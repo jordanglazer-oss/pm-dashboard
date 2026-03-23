@@ -1,5 +1,6 @@
 import { Providers } from "../providers";
 import { Navigation } from "../components/Navigation";
+import { AuthGate } from "../components/AuthGate";
 
 export default function DashboardLayout({
   children,
@@ -7,9 +8,11 @@ export default function DashboardLayout({
   children: React.ReactNode;
 }) {
   return (
-    <Providers>
-      <Navigation />
-      {children}
-    </Providers>
+    <AuthGate>
+      <Providers>
+        <Navigation />
+        {children}
+      </Providers>
+    </AuthGate>
   );
 }
