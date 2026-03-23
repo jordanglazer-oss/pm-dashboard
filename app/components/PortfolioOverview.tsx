@@ -1,0 +1,283 @@
+"use client";
+
+import React from "react";
+import Link from "next/link";
+import { useStocks } from "@/app/lib/StockContext";
+import { SCORE_GROUPS, MAX_SCORE } from "@/app/lib/types";
+import type { ScoredStock, ScoreKey } from "@/app/lib/types";
+import { groupTotal } from "@/app/lib/scoring";
+import { SignalPill } from "./SignalPill";
+
+// S&P 500 approximate sector weights
+const SP500_WEIGHTS: Record<string, number> = {
+  Technology: 32,
+  "Health Care": 12,
+  Financials: 13,
+  "Consumer Discretionary": 10,
+  "Communication Services": 9,
+  Industrials: 9,
+  "Consumer Staples": 6,
+  Energy: 4,
+  Utilities: 2,
+  "Real Estate": 2,
+  Materials: 2,
+};
+
+const sectorColors: Record<string, string> = {
+  Technology: "bg-blue-500",
+  Financials: "bg-teal-500",
+  Energy: "bg-red-500",
+  "Consumer Staples": "bg-amber-500",
+  "Consumer Discretionary": "bg-orange-500",
+  "Health Care": "bg-purple-500",
+  Industrials: "bg-slate-500",
+  "Communication Services": "bg-indigo-500",
+  Utilities: "bg-lime-500",
+  Materials: "bg-cyan-500",
+  "Real Estate": "bg-pink-500",
+};
+
+function ratingColor(label: string): string {
+  if (label.includes("Buy")) return "text-emerald-600";
+  if (label.includes("Underweight")) return "text-amber-600";
+  if (label === "Sell") return "text-red-600";
+  return "text-slate-700";
+}
+
+export function PortfolioOverview() {
+  const { portfolioStocks, watchlistStocks, scoredStocks, marketData } = useStocks();
+
+  const allSorted = [...scoredStocks].sort((a, b) => b.adjusted - a.adjusted);
+
+  // Sector exposure (equal-weighted)
+  const pfCount = portfolioStocks.length;
+  const sectorCounts: Record<string, number> = {};
+  portfolioStocks.forEach((s) => {
+    sectorCounts[s.sector] = (sectorCounts[s.sector] || 0) + 1;
+  });
+  const sectorExposure = Object.entries(sectorCounts)
+    .map(([sector, count]) => ({
+      sector,
+      weight: pfCount > 0 ? Math.round((count / pfCount) * 100) : 0,
+      count,
+    }))
+    .sort((a, b) => b.weight - a.weight);
+
+  // Action items
+  const bottomPortfolio = [...portfolioStocks].reverse().slice(0, 3);
+  const topWatchlist = watchlistStocks.slice(0, 3);
+  const reviewCount = bottomPortfolio.filter((s) => s.adjusted < 20).length;
+  const buyCount = topWatchlist.filter((s) => s.adjusted >= 18).length;
+
+  // Averages
+  const pfAvgBase = pfCount > 0 ? Math.round(portfolioStocks.reduce((s, x) => s + x.raw, 0) / pfCount) : 0;
+  const pfAvgAdj = pfCount > 0 ? Math.round(portfolioStocks.reduce((s, x) => s + x.adjusted, 0) / pfCount) : 0;
+  const wlCount = watchlistStocks.length;
+  const wlAvgBase = wlCount > 0 ? Math.round(watchlistStocks.reduce((s, x) => s + x.raw, 0) / wlCount) : 0;
+  const wlAvgAdj = wlCount > 0 ? Math.round(watchlistStocks.reduce((s, x) => s + x.adjusted, 0) / wlCount) : 0;
+
+  return (
+    <div className="space-y-6">
+      {/* Sector Exposure */}
+      <section className="rounded-[30px] border border-slate-200 bg-white p-5 shadow-sm">
+        <div className="flex items-center gap-3 mb-4">
+          <h2 className="text-lg font-bold text-slate-800">Portfolio Sector Exposure</h2>
+          <span className="text-sm text-slate-400">Equal-weighted · {pfCount} holdings</span>
+        </div>
+        <div className="flex h-8 rounded-xl overflow-hidden mb-3">
+          {sectorExposure.map((s) => (
+            <div
+              key={s.sector}
+              className={`${sectorColors[s.sector] || "bg-slate-400"} flex items-center justify-center text-[11px] font-semibold text-white`}
+              style={{ width: `${s.weight}%` }}
+            >
+              {s.weight >= 8 && `${s.weight}%`}
+            </div>
+          ))}
+        </div>
+        <div className="flex flex-wrap gap-x-4 gap-y-1 text-xs text-slate-500 mb-4">
+          {sectorExposure.map((s) => (
+            <span key={s.sector} className="flex items-center gap-1.5">
+              <span className={`h-2 w-2 rounded-full ${sectorColors[s.sector] || "bg-slate-400"}`} />
+              {s.sector} {s.weight}% ({s.count})
+            </span>
+          ))}
+        </div>
+        {/* Over/Underweight vs S&P */}
+        <div className="grid gap-2 md:grid-cols-2 xl:grid-cols-3">
+          {sectorExposure.map((s) => {
+            const spWeight = SP500_WEIGHTS[s.sector] || 0;
+            const diff = s.weight - spWeight;
+            return (
+              <div key={s.sector} className="flex items-center justify-between rounded-lg bg-slate-50 px-3 py-1.5">
+                <span className="text-xs text-slate-600">{s.sector}</span>
+                <span className={`text-xs font-semibold ${diff > 0 ? "text-emerald-600" : diff < 0 ? "text-red-500" : "text-slate-400"}`}>
+                  {diff > 0 ? "+" : ""}{diff}% vs S&P
+                </span>
+              </div>
+            );
+          })}
+        </div>
+      </section>
+
+      {/* Summary Cards */}
+      <section className="grid gap-4 md:grid-cols-3">
+        <div className="rounded-[24px] border border-slate-200 bg-white p-5 shadow-sm">
+          <div className="text-xs font-semibold uppercase tracking-wider text-slate-400">Portfolio</div>
+          <div className="mt-2 text-4xl font-bold text-slate-900">{pfCount}</div>
+          <div className="mt-1 text-sm text-slate-500">Avg adj: {pfAvgAdj} (base: {pfAvgBase})</div>
+        </div>
+        <div className="rounded-[24px] border border-slate-200 bg-white p-5 shadow-sm">
+          <div className="text-xs font-semibold uppercase tracking-wider text-slate-400">Watchlist</div>
+          <div className="mt-2 text-4xl font-bold text-slate-900">{wlCount}</div>
+          <div className="mt-1 text-sm text-slate-500">Avg adj: {wlAvgAdj} (base: {wlAvgBase})</div>
+        </div>
+        <div className="rounded-[24px] border border-slate-200 bg-white p-5 shadow-sm">
+          <div className="text-xs font-semibold uppercase tracking-wider text-slate-400">Action Items</div>
+          <div className="mt-2 text-4xl font-bold text-amber-600">{reviewCount + buyCount}</div>
+          <div className="mt-1 text-sm text-slate-500">{reviewCount} review · {buyCount} buy candidates</div>
+        </div>
+      </section>
+
+      {/* Portfolio Rankings */}
+      <RankingTable title="Portfolio Rankings" subtitle="Bottom 3 flagged for review" stocks={portfolioStocks} flagType="review" />
+
+      {/* Watchlist Rankings */}
+      <RankingTable title="Watchlist Rankings" subtitle="Top 3 flagged as buy candidates" stocks={watchlistStocks} flagType="buy" />
+
+      {/* Score Comparison */}
+      <section className="rounded-[30px] border border-slate-200 bg-white p-5 shadow-sm">
+        <h2 className="text-lg font-bold text-slate-800 mb-4">Score Comparison</h2>
+        <div className="space-y-2">
+          {allSorted.map((s) => {
+            const pct = (s.adjusted / MAX_SCORE) * 100;
+            const adj = Math.round((s.adjusted - s.raw) * 10) / 10;
+            const label = s.ratingLabel || s.rating;
+            const barColor =
+              s.adjusted >= 22
+                ? "bg-gradient-to-r from-emerald-400 to-emerald-500"
+                : s.adjusted >= 18
+                ? "bg-gradient-to-r from-amber-300 to-amber-400"
+                : "bg-gradient-to-r from-orange-400 to-red-400";
+
+            return (
+              <Link
+                key={s.ticker}
+                href={`/stock/${s.ticker.toLowerCase()}`}
+                className="flex items-center gap-3 rounded-xl py-1.5 hover:bg-slate-50 transition-colors"
+              >
+                <span className="w-16 text-sm font-bold text-slate-800 text-right font-mono">{s.ticker}</span>
+                <SignalPill tone={s.bucket === "Portfolio" ? "blue" : "gray"}>
+                  {s.bucket === "Portfolio" ? "PF" : "WL"}
+                </SignalPill>
+                <div className="flex-1 h-6 rounded-full bg-slate-100 overflow-hidden relative">
+                  <div
+                    className={`h-full rounded-full ${barColor} flex items-center justify-end pr-2`}
+                    style={{ width: `${Math.max(pct, 5)}%` }}
+                  >
+                    <span className="text-xs font-bold text-white">{s.adjusted}</span>
+                  </div>
+                </div>
+                <span className={`w-6 text-xs font-semibold ${adj >= 0 ? "text-emerald-600" : "text-red-500"}`}>
+                  {adj >= 0 ? "+" : ""}{adj}
+                </span>
+                <span className={`w-24 text-xs font-medium text-right ${ratingColor(label)}`}>
+                  {label}
+                </span>
+              </Link>
+            );
+          })}
+        </div>
+      </section>
+    </div>
+  );
+}
+
+function RankingTable({
+  title,
+  subtitle,
+  stocks,
+  flagType,
+}: {
+  title: string;
+  subtitle: string;
+  stocks: ScoredStock[];
+  flagType: "review" | "buy";
+}) {
+  const GROUP_HEADER_COLORS: Record<string, string> = {
+    "Long-term": "text-blue-600",
+    Research: "text-purple-600",
+    Technicals: "text-teal-600",
+    Fundamental: "text-emerald-600",
+    "Company Specific": "text-amber-600",
+    Management: "text-red-600",
+  };
+
+  return (
+    <section className="rounded-[30px] border border-slate-200 bg-white p-5 shadow-sm">
+      <div className="flex items-center gap-3 mb-4">
+        <h2 className="text-lg font-bold text-slate-800">{title}</h2>
+        <span className="text-sm text-slate-400">{subtitle}</span>
+      </div>
+      <div className="overflow-x-auto">
+        <table className="w-full min-w-[900px] text-left text-sm">
+          <thead>
+            <tr className="border-b border-slate-200 text-xs text-slate-500">
+              <th className="pb-2 w-8">Rank</th>
+              <th className="pb-2">Ticker</th>
+              {SCORE_GROUPS.map((g) => (
+                <th key={g.name} className={`pb-2 ${GROUP_HEADER_COLORS[g.name] || ""}`}>
+                  {g.name === "Company Specific" ? "Company" : g.name}
+                </th>
+              ))}
+              <th className="pb-2">Base</th>
+              <th className="pb-2 font-bold">Adj</th>
+              <th className="pb-2">Rating</th>
+              <th className="pb-2">Signal</th>
+            </tr>
+          </thead>
+          <tbody>
+            {stocks.map((s, i) => {
+              const adj = Math.round((s.adjusted - s.raw) * 10) / 10;
+              const label = s.ratingLabel || s.rating;
+              const isFlagged =
+                flagType === "review" ? i >= stocks.length - 3 : i < 3;
+
+              return (
+                <tr key={s.ticker} className="border-b border-slate-50 hover:bg-slate-50/50 transition-colors">
+                  <td className="py-3 text-slate-400">{i + 1}</td>
+                  <td className="py-3">
+                    <Link href={`/stock/${s.ticker.toLowerCase()}`} className="hover:underline">
+                      <div className="font-bold text-slate-800">{s.ticker}</div>
+                      <div className="text-xs text-slate-400">{s.name}</div>
+                    </Link>
+                  </td>
+                  {SCORE_GROUPS.map((g) => (
+                    <td key={g.name} className="py-3 text-slate-600">
+                      {groupTotal(s, g)}/{g.maxTotal}
+                    </td>
+                  ))}
+                  <td className="py-3 text-slate-500">{s.raw}</td>
+                  <td className="py-3">
+                    <span className="font-bold text-slate-900">{s.adjusted}</span>
+                    <span className={`ml-0.5 text-xs ${adj >= 0 ? "text-emerald-500" : "text-red-500"}`}>
+                      {adj >= 0 ? "+" : ""}{adj}
+                    </span>
+                  </td>
+                  <td className={`py-3 font-medium ${ratingColor(label)}`}>{label}</td>
+                  <td className="py-3">
+                    {isFlagged && flagType === "buy" && (
+                      <span className="rounded-full border border-emerald-200 bg-emerald-50 px-2 py-0.5 text-[10px] font-bold text-emerald-600">
+                        BUY CANDIDATE
+                      </span>
+                    )}
+                  </td>
+                </tr>
+              );
+            })}
+          </tbody>
+        </table>
+      </div>
+    </section>
+  );
+}
