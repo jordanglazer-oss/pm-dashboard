@@ -1,48 +1,8 @@
 "use client";
 
-import React, { useState, useEffect, useCallback } from "react";
-
-const STORAGE_KEY = "pm-research-notes";
-
-type UptickEntry = {
-  ticker: string;
-  name: string;
-  sector: string;
-  price: number;
-  support: string;
-  resistance: string;
-  dateAdded: string;
-  priceWhenAdded: number;
-};
-
-type IdeaEntry = {
-  ticker: string;
-  priceWhenAdded: number;
-};
-
-type ResearchState = {
-  newtonUpticks: UptickEntry[];
-  fundstratTop: IdeaEntry[];
-  fundstratBottom: IdeaEntry[];
-  generalNotes: string;
-};
-
-const defaultState: ResearchState = {
-  newtonUpticks: [],
-  fundstratTop: [],
-  fundstratBottom: [],
-  generalNotes: "",
-};
-
-function loadState(): ResearchState {
-  if (typeof window === "undefined") return defaultState;
-  try {
-    const raw = localStorage.getItem(STORAGE_KEY);
-    return raw ? { ...defaultState, ...JSON.parse(raw) } : defaultState;
-  } catch {
-    return defaultState;
-  }
-}
+import React, { useState, useEffect, useCallback, useRef } from "react";
+import type { ResearchState, UptickEntry, IdeaEntry } from "@/app/lib/defaults";
+import { defaultResearch } from "@/app/lib/defaults";
 
 /* ─── Uptick Add Form ─── */
 function UptickAddForm({ onAdd }: { onAdd: (e: UptickEntry) => void }) {
@@ -189,17 +149,30 @@ function EditableCell({
 }
 
 export default function ResearchPage() {
-  const [state, setState] = useState<ResearchState>(defaultState);
+  const [state, setState] = useState<ResearchState>(defaultResearch);
   const [loaded, setLoaded] = useState(false);
+  const saveTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
 
   useEffect(() => {
-    setState(loadState());
-    setLoaded(true);
+    fetch("/api/kv/research")
+      .then((r) => r.json())
+      .then((data) => {
+        if (data.research) setState(data.research);
+      })
+      .catch(() => {})
+      .finally(() => setLoaded(true));
   }, []);
 
   const save = useCallback((next: ResearchState) => {
     setState(next);
-    localStorage.setItem(STORAGE_KEY, JSON.stringify(next));
+    if (saveTimer.current) clearTimeout(saveTimer.current);
+    saveTimer.current = setTimeout(() => {
+      fetch("/api/kv/research", {
+        method: "PUT",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ research: next }),
+      }).catch((e) => console.error("Failed to save research:", e));
+    }, 800);
   }, []);
 
   /* Uptick helpers */
