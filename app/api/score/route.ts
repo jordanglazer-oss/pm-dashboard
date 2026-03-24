@@ -5,14 +5,12 @@ import { SCORE_GROUPS } from "@/app/lib/types";
 
 const client = new Anthropic();
 
-// Build the list of auto + semi categories for Claude to score
 const AI_CATEGORIES = SCORE_GROUPS.flatMap((g) =>
   g.categories
     .filter((c) => c.inputType === "auto" || c.inputType === "semi")
     .map((c) => ({ ...c, group: g.name }))
 );
 
-// Build a lookup of key → max for clamping
 const maxLookup: Record<string, number> = {};
 for (const g of SCORE_GROUPS) {
   for (const c of g.categories) {
@@ -22,80 +20,51 @@ for (const g of SCORE_GROUPS) {
 
 const AI_KEYS = AI_CATEGORIES.map((c) => c.key);
 
-// ── Financial data fetcher (financialdatasets.ai) ──
-const FD_BASE = "https://api.financialdatasets.ai";
+// ── Financial Modeling Prep API ──
+const FMP_BASE = "https://financialmodelingprep.com/api/v3";
 
 async function fetchFinancialData(ticker: string): Promise<string> {
-  const apiKey = process.env.FINANCIAL_DATASETS_API_KEY;
-  const headers: Record<string, string> = {
-    "Accept": "application/json",
-  };
-  if (apiKey) {
-    headers["X-API-Key"] = apiKey;
+  const apiKey = process.env.FMP_API_KEY;
+  if (!apiKey) {
+    return "No financial data API key configured. Use your best knowledge but clearly note that figures should be verified.";
   }
 
-  const fetchers = [
+  const endpoints = [
     // Income statement (annual, 3 years)
-    fetch(`${FD_BASE}/financials/income-statements?ticker=${ticker}&period=annual&limit=3`, { headers })
-      .then((r) => r.ok ? r.json() : null)
-      .catch(() => null),
-    // Balance sheet (TTM)
-    fetch(`${FD_BASE}/financials/balance-sheets?ticker=${ticker}&period=ttm&limit=1`, { headers })
-      .then((r) => r.ok ? r.json() : null)
-      .catch(() => null),
+    { label: "INCOME STATEMENTS (Annual, 3 years)", url: `${FMP_BASE}/income-statement/${ticker}?period=annual&limit=3&apikey=${apiKey}` },
+    // Balance sheet (annual, 1 year)
+    { label: "BALANCE SHEET (Latest)", url: `${FMP_BASE}/balance-sheet-statement/${ticker}?period=annual&limit=1&apikey=${apiKey}` },
     // Cash flow (annual, 3 years)
-    fetch(`${FD_BASE}/financials/cash-flow-statements?ticker=${ticker}&period=annual&limit=3`, { headers })
-      .then((r) => r.ok ? r.json() : null)
-      .catch(() => null),
-    // Financial metrics (annual, 5 years for historical valuation)
-    fetch(`${FD_BASE}/financials/metrics?ticker=${ticker}&period=annual&limit=5`, { headers })
-      .then((r) => r.ok ? r.json() : null)
-      .catch(() => null),
-    // Current metrics snapshot
-    fetch(`${FD_BASE}/financials/metrics/snapshot?ticker=${ticker}`, { headers })
-      .then((r) => r.ok ? r.json() : null)
-      .catch(() => null),
-    // Company facts (sector, industry)
-    fetch(`${FD_BASE}/company/facts?ticker=${ticker}`, { headers })
-      .then((r) => r.ok ? r.json() : null)
-      .catch(() => null),
+    { label: "CASH FLOW STATEMENTS (Annual, 3 years)", url: `${FMP_BASE}/cash-flow-statement/${ticker}?period=annual&limit=3&apikey=${apiKey}` },
+    // Key metrics (annual, 5 years for historical valuation)
+    { label: "KEY METRICS (Annual, 5 years)", url: `${FMP_BASE}/key-metrics/${ticker}?period=annual&limit=5&apikey=${apiKey}` },
+    // Ratios (annual, 5 years)
+    { label: "FINANCIAL RATIOS (Annual, 5 years)", url: `${FMP_BASE}/ratios/${ticker}?period=annual&limit=5&apikey=${apiKey}` },
+    // Company profile (sector, industry, beta, description)
+    { label: "COMPANY PROFILE", url: `${FMP_BASE}/profile/${ticker}?apikey=${apiKey}` },
     // Analyst estimates
-    fetch(`${FD_BASE}/financials/analyst-estimates?ticker=${ticker}&period=annual&limit=3`, { headers })
-      .then((r) => r.ok ? r.json() : null)
-      .catch(() => null),
+    { label: "ANALYST ESTIMATES", url: `${FMP_BASE}/analyst-estimates/${ticker}?limit=3&apikey=${apiKey}` },
+    // Enterprise value
+    { label: "ENTERPRISE VALUE", url: `${FMP_BASE}/enterprise-values/${ticker}?period=annual&limit=3&apikey=${apiKey}` },
   ];
 
-  const [income, balance, cashflow, metrics, snapshot, facts, estimates] = await Promise.all(fetchers);
+  const results = await Promise.all(
+    endpoints.map(async (ep) => {
+      try {
+        const res = await fetch(ep.url, { next: { revalidate: 3600 } });
+        if (!res.ok) return null;
+        const data = await res.json();
+        if (!data || (Array.isArray(data) && data.length === 0)) return null;
+        return { label: ep.label, data };
+      } catch {
+        return null;
+      }
+    })
+  );
 
-  const sections: string[] = [];
-
-  if (facts) {
-    sections.push(`COMPANY FACTS:\n${JSON.stringify(facts, null, 2)}`);
-  }
-
-  if (snapshot) {
-    sections.push(`CURRENT FINANCIAL METRICS SNAPSHOT:\n${JSON.stringify(snapshot, null, 2)}`);
-  }
-
-  if (income) {
-    sections.push(`INCOME STATEMENTS (Annual, last 3 years):\n${JSON.stringify(income, null, 2)}`);
-  }
-
-  if (balance) {
-    sections.push(`BALANCE SHEET (TTM):\n${JSON.stringify(balance, null, 2)}`);
-  }
-
-  if (cashflow) {
-    sections.push(`CASH FLOW STATEMENTS (Annual, last 3 years):\n${JSON.stringify(cashflow, null, 2)}`);
-  }
-
-  if (metrics) {
-    sections.push(`HISTORICAL FINANCIAL METRICS (Annual, 5 years):\n${JSON.stringify(metrics, null, 2)}`);
-  }
-
-  if (estimates) {
-    sections.push(`ANALYST ESTIMATES:\n${JSON.stringify(estimates, null, 2)}`);
-  }
+  const sections = results
+    .filter((r): r is { label: string; data: unknown } => r !== null)
+    .map((r) => `${r.label}:\n${JSON.stringify(r.data, null, 2)}`);
 
   if (sections.length === 0) {
     return "No financial data available from API. Use your best knowledge but clearly state that data should be verified.";
@@ -153,7 +122,7 @@ CRITICAL RULES FOR EXPLANATIONS:
 4. Historical valuation must compare current vs historical averages with specific numbers
 5. Leverage must cite actual debt figures and coverage ratios
 6. Cash flow must cite actual FCF figures and conversion rates
-7. Write in a dense, data-rich paragraph style (not bullet points) — like an analyst note
+7. Write in a dense, data-rich paragraph style — like an analyst note
 8. Each explanation should be 3-6 sentences with multiple data points
 
 Also provide:
