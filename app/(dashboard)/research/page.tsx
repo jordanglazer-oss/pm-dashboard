@@ -216,7 +216,7 @@ export default function ResearchPage() {
       <div className="mx-auto max-w-7xl space-y-6">
         <div>
           <h1 className="text-3xl font-semibold tracking-tight">Research Notes</h1>
-          <p className="text-slate-500 mt-1">Track external research sources, ideas, and notes. All data saved locally in your browser.</p>
+          <p className="text-slate-500 mt-1">Track external research sources, ideas, and notes. All changes are saved and shared across the team.</p>
         </div>
 
         {/* ── Newton's Upticks ── */}
