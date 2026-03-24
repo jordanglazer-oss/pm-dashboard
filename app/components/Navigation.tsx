@@ -8,6 +8,7 @@ const tabs = [
   { label: "Brief", href: "/brief" },
   { label: "Dashboard", href: "/" },
   { label: "Scoring", href: "/scoring" },
+  { label: "Research", href: "/research" },
 ];
 
 export function Navigation() {
@@ -17,6 +18,8 @@ export function Navigation() {
     ? "Scoring"
     : pathname === "/brief"
     ? "Brief"
+    : pathname === "/research"
+    ? "Research"
     : "Dashboard";
 
   return (
@@ -49,13 +52,6 @@ export function Navigation() {
             );
           })}
 
-          {/* User avatar */}
-          <div className="ml-3 flex items-center gap-2 rounded-full bg-slate-800 px-3 py-1.5 shrink-0">
-            <div className="flex h-6 w-6 items-center justify-center rounded-full bg-blue-600 text-xs font-bold">
-              J
-            </div>
-            <span className="hidden sm:inline text-sm font-medium text-slate-200">Jordan</span>
-          </div>
         </nav>
       </div>
     </header>

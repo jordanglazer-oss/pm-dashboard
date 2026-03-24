@@ -1,9 +1,8 @@
 "use client";
 
 import React, { useState } from "react";
-import type { MarketData, MorningBrief as MorningBriefType, Stock } from "@/app/lib/types";
+import type { MarketData, MorningBrief as MorningBriefType, Stock, ScoredStock } from "@/app/lib/types";
 import { SignalPill } from "./SignalPill";
-import { StatCard } from "./StatCard";
 import { LoadingOverlay } from "./LoadingSpinner";
 import { SentimentGauges } from "./SentimentGauges";
 import { HedgingIndicator } from "./HedgingIndicator";
@@ -13,7 +12,9 @@ type Props = {
   offensiveExposure: number;
   brief: MorningBriefType | null;
   stocks: Stock[];
+  scoredStocks: ScoredStock[];
   onBriefGenerated: (brief: MorningBriefType) => void;
+  onUpdateMarketData: (updates: Partial<MarketData>) => void;
 };
 
 export function MorningBrief({
@@ -21,20 +22,37 @@ export function MorningBrief({
   offensiveExposure,
   brief,
   stocks,
+  scoredStocks,
   onBriefGenerated,
+  onUpdateMarketData,
 }: Props) {
   const [generating, setGenerating] = useState(false);
   const [error, setError] = useState("");
 
+  // Local editable state for sentiment inputs
+  const [fg, setFg] = useState(marketData.fearGreed);
+  const [aaiiBull, setAaiiBull] = useState(30);
+  const [aaiiNeutral, setAaiiNeutral] = useState(17);
+  const [aaiiBear, setAaiiBear] = useState(52);
+
   async function generateBrief() {
+    // Sync editable inputs to market data
+    const bullBearSpread = parseFloat((aaiiBull - aaiiBear).toFixed(1));
+    onUpdateMarketData({ fearGreed: fg, aaiiBullBear: bullBearSpread });
+
     setGenerating(true);
     setError("");
 
     try {
+      const updatedMarketData = {
+        ...marketData,
+        fearGreed: fg,
+        aaiiBullBear: bullBearSpread,
+      };
       const res = await fetch("/api/morning-brief", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ marketData, holdings: stocks }),
+        body: JSON.stringify({ marketData: updatedMarketData, holdings: stocks }),
       });
 
       if (!res.ok) {
@@ -53,75 +71,116 @@ export function MorningBrief({
 
   const bottomLine =
     brief?.bottomLine ||
-    "Click \"Generate Brief\" to have Claude analyze current market conditions and produce your morning brief.";
+    "Click \"Refresh Brief\" to have Claude analyze current market conditions and produce your morning brief.";
 
   const compositeAnalysis =
     brief?.compositeAnalysis ||
-    "HY spreads are widening, breadth is below 50%, VIX is elevated, and sentiment is fearful without true capitulation. For PMs, that means the main risk is portfolio construction mismatch.";
+    "Composite analysis will appear here after generating the brief.";
 
   const creditAnalysis =
     brief?.creditAnalysis ||
-    "Widening spreads raise the discount-rate pressure on equities and usually hit high-multiple growth first. This is often a grinding-risk backdrop rather than a one-day crash event.";
+    "Credit spread analysis will appear here after generating the brief.";
 
   const volatilityAnalysis =
     brief?.volatilityAnalysis ||
-    "Volatility is high enough to justify disciplined hedging, but not yet at full panic levels. That usually argues for adding protection before the market reaches obvious capitulation.";
+    "Volatility regime analysis will appear here after generating the brief.";
 
   const breadthAnalysis =
     brief?.breadthAnalysis ||
-    "Index stability can be misleading when the median stock is deteriorating underneath. That is exactly when PMs need tighter exposure control and stronger sector discipline.";
+    "Breadth & internals analysis will appear here after generating the brief.";
 
   const flowsAnalysis =
     brief?.flowsAnalysis ||
-    "Positioning is cautious, but not washed out. That matters because a fearful market can still become much more fearful before the real reset is complete.";
+    "Fund flows & positioning analysis will appear here after generating the brief.";
 
-  const hedgingAnalysis =
-    brief?.hedgingAnalysis ||
-    "With the hedge score elevated, breadth below 50%, and spreads widening, this is the zone where PMs should add protection before any true panic signal arrives.";
+  const hedgingAnalysis = brief?.hedgingAnalysis || "";
 
-  const forwardActions = brief?.forwardActions || [
-    {
-      priority: "High" as const,
-      title: "Increase hedge ratio on growth-heavy sleeves",
-      detail:
-        "With the hedge score elevated, breadth below 50%, and spreads widening, this is the zone where PMs should add protection before any true panic signal arrives.",
-    },
-    {
-      priority: "High" as const,
-      title: "Trim offensive growth where regime-adjusted score weakens",
-      detail:
-        "Do not rewrite the fundamental score. Keep it. But use the regime multiplier to reduce position sizes where tactical fit is poor.",
-    },
-    {
-      priority: "Medium" as const,
-      title: "Rotate incremental capital toward defensive sectors",
-      detail:
-        "Defensive and inflation-linked sectors currently receive the positive regime multiplier. This improves tactical alignment without replacing the underlying stock work.",
-    },
-  ];
+  const sectorRotation = brief?.sectorRotation || null;
+
+  const riskScan = brief?.riskScan || null;
+
+  const forwardActions = brief?.forwardActions || [];
+
+  const compositeSignalTone = marketData.compositeSignal.toLowerCase().includes("bear")
+    ? "red" as const
+    : marketData.compositeSignal.toLowerCase().includes("bull")
+    ? "green" as const
+    : "amber" as const;
 
   return (
     <>
-      {/* Header */}
-      <header className="flex flex-col gap-4 md:flex-row md:items-start md:justify-between">
-        <div>
-          <h1 className="text-4xl font-semibold tracking-tight">
-            Morning Brief
-          </h1>
-          <p className="mt-2 text-xl text-slate-400">
-            {brief?.date || marketData.date}
-          </p>
+      {/* Editable Sentiment Inputs */}
+      <section className="rounded-[30px] border border-slate-200 bg-white p-6 shadow-sm">
+        <div className="flex items-center gap-3 mb-5">
+          <h3 className="text-xl font-semibold">Daily Sentiment Input</h3>
+          <SignalPill tone="green">CONTRARIAN</SignalPill>
         </div>
-        <div className="flex items-center gap-3">
+
+        <div className="grid gap-6 md:grid-cols-2">
+          <div>
+            <label className="text-sm font-medium text-slate-500">CNN Fear & Greed (0-100)</label>
+            <input
+              type="number"
+              min={0}
+              max={100}
+              value={fg}
+              onChange={(e) => setFg(Number(e.target.value))}
+              className="mt-1 w-24 rounded-xl border border-slate-200 px-3 py-2 text-lg font-semibold"
+            />
+          </div>
+          <div>
+            <label className="text-sm font-medium text-slate-500">AAII Survey (%)</label>
+            <div className="mt-1 flex gap-4">
+              <div>
+                <span className="text-xs text-red-500 font-medium">Bull</span>
+                <input
+                  type="number"
+                  min={0}
+                  max={100}
+                  value={aaiiBull}
+                  onChange={(e) => setAaiiBull(Number(e.target.value))}
+                  className="block w-20 rounded-xl border border-slate-200 px-3 py-2 text-lg font-semibold"
+                />
+              </div>
+              <div>
+                <span className="text-xs text-amber-500 font-medium">Neutral</span>
+                <input
+                  type="number"
+                  min={0}
+                  max={100}
+                  value={aaiiNeutral}
+                  onChange={(e) => setAaiiNeutral(Number(e.target.value))}
+                  className="block w-20 rounded-xl border border-slate-200 px-3 py-2 text-lg font-semibold"
+                />
+              </div>
+              <div>
+                <span className="text-xs text-emerald-500 font-medium">Bear</span>
+                <input
+                  type="number"
+                  min={0}
+                  max={100}
+                  value={aaiiBear}
+                  onChange={(e) => setAaiiBear(Number(e.target.value))}
+                  className="block w-20 rounded-xl border border-slate-200 px-3 py-2 text-lg font-semibold"
+                />
+              </div>
+            </div>
+          </div>
+        </div>
+
+        <div className="mt-5 flex items-center gap-4">
           <button
             onClick={generateBrief}
             disabled={generating}
-            className="rounded-2xl border border-blue-200 bg-blue-50 px-4 py-3 text-sm font-medium text-blue-600 disabled:opacity-50 transition-opacity"
+            className="rounded-2xl bg-blue-600 px-5 py-3 text-sm font-semibold text-white hover:bg-blue-700 disabled:opacity-50 transition-colors"
           >
-            {generating ? "Generating..." : "Generate Brief"}
+            {generating ? "Generating..." : "\u21BB Refresh Brief"}
           </button>
+          <span className="text-sm text-slate-400">
+            F&G: <strong>{fg}</strong> | AAII: <strong>{aaiiBull.toFixed(1)}%</strong>B <strong>{aaiiBear.toFixed(1)}%</strong>Be
+          </span>
         </div>
-      </header>
+      </section>
 
       {error && (
         <div className="rounded-xl border border-red-200 bg-red-50 px-4 py-3 text-sm text-red-600">
@@ -129,46 +188,29 @@ export function MorningBrief({
         </div>
       )}
 
+      {/* Header */}
+      <header>
+        <h1 className="text-4xl font-semibold tracking-tight">Morning Brief</h1>
+        <p className="mt-2 text-xl text-slate-400">{brief?.date || marketData.date}</p>
+      </header>
+
       {/* Bottom Line */}
-      <section className="relative rounded-[32px] bg-gradient-to-r from-slate-900 to-slate-700 p-8 text-white shadow-lg">
+      <section className="relative rounded-[30px] bg-amber-50 border border-amber-200 p-8 shadow-sm">
         {generating && <LoadingOverlay message="Claude is analyzing markets..." />}
-        <div className="text-sm font-semibold uppercase tracking-[0.22em] text-slate-300">
+        <div className="text-sm font-bold uppercase tracking-[0.22em] text-amber-700 mb-4">
           Bottom line
         </div>
-        <p className="mt-5 max-w-6xl text-2xl leading-10 text-slate-50 md:text-[32px] md:leading-[1.45]">
+        <p className="max-w-6xl text-lg leading-8 text-slate-800">
           {bottomLine}
         </p>
       </section>
 
-      {/* Stat Cards */}
-      <section className="grid gap-4 md:grid-cols-2 xl:grid-cols-4">
-        <StatCard
-          title="Composite Signal"
-          value={marketData.compositeSignal}
-          sub={`Conviction: ${marketData.conviction}`}
-        />
-        <StatCard
-          title="Hedge Timing Score"
-          value={`${marketData.hedgeScore}/100`}
-          sub={marketData.hedgeTiming}
-        />
-        <StatCard
-          title="Breadth (% above 200 DMA)"
-          value={`${marketData.breadth}%`}
-          sub="Late-cycle / deteriorating breadth"
-        />
-        <StatCard
-          title="Portfolio regime mismatch"
-          value={`${offensiveExposure.toFixed(1)}%`}
-          sub="Offensive exposure in current portfolio"
-        />
-      </section>
-
       {/* Composite Signal */}
-      <section className="relative rounded-[30px] border border-red-200 bg-white p-6 shadow-sm">
+      <section className="rounded-[30px] border border-slate-200 bg-white p-6 shadow-sm">
         <div className="flex flex-wrap items-center gap-3">
+          <span className="text-2xl">🔍</span>
           <h2 className="text-2xl font-semibold">Composite Signal</h2>
-          <SignalPill tone="red">{marketData.compositeSignal}</SignalPill>
+          <SignalPill tone={compositeSignalTone}>{marketData.compositeSignal}</SignalPill>
           <span className="text-slate-500">
             Conviction: {marketData.conviction}
           </span>
@@ -178,147 +220,215 @@ export function MorningBrief({
         </p>
       </section>
 
+      {/* Contrarian Sentiment Gauges */}
+      <SentimentGauges marketData={{...marketData, fearGreed: fg, aaiiBullBear: parseFloat((aaiiBull - aaiiBear).toFixed(1))}} aaiiBull={aaiiBull} aaiiNeutral={aaiiNeutral} aaiiBear={aaiiBear} />
+
       {/* Credit & Volatility */}
       <section className="grid gap-5 lg:grid-cols-2">
         <div className="rounded-[30px] border border-slate-200 bg-white p-6 shadow-sm">
           <div className="flex items-center justify-between gap-3">
-            <h3 className="text-2xl font-semibold">Credit Spreads</h3>
-            <SignalPill tone="red">Risk-Off</SignalPill>
+            <div className="flex items-center gap-2">
+              <span className="text-xl">📉</span>
+              <h3 className="text-2xl font-semibold">Credit Spreads</h3>
+            </div>
+            <SignalPill tone={marketData.hyOas >= 300 ? "red" : marketData.hyOas >= 200 ? "amber" : "green"}>
+              {marketData.hyOas >= 300 ? "Widening" : marketData.hyOas >= 200 ? "Neutral" : "Tight"}
+            </SignalPill>
           </div>
           <div className="mt-5 grid grid-cols-2 gap-4">
             <div className="rounded-2xl bg-slate-50 p-4">
-              <div className="text-sm text-slate-400">HY OAS</div>
-              <div className="mt-2 text-4xl font-semibold">
-                {marketData.hyOas} bps
-              </div>
+              <div className="text-xs font-semibold uppercase tracking-wider text-slate-400">HY OAS</div>
+              <div className="mt-2 text-3xl font-bold">{marketData.hyOas} <span className="text-base font-normal text-slate-400">bps</span></div>
             </div>
             <div className="rounded-2xl bg-slate-50 p-4">
-              <div className="text-sm text-slate-400">IG OAS</div>
-              <div className="mt-2 text-4xl font-semibold">
-                ~{marketData.igOas} bps
-              </div>
+              <div className="text-xs font-semibold uppercase tracking-wider text-slate-400">IG OAS</div>
+              <div className="mt-2 text-3xl font-bold">{marketData.igOas} <span className="text-base font-normal text-slate-400">bps</span></div>
             </div>
           </div>
-          <p className="mt-5 text-lg leading-8 text-slate-600">
-            {creditAnalysis}
-          </p>
+          <p className="mt-4 text-sm text-slate-500">Trend: {marketData.hyOas >= 300 ? "Widening modestly" : "Stable"}</p>
+          <p className="mt-2 text-lg leading-8 text-slate-600">{creditAnalysis}</p>
         </div>
 
         <div className="rounded-[30px] border border-slate-200 bg-white p-6 shadow-sm">
           <div className="flex items-center justify-between gap-3">
-            <h3 className="text-2xl font-semibold">Volatility Regime</h3>
-            <SignalPill tone="amber">Elevated</SignalPill>
+            <div className="flex items-center gap-2">
+              <span className="text-xl">⚡</span>
+              <h3 className="text-2xl font-semibold">Volatility Regime</h3>
+            </div>
+            <SignalPill tone={marketData.vix >= 22 ? "red" : marketData.vix >= 16 ? "amber" : "green"}>
+              {marketData.vix >= 22 ? "Elevated" : marketData.vix >= 16 ? "Moderate" : "Low"}
+            </SignalPill>
           </div>
           <div className="mt-5 grid grid-cols-3 gap-4">
             <div className="rounded-2xl bg-slate-50 p-4">
-              <div className="text-sm text-slate-400">VIX</div>
-              <div className="mt-2 text-3xl font-semibold">
-                {marketData.vix}
-              </div>
+              <div className="text-xs font-semibold uppercase tracking-wider text-slate-400">VIX</div>
+              <div className="mt-2 text-3xl font-bold">{marketData.vix}</div>
             </div>
             <div className="rounded-2xl bg-slate-50 p-4">
-              <div className="text-sm text-slate-400">Term</div>
-              <div className="mt-2 text-3xl font-semibold">
-                {marketData.termStructure}
-              </div>
+              <div className="text-xs font-semibold uppercase tracking-wider text-slate-400">TERM</div>
+              <div className="mt-2 text-xl font-bold">{marketData.termStructure}</div>
             </div>
             <div className="rounded-2xl bg-slate-50 p-4">
-              <div className="text-sm text-slate-400">MOVE</div>
-              <div className="mt-2 text-3xl font-semibold">
-                {marketData.move}
-              </div>
+              <div className="text-xs font-semibold uppercase tracking-wider text-slate-400">MOVE</div>
+              <div className="mt-2 text-3xl font-bold">{marketData.move}</div>
             </div>
           </div>
-          <p className="mt-5 text-lg leading-8 text-slate-600">
-            {volatilityAnalysis}
-          </p>
+          <p className="mt-4 text-lg leading-8 text-slate-600">{volatilityAnalysis}</p>
         </div>
       </section>
-
-      {/* Contrarian Sentiment Gauges */}
-      <SentimentGauges marketData={marketData} />
 
       {/* Breadth & Flows */}
       <section className="grid gap-5 lg:grid-cols-2">
         <div className="rounded-[30px] border border-slate-200 bg-white p-6 shadow-sm">
           <div className="flex items-center justify-between gap-3">
-            <h3 className="text-2xl font-semibold">Breadth & Internals</h3>
-            <SignalPill tone="red">Deteriorating</SignalPill>
+            <div className="flex items-center gap-2">
+              <span className="text-xl">📊</span>
+              <h3 className="text-2xl font-semibold">Breadth & Internals</h3>
+            </div>
+            <SignalPill tone={marketData.breadth <= 50 ? "red" : "amber"}>
+              {marketData.breadth <= 50 ? "Bearish" : "Mixed"}
+            </SignalPill>
           </div>
-          <div className="mt-5 space-y-4 text-lg leading-8 text-slate-700">
-            <div className="grid grid-cols-[1fr_auto] gap-4 border-b border-slate-100 pb-3">
-              <span className="text-slate-400">% Above 200 DMA</span>
-              <span className="font-medium">{marketData.breadth}%</span>
+          <div className="mt-5 space-y-3">
+            <div className="flex justify-between border-b border-slate-100 pb-3">
+              <span className="text-slate-500">A/D Line</span>
+              <span className="font-medium">Deteriorating</span>
             </div>
-            <div className="grid grid-cols-[1fr_auto] gap-4 border-b border-slate-100 pb-3">
-              <span className="text-slate-400">Fear & Greed</span>
-              <span className="font-medium">{marketData.fearGreed}/100</span>
+            <div className="flex justify-between border-b border-slate-100 pb-3">
+              <span className="text-slate-500">% Above 200 DMA</span>
+              <span className="font-mono font-medium">{marketData.breadth}%</span>
             </div>
-            <div className="grid grid-cols-[1fr_auto] gap-4 pb-3">
-              <span className="text-slate-400">Put/Call Ratio</span>
-              <span className="font-medium">{marketData.putCall}</span>
+            <div className="flex justify-between pb-3">
+              <span className="text-slate-500">New Highs/Lows</span>
+              <span className="font-medium">Negative divergence</span>
             </div>
-            <p>{breadthAnalysis}</p>
           </div>
+          <p className="mt-4 text-lg leading-8 text-slate-600">{breadthAnalysis}</p>
         </div>
 
         <div className="rounded-[30px] border border-slate-200 bg-white p-6 shadow-sm">
           <div className="flex items-center justify-between gap-3">
-            <h3 className="text-2xl font-semibold">Fund Flows & Positioning</h3>
-            <SignalPill tone="red">Risk-Off</SignalPill>
+            <div className="flex items-center gap-2">
+              <span className="text-xl">💰</span>
+              <h3 className="text-2xl font-semibold">Fund Flows & Positioning</h3>
+            </div>
+            <SignalPill tone="amber">Mixed</SignalPill>
           </div>
-          <div className="mt-5 space-y-4 text-lg leading-8 text-slate-700">
-            <p>
-              <span className="text-slate-400">Fear & Greed:</span>{" "}
-              <span className="font-medium">{marketData.fearGreed}/100</span>
-            </p>
-            <p>
-              <span className="text-slate-400">AAII bull-bear spread:</span>{" "}
-              <span className="font-medium">{marketData.aaiiBullBear}</span>
-            </p>
-            <p>
-              <span className="text-slate-400">Put/Call:</span>{" "}
-              <span className="font-medium">{marketData.putCall}</span>
-            </p>
-            <p>{flowsAnalysis}</p>
+          <div className="mt-5 space-y-3">
+            <div className="flex justify-between border-b border-slate-100 pb-3">
+              <span className="text-slate-500">Equity Flows</span>
+              <span className="font-medium">Mixed</span>
+            </div>
+            <div className="flex justify-between pb-3">
+              <span className="text-slate-500">Put/Call Ratio</span>
+              <span className="font-mono font-medium">{marketData.putCall}</span>
+            </div>
           </div>
+          <p className="mt-4 text-lg leading-8 text-slate-600">{flowsAnalysis}</p>
         </div>
       </section>
 
-      {/* Hedging Indicator */}
-      <HedgingIndicator marketData={marketData} hedgingAnalysis={hedgingAnalysis} />
+      {/* Hedging Window */}
+      <HedgingIndicator marketData={{...marketData, fearGreed: fg}} hedgingAnalysis={hedgingAnalysis} />
 
-      {/* Forward Actions */}
-      <section className="rounded-[30px] border border-slate-200 bg-white p-6 shadow-sm">
-        <h3 className="text-2xl font-semibold">Forward Actions</h3>
-        <div className="mt-5 space-y-4">
-          {forwardActions.map((action, i) => {
-            const tone =
-              action.priority === "High"
-                ? "red"
-                : action.priority === "Medium"
-                ? "amber"
-                : ("green" as const);
-            const bgClass =
-              action.priority === "High"
-                ? "border-red-200 bg-red-50/40"
-                : action.priority === "Medium"
-                ? "border-amber-200 bg-amber-50/40"
-                : "border-emerald-200 bg-emerald-50/40";
-            return (
-              <div key={i} className={`rounded-3xl border p-5 ${bgClass}`}>
-                <div className="mb-2 flex items-center gap-3">
-                  <SignalPill tone={tone}>{action.priority}</SignalPill>
-                  <h4 className="text-xl font-semibold">{action.title}</h4>
+      {/* Sector Rotation */}
+      {sectorRotation && (
+        <section className="rounded-[30px] border border-slate-200 bg-white p-6 shadow-sm">
+          <div className="flex items-center gap-2 mb-4">
+            <span className="text-xl">🔄</span>
+            <h3 className="text-2xl font-semibold">Sector Rotation</h3>
+          </div>
+          <p className="text-lg leading-8 text-slate-700 mb-5">{sectorRotation.summary}</p>
+          <div className="grid gap-5 md:grid-cols-2">
+            <div>
+              <div className="text-sm font-bold uppercase tracking-wider text-emerald-600 mb-2">LEADING</div>
+              {sectorRotation.leading.map((s, i) => (
+                <div key={i} className="flex items-center gap-2 text-emerald-700 mb-1">
+                  <span>▲</span> <span>{s}</span>
                 </div>
-                <p className="text-lg leading-8 text-slate-700">
-                  {action.detail}
-                </p>
-              </div>
-            );
-          })}
-        </div>
-      </section>
+              ))}
+            </div>
+            <div>
+              <div className="text-sm font-bold uppercase tracking-wider text-red-600 mb-2">LAGGING</div>
+              {sectorRotation.lagging.map((s, i) => (
+                <div key={i} className="flex items-center gap-2 text-red-600 mb-1">
+                  <span>▼</span> <span>{s}</span>
+                </div>
+              ))}
+            </div>
+          </div>
+          <p className="mt-4 text-lg italic leading-8 text-slate-500">{sectorRotation.pmImplication}</p>
+        </section>
+      )}
+
+      {/* Portfolio Risk Scan */}
+      {riskScan && riskScan.length > 0 && (
+        <section className="rounded-[30px] border border-slate-200 bg-white p-6 shadow-sm">
+          <div className="flex items-center gap-2 mb-5">
+            <span className="text-xl">🛡️</span>
+            <h3 className="text-2xl font-semibold">Portfolio Risk Scan</h3>
+          </div>
+          <div className="space-y-3">
+            {riskScan.map((item, i) => {
+              const bgClass =
+                item.priority === "High"
+                  ? "border-l-red-400 bg-red-50/30"
+                  : item.priority === "Medium-High"
+                  ? "border-l-amber-400 bg-amber-50/30"
+                  : "border-l-slate-300 bg-slate-50/30";
+              const tonePill =
+                item.priority === "High"
+                  ? "red" as const
+                  : item.priority === "Medium-High"
+                  ? "amber" as const
+                  : "gray" as const;
+              return (
+                <div key={i} className={`rounded-2xl border-l-4 p-4 ${bgClass}`}>
+                  <div className="flex flex-wrap items-center gap-3 mb-1">
+                    <span className="font-mono text-lg font-bold">{item.ticker}</span>
+                    <SignalPill tone={tonePill}>{item.priority}</SignalPill>
+                    <span className="text-slate-700">{item.summary}</span>
+                  </div>
+                  <div className="text-blue-600 font-medium">&rarr; {item.action}</div>
+                </div>
+              );
+            })}
+          </div>
+        </section>
+      )}
+
+      {/* Action Items */}
+      {forwardActions.length > 0 && (
+        <section className="rounded-[30px] border border-amber-100 bg-amber-50/30 p-6 shadow-sm">
+          <div className="flex items-center gap-2 mb-5">
+            <span className="text-xl">⚡</span>
+            <h3 className="text-2xl font-semibold">Action Items</h3>
+          </div>
+          <div className="space-y-3">
+            {forwardActions.map((action, i) => {
+              const bgClass =
+                action.priority === "High"
+                  ? "border-red-200 bg-red-50/40"
+                  : action.priority === "Medium"
+                  ? "border-amber-200 bg-amber-50/60"
+                  : "border-emerald-200 bg-emerald-50/40";
+              return (
+                <div key={i} className={`rounded-2xl border p-5 ${bgClass}`}>
+                  <div className="flex items-start gap-4">
+                    <div className="flex h-8 w-8 shrink-0 items-center justify-center rounded-full bg-amber-200 text-sm font-bold text-amber-800">
+                      {i + 1}
+                    </div>
+                    <div>
+                      <h4 className="text-lg font-semibold">{action.title}</h4>
+                      <p className="mt-1 text-slate-600 leading-7">{action.detail}</p>
+                    </div>
+                  </div>
+                </div>
+              );
+            })}
+          </div>
+        </section>
+      )}
     </>
   );
 }

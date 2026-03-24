@@ -5,7 +5,7 @@ const client = new Anthropic();
 
 const BRIEF_PROMPT = `You are a senior portfolio strategist generating a daily morning brief for a portfolio management team. Your audience is professional portfolio managers who need actionable, institutional-quality market intelligence.
 
-Given current market data indicators, generate a comprehensive morning brief. Be direct, opinionated, and specific. Avoid generic platitudes. Write like a seasoned PM talking to their team.
+Given current market data indicators and portfolio holdings, generate a comprehensive morning brief. Be direct, opinionated, and specific. Avoid generic platitudes. Write like a seasoned PM talking to their team.
 
 Respond ONLY with valid JSON matching this exact structure:
 {
@@ -15,7 +15,21 @@ Respond ONLY with valid JSON matching this exact structure:
   "volatilityAnalysis": "2-3 sentences on the volatility regime, term structure, and what it means for hedging and position sizing.",
   "breadthAnalysis": "2-3 sentences on market breadth, internals, and what the median stock is doing vs the index.",
   "flowsAnalysis": "2-3 sentences on fund flows, positioning, sentiment indicators, and whether the market is washed out or still has room to deteriorate.",
-  "hedgingAnalysis": "2-3 sentences on whether current conditions favor adding hedges, the optimal approach, and timing considerations.",
+  "hedgingAnalysis": "2-3 sentences on whether current conditions favor adding hedges (focused on cost efficiency: hedge when VIX is low and puts are cheap, not when expensive). Consider put cost environment, VIX context, and whether sentiment suggests complacency (cheap protection) or fear (expensive protection).",
+  "sectorRotation": {
+    "summary": "1-2 sentence overview of which sectors are leading vs lagging and the rotation theme.",
+    "leading": ["Sector (+X% MTD, reason)", "Sector (+X% MTD, reason)"],
+    "lagging": ["Sector (-X% MTD, reason)", "Sector (-X% MTD, reason)"],
+    "pmImplication": "1-2 sentence implication for the portfolio given its current sector exposures."
+  },
+  "riskScan": [
+    {
+      "ticker": "TICKER",
+      "priority": "High",
+      "summary": "Brief explanation of why this holding is flagged.",
+      "action": "Specific recommended action."
+    }
+  ],
   "forwardActions": [
     {
       "priority": "High",
@@ -25,7 +39,10 @@ Respond ONLY with valid JSON matching this exact structure:
   ]
 }
 
-The forwardActions array should contain 3-5 specific, actionable recommendations ordered by priority. Use "High", "Medium", or "Low" for priority.`;
+Notes:
+- sectorRotation.leading and .lagging should each have 2-3 entries with sector name, approximate MTD performance, and a brief reason.
+- riskScan should list portfolio holdings ordered from highest risk to lowest, with priority: "High", "Medium-High", "Medium", or "Low-Medium". Focus on the weakest/most at-risk names. Include 4-7 entries.
+- forwardActions should contain 4-6 specific, actionable recommendations ordered by priority. Use "High", "Medium", or "Low" for priority.`;
 
 export async function POST(request: NextRequest) {
   try {
@@ -41,15 +58,17 @@ export async function POST(request: NextRequest) {
     const holdingsSummary = holdings
       ? holdings
           .map(
-            (h: { ticker: string; bucket: string; sector: string; weights: { portfolio: number } }) =>
-              `${h.ticker} (${h.bucket}, ${h.sector}, ${h.weights.portfolio}% weight)`
+            (h: { ticker: string; bucket: string; sector: string; scores?: Record<string, number>; weights: { portfolio: number } }) => {
+              const rawScore = h.scores ? Object.values(h.scores).reduce((a: number, b: number) => a + b, 0) : 0;
+              return `${h.ticker} (${h.bucket}, ${h.sector}, ${h.weights.portfolio}% weight, score ${rawScore}/40)`;
+            }
           )
           .join(", ")
       : "No holdings provided";
 
     const message = await client.messages.create({
       model: "claude-sonnet-4-6",
-      max_tokens: 2048,
+      max_tokens: 4096,
       messages: [
         {
           role: "user",

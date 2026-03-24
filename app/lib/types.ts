@@ -168,6 +168,18 @@ export type MorningBrief = {
   breadthAnalysis: string;
   flowsAnalysis: string;
   hedgingAnalysis: string;
+  sectorRotation?: {
+    summary: string;
+    leading: string[];
+    lagging: string[];
+    pmImplication: string;
+  };
+  riskScan?: {
+    ticker: string;
+    priority: "High" | "Medium-High" | "Medium" | "Low-Medium";
+    summary: string;
+    action: string;
+  }[];
   forwardActions: {
     priority: "High" | "Medium" | "Low";
     title: string;

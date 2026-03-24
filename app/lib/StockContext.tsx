@@ -16,6 +16,7 @@ type StockContextType = {
   updateScore: (ticker: string, key: ScoreKey, value: number) => void;
   updateSector: (ticker: string, sector: string) => void;
   setBrief: (brief: MorningBrief) => void;
+  updateMarketData: (updates: Partial<MarketData>) => void;
   getStock: (ticker: string) => ScoredStock | undefined;
   portfolioStocks: ScoredStock[];
   watchlistStocks: ScoredStock[];
@@ -242,6 +243,10 @@ export function StockProvider({ children }: { children: React.ReactNode }) {
     );
   }, []);
 
+  const updateMarketData = useCallback((updates: Partial<MarketData>) => {
+    setMarketData((prev) => ({ ...prev, ...updates }));
+  }, []);
+
   const getStock = useCallback(
     (ticker: string) => scoredStocks.find((s) => s.ticker === ticker),
     [scoredStocks]
@@ -261,6 +266,7 @@ export function StockProvider({ children }: { children: React.ReactNode }) {
         updateScore,
         updateSector,
         setBrief,
+        updateMarketData,
         getStock,
         portfolioStocks,
         watchlistStocks,
