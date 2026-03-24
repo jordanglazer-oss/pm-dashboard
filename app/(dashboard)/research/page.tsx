@@ -41,7 +41,7 @@ function UptickAddForm({ onAdd }: { onAdd: (e: UptickEntry) => void }) {
     >
       <div>
         <label className="text-xs text-slate-400 block">Ticker*</label>
-        <input value={ticker} onChange={(e) => setTicker(e.target.value)} placeholder="AMZN" className="w-20 rounded-lg border border-slate-200 px-2 py-1.5 text-sm font-mono" />
+        <input value={ticker} onChange={(e) => setTicker(e.target.value.toUpperCase())} placeholder="AMZN" className="w-20 rounded-lg border border-slate-200 px-2 py-1.5 text-sm font-mono" />
       </div>
       <div>
         <label className="text-xs text-slate-400 block">Name</label>
@@ -94,7 +94,7 @@ function IdeaAddForm({ onAdd }: { onAdd: (e: IdeaEntry) => void }) {
     >
       <div>
         <label className="text-xs text-slate-400 block">Ticker*</label>
-        <input value={ticker} onChange={(e) => setTicker(e.target.value)} placeholder="AAPL" className="w-24 rounded-lg border border-slate-200 px-2 py-1.5 text-sm font-mono" />
+        <input value={ticker} onChange={(e) => setTicker(e.target.value.toUpperCase())} placeholder="AAPL" className="w-24 rounded-lg border border-slate-200 px-2 py-1.5 text-sm font-mono" />
       </div>
       <div>
         <label className="text-xs text-slate-400 block">Price Added</label>

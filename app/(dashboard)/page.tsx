@@ -59,7 +59,7 @@ export default function DashboardPage() {
             <div className="flex gap-3">
               <input
                 value={newTicker}
-                onChange={(e) => setNewTicker(e.target.value)}
+                onChange={(e) => setNewTicker(e.target.value.toUpperCase())}
                 onKeyDown={(e) => e.key === "Enter" && handleAdd()}
                 placeholder="e.g. AAPL"
                 className="flex-1 rounded-xl border border-slate-200 bg-white px-4 py-2.5 text-sm outline-none placeholder:text-slate-400 focus:border-blue-400 focus:ring-1 focus:ring-blue-200"
