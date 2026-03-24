@@ -2,16 +2,28 @@
 
 import React, { useState, useEffect, useCallback } from "react";
 
-type TickerList = { name: string; tickers: string[] };
-type IdeaList = { name: string; items: { ticker: string; tag: "Top" | "Bottom" }[] };
-
 const STORAGE_KEY = "pm-research-notes";
 
+type UptickEntry = {
+  ticker: string;
+  name: string;
+  sector: string;
+  price: number;
+  support: string;
+  resistance: string;
+  dateAdded: string;
+  priceWhenAdded: number;
+};
+
+type IdeaEntry = {
+  ticker: string;
+  priceWhenAdded: number;
+};
+
 type ResearchState = {
-  newtonUpticks: string[];
-  fundstratTop: string[];
-  fundstratBottom: string[];
-  customLists: TickerList[];
+  newtonUpticks: UptickEntry[];
+  fundstratTop: IdeaEntry[];
+  fundstratBottom: IdeaEntry[];
   generalNotes: string;
 };
 
@@ -19,7 +31,6 @@ const defaultState: ResearchState = {
   newtonUpticks: [],
   fundstratTop: [],
   fundstratBottom: [],
-  customLists: [],
   generalNotes: "",
 };
 
@@ -33,61 +44,147 @@ function loadState(): ResearchState {
   }
 }
 
-function TickerPills({
-  tickers,
-  onRemove,
-}: {
-  tickers: string[];
-  onRemove: (t: string) => void;
-}) {
-  if (tickers.length === 0) return <span className="text-sm text-slate-400 italic">No tickers added</span>;
-  return (
-    <div className="flex flex-wrap gap-2">
-      {tickers.map((t) => (
-        <span
-          key={t}
-          className="inline-flex items-center gap-1.5 rounded-full bg-blue-100 px-3 py-1 text-sm font-medium text-blue-800"
-        >
-          {t}
-          <button
-            onClick={() => onRemove(t)}
-            className="ml-0.5 text-blue-500 hover:text-red-500 font-bold"
-          >
-            &times;
-          </button>
-        </span>
-      ))}
-    </div>
-  );
-}
+/* ─── Uptick Add Form ─── */
+function UptickAddForm({ onAdd }: { onAdd: (e: UptickEntry) => void }) {
+  const [ticker, setTicker] = useState("");
+  const [name, setName] = useState("");
+  const [sector, setSector] = useState("");
+  const [price, setPrice] = useState("");
+  const [support, setSupport] = useState("");
+  const [resistance, setResistance] = useState("");
+  const [priceWhenAdded, setPriceWhenAdded] = useState("");
 
-function AddTickerInput({ onAdd }: { onAdd: (t: string) => void }) {
-  const [val, setVal] = useState("");
+  const sectors = [
+    "Communication Services", "Consumer Discretionary", "Consumer Staples", "Crypto ETF",
+    "Energy", "Financials", "Health Care", "Industrials", "Information Technology",
+    "Materials", "Real Estate", "Utilities",
+  ];
+
   return (
     <form
-      className="flex gap-2 mt-3"
+      className="flex flex-wrap gap-2 mt-3 items-end"
       onSubmit={(e) => {
         e.preventDefault();
-        const t = val.trim().toUpperCase();
-        if (t) {
-          onAdd(t);
-          setVal("");
-        }
+        if (!ticker.trim()) return;
+        onAdd({
+          ticker: ticker.trim().toUpperCase(),
+          name: name.trim() || ticker.trim().toUpperCase(),
+          sector: sector || "—",
+          price: parseFloat(price) || 0,
+          support: support.trim() || "—",
+          resistance: resistance.trim() || "—",
+          dateAdded: new Date().toLocaleDateString("en-US", { month: "numeric", day: "numeric", year: "numeric" }),
+          priceWhenAdded: parseFloat(priceWhenAdded) || parseFloat(price) || 0,
+        });
+        setTicker(""); setName(""); setSector(""); setPrice(""); setSupport(""); setResistance(""); setPriceWhenAdded("");
       }}
     >
-      <input
-        value={val}
-        onChange={(e) => setVal(e.target.value)}
-        placeholder="Add ticker"
-        className="w-32 rounded-xl border border-slate-200 px-3 py-2 text-sm outline-none placeholder:text-slate-400"
-      />
-      <button
-        type="submit"
-        className="rounded-xl bg-slate-900 px-3 py-2 text-sm font-medium text-white hover:bg-slate-800"
-      >
+      <div>
+        <label className="text-xs text-slate-400 block">Ticker*</label>
+        <input value={ticker} onChange={(e) => setTicker(e.target.value)} placeholder="AMZN" className="w-20 rounded-lg border border-slate-200 px-2 py-1.5 text-sm font-mono" />
+      </div>
+      <div>
+        <label className="text-xs text-slate-400 block">Name</label>
+        <input value={name} onChange={(e) => setName(e.target.value)} placeholder="Amazon.com Inc" className="w-40 rounded-lg border border-slate-200 px-2 py-1.5 text-sm" />
+      </div>
+      <div>
+        <label className="text-xs text-slate-400 block">Sector</label>
+        <select value={sector} onChange={(e) => setSector(e.target.value)} className="w-44 rounded-lg border border-slate-200 px-2 py-1.5 text-sm bg-white">
+          <option value="">Select...</option>
+          {sectors.map((s) => <option key={s} value={s}>{s}</option>)}
+        </select>
+      </div>
+      <div>
+        <label className="text-xs text-slate-400 block">Price</label>
+        <input value={price} onChange={(e) => setPrice(e.target.value)} placeholder="213.21" type="number" step="0.01" className="w-24 rounded-lg border border-slate-200 px-2 py-1.5 text-sm" />
+      </div>
+      <div>
+        <label className="text-xs text-slate-400 block">Support</label>
+        <input value={support} onChange={(e) => setSupport(e.target.value)} placeholder="196, 161" className="w-24 rounded-lg border border-slate-200 px-2 py-1.5 text-sm" />
+      </div>
+      <div>
+        <label className="text-xs text-slate-400 block">Resistance</label>
+        <input value={resistance} onChange={(e) => setResistance(e.target.value)} placeholder="220, 249" className="w-24 rounded-lg border border-slate-200 px-2 py-1.5 text-sm" />
+      </div>
+      <div>
+        <label className="text-xs text-slate-400 block">Price Added</label>
+        <input value={priceWhenAdded} onChange={(e) => setPriceWhenAdded(e.target.value)} placeholder="161.26" type="number" step="0.01" className="w-24 rounded-lg border border-slate-200 px-2 py-1.5 text-sm" />
+      </div>
+      <button type="submit" className="rounded-lg bg-slate-900 px-4 py-1.5 text-sm font-medium text-white hover:bg-slate-800">
         Add
       </button>
     </form>
+  );
+}
+
+/* ─── Idea Add Form ─── */
+function IdeaAddForm({ onAdd }: { onAdd: (e: IdeaEntry) => void }) {
+  const [ticker, setTicker] = useState("");
+  const [price, setPrice] = useState("");
+
+  return (
+    <form
+      className="flex gap-2 mt-3 items-end"
+      onSubmit={(e) => {
+        e.preventDefault();
+        if (!ticker.trim()) return;
+        onAdd({ ticker: ticker.trim().toUpperCase(), priceWhenAdded: parseFloat(price) || 0 });
+        setTicker(""); setPrice("");
+      }}
+    >
+      <div>
+        <label className="text-xs text-slate-400 block">Ticker*</label>
+        <input value={ticker} onChange={(e) => setTicker(e.target.value)} placeholder="AAPL" className="w-24 rounded-lg border border-slate-200 px-2 py-1.5 text-sm font-mono" />
+      </div>
+      <div>
+        <label className="text-xs text-slate-400 block">Price Added</label>
+        <input value={price} onChange={(e) => setPrice(e.target.value)} placeholder="175.00" type="number" step="0.01" className="w-24 rounded-lg border border-slate-200 px-2 py-1.5 text-sm" />
+      </div>
+      <button type="submit" className="rounded-lg bg-slate-900 px-4 py-1.5 text-sm font-medium text-white hover:bg-slate-800">
+        Add
+      </button>
+    </form>
+  );
+}
+
+/* ─── Editable Cell ─── */
+function EditableCell({
+  value,
+  onChange,
+  className = "",
+  type = "text",
+}: {
+  value: string | number;
+  onChange: (v: string) => void;
+  className?: string;
+  type?: string;
+}) {
+  const [editing, setEditing] = useState(false);
+  const [temp, setTemp] = useState(String(value));
+
+  if (editing) {
+    return (
+      <input
+        autoFocus
+        type={type}
+        step={type === "number" ? "0.01" : undefined}
+        value={temp}
+        onChange={(e) => setTemp(e.target.value)}
+        onBlur={() => { onChange(temp); setEditing(false); }}
+        onKeyDown={(e) => { if (e.key === "Enter") { onChange(temp); setEditing(false); } if (e.key === "Escape") setEditing(false); }}
+        className={`w-full bg-blue-50 border border-blue-300 rounded px-1 py-0.5 text-sm outline-none ${className}`}
+      />
+    );
+  }
+
+  return (
+    <span
+      onClick={() => { setTemp(String(value)); setEditing(true); }}
+      className={`cursor-pointer hover:bg-blue-50 rounded px-1 py-0.5 transition-colors ${className}`}
+      title="Click to edit"
+    >
+      {value || "—"}
+    </span>
   );
 }
 
@@ -100,59 +197,226 @@ export default function ResearchPage() {
     setLoaded(true);
   }, []);
 
-  const save = useCallback(
-    (next: ResearchState) => {
-      setState(next);
-      localStorage.setItem(STORAGE_KEY, JSON.stringify(next));
-    },
-    []
-  );
+  const save = useCallback((next: ResearchState) => {
+    setState(next);
+    localStorage.setItem(STORAGE_KEY, JSON.stringify(next));
+  }, []);
 
-  const addTo = (key: "newtonUpticks" | "fundstratTop" | "fundstratBottom", t: string) => {
-    if (state[key].includes(t)) return;
-    save({ ...state, [key]: [...state[key], t] });
+  /* Uptick helpers */
+  const addUptick = (entry: UptickEntry) => {
+    if (state.newtonUpticks.some((u) => u.ticker === entry.ticker)) return;
+    save({ ...state, newtonUpticks: [...state.newtonUpticks, entry] });
+  };
+  const removeUptick = (ticker: string) => {
+    save({ ...state, newtonUpticks: state.newtonUpticks.filter((u) => u.ticker !== ticker) });
+  };
+  const updateUptick = (idx: number, field: keyof UptickEntry, value: string) => {
+    const updated = [...state.newtonUpticks];
+    const entry = { ...updated[idx] };
+    if (field === "price" || field === "priceWhenAdded") {
+      (entry as Record<string, unknown>)[field] = parseFloat(value) || 0;
+    } else {
+      (entry as Record<string, unknown>)[field] = value;
+    }
+    updated[idx] = entry;
+    save({ ...state, newtonUpticks: updated });
   };
 
-  const removeFrom = (key: "newtonUpticks" | "fundstratTop" | "fundstratBottom", t: string) => {
-    save({ ...state, [key]: state[key].filter((x) => x !== t) });
+  /* Idea helpers */
+  const addIdea = (key: "fundstratTop" | "fundstratBottom", entry: IdeaEntry) => {
+    if (state[key].some((i) => i.ticker === entry.ticker)) return;
+    save({ ...state, [key]: [...state[key], entry] });
+  };
+  const removeIdea = (key: "fundstratTop" | "fundstratBottom", ticker: string) => {
+    save({ ...state, [key]: state[key].filter((i) => i.ticker !== ticker) });
+  };
+  const updateIdea = (key: "fundstratTop" | "fundstratBottom", idx: number, price: string) => {
+    const updated = [...state[key]];
+    updated[idx] = { ...updated[idx], priceWhenAdded: parseFloat(price) || 0 };
+    save({ ...state, [key]: updated });
   };
 
   if (!loaded) return null;
 
   return (
     <main className="min-h-screen bg-[#f4f5f7] px-4 py-6 text-slate-900 md:px-8 md:py-8 overflow-x-hidden">
-      <div className="mx-auto max-w-5xl space-y-6">
-        <h1 className="text-3xl font-semibold tracking-tight">Research Notes</h1>
-        <p className="text-slate-500">Track external research sources, ideas, and notes. All data saved locally in your browser.</p>
+      <div className="mx-auto max-w-7xl space-y-6">
+        <div>
+          <h1 className="text-3xl font-semibold tracking-tight">Research Notes</h1>
+          <p className="text-slate-500 mt-1">Track external research sources, ideas, and notes. All data saved locally in your browser.</p>
+        </div>
 
-        {/* External Source Lists */}
-        <div className="grid gap-5 lg:grid-cols-3">
-          {/* Newton Upticks */}
-          <section className="rounded-[24px] border border-slate-200 bg-white p-5 shadow-sm">
-            <h3 className="text-lg font-semibold mb-1">Mark Newton Upticks</h3>
-            <p className="text-xs text-slate-400 mb-3">Fundstrat technical uptick list</p>
-            <TickerPills tickers={state.newtonUpticks} onRemove={(t) => removeFrom("newtonUpticks", t)} />
-            <AddTickerInput onAdd={(t) => addTo("newtonUpticks", t)} />
+        {/* ── Newton's Upticks ── */}
+        <section className="rounded-[24px] border border-slate-200 bg-white p-6 shadow-sm">
+          <div className="flex items-center justify-between mb-4">
+            <div>
+              <h3 className="text-xl font-bold">Newton&apos;s Upticks&hellip;</h3>
+              <p className="text-xs text-slate-400">Fundstrat technical uptick list &mdash; click any cell to edit</p>
+            </div>
+            <span className="text-sm text-slate-400">{state.newtonUpticks.length} stocks</span>
+          </div>
+
+          <div className="overflow-x-auto">
+            <table className="w-full text-sm">
+              <thead>
+                <tr className="border-b-2 border-teal-600 text-left">
+                  <th className="py-2 pr-2 text-xs font-semibold text-teal-700 w-8">#</th>
+                  <th className="py-2 pr-3 text-xs font-semibold text-teal-700">Ticker</th>
+                  <th className="py-2 pr-3 text-xs font-semibold text-teal-700">Name</th>
+                  <th className="py-2 pr-3 text-xs font-semibold text-teal-700">Sector</th>
+                  <th className="py-2 pr-3 text-xs font-semibold text-teal-700 text-right">Price*</th>
+                  <th className="py-2 pr-3 text-xs font-semibold text-teal-700 text-right">Support</th>
+                  <th className="py-2 pr-3 text-xs font-semibold text-teal-700 text-right">Resistance</th>
+                  <th className="py-2 pr-3 text-xs font-semibold text-teal-700">Date Added</th>
+                  <th className="py-2 pr-3 text-xs font-semibold text-teal-700 text-right">Price When Added</th>
+                  <th className="py-2 text-xs font-semibold text-teal-700 w-8"></th>
+                </tr>
+              </thead>
+              <tbody>
+                {state.newtonUpticks.map((u, i) => {
+                  const isNew = u.dateAdded === new Date().toLocaleDateString("en-US", { month: "numeric", day: "numeric", year: "numeric" });
+                  const rowBg = isNew ? "bg-amber-50 font-semibold" : i % 2 === 0 ? "bg-white" : "bg-slate-50/50";
+                  return (
+                    <tr key={u.ticker} className={`border-b border-slate-100 ${rowBg} hover:bg-blue-50/40 transition-colors`}>
+                      <td className="py-2 pr-2 text-slate-400">{i + 1}</td>
+                      <td className="py-2 pr-3 font-mono font-bold text-teal-700">${u.ticker}</td>
+                      <td className="py-2 pr-3">
+                        <EditableCell value={u.name} onChange={(v) => updateUptick(i, "name", v)} />
+                      </td>
+                      <td className="py-2 pr-3 text-slate-600">
+                        <EditableCell value={u.sector} onChange={(v) => updateUptick(i, "sector", v)} />
+                      </td>
+                      <td className="py-2 pr-3 text-right font-mono">
+                        <EditableCell value={u.price || "—"} onChange={(v) => updateUptick(i, "price", v)} type="number" />
+                      </td>
+                      <td className="py-2 pr-3 text-right font-mono">
+                        <EditableCell value={u.support} onChange={(v) => updateUptick(i, "support", v)} />
+                      </td>
+                      <td className="py-2 pr-3 text-right font-mono">
+                        <EditableCell value={u.resistance} onChange={(v) => updateUptick(i, "resistance", v)} />
+                      </td>
+                      <td className="py-2 pr-3 text-slate-500">
+                        <EditableCell value={u.dateAdded} onChange={(v) => updateUptick(i, "dateAdded", v)} />
+                      </td>
+                      <td className="py-2 pr-3 text-right font-mono">
+                        {u.priceWhenAdded ? (
+                          <EditableCell value={`$${u.priceWhenAdded.toFixed(2)}`} onChange={(v) => updateUptick(i, "priceWhenAdded", v.replace("$", ""))} />
+                        ) : (
+                          <span className="text-emerald-600 font-semibold">NEW</span>
+                        )}
+                      </td>
+                      <td className="py-2">
+                        <button onClick={() => removeUptick(u.ticker)} className="text-slate-300 hover:text-red-500 font-bold transition-colors" title="Remove">
+                          &times;
+                        </button>
+                      </td>
+                    </tr>
+                  );
+                })}
+                {state.newtonUpticks.length === 0 && (
+                  <tr>
+                    <td colSpan={10} className="py-8 text-center text-slate-400 italic">No upticks added yet</td>
+                  </tr>
+                )}
+              </tbody>
+            </table>
+          </div>
+
+          <UptickAddForm onAdd={addUptick} />
+        </section>
+
+        {/* ── Fundstrat Ideas ── */}
+        <div className="grid gap-5 lg:grid-cols-2">
+          {/* Top Ideas */}
+          <section className="rounded-[24px] border border-emerald-200 bg-white p-6 shadow-sm">
+            <div className="flex items-center justify-between mb-4">
+              <div>
+                <h3 className="text-xl font-bold text-emerald-800">Fundstrat Top Ideas</h3>
+                <p className="text-xs text-slate-400">Best long ideas from research</p>
+              </div>
+              <span className="text-sm text-slate-400">{state.fundstratTop.length} names</span>
+            </div>
+
+            <table className="w-full text-sm">
+              <thead>
+                <tr className="border-b-2 border-emerald-500 text-left">
+                  <th className="py-2 pr-2 text-xs font-semibold text-emerald-700 w-8">#</th>
+                  <th className="py-2 pr-3 text-xs font-semibold text-emerald-700">Ticker</th>
+                  <th className="py-2 text-xs font-semibold text-emerald-700 text-right">Price When Added</th>
+                  <th className="py-2 w-8"></th>
+                </tr>
+              </thead>
+              <tbody>
+                {state.fundstratTop.map((item, i) => (
+                  <tr key={item.ticker} className={`border-b border-slate-100 ${i % 2 === 0 ? "bg-white" : "bg-emerald-50/30"} hover:bg-emerald-50/60 transition-colors`}>
+                    <td className="py-2 pr-2 text-slate-400">{i + 1}</td>
+                    <td className="py-2 pr-3 font-mono font-bold text-emerald-700">${item.ticker}</td>
+                    <td className="py-2 text-right font-mono">
+                      <EditableCell
+                        value={item.priceWhenAdded ? `$${item.priceWhenAdded.toFixed(2)}` : "—"}
+                        onChange={(v) => updateIdea("fundstratTop", i, v.replace("$", ""))}
+                      />
+                    </td>
+                    <td className="py-2">
+                      <button onClick={() => removeIdea("fundstratTop", item.ticker)} className="text-slate-300 hover:text-red-500 font-bold transition-colors">&times;</button>
+                    </td>
+                  </tr>
+                ))}
+                {state.fundstratTop.length === 0 && (
+                  <tr><td colSpan={4} className="py-6 text-center text-slate-400 italic">No top ideas added yet</td></tr>
+                )}
+              </tbody>
+            </table>
+
+            <IdeaAddForm onAdd={(e) => addIdea("fundstratTop", e)} />
           </section>
 
-          {/* Fundstrat Top Ideas */}
-          <section className="rounded-[24px] border border-emerald-200 bg-emerald-50/30 p-5 shadow-sm">
-            <h3 className="text-lg font-semibold text-emerald-800 mb-1">Fundstrat Top Ideas</h3>
-            <p className="text-xs text-slate-400 mb-3">Best long ideas from research</p>
-            <TickerPills tickers={state.fundstratTop} onRemove={(t) => removeFrom("fundstratTop", t)} />
-            <AddTickerInput onAdd={(t) => addTo("fundstratTop", t)} />
-          </section>
+          {/* Bottom Ideas */}
+          <section className="rounded-[24px] border border-red-200 bg-white p-6 shadow-sm">
+            <div className="flex items-center justify-between mb-4">
+              <div>
+                <h3 className="text-xl font-bold text-red-800">Fundstrat Bottom Ideas</h3>
+                <p className="text-xs text-slate-400">Names to avoid or short</p>
+              </div>
+              <span className="text-sm text-slate-400">{state.fundstratBottom.length} names</span>
+            </div>
 
-          {/* Fundstrat Bottom Ideas */}
-          <section className="rounded-[24px] border border-red-200 bg-red-50/30 p-5 shadow-sm">
-            <h3 className="text-lg font-semibold text-red-800 mb-1">Fundstrat Bottom Ideas</h3>
-            <p className="text-xs text-slate-400 mb-3">Names to avoid or short</p>
-            <TickerPills tickers={state.fundstratBottom} onRemove={(t) => removeFrom("fundstratBottom", t)} />
-            <AddTickerInput onAdd={(t) => addTo("fundstratBottom", t)} />
+            <table className="w-full text-sm">
+              <thead>
+                <tr className="border-b-2 border-red-400 text-left">
+                  <th className="py-2 pr-2 text-xs font-semibold text-red-700 w-8">#</th>
+                  <th className="py-2 pr-3 text-xs font-semibold text-red-700">Ticker</th>
+                  <th className="py-2 text-xs font-semibold text-red-700 text-right">Price When Added</th>
+                  <th className="py-2 w-8"></th>
+                </tr>
+              </thead>
+              <tbody>
+                {state.fundstratBottom.map((item, i) => (
+                  <tr key={item.ticker} className={`border-b border-slate-100 ${i % 2 === 0 ? "bg-white" : "bg-red-50/30"} hover:bg-red-50/60 transition-colors`}>
+                    <td className="py-2 pr-2 text-slate-400">{i + 1}</td>
+                    <td className="py-2 pr-3 font-mono font-bold text-red-700">${item.ticker}</td>
+                    <td className="py-2 text-right font-mono">
+                      <EditableCell
+                        value={item.priceWhenAdded ? `$${item.priceWhenAdded.toFixed(2)}` : "—"}
+                        onChange={(v) => updateIdea("fundstratBottom", i, v.replace("$", ""))}
+                      />
+                    </td>
+                    <td className="py-2">
+                      <button onClick={() => removeIdea("fundstratBottom", item.ticker)} className="text-slate-300 hover:text-red-500 font-bold transition-colors">&times;</button>
+                    </td>
+                  </tr>
+                ))}
+                {state.fundstratBottom.length === 0 && (
+                  <tr><td colSpan={4} className="py-6 text-center text-slate-400 italic">No bottom ideas added yet</td></tr>
+                )}
+              </tbody>
+            </table>
+
+            <IdeaAddForm onAdd={(e) => addIdea("fundstratBottom", e)} />
           </section>
         </div>
 
-        {/* General Notes */}
+        {/* ── General Notes ── */}
         <section className="rounded-[24px] border border-slate-200 bg-white p-6 shadow-sm">
           <h3 className="text-lg font-semibold mb-3">General Notes</h3>
           <textarea
@@ -164,7 +428,7 @@ export default function ResearchPage() {
           />
         </section>
 
-        {/* Quick Reference */}
+        {/* ── Quick Reference ── */}
         <section className="rounded-[24px] border border-slate-200 bg-white p-6 shadow-sm">
           <h3 className="text-lg font-semibold mb-4">Quick Reference</h3>
           <div className="grid gap-5 md:grid-cols-3">
