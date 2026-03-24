@@ -99,7 +99,7 @@ export default function StockDetailPage() {
   const params = useParams();
   const router = useRouter();
   const ticker = (params.ticker as string)?.toUpperCase();
-  const { getStock, scoredStocks, marketData, updateScore, updateSector, moveBucket, removeStock } = useStocks();
+  const { getStock, scoredStocks, marketData, updateScore, updateExplanations, updateSector, moveBucket, removeStock } = useStocks();
   const stock = getStock(ticker);
   const [scoring, setScoring] = useState(false);
 
@@ -133,6 +133,9 @@ export default function StockDetailPage() {
         for (const [key, val] of Object.entries(data.scores)) {
           updateScore(ticker, key as ScoreKey, val as number);
         }
+      }
+      if (data.explanations) {
+        updateExplanations(ticker, data.explanations);
       }
     } catch {
       // silent fail
