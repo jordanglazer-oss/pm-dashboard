@@ -20,134 +20,247 @@ for (const g of SCORE_GROUPS) {
 
 const AI_KEYS = AI_CATEGORIES.map((c) => c.key);
 
-// ── Financial Modeling Prep API (stable endpoints) ──
-const FMP = "https://financialmodelingprep.com/stable";
+// ── Yahoo Finance API (free, no key required, US + Canadian stocks) ──
+const YAHOO_BASE = "https://query2.finance.yahoo.com";
 
-async function fmpFetch(url: string, label: string): Promise<{ label: string; data: unknown } | null> {
+async function getYahooCrumb(): Promise<{ cookie: string; crumb: string } | null> {
   try {
-    const res = await fetch(url, { cache: "no-store" });
+    // Step 1: Get cookie
+    const cookieRes = await fetch("https://fc.yahoo.com", {
+      cache: "no-store",
+      headers: { "User-Agent": "Mozilla/5.0" },
+    });
+    const setCookie = cookieRes.headers.get("set-cookie") || "";
+
+    // Step 2: Get crumb using cookie
+    const crumbRes = await fetch(`${YAHOO_BASE}/v1/test/getcrumb`, {
+      cache: "no-store",
+      headers: {
+        "User-Agent": "Mozilla/5.0",
+        Cookie: setCookie,
+      },
+    });
+    const crumb = await crumbRes.text();
+
+    if (!crumb || crumb.includes("error")) {
+      console.log("[Yahoo] Failed to get crumb");
+      return null;
+    }
+
+    console.log("[Yahoo] Crumb obtained");
+    return { cookie: setCookie, crumb };
+  } catch (err) {
+    console.log(`[Yahoo] Auth error: ${err}`);
+    return null;
+  }
+}
+
+type YahooResult = Record<string, unknown>;
+
+async function fetchYahooModules(
+  ticker: string,
+  modules: string[],
+  cookie: string,
+  crumb: string
+): Promise<YahooResult | null> {
+  try {
+    const url = `${YAHOO_BASE}/v10/finance/quoteSummary/${encodeURIComponent(ticker)}?modules=${modules.join(",")}&crumb=${encodeURIComponent(crumb)}`;
+    const res = await fetch(url, {
+      cache: "no-store",
+      headers: {
+        "User-Agent": "Mozilla/5.0",
+        Cookie: cookie,
+      },
+    });
     if (!res.ok) {
-      console.log(`[FMP] ${label}: HTTP ${res.status}`);
+      console.log(`[Yahoo] ${ticker}: HTTP ${res.status}`);
       return null;
     }
     const data = await res.json();
-    if (!data || (Array.isArray(data) && data.length === 0)) {
-      console.log(`[FMP] ${label}: empty response`);
+    const result = data?.quoteSummary?.result?.[0];
+    if (!result) {
+      console.log(`[Yahoo] ${ticker}: no result`);
       return null;
     }
-    // FMP returns error messages as objects
-    if (data["Error Message"] || data["error"]) {
-      console.log(`[FMP] ${label}: API error - ${data["Error Message"] || data["error"]}`);
-      return null;
-    }
-    console.log(`[FMP] ${label}: OK`);
-    return { label, data };
+    console.log(`[Yahoo] ${ticker}: OK (${Object.keys(result).length} modules)`);
+    return result;
   } catch (err) {
-    console.log(`[FMP] ${label}: fetch error - ${err}`);
+    console.log(`[Yahoo] ${ticker}: fetch error - ${err}`);
     return null;
   }
 }
 
 async function fetchFinancialData(ticker: string): Promise<{ context: string; price?: number }> {
-  const apiKey = process.env.FMP_API_KEY;
-  if (!apiKey) {
-    return { context: "No financial data API key configured. Use your best knowledge but clearly note that figures should be verified." };
+  const auth = await getYahooCrumb();
+  if (!auth) {
+    return { context: "Financial data API authentication failed. Use your best knowledge but clearly note that figures should be verified." };
   }
 
-  const k = `apikey=${apiKey}`;
+  // Yahoo Finance ticker format: Canadian stocks use .TO suffix
+  // Our app already stores them as CNR.TO etc, so they should work directly
 
-  const s = `symbol=${ticker}`;
+  // Fetch all modules for the target company
+  const companyModules = [
+    "financialData",
+    "defaultKeyStatistics",
+    "incomeStatementHistory",
+    "incomeStatementHistoryQuarterly",
+    "balanceSheetHistory",
+    "cashflowStatementHistory",
+    "cashflowStatementHistoryQuarterly",
+    "earnings",
+    "earningsTrend",
+    "price",
+    "summaryDetail",
+    "summaryProfile",
+  ];
 
-  // Fetch quarterly + annual data for maximum freshness
-  const results = await Promise.all([
-    // REAL-TIME: Current quote with live price, PE, market cap
-    fmpFetch(`${FMP}/quote?${s}&${k}`, "REAL-TIME QUOTE (current price, PE, market cap)"),
-    // QUARTERLY income statements (last 4 quarters = most recent data)
-    fmpFetch(`${FMP}/income-statement?${s}&period=quarter&limit=4&${k}`, "INCOME STATEMENTS (Quarterly, last 4 quarters)"),
-    // ANNUAL income statements (3 years for trend)
-    fmpFetch(`${FMP}/income-statement?${s}&period=annual&limit=3&${k}`, "INCOME STATEMENTS (Annual, 3 years)"),
-    // Balance sheet (latest quarter)
-    fmpFetch(`${FMP}/balance-sheet-statement?${s}&period=quarter&limit=1&${k}`, "BALANCE SHEET (Latest quarter)"),
-    // QUARTERLY cash flow (last 4 quarters)
-    fmpFetch(`${FMP}/cash-flow-statement?${s}&period=quarter&limit=4&${k}`, "CASH FLOW (Quarterly, last 4 quarters)"),
-    // ANNUAL cash flow (3 years)
-    fmpFetch(`${FMP}/cash-flow-statement?${s}&period=annual&limit=3&${k}`, "CASH FLOW (Annual, 3 years)"),
-    // Key metrics (annual, 5 years for historical valuation comps)
-    fmpFetch(`${FMP}/key-metrics?${s}&period=annual&limit=5&${k}`, "KEY METRICS (Annual, 5 years)"),
-    // Key metrics TTM for current valuation
-    fmpFetch(`${FMP}/key-metrics-ttm?${s}&${k}`, "KEY METRICS TTM (Trailing 12 months)"),
-    // Ratios TTM
-    fmpFetch(`${FMP}/ratios-ttm?${s}&${k}`, "FINANCIAL RATIOS TTM"),
-    // Ratios (annual, 5 years for historical comparison)
-    fmpFetch(`${FMP}/ratios?${s}&period=annual&limit=5&${k}`, "FINANCIAL RATIOS (Annual, 5 years)"),
-    // Company profile (sector, industry, beta, description, current price)
-    fmpFetch(`${FMP}/profile?${s}&${k}`, "COMPANY PROFILE"),
-    // Analyst estimates (forward)
-    fmpFetch(`${FMP}/analyst-estimates?${s}&period=annual&limit=3&${k}`, "ANALYST ESTIMATES (Forward)"),
-    // Enterprise value
-    fmpFetch(`${FMP}/enterprise-values?${s}&period=annual&limit=3&${k}`, "ENTERPRISE VALUE (Annual, 3 years)"),
-  ]);
+  const companyData = await fetchYahooModules(ticker, companyModules, auth.cookie, auth.crumb);
 
-  const sections = results
-    .filter((r): r is { label: string; data: unknown } => r !== null)
-    .map((r) => `${r.label}:\n${JSON.stringify(r.data, null, 2)}`);
+  if (!companyData) {
+    return { context: "IMPORTANT: No financial data was returned from Yahoo Finance. Use your best knowledge but CLEARLY STATE in every explanation that the data could not be verified." };
+  }
 
-  const successCount = sections.length;
-  const totalEndpoints = results.length;
-  console.log(`[FMP] ${ticker}: ${successCount}/${totalEndpoints} endpoints returned data`);
-
-  // Extract price from the quote result (first result)
+  // Extract current price
   let price: number | undefined;
-  if (results[0]?.data) {
-    const quoteData = results[0].data as Record<string, unknown>[];
-    if (Array.isArray(quoteData) && quoteData[0]?.price) {
-      price = quoteData[0].price as number;
-    }
+  const priceData = companyData.price as Record<string, Record<string, unknown>> | undefined;
+  if (priceData?.regularMarketPrice?.raw) {
+    price = priceData.regularMarketPrice.raw as number;
+  }
+  const financialData = companyData.financialData as Record<string, Record<string, unknown>> | undefined;
+  if (!price && financialData?.currentPrice?.raw) {
+    price = financialData.currentPrice.raw as number;
   }
 
-  if (sections.length === 0) {
-    return { context: "IMPORTANT: No financial data was returned from the API. All endpoints failed. Use your best knowledge but CLEARLY STATE in every explanation that the data could not be verified with live sources and should be independently confirmed." };
+  // Format the data for Claude - include all modules
+  const sections: string[] = [];
+
+  // Summary/Profile
+  if (companyData.summaryProfile || companyData.price) {
+    sections.push(`COMPANY PROFILE:\n${JSON.stringify({ profile: companyData.summaryProfile, price: companyData.price }, null, 2)}`);
   }
+
+  // Key Statistics (PE, EV, beta, short interest, etc.)
+  if (companyData.defaultKeyStatistics) {
+    sections.push(`KEY STATISTICS (current valuation metrics, enterprise value, shares, short interest):\n${JSON.stringify(companyData.defaultKeyStatistics, null, 2)}`);
+  }
+
+  // Financial Data (current ratios, margins, returns)
+  if (companyData.financialData) {
+    sections.push(`FINANCIAL DATA (current margins, returns, recommendations):\n${JSON.stringify(companyData.financialData, null, 2)}`);
+  }
+
+  // Summary Detail (PE, dividend, market cap, 52w range)
+  if (companyData.summaryDetail) {
+    sections.push(`SUMMARY DETAIL (PE, dividend yield, market cap, 52-week range):\n${JSON.stringify(companyData.summaryDetail, null, 2)}`);
+  }
+
+  // Income Statements (annual)
+  if (companyData.incomeStatementHistory) {
+    sections.push(`INCOME STATEMENTS (Annual, up to 4 years):\n${JSON.stringify(companyData.incomeStatementHistory, null, 2)}`);
+  }
+
+  // Income Statements (quarterly)
+  if (companyData.incomeStatementHistoryQuarterly) {
+    sections.push(`INCOME STATEMENTS (Quarterly, last 4 quarters):\n${JSON.stringify(companyData.incomeStatementHistoryQuarterly, null, 2)}`);
+  }
+
+  // Balance Sheet
+  if (companyData.balanceSheetHistory) {
+    sections.push(`BALANCE SHEET (Annual):\n${JSON.stringify(companyData.balanceSheetHistory, null, 2)}`);
+  }
+
+  // Cash Flow
+  if (companyData.cashflowStatementHistory) {
+    sections.push(`CASH FLOW STATEMENTS (Annual):\n${JSON.stringify(companyData.cashflowStatementHistory, null, 2)}`);
+  }
+
+  // Cash Flow (quarterly)
+  if (companyData.cashflowStatementHistoryQuarterly) {
+    sections.push(`CASH FLOW STATEMENTS (Quarterly, last 4 quarters):\n${JSON.stringify(companyData.cashflowStatementHistoryQuarterly, null, 2)}`);
+  }
+
+  // Earnings
+  if (companyData.earnings) {
+    sections.push(`EARNINGS (quarterly EPS history + estimates):\n${JSON.stringify(companyData.earnings, null, 2)}`);
+  }
+
+  // Earnings Trend (forward estimates)
+  if (companyData.earningsTrend) {
+    sections.push(`EARNINGS TREND (analyst estimates, revisions):\n${JSON.stringify(companyData.earningsTrend, null, 2)}`);
+  }
+
+  console.log(`[Yahoo] ${ticker}: ${sections.length} data sections compiled`);
 
   // Now fetch peer companies for relative valuation
+  // Use the industry from summaryProfile to find peers
   let peerSection = "";
-  try {
-    const peersRes = await fmpFetch(`${FMP}/stock-peers?${s}&${k}`, "PEER COMPANIES");
-    if (peersRes && Array.isArray(peersRes.data) && peersRes.data.length > 0) {
-      // New stable endpoint returns array of {symbol, companyName, price, mktCap}
-      const peerList: string[] = peersRes.data.slice(0, 3).map((p: Record<string, unknown>) => p.symbol as string);
-      console.log(`[FMP] Peers for ${ticker}: ${peerList.join(", ")}`);
+  const profile = companyData.summaryProfile as Record<string, string> | undefined;
+  const industry = profile?.industry;
 
-      if (peerList.length > 0) {
-        // Fetch key metrics TTM and profile for each peer in parallel
-        const peerResults = await Promise.all(
-          peerList.flatMap((peer) => [
-            fmpFetch(`${FMP}/key-metrics-ttm?symbol=${peer}&${k}`, `PEER ${peer} KEY METRICS TTM`),
-            fmpFetch(`${FMP}/quote?symbol=${peer}&${k}`, `PEER ${peer} QUOTE`),
-            fmpFetch(`${FMP}/profile?symbol=${peer}&${k}`, `PEER ${peer} PROFILE`),
-          ])
+  if (industry) {
+    // Fetch key financial data for 3 well-known peers
+    // We'll ask Claude to identify peers since Yahoo doesn't have a peers endpoint
+    // But we can try fetching a few common competitors based on sector
+    try {
+      // Use FMP for peer list if available (it works for this endpoint on free tier)
+      const fmpKey = process.env.FMP_API_KEY;
+      if (fmpKey) {
+        const peersRes = await fetch(
+          `https://financialmodelingprep.com/stable/stock-peers?symbol=${encodeURIComponent(ticker)}&apikey=${fmpKey}`,
+          { cache: "no-store", headers: { "User-Agent": "Mozilla/5.0" } }
         );
+        if (peersRes.ok) {
+          const peersData = await peersRes.json();
+          if (Array.isArray(peersData) && peersData.length > 0) {
+            const peerTickers: string[] = peersData
+              .slice(0, 3)
+              .map((p: Record<string, unknown>) => p.symbol as string)
+              .filter(Boolean);
 
-        const peerData = peerResults
-          .filter((r): r is { label: string; data: unknown } => r !== null)
-          .map((r) => `${r.label}:\n${JSON.stringify(r.data, null, 2)}`);
+            if (peerTickers.length > 0) {
+              console.log(`[Yahoo] Fetching peers: ${peerTickers.join(", ")}`);
 
-        if (peerData.length > 0) {
-          peerSection = `\n\n---\n\nPEER COMPANY DATA (use for relative valuation and competitive moat comparisons):\nPeers identified: ${peerList.join(", ")}\n\n${peerData.join("\n\n")}`;
+              // Fetch key data for each peer via Yahoo
+              const peerResults = await Promise.all(
+                peerTickers.map((peer) =>
+                  fetchYahooModules(
+                    peer,
+                    ["financialData", "defaultKeyStatistics", "summaryDetail", "price"],
+                    auth.cookie,
+                    auth.crumb
+                  )
+                )
+              );
+
+              const peerSections = peerTickers
+                .map((peer, i) => {
+                  if (!peerResults[i]) return null;
+                  return `PEER: ${peer}\n${JSON.stringify(peerResults[i], null, 2)}`;
+                })
+                .filter(Boolean);
+
+              if (peerSections.length > 0) {
+                peerSection = `\n\n---\n\nPEER COMPANY DATA (use for relative valuation and competitive moat comparisons):\nPeers identified: ${peerTickers.join(", ")}\n\n${peerSections.join("\n\n---\n\n")}`;
+              }
+            }
+          }
         }
       }
+    } catch (err) {
+      console.log(`[Yahoo] Peer fetch error: ${err}`);
     }
-  } catch (err) {
-    console.log(`[FMP] Peer fetch error: ${err}`);
   }
 
   return {
-    context: `DATA FRESHNESS: ${successCount}/${totalEndpoints} API endpoints returned live data. Today's date is ${new Date().toISOString().split("T")[0]}. Use the MOST RECENT data available — prefer quarterly over annual where both exist.\n\n${sections.join("\n\n---\n\n")}${peerSection}`,
+    context: `DATA SOURCE: Yahoo Finance (live data). Today's date is ${new Date().toISOString().split("T")[0]}. All financial data below is from the company's actual SEC/SEDAR filings and current market data. Use the MOST RECENT data available — prefer quarterly over annual where both exist.\n\n${sections.join("\n\n---\n\n")}${peerSection}`,
     price,
   };
 }
 
-const SCORING_PROMPT = `You are an institutional equity research analyst scoring a stock for a portfolio management scoring system. You will be provided with REAL FINANCIAL DATA — you MUST use this data to produce accurate, specific explanations. Do not guess or fabricate numbers.
+const SCORING_PROMPT = `You are an institutional equity research analyst scoring a stock for a portfolio management scoring system. You will be provided with REAL FINANCIAL DATA from Yahoo Finance — you MUST use this data to produce accurate, specific explanations. Do not guess or fabricate numbers.
+
+Note: Yahoo Finance data uses "raw" for numeric values and "fmt" for formatted strings. Always use the actual numbers.
 
 Each category has its own max score (shown as /N). Score from 0 to that max:
 - 0 = Poor / negative signal
@@ -174,12 +287,12 @@ FUNDAMENTAL GROUP:
   * Utilities: P/E, dividend yield, rate base growth vs peers
   * Consumer: P/E, EV/EBITDA, same-store sales growth vs peers
   IMPORTANT: Name specific peer companies and cite their actual multiples from the peer data provided. Example: "META trades at 15.3x EV/EBITDA vs GOOGL at 23.5x and SNAP at 18.2x." Do not use vague "sector average" — name the peers.
-- historicalValuation (max 2, AUTO): Historical valuation — Compare CURRENT multiples to the company's OWN 3-5 year history. Use the historical metrics data provided. Cite specific numbers (e.g., "Current EV/EBITDA of 15.3x vs 5-year avg of 18.5x"). Note if trading above or below historical ranges and why.
-- leverageCoverage (max 2, AUTO): Leverage & coverage — Net debt/EBITDA, interest coverage ratio, debt maturity profile. Use actual balance sheet and income statement data.
-- cashFlowQuality (max 1, AUTO): Cash flow quality — FCF conversion rate (FCF/Net Income), operating cash flow trends, capex intensity, working capital changes. Use actual cash flow statement data.
+- historicalValuation (max 2, AUTO): Historical valuation — Compare CURRENT multiples to the company's OWN history using the provided financial data across multiple years. Cite specific numbers.
+- leverageCoverage (max 2, AUTO): Leverage & coverage — Net debt/EBITDA, interest coverage ratio, debt levels. Use actual balance sheet data.
+- cashFlowQuality (max 1, AUTO): Cash flow quality — FCF conversion rate (FCF/Net Income), operating cash flow trends, capex intensity. Use actual cash flow statement data.
 
 COMPANY SPECIFIC GROUP:
-- competitiveMoat (max 2, SEMI): Competitive moat — Use the peer data provided to assess competitive positioning. Compare margins, returns on capital, and growth rates vs named peers. Identify durable advantages: switching costs, network effects, brand, scale, IP. Back up qualitative claims with quantitative comparisons from the data.
+- competitiveMoat (max 2, SEMI): Competitive moat — Use the peer data provided to assess competitive positioning. Compare margins, returns on capital, and growth rates vs named peers. Identify durable advantages.
 - catalysts (max 3, SEMI): Potential catalysts — upcoming events, product launches, strategic shifts, M&A potential
 
 MANAGEMENT GROUP:
@@ -188,12 +301,12 @@ MANAGEMENT GROUP:
 
 CRITICAL RULES FOR EXPLANATIONS:
 1. Every explanation MUST cite specific numbers from the provided financial data — NEVER make up numbers
-2. ALWAYS prefer the MOST RECENT data: use quarterly data and TTM metrics over annual where available
-3. Growth explanations must include actual revenue/earnings figures with YoY% changes — cite the most recent quarter AND full-year trends
-4. Valuation explanations must use CURRENT multiples from the real-time quote or TTM metrics, and compare to sector averages
-5. Historical valuation must compare current vs historical averages with specific numbers from the 5-year metrics data
-6. Leverage must cite actual debt figures and coverage ratios from the most recent balance sheet
-7. Cash flow must cite actual FCF figures and conversion rates from the most recent quarters
+2. ALWAYS prefer the MOST RECENT data: use quarterly data over annual where available
+3. Growth explanations must include actual revenue/earnings figures with YoY% changes
+4. Valuation explanations must use CURRENT multiples from the data and compare to peers
+5. Historical valuation must compare current vs prior year multiples with specific numbers
+6. Leverage must cite actual debt figures and coverage ratios from the balance sheet
+7. Cash flow must cite actual FCF figures and conversion rates
 8. Write in a dense, data-rich paragraph style — like an analyst note
 9. Each explanation should be 3-6 sentences with multiple data points
 10. If any data is unavailable, explicitly say "data not available" rather than guessing
@@ -201,7 +314,7 @@ CRITICAL RULES FOR EXPLANATIONS:
 Also provide:
 - name: Full company name
 - sector: GICS sector
-- beta: Approximate beta to S&P 500
+- beta: Use the beta from the provided data
 - notes: 1-2 sentence PM-oriented note on positioning and key risk/opportunity
 
 Respond ONLY with valid JSON:
@@ -220,11 +333,11 @@ Respond ONLY with valid JSON:
     "secular": ["paragraph explanation"],
     "researchCoverage": ["paragraph explanation"],
     "growth": ["paragraph explanation with actual revenue/earnings data"],
-    "relativeValuation": ["paragraph explanation citing specific peer names and their multiples from the peer data"],
+    "relativeValuation": ["paragraph explanation citing specific peer names and their multiples"],
     "historicalValuation": ["paragraph explanation comparing current vs historical multiples"],
     "leverageCoverage": ["paragraph explanation with actual debt metrics"],
     "cashFlowQuality": ["paragraph explanation with actual FCF data"],
-    "competitiveMoat": ["paragraph explanation comparing vs named peers using provided peer data"],
+    "competitiveMoat": ["paragraph explanation comparing vs named peers"],
     "catalysts": ["paragraph explanation"],
     "trackRecord": ["paragraph explanation"],
     "ownershipTrends": ["paragraph explanation"]
