@@ -542,20 +542,8 @@ export function MorningBrief({
         </p>
       </section>
 
-      {/* Contrarian Sentiment Gauges — expanded with all 4 indicators */}
-      <SentimentGauges marketData={{...marketData, fearGreed: fg, aaiiBullBear: parseFloat((aaiiBull - aaiiBear).toFixed(1))}} aaiiBull={aaiiBull} aaiiNeutral={aaiiNeutral} aaiiBear={aaiiBear} />
-
-      {/* Contrarian Analysis (from Claude) */}
-      {contrarianAnalysis && (
-        <section className="rounded-[30px] border border-slate-200 bg-white p-6 shadow-sm">
-          <div className="flex items-center gap-2 mb-3">
-            <span className="text-xl">🔄</span>
-            <h3 className="text-2xl font-semibold">Contrarian Take</h3>
-            <SignalPill tone="green">INVERTED</SignalPill>
-          </div>
-          <p className="text-lg leading-8 text-slate-700">{contrarianAnalysis}</p>
-        </section>
-      )}
+      {/* Contrarian Sentiment — all 4 indicators + Claude analysis */}
+      <SentimentGauges marketData={{...marketData, fearGreed: fg, aaiiBullBear: parseFloat((aaiiBull - aaiiBear).toFixed(1))}} aaiiBull={aaiiBull} aaiiNeutral={aaiiNeutral} aaiiBear={aaiiBear} contrarianAnalysis={contrarianAnalysis} />
 
       {/* Credit & Volatility */}
       <section className="grid gap-5 lg:grid-cols-2">
