@@ -98,7 +98,41 @@ async function fetchFinancialData(ticker: string): Promise<string> {
     return "IMPORTANT: No financial data was returned from the API. All endpoints failed. Use your best knowledge but CLEARLY STATE in every explanation that the data could not be verified with live sources and should be independently confirmed.";
   }
 
-  return `DATA FRESHNESS: ${successCount}/${totalEndpoints} API endpoints returned live data. Today's date is ${new Date().toISOString().split("T")[0]}. Use the MOST RECENT data available — prefer quarterly over annual where both exist.\n\n${sections.join("\n\n---\n\n")}`;
+  // Now fetch peer companies for relative valuation
+  let peerSection = "";
+  try {
+    const FMP_V4 = "https://financialmodelingprep.com/api/v4";
+    const peersRes = await fmpFetch(`${FMP_V4}/stock_peers?symbol=${ticker}&${k}`, "PEER COMPANIES");
+    if (peersRes && Array.isArray(peersRes.data) && peersRes.data.length > 0) {
+      const peerList: string[] = peersRes.data[0]?.peersList || [];
+      // Take top 4 peers to keep API calls reasonable
+      const topPeers = peerList.slice(0, 4);
+      console.log(`[FMP] Peers for ${ticker}: ${topPeers.join(", ")}`);
+
+      if (topPeers.length > 0) {
+        // Fetch key metrics TTM and profile for each peer in parallel
+        const peerResults = await Promise.all(
+          topPeers.flatMap((peer) => [
+            fmpFetch(`${FMP_BASE}/key-metrics-ttm/${peer}?${k}`, `PEER ${peer} KEY METRICS TTM`),
+            fmpFetch(`${FMP_BASE}/quote/${peer}?${k}`, `PEER ${peer} QUOTE`),
+            fmpFetch(`${FMP_BASE}/profile/${peer}?${k}`, `PEER ${peer} PROFILE`),
+          ])
+        );
+
+        const peerData = peerResults
+          .filter((r): r is { label: string; data: unknown } => r !== null)
+          .map((r) => `${r.label}:\n${JSON.stringify(r.data, null, 2)}`);
+
+        if (peerData.length > 0) {
+          peerSection = `\n\n---\n\nPEER COMPANY DATA (use for relative valuation and competitive moat comparisons):\nPeers identified: ${topPeers.join(", ")}\n\n${peerData.join("\n\n")}`;
+        }
+      }
+    }
+  } catch (err) {
+    console.log(`[FMP] Peer fetch error: ${err}`);
+  }
+
+  return `DATA FRESHNESS: ${successCount}/${totalEndpoints} API endpoints returned live data. Today's date is ${new Date().toISOString().split("T")[0]}. Use the MOST RECENT data available — prefer quarterly over annual where both exist.\n\n${sections.join("\n\n---\n\n")}${peerSection}`;
 }
 
 const SCORING_PROMPT = `You are an institutional equity research analyst scoring a stock for a portfolio management scoring system. You will be provided with REAL FINANCIAL DATA — you MUST use this data to produce accurate, specific explanations. Do not guess or fabricate numbers.
@@ -107,7 +141,7 @@ Each category has its own max score (shown as /N). Score from 0 to that max:
 - 0 = Poor / negative signal
 - Max = Strong / positive signal
 
-Score ONLY the following categories (AUTO and SEMI categories — the PM handles MANUAL ones):
+Score ONLY the following categories (AUTO and SEMI categories — the PM handles MANUAL ones like charting, relative strength, AI rating, brand, external sources, and turnaround):
 
 LONG-TERM GROUP:
 - secular (max 2, AUTO): Secular growth trend — long-term industry tailwinds favoring the company
@@ -115,12 +149,9 @@ LONG-TERM GROUP:
 RESEARCH GROUP:
 - researchCoverage (max 4, SEMI): Research coverage — depth/breadth of sell-side coverage, estimate dispersion, quality of analyst pool
 
-TECHNICALS GROUP:
-- charting (max 3, SEMI): Charting — technical chart setup, trend, support/resistance, moving averages, volume patterns
-
 FUNDAMENTAL GROUP:
 - growth (max 3, AUTO): Growth (rev / earnings / FCF) — USE THE PROVIDED DATA. Cite actual revenue figures, YoY growth rates, EPS, net income changes, FCF trends. Compare sequential quarters and year-over-year. Include guidance if available from analyst estimates.
-- relativeValuation (max 3, AUTO): Relative valuation — USE INDUSTRY-SPECIFIC METRICS FIRST:
+- relativeValuation (max 3, AUTO): Relative valuation — You are provided with REAL PEER COMPANY DATA. Use it to make direct comparisons. USE INDUSTRY-SPECIFIC METRICS FIRST:
   * Banks/Financials: P/B, P/TBV, ROE, ROA, efficiency ratio vs peers
   * REITs: P/FFO, P/AFFO, cap rate, dividend yield vs peers
   * Insurance: P/B, combined ratio, ROE vs peers
@@ -130,13 +161,13 @@ FUNDAMENTAL GROUP:
   * Energy: EV/EBITDA, P/CF, dividend yield, reserve replacement vs peers
   * Utilities: P/E, dividend yield, rate base growth vs peers
   * Consumer: P/E, EV/EBITDA, same-store sales growth vs peers
-  Then also reference general metrics (P/E, EV/EBITDA, FCF yield). Cite actual multiples from the provided data and compare to sector averages.
+  IMPORTANT: Name specific peer companies and cite their actual multiples from the peer data provided. Example: "META trades at 15.3x EV/EBITDA vs GOOGL at 23.5x and SNAP at 18.2x." Do not use vague "sector average" — name the peers.
 - historicalValuation (max 2, AUTO): Historical valuation — Compare CURRENT multiples to the company's OWN 3-5 year history. Use the historical metrics data provided. Cite specific numbers (e.g., "Current EV/EBITDA of 15.3x vs 5-year avg of 18.5x"). Note if trading above or below historical ranges and why.
 - leverageCoverage (max 2, AUTO): Leverage & coverage — Net debt/EBITDA, interest coverage ratio, debt maturity profile. Use actual balance sheet and income statement data.
 - cashFlowQuality (max 1, AUTO): Cash flow quality — FCF conversion rate (FCF/Net Income), operating cash flow trends, capex intensity, working capital changes. Use actual cash flow statement data.
 
 COMPANY SPECIFIC GROUP:
-- competitiveMoat (max 2, SEMI): Competitive moat — durable competitive advantages, switching costs, network effects
+- competitiveMoat (max 2, SEMI): Competitive moat — Use the peer data provided to assess competitive positioning. Compare margins, returns on capital, and growth rates vs named peers. Identify durable advantages: switching costs, network effects, brand, scale, IP. Back up qualitative claims with quantitative comparisons from the data.
 - catalysts (max 3, SEMI): Potential catalysts — upcoming events, product launches, strategic shifts, M&A potential
 
 MANAGEMENT GROUP:
@@ -167,7 +198,7 @@ Respond ONLY with valid JSON:
   "sector": "GICS Sector",
   "beta": 1.0,
   "scores": {
-    "secular": 0, "researchCoverage": 0, "charting": 0,
+    "secular": 0, "researchCoverage": 0,
     "growth": 0, "relativeValuation": 0, "historicalValuation": 0,
     "leverageCoverage": 0, "cashFlowQuality": 0,
     "competitiveMoat": 0, "catalysts": 0,
@@ -176,13 +207,12 @@ Respond ONLY with valid JSON:
   "explanations": {
     "secular": ["paragraph explanation"],
     "researchCoverage": ["paragraph explanation"],
-    "charting": ["paragraph explanation"],
     "growth": ["paragraph explanation with actual revenue/earnings data"],
-    "relativeValuation": ["paragraph explanation with actual multiples and peer comparisons"],
+    "relativeValuation": ["paragraph explanation citing specific peer names and their multiples from the peer data"],
     "historicalValuation": ["paragraph explanation comparing current vs historical multiples"],
     "leverageCoverage": ["paragraph explanation with actual debt metrics"],
     "cashFlowQuality": ["paragraph explanation with actual FCF data"],
-    "competitiveMoat": ["paragraph explanation"],
+    "competitiveMoat": ["paragraph explanation comparing vs named peers using provided peer data"],
     "catalysts": ["paragraph explanation"],
     "trackRecord": ["paragraph explanation"],
     "ownershipTrends": ["paragraph explanation"]
