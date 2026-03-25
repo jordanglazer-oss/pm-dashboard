@@ -1,11 +1,12 @@
 "use client";
 
-import React, { useState, useEffect } from "react";
+import React, { useState, useEffect, useCallback, useRef } from "react";
 import type { MarketData, MorningBrief as MorningBriefType, Stock, ScoredStock } from "@/app/lib/types";
 import { SignalPill } from "./SignalPill";
 import { LoadingOverlay } from "./LoadingSpinner";
 import { SentimentGauges } from "./SentimentGauges";
 import { HedgingIndicator } from "./HedgingIndicator";
+import { ImageUpload, type BriefAttachment } from "./ImageUpload";
 
 type Props = {
   marketData: MarketData;
@@ -36,6 +37,38 @@ export function MorningBrief({
   const [aaiiBull, setAaiiBull] = useState(30);
   const [aaiiNeutral, setAaiiNeutral] = useState(17);
   const [aaiiBear, setAaiiBear] = useState(52);
+
+  // Attachments (screenshots for brief sections)
+  const [attachments, setAttachments] = useState<BriefAttachment[]>([]);
+  const attachSaveTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
+
+  // Load attachments on mount
+  useEffect(() => {
+    fetch("/api/kv/attachments")
+      .then((r) => r.json())
+      .then((data) => { if (data.attachments) setAttachments(data.attachments); })
+      .catch(() => {});
+  }, []);
+
+  const persistAttachments = useCallback((next: BriefAttachment[]) => {
+    setAttachments(next);
+    if (attachSaveTimer.current) clearTimeout(attachSaveTimer.current);
+    attachSaveTimer.current = setTimeout(() => {
+      fetch("/api/kv/attachments", {
+        method: "PUT",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ attachments: next }),
+      }).catch((e) => console.error("Failed to save attachments:", e));
+    }, 500);
+  }, []);
+
+  const addAttachment = useCallback((att: BriefAttachment) => {
+    persistAttachments([...attachments, att]);
+  }, [attachments, persistAttachments]);
+
+  const removeAttachment = useCallback((id: string) => {
+    persistAttachments(attachments.filter((a) => a.id !== id));
+  }, [attachments, persistAttachments]);
 
   // Auto-fetch live market data (VIX, MOVE, HY OAS, IG OAS) on mount
   useEffect(() => {
@@ -96,7 +129,15 @@ export function MorningBrief({
       const res = await fetch("/api/morning-brief", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ marketData: updatedMarketData, holdings: stocks }),
+        body: JSON.stringify({
+          marketData: updatedMarketData,
+          holdings: stocks,
+          attachments: attachments.map((a) => ({
+            section: a.section,
+            label: a.label,
+            dataUrl: a.dataUrl,
+          })),
+        }),
       });
 
       if (!res.ok) {
@@ -300,6 +341,15 @@ export function MorningBrief({
             <option value="Moderate Outflows">Moderate Outflows</option>
             <option value="Heavy Outflows">Heavy Outflows</option>
           </select>
+
+          {/* Screenshot upload for flows/liquidity reports */}
+          <ImageUpload
+            section="equityFlows"
+            sectionLabel="JPM Flows & Liquidity"
+            attachments={attachments}
+            onAdd={addAttachment}
+            onRemove={removeAttachment}
+          />
         </div>
 
         {/* Sentiment inputs */}
@@ -531,6 +581,31 @@ export function MorningBrief({
             </div>
           </div>
           <p className="mt-4 text-lg leading-8 text-slate-600">{flowsAnalysis}</p>
+
+          {/* Attached screenshots displayed inline */}
+          {attachments.filter((a) => a.section === "equityFlows").length > 0 && (
+            <div className="mt-5 border-t border-slate-100 pt-5">
+              <div className="text-xs font-bold uppercase tracking-wider text-slate-400 mb-3">
+                JPM Flows & Liquidity Report
+              </div>
+              <div className="grid gap-3 md:grid-cols-2">
+                {attachments
+                  .filter((a) => a.section === "equityFlows")
+                  .map((att) => (
+                    <div key={att.id} className="rounded-xl border border-slate-200 overflow-hidden">
+                      <img
+                        src={att.dataUrl}
+                        alt={att.label}
+                        className="w-full h-auto"
+                      />
+                      <div className="px-3 py-1.5 bg-slate-50 text-xs text-slate-500">
+                        {att.label}
+                      </div>
+                    </div>
+                  ))}
+              </div>
+            </div>
+          )}
         </div>
       </section>
 
