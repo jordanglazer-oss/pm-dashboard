@@ -72,7 +72,8 @@ export function StockProvider({ children }: { children: React.ReactNode }) {
       fetch("/api/kv/brief").then((r) => r.json()).catch(() => ({ brief: null })),
     ]).then(([stocksRes, marketRes, briefRes]) => {
       if (stocksRes.stocks) setStocks(stocksRes.stocks);
-      if (marketRes.market) setMarketData(marketRes.market);
+      // Merge stored market data with defaults so new fields are always present
+      if (marketRes.market) setMarketData({ ...defaultMarketData, ...marketRes.market });
       if (briefRes.brief) setBriefState(briefRes.brief);
       setLoading(false);
     });
