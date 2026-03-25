@@ -581,6 +581,31 @@ export function MorningBrief({
             </div>
           </div>
           <p className="mt-4 text-lg leading-8 text-slate-600">{flowsAnalysis}</p>
+
+          {/* Attached screenshots displayed inline */}
+          {attachments.filter((a) => a.section === "equityFlows").length > 0 && (
+            <div className="mt-5 border-t border-slate-100 pt-5">
+              <div className="text-xs font-bold uppercase tracking-wider text-slate-400 mb-3">
+                JPM Flows & Liquidity Report
+              </div>
+              <div className="grid gap-3 md:grid-cols-2">
+                {attachments
+                  .filter((a) => a.section === "equityFlows")
+                  .map((att) => (
+                    <div key={att.id} className="rounded-xl border border-slate-200 overflow-hidden">
+                      <img
+                        src={att.dataUrl}
+                        alt={att.label}
+                        className="w-full h-auto"
+                      />
+                      <div className="px-3 py-1.5 bg-slate-50 text-xs text-slate-500">
+                        {att.label}
+                      </div>
+                    </div>
+                  ))}
+              </div>
+            </div>
+          )}
         </div>
       </section>
 
