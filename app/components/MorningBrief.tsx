@@ -556,17 +556,28 @@ export function MorningBrief({
               <span className="font-mono font-medium">{marketData.breadth}%</span>
             </div>
             <div className="flex justify-between border-b border-slate-100 pb-3">
-              <span className="text-slate-500">S&P Oscillator</span>
+              <div className="flex items-center gap-1.5">
+                <span className="text-slate-500">S&P Oscillator</span>
+                <span className="text-[9px] font-bold text-emerald-600 bg-emerald-50 rounded px-1">CONTRARIAN</span>
+              </div>
               <span className={`font-mono font-medium ${marketData.spOscillator < -2 ? "text-emerald-600" : marketData.spOscillator > 2 ? "text-red-600" : "text-slate-700"}`}>
                 {marketData.spOscillator > 0 ? "+" : ""}{marketData.spOscillator}
                 <span className="text-xs text-slate-400 ml-1">
-                  {marketData.spOscillator < -2 ? "(oversold)" : marketData.spOscillator > 2 ? "(overbought)" : ""}
+                  {marketData.spOscillator < -2 ? "(oversold — bullish)" : marketData.spOscillator > 2 ? "(overbought — bearish)" : ""}
                 </span>
               </span>
             </div>
             <div className="flex justify-between pb-3">
-              <span className="text-slate-500">Put/Call Ratio</span>
-              <span className="font-mono font-medium">{marketData.putCall}</span>
+              <div className="flex items-center gap-1.5">
+                <span className="text-slate-500">Put/Call Ratio</span>
+                <span className="text-[9px] font-bold text-emerald-600 bg-emerald-50 rounded px-1">CONTRARIAN</span>
+              </div>
+              <span className={`font-mono font-medium ${marketData.putCall > 1.1 ? "text-emerald-600" : marketData.putCall < 0.7 ? "text-red-600" : "text-slate-700"}`}>
+                {marketData.putCall}
+                <span className="text-xs text-slate-400 ml-1">
+                  {marketData.putCall > 1.1 ? "(elevated — bullish)" : marketData.putCall < 0.7 ? "(low — bearish)" : ""}
+                </span>
+              </span>
             </div>
           </div>
           <p className="mt-4 text-lg leading-8 text-slate-600">{breadthAnalysis}</p>
