@@ -9,6 +9,7 @@ const tabs = [
   { label: "Dashboard", href: "/" },
   { label: "Scoring", href: "/scoring" },
   { label: "Research", href: "/research" },
+  { label: "AA & Performance", href: "/aa-performance" },
 ];
 
 export function Navigation() {
@@ -20,6 +21,8 @@ export function Navigation() {
     ? "Brief"
     : pathname === "/research"
     ? "Research"
+    : pathname === "/aa-performance"
+    ? "AA & Performance"
     : "Dashboard";
 
   return (
