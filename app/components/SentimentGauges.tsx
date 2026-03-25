@@ -9,6 +9,7 @@ type Props = {
   aaiiBull?: number;
   aaiiNeutral?: number;
   aaiiBear?: number;
+  contrarianAnalysis?: string;
 };
 
 function fearGreedLabel(value: number): string {
@@ -117,7 +118,7 @@ export function overallContrarianRating(fg: number, spread: number, spOsc: numbe
   return { label: "Strong Sell Signal", tone: "red" };
 }
 
-export function SentimentGauges({ marketData, aaiiBull = 30, aaiiNeutral = 17, aaiiBear = 52 }: Props) {
+export function SentimentGauges({ marketData, aaiiBull = 30, aaiiNeutral = 17, aaiiBear = 52, contrarianAnalysis }: Props) {
   const fgData = fearGreedContrarian(marketData.fearGreed);
   const aaiiData = aaiiBullBearContrarian(marketData.aaiiBullBear);
   const overall = overallContrarianRating(marketData.fearGreed, marketData.aaiiBullBear, marketData.spOscillator, marketData.putCall);
@@ -208,7 +209,94 @@ export function SentimentGauges({ marketData, aaiiBull = 30, aaiiNeutral = 17, a
           </div>
           <p className="mt-3 text-sm text-slate-500 leading-relaxed">{aaiiData.detail}</p>
         </div>
+
+        {/* S&P Oscillator */}
+        <div className="rounded-2xl border border-slate-100 bg-slate-50 p-5">
+          <div className="text-sm font-semibold text-slate-500 mb-4">S&P Oscillator</div>
+          <div className="flex items-center gap-6">
+            <div className={`flex h-20 w-20 shrink-0 items-center justify-center rounded-2xl text-3xl font-bold ${
+              marketData.spOscillator <= -4 ? "bg-emerald-100 text-emerald-700"
+              : marketData.spOscillator <= -2 ? "bg-emerald-50 text-emerald-600"
+              : marketData.spOscillator >= 4 ? "bg-red-100 text-red-700"
+              : marketData.spOscillator >= 2 ? "bg-red-50 text-red-600"
+              : "bg-slate-100 text-slate-600"
+            }`}>
+              {marketData.spOscillator > 0 ? "+" : ""}{marketData.spOscillator}
+            </div>
+            <div>
+              <div className={`text-xl font-semibold ${
+                marketData.spOscillator <= -4 ? "text-emerald-700"
+                : marketData.spOscillator <= -2 ? "text-emerald-600"
+                : marketData.spOscillator >= 4 ? "text-red-700"
+                : marketData.spOscillator >= 2 ? "text-red-600"
+                : "text-slate-600"
+              }`}>
+                {marketData.spOscillator <= -4 ? "Deeply Oversold" : marketData.spOscillator <= -2 ? "Oversold" : marketData.spOscillator >= 4 ? "Deeply Overbought" : marketData.spOscillator >= 2 ? "Overbought" : "Neutral"}
+              </div>
+              <p className="mt-2 text-sm text-slate-500 leading-relaxed">
+                {marketData.spOscillator <= -4
+                  ? "Extreme oversold conditions have historically preceded sharp mean-reversion rallies. High-conviction contrarian buy signal."
+                  : marketData.spOscillator <= -2
+                  ? "Market is stretched to the downside. Incrementally bullish on a contrarian basis."
+                  : marketData.spOscillator >= 4
+                  ? "Extreme overbought conditions. Risk of a pullback is elevated — consider trimming or hedging."
+                  : marketData.spOscillator >= 2
+                  ? "Market is getting stretched. Reduce marginal risk and tighten stops."
+                  : "No strong directional signal from the oscillator at current levels."}
+              </p>
+            </div>
+          </div>
+        </div>
+
+        {/* Put/Call Ratio */}
+        <div className="rounded-2xl border border-slate-100 bg-slate-50 p-5">
+          <div className="text-sm font-semibold text-slate-500 mb-4">Total Put/Call Ratio</div>
+          <div className="flex items-center gap-6">
+            <div className={`flex h-20 w-20 shrink-0 items-center justify-center rounded-2xl text-3xl font-bold ${
+              marketData.putCall >= 1.2 ? "bg-emerald-100 text-emerald-700"
+              : marketData.putCall >= 1.0 ? "bg-emerald-50 text-emerald-600"
+              : marketData.putCall <= 0.5 ? "bg-red-100 text-red-700"
+              : marketData.putCall <= 0.7 ? "bg-red-50 text-red-600"
+              : "bg-slate-100 text-slate-600"
+            }`}>
+              {marketData.putCall.toFixed(2)}
+            </div>
+            <div>
+              <div className={`text-xl font-semibold ${
+                marketData.putCall >= 1.2 ? "text-emerald-700"
+                : marketData.putCall >= 1.0 ? "text-emerald-600"
+                : marketData.putCall <= 0.5 ? "text-red-700"
+                : marketData.putCall <= 0.7 ? "text-red-600"
+                : "text-slate-600"
+              }`}>
+                {marketData.putCall >= 1.2 ? "Extreme Fear" : marketData.putCall >= 1.0 ? "Elevated Fear" : marketData.putCall <= 0.5 ? "Extreme Complacency" : marketData.putCall <= 0.7 ? "Complacent" : "Neutral"}
+              </div>
+              <p className="mt-2 text-sm text-slate-500 leading-relaxed">
+                {marketData.putCall >= 1.2
+                  ? "Heavy put buying signals panic. Historically a strong contrarian buy signal — protection is expensive and the crowd is hedged."
+                  : marketData.putCall >= 1.0
+                  ? "Put buying is elevated, suggesting caution in the market. Incrementally bullish on a contrarian basis."
+                  : marketData.putCall <= 0.5
+                  ? "Extreme complacency — virtually no hedging activity. This is a strong contrarian warning sign."
+                  : marketData.putCall <= 0.7
+                  ? "Low put demand suggests complacency. Protection is cheap, which is when disciplined PMs should be hedging."
+                  : "Put/Call ratio is in a neutral range. No strong contrarian signal."}
+              </p>
+            </div>
+          </div>
+        </div>
       </div>
+
+      {/* Claude's contrarian analysis */}
+      {contrarianAnalysis && (
+        <div className="mt-5 border-t border-slate-100 pt-5">
+          <div className="flex items-center gap-2 mb-2">
+            <span className="text-sm font-bold uppercase tracking-wider text-slate-400">Contrarian Take</span>
+            <SignalPill tone={overall.tone}>{overall.label}</SignalPill>
+          </div>
+          <p className="text-lg leading-8 text-slate-700">{contrarianAnalysis}</p>
+        </div>
+      )}
     </section>
   );
 }
