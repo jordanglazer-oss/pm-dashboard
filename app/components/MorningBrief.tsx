@@ -1,6 +1,6 @@
 "use client";
 
-import React, { useState } from "react";
+import React, { useState, useEffect } from "react";
 import type { MarketData, MorningBrief as MorningBriefType, Stock, ScoredStock } from "@/app/lib/types";
 import { SignalPill } from "./SignalPill";
 import { LoadingOverlay } from "./LoadingSpinner";
@@ -28,12 +28,52 @@ export function MorningBrief({
 }: Props) {
   const [generating, setGenerating] = useState(false);
   const [error, setError] = useState("");
+  const [liveLoading, setLiveLoading] = useState(false);
+  const [liveFields, setLiveFields] = useState<Record<string, boolean>>({});
 
   // Local editable state for sentiment inputs
   const [fg, setFg] = useState(marketData.fearGreed);
   const [aaiiBull, setAaiiBull] = useState(30);
   const [aaiiNeutral, setAaiiNeutral] = useState(17);
   const [aaiiBear, setAaiiBear] = useState(52);
+
+  // Auto-fetch live market data (VIX, HY OAS, IG OAS) on mount
+  useEffect(() => {
+    let cancelled = false;
+    async function fetchLiveData() {
+      setLiveLoading(true);
+      try {
+        const res = await fetch("/api/market-data");
+        if (!res.ok) return;
+        const data = await res.json();
+        if (cancelled) return;
+        const updates: Partial<MarketData> = {};
+        const live: Record<string, boolean> = {};
+        if (data.vix != null) {
+          updates.vix = data.vix;
+          live.vix = true;
+        }
+        if (data.hyOas != null) {
+          updates.hyOas = data.hyOas;
+          live.hyOas = true;
+        }
+        if (data.igOas != null) {
+          updates.igOas = data.igOas;
+          live.igOas = true;
+        }
+        if (Object.keys(updates).length > 0) {
+          onUpdateMarketData(updates);
+        }
+        setLiveFields(live);
+      } catch {
+        // Silently fail — user can still enter manually
+      } finally {
+        if (!cancelled) setLiveLoading(false);
+      }
+    }
+    fetchLiveData();
+    return () => { cancelled = true; };
+  }, []); // eslint-disable-line react-hooks/exhaustive-deps
 
   async function generateBrief() {
     // Sync editable inputs to market data
@@ -109,60 +149,154 @@ export function MorningBrief({
 
   return (
     <>
-      {/* Editable Sentiment Inputs */}
+      {/* Editable Market & Sentiment Inputs */}
       <section className="rounded-[30px] border border-slate-200 bg-white p-6 shadow-sm">
         <div className="flex items-center gap-3 mb-5">
-          <h3 className="text-xl font-semibold">Daily Sentiment Input</h3>
-          <SignalPill tone="green">CONTRARIAN</SignalPill>
+          <h3 className="text-xl font-semibold">Daily Market Input</h3>
+          {liveLoading && <span className="text-xs text-blue-500 animate-pulse">Fetching live data...</span>}
         </div>
 
-        <div className="grid gap-6 md:grid-cols-2">
+        {/* Live-fetched fields */}
+        <div className="grid gap-4 md:grid-cols-3 mb-6">
           <div>
-            <label className="text-sm font-medium text-slate-500">CNN Fear & Greed (0-100)</label>
+            <div className="flex items-center gap-2">
+              <label className="text-sm font-medium text-slate-500">VIX</label>
+              {liveFields.vix && <span className="rounded-full bg-emerald-100 px-2 py-0.5 text-[10px] font-bold text-emerald-700 uppercase">Live</span>}
+            </div>
             <input
               type="number"
-              min={0}
-              max={100}
-              value={fg}
-              onChange={(e) => setFg(Number(e.target.value))}
+              step="0.1"
+              value={marketData.vix}
+              onChange={(e) => onUpdateMarketData({ vix: Number(e.target.value) })}
+              className="mt-1 w-28 rounded-xl border border-slate-200 px-3 py-2 text-lg font-semibold"
+            />
+          </div>
+          <div>
+            <div className="flex items-center gap-2">
+              <label className="text-sm font-medium text-slate-500">HY OAS (bps)</label>
+              {liveFields.hyOas && <span className="rounded-full bg-emerald-100 px-2 py-0.5 text-[10px] font-bold text-emerald-700 uppercase">Live</span>}
+            </div>
+            <input
+              type="number"
+              value={marketData.hyOas}
+              onChange={(e) => onUpdateMarketData({ hyOas: Number(e.target.value) })}
+              className="mt-1 w-28 rounded-xl border border-slate-200 px-3 py-2 text-lg font-semibold"
+            />
+          </div>
+          <div>
+            <div className="flex items-center gap-2">
+              <label className="text-sm font-medium text-slate-500">IG OAS (bps)</label>
+              {liveFields.igOas && <span className="rounded-full bg-emerald-100 px-2 py-0.5 text-[10px] font-bold text-emerald-700 uppercase">Live</span>}
+            </div>
+            <input
+              type="number"
+              value={marketData.igOas}
+              onChange={(e) => onUpdateMarketData({ igOas: Number(e.target.value) })}
+              className="mt-1 w-28 rounded-xl border border-slate-200 px-3 py-2 text-lg font-semibold"
+            />
+          </div>
+        </div>
+
+        {/* Manual fields */}
+        <div className="grid gap-4 md:grid-cols-4 mb-6">
+          <div>
+            <label className="text-sm font-medium text-slate-500">MOVE Index</label>
+            <input
+              type="number"
+              step="0.1"
+              value={marketData.move}
+              onChange={(e) => onUpdateMarketData({ move: Number(e.target.value) })}
               className="mt-1 w-24 rounded-xl border border-slate-200 px-3 py-2 text-lg font-semibold"
             />
           </div>
           <div>
-            <label className="text-sm font-medium text-slate-500">AAII Survey (%)</label>
-            <div className="mt-1 flex gap-4">
-              <div>
-                <span className="text-xs text-red-500 font-medium">Bull</span>
-                <input
-                  type="number"
-                  min={0}
-                  max={100}
-                  value={aaiiBull}
-                  onChange={(e) => setAaiiBull(Number(e.target.value))}
-                  className="block w-20 rounded-xl border border-slate-200 px-3 py-2 text-lg font-semibold"
-                />
-              </div>
-              <div>
-                <span className="text-xs text-amber-500 font-medium">Neutral</span>
-                <input
-                  type="number"
-                  min={0}
-                  max={100}
-                  value={aaiiNeutral}
-                  onChange={(e) => setAaiiNeutral(Number(e.target.value))}
-                  className="block w-20 rounded-xl border border-slate-200 px-3 py-2 text-lg font-semibold"
-                />
-              </div>
-              <div>
-                <span className="text-xs text-emerald-500 font-medium">Bear</span>
-                <input
-                  type="number"
-                  min={0}
-                  max={100}
-                  value={aaiiBear}
-                  onChange={(e) => setAaiiBear(Number(e.target.value))}
-                  className="block w-20 rounded-xl border border-slate-200 px-3 py-2 text-lg font-semibold"
-                />
+            <label className="text-sm font-medium text-slate-500">Breadth (% &gt; 200 DMA)</label>
+            <input
+              type="number"
+              step="0.1"
+              value={marketData.breadth}
+              onChange={(e) => onUpdateMarketData({ breadth: Number(e.target.value) })}
+              className="mt-1 w-24 rounded-xl border border-slate-200 px-3 py-2 text-lg font-semibold"
+            />
+          </div>
+          <div>
+            <label className="text-sm font-medium text-slate-500">Put/Call Ratio</label>
+            <input
+              type="number"
+              step="0.01"
+              value={marketData.putCall}
+              onChange={(e) => onUpdateMarketData({ putCall: Number(e.target.value) })}
+              className="mt-1 w-24 rounded-xl border border-slate-200 px-3 py-2 text-lg font-semibold"
+            />
+          </div>
+          <div>
+            <label className="text-sm font-medium text-slate-500">VIX Term Structure</label>
+            <select
+              value={marketData.termStructure}
+              onChange={(e) => onUpdateMarketData({ termStructure: e.target.value })}
+              className="mt-1 rounded-xl border border-slate-200 px-3 py-2 text-lg font-semibold"
+            >
+              <option value="Contango">Contango</option>
+              <option value="Flat">Flat</option>
+              <option value="Backwardation">Backwardation</option>
+            </select>
+          </div>
+        </div>
+
+        {/* Sentiment inputs */}
+        <div className="border-t border-slate-100 pt-5">
+          <div className="flex items-center gap-3 mb-4">
+            <h4 className="text-sm font-semibold text-slate-500 uppercase tracking-wider">Sentiment (Manual)</h4>
+            <SignalPill tone="green">CONTRARIAN</SignalPill>
+          </div>
+          <div className="grid gap-6 md:grid-cols-2">
+            <div>
+              <label className="text-sm font-medium text-slate-500">CNN Fear & Greed (0-100)</label>
+              <input
+                type="number"
+                min={0}
+                max={100}
+                value={fg}
+                onChange={(e) => setFg(Number(e.target.value))}
+                className="mt-1 w-24 rounded-xl border border-slate-200 px-3 py-2 text-lg font-semibold"
+              />
+            </div>
+            <div>
+              <label className="text-sm font-medium text-slate-500">AAII Survey (%)</label>
+              <div className="mt-1 flex gap-4">
+                <div>
+                  <span className="text-xs text-red-500 font-medium">Bull</span>
+                  <input
+                    type="number"
+                    min={0}
+                    max={100}
+                    value={aaiiBull}
+                    onChange={(e) => setAaiiBull(Number(e.target.value))}
+                    className="block w-20 rounded-xl border border-slate-200 px-3 py-2 text-lg font-semibold"
+                  />
+                </div>
+                <div>
+                  <span className="text-xs text-amber-500 font-medium">Neutral</span>
+                  <input
+                    type="number"
+                    min={0}
+                    max={100}
+                    value={aaiiNeutral}
+                    onChange={(e) => setAaiiNeutral(Number(e.target.value))}
+                    className="block w-20 rounded-xl border border-slate-200 px-3 py-2 text-lg font-semibold"
+                  />
+                </div>
+                <div>
+                  <span className="text-xs text-emerald-500 font-medium">Bear</span>
+                  <input
+                    type="number"
+                    min={0}
+                    max={100}
+                    value={aaiiBear}
+                    onChange={(e) => setAaiiBear(Number(e.target.value))}
+                    className="block w-20 rounded-xl border border-slate-200 px-3 py-2 text-lg font-semibold"
+                  />
+                </div>
               </div>
             </div>
           </div>
@@ -177,7 +311,7 @@ export function MorningBrief({
             {generating ? "Generating..." : "\u21BB Refresh Brief"}
           </button>
           <span className="text-sm text-slate-400">
-            F&G: <strong>{fg}</strong> | AAII: <strong>{aaiiBull.toFixed(1)}%</strong>B <strong>{aaiiBear.toFixed(1)}%</strong>Be
+            VIX: <strong>{marketData.vix}</strong> | HY: <strong>{marketData.hyOas}</strong> | F&G: <strong>{fg}</strong> | AAII: <strong>{aaiiBull}%</strong>B / <strong>{aaiiBear}%</strong>Be
           </span>
         </div>
       </section>
