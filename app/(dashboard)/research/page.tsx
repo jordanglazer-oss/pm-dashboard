@@ -148,10 +148,56 @@ function EditableCell({
   );
 }
 
+type UptickSortKey = "ticker" | "name" | "sector" | "price" | "support" | "resistance" | "dateAdded" | "priceWhenAdded";
+type IdeaSortKey = "ticker" | "priceWhenAdded";
+type SortDir = "asc" | "desc";
+
 export default function ResearchPage() {
   const [state, setState] = useState<ResearchState>(defaultResearch);
   const [loaded, setLoaded] = useState(false);
   const saveTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
+  const [uptickSort, setUptickSort] = useState<{ key: UptickSortKey; dir: SortDir }>({ key: "ticker", dir: "asc" });
+  const [topSort, setTopSort] = useState<{ key: IdeaSortKey; dir: SortDir }>({ key: "ticker", dir: "asc" });
+  const [bottomSort, setBottomSort] = useState<{ key: IdeaSortKey; dir: SortDir }>({ key: "ticker", dir: "asc" });
+
+  function toggleUptickSort(key: UptickSortKey) {
+    setUptickSort(prev => prev.key === key ? { key, dir: prev.dir === "asc" ? "desc" : "asc" } : { key, dir: "asc" });
+  }
+  function toggleTopSort(key: IdeaSortKey) {
+    setTopSort(prev => prev.key === key ? { key, dir: prev.dir === "asc" ? "desc" : "asc" } : { key, dir: "asc" });
+  }
+  function toggleBottomSort(key: IdeaSortKey) {
+    setBottomSort(prev => prev.key === key ? { key, dir: prev.dir === "asc" ? "desc" : "asc" } : { key, dir: "asc" });
+  }
+
+  function sortedUpticks() {
+    return [...state.newtonUpticks].sort((a, b) => {
+      const { key, dir } = uptickSort;
+      let cmp = 0;
+      if (key === "price" || key === "priceWhenAdded") {
+        cmp = (a[key] || 0) - (b[key] || 0);
+      } else {
+        cmp = String(a[key] || "").localeCompare(String(b[key] || ""));
+      }
+      return dir === "asc" ? cmp : -cmp;
+    });
+  }
+
+  function sortedIdeas(items: IdeaEntry[], sort: { key: IdeaSortKey; dir: SortDir }) {
+    return [...items].sort((a, b) => {
+      let cmp = 0;
+      if (sort.key === "priceWhenAdded") {
+        cmp = (a.priceWhenAdded || 0) - (b.priceWhenAdded || 0);
+      } else {
+        cmp = a.ticker.localeCompare(b.ticker);
+      }
+      return sort.dir === "asc" ? cmp : -cmp;
+    });
+  }
+
+  const uArrow = (key: UptickSortKey) => uptickSort.key === key ? (uptickSort.dir === "asc" ? " ▲" : " ▼") : "";
+  const tArrow = (key: IdeaSortKey) => topSort.key === key ? (topSort.dir === "asc" ? " ▲" : " ▼") : "";
+  const bArrow = (key: IdeaSortKey) => bottomSort.key === key ? (bottomSort.dir === "asc" ? " ▲" : " ▼") : "";
 
   useEffect(() => {
     fetch("/api/kv/research")
@@ -234,19 +280,19 @@ export default function ResearchPage() {
               <thead>
                 <tr className="border-b-2 border-teal-600 text-left">
                   <th className="py-2 pr-2 text-xs font-semibold text-teal-700 w-8">#</th>
-                  <th className="py-2 pr-3 text-xs font-semibold text-teal-700">Ticker</th>
-                  <th className="py-2 pr-3 text-xs font-semibold text-teal-700">Name</th>
-                  <th className="py-2 pr-3 text-xs font-semibold text-teal-700">Sector</th>
-                  <th className="py-2 pr-3 text-xs font-semibold text-teal-700 text-right">Price*</th>
+                  <th className="py-2 pr-3 text-xs font-semibold text-teal-700 cursor-pointer hover:text-teal-900 select-none" onClick={() => toggleUptickSort("ticker")}>Ticker{uArrow("ticker")}</th>
+                  <th className="py-2 pr-3 text-xs font-semibold text-teal-700 cursor-pointer hover:text-teal-900 select-none" onClick={() => toggleUptickSort("name")}>Name{uArrow("name")}</th>
+                  <th className="py-2 pr-3 text-xs font-semibold text-teal-700 cursor-pointer hover:text-teal-900 select-none" onClick={() => toggleUptickSort("sector")}>Sector{uArrow("sector")}</th>
+                  <th className="py-2 pr-3 text-xs font-semibold text-teal-700 text-right cursor-pointer hover:text-teal-900 select-none" onClick={() => toggleUptickSort("price")}>Price*{uArrow("price")}</th>
                   <th className="py-2 pr-3 text-xs font-semibold text-teal-700 text-right">Support</th>
                   <th className="py-2 pr-3 text-xs font-semibold text-teal-700 text-right">Resistance</th>
-                  <th className="py-2 pr-3 text-xs font-semibold text-teal-700">Date Added</th>
-                  <th className="py-2 pr-3 text-xs font-semibold text-teal-700 text-right">Price When Added</th>
+                  <th className="py-2 pr-3 text-xs font-semibold text-teal-700 cursor-pointer hover:text-teal-900 select-none" onClick={() => toggleUptickSort("dateAdded")}>Date Added{uArrow("dateAdded")}</th>
+                  <th className="py-2 pr-3 text-xs font-semibold text-teal-700 text-right cursor-pointer hover:text-teal-900 select-none" onClick={() => toggleUptickSort("priceWhenAdded")}>Price When Added{uArrow("priceWhenAdded")}</th>
                   <th className="py-2 text-xs font-semibold text-teal-700 w-8"></th>
                 </tr>
               </thead>
               <tbody>
-                {state.newtonUpticks.map((u, i) => {
+                {sortedUpticks().map((u, i) => {
                   const isNew = u.dateAdded === new Date().toLocaleDateString("en-US", { month: "numeric", day: "numeric", year: "numeric" });
                   const rowBg = isNew ? "bg-amber-50 font-semibold" : i % 2 === 0 ? "bg-white" : "bg-slate-50/50";
                   return (
@@ -314,13 +360,13 @@ export default function ResearchPage() {
               <thead>
                 <tr className="border-b-2 border-emerald-500 text-left">
                   <th className="py-2 pr-2 text-xs font-semibold text-emerald-700 w-8">#</th>
-                  <th className="py-2 pr-3 text-xs font-semibold text-emerald-700">Ticker</th>
-                  <th className="py-2 text-xs font-semibold text-emerald-700 text-right">Price When Added</th>
+                  <th className="py-2 pr-3 text-xs font-semibold text-emerald-700 cursor-pointer hover:text-emerald-900 select-none" onClick={() => toggleTopSort("ticker")}>Ticker{tArrow("ticker")}</th>
+                  <th className="py-2 text-xs font-semibold text-emerald-700 text-right cursor-pointer hover:text-emerald-900 select-none" onClick={() => toggleTopSort("priceWhenAdded")}>Price When Added{tArrow("priceWhenAdded")}</th>
                   <th className="py-2 w-8"></th>
                 </tr>
               </thead>
               <tbody>
-                {state.fundstratTop.map((item, i) => (
+                {sortedIdeas(state.fundstratTop, topSort).map((item, i) => (
                   <tr key={item.ticker} className={`border-b border-slate-100 ${i % 2 === 0 ? "bg-white" : "bg-emerald-50/30"} hover:bg-emerald-50/60 transition-colors`}>
                     <td className="py-2 pr-2 text-slate-400">{i + 1}</td>
                     <td className="py-2 pr-3 font-mono font-bold text-emerald-700">${item.ticker}</td>
@@ -358,13 +404,13 @@ export default function ResearchPage() {
               <thead>
                 <tr className="border-b-2 border-red-400 text-left">
                   <th className="py-2 pr-2 text-xs font-semibold text-red-700 w-8">#</th>
-                  <th className="py-2 pr-3 text-xs font-semibold text-red-700">Ticker</th>
-                  <th className="py-2 text-xs font-semibold text-red-700 text-right">Price When Added</th>
+                  <th className="py-2 pr-3 text-xs font-semibold text-red-700 cursor-pointer hover:text-red-900 select-none" onClick={() => toggleBottomSort("ticker")}>Ticker{bArrow("ticker")}</th>
+                  <th className="py-2 text-xs font-semibold text-red-700 text-right cursor-pointer hover:text-red-900 select-none" onClick={() => toggleBottomSort("priceWhenAdded")}>Price When Added{bArrow("priceWhenAdded")}</th>
                   <th className="py-2 w-8"></th>
                 </tr>
               </thead>
               <tbody>
-                {state.fundstratBottom.map((item, i) => (
+                {sortedIdeas(state.fundstratBottom, bottomSort).map((item, i) => (
                   <tr key={item.ticker} className={`border-b border-slate-100 ${i % 2 === 0 ? "bg-white" : "bg-red-50/30"} hover:bg-red-50/60 transition-colors`}>
                     <td className="py-2 pr-2 text-slate-400">{i + 1}</td>
                     <td className="py-2 pr-3 font-mono font-bold text-red-700">${item.ticker}</td>
@@ -418,9 +464,15 @@ export default function ResearchPage() {
             <div className="rounded-xl bg-slate-50 p-4">
               <div className="text-xs font-bold uppercase tracking-wider text-slate-400 mb-3">Regime Multipliers</div>
               <div className="space-y-1.5 text-sm">
-                <div className="flex justify-between"><span>Offensive (Risk-Off)</span><span className="text-red-600 font-medium">0.82x</span></div>
-                <div className="flex justify-between"><span>Defensive (Risk-Off)</span><span className="text-emerald-600 font-medium">1.10x</span></div>
-                <div className="flex justify-between"><span>Risk-On</span><span className="text-slate-600 font-medium">1.00x</span></div>
+                <div className="text-xs font-bold text-red-700 mt-1">Risk-Off</div>
+                <div className="flex justify-between"><span>Offensive</span><span className="text-red-600 font-medium">0.82x</span></div>
+                <div className="flex justify-between"><span>Defensive</span><span className="text-emerald-600 font-medium">1.10x</span></div>
+                <div className="text-xs font-bold text-amber-700 mt-2">Neutral</div>
+                <div className="flex justify-between"><span>Offensive</span><span className="text-amber-600 font-medium">0.95x</span></div>
+                <div className="flex justify-between"><span>Defensive</span><span className="text-emerald-600 font-medium">1.03x</span></div>
+                <div className="text-xs font-bold text-emerald-700 mt-2">Risk-On</div>
+                <div className="flex justify-between"><span>Offensive</span><span className="text-emerald-600 font-medium">1.10x</span></div>
+                <div className="flex justify-between"><span>Defensive</span><span className="text-amber-600 font-medium">0.95x</span></div>
               </div>
               <p className="mt-3 text-xs text-slate-400">Offensive: Tech, Comm Services, Consumer Disc</p>
             </div>

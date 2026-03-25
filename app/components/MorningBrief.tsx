@@ -37,7 +37,7 @@ export function MorningBrief({
   const [aaiiNeutral, setAaiiNeutral] = useState(17);
   const [aaiiBear, setAaiiBear] = useState(52);
 
-  // Auto-fetch live market data (VIX, HY OAS, IG OAS) on mount
+  // Auto-fetch live market data (VIX, MOVE, HY OAS, IG OAS) on mount
   useEffect(() => {
     let cancelled = false;
     async function fetchLiveData() {
@@ -52,6 +52,10 @@ export function MorningBrief({
         if (data.vix != null) {
           updates.vix = data.vix;
           live.vix = true;
+        }
+        if (data.move != null) {
+          updates.move = data.move;
+          live.move = true;
         }
         if (data.hyOas != null) {
           updates.hyOas = data.hyOas;
@@ -157,7 +161,7 @@ export function MorningBrief({
         </div>
 
         {/* Live-fetched fields */}
-        <div className="grid gap-4 md:grid-cols-3 mb-6">
+        <div className="grid gap-4 md:grid-cols-4 mb-6">
           <div>
             <div className="flex items-center gap-2">
               <label className="text-sm font-medium text-slate-500">VIX</label>
@@ -168,6 +172,19 @@ export function MorningBrief({
               step="0.1"
               value={marketData.vix}
               onChange={(e) => onUpdateMarketData({ vix: Number(e.target.value) })}
+              className="mt-1 w-28 rounded-xl border border-slate-200 px-3 py-2 text-lg font-semibold"
+            />
+          </div>
+          <div>
+            <div className="flex items-center gap-2">
+              <label className="text-sm font-medium text-slate-500">MOVE Index</label>
+              {liveFields.move && <span className="rounded-full bg-emerald-100 px-2 py-0.5 text-[10px] font-bold text-emerald-700 uppercase">Live</span>}
+            </div>
+            <input
+              type="number"
+              step="0.1"
+              value={marketData.move}
+              onChange={(e) => onUpdateMarketData({ move: Number(e.target.value) })}
               className="mt-1 w-28 rounded-xl border border-slate-200 px-3 py-2 text-lg font-semibold"
             />
           </div>
@@ -197,50 +214,92 @@ export function MorningBrief({
           </div>
         </div>
 
-        {/* Manual fields */}
+        {/* Manual fields with source links */}
         <div className="grid gap-4 md:grid-cols-4 mb-6">
           <div>
-            <label className="text-sm font-medium text-slate-500">MOVE Index</label>
-            <input
-              type="number"
-              step="0.1"
-              value={marketData.move}
-              onChange={(e) => onUpdateMarketData({ move: Number(e.target.value) })}
-              className="mt-1 w-24 rounded-xl border border-slate-200 px-3 py-2 text-lg font-semibold"
-            />
-          </div>
-          <div>
-            <label className="text-sm font-medium text-slate-500">Breadth (% &gt; 200 DMA)</label>
+            <div className="flex items-center gap-2">
+              <label className="text-sm font-medium text-slate-500">Breadth (% &gt; 200 DMA)</label>
+              <a href="https://www.marketinout.com/chart/market.php?breadth=above-sma-200" target="_blank" rel="noopener noreferrer" className="text-blue-500 hover:text-blue-700" title="Open source">
+                <svg className="w-3.5 h-3.5" fill="none" stroke="currentColor" strokeWidth="2" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" d="M10 6H6a2 2 0 00-2 2v10a2 2 0 002 2h10a2 2 0 002-2v-4M14 4h6m0 0v6m0-6L10 14" /></svg>
+              </a>
+            </div>
             <input
               type="number"
               step="0.1"
               value={marketData.breadth}
               onChange={(e) => onUpdateMarketData({ breadth: Number(e.target.value) })}
-              className="mt-1 w-24 rounded-xl border border-slate-200 px-3 py-2 text-lg font-semibold"
+              className="mt-1 w-28 rounded-xl border border-slate-200 px-3 py-2 text-lg font-semibold"
             />
           </div>
           <div>
-            <label className="text-sm font-medium text-slate-500">Put/Call Ratio</label>
-            <input
-              type="number"
-              step="0.01"
-              value={marketData.putCall}
-              onChange={(e) => onUpdateMarketData({ putCall: Number(e.target.value) })}
-              className="mt-1 w-24 rounded-xl border border-slate-200 px-3 py-2 text-lg font-semibold"
-            />
+            <div className="flex items-center gap-2">
+              <label className="text-sm font-medium text-slate-500">Put/Call Ratio</label>
+              <a href="https://www.cboe.com/us/options/market_statistics/daily/" target="_blank" rel="noopener noreferrer" className="text-blue-500 hover:text-blue-700" title="CBOE Total Put/Call">
+                <svg className="w-3.5 h-3.5" fill="none" stroke="currentColor" strokeWidth="2" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" d="M10 6H6a2 2 0 00-2 2v10a2 2 0 002 2h10a2 2 0 002-2v-4M14 4h6m0 0v6m0-6L10 14" /></svg>
+              </a>
+            </div>
+            <div className="mt-1">
+              <input
+                type="number"
+                step="0.01"
+                value={marketData.putCall}
+                onChange={(e) => onUpdateMarketData({ putCall: Number(e.target.value) })}
+                className="w-28 rounded-xl border border-slate-200 px-3 py-2 text-lg font-semibold"
+              />
+              <p className="text-[10px] text-slate-400 mt-0.5">Use Total P/C ratio</p>
+            </div>
+          </div>
+          <div>
+            <div className="flex items-center gap-2">
+              <label className="text-sm font-medium text-slate-500">S&P Oscillator</label>
+              <a href="https://app.marketedge.com/#!/markets" target="_blank" rel="noopener noreferrer" className="text-blue-500 hover:text-blue-700" title="MarketEdge S&P Oscillator">
+                <svg className="w-3.5 h-3.5" fill="none" stroke="currentColor" strokeWidth="2" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" d="M10 6H6a2 2 0 00-2 2v10a2 2 0 002 2h10a2 2 0 002-2v-4M14 4h6m0 0v6m0-6L10 14" /></svg>
+              </a>
+            </div>
+            <div className="mt-1">
+              <input
+                type="number"
+                step="0.1"
+                value={marketData.spOscillator}
+                onChange={(e) => onUpdateMarketData({ spOscillator: Number(e.target.value) })}
+                className="w-28 rounded-xl border border-slate-200 px-3 py-2 text-lg font-semibold"
+              />
+              <p className="text-[10px] text-slate-400 mt-0.5">{marketData.spOscillator < 0 ? "Oversold (bullish)" : marketData.spOscillator > 0 ? "Overbought (bearish)" : "Neutral"}</p>
+            </div>
           </div>
           <div>
             <label className="text-sm font-medium text-slate-500">VIX Term Structure</label>
             <select
               value={marketData.termStructure}
               onChange={(e) => onUpdateMarketData({ termStructure: e.target.value })}
-              className="mt-1 rounded-xl border border-slate-200 px-3 py-2 text-lg font-semibold"
+              className="mt-1 w-full rounded-xl border border-slate-200 px-3 py-2 text-lg font-semibold"
             >
               <option value="Contango">Contango</option>
               <option value="Flat">Flat</option>
               <option value="Backwardation">Backwardation</option>
             </select>
           </div>
+        </div>
+
+        {/* Equity Flows */}
+        <div className="mb-4">
+          <div className="flex items-center gap-2">
+            <label className="text-sm font-medium text-slate-500">Equity Flows</label>
+            <a href="https://www.ici.org/research/stats/weekly-combined" target="_blank" rel="noopener noreferrer" className="text-blue-500 hover:text-blue-700" title="ICI Weekly Fund Flows">
+              <svg className="w-3.5 h-3.5" fill="none" stroke="currentColor" strokeWidth="2" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" d="M10 6H6a2 2 0 00-2 2v10a2 2 0 002 2h10a2 2 0 002-2v-4M14 4h6m0 0v6m0-6L10 14" /></svg>
+            </a>
+          </div>
+          <select
+            value={marketData.equityFlows}
+            onChange={(e) => onUpdateMarketData({ equityFlows: e.target.value })}
+            className="mt-1 rounded-xl border border-slate-200 px-3 py-2 text-sm font-semibold"
+          >
+            <option value="Strong Inflows">Strong Inflows</option>
+            <option value="Moderate Inflows">Moderate Inflows</option>
+            <option value="Mixed">Mixed</option>
+            <option value="Moderate Outflows">Moderate Outflows</option>
+            <option value="Heavy Outflows">Heavy Outflows</option>
+          </select>
         </div>
 
         {/* Sentiment inputs */}
@@ -311,7 +370,7 @@ export function MorningBrief({
             {generating ? "Generating..." : "\u21BB Refresh Brief"}
           </button>
           <span className="text-sm text-slate-400">
-            VIX: <strong>{marketData.vix}</strong> | HY: <strong>{marketData.hyOas}</strong> | F&G: <strong>{fg}</strong> | AAII: <strong>{aaiiBull}%</strong>B / <strong>{aaiiBear}%</strong>Be
+            VIX: <strong>{marketData.vix}</strong> | MOVE: <strong>{marketData.move}</strong> | HY: <strong>{marketData.hyOas}</strong> | Osc: <strong>{marketData.spOscillator}</strong> | F&G: <strong>{fg}</strong>
           </span>
         </div>
       </section>
@@ -419,22 +478,27 @@ export function MorningBrief({
               <span className="text-xl">📊</span>
               <h3 className="text-2xl font-semibold">Breadth & Internals</h3>
             </div>
-            <SignalPill tone={marketData.breadth <= 50 ? "red" : "amber"}>
-              {marketData.breadth <= 50 ? "Bearish" : "Mixed"}
+            <SignalPill tone={marketData.breadth <= 50 ? "red" : marketData.breadth >= 65 ? "green" : "amber"}>
+              {marketData.breadth <= 50 ? "Bearish" : marketData.breadth >= 65 ? "Healthy" : "Mixed"}
             </SignalPill>
           </div>
           <div className="mt-5 space-y-3">
             <div className="flex justify-between border-b border-slate-100 pb-3">
-              <span className="text-slate-500">A/D Line</span>
-              <span className="font-medium">Deteriorating</span>
-            </div>
-            <div className="flex justify-between border-b border-slate-100 pb-3">
               <span className="text-slate-500">% Above 200 DMA</span>
               <span className="font-mono font-medium">{marketData.breadth}%</span>
             </div>
+            <div className="flex justify-between border-b border-slate-100 pb-3">
+              <span className="text-slate-500">S&P Oscillator</span>
+              <span className={`font-mono font-medium ${marketData.spOscillator < -2 ? "text-emerald-600" : marketData.spOscillator > 2 ? "text-red-600" : "text-slate-700"}`}>
+                {marketData.spOscillator > 0 ? "+" : ""}{marketData.spOscillator}
+                <span className="text-xs text-slate-400 ml-1">
+                  {marketData.spOscillator < -2 ? "(oversold)" : marketData.spOscillator > 2 ? "(overbought)" : ""}
+                </span>
+              </span>
+            </div>
             <div className="flex justify-between pb-3">
-              <span className="text-slate-500">New Highs/Lows</span>
-              <span className="font-medium">Negative divergence</span>
+              <span className="text-slate-500">Put/Call Ratio</span>
+              <span className="font-mono font-medium">{marketData.putCall}</span>
             </div>
           </div>
           <p className="mt-4 text-lg leading-8 text-slate-600">{breadthAnalysis}</p>
@@ -446,16 +510,24 @@ export function MorningBrief({
               <span className="text-xl">💰</span>
               <h3 className="text-2xl font-semibold">Fund Flows & Positioning</h3>
             </div>
-            <SignalPill tone="amber">Mixed</SignalPill>
+            <SignalPill tone={
+              marketData.equityFlows.includes("Outflow") ? "red"
+              : marketData.equityFlows.includes("Inflow") ? "green"
+              : "amber"
+            }>
+              {marketData.equityFlows}
+            </SignalPill>
           </div>
           <div className="mt-5 space-y-3">
             <div className="flex justify-between border-b border-slate-100 pb-3">
               <span className="text-slate-500">Equity Flows</span>
-              <span className="font-medium">Mixed</span>
+              <span className="font-medium">{marketData.equityFlows}</span>
             </div>
             <div className="flex justify-between pb-3">
-              <span className="text-slate-500">Put/Call Ratio</span>
-              <span className="font-mono font-medium">{marketData.putCall}</span>
+              <span className="text-slate-500">AAII Bull-Bear</span>
+              <span className={`font-mono font-medium ${(aaiiBull - aaiiBear) < -10 ? "text-emerald-600" : (aaiiBull - aaiiBear) > 20 ? "text-red-600" : "text-slate-700"}`}>
+                {(aaiiBull - aaiiBear) > 0 ? "+" : ""}{(aaiiBull - aaiiBear).toFixed(1)}
+              </span>
             </div>
           </div>
           <p className="mt-4 text-lg leading-8 text-slate-600">{flowsAnalysis}</p>

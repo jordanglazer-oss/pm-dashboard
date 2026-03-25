@@ -158,6 +158,8 @@ export type MarketData = {
   aaiiBullBear: number;
   putCall: number;
   termStructure: string;
+  spOscillator: number;
+  equityFlows: string;
 };
 
 export type MorningBrief = {

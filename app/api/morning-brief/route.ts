@@ -95,6 +95,10 @@ Sentiment & Positioning:
 - AAII Bull-Bear Spread: ${marketData.aaiiBullBear}
 - Put/Call Ratio: ${marketData.putCall}
 
+S&P Oscillator: ${marketData.spOscillator} (negative = oversold/bullish, positive = overbought/bearish)
+
+Equity Flows: ${marketData.equityFlows}
+
 Hedge Timing Score: ${marketData.hedgeScore}/100
 
 Current Portfolio Holdings: ${holdingsSummary}`,
