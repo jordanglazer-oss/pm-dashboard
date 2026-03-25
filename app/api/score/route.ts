@@ -105,8 +105,8 @@ async function fetchFinancialData(ticker: string): Promise<string> {
     const peersRes = await fmpFetch(`${FMP_V4}/stock_peers?symbol=${ticker}&${k}`, "PEER COMPANIES");
     if (peersRes && Array.isArray(peersRes.data) && peersRes.data.length > 0) {
       const peerList: string[] = peersRes.data[0]?.peersList || [];
-      // Take top 4 peers to keep API calls reasonable
-      const topPeers = peerList.slice(0, 4);
+      // Take top 3 peers to stay within FMP free tier limits
+      const topPeers = peerList.slice(0, 3);
       console.log(`[FMP] Peers for ${ticker}: ${topPeers.join(", ")}`);
 
       if (topPeers.length > 0) {
