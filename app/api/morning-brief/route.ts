@@ -1,7 +1,11 @@
 import Anthropic from "@anthropic-ai/sdk";
 import { NextRequest, NextResponse } from "next/server";
+import { createHash } from "crypto";
+import { getRedis } from "@/app/lib/redis";
 
 const client = new Anthropic();
+
+const ATTACHMENT_CACHE_KEY = "pm:attachment-analysis";
 
 const BRIEF_PROMPT = `You are a senior portfolio strategist generating a daily morning brief for a portfolio management team. Your audience is professional portfolio managers who need actionable, institutional-quality market intelligence.
 
@@ -97,6 +101,70 @@ function buildImageBlocks(attachments: AttachmentInput[]): Anthropic.Messages.Co
   return blocks;
 }
 
+// Generate a fingerprint of the current attachments so we know if they changed
+function hashAttachments(attachments: AttachmentInput[]): string {
+  if (!attachments || attachments.length === 0) return "none";
+  const ids = attachments.map((a) => a.dataUrl.slice(-100)).sort().join("|");
+  return createHash("md5").update(ids).digest("hex");
+}
+
+type CachedAnalysis = {
+  hash: string;
+  summary: string;
+  analyzedAt: string;
+};
+
+// Get cached analysis from KV, or null if cache miss / images changed
+async function getCachedAnalysis(hash: string): Promise<string | null> {
+  try {
+    const redis = await getRedis();
+    const raw = await redis.get(ATTACHMENT_CACHE_KEY);
+    if (!raw) return null;
+    const cached: CachedAnalysis = JSON.parse(raw);
+    if (cached.hash === hash) return cached.summary;
+    return null;
+  } catch {
+    return null;
+  }
+}
+
+// Save analysis to KV cache
+async function saveCachedAnalysis(hash: string, summary: string) {
+  try {
+    const redis = await getRedis();
+    const cached: CachedAnalysis = {
+      hash,
+      summary,
+      analyzedAt: new Date().toISOString(),
+    };
+    await redis.set(ATTACHMENT_CACHE_KEY, JSON.stringify(cached));
+  } catch (e) {
+    console.error("Failed to cache attachment analysis:", e);
+  }
+}
+
+// Run a separate Claude call to analyze screenshots, then cache the result
+async function analyzeAttachments(attachments: AttachmentInput[]): Promise<string> {
+  const imageBlocks = buildImageBlocks(attachments);
+  const message = await client.messages.create({
+    model: "claude-sonnet-4-6",
+    max_tokens: 1024,
+    messages: [
+      {
+        role: "user",
+        content: [
+          {
+            type: "text",
+            text: "You are a senior portfolio strategist. Analyze these JPM Flows & Liquidity report screenshots. Extract all key data points: fund flow figures ($bn), asset class flows (equity, bond, money market), regional flows, sector positioning, and any notable trends. Be specific with numbers. Write a concise 3-5 paragraph summary that a PM can reference daily.",
+          },
+          ...imageBlocks,
+        ],
+      },
+    ],
+  });
+  return message.content[0].type === "text" ? message.content[0].text : "";
+}
+
 export async function POST(request: NextRequest) {
   try {
     const { marketData, holdings, attachments } = await request.json();
@@ -151,11 +219,28 @@ Hedge Timing Score: ${marketData.hedgeScore}/100
 
 Current Portfolio Holdings: ${holdingsSummary}`;
 
-    const imageBlocks = buildImageBlocks(attachments || []);
+    // Check if we can reuse cached screenshot analysis instead of re-sending images
+    const atts: AttachmentInput[] = attachments || [];
+    const attHash = hashAttachments(atts);
+    let flowsContext = "";
+
+    if (atts.length > 0) {
+      const cached = await getCachedAnalysis(attHash);
+      if (cached) {
+        // Images haven't changed — use cached summary (saves vision tokens)
+        flowsContext = `\n\n--- JPM Flows & Liquidity Report Summary (from attached screenshots, unchanged since last analysis) ---\n${cached}`;
+        console.log("Using cached attachment analysis (images unchanged)");
+      } else {
+        // New images — analyze them separately and cache the result
+        console.log("New attachments detected — running vision analysis...");
+        const summary = await analyzeAttachments(atts);
+        await saveCachedAnalysis(attHash, summary);
+        flowsContext = `\n\n--- JPM Flows & Liquidity Report Summary (freshly analyzed from screenshots) ---\n${summary}`;
+      }
+    }
 
     const contentBlocks: Anthropic.Messages.ContentBlockParam[] = [
-      { type: "text", text: textContent },
-      ...imageBlocks,
+      { type: "text", text: textContent + flowsContext },
     ];
 
     const message = await client.messages.create({
