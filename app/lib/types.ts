@@ -128,6 +128,7 @@ export type Stock = {
   weights: { portfolio: number };
   scores: Scores;
   explanations?: ScoreExplanations;
+  lastScored?: string;
   notes: string;
 };
 

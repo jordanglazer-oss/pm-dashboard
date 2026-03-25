@@ -99,7 +99,7 @@ export default function StockDetailPage() {
   const params = useParams();
   const router = useRouter();
   const ticker = (params.ticker as string)?.toUpperCase();
-  const { getStock, scoredStocks, marketData, updateScore, updateExplanations, updateSector, moveBucket, removeStock } = useStocks();
+  const { getStock, scoredStocks, marketData, updateScore, updateExplanations, updateLastScored, updateSector, moveBucket, removeStock } = useStocks();
   const stock = getStock(ticker);
   const [scoring, setScoring] = useState(false);
 
@@ -137,6 +137,10 @@ export default function StockDetailPage() {
       if (data.explanations) {
         updateExplanations(ticker, data.explanations);
       }
+      updateLastScored(ticker, new Date().toLocaleString("en-US", {
+        month: "short", day: "numeric", year: "numeric",
+        hour: "numeric", minute: "2-digit", hour12: true,
+      }));
     } catch {
       // silent fail
     } finally {
@@ -206,6 +210,11 @@ export default function StockDetailPage() {
                   >
                     Delete ✕
                   </button>
+                  {stock.lastScored && (
+                    <span className="text-xs text-slate-400 ml-1">
+                      Last scored: {stock.lastScored}
+                    </span>
+                  )}
                 </div>
 
                 {/* Sector selector + bucket pill */}

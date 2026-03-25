@@ -17,6 +17,7 @@ type StockContextType = {
   moveBucket: (ticker: string) => void;
   updateScore: (ticker: string, key: ScoreKey, value: number) => void;
   updateExplanations: (ticker: string, explanations: ScoreExplanations) => void;
+  updateLastScored: (ticker: string, timestamp: string) => void;
   updateSector: (ticker: string, sector: string) => void;
   setBrief: (brief: MorningBrief) => void;
   updateMarketData: (updates: Partial<MarketData>) => void;
@@ -148,6 +149,16 @@ export function StockProvider({ children }: { children: React.ReactNode }) {
     });
   }, [persistStocks]);
 
+  const updateLastScored = useCallback((ticker: string, timestamp: string) => {
+    setStocks((prev) => {
+      const next = prev.map((s) =>
+        s.ticker === ticker ? { ...s, lastScored: timestamp } : s
+      );
+      persistStocks(next);
+      return next;
+    });
+  }, [persistStocks]);
+
   const updateSector = useCallback((ticker: string, sector: string) => {
     setStocks((prev) => {
       const next = prev.map((s) => (s.ticker === ticker ? { ...s, sector } : s));
@@ -190,6 +201,7 @@ export function StockProvider({ children }: { children: React.ReactNode }) {
         moveBucket,
         updateScore,
         updateExplanations,
+        updateLastScored,
         updateSector,
         setBrief,
         updateMarketData,
