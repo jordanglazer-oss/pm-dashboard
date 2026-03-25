@@ -18,6 +18,10 @@ export const defaultMarketData: MarketData = {
   termStructure: "Contango",
   spOscillator: 0,
   equityFlows: "Mixed",
+  nasdaqBreadth: 38.0,
+  sp50dma: 35.0,
+  nyseAdLine: 0,
+  newHighsLows: 0,
 };
 
 export const holdingsSeed: Stock[] = [

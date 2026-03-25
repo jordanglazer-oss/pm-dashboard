@@ -19,8 +19,9 @@ Respond ONLY with valid JSON matching this exact structure:
   "compositeAnalysis": "2-3 sentences on the overall market signal, what's driving it, and what PMs should focus on today.",
   "creditAnalysis": "2-3 sentences on credit spread dynamics, what they're signaling about risk appetite, and implications for equity portfolios.",
   "volatilityAnalysis": "2-3 sentences on the volatility regime, term structure, and what it means for hedging and position sizing.",
-  "breadthAnalysis": "2-3 sentences on market breadth, internals, and what the median stock is doing vs the index.",
-  "flowsAnalysis": "2-3 sentences on fund flows, positioning, sentiment indicators, and whether the market is washed out or still has room to deteriorate. If JPM Flows & Liquidity screenshots are attached, reference specific data points from them.",
+  "breadthAnalysis": "2-3 sentences on market breadth and participation: S&P 500 and Nasdaq DMA participation rates, NYSE A/D line direction, and new highs vs new lows. Focus on market structure health — is the rally/selloff broad-based or narrow?",
+  "contrarianAnalysis": "2-3 sentences providing the contrarian take. ALL four indicators (S&P Oscillator, Put/Call ratio, Fear & Greed, AAII survey) are interpreted INVERSELY: oversold/fearful = BULLISH opportunity, overbought/greedy = BEARISH warning. Provide an overall contrarian assessment and what it means for positioning.",
+  "flowsAnalysis": "2-3 sentences on fund flows, positioning, and whether the market is washed out or still has room to deteriorate. If JPM Flows & Liquidity screenshots are attached, reference specific data points from them.",
   "hedgingAnalysis": "2-3 sentences on whether current conditions favor adding hedges (focused on cost efficiency: hedge when VIX is low and puts are cheap, not when expensive). Consider put cost environment, VIX context, and whether sentiment suggests complacency (cheap protection) or fear (expensive protection).",
   "sectorRotation": {
     "summary": "1-2 sentence overview of which sectors are leading vs lagging and the rotation theme.",
@@ -203,15 +204,18 @@ Credit Spreads:
 - HY OAS: ${marketData.hyOas} bps
 - IG OAS: ${marketData.igOas} bps
 
-Breadth:
-- % Above 200 DMA: ${marketData.breadth}%
+Breadth & Market Structure:
+- S&P 500 % Above 200 DMA: ${marketData.breadth}%
+- Nasdaq % Above 200 DMA: ${marketData.nasdaqBreadth}%
+- S&P 500 % Above 50 DMA: ${marketData.sp50dma}%
+- NYSE A/D Line: ${marketData.nyseAdLine}
+- New Highs - New Lows: ${marketData.newHighsLows}
 
-Sentiment & Positioning:
-- Fear & Greed Index: ${marketData.fearGreed}/100
-- AAII Bull-Bear Spread: ${marketData.aaiiBullBear}
-- Put/Call Ratio: ${marketData.putCall}
-
-S&P Oscillator: ${marketData.spOscillator} (negative = oversold/bullish, positive = overbought/bearish)
+Contrarian Indicators (ALL interpreted INVERSELY — oversold/fearful = BULLISH, overbought/greedy = BEARISH):
+- S&P Oscillator: ${marketData.spOscillator} — negative = oversold = BULLISH, positive = overbought = BEARISH
+- Put/Call Ratio (Total): ${marketData.putCall} — >1.0 = excessive fear = BULLISH, <0.7 = complacency = BEARISH
+- Fear & Greed Index: ${marketData.fearGreed}/100 — <25 = extreme fear = BULLISH, >75 = extreme greed = BEARISH
+- AAII Bull-Bear Spread: ${marketData.aaiiBullBear} — <-20 = excessive bearishness = BULLISH, >+30 = excessive bullishness = BEARISH
 
 Equity Flows: ${marketData.equityFlows}
 

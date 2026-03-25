@@ -222,6 +222,8 @@ export function MorningBrief({
 
   const hedgingAnalysis = brief?.hedgingAnalysis || "";
 
+  const contrarianAnalysis = brief?.contrarianAnalysis || "";
+
   const sectorRotation = brief?.sectorRotation || null;
 
   const riskScan = brief?.riskScan || null;
@@ -291,140 +293,199 @@ export function MorningBrief({
           </div>
         </div>
 
-        {/* Manual fields with source links */}
-        <div className="grid gap-4 md:grid-cols-4 mb-6">
-          <div>
-            <div className="flex items-center gap-2">
-              <label className="text-sm font-medium text-slate-500">Breadth (% &gt; 200 DMA)</label>
-              <a href="https://www.marketinout.com/chart/market.php?breadth=above-sma-200" target="_blank" rel="noopener noreferrer" className="text-blue-500 hover:text-blue-700" title="Open source">
-                <svg className="w-3.5 h-3.5" fill="none" stroke="currentColor" strokeWidth="2" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" d="M10 6H6a2 2 0 00-2 2v10a2 2 0 002 2h10a2 2 0 002-2v-4M14 4h6m0 0v6m0-6L10 14" /></svg>
-              </a>
-            </div>
-            <NumericInput
-              value={marketData.breadth}
-              onChange={(n) => onUpdateMarketData({ breadth: n })}
-              className="mt-1 w-28 rounded-xl border border-slate-200 px-3 py-2 text-lg font-semibold"
-            />
+        {/* ── Breadth & Market Structure ── */}
+        <div className="border-t border-slate-100 pt-5 mb-6">
+          <div className="flex items-center gap-3 mb-4">
+            <h4 className="text-sm font-semibold text-slate-500 uppercase tracking-wider">Breadth & Market Structure</h4>
           </div>
-          <div>
-            <div className="flex items-center gap-2">
-              <label className="text-sm font-medium text-slate-500">Put/Call Ratio</label>
-              <a href="https://www.cboe.com/us/options/market_statistics/daily/" target="_blank" rel="noopener noreferrer" className="text-blue-500 hover:text-blue-700" title="CBOE Total Put/Call">
-                <svg className="w-3.5 h-3.5" fill="none" stroke="currentColor" strokeWidth="2" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" d="M10 6H6a2 2 0 00-2 2v10a2 2 0 002 2h10a2 2 0 002-2v-4M14 4h6m0 0v6m0-6L10 14" /></svg>
-              </a>
-            </div>
-            <div className="mt-1">
+          <div className="grid gap-4 md:grid-cols-5">
+            <div>
+              <div className="flex items-center gap-2">
+                <label className="text-sm font-medium text-slate-500">S&P % &gt; 200 DMA</label>
+                <a href="https://www.marketinout.com/chart/market.php?breadth=above-sma-200" target="_blank" rel="noopener noreferrer" className="text-blue-500 hover:text-blue-700" title="MarketInOut S&P Breadth">
+                  <svg className="w-3.5 h-3.5" fill="none" stroke="currentColor" strokeWidth="2" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" d="M10 6H6a2 2 0 00-2 2v10a2 2 0 002 2h10a2 2 0 002-2v-4M14 4h6m0 0v6m0-6L10 14" /></svg>
+                </a>
+              </div>
               <NumericInput
-                value={marketData.putCall}
-                onChange={(n) => onUpdateMarketData({ putCall: n })}
-                className="w-28 rounded-xl border border-slate-200 px-3 py-2 text-lg font-semibold"
+                value={marketData.breadth}
+                onChange={(n) => onUpdateMarketData({ breadth: n })}
+                className="mt-1 w-full rounded-xl border border-slate-200 px-3 py-2 text-lg font-semibold"
               />
-              <p className="text-[10px] text-slate-400 mt-0.5">Use Total P/C ratio</p>
+            </div>
+            <div>
+              <div className="flex items-center gap-2">
+                <label className="text-sm font-medium text-slate-500">Nasdaq % &gt; 200 DMA</label>
+                <a href="https://www.marketinout.com/chart/market.php?breadth=above-sma-200" target="_blank" rel="noopener noreferrer" className="text-blue-500 hover:text-blue-700" title="MarketInOut Nasdaq Breadth">
+                  <svg className="w-3.5 h-3.5" fill="none" stroke="currentColor" strokeWidth="2" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" d="M10 6H6a2 2 0 00-2 2v10a2 2 0 002 2h10a2 2 0 002-2v-4M14 4h6m0 0v6m0-6L10 14" /></svg>
+                </a>
+              </div>
+              <NumericInput
+                value={marketData.nasdaqBreadth}
+                onChange={(n) => onUpdateMarketData({ nasdaqBreadth: n })}
+                className="mt-1 w-full rounded-xl border border-slate-200 px-3 py-2 text-lg font-semibold"
+              />
+            </div>
+            <div>
+              <div className="flex items-center gap-2">
+                <label className="text-sm font-medium text-slate-500">S&P % &gt; 50 DMA</label>
+                <a href="https://www.marketinout.com/chart/market.php?breadth=above-sma-200" target="_blank" rel="noopener noreferrer" className="text-blue-500 hover:text-blue-700" title="MarketInOut 50 DMA Breadth">
+                  <svg className="w-3.5 h-3.5" fill="none" stroke="currentColor" strokeWidth="2" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" d="M10 6H6a2 2 0 00-2 2v10a2 2 0 002 2h10a2 2 0 002-2v-4M14 4h6m0 0v6m0-6L10 14" /></svg>
+                </a>
+              </div>
+              <NumericInput
+                value={marketData.sp50dma}
+                onChange={(n) => onUpdateMarketData({ sp50dma: n })}
+                className="mt-1 w-full rounded-xl border border-slate-200 px-3 py-2 text-lg font-semibold"
+              />
+            </div>
+            <div>
+              <div className="flex items-center gap-2">
+                <label className="text-sm font-medium text-slate-500">NYSE A/D Line</label>
+                <a href="https://www.marketinout.com/chart/market.php?breadth=advance-decline-line" target="_blank" rel="noopener noreferrer" className="text-blue-500 hover:text-blue-700" title="NYSE A/D Line">
+                  <svg className="w-3.5 h-3.5" fill="none" stroke="currentColor" strokeWidth="2" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" d="M10 6H6a2 2 0 00-2 2v10a2 2 0 002 2h10a2 2 0 002-2v-4M14 4h6m0 0v6m0-6L10 14" /></svg>
+                </a>
+              </div>
+              <NumericInput
+                value={marketData.nyseAdLine}
+                onChange={(n) => onUpdateMarketData({ nyseAdLine: n })}
+                className="mt-1 w-full rounded-xl border border-slate-200 px-3 py-2 text-lg font-semibold"
+              />
+            </div>
+            <div>
+              <div className="flex items-center gap-2">
+                <label className="text-sm font-medium text-slate-500">New Highs - Lows</label>
+                <a href="https://www.marketinout.com/chart/market.php?breadth=new-highs-new-lows" target="_blank" rel="noopener noreferrer" className="text-blue-500 hover:text-blue-700" title="New Highs vs New Lows">
+                  <svg className="w-3.5 h-3.5" fill="none" stroke="currentColor" strokeWidth="2" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" d="M10 6H6a2 2 0 00-2 2v10a2 2 0 002 2h10a2 2 0 002-2v-4M14 4h6m0 0v6m0-6L10 14" /></svg>
+                </a>
+              </div>
+              <NumericInput
+                value={marketData.newHighsLows}
+                onChange={(n) => onUpdateMarketData({ newHighsLows: n })}
+                className="mt-1 w-full rounded-xl border border-slate-200 px-3 py-2 text-lg font-semibold"
+              />
             </div>
           </div>
-          <div>
-            <div className="flex items-center gap-2">
-              <label className="text-sm font-medium text-slate-500">S&P Oscillator</label>
-              <a href="https://app.marketedge.com/#!/markets" target="_blank" rel="noopener noreferrer" className="text-blue-500 hover:text-blue-700" title="MarketEdge S&P Oscillator">
-                <svg className="w-3.5 h-3.5" fill="none" stroke="currentColor" strokeWidth="2" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" d="M10 6H6a2 2 0 00-2 2v10a2 2 0 002 2h10a2 2 0 002-2v-4M14 4h6m0 0v6m0-6L10 14" /></svg>
-              </a>
-            </div>
-            <div className="mt-1">
+        </div>
+
+        {/* ── Contrarian Indicators ── */}
+        <div className="border-t border-slate-100 pt-5 mb-6">
+          <div className="flex items-center gap-3 mb-4">
+            <h4 className="text-sm font-semibold text-slate-500 uppercase tracking-wider">Contrarian Indicators</h4>
+            <SignalPill tone="green">INVERTED SIGNALS</SignalPill>
+          </div>
+          <div className="grid gap-4 md:grid-cols-4">
+            <div>
+              <div className="flex items-center gap-2">
+                <label className="text-sm font-medium text-slate-500">S&P Oscillator</label>
+                <a href="https://app.marketedge.com/#!/markets" target="_blank" rel="noopener noreferrer" className="text-blue-500 hover:text-blue-700" title="MarketEdge S&P Oscillator">
+                  <svg className="w-3.5 h-3.5" fill="none" stroke="currentColor" strokeWidth="2" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" d="M10 6H6a2 2 0 00-2 2v10a2 2 0 002 2h10a2 2 0 002-2v-4M14 4h6m0 0v6m0-6L10 14" /></svg>
+                </a>
+              </div>
               <NumericInput
                 value={marketData.spOscillator}
                 onChange={(n) => onUpdateMarketData({ spOscillator: n })}
-                className="w-28 rounded-xl border border-slate-200 px-3 py-2 text-lg font-semibold"
+                className="mt-1 w-full rounded-xl border border-slate-200 px-3 py-2 text-lg font-semibold"
               />
               <p className="text-[10px] text-slate-400 mt-0.5">{marketData.spOscillator < 0 ? "Oversold (bullish)" : marketData.spOscillator > 0 ? "Overbought (bearish)" : "Neutral"}</p>
             </div>
-          </div>
-          <div>
-            <label className="text-sm font-medium text-slate-500">VIX Term Structure</label>
-            <select
-              value={marketData.termStructure}
-              onChange={(e) => onUpdateMarketData({ termStructure: e.target.value })}
-              className="mt-1 w-full rounded-xl border border-slate-200 px-3 py-2 text-lg font-semibold"
-            >
-              <option value="Contango">Contango</option>
-              <option value="Flat">Flat</option>
-              <option value="Backwardation">Backwardation</option>
-            </select>
-          </div>
-        </div>
-
-        {/* Equity Flows */}
-        <div className="mb-4">
-          <div className="flex items-center gap-2">
-            <label className="text-sm font-medium text-slate-500">Equity Flows</label>
-            <a href="https://www.ici.org/research/stats/weekly-combined" target="_blank" rel="noopener noreferrer" className="text-blue-500 hover:text-blue-700" title="ICI Weekly Fund Flows">
-              <svg className="w-3.5 h-3.5" fill="none" stroke="currentColor" strokeWidth="2" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" d="M10 6H6a2 2 0 00-2 2v10a2 2 0 002 2h10a2 2 0 002-2v-4M14 4h6m0 0v6m0-6L10 14" /></svg>
-            </a>
-          </div>
-          <select
-            value={marketData.equityFlows}
-            onChange={(e) => onUpdateMarketData({ equityFlows: e.target.value })}
-            className="mt-1 rounded-xl border border-slate-200 px-3 py-2 text-sm font-semibold"
-          >
-            <option value="Strong Inflows">Strong Inflows</option>
-            <option value="Moderate Inflows">Moderate Inflows</option>
-            <option value="Mixed">Mixed</option>
-            <option value="Moderate Outflows">Moderate Outflows</option>
-            <option value="Heavy Outflows">Heavy Outflows</option>
-          </select>
-
-          {/* Screenshot upload for flows/liquidity reports */}
-          <ImageUpload
-            section="equityFlows"
-            sectionLabel="JPM Flows & Liquidity"
-            attachments={attachments}
-            onAdd={addAttachment}
-            onRemove={removeAttachment}
-          />
-        </div>
-
-        {/* Sentiment inputs */}
-        <div className="border-t border-slate-100 pt-5">
-          <div className="flex items-center gap-3 mb-4">
-            <h4 className="text-sm font-semibold text-slate-500 uppercase tracking-wider">Sentiment (Manual)</h4>
-            <SignalPill tone="green">CONTRARIAN</SignalPill>
-          </div>
-          <div className="grid gap-6 md:grid-cols-2">
+            <div>
+              <div className="flex items-center gap-2">
+                <label className="text-sm font-medium text-slate-500">Put/Call Ratio</label>
+                <a href="https://www.cboe.com/us/options/market_statistics/daily/" target="_blank" rel="noopener noreferrer" className="text-blue-500 hover:text-blue-700" title="CBOE Total Put/Call">
+                  <svg className="w-3.5 h-3.5" fill="none" stroke="currentColor" strokeWidth="2" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" d="M10 6H6a2 2 0 00-2 2v10a2 2 0 002 2h10a2 2 0 002-2v-4M14 4h6m0 0v6m0-6L10 14" /></svg>
+                </a>
+              </div>
+              <NumericInput
+                value={marketData.putCall}
+                onChange={(n) => onUpdateMarketData({ putCall: n })}
+                className="mt-1 w-full rounded-xl border border-slate-200 px-3 py-2 text-lg font-semibold"
+              />
+              <p className="text-[10px] text-slate-400 mt-0.5">Total P/C ratio</p>
+            </div>
             <div>
               <label className="text-sm font-medium text-slate-500">CNN Fear & Greed (0-100)</label>
               <NumericInput
                 value={fg}
                 onChange={setFg}
-                className="mt-1 w-24 rounded-xl border border-slate-200 px-3 py-2 text-lg font-semibold"
+                className="mt-1 w-full rounded-xl border border-slate-200 px-3 py-2 text-lg font-semibold"
               />
             </div>
             <div>
               <label className="text-sm font-medium text-slate-500">AAII Survey (%)</label>
-              <div className="mt-1 flex gap-4">
+              <div className="mt-1 flex gap-3">
                 <div>
-                  <span className="text-xs text-red-500 font-medium">Bull</span>
+                  <span className="text-[10px] text-red-500 font-medium">Bull</span>
                   <NumericInput
                     value={aaiiBull}
                     onChange={setAaiiBull}
-                    className="block w-20 rounded-xl border border-slate-200 px-3 py-2 text-lg font-semibold"
+                    className="block w-16 rounded-xl border border-slate-200 px-2 py-2 text-base font-semibold"
                   />
                 </div>
                 <div>
-                  <span className="text-xs text-amber-500 font-medium">Neutral</span>
+                  <span className="text-[10px] text-amber-500 font-medium">Ntrl</span>
                   <NumericInput
                     value={aaiiNeutral}
                     onChange={setAaiiNeutral}
-                    className="block w-20 rounded-xl border border-slate-200 px-3 py-2 text-lg font-semibold"
+                    className="block w-16 rounded-xl border border-slate-200 px-2 py-2 text-base font-semibold"
                   />
                 </div>
                 <div>
-                  <span className="text-xs text-emerald-500 font-medium">Bear</span>
+                  <span className="text-[10px] text-emerald-500 font-medium">Bear</span>
                   <NumericInput
                     value={aaiiBear}
                     onChange={setAaiiBear}
-                    className="block w-20 rounded-xl border border-slate-200 px-3 py-2 text-lg font-semibold"
+                    className="block w-16 rounded-xl border border-slate-200 px-2 py-2 text-base font-semibold"
                   />
                 </div>
               </div>
+            </div>
+          </div>
+        </div>
+
+        {/* ── Other Manual Inputs ── */}
+        <div className="border-t border-slate-100 pt-5 mb-4">
+          <div className="grid gap-4 md:grid-cols-3">
+            <div>
+              <label className="text-sm font-medium text-slate-500">VIX Term Structure</label>
+              <select
+                value={marketData.termStructure}
+                onChange={(e) => onUpdateMarketData({ termStructure: e.target.value })}
+                className="mt-1 w-full rounded-xl border border-slate-200 px-3 py-2 text-lg font-semibold"
+              >
+                <option value="Contango">Contango</option>
+                <option value="Flat">Flat</option>
+                <option value="Backwardation">Backwardation</option>
+              </select>
+            </div>
+            <div>
+              <div className="flex items-center gap-2">
+                <label className="text-sm font-medium text-slate-500">Equity Flows</label>
+                <a href="https://www.ici.org/research/stats/weekly-combined" target="_blank" rel="noopener noreferrer" className="text-blue-500 hover:text-blue-700" title="ICI Weekly Fund Flows">
+                  <svg className="w-3.5 h-3.5" fill="none" stroke="currentColor" strokeWidth="2" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" d="M10 6H6a2 2 0 00-2 2v10a2 2 0 002 2h10a2 2 0 002-2v-4M14 4h6m0 0v6m0-6L10 14" /></svg>
+                </a>
+              </div>
+              <select
+                value={marketData.equityFlows}
+                onChange={(e) => onUpdateMarketData({ equityFlows: e.target.value })}
+                className="mt-1 w-full rounded-xl border border-slate-200 px-3 py-2 text-sm font-semibold"
+              >
+                <option value="Strong Inflows">Strong Inflows</option>
+                <option value="Moderate Inflows">Moderate Inflows</option>
+                <option value="Mixed">Mixed</option>
+                <option value="Moderate Outflows">Moderate Outflows</option>
+                <option value="Heavy Outflows">Heavy Outflows</option>
+              </select>
+            </div>
+            <div>
+              {/* Screenshot upload for flows/liquidity reports */}
+              <label className="text-sm font-medium text-slate-500">JPM Flows Report</label>
+              <ImageUpload
+                section="equityFlows"
+                sectionLabel="JPM Flows & Liquidity"
+                attachments={attachments}
+                onAdd={addAttachment}
+                onRemove={removeAttachment}
+              />
             </div>
           </div>
         </div>
@@ -481,8 +542,20 @@ export function MorningBrief({
         </p>
       </section>
 
-      {/* Contrarian Sentiment Gauges */}
+      {/* Contrarian Sentiment Gauges — expanded with all 4 indicators */}
       <SentimentGauges marketData={{...marketData, fearGreed: fg, aaiiBullBear: parseFloat((aaiiBull - aaiiBear).toFixed(1))}} aaiiBull={aaiiBull} aaiiNeutral={aaiiNeutral} aaiiBear={aaiiBear} />
+
+      {/* Contrarian Analysis (from Claude) */}
+      {contrarianAnalysis && (
+        <section className="rounded-[30px] border border-slate-200 bg-white p-6 shadow-sm">
+          <div className="flex items-center gap-2 mb-3">
+            <span className="text-xl">🔄</span>
+            <h3 className="text-2xl font-semibold">Contrarian Take</h3>
+            <SignalPill tone="green">INVERTED</SignalPill>
+          </div>
+          <p className="text-lg leading-8 text-slate-700">{contrarianAnalysis}</p>
+        </section>
+      )}
 
       {/* Credit & Volatility */}
       <section className="grid gap-5 lg:grid-cols-2">
@@ -544,39 +617,33 @@ export function MorningBrief({
           <div className="flex items-center justify-between gap-3">
             <div className="flex items-center gap-2">
               <span className="text-xl">📊</span>
-              <h3 className="text-2xl font-semibold">Breadth & Internals</h3>
+              <h3 className="text-2xl font-semibold">Breadth & Market Structure</h3>
             </div>
             <SignalPill tone={marketData.breadth <= 50 ? "red" : marketData.breadth >= 65 ? "green" : "amber"}>
-              {marketData.breadth <= 50 ? "Bearish" : marketData.breadth >= 65 ? "Healthy" : "Mixed"}
+              {marketData.breadth <= 50 ? "Weak" : marketData.breadth >= 65 ? "Healthy" : "Mixed"}
             </SignalPill>
           </div>
           <div className="mt-5 space-y-3">
             <div className="flex justify-between border-b border-slate-100 pb-3">
-              <span className="text-slate-500">% Above 200 DMA</span>
+              <span className="text-slate-500">S&P 500 % &gt; 200 DMA</span>
               <span className="font-mono font-medium">{marketData.breadth}%</span>
             </div>
             <div className="flex justify-between border-b border-slate-100 pb-3">
-              <div className="flex items-center gap-1.5">
-                <span className="text-slate-500">S&P Oscillator</span>
-                <span className="text-[9px] font-bold text-emerald-600 bg-emerald-50 rounded px-1">CONTRARIAN</span>
-              </div>
-              <span className={`font-mono font-medium ${marketData.spOscillator < -2 ? "text-emerald-600" : marketData.spOscillator > 2 ? "text-red-600" : "text-slate-700"}`}>
-                {marketData.spOscillator > 0 ? "+" : ""}{marketData.spOscillator}
-                <span className="text-xs text-slate-400 ml-1">
-                  {marketData.spOscillator < -2 ? "(oversold — bullish)" : marketData.spOscillator > 2 ? "(overbought — bearish)" : ""}
-                </span>
-              </span>
+              <span className="text-slate-500">Nasdaq % &gt; 200 DMA</span>
+              <span className="font-mono font-medium">{marketData.nasdaqBreadth}%</span>
+            </div>
+            <div className="flex justify-between border-b border-slate-100 pb-3">
+              <span className="text-slate-500">S&P 500 % &gt; 50 DMA</span>
+              <span className="font-mono font-medium">{marketData.sp50dma}%</span>
+            </div>
+            <div className="flex justify-between border-b border-slate-100 pb-3">
+              <span className="text-slate-500">NYSE A/D Line</span>
+              <span className="font-mono font-medium">{marketData.nyseAdLine.toLocaleString()}</span>
             </div>
             <div className="flex justify-between pb-3">
-              <div className="flex items-center gap-1.5">
-                <span className="text-slate-500">Put/Call Ratio</span>
-                <span className="text-[9px] font-bold text-emerald-600 bg-emerald-50 rounded px-1">CONTRARIAN</span>
-              </div>
-              <span className={`font-mono font-medium ${marketData.putCall > 1.1 ? "text-emerald-600" : marketData.putCall < 0.7 ? "text-red-600" : "text-slate-700"}`}>
-                {marketData.putCall}
-                <span className="text-xs text-slate-400 ml-1">
-                  {marketData.putCall > 1.1 ? "(elevated — bullish)" : marketData.putCall < 0.7 ? "(low — bearish)" : ""}
-                </span>
+              <span className="text-slate-500">New Highs - Lows</span>
+              <span className={`font-mono font-medium ${marketData.newHighsLows > 0 ? "text-emerald-600" : marketData.newHighsLows < -50 ? "text-red-600" : "text-slate-700"}`}>
+                {marketData.newHighsLows > 0 ? "+" : ""}{marketData.newHighsLows}
               </span>
             </div>
           </div>
@@ -598,15 +665,9 @@ export function MorningBrief({
             </SignalPill>
           </div>
           <div className="mt-5 space-y-3">
-            <div className="flex justify-between border-b border-slate-100 pb-3">
+            <div className="flex justify-between pb-3">
               <span className="text-slate-500">Equity Flows</span>
               <span className="font-medium">{marketData.equityFlows}</span>
-            </div>
-            <div className="flex justify-between pb-3">
-              <span className="text-slate-500">AAII Bull-Bear</span>
-              <span className={`font-mono font-medium ${(aaiiBull - aaiiBear) < -10 ? "text-emerald-600" : (aaiiBull - aaiiBear) > 20 ? "text-red-600" : "text-slate-700"}`}>
-                {(aaiiBull - aaiiBear) > 0 ? "+" : ""}{(aaiiBull - aaiiBear).toFixed(1)}
-              </span>
             </div>
           </div>
           <p className="mt-4 text-lg leading-8 text-slate-600">{flowsAnalysis}</p>

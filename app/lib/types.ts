@@ -160,6 +160,10 @@ export type MarketData = {
   termStructure: string;
   spOscillator: number;
   equityFlows: string;
+  nasdaqBreadth: number;
+  sp50dma: number;
+  nyseAdLine: number;
+  newHighsLows: number;
 };
 
 export type MorningBrief = {
@@ -172,6 +176,7 @@ export type MorningBrief = {
   breadthAnalysis: string;
   flowsAnalysis: string;
   hedgingAnalysis: string;
+  contrarianAnalysis: string;
   sectorRotation?: {
     summary: string;
     leading: string[];
