@@ -48,10 +48,10 @@ async function fmpFetch(url: string, label: string): Promise<{ label: string; da
   }
 }
 
-async function fetchFinancialData(ticker: string): Promise<string> {
+async function fetchFinancialData(ticker: string): Promise<{ context: string; price?: number }> {
   const apiKey = process.env.FMP_API_KEY;
   if (!apiKey) {
-    return "No financial data API key configured. Use your best knowledge but clearly note that figures should be verified.";
+    return { context: "No financial data API key configured. Use your best knowledge but clearly note that figures should be verified." };
   }
 
   const k = `apikey=${apiKey}`;
@@ -94,8 +94,17 @@ async function fetchFinancialData(ticker: string): Promise<string> {
   const totalEndpoints = results.length;
   console.log(`[FMP] ${ticker}: ${successCount}/${totalEndpoints} endpoints returned data`);
 
+  // Extract price from the quote result (first result)
+  let price: number | undefined;
+  if (results[0]?.data) {
+    const quoteData = results[0].data as Record<string, unknown>[];
+    if (Array.isArray(quoteData) && quoteData[0]?.price) {
+      price = quoteData[0].price as number;
+    }
+  }
+
   if (sections.length === 0) {
-    return "IMPORTANT: No financial data was returned from the API. All endpoints failed. Use your best knowledge but CLEARLY STATE in every explanation that the data could not be verified with live sources and should be independently confirmed.";
+    return { context: "IMPORTANT: No financial data was returned from the API. All endpoints failed. Use your best knowledge but CLEARLY STATE in every explanation that the data could not be verified with live sources and should be independently confirmed." };
   }
 
   // Now fetch peer companies for relative valuation
@@ -132,7 +141,10 @@ async function fetchFinancialData(ticker: string): Promise<string> {
     console.log(`[FMP] Peer fetch error: ${err}`);
   }
 
-  return `DATA FRESHNESS: ${successCount}/${totalEndpoints} API endpoints returned live data. Today's date is ${new Date().toISOString().split("T")[0]}. Use the MOST RECENT data available — prefer quarterly over annual where both exist.\n\n${sections.join("\n\n---\n\n")}${peerSection}`;
+  return {
+    context: `DATA FRESHNESS: ${successCount}/${totalEndpoints} API endpoints returned live data. Today's date is ${new Date().toISOString().split("T")[0]}. Use the MOST RECENT data available — prefer quarterly over annual where both exist.\n\n${sections.join("\n\n---\n\n")}${peerSection}`,
+    price,
+  };
 }
 
 const SCORING_PROMPT = `You are an institutional equity research analyst scoring a stock for a portfolio management scoring system. You will be provided with REAL FINANCIAL DATA — you MUST use this data to produce accurate, specific explanations. Do not guess or fabricate numbers.
@@ -235,8 +247,11 @@ export async function POST(request: NextRequest) {
 
     // Fetch real financial data first
     let financialContext = "";
+    let stockPrice: number | undefined;
     try {
-      financialContext = await fetchFinancialData(upperTicker);
+      const result = await fetchFinancialData(upperTicker);
+      financialContext = result.context;
+      stockPrice = result.price;
     } catch (e) {
       console.error("Failed to fetch financial data:", e);
       financialContext = "Financial data API unavailable. Use your best knowledge but note that data should be verified.";
@@ -298,6 +313,7 @@ export async function POST(request: NextRequest) {
       scores,
       explanations,
       notes: parsed.notes || "",
+      price: stockPrice,
     });
   } catch (error) {
     console.error("Score API error:", error);

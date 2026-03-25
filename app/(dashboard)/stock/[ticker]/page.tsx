@@ -99,7 +99,7 @@ export default function StockDetailPage() {
   const params = useParams();
   const router = useRouter();
   const ticker = (params.ticker as string)?.toUpperCase();
-  const { getStock, scoredStocks, marketData, updateScore, updateExplanations, updateLastScored, updateSector, moveBucket, removeStock } = useStocks();
+  const { getStock, scoredStocks, marketData, updateScore, updateExplanations, updateLastScored, updatePrice, updateSector, moveBucket, removeStock } = useStocks();
   const stock = getStock(ticker);
   const [scoring, setScoring] = useState(false);
 
@@ -136,6 +136,9 @@ export default function StockDetailPage() {
       }
       if (data.explanations) {
         updateExplanations(ticker, data.explanations);
+      }
+      if (data.price != null) {
+        updatePrice(ticker, data.price);
       }
       updateLastScored(ticker, new Date().toLocaleString("en-US", {
         month: "short", day: "numeric", year: "numeric",
@@ -191,6 +194,9 @@ export default function StockDetailPage() {
                 {/* Ticker + action buttons */}
                 <div className="flex items-center gap-3 flex-wrap mb-3">
                   <h1 className="text-3xl font-bold font-mono tracking-tight">{stock.ticker}</h1>
+                  {stock.price != null && (
+                    <span className="text-2xl font-semibold text-slate-600">${stock.price.toFixed(2)}</span>
+                  )}
                   <button
                     onClick={handleRescore}
                     disabled={scoring}

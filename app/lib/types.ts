@@ -129,6 +129,7 @@ export type Stock = {
   scores: Scores;
   explanations?: ScoreExplanations;
   lastScored?: string;
+  price?: number;
   notes: string;
 };
 
