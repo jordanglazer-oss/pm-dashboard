@@ -23,54 +23,82 @@ const AI_KEYS = AI_CATEGORIES.map((c) => c.key);
 // ── Financial Modeling Prep API ──
 const FMP_BASE = "https://financialmodelingprep.com/api/v3";
 
+async function fmpFetch(url: string, label: string): Promise<{ label: string; data: unknown } | null> {
+  try {
+    const res = await fetch(url, { cache: "no-store" });
+    if (!res.ok) {
+      console.log(`[FMP] ${label}: HTTP ${res.status}`);
+      return null;
+    }
+    const data = await res.json();
+    if (!data || (Array.isArray(data) && data.length === 0)) {
+      console.log(`[FMP] ${label}: empty response`);
+      return null;
+    }
+    // FMP returns error messages as objects
+    if (data["Error Message"] || data["error"]) {
+      console.log(`[FMP] ${label}: API error - ${data["Error Message"] || data["error"]}`);
+      return null;
+    }
+    console.log(`[FMP] ${label}: OK`);
+    return { label, data };
+  } catch (err) {
+    console.log(`[FMP] ${label}: fetch error - ${err}`);
+    return null;
+  }
+}
+
 async function fetchFinancialData(ticker: string): Promise<string> {
   const apiKey = process.env.FMP_API_KEY;
   if (!apiKey) {
     return "No financial data API key configured. Use your best knowledge but clearly note that figures should be verified.";
   }
 
-  const endpoints = [
-    // Income statement (annual, 3 years)
-    { label: "INCOME STATEMENTS (Annual, 3 years)", url: `${FMP_BASE}/income-statement/${ticker}?period=annual&limit=3&apikey=${apiKey}` },
-    // Balance sheet (annual, 1 year)
-    { label: "BALANCE SHEET (Latest)", url: `${FMP_BASE}/balance-sheet-statement/${ticker}?period=annual&limit=1&apikey=${apiKey}` },
-    // Cash flow (annual, 3 years)
-    { label: "CASH FLOW STATEMENTS (Annual, 3 years)", url: `${FMP_BASE}/cash-flow-statement/${ticker}?period=annual&limit=3&apikey=${apiKey}` },
-    // Key metrics (annual, 5 years for historical valuation)
-    { label: "KEY METRICS (Annual, 5 years)", url: `${FMP_BASE}/key-metrics/${ticker}?period=annual&limit=5&apikey=${apiKey}` },
-    // Ratios (annual, 5 years)
-    { label: "FINANCIAL RATIOS (Annual, 5 years)", url: `${FMP_BASE}/ratios/${ticker}?period=annual&limit=5&apikey=${apiKey}` },
-    // Company profile (sector, industry, beta, description)
-    { label: "COMPANY PROFILE", url: `${FMP_BASE}/profile/${ticker}?apikey=${apiKey}` },
-    // Analyst estimates
-    { label: "ANALYST ESTIMATES", url: `${FMP_BASE}/analyst-estimates/${ticker}?limit=3&apikey=${apiKey}` },
-    // Enterprise value
-    { label: "ENTERPRISE VALUE", url: `${FMP_BASE}/enterprise-values/${ticker}?period=annual&limit=3&apikey=${apiKey}` },
-  ];
+  const k = `apikey=${apiKey}`;
 
-  const results = await Promise.all(
-    endpoints.map(async (ep) => {
-      try {
-        const res = await fetch(ep.url, { next: { revalidate: 3600 } });
-        if (!res.ok) return null;
-        const data = await res.json();
-        if (!data || (Array.isArray(data) && data.length === 0)) return null;
-        return { label: ep.label, data };
-      } catch {
-        return null;
-      }
-    })
-  );
+  // Fetch quarterly + annual data for maximum freshness
+  const results = await Promise.all([
+    // REAL-TIME: Current quote with live price, PE, market cap
+    fmpFetch(`${FMP_BASE}/quote/${ticker}?${k}`, "REAL-TIME QUOTE (current price, PE, market cap)"),
+    // QUARTERLY income statements (last 4 quarters = most recent data)
+    fmpFetch(`${FMP_BASE}/income-statement/${ticker}?period=quarter&limit=4&${k}`, "INCOME STATEMENTS (Quarterly, last 4 quarters)"),
+    // ANNUAL income statements (3 years for trend)
+    fmpFetch(`${FMP_BASE}/income-statement/${ticker}?period=annual&limit=3&${k}`, "INCOME STATEMENTS (Annual, 3 years)"),
+    // Balance sheet (latest quarter)
+    fmpFetch(`${FMP_BASE}/balance-sheet-statement/${ticker}?period=quarter&limit=1&${k}`, "BALANCE SHEET (Latest quarter)"),
+    // QUARTERLY cash flow (last 4 quarters)
+    fmpFetch(`${FMP_BASE}/cash-flow-statement/${ticker}?period=quarter&limit=4&${k}`, "CASH FLOW (Quarterly, last 4 quarters)"),
+    // ANNUAL cash flow (3 years)
+    fmpFetch(`${FMP_BASE}/cash-flow-statement/${ticker}?period=annual&limit=3&${k}`, "CASH FLOW (Annual, 3 years)"),
+    // Key metrics (annual, 5 years for historical valuation comps)
+    fmpFetch(`${FMP_BASE}/key-metrics/${ticker}?period=annual&limit=5&${k}`, "KEY METRICS (Annual, 5 years)"),
+    // Key metrics TTM for current valuation
+    fmpFetch(`${FMP_BASE}/key-metrics-ttm/${ticker}?${k}`, "KEY METRICS TTM (Trailing 12 months)"),
+    // Ratios TTM
+    fmpFetch(`${FMP_BASE}/ratios-ttm/${ticker}?${k}`, "FINANCIAL RATIOS TTM"),
+    // Ratios (annual, 5 years for historical comparison)
+    fmpFetch(`${FMP_BASE}/ratios/${ticker}?period=annual&limit=5&${k}`, "FINANCIAL RATIOS (Annual, 5 years)"),
+    // Company profile (sector, industry, beta, description, current price)
+    fmpFetch(`${FMP_BASE}/profile/${ticker}?${k}`, "COMPANY PROFILE"),
+    // Analyst estimates (forward)
+    fmpFetch(`${FMP_BASE}/analyst-estimates/${ticker}?limit=3&${k}`, "ANALYST ESTIMATES (Forward)"),
+    // Enterprise value
+    fmpFetch(`${FMP_BASE}/enterprise-values/${ticker}?period=annual&limit=3&${k}`, "ENTERPRISE VALUE (Annual, 3 years)"),
+  ]);
 
   const sections = results
     .filter((r): r is { label: string; data: unknown } => r !== null)
     .map((r) => `${r.label}:\n${JSON.stringify(r.data, null, 2)}`);
 
+  const successCount = sections.length;
+  const totalEndpoints = results.length;
+  console.log(`[FMP] ${ticker}: ${successCount}/${totalEndpoints} endpoints returned data`);
+
   if (sections.length === 0) {
-    return "No financial data available from API. Use your best knowledge but clearly state that data should be verified.";
+    return "IMPORTANT: No financial data was returned from the API. All endpoints failed. Use your best knowledge but CLEARLY STATE in every explanation that the data could not be verified with live sources and should be independently confirmed.";
   }
 
-  return sections.join("\n\n---\n\n");
+  return `DATA FRESHNESS: ${successCount}/${totalEndpoints} API endpoints returned live data. Today's date is ${new Date().toISOString().split("T")[0]}. Use the MOST RECENT data available — prefer quarterly over annual where both exist.\n\n${sections.join("\n\n---\n\n")}`;
 }
 
 const SCORING_PROMPT = `You are an institutional equity research analyst scoring a stock for a portfolio management scoring system. You will be provided with REAL FINANCIAL DATA — you MUST use this data to produce accurate, specific explanations. Do not guess or fabricate numbers.
@@ -116,14 +144,16 @@ MANAGEMENT GROUP:
 - ownershipTrends (max 2, SEMI): Ownership trends — institutional ownership quality, insider buying/selling patterns
 
 CRITICAL RULES FOR EXPLANATIONS:
-1. Every explanation MUST cite specific numbers from the provided financial data
-2. Growth explanations must include actual revenue/earnings figures with YoY% changes
-3. Valuation explanations must include actual multiples (P/E, EV/EBITDA, etc.) and peer comparisons
-4. Historical valuation must compare current vs historical averages with specific numbers
-5. Leverage must cite actual debt figures and coverage ratios
-6. Cash flow must cite actual FCF figures and conversion rates
-7. Write in a dense, data-rich paragraph style — like an analyst note
-8. Each explanation should be 3-6 sentences with multiple data points
+1. Every explanation MUST cite specific numbers from the provided financial data — NEVER make up numbers
+2. ALWAYS prefer the MOST RECENT data: use quarterly data and TTM metrics over annual where available
+3. Growth explanations must include actual revenue/earnings figures with YoY% changes — cite the most recent quarter AND full-year trends
+4. Valuation explanations must use CURRENT multiples from the real-time quote or TTM metrics, and compare to sector averages
+5. Historical valuation must compare current vs historical averages with specific numbers from the 5-year metrics data
+6. Leverage must cite actual debt figures and coverage ratios from the most recent balance sheet
+7. Cash flow must cite actual FCF figures and conversion rates from the most recent quarters
+8. Write in a dense, data-rich paragraph style — like an analyst note
+9. Each explanation should be 3-6 sentences with multiple data points
+10. If any data is unavailable, explicitly say "data not available" rather than guessing
 
 Also provide:
 - name: Full company name
