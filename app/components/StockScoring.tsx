@@ -1,24 +1,61 @@
 "use client";
 
-import React, { useState } from "react";
+import React, { useState, useMemo } from "react";
 import { useRouter } from "next/navigation";
 import type { ScoredStock } from "@/app/lib/types";
 import { MAX_SCORE } from "@/app/lib/types";
 import { SignalPill, ratingTone, riskTone } from "./SignalPill";
 
+type SortKey = "ticker" | "bucket" | "sector" | "raw" | "adjusted" | "rating" | "risk" | "effect";
+type SortDir = "asc" | "desc";
+
 type Props = {
   stocks: ScoredStock[];
 };
 
+const RATING_ORDER: Record<string, number> = { Buy: 3, Hold: 2, Sell: 1 };
+const RISK_ORDER: Record<string, number> = { High: 3, Medium: 2, Low: 1 };
+
 export function StockScoring({ stocks }: Props) {
   const router = useRouter();
   const [query, setQuery] = useState("");
+  const [sortKey, setSortKey] = useState<SortKey>("adjusted");
+  const [sortDir, setSortDir] = useState<SortDir>("desc");
 
-  const filtered = stocks.filter((s) =>
-    `${s.ticker} ${s.name} ${s.sector} ${s.bucket}`
-      .toLowerCase()
-      .includes(query.toLowerCase())
-  );
+  function toggleSort(key: SortKey) {
+    if (sortKey === key) {
+      setSortDir(sortDir === "asc" ? "desc" : "asc");
+    } else {
+      setSortKey(key);
+      setSortDir(key === "ticker" || key === "bucket" || key === "sector" ? "asc" : "desc");
+    }
+  }
+
+  const sorted = useMemo(() => {
+    const filtered = stocks.filter((s) =>
+      `${s.ticker} ${s.name} ${s.sector} ${s.bucket}`
+        .toLowerCase()
+        .includes(query.toLowerCase())
+    );
+
+    return [...filtered].sort((a, b) => {
+      let cmp = 0;
+      switch (sortKey) {
+        case "ticker": cmp = a.ticker.localeCompare(b.ticker); break;
+        case "bucket": cmp = a.bucket.localeCompare(b.bucket); break;
+        case "sector": cmp = a.sector.localeCompare(b.sector); break;
+        case "raw": cmp = a.raw - b.raw; break;
+        case "adjusted": cmp = a.adjusted - b.adjusted; break;
+        case "rating": cmp = (RATING_ORDER[a.rating] || 0) - (RATING_ORDER[b.rating] || 0); break;
+        case "risk": cmp = (RISK_ORDER[a.risk] || 0) - (RISK_ORDER[b.risk] || 0); break;
+        case "effect": cmp = (a.adjusted - a.raw) - (b.adjusted - b.raw); break;
+      }
+      return sortDir === "asc" ? cmp : -cmp;
+    });
+  }, [stocks, query, sortKey, sortDir]);
+
+  const arrow = (key: SortKey) =>
+    sortKey === key ? (sortDir === "asc" ? " ▲" : " ▼") : "";
 
   return (
     <section className="rounded-[30px] border border-slate-200 bg-white p-6 shadow-sm">
@@ -36,19 +73,19 @@ export function StockScoring({ stocks }: Props) {
         <table className="w-full min-w-[1100px] text-left">
           <thead>
             <tr className="border-b border-slate-200 text-sm text-slate-500">
-              <th className="pb-3">Ticker</th>
-              <th className="pb-3">Bucket</th>
-              <th className="pb-3">Sector</th>
-              <th className="pb-3">Raw</th>
-              <th className="pb-3">Regime adj.</th>
-              <th className="pb-3">Rating</th>
-              <th className="pb-3">Risk</th>
-              <th className="pb-3">Regime effect</th>
+              <th className="pb-3 cursor-pointer hover:text-slate-800 select-none" onClick={() => toggleSort("ticker")}>Ticker{arrow("ticker")}</th>
+              <th className="pb-3 cursor-pointer hover:text-slate-800 select-none" onClick={() => toggleSort("bucket")}>Bucket{arrow("bucket")}</th>
+              <th className="pb-3 cursor-pointer hover:text-slate-800 select-none" onClick={() => toggleSort("sector")}>Sector{arrow("sector")}</th>
+              <th className="pb-3 cursor-pointer hover:text-slate-800 select-none" onClick={() => toggleSort("raw")}>Raw{arrow("raw")}</th>
+              <th className="pb-3 cursor-pointer hover:text-slate-800 select-none" onClick={() => toggleSort("adjusted")}>Regime adj.{arrow("adjusted")}</th>
+              <th className="pb-3 cursor-pointer hover:text-slate-800 select-none" onClick={() => toggleSort("rating")}>Rating{arrow("rating")}</th>
+              <th className="pb-3 cursor-pointer hover:text-slate-800 select-none" onClick={() => toggleSort("risk")}>Risk{arrow("risk")}</th>
+              <th className="pb-3 cursor-pointer hover:text-slate-800 select-none" onClick={() => toggleSort("effect")}>Regime effect{arrow("effect")}</th>
               <th className="pb-3">Notes</th>
             </tr>
           </thead>
           <tbody>
-            {filtered.map((s) => {
+            {sorted.map((s) => {
               const effect = (s.adjusted - s.raw).toFixed(1);
               return (
                 <tr

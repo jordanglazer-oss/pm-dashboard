@@ -1,11 +1,11 @@
 import { NextResponse } from "next/server";
 
-// Yahoo Finance quote for VIX
-async function fetchVIX(): Promise<number | null> {
+// Yahoo Finance quote for an index ticker
+async function fetchYahooIndex(symbol: string): Promise<number | null> {
   try {
-    // Use Yahoo Finance v8 quote endpoint for ^VIX
+    const encoded = encodeURIComponent(symbol);
     const res = await fetch(
-      "https://query2.finance.yahoo.com/v8/finance/chart/%5EVIX?range=1d&interval=1d",
+      `https://query2.finance.yahoo.com/v8/finance/chart/${encoded}?range=1d&interval=1d`,
       {
         headers: {
           "User-Agent":
@@ -21,7 +21,7 @@ async function fetchVIX(): Promise<number | null> {
       meta?.regularMarketPrice ?? meta?.previousClose ?? null;
     return price ? parseFloat(price.toFixed(2)) : null;
   } catch (e) {
-    console.error("VIX fetch error:", e);
+    console.error(`Yahoo fetch error (${symbol}):`, e);
     return null;
   }
 }
@@ -50,15 +50,17 @@ async function fetchFRED(seriesId: string): Promise<number | null> {
 }
 
 export async function GET() {
-  // Fetch all three in parallel
-  const [vix, hyOas, igOas] = await Promise.all([
-    fetchVIX(),
+  // Fetch all four in parallel
+  const [vix, move, hyOas, igOas] = await Promise.all([
+    fetchYahooIndex("^VIX"),
+    fetchYahooIndex("^MOVE"),
     fetchFRED("BAMLH0A0HYM2"), // ICE BofA US High Yield OAS
     fetchFRED("BAMLC0A0CM"),   // ICE BofA US Corporate OAS (IG)
   ]);
 
   return NextResponse.json({
     vix,
+    move,
     hyOas,
     igOas,
     fetchedAt: new Date().toISOString(),

@@ -16,10 +16,35 @@ const DEFENSIVE_SECTORS = [
   "Industrials",
 ];
 
+/**
+ * Regime multiplier system:
+ *
+ * Risk-Off (bearish macro):
+ *   Offensive sectors (Tech, Comm Svc, Consumer Disc) → 0.82x (penalized)
+ *   Defensive sectors (Energy, Utilities, Staples, Financials, Materials, Industrials) → 1.10x (boosted)
+ *
+ * Neutral (mixed/uncertain macro):
+ *   Offensive sectors → 0.95x (slight headwind)
+ *   Defensive sectors → 1.03x (slight tailwind)
+ *
+ * Risk-On (bullish macro):
+ *   Offensive sectors → 1.10x (boosted — growth/momentum favored)
+ *   Defensive sectors → 0.95x (slight headwind — less need for safety)
+ */
 export function regimeMultiplier(sector: string, riskRegime: string): number {
-  if (riskRegime !== "Risk-Off") return 1;
-  if (DEFENSIVE_SECTORS.includes(sector)) return 1.1;
-  if (OFFENSIVE_SECTORS.includes(sector)) return 0.82;
+  if (riskRegime === "Risk-Off") {
+    if (DEFENSIVE_SECTORS.includes(sector)) return 1.1;
+    if (OFFENSIVE_SECTORS.includes(sector)) return 0.82;
+    return 1;
+  }
+  if (riskRegime === "Neutral") {
+    if (DEFENSIVE_SECTORS.includes(sector)) return 1.03;
+    if (OFFENSIVE_SECTORS.includes(sector)) return 0.95;
+    return 1;
+  }
+  // Risk-On
+  if (OFFENSIVE_SECTORS.includes(sector)) return 1.1;
+  if (DEFENSIVE_SECTORS.includes(sector)) return 0.95;
   return 1;
 }
 

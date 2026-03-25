@@ -16,6 +16,8 @@ export const defaultMarketData: MarketData = {
   aaiiBullBear: -18,
   putCall: 1.08,
   termStructure: "Contango",
+  spOscillator: 0,
+  equityFlows: "Mixed",
 };
 
 export const holdingsSeed: Stock[] = [

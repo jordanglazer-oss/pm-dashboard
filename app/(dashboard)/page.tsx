@@ -20,7 +20,6 @@ export default function DashboardPage() {
   const [newBucket, setNewBucket] = useState<"Portfolio" | "Watchlist">("Watchlist");
 
   const regime = marketData.riskRegime;
-  const isRiskOff = regime === "Risk-Off";
 
   function handleAdd() {
     const ticker = newTicker.trim().toUpperCase();
@@ -83,14 +82,18 @@ export default function DashboardPage() {
 
           {/* Regime Info Card */}
           <div className={`rounded-[24px] border p-5 shadow-sm ${
-            isRiskOff
+            regime === "Risk-Off"
+              ? "border-red-200 bg-red-50"
+              : regime === "Neutral"
               ? "border-amber-200 bg-amber-50"
               : "border-emerald-200 bg-emerald-50"
           }`}>
             <div className="flex items-center gap-3 mb-3">
               <h2 className="text-lg font-bold text-slate-800">Market Regime</h2>
               <span className={`rounded-full px-3 py-1 text-xs font-bold ${
-                isRiskOff
+                regime === "Risk-Off"
+                  ? "bg-red-200 text-red-800"
+                  : regime === "Neutral"
                   ? "bg-amber-200 text-amber-800"
                   : "bg-emerald-200 text-emerald-800"
               }`}>
@@ -98,33 +101,58 @@ export default function DashboardPage() {
               </span>
             </div>
 
-            {isRiskOff ? (
+            {regime === "Risk-Off" && (
               <div className="space-y-2 text-sm text-slate-700">
-                <p className="font-medium text-amber-800">
+                <p className="font-medium text-red-800">
                   Defensive posture active — scores are adjusted by sector type:
                 </p>
                 <ul className="list-disc list-inside space-y-1 text-slate-600">
                   <li>
-                    <span className="font-semibold text-red-600">Offensive sectors</span> (Tech, Comm Services, Consumer Disc) receive a <span className="font-bold">0.82x multiplier</span> — scores are penalized to reflect elevated drawdown risk in growth/cyclical names during stress.
+                    <span className="font-semibold text-red-600">Offensive sectors</span> (Tech, Comm Services, Consumer Disc) → <span className="font-bold">0.82x</span> — penalized for elevated drawdown risk.
                   </li>
                   <li>
-                    <span className="font-semibold text-emerald-600">Defensive sectors</span> (Energy, Utilities, Staples, Financials, Materials, Industrials) receive a <span className="font-bold">1.10x multiplier</span> — scores are boosted to reflect their relative resilience and capital preservation characteristics.
+                    <span className="font-semibold text-emerald-600">Defensive sectors</span> (Energy, Utilities, Staples, Financials, Materials, Industrials) → <span className="font-bold">1.10x</span> — boosted for capital preservation.
                   </li>
                   <li>
-                    VIX at {marketData.vix}, HY OAS at {marketData.hyOas}bps, breadth at {marketData.breadth}% — conditions support a risk-off stance and favor lower-beta, value-oriented positioning.
+                    VIX at {marketData.vix}, HY OAS at {marketData.hyOas}bps, breadth at {marketData.breadth}% — conditions support defensive positioning.
                   </li>
                 </ul>
               </div>
-            ) : (
+            )}
+
+            {regime === "Neutral" && (
               <div className="space-y-2 text-sm text-slate-700">
-                <p className="font-medium text-emerald-800">
-                  Risk-On — no regime adjustment applied to scores.
+                <p className="font-medium text-amber-800">
+                  Mixed environment — mild regime adjustments applied:
                 </p>
                 <ul className="list-disc list-inside space-y-1 text-slate-600">
-                  <li>All sectors scored at face value (1.0x multiplier).</li>
-                  <li>Growth and cyclical names are not penalized.</li>
                   <li>
-                    VIX at {marketData.vix}, breadth at {marketData.breadth}% — conditions support full risk exposure.
+                    <span className="font-semibold text-amber-700">Offensive sectors</span> → <span className="font-bold">0.95x</span> — slight headwind reflecting macro uncertainty.
+                  </li>
+                  <li>
+                    <span className="font-semibold text-emerald-600">Defensive sectors</span> → <span className="font-bold">1.03x</span> — marginal safety premium.
+                  </li>
+                  <li>
+                    VIX at {marketData.vix}, breadth at {marketData.breadth}% — cross-currents suggest balanced positioning until a clearer signal emerges.
+                  </li>
+                </ul>
+              </div>
+            )}
+
+            {regime === "Risk-On" && (
+              <div className="space-y-2 text-sm text-slate-700">
+                <p className="font-medium text-emerald-800">
+                  Growth-favoring environment — scores tilted toward offensive sectors:
+                </p>
+                <ul className="list-disc list-inside space-y-1 text-slate-600">
+                  <li>
+                    <span className="font-semibold text-emerald-600">Offensive sectors</span> (Tech, Comm Services, Consumer Disc) → <span className="font-bold">1.10x</span> — boosted to reflect momentum and risk appetite.
+                  </li>
+                  <li>
+                    <span className="font-semibold text-amber-600">Defensive sectors</span> → <span className="font-bold">0.95x</span> — slight headwind as safety is less rewarded.
+                  </li>
+                  <li>
+                    VIX at {marketData.vix}, breadth at {marketData.breadth}% — conditions favor full risk exposure and growth/cyclical tilt.
                   </li>
                 </ul>
               </div>
