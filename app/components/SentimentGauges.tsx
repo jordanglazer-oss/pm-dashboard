@@ -102,23 +102,25 @@ function aaiiBullBearContrarian(spread: number): {
   };
 }
 
-// Contrarian rating based on combined signals
-function overallContrarianRating(fg: number, spread: number): { label: string; tone: "red" | "amber" | "green" } {
+// Contrarian rating based on all 4 indicators (range -8 to +8)
+export function overallContrarianRating(fg: number, spread: number, spOsc: number = 0, putCall: number = 0.85): { label: string; tone: "red" | "amber" | "green" } {
   const fgSignal = fg <= 15 ? 2 : fg <= 30 ? 1 : fg <= 55 ? 0 : fg <= 75 ? -1 : -2;
   const aaiiSignal = spread <= -20 ? 2 : spread <= -5 ? 1 : spread <= 15 ? 0 : spread <= 30 ? -1 : -2;
-  const combined = fgSignal + aaiiSignal;
+  const oscSignal = spOsc <= -4 ? 2 : spOsc <= -2 ? 1 : spOsc <= 2 ? 0 : spOsc <= 4 ? -1 : -2;
+  const pcSignal = putCall >= 1.2 ? 2 : putCall >= 1.0 ? 1 : putCall >= 0.7 ? 0 : putCall >= 0.5 ? -1 : -2;
+  const combined = fgSignal + aaiiSignal + oscSignal + pcSignal;
 
-  if (combined >= 3) return { label: "Strong Buy", tone: "green" };
-  if (combined >= 1) return { label: "Leaning Bullish", tone: "green" };
-  if (combined >= -1) return { label: "Neutral", tone: "amber" };
-  if (combined >= -3) return { label: "Leaning Bearish", tone: "amber" };
+  if (combined >= 5) return { label: "Strong Buy", tone: "green" };
+  if (combined >= 2) return { label: "Leaning Bullish", tone: "green" };
+  if (combined >= -2) return { label: "Neutral", tone: "amber" };
+  if (combined >= -5) return { label: "Leaning Bearish", tone: "amber" };
   return { label: "Strong Sell Signal", tone: "red" };
 }
 
 export function SentimentGauges({ marketData, aaiiBull = 30, aaiiNeutral = 17, aaiiBear = 52 }: Props) {
   const fgData = fearGreedContrarian(marketData.fearGreed);
   const aaiiData = aaiiBullBearContrarian(marketData.aaiiBullBear);
-  const overall = overallContrarianRating(marketData.fearGreed, marketData.aaiiBullBear);
+  const overall = overallContrarianRating(marketData.fearGreed, marketData.aaiiBullBear, marketData.spOscillator, marketData.putCall);
   const fgLabel = fearGreedLabel(marketData.fearGreed);
 
   // Color for the donut gauge
