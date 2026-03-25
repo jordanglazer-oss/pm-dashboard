@@ -20,8 +20,8 @@ for (const g of SCORE_GROUPS) {
 
 const AI_KEYS = AI_CATEGORIES.map((c) => c.key);
 
-// ── Financial Modeling Prep API ──
-const FMP_BASE = "https://financialmodelingprep.com/api/v3";
+// ── Financial Modeling Prep API (stable endpoints) ──
+const FMP = "https://financialmodelingprep.com/stable";
 
 async function fmpFetch(url: string, label: string): Promise<{ label: string; data: unknown } | null> {
   try {
@@ -56,34 +56,36 @@ async function fetchFinancialData(ticker: string): Promise<{ context: string; pr
 
   const k = `apikey=${apiKey}`;
 
+  const s = `symbol=${ticker}`;
+
   // Fetch quarterly + annual data for maximum freshness
   const results = await Promise.all([
     // REAL-TIME: Current quote with live price, PE, market cap
-    fmpFetch(`${FMP_BASE}/quote/${ticker}?${k}`, "REAL-TIME QUOTE (current price, PE, market cap)"),
+    fmpFetch(`${FMP}/quote?${s}&${k}`, "REAL-TIME QUOTE (current price, PE, market cap)"),
     // QUARTERLY income statements (last 4 quarters = most recent data)
-    fmpFetch(`${FMP_BASE}/income-statement/${ticker}?period=quarter&limit=4&${k}`, "INCOME STATEMENTS (Quarterly, last 4 quarters)"),
+    fmpFetch(`${FMP}/income-statement?${s}&period=quarter&limit=4&${k}`, "INCOME STATEMENTS (Quarterly, last 4 quarters)"),
     // ANNUAL income statements (3 years for trend)
-    fmpFetch(`${FMP_BASE}/income-statement/${ticker}?period=annual&limit=3&${k}`, "INCOME STATEMENTS (Annual, 3 years)"),
+    fmpFetch(`${FMP}/income-statement?${s}&period=annual&limit=3&${k}`, "INCOME STATEMENTS (Annual, 3 years)"),
     // Balance sheet (latest quarter)
-    fmpFetch(`${FMP_BASE}/balance-sheet-statement/${ticker}?period=quarter&limit=1&${k}`, "BALANCE SHEET (Latest quarter)"),
+    fmpFetch(`${FMP}/balance-sheet-statement?${s}&period=quarter&limit=1&${k}`, "BALANCE SHEET (Latest quarter)"),
     // QUARTERLY cash flow (last 4 quarters)
-    fmpFetch(`${FMP_BASE}/cash-flow-statement/${ticker}?period=quarter&limit=4&${k}`, "CASH FLOW (Quarterly, last 4 quarters)"),
+    fmpFetch(`${FMP}/cash-flow-statement?${s}&period=quarter&limit=4&${k}`, "CASH FLOW (Quarterly, last 4 quarters)"),
     // ANNUAL cash flow (3 years)
-    fmpFetch(`${FMP_BASE}/cash-flow-statement/${ticker}?period=annual&limit=3&${k}`, "CASH FLOW (Annual, 3 years)"),
+    fmpFetch(`${FMP}/cash-flow-statement?${s}&period=annual&limit=3&${k}`, "CASH FLOW (Annual, 3 years)"),
     // Key metrics (annual, 5 years for historical valuation comps)
-    fmpFetch(`${FMP_BASE}/key-metrics/${ticker}?period=annual&limit=5&${k}`, "KEY METRICS (Annual, 5 years)"),
+    fmpFetch(`${FMP}/key-metrics?${s}&period=annual&limit=5&${k}`, "KEY METRICS (Annual, 5 years)"),
     // Key metrics TTM for current valuation
-    fmpFetch(`${FMP_BASE}/key-metrics-ttm/${ticker}?${k}`, "KEY METRICS TTM (Trailing 12 months)"),
+    fmpFetch(`${FMP}/key-metrics-ttm?${s}&${k}`, "KEY METRICS TTM (Trailing 12 months)"),
     // Ratios TTM
-    fmpFetch(`${FMP_BASE}/ratios-ttm/${ticker}?${k}`, "FINANCIAL RATIOS TTM"),
+    fmpFetch(`${FMP}/ratios-ttm?${s}&${k}`, "FINANCIAL RATIOS TTM"),
     // Ratios (annual, 5 years for historical comparison)
-    fmpFetch(`${FMP_BASE}/ratios/${ticker}?period=annual&limit=5&${k}`, "FINANCIAL RATIOS (Annual, 5 years)"),
+    fmpFetch(`${FMP}/ratios?${s}&period=annual&limit=5&${k}`, "FINANCIAL RATIOS (Annual, 5 years)"),
     // Company profile (sector, industry, beta, description, current price)
-    fmpFetch(`${FMP_BASE}/profile/${ticker}?${k}`, "COMPANY PROFILE"),
+    fmpFetch(`${FMP}/profile?${s}&${k}`, "COMPANY PROFILE"),
     // Analyst estimates (forward)
-    fmpFetch(`${FMP_BASE}/analyst-estimates/${ticker}?limit=3&${k}`, "ANALYST ESTIMATES (Forward)"),
+    fmpFetch(`${FMP}/analyst-estimates?${s}&period=annual&limit=3&${k}`, "ANALYST ESTIMATES (Forward)"),
     // Enterprise value
-    fmpFetch(`${FMP_BASE}/enterprise-values/${ticker}?period=annual&limit=3&${k}`, "ENTERPRISE VALUE (Annual, 3 years)"),
+    fmpFetch(`${FMP}/enterprise-values?${s}&period=annual&limit=3&${k}`, "ENTERPRISE VALUE (Annual, 3 years)"),
   ]);
 
   const sections = results
@@ -110,21 +112,19 @@ async function fetchFinancialData(ticker: string): Promise<{ context: string; pr
   // Now fetch peer companies for relative valuation
   let peerSection = "";
   try {
-    const FMP_V4 = "https://financialmodelingprep.com/api/v4";
-    const peersRes = await fmpFetch(`${FMP_V4}/stock_peers?symbol=${ticker}&${k}`, "PEER COMPANIES");
+    const peersRes = await fmpFetch(`${FMP}/stock-peers?${s}&${k}`, "PEER COMPANIES");
     if (peersRes && Array.isArray(peersRes.data) && peersRes.data.length > 0) {
-      const peerList: string[] = peersRes.data[0]?.peersList || [];
-      // Take top 3 peers to stay within FMP free tier limits
-      const topPeers = peerList.slice(0, 3);
-      console.log(`[FMP] Peers for ${ticker}: ${topPeers.join(", ")}`);
+      // New stable endpoint returns array of {symbol, companyName, price, mktCap}
+      const peerList: string[] = peersRes.data.slice(0, 3).map((p: Record<string, unknown>) => p.symbol as string);
+      console.log(`[FMP] Peers for ${ticker}: ${peerList.join(", ")}`);
 
-      if (topPeers.length > 0) {
+      if (peerList.length > 0) {
         // Fetch key metrics TTM and profile for each peer in parallel
         const peerResults = await Promise.all(
-          topPeers.flatMap((peer) => [
-            fmpFetch(`${FMP_BASE}/key-metrics-ttm/${peer}?${k}`, `PEER ${peer} KEY METRICS TTM`),
-            fmpFetch(`${FMP_BASE}/quote/${peer}?${k}`, `PEER ${peer} QUOTE`),
-            fmpFetch(`${FMP_BASE}/profile/${peer}?${k}`, `PEER ${peer} PROFILE`),
+          peerList.flatMap((peer) => [
+            fmpFetch(`${FMP}/key-metrics-ttm?symbol=${peer}&${k}`, `PEER ${peer} KEY METRICS TTM`),
+            fmpFetch(`${FMP}/quote?symbol=${peer}&${k}`, `PEER ${peer} QUOTE`),
+            fmpFetch(`${FMP}/profile?symbol=${peer}&${k}`, `PEER ${peer} PROFILE`),
           ])
         );
 
@@ -133,7 +133,7 @@ async function fetchFinancialData(ticker: string): Promise<{ context: string; pr
           .map((r) => `${r.label}:\n${JSON.stringify(r.data, null, 2)}`);
 
         if (peerData.length > 0) {
-          peerSection = `\n\n---\n\nPEER COMPANY DATA (use for relative valuation and competitive moat comparisons):\nPeers identified: ${topPeers.join(", ")}\n\n${peerData.join("\n\n")}`;
+          peerSection = `\n\n---\n\nPEER COMPANY DATA (use for relative valuation and competitive moat comparisons):\nPeers identified: ${peerList.join(", ")}\n\n${peerData.join("\n\n")}`;
         }
       }
     }
