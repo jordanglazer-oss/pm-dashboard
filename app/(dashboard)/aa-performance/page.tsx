@@ -429,13 +429,13 @@ export default function AAPerformancePage() {
         </div>
       </section>
 
-      {/* ── Screenshots Section ── */}
+      {/* ── Alpha Sleeve Analysis Section ── */}
       <section>
-        <h2 className="text-xl font-bold text-slate-800 mb-4">Screenshots</h2>
+        <h2 className="text-xl font-bold text-slate-800 mb-4">Alpha Sleeve Analysis</h2>
         <div className="rounded-[30px] border border-slate-200 bg-white shadow-sm p-6">
           <ImageUpload
             section="aa-performance"
-            sectionLabel="AA & Performance"
+            sectionLabel="Alpha Sleeve Analysis"
             attachments={data.attachments || []}
             onAdd={addAttachment}
             onRemove={removeAttachment}
