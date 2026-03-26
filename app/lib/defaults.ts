@@ -147,11 +147,19 @@ export const holdingsSeed: Stock[] = [
   },
 ];
 
+export type RBCEntry = {
+  ticker: string;
+  sector: string;
+  dateAdded: string;
+};
+
 export type ResearchState = {
   newtonUpticks: UptickEntry[];
   fundstratTop: IdeaEntry[];
   fundstratBottom: IdeaEntry[];
+  rbcCanadianFocus: RBCEntry[];
   generalNotes: string;
+  attachments?: import("@/app/components/ImageUpload").BriefAttachment[];
 };
 
 export type UptickEntry = {
@@ -174,5 +182,7 @@ export const defaultResearch: ResearchState = {
   newtonUpticks: [],
   fundstratTop: [],
   fundstratBottom: [],
+  rbcCanadianFocus: [],
   generalNotes: "",
+  attachments: [],
 };
