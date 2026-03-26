@@ -529,7 +529,6 @@ export default function ResearchPage() {
                 <th className="py-2 pr-3 text-xs font-semibold text-blue-700 cursor-pointer hover:text-blue-900 select-none" onClick={() => toggleRbcSort("ticker")}>Ticker{rArrow("ticker")}</th>
                 <th className="py-2 pr-3 text-xs font-semibold text-blue-700 cursor-pointer hover:text-blue-900 select-none" onClick={() => toggleRbcSort("sector")}>Sector{rArrow("sector")}</th>
                 <th className="py-2 pr-3 text-xs font-semibold text-blue-700">Weight (%)</th>
-                <th className="py-2 pr-3 text-xs font-semibold text-blue-700 cursor-pointer hover:text-blue-900 select-none" onClick={() => toggleRbcSort("dateAdded")}>Date Added{rArrow("dateAdded")}</th>
                 <th className="py-2 w-8"></th>
               </tr>
             </thead>
@@ -556,14 +555,13 @@ export default function ResearchPage() {
                       className="w-16 rounded border border-transparent px-1 py-0.5 text-sm text-center hover:border-slate-200 focus:border-blue-300 focus:outline-none bg-transparent"
                     />
                   </td>
-                  <td className="py-2 pr-3 text-slate-500">{item.dateAdded}</td>
                   <td className="py-2">
                     <button onClick={() => removeRbc(item.ticker)} className="text-slate-300 hover:text-red-500 font-bold transition-colors">&times;</button>
                   </td>
                 </tr>
               ))}
               {(state.rbcCanadianFocus || []).length === 0 && (
-                <tr><td colSpan={6} className="py-6 text-center text-slate-400 italic">No names added yet</td></tr>
+                <tr><td colSpan={5} className="py-6 text-center text-slate-400 italic">No names added yet</td></tr>
               )}
             </tbody>
           </table>
