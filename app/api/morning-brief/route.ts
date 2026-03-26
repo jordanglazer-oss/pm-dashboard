@@ -5,6 +5,51 @@ import { getRedis } from "@/app/lib/redis";
 
 const client = new Anthropic();
 
+// Fetch live sector ETF performance from Yahoo Finance
+const SECTOR_ETFS: Record<string, string> = {
+  "Technology": "XLK",
+  "Health Care": "XLV",
+  "Financials": "XLF",
+  "Consumer Discretionary": "XLY",
+  "Consumer Staples": "XLP",
+  "Energy": "XLE",
+  "Utilities": "XLU",
+  "Industrials": "XLI",
+  "Materials": "XLB",
+  "Communication Services": "XLC",
+  "Real Estate": "XLRE",
+};
+
+async function fetchSectorPerformance(): Promise<string> {
+  try {
+    const tickers = Object.values(SECTOR_ETFS).join(",");
+    const res = await fetch(
+      `https://query2.finance.yahoo.com/v7/finance/quote?symbols=${tickers}&fields=symbol,shortName,regularMarketChangePercent,regularMarketPrice`,
+      {
+        headers: {
+          "User-Agent": "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36",
+        },
+        cache: "no-store",
+      }
+    );
+    if (!res.ok) return "Sector data unavailable";
+    const data = await res.json();
+    const quotes = data?.quoteResponse?.result || [];
+    const lines: string[] = [];
+    for (const [sector, etf] of Object.entries(SECTOR_ETFS)) {
+      const q = quotes.find((r: { symbol: string }) => r.symbol === etf);
+      if (q) {
+        const pct = q.regularMarketChangePercent?.toFixed(2) ?? "N/A";
+        lines.push(`- ${sector} (${etf}): ${pct}% today, price $${q.regularMarketPrice?.toFixed(2) ?? "N/A"}`);
+      }
+    }
+    return lines.length > 0 ? lines.join("\n") : "Sector data unavailable";
+  } catch (e) {
+    console.error("Sector ETF fetch error:", e);
+    return "Sector data unavailable";
+  }
+}
+
 const ATTACHMENT_CACHE_KEY = "pm:attachment-analysis";
 
 const BRIEF_PROMPT = `You are a senior portfolio strategist generating a daily morning brief for a portfolio management team. Your audience is professional portfolio managers who need actionable, institutional-quality market intelligence.
@@ -15,6 +60,7 @@ Be direct, opinionated, and specific. Avoid generic platitudes. Write like a sea
 
 Respond ONLY with valid JSON matching this exact structure:
 {
+  "marketRegime": "Risk-On or Neutral or Risk-Off — your assessment based on all the data provided. This determines score multipliers for the portfolio.",
   "bottomLine": "2-4 sentence executive summary of the market regime and what it means for portfolio positioning. Be bold and direct.",
   "compositeAnalysis": "2-3 sentences on the overall market signal, what's driving it, and what PMs should focus on today.",
   "creditAnalysis": "2-3 sentences on credit spread dynamics, what they're signaling about risk appetite, and implications for equity portfolios.",
@@ -24,9 +70,9 @@ Respond ONLY with valid JSON matching this exact structure:
   "flowsAnalysis": "2-3 sentences on fund flows, positioning, and whether the market is washed out or still has room to deteriorate. If JPM Flows & Liquidity screenshots are attached, reference specific data points from them.",
   "hedgingAnalysis": "2-3 sentences on whether current conditions favor adding hedges (focused on cost efficiency: hedge when VIX is low and puts are cheap, not when expensive). Consider put cost environment, VIX context, and whether sentiment suggests complacency (cheap protection) or fear (expensive protection).",
   "sectorRotation": {
-    "summary": "1-2 sentence overview of which sectors are leading vs lagging and the rotation theme.",
-    "leading": ["Sector (+X% MTD, reason)", "Sector (+X% MTD, reason)"],
-    "lagging": ["Sector (-X% MTD, reason)", "Sector (-X% MTD, reason)"],
+    "summary": "1-2 sentence overview of which sectors are leading vs lagging based on the LIVE sector ETF performance data provided.",
+    "leading": ["Sector (+X.XX% today, reason)", "Sector (+X.XX% today, reason)"],
+    "lagging": ["Sector (-X.XX% today, reason)", "Sector (-X.XX% today, reason)"],
     "pmImplication": "1-2 sentence implication for the portfolio given its current sector exposures."
   },
   "riskScan": [
@@ -188,12 +234,16 @@ export async function POST(request: NextRequest) {
           .join(", ")
       : "No holdings provided";
 
+    // Fetch live sector ETF data for sector rotation analysis
+    const sectorPerformance = await fetchSectorPerformance();
+
     // Build content blocks: text prompt + any image attachments
     const textContent = `Generate the morning brief for today. Here are the current market indicators:
 
 Composite Signal: ${marketData.compositeSignal}
 Conviction: ${marketData.conviction}
-Risk Regime: ${marketData.riskRegime}
+
+IMPORTANT: Based on ALL the data below, determine the market regime yourself (Risk-On, Neutral, or Risk-Off). Return it in the "marketRegime" field.
 
 Volatility:
 - VIX: ${marketData.vix}
@@ -220,6 +270,9 @@ Contrarian Indicators (ALL interpreted INVERSELY — oversold/fearful = BULLISH,
 Equity Flows: ${marketData.equityFlows}
 
 Hedge Timing Score: ${marketData.hedgeScore}/100
+
+Live Sector ETF Performance (from Yahoo Finance — use this for sector rotation analysis):
+${sectorPerformance}
 
 Current Portfolio Holdings: ${holdingsSummary}`;
 

@@ -189,6 +189,10 @@ export function MorningBrief({
 
       const data = await res.json();
       onBriefGenerated(data);
+      // Update market regime based on Claude's assessment
+      if (data.marketRegime) {
+        onUpdateMarketData({ riskRegime: data.marketRegime });
+      }
     } catch (err) {
       setError(err instanceof Error ? err.message : "Failed to generate brief");
     } finally {
@@ -446,28 +450,12 @@ export function MorningBrief({
         <div className="border-t border-slate-100 pt-5 mb-4">
           <div className="grid gap-4 md:grid-cols-4">
             <div>
-              <label className="text-sm font-medium text-slate-500">Market Regime</label>
-              <select
-                value={marketData.riskRegime}
-                onChange={(e) => onUpdateMarketData({ riskRegime: e.target.value })}
-                className={`mt-1 w-full rounded-xl border px-3 py-2 text-lg font-semibold ${
-                  marketData.riskRegime === "Risk-Off"
-                    ? "border-red-300 bg-red-50 text-red-800"
-                    : marketData.riskRegime === "Risk-On"
-                    ? "border-emerald-300 bg-emerald-50 text-emerald-800"
-                    : "border-amber-300 bg-amber-50 text-amber-800"
-                }`}
-              >
-                <option value="Risk-On">Risk-On</option>
-                <option value="Neutral">Neutral</option>
-                <option value="Risk-Off">Risk-Off</option>
-              </select>
-              <p className="text-[10px] text-slate-400 mt-0.5">
-                {marketData.riskRegime === "Risk-Off" ? "Defensive posture: offensive 0.82x, defensive 1.10x" : marketData.riskRegime === "Risk-On" ? "Offensive posture: offensive 1.10x, defensive 0.95x" : "Balanced: no significant adjustment"}
-              </p>
-            </div>
-            <div>
-              <label className="text-sm font-medium text-slate-500">VIX Term Structure</label>
+              <div className="flex items-center gap-2">
+                <label className="text-sm font-medium text-slate-500">VIX Term Structure</label>
+                <a href="http://vixcentral.com" target="_blank" rel="noopener noreferrer" className="text-blue-500 hover:text-blue-700" title="VIX Central">
+                  <svg className="w-3.5 h-3.5" fill="none" stroke="currentColor" strokeWidth="2" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" d="M10 6H6a2 2 0 00-2 2v10a2 2 0 002 2h10a2 2 0 002-2v-4M14 4h6m0 0v6m0-6L10 14" /></svg>
+                </a>
+              </div>
               <select
                 value={marketData.termStructure}
                 onChange={(e) => onUpdateMarketData({ termStructure: e.target.value })}
@@ -479,12 +467,7 @@ export function MorningBrief({
               </select>
             </div>
             <div>
-              <div className="flex items-center gap-2">
-                <label className="text-sm font-medium text-slate-500">Equity Flows</label>
-                <a href="https://www.ici.org/research/stats/weekly-combined" target="_blank" rel="noopener noreferrer" className="text-blue-500 hover:text-blue-700" title="ICI Weekly Fund Flows">
-                  <svg className="w-3.5 h-3.5" fill="none" stroke="currentColor" strokeWidth="2" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" d="M10 6H6a2 2 0 00-2 2v10a2 2 0 002 2h10a2 2 0 002-2v-4M14 4h6m0 0v6m0-6L10 14" /></svg>
-                </a>
-              </div>
+              <label className="text-sm font-medium text-slate-500">Equity Flows</label>
               <select
                 value={marketData.equityFlows}
                 onChange={(e) => onUpdateMarketData({ equityFlows: e.target.value })}
@@ -557,6 +540,11 @@ export function MorningBrief({
           <span className="text-slate-500">
             Conviction: {marketData.conviction}
           </span>
+          {brief?.marketRegime && (
+            <SignalPill tone={brief.marketRegime === "Risk-Off" ? "red" : brief.marketRegime === "Risk-On" ? "green" : "amber"}>
+              {brief.marketRegime}
+            </SignalPill>
+          )}
         </div>
         <p className="mt-4 text-lg leading-8 text-slate-700">
           {compositeAnalysis}

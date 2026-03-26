@@ -128,6 +128,7 @@ function RBCAddForm({ onAdd }: { onAdd: (e: RBCEntry) => void }) {
         onAdd({
           ticker: ticker.trim().toUpperCase(),
           sector: sector || "—",
+          weight: 0,
           dateAdded: new Date().toLocaleDateString("en-US", { month: "numeric", day: "numeric", year: "numeric" }),
         });
         setTicker(""); setSector("");
@@ -527,6 +528,7 @@ export default function ResearchPage() {
                 <th className="py-2 pr-2 text-xs font-semibold text-blue-700 w-8">#</th>
                 <th className="py-2 pr-3 text-xs font-semibold text-blue-700 cursor-pointer hover:text-blue-900 select-none" onClick={() => toggleRbcSort("ticker")}>Ticker{rArrow("ticker")}</th>
                 <th className="py-2 pr-3 text-xs font-semibold text-blue-700 cursor-pointer hover:text-blue-900 select-none" onClick={() => toggleRbcSort("sector")}>Sector{rArrow("sector")}</th>
+                <th className="py-2 pr-3 text-xs font-semibold text-blue-700">Weight (%)</th>
                 <th className="py-2 pr-3 text-xs font-semibold text-blue-700 cursor-pointer hover:text-blue-900 select-none" onClick={() => toggleRbcSort("dateAdded")}>Date Added{rArrow("dateAdded")}</th>
                 <th className="py-2 w-8"></th>
               </tr>
@@ -537,6 +539,23 @@ export default function ResearchPage() {
                   <td className="py-2 pr-2 text-slate-400">{i + 1}</td>
                   <td className="py-2 pr-3 font-mono font-bold text-blue-700">${item.ticker}</td>
                   <td className="py-2 pr-3 text-slate-600">{item.sector}</td>
+                  <td className="py-2 pr-3 text-slate-500">
+                    <input
+                      type="text"
+                      inputMode="decimal"
+                      value={item.weight ?? 0}
+                      onChange={(e) => {
+                        const val = e.target.value;
+                        const list = [...(state.rbcCanadianFocus || [])];
+                        const idx = list.findIndex((r) => r.ticker === item.ticker);
+                        if (idx >= 0) {
+                          list[idx] = { ...list[idx], weight: val === "" || val === "-" ? 0 : parseFloat(val) || 0 };
+                          save({ ...state, rbcCanadianFocus: list });
+                        }
+                      }}
+                      className="w-16 rounded border border-transparent px-1 py-0.5 text-sm text-center hover:border-slate-200 focus:border-blue-300 focus:outline-none bg-transparent"
+                    />
+                  </td>
                   <td className="py-2 pr-3 text-slate-500">{item.dateAdded}</td>
                   <td className="py-2">
                     <button onClick={() => removeRbc(item.ticker)} className="text-slate-300 hover:text-red-500 font-bold transition-colors">&times;</button>
@@ -544,12 +563,24 @@ export default function ResearchPage() {
                 </tr>
               ))}
               {(state.rbcCanadianFocus || []).length === 0 && (
-                <tr><td colSpan={5} className="py-6 text-center text-slate-400 italic">No names added yet</td></tr>
+                <tr><td colSpan={6} className="py-6 text-center text-slate-400 italic">No names added yet</td></tr>
               )}
             </tbody>
           </table>
 
           <RBCAddForm onAdd={addRbc} />
+        </section>
+
+        {/* ── Seeking Alpha - Alpha Picks ── */}
+        <section className="rounded-[24px] border border-slate-200 bg-white p-6 shadow-sm">
+          <h3 className="text-lg font-semibold mb-3">Seeking Alpha &mdash; Alpha Picks</h3>
+          <ImageUpload
+            section="seeking-alpha-picks"
+            sectionLabel="Alpha Picks"
+            attachments={state.attachments || []}
+            onAdd={addAttachment}
+            onRemove={removeAttachment}
+          />
         </section>
 
         {/* ── General Notes ── */}
@@ -603,17 +634,6 @@ export default function ResearchPage() {
               </div>
             </div>
           </div>
-        </section>
-        {/* ── Seeking Alpha - Alpha Picks ── */}
-        <section className="rounded-[24px] border border-slate-200 bg-white p-6 shadow-sm">
-          <h3 className="text-lg font-semibold mb-3">Seeking Alpha &mdash; Alpha Picks</h3>
-          <ImageUpload
-            section="seeking-alpha-picks"
-            sectionLabel="Alpha Picks"
-            attachments={state.attachments || []}
-            onAdd={addAttachment}
-            onRemove={removeAttachment}
-          />
         </section>
       </div>
     </main>
