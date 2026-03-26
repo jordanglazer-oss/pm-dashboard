@@ -169,6 +169,7 @@ export type MarketData = {
 export type MorningBrief = {
   date: string;
   marketData: MarketData;
+  marketRegime?: string;
   bottomLine: string;
   compositeAnalysis: string;
   creditAnalysis: string;

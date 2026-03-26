@@ -150,6 +150,7 @@ export const holdingsSeed: Stock[] = [
 export type RBCEntry = {
   ticker: string;
   sector: string;
+  weight: number;
   dateAdded: string;
 };
 
