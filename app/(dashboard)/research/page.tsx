@@ -1,8 +1,9 @@
 "use client";
 
 import React, { useState, useEffect, useCallback, useRef } from "react";
-import type { ResearchState, UptickEntry, IdeaEntry } from "@/app/lib/defaults";
+import type { ResearchState, UptickEntry, IdeaEntry, RBCEntry } from "@/app/lib/defaults";
 import { defaultResearch } from "@/app/lib/defaults";
+import { ImageUpload, type BriefAttachment } from "@/app/components/ImageUpload";
 
 /* ─── Uptick Add Form ─── */
 function UptickAddForm({ onAdd }: { onAdd: (e: UptickEntry) => void }) {
@@ -107,6 +108,49 @@ function IdeaAddForm({ onAdd }: { onAdd: (e: IdeaEntry) => void }) {
   );
 }
 
+/* ─── RBC Add Form ─── */
+function RBCAddForm({ onAdd }: { onAdd: (e: RBCEntry) => void }) {
+  const [ticker, setTicker] = useState("");
+  const [sector, setSector] = useState("");
+
+  const sectors = [
+    "Communication Services", "Consumer Discretionary", "Consumer Staples",
+    "Energy", "Financials", "Health Care", "Industrials", "Information Technology",
+    "Materials", "Real Estate", "Utilities",
+  ];
+
+  return (
+    <form
+      className="flex gap-2 mt-3 items-end"
+      onSubmit={(e) => {
+        e.preventDefault();
+        if (!ticker.trim()) return;
+        onAdd({
+          ticker: ticker.trim().toUpperCase(),
+          sector: sector || "—",
+          dateAdded: new Date().toLocaleDateString("en-US", { month: "numeric", day: "numeric", year: "numeric" }),
+        });
+        setTicker(""); setSector("");
+      }}
+    >
+      <div>
+        <label className="text-xs text-slate-400 block">Ticker*</label>
+        <input value={ticker} onChange={(e) => setTicker(e.target.value.toUpperCase())} placeholder="RY" className="w-24 rounded-lg border border-slate-200 px-2 py-1.5 text-sm font-mono" />
+      </div>
+      <div>
+        <label className="text-xs text-slate-400 block">Sector</label>
+        <select value={sector} onChange={(e) => setSector(e.target.value)} className="w-44 rounded-lg border border-slate-200 px-2 py-1.5 text-sm bg-white">
+          <option value="">Select...</option>
+          {sectors.map((s) => <option key={s} value={s}>{s}</option>)}
+        </select>
+      </div>
+      <button type="submit" className="rounded-lg bg-slate-900 px-4 py-1.5 text-sm font-medium text-white hover:bg-slate-800">
+        Add
+      </button>
+    </form>
+  );
+}
+
 /* ─── Editable Cell ─── */
 function EditableCell({
   value,
@@ -150,6 +194,7 @@ function EditableCell({
 
 type UptickSortKey = "ticker" | "name" | "sector" | "price" | "support" | "resistance" | "dateAdded" | "priceWhenAdded";
 type IdeaSortKey = "ticker" | "priceWhenAdded";
+type RBCSortKey = "ticker" | "sector" | "dateAdded";
 type SortDir = "asc" | "desc";
 
 export default function ResearchPage() {
@@ -159,6 +204,7 @@ export default function ResearchPage() {
   const [uptickSort, setUptickSort] = useState<{ key: UptickSortKey; dir: SortDir }>({ key: "ticker", dir: "asc" });
   const [topSort, setTopSort] = useState<{ key: IdeaSortKey; dir: SortDir }>({ key: "ticker", dir: "asc" });
   const [bottomSort, setBottomSort] = useState<{ key: IdeaSortKey; dir: SortDir }>({ key: "ticker", dir: "asc" });
+  const [rbcSort, setRbcSort] = useState<{ key: RBCSortKey; dir: SortDir }>({ key: "ticker", dir: "asc" });
 
   function toggleUptickSort(key: UptickSortKey) {
     setUptickSort(prev => prev.key === key ? { key, dir: prev.dir === "asc" ? "desc" : "asc" } : { key, dir: "asc" });
@@ -168,6 +214,9 @@ export default function ResearchPage() {
   }
   function toggleBottomSort(key: IdeaSortKey) {
     setBottomSort(prev => prev.key === key ? { key, dir: prev.dir === "asc" ? "desc" : "asc" } : { key, dir: "asc" });
+  }
+  function toggleRbcSort(key: RBCSortKey) {
+    setRbcSort(prev => prev.key === key ? { key, dir: prev.dir === "asc" ? "desc" : "asc" } : { key, dir: "asc" });
   }
 
   function sortedUpticks() {
@@ -195,9 +244,18 @@ export default function ResearchPage() {
     });
   }
 
+  function sortedRbc() {
+    return [...(state.rbcCanadianFocus || [])].sort((a, b) => {
+      const { key, dir } = rbcSort;
+      const cmp = String(a[key] || "").localeCompare(String(b[key] || ""));
+      return dir === "asc" ? cmp : -cmp;
+    });
+  }
+
   const uArrow = (key: UptickSortKey) => uptickSort.key === key ? (uptickSort.dir === "asc" ? " ▲" : " ▼") : "";
   const tArrow = (key: IdeaSortKey) => topSort.key === key ? (topSort.dir === "asc" ? " ▲" : " ▼") : "";
   const bArrow = (key: IdeaSortKey) => bottomSort.key === key ? (bottomSort.dir === "asc" ? " ▲" : " ▼") : "";
+  const rArrow = (key: RBCSortKey) => rbcSort.key === key ? (rbcSort.dir === "asc" ? " ▲" : " ▼") : "";
 
   useEffect(() => {
     fetch("/api/kv/research")
@@ -253,6 +311,24 @@ export default function ResearchPage() {
     const updated = [...state[key]];
     updated[idx] = { ...updated[idx], priceWhenAdded: parseFloat(price) || 0 };
     save({ ...state, [key]: updated });
+  };
+
+  /* RBC helpers */
+  const addRbc = (entry: RBCEntry) => {
+    const list = state.rbcCanadianFocus || [];
+    if (list.some((r) => r.ticker === entry.ticker)) return;
+    save({ ...state, rbcCanadianFocus: [...list, entry] });
+  };
+  const removeRbc = (ticker: string) => {
+    save({ ...state, rbcCanadianFocus: (state.rbcCanadianFocus || []).filter((r) => r.ticker !== ticker) });
+  };
+
+  /* Attachment helpers */
+  const addAttachment = (att: BriefAttachment) => {
+    save({ ...state, attachments: [...(state.attachments || []), att] });
+  };
+  const removeAttachment = (id: string) => {
+    save({ ...state, attachments: (state.attachments || []).filter((a) => a.id !== id) });
   };
 
   if (!loaded) return null;
@@ -435,6 +511,47 @@ export default function ResearchPage() {
           </section>
         </div>
 
+        {/* ── RBC Canadian Focus List ── */}
+        <section className="rounded-[24px] border border-blue-200 bg-white p-6 shadow-sm">
+          <div className="flex items-center justify-between mb-4">
+            <div>
+              <h3 className="text-xl font-bold text-blue-800">RBC Canadian Focus List</h3>
+              <p className="text-xs text-slate-400">RBC Capital Markets Canadian equity picks</p>
+            </div>
+            <span className="text-sm text-slate-400">{(state.rbcCanadianFocus || []).length} names</span>
+          </div>
+
+          <table className="w-full text-sm">
+            <thead>
+              <tr className="border-b-2 border-blue-500 text-left">
+                <th className="py-2 pr-2 text-xs font-semibold text-blue-700 w-8">#</th>
+                <th className="py-2 pr-3 text-xs font-semibold text-blue-700 cursor-pointer hover:text-blue-900 select-none" onClick={() => toggleRbcSort("ticker")}>Ticker{rArrow("ticker")}</th>
+                <th className="py-2 pr-3 text-xs font-semibold text-blue-700 cursor-pointer hover:text-blue-900 select-none" onClick={() => toggleRbcSort("sector")}>Sector{rArrow("sector")}</th>
+                <th className="py-2 pr-3 text-xs font-semibold text-blue-700 cursor-pointer hover:text-blue-900 select-none" onClick={() => toggleRbcSort("dateAdded")}>Date Added{rArrow("dateAdded")}</th>
+                <th className="py-2 w-8"></th>
+              </tr>
+            </thead>
+            <tbody>
+              {sortedRbc().map((item, i) => (
+                <tr key={item.ticker} className={`border-b border-slate-100 ${i % 2 === 0 ? "bg-white" : "bg-blue-50/30"} hover:bg-blue-50/60 transition-colors`}>
+                  <td className="py-2 pr-2 text-slate-400">{i + 1}</td>
+                  <td className="py-2 pr-3 font-mono font-bold text-blue-700">${item.ticker}</td>
+                  <td className="py-2 pr-3 text-slate-600">{item.sector}</td>
+                  <td className="py-2 pr-3 text-slate-500">{item.dateAdded}</td>
+                  <td className="py-2">
+                    <button onClick={() => removeRbc(item.ticker)} className="text-slate-300 hover:text-red-500 font-bold transition-colors">&times;</button>
+                  </td>
+                </tr>
+              ))}
+              {(state.rbcCanadianFocus || []).length === 0 && (
+                <tr><td colSpan={5} className="py-6 text-center text-slate-400 italic">No names added yet</td></tr>
+              )}
+            </tbody>
+          </table>
+
+          <RBCAddForm onAdd={addRbc} />
+        </section>
+
         {/* ── General Notes ── */}
         <section className="rounded-[24px] border border-slate-200 bg-white p-6 shadow-sm">
           <h3 className="text-lg font-semibold mb-3">General Notes</h3>
@@ -486,6 +603,17 @@ export default function ResearchPage() {
               </div>
             </div>
           </div>
+        </section>
+        {/* ── Seeking Alpha - Alpha Picks ── */}
+        <section className="rounded-[24px] border border-slate-200 bg-white p-6 shadow-sm">
+          <h3 className="text-lg font-semibold mb-3">Seeking Alpha &mdash; Alpha Picks</h3>
+          <ImageUpload
+            section="seeking-alpha-picks"
+            sectionLabel="Alpha Picks"
+            attachments={state.attachments || []}
+            onAdd={addAttachment}
+            onRemove={removeAttachment}
+          />
         </section>
       </div>
     </main>

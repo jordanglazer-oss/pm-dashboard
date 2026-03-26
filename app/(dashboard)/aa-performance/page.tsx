@@ -31,6 +31,16 @@ type PerformanceRow = {
   "5y": number | null;
 };
 
+type FundRow = {
+  name: string;
+  ticker: string;
+  ytd: number | null;
+  "1y": number | null;
+  "3y": number | null;
+  "5y": number | null;
+  "10y": number | null;
+};
+
 type AAPerformanceData = {
   allocations: {
     balanced: AllocationTable;
@@ -38,6 +48,10 @@ type AAPerformanceData = {
     allEquity: AllocationTable;
   };
   performance: PerformanceRow[];
+  funds: FundRow[];
+  fundsDate: string;
+  etfs: FundRow[];
+  etfsDate: string;
   attachments: BriefAttachment[];
 };
 
@@ -53,6 +67,16 @@ const PERF_COLS: { key: keyof PerformanceRow; label: string }[] = [
   { key: "2y", label: "2Y" },
   { key: "3y", label: "3Y" },
   { key: "5y", label: "5Y" },
+];
+
+const FUND_COLS: { key: keyof FundRow; label: string }[] = [
+  { key: "name", label: "Name" },
+  { key: "ticker", label: "Code/Ticker" },
+  { key: "ytd", label: "YTD" },
+  { key: "1y", label: "1Y" },
+  { key: "3y", label: "3Y" },
+  { key: "5y", label: "5Y" },
+  { key: "10y", label: "10Y" },
 ];
 
 const AA_ROWS: { key: keyof AllocationTable; label: string }[] = [
@@ -90,6 +114,18 @@ const defaultData: AAPerformanceData = {
       max: { fixedIncome: 25, equity: 100, alternatives: 25 },
     },
   },
+  funds: [
+    { name: "RBC Core Plus Bond Pool (USD)", ticker: "", ytd: -0.07, "1y": 6.20, "3y": 5.98, "5y": 1.63, "10y": null },
+    { name: "Dynamic Power American Growth (USD)", ticker: "", ytd: -13.16, "1y": 19.54, "3y": 20.00, "5y": -0.81, "10y": 14.00 },
+    { name: "Fidelity Global Innovators Class", ticker: "", ytd: 1.67, "1y": 33.63, "3y": 37.84, "5y": 15.24, "10y": null },
+    { name: "Dynamic Premium Yield Plus", ticker: "", ytd: -1.33, "1y": 16.11, "3y": 14.28, "5y": 11.50, "10y": null },
+  ],
+  fundsDate: "03/26/2026",
+  etfs: [
+    { name: "iShares US Small Cap Index (XSU)", ticker: "XSU", ytd: 5.32, "1y": 13.69, "3y": 10.13, "5y": 4.49, "10y": 9.37 },
+    { name: "JP Morgan Active Bond ETF (JBND)", ticker: "JBND", ytd: -0.05, "1y": 5.96, "3y": null, "5y": null, "10y": null },
+  ],
+  etfsDate: "03/26/2026",
   performance: [
     { name: "DWM - Balanced Model", ytd: -2.89, "1d": -0.92, "1w": -1.83, "1m": -1.70, "3m": -3.56, "6m": -2.29, "1y": 9.42, "2y": 9.09, "3y": 12.00, "5y": 3.92 },
     { name: "DWM - Balanced Small", ytd: -2.23, "1d": -1.07, "1w": -1.54, "1m": -1.43, "3m": -2.57, "6m": -0.15, "1y": 13.44, "2y": 10.40, "3y": 13.70, "5y": 3.38 },
@@ -231,6 +267,124 @@ function AllocationTableCard({
   );
 }
 
+/* ─── Active Funds / ETFs Table ─── */
+function FundsTable({
+  title,
+  dateValue,
+  onDateChange,
+  rows,
+  onUpdateRow,
+  onAddRow,
+  onRemoveRow,
+}: {
+  title: string;
+  dateValue: string;
+  onDateChange: (v: string) => void;
+  rows: FundRow[];
+  onUpdateRow: (idx: number, key: string, value: string | number | null) => void;
+  onAddRow: () => void;
+  onRemoveRow: (idx: number) => void;
+}) {
+  const [editingDate, setEditingDate] = useState(false);
+  const [tempDate, setTempDate] = useState(dateValue);
+
+  return (
+    <div className="mb-6">
+      <div className="flex items-center gap-2 mb-2">
+        <span className="text-sm font-bold text-slate-700">{title} (as of </span>
+        {editingDate ? (
+          <input
+            autoFocus
+            value={tempDate}
+            onChange={(e) => setTempDate(e.target.value)}
+            onBlur={() => { onDateChange(tempDate); setEditingDate(false); }}
+            onKeyDown={(e) => { if (e.key === "Enter") { onDateChange(tempDate); setEditingDate(false); } if (e.key === "Escape") setEditingDate(false); }}
+            className="w-28 rounded border border-blue-300 bg-blue-50 px-1 py-0.5 text-sm outline-none"
+          />
+        ) : (
+          <span
+            onClick={() => { setTempDate(dateValue); setEditingDate(true); }}
+            className="text-sm font-bold text-slate-700 cursor-pointer hover:bg-blue-50 rounded px-1 py-0.5"
+            title="Click to edit date"
+          >
+            {dateValue}
+          </span>
+        )}
+        <span className="text-sm font-bold text-slate-700">)</span>
+      </div>
+      <div className="overflow-x-auto">
+        <table className="w-full text-sm">
+          <thead>
+            <tr className="border-b border-slate-100 bg-slate-50/50">
+              {FUND_COLS.map((col) => (
+                <th
+                  key={col.key}
+                  className={`px-3 py-2.5 text-xs font-semibold text-slate-500 uppercase tracking-wider ${
+                    col.key === "name" ? "text-left min-w-[220px]" : col.key === "ticker" ? "text-left min-w-[100px]" : "text-center"
+                  }`}
+                >
+                  {col.label}
+                </th>
+              ))}
+              <th className="px-2 py-2.5 w-8"></th>
+            </tr>
+          </thead>
+          <tbody>
+            {rows.map((row, rowIdx) => (
+              <tr key={rowIdx} className="border-b border-slate-50 hover:bg-slate-50/50">
+                <td className="px-3 py-1.5">
+                  <input
+                    type="text"
+                    value={row.name}
+                    onChange={(e) => onUpdateRow(rowIdx, "name", e.target.value)}
+                    className="w-full rounded-lg border border-transparent px-2 py-1 text-sm font-medium text-slate-800 hover:border-slate-200 focus:border-blue-300 focus:outline-none focus:ring-2 focus:ring-blue-200 bg-transparent"
+                  />
+                </td>
+                <td className="px-3 py-1.5">
+                  <input
+                    type="text"
+                    value={row.ticker}
+                    onChange={(e) => onUpdateRow(rowIdx, "ticker", e.target.value)}
+                    className="w-full rounded-lg border border-transparent px-2 py-1 text-sm font-mono text-slate-700 hover:border-slate-200 focus:border-blue-300 focus:outline-none focus:ring-2 focus:ring-blue-200 bg-transparent"
+                    placeholder="—"
+                  />
+                </td>
+                {FUND_COLS.filter((c) => c.key !== "name" && c.key !== "ticker").map((col) => {
+                  const val = row[col.key] as number | null;
+                  return (
+                    <td key={col.key} className="px-1 py-1.5 text-center">
+                      <div className="flex items-center justify-center gap-0.5">
+                        <NumericInput
+                          value={val}
+                          onChange={(n) => onUpdateRow(rowIdx, col.key, n)}
+                          placeholder="—"
+                          className={`w-16 rounded-lg border border-transparent px-1 py-1 text-sm text-center font-medium ${
+                            val === null ? "text-slate-400" : val < 0 ? "text-red-600" : val > 0 ? "text-emerald-600" : "text-slate-600"
+                          } hover:border-slate-200 focus:border-blue-300 focus:outline-none focus:ring-2 focus:ring-blue-200 bg-transparent`}
+                        />
+                        {val !== null && <span className="text-[10px] text-slate-400">%</span>}
+                      </div>
+                    </td>
+                  );
+                })}
+                <td className="px-2 py-1.5 text-center">
+                  <button onClick={() => onRemoveRow(rowIdx)} className="text-slate-300 hover:text-red-500 font-bold transition-colors" title="Remove">&times;</button>
+                </td>
+              </tr>
+            ))}
+          </tbody>
+        </table>
+      </div>
+      <button
+        onClick={onAddRow}
+        className="mt-2 rounded-lg bg-slate-900 px-4 py-1.5 text-sm font-medium text-white hover:bg-slate-800"
+      >
+        Add
+      </button>
+    </div>
+  );
+}
+
 /* ─── Format helper for performance values ─── */
 function formatPerf(v: number | null): string {
   if (v === null) return "—";
@@ -315,6 +469,46 @@ export default function AAPerformancePage() {
           i === rowIdx ? { ...row, [key]: value } : row
         ),
       }));
+    },
+    [updateData]
+  );
+
+  /* Funds / ETFs helpers */
+  const updateFundRow = useCallback(
+    (table: "funds" | "etfs", rowIdx: number, key: string, value: string | number | null) => {
+      updateData((prev) => ({
+        ...prev,
+        [table]: (prev[table] || []).map((row: FundRow, i: number) =>
+          i === rowIdx ? { ...row, [key]: value } : row
+        ),
+      }));
+    },
+    [updateData]
+  );
+
+  const addFundRow = useCallback(
+    (table: "funds" | "etfs") => {
+      updateData((prev) => ({
+        ...prev,
+        [table]: [...(prev[table] || []), { name: "", ticker: "", ytd: null, "1y": null, "3y": null, "5y": null, "10y": null }],
+      }));
+    },
+    [updateData]
+  );
+
+  const removeFundRow = useCallback(
+    (table: "funds" | "etfs", idx: number) => {
+      updateData((prev) => ({
+        ...prev,
+        [table]: (prev[table] || []).filter((_: FundRow, i: number) => i !== idx),
+      }));
+    },
+    [updateData]
+  );
+
+  const updateFundsDate = useCallback(
+    (key: "fundsDate" | "etfsDate", value: string) => {
+      updateData((prev) => ({ ...prev, [key]: value }));
     },
     [updateData]
   );
@@ -429,13 +623,126 @@ export default function AAPerformancePage() {
         </div>
       </section>
 
-      {/* ── Screenshots Section ── */}
+      {/* ── Active Funds / ETFs Section ── */}
       <section>
-        <h2 className="text-xl font-bold text-slate-800 mb-4">Screenshots</h2>
+        <h2 className="text-xl font-bold text-slate-800 mb-4">Active Funds / ETFs</h2>
+        <div className="rounded-[30px] border border-slate-200 bg-white shadow-sm p-6">
+          <FundsTable
+            title="Funds"
+            dateValue={data.fundsDate || "03/26/2026"}
+            onDateChange={(v) => updateFundsDate("fundsDate", v)}
+            rows={data.funds || []}
+            onUpdateRow={(idx, key, val) => updateFundRow("funds", idx, key, val)}
+            onAddRow={() => addFundRow("funds")}
+            onRemoveRow={(idx) => removeFundRow("funds", idx)}
+          />
+          <FundsTable
+            title="ETFs"
+            dateValue={data.etfsDate || "03/26/2026"}
+            onDateChange={(v) => updateFundsDate("etfsDate", v)}
+            rows={data.etfs || []}
+            onUpdateRow={(idx, key, val) => updateFundRow("etfs", idx, key, val)}
+            onAddRow={() => addFundRow("etfs")}
+            onRemoveRow={(idx) => removeFundRow("etfs", idx)}
+          />
+        </div>
+      </section>
+
+      {/* ── Alpha Sleeve Analysis Section ── */}
+      <section>
+        <h2 className="text-xl font-bold text-slate-800 mb-4">Alpha Sleeve Analysis</h2>
         <div className="rounded-[30px] border border-slate-200 bg-white shadow-sm p-6">
           <ImageUpload
             section="aa-performance"
-            sectionLabel="AA & Performance"
+            sectionLabel="Alpha Sleeve Analysis"
+            attachments={data.attachments || []}
+            onAdd={addAttachment}
+            onRemove={removeAttachment}
+          />
+        </div>
+      </section>
+
+      {/* ── Boosted.AI ── */}
+      <section>
+        <div className="flex items-center gap-2 mb-4">
+          <h2 className="text-xl font-bold text-slate-800">Boosted.AI</h2>
+          <a href="https://insights.boosted.ai/dashboard/ideas/de0064ab-7a78-4103-994c-3ad9d15e8211" target="_blank" rel="noopener noreferrer" className="text-blue-500 hover:text-blue-700 text-sm font-medium flex items-center gap-1">
+            Open <svg xmlns="http://www.w3.org/2000/svg" className="h-3.5 w-3.5" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}><path strokeLinecap="round" strokeLinejoin="round" d="M10 6H6a2 2 0 00-2 2v10a2 2 0 002 2h10a2 2 0 002-2v-4M14 4h6m0 0v6m0-6L10 14" /></svg>
+          </a>
+        </div>
+        <div className="grid grid-cols-1 lg:grid-cols-2 gap-4">
+          <div className="rounded-[30px] border border-slate-200 bg-white shadow-sm p-6">
+            <h3 className="text-base font-bold text-slate-700 mb-2">Portfolio Holdings</h3>
+            <ImageUpload
+              section="boosted-holdings"
+              sectionLabel="Portfolio Holdings"
+              attachments={data.attachments || []}
+              onAdd={addAttachment}
+              onRemove={removeAttachment}
+            />
+          </div>
+          <div className="rounded-[30px] border border-slate-200 bg-white shadow-sm p-6">
+            <h3 className="text-base font-bold text-slate-700 mb-2">Sector Performance</h3>
+            <ImageUpload
+              section="boosted-sector"
+              sectionLabel="Sector Performance"
+              attachments={data.attachments || []}
+              onAdd={addAttachment}
+              onRemove={removeAttachment}
+            />
+          </div>
+        </div>
+      </section>
+
+      {/* ── SIA ── */}
+      <section>
+        <div className="flex items-center gap-2 mb-4">
+          <h2 className="text-xl font-bold text-slate-800">SIA</h2>
+          <a href="https://www2.siacharts.com" target="_blank" rel="noopener noreferrer" className="text-blue-500 hover:text-blue-700 text-sm font-medium flex items-center gap-1">
+            Open <svg xmlns="http://www.w3.org/2000/svg" className="h-3.5 w-3.5" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}><path strokeLinecap="round" strokeLinejoin="round" d="M10 6H6a2 2 0 00-2 2v10a2 2 0 002 2h10a2 2 0 002-2v-4M14 4h6m0 0v6m0-6L10 14" /></svg>
+          </a>
+        </div>
+        <div className="grid grid-cols-1 lg:grid-cols-3 gap-4">
+          <div className="rounded-[30px] border border-slate-200 bg-white shadow-sm p-6">
+            <h3 className="text-base font-bold text-slate-700 mb-2">Portfolio Holdings</h3>
+            <ImageUpload
+              section="sia-holdings"
+              sectionLabel="Portfolio Holdings"
+              attachments={data.attachments || []}
+              onAdd={addAttachment}
+              onRemove={removeAttachment}
+            />
+          </div>
+          <div className="rounded-[30px] border border-slate-200 bg-white shadow-sm p-6">
+            <h3 className="text-base font-bold text-slate-700 mb-2">Equity Action Call</h3>
+            <ImageUpload
+              section="sia-equity-action"
+              sectionLabel="Equity Action Call"
+              attachments={data.attachments || []}
+              onAdd={addAttachment}
+              onRemove={removeAttachment}
+            />
+          </div>
+          <div className="rounded-[30px] border border-slate-200 bg-white shadow-sm p-6">
+            <h3 className="text-base font-bold text-slate-700 mb-2">Asset Class Rankings</h3>
+            <ImageUpload
+              section="sia-asset-class"
+              sectionLabel="Asset Class Rankings"
+              attachments={data.attachments || []}
+              onAdd={addAttachment}
+              onRemove={removeAttachment}
+            />
+          </div>
+        </div>
+      </section>
+
+      {/* ── Seeking Alpha ── */}
+      <section>
+        <h2 className="text-xl font-bold text-slate-800 mb-4">Seeking Alpha</h2>
+        <div className="rounded-[30px] border border-slate-200 bg-white shadow-sm p-6">
+          <ImageUpload
+            section="seeking-alpha-aa"
+            sectionLabel="Seeking Alpha"
             attachments={data.attachments || []}
             onAdd={addAttachment}
             onRemove={removeAttachment}

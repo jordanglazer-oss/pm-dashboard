@@ -212,7 +212,12 @@ export function SentimentGauges({ marketData, aaiiBull = 30, aaiiNeutral = 17, a
 
         {/* S&P Oscillator */}
         <div className="rounded-2xl border border-slate-100 bg-slate-50 p-5">
-          <div className="text-sm font-semibold text-slate-500 mb-4">S&P Oscillator</div>
+          <div className="text-sm font-semibold text-slate-500 mb-4 flex items-center gap-2">
+            S&amp;P Oscillator
+            <a href="https://app.marketedge.com/#!/markets" target="_blank" rel="noopener noreferrer" className="text-blue-500 hover:text-blue-700" title="MarketEdge S&P Oscillator">
+              <svg className="w-3.5 h-3.5" fill="none" stroke="currentColor" strokeWidth="2" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" d="M10 6H6a2 2 0 00-2 2v10a2 2 0 002 2h10a2 2 0 002-2v-4M14 4h6m0 0v6m0-6L10 14" /></svg>
+            </a>
+          </div>
           <div className="flex items-center gap-6">
             <div className={`flex h-20 w-20 shrink-0 items-center justify-center rounded-2xl text-3xl font-bold ${
               marketData.spOscillator <= -4 ? "bg-emerald-100 text-emerald-700"
@@ -250,7 +255,12 @@ export function SentimentGauges({ marketData, aaiiBull = 30, aaiiNeutral = 17, a
 
         {/* Put/Call Ratio */}
         <div className="rounded-2xl border border-slate-100 bg-slate-50 p-5">
-          <div className="text-sm font-semibold text-slate-500 mb-4">Total Put/Call Ratio</div>
+          <div className="text-sm font-semibold text-slate-500 mb-4 flex items-center gap-2">
+            Total Put/Call Ratio
+            <a href="https://www.cboe.com/us/options/market_statistics/daily/" target="_blank" rel="noopener noreferrer" className="text-blue-500 hover:text-blue-700" title="CBOE Total Put/Call">
+              <svg className="w-3.5 h-3.5" fill="none" stroke="currentColor" strokeWidth="2" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" d="M10 6H6a2 2 0 00-2 2v10a2 2 0 002 2h10a2 2 0 002-2v-4M14 4h6m0 0v6m0-6L10 14" /></svg>
+            </a>
+          </div>
           <div className="flex items-center gap-6">
             <div className={`flex h-20 w-20 shrink-0 items-center justify-center rounded-2xl text-3xl font-bold ${
               marketData.putCall >= 1.2 ? "bg-emerald-100 text-emerald-700"

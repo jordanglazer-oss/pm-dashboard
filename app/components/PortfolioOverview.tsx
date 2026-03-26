@@ -1,6 +1,6 @@
 "use client";
 
-import React from "react";
+import React, { useState } from "react";
 import Link from "next/link";
 import { useStocks } from "@/app/lib/StockContext";
 import { SCORE_GROUPS, MAX_SCORE } from "@/app/lib/types";
@@ -193,6 +193,9 @@ export function PortfolioOverview() {
   );
 }
 
+type RankingSortKey = "ticker" | "raw" | "adjusted" | "rating" | string;
+type SortDir = "asc" | "desc";
+
 function RankingTable({
   title,
   subtitle,
@@ -204,6 +207,8 @@ function RankingTable({
   stocks: ScoredStock[];
   flagType: "review" | "buy";
 }) {
+  const [sort, setSort] = useState<{ key: RankingSortKey; dir: SortDir }>({ key: "adjusted", dir: "desc" });
+
   const GROUP_HEADER_COLORS: Record<string, string> = {
     "Long-term": "text-blue-600",
     Research: "text-purple-600",
@@ -212,6 +217,36 @@ function RankingTable({
     "Company Specific": "text-amber-600",
     Management: "text-red-600",
   };
+
+  function toggleSort(key: RankingSortKey) {
+    setSort((prev) => prev.key === key ? { key, dir: prev.dir === "asc" ? "desc" : "asc" } : { key, dir: "desc" });
+  }
+
+  const arrow = (key: RankingSortKey) => sort.key === key ? (sort.dir === "asc" ? " \u25B2" : " \u25BC") : "";
+
+  const sorted = [...stocks].sort((a, b) => {
+    const { key, dir } = sort;
+    let cmp = 0;
+    if (key === "ticker") {
+      cmp = a.ticker.localeCompare(b.ticker);
+    } else if (key === "raw") {
+      cmp = a.raw - b.raw;
+    } else if (key === "adjusted") {
+      cmp = a.adjusted - b.adjusted;
+    } else if (key === "rating") {
+      const order = { "Sell": 0, "Underweight": 1, "Hold": 2, "Moderate Buy": 3, "Strong Buy": 4 };
+      cmp = (order[(a.ratingLabel || a.rating) as keyof typeof order] ?? 2) - (order[(b.ratingLabel || b.rating) as keyof typeof order] ?? 2);
+    } else {
+      // Score group sort
+      const group = SCORE_GROUPS.find((g) => g.name === key);
+      if (group) {
+        cmp = groupTotal(a, group) - groupTotal(b, group);
+      }
+    }
+    return dir === "asc" ? cmp : -cmp;
+  });
+
+  const thClass = "pb-2 cursor-pointer hover:text-slate-800 select-none";
 
   return (
     <section className="rounded-[30px] border border-slate-200 bg-white p-5 shadow-sm">
@@ -223,25 +258,25 @@ function RankingTable({
         <table className="w-full min-w-[900px] text-left text-sm">
           <thead>
             <tr className="border-b border-slate-200 text-xs text-slate-500">
-              <th className="pb-2 w-8">Rank</th>
-              <th className="pb-2">Ticker</th>
+              <th className="pb-2 w-8">#</th>
+              <th className={thClass} onClick={() => toggleSort("ticker")}>Ticker{arrow("ticker")}</th>
               {SCORE_GROUPS.map((g) => (
-                <th key={g.name} className={`pb-2 ${GROUP_HEADER_COLORS[g.name] || ""}`}>
-                  {g.name === "Company Specific" ? "Company" : g.name}
+                <th key={g.name} className={`${thClass} ${GROUP_HEADER_COLORS[g.name] || ""}`} onClick={() => toggleSort(g.name)}>
+                  {g.name === "Company Specific" ? "Company" : g.name}{arrow(g.name)}
                 </th>
               ))}
-              <th className="pb-2">Base</th>
-              <th className="pb-2 font-bold">Adj</th>
-              <th className="pb-2">Rating</th>
+              <th className={thClass} onClick={() => toggleSort("raw")}>Base{arrow("raw")}</th>
+              <th className={`${thClass} font-bold`} onClick={() => toggleSort("adjusted")}>Adj{arrow("adjusted")}</th>
+              <th className={thClass} onClick={() => toggleSort("rating")}>Rating{arrow("rating")}</th>
               <th className="pb-2">Signal</th>
             </tr>
           </thead>
           <tbody>
-            {stocks.map((s, i) => {
+            {sorted.map((s, i) => {
               const adj = Math.round((s.adjusted - s.raw) * 10) / 10;
               const label = s.ratingLabel || s.rating;
               const isFlagged =
-                flagType === "review" ? i >= stocks.length - 3 : i < 3;
+                flagType === "review" ? i >= sorted.length - 3 : i < 3;
 
               return (
                 <tr key={s.ticker} className="border-b border-slate-50 hover:bg-slate-50/50 transition-colors">
