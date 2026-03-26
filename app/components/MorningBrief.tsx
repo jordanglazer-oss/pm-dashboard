@@ -444,7 +444,28 @@ export function MorningBrief({
 
         {/* ── Other Manual Inputs ── */}
         <div className="border-t border-slate-100 pt-5 mb-4">
-          <div className="grid gap-4 md:grid-cols-3">
+          <div className="grid gap-4 md:grid-cols-4">
+            <div>
+              <label className="text-sm font-medium text-slate-500">Market Regime</label>
+              <select
+                value={marketData.riskRegime}
+                onChange={(e) => onUpdateMarketData({ riskRegime: e.target.value })}
+                className={`mt-1 w-full rounded-xl border px-3 py-2 text-lg font-semibold ${
+                  marketData.riskRegime === "Risk-Off"
+                    ? "border-red-300 bg-red-50 text-red-800"
+                    : marketData.riskRegime === "Risk-On"
+                    ? "border-emerald-300 bg-emerald-50 text-emerald-800"
+                    : "border-amber-300 bg-amber-50 text-amber-800"
+                }`}
+              >
+                <option value="Risk-On">Risk-On</option>
+                <option value="Neutral">Neutral</option>
+                <option value="Risk-Off">Risk-Off</option>
+              </select>
+              <p className="text-[10px] text-slate-400 mt-0.5">
+                {marketData.riskRegime === "Risk-Off" ? "Defensive posture: offensive 0.82x, defensive 1.10x" : marketData.riskRegime === "Risk-On" ? "Offensive posture: offensive 1.10x, defensive 0.95x" : "Balanced: no significant adjustment"}
+              </p>
+            </div>
             <div>
               <label className="text-sm font-medium text-slate-500">VIX Term Structure</label>
               <select
@@ -613,23 +634,38 @@ export function MorningBrief({
           </div>
           <div className="mt-5 space-y-3">
             <div className="flex justify-between border-b border-slate-100 pb-3">
-              <span className="text-slate-500">S&P 500 % &gt; 200 DMA</span>
+              <a href="https://www.marketinout.com/chart/market.php?breadth=above-sma-200" target="_blank" rel="noopener noreferrer" className="text-slate-500 hover:text-blue-600 flex items-center gap-1.5">
+                S&amp;P 500 % &gt; 200 DMA
+                <svg className="w-3 h-3 text-blue-400" fill="none" stroke="currentColor" strokeWidth="2" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" d="M10 6H6a2 2 0 00-2 2v10a2 2 0 002 2h10a2 2 0 002-2v-4M14 4h6m0 0v6m0-6L10 14" /></svg>
+              </a>
               <span className="font-mono font-medium">{marketData.breadth}%</span>
             </div>
             <div className="flex justify-between border-b border-slate-100 pb-3">
-              <span className="text-slate-500">Nasdaq % &gt; 200 DMA</span>
+              <a href="https://www.marketinout.com/chart/market.php?breadth=above-sma-200" target="_blank" rel="noopener noreferrer" className="text-slate-500 hover:text-blue-600 flex items-center gap-1.5">
+                Nasdaq % &gt; 200 DMA
+                <svg className="w-3 h-3 text-blue-400" fill="none" stroke="currentColor" strokeWidth="2" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" d="M10 6H6a2 2 0 00-2 2v10a2 2 0 002 2h10a2 2 0 002-2v-4M14 4h6m0 0v6m0-6L10 14" /></svg>
+              </a>
               <span className="font-mono font-medium">{marketData.nasdaqBreadth}%</span>
             </div>
             <div className="flex justify-between border-b border-slate-100 pb-3">
-              <span className="text-slate-500">S&P 500 % &gt; 50 DMA</span>
+              <a href="https://www.marketinout.com/chart/market.php?breadth=above-sma-200" target="_blank" rel="noopener noreferrer" className="text-slate-500 hover:text-blue-600 flex items-center gap-1.5">
+                S&amp;P 500 % &gt; 50 DMA
+                <svg className="w-3 h-3 text-blue-400" fill="none" stroke="currentColor" strokeWidth="2" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" d="M10 6H6a2 2 0 00-2 2v10a2 2 0 002 2h10a2 2 0 002-2v-4M14 4h6m0 0v6m0-6L10 14" /></svg>
+              </a>
               <span className="font-mono font-medium">{marketData.sp50dma}%</span>
             </div>
             <div className="flex justify-between border-b border-slate-100 pb-3">
-              <span className="text-slate-500">NYSE A/D Line</span>
+              <a href="https://www.marketinout.com/chart/market.php?breadth=advance-decline-line" target="_blank" rel="noopener noreferrer" className="text-slate-500 hover:text-blue-600 flex items-center gap-1.5">
+                NYSE A/D Line
+                <svg className="w-3 h-3 text-blue-400" fill="none" stroke="currentColor" strokeWidth="2" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" d="M10 6H6a2 2 0 00-2 2v10a2 2 0 002 2h10a2 2 0 002-2v-4M14 4h6m0 0v6m0-6L10 14" /></svg>
+              </a>
               <span className="font-mono font-medium">{marketData.nyseAdLine.toLocaleString()}</span>
             </div>
             <div className="flex justify-between pb-3">
-              <span className="text-slate-500">New Highs - Lows</span>
+              <a href="https://www.marketinout.com/chart/market.php?breadth=new-highs-new-lows" target="_blank" rel="noopener noreferrer" className="text-slate-500 hover:text-blue-600 flex items-center gap-1.5">
+                New Highs - Lows
+                <svg className="w-3 h-3 text-blue-400" fill="none" stroke="currentColor" strokeWidth="2" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" d="M10 6H6a2 2 0 00-2 2v10a2 2 0 002 2h10a2 2 0 002-2v-4M14 4h6m0 0v6m0-6L10 14" /></svg>
+              </a>
               <span className={`font-mono font-medium ${marketData.newHighsLows > 0 ? "text-emerald-600" : marketData.newHighsLows < -50 ? "text-red-600" : "text-slate-700"}`}>
                 {marketData.newHighsLows > 0 ? "+" : ""}{marketData.newHighsLows}
               </span>
