@@ -119,6 +119,27 @@ export const SCORE_GROUPS: ScoreGroup[] = [
 
 export const MAX_SCORE = SCORE_GROUPS.reduce((sum, g) => sum + g.maxTotal, 0); // 40
 
+export type HealthData = {
+  fiftyDayAvg?: number;
+  twoHundredDayAvg?: number;
+  pegRatio?: number;
+  shortPercentOfFloat?: number;
+  heldPercentInstitutions?: number;
+  heldPercentInsiders?: number;
+  earningsDate?: string;
+  exDividendDate?: string;
+  forwardPE?: number;
+  trailingPE?: number;
+  enterpriseToEbitda?: number;
+  earningsCurrentEst?: number;
+  earnings30dAgo?: number;
+  earnings90dAgo?: number;
+  fcfMargin?: number;
+  roic?: number;
+  revenueGrowth?: number;
+  currentPrice?: number;
+};
+
 export type Stock = {
   ticker: string;
   name: string;
@@ -131,6 +152,7 @@ export type Stock = {
   lastScored?: string;
   price?: number;
   notes: string;
+  healthData?: HealthData;
 };
 
 export type ScoredStock = Stock & {
@@ -205,4 +227,5 @@ export type ScoreResponse = {
   scores: Partial<Scores>;
   explanations: ScoreExplanations;
   notes: string;
+  healthData?: HealthData;
 };
