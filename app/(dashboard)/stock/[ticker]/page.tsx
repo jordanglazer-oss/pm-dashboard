@@ -8,6 +8,7 @@ import { SCORE_GROUPS, MAX_SCORE } from "@/app/lib/types";
 import type { ScoreKey } from "@/app/lib/types";
 import { groupTotal } from "@/app/lib/scoring";
 import { SignalPill, ratingTone } from "@/app/components/SignalPill";
+import StockHealthMonitor from "@/app/components/StockHealthMonitor";
 
 // ── Color mapping ──
 const GROUP_COLORS: Record<
@@ -99,7 +100,7 @@ export default function StockDetailPage() {
   const params = useParams();
   const router = useRouter();
   const ticker = (params.ticker as string)?.toUpperCase();
-  const { getStock, scoredStocks, marketData, updateScore, updateExplanations, updateLastScored, updatePrice, updateSector, moveBucket, removeStock } = useStocks();
+  const { getStock, scoredStocks, marketData, updateScore, updateExplanations, updateLastScored, updatePrice, updateSector, updateHealthData, moveBucket, removeStock } = useStocks();
   const stock = getStock(ticker);
   const [scoring, setScoring] = useState(false);
 
@@ -139,6 +140,9 @@ export default function StockDetailPage() {
       }
       if (data.price != null) {
         updatePrice(ticker, data.price);
+      }
+      if (data.healthData) {
+        updateHealthData(ticker, data.healthData);
       }
       updateLastScored(ticker, new Date().toLocaleString("en-US", {
         month: "short", day: "numeric", year: "numeric",
@@ -394,6 +398,9 @@ export default function StockDetailPage() {
               </div>
             </div>
           </div>
+
+          {/* Stock Health Monitor */}
+          {stock.healthData && <StockHealthMonitor healthData={stock.healthData} />}
         </div>
       </div>
     </main>

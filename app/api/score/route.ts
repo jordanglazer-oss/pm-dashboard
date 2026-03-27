@@ -1,6 +1,6 @@
 import Anthropic from "@anthropic-ai/sdk";
 import { NextRequest, NextResponse } from "next/server";
-import type { ScoreKey, ScoreExplanations } from "@/app/lib/types";
+import type { ScoreKey, ScoreExplanations, HealthData } from "@/app/lib/types";
 import { SCORE_GROUPS } from "@/app/lib/types";
 
 const client = new Anthropic();
@@ -90,7 +90,7 @@ async function fetchYahooModules(
   }
 }
 
-async function fetchFinancialData(ticker: string): Promise<{ context: string; price?: number }> {
+async function fetchFinancialData(ticker: string): Promise<{ context: string; price?: number; rawModules?: YahooResult }> {
   const auth = await getYahooCrumb();
   if (!auth) {
     return { context: "Financial data API authentication failed. Use your best knowledge but clearly note that figures should be verified." };
@@ -113,6 +113,7 @@ async function fetchFinancialData(ticker: string): Promise<{ context: string; pr
     "price",
     "summaryDetail",
     "summaryProfile",
+    "calendarEvents",
   ];
 
   const companyData = await fetchYahooModules(ticker, companyModules, auth.cookie, auth.crumb);
@@ -255,6 +256,7 @@ async function fetchFinancialData(ticker: string): Promise<{ context: string; pr
   return {
     context: `DATA SOURCE: Yahoo Finance (live data). Today's date is ${new Date().toISOString().split("T")[0]}. All financial data below is from the company's actual SEC/SEDAR filings and current market data. Use the MOST RECENT data available — prefer quarterly over annual where both exist.\n\n${sections.join("\n\n---\n\n")}${peerSection}`,
     price,
+    rawModules: companyData,
   };
 }
 
@@ -361,10 +363,12 @@ export async function POST(request: NextRequest) {
     // Fetch real financial data first
     let financialContext = "";
     let stockPrice: number | undefined;
+    let rawModules: YahooResult | undefined;
     try {
       const result = await fetchFinancialData(upperTicker);
       financialContext = result.context;
       stockPrice = result.price;
+      rawModules = result.rawModules ?? undefined;
     } catch (e) {
       console.error("Failed to fetch financial data:", e);
       financialContext = "Financial data API unavailable. Use your best knowledge but note that data should be verified.";
@@ -418,6 +422,9 @@ export async function POST(request: NextRequest) {
       }
     }
 
+    // Extract health monitor data from raw Yahoo modules
+    const healthData = extractHealthData(rawModules, stockPrice);
+
     return NextResponse.json({
       ticker: upperTicker,
       name: parsed.name || "Unknown",
@@ -427,6 +434,7 @@ export async function POST(request: NextRequest) {
       explanations,
       notes: parsed.notes || "",
       price: stockPrice,
+      healthData,
     });
   } catch (error) {
     console.error("Score API error:", error);
@@ -436,6 +444,136 @@ export async function POST(request: NextRequest) {
     );
   }
 }
+
+/* eslint-disable @typescript-eslint/no-explicit-any */
+function rawVal(obj: any, ...keys: string[]): number | undefined {
+  for (const k of keys) {
+    const v = obj?.[k]?.raw ?? obj?.[k];
+    if (typeof v === "number" && isFinite(v)) return v;
+  }
+  return undefined;
+}
+
+function fmtVal(obj: any, key: string): string | undefined {
+  const v = obj?.[key]?.fmt ?? obj?.[key];
+  return typeof v === "string" ? v : undefined;
+}
+
+function extractHealthData(modules: YahooResult | undefined, currentPrice?: number): HealthData | undefined {
+  if (!modules) return undefined;
+
+  const summary = modules.summaryDetail as any;
+  const keyStats = modules.defaultKeyStatistics as any;
+  const financial = modules.financialData as any;
+  const calendar = modules.calendarEvents as any;
+  const earningsTrend = modules.earningsTrend as any;
+  const cashflow = modules.cashflowStatementHistory as any;
+  const income = modules.incomeStatementHistory as any;
+  const balance = modules.balanceSheetHistory as any;
+
+  // Earnings trend: extract current estimate and historical estimates
+  let earningsCurrentEst: number | undefined;
+  let earnings30dAgo: number | undefined;
+  let earnings90dAgo: number | undefined;
+
+  const trends = earningsTrend?.trend;
+  if (Array.isArray(trends)) {
+    // Usually first trend entry is current quarter
+    const currentQuarter = trends[0];
+    if (currentQuarter?.earningsEstimate) {
+      earningsCurrentEst = rawVal(currentQuarter.earningsEstimate, "avg");
+    }
+    // Revisions: 30 days ago and 90 days ago from epsTrend
+    if (currentQuarter?.epsTrend) {
+      earnings30dAgo = rawVal(currentQuarter.epsTrend, "30daysAgo");
+      earnings90dAgo = rawVal(currentQuarter.epsTrend, "90daysAgo");
+    }
+  }
+
+  // FCF margin from most recent annual cashflow + income
+  let fcfMargin: number | undefined;
+  const cfStatements = cashflow?.cashflowStatements;
+  const incStatements = income?.incomeStatementHistory;
+  if (Array.isArray(cfStatements) && cfStatements.length > 0) {
+    const latestCF = cfStatements[0];
+    const opCashFlow = rawVal(latestCF, "totalCashFromOperatingActivities");
+    const capex = rawVal(latestCF, "capitalExpenditures");
+    const totalRevenue = rawVal(financial, "totalRevenue");
+    if (opCashFlow != null && totalRevenue && totalRevenue !== 0) {
+      // capex is typically negative in Yahoo data
+      const fcf = opCashFlow + (capex ?? 0);
+      fcfMargin = (fcf / totalRevenue) * 100;
+    }
+  }
+
+  // ROIC = net income / (total assets - current liabilities)
+  let roic: number | undefined;
+  const balStatements = balance?.balanceSheetStatements;
+  if (Array.isArray(incStatements) && incStatements.length > 0 && Array.isArray(balStatements) && balStatements.length > 0) {
+    const netIncome = rawVal(incStatements[0], "netIncome");
+    const totalAssets = rawVal(balStatements[0], "totalAssets");
+    const currentLiabilities = rawVal(balStatements[0], "totalCurrentLiabilities");
+    if (netIncome != null && totalAssets != null && currentLiabilities != null) {
+      const investedCapital = totalAssets - currentLiabilities;
+      if (investedCapital !== 0) {
+        roic = (netIncome / investedCapital) * 100;
+      }
+    }
+  }
+
+  // Earnings date from calendarEvents
+  let earningsDate: string | undefined;
+  const earningsDates = calendar?.earnings?.earningsDate;
+  if (Array.isArray(earningsDates) && earningsDates.length > 0) {
+    earningsDate = fmtVal(earningsDates[0], "") ?? earningsDates[0]?.fmt;
+    if (!earningsDate && earningsDates[0]?.raw) {
+      earningsDate = new Date(earningsDates[0].raw * 1000).toISOString().split("T")[0];
+    }
+  }
+
+  // Ex-dividend date
+  let exDividendDate: string | undefined;
+  const exDiv = summary?.exDividendDate;
+  if (exDiv?.fmt) {
+    exDividendDate = exDiv.fmt;
+  } else if (exDiv?.raw) {
+    exDividendDate = new Date(exDiv.raw * 1000).toISOString().split("T")[0];
+  }
+
+  const healthData: HealthData = {
+    fiftyDayAvg: rawVal(summary, "fiftyDayAverage"),
+    twoHundredDayAvg: rawVal(summary, "twoHundredDayAverage"),
+    pegRatio: rawVal(keyStats, "pegRatio"),
+    shortPercentOfFloat: rawVal(keyStats, "shortPercentOfFloat") != null
+      ? (rawVal(keyStats, "shortPercentOfFloat")! * 100)
+      : undefined,
+    heldPercentInstitutions: rawVal(keyStats, "heldPercentInstitutions") != null
+      ? (rawVal(keyStats, "heldPercentInstitutions")! * 100)
+      : undefined,
+    heldPercentInsiders: rawVal(keyStats, "heldPercentInsiders") != null
+      ? (rawVal(keyStats, "heldPercentInsiders")! * 100)
+      : undefined,
+    earningsDate,
+    exDividendDate,
+    forwardPE: rawVal(summary, "forwardPE") ?? rawVal(keyStats, "forwardPE"),
+    trailingPE: rawVal(summary, "trailingPE") ?? rawVal(keyStats, "trailingPE"),
+    enterpriseToEbitda: rawVal(keyStats, "enterpriseToEbitda"),
+    earningsCurrentEst,
+    earnings30dAgo,
+    earnings90dAgo,
+    fcfMargin,
+    roic,
+    revenueGrowth: rawVal(financial, "revenueGrowth") != null
+      ? (rawVal(financial, "revenueGrowth")! * 100)
+      : undefined,
+    currentPrice: currentPrice ?? rawVal(financial, "currentPrice"),
+  };
+
+  // Only return if we have at least some data
+  const hasData = Object.values(healthData).some((v) => v != null);
+  return hasData ? healthData : undefined;
+}
+/* eslint-enable @typescript-eslint/no-explicit-any */
 
 function clamp(value: unknown, max: number): number {
   const num = typeof value === "number" ? value : 0;

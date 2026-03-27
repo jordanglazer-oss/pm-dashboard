@@ -1,7 +1,7 @@
 "use client";
 
 import React, { createContext, useContext, useState, useMemo, useCallback, useEffect, useRef } from "react";
-import type { Stock, MarketData, ScoredStock, MorningBrief, ScoreKey, ScoreExplanations } from "./types";
+import type { Stock, MarketData, ScoredStock, MorningBrief, ScoreKey, ScoreExplanations, HealthData } from "./types";
 import { computeScores, isOffensiveSector } from "./scoring";
 import { holdingsSeed, defaultMarketData } from "./defaults";
 
@@ -20,6 +20,7 @@ type StockContextType = {
   updateLastScored: (ticker: string, timestamp: string) => void;
   updatePrice: (ticker: string, price: number) => void;
   updateSector: (ticker: string, sector: string) => void;
+  updateHealthData: (ticker: string, healthData: HealthData) => void;
   setBrief: (brief: MorningBrief) => void;
   updateMarketData: (updates: Partial<MarketData>) => void;
   getStock: (ticker: string) => ScoredStock | undefined;
@@ -179,6 +180,16 @@ export function StockProvider({ children }: { children: React.ReactNode }) {
     });
   }, [persistStocks]);
 
+  const updateHealthData = useCallback((ticker: string, healthData: HealthData) => {
+    setStocks((prev) => {
+      const next = prev.map((s) =>
+        s.ticker === ticker ? { ...s, healthData } : s
+      );
+      persistStocks(next);
+      return next;
+    });
+  }, [persistStocks]);
+
   /* ─── Market data ─── */
   const updateMarketData = useCallback((updates: Partial<MarketData>) => {
     setMarketData((prev) => {
@@ -216,6 +227,7 @@ export function StockProvider({ children }: { children: React.ReactNode }) {
         updateLastScored,
         updatePrice,
         updateSector,
+        updateHealthData,
         setBrief,
         updateMarketData,
         getStock,
