@@ -184,65 +184,139 @@ async function fetchFinancialData(ticker: string): Promise<{ context: string; pr
     price = financialData.currentPrice.raw as number;
   }
 
-  // Format the data for Claude - include all modules
-  const sections: string[] = [];
+  // Pre-extract key metrics instead of dumping raw JSON (saves ~70% tokens)
+  const r = (obj: any, ...keys: string[]): string => {
+    for (const k of keys) {
+      const v = obj?.[k]?.fmt ?? obj?.[k]?.raw ?? obj?.[k];
+      if (v != null && v !== "" && typeof v !== "object") return String(v);
+    }
+    return "N/A";
+  };
+  const rn = (obj: any, ...keys: string[]): number | null => {
+    for (const k of keys) {
+      const v = obj?.[k]?.raw ?? obj?.[k];
+      if (typeof v === "number" && isFinite(v)) return v;
+    }
+    return null;
+  };
 
-  // Summary/Profile
-  if (companyData.summaryProfile || companyData.price) {
-    sections.push(`COMPANY PROFILE:\n${JSON.stringify({ profile: companyData.summaryProfile, price: companyData.price }, null, 2)}`);
+  const ks = companyData.defaultKeyStatistics as any ?? {};
+  const fd = companyData.financialData as any ?? {};
+  const sd = companyData.summaryDetail as any ?? {};
+  const sp = companyData.summaryProfile as any ?? {};
+  const earn = companyData.earnings as any ?? {};
+  const et = companyData.earningsTrend as any ?? {};
+  const isH = (companyData.incomeStatementHistory as any)?.incomeStatementHistory ?? [];
+  const isQ = (companyData.incomeStatementHistoryQuarterly as any)?.incomeStatementHistory ?? [];
+  const bsH = (companyData.balanceSheetHistory as any)?.balanceSheetStatements ?? [];
+  const cfH = (companyData.cashflowStatementHistory as any)?.cashflowStatements ?? [];
+  const cfQ = (companyData.cashflowStatementHistoryQuarterly as any)?.cashflowStatements ?? [];
+
+  // Build compact profile
+  const lines: string[] = [];
+  lines.push(`COMPANY: ${r(companyData.price, "shortName", "longName")} (${ticker})`);
+  lines.push(`Sector: ${r(sp, "sector")} | Industry: ${r(sp, "industry")} | Employees: ${r(sp, "fullTimeEmployees")}`);
+  lines.push(`Price: $${r(companyData.price, "regularMarketPrice")} | Market Cap: ${r(sd, "marketCap")} | Enterprise Value: ${r(ks, "enterpriseValue")}`);
+  lines.push(`Beta: ${r(sd, "beta")} | 52-Week: $${r(sd, "fiftyTwoWeekLow")} - $${r(sd, "fiftyTwoWeekHigh")}`);
+
+  // Valuation
+  lines.push(`\nVALUATION:`);
+  lines.push(`Trailing P/E: ${r(sd, "trailingPE")} | Forward P/E: ${r(sd, "forwardPE")} | PEG: ${r(ks, "pegRatio")}`);
+  lines.push(`EV/EBITDA: ${r(ks, "enterpriseToEbitda")} | EV/Revenue: ${r(ks, "enterpriseToRevenue")} | P/B: ${r(ks, "priceToBook")}`);
+  lines.push(`P/S: ${r(sd, "priceToSalesTrailing12Months")} | Dividend Yield: ${r(sd, "dividendYield")}`);
+
+  // Margins & Returns
+  lines.push(`\nMARGINS & RETURNS:`);
+  lines.push(`Gross Margin: ${r(fd, "grossMargins")} | EBITDA Margin: ${r(fd, "ebitdaMargins")} | Operating Margin: ${r(fd, "operatingMargins")} | Profit Margin: ${r(fd, "profitMargins")}`);
+  lines.push(`ROE: ${r(fd, "returnOnEquity")} | ROA: ${r(fd, "returnOnAssets")}`);
+
+  // Growth
+  lines.push(`\nGROWTH:`);
+  lines.push(`Revenue Growth: ${r(fd, "revenueGrowth")} | Earnings Growth: ${r(fd, "earningsGrowth")}`);
+  lines.push(`Total Revenue: ${r(fd, "totalRevenue")} | EBITDA: ${r(fd, "ebitda")} | Free Cash Flow: ${r(fd, "freeCashflow")} | Operating CF: ${r(fd, "operatingCashflow")}`);
+
+  // Balance Sheet (most recent)
+  if (bsH.length > 0) {
+    const bs = bsH[0];
+    lines.push(`\nBALANCE SHEET (most recent):`);
+    lines.push(`Total Assets: ${r(bs, "totalAssets")} | Total Liabilities: ${r(bs, "totalLiab")} | Total Debt: ${r(bs, "longTermDebt", "shortLongTermDebt")}`);
+    lines.push(`Cash: ${r(bs, "cash")} | Net Debt: ${r(fd, "totalDebt")} minus ${r(bs, "cash")}`);
+    lines.push(`Debt/Equity: ${r(fd, "debtToEquity")} | Current Ratio: ${r(fd, "currentRatio")}`);
   }
 
-  // Key Statistics (PE, EV, beta, short interest, etc.)
-  if (companyData.defaultKeyStatistics) {
-    sections.push(`KEY STATISTICS (current valuation metrics, enterprise value, shares, short interest):\n${JSON.stringify(companyData.defaultKeyStatistics, null, 2)}`);
+  // Income trend (last 3 years if available)
+  if (isH.length > 0) {
+    lines.push(`\nINCOME TREND (annual):`);
+    for (const stmt of isH.slice(0, 3)) {
+      const yr = stmt?.endDate?.fmt ?? "?";
+      lines.push(`  ${yr}: Revenue ${r(stmt, "totalRevenue")} | Net Income ${r(stmt, "netIncome")} | EPS ${r(stmt, "dilutedEPS", "basicEPS")}`);
+    }
   }
 
-  // Financial Data (current ratios, margins, returns)
-  if (companyData.financialData) {
-    sections.push(`FINANCIAL DATA (current margins, returns, recommendations):\n${JSON.stringify(companyData.financialData, null, 2)}`);
+  // Quarterly income trend
+  if (isQ.length > 0) {
+    lines.push(`\nINCOME TREND (quarterly):`);
+    for (const stmt of isQ.slice(0, 4)) {
+      const qtr = stmt?.endDate?.fmt ?? "?";
+      lines.push(`  ${qtr}: Revenue ${r(stmt, "totalRevenue")} | Net Income ${r(stmt, "netIncome")} | EPS ${r(stmt, "dilutedEPS", "basicEPS")}`);
+    }
   }
 
-  // Summary Detail (PE, dividend, market cap, 52w range)
-  if (companyData.summaryDetail) {
-    sections.push(`SUMMARY DETAIL (PE, dividend yield, market cap, 52-week range):\n${JSON.stringify(companyData.summaryDetail, null, 2)}`);
+  // Cash Flow trend
+  if (cfH.length > 0) {
+    lines.push(`\nCASH FLOW TREND (annual):`);
+    for (const stmt of cfH.slice(0, 3)) {
+      const yr = stmt?.endDate?.fmt ?? "?";
+      const opCF = rn(stmt, "totalCashFromOperatingActivities");
+      const capex = rn(stmt, "capitalExpenditures");
+      const fcf = opCF != null ? (opCF + (capex ?? 0)) : null;
+      lines.push(`  ${yr}: Operating CF ${r(stmt, "totalCashFromOperatingActivities")} | Capex ${r(stmt, "capitalExpenditures")} | FCF ${fcf != null ? `$${(fcf/1e9).toFixed(2)}B` : "N/A"}`);
+    }
   }
 
-  // Income Statements (annual)
-  if (companyData.incomeStatementHistory) {
-    sections.push(`INCOME STATEMENTS (Annual, up to 4 years):\n${JSON.stringify(companyData.incomeStatementHistory, null, 2)}`);
+  // Quarterly cash flow
+  if (cfQ.length > 0) {
+    lines.push(`\nCASH FLOW TREND (quarterly):`);
+    for (const stmt of cfQ.slice(0, 4)) {
+      const qtr = stmt?.endDate?.fmt ?? "?";
+      const opCF = rn(stmt, "totalCashFromOperatingActivities");
+      const capex = rn(stmt, "capitalExpenditures");
+      const fcf = opCF != null ? (opCF + (capex ?? 0)) : null;
+      lines.push(`  ${qtr}: Operating CF ${r(stmt, "totalCashFromOperatingActivities")} | FCF ${fcf != null ? `$${(fcf/1e9).toFixed(2)}B` : "N/A"}`);
+    }
   }
 
-  // Income Statements (quarterly)
-  if (companyData.incomeStatementHistoryQuarterly) {
-    sections.push(`INCOME STATEMENTS (Quarterly, last 4 quarters):\n${JSON.stringify(companyData.incomeStatementHistoryQuarterly, null, 2)}`);
+  // Earnings estimates
+  const trends = et?.trend;
+  if (Array.isArray(trends) && trends.length > 0) {
+    lines.push(`\nEARNINGS ESTIMATES:`);
+    for (const t of trends.slice(0, 2)) {
+      const period = t?.period ?? "?";
+      lines.push(`  ${period}: EPS Est ${r(t?.earningsEstimate ?? {}, "avg")} | Revenue Est ${r(t?.revenueEstimate ?? {}, "avg")} | Growth ${r(t, "growth")}`);
+      if (t?.epsTrend) {
+        lines.push(`    Revisions: 7d ago ${r(t.epsTrend, "7daysAgo")} | 30d ago ${r(t.epsTrend, "30daysAgo")} | 90d ago ${r(t.epsTrend, "90daysAgo")}`);
+      }
+    }
   }
 
-  // Balance Sheet
-  if (companyData.balanceSheetHistory) {
-    sections.push(`BALANCE SHEET (Annual):\n${JSON.stringify(companyData.balanceSheetHistory, null, 2)}`);
+  // Quarterly EPS history
+  const qEarnings = earn?.earningsChart?.quarterly;
+  if (Array.isArray(qEarnings) && qEarnings.length > 0) {
+    lines.push(`\nQUARTERLY EPS (recent):`);
+    for (const q of qEarnings) {
+      lines.push(`  ${q?.date ?? "?"}: Actual ${r(q, "actual")} vs Est ${r(q, "estimate")} (${rn(q, "actual") != null && rn(q, "estimate") != null && rn(q, "actual")! > rn(q, "estimate")! ? "BEAT" : "MISS"})`);
+    }
   }
 
-  // Cash Flow
-  if (companyData.cashflowStatementHistory) {
-    sections.push(`CASH FLOW STATEMENTS (Annual):\n${JSON.stringify(companyData.cashflowStatementHistory, null, 2)}`);
-  }
+  // Short interest & ownership
+  lines.push(`\nOWNERSHIP:`);
+  lines.push(`Short % of Float: ${r(ks, "shortPercentOfFloat")} | Institutional: ${r(ks, "heldPercentInstitutions")} | Insider: ${r(ks, "heldPercentInsiders")}`);
+  lines.push(`Shares Outstanding: ${r(ks, "sharesOutstanding")} | Float: ${r(ks, "floatShares")}`);
 
-  // Cash Flow (quarterly)
-  if (companyData.cashflowStatementHistoryQuarterly) {
-    sections.push(`CASH FLOW STATEMENTS (Quarterly, last 4 quarters):\n${JSON.stringify(companyData.cashflowStatementHistoryQuarterly, null, 2)}`);
-  }
+  // Analyst recommendations
+  lines.push(`\nANALYST: Target Mean $${r(fd, "targetMeanPrice")} | Target High $${r(fd, "targetHighPrice")} | Target Low $${r(fd, "targetLowPrice")} | Recommendation: ${r(fd, "recommendationKey")}`);
 
-  // Earnings
-  if (companyData.earnings) {
-    sections.push(`EARNINGS (quarterly EPS history + estimates):\n${JSON.stringify(companyData.earnings, null, 2)}`);
-  }
-
-  // Earnings Trend (forward estimates)
-  if (companyData.earningsTrend) {
-    sections.push(`EARNINGS TREND (analyst estimates, revisions):\n${JSON.stringify(companyData.earningsTrend, null, 2)}`);
-  }
-
-  console.log(`[Yahoo] ${ticker}: ${sections.length} data sections compiled`);
+  console.log(`[Yahoo] ${ticker}: compact data compiled (${lines.length} lines)`);
 
   // Now fetch peer companies for relative valuation
   // Use the industry from summaryProfile to find peers
@@ -266,14 +340,14 @@ async function fetchFinancialData(ticker: string): Promise<{ context: string; pr
           const peersData = await peersRes.json();
           if (Array.isArray(peersData) && peersData.length > 0) {
             const peerTickers: string[] = peersData
-              .slice(0, 3)
+              .slice(0, 2)
               .map((p: Record<string, unknown>) => p.symbol as string)
               .filter(Boolean);
 
             if (peerTickers.length > 0) {
               console.log(`[Yahoo] Fetching peers: ${peerTickers.join(", ")}`);
 
-              // Fetch key data for each peer via Yahoo
+              // Fetch key data for each peer via Yahoo (compact metrics only)
               const peerResults = await Promise.all(
                 peerTickers.map((peer) =>
                   fetchYahooModules(
@@ -285,15 +359,19 @@ async function fetchFinancialData(ticker: string): Promise<{ context: string; pr
                 )
               );
 
-              const peerSections = peerTickers
+              const peerLines = peerTickers
                 .map((peer, i) => {
-                  if (!peerResults[i]) return null;
-                  return `PEER: ${peer}\n${JSON.stringify(peerResults[i], null, 2)}`;
+                  const p = peerResults[i];
+                  if (!p) return null;
+                  const pks = p.defaultKeyStatistics as any ?? {};
+                  const pfd = p.financialData as any ?? {};
+                  const psd = p.summaryDetail as any ?? {};
+                  return `PEER ${peer}: Price $${r(p.price, "regularMarketPrice")} | P/E ${r(psd, "trailingPE")} | Fwd P/E ${r(psd, "forwardPE")} | EV/EBITDA ${r(pks, "enterpriseToEbitda")} | P/B ${r(pks, "priceToBook")} | Rev Growth ${r(pfd, "revenueGrowth")} | Gross Margin ${r(pfd, "grossMargins")} | ROE ${r(pfd, "returnOnEquity")} | FCF ${r(pfd, "freeCashflow")} | Market Cap ${r(psd, "marketCap")}`;
                 })
                 .filter(Boolean);
 
-              if (peerSections.length > 0) {
-                peerSection = `\n\n---\n\nPEER COMPANY DATA (use for relative valuation and competitive moat comparisons):\nPeers identified: ${peerTickers.join(", ")}\n\n${peerSections.join("\n\n---\n\n")}`;
+              if (peerLines.length > 0) {
+                peerSection = `\n\nPEER COMPARISONS (use for relative valuation):\n${peerLines.join("\n")}`;
               }
             }
           }
@@ -305,7 +383,7 @@ async function fetchFinancialData(ticker: string): Promise<{ context: string; pr
   }
 
   return {
-    context: `DATA SOURCE: Yahoo Finance (live data). Today's date is ${new Date().toISOString().split("T")[0]}. All financial data below is from the company's actual SEC/SEDAR filings and current market data. Use the MOST RECENT data available — prefer quarterly over annual where both exist.\n\n${sections.join("\n\n---\n\n")}${peerSection}`,
+    context: `DATA SOURCE: Yahoo Finance (live data, ${new Date().toISOString().split("T")[0]}). All figures from actual filings.\n\n${lines.join("\n")}${peerSection}`,
     price,
     rawModules: companyData,
   };
@@ -443,7 +521,7 @@ export async function POST(request: NextRequest) {
 
     const message = await client.messages.create({
       model: "claude-sonnet-4-6",
-      max_tokens: 8192,
+      max_tokens: 3000,
       messages: [
         {
           role: "user",
