@@ -158,30 +158,41 @@ function hashAttachments(attachments: AttachmentInput[]): string {
 type CachedAnalysis = {
   hash: string;
   summary: string;
+  equityFlowsSignal?: string;
   analyzedAt: string;
 };
 
 // Get cached analysis from KV, or null if cache miss / images changed
-async function getCachedAnalysis(hash: string): Promise<string | null> {
+async function getCachedAnalysis(hash: string): Promise<{ summary: string; equityFlowsSignal?: string } | null> {
   try {
     const redis = await getRedis();
     const raw = await redis.get(ATTACHMENT_CACHE_KEY);
     if (!raw) return null;
     const cached: CachedAnalysis = JSON.parse(raw);
-    if (cached.hash === hash) return cached.summary;
+    if (cached.hash === hash) return { summary: cached.summary, equityFlowsSignal: cached.equityFlowsSignal };
     return null;
   } catch {
     return null;
   }
 }
 
+// Parse the equity flows signal from the analysis text
+function parseEquityFlowsSignal(text: string): string | undefined {
+  const match = text.match(/^EQUITY_FLOWS_SIGNAL:\s*(.+)$/m);
+  if (!match) return undefined;
+  const signal = match[1].trim();
+  const valid = ["Strong Inflows", "Moderate Inflows", "Mixed", "Moderate Outflows", "Heavy Outflows"];
+  return valid.includes(signal) ? signal : undefined;
+}
+
 // Save analysis to KV cache
-async function saveCachedAnalysis(hash: string, summary: string) {
+async function saveCachedAnalysis(hash: string, summary: string, equityFlowsSignal?: string) {
   try {
     const redis = await getRedis();
     const cached: CachedAnalysis = {
       hash,
       summary,
+      equityFlowsSignal,
       analyzedAt: new Date().toISOString(),
     };
     await redis.set(ATTACHMENT_CACHE_KEY, JSON.stringify(cached));
@@ -202,7 +213,12 @@ async function analyzeAttachments(attachments: AttachmentInput[]): Promise<strin
         content: [
           {
             type: "text",
-            text: "You are a senior portfolio strategist. Analyze these JPM Flows & Liquidity report screenshots. Extract all key data points: fund flow figures ($bn), asset class flows (equity, bond, money market), regional flows, sector positioning, and any notable trends. Be specific with numbers. Write a concise 3-5 paragraph summary that a PM can reference daily.",
+            text: `You are a senior portfolio strategist. Analyze these JPM Flows & Liquidity report screenshots. Extract all key data points: fund flow figures ($bn), asset class flows (equity, bond, money market), regional flows, sector positioning, and any notable trends. Be specific with numbers.
+
+IMPORTANT: Your response must start with a single classification line in this exact format:
+EQUITY_FLOWS_SIGNAL: <one of: Strong Inflows, Moderate Inflows, Mixed, Moderate Outflows, Heavy Outflows>
+
+Then write a concise 3-5 paragraph summary that a PM can reference daily.`,
           },
           ...imageBlocks,
         ],
@@ -280,19 +296,25 @@ Current Portfolio Holdings: ${holdingsSummary}`;
     const atts: AttachmentInput[] = attachments || [];
     const attHash = hashAttachments(atts);
     let flowsContext = "";
+    let autoEquityFlows: string | undefined;
 
     if (atts.length > 0) {
       const cached = await getCachedAnalysis(attHash);
       if (cached) {
         // Images haven't changed — use cached summary (saves vision tokens)
-        flowsContext = `\n\n--- JPM Flows & Liquidity Report Summary (from attached screenshots, unchanged since last analysis) ---\n${cached}`;
+        flowsContext = `\n\n--- JPM Flows & Liquidity Report Summary (from attached screenshots, unchanged since last analysis) ---\n${cached.summary}`;
+        autoEquityFlows = cached.equityFlowsSignal;
         console.log("Using cached attachment analysis (images unchanged)");
       } else {
         // New images — analyze them separately and cache the result
         console.log("New attachments detected — running vision analysis...");
         const summary = await analyzeAttachments(atts);
-        await saveCachedAnalysis(attHash, summary);
-        flowsContext = `\n\n--- JPM Flows & Liquidity Report Summary (freshly analyzed from screenshots) ---\n${summary}`;
+        const flowsSignal = parseEquityFlowsSignal(summary);
+        // Strip the signal line from the summary for cleaner context
+        const cleanSummary = summary.replace(/^EQUITY_FLOWS_SIGNAL:.*\n?/m, "").trim();
+        await saveCachedAnalysis(attHash, cleanSummary, flowsSignal);
+        autoEquityFlows = flowsSignal;
+        flowsContext = `\n\n--- JPM Flows & Liquidity Report Summary (freshly analyzed from screenshots) ---\n${cleanSummary}`;
       }
     }
 
@@ -332,6 +354,7 @@ Current Portfolio Holdings: ${holdingsSummary}`;
         day: "numeric",
       }),
       marketData,
+      ...(autoEquityFlows ? { autoEquityFlows } : {}),
       ...parsed,
     });
   } catch (error) {
