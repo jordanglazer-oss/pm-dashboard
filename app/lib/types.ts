@@ -1,3 +1,8 @@
+import type { TechnicalIndicators, RiskAlert } from "./technicals";
+
+// Re-export for convenience
+export type { TechnicalIndicators, RiskAlert };
+
 // ── Scoring category definitions ──
 // Each sub-category has a max score and an input type:
 //   AUTO  = Claude scores automatically
@@ -153,6 +158,8 @@ export type Stock = {
   price?: number;
   notes: string;
   healthData?: HealthData;
+  technicals?: TechnicalIndicators;
+  riskAlert?: RiskAlert;
 };
 
 export type ScoredStock = Stock & {
@@ -228,4 +235,6 @@ export type ScoreResponse = {
   explanations: ScoreExplanations;
   notes: string;
   healthData?: HealthData;
+  technicals?: TechnicalIndicators;
+  riskAlert?: RiskAlert;
 };

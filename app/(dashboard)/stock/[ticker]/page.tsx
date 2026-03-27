@@ -9,6 +9,7 @@ import type { ScoreKey } from "@/app/lib/types";
 import { groupTotal } from "@/app/lib/scoring";
 import { SignalPill, ratingTone } from "@/app/components/SignalPill";
 import StockHealthMonitor from "@/app/components/StockHealthMonitor";
+import RiskAlertPanel from "@/app/components/RiskAlertPanel";
 
 // ── Color mapping ──
 const GROUP_COLORS: Record<
@@ -100,7 +101,7 @@ export default function StockDetailPage() {
   const params = useParams();
   const router = useRouter();
   const ticker = (params.ticker as string)?.toUpperCase();
-  const { getStock, scoredStocks, marketData, updateScore, updateExplanations, updateLastScored, updatePrice, updateSector, updateHealthData, moveBucket, removeStock } = useStocks();
+  const { getStock, scoredStocks, marketData, updateScore, updateExplanations, updateLastScored, updatePrice, updateSector, updateHealthData, updateTechnicals, moveBucket, removeStock } = useStocks();
   const stock = getStock(ticker);
   const [scoring, setScoring] = useState(false);
 
@@ -143,6 +144,9 @@ export default function StockDetailPage() {
       }
       if (data.healthData) {
         updateHealthData(ticker, data.healthData);
+      }
+      if (data.technicals && data.riskAlert) {
+        updateTechnicals(ticker, data.technicals, data.riskAlert);
       }
       updateLastScored(ticker, new Date().toLocaleString("en-US", {
         month: "short", day: "numeric", year: "numeric",
@@ -398,6 +402,11 @@ export default function StockDetailPage() {
               </div>
             </div>
           </div>
+
+          {/* Risk Alert Panel */}
+          {stock.riskAlert && stock.technicals && (
+            <RiskAlertPanel riskAlert={stock.riskAlert} technicals={stock.technicals} />
+          )}
 
           {/* Stock Health Monitor */}
           {stock.healthData && <StockHealthMonitor healthData={stock.healthData} />}
