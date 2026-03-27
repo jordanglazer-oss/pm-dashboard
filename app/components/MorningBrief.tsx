@@ -190,8 +190,16 @@ export function MorningBrief({
       const data = await res.json();
       onBriefGenerated(data);
       // Update market regime based on Claude's assessment
+      const marketUpdates: Partial<MarketData> = {};
       if (data.marketRegime) {
-        onUpdateMarketData({ riskRegime: data.marketRegime });
+        marketUpdates.riskRegime = data.marketRegime;
+      }
+      // Auto-set equity flows from JPM screenshot analysis
+      if (data.autoEquityFlows) {
+        marketUpdates.equityFlows = data.autoEquityFlows;
+      }
+      if (Object.keys(marketUpdates).length > 0) {
+        onUpdateMarketData(marketUpdates);
       }
     } catch (err) {
       setError(err instanceof Error ? err.message : "Failed to generate brief");
@@ -407,7 +415,12 @@ export function MorningBrief({
               <p className="text-[10px] text-slate-400 mt-0.5">Total P/C ratio</p>
             </div>
             <div>
-              <label className="text-sm font-medium text-slate-500">CNN Fear & Greed (0-100)</label>
+              <div className="flex items-center gap-2">
+                <label className="text-sm font-medium text-slate-500">CNN Fear & Greed (0-100)</label>
+                <a href="https://www.cnn.com/markets/fear-and-greed" target="_blank" rel="noopener noreferrer" className="text-blue-500 hover:text-blue-700" title="CNN Fear & Greed Index">
+                  <svg className="w-3.5 h-3.5" fill="none" stroke="currentColor" strokeWidth="2" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" d="M10 6H6a2 2 0 00-2 2v10a2 2 0 002 2h10a2 2 0 002-2v-4M14 4h6m0 0v6m0-6L10 14" /></svg>
+                </a>
+              </div>
               <NumericInput
                 value={fg}
                 onChange={setFg}
@@ -415,7 +428,12 @@ export function MorningBrief({
               />
             </div>
             <div>
-              <label className="text-sm font-medium text-slate-500">AAII Survey (%)</label>
+              <div className="flex items-center gap-2">
+                <label className="text-sm font-medium text-slate-500">AAII Survey (%)</label>
+                <a href="https://www.aaii.com/sentimentsurvey" target="_blank" rel="noopener noreferrer" className="text-blue-500 hover:text-blue-700" title="AAII Sentiment Survey">
+                  <svg className="w-3.5 h-3.5" fill="none" stroke="currentColor" strokeWidth="2" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" d="M10 6H6a2 2 0 00-2 2v10a2 2 0 002 2h10a2 2 0 002-2v-4M14 4h6m0 0v6m0-6L10 14" /></svg>
+                </a>
+              </div>
               <div className="mt-1 flex gap-3">
                 <div>
                   <span className="text-[10px] text-red-500 font-medium">Bull</span>
