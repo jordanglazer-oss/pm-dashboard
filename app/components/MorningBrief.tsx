@@ -74,11 +74,37 @@ export function MorningBrief({
   const [liveLoading, setLiveLoading] = useState(false);
   const [liveFields, setLiveFields] = useState<Record<string, boolean>>({});
 
-  // Local editable state for sentiment inputs
+  // Local editable state for sentiment inputs — initialise from persisted marketData
   const [fg, setFg] = useState(marketData.fearGreed);
-  const [aaiiBull, setAaiiBull] = useState(30);
-  const [aaiiNeutral, setAaiiNeutral] = useState(17);
-  const [aaiiBear, setAaiiBear] = useState(52);
+  const [aaiiBull, setAaiiBull] = useState(marketData.aaiiBull ?? 30);
+  const [aaiiNeutral, setAaiiNeutral] = useState(marketData.aaiiNeutral ?? 17);
+  const [aaiiBear, setAaiiBear] = useState(marketData.aaiiBear ?? 52);
+
+  // Sync local state when marketData loads from Redis after mount
+  const initialised = useRef(false);
+  useEffect(() => {
+    if (initialised.current) return;
+    // Only sync once when real data arrives (not defaults)
+    if (marketData.aaiiBull != null) {
+      setFg(marketData.fearGreed);
+      setAaiiBull(marketData.aaiiBull);
+      setAaiiNeutral(marketData.aaiiNeutral);
+      setAaiiBear(marketData.aaiiBear);
+      initialised.current = true;
+    }
+  }, [marketData.fearGreed, marketData.aaiiBull, marketData.aaiiNeutral, marketData.aaiiBear]);
+
+  // Persist sentiment changes to marketData (debounced via parent)
+  const mounted = useRef(false);
+  useEffect(() => {
+    if (!mounted.current) { mounted.current = true; return; }
+    onUpdateMarketData({ fearGreed: fg });
+  }, [fg]); // eslint-disable-line react-hooks/exhaustive-deps
+  useEffect(() => {
+    if (!mounted.current) return;
+    const spread = parseFloat((aaiiBull - aaiiBear).toFixed(1));
+    onUpdateMarketData({ aaiiBull, aaiiNeutral, aaiiBear, aaiiBullBear: spread });
+  }, [aaiiBull, aaiiNeutral, aaiiBear]); // eslint-disable-line react-hooks/exhaustive-deps
 
   // Attachments (screenshots for brief sections)
   const [attachments, setAttachments] = useState<BriefAttachment[]>([]);

@@ -22,6 +22,9 @@ export const defaultMarketData: MarketData = {
   sp50dma: 35.0,
   nyseAdLine: 0,
   newHighsLows: 0,
+  aaiiBull: 30,
+  aaiiNeutral: 17,
+  aaiiBear: 52,
 };
 
 export const holdingsSeed: Stock[] = [

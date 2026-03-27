@@ -193,6 +193,9 @@ export type MarketData = {
   sp50dma: number;
   nyseAdLine: number;
   newHighsLows: number;
+  aaiiBull: number;
+  aaiiNeutral: number;
+  aaiiBear: number;
 };
 
 export type MorningBrief = {
