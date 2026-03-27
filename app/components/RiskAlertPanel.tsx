@@ -222,6 +222,110 @@ function VolumeBar({ ratio, signal }: { ratio: number; signal: string }) {
   );
 }
 
+// ── Ichimoku Cloud panel ──
+
+function IchimokuPanel({ ichimoku, price }: { ichimoku: TechnicalIndicators["ichimoku"]; price: number }) {
+  const overallColor =
+    ichimoku.overallSignal === "strong_bullish" || ichimoku.overallSignal === "bullish"
+      ? "text-emerald-600"
+      : ichimoku.overallSignal === "strong_bearish" || ichimoku.overallSignal === "bearish"
+      ? "text-red-600"
+      : "text-amber-600";
+
+  const overallBg =
+    ichimoku.overallSignal === "strong_bullish" || ichimoku.overallSignal === "bullish"
+      ? "bg-emerald-50 border-emerald-200"
+      : ichimoku.overallSignal === "strong_bearish" || ichimoku.overallSignal === "bearish"
+      ? "bg-red-50 border-red-200"
+      : "bg-amber-50 border-amber-200";
+
+  const signalItems: { label: string; value: string; color: string }[] = [
+    {
+      label: "Price vs Cloud",
+      value: ichimoku.priceVsCloud === "above" ? "Above (Bullish)" : ichimoku.priceVsCloud === "below" ? "Below (Bearish)" : "Inside (Indecision)",
+      color: ichimoku.priceVsCloud === "above" ? "text-emerald-600" : ichimoku.priceVsCloud === "below" ? "text-red-600" : "text-amber-600",
+    },
+    {
+      label: "TK Cross",
+      value: ichimoku.tkCross === "bullish"
+        ? `Bullish${ichimoku.tkCrossRecent ? " (Recent!)" : ""}`
+        : ichimoku.tkCross === "bearish"
+        ? `Bearish${ichimoku.tkCrossRecent ? " (Recent!)" : ""}`
+        : "Neutral",
+      color: ichimoku.tkCross === "bullish" ? "text-emerald-600" : ichimoku.tkCross === "bearish" ? "text-red-600" : "text-slate-500",
+    },
+    {
+      label: "Cloud Trend",
+      value: ichimoku.cloudTrend === "bullish" ? "Bullish" : ichimoku.cloudTrend === "bearish" ? "Bearish" : "Twisting (Trend Change)",
+      color: ichimoku.cloudTrend === "bullish" ? "text-emerald-600" : ichimoku.cloudTrend === "bearish" ? "text-red-600" : "text-amber-600",
+    },
+    {
+      label: "Chikou Span",
+      value: ichimoku.chikouSignal === "bullish"
+        ? `Bullish (+${ichimoku.chikouVsPrice.toFixed(1)}%)`
+        : ichimoku.chikouSignal === "bearish"
+        ? `Bearish (${ichimoku.chikouVsPrice.toFixed(1)}%)`
+        : "Neutral",
+      color: ichimoku.chikouSignal === "bullish" ? "text-emerald-600" : ichimoku.chikouSignal === "bearish" ? "text-red-600" : "text-slate-500",
+    },
+    {
+      label: "Cloud Thickness",
+      value: `${ichimoku.cloudThickness.toFixed(1)}%`,
+      color: "text-slate-700",
+    },
+  ];
+
+  return (
+    <div>
+      <div className="text-xs font-semibold text-slate-600 mb-1">Ichimoku Cloud</div>
+      <div className={`rounded-xl border p-3 ${overallBg}`}>
+        <div className={`text-sm font-bold ${overallColor} mb-2`}>
+          {ichimoku.overallSignal.replace(/_/g, " ").replace(/\b\w/g, (c) => c.toUpperCase())}
+        </div>
+        {/* Cloud level visualization */}
+        <div className="relative mb-3 h-12 rounded-lg bg-white/60 overflow-hidden">
+          {/* Cloud band */}
+          {(() => {
+            const range = Math.max(price * 1.1, ichimoku.cloudTop * 1.05) - Math.min(price * 0.9, ichimoku.cloudBottom * 0.95);
+            const base = Math.min(price * 0.9, ichimoku.cloudBottom * 0.95);
+            const cloudBottomPct = range > 0 ? ((ichimoku.cloudBottom - base) / range) * 100 : 40;
+            const cloudTopPct = range > 0 ? ((ichimoku.cloudTop - base) / range) * 100 : 60;
+            const pricePct = range > 0 ? ((price - base) / range) * 100 : 50;
+            const cloudColor = ichimoku.cloudTrend === "bullish" ? "bg-emerald-200/60" : ichimoku.cloudTrend === "bearish" ? "bg-red-200/60" : "bg-amber-200/60";
+
+            return (
+              <>
+                <div
+                  className={`absolute left-0 right-0 ${cloudColor}`}
+                  style={{ bottom: `${cloudBottomPct}%`, height: `${cloudTopPct - cloudBottomPct}%` }}
+                />
+                <div
+                  className="absolute left-0 right-0 h-0.5 bg-slate-800"
+                  style={{ bottom: `${pricePct}%` }}
+                />
+                <div
+                  className="absolute right-2 text-[9px] font-bold text-slate-700"
+                  style={{ bottom: `${pricePct}%`, transform: "translateY(50%)" }}
+                >
+                  ${price.toFixed(0)}
+                </div>
+              </>
+            );
+          })()}
+        </div>
+        <div className="space-y-1">
+          {signalItems.map((item) => (
+            <div key={item.label} className="flex items-center justify-between">
+              <span className="text-[11px] text-slate-500">{item.label}</span>
+              <span className={`text-[11px] font-semibold ${item.color}`}>{item.value}</span>
+            </div>
+          ))}
+        </div>
+      </div>
+    </div>
+  );
+}
+
 // ── 52-week range ──
 
 function Week52Range({ position, high, low }: { position: number; high: number; low: number }) {
@@ -307,6 +411,8 @@ export default function RiskAlertPanel({
             high={technicals.week52High}
             low={technicals.week52Low}
           />
+          {/* Ichimoku Cloud */}
+          <IchimokuPanel ichimoku={technicals.ichimoku} price={technicals.currentPrice} />
           {/* Price changes summary */}
           <div>
             <div className="text-xs font-semibold text-slate-600 mb-1">Price Momentum</div>
