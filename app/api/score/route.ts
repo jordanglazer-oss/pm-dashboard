@@ -490,21 +490,26 @@ function extractHealthData(modules: YahooResult | undefined, currentPrice?: numb
     }
   }
 
-  // FCF margin from most recent annual cashflow + income
+  // FCF margin — prefer financialData.freeCashflow / totalRevenue (most reliable)
+  // Fall back to cashflow statement if financialData doesn't have it
   let fcfMargin: number | undefined;
-  const cfStatements = cashflow?.cashflowStatements;
-  const incStatements = income?.incomeStatementHistory;
-  if (Array.isArray(cfStatements) && cfStatements.length > 0) {
-    const latestCF = cfStatements[0];
-    const opCashFlow = rawVal(latestCF, "totalCashFromOperatingActivities");
-    const capex = rawVal(latestCF, "capitalExpenditures");
-    const totalRevenue = rawVal(financial, "totalRevenue");
-    if (opCashFlow != null && totalRevenue && totalRevenue !== 0) {
-      // capex is typically negative in Yahoo data
-      const fcf = opCashFlow + (capex ?? 0);
-      fcfMargin = (fcf / totalRevenue) * 100;
+  const totalRevenue = rawVal(financial, "totalRevenue");
+  const directFCF = rawVal(financial, "freeCashflow");
+  if (directFCF != null && totalRevenue && totalRevenue !== 0) {
+    fcfMargin = (directFCF / totalRevenue) * 100;
+  } else {
+    const cfStatements = cashflow?.cashflowStatements;
+    if (Array.isArray(cfStatements) && cfStatements.length > 0) {
+      const latestCF = cfStatements[0];
+      const opCashFlow = rawVal(latestCF, "totalCashFromOperatingActivities");
+      const capex = rawVal(latestCF, "capitalExpenditures");
+      if (opCashFlow != null && totalRevenue && totalRevenue !== 0) {
+        const fcf = opCashFlow + (capex ?? 0);
+        fcfMargin = (fcf / totalRevenue) * 100;
+      }
     }
   }
+  const incStatements = income?.incomeStatementHistory;
 
   // ROIC = net income / (total assets - current liabilities)
   let roic: number | undefined;
@@ -543,7 +548,15 @@ function extractHealthData(modules: YahooResult | undefined, currentPrice?: numb
   const healthData: HealthData = {
     fiftyDayAvg: rawVal(summary, "fiftyDayAverage"),
     twoHundredDayAvg: rawVal(summary, "twoHundredDayAverage"),
-    pegRatio: rawVal(keyStats, "pegRatio"),
+    pegRatio: rawVal(keyStats, "pegRatio") ?? (() => {
+      // Fallback: compute PEG = forwardPE / earningsGrowth if Yahoo returns empty
+      const fpe = rawVal(summary, "forwardPE") ?? rawVal(keyStats, "forwardPE");
+      const growth = rawVal(financial, "earningsGrowth");
+      if (fpe != null && growth != null && growth !== 0) {
+        return parseFloat((fpe / (growth * 100)).toFixed(2));
+      }
+      return undefined;
+    })(),
     shortPercentOfFloat: rawVal(keyStats, "shortPercentOfFloat") != null
       ? (rawVal(keyStats, "shortPercentOfFloat")! * 100)
       : undefined,
