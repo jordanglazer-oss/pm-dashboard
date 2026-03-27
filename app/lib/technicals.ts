@@ -31,13 +31,6 @@ export type TechnicalIndicators = {
   macdSignal: "bullish_crossover" | "bearish_crossover" | "bullish" | "bearish";
   macdCrossoverDaysAgo?: number;
 
-  // Bollinger Bands
-  bollingerUpper: number;
-  bollingerMiddle: number;
-  bollingerLower: number;
-  bollingerPosition: number;
-  bollingerSignal: "above_upper" | "near_upper" | "middle" | "near_lower" | "below_lower";
-
   // Volume
   volumeAvg50: number;
   volumeLatest: number;
@@ -53,6 +46,28 @@ export type TechnicalIndicators = {
   currentPrice: number;
   priceChange5d: number;
   priceChange20d: number;
+
+  // Ichimoku Cloud
+  ichimoku: {
+    tenkanSen: number;       // Conversion Line (9-period)
+    kijunSen: number;        // Base Line (26-period)
+    senkouSpanA: number;     // Leading Span A (current cloud top/bottom)
+    senkouSpanB: number;     // Leading Span B (current cloud top/bottom)
+    cloudTop: number;        // max(spanA, spanB)
+    cloudBottom: number;     // min(spanA, spanB)
+    chikouSpan: number;      // Lagging Span (current close vs price 26 periods ago)
+    chikouVsPrice: number;   // % difference: chikou above/below price 26 periods ago
+
+    // Derived signals
+    priceVsCloud: "above" | "inside" | "below";
+    tkCross: "bullish" | "bearish" | "neutral";        // Tenkan vs Kijun
+    tkCrossRecent: boolean;                              // TK cross within last 5 days
+    cloudTrend: "bullish" | "bearish" | "twisting";     // Span A vs Span B ahead
+    chikouSignal: "bullish" | "bearish" | "neutral";    // Chikou vs price
+    cloudThickness: number;                              // % of price, thicker = stronger S/R
+    overallSignal: "strong_bullish" | "bullish" | "neutral" | "bearish" | "strong_bearish";
+    signalSummary: string;   // Human-readable summary
+  };
 };
 
 // ── Risk alert types ──
@@ -142,20 +157,179 @@ export function computeMACD(closes: number[]): {
   return { macdLine, signalLine, histogram, macdHistory, signalHistory };
 }
 
-export function computeBollingerBands(
+// ── Ichimoku computation ──
+
+function periodHighLow(highs: number[], lows: number[], end: number, period: number): { high: number; low: number } {
+  const start = Math.max(0, end - period + 1);
+  let high = -Infinity;
+  let low = Infinity;
+  for (let i = start; i <= end; i++) {
+    if (highs[i] > high) high = highs[i];
+    if (lows[i] < low) low = lows[i];
+  }
+  return { high, low };
+}
+
+function computeIchimoku(
   closes: number[],
-  period: number = 20,
-  stdDevs: number = 2
-): { upper: number; middle: number; lower: number } {
-  const middle = computeSMA(closes, period);
-  const slice = closes.slice(Math.max(0, closes.length - period));
-  const variance =
-    slice.reduce((sum, v) => sum + Math.pow(v - middle, 2), 0) / slice.length;
-  const std = Math.sqrt(variance);
+  highs: number[],
+  lows: number[]
+): TechnicalIndicators["ichimoku"] | null {
+  const len = closes.length;
+  if (len < 52) return null; // Need at least 52 periods
+
+  const idx = len - 1; // Current bar index
+  const currentPrice = closes[idx];
+
+  // Tenkan-sen (Conversion Line): (9-period high + 9-period low) / 2
+  const tenkan9 = periodHighLow(highs, lows, idx, 9);
+  const tenkanSen = (tenkan9.high + tenkan9.low) / 2;
+
+  // Kijun-sen (Base Line): (26-period high + 26-period low) / 2
+  const kijun26 = periodHighLow(highs, lows, idx, 26);
+  const kijunSen = (kijun26.high + kijun26.low) / 2;
+
+  // Senkou Span A: (Tenkan + Kijun) / 2, plotted 26 periods ahead
+  // For current cloud, we use the value computed 26 periods ago
+  const spanAIdx = idx - 26;
+  let senkouSpanA: number;
+  if (spanAIdx >= 8) {
+    const t9 = periodHighLow(highs, lows, spanAIdx, 9);
+    const k26 = periodHighLow(highs, lows, spanAIdx, 26);
+    senkouSpanA = ((t9.high + t9.low) / 2 + (k26.high + k26.low) / 2) / 2;
+  } else {
+    senkouSpanA = (tenkanSen + kijunSen) / 2;
+  }
+
+  // Senkou Span B: (52-period high + 52-period low) / 2, plotted 26 periods ahead
+  // For current cloud, we use the value computed 26 periods ago
+  let senkouSpanB: number;
+  if (spanAIdx >= 51) {
+    const s52 = periodHighLow(highs, lows, spanAIdx, 52);
+    senkouSpanB = (s52.high + s52.low) / 2;
+  } else {
+    const s52 = periodHighLow(highs, lows, idx, 52);
+    senkouSpanB = (s52.high + s52.low) / 2;
+  }
+
+  const cloudTop = Math.max(senkouSpanA, senkouSpanB);
+  const cloudBottom = Math.min(senkouSpanA, senkouSpanB);
+
+  // Chikou Span: current close compared to price 26 periods ago
+  const chikouRefIdx = idx - 26;
+  const chikouSpan = currentPrice;
+  const chikouRefPrice = chikouRefIdx >= 0 ? closes[chikouRefIdx] : currentPrice;
+  const chikouVsPrice = chikouRefPrice !== 0 ? ((chikouSpan - chikouRefPrice) / chikouRefPrice) * 100 : 0;
+
+  // ── Derive signals ──
+
+  // Price vs Cloud
+  let priceVsCloud: "above" | "inside" | "below";
+  if (currentPrice > cloudTop) priceVsCloud = "above";
+  else if (currentPrice < cloudBottom) priceVsCloud = "below";
+  else priceVsCloud = "inside";
+
+  // TK Cross (Tenkan vs Kijun)
+  let tkCross: "bullish" | "bearish" | "neutral" = "neutral";
+  if (tenkanSen > kijunSen) tkCross = "bullish";
+  else if (tenkanSen < kijunSen) tkCross = "bearish";
+
+  // Detect recent TK crossover (within last 5 days)
+  let tkCrossRecent = false;
+  for (let i = Math.max(0, len - 6); i < len - 1; i++) {
+    const prevT = periodHighLow(highs, lows, i, 9);
+    const prevK = periodHighLow(highs, lows, i, 26);
+    const prevTenkan = (prevT.high + prevT.low) / 2;
+    const prevKijun = (prevK.high + prevK.low) / 2;
+    const curT = periodHighLow(highs, lows, i + 1, 9);
+    const curK = periodHighLow(highs, lows, i + 1, 26);
+    const curTenkan = (curT.high + curT.low) / 2;
+    const curKijun = (curK.high + curK.low) / 2;
+    if ((prevTenkan <= prevKijun && curTenkan > curKijun) ||
+        (prevTenkan >= prevKijun && curTenkan < curKijun)) {
+      tkCrossRecent = true;
+    }
+  }
+
+  // Cloud Trend: future Span A vs Span B (using current values projected ahead)
+  const futureSpanA = (tenkanSen + kijunSen) / 2;
+  const futureSpanB52 = periodHighLow(highs, lows, idx, 52);
+  const futureSpanB = (futureSpanB52.high + futureSpanB52.low) / 2;
+  let cloudTrend: "bullish" | "bearish" | "twisting" = "neutral" as any;
+  if (futureSpanA > futureSpanB && senkouSpanA > senkouSpanB) cloudTrend = "bullish";
+  else if (futureSpanA < futureSpanB && senkouSpanA < senkouSpanB) cloudTrend = "bearish";
+  else cloudTrend = "twisting";
+
+  // Chikou Signal
+  let chikouSignal: "bullish" | "bearish" | "neutral" = "neutral";
+  if (chikouVsPrice > 2) chikouSignal = "bullish";
+  else if (chikouVsPrice < -2) chikouSignal = "bearish";
+
+  // Cloud thickness as % of price
+  const cloudThickness = currentPrice !== 0 ? ((cloudTop - cloudBottom) / currentPrice) * 100 : 0;
+
+  // Overall Ichimoku signal (5 factors)
+  let bullPoints = 0;
+  let bearPoints = 0;
+
+  // 1. Price vs cloud (2 points — most important)
+  if (priceVsCloud === "above") bullPoints += 2;
+  else if (priceVsCloud === "below") bearPoints += 2;
+
+  // 2. TK cross
+  if (tkCross === "bullish") bullPoints += 1;
+  else if (tkCross === "bearish") bearPoints += 1;
+
+  // 3. Cloud trend
+  if (cloudTrend === "bullish") bullPoints += 1;
+  else if (cloudTrend === "bearish") bearPoints += 1;
+
+  // 4. Chikou
+  if (chikouSignal === "bullish") bullPoints += 1;
+  else if (chikouSignal === "bearish") bearPoints += 1;
+
+  let overallSignal: TechnicalIndicators["ichimoku"]["overallSignal"];
+  const net = bullPoints - bearPoints;
+  if (net >= 4) overallSignal = "strong_bullish";
+  else if (net >= 2) overallSignal = "bullish";
+  else if (net <= -4) overallSignal = "strong_bearish";
+  else if (net <= -2) overallSignal = "bearish";
+  else overallSignal = "neutral";
+
+  // Summary
+  const parts: string[] = [];
+  if (priceVsCloud === "above") parts.push("price above cloud (bullish)");
+  else if (priceVsCloud === "below") parts.push("price below cloud (bearish)");
+  else parts.push("price inside cloud (indecision)");
+
+  if (tkCrossRecent) parts.push(`recent TK ${tkCross} cross`);
+  else if (tkCross !== "neutral") parts.push(`TK ${tkCross}`);
+
+  if (cloudTrend === "twisting") parts.push("cloud twisting (trend change)");
+  else parts.push(`cloud ${cloudTrend}`);
+
+  if (chikouSignal !== "neutral") parts.push(`chikou ${chikouSignal}`);
+
+  const signalLabel = overallSignal.replace("_", " ");
+  const signalSummary = `Ichimoku ${signalLabel}: ${parts.join(", ")}`;
+
   return {
-    upper: middle + stdDevs * std,
-    middle,
-    lower: middle - stdDevs * std,
+    tenkanSen,
+    kijunSen,
+    senkouSpanA,
+    senkouSpanB,
+    cloudTop,
+    cloudBottom,
+    chikouSpan,
+    chikouVsPrice,
+    priceVsCloud,
+    tkCross,
+    tkCrossRecent,
+    cloudTrend,
+    chikouSignal,
+    cloudThickness,
+    overallSignal,
+    signalSummary,
   };
 }
 
@@ -240,16 +414,6 @@ export function computeTechnicals(bars: OHLCVBar[]): TechnicalIndicators | null 
     }
   }
 
-  // Bollinger Bands
-  const bb = computeBollingerBands(closes, 20, 2);
-  const bbRange = bb.upper - bb.lower;
-  const bollingerPosition = bbRange > 0 ? (currentPrice - bb.lower) / bbRange : 0.5;
-  let bollingerSignal: TechnicalIndicators["bollingerSignal"] = "middle";
-  if (currentPrice > bb.upper) bollingerSignal = "above_upper";
-  else if (bollingerPosition > 0.85) bollingerSignal = "near_upper";
-  else if (currentPrice < bb.lower) bollingerSignal = "below_lower";
-  else if (bollingerPosition < 0.15) bollingerSignal = "near_lower";
-
   // Volume
   const volumeAvg50 = volumes.length >= 50
     ? volumes.slice(-50).reduce((s, v) => s + v, 0) / 50
@@ -286,11 +450,6 @@ export function computeTechnicals(bars: OHLCVBar[]): TechnicalIndicators | null 
     macdHistogram: macd.histogram,
     macdSignal,
     macdCrossoverDaysAgo,
-    bollingerUpper: bb.upper,
-    bollingerMiddle: bb.middle,
-    bollingerLower: bb.lower,
-    bollingerPosition: Math.max(0, Math.min(1, bollingerPosition)),
-    bollingerSignal,
     volumeAvg50,
     volumeLatest,
     volumeRatio,
@@ -301,6 +460,15 @@ export function computeTechnicals(bars: OHLCVBar[]): TechnicalIndicators | null 
     currentPrice,
     priceChange5d,
     priceChange20d,
+
+    // Ichimoku Cloud
+    ichimoku: computeIchimoku(closes, highs, lows) ?? {
+      tenkanSen: 0, kijunSen: 0, senkouSpanA: 0, senkouSpanB: 0,
+      cloudTop: 0, cloudBottom: 0, chikouSpan: 0, chikouVsPrice: 0,
+      priceVsCloud: "inside" as const, tkCross: "neutral" as const, tkCrossRecent: false,
+      cloudTrend: "bullish" as const, chikouSignal: "neutral" as const,
+      cloudThickness: 0, overallSignal: "neutral" as const, signalSummary: "Insufficient data for Ichimoku",
+    },
   };
 }
 
@@ -352,16 +520,17 @@ export function computeRiskAlert(
     signals.push({ name: "Volume", status: "ok", detail: `Volume ${technicals.volumeRatio.toFixed(1)}x 50d average — normal` });
   }
 
-  // 5. Bollinger
-  if (technicals.bollingerSignal === "above_upper") {
-    signals.push({ name: "Bollinger Bands", status: "caution", detail: `Price above upper band — overextended, mean reversion risk` });
-  } else if (technicals.bollingerSignal === "below_lower") {
-    signals.push({ name: "Bollinger Bands", status: "caution", detail: `Price below lower band — oversold, potential bounce or further decline` });
+  // 5. Ichimoku Cloud
+  const ichi = technicals.ichimoku;
+  if (ichi.overallSignal === "strong_bearish" || (ichi.priceVsCloud === "below" && ichi.tkCross === "bearish")) {
+    signals.push({ name: "Ichimoku Cloud", status: "danger", detail: ichi.signalSummary });
+  } else if (ichi.overallSignal === "bearish" || ichi.priceVsCloud === "below" || ichi.priceVsCloud === "inside") {
+    signals.push({ name: "Ichimoku Cloud", status: "caution", detail: ichi.signalSummary });
   } else {
-    signals.push({ name: "Bollinger Bands", status: "ok", detail: `Price within bands (${(technicals.bollingerPosition * 100).toFixed(0)}% position)` });
+    signals.push({ name: "Ichimoku Cloud", status: "ok", detail: ichi.signalSummary });
   }
 
-  // 6. Earnings Revisions (from healthData)
+  // 7. Earnings Revisions (from healthData)
   if (healthData?.earningsCurrentEst != null && healthData?.earnings30dAgo != null) {
     if (healthData.earningsCurrentEst < healthData.earnings30dAgo) {
       signals.push({ name: "Earnings Revisions", status: "danger", detail: `Estimate cut: $${healthData.earningsCurrentEst.toFixed(2)} vs $${healthData.earnings30dAgo.toFixed(2)} 30d ago` });
@@ -372,7 +541,7 @@ export function computeRiskAlert(
     }
   }
 
-  // 7. Short Interest (from healthData)
+  // 8. Short Interest (from healthData)
   if (healthData?.shortPercentOfFloat != null) {
     if (healthData.shortPercentOfFloat > 10) {
       signals.push({ name: "Short Interest", status: "danger", detail: `Short interest at ${healthData.shortPercentOfFloat.toFixed(1)}% of float — elevated bearish positioning` });
@@ -383,7 +552,7 @@ export function computeRiskAlert(
     }
   }
 
-  // 8. Valuation (PEG from healthData)
+  // 9. Valuation (PEG from healthData)
   if (healthData?.pegRatio != null) {
     if (healthData.pegRatio > 3) {
       signals.push({ name: "Valuation (PEG)", status: "danger", detail: `PEG ratio at ${healthData.pegRatio.toFixed(2)} — significantly overvalued on growth-adjusted basis` });
@@ -430,8 +599,8 @@ export function formatTechnicalsForPrompt(t: TechnicalIndicators): string {
     `50 DMA: $${t.sma50.toFixed(2)} | 200 DMA: $${t.sma200.toFixed(2)} | Signal: ${t.dmaSignal}`,
     `RSI(14): ${t.rsi14.toFixed(1)} (${t.rsiSignal})`,
     `MACD: ${t.macdLine.toFixed(3)} | Signal: ${t.signalLine.toFixed(3)} | Histogram: ${t.macdHistogram.toFixed(3)} (${t.macdSignal})`,
-    `Bollinger: [${t.bollingerLower.toFixed(2)}, ${t.bollingerMiddle.toFixed(2)}, ${t.bollingerUpper.toFixed(2)}] Position: ${(t.bollingerPosition * 100).toFixed(0)}% (${t.bollingerSignal})`,
     `Volume: ${t.volumeRatio.toFixed(1)}x 50d avg (${t.volumeSignal})`,
     `52-Week: $${t.week52Low.toFixed(2)} - $${t.week52High.toFixed(2)} (${(t.week52Position * 100).toFixed(0)}% position)`,
+    `Ichimoku Cloud: ${t.ichimoku.signalSummary} | Cloud: $${t.ichimoku.cloudBottom.toFixed(2)}-$${t.ichimoku.cloudTop.toFixed(2)} (${t.ichimoku.cloudThickness.toFixed(1)}% thick)`,
   ].join("\n");
 }
