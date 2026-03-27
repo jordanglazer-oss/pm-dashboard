@@ -31,13 +31,6 @@ export type TechnicalIndicators = {
   macdSignal: "bullish_crossover" | "bearish_crossover" | "bullish" | "bearish";
   macdCrossoverDaysAgo?: number;
 
-  // Bollinger Bands
-  bollingerUpper: number;
-  bollingerMiddle: number;
-  bollingerLower: number;
-  bollingerPosition: number;
-  bollingerSignal: "above_upper" | "near_upper" | "middle" | "near_lower" | "below_lower";
-
   // Volume
   volumeAvg50: number;
   volumeLatest: number;
@@ -162,23 +155,6 @@ export function computeMACD(closes: number[]): {
   const histogram = macdLine - signalLine;
 
   return { macdLine, signalLine, histogram, macdHistory, signalHistory };
-}
-
-export function computeBollingerBands(
-  closes: number[],
-  period: number = 20,
-  stdDevs: number = 2
-): { upper: number; middle: number; lower: number } {
-  const middle = computeSMA(closes, period);
-  const slice = closes.slice(Math.max(0, closes.length - period));
-  const variance =
-    slice.reduce((sum, v) => sum + Math.pow(v - middle, 2), 0) / slice.length;
-  const std = Math.sqrt(variance);
-  return {
-    upper: middle + stdDevs * std,
-    middle,
-    lower: middle - stdDevs * std,
-  };
 }
 
 // ── Ichimoku computation ──
@@ -438,16 +414,6 @@ export function computeTechnicals(bars: OHLCVBar[]): TechnicalIndicators | null 
     }
   }
 
-  // Bollinger Bands
-  const bb = computeBollingerBands(closes, 20, 2);
-  const bbRange = bb.upper - bb.lower;
-  const bollingerPosition = bbRange > 0 ? (currentPrice - bb.lower) / bbRange : 0.5;
-  let bollingerSignal: TechnicalIndicators["bollingerSignal"] = "middle";
-  if (currentPrice > bb.upper) bollingerSignal = "above_upper";
-  else if (bollingerPosition > 0.85) bollingerSignal = "near_upper";
-  else if (currentPrice < bb.lower) bollingerSignal = "below_lower";
-  else if (bollingerPosition < 0.15) bollingerSignal = "near_lower";
-
   // Volume
   const volumeAvg50 = volumes.length >= 50
     ? volumes.slice(-50).reduce((s, v) => s + v, 0) / 50
@@ -484,11 +450,6 @@ export function computeTechnicals(bars: OHLCVBar[]): TechnicalIndicators | null 
     macdHistogram: macd.histogram,
     macdSignal,
     macdCrossoverDaysAgo,
-    bollingerUpper: bb.upper,
-    bollingerMiddle: bb.middle,
-    bollingerLower: bb.lower,
-    bollingerPosition: Math.max(0, Math.min(1, bollingerPosition)),
-    bollingerSignal,
     volumeAvg50,
     volumeLatest,
     volumeRatio,
@@ -559,16 +520,7 @@ export function computeRiskAlert(
     signals.push({ name: "Volume", status: "ok", detail: `Volume ${technicals.volumeRatio.toFixed(1)}x 50d average — normal` });
   }
 
-  // 5. Bollinger
-  if (technicals.bollingerSignal === "above_upper") {
-    signals.push({ name: "Bollinger Bands", status: "caution", detail: `Price above upper band — overextended, mean reversion risk` });
-  } else if (technicals.bollingerSignal === "below_lower") {
-    signals.push({ name: "Bollinger Bands", status: "caution", detail: `Price below lower band — oversold, potential bounce or further decline` });
-  } else {
-    signals.push({ name: "Bollinger Bands", status: "ok", detail: `Price within bands (${(technicals.bollingerPosition * 100).toFixed(0)}% position)` });
-  }
-
-  // 6. Ichimoku Cloud
+  // 5. Ichimoku Cloud
   const ichi = technicals.ichimoku;
   if (ichi.overallSignal === "strong_bearish" || (ichi.priceVsCloud === "below" && ichi.tkCross === "bearish")) {
     signals.push({ name: "Ichimoku Cloud", status: "danger", detail: ichi.signalSummary });
@@ -647,7 +599,6 @@ export function formatTechnicalsForPrompt(t: TechnicalIndicators): string {
     `50 DMA: $${t.sma50.toFixed(2)} | 200 DMA: $${t.sma200.toFixed(2)} | Signal: ${t.dmaSignal}`,
     `RSI(14): ${t.rsi14.toFixed(1)} (${t.rsiSignal})`,
     `MACD: ${t.macdLine.toFixed(3)} | Signal: ${t.signalLine.toFixed(3)} | Histogram: ${t.macdHistogram.toFixed(3)} (${t.macdSignal})`,
-    `Bollinger: [${t.bollingerLower.toFixed(2)}, ${t.bollingerMiddle.toFixed(2)}, ${t.bollingerUpper.toFixed(2)}] Position: ${(t.bollingerPosition * 100).toFixed(0)}% (${t.bollingerSignal})`,
     `Volume: ${t.volumeRatio.toFixed(1)}x 50d avg (${t.volumeSignal})`,
     `52-Week: $${t.week52Low.toFixed(2)} - $${t.week52High.toFixed(2)} (${(t.week52Position * 100).toFixed(0)}% position)`,
     `Ichimoku Cloud: ${t.ichimoku.signalSummary} | Cloud: $${t.ichimoku.cloudBottom.toFixed(2)}-$${t.ichimoku.cloudTop.toFixed(2)} (${t.ichimoku.cloudThickness.toFixed(1)}% thick)`,

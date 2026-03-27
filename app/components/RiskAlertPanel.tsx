@@ -168,32 +168,6 @@ function MACDBar({ histogram, signal }: { histogram: number; signal: string }) {
   );
 }
 
-// ── Bollinger position ──
-
-function BollingerPosition({ position, upper, lower, price }: { position: number; upper: number; lower: number; price: number }) {
-  const pct = `${(Math.max(0, Math.min(1, position)) * 100).toFixed(0)}%`;
-
-  return (
-    <div>
-      <div className="flex items-center justify-between mb-1">
-        <span className="text-xs font-semibold text-slate-600">Bollinger Position</span>
-        <span className="text-xs font-bold text-slate-700">{pct}</span>
-      </div>
-      <div className="relative h-3 rounded-full bg-gradient-to-r from-blue-200 via-slate-100 to-blue-200 overflow-hidden">
-        <div
-          className="absolute top-0 h-3 w-1.5 bg-slate-800 rounded-full"
-          style={{ left: pct, transform: "translateX(-50%)" }}
-        />
-      </div>
-      <div className="flex justify-between mt-0.5">
-        <span className="text-[10px] text-slate-400">${lower.toFixed(0)}</span>
-        <span className="text-[10px] text-slate-500 font-medium">${price.toFixed(2)}</span>
-        <span className="text-[10px] text-slate-400">${upper.toFixed(0)}</span>
-      </div>
-    </div>
-  );
-}
-
 // ── Volume bar ──
 
 function VolumeBar({ ratio, signal }: { ratio: number; signal: string }) {
@@ -399,12 +373,6 @@ export default function RiskAlertPanel({
         <div className="grid gap-5 md:grid-cols-2 lg:grid-cols-3">
           <RSIGauge rsi={technicals.rsi14} />
           <MACDBar histogram={technicals.macdHistogram} signal={technicals.macdSignal} />
-          <BollingerPosition
-            position={technicals.bollingerPosition}
-            upper={technicals.bollingerUpper}
-            lower={technicals.bollingerLower}
-            price={technicals.currentPrice}
-          />
           <VolumeBar ratio={technicals.volumeRatio} signal={technicals.volumeSignal} />
           <Week52Range
             position={technicals.week52Position}
