@@ -2,6 +2,8 @@ import Anthropic from "@anthropic-ai/sdk";
 import { NextRequest, NextResponse } from "next/server";
 import type { ScoreKey, ScoreExplanations, HealthData } from "@/app/lib/types";
 import { SCORE_GROUPS } from "@/app/lib/types";
+import type { OHLCVBar, TechnicalIndicators, RiskAlert } from "@/app/lib/technicals";
+import { computeTechnicals, computeRiskAlert, formatTechnicalsForPrompt } from "@/app/lib/technicals";
 
 const client = new Anthropic();
 
@@ -87,6 +89,55 @@ async function fetchYahooModules(
   } catch (err) {
     console.log(`[Yahoo] ${ticker}: fetch error - ${err}`);
     return null;
+  }
+}
+
+async function fetchPriceHistory(ticker: string): Promise<OHLCVBar[]> {
+  try {
+    const url = `${YAHOO_BASE}/v8/finance/chart/${encodeURIComponent(ticker)}?range=1y&interval=1d`;
+    const res = await fetch(url, {
+      cache: "no-store",
+      headers: { "User-Agent": "Mozilla/5.0" },
+    });
+    if (!res.ok) {
+      console.log(`[Yahoo] ${ticker} chart: HTTP ${res.status}`);
+      return [];
+    }
+    const data = await res.json();
+    const result = data?.chart?.result?.[0];
+    if (!result) {
+      console.log(`[Yahoo] ${ticker} chart: no result`);
+      return [];
+    }
+
+    const timestamps: number[] = result.timestamp || [];
+    const quote = result.indicators?.quote?.[0];
+    if (!quote || timestamps.length === 0) return [];
+
+    const bars: OHLCVBar[] = [];
+    for (let i = 0; i < timestamps.length; i++) {
+      const open = quote.open?.[i];
+      const high = quote.high?.[i];
+      const low = quote.low?.[i];
+      const close = quote.close?.[i];
+      const volume = quote.volume?.[i];
+      // Skip bars with null data
+      if (open == null || high == null || low == null || close == null || volume == null) continue;
+      bars.push({
+        date: new Date(timestamps[i] * 1000).toISOString().split("T")[0],
+        open,
+        high,
+        low,
+        close,
+        volume,
+      });
+    }
+
+    console.log(`[Yahoo] ${ticker} chart: ${bars.length} bars`);
+    return bars;
+  } catch (err) {
+    console.log(`[Yahoo] ${ticker} chart error: ${err}`);
+    return [];
   }
 }
 
@@ -360,15 +411,31 @@ export async function POST(request: NextRequest) {
 
     const upperTicker = ticker.toUpperCase();
 
-    // Fetch real financial data first
+    // Fetch real financial data and price history in parallel
     let financialContext = "";
     let stockPrice: number | undefined;
     let rawModules: YahooResult | undefined;
+    let technicals: TechnicalIndicators | null = null;
+    let riskAlert: RiskAlert | undefined;
+
     try {
-      const result = await fetchFinancialData(upperTicker);
-      financialContext = result.context;
-      stockPrice = result.price;
-      rawModules = result.rawModules ?? undefined;
+      const [financialResult, priceHistory] = await Promise.all([
+        fetchFinancialData(upperTicker),
+        fetchPriceHistory(upperTicker),
+      ]);
+
+      financialContext = financialResult.context;
+      stockPrice = financialResult.price;
+      rawModules = financialResult.rawModules ?? undefined;
+
+      // Compute technical indicators from price history
+      if (priceHistory.length > 0) {
+        technicals = computeTechnicals(priceHistory);
+        if (technicals) {
+          // Append technical summary to financial context for Claude
+          financialContext += `\n\n---\n\n${formatTechnicalsForPrompt(technicals)}`;
+        }
+      }
     } catch (e) {
       console.error("Failed to fetch financial data:", e);
       financialContext = "Financial data API unavailable. Use your best knowledge but note that data should be verified.";
@@ -425,6 +492,13 @@ export async function POST(request: NextRequest) {
     // Extract health monitor data from raw Yahoo modules
     const healthData = extractHealthData(rawModules, stockPrice);
 
+    // Compute risk alert combining technicals with health data
+    if (technicals && healthData) {
+      riskAlert = computeRiskAlert(technicals, healthData);
+    } else if (technicals) {
+      riskAlert = computeRiskAlert(technicals);
+    }
+
     return NextResponse.json({
       ticker: upperTicker,
       name: parsed.name || "Unknown",
@@ -435,6 +509,8 @@ export async function POST(request: NextRequest) {
       notes: parsed.notes || "",
       price: stockPrice,
       healthData,
+      technicals,
+      riskAlert,
     });
   } catch (error) {
     console.error("Score API error:", error);

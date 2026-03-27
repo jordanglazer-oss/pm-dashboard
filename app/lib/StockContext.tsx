@@ -1,7 +1,7 @@
 "use client";
 
 import React, { createContext, useContext, useState, useMemo, useCallback, useEffect, useRef } from "react";
-import type { Stock, MarketData, ScoredStock, MorningBrief, ScoreKey, ScoreExplanations, HealthData } from "./types";
+import type { Stock, MarketData, ScoredStock, MorningBrief, ScoreKey, ScoreExplanations, HealthData, TechnicalIndicators, RiskAlert } from "./types";
 import { computeScores, isOffensiveSector } from "./scoring";
 import { holdingsSeed, defaultMarketData } from "./defaults";
 
@@ -21,6 +21,7 @@ type StockContextType = {
   updatePrice: (ticker: string, price: number) => void;
   updateSector: (ticker: string, sector: string) => void;
   updateHealthData: (ticker: string, healthData: HealthData) => void;
+  updateTechnicals: (ticker: string, technicals: TechnicalIndicators, riskAlert: RiskAlert) => void;
   setBrief: (brief: MorningBrief) => void;
   updateMarketData: (updates: Partial<MarketData>) => void;
   getStock: (ticker: string) => ScoredStock | undefined;
@@ -190,6 +191,16 @@ export function StockProvider({ children }: { children: React.ReactNode }) {
     });
   }, [persistStocks]);
 
+  const updateTechnicals = useCallback((ticker: string, technicals: TechnicalIndicators, riskAlert: RiskAlert) => {
+    setStocks((prev) => {
+      const next = prev.map((s) =>
+        s.ticker === ticker ? { ...s, technicals, riskAlert } : s
+      );
+      persistStocks(next);
+      return next;
+    });
+  }, [persistStocks]);
+
   /* ─── Market data ─── */
   const updateMarketData = useCallback((updates: Partial<MarketData>) => {
     setMarketData((prev) => {
@@ -228,6 +239,7 @@ export function StockProvider({ children }: { children: React.ReactNode }) {
         updatePrice,
         updateSector,
         updateHealthData,
+        updateTechnicals,
         setBrief,
         updateMarketData,
         getStock,
