@@ -80,31 +80,38 @@ export function MorningBrief({
   const [aaiiNeutral, setAaiiNeutral] = useState(marketData.aaiiNeutral ?? 17);
   const [aaiiBear, setAaiiBear] = useState(marketData.aaiiBear ?? 52);
 
-  // Sync local state when marketData loads from Redis after mount
-  const initialised = useRef(false);
+  // Track previous marketData values to detect when Redis data loads
+  const prevMarketRef = useRef({ fg: marketData.fearGreed, bull: marketData.aaiiBull, ntrl: marketData.aaiiNeutral, bear: marketData.aaiiBear });
+  const userEdited = useRef(false);
   useEffect(() => {
-    if (initialised.current) return;
-    // Only sync once when real data arrives (not defaults)
-    if (marketData.aaiiBull != null) {
+    const prev = prevMarketRef.current;
+    // Only sync if marketData actually changed (i.e. Redis loaded new values) and user hasn't started editing
+    if (!userEdited.current && (
+      prev.fg !== marketData.fearGreed || prev.bull !== marketData.aaiiBull ||
+      prev.ntrl !== marketData.aaiiNeutral || prev.bear !== marketData.aaiiBear
+    )) {
       setFg(marketData.fearGreed);
-      setAaiiBull(marketData.aaiiBull);
-      setAaiiNeutral(marketData.aaiiNeutral);
-      setAaiiBear(marketData.aaiiBear);
-      initialised.current = true;
+      setAaiiBull(marketData.aaiiBull ?? 30);
+      setAaiiNeutral(marketData.aaiiNeutral ?? 17);
+      setAaiiBear(marketData.aaiiBear ?? 52);
     }
+    prevMarketRef.current = { fg: marketData.fearGreed, bull: marketData.aaiiBull, ntrl: marketData.aaiiNeutral, bear: marketData.aaiiBear };
   }, [marketData.fearGreed, marketData.aaiiBull, marketData.aaiiNeutral, marketData.aaiiBear]);
 
-  // Persist sentiment changes to marketData (debounced via parent)
-  const mounted = useRef(false);
-  useEffect(() => {
-    if (!mounted.current) { mounted.current = true; return; }
-    onUpdateMarketData({ fearGreed: fg });
-  }, [fg]); // eslint-disable-line react-hooks/exhaustive-deps
-  useEffect(() => {
-    if (!mounted.current) return;
-    const spread = parseFloat((aaiiBull - aaiiBear).toFixed(1));
-    onUpdateMarketData({ aaiiBull, aaiiNeutral, aaiiBear, aaiiBullBear: spread });
-  }, [aaiiBull, aaiiNeutral, aaiiBear]); // eslint-disable-line react-hooks/exhaustive-deps
+  // Wrap setters to mark user edits and persist to marketData
+  const setFgAndPersist = useCallback((n: number) => {
+    userEdited.current = true;
+    setFg(n);
+    onUpdateMarketData({ fearGreed: n });
+  }, [onUpdateMarketData]);
+  const setAaiiAndPersist = useCallback((bull: number, ntrl: number, bear: number) => {
+    userEdited.current = true;
+    setAaiiBull(bull);
+    setAaiiNeutral(ntrl);
+    setAaiiBear(bear);
+    const spread = parseFloat((bull - bear).toFixed(1));
+    onUpdateMarketData({ aaiiBull: bull, aaiiNeutral: ntrl, aaiiBear: bear, aaiiBullBear: spread });
+  }, [onUpdateMarketData]);
 
   // Attachments (screenshots for brief sections)
   const [attachments, setAttachments] = useState<BriefAttachment[]>([]);
@@ -181,24 +188,15 @@ export function MorningBrief({
   }, []); // eslint-disable-line react-hooks/exhaustive-deps
 
   async function generateBrief() {
-    // Sync editable inputs to market data
-    const bullBearSpread = parseFloat((aaiiBull - aaiiBear).toFixed(1));
-    onUpdateMarketData({ fearGreed: fg, aaiiBullBear: bullBearSpread });
-
     setGenerating(true);
     setError("");
 
     try {
-      const updatedMarketData = {
-        ...marketData,
-        fearGreed: fg,
-        aaiiBullBear: bullBearSpread,
-      };
       const res = await fetch("/api/morning-brief", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({
-          marketData: updatedMarketData,
+          marketData,
           holdings: stocks,
           attachments: attachments.map((a) => ({
             section: a.section,
@@ -449,7 +447,7 @@ export function MorningBrief({
               </div>
               <NumericInput
                 value={fg}
-                onChange={setFg}
+                onChange={setFgAndPersist}
                 className="mt-1 w-full rounded-xl border border-slate-200 px-3 py-2 text-lg font-semibold"
               />
             </div>
@@ -465,7 +463,7 @@ export function MorningBrief({
                   <span className="text-[10px] text-red-500 font-medium">Bull</span>
                   <NumericInput
                     value={aaiiBull}
-                    onChange={setAaiiBull}
+                    onChange={(n) => setAaiiAndPersist(n, aaiiNeutral, aaiiBear)}
                     className="block w-16 rounded-xl border border-slate-200 px-2 py-2 text-base font-semibold"
                   />
                 </div>
@@ -473,7 +471,7 @@ export function MorningBrief({
                   <span className="text-[10px] text-amber-500 font-medium">Ntrl</span>
                   <NumericInput
                     value={aaiiNeutral}
-                    onChange={setAaiiNeutral}
+                    onChange={(n) => setAaiiAndPersist(aaiiBull, n, aaiiBear)}
                     className="block w-16 rounded-xl border border-slate-200 px-2 py-2 text-base font-semibold"
                   />
                 </div>
@@ -481,7 +479,7 @@ export function MorningBrief({
                   <span className="text-[10px] text-emerald-500 font-medium">Bear</span>
                   <NumericInput
                     value={aaiiBear}
-                    onChange={setAaiiBear}
+                    onChange={(n) => setAaiiAndPersist(aaiiBull, aaiiNeutral, n)}
                     className="block w-16 rounded-xl border border-slate-200 px-2 py-2 text-base font-semibold"
                   />
                 </div>
@@ -596,7 +594,7 @@ export function MorningBrief({
       </section>
 
       {/* Contrarian Sentiment — all 4 indicators + Claude analysis */}
-      <SentimentGauges marketData={{...marketData, fearGreed: fg, aaiiBullBear: parseFloat((aaiiBull - aaiiBear).toFixed(1))}} aaiiBull={aaiiBull} aaiiNeutral={aaiiNeutral} aaiiBear={aaiiBear} contrarianAnalysis={contrarianAnalysis} />
+      <SentimentGauges marketData={marketData} aaiiBull={aaiiBull} aaiiNeutral={aaiiNeutral} aaiiBear={aaiiBear} contrarianAnalysis={contrarianAnalysis} />
 
       {/* Credit & Volatility */}
       <section className="grid gap-5 lg:grid-cols-2">
@@ -756,7 +754,7 @@ export function MorningBrief({
       </section>
 
       {/* Hedging Window */}
-      <HedgingIndicator marketData={{...marketData, fearGreed: fg}} hedgingAnalysis={hedgingAnalysis} />
+      <HedgingIndicator marketData={marketData} hedgingAnalysis={hedgingAnalysis} />
 
       {/* Sector Rotation */}
       {sectorRotation && (

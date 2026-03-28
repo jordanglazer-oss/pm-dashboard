@@ -38,7 +38,11 @@ async function fetchFRED(seriesId: string): Promise<number | null> {
       `https://api.stlouisfed.org/fred/series/observations?series_id=${seriesId}&sort_order=desc&limit=1&file_type=json&api_key=${apiKey}`,
       { cache: "no-store" }
     );
-    if (!res.ok) return null;
+    if (!res.ok) {
+      const errText = await res.text().catch(() => "");
+      console.error(`FRED API error (${seriesId}): ${res.status} ${errText}`);
+      return null;
+    }
     const data = await res.json();
     const value = data?.observations?.[0]?.value;
     if (!value || value === ".") return null;
