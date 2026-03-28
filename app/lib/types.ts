@@ -200,6 +200,7 @@ export type MarketData = {
 
 export type MorningBrief = {
   date: string;
+  generatedAt?: string;
   marketData: MarketData;
   marketRegime?: string;
   bottomLine: string;

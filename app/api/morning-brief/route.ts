@@ -330,7 +330,7 @@ Current Portfolio Holdings: ${holdingsSummary}`;
 
     const message = await client.messages.create({
       model: "claude-sonnet-4-6",
-      max_tokens: 4096,
+      max_tokens: 8192,
       messages: [
         {
           role: "user",
@@ -351,14 +351,40 @@ Current Portfolio Holdings: ${holdingsSummary}`;
       );
     }
 
-    const parsed = JSON.parse(jsonMatch[0]);
+    let parsed;
+    try {
+      parsed = JSON.parse(jsonMatch[0]);
+    } catch {
+      // Attempt to repair truncated JSON by closing open brackets/braces
+      let repaired = jsonMatch[0];
+      // Remove trailing incomplete string value (e.g., truncated mid-sentence)
+      repaired = repaired.replace(/,\s*"[^"]*":\s*"[^"]*$/, "");
+      repaired = repaired.replace(/,\s*"[^"]*$/, "");
+      // Count and close open brackets/braces
+      const openBraces = (repaired.match(/\{/g) || []).length - (repaired.match(/\}/g) || []).length;
+      const openBrackets = (repaired.match(/\[/g) || []).length - (repaired.match(/\]/g) || []).length;
+      repaired += "]".repeat(Math.max(0, openBrackets));
+      repaired += "}".repeat(Math.max(0, openBraces));
+      try {
+        parsed = JSON.parse(repaired);
+        console.log("Repaired truncated JSON response");
+      } catch (e2) {
+        const msg = e2 instanceof Error ? e2.message : String(e2);
+        return NextResponse.json(
+          { error: `Failed to parse brief response: ${msg}` },
+          { status: 500 }
+        );
+      }
+    }
 
+    const now = new Date();
     return NextResponse.json({
-      date: new Date().toLocaleDateString("en-US", {
+      date: now.toLocaleDateString("en-US", {
         year: "numeric",
         month: "long",
         day: "numeric",
       }),
+      generatedAt: now.toISOString(),
       marketData,
       ...(autoEquityFlows ? { autoEquityFlows } : {}),
       ...parsed,
