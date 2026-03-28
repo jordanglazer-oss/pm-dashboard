@@ -4,7 +4,11 @@ const globalForRedis = globalThis as unknown as { redis?: ReturnType<typeof crea
 
 function getClient() {
   if (!globalForRedis.redis) {
-    globalForRedis.redis = createClient({ url: process.env.REDIS_URL });
+    const url = process.env.REDIS_URL || process.env.KV_URL;
+    if (!url) {
+      console.error("No REDIS_URL or KV_URL environment variable set");
+    }
+    globalForRedis.redis = createClient({ url });
     globalForRedis.redis.on("error", (err) => console.error("Redis error:", err));
   }
   return globalForRedis.redis;

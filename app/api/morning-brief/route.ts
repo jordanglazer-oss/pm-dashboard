@@ -22,27 +22,33 @@ const SECTOR_ETFS: Record<string, string> = {
 
 async function fetchSectorPerformance(): Promise<string> {
   try {
-    const tickers = Object.values(SECTOR_ETFS).join(",");
-    const res = await fetch(
-      `https://query2.finance.yahoo.com/v7/finance/quote?symbols=${tickers}&fields=symbol,shortName,regularMarketChangePercent,regularMarketPrice`,
-      {
-        headers: {
-          "User-Agent": "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36",
-        },
-        cache: "no-store",
-      }
+    const entries = Object.entries(SECTOR_ETFS);
+    const results = await Promise.all(
+      entries.map(async ([sector, etf]) => {
+        try {
+          const res = await fetch(
+            `https://query2.finance.yahoo.com/v8/finance/chart/${etf}?range=1d&interval=1d`,
+            {
+              headers: {
+                "User-Agent": "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36",
+              },
+              cache: "no-store",
+            }
+          );
+          if (!res.ok) return null;
+          const data = await res.json();
+          const meta = data?.chart?.result?.[0]?.meta;
+          if (!meta) return null;
+          const price = meta.regularMarketPrice;
+          const prevClose = meta.chartPreviousClose ?? meta.previousClose;
+          const pct = prevClose ? (((price - prevClose) / prevClose) * 100).toFixed(2) : "N/A";
+          return `- ${sector} (${etf}): ${pct}% today, price $${price?.toFixed(2) ?? "N/A"}`;
+        } catch {
+          return null;
+        }
+      })
     );
-    if (!res.ok) return "Sector data unavailable";
-    const data = await res.json();
-    const quotes = data?.quoteResponse?.result || [];
-    const lines: string[] = [];
-    for (const [sector, etf] of Object.entries(SECTOR_ETFS)) {
-      const q = quotes.find((r: { symbol: string }) => r.symbol === etf);
-      if (q) {
-        const pct = q.regularMarketChangePercent?.toFixed(2) ?? "N/A";
-        lines.push(`- ${sector} (${etf}): ${pct}% today, price $${q.regularMarketPrice?.toFixed(2) ?? "N/A"}`);
-      }
-    }
+    const lines = results.filter(Boolean) as string[];
     return lines.length > 0 ? lines.join("\n") : "Sector data unavailable";
   } catch (e) {
     console.error("Sector ETF fetch error:", e);
@@ -358,9 +364,10 @@ Current Portfolio Holdings: ${holdingsSummary}`;
       ...parsed,
     });
   } catch (error) {
-    console.error("Morning brief API error:", error);
+    const message = error instanceof Error ? error.message : String(error);
+    console.error("Morning brief API error:", message, error);
     return NextResponse.json(
-      { error: "Failed to generate morning brief" },
+      { error: `Failed to generate morning brief: ${message}` },
       { status: 500 }
     );
   }
