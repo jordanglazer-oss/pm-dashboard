@@ -521,7 +521,7 @@ export async function POST(request: NextRequest) {
 
     const message = await client.messages.create({
       model: "claude-sonnet-4-6",
-      max_tokens: 3000,
+      max_tokens: 8192,
       messages: [
         {
           role: "user",
@@ -537,12 +537,34 @@ export async function POST(request: NextRequest) {
     const jsonMatch = text.match(/\{[\s\S]*\}/);
     if (!jsonMatch) {
       return NextResponse.json(
-        { error: "Failed to parse scoring response" },
+        { error: "Failed to parse scoring response — no JSON found" },
         { status: 500 }
       );
     }
 
-    const parsed = JSON.parse(jsonMatch[0]);
+    let parsed;
+    try {
+      parsed = JSON.parse(jsonMatch[0]);
+    } catch {
+      // Attempt to repair truncated JSON
+      let repaired = jsonMatch[0];
+      repaired = repaired.replace(/,\s*"[^"]*":\s*"[^"]*$/, "");
+      repaired = repaired.replace(/,\s*"[^"]*$/, "");
+      const openBraces = (repaired.match(/\{/g) || []).length - (repaired.match(/\}/g) || []).length;
+      const openBrackets = (repaired.match(/\[/g) || []).length - (repaired.match(/\]/g) || []).length;
+      repaired += "]".repeat(Math.max(0, openBrackets));
+      repaired += "}".repeat(Math.max(0, openBraces));
+      try {
+        parsed = JSON.parse(repaired);
+        console.log(`[Score] Repaired truncated JSON for ${upperTicker}`);
+      } catch (e2) {
+        const msg = e2 instanceof Error ? e2.message : String(e2);
+        return NextResponse.json(
+          { error: `Failed to parse scoring response: ${msg}` },
+          { status: 500 }
+        );
+      }
+    }
 
     // Clamp each AI-scored category to its max
     const scores: Partial<Record<ScoreKey, number>> = {};

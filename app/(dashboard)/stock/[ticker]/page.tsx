@@ -104,6 +104,7 @@ export default function StockDetailPage() {
   const { getStock, scoredStocks, marketData, updateScore, updateExplanations, updateLastScored, updatePrice, updateSector, updateHealthData, updateTechnicals, moveBucket, removeStock } = useStocks();
   const stock = getStock(ticker);
   const [scoring, setScoring] = useState(false);
+  const [scoreError, setScoreError] = useState("");
 
   if (!stock) {
     return (
@@ -123,13 +124,18 @@ export default function StockDetailPage() {
 
   const handleRescore = async () => {
     setScoring(true);
+    setScoreError("");
     try {
       const res = await fetch("/api/score", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({ ticker: stock.ticker }),
       });
-      if (!res.ok) return;
+      if (!res.ok) {
+        const errData = await res.json().catch(() => ({}));
+        setScoreError(errData.error || `Scoring failed (${res.status})`);
+        return;
+      }
       const data = await res.json();
       if (data.scores) {
         for (const [key, val] of Object.entries(data.scores)) {
@@ -152,8 +158,8 @@ export default function StockDetailPage() {
         month: "short", day: "numeric", year: "numeric",
         hour: "numeric", minute: "2-digit", hour12: true,
       }));
-    } catch {
-      // silent fail
+    } catch (err) {
+      setScoreError(err instanceof Error ? err.message : "Scoring failed");
     } finally {
       setScoring(false);
     }
@@ -228,6 +234,9 @@ export default function StockDetailPage() {
                     <span className="text-xs text-slate-400 ml-1">
                       Last scored: {stock.lastScored}
                     </span>
+                  )}
+                  {scoreError && (
+                    <span className="text-xs text-red-500 ml-1">{scoreError}</span>
                   )}
                 </div>
 
