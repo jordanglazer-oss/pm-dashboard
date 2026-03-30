@@ -10,7 +10,6 @@ function UptickAddForm({ onAdd }: { onAdd: (e: UptickEntry) => void }) {
   const [ticker, setTicker] = useState("");
   const [name, setName] = useState("");
   const [sector, setSector] = useState("");
-  const [price, setPrice] = useState("");
   const [support, setSupport] = useState("");
   const [resistance, setResistance] = useState("");
   const [priceWhenAdded, setPriceWhenAdded] = useState("");
@@ -31,13 +30,13 @@ function UptickAddForm({ onAdd }: { onAdd: (e: UptickEntry) => void }) {
           ticker: ticker.trim().toUpperCase(),
           name: name.trim() || ticker.trim().toUpperCase(),
           sector: sector || "—",
-          price: parseFloat(price) || 0,
+          price: 0,
           support: support.trim() || "—",
           resistance: resistance.trim() || "—",
           dateAdded: new Date().toLocaleDateString("en-US", { month: "numeric", day: "numeric", year: "numeric" }),
-          priceWhenAdded: parseFloat(priceWhenAdded) || parseFloat(price) || 0,
+          priceWhenAdded: parseFloat(priceWhenAdded) || 0,
         });
-        setTicker(""); setName(""); setSector(""); setPrice(""); setSupport(""); setResistance(""); setPriceWhenAdded("");
+        setTicker(""); setName(""); setSector(""); setSupport(""); setResistance(""); setPriceWhenAdded("");
       }}
     >
       <div>
@@ -54,10 +53,6 @@ function UptickAddForm({ onAdd }: { onAdd: (e: UptickEntry) => void }) {
           <option value="">Select...</option>
           {sectors.map((s) => <option key={s} value={s}>{s}</option>)}
         </select>
-      </div>
-      <div>
-        <label className="text-xs text-slate-400 block">Price</label>
-        <input value={price} onChange={(e) => setPrice(e.target.value)} placeholder="213.21" type="number" step="0.01" className="w-24 rounded-lg border border-slate-200 px-2 py-1.5 text-sm" />
       </div>
       <div>
         <label className="text-xs text-slate-400 block">Support</label>
@@ -194,9 +189,11 @@ function EditableCell({
 }
 
 type UptickSortKey = "ticker" | "name" | "sector" | "price" | "support" | "resistance" | "dateAdded" | "priceWhenAdded";
-type IdeaSortKey = "ticker" | "priceWhenAdded";
+type IdeaSortKey = "ticker" | "priceWhenAdded" | "currentPrice";
 type RBCSortKey = "ticker" | "sector" | "dateAdded";
 type SortDir = "asc" | "desc";
+
+type LivePrices = Record<string, number | null>;
 
 export default function ResearchPage() {
   const [state, setState] = useState<ResearchState>(defaultResearch);
@@ -206,6 +203,39 @@ export default function ResearchPage() {
   const [topSort, setTopSort] = useState<{ key: IdeaSortKey; dir: SortDir }>({ key: "ticker", dir: "asc" });
   const [bottomSort, setBottomSort] = useState<{ key: IdeaSortKey; dir: SortDir }>({ key: "ticker", dir: "asc" });
   const [rbcSort, setRbcSort] = useState<{ key: RBCSortKey; dir: SortDir }>({ key: "ticker", dir: "asc" });
+
+  // Live prices from Yahoo Finance
+  const [livePrices, setLivePrices] = useState<LivePrices>({});
+  const [pricesLoading, setPricesLoading] = useState(false);
+  const [pricesFetchedAt, setPricesFetchedAt] = useState<string | null>(null);
+
+  const fetchLivePrices = useCallback(async (researchState?: ResearchState) => {
+    const s = researchState || state;
+    const allTickers = [
+      ...s.newtonUpticks.map((u) => u.ticker),
+      ...s.fundstratTop.map((i) => i.ticker),
+      ...s.fundstratBottom.map((i) => i.ticker),
+    ];
+    const unique = [...new Set(allTickers)];
+    if (unique.length === 0) return;
+
+    setPricesLoading(true);
+    try {
+      const res = await fetch("/api/prices", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ tickers: unique }),
+      });
+      if (!res.ok) return;
+      const data = await res.json();
+      setLivePrices(data.prices || {});
+      setPricesFetchedAt(data.fetchedAt || new Date().toISOString());
+    } catch {
+      // silently fail
+    } finally {
+      setPricesLoading(false);
+    }
+  }, [state]);
 
   function toggleUptickSort(key: UptickSortKey) {
     setUptickSort(prev => prev.key === key ? { key, dir: prev.dir === "asc" ? "desc" : "asc" } : { key, dir: "asc" });
@@ -224,8 +254,10 @@ export default function ResearchPage() {
     return [...state.newtonUpticks].sort((a, b) => {
       const { key, dir } = uptickSort;
       let cmp = 0;
-      if (key === "price" || key === "priceWhenAdded") {
-        cmp = (a[key] || 0) - (b[key] || 0);
+      if (key === "price") {
+        cmp = (livePrices[a.ticker] || 0) - (livePrices[b.ticker] || 0);
+      } else if (key === "priceWhenAdded") {
+        cmp = (a.priceWhenAdded || 0) - (b.priceWhenAdded || 0);
       } else {
         cmp = String(a[key] || "").localeCompare(String(b[key] || ""));
       }
@@ -236,7 +268,9 @@ export default function ResearchPage() {
   function sortedIdeas(items: IdeaEntry[], sort: { key: IdeaSortKey; dir: SortDir }) {
     return [...items].sort((a, b) => {
       let cmp = 0;
-      if (sort.key === "priceWhenAdded") {
+      if (sort.key === "currentPrice") {
+        cmp = (livePrices[a.ticker] || 0) - (livePrices[b.ticker] || 0);
+      } else if (sort.key === "priceWhenAdded") {
         cmp = (a.priceWhenAdded || 0) - (b.priceWhenAdded || 0);
       } else {
         cmp = a.ticker.localeCompare(b.ticker);
@@ -262,11 +296,15 @@ export default function ResearchPage() {
     fetch("/api/kv/research")
       .then((r) => r.json())
       .then((data) => {
-        if (data.research) setState(data.research);
+        if (data.research) {
+          setState(data.research);
+          // Auto-fetch live prices after loading research data
+          fetchLivePrices(data.research);
+        }
       })
       .catch(() => {})
       .finally(() => setLoaded(true));
-  }, []);
+  }, []); // eslint-disable-line react-hooks/exhaustive-deps
 
   const save = useCallback((next: ResearchState) => {
     setState(next);
@@ -346,11 +384,28 @@ export default function ResearchPage() {
         <section className="rounded-[24px] border border-slate-200 bg-white p-6 shadow-sm">
           <div className="flex items-center justify-between mb-4">
             <div>
-              <h3 className="text-xl font-bold">Newton&apos;s Upticks&hellip;</h3>
+              <h3 className="text-xl font-bold">Newton&apos;s Upticks</h3>
               <p className="text-xs text-slate-400">Fundstrat technical uptick list &mdash; click any cell to edit</p>
             </div>
-            <span className="text-sm text-slate-400">{state.newtonUpticks.length} stocks</span>
+            <div className="flex items-center gap-3">
+              <button
+                onClick={() => fetchLivePrices()}
+                disabled={pricesLoading}
+                className="flex items-center gap-1.5 rounded-lg bg-teal-600 px-3 py-1.5 text-xs font-semibold text-white hover:bg-teal-700 disabled:opacity-50 transition-colors"
+                title="Refresh all prices from Yahoo Finance"
+              >
+                <svg className={`w-3.5 h-3.5 ${pricesLoading ? "animate-spin" : ""}`} fill="none" stroke="currentColor" strokeWidth="2" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" d="M16.023 9.348h4.992v-.001M2.985 19.644v-4.992m0 0h4.992m-4.993 0 3.181 3.183a8.25 8.25 0 0 0 13.803-3.7M4.031 9.865a8.25 8.25 0 0 1 13.803-3.7l3.181 3.182" /></svg>
+                {pricesLoading ? "Updating..." : "Refresh Prices"}
+              </button>
+              <span className="text-sm text-slate-400">{state.newtonUpticks.length} stocks</span>
+            </div>
           </div>
+
+          {pricesFetchedAt && (
+            <p className="text-[10px] text-slate-400 mb-2">
+              Prices updated {new Date(pricesFetchedAt).toLocaleString("en-US", { month: "short", day: "numeric", hour: "numeric", minute: "2-digit", hour12: true })}
+            </p>
+          )}
 
           <div className="overflow-x-auto">
             <table className="w-full text-sm">
@@ -360,11 +415,12 @@ export default function ResearchPage() {
                   <th className="py-2 pr-3 text-xs font-semibold text-teal-700 cursor-pointer hover:text-teal-900 select-none" onClick={() => toggleUptickSort("ticker")}>Ticker{uArrow("ticker")}</th>
                   <th className="py-2 pr-3 text-xs font-semibold text-teal-700 cursor-pointer hover:text-teal-900 select-none" onClick={() => toggleUptickSort("name")}>Name{uArrow("name")}</th>
                   <th className="py-2 pr-3 text-xs font-semibold text-teal-700 cursor-pointer hover:text-teal-900 select-none" onClick={() => toggleUptickSort("sector")}>Sector{uArrow("sector")}</th>
-                  <th className="py-2 pr-3 text-xs font-semibold text-teal-700 text-right cursor-pointer hover:text-teal-900 select-none" onClick={() => toggleUptickSort("price")}>Price*{uArrow("price")}</th>
+                  <th className="py-2 pr-3 text-xs font-semibold text-teal-700 text-right cursor-pointer hover:text-teal-900 select-none" onClick={() => toggleUptickSort("price")}>Price{uArrow("price")}</th>
                   <th className="py-2 pr-3 text-xs font-semibold text-teal-700 text-right">Support</th>
                   <th className="py-2 pr-3 text-xs font-semibold text-teal-700 text-right">Resistance</th>
                   <th className="py-2 pr-3 text-xs font-semibold text-teal-700 cursor-pointer hover:text-teal-900 select-none" onClick={() => toggleUptickSort("dateAdded")}>Date Added{uArrow("dateAdded")}</th>
                   <th className="py-2 pr-3 text-xs font-semibold text-teal-700 text-right cursor-pointer hover:text-teal-900 select-none" onClick={() => toggleUptickSort("priceWhenAdded")}>Price When Added{uArrow("priceWhenAdded")}</th>
+                  <th className="py-2 pr-3 text-xs font-semibold text-teal-700 text-right">Chg</th>
                   <th className="py-2 text-xs font-semibold text-teal-700 w-8"></th>
                 </tr>
               </thead>
@@ -372,6 +428,8 @@ export default function ResearchPage() {
                 {sortedUpticks().map((u, i) => {
                   const isNew = u.dateAdded === new Date().toLocaleDateString("en-US", { month: "numeric", day: "numeric", year: "numeric" });
                   const rowBg = isNew ? "bg-amber-50 font-semibold" : i % 2 === 0 ? "bg-white" : "bg-slate-50/50";
+                  const livePrice = livePrices[u.ticker];
+                  const pctChange = livePrice && u.priceWhenAdded ? ((livePrice - u.priceWhenAdded) / u.priceWhenAdded * 100) : null;
                   return (
                     <tr key={u.ticker} className={`border-b border-slate-100 ${rowBg} hover:bg-blue-50/40 transition-colors`}>
                       <td className="py-2 pr-2 text-slate-400">{i + 1}</td>
@@ -383,7 +441,13 @@ export default function ResearchPage() {
                         <EditableCell value={u.sector} onChange={(v) => updateUptick(i, "sector", v)} />
                       </td>
                       <td className="py-2 pr-3 text-right font-mono">
-                        <EditableCell value={u.price || "—"} onChange={(v) => updateUptick(i, "price", v)} type="number" />
+                        {pricesLoading ? (
+                          <span className="text-slate-300 animate-pulse">...</span>
+                        ) : livePrice != null ? (
+                          <span className="font-semibold">${livePrice.toFixed(2)}</span>
+                        ) : (
+                          <span className="text-slate-300">—</span>
+                        )}
                       </td>
                       <td className="py-2 pr-3 text-right font-mono">
                         <EditableCell value={u.support} onChange={(v) => updateUptick(i, "support", v)} />
@@ -401,6 +465,15 @@ export default function ResearchPage() {
                           <span className="text-emerald-600 font-semibold">NEW</span>
                         )}
                       </td>
+                      <td className="py-2 pr-3 text-right font-mono text-xs">
+                        {pctChange != null ? (
+                          <span className={pctChange >= 0 ? "text-emerald-600" : "text-red-500"}>
+                            {pctChange >= 0 ? "+" : ""}{pctChange.toFixed(1)}%
+                          </span>
+                        ) : (
+                          <span className="text-slate-300">—</span>
+                        )}
+                      </td>
                       <td className="py-2">
                         <button onClick={() => removeUptick(u.ticker)} className="text-slate-300 hover:text-red-500 font-bold transition-colors" title="Remove">
                           &times;
@@ -411,7 +484,7 @@ export default function ResearchPage() {
                 })}
                 {state.newtonUpticks.length === 0 && (
                   <tr>
-                    <td colSpan={10} className="py-8 text-center text-slate-400 italic">No upticks added yet</td>
+                    <td colSpan={11} className="py-8 text-center text-slate-400 italic">No upticks added yet</td>
                   </tr>
                 )}
               </tbody>
@@ -438,28 +511,52 @@ export default function ResearchPage() {
                 <tr className="border-b-2 border-emerald-500 text-left">
                   <th className="py-2 pr-2 text-xs font-semibold text-emerald-700 w-8">#</th>
                   <th className="py-2 pr-3 text-xs font-semibold text-emerald-700 cursor-pointer hover:text-emerald-900 select-none" onClick={() => toggleTopSort("ticker")}>Ticker{tArrow("ticker")}</th>
-                  <th className="py-2 text-xs font-semibold text-emerald-700 text-right cursor-pointer hover:text-emerald-900 select-none" onClick={() => toggleTopSort("priceWhenAdded")}>Price When Added{tArrow("priceWhenAdded")}</th>
+                  <th className="py-2 pr-3 text-xs font-semibold text-emerald-700 text-right cursor-pointer hover:text-emerald-900 select-none" onClick={() => toggleTopSort("currentPrice")}>Current Price{tArrow("currentPrice")}</th>
+                  <th className="py-2 pr-3 text-xs font-semibold text-emerald-700 text-right cursor-pointer hover:text-emerald-900 select-none" onClick={() => toggleTopSort("priceWhenAdded")}>Price Added{tArrow("priceWhenAdded")}</th>
+                  <th className="py-2 pr-2 text-xs font-semibold text-emerald-700 text-right">Chg</th>
                   <th className="py-2 w-8"></th>
                 </tr>
               </thead>
               <tbody>
-                {sortedIdeas(state.fundstratTop, topSort).map((item, i) => (
-                  <tr key={item.ticker} className={`border-b border-slate-100 ${i % 2 === 0 ? "bg-white" : "bg-emerald-50/30"} hover:bg-emerald-50/60 transition-colors`}>
-                    <td className="py-2 pr-2 text-slate-400">{i + 1}</td>
-                    <td className="py-2 pr-3 font-mono font-bold text-emerald-700">${item.ticker}</td>
-                    <td className="py-2 text-right font-mono">
-                      <EditableCell
-                        value={item.priceWhenAdded ? `$${item.priceWhenAdded.toFixed(2)}` : "—"}
-                        onChange={(v) => updateIdea("fundstratTop", i, v.replace("$", ""))}
-                      />
-                    </td>
-                    <td className="py-2">
-                      <button onClick={() => removeIdea("fundstratTop", item.ticker)} className="text-slate-300 hover:text-red-500 font-bold transition-colors">&times;</button>
-                    </td>
-                  </tr>
-                ))}
+                {sortedIdeas(state.fundstratTop, topSort).map((item, i) => {
+                  const livePrice = livePrices[item.ticker];
+                  const pctChange = livePrice && item.priceWhenAdded ? ((livePrice - item.priceWhenAdded) / item.priceWhenAdded * 100) : null;
+                  return (
+                    <tr key={item.ticker} className={`border-b border-slate-100 ${i % 2 === 0 ? "bg-white" : "bg-emerald-50/30"} hover:bg-emerald-50/60 transition-colors`}>
+                      <td className="py-2 pr-2 text-slate-400">{i + 1}</td>
+                      <td className="py-2 pr-3 font-mono font-bold text-emerald-700">${item.ticker}</td>
+                      <td className="py-2 pr-3 text-right font-mono">
+                        {pricesLoading ? (
+                          <span className="text-slate-300 animate-pulse">...</span>
+                        ) : livePrice != null ? (
+                          <span className="font-semibold">${livePrice.toFixed(2)}</span>
+                        ) : (
+                          <span className="text-slate-300">—</span>
+                        )}
+                      </td>
+                      <td className="py-2 pr-3 text-right font-mono">
+                        <EditableCell
+                          value={item.priceWhenAdded ? `$${item.priceWhenAdded.toFixed(2)}` : "—"}
+                          onChange={(v) => updateIdea("fundstratTop", i, v.replace("$", ""))}
+                        />
+                      </td>
+                      <td className="py-2 pr-2 text-right font-mono text-xs">
+                        {pctChange != null ? (
+                          <span className={pctChange >= 0 ? "text-emerald-600" : "text-red-500"}>
+                            {pctChange >= 0 ? "+" : ""}{pctChange.toFixed(1)}%
+                          </span>
+                        ) : (
+                          <span className="text-slate-300">—</span>
+                        )}
+                      </td>
+                      <td className="py-2">
+                        <button onClick={() => removeIdea("fundstratTop", item.ticker)} className="text-slate-300 hover:text-red-500 font-bold transition-colors">&times;</button>
+                      </td>
+                    </tr>
+                  );
+                })}
                 {state.fundstratTop.length === 0 && (
-                  <tr><td colSpan={4} className="py-6 text-center text-slate-400 italic">No top ideas added yet</td></tr>
+                  <tr><td colSpan={6} className="py-6 text-center text-slate-400 italic">No top ideas added yet</td></tr>
                 )}
               </tbody>
             </table>
@@ -482,28 +579,52 @@ export default function ResearchPage() {
                 <tr className="border-b-2 border-red-400 text-left">
                   <th className="py-2 pr-2 text-xs font-semibold text-red-700 w-8">#</th>
                   <th className="py-2 pr-3 text-xs font-semibold text-red-700 cursor-pointer hover:text-red-900 select-none" onClick={() => toggleBottomSort("ticker")}>Ticker{bArrow("ticker")}</th>
-                  <th className="py-2 text-xs font-semibold text-red-700 text-right cursor-pointer hover:text-red-900 select-none" onClick={() => toggleBottomSort("priceWhenAdded")}>Price When Added{bArrow("priceWhenAdded")}</th>
+                  <th className="py-2 pr-3 text-xs font-semibold text-red-700 text-right cursor-pointer hover:text-red-900 select-none" onClick={() => toggleBottomSort("currentPrice")}>Current Price{bArrow("currentPrice")}</th>
+                  <th className="py-2 pr-3 text-xs font-semibold text-red-700 text-right cursor-pointer hover:text-red-900 select-none" onClick={() => toggleBottomSort("priceWhenAdded")}>Price Added{bArrow("priceWhenAdded")}</th>
+                  <th className="py-2 pr-2 text-xs font-semibold text-red-700 text-right">Chg</th>
                   <th className="py-2 w-8"></th>
                 </tr>
               </thead>
               <tbody>
-                {sortedIdeas(state.fundstratBottom, bottomSort).map((item, i) => (
-                  <tr key={item.ticker} className={`border-b border-slate-100 ${i % 2 === 0 ? "bg-white" : "bg-red-50/30"} hover:bg-red-50/60 transition-colors`}>
-                    <td className="py-2 pr-2 text-slate-400">{i + 1}</td>
-                    <td className="py-2 pr-3 font-mono font-bold text-red-700">${item.ticker}</td>
-                    <td className="py-2 text-right font-mono">
-                      <EditableCell
-                        value={item.priceWhenAdded ? `$${item.priceWhenAdded.toFixed(2)}` : "—"}
-                        onChange={(v) => updateIdea("fundstratBottom", i, v.replace("$", ""))}
-                      />
-                    </td>
-                    <td className="py-2">
-                      <button onClick={() => removeIdea("fundstratBottom", item.ticker)} className="text-slate-300 hover:text-red-500 font-bold transition-colors">&times;</button>
-                    </td>
-                  </tr>
-                ))}
+                {sortedIdeas(state.fundstratBottom, bottomSort).map((item, i) => {
+                  const livePrice = livePrices[item.ticker];
+                  const pctChange = livePrice && item.priceWhenAdded ? ((livePrice - item.priceWhenAdded) / item.priceWhenAdded * 100) : null;
+                  return (
+                    <tr key={item.ticker} className={`border-b border-slate-100 ${i % 2 === 0 ? "bg-white" : "bg-red-50/30"} hover:bg-red-50/60 transition-colors`}>
+                      <td className="py-2 pr-2 text-slate-400">{i + 1}</td>
+                      <td className="py-2 pr-3 font-mono font-bold text-red-700">${item.ticker}</td>
+                      <td className="py-2 pr-3 text-right font-mono">
+                        {pricesLoading ? (
+                          <span className="text-slate-300 animate-pulse">...</span>
+                        ) : livePrice != null ? (
+                          <span className="font-semibold">${livePrice.toFixed(2)}</span>
+                        ) : (
+                          <span className="text-slate-300">—</span>
+                        )}
+                      </td>
+                      <td className="py-2 pr-3 text-right font-mono">
+                        <EditableCell
+                          value={item.priceWhenAdded ? `$${item.priceWhenAdded.toFixed(2)}` : "—"}
+                          onChange={(v) => updateIdea("fundstratBottom", i, v.replace("$", ""))}
+                        />
+                      </td>
+                      <td className="py-2 pr-2 text-right font-mono text-xs">
+                        {pctChange != null ? (
+                          <span className={pctChange >= 0 ? "text-emerald-600" : "text-red-500"}>
+                            {pctChange >= 0 ? "+" : ""}{pctChange.toFixed(1)}%
+                          </span>
+                        ) : (
+                          <span className="text-slate-300">—</span>
+                        )}
+                      </td>
+                      <td className="py-2">
+                        <button onClick={() => removeIdea("fundstratBottom", item.ticker)} className="text-slate-300 hover:text-red-500 font-bold transition-colors">&times;</button>
+                      </td>
+                    </tr>
+                  );
+                })}
                 {state.fundstratBottom.length === 0 && (
-                  <tr><td colSpan={4} className="py-6 text-center text-slate-400 italic">No bottom ideas added yet</td></tr>
+                  <tr><td colSpan={6} className="py-6 text-center text-slate-400 italic">No bottom ideas added yet</td></tr>
                 )}
               </tbody>
             </table>
