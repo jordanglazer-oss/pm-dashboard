@@ -8,45 +8,119 @@ import { SentimentGauges } from "./SentimentGauges";
 import { HedgingIndicator } from "./HedgingIndicator";
 import { ImageUpload, type BriefAttachment } from "./ImageUpload";
 
-/** Numeric input that keeps the raw text while typing (supports "-", ".", "30.5" etc)
- *  and only commits the parsed number on blur or Enter. */
-function NumericInput({
-  value,
-  onChange,
+/** Numeric input with an explicit Save button.
+ *  Value only persists when the user clicks Save (or presses Enter).
+ *  Save button is disabled when the value hasn't changed. */
+function SaveableNumericInput({
+  savedValue,
+  onSave,
   className = "",
+  inputClassName = "",
   placeholder,
 }: {
-  value: number;
-  onChange: (n: number) => void;
+  savedValue: number;
+  onSave: (n: number) => void;
   className?: string;
+  inputClassName?: string;
   placeholder?: string;
 }) {
-  const [text, setText] = React.useState(String(value));
-  const [focused, setFocused] = React.useState(false);
+  const [text, setText] = React.useState(String(savedValue));
+  const parsed = parseFloat(text);
+  const isValid = !isNaN(parsed);
+  const isDirty = isValid && parsed !== savedValue;
 
-  // Sync from parent when not focused
+  // Sync when savedValue changes externally (e.g. Redis load, live fetch)
+  const prevSaved = React.useRef(savedValue);
   React.useEffect(() => {
-    if (!focused) setText(String(value));
-  }, [value, focused]);
+    if (prevSaved.current !== savedValue) {
+      setText(String(savedValue));
+      prevSaved.current = savedValue;
+    }
+  }, [savedValue]);
 
-  function commit(raw: string) {
-    const n = parseFloat(raw);
-    if (!isNaN(n)) onChange(n);
-    else setText(String(value));
+  function handleSave() {
+    if (isValid && isDirty) {
+      onSave(parsed);
+      prevSaved.current = parsed;
+    }
   }
 
   return (
-    <input
-      type="text"
-      inputMode="decimal"
-      value={focused ? text : String(value)}
-      placeholder={placeholder}
-      onFocus={() => { setFocused(true); setText(String(value)); }}
-      onChange={(e) => setText(e.target.value)}
-      onBlur={(e) => { commit(e.target.value); setFocused(false); }}
-      onKeyDown={(e) => { if (e.key === "Enter") { commit(text); (e.target as HTMLInputElement).blur(); } }}
-      className={className}
-    />
+    <div className={`flex items-center gap-1.5 ${className}`}>
+      <input
+        type="text"
+        inputMode="decimal"
+        value={text}
+        placeholder={placeholder}
+        onChange={(e) => setText(e.target.value)}
+        onKeyDown={(e) => { if (e.key === "Enter") handleSave(); }}
+        className={inputClassName}
+      />
+      <button
+        onClick={handleSave}
+        disabled={!isDirty}
+        title={isDirty ? "Save" : "No changes"}
+        className={`shrink-0 rounded-lg px-2 py-2 text-xs font-bold transition-all ${
+          isDirty
+            ? "bg-blue-600 text-white hover:bg-blue-700 shadow-sm"
+            : "bg-slate-100 text-slate-300 cursor-not-allowed"
+        }`}
+      >
+        {isDirty ? "Save" : "Saved"}
+      </button>
+    </div>
+  );
+}
+
+/** Dropdown select with an explicit Save button. */
+function SaveableSelect({
+  savedValue,
+  onSave,
+  options,
+  className = "",
+  selectClassName = "",
+}: {
+  savedValue: string;
+  onSave: (v: string) => void;
+  options: { value: string; label: string }[];
+  className?: string;
+  selectClassName?: string;
+}) {
+  const [value, setValue] = React.useState(savedValue);
+  const isDirty = value !== savedValue;
+
+  const prevSaved = React.useRef(savedValue);
+  React.useEffect(() => {
+    if (prevSaved.current !== savedValue) {
+      setValue(savedValue);
+      prevSaved.current = savedValue;
+    }
+  }, [savedValue]);
+
+  return (
+    <div className={`flex items-center gap-1.5 ${className}`}>
+      <select
+        value={value}
+        onChange={(e) => setValue(e.target.value)}
+        className={selectClassName}
+      >
+        {options.map((o) => (
+          <option key={o.value} value={o.value}>{o.label}</option>
+        ))}
+      </select>
+      <button
+        onClick={() => { if (isDirty) onSave(value); }}
+        disabled={!isDirty}
+        title={isDirty ? "Save" : "No changes"}
+        className={`shrink-0 rounded-lg px-2 py-2 text-xs font-bold transition-all ${
+          isDirty
+            ? "bg-blue-600 text-white hover:bg-blue-700 shadow-sm"
+            : "bg-slate-100 text-slate-300 cursor-not-allowed"
+        }`}
+      >
+        {isDirty ? "Save" : "Saved"}
+      </button>
+    </div>
   );
 }
 
@@ -73,45 +147,6 @@ export function MorningBrief({
   const [error, setError] = useState("");
   const [liveLoading, setLiveLoading] = useState(false);
   const [liveFields, setLiveFields] = useState<Record<string, boolean>>({});
-
-  // Local editable state for sentiment inputs — initialise from persisted marketData
-  const [fg, setFg] = useState(marketData.fearGreed);
-  const [aaiiBull, setAaiiBull] = useState(marketData.aaiiBull ?? 30);
-  const [aaiiNeutral, setAaiiNeutral] = useState(marketData.aaiiNeutral ?? 17);
-  const [aaiiBear, setAaiiBear] = useState(marketData.aaiiBear ?? 52);
-
-  // Track previous marketData values to detect when Redis data loads
-  const prevMarketRef = useRef({ fg: marketData.fearGreed, bull: marketData.aaiiBull, ntrl: marketData.aaiiNeutral, bear: marketData.aaiiBear });
-  const userEdited = useRef(false);
-  useEffect(() => {
-    const prev = prevMarketRef.current;
-    // Only sync if marketData actually changed (i.e. Redis loaded new values) and user hasn't started editing
-    if (!userEdited.current && (
-      prev.fg !== marketData.fearGreed || prev.bull !== marketData.aaiiBull ||
-      prev.ntrl !== marketData.aaiiNeutral || prev.bear !== marketData.aaiiBear
-    )) {
-      setFg(marketData.fearGreed);
-      setAaiiBull(marketData.aaiiBull ?? 30);
-      setAaiiNeutral(marketData.aaiiNeutral ?? 17);
-      setAaiiBear(marketData.aaiiBear ?? 52);
-    }
-    prevMarketRef.current = { fg: marketData.fearGreed, bull: marketData.aaiiBull, ntrl: marketData.aaiiNeutral, bear: marketData.aaiiBear };
-  }, [marketData.fearGreed, marketData.aaiiBull, marketData.aaiiNeutral, marketData.aaiiBear]);
-
-  // Wrap setters to mark user edits and persist to marketData
-  const setFgAndPersist = useCallback((n: number) => {
-    userEdited.current = true;
-    setFg(n);
-    onUpdateMarketData({ fearGreed: n });
-  }, [onUpdateMarketData]);
-  const setAaiiAndPersist = useCallback((bull: number, ntrl: number, bear: number) => {
-    userEdited.current = true;
-    setAaiiBull(bull);
-    setAaiiNeutral(ntrl);
-    setAaiiBear(bear);
-    const spread = parseFloat((bull - bear).toFixed(1));
-    onUpdateMarketData({ aaiiBull: bull, aaiiNeutral: ntrl, aaiiBear: bear, aaiiBullBear: spread });
-  }, [onUpdateMarketData]);
 
   // Attachments (screenshots for brief sections)
   const [attachments, setAttachments] = useState<BriefAttachment[]>([]);
@@ -281,10 +316,10 @@ export function MorningBrief({
               <label className="text-sm font-medium text-slate-500">VIX</label>
               {liveFields.vix && <span className="rounded-full bg-emerald-100 px-2 py-0.5 text-[10px] font-bold text-emerald-700 uppercase">Live</span>}
             </div>
-            <NumericInput
-              value={marketData.vix}
-              onChange={(n) => onUpdateMarketData({ vix: n })}
-              className="mt-1 w-28 rounded-xl border border-slate-200 px-3 py-2 text-lg font-semibold"
+            <SaveableNumericInput
+              savedValue={marketData.vix}
+              onSave={(n) => onUpdateMarketData({ vix: n })}
+              inputClassName="mt-1 w-24 rounded-xl border border-slate-200 px-3 py-2 text-lg font-semibold"
             />
           </div>
           <div>
@@ -292,10 +327,10 @@ export function MorningBrief({
               <label className="text-sm font-medium text-slate-500">MOVE Index</label>
               {liveFields.move && <span className="rounded-full bg-emerald-100 px-2 py-0.5 text-[10px] font-bold text-emerald-700 uppercase">Live</span>}
             </div>
-            <NumericInput
-              value={marketData.move}
-              onChange={(n) => onUpdateMarketData({ move: n })}
-              className="mt-1 w-28 rounded-xl border border-slate-200 px-3 py-2 text-lg font-semibold"
+            <SaveableNumericInput
+              savedValue={marketData.move}
+              onSave={(n) => onUpdateMarketData({ move: n })}
+              inputClassName="mt-1 w-24 rounded-xl border border-slate-200 px-3 py-2 text-lg font-semibold"
             />
           </div>
           <div>
@@ -305,10 +340,10 @@ export function MorningBrief({
                 <svg className="w-3.5 h-3.5" fill="none" stroke="currentColor" strokeWidth="2" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" d="M10 6H6a2 2 0 00-2 2v10a2 2 0 002 2h10a2 2 0 002-2v-4M14 4h6m0 0v6m0-6L10 14" /></svg>
               </a>
             </div>
-            <NumericInput
-              value={marketData.hyOas}
-              onChange={(n) => onUpdateMarketData({ hyOas: n })}
-              className="mt-1 w-28 rounded-xl border border-slate-200 px-3 py-2 text-lg font-semibold"
+            <SaveableNumericInput
+              savedValue={marketData.hyOas}
+              onSave={(n) => onUpdateMarketData({ hyOas: n })}
+              inputClassName="mt-1 w-24 rounded-xl border border-slate-200 px-3 py-2 text-lg font-semibold"
             />
           </div>
           <div>
@@ -318,10 +353,10 @@ export function MorningBrief({
                 <svg className="w-3.5 h-3.5" fill="none" stroke="currentColor" strokeWidth="2" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" d="M10 6H6a2 2 0 00-2 2v10a2 2 0 002 2h10a2 2 0 002-2v-4M14 4h6m0 0v6m0-6L10 14" /></svg>
               </a>
             </div>
-            <NumericInput
-              value={marketData.igOas}
-              onChange={(n) => onUpdateMarketData({ igOas: n })}
-              className="mt-1 w-28 rounded-xl border border-slate-200 px-3 py-2 text-lg font-semibold"
+            <SaveableNumericInput
+              savedValue={marketData.igOas}
+              onSave={(n) => onUpdateMarketData({ igOas: n })}
+              inputClassName="mt-1 w-24 rounded-xl border border-slate-200 px-3 py-2 text-lg font-semibold"
             />
           </div>
         </div>
@@ -339,10 +374,10 @@ export function MorningBrief({
                   <svg className="w-3.5 h-3.5" fill="none" stroke="currentColor" strokeWidth="2" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" d="M10 6H6a2 2 0 00-2 2v10a2 2 0 002 2h10a2 2 0 002-2v-4M14 4h6m0 0v6m0-6L10 14" /></svg>
                 </a>
               </div>
-              <NumericInput
-                value={marketData.breadth}
-                onChange={(n) => onUpdateMarketData({ breadth: n })}
-                className="mt-1 w-full rounded-xl border border-slate-200 px-3 py-2 text-lg font-semibold"
+              <SaveableNumericInput
+                savedValue={marketData.breadth}
+                onSave={(n) => onUpdateMarketData({ breadth: n })}
+                inputClassName="mt-1 w-full rounded-xl border border-slate-200 px-3 py-2 text-lg font-semibold"
               />
             </div>
             <div>
@@ -352,10 +387,10 @@ export function MorningBrief({
                   <svg className="w-3.5 h-3.5" fill="none" stroke="currentColor" strokeWidth="2" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" d="M10 6H6a2 2 0 00-2 2v10a2 2 0 002 2h10a2 2 0 002-2v-4M14 4h6m0 0v6m0-6L10 14" /></svg>
                 </a>
               </div>
-              <NumericInput
-                value={marketData.nasdaqBreadth}
-                onChange={(n) => onUpdateMarketData({ nasdaqBreadth: n })}
-                className="mt-1 w-full rounded-xl border border-slate-200 px-3 py-2 text-lg font-semibold"
+              <SaveableNumericInput
+                savedValue={marketData.nasdaqBreadth}
+                onSave={(n) => onUpdateMarketData({ nasdaqBreadth: n })}
+                inputClassName="mt-1 w-full rounded-xl border border-slate-200 px-3 py-2 text-lg font-semibold"
               />
             </div>
             <div>
@@ -365,10 +400,10 @@ export function MorningBrief({
                   <svg className="w-3.5 h-3.5" fill="none" stroke="currentColor" strokeWidth="2" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" d="M10 6H6a2 2 0 00-2 2v10a2 2 0 002 2h10a2 2 0 002-2v-4M14 4h6m0 0v6m0-6L10 14" /></svg>
                 </a>
               </div>
-              <NumericInput
-                value={marketData.sp50dma}
-                onChange={(n) => onUpdateMarketData({ sp50dma: n })}
-                className="mt-1 w-full rounded-xl border border-slate-200 px-3 py-2 text-lg font-semibold"
+              <SaveableNumericInput
+                savedValue={marketData.sp50dma}
+                onSave={(n) => onUpdateMarketData({ sp50dma: n })}
+                inputClassName="mt-1 w-full rounded-xl border border-slate-200 px-3 py-2 text-lg font-semibold"
               />
             </div>
             <div>
@@ -378,10 +413,10 @@ export function MorningBrief({
                   <svg className="w-3.5 h-3.5" fill="none" stroke="currentColor" strokeWidth="2" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" d="M10 6H6a2 2 0 00-2 2v10a2 2 0 002 2h10a2 2 0 002-2v-4M14 4h6m0 0v6m0-6L10 14" /></svg>
                 </a>
               </div>
-              <NumericInput
-                value={marketData.nyseAdLine}
-                onChange={(n) => onUpdateMarketData({ nyseAdLine: n })}
-                className="mt-1 w-full rounded-xl border border-slate-200 px-3 py-2 text-lg font-semibold"
+              <SaveableNumericInput
+                savedValue={marketData.nyseAdLine}
+                onSave={(n) => onUpdateMarketData({ nyseAdLine: n })}
+                inputClassName="mt-1 w-full rounded-xl border border-slate-200 px-3 py-2 text-lg font-semibold"
               />
             </div>
             <div>
@@ -391,10 +426,10 @@ export function MorningBrief({
                   <svg className="w-3.5 h-3.5" fill="none" stroke="currentColor" strokeWidth="2" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" d="M10 6H6a2 2 0 00-2 2v10a2 2 0 002 2h10a2 2 0 002-2v-4M14 4h6m0 0v6m0-6L10 14" /></svg>
                 </a>
               </div>
-              <NumericInput
-                value={marketData.newHighsLows}
-                onChange={(n) => onUpdateMarketData({ newHighsLows: n })}
-                className="mt-1 w-full rounded-xl border border-slate-200 px-3 py-2 text-lg font-semibold"
+              <SaveableNumericInput
+                savedValue={marketData.newHighsLows}
+                onSave={(n) => onUpdateMarketData({ newHighsLows: n })}
+                inputClassName="mt-1 w-full rounded-xl border border-slate-200 px-3 py-2 text-lg font-semibold"
               />
             </div>
           </div>
@@ -414,10 +449,10 @@ export function MorningBrief({
                   <svg className="w-3.5 h-3.5" fill="none" stroke="currentColor" strokeWidth="2" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" d="M10 6H6a2 2 0 00-2 2v10a2 2 0 002 2h10a2 2 0 002-2v-4M14 4h6m0 0v6m0-6L10 14" /></svg>
                 </a>
               </div>
-              <NumericInput
-                value={marketData.spOscillator}
-                onChange={(n) => onUpdateMarketData({ spOscillator: n })}
-                className="mt-1 w-full rounded-xl border border-slate-200 px-3 py-2 text-lg font-semibold"
+              <SaveableNumericInput
+                savedValue={marketData.spOscillator}
+                onSave={(n) => onUpdateMarketData({ spOscillator: n })}
+                inputClassName="mt-1 w-full rounded-xl border border-slate-200 px-3 py-2 text-lg font-semibold"
               />
               <p className="text-[10px] text-slate-400 mt-0.5">{marketData.spOscillator < 0 ? "Oversold (bullish)" : marketData.spOscillator > 0 ? "Overbought (bearish)" : "Neutral"}</p>
             </div>
@@ -428,10 +463,10 @@ export function MorningBrief({
                   <svg className="w-3.5 h-3.5" fill="none" stroke="currentColor" strokeWidth="2" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" d="M10 6H6a2 2 0 00-2 2v10a2 2 0 002 2h10a2 2 0 002-2v-4M14 4h6m0 0v6m0-6L10 14" /></svg>
                 </a>
               </div>
-              <NumericInput
-                value={marketData.putCall}
-                onChange={(n) => onUpdateMarketData({ putCall: n })}
-                className="mt-1 w-full rounded-xl border border-slate-200 px-3 py-2 text-lg font-semibold"
+              <SaveableNumericInput
+                savedValue={marketData.putCall}
+                onSave={(n) => onUpdateMarketData({ putCall: n })}
+                inputClassName="mt-1 w-full rounded-xl border border-slate-200 px-3 py-2 text-lg font-semibold"
               />
               <p className="text-[10px] text-slate-400 mt-0.5">Total P/C ratio</p>
             </div>
@@ -442,10 +477,10 @@ export function MorningBrief({
                   <svg className="w-3.5 h-3.5" fill="none" stroke="currentColor" strokeWidth="2" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" d="M10 6H6a2 2 0 00-2 2v10a2 2 0 002 2h10a2 2 0 002-2v-4M14 4h6m0 0v6m0-6L10 14" /></svg>
                 </a>
               </div>
-              <NumericInput
-                value={fg}
-                onChange={setFgAndPersist}
-                className="mt-1 w-full rounded-xl border border-slate-200 px-3 py-2 text-lg font-semibold"
+              <SaveableNumericInput
+                savedValue={marketData.fearGreed}
+                onSave={(n) => onUpdateMarketData({ fearGreed: n })}
+                inputClassName="mt-1 w-full rounded-xl border border-slate-200 px-3 py-2 text-lg font-semibold"
               />
             </div>
             <div>
@@ -455,29 +490,35 @@ export function MorningBrief({
                   <svg className="w-3.5 h-3.5" fill="none" stroke="currentColor" strokeWidth="2" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" d="M10 6H6a2 2 0 00-2 2v10a2 2 0 002 2h10a2 2 0 002-2v-4M14 4h6m0 0v6m0-6L10 14" /></svg>
                 </a>
               </div>
-              <div className="mt-1 flex gap-3">
+              <div className="mt-1 flex gap-2">
                 <div>
                   <span className="text-[10px] text-red-500 font-medium">Bull</span>
-                  <NumericInput
-                    value={aaiiBull}
-                    onChange={(n) => setAaiiAndPersist(n, aaiiNeutral, aaiiBear)}
-                    className="block w-16 rounded-xl border border-slate-200 px-2 py-2 text-base font-semibold"
+                  <SaveableNumericInput
+                    savedValue={marketData.aaiiBull ?? 30}
+                    onSave={(n) => {
+                      const spread = parseFloat((n - (marketData.aaiiBear ?? 52)).toFixed(1));
+                      onUpdateMarketData({ aaiiBull: n, aaiiBullBear: spread });
+                    }}
+                    inputClassName="block w-16 rounded-xl border border-slate-200 px-2 py-2 text-base font-semibold"
                   />
                 </div>
                 <div>
                   <span className="text-[10px] text-amber-500 font-medium">Ntrl</span>
-                  <NumericInput
-                    value={aaiiNeutral}
-                    onChange={(n) => setAaiiAndPersist(aaiiBull, n, aaiiBear)}
-                    className="block w-16 rounded-xl border border-slate-200 px-2 py-2 text-base font-semibold"
+                  <SaveableNumericInput
+                    savedValue={marketData.aaiiNeutral ?? 17}
+                    onSave={(n) => onUpdateMarketData({ aaiiNeutral: n })}
+                    inputClassName="block w-16 rounded-xl border border-slate-200 px-2 py-2 text-base font-semibold"
                   />
                 </div>
                 <div>
                   <span className="text-[10px] text-emerald-500 font-medium">Bear</span>
-                  <NumericInput
-                    value={aaiiBear}
-                    onChange={(n) => setAaiiAndPersist(aaiiBull, aaiiNeutral, n)}
-                    className="block w-16 rounded-xl border border-slate-200 px-2 py-2 text-base font-semibold"
+                  <SaveableNumericInput
+                    savedValue={marketData.aaiiBear ?? 52}
+                    onSave={(n) => {
+                      const spread = parseFloat(((marketData.aaiiBull ?? 30) - n).toFixed(1));
+                      onUpdateMarketData({ aaiiBear: n, aaiiBullBear: spread });
+                    }}
+                    inputClassName="block w-16 rounded-xl border border-slate-200 px-2 py-2 text-base font-semibold"
                   />
                 </div>
               </div>
@@ -495,29 +536,31 @@ export function MorningBrief({
                   <svg className="w-3.5 h-3.5" fill="none" stroke="currentColor" strokeWidth="2" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" d="M10 6H6a2 2 0 00-2 2v10a2 2 0 002 2h10a2 2 0 002-2v-4M14 4h6m0 0v6m0-6L10 14" /></svg>
                 </a>
               </div>
-              <select
-                value={marketData.termStructure}
-                onChange={(e) => onUpdateMarketData({ termStructure: e.target.value })}
-                className="mt-1 w-full rounded-xl border border-slate-200 px-3 py-2 text-lg font-semibold"
-              >
-                <option value="Contango">Contango</option>
-                <option value="Flat">Flat</option>
-                <option value="Backwardation">Backwardation</option>
-              </select>
+              <SaveableSelect
+                savedValue={marketData.termStructure}
+                onSave={(v) => onUpdateMarketData({ termStructure: v })}
+                options={[
+                  { value: "Contango", label: "Contango" },
+                  { value: "Flat", label: "Flat" },
+                  { value: "Backwardation", label: "Backwardation" },
+                ]}
+                selectClassName="mt-1 w-full rounded-xl border border-slate-200 px-3 py-2 text-lg font-semibold"
+              />
             </div>
             <div>
               <label className="text-sm font-medium text-slate-500">Equity Flows</label>
-              <select
-                value={marketData.equityFlows}
-                onChange={(e) => onUpdateMarketData({ equityFlows: e.target.value })}
-                className="mt-1 w-full rounded-xl border border-slate-200 px-3 py-2 text-sm font-semibold"
-              >
-                <option value="Strong Inflows">Strong Inflows</option>
-                <option value="Moderate Inflows">Moderate Inflows</option>
-                <option value="Mixed">Mixed</option>
-                <option value="Moderate Outflows">Moderate Outflows</option>
-                <option value="Heavy Outflows">Heavy Outflows</option>
-              </select>
+              <SaveableSelect
+                savedValue={marketData.equityFlows}
+                onSave={(v) => onUpdateMarketData({ equityFlows: v })}
+                options={[
+                  { value: "Strong Inflows", label: "Strong Inflows" },
+                  { value: "Moderate Inflows", label: "Moderate Inflows" },
+                  { value: "Mixed", label: "Mixed" },
+                  { value: "Moderate Outflows", label: "Moderate Outflows" },
+                  { value: "Heavy Outflows", label: "Heavy Outflows" },
+                ]}
+                selectClassName="mt-1 w-full rounded-xl border border-slate-200 px-3 py-2 text-sm font-semibold"
+              />
             </div>
             <div>
               {/* Screenshot upload for flows/liquidity reports */}
@@ -542,7 +585,7 @@ export function MorningBrief({
             {generating ? "Generating..." : "\u21BB Refresh Brief"}
           </button>
           <span className="text-sm text-slate-400">
-            VIX: <strong>{marketData.vix}</strong> | MOVE: <strong>{marketData.move}</strong> | HY: <strong>{marketData.hyOas}</strong> | Osc: <strong>{marketData.spOscillator}</strong> | F&G: <strong>{fg}</strong>
+            VIX: <strong>{marketData.vix}</strong> | MOVE: <strong>{marketData.move}</strong> | HY: <strong>{marketData.hyOas}</strong> | Osc: <strong>{marketData.spOscillator}</strong> | F&G: <strong>{marketData.fearGreed}</strong>
           </span>
         </div>
       </section>
@@ -598,7 +641,7 @@ export function MorningBrief({
       </section>
 
       {/* Contrarian Sentiment — all 4 indicators + Claude analysis */}
-      <SentimentGauges marketData={marketData} aaiiBull={aaiiBull} aaiiNeutral={aaiiNeutral} aaiiBear={aaiiBear} contrarianAnalysis={contrarianAnalysis} />
+      <SentimentGauges marketData={marketData} aaiiBull={marketData.aaiiBull ?? 30} aaiiNeutral={marketData.aaiiNeutral ?? 17} aaiiBear={marketData.aaiiBear ?? 52} contrarianAnalysis={contrarianAnalysis} />
 
       {/* Credit & Volatility */}
       <section className="grid gap-5 lg:grid-cols-2">
