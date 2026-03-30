@@ -8,9 +8,9 @@ import { SentimentGauges } from "./SentimentGauges";
 import { HedgingIndicator } from "./HedgingIndicator";
 import { ImageUpload, type BriefAttachment } from "./ImageUpload";
 
-/** Numeric input with an explicit Save button.
- *  Value only persists when the user clicks Save (or presses Enter).
- *  Save button is disabled when the value hasn't changed. */
+/** Numeric input with an inline save indicator.
+ *  Value only persists when the user clicks the save icon (or presses Enter).
+ *  Shows a subtle checkmark when saved, a blue save icon when dirty. */
 function SaveableNumericInput({
   savedValue,
   onSave,
@@ -46,7 +46,7 @@ function SaveableNumericInput({
   }
 
   return (
-    <div className={`flex items-center gap-1.5 ${className}`}>
+    <div className={`relative ${className}`}>
       <input
         type="text"
         inputMode="decimal"
@@ -54,25 +54,29 @@ function SaveableNumericInput({
         placeholder={placeholder}
         onChange={(e) => setText(e.target.value)}
         onKeyDown={(e) => { if (e.key === "Enter") handleSave(); }}
-        className={inputClassName}
+        className={`${inputClassName} pr-8`}
       />
       <button
         onClick={handleSave}
         disabled={!isDirty}
-        title={isDirty ? "Save" : "No changes"}
-        className={`shrink-0 rounded-lg px-2 py-2 text-xs font-bold transition-all ${
+        title={isDirty ? "Save changes" : "Saved"}
+        className={`absolute right-2 top-1/2 -translate-y-1/2 flex items-center justify-center w-5 h-5 rounded-full transition-all ${
           isDirty
-            ? "bg-blue-600 text-white hover:bg-blue-700 shadow-sm"
-            : "bg-slate-100 text-slate-300 cursor-not-allowed"
+            ? "bg-blue-600 text-white hover:bg-blue-700 shadow-sm cursor-pointer"
+            : "text-emerald-400"
         }`}
       >
-        {isDirty ? "Save" : "Saved"}
+        {isDirty ? (
+          <svg className="w-3 h-3" fill="none" stroke="currentColor" strokeWidth="3" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" d="M4.5 12.75l6 6 9-13.5" /></svg>
+        ) : (
+          <svg className="w-3.5 h-3.5" fill="none" stroke="currentColor" strokeWidth="2.5" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" d="M4.5 12.75l6 6 9-13.5" /></svg>
+        )}
       </button>
     </div>
   );
 }
 
-/** Dropdown select with an explicit Save button. */
+/** Dropdown select with an inline save indicator. */
 function SaveableSelect({
   savedValue,
   onSave,
@@ -98,28 +102,25 @@ function SaveableSelect({
   }, [savedValue]);
 
   return (
-    <div className={`flex items-center gap-1.5 ${className}`}>
+    <div className={`relative ${className}`}>
       <select
         value={value}
         onChange={(e) => setValue(e.target.value)}
-        className={selectClassName}
+        className={`${selectClassName} pr-9`}
       >
         {options.map((o) => (
           <option key={o.value} value={o.value}>{o.label}</option>
         ))}
       </select>
-      <button
-        onClick={() => { if (isDirty) onSave(value); }}
-        disabled={!isDirty}
-        title={isDirty ? "Save" : "No changes"}
-        className={`shrink-0 rounded-lg px-2 py-2 text-xs font-bold transition-all ${
-          isDirty
-            ? "bg-blue-600 text-white hover:bg-blue-700 shadow-sm"
-            : "bg-slate-100 text-slate-300 cursor-not-allowed"
-        }`}
-      >
-        {isDirty ? "Save" : "Saved"}
-      </button>
+      {isDirty && (
+        <button
+          onClick={() => onSave(value)}
+          title="Save changes"
+          className="absolute right-7 top-1/2 -translate-y-1/2 flex items-center justify-center w-5 h-5 rounded-full bg-blue-600 text-white hover:bg-blue-700 shadow-sm cursor-pointer transition-all"
+        >
+          <svg className="w-3 h-3" fill="none" stroke="currentColor" strokeWidth="3" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" d="M4.5 12.75l6 6 9-13.5" /></svg>
+        </button>
+      )}
     </div>
   );
 }
@@ -303,60 +304,60 @@ export function MorningBrief({
   return (
     <>
       {/* Editable Market & Sentiment Inputs */}
-      <section className="rounded-[30px] border border-slate-200 bg-white p-6 shadow-sm">
-        <div className="flex items-center gap-3 mb-5">
-          <h3 className="text-xl font-semibold">Daily Market Input</h3>
+      <section className="rounded-[30px] border border-slate-200 bg-white p-6 md:p-8 shadow-sm overflow-hidden">
+        <div className="flex items-center gap-3 mb-6">
+          <h3 className="text-lg font-semibold text-slate-800">Daily Market Input</h3>
           {liveLoading && <span className="text-xs text-blue-500 animate-pulse">Fetching live data...</span>}
         </div>
 
         {/* Live-fetched fields */}
-        <div className="grid gap-4 md:grid-cols-4 mb-6">
+        <div className="grid grid-cols-2 gap-x-6 gap-y-4 md:grid-cols-4 mb-6">
           <div>
-            <div className="flex items-center gap-2">
-              <label className="text-sm font-medium text-slate-500">VIX</label>
-              {liveFields.vix && <span className="rounded-full bg-emerald-100 px-2 py-0.5 text-[10px] font-bold text-emerald-700 uppercase">Live</span>}
+            <div className="flex items-center gap-1.5 mb-1">
+              <label className="text-xs font-semibold text-slate-400 uppercase tracking-wider">VIX</label>
+              {liveFields.vix && <span className="rounded-full bg-emerald-100 px-1.5 py-0.5 text-[9px] font-bold text-emerald-700 uppercase leading-none">Live</span>}
             </div>
             <SaveableNumericInput
               savedValue={marketData.vix}
               onSave={(n) => onUpdateMarketData({ vix: n })}
-              inputClassName="mt-1 w-24 rounded-xl border border-slate-200 px-3 py-2 text-lg font-semibold"
+              inputClassName="w-full rounded-xl border border-slate-200 bg-slate-50 px-3 py-2.5 text-lg font-semibold focus:bg-white focus:border-blue-300 focus:ring-1 focus:ring-blue-200 transition-all outline-none"
             />
           </div>
           <div>
-            <div className="flex items-center gap-2">
-              <label className="text-sm font-medium text-slate-500">MOVE Index</label>
-              {liveFields.move && <span className="rounded-full bg-emerald-100 px-2 py-0.5 text-[10px] font-bold text-emerald-700 uppercase">Live</span>}
+            <div className="flex items-center gap-1.5 mb-1">
+              <label className="text-xs font-semibold text-slate-400 uppercase tracking-wider">MOVE Index</label>
+              {liveFields.move && <span className="rounded-full bg-emerald-100 px-1.5 py-0.5 text-[9px] font-bold text-emerald-700 uppercase leading-none">Live</span>}
             </div>
             <SaveableNumericInput
               savedValue={marketData.move}
               onSave={(n) => onUpdateMarketData({ move: n })}
-              inputClassName="mt-1 w-24 rounded-xl border border-slate-200 px-3 py-2 text-lg font-semibold"
+              inputClassName="w-full rounded-xl border border-slate-200 bg-slate-50 px-3 py-2.5 text-lg font-semibold focus:bg-white focus:border-blue-300 focus:ring-1 focus:ring-blue-200 transition-all outline-none"
             />
           </div>
           <div>
-            <div className="flex items-center gap-2">
-              <label className="text-sm font-medium text-slate-500">HY OAS (bps)</label>
-              <a href="https://fred.stlouisfed.org/series/BAMLH0A0HYM2" target="_blank" rel="noopener noreferrer" className="text-blue-500 hover:text-blue-700" title="FRED HY OAS">
-                <svg className="w-3.5 h-3.5" fill="none" stroke="currentColor" strokeWidth="2" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" d="M10 6H6a2 2 0 00-2 2v10a2 2 0 002 2h10a2 2 0 002-2v-4M14 4h6m0 0v6m0-6L10 14" /></svg>
+            <div className="flex items-center gap-1.5 mb-1">
+              <label className="text-xs font-semibold text-slate-400 uppercase tracking-wider">HY OAS (bps)</label>
+              <a href="https://fred.stlouisfed.org/series/BAMLH0A0HYM2" target="_blank" rel="noopener noreferrer" className="text-blue-400 hover:text-blue-600 transition-colors" title="FRED HY OAS">
+                <svg className="w-3 h-3" fill="none" stroke="currentColor" strokeWidth="2" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" d="M10 6H6a2 2 0 00-2 2v10a2 2 0 002 2h10a2 2 0 002-2v-4M14 4h6m0 0v6m0-6L10 14" /></svg>
               </a>
             </div>
             <SaveableNumericInput
               savedValue={marketData.hyOas}
               onSave={(n) => onUpdateMarketData({ hyOas: n })}
-              inputClassName="mt-1 w-24 rounded-xl border border-slate-200 px-3 py-2 text-lg font-semibold"
+              inputClassName="w-full rounded-xl border border-slate-200 bg-slate-50 px-3 py-2.5 text-lg font-semibold focus:bg-white focus:border-blue-300 focus:ring-1 focus:ring-blue-200 transition-all outline-none"
             />
           </div>
           <div>
-            <div className="flex items-center gap-2">
-              <label className="text-sm font-medium text-slate-500">IG OAS (bps)</label>
-              <a href="https://fred.stlouisfed.org/series/BAMLC0A0CM" target="_blank" rel="noopener noreferrer" className="text-blue-500 hover:text-blue-700" title="FRED IG OAS">
-                <svg className="w-3.5 h-3.5" fill="none" stroke="currentColor" strokeWidth="2" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" d="M10 6H6a2 2 0 00-2 2v10a2 2 0 002 2h10a2 2 0 002-2v-4M14 4h6m0 0v6m0-6L10 14" /></svg>
+            <div className="flex items-center gap-1.5 mb-1">
+              <label className="text-xs font-semibold text-slate-400 uppercase tracking-wider">IG OAS (bps)</label>
+              <a href="https://fred.stlouisfed.org/series/BAMLC0A0CM" target="_blank" rel="noopener noreferrer" className="text-blue-400 hover:text-blue-600 transition-colors" title="FRED IG OAS">
+                <svg className="w-3 h-3" fill="none" stroke="currentColor" strokeWidth="2" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" d="M10 6H6a2 2 0 00-2 2v10a2 2 0 002 2h10a2 2 0 002-2v-4M14 4h6m0 0v6m0-6L10 14" /></svg>
               </a>
             </div>
             <SaveableNumericInput
               savedValue={marketData.igOas}
               onSave={(n) => onUpdateMarketData({ igOas: n })}
-              inputClassName="mt-1 w-24 rounded-xl border border-slate-200 px-3 py-2 text-lg font-semibold"
+              inputClassName="w-full rounded-xl border border-slate-200 bg-slate-50 px-3 py-2.5 text-lg font-semibold focus:bg-white focus:border-blue-300 focus:ring-1 focus:ring-blue-200 transition-all outline-none"
             />
           </div>
         </div>
@@ -364,73 +365,74 @@ export function MorningBrief({
         {/* ── Breadth & Market Structure ── */}
         <div className="border-t border-slate-100 pt-5 mb-6">
           <div className="flex items-center gap-3 mb-4">
-            <h4 className="text-sm font-semibold text-slate-500 uppercase tracking-wider">Breadth & Market Structure</h4>
+            <h4 className="text-xs font-semibold text-slate-400 uppercase tracking-widest">Breadth & Market Structure</h4>
           </div>
-          <div className="grid gap-4 md:grid-cols-5">
+          <div className="grid grid-cols-2 gap-x-6 gap-y-4 md:grid-cols-3 lg:grid-cols-5">
             <div>
-              <div className="flex items-center gap-2">
-                <label className="text-sm font-medium text-slate-500">S&P % &gt; 200 DMA</label>
-                <a href="https://www.marketinout.com/chart/market.php?breadth=above-sma-200" target="_blank" rel="noopener noreferrer" className="text-blue-500 hover:text-blue-700" title="MarketInOut S&P Breadth">
-                  <svg className="w-3.5 h-3.5" fill="none" stroke="currentColor" strokeWidth="2" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" d="M10 6H6a2 2 0 00-2 2v10a2 2 0 002 2h10a2 2 0 002-2v-4M14 4h6m0 0v6m0-6L10 14" /></svg>
+              <div className="flex items-center gap-1.5 mb-1">
+                <label className="text-xs font-semibold text-slate-400 uppercase tracking-wider">S&P % &gt; 200 DMA</label>
+                <a href="https://www.marketinout.com/chart/market.php?breadth=above-sma-200" target="_blank" rel="noopener noreferrer" className="text-blue-400 hover:text-blue-600 transition-colors" title="MarketInOut S&P Breadth">
+                  <svg className="w-3 h-3" fill="none" stroke="currentColor" strokeWidth="2" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" d="M10 6H6a2 2 0 00-2 2v10a2 2 0 002 2h10a2 2 0 002-2v-4M14 4h6m0 0v6m0-6L10 14" /></svg>
                 </a>
               </div>
               <SaveableNumericInput
                 savedValue={marketData.breadth}
                 onSave={(n) => onUpdateMarketData({ breadth: n })}
-                inputClassName="mt-1 w-full rounded-xl border border-slate-200 px-3 py-2 text-lg font-semibold"
+                inputClassName="w-full rounded-xl border border-slate-200 bg-slate-50 px-3 py-2.5 text-lg font-semibold focus:bg-white focus:border-blue-300 focus:ring-1 focus:ring-blue-200 transition-all outline-none"
               />
             </div>
             <div>
-              <div className="flex items-center gap-2">
-                <label className="text-sm font-medium text-slate-500">Nasdaq % &gt; 200 DMA</label>
-                <a href="https://www.marketinout.com/chart/market.php?breadth=above-sma-200" target="_blank" rel="noopener noreferrer" className="text-blue-500 hover:text-blue-700" title="MarketInOut Nasdaq Breadth">
-                  <svg className="w-3.5 h-3.5" fill="none" stroke="currentColor" strokeWidth="2" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" d="M10 6H6a2 2 0 00-2 2v10a2 2 0 002 2h10a2 2 0 002-2v-4M14 4h6m0 0v6m0-6L10 14" /></svg>
+              <div className="flex items-center gap-1.5 mb-1">
+                <label className="text-xs font-semibold text-slate-400 uppercase tracking-wider">Nasdaq % &gt; 200 DMA</label>
+                <a href="https://www.marketinout.com/chart/market.php?breadth=above-sma-200" target="_blank" rel="noopener noreferrer" className="text-blue-400 hover:text-blue-600 transition-colors" title="MarketInOut Nasdaq Breadth">
+                  <svg className="w-3 h-3" fill="none" stroke="currentColor" strokeWidth="2" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" d="M10 6H6a2 2 0 00-2 2v10a2 2 0 002 2h10a2 2 0 002-2v-4M14 4h6m0 0v6m0-6L10 14" /></svg>
                 </a>
               </div>
               <SaveableNumericInput
                 savedValue={marketData.nasdaqBreadth}
                 onSave={(n) => onUpdateMarketData({ nasdaqBreadth: n })}
-                inputClassName="mt-1 w-full rounded-xl border border-slate-200 px-3 py-2 text-lg font-semibold"
+                inputClassName="w-full rounded-xl border border-slate-200 bg-slate-50 px-3 py-2.5 text-lg font-semibold focus:bg-white focus:border-blue-300 focus:ring-1 focus:ring-blue-200 transition-all outline-none"
               />
             </div>
             <div>
-              <div className="flex items-center gap-2">
-                <label className="text-sm font-medium text-slate-500">S&P % &gt; 50 DMA</label>
-                <a href="https://www.marketinout.com/chart/market.php?breadth=above-sma-50" target="_blank" rel="noopener noreferrer" className="text-blue-500 hover:text-blue-700" title="MarketInOut 50 DMA Breadth">
-                  <svg className="w-3.5 h-3.5" fill="none" stroke="currentColor" strokeWidth="2" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" d="M10 6H6a2 2 0 00-2 2v10a2 2 0 002 2h10a2 2 0 002-2v-4M14 4h6m0 0v6m0-6L10 14" /></svg>
+              <div className="flex items-center gap-1.5 mb-1">
+                <label className="text-xs font-semibold text-slate-400 uppercase tracking-wider">S&P % &gt; 50 DMA</label>
+                <a href="https://www.marketinout.com/chart/market.php?breadth=above-sma-50" target="_blank" rel="noopener noreferrer" className="text-blue-400 hover:text-blue-600 transition-colors" title="MarketInOut 50 DMA Breadth">
+                  <svg className="w-3 h-3" fill="none" stroke="currentColor" strokeWidth="2" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" d="M10 6H6a2 2 0 00-2 2v10a2 2 0 002 2h10a2 2 0 002-2v-4M14 4h6m0 0v6m0-6L10 14" /></svg>
                 </a>
               </div>
               <SaveableNumericInput
                 savedValue={marketData.sp50dma}
                 onSave={(n) => onUpdateMarketData({ sp50dma: n })}
-                inputClassName="mt-1 w-full rounded-xl border border-slate-200 px-3 py-2 text-lg font-semibold"
+                inputClassName="w-full rounded-xl border border-slate-200 bg-slate-50 px-3 py-2.5 text-lg font-semibold focus:bg-white focus:border-blue-300 focus:ring-1 focus:ring-blue-200 transition-all outline-none"
               />
             </div>
             <div>
-              <div className="flex items-center gap-2">
-                <label className="text-sm font-medium text-slate-500">NYSE A/D Line</label>
-                <a href="https://www.marketinout.com/chart/market.php?breadth=advance-decline-line" target="_blank" rel="noopener noreferrer" className="text-blue-500 hover:text-blue-700" title="NYSE A/D Line">
-                  <svg className="w-3.5 h-3.5" fill="none" stroke="currentColor" strokeWidth="2" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" d="M10 6H6a2 2 0 00-2 2v10a2 2 0 002 2h10a2 2 0 002-2v-4M14 4h6m0 0v6m0-6L10 14" /></svg>
+              <div className="flex items-center gap-1.5 mb-1">
+                <label className="text-xs font-semibold text-slate-400 uppercase tracking-wider">NYSE A/D Line</label>
+                <a href="https://www.marketinout.com/chart/market.php?breadth=advance-decline-line" target="_blank" rel="noopener noreferrer" className="text-blue-400 hover:text-blue-600 transition-colors" title="NYSE A/D Line">
+                  <svg className="w-3 h-3" fill="none" stroke="currentColor" strokeWidth="2" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" d="M10 6H6a2 2 0 00-2 2v10a2 2 0 002 2h10a2 2 0 002-2v-4M14 4h6m0 0v6m0-6L10 14" /></svg>
                 </a>
               </div>
               <SaveableNumericInput
                 savedValue={marketData.nyseAdLine}
                 onSave={(n) => onUpdateMarketData({ nyseAdLine: n })}
-                inputClassName="mt-1 w-full rounded-xl border border-slate-200 px-3 py-2 text-lg font-semibold"
+                inputClassName="w-full rounded-xl border border-slate-200 bg-slate-50 px-3 py-2.5 text-lg font-semibold focus:bg-white focus:border-blue-300 focus:ring-1 focus:ring-blue-200 transition-all outline-none"
               />
             </div>
             <div>
-              <div className="flex items-center gap-2">
-                <label className="text-sm font-medium text-slate-500">New Highs - Lows</label>
-                <a href="https://www.marketinout.com/chart/market.php?breadth=new-highs-new-lows" target="_blank" rel="noopener noreferrer" className="text-blue-500 hover:text-blue-700" title="New Highs vs New Lows">
-                  <svg className="w-3.5 h-3.5" fill="none" stroke="currentColor" strokeWidth="2" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" d="M10 6H6a2 2 0 00-2 2v10a2 2 0 002 2h10a2 2 0 002-2v-4M14 4h6m0 0v6m0-6L10 14" /></svg>
+              <div className="flex items-center gap-1.5 mb-1">
+                <label className="text-xs font-semibold text-slate-400 uppercase tracking-wider">New Highs - Lows</label>
+                <a href="https://www.marketinout.com/chart/market.php?breadth=new-highs-new-lows" target="_blank" rel="noopener noreferrer" className="text-blue-400 hover:text-blue-600 transition-colors" title="New Highs vs New Lows">
+                  <svg className="w-3 h-3" fill="none" stroke="currentColor" strokeWidth="2" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" d="M10 6H6a2 2 0 00-2 2v10a2 2 0 002 2h10a2 2 0 002-2v-4M14 4h6m0 0v6m0-6L10 14" /></svg>
                 </a>
               </div>
               <SaveableNumericInput
                 savedValue={marketData.newHighsLows}
                 onSave={(n) => onUpdateMarketData({ newHighsLows: n })}
-                inputClassName="mt-1 w-full rounded-xl border border-slate-200 px-3 py-2 text-lg font-semibold"
+                inputClassName="w-full rounded-xl border border-slate-200 bg-slate-50 px-3 py-2.5 text-lg font-semibold focus:bg-white focus:border-blue-300 focus:ring-1 focus:ring-blue-200 transition-all outline-none"
               />
+              <p className="text-[10px] text-slate-400 mt-0.5">S&P 500</p>
             </div>
           </div>
         </div>
@@ -438,87 +440,88 @@ export function MorningBrief({
         {/* ── Contrarian Indicators ── */}
         <div className="border-t border-slate-100 pt-5 mb-6">
           <div className="flex items-center gap-3 mb-4">
-            <h4 className="text-sm font-semibold text-slate-500 uppercase tracking-wider">Contrarian Indicators</h4>
+            <h4 className="text-xs font-semibold text-slate-400 uppercase tracking-widest">Contrarian Indicators</h4>
             <SignalPill tone="green">INVERTED SIGNALS</SignalPill>
           </div>
-          <div className="grid gap-4 md:grid-cols-4">
+          <div className="grid grid-cols-2 gap-x-6 gap-y-4 md:grid-cols-4">
             <div>
-              <div className="flex items-center gap-2">
-                <label className="text-sm font-medium text-slate-500">S&P Oscillator</label>
-                <a href="https://app.marketedge.com/#!/markets" target="_blank" rel="noopener noreferrer" className="text-blue-500 hover:text-blue-700" title="MarketEdge S&P Oscillator">
-                  <svg className="w-3.5 h-3.5" fill="none" stroke="currentColor" strokeWidth="2" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" d="M10 6H6a2 2 0 00-2 2v10a2 2 0 002 2h10a2 2 0 002-2v-4M14 4h6m0 0v6m0-6L10 14" /></svg>
+              <div className="flex items-center gap-1.5 mb-1">
+                <label className="text-xs font-semibold text-slate-400 uppercase tracking-wider">S&P Oscillator</label>
+                <a href="https://app.marketedge.com/#!/markets" target="_blank" rel="noopener noreferrer" className="text-blue-400 hover:text-blue-600 transition-colors" title="MarketEdge S&P Oscillator">
+                  <svg className="w-3 h-3" fill="none" stroke="currentColor" strokeWidth="2" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" d="M10 6H6a2 2 0 00-2 2v10a2 2 0 002 2h10a2 2 0 002-2v-4M14 4h6m0 0v6m0-6L10 14" /></svg>
                 </a>
               </div>
               <SaveableNumericInput
                 savedValue={marketData.spOscillator}
                 onSave={(n) => onUpdateMarketData({ spOscillator: n })}
-                inputClassName="mt-1 w-full rounded-xl border border-slate-200 px-3 py-2 text-lg font-semibold"
+                inputClassName="w-full rounded-xl border border-slate-200 bg-slate-50 px-3 py-2.5 text-lg font-semibold focus:bg-white focus:border-blue-300 focus:ring-1 focus:ring-blue-200 transition-all outline-none"
               />
               <p className="text-[10px] text-slate-400 mt-0.5">{marketData.spOscillator < 0 ? "Oversold (bullish)" : marketData.spOscillator > 0 ? "Overbought (bearish)" : "Neutral"}</p>
             </div>
             <div>
-              <div className="flex items-center gap-2">
-                <label className="text-sm font-medium text-slate-500">Put/Call Ratio</label>
-                <a href="https://www.cboe.com/us/options/market_statistics/daily/" target="_blank" rel="noopener noreferrer" className="text-blue-500 hover:text-blue-700" title="CBOE Total Put/Call">
-                  <svg className="w-3.5 h-3.5" fill="none" stroke="currentColor" strokeWidth="2" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" d="M10 6H6a2 2 0 00-2 2v10a2 2 0 002 2h10a2 2 0 002-2v-4M14 4h6m0 0v6m0-6L10 14" /></svg>
+              <div className="flex items-center gap-1.5 mb-1">
+                <label className="text-xs font-semibold text-slate-400 uppercase tracking-wider">Put/Call Ratio</label>
+                <a href="https://www.cboe.com/us/options/market_statistics/daily/" target="_blank" rel="noopener noreferrer" className="text-blue-400 hover:text-blue-600 transition-colors" title="CBOE Total Put/Call">
+                  <svg className="w-3 h-3" fill="none" stroke="currentColor" strokeWidth="2" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" d="M10 6H6a2 2 0 00-2 2v10a2 2 0 002 2h10a2 2 0 002-2v-4M14 4h6m0 0v6m0-6L10 14" /></svg>
                 </a>
               </div>
               <SaveableNumericInput
                 savedValue={marketData.putCall}
                 onSave={(n) => onUpdateMarketData({ putCall: n })}
-                inputClassName="mt-1 w-full rounded-xl border border-slate-200 px-3 py-2 text-lg font-semibold"
+                inputClassName="w-full rounded-xl border border-slate-200 bg-slate-50 px-3 py-2.5 text-lg font-semibold focus:bg-white focus:border-blue-300 focus:ring-1 focus:ring-blue-200 transition-all outline-none"
               />
               <p className="text-[10px] text-slate-400 mt-0.5">Total P/C ratio</p>
             </div>
             <div>
-              <div className="flex items-center gap-2">
-                <label className="text-sm font-medium text-slate-500">CNN Fear & Greed (0-100)</label>
-                <a href="https://www.cnn.com/markets/fear-and-greed" target="_blank" rel="noopener noreferrer" className="text-blue-500 hover:text-blue-700" title="CNN Fear & Greed Index">
-                  <svg className="w-3.5 h-3.5" fill="none" stroke="currentColor" strokeWidth="2" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" d="M10 6H6a2 2 0 00-2 2v10a2 2 0 002 2h10a2 2 0 002-2v-4M14 4h6m0 0v6m0-6L10 14" /></svg>
+              <div className="flex items-center gap-1.5 mb-1">
+                <label className="text-xs font-semibold text-slate-400 uppercase tracking-wider">Fear & Greed (0-100)</label>
+                <a href="https://www.cnn.com/markets/fear-and-greed" target="_blank" rel="noopener noreferrer" className="text-blue-400 hover:text-blue-600 transition-colors" title="CNN Fear & Greed Index">
+                  <svg className="w-3 h-3" fill="none" stroke="currentColor" strokeWidth="2" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" d="M10 6H6a2 2 0 00-2 2v10a2 2 0 002 2h10a2 2 0 002-2v-4M14 4h6m0 0v6m0-6L10 14" /></svg>
                 </a>
               </div>
               <SaveableNumericInput
                 savedValue={marketData.fearGreed}
                 onSave={(n) => onUpdateMarketData({ fearGreed: n })}
-                inputClassName="mt-1 w-full rounded-xl border border-slate-200 px-3 py-2 text-lg font-semibold"
+                inputClassName="w-full rounded-xl border border-slate-200 bg-slate-50 px-3 py-2.5 text-lg font-semibold focus:bg-white focus:border-blue-300 focus:ring-1 focus:ring-blue-200 transition-all outline-none"
               />
+              <p className="text-[10px] text-slate-400 mt-0.5">CNN index</p>
             </div>
             <div>
-              <div className="flex items-center gap-2">
-                <label className="text-sm font-medium text-slate-500">AAII Survey (%)</label>
-                <a href="https://www.aaii.com/sentimentsurvey" target="_blank" rel="noopener noreferrer" className="text-blue-500 hover:text-blue-700" title="AAII Sentiment Survey">
-                  <svg className="w-3.5 h-3.5" fill="none" stroke="currentColor" strokeWidth="2" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" d="M10 6H6a2 2 0 00-2 2v10a2 2 0 002 2h10a2 2 0 002-2v-4M14 4h6m0 0v6m0-6L10 14" /></svg>
+              <div className="flex items-center gap-1.5 mb-1">
+                <label className="text-xs font-semibold text-slate-400 uppercase tracking-wider">AAII Survey (%)</label>
+                <a href="https://www.aaii.com/sentimentsurvey" target="_blank" rel="noopener noreferrer" className="text-blue-400 hover:text-blue-600 transition-colors" title="AAII Sentiment Survey">
+                  <svg className="w-3 h-3" fill="none" stroke="currentColor" strokeWidth="2" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" d="M10 6H6a2 2 0 00-2 2v10a2 2 0 002 2h10a2 2 0 002-2v-4M14 4h6m0 0v6m0-6L10 14" /></svg>
                 </a>
               </div>
-              <div className="mt-1 flex gap-2">
+              <div className="grid grid-cols-3 gap-1.5">
                 <div>
-                  <span className="text-[10px] text-red-500 font-medium">Bull</span>
+                  <span className="text-[9px] font-semibold text-red-400 uppercase">Bull</span>
                   <SaveableNumericInput
                     savedValue={marketData.aaiiBull ?? 30}
                     onSave={(n) => {
                       const spread = parseFloat((n - (marketData.aaiiBear ?? 52)).toFixed(1));
                       onUpdateMarketData({ aaiiBull: n, aaiiBullBear: spread });
                     }}
-                    inputClassName="block w-16 rounded-xl border border-slate-200 px-2 py-2 text-base font-semibold"
+                    inputClassName="w-full rounded-lg border border-slate-200 bg-slate-50 px-2 py-2 text-sm font-semibold focus:bg-white focus:border-blue-300 focus:ring-1 focus:ring-blue-200 transition-all outline-none"
                   />
                 </div>
                 <div>
-                  <span className="text-[10px] text-amber-500 font-medium">Ntrl</span>
+                  <span className="text-[9px] font-semibold text-amber-400 uppercase">Ntrl</span>
                   <SaveableNumericInput
                     savedValue={marketData.aaiiNeutral ?? 17}
                     onSave={(n) => onUpdateMarketData({ aaiiNeutral: n })}
-                    inputClassName="block w-16 rounded-xl border border-slate-200 px-2 py-2 text-base font-semibold"
+                    inputClassName="w-full rounded-lg border border-slate-200 bg-slate-50 px-2 py-2 text-sm font-semibold focus:bg-white focus:border-blue-300 focus:ring-1 focus:ring-blue-200 transition-all outline-none"
                   />
                 </div>
                 <div>
-                  <span className="text-[10px] text-emerald-500 font-medium">Bear</span>
+                  <span className="text-[9px] font-semibold text-emerald-400 uppercase">Bear</span>
                   <SaveableNumericInput
                     savedValue={marketData.aaiiBear ?? 52}
                     onSave={(n) => {
                       const spread = parseFloat(((marketData.aaiiBull ?? 30) - n).toFixed(1));
                       onUpdateMarketData({ aaiiBear: n, aaiiBullBear: spread });
                     }}
-                    inputClassName="block w-16 rounded-xl border border-slate-200 px-2 py-2 text-base font-semibold"
+                    inputClassName="w-full rounded-lg border border-slate-200 bg-slate-50 px-2 py-2 text-sm font-semibold focus:bg-white focus:border-blue-300 focus:ring-1 focus:ring-blue-200 transition-all outline-none"
                   />
                 </div>
               </div>
@@ -528,12 +531,12 @@ export function MorningBrief({
 
         {/* ── Other Manual Inputs ── */}
         <div className="border-t border-slate-100 pt-5 mb-4">
-          <div className="grid gap-4 md:grid-cols-4">
+          <div className="grid grid-cols-2 gap-x-6 gap-y-4 md:grid-cols-3">
             <div>
-              <div className="flex items-center gap-2">
-                <label className="text-sm font-medium text-slate-500">VIX Term Structure</label>
-                <a href="http://vixcentral.com" target="_blank" rel="noopener noreferrer" className="text-blue-500 hover:text-blue-700" title="VIX Central">
-                  <svg className="w-3.5 h-3.5" fill="none" stroke="currentColor" strokeWidth="2" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" d="M10 6H6a2 2 0 00-2 2v10a2 2 0 002 2h10a2 2 0 002-2v-4M14 4h6m0 0v6m0-6L10 14" /></svg>
+              <div className="flex items-center gap-1.5 mb-1">
+                <label className="text-xs font-semibold text-slate-400 uppercase tracking-wider">VIX Term Structure</label>
+                <a href="http://vixcentral.com" target="_blank" rel="noopener noreferrer" className="text-blue-400 hover:text-blue-600 transition-colors" title="VIX Central">
+                  <svg className="w-3 h-3" fill="none" stroke="currentColor" strokeWidth="2" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" d="M10 6H6a2 2 0 00-2 2v10a2 2 0 002 2h10a2 2 0 002-2v-4M14 4h6m0 0v6m0-6L10 14" /></svg>
                 </a>
               </div>
               <SaveableSelect
@@ -544,11 +547,13 @@ export function MorningBrief({
                   { value: "Flat", label: "Flat" },
                   { value: "Backwardation", label: "Backwardation" },
                 ]}
-                selectClassName="mt-1 w-full rounded-xl border border-slate-200 px-3 py-2 text-lg font-semibold"
+                selectClassName="w-full rounded-xl border border-slate-200 bg-slate-50 px-3 py-2.5 text-lg font-semibold focus:bg-white focus:border-blue-300 focus:ring-1 focus:ring-blue-200 transition-all outline-none appearance-none"
               />
             </div>
             <div>
-              <label className="text-sm font-medium text-slate-500">Equity Flows</label>
+              <div className="flex items-center gap-1.5 mb-1">
+                <label className="text-xs font-semibold text-slate-400 uppercase tracking-wider">Equity Flows</label>
+              </div>
               <SaveableSelect
                 savedValue={marketData.equityFlows}
                 onSave={(v) => onUpdateMarketData({ equityFlows: v })}
@@ -559,12 +564,13 @@ export function MorningBrief({
                   { value: "Moderate Outflows", label: "Moderate Outflows" },
                   { value: "Heavy Outflows", label: "Heavy Outflows" },
                 ]}
-                selectClassName="mt-1 w-full rounded-xl border border-slate-200 px-3 py-2 text-sm font-semibold"
+                selectClassName="w-full rounded-xl border border-slate-200 bg-slate-50 px-3 py-2.5 text-sm font-semibold focus:bg-white focus:border-blue-300 focus:ring-1 focus:ring-blue-200 transition-all outline-none appearance-none"
               />
             </div>
-            <div>
-              {/* Screenshot upload for flows/liquidity reports */}
-              <label className="text-sm font-medium text-slate-500">JPM Flows Report</label>
+            <div className="col-span-2 md:col-span-1">
+              <div className="flex items-center gap-1.5 mb-1">
+                <label className="text-xs font-semibold text-slate-400 uppercase tracking-wider">JPM Flows Report</label>
+              </div>
               <ImageUpload
                 section="equityFlows"
                 sectionLabel="JPM Flows & Liquidity"
