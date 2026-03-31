@@ -70,7 +70,7 @@ export function StockScoring({ stocks }: Props) {
       </div>
 
       <div className="mt-5 overflow-x-auto">
-        <table className="w-full min-w-[1100px] text-left">
+        <table className="w-full min-w-[1300px] text-left">
           <thead>
             <tr className="border-b border-slate-200 text-sm text-slate-500">
               <th className="pb-3 cursor-pointer hover:text-slate-800 select-none" onClick={() => toggleSort("ticker")}>Ticker{arrow("ticker")}</th>
@@ -81,7 +81,8 @@ export function StockScoring({ stocks }: Props) {
               <th className="pb-3 cursor-pointer hover:text-slate-800 select-none" onClick={() => toggleSort("rating")}>Rating{arrow("rating")}</th>
               <th className="pb-3 cursor-pointer hover:text-slate-800 select-none" onClick={() => toggleSort("risk")}>Risk{arrow("risk")}</th>
               <th className="pb-3 cursor-pointer hover:text-slate-800 select-none" onClick={() => toggleSort("effect")}>Regime effect{arrow("effect")}</th>
-              <th className="pb-3">Notes</th>
+              <th className="pb-3">What They Do</th>
+              <th className="pb-3">Why Own It</th>
             </tr>
           </thead>
           <tbody>
@@ -131,8 +132,11 @@ export function StockScoring({ stocks }: Props) {
                     {Number(effect) >= 0 ? "+" : ""}
                     {effect}
                   </td>
-                  <td className="max-w-[360px] py-4 text-slate-600">
-                    {s.notes}
+                  <td className="max-w-[280px] py-4 text-xs leading-relaxed text-slate-600">
+                    {s.companySummary || <span className="text-slate-300 italic">Score to generate</span>}
+                  </td>
+                  <td className="max-w-[280px] py-4 text-xs leading-relaxed text-slate-600">
+                    {s.investmentThesis || <span className="text-slate-300 italic">Score to generate</span>}
                   </td>
                 </tr>
               );

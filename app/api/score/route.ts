@@ -446,7 +446,8 @@ Also provide:
 - name: Full company name
 - sector: GICS sector
 - beta: Use the beta from the provided data
-- notes: 1-2 sentence PM-oriented note on positioning and key risk/opportunity
+- companySummary: 1-2 sentences explaining what the company does in plain language that a portfolio manager can relay to clients. Focus on the core business, key products/services, and what drives revenue. Keep it simple and jargon-free.
+- investmentThesis: 1-2 sentences on why to own this stock right now given current market conditions. Reference specific catalysts, valuation support, or thematic tailwinds. This should be a concise "elevator pitch" a PM could use with clients.
 
 Respond ONLY with valid JSON:
 {
@@ -473,7 +474,8 @@ Respond ONLY with valid JSON:
     "trackRecord": ["paragraph explanation"],
     "ownershipTrends": ["paragraph explanation"]
   },
-  "notes": "PM note here."
+  "companySummary": "Plain-language summary of what the company does.",
+  "investmentThesis": "Why to own this stock now given market conditions."
 }`;
 
 export async function POST(request: NextRequest) {
@@ -606,7 +608,9 @@ export async function POST(request: NextRequest) {
       beta: typeof parsed.beta === "number" ? parsed.beta : 1.0,
       scores,
       explanations,
-      notes: parsed.notes || "",
+      notes: parsed.companySummary || parsed.notes || "",
+      companySummary: parsed.companySummary || "",
+      investmentThesis: parsed.investmentThesis || "",
       price: stockPrice,
       healthData,
       technicals,

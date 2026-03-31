@@ -157,6 +157,8 @@ export type Stock = {
   lastScored?: string;
   price?: number;
   notes: string;
+  companySummary?: string;
+  investmentThesis?: string;
   healthData?: HealthData;
   technicals?: TechnicalIndicators;
   riskAlert?: RiskAlert;

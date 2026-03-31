@@ -101,7 +101,7 @@ export default function StockDetailPage() {
   const params = useParams();
   const router = useRouter();
   const ticker = (params.ticker as string)?.toUpperCase();
-  const { getStock, scoredStocks, marketData, updateScore, updateExplanations, updateLastScored, updatePrice, updateSector, updateHealthData, updateTechnicals, moveBucket, removeStock } = useStocks();
+  const { getStock, scoredStocks, marketData, updateScore, updateExplanations, updateLastScored, updatePrice, updateSector, updateHealthData, updateTechnicals, updateStockFields, moveBucket, removeStock } = useStocks();
   const stock = getStock(ticker);
   const [scoring, setScoring] = useState(false);
   const [scoreError, setScoreError] = useState("");
@@ -153,6 +153,12 @@ export default function StockDetailPage() {
       }
       if (data.technicals && data.riskAlert) {
         updateTechnicals(ticker, data.technicals, data.riskAlert);
+      }
+      if (data.companySummary || data.investmentThesis) {
+        updateStockFields(ticker, {
+          companySummary: data.companySummary || "",
+          investmentThesis: data.investmentThesis || "",
+        });
       }
       updateLastScored(ticker, new Date().toLocaleString("en-US", {
         month: "short", day: "numeric", year: "numeric",
@@ -259,9 +265,12 @@ export default function StockDetailPage() {
                 {/* Company name */}
                 <p className="text-base text-slate-600">{stock.name}</p>
 
-                {/* Notes / description */}
-                {stock.notes && (
-                  <p className="mt-2 text-sm italic text-slate-400 leading-relaxed">{stock.notes}</p>
+                {/* Company summary & investment thesis */}
+                {stock.companySummary && (
+                  <p className="mt-2 text-sm text-slate-500 leading-relaxed">{stock.companySummary}</p>
+                )}
+                {stock.investmentThesis && (
+                  <p className="mt-1 text-sm italic text-blue-600/70 leading-relaxed">{stock.investmentThesis}</p>
                 )}
 
                 {/* Group progress bars */}
