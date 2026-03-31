@@ -21,6 +21,12 @@ export default function DashboardPage() {
 
   const regime = marketData.riskRegime;
 
+  // Portfolio-level beta
+  const portfolioStocks = scoredStocks.filter((s) => s.bucket === "Portfolio");
+  const portfolioBeta = portfolioStocks.length > 0
+    ? portfolioStocks.reduce((sum, s) => sum + s.beta, 0) / portfolioStocks.length
+    : null;
+
   function handleAdd() {
     const ticker = newTicker.trim().toUpperCase();
     if (!ticker) return;
@@ -99,6 +105,11 @@ export default function DashboardPage() {
               }`}>
                 {regime}
               </span>
+              {portfolioBeta != null && (
+                <span className="rounded-full bg-white/60 px-3 py-1 text-xs font-bold text-slate-700">
+                  Portfolio {"\u03B2"} {portfolioBeta.toFixed(2)}
+                </span>
+              )}
             </div>
 
             {regime === "Risk-Off" && (
