@@ -111,13 +111,17 @@ export default function StockHealthMonitor({ healthData }: { healthData: HealthD
   const fiftyDmaSignal = aboveBelow(price, healthData.fiftyDayAvg);
   const twoHundredDmaSignal = aboveBelow(price, healthData.twoHundredDayAvg);
 
-  // Earnings revision signal — compare displayed (2dp) values so arrow matches what user sees
+  // Earnings revision signal — only flag green/red if revision is >= 2% (meaningful change)
   const round2 = (n: number) => parseFloat(n.toFixed(2));
+  const revPct = (cur: number, prev: number) => prev !== 0 ? Math.abs((cur - prev) / prev) * 100 : 0;
+  const REV_THRESHOLD = 2; // minimum % change to trigger signal
   let earningsRevSignal: "green" | "red" | "neutral" = "neutral";
   if (healthData.earningsCurrentEst != null && healthData.earnings30dAgo != null) {
     const cur = round2(healthData.earningsCurrentEst);
     const prev = round2(healthData.earnings30dAgo);
-    earningsRevSignal = cur > prev ? "green" : cur < prev ? "red" : "neutral";
+    if (revPct(cur, prev) >= REV_THRESHOLD) {
+      earningsRevSignal = cur > prev ? "green" : cur < prev ? "red" : "neutral";
+    }
   }
 
   // PEG signal
@@ -197,8 +201,8 @@ export default function StockHealthMonitor({ healthData }: { healthData: HealthD
             <IndicatorRow
               label="Earnings Revision (90d)"
               value={revision90Text}
-              signal={healthData.earningsCurrentEst != null && healthData.earnings90dAgo != null
-                ? (round2(healthData.earningsCurrentEst) > round2(healthData.earnings90dAgo) ? "green" : round2(healthData.earningsCurrentEst) < round2(healthData.earnings90dAgo) ? "red" : "neutral")
+              signal={healthData.earningsCurrentEst != null && healthData.earnings90dAgo != null && revPct(round2(healthData.earningsCurrentEst), round2(healthData.earnings90dAgo)) >= REV_THRESHOLD
+                ? (round2(healthData.earningsCurrentEst) > round2(healthData.earnings90dAgo) ? "green" : "red")
                 : "neutral"}
             />
           )}
