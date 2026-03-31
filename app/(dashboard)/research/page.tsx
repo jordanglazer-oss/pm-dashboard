@@ -4,6 +4,8 @@ import React, { useState, useEffect, useCallback, useRef } from "react";
 import type { ResearchState, UptickEntry, IdeaEntry, RBCEntry } from "@/app/lib/defaults";
 import { defaultResearch } from "@/app/lib/defaults";
 import { ImageUpload, type BriefAttachment } from "@/app/components/ImageUpload";
+import { useStocks } from "@/app/lib/StockContext";
+import type { Stock, ScoreKey } from "@/app/lib/types";
 
 /* ─── Uptick Add Form ─── */
 function UptickAddForm({ onAdd }: { onAdd: (e: UptickEntry) => void }) {
@@ -195,10 +197,36 @@ type SortDir = "asc" | "desc";
 
 type LivePrices = Record<string, number | null>;
 
+const ZERO_SCORES: Record<ScoreKey, number> = {
+  brand: 0, secular: 0, researchCoverage: 0, externalSources: 0,
+  charting: 0, relativeStrength: 0, aiRating: 0, growth: 0,
+  relativeValuation: 0, historicalValuation: 0, leverageCoverage: 0,
+  cashFlowQuality: 0, competitiveMoat: 0, turnaround: 0, catalysts: 0,
+  trackRecord: 0, ownershipTrends: 0,
+};
+
 export default function ResearchPage() {
   const [state, setState] = useState<ResearchState>(defaultResearch);
   const [loaded, setLoaded] = useState(false);
   const saveTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
+  const { scoredStocks, addStock } = useStocks();
+
+  // Add a research idea to the watchlist
+  const addToWatchlist = useCallback((ticker: string, sector?: string) => {
+    if (scoredStocks.some((s) => s.ticker === ticker)) return false; // already exists
+    const stock: Stock = {
+      ticker,
+      name: ticker,
+      bucket: "Watchlist",
+      sector: sector || "Technology",
+      beta: 1.0,
+      weights: { portfolio: 0 },
+      scores: { ...ZERO_SCORES },
+      notes: "",
+    };
+    addStock(stock);
+    return true;
+  }, [scoredStocks, addStock]);
   const [uptickSort, setUptickSort] = useState<{ key: UptickSortKey; dir: SortDir }>({ key: "ticker", dir: "asc" });
   const [topSort, setTopSort] = useState<{ key: IdeaSortKey; dir: SortDir }>({ key: "ticker", dir: "asc" });
   const [bottomSort, setBottomSort] = useState<{ key: IdeaSortKey; dir: SortDir }>({ key: "ticker", dir: "asc" });
@@ -474,8 +502,19 @@ export default function ResearchPage() {
                           <span className="text-slate-300">—</span>
                         )}
                       </td>
-                      <td className="py-2">
-                        <button onClick={() => removeUptick(u.ticker)} className="text-slate-300 hover:text-red-500 font-bold transition-colors" title="Remove">
+                      <td className="py-2 text-right whitespace-nowrap">
+                        {scoredStocks.some((s) => s.ticker === u.ticker) ? (
+                          <span className="text-[10px] text-emerald-500 font-medium">In list</span>
+                        ) : (
+                          <button
+                            onClick={(e) => { e.stopPropagation(); addToWatchlist(u.ticker, u.sector !== "\u2014" ? u.sector : undefined); }}
+                            className="text-[10px] text-blue-500 hover:text-blue-700 font-semibold transition-colors"
+                            title="Add to Watchlist"
+                          >
+                            + Watch
+                          </button>
+                        )}
+                        <button onClick={() => removeUptick(u.ticker)} className="ml-2 text-slate-300 hover:text-red-500 font-bold transition-colors" title="Remove">
                           &times;
                         </button>
                       </td>
@@ -549,8 +588,19 @@ export default function ResearchPage() {
                           <span className="text-slate-300">—</span>
                         )}
                       </td>
-                      <td className="py-2">
-                        <button onClick={() => removeIdea("fundstratTop", item.ticker)} className="text-slate-300 hover:text-red-500 font-bold transition-colors">&times;</button>
+                      <td className="py-2 text-right whitespace-nowrap">
+                        {scoredStocks.some((s) => s.ticker === item.ticker) ? (
+                          <span className="text-[10px] text-emerald-500 font-medium">In list</span>
+                        ) : (
+                          <button
+                            onClick={(e) => { e.stopPropagation(); addToWatchlist(item.ticker); }}
+                            className="text-[10px] text-blue-500 hover:text-blue-700 font-semibold transition-colors"
+                            title="Add to Watchlist"
+                          >
+                            + Watch
+                          </button>
+                        )}
+                        <button onClick={() => removeIdea("fundstratTop", item.ticker)} className="ml-2 text-slate-300 hover:text-red-500 font-bold transition-colors">&times;</button>
                       </td>
                     </tr>
                   );
@@ -617,8 +667,19 @@ export default function ResearchPage() {
                           <span className="text-slate-300">—</span>
                         )}
                       </td>
-                      <td className="py-2">
-                        <button onClick={() => removeIdea("fundstratBottom", item.ticker)} className="text-slate-300 hover:text-red-500 font-bold transition-colors">&times;</button>
+                      <td className="py-2 text-right whitespace-nowrap">
+                        {scoredStocks.some((s) => s.ticker === item.ticker) ? (
+                          <span className="text-[10px] text-emerald-500 font-medium">In list</span>
+                        ) : (
+                          <button
+                            onClick={(e) => { e.stopPropagation(); addToWatchlist(item.ticker); }}
+                            className="text-[10px] text-blue-500 hover:text-blue-700 font-semibold transition-colors"
+                            title="Add to Watchlist"
+                          >
+                            + Watch
+                          </button>
+                        )}
+                        <button onClick={() => removeIdea("fundstratBottom", item.ticker)} className="ml-2 text-slate-300 hover:text-red-500 font-bold transition-colors">&times;</button>
                       </td>
                     </tr>
                   );
