@@ -22,6 +22,7 @@ type StockContextType = {
   updateSector: (ticker: string, sector: string) => void;
   updateHealthData: (ticker: string, healthData: HealthData) => void;
   updateTechnicals: (ticker: string, technicals: TechnicalIndicators, riskAlert: RiskAlert) => void;
+  updateStockFields: (ticker: string, fields: Partial<Stock>) => void;
   setBrief: (brief: MorningBrief) => void;
   updateMarketData: (updates: Partial<MarketData>) => void;
   getStock: (ticker: string) => ScoredStock | undefined;
@@ -201,6 +202,16 @@ export function StockProvider({ children }: { children: React.ReactNode }) {
     });
   }, [persistStocks]);
 
+  const updateStockFields = useCallback((ticker: string, fields: Partial<Stock>) => {
+    setStocks((prev) => {
+      const next = prev.map((s) =>
+        s.ticker === ticker ? { ...s, ...fields } : s
+      );
+      persistStocks(next);
+      return next;
+    });
+  }, [persistStocks]);
+
   /* ─── Market data ─── */
   const updateMarketData = useCallback((updates: Partial<MarketData>) => {
     setMarketData((prev) => {
@@ -240,6 +251,7 @@ export function StockProvider({ children }: { children: React.ReactNode }) {
         updateSector,
         updateHealthData,
         updateTechnicals,
+        updateStockFields,
         setBrief,
         updateMarketData,
         getStock,
