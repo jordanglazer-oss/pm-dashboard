@@ -111,11 +111,13 @@ export default function StockHealthMonitor({ healthData }: { healthData: HealthD
   const fiftyDmaSignal = aboveBelow(price, healthData.fiftyDayAvg);
   const twoHundredDmaSignal = aboveBelow(price, healthData.twoHundredDayAvg);
 
-  // Earnings revision signal (round to 2dp to avoid floating-point noise)
+  // Earnings revision signal — compare displayed (2dp) values so arrow matches what user sees
+  const round2 = (n: number) => parseFloat(n.toFixed(2));
   let earningsRevSignal: "green" | "red" | "neutral" = "neutral";
   if (healthData.earningsCurrentEst != null && healthData.earnings30dAgo != null) {
-    const revDiff = parseFloat((healthData.earningsCurrentEst - healthData.earnings30dAgo).toFixed(2));
-    earningsRevSignal = revDiff > 0 ? "green" : revDiff < 0 ? "red" : "neutral";
+    const cur = round2(healthData.earningsCurrentEst);
+    const prev = round2(healthData.earnings30dAgo);
+    earningsRevSignal = cur > prev ? "green" : cur < prev ? "red" : "neutral";
   }
 
   // PEG signal
@@ -136,19 +138,21 @@ export default function StockHealthMonitor({ healthData }: { healthData: HealthD
     fcfSignal = healthData.fcfMargin > 15 ? "green" : healthData.fcfMargin < 5 ? "red" : "neutral";
   }
 
-  // Earnings revision direction text (round diffs to avoid floating-point arrows)
+  // Earnings revision direction text — compare rounded values so arrow matches display
   let revisionText = "\u2014";
   if (healthData.earningsCurrentEst != null && healthData.earnings30dAgo != null) {
-    const diff = parseFloat((healthData.earningsCurrentEst - healthData.earnings30dAgo).toFixed(2));
-    const arrow = diff > 0 ? "\u2191" : diff < 0 ? "\u2193" : "\u2192";
-    revisionText = `$${healthData.earningsCurrentEst.toFixed(2)} ${arrow} (30d ago: $${healthData.earnings30dAgo.toFixed(2)})`;
+    const cur = round2(healthData.earningsCurrentEst);
+    const prev30 = round2(healthData.earnings30dAgo);
+    const arrow = cur > prev30 ? "\u2191" : cur < prev30 ? "\u2193" : "\u2192";
+    revisionText = `$${cur.toFixed(2)} ${arrow} (30d ago: $${prev30.toFixed(2)})`;
   }
 
   let revision90Text: string | null = null;
   if (healthData.earningsCurrentEst != null && healthData.earnings90dAgo != null) {
-    const diff90 = parseFloat((healthData.earningsCurrentEst - healthData.earnings90dAgo).toFixed(2));
-    const arrow90 = diff90 > 0 ? "\u2191" : diff90 < 0 ? "\u2193" : "\u2192";
-    revision90Text = `$${healthData.earningsCurrentEst.toFixed(2)} ${arrow90} (90d ago: $${healthData.earnings90dAgo.toFixed(2)})`;
+    const cur = round2(healthData.earningsCurrentEst);
+    const prev90 = round2(healthData.earnings90dAgo);
+    const arrow90 = cur > prev90 ? "\u2191" : cur < prev90 ? "\u2193" : "\u2192";
+    revision90Text = `$${cur.toFixed(2)} ${arrow90} (90d ago: $${prev90.toFixed(2)})`;
   }
 
   return (
@@ -194,7 +198,7 @@ export default function StockHealthMonitor({ healthData }: { healthData: HealthD
               label="Earnings Revision (90d)"
               value={revision90Text}
               signal={healthData.earningsCurrentEst != null && healthData.earnings90dAgo != null
-                ? (parseFloat((healthData.earningsCurrentEst - healthData.earnings90dAgo).toFixed(2)) > 0 ? "green" : parseFloat((healthData.earningsCurrentEst - healthData.earnings90dAgo).toFixed(2)) < 0 ? "red" : "neutral")
+                ? (round2(healthData.earningsCurrentEst) > round2(healthData.earnings90dAgo) ? "green" : round2(healthData.earningsCurrentEst) < round2(healthData.earnings90dAgo) ? "red" : "neutral")
                 : "neutral"}
             />
           )}
