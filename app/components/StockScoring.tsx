@@ -14,12 +14,13 @@ type LivePrices = Record<string, number | null>;
 type Props = {
   stocks: ScoredStock[];
   onScoreStock?: (ticker: string) => Promise<void>;
+  onUpdateCostBasis?: (ticker: string, costBasis: number) => void;
 };
 
 const RATING_ORDER: Record<string, number> = { Buy: 3, Hold: 2, Sell: 1 };
 const RISK_ORDER: Record<string, number> = { High: 3, Medium: 2, Low: 1 };
 
-export function StockScoring({ stocks, onScoreStock }: Props) {
+export function StockScoring({ stocks, onScoreStock, onUpdateCostBasis }: Props) {
   const router = useRouter();
   const [query, setQuery] = useState("");
   const [sortKey, setSortKey] = useState<SortKey>("adjusted");
@@ -111,8 +112,8 @@ export function StockScoring({ stocks, onScoreStock }: Props) {
         case "effect": cmp = (a.adjusted - a.raw) - (b.adjusted - b.raw); break;
         case "price": cmp = (livePrices[a.ticker] || 0) - (livePrices[b.ticker] || 0); break;
         case "pnl": {
-          const aPnl = livePrices[a.ticker] && a.price ? ((livePrices[a.ticker]! - a.price) / a.price) : 0;
-          const bPnl = livePrices[b.ticker] && b.price ? ((livePrices[b.ticker]! - b.price) / b.price) : 0;
+          const aPnl = livePrices[a.ticker] && a.costBasis ? ((livePrices[a.ticker]! - a.costBasis) / a.costBasis) : 0;
+          const bPnl = livePrices[b.ticker] && b.costBasis ? ((livePrices[b.ticker]! - b.costBasis) / b.costBasis) : 0;
           cmp = aPnl - bPnl;
           break;
         }
@@ -180,14 +181,72 @@ export function StockScoring({ stocks, onScoreStock }: Props) {
         </p>
       )}
 
-      <div className="mt-4 overflow-x-auto">
-        <table className="w-full min-w-[1400px] text-left">
+      {/* Mobile card view */}
+      <div className="mt-4 space-y-3 md:hidden">
+        {sorted.map((s) => {
+          const effect = (s.adjusted - s.raw).toFixed(1);
+          const livePrice = livePrices[s.ticker];
+          const costBasis = s.costBasis;
+          const pnlPct = livePrice && costBasis ? ((livePrice - costBasis) / costBasis * 100) : null;
+          return (
+            <div
+              key={`mobile-${s.ticker}-${s.bucket}`}
+              className="rounded-2xl border border-slate-200 bg-white p-4 shadow-sm cursor-pointer hover:shadow-md transition-shadow"
+              onClick={() => router.push(`/stock/${s.ticker.toLowerCase()}`)}
+            >
+              {/* Top row: Ticker + Bucket + Rating */}
+              <div className="flex items-center justify-between mb-2">
+                <div className="flex items-center gap-2">
+                  <span className="text-lg font-bold text-slate-900">{s.ticker}</span>
+                  <SignalPill tone={s.bucket === "Portfolio" ? "blue" : "gray"}>{s.bucket}</SignalPill>
+                </div>
+                <div className="flex items-center gap-1.5">
+                  <SignalPill tone={ratingTone(s.rating)}>{s.rating}</SignalPill>
+                  <SignalPill tone={riskTone(s.risk)}>{s.risk}</SignalPill>
+                </div>
+              </div>
+              {/* Name + Sector */}
+              <div className="text-xs text-slate-500 mb-3">{s.name} &middot; {s.sector}</div>
+              {/* Stats grid */}
+              <div className="grid grid-cols-3 gap-3 text-center">
+                <div>
+                  <div className="text-[10px] text-slate-400 uppercase tracking-wider">Price</div>
+                  <div className="text-sm font-semibold text-slate-800">
+                    {pricesLoading ? "..." : livePrice != null ? `$${livePrice.toFixed(2)}` : "\u2014"}
+                  </div>
+                </div>
+                <div>
+                  <div className="text-[10px] text-slate-400 uppercase tracking-wider">Score</div>
+                  <div className="text-sm font-semibold text-slate-900">{s.adjusted}/{MAX_SCORE}</div>
+                </div>
+                <div>
+                  <div className="text-[10px] text-slate-400 uppercase tracking-wider">P&L</div>
+                  <div className={`text-sm font-semibold ${pnlPct != null ? (pnlPct >= 0 ? "text-emerald-600" : "text-red-500") : "text-slate-300"}`}>
+                    {pnlPct != null ? `${pnlPct >= 0 ? "+" : ""}${pnlPct.toFixed(1)}%` : "\u2014"}
+                  </div>
+                </div>
+              </div>
+              {/* Summaries if available */}
+              {(s.companySummary || s.investmentThesis) && (
+                <div className="mt-3 pt-3 border-t border-slate-100 space-y-1">
+                  {s.companySummary && <p className="text-[11px] text-slate-500 leading-relaxed">{s.companySummary}</p>}
+                  {s.investmentThesis && <p className="text-[11px] text-blue-600 italic leading-relaxed">{s.investmentThesis}</p>}
+                </div>
+              )}
+            </div>
+          );
+        })}
+      </div>
+
+      <div className="mt-4 overflow-x-auto hidden md:block">
+        <table className="w-full min-w-[1500px] text-left">
           <thead>
             <tr className="border-b border-slate-200 text-xs text-slate-500 uppercase tracking-wider">
               <th className="pb-3 pr-2 cursor-pointer hover:text-slate-800 select-none" onClick={() => toggleSort("ticker")}>Ticker{arrow("ticker")}</th>
               <th className="pb-3 pr-2 cursor-pointer hover:text-slate-800 select-none" onClick={() => toggleSort("bucket")}>Bucket{arrow("bucket")}</th>
               <th className="pb-3 pr-2 cursor-pointer hover:text-slate-800 select-none" onClick={() => toggleSort("sector")}>Sector{arrow("sector")}</th>
               <th className="pb-3 pr-2 cursor-pointer hover:text-slate-800 select-none text-right" onClick={() => toggleSort("price")}>Price{arrow("price")}</th>
+              <th className="pb-3 pr-2 text-right">Cost Basis</th>
               <th className="pb-3 pr-2 cursor-pointer hover:text-slate-800 select-none text-right" onClick={() => toggleSort("pnl")}>P&L{arrow("pnl")}</th>
               <th className="pb-3 pr-2 cursor-pointer hover:text-slate-800 select-none text-right" onClick={() => toggleSort("raw")}>Raw{arrow("raw")}</th>
               <th className="pb-3 pr-2 cursor-pointer hover:text-slate-800 select-none text-right" onClick={() => toggleSort("adjusted")}>Adj.{arrow("adjusted")}</th>
@@ -202,8 +261,8 @@ export function StockScoring({ stocks, onScoreStock }: Props) {
             {sorted.map((s) => {
               const effect = (s.adjusted - s.raw).toFixed(1);
               const livePrice = livePrices[s.ticker];
-              const scoredPrice = s.price;
-              const pnlPct = livePrice && scoredPrice ? ((livePrice - scoredPrice) / scoredPrice * 100) : null;
+              const cb = s.costBasis;
+              const pnlPct = livePrice && cb ? ((livePrice - cb) / cb * 100) : null;
               return (
                 <tr
                   key={`${s.ticker}-${s.bucket}`}
@@ -228,6 +287,20 @@ export function StockScoring({ stocks, onScoreStock }: Props) {
                     ) : (
                       <span className="text-slate-300">&mdash;</span>
                     )}
+                  </td>
+                  <td className="py-3 pr-2 text-right" onClick={(e) => e.stopPropagation()}>
+                    <input
+                      type="number"
+                      step="0.01"
+                      placeholder="—"
+                      value={cb ?? ""}
+                      onChange={(e) => {
+                        const val = parseFloat(e.target.value);
+                        if (onUpdateCostBasis && !isNaN(val)) onUpdateCostBasis(s.ticker, val);
+                        else if (onUpdateCostBasis && e.target.value === "") onUpdateCostBasis(s.ticker, 0);
+                      }}
+                      className="w-20 rounded-lg border border-transparent bg-transparent px-1 py-0.5 text-right text-sm font-mono text-slate-600 hover:border-slate-200 focus:border-blue-300 focus:bg-white focus:outline-none focus:ring-1 focus:ring-blue-200 transition-all"
+                    />
                   </td>
                   <td className="py-3 pr-2 text-right font-mono text-xs">
                     {pnlPct != null ? (

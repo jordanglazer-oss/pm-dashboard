@@ -156,6 +156,7 @@ export type Stock = {
   explanations?: ScoreExplanations;
   lastScored?: string;
   price?: number;
+  costBasis?: number;
   notes: string;
   companySummary?: string;
   investmentThesis?: string;

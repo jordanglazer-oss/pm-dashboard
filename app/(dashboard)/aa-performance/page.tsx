@@ -251,7 +251,7 @@ function AllocationTableCard({
                             isCurrent
                               ? "border-emerald-200 bg-emerald-50 text-emerald-800"
                               : "border-slate-200 bg-white text-slate-700"
-                          } focus:outline-none focus:ring-2 focus:ring-blue-300`}
+                          } focus:outline-none focus:ring-1 focus:ring-blue-200`}
                         />
                         <span className="text-xs text-slate-400">%</span>
                       </div>
@@ -299,7 +299,7 @@ function FundsTable({
             onChange={(e) => setTempDate(e.target.value)}
             onBlur={() => { onDateChange(tempDate); setEditingDate(false); }}
             onKeyDown={(e) => { if (e.key === "Enter") { onDateChange(tempDate); setEditingDate(false); } if (e.key === "Escape") setEditingDate(false); }}
-            className="w-28 rounded border border-blue-300 bg-blue-50 px-1 py-0.5 text-sm outline-none"
+            className="w-28 bg-white border border-blue-300 focus:ring-1 focus:ring-blue-200 rounded-lg outline-none transition-all px-1 py-0.5 text-sm"
           />
         ) : (
           <span
@@ -337,7 +337,7 @@ function FundsTable({
                     type="text"
                     value={row.name}
                     onChange={(e) => onUpdateRow(rowIdx, "name", e.target.value)}
-                    className="w-full rounded-lg border border-transparent px-2 py-1 text-sm font-medium text-slate-800 hover:border-slate-200 focus:border-blue-300 focus:outline-none focus:ring-2 focus:ring-blue-200 bg-transparent"
+                    className="w-full rounded-lg border border-transparent px-2 py-1 text-sm font-medium text-slate-800 hover:border-slate-200 hover:bg-slate-50 focus:border-blue-300 focus:outline-none focus:ring-2 focus:ring-blue-200 bg-transparent"
                   />
                 </td>
                 <td className="px-3 py-1.5">
@@ -345,7 +345,7 @@ function FundsTable({
                     type="text"
                     value={row.ticker}
                     onChange={(e) => onUpdateRow(rowIdx, "ticker", e.target.value)}
-                    className="w-full rounded-lg border border-transparent px-2 py-1 text-sm font-mono text-slate-700 hover:border-slate-200 focus:border-blue-300 focus:outline-none focus:ring-2 focus:ring-blue-200 bg-transparent"
+                    className="w-full rounded-lg border border-transparent px-2 py-1 text-sm font-mono text-slate-700 hover:border-slate-200 hover:bg-slate-50 focus:border-blue-300 focus:outline-none focus:ring-2 focus:ring-blue-200 bg-transparent"
                     placeholder="—"
                   />
                 </td>
@@ -360,7 +360,7 @@ function FundsTable({
                           placeholder="—"
                           className={`w-16 rounded-lg border border-transparent px-1 py-1 text-sm text-center font-medium ${
                             val === null ? "text-slate-400" : val < 0 ? "text-red-600" : val > 0 ? "text-emerald-600" : "text-slate-600"
-                          } hover:border-slate-200 focus:border-blue-300 focus:outline-none focus:ring-2 focus:ring-blue-200 bg-transparent`}
+                          } hover:border-slate-200 focus:border-blue-300 focus:outline-none focus:ring-2 focus:ring-blue-200 bg-slate-50/50 hover:bg-white`}
                         />
                         {val !== null && <span className="text-[10px] text-slate-400">%</span>}
                       </div>
@@ -377,7 +377,7 @@ function FundsTable({
       </div>
       <button
         onClick={onAddRow}
-        className="mt-2 rounded-lg bg-slate-900 px-4 py-1.5 text-sm font-medium text-white hover:bg-slate-800"
+        className="mt-2 rounded-xl bg-blue-600 px-5 py-2 text-sm font-semibold text-white hover:bg-blue-700 transition-colors"
       >
         Add
       </button>
@@ -595,7 +595,7 @@ export default function AAPerformancePage() {
                         type="text"
                         value={row.name}
                         onChange={(e) => updatePerformance(rowIdx, "name", e.target.value)}
-                        className="w-full rounded-lg border border-transparent px-2 py-1 text-sm font-medium text-slate-800 hover:border-slate-200 focus:border-blue-300 focus:outline-none focus:ring-2 focus:ring-blue-200 bg-transparent"
+                        className="w-full rounded-lg border border-transparent px-2 py-1 text-sm font-medium text-slate-800 hover:border-slate-200 hover:bg-slate-50 focus:border-blue-300 focus:outline-none focus:ring-2 focus:ring-blue-200 bg-transparent"
                       />
                     </td>
                     {/* Numeric columns */}
@@ -608,7 +608,7 @@ export default function AAPerformancePage() {
                               value={val}
                               onChange={(n) => updatePerformance(rowIdx, col.key, n)}
                               placeholder="—"
-                              className={`w-16 rounded-lg border border-transparent px-1 py-1 text-sm text-center font-medium ${perfColor(val)} hover:border-slate-200 focus:border-blue-300 focus:outline-none focus:ring-2 focus:ring-blue-200 bg-transparent`}
+                              className={`w-16 rounded-lg border border-transparent px-1 py-1 text-sm text-center font-medium ${perfColor(val)} hover:border-slate-200 focus:border-blue-300 focus:outline-none focus:ring-2 focus:ring-blue-200 bg-slate-50/50 hover:bg-white`}
                             />
                             {val !== null && <span className="text-[10px] text-slate-400">%</span>}
                           </div>
