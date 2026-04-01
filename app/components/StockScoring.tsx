@@ -133,7 +133,7 @@ export function StockScoring({ stocks, onScoreStock, onUpdateCostBasis }: Props)
           <h3 className="text-2xl font-semibold">Stock Scoring</h3>
           {portfolioBeta != null && (
             <span className="rounded-full bg-slate-100 px-3 py-1 text-xs font-semibold text-slate-600">
-              Portfolio \u03B2 {portfolioBeta.toFixed(2)}
+              Portfolio &beta; {portfolioBeta.toFixed(2)}
             </span>
           )}
         </div>
@@ -181,159 +181,168 @@ export function StockScoring({ stocks, onScoreStock, onUpdateCostBasis }: Props)
         </p>
       )}
 
-      {/* Mobile card view */}
-      <div className="mt-4 space-y-3 md:hidden">
-        {sorted.map((s) => {
-          const effect = (s.adjusted - s.raw).toFixed(1);
-          const livePrice = livePrices[s.ticker];
-          const costBasis = s.costBasis;
-          const pnlPct = livePrice && costBasis ? ((livePrice - costBasis) / costBasis * 100) : null;
-          return (
-            <div
-              key={`mobile-${s.ticker}-${s.bucket}`}
-              className="rounded-2xl border border-slate-200 bg-white p-4 shadow-sm cursor-pointer hover:shadow-md transition-shadow"
-              onClick={() => router.push(`/stock/${s.ticker.toLowerCase()}`)}
-            >
-              {/* Top row: Ticker + Bucket + Rating */}
-              <div className="flex items-center justify-between mb-2">
-                <div className="flex items-center gap-2">
-                  <span className="text-lg font-bold text-slate-900">{s.ticker}</span>
-                  <SignalPill tone={s.bucket === "Portfolio" ? "blue" : "gray"}>{s.bucket}</SignalPill>
-                </div>
-                <div className="flex items-center gap-1.5">
-                  <SignalPill tone={ratingTone(s.rating)}>{s.rating}</SignalPill>
-                  <SignalPill tone={riskTone(s.risk)}>{s.risk}</SignalPill>
-                </div>
-              </div>
-              {/* Name + Sector */}
-              <div className="text-xs text-slate-500 mb-3">{s.name} &middot; {s.sector}</div>
-              {/* Stats grid */}
-              <div className="grid grid-cols-3 gap-3 text-center">
-                <div>
-                  <div className="text-[10px] text-slate-400 uppercase tracking-wider">Price</div>
-                  <div className="text-sm font-semibold text-slate-800">
-                    {pricesLoading ? "..." : livePrice != null ? `$${livePrice.toFixed(2)}` : "\u2014"}
-                  </div>
-                </div>
-                <div>
-                  <div className="text-[10px] text-slate-400 uppercase tracking-wider">Score</div>
-                  <div className="text-sm font-semibold text-slate-900">{s.adjusted}/{MAX_SCORE}</div>
-                </div>
-                <div>
-                  <div className="text-[10px] text-slate-400 uppercase tracking-wider">P&L</div>
-                  <div className={`text-sm font-semibold ${pnlPct != null ? (pnlPct >= 0 ? "text-emerald-600" : "text-red-500") : "text-slate-300"}`}>
-                    {pnlPct != null ? `${pnlPct >= 0 ? "+" : ""}${pnlPct.toFixed(1)}%` : "\u2014"}
-                  </div>
-                </div>
-              </div>
-              {/* Summaries if available */}
-              {(s.companySummary || s.investmentThesis) && (
-                <div className="mt-3 pt-3 border-t border-slate-100 space-y-1">
-                  {s.companySummary && <p className="text-[11px] text-slate-500 leading-relaxed">{s.companySummary}</p>}
-                  {s.investmentThesis && <p className="text-[11px] text-blue-600 italic leading-relaxed">{s.investmentThesis}</p>}
-                </div>
-              )}
-            </div>
-          );
-        })}
-      </div>
+      {/* Split into Portfolio and Watchlist */}
+      {(["Portfolio", "Watchlist"] as const).map((bucket) => {
+        const bucketStocks = sorted.filter((s) => s.bucket === bucket);
+        if (bucketStocks.length === 0) return null;
+        const isPortfolio = bucket === "Portfolio";
 
-      <div className="mt-4 overflow-x-auto hidden md:block">
-        <table className="w-full min-w-[1500px] text-left">
-          <thead>
-            <tr className="border-b border-slate-200 text-xs text-slate-500 uppercase tracking-wider">
-              <th className="pb-3 pr-2 cursor-pointer hover:text-slate-800 select-none" onClick={() => toggleSort("ticker")}>Ticker{arrow("ticker")}</th>
-              <th className="pb-3 pr-2 cursor-pointer hover:text-slate-800 select-none" onClick={() => toggleSort("bucket")}>Bucket{arrow("bucket")}</th>
-              <th className="pb-3 pr-2 cursor-pointer hover:text-slate-800 select-none" onClick={() => toggleSort("sector")}>Sector{arrow("sector")}</th>
-              <th className="pb-3 pr-2 cursor-pointer hover:text-slate-800 select-none text-right" onClick={() => toggleSort("price")}>Price{arrow("price")}</th>
-              <th className="pb-3 pr-2 text-right">Cost Basis</th>
-              <th className="pb-3 pr-2 cursor-pointer hover:text-slate-800 select-none text-right" onClick={() => toggleSort("pnl")}>P&L{arrow("pnl")}</th>
-              <th className="pb-3 pr-2 cursor-pointer hover:text-slate-800 select-none text-right" onClick={() => toggleSort("raw")}>Raw{arrow("raw")}</th>
-              <th className="pb-3 pr-2 cursor-pointer hover:text-slate-800 select-none text-right" onClick={() => toggleSort("adjusted")}>Adj.{arrow("adjusted")}</th>
-              <th className="pb-3 pr-2 cursor-pointer hover:text-slate-800 select-none" onClick={() => toggleSort("rating")}>Rating{arrow("rating")}</th>
-              <th className="pb-3 pr-2 cursor-pointer hover:text-slate-800 select-none" onClick={() => toggleSort("risk")}>Risk{arrow("risk")}</th>
-              <th className="pb-3 pr-2 cursor-pointer hover:text-slate-800 select-none text-right" onClick={() => toggleSort("effect")}>Regime{arrow("effect")}</th>
-              <th className="pb-3 pr-2">What They Do</th>
-              <th className="pb-3">Why Own It</th>
-            </tr>
-          </thead>
-          <tbody>
-            {sorted.map((s) => {
-              const effect = (s.adjusted - s.raw).toFixed(1);
-              const livePrice = livePrices[s.ticker];
-              const cb = s.costBasis;
-              const pnlPct = livePrice && cb ? ((livePrice - cb) / cb * 100) : null;
-              return (
-                <tr
-                  key={`${s.ticker}-${s.bucket}`}
-                  className="border-b border-slate-100 align-top cursor-pointer hover:bg-slate-50/50 transition-colors"
-                  onClick={() => router.push(`/stock/${s.ticker.toLowerCase()}`)}
-                >
-                  <td className="py-3 pr-2">
-                    <div className="font-semibold text-slate-900">{s.ticker}</div>
-                    <div className="text-[11px] text-slate-400 truncate max-w-[120px]">{s.name}</div>
-                  </td>
-                  <td className="py-3 pr-2">
-                    <SignalPill tone={s.bucket === "Portfolio" ? "blue" : "gray"}>
-                      {s.bucket}
-                    </SignalPill>
-                  </td>
-                  <td className="py-3 pr-2 text-xs text-slate-600">{s.sector}</td>
-                  <td className="py-3 pr-2 text-right font-mono text-sm">
-                    {pricesLoading ? (
-                      <span className="text-slate-300 animate-pulse">...</span>
-                    ) : livePrice != null ? (
-                      <span className="font-semibold text-slate-800">${livePrice.toFixed(2)}</span>
-                    ) : (
-                      <span className="text-slate-300">&mdash;</span>
+        return (
+          <div key={bucket} className="mt-6">
+            {/* Section header */}
+            <div className="flex items-center gap-3 mb-3">
+              <h4 className={`text-sm font-bold uppercase tracking-wider ${isPortfolio ? "text-blue-600" : "text-slate-500"}`}>
+                {bucket}
+              </h4>
+              <span className={`rounded-full px-2.5 py-0.5 text-xs font-semibold ${isPortfolio ? "bg-blue-50 text-blue-600" : "bg-slate-100 text-slate-500"}`}>
+                {bucketStocks.length}
+              </span>
+              <div className={`flex-1 border-t ${isPortfolio ? "border-blue-200" : "border-slate-200"}`} />
+            </div>
+
+            {/* Mobile card view */}
+            <div className="space-y-3 md:hidden">
+              {bucketStocks.map((s) => {
+                const livePrice = livePrices[s.ticker];
+                const costBasis = s.costBasis;
+                const pnlPct = livePrice && costBasis ? ((livePrice - costBasis) / costBasis * 100) : null;
+                return (
+                  <div
+                    key={`mobile-${s.ticker}-${s.bucket}`}
+                    className={`rounded-2xl border bg-white p-4 shadow-sm cursor-pointer hover:shadow-md transition-shadow ${isPortfolio ? "border-blue-100" : "border-slate-200"}`}
+                    onClick={() => router.push(`/stock/${s.ticker.toLowerCase()}`)}
+                  >
+                    <div className="flex items-center justify-between mb-2">
+                      <span className="text-lg font-bold text-slate-900">{s.ticker}</span>
+                      <div className="flex items-center gap-1.5">
+                        <SignalPill tone={ratingTone(s.rating)}>{s.rating}</SignalPill>
+                        <SignalPill tone={riskTone(s.risk)}>{s.risk}</SignalPill>
+                      </div>
+                    </div>
+                    <div className="text-xs text-slate-500 mb-3">{s.name} &middot; {s.sector}</div>
+                    <div className="grid grid-cols-3 gap-3 text-center">
+                      <div>
+                        <div className="text-[10px] text-slate-400 uppercase tracking-wider">Price</div>
+                        <div className="text-sm font-semibold text-slate-800">
+                          {pricesLoading ? "..." : livePrice != null ? `$${livePrice.toFixed(2)}` : "\u2014"}
+                        </div>
+                      </div>
+                      <div>
+                        <div className="text-[10px] text-slate-400 uppercase tracking-wider">Score</div>
+                        <div className="text-sm font-semibold text-slate-900">{s.adjusted}/{MAX_SCORE}</div>
+                      </div>
+                      <div>
+                        <div className="text-[10px] text-slate-400 uppercase tracking-wider">P&L</div>
+                        <div className={`text-sm font-semibold ${pnlPct != null ? (pnlPct >= 0 ? "text-emerald-600" : "text-red-500") : "text-slate-300"}`}>
+                          {pnlPct != null ? `${pnlPct >= 0 ? "+" : ""}${pnlPct.toFixed(1)}%` : "\u2014"}
+                        </div>
+                      </div>
+                    </div>
+                    {(s.companySummary || s.investmentThesis) && (
+                      <div className="mt-3 pt-3 border-t border-slate-100 space-y-1">
+                        {s.companySummary && <p className="text-[11px] text-slate-500 leading-relaxed">{s.companySummary}</p>}
+                        {s.investmentThesis && <p className="text-[11px] text-blue-600 italic leading-relaxed">{s.investmentThesis}</p>}
+                      </div>
                     )}
-                  </td>
-                  <td className="py-3 pr-2 text-right" onClick={(e) => e.stopPropagation()}>
-                    <input
-                      type="number"
-                      step="0.01"
-                      placeholder="—"
-                      value={cb ?? ""}
-                      onChange={(e) => {
-                        const val = parseFloat(e.target.value);
-                        if (onUpdateCostBasis && !isNaN(val)) onUpdateCostBasis(s.ticker, val);
-                        else if (onUpdateCostBasis && e.target.value === "") onUpdateCostBasis(s.ticker, 0);
-                      }}
-                      className="w-20 rounded-lg border border-transparent bg-transparent px-1 py-0.5 text-right text-sm font-mono text-slate-600 hover:border-slate-200 focus:border-blue-300 focus:bg-white focus:outline-none focus:ring-1 focus:ring-blue-200 transition-all"
-                    />
-                  </td>
-                  <td className="py-3 pr-2 text-right font-mono text-xs">
-                    {pnlPct != null ? (
-                      <span className={pnlPct >= 0 ? "text-emerald-600 font-semibold" : "text-red-500 font-semibold"}>
-                        {pnlPct >= 0 ? "+" : ""}{pnlPct.toFixed(1)}%
-                      </span>
-                    ) : (
-                      <span className="text-slate-300">&mdash;</span>
-                    )}
-                  </td>
-                  <td className="py-3 pr-2 text-right text-sm text-slate-600">{s.raw}/{MAX_SCORE}</td>
-                  <td className="py-3 pr-2 text-right text-sm font-semibold text-slate-900">{s.adjusted}/{MAX_SCORE}</td>
-                  <td className="py-3 pr-2">
-                    <SignalPill tone={ratingTone(s.rating)}>{s.rating}</SignalPill>
-                  </td>
-                  <td className="py-3 pr-2">
-                    <SignalPill tone={riskTone(s.risk)}>{s.risk}</SignalPill>
-                  </td>
-                  <td className={`py-3 pr-2 text-right text-xs font-semibold ${Number(effect) >= 0 ? "text-emerald-600" : "text-red-500"}`}>
-                    {Number(effect) >= 0 ? "+" : ""}{effect}
-                  </td>
-                  <td className="max-w-[220px] py-3 pr-2 text-[11px] leading-relaxed text-slate-500">
-                    {s.companySummary || <span className="text-slate-300 italic">Score to generate</span>}
-                  </td>
-                  <td className="max-w-[220px] py-3 text-[11px] leading-relaxed text-slate-500">
-                    {s.investmentThesis || <span className="text-slate-300 italic">Score to generate</span>}
-                  </td>
-                </tr>
-              );
-            })}
-          </tbody>
-        </table>
-      </div>
+                  </div>
+                );
+              })}
+            </div>
+
+            {/* Desktop table */}
+            <div className="overflow-x-auto hidden md:block">
+              <table className="w-full min-w-[1400px] text-left">
+                <thead>
+                  <tr className={`border-b text-xs text-slate-500 uppercase tracking-wider ${isPortfolio ? "border-blue-200" : "border-slate-200"}`}>
+                    <th className="pb-3 pr-2 cursor-pointer hover:text-slate-800 select-none" onClick={() => toggleSort("ticker")}>Ticker{arrow("ticker")}</th>
+                    <th className="pb-3 pr-2 cursor-pointer hover:text-slate-800 select-none" onClick={() => toggleSort("sector")}>Sector{arrow("sector")}</th>
+                    <th className="pb-3 pr-2 cursor-pointer hover:text-slate-800 select-none text-right" onClick={() => toggleSort("price")}>Price{arrow("price")}</th>
+                    <th className="pb-3 pr-2 text-right">Cost Basis</th>
+                    <th className="pb-3 pr-2 cursor-pointer hover:text-slate-800 select-none text-right" onClick={() => toggleSort("pnl")}>P&L{arrow("pnl")}</th>
+                    <th className="pb-3 pr-2 cursor-pointer hover:text-slate-800 select-none text-right" onClick={() => toggleSort("raw")}>Raw{arrow("raw")}</th>
+                    <th className="pb-3 pr-2 cursor-pointer hover:text-slate-800 select-none text-right" onClick={() => toggleSort("adjusted")}>Adj.{arrow("adjusted")}</th>
+                    <th className="pb-3 pr-2 cursor-pointer hover:text-slate-800 select-none" onClick={() => toggleSort("rating")}>Rating{arrow("rating")}</th>
+                    <th className="pb-3 pr-2 cursor-pointer hover:text-slate-800 select-none" onClick={() => toggleSort("risk")}>Risk{arrow("risk")}</th>
+                    <th className="pb-3 pr-2 cursor-pointer hover:text-slate-800 select-none text-right" onClick={() => toggleSort("effect")}>Regime{arrow("effect")}</th>
+                    <th className="pb-3 pr-2">What They Do</th>
+                    <th className="pb-3">Why Own It</th>
+                  </tr>
+                </thead>
+                <tbody>
+                  {bucketStocks.map((s) => {
+                    const effect = (s.adjusted - s.raw).toFixed(1);
+                    const livePrice = livePrices[s.ticker];
+                    const cb = s.costBasis;
+                    const pnlPct = livePrice && cb ? ((livePrice - cb) / cb * 100) : null;
+                    return (
+                      <tr
+                        key={`${s.ticker}-${s.bucket}`}
+                        className="border-b border-slate-100 align-top cursor-pointer hover:bg-slate-50/50 transition-colors"
+                        onClick={() => router.push(`/stock/${s.ticker.toLowerCase()}`)}
+                      >
+                        <td className="py-3 pr-2">
+                          <div className="font-semibold text-slate-900">{s.ticker}</div>
+                          <div className="text-[11px] text-slate-400 truncate max-w-[120px]">{s.name}</div>
+                        </td>
+                        <td className="py-3 pr-2 text-xs text-slate-600">{s.sector}</td>
+                        <td className="py-3 pr-2 text-right font-mono text-sm">
+                          {pricesLoading ? (
+                            <span className="text-slate-300 animate-pulse">...</span>
+                          ) : livePrice != null ? (
+                            <span className="font-semibold text-slate-800">${livePrice.toFixed(2)}</span>
+                          ) : (
+                            <span className="text-slate-300">&mdash;</span>
+                          )}
+                        </td>
+                        <td className="py-3 pr-2 text-right" onClick={(e) => e.stopPropagation()}>
+                          <input
+                            type="number"
+                            step="0.01"
+                            placeholder="—"
+                            value={cb ?? ""}
+                            onChange={(e) => {
+                              const val = parseFloat(e.target.value);
+                              if (onUpdateCostBasis && !isNaN(val)) onUpdateCostBasis(s.ticker, val);
+                              else if (onUpdateCostBasis && e.target.value === "") onUpdateCostBasis(s.ticker, 0);
+                            }}
+                            className="w-20 rounded-lg border border-transparent bg-transparent px-1 py-0.5 text-right text-sm font-mono text-slate-600 hover:border-slate-200 focus:border-blue-300 focus:bg-white focus:outline-none focus:ring-1 focus:ring-blue-200 transition-all"
+                          />
+                        </td>
+                        <td className="py-3 pr-2 text-right font-mono text-xs">
+                          {pnlPct != null ? (
+                            <span className={pnlPct >= 0 ? "text-emerald-600 font-semibold" : "text-red-500 font-semibold"}>
+                              {pnlPct >= 0 ? "+" : ""}{pnlPct.toFixed(1)}%
+                            </span>
+                          ) : (
+                            <span className="text-slate-300">&mdash;</span>
+                          )}
+                        </td>
+                        <td className="py-3 pr-2 text-right text-sm text-slate-600">{s.raw}/{MAX_SCORE}</td>
+                        <td className="py-3 pr-2 text-right text-sm font-semibold text-slate-900">{s.adjusted}/{MAX_SCORE}</td>
+                        <td className="py-3 pr-2">
+                          <SignalPill tone={ratingTone(s.rating)}>{s.rating}</SignalPill>
+                        </td>
+                        <td className="py-3 pr-2">
+                          <SignalPill tone={riskTone(s.risk)}>{s.risk}</SignalPill>
+                        </td>
+                        <td className={`py-3 pr-2 text-right text-xs font-semibold ${Number(effect) >= 0 ? "text-emerald-600" : "text-red-500"}`}>
+                          {Number(effect) >= 0 ? "+" : ""}{effect}
+                        </td>
+                        <td className="max-w-[220px] py-3 pr-2 text-[11px] leading-relaxed text-slate-500">
+                          {s.companySummary || <span className="text-slate-300 italic">Score to generate</span>}
+                        </td>
+                        <td className="max-w-[220px] py-3 text-[11px] leading-relaxed text-slate-500">
+                          {s.investmentThesis || <span className="text-slate-300 italic">Score to generate</span>}
+                        </td>
+                      </tr>
+                    );
+                  })}
+                </tbody>
+              </table>
+            </div>
+          </div>
+        );
+      })}
     </section>
   );
 }

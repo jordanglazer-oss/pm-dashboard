@@ -444,11 +444,11 @@ export default function ResearchPage() {
                   <th className="py-2 pr-3 text-xs font-semibold text-teal-700 cursor-pointer hover:text-teal-900 select-none" onClick={() => toggleUptickSort("name")}>Name{uArrow("name")}</th>
                   <th className="py-2 pr-3 text-xs font-semibold text-teal-700 cursor-pointer hover:text-teal-900 select-none" onClick={() => toggleUptickSort("sector")}>Sector{uArrow("sector")}</th>
                   <th className="py-2 pr-3 text-xs font-semibold text-teal-700 text-right cursor-pointer hover:text-teal-900 select-none" onClick={() => toggleUptickSort("price")}>Price{uArrow("price")}</th>
+                  <th className="py-2 pr-3 text-xs font-semibold text-teal-700 text-right cursor-pointer hover:text-teal-900 select-none" onClick={() => toggleUptickSort("priceWhenAdded")}>Price Added{uArrow("priceWhenAdded")}</th>
+                  <th className="py-2 pr-3 text-xs font-semibold text-teal-700 text-right">Chg</th>
                   <th className="py-2 pr-3 text-xs font-semibold text-teal-700 text-right">Support</th>
                   <th className="py-2 pr-3 text-xs font-semibold text-teal-700 text-right">Resistance</th>
                   <th className="py-2 pr-3 text-xs font-semibold text-teal-700 cursor-pointer hover:text-teal-900 select-none" onClick={() => toggleUptickSort("dateAdded")}>Date Added{uArrow("dateAdded")}</th>
-                  <th className="py-2 pr-3 text-xs font-semibold text-teal-700 text-right cursor-pointer hover:text-teal-900 select-none" onClick={() => toggleUptickSort("priceWhenAdded")}>Price When Added{uArrow("priceWhenAdded")}</th>
-                  <th className="py-2 pr-3 text-xs font-semibold text-teal-700 text-right">Chg</th>
                   <th className="py-2 text-xs font-semibold text-teal-700 w-8"></th>
                 </tr>
               </thead>
@@ -478,15 +478,6 @@ export default function ResearchPage() {
                         )}
                       </td>
                       <td className="py-2 pr-3 text-right font-mono">
-                        <EditableCell value={u.support} onChange={(v) => updateUptick(i, "support", v)} />
-                      </td>
-                      <td className="py-2 pr-3 text-right font-mono">
-                        <EditableCell value={u.resistance} onChange={(v) => updateUptick(i, "resistance", v)} />
-                      </td>
-                      <td className="py-2 pr-3 text-slate-500">
-                        <EditableCell value={u.dateAdded} onChange={(v) => updateUptick(i, "dateAdded", v)} />
-                      </td>
-                      <td className="py-2 pr-3 text-right font-mono">
                         {u.priceWhenAdded ? (
                           <EditableCell value={`$${u.priceWhenAdded.toFixed(2)}`} onChange={(v) => updateUptick(i, "priceWhenAdded", v.replace("$", ""))} />
                         ) : (
@@ -501,6 +492,15 @@ export default function ResearchPage() {
                         ) : (
                           <span className="text-slate-300">—</span>
                         )}
+                      </td>
+                      <td className="py-2 pr-3 text-right font-mono">
+                        <EditableCell value={u.support} onChange={(v) => updateUptick(i, "support", v)} />
+                      </td>
+                      <td className="py-2 pr-3 text-right font-mono">
+                        <EditableCell value={u.resistance} onChange={(v) => updateUptick(i, "resistance", v)} />
+                      </td>
+                      <td className="py-2 pr-3 text-slate-500">
+                        <EditableCell value={u.dateAdded} onChange={(v) => updateUptick(i, "dateAdded", v)} />
                       </td>
                       <td className="py-2 text-right whitespace-nowrap">
                         {scoredStocks.some((s) => s.ticker === u.ticker) ? (

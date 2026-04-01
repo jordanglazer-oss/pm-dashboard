@@ -1,6 +1,6 @@
 "use client";
 
-import React from "react";
+import React, { useState } from "react";
 import Link from "next/link";
 import { usePathname } from "next/navigation";
 
@@ -9,11 +9,12 @@ const tabs = [
   { label: "Dashboard", href: "/" },
   { label: "Scoring", href: "/scoring" },
   { label: "Research", href: "/research" },
-  { label: "AA & Performance", href: "/aa-performance" },
+  { label: "AA & Perf", href: "/aa-performance" },
 ];
 
 export function Navigation() {
   const pathname = usePathname();
+  const [menuOpen, setMenuOpen] = useState(false);
 
   const activeTab = pathname.startsWith("/stock/") || pathname === "/scoring"
     ? "Scoring"
@@ -22,7 +23,7 @@ export function Navigation() {
     : pathname === "/research"
     ? "Research"
     : pathname === "/aa-performance"
-    ? "AA & Performance"
+    ? "AA & Perf"
     : "Dashboard";
 
   return (
@@ -36,8 +37,21 @@ export function Navigation() {
           </span>
         </div>
 
-        {/* Tabs + avatar */}
-        <nav className="flex items-center gap-1 shrink-0 ml-4">
+        {/* Hamburger button — mobile only */}
+        <button
+          onClick={() => setMenuOpen(!menuOpen)}
+          className="md:hidden flex items-center justify-center w-9 h-9 rounded-lg hover:bg-slate-800 transition-colors"
+          aria-label="Toggle menu"
+        >
+          {menuOpen ? (
+            <svg className="w-5 h-5" fill="none" stroke="currentColor" strokeWidth="2" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" d="M6 18L18 6M6 6l12 12" /></svg>
+          ) : (
+            <svg className="w-5 h-5" fill="none" stroke="currentColor" strokeWidth="2" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" d="M3.75 6.75h16.5M3.75 12h16.5m-16.5 5.25h16.5" /></svg>
+          )}
+        </button>
+
+        {/* Desktop nav */}
+        <nav className="hidden md:flex items-center gap-1 shrink-0 ml-4">
           {tabs.map((tab) => {
             const isActive = tab.label === activeTab;
             return (
@@ -54,9 +68,31 @@ export function Navigation() {
               </Link>
             );
           })}
-
         </nav>
       </div>
+
+      {/* Mobile dropdown menu */}
+      {menuOpen && (
+        <nav className="md:hidden border-t border-slate-700 px-4 pb-3 pt-1">
+          {tabs.map((tab) => {
+            const isActive = tab.label === activeTab;
+            return (
+              <Link
+                key={tab.label}
+                href={tab.href}
+                onClick={() => setMenuOpen(false)}
+                className={`block rounded-lg px-4 py-2.5 text-sm font-semibold transition-colors ${
+                  isActive
+                    ? "bg-blue-600 text-white"
+                    : "text-slate-300 hover:text-white hover:bg-slate-800"
+                }`}
+              >
+                {tab.label}
+              </Link>
+            );
+          })}
+        </nav>
+      )}
     </header>
   );
 }
