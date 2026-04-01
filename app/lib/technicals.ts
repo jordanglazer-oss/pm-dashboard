@@ -530,18 +530,7 @@ export function computeRiskAlert(
     signals.push({ name: "Ichimoku Cloud", status: "ok", detail: ichi.signalSummary });
   }
 
-  // 7. Earnings Revisions (from healthData)
-  if (healthData?.earningsCurrentEst != null && healthData?.earnings30dAgo != null) {
-    if (healthData.earningsCurrentEst < healthData.earnings30dAgo) {
-      signals.push({ name: "Earnings Revisions", status: "danger", detail: `Estimate cut: $${healthData.earningsCurrentEst.toFixed(2)} vs $${healthData.earnings30dAgo.toFixed(2)} 30d ago` });
-    } else if (healthData.earningsCurrentEst === healthData.earnings30dAgo) {
-      signals.push({ name: "Earnings Revisions", status: "caution", detail: `Estimates flat at $${healthData.earningsCurrentEst.toFixed(2)} — no positive revisions` });
-    } else {
-      signals.push({ name: "Earnings Revisions", status: "ok", detail: `Estimates revised up: $${healthData.earningsCurrentEst.toFixed(2)} vs $${healthData.earnings30dAgo.toFixed(2)} 30d ago` });
-    }
-  }
-
-  // 8. Short Interest (from healthData)
+  // 7. Short Interest (from healthData)
   if (healthData?.shortPercentOfFloat != null) {
     if (healthData.shortPercentOfFloat > 10) {
       signals.push({ name: "Short Interest", status: "danger", detail: `Short interest at ${healthData.shortPercentOfFloat.toFixed(1)}% of float — elevated bearish positioning` });

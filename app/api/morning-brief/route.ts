@@ -100,7 +100,7 @@ Respond ONLY with valid JSON matching this exact structure:
 
 Notes:
 - sectorRotation.leading and .lagging should each have 2-3 entries with sector name, approximate MTD performance, and a brief reason.
-- riskScan should list portfolio holdings ordered from highest risk to lowest, with priority: "High", "Medium-High", "Medium", or "Low-Medium". Focus on the weakest/most at-risk names. Include 4-7 entries.
+- riskScan should list portfolio holdings ordered from highest risk to lowest, with priority: "High", "Medium-High", "Medium", or "Low-Medium". Focus on the weakest/most at-risk names. Include 4-7 entries. USE the [RISK: ...] annotations on each holding — holdings tagged CRITICAL or WARNING should be prioritized highest. Incorporate specific risk signals (trend, momentum, MACD, volume, Ichimoku, short interest, valuation) into your summaries and actions.
 - forwardActions should contain 4-6 specific, actionable recommendations ordered by priority. Use "High", "Medium", or "Low" for priority.`;
 
 type AttachmentInput = {
@@ -234,6 +234,24 @@ Then write a concise 3-5 paragraph summary that a PM can reference daily.`,
   return message.content[0].type === "text" ? message.content[0].text : "";
 }
 
+// Compute dynamic hedge timing score from market data (mirrors HedgingIndicator logic)
+function computeHedgeScore(vix: number, termStructure: string, fearGreed: number): number {
+  let optimalCount = 0;
+
+  // Put cost: VIX <= 18 → cheap/moderate → optimal
+  if (vix <= 18) optimalCount++;
+
+  // VIX context: low vol (<=16) optimal; moderate (<=22) optimal only if not backwardation
+  if (vix <= 16) optimalCount++;
+  else if (vix <= 22 && termStructure !== "Backwardation") optimalCount++;
+
+  // Sentiment: fearGreed >= 45 → neutral/greedy → complacency → optimal
+  if (fearGreed >= 45) optimalCount++;
+
+  // Score: 0 optimal = ~15, 1 = ~40, 2 = ~65, 3 = ~90
+  return Math.round((optimalCount / 3) * 80 + 10);
+}
+
 export async function POST(request: NextRequest) {
   try {
     const { marketData, holdings, attachments } = await request.json();
@@ -245,15 +263,32 @@ export async function POST(request: NextRequest) {
       );
     }
 
+    type HoldingInput = {
+      ticker: string;
+      bucket: string;
+      sector: string;
+      scores?: Record<string, number>;
+      weights: { portfolio: number };
+      riskAlert?: { level: string; summary: string; dangerCount: number; cautionCount: number; signals?: { name: string; status: string; detail: string }[] };
+    };
+
     const holdingsSummary = holdings
-      ? holdings
-          .map(
-            (h: { ticker: string; bucket: string; sector: string; scores?: Record<string, number>; weights: { portfolio: number } }) => {
+      ? (holdings as HoldingInput[])
+          .map((h) => {
               const rawScore = h.scores ? Object.values(h.scores).reduce((a: number, b: number) => a + b, 0) : 0;
-              return `${h.ticker} (${h.bucket}, ${h.sector}, ${h.weights.portfolio}% weight, score ${rawScore}/40)`;
+              let line = `${h.ticker} (${h.bucket}, ${h.sector}, ${h.weights.portfolio}% weight, score ${rawScore}/40)`;
+              if (h.riskAlert && h.riskAlert.level !== "clear") {
+                const dangerSignals = h.riskAlert.signals?.filter(s => s.status === "danger").map(s => s.name) || [];
+                const cautionSignals = h.riskAlert.signals?.filter(s => s.status === "caution").map(s => s.name) || [];
+                line += ` [RISK: ${h.riskAlert.level.toUpperCase()} — ${h.riskAlert.summary}`;
+                if (dangerSignals.length > 0) line += ` | Danger: ${dangerSignals.join(", ")}`;
+                if (cautionSignals.length > 0) line += ` | Caution: ${cautionSignals.join(", ")}`;
+                line += `]`;
+              }
+              return line;
             }
           )
-          .join(", ")
+          .join("\n")
       : "No holdings provided";
 
     // Fetch live sector ETF data for sector rotation analysis
@@ -291,7 +326,7 @@ Contrarian Indicators (ALL interpreted INVERSELY — oversold/fearful = BULLISH,
 
 Equity Flows: ${marketData.equityFlows}
 
-Hedge Timing Score: ${marketData.hedgeScore}/100
+Hedge Timing Score: ${computeHedgeScore(marketData.vix ?? 20, marketData.termStructure ?? "Contango", marketData.fearGreed ?? 50)}/100 (dynamically computed from VIX, term structure, and sentiment)
 
 Live Sector ETF Performance (from Yahoo Finance — use this for sector rotation analysis):
 ${sectorPerformance}
