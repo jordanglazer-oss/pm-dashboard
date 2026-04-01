@@ -48,10 +48,14 @@ export default function ScoringPage() {
     }));
   }, [updateScore, updateExplanations, updateLastScored, updatePrice, updateHealthData, updateTechnicals, updateStockFields]);
 
+  const handleUpdateCostBasis = useCallback((ticker: string, costBasis: number) => {
+    updateStockFields(ticker, { costBasis: costBasis || undefined });
+  }, [updateStockFields]);
+
   return (
     <main className="min-h-screen bg-[#f4f5f7] px-4 py-6 text-slate-900 md:px-8 md:py-8 overflow-x-hidden">
       <div className="mx-auto max-w-7xl">
-        <StockScoring stocks={scoredStocks} onScoreStock={handleScoreStock} />
+        <StockScoring stocks={scoredStocks} onScoreStock={handleScoreStock} onUpdateCostBasis={handleUpdateCostBasis} />
       </div>
     </main>
   );

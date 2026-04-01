@@ -43,32 +43,32 @@ function UptickAddForm({ onAdd }: { onAdd: (e: UptickEntry) => void }) {
     >
       <div>
         <label className="text-xs text-slate-400 block">Ticker*</label>
-        <input value={ticker} onChange={(e) => setTicker(e.target.value.toUpperCase())} placeholder="AMZN" className="w-20 rounded-lg border border-slate-200 px-2 py-1.5 text-sm font-mono" />
+        <input value={ticker} onChange={(e) => setTicker(e.target.value.toUpperCase())} placeholder="AMZN" className="w-20 rounded-xl border border-slate-200 bg-slate-50 px-3 py-2 text-sm font-mono outline-none placeholder:text-slate-400 focus:bg-white focus:border-blue-300 focus:ring-1 focus:ring-blue-200 transition-all" />
       </div>
       <div>
         <label className="text-xs text-slate-400 block">Name</label>
-        <input value={name} onChange={(e) => setName(e.target.value)} placeholder="Amazon.com Inc" className="w-40 rounded-lg border border-slate-200 px-2 py-1.5 text-sm" />
+        <input value={name} onChange={(e) => setName(e.target.value)} placeholder="Amazon.com Inc" className="w-40 rounded-xl border border-slate-200 bg-slate-50 px-3 py-2 text-sm outline-none placeholder:text-slate-400 focus:bg-white focus:border-blue-300 focus:ring-1 focus:ring-blue-200 transition-all" />
       </div>
       <div>
         <label className="text-xs text-slate-400 block">Sector</label>
-        <select value={sector} onChange={(e) => setSector(e.target.value)} className="w-44 rounded-lg border border-slate-200 px-2 py-1.5 text-sm bg-white">
+        <select value={sector} onChange={(e) => setSector(e.target.value)} className="w-44 rounded-xl border border-slate-200 bg-slate-50 px-3 py-2 text-sm outline-none placeholder:text-slate-400 focus:bg-white focus:border-blue-300 focus:ring-1 focus:ring-blue-200 transition-all">
           <option value="">Select...</option>
           {sectors.map((s) => <option key={s} value={s}>{s}</option>)}
         </select>
       </div>
       <div>
         <label className="text-xs text-slate-400 block">Support</label>
-        <input value={support} onChange={(e) => setSupport(e.target.value)} placeholder="196, 161" className="w-24 rounded-lg border border-slate-200 px-2 py-1.5 text-sm" />
+        <input value={support} onChange={(e) => setSupport(e.target.value)} placeholder="196, 161" className="w-24 rounded-xl border border-slate-200 bg-slate-50 px-3 py-2 text-sm outline-none placeholder:text-slate-400 focus:bg-white focus:border-blue-300 focus:ring-1 focus:ring-blue-200 transition-all" />
       </div>
       <div>
         <label className="text-xs text-slate-400 block">Resistance</label>
-        <input value={resistance} onChange={(e) => setResistance(e.target.value)} placeholder="220, 249" className="w-24 rounded-lg border border-slate-200 px-2 py-1.5 text-sm" />
+        <input value={resistance} onChange={(e) => setResistance(e.target.value)} placeholder="220, 249" className="w-24 rounded-xl border border-slate-200 bg-slate-50 px-3 py-2 text-sm outline-none placeholder:text-slate-400 focus:bg-white focus:border-blue-300 focus:ring-1 focus:ring-blue-200 transition-all" />
       </div>
       <div>
         <label className="text-xs text-slate-400 block">Price Added</label>
-        <input value={priceWhenAdded} onChange={(e) => setPriceWhenAdded(e.target.value)} placeholder="161.26" type="number" step="0.01" className="w-24 rounded-lg border border-slate-200 px-2 py-1.5 text-sm" />
+        <input value={priceWhenAdded} onChange={(e) => setPriceWhenAdded(e.target.value)} placeholder="161.26" type="number" step="0.01" className="w-24 rounded-xl border border-slate-200 bg-slate-50 px-3 py-2 text-sm outline-none placeholder:text-slate-400 focus:bg-white focus:border-blue-300 focus:ring-1 focus:ring-blue-200 transition-all" />
       </div>
-      <button type="submit" className="rounded-lg bg-slate-900 px-4 py-1.5 text-sm font-medium text-white hover:bg-slate-800">
+      <button type="submit" className="rounded-xl bg-blue-600 px-5 py-2 text-sm font-semibold text-white hover:bg-blue-700 transition-colors">
         Add
       </button>
     </form>
@@ -92,13 +92,13 @@ function IdeaAddForm({ onAdd }: { onAdd: (e: IdeaEntry) => void }) {
     >
       <div>
         <label className="text-xs text-slate-400 block">Ticker*</label>
-        <input value={ticker} onChange={(e) => setTicker(e.target.value.toUpperCase())} placeholder="AAPL" className="w-24 rounded-lg border border-slate-200 px-2 py-1.5 text-sm font-mono" />
+        <input value={ticker} onChange={(e) => setTicker(e.target.value.toUpperCase())} placeholder="AAPL" className="w-24 rounded-xl border border-slate-200 bg-slate-50 px-3 py-2 text-sm font-mono outline-none placeholder:text-slate-400 focus:bg-white focus:border-blue-300 focus:ring-1 focus:ring-blue-200 transition-all" />
       </div>
       <div>
         <label className="text-xs text-slate-400 block">Price Added</label>
-        <input value={price} onChange={(e) => setPrice(e.target.value)} placeholder="175.00" type="number" step="0.01" className="w-24 rounded-lg border border-slate-200 px-2 py-1.5 text-sm" />
+        <input value={price} onChange={(e) => setPrice(e.target.value)} placeholder="175.00" type="number" step="0.01" className="w-24 rounded-xl border border-slate-200 bg-slate-50 px-3 py-2 text-sm outline-none placeholder:text-slate-400 focus:bg-white focus:border-blue-300 focus:ring-1 focus:ring-blue-200 transition-all" />
       </div>
-      <button type="submit" className="rounded-lg bg-slate-900 px-4 py-1.5 text-sm font-medium text-white hover:bg-slate-800">
+      <button type="submit" className="rounded-xl bg-blue-600 px-5 py-2 text-sm font-semibold text-white hover:bg-blue-700 transition-colors">
         Add
       </button>
     </form>
@@ -133,16 +133,16 @@ function RBCAddForm({ onAdd }: { onAdd: (e: RBCEntry) => void }) {
     >
       <div>
         <label className="text-xs text-slate-400 block">Ticker*</label>
-        <input value={ticker} onChange={(e) => setTicker(e.target.value.toUpperCase())} placeholder="RY" className="w-24 rounded-lg border border-slate-200 px-2 py-1.5 text-sm font-mono" />
+        <input value={ticker} onChange={(e) => setTicker(e.target.value.toUpperCase())} placeholder="RY" className="w-24 rounded-xl border border-slate-200 bg-slate-50 px-3 py-2 text-sm font-mono outline-none placeholder:text-slate-400 focus:bg-white focus:border-blue-300 focus:ring-1 focus:ring-blue-200 transition-all" />
       </div>
       <div>
         <label className="text-xs text-slate-400 block">Sector</label>
-        <select value={sector} onChange={(e) => setSector(e.target.value)} className="w-44 rounded-lg border border-slate-200 px-2 py-1.5 text-sm bg-white">
+        <select value={sector} onChange={(e) => setSector(e.target.value)} className="w-44 rounded-xl border border-slate-200 bg-slate-50 px-3 py-2 text-sm outline-none focus:bg-white focus:border-blue-300 focus:ring-1 focus:ring-blue-200 transition-all">
           <option value="">Select...</option>
           {sectors.map((s) => <option key={s} value={s}>{s}</option>)}
         </select>
       </div>
-      <button type="submit" className="rounded-lg bg-slate-900 px-4 py-1.5 text-sm font-medium text-white hover:bg-slate-800">
+      <button type="submit" className="rounded-xl bg-blue-600 px-5 py-2 text-sm font-semibold text-white hover:bg-blue-700 transition-colors">
         Add
       </button>
     </form>
@@ -174,7 +174,7 @@ function EditableCell({
         onChange={(e) => setTemp(e.target.value)}
         onBlur={() => { onChange(temp); setEditing(false); }}
         onKeyDown={(e) => { if (e.key === "Enter") { onChange(temp); setEditing(false); } if (e.key === "Escape") setEditing(false); }}
-        className={`w-full bg-blue-50 border border-blue-300 rounded px-1 py-0.5 text-sm outline-none ${className}`}
+        className={`w-full bg-white border border-blue-300 rounded-lg px-1 py-0.5 text-sm outline-none focus:ring-1 focus:ring-blue-200 transition-all ${className}`}
       />
     );
   }
@@ -771,7 +771,7 @@ export default function ResearchPage() {
             onChange={(e) => save({ ...state, generalNotes: e.target.value })}
             placeholder="Market observations, strategy notes, meeting takeaways..."
             rows={8}
-            className="w-full rounded-xl border border-slate-200 p-4 text-sm leading-relaxed outline-none resize-y placeholder:text-slate-400"
+            className="w-full rounded-xl border border-slate-200 bg-slate-50 p-4 text-sm leading-relaxed outline-none resize-y placeholder:text-slate-400 focus:bg-white focus:border-blue-300 focus:ring-1 focus:ring-blue-200 transition-all"
           />
         </section>
 
