@@ -15,12 +15,13 @@ type Props = {
   stocks: ScoredStock[];
   onScoreStock?: (ticker: string) => Promise<void>;
   onUpdateCostBasis?: (ticker: string, costBasis: number) => void;
+  onRefreshData?: (ticker: string, data: { price?: number; technicals?: unknown; healthData?: unknown; riskAlert?: unknown }) => void;
 };
 
 const RATING_ORDER: Record<string, number> = { Buy: 3, Hold: 2, Sell: 1 };
 const RISK_ORDER: Record<string, number> = { High: 3, Medium: 2, Low: 1 };
 
-export function StockScoring({ stocks, onScoreStock, onUpdateCostBasis }: Props) {
+export function StockScoring({ stocks, onScoreStock, onUpdateCostBasis, onRefreshData }: Props) {
   const router = useRouter();
   const [query, setQuery] = useState("");
   const [sortKey, setSortKey] = useState<SortKey>("adjusted");
@@ -34,6 +35,10 @@ export function StockScoring({ stocks, onScoreStock, onUpdateCostBasis }: Props)
   // Score all state
   const [scoringAll, setScoringAll] = useState(false);
   const [scoreProgress, setScoreProgress] = useState("");
+
+  // Refresh all data state (no Claude — just technicals, health, risk alerts)
+  const [refreshingAll, setRefreshingAll] = useState(false);
+  const [refreshProgress, setRefreshProgress] = useState("");
 
   const fetchPrices = useCallback(async () => {
     const tickers = stocks.map((s) => s.ticker);
@@ -75,6 +80,48 @@ export function StockScoring({ stocks, onScoreStock, onUpdateCostBasis }: Props)
     setScoringAll(false);
     // Refresh prices after scoring
     fetchPrices();
+  }
+
+  // Refresh all data (technicals, health, risk alerts) without Claude scoring
+  async function handleRefreshAll() {
+    if (!onRefreshData || refreshingAll) return;
+    setRefreshingAll(true);
+    setRefreshProgress("Fetching data...");
+    try {
+      const tickers = stocks.map((s) => s.ticker);
+      const res = await fetch("/api/refresh-data", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ tickers }),
+      });
+      if (!res.ok) {
+        const err = await res.json().catch(() => ({}));
+        throw new Error(err.error || "Failed to refresh data");
+      }
+      const data = await res.json();
+      const results = data.results || [];
+      let updated = 0;
+      for (const r of results) {
+        if (r.error) continue;
+        onRefreshData(r.ticker, {
+          price: r.price,
+          technicals: r.technicals,
+          healthData: r.healthData,
+          riskAlert: r.riskAlert,
+        });
+        updated++;
+      }
+      setRefreshProgress(`Updated ${updated}/${tickers.length} stocks`);
+      // Clear progress message after 3s
+      setTimeout(() => setRefreshProgress(""), 3000);
+      // Also refresh live prices
+      fetchPrices();
+    } catch (err) {
+      setRefreshProgress(err instanceof Error ? err.message : "Refresh failed");
+      setTimeout(() => setRefreshProgress(""), 5000);
+    } finally {
+      setRefreshingAll(false);
+    }
   }
 
   function toggleSort(key: SortKey) {
@@ -148,6 +195,29 @@ export function StockScoring({ stocks, onScoreStock, onUpdateCostBasis }: Props)
             <svg className={`w-3.5 h-3.5 ${pricesLoading ? "animate-spin" : ""}`} fill="none" stroke="currentColor" strokeWidth="2" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" d="M16.023 9.348h4.992v-.001M2.985 19.644v-4.992m0 0h4.992m-4.993 0 3.181 3.183a8.25 8.25 0 0 0 13.803-3.7M4.031 9.865a8.25 8.25 0 0 1 13.803-3.7l3.181 3.182" /></svg>
             {pricesLoading ? "Updating..." : "Refresh Prices"}
           </button>
+          {/* Refresh All Data (no Claude) */}
+          {onRefreshData && (
+            <button
+              onClick={handleRefreshAll}
+              disabled={refreshingAll || scoringAll}
+              className="flex items-center gap-1.5 rounded-xl bg-emerald-600 px-4 py-2 text-xs font-semibold text-white hover:bg-emerald-700 disabled:opacity-50 transition-colors"
+              title="Refresh technicals, health data & risk alerts for all stocks (no AI scoring — zero token usage)"
+            >
+              {refreshingAll ? (
+                <>
+                  <svg className="w-3.5 h-3.5 animate-spin" fill="none" stroke="currentColor" strokeWidth="2" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" d="M16.023 9.348h4.992v-.001M2.985 19.644v-4.992m0 0h4.992m-4.993 0 3.181 3.183a8.25 8.25 0 0 0 13.803-3.7M4.031 9.865a8.25 8.25 0 0 1 13.803-3.7l3.181 3.182" /></svg>
+                  {refreshProgress || "Refreshing..."}
+                </>
+              ) : refreshProgress ? (
+                <>{refreshProgress}</>
+              ) : (
+                <>
+                  <svg className="w-3.5 h-3.5" fill="none" stroke="currentColor" strokeWidth="2" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" d="M19.5 14.25v-2.625a3.375 3.375 0 0 0-3.375-3.375h-1.5A1.125 1.125 0 0 1 13.5 7.125v-1.5a3.375 3.375 0 0 0-3.375-3.375H8.25m5.231 13.481L15 17.25m-4.5-15H5.625c-.621 0-1.125.504-1.125 1.125v16.5c0 .621.504 1.125 1.125 1.125h12.75c.621 0 1.125-.504 1.125-1.125V11.25a9 9 0 0 0-9-9Zm3.75 11.625a2.625 2.625 0 1 1-5.25 0 2.625 2.625 0 0 1 5.25 0Z" /></svg>
+                  Refresh All Data
+                </>
+              )}
+            </button>
+          )}
           {/* Score All */}
           {onScoreStock && (
             <button
