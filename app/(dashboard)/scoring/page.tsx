@@ -3,7 +3,8 @@
 import React, { useCallback } from "react";
 import { useStocks } from "@/app/lib/StockContext";
 import { StockScoring } from "@/app/components/StockScoring";
-import type { ScoreKey } from "@/app/lib/types";
+import type { ScoreKey, HealthData } from "@/app/lib/types";
+import type { TechnicalIndicators, RiskAlert } from "@/app/lib/technicals";
 
 export default function ScoringPage() {
   const { scoredStocks, updateScore, updateExplanations, updateLastScored, updatePrice, updateHealthData, updateTechnicals, updateStockFields } = useStocks();
@@ -52,10 +53,23 @@ export default function ScoringPage() {
     updateStockFields(ticker, { costBasis: costBasis || undefined });
   }, [updateStockFields]);
 
+  const handleRefreshData = useCallback((ticker: string, data: { price?: number; technicals?: unknown; healthData?: unknown; riskAlert?: unknown }) => {
+    if (data.price != null) {
+      updatePrice(ticker, data.price);
+    }
+    if (data.healthData) {
+      updateHealthData(ticker, data.healthData as HealthData);
+    }
+    if (data.technicals) {
+      const fallbackAlert: RiskAlert = { level: "clear", signals: [], summary: "No signals", dangerCount: 0, cautionCount: 0 };
+      updateTechnicals(ticker, data.technicals as TechnicalIndicators, (data.riskAlert as RiskAlert) || fallbackAlert);
+    }
+  }, [updatePrice, updateHealthData, updateTechnicals]);
+
   return (
     <main className="min-h-screen bg-[#f4f5f7] px-4 py-6 text-slate-900 md:px-8 md:py-8 overflow-x-hidden">
       <div className="mx-auto max-w-7xl">
-        <StockScoring stocks={scoredStocks} onScoreStock={handleScoreStock} onUpdateCostBasis={handleUpdateCostBasis} />
+        <StockScoring stocks={scoredStocks} onScoreStock={handleScoreStock} onUpdateCostBasis={handleUpdateCostBasis} onRefreshData={handleRefreshData} />
       </div>
     </main>
   );
