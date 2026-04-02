@@ -220,12 +220,13 @@ export function StockProvider({ children }: { children: React.ReactNode }) {
   }, [persistStocks]);
 
   /* ─── Market data ─── */
+  // Only persist the partial updates — NOT the full merged object.
+  // The KV endpoint merges server-side: { ...existing, ...updates }.
+  // Sending the full object would overwrite saved manual data with defaults
+  // if called before KV data loads (e.g. live VIX fetch on mount).
   const updateMarketData = useCallback((updates: Partial<MarketData>) => {
-    setMarketData((prev) => {
-      const next = { ...prev, ...updates };
-      persistMarket(next);
-      return next;
-    });
+    setMarketData((prev) => ({ ...prev, ...updates }));
+    persistMarket(updates);
   }, [persistMarket]);
 
   /* ─── Brief ─── */
