@@ -353,18 +353,18 @@ Current Portfolio Holdings: ${holdingsSummary}`;
       } else {
         // New images — analyze them separately and cache the result
         console.log("New attachments detected — running vision analysis...");
-        try {
-          const summary = await analyzeAttachments(atts);
-          const flowsSignal = parseEquityFlowsSignal(summary);
-          // Strip the signal line from the summary for cleaner context
-          const cleanSummary = summary.replace(/^EQUITY_FLOWS_SIGNAL:.*\n?/m, "").trim();
-          await saveCachedAnalysis(attHash, cleanSummary, flowsSignal);
-          autoEquityFlows = flowsSignal;
-          flowsContext = `\n\n--- JPM Flows & Liquidity Report Summary (freshly analyzed from screenshots) ---\n${cleanSummary}`;
-        } catch (attErr) {
-          console.error("Attachment analysis failed (continuing without):", attErr);
-          flowsContext = "\n\n--- JPM Flows & Liquidity screenshots were provided but could not be analyzed. ---";
+        const summary = await analyzeAttachments(atts);
+        if (!summary || summary.trim().length === 0) {
+          return NextResponse.json(
+            { error: "JPM Flows screenshot analysis returned empty — the images may be unreadable. Try re-uploading clearer screenshots." },
+            { status: 500 }
+          );
         }
+        const flowsSignal = parseEquityFlowsSignal(summary);
+        const cleanSummary = summary.replace(/^EQUITY_FLOWS_SIGNAL:.*\n?/m, "").trim();
+        await saveCachedAnalysis(attHash, cleanSummary, flowsSignal);
+        autoEquityFlows = flowsSignal;
+        flowsContext = `\n\n--- JPM Flows & Liquidity Report Summary (freshly analyzed from screenshots) ---\n${cleanSummary}`;
       }
     }
 
