@@ -17,12 +17,14 @@ function SaveableNumericInput({
   className = "",
   inputClassName = "",
   placeholder,
+  allowNegative = false,
 }: {
   savedValue: number;
   onSave: (n: number) => void;
   className?: string;
   inputClassName?: string;
   placeholder?: string;
+  allowNegative?: boolean;
 }) {
   const [text, setText] = React.useState(String(savedValue));
   const parsed = parseFloat(text);
@@ -49,11 +51,13 @@ function SaveableNumericInput({
     <div className={`relative ${className}`}>
       <input
         type="text"
-        inputMode="decimal"
+        inputMode={allowNegative ? "text" : "decimal"}
+        pattern={allowNegative ? "-?[0-9]*\\.?[0-9]*" : undefined}
         value={text}
         placeholder={placeholder}
         onChange={(e) => setText(e.target.value)}
         onKeyDown={(e) => { if (e.key === "Enter") handleSave(); }}
+        onBlur={handleSave}
         className={`${inputClassName} pr-8`}
       />
       <button
@@ -417,6 +421,7 @@ export function MorningBrief({
               <SaveableNumericInput
                 savedValue={marketData.nyseAdLine}
                 onSave={(n) => onUpdateMarketData({ nyseAdLine: n })}
+                allowNegative
                 inputClassName="w-full rounded-xl border border-slate-200 bg-slate-50 px-3 py-2.5 text-lg font-semibold focus:bg-white focus:border-blue-300 focus:ring-1 focus:ring-blue-200 transition-all outline-none"
               />
             </div>
@@ -430,6 +435,7 @@ export function MorningBrief({
               <SaveableNumericInput
                 savedValue={marketData.newHighsLows}
                 onSave={(n) => onUpdateMarketData({ newHighsLows: n })}
+                allowNegative
                 inputClassName="w-full rounded-xl border border-slate-200 bg-slate-50 px-3 py-2.5 text-lg font-semibold focus:bg-white focus:border-blue-300 focus:ring-1 focus:ring-blue-200 transition-all outline-none"
               />
               <p className="text-[10px] text-slate-400 mt-0.5">S&P 500</p>
@@ -454,6 +460,7 @@ export function MorningBrief({
               <SaveableNumericInput
                 savedValue={marketData.spOscillator}
                 onSave={(n) => onUpdateMarketData({ spOscillator: n })}
+                allowNegative
                 inputClassName="w-full rounded-xl border border-slate-200 bg-slate-50 px-3 py-2.5 text-lg font-semibold focus:bg-white focus:border-blue-300 focus:ring-1 focus:ring-blue-200 transition-all outline-none"
               />
               <p className="text-[10px] text-slate-400 mt-0.5">{marketData.spOscillator < 0 ? "Oversold (bullish)" : marketData.spOscillator > 0 ? "Overbought (bearish)" : "Neutral"}</p>

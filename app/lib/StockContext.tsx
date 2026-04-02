@@ -64,7 +64,14 @@ export function StockProvider({ children }: { children: React.ReactNode }) {
   const [loading, setLoading] = useState(true);
 
   const persistStocks = useDebouncedPersist("/api/kv/stocks", "stocks");
-  const persistMarket = useDebouncedPersist("/api/kv/market", "updates", 300);
+  // Market data persists immediately (not debounced) since updates are explicit save actions
+  const persistMarket = useCallback((data: unknown) => {
+    fetch("/api/kv/market", {
+      method: "PUT",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ updates: data }),
+    }).catch((e) => console.error("Failed to persist market:", e));
+  }, []);
   const persistBrief = useDebouncedPersist("/api/kv/brief", "brief", 100);
 
   /* ─── Load from KV on mount ─── */
