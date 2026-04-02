@@ -52,7 +52,6 @@ function SaveableNumericInput({
       <input
         type="text"
         inputMode={allowNegative ? "text" : "decimal"}
-        pattern={allowNegative ? "-?[0-9]*\\.?[0-9]*" : undefined}
         value={text}
         placeholder={placeholder}
         onChange={(e) => setText(e.target.value)}
