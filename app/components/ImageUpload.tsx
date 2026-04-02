@@ -18,6 +18,42 @@ type Props = {
   onRemove: (id: string) => void;
 };
 
+/** Resize and compress an image to keep it under the size limit.
+ *  Mac Retina screenshots are 2x resolution PNGs — this converts them
+ *  to JPEG at reasonable dimensions so they work reliably with the API. */
+function compressImage(file: File, maxWidth = 1600, quality = 0.8): Promise<string> {
+  return new Promise((resolve, reject) => {
+    const reader = new FileReader();
+    reader.onerror = () => reject(new Error("Failed to read file"));
+    reader.onload = (e) => {
+      const img = new Image();
+      img.onerror = () => reject(new Error("Failed to load image"));
+      img.onload = () => {
+        // Scale down if wider than maxWidth (keeps aspect ratio)
+        let w = img.width;
+        let h = img.height;
+        if (w > maxWidth) {
+          h = Math.round(h * (maxWidth / w));
+          w = maxWidth;
+        }
+
+        const canvas = document.createElement("canvas");
+        canvas.width = w;
+        canvas.height = h;
+        const ctx = canvas.getContext("2d");
+        if (!ctx) { reject(new Error("Canvas not supported")); return; }
+        ctx.drawImage(img, 0, 0, w, h);
+
+        // Convert to JPEG (much smaller than PNG for screenshots)
+        const dataUrl = canvas.toDataURL("image/jpeg", quality);
+        resolve(dataUrl);
+      };
+      img.src = e.target?.result as string;
+    };
+    reader.readAsDataURL(file);
+  });
+}
+
 export function ImageUpload({ section, sectionLabel, attachments, onAdd, onRemove }: Props) {
   const [dragActive, setDragActive] = useState(false);
   const [previewId, setPreviewId] = useState<string | null>(null);
@@ -26,16 +62,17 @@ export function ImageUpload({ section, sectionLabel, attachments, onAdd, onRemov
   const sectionAttachments = attachments.filter((a) => a.section === section);
 
   const processFile = useCallback(
-    (file: File) => {
+    async (file: File) => {
       if (!file.type.startsWith("image/")) return;
-      // Limit to 2MB per image
-      if (file.size > 2 * 1024 * 1024) {
-        alert("Image too large. Please keep under 2MB.");
+      // Reject extremely large files (>10MB raw)
+      if (file.size > 10 * 1024 * 1024) {
+        alert("Image too large. Please keep under 10MB.");
         return;
       }
-      const reader = new FileReader();
-      reader.onload = (e) => {
-        const dataUrl = e.target?.result as string;
+
+      try {
+        // Compress and resize to JPEG — handles Retina PNGs gracefully
+        const dataUrl = await compressImage(file);
         onAdd({
           id: `${Date.now()}-${Math.random().toString(36).slice(2, 8)}`,
           label: file.name.replace(/\.[^.]+$/, ""),
@@ -43,8 +80,10 @@ export function ImageUpload({ section, sectionLabel, attachments, onAdd, onRemov
           dataUrl,
           addedAt: new Date().toISOString(),
         });
-      };
-      reader.readAsDataURL(file);
+      } catch (err) {
+        console.error("Image processing failed:", err);
+        alert("Failed to process image. Try a smaller file or different format.");
+      }
     },
     [onAdd, section]
   );

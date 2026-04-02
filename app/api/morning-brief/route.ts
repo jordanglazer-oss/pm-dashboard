@@ -132,8 +132,12 @@ function buildImageBlocks(attachments: AttachmentInput[]): Anthropic.Messages.Co
       const match = att.dataUrl.match(/^data:(image\/[^;]+);base64,(.+)$/);
       if (!match) continue;
 
-      const mediaType = match[1] as "image/jpeg" | "image/png" | "image/gif" | "image/webp";
-      const data = match[2];
+      const rawMediaType = match[1];
+      // Ensure media type is one that Anthropic accepts
+      const allowedTypes = ["image/jpeg", "image/png", "image/gif", "image/webp"];
+      const mediaType = (allowedTypes.includes(rawMediaType) ? rawMediaType : "image/png") as "image/jpeg" | "image/png" | "image/gif" | "image/webp";
+      // Strip any whitespace/newlines from base64 data
+      const data = match[2].replace(/\s/g, "");
 
       blocks.push({
         type: "image",
@@ -350,8 +354,13 @@ Current Portfolio Holdings: ${holdingsSummary}`;
         // New images — analyze them separately and cache the result
         console.log("New attachments detected — running vision analysis...");
         const summary = await analyzeAttachments(atts);
+        if (!summary || summary.trim().length === 0) {
+          return NextResponse.json(
+            { error: "JPM Flows screenshot analysis returned empty — the images may be unreadable. Try re-uploading clearer screenshots." },
+            { status: 500 }
+          );
+        }
         const flowsSignal = parseEquityFlowsSignal(summary);
-        // Strip the signal line from the summary for cleaner context
         const cleanSummary = summary.replace(/^EQUITY_FLOWS_SIGNAL:.*\n?/m, "").trim();
         await saveCachedAnalysis(attHash, cleanSummary, flowsSignal);
         autoEquityFlows = flowsSignal;
