@@ -2,6 +2,7 @@
 
 import React, { useRef, useEffect, useState, useCallback } from "react";
 import type { TechnicalIndicators } from "@/app/lib/technicals";
+import { useStocks } from "@/app/lib/StockContext";
 
 type Range = "1mo" | "3mo" | "6mo" | "1y" | "2y" | "5y";
 
@@ -27,6 +28,7 @@ type Props = {
 };
 
 export default function StockChart({ ticker, technicals, className = "" }: Props) {
+  const { chartAnalyses, setChartAnalysis } = useStocks();
   const containerRef = useRef<HTMLDivElement>(null);
   // eslint-disable-next-line @typescript-eslint/no-explicit-any
   const chartRef = useRef<any>(null);
@@ -35,8 +37,11 @@ export default function StockChart({ ticker, technicals, className = "" }: Props
   const [error, setError] = useState("");
   const [chartData, setChartData] = useState<ChartData | null>(null);
   const [analyzing, setAnalyzing] = useState(false);
-  const [analysis, setAnalysis] = useState<string | null>(null);
   const [analysisError, setAnalysisError] = useState("");
+
+  // Load persisted analysis for this ticker
+  const savedAnalysis = chartAnalyses[ticker];
+  const analysis = savedAnalysis?.analysis || null;
 
   // Fetch chart data
   const fetchData = useCallback(async (r: Range) => {
@@ -226,7 +231,11 @@ export default function StockChart({ ticker, technicals, className = "" }: Props
       }
 
       const data = await res.json();
-      setAnalysis(data.analysis);
+      setChartAnalysis(ticker, {
+        analysis: data.analysis,
+        range,
+        analyzedAt: new Date().toISOString(),
+      });
     } catch (err) {
       setAnalysisError(err instanceof Error ? err.message : "Analysis failed");
     } finally {
@@ -316,7 +325,10 @@ export default function StockChart({ ticker, technicals, className = "" }: Props
               AI Generated
             </span>
             <span className="text-xs text-slate-400 ml-auto">
-              {ticker} &middot; {RANGES.find((r) => r.key === range)?.label} chart
+              {ticker} &middot; {savedAnalysis?.range ? RANGES.find((r) => r.key === savedAnalysis.range)?.label || savedAnalysis.range : RANGES.find((r) => r.key === range)?.label} chart
+              {savedAnalysis?.analyzedAt && (
+                <> &middot; {new Date(savedAnalysis.analyzedAt).toLocaleString("en-US", { month: "short", day: "numeric", hour: "numeric", minute: "2-digit", hour12: true })}</>
+              )}
             </span>
           </div>
           <div className="prose prose-sm prose-slate max-w-none text-sm leading-relaxed [&_h1]:text-base [&_h2]:text-sm [&_h3]:text-sm [&_h1]:font-bold [&_h2]:font-bold [&_h3]:font-semibold [&_strong]:text-slate-800 [&_ul]:space-y-1 [&_ol]:space-y-1">

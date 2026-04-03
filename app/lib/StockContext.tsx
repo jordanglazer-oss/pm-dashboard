@@ -5,11 +5,24 @@ import type { Stock, MarketData, ScoredStock, MorningBrief, ScoreKey, ScoreExpla
 import { computeScores, isOffensiveSector } from "./scoring";
 import { holdingsSeed, defaultMarketData } from "./defaults";
 
+export type ChartAnalysisEntry = {
+  analysis: string;
+  range: string;
+  analyzedAt: string;
+};
+
+export type ScannerData = {
+  results: unknown[];
+  meta: { total: number; found: number; scannedAt: string; universe: string; minScore: number } | null;
+};
+
 type StockContextType = {
   stocks: Stock[];
   scoredStocks: ScoredStock[];
   marketData: MarketData;
   brief: MorningBrief | null;
+  chartAnalyses: Record<string, ChartAnalysisEntry>;
+  scannerData: ScannerData | null;
   offensiveExposure: number;
   loading: boolean;
   addStock: (stock: Stock) => void;
@@ -24,6 +37,8 @@ type StockContextType = {
   updateTechnicals: (ticker: string, technicals: TechnicalIndicators, riskAlert: RiskAlert) => void;
   updateStockFields: (ticker: string, fields: Partial<Stock>) => void;
   setBrief: (brief: MorningBrief) => void;
+  setChartAnalysis: (ticker: string, entry: ChartAnalysisEntry) => void;
+  setScannerData: (data: ScannerData) => void;
   updateMarketData: (updates: Partial<MarketData>) => void;
   getStock: (ticker: string) => ScoredStock | undefined;
   portfolioStocks: ScoredStock[];
@@ -61,6 +76,8 @@ export function StockProvider({ children }: { children: React.ReactNode }) {
   const [stocks, setStocks] = useState<Stock[]>(holdingsSeed);
   const [marketData, setMarketData] = useState<MarketData>(defaultMarketData);
   const [brief, setBriefState] = useState<MorningBrief | null>(null);
+  const [chartAnalyses, setChartAnalysesState] = useState<Record<string, ChartAnalysisEntry>>({});
+  const [scannerData, setScannerDataState] = useState<ScannerData | null>(null);
   const [loading, setLoading] = useState(true);
 
   const persistStocks = useDebouncedPersist("/api/kv/stocks", "stocks");
@@ -73,6 +90,8 @@ export function StockProvider({ children }: { children: React.ReactNode }) {
     }).catch((e) => console.error("Failed to persist market:", e));
   }, []);
   const persistBrief = useDebouncedPersist("/api/kv/brief", "brief", 100);
+  const persistChartAnalyses = useDebouncedPersist("/api/kv/chart-analysis", "chartAnalyses", 300);
+  const persistScanner = useDebouncedPersist("/api/kv/scanner", "scanner", 300);
 
   /* ─── Load from KV on mount ─── */
   useEffect(() => {
@@ -80,11 +99,15 @@ export function StockProvider({ children }: { children: React.ReactNode }) {
       fetch("/api/kv/stocks").then((r) => r.json()).catch(() => ({ stocks: holdingsSeed })),
       fetch("/api/kv/market").then((r) => r.json()).catch(() => ({ market: defaultMarketData })),
       fetch("/api/kv/brief").then((r) => r.json()).catch(() => ({ brief: null })),
-    ]).then(([stocksRes, marketRes, briefRes]) => {
+      fetch("/api/kv/chart-analysis").then((r) => r.json()).catch(() => ({ chartAnalyses: {} })),
+      fetch("/api/kv/scanner").then((r) => r.json()).catch(() => ({ scanner: null })),
+    ]).then(([stocksRes, marketRes, briefRes, chartRes, scannerRes]) => {
       if (stocksRes.stocks) setStocks(stocksRes.stocks);
       // Merge stored market data with defaults so new fields are always present
       if (marketRes.market) setMarketData({ ...defaultMarketData, ...marketRes.market });
       if (briefRes.brief) setBriefState(briefRes.brief);
+      if (chartRes.chartAnalyses) setChartAnalysesState(chartRes.chartAnalyses);
+      if (scannerRes.scanner) setScannerDataState(scannerRes.scanner);
       setLoading(false);
     });
   }, []);
@@ -235,6 +258,21 @@ export function StockProvider({ children }: { children: React.ReactNode }) {
     persistBrief(b);
   }, [persistBrief]);
 
+  /* ─── Chart Analysis ─── */
+  const setChartAnalysis = useCallback((ticker: string, entry: ChartAnalysisEntry) => {
+    setChartAnalysesState((prev) => {
+      const next = { ...prev, [ticker]: entry };
+      persistChartAnalyses(next);
+      return next;
+    });
+  }, [persistChartAnalyses]);
+
+  /* ─── Scanner Data ─── */
+  const setScannerData = useCallback((data: ScannerData) => {
+    setScannerDataState(data);
+    persistScanner(data);
+  }, [persistScanner]);
+
   const getStock = useCallback(
     (ticker: string) => scoredStocks.find((s) => s.ticker === ticker),
     [scoredStocks]
@@ -247,6 +285,8 @@ export function StockProvider({ children }: { children: React.ReactNode }) {
         scoredStocks,
         marketData,
         brief,
+        chartAnalyses,
+        scannerData,
         offensiveExposure,
         loading,
         addStock,
@@ -261,6 +301,8 @@ export function StockProvider({ children }: { children: React.ReactNode }) {
         updateTechnicals,
         updateStockFields,
         setBrief,
+        setChartAnalysis,
+        setScannerData,
         updateMarketData,
         getStock,
         portfolioStocks,
