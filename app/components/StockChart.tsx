@@ -4,16 +4,31 @@ import React, { useRef, useEffect, useState, useCallback } from "react";
 import type { TechnicalIndicators } from "@/app/lib/technicals";
 import { useStocks } from "@/app/lib/StockContext";
 
-type Range = "1mo" | "3mo" | "6mo" | "1y" | "2y" | "5y";
+type ViewRange = "1mo" | "3mo" | "6mo" | "1y" | "2y" | "5y" | "10y" | "all";
 
-const RANGES: { key: Range; label: string }[] = [
+const RANGES: { key: ViewRange; label: string }[] = [
   { key: "1mo", label: "1M" },
   { key: "3mo", label: "3M" },
   { key: "6mo", label: "6M" },
   { key: "1y", label: "1Y" },
   { key: "2y", label: "2Y" },
   { key: "5y", label: "5Y" },
+  { key: "10y", label: "10Y" },
+  { key: "all", label: "MAX" },
 ];
+
+function rangeToMonths(r: ViewRange): number | null {
+  switch (r) {
+    case "1mo": return 1;
+    case "3mo": return 3;
+    case "6mo": return 6;
+    case "1y": return 12;
+    case "2y": return 24;
+    case "5y": return 60;
+    case "10y": return 120;
+    case "all": return null; // fit all
+  }
+}
 
 type ChartData = {
   bars: { date: string; open: number; high: number; low: number; close: number; volume: number }[];
@@ -32,7 +47,7 @@ export default function StockChart({ ticker, technicals, className = "" }: Props
   const containerRef = useRef<HTMLDivElement>(null);
   // eslint-disable-next-line @typescript-eslint/no-explicit-any
   const chartRef = useRef<any>(null);
-  const [range, setRange] = useState<Range>("1y");
+  const [viewRange, setViewRange] = useState<ViewRange>("1y");
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState("");
   const [chartData, setChartData] = useState<ChartData | null>(null);
@@ -43,12 +58,12 @@ export default function StockChart({ ticker, technicals, className = "" }: Props
   const savedAnalysis = chartAnalyses[ticker];
   const analysis = savedAnalysis?.analysis || null;
 
-  // Fetch chart data
-  const fetchData = useCallback(async (r: Range) => {
+  // Fetch ALL chart data once on mount (daily + weekly merged by API)
+  const fetchData = useCallback(async () => {
     setLoading(true);
     setError("");
     try {
-      const res = await fetch(`/api/chart-data?ticker=${encodeURIComponent(ticker)}&range=${r}`);
+      const res = await fetch(`/api/chart-data?ticker=${encodeURIComponent(ticker)}`);
       if (!res.ok) {
         const err = await res.json().catch(() => ({}));
         throw new Error(err.error || `Failed (${res.status})`);
@@ -63,10 +78,37 @@ export default function StockChart({ ticker, technicals, className = "" }: Props
   }, [ticker]);
 
   useEffect(() => {
-    fetchData(range);
-  }, [range, fetchData]);
+    fetchData();
+  }, [fetchData]);
 
-  // Render chart
+  // Zoom to the selected range
+  const zoomToRange = useCallback((r: ViewRange) => {
+    if (!chartRef.current || !chartData || chartData.bars.length === 0) return;
+
+    const months = rangeToMonths(r);
+    if (months === null) {
+      chartRef.current.timeScale().fitContent();
+      return;
+    }
+
+    const lastDate = chartData.bars[chartData.bars.length - 1].date;
+    const to = new Date(lastDate);
+    const from = new Date(lastDate);
+    from.setMonth(from.getMonth() - months);
+    const fromStr = from.toISOString().split("T")[0];
+
+    chartRef.current.timeScale().setVisibleRange({
+      from: fromStr,
+      to: lastDate,
+    });
+  }, [chartData]);
+
+  // When viewRange changes, zoom the chart (no re-fetch)
+  useEffect(() => {
+    zoomToRange(viewRange);
+  }, [viewRange, zoomToRange]);
+
+  // Render chart (only when data changes, not on zoom)
   useEffect(() => {
     if (!chartData || !containerRef.current) return;
 
@@ -178,7 +220,19 @@ export default function StockChart({ ticker, technicals, className = "" }: Props
         );
       }
 
-      chart.timeScale().fitContent();
+      // Apply initial zoom
+      const months = rangeToMonths(viewRange);
+      if (months === null) {
+        chart.timeScale().fitContent();
+      } else {
+        const lastDate = chartData.bars[chartData.bars.length - 1].date;
+        const from = new Date(lastDate);
+        from.setMonth(from.getMonth() - months);
+        chart.timeScale().setVisibleRange({
+          from: from.toISOString().split("T")[0],
+          to: lastDate,
+        });
+      }
 
       // Resize observer
       const ro = new ResizeObserver((entries) => {
@@ -188,7 +242,6 @@ export default function StockChart({ ticker, technicals, className = "" }: Props
       });
       ro.observe(containerRef.current);
 
-      // Cleanup on re-render
       const currentContainer = containerRef.current;
       return () => {
         ro.unobserve(currentContainer);
@@ -203,7 +256,7 @@ export default function StockChart({ ticker, technicals, className = "" }: Props
         chartRef.current = null;
       }
     };
-  }, [chartData]);
+  }, [chartData]); // eslint-disable-line react-hooks/exhaustive-deps
 
   // Claude chart analysis
   const handleAnalyze = async () => {
@@ -214,13 +267,15 @@ export default function StockChart({ ticker, technicals, className = "" }: Props
       const canvas = chartRef.current.takeScreenshot();
       const imageBase64 = canvas.toDataURL("image/png");
 
+      const rangeLabel = RANGES.find((r) => r.key === viewRange)?.label || viewRange;
+
       const res = await fetch("/api/analyze-chart", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({
           ticker,
           imageBase64,
-          range,
+          range: rangeLabel,
           technicals: technicals || undefined,
         }),
       });
@@ -233,7 +288,7 @@ export default function StockChart({ ticker, technicals, className = "" }: Props
       const data = await res.json();
       setChartAnalysis(ticker, {
         analysis: data.analysis,
-        range,
+        range: viewRange,
         analyzedAt: new Date().toISOString(),
       });
     } catch (err) {
@@ -242,6 +297,12 @@ export default function StockChart({ ticker, technicals, className = "" }: Props
       setAnalyzing(false);
     }
   };
+
+  // Bar count info
+  const totalBars = chartData?.bars.length || 0;
+  const yearsOfData = totalBars > 0
+    ? Math.round((new Date(chartData!.bars[totalBars - 1].date).getTime() - new Date(chartData!.bars[0].date).getTime()) / (365.25 * 24 * 60 * 60 * 1000))
+    : 0;
 
   return (
     <div className={className}>
@@ -257,18 +318,21 @@ export default function StockChart({ ticker, technicals, className = "" }: Props
               <span className="flex items-center gap-1">
                 <span className="inline-block w-3 h-0.5 bg-red-500 rounded" /> SMA 200
               </span>
+              {totalBars > 0 && (
+                <span>{yearsOfData}+ yrs loaded &middot; scroll to explore</span>
+              )}
             </div>
           </div>
 
           <div className="flex items-center gap-2">
-            {/* Timeframe selector */}
+            {/* Timeframe selector — zoom only, no re-fetch */}
             <div className="flex rounded-xl border border-slate-200 overflow-hidden">
               {RANGES.map((r) => (
                 <button
                   key={r.key}
-                  onClick={() => setRange(r.key)}
-                  className={`px-3 py-1.5 text-xs font-semibold transition-colors ${
-                    range === r.key
+                  onClick={() => setViewRange(r.key)}
+                  className={`px-2.5 py-1.5 text-xs font-semibold transition-colors ${
+                    viewRange === r.key
                       ? "bg-slate-900 text-white"
                       : "text-slate-500 hover:bg-slate-50"
                   }`}
@@ -325,7 +389,7 @@ export default function StockChart({ ticker, technicals, className = "" }: Props
               AI Generated
             </span>
             <span className="text-xs text-slate-400 ml-auto">
-              {ticker} &middot; {savedAnalysis?.range ? RANGES.find((r) => r.key === savedAnalysis.range)?.label || savedAnalysis.range : RANGES.find((r) => r.key === range)?.label} chart
+              {ticker} &middot; {savedAnalysis?.range ? RANGES.find((r) => r.key === savedAnalysis.range)?.label || savedAnalysis.range : RANGES.find((r) => r.key === viewRange)?.label} chart
               {savedAnalysis?.analyzedAt && (
                 <> &middot; {new Date(savedAnalysis.analyzedAt).toLocaleString("en-US", { month: "short", day: "numeric", hour: "numeric", minute: "2-digit", hour12: true })}</>
               )}
