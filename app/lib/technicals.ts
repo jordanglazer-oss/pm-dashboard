@@ -740,3 +740,15 @@ export function formatTechnicalsForPrompt(t: TechnicalIndicators): string {
     `Ichimoku Cloud: ${t.ichimoku.signalSummary} | Cloud: $${t.ichimoku.cloudBottom.toFixed(2)}-$${t.ichimoku.cloudTop.toFixed(2)} (${t.ichimoku.cloudThickness.toFixed(1)}% thick)`,
   ].join("\n");
 }
+
+// ── SMA series for chart overlays ──
+
+export function computeSMASeries(bars: OHLCVBar[], period: number): { date: string; value: number }[] {
+  const result: { date: string; value: number }[] = [];
+  for (let i = period - 1; i < bars.length; i++) {
+    let sum = 0;
+    for (let j = i - period + 1; j <= i; j++) sum += bars[j].close;
+    result.push({ date: bars[i].date, value: sum / period });
+  }
+  return result;
+}

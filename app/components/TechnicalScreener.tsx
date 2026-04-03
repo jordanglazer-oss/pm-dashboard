@@ -1,7 +1,8 @@
 "use client";
 
-import React, { useState, useMemo } from "react";
+import React, { useState, useMemo, useEffect } from "react";
 import { useRouter } from "next/navigation";
+import { useStocks } from "@/app/lib/StockContext";
 import type { ScoredStock, Stock, ScoreKey } from "@/app/lib/types";
 import type { TechnicalIndicators, ImprovingScore } from "@/app/lib/technicals";
 import type { UniverseKey } from "@/app/lib/universes";
@@ -132,34 +133,9 @@ type Props = {
   onAddToWatchlist?: (stock: Stock) => void;
 };
 
-// ── LocalStorage helpers ──
-const SCAN_STORAGE_KEY = "screener_scan_results";
-const SCAN_META_KEY = "screener_scan_meta";
-
-function loadScanResults(): ScanResult[] {
-  try {
-    const raw = localStorage.getItem(SCAN_STORAGE_KEY);
-    return raw ? JSON.parse(raw) : [];
-  } catch { return []; }
-}
-
-function loadScanMeta(): { total: number; found: number; scannedAt: string; universe: string; minScore: number } | null {
-  try {
-    const raw = localStorage.getItem(SCAN_META_KEY);
-    return raw ? JSON.parse(raw) : null;
-  } catch { return null; }
-}
-
-function saveScanResults(results: ScanResult[]) {
-  try { localStorage.setItem(SCAN_STORAGE_KEY, JSON.stringify(results)); } catch {}
-}
-
-function saveScanMeta(meta: { total: number; found: number; scannedAt: string; universe: string; minScore: number }) {
-  try { localStorage.setItem(SCAN_META_KEY, JSON.stringify(meta)); } catch {}
-}
-
 export function TechnicalScreener({ stocks, onAddToWatchlist }: Props) {
   const router = useRouter();
+  const { scannerData, setScannerData } = useStocks();
   const [tab, setTab] = useState<"portfolio" | "scan">("portfolio");
 
   // ── Portfolio tab state ──
@@ -176,8 +152,8 @@ export function TechnicalScreener({ stocks, onAddToWatchlist }: Props) {
   const [minImprovingScore, setMinImprovingScore] = useState(2);
   const [scanning, setScanning] = useState(false);
   const [scanProgress, setScanProgress] = useState("");
-  const [scanResults, setScanResults] = useState<ScanResult[]>(() => loadScanResults());
-  const [scanMeta, setScanMeta] = useState<{ total: number; found: number; scannedAt: string; universe: string; minScore: number } | null>(() => loadScanMeta());
+  const [scanResults, setScanResults] = useState<ScanResult[]>((scannerData?.results as ScanResult[]) || []);
+  const [scanMeta, setScanMeta] = useState<{ total: number; found: number; scannedAt: string; universe: string; minScore: number } | null>(scannerData?.meta || null);
   const [scanQuery, setScanQuery] = useState("");
   const [scanFilters, setScanFilters] = useState<Record<FilterKey, FilterOption>>({
     trend: "all", rsi: "all", macd: "all", ichimoku: "all", volume: "all", week52: "all",
@@ -187,6 +163,14 @@ export function TechnicalScreener({ stocks, onAddToWatchlist }: Props) {
   const [addedTickers, setAddedTickers] = useState<Set<string>>(new Set());
 
   const existingTickers = useMemo(() => stocks.map((s) => s.ticker), [stocks]);
+
+  // Hydrate scanner state when KV data loads
+  useEffect(() => {
+    if (scannerData && scanResults.length === 0) {
+      if (scannerData.results?.length) setScanResults(scannerData.results as ScanResult[]);
+      if (scannerData.meta) setScanMeta(scannerData.meta);
+    }
+  }, [scannerData]); // eslint-disable-line react-hooks/exhaustive-deps
 
   const setScanFilter = (key: FilterKey, value: FilterOption) => setScanFilters((prev) => ({ ...prev, [key]: value }));
   const activeScanFilterCount = Object.values(scanFilters).filter((v) => v !== "all").length;
@@ -265,8 +249,7 @@ export function TechnicalScreener({ stocks, onAddToWatchlist }: Props) {
       const meta = { total: data.total, found: data.found, scannedAt: data.scannedAt, universe: scanUniverse, minScore: minImprovingScore };
       setScanResults(results);
       setScanMeta(meta);
-      saveScanResults(results);
-      saveScanMeta(meta);
+      setScannerData({ results, meta });
       setScanProgress("");
     } catch (err) {
       setScanProgress(err instanceof Error ? err.message : "Scan failed");

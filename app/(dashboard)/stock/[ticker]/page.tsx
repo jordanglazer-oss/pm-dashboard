@@ -10,6 +10,7 @@ import { groupTotal } from "@/app/lib/scoring";
 import { SignalPill, ratingTone } from "@/app/components/SignalPill";
 import StockHealthMonitor from "@/app/components/StockHealthMonitor";
 import RiskAlertPanel from "@/app/components/RiskAlertPanel";
+import StockChart from "@/app/components/StockChart";
 
 // ── Color mapping ──
 const GROUP_COLORS: Record<
@@ -371,6 +372,9 @@ export default function StockDetailPage() {
               </div>
             </div>
           </div>
+
+          {/* Price Chart */}
+          <StockChart ticker={stock.ticker} technicals={stock.technicals} className="mt-6" />
 
           {/* Score breakdown - 2 column grid */}
           <div className="grid gap-4 md:grid-cols-2 mt-6">
