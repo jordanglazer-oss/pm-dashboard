@@ -570,6 +570,162 @@ export function computeRiskAlert(
   return { level, signals, summary, dangerCount, cautionCount };
 }
 
+// ── "Improving" signal detection ──
+// Identifies stocks trending TOWARD positive territory (not already there).
+// Requires raw OHLCV bars to compute trailing indicator values.
+
+export type ImprovingSignal = {
+  name: string;
+  active: boolean;
+  detail: string;
+};
+
+export type ImprovingScore = {
+  signals: ImprovingSignal[];
+  score: number; // 0-6
+  label: "Strong" | "Moderate" | "Weak" | "None";
+};
+
+export function computeImprovingSignals(bars: OHLCVBar[], current: TechnicalIndicators): ImprovingScore {
+  const signals: ImprovingSignal[] = [];
+  const closes = bars.map((b) => b.close);
+
+  // We need at least 30 bars for meaningful lookback
+  if (closes.length < 30) {
+    return { signals: [], score: 0, label: "None" };
+  }
+
+  // 1. RSI Rising from Oversold
+  // RSI was below 40 within last 10 days and is now higher (momentum building)
+  {
+    const lookback = 10;
+    let wasLow = false;
+    let minRecentRsi = 100;
+    for (let i = Math.max(0, closes.length - lookback - 1); i < closes.length - 1; i++) {
+      const pastRsi = computeRSI(closes.slice(0, i + 1), 14);
+      if (pastRsi < 40) wasLow = true;
+      if (pastRsi < minRecentRsi) minRecentRsi = pastRsi;
+    }
+    const rising = wasLow && current.rsi14 > minRecentRsi + 3 && current.rsi14 < 65;
+    signals.push({
+      name: "RSI Recovery",
+      active: rising,
+      detail: rising
+        ? `RSI rising from ${minRecentRsi.toFixed(0)} to ${current.rsi14.toFixed(0)} — momentum building`
+        : `RSI at ${current.rsi14.toFixed(0)} — no recovery pattern`,
+    });
+  }
+
+  // 2. MACD Histogram Improving
+  // Histogram was negative and is now less negative or just crossed positive
+  {
+    const macd = computeMACD(closes);
+    const histLen = macd.macdHistory.length;
+    let improving = false;
+    let detail = "";
+    if (histLen >= 5) {
+      const hist5ago = macd.macdHistory[histLen - 5] - (computeEMA(macd.macdHistory, 9)[histLen - 5] ?? 0);
+      const histNow = current.macdHistogram;
+      improving = hist5ago < 0 && histNow > hist5ago && (histNow > hist5ago * 0.5 || histNow > 0);
+      detail = improving
+        ? `Histogram improving from ${hist5ago.toFixed(3)} to ${histNow.toFixed(3)} — momentum turning`
+        : `Histogram at ${histNow.toFixed(3)} — not improving`;
+    } else {
+      detail = "Insufficient MACD history";
+    }
+    signals.push({ name: "MACD Improving", active: improving, detail });
+  }
+
+  // 3. Price Approaching 50 DMA from Below
+  // Price is below 50 DMA but within 3%, or just crossed above within last 5 days
+  {
+    const pctFrom50 = current.sma50 !== 0 ? ((current.currentPrice - current.sma50) / current.sma50) * 100 : 0;
+    const approaching = pctFrom50 > -3 && pctFrom50 < 1 && current.currentPrice < current.sma50;
+    const justCrossed = current.dmaSignal === "between" && pctFrom50 >= 0 && pctFrom50 < 2;
+
+    // Check if price was below 50 DMA 5 days ago and now closer or above
+    let wasFurtherBelow = false;
+    if (closes.length >= 6) {
+      const price5ago = closes[closes.length - 6];
+      const sma50_5ago = computeSMA(closes.slice(0, closes.length - 5), 50);
+      const pctThen = sma50_5ago !== 0 ? ((price5ago - sma50_5ago) / sma50_5ago) * 100 : 0;
+      wasFurtherBelow = pctThen < pctFrom50 && pctThen < 0;
+    }
+
+    const active = approaching || justCrossed || wasFurtherBelow;
+    signals.push({
+      name: "DMA Approach",
+      active,
+      detail: active
+        ? approaching
+          ? `Price ${pctFrom50.toFixed(1)}% from 50 DMA — approaching from below`
+          : justCrossed
+          ? `Price just crossed above 50 DMA (+${pctFrom50.toFixed(1)}%)`
+          : `Price closing gap with 50 DMA — was further below 5 days ago`
+        : `Price ${pctFrom50.toFixed(1)}% from 50 DMA — no approach pattern`,
+    });
+  }
+
+  // 4. Recent Bullish Crossover (golden cross or MACD bullish crossover within last 10 days)
+  {
+    const recentGolden = current.dmaSignal === "golden_cross" && current.dmaCrossoverDaysAgo != null && current.dmaCrossoverDaysAgo <= 10;
+    const recentMacdBull = current.macdSignal === "bullish_crossover" && current.macdCrossoverDaysAgo != null && current.macdCrossoverDaysAgo <= 10;
+    const recentTkBull = current.ichimoku.tkCrossRecent && current.ichimoku.tkCross === "bullish";
+    const active = recentGolden || recentMacdBull || recentTkBull;
+    const parts: string[] = [];
+    if (recentGolden) parts.push(`golden cross ${current.dmaCrossoverDaysAgo}d ago`);
+    if (recentMacdBull) parts.push(`MACD bullish crossover ${current.macdCrossoverDaysAgo}d ago`);
+    if (recentTkBull) parts.push("recent TK bullish cross");
+    signals.push({
+      name: "Bullish Crossover",
+      active,
+      detail: active ? `Recent crossovers: ${parts.join(", ")}` : "No recent bullish crossovers",
+    });
+  }
+
+  // 5. Ichimoku Cloud Entry — price entering cloud from below or breaking above
+  {
+    const entering = current.ichimoku.priceVsCloud === "inside" && current.priceChange5d > 0;
+    // Check if was below cloud recently
+    let wasBelowCloud = false;
+    if (closes.length >= 6) {
+      const price5ago = closes[closes.length - 6];
+      if (price5ago < current.ichimoku.cloudBottom) wasBelowCloud = true;
+    }
+    const breakingOut = current.ichimoku.priceVsCloud === "above" && wasBelowCloud;
+    const active = (entering && wasBelowCloud) || breakingOut;
+    signals.push({
+      name: "Cloud Breakout",
+      active,
+      detail: active
+        ? breakingOut
+          ? "Price broke above Ichimoku cloud — bullish breakout"
+          : "Price entering cloud from below — potential reversal forming"
+        : `Price ${current.ichimoku.priceVsCloud} cloud — no entry pattern`,
+    });
+  }
+
+  // 6. Volume Accumulation — high volume on positive price days
+  {
+    const active = current.volumeSignal === "high_volume" && current.priceChange5d > 1;
+    signals.push({
+      name: "Accumulation",
+      active,
+      detail: active
+        ? `Volume ${current.volumeRatio.toFixed(1)}x avg with +${current.priceChange5d.toFixed(1)}% price gain — accumulation`
+        : current.volumeSignal === "high_volume"
+        ? `High volume but price ${current.priceChange5d.toFixed(1)}% — not accumulation`
+        : `Volume normal (${current.volumeRatio.toFixed(1)}x)`,
+    });
+  }
+
+  const score = signals.filter((s) => s.active).length;
+  const label: ImprovingScore["label"] =
+    score >= 4 ? "Strong" : score >= 2 ? "Moderate" : score >= 1 ? "Weak" : "None";
+
+  return { signals, score, label };
+}
+
 // ── Helper to format technicals summary for Claude prompt ──
 
 export function formatTechnicalsForPrompt(t: TechnicalIndicators): string {
