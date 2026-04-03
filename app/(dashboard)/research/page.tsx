@@ -10,51 +10,46 @@ import type { Stock, ScoreKey } from "@/app/lib/types";
 /* ─── Uptick Add Form ─── */
 function UptickAddForm({ onAdd }: { onAdd: (e: UptickEntry) => void }) {
   const [ticker, setTicker] = useState("");
-  const [name, setName] = useState("");
-  const [sector, setSector] = useState("");
   const [support, setSupport] = useState("");
   const [resistance, setResistance] = useState("");
   const [priceWhenAdded, setPriceWhenAdded] = useState("");
-
-  const sectors = [
-    "Communication Services", "Consumer Discretionary", "Consumer Staples", "Crypto ETF",
-    "Energy", "Financials", "Health Care", "Industrials", "Information Technology",
-    "Materials", "Real Estate", "Utilities",
-  ];
+  const [adding, setAdding] = useState(false);
 
   return (
     <form
       className="flex flex-wrap gap-2 mt-3 items-end"
-      onSubmit={(e) => {
+      onSubmit={async (e) => {
         e.preventDefault();
-        if (!ticker.trim()) return;
+        const t = ticker.trim().toUpperCase();
+        if (!t) return;
+        setAdding(true);
+        let name = t;
+        let sector = "—";
+        try {
+          const res = await fetch(`/api/company-name?tickers=${encodeURIComponent(t)}`);
+          if (res.ok) {
+            const data = await res.json();
+            if (data.names?.[t]) name = data.names[t];
+            if (data.sectors?.[t]) sector = data.sectors[t];
+          }
+        } catch { /* fallback */ }
         onAdd({
-          ticker: ticker.trim().toUpperCase(),
-          name: name.trim() || ticker.trim().toUpperCase(),
-          sector: sector || "—",
+          ticker: t,
+          name,
+          sector,
           price: 0,
           support: support.trim() || "—",
           resistance: resistance.trim() || "—",
           dateAdded: new Date().toLocaleDateString("en-US", { month: "numeric", day: "numeric", year: "numeric" }),
           priceWhenAdded: parseFloat(priceWhenAdded) || 0,
         });
-        setTicker(""); setName(""); setSector(""); setSupport(""); setResistance(""); setPriceWhenAdded("");
+        setTicker(""); setSupport(""); setResistance(""); setPriceWhenAdded("");
+        setAdding(false);
       }}
     >
       <div>
         <label className="text-xs text-slate-400 block">Ticker*</label>
         <input value={ticker} onChange={(e) => setTicker(e.target.value.toUpperCase())} placeholder="AMZN" className="w-20 rounded-xl border border-slate-200 bg-slate-50 px-3 py-2 text-sm font-mono outline-none placeholder:text-slate-400 focus:bg-white focus:border-blue-300 focus:ring-1 focus:ring-blue-200 transition-all" />
-      </div>
-      <div>
-        <label className="text-xs text-slate-400 block">Name</label>
-        <input value={name} onChange={(e) => setName(e.target.value)} placeholder="Amazon.com Inc" className="w-40 rounded-xl border border-slate-200 bg-slate-50 px-3 py-2 text-sm outline-none placeholder:text-slate-400 focus:bg-white focus:border-blue-300 focus:ring-1 focus:ring-blue-200 transition-all" />
-      </div>
-      <div>
-        <label className="text-xs text-slate-400 block">Sector</label>
-        <select value={sector} onChange={(e) => setSector(e.target.value)} className="w-44 rounded-xl border border-slate-200 bg-slate-50 px-3 py-2 text-sm outline-none placeholder:text-slate-400 focus:bg-white focus:border-blue-300 focus:ring-1 focus:ring-blue-200 transition-all">
-          <option value="">Select...</option>
-          {sectors.map((s) => <option key={s} value={s}>{s}</option>)}
-        </select>
       </div>
       <div>
         <label className="text-xs text-slate-400 block">Support</label>
@@ -68,8 +63,8 @@ function UptickAddForm({ onAdd }: { onAdd: (e: UptickEntry) => void }) {
         <label className="text-xs text-slate-400 block">Price Added</label>
         <input value={priceWhenAdded} onChange={(e) => setPriceWhenAdded(e.target.value)} placeholder="161.26" type="number" step="0.01" className="w-24 rounded-xl border border-slate-200 bg-slate-50 px-3 py-2 text-sm outline-none placeholder:text-slate-400 focus:bg-white focus:border-blue-300 focus:ring-1 focus:ring-blue-200 transition-all" />
       </div>
-      <button type="submit" className="rounded-xl bg-blue-600 px-5 py-2 text-sm font-semibold text-white hover:bg-blue-700 transition-colors">
-        Add
+      <button type="submit" disabled={adding} className="rounded-xl bg-blue-600 px-5 py-2 text-sm font-semibold text-white hover:bg-blue-700 transition-colors disabled:opacity-50">
+        {adding ? "Adding..." : "Add"}
       </button>
     </form>
   );
@@ -108,42 +103,40 @@ function IdeaAddForm({ onAdd }: { onAdd: (e: IdeaEntry) => void }) {
 /* ─── RBC Add Form ─── */
 function RBCAddForm({ onAdd }: { onAdd: (e: RBCEntry) => void }) {
   const [ticker, setTicker] = useState("");
-  const [sector, setSector] = useState("");
-
-  const sectors = [
-    "Communication Services", "Consumer Discretionary", "Consumer Staples",
-    "Energy", "Financials", "Health Care", "Industrials", "Information Technology",
-    "Materials", "Real Estate", "Utilities",
-  ];
+  const [adding, setAdding] = useState(false);
 
   return (
     <form
       className="flex gap-2 mt-3 items-end"
-      onSubmit={(e) => {
+      onSubmit={async (e) => {
         e.preventDefault();
-        if (!ticker.trim()) return;
+        const t = ticker.trim().toUpperCase();
+        if (!t) return;
+        setAdding(true);
+        let sector = "—";
+        try {
+          const res = await fetch(`/api/company-name?tickers=${encodeURIComponent(t)}`);
+          if (res.ok) {
+            const data = await res.json();
+            if (data.sectors?.[t]) sector = data.sectors[t];
+          }
+        } catch { /* fallback */ }
         onAdd({
-          ticker: ticker.trim().toUpperCase(),
-          sector: sector || "—",
+          ticker: t,
+          sector,
           weight: 0,
           dateAdded: new Date().toLocaleDateString("en-US", { month: "numeric", day: "numeric", year: "numeric" }),
         });
-        setTicker(""); setSector("");
+        setTicker("");
+        setAdding(false);
       }}
     >
       <div>
         <label className="text-xs text-slate-400 block">Ticker*</label>
         <input value={ticker} onChange={(e) => setTicker(e.target.value.toUpperCase())} placeholder="RY" className="w-24 rounded-xl border border-slate-200 bg-slate-50 px-3 py-2 text-sm font-mono outline-none placeholder:text-slate-400 focus:bg-white focus:border-blue-300 focus:ring-1 focus:ring-blue-200 transition-all" />
       </div>
-      <div>
-        <label className="text-xs text-slate-400 block">Sector</label>
-        <select value={sector} onChange={(e) => setSector(e.target.value)} className="w-44 rounded-xl border border-slate-200 bg-slate-50 px-3 py-2 text-sm outline-none focus:bg-white focus:border-blue-300 focus:ring-1 focus:ring-blue-200 transition-all">
-          <option value="">Select...</option>
-          {sectors.map((s) => <option key={s} value={s}>{s}</option>)}
-        </select>
-      </div>
-      <button type="submit" className="rounded-xl bg-blue-600 px-5 py-2 text-sm font-semibold text-white hover:bg-blue-700 transition-colors">
-        Add
+      <button type="submit" disabled={adding} className="rounded-xl bg-blue-600 px-5 py-2 text-sm font-semibold text-white hover:bg-blue-700 transition-colors disabled:opacity-50">
+        {adding ? "Adding..." : "Add"}
       </button>
     </form>
   );
@@ -211,14 +204,24 @@ export default function ResearchPage() {
   const saveTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
   const { scoredStocks, addStock } = useStocks();
 
-  // Add a research idea to the watchlist
-  const addToWatchlist = useCallback((ticker: string, sector?: string) => {
-    if (scoredStocks.some((s) => s.ticker === ticker)) return false; // already exists
+  // Add a research idea to the watchlist (auto-fetches name + sector)
+  const addToWatchlist = useCallback(async (ticker: string) => {
+    if (scoredStocks.some((s) => s.ticker === ticker)) return false;
+    let name = ticker;
+    let sector = "Technology";
+    try {
+      const res = await fetch(`/api/company-name?tickers=${encodeURIComponent(ticker)}`);
+      if (res.ok) {
+        const data = await res.json();
+        if (data.names?.[ticker]) name = data.names[ticker];
+        if (data.sectors?.[ticker]) sector = data.sectors[ticker];
+      }
+    } catch { /* fallback */ }
     const stock: Stock = {
       ticker,
-      name: ticker,
+      name,
       bucket: "Watchlist",
-      sector: sector || "Technology",
+      sector,
       beta: 1.0,
       weights: { portfolio: 0 },
       scores: { ...ZERO_SCORES },
@@ -507,7 +510,7 @@ export default function ResearchPage() {
                           <span className="text-[10px] text-emerald-500 font-medium">In list</span>
                         ) : (
                           <button
-                            onClick={(e) => { e.stopPropagation(); addToWatchlist(u.ticker, u.sector !== "\u2014" ? u.sector : undefined); }}
+                            onClick={(e) => { e.stopPropagation(); addToWatchlist(u.ticker); }}
                             className="text-[10px] text-blue-500 hover:text-blue-700 font-semibold transition-colors"
                             title="Add to Watchlist"
                           >

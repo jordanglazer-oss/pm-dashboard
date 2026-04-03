@@ -25,10 +25,6 @@ const GROUP_COLORS: Record<
   red:    { bar: "bg-red-500",     text: "text-red-600",     scoreText: "text-red-600",     activeBg: "bg-red-500",     activeText: "text-white", ring: "#ef4444", barBg: "bg-red-100" },
 };
 
-const SECTORS = [
-  "Technology", "Communication Services", "Consumer Discretionary", "Consumer Staples",
-  "Energy", "Financials", "Health Care", "Industrials", "Materials", "Real Estate", "Utilities",
-];
 
 // Donut chart SVG
 function ScoreDonut({ score, max, groups, stock }: { score: number; max: number; groups: typeof SCORE_GROUPS; stock: { scores: Record<string, number> } }) {
@@ -102,7 +98,7 @@ export default function StockDetailPage() {
   const params = useParams();
   const router = useRouter();
   const ticker = (params.ticker as string)?.toUpperCase();
-  const { getStock, scoredStocks, marketData, updateScore, updateExplanations, updateLastScored, updatePrice, updateSector, updateHealthData, updateTechnicals, updateStockFields, moveBucket, removeStock } = useStocks();
+  const { getStock, scoredStocks, marketData, updateScore, updateExplanations, updateLastScored, updatePrice, updateHealthData, updateTechnicals, updateStockFields, moveBucket, removeStock } = useStocks();
   const stock = getStock(ticker);
   const [scoring, setScoring] = useState(false);
   const [scoreError, setScoreError] = useState("");
@@ -158,10 +154,12 @@ export default function StockDetailPage() {
       if (data.technicals && data.riskAlert) {
         updateTechnicals(ticker, data.technicals, data.riskAlert);
       }
-      if (data.companySummary || data.investmentThesis) {
+      if (data.companySummary || data.investmentThesis || data.sector || data.name) {
         updateStockFields(ticker, {
-          companySummary: data.companySummary || "",
-          investmentThesis: data.investmentThesis || "",
+          ...(data.companySummary ? { companySummary: data.companySummary } : {}),
+          ...(data.investmentThesis ? { investmentThesis: data.investmentThesis } : {}),
+          ...(data.sector ? { sector: data.sector } : {}),
+          ...(data.name && data.name !== "Unknown" ? { name: data.name } : {}),
         });
       }
       updateLastScored(ticker, new Date().toLocaleString("en-US", {
@@ -315,17 +313,9 @@ export default function StockDetailPage() {
                   {refreshError && <span className="text-xs text-red-500 ml-1">{refreshError}</span>}
                 </div>
 
-                {/* Sector selector */}
-                <div className="flex items-center gap-3 mb-2">
-                  <select
-                    value={stock.sector}
-                    onChange={(e) => updateSector(ticker, e.target.value)}
-                    className="rounded-lg border border-slate-300 bg-white px-3 py-1.5 text-sm text-slate-700 focus:outline-none focus:ring-2 focus:ring-blue-500"
-                  >
-                    {SECTORS.map((s) => (
-                      <option key={s} value={s}>{s}</option>
-                    ))}
-                  </select>
+                {/* Sector (auto-populated from Yahoo Finance) */}
+                <div className="flex items-center gap-2 mb-2">
+                  <span className="rounded-lg bg-slate-100 px-3 py-1.5 text-sm font-medium text-slate-700">{stock.sector}</span>
                 </div>
 
                 {/* Company name */}

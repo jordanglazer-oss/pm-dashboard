@@ -101,15 +101,50 @@ export function StockProvider({ children }: { children: React.ReactNode }) {
       fetch("/api/kv/brief").then((r) => r.json()).catch(() => ({ brief: null })),
       fetch("/api/kv/chart-analysis").then((r) => r.json()).catch(() => ({ chartAnalyses: {} })),
       fetch("/api/kv/scanner").then((r) => r.json()).catch(() => ({ scanner: null })),
-    ]).then(([stocksRes, marketRes, briefRes, chartRes, scannerRes]) => {
-      if (stocksRes.stocks) setStocks(stocksRes.stocks);
-      // Merge stored market data with defaults so new fields are always present
+    ]).then(async ([stocksRes, marketRes, briefRes, chartRes, scannerRes]) => {
+      const loadedStocks: Stock[] = stocksRes.stocks || holdingsSeed;
+      setStocks(loadedStocks);
       if (marketRes.market) setMarketData({ ...defaultMarketData, ...marketRes.market });
       if (briefRes.brief) setBriefState(briefRes.brief);
       if (chartRes.chartAnalyses) setChartAnalysesState(chartRes.chartAnalyses);
       if (scannerRes.scanner) setScannerDataState(scannerRes.scanner);
       setLoading(false);
+
+      // Backfill missing names/sectors from Yahoo Finance
+      const needsBackfill = loadedStocks.filter(
+        (s) => s.name === s.ticker || !s.sector || s.sector === "Technology"
+      );
+      if (needsBackfill.length > 0) {
+        try {
+          const tickers = needsBackfill.map((s) => s.ticker).join(",");
+          const res = await fetch(`/api/company-name?tickers=${encodeURIComponent(tickers)}`);
+          if (res.ok) {
+            const data = await res.json();
+            setStocks((prev) => {
+              let changed = false;
+              const next = prev.map((s) => {
+                const newName = data.names?.[s.ticker];
+                const newSector = data.sectors?.[s.ticker];
+                const shouldUpdateName = newName && s.name === s.ticker;
+                const shouldUpdateSector = newSector && (!s.sector || s.sector === "Technology");
+                if (shouldUpdateName || shouldUpdateSector) {
+                  changed = true;
+                  return {
+                    ...s,
+                    ...(shouldUpdateName ? { name: newName } : {}),
+                    ...(shouldUpdateSector ? { sector: newSector } : {}),
+                  };
+                }
+                return s;
+              });
+              if (changed) persistStocks(next);
+              return changed ? next : prev;
+            });
+          }
+        } catch { /* backfill is best-effort */ }
+      }
     });
+  // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
 
   const scoredStocks = useMemo(

@@ -35,13 +35,15 @@ export default function DashboardPage() {
       return;
     }
 
-    // Fetch company name from Yahoo Finance (no Claude tokens)
+    // Fetch company name and sector from Yahoo Finance (no Claude tokens)
     let name = ticker;
+    let sector = "Technology";
     try {
       const res = await fetch(`/api/company-name?tickers=${encodeURIComponent(ticker)}`);
       if (res.ok) {
         const data = await res.json();
         if (data.names?.[ticker]) name = data.names[ticker];
+        if (data.sectors?.[ticker]) sector = data.sectors[ticker];
       }
     } catch { /* fallback to ticker */ }
 
@@ -49,7 +51,7 @@ export default function DashboardPage() {
       ticker,
       name,
       bucket: newBucket,
-      sector: "Technology",
+      sector,
       beta: 1.0,
       weights: { portfolio: newBucket === "Portfolio" ? 2 : 0 },
       scores: { ...ZERO_SCORES },

@@ -11,6 +11,7 @@ import StockChart from "@/app/components/StockChart";
 type ScanResult = {
   ticker: string;
   name: string;
+  sector: string;
   price: number;
   priceChange5d: number;
   priceChange20d: number;
@@ -118,7 +119,7 @@ export default function ScanPreviewPage() {
       ticker: cleanTicker,
       name: data.name || rawTicker,
       bucket: "Watchlist",
-      sector: "Technology",
+      sector: data.sector || "Technology",
       beta: 1.0,
       weights: { portfolio: 0 },
       scores: { ...ZERO_SCORES },
@@ -152,7 +153,10 @@ export default function ScanPreviewPage() {
               <span className="rounded-full bg-teal-100 text-teal-700 px-2.5 py-0.5 text-xs font-semibold">Scan Result</span>
             </div>
             {data.name && data.name !== rawTicker && (
-              <p className="text-sm text-slate-500 mb-2">{data.name}</p>
+              <p className="text-sm text-slate-500 mb-1">{data.name}</p>
+            )}
+            {data.sector && (
+              <p className="text-xs text-slate-400 mb-2">{data.sector}</p>
             )}
 
             <div className="flex items-center gap-3 mb-4">

@@ -47,6 +47,7 @@ async function fetchPriceHistory(ticker: string): Promise<OHLCVBar[]> {
 export type ScanResult = {
   ticker: string;
   name: string;
+  sector: string;
   price: number;
   priceChange5d: number;
   priceChange20d: number;
@@ -54,27 +55,32 @@ export type ScanResult = {
   improving: ImprovingScore;
 };
 
-async function fetchCompanyName(ticker: string): Promise<string> {
+async function fetchCompanyInfo(ticker: string): Promise<{ name: string; sector: string }> {
   try {
-    const url = `${YAHOO_BASE}/v10/finance/quoteSummary/${encodeURIComponent(ticker)}?modules=price`;
+    const url = `${YAHOO_BASE}/v10/finance/quoteSummary/${encodeURIComponent(ticker)}?modules=price,assetProfile`;
     const res = await fetch(url, {
       cache: "no-store",
       headers: { "User-Agent": "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36" },
     });
-    if (!res.ok) return ticker;
+    if (!res.ok) return { name: ticker, sector: "" };
     const data = await res.json();
-    const price = data?.quoteSummary?.result?.[0]?.price;
-    return price?.shortName || price?.longName || ticker;
+    const result = data?.quoteSummary?.result?.[0];
+    const price = result?.price;
+    const profile = result?.assetProfile;
+    return {
+      name: price?.shortName || price?.longName || ticker,
+      sector: profile?.sector || "",
+    };
   } catch {
-    return ticker;
+    return { name: ticker, sector: "" };
   }
 }
 
 async function scanTicker(ticker: string): Promise<ScanResult | null> {
   try {
-    const [bars, name] = await Promise.all([
+    const [bars, info] = await Promise.all([
       fetchPriceHistory(ticker),
-      fetchCompanyName(ticker),
+      fetchCompanyInfo(ticker),
     ]);
     if (bars.length < 30) return null;
 
@@ -85,7 +91,8 @@ async function scanTicker(ticker: string): Promise<ScanResult | null> {
 
     return {
       ticker,
-      name,
+      name: info.name,
+      sector: info.sector,
       price: technicals.currentPrice,
       priceChange5d: technicals.priceChange5d,
       priceChange20d: technicals.priceChange20d,
