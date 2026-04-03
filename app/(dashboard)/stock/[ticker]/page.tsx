@@ -105,6 +105,8 @@ export default function StockDetailPage() {
   const stock = getStock(ticker);
   const [scoring, setScoring] = useState(false);
   const [scoreError, setScoreError] = useState("");
+  const [refreshing, setRefreshing] = useState(false);
+  const [refreshError, setRefreshError] = useState("");
 
   if (!stock) {
     return (
@@ -120,7 +122,8 @@ export default function StockDetailPage() {
     );
   }
 
-  const allTickers = scoredStocks.map((s) => s.ticker);
+  const portfolioTickers = scoredStocks.filter((s) => s.bucket === "Portfolio").map((s) => s.ticker);
+  const watchlistTickers = scoredStocks.filter((s) => s.bucket === "Watchlist").map((s) => s.ticker);
 
   const handleRescore = async () => {
     setScoring(true);
@@ -171,6 +174,34 @@ export default function StockDetailPage() {
     }
   };
 
+  const handleRefreshData = async () => {
+    setRefreshing(true);
+    setRefreshError("");
+    try {
+      const res = await fetch("/api/refresh-data", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ tickers: [stock.ticker] }),
+      });
+      if (!res.ok) {
+        const errData = await res.json().catch(() => ({}));
+        setRefreshError(errData.error || `Refresh failed (${res.status})`);
+        return;
+      }
+      const data = await res.json();
+      const result = data.results?.[0];
+      if (result) {
+        if (result.price != null) updatePrice(ticker, result.price);
+        if (result.healthData) updateHealthData(ticker, result.healthData);
+        if (result.technicals && result.riskAlert) updateTechnicals(ticker, result.technicals, result.riskAlert);
+      }
+    } catch (err) {
+      setRefreshError(err instanceof Error ? err.message : "Refresh failed");
+    } finally {
+      setRefreshing(false);
+    }
+  };
+
   const handleDelete = () => {
     removeStock(ticker);
     router.push("/");
@@ -187,20 +218,44 @@ export default function StockDetailPage() {
           >
             &larr; Dashboard
           </Link>
-          <div className="h-5 w-px bg-slate-200 shrink-0" />
-          {allTickers.map((t) => (
-            <Link
-              key={t}
-              href={`/stock/${t.toLowerCase()}`}
-              className={`shrink-0 rounded-lg px-3 py-1.5 text-xs font-bold font-mono transition-colors ${
-                t === ticker
-                  ? "bg-slate-900 text-white"
-                  : "border border-slate-200 text-slate-600 hover:bg-slate-50"
-              }`}
-            >
-              {t}
-            </Link>
-          ))}
+          {portfolioTickers.length > 0 && (
+            <>
+              <div className="h-5 w-px bg-slate-200 shrink-0" />
+              <span className="shrink-0 text-[10px] font-semibold uppercase tracking-wider text-slate-400">Portfolio</span>
+              {portfolioTickers.map((t) => (
+                <Link
+                  key={t}
+                  href={`/stock/${t.toLowerCase()}`}
+                  className={`shrink-0 rounded-lg px-3 py-1.5 text-xs font-bold font-mono transition-colors ${
+                    t === ticker
+                      ? "bg-blue-600 text-white"
+                      : "border border-blue-200 text-blue-700 hover:bg-blue-50"
+                  }`}
+                >
+                  {t}
+                </Link>
+              ))}
+            </>
+          )}
+          {watchlistTickers.length > 0 && (
+            <>
+              <div className="h-5 w-px bg-slate-200 shrink-0" />
+              <span className="shrink-0 text-[10px] font-semibold uppercase tracking-wider text-slate-400">Watchlist</span>
+              {watchlistTickers.map((t) => (
+                <Link
+                  key={t}
+                  href={`/stock/${t.toLowerCase()}`}
+                  className={`shrink-0 rounded-lg px-3 py-1.5 text-xs font-bold font-mono transition-colors ${
+                    t === ticker
+                      ? "bg-slate-900 text-white"
+                      : "border border-slate-200 text-slate-600 hover:bg-slate-50"
+                  }`}
+                >
+                  {t}
+                </Link>
+              ))}
+            </>
+          )}
         </div>
       </div>
 
@@ -211,12 +266,19 @@ export default function StockDetailPage() {
             <div className="grid grid-cols-1 lg:grid-cols-[1fr_200px] gap-6 items-start">
               {/* Left: stock info */}
               <div className="min-w-0">
-                {/* Ticker + action buttons */}
-                <div className="flex items-center gap-3 flex-wrap mb-3">
+                {/* Ticker + price */}
+                <div className="flex items-baseline gap-3 mb-1">
                   <h1 className="text-3xl font-bold font-mono tracking-tight">{stock.ticker}</h1>
                   {stock.price != null && (
                     <span className="text-2xl font-semibold text-slate-600">${stock.price.toFixed(2)}</span>
                   )}
+                  <SignalPill tone={stock.bucket === "Portfolio" ? "blue" : "gray"}>
+                    {stock.bucket}
+                  </SignalPill>
+                </div>
+
+                {/* Action buttons */}
+                <div className="flex items-center gap-2 flex-wrap mb-3">
                   <button
                     onClick={handleRescore}
                     disabled={scoring}
@@ -225,28 +287,34 @@ export default function StockDetailPage() {
                     {scoring ? "Scoring..." : "Score"}
                   </button>
                   <button
+                    onClick={handleRefreshData}
+                    disabled={refreshing}
+                    className="rounded-lg bg-emerald-600 px-4 py-1.5 text-sm font-semibold text-white hover:bg-emerald-700 transition-colors disabled:opacity-50"
+                  >
+                    {refreshing ? "Refreshing..." : "Refresh Data"}
+                  </button>
+                  <button
                     onClick={() => moveBucket(ticker)}
                     className="rounded-lg border border-slate-300 px-4 py-1.5 text-sm font-medium text-slate-600 hover:bg-slate-50 transition-colors"
                   >
-                    Move to {stock.bucket === "Portfolio" ? "Watchlist" : "Portfolio"} ⇌
+                    Move to {stock.bucket === "Portfolio" ? "Watchlist" : "Portfolio"}
                   </button>
                   <button
                     onClick={handleDelete}
                     className="rounded-lg border border-red-200 px-4 py-1.5 text-sm font-semibold text-red-600 hover:bg-red-50 transition-colors"
                   >
-                    Delete ✕
+                    Delete
                   </button>
                   {stock.lastScored && (
                     <span className="text-xs text-slate-400 ml-1">
                       Last scored: {stock.lastScored}
                     </span>
                   )}
-                  {scoreError && (
-                    <span className="text-xs text-red-500 ml-1">{scoreError}</span>
-                  )}
+                  {scoreError && <span className="text-xs text-red-500 ml-1">{scoreError}</span>}
+                  {refreshError && <span className="text-xs text-red-500 ml-1">{refreshError}</span>}
                 </div>
 
-                {/* Sector selector + bucket pill */}
+                {/* Sector selector */}
                 <div className="flex items-center gap-3 mb-2">
                   <select
                     value={stock.sector}
@@ -257,9 +325,6 @@ export default function StockDetailPage() {
                       <option key={s} value={s}>{s}</option>
                     ))}
                   </select>
-                  <SignalPill tone={stock.bucket === "Portfolio" ? "blue" : "gray"}>
-                    {stock.bucket}
-                  </SignalPill>
                 </div>
 
                 {/* Company name */}
