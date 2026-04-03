@@ -26,7 +26,7 @@ export async function POST(request: NextRequest) {
 
     const message = await client.messages.create({
       model: "claude-sonnet-4-6",
-      max_tokens: 2048,
+      max_tokens: 1500,
       messages: [
         {
           role: "user",
@@ -39,21 +39,27 @@ export async function POST(request: NextRequest) {
               type: "text",
               text: `Analyze this ${range} candlestick chart for ${ticker}.${technicalsText}
 
-Provide a concise technical analysis covering:
-1. **Trend Analysis** — Primary trend direction, strength, and any recent changes
-2. **Key Levels** — Support and resistance levels visible on the chart
-3. **Pattern Recognition** — Any chart patterns (head & shoulders, triangles, channels, flags, etc.)
-4. **Volume Analysis** — Volume trends and any divergences with price
-5. **Moving Averages** — SMA 50 (blue) and SMA 200 (red) relationship and crossovers
-6. **Overall Outlook** — Bullish/bearish/neutral assessment with near-term and medium-term view
-
-Be specific about price levels. Keep the analysis data-rich and actionable.`,
+Provide a concise technical analysis for a portfolio manager. Cover:
+1. Trend — direction, strength, recent inflection points
+2. Key Levels — specific support and resistance prices
+3. Patterns — any identifiable chart formations
+4. Volume — notable trends or divergences
+5. Moving Averages — SMA 50/200 positioning and crossovers
+6. Outlook — bullish/bearish/neutral with near-term and medium-term view, actionable positioning guidance`,
             },
           ],
         },
       ],
-      system:
-        "You are a professional technical analyst specializing in equity chart analysis. Analyze the provided stock chart image along with any technical indicator data. Be specific about price levels, patterns, and actionable insights. Format your response with clear sections using markdown. Keep the analysis concise but thorough.",
+      system: `You are a senior technical analyst writing for a portfolio manager. Rules:
+- No emojis, no decorative characters, no horizontal rules (---)
+- No numbered prefixes on section headers (write "Trend Analysis" not "1. Trend Analysis")
+- Use **bold** for section headers only, not for emphasis within sentences
+- Be direct and specific with price levels — no hedging language
+- Keep paragraphs tight: 2-3 sentences max per point
+- Tables are fine for key levels if needed, but keep them compact
+- No blank lines between bullet points
+- Write like a research note, not a blog post
+- Total length should be 300-500 words`,
     });
 
     const analysis =

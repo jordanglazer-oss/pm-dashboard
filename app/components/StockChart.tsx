@@ -395,21 +395,50 @@ export default function StockChart({ ticker, technicals, className = "" }: Props
               )}
             </span>
           </div>
-          <div className="prose prose-sm prose-slate max-w-none text-sm leading-relaxed [&_h1]:text-base [&_h2]:text-sm [&_h3]:text-sm [&_h1]:font-bold [&_h2]:font-bold [&_h3]:font-semibold [&_strong]:text-slate-800 [&_ul]:space-y-1 [&_ol]:space-y-1">
+          <div className="text-sm leading-relaxed text-slate-600 space-y-0.5">
             {analysis.split("\n").map((line, i) => {
-              if (line.startsWith("## ") || line.startsWith("### ")) {
-                const level = line.startsWith("### ") ? "h3" : "h2";
-                const text = line.replace(/^#{2,3}\s/, "");
-                return React.createElement(level, { key: i, className: "mt-3 mb-1" }, text);
+              // Skip horizontal rules and empty decorative lines
+              if (line.trim() === "---" || line.trim() === "***") return null;
+              // Section headers: **Bold Header** on its own line or ## / ###
+              if (/^#{1,3}\s/.test(line)) {
+                const text = line.replace(/^#{1,3}\s/, "").replace(/\*\*/g, "");
+                return <p key={i} className="font-semibold text-slate-800 mt-3 mb-0.5 text-sm">{text}</p>;
               }
-              if (line.startsWith("**") && line.endsWith("**")) {
-                return <p key={i} className="font-bold text-slate-800 mt-3 mb-1">{line.replace(/\*\*/g, "")}</p>;
+              if (/^\*\*[^*]+\*\*\s*$/.test(line.trim())) {
+                return <p key={i} className="font-semibold text-slate-800 mt-3 mb-0.5 text-sm">{line.replace(/\*\*/g, "")}</p>;
               }
+              // Bullet points
               if (line.startsWith("- ") || line.startsWith("* ")) {
-                return <p key={i} className="ml-4 text-slate-600 before:content-['•'] before:mr-2 before:text-slate-400">{line.slice(2)}</p>;
+                const content = line.slice(2).replace(/\*\*(.*?)\*\*/g, "$1");
+                return <p key={i} className="ml-3 text-slate-600 pl-2 border-l-2 border-slate-200">{content}</p>;
               }
-              if (line.trim() === "") return <div key={i} className="h-2" />;
-              return <p key={i} className="text-slate-600">{line.replace(/\*\*(.*?)\*\*/g, (_, m) => m)}</p>;
+              // Table rows
+              if (line.includes("|") && line.trim().startsWith("|")) {
+                // Skip separator rows
+                if (/^\|[\s\-|]+\|$/.test(line.trim())) return null;
+                const cells = line.split("|").filter(c => c.trim()).map(c => c.trim());
+                if (cells.length === 0) return null;
+                return (
+                  <div key={i} className="grid grid-cols-3 gap-2 text-xs py-0.5 font-mono">
+                    {cells.map((cell, j) => (
+                      <span key={j} className={j === 0 ? "text-slate-700 font-medium" : "text-slate-500"}>{cell}</span>
+                    ))}
+                  </div>
+                );
+              }
+              // Empty lines — minimal spacing
+              if (line.trim() === "") return <div key={i} className="h-1" />;
+              // Regular text — inline bold handling
+              const parts = line.split(/(\*\*.*?\*\*)/g);
+              return (
+                <p key={i} className="text-slate-600">
+                  {parts.map((part, j) =>
+                    part.startsWith("**") && part.endsWith("**")
+                      ? <span key={j} className="font-medium text-slate-800">{part.slice(2, -2)}</span>
+                      : part
+                  )}
+                </p>
+              );
             })}
           </div>
         </div>
