@@ -193,6 +193,12 @@ export default function StockDetailPage() {
         if (result.price != null) updatePrice(ticker, result.price);
         if (result.healthData) updateHealthData(ticker, result.healthData);
         if (result.technicals && result.riskAlert) updateTechnicals(ticker, result.technicals, result.riskAlert);
+        if (result.name || result.sector) {
+          updateStockFields(ticker, {
+            ...(result.name ? { name: result.name } : {}),
+            ...(result.sector ? { sector: result.sector } : {}),
+          });
+        }
       }
     } catch (err) {
       setRefreshError(err instanceof Error ? err.message : "Refresh failed");

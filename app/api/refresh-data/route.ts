@@ -208,6 +208,8 @@ function extractHealthData(modules: YahooResult | undefined, currentPrice?: numb
 // ── Health data modules (subset of what score route fetches — no peers, no financial context) ──
 
 const HEALTH_MODULES = [
+  "price",
+  "assetProfile",
   "financialData",
   "defaultKeyStatistics",
   "summaryDetail",
@@ -220,6 +222,8 @@ const HEALTH_MODULES = [
 
 type RefreshResult = {
   ticker: string;
+  name?: string;
+  sector?: string;
   price?: number;
   technicals?: TechnicalIndicators;
   healthData?: HealthData;
@@ -250,6 +254,16 @@ async function refreshSingleStock(
       price = financial?.currentPrice?.raw as number | undefined;
     }
 
+    // Extract company name and sector
+    let name: string | undefined;
+    let sector: string | undefined;
+    if (modules) {
+      const priceModule = modules.price as Record<string, Record<string, unknown>> | undefined;
+      const profile = modules.assetProfile as Record<string, unknown> | undefined;
+      name = (priceModule?.shortName as unknown as string) || (priceModule?.longName as unknown as string) || undefined;
+      sector = (profile?.sector as string) || undefined;
+    }
+
     // Compute technicals
     let technicals: TechnicalIndicators | null = null;
     if (priceHistory.length > 0) {
@@ -269,6 +283,8 @@ async function refreshSingleStock(
 
     return {
       ticker,
+      name,
+      sector,
       price,
       technicals: technicals ?? undefined,
       healthData,

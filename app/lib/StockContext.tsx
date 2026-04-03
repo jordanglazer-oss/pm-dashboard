@@ -110,14 +110,14 @@ export function StockProvider({ children }: { children: React.ReactNode }) {
       if (scannerRes.scanner) setScannerDataState(scannerRes.scanner);
       setLoading(false);
 
-      // Backfill missing names/sectors from Yahoo Finance
-      const needsBackfill = loadedStocks.filter(
-        (s) => s.name === s.ticker || !s.sector || s.sector === "Technology"
-      );
-      if (needsBackfill.length > 0) {
+      // Backfill missing names from Yahoo Finance for all stocks
+      // Names are considered missing if name equals ticker (e.g. "AAPL" instead of "Apple Inc.")
+      const needsNameBackfill = loadedStocks.filter((s) => !s.name || s.name === s.ticker);
+      if (needsNameBackfill.length > 0) {
         try {
-          const tickers = needsBackfill.map((s) => s.ticker).join(",");
-          const res = await fetch(`/api/company-name?tickers=${encodeURIComponent(tickers)}`);
+          // Fetch all stock tickers to get names and sectors
+          const allTickers = loadedStocks.map((s) => s.ticker).join(",");
+          const res = await fetch(`/api/company-name?tickers=${encodeURIComponent(allTickers)}`);
           if (res.ok) {
             const data = await res.json();
             setStocks((prev) => {
@@ -125,8 +125,8 @@ export function StockProvider({ children }: { children: React.ReactNode }) {
               const next = prev.map((s) => {
                 const newName = data.names?.[s.ticker];
                 const newSector = data.sectors?.[s.ticker];
-                const shouldUpdateName = newName && s.name === s.ticker;
-                const shouldUpdateSector = newSector && (!s.sector || s.sector === "Technology");
+                const shouldUpdateName = newName && (!s.name || s.name === s.ticker);
+                const shouldUpdateSector = newSector && newSector !== s.sector;
                 if (shouldUpdateName || shouldUpdateSector) {
                   changed = true;
                   return {
