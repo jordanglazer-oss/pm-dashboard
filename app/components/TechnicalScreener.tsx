@@ -132,6 +132,32 @@ type Props = {
   onAddToWatchlist?: (stock: Stock) => void;
 };
 
+// ── LocalStorage helpers ──
+const SCAN_STORAGE_KEY = "screener_scan_results";
+const SCAN_META_KEY = "screener_scan_meta";
+
+function loadScanResults(): ScanResult[] {
+  try {
+    const raw = localStorage.getItem(SCAN_STORAGE_KEY);
+    return raw ? JSON.parse(raw) : [];
+  } catch { return []; }
+}
+
+function loadScanMeta(): { total: number; found: number; scannedAt: string; universe: string; minScore: number } | null {
+  try {
+    const raw = localStorage.getItem(SCAN_META_KEY);
+    return raw ? JSON.parse(raw) : null;
+  } catch { return null; }
+}
+
+function saveScanResults(results: ScanResult[]) {
+  try { localStorage.setItem(SCAN_STORAGE_KEY, JSON.stringify(results)); } catch {}
+}
+
+function saveScanMeta(meta: { total: number; found: number; scannedAt: string; universe: string; minScore: number }) {
+  try { localStorage.setItem(SCAN_META_KEY, JSON.stringify(meta)); } catch {}
+}
+
 export function TechnicalScreener({ stocks, onAddToWatchlist }: Props) {
   const router = useRouter();
   const [tab, setTab] = useState<"portfolio" | "scan">("portfolio");
@@ -145,19 +171,25 @@ export function TechnicalScreener({ stocks, onAddToWatchlist }: Props) {
   const [sortKey, setSortKey] = useState<SortKey>("composite");
   const [sortDir, setSortDir] = useState<SortDir>("desc");
 
-  // ── Scan tab state ──
+  // ── Scan tab state (persisted) ──
   const [scanUniverse, setScanUniverse] = useState<UniverseKey>("sp500");
   const [minImprovingScore, setMinImprovingScore] = useState(2);
   const [scanning, setScanning] = useState(false);
   const [scanProgress, setScanProgress] = useState("");
-  const [scanResults, setScanResults] = useState<ScanResult[]>([]);
-  const [scanMeta, setScanMeta] = useState<{ total: number; found: number; scannedAt: string } | null>(null);
+  const [scanResults, setScanResults] = useState<ScanResult[]>(() => loadScanResults());
+  const [scanMeta, setScanMeta] = useState<{ total: number; found: number; scannedAt: string; universe: string; minScore: number } | null>(() => loadScanMeta());
   const [scanQuery, setScanQuery] = useState("");
-  const [scanSortKey, setScanSortKey] = useState<"improving" | "momentum" | "ticker" | "rsi">("improving");
+  const [scanFilters, setScanFilters] = useState<Record<FilterKey, FilterOption>>({
+    trend: "all", rsi: "all", macd: "all", ichimoku: "all", volume: "all", week52: "all",
+  });
+  const [scanSortKey, setScanSortKey] = useState<"improving" | "momentum" | "ticker" | "rsi" | "composite">("improving");
   const [scanSortDir, setScanSortDir] = useState<SortDir>("desc");
   const [addedTickers, setAddedTickers] = useState<Set<string>>(new Set());
 
   const existingTickers = useMemo(() => stocks.map((s) => s.ticker), [stocks]);
+
+  const setScanFilter = (key: FilterKey, value: FilterOption) => setScanFilters((prev) => ({ ...prev, [key]: value }));
+  const activeScanFilterCount = Object.values(scanFilters).filter((v) => v !== "all").length;
 
   // ── Portfolio tab logic ──
   const stocksWithTechnicals = useMemo(() => stocks.filter((s) => s.technicals != null), [stocks]);
@@ -213,8 +245,6 @@ export function TechnicalScreener({ stocks, onAddToWatchlist }: Props) {
   async function handleScan() {
     setScanning(true);
     setScanProgress(`Scanning ${UNIVERSE_LABELS[scanUniverse]}...`);
-    setScanResults([]);
-    setScanMeta(null);
     setAddedTickers(new Set());
     try {
       const res = await fetch("/api/scan-universe", {
@@ -231,8 +261,12 @@ export function TechnicalScreener({ stocks, onAddToWatchlist }: Props) {
         throw new Error(err.error || `Scan failed (${res.status})`);
       }
       const data = await res.json();
-      setScanResults(data.results || []);
-      setScanMeta({ total: data.total, found: data.found, scannedAt: data.scannedAt });
+      const results = data.results || [];
+      const meta = { total: data.total, found: data.found, scannedAt: data.scannedAt, universe: scanUniverse, minScore: minImprovingScore };
+      setScanResults(results);
+      setScanMeta(meta);
+      saveScanResults(results);
+      saveScanMeta(meta);
       setScanProgress("");
     } catch (err) {
       setScanProgress(err instanceof Error ? err.message : "Scan failed");
@@ -265,6 +299,17 @@ export function TechnicalScreener({ stocks, onAddToWatchlist }: Props) {
       const q = scanQuery.toLowerCase();
       results = results.filter((r) => r.ticker.toLowerCase().includes(q));
     }
+    // Apply signal filters
+    results = results.filter((r) => {
+      const t = r.technicals;
+      if (scanFilters.trend !== "all" && getTrendSignal(t) !== scanFilters.trend) return false;
+      if (scanFilters.rsi !== "all" && getRsiSignal(t) !== scanFilters.rsi) return false;
+      if (scanFilters.macd !== "all" && getMacdSignal(t) !== scanFilters.macd) return false;
+      if (scanFilters.ichimoku !== "all" && getIchimokuSignal(t) !== scanFilters.ichimoku) return false;
+      if (scanFilters.volume !== "all" && getVolumeSignal(t) !== scanFilters.volume) return false;
+      if (scanFilters.week52 !== "all" && getWeek52Signal(t) !== scanFilters.week52) return false;
+      return true;
+    });
     return [...results].sort((a, b) => {
       let cmp = 0;
       switch (scanSortKey) {
@@ -272,10 +317,11 @@ export function TechnicalScreener({ stocks, onAddToWatchlist }: Props) {
         case "momentum": cmp = a.priceChange20d - b.priceChange20d; break;
         case "ticker": cmp = a.ticker.localeCompare(b.ticker); break;
         case "rsi": cmp = a.technicals.rsi14 - b.technicals.rsi14; break;
+        case "composite": cmp = compositeTechnicalScore(a.technicals).net - compositeTechnicalScore(b.technicals).net; break;
       }
       return scanSortDir === "desc" ? -cmp : cmp;
     });
-  }, [scanResults, scanQuery, scanSortKey, scanSortDir]);
+  }, [scanResults, scanQuery, scanFilters, scanSortKey, scanSortDir]);
 
   const toggleScanSort = (key: typeof scanSortKey) => {
     if (scanSortKey === key) setScanSortDir((d) => (d === "desc" ? "asc" : "desc"));
@@ -435,6 +481,14 @@ export function TechnicalScreener({ stocks, onAddToWatchlist }: Props) {
                   Scan an index universe for stocks showing improving technical signals.
                   Identifies stocks trending <span className="font-semibold text-teal-700">toward</span> positive territory — not already there.
                 </p>
+                {scanMeta && (
+                  <p className="text-xs text-slate-400 mt-1">
+                    Last scanned: {new Date(scanMeta.scannedAt).toLocaleString("en-US", {
+                      month: "short", day: "numeric", year: "numeric",
+                      hour: "numeric", minute: "2-digit", hour12: true,
+                    })} — {UNIVERSE_LABELS[scanMeta.universe as UniverseKey] || scanMeta.universe}, min score {scanMeta.minScore}/6
+                  </p>
+                )}
               </div>
             </div>
 
@@ -475,6 +529,29 @@ export function TechnicalScreener({ stocks, onAddToWatchlist }: Props) {
               )}
             </div>
 
+            {/* Signal filters (same as portfolio tab) */}
+            {scanResults.length > 0 && (
+              <div className="mt-4 flex flex-wrap items-center gap-3">
+                {(Object.keys(FILTER_LABELS) as FilterKey[]).map((key) => (
+                  <select key={key} value={scanFilters[key]} onChange={(e) => setScanFilter(key, e.target.value as FilterOption)}
+                    className={`rounded-xl border px-3 py-1.5 text-sm outline-none transition-colors ${
+                      scanFilters[key] !== "all" ? "border-teal-400 bg-teal-50 text-teal-700 font-semibold" : "border-slate-200 bg-white text-slate-600"
+                    }`}>
+                    <option value="all">{FILTER_LABELS[key]}: All</option>
+                    <option value="bullish">Bullish</option>
+                    <option value="bearish">Bearish</option>
+                    <option value="neutral">Neutral</option>
+                  </select>
+                ))}
+                {activeScanFilterCount > 0 && (
+                  <button onClick={() => setScanFilters({ trend: "all", rsi: "all", macd: "all", ichimoku: "all", volume: "all", week52: "all" })}
+                    className="rounded-xl border border-slate-200 px-3 py-1.5 text-sm text-slate-500 hover:bg-slate-50 transition-colors">
+                    Clear filters ({activeScanFilterCount})
+                  </button>
+                )}
+              </div>
+            )}
+
             {/* Improving signals legend */}
             <div className="mt-4 rounded-2xl bg-teal-50 border border-teal-200 p-4">
               <div className="text-xs font-semibold text-teal-800 mb-2">Improving signals detected (6 factors):</div>
@@ -493,36 +570,37 @@ export function TechnicalScreener({ stocks, onAddToWatchlist }: Props) {
           {scanResults.length > 0 && (
             <div className="rounded-[30px] border border-slate-200 bg-white p-6 shadow-sm overflow-x-auto">
               <div className="flex flex-col gap-3 md:flex-row md:items-center md:justify-between mb-4">
-                <div>
-                  <div className="text-sm text-slate-500">
-                    {scanMeta && (
-                      <>
-                        <span className="font-semibold text-teal-700">{scanMeta.found}</span> stocks with improving score {"\u2265"} {minImprovingScore} out of {scanMeta.total} scanned
-                        <span className="text-slate-400 ml-2">({new Date(scanMeta.scannedAt).toLocaleTimeString()})</span>
-                      </>
-                    )}
-                  </div>
+                <div className="text-sm text-slate-500">
+                  {filteredScanResults.length} of {scanResults.length} results
+                  {scanMeta && (
+                    <span className="text-slate-400 ml-1">(from {scanMeta.total} scanned)</span>
+                  )}
                 </div>
                 <input value={scanQuery} onChange={(e) => setScanQuery(e.target.value)} placeholder="Filter by ticker"
                   className="rounded-2xl border border-slate-200 bg-white px-4 py-2 text-sm outline-none placeholder:text-slate-400 w-48" />
               </div>
 
-              <table className="w-full min-w-[900px] text-left">
+              <table className="w-full min-w-[1100px] text-left">
                 <thead>
                   <tr className="border-b border-slate-200 text-sm text-slate-500">
                     <th className="pb-3 cursor-pointer" onClick={() => toggleScanSort("ticker")}>
                       Ticker {scanSortKey === "ticker" && (scanSortDir === "desc" ? "\u2193" : "\u2191")}
                     </th>
                     <th className="pb-3">Price</th>
+                    <th className="pb-3 cursor-pointer" onClick={() => toggleScanSort("composite")}>
+                      Composite {scanSortKey === "composite" && (scanSortDir === "desc" ? "\u2193" : "\u2191")}
+                    </th>
                     <th className="pb-3 cursor-pointer" onClick={() => toggleScanSort("improving")}>
                       Improving {scanSortKey === "improving" && (scanSortDir === "desc" ? "\u2193" : "\u2191")}
                     </th>
-                    <th className="pb-3">Signals</th>
+                    <th className="pb-3">Trend</th>
                     <th className="pb-3 cursor-pointer" onClick={() => toggleScanSort("rsi")}>
                       RSI {scanSortKey === "rsi" && (scanSortDir === "desc" ? "\u2193" : "\u2191")}
                     </th>
-                    <th className="pb-3">Trend</th>
                     <th className="pb-3">MACD</th>
+                    <th className="pb-3">Ichimoku</th>
+                    <th className="pb-3">Volume</th>
+                    <th className="pb-3">52W</th>
                     <th className="pb-3 cursor-pointer" onClick={() => toggleScanSort("momentum")}>
                       20d Chg {scanSortKey === "momentum" && (scanSortDir === "desc" ? "\u2193" : "\u2191")}
                     </th>
@@ -533,15 +611,32 @@ export function TechnicalScreener({ stocks, onAddToWatchlist }: Props) {
                   {filteredScanResults.map((r) => {
                     const t = r.technicals;
                     const isAdded = addedTickers.has(r.ticker) || existingTickers.includes(r.ticker.replace(".TO", ""));
+                    const composite = compositeTechnicalScore(t);
+                    const compositeColor = composite.net >= 3 ? "text-emerald-700 bg-emerald-50" : composite.net >= 1 ? "text-emerald-600" : composite.net <= -3 ? "text-red-700 bg-red-50" : composite.net <= -1 ? "text-red-600" : "text-slate-500";
                     const improvingColor = r.improving.score >= 4 ? "text-teal-700 bg-teal-50" : r.improving.score >= 2 ? "text-teal-600" : "text-slate-500";
-                    const activeSignals = r.improving.signals.filter((s) => s.active).map((s) => s.name);
 
                     return (
-                      <tr key={r.ticker} className="border-b border-slate-100 align-middle hover:bg-slate-50/50 transition-colors">
+                      <tr key={r.ticker} className="border-b border-slate-100 align-middle cursor-pointer hover:bg-slate-50/50 transition-colors"
+                        onClick={() => {
+                          const clean = r.ticker.replace(".TO", "").toLowerCase();
+                          if (existingTickers.includes(clean.toUpperCase()) || existingTickers.includes(r.ticker.replace(".TO", ""))) {
+                            router.push(`/stock/${clean}`);
+                          } else {
+                            // Store scan result for the preview page
+                            try { sessionStorage.setItem(`scan_preview_${r.ticker}`, JSON.stringify(r)); } catch {}
+                            router.push(`/screener/preview/${encodeURIComponent(r.ticker)}`);
+                          }
+                        }}>
                         <td className="py-3">
                           <div className="font-semibold text-slate-900 font-mono">{r.ticker}</div>
                         </td>
                         <td className="py-3 text-sm text-slate-600 font-mono">${r.price.toFixed(2)}</td>
+                        <td className="py-3">
+                          <div className="flex items-center gap-2">
+                            <span className={`text-sm font-bold rounded px-1.5 py-0.5 ${compositeColor}`}>{composite.net > 0 ? "+" : ""}{composite.net}</span>
+                            <CompositeBar bullish={composite.bullish} bearish={composite.bearish} neutral={composite.neutral} />
+                          </div>
+                        </td>
                         <td className="py-3">
                           <div className="flex items-center gap-2">
                             <span className={`text-sm font-bold rounded px-1.5 py-0.5 ${improvingColor}`}>
@@ -550,43 +645,18 @@ export function TechnicalScreener({ stocks, onAddToWatchlist }: Props) {
                             <ImprovingBar score={r.improving.score} />
                           </div>
                         </td>
-                        <td className="py-3">
-                          <div className="flex flex-wrap gap-1">
-                            {activeSignals.map((s) => (
-                              <span key={s} className="rounded-full bg-teal-100 text-teal-700 px-2 py-0.5 text-[10px] font-medium">
-                                {s}
-                              </span>
-                            ))}
-                          </div>
-                        </td>
-                        <td className="py-3">
-                          <div className="flex items-center gap-1.5">
-                            <TechPill signal={getRsiSignal(t)} />
-                            <span className={`text-xs font-mono ${t.rsi14 > 70 ? "text-red-600" : t.rsi14 < 30 ? "text-emerald-600" : "text-slate-600"}`}>
-                              {t.rsi14.toFixed(0)}
-                            </span>
-                          </div>
-                        </td>
-                        <td className="py-3">
-                          <div className="flex items-center gap-1.5">
-                            <TechPill signal={getTrendSignal(t)} />
-                            <span className="text-xs text-slate-500">{t.dmaSignal.replace(/_/g, " ")}</span>
-                          </div>
-                        </td>
-                        <td className="py-3">
-                          <div className="flex items-center gap-1.5">
-                            <TechPill signal={getMacdSignal(t)} />
-                            <span className={`text-xs font-mono ${t.macdHistogram >= 0 ? "text-emerald-600" : "text-red-600"}`}>
-                              {t.macdHistogram >= 0 ? "+" : ""}{t.macdHistogram.toFixed(2)}
-                            </span>
-                          </div>
-                        </td>
+                        <td className="py-3"><div className="flex items-center gap-1.5"><TechPill signal={getTrendSignal(t)} /><span className="text-xs text-slate-500">{t.dmaSignal.replace(/_/g, " ")}</span></div></td>
+                        <td className="py-3"><div className="flex items-center gap-1.5"><TechPill signal={getRsiSignal(t)} /><span className={`text-xs font-mono ${t.rsi14 > 70 ? "text-red-600" : t.rsi14 < 30 ? "text-emerald-600" : "text-slate-600"}`}>{t.rsi14.toFixed(0)}</span></div></td>
+                        <td className="py-3"><div className="flex items-center gap-1.5"><TechPill signal={getMacdSignal(t)} /><span className={`text-xs font-mono ${t.macdHistogram >= 0 ? "text-emerald-600" : "text-red-600"}`}>{t.macdHistogram >= 0 ? "+" : ""}{t.macdHistogram.toFixed(2)}</span></div></td>
+                        <td className="py-3"><div className="flex items-center gap-1.5"><TechPill signal={getIchimokuSignal(t)} /><span className="text-xs text-slate-500">{t.ichimoku.overallSignal.replace(/_/g, " ")}</span></div></td>
+                        <td className="py-3"><div className="flex items-center gap-1.5"><TechPill signal={getVolumeSignal(t)} /><span className="text-xs text-slate-500 font-mono">{t.volumeRatio.toFixed(1)}x</span></div></td>
+                        <td className="py-3"><div className="flex items-center gap-1.5"><TechPill signal={getWeek52Signal(t)} /><span className="text-xs text-slate-500 font-mono">{(t.week52Position * 100).toFixed(0)}%</span></div></td>
                         <td className="py-3">
                           <span className={`text-sm font-semibold ${r.priceChange20d >= 0 ? "text-emerald-600" : "text-red-600"}`}>
                             {r.priceChange20d >= 0 ? "+" : ""}{r.priceChange20d.toFixed(1)}%
                           </span>
                         </td>
-                        <td className="py-3">
+                        <td className="py-3" onClick={(e) => e.stopPropagation()}>
                           {isAdded ? (
                             <span className="rounded-lg bg-slate-100 px-3 py-1.5 text-xs font-medium text-slate-400">Added</span>
                           ) : (
@@ -601,6 +671,12 @@ export function TechnicalScreener({ stocks, onAddToWatchlist }: Props) {
                   })}
                 </tbody>
               </table>
+            </div>
+          )}
+
+          {!scanning && scanResults.length === 0 && !scanMeta && (
+            <div className="rounded-[30px] border border-slate-200 bg-white p-12 shadow-sm text-center text-slate-400">
+              Run a scan to find stocks with improving technical signals.
             </div>
           )}
 
