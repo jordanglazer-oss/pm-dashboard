@@ -107,6 +107,7 @@ function ImprovingBar({ score }: { score: number }) {
 type ScanResult = {
   ticker: string;
   name: string;
+  sector: string;
   price: number;
   priceChange5d: number;
   priceChange20d: number;
@@ -265,7 +266,7 @@ export function TechnicalScreener({ stocks, onAddToWatchlist }: Props) {
       ticker: result.ticker.replace(".TO", ""),
       name: result.name || result.ticker,
       bucket: "Watchlist",
-      sector: "Technology", // default — will be updated on first score
+      sector: result.sector || "Technology",
       beta: 1.0,
       weights: { portfolio: 0 },
       scores: { ...ZERO_SCORES },
@@ -614,6 +615,7 @@ export function TechnicalScreener({ stocks, onAddToWatchlist }: Props) {
                         <td className="py-3">
                           <div className="font-semibold text-slate-900 font-mono">{r.ticker}</div>
                           {r.name && r.name !== r.ticker && <div className="text-xs text-slate-400 truncate max-w-[140px]">{r.name}</div>}
+                          {r.sector && <div className="text-[10px] text-slate-300 truncate max-w-[140px]">{r.sector}</div>}
                         </td>
                         <td className="py-3 text-sm text-slate-600 font-mono">${r.price.toFixed(2)}</td>
                         <td className="py-3">

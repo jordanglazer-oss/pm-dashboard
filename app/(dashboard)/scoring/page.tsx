@@ -37,10 +37,12 @@ export default function ScoringPage() {
     if (data.technicals && data.riskAlert) {
       updateTechnicals(ticker, data.technicals, data.riskAlert);
     }
-    if (data.companySummary || data.investmentThesis) {
+    if (data.companySummary || data.investmentThesis || data.sector || data.name) {
       updateStockFields(ticker, {
-        companySummary: data.companySummary || "",
-        investmentThesis: data.investmentThesis || "",
+        ...(data.companySummary ? { companySummary: data.companySummary } : {}),
+        ...(data.investmentThesis ? { investmentThesis: data.investmentThesis } : {}),
+        ...(data.sector ? { sector: data.sector } : {}),
+        ...(data.name && data.name !== "Unknown" ? { name: data.name } : {}),
       });
     }
     updateLastScored(ticker, new Date().toLocaleString("en-US", {
