@@ -46,6 +46,7 @@ async function fetchPriceHistory(ticker: string): Promise<OHLCVBar[]> {
 
 export type ScanResult = {
   ticker: string;
+  name: string;
   price: number;
   priceChange5d: number;
   priceChange20d: number;
@@ -53,9 +54,28 @@ export type ScanResult = {
   improving: ImprovingScore;
 };
 
+async function fetchCompanyName(ticker: string): Promise<string> {
+  try {
+    const url = `${YAHOO_BASE}/v10/finance/quoteSummary/${encodeURIComponent(ticker)}?modules=price`;
+    const res = await fetch(url, {
+      cache: "no-store",
+      headers: { "User-Agent": "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36" },
+    });
+    if (!res.ok) return ticker;
+    const data = await res.json();
+    const price = data?.quoteSummary?.result?.[0]?.price;
+    return price?.shortName || price?.longName || ticker;
+  } catch {
+    return ticker;
+  }
+}
+
 async function scanTicker(ticker: string): Promise<ScanResult | null> {
   try {
-    const bars = await fetchPriceHistory(ticker);
+    const [bars, name] = await Promise.all([
+      fetchPriceHistory(ticker),
+      fetchCompanyName(ticker),
+    ]);
     if (bars.length < 30) return null;
 
     const technicals = computeTechnicals(bars);
@@ -65,6 +85,7 @@ async function scanTicker(ticker: string): Promise<ScanResult | null> {
 
     return {
       ticker,
+      name,
       price: technicals.currentPrice,
       priceChange5d: technicals.priceChange5d,
       priceChange20d: technicals.priceChange20d,

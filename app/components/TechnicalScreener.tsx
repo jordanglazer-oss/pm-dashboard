@@ -106,6 +106,7 @@ function ImprovingBar({ score }: { score: number }) {
 
 type ScanResult = {
   ticker: string;
+  name: string;
   price: number;
   priceChange5d: number;
   priceChange20d: number;
@@ -262,7 +263,7 @@ export function TechnicalScreener({ stocks, onAddToWatchlist }: Props) {
     if (!onAddToWatchlist) return;
     const stock: Stock = {
       ticker: result.ticker.replace(".TO", ""),
-      name: result.ticker,
+      name: result.name || result.ticker,
       bucket: "Watchlist",
       sector: "Technology", // default — will be updated on first score
       beta: 1.0,
@@ -612,6 +613,7 @@ export function TechnicalScreener({ stocks, onAddToWatchlist }: Props) {
                         }}>
                         <td className="py-3">
                           <div className="font-semibold text-slate-900 font-mono">{r.ticker}</div>
+                          {r.name && r.name !== r.ticker && <div className="text-xs text-slate-400 truncate max-w-[140px]">{r.name}</div>}
                         </td>
                         <td className="py-3 text-sm text-slate-600 font-mono">${r.price.toFixed(2)}</td>
                         <td className="py-3">

@@ -27,16 +27,27 @@ export default function DashboardPage() {
     ? portfolioStocks.reduce((sum, s) => sum + s.beta, 0) / portfolioStocks.length
     : null;
 
-  function handleAdd() {
+  async function handleAdd() {
     const ticker = newTicker.trim().toUpperCase();
     if (!ticker) return;
     if (scoredStocks.some((s) => s.ticker === ticker)) {
       alert(`${ticker} is already in your list.`);
       return;
     }
+
+    // Fetch company name from Yahoo Finance (no Claude tokens)
+    let name = ticker;
+    try {
+      const res = await fetch(`/api/company-name?tickers=${encodeURIComponent(ticker)}`);
+      if (res.ok) {
+        const data = await res.json();
+        if (data.names?.[ticker]) name = data.names[ticker];
+      }
+    } catch { /* fallback to ticker */ }
+
     const stock: Stock = {
       ticker,
-      name: ticker,
+      name,
       bucket: newBucket,
       sector: "Technology",
       beta: 1.0,

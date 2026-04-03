@@ -308,30 +308,32 @@ export default function StockChart({ ticker, technicals, className = "" }: Props
     <div className={className}>
       <div className="rounded-[24px] border border-slate-200 bg-white p-5 shadow-sm">
         {/* Header row */}
-        <div className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between mb-4">
-          <div className="flex items-center gap-3">
-            <h2 className="text-lg font-bold text-slate-800">Price Chart</h2>
-            <div className="flex items-center gap-3 text-xs text-slate-400">
-              <span className="flex items-center gap-1">
-                <span className="inline-block w-3 h-0.5 bg-blue-500 rounded" /> SMA 50
-              </span>
-              <span className="flex items-center gap-1">
-                <span className="inline-block w-3 h-0.5 bg-red-500 rounded" /> SMA 200
-              </span>
-              {totalBars > 0 && (
-                <span>{yearsOfData}+ yrs loaded &middot; scroll to explore</span>
-              )}
+        <div className="flex flex-col gap-2 mb-4">
+          <div className="flex items-center justify-between">
+            <div className="flex items-center gap-2">
+              <h2 className="text-lg font-bold text-slate-800">Price Chart</h2>
+              <div className="hidden sm:flex items-center gap-3 text-xs text-slate-400">
+                <span className="flex items-center gap-1">
+                  <span className="inline-block w-3 h-0.5 bg-blue-500 rounded" /> SMA 50
+                </span>
+                <span className="flex items-center gap-1">
+                  <span className="inline-block w-3 h-0.5 bg-red-500 rounded" /> SMA 200
+                </span>
+              </div>
             </div>
+            {totalBars > 0 && (
+              <span className="text-[10px] text-slate-400">{yearsOfData}+ yrs &middot; scroll to explore</span>
+            )}
           </div>
 
-          <div className="flex items-center gap-2">
+          <div className="flex items-center gap-2 flex-wrap">
             {/* Timeframe selector — zoom only, no re-fetch */}
             <div className="flex rounded-xl border border-slate-200 overflow-hidden">
               {RANGES.map((r) => (
                 <button
                   key={r.key}
                   onClick={() => setViewRange(r.key)}
-                  className={`px-2.5 py-1.5 text-xs font-semibold transition-colors ${
+                  className={`px-2 py-1.5 text-[11px] font-semibold transition-colors ${
                     viewRange === r.key
                       ? "bg-slate-900 text-white"
                       : "text-slate-500 hover:bg-slate-50"
@@ -346,13 +348,23 @@ export default function StockChart({ ticker, technicals, className = "" }: Props
             <button
               onClick={handleAnalyze}
               disabled={analyzing || loading || !chartData}
-              className="rounded-xl bg-violet-600 px-4 py-1.5 text-xs font-semibold text-white hover:bg-violet-700 transition-colors disabled:opacity-50 flex items-center gap-1.5"
+              className="rounded-xl bg-violet-600 px-3 py-1.5 text-[11px] font-semibold text-white hover:bg-violet-700 transition-colors disabled:opacity-50 flex items-center gap-1.5"
             >
               {analyzing && (
                 <span className="inline-block w-3 h-3 border-2 border-white border-t-transparent rounded-full animate-spin" />
               )}
               {analyzing ? "Analyzing..." : "Analyze Chart"}
             </button>
+
+            {/* SMA legend on mobile */}
+            <div className="flex sm:hidden items-center gap-2 text-[10px] text-slate-400 ml-auto">
+              <span className="flex items-center gap-1">
+                <span className="inline-block w-2 h-0.5 bg-blue-500 rounded" /> 50
+              </span>
+              <span className="flex items-center gap-1">
+                <span className="inline-block w-2 h-0.5 bg-red-500 rounded" /> 200
+              </span>
+            </div>
           </div>
         </div>
 

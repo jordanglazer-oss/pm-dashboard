@@ -10,6 +10,7 @@ import StockChart from "@/app/components/StockChart";
 
 type ScanResult = {
   ticker: string;
+  name: string;
   price: number;
   priceChange5d: number;
   priceChange20d: number;
@@ -115,7 +116,7 @@ export default function ScanPreviewPage() {
   const handleAdd = () => {
     const stock: Stock = {
       ticker: cleanTicker,
-      name: rawTicker,
+      name: data.name || rawTicker,
       bucket: "Watchlist",
       sector: "Technology",
       beta: 1.0,
@@ -145,11 +146,14 @@ export default function ScanPreviewPage() {
         <div className="mx-auto max-w-3xl space-y-6">
           {/* Header */}
           <div className="rounded-[30px] border border-slate-200 bg-white p-6 shadow-sm">
-            <div className="flex items-baseline gap-3 mb-2">
+            <div className="flex items-baseline gap-3 mb-1">
               <h1 className="text-3xl font-bold font-mono tracking-tight">{rawTicker}</h1>
               <span className="text-2xl font-semibold text-slate-600">${data.price.toFixed(2)}</span>
               <span className="rounded-full bg-teal-100 text-teal-700 px-2.5 py-0.5 text-xs font-semibold">Scan Result</span>
             </div>
+            {data.name && data.name !== rawTicker && (
+              <p className="text-sm text-slate-500 mb-2">{data.name}</p>
+            )}
 
             <div className="flex items-center gap-3 mb-4">
               {added || alreadyExists ? (
