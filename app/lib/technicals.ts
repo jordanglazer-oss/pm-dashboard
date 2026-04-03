@@ -541,16 +541,7 @@ export function computeRiskAlert(
     }
   }
 
-  // 9. Valuation (PEG from healthData)
-  if (healthData?.pegRatio != null) {
-    if (healthData.pegRatio > 3) {
-      signals.push({ name: "Valuation (PEG)", status: "danger", detail: `PEG ratio at ${healthData.pegRatio.toFixed(2)} — significantly overvalued on growth-adjusted basis` });
-    } else if (healthData.pegRatio > 2) {
-      signals.push({ name: "Valuation (PEG)", status: "caution", detail: `PEG ratio at ${healthData.pegRatio.toFixed(2)} — expensive relative to growth` });
-    } else {
-      signals.push({ name: "Valuation (PEG)", status: "ok", detail: `PEG ratio at ${healthData.pegRatio.toFixed(2)} — reasonable valuation` });
-    }
-  }
+  // Valuation (PEG) intentionally excluded from risk alerts — tracked in Stock Health Monitor only
 
   // Compute counts and level
   const dangerCount = signals.filter((s) => s.status === "danger").length;
