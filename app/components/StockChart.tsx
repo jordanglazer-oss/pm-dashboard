@@ -1,0 +1,343 @@
+"use client";
+
+import React, { useRef, useEffect, useState, useCallback } from "react";
+import type { TechnicalIndicators } from "@/app/lib/technicals";
+
+type Range = "1mo" | "3mo" | "6mo" | "1y" | "2y" | "5y";
+
+const RANGES: { key: Range; label: string }[] = [
+  { key: "1mo", label: "1M" },
+  { key: "3mo", label: "3M" },
+  { key: "6mo", label: "6M" },
+  { key: "1y", label: "1Y" },
+  { key: "2y", label: "2Y" },
+  { key: "5y", label: "5Y" },
+];
+
+type ChartData = {
+  bars: { date: string; open: number; high: number; low: number; close: number; volume: number }[];
+  sma50: { date: string; value: number }[];
+  sma200: { date: string; value: number }[];
+};
+
+type Props = {
+  ticker: string;
+  technicals?: TechnicalIndicators;
+  className?: string;
+};
+
+export default function StockChart({ ticker, technicals, className = "" }: Props) {
+  const containerRef = useRef<HTMLDivElement>(null);
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any
+  const chartRef = useRef<any>(null);
+  const [range, setRange] = useState<Range>("1y");
+  const [loading, setLoading] = useState(false);
+  const [error, setError] = useState("");
+  const [chartData, setChartData] = useState<ChartData | null>(null);
+  const [analyzing, setAnalyzing] = useState(false);
+  const [analysis, setAnalysis] = useState<string | null>(null);
+  const [analysisError, setAnalysisError] = useState("");
+
+  // Fetch chart data
+  const fetchData = useCallback(async (r: Range) => {
+    setLoading(true);
+    setError("");
+    try {
+      const res = await fetch(`/api/chart-data?ticker=${encodeURIComponent(ticker)}&range=${r}`);
+      if (!res.ok) {
+        const err = await res.json().catch(() => ({}));
+        throw new Error(err.error || `Failed (${res.status})`);
+      }
+      const data: ChartData = await res.json();
+      setChartData(data);
+    } catch (err) {
+      setError(err instanceof Error ? err.message : "Failed to load chart data");
+    } finally {
+      setLoading(false);
+    }
+  }, [ticker]);
+
+  useEffect(() => {
+    fetchData(range);
+  }, [range, fetchData]);
+
+  // Render chart
+  useEffect(() => {
+    if (!chartData || !containerRef.current) return;
+
+    let disposed = false;
+
+    (async () => {
+      const lc = await import("lightweight-charts");
+
+      if (disposed || !containerRef.current) return;
+
+      // Clean up previous chart
+      if (chartRef.current) {
+        chartRef.current.remove();
+        chartRef.current = null;
+      }
+
+      const chart = lc.createChart(containerRef.current, {
+        width: containerRef.current.clientWidth,
+        height: 420,
+        layout: {
+          background: { color: "#ffffff" },
+          textColor: "#64748b",
+          fontFamily: "ui-monospace, monospace",
+          fontSize: 11,
+        },
+        grid: {
+          vertLines: { color: "#f1f5f9" },
+          horzLines: { color: "#f1f5f9" },
+        },
+        crosshair: {
+          mode: lc.CrosshairMode.Normal,
+          vertLine: { color: "#94a3b8", width: 1, style: lc.LineStyle.Dashed },
+          horzLine: { color: "#94a3b8", width: 1, style: lc.LineStyle.Dashed },
+        },
+        rightPriceScale: {
+          borderColor: "#e2e8f0",
+        },
+        timeScale: {
+          borderColor: "#e2e8f0",
+          timeVisible: false,
+        },
+      });
+
+      chartRef.current = chart;
+
+      // Candlestick series
+      const candleSeries = chart.addSeries(lc.CandlestickSeries, {
+        upColor: "#10b981",
+        downColor: "#ef4444",
+        borderUpColor: "#10b981",
+        borderDownColor: "#ef4444",
+        wickUpColor: "#10b981",
+        wickDownColor: "#ef4444",
+      });
+
+      candleSeries.setData(
+        chartData.bars.map((b) => ({
+          time: b.date,
+          open: b.open,
+          high: b.high,
+          low: b.low,
+          close: b.close,
+        }))
+      );
+
+      // Volume series
+      const volumeSeries = chart.addSeries(lc.HistogramSeries, {
+        priceFormat: { type: "volume" },
+        priceScaleId: "volume",
+      });
+
+      chart.priceScale("volume").applyOptions({
+        scaleMargins: { top: 0.85, bottom: 0 },
+      });
+
+      volumeSeries.setData(
+        chartData.bars.map((b) => ({
+          time: b.date,
+          value: b.volume,
+          color: b.close >= b.open ? "rgba(16, 185, 129, 0.3)" : "rgba(239, 68, 68, 0.3)",
+        }))
+      );
+
+      // SMA 50 overlay (blue)
+      if (chartData.sma50.length > 0) {
+        const sma50Series = chart.addSeries(lc.LineSeries, {
+          color: "#3b82f6",
+          lineWidth: 2,
+          priceLineVisible: false,
+          lastValueVisible: false,
+          crosshairMarkerVisible: false,
+        });
+        sma50Series.setData(
+          chartData.sma50.map((p) => ({ time: p.date, value: p.value }))
+        );
+      }
+
+      // SMA 200 overlay (red)
+      if (chartData.sma200.length > 0) {
+        const sma200Series = chart.addSeries(lc.LineSeries, {
+          color: "#ef4444",
+          lineWidth: 2,
+          priceLineVisible: false,
+          lastValueVisible: false,
+          crosshairMarkerVisible: false,
+        });
+        sma200Series.setData(
+          chartData.sma200.map((p) => ({ time: p.date, value: p.value }))
+        );
+      }
+
+      chart.timeScale().fitContent();
+
+      // Resize observer
+      const ro = new ResizeObserver((entries) => {
+        for (const entry of entries) {
+          chart.applyOptions({ width: entry.contentRect.width });
+        }
+      });
+      ro.observe(containerRef.current);
+
+      // Cleanup on re-render
+      const currentContainer = containerRef.current;
+      return () => {
+        ro.unobserve(currentContainer);
+        ro.disconnect();
+      };
+    })();
+
+    return () => {
+      disposed = true;
+      if (chartRef.current) {
+        chartRef.current.remove();
+        chartRef.current = null;
+      }
+    };
+  }, [chartData]);
+
+  // Claude chart analysis
+  const handleAnalyze = async () => {
+    if (!chartRef.current) return;
+    setAnalyzing(true);
+    setAnalysisError("");
+    try {
+      const canvas = chartRef.current.takeScreenshot();
+      const imageBase64 = canvas.toDataURL("image/png");
+
+      const res = await fetch("/api/analyze-chart", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          ticker,
+          imageBase64,
+          range,
+          technicals: technicals || undefined,
+        }),
+      });
+
+      if (!res.ok) {
+        const err = await res.json().catch(() => ({}));
+        throw new Error(err.error || `Analysis failed (${res.status})`);
+      }
+
+      const data = await res.json();
+      setAnalysis(data.analysis);
+    } catch (err) {
+      setAnalysisError(err instanceof Error ? err.message : "Analysis failed");
+    } finally {
+      setAnalyzing(false);
+    }
+  };
+
+  return (
+    <div className={className}>
+      <div className="rounded-[24px] border border-slate-200 bg-white p-5 shadow-sm">
+        {/* Header row */}
+        <div className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between mb-4">
+          <div className="flex items-center gap-3">
+            <h2 className="text-lg font-bold text-slate-800">Price Chart</h2>
+            <div className="flex items-center gap-3 text-xs text-slate-400">
+              <span className="flex items-center gap-1">
+                <span className="inline-block w-3 h-0.5 bg-blue-500 rounded" /> SMA 50
+              </span>
+              <span className="flex items-center gap-1">
+                <span className="inline-block w-3 h-0.5 bg-red-500 rounded" /> SMA 200
+              </span>
+            </div>
+          </div>
+
+          <div className="flex items-center gap-2">
+            {/* Timeframe selector */}
+            <div className="flex rounded-xl border border-slate-200 overflow-hidden">
+              {RANGES.map((r) => (
+                <button
+                  key={r.key}
+                  onClick={() => setRange(r.key)}
+                  className={`px-3 py-1.5 text-xs font-semibold transition-colors ${
+                    range === r.key
+                      ? "bg-slate-900 text-white"
+                      : "text-slate-500 hover:bg-slate-50"
+                  }`}
+                >
+                  {r.label}
+                </button>
+              ))}
+            </div>
+
+            {/* Analyze button */}
+            <button
+              onClick={handleAnalyze}
+              disabled={analyzing || loading || !chartData}
+              className="rounded-xl bg-violet-600 px-4 py-1.5 text-xs font-semibold text-white hover:bg-violet-700 transition-colors disabled:opacity-50 flex items-center gap-1.5"
+            >
+              {analyzing && (
+                <span className="inline-block w-3 h-3 border-2 border-white border-t-transparent rounded-full animate-spin" />
+              )}
+              {analyzing ? "Analyzing..." : "Analyze Chart"}
+            </button>
+          </div>
+        </div>
+
+        {/* Chart container */}
+        {loading && (
+          <div className="flex items-center justify-center h-[420px] text-slate-400">
+            <span className="inline-block w-5 h-5 border-2 border-slate-300 border-t-transparent rounded-full animate-spin mr-2" />
+            Loading chart data...
+          </div>
+        )}
+        {error && (
+          <div className="flex items-center justify-center h-[420px] text-red-500 text-sm">
+            {error}
+          </div>
+        )}
+        <div
+          ref={containerRef}
+          className={`w-full ${loading || error ? "hidden" : ""}`}
+          style={{ minHeight: 420 }}
+        />
+      </div>
+
+      {/* Analysis result */}
+      {analysisError && (
+        <div className="mt-4 rounded-[24px] border border-red-200 bg-red-50 p-5 shadow-sm">
+          <p className="text-sm text-red-600">{analysisError}</p>
+        </div>
+      )}
+      {analysis && (
+        <div className="mt-4 rounded-[24px] border border-violet-200 bg-white p-5 shadow-sm">
+          <div className="flex items-center gap-2 mb-3">
+            <h3 className="text-base font-bold text-slate-800">Chart Analysis</h3>
+            <span className="rounded-full bg-violet-100 text-violet-700 px-2 py-0.5 text-[10px] font-semibold">
+              AI Generated
+            </span>
+            <span className="text-xs text-slate-400 ml-auto">
+              {ticker} &middot; {RANGES.find((r) => r.key === range)?.label} chart
+            </span>
+          </div>
+          <div className="prose prose-sm prose-slate max-w-none text-sm leading-relaxed [&_h1]:text-base [&_h2]:text-sm [&_h3]:text-sm [&_h1]:font-bold [&_h2]:font-bold [&_h3]:font-semibold [&_strong]:text-slate-800 [&_ul]:space-y-1 [&_ol]:space-y-1">
+            {analysis.split("\n").map((line, i) => {
+              if (line.startsWith("## ") || line.startsWith("### ")) {
+                const level = line.startsWith("### ") ? "h3" : "h2";
+                const text = line.replace(/^#{2,3}\s/, "");
+                return React.createElement(level, { key: i, className: "mt-3 mb-1" }, text);
+              }
+              if (line.startsWith("**") && line.endsWith("**")) {
+                return <p key={i} className="font-bold text-slate-800 mt-3 mb-1">{line.replace(/\*\*/g, "")}</p>;
+              }
+              if (line.startsWith("- ") || line.startsWith("* ")) {
+                return <p key={i} className="ml-4 text-slate-600 before:content-['•'] before:mr-2 before:text-slate-400">{line.slice(2)}</p>;
+              }
+              if (line.trim() === "") return <div key={i} className="h-2" />;
+              return <p key={i} className="text-slate-600">{line.replace(/\*\*(.*?)\*\*/g, (_, m) => m)}</p>;
+            })}
+          </div>
+        </div>
+      )}
+    </div>
+  );
+}

@@ -6,6 +6,7 @@ import Link from "next/link";
 import { useStocks } from "@/app/lib/StockContext";
 import type { TechnicalIndicators, ImprovingScore } from "@/app/lib/technicals";
 import type { Stock } from "@/app/lib/types";
+import StockChart from "@/app/components/StockChart";
 
 type ScanResult = {
   ticker: string;
@@ -174,6 +175,9 @@ export default function ScanPreviewPage() {
               <span className="text-xs text-slate-400">({bullish} bullish, {bearish} bearish)</span>
             </div>
           </div>
+
+          {/* Price Chart */}
+          <StockChart ticker={rawTicker} technicals={data.technicals} />
 
           {/* Improving Signals */}
           <div className="rounded-[30px] border border-teal-200 bg-white p-6 shadow-sm">
