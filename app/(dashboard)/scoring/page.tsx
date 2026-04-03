@@ -55,7 +55,7 @@ export default function ScoringPage() {
     updateStockFields(ticker, { costBasis: costBasis || undefined });
   }, [updateStockFields]);
 
-  const handleRefreshData = useCallback((ticker: string, data: { price?: number; technicals?: unknown; healthData?: unknown; riskAlert?: unknown }) => {
+  const handleRefreshData = useCallback((ticker: string, data: { name?: string; sector?: string; price?: number; technicals?: unknown; healthData?: unknown; riskAlert?: unknown }) => {
     if (data.price != null) {
       updatePrice(ticker, data.price);
     }
@@ -66,7 +66,13 @@ export default function ScoringPage() {
       const fallbackAlert: RiskAlert = { level: "clear", signals: [], summary: "No signals", dangerCount: 0, cautionCount: 0 };
       updateTechnicals(ticker, data.technicals as TechnicalIndicators, (data.riskAlert as RiskAlert) || fallbackAlert);
     }
-  }, [updatePrice, updateHealthData, updateTechnicals]);
+    if (data.name || data.sector) {
+      updateStockFields(ticker, {
+        ...(data.name ? { name: data.name } : {}),
+        ...(data.sector ? { sector: data.sector } : {}),
+      });
+    }
+  }, [updatePrice, updateHealthData, updateTechnicals, updateStockFields]);
 
   return (
     <main className="min-h-screen bg-[#f4f5f7] px-4 py-6 text-slate-900 md:px-8 md:py-8 overflow-x-hidden">

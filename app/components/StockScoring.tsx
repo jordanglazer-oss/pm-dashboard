@@ -15,7 +15,7 @@ type Props = {
   stocks: ScoredStock[];
   onScoreStock?: (ticker: string) => Promise<void>;
   onUpdateCostBasis?: (ticker: string, costBasis: number) => void;
-  onRefreshData?: (ticker: string, data: { price?: number; technicals?: unknown; healthData?: unknown; riskAlert?: unknown }) => void;
+  onRefreshData?: (ticker: string, data: { name?: string; sector?: string; price?: number; technicals?: unknown; healthData?: unknown; riskAlert?: unknown }) => void;
 };
 
 const RATING_ORDER: Record<string, number> = { Buy: 3, Hold: 2, Sell: 1 };
@@ -104,6 +104,8 @@ export function StockScoring({ stocks, onScoreStock, onUpdateCostBasis, onRefres
       for (const r of results) {
         if (r.error) continue;
         onRefreshData(r.ticker, {
+          name: r.name,
+          sector: r.sector,
           price: r.price,
           technicals: r.technicals,
           healthData: r.healthData,
