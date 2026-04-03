@@ -248,7 +248,7 @@ export default function StockDetailPage() {
                   href={`/stock/${t.toLowerCase()}`}
                   className={`shrink-0 rounded-lg px-3 py-1.5 text-xs font-bold font-mono transition-colors ${
                     t === ticker
-                      ? "bg-slate-900 text-white"
+                      ? "bg-blue-600 text-white"
                       : "border border-slate-200 text-slate-600 hover:bg-slate-50"
                   }`}
                 >
@@ -268,10 +268,10 @@ export default function StockDetailPage() {
               {/* Left: stock info */}
               <div className="min-w-0">
                 {/* Ticker + price */}
-                <div className="flex items-baseline gap-3 mb-1">
-                  <h1 className="text-3xl font-bold font-mono tracking-tight">{stock.ticker}</h1>
+                <div className="flex items-baseline gap-2 sm:gap-3 flex-wrap mb-1">
+                  <h1 className="text-2xl sm:text-3xl font-bold font-mono tracking-tight">{stock.ticker}</h1>
                   {stock.price != null && (
-                    <span className="text-2xl font-semibold text-slate-600">${stock.price.toFixed(2)}</span>
+                    <span className="text-xl sm:text-2xl font-semibold text-slate-600">${stock.price.toFixed(2)}</span>
                   )}
                   <SignalPill tone={stock.bucket === "Portfolio" ? "blue" : "gray"}>
                     {stock.bucket}
@@ -279,30 +279,30 @@ export default function StockDetailPage() {
                 </div>
 
                 {/* Action buttons */}
-                <div className="flex items-center gap-2 flex-wrap mb-3">
+                <div className="flex items-center gap-1.5 sm:gap-2 flex-wrap mb-3">
                   <button
                     onClick={handleRescore}
                     disabled={scoring}
-                    className="rounded-lg bg-blue-600 px-4 py-1.5 text-sm font-semibold text-white hover:bg-blue-700 transition-colors disabled:opacity-50"
+                    className="rounded-lg bg-blue-600 px-3 sm:px-4 py-1.5 text-xs sm:text-sm font-semibold text-white hover:bg-blue-700 transition-colors disabled:opacity-50"
                   >
                     {scoring ? "Scoring..." : "Score"}
                   </button>
                   <button
                     onClick={handleRefreshData}
                     disabled={refreshing}
-                    className="rounded-lg bg-emerald-600 px-4 py-1.5 text-sm font-semibold text-white hover:bg-emerald-700 transition-colors disabled:opacity-50"
+                    className="rounded-lg bg-emerald-600 px-3 sm:px-4 py-1.5 text-xs sm:text-sm font-semibold text-white hover:bg-emerald-700 transition-colors disabled:opacity-50"
                   >
                     {refreshing ? "Refreshing..." : "Refresh Data"}
                   </button>
                   <button
                     onClick={() => moveBucket(ticker)}
-                    className="rounded-lg border border-slate-300 px-4 py-1.5 text-sm font-medium text-slate-600 hover:bg-slate-50 transition-colors"
+                    className="rounded-lg border border-slate-300 px-3 sm:px-4 py-1.5 text-xs sm:text-sm font-medium text-slate-600 hover:bg-slate-50 transition-colors"
                   >
                     Move to {stock.bucket === "Portfolio" ? "Watchlist" : "Portfolio"}
                   </button>
                   <button
                     onClick={handleDelete}
-                    className="rounded-lg border border-red-200 px-4 py-1.5 text-sm font-semibold text-red-600 hover:bg-red-50 transition-colors"
+                    className="rounded-lg border border-red-200 px-3 sm:px-4 py-1.5 text-xs sm:text-sm font-semibold text-red-600 hover:bg-red-50 transition-colors"
                   >
                     Delete
                   </button>
