@@ -157,7 +157,24 @@ export function StockScoring({ stocks, onScoreStock, onUpdateCostBasis, onRefres
               const fRes = await fetch(`/api/fund-data?ticker=${encodeURIComponent(fund.ticker)}`);
               if (fRes.ok) {
                 const fData = await fRes.json();
-                if (fData.fundData) onUpdateFundData(fund.ticker, fData.fundData);
+                if (fData.fundData) {
+                  const existing = fund.fundData;
+                  const merged = { ...fData.fundData };
+                  // Preserve user-provided holdings if API returned none
+                  if (!merged.topHoldings?.length && existing?.topHoldings?.length) {
+                    merged.topHoldings = existing.topHoldings;
+                    merged.sectorWeightings = existing.sectorWeightings;
+                    merged.holdingsLastUpdated = existing.holdingsLastUpdated;
+                  }
+                  // Always preserve the holdings URL and timestamp
+                  if (existing?.holdingsUrl && !merged.holdingsUrl) {
+                    merged.holdingsUrl = existing.holdingsUrl;
+                  }
+                  if (existing?.holdingsLastUpdated && !merged.holdingsLastUpdated) {
+                    merged.holdingsLastUpdated = existing.holdingsLastUpdated;
+                  }
+                  onUpdateFundData(fund.ticker, merged);
+                }
               }
             } catch { /* best effort */ }
           }

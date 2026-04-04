@@ -206,6 +206,7 @@ export type FundData = {
   fundservCode?: string; // Canadian FUNDSERV code (e.g., TDB900)
   yahooTicker?: string; // Resolved Yahoo ticker for Canadian funds (e.g., 0P000071WA.TO)
   holdingsUrl?: string; // User-provided URL for scraping holdings from fund website
+  holdingsLastUpdated?: string; // Timestamp when holdings were last fetched via URL
   lastUpdated?: string;
 };
 

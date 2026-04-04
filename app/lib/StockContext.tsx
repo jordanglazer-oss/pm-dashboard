@@ -162,9 +162,28 @@ export function StockProvider({ children }: { children: React.ReactNode }) {
               const data = await res.json();
               if (data.fundData) {
                 setStocks((prev) => {
-                  const next = prev.map((s) =>
-                    s.ticker === fund.ticker ? { ...s, fundData: data.fundData, ...(data.name && (!s.name || s.name === s.ticker) ? { name: data.name } : {}) } : s
-                  );
+                  const next = prev.map((s) => {
+                    if (s.ticker !== fund.ticker) return s;
+                    const existing = s.fundData;
+                    const merged = { ...data.fundData };
+                    // Preserve user-provided holdings if API returned none
+                    if (!merged.topHoldings?.length && existing?.topHoldings?.length) {
+                      merged.topHoldings = existing.topHoldings;
+                      merged.sectorWeightings = existing.sectorWeightings;
+                      merged.holdingsLastUpdated = existing.holdingsLastUpdated;
+                    }
+                    if (existing?.holdingsUrl && !merged.holdingsUrl) {
+                      merged.holdingsUrl = existing.holdingsUrl;
+                    }
+                    if (existing?.holdingsLastUpdated && !merged.holdingsLastUpdated) {
+                      merged.holdingsLastUpdated = existing.holdingsLastUpdated;
+                    }
+                    return {
+                      ...s,
+                      fundData: merged,
+                      ...(data.name && (!s.name || s.name === s.ticker) ? { name: data.name } : {}),
+                    };
+                  });
                   persistStocks(next);
                   return next;
                 });
