@@ -65,20 +65,26 @@ export function StockScoring({ stocks, onScoreStock, onUpdateCostBasis, onRefres
     fetchPrices();
   }, []); // eslint-disable-line react-hooks/exhaustive-deps
 
-  // Score all stocks sequentially
-  async function handleScoreAll() {
+  // Score all state per bucket
+  const [scoringBucket, setScoringBucket] = useState<"Portfolio" | "Watchlist" | null>(null);
+
+  // Score all stocks in a specific bucket sequentially
+  async function handleScoreBucket(bucket: "Portfolio" | "Watchlist") {
     if (!onScoreStock || scoringAll) return;
+    const bucketStocks = stocks.filter((s) => s.bucket === bucket);
+    if (bucketStocks.length === 0) return;
     setScoringAll(true);
-    for (let i = 0; i < stocks.length; i++) {
-      const s = stocks[i];
-      setScoreProgress(`Scoring ${s.ticker} (${i + 1}/${stocks.length})`);
+    setScoringBucket(bucket);
+    for (let i = 0; i < bucketStocks.length; i++) {
+      const s = bucketStocks[i];
+      setScoreProgress(`Scoring ${s.ticker} (${i + 1}/${bucketStocks.length})`);
       try {
         await onScoreStock(s.ticker);
       } catch { /* continue on error */ }
     }
     setScoreProgress("");
     setScoringAll(false);
-    // Refresh prices after scoring
+    setScoringBucket(null);
     fetchPrices();
   }
 
@@ -220,24 +226,6 @@ export function StockScoring({ stocks, onScoreStock, onUpdateCostBasis, onRefres
               )}
             </button>
           )}
-          {/* Score All */}
-          {onScoreStock && (
-            <button
-              onClick={handleScoreAll}
-              disabled={scoringAll}
-              className="flex items-center gap-1.5 rounded-xl bg-blue-600 px-4 py-2 text-xs font-semibold text-white hover:bg-blue-700 disabled:opacity-50 transition-colors"
-              title="Re-score all stocks with Claude"
-            >
-              {scoringAll ? (
-                <>
-                  <svg className="w-3.5 h-3.5 animate-spin" fill="none" stroke="currentColor" strokeWidth="2" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" d="M16.023 9.348h4.992v-.001M2.985 19.644v-4.992m0 0h4.992m-4.993 0 3.181 3.183a8.25 8.25 0 0 0 13.803-3.7M4.031 9.865a8.25 8.25 0 0 1 13.803-3.7l3.181 3.182" /></svg>
-                  {scoreProgress}
-                </>
-              ) : (
-                <>Score All ({stocks.length})</>
-              )}
-            </button>
-          )}
           <input
             value={query}
             onChange={(e) => setQuery(e.target.value)}
@@ -269,6 +257,23 @@ export function StockScoring({ stocks, onScoreStock, onUpdateCostBasis, onRefres
               <span className={`rounded-full px-2.5 py-0.5 text-xs font-semibold ${isPortfolio ? "bg-blue-50 text-blue-600" : "bg-slate-100 text-slate-500"}`}>
                 {bucketStocks.length}
               </span>
+              {onScoreStock && (
+                <button
+                  onClick={() => handleScoreBucket(bucket)}
+                  disabled={scoringAll}
+                  className={`flex items-center gap-1.5 rounded-lg px-3 py-1 text-xs font-semibold text-white transition-colors disabled:opacity-50 ${isPortfolio ? "bg-blue-600 hover:bg-blue-700" : "bg-slate-600 hover:bg-slate-700"}`}
+                  title={`Score all ${bucket.toLowerCase()} stocks with Claude`}
+                >
+                  {scoringAll && scoringBucket === bucket ? (
+                    <>
+                      <svg className="w-3 h-3 animate-spin" fill="none" stroke="currentColor" strokeWidth="2" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" d="M16.023 9.348h4.992v-.001M2.985 19.644v-4.992m0 0h4.992m-4.993 0 3.181 3.183a8.25 8.25 0 0 0 13.803-3.7M4.031 9.865a8.25 8.25 0 0 1 13.803-3.7l3.181 3.182" /></svg>
+                      {scoreProgress}
+                    </>
+                  ) : (
+                    <>Score All ({bucketStocks.length})</>
+                  )}
+                </button>
+              )}
               <div className={`flex-1 border-t ${isPortfolio ? "border-blue-200" : "border-slate-200"}`} />
             </div>
 
@@ -292,7 +297,7 @@ export function StockScoring({ stocks, onScoreStock, onUpdateCostBasis, onRefres
                       </div>
                     </div>
                     <div className="text-xs text-slate-500 mb-3">{s.name} &middot; {s.sector}</div>
-                    <div className="grid grid-cols-3 gap-3 text-center">
+                    <div className={`grid gap-3 text-center ${isPortfolio ? "grid-cols-3" : "grid-cols-2"}`}>
                       <div>
                         <div className="text-[10px] text-slate-400 uppercase tracking-wider">Price</div>
                         <div className="text-sm font-semibold text-slate-800">
@@ -303,12 +308,14 @@ export function StockScoring({ stocks, onScoreStock, onUpdateCostBasis, onRefres
                         <div className="text-[10px] text-slate-400 uppercase tracking-wider">Score</div>
                         <div className="text-sm font-semibold text-slate-900">{s.adjusted}/{MAX_SCORE}</div>
                       </div>
-                      <div>
-                        <div className="text-[10px] text-slate-400 uppercase tracking-wider">P&L</div>
-                        <div className={`text-sm font-semibold ${pnlPct != null ? (pnlPct >= 0 ? "text-emerald-600" : "text-red-500") : "text-slate-300"}`}>
-                          {pnlPct != null ? `${pnlPct >= 0 ? "+" : ""}${pnlPct.toFixed(1)}%` : "\u2014"}
+                      {isPortfolio && (
+                        <div>
+                          <div className="text-[10px] text-slate-400 uppercase tracking-wider">P&L</div>
+                          <div className={`text-sm font-semibold ${pnlPct != null ? (pnlPct >= 0 ? "text-emerald-600" : "text-red-500") : "text-slate-300"}`}>
+                            {pnlPct != null ? `${pnlPct >= 0 ? "+" : ""}${pnlPct.toFixed(1)}%` : "\u2014"}
+                          </div>
                         </div>
-                      </div>
+                      )}
                     </div>
                     {(s.companySummary || s.investmentThesis) && (
                       <div className="mt-3 pt-3 border-t border-slate-100 space-y-1">
@@ -329,8 +336,8 @@ export function StockScoring({ stocks, onScoreStock, onUpdateCostBasis, onRefres
                     <th className="pb-3 pr-2 cursor-pointer hover:text-slate-800 select-none" onClick={() => toggleSort("ticker")}>Ticker{arrow("ticker")}</th>
                     <th className="pb-3 pr-2 cursor-pointer hover:text-slate-800 select-none" onClick={() => toggleSort("sector")}>Sector{arrow("sector")}</th>
                     <th className="pb-3 pr-2 cursor-pointer hover:text-slate-800 select-none text-right" onClick={() => toggleSort("price")}>Price{arrow("price")}</th>
-                    <th className="pb-3 pr-2 text-right">Cost Basis</th>
-                    <th className="pb-3 pr-2 cursor-pointer hover:text-slate-800 select-none text-right" onClick={() => toggleSort("pnl")}>P&L{arrow("pnl")}</th>
+                    {isPortfolio && <th className="pb-3 pr-2 text-right">Cost Basis</th>}
+                    {isPortfolio && <th className="pb-3 pr-2 cursor-pointer hover:text-slate-800 select-none text-right" onClick={() => toggleSort("pnl")}>P&L{arrow("pnl")}</th>}
                     <th className="pb-3 pr-2 cursor-pointer hover:text-slate-800 select-none text-right" onClick={() => toggleSort("raw")}>Raw{arrow("raw")}</th>
                     <th className="pb-3 pr-2 cursor-pointer hover:text-slate-800 select-none text-right" onClick={() => toggleSort("adjusted")}>Adj.{arrow("adjusted")}</th>
                     <th className="pb-3 pr-2 cursor-pointer hover:text-slate-800 select-none" onClick={() => toggleSort("rating")}>Rating{arrow("rating")}</th>
@@ -366,29 +373,33 @@ export function StockScoring({ stocks, onScoreStock, onUpdateCostBasis, onRefres
                             <span className="text-slate-300">&mdash;</span>
                           )}
                         </td>
-                        <td className="py-3 pr-2 text-right" onClick={(e) => e.stopPropagation()}>
-                          <input
-                            type="number"
-                            step="0.01"
-                            placeholder="—"
-                            value={cb ?? ""}
-                            onChange={(e) => {
-                              const val = parseFloat(e.target.value);
-                              if (onUpdateCostBasis && !isNaN(val)) onUpdateCostBasis(s.ticker, val);
-                              else if (onUpdateCostBasis && e.target.value === "") onUpdateCostBasis(s.ticker, 0);
-                            }}
-                            className="w-20 rounded-lg border border-transparent bg-transparent px-1 py-0.5 text-right text-sm font-mono text-slate-600 hover:border-slate-200 focus:border-blue-300 focus:bg-white focus:outline-none focus:ring-1 focus:ring-blue-200 transition-all"
-                          />
-                        </td>
-                        <td className="py-3 pr-2 text-right font-mono text-xs">
-                          {pnlPct != null ? (
-                            <span className={pnlPct >= 0 ? "text-emerald-600 font-semibold" : "text-red-500 font-semibold"}>
-                              {pnlPct >= 0 ? "+" : ""}{pnlPct.toFixed(1)}%
-                            </span>
-                          ) : (
-                            <span className="text-slate-300">&mdash;</span>
-                          )}
-                        </td>
+                        {isPortfolio && (
+                          <td className="py-3 pr-2 text-right" onClick={(e) => e.stopPropagation()}>
+                            <input
+                              type="number"
+                              step="0.01"
+                              placeholder="—"
+                              value={cb ?? ""}
+                              onChange={(e) => {
+                                const val = parseFloat(e.target.value);
+                                if (onUpdateCostBasis && !isNaN(val)) onUpdateCostBasis(s.ticker, val);
+                                else if (onUpdateCostBasis && e.target.value === "") onUpdateCostBasis(s.ticker, 0);
+                              }}
+                              className="w-20 rounded-lg border border-transparent bg-transparent px-1 py-0.5 text-right text-sm font-mono text-slate-600 hover:border-slate-200 focus:border-blue-300 focus:bg-white focus:outline-none focus:ring-1 focus:ring-blue-200 transition-all"
+                            />
+                          </td>
+                        )}
+                        {isPortfolio && (
+                          <td className="py-3 pr-2 text-right font-mono text-xs">
+                            {pnlPct != null ? (
+                              <span className={pnlPct >= 0 ? "text-emerald-600 font-semibold" : "text-red-500 font-semibold"}>
+                                {pnlPct >= 0 ? "+" : ""}{pnlPct.toFixed(1)}%
+                              </span>
+                            ) : (
+                              <span className="text-slate-300">&mdash;</span>
+                            )}
+                          </td>
+                        )}
                         <td className="py-3 pr-2 text-right text-sm text-slate-600">{s.raw}/{MAX_SCORE}</td>
                         <td className="py-3 pr-2 text-right text-sm font-semibold text-slate-900">{s.adjusted}/{MAX_SCORE}</td>
                         <td className="py-3 pr-2">

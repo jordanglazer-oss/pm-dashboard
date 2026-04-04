@@ -326,11 +326,51 @@ export default function ResearchPage() {
   useEffect(() => {
     fetch("/api/kv/research")
       .then((r) => r.json())
-      .then((data) => {
+      .then(async (data) => {
         if (data.research) {
-          setState(data.research);
-          // Auto-fetch live prices after loading research data
-          fetchLivePrices(data.research);
+          let research = data.research as ResearchState;
+          setState(research);
+          fetchLivePrices(research);
+
+          // Backfill missing names/sectors for existing uptick entries
+          const needsBackfill = research.newtonUpticks.filter(
+            (u) => !u.name || u.name === u.ticker || !u.sector || u.sector === "—"
+          );
+          if (needsBackfill.length > 0) {
+            try {
+              const tickers = needsBackfill.map((u) => u.ticker).join(",");
+              const res = await fetch(`/api/company-name?tickers=${encodeURIComponent(tickers)}`);
+              if (res.ok) {
+                const info = await res.json();
+                let changed = false;
+                const updated = research.newtonUpticks.map((u) => {
+                  const newName = info.names?.[u.ticker];
+                  const newSector = info.sectors?.[u.ticker];
+                  const shouldUpdateName = newName && (!u.name || u.name === u.ticker);
+                  const shouldUpdateSector = newSector && (!u.sector || u.sector === "—");
+                  if (shouldUpdateName || shouldUpdateSector) {
+                    changed = true;
+                    return {
+                      ...u,
+                      ...(shouldUpdateName ? { name: newName } : {}),
+                      ...(shouldUpdateSector ? { sector: newSector } : {}),
+                    };
+                  }
+                  return u;
+                });
+                if (changed) {
+                  research = { ...research, newtonUpticks: updated };
+                  setState(research);
+                  // Persist the backfilled data
+                  fetch("/api/kv/research", {
+                    method: "PUT",
+                    headers: { "Content-Type": "application/json" },
+                    body: JSON.stringify({ research }),
+                  }).catch(() => {});
+                }
+              }
+            } catch { /* best-effort */ }
+          }
         }
       })
       .catch(() => {})
