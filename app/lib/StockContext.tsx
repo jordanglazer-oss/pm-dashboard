@@ -2,8 +2,10 @@
 
 import React, { createContext, useContext, useState, useMemo, useCallback, useEffect, useRef } from "react";
 import type { Stock, MarketData, ScoredStock, MorningBrief, ScoreKey, ScoreExplanations, HealthData, TechnicalIndicators, RiskAlert, FundData } from "./types";
+import type { PimModelGroup, PimModelData } from "./pim-types";
 import { computeScores, isOffensiveSector, isScoreable } from "./scoring";
 import { holdingsSeed, defaultMarketData } from "./defaults";
+import { pimModelSeed } from "./pim-seed";
 
 export type ChartAnalysisEntry = {
   analysis: string;
@@ -45,6 +47,8 @@ type StockContextType = {
   getStock: (ticker: string) => ScoredStock | undefined;
   portfolioStocks: ScoredStock[];
   watchlistStocks: ScoredStock[];
+  pimModels: PimModelData;
+  updatePimModels: (data: PimModelData) => void;
 };
 
 const StockContext = createContext<StockContextType | null>(null);
@@ -80,6 +84,7 @@ export function StockProvider({ children }: { children: React.ReactNode }) {
   const [brief, setBriefState] = useState<MorningBrief | null>(null);
   const [chartAnalyses, setChartAnalysesState] = useState<Record<string, ChartAnalysisEntry>>({});
   const [scannerData, setScannerDataState] = useState<ScannerData | null>(null);
+  const [pimModels, setPimModelsState] = useState<PimModelData>({ groups: pimModelSeed });
   const [loading, setLoading] = useState(true);
 
   const persistStocks = useDebouncedPersist("/api/kv/stocks", "stocks");
@@ -94,6 +99,14 @@ export function StockProvider({ children }: { children: React.ReactNode }) {
   const persistBrief = useDebouncedPersist("/api/kv/brief", "brief", 100);
   const persistChartAnalyses = useDebouncedPersist("/api/kv/chart-analysis", "chartAnalyses", 300);
   const persistScanner = useDebouncedPersist("/api/kv/scanner", "scanner", 300);
+  // Custom persist for pim-models (sends full object, not wrapped in key)
+  const persistPim = useCallback((data: PimModelData) => {
+    fetch("/api/kv/pim-models", {
+      method: "PUT",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify(data),
+    }).catch((e) => console.error("Failed to persist pim-models:", e));
+  }, []);
 
   /* ─── Load from KV on mount ─── */
   useEffect(() => {
@@ -103,13 +116,15 @@ export function StockProvider({ children }: { children: React.ReactNode }) {
       fetch("/api/kv/brief").then((r) => r.json()).catch(() => ({ brief: null })),
       fetch("/api/kv/chart-analysis").then((r) => r.json()).catch(() => ({ chartAnalyses: {} })),
       fetch("/api/kv/scanner").then((r) => r.json()).catch(() => ({ scanner: null })),
-    ]).then(async ([stocksRes, marketRes, briefRes, chartRes, scannerRes]) => {
+      fetch("/api/kv/pim-models").then((r) => r.json()).catch(() => ({ groups: pimModelSeed })),
+    ]).then(async ([stocksRes, marketRes, briefRes, chartRes, scannerRes, pimRes]) => {
       const loadedStocks: Stock[] = stocksRes.stocks || holdingsSeed;
       setStocks(loadedStocks);
       if (marketRes.market) setMarketData({ ...defaultMarketData, ...marketRes.market });
       if (briefRes.brief) setBriefState(briefRes.brief);
       if (chartRes.chartAnalyses) setChartAnalysesState(chartRes.chartAnalyses);
       if (scannerRes.scanner) setScannerDataState(scannerRes.scanner);
+      if (pimRes.groups) setPimModelsState(pimRes);
       setLoading(false);
 
       // Backfill missing names from Yahoo Finance for all stocks
@@ -377,6 +392,12 @@ export function StockProvider({ children }: { children: React.ReactNode }) {
     persistScanner(data);
   }, [persistScanner]);
 
+  /* ─── PIM Models ─── */
+  const updatePimModels = useCallback((data: PimModelData) => {
+    setPimModelsState(data);
+    persistPim(data);
+  }, [persistPim]);
+
   const getStock = useCallback(
     (ticker: string) => scoredStocks.find((s) => s.ticker === ticker),
     [scoredStocks]
@@ -413,6 +434,8 @@ export function StockProvider({ children }: { children: React.ReactNode }) {
         getStock,
         portfolioStocks,
         watchlistStocks,
+        pimModels,
+        updatePimModels,
       }}
     >
       {children}
