@@ -56,140 +56,64 @@ const SECTOR_NAME_MAP: Record<string, string> = {
   healthcare: "Health Care",
 };
 
-type TotalReturnResult = {
-  performance: FundPerformance;
-  /** True if Yahoo adjclose differs from close, meaning dividends are reflected */
-  adjcloseIsReal: boolean;
-};
-
 /**
- * Calculate total return performance from Yahoo adjusted close prices.
- * Uses adjclose (which accounts for dividends and splits) to compute true total return.
- * Returns YTD, 1Y, 3Y, 5Y, and 10Y — all annualized where applicable.
+ * Calculate real-time YTD price return from Yahoo chart data.
+ * Uses close prices (Dec 31 → current regularMarketPrice).
  *
- * IMPORTANT: Yahoo does not provide meaningful adjclose for many Canadian-listed ETFs
- * (adjclose === close). The `adjcloseIsReal` flag lets callers decide whether to trust
- * these values or defer to API sources (Globe and Mail, Morningstar) that report
- * proper total return.
+ * This is price return only (excludes distributions), but for YTD the error is
+ * typically small (<1% for most ETFs) and the real-time freshness is valuable —
+ * API sources (Globe and Mail, Morningstar, Yahoo trailingReturns) report
+ * month-end YTD which can be stale.
+ *
+ * For 1Y/3Y/5Y/10Y we rely on Yahoo trailingReturns (total return, month-end)
+ * rather than chart calculations, because Yahoo's adjclose data is unreliable
+ * for some securities (e.g., Canadian ETFs with large capital gains distributions
+ * produce inflated adjclose-based returns).
  */
-async function calculateTotalReturns(
+async function calculateRealtimeYTD(
   ticker: string,
   auth: { cookie: string; crumb: string }
-): Promise<TotalReturnResult | undefined> {
+): Promise<number | undefined> {
   try {
-    const now = new Date();
-    const currentYear = now.getFullYear();
+    const currentYear = new Date().getFullYear();
+    // Fetch prices around Dec 31 of previous year and recent days
+    const dec29 = Math.floor(new Date(`${currentYear - 1}-12-29`).getTime() / 1000);
+    const jan3 = Math.floor(new Date(`${currentYear}-01-03`).getTime() / 1000);
 
-    // We need data going back up to 10 years + a few days buffer
-    const tenYearsAgo = Math.floor(new Date(currentYear - 10, now.getMonth(), now.getDate() - 10).getTime() / 1000);
-    const tomorrow = Math.floor(now.getTime() / 1000) + 86400;
+    const [histRes, currentRes] = await Promise.all([
+      fetch(
+        `${YAHOO_BASE}/v8/finance/chart/${encodeURIComponent(ticker)}?period1=${dec29}&period2=${jan3}&interval=1d&crumb=${encodeURIComponent(auth.crumb)}`,
+        { cache: "no-store", headers: { "User-Agent": "Mozilla/5.0", Cookie: auth.cookie } }
+      ),
+      fetch(
+        `${YAHOO_BASE}/v8/finance/chart/${encodeURIComponent(ticker)}?range=5d&interval=1d&crumb=${encodeURIComponent(auth.crumb)}`,
+        { cache: "no-store", headers: { "User-Agent": "Mozilla/5.0", Cookie: auth.cookie } }
+      ),
+    ]);
 
-    // Single request for the full history — Yahoo will return what's available
-    const res = await fetch(
-      `${YAHOO_BASE}/v8/finance/chart/${encodeURIComponent(ticker)}?period1=${tenYearsAgo}&period2=${tomorrow}&interval=1d&crumb=${encodeURIComponent(auth.crumb)}`,
-      { cache: "no-store", headers: { "User-Agent": "Mozilla/5.0", Cookie: auth.cookie } }
-    );
-    if (!res.ok) return undefined;
+    if (!histRes.ok || !currentRes.ok) return undefined;
+    const [histData, currentData] = await Promise.all([histRes.json(), currentRes.json()]);
 
-    const data = await res.json();
-    const result = data?.chart?.result?.[0];
-    if (!result) return undefined;
-
-    const timestamps = result.timestamp as number[] | undefined;
-    const rawCloses = result.indicators?.quote?.[0]?.close as number[] | undefined;
-    const adjCloses = result.indicators?.adjclose?.[0]?.adjclose as number[] | undefined;
-    const currentPrice = result.meta?.regularMarketPrice as number | undefined;
-
-    if (!timestamps || !rawCloses || !currentPrice || timestamps.length < 2) return undefined;
-
-    // Detect whether adjclose is meaningful by comparing an older data point.
-    // If adjclose === close for a point >6 months ago, Yahoo isn't adjusting for dividends.
-    // We check a point near the middle of the dataset for a robust comparison.
-    let adjcloseIsReal = false;
-    if (adjCloses && rawCloses) {
-      // Pick a sample point ~1 year back (or middle of dataset if shorter)
-      const sampleIdx = Math.max(0, Math.min(
-        Math.floor(timestamps.length / 2),
-        timestamps.length - Math.min(252, timestamps.length) // ~252 trading days = 1 year
-      ));
-      const rawSample = rawCloses[sampleIdx];
-      const adjSample = adjCloses[sampleIdx];
-      if (rawSample && adjSample && rawSample > 0) {
-        // If there's more than 0.01% divergence, adjclose is real
-        adjcloseIsReal = Math.abs(adjSample - rawSample) / rawSample > 0.0001;
-      }
-    }
-
-    // Use adjclose if real, otherwise fall back to regular close (price-only)
-    const closes = (adjcloseIsReal && adjCloses) ? adjCloses : rawCloses;
-
-    // Find the closest trading day on or before a target date
-    function findClose(targetDate: string): number | undefined {
-      for (let i = timestamps!.length - 1; i >= 0; i--) {
-        const date = new Date(timestamps![i] * 1000).toISOString().split("T")[0];
-        if (date <= targetDate && closes[i] != null && isFinite(closes[i])) {
-          return closes[i];
+    // Find Dec 31 (or last trading day before it) close price
+    const closes = histData?.chart?.result?.[0]?.indicators?.quote?.[0]?.close as number[] | undefined;
+    const timestamps = histData?.chart?.result?.[0]?.timestamp as number[] | undefined;
+    let dec31Close: number | undefined;
+    if (closes && timestamps) {
+      for (let i = timestamps.length - 1; i >= 0; i--) {
+        const date = new Date(timestamps[i] * 1000).toISOString().split("T")[0];
+        if (date <= `${currentYear - 1}-12-31` && closes[i] != null && isFinite(closes[i])) {
+          dec31Close = closes[i];
+          break;
         }
       }
-      return undefined;
     }
 
-    // For total return, project regularMarketPrice into adjusted space.
-    // The latest adjclose may be yesterday's, so scale current price by the
-    // adjclose/close ratio of the most recent data point.
-    let currentAdjPrice = currentPrice;
-    if (adjcloseIsReal && adjCloses) {
-      const lastIdx = timestamps.length - 1;
-      const lastRawClose = rawCloses[lastIdx];
-      const lastAdjClose = adjCloses[lastIdx];
-      if (lastRawClose && lastAdjClose && lastRawClose > 0) {
-        currentAdjPrice = currentPrice * (lastAdjClose / lastRawClose);
-      }
+    // Get current market price
+    const currentPrice = currentData?.chart?.result?.[0]?.meta?.regularMarketPrice as number | undefined;
+
+    if (dec31Close && currentPrice && dec31Close > 0) {
+      return parseFloat(((currentPrice - dec31Close) / dec31Close * 100).toFixed(2));
     }
-
-    const perf: FundPerformance = {};
-
-    // YTD: Dec 31 of previous year → now
-    const dec31 = `${currentYear - 1}-12-31`;
-    const ytdBase = findClose(dec31);
-    if (ytdBase && ytdBase > 0) {
-      perf.ytd = parseFloat(((currentAdjPrice - ytdBase) / ytdBase * 100).toFixed(2));
-    }
-
-    // 1Y: ~1 year ago → now (simple return, not annualized)
-    const oneYearAgo = `${currentYear - 1}-${String(now.getMonth() + 1).padStart(2, "0")}-${String(now.getDate()).padStart(2, "0")}`;
-    const oneYBase = findClose(oneYearAgo);
-    if (oneYBase && oneYBase > 0) {
-      perf.oneYear = parseFloat(((currentAdjPrice - oneYBase) / oneYBase * 100).toFixed(2));
-    }
-
-    // 3Y: annualized total return
-    const threeYearAgo = `${currentYear - 3}-${String(now.getMonth() + 1).padStart(2, "0")}-${String(now.getDate()).padStart(2, "0")}`;
-    const threeYBase = findClose(threeYearAgo);
-    if (threeYBase && threeYBase > 0) {
-      const totalReturn = currentAdjPrice / threeYBase;
-      perf.threeYear = parseFloat(((Math.pow(totalReturn, 1 / 3) - 1) * 100).toFixed(2));
-    }
-
-    // 5Y: annualized total return
-    const fiveYearAgo = `${currentYear - 5}-${String(now.getMonth() + 1).padStart(2, "0")}-${String(now.getDate()).padStart(2, "0")}`;
-    const fiveYBase = findClose(fiveYearAgo);
-    if (fiveYBase && fiveYBase > 0) {
-      const totalReturn = currentAdjPrice / fiveYBase;
-      perf.fiveYear = parseFloat(((Math.pow(totalReturn, 1 / 5) - 1) * 100).toFixed(2));
-    }
-
-    // 10Y: annualized total return
-    const tenYearAgo = `${currentYear - 10}-${String(now.getMonth() + 1).padStart(2, "0")}-${String(now.getDate()).padStart(2, "0")}`;
-    const tenYBase = findClose(tenYearAgo);
-    if (tenYBase && tenYBase > 0) {
-      const totalReturn = currentAdjPrice / tenYBase;
-      perf.tenYear = parseFloat(((Math.pow(totalReturn, 1 / 10) - 1) * 100).toFixed(2));
-    }
-
-    return Object.keys(perf).length > 0
-      ? { performance: perf, adjcloseIsReal }
-      : undefined;
   } catch {
     /* best effort */
   }
@@ -724,37 +648,40 @@ function extractYahooFundData(modules: Record<string, unknown>): FundData {
   }
 
   // Fund performance
+  // Yahoo returns performance values as decimals (0.22 = 22%).
+  // Convert to percentages for consistency with Globe and Mail / Morningstar.
+  // Prefer trailingReturns over performanceOverview — trailingReturns matches
+  // Yahoo's website (monthly total returns) while performanceOverview can
+  // differ and uses different calculation periods.
   let performance: FundPerformance | undefined;
   let categoryPerformance: FundPerformance | undefined;
   const perfOverview = fundPerf?.performanceOverview;
   const trailingReturns = fundPerf?.trailingReturns;
 
+  /** Convert Yahoo decimal return to percentage (0.22 → 22.0), rounded to 2dp */
+  const toPct = (v: number | undefined): number | undefined =>
+    v != null ? parseFloat((v * 100).toFixed(2)) : undefined;
+
   if (perfOverview || trailingReturns) {
     const fund: FundPerformance = {};
-    if (perfOverview) {
-      fund.ytd = rawVal(perfOverview, "ytdReturnPct");
-      fund.oneYear = rawVal(perfOverview, "oneYearTotalReturn");
-      fund.threeYear = rawVal(perfOverview, "threeYearTotalReturn");
-      fund.fiveYear = rawVal(perfOverview, "fiveYrAvgReturnPct");
-    }
+    // trailingReturns is primary — matches Yahoo's website display
     if (trailingReturns) {
-      if (fund.ytd == null) fund.ytd = rawVal(trailingReturns, "ytd");
-      fund.oneMonth = rawVal(trailingReturns, "oneMonth");
-      fund.threeMonth = rawVal(trailingReturns, "threeMonth");
-      if (fund.oneYear == null) fund.oneYear = rawVal(trailingReturns, "oneYear");
-      if (fund.threeYear == null) fund.threeYear = rawVal(trailingReturns, "threeYear");
-      if (fund.fiveYear == null) fund.fiveYear = rawVal(trailingReturns, "fiveYear");
-      fund.tenYear = rawVal(trailingReturns, "tenYear");
+      fund.ytd = toPct(rawVal(trailingReturns, "ytd"));
+      fund.oneMonth = toPct(rawVal(trailingReturns, "oneMonth"));
+      fund.threeMonth = toPct(rawVal(trailingReturns, "threeMonth"));
+      fund.oneYear = toPct(rawVal(trailingReturns, "oneYear"));
+      fund.threeYear = toPct(rawVal(trailingReturns, "threeYear"));
+      fund.fiveYear = toPct(rawVal(trailingReturns, "fiveYear"));
+      fund.tenYear = toPct(rawVal(trailingReturns, "tenYear"));
 
-      categoryPerformance = {
-        ytd: rawVal(trailingReturns, "ytd"),
-        oneMonth: rawVal(trailingReturns, "oneMonth"),
-        threeMonth: rawVal(trailingReturns, "threeMonth"),
-        oneYear: rawVal(trailingReturns, "oneYear"),
-        threeYear: rawVal(trailingReturns, "threeYear"),
-        fiveYear: rawVal(trailingReturns, "fiveYear"),
-        tenYear: rawVal(trailingReturns, "tenYear"),
-      };
+      categoryPerformance = { ...fund };
+    }
+    // performanceOverview fills gaps only
+    if (perfOverview) {
+      if (fund.ytd == null) fund.ytd = toPct(rawVal(perfOverview, "ytdReturnPct"));
+      if (fund.oneYear == null) fund.oneYear = toPct(rawVal(perfOverview, "oneYearTotalReturn"));
+      if (fund.threeYear == null) fund.threeYear = toPct(rawVal(perfOverview, "threeYearTotalReturn"));
+      if (fund.fiveYear == null) fund.fiveYear = toPct(rawVal(perfOverview, "fiveYrAvgReturnPct"));
     }
     performance = fund;
   }
@@ -858,19 +785,12 @@ async function fetchCanadianFundData(
     };
   }
 
-  // Calculate total returns from adjusted close prices — only override when
-  // Yahoo adjclose is meaningful (includes dividends). Canadian funds on Yahoo
-  // often have adjclose === close, so we defer to Globe and Mail / Morningstar.
+  // Real-time YTD from chart prices — overrides stale month-end API values
   const ytdTicker = yahooTicker || fundservCode;
-  if (auth) {
-    const calculatedReturns = await calculateTotalReturns(ytdTicker, auth);
-    if (calculatedReturns?.adjcloseIsReal && mergedPerformance) {
-      const cr = calculatedReturns.performance;
-      if (cr.ytd != null) mergedPerformance.ytd = cr.ytd;
-      if (cr.oneYear != null) mergedPerformance.oneYear = cr.oneYear;
-      if (cr.threeYear != null) mergedPerformance.threeYear = cr.threeYear;
-      if (cr.fiveYear != null) mergedPerformance.fiveYear = cr.fiveYear;
-      if (cr.tenYear != null) mergedPerformance.tenYear = cr.tenYear;
+  if (auth && mergedPerformance) {
+    const realtimeYTD = await calculateRealtimeYTD(ytdTicker, auth);
+    if (realtimeYTD != null) {
+      mergedPerformance.ytd = realtimeYTD;
     }
   }
 
@@ -1313,33 +1233,36 @@ export async function GET(request: NextRequest) {
 
     // Merge performance: primary source wins, Yahoo fills gaps
     const yp = fundData.performance || {};
-    if (isCanadianETF && (gmData.performance || gmData.mer != null)) {
-      // Canadian ETFs: Globe and Mail is primary
+    // Merge performance: Yahoo trailingReturns is primary (total return, matches
+    // Yahoo website). Globe and Mail / Morningstar fill gaps only.
+    // Yahoo values are already converted to percentages by extractYahooFundData.
+    if (isCanadianETF) {
+      // Canadian ETFs: Yahoo primary, Globe and Mail fills gaps
       const gm = gmData.performance || {};
       fundData.performance = {
-        ytd: gm.ytd ?? yp.ytd,
+        ytd: yp.ytd ?? gm.ytd,
         oneMonth: yp.oneMonth,
         threeMonth: yp.threeMonth,
-        oneYear: gm.oneYear ?? yp.oneYear,
-        threeYear: gm.threeYear ?? yp.threeYear,
-        fiveYear: gm.fiveYear ?? yp.fiveYear,
-        tenYear: gm.tenYear ?? yp.tenYear,
+        oneYear: yp.oneYear ?? gm.oneYear,
+        threeYear: yp.threeYear ?? gm.threeYear,
+        fiveYear: yp.fiveYear ?? gm.fiveYear,
+        tenYear: yp.tenYear ?? gm.tenYear,
       };
       if (gmData.mer != null) fundData.expenseRatio = gmData.mer;
     } else if (msData.performance) {
-      // US/other ETFs: Morningstar is primary
+      // US/other ETFs: Yahoo primary, Morningstar fills gaps
       const ms = msData.performance;
       fundData.performance = {
-        ytd: ms.ytd ?? yp.ytd,
-        oneMonth: ms.oneMonth ?? yp.oneMonth,
-        threeMonth: ms.threeMonth ?? yp.threeMonth,
-        oneYear: ms.oneYear ?? yp.oneYear,
-        threeYear: ms.threeYear ?? yp.threeYear,
-        fiveYear: ms.fiveYear ?? yp.fiveYear,
-        tenYear: ms.tenYear ?? yp.tenYear,
+        ytd: yp.ytd ?? ms.ytd,
+        oneMonth: yp.oneMonth ?? ms.oneMonth,
+        threeMonth: yp.threeMonth ?? ms.threeMonth,
+        oneYear: yp.oneYear ?? ms.oneYear,
+        threeYear: yp.threeYear ?? ms.threeYear,
+        fiveYear: yp.fiveYear ?? ms.fiveYear,
+        tenYear: yp.tenYear ?? ms.tenYear,
       };
     }
-    // Morningstar is authoritative for these fields (overrides Yahoo)
+    // Morningstar is authoritative for these non-performance fields
     if (msData.category) fundData.category = msData.category;
     if (msData.starRating != null) fundData.starRating = msData.starRating;
     if (msData.mer != null) fundData.expenseRatio = msData.mer;
@@ -1351,26 +1274,10 @@ export async function GET(request: NextRequest) {
     if (msHoldings.topHoldings?.length) fundData.topHoldings = msHoldings.topHoldings;
     if (msHoldings.sectorWeightings?.length) fundData.sectorWeightings = msHoldings.sectorWeightings;
 
-    // Calculate total returns from adjusted close prices
-    // Only override API values when Yahoo adjclose is meaningful (i.e. includes dividends).
-    // For Canadian ETFs where adjclose === close, defer to Globe and Mail / Morningstar
-    // which already report proper total return.
-    const calculatedReturns = await calculateTotalReturns(ticker, auth);
-    if (calculatedReturns) {
-      const cr = calculatedReturns.performance;
-      if (calculatedReturns.adjcloseIsReal) {
-        // adjclose includes dividends → override all periods with true total return
-        fundData.performance = {
-          ...fundData.performance,
-          ...(cr.ytd != null && { ytd: cr.ytd }),
-          ...(cr.oneYear != null && { oneYear: cr.oneYear }),
-          ...(cr.threeYear != null && { threeYear: cr.threeYear }),
-          ...(cr.fiveYear != null && { fiveYear: cr.fiveYear }),
-          ...(cr.tenYear != null && { tenYear: cr.tenYear }),
-        };
-      }
-      // When adjclose is NOT real (Canadian ETFs), don't override — the API sources
-      // (Globe and Mail, Morningstar) already provide total return figures.
+    // Real-time YTD from chart prices — overrides stale month-end API values
+    const realtimeYTD = await calculateRealtimeYTD(ticker, auth);
+    if (realtimeYTD != null) {
+      fundData.performance = { ...fundData.performance, ytd: realtimeYTD };
     }
 
     // Provider-direct holdings: highest priority — override Morningstar/Yahoo
