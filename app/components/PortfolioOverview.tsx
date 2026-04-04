@@ -37,6 +37,16 @@ const sectorColors: Record<string, string> = {
   "Real Estate": "bg-pink-500",
 };
 
+function fundReturnFmt(val: number | undefined): string {
+  if (val == null) return "—";
+  return `${val >= 0 ? "+" : ""}${val.toFixed(1)}%`;
+}
+
+function fundReturnColor(val: number | undefined): string {
+  if (val == null) return "text-slate-400";
+  return val >= 0 ? "text-emerald-600" : "text-red-500";
+}
+
 function ratingColor(label: string): string {
   if (label.includes("Buy")) return "text-emerald-600";
   if (label.includes("Underweight")) return "text-amber-600";
@@ -159,7 +169,7 @@ export function PortfolioOverview() {
             <span className="text-sm text-slate-400">{fundPortfolio.length} holdings · {totalFundWeight.toFixed(1)}% total weight</span>
           </div>
           <div className="overflow-x-auto">
-            <table className="w-full text-left text-sm">
+            <table className="w-full min-w-[800px] text-left text-sm">
               <thead>
                 <tr className="border-b border-slate-200 text-xs text-slate-500">
                   <th className="pb-2">Ticker</th>
@@ -167,26 +177,39 @@ export function PortfolioOverview() {
                   <th className="pb-2">Type</th>
                   <th className="pb-2 text-right">Weight</th>
                   <th className="pb-2 text-right">Price</th>
+                  <th className="pb-2 text-right">YTD</th>
+                  <th className="pb-2 text-right">1Y</th>
+                  <th className="pb-2 text-right">3Y</th>
+                  <th className="pb-2 text-right">5Y</th>
+                  <th className="pb-2 text-right">10Y</th>
                 </tr>
               </thead>
               <tbody>
-                {fundPortfolio.map((s) => (
-                  <tr key={s.ticker} className="border-b border-slate-50 hover:bg-slate-50/50 transition-colors">
-                    <td className="py-3">
-                      <Link href={`/stock/${s.ticker.toLowerCase()}`} className="font-bold text-slate-800 hover:underline font-mono">
-                        {s.ticker}
-                      </Link>
-                    </td>
-                    <td className="py-3 text-slate-600">{s.name}</td>
-                    <td className="py-3">
-                      <span className={`rounded-md px-2 py-0.5 text-[10px] font-bold ${s.instrumentType === "etf" ? "bg-indigo-100 text-indigo-700" : "bg-purple-100 text-purple-700"}`}>
-                        {INSTRUMENT_LABELS[s.instrumentType || "stock"]}
-                      </span>
-                    </td>
-                    <td className="py-3 text-right font-semibold text-slate-700">{s.weights.portfolio}%</td>
-                    <td className="py-3 text-right text-slate-600">{s.price != null ? `$${s.price.toFixed(2)}` : "—"}</td>
-                  </tr>
-                ))}
+                {fundPortfolio.map((s) => {
+                  const perf = s.fundData?.performance;
+                  return (
+                    <tr key={s.ticker} className="border-b border-slate-50 hover:bg-slate-50/50 transition-colors">
+                      <td className="py-3">
+                        <Link href={`/stock/${s.ticker.toLowerCase()}`} className="font-bold text-slate-800 hover:underline font-mono">
+                          {s.ticker}
+                        </Link>
+                      </td>
+                      <td className="py-3 text-slate-600 max-w-[180px] truncate">{s.name}</td>
+                      <td className="py-3">
+                        <span className={`rounded-md px-2 py-0.5 text-[10px] font-bold ${s.instrumentType === "etf" ? "bg-indigo-100 text-indigo-700" : "bg-purple-100 text-purple-700"}`}>
+                          {INSTRUMENT_LABELS[s.instrumentType || "stock"]}
+                        </span>
+                      </td>
+                      <td className="py-3 text-right font-semibold text-slate-700">{s.weights.portfolio}%</td>
+                      <td className="py-3 text-right text-slate-600">{s.price != null ? `$${s.price.toFixed(2)}` : "—"}</td>
+                      <td className={`py-3 text-right text-xs font-semibold ${fundReturnColor(perf?.ytd)}`}>{fundReturnFmt(perf?.ytd)}</td>
+                      <td className={`py-3 text-right text-xs font-semibold ${fundReturnColor(perf?.oneYear)}`}>{fundReturnFmt(perf?.oneYear)}</td>
+                      <td className={`py-3 text-right text-xs font-semibold ${fundReturnColor(perf?.threeYear)}`}>{fundReturnFmt(perf?.threeYear)}</td>
+                      <td className={`py-3 text-right text-xs font-semibold ${fundReturnColor(perf?.fiveYear)}`}>{fundReturnFmt(perf?.fiveYear)}</td>
+                      <td className={`py-3 text-right text-xs font-semibold ${fundReturnColor(perf?.tenYear)}`}>{fundReturnFmt(perf?.tenYear)}</td>
+                    </tr>
+                  );
+                })}
               </tbody>
             </table>
           </div>

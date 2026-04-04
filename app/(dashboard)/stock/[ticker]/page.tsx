@@ -763,8 +763,10 @@ export default function StockDetailPage() {
             </div>
           </div>
 
-          {/* Price Chart */}
-          <StockChart ticker={stock.ticker} technicals={stock.technicals} className="mt-6" />
+          {/* Price Chart (not available for mutual funds) */}
+          {stock.instrumentType !== "mutual-fund" && (
+            <StockChart ticker={stock.ticker} technicals={stock.technicals} className="mt-6" />
+          )}
 
           {/* Fund Data Panels (ETFs / Mutual Funds) */}
           {!scoreable && stock.fundData && <FundDataPanels fundData={stock.fundData} />}
