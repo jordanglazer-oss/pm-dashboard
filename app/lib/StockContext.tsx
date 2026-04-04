@@ -2,8 +2,10 @@
 
 import React, { createContext, useContext, useState, useMemo, useCallback, useEffect, useRef } from "react";
 import type { Stock, MarketData, ScoredStock, MorningBrief, ScoreKey, ScoreExplanations, HealthData, TechnicalIndicators, RiskAlert, FundData } from "./types";
+import type { PimModelGroup, PimModelData } from "./pim-types";
 import { computeScores, isOffensiveSector, isScoreable } from "./scoring";
 import { holdingsSeed, defaultMarketData } from "./defaults";
+import { pimModelSeed } from "./pim-seed";
 
 export type ChartAnalysisEntry = {
   analysis: string;
@@ -45,6 +47,8 @@ type StockContextType = {
   getStock: (ticker: string) => ScoredStock | undefined;
   portfolioStocks: ScoredStock[];
   watchlistStocks: ScoredStock[];
+  pimModels: PimModelData;
+  updatePimModels: (data: PimModelData) => void;
 };
 
 const StockContext = createContext<StockContextType | null>(null);
@@ -80,6 +84,7 @@ export function StockProvider({ children }: { children: React.ReactNode }) {
   const [brief, setBriefState] = useState<MorningBrief | null>(null);
   const [chartAnalyses, setChartAnalysesState] = useState<Record<string, ChartAnalysisEntry>>({});
   const [scannerData, setScannerDataState] = useState<ScannerData | null>(null);
+  const [pimModels, setPimModelsState] = useState<PimModelData>({ groups: pimModelSeed });
   const [loading, setLoading] = useState(true);
 
   const persistStocks = useDebouncedPersist("/api/kv/stocks", "stocks");
@@ -94,6 +99,14 @@ export function StockProvider({ children }: { children: React.ReactNode }) {
   const persistBrief = useDebouncedPersist("/api/kv/brief", "brief", 100);
   const persistChartAnalyses = useDebouncedPersist("/api/kv/chart-analysis", "chartAnalyses", 300);
   const persistScanner = useDebouncedPersist("/api/kv/scanner", "scanner", 300);
+  // Custom persist for pim-models (sends full object, not wrapped in key)
+  const persistPim = useCallback((data: PimModelData) => {
+    fetch("/api/kv/pim-models", {
+      method: "PUT",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify(data),
+    }).catch((e) => console.error("Failed to persist pim-models:", e));
+  }, []);
 
   /* ─── Load from KV on mount ─── */
   useEffect(() => {
@@ -103,13 +116,15 @@ export function StockProvider({ children }: { children: React.ReactNode }) {
       fetch("/api/kv/brief").then((r) => r.json()).catch(() => ({ brief: null })),
       fetch("/api/kv/chart-analysis").then((r) => r.json()).catch(() => ({ chartAnalyses: {} })),
       fetch("/api/kv/scanner").then((r) => r.json()).catch(() => ({ scanner: null })),
-    ]).then(async ([stocksRes, marketRes, briefRes, chartRes, scannerRes]) => {
+      fetch("/api/kv/pim-models").then((r) => r.json()).catch(() => ({ groups: pimModelSeed })),
+    ]).then(async ([stocksRes, marketRes, briefRes, chartRes, scannerRes, pimRes]) => {
       const loadedStocks: Stock[] = stocksRes.stocks || holdingsSeed;
       setStocks(loadedStocks);
       if (marketRes.market) setMarketData({ ...defaultMarketData, ...marketRes.market });
       if (briefRes.brief) setBriefState(briefRes.brief);
       if (chartRes.chartAnalyses) setChartAnalysesState(chartRes.chartAnalyses);
       if (scannerRes.scanner) setScannerDataState(scannerRes.scanner);
+      if (pimRes.groups) setPimModelsState(pimRes);
       setLoading(false);
 
       // Backfill missing names from Yahoo Finance for all stocks
@@ -219,6 +234,64 @@ export function StockProvider({ children }: { children: React.ReactNode }) {
     [scoredStocks]
   );
 
+  /* ─── Auto-add to PIM models when stock is added ─── */
+  const addToPimModels = useCallback((stock: Stock) => {
+    setPimModelsState((prev) => {
+      // Determine asset class based on instrument type and sector
+      let assetClass: "fixedIncome" | "equity" | "alternative" = "equity";
+      const sectorLower = (stock.sector || "").toLowerCase();
+      const nameLower = (stock.name || stock.ticker).toLowerCase();
+      if (stock.instrumentType === "etf" || stock.instrumentType === "mutual-fund") {
+        if (sectorLower.includes("bond") || sectorLower.includes("fixed") || nameLower.includes("bond") || nameLower.includes("fixed income")) {
+          assetClass = "fixedIncome";
+        } else if (sectorLower.includes("alternative") || nameLower.includes("alternative") || nameLower.includes("premium yield") || nameLower.includes("hedge")) {
+          assetClass = "alternative";
+        }
+      }
+
+      const currency: "CAD" | "USD" = stock.ticker.endsWith("-T") || stock.ticker.endsWith(".TO") ? "CAD" : "USD";
+
+      const updatedGroups = prev.groups.map((group) => {
+        // Skip if already in this group
+        const exists = group.holdings.some((h) =>
+          h.symbol === stock.ticker || h.symbol.replace("-T", ".TO") === stock.ticker.replace("-T", ".TO")
+        );
+        if (exists) return group;
+
+        // For equity holdings: redistribute weight equally among all equities
+        const existingInClass = group.holdings.filter((h) => h.assetClass === assetClass);
+        const newCount = existingInClass.length + 1;
+        const totalClassWeight = existingInClass.reduce((s, h) => s + h.weightInClass, 0);
+        // Give the new holding an equal share of the total class weight
+        const newWeight = totalClassWeight > 0 ? totalClassWeight / newCount : (1 / newCount);
+
+        // Redistribute existing holdings in that class
+        const scaleFactor = totalClassWeight > 0 ? (totalClassWeight - newWeight) / totalClassWeight : 1;
+
+        const updatedHoldings = group.holdings.map((h) => {
+          if (h.assetClass === assetClass) {
+            return { ...h, weightInClass: parseFloat((h.weightInClass * scaleFactor).toFixed(6)) };
+          }
+          return h;
+        });
+
+        updatedHoldings.push({
+          name: (stock.name || stock.ticker).toUpperCase(),
+          symbol: stock.ticker,
+          currency,
+          assetClass,
+          weightInClass: parseFloat(newWeight.toFixed(6)),
+        });
+
+        return { ...group, holdings: updatedHoldings };
+      });
+
+      const updated = { ...prev, groups: updatedGroups, lastUpdated: new Date().toISOString() };
+      persistPim(updated);
+      return updated;
+    });
+  }, [persistPim]);
+
   /* ─── Stock mutations (optimistic + persist) ─── */
   const addStock = useCallback((stock: Stock) => {
     setStocks((prev) => {
@@ -226,7 +299,9 @@ export function StockProvider({ children }: { children: React.ReactNode }) {
       persistStocks(next);
       return next;
     });
-  }, [persistStocks]);
+    // Auto-add to PIM models
+    addToPimModels(stock);
+  }, [persistStocks, addToPimModels]);
 
   const removeStock = useCallback((ticker: string) => {
     setStocks((prev) => {
@@ -377,6 +452,12 @@ export function StockProvider({ children }: { children: React.ReactNode }) {
     persistScanner(data);
   }, [persistScanner]);
 
+  /* ─── PIM Models ─── */
+  const updatePimModels = useCallback((data: PimModelData) => {
+    setPimModelsState(data);
+    persistPim(data);
+  }, [persistPim]);
+
   const getStock = useCallback(
     (ticker: string) => scoredStocks.find((s) => s.ticker === ticker),
     [scoredStocks]
@@ -413,6 +494,8 @@ export function StockProvider({ children }: { children: React.ReactNode }) {
         getStock,
         portfolioStocks,
         watchlistStocks,
+        pimModels,
+        updatePimModels,
       }}
     >
       {children}

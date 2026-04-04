@@ -8,6 +8,7 @@ const tabs = [
   { label: "Brief", href: "/brief" },
   { label: "Dashboard", href: "/" },
   { label: "Scoring", href: "/scoring" },
+  { label: "PIM Model", href: "/pim-model" },
   { label: "Screener", href: "/screener" },
   { label: "Research", href: "/research" },
   { label: "AA & Perf", href: "/aa-performance" },
@@ -21,6 +22,8 @@ export function Navigation() {
     ? "Scoring"
     : pathname === "/brief"
     ? "Brief"
+    : pathname === "/pim-model"
+    ? "PIM Model"
     : pathname === "/research"
     ? "Research"
     : pathname === "/screener"
