@@ -412,6 +412,7 @@ export function TechnicalScreener({ stocks, onAddToWatchlist }: Props) {
               <thead>
                 <tr className="border-b border-slate-200 text-sm text-slate-500">
                   <SortHeader label="Ticker" sortId="ticker" />
+                  <th className="pb-3">Name</th>
                   <th className="pb-3">Sector</th>
                   <SortHeader label="Composite" sortId="composite" />
                   <SortHeader label="Trend" sortId="trend" />
@@ -431,7 +432,8 @@ export function TechnicalScreener({ stocks, onAddToWatchlist }: Props) {
                   return (
                     <tr key={s.ticker} className="border-b border-slate-100 align-middle cursor-pointer hover:bg-slate-50/50 transition-colors"
                       onClick={() => router.push(`/stock/${s.ticker.toLowerCase()}`)}>
-                      <td className="py-3"><div className="font-semibold text-slate-900 font-mono">{s.ticker}</div><div className="text-xs text-slate-400">{s.name}</div></td>
+                      <td className="py-3"><div className="font-semibold text-slate-900 font-mono">{s.ticker}</div></td>
+                      <td className="py-3 text-xs text-slate-500 truncate max-w-[160px]">{s.name !== s.ticker ? s.name : ""}</td>
                       <td className="py-3 text-xs text-slate-500">{s.sector}</td>
                       <td className="py-3"><div className="flex items-center gap-2"><span className={`text-sm font-bold rounded px-1.5 py-0.5 ${compositeColor}`}>{composite.net > 0 ? "+" : ""}{composite.net}</span><CompositeBar bullish={composite.bullish} bearish={composite.bearish} neutral={composite.neutral} /></div></td>
                       <td className="py-3"><div className="flex items-center gap-1.5"><TechPill signal={getTrendSignal(t)} /><span className="text-xs text-slate-500">{t.dmaSignal.replace(/_/g, " ")}</span></div></td>
@@ -571,6 +573,7 @@ export function TechnicalScreener({ stocks, onAddToWatchlist }: Props) {
                     <th className="pb-3 cursor-pointer" onClick={() => toggleScanSort("ticker")}>
                       Ticker {scanSortKey === "ticker" && (scanSortDir === "desc" ? "\u2193" : "\u2191")}
                     </th>
+                    <th className="pb-3">Name</th>
                     <th className="pb-3">Price</th>
                     <th className="pb-3 cursor-pointer" onClick={() => toggleScanSort("composite")}>
                       Composite {scanSortKey === "composite" && (scanSortDir === "desc" ? "\u2193" : "\u2191")}
@@ -614,8 +617,10 @@ export function TechnicalScreener({ stocks, onAddToWatchlist }: Props) {
                         }}>
                         <td className="py-3">
                           <div className="font-semibold text-slate-900 font-mono">{r.ticker}</div>
-                          {r.name && r.name !== r.ticker && <div className="text-xs text-slate-400 truncate max-w-[140px]">{r.name}</div>}
-                          {r.sector && <div className="text-[10px] text-slate-300 truncate max-w-[140px]">{r.sector}</div>}
+                        </td>
+                        <td className="py-3 text-xs text-slate-500 truncate max-w-[160px]">
+                          {r.name && r.name !== r.ticker ? r.name : ""}
+                          {r.sector && <div className="text-[10px] text-slate-300">{r.sector}</div>}
                         </td>
                         <td className="py-3 text-sm text-slate-600 font-mono">${r.price.toFixed(2)}</td>
                         <td className="py-3">
