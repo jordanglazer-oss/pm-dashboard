@@ -5,6 +5,7 @@ const UA = "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36";
 
 /**
  * Fetches company name(s) and sector(s) from Yahoo Finance without using Claude tokens.
+ * Uses the search/autosuggest API which does NOT require crumb/cookie auth.
  * Accepts GET with ?tickers=AAPL,GOOGL,META (comma-separated, max 50).
  * Returns { names: { "AAPL": "Apple Inc.", ... }, sectors: { "AAPL": "Technology", ... } }
  */
@@ -27,19 +28,22 @@ export async function GET(request: NextRequest) {
       const batch = tickers.slice(i, i + batchSize);
       const results = await Promise.allSettled(
         batch.map(async (ticker) => {
-          const url = `${YAHOO_BASE}/v10/finance/quoteSummary/${encodeURIComponent(ticker)}?modules=price,assetProfile`;
+          const url = `${YAHOO_BASE}/v1/finance/search?q=${encodeURIComponent(ticker)}&quotesCount=1&newsCount=0`;
           const res = await fetch(url, {
             cache: "no-store",
             headers: { "User-Agent": UA },
           });
           if (!res.ok) return { ticker, name: ticker, sector: "" };
           const data = await res.json();
-          const result = data?.quoteSummary?.result?.[0];
-          const price = result?.price;
-          const profile = result?.assetProfile;
-          const name = price?.shortName || price?.longName || ticker;
-          const sector = profile?.sector || "";
-          return { ticker, name, sector };
+          const quote = data?.quotes?.[0];
+          if (!quote) return { ticker, name: ticker, sector: "" };
+          // Only use result if the returned symbol matches (search can return different tickers)
+          if (quote.symbol !== ticker) return { ticker, name: ticker, sector: "" };
+          return {
+            ticker,
+            name: quote.shortname || quote.longname || ticker,
+            sector: quote.sector || "",
+          };
         })
       );
       for (const r of results) {

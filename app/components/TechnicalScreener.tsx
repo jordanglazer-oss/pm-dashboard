@@ -169,8 +169,37 @@ export function TechnicalScreener({ stocks, onAddToWatchlist }: Props) {
   // Hydrate scanner state when KV data loads
   useEffect(() => {
     if (scannerData && scanResults.length === 0) {
-      if (scannerData.results?.length) setScanResults(scannerData.results as ScanResult[]);
+      const results = (scannerData.results || []) as ScanResult[];
+      if (results.length) setScanResults(results);
       if (scannerData.meta) setScanMeta(scannerData.meta);
+
+      // Backfill missing names from Yahoo Finance
+      const needsName = results.filter((r) => !r.name || r.name === r.ticker);
+      if (needsName.length > 0) {
+        const tickers = needsName.map((r) => r.ticker).join(",");
+        fetch(`/api/company-name?tickers=${encodeURIComponent(tickers)}`)
+          .then((res) => res.ok ? res.json() : null)
+          .then((data) => {
+            if (!data?.names) return;
+            setScanResults((prev) => {
+              let changed = false;
+              const next = prev.map((r) => {
+                const newName = data.names[r.ticker];
+                const newSector = data.sectors?.[r.ticker];
+                if (newName && (!r.name || r.name === r.ticker)) {
+                  changed = true;
+                  return { ...r, name: newName, ...(newSector && !r.sector ? { sector: newSector } : {}) };
+                }
+                return r;
+              });
+              if (changed && setScannerData) {
+                setScannerData({ results: next, meta: scannerData.meta });
+              }
+              return changed ? next : prev;
+            });
+          })
+          .catch(() => {});
+      }
     }
   }, [scannerData]); // eslint-disable-line react-hooks/exhaustive-deps
 
