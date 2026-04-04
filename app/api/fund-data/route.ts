@@ -749,6 +749,331 @@ async function fetchCanadianFundData(
 }
 /* eslint-enable @typescript-eslint/no-explicit-any */
 
+// ── ETF Provider-Direct Holdings ──
+
+type ProviderHoldingsResult = {
+  topHoldings?: FundHolding[];
+  sectorWeightings?: FundSectorWeight[];
+};
+
+/**
+ * Fetch holdings from BMO ETF JSON API.
+ * Works for BMO-managed Canadian ETFs (ZSP, ZAG, ZEB, etc.)
+ */
+async function fetchBMOHoldings(ticker: string): Promise<ProviderHoldingsResult> {
+  const result: ProviderHoldingsResult = {};
+  try {
+    const cleanTicker = ticker.replace(/\.TO$/i, "");
+    const url = `https://tools.bmogam.com/api/etfs/holdings?symbol=XTSE:${encodeURIComponent(cleanTicker)}`;
+    const res = await fetch(url, {
+      cache: "no-store",
+      headers: { "User-Agent": "Mozilla/5.0" },
+    });
+    if (!res.ok) return result;
+
+    const data = await res.json();
+    if (data.requestStatus !== "success" || !Array.isArray(data.holdings)) return result;
+
+    const holdings: FundHolding[] = data.holdings
+      .filter((h: { securityName?: string; marketPercent?: number }) => h.securityName && typeof h.marketPercent === "number")
+      .slice(0, 10)
+      .map((h: { ticker?: string; securityName: string; marketPercent: number }) => ({
+        symbol: h.ticker || "",
+        name: h.securityName.replace(/ - Common$/, ""),
+        weight: parseFloat(h.marketPercent.toFixed(2)),
+      }));
+
+    if (holdings.length > 0) result.topHoldings = holdings;
+
+    // BMO API doesn't include sector data, so no sector weightings
+  } catch {
+    /* best effort */
+  }
+  return result;
+}
+
+/**
+ * Fetch holdings from iShares CSV endpoint.
+ * Works for both US and Canadian iShares ETFs.
+ * US AJAX ID: 1467271812596, Canada AJAX ID: 1464253357814
+ */
+async function fetchISharesHoldings(ticker: string, country: "us" | "ca"): Promise<ProviderHoldingsResult> {
+  const result: ProviderHoldingsResult = {};
+  try {
+    const cleanTicker = ticker.replace(/\.TO$/i, "").toUpperCase();
+
+    // Step 1: Find the product page URL from the iShares/BlackRock product listing page
+    // The listing page contains links like: <a href="/us/products/239726/ishares-core-sp-500-etf">IVV</a>
+    const listingUrl = country === "us"
+      ? `https://www.ishares.com/us/products/etf-investments`
+      : `https://www.blackrock.com/ca/investors/en/products/product-list`;
+
+    const listingRes = await fetch(listingUrl, {
+      cache: "no-store",
+      headers: {
+        "User-Agent": "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36",
+        "Accept": "text/html,application/xhtml+xml",
+      },
+    });
+    if (!listingRes.ok) return result;
+
+    const listingHtml = await listingRes.text();
+
+    // Use regex to find the product link — the listing has <a href="/us/products/XXXX/slug">TICKER</a>
+    // Match the exact ticker as the link text (not a substring)
+    const pathPrefix = country === "us" ? "/us/products/" : "/ca/investors/en/products/";
+    const escapedPrefix = pathPrefix.replace(/\//g, "\\/");
+    const linkRegex = new RegExp(
+      `href="(${escapedPrefix}\\d+/[a-z0-9-]+)"[^>]*>${cleanTicker}<`,
+      "i"
+    );
+    const linkMatch = linkRegex.exec(listingHtml);
+    if (!linkMatch) return result;
+
+    const productPath = linkMatch[1];
+
+    // Step 2: Fetch the CSV using the product path and the known AJAX ID
+    const ajaxId = country === "us" ? "1467271812596" : "1464253357814";
+    const baseUrl = country === "us" ? "https://www.ishares.com" : "https://www.blackrock.com";
+    const csvUrl = `${baseUrl}${productPath}/${ajaxId}.ajax?fileType=csv&fileName=${cleanTicker}_holdings&dataType=fund`;
+
+    const csvRes = await fetch(csvUrl, {
+      cache: "no-store",
+      headers: {
+        "User-Agent": "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36",
+      },
+    });
+    if (!csvRes.ok) return result;
+
+    const csvText = await csvRes.text();
+    const holdings = parseISharesCSV(csvText);
+    if (holdings.topHoldings?.length) result.topHoldings = holdings.topHoldings;
+    if (holdings.sectorWeightings?.length) result.sectorWeightings = holdings.sectorWeightings;
+  } catch {
+    /* best effort */
+  }
+  return result;
+}
+
+/**
+ * Parse iShares CSV holdings data.
+ * CSV has header: Ticker,Name,Sector,Asset Class,Market Value,Weight (%),Notional Value,...
+ * Multiple sections may exist (separated by blank lines + new headers).
+ */
+function parseISharesCSV(csv: string): ProviderHoldingsResult {
+  const result: ProviderHoldingsResult = {};
+  const lines = csv.split("\n");
+
+  // Find the first data header line
+  let headerIdx = -1;
+  for (let i = 0; i < lines.length; i++) {
+    if (lines[i].startsWith("Ticker,Name,Sector")) {
+      headerIdx = i;
+      break;
+    }
+  }
+  if (headerIdx < 0) return result;
+
+  const holdings: FundHolding[] = [];
+  const sectorWeights: Record<string, number> = {};
+
+  for (let i = headerIdx + 1; i < lines.length; i++) {
+    const line = lines[i].trim();
+    if (!line) continue;
+    // Stop at the second section header (fund-of-funds underlying holdings)
+    if (line.startsWith("Ticker,Name,Sector")) break;
+    if (line.startsWith("Fund Holdings")) break;
+
+    // Parse CSV line (fields may be quoted)
+    const fields = parseCSVLine(line);
+    if (fields.length < 6) continue;
+
+    const ticker = fields[0].replace(/"/g, "").trim();
+    const name = fields[1].replace(/"/g, "").trim();
+    const sector = fields[2].replace(/"/g, "").trim();
+    const assetClass = fields[3].replace(/"/g, "").trim();
+    const weight = parseFloat(fields[5].replace(/"/g, "").replace(/,/g, "").trim());
+
+    // Only include equity holdings (skip cash, derivatives, etc.)
+    if (!ticker || !name || !isFinite(weight) || weight <= 0) continue;
+    if (assetClass && !assetClass.includes("Equity")) continue;
+
+    // Keep top 10 for display
+    if (holdings.length < 10) {
+      holdings.push({ symbol: ticker, name: titleCase(name), weight: parseFloat(weight.toFixed(2)) });
+    }
+    // Accumulate ALL equity sectors for complete sector weightings
+    if (sector) {
+      sectorWeights[sector] = (sectorWeights[sector] || 0) + weight;
+    }
+  }
+
+  if (holdings.length > 0) {
+    result.topHoldings = holdings;
+    if (Object.keys(sectorWeights).length > 0) {
+      result.sectorWeightings = Object.entries(sectorWeights)
+        .map(([sector, weight]) => ({ sector, weight: parseFloat(weight.toFixed(2)) }))
+        .sort((a, b) => b.weight - a.weight);
+    }
+  }
+
+  return result;
+}
+
+/** Convert ALL CAPS name to Title Case (e.g. "NVIDIA CORP" → "Nvidia Corp") */
+function titleCase(s: string): string {
+  // Keep common abbreviations uppercase
+  const keepUpper = new Set(["INC", "ETF", "LP", "LLC", "LTD", "PLC", "SA", "AG", "NV", "SE", "AB", "ASA", "ADR", "II", "III", "IV", "CORP"]);
+  return s.split(" ").map(w => {
+    const upper = w.replace(/[^A-Z0-9]/g, "");
+    if (keepUpper.has(upper)) return w;
+    if (w.length <= 1) return w.toUpperCase();
+    return w.charAt(0).toUpperCase() + w.slice(1).toLowerCase();
+  }).join(" ");
+}
+
+/** Simple CSV line parser that handles quoted fields with commas */
+function parseCSVLine(line: string): string[] {
+  const fields: string[] = [];
+  let current = "";
+  let inQuotes = false;
+  for (let i = 0; i < line.length; i++) {
+    const ch = line[i];
+    if (ch === '"') {
+      inQuotes = !inQuotes;
+      current += ch;
+    } else if (ch === "," && !inQuotes) {
+      fields.push(current);
+      current = "";
+    } else {
+      current += ch;
+    }
+  }
+  fields.push(current);
+  return fields;
+}
+
+/**
+ * Detect ETF provider from Yahoo's fundFamily field (or Morningstar name as fallback)
+ * and fetch holdings directly from the provider's website/API.
+ * Returns empty if provider is unknown or fetching fails.
+ */
+async function fetchProviderHoldings(
+  ticker: string,
+  fundFamily?: string,
+  etfName?: string,
+): Promise<ProviderHoldingsResult> {
+  const family = (fundFamily || "").toLowerCase();
+  const name = (etfName || "").toLowerCase();
+  const isCanadian = ticker.endsWith(".TO");
+
+  // BMO ETFs
+  if (family.includes("bmo") || name.includes("bmo")) {
+    return fetchBMOHoldings(ticker);
+  }
+
+  // iShares / BlackRock ETFs
+  if (family.includes("ishares") || family.includes("blackrock") ||
+      name.includes("ishares") || name.includes("blackrock")) {
+    return fetchISharesHoldings(ticker, isCanadian ? "ca" : "us");
+  }
+
+  // Vanguard ETFs
+  if (family.includes("vanguard") || name.includes("vanguard")) {
+    return fetchVanguardHoldings(ticker, isCanadian);
+  }
+
+  // SPDR / State Street ETFs (use iShares-style approach — they also use the same BlackRock CSV pattern for some)
+  // For now fall through to empty
+
+  return {};
+}
+
+/**
+ * Fetch holdings from Vanguard's JSON API.
+ */
+async function fetchVanguardHoldings(ticker: string, isCanadian: boolean): Promise<ProviderHoldingsResult> {
+  const result: ProviderHoldingsResult = {};
+  try {
+    const cleanTicker = ticker.replace(/\.TO$/i, "").toUpperCase();
+
+    if (isCanadian) {
+      // Vanguard Canada uses a different site structure
+      // Try scraping the product page
+      const url = `https://www.vanguard.ca/en/advisor/products/products-group/etfs/${cleanTicker}`;
+      const res = await fetch(url, {
+        cache: "no-store",
+        headers: {
+          "User-Agent": "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36",
+        },
+      });
+      if (!res.ok) return result;
+      // Vanguard Canada pages are heavily client-rendered; best-effort scraping
+      return result;
+    }
+
+    // Vanguard US — try the overview API
+    // First find the portfolio ID from the product page
+    const pageUrl = `https://investor.vanguard.com/investment-products/etfs/profile/${cleanTicker.toLowerCase()}`;
+    const pageRes = await fetch(pageUrl, {
+      cache: "no-store",
+      headers: {
+        "User-Agent": "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36",
+      },
+    });
+    if (!pageRes.ok) return result;
+
+    const html = await pageRes.text();
+    // Look for portId in the page
+    const portIdMatch = html.match(/"portId"\s*:\s*"?(\d+)"?/);
+    if (!portIdMatch) return result;
+
+    const portId = portIdMatch[1];
+    const apiUrl = `https://investor.vanguard.com/investment-products/etfs/profile/api/${portId}/portfolio-holding/stock`;
+    const apiRes = await fetch(apiUrl, {
+      cache: "no-store",
+      headers: {
+        "User-Agent": "Mozilla/5.0",
+        "Accept": "application/json",
+      },
+    });
+    if (!apiRes.ok) return result;
+
+    const apiData = await apiRes.json();
+    const holdingsArray = apiData?.fund?.entity;
+    if (!Array.isArray(holdingsArray)) return result;
+
+    const holdings: FundHolding[] = holdingsArray
+      .filter((h: { ticker?: string; shortName?: string; percentWeight?: number }) =>
+        h.ticker && h.shortName && typeof h.percentWeight === "number"
+      )
+      .slice(0, 10)
+      .map((h: { ticker: string; shortName: string; percentWeight: number; sectorName?: string }) => ({
+        symbol: h.ticker,
+        name: h.shortName,
+        weight: parseFloat(h.percentWeight.toFixed(2)),
+      }));
+
+    if (holdings.length > 0) result.topHoldings = holdings;
+
+    // Build sector weightings from holdings
+    const sectorCounts: Record<string, number> = {};
+    for (const h of holdingsArray) {
+      if (h.sectorName && typeof h.percentWeight === "number") {
+        sectorCounts[h.sectorName] = (sectorCounts[h.sectorName] || 0) + h.percentWeight;
+      }
+    }
+    if (Object.keys(sectorCounts).length > 0) {
+      result.sectorWeightings = Object.entries(sectorCounts)
+        .map(([sector, weight]) => ({ sector, weight: parseFloat(weight.toFixed(2)) }))
+        .sort((a, b) => b.weight - a.weight);
+    }
+  } catch {
+    /* best effort */
+  }
+  return result;
+}
+
 // ── API handler ──
 
 export async function GET(request: NextRequest) {
@@ -869,6 +1194,16 @@ export async function GET(request: NextRequest) {
     // Morningstar holdings override Yahoo (when available)
     if (msHoldings.topHoldings?.length) fundData.topHoldings = msHoldings.topHoldings;
     if (msHoldings.sectorWeightings?.length) fundData.sectorWeightings = msHoldings.sectorWeightings;
+
+    // Provider-direct holdings: highest priority — override Morningstar/Yahoo
+    // Use fundFamily from Yahoo (+ Morningstar name as fallback) to detect provider
+    const providerHoldings = await fetchProviderHoldings(
+      ticker,
+      fundData.fundFamily,
+      msETFLookup?.name,
+    );
+    if (providerHoldings.topHoldings?.length) fundData.topHoldings = providerHoldings.topHoldings;
+    if (providerHoldings.sectorWeightings?.length) fundData.sectorWeightings = providerHoldings.sectorWeightings;
 
     return NextResponse.json({ ticker, fundData });
   } catch (err) {
