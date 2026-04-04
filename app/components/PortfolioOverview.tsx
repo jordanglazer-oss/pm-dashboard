@@ -54,14 +54,52 @@ function ratingColor(label: string): string {
   return "text-slate-700";
 }
 
+type DashboardFilter = "all" | "stocks" | "etf-usd" | "etf-cad" | "mutual-fund";
+
+const DASH_FILTER_LABELS: Record<DashboardFilter, string> = {
+  all: "All",
+  stocks: "Stocks",
+  "etf-usd": "ETFs (USD)",
+  "etf-cad": "ETFs (CAD)",
+  "mutual-fund": "Mutual Funds",
+};
+
+function isCanadianTicker(ticker: string): boolean {
+  return ticker.endsWith(".TO") || /^[A-Z]{2,4}\d{2,5}$/i.test(ticker);
+}
+
+function matchesDashFilter(s: ScoredStock, filter: DashboardFilter): boolean {
+  if (filter === "all") return true;
+  if (filter === "stocks") return !s.instrumentType || s.instrumentType === "stock";
+  if (filter === "etf-usd") return s.instrumentType === "etf" && !isCanadianTicker(s.ticker);
+  if (filter === "etf-cad") return s.instrumentType === "etf" && isCanadianTicker(s.ticker);
+  if (filter === "mutual-fund") return s.instrumentType === "mutual-fund";
+  return true;
+}
+
 export function PortfolioOverview() {
   const { portfolioStocks, watchlistStocks, scoredStocks, marketData } = useStocks();
+  const [dashFilter, setDashFilter] = useState<DashboardFilter>("all");
+
+  // Apply instrument filter first
+  const filteredPortfolio = portfolioStocks.filter((s) => matchesDashFilter(s, dashFilter));
+  const filteredWatchlist = watchlistStocks.filter((s) => matchesDashFilter(s, dashFilter));
 
   // Separate scoreable stocks from funds
-  const scoreablePortfolio = portfolioStocks.filter((s) => isScoreable(s));
-  const fundPortfolio = portfolioStocks.filter((s) => !isScoreable(s));
-  const scoreableWatchlist = watchlistStocks.filter((s) => isScoreable(s));
+  const scoreablePortfolio = filteredPortfolio.filter((s) => isScoreable(s));
+  const fundPortfolio = filteredPortfolio.filter((s) => !isScoreable(s));
+  const scoreableWatchlist = filteredWatchlist.filter((s) => isScoreable(s));
   const allScoreable = [...scoreablePortfolio, ...scoreableWatchlist].sort((a, b) => b.adjusted - a.adjusted);
+
+  // Compute counts across ALL stocks (unfiltered) for filter badges
+  const allStocks = [...portfolioStocks, ...watchlistStocks];
+  const filterCounts: Record<DashboardFilter, number> = { all: allStocks.length, stocks: 0, "etf-usd": 0, "etf-cad": 0, "mutual-fund": 0 };
+  for (const s of allStocks) {
+    if (!s.instrumentType || s.instrumentType === "stock") filterCounts.stocks++;
+    else if (s.instrumentType === "etf" && !isCanadianTicker(s.ticker)) filterCounts["etf-usd"]++;
+    else if (s.instrumentType === "etf" && isCanadianTicker(s.ticker)) filterCounts["etf-cad"]++;
+    else if (s.instrumentType === "mutual-fund") filterCounts["mutual-fund"]++;
+  }
 
   // Sector exposure (equal-weighted among individual stocks)
   const pfCount = scoreablePortfolio.length;
@@ -93,6 +131,31 @@ export function PortfolioOverview() {
 
   return (
     <div className="space-y-6">
+      {/* Instrument Type Filter */}
+      <div className="flex items-center gap-1 flex-wrap">
+        {(Object.keys(DASH_FILTER_LABELS) as DashboardFilter[]).map((key) => {
+          const count = filterCounts[key];
+          if (key !== "all" && count === 0) return null;
+          const active = dashFilter === key;
+          return (
+            <button
+              key={key}
+              onClick={() => setDashFilter(key)}
+              className={`flex items-center gap-1.5 rounded-lg px-3 py-1.5 text-xs font-semibold transition-colors ${
+                active
+                  ? "bg-slate-800 text-white shadow-sm"
+                  : "bg-slate-100 text-slate-500 hover:bg-slate-200 hover:text-slate-700"
+              }`}
+            >
+              {DASH_FILTER_LABELS[key]}
+              <span className={`rounded-full px-1.5 py-0.5 text-[10px] font-bold ${active ? "bg-white/20 text-white" : "bg-slate-200 text-slate-500"}`}>
+                {count}
+              </span>
+            </button>
+          );
+        })}
+      </div>
+
       {/* Sector Exposure */}
       <section className="rounded-[30px] border border-slate-200 bg-white p-5 shadow-sm">
         <div className="flex items-center gap-3 mb-4">

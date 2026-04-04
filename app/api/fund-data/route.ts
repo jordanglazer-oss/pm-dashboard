@@ -1239,7 +1239,7 @@ function scrapeGenericHoldings(html: string): ProviderHoldingsResult {
 
     if (weightIdx < 0) continue; // Must have a weight column
 
-    const holdings: FundHolding[] = [];
+    const allHoldings: FundHolding[] = [];
     const sectorWeights: Record<string, number> = {};
 
     table.find("tbody tr, tr").each((i, row) => {
@@ -1258,20 +1258,20 @@ function scrapeGenericHoldings(html: string): ProviderHoldingsResult {
       // Skip cash/derivatives entries
       if (/^(cash|usd|cad|forward|swap|future|derivative)/i.test(name) || /^(cash|usd|cad)/i.test(ticker)) return;
 
-      if (holdings.length < 15) {
-        holdings.push({
-          symbol: ticker.replace(/[^A-Z0-9.]/gi, "").substring(0, 10),
-          name: name.length > 60 ? name.substring(0, 57) + "..." : name,
-          weight: parseFloat(weight.toFixed(2)),
-        });
-      }
+      allHoldings.push({
+        symbol: ticker.replace(/[^A-Z0-9.]/gi, "").substring(0, 10),
+        name: name.length > 60 ? name.substring(0, 57) + "..." : name,
+        weight: parseFloat(weight.toFixed(2)),
+      });
       if (sector) {
         sectorWeights[sector] = (sectorWeights[sector] || 0) + weight;
       }
     });
 
-    if (holdings.length >= 3) {
-      result.topHoldings = holdings.slice(0, 10);
+    if (allHoldings.length >= 3) {
+      // Sort by weight descending so top 10 are the largest holdings
+      allHoldings.sort((a, b) => b.weight - a.weight);
+      result.topHoldings = allHoldings.slice(0, 10);
       if (Object.keys(sectorWeights).length > 0) {
         result.sectorWeightings = Object.entries(sectorWeights)
           .map(([sector, weight]) => ({ sector, weight: parseFloat(weight.toFixed(2)) }))
