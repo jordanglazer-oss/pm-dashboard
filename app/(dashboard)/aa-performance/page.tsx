@@ -1,7 +1,11 @@
 "use client";
 
 import React, { useState, useEffect, useCallback, useRef } from "react";
+import Link from "next/link";
 import { ImageUpload, type BriefAttachment } from "@/app/components/ImageUpload";
+import { useStocks } from "@/app/lib/StockContext";
+import { isScoreable } from "@/app/lib/scoring";
+import { INSTRUMENT_LABELS } from "@/app/lib/types";
 
 /* ─── Types ─── */
 type AllocationRow = {
@@ -396,11 +400,91 @@ function perfColor(v: number | null): string {
   return v < 0 ? "text-red-600" : v > 0 ? "text-emerald-600" : "text-slate-600";
 }
 
+/* ─── Auto-populated Funds / ETFs Table (from portfolio) ─── */
+function AutoFundsTable({
+  title,
+  holdings,
+}: {
+  title: string;
+  holdings: { ticker: string; name: string; instrumentType?: string; fundData?: { performance?: { ytd?: number; oneYear?: number; threeYear?: number; fiveYear?: number; tenYear?: number }; lastUpdated?: string } }[];
+}) {
+  // Find the most recent lastUpdated across all holdings
+  const lastUpdated = holdings.reduce((latest, h) => {
+    const d = h.fundData?.lastUpdated;
+    if (!d) return latest;
+    return !latest || d > latest ? d : latest;
+  }, "" as string);
+
+  const dateLabel = lastUpdated
+    ? new Date(lastUpdated).toLocaleDateString("en-US", { month: "2-digit", day: "2-digit", year: "numeric" })
+    : "";
+
+  return (
+    <div className="mb-6">
+      <div className="flex items-center gap-2 mb-2">
+        <span className="text-sm font-bold text-slate-700">{title}</span>
+        {dateLabel && <span className="text-xs text-slate-400">(as of {dateLabel})</span>}
+      </div>
+      <div className="overflow-x-auto">
+        <table className="w-full text-sm">
+          <thead>
+            <tr className="border-b border-slate-100 bg-slate-50/50">
+              <th className="px-3 py-2.5 text-left text-xs font-semibold text-slate-500 uppercase tracking-wider min-w-[220px]">Name</th>
+              <th className="px-3 py-2.5 text-left text-xs font-semibold text-slate-500 uppercase tracking-wider min-w-[100px]">Code/Ticker</th>
+              <th className="px-3 py-2.5 text-center text-xs font-semibold text-slate-500 uppercase tracking-wider">YTD</th>
+              <th className="px-3 py-2.5 text-center text-xs font-semibold text-slate-500 uppercase tracking-wider">1Y</th>
+              <th className="px-3 py-2.5 text-center text-xs font-semibold text-slate-500 uppercase tracking-wider">3Y</th>
+              <th className="px-3 py-2.5 text-center text-xs font-semibold text-slate-500 uppercase tracking-wider">5Y</th>
+              <th className="px-3 py-2.5 text-center text-xs font-semibold text-slate-500 uppercase tracking-wider">10Y</th>
+            </tr>
+          </thead>
+          <tbody>
+            {holdings.map((h) => {
+              const perf = h.fundData?.performance;
+              return (
+                <tr key={h.ticker} className="border-b border-slate-50 hover:bg-slate-50/50">
+                  <td className="px-3 py-2.5">
+                    <Link href={`/stock/${h.ticker.toLowerCase()}`} className="text-sm font-medium text-slate-800 hover:underline">
+                      {h.name || h.ticker}
+                    </Link>
+                  </td>
+                  <td className="px-3 py-2.5 text-sm font-mono text-slate-600">{h.ticker}</td>
+                  <td className={`px-3 py-2.5 text-center text-sm font-medium ${perfColor(perf?.ytd ?? null)}`}>
+                    {formatPerf(perf?.ytd ?? null)}{perf?.ytd != null && <span className="text-[10px] text-slate-400 ml-0.5">%</span>}
+                  </td>
+                  <td className={`px-3 py-2.5 text-center text-sm font-medium ${perfColor(perf?.oneYear ?? null)}`}>
+                    {formatPerf(perf?.oneYear ?? null)}{perf?.oneYear != null && <span className="text-[10px] text-slate-400 ml-0.5">%</span>}
+                  </td>
+                  <td className={`px-3 py-2.5 text-center text-sm font-medium ${perfColor(perf?.threeYear ?? null)}`}>
+                    {formatPerf(perf?.threeYear ?? null)}{perf?.threeYear != null && <span className="text-[10px] text-slate-400 ml-0.5">%</span>}
+                  </td>
+                  <td className={`px-3 py-2.5 text-center text-sm font-medium ${perfColor(perf?.fiveYear ?? null)}`}>
+                    {formatPerf(perf?.fiveYear ?? null)}{perf?.fiveYear != null && <span className="text-[10px] text-slate-400 ml-0.5">%</span>}
+                  </td>
+                  <td className={`px-3 py-2.5 text-center text-sm font-medium ${perfColor(perf?.tenYear ?? null)}`}>
+                    {formatPerf(perf?.tenYear ?? null)}{perf?.tenYear != null && <span className="text-[10px] text-slate-400 ml-0.5">%</span>}
+                  </td>
+                </tr>
+              );
+            })}
+          </tbody>
+        </table>
+      </div>
+    </div>
+  );
+}
+
 /* ─── Main Page ─── */
 export default function AAPerformancePage() {
   const [data, setData] = useState<AAPerformanceData>(defaultData);
   const [loading, setLoading] = useState(true);
   const persist = useDebouncedPersist(500);
+  const { scoredStocks } = useStocks();
+
+  // Derive funds and ETFs from portfolio holdings
+  const portfolioFunds = scoredStocks.filter((s) => s.bucket === "Portfolio" && !isScoreable(s));
+  const mutualFunds = portfolioFunds.filter((s) => s.instrumentType === "mutual-fund");
+  const etfs = portfolioFunds.filter((s) => s.instrumentType === "etf");
 
   /* Load from KV on mount */
   useEffect(() => {
@@ -623,28 +707,22 @@ export default function AAPerformancePage() {
         </div>
       </section>
 
-      {/* ── Active Funds / ETFs Section ── */}
+      {/* ── Active Funds / ETFs Section (auto-populated from portfolio) ── */}
       <section>
         <h2 className="text-xl font-bold text-slate-800 mb-4">Active Funds / ETFs</h2>
         <div className="rounded-[30px] border border-slate-200 bg-white shadow-sm p-6">
-          <FundsTable
-            title="Funds"
-            dateValue={data.fundsDate || "03/26/2026"}
-            onDateChange={(v) => updateFundsDate("fundsDate", v)}
-            rows={data.funds || []}
-            onUpdateRow={(idx, key, val) => updateFundRow("funds", idx, key, val)}
-            onAddRow={() => addFundRow("funds")}
-            onRemoveRow={(idx) => removeFundRow("funds", idx)}
-          />
-          <FundsTable
-            title="ETFs"
-            dateValue={data.etfsDate || "03/26/2026"}
-            onDateChange={(v) => updateFundsDate("etfsDate", v)}
-            rows={data.etfs || []}
-            onUpdateRow={(idx, key, val) => updateFundRow("etfs", idx, key, val)}
-            onAddRow={() => addFundRow("etfs")}
-            onRemoveRow={(idx) => removeFundRow("etfs", idx)}
-          />
+          {portfolioFunds.length === 0 ? (
+            <p className="text-sm text-slate-400">No funds or ETFs in your portfolio. Add them from the <Link href="/" className="text-blue-600 hover:underline">Dashboard</Link>.</p>
+          ) : (
+            <>
+              {mutualFunds.length > 0 && (
+                <AutoFundsTable title="Funds" holdings={mutualFunds} />
+              )}
+              {etfs.length > 0 && (
+                <AutoFundsTable title="ETFs" holdings={etfs} />
+              )}
+            </>
+          )}
         </div>
       </section>
 
