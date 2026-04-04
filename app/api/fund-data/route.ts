@@ -1,4 +1,5 @@
 import { NextRequest, NextResponse } from "next/server";
+import * as cheerio from "cheerio";
 import type { FundData, FundHolding, FundSectorWeight, FundPerformance, FundRiskStats } from "@/app/lib/types";
 
 const YAHOO_BASE = "https://query2.finance.yahoo.com";
@@ -197,6 +198,81 @@ async function fetchMorningstarData(secId: string): Promise<MorningstarScreenerD
   return result;
 }
 
+// ── Globe and Mail scraper (performance + MER for Canadian funds) ──
+
+type GlobeAndMailData = {
+  mer?: number;
+  performance?: FundPerformance;
+  fundGrade?: string;
+  aum?: string;
+};
+
+/**
+ * Scrape performance data and MER from Globe and Mail fund page.
+ * URL pattern: https://www.theglobeandmail.com/investing/markets/funds/{CODE}.CF/performance/
+ */
+async function fetchGlobeAndMailData(fundservCode: string): Promise<GlobeAndMailData> {
+  const result: GlobeAndMailData = {};
+
+  try {
+    const url = `https://www.theglobeandmail.com/investing/markets/funds/${encodeURIComponent(fundservCode)}.CF/performance/`;
+    const res = await fetch(url, {
+      cache: "no-store",
+      headers: {
+        "User-Agent": "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36",
+        "Accept": "text/html,application/xhtml+xml",
+      },
+    });
+    if (!res.ok) return result;
+
+    const html = await res.text();
+    const $ = cheerio.load(html);
+
+    // Extract MER from barchart-field elements
+    $("barchart-field").each((_, el) => {
+      const name = $(el).attr("name");
+      const value = $(el).attr("value");
+      if (!name || !value) return;
+
+      if (name === "expenseRatio") {
+        const parsed = parseFloat(value.replace("%", ""));
+        if (isFinite(parsed)) result.mer = parsed;
+      }
+      if (name === "fundGrade") {
+        result.fundGrade = value;
+      }
+      if (name === "managedAssets") {
+        result.aum = value;
+      }
+    });
+
+    // Extract performance returns from the table
+    // The table has rows like "YTD Year to date" | "8.66%"
+    const perf: FundPerformance = {};
+    $("table.bc-datatable tbody tr, table.dataTable tbody tr").each((_, row) => {
+      const cells = $(row).find("td");
+      if (cells.length < 2) return;
+      const label = $(cells[0]).text().trim().toUpperCase();
+      const valText = $(cells[1]).text().trim();
+      const val = parseFloat(valText.replace("%", ""));
+      if (!isFinite(val)) return;
+
+      if (label.startsWith("YTD")) perf.ytd = val;
+      else if (label.startsWith("1Y") || label.startsWith("1 Y")) perf.oneYear = val;
+      else if (label.startsWith("3Y") || label.startsWith("3 Y")) perf.threeYear = val;
+      else if (label.startsWith("5Y") || label.startsWith("5 Y")) perf.fiveYear = val;
+      else if (label.startsWith("10Y") || label.startsWith("10 Y")) perf.tenYear = val;
+      else if (label.startsWith("1M") || label.startsWith("1 M")) perf.oneMonth = val;
+      else if (label.startsWith("3M") || label.startsWith("3 M")) perf.threeMonth = val;
+    });
+    if (Object.keys(perf).length > 0) result.performance = perf;
+  } catch {
+    /* best effort */
+  }
+
+  return result;
+}
+
 // ── Yahoo data extraction (shared for both ETFs and Canadian funds) ──
 
 function extractYahooFundData(modules: Record<string, unknown>): FundData {
@@ -378,55 +454,57 @@ async function fetchCanadianFundData(
     return null;
   }
 
-  // Step 2: Fetch Morningstar screener data (MER, AUM, category, returns)
-  const msData = await fetchMorningstarData(lookup.secId);
-
-  // Step 3: Fetch Yahoo data for holdings/sectors/risk if we have a performance ID
-  let yahooData: FundData = {};
+  // Step 2: Fetch all data sources in parallel
+  // Globe and Mail = primary for performance + MER
+  // Morningstar = category, star rating, AUM, yield
+  // Yahoo = holdings, sectors, risk stats, asset allocation
   const yahooTicker = lookup.performanceId ? `${lookup.performanceId}.TO` : undefined;
 
-  if (yahooTicker && auth) {
-    try {
-      const url = `${YAHOO_BASE}/v10/finance/quoteSummary/${encodeURIComponent(yahooTicker)}?modules=${FUND_MODULES.join(",")}&crumb=${encodeURIComponent(auth.crumb)}`;
-      const res = await fetch(url, {
-        cache: "no-store",
-        headers: { "User-Agent": "Mozilla/5.0", Cookie: auth.cookie },
-      });
-      if (res.ok) {
-        const data = await res.json();
-        const result = data?.quoteSummary?.result?.[0];
-        if (result) {
-          yahooData = extractYahooFundData(result);
+  const [gmData, msData, yahooData] = await Promise.all([
+    fetchGlobeAndMailData(fundservCode),
+    fetchMorningstarData(lookup.secId),
+    (async (): Promise<FundData> => {
+      if (!yahooTicker || !auth) return {};
+      try {
+        const url = `${YAHOO_BASE}/v10/finance/quoteSummary/${encodeURIComponent(yahooTicker)}?modules=${FUND_MODULES.join(",")}&crumb=${encodeURIComponent(auth.crumb)}`;
+        const res = await fetch(url, {
+          cache: "no-store",
+          headers: { "User-Agent": "Mozilla/5.0", Cookie: auth.cookie },
+        });
+        if (res.ok) {
+          const data = await res.json();
+          const result = data?.quoteSummary?.result?.[0];
+          if (result) return extractYahooFundData(result);
         }
-      }
-    } catch {
-      /* Yahoo data is supplementary */
-    }
-  }
+      } catch { /* Yahoo data is supplementary */ }
+      return {};
+    })(),
+  ]);
 
-  // Step 4: Merge — Morningstar wins for MER/category (Yahoo returns 0 for Canadian MER)
-  // Merge performance: Morningstar is primary, Yahoo fills gaps (especially YTD)
+  // Step 3: Merge — Globe and Mail is primary for performance + MER,
+  // Morningstar fills gaps, Yahoo is supplementary
   let mergedPerformance: FundPerformance | undefined;
-  if (msData.performance || yahooData.performance) {
+  if (gmData.performance || msData.performance || yahooData.performance) {
     mergedPerformance = {
-      ytd: msData.performance?.ytd ?? yahooData.performance?.ytd,
-      oneMonth: msData.performance?.oneMonth ?? yahooData.performance?.oneMonth,
-      threeMonth: msData.performance?.threeMonth ?? yahooData.performance?.threeMonth,
-      oneYear: msData.performance?.oneYear ?? yahooData.performance?.oneYear,
-      threeYear: msData.performance?.threeYear ?? yahooData.performance?.threeYear,
-      fiveYear: msData.performance?.fiveYear ?? yahooData.performance?.fiveYear,
-      tenYear: msData.performance?.tenYear ?? yahooData.performance?.tenYear,
+      ytd: gmData.performance?.ytd ?? msData.performance?.ytd ?? yahooData.performance?.ytd,
+      oneMonth: gmData.performance?.oneMonth ?? msData.performance?.oneMonth ?? yahooData.performance?.oneMonth,
+      threeMonth: gmData.performance?.threeMonth ?? msData.performance?.threeMonth ?? yahooData.performance?.threeMonth,
+      oneYear: gmData.performance?.oneYear ?? msData.performance?.oneYear ?? yahooData.performance?.oneYear,
+      threeYear: gmData.performance?.threeYear ?? msData.performance?.threeYear ?? yahooData.performance?.threeYear,
+      fiveYear: gmData.performance?.fiveYear ?? msData.performance?.fiveYear ?? yahooData.performance?.fiveYear,
+      tenYear: gmData.performance?.tenYear ?? msData.performance?.tenYear ?? yahooData.performance?.tenYear,
     };
   }
 
   const fundData: FundData = {
+    // Globe and Mail is primary for MER, Morningstar fallback
+    expenseRatio: gmData.mer ?? msData.mer ?? yahooData.expenseRatio,
     // Morningstar is authoritative for these
-    expenseRatio: msData.mer ?? yahooData.expenseRatio,
     totalAssets: msData.totalAssets ?? yahooData.totalAssets,
     category: msData.category ?? yahooData.category,
     yield: msData.yield12m ?? yahooData.yield,
     starRating: msData.starRating,
-    // Performance: merged from both sources
+    // Performance: Globe and Mail primary, Morningstar + Yahoo fill gaps
     performance: mergedPerformance,
     // Yahoo is authoritative for these
     fundFamily: yahooData.fundFamily,
