@@ -2,8 +2,8 @@ import type { PimModelGroup } from "./pim-types";
 
 export const pimModelSeed: PimModelGroup[] = [
   {
-    id: "base",
-    name: "Base",
+    id: "pim",
+    name: "PIM",
     profiles: {
       balanced: { cash: 0.0, fixedIncome: 0.28, equity: 0.66, alternatives: 0.06 },
       growth: { cash: 0.0, fixedIncome: 0.14, equity: 0.83, alternatives: 0.03 },

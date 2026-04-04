@@ -238,6 +238,7 @@ export type Stock = {
   technicals?: TechnicalIndicators;
   riskAlert?: RiskAlert;
   fundData?: FundData;
+  modelEligibility?: Record<string, boolean>; // PIM model group id → eligible (default all true)
 };
 
 export type ScoredStock = Stock & {
