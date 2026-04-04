@@ -268,6 +268,8 @@ export default function ResearchPage() {
     }
   }, [state]);
 
+  const [namesLoading, setNamesLoading] = useState(false);
+
   function toggleUptickSort(key: UptickSortKey) {
     setUptickSort(prev => prev.key === key ? { key, dir: prev.dir === "asc" ? "desc" : "asc" } : { key, dir: "asc" });
   }
@@ -389,6 +391,32 @@ export default function ResearchPage() {
     }, 800);
   }, []);
 
+  const refreshUptickNames = useCallback(async () => {
+    if (state.newtonUpticks.length === 0) return;
+    setNamesLoading(true);
+    try {
+      const tickers = state.newtonUpticks.map((u) => u.ticker).join(",");
+      const res = await fetch(`/api/company-name?tickers=${encodeURIComponent(tickers)}`);
+      if (res.ok) {
+        const info = await res.json();
+        let changed = false;
+        const updated = state.newtonUpticks.map((u) => {
+          const newName = info.names?.[u.ticker];
+          const newSector = info.sectors?.[u.ticker];
+          if ((newName && newName !== u.name) || (newSector && newSector !== u.sector)) {
+            changed = true;
+            return { ...u, name: newName || u.name, sector: newSector || u.sector };
+          }
+          return u;
+        });
+        if (changed) {
+          save({ ...state, newtonUpticks: updated });
+        }
+      }
+    } catch { /* silent */ }
+    finally { setNamesLoading(false); }
+  }, [state, save]);
+
   /* Uptick helpers */
   const addUptick = (entry: UptickEntry) => {
     if (state.newtonUpticks.some((u) => u.ticker === entry.ticker)) return;
@@ -460,6 +488,15 @@ export default function ResearchPage() {
             </div>
             <div className="flex items-center gap-3">
               <button
+                onClick={refreshUptickNames}
+                disabled={namesLoading}
+                className="flex items-center gap-1.5 rounded-lg bg-slate-600 px-3 py-1.5 text-xs font-semibold text-white hover:bg-slate-700 disabled:opacity-50 transition-colors"
+                title="Refresh company names & sectors from Yahoo Finance"
+              >
+                <svg className={`w-3.5 h-3.5 ${namesLoading ? "animate-spin" : ""}`} fill="none" stroke="currentColor" strokeWidth="2" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" d="M16.023 9.348h4.992v-.001M2.985 19.644v-4.992m0 0h4.992m-4.993 0 3.181 3.183a8.25 8.25 0 0 0 13.803-3.7M4.031 9.865a8.25 8.25 0 0 1 13.803-3.7l3.181 3.182" /></svg>
+                {namesLoading ? "Updating..." : "Refresh Names"}
+              </button>
+              <button
                 onClick={() => fetchLivePrices()}
                 disabled={pricesLoading}
                 className="flex items-center gap-1.5 rounded-lg bg-teal-600 px-3 py-1.5 text-xs font-semibold text-white hover:bg-teal-700 disabled:opacity-50 transition-colors"
@@ -505,11 +542,11 @@ export default function ResearchPage() {
                     <tr key={u.ticker} className={`border-b border-slate-100 ${rowBg} hover:bg-blue-50/40 transition-colors`}>
                       <td className="py-2 pr-2 text-slate-400">{i + 1}</td>
                       <td className="py-2 pr-3 font-mono font-bold text-teal-700">${u.ticker}</td>
-                      <td className="py-2 pr-3">
-                        <EditableCell value={u.name} onChange={(v) => updateUptick(i, "name", v)} />
+                      <td className="py-2 pr-3 text-slate-700 truncate max-w-[160px]">
+                        {u.name && u.name !== u.ticker ? u.name : <span className="text-slate-300 italic text-xs">loading...</span>}
                       </td>
-                      <td className="py-2 pr-3 text-slate-600">
-                        <EditableCell value={u.sector} onChange={(v) => updateUptick(i, "sector", v)} />
+                      <td className="py-2 pr-3 text-slate-600 truncate max-w-[140px]">
+                        {u.sector && u.sector !== "—" ? u.sector : <span className="text-slate-300 italic text-xs">loading...</span>}
                       </td>
                       <td className="py-2 pr-3 text-right font-mono">
                         {pricesLoading ? (
