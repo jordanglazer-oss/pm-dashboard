@@ -57,19 +57,19 @@ export type ScanResult = {
 
 async function fetchCompanyInfo(ticker: string): Promise<{ name: string; sector: string }> {
   try {
-    const url = `${YAHOO_BASE}/v10/finance/quoteSummary/${encodeURIComponent(ticker)}?modules=price,assetProfile`;
+    // Use search API — no auth required (v10 quoteSummary needs crumb/cookie)
+    const url = `${YAHOO_BASE}/v1/finance/search?q=${encodeURIComponent(ticker)}&quotesCount=1&newsCount=0`;
     const res = await fetch(url, {
       cache: "no-store",
       headers: { "User-Agent": "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36" },
     });
     if (!res.ok) return { name: ticker, sector: "" };
     const data = await res.json();
-    const result = data?.quoteSummary?.result?.[0];
-    const price = result?.price;
-    const profile = result?.assetProfile;
+    const quote = data?.quotes?.[0];
+    if (!quote || quote.symbol !== ticker) return { name: ticker, sector: "" };
     return {
-      name: price?.shortName || price?.longName || ticker,
-      sector: profile?.sector || "",
+      name: quote.shortname || quote.longname || ticker,
+      sector: quote.sector || "",
     };
   } catch {
     return { name: ticker, sector: "" };
