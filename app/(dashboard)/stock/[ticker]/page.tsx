@@ -253,27 +253,27 @@ function FundDataPanels({ fundData, ticker, onHoldingsUpdate }: { fundData: Fund
       {/* Row 2: Top Holdings + Sector Breakdown */}
       <div className="grid gap-4 md:grid-cols-2">
         {/* Top Holdings */}
-        <div className="rounded-[24px] border border-slate-200 bg-white p-5 shadow-sm">
+        <div className="rounded-[24px] border border-slate-200 bg-white p-4 sm:p-5 shadow-sm overflow-hidden">
           <h2 className="text-base font-bold text-slate-800 mb-3">Top Holdings</h2>
           {fundData.topHoldings && fundData.topHoldings.length > 0 ? (
             <div className="space-y-1.5">
               {fundData.topHoldings.map((h, i) => (
-                <div key={i} className="flex items-center gap-3">
-                  <span className="w-5 text-xs text-slate-400 text-right">{i + 1}</span>
+                <div key={i} className="flex items-center gap-2 sm:gap-3">
+                  <span className="w-4 sm:w-5 text-xs text-slate-400 text-right shrink-0">{i + 1}</span>
                   <div className="flex-1 min-w-0">
-                    <div className="flex items-center gap-2">
-                      {h.symbol && <span className="text-xs font-bold font-mono text-slate-700">{h.symbol}</span>}
+                    <div className="flex items-center gap-1 sm:gap-2">
+                      {h.symbol && <span className="text-xs font-bold font-mono text-slate-700 shrink-0">{h.symbol}</span>}
                       <span className="text-xs text-slate-500 truncate">{h.name}</span>
                     </div>
                   </div>
-                  <div className="flex items-center gap-2 shrink-0">
-                    <div className="w-20 h-2 rounded-full bg-slate-100 overflow-hidden">
+                  <div className="flex items-center gap-1.5 sm:gap-2 shrink-0">
+                    <div className="w-12 sm:w-20 h-2 rounded-full bg-slate-100 overflow-hidden">
                       <div
                         className="h-full rounded-full bg-blue-500"
                         style={{ width: `${Math.min(h.weight * 3, 100)}%` }}
                       />
                     </div>
-                    <span className="w-12 text-right text-xs font-semibold text-slate-700">{h.weight.toFixed(1)}%</span>
+                    <span className="w-11 sm:w-12 text-right text-xs font-semibold text-slate-700">{h.weight.toFixed(1)}%</span>
                   </div>
                 </div>
               ))}
@@ -310,7 +310,7 @@ function FundDataPanels({ fundData, ticker, onHoldingsUpdate }: { fundData: Fund
                   value={holdingsUrl}
                   onChange={(e) => { setHoldingsUrl(e.target.value); setScrapeError(""); }}
                   placeholder="https://provider.com/etf/holdings"
-                  className="flex-1 rounded-lg border border-slate-200 bg-slate-50 px-3 py-1.5 text-xs outline-none placeholder:text-slate-400 focus:bg-white focus:border-blue-300 focus:ring-1 focus:ring-blue-200 transition-all"
+                  className="flex-1 min-w-0 rounded-lg border border-slate-200 bg-slate-50 px-2 sm:px-3 py-1.5 text-xs outline-none placeholder:text-slate-400 focus:bg-white focus:border-blue-300 focus:ring-1 focus:ring-blue-200 transition-all"
                 />
                 <button
                   onClick={handleScrapeHoldings}
@@ -332,14 +332,14 @@ function FundDataPanels({ fundData, ticker, onHoldingsUpdate }: { fundData: Fund
 
         {/* Sector Breakdown */}
         {fundData.sectorWeightings && fundData.sectorWeightings.length > 0 && (
-          <div className="rounded-[24px] border border-slate-200 bg-white p-5 shadow-sm">
+          <div className="rounded-[24px] border border-slate-200 bg-white p-4 sm:p-5 shadow-sm overflow-hidden">
             <h2 className="text-base font-bold text-slate-800 mb-3">Sector Breakdown</h2>
             {/* Stacked bar */}
-            <div className="flex h-8 rounded-xl overflow-hidden mb-3">
+            <div className="flex h-7 sm:h-8 rounded-xl overflow-hidden mb-3">
               {fundData.sectorWeightings.map((s) => (
                 <div
                   key={s.sector}
-                  className={`${sectorColors[s.sector] || "bg-slate-400"} flex items-center justify-center text-[10px] font-semibold text-white`}
+                  className={`${sectorColors[s.sector] || "bg-slate-400"} flex items-center justify-center text-[9px] sm:text-[10px] font-semibold text-white`}
                   style={{ width: `${s.weight}%` }}
                 >
                   {s.weight >= 8 && `${s.weight.toFixed(0)}%`}
@@ -348,10 +348,10 @@ function FundDataPanels({ fundData, ticker, onHoldingsUpdate }: { fundData: Fund
             </div>
             <div className="space-y-1.5">
               {fundData.sectorWeightings.map((s) => (
-                <div key={s.sector} className="flex items-center gap-2">
+                <div key={s.sector} className="flex items-center gap-2 min-w-0">
                   <span className={`h-2.5 w-2.5 rounded-full shrink-0 ${sectorColors[s.sector] || "bg-slate-400"}`} />
-                  <span className="flex-1 text-xs text-slate-600">{s.sector}</span>
-                  <span className="text-xs font-semibold text-slate-700">{s.weight.toFixed(1)}%</span>
+                  <span className="flex-1 text-xs text-slate-600 truncate">{s.sector}</span>
+                  <span className="text-xs font-semibold text-slate-700 shrink-0">{s.weight.toFixed(1)}%</span>
                 </div>
               ))}
             </div>
@@ -360,7 +360,7 @@ function FundDataPanels({ fundData, ticker, onHoldingsUpdate }: { fundData: Fund
             {fundData.assetAllocation && (
               <div className="mt-4 pt-3 border-t border-slate-100">
                 <div className="text-[10px] font-semibold uppercase tracking-wider text-slate-400 mb-2">Asset Allocation</div>
-                <div className="grid grid-cols-4 gap-2 text-center">
+                <div className="grid grid-cols-2 sm:grid-cols-4 gap-2 text-center">
                   {fundData.assetAllocation.stock != null && (
                     <div className="rounded-lg bg-blue-50 p-2">
                       <div className="text-[10px] text-blue-500">Stocks</div>
