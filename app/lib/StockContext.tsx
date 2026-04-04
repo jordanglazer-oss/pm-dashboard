@@ -234,6 +234,64 @@ export function StockProvider({ children }: { children: React.ReactNode }) {
     [scoredStocks]
   );
 
+  /* ─── Auto-add to PIM models when stock is added ─── */
+  const addToPimModels = useCallback((stock: Stock) => {
+    setPimModelsState((prev) => {
+      // Determine asset class based on instrument type and sector
+      let assetClass: "fixedIncome" | "equity" | "alternative" = "equity";
+      const sectorLower = (stock.sector || "").toLowerCase();
+      const nameLower = (stock.name || stock.ticker).toLowerCase();
+      if (stock.instrumentType === "etf" || stock.instrumentType === "mutual-fund") {
+        if (sectorLower.includes("bond") || sectorLower.includes("fixed") || nameLower.includes("bond") || nameLower.includes("fixed income")) {
+          assetClass = "fixedIncome";
+        } else if (sectorLower.includes("alternative") || nameLower.includes("alternative") || nameLower.includes("premium yield") || nameLower.includes("hedge")) {
+          assetClass = "alternative";
+        }
+      }
+
+      const currency: "CAD" | "USD" = stock.ticker.endsWith("-T") || stock.ticker.endsWith(".TO") ? "CAD" : "USD";
+
+      const updatedGroups = prev.groups.map((group) => {
+        // Skip if already in this group
+        const exists = group.holdings.some((h) =>
+          h.symbol === stock.ticker || h.symbol.replace("-T", ".TO") === stock.ticker.replace("-T", ".TO")
+        );
+        if (exists) return group;
+
+        // For equity holdings: redistribute weight equally among all equities
+        const existingInClass = group.holdings.filter((h) => h.assetClass === assetClass);
+        const newCount = existingInClass.length + 1;
+        const totalClassWeight = existingInClass.reduce((s, h) => s + h.weightInClass, 0);
+        // Give the new holding an equal share of the total class weight
+        const newWeight = totalClassWeight > 0 ? totalClassWeight / newCount : (1 / newCount);
+
+        // Redistribute existing holdings in that class
+        const scaleFactor = totalClassWeight > 0 ? (totalClassWeight - newWeight) / totalClassWeight : 1;
+
+        const updatedHoldings = group.holdings.map((h) => {
+          if (h.assetClass === assetClass) {
+            return { ...h, weightInClass: parseFloat((h.weightInClass * scaleFactor).toFixed(6)) };
+          }
+          return h;
+        });
+
+        updatedHoldings.push({
+          name: (stock.name || stock.ticker).toUpperCase(),
+          symbol: stock.ticker,
+          currency,
+          assetClass,
+          weightInClass: parseFloat(newWeight.toFixed(6)),
+        });
+
+        return { ...group, holdings: updatedHoldings };
+      });
+
+      const updated = { ...prev, groups: updatedGroups, lastUpdated: new Date().toISOString() };
+      persistPim(updated);
+      return updated;
+    });
+  }, [persistPim]);
+
   /* ─── Stock mutations (optimistic + persist) ─── */
   const addStock = useCallback((stock: Stock) => {
     setStocks((prev) => {
@@ -241,7 +299,9 @@ export function StockProvider({ children }: { children: React.ReactNode }) {
       persistStocks(next);
       return next;
     });
-  }, [persistStocks]);
+    // Auto-add to PIM models
+    addToPimModels(stock);
+  }, [persistStocks, addToPimModels]);
 
   const removeStock = useCallback((ticker: string) => {
     setStocks((prev) => {
