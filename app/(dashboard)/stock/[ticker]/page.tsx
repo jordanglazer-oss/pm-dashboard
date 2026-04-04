@@ -371,10 +371,14 @@ export default function StockDetailPage() {
       if (res.ok) {
         const data = await res.json();
         if (data.fundData) updateFundData(ticker, data.fundData);
+        // Update name from Morningstar for Canadian funds if we got a better name
+        if (data.name && (!stock.name || stock.name === ticker)) {
+          updateStockFields(ticker, { name: data.name });
+        }
       }
     } catch { /* best effort */ }
     finally { setLoadingFundData(false); }
-  }, [ticker, stock, scoreable, updateFundData]);
+  }, [ticker, stock, scoreable, updateFundData, updateStockFields]);
 
   // Auto-fetch fund data on mount if missing
   useEffect(() => {
@@ -704,7 +708,9 @@ export default function StockDetailPage() {
                       <div className="grid grid-cols-2 sm:grid-cols-4 gap-3">
                         {stock.fundData.expenseRatio != null && (
                           <div className="rounded-xl bg-slate-50 p-3">
-                            <div className="text-[10px] font-semibold uppercase tracking-wider text-slate-400">Expense Ratio</div>
+                            <div className="text-[10px] font-semibold uppercase tracking-wider text-slate-400">
+                              {stock.instrumentType === "mutual-fund" ? "MER" : "Expense Ratio"}
+                            </div>
                             <div className="mt-1 text-lg font-bold text-slate-800">{stock.fundData.expenseRatio.toFixed(2)}%</div>
                           </div>
                         )}
@@ -718,6 +724,14 @@ export default function StockDetailPage() {
                           <div className="rounded-xl bg-slate-50 p-3">
                             <div className="text-[10px] font-semibold uppercase tracking-wider text-slate-400">Yield</div>
                             <div className="mt-1 text-lg font-bold text-slate-800">{stock.fundData.yield.toFixed(2)}%</div>
+                          </div>
+                        )}
+                        {stock.fundData.starRating != null && (
+                          <div className="rounded-xl bg-slate-50 p-3">
+                            <div className="text-[10px] font-semibold uppercase tracking-wider text-slate-400">Morningstar</div>
+                            <div className="mt-1 text-lg font-bold text-amber-500">
+                              {"★".repeat(stock.fundData.starRating)}{"☆".repeat(5 - stock.fundData.starRating)}
+                            </div>
                           </div>
                         )}
                         {stock.fundData.category && (

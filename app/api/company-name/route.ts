@@ -3,6 +3,26 @@ import { NextRequest, NextResponse } from "next/server";
 const YAHOO_BASE = "https://query2.finance.yahoo.com";
 const UA = "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36";
 
+// Detect FUNDSERV codes (e.g., TDB900, RBF556, CIG686)
+function isFundservCode(ticker: string): boolean {
+  return /^[A-Z]{2,4}\d{2,5}$/i.test(ticker);
+}
+
+async function lookupFundservName(code: string): Promise<{ name: string; type: string }> {
+  try {
+    const url = `https://www.morningstar.ca/ca/util/SecuritySearch.ashx?q=${encodeURIComponent(code)}&limit=5`;
+    const res = await fetch(url, { cache: "no-store", headers: { "User-Agent": UA } });
+    if (!res.ok) return { name: code, type: "mutual-fund" };
+    const text = await res.text();
+    const lines = text.trim().split("\n");
+    if (lines.length > 0 && lines[0].includes("|")) {
+      const name = lines[0].split("|")[0];
+      if (name) return { name, type: "mutual-fund" };
+    }
+  } catch { /* fallback */ }
+  return { name: code, type: "mutual-fund" };
+}
+
 /**
  * Fetches company name(s) and sector(s) from Yahoo Finance without using Claude tokens.
  * Uses the search/autosuggest API which does NOT require crumb/cookie auth.
@@ -29,6 +49,13 @@ export async function GET(request: NextRequest) {
       const batch = tickers.slice(i, i + batchSize);
       const results = await Promise.allSettled(
         batch.map(async (ticker) => {
+          // FUNDSERV codes (Canadian mutual funds) — use Morningstar lookup
+          if (isFundservCode(ticker)) {
+            const { name, type } = await lookupFundservName(ticker);
+            return { ticker, name, sector: "", type };
+          }
+
+          // Regular tickers — use Yahoo Finance search
           const url = `${YAHOO_BASE}/v1/finance/search?q=${encodeURIComponent(ticker)}&quotesCount=1&newsCount=0`;
           const res = await fetch(url, {
             cache: "no-store",
