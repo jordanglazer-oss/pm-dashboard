@@ -56,13 +56,119 @@ const SECTOR_NAME_MAP: Record<string, string> = {
   healthcare: "Health Care",
 };
 
-// ── Morningstar Canada helpers ──
+// ── Morningstar helpers ──
 
 type MorningstarLookup = {
   secId: string;
   performanceId: string; // Yahoo ticker base (append .TO)
   name: string;
 };
+
+type MorningstarETFLookup = {
+  secId: string;
+  exchange: string;
+  name: string;
+};
+
+// Map Morningstar search exchange codes to screener universe IDs
+const EXCHANGE_TO_UNIVERSE: Record<string, string> = {
+  ARCA: "ETEXG$ARCX",
+  NAS: "ETEXG$XNAS",
+  NASDAQ: "ETEXG$XNAS",
+  NYSE: "ETEXG$XNYS",
+  BATS: "ETEXG$BATS",
+  TSX: "ETEXG$XTSE",
+};
+
+/**
+ * Look up any ETF ticker on Morningstar to get SecId and exchange.
+ */
+async function lookupMorningstarETF(ticker: string): Promise<MorningstarETFLookup | null> {
+  try {
+    const cleanTicker = ticker.replace(/\.TO$/i, "");
+    const url = `https://www.morningstar.ca/ca/util/SecuritySearch.ashx?q=${encodeURIComponent(cleanTicker)}&limit=10`;
+    const res = await fetch(url, {
+      cache: "no-store",
+      headers: { "User-Agent": "Mozilla/5.0" },
+    });
+    if (!res.ok) return null;
+    const text = await res.text();
+    const tickerUpper = cleanTicker.toUpperCase();
+
+    for (const line of text.trim().split("\n")) {
+      const parts = line.split("|");
+      if (parts.length < 4) continue;
+      // Only match ETFs (type indicator after the pipe-delimited fields)
+      if (!line.includes("|ETF|")) continue;
+      const jsonPart = parts.find((p) => p.startsWith("{"));
+      if (!jsonPart) continue;
+      try {
+        const meta = JSON.parse(jsonPart);
+        // Exact ticker match
+        if (meta.s?.toUpperCase() === tickerUpper) {
+          return {
+            secId: meta.i || "",
+            exchange: meta.e || "",
+            name: meta.n || parts[0] || "",
+          };
+        }
+      } catch { continue; }
+    }
+    return null;
+  } catch {
+    return null;
+  }
+}
+
+/**
+ * Fetch performance data for an ETF from Morningstar screener API.
+ */
+async function fetchMorningstarETFData(secId: string, exchange: string): Promise<MorningstarScreenerData> {
+  const result: MorningstarScreenerData = {};
+  const universeId = EXCHANGE_TO_UNIVERSE[exchange];
+  if (!universeId) return result;
+
+  try {
+    const dataPoints = [
+      "SecId", "Name", "ProspectusNetExpenseRatio", "FundTNAV", "StarRatingM255",
+      "CategoryName", "GBRReturnM0", "GBRReturnM1", "GBRReturnM3", "GBRReturnM6",
+      "GBRReturnM12", "GBRReturnM36", "GBRReturnM60", "GBRReturnM120",
+      "Yield_M12",
+    ].join(",");
+
+    const url = `https://lt.morningstar.com/api/rest.svc/9vehuxllxs/security/screener?outputType=json&page=1&pageSize=1&securityDataPoints=${dataPoints}&universeIds=${encodeURIComponent(universeId)}&filters=SecId:IN:${encodeURIComponent(secId)}`;
+    const res = await fetch(url, {
+      cache: "no-store",
+      headers: { "User-Agent": "Mozilla/5.0" },
+    });
+    if (!res.ok) return result;
+
+    const data = await res.json();
+    const row = data?.rows?.[0];
+    if (!row) return result;
+
+    result.name = row.Name || undefined;
+    result.mer = typeof row.ProspectusNetExpenseRatio === "number" ? row.ProspectusNetExpenseRatio : undefined;
+    result.totalAssets = typeof row.FundTNAV === "number" ? row.FundTNAV : undefined;
+    result.category = row.CategoryName || undefined;
+    result.starRating = typeof row.StarRatingM255 === "number" ? row.StarRatingM255 : undefined;
+    result.yield12m = typeof row.Yield_M12 === "number" ? row.Yield_M12 : undefined;
+
+    const perf: FundPerformance = {};
+    if (typeof row.GBRReturnM0 === "number") perf.ytd = row.GBRReturnM0;
+    if (typeof row.GBRReturnM1 === "number") perf.oneMonth = row.GBRReturnM1;
+    if (typeof row.GBRReturnM3 === "number") perf.threeMonth = row.GBRReturnM3;
+    if (typeof row.GBRReturnM12 === "number") perf.oneYear = row.GBRReturnM12;
+    if (typeof row.GBRReturnM36 === "number") perf.threeYear = row.GBRReturnM36;
+    if (typeof row.GBRReturnM60 === "number") perf.fiveYear = row.GBRReturnM60;
+    if (typeof row.GBRReturnM120 === "number") perf.tenYear = row.GBRReturnM120;
+    if (Object.keys(perf).length > 0) result.performance = perf;
+  } catch {
+    /* best effort */
+  }
+
+  return result;
+}
 
 /**
  * Resolve a FUNDSERV code (e.g. TDB900, RBF556) to Morningstar SecId and Yahoo PerformanceId.
@@ -558,7 +664,7 @@ export async function GET(request: NextRequest) {
     });
   }
 
-  // Regular ETF — use Yahoo for holdings/risk, Globe and Mail for Canadian ETF performance
+  // Regular ETF — Yahoo for holdings/risk, Morningstar or Globe and Mail for performance
   if (!auth) {
     return NextResponse.json(
       { error: "Failed to authenticate with Yahoo Finance" },
@@ -569,8 +675,10 @@ export async function GET(request: NextRequest) {
   try {
     const isCanadianETF = ticker.endsWith(".TO");
 
-    // Fetch Yahoo and (for Canadian ETFs) Globe and Mail in parallel
-    const [yahooRes, gmData] = await Promise.all([
+    // Fetch Yahoo + performance source in parallel
+    // Canadian ETFs: Globe and Mail for performance
+    // US/other ETFs: Morningstar for performance (via SecuritySearch → screener)
+    const [yahooRes, gmData, msETFLookup] = await Promise.all([
       fetch(
         `${YAHOO_BASE}/v10/finance/quoteSummary/${encodeURIComponent(ticker)}?modules=${FUND_MODULES.join(",")}&crumb=${encodeURIComponent(auth.crumb)}`,
         {
@@ -579,7 +687,13 @@ export async function GET(request: NextRequest) {
         }
       ),
       isCanadianETF ? fetchGlobeAndMailData(ticker) : Promise.resolve({} as GlobeAndMailData),
+      !isCanadianETF ? lookupMorningstarETF(ticker) : Promise.resolve(null),
     ]);
+
+    // For US ETFs, fetch Morningstar screener data if lookup succeeded
+    const msData = msETFLookup
+      ? await fetchMorningstarETFData(msETFLookup.secId, msETFLookup.exchange)
+      : ({} as MorningstarScreenerData);
 
     if (!yahooRes.ok) {
       return NextResponse.json(
@@ -599,10 +713,11 @@ export async function GET(request: NextRequest) {
 
     const fundData = extractYahooFundData(result);
 
-    // For Canadian ETFs, use Globe and Mail performance as primary source
-    if (isCanadianETF && gmData.performance) {
-      const gm = gmData.performance;
-      const yp = fundData.performance || {};
+    // Merge performance: primary source wins, Yahoo fills gaps
+    const yp = fundData.performance || {};
+    if (isCanadianETF && (gmData.performance || gmData.mer != null)) {
+      // Canadian ETFs: Globe and Mail is primary
+      const gm = gmData.performance || {};
       fundData.performance = {
         ytd: gm.ytd ?? yp.ytd,
         oneMonth: yp.oneMonth,
@@ -612,10 +727,25 @@ export async function GET(request: NextRequest) {
         fiveYear: gm.fiveYear ?? yp.fiveYear,
         tenYear: gm.tenYear ?? yp.tenYear,
       };
+      if (gmData.mer != null) fundData.expenseRatio = gmData.mer;
+    } else if (msData.performance) {
+      // US/other ETFs: Morningstar is primary
+      const ms = msData.performance;
+      fundData.performance = {
+        ytd: ms.ytd ?? yp.ytd,
+        oneMonth: ms.oneMonth ?? yp.oneMonth,
+        threeMonth: ms.threeMonth ?? yp.threeMonth,
+        oneYear: ms.oneYear ?? yp.oneYear,
+        threeYear: ms.threeYear ?? yp.threeYear,
+        fiveYear: ms.fiveYear ?? yp.fiveYear,
+        tenYear: ms.tenYear ?? yp.tenYear,
+      };
     }
-    if (isCanadianETF && gmData.mer != null) {
-      fundData.expenseRatio = gmData.mer;
-    }
+    // Morningstar supplementary fields for all ETFs
+    if (msData.category && !fundData.category) fundData.category = msData.category;
+    if (msData.starRating != null) fundData.starRating = msData.starRating;
+    if (msData.mer != null && fundData.expenseRatio == null) fundData.expenseRatio = msData.mer;
+    if (msData.totalAssets != null && fundData.totalAssets == null) fundData.totalAssets = msData.totalAssets;
 
     return NextResponse.json({ ticker, fundData });
   } catch (err) {
