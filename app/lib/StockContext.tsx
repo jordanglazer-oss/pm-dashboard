@@ -2,7 +2,7 @@
 
 import React, { createContext, useContext, useState, useMemo, useCallback, useEffect, useRef } from "react";
 import type { Stock, MarketData, ScoredStock, MorningBrief, ScoreKey, ScoreExplanations, HealthData, TechnicalIndicators, RiskAlert, FundData } from "./types";
-import { computeScores, isOffensiveSector } from "./scoring";
+import { computeScores, isOffensiveSector, isScoreable } from "./scoring";
 import { holdingsSeed, defaultMarketData } from "./defaults";
 
 export type ChartAnalysisEntry = {
@@ -128,7 +128,8 @@ export function StockProvider({ children }: { children: React.ReactNode }) {
                 const newName = data.names?.[s.ticker];
                 const newSector = data.sectors?.[s.ticker];
                 const shouldUpdateName = newName && (!s.name || s.name === s.ticker);
-                const shouldUpdateSector = newSector && newSector !== s.sector;
+                const isFund = s.instrumentType === "etf" || s.instrumentType === "mutual-fund";
+                const shouldUpdateSector = !isFund && newSector && newSector !== s.sector;
                 if (shouldUpdateName || shouldUpdateSector) {
                   changed = true;
                   return {
@@ -167,7 +168,7 @@ export function StockProvider({ children }: { children: React.ReactNode }) {
   const offensiveExposure = useMemo(
     () =>
       scoredStocks
-        .filter((s) => s.bucket === "Portfolio" && isOffensiveSector(s.sector))
+        .filter((s) => s.bucket === "Portfolio" && isScoreable(s) && isOffensiveSector(s.sector))
         .reduce((sum, s) => sum + s.weights.portfolio, 0),
     [scoredStocks]
   );

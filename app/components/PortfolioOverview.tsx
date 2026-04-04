@@ -165,7 +165,6 @@ export function PortfolioOverview() {
                   <th className="pb-2">Ticker</th>
                   <th className="pb-2">Name</th>
                   <th className="pb-2">Type</th>
-                  <th className="pb-2">Sector</th>
                   <th className="pb-2 text-right">Weight</th>
                   <th className="pb-2 text-right">Price</th>
                 </tr>
@@ -184,7 +183,6 @@ export function PortfolioOverview() {
                         {INSTRUMENT_LABELS[s.instrumentType || "stock"]}
                       </span>
                     </td>
-                    <td className="py-3 text-slate-500 text-xs">{s.sector}</td>
                     <td className="py-3 text-right font-semibold text-slate-700">{s.weights.portfolio}%</td>
                     <td className="py-3 text-right text-slate-600">{s.price != null ? `$${s.price.toFixed(2)}` : "—"}</td>
                   </tr>

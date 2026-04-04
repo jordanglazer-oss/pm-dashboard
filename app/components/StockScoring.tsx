@@ -310,7 +310,7 @@ export function StockScoring({ stocks, onScoreStock, onUpdateCostBasis, onRefres
                         )}
                       </div>
                     </div>
-                    <div className="text-xs text-slate-500 mb-3">{s.name} &middot; {s.sector}</div>
+                    <div className="text-xs text-slate-500 mb-3">{s.name}{isScoreable(s) && s.sector ? ` \u00b7 ${s.sector}` : ""}</div>
                     <div className={`grid gap-3 text-center ${isPortfolio ? "grid-cols-3" : "grid-cols-2"}`}>
                       <div>
                         <div className="text-[10px] text-slate-400 uppercase tracking-wider">Price</div>
@@ -384,7 +384,7 @@ export function StockScoring({ stocks, onScoreStock, onUpdateCostBasis, onRefres
                           </div>
                           <div className="text-[11px] text-slate-400 truncate max-w-[120px]">{s.name}</div>
                         </td>
-                        <td className="py-3 pr-2 text-xs text-slate-600">{s.sector}</td>
+                        <td className="py-3 pr-2 text-xs text-slate-600">{isScoreable(s) ? s.sector : ""}</td>
                         <td className="py-3 pr-2 text-right font-mono text-sm">
                           {pricesLoading ? (
                             <span className="text-slate-300 animate-pulse">...</span>

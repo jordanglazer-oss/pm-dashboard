@@ -63,7 +63,7 @@ export default function DashboardPage() {
       name,
       instrumentType,
       bucket: newBucket,
-      sector,
+      sector: isFund ? "" : sector,
       beta: 1.0,
       weights: { portfolio: weight },
       scores: { ...ZERO_SCORES },

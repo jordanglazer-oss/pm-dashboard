@@ -608,9 +608,11 @@ export default function StockDetailPage() {
                   {refreshError && <span className="text-xs text-red-500 ml-1">{refreshError}</span>}
                 </div>
 
-                {/* Sector (auto-populated from Yahoo Finance) */}
+                {/* Sector (stocks only) + Weight (funds only) */}
                 <div className="flex items-center gap-2 mb-2">
-                  <span className="rounded-lg bg-slate-100 px-3 py-1.5 text-sm font-medium text-slate-700">{stock.sector}</span>
+                  {scoreable && stock.sector && (
+                    <span className="rounded-lg bg-slate-100 px-3 py-1.5 text-sm font-medium text-slate-700">{stock.sector}</span>
+                  )}
                   {!scoreable && (
                     <div className="flex items-center gap-1.5">
                       <span className="text-xs text-slate-400">Weight:</span>
