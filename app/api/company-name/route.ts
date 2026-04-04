@@ -21,6 +21,7 @@ export async function GET(request: NextRequest) {
 
     const names: Record<string, string> = {};
     const sectors: Record<string, string> = {};
+    const types: Record<string, string> = {};
 
     // Fetch in parallel batches of 10
     const batchSize = 10;
@@ -33,16 +34,19 @@ export async function GET(request: NextRequest) {
             cache: "no-store",
             headers: { "User-Agent": UA },
           });
-          if (!res.ok) return { ticker, name: ticker, sector: "" };
+          if (!res.ok) return { ticker, name: ticker, sector: "", type: "stock" };
           const data = await res.json();
           const quote = data?.quotes?.[0];
-          if (!quote) return { ticker, name: ticker, sector: "" };
+          if (!quote) return { ticker, name: ticker, sector: "", type: "stock" };
           // Only use result if the returned symbol matches (search can return different tickers)
-          if (quote.symbol !== ticker) return { ticker, name: ticker, sector: "" };
+          if (quote.symbol !== ticker) return { ticker, name: ticker, sector: "", type: "stock" };
+          const quoteType = quote.quoteType || "EQUITY";
+          const instrumentType = quoteType === "ETF" ? "etf" : quoteType === "MUTUALFUND" ? "mutual-fund" : "stock";
           return {
             ticker,
             name: quote.shortname || quote.longname || ticker,
             sector: quote.sector || "",
+            type: instrumentType,
           };
         })
       );
@@ -50,11 +54,12 @@ export async function GET(request: NextRequest) {
         if (r.status === "fulfilled") {
           names[r.value.ticker] = r.value.name;
           if (r.value.sector) sectors[r.value.ticker] = r.value.sector;
+          if (r.value.type) types[r.value.ticker] = r.value.type;
         }
       }
     }
 
-    return NextResponse.json({ names, sectors });
+    return NextResponse.json({ names, sectors, types });
   } catch (error) {
     const msg = error instanceof Error ? error.message : String(error);
     return NextResponse.json({ error: msg }, { status: 500 });

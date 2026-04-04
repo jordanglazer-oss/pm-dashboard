@@ -3,9 +3,9 @@
 import React, { useState } from "react";
 import Link from "next/link";
 import { useStocks } from "@/app/lib/StockContext";
-import { SCORE_GROUPS, MAX_SCORE } from "@/app/lib/types";
+import { SCORE_GROUPS, MAX_SCORE, INSTRUMENT_LABELS } from "@/app/lib/types";
 import type { ScoredStock, ScoreKey } from "@/app/lib/types";
-import { groupTotal } from "@/app/lib/scoring";
+import { groupTotal, isScoreable } from "@/app/lib/scoring";
 import { SignalPill } from "./SignalPill";
 
 // S&P 500 approximate sector weights
@@ -47,12 +47,16 @@ function ratingColor(label: string): string {
 export function PortfolioOverview() {
   const { portfolioStocks, watchlistStocks, scoredStocks, marketData } = useStocks();
 
-  const allSorted = [...scoredStocks].sort((a, b) => b.adjusted - a.adjusted);
+  // Separate scoreable stocks from funds
+  const scoreablePortfolio = portfolioStocks.filter((s) => isScoreable(s));
+  const fundPortfolio = portfolioStocks.filter((s) => !isScoreable(s));
+  const scoreableWatchlist = watchlistStocks.filter((s) => isScoreable(s));
+  const allScoreable = [...scoreablePortfolio, ...scoreableWatchlist].sort((a, b) => b.adjusted - a.adjusted);
 
-  // Sector exposure (equal-weighted)
-  const pfCount = portfolioStocks.length;
+  // Sector exposure (equal-weighted among individual stocks)
+  const pfCount = scoreablePortfolio.length;
   const sectorCounts: Record<string, number> = {};
-  portfolioStocks.forEach((s) => {
+  scoreablePortfolio.forEach((s) => {
     sectorCounts[s.sector] = (sectorCounts[s.sector] || 0) + 1;
   });
   const sectorExposure = Object.entries(sectorCounts)
@@ -63,18 +67,19 @@ export function PortfolioOverview() {
     }))
     .sort((a, b) => b.weight - a.weight);
 
-  // Action items
-  const bottomPortfolio = [...portfolioStocks].reverse().slice(0, 3);
-  const topWatchlist = watchlistStocks.slice(0, 3);
+  // Action items (only for scoreable stocks)
+  const bottomPortfolio = [...scoreablePortfolio].reverse().slice(0, 3);
+  const topWatchlist = scoreableWatchlist.slice(0, 3);
   const reviewCount = bottomPortfolio.filter((s) => s.adjusted < 20).length;
   const buyCount = topWatchlist.filter((s) => s.adjusted >= 18).length;
 
-  // Averages
-  const pfAvgBase = pfCount > 0 ? Math.round(portfolioStocks.reduce((s, x) => s + x.raw, 0) / pfCount) : 0;
-  const pfAvgAdj = pfCount > 0 ? Math.round(portfolioStocks.reduce((s, x) => s + x.adjusted, 0) / pfCount) : 0;
-  const wlCount = watchlistStocks.length;
-  const wlAvgBase = wlCount > 0 ? Math.round(watchlistStocks.reduce((s, x) => s + x.raw, 0) / wlCount) : 0;
-  const wlAvgAdj = wlCount > 0 ? Math.round(watchlistStocks.reduce((s, x) => s + x.adjusted, 0) / wlCount) : 0;
+  // Averages (only for scoreable stocks)
+  const pfAvgBase = pfCount > 0 ? Math.round(scoreablePortfolio.reduce((s, x) => s + x.raw, 0) / pfCount) : 0;
+  const pfAvgAdj = pfCount > 0 ? Math.round(scoreablePortfolio.reduce((s, x) => s + x.adjusted, 0) / pfCount) : 0;
+  const wlCount = scoreableWatchlist.length;
+  const wlAvgBase = wlCount > 0 ? Math.round(scoreableWatchlist.reduce((s, x) => s + x.raw, 0) / wlCount) : 0;
+  const wlAvgAdj = wlCount > 0 ? Math.round(scoreableWatchlist.reduce((s, x) => s + x.adjusted, 0) / wlCount) : 0;
+  const totalFundWeight = fundPortfolio.reduce((s, x) => s + x.weights.portfolio, 0);
 
   return (
     <div className="space-y-6">
@@ -82,7 +87,7 @@ export function PortfolioOverview() {
       <section className="rounded-[30px] border border-slate-200 bg-white p-5 shadow-sm">
         <div className="flex items-center gap-3 mb-4">
           <h2 className="text-lg font-bold text-slate-800">Portfolio Sector Exposure</h2>
-          <span className="text-sm text-slate-400">Equal-weighted · {pfCount} holdings</span>
+          <span className="text-sm text-slate-400">Equal-weighted · {pfCount} stocks{fundPortfolio.length > 0 ? ` + ${fundPortfolio.length} funds` : ""}</span>
         </div>
         <div className="flex h-8 rounded-xl overflow-hidden mb-3">
           {sectorExposure.map((s) => (
@@ -121,12 +126,19 @@ export function PortfolioOverview() {
       </section>
 
       {/* Summary Cards */}
-      <section className="grid gap-4 md:grid-cols-3">
+      <section className="grid gap-4 md:grid-cols-3 xl:grid-cols-4">
         <div className="rounded-[24px] border border-slate-200 bg-white p-5 shadow-sm">
-          <div className="text-xs font-semibold uppercase tracking-wider text-slate-400">Portfolio</div>
+          <div className="text-xs font-semibold uppercase tracking-wider text-slate-400">Stocks</div>
           <div className="mt-2 text-4xl font-bold text-slate-900">{pfCount}</div>
           <div className="mt-1 text-sm text-slate-500">Avg adj: {pfAvgAdj} (base: {pfAvgBase})</div>
         </div>
+        {fundPortfolio.length > 0 && (
+          <div className="rounded-[24px] border border-indigo-200 bg-indigo-50/50 p-5 shadow-sm">
+            <div className="text-xs font-semibold uppercase tracking-wider text-indigo-400">Funds / ETFs</div>
+            <div className="mt-2 text-4xl font-bold text-indigo-700">{fundPortfolio.length}</div>
+            <div className="mt-1 text-sm text-indigo-500">Total weight: {totalFundWeight.toFixed(1)}%</div>
+          </div>
+        )}
         <div className="rounded-[24px] border border-slate-200 bg-white p-5 shadow-sm">
           <div className="text-xs font-semibold uppercase tracking-wider text-slate-400">Watchlist</div>
           <div className="mt-2 text-4xl font-bold text-slate-900">{wlCount}</div>
@@ -139,17 +151,61 @@ export function PortfolioOverview() {
         </div>
       </section>
 
-      {/* Portfolio Rankings */}
-      <RankingTable title="Portfolio Rankings" subtitle="Bottom 3 flagged for review" stocks={portfolioStocks} flagType="review" />
+      {/* Fund Holdings */}
+      {fundPortfolio.length > 0 && (
+        <section className="rounded-[30px] border border-indigo-200 bg-white p-5 shadow-sm">
+          <div className="flex items-center gap-3 mb-4">
+            <h2 className="text-lg font-bold text-slate-800">Fund & ETF Holdings</h2>
+            <span className="text-sm text-slate-400">{fundPortfolio.length} holdings · {totalFundWeight.toFixed(1)}% total weight</span>
+          </div>
+          <div className="overflow-x-auto">
+            <table className="w-full text-left text-sm">
+              <thead>
+                <tr className="border-b border-slate-200 text-xs text-slate-500">
+                  <th className="pb-2">Ticker</th>
+                  <th className="pb-2">Name</th>
+                  <th className="pb-2">Type</th>
+                  <th className="pb-2">Sector</th>
+                  <th className="pb-2 text-right">Weight</th>
+                  <th className="pb-2 text-right">Price</th>
+                </tr>
+              </thead>
+              <tbody>
+                {fundPortfolio.map((s) => (
+                  <tr key={s.ticker} className="border-b border-slate-50 hover:bg-slate-50/50 transition-colors">
+                    <td className="py-3">
+                      <Link href={`/stock/${s.ticker.toLowerCase()}`} className="font-bold text-slate-800 hover:underline font-mono">
+                        {s.ticker}
+                      </Link>
+                    </td>
+                    <td className="py-3 text-slate-600">{s.name}</td>
+                    <td className="py-3">
+                      <span className={`rounded-md px-2 py-0.5 text-[10px] font-bold ${s.instrumentType === "etf" ? "bg-indigo-100 text-indigo-700" : "bg-purple-100 text-purple-700"}`}>
+                        {INSTRUMENT_LABELS[s.instrumentType || "stock"]}
+                      </span>
+                    </td>
+                    <td className="py-3 text-slate-500 text-xs">{s.sector}</td>
+                    <td className="py-3 text-right font-semibold text-slate-700">{s.weights.portfolio}%</td>
+                    <td className="py-3 text-right text-slate-600">{s.price != null ? `$${s.price.toFixed(2)}` : "—"}</td>
+                  </tr>
+                ))}
+              </tbody>
+            </table>
+          </div>
+        </section>
+      )}
 
-      {/* Watchlist Rankings */}
-      <RankingTable title="Watchlist Rankings" subtitle="Top 3 flagged as buy candidates" stocks={watchlistStocks} flagType="buy" />
+      {/* Portfolio Rankings (scoreable stocks only) */}
+      <RankingTable title="Portfolio Rankings" subtitle="Bottom 3 flagged for review" stocks={scoreablePortfolio} flagType="review" />
 
-      {/* Score Comparison */}
+      {/* Watchlist Rankings (scoreable stocks only) */}
+      <RankingTable title="Watchlist Rankings" subtitle="Top 3 flagged as buy candidates" stocks={scoreableWatchlist} flagType="buy" />
+
+      {/* Score Comparison (scoreable stocks only) */}
       <section className="rounded-[30px] border border-slate-200 bg-white p-5 shadow-sm">
         <h2 className="text-lg font-bold text-slate-800 mb-4">Score Comparison</h2>
         <div className="space-y-2">
-          {allSorted.map((s) => {
+          {allScoreable.map((s) => {
             const pct = (s.adjusted / MAX_SCORE) * 100;
             const adj = Math.round((s.adjusted - s.raw) * 10) / 10;
             const label = s.ratingLabel || s.rating;
