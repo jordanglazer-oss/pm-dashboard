@@ -121,6 +121,88 @@ async function lookupMorningstarETF(ticker: string): Promise<MorningstarETFLooku
 }
 
 /**
+ * Scrape top holdings from Morningstar.com quote page.
+ * Works for US ETFs — page contains server-rendered top 10 holdings with weights and sectors.
+ * URL: https://www.morningstar.com/etfs/{exchange}/{ticker}/quote
+ */
+async function fetchMorningstarHoldings(
+  ticker: string,
+  exchange: string
+): Promise<{ topHoldings?: FundHolding[]; sectorWeightings?: FundSectorWeight[] }> {
+  const result: { topHoldings?: FundHolding[]; sectorWeightings?: FundSectorWeight[] } = {};
+
+  // Map search exchange to Morningstar URL exchange code
+  const exchangeMap: Record<string, string> = {
+    ARCA: "arcx", NAS: "xnas", NASDAQ: "xnas", NYSE: "xnys", BATS: "bats",
+  };
+  const msExchange = exchangeMap[exchange];
+  if (!msExchange) return result;
+
+  try {
+    const cleanTicker = ticker.replace(/\.TO$/i, "").toLowerCase();
+    const url = `https://www.morningstar.com/etfs/${msExchange}/${cleanTicker}/quote`;
+    const res = await fetch(url, {
+      cache: "no-store",
+      headers: {
+        "User-Agent": "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36",
+        "Accept": "text/html,application/xhtml+xml",
+      },
+    });
+    if (!res.ok) return result;
+
+    const html = await res.text();
+    const $ = cheerio.load(html);
+
+    // Parse top holdings from table rows with class "mdc-table-row"
+    // Each row has cells: Name, Weight, MarketValue, Sector
+    const holdings: FundHolding[] = [];
+    const sectorCounts: Record<string, number> = {};
+
+    // Find the section containing "Top 10 Holdings" and get its table rows
+    const holdingsSection = $("*:contains('Top 10 Holdings')").last().closest("div");
+    const rows = holdingsSection.find("tr[class*='mdc-table-row']");
+
+    rows.each((_, row) => {
+      if (holdings.length >= 10) return;
+      const cells = $(row).find("td");
+      if (cells.length < 2) return;
+
+      const cellTexts: string[] = [];
+      cells.each((__, cell) => {
+        const text = $(cell).text().trim().replace(/\s+/g, " ");
+        if (text) cellTexts.push(text);
+      });
+
+      // Expect: [Name, Weight, MarketValue, Sector]
+      if (cellTexts.length >= 2) {
+        const name = cellTexts[0];
+        const weight = parseFloat(cellTexts[1]);
+        if (!isFinite(weight)) return;
+        const sector = cellTexts.length >= 4 ? cellTexts[3] : "";
+
+        holdings.push({ symbol: "", name, weight });
+        if (sector) {
+          sectorCounts[sector] = (sectorCounts[sector] || 0) + weight;
+        }
+      }
+    });
+
+    if (holdings.length > 0) result.topHoldings = holdings;
+
+    // Build sector weightings from holdings
+    if (Object.keys(sectorCounts).length > 0) {
+      result.sectorWeightings = Object.entries(sectorCounts)
+        .map(([sector, weight]) => ({ sector, weight: parseFloat(weight.toFixed(2)) }))
+        .sort((a, b) => b.weight - a.weight);
+    }
+  } catch {
+    /* best effort */
+  }
+
+  return result;
+}
+
+/**
  * Fetch performance data for an ETF from Morningstar screener API.
  */
 async function fetchMorningstarETFData(secId: string, exchange: string): Promise<MorningstarScreenerData> {
@@ -722,10 +804,13 @@ export async function GET(request: NextRequest) {
       !isCanadianETF ? lookupMorningstarETF(ticker) : Promise.resolve(null),
     ]);
 
-    // For US ETFs, fetch Morningstar screener data if lookup succeeded
-    const msData = msETFLookup
-      ? await fetchMorningstarETFData(msETFLookup.secId, msETFLookup.exchange)
-      : ({} as MorningstarScreenerData);
+    // For US ETFs, fetch Morningstar screener data + holdings in parallel
+    const [msData, msHoldings] = msETFLookup
+      ? await Promise.all([
+          fetchMorningstarETFData(msETFLookup.secId, msETFLookup.exchange),
+          fetchMorningstarHoldings(ticker, msETFLookup.exchange),
+        ])
+      : [{} as MorningstarScreenerData, {} as Awaited<ReturnType<typeof fetchMorningstarHoldings>>];
 
     if (!yahooRes.ok) {
       return NextResponse.json(
@@ -781,6 +866,9 @@ export async function GET(request: NextRequest) {
     if (msData.yield12m != null) fundData.yield = msData.yield12m;
     if (msData.riskStats) fundData.riskStats = msData.riskStats;
     if (msData.equityMetrics) fundData.equityMetrics = msData.equityMetrics;
+    // Morningstar holdings override Yahoo (when available)
+    if (msHoldings.topHoldings?.length) fundData.topHoldings = msHoldings.topHoldings;
+    if (msHoldings.sectorWeightings?.length) fundData.sectorWeightings = msHoldings.sectorWeightings;
 
     return NextResponse.json({ ticker, fundData });
   } catch (err) {
