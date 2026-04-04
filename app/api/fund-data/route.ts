@@ -1214,3 +1214,157 @@ export async function GET(request: NextRequest) {
     );
   }
 }
+
+// ── POST handler: scrape holdings from a user-provided URL ──
+
+/**
+ * Scrape holdings from a generic HTML page.
+ * Looks for table-like structures containing: Ticker/Symbol, Name, Weight/%, Sector
+ */
+function scrapeGenericHoldings(html: string): ProviderHoldingsResult {
+  const result: ProviderHoldingsResult = {};
+  const $ = cheerio.load(html);
+
+  // Strategy 1: Look for a table with a header containing "Ticker"/"Symbol" and "Weight"/%
+  const tables = $("table");
+  for (let t = 0; t < tables.length; t++) {
+    const table = $(tables[t]);
+    const headers = table.find("th, thead td").map((_, el) => $(el).text().trim().toLowerCase()).get();
+
+    // Find relevant column indices
+    const tickerIdx = headers.findIndex(h => /^(ticker|symbol)$/i.test(h));
+    const nameIdx = headers.findIndex(h => /^(name|security|holding|company)$/i.test(h));
+    const weightIdx = headers.findIndex(h => /weight|%|allocation|pct/i.test(h));
+    const sectorIdx = headers.findIndex(h => /sector|industry/i.test(h));
+
+    if (weightIdx < 0) continue; // Must have a weight column
+
+    const holdings: FundHolding[] = [];
+    const sectorWeights: Record<string, number> = {};
+
+    table.find("tbody tr, tr").each((i, row) => {
+      if (i === 0 && $(row).find("th").length > 0) return; // Skip header row
+      const cells = $(row).find("td");
+      if (cells.length < 2) return;
+
+      const getCellText = (idx: number) => idx >= 0 && idx < cells.length ? $(cells[idx]).text().trim() : "";
+      const ticker = getCellText(tickerIdx);
+      const name = getCellText(nameIdx) || ticker;
+      const weightText = getCellText(weightIdx);
+      const sector = getCellText(sectorIdx);
+
+      const weight = parseFloat(weightText.replace(/[%,]/g, ""));
+      if (!isFinite(weight) || weight <= 0) return;
+      // Skip cash/derivatives entries
+      if (/^(cash|usd|cad|forward|swap|future|derivative)/i.test(name) || /^(cash|usd|cad)/i.test(ticker)) return;
+
+      if (holdings.length < 15) {
+        holdings.push({
+          symbol: ticker.replace(/[^A-Z0-9.]/gi, "").substring(0, 10),
+          name: name.length > 60 ? name.substring(0, 57) + "..." : name,
+          weight: parseFloat(weight.toFixed(2)),
+        });
+      }
+      if (sector) {
+        sectorWeights[sector] = (sectorWeights[sector] || 0) + weight;
+      }
+    });
+
+    if (holdings.length >= 3) {
+      result.topHoldings = holdings.slice(0, 10);
+      if (Object.keys(sectorWeights).length > 0) {
+        result.sectorWeightings = Object.entries(sectorWeights)
+          .map(([sector, weight]) => ({ sector, weight: parseFloat(weight.toFixed(2)) }))
+          .sort((a, b) => b.weight - a.weight);
+      }
+      break; // Use first matching table
+    }
+  }
+
+  return result;
+}
+
+export async function POST(request: NextRequest) {
+  try {
+    const body = await request.json();
+    const { url, ticker } = body;
+
+    if (!url || typeof url !== "string") {
+      return NextResponse.json({ error: "url is required" }, { status: 400 });
+    }
+    if (!ticker || typeof ticker !== "string") {
+      return NextResponse.json({ error: "ticker is required" }, { status: 400 });
+    }
+
+    // Validate the URL
+    let parsedUrl: URL;
+    try {
+      parsedUrl = new URL(url);
+    } catch {
+      return NextResponse.json({ error: "Invalid URL format" }, { status: 400 });
+    }
+
+    // Only allow HTTP/HTTPS
+    if (!["http:", "https:"].includes(parsedUrl.protocol)) {
+      return NextResponse.json({ error: "Only HTTP/HTTPS URLs are supported" }, { status: 400 });
+    }
+
+    // Fetch the page
+    const res = await fetch(url, {
+      cache: "no-store",
+      headers: {
+        "User-Agent": "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36",
+        "Accept": "text/html,application/xhtml+xml",
+      },
+    });
+
+    if (!res.ok) {
+      return NextResponse.json(
+        { error: `Failed to fetch URL: ${res.status} ${res.statusText}` },
+        { status: 502 }
+      );
+    }
+
+    const contentType = res.headers.get("content-type") || "";
+
+    // Handle CSV responses
+    if (contentType.includes("text/csv") || url.endsWith(".csv")) {
+      const csvText = await res.text();
+      const holdings = parseISharesCSV(csvText);
+      if (!holdings.topHoldings?.length) {
+        return NextResponse.json(
+          { error: "Could not parse holdings from CSV. Ensure it has Ticker, Name, Sector, Weight columns." },
+          { status: 422 }
+        );
+      }
+      return NextResponse.json({
+        ticker: ticker.toUpperCase(),
+        topHoldings: holdings.topHoldings,
+        sectorWeightings: holdings.sectorWeightings || [],
+      });
+    }
+
+    // Handle HTML responses
+    const html = await res.text();
+    const holdings = scrapeGenericHoldings(html);
+
+    if (!holdings.topHoldings?.length) {
+      return NextResponse.json(
+        { error: "Could not find holdings data on this page. The page should contain a table with Ticker/Symbol, Name, and Weight/% columns." },
+        { status: 422 }
+      );
+    }
+
+    return NextResponse.json({
+      ticker: ticker.toUpperCase(),
+      topHoldings: holdings.topHoldings,
+      sectorWeightings: holdings.sectorWeightings || [],
+    });
+  } catch (err) {
+    const message = err instanceof Error ? err.message : String(err);
+    return NextResponse.json(
+      { error: `Failed to scrape holdings: ${message}` },
+      { status: 500 }
+    );
+  }
+}
