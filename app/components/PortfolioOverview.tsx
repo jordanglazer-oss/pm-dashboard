@@ -209,7 +209,7 @@ export function PortfolioOverview() {
               <div key={s.sector} className="flex items-center justify-between rounded-lg bg-slate-50 px-3 py-1.5">
                 <span className="text-xs text-slate-600">{s.sector}</span>
                 <span className={`text-xs font-semibold ${diff > 0 ? "text-emerald-600" : diff < 0 ? "text-red-500" : "text-slate-400"}`}>
-                  {diff > 0 ? "+" : ""}{diff}% vs S&P
+                  {diff > 0 ? "+" : ""}{parseFloat(diff.toFixed(1))}% vs S&P
                 </span>
               </div>
             );
