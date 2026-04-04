@@ -709,7 +709,7 @@ export default function StockDetailPage() {
                         {stock.fundData.expenseRatio != null && (
                           <div className="rounded-xl bg-slate-50 p-3">
                             <div className="text-[10px] font-semibold uppercase tracking-wider text-slate-400">
-                              {stock.instrumentType === "mutual-fund" ? "Mgmt Fee" : "Expense Ratio"}
+                              {stock.instrumentType === "mutual-fund" ? "MER" : "Expense Ratio"}
                             </div>
                             <div className="mt-1 text-lg font-bold text-slate-800">{stock.fundData.expenseRatio.toFixed(2)}%</div>
                           </div>

@@ -154,7 +154,7 @@ async function fetchMorningstarData(secId: string): Promise<MorningstarScreenerD
 
   try {
     const dataPoints = [
-      "SecId", "Name", "ManagementFee", "FundTNAV", "StarRatingM255",
+      "SecId", "Name", "ManagementExpenseRatio", "FundTNAV", "StarRatingM255",
       "CategoryName", "GBRReturnM0", "GBRReturnM1", "GBRReturnM3", "GBRReturnM6",
       "GBRReturnM12", "GBRReturnM36", "GBRReturnM60", "GBRReturnM120",
       "Yield_M12", "ClosePrice", "PriceCurrency",
@@ -172,7 +172,7 @@ async function fetchMorningstarData(secId: string): Promise<MorningstarScreenerD
     if (!row) return result;
 
     result.name = row.Name || undefined;
-    result.mer = typeof row.ManagementFee === "number" ? row.ManagementFee : undefined;
+    result.mer = typeof row.ManagementExpenseRatio === "number" ? row.ManagementExpenseRatio : undefined;
     result.totalAssets = typeof row.FundTNAV === "number" ? row.FundTNAV : undefined;
     result.category = row.CategoryName || undefined;
     result.starRating = typeof row.StarRatingM255 === "number" ? row.StarRatingM255 : undefined;
