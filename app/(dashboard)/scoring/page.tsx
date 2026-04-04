@@ -7,7 +7,7 @@ import type { ScoreKey, HealthData } from "@/app/lib/types";
 import type { TechnicalIndicators, RiskAlert } from "@/app/lib/technicals";
 
 export default function ScoringPage() {
-  const { scoredStocks, updateScore, updateExplanations, updateLastScored, updatePrice, updateHealthData, updateTechnicals, updateStockFields, updateFundData } = useStocks();
+  const { scoredStocks, updateScore, updateExplanations, updateLastScored, updatePrice, updateHealthData, updateTechnicals, updateStockFields, updateFundData, updateMarketData } = useStocks();
 
   const handleScoreStock = useCallback(async (ticker: string) => {
     const res = await fetch("/api/score", {
@@ -77,7 +77,7 @@ export default function ScoringPage() {
   return (
     <main className="min-h-screen bg-[#f4f5f7] px-4 py-6 text-slate-900 md:px-8 md:py-8 overflow-x-hidden">
       <div className="mx-auto max-w-7xl">
-        <StockScoring stocks={scoredStocks} onScoreStock={handleScoreStock} onUpdateCostBasis={handleUpdateCostBasis} onRefreshData={handleRefreshData} onUpdateFundData={updateFundData} />
+        <StockScoring stocks={scoredStocks} onScoreStock={handleScoreStock} onUpdateCostBasis={handleUpdateCostBasis} onRefreshData={handleRefreshData} onUpdateFundData={updateFundData} onUpdateMarketData={updateMarketData} />
       </div>
     </main>
   );

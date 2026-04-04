@@ -8,8 +8,8 @@ import type { ScoredStock, ScoreKey } from "@/app/lib/types";
 import { groupTotal, isScoreable } from "@/app/lib/scoring";
 import { SignalPill } from "./SignalPill";
 
-// S&P 500 approximate sector weights
-const SP500_WEIGHTS: Record<string, number> = {
+// S&P 500 fallback sector weights (used when live SPY data is unavailable)
+const SP500_WEIGHTS_FALLBACK: Record<string, number> = {
   Technology: 32,
   "Health Care": 12,
   Financials: 13,
@@ -23,8 +23,22 @@ const SP500_WEIGHTS: Record<string, number> = {
   Materials: 2,
 };
 
+// Normalize sector names — Yahoo uses different names than GICS standard
+// e.g., "Consumer Cyclical" vs "Consumer Discretionary", "Financial Services" vs "Financials"
+function normalizeSector(sector: string): string {
+  const map: Record<string, string> = {
+    "Consumer Cyclical": "Consumer Discretionary",
+    "Consumer Defensive": "Consumer Staples",
+    "Financial Services": "Financials",
+    "Basic Materials": "Materials",
+    "Healthcare": "Health Care",
+  };
+  return map[sector] || sector;
+}
+
+// Distinct colors for each GICS sector — all visually distinguishable
 const sectorColors: Record<string, string> = {
-  Technology: "bg-blue-500",
+  Technology: "bg-blue-600",
   Financials: "bg-teal-500",
   Energy: "bg-red-500",
   "Consumer Staples": "bg-amber-500",
@@ -101,11 +115,16 @@ export function PortfolioOverview() {
     else if (s.instrumentType === "mutual-fund") filterCounts["mutual-fund"]++;
   }
 
+  // S&P 500 sector weights — use live data from marketData if available, else fallback
+  const sp500Weights = marketData.sp500SectorWeights || SP500_WEIGHTS_FALLBACK;
+
   // Sector exposure (equal-weighted among individual stocks)
+  // Normalize sector names so Yahoo variants map to GICS standard
   const pfCount = scoreablePortfolio.length;
   const sectorCounts: Record<string, number> = {};
   scoreablePortfolio.forEach((s) => {
-    sectorCounts[s.sector] = (sectorCounts[s.sector] || 0) + 1;
+    const normalized = normalizeSector(s.sector);
+    sectorCounts[normalized] = (sectorCounts[normalized] || 0) + 1;
   });
   const sectorExposure = Object.entries(sectorCounts)
     .map(([sector, count]) => ({
@@ -184,7 +203,7 @@ export function PortfolioOverview() {
         {/* Over/Underweight vs S&P */}
         <div className="grid gap-2 md:grid-cols-2 xl:grid-cols-3">
           {sectorExposure.map((s) => {
-            const spWeight = SP500_WEIGHTS[s.sector] || 0;
+            const spWeight = sp500Weights[s.sector] || 0;
             const diff = s.weight - spWeight;
             return (
               <div key={s.sector} className="flex items-center justify-between rounded-lg bg-slate-50 px-3 py-1.5">
