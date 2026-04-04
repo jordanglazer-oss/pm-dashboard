@@ -17,12 +17,13 @@ type Props = {
   onScoreStock?: (ticker: string) => Promise<void>;
   onUpdateCostBasis?: (ticker: string, costBasis: number) => void;
   onRefreshData?: (ticker: string, data: { name?: string; sector?: string; price?: number; technicals?: unknown; healthData?: unknown; riskAlert?: unknown }) => void;
+  onUpdateFundData?: (ticker: string, fundData: import("@/app/lib/types").FundData) => void;
 };
 
 const RATING_ORDER: Record<string, number> = { Buy: 3, Hold: 2, Sell: 1 };
 const RISK_ORDER: Record<string, number> = { High: 3, Medium: 2, Low: 1 };
 
-export function StockScoring({ stocks, onScoreStock, onUpdateCostBasis, onRefreshData }: Props) {
+export function StockScoring({ stocks, onScoreStock, onUpdateCostBasis, onRefreshData, onUpdateFundData }: Props) {
   const router = useRouter();
   const [query, setQuery] = useState("");
   const [sortKey, setSortKey] = useState<SortKey>("adjusted");
@@ -120,7 +121,25 @@ export function StockScoring({ stocks, onScoreStock, onUpdateCostBasis, onRefres
         });
         updated++;
       }
-      setRefreshProgress(`Updated ${updated}/${tickers.length} stocks`);
+      // Also refresh fund data for ETFs and mutual funds
+      if (onUpdateFundData) {
+        const fundStocks = stocks.filter(
+          (s) => s.instrumentType === "etf" || s.instrumentType === "mutual-fund"
+        );
+        if (fundStocks.length > 0) {
+          setRefreshProgress(`Updated ${updated} stocks. Refreshing ${fundStocks.length} fund(s)...`);
+          for (const fund of fundStocks) {
+            try {
+              const fRes = await fetch(`/api/fund-data?ticker=${encodeURIComponent(fund.ticker)}`);
+              if (fRes.ok) {
+                const fData = await fRes.json();
+                if (fData.fundData) onUpdateFundData(fund.ticker, fData.fundData);
+              }
+            } catch { /* best effort */ }
+          }
+        }
+      }
+      setRefreshProgress(`Updated ${updated}/${tickers.length} holdings`);
       // Clear progress message after 3s
       setTimeout(() => setRefreshProgress(""), 3000);
       // Also refresh live prices

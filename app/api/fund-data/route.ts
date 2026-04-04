@@ -448,22 +448,18 @@ async function fetchCanadianFundData(
   fundservCode: string,
   auth: { cookie: string; crumb: string } | null
 ): Promise<{ fundData: FundData; yahooTicker?: string; name?: string } | null> {
-  // Step 1: Resolve FUNDSERV code via Morningstar
+  // Step 1: Resolve FUNDSERV code via Morningstar (may fail for some funds)
   const lookup = await lookupFundservCode(fundservCode);
-  if (!lookup || !lookup.secId) {
-    console.warn(`[FundData] Could not resolve FUNDSERV code: ${fundservCode}`);
-    return null;
-  }
 
   // Step 2: Fetch all data sources in parallel
-  // Globe and Mail = primary for performance + MER
-  // Morningstar = category, star rating, AUM, yield
-  // Yahoo = holdings, sectors, risk stats, asset allocation
-  const yahooTicker = lookup.performanceId ? `${lookup.performanceId}.TO` : undefined;
+  // Globe and Mail = primary for performance + MER (always available for FUNDSERV codes)
+  // Morningstar = category, star rating, AUM, yield (requires successful lookup)
+  // Yahoo = holdings, sectors, risk stats, asset allocation (requires lookup.performanceId)
+  const yahooTicker = lookup?.performanceId ? `${lookup.performanceId}.TO` : undefined;
 
   const [gmData, msData, yahooData] = await Promise.all([
     fetchGlobeAndMailData(fundservCode),
-    fetchMorningstarData(lookup.secId),
+    lookup?.secId ? fetchMorningstarData(lookup.secId) : Promise.resolve({} as MorningstarScreenerData),
     (async (): Promise<FundData> => {
       if (!yahooTicker || !auth) return {};
       try {
@@ -481,6 +477,11 @@ async function fetchCanadianFundData(
       return {};
     })(),
   ]);
+
+  // If no data source returned anything useful, give up
+  if (!gmData.performance && !gmData.mer && !msData.performance && !msData.mer && !yahooData.performance) {
+    return null;
+  }
 
   // Step 3: Merge — Globe and Mail is primary for performance + MER,
   // Morningstar fills gaps, Yahoo is supplementary
@@ -523,7 +524,7 @@ async function fetchCanadianFundData(
   return {
     fundData,
     yahooTicker,
-    name: msData.name || lookup.name,
+    name: msData.name || lookup?.name,
   };
 }
 /* eslint-enable @typescript-eslint/no-explicit-any */
