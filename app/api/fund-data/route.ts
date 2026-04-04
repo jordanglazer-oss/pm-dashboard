@@ -144,7 +144,7 @@ async function fetchMorningstarData(secId: string): Promise<MorningstarScreenerD
   try {
     const dataPoints = [
       "SecId", "Name", "ManagementFee", "FundTNAV", "StarRatingM255",
-      "CategoryName", "GBRReturnM1", "GBRReturnM3", "GBRReturnM6",
+      "CategoryName", "GBRReturnM0", "GBRReturnM1", "GBRReturnM3", "GBRReturnM6",
       "GBRReturnM12", "GBRReturnM36", "GBRReturnM60", "GBRReturnM120",
       "Yield_M12", "ClosePrice", "PriceCurrency",
     ].join(",");
@@ -171,6 +171,7 @@ async function fetchMorningstarData(secId: string): Promise<MorningstarScreenerD
 
     // Build performance from Morningstar returns
     const perf: FundPerformance = {};
+    if (typeof row.GBRReturnM0 === "number") perf.ytd = row.GBRReturnM0;
     if (typeof row.GBRReturnM1 === "number") perf.oneMonth = row.GBRReturnM1;
     if (typeof row.GBRReturnM3 === "number") perf.threeMonth = row.GBRReturnM3;
     if (typeof row.GBRReturnM12 === "number") perf.oneYear = row.GBRReturnM12;
@@ -393,6 +394,20 @@ async function fetchCanadianFundData(
   }
 
   // Step 4: Merge — Morningstar wins for MER/category (Yahoo returns 0 for Canadian MER)
+  // Merge performance: Morningstar is primary, Yahoo fills gaps (especially YTD)
+  let mergedPerformance: FundPerformance | undefined;
+  if (msData.performance || yahooData.performance) {
+    mergedPerformance = {
+      ytd: msData.performance?.ytd ?? yahooData.performance?.ytd,
+      oneMonth: msData.performance?.oneMonth ?? yahooData.performance?.oneMonth,
+      threeMonth: msData.performance?.threeMonth ?? yahooData.performance?.threeMonth,
+      oneYear: msData.performance?.oneYear ?? yahooData.performance?.oneYear,
+      threeYear: msData.performance?.threeYear ?? yahooData.performance?.threeYear,
+      fiveYear: msData.performance?.fiveYear ?? yahooData.performance?.fiveYear,
+      tenYear: msData.performance?.tenYear ?? yahooData.performance?.tenYear,
+    };
+  }
+
   const fundData: FundData = {
     // Morningstar is authoritative for these
     expenseRatio: msData.mer ?? yahooData.expenseRatio,
@@ -400,8 +415,8 @@ async function fetchCanadianFundData(
     category: msData.category ?? yahooData.category,
     yield: msData.yield12m ?? yahooData.yield,
     starRating: msData.starRating,
-    // Performance: prefer Morningstar (annualized), fall back to Yahoo
-    performance: msData.performance ?? yahooData.performance,
+    // Performance: merged from both sources
+    performance: mergedPerformance,
     // Yahoo is authoritative for these
     fundFamily: yahooData.fundFamily,
     inceptionDate: yahooData.inceptionDate,

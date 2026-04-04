@@ -146,6 +146,33 @@ export function StockProvider({ children }: { children: React.ReactNode }) {
           }
         } catch { /* backfill is best-effort */ }
       }
+
+      // Backfill fund data for portfolio funds/ETFs that are missing it
+      const needsFundData = loadedStocks.filter(
+        (s) => s.bucket === "Portfolio" &&
+          (s.instrumentType === "etf" || s.instrumentType === "mutual-fund") &&
+          !s.fundData
+      );
+      if (needsFundData.length > 0) {
+        // Fetch fund data sequentially to avoid rate limits
+        for (const fund of needsFundData) {
+          try {
+            const res = await fetch(`/api/fund-data?ticker=${encodeURIComponent(fund.ticker)}`);
+            if (res.ok) {
+              const data = await res.json();
+              if (data.fundData) {
+                setStocks((prev) => {
+                  const next = prev.map((s) =>
+                    s.ticker === fund.ticker ? { ...s, fundData: data.fundData, ...(data.name && (!s.name || s.name === s.ticker) ? { name: data.name } : {}) } : s
+                  );
+                  persistStocks(next);
+                  return next;
+                });
+              }
+            }
+          } catch { /* best effort */ }
+        }
+      }
     });
   // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
