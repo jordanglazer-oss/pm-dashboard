@@ -293,9 +293,14 @@ function FundDataPanels({ fundData, ticker, onHoldingsUpdate }: { fundData: Fund
             </div>
           )}
 
-          {/* Custom URL input — always shown to allow refresh from provider */}
+          {/* Holdings source info + URL input */}
           {onHoldingsUpdate && (
             <div className="mt-3 pt-3 border-t border-slate-100">
+              {fundData.holdingsLastUpdated && fundData.holdingsUrl && (
+                <p className="text-[10px] text-slate-400 mb-2">
+                  Holdings fetched from URL on {new Date(fundData.holdingsLastUpdated).toLocaleDateString("en-US", { month: "short", day: "numeric", year: "numeric", hour: "numeric", minute: "2-digit" })}
+                </p>
+              )}
               <label className="text-[10px] font-semibold text-slate-400 uppercase tracking-wider">
                 Holdings source URL
               </label>
@@ -446,7 +451,26 @@ export default function StockDetailPage() {
       const res = await fetch(`/api/fund-data?ticker=${encodeURIComponent(ticker)}`);
       if (res.ok) {
         const data = await res.json();
-        if (data.fundData) updateFundData(ticker, data.fundData);
+        if (data.fundData) {
+          const existing = stock.fundData;
+          // Merge: API data is base, but preserve user-provided holdings
+          // (from URL scraping) if the API didn't return any
+          const merged = { ...data.fundData };
+          if (!merged.topHoldings?.length && existing?.topHoldings?.length) {
+            merged.topHoldings = existing.topHoldings;
+            merged.sectorWeightings = existing.sectorWeightings;
+            merged.holdingsLastUpdated = existing.holdingsLastUpdated;
+          }
+          // Always preserve the holdings URL
+          if (existing?.holdingsUrl && !merged.holdingsUrl) {
+            merged.holdingsUrl = existing.holdingsUrl;
+          }
+          // Preserve holdingsLastUpdated for URL-sourced holdings
+          if (existing?.holdingsLastUpdated && !merged.holdingsLastUpdated) {
+            merged.holdingsLastUpdated = existing.holdingsLastUpdated;
+          }
+          updateFundData(ticker, merged);
+        }
         // Update name from Morningstar for Canadian funds if we got a better name
         if (data.name && (!stock.name || stock.name === ticker)) {
           updateStockFields(ticker, { name: data.name });
@@ -855,6 +879,7 @@ export default function StockDetailPage() {
                   topHoldings: holdings,
                   sectorWeightings: sectors,
                   holdingsUrl: url,
+                  holdingsLastUpdated: new Date().toISOString(),
                 });
               }}
             />
