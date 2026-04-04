@@ -68,7 +68,7 @@ type MorningstarLookup = {
  */
 async function lookupFundservCode(code: string): Promise<MorningstarLookup | null> {
   try {
-    const url = `https://www.morningstar.ca/ca/util/SecuritySearch.ashx?q=${encodeURIComponent(code)}&limit=10`;
+    const url = `https://www.morningstar.ca/ca/util/SecuritySearch.ashx?q=${encodeURIComponent(code)}&limit=25`;
     const res = await fetch(url, {
       cache: "no-store",
       headers: { "User-Agent": "Mozilla/5.0" },
@@ -77,43 +77,54 @@ async function lookupFundservCode(code: string): Promise<MorningstarLookup | nul
     const text = await res.text();
 
     // Response is pipe-delimited: name|ticker|secId|...|json
-    // Parse each line looking for a match
+    // The JSON blob contains an `e1` field with comma-separated FUNDSERV codes
+    // e.g. e1: "RBF556@7,RBF756@7" — each entry is CODE@exchangeId
+    const codeUpper = code.toUpperCase();
     const lines = text.trim().split("\n");
+
+    // First pass: exact FUNDSERV code match via the e1 JSON field
     for (const line of lines) {
       const parts = line.split("|");
       if (parts.length < 4) continue;
 
-      // The JSON blob is typically the last part
       const jsonPart = parts.find((p) => p.startsWith("{"));
       if (!jsonPart) continue;
 
       try {
         const meta = JSON.parse(jsonPart);
-        // Match: check if the line contains the FUNDSERV code
-        const lineUpper = line.toUpperCase();
-        if (lineUpper.includes(code.toUpperCase()) || meta.i) {
-          return {
-            secId: meta.i || parts[2] || "",
-            performanceId: meta.pi || "",
-            name: parts[0] || "",
-          };
+        // e1 contains comma-separated "CODE@exchange" entries
+        if (meta.e1) {
+          const fundservCodes = (meta.e1 as string)
+            .split(",")
+            .map((entry: string) => entry.split("@")[0].trim().toUpperCase());
+          if (fundservCodes.includes(codeUpper)) {
+            return {
+              secId: meta.i || parts[2] || "",
+              performanceId: meta.pi || "",
+              name: parts[0] || "",
+            };
+          }
         }
       } catch { continue; }
     }
 
-    // Fallback: try first result
-    if (lines.length > 0 && lines[0].includes("|")) {
-      const parts = lines[0].split("|");
-      const jsonPart = parts.find((p) => p.startsWith("{"));
-      if (jsonPart) {
-        try {
-          const meta = JSON.parse(jsonPart);
-          return {
-            secId: meta.i || parts[2] || "",
-            performanceId: meta.pi || "",
-            name: parts[0] || "",
-          };
-        } catch { /* ignore */ }
+    // Second pass: check if the ticker field (parts[1]) matches exactly
+    for (const line of lines) {
+      const parts = line.split("|");
+      if (parts.length < 4) continue;
+
+      if (parts[1]?.trim().toUpperCase() === codeUpper) {
+        const jsonPart = parts.find((p) => p.startsWith("{"));
+        if (jsonPart) {
+          try {
+            const meta = JSON.parse(jsonPart);
+            return {
+              secId: meta.i || parts[2] || "",
+              performanceId: meta.pi || "",
+              name: parts[0] || "",
+            };
+          } catch { continue; }
+        }
       }
     }
 
@@ -143,7 +154,7 @@ async function fetchMorningstarData(secId: string): Promise<MorningstarScreenerD
 
   try {
     const dataPoints = [
-      "SecId", "Name", "ManagementFee", "FundTNAV", "StarRatingM255",
+      "SecId", "Name", "ManagementExpenseRatio", "FundTNAV", "StarRatingM255",
       "CategoryName", "GBRReturnM0", "GBRReturnM1", "GBRReturnM3", "GBRReturnM6",
       "GBRReturnM12", "GBRReturnM36", "GBRReturnM60", "GBRReturnM120",
       "Yield_M12", "ClosePrice", "PriceCurrency",
@@ -161,7 +172,7 @@ async function fetchMorningstarData(secId: string): Promise<MorningstarScreenerD
     if (!row) return result;
 
     result.name = row.Name || undefined;
-    result.mer = typeof row.ManagementFee === "number" ? row.ManagementFee : undefined;
+    result.mer = typeof row.ManagementExpenseRatio === "number" ? row.ManagementExpenseRatio : undefined;
     result.totalAssets = typeof row.FundTNAV === "number" ? row.FundTNAV : undefined;
     result.category = row.CategoryName || undefined;
     result.starRating = typeof row.StarRatingM255 === "number" ? row.StarRatingM255 : undefined;
