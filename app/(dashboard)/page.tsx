@@ -51,13 +51,7 @@ export default function DashboardPage() {
         const data = await res.json();
         if (data.names?.[ticker]) name = data.names[ticker];
         if (data.sectors?.[ticker]) sector = data.sectors[ticker];
-        // Use auto-detected type from Yahoo, but the toggle (detectedType) takes priority
-        // since it reflects both auto-detection on blur and manual user selection
-        if (data.types?.[ticker]) {
-          const apiType = data.types[ticker] as InstrumentType;
-          // Only override if user hasn't explicitly selected a different type via toggle
-          if (!detectedType) instrumentType = apiType;
-        }
+        if (data.types?.[ticker]) instrumentType = data.types[ticker] as InstrumentType;
       }
     } catch { /* fallback to ticker */ }
 
@@ -113,39 +107,22 @@ export default function DashboardPage() {
                 <> Use the <span className="font-semibold text-blue-600">Score</span> button on the stock page to auto-score with Claude.</>
               )}
             </p>
-            {/* Instrument type toggle */}
-            <div className="flex items-center gap-1 mb-3">
-              {(["stock", "etf", "mutual-fund"] as InstrumentType[]).map((type) => {
-                const active = (detectedType || "stock") === type;
-                return (
-                  <button
-                    key={type}
-                    onClick={() => setDetectedType(type === "stock" ? null : type)}
-                    className={`rounded-lg px-3 py-1.5 text-xs font-semibold transition-colors ${
-                      active
-                        ? type === "stock"
-                          ? "bg-slate-800 text-white shadow-sm"
-                          : type === "etf"
-                          ? "bg-indigo-600 text-white shadow-sm"
-                          : "bg-purple-600 text-white shadow-sm"
-                        : "bg-slate-100 text-slate-500 hover:bg-slate-200 hover:text-slate-700"
-                    }`}
-                  >
-                    {INSTRUMENT_LABELS[type]}
-                  </button>
-                );
-              })}
-            </div>
-
             <div className="flex flex-wrap gap-3">
-              <input
-                value={newTicker}
-                onChange={(e) => setNewTicker(e.target.value.toUpperCase())}
-                onBlur={() => newTicker.trim() && detectType(newTicker.trim().toUpperCase())}
-                onKeyDown={(e) => e.key === "Enter" && handleAdd()}
-                placeholder={detectedType === "mutual-fund" ? "e.g. TDB900, RBF556" : detectedType === "etf" ? "e.g. SPY, XIC.TO" : "e.g. AAPL, GOOGL"}
-                className="flex-1 min-w-[120px] rounded-xl border border-slate-200 bg-white px-4 py-2.5 text-sm outline-none placeholder:text-slate-400 focus:border-blue-400 focus:ring-1 focus:ring-blue-200"
-              />
+              <div className="relative flex-1 min-w-[120px]">
+                <input
+                  value={newTicker}
+                  onChange={(e) => setNewTicker(e.target.value.toUpperCase())}
+                  onBlur={() => newTicker.trim() && detectType(newTicker.trim().toUpperCase())}
+                  onKeyDown={(e) => e.key === "Enter" && handleAdd()}
+                  placeholder="e.g. AAPL, SPY, TDB900"
+                  className="w-full rounded-xl border border-slate-200 bg-white px-4 py-2.5 text-sm outline-none placeholder:text-slate-400 focus:border-blue-400 focus:ring-1 focus:ring-blue-200"
+                />
+                {detectedType && detectedType !== "stock" && (
+                  <span className={`absolute right-2 top-1/2 -translate-y-1/2 rounded-md px-2 py-0.5 text-[10px] font-bold ${detectedType === "etf" ? "bg-indigo-100 text-indigo-700" : "bg-purple-100 text-purple-700"}`}>
+                    {INSTRUMENT_LABELS[detectedType]}
+                  </span>
+                )}
+              </div>
               <select
                 value={newBucket}
                 onChange={(e) => setNewBucket(e.target.value as "Portfolio" | "Watchlist")}
