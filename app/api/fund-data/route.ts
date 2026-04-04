@@ -130,10 +130,17 @@ async function fetchMorningstarETFData(secId: string, exchange: string): Promise
 
   try {
     const dataPoints = [
+      // Identifiers & metadata
       "SecId", "Name", "ProspectusNetExpenseRatio", "FundTNAV", "StarRatingM255",
-      "CategoryName", "GBRReturnM0", "GBRReturnM1", "GBRReturnM3", "GBRReturnM6",
+      "CategoryName", "Yield_M12",
+      // Performance returns
+      "GBRReturnM0", "GBRReturnM1", "GBRReturnM3", "GBRReturnM6",
       "GBRReturnM12", "GBRReturnM36", "GBRReturnM60", "GBRReturnM120",
-      "Yield_M12",
+      // Risk statistics (3-year)
+      "AlphaM36", "BetaM36", "SharpeM36", "StandardDeviationM36",
+      "R2M36", "SortinoM36", "MaxDrawdownM36",
+      // Equity portfolio metrics
+      "PERatio", "PBRatio", "PSRatio", "PCFRatio",
     ].join(",");
 
     const url = `https://lt.morningstar.com/api/rest.svc/9vehuxllxs/security/screener?outputType=json&page=1&pageSize=1&securityDataPoints=${dataPoints}&universeIds=${encodeURIComponent(universeId)}&filters=SecId:IN:${encodeURIComponent(secId)}`;
@@ -154,6 +161,7 @@ async function fetchMorningstarETFData(secId: string, exchange: string): Promise
     result.starRating = typeof row.StarRatingM255 === "number" ? row.StarRatingM255 : undefined;
     result.yield12m = typeof row.Yield_M12 === "number" ? row.Yield_M12 : undefined;
 
+    // Performance
     const perf: FundPerformance = {};
     if (typeof row.GBRReturnM0 === "number") perf.ytd = row.GBRReturnM0;
     if (typeof row.GBRReturnM1 === "number") perf.oneMonth = row.GBRReturnM1;
@@ -163,6 +171,23 @@ async function fetchMorningstarETFData(secId: string, exchange: string): Promise
     if (typeof row.GBRReturnM60 === "number") perf.fiveYear = row.GBRReturnM60;
     if (typeof row.GBRReturnM120 === "number") perf.tenYear = row.GBRReturnM120;
     if (Object.keys(perf).length > 0) result.performance = perf;
+
+    // Risk stats (3-year)
+    const rs: FundRiskStats = {};
+    if (typeof row.AlphaM36 === "number") rs.alpha = row.AlphaM36;
+    if (typeof row.BetaM36 === "number") rs.beta = row.BetaM36;
+    if (typeof row.SharpeM36 === "number") rs.sharpeRatio = row.SharpeM36;
+    if (typeof row.StandardDeviationM36 === "number") rs.stdDev = row.StandardDeviationM36;
+    if (typeof row.R2M36 === "number") rs.rSquared = row.R2M36;
+    if (Object.keys(rs).length > 0) result.riskStats = rs;
+
+    // Equity metrics
+    const em: NonNullable<MorningstarScreenerData["equityMetrics"]> = {};
+    if (typeof row.PERatio === "number") em.priceToEarnings = row.PERatio;
+    if (typeof row.PBRatio === "number") em.priceToBook = row.PBRatio;
+    if (typeof row.PSRatio === "number") em.priceToSales = row.PSRatio;
+    if (typeof row.PCFRatio === "number") em.priceToCashflow = row.PCFRatio;
+    if (Object.keys(em).length > 0) result.equityMetrics = em;
   } catch {
     /* best effort */
   }
@@ -251,6 +276,13 @@ type MorningstarScreenerData = {
   currency?: string;
   performance?: FundPerformance;
   name?: string;
+  riskStats?: FundRiskStats;
+  equityMetrics?: {
+    priceToEarnings?: number;
+    priceToBook?: number;
+    priceToSales?: number;
+    priceToCashflow?: number;
+  };
 };
 
 /**
@@ -741,11 +773,14 @@ export async function GET(request: NextRequest) {
         tenYear: ms.tenYear ?? yp.tenYear,
       };
     }
-    // Morningstar supplementary fields for all ETFs
-    if (msData.category && !fundData.category) fundData.category = msData.category;
+    // Morningstar is authoritative for these fields (overrides Yahoo)
+    if (msData.category) fundData.category = msData.category;
     if (msData.starRating != null) fundData.starRating = msData.starRating;
-    if (msData.mer != null && fundData.expenseRatio == null) fundData.expenseRatio = msData.mer;
-    if (msData.totalAssets != null && fundData.totalAssets == null) fundData.totalAssets = msData.totalAssets;
+    if (msData.mer != null) fundData.expenseRatio = msData.mer;
+    if (msData.totalAssets != null) fundData.totalAssets = msData.totalAssets;
+    if (msData.yield12m != null) fundData.yield = msData.yield12m;
+    if (msData.riskStats) fundData.riskStats = msData.riskStats;
+    if (msData.equityMetrics) fundData.equityMetrics = msData.equityMetrics;
 
     return NextResponse.json({ ticker, fundData });
   } catch (err) {
