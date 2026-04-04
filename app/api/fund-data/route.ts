@@ -56,15 +56,26 @@ const SECTOR_NAME_MAP: Record<string, string> = {
   healthcare: "Health Care",
 };
 
+type TotalReturnResult = {
+  performance: FundPerformance;
+  /** True if Yahoo adjclose differs from close, meaning dividends are reflected */
+  adjcloseIsReal: boolean;
+};
+
 /**
  * Calculate total return performance from Yahoo adjusted close prices.
  * Uses adjclose (which accounts for dividends and splits) to compute true total return.
  * Returns YTD, 1Y, 3Y, 5Y, and 10Y — all annualized where applicable.
+ *
+ * IMPORTANT: Yahoo does not provide meaningful adjclose for many Canadian-listed ETFs
+ * (adjclose === close). The `adjcloseIsReal` flag lets callers decide whether to trust
+ * these values or defer to API sources (Globe and Mail, Morningstar) that report
+ * proper total return.
  */
 async function calculateTotalReturns(
   ticker: string,
   auth: { cookie: string; crumb: string }
-): Promise<FundPerformance | undefined> {
+): Promise<TotalReturnResult | undefined> {
   try {
     const now = new Date();
     const currentYear = now.getFullYear();
@@ -85,37 +96,53 @@ async function calculateTotalReturns(
     if (!result) return undefined;
 
     const timestamps = result.timestamp as number[] | undefined;
-    // Use adjusted close for total return (includes dividends and splits)
+    const rawCloses = result.indicators?.quote?.[0]?.close as number[] | undefined;
     const adjCloses = result.indicators?.adjclose?.[0]?.adjclose as number[] | undefined;
-    // Fallback to regular close if adjclose not available
-    const closes = adjCloses || result.indicators?.quote?.[0]?.close as number[] | undefined;
     const currentPrice = result.meta?.regularMarketPrice as number | undefined;
 
-    if (!timestamps || !closes || !currentPrice || timestamps.length < 2) return undefined;
+    if (!timestamps || !rawCloses || !currentPrice || timestamps.length < 2) return undefined;
 
-    // Build a date→adjclose map for easy lookup
-    // We find the closest trading day on or before each target date
-    function findAdjClose(targetDate: string): number | undefined {
+    // Detect whether adjclose is meaningful by comparing an older data point.
+    // If adjclose === close for a point >6 months ago, Yahoo isn't adjusting for dividends.
+    // We check a point near the middle of the dataset for a robust comparison.
+    let adjcloseIsReal = false;
+    if (adjCloses && rawCloses) {
+      // Pick a sample point ~1 year back (or middle of dataset if shorter)
+      const sampleIdx = Math.max(0, Math.min(
+        Math.floor(timestamps.length / 2),
+        timestamps.length - Math.min(252, timestamps.length) // ~252 trading days = 1 year
+      ));
+      const rawSample = rawCloses[sampleIdx];
+      const adjSample = adjCloses[sampleIdx];
+      if (rawSample && adjSample && rawSample > 0) {
+        // If there's more than 0.01% divergence, adjclose is real
+        adjcloseIsReal = Math.abs(adjSample - rawSample) / rawSample > 0.0001;
+      }
+    }
+
+    // Use adjclose if real, otherwise fall back to regular close (price-only)
+    const closes = (adjcloseIsReal && adjCloses) ? adjCloses : rawCloses;
+
+    // Find the closest trading day on or before a target date
+    function findClose(targetDate: string): number | undefined {
       for (let i = timestamps!.length - 1; i >= 0; i--) {
         const date = new Date(timestamps![i] * 1000).toISOString().split("T")[0];
-        if (date <= targetDate && closes![i] != null && isFinite(closes![i])) {
-          return closes![i];
+        if (date <= targetDate && closes[i] != null && isFinite(closes[i])) {
+          return closes[i];
         }
       }
       return undefined;
     }
 
-    // For total return, the current adjusted close = current price (no adjustment needed for today)
-    // But the latest adjclose in the series might be yesterday's, so use regularMarketPrice
-    // adjusted by the ratio of adjclose to close for the most recent day
-    const latestClose = result.indicators?.quote?.[0]?.close as number[] | undefined;
+    // For total return, project regularMarketPrice into adjusted space.
+    // The latest adjclose may be yesterday's, so scale current price by the
+    // adjclose/close ratio of the most recent data point.
     let currentAdjPrice = currentPrice;
-    if (adjCloses && latestClose && timestamps.length > 0) {
+    if (adjcloseIsReal && adjCloses) {
       const lastIdx = timestamps.length - 1;
-      const lastRawClose = latestClose[lastIdx];
+      const lastRawClose = rawCloses[lastIdx];
       const lastAdjClose = adjCloses[lastIdx];
       if (lastRawClose && lastAdjClose && lastRawClose > 0) {
-        // Apply the same adjustment ratio to the current market price
         currentAdjPrice = currentPrice * (lastAdjClose / lastRawClose);
       }
     }
@@ -124,21 +151,21 @@ async function calculateTotalReturns(
 
     // YTD: Dec 31 of previous year → now
     const dec31 = `${currentYear - 1}-12-31`;
-    const ytdBase = findAdjClose(dec31);
+    const ytdBase = findClose(dec31);
     if (ytdBase && ytdBase > 0) {
       perf.ytd = parseFloat(((currentAdjPrice - ytdBase) / ytdBase * 100).toFixed(2));
     }
 
     // 1Y: ~1 year ago → now (simple return, not annualized)
     const oneYearAgo = `${currentYear - 1}-${String(now.getMonth() + 1).padStart(2, "0")}-${String(now.getDate()).padStart(2, "0")}`;
-    const oneYBase = findAdjClose(oneYearAgo);
+    const oneYBase = findClose(oneYearAgo);
     if (oneYBase && oneYBase > 0) {
       perf.oneYear = parseFloat(((currentAdjPrice - oneYBase) / oneYBase * 100).toFixed(2));
     }
 
     // 3Y: annualized total return
     const threeYearAgo = `${currentYear - 3}-${String(now.getMonth() + 1).padStart(2, "0")}-${String(now.getDate()).padStart(2, "0")}`;
-    const threeYBase = findAdjClose(threeYearAgo);
+    const threeYBase = findClose(threeYearAgo);
     if (threeYBase && threeYBase > 0) {
       const totalReturn = currentAdjPrice / threeYBase;
       perf.threeYear = parseFloat(((Math.pow(totalReturn, 1 / 3) - 1) * 100).toFixed(2));
@@ -146,7 +173,7 @@ async function calculateTotalReturns(
 
     // 5Y: annualized total return
     const fiveYearAgo = `${currentYear - 5}-${String(now.getMonth() + 1).padStart(2, "0")}-${String(now.getDate()).padStart(2, "0")}`;
-    const fiveYBase = findAdjClose(fiveYearAgo);
+    const fiveYBase = findClose(fiveYearAgo);
     if (fiveYBase && fiveYBase > 0) {
       const totalReturn = currentAdjPrice / fiveYBase;
       perf.fiveYear = parseFloat(((Math.pow(totalReturn, 1 / 5) - 1) * 100).toFixed(2));
@@ -154,13 +181,15 @@ async function calculateTotalReturns(
 
     // 10Y: annualized total return
     const tenYearAgo = `${currentYear - 10}-${String(now.getMonth() + 1).padStart(2, "0")}-${String(now.getDate()).padStart(2, "0")}`;
-    const tenYBase = findAdjClose(tenYearAgo);
+    const tenYBase = findClose(tenYearAgo);
     if (tenYBase && tenYBase > 0) {
       const totalReturn = currentAdjPrice / tenYBase;
       perf.tenYear = parseFloat(((Math.pow(totalReturn, 1 / 10) - 1) * 100).toFixed(2));
     }
 
-    return Object.keys(perf).length > 0 ? perf : undefined;
+    return Object.keys(perf).length > 0
+      ? { performance: perf, adjcloseIsReal }
+      : undefined;
   } catch {
     /* best effort */
   }
@@ -829,17 +858,19 @@ async function fetchCanadianFundData(
     };
   }
 
-  // Calculate total returns from adjusted close prices (overrides stale API values)
-  // Uses adjclose which accounts for dividends and splits = true total return
+  // Calculate total returns from adjusted close prices — only override when
+  // Yahoo adjclose is meaningful (includes dividends). Canadian funds on Yahoo
+  // often have adjclose === close, so we defer to Globe and Mail / Morningstar.
   const ytdTicker = yahooTicker || fundservCode;
   if (auth) {
     const calculatedReturns = await calculateTotalReturns(ytdTicker, auth);
-    if (calculatedReturns && mergedPerformance) {
-      if (calculatedReturns.ytd != null) mergedPerformance.ytd = calculatedReturns.ytd;
-      if (calculatedReturns.oneYear != null) mergedPerformance.oneYear = calculatedReturns.oneYear;
-      if (calculatedReturns.threeYear != null) mergedPerformance.threeYear = calculatedReturns.threeYear;
-      if (calculatedReturns.fiveYear != null) mergedPerformance.fiveYear = calculatedReturns.fiveYear;
-      if (calculatedReturns.tenYear != null) mergedPerformance.tenYear = calculatedReturns.tenYear;
+    if (calculatedReturns?.adjcloseIsReal && mergedPerformance) {
+      const cr = calculatedReturns.performance;
+      if (cr.ytd != null) mergedPerformance.ytd = cr.ytd;
+      if (cr.oneYear != null) mergedPerformance.oneYear = cr.oneYear;
+      if (cr.threeYear != null) mergedPerformance.threeYear = cr.threeYear;
+      if (cr.fiveYear != null) mergedPerformance.fiveYear = cr.fiveYear;
+      if (cr.tenYear != null) mergedPerformance.tenYear = cr.tenYear;
     }
   }
 
@@ -1320,19 +1351,26 @@ export async function GET(request: NextRequest) {
     if (msHoldings.topHoldings?.length) fundData.topHoldings = msHoldings.topHoldings;
     if (msHoldings.sectorWeightings?.length) fundData.sectorWeightings = msHoldings.sectorWeightings;
 
-    // Calculate total returns from adjusted close prices (overrides stale API values)
-    // Uses adjclose which accounts for dividends and splits = true total return
+    // Calculate total returns from adjusted close prices
+    // Only override API values when Yahoo adjclose is meaningful (i.e. includes dividends).
+    // For Canadian ETFs where adjclose === close, defer to Globe and Mail / Morningstar
+    // which already report proper total return.
     const calculatedReturns = await calculateTotalReturns(ticker, auth);
     if (calculatedReturns) {
-      fundData.performance = {
-        ...fundData.performance,
-        // Calculated total returns override API values (which can be stale)
-        ...(calculatedReturns.ytd != null && { ytd: calculatedReturns.ytd }),
-        ...(calculatedReturns.oneYear != null && { oneYear: calculatedReturns.oneYear }),
-        ...(calculatedReturns.threeYear != null && { threeYear: calculatedReturns.threeYear }),
-        ...(calculatedReturns.fiveYear != null && { fiveYear: calculatedReturns.fiveYear }),
-        ...(calculatedReturns.tenYear != null && { tenYear: calculatedReturns.tenYear }),
-      };
+      const cr = calculatedReturns.performance;
+      if (calculatedReturns.adjcloseIsReal) {
+        // adjclose includes dividends → override all periods with true total return
+        fundData.performance = {
+          ...fundData.performance,
+          ...(cr.ytd != null && { ytd: cr.ytd }),
+          ...(cr.oneYear != null && { oneYear: cr.oneYear }),
+          ...(cr.threeYear != null && { threeYear: cr.threeYear }),
+          ...(cr.fiveYear != null && { fiveYear: cr.fiveYear }),
+          ...(cr.tenYear != null && { tenYear: cr.tenYear }),
+        };
+      }
+      // When adjclose is NOT real (Canadian ETFs), don't override — the API sources
+      // (Globe and Mail, Morningstar) already provide total return figures.
     }
 
     // Provider-direct holdings: highest priority — override Morningstar/Yahoo
