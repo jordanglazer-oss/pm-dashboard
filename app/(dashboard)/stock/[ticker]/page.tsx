@@ -114,7 +114,39 @@ function ScoreDonut({ score, max, groups, stock }: { score: number; max: number;
 }
 
 // ── Fund Data Panels ──
-function FundDataPanels({ fundData }: { fundData: FundData }) {
+function FundDataPanels({ fundData, ticker, onHoldingsUpdate }: { fundData: FundData; ticker: string; onHoldingsUpdate?: (holdings: FundData["topHoldings"], sectors: FundData["sectorWeightings"], url: string) => void }) {
+  const [holdingsUrl, setHoldingsUrl] = useState(fundData.holdingsUrl || "");
+  const [scrapingHoldings, setScrapingHoldings] = useState(false);
+  const [scrapeError, setScrapeError] = useState("");
+  const [scrapeSuccess, setScrapeSuccess] = useState(false);
+
+  const handleScrapeHoldings = async () => {
+    if (!holdingsUrl.trim()) return;
+    setScrapingHoldings(true);
+    setScrapeError("");
+    setScrapeSuccess(false);
+    try {
+      const res = await fetch("/api/fund-data", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ url: holdingsUrl.trim(), ticker }),
+      });
+      const data = await res.json();
+      if (!res.ok) {
+        setScrapeError(data.error || "Failed to scrape holdings");
+        return;
+      }
+      if (data.topHoldings?.length) {
+        onHoldingsUpdate?.(data.topHoldings, data.sectorWeightings, holdingsUrl.trim());
+        setScrapeSuccess(true);
+        setTimeout(() => setScrapeSuccess(false), 3000);
+      }
+    } catch (err) {
+      setScrapeError(err instanceof Error ? err.message : "Request failed");
+    } finally {
+      setScrapingHoldings(false);
+    }
+  };
   const sectorColors: Record<string, string> = {
     Technology: "bg-blue-500",
     Financials: "bg-teal-500",
@@ -221,9 +253,9 @@ function FundDataPanels({ fundData }: { fundData: FundData }) {
       {/* Row 2: Top Holdings + Sector Breakdown */}
       <div className="grid gap-4 md:grid-cols-2">
         {/* Top Holdings */}
-        {fundData.topHoldings && fundData.topHoldings.length > 0 && (
-          <div className="rounded-[24px] border border-slate-200 bg-white p-5 shadow-sm">
-            <h2 className="text-base font-bold text-slate-800 mb-3">Top Holdings</h2>
+        <div className="rounded-[24px] border border-slate-200 bg-white p-5 shadow-sm">
+          <h2 className="text-base font-bold text-slate-800 mb-3">Top Holdings</h2>
+          {fundData.topHoldings && fundData.topHoldings.length > 0 ? (
             <div className="space-y-1.5">
               {fundData.topHoldings.map((h, i) => (
                 <div key={i} className="flex items-center gap-3">
@@ -246,8 +278,52 @@ function FundDataPanels({ fundData }: { fundData: FundData }) {
                 </div>
               ))}
             </div>
-          </div>
-        )}
+          ) : (
+            /* Missing holdings alert */
+            <div className="rounded-xl border border-amber-200 bg-amber-50 p-3 mb-3">
+              <div className="flex items-start gap-2">
+                <svg className="w-4 h-4 text-amber-500 mt-0.5 shrink-0" fill="currentColor" viewBox="0 0 20 20"><path fillRule="evenodd" d="M8.485 2.495c.673-1.167 2.357-1.167 3.03 0l6.28 10.875c.673 1.167-.17 2.625-1.516 2.625H3.72c-1.347 0-2.189-1.458-1.515-2.625L8.485 2.495zM10 6a.75.75 0 01.75.75v3.5a.75.75 0 01-1.5 0v-3.5A.75.75 0 0110 6zm0 9a1 1 0 100-2 1 1 0 000 2z" clipRule="evenodd" /></svg>
+                <div>
+                  <p className="text-xs font-semibold text-amber-800">Holdings data not available</p>
+                  <p className="text-[11px] text-amber-700 mt-0.5">
+                    Automatic sources could not find holdings for this fund. Paste a link to the fund&apos;s holdings page below.
+                  </p>
+                </div>
+              </div>
+            </div>
+          )}
+
+          {/* Custom URL input — always shown to allow refresh from provider */}
+          {onHoldingsUpdate && (
+            <div className="mt-3 pt-3 border-t border-slate-100">
+              <label className="text-[10px] font-semibold text-slate-400 uppercase tracking-wider">
+                Holdings source URL
+              </label>
+              <div className="flex gap-2 mt-1">
+                <input
+                  type="url"
+                  value={holdingsUrl}
+                  onChange={(e) => { setHoldingsUrl(e.target.value); setScrapeError(""); }}
+                  placeholder="https://provider.com/etf/holdings"
+                  className="flex-1 rounded-lg border border-slate-200 bg-slate-50 px-3 py-1.5 text-xs outline-none placeholder:text-slate-400 focus:bg-white focus:border-blue-300 focus:ring-1 focus:ring-blue-200 transition-all"
+                />
+                <button
+                  onClick={handleScrapeHoldings}
+                  disabled={scrapingHoldings || !holdingsUrl.trim()}
+                  className="rounded-lg bg-indigo-600 px-3 py-1.5 text-xs font-semibold text-white hover:bg-indigo-700 disabled:opacity-50 transition-colors whitespace-nowrap"
+                >
+                  {scrapingHoldings ? "Loading..." : "Fetch"}
+                </button>
+              </div>
+              {scrapeError && (
+                <p className="text-[11px] text-red-500 mt-1">{scrapeError}</p>
+              )}
+              {scrapeSuccess && (
+                <p className="text-[11px] text-emerald-600 mt-1">Holdings updated successfully!</p>
+              )}
+            </div>
+          )}
+        </div>
 
         {/* Sector Breakdown */}
         {fundData.sectorWeightings && fundData.sectorWeightings.length > 0 && (
@@ -769,7 +845,20 @@ export default function StockDetailPage() {
           )}
 
           {/* Fund Data Panels (ETFs / Mutual Funds) */}
-          {!scoreable && stock.fundData && <FundDataPanels fundData={stock.fundData} />}
+          {!scoreable && stock.fundData && (
+            <FundDataPanels
+              fundData={stock.fundData}
+              ticker={stock.ticker}
+              onHoldingsUpdate={(holdings, sectors, url) => {
+                updateFundData(stock.ticker, {
+                  ...stock.fundData!,
+                  topHoldings: holdings,
+                  sectorWeightings: sectors,
+                  holdingsUrl: url,
+                });
+              }}
+            />
+          )}
 
           {/* Score breakdown - 2 column grid (stocks only) */}
           {scoreable && <div className="grid gap-4 md:grid-cols-2 mt-6">

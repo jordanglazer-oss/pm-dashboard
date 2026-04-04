@@ -9,6 +9,7 @@ import { SignalPill, ratingTone, riskTone } from "./SignalPill";
 
 type SortKey = "ticker" | "bucket" | "sector" | "raw" | "adjusted" | "rating" | "risk" | "effect" | "price" | "pnl";
 type SortDir = "asc" | "desc";
+type InstrumentFilter = "all" | "stocks" | "etf-usd" | "etf-cad" | "mutual-fund";
 
 type LivePrices = Record<string, number | null>;
 
@@ -23,11 +24,34 @@ type Props = {
 const RATING_ORDER: Record<string, number> = { Buy: 3, Hold: 2, Sell: 1 };
 const RISK_ORDER: Record<string, number> = { High: 3, Medium: 2, Low: 1 };
 
+/** Check if a ticker is Canadian (.TO suffix or FUNDSERV code pattern) */
+function isCanadianTicker(ticker: string): boolean {
+  return ticker.endsWith(".TO") || /^[A-Z]{2,4}\d{2,5}$/i.test(ticker);
+}
+
+const FILTER_LABELS: Record<InstrumentFilter, string> = {
+  all: "All",
+  stocks: "Stocks",
+  "etf-usd": "ETFs (USD)",
+  "etf-cad": "ETFs (CAD)",
+  "mutual-fund": "Mutual Funds",
+};
+
+function matchesFilter(s: ScoredStock, filter: InstrumentFilter): boolean {
+  if (filter === "all") return true;
+  if (filter === "stocks") return !s.instrumentType || s.instrumentType === "stock";
+  if (filter === "etf-usd") return s.instrumentType === "etf" && !isCanadianTicker(s.ticker);
+  if (filter === "etf-cad") return s.instrumentType === "etf" && isCanadianTicker(s.ticker);
+  if (filter === "mutual-fund") return s.instrumentType === "mutual-fund";
+  return true;
+}
+
 export function StockScoring({ stocks, onScoreStock, onUpdateCostBasis, onRefreshData, onUpdateFundData }: Props) {
   const router = useRouter();
   const [query, setQuery] = useState("");
   const [sortKey, setSortKey] = useState<SortKey>("adjusted");
   const [sortDir, setSortDir] = useState<SortDir>("desc");
+  const [instrumentFilter, setInstrumentFilter] = useState<InstrumentFilter>("all");
 
   // Live prices
   const [livePrices, setLivePrices] = useState<LivePrices>({});
@@ -167,8 +191,21 @@ export function StockScoring({ stocks, onScoreStock, onUpdateCostBasis, onRefres
     ? portfolioStocks.reduce((sum, s) => sum + s.beta, 0) / portfolioStocks.length
     : null;
 
+  // Compute counts per instrument filter for badges
+  const filterCounts = useMemo(() => {
+    const counts: Record<InstrumentFilter, number> = { all: stocks.length, stocks: 0, "etf-usd": 0, "etf-cad": 0, "mutual-fund": 0 };
+    for (const s of stocks) {
+      if (!s.instrumentType || s.instrumentType === "stock") counts.stocks++;
+      else if (s.instrumentType === "etf" && !isCanadianTicker(s.ticker)) counts["etf-usd"]++;
+      else if (s.instrumentType === "etf" && isCanadianTicker(s.ticker)) counts["etf-cad"]++;
+      else if (s.instrumentType === "mutual-fund") counts["mutual-fund"]++;
+    }
+    return counts;
+  }, [stocks]);
+
   const sorted = useMemo(() => {
     const filtered = stocks.filter((s) =>
+      matchesFilter(s, instrumentFilter) &&
       `${s.ticker} ${s.name} ${s.sector} ${s.bucket}`
         .toLowerCase()
         .includes(query.toLowerCase())
@@ -195,7 +232,7 @@ export function StockScoring({ stocks, onScoreStock, onUpdateCostBasis, onRefres
       }
       return sortDir === "asc" ? cmp : -cmp;
     });
-  }, [stocks, query, sortKey, sortDir, livePrices]);
+  }, [stocks, query, sortKey, sortDir, livePrices, instrumentFilter]);
 
   const arrow = (key: SortKey) =>
     sortKey === key ? (sortDir === "asc" ? " \u25B2" : " \u25BC") : "";
@@ -253,6 +290,31 @@ export function StockScoring({ stocks, onScoreStock, onUpdateCostBasis, onRefres
             className="w-full min-w-[220px] rounded-xl border border-slate-200 bg-slate-50 px-4 py-2 text-sm outline-none placeholder:text-slate-400 focus:bg-white focus:border-blue-300 focus:ring-1 focus:ring-blue-200 transition-all md:w-auto"
           />
         </div>
+      </div>
+
+      {/* Instrument type filter */}
+      <div className="mt-4 flex items-center gap-1 flex-wrap">
+        {(Object.keys(FILTER_LABELS) as InstrumentFilter[]).map((key) => {
+          const count = filterCounts[key];
+          if (key !== "all" && count === 0) return null;
+          const active = instrumentFilter === key;
+          return (
+            <button
+              key={key}
+              onClick={() => setInstrumentFilter(key)}
+              className={`flex items-center gap-1.5 rounded-lg px-3 py-1.5 text-xs font-semibold transition-colors ${
+                active
+                  ? "bg-slate-800 text-white shadow-sm"
+                  : "bg-slate-100 text-slate-500 hover:bg-slate-200 hover:text-slate-700"
+              }`}
+            >
+              {FILTER_LABELS[key]}
+              <span className={`rounded-full px-1.5 py-0.5 text-[10px] font-bold ${active ? "bg-white/20 text-white" : "bg-slate-200 text-slate-500"}`}>
+                {count}
+              </span>
+            </button>
+          );
+        })}
       </div>
 
       {pricesFetchedAt && (

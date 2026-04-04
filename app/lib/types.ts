@@ -205,6 +205,7 @@ export type FundData = {
   starRating?: number; // Morningstar star rating (1-5)
   fundservCode?: string; // Canadian FUNDSERV code (e.g., TDB900)
   yahooTicker?: string; // Resolved Yahoo ticker for Canadian funds (e.g., 0P000071WA.TO)
+  holdingsUrl?: string; // User-provided URL for scraping holdings from fund website
   lastUpdated?: string;
 };
 
