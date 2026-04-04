@@ -198,24 +198,34 @@ async function fetchMorningstarData(secId: string): Promise<MorningstarScreenerD
   return result;
 }
 
-// ── Globe and Mail scraper (performance + MER for Canadian funds) ──
+// ── Globe and Mail scraper (performance + MER for Canadian securities) ──
 
 type GlobeAndMailData = {
   mer?: number;
   performance?: FundPerformance;
-  fundGrade?: string;
-  aum?: string;
 };
 
 /**
- * Scrape performance data and MER from Globe and Mail fund page.
- * URL pattern: https://www.theglobeandmail.com/investing/markets/funds/{CODE}.CF/performance/
+ * Build the Globe and Mail URL suffix for a given ticker/code.
+ * - FUNDSERV codes (e.g. TDB900) → TDB900.CF
+ * - TSX ETFs (e.g. XEQT or XEQT.TO) → XEQT-T
  */
-async function fetchGlobeAndMailData(fundservCode: string): Promise<GlobeAndMailData> {
+function globeAndMailSymbol(ticker: string): string {
+  if (isFundservCode(ticker)) return `${ticker}.CF`;
+  // Strip .TO suffix if present and use -T for TSX
+  return `${ticker.replace(/\.TO$/i, "")}-T`;
+}
+
+/**
+ * Scrape performance data and MER from Globe and Mail fund page.
+ * Works for Canadian mutual funds (.CF) and TSX-listed ETFs (-T).
+ */
+async function fetchGlobeAndMailData(ticker: string): Promise<GlobeAndMailData> {
   const result: GlobeAndMailData = {};
 
   try {
-    const url = `https://www.theglobeandmail.com/investing/markets/funds/${encodeURIComponent(fundservCode)}.CF/performance/`;
+    const symbol = globeAndMailSymbol(ticker);
+    const url = `https://www.theglobeandmail.com/investing/markets/funds/${encodeURIComponent(symbol)}/performance/`;
     const res = await fetch(url, {
       cache: "no-store",
       headers: {
@@ -228,43 +238,34 @@ async function fetchGlobeAndMailData(fundservCode: string): Promise<GlobeAndMail
     const html = await res.text();
     const $ = cheerio.load(html);
 
-    // Extract MER from barchart-field elements
-    $("barchart-field").each((_, el) => {
-      const name = $(el).attr("name");
+    // Extract MER from barchart-field with name="expenseRatio" value="0.22%"
+    $("[name='expenseRatio']").each((_, el) => {
       const value = $(el).attr("value");
-      if (!name || !value) return;
-
-      if (name === "expenseRatio") {
-        const parsed = parseFloat(value.replace("%", ""));
-        if (isFinite(parsed)) result.mer = parsed;
-      }
-      if (name === "fundGrade") {
-        result.fundGrade = value;
-      }
-      if (name === "managedAssets") {
-        result.aum = value;
-      }
+      if (!value) return;
+      const parsed = parseFloat(value.replace("%", ""));
+      if (isFinite(parsed) && result.mer == null) result.mer = parsed;
     });
 
-    // Extract performance returns from the table
-    // The table has rows like "YTD Year to date" | "8.66%"
+    // Extract performance from data-barchart-field-type attributes
+    // e.g. <... data-barchart-field-type="returnYtd"> 8.66% <...>
     const perf: FundPerformance = {};
-    $("table.bc-datatable tbody tr, table.dataTable tbody tr").each((_, row) => {
-      const cells = $(row).find("td");
-      if (cells.length < 2) return;
-      const label = $(cells[0]).text().trim().toUpperCase();
-      const valText = $(cells[1]).text().trim();
-      const val = parseFloat(valText.replace("%", ""));
-      if (!isFinite(val)) return;
+    const fieldMap: Record<string, keyof FundPerformance> = {
+      returnYtd: "ytd",
+      annualReturn1y: "oneYear",
+      annualReturn3y: "threeYear",
+      annualReturn5y: "fiveYear",
+      annualReturn10y: "tenYear",
+    };
 
-      if (label.startsWith("YTD")) perf.ytd = val;
-      else if (label.startsWith("1Y") || label.startsWith("1 Y")) perf.oneYear = val;
-      else if (label.startsWith("3Y") || label.startsWith("3 Y")) perf.threeYear = val;
-      else if (label.startsWith("5Y") || label.startsWith("5 Y")) perf.fiveYear = val;
-      else if (label.startsWith("10Y") || label.startsWith("10 Y")) perf.tenYear = val;
-      else if (label.startsWith("1M") || label.startsWith("1 M")) perf.oneMonth = val;
-      else if (label.startsWith("3M") || label.startsWith("3 M")) perf.threeMonth = val;
-    });
+    for (const [attr, key] of Object.entries(fieldMap)) {
+      // Only match fund returns, not benchmark returns
+      const el = $(`[data-barchart-field-type="${attr}"]`).first();
+      if (el.length) {
+        const text = el.text().trim();
+        const val = parseFloat(text.replace("%", ""));
+        if (isFinite(val)) perf[key] = val;
+      }
+    }
     if (Object.keys(perf).length > 0) result.performance = perf;
   } catch {
     /* best effort */
@@ -556,7 +557,7 @@ export async function GET(request: NextRequest) {
     });
   }
 
-  // Regular ETF / US mutual fund — use Yahoo directly
+  // Regular ETF — use Yahoo for holdings/risk, Globe and Mail for Canadian ETF performance
   if (!auth) {
     return NextResponse.json(
       { error: "Failed to authenticate with Yahoo Finance" },
@@ -565,20 +566,28 @@ export async function GET(request: NextRequest) {
   }
 
   try {
-    const url = `${YAHOO_BASE}/v10/finance/quoteSummary/${encodeURIComponent(ticker)}?modules=${FUND_MODULES.join(",")}&crumb=${encodeURIComponent(auth.crumb)}`;
-    const res = await fetch(url, {
-      cache: "no-store",
-      headers: { "User-Agent": "Mozilla/5.0", Cookie: auth.cookie },
-    });
+    const isCanadianETF = ticker.endsWith(".TO");
 
-    if (!res.ok) {
+    // Fetch Yahoo and (for Canadian ETFs) Globe and Mail in parallel
+    const [yahooRes, gmData] = await Promise.all([
+      fetch(
+        `${YAHOO_BASE}/v10/finance/quoteSummary/${encodeURIComponent(ticker)}?modules=${FUND_MODULES.join(",")}&crumb=${encodeURIComponent(auth.crumb)}`,
+        {
+          cache: "no-store",
+          headers: { "User-Agent": "Mozilla/5.0", Cookie: auth.cookie },
+        }
+      ),
+      isCanadianETF ? fetchGlobeAndMailData(ticker) : Promise.resolve({} as GlobeAndMailData),
+    ]);
+
+    if (!yahooRes.ok) {
       return NextResponse.json(
-        { error: `Yahoo Finance returned ${res.status}` },
+        { error: `Yahoo Finance returned ${yahooRes.status}` },
         { status: 502 }
       );
     }
 
-    const data = await res.json();
+    const data = await yahooRes.json();
     const result = data?.quoteSummary?.result?.[0];
     if (!result) {
       return NextResponse.json(
@@ -588,6 +597,25 @@ export async function GET(request: NextRequest) {
     }
 
     const fundData = extractYahooFundData(result);
+
+    // For Canadian ETFs, use Globe and Mail performance as primary source
+    if (isCanadianETF && gmData.performance) {
+      const gm = gmData.performance;
+      const yp = fundData.performance || {};
+      fundData.performance = {
+        ytd: gm.ytd ?? yp.ytd,
+        oneMonth: yp.oneMonth,
+        threeMonth: yp.threeMonth,
+        oneYear: gm.oneYear ?? yp.oneYear,
+        threeYear: gm.threeYear ?? yp.threeYear,
+        fiveYear: gm.fiveYear ?? yp.fiveYear,
+        tenYear: gm.tenYear ?? yp.tenYear,
+      };
+    }
+    if (isCanadianETF && gmData.mer != null) {
+      fundData.expenseRatio = gmData.mer;
+    }
+
     return NextResponse.json({ ticker, fundData });
   } catch (err) {
     const message = err instanceof Error ? err.message : String(err);
