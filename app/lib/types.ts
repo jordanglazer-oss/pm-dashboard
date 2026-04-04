@@ -274,6 +274,7 @@ export type MarketData = {
   aaiiBull: number;
   aaiiNeutral: number;
   aaiiBear: number;
+  sp500SectorWeights?: Record<string, number>; // Live S&P 500 sector weights from SPY
 };
 
 export type MorningBrief = {

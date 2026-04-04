@@ -19,6 +19,7 @@ type Props = {
   onUpdateCostBasis?: (ticker: string, costBasis: number) => void;
   onRefreshData?: (ticker: string, data: { name?: string; sector?: string; price?: number; technicals?: unknown; healthData?: unknown; riskAlert?: unknown }) => void;
   onUpdateFundData?: (ticker: string, fundData: import("@/app/lib/types").FundData) => void;
+  onUpdateMarketData?: (data: Partial<import("@/app/lib/types").MarketData>) => void;
 };
 
 const RATING_ORDER: Record<string, number> = { Buy: 3, Hold: 2, Sell: 1 };
@@ -46,7 +47,7 @@ function matchesFilter(s: ScoredStock, filter: InstrumentFilter): boolean {
   return true;
 }
 
-export function StockScoring({ stocks, onScoreStock, onUpdateCostBasis, onRefreshData, onUpdateFundData }: Props) {
+export function StockScoring({ stocks, onScoreStock, onUpdateCostBasis, onRefreshData, onUpdateFundData, onUpdateMarketData }: Props) {
   const router = useRouter();
   const [query, setQuery] = useState("");
   const [sortKey, setSortKey] = useState<SortKey>("adjusted");
@@ -180,6 +181,23 @@ export function StockScoring({ stocks, onScoreStock, onUpdateCostBasis, onRefres
           }
         }
       }
+      // Refresh S&P 500 sector weights from SPY
+      try {
+        setRefreshProgress("Updating S&P 500 sector weights...");
+        const spyRes = await fetch("/api/fund-data?ticker=SPY");
+        if (spyRes.ok) {
+          const spyData = await spyRes.json();
+          const sectorWeightings = spyData.fundData?.sectorWeightings;
+          if (Array.isArray(sectorWeightings) && sectorWeightings.length > 0) {
+            const weights: Record<string, number> = {};
+            for (const sw of sectorWeightings) {
+              weights[sw.sector] = parseFloat(sw.weight.toFixed(1));
+            }
+            if (onUpdateMarketData) onUpdateMarketData({ sp500SectorWeights: weights });
+          }
+        }
+      } catch { /* best effort */ }
+
       setRefreshProgress(`Updated ${updated}/${tickers.length} holdings`);
       // Clear progress message after 3s
       setTimeout(() => setRefreshProgress(""), 3000);
