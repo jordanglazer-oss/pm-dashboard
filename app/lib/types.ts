@@ -178,7 +178,7 @@ export type FundRiskStats = {
 };
 
 export type FundData = {
-  expenseRatio?: number;
+  expenseRatio?: number; // MER for Canadian funds
   totalAssets?: number; // AUM in dollars
   yield?: number;
   category?: string;
@@ -202,6 +202,9 @@ export type FundData = {
     priceToSales?: number;
     priceToCashflow?: number;
   };
+  starRating?: number; // Morningstar star rating (1-5)
+  fundservCode?: string; // Canadian FUNDSERV code (e.g., TDB900)
+  yahooTicker?: string; // Resolved Yahoo ticker for Canadian funds (e.g., 0P000071WA.TO)
   lastUpdated?: string;
 };
 

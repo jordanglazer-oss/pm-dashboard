@@ -100,7 +100,7 @@ export default function DashboardPage() {
           <div className="rounded-[24px] border border-slate-200 bg-white p-5 shadow-sm">
             <h2 className="text-lg font-bold text-slate-800 mb-3">Add a Holding</h2>
             <p className="text-sm text-slate-500 mb-4">
-              Enter a ticker (stock, ETF, or mutual fund) to add to your Portfolio or Watchlist.
+              Enter a ticker (stock, ETF) or FUNDSERV code (Canadian mutual fund, e.g. TDB900) to add.
               {detectedType && detectedType !== "stock" ? (
                 <span className="text-amber-600 font-medium"> Auto-scoring is not available for {INSTRUMENT_LABELS[detectedType]}s — use the weight field to set the allocation.</span>
               ) : (
@@ -114,7 +114,7 @@ export default function DashboardPage() {
                   onChange={(e) => setNewTicker(e.target.value.toUpperCase())}
                   onBlur={() => newTicker.trim() && detectType(newTicker.trim().toUpperCase())}
                   onKeyDown={(e) => e.key === "Enter" && handleAdd()}
-                  placeholder="e.g. AAPL, SPY, VFIAX"
+                  placeholder="e.g. AAPL, SPY, TDB900"
                   className="w-full rounded-xl border border-slate-200 bg-white px-4 py-2.5 text-sm outline-none placeholder:text-slate-400 focus:border-blue-400 focus:ring-1 focus:ring-blue-200"
                 />
                 {detectedType && detectedType !== "stock" && (
