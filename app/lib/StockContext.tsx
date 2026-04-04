@@ -35,6 +35,7 @@ type StockContextType = {
   updateSector: (ticker: string, sector: string) => void;
   updateHealthData: (ticker: string, healthData: HealthData) => void;
   updateTechnicals: (ticker: string, technicals: TechnicalIndicators, riskAlert: RiskAlert) => void;
+  updateWeight: (ticker: string, weight: number) => void;
   updateStockFields: (ticker: string, fields: Partial<Stock>) => void;
   setBrief: (brief: MorningBrief) => void;
   setChartAnalysis: (ticker: string, entry: ChartAnalysisEntry) => void;
@@ -267,6 +268,16 @@ export function StockProvider({ children }: { children: React.ReactNode }) {
     });
   }, [persistStocks]);
 
+  const updateWeight = useCallback((ticker: string, weight: number) => {
+    setStocks((prev) => {
+      const next = prev.map((s) =>
+        s.ticker === ticker ? { ...s, weights: { ...s.weights, portfolio: weight } } : s
+      );
+      persistStocks(next);
+      return next;
+    });
+  }, [persistStocks]);
+
   const updateStockFields = useCallback((ticker: string, fields: Partial<Stock>) => {
     setStocks((prev) => {
       const next = prev.map((s) =>
@@ -332,6 +343,7 @@ export function StockProvider({ children }: { children: React.ReactNode }) {
         updateLastScored,
         updatePrice,
         updateSector,
+        updateWeight,
         updateHealthData,
         updateTechnicals,
         updateStockFields,

@@ -145,9 +145,18 @@ export type HealthData = {
   currentPrice?: number;
 };
 
+export type InstrumentType = "stock" | "etf" | "mutual-fund";
+
+export const INSTRUMENT_LABELS: Record<InstrumentType, string> = {
+  stock: "Stock",
+  etf: "ETF",
+  "mutual-fund": "Mutual Fund",
+};
+
 export type Stock = {
   ticker: string;
   name: string;
+  instrumentType?: InstrumentType;
   bucket: "Portfolio" | "Watchlist";
   sector: string;
   beta: number;

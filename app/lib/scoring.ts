@@ -83,6 +83,11 @@ export function isOffensiveSector(sector: string): boolean {
   return OFFENSIVE_SECTORS.includes(sector);
 }
 
+/** Returns true if the instrument can be scored (individual stocks only, not ETFs/funds) */
+export function isScoreable(stock: Stock): boolean {
+  return !stock.instrumentType || stock.instrumentType === "stock";
+}
+
 export function groupTotal(stock: Stock, group: typeof SCORE_GROUPS[number]): number {
   return group.categories.reduce(
     (sum, cat) => sum + (stock.scores[cat.key as ScoreKey] || 0),

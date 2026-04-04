@@ -4,9 +4,9 @@ import React, { useState } from "react";
 import { useParams, useRouter } from "next/navigation";
 import Link from "next/link";
 import { useStocks } from "@/app/lib/StockContext";
-import { SCORE_GROUPS, MAX_SCORE } from "@/app/lib/types";
+import { SCORE_GROUPS, MAX_SCORE, INSTRUMENT_LABELS } from "@/app/lib/types";
 import type { ScoreKey } from "@/app/lib/types";
-import { groupTotal } from "@/app/lib/scoring";
+import { groupTotal, isScoreable } from "@/app/lib/scoring";
 import { SignalPill, ratingTone } from "@/app/components/SignalPill";
 import StockHealthMonitor from "@/app/components/StockHealthMonitor";
 import RiskAlertPanel from "@/app/components/RiskAlertPanel";
@@ -98,12 +98,16 @@ export default function StockDetailPage() {
   const params = useParams();
   const router = useRouter();
   const ticker = (params.ticker as string)?.toUpperCase();
-  const { getStock, scoredStocks, marketData, updateScore, updateExplanations, updateLastScored, updatePrice, updateHealthData, updateTechnicals, updateStockFields, moveBucket, removeStock } = useStocks();
+  const { getStock, scoredStocks, marketData, updateScore, updateExplanations, updateLastScored, updatePrice, updateHealthData, updateTechnicals, updateStockFields, updateWeight, moveBucket, removeStock } = useStocks();
   const stock = getStock(ticker);
   const [scoring, setScoring] = useState(false);
   const [scoreError, setScoreError] = useState("");
   const [refreshing, setRefreshing] = useState(false);
   const [refreshError, setRefreshError] = useState("");
+  const [editingWeight, setEditingWeight] = useState(false);
+  const [weightInput, setWeightInput] = useState("");
+
+  const scoreable = stock ? isScoreable(stock) : true;
 
   if (!stock) {
     return (
@@ -280,17 +284,24 @@ export default function StockDetailPage() {
                   <SignalPill tone={stock.bucket === "Portfolio" ? "blue" : "gray"}>
                     {stock.bucket}
                   </SignalPill>
+                  {stock.instrumentType && stock.instrumentType !== "stock" && (
+                    <span className={`rounded-md px-2 py-0.5 text-xs font-bold ${stock.instrumentType === "etf" ? "bg-indigo-100 text-indigo-700" : "bg-purple-100 text-purple-700"}`}>
+                      {INSTRUMENT_LABELS[stock.instrumentType]}
+                    </span>
+                  )}
                 </div>
 
                 {/* Action buttons */}
                 <div className="flex items-center gap-1.5 sm:gap-2 flex-wrap mb-3">
-                  <button
-                    onClick={handleRescore}
-                    disabled={scoring}
-                    className="rounded-lg bg-blue-600 px-3 sm:px-4 py-1.5 text-xs sm:text-sm font-semibold text-white hover:bg-blue-700 transition-colors disabled:opacity-50"
-                  >
-                    {scoring ? "Scoring..." : "Score"}
-                  </button>
+                  {scoreable && (
+                    <button
+                      onClick={handleRescore}
+                      disabled={scoring}
+                      className="rounded-lg bg-blue-600 px-3 sm:px-4 py-1.5 text-xs sm:text-sm font-semibold text-white hover:bg-blue-700 transition-colors disabled:opacity-50"
+                    >
+                      {scoring ? "Scoring..." : "Score"}
+                    </button>
+                  )}
                   <button
                     onClick={handleRefreshData}
                     disabled={refreshing}
@@ -322,6 +333,44 @@ export default function StockDetailPage() {
                 {/* Sector (auto-populated from Yahoo Finance) */}
                 <div className="flex items-center gap-2 mb-2">
                   <span className="rounded-lg bg-slate-100 px-3 py-1.5 text-sm font-medium text-slate-700">{stock.sector}</span>
+                  {!scoreable && (
+                    <div className="flex items-center gap-1.5">
+                      <span className="text-xs text-slate-400">Weight:</span>
+                      {editingWeight ? (
+                        <form
+                          onSubmit={(e) => {
+                            e.preventDefault();
+                            const val = parseFloat(weightInput);
+                            if (!isNaN(val) && val >= 0) {
+                              updateWeight(ticker, val);
+                            }
+                            setEditingWeight(false);
+                          }}
+                          className="flex items-center gap-1"
+                        >
+                          <input
+                            value={weightInput}
+                            onChange={(e) => setWeightInput(e.target.value)}
+                            type="number"
+                            step="0.1"
+                            min="0"
+                            autoFocus
+                            className="w-16 rounded-md border border-slate-300 px-2 py-1 text-sm outline-none focus:border-blue-400"
+                          />
+                          <span className="text-xs text-slate-400">%</span>
+                          <button type="submit" className="rounded-md bg-blue-600 px-2 py-1 text-xs font-semibold text-white hover:bg-blue-700">Save</button>
+                          <button type="button" onClick={() => setEditingWeight(false)} className="text-xs text-slate-400 hover:text-slate-600">Cancel</button>
+                        </form>
+                      ) : (
+                        <button
+                          onClick={() => { setWeightInput(String(stock.weights.portfolio)); setEditingWeight(true); }}
+                          className="rounded-md bg-slate-100 px-2 py-1 text-sm font-semibold text-slate-700 hover:bg-slate-200 transition-colors"
+                        >
+                          {stock.weights.portfolio}%
+                        </button>
+                      )}
+                    </div>
+                  )}
                 </div>
 
                 {/* Company name */}
@@ -335,45 +384,58 @@ export default function StockDetailPage() {
                   <p className="mt-1 text-sm italic text-blue-600/70 leading-relaxed">{stock.investmentThesis}</p>
                 )}
 
-                {/* Group progress bars */}
-                <div className="mt-6 space-y-3 max-w-xl">
-                  {SCORE_GROUPS.map((group) => {
-                    const total = groupTotal(stock, group);
-                    const colors = GROUP_COLORS[group.color] || GROUP_COLORS.blue;
-                    const pct = (total / group.maxTotal) * 100;
+                {/* Group progress bars (stocks only) */}
+                {scoreable && (
+                  <div className="mt-6 space-y-3 max-w-xl">
+                    {SCORE_GROUPS.map((group) => {
+                      const total = groupTotal(stock, group);
+                      const colors = GROUP_COLORS[group.color] || GROUP_COLORS.blue;
+                      const pct = (total / group.maxTotal) * 100;
 
-                    return (
-                      <div key={group.name} className="flex items-center gap-3">
-                        <span className="w-20 text-right text-xs text-slate-500 shrink-0 leading-tight">
-                          {group.name === "Company Specific" ? "Company Specific" : group.name}
-                        </span>
-                        <div className="flex-1 h-3.5 rounded-full bg-slate-100 overflow-hidden">
-                          <div
-                            className={`h-full rounded-full ${colors.bar} transition-all duration-500`}
-                            style={{ width: `${pct}%` }}
-                          />
+                      return (
+                        <div key={group.name} className="flex items-center gap-3">
+                          <span className="w-20 text-right text-xs text-slate-500 shrink-0 leading-tight">
+                            {group.name === "Company Specific" ? "Company Specific" : group.name}
+                          </span>
+                          <div className="flex-1 h-3.5 rounded-full bg-slate-100 overflow-hidden">
+                            <div
+                              className={`h-full rounded-full ${colors.bar} transition-all duration-500`}
+                              style={{ width: `${pct}%` }}
+                            />
+                          </div>
+                          <span className={`w-10 text-right text-xs font-bold shrink-0 ${colors.scoreText}`}>
+                            {total}/{group.maxTotal}
+                          </span>
                         </div>
-                        <span className={`w-10 text-right text-xs font-bold shrink-0 ${colors.scoreText}`}>
-                          {total}/{group.maxTotal}
-                        </span>
-                      </div>
-                    );
-                  })}
-                </div>
+                      );
+                    })}
+                  </div>
+                )}
+
+                {/* Fund info for non-scoreable instruments */}
+                {!scoreable && (
+                  <div className="mt-6 rounded-xl bg-slate-50 p-4 max-w-xl">
+                    <p className="text-sm text-slate-500">
+                      Auto-scoring is not available for {INSTRUMENT_LABELS[stock.instrumentType || "stock"]}s. Use the weight field above to set the portfolio allocation.
+                    </p>
+                  </div>
+                )}
               </div>
 
-              {/* Right: donut chart */}
-              <div className="flex justify-center lg:justify-end">
-                <ScoreDonut score={stock.adjusted} max={MAX_SCORE} groups={SCORE_GROUPS} stock={stock} />
-              </div>
+              {/* Right: donut chart (stocks only) */}
+              {scoreable && (
+                <div className="flex justify-center lg:justify-end">
+                  <ScoreDonut score={stock.adjusted} max={MAX_SCORE} groups={SCORE_GROUPS} stock={stock} />
+                </div>
+              )}
             </div>
           </div>
 
           {/* Price Chart */}
           <StockChart ticker={stock.ticker} technicals={stock.technicals} className="mt-6" />
 
-          {/* Score breakdown - 2 column grid */}
-          <div className="grid gap-4 md:grid-cols-2 mt-6">
+          {/* Score breakdown - 2 column grid (stocks only) */}
+          {scoreable && <div className="grid gap-4 md:grid-cols-2 mt-6">
             {SCORE_GROUPS.map((group) => {
               const total = groupTotal(stock, group);
               const colors = GROUP_COLORS[group.color] || GROUP_COLORS.blue;
@@ -453,10 +515,10 @@ export default function StockDetailPage() {
                 </div>
               );
             })}
-          </div>
+          </div>}
 
-          {/* Regime context */}
-          <div className="rounded-[24px] border border-slate-200 bg-white p-5 shadow-sm mt-6">
+          {/* Regime context (stocks only) */}
+          {scoreable && <div className="rounded-[24px] border border-slate-200 bg-white p-5 shadow-sm mt-6">
             <h2 className="text-base font-bold text-slate-800 mb-3">Regime Context</h2>
             <div className="grid gap-4 md:grid-cols-4">
               <div className="rounded-2xl bg-slate-50 p-3">
@@ -484,7 +546,7 @@ export default function StockDetailPage() {
                 <div className="mt-1 text-lg font-semibold">{marketData.compositeSignal}</div>
               </div>
             </div>
-          </div>
+          </div>}
 
           {/* Risk Alert Panel */}
           {stock.riskAlert && stock.technicals && (

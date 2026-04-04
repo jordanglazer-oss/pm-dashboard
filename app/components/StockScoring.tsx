@@ -3,7 +3,8 @@
 import React, { useState, useMemo, useEffect, useCallback } from "react";
 import { useRouter } from "next/navigation";
 import type { ScoredStock, ScoreKey } from "@/app/lib/types";
-import { MAX_SCORE } from "@/app/lib/types";
+import { MAX_SCORE, INSTRUMENT_LABELS } from "@/app/lib/types";
+import { isScoreable } from "@/app/lib/scoring";
 import { SignalPill, ratingTone, riskTone } from "./SignalPill";
 
 type SortKey = "ticker" | "bucket" | "sector" | "raw" | "adjusted" | "rating" | "risk" | "effect" | "price" | "pnl";
@@ -71,7 +72,7 @@ export function StockScoring({ stocks, onScoreStock, onUpdateCostBasis, onRefres
   // Score all stocks in a specific bucket sequentially
   async function handleScoreBucket(bucket: "Portfolio" | "Watchlist") {
     if (!onScoreStock || scoringAll) return;
-    const bucketStocks = stocks.filter((s) => s.bucket === bucket);
+    const bucketStocks = stocks.filter((s) => s.bucket === bucket && isScoreable(s));
     if (bucketStocks.length === 0) return;
     setScoringAll(true);
     setScoringBucket(bucket);
@@ -270,7 +271,7 @@ export function StockScoring({ stocks, onScoreStock, onUpdateCostBasis, onRefres
                       {scoreProgress}
                     </>
                   ) : (
-                    <>Score All ({bucketStocks.length})</>
+                    <>Score All ({bucketStocks.filter((s) => isScoreable(s)).length})</>
                   )}
                 </button>
               )}
@@ -290,10 +291,23 @@ export function StockScoring({ stocks, onScoreStock, onUpdateCostBasis, onRefres
                     onClick={() => router.push(`/stock/${s.ticker.toLowerCase()}`)}
                   >
                     <div className="flex items-center justify-between mb-2">
-                      <span className="text-lg font-bold text-slate-900">{s.ticker}</span>
+                      <div className="flex items-center gap-2">
+                        <span className="text-lg font-bold text-slate-900">{s.ticker}</span>
+                        {s.instrumentType && s.instrumentType !== "stock" && (
+                          <span className={`rounded px-1.5 py-0.5 text-[9px] font-bold ${s.instrumentType === "etf" ? "bg-indigo-100 text-indigo-700" : "bg-purple-100 text-purple-700"}`}>
+                            {INSTRUMENT_LABELS[s.instrumentType]}
+                          </span>
+                        )}
+                      </div>
                       <div className="flex items-center gap-1.5">
-                        <SignalPill tone={ratingTone(s.rating)}>{s.rating}</SignalPill>
-                        <SignalPill tone={riskTone(s.risk)}>{s.risk}</SignalPill>
+                        {isScoreable(s) ? (
+                          <>
+                            <SignalPill tone={ratingTone(s.rating)}>{s.rating}</SignalPill>
+                            <SignalPill tone={riskTone(s.risk)}>{s.risk}</SignalPill>
+                          </>
+                        ) : (
+                          <span className="text-xs text-slate-400">Wt: {s.weights.portfolio}%</span>
+                        )}
                       </div>
                     </div>
                     <div className="text-xs text-slate-500 mb-3">{s.name} &middot; {s.sector}</div>
@@ -360,7 +374,14 @@ export function StockScoring({ stocks, onScoreStock, onUpdateCostBasis, onRefres
                         onClick={() => router.push(`/stock/${s.ticker.toLowerCase()}`)}
                       >
                         <td className="py-3 pr-2">
-                          <div className="font-semibold text-slate-900">{s.ticker}</div>
+                          <div className="flex items-center gap-1.5">
+                            <span className="font-semibold text-slate-900">{s.ticker}</span>
+                            {s.instrumentType && s.instrumentType !== "stock" && (
+                              <span className={`rounded px-1.5 py-0.5 text-[9px] font-bold ${s.instrumentType === "etf" ? "bg-indigo-100 text-indigo-700" : "bg-purple-100 text-purple-700"}`}>
+                                {INSTRUMENT_LABELS[s.instrumentType]}
+                              </span>
+                            )}
+                          </div>
                           <div className="text-[11px] text-slate-400 truncate max-w-[120px]">{s.name}</div>
                         </td>
                         <td className="py-3 pr-2 text-xs text-slate-600">{s.sector}</td>
@@ -400,13 +421,17 @@ export function StockScoring({ stocks, onScoreStock, onUpdateCostBasis, onRefres
                             )}
                           </td>
                         )}
-                        <td className="py-3 pr-2 text-right text-sm text-slate-600">{s.raw}/{MAX_SCORE}</td>
-                        <td className="py-3 pr-2 text-right text-sm font-semibold text-slate-900">{s.adjusted}/{MAX_SCORE}</td>
-                        <td className="py-3 pr-2">
-                          <SignalPill tone={ratingTone(s.rating)}>{s.rating}</SignalPill>
+                        <td className="py-3 pr-2 text-right text-sm text-slate-600">
+                          {isScoreable(s) ? `${s.raw}/${MAX_SCORE}` : <span className="text-slate-300">--</span>}
+                        </td>
+                        <td className="py-3 pr-2 text-right text-sm font-semibold text-slate-900">
+                          {isScoreable(s) ? `${s.adjusted}/${MAX_SCORE}` : <span className="text-slate-300">--</span>}
                         </td>
                         <td className="py-3 pr-2">
-                          <SignalPill tone={riskTone(s.risk)}>{s.risk}</SignalPill>
+                          {isScoreable(s) ? <SignalPill tone={ratingTone(s.rating)}>{s.rating}</SignalPill> : <span className="text-xs text-slate-300">--</span>}
+                        </td>
+                        <td className="py-3 pr-2">
+                          {isScoreable(s) ? <SignalPill tone={riskTone(s.risk)}>{s.risk}</SignalPill> : <span className="text-xs text-slate-300">--</span>}
                         </td>
                         <td className={`py-3 pr-2 text-right text-xs font-semibold ${Number(effect) >= 0 ? "text-emerald-600" : "text-red-500"}`}>
                           {Number(effect) >= 0 ? "+" : ""}{effect}

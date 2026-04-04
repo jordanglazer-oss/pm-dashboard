@@ -4,7 +4,8 @@ import React, { useState } from "react";
 import { useStocks } from "@/app/lib/StockContext";
 import { PortfolioOverview } from "@/app/components/PortfolioOverview";
 import { regimeMultiplier, isOffensiveSector } from "@/app/lib/scoring";
-import type { Stock, ScoreKey } from "@/app/lib/types";
+import type { Stock, ScoreKey, InstrumentType } from "@/app/lib/types";
+import { INSTRUMENT_LABELS } from "@/app/lib/types";
 
 const ZERO_SCORES: Record<ScoreKey, number> = {
   brand: 0, secular: 0, researchCoverage: 0, externalSources: 0,
@@ -18,6 +19,9 @@ export default function DashboardPage() {
   const { scoredStocks, marketData, addStock } = useStocks();
   const [newTicker, setNewTicker] = useState("");
   const [newBucket, setNewBucket] = useState<"Portfolio" | "Watchlist">("Watchlist");
+  const [detectedType, setDetectedType] = useState<InstrumentType | null>(null);
+  const [newWeight, setNewWeight] = useState("");
+  const [adding, setAdding] = useState(false);
 
   const regime = marketData.riskRegime;
 
@@ -35,30 +39,54 @@ export default function DashboardPage() {
       return;
     }
 
-    // Fetch company name and sector from Yahoo Finance (no Claude tokens)
+    setAdding(true);
+
+    // Fetch company name, sector, and instrument type from Yahoo Finance
     let name = ticker;
     let sector = "Technology";
+    let instrumentType: InstrumentType = detectedType || "stock";
     try {
       const res = await fetch(`/api/company-name?tickers=${encodeURIComponent(ticker)}`);
       if (res.ok) {
         const data = await res.json();
         if (data.names?.[ticker]) name = data.names[ticker];
         if (data.sectors?.[ticker]) sector = data.sectors[ticker];
+        if (data.types?.[ticker]) instrumentType = data.types[ticker] as InstrumentType;
       }
     } catch { /* fallback to ticker */ }
+
+    const isFund = instrumentType === "etf" || instrumentType === "mutual-fund";
+    const weight = isFund && newWeight ? parseFloat(newWeight) : (newBucket === "Portfolio" ? 2 : 0);
 
     const stock: Stock = {
       ticker,
       name,
+      instrumentType,
       bucket: newBucket,
       sector,
       beta: 1.0,
-      weights: { portfolio: newBucket === "Portfolio" ? 2 : 0 },
+      weights: { portfolio: weight },
       scores: { ...ZERO_SCORES },
       notes: "",
     };
     addStock(stock);
     setNewTicker("");
+    setNewWeight("");
+    setDetectedType(null);
+    setAdding(false);
+  }
+
+  // Auto-detect instrument type when ticker changes
+  async function detectType(ticker: string) {
+    if (!ticker || ticker.length < 1) { setDetectedType(null); return; }
+    try {
+      const res = await fetch(`/api/company-name?tickers=${encodeURIComponent(ticker)}`);
+      if (res.ok) {
+        const data = await res.json();
+        const t = data.types?.[ticker] as InstrumentType | undefined;
+        setDetectedType(t || null);
+      }
+    } catch { setDetectedType(null); }
   }
 
   return (
@@ -68,20 +96,33 @@ export default function DashboardPage() {
         {/* ── Add Stock + Regime Banner ── */}
         <div className="grid gap-4 lg:grid-cols-2">
 
-          {/* Add Stock Card */}
+          {/* Add Holding Card */}
           <div className="rounded-[24px] border border-slate-200 bg-white p-5 shadow-sm">
-            <h2 className="text-lg font-bold text-slate-800 mb-3">Add a Stock</h2>
+            <h2 className="text-lg font-bold text-slate-800 mb-3">Add a Holding</h2>
             <p className="text-sm text-slate-500 mb-4">
-              Enter a ticker to add it to your Portfolio or Watchlist. Scores start at zero — click into the stock to score categories manually, or use the <span className="font-semibold text-blue-600">Score</span> button on the stock page to auto-score with Claude.
+              Enter a ticker (stock, ETF, or mutual fund) to add to your Portfolio or Watchlist.
+              {detectedType && detectedType !== "stock" ? (
+                <span className="text-amber-600 font-medium"> Auto-scoring is not available for {INSTRUMENT_LABELS[detectedType]}s — use the weight field to set the allocation.</span>
+              ) : (
+                <> Use the <span className="font-semibold text-blue-600">Score</span> button on the stock page to auto-score with Claude.</>
+              )}
             </p>
-            <div className="flex gap-3">
-              <input
-                value={newTicker}
-                onChange={(e) => setNewTicker(e.target.value.toUpperCase())}
-                onKeyDown={(e) => e.key === "Enter" && handleAdd()}
-                placeholder="e.g. AAPL"
-                className="flex-1 rounded-xl border border-slate-200 bg-white px-4 py-2.5 text-sm outline-none placeholder:text-slate-400 focus:border-blue-400 focus:ring-1 focus:ring-blue-200"
-              />
+            <div className="flex flex-wrap gap-3">
+              <div className="relative flex-1 min-w-[120px]">
+                <input
+                  value={newTicker}
+                  onChange={(e) => setNewTicker(e.target.value.toUpperCase())}
+                  onBlur={() => newTicker.trim() && detectType(newTicker.trim().toUpperCase())}
+                  onKeyDown={(e) => e.key === "Enter" && handleAdd()}
+                  placeholder="e.g. AAPL, SPY, VFIAX"
+                  className="w-full rounded-xl border border-slate-200 bg-white px-4 py-2.5 text-sm outline-none placeholder:text-slate-400 focus:border-blue-400 focus:ring-1 focus:ring-blue-200"
+                />
+                {detectedType && detectedType !== "stock" && (
+                  <span className={`absolute right-2 top-1/2 -translate-y-1/2 rounded-md px-2 py-0.5 text-[10px] font-bold ${detectedType === "etf" ? "bg-indigo-100 text-indigo-700" : "bg-purple-100 text-purple-700"}`}>
+                    {INSTRUMENT_LABELS[detectedType]}
+                  </span>
+                )}
+              </div>
               <select
                 value={newBucket}
                 onChange={(e) => setNewBucket(e.target.value as "Portfolio" | "Watchlist")}
@@ -90,11 +131,23 @@ export default function DashboardPage() {
                 <option>Portfolio</option>
                 <option>Watchlist</option>
               </select>
+              {detectedType && detectedType !== "stock" && (
+                <input
+                  value={newWeight}
+                  onChange={(e) => setNewWeight(e.target.value)}
+                  placeholder="Weight %"
+                  type="number"
+                  step="0.1"
+                  min="0"
+                  className="w-24 rounded-xl border border-slate-200 bg-white px-3 py-2.5 text-sm outline-none placeholder:text-slate-400 focus:border-blue-400 focus:ring-1 focus:ring-blue-200"
+                />
+              )}
               <button
                 onClick={handleAdd}
-                className="rounded-xl bg-blue-600 px-5 py-2.5 text-sm font-semibold text-white hover:bg-blue-700 transition-colors"
+                disabled={adding}
+                className="rounded-xl bg-blue-600 px-5 py-2.5 text-sm font-semibold text-white hover:bg-blue-700 transition-colors disabled:opacity-50"
               >
-                Add
+                {adding ? "Adding..." : "Add"}
               </button>
             </div>
           </div>
