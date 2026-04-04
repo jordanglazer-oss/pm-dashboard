@@ -1,16 +1,35 @@
 "use client";
 
-import React, { useState } from "react";
+import React, { useState, useEffect, useCallback } from "react";
 import { useParams, useRouter } from "next/navigation";
 import Link from "next/link";
 import { useStocks } from "@/app/lib/StockContext";
 import { SCORE_GROUPS, MAX_SCORE, INSTRUMENT_LABELS } from "@/app/lib/types";
-import type { ScoreKey } from "@/app/lib/types";
+import type { ScoreKey, FundData } from "@/app/lib/types";
 import { groupTotal, isScoreable } from "@/app/lib/scoring";
 import { SignalPill, ratingTone } from "@/app/components/SignalPill";
 import StockHealthMonitor from "@/app/components/StockHealthMonitor";
 import RiskAlertPanel from "@/app/components/RiskAlertPanel";
 import StockChart from "@/app/components/StockChart";
+
+// ── Helpers ──
+function formatAUM(value: number): string {
+  if (value >= 1e12) return `$${(value / 1e12).toFixed(1)}T`;
+  if (value >= 1e9) return `$${(value / 1e9).toFixed(1)}B`;
+  if (value >= 1e6) return `$${(value / 1e6).toFixed(0)}M`;
+  return `$${value.toLocaleString()}`;
+}
+
+function formatReturn(value: number | undefined): string {
+  if (value == null) return "--";
+  const sign = value >= 0 ? "+" : "";
+  return `${sign}${value.toFixed(2)}%`;
+}
+
+function returnColor(value: number | undefined): string {
+  if (value == null) return "text-slate-400";
+  return value >= 0 ? "text-emerald-600" : "text-red-500";
+}
 
 // ── Color mapping ──
 const GROUP_COLORS: Record<
@@ -94,11 +113,245 @@ function ScoreDonut({ score, max, groups, stock }: { score: number; max: number;
   );
 }
 
+// ── Fund Data Panels ──
+function FundDataPanels({ fundData }: { fundData: FundData }) {
+  const sectorColors: Record<string, string> = {
+    Technology: "bg-blue-500",
+    Financials: "bg-teal-500",
+    "Health Care": "bg-purple-500",
+    "Consumer Discretionary": "bg-orange-500",
+    "Consumer Staples": "bg-amber-500",
+    "Communication Services": "bg-indigo-500",
+    Industrials: "bg-slate-500",
+    Energy: "bg-red-500",
+    Utilities: "bg-lime-500",
+    Materials: "bg-cyan-500",
+    "Real Estate": "bg-pink-500",
+  };
+
+  return (
+    <div className="space-y-4 mt-6">
+      {/* Row 1: Performance + Risk */}
+      <div className="grid gap-4 md:grid-cols-2">
+        {/* Performance */}
+        {fundData.performance && (
+          <div className="rounded-[24px] border border-slate-200 bg-white p-5 shadow-sm">
+            <h2 className="text-base font-bold text-slate-800 mb-4">Performance</h2>
+            <div className="grid grid-cols-4 gap-2 text-center">
+              {[
+                { label: "1M", val: fundData.performance.oneMonth },
+                { label: "3M", val: fundData.performance.threeMonth },
+                { label: "YTD", val: fundData.performance.ytd },
+                { label: "1Y", val: fundData.performance.oneYear },
+                { label: "3Y", val: fundData.performance.threeYear },
+                { label: "5Y", val: fundData.performance.fiveYear },
+                { label: "10Y", val: fundData.performance.tenYear },
+              ]
+                .filter((r) => r.val != null)
+                .map((r) => (
+                  <div key={r.label} className="rounded-xl bg-slate-50 p-2.5">
+                    <div className="text-[10px] font-semibold text-slate-400 uppercase">{r.label}</div>
+                    <div className={`mt-1 text-sm font-bold ${returnColor(r.val)}`}>
+                      {formatReturn(r.val)}
+                    </div>
+                  </div>
+                ))}
+            </div>
+          </div>
+        )}
+
+        {/* Risk & Key Stats */}
+        <div className="rounded-[24px] border border-slate-200 bg-white p-5 shadow-sm">
+          <h2 className="text-base font-bold text-slate-800 mb-4">Key Statistics</h2>
+          <div className="grid grid-cols-2 gap-3">
+            {fundData.fundFamily && (
+              <div className="rounded-xl bg-slate-50 p-2.5">
+                <div className="text-[10px] font-semibold text-slate-400 uppercase">Fund Family</div>
+                <div className="mt-1 text-sm font-semibold text-slate-700 truncate">{fundData.fundFamily}</div>
+              </div>
+            )}
+            {fundData.inceptionDate && (
+              <div className="rounded-xl bg-slate-50 p-2.5">
+                <div className="text-[10px] font-semibold text-slate-400 uppercase">Inception</div>
+                <div className="mt-1 text-sm font-semibold text-slate-700">{fundData.inceptionDate}</div>
+              </div>
+            )}
+            {fundData.turnover != null && (
+              <div className="rounded-xl bg-slate-50 p-2.5">
+                <div className="text-[10px] font-semibold text-slate-400 uppercase">Turnover</div>
+                <div className="mt-1 text-sm font-semibold text-slate-700">{fundData.turnover.toFixed(0)}%</div>
+              </div>
+            )}
+            {fundData.riskStats?.beta != null && (
+              <div className="rounded-xl bg-slate-50 p-2.5">
+                <div className="text-[10px] font-semibold text-slate-400 uppercase">Beta (3Y)</div>
+                <div className="mt-1 text-sm font-semibold text-slate-700">{fundData.riskStats.beta.toFixed(2)}</div>
+              </div>
+            )}
+            {fundData.riskStats?.sharpeRatio != null && (
+              <div className="rounded-xl bg-slate-50 p-2.5">
+                <div className="text-[10px] font-semibold text-slate-400 uppercase">Sharpe (3Y)</div>
+                <div className="mt-1 text-sm font-semibold text-slate-700">{fundData.riskStats.sharpeRatio.toFixed(2)}</div>
+              </div>
+            )}
+            {fundData.riskStats?.stdDev != null && (
+              <div className="rounded-xl bg-slate-50 p-2.5">
+                <div className="text-[10px] font-semibold text-slate-400 uppercase">Std Dev (3Y)</div>
+                <div className="mt-1 text-sm font-semibold text-slate-700">{fundData.riskStats.stdDev.toFixed(2)}%</div>
+              </div>
+            )}
+            {fundData.riskStats?.alpha != null && (
+              <div className="rounded-xl bg-slate-50 p-2.5">
+                <div className="text-[10px] font-semibold text-slate-400 uppercase">Alpha (3Y)</div>
+                <div className={`mt-1 text-sm font-semibold ${fundData.riskStats.alpha >= 0 ? "text-emerald-600" : "text-red-500"}`}>
+                  {fundData.riskStats.alpha >= 0 ? "+" : ""}{fundData.riskStats.alpha.toFixed(2)}
+                </div>
+              </div>
+            )}
+            {fundData.riskStats?.rSquared != null && (
+              <div className="rounded-xl bg-slate-50 p-2.5">
+                <div className="text-[10px] font-semibold text-slate-400 uppercase">R-Squared</div>
+                <div className="mt-1 text-sm font-semibold text-slate-700">{fundData.riskStats.rSquared.toFixed(2)}</div>
+              </div>
+            )}
+          </div>
+        </div>
+      </div>
+
+      {/* Row 2: Top Holdings + Sector Breakdown */}
+      <div className="grid gap-4 md:grid-cols-2">
+        {/* Top Holdings */}
+        {fundData.topHoldings && fundData.topHoldings.length > 0 && (
+          <div className="rounded-[24px] border border-slate-200 bg-white p-5 shadow-sm">
+            <h2 className="text-base font-bold text-slate-800 mb-3">Top Holdings</h2>
+            <div className="space-y-1.5">
+              {fundData.topHoldings.map((h, i) => (
+                <div key={i} className="flex items-center gap-3">
+                  <span className="w-5 text-xs text-slate-400 text-right">{i + 1}</span>
+                  <div className="flex-1 min-w-0">
+                    <div className="flex items-center gap-2">
+                      {h.symbol && <span className="text-xs font-bold font-mono text-slate-700">{h.symbol}</span>}
+                      <span className="text-xs text-slate-500 truncate">{h.name}</span>
+                    </div>
+                  </div>
+                  <div className="flex items-center gap-2 shrink-0">
+                    <div className="w-20 h-2 rounded-full bg-slate-100 overflow-hidden">
+                      <div
+                        className="h-full rounded-full bg-blue-500"
+                        style={{ width: `${Math.min(h.weight * 3, 100)}%` }}
+                      />
+                    </div>
+                    <span className="w-12 text-right text-xs font-semibold text-slate-700">{h.weight.toFixed(1)}%</span>
+                  </div>
+                </div>
+              ))}
+            </div>
+          </div>
+        )}
+
+        {/* Sector Breakdown */}
+        {fundData.sectorWeightings && fundData.sectorWeightings.length > 0 && (
+          <div className="rounded-[24px] border border-slate-200 bg-white p-5 shadow-sm">
+            <h2 className="text-base font-bold text-slate-800 mb-3">Sector Breakdown</h2>
+            {/* Stacked bar */}
+            <div className="flex h-8 rounded-xl overflow-hidden mb-3">
+              {fundData.sectorWeightings.map((s) => (
+                <div
+                  key={s.sector}
+                  className={`${sectorColors[s.sector] || "bg-slate-400"} flex items-center justify-center text-[10px] font-semibold text-white`}
+                  style={{ width: `${s.weight}%` }}
+                >
+                  {s.weight >= 8 && `${s.weight.toFixed(0)}%`}
+                </div>
+              ))}
+            </div>
+            <div className="space-y-1.5">
+              {fundData.sectorWeightings.map((s) => (
+                <div key={s.sector} className="flex items-center gap-2">
+                  <span className={`h-2.5 w-2.5 rounded-full shrink-0 ${sectorColors[s.sector] || "bg-slate-400"}`} />
+                  <span className="flex-1 text-xs text-slate-600">{s.sector}</span>
+                  <span className="text-xs font-semibold text-slate-700">{s.weight.toFixed(1)}%</span>
+                </div>
+              ))}
+            </div>
+
+            {/* Asset Allocation */}
+            {fundData.assetAllocation && (
+              <div className="mt-4 pt-3 border-t border-slate-100">
+                <div className="text-[10px] font-semibold uppercase tracking-wider text-slate-400 mb-2">Asset Allocation</div>
+                <div className="grid grid-cols-4 gap-2 text-center">
+                  {fundData.assetAllocation.stock != null && (
+                    <div className="rounded-lg bg-blue-50 p-2">
+                      <div className="text-[10px] text-blue-500">Stocks</div>
+                      <div className="text-sm font-bold text-blue-700">{fundData.assetAllocation.stock.toFixed(1)}%</div>
+                    </div>
+                  )}
+                  {fundData.assetAllocation.bond != null && (
+                    <div className="rounded-lg bg-amber-50 p-2">
+                      <div className="text-[10px] text-amber-500">Bonds</div>
+                      <div className="text-sm font-bold text-amber-700">{fundData.assetAllocation.bond.toFixed(1)}%</div>
+                    </div>
+                  )}
+                  {fundData.assetAllocation.cash != null && (
+                    <div className="rounded-lg bg-emerald-50 p-2">
+                      <div className="text-[10px] text-emerald-500">Cash</div>
+                      <div className="text-sm font-bold text-emerald-700">{fundData.assetAllocation.cash.toFixed(1)}%</div>
+                    </div>
+                  )}
+                  {fundData.assetAllocation.other != null && (
+                    <div className="rounded-lg bg-slate-50 p-2">
+                      <div className="text-[10px] text-slate-500">Other</div>
+                      <div className="text-sm font-bold text-slate-700">{fundData.assetAllocation.other.toFixed(1)}%</div>
+                    </div>
+                  )}
+                </div>
+              </div>
+            )}
+          </div>
+        )}
+      </div>
+
+      {/* Row 3: Equity Metrics (P/E, P/B, etc.) */}
+      {fundData.equityMetrics && (
+        <div className="rounded-[24px] border border-slate-200 bg-white p-5 shadow-sm">
+          <h2 className="text-base font-bold text-slate-800 mb-3">Underlying Equity Metrics</h2>
+          <div className="grid grid-cols-2 sm:grid-cols-4 gap-3">
+            {fundData.equityMetrics.priceToEarnings != null && (
+              <div className="rounded-xl bg-slate-50 p-3 text-center">
+                <div className="text-[10px] font-semibold text-slate-400 uppercase">P/E Ratio</div>
+                <div className="mt-1 text-xl font-bold text-slate-800">{fundData.equityMetrics.priceToEarnings.toFixed(1)}</div>
+              </div>
+            )}
+            {fundData.equityMetrics.priceToBook != null && (
+              <div className="rounded-xl bg-slate-50 p-3 text-center">
+                <div className="text-[10px] font-semibold text-slate-400 uppercase">P/B Ratio</div>
+                <div className="mt-1 text-xl font-bold text-slate-800">{fundData.equityMetrics.priceToBook.toFixed(2)}</div>
+              </div>
+            )}
+            {fundData.equityMetrics.priceToSales != null && (
+              <div className="rounded-xl bg-slate-50 p-3 text-center">
+                <div className="text-[10px] font-semibold text-slate-400 uppercase">P/S Ratio</div>
+                <div className="mt-1 text-xl font-bold text-slate-800">{fundData.equityMetrics.priceToSales.toFixed(2)}</div>
+              </div>
+            )}
+            {fundData.equityMetrics.priceToCashflow != null && (
+              <div className="rounded-xl bg-slate-50 p-3 text-center">
+                <div className="text-[10px] font-semibold text-slate-400 uppercase">P/CF Ratio</div>
+                <div className="mt-1 text-xl font-bold text-slate-800">{fundData.equityMetrics.priceToCashflow.toFixed(2)}</div>
+              </div>
+            )}
+          </div>
+        </div>
+      )}
+    </div>
+  );
+}
+
 export default function StockDetailPage() {
   const params = useParams();
   const router = useRouter();
   const ticker = (params.ticker as string)?.toUpperCase();
-  const { getStock, scoredStocks, marketData, updateScore, updateExplanations, updateLastScored, updatePrice, updateHealthData, updateTechnicals, updateStockFields, updateWeight, moveBucket, removeStock } = useStocks();
+  const { getStock, scoredStocks, marketData, updateScore, updateExplanations, updateLastScored, updatePrice, updateHealthData, updateTechnicals, updateStockFields, updateWeight, updateFundData, moveBucket, removeStock } = useStocks();
   const stock = getStock(ticker);
   const [scoring, setScoring] = useState(false);
   const [scoreError, setScoreError] = useState("");
@@ -106,8 +359,29 @@ export default function StockDetailPage() {
   const [refreshError, setRefreshError] = useState("");
   const [editingWeight, setEditingWeight] = useState(false);
   const [weightInput, setWeightInput] = useState("");
+  const [loadingFundData, setLoadingFundData] = useState(false);
 
   const scoreable = stock ? isScoreable(stock) : true;
+
+  const fetchFundData = useCallback(async () => {
+    if (!stock || scoreable) return;
+    setLoadingFundData(true);
+    try {
+      const res = await fetch(`/api/fund-data?ticker=${encodeURIComponent(ticker)}`);
+      if (res.ok) {
+        const data = await res.json();
+        if (data.fundData) updateFundData(ticker, data.fundData);
+      }
+    } catch { /* best effort */ }
+    finally { setLoadingFundData(false); }
+  }, [ticker, stock, scoreable, updateFundData]);
+
+  // Auto-fetch fund data on mount if missing
+  useEffect(() => {
+    if (stock && !scoreable && !stock.fundData) {
+      fetchFundData();
+    }
+  }, [stock, scoreable, fetchFundData]);
 
   if (!stock) {
     return (
@@ -203,6 +477,10 @@ export default function StockDetailPage() {
             ...(result.sector ? { sector: result.sector } : {}),
           });
         }
+      }
+      // Also refresh fund data for ETFs/mutual funds
+      if (!scoreable) {
+        await fetchFundData();
       }
     } catch (err) {
       setRefreshError(err instanceof Error ? err.message : "Refresh failed");
@@ -412,12 +690,50 @@ export default function StockDetailPage() {
                   </div>
                 )}
 
-                {/* Fund info for non-scoreable instruments */}
+                {/* Fund key stats for non-scoreable instruments */}
                 {!scoreable && (
-                  <div className="mt-6 rounded-xl bg-slate-50 p-4 max-w-xl">
-                    <p className="text-sm text-slate-500">
-                      Auto-scoring is not available for {INSTRUMENT_LABELS[stock.instrumentType || "stock"]}s. Use the weight field above to set the portfolio allocation.
-                    </p>
+                  <div className="mt-6 max-w-xl">
+                    {loadingFundData && !stock.fundData && (
+                      <div className="rounded-xl bg-slate-50 p-4">
+                        <p className="text-sm text-slate-400 animate-pulse">Loading fund data...</p>
+                      </div>
+                    )}
+                    {stock.fundData && (
+                      <div className="grid grid-cols-2 sm:grid-cols-4 gap-3">
+                        {stock.fundData.expenseRatio != null && (
+                          <div className="rounded-xl bg-slate-50 p-3">
+                            <div className="text-[10px] font-semibold uppercase tracking-wider text-slate-400">Expense Ratio</div>
+                            <div className="mt-1 text-lg font-bold text-slate-800">{stock.fundData.expenseRatio.toFixed(2)}%</div>
+                          </div>
+                        )}
+                        {stock.fundData.totalAssets != null && (
+                          <div className="rounded-xl bg-slate-50 p-3">
+                            <div className="text-[10px] font-semibold uppercase tracking-wider text-slate-400">AUM</div>
+                            <div className="mt-1 text-lg font-bold text-slate-800">{formatAUM(stock.fundData.totalAssets)}</div>
+                          </div>
+                        )}
+                        {stock.fundData.yield != null && (
+                          <div className="rounded-xl bg-slate-50 p-3">
+                            <div className="text-[10px] font-semibold uppercase tracking-wider text-slate-400">Yield</div>
+                            <div className="mt-1 text-lg font-bold text-slate-800">{stock.fundData.yield.toFixed(2)}%</div>
+                          </div>
+                        )}
+                        {stock.fundData.category && (
+                          <div className="rounded-xl bg-slate-50 p-3">
+                            <div className="text-[10px] font-semibold uppercase tracking-wider text-slate-400">Category</div>
+                            <div className="mt-1 text-sm font-bold text-slate-800 leading-tight">{stock.fundData.category}</div>
+                          </div>
+                        )}
+                      </div>
+                    )}
+                    {!stock.fundData && !loadingFundData && (
+                      <button
+                        onClick={fetchFundData}
+                        className="rounded-lg bg-indigo-600 px-4 py-2 text-sm font-semibold text-white hover:bg-indigo-700 transition-colors"
+                      >
+                        Load Fund Data
+                      </button>
+                    )}
                   </div>
                 )}
               </div>
@@ -433,6 +749,9 @@ export default function StockDetailPage() {
 
           {/* Price Chart */}
           <StockChart ticker={stock.ticker} technicals={stock.technicals} className="mt-6" />
+
+          {/* Fund Data Panels (ETFs / Mutual Funds) */}
+          {!scoreable && stock.fundData && <FundDataPanels fundData={stock.fundData} />}
 
           {/* Score breakdown - 2 column grid (stocks only) */}
           {scoreable && <div className="grid gap-4 md:grid-cols-2 mt-6">

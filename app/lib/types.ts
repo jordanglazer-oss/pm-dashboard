@@ -145,6 +145,66 @@ export type HealthData = {
   currentPrice?: number;
 };
 
+// ── Fund / ETF specific data ──
+
+export type FundHolding = {
+  symbol: string;
+  name: string;
+  weight: number; // percentage
+};
+
+export type FundSectorWeight = {
+  sector: string;
+  weight: number; // percentage
+};
+
+export type FundPerformance = {
+  ytd?: number;
+  oneMonth?: number;
+  threeMonth?: number;
+  oneYear?: number;
+  threeYear?: number;
+  fiveYear?: number;
+  tenYear?: number;
+};
+
+export type FundRiskStats = {
+  alpha?: number;
+  beta?: number;
+  sharpeRatio?: number;
+  treynorRatio?: number;
+  rSquared?: number;
+  stdDev?: number;
+};
+
+export type FundData = {
+  expenseRatio?: number;
+  totalAssets?: number; // AUM in dollars
+  yield?: number;
+  category?: string;
+  fundFamily?: string;
+  inceptionDate?: string;
+  turnover?: number;
+  topHoldings?: FundHolding[];
+  sectorWeightings?: FundSectorWeight[];
+  assetAllocation?: {
+    stock?: number;
+    bond?: number;
+    cash?: number;
+    other?: number;
+  };
+  performance?: FundPerformance;
+  categoryPerformance?: FundPerformance; // for comparison
+  riskStats?: FundRiskStats;
+  equityMetrics?: {
+    priceToEarnings?: number;
+    priceToBook?: number;
+    priceToSales?: number;
+    priceToCashflow?: number;
+  };
+  lastUpdated?: string;
+};
+
 export type InstrumentType = "stock" | "etf" | "mutual-fund";
 
 export const INSTRUMENT_LABELS: Record<InstrumentType, string> = {
@@ -172,6 +232,7 @@ export type Stock = {
   healthData?: HealthData;
   technicals?: TechnicalIndicators;
   riskAlert?: RiskAlert;
+  fundData?: FundData;
 };
 
 export type ScoredStock = Stock & {
