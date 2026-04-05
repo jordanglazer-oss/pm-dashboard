@@ -771,8 +771,8 @@ export function StockProvider({ children }: { children: React.ReactNode }) {
   }, [stocks, persistStocks, persistPim, detectAssetClass, isStock, tickerMatch, tickerCurrency, rebalanceStockWeights, getBalancedAlloc]);
 
   const getStock = useCallback(
-    (ticker: string) => scoredStocks.find((s) => s.ticker === ticker),
-    [scoredStocks]
+    (ticker: string) => scoredStocks.find((s) => tickerMatch(s.ticker, ticker)),
+    [scoredStocks, tickerMatch]
   );
 
   return (
