@@ -1,7 +1,7 @@
 "use client";
 
 import React, { useState, useEffect, useCallback } from "react";
-import { useParams, useRouter } from "next/navigation";
+import { useParams, useRouter, useSearchParams } from "next/navigation";
 import Link from "next/link";
 import { useStocks } from "@/app/lib/StockContext";
 import { SCORE_GROUPS, MAX_SCORE, INSTRUMENT_LABELS } from "@/app/lib/types";
@@ -475,7 +475,13 @@ function FundDataPanels({ fundData, ticker, onHoldingsUpdate }: { fundData: Fund
 export default function StockDetailPage() {
   const params = useParams();
   const router = useRouter();
+  const searchParams = useSearchParams();
+  const from = searchParams.get("from");
   const ticker = (params.ticker as string)?.toUpperCase();
+
+  const backHref = from === "pim-model" ? "/pim-model" : "/";
+  const backLabel = from === "pim-model" ? "PIM Model" : "Dashboard";
+  const fromSuffix = from ? `?from=${from}` : "";
   const { getStock, scoredStocks, marketData, updateScore, updateExplanations, updateLastScored, updatePrice, updateHealthData, updateTechnicals, updateStockFields, updateWeight, updateFundData, moveBucket, removeStock, pimModels, toggleModelEligibility, updateModelWeight } = useStocks();
   const stock = getStock(ticker);
   const [scoring, setScoring] = useState(false);
@@ -538,7 +544,7 @@ export default function StockDetailPage() {
           <div className="rounded-[30px] border border-slate-200 bg-white p-8 text-center shadow-sm">
             <h1 className="text-2xl font-semibold text-slate-900">{ticker} not found</h1>
             <p className="mt-2 text-slate-500">This ticker is not in your portfolio or watchlist.</p>
-            <Link href="/" className="mt-4 inline-block text-blue-600 hover:underline text-sm">Back to Dashboard</Link>
+            <Link href={backHref} className="mt-4 inline-block text-blue-600 hover:underline text-sm">Back to {backLabel}</Link>
           </div>
         </div>
       </main>
@@ -653,10 +659,10 @@ export default function StockDetailPage() {
       <div className="border-b border-slate-200 bg-white px-4 py-2.5 md:px-8 overflow-x-auto">
         <div className="flex items-center gap-2 w-max">
           <Link
-            href="/"
+            href={backHref}
             className="shrink-0 rounded-lg border border-slate-200 px-3 py-1.5 text-xs font-semibold text-slate-500 hover:bg-slate-50 transition-colors"
           >
-            &larr; Dashboard
+            &larr; {backLabel}
           </Link>
           {portfolioStockTickers.length > 0 && (
             <>
@@ -665,7 +671,7 @@ export default function StockDetailPage() {
               {portfolioStockTickers.map((t) => (
                 <Link
                   key={t}
-                  href={`/stock/${t.toLowerCase()}`}
+                  href={`/stock/${t.toLowerCase()}${fromSuffix}`}
                   className={`shrink-0 rounded-lg px-3 py-1.5 text-xs font-bold font-mono transition-colors ${
                     t === ticker
                       ? "bg-blue-600 text-white"
@@ -684,7 +690,7 @@ export default function StockDetailPage() {
               {portfolioFundTickers.map((t) => (
                 <Link
                   key={t}
-                  href={`/stock/${t.toLowerCase()}`}
+                  href={`/stock/${t.toLowerCase()}${fromSuffix}`}
                   className={`shrink-0 rounded-lg px-3 py-1.5 text-xs font-bold font-mono transition-colors ${
                     t === ticker
                       ? "bg-indigo-600 text-white"
@@ -703,7 +709,7 @@ export default function StockDetailPage() {
               {watchlistStockTickers.map((t) => (
                 <Link
                   key={t}
-                  href={`/stock/${t.toLowerCase()}`}
+                  href={`/stock/${t.toLowerCase()}${fromSuffix}`}
                   className={`shrink-0 rounded-lg px-3 py-1.5 text-xs font-bold font-mono transition-colors ${
                     t === ticker
                       ? "bg-blue-600 text-white"
@@ -722,7 +728,7 @@ export default function StockDetailPage() {
               {watchlistFundTickers.map((t) => (
                 <Link
                   key={t}
-                  href={`/stock/${t.toLowerCase()}`}
+                  href={`/stock/${t.toLowerCase()}${fromSuffix}`}
                   className={`shrink-0 rounded-lg px-3 py-1.5 text-xs font-bold font-mono transition-colors ${
                     t === ticker
                       ? "bg-indigo-600 text-white"

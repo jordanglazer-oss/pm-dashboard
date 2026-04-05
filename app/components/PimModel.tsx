@@ -6,6 +6,12 @@ import type { PimModelGroup, PimProfileType, PimComputedHolding, PimAssetClass, 
 import { useStocks } from "@/app/lib/StockContext";
 import { PimPerformance } from "./PimPerformance";
 
+/** Convert PIM symbol (e.g., PAYF-T) to the ticker used in stock routes (PAYF.TO) */
+function symbolToTicker(symbol: string): string {
+  if (symbol.endsWith("-T")) return symbol.replace(/-T$/, ".TO");
+  return symbol;
+}
+
 type Props = {
   groups: PimModelGroup[];
 };
@@ -533,7 +539,7 @@ export function PimModel({ groups }: Props) {
                 {rebalanceTrades.map((t) => (
                   <tr key={t.symbol} className="border-b border-emerald-100">
                     <td className="py-2 font-mono text-xs font-semibold">
-                      <Link href={`/stock/${t.symbol.toLowerCase()}`} className="hover:underline hover:text-blue-600 transition-colors">
+                      <Link href={`/stock/${symbolToTicker(t.symbol).toLowerCase()}?from=pim-model`} className="hover:underline hover:text-blue-600 transition-colors">
                         {t.symbol}
                       </Link>
                     </td>
@@ -751,12 +757,12 @@ export function PimModel({ groups }: Props) {
                   {holdings.map((h, i) => (
                     <tr key={`${h.symbol}-${i}`} className={`border-b border-slate-50 hover:bg-slate-50/50 transition-colors ${h.weightInPortfolio === 0 ? "opacity-40" : ""}`}>
                       <td className="py-2 pl-5 pr-2 font-medium text-slate-800 truncate max-w-[200px]">
-                        <Link href={`/stock/${h.symbol.toLowerCase()}`} className="hover:underline hover:text-blue-600 transition-colors">
+                        <Link href={`/stock/${symbolToTicker(h.symbol).toLowerCase()}?from=pim-model`} className="hover:underline hover:text-blue-600 transition-colors">
                           {h.name}
                         </Link>
                       </td>
                       <td className="py-2 px-2 font-mono text-xs text-slate-600">
-                        <Link href={`/stock/${h.symbol.toLowerCase()}`} className="hover:underline hover:text-blue-600 transition-colors">
+                        <Link href={`/stock/${symbolToTicker(h.symbol).toLowerCase()}?from=pim-model`} className="hover:underline hover:text-blue-600 transition-colors">
                           {h.symbol}
                         </Link>
                       </td>
