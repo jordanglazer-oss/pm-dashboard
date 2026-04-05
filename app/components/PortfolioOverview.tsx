@@ -171,24 +171,15 @@ function InlineWeightEditor({ ticker, currentWeight, onSave }: { ticker: string;
 }
 
 export function PortfolioOverview() {
-  const { portfolioStocks, watchlistStocks, scoredStocks, marketData, updateWeight, updateStockFields } = useStocks();
+  const { portfolioStocks, watchlistStocks, scoredStocks, marketData, updateWeight, updateStockFields, uiPrefs, setUiPref } = useStocks();
   const [dashFilter, setDashFilter] = useState<DashboardFilter>("all");
-  const [fundSort, setFundSort] = useState<FundSortField>(() => {
-    if (typeof window !== "undefined") {
-      return (localStorage.getItem("pim:fundSort") as FundSortField) || "weight";
-    }
-    return "weight";
-  });
-  const [fundSortDir, setFundSortDir] = useState<SortDir>(() => {
-    if (typeof window !== "undefined") {
-      return (localStorage.getItem("pim:fundSortDir") as SortDir) || "desc";
-    }
-    return "desc";
-  });
-
-  // Persist fund sort preferences
-  useEffect(() => { localStorage.setItem("pim:fundSort", fundSort); }, [fundSort]);
-  useEffect(() => { localStorage.setItem("pim:fundSortDir", fundSortDir); }, [fundSortDir]);
+  const fundSort = (uiPrefs["fundSort"] as FundSortField) || "weight";
+  const fundSortDir = (uiPrefs["fundSortDir"] as SortDir) || "desc";
+  const setFundSort = (f: FundSortField) => setUiPref("fundSort", f);
+  const setFundSortDir = (d: SortDir | ((prev: SortDir) => SortDir)) => {
+    const val = typeof d === "function" ? d(fundSortDir) : d;
+    setUiPref("fundSortDir", val);
+  };
 
   // Apply instrument filter first
   const filteredPortfolio = portfolioStocks.filter((s) => matchesDashFilter(s, dashFilter));

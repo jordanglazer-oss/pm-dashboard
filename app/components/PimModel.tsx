@@ -64,28 +64,19 @@ function generateId(): string {
 }
 
 export function PimModel({ groups }: Props) {
-  const { getGroupState, pimPortfolioState, updatePimPortfolioState } = useStocks();
+  const { getGroupState, pimPortfolioState, updatePimPortfolioState, uiPrefs, setUiPref } = useStocks();
   const [selectedGroupId, setSelectedGroupId] = useState(groups[0]?.id || "");
   const [selectedProfile, setSelectedProfile] = useState<PimProfileType>("balanced");
   const [dropdownOpen, setDropdownOpen] = useState(false);
   const [dropdownSearch, setDropdownSearch] = useState("");
   const [holdingSearch, setHoldingSearch] = useState("");
-  const [sortField, setSortField] = useState<SortField>(() => {
-    if (typeof window !== "undefined") {
-      return (localStorage.getItem("pim:modelSort") as SortField) || "name";
-    }
-    return "name";
-  });
-  const [sortDir, setSortDir] = useState<SortDir>(() => {
-    if (typeof window !== "undefined") {
-      return (localStorage.getItem("pim:modelSortDir") as SortDir) || "asc";
-    }
-    return "asc";
-  });
-
-  // Persist sort preferences
-  useEffect(() => { localStorage.setItem("pim:modelSort", sortField); }, [sortField]);
-  useEffect(() => { localStorage.setItem("pim:modelSortDir", sortDir); }, [sortDir]);
+  const sortField = (uiPrefs["modelSort"] as SortField) || "name";
+  const sortDir = (uiPrefs["modelSortDir"] as SortDir) || "asc";
+  const setSortField = (f: SortField) => setUiPref("modelSort", f);
+  const setSortDir = (d: SortDir | ((prev: SortDir) => SortDir)) => {
+    const val = typeof d === "function" ? d(sortDir) : d;
+    setUiPref("modelSortDir", val);
+  };
   const [livePrices, setLivePrices] = useState<Record<string, number>>({});
   const [pricesLoading, setPricesLoading] = useState(false);
   const [showRebalance, setShowRebalance] = useState(false);
