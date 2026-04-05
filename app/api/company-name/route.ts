@@ -3,21 +3,50 @@ import { NextRequest, NextResponse } from "next/server";
 const YAHOO_BASE = "https://query2.finance.yahoo.com";
 const UA = "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36";
 
-// Detect FUNDSERV codes (e.g., TDB900, RBF556, CIG686)
+// Detect FUNDSERV codes (e.g., TDB900, RBF556, CIG686, DYN3366)
 function isFundservCode(ticker: string): boolean {
   return /^[A-Z]{2,4}\d{2,5}$/i.test(ticker);
 }
 
 async function lookupFundservName(code: string): Promise<{ name: string; type: string }> {
   try {
+    // First try exact code match
     const url = `https://www.morningstar.ca/ca/util/SecuritySearch.ashx?q=${encodeURIComponent(code)}&limit=5`;
     const res = await fetch(url, { cache: "no-store", headers: { "User-Agent": UA } });
-    if (!res.ok) return { name: code, type: "mutual-fund" };
-    const text = await res.text();
-    const lines = text.trim().split("\n");
-    if (lines.length > 0 && lines[0].includes("|")) {
-      const name = lines[0].split("|")[0];
-      if (name) return { name, type: "mutual-fund" };
+    if (res.ok) {
+      const text = await res.text();
+      const lines = text.trim().split("\n");
+      if (lines.length > 0 && lines[0].includes("|")) {
+        const name = lines[0].split("|")[0];
+        if (name) return { name, type: "mutual-fund" };
+      }
+    }
+
+    // If exact lookup failed, try prefix search (e.g. DYN3366 → DYN336)
+    // to find the fund family and match against the e1 field which lists all series codes
+    const prefix = code.replace(/\d{1,2}$/, ""); // strip last 1-2 digits
+    if (prefix !== code && prefix.length >= 3) {
+      const prefixUrl = `https://www.morningstar.ca/ca/util/SecuritySearch.ashx?q=${encodeURIComponent(prefix)}&limit=25`;
+      const prefixRes = await fetch(prefixUrl, { cache: "no-store", headers: { "User-Agent": UA } });
+      if (prefixRes.ok) {
+        const prefixText = await prefixRes.text();
+        const prefixLines = prefixText.trim().split("\n");
+        for (const line of prefixLines) {
+          if (!line.includes("|")) continue;
+          // Check if the e1 field contains this code (e.g. "DYN3360@3,DYN3364@3")
+          // or if the JSON data references this code
+          if (line.includes(code)) {
+            const name = line.split("|")[0];
+            if (name) return { name, type: "mutual-fund" };
+          }
+        }
+        // If code not found in e1 fields, use the first result's name
+        // since it's the same fund family (e.g. DYN3366 is a series of Dynamic Premium Yield PLUS)
+        if (prefixLines.length > 0 && prefixLines[0].includes("|")) {
+          const name = prefixLines[0].split("|")[0];
+          if (name) return { name, type: "mutual-fund" };
+        }
+      }
     }
   } catch { /* fallback */ }
   return { name: code, type: "mutual-fund" };

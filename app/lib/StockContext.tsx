@@ -256,7 +256,7 @@ export function StockProvider({ children }: { children: React.ReactNode }) {
       if (sectorLower.includes("bond") || sectorLower.includes("fixed") || nameLower.includes("bond") || nameLower.includes("fixed income")) {
         return "fixedIncome";
       }
-      if (sectorLower.includes("alternative") || nameLower.includes("alternative") || nameLower.includes("premium yield") || nameLower.includes("hedge")) {
+      if (sectorLower.includes("alternative") || nameLower.includes("alternative") || nameLower.includes("premium yield") || nameLower.includes("premium income") || nameLower.includes("hedge") || nameLower.includes("option income") || nameLower.includes("option writing") || nameLower.includes("covered call")) {
         return "alternative";
       }
     }
