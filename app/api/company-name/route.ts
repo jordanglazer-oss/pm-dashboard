@@ -8,25 +8,78 @@ function isFundservCode(ticker: string): boolean {
   return /^[A-Z]{2,4}\d{2,5}$/i.test(ticker);
 }
 
-async function lookupFundservName(code: string): Promise<{ name: string; type: string }> {
+// Parse the e1 field from Morningstar JSON to extract FUNDSERV codes
+function parseE1Codes(e1: string): string[] {
+  if (!e1) return [];
+  return e1.split(",").map((entry) => entry.split("@")[0].trim().toUpperCase());
+}
+
+// Scrape fund name from Globe and Mail page title
+async function lookupGlobeAndMail(code: string): Promise<string | null> {
   try {
-    // First try exact code match
-    const url = `https://www.morningstar.ca/ca/util/SecuritySearch.ashx?q=${encodeURIComponent(code)}&limit=5`;
+    const url = `https://www.theglobeandmail.com/investing/markets/funds/${encodeURIComponent(code)}.CF/`;
+    const res = await fetch(url, {
+      cache: "no-store",
+      headers: { "User-Agent": UA, "Accept-Encoding": "identity" },
+      redirect: "follow",
+    });
+    if (!res.ok) return null;
+    const html = await res.text();
+    const titleMatch = html.match(/<title>([^<]+)<\/title>/i);
+    if (!titleMatch) return null;
+    // Title format: "Fund Name (CADFUNDS: DYN3366.CF) Quote - The Globe and Mail"
+    let name = titleMatch[1]
+      .replace(/\s*\(CADFUNDS:[^)]*\)\s*/i, "")
+      .replace(/\s*Quote\s*-\s*The Globe and Mail\s*/i, "")
+      .replace(/\s*U\$\s*/g, " USD")
+      .replace(/\s*C\$\s*/g, " CAD")
+      .trim();
+    // Title-case the series (e.g. "Series Fh" → "Series FH")
+    name = name.replace(/Series\s+(\w+)/i, (_, s) => `Series ${s.toUpperCase()}`);
+    return name || null;
+  } catch { return null; }
+}
+
+async function lookupFundservName(code: string): Promise<{ name: string; type: string }> {
+  const codeUpper = code.toUpperCase();
+
+  try {
+    // Step 1: exact code search on Morningstar
+    const url = `https://www.morningstar.ca/ca/util/SecuritySearch.ashx?q=${encodeURIComponent(code)}&limit=10`;
     const res = await fetch(url, { cache: "no-store", headers: { "User-Agent": UA } });
     if (res.ok) {
       const text = await res.text();
-      const lines = text.trim().split("\n");
-      if (lines.length > 0 && lines[0].includes("|")) {
-        const name = lines[0].split("|")[0];
-        if (name) return { name, type: "mutual-fund" };
+      const lines = text.trim().split("\n").filter((l) => l.includes("|"));
+      // Check if any result's e1 field contains this exact code
+      for (const line of lines) {
+        const jsonPart = line.match(/\{[^}]+\}/)?.[0];
+        if (jsonPart) {
+          try {
+            const meta = JSON.parse(jsonPart);
+            if (parseE1Codes(meta.e1 || "").includes(codeUpper)) {
+              return { name: line.split("|")[0], type: "mutual-fund" };
+            }
+          } catch { /* continue */ }
+        }
+      }
+      // If first result looks like a direct match (Morningstar returned a fund)
+      if (lines.length > 0) {
+        const firstLine = lines[0];
+        const category = firstLine.split("|")[2];
+        if (category === "FUND") {
+          return { name: firstLine.split("|")[0], type: "mutual-fund" };
+        }
       }
     }
 
-    // If exact lookup failed, try prefix searches (strip 1 digit, then 2)
-    // to find the fund family. E.g. DYN3366 → try DYN336 first, then DYN33
+    // Step 2: try Globe and Mail — most reliable for exact FUNDSERV code → name
+    const globeName = await lookupGlobeAndMail(code);
+    if (globeName) return { name: globeName, type: "mutual-fund" };
+
+    // Step 3: prefix search on Morningstar to find the fund family
     const prefixes = [
-      code.replace(/\d$/, ""),       // strip 1 digit: DYN3366 → DYN336
-      code.replace(/\d{2}$/, ""),    // strip 2 digits: DYN3366 → DYN33
+      code.replace(/\d$/, ""),
+      code.replace(/\d{2}$/, ""),
     ].filter((p, i, arr) => p !== code && p.length >= 3 && arr.indexOf(p) === i);
 
     for (const prefix of prefixes) {
@@ -37,16 +90,24 @@ async function lookupFundservName(code: string): Promise<{ name: string; type: s
       const prefixLines = prefixText.trim().split("\n").filter((l) => l.includes("|"));
       if (prefixLines.length === 0) continue;
 
-      // First check if any result's e1 field contains this exact code
+      // Check if any result's e1 field contains the exact code
       for (const line of prefixLines) {
-        if (line.includes(code)) {
-          const name = line.split("|")[0];
-          if (name) return { name, type: "mutual-fund" };
+        const jsonPart = line.match(/\{[^}]+\}/)?.[0];
+        if (jsonPart) {
+          try {
+            const meta = JSON.parse(jsonPart);
+            if (parseE1Codes(meta.e1 || "").includes(codeUpper)) {
+              return { name: line.split("|")[0], type: "mutual-fund" };
+            }
+          } catch { /* continue */ }
         }
       }
-      // Otherwise use the first result's name (same fund family)
-      const name = prefixLines[0].split("|")[0];
-      if (name) return { name, type: "mutual-fund" };
+
+      // Use the base fund family name (strip series suffix)
+      const familyName = prefixLines[0].split("|")[0]
+        .replace(/\s+Series\s+\w+$/i, "")
+        .replace(/\s+[A-Z]{1,3}$/, "");
+      if (familyName) return { name: familyName, type: "mutual-fund" };
     }
   } catch { /* fallback */ }
   return { name: code, type: "mutual-fund" };
