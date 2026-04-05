@@ -30,9 +30,13 @@ export type PimModelGroup = {
 
 // Computed holding row for display
 export type PimComputedHolding = PimHolding & {
-  weightInPortfolio: number; // weightInClass × asset class allocation
+  weightInPortfolio: number; // weightInClass × asset class allocation (target)
   cadModelWeight: number | null; // for CAD currency holdings
   usdModelWeight: number | null; // for USD currency holdings
+  liveWeight?: number; // current drifted weight based on price changes
+  driftBps?: number; // drift in basis points (live - target)
+  currentPrice?: number; // latest price
+  rebalancePrice?: number; // price at last rebalance
 };
 
 export type PimModelData = {
@@ -57,5 +61,37 @@ export type PimModelPerformance = {
 
 export type PimPerformanceData = {
   models: PimModelPerformance[];
+  lastUpdated: string;
+};
+
+// ── Portfolio State (rebalance snapshots, transactions) ──
+
+export type PimRebalanceSnapshot = {
+  date: string; // ISO date of rebalance
+  prices: Record<string, number>; // symbol → price at rebalance time
+};
+
+export type PimTransaction = {
+  id: string;
+  date: string; // ISO datetime
+  groupId: string;
+  type: "rebalance" | "buy" | "sell" | "switch";
+  symbol: string;
+  direction: "buy" | "sell";
+  price: number; // execution price entered by user
+  targetWeight: number; // model target weight at time of trade
+  notes?: string;
+  pairedWith?: string; // for switch: the other symbol in the pair
+};
+
+export type PimModelGroupState = {
+  groupId: string;
+  lastRebalance: PimRebalanceSnapshot | null;
+  trackingStart: PimRebalanceSnapshot | null; // for forward performance
+  transactions: PimTransaction[];
+};
+
+export type PimPortfolioState = {
+  groupStates: PimModelGroupState[];
   lastUpdated: string;
 };

@@ -1,14 +1,26 @@
 import { NextResponse } from "next/server";
 import { getRedis } from "@/app/lib/redis";
-import type { PimModelGroup, PimProfileType, PimProfileWeights, PimDailyReturn, PimModelPerformance, PimPerformanceData } from "@/app/lib/pim-types";
+import type {
+  PimModelGroup,
+  PimProfileType,
+  PimProfileWeights,
+  PimDailyReturn,
+  PimModelPerformance,
+  PimPerformanceData,
+  PimPortfolioState,
+  PimRebalanceSnapshot,
+} from "@/app/lib/pim-types";
 
 const UA = "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36";
 const PIM_KEY = "pm:pim-models";
 const PERF_KEY = "pm:pim-performance";
+const STATE_KEY = "pm:pim-portfolio-state";
 
 // Fetch historical closing prices from Yahoo Finance
-async function fetchHistory(symbol: string, range = "1y"): Promise<{ date: string; close: number }[]> {
-  // Translate ticker formats for Yahoo
+async function fetchHistory(
+  symbol: string,
+  startDate?: string
+): Promise<{ date: string; close: number }[]> {
   let yahooSymbol = symbol;
   if (symbol.endsWith("-T")) {
     yahooSymbol = symbol.replace("-T", ".TO");
@@ -19,8 +31,24 @@ async function fetchHistory(symbol: string, range = "1y"): Promise<{ date: strin
   if (/^[A-Z]{2,4}\d{2,5}$/i.test(symbol)) return [];
 
   try {
-    const url = `https://query2.finance.yahoo.com/v8/finance/chart/${encodeURIComponent(yahooSymbol)}?range=${range}&interval=1d`;
-    const res = await fetch(url, { cache: "no-store", headers: { "User-Agent": UA } });
+    // Use period1/period2 for date-based range if we have a start date
+    let url: string;
+    if (startDate) {
+      const period1 = Math.floor(new Date(startDate).getTime() / 1000);
+      const period2 = Math.floor(Date.now() / 1000);
+      url = `https://query2.finance.yahoo.com/v8/finance/chart/${encodeURIComponent(
+        yahooSymbol
+      )}?period1=${period1}&period2=${period2}&interval=1d`;
+    } else {
+      url = `https://query2.finance.yahoo.com/v8/finance/chart/${encodeURIComponent(
+        yahooSymbol
+      )}?range=1y&interval=1d`;
+    }
+
+    const res = await fetch(url, {
+      cache: "no-store",
+      headers: { "User-Agent": UA },
+    });
     if (!res.ok) return [];
     const data = await res.json();
     const result = data?.chart?.result?.[0];
@@ -35,6 +63,8 @@ async function fetchHistory(symbol: string, range = "1y"): Promise<{ date: strin
       if (close == null || isNaN(close)) continue;
       const d = new Date(timestamps[i] * 1000);
       const dateStr = d.toISOString().split("T")[0];
+      // Only include dates on or after startDate
+      if (startDate && dateStr < startDate) continue;
       history.push({ date: dateStr, close });
     }
     return history;
@@ -47,12 +77,18 @@ async function fetchHistory(symbol: string, range = "1y"): Promise<{ date: strin
 async function fetchCurrentPrice(symbol: string): Promise<number | null> {
   let yahooSymbol = symbol;
   if (symbol.endsWith("-T")) yahooSymbol = symbol.replace("-T", ".TO");
-  else if (symbol.endsWith(".U")) yahooSymbol = symbol.replace(".U", "-U.TO");
+  else if (symbol.endsWith(".U"))
+    yahooSymbol = symbol.replace(".U", "-U.TO");
   if (/^[A-Z]{2,4}\d{2,5}$/i.test(symbol)) return null;
 
   try {
-    const url = `https://query2.finance.yahoo.com/v8/finance/chart/${encodeURIComponent(yahooSymbol)}?range=1d&interval=1m`;
-    const res = await fetch(url, { cache: "no-store", headers: { "User-Agent": UA } });
+    const url = `https://query2.finance.yahoo.com/v8/finance/chart/${encodeURIComponent(
+      yahooSymbol
+    )}?range=1d&interval=1m`;
+    const res = await fetch(url, {
+      cache: "no-store",
+      headers: { "User-Agent": UA },
+    });
     if (!res.ok) return null;
     const data = await res.json();
     const meta = data?.chart?.result?.[0]?.meta;
@@ -69,26 +105,33 @@ function getAssetAlloc(pw: PimProfileWeights, assetClass: string): number {
   return 0;
 }
 
-// Compute weighted portfolio return for a model+profile
+// Compute weighted portfolio return for a model+profile using forward-only tracking
 function computeModelReturns(
   group: PimModelGroup,
   profile: PimProfileType,
   priceHistories: Map<string, { date: string; close: number }[]>,
-  currentPrices: Map<string, number>
+  currentPrices: Map<string, number>,
+  trackingStart: PimRebalanceSnapshot | null
 ): { history: PimDailyReturn[]; intradayReturn: number | null } {
   const pw = group.profiles[profile];
   if (!pw) return { history: [], intradayReturn: null };
 
   // Calculate portfolio weights for each holding
-  const holdingsWithWeight = group.holdings.map((h) => {
-    const alloc = getAssetAlloc(pw, h.assetClass);
-    return { ...h, portfolioWeight: h.weightInClass * alloc };
-  }).filter((h) => h.portfolioWeight > 0);
+  const holdingsWithWeight = group.holdings
+    .map((h) => {
+      const alloc = getAssetAlloc(pw, h.assetClass);
+      return { ...h, portfolioWeight: h.weightInClass * alloc };
+    })
+    .filter((h) => h.portfolioWeight > 0);
 
-  if (holdingsWithWeight.length === 0) return { history: [], intradayReturn: null };
+  if (holdingsWithWeight.length === 0)
+    return { history: [], intradayReturn: null };
 
   // Normalize weights to sum to total invested (exclude cash)
-  const totalWeight = holdingsWithWeight.reduce((s, h) => s + h.portfolioWeight, 0);
+  const totalWeight = holdingsWithWeight.reduce(
+    (s, h) => s + h.portfolioWeight,
+    0
+  );
 
   // Get all dates across all holdings
   const allDates = new Set<string>();
@@ -109,9 +152,21 @@ function computeModelReturns(
     priceMaps.set(h.symbol, pm);
   }
 
+  // If we have tracking start prices, use those as the baseline for day 0
+  // Otherwise use the first available day's prices
+  const startDate = trackingStart?.date || sortedDates[0];
+  const startPrices = trackingStart?.prices || null;
+
   // Compute daily weighted returns
   const history: PimDailyReturn[] = [];
   let cumulativeValue = 100;
+
+  // Add the start point
+  history.push({
+    date: startDate,
+    value: 100,
+    dailyReturn: 0,
+  });
 
   for (let i = 1; i < sortedDates.length; i++) {
     const prevDate = sortedDates[i - 1];
@@ -123,7 +178,15 @@ function computeModelReturns(
     for (const h of holdingsWithWeight) {
       const pm = priceMaps.get(h.symbol);
       if (!pm) continue;
-      const prevPrice = pm.get(prevDate);
+
+      let prevPrice: number | undefined;
+      // For the first day after tracking start, use tracking start prices as baseline
+      if (i === 1 && startPrices && startPrices[h.symbol]) {
+        prevPrice = startPrices[h.symbol];
+      } else {
+        prevPrice = pm.get(prevDate);
+      }
+
       const curPrice = pm.get(curDate);
       if (prevPrice && curPrice && prevPrice > 0) {
         const ret = (curPrice - prevPrice) / prevPrice;
@@ -168,7 +231,9 @@ function computeModelReturns(
   }
 
   if (intradayActive > 0.3) {
-    intradayReturn = parseFloat(((intradayWeighted / intradayActive) * 100).toFixed(4));
+    intradayReturn = parseFloat(
+      ((intradayWeighted / intradayActive) * 100).toFixed(4)
+    );
   }
 
   return { history, intradayReturn };
@@ -177,15 +242,32 @@ function computeModelReturns(
 export async function POST() {
   try {
     const redis = await getRedis();
-    const pimRaw = await redis.get(PIM_KEY);
+    const [pimRaw, stateRaw] = await Promise.all([
+      redis.get(PIM_KEY),
+      redis.get(STATE_KEY),
+    ]);
+
     if (!pimRaw) {
-      return NextResponse.json({ error: "No PIM model data" }, { status: 400 });
+      return NextResponse.json(
+        { error: "No PIM model data" },
+        { status: 400 }
+      );
     }
 
     const pimData = JSON.parse(pimRaw) as { groups: PimModelGroup[] };
-    // Focus on PIM group models (first 4: pim, pc-usa, non-res, no-us-situs)
-    // but compute for all groups
+    const portfolioState: PimPortfolioState | null = stateRaw
+      ? JSON.parse(stateRaw)
+      : null;
+
     const groups = pimData.groups;
+
+    // Build a map of groupId → trackingStart
+    const trackingStarts = new Map<string, PimRebalanceSnapshot | null>();
+    if (portfolioState?.groupStates) {
+      for (const gs of portfolioState.groupStates) {
+        trackingStarts.set(gs.groupId, gs.trackingStart || null);
+      }
+    }
 
     // Collect all unique symbols
     const allSymbols = new Set<string>();
@@ -195,17 +277,41 @@ export async function POST() {
       }
     }
 
+    // Determine the earliest tracking start date across all groups
+    let earliestStart: string | undefined;
+    for (const g of groups) {
+      const ts = trackingStarts.get(g.id);
+      if (ts?.date) {
+        if (!earliestStart || ts.date < earliestStart) {
+          earliestStart = ts.date;
+        }
+      }
+    }
+
     // Fetch histories in parallel (batches of 10)
     const symbols = [...allSymbols];
-    const priceHistories = new Map<string, { date: string; close: number }[]>();
+    const priceHistories = new Map<
+      string,
+      { date: string; close: number }[]
+    >();
     const currentPrices = new Map<string, number>();
 
     const batchSize = 10;
     for (let i = 0; i < symbols.length; i += batchSize) {
       const batch = symbols.slice(i, i + batchSize);
       const [histories, prices] = await Promise.all([
-        Promise.all(batch.map(async (s) => ({ symbol: s, data: await fetchHistory(s) }))),
-        Promise.all(batch.map(async (s) => ({ symbol: s, price: await fetchCurrentPrice(s) }))),
+        Promise.all(
+          batch.map(async (s) => ({
+            symbol: s,
+            data: await fetchHistory(s, earliestStart),
+          }))
+        ),
+        Promise.all(
+          batch.map(async (s) => ({
+            symbol: s,
+            price: await fetchCurrentPrice(s),
+          }))
+        ),
       ]);
       for (const h of histories) priceHistories.set(h.symbol, h.data);
       for (const p of prices) {
@@ -213,14 +319,26 @@ export async function POST() {
       }
     }
 
-    // Compute returns for each group × profile
+    // Compute returns for each group x profile
     const profiles: PimProfileType[] = ["balanced", "growth", "allEquity"];
     const models: PimModelPerformance[] = [];
 
     for (const group of groups) {
+      const trackingStart = trackingStarts.get(group.id) || null;
+
+      // Only compute for groups that have a tracking start date set
+      // (forward-only: no backdating)
+      if (!trackingStart) continue;
+
       for (const profile of profiles) {
         if (!group.profiles[profile]) continue;
-        const { history, intradayReturn } = computeModelReturns(group, profile, priceHistories, currentPrices);
+        const { history, intradayReturn } = computeModelReturns(
+          group,
+          profile,
+          priceHistories,
+          currentPrices,
+          trackingStart
+        );
         if (history.length > 0) {
           // Add intraday as a projected point if available
           if (intradayReturn != null && history.length > 0) {
@@ -229,17 +347,22 @@ export async function POST() {
             if (last.date !== today) {
               history.push({
                 date: today,
-                value: parseFloat((last.value * (1 + intradayReturn / 100)).toFixed(4)),
+                value: parseFloat(
+                  (last.value * (1 + intradayReturn / 100)).toFixed(4)
+                ),
                 dailyReturn: intradayReturn,
               });
             } else {
               // Update today's entry with live data
               history[history.length - 1] = {
                 date: today,
-                value: parseFloat((history.length > 1
-                  ? history[history.length - 2].value * (1 + intradayReturn / 100)
-                  : 100 * (1 + intradayReturn / 100)
-                ).toFixed(4)),
+                value: parseFloat(
+                  (history.length > 1
+                    ? history[history.length - 2].value *
+                      (1 + intradayReturn / 100)
+                    : 100 * (1 + intradayReturn / 100)
+                  ).toFixed(4)
+                ),
                 dailyReturn: intradayReturn,
               };
             }
