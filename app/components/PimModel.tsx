@@ -35,12 +35,36 @@ function pctClean(v: number): string {
   return p.toFixed(2) + "%";
 }
 
+type SortField = "name" | "symbol" | "currency" | "weightInClass" | "weightInPortfolio" | "cadModelWeight" | "usdModelWeight";
+type SortDir = "asc" | "desc";
+
+function SortIcon({ field, sortField, sortDir }: { field: SortField; sortField: SortField; sortDir: SortDir }) {
+  if (field !== sortField) {
+    return (
+      <svg className="w-3 h-3 ml-1 inline opacity-30" fill="none" stroke="currentColor" strokeWidth="2" viewBox="0 0 24 24">
+        <path strokeLinecap="round" strokeLinejoin="round" d="M8 9l4-4 4 4M16 15l-4 4-4-4" />
+      </svg>
+    );
+  }
+  return sortDir === "asc" ? (
+    <svg className="w-3 h-3 ml-1 inline" fill="none" stroke="currentColor" strokeWidth="2" viewBox="0 0 24 24">
+      <path strokeLinecap="round" strokeLinejoin="round" d="M8 15l4-4 4 4" />
+    </svg>
+  ) : (
+    <svg className="w-3 h-3 ml-1 inline" fill="none" stroke="currentColor" strokeWidth="2" viewBox="0 0 24 24">
+      <path strokeLinecap="round" strokeLinejoin="round" d="M8 9l4 4 4-4" />
+    </svg>
+  );
+}
+
 export function PimModel({ groups }: Props) {
   const [selectedGroupId, setSelectedGroupId] = useState(groups[0]?.id || "");
   const [selectedProfile, setSelectedProfile] = useState<PimProfileType>("balanced");
   const [dropdownOpen, setDropdownOpen] = useState(false);
   const [dropdownSearch, setDropdownSearch] = useState("");
   const [holdingSearch, setHoldingSearch] = useState("");
+  const [sortField, setSortField] = useState<SortField>("name");
+  const [sortDir, setSortDir] = useState<SortDir>("asc");
   const dropdownRef = useRef<HTMLDivElement>(null);
   const searchInputRef = useRef<HTMLInputElement>(null);
 
@@ -83,15 +107,37 @@ export function PimModel({ groups }: Props) {
 
   const computedHoldings = useMemo<PimComputedHolding[]>(() => {
     if (!selectedGroup || !profileWeights) return [];
-    return selectedGroup.holdings.map((h) => {
+
+    const holdings = selectedGroup.holdings;
+
+    // Pre-compute sums of weightInClass by (assetClass, currency) for normalization
+    const classCurrencyTotals: Record<string, number> = {};
+    holdings.forEach((h) => {
+      const key = `${h.assetClass}:${h.currency}`;
+      classCurrencyTotals[key] = (classCurrencyTotals[key] || 0) + h.weightInClass;
+    });
+
+    return holdings.map((h) => {
       let assetClassAllocation = 0;
       if (h.assetClass === "fixedIncome") assetClassAllocation = profileWeights.fixedIncome;
       else if (h.assetClass === "equity") assetClassAllocation = profileWeights.equity;
       else if (h.assetClass === "alternative") assetClassAllocation = profileWeights.alternatives;
 
       const weightInPortfolio = h.weightInClass * assetClassAllocation;
-      const cadModelWeight = h.currency === "CAD" ? weightInPortfolio / (selectedGroup.cadSplit || 0.5) : null;
-      const usdModelWeight = h.currency === "USD" ? weightInPortfolio / (selectedGroup.usdSplit || 0.5) : null;
+
+      // Normalize within each currency: each currency model independently
+      // has the full asset class allocation. So within the CAD model,
+      // equities always = equityAlloc, regardless of how many CAD vs USD holdings.
+      const cadTotal = classCurrencyTotals[`${h.assetClass}:CAD`] || 0;
+      const usdTotal = classCurrencyTotals[`${h.assetClass}:USD`] || 0;
+
+      const cadModelWeight = h.currency === "CAD" && cadTotal > 0
+        ? (h.weightInClass / cadTotal) * assetClassAllocation
+        : null;
+      const usdModelWeight = h.currency === "USD" && usdTotal > 0
+        ? (h.weightInClass / usdTotal) * assetClassAllocation
+        : null;
+
       return { ...h, weightInPortfolio, cadModelWeight, usdModelWeight };
     });
   }, [selectedGroup, profileWeights]);
@@ -125,7 +171,50 @@ export function PimModel({ groups }: Props) {
     [computedHoldings]
   );
 
+  // Sort handler
+  const handleSort = (field: SortField) => {
+    if (sortField === field) {
+      setSortDir((d) => (d === "asc" ? "desc" : "asc"));
+    } else {
+      setSortField(field);
+      setSortDir(field === "name" || field === "symbol" || field === "currency" ? "asc" : "desc");
+    }
+  };
+
+  // Sort holdings
+  const sortHoldings = (list: PimComputedHolding[]): PimComputedHolding[] => {
+    return [...list].sort((a, b) => {
+      let cmp = 0;
+      switch (sortField) {
+        case "name":
+          cmp = a.name.localeCompare(b.name);
+          break;
+        case "symbol":
+          cmp = a.symbol.localeCompare(b.symbol);
+          break;
+        case "currency":
+          cmp = a.currency.localeCompare(b.currency);
+          break;
+        case "weightInClass":
+          cmp = a.weightInClass - b.weightInClass;
+          break;
+        case "weightInPortfolio":
+          cmp = a.weightInPortfolio - b.weightInPortfolio;
+          break;
+        case "cadModelWeight":
+          cmp = (a.cadModelWeight ?? -1) - (b.cadModelWeight ?? -1);
+          break;
+        case "usdModelWeight":
+          cmp = (a.usdModelWeight ?? -1) - (b.usdModelWeight ?? -1);
+          break;
+      }
+      return sortDir === "asc" ? cmp : -cmp;
+    });
+  };
+
   if (!selectedGroup) return null;
+
+  const thClass = "py-2.5 px-2 font-semibold cursor-pointer select-none hover:text-slate-800 transition-colors whitespace-nowrap";
 
   return (
     <div className="space-y-5">
@@ -278,7 +367,7 @@ export function PimModel({ groups }: Props) {
 
       {/* Holdings tables by asset class */}
       {(["fixedIncome", "equity", "alternative"] as PimAssetClass[]).map((ac) => {
-        const holdings = holdingsByClass[ac];
+        const holdings = sortHoldings(holdingsByClass[ac]);
         if (holdings.length === 0 && profileWeights && (
           (ac === "fixedIncome" && profileWeights.fixedIncome === 0) ||
           (ac === "alternative" && profileWeights.alternatives === 0)
@@ -304,13 +393,27 @@ export function PimModel({ groups }: Props) {
               <table className="w-full text-sm">
                 <thead>
                   <tr className="border-b border-slate-100 text-xs text-slate-500">
-                    <th className="text-left py-2.5 pl-5 pr-2 font-semibold">Name</th>
-                    <th className="text-left py-2.5 px-2 font-semibold">Symbol</th>
-                    <th className="text-center py-2.5 px-2 font-semibold">Ccy</th>
-                    <th className="text-right py-2.5 px-2 font-semibold">Weight (Class)</th>
-                    <th className="text-right py-2.5 px-2 font-semibold">Weight (Portfolio)</th>
-                    <th className="text-right py-2.5 px-2 font-semibold">CAD Model</th>
-                    <th className="text-right py-2.5 pr-5 pl-2 font-semibold">USD Model</th>
+                    <th className={`text-left pl-5 pr-2 ${thClass}`} onClick={() => handleSort("name")}>
+                      Name<SortIcon field="name" sortField={sortField} sortDir={sortDir} />
+                    </th>
+                    <th className={`text-left ${thClass}`} onClick={() => handleSort("symbol")}>
+                      Symbol<SortIcon field="symbol" sortField={sortField} sortDir={sortDir} />
+                    </th>
+                    <th className={`text-center ${thClass}`} onClick={() => handleSort("currency")}>
+                      Ccy<SortIcon field="currency" sortField={sortField} sortDir={sortDir} />
+                    </th>
+                    <th className={`text-right ${thClass}`} onClick={() => handleSort("weightInClass")}>
+                      Weight (Class)<SortIcon field="weightInClass" sortField={sortField} sortDir={sortDir} />
+                    </th>
+                    <th className={`text-right ${thClass}`} onClick={() => handleSort("weightInPortfolio")}>
+                      Weight (Portfolio)<SortIcon field="weightInPortfolio" sortField={sortField} sortDir={sortDir} />
+                    </th>
+                    <th className={`text-right ${thClass}`} onClick={() => handleSort("cadModelWeight")}>
+                      CAD Model<SortIcon field="cadModelWeight" sortField={sortField} sortDir={sortDir} />
+                    </th>
+                    <th className={`text-right pr-5 pl-2 ${thClass}`} onClick={() => handleSort("usdModelWeight")}>
+                      USD Model<SortIcon field="usdModelWeight" sortField={sortField} sortDir={sortDir} />
+                    </th>
                   </tr>
                 </thead>
                 <tbody>
