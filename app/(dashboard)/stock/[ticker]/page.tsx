@@ -432,7 +432,7 @@ export default function StockDetailPage() {
   const params = useParams();
   const router = useRouter();
   const ticker = (params.ticker as string)?.toUpperCase();
-  const { getStock, scoredStocks, marketData, updateScore, updateExplanations, updateLastScored, updatePrice, updateHealthData, updateTechnicals, updateStockFields, updateWeight, updateFundData, moveBucket, removeStock, pimModels, toggleModelEligibility } = useStocks();
+  const { getStock, scoredStocks, marketData, updateScore, updateExplanations, updateLastScored, updatePrice, updateHealthData, updateTechnicals, updateStockFields, updateWeight, updateFundData, moveBucket, removeStock, pimModels, toggleModelEligibility, updateModelWeight } = useStocks();
   const stock = getStock(ticker);
   const [scoring, setScoring] = useState(false);
   const [scoreError, setScoreError] = useState("");
@@ -719,7 +719,7 @@ export default function StockDetailPage() {
                   )}
                   {!scoreable && (
                     <div className="flex items-center gap-1.5">
-                      <span className="text-xs text-slate-400">Weight:</span>
+                      <span className="text-xs text-slate-400">Default Weight:</span>
                       {editingWeight ? (
                         <form
                           onSubmit={(e) => {
@@ -749,6 +749,7 @@ export default function StockDetailPage() {
                         <button
                           onClick={() => { setWeightInput(String(stock.weights.portfolio)); setEditingWeight(true); }}
                           className="rounded-md bg-slate-100 px-2 py-1 text-sm font-semibold text-slate-700 hover:bg-slate-200 transition-colors"
+                          title="Fallback weight used when no per-model override is set"
                         >
                           {stock.weights.portfolio}%
                         </button>
@@ -923,34 +924,66 @@ export default function StockDetailPage() {
             );
           })()}
 
-          {/* Model Eligibility */}
+          {/* Model Eligibility & Per-Model Weights */}
           <div className="rounded-[24px] border border-slate-200 bg-white p-5 shadow-sm mt-6">
             <h2 className="text-sm font-bold text-slate-800 mb-3">Model Eligibility</h2>
-            <p className="text-xs text-slate-400 mb-3">Toggle which PIM model groups this position is eligible for.</p>
-            <div className="grid grid-cols-2 sm:grid-cols-3 md:grid-cols-4 lg:grid-cols-5 gap-2">
+            <p className="text-xs text-slate-400 mb-3">
+              Toggle which PIM model groups this position is eligible for.
+              {!scoreable && " Set the weight (%) for each model's Balanced profile."}
+            </p>
+            <div className="grid grid-cols-1 sm:grid-cols-2 md:grid-cols-3 lg:grid-cols-4 gap-3">
               {pimModels.groups.map((group) => {
                 const eligible = stock.modelEligibility?.[group.id] !== false;
+                const modelWeight = stock.modelWeights?.[group.id] ?? stock.weights.portfolio;
                 return (
-                  <button
+                  <div
                     key={group.id}
-                    onClick={() => toggleModelEligibility(ticker, group.id, !eligible)}
-                    className={`flex items-center gap-2 rounded-lg px-3 py-2 text-sm font-medium transition-all border ${
+                    className={`rounded-lg border transition-all ${
                       eligible
-                        ? "bg-emerald-50 border-emerald-200 text-emerald-700 hover:bg-emerald-100"
-                        : "bg-slate-50 border-slate-200 text-slate-400 hover:bg-slate-100"
+                        ? "bg-emerald-50 border-emerald-200"
+                        : "bg-slate-50 border-slate-200"
                     }`}
                   >
-                    <span className={`flex items-center justify-center w-4 h-4 rounded border transition-colors ${
-                      eligible ? "bg-emerald-500 border-emerald-500" : "border-slate-300 bg-white"
-                    }`}>
-                      {eligible && (
-                        <svg className="w-3 h-3 text-white" fill="none" stroke="currentColor" strokeWidth="3" viewBox="0 0 24 24">
-                          <path strokeLinecap="round" strokeLinejoin="round" d="M5 13l4 4L19 7" />
-                        </svg>
-                      )}
-                    </span>
-                    {group.name}
-                  </button>
+                    <button
+                      onClick={() => toggleModelEligibility(ticker, group.id, !eligible)}
+                      className={`flex items-center gap-2 w-full px-3 py-2 text-sm font-medium transition-all ${
+                        eligible ? "text-emerald-700" : "text-slate-400 hover:text-slate-500"
+                      }`}
+                    >
+                      <span className={`flex items-center justify-center w-4 h-4 rounded border transition-colors ${
+                        eligible ? "bg-emerald-500 border-emerald-500" : "border-slate-300 bg-white"
+                      }`}>
+                        {eligible && (
+                          <svg className="w-3 h-3 text-white" fill="none" stroke="currentColor" strokeWidth="3" viewBox="0 0 24 24">
+                            <path strokeLinecap="round" strokeLinejoin="round" d="M5 13l4 4L19 7" />
+                          </svg>
+                        )}
+                      </span>
+                      {group.name}
+                    </button>
+                    {/* Per-model weight input for funds/ETFs */}
+                    {!scoreable && eligible && (
+                      <div className="flex items-center gap-1.5 px-3 pb-2">
+                        <input
+                          type="number"
+                          step="0.1"
+                          min="0"
+                          value={modelWeight}
+                          onChange={(e) => {
+                            const val = parseFloat(e.target.value);
+                            if (!isNaN(val) && val >= 0) {
+                              updateModelWeight(ticker, group.id, val);
+                            }
+                          }}
+                          className="w-16 rounded-md border border-emerald-200 bg-white px-2 py-1 text-sm text-slate-700 outline-none focus:border-emerald-400"
+                        />
+                        <span className="text-xs text-emerald-500">%</span>
+                        {stock.modelWeights?.[group.id] != null && stock.modelWeights[group.id] !== stock.weights.portfolio && (
+                          <span className="text-[10px] text-amber-500 ml-1" title="Overrides default weight">override</span>
+                        )}
+                      </div>
+                    )}
+                  </div>
                 );
               })}
             </div>
