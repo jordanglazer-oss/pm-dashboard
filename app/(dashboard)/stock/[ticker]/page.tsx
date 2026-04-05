@@ -885,33 +885,43 @@ export default function StockDetailPage() {
             />
           )}
 
-          {/* Portfolio Role */}
-          <div className="rounded-[24px] border border-slate-200 bg-white p-5 shadow-sm mt-6">
-            <h2 className="text-sm font-bold text-slate-800 mb-2">Portfolio Role</h2>
-            <p className="text-xs text-slate-400 mb-3">Core = indexed/passive holdings. Alpha = active stock picks. Sector exposure is based on Alpha picks only.</p>
-            <div className="flex gap-2">
-              <button
-                onClick={() => updateStockFields(ticker, { designation: "core" })}
-                className={`rounded-lg px-4 py-2 text-sm font-semibold transition-all border ${
-                  stock.designation === "core"
-                    ? "bg-blue-100 border-blue-300 text-blue-700"
-                    : "bg-slate-50 border-slate-200 text-slate-400 hover:bg-slate-100"
-                }`}
-              >
-                Core
-              </button>
-              <button
-                onClick={() => updateStockFields(ticker, { designation: "alpha" })}
-                className={`rounded-lg px-4 py-2 text-sm font-semibold transition-all border ${
-                  (stock.designation || "alpha") === "alpha"
-                    ? "bg-amber-100 border-amber-300 text-amber-700"
-                    : "bg-slate-50 border-slate-200 text-slate-400 hover:bg-slate-100"
-                }`}
-              >
-                Alpha
-              </button>
-            </div>
-          </div>
+          {/* Portfolio Role — only for equity ETFs/MFs */}
+          {!scoreable && stock.instrumentType && stock.instrumentType !== "stock" && (() => {
+            // Only show for equity-class ETFs/MFs (not bond/alternative funds)
+            const nameLower = (stock.name || "").toLowerCase();
+            const sectorLower = (stock.sector || "").toLowerCase();
+            const isBondOrAlt = sectorLower.includes("bond") || sectorLower.includes("fixed") || nameLower.includes("bond") || nameLower.includes("fixed income")
+              || sectorLower.includes("alternative") || nameLower.includes("alternative") || nameLower.includes("premium yield") || nameLower.includes("hedge");
+            if (isBondOrAlt) return null;
+            return (
+              <div className="rounded-[24px] border border-slate-200 bg-white p-5 shadow-sm mt-6">
+                <h2 className="text-sm font-bold text-slate-800 mb-2">Portfolio Role</h2>
+                <p className="text-xs text-slate-400 mb-3">Core = indexed/passive. Alpha = active picks. Sector exposure is based on Alpha picks only.</p>
+                <div className="flex gap-2">
+                  <button
+                    onClick={() => updateStockFields(ticker, { designation: "core" })}
+                    className={`rounded-lg px-4 py-2 text-sm font-semibold transition-all border ${
+                      stock.designation === "core"
+                        ? "bg-blue-100 border-blue-300 text-blue-700"
+                        : "bg-slate-50 border-slate-200 text-slate-400 hover:bg-slate-100"
+                    }`}
+                  >
+                    Core
+                  </button>
+                  <button
+                    onClick={() => updateStockFields(ticker, { designation: "alpha" })}
+                    className={`rounded-lg px-4 py-2 text-sm font-semibold transition-all border ${
+                      (stock.designation || "alpha") === "alpha"
+                        ? "bg-amber-100 border-amber-300 text-amber-700"
+                        : "bg-slate-50 border-slate-200 text-slate-400 hover:bg-slate-100"
+                    }`}
+                  >
+                    Alpha
+                  </button>
+                </div>
+              </div>
+            );
+          })()}
 
           {/* Model Eligibility */}
           <div className="rounded-[24px] border border-slate-200 bg-white p-5 shadow-sm mt-6">
