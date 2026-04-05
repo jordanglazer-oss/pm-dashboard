@@ -79,6 +79,8 @@ const DASH_FILTER_LABELS: Record<DashboardFilter, string> = {
 };
 
 function isCanadianTicker(ticker: string): boolean {
+  // .U suffix = USD-denominated Canadian-listed ETF (e.g., XUS.U, XUU.U) — NOT Canadian
+  if (ticker.endsWith(".U")) return false;
   return ticker.endsWith(".TO") || /^[A-Z]{2,4}\d{2,5}$/i.test(ticker);
 }
 
@@ -91,7 +93,7 @@ function matchesDashFilter(s: ScoredStock, filter: DashboardFilter): boolean {
   return true;
 }
 
-type FundSortField = "ticker" | "name" | "type" | "weight" | "price" | "ytd" | "oneYear" | "threeYear" | "fiveYear" | "tenYear";
+type FundSortField = "ticker" | "name" | "type" | "role" | "weight" | "price" | "ytd" | "oneYear" | "threeYear" | "fiveYear" | "tenYear";
 type SortDir = "asc" | "desc";
 
 function FundSortIcon({ field, sortField, sortDir }: { field: FundSortField; sortField: FundSortField; sortDir: SortDir }) {
@@ -169,7 +171,7 @@ function InlineWeightEditor({ ticker, currentWeight, onSave }: { ticker: string;
 }
 
 export function PortfolioOverview() {
-  const { portfolioStocks, watchlistStocks, scoredStocks, marketData, updateWeight } = useStocks();
+  const { portfolioStocks, watchlistStocks, scoredStocks, marketData, updateWeight, updateStockFields } = useStocks();
   const [dashFilter, setDashFilter] = useState<DashboardFilter>("all");
   const [fundSort, setFundSort] = useState<FundSortField>("weight");
   const [fundSortDir, setFundSortDir] = useState<SortDir>("desc");
@@ -197,18 +199,20 @@ export function PortfolioOverview() {
   // S&P 500 sector weights — use live data from marketData if available, else fallback
   const sp500Weights = marketData.sp500SectorWeights || SP500_WEIGHTS_FALLBACK;
 
-  // Sector exposure (equal-weighted among individual stocks)
+  // Sector exposure — Alpha picks only (excludes Core indexed holdings)
   // Normalize sector names so Yahoo variants map to GICS standard
+  const alphaPortfolio = scoreablePortfolio.filter((s) => s.designation !== "core");
   const pfCount = scoreablePortfolio.length;
+  const alphaCount = alphaPortfolio.length;
   const sectorCounts: Record<string, number> = {};
-  scoreablePortfolio.forEach((s) => {
+  alphaPortfolio.forEach((s) => {
     const normalized = normalizeSector(s.sector);
     sectorCounts[normalized] = (sectorCounts[normalized] || 0) + 1;
   });
   const sectorExposure = Object.entries(sectorCounts)
     .map(([sector, count]) => ({
       sector,
-      weight: pfCount > 0 ? Math.round((count / pfCount) * 100) : 0,
+      weight: alphaCount > 0 ? Math.round((count / alphaCount) * 100) : 0,
       count,
     }))
     .sort((a, b) => b.weight - a.weight);
@@ -258,7 +262,7 @@ export function PortfolioOverview() {
       <section className="rounded-[30px] border border-slate-200 bg-white p-5 shadow-sm">
         <div className="flex items-center gap-3 mb-4">
           <h2 className="text-lg font-bold text-slate-800">Portfolio Sector Exposure</h2>
-          <span className="text-sm text-slate-400">Equal-weighted · {pfCount} stocks{fundPortfolio.length > 0 ? ` + ${fundPortfolio.length} funds` : ""}</span>
+          <span className="text-sm text-slate-400">Alpha picks only · {alphaCount} stocks (equal-weighted)</span>
         </div>
         <div className="flex h-8 rounded-xl overflow-hidden mb-3">
           {sectorExposure.map((s) => (
@@ -329,7 +333,7 @@ export function PortfolioOverview() {
             setFundSortDir((d) => (d === "asc" ? "desc" : "asc"));
           } else {
             setFundSort(field);
-            setFundSortDir(field === "ticker" || field === "name" || field === "type" ? "asc" : "desc");
+            setFundSortDir(field === "ticker" || field === "name" || field === "type" || field === "role" ? "asc" : "desc");
           }
         };
 
@@ -341,6 +345,7 @@ export function PortfolioOverview() {
             case "ticker": cmp = a.ticker.localeCompare(b.ticker); break;
             case "name": cmp = a.name.localeCompare(b.name); break;
             case "type": cmp = (a.instrumentType || "").localeCompare(b.instrumentType || ""); break;
+            case "role": cmp = (a.designation || "alpha").localeCompare(b.designation || "alpha"); break;
             case "weight": cmp = a.weights.portfolio - b.weights.portfolio; break;
             case "price": cmp = (a.price ?? -1) - (b.price ?? -1); break;
             case "ytd": cmp = (perfA?.ytd ?? -999) - (perfB?.ytd ?? -999); break;
@@ -372,6 +377,9 @@ export function PortfolioOverview() {
                     </th>
                     <th className={fThClass} onClick={() => handleFundSort("type")}>
                       Type<FundSortIcon field="type" sortField={fundSort} sortDir={fundSortDir} />
+                    </th>
+                    <th className={fThClass} onClick={() => handleFundSort("role")}>
+                      Role<FundSortIcon field="role" sortField={fundSort} sortDir={fundSortDir} />
                     </th>
                     <th className={`text-right ${fThClass}`} onClick={() => handleFundSort("weight")}>
                       Weight<FundSortIcon field="weight" sortField={fundSort} sortDir={fundSortDir} />
@@ -411,6 +419,18 @@ export function PortfolioOverview() {
                           <span className={`rounded-md px-2 py-0.5 text-[10px] font-bold ${s.instrumentType === "etf" ? "bg-indigo-100 text-indigo-700" : "bg-purple-100 text-purple-700"}`}>
                             {INSTRUMENT_LABELS[s.instrumentType || "stock"]}
                           </span>
+                        </td>
+                        <td className="py-3">
+                          <button
+                            onClick={() => updateStockFields(s.ticker, { designation: (s.designation || "alpha") === "core" ? "alpha" : "core" })}
+                            className={`rounded-md px-2 py-0.5 text-[10px] font-bold transition-colors ${
+                              (s.designation || "alpha") === "core"
+                                ? "bg-blue-100 text-blue-700 hover:bg-blue-200"
+                                : "bg-amber-100 text-amber-700 hover:bg-amber-200"
+                            }`}
+                          >
+                            {(s.designation || "alpha") === "core" ? "Core" : "Alpha"}
+                          </button>
                         </td>
                         <td className="py-3 text-right">
                           <InlineWeightEditor ticker={s.ticker} currentWeight={s.weights.portfolio} onSave={updateWeight} />

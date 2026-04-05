@@ -239,6 +239,7 @@ export type Stock = {
   riskAlert?: RiskAlert;
   fundData?: FundData;
   modelEligibility?: Record<string, boolean>; // PIM model group id → eligible (default all true)
+  designation?: "core" | "alpha"; // Core = indexed/passive, Alpha = active picks (default alpha)
 };
 
 export type ScoredStock = Stock & {

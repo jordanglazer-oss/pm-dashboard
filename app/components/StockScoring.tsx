@@ -27,6 +27,8 @@ const RISK_ORDER: Record<string, number> = { High: 3, Medium: 2, Low: 1 };
 
 /** Check if a ticker is Canadian (.TO suffix or FUNDSERV code pattern) */
 function isCanadianTicker(ticker: string): boolean {
+  // .U suffix = USD-denominated Canadian-listed ETF (e.g., XUS.U, XUU.U) — NOT Canadian
+  if (ticker.endsWith(".U")) return false;
   return ticker.endsWith(".TO") || /^[A-Z]{2,4}\d{2,5}$/i.test(ticker);
 }
 

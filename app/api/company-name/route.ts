@@ -56,7 +56,11 @@ export async function GET(request: NextRequest) {
           }
 
           // Regular tickers — use Yahoo Finance search
-          const url = `${YAHOO_BASE}/v1/finance/search?q=${encodeURIComponent(ticker)}&quotesCount=1&newsCount=0`;
+          // For Canadian USD ETFs (e.g. XUS.U), Yahoo uses XUS-U.TO format
+          const yahooQuery = ticker.endsWith(".U")
+            ? ticker.replace(".U", "-U.TO")
+            : ticker;
+          const url = `${YAHOO_BASE}/v1/finance/search?q=${encodeURIComponent(yahooQuery)}&quotesCount=1&newsCount=0`;
           const res = await fetch(url, {
             cache: "no-store",
             headers: { "User-Agent": UA },
@@ -65,8 +69,11 @@ export async function GET(request: NextRequest) {
           const data = await res.json();
           const quote = data?.quotes?.[0];
           if (!quote) return { ticker, name: ticker, sector: "", type: "stock" };
-          // Only use result if the returned symbol matches (search can return different tickers)
-          if (quote.symbol !== ticker) return { ticker, name: ticker, sector: "", type: "stock" };
+          // Accept result if returned symbol matches the ticker or the Yahoo variant
+          const symbolMatch = quote.symbol === ticker
+            || quote.symbol === yahooQuery
+            || quote.symbol === ticker.replace(".U", "-U.TO");
+          if (!symbolMatch) return { ticker, name: ticker, sector: "", type: "stock" };
           const quoteType = quote.quoteType || "EQUITY";
           const instrumentType = quoteType === "ETF" ? "etf" : quoteType === "MUTUALFUND" ? "mutual-fund" : "stock";
           return {
