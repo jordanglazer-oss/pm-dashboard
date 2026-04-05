@@ -173,8 +173,22 @@ function InlineWeightEditor({ ticker, currentWeight, onSave }: { ticker: string;
 export function PortfolioOverview() {
   const { portfolioStocks, watchlistStocks, scoredStocks, marketData, updateWeight, updateStockFields } = useStocks();
   const [dashFilter, setDashFilter] = useState<DashboardFilter>("all");
-  const [fundSort, setFundSort] = useState<FundSortField>("weight");
-  const [fundSortDir, setFundSortDir] = useState<SortDir>("desc");
+  const [fundSort, setFundSort] = useState<FundSortField>(() => {
+    if (typeof window !== "undefined") {
+      return (localStorage.getItem("pim:fundSort") as FundSortField) || "weight";
+    }
+    return "weight";
+  });
+  const [fundSortDir, setFundSortDir] = useState<SortDir>(() => {
+    if (typeof window !== "undefined") {
+      return (localStorage.getItem("pim:fundSortDir") as SortDir) || "desc";
+    }
+    return "desc";
+  });
+
+  // Persist fund sort preferences
+  useEffect(() => { localStorage.setItem("pim:fundSort", fundSort); }, [fundSort]);
+  useEffect(() => { localStorage.setItem("pim:fundSortDir", fundSortDir); }, [fundSortDir]);
 
   // Apply instrument filter first
   const filteredPortfolio = portfolioStocks.filter((s) => matchesDashFilter(s, dashFilter));
@@ -229,7 +243,6 @@ export function PortfolioOverview() {
   const wlCount = scoreableWatchlist.length;
   const wlAvgBase = wlCount > 0 ? Math.round(scoreableWatchlist.reduce((s, x) => s + x.raw, 0) / wlCount) : 0;
   const wlAvgAdj = wlCount > 0 ? Math.round(scoreableWatchlist.reduce((s, x) => s + x.adjusted, 0) / wlCount) : 0;
-  const totalFundWeight = fundPortfolio.reduce((s, x) => s + x.weights.portfolio, 0);
 
   return (
     <div className="space-y-6">
@@ -311,7 +324,6 @@ export function PortfolioOverview() {
           <div className="rounded-[24px] border border-indigo-200 bg-indigo-50/50 p-5 shadow-sm">
             <div className="text-xs font-semibold uppercase tracking-wider text-indigo-400">Funds / ETFs</div>
             <div className="mt-2 text-4xl font-bold text-indigo-700">{fundPortfolio.length}</div>
-            <div className="mt-1 text-sm text-indigo-500">Total weight: {totalFundWeight.toFixed(1)}%</div>
           </div>
         )}
         <div className="rounded-[24px] border border-slate-200 bg-white p-5 shadow-sm">
@@ -363,7 +375,7 @@ export function PortfolioOverview() {
           <section className="rounded-[30px] border border-indigo-200 bg-white p-5 shadow-sm">
             <div className="flex items-center gap-3 mb-4">
               <h2 className="text-lg font-bold text-slate-800">Fund & ETF Holdings</h2>
-              <span className="text-sm text-slate-400">{fundPortfolio.length} holdings · {totalFundWeight.toFixed(1)}% total weight</span>
+              <span className="text-sm text-slate-400">{fundPortfolio.length} holdings</span>
             </div>
             <div className="overflow-x-auto">
               <table className="w-full min-w-[800px] text-left text-sm">

@@ -70,8 +70,22 @@ export function PimModel({ groups }: Props) {
   const [dropdownOpen, setDropdownOpen] = useState(false);
   const [dropdownSearch, setDropdownSearch] = useState("");
   const [holdingSearch, setHoldingSearch] = useState("");
-  const [sortField, setSortField] = useState<SortField>("name");
-  const [sortDir, setSortDir] = useState<SortDir>("asc");
+  const [sortField, setSortField] = useState<SortField>(() => {
+    if (typeof window !== "undefined") {
+      return (localStorage.getItem("pim:modelSort") as SortField) || "name";
+    }
+    return "name";
+  });
+  const [sortDir, setSortDir] = useState<SortDir>(() => {
+    if (typeof window !== "undefined") {
+      return (localStorage.getItem("pim:modelSortDir") as SortDir) || "asc";
+    }
+    return "asc";
+  });
+
+  // Persist sort preferences
+  useEffect(() => { localStorage.setItem("pim:modelSort", sortField); }, [sortField]);
+  useEffect(() => { localStorage.setItem("pim:modelSortDir", sortDir); }, [sortDir]);
   const [livePrices, setLivePrices] = useState<Record<string, number>>({});
   const [pricesLoading, setPricesLoading] = useState(false);
   const [showRebalance, setShowRebalance] = useState(false);
