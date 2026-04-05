@@ -545,8 +545,13 @@ export default function StockDetailPage() {
     );
   }
 
-  const portfolioTickers = scoredStocks.filter((s) => s.bucket === "Portfolio").map((s) => s.ticker);
-  const watchlistTickers = scoredStocks.filter((s) => s.bucket === "Watchlist").map((s) => s.ticker);
+  const portfolioAll = scoredStocks.filter((s) => s.bucket === "Portfolio");
+  const watchlistAll = scoredStocks.filter((s) => s.bucket === "Watchlist");
+  const alpha = (a: string, b: string) => a.localeCompare(b);
+  const portfolioStockTickers = portfolioAll.filter((s) => isScoreable(s)).map((s) => s.ticker).sort(alpha);
+  const portfolioFundTickers = portfolioAll.filter((s) => !isScoreable(s)).map((s) => s.ticker).sort(alpha);
+  const watchlistStockTickers = watchlistAll.filter((s) => isScoreable(s)).map((s) => s.ticker).sort(alpha);
+  const watchlistFundTickers = watchlistAll.filter((s) => !isScoreable(s)).map((s) => s.ticker).sort(alpha);
 
   const handleRescore = async () => {
     setScoring(true);
@@ -653,11 +658,11 @@ export default function StockDetailPage() {
           >
             &larr; Dashboard
           </Link>
-          {portfolioTickers.length > 0 && (
+          {portfolioStockTickers.length > 0 && (
             <>
               <div className="h-5 w-px bg-slate-200 shrink-0" />
               <span className="shrink-0 text-[10px] font-semibold uppercase tracking-wider text-slate-400">Portfolio</span>
-              {portfolioTickers.map((t) => (
+              {portfolioStockTickers.map((t) => (
                 <Link
                   key={t}
                   href={`/stock/${t.toLowerCase()}`}
@@ -672,11 +677,30 @@ export default function StockDetailPage() {
               ))}
             </>
           )}
-          {watchlistTickers.length > 0 && (
+          {portfolioFundTickers.length > 0 && (
+            <>
+              <div className="h-5 w-px bg-slate-200 shrink-0" />
+              <span className="shrink-0 text-[10px] font-semibold uppercase tracking-wider text-indigo-400">Funds & ETFs</span>
+              {portfolioFundTickers.map((t) => (
+                <Link
+                  key={t}
+                  href={`/stock/${t.toLowerCase()}`}
+                  className={`shrink-0 rounded-lg px-3 py-1.5 text-xs font-bold font-mono transition-colors ${
+                    t === ticker
+                      ? "bg-indigo-600 text-white"
+                      : "border border-indigo-200 text-indigo-700 hover:bg-indigo-50"
+                  }`}
+                >
+                  {t}
+                </Link>
+              ))}
+            </>
+          )}
+          {watchlistStockTickers.length > 0 && (
             <>
               <div className="h-5 w-px bg-slate-200 shrink-0" />
               <span className="shrink-0 text-[10px] font-semibold uppercase tracking-wider text-slate-400">Watchlist</span>
-              {watchlistTickers.map((t) => (
+              {watchlistStockTickers.map((t) => (
                 <Link
                   key={t}
                   href={`/stock/${t.toLowerCase()}`}
@@ -684,6 +708,25 @@ export default function StockDetailPage() {
                     t === ticker
                       ? "bg-blue-600 text-white"
                       : "border border-slate-200 text-slate-600 hover:bg-slate-50"
+                  }`}
+                >
+                  {t}
+                </Link>
+              ))}
+            </>
+          )}
+          {watchlistFundTickers.length > 0 && (
+            <>
+              <div className="h-5 w-px bg-slate-200 shrink-0" />
+              <span className="shrink-0 text-[10px] font-semibold uppercase tracking-wider text-slate-400">WL Funds & ETFs</span>
+              {watchlistFundTickers.map((t) => (
+                <Link
+                  key={t}
+                  href={`/stock/${t.toLowerCase()}`}
+                  className={`shrink-0 rounded-lg px-3 py-1.5 text-xs font-bold font-mono transition-colors ${
+                    t === ticker
+                      ? "bg-indigo-600 text-white"
+                      : "border border-slate-200 text-slate-500 hover:bg-slate-50"
                   }`}
                 >
                   {t}
