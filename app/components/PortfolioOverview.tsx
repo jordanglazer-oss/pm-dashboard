@@ -1,6 +1,6 @@
 "use client";
 
-import React, { useState } from "react";
+import React, { useState, useMemo, useCallback, useRef, useEffect } from "react";
 import Link from "next/link";
 import { useStocks } from "@/app/lib/StockContext";
 import { SCORE_GROUPS, MAX_SCORE, INSTRUMENT_LABELS } from "@/app/lib/types";
@@ -91,9 +91,88 @@ function matchesDashFilter(s: ScoredStock, filter: DashboardFilter): boolean {
   return true;
 }
 
+type FundSortField = "ticker" | "name" | "type" | "weight" | "price" | "ytd" | "oneYear" | "threeYear" | "fiveYear" | "tenYear";
+type SortDir = "asc" | "desc";
+
+function FundSortIcon({ field, sortField, sortDir }: { field: FundSortField; sortField: FundSortField; sortDir: SortDir }) {
+  if (field !== sortField) {
+    return (
+      <svg className="w-3 h-3 ml-0.5 inline opacity-30" fill="none" stroke="currentColor" strokeWidth="2" viewBox="0 0 24 24">
+        <path strokeLinecap="round" strokeLinejoin="round" d="M8 9l4-4 4 4M16 15l-4 4-4-4" />
+      </svg>
+    );
+  }
+  return sortDir === "asc" ? (
+    <svg className="w-3 h-3 ml-0.5 inline" fill="none" stroke="currentColor" strokeWidth="2" viewBox="0 0 24 24">
+      <path strokeLinecap="round" strokeLinejoin="round" d="M8 15l4-4 4 4" />
+    </svg>
+  ) : (
+    <svg className="w-3 h-3 ml-0.5 inline" fill="none" stroke="currentColor" strokeWidth="2" viewBox="0 0 24 24">
+      <path strokeLinecap="round" strokeLinejoin="round" d="M8 9l4 4 4-4" />
+    </svg>
+  );
+}
+
+function InlineWeightEditor({ ticker, currentWeight, onSave }: { ticker: string; currentWeight: number; onSave: (ticker: string, w: number) => void }) {
+  const [editing, setEditing] = useState(false);
+  const [value, setValue] = useState(String(currentWeight));
+  const inputRef = useRef<HTMLInputElement>(null);
+
+  useEffect(() => {
+    if (editing && inputRef.current) inputRef.current.focus();
+  }, [editing]);
+
+  // Sync if external value changes while not editing
+  useEffect(() => {
+    if (!editing) setValue(String(currentWeight));
+  }, [currentWeight, editing]);
+
+  const commit = useCallback(() => {
+    const parsed = parseFloat(value);
+    if (!isNaN(parsed) && parsed >= 0) {
+      onSave(ticker, parsed);
+    }
+    setEditing(false);
+  }, [value, ticker, onSave]);
+
+  if (!editing) {
+    return (
+      <button
+        onClick={() => { setValue(String(currentWeight)); setEditing(true); }}
+        className="font-semibold text-slate-700 hover:text-blue-600 hover:underline decoration-dashed transition-colors cursor-pointer"
+        title="Click to edit weight"
+      >
+        {currentWeight}%
+      </button>
+    );
+  }
+
+  return (
+    <form
+      onSubmit={(e) => { e.preventDefault(); commit(); }}
+      className="flex items-center gap-1"
+    >
+      <input
+        ref={inputRef}
+        type="number"
+        step="0.1"
+        min="0"
+        value={value}
+        onChange={(e) => setValue(e.target.value)}
+        onBlur={commit}
+        onKeyDown={(e) => { if (e.key === "Escape") setEditing(false); }}
+        className="w-16 rounded border border-blue-300 bg-blue-50 px-1.5 py-0.5 text-right text-xs font-semibold text-slate-800 outline-none focus:ring-1 focus:ring-blue-300"
+      />
+      <span className="text-xs text-slate-400">%</span>
+    </form>
+  );
+}
+
 export function PortfolioOverview() {
-  const { portfolioStocks, watchlistStocks, scoredStocks, marketData } = useStocks();
+  const { portfolioStocks, watchlistStocks, scoredStocks, marketData, updateWeight } = useStocks();
   const [dashFilter, setDashFilter] = useState<DashboardFilter>("all");
+  const [fundSort, setFundSort] = useState<FundSortField>("weight");
+  const [fundSortDir, setFundSortDir] = useState<SortDir>("desc");
 
   // Apply instrument filter first
   const filteredPortfolio = portfolioStocks.filter((s) => matchesDashFilter(s, dashFilter));
@@ -244,59 +323,113 @@ export function PortfolioOverview() {
       </section>
 
       {/* Fund Holdings */}
-      {fundPortfolio.length > 0 && (
-        <section className="rounded-[30px] border border-indigo-200 bg-white p-5 shadow-sm">
-          <div className="flex items-center gap-3 mb-4">
-            <h2 className="text-lg font-bold text-slate-800">Fund & ETF Holdings</h2>
-            <span className="text-sm text-slate-400">{fundPortfolio.length} holdings · {totalFundWeight.toFixed(1)}% total weight</span>
-          </div>
-          <div className="overflow-x-auto">
-            <table className="w-full min-w-[800px] text-left text-sm">
-              <thead>
-                <tr className="border-b border-slate-200 text-xs text-slate-500">
-                  <th className="pb-2">Ticker</th>
-                  <th className="pb-2">Name</th>
-                  <th className="pb-2">Type</th>
-                  <th className="pb-2 text-right">Weight</th>
-                  <th className="pb-2 text-right">Price</th>
-                  <th className="pb-2 text-right">YTD</th>
-                  <th className="pb-2 text-right">1Y</th>
-                  <th className="pb-2 text-right">3Y</th>
-                  <th className="pb-2 text-right">5Y</th>
-                  <th className="pb-2 text-right">10Y</th>
-                </tr>
-              </thead>
-              <tbody>
-                {fundPortfolio.map((s) => {
-                  const perf = s.fundData?.performance;
-                  return (
-                    <tr key={s.ticker} className="border-b border-slate-50 hover:bg-slate-50/50 transition-colors">
-                      <td className="py-3">
-                        <Link href={`/stock/${s.ticker.toLowerCase()}`} className="font-bold text-slate-800 hover:underline font-mono">
-                          {s.ticker}
-                        </Link>
-                      </td>
-                      <td className="py-3 text-slate-600 max-w-[180px] truncate">{s.name}</td>
-                      <td className="py-3">
-                        <span className={`rounded-md px-2 py-0.5 text-[10px] font-bold ${s.instrumentType === "etf" ? "bg-indigo-100 text-indigo-700" : "bg-purple-100 text-purple-700"}`}>
-                          {INSTRUMENT_LABELS[s.instrumentType || "stock"]}
-                        </span>
-                      </td>
-                      <td className="py-3 text-right font-semibold text-slate-700">{s.weights.portfolio}%</td>
-                      <td className="py-3 text-right text-slate-600">{s.price != null ? `$${s.price.toFixed(2)}` : "—"}</td>
-                      <td className={`py-3 text-right text-xs font-semibold ${fundReturnColor(perf?.ytd)}`}>{fundReturnFmt(perf?.ytd)}</td>
-                      <td className={`py-3 text-right text-xs font-semibold ${fundReturnColor(perf?.oneYear)}`}>{fundReturnFmt(perf?.oneYear)}</td>
-                      <td className={`py-3 text-right text-xs font-semibold ${fundReturnColor(perf?.threeYear)}`}>{fundReturnFmt(perf?.threeYear)}</td>
-                      <td className={`py-3 text-right text-xs font-semibold ${fundReturnColor(perf?.fiveYear)}`}>{fundReturnFmt(perf?.fiveYear)}</td>
-                      <td className={`py-3 text-right text-xs font-semibold ${fundReturnColor(perf?.tenYear)}`}>{fundReturnFmt(perf?.tenYear)}</td>
-                    </tr>
-                  );
-                })}
-              </tbody>
-            </table>
-          </div>
-        </section>
-      )}
+      {fundPortfolio.length > 0 && (() => {
+        const handleFundSort = (field: FundSortField) => {
+          if (fundSort === field) {
+            setFundSortDir((d) => (d === "asc" ? "desc" : "asc"));
+          } else {
+            setFundSort(field);
+            setFundSortDir(field === "ticker" || field === "name" || field === "type" ? "asc" : "desc");
+          }
+        };
+
+        const sortedFunds = [...fundPortfolio].sort((a, b) => {
+          let cmp = 0;
+          const perfA = a.fundData?.performance;
+          const perfB = b.fundData?.performance;
+          switch (fundSort) {
+            case "ticker": cmp = a.ticker.localeCompare(b.ticker); break;
+            case "name": cmp = a.name.localeCompare(b.name); break;
+            case "type": cmp = (a.instrumentType || "").localeCompare(b.instrumentType || ""); break;
+            case "weight": cmp = a.weights.portfolio - b.weights.portfolio; break;
+            case "price": cmp = (a.price ?? -1) - (b.price ?? -1); break;
+            case "ytd": cmp = (perfA?.ytd ?? -999) - (perfB?.ytd ?? -999); break;
+            case "oneYear": cmp = (perfA?.oneYear ?? -999) - (perfB?.oneYear ?? -999); break;
+            case "threeYear": cmp = (perfA?.threeYear ?? -999) - (perfB?.threeYear ?? -999); break;
+            case "fiveYear": cmp = (perfA?.fiveYear ?? -999) - (perfB?.fiveYear ?? -999); break;
+            case "tenYear": cmp = (perfA?.tenYear ?? -999) - (perfB?.tenYear ?? -999); break;
+          }
+          return fundSortDir === "asc" ? cmp : -cmp;
+        });
+
+        const fThClass = "pb-2 font-semibold cursor-pointer select-none hover:text-slate-800 transition-colors whitespace-nowrap";
+
+        return (
+          <section className="rounded-[30px] border border-indigo-200 bg-white p-5 shadow-sm">
+            <div className="flex items-center gap-3 mb-4">
+              <h2 className="text-lg font-bold text-slate-800">Fund & ETF Holdings</h2>
+              <span className="text-sm text-slate-400">{fundPortfolio.length} holdings · {totalFundWeight.toFixed(1)}% total weight</span>
+            </div>
+            <div className="overflow-x-auto">
+              <table className="w-full min-w-[800px] text-left text-sm">
+                <thead>
+                  <tr className="border-b border-slate-200 text-xs text-slate-500">
+                    <th className={fThClass} onClick={() => handleFundSort("ticker")}>
+                      Ticker<FundSortIcon field="ticker" sortField={fundSort} sortDir={fundSortDir} />
+                    </th>
+                    <th className={fThClass} onClick={() => handleFundSort("name")}>
+                      Name<FundSortIcon field="name" sortField={fundSort} sortDir={fundSortDir} />
+                    </th>
+                    <th className={fThClass} onClick={() => handleFundSort("type")}>
+                      Type<FundSortIcon field="type" sortField={fundSort} sortDir={fundSortDir} />
+                    </th>
+                    <th className={`text-right ${fThClass}`} onClick={() => handleFundSort("weight")}>
+                      Weight<FundSortIcon field="weight" sortField={fundSort} sortDir={fundSortDir} />
+                    </th>
+                    <th className={`text-right ${fThClass}`} onClick={() => handleFundSort("price")}>
+                      Price<FundSortIcon field="price" sortField={fundSort} sortDir={fundSortDir} />
+                    </th>
+                    <th className={`text-right ${fThClass}`} onClick={() => handleFundSort("ytd")}>
+                      YTD<FundSortIcon field="ytd" sortField={fundSort} sortDir={fundSortDir} />
+                    </th>
+                    <th className={`text-right ${fThClass}`} onClick={() => handleFundSort("oneYear")}>
+                      1Y<FundSortIcon field="oneYear" sortField={fundSort} sortDir={fundSortDir} />
+                    </th>
+                    <th className={`text-right ${fThClass}`} onClick={() => handleFundSort("threeYear")}>
+                      3Y<FundSortIcon field="threeYear" sortField={fundSort} sortDir={fundSortDir} />
+                    </th>
+                    <th className={`text-right ${fThClass}`} onClick={() => handleFundSort("fiveYear")}>
+                      5Y<FundSortIcon field="fiveYear" sortField={fundSort} sortDir={fundSortDir} />
+                    </th>
+                    <th className={`text-right ${fThClass}`} onClick={() => handleFundSort("tenYear")}>
+                      10Y<FundSortIcon field="tenYear" sortField={fundSort} sortDir={fundSortDir} />
+                    </th>
+                  </tr>
+                </thead>
+                <tbody>
+                  {sortedFunds.map((s) => {
+                    const perf = s.fundData?.performance;
+                    return (
+                      <tr key={s.ticker} className="border-b border-slate-50 hover:bg-slate-50/50 transition-colors">
+                        <td className="py-3">
+                          <Link href={`/stock/${s.ticker.toLowerCase()}`} className="font-bold text-slate-800 hover:underline font-mono">
+                            {s.ticker}
+                          </Link>
+                        </td>
+                        <td className="py-3 text-slate-600 max-w-[180px] truncate">{s.name}</td>
+                        <td className="py-3">
+                          <span className={`rounded-md px-2 py-0.5 text-[10px] font-bold ${s.instrumentType === "etf" ? "bg-indigo-100 text-indigo-700" : "bg-purple-100 text-purple-700"}`}>
+                            {INSTRUMENT_LABELS[s.instrumentType || "stock"]}
+                          </span>
+                        </td>
+                        <td className="py-3 text-right">
+                          <InlineWeightEditor ticker={s.ticker} currentWeight={s.weights.portfolio} onSave={updateWeight} />
+                        </td>
+                        <td className="py-3 text-right text-slate-600">{s.price != null ? `$${s.price.toFixed(2)}` : "—"}</td>
+                        <td className={`py-3 text-right text-xs font-semibold ${fundReturnColor(perf?.ytd)}`}>{fundReturnFmt(perf?.ytd)}</td>
+                        <td className={`py-3 text-right text-xs font-semibold ${fundReturnColor(perf?.oneYear)}`}>{fundReturnFmt(perf?.oneYear)}</td>
+                        <td className={`py-3 text-right text-xs font-semibold ${fundReturnColor(perf?.threeYear)}`}>{fundReturnFmt(perf?.threeYear)}</td>
+                        <td className={`py-3 text-right text-xs font-semibold ${fundReturnColor(perf?.fiveYear)}`}>{fundReturnFmt(perf?.fiveYear)}</td>
+                        <td className={`py-3 text-right text-xs font-semibold ${fundReturnColor(perf?.tenYear)}`}>{fundReturnFmt(perf?.tenYear)}</td>
+                      </tr>
+                    );
+                  })}
+                </tbody>
+              </table>
+            </div>
+          </section>
+        );
+      })()}
 
       {/* Portfolio Rankings (scoreable stocks only) */}
       <RankingTable title="Portfolio Rankings" subtitle="Bottom 3 flagged for review" stocks={scoreablePortfolio} flagType="review" />
@@ -353,7 +486,6 @@ export function PortfolioOverview() {
 }
 
 type RankingSortKey = "ticker" | "raw" | "adjusted" | "rating" | string;
-type SortDir = "asc" | "desc";
 
 function RankingTable({
   title,
