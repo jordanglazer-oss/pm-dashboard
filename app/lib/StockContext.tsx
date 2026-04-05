@@ -2,7 +2,7 @@
 
 import React, { createContext, useContext, useState, useMemo, useCallback, useEffect, useRef } from "react";
 import type { Stock, MarketData, ScoredStock, MorningBrief, ScoreKey, ScoreExplanations, HealthData, TechnicalIndicators, RiskAlert, FundData } from "./types";
-import type { PimHolding, PimModelData } from "./pim-types";
+import type { PimHolding, PimModelData, PimPortfolioState, PimModelGroupState } from "./pim-types";
 import { computeScores, isOffensiveSector, isScoreable } from "./scoring";
 import { holdingsSeed, defaultMarketData } from "./defaults";
 import { pimModelSeed } from "./pim-seed";
@@ -50,6 +50,9 @@ type StockContextType = {
   pimModels: PimModelData;
   updatePimModels: (data: PimModelData) => void;
   toggleModelEligibility: (ticker: string, groupId: string, eligible: boolean) => void;
+  pimPortfolioState: PimPortfolioState;
+  updatePimPortfolioState: (data: PimPortfolioState) => void;
+  getGroupState: (groupId: string) => PimModelGroupState;
 };
 
 const StockContext = createContext<StockContextType | null>(null);
@@ -86,6 +89,7 @@ export function StockProvider({ children }: { children: React.ReactNode }) {
   const [chartAnalyses, setChartAnalysesState] = useState<Record<string, ChartAnalysisEntry>>({});
   const [scannerData, setScannerDataState] = useState<ScannerData | null>(null);
   const [pimModels, setPimModelsState] = useState<PimModelData>({ groups: pimModelSeed });
+  const [pimPortfolioState, setPimPortfolioState] = useState<PimPortfolioState>({ groupStates: [], lastUpdated: "" });
   const [loading, setLoading] = useState(true);
 
   const persistStocks = useDebouncedPersist("/api/kv/stocks", "stocks");
@@ -108,6 +112,13 @@ export function StockProvider({ children }: { children: React.ReactNode }) {
       body: JSON.stringify(data),
     }).catch((e) => console.error("Failed to persist pim-models:", e));
   }, []);
+  const persistPortfolioState = useCallback((data: PimPortfolioState) => {
+    fetch("/api/kv/pim-portfolio-state", {
+      method: "PUT",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify(data),
+    }).catch((e) => console.error("Failed to persist pim-portfolio-state:", e));
+  }, []);
 
   /* ─── Load from KV on mount ─── */
   useEffect(() => {
@@ -118,7 +129,8 @@ export function StockProvider({ children }: { children: React.ReactNode }) {
       fetch("/api/kv/chart-analysis").then((r) => r.json()).catch(() => ({ chartAnalyses: {} })),
       fetch("/api/kv/scanner").then((r) => r.json()).catch(() => ({ scanner: null })),
       fetch("/api/kv/pim-models").then((r) => r.json()).catch(() => ({ groups: pimModelSeed })),
-    ]).then(async ([stocksRes, marketRes, briefRes, chartRes, scannerRes, pimRes]) => {
+      fetch("/api/kv/pim-portfolio-state").then((r) => r.json()).catch(() => ({ groupStates: [], lastUpdated: "" })),
+    ]).then(async ([stocksRes, marketRes, briefRes, chartRes, scannerRes, pimRes, portfolioStateRes]) => {
       const loadedStocks: Stock[] = stocksRes.stocks || holdingsSeed;
       setStocks(loadedStocks);
       if (marketRes.market) setMarketData({ ...defaultMarketData, ...marketRes.market });
@@ -126,6 +138,7 @@ export function StockProvider({ children }: { children: React.ReactNode }) {
       if (chartRes.chartAnalyses) setChartAnalysesState(chartRes.chartAnalyses);
       if (scannerRes.scanner) setScannerDataState(scannerRes.scanner);
       if (pimRes.groups) setPimModelsState(pimRes);
+      if (portfolioStateRes.groupStates) setPimPortfolioState(portfolioStateRes);
       setLoading(false);
 
       // Backfill missing names from Yahoo Finance for all stocks
@@ -607,6 +620,17 @@ export function StockProvider({ children }: { children: React.ReactNode }) {
     persistPim(data);
   }, [persistPim]);
 
+  /* ─── PIM Portfolio State ─── */
+  const updatePimPortfolioState = useCallback((data: PimPortfolioState) => {
+    setPimPortfolioState(data);
+    persistPortfolioState(data);
+  }, [persistPortfolioState]);
+
+  const getGroupState = useCallback((groupId: string): PimModelGroupState => {
+    const existing = pimPortfolioState.groupStates.find((gs) => gs.groupId === groupId);
+    return existing || { groupId, lastRebalance: null, trackingStart: null, transactions: [] };
+  }, [pimPortfolioState]);
+
   /* ─── Toggle model eligibility: updates stock field AND syncs model holdings ─── */
   const toggleModelEligibility = useCallback((ticker: string, groupId: string, eligible: boolean) => {
     // 1. Update the stock's modelEligibility field
@@ -720,6 +744,9 @@ export function StockProvider({ children }: { children: React.ReactNode }) {
         pimModels,
         updatePimModels,
         toggleModelEligibility,
+        pimPortfolioState,
+        updatePimPortfolioState,
+        getGroupState,
       }}
     >
       {children}

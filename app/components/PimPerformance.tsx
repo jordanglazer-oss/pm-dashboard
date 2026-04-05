@@ -2,6 +2,7 @@
 
 import React, { useState, useEffect, useMemo, useCallback } from "react";
 import type { PimPerformanceData, PimModelPerformance, PimProfileType } from "@/app/lib/pim-types";
+import { useStocks } from "@/app/lib/StockContext";
 
 const PROFILE_LABELS: Record<PimProfileType, string> = {
   balanced: "Balanced",
@@ -15,7 +16,7 @@ const PERIOD_OPTIONS = [
   { label: "3M", days: 63 },
   { label: "6M", days: 126 },
   { label: "YTD", days: -1 },
-  { label: "1Y", days: 252 },
+  { label: "All", days: 0 },
 ];
 
 function fmtPct(v: number): string {
@@ -33,11 +34,15 @@ type Props = {
 };
 
 export function PimPerformance({ groupId, groupName }: Props) {
+  const { getGroupState } = useStocks();
+  const groupState = getGroupState(groupId);
+  const trackingStart = groupState?.trackingStart;
+
   const [perfData, setPerfData] = useState<PimPerformanceData | null>(null);
   const [loading, setLoading] = useState(false);
   const [refreshing, setRefreshing] = useState(false);
   const [selectedProfile, setSelectedProfile] = useState<PimProfileType>("balanced");
-  const [period, setPeriod] = useState("YTD");
+  const [period, setPeriod] = useState("All");
 
   // Load cached performance data
   useEffect(() => {
@@ -65,9 +70,9 @@ export function PimPerformance({ groupId, groupName }: Props) {
     setRefreshing(false);
   }, []);
 
-  // Auto-refresh on first mount if no data or stale (> 4 hours)
+  // Auto-refresh on first mount if tracking is active and (no data or stale > 4 hours)
   useEffect(() => {
-    if (loading) return;
+    if (loading || !trackingStart) return;
     if (!perfData) {
       setLoading(true);
       refreshPerformance().finally(() => setLoading(false));
@@ -79,7 +84,7 @@ export function PimPerformance({ groupId, groupName }: Props) {
       refreshPerformance();
     }
   // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, []);
+  }, [trackingStart]);
 
   // Get models for selected group
   const groupModels = useMemo(() => {
@@ -100,6 +105,11 @@ export function PimPerformance({ groupId, groupName }: Props) {
     const periodOpt = PERIOD_OPTIONS.find((p) => p.label === period);
     if (!periodOpt) return hist;
 
+    if (periodOpt.days === 0) {
+      // All — show everything since tracking start
+      return hist;
+    }
+
     if (periodOpt.days === -1) {
       // YTD
       const year = new Date().getFullYear();
@@ -116,7 +126,8 @@ export function PimPerformance({ groupId, groupName }: Props) {
     const first = filteredHistory[0];
     const last = filteredHistory[filteredHistory.length - 1];
     const totalReturn = ((last.value - first.value) / first.value) * 100;
-    const dailyReturns = filteredHistory.map((h) => h.dailyReturn);
+    const dailyReturns = filteredHistory.slice(1).map((h) => h.dailyReturn); // skip day 0 (baseline)
+    if (dailyReturns.length === 0) return null;
     const avg = dailyReturns.reduce((s, r) => s + r, 0) / dailyReturns.length;
     const maxDay = Math.max(...dailyReturns);
     const minDay = Math.min(...dailyReturns);
@@ -182,6 +193,23 @@ export function PimPerformance({ groupId, groupName }: Props) {
   const availableProfiles = groupModels.map((m) => m.profile);
   const activeProfile = availableProfiles.includes(selectedProfile) ? selectedProfile : availableProfiles[0] || "balanced";
 
+  // Tracking start date display
+  const trackingStartLabel = trackingStart
+    ? new Date(trackingStart.date + "T12:00:00").toLocaleDateString("en-US", { month: "short", day: "numeric", year: "numeric" })
+    : null;
+
+  // If no tracking start, show a message
+  if (!trackingStart) {
+    return (
+      <div className="rounded-2xl border border-slate-200 bg-white p-6 shadow-sm">
+        <h2 className="text-sm font-bold text-slate-800 mb-2">Performance Tracker</h2>
+        <p className="text-xs text-slate-400">
+          Performance tracking has not been started for this model. Set an initial rebalance above to begin forward tracking.
+        </p>
+      </div>
+    );
+  }
+
   if (loading) {
     return (
       <div className="rounded-2xl border border-slate-200 bg-white p-6 shadow-sm">
@@ -200,7 +228,7 @@ export function PimPerformance({ groupId, groupName }: Props) {
         <div>
           <h2 className="text-sm font-bold text-slate-800">Performance Tracker</h2>
           <p className="text-xs text-slate-400 mt-0.5">
-            {groupName} model · weighted return
+            {groupName} model · forward tracking since {trackingStartLabel}
             {perfData?.lastUpdated && (
               <> · updated {new Date(perfData.lastUpdated).toLocaleString()}</>
             )}
@@ -219,34 +247,36 @@ export function PimPerformance({ groupId, groupName }: Props) {
       </div>
 
       {/* Profile tabs + Period selector */}
-      <div className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
-        <div className="flex gap-1 rounded-xl bg-slate-100 p-1">
-          {availableProfiles.map((p) => (
-            <button
-              key={p}
-              onClick={() => setSelectedProfile(p)}
-              className={`rounded-lg px-3 py-1.5 text-xs font-semibold transition-colors ${
-                activeProfile === p ? "bg-white text-slate-800 shadow-sm" : "text-slate-500 hover:text-slate-700"
-              }`}
-            >
-              {PROFILE_LABELS[p]}
-            </button>
-          ))}
+      {availableProfiles.length > 0 && (
+        <div className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
+          <div className="flex gap-1 rounded-xl bg-slate-100 p-1">
+            {availableProfiles.map((p) => (
+              <button
+                key={p}
+                onClick={() => setSelectedProfile(p)}
+                className={`rounded-lg px-3 py-1.5 text-xs font-semibold transition-colors ${
+                  activeProfile === p ? "bg-white text-slate-800 shadow-sm" : "text-slate-500 hover:text-slate-700"
+                }`}
+              >
+                {PROFILE_LABELS[p]}
+              </button>
+            ))}
+          </div>
+          <div className="flex gap-1">
+            {PERIOD_OPTIONS.map((p) => (
+              <button
+                key={p.label}
+                onClick={() => setPeriod(p.label)}
+                className={`rounded-lg px-2.5 py-1 text-[10px] font-bold transition-colors ${
+                  period === p.label ? "bg-slate-800 text-white" : "bg-slate-100 text-slate-500 hover:bg-slate-200"
+                }`}
+              >
+                {p.label}
+              </button>
+            ))}
+          </div>
         </div>
-        <div className="flex gap-1">
-          {PERIOD_OPTIONS.map((p) => (
-            <button
-              key={p.label}
-              onClick={() => setPeriod(p.label)}
-              className={`rounded-lg px-2.5 py-1 text-[10px] font-bold transition-colors ${
-                period === p.label ? "bg-slate-800 text-white" : "bg-slate-100 text-slate-500 hover:bg-slate-200"
-              }`}
-            >
-              {p.label}
-            </button>
-          ))}
-        </div>
-      </div>
+      )}
 
       {/* Stats row */}
       {stats && (
@@ -329,12 +359,14 @@ export function PimPerformance({ groupId, groupName }: Props) {
         </div>
       ) : (
         <div className="flex items-center justify-center h-40 text-sm text-slate-400">
-          {groupModels.length === 0 ? "No performance data available. Click Refresh to compute." : "Not enough data for this period."}
+          {groupModels.length === 0
+            ? "No performance data yet. Click Refresh to compute returns since tracking started."
+            : "Not enough data for this period."}
         </div>
       )}
 
       {/* Daily returns table (last 10 days) */}
-      {filteredHistory.length > 0 && (
+      {filteredHistory.length > 1 && (
         <details className="text-xs">
           <summary className="cursor-pointer text-slate-400 hover:text-slate-600 font-semibold py-1">
             Daily Returns (last 10 trading days)
@@ -349,7 +381,7 @@ export function PimPerformance({ groupId, groupName }: Props) {
                 </tr>
               </thead>
               <tbody>
-                {filteredHistory.slice(-10).reverse().map((h) => (
+                {filteredHistory.slice(1).slice(-10).reverse().map((h) => (
                   <tr key={h.date} className="border-b border-slate-50">
                     <td className="py-1 text-slate-600">{h.date}</td>
                     <td className={`py-1 text-right font-semibold ${h.dailyReturn >= 0 ? "text-emerald-600" : "text-red-500"}`}>{fmtPct(h.dailyReturn)}</td>
