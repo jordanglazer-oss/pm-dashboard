@@ -22,31 +22,31 @@ async function lookupFundservName(code: string): Promise<{ name: string; type: s
       }
     }
 
-    // If exact lookup failed, try prefix search (e.g. DYN3366 → DYN336)
-    // to find the fund family and match against the e1 field which lists all series codes
-    const prefix = code.replace(/\d{1,2}$/, ""); // strip last 1-2 digits
-    if (prefix !== code && prefix.length >= 3) {
+    // If exact lookup failed, try prefix searches (strip 1 digit, then 2)
+    // to find the fund family. E.g. DYN3366 → try DYN336 first, then DYN33
+    const prefixes = [
+      code.replace(/\d$/, ""),       // strip 1 digit: DYN3366 → DYN336
+      code.replace(/\d{2}$/, ""),    // strip 2 digits: DYN3366 → DYN33
+    ].filter((p, i, arr) => p !== code && p.length >= 3 && arr.indexOf(p) === i);
+
+    for (const prefix of prefixes) {
       const prefixUrl = `https://www.morningstar.ca/ca/util/SecuritySearch.ashx?q=${encodeURIComponent(prefix)}&limit=25`;
       const prefixRes = await fetch(prefixUrl, { cache: "no-store", headers: { "User-Agent": UA } });
-      if (prefixRes.ok) {
-        const prefixText = await prefixRes.text();
-        const prefixLines = prefixText.trim().split("\n");
-        for (const line of prefixLines) {
-          if (!line.includes("|")) continue;
-          // Check if the e1 field contains this code (e.g. "DYN3360@3,DYN3364@3")
-          // or if the JSON data references this code
-          if (line.includes(code)) {
-            const name = line.split("|")[0];
-            if (name) return { name, type: "mutual-fund" };
-          }
-        }
-        // If code not found in e1 fields, use the first result's name
-        // since it's the same fund family (e.g. DYN3366 is a series of Dynamic Premium Yield PLUS)
-        if (prefixLines.length > 0 && prefixLines[0].includes("|")) {
-          const name = prefixLines[0].split("|")[0];
+      if (!prefixRes.ok) continue;
+      const prefixText = await prefixRes.text();
+      const prefixLines = prefixText.trim().split("\n").filter((l) => l.includes("|"));
+      if (prefixLines.length === 0) continue;
+
+      // First check if any result's e1 field contains this exact code
+      for (const line of prefixLines) {
+        if (line.includes(code)) {
+          const name = line.split("|")[0];
           if (name) return { name, type: "mutual-fund" };
         }
       }
+      // Otherwise use the first result's name (same fund family)
+      const name = prefixLines[0].split("|")[0];
+      if (name) return { name, type: "mutual-fund" };
     }
   } catch { /* fallback */ }
   return { name: code, type: "mutual-fund" };
