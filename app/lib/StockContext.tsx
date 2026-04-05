@@ -2,7 +2,7 @@
 
 import React, { createContext, useContext, useState, useMemo, useCallback, useEffect, useRef } from "react";
 import type { Stock, MarketData, ScoredStock, MorningBrief, ScoreKey, ScoreExplanations, HealthData, TechnicalIndicators, RiskAlert, FundData } from "./types";
-import type { PimModelGroup, PimModelData } from "./pim-types";
+import type { PimHolding, PimModelData } from "./pim-types";
 import { computeScores, isOffensiveSector, isScoreable } from "./scoring";
 import { holdingsSeed, defaultMarketData } from "./defaults";
 import { pimModelSeed } from "./pim-seed";
@@ -49,6 +49,7 @@ type StockContextType = {
   watchlistStocks: ScoredStock[];
   pimModels: PimModelData;
   updatePimModels: (data: PimModelData) => void;
+  toggleModelEligibility: (ticker: string, groupId: string, eligible: boolean) => void;
 };
 
 const StockContext = createContext<StockContextType | null>(null);
@@ -249,6 +250,52 @@ export function StockProvider({ children }: { children: React.ReactNode }) {
     return "equity";
   }, []);
 
+  /* ─── Helper: is the instrument a stock (not ETF/MF)? ─── */
+  const isStock = useCallback((s: Stock | { instrumentType?: string }) => {
+    return !s.instrumentType || s.instrumentType === "stock";
+  }, []);
+
+  /* ─── Helper: ticker matching across -T / .TO variants ─── */
+  const tickerMatch = useCallback((a: string, b: string) => {
+    return a === b || a.replace("-T", ".TO") === b.replace("-T", ".TO");
+  }, []);
+
+  /* ─── Rebalance: set all individual stocks to equal weight within equity class ─── */
+  const rebalanceStockWeights = useCallback((holdings: PimHolding[]): PimHolding[] => {
+    // Count individual stocks (equity class, not ETF/MF pattern)
+    // We identify ETFs/MFs by their symbol patterns or by checking if they existed
+    // in the original seed (they have non-equal weights). Simpler: use the stocks list.
+    const currentStocks = stocks.filter((s) => s.bucket === "Portfolio" && isStock(s));
+    const stockTickers = new Set(currentStocks.map((s) => s.ticker));
+    // Also add .TO variants
+    currentStocks.forEach((s) => {
+      stockTickers.add(s.ticker.replace(".TO", "-T"));
+      stockTickers.add(s.ticker.replace("-T", ".TO"));
+    });
+
+    const equityHoldings = holdings.filter((h) => h.assetClass === "equity");
+    const stockHoldings = equityHoldings.filter((h) => stockTickers.has(h.symbol));
+    const etfHoldings = equityHoldings.filter((h) => !stockTickers.has(h.symbol));
+    const nonEquity = holdings.filter((h) => h.assetClass !== "equity");
+
+    if (stockHoldings.length === 0) return holdings;
+
+    // Individual stocks get equal weight. ETFs keep their existing weights.
+    // Total equity weight = 1.0 (100% of equity class).
+    // ETFs take their portion, stocks share the remainder equally.
+    const etfTotal = etfHoldings.reduce((s, h) => s + h.weightInClass, 0);
+    const stockTotal = 1.0 - etfTotal;
+    const perStock = stockTotal > 0 ? stockTotal / stockHoldings.length : 0;
+
+    const rebalanced = [
+      ...nonEquity,
+      ...etfHoldings,
+      ...stockHoldings.map((h) => ({ ...h, weightInClass: parseFloat(perStock.toFixed(6)) })),
+    ];
+
+    return rebalanced;
+  }, [stocks, isStock]);
+
   /* ─── Auto-add to PIM models when stock is added ─── */
   const addToPimModels = useCallback((stock: Stock) => {
     setPimModelsState((prev) => {
@@ -261,67 +308,77 @@ export function StockProvider({ children }: { children: React.ReactNode }) {
         if (eligibility[group.id] === false) return group;
 
         // Skip if already in this group
-        const exists = group.holdings.some((h) =>
-          h.symbol === stock.ticker || h.symbol.replace("-T", ".TO") === stock.ticker.replace("-T", ".TO")
-        );
-        if (exists) return group;
+        if (group.holdings.some((h) => tickerMatch(h.symbol, stock.ticker))) return group;
 
-        // Redistribute weight equally among all holdings in this asset class
-        const existingInClass = group.holdings.filter((h) => h.assetClass === assetClass);
-        const newCount = existingInClass.length + 1;
-        const totalClassWeight = existingInClass.reduce((s, h) => s + h.weightInClass, 0);
-        const newWeight = totalClassWeight > 0 ? totalClassWeight / newCount : (1 / newCount);
-        const scaleFactor = totalClassWeight > 0 ? (totalClassWeight - newWeight) / totalClassWeight : 1;
-
-        const updatedHoldings = group.holdings.map((h) => {
-          if (h.assetClass === assetClass) {
-            return { ...h, weightInClass: parseFloat((h.weightInClass * scaleFactor).toFixed(6)) };
-          }
-          return h;
-        });
-
-        updatedHoldings.push({
+        // Add the new holding
+        const newHoldings = [...group.holdings, {
           name: (stock.name || stock.ticker).toUpperCase(),
           symbol: stock.ticker,
           currency,
           assetClass,
-          weightInClass: parseFloat(newWeight.toFixed(6)),
-        });
+          weightInClass: 0, // will be set by rebalance
+        }];
 
-        return { ...group, holdings: updatedHoldings };
+        // For individual stocks: rebalance all stocks to equal weight
+        // For ETFs/MFs: redistribute within their asset class
+        if (isStock(stock)) {
+          return { ...group, holdings: rebalanceStockWeights(newHoldings) };
+        } else {
+          // ETF/MF: give proportional share of existing class weight
+          const existingInClass = group.holdings.filter((h) => h.assetClass === assetClass);
+          const newCount = existingInClass.length + 1;
+          const totalClassWeight = existingInClass.reduce((s, h) => s + h.weightInClass, 0);
+          const newWeight = totalClassWeight > 0 ? totalClassWeight / newCount : (1 / newCount);
+          const scaleFactor = totalClassWeight > 0 ? (totalClassWeight - newWeight) / totalClassWeight : 1;
+
+          const rebalanced = newHoldings.map((h) => {
+            if (tickerMatch(h.symbol, stock.ticker)) {
+              return { ...h, weightInClass: parseFloat(newWeight.toFixed(6)) };
+            }
+            if (h.assetClass === assetClass) {
+              return { ...h, weightInClass: parseFloat((h.weightInClass * scaleFactor).toFixed(6)) };
+            }
+            return h;
+          });
+          return { ...group, holdings: rebalanced };
+        }
       });
 
       const updated = { ...prev, groups: updatedGroups, lastUpdated: new Date().toISOString() };
       persistPim(updated);
       return updated;
     });
-  }, [persistPim, detectAssetClass]);
+  }, [persistPim, detectAssetClass, isStock, tickerMatch, rebalanceStockWeights]);
 
   /* ─── Auto-remove from PIM models when stock is removed ─── */
-  const removeFromPimModels = useCallback((ticker: string) => {
+  const removeFromPimModels = useCallback((ticker: string, removedStock?: Stock) => {
     setPimModelsState((prev) => {
       const updatedGroups = prev.groups.map((group) => {
-        const holdingIdx = group.holdings.findIndex((h) =>
-          h.symbol === ticker || h.symbol.replace("-T", ".TO") === ticker.replace("-T", ".TO")
-        );
+        const holdingIdx = group.holdings.findIndex((h) => tickerMatch(h.symbol, ticker));
         if (holdingIdx === -1) return group;
 
         const removed = group.holdings[holdingIdx];
         const remainingHoldings = group.holdings.filter((_, i) => i !== holdingIdx);
 
-        // Redistribute removed weight among remaining holdings in same asset class
+        // For individual stocks: rebalance remaining stocks to equal weight
+        if (removedStock && isStock(removedStock)) {
+          return { ...group, holdings: rebalanceStockWeights(remainingHoldings) };
+        }
+
+        // For ETFs/MFs: redistribute removed weight among remaining in same class
         const sameClass = remainingHoldings.filter((h) => h.assetClass === removed.assetClass);
         const totalRemaining = sameClass.reduce((s, h) => s + h.weightInClass, 0);
 
         if (totalRemaining > 0 && removed.weightInClass > 0) {
           const scaleFactor = (totalRemaining + removed.weightInClass) / totalRemaining;
-          const updatedHoldings = remainingHoldings.map((h) => {
-            if (h.assetClass === removed.assetClass) {
-              return { ...h, weightInClass: parseFloat((h.weightInClass * scaleFactor).toFixed(6)) };
-            }
-            return h;
-          });
-          return { ...group, holdings: updatedHoldings };
+          return {
+            ...group,
+            holdings: remainingHoldings.map((h) =>
+              h.assetClass === removed.assetClass
+                ? { ...h, weightInClass: parseFloat((h.weightInClass * scaleFactor).toFixed(6)) }
+                : h
+            ),
+          };
         }
 
         return { ...group, holdings: remainingHoldings };
@@ -331,7 +388,7 @@ export function StockProvider({ children }: { children: React.ReactNode }) {
       persistPim(updated);
       return updated;
     });
-  }, [persistPim]);
+  }, [persistPim, tickerMatch, isStock, rebalanceStockWeights]);
 
   /* ─── Stock mutations (optimistic + persist) ─── */
   const addStock = useCallback((stock: Stock) => {
@@ -345,36 +402,37 @@ export function StockProvider({ children }: { children: React.ReactNode }) {
   }, [persistStocks, addToPimModels]);
 
   const removeStock = useCallback((ticker: string) => {
+    // Find the stock before removing so we can pass it to removeFromPimModels
+    const stockToRemove = stocks.find((s) => s.ticker === ticker);
     setStocks((prev) => {
       const next = prev.filter((s) => s.ticker !== ticker);
       persistStocks(next);
       return next;
     });
     // Auto-remove from PIM models
-    removeFromPimModels(ticker);
-  }, [persistStocks, removeFromPimModels]);
+    removeFromPimModels(ticker, stockToRemove);
+  }, [stocks, persistStocks, removeFromPimModels]);
 
   const moveBucket = useCallback((ticker: string) => {
+    const stock = stocks.find((s) => s.ticker === ticker);
+    const wasPortfolio = stock?.bucket === "Portfolio";
     setStocks((prev) => {
-      const stock = prev.find((s) => s.ticker === ticker);
-      const wasPortfolio = stock?.bucket === "Portfolio";
       const next = prev.map((s) =>
         s.ticker === ticker
           ? { ...s, bucket: (s.bucket === "Portfolio" ? "Watchlist" : "Portfolio") as "Portfolio" | "Watchlist", weights: { portfolio: s.bucket === "Portfolio" ? 0 : 2 } }
           : s
       );
       persistStocks(next);
-
-      // Sync with PIM models: remove when moving to Watchlist, add when moving to Portfolio
-      if (wasPortfolio) {
-        removeFromPimModels(ticker);
-      } else if (stock) {
-        addToPimModels(stock);
-      }
-
       return next;
     });
-  }, [persistStocks, removeFromPimModels, addToPimModels]);
+
+    // Sync with PIM models: remove when moving to Watchlist, add when moving to Portfolio
+    if (wasPortfolio) {
+      removeFromPimModels(ticker, stock);
+    } else if (stock) {
+      addToPimModels(stock);
+    }
+  }, [stocks, persistStocks, removeFromPimModels, addToPimModels]);
 
   const updateScore = useCallback((ticker: string, key: ScoreKey, value: number) => {
     setStocks((prev) => {
@@ -511,6 +569,100 @@ export function StockProvider({ children }: { children: React.ReactNode }) {
     persistPim(data);
   }, [persistPim]);
 
+  /* ─── Toggle model eligibility: updates stock field AND syncs model holdings ─── */
+  const toggleModelEligibility = useCallback((ticker: string, groupId: string, eligible: boolean) => {
+    // 1. Update the stock's modelEligibility field
+    const stock = stocks.find((s) => s.ticker === ticker);
+    if (!stock) return;
+
+    const current = stock.modelEligibility || {};
+    const updated = { ...current, [groupId]: eligible };
+    setStocks((prev) => {
+      const next = prev.map((s) =>
+        s.ticker === ticker ? { ...s, modelEligibility: updated } : s
+      );
+      persistStocks(next);
+      return next;
+    });
+
+    // 2. Sync PIM models: add or remove from the specific group
+    if (eligible) {
+      // Add to this specific model group
+      const assetClass = detectAssetClass(stock);
+      const currency: "CAD" | "USD" = stock.ticker.endsWith("-T") || stock.ticker.endsWith(".TO") ? "CAD" : "USD";
+
+      setPimModelsState((prev) => {
+        const updatedGroups = prev.groups.map((group) => {
+          if (group.id !== groupId) return group;
+          if (group.holdings.some((h) => tickerMatch(h.symbol, stock.ticker))) return group;
+
+          const newHoldings = [...group.holdings, {
+            name: (stock.name || stock.ticker).toUpperCase(),
+            symbol: stock.ticker,
+            currency,
+            assetClass,
+            weightInClass: 0,
+          }];
+
+          if (isStock(stock)) {
+            return { ...group, holdings: rebalanceStockWeights(newHoldings) };
+          } else {
+            const existingInClass = group.holdings.filter((h) => h.assetClass === assetClass);
+            const newCount = existingInClass.length + 1;
+            const totalClassWeight = existingInClass.reduce((s, h) => s + h.weightInClass, 0);
+            const newWeight = totalClassWeight > 0 ? totalClassWeight / newCount : (1 / newCount);
+            const scaleFactor = totalClassWeight > 0 ? (totalClassWeight - newWeight) / totalClassWeight : 1;
+            return {
+              ...group,
+              holdings: newHoldings.map((h) => {
+                if (tickerMatch(h.symbol, stock.ticker)) return { ...h, weightInClass: parseFloat(newWeight.toFixed(6)) };
+                if (h.assetClass === assetClass) return { ...h, weightInClass: parseFloat((h.weightInClass * scaleFactor).toFixed(6)) };
+                return h;
+              }),
+            };
+          }
+        });
+        const data = { ...prev, groups: updatedGroups, lastUpdated: new Date().toISOString() };
+        persistPim(data);
+        return data;
+      });
+    } else {
+      // Remove from this specific model group
+      setPimModelsState((prev) => {
+        const updatedGroups = prev.groups.map((group) => {
+          if (group.id !== groupId) return group;
+          const holdingIdx = group.holdings.findIndex((h) => tickerMatch(h.symbol, ticker));
+          if (holdingIdx === -1) return group;
+
+          const removed = group.holdings[holdingIdx];
+          const remaining = group.holdings.filter((_, i) => i !== holdingIdx);
+
+          if (isStock(stock)) {
+            return { ...group, holdings: rebalanceStockWeights(remaining) };
+          }
+
+          const sameClass = remaining.filter((h) => h.assetClass === removed.assetClass);
+          const totalRemaining = sameClass.reduce((s, h) => s + h.weightInClass, 0);
+          if (totalRemaining > 0 && removed.weightInClass > 0) {
+            const scaleFactor = (totalRemaining + removed.weightInClass) / totalRemaining;
+            return {
+              ...group,
+              holdings: remaining.map((h) =>
+                h.assetClass === removed.assetClass
+                  ? { ...h, weightInClass: parseFloat((h.weightInClass * scaleFactor).toFixed(6)) }
+                  : h
+              ),
+            };
+          }
+          return { ...group, holdings: remaining };
+        });
+        const data = { ...prev, groups: updatedGroups, lastUpdated: new Date().toISOString() };
+        persistPim(data);
+        return data;
+      });
+    }
+  }, [stocks, persistStocks, persistPim, detectAssetClass, isStock, tickerMatch, rebalanceStockWeights]);
+
   const getStock = useCallback(
     (ticker: string) => scoredStocks.find((s) => s.ticker === ticker),
     [scoredStocks]
@@ -549,6 +701,7 @@ export function StockProvider({ children }: { children: React.ReactNode }) {
         watchlistStocks,
         pimModels,
         updatePimModels,
+        toggleModelEligibility,
       }}
     >
       {children}

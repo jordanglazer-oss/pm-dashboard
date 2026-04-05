@@ -432,7 +432,7 @@ export default function StockDetailPage() {
   const params = useParams();
   const router = useRouter();
   const ticker = (params.ticker as string)?.toUpperCase();
-  const { getStock, scoredStocks, marketData, updateScore, updateExplanations, updateLastScored, updatePrice, updateHealthData, updateTechnicals, updateStockFields, updateWeight, updateFundData, moveBucket, removeStock, pimModels } = useStocks();
+  const { getStock, scoredStocks, marketData, updateScore, updateExplanations, updateLastScored, updatePrice, updateHealthData, updateTechnicals, updateStockFields, updateWeight, updateFundData, moveBucket, removeStock, pimModels, toggleModelEligibility } = useStocks();
   const stock = getStock(ticker);
   const [scoring, setScoring] = useState(false);
   const [scoreError, setScoreError] = useState("");
@@ -895,12 +895,7 @@ export default function StockDetailPage() {
                 return (
                   <button
                     key={group.id}
-                    onClick={() => {
-                      const current = stock.modelEligibility || {};
-                      updateStockFields(ticker, {
-                        modelEligibility: { ...current, [group.id]: !eligible },
-                      });
-                    }}
+                    onClick={() => toggleModelEligibility(ticker, group.id, !eligible)}
                     className={`flex items-center gap-2 rounded-lg px-3 py-2 text-sm font-medium transition-all border ${
                       eligible
                         ? "bg-emerald-50 border-emerald-200 text-emerald-700 hover:bg-emerald-100"
