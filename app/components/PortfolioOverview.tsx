@@ -429,7 +429,7 @@ export function PortfolioOverview() {
                             const nl = (s.name || "").toLowerCase();
                             const sl = (s.sector || "").toLowerCase();
                             const isBondOrAlt = sl.includes("bond") || sl.includes("fixed") || nl.includes("bond") || nl.includes("fixed income")
-                              || sl.includes("alternative") || nl.includes("alternative") || nl.includes("premium yield") || nl.includes("premium income") || nl.includes("hedge") || nl.includes("option income") || nl.includes("option writing") || nl.includes("covered call");
+                              || sl.includes("alternative") || nl.includes("alternative") || nl.includes("premium yield") || nl.includes("premium incom") || nl.includes("hedge") || nl.includes("option income") || nl.includes("option writing") || nl.includes("covered call");
                             if (isBondOrAlt) return <span className="text-[10px] text-slate-300">—</span>;
                             return (
                               <button
