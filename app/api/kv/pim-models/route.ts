@@ -13,7 +13,23 @@ export async function GET() {
       await redis.set(KEY, JSON.stringify(seed));
       return NextResponse.json(seed);
     }
-    return NextResponse.json(JSON.parse(raw));
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+    const parsed = JSON.parse(raw) as any;
+    // Migrate: rename "Base" → "PIM" in cached data
+    let migrated = false;
+    if (parsed.groups) {
+      for (const g of parsed.groups) {
+        if (g.id === "base" || (g.id === "pim" && g.name === "Base")) {
+          g.id = "pim";
+          g.name = "PIM";
+          migrated = true;
+        }
+      }
+    }
+    if (migrated) {
+      await redis.set(KEY, JSON.stringify(parsed));
+    }
+    return NextResponse.json(parsed);
   } catch (e) {
     console.error("Redis read error (pim-models):", e);
     return NextResponse.json({ groups: pimModelSeed, lastUpdated: null });

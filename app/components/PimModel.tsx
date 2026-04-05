@@ -2,6 +2,7 @@
 
 import React, { useState, useMemo, useRef, useEffect } from "react";
 import type { PimModelGroup, PimProfileType, PimComputedHolding, PimAssetClass } from "@/app/lib/pim-types";
+import { PimPerformance } from "./PimPerformance";
 
 type Props = {
   groups: PimModelGroup[];
@@ -347,6 +348,9 @@ export function PimModel({ groups }: Props) {
           </div>
         </div>
       )}
+
+      {/* Performance Tracker */}
+      <PimPerformance groupId={selectedGroup.id} groupName={selectedGroup.name} />
 
       {/* Holdings search */}
       <div className="flex items-center gap-3">

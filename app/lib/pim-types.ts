@@ -39,3 +39,23 @@ export type PimModelData = {
   groups: PimModelGroup[];
   lastUpdated?: string;
 };
+
+// ── Performance Tracking ──
+
+export type PimDailyReturn = {
+  date: string; // YYYY-MM-DD
+  value: number; // cumulative index value (starts at 100)
+  dailyReturn: number; // daily % change
+};
+
+export type PimModelPerformance = {
+  groupId: string;
+  profile: PimProfileType;
+  history: PimDailyReturn[];
+  lastUpdated: string;
+};
+
+export type PimPerformanceData = {
+  models: PimModelPerformance[];
+  lastUpdated: string;
+};

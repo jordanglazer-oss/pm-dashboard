@@ -421,16 +421,26 @@ export function PortfolioOverview() {
                           </span>
                         </td>
                         <td className="py-3">
-                          <button
-                            onClick={() => updateStockFields(s.ticker, { designation: (s.designation || "alpha") === "core" ? "alpha" : "core" })}
-                            className={`rounded-md px-2 py-0.5 text-[10px] font-bold transition-colors ${
-                              (s.designation || "alpha") === "core"
-                                ? "bg-blue-100 text-blue-700 hover:bg-blue-200"
-                                : "bg-amber-100 text-amber-700 hover:bg-amber-200"
-                            }`}
-                          >
-                            {(s.designation || "alpha") === "core" ? "Core" : "Alpha"}
-                          </button>
+                          {(() => {
+                            // Only show Core/Alpha for equity-class ETFs/MFs
+                            const nl = (s.name || "").toLowerCase();
+                            const sl = (s.sector || "").toLowerCase();
+                            const isBondOrAlt = sl.includes("bond") || sl.includes("fixed") || nl.includes("bond") || nl.includes("fixed income")
+                              || sl.includes("alternative") || nl.includes("alternative") || nl.includes("premium yield") || nl.includes("hedge");
+                            if (isBondOrAlt) return <span className="text-[10px] text-slate-300">—</span>;
+                            return (
+                              <button
+                                onClick={() => updateStockFields(s.ticker, { designation: (s.designation || "alpha") === "core" ? "alpha" : "core" })}
+                                className={`rounded-md px-2 py-0.5 text-[10px] font-bold transition-colors ${
+                                  (s.designation || "alpha") === "core"
+                                    ? "bg-blue-100 text-blue-700 hover:bg-blue-200"
+                                    : "bg-amber-100 text-amber-700 hover:bg-amber-200"
+                                }`}
+                              >
+                                {(s.designation || "alpha") === "core" ? "Core" : "Alpha"}
+                              </button>
+                            );
+                          })()}
                         </td>
                         <td className="py-3 text-right">
                           <InlineWeightEditor ticker={s.ticker} currentWeight={s.weights.portfolio} onSave={updateWeight} />
