@@ -891,7 +891,7 @@ export default function StockDetailPage() {
             const nameLower = (stock.name || "").toLowerCase();
             const sectorLower = (stock.sector || "").toLowerCase();
             const isBondOrAlt = sectorLower.includes("bond") || sectorLower.includes("fixed") || nameLower.includes("bond") || nameLower.includes("fixed income")
-              || sectorLower.includes("alternative") || nameLower.includes("alternative") || nameLower.includes("premium yield") || nameLower.includes("premium income") || nameLower.includes("hedge") || nameLower.includes("option income") || nameLower.includes("option writing") || nameLower.includes("covered call");
+              || sectorLower.includes("alternative") || nameLower.includes("alternative") || nameLower.includes("premium yield") || nameLower.includes("premium incom") || nameLower.includes("hedge") || nameLower.includes("option income") || nameLower.includes("option writing") || nameLower.includes("covered call");
             if (isBondOrAlt) return null;
             return (
               <div className="rounded-[24px] border border-slate-200 bg-white p-5 shadow-sm mt-6">
