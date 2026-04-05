@@ -1,6 +1,7 @@
 "use client";
 
 import React, { useState, useMemo, useRef, useEffect, useCallback } from "react";
+import Link from "next/link";
 import type { PimModelGroup, PimProfileType, PimComputedHolding, PimAssetClass, PimTransaction, PimPortfolioState } from "@/app/lib/pim-types";
 import { useStocks } from "@/app/lib/StockContext";
 import { PimPerformance } from "./PimPerformance";
@@ -531,7 +532,11 @@ export function PimModel({ groups }: Props) {
               <tbody>
                 {rebalanceTrades.map((t) => (
                   <tr key={t.symbol} className="border-b border-emerald-100">
-                    <td className="py-2 font-mono text-xs font-semibold">{t.symbol}</td>
+                    <td className="py-2 font-mono text-xs font-semibold">
+                      <Link href={`/stock/${t.symbol.toLowerCase()}`} className="hover:underline hover:text-blue-600 transition-colors">
+                        {t.symbol}
+                      </Link>
+                    </td>
                     <td className="py-2 text-right font-mono text-xs">{pct(t.target)}</td>
                     <td className="py-2 text-right font-mono text-xs">{pct(t.live)}</td>
                     <td className={`py-2 text-right font-mono text-xs font-semibold ${t.drift > 0 ? "text-emerald-600" : "text-red-500"}`}>
@@ -745,8 +750,16 @@ export function PimModel({ groups }: Props) {
                 <tbody>
                   {holdings.map((h, i) => (
                     <tr key={`${h.symbol}-${i}`} className={`border-b border-slate-50 hover:bg-slate-50/50 transition-colors ${h.weightInPortfolio === 0 ? "opacity-40" : ""}`}>
-                      <td className="py-2 pl-5 pr-2 font-medium text-slate-800 truncate max-w-[200px]">{h.name}</td>
-                      <td className="py-2 px-2 font-mono text-xs text-slate-600">{h.symbol}</td>
+                      <td className="py-2 pl-5 pr-2 font-medium text-slate-800 truncate max-w-[200px]">
+                        <Link href={`/stock/${h.symbol.toLowerCase()}`} className="hover:underline hover:text-blue-600 transition-colors">
+                          {h.name}
+                        </Link>
+                      </td>
+                      <td className="py-2 px-2 font-mono text-xs text-slate-600">
+                        <Link href={`/stock/${h.symbol.toLowerCase()}`} className="hover:underline hover:text-blue-600 transition-colors">
+                          {h.symbol}
+                        </Link>
+                      </td>
                       <td className="py-2 px-2 text-center">
                         <span className={`inline-block rounded px-1.5 py-0.5 text-[10px] font-bold ${h.currency === "CAD" ? "bg-red-50 text-red-600" : "bg-green-50 text-green-600"}`}>{h.currency}</span>
                       </td>

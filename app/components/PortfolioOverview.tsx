@@ -1,6 +1,6 @@
 "use client";
 
-import React, { useState, useMemo, useCallback, useRef, useEffect } from "react";
+import React, { useState, useMemo, useEffect } from "react";
 import Link from "next/link";
 import { useStocks } from "@/app/lib/StockContext";
 import { SCORE_GROUPS, MAX_SCORE, INSTRUMENT_LABELS } from "@/app/lib/types";
@@ -93,7 +93,7 @@ function matchesDashFilter(s: ScoredStock, filter: DashboardFilter): boolean {
   return true;
 }
 
-type FundSortField = "ticker" | "name" | "type" | "role" | "weight" | "price" | "ytd" | "oneYear" | "threeYear" | "fiveYear" | "tenYear";
+type FundSortField = "ticker" | "name" | "type" | "role" | "weight" | "price" | "ytd" | "oneYear" | "threeYear" | "fiveYear" | "tenYear"; // "weight" kept for backwards compat with saved prefs
 type SortDir = "asc" | "desc";
 
 function FundSortIcon({ field, sortField, sortDir }: { field: FundSortField; sortField: FundSortField; sortDir: SortDir }) {
@@ -115,65 +115,12 @@ function FundSortIcon({ field, sortField, sortDir }: { field: FundSortField; sor
   );
 }
 
-function InlineWeightEditor({ ticker, currentWeight, onSave }: { ticker: string; currentWeight: number; onSave: (ticker: string, w: number) => void }) {
-  const [editing, setEditing] = useState(false);
-  const [value, setValue] = useState(String(currentWeight));
-  const inputRef = useRef<HTMLInputElement>(null);
 
-  useEffect(() => {
-    if (editing && inputRef.current) inputRef.current.focus();
-  }, [editing]);
-
-  // Sync if external value changes while not editing
-  useEffect(() => {
-    if (!editing) setValue(String(currentWeight));
-  }, [currentWeight, editing]);
-
-  const commit = useCallback(() => {
-    const parsed = parseFloat(value);
-    if (!isNaN(parsed) && parsed >= 0) {
-      onSave(ticker, parsed);
-    }
-    setEditing(false);
-  }, [value, ticker, onSave]);
-
-  if (!editing) {
-    return (
-      <button
-        onClick={() => { setValue(String(currentWeight)); setEditing(true); }}
-        className="font-semibold text-slate-700 hover:text-blue-600 hover:underline decoration-dashed transition-colors cursor-pointer"
-        title="Click to edit weight"
-      >
-        {currentWeight}%
-      </button>
-    );
-  }
-
-  return (
-    <form
-      onSubmit={(e) => { e.preventDefault(); commit(); }}
-      className="flex items-center gap-1"
-    >
-      <input
-        ref={inputRef}
-        type="number"
-        step="0.1"
-        min="0"
-        value={value}
-        onChange={(e) => setValue(e.target.value)}
-        onBlur={commit}
-        onKeyDown={(e) => { if (e.key === "Escape") setEditing(false); }}
-        className="w-16 rounded border border-blue-300 bg-blue-50 px-1.5 py-0.5 text-right text-xs font-semibold text-slate-800 outline-none focus:ring-1 focus:ring-blue-300"
-      />
-      <span className="text-xs text-slate-400">%</span>
-    </form>
-  );
-}
 
 export function PortfolioOverview() {
-  const { portfolioStocks, watchlistStocks, scoredStocks, marketData, updateWeight, updateStockFields, uiPrefs, setUiPref } = useStocks();
+  const { portfolioStocks, watchlistStocks, scoredStocks, marketData, updateStockFields, uiPrefs, setUiPref } = useStocks();
   const [dashFilter, setDashFilter] = useState<DashboardFilter>("all");
-  const fundSort = (uiPrefs["fundSort"] as FundSortField) || "weight";
+  const fundSort = (uiPrefs["fundSort"] as FundSortField) || "ticker";
   const fundSortDir = (uiPrefs["fundSortDir"] as SortDir) || "desc";
   const setFundSort = (f: FundSortField) => setUiPref("fundSort", f);
   const setFundSortDir = (d: SortDir | ((prev: SortDir) => SortDir)) => {
@@ -384,9 +331,6 @@ export function PortfolioOverview() {
                     <th className={fThClass} onClick={() => handleFundSort("role")}>
                       Role<FundSortIcon field="role" sortField={fundSort} sortDir={fundSortDir} />
                     </th>
-                    <th className={`text-right ${fThClass}`} onClick={() => handleFundSort("weight")}>
-                      Weight<FundSortIcon field="weight" sortField={fundSort} sortDir={fundSortDir} />
-                    </th>
                     <th className={`text-right ${fThClass}`} onClick={() => handleFundSort("price")}>
                       Price<FundSortIcon field="price" sortField={fundSort} sortDir={fundSortDir} />
                     </th>
@@ -444,9 +388,6 @@ export function PortfolioOverview() {
                               </button>
                             );
                           })()}
-                        </td>
-                        <td className="py-3 text-right">
-                          <InlineWeightEditor ticker={s.ticker} currentWeight={s.weights.portfolio} onSave={updateWeight} />
                         </td>
                         <td className="py-3 text-right text-slate-600">{s.price != null ? `$${s.price.toFixed(2)}` : "—"}</td>
                         <td className={`py-3 text-right text-xs font-semibold ${fundReturnColor(perf?.ytd)}`}>{fundReturnFmt(perf?.ytd)}</td>

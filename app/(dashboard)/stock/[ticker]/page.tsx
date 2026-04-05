@@ -45,6 +45,50 @@ const GROUP_COLORS: Record<
 };
 
 
+// Per-model weight input with local string state (supports backspace/clearing)
+function ModelWeightInput({ groupId, modelWeight, isOverride, onCommit }: {
+  groupId: string;
+  modelWeight: number;
+  isOverride: boolean;
+  onCommit: (val: number) => void;
+}) {
+  const [text, setText] = useState(String(modelWeight));
+  const [focused, setFocused] = useState(false);
+
+  // Sync from parent when not focused
+  useEffect(() => {
+    if (!focused) setText(String(modelWeight));
+  }, [modelWeight, focused]);
+
+  const commit = (raw: string) => {
+    const val = parseFloat(raw);
+    if (!isNaN(val) && val >= 0) {
+      onCommit(val);
+    } else {
+      setText(String(modelWeight));
+    }
+  };
+
+  return (
+    <div className="flex items-center gap-1.5 px-3 pb-2">
+      <input
+        type="text"
+        inputMode="decimal"
+        value={focused ? text : String(modelWeight)}
+        onFocus={() => { setFocused(true); setText(String(modelWeight)); }}
+        onChange={(e) => setText(e.target.value)}
+        onBlur={(e) => { commit(e.target.value); setFocused(false); }}
+        onKeyDown={(e) => { if (e.key === "Enter") { commit(text); (e.target as HTMLInputElement).blur(); } }}
+        className="w-16 rounded-md border border-emerald-200 bg-white px-2 py-1 text-sm text-slate-700 outline-none focus:border-emerald-400"
+      />
+      <span className="text-xs text-emerald-500">%</span>
+      {isOverride && (
+        <span className="text-[10px] text-amber-500 ml-1" title="Overrides default weight">override</span>
+      )}
+    </div>
+  );
+}
+
 // Donut chart SVG
 function ScoreDonut({ score, max, groups, stock }: { score: number; max: number; groups: typeof SCORE_GROUPS; stock: { scores: Record<string, number> } }) {
   const radius = 80;
@@ -963,25 +1007,12 @@ export default function StockDetailPage() {
                     </button>
                     {/* Per-model weight input for funds/ETFs */}
                     {!scoreable && eligible && (
-                      <div className="flex items-center gap-1.5 px-3 pb-2">
-                        <input
-                          type="number"
-                          step="0.1"
-                          min="0"
-                          value={modelWeight}
-                          onChange={(e) => {
-                            const val = parseFloat(e.target.value);
-                            if (!isNaN(val) && val >= 0) {
-                              updateModelWeight(ticker, group.id, val);
-                            }
-                          }}
-                          className="w-16 rounded-md border border-emerald-200 bg-white px-2 py-1 text-sm text-slate-700 outline-none focus:border-emerald-400"
-                        />
-                        <span className="text-xs text-emerald-500">%</span>
-                        {stock.modelWeights?.[group.id] != null && stock.modelWeights[group.id] !== stock.weights.portfolio && (
-                          <span className="text-[10px] text-amber-500 ml-1" title="Overrides default weight">override</span>
-                        )}
-                      </div>
+                      <ModelWeightInput
+                        groupId={group.id}
+                        modelWeight={modelWeight}
+                        isOverride={stock.modelWeights?.[group.id] != null && stock.modelWeights[group.id] !== stock.weights.portfolio}
+                        onCommit={(val) => updateModelWeight(ticker, group.id, val)}
+                      />
                     )}
                   </div>
                 );
