@@ -50,6 +50,7 @@ type StockContextType = {
   pimModels: PimModelData;
   updatePimModels: (data: PimModelData) => void;
   toggleModelEligibility: (ticker: string, groupId: string, eligible: boolean) => void;
+  updateModelWeight: (ticker: string, groupId: string, weight: number) => void;
   pimPortfolioState: PimPortfolioState;
   updatePimPortfolioState: (data: PimPortfolioState) => void;
   getGroupState: (groupId: string) => PimModelGroupState;
@@ -351,14 +352,16 @@ export function StockProvider({ children }: { children: React.ReactNode }) {
         // Skip if already in this group
         if (group.holdings.some((h) => tickerMatch(h.symbol, stock.ticker))) return group;
 
-        // For ETFs/MFs: derive weightInClass from the manual portfolio weight
-        // Manual weight = Weight(Portfolio) in Balanced model
+        // For ETFs/MFs: derive weightInClass from per-model weight (or fallback to portfolio weight)
         // weightInClass = manualWeight / balancedAssetClassAllocation
         let initialWeightInClass = 0;
-        if (!isStock(stock) && stock.weights.portfolio > 0) {
-          const balancedAlloc = getBalancedAlloc(group, assetClass);
-          if (balancedAlloc > 0) {
-            initialWeightInClass = parseFloat(((stock.weights.portfolio / 100) / balancedAlloc).toFixed(6));
+        if (!isStock(stock)) {
+          const manualWeight = stock.modelWeights?.[group.id] ?? stock.weights.portfolio;
+          if (manualWeight > 0) {
+            const balancedAlloc = getBalancedAlloc(group, assetClass);
+            if (balancedAlloc > 0) {
+              initialWeightInClass = parseFloat(((manualWeight / 100) / balancedAlloc).toFixed(6));
+            }
           }
         }
 
@@ -529,22 +532,67 @@ export function StockProvider({ children }: { children: React.ReactNode }) {
       return next;
     });
 
-    // For ETFs/MFs: sync weightInClass across all eligible PIM model groups
-    // Manual weight = Weight(Portfolio) in Balanced model
-    // weightInClass = manualWeight / balancedAssetClassAllocation
-    // This automatically cascades to Growth (via lower allocation multiplier)
-    // and excludes from All-Equity for FI/alternative (allocation = 0)
+    // For ETFs/MFs: sync weightInClass across eligible PIM model groups
+    // Only update groups that don't have an explicit per-model weight override
     setTimeout(() => {
-      // Use timeout to ensure stockRecord is populated from the setStocks callback
       const stock = stockRecord || stocks.find((s) => s.ticker === ticker);
-      if (!stock || isStock(stock)) return; // Only sync for ETFs/MFs
+      if (!stock || isStock(stock)) return;
 
       const assetClass = detectAssetClass(stock);
       const eligibility = stock.modelEligibility || {};
+      const modelWeights = stock.modelWeights || {};
 
       setPimModelsState((prev) => {
         const updatedGroups = prev.groups.map((group) => {
           if (eligibility[group.id] === false) return group;
+
+          const holdingIdx = group.holdings.findIndex((h) => tickerMatch(h.symbol, ticker));
+          if (holdingIdx === -1) return group;
+
+          // Use per-model weight if set, otherwise use the new default weight
+          const effectiveWeight = modelWeights[group.id] ?? weight;
+          const balancedAlloc = getBalancedAlloc(group, assetClass);
+          const newWeightInClass = balancedAlloc > 0
+            ? parseFloat(((effectiveWeight / 100) / balancedAlloc).toFixed(6))
+            : 0;
+
+          const updatedHoldings = group.holdings.map((h, i) =>
+            i === holdingIdx ? { ...h, weightInClass: newWeightInClass } : h
+          );
+
+          return { ...group, holdings: rebalanceStockWeights(updatedHoldings) };
+        });
+
+        const updated = { ...prev, groups: updatedGroups, lastUpdated: new Date().toISOString() };
+        persistPim(updated);
+        return updated;
+      });
+    }, 0);
+  }, [persistStocks, stocks, isStock, detectAssetClass, tickerMatch, getBalancedAlloc, rebalanceStockWeights, persistPim]);
+
+  /* ─── Per-model weight for ETFs/MFs ─── */
+  const updateModelWeight = useCallback((ticker: string, groupId: string, weight: number) => {
+    // 1. Persist modelWeights on the stock
+    setStocks((prev) => {
+      const next = prev.map((s) => {
+        if (s.ticker !== ticker) return s;
+        const modelWeights = { ...s.modelWeights, [groupId]: weight };
+        return { ...s, modelWeights };
+      });
+      persistStocks(next);
+      return next;
+    });
+
+    // 2. Update weightInClass in the specific PIM model group
+    setTimeout(() => {
+      const stock = stocks.find((s) => s.ticker === ticker);
+      if (!stock || isStock(stock)) return;
+
+      const assetClass = detectAssetClass(stock);
+
+      setPimModelsState((prev) => {
+        const updatedGroups = prev.groups.map((group) => {
+          if (group.id !== groupId) return group;
 
           const holdingIdx = group.holdings.findIndex((h) => tickerMatch(h.symbol, ticker));
           if (holdingIdx === -1) return group;
@@ -558,7 +606,6 @@ export function StockProvider({ children }: { children: React.ReactNode }) {
             i === holdingIdx ? { ...h, weightInClass: newWeightInClass } : h
           );
 
-          // Rebalance individual stocks (their equal share adjusts with ETF weight changes)
           return { ...group, holdings: rebalanceStockWeights(updatedHoldings) };
         });
 
@@ -673,12 +720,15 @@ export function StockProvider({ children }: { children: React.ReactNode }) {
           if (group.id !== groupId) return group;
           if (group.holdings.some((h) => tickerMatch(h.symbol, stock.ticker))) return group;
 
-          // For ETFs/MFs: derive weightInClass from manual portfolio weight
+          // For ETFs/MFs: derive weightInClass from per-model weight or fallback
           let initialWeightInClass = 0;
-          if (!isStock(stock) && stock.weights.portfolio > 0) {
-            const balancedAlloc = getBalancedAlloc(group, assetClass);
-            if (balancedAlloc > 0) {
-              initialWeightInClass = parseFloat(((stock.weights.portfolio / 100) / balancedAlloc).toFixed(6));
+          if (!isStock(stock)) {
+            const manualWeight = stock.modelWeights?.[group.id] ?? stock.weights.portfolio;
+            if (manualWeight > 0) {
+              const balancedAlloc = getBalancedAlloc(group, assetClass);
+              if (balancedAlloc > 0) {
+                initialWeightInClass = parseFloat(((manualWeight / 100) / balancedAlloc).toFixed(6));
+              }
             }
           }
 
@@ -759,6 +809,7 @@ export function StockProvider({ children }: { children: React.ReactNode }) {
         pimModels,
         updatePimModels,
         toggleModelEligibility,
+        updateModelWeight,
         pimPortfolioState,
         updatePimPortfolioState,
         getGroupState,

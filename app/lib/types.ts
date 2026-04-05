@@ -239,6 +239,7 @@ export type Stock = {
   riskAlert?: RiskAlert;
   fundData?: FundData;
   modelEligibility?: Record<string, boolean>; // PIM model group id → eligible (default all true)
+  modelWeights?: Record<string, number>; // PIM model group id → weight% in Balanced (overrides weights.portfolio)
   designation?: "core" | "alpha"; // Core = indexed/passive, Alpha = active picks (default alpha)
 };
 

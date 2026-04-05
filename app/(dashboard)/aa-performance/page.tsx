@@ -6,6 +6,7 @@ import { ImageUpload, type BriefAttachment } from "@/app/components/ImageUpload"
 import { useStocks } from "@/app/lib/StockContext";
 import { isScoreable } from "@/app/lib/scoring";
 import { INSTRUMENT_LABELS } from "@/app/lib/types";
+import type { PimPerformanceData, PimModelPerformance } from "@/app/lib/pim-types";
 
 /* ─── Types ─── */
 type AllocationRow = {
@@ -45,6 +46,11 @@ type FundRow = {
   "10y": number | null;
 };
 
+type PimMapping = {
+  groupId: string;
+  profile: string; // "balanced" | "growth" | "allEquity" | "alpha-balanced" | "alpha-growth" | "alpha-allEquity"
+};
+
 type AAPerformanceData = {
   allocations: {
     balanced: AllocationTable;
@@ -52,6 +58,7 @@ type AAPerformanceData = {
     allEquity: AllocationTable;
   };
   performance: PerformanceRow[];
+  pimMappings?: Record<number, PimMapping>; // rowIdx → PIM model mapping
   funds: FundRow[];
   fundsDate: string;
   etfs: FundRow[];
@@ -474,12 +481,25 @@ function AutoFundsTable({
   );
 }
 
+/* ─── PIM Return Helper ─── */
+function getPimReturn(pimData: PimPerformanceData | null, mapping: PimMapping | undefined): number | null {
+  if (!pimData || !mapping) return null;
+  const model = pimData.models.find(
+    (m) => m.groupId === mapping.groupId && m.profile === mapping.profile
+  );
+  if (!model || model.history.length === 0) return null;
+  const lastValue = model.history[model.history.length - 1].value;
+  return parseFloat((lastValue - 100).toFixed(2)); // cumulative return %
+}
+
 /* ─── Main Page ─── */
 export default function AAPerformancePage() {
   const [data, setData] = useState<AAPerformanceData>(defaultData);
   const [loading, setLoading] = useState(true);
+  const [pimData, setPimData] = useState<PimPerformanceData | null>(null);
+  const [pimLoading, setPimLoading] = useState(false);
   const persist = useDebouncedPersist(500);
-  const { scoredStocks } = useStocks();
+  const { scoredStocks, pimModels } = useStocks();
 
   // Derive funds and ETFs from portfolio holdings
   const portfolioFunds = scoredStocks.filter((s) => s.bucket === "Portfolio" && !isScoreable(s));
@@ -505,6 +525,18 @@ export default function AAPerformancePage() {
         setLoading(false);
       })
       .catch(() => setLoading(false));
+  }, []);
+
+  /* Fetch PIM performance data on mount */
+  useEffect(() => {
+    setPimLoading(true);
+    fetch("/api/pim-performance", { method: "POST" })
+      .then((r) => r.json())
+      .then((res) => {
+        if (res.models) setPimData(res as PimPerformanceData);
+        setPimLoading(false);
+      })
+      .catch(() => setPimLoading(false));
   }, []);
 
   /* Update helper that persists */
@@ -553,6 +585,22 @@ export default function AAPerformancePage() {
           i === rowIdx ? { ...row, [key]: value } : row
         ),
       }));
+    },
+    [updateData]
+  );
+
+  /* PIM mapping update */
+  const updatePimMapping = useCallback(
+    (rowIdx: number, mapping: PimMapping | null) => {
+      updateData((prev) => {
+        const mappings = { ...(prev.pimMappings || {}) };
+        if (mapping) {
+          mappings[rowIdx] = mapping;
+        } else {
+          delete mappings[rowIdx];
+        }
+        return { ...prev, pimMappings: mappings };
+      });
     },
     [updateData]
   );
@@ -658,12 +706,19 @@ export default function AAPerformancePage() {
             <table className="w-full text-sm">
               <thead>
                 <tr className="border-b border-slate-100 bg-slate-50/50">
-                  {PERF_COLS.map((col) => (
+                  {/* Name column */}
+                  <th className="px-3 py-2.5 text-left text-xs font-semibold text-slate-500 uppercase tracking-wider min-w-[220px]">
+                    Name
+                  </th>
+                  {/* PIM column */}
+                  <th className="px-3 py-2.5 text-center text-xs font-semibold text-blue-500 uppercase tracking-wider min-w-[100px]" title="PIM automated tracking — cumulative return since tracking start">
+                    PIM
+                  </th>
+                  {/* Standard period columns */}
+                  {PERF_COLS.filter((c) => c.key !== "name").map((col) => (
                     <th
                       key={col.key}
-                      className={`px-3 py-2.5 text-xs font-semibold text-slate-500 uppercase tracking-wider ${
-                        col.key === "name" ? "text-left min-w-[220px]" : "text-center"
-                      }`}
+                      className="px-3 py-2.5 text-center text-xs font-semibold text-slate-500 uppercase tracking-wider"
                     >
                       {col.label}
                     </th>
@@ -671,36 +726,92 @@ export default function AAPerformancePage() {
                 </tr>
               </thead>
               <tbody>
-                {data.performance.map((row, rowIdx) => (
-                  <tr key={rowIdx} className="border-b border-slate-50 hover:bg-slate-50/50">
-                    {/* Name column */}
-                    <td className="px-3 py-1.5">
-                      <input
-                        type="text"
-                        value={row.name}
-                        onChange={(e) => updatePerformance(rowIdx, "name", e.target.value)}
-                        className="w-full rounded-lg border border-transparent px-2 py-1 text-sm font-medium text-slate-800 hover:border-slate-200 hover:bg-slate-50 focus:border-blue-300 focus:outline-none focus:ring-2 focus:ring-blue-200 bg-transparent"
-                      />
-                    </td>
-                    {/* Numeric columns */}
-                    {PERF_COLS.filter((c) => c.key !== "name").map((col) => {
-                      const val = row[col.key] as number | null;
-                      return (
-                        <td key={col.key} className="px-1 py-1.5 text-center">
-                          <div className="flex items-center justify-center gap-0.5">
-                            <NumericInput
-                              value={val}
-                              onChange={(n) => updatePerformance(rowIdx, col.key, n)}
-                              placeholder="—"
-                              className={`w-16 rounded-lg border border-transparent px-1 py-1 text-sm text-center font-medium ${perfColor(val)} hover:border-slate-200 focus:border-blue-300 focus:outline-none focus:ring-2 focus:ring-blue-200 bg-slate-50/50 hover:bg-white`}
-                            />
-                            {val !== null && <span className="text-[10px] text-slate-400">%</span>}
-                          </div>
-                        </td>
-                      );
-                    })}
-                  </tr>
-                ))}
+                {data.performance.map((row, rowIdx) => {
+                  const mapping = data.pimMappings?.[rowIdx];
+                  const pimReturn = getPimReturn(pimData, mapping);
+
+                  // Build PIM mapping options
+                  const pimOptions: { label: string; value: string }[] = [
+                    { label: "—", value: "" },
+                  ];
+                  for (const group of pimModels.groups) {
+                    const profiles = [
+                      { key: "balanced", label: "Bal" },
+                      { key: "growth", label: "Grw" },
+                      { key: "allEquity", label: "AE" },
+                      { key: "alpha-balanced", label: "α Bal" },
+                      { key: "alpha-growth", label: "α Grw" },
+                      { key: "alpha-allEquity", label: "α AE" },
+                    ];
+                    for (const p of profiles) {
+                      pimOptions.push({
+                        label: `${group.name} ${p.label}`,
+                        value: `${group.id}|${p.key}`,
+                      });
+                    }
+                  }
+
+                  return (
+                    <tr key={rowIdx} className="border-b border-slate-50 hover:bg-slate-50/50">
+                      {/* Name column */}
+                      <td className="px-3 py-1.5">
+                        <input
+                          type="text"
+                          value={row.name}
+                          onChange={(e) => updatePerformance(rowIdx, "name", e.target.value)}
+                          className="w-full rounded-lg border border-transparent px-2 py-1 text-sm font-medium text-slate-800 hover:border-slate-200 hover:bg-slate-50 focus:border-blue-300 focus:outline-none focus:ring-2 focus:ring-blue-200 bg-transparent"
+                        />
+                      </td>
+                      {/* PIM column */}
+                      <td className="px-1 py-1.5 text-center">
+                        <div className="flex flex-col items-center gap-0.5">
+                          {pimReturn !== null ? (
+                            <span className={`text-sm font-semibold ${perfColor(pimReturn)}`}>
+                              {formatPerf(pimReturn)}
+                              <span className="text-[10px] text-slate-400 ml-0.5">%</span>
+                            </span>
+                          ) : pimLoading ? (
+                            <span className="text-[10px] text-slate-300 animate-pulse">...</span>
+                          ) : null}
+                          <select
+                            value={mapping ? `${mapping.groupId}|${mapping.profile}` : ""}
+                            onChange={(e) => {
+                              const val = e.target.value;
+                              if (!val) {
+                                updatePimMapping(rowIdx, null);
+                              } else {
+                                const [groupId, profile] = val.split("|");
+                                updatePimMapping(rowIdx, { groupId, profile });
+                              }
+                            }}
+                            className="w-24 text-[10px] text-slate-400 bg-transparent border-none outline-none cursor-pointer hover:text-slate-600 text-center"
+                          >
+                            {pimOptions.map((opt) => (
+                              <option key={opt.value} value={opt.value}>{opt.label}</option>
+                            ))}
+                          </select>
+                        </div>
+                      </td>
+                      {/* Numeric columns */}
+                      {PERF_COLS.filter((c) => c.key !== "name").map((col) => {
+                        const val = row[col.key] as number | null;
+                        return (
+                          <td key={col.key} className="px-1 py-1.5 text-center">
+                            <div className="flex items-center justify-center gap-0.5">
+                              <NumericInput
+                                value={val}
+                                onChange={(n) => updatePerformance(rowIdx, col.key, n)}
+                                placeholder="—"
+                                className={`w-16 rounded-lg border border-transparent px-1 py-1 text-sm text-center font-medium ${perfColor(val)} hover:border-slate-200 focus:border-blue-300 focus:outline-none focus:ring-2 focus:ring-blue-200 bg-slate-50/50 hover:bg-white`}
+                              />
+                              {val !== null && <span className="text-[10px] text-slate-400">%</span>}
+                            </div>
+                          </td>
+                        );
+                      })}
+                    </tr>
+                  );
+                })}
               </tbody>
             </table>
           </div>

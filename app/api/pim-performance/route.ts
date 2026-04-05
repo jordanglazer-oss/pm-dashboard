@@ -10,11 +10,13 @@ import type {
   PimPortfolioState,
   PimRebalanceSnapshot,
 } from "@/app/lib/pim-types";
+import type { Stock } from "@/app/lib/types";
 
 const UA = "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36";
 const PIM_KEY = "pm:pim-models";
 const PERF_KEY = "pm:pim-performance";
 const STATE_KEY = "pm:pim-portfolio-state";
+const STOCKS_KEY = "pm:stocks";
 
 // Fetch historical closing prices from Yahoo Finance
 async function fetchHistory(
@@ -242,9 +244,10 @@ function computeModelReturns(
 export async function POST() {
   try {
     const redis = await getRedis();
-    const [pimRaw, stateRaw] = await Promise.all([
+    const [pimRaw, stateRaw, stocksRaw] = await Promise.all([
       redis.get(PIM_KEY),
       redis.get(STATE_KEY),
+      redis.get(STOCKS_KEY),
     ]);
 
     if (!pimRaw) {
@@ -258,6 +261,16 @@ export async function POST() {
     const portfolioState: PimPortfolioState | null = stateRaw
       ? JSON.parse(stateRaw)
       : null;
+
+    // Build a set of alpha-designated symbols (for alpha-only performance)
+    const stocks: Stock[] = stocksRaw ? JSON.parse(stocksRaw) : [];
+    const alphaSymbols = new Set<string>();
+    for (const s of stocks) {
+      // Default designation is "alpha" if not set; only exclude explicit "core"
+      if (s.designation !== "core") {
+        alphaSymbols.add(s.ticker);
+      }
+    }
 
     const groups = pimData.groups;
 
@@ -374,6 +387,60 @@ export async function POST() {
             history,
             lastUpdated: new Date().toISOString(),
           });
+        }
+      }
+
+      // Compute alpha-only returns for this group (equity holdings with alpha designation)
+      const alphaGroup: PimModelGroup = {
+        ...group,
+        holdings: group.holdings.filter(
+          (h) => h.assetClass === "equity" && alphaSymbols.has(h.symbol)
+        ),
+      };
+      if (alphaGroup.holdings.length > 0) {
+        for (const profile of profiles) {
+          if (!group.profiles[profile]) continue;
+          const { history: alphaHistory, intradayReturn: alphaIntraday } =
+            computeModelReturns(
+              alphaGroup,
+              profile,
+              priceHistories,
+              currentPrices,
+              trackingStart
+            );
+          if (alphaHistory.length > 0) {
+            if (alphaIntraday != null) {
+              const last = alphaHistory[alphaHistory.length - 1];
+              const today = new Date().toISOString().split("T")[0];
+              if (last.date !== today) {
+                alphaHistory.push({
+                  date: today,
+                  value: parseFloat(
+                    (last.value * (1 + alphaIntraday / 100)).toFixed(4)
+                  ),
+                  dailyReturn: alphaIntraday,
+                });
+              } else {
+                alphaHistory[alphaHistory.length - 1] = {
+                  date: today,
+                  value: parseFloat(
+                    (alphaHistory.length > 1
+                      ? alphaHistory[alphaHistory.length - 2].value *
+                        (1 + alphaIntraday / 100)
+                      : 100 * (1 + alphaIntraday / 100)
+                    ).toFixed(4)
+                  ),
+                  dailyReturn: alphaIntraday,
+                };
+              }
+            }
+            models.push({
+              groupId: group.id,
+              profile: `alpha-${profile}` as PimProfileType,
+              history: alphaHistory,
+              lastUpdated: new Date().toISOString(),
+            });
+          }
         }
       }
     }
