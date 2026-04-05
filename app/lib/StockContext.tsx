@@ -53,6 +53,8 @@ type StockContextType = {
   pimPortfolioState: PimPortfolioState;
   updatePimPortfolioState: (data: PimPortfolioState) => void;
   getGroupState: (groupId: string) => PimModelGroupState;
+  uiPrefs: Record<string, string>;
+  setUiPref: (key: string, value: string) => void;
 };
 
 const StockContext = createContext<StockContextType | null>(null);
@@ -90,6 +92,7 @@ export function StockProvider({ children }: { children: React.ReactNode }) {
   const [scannerData, setScannerDataState] = useState<ScannerData | null>(null);
   const [pimModels, setPimModelsState] = useState<PimModelData>({ groups: pimModelSeed });
   const [pimPortfolioState, setPimPortfolioState] = useState<PimPortfolioState>({ groupStates: [], lastUpdated: "" });
+  const [uiPrefs, setUiPrefsState] = useState<Record<string, string>>({});
   const [loading, setLoading] = useState(true);
 
   const persistStocks = useDebouncedPersist("/api/kv/stocks", "stocks");
@@ -119,6 +122,7 @@ export function StockProvider({ children }: { children: React.ReactNode }) {
       body: JSON.stringify(data),
     }).catch((e) => console.error("Failed to persist pim-portfolio-state:", e));
   }, []);
+  const persistUiPrefs = useDebouncedPersist("/api/kv/ui-prefs", "uiPrefs", 300);
 
   /* ─── Load from KV on mount ─── */
   useEffect(() => {
@@ -130,7 +134,8 @@ export function StockProvider({ children }: { children: React.ReactNode }) {
       fetch("/api/kv/scanner").then((r) => r.json()).catch(() => ({ scanner: null })),
       fetch("/api/kv/pim-models").then((r) => r.json()).catch(() => ({ groups: pimModelSeed })),
       fetch("/api/kv/pim-portfolio-state").then((r) => r.json()).catch(() => ({ groupStates: [], lastUpdated: "" })),
-    ]).then(async ([stocksRes, marketRes, briefRes, chartRes, scannerRes, pimRes, portfolioStateRes]) => {
+      fetch("/api/kv/ui-prefs").then((r) => r.json()).catch(() => ({ uiPrefs: {} })),
+    ]).then(async ([stocksRes, marketRes, briefRes, chartRes, scannerRes, pimRes, portfolioStateRes, uiPrefsRes]) => {
       const loadedStocks: Stock[] = stocksRes.stocks || holdingsSeed;
       setStocks(loadedStocks);
       if (marketRes.market) setMarketData({ ...defaultMarketData, ...marketRes.market });
@@ -139,6 +144,7 @@ export function StockProvider({ children }: { children: React.ReactNode }) {
       if (scannerRes.scanner) setScannerDataState(scannerRes.scanner);
       if (pimRes.groups) setPimModelsState(pimRes);
       if (portfolioStateRes.groupStates) setPimPortfolioState(portfolioStateRes);
+      if (uiPrefsRes.uiPrefs) setUiPrefsState(uiPrefsRes.uiPrefs);
       setLoading(false);
 
       // Backfill missing names from Yahoo Finance for all stocks
@@ -631,6 +637,15 @@ export function StockProvider({ children }: { children: React.ReactNode }) {
     return existing || { groupId, lastRebalance: null, trackingStart: null, transactions: [] };
   }, [pimPortfolioState]);
 
+  /* ─── UI Preferences (synced to KV) ─── */
+  const setUiPref = useCallback((key: string, value: string) => {
+    setUiPrefsState((prev) => {
+      const next = { ...prev, [key]: value };
+      persistUiPrefs(next);
+      return next;
+    });
+  }, [persistUiPrefs]);
+
   /* ─── Toggle model eligibility: updates stock field AND syncs model holdings ─── */
   const toggleModelEligibility = useCallback((ticker: string, groupId: string, eligible: boolean) => {
     // 1. Update the stock's modelEligibility field
@@ -747,6 +762,8 @@ export function StockProvider({ children }: { children: React.ReactNode }) {
         pimPortfolioState,
         updatePimPortfolioState,
         getGroupState,
+        uiPrefs,
+        setUiPref,
       }}
     >
       {children}
