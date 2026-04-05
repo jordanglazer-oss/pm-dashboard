@@ -300,6 +300,16 @@ export function StockProvider({ children }: { children: React.ReactNode }) {
     return rebalanced;
   }, [stocks, isStock]);
 
+  /* ─── Helper: get balanced asset class allocation for a group ─── */
+  const getBalancedAlloc = useCallback((group: { profiles: Partial<Record<string, { fixedIncome: number; equity: number; alternatives: number }>> }, assetClass: "fixedIncome" | "equity" | "alternative"): number => {
+    const balanced = group.profiles.balanced;
+    if (!balanced) return 0;
+    if (assetClass === "fixedIncome") return balanced.fixedIncome;
+    if (assetClass === "equity") return balanced.equity;
+    if (assetClass === "alternative") return balanced.alternatives;
+    return 0;
+  }, []);
+
   /* ─── Auto-add to PIM models when stock is added ─── */
   const addToPimModels = useCallback((stock: Stock) => {
     setPimModelsState((prev) => {
@@ -314,37 +324,33 @@ export function StockProvider({ children }: { children: React.ReactNode }) {
         // Skip if already in this group
         if (group.holdings.some((h) => tickerMatch(h.symbol, stock.ticker))) return group;
 
+        // For ETFs/MFs: derive weightInClass from the manual portfolio weight
+        // Manual weight = Weight(Portfolio) in Balanced model
+        // weightInClass = manualWeight / balancedAssetClassAllocation
+        let initialWeightInClass = 0;
+        if (!isStock(stock) && stock.weights.portfolio > 0) {
+          const balancedAlloc = getBalancedAlloc(group, assetClass);
+          if (balancedAlloc > 0) {
+            initialWeightInClass = parseFloat(((stock.weights.portfolio / 100) / balancedAlloc).toFixed(6));
+          }
+        }
+
         // Add the new holding
         const newHoldings = [...group.holdings, {
           name: (stock.name || stock.ticker).toUpperCase(),
           symbol: stock.ticker,
           currency,
           assetClass,
-          weightInClass: 0, // will be set by rebalance
+          weightInClass: initialWeightInClass,
         }];
 
         // For individual stocks: rebalance all stocks to equal weight
-        // For ETFs/MFs: redistribute within their asset class
+        // For ETFs/MFs: weight is derived from manual input, just rebalance stocks
         if (isStock(stock)) {
           return { ...group, holdings: rebalanceStockWeights(newHoldings, stock) };
         } else {
-          // ETF/MF: give proportional share of existing class weight
-          const existingInClass = group.holdings.filter((h) => h.assetClass === assetClass);
-          const newCount = existingInClass.length + 1;
-          const totalClassWeight = existingInClass.reduce((s, h) => s + h.weightInClass, 0);
-          const newWeight = totalClassWeight > 0 ? totalClassWeight / newCount : (1 / newCount);
-          const scaleFactor = totalClassWeight > 0 ? (totalClassWeight - newWeight) / totalClassWeight : 1;
-
-          const rebalanced = newHoldings.map((h) => {
-            if (tickerMatch(h.symbol, stock.ticker)) {
-              return { ...h, weightInClass: parseFloat(newWeight.toFixed(6)) };
-            }
-            if (h.assetClass === assetClass) {
-              return { ...h, weightInClass: parseFloat((h.weightInClass * scaleFactor).toFixed(6)) };
-            }
-            return h;
-          });
-          return { ...group, holdings: rebalanced };
+          // Rebalance individual stocks in case ETF is in equity class
+          return { ...group, holdings: rebalanceStockWeights(newHoldings) };
         }
       });
 
@@ -352,47 +358,25 @@ export function StockProvider({ children }: { children: React.ReactNode }) {
       persistPim(updated);
       return updated;
     });
-  }, [persistPim, detectAssetClass, isStock, tickerMatch, rebalanceStockWeights]);
+  }, [persistPim, detectAssetClass, isStock, tickerMatch, rebalanceStockWeights, getBalancedAlloc]);
 
   /* ─── Auto-remove from PIM models when stock is removed ─── */
-  const removeFromPimModels = useCallback((ticker: string, removedStock?: Stock) => {
+  const removeFromPimModels = useCallback((ticker: string) => {
     setPimModelsState((prev) => {
       const updatedGroups = prev.groups.map((group) => {
         const holdingIdx = group.holdings.findIndex((h) => tickerMatch(h.symbol, ticker));
         if (holdingIdx === -1) return group;
 
-        const removed = group.holdings[holdingIdx];
         const remainingHoldings = group.holdings.filter((_, i) => i !== holdingIdx);
-
-        // For individual stocks: rebalance remaining stocks to equal weight
-        if (removedStock && isStock(removedStock)) {
-          return { ...group, holdings: rebalanceStockWeights(remainingHoldings) };
-        }
-
-        // For ETFs/MFs: redistribute removed weight among remaining in same class
-        const sameClass = remainingHoldings.filter((h) => h.assetClass === removed.assetClass);
-        const totalRemaining = sameClass.reduce((s, h) => s + h.weightInClass, 0);
-
-        if (totalRemaining > 0 && removed.weightInClass > 0) {
-          const scaleFactor = (totalRemaining + removed.weightInClass) / totalRemaining;
-          return {
-            ...group,
-            holdings: remainingHoldings.map((h) =>
-              h.assetClass === removed.assetClass
-                ? { ...h, weightInClass: parseFloat((h.weightInClass * scaleFactor).toFixed(6)) }
-                : h
-            ),
-          };
-        }
-
-        return { ...group, holdings: remainingHoldings };
+        // Rebalance individual stocks to redistribute freed equity weight
+        return { ...group, holdings: rebalanceStockWeights(remainingHoldings) };
       });
 
       const updated = { ...prev, groups: updatedGroups, lastUpdated: new Date().toISOString() };
       persistPim(updated);
       return updated;
     });
-  }, [persistPim, tickerMatch, isStock, rebalanceStockWeights]);
+  }, [persistPim, tickerMatch, rebalanceStockWeights]);
 
   /* ─── Stock mutations (optimistic + persist) ─── */
   const addStock = useCallback((stock: Stock) => {
@@ -406,16 +390,14 @@ export function StockProvider({ children }: { children: React.ReactNode }) {
   }, [persistStocks, addToPimModels]);
 
   const removeStock = useCallback((ticker: string) => {
-    // Find the stock before removing so we can pass it to removeFromPimModels
-    const stockToRemove = stocks.find((s) => s.ticker === ticker);
     setStocks((prev) => {
       const next = prev.filter((s) => s.ticker !== ticker);
       persistStocks(next);
       return next;
     });
     // Auto-remove from PIM models
-    removeFromPimModels(ticker, stockToRemove);
-  }, [stocks, persistStocks, removeFromPimModels]);
+    removeFromPimModels(ticker);
+  }, [persistStocks, removeFromPimModels]);
 
   const moveBucket = useCallback((ticker: string) => {
     const stock = stocks.find((s) => s.ticker === ticker);
@@ -432,7 +414,7 @@ export function StockProvider({ children }: { children: React.ReactNode }) {
 
     // Sync with PIM models: remove when moving to Watchlist, add when moving to Portfolio
     if (wasPortfolio) {
-      removeFromPimModels(ticker, stock);
+      removeFromPimModels(ticker);
     } else if (stock) {
       addToPimModels(stock);
     }
@@ -507,14 +489,58 @@ export function StockProvider({ children }: { children: React.ReactNode }) {
   }, [persistStocks]);
 
   const updateWeight = useCallback((ticker: string, weight: number) => {
+    let stockRecord: Stock | undefined;
     setStocks((prev) => {
-      const next = prev.map((s) =>
-        s.ticker === ticker ? { ...s, weights: { ...s.weights, portfolio: weight } } : s
-      );
+      const next = prev.map((s) => {
+        if (s.ticker === ticker) {
+          stockRecord = s;
+          return { ...s, weights: { ...s.weights, portfolio: weight } };
+        }
+        return s;
+      });
       persistStocks(next);
       return next;
     });
-  }, [persistStocks]);
+
+    // For ETFs/MFs: sync weightInClass across all eligible PIM model groups
+    // Manual weight = Weight(Portfolio) in Balanced model
+    // weightInClass = manualWeight / balancedAssetClassAllocation
+    // This automatically cascades to Growth (via lower allocation multiplier)
+    // and excludes from All-Equity for FI/alternative (allocation = 0)
+    setTimeout(() => {
+      // Use timeout to ensure stockRecord is populated from the setStocks callback
+      const stock = stockRecord || stocks.find((s) => s.ticker === ticker);
+      if (!stock || isStock(stock)) return; // Only sync for ETFs/MFs
+
+      const assetClass = detectAssetClass(stock);
+      const eligibility = stock.modelEligibility || {};
+
+      setPimModelsState((prev) => {
+        const updatedGroups = prev.groups.map((group) => {
+          if (eligibility[group.id] === false) return group;
+
+          const holdingIdx = group.holdings.findIndex((h) => tickerMatch(h.symbol, ticker));
+          if (holdingIdx === -1) return group;
+
+          const balancedAlloc = getBalancedAlloc(group, assetClass);
+          const newWeightInClass = balancedAlloc > 0
+            ? parseFloat(((weight / 100) / balancedAlloc).toFixed(6))
+            : 0;
+
+          const updatedHoldings = group.holdings.map((h, i) =>
+            i === holdingIdx ? { ...h, weightInClass: newWeightInClass } : h
+          );
+
+          // Rebalance individual stocks (their equal share adjusts with ETF weight changes)
+          return { ...group, holdings: rebalanceStockWeights(updatedHoldings) };
+        });
+
+        const updated = { ...prev, groups: updatedGroups, lastUpdated: new Date().toISOString() };
+        persistPim(updated);
+        return updated;
+      });
+    }, 0);
+  }, [persistStocks, stocks, isStock, detectAssetClass, tickerMatch, getBalancedAlloc, rebalanceStockWeights, persistPim]);
 
   const updateFundData = useCallback((ticker: string, fundData: FundData) => {
     setStocks((prev) => {
@@ -600,30 +626,28 @@ export function StockProvider({ children }: { children: React.ReactNode }) {
           if (group.id !== groupId) return group;
           if (group.holdings.some((h) => tickerMatch(h.symbol, stock.ticker))) return group;
 
+          // For ETFs/MFs: derive weightInClass from manual portfolio weight
+          let initialWeightInClass = 0;
+          if (!isStock(stock) && stock.weights.portfolio > 0) {
+            const balancedAlloc = getBalancedAlloc(group, assetClass);
+            if (balancedAlloc > 0) {
+              initialWeightInClass = parseFloat(((stock.weights.portfolio / 100) / balancedAlloc).toFixed(6));
+            }
+          }
+
           const newHoldings = [...group.holdings, {
             name: (stock.name || stock.ticker).toUpperCase(),
             symbol: stock.ticker,
             currency,
             assetClass,
-            weightInClass: 0,
+            weightInClass: initialWeightInClass,
           }];
 
+          // Rebalance individual stocks (works for both stock and ETF/MF additions)
           if (isStock(stock)) {
             return { ...group, holdings: rebalanceStockWeights(newHoldings, stock) };
           } else {
-            const existingInClass = group.holdings.filter((h) => h.assetClass === assetClass);
-            const newCount = existingInClass.length + 1;
-            const totalClassWeight = existingInClass.reduce((s, h) => s + h.weightInClass, 0);
-            const newWeight = totalClassWeight > 0 ? totalClassWeight / newCount : (1 / newCount);
-            const scaleFactor = totalClassWeight > 0 ? (totalClassWeight - newWeight) / totalClassWeight : 1;
-            return {
-              ...group,
-              holdings: newHoldings.map((h) => {
-                if (tickerMatch(h.symbol, stock.ticker)) return { ...h, weightInClass: parseFloat(newWeight.toFixed(6)) };
-                if (h.assetClass === assetClass) return { ...h, weightInClass: parseFloat((h.weightInClass * scaleFactor).toFixed(6)) };
-                return h;
-              }),
-            };
+            return { ...group, holdings: rebalanceStockWeights(newHoldings) };
           }
         });
         const data = { ...prev, groups: updatedGroups, lastUpdated: new Date().toISOString() };
@@ -638,34 +662,16 @@ export function StockProvider({ children }: { children: React.ReactNode }) {
           const holdingIdx = group.holdings.findIndex((h) => tickerMatch(h.symbol, ticker));
           if (holdingIdx === -1) return group;
 
-          const removed = group.holdings[holdingIdx];
           const remaining = group.holdings.filter((_, i) => i !== holdingIdx);
-
-          if (isStock(stock)) {
-            return { ...group, holdings: rebalanceStockWeights(remaining) };
-          }
-
-          const sameClass = remaining.filter((h) => h.assetClass === removed.assetClass);
-          const totalRemaining = sameClass.reduce((s, h) => s + h.weightInClass, 0);
-          if (totalRemaining > 0 && removed.weightInClass > 0) {
-            const scaleFactor = (totalRemaining + removed.weightInClass) / totalRemaining;
-            return {
-              ...group,
-              holdings: remaining.map((h) =>
-                h.assetClass === removed.assetClass
-                  ? { ...h, weightInClass: parseFloat((h.weightInClass * scaleFactor).toFixed(6)) }
-                  : h
-              ),
-            };
-          }
-          return { ...group, holdings: remaining };
+          // Rebalance individual stocks to redistribute freed weight
+          return { ...group, holdings: rebalanceStockWeights(remaining) };
         });
         const data = { ...prev, groups: updatedGroups, lastUpdated: new Date().toISOString() };
         persistPim(data);
         return data;
       });
     }
-  }, [stocks, persistStocks, persistPim, detectAssetClass, isStock, tickerMatch, rebalanceStockWeights]);
+  }, [stocks, persistStocks, persistPim, detectAssetClass, isStock, tickerMatch, rebalanceStockWeights, getBalancedAlloc]);
 
   const getStock = useCallback(
     (ticker: string) => scoredStocks.find((s) => s.ticker === ticker),
