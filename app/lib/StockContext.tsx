@@ -260,6 +260,14 @@ export function StockProvider({ children }: { children: React.ReactNode }) {
     return a === b || a.replace("-T", ".TO") === b.replace("-T", ".TO");
   }, []);
 
+  /* ─── Helper: detect currency from ticker ─── */
+  // .U suffix = USD-denominated Canadian-listed ETF (e.g., XUS.U, XUU.U)
+  const tickerCurrency = useCallback((ticker: string): "CAD" | "USD" => {
+    if (ticker.endsWith(".U")) return "USD";
+    if (ticker.endsWith("-T") || ticker.endsWith(".TO")) return "CAD";
+    return "USD";
+  }, []);
+
   /* ─── Rebalance: set all individual stocks to equal weight within equity class ─── */
   const rebalanceStockWeights = useCallback((holdings: PimHolding[], extraStock?: Stock): PimHolding[] => {
     // Count individual stocks (equity class, not ETF/MF pattern)
@@ -314,7 +322,7 @@ export function StockProvider({ children }: { children: React.ReactNode }) {
   const addToPimModels = useCallback((stock: Stock) => {
     setPimModelsState((prev) => {
       const assetClass = detectAssetClass(stock);
-      const currency: "CAD" | "USD" = stock.ticker.endsWith("-T") || stock.ticker.endsWith(".TO") ? "CAD" : "USD";
+      const currency = tickerCurrency(stock.ticker);
       const eligibility = stock.modelEligibility || {};
 
       const updatedGroups = prev.groups.map((group) => {
@@ -358,7 +366,7 @@ export function StockProvider({ children }: { children: React.ReactNode }) {
       persistPim(updated);
       return updated;
     });
-  }, [persistPim, detectAssetClass, isStock, tickerMatch, rebalanceStockWeights, getBalancedAlloc]);
+  }, [persistPim, detectAssetClass, isStock, tickerMatch, tickerCurrency, rebalanceStockWeights, getBalancedAlloc]);
 
   /* ─── Auto-remove from PIM models when stock is removed ─── */
   const removeFromPimModels = useCallback((ticker: string) => {
@@ -619,7 +627,7 @@ export function StockProvider({ children }: { children: React.ReactNode }) {
     if (eligible) {
       // Add to this specific model group
       const assetClass = detectAssetClass(stock);
-      const currency: "CAD" | "USD" = stock.ticker.endsWith("-T") || stock.ticker.endsWith(".TO") ? "CAD" : "USD";
+      const currency = tickerCurrency(stock.ticker);
 
       setPimModelsState((prev) => {
         const updatedGroups = prev.groups.map((group) => {
@@ -671,7 +679,7 @@ export function StockProvider({ children }: { children: React.ReactNode }) {
         return data;
       });
     }
-  }, [stocks, persistStocks, persistPim, detectAssetClass, isStock, tickerMatch, rebalanceStockWeights, getBalancedAlloc]);
+  }, [stocks, persistStocks, persistPim, detectAssetClass, isStock, tickerMatch, tickerCurrency, rebalanceStockWeights, getBalancedAlloc]);
 
   const getStock = useCallback(
     (ticker: string) => scoredStocks.find((s) => s.ticker === ticker),
