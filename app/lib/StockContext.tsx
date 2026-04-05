@@ -261,11 +261,15 @@ export function StockProvider({ children }: { children: React.ReactNode }) {
   }, []);
 
   /* ─── Rebalance: set all individual stocks to equal weight within equity class ─── */
-  const rebalanceStockWeights = useCallback((holdings: PimHolding[]): PimHolding[] => {
+  const rebalanceStockWeights = useCallback((holdings: PimHolding[], extraStock?: Stock): PimHolding[] => {
     // Count individual stocks (equity class, not ETF/MF pattern)
     // We identify ETFs/MFs by their symbol patterns or by checking if they existed
     // in the original seed (they have non-equal weights). Simpler: use the stocks list.
     const currentStocks = stocks.filter((s) => s.bucket === "Portfolio" && isStock(s));
+    // Include the newly-added stock that may not be in state yet
+    if (extraStock && isStock(extraStock) && !currentStocks.some((s) => s.ticker === extraStock.ticker)) {
+      currentStocks.push(extraStock);
+    }
     const stockTickers = new Set(currentStocks.map((s) => s.ticker));
     // Also add .TO variants
     currentStocks.forEach((s) => {
@@ -322,7 +326,7 @@ export function StockProvider({ children }: { children: React.ReactNode }) {
         // For individual stocks: rebalance all stocks to equal weight
         // For ETFs/MFs: redistribute within their asset class
         if (isStock(stock)) {
-          return { ...group, holdings: rebalanceStockWeights(newHoldings) };
+          return { ...group, holdings: rebalanceStockWeights(newHoldings, stock) };
         } else {
           // ETF/MF: give proportional share of existing class weight
           const existingInClass = group.holdings.filter((h) => h.assetClass === assetClass);
@@ -605,7 +609,7 @@ export function StockProvider({ children }: { children: React.ReactNode }) {
           }];
 
           if (isStock(stock)) {
-            return { ...group, holdings: rebalanceStockWeights(newHoldings) };
+            return { ...group, holdings: rebalanceStockWeights(newHoldings, stock) };
           } else {
             const existingInClass = group.holdings.filter((h) => h.assetClass === assetClass);
             const newCount = existingInClass.length + 1;
