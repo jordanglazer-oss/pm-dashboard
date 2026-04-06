@@ -52,7 +52,7 @@ function matchesFilter(s: ScoredStock, filter: InstrumentFilter): boolean {
 
 export function StockScoring({ stocks, onScoreStock, onUpdateCostBasis, onRefreshData, onUpdateFundData, onUpdateMarketData }: Props) {
   const router = useRouter();
-  const { uiPrefs, setUiPref } = useStocks();
+  const { uiPrefs, setUiPref, updatePrice } = useStocks();
   const [query, setQuery] = useState("");
 
   // Persist sort state across refreshes and devices via Redis KV
@@ -66,8 +66,14 @@ export function StockScoring({ stocks, onScoreStock, onUpdateCostBasis, onRefres
 
   const [instrumentFilter, setInstrumentFilter] = useState<InstrumentFilter>("all");
 
-  // Live prices
-  const [livePrices, setLivePrices] = useState<LivePrices>({});
+  // Live prices — initialize from persisted stock.price values so they show before API fetch
+  const [livePrices, setLivePrices] = useState<LivePrices>(() => {
+    const initial: LivePrices = {};
+    for (const s of stocks) {
+      if (s.price != null) initial[s.ticker] = s.price;
+    }
+    return initial;
+  });
   const [pricesLoading, setPricesLoading] = useState(false);
   const [pricesFetchedAt, setPricesFetchedAt] = useState<string | null>(null);
 
@@ -91,13 +97,18 @@ export function StockScoring({ stocks, onScoreStock, onUpdateCostBasis, onRefres
       });
       if (res.ok) {
         const data = await res.json();
-        setLivePrices(data.prices || {});
+        const prices: LivePrices = data.prices || {};
+        setLivePrices(prices);
         setPricesFetchedAt(data.fetchedAt || new Date().toISOString());
+        // Persist all fetched prices to Redis KV via stock objects
+        for (const [t, p] of Object.entries(prices)) {
+          if (p != null) updatePrice(t, p);
+        }
       }
     } catch { /* silent */ } finally {
       setPricesLoading(false);
     }
-  }, [stocks]);
+  }, [stocks, updatePrice]);
 
   // Auto-fetch prices on mount
   useEffect(() => {
@@ -188,9 +199,10 @@ export function StockScoring({ stocks, onScoreStock, onUpdateCostBasis, onRefres
                   }
                   onUpdateFundData(fund.ticker, merged);
                 }
-                // Pick up price from fund-data response (Morningstar for mutual funds)
+                // Pick up price from fund-data response and persist to KV
                 if (fData.price != null && typeof fData.price === "number") {
                   setLivePrices((prev) => ({ ...prev, [fund.ticker]: fData.price }));
+                  updatePrice(fund.ticker, fData.price);
                 }
               }
             } catch { /* best effort */ }
