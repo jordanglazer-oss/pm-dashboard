@@ -78,13 +78,18 @@ export function PimPerformance({ groupId, groupName }: Props) {
   // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
 
+  // Refresh = append new daily values only (never recompute historical data)
   const refreshPerformance = useCallback(async () => {
     setRefreshing(true);
     try {
-      const res = await fetch("/api/pim-performance", { method: "POST" });
+      const res = await fetch("/api/update-daily-value", { method: "POST" });
       if (res.ok) {
-        const data = await res.json();
-        setPerfData(data);
+        // Reload cached data
+        const perfRes = await fetch("/api/kv/pim-performance");
+        if (perfRes.ok) {
+          const data = await perfRes.json();
+          if (data.models?.length > 0) setPerfData(data);
+        }
       }
     } catch { /* ignore */ }
     setRefreshing(false);
@@ -148,22 +153,6 @@ export function PimPerformance({ groupId, groupName }: Props) {
     } catch { /* ignore */ }
     setAutoUpdating(false);
   }, []);
-
-  // Auto-refresh on first mount if tracking is active and (no data or stale > 4 hours)
-  useEffect(() => {
-    if (loading || !trackingStart) return;
-    if (!perfData) {
-      setLoading(true);
-      refreshPerformance().finally(() => setLoading(false));
-      return;
-    }
-    const lastUpdate = new Date(perfData.lastUpdated).getTime();
-    const fourHoursAgo = Date.now() - 4 * 60 * 60 * 1000;
-    if (lastUpdate < fourHoursAgo) {
-      refreshPerformance();
-    }
-  // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [trackingStart]);
 
   // Auto-update daily values when data is loaded and stale
   useEffect(() => {
