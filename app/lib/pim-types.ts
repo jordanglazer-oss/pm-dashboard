@@ -18,6 +18,25 @@ export type PimProfileWeights = {
 };
 
 export type PimProfileType = "balanced" | "growth" | "allEquity";
+export type AppendixProfileType = "balanced" | "growth" | "allEquity" | "alpha";
+
+// ── Appendix: Immutable Daily Value Ledger ──
+
+export type AppendixDailyValue = {
+  date: string;       // YYYY-MM-DD
+  value: number;      // cumulative index value
+  dailyReturn: number; // daily % change
+  addedAt: string;    // ISO timestamp when this entry was recorded
+};
+
+export type AppendixModelLedger = {
+  profile: AppendixProfileType;
+  entries: AppendixDailyValue[];
+};
+
+export type AppendixData = {
+  ledgers: AppendixModelLedger[];
+};
 
 export type PimModelGroup = {
   id: string;

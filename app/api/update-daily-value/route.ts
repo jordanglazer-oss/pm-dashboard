@@ -11,6 +11,7 @@ import type {
 const UA = "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36";
 const PIM_KEY = "pm:pim-models";
 const PERF_KEY = "pm:pim-performance";
+const APPENDIX_KEY = "pm:appendix-daily-values";
 
 /**
  * POST /api/update-daily-value
@@ -314,6 +315,48 @@ export async function POST() {
     if (updates.length > 0) {
       perfData.lastUpdated = new Date().toISOString();
       await redis.set(PERF_KEY, JSON.stringify(perfData));
+
+      // Also append new entries to the immutable Appendix ledger
+      try {
+        const appendixRaw = await redis.get(APPENDIX_KEY);
+        const appendixData: { ledgers: { profile: string; entries: { date: string; value: number; dailyReturn: number; addedAt: string }[] }[] } =
+          appendixRaw ? JSON.parse(appendixRaw) : { ledgers: [] };
+        const now = new Date().toISOString();
+
+        for (const upd of updates) {
+          const model = perfData.models.find(
+            (m) => m.groupId === upd.groupId && m.profile === upd.profile
+          );
+          if (!model) continue;
+
+          // Find or create appendix ledger for this profile
+          let ledger = appendixData.ledgers.find((l) => l.profile === upd.profile);
+          if (!ledger) {
+            ledger = { profile: upd.profile, entries: [] };
+            appendixData.ledgers.push(ledger);
+          }
+
+          const existingDates = new Set(ledger.entries.map((e) => e.date));
+          const newEntries = model.history
+            .slice(-upd.addedDays)
+            .filter((e) => !existingDates.has(e.date));
+
+          for (const entry of newEntries) {
+            ledger.entries.push({
+              date: entry.date,
+              value: entry.value,
+              dailyReturn: entry.dailyReturn,
+              addedAt: now,
+            });
+          }
+          ledger.entries.sort((a, b) => a.date.localeCompare(b.date));
+        }
+
+        await redis.set(APPENDIX_KEY, JSON.stringify(appendixData));
+      } catch (appendixErr) {
+        console.error("Failed to update appendix ledger:", appendixErr);
+        // Don't fail the main update
+      }
     }
 
     return NextResponse.json({
