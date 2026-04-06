@@ -322,44 +322,93 @@ export function StockProvider({ children }: { children: React.ReactNode }) {
     return "USD";
   }, []);
 
-  /* ─── Rebalance: set all individual stocks to equal weight within equity class ─── */
+  /* ─── Rebalance: set individual stocks to equal weight, freed weight → Core ETFs ─── */
   const rebalanceStockWeights = useCallback((holdings: PimHolding[], extraStock?: Stock): PimHolding[] => {
-    // Count individual stocks (equity class, not ETF/MF pattern)
-    // We identify ETFs/MFs by their symbol patterns or by checking if they existed
-    // in the original seed (they have non-equal weights). Simpler: use the stocks list.
+    // Identify individual stocks from the portfolio
     const currentStocks = stocks.filter((s) => s.bucket === "Portfolio" && isStock(s));
-    // Include the newly-added stock that may not be in state yet
     if (extraStock && isStock(extraStock) && !currentStocks.some((s) => s.ticker === extraStock.ticker)) {
       currentStocks.push(extraStock);
     }
     const stockTickers = new Set(currentStocks.map((s) => s.ticker));
-    // Also add .TO variants
     currentStocks.forEach((s) => {
       stockTickers.add(s.ticker.replace(".TO", "-T"));
       stockTickers.add(s.ticker.replace("-T", ".TO"));
     });
 
+    // Identify Core ETF holdings (designation === "core")
+    const coreEtfTickers = new Set<string>();
+    for (const s of stocks) {
+      if (s.designation === "core" && !isStock(s)) {
+        coreEtfTickers.add(s.ticker);
+        coreEtfTickers.add(s.ticker.replace(".TO", "-T"));
+        coreEtfTickers.add(s.ticker.replace("-T", ".TO"));
+      }
+    }
+
     const equityHoldings = holdings.filter((h) => h.assetClass === "equity");
     const stockHoldings = equityHoldings.filter((h) => stockTickers.has(h.symbol));
-    const etfHoldings = equityHoldings.filter((h) => !stockTickers.has(h.symbol));
+    const coreEtfHoldings = equityHoldings.filter((h) => !stockTickers.has(h.symbol) && coreEtfTickers.has(h.symbol));
+    const otherEtfHoldings = equityHoldings.filter((h) => !stockTickers.has(h.symbol) && !coreEtfTickers.has(h.symbol));
     const nonEquity = holdings.filter((h) => h.assetClass !== "equity");
 
-    if (stockHoldings.length === 0) return holdings;
+    if (stockHoldings.length === 0 && coreEtfHoldings.length === 0) return holdings;
 
-    // Individual stocks get equal weight. ETFs keep their existing weights.
-    // Total equity weight = 1.0 (100% of equity class).
-    // ETFs take their portion, stocks share the remainder equally.
-    const etfTotal = etfHoldings.reduce((s, h) => s + h.weightInClass, 0);
-    const stockTotal = 1.0 - etfTotal;
-    const perStock = stockTotal > 0 ? stockTotal / stockHoldings.length : 0;
+    // Other (non-Core) ETFs keep their existing weights
+    const otherEtfTotal = otherEtfHoldings.reduce((s, h) => s + h.weightInClass, 0);
 
-    const rebalanced = [
+    // Individual stocks share weight equally
+    // Core ETFs absorb the remainder (so when stocks are removed, Core ETFs grow)
+    const perStock = stockHoldings.length > 0
+      ? parseFloat((stockHoldings[0]?.weightInClass || 0).toFixed(6)) || 0
+      : 0;
+
+    // If this is a full rebalance (new stock added/removed), recalculate equal weight
+    // Use a target per-stock weight based on remaining space after other ETFs
+    const availableForStocksAndCore = 1.0 - otherEtfTotal;
+
+    // Stocks get equal share; Core ETFs absorb the rest proportionally
+    let stockTotal: number;
+    if (stockHoldings.length > 0) {
+      // Each stock gets equal weight from the stock portion
+      // Stock portion = whatever is left after Core and Other ETFs
+      // But we want Core ETFs to absorb freed stock weight, so:
+      // Keep existing Core ETF total, let stocks share equally in remainder
+      const currentCoreTotal = coreEtfHoldings.reduce((s, h) => s + h.weightInClass, 0);
+      stockTotal = availableForStocksAndCore - currentCoreTotal;
+      // If stock count changed, recalculate: stock gets equal share, Core absorbs freed weight
+      const newPerStock = stockTotal > 0 ? stockTotal / stockHoldings.length : 0;
+
+      // Check if a stock was added or removed by comparing current per-stock weight
+      // If stocks were removed, their freed weight should go to Core ETFs
+      // Simple approach: always recalculate with stocks getting equal share of stockTotal
+      // and if stockTotal is negative (more core needed), redistribute
+      if (newPerStock <= 0 || stockTotal <= 0) {
+        // No room for stocks, all goes to Core
+        stockTotal = 0;
+      }
+    } else {
+      stockTotal = 0;
+    }
+
+    const actualPerStock = stockHoldings.length > 0 && stockTotal > 0
+      ? parseFloat((stockTotal / stockHoldings.length).toFixed(6))
+      : 0;
+
+    const coreTotal = availableForStocksAndCore - (actualPerStock * stockHoldings.length);
+
+    // Distribute Core ETF weight proportionally based on their existing ratios
+    const existingCoreTotal = coreEtfHoldings.reduce((s, h) => s + h.weightInClass, 0);
+    const rebalancedCoreEtfs = coreEtfHoldings.map((h) => {
+      const ratio = existingCoreTotal > 0 ? h.weightInClass / existingCoreTotal : 1 / coreEtfHoldings.length;
+      return { ...h, weightInClass: parseFloat((ratio * coreTotal).toFixed(6)) };
+    });
+
+    return [
       ...nonEquity,
-      ...etfHoldings,
-      ...stockHoldings.map((h) => ({ ...h, weightInClass: parseFloat(perStock.toFixed(6)) })),
+      ...otherEtfHoldings,
+      ...rebalancedCoreEtfs,
+      ...stockHoldings.map((h) => ({ ...h, weightInClass: actualPerStock })),
     ];
-
-    return rebalanced;
   }, [stocks, isStock]);
 
   /* ─── Helper: get balanced asset class allocation for a group ─── */

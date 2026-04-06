@@ -15,28 +15,23 @@ const PERF_KEY = "pm:pim-performance";
 /**
  * POST /api/update-daily-value
  *
- * Automatically appends new daily values to performance history.
- * Uses adjusted close prices from Yahoo Finance which account for
- * dividends, distributions, and splits automatically.
- * Mutual fund prices from Barchart are NAV-based and inherently
- * include reinvested distributions.
+ * Appends new daily values to performance history. Never modifies
+ * historical entries — only adds new dates after the last recorded date.
  *
- * If mutual fund EOD data isn't available yet (published after market
- * close, sometimes next morning), the update will still run with
- * available holdings and retroactively correct when fund prices arrive.
+ * Uses Yahoo adjusted close prices (dividends/splits baked in).
+ * Converts USD-denominated holding returns to CAD using daily USD/CAD rate.
+ * Mutual fund NAV from Barchart already reflects reinvested distributions.
+ *
+ * Each computed daily value is permanently stored once written.
  */
 
-type DailyPriceData = {
-  date: string;
-  adjClose: number;
-};
+type DailyPriceData = { date: string; adjClose: number };
 
-/** Fetch adjusted close prices for the last 15 trading days from Yahoo */
+/** Fetch adjusted close prices from Yahoo (dividends/splits adjusted) */
 async function fetchAdjustedCloses(symbol: string): Promise<DailyPriceData[]> {
   let yahooSymbol = symbol;
   if (symbol.endsWith("-T")) yahooSymbol = symbol.replace("-T", ".TO");
   else if (symbol.endsWith(".U")) yahooSymbol = symbol.replace(".U", "-U.TO");
-  // FUNDSERV mutual funds — Yahoo doesn't have these
   if (/^[A-Z]{2,4}\d{2,5}$/i.test(symbol)) return [];
 
   try {
@@ -48,9 +43,7 @@ async function fetchAdjustedCloses(symbol: string): Promise<DailyPriceData[]> {
     if (!r) return [];
 
     const timestamps: number[] = r.timestamp || [];
-    // adjclose accounts for dividends, distributions, and splits
     const adjCloses: number[] = r.indicators?.adjclose?.[0]?.adjclose || [];
-    // Fallback to regular close if adjclose unavailable
     const closes: number[] = r.indicators?.quote?.[0]?.close || [];
 
     const result: DailyPriceData[] = [];
@@ -66,7 +59,7 @@ async function fetchAdjustedCloses(symbol: string): Promise<DailyPriceData[]> {
   }
 }
 
-/** Fetch FUNDSERV (mutual fund) NAV prices for recent days from Barchart */
+/** Fetch FUNDSERV NAV prices from Barchart (distributions reflected in NAV) */
 async function fetchFundservCloses(ticker: string): Promise<DailyPriceData[]> {
   const symbol = `${ticker}.CF`;
   const url = `https://globeandmail.pl.barchart.com/proxies/timeseries/queryeod.ashx?symbol=${encodeURIComponent(symbol)}&data=daily&maxrecords=15&volume=contract&order=desc&dividends=false&backadjust=false`;
@@ -82,22 +75,41 @@ async function fetchFundservCloses(ticker: string): Promise<DailyPriceData[]> {
     const text = await res.text();
     const result: DailyPriceData[] = [];
     for (const line of text.trim().split("\n")) {
-      // CSV: SYMBOL,DATE,OPEN,HIGH,LOW,CLOSE,VOLUME
       const parts = line.split(",");
       if (parts.length < 6) continue;
       const close = parseFloat(parts[5]);
       if (!isFinite(close)) continue;
-      // Date format from Barchart: MM/DD/YYYY
       const dateParts = parts[1]?.split("/");
       if (!dateParts || dateParts.length !== 3) continue;
       const isoDate = `${dateParts[2]}-${dateParts[0].padStart(2, "0")}-${dateParts[1].padStart(2, "0")}`;
       result.push({ date: isoDate, adjClose: close });
     }
-    // Mutual fund NAV already reflects distributions (reinvested at NAV)
     return result.sort((a, b) => a.date.localeCompare(b.date));
   } catch {
     return [];
   }
+}
+
+/** Fetch USD/CAD exchange rate history from Yahoo */
+async function fetchUsdCadRates(): Promise<Map<string, number>> {
+  const rates = new Map<string, number>();
+  try {
+    const url = `https://query2.finance.yahoo.com/v8/finance/chart/USDCAD=X?range=15d&interval=1d`;
+    const res = await fetch(url, { cache: "no-store", headers: { "User-Agent": UA } });
+    if (!res.ok) return rates;
+    const data = await res.json();
+    const r = data?.chart?.result?.[0];
+    if (!r) return rates;
+    const timestamps: number[] = r.timestamp || [];
+    const closes: number[] = r.indicators?.quote?.[0]?.close || [];
+    for (let i = 0; i < timestamps.length; i++) {
+      if (closes[i] != null && !isNaN(closes[i])) {
+        const d = new Date(timestamps[i] * 1000).toISOString().split("T")[0];
+        rates.set(d, closes[i]);
+      }
+    }
+  } catch { /* ignore */ }
+  return rates;
 }
 
 function isFundserv(symbol: string): boolean {
@@ -130,6 +142,16 @@ function getTradingDaysNeeded(lastDate: string, today: string): string[] {
   return dates;
 }
 
+/** Get the closest rate on or before the given date */
+function getRateForDate(rates: Map<string, number>, date: string): number | null {
+  const rate = rates.get(date);
+  if (rate) return rate;
+  // Fall back to the most recent rate before this date
+  const sorted = [...rates.keys()].filter((d) => d <= date).sort();
+  if (sorted.length > 0) return rates.get(sorted[sorted.length - 1]) ?? null;
+  return null;
+}
+
 export async function POST() {
   try {
     const redis = await getRedis();
@@ -153,7 +175,7 @@ export async function POST() {
     }
 
     const today = new Date().toISOString().split("T")[0];
-    const updates: Array<{ groupId: string; profile: string; addedDays: number; lastDate: string; retroCorrected: number }> = [];
+    const updates: Array<{ groupId: string; profile: string; addedDays: number; lastDate: string }> = [];
 
     // Collect all symbols
     const allSymbols = new Set<string>();
@@ -161,9 +183,7 @@ export async function POST() {
       for (const h of group.holdings) allSymbols.add(h.symbol);
     }
 
-    // Fetch adjusted close histories for all symbols
-    // Yahoo's adjclose automatically reflects dividends & splits
-    // Barchart mutual fund NAV inherently includes reinvested distributions
+    // Fetch adjusted close histories for all symbols + USD/CAD rate
     const symbols = [...allSymbols];
     const priceHistories = new Map<string, DailyPriceData[]>();
 
@@ -181,7 +201,10 @@ export async function POST() {
       }
     }
 
-    // Update each model
+    // Fetch USD/CAD rates
+    const usdCadRates = await fetchUsdCadRates();
+
+    // Update each model — ONLY append new days, never modify historical entries
     for (const model of perfData.models) {
       if (model.history.length < 2) continue;
 
@@ -221,70 +244,18 @@ export async function POST() {
 
       let currentValue = lastEntry.value;
       let addedDays = 0;
-      let retroCorrected = 0;
-
-      // Check if we should retroactively correct recent entries
-      // (mutual fund NAV may have been unavailable when previously computed)
-      const retroWindowDays = 3;
-      const recentEntries = model.history.slice(-retroWindowDays);
-      for (const entry of recentEntries) {
-        // Recompute this day's return with now-available data
-        const entryIdx = model.history.findIndex((h) => h.date === entry.date);
-        if (entryIdx <= 0) continue;
-
-        const prevEntry = model.history[entryIdx - 1];
-        let weightedReturn = 0;
-        let activeWeight = 0;
-        let prevActiveWeight = 0;
-
-        for (const h of holdingsWithWeight) {
-          const pm = holdingPriceMaps.get(h.symbol);
-          if (!pm) continue;
-
-          const curPrice = pm.get(entry.date);
-          // Find previous trading day price
-          const allDates = [...pm.keys()].filter((d) => d < entry.date).sort();
-          const prevPrice = allDates.length > 0 ? pm.get(allDates[allDates.length - 1]) : undefined;
-
-          const normWeight = h.portfolioWeight / totalWeight;
-
-          if (curPrice != null && prevPrice != null && prevPrice > 0) {
-            weightedReturn += ((curPrice - prevPrice) / prevPrice) * normWeight;
-            activeWeight += normWeight;
-          }
-
-          // Track what we had before (any price data for previous day)
-          if (prevPrice != null) prevActiveWeight += normWeight;
-        }
-
-        // Only retroactively correct if we now have MORE coverage than before
-        // (e.g., mutual fund prices that weren't available before)
-        if (activeWeight > 0.3 && activeWeight > prevActiveWeight * 0.01 + (entry.dailyReturn === 0 ? 0 : activeWeight - 0.001)) {
-          if (activeWeight < 0.99) weightedReturn = weightedReturn / activeWeight;
-
-          const newDailyReturn = parseFloat((weightedReturn * 100).toFixed(4));
-          // Only correct if materially different (>0.01% difference)
-          if (Math.abs(newDailyReturn - entry.dailyReturn) > 0.01) {
-            const prevValue = model.history[entryIdx - 1].value;
-            entry.dailyReturn = newDailyReturn;
-            entry.value = parseFloat((prevValue * (1 + weightedReturn)).toFixed(4));
-
-            // Cascade correction to subsequent entries
-            for (let j = entryIdx + 1; j < model.history.length; j++) {
-              const prev = model.history[j - 1];
-              model.history[j].value = parseFloat((prev.value * (1 + model.history[j].dailyReturn / 100)).toFixed(4));
-            }
-            retroCorrected++;
-          }
-        }
-      }
-
-      // Now compute new days
-      currentValue = model.history[model.history.length - 1].value;
 
       for (const date of daysNeeded) {
         let weightedReturn = 0;
         let activeWeight = 0;
+
+        // Get USD/CAD rates for FX conversion
+        const todayRate = getRateForDate(usdCadRates, date);
+        const prevDates = [...usdCadRates.keys()].filter((d) => d < date).sort();
+        const prevRate = prevDates.length > 0 ? usdCadRates.get(prevDates[prevDates.length - 1]) ?? null : null;
+        const fxChange = (todayRate && prevRate && prevRate > 0)
+          ? (todayRate - prevRate) / prevRate
+          : 0;
 
         for (const h of holdingsWithWeight) {
           const pm = holdingPriceMaps.get(h.symbol);
@@ -298,9 +269,15 @@ export async function POST() {
           const prevPrice = allDates.length > 0 ? pm.get(allDates[allDates.length - 1]) : undefined;
 
           if (prevPrice && prevPrice > 0) {
-            const ret = (curPrice - prevPrice) / prevPrice;
+            let holdingReturn = (curPrice - prevPrice) / prevPrice;
+
+            // Convert USD returns to CAD: (1 + USD return) * (1 + FX change) - 1
+            if (h.currency === "USD" && fxChange !== 0) {
+              holdingReturn = (1 + holdingReturn) * (1 + fxChange) - 1;
+            }
+
             const normWeight = h.portfolioWeight / totalWeight;
-            weightedReturn += ret * normWeight;
+            weightedReturn += holdingReturn * normWeight;
             activeWeight += normWeight;
           }
         }
@@ -323,14 +300,13 @@ export async function POST() {
         addedDays++;
       }
 
-      if (addedDays > 0 || retroCorrected > 0) {
+      if (addedDays > 0) {
         model.lastUpdated = new Date().toISOString();
         updates.push({
           groupId: model.groupId,
           profile: model.profile,
           addedDays,
           lastDate: model.history[model.history.length - 1].date,
-          retroCorrected,
         });
       }
     }
