@@ -155,17 +155,25 @@ export function StockProvider({ children }: { children: React.ReactNode }) {
       if (chartRes.chartAnalyses) setChartAnalysesState(chartRes.chartAnalyses);
       if (scannerRes.scanner) setScannerDataState(scannerRes.scanner);
       if (pimRes.groups) {
-        // Fix FUNDSERV currencies: all FUNDSERV codes are CAD mutual funds
+        // Fix FUNDSERV currencies: look up authoritative currency from seed data
         let pimFixed = false;
         const fixedPim = {
           ...pimRes,
-          groups: pimRes.groups.map((g: { holdings: Array<{ symbol: string; currency: string }> }) => ({
+          groups: pimRes.groups.map((g: { id: string; holdings: Array<{ symbol: string; currency: string }> }) => ({
             ...g,
             holdings: g.holdings.map((h: { symbol: string; currency: string }) => {
               const base = h.symbol.replace(/-T$/, "");
-              if (/^[A-Z]{2,4}\d{2,5}$/i.test(base) && h.currency !== "CAD") {
-                pimFixed = true;
-                return { ...h, currency: "CAD" };
+              if (/^[A-Z]{2,4}\d{2,5}$/i.test(base)) {
+                // Look up the correct currency from pim-seed
+                let seedCurrency: "CAD" | "USD" = "CAD"; // default fallback
+                for (const sg of pimModelSeed) {
+                  const seedHolding = sg.holdings.find((sh) => sh.symbol === h.symbol || sh.symbol === base);
+                  if (seedHolding) { seedCurrency = seedHolding.currency; break; }
+                }
+                if (h.currency !== seedCurrency) {
+                  pimFixed = true;
+                  return { ...h, currency: seedCurrency };
+                }
               }
               return h;
             }),
@@ -312,13 +320,20 @@ export function StockProvider({ children }: { children: React.ReactNode }) {
 
   /* ─── Helper: detect currency from ticker ─── */
   // .U suffix = USD-denominated Canadian-listed ETF (e.g., XUS.U, XUU.U)
-  // FUNDSERV codes are always Canadian mutual funds (e.g., FID5982, DYN3366, RBF1083)
+  // FUNDSERV codes: check pim-seed for authoritative currency, default CAD
   const tickerCurrency = useCallback((ticker: string): "CAD" | "USD" => {
     if (ticker.endsWith(".U")) return "USD";
     if (ticker.endsWith("-T") || ticker.endsWith(".TO")) return "CAD";
-    // FUNDSERV codes (with or without -T suffix) are always CAD
+    // FUNDSERV codes — look up in seed data for authoritative currency
     const base = ticker.replace(/-T$/, "");
-    if (/^[A-Z]{2,4}\d{2,5}$/i.test(base)) return "CAD";
+    if (/^[A-Z]{2,4}\d{2,5}$/i.test(base)) {
+      // Check seed for this symbol's currency
+      for (const g of pimModelSeed) {
+        const seedHolding = g.holdings.find((h) => h.symbol === ticker || h.symbol === base);
+        if (seedHolding) return seedHolding.currency;
+      }
+      return "CAD"; // default for unknown FUNDSERV
+    }
     return "USD";
   }, []);
 
