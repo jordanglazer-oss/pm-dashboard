@@ -3,8 +3,17 @@
 import React, { useState, useMemo, useRef, useEffect, useCallback } from "react";
 import Link from "next/link";
 import type { PimModelGroup, PimProfileType, PimComputedHolding, PimAssetClass, PimTransaction, PimPortfolioState } from "@/app/lib/pim-types";
+import type { Stock, InstrumentType, ScoreKey } from "@/app/lib/types";
 import { useStocks } from "@/app/lib/StockContext";
 import { PimPerformance } from "./PimPerformance";
+
+const ZERO_SCORES: Record<ScoreKey, number> = {
+  brand: 0, secular: 0, researchCoverage: 0, externalSources: 0,
+  charting: 0, relativeStrength: 0, aiRating: 0, growth: 0,
+  relativeValuation: 0, historicalValuation: 0, leverageCoverage: 0,
+  cashFlowQuality: 0, competitiveMoat: 0, turnaround: 0, catalysts: 0,
+  trackRecord: 0, ownershipTrends: 0,
+};
 
 /** Convert PIM symbol (e.g., PAYF-T) to the ticker used in stock routes (PAYF.TO) */
 function symbolToTicker(symbol: string): string {
@@ -71,7 +80,7 @@ function generateId(): string {
 }
 
 export function PimModel({ groups }: Props) {
-  const { getGroupState, pimPortfolioState, updatePimPortfolioState, uiPrefs, setUiPref } = useStocks();
+  const { getGroupState, pimPortfolioState, updatePimPortfolioState, uiPrefs, setUiPref, addStock, scoredStocks } = useStocks();
   const [selectedGroupId, setSelectedGroupId] = useState(groups[0]?.id || "");
   const [selectedProfile, setSelectedProfile] = useState<PimProfileType>("balanced");
   const [dropdownOpen, setDropdownOpen] = useState(false);
@@ -90,7 +99,7 @@ export function PimModel({ groups }: Props) {
   const [showSwitch, setShowSwitch] = useState(false);
   const [rebalancePrices, setRebalancePrices] = useState<Record<string, string>>({});
   const [switchSell, setSwitchSell] = useState({ symbol: "", price: "" });
-  const [switchBuy, setSwitchBuy] = useState({ symbol: "", price: "" });
+  const [switchBuy, setSwitchBuy] = useState({ symbol: "", price: "", ticker: "", name: "", resolving: false });
   const dropdownRef = useRef<HTMLDivElement>(null);
   const searchInputRef = useRef<HTMLInputElement>(null);
 
@@ -368,43 +377,100 @@ export function PimModel({ groups }: Props) {
     fetchPrices();
   }, [rebalanceTrades, rebalancePrices, pimPortfolioState, selectedGroupId, groupState, updatePimPortfolioState, fetchPrices]);
 
-  // ── Buy/Sell Switch logic ──
-  const handleExecuteSwitch = useCallback(() => {
-    const sellPrice = parseFloat(switchSell.price);
+  // ── Buy/Sell logic ──
+  const handleResolveBuyTicker = useCallback(async (ticker: string) => {
+    if (!ticker.trim()) return;
+    const t = ticker.trim().toUpperCase();
+    setSwitchBuy((s) => ({ ...s, ticker: t, resolving: true, name: "" }));
+    try {
+      const res = await fetch(`/api/company-name?tickers=${encodeURIComponent(t)}`);
+      if (res.ok) {
+        const data = await res.json();
+        const name = data.names?.[t] || t;
+        setSwitchBuy((s) => ({ ...s, name, symbol: t, resolving: false }));
+      } else {
+        setSwitchBuy((s) => ({ ...s, name: t, symbol: t, resolving: false }));
+      }
+    } catch {
+      setSwitchBuy((s) => ({ ...s, name: t, symbol: t, resolving: false }));
+    }
+  }, []);
+
+  const handleExecuteSwitch = useCallback(async () => {
+    const sellPrice = switchSell.symbol ? parseFloat(switchSell.price) : 0;
     const buyPrice = parseFloat(switchBuy.price);
-    if (!switchSell.symbol || !switchBuy.symbol || !sellPrice || !buyPrice) return;
+    const buyTicker = switchBuy.symbol.trim().toUpperCase();
 
-    const sellHolding = computedHoldings.find((h) => h.symbol === switchSell.symbol);
-    const buyHolding = computedHoldings.find((h) => h.symbol === switchBuy.symbol);
+    // Validate: need at least a buy with price, and if selling also need price
+    if (!buyTicker || !buyPrice) return;
+    if (switchSell.symbol && !sellPrice) return;
 
-    const transactions: PimTransaction[] = [
-      {
+    // If the buy ticker is not in the portfolio, add it
+    const existsInPortfolio = scoredStocks.some(
+      (s) => s.ticker === buyTicker || s.ticker.replace("-T", ".TO") === buyTicker.replace("-T", ".TO")
+    );
+    if (!existsInPortfolio) {
+      // Look up company name and type
+      let name = switchBuy.name || buyTicker;
+      let instrumentType: InstrumentType = "stock";
+      let sector = "";
+      try {
+        const res = await fetch(`/api/company-name?tickers=${encodeURIComponent(buyTicker)}`);
+        if (res.ok) {
+          const data = await res.json();
+          if (data.names?.[buyTicker]) name = data.names[buyTicker];
+          if (data.sectors?.[buyTicker]) sector = data.sectors[buyTicker];
+          if (data.types?.[buyTicker]) instrumentType = data.types[buyTicker] as InstrumentType;
+        }
+      } catch { /* fallback */ }
+
+      const stock: Stock = {
+        ticker: buyTicker,
+        name,
+        instrumentType,
+        bucket: "Portfolio",
+        sector: instrumentType === "etf" || instrumentType === "mutual-fund" ? "" : sector,
+        beta: 1.0,
+        weights: { portfolio: 0 },
+        scores: { ...ZERO_SCORES },
+        notes: "",
+      };
+      addStock(stock);
+    }
+
+    const sellHolding = switchSell.symbol ? computedHoldings.find((h) => h.symbol === switchSell.symbol) : null;
+
+    const transactions: PimTransaction[] = [];
+
+    if (switchSell.symbol && sellPrice) {
+      transactions.push({
         id: generateId(),
         date: new Date().toISOString(),
         groupId: selectedGroupId,
-        type: "switch",
+        type: switchSell.symbol ? "switch" : "buy",
         symbol: switchSell.symbol,
         direction: "sell",
         price: sellPrice,
         targetWeight: sellHolding?.weightInPortfolio || 0,
-        pairedWith: switchBuy.symbol,
-      },
-      {
-        id: generateId(),
-        date: new Date().toISOString(),
-        groupId: selectedGroupId,
-        type: "switch",
-        symbol: switchBuy.symbol,
-        direction: "buy",
-        price: buyPrice,
-        targetWeight: buyHolding?.weightInPortfolio || 0,
-        pairedWith: switchSell.symbol,
-      },
-    ];
+        pairedWith: buyTicker,
+      });
+    }
+
+    transactions.push({
+      id: generateId(),
+      date: new Date().toISOString(),
+      groupId: selectedGroupId,
+      type: switchSell.symbol ? "switch" : "buy",
+      symbol: buyTicker,
+      direction: "buy",
+      price: buyPrice,
+      targetWeight: 0,
+      pairedWith: switchSell.symbol || undefined,
+    });
 
     const newPrices = { ...(groupState.lastRebalance?.prices || {}) };
-    newPrices[switchSell.symbol] = sellPrice;
-    newPrices[switchBuy.symbol] = buyPrice;
+    if (switchSell.symbol) newPrices[switchSell.symbol] = sellPrice;
+    newPrices[buyTicker] = buyPrice;
 
     const updatedState: PimPortfolioState = {
       ...pimPortfolioState,
@@ -423,9 +489,9 @@ export function PimModel({ groups }: Props) {
     updatePimPortfolioState(updatedState);
     setShowSwitch(false);
     setSwitchSell({ symbol: "", price: "" });
-    setSwitchBuy({ symbol: "", price: "" });
+    setSwitchBuy({ symbol: "", price: "", ticker: "", name: "", resolving: false });
     fetchPrices();
-  }, [switchSell, switchBuy, computedHoldings, pimPortfolioState, selectedGroupId, groupState, updatePimPortfolioState, fetchPrices]);
+  }, [switchSell, switchBuy, computedHoldings, pimPortfolioState, selectedGroupId, groupState, updatePimPortfolioState, fetchPrices, scoredStocks, addStock]);
 
   if (!selectedGroup) return null;
 
@@ -578,52 +644,65 @@ export function PimModel({ groups }: Props) {
         </div>
       )}
 
-      {/* Buy/Sell Switch Panel */}
+      {/* Buy/Sell Panel */}
       {showSwitch && isPimGroup && (
         <div className="rounded-2xl border border-amber-200 bg-amber-50/50 p-5 shadow-sm">
           <h3 className="text-sm font-bold text-slate-800 mb-3">Buy / Sell</h3>
-          <p className="text-xs text-slate-500 mb-3">Sell one position and buy another with the proceeds. Enter execution prices.</p>
+          <p className="text-xs text-slate-500 mb-3">Buy a new position or sell an existing one. Optionally pair as a switch (sell one, buy another).</p>
           <div className="grid gap-4 sm:grid-cols-2">
+            {/* Sell side — existing holdings */}
             <div className="space-y-2">
-              <label className="text-xs font-semibold text-red-600 uppercase">Sell</label>
+              <label className="text-xs font-semibold text-red-600 uppercase">Sell (optional)</label>
               <select value={switchSell.symbol} onChange={(e) => setSwitchSell((s) => ({ ...s, symbol: e.target.value }))}
                 className="w-full rounded-lg border border-slate-200 bg-white px-3 py-2 text-sm outline-none focus:border-amber-300">
-                <option value="">Select holding to sell...</option>
+                <option value="">None — buy only</option>
                 {computedHoldings.filter((h) => h.weightInPortfolio > 0).map((h) => (
                   <option key={h.symbol} value={h.symbol}>{h.symbol} — {h.name}</option>
                 ))}
               </select>
-              <input type="number" step="0.01" placeholder="Sell price"
-                value={switchSell.price} onChange={(e) => setSwitchSell((s) => ({ ...s, price: e.target.value }))}
-                className="w-full rounded-lg border border-slate-200 bg-white px-3 py-2 text-sm outline-none focus:border-red-300" />
-              {switchSell.symbol && livePrices[switchSell.symbol] && (
-                <p className="text-[10px] text-slate-400">Market: ${livePrices[switchSell.symbol].toFixed(2)}</p>
+              {switchSell.symbol && (
+                <>
+                  <input type="number" step="0.01" placeholder="Sell price"
+                    value={switchSell.price} onChange={(e) => setSwitchSell((s) => ({ ...s, price: e.target.value }))}
+                    className="w-full rounded-lg border border-slate-200 bg-white px-3 py-2 text-sm outline-none focus:border-red-300" />
+                  {livePrices[switchSell.symbol] && (
+                    <p className="text-[10px] text-slate-400">Market: ${livePrices[switchSell.symbol].toFixed(2)}</p>
+                  )}
+                </>
               )}
             </div>
+            {/* Buy side — new ticker input */}
             <div className="space-y-2">
               <label className="text-xs font-semibold text-emerald-600 uppercase">Buy</label>
-              <select value={switchBuy.symbol} onChange={(e) => setSwitchBuy((s) => ({ ...s, symbol: e.target.value }))}
-                className="w-full rounded-lg border border-slate-200 bg-white px-3 py-2 text-sm outline-none focus:border-amber-300">
-                <option value="">Select holding to buy...</option>
-                {computedHoldings.filter((h) => h.weightInPortfolio > 0).map((h) => (
-                  <option key={h.symbol} value={h.symbol}>{h.symbol} — {h.name}</option>
-                ))}
-              </select>
+              <div className="relative">
+                <input
+                  type="text"
+                  value={switchBuy.ticker}
+                  onChange={(e) => setSwitchBuy((s) => ({ ...s, ticker: e.target.value.toUpperCase() }))}
+                  onBlur={() => switchBuy.ticker.trim() && handleResolveBuyTicker(switchBuy.ticker)}
+                  onKeyDown={(e) => { if (e.key === "Enter") handleResolveBuyTicker(switchBuy.ticker); }}
+                  placeholder="e.g. AAPL, XSP.TO, TDB900"
+                  className="w-full rounded-lg border border-slate-200 bg-white px-3 py-2 text-sm outline-none focus:border-emerald-300 font-mono"
+                />
+                {switchBuy.resolving && (
+                  <span className="absolute right-2 top-1/2 -translate-y-1/2 text-[10px] text-slate-400 animate-pulse">Looking up...</span>
+                )}
+              </div>
+              {switchBuy.name && !switchBuy.resolving && (
+                <p className="text-xs text-slate-600 truncate">{switchBuy.name}</p>
+              )}
               <input type="number" step="0.01" placeholder="Buy price"
                 value={switchBuy.price} onChange={(e) => setSwitchBuy((s) => ({ ...s, price: e.target.value }))}
                 className="w-full rounded-lg border border-slate-200 bg-white px-3 py-2 text-sm outline-none focus:border-emerald-300" />
-              {switchBuy.symbol && livePrices[switchBuy.symbol] && (
-                <p className="text-[10px] text-slate-400">Market: ${livePrices[switchBuy.symbol].toFixed(2)}</p>
-              )}
             </div>
           </div>
           <div className="flex gap-2 mt-3">
             <button onClick={handleExecuteSwitch}
-              disabled={!switchSell.symbol || !switchBuy.symbol || !switchSell.price || !switchBuy.price}
+              disabled={!switchBuy.symbol || !switchBuy.price || switchBuy.resolving || (!!switchSell.symbol && !switchSell.price)}
               className="rounded-lg bg-amber-600 px-4 py-2 text-xs font-semibold text-white hover:bg-amber-700 transition-colors disabled:opacity-50">
-              Execute Trade
+              {switchSell.symbol ? "Execute Switch" : "Execute Buy"}
             </button>
-            <button onClick={() => { setShowSwitch(false); setSwitchSell({ symbol: "", price: "" }); setSwitchBuy({ symbol: "", price: "" }); }}
+            <button onClick={() => { setShowSwitch(false); setSwitchSell({ symbol: "", price: "" }); setSwitchBuy({ symbol: "", price: "", ticker: "", name: "", resolving: false }); }}
               className="rounded-lg bg-slate-200 px-4 py-2 text-xs font-semibold text-slate-600 hover:bg-slate-300 transition-colors">
               Cancel
             </button>
