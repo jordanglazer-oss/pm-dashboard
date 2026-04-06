@@ -154,7 +154,26 @@ export function StockProvider({ children }: { children: React.ReactNode }) {
       if (briefRes.brief) setBriefState(briefRes.brief);
       if (chartRes.chartAnalyses) setChartAnalysesState(chartRes.chartAnalyses);
       if (scannerRes.scanner) setScannerDataState(scannerRes.scanner);
-      if (pimRes.groups) setPimModelsState(pimRes);
+      if (pimRes.groups) {
+        // Fix FUNDSERV currencies: all FUNDSERV codes are CAD mutual funds
+        let pimFixed = false;
+        const fixedPim = {
+          ...pimRes,
+          groups: pimRes.groups.map((g: { holdings: Array<{ symbol: string; currency: string }> }) => ({
+            ...g,
+            holdings: g.holdings.map((h: { symbol: string; currency: string }) => {
+              const base = h.symbol.replace(/-T$/, "");
+              if (/^[A-Z]{2,4}\d{2,5}$/i.test(base) && h.currency !== "CAD") {
+                pimFixed = true;
+                return { ...h, currency: "CAD" };
+              }
+              return h;
+            }),
+          })),
+        };
+        setPimModelsState(fixedPim);
+        if (pimFixed) persistPim(fixedPim);
+      }
       if (portfolioStateRes.groupStates) setPimPortfolioState(portfolioStateRes);
       if (uiPrefsRes.uiPrefs) setUiPrefsState(uiPrefsRes.uiPrefs);
       setLoading(false);
@@ -293,9 +312,13 @@ export function StockProvider({ children }: { children: React.ReactNode }) {
 
   /* ─── Helper: detect currency from ticker ─── */
   // .U suffix = USD-denominated Canadian-listed ETF (e.g., XUS.U, XUU.U)
+  // FUNDSERV codes are always Canadian mutual funds (e.g., FID5982, DYN3366, RBF1083)
   const tickerCurrency = useCallback((ticker: string): "CAD" | "USD" => {
     if (ticker.endsWith(".U")) return "USD";
     if (ticker.endsWith("-T") || ticker.endsWith(".TO")) return "CAD";
+    // FUNDSERV codes (with or without -T suffix) are always CAD
+    const base = ticker.replace(/-T$/, "");
+    if (/^[A-Z]{2,4}\d{2,5}$/i.test(base)) return "CAD";
     return "USD";
   }, []);
 
