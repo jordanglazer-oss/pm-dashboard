@@ -521,6 +521,10 @@ export default function StockDetailPage() {
           }
           updateFundData(ticker, merged);
         }
+        // Update price from Morningstar for mutual funds (Yahoo doesn't have FUNDSERV prices)
+        if (data.price != null && typeof data.price === "number") {
+          updatePrice(ticker, data.price);
+        }
         // Update name from Morningstar for Canadian funds if we got a better name
         if (data.name && (!stock.name || stock.name === ticker)) {
           updateStockFields(ticker, { name: data.name });
@@ -528,7 +532,7 @@ export default function StockDetailPage() {
       }
     } catch { /* best effort */ }
     finally { setLoadingFundData(false); }
-  }, [ticker, stock, scoreable, updateFundData, updateStockFields]);
+  }, [ticker, stock, scoreable, updateFundData, updateStockFields, updatePrice]);
 
   // Auto-fetch fund data on mount if missing
   useEffect(() => {

@@ -1,10 +1,20 @@
 import { NextRequest, NextResponse } from "next/server";
 
+/** Convert local ticker format to Yahoo Finance symbol */
+function toYahoo(ticker: string): string {
+  if (ticker.endsWith(".U")) return ticker.replace(/\.U$/, "-U.TO");
+  if (ticker.endsWith("-T")) return ticker.replace(/-T$/, ".TO");
+  return ticker;
+}
+
 // Batch-fetch current prices from Yahoo Finance v8 chart API
 async function fetchPrice(ticker: string): Promise<number | null> {
+  // FUNDSERV codes (mutual funds) are not on Yahoo
+  if (/^[A-Z]{2,4}\d{2,5}$/i.test(ticker)) return null;
   try {
+    const yahooSymbol = toYahoo(ticker);
     const res = await fetch(
-      `https://query2.finance.yahoo.com/v8/finance/chart/${encodeURIComponent(ticker)}?range=1d&interval=1d`,
+      `https://query2.finance.yahoo.com/v8/finance/chart/${encodeURIComponent(yahooSymbol)}?range=1d&interval=1d`,
       {
         headers: {
           "User-Agent":

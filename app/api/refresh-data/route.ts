@@ -7,6 +7,13 @@ import { computeTechnicals, computeRiskAlert } from "@/app/lib/technicals";
 
 const YAHOO_BASE = "https://query2.finance.yahoo.com";
 
+/** Convert local ticker format to Yahoo Finance symbol */
+function toYahoo(ticker: string): string {
+  if (ticker.endsWith(".U")) return ticker.replace(/\.U$/, "-U.TO");
+  if (ticker.endsWith("-T")) return ticker.replace(/-T$/, ".TO");
+  return ticker;
+}
+
 async function getYahooCrumb(): Promise<{ cookie: string; crumb: string } | null> {
   try {
     const cookieRes = await fetch("https://fc.yahoo.com", {
@@ -237,9 +244,10 @@ async function refreshSingleStock(
 ): Promise<RefreshResult> {
   try {
     // Fetch price history and Yahoo modules in parallel
+    const yahooSymbol = toYahoo(ticker);
     const [priceHistory, modules] = await Promise.all([
-      fetchPriceHistory(ticker),
-      auth ? fetchYahooModules(ticker, HEALTH_MODULES, auth.cookie, auth.crumb) : Promise.resolve(null),
+      fetchPriceHistory(yahooSymbol),
+      auth ? fetchYahooModules(yahooSymbol, HEALTH_MODULES, auth.cookie, auth.crumb) : Promise.resolve(null),
     ]);
 
     // Current price from chart data

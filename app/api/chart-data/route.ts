@@ -5,8 +5,16 @@ import { computeSMASeries } from "@/app/lib/technicals";
 const YAHOO_BASE = "https://query2.finance.yahoo.com";
 const UA = "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36";
 
+/** Convert local ticker format to Yahoo Finance symbol */
+function toYahoo(ticker: string): string {
+  if (ticker.endsWith(".U")) return ticker.replace(/\.U$/, "-U.TO");
+  if (ticker.endsWith("-T")) return ticker.replace(/-T$/, ".TO");
+  return ticker;
+}
+
 async function fetchBars(ticker: string, range: string, interval: string): Promise<OHLCVBar[]> {
-  const url = `${YAHOO_BASE}/v8/finance/chart/${encodeURIComponent(ticker)}?range=${range}&interval=${interval}`;
+  const yahooSymbol = toYahoo(ticker);
+  const url = `${YAHOO_BASE}/v8/finance/chart/${encodeURIComponent(yahooSymbol)}?range=${range}&interval=${interval}`;
   const res = await fetch(url, {
     cache: "no-store",
     headers: { "User-Agent": UA },
