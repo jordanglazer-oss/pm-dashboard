@@ -6,6 +6,7 @@ import type { ScoredStock, ScoreKey } from "@/app/lib/types";
 import { MAX_SCORE, INSTRUMENT_LABELS } from "@/app/lib/types";
 import { isScoreable } from "@/app/lib/scoring";
 import { SignalPill, ratingTone, riskTone } from "./SignalPill";
+import { useStocks } from "@/app/lib/StockContext";
 
 type SortKey = "ticker" | "bucket" | "sector" | "raw" | "adjusted" | "rating" | "risk" | "effect" | "price" | "pnl";
 type SortDir = "asc" | "desc";
@@ -51,9 +52,18 @@ function matchesFilter(s: ScoredStock, filter: InstrumentFilter): boolean {
 
 export function StockScoring({ stocks, onScoreStock, onUpdateCostBasis, onRefreshData, onUpdateFundData, onUpdateMarketData }: Props) {
   const router = useRouter();
+  const { uiPrefs, setUiPref } = useStocks();
   const [query, setQuery] = useState("");
-  const [sortKey, setSortKey] = useState<SortKey>("adjusted");
-  const [sortDir, setSortDir] = useState<SortDir>("desc");
+
+  // Persist sort state across refreshes and devices via Redis KV
+  const sortKey = (uiPrefs["scoringSort"] as SortKey) || "adjusted";
+  const sortDir = (uiPrefs["scoringSortDir"] as SortDir) || "desc";
+  const setSortKey = (k: SortKey) => setUiPref("scoringSort", k);
+  const setSortDir = (d: SortDir | ((prev: SortDir) => SortDir)) => {
+    const val = typeof d === "function" ? d(sortDir) : d;
+    setUiPref("scoringSortDir", val);
+  };
+
   const [instrumentFilter, setInstrumentFilter] = useState<InstrumentFilter>("all");
 
   // Live prices
@@ -360,52 +370,59 @@ export function StockScoring({ stocks, onScoreStock, onUpdateCostBasis, onRefres
         </p>
       )}
 
-      {/* Split into Portfolio and Watchlist */}
-      {(["Portfolio", "Watchlist"] as const).map((bucket) => {
-        const bucketStocks = sorted.filter((s) => s.bucket === bucket);
-        if (bucketStocks.length === 0) return null;
-        const isPortfolio = bucket === "Portfolio";
+      {/* Split into Portfolio (stocks), Watchlist (stocks), and Funds & ETFs */}
+      {(["Portfolio", "Watchlist", "Funds & ETFs"] as const).map((section) => {
+        const isFundsSection = section === "Funds & ETFs";
+        const isPortfolio = section === "Portfolio";
+        const sectionStocks = isFundsSection
+          ? sorted.filter((s) => !isScoreable(s))
+          : sorted.filter((s) => s.bucket === section && isScoreable(s));
+        if (sectionStocks.length === 0) return null;
+
+        // For the Funds & ETFs section, show cost basis & P&L for portfolio holdings
+        const showCostBasis = isPortfolio || isFundsSection;
 
         return (
-          <div key={bucket} className="mt-6">
+          <div key={section} className="mt-6">
             {/* Section header */}
             <div className="flex items-center gap-3 mb-3">
-              <h4 className={`text-sm font-bold uppercase tracking-wider ${isPortfolio ? "text-blue-600" : "text-slate-500"}`}>
-                {bucket}
+              <h4 className={`text-sm font-bold uppercase tracking-wider ${isPortfolio ? "text-blue-600" : isFundsSection ? "text-indigo-600" : "text-slate-500"}`}>
+                {section}
               </h4>
-              <span className={`rounded-full px-2.5 py-0.5 text-xs font-semibold ${isPortfolio ? "bg-blue-50 text-blue-600" : "bg-slate-100 text-slate-500"}`}>
-                {bucketStocks.length}
+              <span className={`rounded-full px-2.5 py-0.5 text-xs font-semibold ${isPortfolio ? "bg-blue-50 text-blue-600" : isFundsSection ? "bg-indigo-50 text-indigo-600" : "bg-slate-100 text-slate-500"}`}>
+                {sectionStocks.length}
               </span>
-              {onScoreStock && (
+              {onScoreStock && !isFundsSection && (
                 <button
-                  onClick={() => handleScoreBucket(bucket)}
+                  onClick={() => handleScoreBucket(section as "Portfolio" | "Watchlist")}
                   disabled={scoringAll}
                   className={`flex items-center gap-1.5 rounded-lg px-3 py-1 text-xs font-semibold text-white transition-colors disabled:opacity-50 ${isPortfolio ? "bg-blue-600 hover:bg-blue-700" : "bg-slate-600 hover:bg-slate-700"}`}
-                  title={`Score all ${bucket.toLowerCase()} stocks with Claude`}
+                  title={`Score all ${section.toLowerCase()} stocks with Claude`}
                 >
-                  {scoringAll && scoringBucket === bucket ? (
+                  {scoringAll && scoringBucket === section ? (
                     <>
                       <svg className="w-3 h-3 animate-spin" fill="none" stroke="currentColor" strokeWidth="2" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" d="M16.023 9.348h4.992v-.001M2.985 19.644v-4.992m0 0h4.992m-4.993 0 3.181 3.183a8.25 8.25 0 0 0 13.803-3.7M4.031 9.865a8.25 8.25 0 0 1 13.803-3.7l3.181 3.182" /></svg>
                       {scoreProgress}
                     </>
                   ) : (
-                    <>Score All ({bucketStocks.filter((s) => isScoreable(s)).length})</>
+                    <>Score All ({sectionStocks.filter((s) => isScoreable(s)).length})</>
                   )}
                 </button>
               )}
-              <div className={`flex-1 border-t ${isPortfolio ? "border-blue-200" : "border-slate-200"}`} />
+              <div className={`flex-1 border-t ${isPortfolio ? "border-blue-200" : isFundsSection ? "border-indigo-200" : "border-slate-200"}`} />
             </div>
 
             {/* Mobile card view */}
             <div className="space-y-3 md:hidden">
-              {bucketStocks.map((s) => {
+              {sectionStocks.map((s) => {
                 const livePrice = livePrices[s.ticker];
                 const costBasis = s.costBasis;
                 const pnlPct = livePrice && costBasis ? ((livePrice - costBasis) / costBasis * 100) : null;
+                const isPortfolioHolding = s.bucket === "Portfolio";
                 return (
                   <div
                     key={`mobile-${s.ticker}-${s.bucket}`}
-                    className={`rounded-2xl border bg-white p-4 shadow-sm cursor-pointer hover:shadow-md transition-shadow ${isPortfolio ? "border-blue-100" : "border-slate-200"}`}
+                    className={`rounded-2xl border bg-white p-4 shadow-sm cursor-pointer hover:shadow-md transition-shadow ${isPortfolio ? "border-blue-100" : isFundsSection ? "border-indigo-100" : "border-slate-200"}`}
                     onClick={() => router.push(`/stock/${s.ticker.toLowerCase()}`)}
                   >
                     <div className="flex items-center justify-between mb-2">
@@ -414,6 +431,11 @@ export function StockScoring({ stocks, onScoreStock, onUpdateCostBasis, onRefres
                         {s.instrumentType && s.instrumentType !== "stock" && (
                           <span className={`rounded px-1.5 py-0.5 text-[9px] font-bold ${s.instrumentType === "etf" ? "bg-indigo-100 text-indigo-700" : "bg-purple-100 text-purple-700"}`}>
                             {INSTRUMENT_LABELS[s.instrumentType]}
+                          </span>
+                        )}
+                        {isFundsSection && (
+                          <span className={`rounded px-1.5 py-0.5 text-[9px] font-bold ${isPortfolioHolding ? "bg-blue-50 text-blue-600" : "bg-slate-100 text-slate-500"}`}>
+                            {s.bucket}
                           </span>
                         )}
                       </div>
@@ -429,7 +451,7 @@ export function StockScoring({ stocks, onScoreStock, onUpdateCostBasis, onRefres
                       </div>
                     </div>
                     <div className="text-xs text-slate-500 mb-3">{s.name}{isScoreable(s) && s.sector ? ` \u00b7 ${s.sector}` : ""}</div>
-                    <div className={`grid gap-3 text-center ${isPortfolio ? "grid-cols-3" : "grid-cols-2"}`}>
+                    <div className={`grid gap-3 text-center ${isPortfolioHolding ? "grid-cols-3" : "grid-cols-2"}`}>
                       <div>
                         <div className="text-[10px] text-slate-400 uppercase tracking-wider">Price</div>
                         <div className="text-sm font-semibold text-slate-800">
@@ -437,10 +459,10 @@ export function StockScoring({ stocks, onScoreStock, onUpdateCostBasis, onRefres
                         </div>
                       </div>
                       <div>
-                        <div className="text-[10px] text-slate-400 uppercase tracking-wider">Score</div>
-                        <div className="text-sm font-semibold text-slate-900">{s.adjusted}/{MAX_SCORE}</div>
+                        <div className="text-[10px] text-slate-400 uppercase tracking-wider">{isFundsSection ? "Weight" : "Score"}</div>
+                        <div className="text-sm font-semibold text-slate-900">{isFundsSection ? `${s.weights.portfolio}%` : `${s.adjusted}/${MAX_SCORE}`}</div>
                       </div>
-                      {isPortfolio && (
+                      {isPortfolioHolding && (
                         <div>
                           <div className="text-[10px] text-slate-400 uppercase tracking-wider">P&L</div>
                           <div className={`text-sm font-semibold ${pnlPct != null ? (pnlPct >= 0 ? "text-emerald-600" : "text-red-500") : "text-slate-300"}`}>
@@ -462,28 +484,37 @@ export function StockScoring({ stocks, onScoreStock, onUpdateCostBasis, onRefres
 
             {/* Desktop table */}
             <div className="overflow-x-auto hidden md:block">
-              <table className="w-full min-w-[1400px] text-left">
+              <table className={`w-full ${isFundsSection ? "min-w-[900px]" : "min-w-[1400px]"} text-left`}>
                 <thead>
-                  <tr className={`border-b text-xs text-slate-500 uppercase tracking-wider ${isPortfolio ? "border-blue-200" : "border-slate-200"}`}>
+                  <tr className={`border-b text-xs text-slate-500 uppercase tracking-wider ${isPortfolio ? "border-blue-200" : isFundsSection ? "border-indigo-200" : "border-slate-200"}`}>
                     <th className="pb-3 pr-2 cursor-pointer hover:text-slate-800 select-none" onClick={() => toggleSort("ticker")}>Ticker{arrow("ticker")}</th>
-                    <th className="pb-3 pr-2 cursor-pointer hover:text-slate-800 select-none" onClick={() => toggleSort("sector")}>Sector{arrow("sector")}</th>
+                    {isFundsSection && <th className="pb-3 pr-2 cursor-pointer hover:text-slate-800 select-none" onClick={() => toggleSort("bucket")}>Bucket{arrow("bucket")}</th>}
+                    {!isFundsSection && <th className="pb-3 pr-2 cursor-pointer hover:text-slate-800 select-none" onClick={() => toggleSort("sector")}>Sector{arrow("sector")}</th>}
                     <th className="pb-3 pr-2 cursor-pointer hover:text-slate-800 select-none text-right" onClick={() => toggleSort("price")}>Price{arrow("price")}</th>
-                    {isPortfolio && <th className="pb-3 pr-2 text-right">Cost Basis</th>}
-                    {isPortfolio && <th className="pb-3 pr-2 cursor-pointer hover:text-slate-800 select-none text-right" onClick={() => toggleSort("pnl")}>P&L{arrow("pnl")}</th>}
-                    <th className="pb-3 pr-2 cursor-pointer hover:text-slate-800 select-none text-right" onClick={() => toggleSort("raw")}>Raw{arrow("raw")}</th>
-                    <th className="pb-3 pr-2 cursor-pointer hover:text-slate-800 select-none text-right" onClick={() => toggleSort("adjusted")}>Adj.{arrow("adjusted")}</th>
-                    <th className="pb-3 pr-2 cursor-pointer hover:text-slate-800 select-none" onClick={() => toggleSort("rating")}>Rating{arrow("rating")}</th>
-                    <th className="pb-3 pr-2 cursor-pointer hover:text-slate-800 select-none" onClick={() => toggleSort("risk")}>Risk{arrow("risk")}</th>
-                    <th className="pb-3 pr-2 cursor-pointer hover:text-slate-800 select-none text-right" onClick={() => toggleSort("effect")}>Regime{arrow("effect")}</th>
-                    <th className="pb-3 pr-2">What They Do</th>
-                    <th className="pb-3">Why Own It</th>
+                    {showCostBasis && <th className="pb-3 pr-2 text-right">Cost Basis</th>}
+                    {showCostBasis && <th className="pb-3 pr-2 cursor-pointer hover:text-slate-800 select-none text-right" onClick={() => toggleSort("pnl")}>P&L{arrow("pnl")}</th>}
+                    {!isFundsSection && (
+                      <>
+                        <th className="pb-3 pr-2 cursor-pointer hover:text-slate-800 select-none text-right" onClick={() => toggleSort("raw")}>Raw{arrow("raw")}</th>
+                        <th className="pb-3 pr-2 cursor-pointer hover:text-slate-800 select-none text-right" onClick={() => toggleSort("adjusted")}>Adj.{arrow("adjusted")}</th>
+                        <th className="pb-3 pr-2 cursor-pointer hover:text-slate-800 select-none" onClick={() => toggleSort("rating")}>Rating{arrow("rating")}</th>
+                        <th className="pb-3 pr-2 cursor-pointer hover:text-slate-800 select-none" onClick={() => toggleSort("risk")}>Risk{arrow("risk")}</th>
+                        <th className="pb-3 pr-2 cursor-pointer hover:text-slate-800 select-none text-right" onClick={() => toggleSort("effect")}>Regime{arrow("effect")}</th>
+                        <th className="pb-3 pr-2">What They Do</th>
+                        <th className="pb-3">Why Own It</th>
+                      </>
+                    )}
+                    {isFundsSection && (
+                      <th className="pb-3 pr-2 text-right">Weight</th>
+                    )}
                   </tr>
                 </thead>
                 <tbody>
-                  {bucketStocks.map((s) => {
+                  {sectionStocks.map((s) => {
                     const effect = (s.adjusted - s.raw).toFixed(1);
                     const livePrice = livePrices[s.ticker];
                     const cb = s.costBasis;
+                    const isPortfolioHolding = s.bucket === "Portfolio";
                     const pnlPct = livePrice && cb ? ((livePrice - cb) / cb * 100) : null;
                     return (
                       <tr
@@ -502,7 +533,14 @@ export function StockScoring({ stocks, onScoreStock, onUpdateCostBasis, onRefres
                           </div>
                           <div className="text-[11px] text-slate-400 truncate max-w-[120px]">{s.name}</div>
                         </td>
-                        <td className="py-3 pr-2 text-xs text-slate-600">{isScoreable(s) ? s.sector : ""}</td>
+                        {isFundsSection && (
+                          <td className="py-3 pr-2">
+                            <span className={`rounded-full px-2 py-0.5 text-[10px] font-semibold ${isPortfolioHolding ? "bg-blue-50 text-blue-600" : "bg-slate-100 text-slate-500"}`}>
+                              {s.bucket}
+                            </span>
+                          </td>
+                        )}
+                        {!isFundsSection && <td className="py-3 pr-2 text-xs text-slate-600">{s.sector}</td>}
                         <td className="py-3 pr-2 text-right font-mono text-sm">
                           {pricesLoading ? (
                             <span className="text-slate-300 animate-pulse">...</span>
@@ -512,25 +550,29 @@ export function StockScoring({ stocks, onScoreStock, onUpdateCostBasis, onRefres
                             <span className="text-slate-300">&mdash;</span>
                           )}
                         </td>
-                        {isPortfolio && (
+                        {showCostBasis && (
                           <td className="py-3 pr-2 text-right" onClick={(e) => e.stopPropagation()}>
-                            <input
-                              type="number"
-                              step="0.01"
-                              placeholder="—"
-                              value={cb ?? ""}
-                              onChange={(e) => {
-                                const val = parseFloat(e.target.value);
-                                if (onUpdateCostBasis && !isNaN(val)) onUpdateCostBasis(s.ticker, val);
-                                else if (onUpdateCostBasis && e.target.value === "") onUpdateCostBasis(s.ticker, 0);
-                              }}
-                              className="w-20 rounded-lg border border-transparent bg-transparent px-1 py-0.5 text-right text-sm font-mono text-slate-600 hover:border-slate-200 focus:border-blue-300 focus:bg-white focus:outline-none focus:ring-1 focus:ring-blue-200 transition-all"
-                            />
+                            {isPortfolioHolding ? (
+                              <input
+                                type="number"
+                                step="0.01"
+                                placeholder="—"
+                                value={cb ?? ""}
+                                onChange={(e) => {
+                                  const val = parseFloat(e.target.value);
+                                  if (onUpdateCostBasis && !isNaN(val)) onUpdateCostBasis(s.ticker, val);
+                                  else if (onUpdateCostBasis && e.target.value === "") onUpdateCostBasis(s.ticker, 0);
+                                }}
+                                className="w-20 rounded-lg border border-transparent bg-transparent px-1 py-0.5 text-right text-sm font-mono text-slate-600 hover:border-slate-200 focus:border-blue-300 focus:bg-white focus:outline-none focus:ring-1 focus:ring-blue-200 transition-all"
+                              />
+                            ) : (
+                              <span className="text-slate-300">&mdash;</span>
+                            )}
                           </td>
                         )}
-                        {isPortfolio && (
+                        {showCostBasis && (
                           <td className="py-3 pr-2 text-right font-mono text-xs">
-                            {pnlPct != null ? (
+                            {isPortfolioHolding && pnlPct != null ? (
                               <span className={pnlPct >= 0 ? "text-emerald-600 font-semibold" : "text-red-500 font-semibold"}>
                                 {pnlPct >= 0 ? "+" : ""}{pnlPct.toFixed(1)}%
                               </span>
@@ -539,27 +581,36 @@ export function StockScoring({ stocks, onScoreStock, onUpdateCostBasis, onRefres
                             )}
                           </td>
                         )}
-                        <td className="py-3 pr-2 text-right text-sm text-slate-600">
-                          {isScoreable(s) ? `${s.raw}/${MAX_SCORE}` : <span className="text-slate-300">--</span>}
-                        </td>
-                        <td className="py-3 pr-2 text-right text-sm font-semibold text-slate-900">
-                          {isScoreable(s) ? `${s.adjusted}/${MAX_SCORE}` : <span className="text-slate-300">--</span>}
-                        </td>
-                        <td className="py-3 pr-2">
-                          {isScoreable(s) ? <SignalPill tone={ratingTone(s.rating)}>{s.rating}</SignalPill> : <span className="text-xs text-slate-300">--</span>}
-                        </td>
-                        <td className="py-3 pr-2">
-                          {isScoreable(s) ? <SignalPill tone={riskTone(s.risk)}>{s.risk}</SignalPill> : <span className="text-xs text-slate-300">--</span>}
-                        </td>
-                        <td className={`py-3 pr-2 text-right text-xs font-semibold ${Number(effect) >= 0 ? "text-emerald-600" : "text-red-500"}`}>
-                          {Number(effect) >= 0 ? "+" : ""}{effect}
-                        </td>
-                        <td className="max-w-[220px] py-3 pr-2 text-[11px] leading-relaxed text-slate-500">
-                          {s.companySummary || <span className="text-slate-300 italic">Score to generate</span>}
-                        </td>
-                        <td className="max-w-[220px] py-3 text-[11px] leading-relaxed text-slate-500">
-                          {s.investmentThesis || <span className="text-slate-300 italic">Score to generate</span>}
-                        </td>
+                        {!isFundsSection && (
+                          <>
+                            <td className="py-3 pr-2 text-right text-sm text-slate-600">
+                              {`${s.raw}/${MAX_SCORE}`}
+                            </td>
+                            <td className="py-3 pr-2 text-right text-sm font-semibold text-slate-900">
+                              {`${s.adjusted}/${MAX_SCORE}`}
+                            </td>
+                            <td className="py-3 pr-2">
+                              <SignalPill tone={ratingTone(s.rating)}>{s.rating}</SignalPill>
+                            </td>
+                            <td className="py-3 pr-2">
+                              <SignalPill tone={riskTone(s.risk)}>{s.risk}</SignalPill>
+                            </td>
+                            <td className={`py-3 pr-2 text-right text-xs font-semibold ${Number(effect) >= 0 ? "text-emerald-600" : "text-red-500"}`}>
+                              {Number(effect) >= 0 ? "+" : ""}{effect}
+                            </td>
+                            <td className="max-w-[220px] py-3 pr-2 text-[11px] leading-relaxed text-slate-500">
+                              {s.companySummary || <span className="text-slate-300 italic">Score to generate</span>}
+                            </td>
+                            <td className="max-w-[220px] py-3 text-[11px] leading-relaxed text-slate-500">
+                              {s.investmentThesis || <span className="text-slate-300 italic">Score to generate</span>}
+                            </td>
+                          </>
+                        )}
+                        {isFundsSection && (
+                          <td className="py-3 pr-2 text-right text-sm font-mono text-slate-600">
+                            {s.weights.portfolio}%
+                          </td>
+                        )}
                       </tr>
                     );
                   })}
