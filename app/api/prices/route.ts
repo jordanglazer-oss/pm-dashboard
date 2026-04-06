@@ -7,10 +7,60 @@ function toYahoo(ticker: string): string {
   return ticker;
 }
 
+/** Detect FUNDSERV codes (Canadian mutual funds, e.g. TDB900, RBF1083, DYN3366) */
+function isFundservCode(ticker: string): boolean {
+  return /^[A-Z]{2,4}\d{2,5}$/i.test(ticker);
+}
+
+/** Resolve FUNDSERV code to Morningstar SecId via SecuritySearch */
+async function lookupMorningstarSecId(code: string): Promise<string | null> {
+  try {
+    const url = `https://www.morningstar.ca/ca/util/SecuritySearch.ashx?q=${encodeURIComponent(code)}&limit=5`;
+    const res = await fetch(url, {
+      cache: "no-store",
+      headers: { "User-Agent": "Mozilla/5.0" },
+    });
+    if (!res.ok) return null;
+    const text = await res.text();
+    const lines = text.split("\n").filter((l) => l.trim());
+    for (const line of lines) {
+      const parts = line.split("|");
+      if (parts.length >= 2 && parts[1]) return parts[1]; // SecId is 2nd field
+    }
+    return null;
+  } catch {
+    return null;
+  }
+}
+
+/** Fetch price from Morningstar screener API for a given SecId */
+async function fetchMorningstarPrice(secId: string): Promise<number | null> {
+  try {
+    const url = `https://lt.morningstar.com/api/rest.svc/9vehuxllxs/security/screener?outputType=json&page=1&pageSize=1&securityDataPoints=SecId,ClosePrice&universeIds=FOCAN$$ALL&filters=SecId:IN:${encodeURIComponent(secId)}`;
+    const res = await fetch(url, {
+      cache: "no-store",
+      headers: { "User-Agent": "Mozilla/5.0" },
+    });
+    if (!res.ok) return null;
+    const data = await res.json();
+    const row = data?.rows?.[0];
+    if (row && typeof row.ClosePrice === "number") {
+      return parseFloat(row.ClosePrice.toFixed(2));
+    }
+    return null;
+  } catch {
+    return null;
+  }
+}
+
 // Batch-fetch current prices from Yahoo Finance v8 chart API
 async function fetchPrice(ticker: string): Promise<number | null> {
-  // FUNDSERV codes (mutual funds) are not on Yahoo
-  if (/^[A-Z]{2,4}\d{2,5}$/i.test(ticker)) return null;
+  // FUNDSERV codes (mutual funds) — fetch from Morningstar instead of Yahoo
+  if (isFundservCode(ticker)) {
+    const secId = await lookupMorningstarSecId(ticker);
+    if (!secId) return null;
+    return fetchMorningstarPrice(secId);
+  }
   try {
     const yahooSymbol = toYahoo(ticker);
     const res = await fetch(
