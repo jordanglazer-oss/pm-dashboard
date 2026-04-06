@@ -4,7 +4,7 @@ import React, { createContext, useContext, useState, useMemo, useCallback, useEf
 import type { Stock, MarketData, ScoredStock, MorningBrief, ScoreKey, ScoreExplanations, HealthData, TechnicalIndicators, RiskAlert, FundData } from "./types";
 import type { PimHolding, PimModelData, PimPortfolioState, PimModelGroupState } from "./pim-types";
 import { computeScores, isOffensiveSector, isScoreable } from "./scoring";
-import { holdingsSeed, defaultMarketData } from "./defaults";
+import { defaultMarketData } from "./defaults";
 import { pimModelSeed } from "./pim-seed";
 
 export type ChartAnalysisEntry = {
@@ -86,7 +86,7 @@ function useDebouncedPersist(url: string, bodyKey: string, delay = 500) {
 }
 
 export function StockProvider({ children }: { children: React.ReactNode }) {
-  const [stocks, setStocks] = useState<Stock[]>(holdingsSeed);
+  const [stocks, setStocks] = useState<Stock[]>([]);
   const [marketData, setMarketData] = useState<MarketData>(defaultMarketData);
   const [brief, setBriefState] = useState<MorningBrief | null>(null);
   const [chartAnalyses, setChartAnalysesState] = useState<Record<string, ChartAnalysisEntry>>({});
@@ -96,17 +96,7 @@ export function StockProvider({ children }: { children: React.ReactNode }) {
   const [uiPrefs, setUiPrefsState] = useState<Record<string, string>>({});
   const [loading, setLoading] = useState(true);
 
-  const rawPersistStocks = useDebouncedPersist("/api/kv/stocks", "stocks");
-  // Safety: never persist a smaller dataset over a larger one (prevents seed overwriting real data)
-  const stockCountRef = useRef<number>(0);
-  const persistStocks = useCallback((data: Stock[]) => {
-    if (data.length < stockCountRef.current && data.length <= holdingsSeed.length) {
-      console.warn(`Blocked persist: would overwrite ${stockCountRef.current} stocks with ${data.length} (seed has ${holdingsSeed.length})`);
-      return;
-    }
-    stockCountRef.current = Math.max(stockCountRef.current, data.length);
-    rawPersistStocks(data);
-  }, [rawPersistStocks]);
+  const persistStocks = useDebouncedPersist("/api/kv/stocks", "stocks");
   // Market data persists immediately (not debounced) since updates are explicit save actions
   const persistMarket = useCallback((data: unknown) => {
     fetch("/api/kv/market", {
@@ -138,7 +128,7 @@ export function StockProvider({ children }: { children: React.ReactNode }) {
   /* ─── Load from KV on mount ─── */
   useEffect(() => {
     Promise.all([
-      fetch("/api/kv/stocks").then((r) => r.json()).catch(() => ({ stocks: holdingsSeed })),
+      fetch("/api/kv/stocks").then((r) => r.json()).catch(() => ({ stocks: [] })),
       fetch("/api/kv/market").then((r) => r.json()).catch(() => ({ market: defaultMarketData })),
       fetch("/api/kv/brief").then((r) => r.json()).catch(() => ({ brief: null })),
       fetch("/api/kv/chart-analysis").then((r) => r.json()).catch(() => ({ chartAnalyses: {} })),
@@ -147,8 +137,7 @@ export function StockProvider({ children }: { children: React.ReactNode }) {
       fetch("/api/kv/pim-portfolio-state").then((r) => r.json()).catch(() => ({ groupStates: [], lastUpdated: "" })),
       fetch("/api/kv/ui-prefs").then((r) => r.json()).catch(() => ({ uiPrefs: {} })),
     ]).then(async ([stocksRes, marketRes, briefRes, chartRes, scannerRes, pimRes, portfolioStateRes, uiPrefsRes]) => {
-      const loadedStocks: Stock[] = stocksRes.stocks || holdingsSeed;
-      stockCountRef.current = loadedStocks.length;
+      const loadedStocks: Stock[] = stocksRes.stocks || [];
       setStocks(loadedStocks);
       if (marketRes.market) setMarketData({ ...defaultMarketData, ...marketRes.market });
       if (briefRes.brief) setBriefState(briefRes.brief);

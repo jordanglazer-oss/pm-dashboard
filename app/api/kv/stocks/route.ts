@@ -1,6 +1,5 @@
 import { getRedis } from "@/app/lib/redis";
 import { NextRequest, NextResponse } from "next/server";
-import { holdingsSeed } from "@/app/lib/defaults";
 
 const KEY = "pm:stocks";
 
@@ -9,13 +8,14 @@ export async function GET() {
     const redis = await getRedis();
     const raw = await redis.get(KEY);
     if (!raw) {
-      await redis.set(KEY, JSON.stringify(holdingsSeed));
-      return NextResponse.json({ stocks: holdingsSeed });
+      // No data yet — return empty array, never seed
+      return NextResponse.json({ stocks: [] });
     }
     return NextResponse.json({ stocks: JSON.parse(raw) });
   } catch (e) {
     console.error("Redis read error (stocks):", e);
-    return NextResponse.json({ stocks: holdingsSeed });
+    // On error, return empty — never seed data that could overwrite real data
+    return NextResponse.json({ stocks: [] });
   }
 }
 
