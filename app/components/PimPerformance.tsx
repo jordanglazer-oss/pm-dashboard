@@ -1,8 +1,9 @@
 "use client";
 
-import React, { useState, useEffect, useMemo, useCallback } from "react";
+import React, { useState, useEffect, useMemo, useCallback, useRef } from "react";
 import type { PimPerformanceData, PimModelPerformance, PimProfileType } from "@/app/lib/pim-types";
 import { useStocks } from "@/app/lib/StockContext";
+import * as XLSX from "xlsx";
 
 const PROFILE_LABELS: Record<PimProfileType, string> = {
   balanced: "Balanced",
@@ -50,6 +51,12 @@ export function PimPerformance({ groupId, groupName }: Props) {
   const [refreshing, setRefreshing] = useState(false);
   const [selectedProfile, setSelectedProfile] = useState<PimProfileType>("allEquity");
   const [period, setPeriod] = useState("All");
+  const [importing, setImporting] = useState(false);
+  const [importMsg, setImportMsg] = useState<string | null>(null);
+  const [importProfile, setImportProfile] = useState<PimProfileType>("allEquity");
+  const [showImport, setShowImport] = useState(false);
+  const [autoUpdating, setAutoUpdating] = useState(false);
+  const fileInputRef = useRef<HTMLInputElement>(null);
 
   // Load cached performance data
   useEffect(() => {
@@ -77,6 +84,96 @@ export function PimPerformance({ groupId, groupName }: Props) {
     setRefreshing(false);
   }, []);
 
+  // Handle xlsx file upload and import
+  const handleFileUpload = useCallback(async (e: React.ChangeEvent<HTMLInputElement>) => {
+    const file = e.target.files?.[0];
+    if (!file) return;
+    setImporting(true);
+    setImportMsg(null);
+
+    try {
+      const arrayBuffer = await file.arrayBuffer();
+      const workbook = XLSX.read(arrayBuffer, { type: "array" });
+      const sheet = workbook.Sheets[workbook.SheetNames[0]];
+      const rows = XLSX.utils.sheet_to_json<unknown[]>(sheet, { header: 1 });
+
+      // Parse Daily Value xlsx: columns [null, Edit, Date, Trades, Corp.Act., Cash, Total]
+      const dailyValues: Array<{ date: string; cash: number; total: number }> = [];
+      for (let i = 2; i < rows.length; i++) {
+        const row = rows[i] as unknown[];
+        const dateStr = row[2];
+        const cash = row[5];
+        const total = row[6];
+        if (!dateStr || typeof total !== "number" || total <= 0) continue;
+
+        // Convert MM/DD/YYYY → YYYY-MM-DD
+        const parts = String(dateStr).split("/");
+        if (parts.length !== 3) continue;
+        const isoDate = `${parts[2]}-${parts[0].padStart(2, "0")}-${parts[1].padStart(2, "0")}`;
+
+        dailyValues.push({
+          date: isoDate,
+          cash: typeof cash === "number" ? cash : 0,
+          total,
+        });
+      }
+
+      if (dailyValues.length === 0) {
+        setImportMsg("No valid daily value rows found in the file.");
+        setImporting(false);
+        return;
+      }
+
+      // Send to server
+      const res = await fetch("/api/import-performance", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          groupId,
+          profile: importProfile,
+          dailyValues,
+        }),
+      });
+
+      const result = await res.json();
+      if (res.ok && result.ok) {
+        setImportMsg(`Imported ${result.imported.days} days (${result.imported.startDate} to ${result.imported.endDate}). ${result.imported.totalReturn} total return.`);
+        // Reload performance data
+        const perfRes = await fetch("/api/kv/pim-performance");
+        if (perfRes.ok) {
+          const data = await perfRes.json();
+          if (data.models?.length > 0) setPerfData(data);
+        }
+      } else {
+        setImportMsg(`Import failed: ${result.error}`);
+      }
+    } catch (err) {
+      setImportMsg(`Error: ${err instanceof Error ? err.message : String(err)}`);
+    }
+    setImporting(false);
+    if (fileInputRef.current) fileInputRef.current.value = "";
+  }, [groupId, importProfile]);
+
+  // Auto-update: append today's daily value using live prices
+  const autoUpdateDailyValue = useCallback(async () => {
+    setAutoUpdating(true);
+    try {
+      const res = await fetch("/api/update-daily-value", { method: "POST" });
+      if (res.ok) {
+        const result = await res.json();
+        if (result.updates?.length > 0) {
+          // Reload performance data
+          const perfRes = await fetch("/api/kv/pim-performance");
+          if (perfRes.ok) {
+            const data = await perfRes.json();
+            if (data.models?.length > 0) setPerfData(data);
+          }
+        }
+      }
+    } catch { /* ignore */ }
+    setAutoUpdating(false);
+  }, []);
+
   // Auto-refresh on first mount if tracking is active and (no data or stale > 4 hours)
   useEffect(() => {
     if (loading || !trackingStart) return;
@@ -92,6 +189,30 @@ export function PimPerformance({ groupId, groupName }: Props) {
     }
   // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [trackingStart]);
+
+  // Auto-update daily values when data is loaded and stale
+  useEffect(() => {
+    if (!perfData || perfData.models.length === 0 || autoUpdating) return;
+    const groupModels = perfData.models.filter((m) => m.groupId === groupId);
+    if (groupModels.length === 0) return;
+
+    // Check if any model's last date is before today
+    const today = new Date().toISOString().split("T")[0];
+    const needsUpdate = groupModels.some((m) => {
+      if (m.history.length < 2) return false;
+      const lastDate = m.history[m.history.length - 1].date;
+      return lastDate < today;
+    });
+
+    // Also check it's a weekday (markets open)
+    const dayOfWeek = new Date().getDay();
+    const isWeekday = dayOfWeek >= 1 && dayOfWeek <= 5;
+
+    if (needsUpdate && isWeekday) {
+      autoUpdateDailyValue();
+    }
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [perfData?.lastUpdated, groupId]);
 
   // Get models for selected group
   const groupModels = useMemo(() => {
@@ -309,17 +430,87 @@ export function PimPerformance({ groupId, groupName }: Props) {
             )}
           </p>
         </div>
-        <button
-          onClick={refreshPerformance}
-          disabled={refreshing}
-          className="flex items-center gap-1.5 rounded-lg bg-slate-100 px-3 py-1.5 text-xs font-semibold text-slate-600 hover:bg-slate-200 transition-colors disabled:opacity-50"
-        >
-          <svg className={`w-3.5 h-3.5 ${refreshing ? "animate-spin" : ""}`} fill="none" stroke="currentColor" strokeWidth="2" viewBox="0 0 24 24">
-            <path strokeLinecap="round" strokeLinejoin="round" d="M16.023 9.348h4.992v-.001M2.985 19.644v-4.992m0 0h4.992m-4.993 0 3.181 3.183a8.25 8.25 0 0 0 13.803-3.7M4.031 9.865a8.25 8.25 0 0 1 13.803-3.7l3.181 3.182" />
-          </svg>
-          {refreshing ? "Refreshing..." : "Refresh"}
-        </button>
+        <div className="flex items-center gap-2">
+          {autoUpdating && (
+            <span className="flex items-center gap-1 text-[10px] text-blue-500 font-medium">
+              <div className="h-3 w-3 animate-spin rounded-full border border-blue-300 border-t-blue-500" />
+              Updating...
+            </span>
+          )}
+          <button
+            onClick={() => setShowImport(!showImport)}
+            className="flex items-center gap-1.5 rounded-lg bg-blue-50 px-3 py-1.5 text-xs font-semibold text-blue-600 hover:bg-blue-100 transition-colors"
+          >
+            <svg className="w-3.5 h-3.5" fill="none" stroke="currentColor" strokeWidth="2" viewBox="0 0 24 24">
+              <path strokeLinecap="round" strokeLinejoin="round" d="M3 16.5v2.25A2.25 2.25 0 0 0 5.25 21h13.5A2.25 2.25 0 0 0 21 18.75V16.5m-13.5-9L12 3m0 0 4.5 4.5M12 3v13.5" />
+            </svg>
+            Import
+          </button>
+          <button
+            onClick={refreshPerformance}
+            disabled={refreshing}
+            className="flex items-center gap-1.5 rounded-lg bg-slate-100 px-3 py-1.5 text-xs font-semibold text-slate-600 hover:bg-slate-200 transition-colors disabled:opacity-50"
+          >
+            <svg className={`w-3.5 h-3.5 ${refreshing ? "animate-spin" : ""}`} fill="none" stroke="currentColor" strokeWidth="2" viewBox="0 0 24 24">
+              <path strokeLinecap="round" strokeLinejoin="round" d="M16.023 9.348h4.992v-.001M2.985 19.644v-4.992m0 0h4.992m-4.993 0 3.181 3.183a8.25 8.25 0 0 0 13.803-3.7M4.031 9.865a8.25 8.25 0 0 1 13.803-3.7l3.181 3.182" />
+            </svg>
+            {refreshing ? "Refreshing..." : "Refresh"}
+          </button>
+        </div>
       </div>
+
+      {/* Import panel */}
+      {showImport && (
+        <div className="rounded-xl border border-blue-100 bg-blue-50/50 p-4 space-y-3">
+          <div className="flex items-center justify-between">
+            <h3 className="text-xs font-bold text-slate-700">Import Daily Values</h3>
+            <button onClick={() => { setShowImport(false); setImportMsg(null); }} className="text-slate-400 hover:text-slate-600">
+              <svg className="w-4 h-4" fill="none" stroke="currentColor" strokeWidth="2" viewBox="0 0 24 24">
+                <path strokeLinecap="round" strokeLinejoin="round" d="M6 18 18 6M6 6l12 12" />
+              </svg>
+            </button>
+          </div>
+          <p className="text-[10px] text-slate-500">
+            Upload a Daily Value xlsx file from your provider. The file should have columns: Date, Cash, Total.
+            Data will be converted to an indexed return series and stored for continuous tracking.
+          </p>
+          <div className="flex items-center gap-3">
+            <label className="text-[10px] font-semibold text-slate-500">Profile:</label>
+            <select
+              value={importProfile}
+              onChange={(e) => setImportProfile(e.target.value as PimProfileType)}
+              className="rounded-lg border border-slate-200 bg-white px-2 py-1 text-xs text-slate-700 focus:outline-none focus:ring-1 focus:ring-blue-300"
+            >
+              <option value="allEquity">All-Equity</option>
+              <option value="growth">Growth</option>
+              <option value="balanced">Balanced</option>
+            </select>
+            <label
+              className={`flex items-center gap-2 cursor-pointer rounded-lg px-4 py-2 text-xs font-semibold transition-colors ${
+                importing ? "bg-slate-200 text-slate-400" : "bg-blue-500 text-white hover:bg-blue-600"
+              }`}
+            >
+              <svg className="w-4 h-4" fill="none" stroke="currentColor" strokeWidth="2" viewBox="0 0 24 24">
+                <path strokeLinecap="round" strokeLinejoin="round" d="M3 16.5v2.25A2.25 2.25 0 0 0 5.25 21h13.5A2.25 2.25 0 0 0 21 18.75V16.5m-13.5-9L12 3m0 0 4.5 4.5M12 3v13.5" />
+              </svg>
+              {importing ? "Importing..." : "Choose File"}
+              <input
+                ref={fileInputRef}
+                type="file"
+                accept=".xlsx,.xls"
+                onChange={handleFileUpload}
+                disabled={importing}
+                className="hidden"
+              />
+            </label>
+          </div>
+          {importMsg && (
+            <div className={`text-[10px] rounded-lg px-3 py-2 ${importMsg.includes("fail") || importMsg.includes("Error") ? "bg-red-50 text-red-600" : "bg-emerald-50 text-emerald-700"}`}>
+              {importMsg}
+            </div>
+          )}
+        </div>
+      )}
 
       {/* Profile tabs + Period selector */}
       {availableProfiles.length > 0 && (
