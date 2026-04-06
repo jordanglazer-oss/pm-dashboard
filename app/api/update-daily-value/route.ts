@@ -12,6 +12,7 @@ const UA = "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36";
 const PIM_KEY = "pm:pim-models";
 const PERF_KEY = "pm:pim-performance";
 const APPENDIX_KEY = "pm:appendix-daily-values";
+const POSITIONS_KEY = "pm:pim-positions";
 
 /**
  * POST /api/update-daily-value
@@ -156,9 +157,10 @@ function getRateForDate(rates: Map<string, number>, date: string): number | null
 export async function POST() {
   try {
     const redis = await getRedis();
-    const [pimRaw, perfRaw] = await Promise.all([
+    const [pimRaw, perfRaw, positionsRaw] = await Promise.all([
       redis.get(PIM_KEY),
       redis.get(PERF_KEY),
+      redis.get(POSITIONS_KEY),
     ]);
 
     if (!perfRaw) {
@@ -174,6 +176,13 @@ export async function POST() {
     if (!pimData) {
       return NextResponse.json({ error: "No PIM model data" }, { status: 400 });
     }
+
+    // Parse position data for live weight computation
+    type PositionEntry = { symbol: string; units: number; costBasis: number };
+    type PortfolioPositions = { groupId: string; profile: string; positions: PositionEntry[]; cashBalance: number };
+    const positionsData: { portfolios: PortfolioPositions[] } = positionsRaw
+      ? JSON.parse(positionsRaw)
+      : { portfolios: [] };
 
     const today = new Date().toISOString().split("T")[0];
     const updates: Array<{ groupId: string; profile: string; addedDays: number; lastDate: string }> = [];
@@ -220,12 +229,65 @@ export async function POST() {
       if (lastDate >= today) continue;
 
       // Calculate holdings with portfolio weights
-      const holdingsWithWeight = group.holdings
-        .map((h) => {
-          const alloc = getAssetAlloc(profileWeights, h.assetClass);
-          return { ...h, portfolioWeight: h.weightInClass * alloc };
-        })
-        .filter((h) => h.portfolioWeight > 0);
+      // Use LIVE weights from positions when available, fall back to model target weights
+      const portfolio = positionsData.portfolios.find(
+        (p) => p.groupId === model.groupId && p.profile === model.profile
+      );
+      const hasPositions = portfolio && portfolio.positions.length > 0;
+
+      let holdingsWithWeight: Array<typeof group.holdings[0] & { portfolioWeight: number }>;
+
+      if (hasPositions) {
+        // Live weights: compute from actual positions using latest available prices
+        // All values standardized to CAD for consistent weighting
+        const latestPrices = new Map<string, number>();
+        for (const h of group.holdings) {
+          const hist = priceHistories.get(h.symbol);
+          if (hist && hist.length > 0) {
+            latestPrices.set(h.symbol, hist[hist.length - 1].adjClose);
+          }
+        }
+
+        // Get latest USD/CAD rate for converting USD positions to CAD
+        const sortedRateDates = [...usdCadRates.keys()].sort();
+        const latestFxRate = sortedRateDates.length > 0
+          ? usdCadRates.get(sortedRateDates[sortedRateDates.length - 1]) ?? 1
+          : 1;
+
+        // Build a currency lookup from group holdings
+        const holdingCurrency = new Map<string, string>();
+        for (const h of group.holdings) holdingCurrency.set(h.symbol, h.currency);
+
+        // Calculate total portfolio value from positions (all in CAD)
+        let totalPortfolioValue = portfolio.cashBalance || 0;
+        const positionValues = new Map<string, number>();
+        for (const pos of portfolio.positions) {
+          const price = latestPrices.get(pos.symbol) || 0;
+          let value = pos.units * price;
+          // Convert USD to CAD
+          if (holdingCurrency.get(pos.symbol) === "USD") {
+            value *= latestFxRate;
+          }
+          positionValues.set(pos.symbol, value);
+          totalPortfolioValue += value;
+        }
+
+        holdingsWithWeight = group.holdings
+          .map((h) => {
+            const value = positionValues.get(h.symbol) || 0;
+            const portfolioWeight = totalPortfolioValue > 0 ? value / totalPortfolioValue : 0;
+            return { ...h, portfolioWeight };
+          })
+          .filter((h) => h.portfolioWeight > 0);
+      } else {
+        // No positions — use model target weights
+        holdingsWithWeight = group.holdings
+          .map((h) => {
+            const alloc = getAssetAlloc(profileWeights, h.assetClass);
+            return { ...h, portfolioWeight: h.weightInClass * alloc };
+          })
+          .filter((h) => h.portfolioWeight > 0);
+      }
 
       const totalWeight = holdingsWithWeight.reduce((s, h) => s + h.portfolioWeight, 0);
       if (totalWeight === 0) continue;
