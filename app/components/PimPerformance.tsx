@@ -39,9 +39,10 @@ function fmtDateFull(d: string): string {
 type Props = {
   groupId: string;
   groupName: string;
+  selectedProfile: PimProfileType;
 };
 
-export function PimPerformance({ groupId, groupName }: Props) {
+export function PimPerformance({ groupId, groupName, selectedProfile }: Props) {
   const { getGroupState } = useStocks();
   const groupState = getGroupState(groupId);
   const trackingStart = groupState?.trackingStart;
@@ -49,22 +50,31 @@ export function PimPerformance({ groupId, groupName }: Props) {
   const [perfData, setPerfData] = useState<PimPerformanceData | null>(null);
   const [loading, setLoading] = useState(false);
   const [refreshing, setRefreshing] = useState(false);
-  const [selectedProfile, setSelectedProfile] = useState<PimProfileType>("allEquity");
   const [period, setPeriod] = useState("All");
   const [autoUpdating, setAutoUpdating] = useState(false);
   const [seeded, setSeeded] = useState(false);
 
-  // Load cached performance data, auto-seed if empty
+  // Load cached performance data, auto-seed if empty or corrupted
   useEffect(() => {
     async function load() {
       try {
         const res = await fetch("/api/kv/pim-performance");
         if (res.ok) {
           const data = await res.json();
-          if (data.models?.length > 0) {
+          const allEquityModel = data.models?.find(
+            (m: PimModelPerformance) => m.groupId === groupId && m.profile === "allEquity"
+          );
+          // Validate: seed has 2114 entries. If stored data has fewer or
+          // the first entry doesn't match the seed's first value, re-seed.
+          const seedFirst = allEquityDailyValueSeed[0];
+          const isCorrupted = allEquityModel && allEquityModel.history.length > 0 && (
+            allEquityModel.history.length < allEquityDailyValueSeed.length ||
+            Math.abs(allEquityModel.history[0].value - seedFirst.value) > 0.01 ||
+            allEquityModel.history[0].date !== seedFirst.date
+          );
+          if (data.models?.length > 0 && !isCorrupted) {
             setPerfData(data);
           } else {
-            // No data — auto-seed from hardcoded historical values
             seedHistoricalData();
           }
         } else {
@@ -95,21 +105,50 @@ export function PimPerformance({ groupId, groupName }: Props) {
     setRefreshing(false);
   }, []);
 
-  // Auto-seed: if no performance data for this group, seed from hardcoded historical data
+  // Auto-seed: restore historical data from hardcoded seed (source of truth)
   const seedHistoricalData = useCallback(async () => {
     if (seeded) return;
     setSeeded(true);
     try {
-      // Seed allEquity profile with hardcoded daily values
+      // Load existing data to preserve any post-seed daily values
+      let existingModels: PimModelPerformance[] = [];
+      try {
+        const existingRes = await fetch("/api/kv/pim-performance");
+        if (existingRes.ok) {
+          const existing = await existingRes.json();
+          existingModels = existing.models || [];
+        }
+      } catch { /* ignore */ }
+
+      // For allEquity: use seed as base, then append any post-seed entries
+      const seedLastDate = allEquityDailyValueSeed[allEquityDailyValueSeed.length - 1].date;
+      const existingAllEquity = existingModels.find(
+        (m) => m.groupId === groupId && m.profile === "allEquity"
+      );
+      const postSeedEntries = existingAllEquity?.history.filter(
+        (h) => h.date > seedLastDate
+      ) || [];
+
+      const restoredHistory = [...allEquityDailyValueSeed, ...postSeedEntries];
+
+      // Keep other models (balanced, growth, etc.) intact
+      const otherModels = existingModels.filter(
+        (m) => !(m.groupId === groupId && m.profile === "allEquity")
+      );
+
       const seedData: PimPerformanceData = {
-        models: [{
-          groupId,
-          profile: "allEquity",
-          history: allEquityDailyValueSeed,
-          lastUpdated: new Date().toISOString(),
-        }],
+        models: [
+          ...otherModels,
+          {
+            groupId,
+            profile: "allEquity",
+            history: restoredHistory,
+            lastUpdated: new Date().toISOString(),
+          },
+        ],
         lastUpdated: new Date().toISOString(),
       };
+
       await fetch("/api/kv/pim-performance", {
         method: "PUT",
         headers: { "Content-Type": "application/json" },
@@ -335,8 +374,7 @@ export function PimPerformance({ groupId, groupName }: Props) {
     return { points, path: pathD, areaPath, yLabels, xLabels, isPositive, minV, maxV };
   }, [filteredHistory]);
 
-  const availableProfiles = groupModels.map((m) => m.profile);
-  const activeProfile = availableProfiles.includes(selectedProfile) ? selectedProfile : availableProfiles[0] || "allEquity";
+  // Profile is controlled by the parent PimModel toggle
 
   const trackingStartLabel = trackingStart
     ? new Date((trackingStart as { date: string }).date + "T12:00:00").toLocaleDateString("en-US", { month: "short", day: "numeric", year: "numeric" })
@@ -414,39 +452,22 @@ export function PimPerformance({ groupId, groupName }: Props) {
         </div>
       </div>
 
-      {/* Profile tabs + Period selector */}
-      {availableProfiles.length > 0 && (
-        <div className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
-          {availableProfiles.length > 1 && (
-            <div className="flex gap-1 rounded-xl bg-slate-100 p-1">
-              {availableProfiles.map((p) => (
-                <button
-                  key={p}
-                  onClick={() => setSelectedProfile(p)}
-                  className={`rounded-lg px-3 py-1.5 text-xs font-semibold transition-colors ${
-                    activeProfile === p ? "bg-white text-slate-800 shadow-sm" : "text-slate-500 hover:text-slate-700"
-                  }`}
-                >
-                  {PROFILE_LABELS[p]}
-                </button>
-              ))}
-            </div>
-          )}
-          <div className="flex gap-1">
-            {PERIOD_OPTIONS.map((p) => (
-              <button
-                key={p.label}
-                onClick={() => setPeriod(p.label)}
-                className={`rounded-lg px-2.5 py-1 text-[10px] font-bold transition-colors ${
-                  period === p.label ? "bg-slate-800 text-white" : "bg-slate-100 text-slate-500 hover:bg-slate-200"
-                }`}
-              >
-                {p.label}
+      {/* Period selector */}
+      <div className="flex justify-end">
+        <div className="flex gap-1">
+          {PERIOD_OPTIONS.map((p) => (
+            <button
+              key={p.label}
+              onClick={() => setPeriod(p.label)}
+              className={`rounded-lg px-2.5 py-1 text-[10px] font-bold transition-colors ${
+                period === p.label ? "bg-slate-800 text-white" : "bg-slate-100 text-slate-500 hover:bg-slate-200"
+              }`}
+            >
+              {p.label}
               </button>
             ))}
           </div>
         </div>
-      )}
 
       {/* Stats row */}
       {stats && (

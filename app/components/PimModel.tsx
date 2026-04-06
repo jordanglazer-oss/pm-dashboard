@@ -765,7 +765,7 @@ export function PimModel({ groups }: Props) {
       )}
 
       {/* Performance Tracker */}
-      <PimPerformance groupId={selectedGroup.id} groupName={selectedGroup.name} />
+      <PimPerformance groupId={selectedGroup.id} groupName={selectedGroup.name} selectedProfile={activeProfile} />
 
       {/* Holdings search */}
       <div className="flex items-center gap-3">
