@@ -5,6 +5,7 @@ import { useRouter } from "next/navigation";
 import { useStocks } from "@/app/lib/StockContext";
 import type { ScoredStock, Stock, ScoreKey } from "@/app/lib/types";
 import type { TechnicalIndicators, ImprovingScore } from "@/app/lib/technicals";
+import { isScoreable } from "@/app/lib/scoring";
 import type { UniverseKey } from "@/app/lib/universes";
 import { UNIVERSE_LABELS } from "@/app/lib/universes";
 
@@ -142,7 +143,7 @@ export function TechnicalScreener({ stocks, onAddToWatchlist }: Props) {
 
   // ── Portfolio tab state ──
   const [query, setQuery] = useState("");
-  const [bucketFilter, setBucketFilter] = useState<"All" | "Portfolio" | "Watchlist">("All");
+  const [bucketFilter, setBucketFilter] = useState<"All" | "Portfolio" | "Watchlist" | "Funds & ETFs">("All");
   const [filters, setFilters] = useState<Record<FilterKey, FilterOption>>({
     trend: "all", rsi: "all", macd: "all", ichimoku: "all", volume: "all", week52: "all",
   });
@@ -223,7 +224,13 @@ export function TechnicalScreener({ stocks, onAddToWatchlist }: Props) {
       const q = query.toLowerCase();
       result = result.filter((s) => `${s.ticker} ${s.name} ${s.sector}`.toLowerCase().includes(q));
     }
-    if (bucketFilter !== "All") result = result.filter((s) => s.bucket === bucketFilter);
+    if (bucketFilter === "Funds & ETFs") {
+      result = result.filter((s) => !isScoreable(s));
+    } else if (bucketFilter === "Portfolio") {
+      result = result.filter((s) => s.bucket === "Portfolio" && isScoreable(s));
+    } else if (bucketFilter === "Watchlist") {
+      result = result.filter((s) => s.bucket === "Watchlist" && isScoreable(s));
+    }
     result = result.filter((s) => {
       const t = s.technicals!;
       if (filters.trend !== "all" && getTrendSignal(t) !== filters.trend) return false;
@@ -407,7 +414,7 @@ export function TechnicalScreener({ stocks, onAddToWatchlist }: Props) {
 
             <div className="mt-4 flex flex-wrap items-center gap-3">
               <div className="flex rounded-xl border border-slate-200 overflow-hidden text-sm">
-                {(["All", "Portfolio", "Watchlist"] as const).map((b) => (
+                {(["All", "Portfolio", "Watchlist", "Funds & ETFs"] as const).map((b) => (
                   <button key={b} onClick={() => setBucketFilter(b)}
                     className={`px-3 py-1.5 font-medium transition-colors ${bucketFilter === b ? "bg-slate-900 text-white" : "text-slate-600 hover:bg-slate-50"}`}>
                     {b}
