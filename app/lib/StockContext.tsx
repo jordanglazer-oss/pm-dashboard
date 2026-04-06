@@ -96,7 +96,17 @@ export function StockProvider({ children }: { children: React.ReactNode }) {
   const [uiPrefs, setUiPrefsState] = useState<Record<string, string>>({});
   const [loading, setLoading] = useState(true);
 
-  const persistStocks = useDebouncedPersist("/api/kv/stocks", "stocks");
+  const rawPersistStocks = useDebouncedPersist("/api/kv/stocks", "stocks");
+  // Safety: never persist a smaller dataset over a larger one (prevents seed overwriting real data)
+  const stockCountRef = useRef<number>(0);
+  const persistStocks = useCallback((data: Stock[]) => {
+    if (data.length < stockCountRef.current && data.length <= holdingsSeed.length) {
+      console.warn(`Blocked persist: would overwrite ${stockCountRef.current} stocks with ${data.length} (seed has ${holdingsSeed.length})`);
+      return;
+    }
+    stockCountRef.current = Math.max(stockCountRef.current, data.length);
+    rawPersistStocks(data);
+  }, [rawPersistStocks]);
   // Market data persists immediately (not debounced) since updates are explicit save actions
   const persistMarket = useCallback((data: unknown) => {
     fetch("/api/kv/market", {
@@ -138,6 +148,7 @@ export function StockProvider({ children }: { children: React.ReactNode }) {
       fetch("/api/kv/ui-prefs").then((r) => r.json()).catch(() => ({ uiPrefs: {} })),
     ]).then(async ([stocksRes, marketRes, briefRes, chartRes, scannerRes, pimRes, portfolioStateRes, uiPrefsRes]) => {
       const loadedStocks: Stock[] = stocksRes.stocks || holdingsSeed;
+      stockCountRef.current = loadedStocks.length;
       setStocks(loadedStocks);
       if (marketRes.market) setMarketData({ ...defaultMarketData, ...marketRes.market });
       if (briefRes.brief) setBriefState(briefRes.brief);
