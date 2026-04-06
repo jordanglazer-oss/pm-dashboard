@@ -746,7 +746,7 @@ async function fetchCanadianFundData(
   // Yahoo = holdings, sectors, risk stats, asset allocation (requires lookup.performanceId)
   const yahooTicker = lookup?.performanceId ? `${lookup.performanceId}.TO` : undefined;
 
-  const [gmData, msData, yahooData] = await Promise.all([
+  const [gmData, msData, yahooData, barchartPrice] = await Promise.all([
     fetchGlobeAndMailData(fundservCode),
     lookup?.secId ? fetchMorningstarData(lookup.secId) : Promise.resolve({} as MorningstarScreenerData),
     (async (): Promise<FundData> => {
@@ -764,6 +764,26 @@ async function fetchCanadianFundData(
         }
       } catch { /* Yahoo data is supplementary */ }
       return {};
+    })(),
+    // Fetch NAV price from Globe and Mail / Barchart EOD API
+    (async (): Promise<number | undefined> => {
+      try {
+        const symbol = `${fundservCode}.CF`;
+        const url = `https://globeandmail.pl.barchart.com/proxies/timeseries/queryeod.ashx?symbol=${encodeURIComponent(symbol)}&data=daily&maxrecords=1&volume=contract&order=desc&dividends=false&backadjust=false`;
+        const res = await fetch(url, {
+          cache: "no-store",
+          headers: { "User-Agent": "Mozilla/5.0", "Referer": "https://www.theglobeandmail.com/" },
+        });
+        if (!res.ok) return undefined;
+        const text = (await res.text()).trim();
+        if (!text) return undefined;
+        const parts = text.split(",");
+        if (parts.length >= 6) {
+          const close = parseFloat(parts[5]);
+          if (isFinite(close)) return close;
+        }
+        return undefined;
+      } catch { return undefined; }
     })(),
   ]);
 
@@ -823,7 +843,7 @@ async function fetchCanadianFundData(
     fundData,
     yahooTicker,
     name: msData.name || lookup?.name,
-    price: msData.price,
+    price: msData.price ?? barchartPrice,
   };
 }
 /* eslint-enable @typescript-eslint/no-explicit-any */
