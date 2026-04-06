@@ -80,11 +80,12 @@ function generateId(): string {
 }
 
 export function PimModel({ groups }: Props) {
-  const { getGroupState, pimPortfolioState, updatePimPortfolioState, uiPrefs, setUiPref, addStock, scoredStocks } = useStocks();
+  const { getGroupState, pimPortfolioState, updatePimPortfolioState, uiPrefs, setUiPref, addStock, scoredStocks, stocks } = useStocks();
   const [selectedGroupId, setSelectedGroupId] = useState(groups[0]?.id || "");
   const [selectedProfile, setSelectedProfile] = useState<PimProfileType>("balanced");
   const [dropdownOpen, setDropdownOpen] = useState(false);
   const [dropdownSearch, setDropdownSearch] = useState("");
+  const [addingToScoring, setAddingToScoring] = useState<string | null>(null);
   const [holdingSearch, setHoldingSearch] = useState("");
   const sortField = (uiPrefs["modelSort"] as SortField) || "name";
   const sortDir = (uiPrefs["modelSortDir"] as SortDir) || "asc";
@@ -493,6 +494,46 @@ export function PimModel({ groups }: Props) {
     fetchPrices();
   }, [switchSell, switchBuy, computedHoldings, pimPortfolioState, selectedGroupId, groupState, updatePimPortfolioState, fetchPrices, scoredStocks, addStock]);
 
+  // Check if a PIM holding is already in the scoring/dashboard stocks list
+  const isInScoring = useCallback((symbol: string) => {
+    const ticker = symbolToTicker(symbol);
+    return stocks.some((s) => s.ticker === ticker || s.ticker === symbol || s.ticker.replace("-T", ".TO") === ticker);
+  }, [stocks]);
+
+  // Add a PIM holding to the scoring/dashboard stocks list
+  const handleAddToScoring = useCallback(async (holding: PimComputedHolding) => {
+    const ticker = symbolToTicker(holding.symbol);
+    if (isInScoring(holding.symbol)) return;
+    setAddingToScoring(holding.symbol);
+
+    let name = holding.name || ticker;
+    let instrumentType: InstrumentType = "stock";
+    let sector = "";
+    try {
+      const res = await fetch(`/api/company-name?tickers=${encodeURIComponent(ticker)}`);
+      if (res.ok) {
+        const data = await res.json();
+        if (data.names?.[ticker]) name = data.names[ticker];
+        if (data.sectors?.[ticker]) sector = data.sectors[ticker];
+        if (data.types?.[ticker]) instrumentType = data.types[ticker] as InstrumentType;
+      }
+    } catch { /* fallback */ }
+
+    const stock: Stock = {
+      ticker,
+      name,
+      instrumentType,
+      bucket: "Portfolio",
+      sector: instrumentType === "etf" || instrumentType === "mutual-fund" ? "" : sector,
+      beta: 1.0,
+      weights: { portfolio: 0 },
+      scores: { ...ZERO_SCORES },
+      notes: "",
+    };
+    addStock(stock);
+    setAddingToScoring(null);
+  }, [isInScoring, addStock]);
+
   if (!selectedGroup) return null;
 
   const thClass = "py-2.5 px-2 font-semibold cursor-pointer select-none hover:text-slate-800 transition-colors whitespace-nowrap";
@@ -827,9 +868,10 @@ export function PimModel({ groups }: Props) {
                     <th className={`text-right ${thClass}`} onClick={() => handleSort("cadModelWeight")}>
                       CAD Model<SortIcon field="cadModelWeight" sortField={sortField} sortDir={sortDir} />
                     </th>
-                    <th className={`text-right pr-5 pl-2 ${thClass}`} onClick={() => handleSort("usdModelWeight")}>
+                    <th className={`text-right ${thClass}`} onClick={() => handleSort("usdModelWeight")}>
                       USD Model<SortIcon field="usdModelWeight" sortField={sortField} sortDir={sortDir} />
                     </th>
+                    <th className="py-2.5 px-2 text-center text-xs font-semibold whitespace-nowrap w-16">Scoring</th>
                   </tr>
                 </thead>
                 <tbody>
@@ -864,7 +906,20 @@ export function PimModel({ groups }: Props) {
                         </td>
                       )}
                       <td className="py-2 px-2 text-right font-mono text-xs">{h.cadModelWeight != null ? pctClean(h.cadModelWeight) : <span className="text-slate-300">&mdash;</span>}</td>
-                      <td className="py-2 pr-5 pl-2 text-right font-mono text-xs">{h.usdModelWeight != null ? pctClean(h.usdModelWeight) : <span className="text-slate-300">&mdash;</span>}</td>
+                      <td className="py-2 px-2 text-right font-mono text-xs">{h.usdModelWeight != null ? pctClean(h.usdModelWeight) : <span className="text-slate-300">&mdash;</span>}</td>
+                      <td className="py-2 px-2 text-center">
+                        {isInScoring(h.symbol) ? (
+                          <span className="text-[10px] font-semibold text-emerald-500">Added</span>
+                        ) : (
+                          <button
+                            onClick={() => handleAddToScoring(h)}
+                            disabled={addingToScoring === h.symbol}
+                            className="rounded px-2 py-0.5 text-[10px] font-bold bg-blue-50 text-blue-600 hover:bg-blue-100 transition-colors disabled:opacity-50"
+                          >
+                            {addingToScoring === h.symbol ? "..." : "+ Add"}
+                          </button>
+                        )}
+                      </td>
                     </tr>
                   ))}
                   <tr className={`${colors.bg} font-semibold`}>
@@ -874,7 +929,8 @@ export function PimModel({ groups }: Props) {
                       <td className="py-2 px-2 text-right font-mono text-xs font-bold">{pct(holdings.filter((h) => h.liveWeight != null).reduce((s, h) => s + (h.liveWeight || 0), 0))}</td>
                     )}
                     <td className="py-2 px-2 text-right font-mono text-xs">{pct(holdings.filter((h) => h.cadModelWeight != null).reduce((s, h) => s + (h.cadModelWeight || 0), 0))}</td>
-                    <td className="py-2 pr-5 pl-2 text-right font-mono text-xs">{pct(holdings.filter((h) => h.usdModelWeight != null).reduce((s, h) => s + (h.usdModelWeight || 0), 0))}</td>
+                    <td className="py-2 px-2 text-right font-mono text-xs">{pct(holdings.filter((h) => h.usdModelWeight != null).reduce((s, h) => s + (h.usdModelWeight || 0), 0))}</td>
+                    <td></td>
                   </tr>
                 </tbody>
               </table>
