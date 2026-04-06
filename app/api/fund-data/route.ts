@@ -1179,6 +1179,7 @@ export async function GET(request: NextRequest) {
       fundData: result.fundData,
       yahooTicker: result.yahooTicker,
       name: result.name,
+      price: result.price,
     });
   }
 

@@ -188,6 +188,10 @@ export function StockScoring({ stocks, onScoreStock, onUpdateCostBasis, onRefres
                   }
                   onUpdateFundData(fund.ticker, merged);
                 }
+                // Pick up price from fund-data response (Morningstar for mutual funds)
+                if (fData.price != null && typeof fData.price === "number") {
+                  setLivePrices((prev) => ({ ...prev, [fund.ticker]: fData.price }));
+                }
               }
             } catch { /* best effort */ }
           }
