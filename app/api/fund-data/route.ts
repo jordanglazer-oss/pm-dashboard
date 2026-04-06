@@ -496,6 +496,8 @@ type GlobeAndMailData = {
  */
 function globeAndMailSymbol(ticker: string): string {
   if (isFundservCode(ticker)) return `${ticker}.CF`;
+  // USD-denominated Canadian ETFs: XUU.U → XUU-U-T
+  if (ticker.endsWith(".U")) return `${ticker.replace(/\.U$/, "")}-U-T`;
   // Strip .TO suffix if present and use -T for TSX
   return `${ticker.replace(/\.TO$/i, "")}-T`;
 }
@@ -734,7 +736,7 @@ function isFundservCode(ticker: string): boolean {
 async function fetchCanadianFundData(
   fundservCode: string,
   auth: { cookie: string; crumb: string } | null
-): Promise<{ fundData: FundData; yahooTicker?: string; name?: string } | null> {
+): Promise<{ fundData: FundData; yahooTicker?: string; name?: string; price?: number } | null> {
   // Step 1: Resolve FUNDSERV code via Morningstar (may fail for some funds)
   const lookup = await lookupFundservCode(fundservCode);
 
@@ -821,6 +823,7 @@ async function fetchCanadianFundData(
     fundData,
     yahooTicker,
     name: msData.name || lookup?.name,
+    price: msData.price,
   };
 }
 /* eslint-enable @typescript-eslint/no-explicit-any */
@@ -1188,14 +1191,18 @@ export async function GET(request: NextRequest) {
   }
 
   try {
-    const isCanadianETF = ticker.endsWith(".TO");
+    // Convert .U tickers to Yahoo format (XUU.U → XUU-U.TO)
+    const yahooTicker = ticker.endsWith(".U")
+      ? ticker.replace(/\.U$/, "-U.TO")
+      : ticker;
+    const isCanadianETF = yahooTicker.endsWith(".TO");
 
     // Fetch Yahoo + performance source in parallel
     // Canadian ETFs: Globe and Mail for performance
     // US/other ETFs: Morningstar for performance (via SecuritySearch → screener)
     const [yahooRes, gmData, msETFLookup] = await Promise.all([
       fetch(
-        `${YAHOO_BASE}/v10/finance/quoteSummary/${encodeURIComponent(ticker)}?modules=${FUND_MODULES.join(",")}&crumb=${encodeURIComponent(auth.crumb)}`,
+        `${YAHOO_BASE}/v10/finance/quoteSummary/${encodeURIComponent(yahooTicker)}?modules=${FUND_MODULES.join(",")}&crumb=${encodeURIComponent(auth.crumb)}`,
         {
           cache: "no-store",
           headers: { "User-Agent": "Mozilla/5.0", Cookie: auth.cookie },
