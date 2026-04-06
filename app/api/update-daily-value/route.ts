@@ -2,7 +2,6 @@ import { NextResponse } from "next/server";
 import { getRedis } from "@/app/lib/redis";
 import type {
   PimPerformanceData,
-  PimModelPerformance,
   PimDailyReturn,
   PimProfileType,
   PimModelGroup,
@@ -16,41 +15,61 @@ const PERF_KEY = "pm:pim-performance";
 /**
  * POST /api/update-daily-value
  *
- * Automatically appends new daily values to imported performance history.
- * For each model+profile that has imported history, it:
- *   1. Checks the last recorded date
- *   2. Fetches current prices for all holdings
- *   3. Computes the weighted daily return based on model weights
- *   4. Calculates new_value = last_value * (1 + weighted_return)
- *   5. Appends and saves to Redis
+ * Automatically appends new daily values to performance history.
+ * Uses adjusted close prices from Yahoo Finance which account for
+ * dividends, distributions, and splits automatically.
+ * Mutual fund prices from Barchart are NAV-based and inherently
+ * include reinvested distributions.
  *
- * This extends the imported Daily Value history with live-computed values.
+ * If mutual fund EOD data isn't available yet (published after market
+ * close, sometimes next morning), the update will still run with
+ * available holdings and retroactively correct when fund prices arrive.
  */
 
-async function fetchCurrentPrice(symbol: string): Promise<number | null> {
+type DailyPriceData = {
+  date: string;
+  adjClose: number;
+};
+
+/** Fetch adjusted close prices for the last 15 trading days from Yahoo */
+async function fetchAdjustedCloses(symbol: string): Promise<DailyPriceData[]> {
   let yahooSymbol = symbol;
   if (symbol.endsWith("-T")) yahooSymbol = symbol.replace("-T", ".TO");
   else if (symbol.endsWith(".U")) yahooSymbol = symbol.replace(".U", "-U.TO");
-  // FUNDSERV codes — use Barchart
-  if (/^[A-Z]{2,4}\d{2,5}$/i.test(symbol)) {
-    return fetchFundservPrice(symbol);
-  }
+  // FUNDSERV mutual funds — Yahoo doesn't have these
+  if (/^[A-Z]{2,4}\d{2,5}$/i.test(symbol)) return [];
 
   try {
-    const url = `https://query2.finance.yahoo.com/v8/finance/chart/${encodeURIComponent(yahooSymbol)}?range=5d&interval=1d`;
+    const url = `https://query2.finance.yahoo.com/v8/finance/chart/${encodeURIComponent(yahooSymbol)}?range=15d&interval=1d`;
     const res = await fetch(url, { cache: "no-store", headers: { "User-Agent": UA } });
-    if (!res.ok) return null;
+    if (!res.ok) return [];
     const data = await res.json();
-    const meta = data?.chart?.result?.[0]?.meta;
-    return meta?.regularMarketPrice ?? meta?.previousClose ?? null;
+    const r = data?.chart?.result?.[0];
+    if (!r) return [];
+
+    const timestamps: number[] = r.timestamp || [];
+    // adjclose accounts for dividends, distributions, and splits
+    const adjCloses: number[] = r.indicators?.adjclose?.[0]?.adjclose || [];
+    // Fallback to regular close if adjclose unavailable
+    const closes: number[] = r.indicators?.quote?.[0]?.close || [];
+
+    const result: DailyPriceData[] = [];
+    for (let i = 0; i < timestamps.length; i++) {
+      const price = adjCloses[i] ?? closes[i];
+      if (price == null || isNaN(price)) continue;
+      const d = new Date(timestamps[i] * 1000).toISOString().split("T")[0];
+      result.push({ date: d, adjClose: price });
+    }
+    return result;
   } catch {
-    return null;
+    return [];
   }
 }
 
-async function fetchFundservPrice(ticker: string): Promise<number | null> {
+/** Fetch FUNDSERV (mutual fund) NAV prices for recent days from Barchart */
+async function fetchFundservCloses(ticker: string): Promise<DailyPriceData[]> {
   const symbol = `${ticker}.CF`;
-  const url = `https://globeandmail.pl.barchart.com/proxies/timeseries/queryeod.ashx?symbol=${encodeURIComponent(symbol)}&data=daily&maxrecords=1&volume=contract&order=desc&dividends=false&backadjust=false`;
+  const url = `https://globeandmail.pl.barchart.com/proxies/timeseries/queryeod.ashx?symbol=${encodeURIComponent(symbol)}&data=daily&maxrecords=15&volume=contract&order=desc&dividends=false&backadjust=false`;
   try {
     const res = await fetch(url, {
       cache: "no-store",
@@ -59,47 +78,30 @@ async function fetchFundservPrice(ticker: string): Promise<number | null> {
         Referer: "https://www.theglobeandmail.com/",
       },
     });
-    if (!res.ok) return null;
+    if (!res.ok) return [];
     const text = await res.text();
-    const lines = text.trim().split("\n");
-    for (const line of lines) {
+    const result: DailyPriceData[] = [];
+    for (const line of text.trim().split("\n")) {
+      // CSV: SYMBOL,DATE,OPEN,HIGH,LOW,CLOSE,VOLUME
       const parts = line.split(",");
-      if (parts.length >= 6) {
-        const close = parseFloat(parts[5]);
-        if (isFinite(close)) return parseFloat(close.toFixed(4));
-      }
+      if (parts.length < 6) continue;
+      const close = parseFloat(parts[5]);
+      if (!isFinite(close)) continue;
+      // Date format from Barchart: MM/DD/YYYY
+      const dateParts = parts[1]?.split("/");
+      if (!dateParts || dateParts.length !== 3) continue;
+      const isoDate = `${dateParts[2]}-${dateParts[0].padStart(2, "0")}-${dateParts[1].padStart(2, "0")}`;
+      result.push({ date: isoDate, adjClose: close });
     }
-    return null;
+    // Mutual fund NAV already reflects distributions (reinvested at NAV)
+    return result.sort((a, b) => a.date.localeCompare(b.date));
   } catch {
-    return null;
+    return [];
   }
 }
 
-/** Fetch previous close prices for last N days from Yahoo */
-async function fetchRecentCloses(symbol: string): Promise<Map<string, number>> {
-  let yahooSymbol = symbol;
-  if (symbol.endsWith("-T")) yahooSymbol = symbol.replace("-T", ".TO");
-  else if (symbol.endsWith(".U")) yahooSymbol = symbol.replace(".U", "-U.TO");
-  if (/^[A-Z]{2,4}\d{2,5}$/i.test(symbol)) return new Map();
-
-  const result = new Map<string, number>();
-  try {
-    const url = `https://query2.finance.yahoo.com/v8/finance/chart/${encodeURIComponent(yahooSymbol)}?range=10d&interval=1d`;
-    const res = await fetch(url, { cache: "no-store", headers: { "User-Agent": UA } });
-    if (!res.ok) return result;
-    const data = await res.json();
-    const r = data?.chart?.result?.[0];
-    if (!r) return result;
-    const timestamps: number[] = r.timestamp || [];
-    const closes: number[] = r.indicators?.quote?.[0]?.close || [];
-    for (let i = 0; i < timestamps.length; i++) {
-      if (closes[i] != null && !isNaN(closes[i])) {
-        const d = new Date(timestamps[i] * 1000).toISOString().split("T")[0];
-        result.set(d, closes[i]);
-      }
-    }
-  } catch { /* ignore */ }
-  return result;
+function isFundserv(symbol: string): boolean {
+  return /^[A-Z]{2,4}\d{2,5}$/i.test(symbol);
 }
 
 function getAssetAlloc(pw: PimProfileWeights, assetClass: string): number {
@@ -119,13 +121,10 @@ function getTradingDaysNeeded(lastDate: string, today: string): string[] {
   const dates: string[] = [];
   const d = new Date(lastDate + "T12:00:00");
   const end = new Date(today + "T12:00:00");
-
-  d.setDate(d.getDate() + 1); // start from the day after lastDate
+  d.setDate(d.getDate() + 1);
   while (d <= end) {
     const ds = d.toISOString().split("T")[0];
-    if (!isWeekend(ds)) {
-      dates.push(ds);
-    }
+    if (!isWeekend(ds)) dates.push(ds);
     d.setDate(d.getDate() + 1);
   }
   return dates;
@@ -140,7 +139,7 @@ export async function POST() {
     ]);
 
     if (!perfRaw) {
-      return NextResponse.json({ error: "No performance data to update. Import historical data first." }, { status: 400 });
+      return NextResponse.json({ error: "No performance data to update." }, { status: 400 });
     }
 
     const perfData: PimPerformanceData = JSON.parse(perfRaw);
@@ -154,35 +153,35 @@ export async function POST() {
     }
 
     const today = new Date().toISOString().split("T")[0];
-    const updates: Array<{ groupId: string; profile: string; addedDays: number; lastDate: string }> = [];
+    const updates: Array<{ groupId: string; profile: string; addedDays: number; lastDate: string; retroCorrected: number }> = [];
 
-    // Collect all symbols we need prices for
+    // Collect all symbols
     const allSymbols = new Set<string>();
     for (const group of pimData.groups) {
       for (const h of group.holdings) allSymbols.add(h.symbol);
     }
 
-    // Fetch current prices and recent closes for all symbols
+    // Fetch adjusted close histories for all symbols
+    // Yahoo's adjclose automatically reflects dividends & splits
+    // Barchart mutual fund NAV inherently includes reinvested distributions
     const symbols = [...allSymbols];
-    const currentPrices = new Map<string, number>();
-    const recentCloses = new Map<string, Map<string, number>>();
+    const priceHistories = new Map<string, DailyPriceData[]>();
 
     const batchSize = 10;
     for (let i = 0; i < symbols.length; i += batchSize) {
       const batch = symbols.slice(i, i + batchSize);
-      const [prices, closes] = await Promise.all([
-        Promise.all(batch.map(async (s) => ({ symbol: s, price: await fetchCurrentPrice(s) }))),
-        Promise.all(batch.map(async (s) => ({ symbol: s, closes: await fetchRecentCloses(s) }))),
-      ]);
-      for (const p of prices) {
-        if (p.price != null) currentPrices.set(p.symbol, p.price);
-      }
-      for (const c of closes) {
-        recentCloses.set(c.symbol, c.closes);
+      const results = await Promise.all(
+        batch.map(async (s) => ({
+          symbol: s,
+          data: isFundserv(s) ? await fetchFundservCloses(s) : await fetchAdjustedCloses(s),
+        }))
+      );
+      for (const r of results) {
+        if (r.data.length > 0) priceHistories.set(r.symbol, r.data);
       }
     }
 
-    // Update each model that has imported history
+    // Update each model
     for (const model of perfData.models) {
       if (model.history.length < 2) continue;
 
@@ -194,12 +193,7 @@ export async function POST() {
 
       const lastEntry = model.history[model.history.length - 1];
       const lastDate = lastEntry.date;
-
-      // Check if we need to add new days
       if (lastDate >= today) continue;
-
-      const daysNeeded = getTradingDaysNeeded(lastDate, today);
-      if (daysNeeded.length === 0) continue;
 
       // Calculate holdings with portfolio weights
       const holdingsWithWeight = group.holdings
@@ -212,42 +206,108 @@ export async function POST() {
       const totalWeight = holdingsWithWeight.reduce((s, h) => s + h.portfolioWeight, 0);
       if (totalWeight === 0) continue;
 
+      // Build per-holding price maps
+      const holdingPriceMaps = new Map<string, Map<string, number>>();
+      for (const h of holdingsWithWeight) {
+        const hist = priceHistories.get(h.symbol);
+        if (!hist) continue;
+        const pm = new Map<string, number>();
+        for (const p of hist) pm.set(p.date, p.adjClose);
+        holdingPriceMaps.set(h.symbol, pm);
+      }
+
+      const daysNeeded = getTradingDaysNeeded(lastDate, today);
+      if (daysNeeded.length === 0) continue;
+
       let currentValue = lastEntry.value;
       let addedDays = 0;
+      let retroCorrected = 0;
+
+      // Check if we should retroactively correct recent entries
+      // (mutual fund NAV may have been unavailable when previously computed)
+      const retroWindowDays = 3;
+      const recentEntries = model.history.slice(-retroWindowDays);
+      for (const entry of recentEntries) {
+        // Recompute this day's return with now-available data
+        const entryIdx = model.history.findIndex((h) => h.date === entry.date);
+        if (entryIdx <= 0) continue;
+
+        const prevEntry = model.history[entryIdx - 1];
+        let weightedReturn = 0;
+        let activeWeight = 0;
+        let prevActiveWeight = 0;
+
+        for (const h of holdingsWithWeight) {
+          const pm = holdingPriceMaps.get(h.symbol);
+          if (!pm) continue;
+
+          const curPrice = pm.get(entry.date);
+          // Find previous trading day price
+          const allDates = [...pm.keys()].filter((d) => d < entry.date).sort();
+          const prevPrice = allDates.length > 0 ? pm.get(allDates[allDates.length - 1]) : undefined;
+
+          const normWeight = h.portfolioWeight / totalWeight;
+
+          if (curPrice != null && prevPrice != null && prevPrice > 0) {
+            weightedReturn += ((curPrice - prevPrice) / prevPrice) * normWeight;
+            activeWeight += normWeight;
+          }
+
+          // Track what we had before (any price data for previous day)
+          if (prevPrice != null) prevActiveWeight += normWeight;
+        }
+
+        // Only retroactively correct if we now have MORE coverage than before
+        // (e.g., mutual fund prices that weren't available before)
+        if (activeWeight > 0.3 && activeWeight > prevActiveWeight * 0.01 + (entry.dailyReturn === 0 ? 0 : activeWeight - 0.001)) {
+          if (activeWeight < 0.99) weightedReturn = weightedReturn / activeWeight;
+
+          const newDailyReturn = parseFloat((weightedReturn * 100).toFixed(4));
+          // Only correct if materially different (>0.01% difference)
+          if (Math.abs(newDailyReturn - entry.dailyReturn) > 0.01) {
+            const prevValue = model.history[entryIdx - 1].value;
+            entry.dailyReturn = newDailyReturn;
+            entry.value = parseFloat((prevValue * (1 + weightedReturn)).toFixed(4));
+
+            // Cascade correction to subsequent entries
+            for (let j = entryIdx + 1; j < model.history.length; j++) {
+              const prev = model.history[j - 1];
+              model.history[j].value = parseFloat((prev.value * (1 + model.history[j].dailyReturn / 100)).toFixed(4));
+            }
+            retroCorrected++;
+          }
+        }
+      }
+
+      // Now compute new days
+      currentValue = model.history[model.history.length - 1].value;
 
       for (const date of daysNeeded) {
-        // For each trading day, compute weighted return from available price data
         let weightedReturn = 0;
         let activeWeight = 0;
 
         for (const h of holdingsWithWeight) {
-          const closes = recentCloses.get(h.symbol);
-          const curPrice = date === today ? currentPrices.get(h.symbol) : closes?.get(date);
+          const pm = holdingPriceMaps.get(h.symbol);
+          if (!pm) continue;
 
+          const curPrice = pm.get(date);
           if (curPrice == null) continue;
 
-          // Find the previous day's close
-          let prevClose: number | undefined;
-          if (closes) {
-            // Get all dates before the current date
-            const prevDates = [...closes.keys()].filter((d) => d < date).sort();
-            if (prevDates.length > 0) {
-              prevClose = closes.get(prevDates[prevDates.length - 1]);
-            }
-          }
+          // Find previous trading day's adjusted close
+          const allDates = [...pm.keys()].filter((d) => d < date).sort();
+          const prevPrice = allDates.length > 0 ? pm.get(allDates[allDates.length - 1]) : undefined;
 
-          if (prevClose && prevClose > 0) {
-            const ret = (curPrice - prevClose) / prevClose;
+          if (prevPrice && prevPrice > 0) {
+            const ret = (curPrice - prevPrice) / prevPrice;
             const normWeight = h.portfolioWeight / totalWeight;
             weightedReturn += ret * normWeight;
             activeWeight += normWeight;
           }
         }
 
-        // Only add an entry if we have meaningful price data
+        // Only add if we have meaningful coverage
         if (activeWeight < 0.3) continue;
 
-        // Scale if partial coverage
         if (activeWeight < 0.99) {
           weightedReturn = weightedReturn / activeWeight;
         }
@@ -260,17 +320,17 @@ export async function POST() {
           value: parseFloat(currentValue.toFixed(4)),
           dailyReturn: parseFloat(dailyReturn.toFixed(4)),
         });
-
         addedDays++;
       }
 
-      if (addedDays > 0) {
+      if (addedDays > 0 || retroCorrected > 0) {
         model.lastUpdated = new Date().toISOString();
         updates.push({
           groupId: model.groupId,
           profile: model.profile,
           addedDays,
           lastDate: model.history[model.history.length - 1].date,
+          retroCorrected,
         });
       }
     }
