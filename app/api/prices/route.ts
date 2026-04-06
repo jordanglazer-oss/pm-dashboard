@@ -12,40 +12,29 @@ function isFundservCode(ticker: string): boolean {
   return /^[A-Z]{2,4}\d{2,5}$/i.test(ticker);
 }
 
-/** Resolve FUNDSERV code to Morningstar SecId via SecuritySearch */
-async function lookupMorningstarSecId(code: string): Promise<string | null> {
+/**
+ * Fetch mutual fund NAV price from Globe and Mail / Barchart EOD API.
+ * Response format: "TICKER.CF,DATE,OPEN,HIGH,LOW,CLOSE,VOLUME"
+ */
+async function fetchFundservPrice(ticker: string): Promise<number | null> {
   try {
-    const url = `https://www.morningstar.ca/ca/util/SecuritySearch.ashx?q=${encodeURIComponent(code)}&limit=5`;
+    const symbol = `${ticker}.CF`;
+    const url = `https://globeandmail.pl.barchart.com/proxies/timeseries/queryeod.ashx?symbol=${encodeURIComponent(symbol)}&data=daily&maxrecords=1&volume=contract&order=desc&dividends=false&backadjust=false`;
     const res = await fetch(url, {
       cache: "no-store",
-      headers: { "User-Agent": "Mozilla/5.0" },
+      headers: {
+        "User-Agent": "Mozilla/5.0",
+        "Referer": "https://www.theglobeandmail.com/",
+      },
     });
     if (!res.ok) return null;
-    const text = await res.text();
-    const lines = text.split("\n").filter((l) => l.trim());
-    for (const line of lines) {
-      const parts = line.split("|");
-      if (parts.length >= 2 && parts[1]) return parts[1]; // SecId is 2nd field
-    }
-    return null;
-  } catch {
-    return null;
-  }
-}
-
-/** Fetch price from Morningstar screener API for a given SecId */
-async function fetchMorningstarPrice(secId: string): Promise<number | null> {
-  try {
-    const url = `https://lt.morningstar.com/api/rest.svc/9vehuxllxs/security/screener?outputType=json&page=1&pageSize=1&securityDataPoints=SecId,ClosePrice&universeIds=FOCAN$$ALL&filters=SecId:IN:${encodeURIComponent(secId)}`;
-    const res = await fetch(url, {
-      cache: "no-store",
-      headers: { "User-Agent": "Mozilla/5.0" },
-    });
-    if (!res.ok) return null;
-    const data = await res.json();
-    const row = data?.rows?.[0];
-    if (row && typeof row.ClosePrice === "number") {
-      return parseFloat(row.ClosePrice.toFixed(2));
+    const text = (await res.text()).trim();
+    if (!text) return null;
+    // Parse CSV: TICKER.CF,DATE,OPEN,HIGH,LOW,CLOSE,VOLUME
+    const parts = text.split(",");
+    if (parts.length >= 6) {
+      const close = parseFloat(parts[5]);
+      if (isFinite(close)) return parseFloat(close.toFixed(4));
     }
     return null;
   } catch {
@@ -55,11 +44,9 @@ async function fetchMorningstarPrice(secId: string): Promise<number | null> {
 
 // Batch-fetch current prices from Yahoo Finance v8 chart API
 async function fetchPrice(ticker: string): Promise<number | null> {
-  // FUNDSERV codes (mutual funds) — fetch from Morningstar instead of Yahoo
+  // FUNDSERV codes (mutual funds) — fetch NAV from Globe and Mail / Barchart
   if (isFundservCode(ticker)) {
-    const secId = await lookupMorningstarSecId(ticker);
-    if (!secId) return null;
-    return fetchMorningstarPrice(secId);
+    return fetchFundservPrice(ticker);
   }
   try {
     const yahooSymbol = toYahoo(ticker);
