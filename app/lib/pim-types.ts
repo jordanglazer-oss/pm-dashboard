@@ -64,6 +64,22 @@ export type PimPerformanceData = {
   lastUpdated: string;
 };
 
+// ── Position / Holdings Data ──
+
+export type PimPosition = {
+  symbol: string;
+  units: number; // shares or fund units held
+  costBasis: number; // average cost per unit in account currency
+};
+
+export type PimPortfolioPositions = {
+  groupId: string;
+  profile: PimProfileType;
+  positions: PimPosition[];
+  cashBalance: number; // cash & dividends
+  lastUpdated: string;
+};
+
 // ── Portfolio State (rebalance snapshots, transactions) ──
 
 export type PimRebalanceSnapshot = {
