@@ -1,9 +1,8 @@
 "use client";
 
 import React, { useState, useEffect, useMemo, useCallback } from "react";
-import type { PimPerformanceData, PimModelPerformance, PimProfileType } from "@/app/lib/pim-types";
+import type { PimPerformanceData, PimModelPerformance, PimProfileType, AppendixModelLedger } from "@/app/lib/pim-types";
 import { useStocks } from "@/app/lib/StockContext";
-import { allEquityDailyValueSeed } from "@/app/lib/pim-daily-value-seed";
 
 const PROFILE_LABELS: Record<PimProfileType, string> = {
   balanced: "Balanced",
@@ -54,34 +53,59 @@ export function PimPerformance({ groupId, groupName, selectedProfile }: Props) {
   const [autoUpdating, setAutoUpdating] = useState(false);
   const [seeded, setSeeded] = useState(false);
 
-  // Load cached performance data, auto-seed if empty or corrupted
+  // Load cached performance data, validate against Appendix (source of truth)
   useEffect(() => {
     async function load() {
       try {
         const res = await fetch("/api/kv/pim-performance");
         if (res.ok) {
           const data = await res.json();
-          const allEquityModel = data.models?.find(
-            (m: PimModelPerformance) => m.groupId === groupId && m.profile === "allEquity"
-          );
-          // Validate: seed has 2114 entries. If stored data has fewer or
-          // the first entry doesn't match the seed's first value, re-seed.
-          const seedFirst = allEquityDailyValueSeed[0];
-          const isCorrupted = allEquityModel && allEquityModel.history.length > 0 && (
-            allEquityModel.history.length < allEquityDailyValueSeed.length ||
-            Math.abs(allEquityModel.history[0].value - seedFirst.value) > 0.01 ||
-            allEquityModel.history[0].date !== seedFirst.date
-          );
-          if (data.models?.length > 0 && !isCorrupted) {
+          if (data.models?.length > 0) {
+            // Validate against Appendix: check that historical entries match
+            const appendixRes = await fetch("/api/kv/appendix-daily-values").catch(() => null);
+            const appendix = appendixRes?.ok ? await appendixRes.json() : null;
+            if (appendix?.ledgers?.length > 0) {
+              let corrupted = false;
+              for (const ledger of appendix.ledgers as AppendixModelLedger[]) {
+                if (ledger.profile === "alpha") continue;
+                const model = data.models.find(
+                  (m: PimModelPerformance) => m.groupId === groupId && m.profile === ledger.profile
+                );
+                if (!model || model.history.length < ledger.entries.length) {
+                  corrupted = true;
+                  break;
+                }
+                // Check first and last provider entries match
+                const firstEntry = ledger.entries[0];
+                const lastEntry = ledger.entries[ledger.entries.length - 1];
+                const modelFirst = model.history[0];
+                const modelAtLastProvider = model.history.find(
+                  (h: { date: string; value: number }) => h.date === lastEntry.date
+                );
+                if (
+                  !modelFirst || modelFirst.date !== firstEntry.date ||
+                  Math.abs(modelFirst.value - firstEntry.value) > 0.01 ||
+                  !modelAtLastProvider ||
+                  Math.abs(modelAtLastProvider.value - lastEntry.value) > 0.5
+                ) {
+                  corrupted = true;
+                  break;
+                }
+              }
+              if (corrupted) {
+                seedFromAppendix(appendix.ledgers);
+                return;
+              }
+            }
             setPerfData(data);
           } else {
-            seedHistoricalData();
+            seedFromAppendix();
           }
         } else {
-          seedHistoricalData();
+          seedFromAppendix();
         }
       } catch {
-        seedHistoricalData();
+        seedFromAppendix();
       }
     }
     load();
@@ -105,12 +129,21 @@ export function PimPerformance({ groupId, groupName, selectedProfile }: Props) {
     setRefreshing(false);
   }, []);
 
-  // Auto-seed: restore historical data from hardcoded seed (source of truth)
-  const seedHistoricalData = useCallback(async () => {
+  // Restore performance data from Appendix (immutable source of truth)
+  const seedFromAppendix = useCallback(async (ledgersArg?: AppendixModelLedger[]) => {
     if (seeded) return;
     setSeeded(true);
     try {
-      // Load existing data to preserve any post-seed daily values
+      let ledgers = ledgersArg;
+      if (!ledgers) {
+        const res = await fetch("/api/kv/appendix-daily-values");
+        if (!res.ok) return;
+        const data = await res.json();
+        ledgers = data.ledgers;
+      }
+      if (!ledgers || ledgers.length === 0) return;
+
+      // Load existing perf data to preserve post-provider entries
       let existingModels: PimModelPerformance[] = [];
       try {
         const existingRes = await fetch("/api/kv/pim-performance");
@@ -120,32 +153,44 @@ export function PimPerformance({ groupId, groupName, selectedProfile }: Props) {
         }
       } catch { /* ignore */ }
 
-      // For allEquity: use seed as base, then append any post-seed entries
-      const seedLastDate = allEquityDailyValueSeed[allEquityDailyValueSeed.length - 1].date;
-      const existingAllEquity = existingModels.find(
-        (m) => m.groupId === groupId && m.profile === "allEquity"
-      );
-      const postSeedEntries = existingAllEquity?.history.filter(
-        (h) => h.date > seedLastDate
-      ) || [];
+      const models: PimModelPerformance[] = [];
 
-      const restoredHistory = [...allEquityDailyValueSeed, ...postSeedEntries];
+      for (const ledger of ledgers) {
+        if (ledger.profile === "alpha") continue; // alpha is tracked separately
+        const profile = ledger.profile as PimProfileType;
+        const providerLastDate = ledger.entries[ledger.entries.length - 1]?.date || "";
 
-      // Keep other models (balanced, growth, etc.) intact
-      const otherModels = existingModels.filter(
-        (m) => !(m.groupId === groupId && m.profile === "allEquity")
-      );
+        // Find existing model to preserve any post-provider live-computed entries
+        const existingModel = existingModels.find(
+          (m) => m.groupId === groupId && m.profile === profile
+        );
+        const postProviderEntries = existingModel?.history.filter(
+          (h) => h.date > providerLastDate
+        ) || [];
+
+        // Provider entries are the base, then append any live-computed entries
+        const history = [
+          ...ledger.entries.map((e) => ({
+            date: e.date,
+            value: e.value,
+            dailyReturn: e.dailyReturn,
+          })),
+          ...postProviderEntries,
+        ];
+
+        models.push({
+          groupId,
+          profile,
+          history,
+          lastUpdated: new Date().toISOString(),
+        });
+      }
+
+      // Keep models for OTHER groups intact
+      const otherGroupModels = existingModels.filter((m) => m.groupId !== groupId);
 
       const seedData: PimPerformanceData = {
-        models: [
-          ...otherModels,
-          {
-            groupId,
-            profile: "allEquity",
-            history: restoredHistory,
-            lastUpdated: new Date().toISOString(),
-          },
-        ],
+        models: [...otherGroupModels, ...models],
         lastUpdated: new Date().toISOString(),
       };
 
@@ -155,21 +200,6 @@ export function PimPerformance({ groupId, groupName, selectedProfile }: Props) {
         body: JSON.stringify(seedData),
       });
       setPerfData(seedData);
-
-      // Also set tracking start in portfolio state
-      await fetch("/api/kv/pim-portfolio-state", {
-        method: "PUT",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({
-          groupStates: [{
-            groupId,
-            trackingStart: { date: allEquityDailyValueSeed[0].date, prices: {} },
-            lastRebalance: null,
-            transactions: [],
-          }],
-          lastUpdated: new Date().toISOString(),
-        }),
-      });
     } catch { /* ignore */ }
   }, [groupId, seeded]);
 
