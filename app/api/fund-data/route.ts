@@ -1303,7 +1303,7 @@ export async function GET(request: NextRequest) {
     if (msHoldings.sectorWeightings?.length) fundData.sectorWeightings = msHoldings.sectorWeightings;
 
     // Real-time YTD from chart prices — overrides stale month-end API values
-    const realtimeYTD = await calculateRealtimeYTD(ticker, auth);
+    const realtimeYTD = await calculateRealtimeYTD(yahooTicker, auth);
     if (realtimeYTD != null) {
       fundData.performance = { ...fundData.performance, ytd: realtimeYTD };
     }
