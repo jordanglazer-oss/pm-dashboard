@@ -57,7 +57,7 @@ type Props = {
 };
 
 export function PimPortfolio({ groups }: Props) {
-  const { uiPrefs, setUiPref } = useStocks();
+  const { uiPrefs, setUiPref, stocks } = useStocks();
 
   const [selectedGroupId, setSelectedGroupId] = useState(groups[0]?.id || "");
   const [selectedProfile, setSelectedProfile] = useState<PimProfileType>("allEquity");
@@ -106,32 +106,56 @@ export function PimPortfolio({ groups }: Props) {
     load();
   }, []);
 
-  // Fetch live prices
+  // Fetch live prices: use StockContext prices first (from Scoring page), then fetch remaining
   const fetchPrices = useCallback(async () => {
     if (!selectedGroup) return;
     setPricesLoading(true);
-    const symbols = selectedGroup.holdings.map((h) => {
-      if (h.symbol.endsWith("-T")) return h.symbol.replace("-T", ".TO");
-      if (h.symbol.endsWith(".U")) return h.symbol.replace(".U", "-U.TO");
-      return h.symbol;
-    });
-    try {
-      const res = await fetch(`/api/prices?symbols=${encodeURIComponent(symbols.join(","))}`);
-      if (res.ok) {
-        const data = await res.json();
-        const mapped: Record<string, number> = {};
-        for (const h of selectedGroup.holdings) {
-          let yahoo = h.symbol;
-          if (h.symbol.endsWith("-T")) yahoo = h.symbol.replace("-T", ".TO");
-          else if (h.symbol.endsWith(".U")) yahoo = h.symbol.replace(".U", "-U.TO");
-          if (data.prices?.[yahoo]) mapped[h.symbol] = data.prices[yahoo];
-          else if (data.prices?.[h.symbol]) mapped[h.symbol] = data.prices[h.symbol];
-        }
-        setLivePrices(mapped);
+
+    const mapped: Record<string, number> = {};
+    const needsFetch: string[] = [];
+
+    // First: pull prices from StockContext (already fetched on Scoring page)
+    for (const h of selectedGroup.holdings) {
+      const ticker = h.symbol.endsWith("-T") ? h.symbol.replace("-T", ".TO") : h.symbol;
+      const stock = stocks.find(
+        (s) => s.ticker === ticker || s.ticker === h.symbol || s.ticker.replace("-T", ".TO") === ticker
+      );
+      if (stock?.price != null && stock.price > 0) {
+        mapped[h.symbol] = stock.price;
+      } else {
+        needsFetch.push(h.symbol);
       }
-    } catch { /* ignore */ }
+    }
+
+    // Fetch remaining prices via POST /api/prices
+    if (needsFetch.length > 0) {
+      try {
+        const tickers = needsFetch.map((s) => {
+          if (s.endsWith("-T")) return s.replace("-T", ".TO");
+          if (s.endsWith(".U")) return s.replace(".U", "-U.TO");
+          return s;
+        });
+        const res = await fetch("/api/prices", {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ tickers }),
+        });
+        if (res.ok) {
+          const data = await res.json();
+          for (const h of needsFetch) {
+            let yahoo = h;
+            if (h.endsWith("-T")) yahoo = h.replace("-T", ".TO");
+            else if (h.endsWith(".U")) yahoo = h.replace(".U", "-U.TO");
+            const price = data.prices?.[yahoo] ?? data.prices?.[h];
+            if (price != null) mapped[h] = price;
+          }
+        }
+      } catch { /* ignore */ }
+    }
+
+    setLivePrices(mapped);
     setPricesLoading(false);
-  }, [selectedGroup]);
+  }, [selectedGroup, stocks]);
 
   useEffect(() => { fetchPrices(); }, [selectedGroupId]); // eslint-disable-line react-hooks/exhaustive-deps
 
