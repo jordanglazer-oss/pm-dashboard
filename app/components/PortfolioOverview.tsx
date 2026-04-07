@@ -406,10 +406,10 @@ export function PortfolioOverview() {
       })()}
 
       {/* Portfolio Rankings (scoreable stocks only) */}
-      <RankingTable title="Portfolio Rankings" subtitle="Bottom 3 flagged for review" stocks={scoreablePortfolio} flagType="review" />
+      <RankingTable title="Portfolio Rankings" subtitle="Bottom 3 flagged for review" stocks={scoreablePortfolio} flagType="review" uiPrefs={uiPrefs} setUiPref={setUiPref} />
 
       {/* Watchlist Rankings (scoreable stocks only) */}
-      <RankingTable title="Watchlist Rankings" subtitle="Top 3 flagged as buy candidates" stocks={scoreableWatchlist} flagType="buy" />
+      <RankingTable title="Watchlist Rankings" subtitle="Top 3 flagged as buy candidates" stocks={scoreableWatchlist} flagType="buy" uiPrefs={uiPrefs} setUiPref={setUiPref} />
 
       {/* Score Comparison (scoreable stocks only) */}
       <section className="rounded-[30px] border border-slate-200 bg-white p-5 shadow-sm">
@@ -466,13 +466,25 @@ function RankingTable({
   subtitle,
   stocks,
   flagType,
+  uiPrefs,
+  setUiPref,
 }: {
   title: string;
   subtitle: string;
   stocks: ScoredStock[];
   flagType: "review" | "buy";
+  uiPrefs: Record<string, string>;
+  setUiPref: (key: string, value: string) => void;
 }) {
-  const [sort, setSort] = useState<{ key: RankingSortKey; dir: SortDir }>({ key: "adjusted", dir: "desc" });
+  const prefPrefix = flagType === "review" ? "rankPort" : "rankWatch";
+  const sort = {
+    key: (uiPrefs[`${prefPrefix}Sort`] as RankingSortKey) || "adjusted",
+    dir: (uiPrefs[`${prefPrefix}SortDir`] as SortDir) || "desc",
+  };
+  const setSort = (val: { key: RankingSortKey; dir: SortDir }) => {
+    setUiPref(`${prefPrefix}Sort`, val.key);
+    setUiPref(`${prefPrefix}SortDir`, val.dir);
+  };
 
   const GROUP_HEADER_COLORS: Record<string, string> = {
     "Long-term": "text-blue-600",
@@ -484,7 +496,11 @@ function RankingTable({
   };
 
   function toggleSort(key: RankingSortKey) {
-    setSort((prev) => prev.key === key ? { key, dir: prev.dir === "asc" ? "desc" : "asc" } : { key, dir: "desc" });
+    if (sort.key === key) {
+      setSort({ key, dir: sort.dir === "asc" ? "desc" : "asc" });
+    } else {
+      setSort({ key, dir: "desc" });
+    }
   }
 
   const arrow = (key: RankingSortKey) => sort.key === key ? (sort.dir === "asc" ? " \u25B2" : " \u25BC") : "";

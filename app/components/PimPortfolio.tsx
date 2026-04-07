@@ -33,7 +33,7 @@ function fmtGainLoss(v: number): string {
   return `${v >= 0 ? "+" : ""}${v.toFixed(2)}%`;
 }
 
-type SortField = "symbol" | "name" | "units" | "price" | "value" | "modelPct" | "currentPct" | "drift" | "gainLoss";
+type SortField = "symbol" | "name" | "units" | "price" | "value" | "acb" | "modelPct" | "currentPct" | "drift" | "gainLoss";
 type SortDir = "asc" | "desc";
 
 type HoldingRow = {
@@ -41,10 +41,14 @@ type HoldingRow = {
   name: string;
   currency: "CAD" | "USD";
   units: number;
-  price: number;
-  costBasis: number;
-  value: number;
-  costValue: number;
+  price: number;        // market price in instrument currency
+  priceCad: number;     // market price converted to CAD
+  costBasis: number;    // cost per unit in instrument currency
+  costBasisCad: number; // cost per unit in CAD
+  value: number;        // market value in instrument currency
+  valueCad: number;     // market value in CAD (for weight calculation)
+  costValue: number;    // total cost in instrument currency
+  costValueCad: number; // total cost in CAD (ACB)
   modelPct: number;
   currentPct: number;
   driftPct: number;
@@ -63,6 +67,7 @@ export function PimPortfolio({ groups }: Props) {
   const [selectedProfile, setSelectedProfile] = useState<PimProfileType>("allEquity");
   const [positions, setPositions] = useState<PimPortfolioPositions[]>([]);
   const [livePrices, setLivePrices] = useState<Record<string, number>>({});
+  const [usdCadRate, setUsdCadRate] = useState<number>(1.0);
   const [pricesLoading, setPricesLoading] = useState(false);
   const [editMode, setEditMode] = useState(false);
   const [editPositions, setEditPositions] = useState<PimPosition[]>([]);
@@ -154,6 +159,21 @@ export function PimPortfolio({ groups }: Props) {
     }
 
     setLivePrices(mapped);
+
+    // Fetch USD/CAD rate
+    try {
+      const fxRes = await fetch("/api/prices", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ tickers: ["USDCAD=X"] }),
+      });
+      if (fxRes.ok) {
+        const fxData = await fxRes.json();
+        const rate = fxData.prices?.["USDCAD=X"];
+        if (rate && rate > 0) setUsdCadRate(rate);
+      }
+    } catch { /* ignore */ }
+
     setPricesLoading(false);
   }, [selectedGroup, stocks]);
 
@@ -181,9 +201,10 @@ export function PimPortfolio({ groups }: Props) {
     if (!selectedGroup || !profileWeights) return [];
 
     const rows: HoldingRow[] = [];
-    let totalValue = currentPositions?.cashBalance || 0;
+    // Cash is always CAD
+    let totalValueCad = currentPositions?.cashBalance || 0;
 
-    // First pass: compute values
+    // First pass: compute values (all in CAD for weight calculation)
     const rawRows = selectedGroup.holdings.map((h) => {
       let assetAlloc = 0;
       if (h.assetClass === "fixedIncome") assetAlloc = profileWeights.fixedIncome;
@@ -193,20 +214,25 @@ export function PimPortfolio({ groups }: Props) {
       const modelPct = h.weightInClass * assetAlloc;
       const pos = positionMap.get(h.symbol);
       const units = pos?.units || 0;
-      const costBasis = pos?.costBasis || 0;
-      const price = livePrices[h.symbol] || 0;
-      const value = units * price;
-      const costValue = units * costBasis;
+      const costBasis = pos?.costBasis || 0; // in instrument currency
+      const price = livePrices[h.symbol] || 0; // in instrument currency
+      const fxRate = h.currency === "USD" ? usdCadRate : 1;
+      const priceCad = price * fxRate;
+      const costBasisCad = costBasis * fxRate;
+      const value = units * price; // in instrument currency
+      const valueCad = units * priceCad; // in CAD
+      const costValue = units * costBasis; // in instrument currency
+      const costValueCad = units * costBasisCad; // ACB in CAD
 
-      totalValue += value;
-      return { h, modelPct, units, costBasis, price, value, costValue };
+      totalValueCad += valueCad;
+      return { h, modelPct, units, costBasis, costBasisCad, price, priceCad, value, valueCad, costValue, costValueCad, fxRate };
     });
 
-    // Second pass: compute current weights and actions
+    // Second pass: compute current weights (based on CAD values) and actions
     for (const r of rawRows) {
-      const currentPct = totalValue > 0 ? r.value / totalValue : 0;
+      const currentPct = totalValueCad > 0 ? r.valueCad / totalValueCad : 0;
       const driftPct = currentPct - r.modelPct;
-      const gainLoss = r.costValue > 0 ? ((r.value - r.costValue) / r.costValue) * 100 : 0;
+      const gainLoss = r.costValueCad > 0 ? ((r.valueCad - r.costValueCad) / r.costValueCad) * 100 : 0;
 
       let action: "BUY" | "SELL" | "HOLD" = "HOLD";
       const driftBps = Math.abs(driftPct * 10000);
@@ -220,9 +246,13 @@ export function PimPortfolio({ groups }: Props) {
         currency: r.h.currency,
         units: r.units,
         price: r.price,
+        priceCad: r.priceCad,
         costBasis: r.costBasis,
+        costBasisCad: r.costBasisCad,
         value: r.value,
+        valueCad: r.valueCad,
         costValue: r.costValue,
+        costValueCad: r.costValueCad,
         modelPct: r.modelPct,
         currentPct,
         driftPct,
@@ -232,7 +262,7 @@ export function PimPortfolio({ groups }: Props) {
     }
 
     return rows;
-  }, [selectedGroup, profileWeights, livePrices, positionMap, currentPositions]);
+  }, [selectedGroup, profileWeights, livePrices, positionMap, currentPositions, usdCadRate]);
 
   // Sort
   const sortedRows = useMemo(() => {
@@ -243,7 +273,8 @@ export function PimPortfolio({ groups }: Props) {
         case "name": cmp = a.name.localeCompare(b.name); break;
         case "units": cmp = a.units - b.units; break;
         case "price": cmp = a.price - b.price; break;
-        case "value": cmp = a.value - b.value; break;
+        case "value": cmp = a.valueCad - b.valueCad; break;
+        case "acb": cmp = a.costValueCad - b.costValueCad; break;
         case "modelPct": cmp = a.modelPct - b.modelPct; break;
         case "currentPct": cmp = a.currentPct - b.currentPct; break;
         case "drift": cmp = a.driftPct - b.driftPct; break;
@@ -253,18 +284,18 @@ export function PimPortfolio({ groups }: Props) {
     });
   }, [holdingRows, sortField, sortDir]);
 
-  // Summary
-  const totalValue = useMemo(() => {
-    const holdingsValue = holdingRows.reduce((s, r) => s + r.value, 0);
+  // Summary (all in CAD)
+  const totalValueCadSummary = useMemo(() => {
+    const holdingsValue = holdingRows.reduce((s, r) => s + r.valueCad, 0);
     return holdingsValue + (currentPositions?.cashBalance || 0);
   }, [holdingRows, currentPositions]);
 
-  const totalCost = useMemo(() => {
-    return holdingRows.reduce((s, r) => s + r.costValue, 0);
+  const totalCostCad = useMemo(() => {
+    return holdingRows.reduce((s, r) => s + r.costValueCad, 0);
   }, [holdingRows]);
 
   const cashBalance = currentPositions?.cashBalance || 0;
-  const cashPct = totalValue > 0 ? cashBalance / totalValue : 0;
+  const cashPct = totalValueCadSummary > 0 ? cashBalance / totalValueCadSummary : 0;
 
   const handleSort = (field: SortField) => {
     if (sortField === field) {
@@ -389,26 +420,26 @@ export function PimPortfolio({ groups }: Props) {
         </div>
       </div>
 
-      {/* Portfolio summary */}
+      {/* Portfolio summary (all CAD) */}
       <div className="grid grid-cols-2 sm:grid-cols-5 gap-3">
         <div className="rounded-xl border border-slate-200 bg-white p-4 text-center">
-          <div className="text-[10px] font-semibold text-slate-400 uppercase">Total Value</div>
-          <div className="text-lg font-bold text-slate-800">{fmtCurrency(totalValue)}</div>
+          <div className="text-[10px] font-semibold text-slate-400 uppercase">Total Value (CAD)</div>
+          <div className="text-lg font-bold text-slate-800">{fmtCurrency(totalValueCadSummary)}</div>
         </div>
         <div className="rounded-xl border border-slate-200 bg-white p-4 text-center">
-          <div className="text-[10px] font-semibold text-slate-400 uppercase">Total Cost</div>
-          <div className="text-lg font-bold text-slate-700">{fmtCurrency(totalCost)}</div>
+          <div className="text-[10px] font-semibold text-slate-400 uppercase">Total ACB (CAD)</div>
+          <div className="text-lg font-bold text-slate-700">{fmtCurrency(totalCostCad)}</div>
         </div>
         <div className="rounded-xl border border-slate-200 bg-white p-4 text-center">
           <div className="text-[10px] font-semibold text-slate-400 uppercase">Gain/Loss</div>
-          <div className={`text-lg font-bold ${totalValue - totalCost >= 0 ? "text-emerald-600" : "text-red-500"}`}>
-            {fmtCurrency(totalValue - totalCost)}
+          <div className={`text-lg font-bold ${totalValueCadSummary - totalCostCad >= 0 ? "text-emerald-600" : "text-red-500"}`}>
+            {fmtCurrency(totalValueCadSummary - totalCostCad)}
           </div>
         </div>
         <div className="rounded-xl border border-slate-200 bg-white p-4 text-center">
           <div className="text-[10px] font-semibold text-slate-400 uppercase">Return</div>
-          <div className={`text-lg font-bold ${totalCost > 0 && totalValue - totalCost >= 0 ? "text-emerald-600" : "text-red-500"}`}>
-            {totalCost > 0 ? fmtGainLoss(((totalValue - totalCost) / totalCost) * 100) : "--"}
+          <div className={`text-lg font-bold ${totalCostCad > 0 && totalValueCadSummary - totalCostCad >= 0 ? "text-emerald-600" : "text-red-500"}`}>
+            {totalCostCad > 0 ? fmtGainLoss(((totalValueCadSummary - totalCostCad) / totalCostCad) * 100) : "--"}
           </div>
         </div>
         <div className="rounded-xl border border-slate-200 bg-white p-4 text-center">
@@ -417,6 +448,14 @@ export function PimPortfolio({ groups }: Props) {
           <div className="text-[9px] text-slate-400">{pct(cashPct)}</div>
         </div>
       </div>
+
+      {/* USD/CAD rate indicator */}
+      {usdCadRate > 1 && (
+        <div className="flex items-center gap-2 text-[10px] text-slate-400">
+          <span className="inline-block w-2 h-2 rounded-full bg-blue-300" />
+          USD/CAD: {usdCadRate.toFixed(4)}
+        </div>
+      )}
 
       {/* Holdings table */}
       <div className="rounded-2xl border border-slate-200 bg-white shadow-sm overflow-hidden">
@@ -437,7 +476,10 @@ export function PimPortfolio({ groups }: Props) {
                   Price<SortIcon field="price" />
                 </th>
                 <th className={`text-right ${thClass}`} onClick={() => handleSort("value")}>
-                  Value<SortIcon field="value" />
+                  Value (CAD)<SortIcon field="value" />
+                </th>
+                <th className={`text-right ${thClass}`} onClick={() => handleSort("acb")}>
+                  ACB (CAD)<SortIcon field="acb" />
                 </th>
                 <th className={`text-right ${thClass}`} onClick={() => handleSort("modelPct")}>
                   Model %<SortIcon field="modelPct" />
@@ -477,6 +519,7 @@ export function PimPortfolio({ groups }: Props) {
                     fmtCurrency(cashBalance)
                   )}
                 </td>
+                <td className="py-2.5 px-2 text-right font-mono text-slate-500">-</td>
                 <td className="py-2.5 px-2 text-right font-mono text-slate-500">{pct(cashPct)}</td>
                 {hasPositions && (
                   <>
@@ -489,75 +532,89 @@ export function PimPortfolio({ groups }: Props) {
                 )}
               </tr>
 
-              {sortedRows.map((row) => (
-                <tr key={row.symbol} className="border-b border-slate-50 hover:bg-slate-25 transition-colors">
-                  <td className="py-2.5 px-2 font-semibold text-slate-700">{row.symbol}</td>
-                  <td className="py-2.5 px-2 text-slate-600 max-w-[200px] truncate">{row.name}</td>
-                  <td className="py-2.5 px-2 text-right font-mono text-slate-700">
-                    {editMode ? (
-                      <input
-                        type="number"
-                        value={editPositions.find((p) => p.symbol === row.symbol)?.units || ""}
-                        onChange={(e) => {
-                          const val = parseFloat(e.target.value) || 0;
-                          setEditPositions((prev) =>
-                            prev.map((p) => p.symbol === row.symbol ? { ...p, units: val } : p)
-                          );
-                        }}
-                        className="w-24 rounded border border-slate-200 px-2 py-1 text-right text-xs font-mono"
-                        step="0.0001"
-                      />
-                    ) : (
-                      row.units > 0 ? fmtUnits(row.units) : "-"
-                    )}
-                  </td>
-                  <td className="py-2.5 px-2 text-right font-mono text-slate-700">
-                    {row.price > 0 ? `$${row.price.toFixed(2)}` : "-"}
-                  </td>
-                  <td className="py-2.5 px-2 text-right font-mono font-semibold text-slate-700">
-                    {editMode && (
-                      <div className="mb-1">
+              {sortedRows.map((row) => {
+                const currBadge = row.currency === "USD" ? (
+                  <span className="ml-1 inline-block rounded bg-blue-50 px-1 py-0 text-[8px] font-bold text-blue-500 align-middle">USD</span>
+                ) : null;
+
+                return (
+                  <tr key={row.symbol} className="border-b border-slate-50 hover:bg-slate-25 transition-colors">
+                    <td className="py-2.5 px-2 font-semibold text-slate-700">{row.symbol}</td>
+                    <td className="py-2.5 px-2 text-slate-600 max-w-[200px] truncate">{row.name}</td>
+                    <td className="py-2.5 px-2 text-right font-mono text-slate-700">
+                      {editMode ? (
                         <input
                           type="number"
-                          value={editPositions.find((p) => p.symbol === row.symbol)?.costBasis || ""}
+                          value={editPositions.find((p) => p.symbol === row.symbol)?.units || ""}
                           onChange={(e) => {
                             const val = parseFloat(e.target.value) || 0;
                             setEditPositions((prev) =>
-                              prev.map((p) => p.symbol === row.symbol ? { ...p, costBasis: val } : p)
+                              prev.map((p) => p.symbol === row.symbol ? { ...p, units: val } : p)
                             );
                           }}
-                          className="w-20 rounded border border-slate-200 px-2 py-1 text-right text-xs font-mono"
-                          step="0.01"
-                          placeholder="Cost"
+                          className="w-24 rounded border border-slate-200 px-2 py-1 text-right text-xs font-mono"
+                          step="0.0001"
                         />
-                      </div>
+                      ) : (
+                        row.units > 0 ? fmtUnits(row.units) : "-"
+                      )}
+                    </td>
+                    {/* Price in instrument currency */}
+                    <td className="py-2.5 px-2 text-right font-mono text-slate-700">
+                      {row.price > 0 ? (
+                        <span>${row.price.toFixed(2)}{currBadge}</span>
+                      ) : "-"}
+                    </td>
+                    {/* Market Value in CAD */}
+                    <td className="py-2.5 px-2 text-right font-mono font-semibold text-slate-700">
+                      {row.valueCad > 0 ? fmtCurrency(row.valueCad) : "-"}
+                    </td>
+                    {/* ACB (Book Cost) in CAD */}
+                    <td className="py-2.5 px-2 text-right font-mono text-slate-600">
+                      {editMode && (
+                        <div className="mb-1">
+                          <input
+                            type="number"
+                            value={editPositions.find((p) => p.symbol === row.symbol)?.costBasis || ""}
+                            onChange={(e) => {
+                              const val = parseFloat(e.target.value) || 0;
+                              setEditPositions((prev) =>
+                                prev.map((p) => p.symbol === row.symbol ? { ...p, costBasis: val } : p)
+                              );
+                            }}
+                            className="w-20 rounded border border-slate-200 px-2 py-1 text-right text-xs font-mono"
+                            step="0.01"
+                            placeholder={`Cost (${row.currency})`}
+                          />
+                        </div>
+                      )}
+                      {row.costValueCad > 0 ? fmtCurrency(row.costValueCad) : "-"}
+                    </td>
+                    <td className="py-2.5 px-2 text-right font-mono text-slate-600">{pct(row.modelPct)}</td>
+                    {hasPositions && (
+                      <>
+                        <td className="py-2.5 px-2 text-right font-mono text-slate-700">{row.units > 0 ? pct(row.currentPct) : "-"}</td>
+                        <td className="py-2.5 px-2 text-center">
+                          {row.units > 0 ? (
+                            <span className={`inline-block rounded px-2 py-0.5 text-[9px] font-bold ${
+                              row.action === "BUY" ? "bg-emerald-50 text-emerald-600" :
+                              row.action === "SELL" ? "bg-red-50 text-red-500" :
+                              "bg-slate-100 text-slate-500"
+                            }`}>
+                              {row.action}
+                            </span>
+                          ) : (
+                            <span className="inline-block rounded px-2 py-0.5 text-[9px] font-bold bg-emerald-50 text-emerald-600">BUY</span>
+                          )}
+                        </td>
+                        <td className={`py-2.5 px-2 text-right font-mono font-semibold ${row.gainLoss >= 0 ? "text-emerald-600" : "text-red-500"}`}>
+                          {row.units > 0 ? fmtGainLoss(row.gainLoss) : "-"}
+                        </td>
+                      </>
                     )}
-                    {row.value > 0 ? fmtCurrency(row.value) : "-"}
-                  </td>
-                  <td className="py-2.5 px-2 text-right font-mono text-slate-600">{pct(row.modelPct)}</td>
-                  {hasPositions && (
-                    <>
-                      <td className="py-2.5 px-2 text-right font-mono text-slate-700">{row.units > 0 ? pct(row.currentPct) : "-"}</td>
-                      <td className="py-2.5 px-2 text-center">
-                        {row.units > 0 ? (
-                          <span className={`inline-block rounded px-2 py-0.5 text-[9px] font-bold ${
-                            row.action === "BUY" ? "bg-emerald-50 text-emerald-600" :
-                            row.action === "SELL" ? "bg-red-50 text-red-500" :
-                            "bg-slate-100 text-slate-500"
-                          }`}>
-                            {row.action}
-                          </span>
-                        ) : (
-                          <span className="inline-block rounded px-2 py-0.5 text-[9px] font-bold bg-emerald-50 text-emerald-600">BUY</span>
-                        )}
-                      </td>
-                      <td className={`py-2.5 px-2 text-right font-mono font-semibold ${row.gainLoss >= 0 ? "text-emerald-600" : "text-red-500"}`}>
-                        {row.units > 0 ? fmtGainLoss(row.gainLoss) : "-"}
-                      </td>
-                    </>
-                  )}
-                </tr>
-              ))}
+                  </tr>
+                );
+              })}
             </tbody>
           </table>
         </div>
