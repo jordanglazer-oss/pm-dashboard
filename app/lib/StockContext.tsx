@@ -326,7 +326,7 @@ export function StockProvider({ children }: { children: React.ReactNode }) {
     return "USD";
   }, []);
 
-  /* ─── Rebalance: set individual stocks to equal weight, freed weight → Core ETFs ─── */
+  /* ─── Rebalance: individual stocks keep fixed weight, freed weight → Core ETFs ─── */
   const rebalanceStockWeights = useCallback((holdings: PimHolding[], extraStock?: Stock): PimHolding[] => {
     // Identify individual stocks from the portfolio
     const currentStocks = stocks.filter((s) => s.bucket === "Portfolio" && isStock(s));
@@ -357,48 +357,29 @@ export function StockProvider({ children }: { children: React.ReactNode }) {
 
     if (stockHoldings.length === 0 && coreEtfHoldings.length === 0) return holdings;
 
-    // Other (non-Core) ETFs keep their existing weights
-    const otherEtfTotal = otherEtfHoldings.reduce((s, h) => s + h.weightInClass, 0);
-
-    // Individual stocks share weight equally
-    // Core ETFs absorb the remainder (so when stocks are removed, Core ETFs grow)
-    const perStock = stockHoldings.length > 0
-      ? parseFloat((stockHoldings[0]?.weightInClass || 0).toFixed(6)) || 0
-      : 0;
-
-    // If this is a full rebalance (new stock added/removed), recalculate equal weight
-    // Use a target per-stock weight based on remaining space after other ETFs
-    const availableForStocksAndCore = 1.0 - otherEtfTotal;
-
-    // Stocks get equal share; Core ETFs absorb the rest proportionally
-    let stockTotal: number;
-    if (stockHoldings.length > 0) {
-      // Each stock gets equal weight from the stock portion
-      // Stock portion = whatever is left after Core and Other ETFs
-      // But we want Core ETFs to absorb freed stock weight, so:
-      // Keep existing Core ETF total, let stocks share equally in remainder
-      const currentCoreTotal = coreEtfHoldings.reduce((s, h) => s + h.weightInClass, 0);
-      stockTotal = availableForStocksAndCore - currentCoreTotal;
-      // If stock count changed, recalculate: stock gets equal share, Core absorbs freed weight
-      const newPerStock = stockTotal > 0 ? stockTotal / stockHoldings.length : 0;
-
-      // Check if a stock was added or removed by comparing current per-stock weight
-      // If stocks were removed, their freed weight should go to Core ETFs
-      // Simple approach: always recalculate with stocks getting equal share of stockTotal
-      // and if stockTotal is negative (more core needed), redistribute
-      if (newPerStock <= 0 || stockTotal <= 0) {
-        // No room for stocks, all goes to Core
-        stockTotal = 0;
+    // Get the reference per-stock weight from the PIM base model
+    // All stocks across all models should have the same per-stock weight
+    const pimBaseGroup = pimModelSeed.find((g) => g.id === "pim");
+    let refPerStock = 0.018182; // fallback: PIM seed default
+    if (pimBaseGroup) {
+      const pimStockHoldings = pimBaseGroup.holdings.filter((h) => {
+        const base = h.symbol.replace(/-T$/, "").replace(/\.TO$/, "");
+        return h.assetClass === "equity" && stockTickers.has(h.symbol) || stockTickers.has(base);
+      });
+      if (pimStockHoldings.length > 0) {
+        refPerStock = pimStockHoldings[0].weightInClass;
       }
-    } else {
-      stockTotal = 0;
     }
 
-    const actualPerStock = stockHoldings.length > 0 && stockTotal > 0
-      ? parseFloat((stockTotal / stockHoldings.length).toFixed(6))
-      : 0;
+    // Other (non-Core) ETFs keep their existing weights
+    const otherEtfTotal = otherEtfHoldings.reduce((s, h) => s + h.weightInClass, 0);
+    const availableForStocksAndCore = 1.0 - otherEtfTotal;
 
-    const coreTotal = availableForStocksAndCore - (actualPerStock * stockHoldings.length);
+    // Each stock keeps the SAME per-stock weight as the PIM base model
+    // Core ETFs absorb whatever is left (freed stock weight goes here)
+    const actualPerStock = stockHoldings.length > 0 ? refPerStock : 0;
+    const stockTotal = actualPerStock * stockHoldings.length;
+    const coreTotal = Math.max(0, availableForStocksAndCore - stockTotal);
 
     // Distribute Core ETF weight proportionally based on their existing ratios
     const existingCoreTotal = coreEtfHoldings.reduce((s, h) => s + h.weightInClass, 0);
@@ -411,7 +392,7 @@ export function StockProvider({ children }: { children: React.ReactNode }) {
       ...nonEquity,
       ...otherEtfHoldings,
       ...rebalancedCoreEtfs,
-      ...stockHoldings.map((h) => ({ ...h, weightInClass: actualPerStock })),
+      ...stockHoldings.map((h) => ({ ...h, weightInClass: parseFloat(actualPerStock.toFixed(6)) })),
     ];
   }, [stocks, isStock]);
 

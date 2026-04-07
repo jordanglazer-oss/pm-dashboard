@@ -270,6 +270,19 @@ export function PimModel({ groups }: Props) {
     [computedHoldings]
   );
 
+  // Dynamic currency split based on model holdings
+  const currencySplit = useMemo(() => {
+    let cadWeight = 0;
+    let usdWeight = 0;
+    for (const h of computedHoldings) {
+      if (h.currency === "CAD") cadWeight += h.weightInPortfolio;
+      else if (h.currency === "USD") usdWeight += h.weightInPortfolio;
+    }
+    const total = cadWeight + usdWeight;
+    if (total === 0) return { cad: 0, usd: 0 };
+    return { cad: cadWeight / total, usd: usdWeight / total };
+  }, [computedHoldings]);
+
   const hasLiveWeights = computedHoldings.some((h) => h.liveWeight != null);
 
   // Sort handler
@@ -794,8 +807,8 @@ export function PimModel({ groups }: Props) {
             </div>
           </div>
           <div className="mt-3 flex flex-wrap items-center gap-4 text-xs text-slate-400">
-            <span>CAD Split: {(selectedGroup.cadSplit * 100).toFixed(1)}%</span>
-            <span>USD Split: {(selectedGroup.usdSplit * 100).toFixed(1)}%</span>
+            <span>CAD Split: {(currencySplit.cad * 100).toFixed(1)}%</span>
+            <span>USD Split: {(currencySplit.usd * 100).toFixed(1)}%</span>
             <span className="ml-auto">
               Portfolio Total: <span className={`font-semibold ${Math.abs(portfolioTotal - (profileWeights.fixedIncome + profileWeights.equity + profileWeights.alternatives)) < 0.001 ? "text-emerald-600" : "text-red-500"}`}>
                 {pct(portfolioTotal)}
