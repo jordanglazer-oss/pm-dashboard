@@ -333,7 +333,7 @@ export async function POST() {
     }
 
     // Compute returns for each group x profile
-    const profiles: PimProfileType[] = ["balanced", "growth", "allEquity"];
+    const profiles: PimProfileType[] = ["balanced", "growth", "allEquity", "alpha"];
     const models: PimModelPerformance[] = [];
 
     for (const group of groups) {

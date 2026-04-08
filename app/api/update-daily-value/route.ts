@@ -28,42 +28,42 @@ const POSITIONS_KEY = "pm:pim-positions";
  */
 
 type DailyPriceData = { date: string; adjClose: number };
+type SymbolPriceResult = { history: DailyPriceData[]; chartPreviousClose: number | null };
 
 /** Fetch adjusted close prices from Yahoo (dividends/splits adjusted).
  *  For today's date, uses regularMarketPrice from meta (live intraday)
- *  to match the Positioning tab's "Today" return calculation. */
-async function fetchAdjustedCloses(symbol: string): Promise<DailyPriceData[]> {
+ *  and returns chartPreviousClose so today's return matches Positioning tab. */
+async function fetchAdjustedCloses(symbol: string): Promise<SymbolPriceResult> {
   let yahooSymbol = symbol;
   if (symbol.endsWith("-T")) yahooSymbol = symbol.replace("-T", ".TO");
   else if (symbol.endsWith(".U")) yahooSymbol = symbol.replace(".U", "-U.TO");
-  if (/^[A-Z]{2,4}\d{2,5}$/i.test(symbol)) return [];
+  if (/^[A-Z]{2,4}\d{2,5}$/i.test(symbol)) return { history: [], chartPreviousClose: null };
 
   try {
     const url = `https://query2.finance.yahoo.com/v8/finance/chart/${encodeURIComponent(yahooSymbol)}?range=15d&interval=1d`;
     const res = await fetch(url, { cache: "no-store", headers: { "User-Agent": UA } });
-    if (!res.ok) return [];
+    if (!res.ok) return { history: [], chartPreviousClose: null };
     const data = await res.json();
     const r = data?.chart?.result?.[0];
-    if (!r) return [];
+    if (!r) return { history: [], chartPreviousClose: null };
 
     const timestamps: number[] = r.timestamp || [];
     const adjCloses: number[] = r.indicators?.adjclose?.[0]?.adjclose || [];
     const closes: number[] = r.indicators?.quote?.[0]?.close || [];
 
     const result: DailyPriceData[] = [];
-    const seenDates = new Set<string>();
     for (let i = 0; i < timestamps.length; i++) {
       const price = adjCloses[i] ?? closes[i];
       if (price == null || isNaN(price)) continue;
       const d = new Date(timestamps[i] * 1000).toISOString().split("T")[0];
-      seenDates.add(d);
       result.push({ date: d, adjClose: price });
     }
 
-    // Use live regularMarketPrice for today if not already in the historical data,
-    // or override today's entry with the live price (matches Positioning tab methodology)
     const meta = r.meta;
     const livePrice = meta?.regularMarketPrice;
+    // chartPreviousClose is what Yahoo uses for daily change — same as Positioning tab
+    const chartPrevClose = meta?.chartPreviousClose ?? meta?.previousClose ?? null;
+
     if (livePrice && !isNaN(livePrice)) {
       const today = new Date().toISOString().split("T")[0];
       const todayIdx = result.findIndex((p) => p.date === today);
@@ -74,9 +74,9 @@ async function fetchAdjustedCloses(symbol: string): Promise<DailyPriceData[]> {
       }
     }
 
-    return result;
+    return { history: result, chartPreviousClose: chartPrevClose };
   } catch {
-    return [];
+    return { history: [], chartPreviousClose: null };
   }
 }
 
@@ -112,16 +112,18 @@ async function fetchFundservCloses(ticker: string): Promise<DailyPriceData[]> {
 }
 
 /** Fetch USD/CAD exchange rate history from Yahoo.
- *  Uses live regularMarketPrice for today's rate. */
-async function fetchUsdCadRates(): Promise<Map<string, number>> {
+ *  Uses live regularMarketPrice for today's rate.
+ *  Returns { rates, previousClose } where previousClose is chartPreviousClose for today's FX calc. */
+async function fetchUsdCadRates(): Promise<{ rates: Map<string, number>; previousClose: number | null }> {
   const rates = new Map<string, number>();
+  let previousClose: number | null = null;
   try {
     const url = `https://query2.finance.yahoo.com/v8/finance/chart/USDCAD=X?range=15d&interval=1d`;
     const res = await fetch(url, { cache: "no-store", headers: { "User-Agent": UA } });
-    if (!res.ok) return rates;
+    if (!res.ok) return { rates, previousClose };
     const data = await res.json();
     const r = data?.chart?.result?.[0];
-    if (!r) return rates;
+    if (!r) return { rates, previousClose };
     const timestamps: number[] = r.timestamp || [];
     const closes: number[] = r.indicators?.quote?.[0]?.close || [];
     for (let i = 0; i < timestamps.length; i++) {
@@ -136,8 +138,10 @@ async function fetchUsdCadRates(): Promise<Map<string, number>> {
       const today = new Date().toISOString().split("T")[0];
       rates.set(today, liveRate);
     }
+    // chartPreviousClose for consistent FX change calculation on today
+    previousClose = r.meta?.chartPreviousClose ?? r.meta?.previousClose ?? null;
   } catch { /* ignore */ }
-  return rates;
+  return { rates, previousClose };
 }
 
 function isFundserv(symbol: string): boolean {
@@ -222,23 +226,28 @@ export async function POST() {
     // Fetch adjusted close histories for all symbols + USD/CAD rate
     const symbols = [...allSymbols];
     const priceHistories = new Map<string, DailyPriceData[]>();
+    const chartPreviousCloses = new Map<string, number>();
 
     const batchSize = 10;
     for (let i = 0; i < symbols.length; i += batchSize) {
       const batch = symbols.slice(i, i + batchSize);
       const results = await Promise.all(
-        batch.map(async (s) => ({
-          symbol: s,
-          data: isFundserv(s) ? await fetchFundservCloses(s) : await fetchAdjustedCloses(s),
-        }))
+        batch.map(async (s) => {
+          if (isFundserv(s)) {
+            return { symbol: s, history: await fetchFundservCloses(s), chartPreviousClose: null as number | null };
+          }
+          const res = await fetchAdjustedCloses(s);
+          return { symbol: s, ...res };
+        })
       );
       for (const r of results) {
-        if (r.data.length > 0) priceHistories.set(r.symbol, r.data);
+        if (r.history.length > 0) priceHistories.set(r.symbol, r.history);
+        if (r.chartPreviousClose != null) chartPreviousCloses.set(r.symbol, r.chartPreviousClose);
       }
     }
 
     // Fetch USD/CAD rates
-    const usdCadRates = await fetchUsdCadRates();
+    const { rates: usdCadRates, previousClose: fxPreviousClose } = await fetchUsdCadRates();
 
     // Update each model — ONLY append new days, never modify historical entries
     for (const model of perfData.models) {
@@ -356,10 +365,18 @@ export async function POST() {
         let weightedReturn = 0;
         let activeWeight = 0;
 
+        const isToday = date === today;
+
         // Get USD/CAD rates for FX conversion
+        // For today: use chartPreviousClose as base (matches Positioning tab)
         const todayRate = getRateForDate(usdCadRates, date);
-        const prevDates = [...usdCadRates.keys()].filter((d) => d < date).sort();
-        const prevRate = prevDates.length > 0 ? usdCadRates.get(prevDates[prevDates.length - 1]) ?? null : null;
+        let prevRate: number | null;
+        if (isToday && fxPreviousClose != null) {
+          prevRate = fxPreviousClose;
+        } else {
+          const prevDates = [...usdCadRates.keys()].filter((d) => d < date).sort();
+          prevRate = prevDates.length > 0 ? usdCadRates.get(prevDates[prevDates.length - 1]) ?? null : null;
+        }
         const fxChange = (todayRate && prevRate && prevRate > 0)
           ? (todayRate - prevRate) / prevRate
           : 0;
@@ -371,9 +388,15 @@ export async function POST() {
           const curPrice = pm.get(date);
           if (curPrice == null) continue;
 
-          // Find previous trading day's adjusted close
-          const allDates = [...pm.keys()].filter((d) => d < date).sort();
-          const prevPrice = allDates.length > 0 ? pm.get(allDates[allDates.length - 1]) : undefined;
+          // For today: use chartPreviousClose (matches Positioning tab's previousClose)
+          // For past days: use previous trading day's adjClose from history
+          let prevPrice: number | undefined;
+          if (isToday && chartPreviousCloses.has(h.symbol)) {
+            prevPrice = chartPreviousCloses.get(h.symbol);
+          } else {
+            const allDates = [...pm.keys()].filter((d) => d < date).sort();
+            prevPrice = allDates.length > 0 ? pm.get(allDates[allDates.length - 1]) : undefined;
+          }
 
           if (prevPrice && prevPrice > 0) {
             let holdingReturn = (curPrice - prevPrice) / prevPrice;

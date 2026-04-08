@@ -8,6 +8,7 @@ const PROFILE_LABELS: Record<PimProfileType, string> = {
   balanced: "Balanced",
   growth: "Growth",
   allEquity: "All-Equity",
+  alpha: "Alpha",
 };
 
 const PERIOD_OPTIONS = [
@@ -258,7 +259,6 @@ export function PimPerformance({ groupId, groupName, selectedProfile }: Props) {
       const models: PimModelPerformance[] = [];
 
       for (const ledger of ledgers) {
-        if (ledger.profile === "alpha") continue; // alpha is tracked separately
         const profile = ledger.profile as PimProfileType;
         const providerLastDate = ledger.entries[ledger.entries.length - 1]?.date || "";
 
