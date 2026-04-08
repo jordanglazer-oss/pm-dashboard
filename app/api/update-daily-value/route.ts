@@ -17,14 +17,14 @@ const POSITIONS_KEY = "pm:pim-positions";
 /**
  * POST /api/update-daily-value
  *
- * Appends new daily values to performance history. Never modifies
- * historical entries — only adds new dates after the last recorded date.
+ * Appends new daily values to performance history. On each call,
+ * the last 2 trading days are recalculated to ensure end-of-day
+ * adjusted close prices are used (handles intraday captures and
+ * mutual fund NAV delays). Older historical entries are never modified.
  *
  * Uses Yahoo adjusted close prices (dividends/splits baked in).
  * Converts USD-denominated holding returns to CAD using daily USD/CAD rate.
  * Mutual fund NAV from Barchart already reflects reinvested distributions.
- *
- * Each computed daily value is permanently stored once written.
  */
 
 type DailyPriceData = { date: string; adjClose: number };
@@ -224,6 +224,24 @@ export async function POST() {
       const profileWeights = group.profiles[model.profile as PimProfileType];
       if (!profileWeights) continue;
 
+      // Recalculate the last 2 trading days to account for:
+      // - Intraday prices that were captured before market close
+      // - Mutual fund NAVs that only populate the next day
+      // This also serves as a one-time fix for any recently locked incorrect entries
+      const RECALC_DAYS = 2;
+      let popped = 0;
+      while (
+        model.history.length > 1 &&
+        popped < RECALC_DAYS &&
+        model.history[model.history.length - 1].date >= today.slice(0, 8) // same month prefix safety
+      ) {
+        const last = model.history[model.history.length - 1];
+        // Only pop recent entries (within last 5 calendar days of today)
+        const daysDiff = (new Date(today).getTime() - new Date(last.date).getTime()) / (1000 * 60 * 60 * 24);
+        if (daysDiff > 5) break;
+        model.history.pop();
+        popped++;
+      }
       const lastEntry = model.history[model.history.length - 1];
       const lastDate = lastEntry.date;
       if (lastDate >= today) continue;
@@ -398,18 +416,25 @@ export async function POST() {
             appendixData.ledgers.push(ledger);
           }
 
-          const existingDates = new Set(ledger.entries.map((e) => e.date));
-          const newEntries = model.history
-            .slice(-upd.addedDays)
-            .filter((e) => !existingDates.has(e.date));
-
-          for (const entry of newEntries) {
-            ledger.entries.push({
-              date: entry.date,
-              value: entry.value,
-              dailyReturn: entry.dailyReturn,
-              addedAt: now,
-            });
+          const recentEntries = model.history.slice(-upd.addedDays);
+          for (const entry of recentEntries) {
+            // Replace today's entry if it exists, otherwise append
+            const existingIdx = ledger.entries.findIndex((e) => e.date === entry.date);
+            if (existingIdx >= 0) {
+              ledger.entries[existingIdx] = {
+                date: entry.date,
+                value: entry.value,
+                dailyReturn: entry.dailyReturn,
+                addedAt: now,
+              };
+            } else {
+              ledger.entries.push({
+                date: entry.date,
+                value: entry.value,
+                dailyReturn: entry.dailyReturn,
+                addedAt: now,
+              });
+            }
           }
           ledger.entries.sort((a, b) => a.date.localeCompare(b.date));
         }

@@ -302,6 +302,7 @@ export default function AppendixPage() {
                       <th className="text-left py-2.5 px-2 font-semibold">Date</th>
                       <th className="text-right py-2.5 px-2 font-semibold">Index Value</th>
                       <th className="text-right py-2.5 px-2 font-semibold">Daily Return</th>
+                      <th className="text-center py-2.5 px-2 font-semibold">Source</th>
                       <th className="text-right py-2.5 pr-5 pl-2 font-semibold text-slate-400">Recorded</th>
                     </tr>
                   </thead>
@@ -317,6 +318,15 @@ export default function AppendixPage() {
                             entry.dailyReturn > 0 ? "text-emerald-600" : entry.dailyReturn < 0 ? "text-red-500" : "text-slate-400"
                           }`}>
                             {formatPct(entry.dailyReturn)}
+                          </td>
+                          <td className="py-1.5 px-2 text-center">
+                            <span className={`rounded px-1.5 py-0.5 text-[9px] font-bold ${
+                              entry.date < "2026-04-07"
+                                ? "bg-purple-100 text-purple-700"
+                                : "bg-blue-100 text-blue-700"
+                            }`}>
+                              {entry.date < "2026-04-07" ? "SIA" : "PIM"}
+                            </span>
                           </td>
                           <td className="py-1.5 pr-5 pl-2 text-right text-[10px] text-slate-300">
                             {entry.addedAt ? new Date(entry.addedAt).toLocaleDateString() : "seed"}
