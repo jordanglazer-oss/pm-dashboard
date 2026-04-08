@@ -29,6 +29,7 @@ const PROFILE_LABELS: Record<PimProfileType, string> = {
   balanced: "Balanced",
   growth: "Growth",
   allEquity: "All-Equity",
+  alpha: "Alpha",
 };
 
 const ASSET_CLASS_LABELS: Record<PimAssetClass, string> = {
@@ -123,7 +124,7 @@ export function PimModel({ groups }: Props) {
 
   const availableProfiles = useMemo<PimProfileType[]>(() => {
     if (!selectedGroup) return [];
-    return (["balanced", "growth", "allEquity"] as PimProfileType[]).filter(
+    return (["balanced", "growth", "allEquity", "alpha"] as PimProfileType[]).filter(
       (p) => selectedGroup.profiles[p]
     );
   }, [selectedGroup]);

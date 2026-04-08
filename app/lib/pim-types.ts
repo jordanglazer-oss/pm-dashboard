@@ -17,8 +17,8 @@ export type PimProfileWeights = {
   alternatives: number;
 };
 
-export type PimProfileType = "balanced" | "growth" | "allEquity";
-export type AppendixProfileType = "balanced" | "growth" | "allEquity" | "alpha";
+export type PimProfileType = "balanced" | "growth" | "allEquity" | "alpha";
+export type AppendixProfileType = PimProfileType;
 
 // ── Appendix: Immutable Daily Value Ledger ──
 
