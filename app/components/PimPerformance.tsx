@@ -43,7 +43,7 @@ type Props = {
 };
 
 export function PimPerformance({ groupId, groupName, selectedProfile }: Props) {
-  const { getGroupState, pimModels } = useStocks();
+  const { getGroupState, pimModels, stocks } = useStocks();
   const groupState = getGroupState(groupId);
   const trackingStart = groupState?.trackingStart;
 
@@ -57,11 +57,22 @@ export function PimPerformance({ groupId, groupName, selectedProfile }: Props) {
   // Live today's return — computed using same methodology as Positioning tab
   const [liveTodayReturn, setLiveTodayReturn] = useState<number | null>(null);
 
+  // Build set of core-designated symbols for alpha filtering
+  const coreSymbols = useMemo(() => {
+    const set = new Set<string>();
+    for (const s of stocks) {
+      if (s.designation === "core") set.add(s.ticker);
+    }
+    return set;
+  }, [stocks]);
+
   const computeLiveTodayReturn = useCallback(async () => {
     const group = pimModels.groups.find((g) => g.id === groupId);
     if (!group) return;
 
-    const profileWeights = group.profiles[selectedProfile];
+    const isAlpha = selectedProfile === "alpha";
+    const ALPHA_WEIGHTS = { cash: 0, fixedIncome: 0, equity: 1, alternatives: 0 };
+    const profileWeights = isAlpha ? ALPHA_WEIGHTS : group.profiles[selectedProfile];
     if (!profileWeights) return;
 
     // Load positions
@@ -82,14 +93,23 @@ export function PimPerformance({ groupId, groupName, selectedProfile }: Props) {
     // Build position map
     const posMap = new Map(positions.positions.map((p) => [p.symbol, p]));
 
-    // Filter holdings with >0% model weight (same as Positioning tab)
-    const activeHoldings = group.holdings.filter((h) => {
-      let assetAlloc = 0;
-      if (h.assetClass === "fixedIncome") assetAlloc = profileWeights.fixedIncome;
-      else if (h.assetClass === "equity") assetAlloc = profileWeights.equity;
-      else if (h.assetClass === "alternative") assetAlloc = profileWeights.alternatives;
-      return h.weightInClass * assetAlloc > 0;
-    });
+    // For alpha: filter to equity + non-core; otherwise filter by >0% model weight
+    let activeHoldings;
+    if (isAlpha) {
+      activeHoldings = group.holdings.filter(
+        (h) => h.assetClass === "equity" && !coreSymbols.has(
+          h.symbol.endsWith("-T") ? h.symbol.replace(/-T$/, ".TO") : h.symbol
+        )
+      );
+    } else {
+      activeHoldings = group.holdings.filter((h) => {
+        let assetAlloc = 0;
+        if (h.assetClass === "fixedIncome") assetAlloc = profileWeights.fixedIncome;
+        else if (h.assetClass === "equity") assetAlloc = profileWeights.equity;
+        else if (h.assetClass === "alternative") assetAlloc = profileWeights.alternatives;
+        return h.weightInClass * assetAlloc > 0;
+      });
+    }
 
     // Fetch live prices + previousCloses for all active holdings
     const allSymbols = activeHoldings.map((h) => h.symbol);
@@ -148,7 +168,7 @@ export function PimPerformance({ groupId, groupName, selectedProfile }: Props) {
         setLiveTodayReturn(((currTotalCad - prevTotalCad) / prevTotalCad) * 100);
       }
     } catch { /* ignore */ }
-  }, [groupId, selectedProfile, pimModels]);
+  }, [groupId, selectedProfile, pimModels, coreSymbols]);
 
   // Compute live today's return on mount and when profile changes
   useEffect(() => {

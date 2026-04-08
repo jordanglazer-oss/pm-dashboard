@@ -114,18 +114,51 @@ export function PimPortfolio({ groups }: Props) {
     [groups, selectedGroupId]
   );
 
+  // Build set of core-designated symbols (alpha model excludes these)
+  const coreSymbols = useMemo(() => {
+    const set = new Set<string>();
+    for (const s of stocks) {
+      if (s.designation === "core") set.add(s.ticker);
+    }
+    return set;
+  }, [stocks]);
+
   const availableProfiles = useMemo<PimProfileType[]>(() => {
     if (!selectedGroup) return [];
-    return (["balanced", "growth", "allEquity", "alpha"] as PimProfileType[]).filter(
+    const base = (["balanced", "growth", "allEquity"] as PimProfileType[]).filter(
       (p) => selectedGroup.profiles[p]
     );
+    // Alpha is always available if the group has equity holdings
+    const hasEquity = selectedGroup.holdings.some((h) => h.assetClass === "equity");
+    if (hasEquity) base.push("alpha");
+    return base;
   }, [selectedGroup]);
 
   const activeProfile = availableProfiles.includes(selectedProfile)
     ? selectedProfile
     : availableProfiles[0] || "allEquity";
 
-  const profileWeights = selectedGroup?.profiles[activeProfile];
+  // Alpha profile = virtual 100% equity; otherwise use stored profile weights
+  const ALPHA_WEIGHTS = { cash: 0, fixedIncome: 0, equity: 1, alternatives: 0 };
+  const profileWeights = activeProfile === "alpha"
+    ? ALPHA_WEIGHTS
+    : selectedGroup?.profiles[activeProfile];
+
+  // For alpha: filter to equity + non-core holdings with re-normalized weights
+  const effectiveGroup = useMemo(() => {
+    if (!selectedGroup) return selectedGroup;
+    if (activeProfile !== "alpha") return selectedGroup;
+
+    const alphaHoldings = selectedGroup.holdings.filter(
+      (h) => h.assetClass === "equity" && !coreSymbols.has(symbolToTicker(h.symbol))
+    );
+    // Re-normalize weightInClass so they sum to 1.0
+    const totalWeight = alphaHoldings.reduce((s, h) => s + h.weightInClass, 0);
+    const normalized = totalWeight > 0
+      ? alphaHoldings.map((h) => ({ ...h, weightInClass: h.weightInClass / totalWeight }))
+      : alphaHoldings;
+    return { ...selectedGroup, holdings: normalized };
+  }, [selectedGroup, activeProfile, coreSymbols]);
 
   // Load positions from KV
   useEffect(() => {
@@ -247,14 +280,14 @@ export function PimPortfolio({ groups }: Props) {
 
   // Compute holding rows
   const holdingRows = useMemo<HoldingRow[]>(() => {
-    if (!selectedGroup || !profileWeights) return [];
+    if (!effectiveGroup || !profileWeights) return [];
 
     const rows: HoldingRow[] = [];
     // Cash is always CAD
     let totalValueCad = currentPositions?.cashBalance || 0;
 
     // First pass: compute values (all in CAD for weight calculation)
-    const rawRows = selectedGroup.holdings.map((h) => {
+    const rawRows = effectiveGroup.holdings.map((h) => {
       let assetAlloc = 0;
       if (h.assetClass === "fixedIncome") assetAlloc = profileWeights.fixedIncome;
       else if (h.assetClass === "equity") assetAlloc = profileWeights.equity;
@@ -315,7 +348,7 @@ export function PimPortfolio({ groups }: Props) {
     }
 
     return rows;
-  }, [selectedGroup, profileWeights, livePrices, positionMap, currentPositions, usdCadRate, sharedCostBasisMap]);
+  }, [effectiveGroup, profileWeights, livePrices, positionMap, currentPositions, usdCadRate, sharedCostBasisMap]);
 
   // Sort
   const sortedRows = useMemo(() => {
@@ -458,15 +491,15 @@ export function PimPortfolio({ groups }: Props) {
   const groupState = getGroupState(selectedGroupId);
 
   const computedHoldingsForSwitch = useMemo(() => {
-    if (!selectedGroup || !profileWeights) return [];
-    return selectedGroup.holdings.map((h) => {
+    if (!effectiveGroup || !profileWeights) return [];
+    return effectiveGroup.holdings.map((h) => {
       let alloc = 0;
       if (h.assetClass === "fixedIncome") alloc = profileWeights.fixedIncome;
       else if (h.assetClass === "equity") alloc = profileWeights.equity;
       else if (h.assetClass === "alternative") alloc = profileWeights.alternatives;
       return { symbol: h.symbol, name: h.name, weightInPortfolio: h.weightInClass * alloc };
     });
-  }, [selectedGroup, profileWeights]);
+  }, [effectiveGroup, profileWeights]);
 
   const handleExecuteRebalance = useCallback(async () => {
     if (!selectedGroup || !profileWeights) return;
