@@ -9,7 +9,7 @@ const tabs = [
   { label: "Dashboard", href: "/" },
   { label: "Scoring", href: "/scoring" },
   { label: "PIM Model", href: "/pim-model" },
-  { label: "Portfolio", href: "/portfolio" },
+  { label: "Positioning", href: "/portfolio" },
   { label: "Screener", href: "/screener" },
   { label: "Research", href: "/research" },
   { label: "AA & Perf", href: "/aa-performance" },
@@ -27,7 +27,7 @@ export function Navigation() {
     : pathname === "/pim-model"
     ? "PIM Model"
     : pathname === "/portfolio"
-    ? "Portfolio"
+    ? "Positioning"
     : pathname === "/research"
     ? "Research"
     : pathname === "/screener"

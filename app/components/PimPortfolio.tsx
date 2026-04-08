@@ -1,14 +1,35 @@
 "use client";
 
 import React, { useState, useEffect, useMemo, useCallback } from "react";
+import Link from "next/link";
 import type {
   PimModelGroup,
   PimProfileType,
   PimProfileWeights,
   PimPortfolioPositions,
   PimPosition,
+  PimTransaction,
+  PimPortfolioState,
 } from "@/app/lib/pim-types";
+import type { Stock, InstrumentType, ScoreKey } from "@/app/lib/types";
+
+const ZERO_SCORES: Record<ScoreKey, number> = {
+  brand: 0, secular: 0, researchCoverage: 0, externalSources: 0,
+  charting: 0, relativeStrength: 0, aiRating: 0, growth: 0,
+  relativeValuation: 0, historicalValuation: 0, leverageCoverage: 0,
+  cashFlowQuality: 0, competitiveMoat: 0, turnaround: 0, catalysts: 0,
+  trackRecord: 0, ownershipTrends: 0,
+};
 import { useStocks } from "@/app/lib/StockContext";
+
+function generateId(): string {
+  return Date.now().toString(36) + Math.random().toString(36).slice(2, 8);
+}
+
+function symbolToTicker(symbol: string): string {
+  if (symbol.endsWith("-T")) return symbol.replace(/-T$/, ".TO");
+  return symbol;
+}
 
 const PROFILE_LABELS: Record<PimProfileType, string> = {
   balanced: "Balanced",
@@ -61,7 +82,7 @@ type Props = {
 };
 
 export function PimPortfolio({ groups }: Props) {
-  const { uiPrefs, setUiPref, stocks } = useStocks();
+  const { uiPrefs, setUiPref, stocks, pimPortfolioState, updatePimPortfolioState, getGroupState, addStock, scoredStocks } = useStocks();
 
   const [selectedGroupId, setSelectedGroupId] = useState(groups[0]?.id || "");
   const [selectedProfile, setSelectedProfile] = useState<PimProfileType>("allEquity");
@@ -73,6 +94,13 @@ export function PimPortfolio({ groups }: Props) {
   const [editPositions, setEditPositions] = useState<PimPosition[]>([]);
   const [editCash, setEditCash] = useState(0);
   const [saving, setSaving] = useState(false);
+
+  // Rebalance & Buy/Sell state
+  const [showRebalance, setShowRebalance] = useState(false);
+  const [showSwitch, setShowSwitch] = useState(false);
+  const [rebalancePrices, setRebalancePrices] = useState<Record<string, string>>({});
+  const [switchSell, setSwitchSell] = useState({ symbol: "", price: "" });
+  const [switchBuy, setSwitchBuy] = useState({ symbol: "", price: "", ticker: "", name: "", resolving: false });
 
   const sortField = (uiPrefs["portfolioSort"] as SortField) || "value";
   const sortDir = (uiPrefs["portfolioSortDir"] as SortDir) || "desc";
@@ -196,6 +224,20 @@ export function PimPortfolio({ groups }: Props) {
     return map;
   }, [currentPositions]);
 
+  // Shared costBasis across all profiles in this group
+  const sharedCostBasisMap = useMemo(() => {
+    const map = new Map<string, number>();
+    for (const p of positions) {
+      if (p.groupId !== selectedGroupId) continue;
+      for (const pos of p.positions) {
+        if (pos.costBasis > 0 && !map.has(pos.symbol)) {
+          map.set(pos.symbol, pos.costBasis);
+        }
+      }
+    }
+    return map;
+  }, [positions, selectedGroupId]);
+
   // Compute holding rows
   const holdingRows = useMemo<HoldingRow[]>(() => {
     if (!selectedGroup || !profileWeights) return [];
@@ -214,7 +256,8 @@ export function PimPortfolio({ groups }: Props) {
       const modelPct = h.weightInClass * assetAlloc;
       const pos = positionMap.get(h.symbol);
       const units = pos?.units || 0;
-      const costBasis = pos?.costBasis || 0; // in instrument currency
+      // ACB shared across profiles: use position's costBasis, fallback to any profile in group
+      const costBasis = pos?.costBasis || sharedCostBasisMap.get(h.symbol) || 0;
       const price = livePrices[h.symbol] || 0; // in instrument currency
       const fxRate = h.currency === "USD" ? usdCadRate : 1;
       const priceCad = price * fxRate;
@@ -262,7 +305,7 @@ export function PimPortfolio({ groups }: Props) {
     }
 
     return rows;
-  }, [selectedGroup, profileWeights, livePrices, positionMap, currentPositions, usdCadRate]);
+  }, [selectedGroup, profileWeights, livePrices, positionMap, currentPositions, usdCadRate, sharedCostBasisMap]);
 
   // Sort
   const sortedRows = useMemo(() => {
@@ -309,10 +352,24 @@ export function PimPortfolio({ groups }: Props) {
   // Edit mode: enter positions
   const startEdit = () => {
     const existing = currentPositions?.positions || [];
+    // Build shared costBasis from ALL profiles in this group (ACB is cross-profile)
+    const sharedCostBasis = new Map<string, number>();
+    for (const p of positions) {
+      if (p.groupId !== selectedGroupId) continue;
+      for (const pos of p.positions) {
+        if (pos.costBasis > 0 && !sharedCostBasis.has(pos.symbol)) {
+          sharedCostBasis.set(pos.symbol, pos.costBasis);
+        }
+      }
+    }
     const allSymbols = selectedGroup?.holdings.map((h) => h.symbol) || [];
     const editPos = allSymbols.map((sym) => {
       const ex = existing.find((p) => p.symbol === sym);
-      return { symbol: sym, units: ex?.units || 0, costBasis: ex?.costBasis || 0 };
+      return {
+        symbol: sym,
+        units: ex?.units || 0,
+        costBasis: ex?.costBasis || sharedCostBasis.get(sym) || 0,
+      };
     });
     setEditPositions(editPos);
     setEditCash(currentPositions?.cashBalance || 0);
@@ -329,11 +386,26 @@ export function PimPortfolio({ groups }: Props) {
       lastUpdated: new Date().toISOString(),
     };
 
-    // Merge with existing portfolios
+    // Build costBasis map from saved positions (ACB is shared across profiles)
+    const costBasisMap = new Map<string, number>();
+    for (const p of updated.positions) {
+      if (p.costBasis > 0) costBasisMap.set(p.symbol, p.costBasis);
+    }
+
+    // Merge with existing portfolios, syncing costBasis across profiles in same group
     const other = positions.filter(
       (p) => !(p.groupId === selectedGroupId && p.profile === activeProfile)
     );
-    const all = [...other, updated];
+    // Propagate costBasis to other profiles in the same group
+    const synced = other.map((p) => {
+      if (p.groupId !== selectedGroupId) return p;
+      const syncedPositions = p.positions.map((pos) => {
+        const newCost = costBasisMap.get(pos.symbol);
+        return newCost != null ? { ...pos, costBasis: newCost } : pos;
+      });
+      return { ...p, positions: syncedPositions };
+    });
+    const all = [...synced, updated];
     setPositions(all);
 
     try {
@@ -355,6 +427,216 @@ export function PimPortfolio({ groups }: Props) {
 
   const hasPositions = holdingRows.some((r) => r.units > 0);
   const thClass = "py-2 px-2 cursor-pointer hover:bg-slate-100 transition-colors text-[10px] font-bold uppercase tracking-wider text-slate-500 select-none whitespace-nowrap";
+
+  // ── Rebalance & Buy/Sell logic ──
+  const groupState = getGroupState(selectedGroupId);
+
+  // Compute live weights with drift (for rebalance)
+  const rebalanceData = useMemo(() => {
+    if (!selectedGroup || !profileWeights || !groupState.lastRebalance) return { trades: [], hasLive: false };
+    const rebalPrices = groupState.lastRebalance.prices;
+
+    const holdingsWithGrowth = selectedGroup.holdings.map((h) => {
+      let alloc = 0;
+      if (h.assetClass === "fixedIncome") alloc = profileWeights.fixedIncome;
+      else if (h.assetClass === "equity") alloc = profileWeights.equity;
+      else if (h.assetClass === "alternative") alloc = profileWeights.alternatives;
+
+      const target = h.weightInClass * alloc;
+      const cur = livePrices[h.symbol];
+      const reb = rebalPrices[h.symbol];
+      const growth = cur && reb && reb > 0 ? cur / reb : 1;
+      return { symbol: h.symbol, name: h.name, target, cur, growth, weightedGrowth: target * growth };
+    });
+
+    const totalGrowth = holdingsWithGrowth.reduce((s, x) => s + x.weightedGrowth, 0);
+    if (totalGrowth === 0) return { trades: [], hasLive: false };
+
+    const trades = holdingsWithGrowth
+      .filter((x) => x.target > 0 && x.cur && x.cur > 0)
+      .map((x) => {
+        const live = x.weightedGrowth / totalGrowth;
+        const drift = Math.round((live - x.target) * 10000);
+        return {
+          symbol: x.symbol,
+          name: x.name,
+          target: x.target,
+          live,
+          drift,
+          action: drift > 0 ? "sell" as const : "buy" as const,
+          currentPrice: x.cur,
+        };
+      })
+      .filter((t) => Math.abs(t.drift) >= 5)
+      .sort((a, b) => Math.abs(b.drift) - Math.abs(a.drift));
+
+    return { trades, hasLive: true };
+  }, [selectedGroup, profileWeights, groupState, livePrices]);
+
+  const computedHoldingsForSwitch = useMemo(() => {
+    if (!selectedGroup || !profileWeights) return [];
+    return selectedGroup.holdings.map((h) => {
+      let alloc = 0;
+      if (h.assetClass === "fixedIncome") alloc = profileWeights.fixedIncome;
+      else if (h.assetClass === "equity") alloc = profileWeights.equity;
+      else if (h.assetClass === "alternative") alloc = profileWeights.alternatives;
+      return { symbol: h.symbol, name: h.name, weightInPortfolio: h.weightInClass * alloc };
+    });
+  }, [selectedGroup, profileWeights]);
+
+  const handleSetRebalance = useCallback(() => {
+    const prices: Record<string, number> = {};
+    for (const h of selectedGroup?.holdings || []) {
+      const p = livePrices[h.symbol];
+      if (p) prices[h.symbol] = p;
+    }
+    const updatedState: PimPortfolioState = {
+      ...pimPortfolioState,
+      groupStates: [
+        ...pimPortfolioState.groupStates.filter((gs) => gs.groupId !== selectedGroupId),
+        {
+          ...groupState,
+          lastRebalance: { date: new Date().toISOString(), prices },
+          trackingStart: groupState.trackingStart || { date: new Date().toISOString().split("T")[0], prices },
+        },
+      ],
+      lastUpdated: new Date().toISOString(),
+    };
+    updatePimPortfolioState(updatedState);
+  }, [selectedGroup, livePrices, pimPortfolioState, selectedGroupId, groupState, updatePimPortfolioState]);
+
+  const handleExecuteRebalance = useCallback(() => {
+    const transactions: PimTransaction[] = [];
+    const newPrices: Record<string, number> = { ...(groupState.lastRebalance?.prices || {}) };
+    for (const trade of rebalanceData.trades) {
+      const priceStr = rebalancePrices[trade.symbol];
+      const price = parseFloat(priceStr);
+      if (!price || isNaN(price)) continue;
+      newPrices[trade.symbol] = price;
+      transactions.push({
+        id: generateId(),
+        date: new Date().toISOString(),
+        groupId: selectedGroupId,
+        type: "rebalance",
+        symbol: trade.symbol,
+        direction: trade.action,
+        price,
+        targetWeight: trade.target,
+      });
+    }
+    const updatedState: PimPortfolioState = {
+      ...pimPortfolioState,
+      groupStates: [
+        ...pimPortfolioState.groupStates.filter((gs) => gs.groupId !== selectedGroupId),
+        {
+          ...groupState,
+          lastRebalance: { date: new Date().toISOString(), prices: newPrices },
+          transactions: [...groupState.transactions, ...transactions],
+        },
+      ],
+      lastUpdated: new Date().toISOString(),
+    };
+    updatePimPortfolioState(updatedState);
+    setShowRebalance(false);
+    setRebalancePrices({});
+    fetchPrices();
+  }, [rebalanceData, rebalancePrices, pimPortfolioState, selectedGroupId, groupState, updatePimPortfolioState, fetchPrices]);
+
+  const handleResolveBuyTicker = useCallback(async (ticker: string) => {
+    if (!ticker.trim()) return;
+    const t = ticker.trim().toUpperCase();
+    setSwitchBuy((s) => ({ ...s, ticker: t, resolving: true, name: "" }));
+    try {
+      const res = await fetch(`/api/company-name?tickers=${encodeURIComponent(t)}`);
+      if (res.ok) {
+        const data = await res.json();
+        const name = data.names?.[t] || t;
+        setSwitchBuy((s) => ({ ...s, name, symbol: t, resolving: false }));
+      } else {
+        setSwitchBuy((s) => ({ ...s, name: t, symbol: t, resolving: false }));
+      }
+    } catch {
+      setSwitchBuy((s) => ({ ...s, name: t, symbol: t, resolving: false }));
+    }
+  }, []);
+
+  const handleExecuteSwitch = useCallback(async () => {
+    const sellPrice = switchSell.symbol ? parseFloat(switchSell.price) : 0;
+    const buyPrice = parseFloat(switchBuy.price);
+    const buyTicker = switchBuy.symbol.trim().toUpperCase();
+    if (!buyTicker || !buyPrice) return;
+    if (switchSell.symbol && !sellPrice) return;
+
+    const existsInPortfolio = scoredStocks.some(
+      (s) => s.ticker === buyTicker || s.ticker.replace("-T", ".TO") === buyTicker.replace("-T", ".TO")
+    );
+    if (!existsInPortfolio) {
+      let name = switchBuy.name || buyTicker;
+      let instrumentType: InstrumentType = "stock";
+      let sector = "";
+      try {
+        const res = await fetch(`/api/company-name?tickers=${encodeURIComponent(buyTicker)}`);
+        if (res.ok) {
+          const data = await res.json();
+          if (data.names?.[buyTicker]) name = data.names[buyTicker];
+          if (data.sectors?.[buyTicker]) sector = data.sectors[buyTicker];
+          if (data.types?.[buyTicker]) instrumentType = data.types[buyTicker] as InstrumentType;
+        }
+      } catch { /* fallback */ }
+
+      const stock: Stock = {
+        ticker: buyTicker,
+        name,
+        instrumentType,
+        bucket: "Portfolio",
+        sector: instrumentType === "etf" || instrumentType === "mutual-fund" ? "" : sector,
+        beta: 1.0,
+        weights: { portfolio: 0 },
+        scores: { ...ZERO_SCORES },
+        notes: "",
+      };
+      addStock(stock);
+    }
+
+    const sellHolding = switchSell.symbol ? computedHoldingsForSwitch.find((h) => h.symbol === switchSell.symbol) : null;
+    const transactions: PimTransaction[] = [];
+    if (switchSell.symbol && sellPrice) {
+      transactions.push({
+        id: generateId(), date: new Date().toISOString(), groupId: selectedGroupId,
+        type: switchSell.symbol ? "switch" : "buy", symbol: switchSell.symbol, direction: "sell",
+        price: sellPrice, targetWeight: sellHolding?.weightInPortfolio || 0, pairedWith: buyTicker,
+      });
+    }
+    transactions.push({
+      id: generateId(), date: new Date().toISOString(), groupId: selectedGroupId,
+      type: switchSell.symbol ? "switch" : "buy", symbol: buyTicker, direction: "buy",
+      price: buyPrice, targetWeight: 0, pairedWith: switchSell.symbol || undefined,
+    });
+
+    const newPrices = { ...(groupState.lastRebalance?.prices || {}) };
+    if (switchSell.symbol) newPrices[switchSell.symbol] = sellPrice;
+    newPrices[buyTicker] = buyPrice;
+
+    const updatedState: PimPortfolioState = {
+      ...pimPortfolioState,
+      groupStates: [
+        ...pimPortfolioState.groupStates.filter((gs) => gs.groupId !== selectedGroupId),
+        {
+          ...groupState,
+          lastRebalance: groupState.lastRebalance
+            ? { ...groupState.lastRebalance, prices: newPrices }
+            : { date: new Date().toISOString(), prices: newPrices },
+          transactions: [...groupState.transactions, ...transactions],
+        },
+      ],
+      lastUpdated: new Date().toISOString(),
+    };
+    updatePimPortfolioState(updatedState);
+    setShowSwitch(false);
+    setSwitchSell({ symbol: "", price: "" });
+    setSwitchBuy({ symbol: "", price: "", ticker: "", name: "", resolving: false });
+    fetchPrices();
+  }, [switchSell, switchBuy, computedHoldingsForSwitch, pimPortfolioState, selectedGroupId, groupState, updatePimPortfolioState, fetchPrices, scoredStocks, addStock]);
 
   return (
     <div className="space-y-6">
@@ -417,8 +699,153 @@ export function PimPortfolio({ groups }: Props) {
               Cancel
             </button>
           )}
+          {!editMode && !groupState.lastRebalance && (
+            <button onClick={handleSetRebalance}
+              className="rounded-lg bg-blue-600 px-3 py-1.5 text-xs font-semibold text-white hover:bg-blue-700 transition-colors">
+              Set Initial Rebalance
+            </button>
+          )}
+          {!editMode && rebalanceData.hasLive && (
+            <button onClick={() => setShowRebalance(!showRebalance)}
+              className="rounded-lg bg-emerald-600 px-3 py-1.5 text-xs font-semibold text-white hover:bg-emerald-700 transition-colors">
+              Rebalance
+            </button>
+          )}
+          {!editMode && (
+            <button onClick={() => setShowSwitch(!showSwitch)}
+              className="rounded-lg bg-amber-600 px-3 py-1.5 text-xs font-semibold text-white hover:bg-amber-700 transition-colors">
+              Buy / Sell
+            </button>
+          )}
+          {groupState.lastRebalance && (
+            <span className="text-[10px] text-slate-400 ml-1">
+              Last rebalance: {new Date(groupState.lastRebalance.date).toLocaleDateString()}
+            </span>
+          )}
         </div>
       </div>
+
+      {/* Rebalance Panel */}
+      {showRebalance && rebalanceData.trades.length > 0 && (
+        <div className="rounded-2xl border border-emerald-200 bg-emerald-50/50 p-5 shadow-sm">
+          <h3 className="text-sm font-bold text-slate-800 mb-3">Rebalance Trades</h3>
+          <p className="text-xs text-slate-500 mb-3">Enter execution prices for each trade to rebalance back to model weights.</p>
+          <div className="overflow-x-auto">
+            <table className="w-full text-sm">
+              <thead>
+                <tr className="border-b border-emerald-200 text-xs text-slate-500">
+                  <th className="text-left py-2 font-semibold">Symbol</th>
+                  <th className="text-right py-2 font-semibold">Target</th>
+                  <th className="text-right py-2 font-semibold">Live</th>
+                  <th className="text-right py-2 font-semibold">Drift</th>
+                  <th className="text-center py-2 font-semibold">Action</th>
+                  <th className="text-right py-2 font-semibold">Mkt Price</th>
+                  <th className="text-right py-2 font-semibold">Exec Price</th>
+                </tr>
+              </thead>
+              <tbody>
+                {rebalanceData.trades.map((t) => (
+                  <tr key={t.symbol} className="border-b border-emerald-100">
+                    <td className="py-2 font-mono text-xs font-semibold">
+                      <Link href={`/stock/${symbolToTicker(t.symbol).toLowerCase()}?from=positioning`} className="hover:underline hover:text-blue-600 transition-colors">
+                        {t.symbol}
+                      </Link>
+                    </td>
+                    <td className="py-2 text-right font-mono text-xs">{pct(t.target)}</td>
+                    <td className="py-2 text-right font-mono text-xs">{pct(t.live)}</td>
+                    <td className={`py-2 text-right font-mono text-xs font-semibold ${t.drift > 0 ? "text-emerald-600" : "text-red-500"}`}>
+                      {t.drift > 0 ? "+" : ""}{t.drift}bp
+                    </td>
+                    <td className="py-2 text-center">
+                      <span className={`rounded px-1.5 py-0.5 text-[10px] font-bold ${t.action === "sell" ? "bg-red-100 text-red-700" : "bg-emerald-100 text-emerald-700"}`}>
+                        {t.action.toUpperCase()}
+                      </span>
+                    </td>
+                    <td className="py-2 text-right font-mono text-xs text-slate-500">{t.currentPrice ? `$${t.currentPrice.toFixed(2)}` : "\u2014"}</td>
+                    <td className="py-2 text-right">
+                      <input type="number" step="0.01" placeholder="Price"
+                        value={rebalancePrices[t.symbol] || ""}
+                        onChange={(e) => setRebalancePrices((p) => ({ ...p, [t.symbol]: e.target.value }))}
+                        className="w-20 rounded border border-slate-200 px-2 py-1 text-xs text-right outline-none focus:border-emerald-300" />
+                    </td>
+                  </tr>
+                ))}
+              </tbody>
+            </table>
+          </div>
+          <div className="flex gap-2 mt-3">
+            <button onClick={handleExecuteRebalance}
+              className="rounded-lg bg-emerald-600 px-4 py-2 text-xs font-semibold text-white hover:bg-emerald-700 transition-colors">
+              Execute Rebalance
+            </button>
+            <button onClick={() => { setShowRebalance(false); setRebalancePrices({}); }}
+              className="rounded-lg bg-slate-200 px-4 py-2 text-xs font-semibold text-slate-600 hover:bg-slate-300 transition-colors">
+              Cancel
+            </button>
+          </div>
+        </div>
+      )}
+
+      {/* Buy/Sell Panel */}
+      {showSwitch && (
+        <div className="rounded-2xl border border-amber-200 bg-amber-50/50 p-5 shadow-sm">
+          <h3 className="text-sm font-bold text-slate-800 mb-3">Buy / Sell</h3>
+          <p className="text-xs text-slate-500 mb-3">Buy a new position or sell an existing one. Optionally pair as a switch (sell one, buy another).</p>
+          <div className="grid gap-4 sm:grid-cols-2">
+            <div className="space-y-2">
+              <label className="text-xs font-semibold text-red-600 uppercase">Sell (optional)</label>
+              <select value={switchSell.symbol} onChange={(e) => setSwitchSell((s) => ({ ...s, symbol: e.target.value }))}
+                className="w-full rounded-lg border border-slate-200 bg-white px-3 py-2 text-sm outline-none focus:border-amber-300">
+                <option value="">None \u2014 buy only</option>
+                {computedHoldingsForSwitch.filter((h) => h.weightInPortfolio > 0).map((h) => (
+                  <option key={h.symbol} value={h.symbol}>{h.symbol} \u2014 {h.name}</option>
+                ))}
+              </select>
+              {switchSell.symbol && (
+                <>
+                  <input type="number" step="0.01" placeholder="Sell price"
+                    value={switchSell.price} onChange={(e) => setSwitchSell((s) => ({ ...s, price: e.target.value }))}
+                    className="w-full rounded-lg border border-slate-200 bg-white px-3 py-2 text-sm outline-none focus:border-red-300" />
+                  {livePrices[switchSell.symbol] && (
+                    <p className="text-[10px] text-slate-400">Market: ${livePrices[switchSell.symbol].toFixed(2)}</p>
+                  )}
+                </>
+              )}
+            </div>
+            <div className="space-y-2">
+              <label className="text-xs font-semibold text-emerald-600 uppercase">Buy</label>
+              <div className="relative">
+                <input type="text" value={switchBuy.ticker}
+                  onChange={(e) => setSwitchBuy((s) => ({ ...s, ticker: e.target.value.toUpperCase() }))}
+                  onBlur={() => switchBuy.ticker.trim() && handleResolveBuyTicker(switchBuy.ticker)}
+                  onKeyDown={(e) => { if (e.key === "Enter") handleResolveBuyTicker(switchBuy.ticker); }}
+                  placeholder="e.g. AAPL, XSP.TO, TDB900"
+                  className="w-full rounded-lg border border-slate-200 bg-white px-3 py-2 text-sm outline-none focus:border-emerald-300 font-mono" />
+                {switchBuy.resolving && (
+                  <span className="absolute right-2 top-1/2 -translate-y-1/2 text-[10px] text-slate-400 animate-pulse">Looking up...</span>
+                )}
+              </div>
+              {switchBuy.name && !switchBuy.resolving && (
+                <p className="text-xs text-slate-600 truncate">{switchBuy.name}</p>
+              )}
+              <input type="number" step="0.01" placeholder="Buy price"
+                value={switchBuy.price} onChange={(e) => setSwitchBuy((s) => ({ ...s, price: e.target.value }))}
+                className="w-full rounded-lg border border-slate-200 bg-white px-3 py-2 text-sm outline-none focus:border-emerald-300" />
+            </div>
+          </div>
+          <div className="flex gap-2 mt-3">
+            <button onClick={handleExecuteSwitch}
+              disabled={!switchBuy.symbol || !switchBuy.price || switchBuy.resolving || (!!switchSell.symbol && !switchSell.price)}
+              className="rounded-lg bg-amber-600 px-4 py-2 text-xs font-semibold text-white hover:bg-amber-700 transition-colors disabled:opacity-50">
+              {switchSell.symbol ? "Execute Switch" : "Execute Buy"}
+            </button>
+            <button onClick={() => { setShowSwitch(false); setSwitchSell({ symbol: "", price: "" }); setSwitchBuy({ symbol: "", price: "", ticker: "", name: "", resolving: false }); }}
+              className="rounded-lg bg-slate-200 px-4 py-2 text-xs font-semibold text-slate-600 hover:bg-slate-300 transition-colors">
+              Cancel
+            </button>
+          </div>
+        </div>
+      )}
 
       {/* Portfolio summary (all CAD) */}
       <div className="grid grid-cols-2 sm:grid-cols-5 gap-3">

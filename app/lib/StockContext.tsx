@@ -328,71 +328,75 @@ export function StockProvider({ children }: { children: React.ReactNode }) {
 
   /* ─── Rebalance: individual stocks keep fixed weight, freed weight → Core ETFs ─── */
   const rebalanceStockWeights = useCallback((holdings: PimHolding[], extraStock?: Stock): PimHolding[] => {
-    // Identify individual stocks from the portfolio
-    const currentStocks = stocks.filter((s) => s.bucket === "Portfolio" && isStock(s));
-    if (extraStock && isStock(extraStock) && !currentStocks.some((s) => s.ticker === extraStock.ticker)) {
-      currentStocks.push(extraStock);
-    }
-    const stockTickers = new Set(currentStocks.map((s) => s.ticker));
-    currentStocks.forEach((s) => {
-      stockTickers.add(s.ticker.replace(".TO", "-T"));
-      stockTickers.add(s.ticker.replace("-T", ".TO"));
-    });
+    // Reference per-stock weight from PIM base model seed (constant across all models)
+    const pimBaseGroup = pimModelSeed.find((g) => g.id === "pim");
+    const refPerStock = 0.018182; // PIM seed default for individual stocks
 
-    // Identify Core ETF holdings (designation === "core")
-    const coreEtfTickers = new Set<string>();
-    for (const s of stocks) {
-      if (s.designation === "core" && !isStock(s)) {
-        coreEtfTickers.add(s.ticker);
-        coreEtfTickers.add(s.ticker.replace(".TO", "-T"));
-        coreEtfTickers.add(s.ticker.replace("-T", ".TO"));
+    // Build a set of individual stock symbols from the PIM base model seed
+    // Stocks are equity holdings with weightInClass === refPerStock (the fixed per-stock weight)
+    const seedStockSymbols = new Set<string>();
+    if (pimBaseGroup) {
+      for (const h of pimBaseGroup.holdings) {
+        if (h.assetClass === "equity" && Math.abs(h.weightInClass - refPerStock) < 0.001) {
+          seedStockSymbols.add(h.symbol);
+          seedStockSymbols.add(h.symbol.replace(/-T$/, ".TO"));
+          seedStockSymbols.add(h.symbol.replace(/\.TO$/, "-T"));
+        }
       }
+    }
+    // Also include any portfolio stocks added after seed
+    for (const s of stocks) {
+      if (s.bucket === "Portfolio" && isStock(s)) {
+        seedStockSymbols.add(s.ticker);
+        seedStockSymbols.add(s.ticker.replace(".TO", "-T"));
+        seedStockSymbols.add(s.ticker.replace("-T", ".TO"));
+      }
+    }
+    if (extraStock && isStock(extraStock)) {
+      seedStockSymbols.add(extraStock.ticker);
+      seedStockSymbols.add(extraStock.ticker.replace(".TO", "-T"));
+      seedStockSymbols.add(extraStock.ticker.replace("-T", ".TO"));
     }
 
     const equityHoldings = holdings.filter((h) => h.assetClass === "equity");
-    const stockHoldings = equityHoldings.filter((h) => stockTickers.has(h.symbol));
-    const coreEtfHoldings = equityHoldings.filter((h) => !stockTickers.has(h.symbol) && coreEtfTickers.has(h.symbol));
-    const otherEtfHoldings = equityHoldings.filter((h) => !stockTickers.has(h.symbol) && !coreEtfTickers.has(h.symbol));
     const nonEquity = holdings.filter((h) => h.assetClass !== "equity");
 
-    if (stockHoldings.length === 0 && coreEtfHoldings.length === 0) return holdings;
+    // Split equity holdings: individual stocks vs ETFs/funds (Core ETFs absorb freed weight)
+    const stockHoldings = equityHoldings.filter((h) => seedStockSymbols.has(h.symbol));
+    const etfHoldings = equityHoldings.filter((h) => !seedStockSymbols.has(h.symbol));
 
-    // Get the reference per-stock weight from the PIM base model
-    // All stocks across all models should have the same per-stock weight
-    const pimBaseGroup = pimModelSeed.find((g) => g.id === "pim");
-    let refPerStock = 0.018182; // fallback: PIM seed default
+    if (stockHoldings.length === 0 && etfHoldings.length === 0) return holdings;
+
+    // Each stock keeps the SAME per-stock weight as the PIM base model
+    const stockTotal = refPerStock * stockHoldings.length;
+
+    // ALL non-stock equity holdings (ETFs/funds) absorb the remainder proportionally
+    // Use PIM base model ratios as reference for proportional distribution
+    const seedEtfWeights = new Map<string, number>();
     if (pimBaseGroup) {
-      const pimStockHoldings = pimBaseGroup.holdings.filter((h) => {
-        const base = h.symbol.replace(/-T$/, "").replace(/\.TO$/, "");
-        return h.assetClass === "equity" && stockTickers.has(h.symbol) || stockTickers.has(base);
-      });
-      if (pimStockHoldings.length > 0) {
-        refPerStock = pimStockHoldings[0].weightInClass;
+      for (const h of pimBaseGroup.holdings) {
+        if (h.assetClass === "equity" && !seedStockSymbols.has(h.symbol)) {
+          seedEtfWeights.set(h.symbol, h.weightInClass);
+        }
       }
     }
 
-    // Other (non-Core) ETFs keep their existing weights
-    const otherEtfTotal = otherEtfHoldings.reduce((s, h) => s + h.weightInClass, 0);
-    const availableForStocksAndCore = 1.0 - otherEtfTotal;
+    const etfTotal = Math.max(0, 1.0 - stockTotal);
+    const seedEtfTotal = [...seedEtfWeights.values()].reduce((s, v) => s + v, 0);
 
-    // Each stock keeps the SAME per-stock weight as the PIM base model
-    // Core ETFs absorb whatever is left (freed stock weight goes here)
-    const actualPerStock = stockHoldings.length > 0 ? refPerStock : 0;
-    const stockTotal = actualPerStock * stockHoldings.length;
-    const coreTotal = Math.max(0, availableForStocksAndCore - stockTotal);
-
-    // Distribute Core ETF weight proportionally based on their existing ratios
-    const existingCoreTotal = coreEtfHoldings.reduce((s, h) => s + h.weightInClass, 0);
-    const rebalancedCoreEtfs = coreEtfHoldings.map((h) => {
-      const ratio = existingCoreTotal > 0 ? h.weightInClass / existingCoreTotal : 1 / coreEtfHoldings.length;
-      return { ...h, weightInClass: parseFloat((ratio * coreTotal).toFixed(6)) };
+    const rebalancedEtfs = etfHoldings.map((h) => {
+      // Use seed ratio if available, otherwise preserve current ratio
+      const seedWeight = seedEtfWeights.get(h.symbol);
+      const ratio = seedWeight != null && seedEtfTotal > 0
+        ? seedWeight / seedEtfTotal
+        : (etfHoldings.length > 0 ? h.weightInClass / (etfHoldings.reduce((s, e) => s + e.weightInClass, 0) || 1) : 0);
+      return { ...h, weightInClass: parseFloat((ratio * etfTotal).toFixed(6)) };
     });
 
     return [
       ...nonEquity,
-      ...otherEtfHoldings,
-      ...rebalancedCoreEtfs,
-      ...stockHoldings.map((h) => ({ ...h, weightInClass: parseFloat(actualPerStock.toFixed(6)) })),
+      ...rebalancedEtfs,
+      ...stockHoldings.map((h) => ({ ...h, weightInClass: refPerStock })),
     ];
   }, [stocks, isStock]);
 
