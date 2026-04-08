@@ -29,7 +29,9 @@ const POSITIONS_KEY = "pm:pim-positions";
 
 type DailyPriceData = { date: string; adjClose: number };
 
-/** Fetch adjusted close prices from Yahoo (dividends/splits adjusted) */
+/** Fetch adjusted close prices from Yahoo (dividends/splits adjusted).
+ *  For today's date, uses regularMarketPrice from meta (live intraday)
+ *  to match the Positioning tab's "Today" return calculation. */
 async function fetchAdjustedCloses(symbol: string): Promise<DailyPriceData[]> {
   let yahooSymbol = symbol;
   if (symbol.endsWith("-T")) yahooSymbol = symbol.replace("-T", ".TO");
@@ -49,12 +51,29 @@ async function fetchAdjustedCloses(symbol: string): Promise<DailyPriceData[]> {
     const closes: number[] = r.indicators?.quote?.[0]?.close || [];
 
     const result: DailyPriceData[] = [];
+    const seenDates = new Set<string>();
     for (let i = 0; i < timestamps.length; i++) {
       const price = adjCloses[i] ?? closes[i];
       if (price == null || isNaN(price)) continue;
       const d = new Date(timestamps[i] * 1000).toISOString().split("T")[0];
+      seenDates.add(d);
       result.push({ date: d, adjClose: price });
     }
+
+    // Use live regularMarketPrice for today if not already in the historical data,
+    // or override today's entry with the live price (matches Positioning tab methodology)
+    const meta = r.meta;
+    const livePrice = meta?.regularMarketPrice;
+    if (livePrice && !isNaN(livePrice)) {
+      const today = new Date().toISOString().split("T")[0];
+      const todayIdx = result.findIndex((p) => p.date === today);
+      if (todayIdx >= 0) {
+        result[todayIdx].adjClose = livePrice;
+      } else {
+        result.push({ date: today, adjClose: livePrice });
+      }
+    }
+
     return result;
   } catch {
     return [];
@@ -92,7 +111,8 @@ async function fetchFundservCloses(ticker: string): Promise<DailyPriceData[]> {
   }
 }
 
-/** Fetch USD/CAD exchange rate history from Yahoo */
+/** Fetch USD/CAD exchange rate history from Yahoo.
+ *  Uses live regularMarketPrice for today's rate. */
 async function fetchUsdCadRates(): Promise<Map<string, number>> {
   const rates = new Map<string, number>();
   try {
@@ -109,6 +129,12 @@ async function fetchUsdCadRates(): Promise<Map<string, number>> {
         const d = new Date(timestamps[i] * 1000).toISOString().split("T")[0];
         rates.set(d, closes[i]);
       }
+    }
+    // Use live rate for today
+    const liveRate = r.meta?.regularMarketPrice;
+    if (liveRate && !isNaN(liveRate)) {
+      const today = new Date().toISOString().split("T")[0];
+      rates.set(today, liveRate);
     }
   } catch { /* ignore */ }
   return rates;
