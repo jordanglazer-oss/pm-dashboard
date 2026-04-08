@@ -1,6 +1,6 @@
 "use client";
 
-import React, { useState, useEffect, useMemo, useCallback } from "react";
+import React, { useState, useEffect, useMemo, useCallback, useRef } from "react";
 import type { PimPerformanceData, PimModelPerformance, PimProfileType, AppendixModelLedger } from "@/app/lib/pim-types";
 import { useStocks } from "@/app/lib/StockContext";
 
@@ -223,20 +223,20 @@ export function PimPerformance({ groupId, groupName, selectedProfile }: Props) {
     setAutoUpdating(false);
   }, []);
 
-  // Auto-update daily values when data is loaded and stale
+  // Auto-update daily values once on first load (per group)
+  const autoUpdatedRef = useRef<string | null>(null);
   useEffect(() => {
     if (!perfData || perfData.models.length === 0 || autoUpdating) return;
+    if (autoUpdatedRef.current === groupId) return; // already updated this group
+
     const groupModels = perfData.models.filter((m) => m.groupId === groupId);
     if (groupModels.length === 0) return;
 
-    // Check if any model's last date is before today
-    const today = new Date().toISOString().split("T")[0];
-    // Always recalculate — the update endpoint handles recalculating
-    // the last 2 trading days with latest prices (intraday + mutual fund delays)
     const dayOfWeek = new Date().getDay();
     const isWeekday = dayOfWeek >= 1 && dayOfWeek <= 5;
 
     if (isWeekday) {
+      autoUpdatedRef.current = groupId;
       autoUpdateDailyValue();
     }
   // eslint-disable-next-line react-hooks/exhaustive-deps

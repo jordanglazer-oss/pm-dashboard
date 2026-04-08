@@ -181,11 +181,9 @@ export function PimPortfolio({ groups }: Props) {
           let yahoo = h;
           if (h.endsWith("-T")) yahoo = h.replace("-T", ".TO");
           else if (h.endsWith(".U")) yahoo = h.replace(".U", "-U.TO");
-          // Fill missing prices
-          if (!mapped[h]) {
-            const price = data.prices?.[yahoo] ?? data.prices?.[h];
-            if (price != null) mapped[h] = price;
-          }
+          // Always use fresh prices from API (override StockContext cache)
+          const freshPrice = data.prices?.[yahoo] ?? data.prices?.[h];
+          if (freshPrice != null) mapped[h] = freshPrice;
           // Capture previous close
           const pc = data.previousCloses?.[yahoo] ?? data.previousCloses?.[h];
           if (pc != null) prevCloseMapped[h] = pc;
