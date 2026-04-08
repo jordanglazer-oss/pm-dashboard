@@ -280,6 +280,8 @@ export function PimPerformance({ groupId, groupName, selectedProfile }: Props) {
 
       for (const ledger of ledgers) {
         const profile = ledger.profile as PimProfileType;
+        // Alpha only applies to PIM group
+        if (profile === "alpha" && groupId !== "pim") continue;
         const providerLastDate = ledger.entries[ledger.entries.length - 1]?.date || "";
 
         // Find existing model to preserve any post-provider live-computed entries
@@ -371,7 +373,12 @@ export function PimPerformance({ groupId, groupName, selectedProfile }: Props) {
   }, [perfData, groupId]);
 
   const selectedModel = useMemo(() => {
-    return groupModels.find((m) => m.profile === selectedProfile) || groupModels[0];
+    const match = groupModels.find((m) => m.profile === selectedProfile);
+    if (match) return match;
+    // Don't fall back to another model — only show data for the selected profile
+    // (prevents alpha from displaying allEquity data, etc.)
+    if (selectedProfile === "alpha") return null;
+    return groupModels[0] || null;
   }, [groupModels, selectedProfile]);
 
   // Filter history by period
