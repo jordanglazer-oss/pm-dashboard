@@ -264,6 +264,34 @@ export async function POST() {
     // Fetch USD/CAD rates
     const { rates: usdCadRates, previousClose: fxPreviousClose } = await fetchUsdCadRates();
 
+    // Ensure alpha model exists for PIM group — seed from Appendix if missing
+    const pimGroup = pimData.groups.find((g) => g.id === "pim");
+    const hasAlphaModel = perfData.models.some(
+      (m) => m.groupId === "pim" && m.profile === "alpha"
+    );
+    if (pimGroup && !hasAlphaModel) {
+      // Try to seed from Appendix
+      const appendixRaw = await redis.get(APPENDIX_KEY);
+      if (appendixRaw) {
+        const appendixData = JSON.parse(appendixRaw);
+        const alphaLedger = appendixData.ledgers?.find(
+          (l: { profile: string }) => l.profile === "alpha"
+        );
+        if (alphaLedger && alphaLedger.entries?.length > 0) {
+          perfData.models.push({
+            groupId: "pim",
+            profile: "alpha",
+            history: alphaLedger.entries.map((e: { date: string; value: number; dailyReturn: number }) => ({
+              date: e.date,
+              value: e.value,
+              dailyReturn: e.dailyReturn,
+            })),
+            lastUpdated: new Date().toISOString(),
+          });
+        }
+      }
+    }
+
     // Update each model — ONLY append new days, never modify historical entries
     for (const model of perfData.models) {
       if (model.history.length < 2) continue;
