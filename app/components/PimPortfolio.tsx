@@ -88,6 +88,7 @@ export function PimPortfolio({ groups }: Props) {
   const [selectedProfile, setSelectedProfile] = useState<PimProfileType>("allEquity");
   const [positions, setPositions] = useState<PimPortfolioPositions[]>([]);
   const [livePrices, setLivePrices] = useState<Record<string, number>>({});
+  const [prevCloses, setPrevCloses] = useState<Record<string, number>>({});
   const [usdCadRate, setUsdCadRate] = useState<number>(1.0);
   const [pricesLoading, setPricesLoading] = useState(false);
   const [editMode, setEditMode] = useState(false);
@@ -160,33 +161,40 @@ export function PimPortfolio({ groups }: Props) {
       }
     }
 
-    // Fetch remaining prices via POST /api/prices
-    if (needsFetch.length > 0) {
-      try {
-        const tickers = needsFetch.map((s) => {
-          if (s.endsWith("-T")) return s.replace("-T", ".TO");
-          if (s.endsWith(".U")) return s.replace(".U", "-U.TO");
-          return s;
-        });
-        const res = await fetch("/api/prices", {
-          method: "POST",
-          headers: { "Content-Type": "application/json" },
-          body: JSON.stringify({ tickers }),
-        });
-        if (res.ok) {
-          const data = await res.json();
-          for (const h of needsFetch) {
-            let yahoo = h;
-            if (h.endsWith("-T")) yahoo = h.replace("-T", ".TO");
-            else if (h.endsWith(".U")) yahoo = h.replace(".U", "-U.TO");
+    // Fetch all holdings from /api/prices (for previousClose data + missing prices)
+    const allSymbols = selectedGroup.holdings.map((h) => h.symbol);
+    const prevCloseMapped: Record<string, number> = {};
+    try {
+      const tickers = allSymbols.map((s) => {
+        if (s.endsWith("-T")) return s.replace("-T", ".TO");
+        if (s.endsWith(".U")) return s.replace(".U", "-U.TO");
+        return s;
+      });
+      const res = await fetch("/api/prices", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ tickers }),
+      });
+      if (res.ok) {
+        const data = await res.json();
+        for (const h of allSymbols) {
+          let yahoo = h;
+          if (h.endsWith("-T")) yahoo = h.replace("-T", ".TO");
+          else if (h.endsWith(".U")) yahoo = h.replace(".U", "-U.TO");
+          // Fill missing prices
+          if (!mapped[h]) {
             const price = data.prices?.[yahoo] ?? data.prices?.[h];
             if (price != null) mapped[h] = price;
           }
+          // Capture previous close
+          const pc = data.previousCloses?.[yahoo] ?? data.previousCloses?.[h];
+          if (pc != null) prevCloseMapped[h] = pc;
         }
-      } catch { /* ignore */ }
-    }
+      }
+    } catch { /* ignore */ }
 
     setLivePrices(mapped);
+    setPrevCloses(prevCloseMapped);
 
     // Fetch USD/CAD rate
     try {
@@ -340,6 +348,22 @@ export function PimPortfolio({ groups }: Props) {
   const cashBalance = currentPositions?.cashBalance || 0;
   const cashPct = totalValueCadSummary > 0 ? cashBalance / totalValueCadSummary : 0;
 
+  // Today's return: weighted sum of each holding's daily % change (prev close → current price)
+  const todayReturn = useMemo(() => {
+    if (holdingRows.length === 0) return null;
+    let prevTotalCad = 0;
+    let currTotalCad = 0;
+    for (const r of holdingRows) {
+      const pc = prevCloses[r.symbol];
+      if (pc == null || pc <= 0 || r.units <= 0) continue;
+      const fxRate = r.currency === "USD" ? usdCadRate : 1;
+      prevTotalCad += r.units * pc * fxRate;
+      currTotalCad += r.units * r.price * fxRate;
+    }
+    if (prevTotalCad <= 0) return null;
+    return ((currTotalCad - prevTotalCad) / prevTotalCad) * 100;
+  }, [holdingRows, prevCloses, usdCadRate]);
+
   const handleSort = (field: SortField) => {
     if (sortField === field) {
       setSortDir(sortDir === "asc" ? "desc" : "asc");
@@ -431,48 +455,6 @@ export function PimPortfolio({ groups }: Props) {
   // ── Rebalance & Buy/Sell logic ──
   const groupState = getGroupState(selectedGroupId);
 
-  // Compute live weights with drift (for rebalance)
-  const rebalanceData = useMemo(() => {
-    if (!selectedGroup || !profileWeights || !groupState.lastRebalance) return { trades: [], hasLive: false };
-    const rebalPrices = groupState.lastRebalance.prices;
-
-    const holdingsWithGrowth = selectedGroup.holdings.map((h) => {
-      let alloc = 0;
-      if (h.assetClass === "fixedIncome") alloc = profileWeights.fixedIncome;
-      else if (h.assetClass === "equity") alloc = profileWeights.equity;
-      else if (h.assetClass === "alternative") alloc = profileWeights.alternatives;
-
-      const target = h.weightInClass * alloc;
-      const cur = livePrices[h.symbol];
-      const reb = rebalPrices[h.symbol];
-      const growth = cur && reb && reb > 0 ? cur / reb : 1;
-      return { symbol: h.symbol, name: h.name, target, cur, growth, weightedGrowth: target * growth };
-    });
-
-    const totalGrowth = holdingsWithGrowth.reduce((s, x) => s + x.weightedGrowth, 0);
-    if (totalGrowth === 0) return { trades: [], hasLive: false };
-
-    const trades = holdingsWithGrowth
-      .filter((x) => x.target > 0 && x.cur && x.cur > 0)
-      .map((x) => {
-        const live = x.weightedGrowth / totalGrowth;
-        const drift = Math.round((live - x.target) * 10000);
-        return {
-          symbol: x.symbol,
-          name: x.name,
-          target: x.target,
-          live,
-          drift,
-          action: drift > 0 ? "sell" as const : "buy" as const,
-          currentPrice: x.cur,
-        };
-      })
-      .filter((t) => Math.abs(t.drift) >= 5)
-      .sort((a, b) => Math.abs(b.drift) - Math.abs(a.drift));
-
-    return { trades, hasLive: true };
-  }, [selectedGroup, profileWeights, groupState, livePrices]);
-
   const computedHoldingsForSwitch = useMemo(() => {
     if (!selectedGroup || !profileWeights) return [];
     return selectedGroup.holdings.map((h) => {
@@ -484,46 +466,112 @@ export function PimPortfolio({ groups }: Props) {
     });
   }, [selectedGroup, profileWeights]);
 
-  const handleSetRebalance = useCallback(() => {
-    const prices: Record<string, number> = {};
-    for (const h of selectedGroup?.holdings || []) {
-      const p = livePrices[h.symbol];
-      if (p) prices[h.symbol] = p;
-    }
-    const updatedState: PimPortfolioState = {
-      ...pimPortfolioState,
-      groupStates: [
-        ...pimPortfolioState.groupStates.filter((gs) => gs.groupId !== selectedGroupId),
-        {
-          ...groupState,
-          lastRebalance: { date: new Date().toISOString(), prices },
-          trackingStart: groupState.trackingStart || { date: new Date().toISOString().split("T")[0], prices },
-        },
-      ],
-      lastUpdated: new Date().toISOString(),
-    };
-    updatePimPortfolioState(updatedState);
-  }, [selectedGroup, livePrices, pimPortfolioState, selectedGroupId, groupState, updatePimPortfolioState]);
-
-  const handleExecuteRebalance = useCallback(() => {
+  const handleExecuteRebalance = useCallback(async () => {
+    if (!selectedGroup || !profileWeights) return;
     const transactions: PimTransaction[] = [];
     const newPrices: Record<string, number> = { ...(groupState.lastRebalance?.prices || {}) };
-    for (const trade of rebalanceData.trades) {
-      const priceStr = rebalancePrices[trade.symbol];
-      const price = parseFloat(priceStr);
-      if (!price || isNaN(price)) continue;
-      newPrices[trade.symbol] = price;
+
+    // Build updated positions from rebalance deltas
+    const updatedPositionMap = new Map<string, { units: number; costBasis: number }>();
+    // Start with existing positions
+    for (const row of sortedRows) {
+      if (row.modelPct <= 0) continue;
+      const existing = positionMap.get(row.symbol);
+      updatedPositionMap.set(row.symbol, {
+        units: existing?.units || 0,
+        costBasis: existing?.costBasis || sharedCostBasisMap.get(row.symbol) || 0,
+      });
+    }
+
+    for (const row of sortedRows) {
+      if (row.modelPct <= 0) continue;
+      const execPriceStr = rebalancePrices[row.symbol];
+      const execPrice = parseFloat(execPriceStr);
+      if (!execPrice || isNaN(execPrice)) continue;
+
+      const targetValueCad = totalValueCadSummary * row.modelPct;
+      const targetUnits = row.priceCad > 0 ? targetValueCad / row.priceCad : 0;
+      const deltaUnits = targetUnits - row.units;
+      if (Math.abs(deltaUnits) < 0.5) continue;
+
+      const direction = deltaUnits > 0 ? "buy" as const : "sell" as const;
+      const fxRate = row.currency === "USD" ? usdCadRate : 1;
+      const execPriceCad = execPrice * fxRate;
+
+      // Update position: new units and weighted average ACB (in CAD)
+      const pos = updatedPositionMap.get(row.symbol)!;
+      const oldUnits = pos.units;
+      const oldCostBasis = pos.costBasis;
+      const newUnits = oldUnits + deltaUnits;
+
+      let newCostBasis = oldCostBasis;
+      if (direction === "buy" && newUnits > 0) {
+        // Weighted average: (oldUnits * oldACB + boughtUnits * execPriceCad) / newUnits
+        newCostBasis = (oldUnits * oldCostBasis + Math.abs(deltaUnits) * execPriceCad) / newUnits;
+      }
+      // For sells, ACB per unit stays the same
+
+      updatedPositionMap.set(row.symbol, { units: Math.max(0, newUnits), costBasis: parseFloat(newCostBasis.toFixed(4)) });
+
+      newPrices[row.symbol] = execPrice;
       transactions.push({
         id: generateId(),
         date: new Date().toISOString(),
         groupId: selectedGroupId,
         type: "rebalance",
-        symbol: trade.symbol,
-        direction: trade.action,
-        price,
-        targetWeight: trade.target,
+        symbol: row.symbol,
+        direction,
+        price: execPrice,
+        targetWeight: row.modelPct,
       });
     }
+
+    // Persist updated positions
+    const newPositions: PimPosition[] = [];
+    for (const [symbol, data] of updatedPositionMap) {
+      newPositions.push({ symbol, units: parseFloat(data.units.toFixed(4)), costBasis: data.costBasis });
+    }
+    // Merge: keep positions for symbols not in the rebalance
+    const existingPositions = currentPositions?.positions || [];
+    const rebalancedSymbols = new Set(updatedPositionMap.keys());
+    const keptPositions = existingPositions.filter((p) => !rebalancedSymbols.has(p.symbol));
+    const mergedPositions = [...keptPositions, ...newPositions];
+
+    const updatedPortfolio: PimPortfolioPositions = {
+      groupId: selectedGroupId,
+      profile: activeProfile,
+      positions: mergedPositions,
+      cashBalance: currentPositions?.cashBalance || 0,
+      lastUpdated: new Date().toISOString(),
+    };
+    const otherPortfolios = positions.filter(
+      (p) => !(p.groupId === selectedGroupId && p.profile === activeProfile)
+    );
+    // Sync costBasis across profiles
+    const costBasisMap = new Map<string, number>();
+    for (const p of newPositions) {
+      if (p.costBasis > 0) costBasisMap.set(p.symbol, p.costBasis);
+    }
+    const synced = otherPortfolios.map((p) => {
+      if (p.groupId !== selectedGroupId) return p;
+      const syncedPos = p.positions.map((pos) => {
+        const newCost = costBasisMap.get(pos.symbol);
+        return newCost != null ? { ...pos, costBasis: newCost } : pos;
+      });
+      return { ...p, positions: syncedPos };
+    });
+    const allPositions = [...synced, updatedPortfolio];
+    setPositions(allPositions);
+
+    try {
+      await fetch("/api/kv/pim-positions", {
+        method: "PUT",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ portfolios: allPositions }),
+      });
+    } catch { /* ignore */ }
+
+    // Update portfolio state (rebalance timestamp + transactions)
     const updatedState: PimPortfolioState = {
       ...pimPortfolioState,
       groupStates: [
@@ -540,7 +588,9 @@ export function PimPortfolio({ groups }: Props) {
     setShowRebalance(false);
     setRebalancePrices({});
     fetchPrices();
-  }, [rebalanceData, rebalancePrices, pimPortfolioState, selectedGroupId, groupState, updatePimPortfolioState, fetchPrices]);
+  }, [sortedRows, rebalancePrices, totalValueCadSummary, usdCadRate, positionMap, sharedCostBasisMap,
+      positions, currentPositions, activeProfile, selectedGroup, profileWeights,
+      pimPortfolioState, selectedGroupId, groupState, updatePimPortfolioState, fetchPrices]);
 
   const handleResolveBuyTicker = useCallback(async (ticker: string) => {
     if (!ticker.trim()) return;
@@ -688,13 +738,7 @@ export function PimPortfolio({ groups }: Props) {
               Cancel
             </button>
           )}
-          {!editMode && !groupState.lastRebalance && (
-            <button onClick={handleSetRebalance}
-              className="rounded-lg bg-blue-600 px-3 py-1.5 text-xs font-semibold text-white hover:bg-blue-700 transition-colors">
-              Set Initial Rebalance
-            </button>
-          )}
-          {!editMode && rebalanceData.hasLive && (
+          {!editMode && (
             <button onClick={() => setShowRebalance(!showRebalance)}
               className="rounded-lg bg-emerald-600 px-3 py-1.5 text-xs font-semibold text-white hover:bg-emerald-700 transition-colors">
               Rebalance
@@ -715,50 +759,81 @@ export function PimPortfolio({ groups }: Props) {
       </div>
 
       {/* Rebalance Panel */}
-      {showRebalance && rebalanceData.trades.length > 0 && (
+      {showRebalance && (
         <div className="rounded-2xl border border-emerald-200 bg-emerald-50/50 p-5 shadow-sm">
-          <h3 className="text-sm font-bold text-slate-800 mb-3">Rebalance Trades</h3>
-          <p className="text-xs text-slate-500 mb-3">Enter execution prices for each trade to rebalance back to model weights.</p>
+          <h3 className="text-sm font-bold text-slate-800 mb-3">Rebalance Preview</h3>
+          <p className="text-xs text-slate-500 mb-3">
+            Shows the units to buy or sell for each holding to match model weights.
+            Enter the execution price (in holding currency) to confirm — ACB (CAD) will be recalculated automatically.
+          </p>
           <div className="overflow-x-auto">
             <table className="w-full text-sm">
               <thead>
                 <tr className="border-b border-emerald-200 text-xs text-slate-500">
                   <th className="text-left py-2 font-semibold">Symbol</th>
-                  <th className="text-right py-2 font-semibold">Target</th>
-                  <th className="text-right py-2 font-semibold">Live</th>
+                  <th className="text-right py-2 font-semibold">Target %</th>
+                  <th className="text-right py-2 font-semibold">Current %</th>
                   <th className="text-right py-2 font-semibold">Drift</th>
                   <th className="text-center py-2 font-semibold">Action</th>
+                  <th className="text-right py-2 font-semibold">Current Units</th>
+                  <th className="text-right py-2 font-semibold">Target Units</th>
+                  <th className="text-right py-2 font-semibold">Δ Units</th>
                   <th className="text-right py-2 font-semibold">Mkt Price</th>
                   <th className="text-right py-2 font-semibold">Exec Price</th>
+                  <th className="text-right py-2 font-semibold">Cost (CAD)</th>
                 </tr>
               </thead>
               <tbody>
-                {rebalanceData.trades.map((t) => (
-                  <tr key={t.symbol} className="border-b border-emerald-100">
-                    <td className="py-2 font-mono text-xs font-semibold">
-                      <Link href={`/stock/${symbolToTicker(t.symbol).toLowerCase()}?from=positioning`} className="hover:underline hover:text-blue-600 transition-colors">
-                        {t.symbol}
-                      </Link>
-                    </td>
-                    <td className="py-2 text-right font-mono text-xs">{pct(t.target)}</td>
-                    <td className="py-2 text-right font-mono text-xs">{pct(t.live)}</td>
-                    <td className={`py-2 text-right font-mono text-xs font-semibold ${t.drift > 0 ? "text-emerald-600" : "text-red-500"}`}>
-                      {t.drift > 0 ? "+" : ""}{t.drift}bp
-                    </td>
-                    <td className="py-2 text-center">
-                      <span className={`rounded px-1.5 py-0.5 text-[10px] font-bold ${t.action === "sell" ? "bg-red-100 text-red-700" : "bg-emerald-100 text-emerald-700"}`}>
-                        {t.action.toUpperCase()}
-                      </span>
-                    </td>
-                    <td className="py-2 text-right font-mono text-xs text-slate-500">{t.currentPrice ? `$${t.currentPrice.toFixed(2)}` : "\u2014"}</td>
-                    <td className="py-2 text-right">
-                      <input type="number" step="0.01" placeholder="Price"
-                        value={rebalancePrices[t.symbol] || ""}
-                        onChange={(e) => setRebalancePrices((p) => ({ ...p, [t.symbol]: e.target.value }))}
-                        className="w-20 rounded border border-slate-200 px-2 py-1 text-xs text-right outline-none focus:border-emerald-300" />
-                    </td>
-                  </tr>
-                ))}
+                {sortedRows.filter((r) => r.modelPct > 0).map((r) => {
+                  const targetValueCad = totalValueCadSummary * r.modelPct;
+                  const targetUnits = r.priceCad > 0 ? targetValueCad / r.priceCad : 0;
+                  const deltaUnits = targetUnits - r.units;
+                  const absDelta = Math.abs(deltaUnits);
+                  const action = absDelta < 0.5 ? "HOLD" : deltaUnits > 0 ? "BUY" : "SELL";
+                  const execPrice = parseFloat(rebalancePrices[r.symbol] || "0");
+                  const fxRate = r.currency === "USD" ? usdCadRate : 1;
+                  const costCad = execPrice > 0 ? absDelta * execPrice * fxRate : 0;
+
+                  return (
+                    <tr key={r.symbol} className="border-b border-emerald-100">
+                      <td className="py-2 font-mono text-xs font-semibold">
+                        <Link href={`/stock/${symbolToTicker(r.symbol).toLowerCase()}?from=positioning`} className="hover:underline hover:text-blue-600 transition-colors">
+                          {r.symbol}
+                        </Link>
+                      </td>
+                      <td className="py-2 text-right font-mono text-xs">{pct(r.modelPct)}</td>
+                      <td className="py-2 text-right font-mono text-xs">{pct(r.currentPct)}</td>
+                      <td className={`py-2 text-right font-mono text-xs font-semibold ${r.driftPct > 0 ? "text-emerald-600" : r.driftPct < 0 ? "text-red-500" : "text-slate-400"}`}>
+                        {r.driftPct > 0 ? "+" : ""}{(r.driftPct * 10000).toFixed(0)}bp
+                      </td>
+                      <td className="py-2 text-center">
+                        {action !== "HOLD" && (
+                          <span className={`rounded px-1.5 py-0.5 text-[10px] font-bold ${action === "SELL" ? "bg-red-100 text-red-700" : "bg-emerald-100 text-emerald-700"}`}>
+                            {action}
+                          </span>
+                        )}
+                        {action === "HOLD" && <span className="text-[10px] text-slate-400">—</span>}
+                      </td>
+                      <td className="py-2 text-right font-mono text-xs">{r.units > 0 ? r.units.toFixed(2) : "—"}</td>
+                      <td className="py-2 text-right font-mono text-xs">{targetUnits.toFixed(2)}</td>
+                      <td className={`py-2 text-right font-mono text-xs font-semibold ${action === "BUY" ? "text-emerald-600" : action === "SELL" ? "text-red-500" : "text-slate-400"}`}>
+                        {action === "HOLD" ? "—" : `${deltaUnits > 0 ? "+" : ""}${deltaUnits.toFixed(2)}`}
+                      </td>
+                      <td className="py-2 text-right font-mono text-xs text-slate-500">{r.price > 0 ? `$${r.price.toFixed(2)}` : "—"}</td>
+                      <td className="py-2 text-right">
+                        {action !== "HOLD" ? (
+                          <input type="number" step="0.01" placeholder="Price"
+                            value={rebalancePrices[r.symbol] || ""}
+                            onChange={(e) => setRebalancePrices((p) => ({ ...p, [r.symbol]: e.target.value }))}
+                            className="w-20 rounded border border-slate-200 px-2 py-1 text-xs text-right outline-none focus:border-emerald-300" />
+                        ) : <span className="text-xs text-slate-400">—</span>}
+                      </td>
+                      <td className="py-2 text-right font-mono text-xs text-slate-600">
+                        {costCad > 0 ? `$${costCad.toFixed(2)}` : "—"}
+                      </td>
+                    </tr>
+                  );
+                })}
               </tbody>
             </table>
           </div>
@@ -837,7 +912,7 @@ export function PimPortfolio({ groups }: Props) {
       )}
 
       {/* Portfolio summary (all CAD) */}
-      <div className="grid grid-cols-2 sm:grid-cols-5 gap-3">
+      <div className="grid grid-cols-2 sm:grid-cols-6 gap-3">
         <div className="rounded-xl border border-slate-200 bg-white p-4 text-center">
           <div className="text-[10px] font-semibold text-slate-400 uppercase">Total Value (CAD)</div>
           <div className="text-lg font-bold text-slate-800">{fmtCurrency(totalValueCadSummary)}</div>
@@ -856,6 +931,12 @@ export function PimPortfolio({ groups }: Props) {
           <div className="text-[10px] font-semibold text-slate-400 uppercase">Return</div>
           <div className={`text-lg font-bold ${totalCostCad > 0 && totalValueCadSummary - totalCostCad >= 0 ? "text-emerald-600" : "text-red-500"}`}>
             {totalCostCad > 0 ? fmtGainLoss(((totalValueCadSummary - totalCostCad) / totalCostCad) * 100) : "--"}
+          </div>
+        </div>
+        <div className="rounded-xl border border-slate-200 bg-white p-4 text-center">
+          <div className="text-[10px] font-semibold text-slate-400 uppercase">Today</div>
+          <div className={`text-lg font-bold ${todayReturn != null && todayReturn >= 0 ? "text-emerald-600" : "text-red-500"}`}>
+            {todayReturn != null ? fmtGainLoss(todayReturn) : "--"}
           </div>
         </div>
         <div className="rounded-xl border border-slate-200 bg-white p-4 text-center">

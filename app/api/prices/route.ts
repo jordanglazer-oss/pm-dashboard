@@ -43,10 +43,11 @@ async function fetchFundservPrice(ticker: string): Promise<number | null> {
 }
 
 // Batch-fetch current prices from Yahoo Finance v8 chart API
-async function fetchPrice(ticker: string): Promise<number | null> {
+async function fetchPrice(ticker: string): Promise<{ price: number | null; previousClose: number | null }> {
   // FUNDSERV codes (mutual funds) — fetch NAV from Globe and Mail / Barchart
   if (isFundservCode(ticker)) {
-    return fetchFundservPrice(ticker);
+    const nav = await fetchFundservPrice(ticker);
+    return { price: nav, previousClose: null };
   }
   try {
     const yahooSymbol = toYahoo(ticker);
@@ -60,13 +61,17 @@ async function fetchPrice(ticker: string): Promise<number | null> {
         cache: "no-store",
       }
     );
-    if (!res.ok) return null;
+    if (!res.ok) return { price: null, previousClose: null };
     const data = await res.json();
     const meta = data?.chart?.result?.[0]?.meta;
     const price = meta?.regularMarketPrice ?? meta?.previousClose ?? null;
-    return price ? parseFloat(price.toFixed(2)) : null;
+    const previousClose = meta?.chartPreviousClose ?? meta?.previousClose ?? null;
+    return {
+      price: price ? parseFloat(price.toFixed(2)) : null,
+      previousClose: previousClose ? parseFloat(previousClose.toFixed(2)) : null,
+    };
   } catch {
-    return null;
+    return { price: null, previousClose: null };
   }
 }
 
@@ -80,16 +85,19 @@ export async function POST(request: NextRequest) {
     // Cap at 50 tickers to avoid abuse
     const batch = tickers.slice(0, 50) as string[];
     const results = await Promise.all(
-      batch.map(async (t) => ({ ticker: t, price: await fetchPrice(t) }))
+      batch.map(async (t) => ({ ticker: t, ...(await fetchPrice(t)) }))
     );
 
     const prices: Record<string, number | null> = {};
+    const previousCloses: Record<string, number | null> = {};
     for (const r of results) {
       prices[r.ticker] = r.price;
+      previousCloses[r.ticker] = r.previousClose;
     }
 
     return NextResponse.json({
       prices,
+      previousCloses,
       fetchedAt: new Date().toISOString(),
     });
   } catch (error) {
