@@ -154,20 +154,61 @@ export function PimModel({ groups }: Props) {
     ? ALPHA_WEIGHTS
     : selectedGroup?.profiles[activeProfile];
 
-  // For alpha: filter to equity + non-core holdings with re-normalized weights
+  // For alpha: equity-only, keep individual stock weights unchanged,
+  // redistribute ineligible/non-equity weight to core ETFs by currency
   const effectiveGroup = useMemo(() => {
     if (!selectedGroup) return selectedGroup;
     if (activeProfile !== "alpha") return selectedGroup;
 
-    const alphaHoldings = selectedGroup.holdings.filter(
-      (h) => h.assetClass === "equity" && !coreSymbols.has(symbolToTicker(h.symbol))
-    );
-    // Re-normalize weightInClass so they sum to 1.0
-    const totalWeight = alphaHoldings.reduce((s, h) => s + h.weightInClass, 0);
-    const normalized = totalWeight > 0
-      ? alphaHoldings.map((h) => ({ ...h, weightInClass: h.weightInClass / totalWeight }))
-      : alphaHoldings;
-    return { ...selectedGroup, holdings: normalized };
+    const equityHoldings = selectedGroup.holdings.filter((h) => h.assetClass === "equity");
+
+    // Compute excess weight from non-equity holdings (bonds, alternatives)
+    // and any ineligible equity stocks (0% weight or missing from model)
+    const equityTotal = equityHoldings.reduce((s, h) => s + h.weightInClass, 0);
+    const excessWeight = Math.max(0, 1 - equityTotal);
+
+    // Split excess by currency of the ineligible holdings
+    let cadExcess = 0;
+    let usdExcess = 0;
+    for (const h of selectedGroup.holdings) {
+      if (h.assetClass !== "equity") {
+        if (h.currency === "USD") usdExcess += h.weightInClass;
+        else cadExcess += h.weightInClass;
+      }
+    }
+    // If there's remaining excess not accounted for, split proportionally
+    const nonEquityTotal = cadExcess + usdExcess;
+    if (nonEquityTotal > 0 && excessWeight > 0) {
+      const scale = excessWeight / nonEquityTotal;
+      cadExcess *= scale;
+      usdExcess *= scale;
+    }
+
+    // Identify core ETFs that will absorb excess weight
+    const coreEtfs = { cad: [] as typeof equityHoldings, usd: [] as typeof equityHoldings };
+    for (const h of equityHoldings) {
+      if (coreSymbols.has(symbolToTicker(h.symbol))) {
+        if (h.currency === "USD") coreEtfs.usd.push(h);
+        else coreEtfs.cad.push(h);
+      }
+    }
+
+    // Build final holdings: alpha stocks keep original weights, core ETFs absorb excess
+    const adjusted = equityHoldings.map((h) => {
+      if (!coreSymbols.has(symbolToTicker(h.symbol))) return h; // alpha stock — unchanged
+
+      // Core ETF — add proportional share of currency-matched excess
+      const isUsd = h.currency === "USD";
+      const bucket = isUsd ? coreEtfs.usd : coreEtfs.cad;
+      const bucketExcess = isUsd ? usdExcess : cadExcess;
+      if (bucket.length === 0 || bucketExcess <= 0) return h;
+
+      const bucketTotal = bucket.reduce((s, e) => s + e.weightInClass, 0);
+      const share = bucketTotal > 0 ? (h.weightInClass / bucketTotal) * bucketExcess : 0;
+      return { ...h, weightInClass: h.weightInClass + share };
+    });
+
+    return { ...selectedGroup, holdings: adjusted };
   }, [selectedGroup, activeProfile, coreSymbols]);
 
   // Fetch live prices for all holdings

@@ -306,14 +306,42 @@ export async function POST() {
       const profileWeights = isAlpha ? ALPHA_WEIGHTS : group.profiles[model.profile as PimProfileType];
       if (!profileWeights) continue;
 
-      // For alpha: filter to equity + non-core holdings, re-normalize weights
+      // For alpha: equity-only, keep individual stock weights, excess → core ETFs by currency
       const effectiveHoldings = isAlpha
         ? (() => {
-            const alphaH = group.holdings.filter(
-              (h) => h.assetClass === "equity" && !coreSymbols.has(pimSymbolToTicker(h.symbol))
-            );
-            const total = alphaH.reduce((s, h) => s + h.weightInClass, 0);
-            return total > 0 ? alphaH.map((h) => ({ ...h, weightInClass: h.weightInClass / total })) : alphaH;
+            const equityH = group.holdings.filter((h) => h.assetClass === "equity");
+            const equityTotal = equityH.reduce((s, h) => s + h.weightInClass, 0);
+            const excess = Math.max(0, 1 - equityTotal);
+            let cadExcess = 0, usdExcess = 0;
+            for (const h of group.holdings) {
+              if (h.assetClass !== "equity") {
+                if (h.currency === "USD") usdExcess += h.weightInClass;
+                else cadExcess += h.weightInClass;
+              }
+            }
+            const nonEqTotal = cadExcess + usdExcess;
+            if (nonEqTotal > 0 && excess > 0) {
+              const scale = excess / nonEqTotal;
+              cadExcess *= scale;
+              usdExcess *= scale;
+            }
+            const coreBuckets = { cad: [] as typeof equityH, usd: [] as typeof equityH };
+            for (const h of equityH) {
+              if (coreSymbols.has(pimSymbolToTicker(h.symbol))) {
+                if (h.currency === "USD") coreBuckets.usd.push(h);
+                else coreBuckets.cad.push(h);
+              }
+            }
+            return equityH.map((h) => {
+              if (!coreSymbols.has(pimSymbolToTicker(h.symbol))) return h;
+              const isUsd = h.currency === "USD";
+              const bucket = isUsd ? coreBuckets.usd : coreBuckets.cad;
+              const bExcess = isUsd ? usdExcess : cadExcess;
+              if (bucket.length === 0 || bExcess <= 0) return h;
+              const bTotal = bucket.reduce((s, e) => s + e.weightInClass, 0);
+              const share = bTotal > 0 ? (h.weightInClass / bTotal) * bExcess : 0;
+              return { ...h, weightInClass: h.weightInClass + share };
+            });
           })()
         : group.holdings;
 
