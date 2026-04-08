@@ -84,7 +84,7 @@ type Props = {
 export function PimPortfolio({ groups }: Props) {
   const { uiPrefs, setUiPref, stocks, pimPortfolioState, updatePimPortfolioState, getGroupState, addStock, scoredStocks } = useStocks();
 
-  const [selectedGroupId, setSelectedGroupId] = useState(groups[0]?.id || "");
+  const selectedGroupId = "pim";
   const [selectedProfile, setSelectedProfile] = useState<PimProfileType>("allEquity");
   const [positions, setPositions] = useState<PimPortfolioPositions[]>([]);
   const [livePrices, setLivePrices] = useState<Record<string, number>>({});
@@ -642,18 +642,7 @@ export function PimPortfolio({ groups }: Props) {
     <div className="space-y-6">
       {/* Header bar */}
       <div className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
-        {/* Group selector */}
-        {groups.length > 1 && (
-          <select
-            value={selectedGroupId}
-            onChange={(e) => setSelectedGroupId(e.target.value)}
-            className="rounded-xl border border-slate-200 bg-white px-3 py-2 text-sm font-semibold text-slate-700 focus:outline-none focus:ring-2 focus:ring-blue-100"
-          >
-            {groups.map((g) => (
-              <option key={g.id} value={g.id}>{g.name}</option>
-            ))}
-          </select>
-        )}
+        <h2 className="text-lg font-bold text-slate-800">PIM</h2>
 
         {/* Profile tabs */}
         <div className="flex gap-1 rounded-xl bg-slate-100 p-1">
