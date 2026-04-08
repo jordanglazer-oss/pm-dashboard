@@ -277,8 +277,11 @@ export function PimPortfolio({ groups }: Props) {
       return { h, modelPct, units, costBasis, costBasisCad, price, priceCad, value, valueCad, costValue, costValueCad, fxRate };
     });
 
+    // Filter out holdings with 0% model weight for this profile
+    const activeRows = rawRows.filter((r) => r.modelPct > 0);
+
     // Second pass: compute current weights (based on CAD values) and actions
-    for (const r of rawRows) {
+    for (const r of activeRows) {
       const currentPct = totalValueCad > 0 ? r.valueCad / totalValueCad : 0;
       const driftPct = currentPct - r.modelPct;
       const gainLoss = r.costValueCad > 0 ? ((r.valueCad - r.costValueCad) / r.costValueCad) * 100 : 0;
