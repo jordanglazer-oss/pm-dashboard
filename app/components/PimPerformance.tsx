@@ -112,7 +112,7 @@ export function PimPerformance({ groupId, groupName, selectedProfile }: Props) {
   // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
 
-  // Refresh = append new daily values only (never recompute historical data)
+  // Refresh = recalculate last 2 trading days with latest prices + append new days
   const refreshPerformance = useCallback(async () => {
     setRefreshing(true);
     try {
@@ -231,17 +231,12 @@ export function PimPerformance({ groupId, groupName, selectedProfile }: Props) {
 
     // Check if any model's last date is before today
     const today = new Date().toISOString().split("T")[0];
-    const needsUpdate = groupModels.some((m) => {
-      if (m.history.length < 2) return false;
-      const lastDate = m.history[m.history.length - 1].date;
-      return lastDate < today;
-    });
-
-    // Also check it's a weekday (markets open)
+    // Always recalculate — the update endpoint handles recalculating
+    // the last 2 trading days with latest prices (intraday + mutual fund delays)
     const dayOfWeek = new Date().getDay();
     const isWeekday = dayOfWeek >= 1 && dayOfWeek <= 5;
 
-    if (needsUpdate && isWeekday) {
+    if (isWeekday) {
       autoUpdateDailyValue();
     }
   // eslint-disable-next-line react-hooks/exhaustive-deps
