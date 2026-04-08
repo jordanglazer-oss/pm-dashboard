@@ -344,6 +344,8 @@ export async function POST() {
       if (!trackingStart) continue;
 
       for (const profile of profiles) {
+        // Alpha only applies to PIM group
+        if (profile === "alpha" && group.id !== "pim") continue;
         if (!group.profiles[profile]) continue;
         const { history, intradayReturn } = computeModelReturns(
           group,

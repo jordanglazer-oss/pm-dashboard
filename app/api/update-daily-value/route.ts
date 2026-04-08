@@ -272,6 +272,8 @@ export async function POST() {
       if (!group) continue;
 
       const isAlpha = model.profile === "alpha";
+      // Alpha only applies to PIM group
+      if (isAlpha && model.groupId !== "pim") continue;
       const ALPHA_WEIGHTS = { cash: 0, fixedIncome: 0, equity: 1, alternatives: 0 };
       const profileWeights = isAlpha ? ALPHA_WEIGHTS : group.profiles[model.profile as PimProfileType];
       if (!profileWeights) continue;

@@ -136,9 +136,11 @@ export function PimModel({ groups }: Props) {
     const base = (["balanced", "growth", "allEquity"] as PimProfileType[]).filter(
       (p) => selectedGroup.profiles[p]
     );
-    // Alpha is always available if the group has equity holdings
-    const hasEquity = selectedGroup.holdings.some((h) => h.assetClass === "equity");
-    if (hasEquity) base.push("alpha");
+    // Alpha is only available for the PIM group
+    if (selectedGroup.id === "pim") {
+      const hasEquity = selectedGroup.holdings.some((h) => h.assetClass === "equity");
+      if (hasEquity) base.push("alpha");
+    }
     return base;
   }, [selectedGroup]);
 
