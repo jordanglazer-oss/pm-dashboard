@@ -3,8 +3,8 @@
   "configurations": [
     {
       "name": "pm-dashboard",
-      "runtimeExecutable": "npm",
-      "runtimeArgs": ["run", "dev"],
+      "runtimeExecutable": "/bin/bash",
+      "runtimeArgs": ["-c", "export PATH=/usr/local/bin:$PATH && npm run dev"],
       "port": 3000
     }
   ]

@@ -64,8 +64,8 @@ type HoldingRow = {
   units: number;
   price: number;        // market price in instrument currency
   priceCad: number;     // market price converted to CAD
-  costBasis: number;    // cost per unit in instrument currency
-  costBasisCad: number; // cost per unit in CAD
+  costBasis: number;    // cost per unit in CAD (user inputs in CAD)
+  costBasisCad: number; // same as costBasis (no FX conversion needed)
   value: number;        // market value in instrument currency
   valueCad: number;     // market value in CAD (for weight calculation)
   costValue: number;    // total cost in instrument currency
@@ -261,10 +261,10 @@ export function PimPortfolio({ groups }: Props) {
       const price = livePrices[h.symbol] || 0; // in instrument currency
       const fxRate = h.currency === "USD" ? usdCadRate : 1;
       const priceCad = price * fxRate;
-      const costBasisCad = costBasis * fxRate;
+      const costBasisCad = costBasis; // already entered in CAD by user
       const value = units * price; // in instrument currency
       const valueCad = units * priceCad; // in CAD
-      const costValue = units * costBasis; // in instrument currency
+      const costValue = units * costBasis; // in CAD (input is CAD)
       const costValueCad = units * costBasisCad; // ACB in CAD
 
       totalValueCad += valueCad;
