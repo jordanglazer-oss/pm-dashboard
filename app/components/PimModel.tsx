@@ -122,18 +122,51 @@ export function PimModel({ groups }: Props) {
 
   const groupState = useMemo(() => getGroupState(selectedGroupId), [getGroupState, selectedGroupId]);
 
+  // Build set of core-designated symbols (alpha model excludes these)
+  const coreSymbols = useMemo(() => {
+    const set = new Set<string>();
+    for (const s of stocks) {
+      if (s.designation === "core") set.add(s.ticker);
+    }
+    return set;
+  }, [stocks]);
+
   const availableProfiles = useMemo<PimProfileType[]>(() => {
     if (!selectedGroup) return [];
-    return (["balanced", "growth", "allEquity", "alpha"] as PimProfileType[]).filter(
+    const base = (["balanced", "growth", "allEquity"] as PimProfileType[]).filter(
       (p) => selectedGroup.profiles[p]
     );
+    // Alpha is always available if the group has equity holdings
+    const hasEquity = selectedGroup.holdings.some((h) => h.assetClass === "equity");
+    if (hasEquity) base.push("alpha");
+    return base;
   }, [selectedGroup]);
 
   const activeProfile = availableProfiles.includes(selectedProfile)
     ? selectedProfile
     : availableProfiles[0] || "balanced";
 
-  const profileWeights = selectedGroup?.profiles[activeProfile];
+  // Alpha profile = virtual 100% equity; otherwise use stored profile weights
+  const ALPHA_WEIGHTS = { cash: 0, fixedIncome: 0, equity: 1, alternatives: 0 };
+  const profileWeights = activeProfile === "alpha"
+    ? ALPHA_WEIGHTS
+    : selectedGroup?.profiles[activeProfile];
+
+  // For alpha: filter to equity + non-core holdings with re-normalized weights
+  const effectiveGroup = useMemo(() => {
+    if (!selectedGroup) return selectedGroup;
+    if (activeProfile !== "alpha") return selectedGroup;
+
+    const alphaHoldings = selectedGroup.holdings.filter(
+      (h) => h.assetClass === "equity" && !coreSymbols.has(symbolToTicker(h.symbol))
+    );
+    // Re-normalize weightInClass so they sum to 1.0
+    const totalWeight = alphaHoldings.reduce((s, h) => s + h.weightInClass, 0);
+    const normalized = totalWeight > 0
+      ? alphaHoldings.map((h) => ({ ...h, weightInClass: h.weightInClass / totalWeight }))
+      : alphaHoldings;
+    return { ...selectedGroup, holdings: normalized };
+  }, [selectedGroup, activeProfile, coreSymbols]);
 
   // Fetch live prices for all holdings
   const fetchPrices = useCallback(async () => {
@@ -172,9 +205,9 @@ export function PimModel({ groups }: Props) {
   useEffect(() => { fetchPrices(); }, [selectedGroupId]); // eslint-disable-line react-hooks/exhaustive-deps
 
   const computedHoldings = useMemo<PimComputedHolding[]>(() => {
-    if (!selectedGroup || !profileWeights) return [];
+    if (!effectiveGroup || !profileWeights) return [];
 
-    const holdings = selectedGroup.holdings;
+    const holdings = effectiveGroup.holdings;
     const rebalancePriceMap = groupState.lastRebalance?.prices || {};
 
     // Pre-compute sums of weightInClass by (assetClass, currency) for normalization
@@ -231,7 +264,7 @@ export function PimModel({ groups }: Props) {
         liveWeight, driftBps, currentPrice, rebalancePrice: rebalPrice,
       };
     });
-  }, [selectedGroup, profileWeights, livePrices, groupState]);
+  }, [effectiveGroup, profileWeights, livePrices, groupState]);
 
   const filteredHoldings = useMemo(() => {
     if (!holdingSearch.trim()) return computedHoldings;
