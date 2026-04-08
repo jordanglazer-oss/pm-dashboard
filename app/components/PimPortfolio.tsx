@@ -146,59 +146,74 @@ export function PimPortfolio({ groups }: Props) {
     ? ALPHA_WEIGHTS
     : selectedGroup?.profiles[activeProfile];
 
-  // For alpha: equity-only, keep individual stock weights unchanged,
-  // redistribute ineligible/non-equity weight to core ETFs by currency
+  // Reference PIM group for canonical individual stock weights
+  const pimGroup = useMemo(() => groups.find((g) => g.id === "pim"), [groups]);
+
   const effectiveGroup = useMemo(() => {
     if (!selectedGroup) return selectedGroup;
-    if (activeProfile !== "alpha") return selectedGroup;
 
-    const equityHoldings = selectedGroup.holdings.filter((h) => h.assetClass === "equity");
+    // Alpha: equity-only, exclude core ETFs, re-normalize proportionally
+    if (activeProfile === "alpha") {
+      const alphaHoldings = selectedGroup.holdings.filter(
+        (h) => h.assetClass === "equity" && !coreSymbols.has(symbolToTicker(h.symbol))
+      );
+      const totalWeight = alphaHoldings.reduce((s, h) => s + h.weightInClass, 0);
+      const normalized = totalWeight > 0
+        ? alphaHoldings.map((h) => ({ ...h, weightInClass: h.weightInClass / totalWeight }))
+        : alphaHoldings;
+      return { ...selectedGroup, holdings: normalized };
+    }
 
-    // Compute excess weight from non-equity holdings (bonds, alternatives)
-    const equityTotal = equityHoldings.reduce((s, h) => s + h.weightInClass, 0);
-    const excessWeight = Math.max(0, 1 - equityTotal);
+    // Non-PIM groups: keep individual stock weights from PIM, excess to core ETFs by currency
+    if (selectedGroup.id !== "pim" && pimGroup) {
+      const pimWeightMap = new Map<string, number>();
+      for (const h of pimGroup.holdings) {
+        if (h.assetClass === "equity") pimWeightMap.set(h.symbol, h.weightInClass);
+      }
 
-    // Split excess by currency of the ineligible holdings
-    let cadExcess = 0;
-    let usdExcess = 0;
-    for (const h of selectedGroup.holdings) {
-      if (h.assetClass !== "equity") {
-        if (h.currency === "USD") usdExcess += h.weightInClass;
-        else cadExcess += h.weightInClass;
+      const groupSymbols = new Set(selectedGroup.holdings.map((h) => h.symbol));
+      let cadMissing = 0;
+      let usdMissing = 0;
+      for (const h of pimGroup.holdings) {
+        if (h.assetClass === "equity" && !groupSymbols.has(h.symbol)) {
+          if (h.currency === "USD") usdMissing += h.weightInClass;
+          else cadMissing += h.weightInClass;
+        }
+      }
+
+      if (cadMissing > 0 || usdMissing > 0) {
+        const coreCad: string[] = [];
+        const coreUsd: string[] = [];
+        let coreCadTotal = 0;
+        let coreUsdTotal = 0;
+        for (const h of selectedGroup.holdings) {
+          if (h.assetClass === "equity" && coreSymbols.has(symbolToTicker(h.symbol))) {
+            const pimW = pimWeightMap.get(h.symbol) || h.weightInClass;
+            if (h.currency === "USD") { coreUsd.push(h.symbol); coreUsdTotal += pimW; }
+            else { coreCad.push(h.symbol); coreCadTotal += pimW; }
+          }
+        }
+
+        const adjusted = selectedGroup.holdings.map((h) => {
+          if (h.assetClass !== "equity") return h;
+          const pimW = pimWeightMap.get(h.symbol);
+          if (!coreSymbols.has(symbolToTicker(h.symbol))) {
+            return pimW != null ? { ...h, weightInClass: pimW } : h;
+          }
+          const basePimW = pimW || h.weightInClass;
+          const isUsd = h.currency === "USD";
+          const missing = isUsd ? usdMissing : cadMissing;
+          const bucketTotal = isUsd ? coreUsdTotal : coreCadTotal;
+          const share = bucketTotal > 0 ? (basePimW / bucketTotal) * missing : 0;
+          return { ...h, weightInClass: basePimW + share };
+        });
+
+        return { ...selectedGroup, holdings: adjusted };
       }
     }
-    const nonEquityTotal = cadExcess + usdExcess;
-    if (nonEquityTotal > 0 && excessWeight > 0) {
-      const scale = excessWeight / nonEquityTotal;
-      cadExcess *= scale;
-      usdExcess *= scale;
-    }
 
-    // Identify core ETFs that will absorb excess weight
-    const coreEtfs = { cad: [] as typeof equityHoldings, usd: [] as typeof equityHoldings };
-    for (const h of equityHoldings) {
-      if (coreSymbols.has(symbolToTicker(h.symbol))) {
-        if (h.currency === "USD") coreEtfs.usd.push(h);
-        else coreEtfs.cad.push(h);
-      }
-    }
-
-    // Build final holdings: alpha stocks keep original weights, core ETFs absorb excess
-    const adjusted = equityHoldings.map((h) => {
-      if (!coreSymbols.has(symbolToTicker(h.symbol))) return h;
-
-      const isUsd = h.currency === "USD";
-      const bucket = isUsd ? coreEtfs.usd : coreEtfs.cad;
-      const bucketExcess = isUsd ? usdExcess : cadExcess;
-      if (bucket.length === 0 || bucketExcess <= 0) return h;
-
-      const bucketTotal = bucket.reduce((s, e) => s + e.weightInClass, 0);
-      const share = bucketTotal > 0 ? (h.weightInClass / bucketTotal) * bucketExcess : 0;
-      return { ...h, weightInClass: h.weightInClass + share };
-    });
-
-    return { ...selectedGroup, holdings: adjusted };
-  }, [selectedGroup, activeProfile, coreSymbols]);
+    return selectedGroup;
+  }, [selectedGroup, activeProfile, coreSymbols, pimGroup]);
 
   // Load positions from KV
   useEffect(() => {

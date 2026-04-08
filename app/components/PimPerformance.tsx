@@ -93,10 +93,14 @@ export function PimPerformance({ groupId, groupName, selectedProfile }: Props) {
     // Build position map
     const posMap = new Map(positions.positions.map((p) => [p.symbol, p]));
 
-    // For alpha: all equity holdings (including core ETFs); otherwise filter by >0% model weight
+    // For alpha: equity-only, exclude core ETFs; otherwise filter by >0% model weight
     let activeHoldings;
     if (isAlpha) {
-      activeHoldings = group.holdings.filter((h) => h.assetClass === "equity");
+      activeHoldings = group.holdings.filter(
+        (h) => h.assetClass === "equity" && !coreSymbols.has(
+          h.symbol.endsWith("-T") ? h.symbol.replace(/-T$/, ".TO") : h.symbol
+        )
+      );
     } else {
       activeHoldings = group.holdings.filter((h) => {
         let assetAlloc = 0;
