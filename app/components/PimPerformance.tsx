@@ -1,7 +1,7 @@
 "use client";
 
 import React, { useState, useEffect, useMemo, useCallback, useRef } from "react";
-import type { PimPerformanceData, PimModelPerformance, PimProfileType, AppendixModelLedger } from "@/app/lib/pim-types";
+import type { PimPerformanceData, PimModelPerformance, PimProfileType, AppendixModelLedger, PimPortfolioPositions } from "@/app/lib/pim-types";
 import { useStocks } from "@/app/lib/StockContext";
 
 const PROFILE_LABELS: Record<PimProfileType, string> = {
@@ -42,7 +42,7 @@ type Props = {
 };
 
 export function PimPerformance({ groupId, groupName, selectedProfile }: Props) {
-  const { getGroupState } = useStocks();
+  const { getGroupState, pimModels } = useStocks();
   const groupState = getGroupState(groupId);
   const trackingStart = groupState?.trackingStart;
 
@@ -52,6 +52,107 @@ export function PimPerformance({ groupId, groupName, selectedProfile }: Props) {
   const [period, setPeriod] = useState("All");
   const [autoUpdating, setAutoUpdating] = useState(false);
   const [seeded, setSeeded] = useState(false);
+
+  // Live today's return — computed using same methodology as Positioning tab
+  const [liveTodayReturn, setLiveTodayReturn] = useState<number | null>(null);
+
+  const computeLiveTodayReturn = useCallback(async () => {
+    const group = pimModels.groups.find((g) => g.id === groupId);
+    if (!group) return;
+
+    const profileWeights = group.profiles[selectedProfile];
+    if (!profileWeights) return;
+
+    // Load positions
+    let positions: PimPortfolioPositions | null = null;
+    try {
+      const res = await fetch("/api/kv/pim-positions");
+      if (res.ok) {
+        const data = await res.json();
+        const portfolios: PimPortfolioPositions[] = data.portfolios || [];
+        positions = portfolios.find(
+          (p) => p.groupId === groupId && p.profile === selectedProfile
+        ) || null;
+      }
+    } catch { /* ignore */ }
+
+    if (!positions || positions.positions.length === 0) return;
+
+    // Build position map
+    const posMap = new Map(positions.positions.map((p) => [p.symbol, p]));
+
+    // Filter holdings with >0% model weight (same as Positioning tab)
+    const activeHoldings = group.holdings.filter((h) => {
+      let assetAlloc = 0;
+      if (h.assetClass === "fixedIncome") assetAlloc = profileWeights.fixedIncome;
+      else if (h.assetClass === "equity") assetAlloc = profileWeights.equity;
+      else if (h.assetClass === "alternative") assetAlloc = profileWeights.alternatives;
+      return h.weightInClass * assetAlloc > 0;
+    });
+
+    // Fetch live prices + previousCloses for all active holdings
+    const allSymbols = activeHoldings.map((h) => h.symbol);
+    const tickers = allSymbols.map((s) => {
+      if (s.endsWith("-T")) return s.replace("-T", ".TO");
+      if (s.endsWith(".U")) return s.replace(".U", "-U.TO");
+      return s;
+    });
+
+    try {
+      const [priceRes, fxRes] = await Promise.all([
+        fetch("/api/prices", {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ tickers }),
+        }),
+        fetch("/api/prices", {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ tickers: ["USDCAD=X"] }),
+        }),
+      ]);
+
+      if (!priceRes.ok) return;
+      const priceData = await priceRes.json();
+
+      let usdCadRate = 1;
+      if (fxRes.ok) {
+        const fxData = await fxRes.json();
+        const rate = fxData.prices?.["USDCAD=X"];
+        if (rate && rate > 0) usdCadRate = rate;
+      }
+
+      // Compute today's return — identical to PimPortfolio.todayReturn
+      let prevTotalCad = 0;
+      let currTotalCad = 0;
+      for (const h of activeHoldings) {
+        const pos = posMap.get(h.symbol);
+        if (!pos || pos.units <= 0) continue;
+
+        let yahoo = h.symbol;
+        if (h.symbol.endsWith("-T")) yahoo = h.symbol.replace("-T", ".TO");
+        else if (h.symbol.endsWith(".U")) yahoo = h.symbol.replace(".U", "-U.TO");
+
+        const currentPrice = priceData.prices?.[yahoo] ?? priceData.prices?.[h.symbol];
+        const prevClose = priceData.previousCloses?.[yahoo] ?? priceData.previousCloses?.[h.symbol];
+
+        if (prevClose == null || prevClose <= 0 || currentPrice == null) continue;
+
+        const fxRate = h.currency === "USD" ? usdCadRate : 1;
+        prevTotalCad += pos.units * prevClose * fxRate;
+        currTotalCad += pos.units * currentPrice * fxRate;
+      }
+
+      if (prevTotalCad > 0) {
+        setLiveTodayReturn(((currTotalCad - prevTotalCad) / prevTotalCad) * 100);
+      }
+    } catch { /* ignore */ }
+  }, [groupId, selectedProfile, pimModels]);
+
+  // Compute live today's return on mount and when profile changes
+  useEffect(() => {
+    computeLiveTodayReturn();
+  }, [computeLiveTodayReturn]);
 
   // Load cached performance data, validate against Appendix (source of truth)
   useEffect(() => {
@@ -127,7 +228,8 @@ export function PimPerformance({ groupId, groupName, selectedProfile }: Props) {
       }
     } catch { /* ignore */ }
     setRefreshing(false);
-  }, []);
+    computeLiveTodayReturn();
+  }, [computeLiveTodayReturn]);
 
   // Restore performance data from Appendix (immutable source of truth)
   const seedFromAppendix = useCallback(async (ledgersArg?: AppendixModelLedger[]) => {
@@ -301,10 +403,10 @@ export function PimPerformance({ groupId, groupName, selectedProfile }: Props) {
       annualizedVol,
       lastValue: last.value,
       lastDate: last.date,
-      lastDailyReturn: last.dailyReturn,
+      lastDailyReturn: liveTodayReturn ?? last.dailyReturn,
       days,
     };
-  }, [filteredHistory]);
+  }, [filteredHistory, liveTodayReturn]);
 
   // Calendar year returns
   const calendarYearReturns = useMemo(() => {
