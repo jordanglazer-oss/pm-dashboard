@@ -154,21 +154,80 @@ export function PimModel({ groups }: Props) {
     ? ALPHA_WEIGHTS
     : selectedGroup?.profiles[activeProfile];
 
-  // For alpha: filter to equity + non-core holdings with re-normalized weights
+  // Reference PIM group for canonical individual stock weights
+  const pimGroup = useMemo(() => groups.find((g) => g.id === "pim"), [groups]);
+
   const effectiveGroup = useMemo(() => {
     if (!selectedGroup) return selectedGroup;
-    if (activeProfile !== "alpha") return selectedGroup;
 
-    const alphaHoldings = selectedGroup.holdings.filter(
-      (h) => h.assetClass === "equity" && !coreSymbols.has(symbolToTicker(h.symbol))
-    );
-    // Re-normalize weightInClass so they sum to 1.0
-    const totalWeight = alphaHoldings.reduce((s, h) => s + h.weightInClass, 0);
-    const normalized = totalWeight > 0
-      ? alphaHoldings.map((h) => ({ ...h, weightInClass: h.weightInClass / totalWeight }))
-      : alphaHoldings;
-    return { ...selectedGroup, holdings: normalized };
-  }, [selectedGroup, activeProfile, coreSymbols]);
+    // Alpha: equity-only, exclude core ETFs, re-normalize proportionally
+    if (activeProfile === "alpha") {
+      const alphaHoldings = selectedGroup.holdings.filter(
+        (h) => h.assetClass === "equity" && !coreSymbols.has(symbolToTicker(h.symbol))
+      );
+      const totalWeight = alphaHoldings.reduce((s, h) => s + h.weightInClass, 0);
+      const normalized = totalWeight > 0
+        ? alphaHoldings.map((h) => ({ ...h, weightInClass: h.weightInClass / totalWeight }))
+        : alphaHoldings;
+      return { ...selectedGroup, holdings: normalized };
+    }
+
+    // Non-PIM groups: keep individual stock weights from PIM, excess to core ETFs by currency
+    if (selectedGroup.id !== "pim" && pimGroup) {
+      const pimWeightMap = new Map<string, number>();
+      for (const h of pimGroup.holdings) {
+        if (h.assetClass === "equity") pimWeightMap.set(h.symbol, h.weightInClass);
+      }
+
+      // Find which PIM equity holdings are missing from this group
+      const groupSymbols = new Set(selectedGroup.holdings.map((h) => h.symbol));
+      let cadMissing = 0;
+      let usdMissing = 0;
+      for (const h of pimGroup.holdings) {
+        if (h.assetClass === "equity" && !groupSymbols.has(h.symbol)) {
+          if (h.currency === "USD") usdMissing += h.weightInClass;
+          else cadMissing += h.weightInClass;
+        }
+      }
+
+      if (cadMissing > 0 || usdMissing > 0) {
+        // Identify core ETFs in this group by currency
+        const coreCad: string[] = [];
+        const coreUsd: string[] = [];
+        let coreCadTotal = 0;
+        let coreUsdTotal = 0;
+        for (const h of selectedGroup.holdings) {
+          if (h.assetClass === "equity" && coreSymbols.has(symbolToTicker(h.symbol))) {
+            const pimW = pimWeightMap.get(h.symbol) || h.weightInClass;
+            if (h.currency === "USD") { coreUsd.push(h.symbol); coreUsdTotal += pimW; }
+            else { coreCad.push(h.symbol); coreCadTotal += pimW; }
+          }
+        }
+
+        const adjusted = selectedGroup.holdings.map((h) => {
+          if (h.assetClass !== "equity") return h;
+
+          // Non-core: use PIM weight
+          const pimW = pimWeightMap.get(h.symbol);
+          if (!coreSymbols.has(symbolToTicker(h.symbol))) {
+            return pimW != null ? { ...h, weightInClass: pimW } : h;
+          }
+
+          // Core ETF: PIM weight + proportional share of missing stocks' weight
+          const basePimW = pimW || h.weightInClass;
+          const isUsd = h.currency === "USD";
+          const missing = isUsd ? usdMissing : cadMissing;
+          const bucketTotal = isUsd ? coreUsdTotal : coreCadTotal;
+          const share = bucketTotal > 0 ? (basePimW / bucketTotal) * missing : 0;
+          return { ...h, weightInClass: basePimW + share };
+        });
+
+        return { ...selectedGroup, holdings: adjusted };
+      }
+    }
+
+    return selectedGroup;
+  }, [selectedGroup, activeProfile, coreSymbols, pimGroup]);
 
   // Fetch live prices for all holdings
   const fetchPrices = useCallback(async () => {

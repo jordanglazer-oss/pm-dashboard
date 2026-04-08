@@ -306,7 +306,7 @@ export async function POST() {
       const profileWeights = isAlpha ? ALPHA_WEIGHTS : group.profiles[model.profile as PimProfileType];
       if (!profileWeights) continue;
 
-      // For alpha: filter to equity + non-core holdings, re-normalize weights
+      // For alpha: equity-only, exclude core ETFs, re-normalize proportionally
       const effectiveHoldings = isAlpha
         ? (() => {
             const alphaH = group.holdings.filter(

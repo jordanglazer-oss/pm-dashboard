@@ -93,7 +93,7 @@ export function PimPerformance({ groupId, groupName, selectedProfile }: Props) {
     // Build position map
     const posMap = new Map(positions.positions.map((p) => [p.symbol, p]));
 
-    // For alpha: filter to equity + non-core; otherwise filter by >0% model weight
+    // For alpha: equity-only, exclude core ETFs; otherwise filter by >0% model weight
     let activeHoldings;
     if (isAlpha) {
       activeHoldings = group.holdings.filter(
