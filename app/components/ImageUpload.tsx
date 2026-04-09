@@ -134,7 +134,7 @@ export function ImageUpload({ section, sectionLabel, attachments, onAdd, onRemov
                   e.stopPropagation();
                   onRemove(att.id);
                 }}
-                className="absolute -top-1.5 -right-1.5 hidden group-hover:flex h-5 w-5 items-center justify-center rounded-full bg-red-500 text-white text-xs font-bold shadow"
+                className="absolute -top-1.5 -right-1.5 flex md:hidden md:group-hover:flex h-5 w-5 items-center justify-center rounded-full bg-red-500 text-white text-xs font-bold shadow"
                 title="Remove"
               >
                 &times;
