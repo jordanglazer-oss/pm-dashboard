@@ -952,7 +952,7 @@ export function PimPortfolio({ groups }: Props) {
                 className="w-full rounded-lg border border-slate-200 bg-white px-3 py-2 text-sm outline-none focus:border-amber-300">
                 <option value="">None \u2014 buy only</option>
                 {computedHoldingsForSwitch.filter((h) => h.weightInPortfolio > 0).map((h) => (
-                  <option key={h.symbol} value={h.symbol}>{h.symbol} \u2014 {h.name}</option>
+                  <option key={h.symbol} value={h.symbol}>{symbolToTicker(h.symbol)} — {h.name}</option>
                 ))}
               </select>
               {switchSell.symbol && (
