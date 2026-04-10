@@ -21,6 +21,7 @@ const ZERO_SCORES: Record<ScoreKey, number> = {
   trackRecord: 0, ownershipTrends: 0,
 };
 import { useStocks } from "@/app/lib/StockContext";
+import { isMarketOpenOrAfterET } from "@/app/lib/market-hours";
 
 function generateId(): string {
   return Date.now().toString(36) + Math.random().toString(36).slice(2, 8);
@@ -440,6 +441,10 @@ export function PimPortfolio({ groups }: Props) {
 
   // Today's return: weighted sum of each holding's daily % change (prev close → current price)
   const todayReturn = useMemo(() => {
+    // Pre-market data is unreliable: Yahoo's regularMarketPrice still
+    // reports yesterday's close before 9:30 AM ET, so the computed return
+    // would actually be yesterday's return mislabeled as today's.
+    if (!isMarketOpenOrAfterET()) return null;
     if (holdingRows.length === 0) return null;
     let prevTotalCad = 0;
     let currTotalCad = 0;
