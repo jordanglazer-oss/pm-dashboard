@@ -5,7 +5,7 @@ import Link from "next/link";
 import { ImageUpload, type BriefAttachment } from "@/app/components/ImageUpload";
 import { useStocks } from "@/app/lib/StockContext";
 import { isScoreable } from "@/app/lib/scoring";
-import type { PimPerformanceData } from "@/app/lib/pim-types";
+import type { AppendixData } from "@/app/lib/pim-types";
 
 /* ─── Types ─── */
 type AllocationRow = {
@@ -46,17 +46,20 @@ type AAPerformanceData = {
 
 type PeriodKey = "ytd" | "1d" | "1w" | "1m" | "3m" | "6m" | "1y" | "2y" | "3y" | "5y";
 
-const PERIOD_COLS: { key: PeriodKey; label: string }[] = [
-  { key: "ytd", label: "YTD" },
-  { key: "1d", label: "1D" },
-  { key: "1w", label: "1W" },
-  { key: "1m", label: "1M" },
-  { key: "3m", label: "3M" },
-  { key: "6m", label: "6M" },
-  { key: "1y", label: "1Y" },
-  { key: "2y", label: "2Y" },
-  { key: "3y", label: "3Y" },
-  { key: "5y", label: "5Y" },
+// `annualized` means the column shows CAGR (annualized return) instead of
+// the raw cumulative return over the window. We annualize anything ≥ 1Y so
+// the table is comparable across periods at a glance.
+const PERIOD_COLS: { key: PeriodKey; label: string; annualized: boolean }[] = [
+  { key: "ytd", label: "YTD", annualized: false },
+  { key: "1d", label: "1D", annualized: false },
+  { key: "1w", label: "1W", annualized: false },
+  { key: "1m", label: "1M", annualized: false },
+  { key: "3m", label: "3M", annualized: false },
+  { key: "6m", label: "6M", annualized: false },
+  { key: "1y", label: "1Y", annualized: true },
+  { key: "2y", label: "2Y", annualized: true },
+  { key: "3y", label: "3Y", annualized: true },
+  { key: "5y", label: "5Y", annualized: true },
 ];
 
 type AutoPerfRow = { name: string } & Record<PeriodKey, number | null>;
@@ -459,19 +462,24 @@ type ValuePoint = { date: string; value: number };
 /**
  * Trading-day counts that mirror PimPerformance.tsx's PERIOD_OPTIONS so the
  * AA & Perf table matches the PIM Model page exactly. The values represent
- * the trading-day window length: e.g. 1Y = "last 252 trading days" — the
- * same convention used by every other PIM screen.
+ * the trading-day window length (e.g. 1Y = last 252 trading days — the same
+ * convention used by every other PIM screen). `years` is set when the period
+ * should be reported as an annualized CAGR rather than a raw cumulative
+ * return; sub-1Y periods are reported as raw cumulative.
  */
-const PERIOD_TRADING_DAYS: Record<Exclude<PeriodKey, "ytd">, number> = {
-  "1d": 1,
-  "1w": 5,
-  "1m": 21,
-  "3m": 63,
-  "6m": 126,
-  "1y": 252,
-  "2y": 504,
-  "3y": 756,
-  "5y": 1260,
+const PERIOD_TRADING_DAYS: Record<
+  Exclude<PeriodKey, "ytd">,
+  { days: number; years: number | null }
+> = {
+  "1d": { days: 1, years: null },
+  "1w": { days: 5, years: null },
+  "1m": { days: 21, years: null },
+  "3m": { days: 63, years: null },
+  "6m": { days: 126, years: null },
+  "1y": { days: 252, years: 1 },
+  "2y": { days: 504, years: 2 },
+  "3y": { days: 756, years: 3 },
+  "5y": { days: 1260, years: 5 },
 };
 
 /**
@@ -495,14 +503,18 @@ function normalizeHistory(history: ValuePoint[]): ValuePoint[] {
 /**
  * Compute period returns for a value-history series using the same
  * trading-day-slice methodology as PimPerformance.tsx. For each period
- * we look at the entry `tradingDays` rows back from the last entry and
- * return (last/start − 1) × 100. If the history doesn't span enough
- * trading days, the period returns null (rather than falling back to
- * since-inception, which would mislabel the row).
+ * we look at the entry `days` rows back from the last entry. If the
+ * history doesn't span that many trading days, the period returns null
+ * (rather than falling back to since-inception, which would mislabel
+ * the row).
+ *
+ * Sub-1Y periods are reported as the raw cumulative return over the
+ * window: (last/start − 1) × 100. Periods with `years` set (1Y, 2Y, 3Y,
+ * 5Y) are reported as annualized CAGR: ((last/start)^(1/years) − 1) × 100.
  *
  * YTD is special-cased to use the last close of the prior calendar year
  * as the baseline (matching the Calendar Year Returns methodology on
- * the PIM Model page).
+ * the PIM Model page) and is always reported as raw cumulative.
  */
 function computePeriodReturns(rawHistory: ValuePoint[]): Record<PeriodKey, number | null> {
   const empty: Record<PeriodKey, number | null> = {
@@ -514,29 +526,35 @@ function computePeriodReturns(rawHistory: ValuePoint[]): Record<PeriodKey, numbe
   const last = history[history.length - 1];
   if (!last.value || last.value <= 0) return empty;
 
-  const pct = (start: ValuePoint | null): number | null => {
+  const cumulativePct = (start: ValuePoint | null): number | null => {
     if (!start || !start.value || start.value <= 0) return null;
     return parseFloat((((last.value / start.value) - 1) * 100).toFixed(2));
+  };
+
+  const annualizedPct = (start: ValuePoint | null, years: number): number | null => {
+    if (!start || !start.value || start.value <= 0 || years <= 0) return null;
+    return parseFloat(((Math.pow(last.value / start.value, 1 / years) - 1) * 100).toFixed(2));
   };
 
   const result: Record<PeriodKey, number | null> = { ...empty };
 
   for (const key of Object.keys(PERIOD_TRADING_DAYS) as Array<keyof typeof PERIOD_TRADING_DAYS>) {
-    const tradingDays = PERIOD_TRADING_DAYS[key];
-    // Need at least `tradingDays + 1` entries — one for the start, one
-    // for the end, plus the days in between. Anything shorter means the
-    // history doesn't actually cover this period.
-    if (history.length < tradingDays + 1) {
+    const { days, years } = PERIOD_TRADING_DAYS[key];
+    // Need at least `days + 1` entries — one for the start, one for the
+    // end, plus the days in between. Anything shorter means the history
+    // doesn't actually cover this period.
+    if (history.length < days + 1) {
       result[key] = null;
       continue;
     }
-    const start = history[history.length - 1 - tradingDays];
-    result[key] = pct(start);
+    const start = history[history.length - 1 - days];
+    result[key] = years != null ? annualizedPct(start, years) : cumulativePct(start);
   }
 
   // YTD: last entry of prior calendar year (Dec 31). Falls back to null
   // if the series doesn't extend into the prior year — same convention
-  // as PimPerformance's filteredHistory YTD prepend.
+  // as PimPerformance's filteredHistory YTD prepend. Reported as raw
+  // cumulative (not annualized) since YTD is a partial-year window.
   const currentYear = new Date().getFullYear();
   const ytdCutoff = `${currentYear}-01-01`;
   let ytdBaseline: ValuePoint | null = null;
@@ -544,7 +562,7 @@ function computePeriodReturns(rawHistory: ValuePoint[]): Record<PeriodKey, numbe
     if (e.date < ytdCutoff) ytdBaseline = e;
     else break;
   }
-  result.ytd = pct(ytdBaseline);
+  result.ytd = cumulativePct(ytdBaseline);
 
   return result;
 }
@@ -553,7 +571,7 @@ function computePeriodReturns(rawHistory: ValuePoint[]): Record<PeriodKey, numbe
 export default function AAPerformancePage() {
   const [data, setData] = useState<AAPerformanceData>(defaultData);
   const [loading, setLoading] = useState(true);
-  const [pimData, setPimData] = useState<PimPerformanceData | null>(null);
+  const [appendixData, setAppendixData] = useState<AppendixData | null>(null);
   // Start as loading so the "refreshing…" indicator shows on first paint
   // without needing to call setState inside the effect.
   const [pimLoading, setPimLoading] = useState(true);
@@ -596,17 +614,18 @@ export default function AAPerformancePage() {
   }, []);
 
   /* Fetch PIM performance data on mount.
-   * Reads from `/api/kv/pim-performance` — the same Redis-cached source
-   * `PimPerformance.tsx` uses — so the AA & Perf table sees the exact
-   * dataset displayed on the PIM Model page (including Alpha entries
-   * seeded from the Appendix by `update-daily-value`). We deliberately
-   * do NOT call POST `/api/pim-performance`: that endpoint recomputes
-   * from scratch and drops Appendix-only rows like Alpha. */
+   * Reads from `/api/kv/appendix-daily-values` — the immutable source of
+   * truth for daily index values. We deliberately do NOT read from
+   * `/api/kv/pim-performance`: that cache is only populated when the user
+   * visits the PIM Model page (PimPerformance.tsx's seedFromAppendix), and
+   * Alpha is missing from it on a fresh load. The Appendix always has all
+   * four profiles (balanced/growth/allEquity/alpha), so this ensures the
+   * AA & Perf table — and Alpha specifically — populates on first visit. */
   useEffect(() => {
-    fetch("/api/kv/pim-performance")
+    fetch("/api/kv/appendix-daily-values")
       .then((r) => r.json())
       .then((res) => {
-        if (res?.models) setPimData(res as PimPerformanceData);
+        if (res?.ledgers) setAppendixData(res as AppendixData);
       })
       .catch(() => {})
       .finally(() => setPimLoading(false));
@@ -722,10 +741,11 @@ export default function AAPerformancePage() {
   );
 
   /* ─── Auto-computed Performance rows ─── */
-  // Builds a fixed set of rows from PIM model histories and live index data:
-  //   • PIM Balanced / Growth / All-Equity / Alpha — pulled straight from
-  //     the same `pim-performance` data the PIM Model page renders, so the
-  //     numbers stay in sync with that screen.
+  // Builds a fixed set of rows from Appendix ledgers and live index data:
+  //   • PIM Balanced / Growth / All-Equity / Alpha — pulled directly from
+  //     the Appendix (the immutable source of truth for daily index values),
+  //     so all four profiles always populate, regardless of whether the user
+  //     has visited the PIM Model page yet.
   //   • S&P 500 / S&P/TSX Composite — pulled from /api/index-history (Yahoo
   //     ^GSPC and ^GSPTSE).
   // Period returns for both are computed from the same value-history series
@@ -740,11 +760,9 @@ export default function AAPerformancePage() {
       { profile: "alpha", label: "PIM Alpha" },
     ];
     for (const p of pimProfiles) {
-      const model = pimData?.models.find(
-        (m) => m.groupId === "pim" && m.profile === p.profile
-      );
-      const history: ValuePoint[] = model
-        ? model.history.map((h) => ({ date: h.date, value: h.value }))
+      const ledger = appendixData?.ledgers.find((l) => l.profile === p.profile);
+      const history: ValuePoint[] = ledger
+        ? ledger.entries.map((e) => ({ date: e.date, value: e.value }))
         : [];
       rows.push({ name: p.label, ...computePeriodReturns(history) });
     }
@@ -755,7 +773,7 @@ export default function AAPerformancePage() {
     }
 
     return rows;
-  }, [pimData, indexes]);
+  }, [appendixData, indexes]);
 
   if (loading) {
     return (
@@ -811,6 +829,11 @@ export default function AAPerformancePage() {
                       className="px-3 py-2.5 text-center text-xs font-semibold text-slate-500 uppercase tracking-wider"
                     >
                       {col.label}
+                      {col.annualized && (
+                        <div className="text-[9px] font-normal normal-case text-slate-400 mt-0.5">
+                          ann.
+                        </div>
+                      )}
                     </th>
                   ))}
                 </tr>
