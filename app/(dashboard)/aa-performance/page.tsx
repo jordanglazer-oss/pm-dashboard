@@ -5,7 +5,7 @@ import Link from "next/link";
 import { ImageUpload, type BriefAttachment } from "@/app/components/ImageUpload";
 import { useStocks } from "@/app/lib/StockContext";
 import { isScoreable } from "@/app/lib/scoring";
-import type { AppendixData } from "@/app/lib/pim-types";
+import type { AppendixData, PimPerformanceData } from "@/app/lib/pim-types";
 
 /* ─── Types ─── */
 type AllocationRow = {
@@ -571,6 +571,7 @@ function computePeriodReturns(rawHistory: ValuePoint[]): Record<PeriodKey, numbe
 export default function AAPerformancePage() {
   const [data, setData] = useState<AAPerformanceData>(defaultData);
   const [loading, setLoading] = useState(true);
+  const [pimData, setPimData] = useState<PimPerformanceData | null>(null);
   const [appendixData, setAppendixData] = useState<AppendixData | null>(null);
   // Start as loading so the "refreshing…" indicator shows on first paint
   // without needing to call setState inside the effect.
@@ -613,22 +614,47 @@ export default function AAPerformancePage() {
       .catch(() => setLoading(false));
   }, []);
 
-  /* Fetch PIM performance data on mount.
-   * Reads from `/api/kv/appendix-daily-values` — the immutable source of
-   * truth for daily index values. We deliberately do NOT read from
-   * `/api/kv/pim-performance`: that cache is only populated when the user
-   * visits the PIM Model page (PimPerformance.tsx's seedFromAppendix), and
-   * Alpha is missing from it on a fresh load. The Appendix always has all
-   * four profiles (balanced/growth/allEquity/alpha), so this ensures the
-   * AA & Perf table — and Alpha specifically — populates on first visit. */
+  /* Fetch PIM performance data on mount from BOTH sources:
+   *
+   *   • `/api/kv/pim-performance` — the same Redis-cached source the PIM
+   *     Model page (PimPerformance.tsx) reads, so non-Alpha rows match
+   *     that screen exactly. This cache contains the full historical tail
+   *     loaded by `import-performance` plus the daily updates appended by
+   *     `update-daily-value`.
+   *
+   *   • `/api/kv/appendix-daily-values` — the immutable Appendix ledger,
+   *     used as a fallback for any profile missing from `pim-performance`.
+   *     In practice this covers the Alpha row, which is sometimes seeded
+   *     into pim-performance only after `update-daily-value` runs.
+   *
+   * For each PIM profile we prefer pim-performance, falling back to the
+   * Appendix when the profile isn't present. */
   useEffect(() => {
+    let pimDone = false;
+    let appendixDone = false;
+    const checkDone = () => {
+      if (pimDone && appendixDone) setPimLoading(false);
+    };
+    fetch("/api/kv/pim-performance")
+      .then((r) => r.json())
+      .then((res) => {
+        if (res?.models) setPimData(res as PimPerformanceData);
+      })
+      .catch(() => {})
+      .finally(() => {
+        pimDone = true;
+        checkDone();
+      });
     fetch("/api/kv/appendix-daily-values")
       .then((r) => r.json())
       .then((res) => {
         if (res?.ledgers) setAppendixData(res as AppendixData);
       })
       .catch(() => {})
-      .finally(() => setPimLoading(false));
+      .finally(() => {
+        appendixDone = true;
+        checkDone();
+      });
   }, []);
 
   /* Fetch index histories (S&P 500, S&P/TSX) on mount */
@@ -741,11 +767,12 @@ export default function AAPerformancePage() {
   );
 
   /* ─── Auto-computed Performance rows ─── */
-  // Builds a fixed set of rows from Appendix ledgers and live index data:
-  //   • PIM Balanced / Growth / All-Equity / Alpha — pulled directly from
-  //     the Appendix (the immutable source of truth for daily index values),
-  //     so all four profiles always populate, regardless of whether the user
-  //     has visited the PIM Model page yet.
+  // Builds a fixed set of rows from PIM model histories and live index data:
+  //   • PIM Balanced / Growth / All-Equity / Alpha — for each profile, prefer
+  //     the `pim-performance` cache (matches the PIM Model page exactly,
+  //     including the historical tail loaded by `import-performance`). Fall
+  //     back to the Appendix ledger when a profile is missing from the cache
+  //     (typically Alpha on a fresh load before `update-daily-value` seeds).
   //   • S&P 500 / S&P/TSX Composite — pulled from /api/index-history (Yahoo
   //     ^GSPC and ^GSPTSE).
   // Period returns for both are computed from the same value-history series
@@ -760,10 +787,20 @@ export default function AAPerformancePage() {
       { profile: "alpha", label: "PIM Alpha" },
     ];
     for (const p of pimProfiles) {
-      const ledger = appendixData?.ledgers.find((l) => l.profile === p.profile);
-      const history: ValuePoint[] = ledger
-        ? ledger.entries.map((e) => ({ date: e.date, value: e.value }))
+      // Primary: pim-performance (matches PIM Model page)
+      const model = pimData?.models.find(
+        (m) => m.groupId === "pim" && m.profile === p.profile
+      );
+      let history: ValuePoint[] = model
+        ? model.history.map((h) => ({ date: h.date, value: h.value }))
         : [];
+      // Fallback: Appendix ledger (covers Alpha when not yet in pim-performance)
+      if (history.length === 0) {
+        const ledger = appendixData?.ledgers.find((l) => l.profile === p.profile);
+        if (ledger) {
+          history = ledger.entries.map((e) => ({ date: e.date, value: e.value }));
+        }
+      }
       rows.push({ name: p.label, ...computePeriodReturns(history) });
     }
 
@@ -773,7 +810,7 @@ export default function AAPerformancePage() {
     }
 
     return rows;
-  }, [appendixData, indexes]);
+  }, [pimData, appendixData, indexes]);
 
   if (loading) {
     return (
