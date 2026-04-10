@@ -1,5 +1,6 @@
 import { NextResponse } from "next/server";
 import { getRedis } from "@/app/lib/redis";
+import { getTodayET, isMarketOpenOrAfterET } from "@/app/lib/market-hours";
 import type {
   PimPerformanceData,
   PimDailyReturn,
@@ -65,7 +66,7 @@ async function fetchAdjustedCloses(symbol: string): Promise<SymbolPriceResult> {
     const chartPrevClose = meta?.chartPreviousClose ?? meta?.previousClose ?? null;
 
     if (livePrice && !isNaN(livePrice)) {
-      const today = new Date().toISOString().split("T")[0];
+      const today = getTodayET();
       const todayIdx = result.findIndex((p) => p.date === today);
       if (todayIdx >= 0) {
         result[todayIdx].adjClose = livePrice;
@@ -135,7 +136,7 @@ async function fetchUsdCadRates(): Promise<{ rates: Map<string, number>; previou
     // Use live rate for today
     const liveRate = r.meta?.regularMarketPrice;
     if (liveRate && !isNaN(liveRate)) {
-      const today = new Date().toISOString().split("T")[0];
+      const today = getTodayET();
       rates.set(today, liveRate);
     }
     // chartPreviousClose for consistent FX change calculation on today
@@ -229,7 +230,11 @@ export async function POST() {
       return symbol;
     }
 
-    const today = new Date().toISOString().split("T")[0];
+    const today = getTodayET();
+    // Pre-market data is unreliable: Yahoo's regularMarketPrice still reports
+    // yesterday's close before 9:30 AM ET, so any "today" return computed
+    // before market open is actually yesterday's return mislabeled.
+    const marketOpen = isMarketOpenOrAfterET();
     const updates: Array<{ groupId: string; profile: string; addedDays: number; lastDate: string }> = [];
 
     // Collect all symbols
@@ -427,6 +432,9 @@ export async function POST() {
         let activeWeight = 0;
 
         const isToday = date === today;
+        // Skip today entirely until market has actually opened — pre-market
+        // pricing would record yesterday's return as today's.
+        if (isToday && !marketOpen) continue;
 
         // Get USD/CAD rates for FX conversion
         // For today: use chartPreviousClose as base (matches Positioning tab)

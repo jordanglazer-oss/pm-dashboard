@@ -3,6 +3,7 @@
 import React, { useState, useEffect, useMemo, useCallback, useRef } from "react";
 import type { PimPerformanceData, PimModelPerformance, PimProfileType, AppendixModelLedger, PimPortfolioPositions } from "@/app/lib/pim-types";
 import { useStocks } from "@/app/lib/StockContext";
+import { isMarketOpenOrAfterET } from "@/app/lib/market-hours";
 
 const PROFILE_LABELS: Record<PimProfileType, string> = {
   balanced: "Balanced",
@@ -67,6 +68,13 @@ export function PimPerformance({ groupId, groupName, selectedProfile }: Props) {
   }, [stocks]);
 
   const computeLiveTodayReturn = useCallback(async () => {
+    // Pre-market data is unreliable — Yahoo's regularMarketPrice still
+    // reports yesterday's close before 9:30 AM ET, which would label
+    // yesterday's return as today's. Fall back to the last persisted entry.
+    if (!isMarketOpenOrAfterET()) {
+      setLiveTodayReturn(null);
+      return;
+    }
     const group = pimModels.groups.find((g) => g.id === groupId);
     if (!group) return;
 
