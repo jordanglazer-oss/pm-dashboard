@@ -456,38 +456,60 @@ function AutoFundsTable({
 /* ─── Period Return Helpers ─── */
 type ValuePoint = { date: string; value: number };
 
-/** Find the last entry on or before the target date. Assumes history is sorted ascending by date. */
-function findEntryOnOrBefore(history: ValuePoint[], targetDate: string): ValuePoint | null {
-  let result: ValuePoint | null = null;
-  for (const e of history) {
-    if (e.date <= targetDate) result = e;
-    else break;
-  }
-  return result;
-}
+/**
+ * Trading-day counts that mirror PimPerformance.tsx's PERIOD_OPTIONS so the
+ * AA & Perf table matches the PIM Model page exactly. The values represent
+ * the trading-day window length: e.g. 1Y = "last 252 trading days" — the
+ * same convention used by every other PIM screen.
+ */
+const PERIOD_TRADING_DAYS: Record<Exclude<PeriodKey, "ytd">, number> = {
+  "1d": 1,
+  "1w": 5,
+  "1m": 21,
+  "3m": 63,
+  "6m": 126,
+  "1y": 252,
+  "2y": 504,
+  "3y": 756,
+  "5y": 1260,
+};
 
-/** Subtract a number of calendar days/months/years from today and return YYYY-MM-DD. */
-function dateOffset(opts: { days?: number; months?: number; years?: number }): string {
-  const d = new Date();
-  if (opts.days) d.setDate(d.getDate() - opts.days);
-  if (opts.months) d.setMonth(d.getMonth() - opts.months);
-  if (opts.years) d.setFullYear(d.getFullYear() - opts.years);
-  return d.toISOString().split("T")[0];
+/**
+ * Defensive cleanup: sort by date ascending and dedupe (keeping the last
+ * value seen for any given date). The PIM performance route in some edge
+ * cases emits entries that aren't strictly monotonic — this guarantees
+ * downstream period math sees a clean, ordered series.
+ */
+function normalizeHistory(history: ValuePoint[]): ValuePoint[] {
+  const seen = new Map<string, number>();
+  for (const e of history) {
+    if (e && e.date && typeof e.value === "number" && !isNaN(e.value)) {
+      seen.set(e.date, e.value);
+    }
+  }
+  return [...seen.entries()]
+    .map(([date, value]) => ({ date, value }))
+    .sort((a, b) => a.date.localeCompare(b.date));
 }
 
 /**
- * Compute period returns for a value-history series.
- * Returns null for any period that the history doesn't cover.
+ * Compute period returns for a value-history series using the same
+ * trading-day-slice methodology as PimPerformance.tsx. For each period
+ * we look at the entry `tradingDays` rows back from the last entry and
+ * return (last/start − 1) × 100. If the history doesn't span enough
+ * trading days, the period returns null (rather than falling back to
+ * since-inception, which would mislabel the row).
  *
- * - 1D = last entry vs second-to-last entry (most recent close-to-close)
- * - 1W..5Y = last entry vs the entry on or before today minus that period
- * - YTD = last entry vs the last entry of the prior calendar year
+ * YTD is special-cased to use the last close of the prior calendar year
+ * as the baseline (matching the Calendar Year Returns methodology on
+ * the PIM Model page).
  */
-function computePeriodReturns(history: ValuePoint[]): Record<PeriodKey, number | null> {
+function computePeriodReturns(rawHistory: ValuePoint[]): Record<PeriodKey, number | null> {
   const empty: Record<PeriodKey, number | null> = {
     ytd: null, "1d": null, "1w": null, "1m": null, "3m": null,
     "6m": null, "1y": null, "2y": null, "3y": null, "5y": null,
   };
+  const history = normalizeHistory(rawHistory);
   if (history.length < 2) return empty;
   const last = history[history.length - 1];
   if (!last.value || last.value <= 0) return empty;
@@ -497,12 +519,24 @@ function computePeriodReturns(history: ValuePoint[]): Record<PeriodKey, number |
     return parseFloat((((last.value / start.value) - 1) * 100).toFixed(2));
   };
 
-  // 1D: last vs previous entry
-  const prev = history[history.length - 2];
-  const d1: number | null = prev ? pct(prev) : null;
+  const result: Record<PeriodKey, number | null> = { ...empty };
+
+  for (const key of Object.keys(PERIOD_TRADING_DAYS) as Array<keyof typeof PERIOD_TRADING_DAYS>) {
+    const tradingDays = PERIOD_TRADING_DAYS[key];
+    // Need at least `tradingDays + 1` entries — one for the start, one
+    // for the end, plus the days in between. Anything shorter means the
+    // history doesn't actually cover this period.
+    if (history.length < tradingDays + 1) {
+      result[key] = null;
+      continue;
+    }
+    const start = history[history.length - 1 - tradingDays];
+    result[key] = pct(start);
+  }
 
   // YTD: last entry of prior calendar year (Dec 31). Falls back to null
-  // if the series doesn't extend into the prior year.
+  // if the series doesn't extend into the prior year — same convention
+  // as PimPerformance's filteredHistory YTD prepend.
   const currentYear = new Date().getFullYear();
   const ytdCutoff = `${currentYear}-01-01`;
   let ytdBaseline: ValuePoint | null = null;
@@ -510,20 +544,9 @@ function computePeriodReturns(history: ValuePoint[]): Record<PeriodKey, number |
     if (e.date < ytdCutoff) ytdBaseline = e;
     else break;
   }
-  const ytd = pct(ytdBaseline);
+  result.ytd = pct(ytdBaseline);
 
-  return {
-    ytd,
-    "1d": d1,
-    "1w": pct(findEntryOnOrBefore(history, dateOffset({ days: 7 }))),
-    "1m": pct(findEntryOnOrBefore(history, dateOffset({ months: 1 }))),
-    "3m": pct(findEntryOnOrBefore(history, dateOffset({ months: 3 }))),
-    "6m": pct(findEntryOnOrBefore(history, dateOffset({ months: 6 }))),
-    "1y": pct(findEntryOnOrBefore(history, dateOffset({ years: 1 }))),
-    "2y": pct(findEntryOnOrBefore(history, dateOffset({ years: 2 }))),
-    "3y": pct(findEntryOnOrBefore(history, dateOffset({ years: 3 }))),
-    "5y": pct(findEntryOnOrBefore(history, dateOffset({ years: 5 }))),
-  };
+  return result;
 }
 
 /* ─── Main Page ─── */
@@ -531,7 +554,9 @@ export default function AAPerformancePage() {
   const [data, setData] = useState<AAPerformanceData>(defaultData);
   const [loading, setLoading] = useState(true);
   const [pimData, setPimData] = useState<PimPerformanceData | null>(null);
-  const [pimLoading, setPimLoading] = useState(false);
+  // Start as loading so the "refreshing…" indicator shows on first paint
+  // without needing to call setState inside the effect.
+  const [pimLoading, setPimLoading] = useState(true);
   const [indexes, setIndexes] = useState<IndexHistoryEntry[]>([]);
   // Start as loading so the "refreshing…" indicator shows on first paint
   // without needing to call setState inside the effect (which lint flags
@@ -570,16 +595,21 @@ export default function AAPerformancePage() {
       .catch(() => setLoading(false));
   }, []);
 
-  /* Fetch PIM performance data on mount */
+  /* Fetch PIM performance data on mount.
+   * Reads from `/api/kv/pim-performance` — the same Redis-cached source
+   * `PimPerformance.tsx` uses — so the AA & Perf table sees the exact
+   * dataset displayed on the PIM Model page (including Alpha entries
+   * seeded from the Appendix by `update-daily-value`). We deliberately
+   * do NOT call POST `/api/pim-performance`: that endpoint recomputes
+   * from scratch and drops Appendix-only rows like Alpha. */
   useEffect(() => {
-    setPimLoading(true);
-    fetch("/api/pim-performance", { method: "POST" })
+    fetch("/api/kv/pim-performance")
       .then((r) => r.json())
       .then((res) => {
-        if (res.models) setPimData(res as PimPerformanceData);
-        setPimLoading(false);
+        if (res?.models) setPimData(res as PimPerformanceData);
       })
-      .catch(() => setPimLoading(false));
+      .catch(() => {})
+      .finally(() => setPimLoading(false));
   }, []);
 
   /* Fetch index histories (S&P 500, S&P/TSX) on mount */
