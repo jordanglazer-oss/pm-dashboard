@@ -3,7 +3,7 @@
 import React, { useState, useEffect, useMemo, useCallback, useRef } from "react";
 import type { PimPerformanceData, PimModelPerformance, PimProfileType, AppendixModelLedger, PimPortfolioPositions } from "@/app/lib/pim-types";
 import { useStocks } from "@/app/lib/StockContext";
-import { isMarketOpenOrAfterET } from "@/app/lib/market-hours";
+import { getTodayET, isMarketOpenOrAfterET } from "@/app/lib/market-hours";
 
 const PROFILE_LABELS: Record<PimProfileType, string> = {
   balanced: "Balanced",
@@ -389,11 +389,32 @@ export function PimPerformance({ groupId, groupName, selectedProfile }: Props) {
     return groupModels[0] || null;
   }, [groupModels, selectedProfile]);
 
-  // Filter history by period
-  const filteredHistory = useMemo(() => {
+  // Effective history: if we have a live Today return and the last persisted
+  // entry is today, replace it with a corrected entry derived from yesterday's
+  // index value × liveTodayReturn. This keeps the displayed Daily Value and
+  // Index stats consistent with the live Today return, even if Redis still
+  // holds a pre-market-polluted today row.
+  const effectiveHistory = useMemo((): PimModelPerformance["history"] => {
     if (!selectedModel) return [];
     const hist = selectedModel.history;
-    if (hist.length === 0) return [];
+    if (liveTodayReturn == null || hist.length < 2) return hist;
+
+    const todayET = getTodayET();
+    const lastEntry = hist[hist.length - 1];
+    if (lastEntry.date !== todayET) return hist;
+
+    const yesterdayValue = hist[hist.length - 2].value;
+    const correctedValue = yesterdayValue * (1 + liveTodayReturn / 100);
+    return [
+      ...hist.slice(0, -1),
+      { date: todayET, value: correctedValue, dailyReturn: liveTodayReturn },
+    ];
+  }, [selectedModel, liveTodayReturn]);
+
+  // Filter history by period
+  const filteredHistory = useMemo(() => {
+    if (effectiveHistory.length === 0) return [];
+    const hist = effectiveHistory;
 
     const periodOpt = PERIOD_OPTIONS.find((p) => p.label === period);
     if (!periodOpt) return hist;
@@ -407,7 +428,7 @@ export function PimPerformance({ groupId, groupName, selectedProfile }: Props) {
     }
 
     return hist.slice(-periodOpt.days);
-  }, [selectedModel, period]);
+  }, [effectiveHistory, period]);
 
   // Compute summary stats
   const stats = useMemo(() => {
@@ -755,7 +776,7 @@ export function PimPerformance({ groupId, groupName, selectedProfile }: Props) {
       )}
 
       {/* Portfolio daily value table (collapsible) */}
-      {selectedModel && selectedModel.history.length > 1 && (
+      {selectedModel && effectiveHistory.length > 1 && (
         <details className="text-xs">
           <summary className="cursor-pointer text-slate-400 hover:text-slate-600 font-semibold py-1">
             Portfolio Value History (last 20 trading days)
@@ -771,7 +792,7 @@ export function PimPerformance({ groupId, groupName, selectedProfile }: Props) {
                 </tr>
               </thead>
               <tbody>
-                {selectedModel.history.slice(-20).reverse().map((h) => {
+                {effectiveHistory.slice(-20).reverse().map((h) => {
                   const itdReturn = ((h.value - 100) / 100) * 100;
                   return (
                     <tr key={h.date} className="border-b border-slate-50">
