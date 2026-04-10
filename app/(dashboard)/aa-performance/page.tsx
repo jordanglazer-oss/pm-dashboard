@@ -6,6 +6,8 @@ import { ImageUpload, type BriefAttachment } from "@/app/components/ImageUpload"
 import { useStocks } from "@/app/lib/StockContext";
 import { isScoreable } from "@/app/lib/scoring";
 import type { AppendixData, PimPerformanceData } from "@/app/lib/pim-types";
+import { useLiveTodayReturn } from "@/app/lib/useLiveTodayReturn";
+import { getTodayET } from "@/app/lib/market-hours";
 
 /* ─── Types ─── */
 type AllocationRow = {
@@ -614,37 +616,50 @@ export default function AAPerformancePage() {
       .catch(() => setLoading(false));
   }, []);
 
-  /* Fetch PIM performance data on mount from BOTH sources:
+  /* Fetch PIM performance data on mount, mirroring the PIM Model page's
+   * load sequence so the AA & Perf table sees the same dataset:
    *
-   *   • `/api/kv/pim-performance` — the same Redis-cached source the PIM
-   *     Model page (PimPerformance.tsx) reads, so non-Alpha rows match
-   *     that screen exactly. This cache contains the full historical tail
-   *     loaded by `import-performance` plus the daily updates appended by
-   *     `update-daily-value`.
+   *   1. POST `/api/update-daily-value` to recompute today's value with
+   *      the latest live prices and persist it. PimPerformance.tsx triggers
+   *      this on every visit (autoUpdateDailyValue) — without it, AA & Perf
+   *      can read a stale "today" entry written by an earlier session.
+   *   2. GET `/api/kv/pim-performance` — the now-fresh Redis cache. This
+   *      is the same source PimPerformance.tsx reads after seedFromAppendix
+   *      validation, so non-Alpha rows match that screen exactly.
+   *   3. GET `/api/kv/appendix-daily-values` in parallel as a fallback for
+   *      any profile missing from pim-performance (typically Alpha).
    *
-   *   • `/api/kv/appendix-daily-values` — the immutable Appendix ledger,
-   *     used as a fallback for any profile missing from `pim-performance`.
-   *     In practice this covers the Alpha row, which is sometimes seeded
-   *     into pim-performance only after `update-daily-value` runs.
-   *
-   * For each PIM profile we prefer pim-performance, falling back to the
-   * Appendix when the profile isn't present. */
+   * The client-side `liveTodayReturn` override is applied separately
+   * (see `effectiveHistoryFor` below), matching PimPerformance.tsx's
+   * effectiveHistory logic so today's value is corrected client-side when
+   * the persisted value drifts. */
   useEffect(() => {
     let pimDone = false;
     let appendixDone = false;
     const checkDone = () => {
       if (pimDone && appendixDone) setPimLoading(false);
     };
-    fetch("/api/kv/pim-performance")
-      .then((r) => r.json())
-      .then((res) => {
-        if (res?.models) setPimData(res as PimPerformanceData);
-      })
+
+    // Fire update-daily-value first; ignore errors (e.g. weekends or no
+    // positions yet) and proceed to read the cache regardless.
+    const reloadPim = () =>
+      fetch("/api/kv/pim-performance")
+        .then((r) => r.json())
+        .then((res) => {
+          if (res?.models) setPimData(res as PimPerformanceData);
+        })
+        .catch(() => {})
+        .finally(() => {
+          pimDone = true;
+          checkDone();
+        });
+
+    fetch("/api/update-daily-value", { method: "POST" })
       .catch(() => {})
       .finally(() => {
-        pimDone = true;
-        checkDone();
+        reloadPim();
       });
+
     fetch("/api/kv/appendix-daily-values")
       .then((r) => r.json())
       .then((res) => {
@@ -656,6 +671,14 @@ export default function AAPerformancePage() {
         checkDone();
       });
   }, []);
+
+  /* Live today's return for each PIM profile — uses the same shared hook
+   * PimPerformance.tsx calls, so the client-side override applied below
+   * matches that screen's effectiveHistory exactly. */
+  const liveBalanced = useLiveTodayReturn("pim", "balanced").value;
+  const liveGrowth = useLiveTodayReturn("pim", "growth").value;
+  const liveAllEquity = useLiveTodayReturn("pim", "allEquity").value;
+  const liveAlpha = useLiveTodayReturn("pim", "alpha").value;
 
   /* Fetch index histories (S&P 500, S&P/TSX) on mount */
   useEffect(() => {
@@ -773,6 +796,14 @@ export default function AAPerformancePage() {
   //     including the historical tail loaded by `import-performance`). Fall
   //     back to the Appendix ledger when a profile is missing from the cache
   //     (typically Alpha on a fresh load before `update-daily-value` seeds).
+  //
+  //     We then apply the SAME effectiveHistory override PimPerformance.tsx
+  //     uses: when liveTodayReturn is non-null and the persisted last entry
+  //     is dated today, we replace today's value with
+  //     `yesterdayValue × (1 + liveTodayReturn / 100)`. This corrects the
+  //     persisted "today" entry when it drifts from the live market value
+  //     (the same correction the PIM Model page displays).
+  //
   //   • S&P 500 / S&P/TSX Composite — pulled from /api/index-history (Yahoo
   //     ^GSPC and ^GSPTSE).
   // Period returns for both are computed from the same value-history series
@@ -780,11 +811,31 @@ export default function AAPerformancePage() {
   const autoPerformanceRows = useMemo<AutoPerfRow[]>(() => {
     const rows: AutoPerfRow[] = [];
 
-    const pimProfiles: { profile: "balanced" | "growth" | "allEquity" | "alpha"; label: string }[] = [
-      { profile: "balanced", label: "PIM Balanced" },
-      { profile: "growth", label: "PIM Growth" },
-      { profile: "allEquity", label: "PIM All-Equity" },
-      { profile: "alpha", label: "PIM Alpha" },
+    /** Mirrors PimPerformance.tsx's effectiveHistory: when there's a
+     *  live today return AND the last entry is today's date, replace the
+     *  last entry with yesterdayValue × (1 + liveTodayReturn / 100). */
+    const applyLiveOverride = (
+      hist: ValuePoint[],
+      live: number | null
+    ): ValuePoint[] => {
+      if (live == null || hist.length < 2) return hist;
+      const todayET = getTodayET();
+      const last = hist[hist.length - 1];
+      if (last.date !== todayET) return hist;
+      const yesterdayValue = hist[hist.length - 2].value;
+      const correctedValue = yesterdayValue * (1 + live / 100);
+      return [...hist.slice(0, -1), { date: todayET, value: correctedValue }];
+    };
+
+    const pimProfiles: {
+      profile: "balanced" | "growth" | "allEquity" | "alpha";
+      label: string;
+      live: number | null;
+    }[] = [
+      { profile: "balanced", label: "PIM Balanced", live: liveBalanced },
+      { profile: "growth", label: "PIM Growth", live: liveGrowth },
+      { profile: "allEquity", label: "PIM All-Equity", live: liveAllEquity },
+      { profile: "alpha", label: "PIM Alpha", live: liveAlpha },
     ];
     for (const p of pimProfiles) {
       // Primary: pim-performance (matches PIM Model page)
@@ -801,6 +852,8 @@ export default function AAPerformancePage() {
           history = ledger.entries.map((e) => ({ date: e.date, value: e.value }));
         }
       }
+      // Apply the same client-side override PimPerformance.tsx uses
+      history = applyLiveOverride(history, p.live);
       rows.push({ name: p.label, ...computePeriodReturns(history) });
     }
 
@@ -810,7 +863,7 @@ export default function AAPerformancePage() {
     }
 
     return rows;
-  }, [pimData, appendixData, indexes]);
+  }, [pimData, appendixData, indexes, liveBalanced, liveGrowth, liveAllEquity, liveAlpha]);
 
   if (loading) {
     return (
