@@ -424,7 +424,15 @@ export function PimPerformance({ groupId, groupName, selectedProfile }: Props) {
     if (periodOpt.days === -1) {
       const year = new Date().getFullYear();
       const ytdStart = `${year}-01-01`;
-      return hist.filter((h) => h.date >= ytdStart);
+      const ytdEntries = hist.filter((h) => h.date >= ytdStart);
+      // Prepend the last entry of the prior year as the baseline so that
+      // the YTD Period Return is measured from Dec 31 close — matching the
+      // Calendar Year Return methodology.
+      const priorYearEntries = hist.filter((h) => h.date < ytdStart);
+      if (priorYearEntries.length > 0) {
+        return [priorYearEntries[priorYearEntries.length - 1], ...ytdEntries];
+      }
+      return ytdEntries;
     }
 
     return hist.slice(-periodOpt.days);
