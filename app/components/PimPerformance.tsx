@@ -464,10 +464,11 @@ export function PimPerformance({ groupId, groupName, selectedProfile }: Props) {
     };
   }, [filteredHistory, liveTodayReturn]);
 
-  // Calendar year returns
+  // Calendar year returns — uses effectiveHistory so the current year reflects
+  // the liveTodayReturn override when today's persisted entry is stale.
   const calendarYearReturns = useMemo(() => {
-    if (!selectedModel || selectedModel.history.length < 2) return [];
-    const hist = selectedModel.history;
+    if (effectiveHistory.length < 2) return [];
+    const hist = effectiveHistory;
     const years: Map<number, { first: number; last: number }> = new Map();
 
     for (const h of hist) {
@@ -480,13 +481,8 @@ export function PimPerformance({ groupId, groupName, selectedProfile }: Props) {
       }
     }
 
-    const results: Array<{ year: number; return: number }> = [];
-    for (const [y, v] of years) {
-      results.push({ year: y, return: ((v.last - v.first) / v.first) * 100 });
-    }
     // For years after the first year, the return should be calculated from
     // the previous year's last value (which is the starting value for the new year)
-    // Actually, let's recalculate properly: year-start to year-end
     const sorted = [...years.entries()].sort((a, b) => a[0] - b[0]);
     const proper: Array<{ year: number; return: number }> = [];
     for (let i = 0; i < sorted.length; i++) {
@@ -509,7 +505,7 @@ export function PimPerformance({ groupId, groupName, selectedProfile }: Props) {
     }
 
     return proper;
-  }, [selectedModel]);
+  }, [effectiveHistory]);
 
   // Chart rendering
   const chartWidth = 800;
@@ -563,10 +559,11 @@ export function PimPerformance({ groupId, groupName, selectedProfile }: Props) {
     ? new Date((trackingStart as { date: string }).date + "T12:00:00").toLocaleDateString("en-US", { month: "short", day: "numeric", year: "numeric" })
     : null;
 
-  // Inception to date return (from full history)
+  // Inception to date return (from full history) — uses effectiveHistory so
+  // the ITD figure reflects the liveTodayReturn override when applicable.
   const itdStats = useMemo(() => {
-    if (!selectedModel || selectedModel.history.length < 2) return null;
-    const h = selectedModel.history;
+    if (effectiveHistory.length < 2) return null;
+    const h = effectiveHistory;
     const first = h[0];
     const last = h[h.length - 1];
     const totalReturn = ((last.value - first.value) / first.value) * 100;
@@ -574,7 +571,7 @@ export function PimPerformance({ groupId, groupName, selectedProfile }: Props) {
     const years = days / 252;
     const annualized = years > 1 ? (Math.pow(last.value / first.value, 1 / years) - 1) * 100 : null;
     return { totalReturn, annualized, startDate: first.date, endDate: last.date, years };
-  }, [selectedModel]);
+  }, [effectiveHistory]);
 
   if (!trackingStart && (!perfData || groupModels.length === 0)) {
     return (
