@@ -1,12 +1,11 @@
 "use client";
 
-import React, { useState, useEffect, useCallback, useRef } from "react";
+import React, { useState, useEffect, useCallback, useRef, useMemo } from "react";
 import Link from "next/link";
 import { ImageUpload, type BriefAttachment } from "@/app/components/ImageUpload";
 import { useStocks } from "@/app/lib/StockContext";
 import { isScoreable } from "@/app/lib/scoring";
-import { INSTRUMENT_LABELS } from "@/app/lib/types";
-import type { PimPerformanceData, PimModelPerformance } from "@/app/lib/pim-types";
+import type { PimPerformanceData } from "@/app/lib/pim-types";
 
 /* ─── Types ─── */
 type AllocationRow = {
@@ -22,20 +21,6 @@ type AllocationTable = {
   max: AllocationRow;
 };
 
-type PerformanceRow = {
-  name: string;
-  ytd: number | null;
-  "1d": number | null;
-  "1w": number | null;
-  "1m": number | null;
-  "3m": number | null;
-  "6m": number | null;
-  "1y": number | null;
-  "2y": number | null;
-  "3y": number | null;
-  "5y": number | null;
-};
-
 type FundRow = {
   name: string;
   ticker: string;
@@ -46,19 +31,12 @@ type FundRow = {
   "10y": number | null;
 };
 
-type PimMapping = {
-  groupId: string;
-  profile: string; // "balanced" | "growth" | "allEquity" | "alpha-balanced" | "alpha-growth" | "alpha-allEquity"
-};
-
 type AAPerformanceData = {
   allocations: {
     balanced: AllocationTable;
     growth: AllocationTable;
     allEquity: AllocationTable;
   };
-  performance: PerformanceRow[];
-  pimMappings?: Record<number, PimMapping>; // rowIdx → PIM model mapping
   funds: FundRow[];
   fundsDate: string;
   etfs: FundRow[];
@@ -66,8 +44,9 @@ type AAPerformanceData = {
   attachments: BriefAttachment[];
 };
 
-const PERF_COLS: { key: keyof PerformanceRow; label: string }[] = [
-  { key: "name", label: "Name" },
+type PeriodKey = "ytd" | "1d" | "1w" | "1m" | "3m" | "6m" | "1y" | "2y" | "3y" | "5y";
+
+const PERIOD_COLS: { key: PeriodKey; label: string }[] = [
   { key: "ytd", label: "YTD" },
   { key: "1d", label: "1D" },
   { key: "1w", label: "1W" },
@@ -79,6 +58,10 @@ const PERF_COLS: { key: keyof PerformanceRow; label: string }[] = [
   { key: "3y", label: "3Y" },
   { key: "5y", label: "5Y" },
 ];
+
+type AutoPerfRow = { name: string } & Record<PeriodKey, number | null>;
+
+type IndexHistoryEntry = { key: string; label: string; symbol: string; history: { date: string; close: number }[] };
 
 const FUND_COLS: { key: keyof FundRow; label: string }[] = [
   { key: "name", label: "Name" },
@@ -137,17 +120,6 @@ const defaultData: AAPerformanceData = {
     { name: "JP Morgan Active Bond ETF (JBND)", ticker: "JBND", ytd: -0.05, "1y": 5.96, "3y": null, "5y": null, "10y": null },
   ],
   etfsDate: "03/26/2026",
-  performance: [
-    { name: "DWM - Balanced Model", ytd: -2.89, "1d": -0.92, "1w": -1.83, "1m": -1.70, "3m": -3.56, "6m": -2.29, "1y": 9.42, "2y": 9.09, "3y": 12.00, "5y": 3.92 },
-    { name: "DWM - Balanced Small", ytd: -2.23, "1d": -1.07, "1w": -1.54, "1m": -1.43, "3m": -2.57, "6m": -0.15, "1y": 13.44, "2y": 10.40, "3y": 13.70, "5y": 3.38 },
-    { name: "DWM - Growth Model", ytd: -3.40, "1d": -1.06, "1w": -1.99, "1m": -1.92, "3m": -4.15, "6m": -2.68, "1y": 11.91, "2y": 10.43, "3y": 14.13, "5y": 4.29 },
-    { name: "DWM - Growth Small", ytd: -2.74, "1d": -1.25, "1w": -1.71, "1m": -1.49, "3m": -2.79, "6m": 0.15, "1y": 16.94, "2y": 12.27, "3y": 16.29, "5y": 3.66 },
-    { name: "DWM - All-Equity Model", ytd: -3.92, "1d": -1.20, "1w": -2.15, "1m": -2.14, "3m": -4.74, "6m": -3.06, "1y": 14.28, "2y": 11.51, "3y": 16.58, "5y": 4.69 },
-    { name: "DWM - All-Equity Small", ytd: -3.24, "1d": -1.43, "1w": -1.89, "1m": -1.56, "3m": -3.01, "6m": 0.44, "1y": 20.19, "2y": 13.93, "3y": 19.28, "5y": 3.92 },
-    { name: "DWM - Alpha Model", ytd: -5.02, "1d": -1.23, "1w": -2.34, "1m": -1.68, "3m": -6.48, "6m": -6.21, "1y": 13.22, "2y": null, "3y": null, "5y": null },
-    { name: "S&P 500 INDEX", ytd: -3.13, "1d": -1.20, "1w": -2.58, "1m": -2.16, "3m": -3.21, "6m": -0.15, "1y": 13.11, "2y": 14.16, "3y": 19.46, "5y": 13.08 },
-    { name: "S&P/TSX COMPOSITE INDEX", ytd: 3.56, "1d": -0.84, "1w": -2.29, "1m": 1.16, "3m": 4.17, "6m": 12.15, "1y": 34.46, "2y": 22.65, "3y": 18.42, "5y": 11.74 },
-  ],
   attachments: [],
 };
 
@@ -481,15 +453,77 @@ function AutoFundsTable({
   );
 }
 
-/* ─── PIM Return Helper ─── */
-function getPimReturn(pimData: PimPerformanceData | null, mapping: PimMapping | undefined): number | null {
-  if (!pimData || !mapping) return null;
-  const model = pimData.models.find(
-    (m) => m.groupId === mapping.groupId && m.profile === mapping.profile
-  );
-  if (!model || model.history.length === 0) return null;
-  const lastValue = model.history[model.history.length - 1].value;
-  return parseFloat((lastValue - 100).toFixed(2)); // cumulative return %
+/* ─── Period Return Helpers ─── */
+type ValuePoint = { date: string; value: number };
+
+/** Find the last entry on or before the target date. Assumes history is sorted ascending by date. */
+function findEntryOnOrBefore(history: ValuePoint[], targetDate: string): ValuePoint | null {
+  let result: ValuePoint | null = null;
+  for (const e of history) {
+    if (e.date <= targetDate) result = e;
+    else break;
+  }
+  return result;
+}
+
+/** Subtract a number of calendar days/months/years from today and return YYYY-MM-DD. */
+function dateOffset(opts: { days?: number; months?: number; years?: number }): string {
+  const d = new Date();
+  if (opts.days) d.setDate(d.getDate() - opts.days);
+  if (opts.months) d.setMonth(d.getMonth() - opts.months);
+  if (opts.years) d.setFullYear(d.getFullYear() - opts.years);
+  return d.toISOString().split("T")[0];
+}
+
+/**
+ * Compute period returns for a value-history series.
+ * Returns null for any period that the history doesn't cover.
+ *
+ * - 1D = last entry vs second-to-last entry (most recent close-to-close)
+ * - 1W..5Y = last entry vs the entry on or before today minus that period
+ * - YTD = last entry vs the last entry of the prior calendar year
+ */
+function computePeriodReturns(history: ValuePoint[]): Record<PeriodKey, number | null> {
+  const empty: Record<PeriodKey, number | null> = {
+    ytd: null, "1d": null, "1w": null, "1m": null, "3m": null,
+    "6m": null, "1y": null, "2y": null, "3y": null, "5y": null,
+  };
+  if (history.length < 2) return empty;
+  const last = history[history.length - 1];
+  if (!last.value || last.value <= 0) return empty;
+
+  const pct = (start: ValuePoint | null): number | null => {
+    if (!start || !start.value || start.value <= 0) return null;
+    return parseFloat((((last.value / start.value) - 1) * 100).toFixed(2));
+  };
+
+  // 1D: last vs previous entry
+  const prev = history[history.length - 2];
+  const d1: number | null = prev ? pct(prev) : null;
+
+  // YTD: last entry of prior calendar year (Dec 31). Falls back to null
+  // if the series doesn't extend into the prior year.
+  const currentYear = new Date().getFullYear();
+  const ytdCutoff = `${currentYear}-01-01`;
+  let ytdBaseline: ValuePoint | null = null;
+  for (const e of history) {
+    if (e.date < ytdCutoff) ytdBaseline = e;
+    else break;
+  }
+  const ytd = pct(ytdBaseline);
+
+  return {
+    ytd,
+    "1d": d1,
+    "1w": pct(findEntryOnOrBefore(history, dateOffset({ days: 7 }))),
+    "1m": pct(findEntryOnOrBefore(history, dateOffset({ months: 1 }))),
+    "3m": pct(findEntryOnOrBefore(history, dateOffset({ months: 3 }))),
+    "6m": pct(findEntryOnOrBefore(history, dateOffset({ months: 6 }))),
+    "1y": pct(findEntryOnOrBefore(history, dateOffset({ years: 1 }))),
+    "2y": pct(findEntryOnOrBefore(history, dateOffset({ years: 2 }))),
+    "3y": pct(findEntryOnOrBefore(history, dateOffset({ years: 3 }))),
+    "5y": pct(findEntryOnOrBefore(history, dateOffset({ years: 5 }))),
+  };
 }
 
 /* ─── Main Page ─── */
@@ -498,8 +532,13 @@ export default function AAPerformancePage() {
   const [loading, setLoading] = useState(true);
   const [pimData, setPimData] = useState<PimPerformanceData | null>(null);
   const [pimLoading, setPimLoading] = useState(false);
+  const [indexes, setIndexes] = useState<IndexHistoryEntry[]>([]);
+  // Start as loading so the "refreshing…" indicator shows on first paint
+  // without needing to call setState inside the effect (which lint flags
+  // as a cascading-render anti-pattern).
+  const [indexLoading, setIndexLoading] = useState(true);
   const persist = useDebouncedPersist(500);
-  const { scoredStocks, pimModels } = useStocks();
+  const { scoredStocks } = useStocks();
 
   // Derive funds and ETFs from portfolio holdings
   const portfolioFunds = scoredStocks.filter((s) => s.bucket === "Portfolio" && !isScoreable(s));
@@ -512,10 +551,14 @@ export default function AAPerformancePage() {
       .then((r) => r.json())
       .then((res) => {
         if (res.aaPerformance) {
-          // Merge with defaults so new fields are always present
+          // Merge with defaults so new fields are always present.
+          // Strip legacy fields (`performance`, `pimMappings`) — those rows
+          // are now auto-computed from PIM data and the index endpoint.
+          const { performance: _p, pimMappings: _m, ...rest } = res.aaPerformance;
+          void _p; void _m;
           setData({
             ...defaultData,
-            ...res.aaPerformance,
+            ...rest,
             allocations: {
               ...defaultData.allocations,
               ...(res.aaPerformance.allocations || {}),
@@ -537,6 +580,17 @@ export default function AAPerformancePage() {
         setPimLoading(false);
       })
       .catch(() => setPimLoading(false));
+  }, []);
+
+  /* Fetch index histories (S&P 500, S&P/TSX) on mount */
+  useEffect(() => {
+    fetch("/api/index-history")
+      .then((r) => r.json())
+      .then((res) => {
+        if (Array.isArray(res?.indexes)) setIndexes(res.indexes as IndexHistoryEntry[]);
+      })
+      .catch(() => {})
+      .finally(() => setIndexLoading(false));
   }, []);
 
   /* Update helper that persists */
@@ -572,35 +626,6 @@ export default function AAPerformancePage() {
           },
         },
       }));
-    },
-    [updateData]
-  );
-
-  /* Performance update */
-  const updatePerformance = useCallback(
-    (rowIdx: number, key: string, value: number | null | string) => {
-      updateData((prev) => ({
-        ...prev,
-        performance: prev.performance.map((row, i) =>
-          i === rowIdx ? { ...row, [key]: value } : row
-        ),
-      }));
-    },
-    [updateData]
-  );
-
-  /* PIM mapping update */
-  const updatePimMapping = useCallback(
-    (rowIdx: number, mapping: PimMapping | null) => {
-      updateData((prev) => {
-        const mappings = { ...(prev.pimMappings || {}) };
-        if (mapping) {
-          mappings[rowIdx] = mapping;
-        } else {
-          delete mappings[rowIdx];
-        }
-        return { ...prev, pimMappings: mappings };
-      });
     },
     [updateData]
   );
@@ -666,6 +691,42 @@ export default function AAPerformancePage() {
     [updateData]
   );
 
+  /* ─── Auto-computed Performance rows ─── */
+  // Builds a fixed set of rows from PIM model histories and live index data:
+  //   • PIM Balanced / Growth / All-Equity / Alpha — pulled straight from
+  //     the same `pim-performance` data the PIM Model page renders, so the
+  //     numbers stay in sync with that screen.
+  //   • S&P 500 / S&P/TSX Composite — pulled from /api/index-history (Yahoo
+  //     ^GSPC and ^GSPTSE).
+  // Period returns for both are computed from the same value-history series
+  // so the methodology is identical across rows.
+  const autoPerformanceRows = useMemo<AutoPerfRow[]>(() => {
+    const rows: AutoPerfRow[] = [];
+
+    const pimProfiles: { profile: "balanced" | "growth" | "allEquity" | "alpha"; label: string }[] = [
+      { profile: "balanced", label: "PIM Balanced" },
+      { profile: "growth", label: "PIM Growth" },
+      { profile: "allEquity", label: "PIM All-Equity" },
+      { profile: "alpha", label: "PIM Alpha" },
+    ];
+    for (const p of pimProfiles) {
+      const model = pimData?.models.find(
+        (m) => m.groupId === "pim" && m.profile === p.profile
+      );
+      const history: ValuePoint[] = model
+        ? model.history.map((h) => ({ date: h.date, value: h.value }))
+        : [];
+      rows.push({ name: p.label, ...computePeriodReturns(history) });
+    }
+
+    for (const idx of indexes) {
+      const history: ValuePoint[] = idx.history.map((b) => ({ date: b.date, value: b.close }));
+      rows.push({ name: idx.label, ...computePeriodReturns(history) });
+    }
+
+    return rows;
+  }, [pimData, indexes]);
+
   if (loading) {
     return (
       <div className="flex items-center justify-center min-h-[60vh]">
@@ -700,22 +761,21 @@ export default function AAPerformancePage() {
 
       {/* ── Performance Section ── */}
       <section>
-        <h2 className="text-xl font-bold text-slate-800 mb-4">Performance</h2>
+        <div className="flex items-center gap-2 mb-4">
+          <h2 className="text-xl font-bold text-slate-800">Performance</h2>
+          {(pimLoading || indexLoading) && (
+            <span className="text-xs text-slate-400 animate-pulse">refreshing…</span>
+          )}
+        </div>
         <div className="rounded-[30px] border border-slate-200 bg-white shadow-sm overflow-hidden">
           <div className="overflow-x-auto">
             <table className="w-full text-sm">
               <thead>
                 <tr className="border-b border-slate-100 bg-slate-50/50">
-                  {/* Name column */}
                   <th className="px-3 py-2.5 text-left text-xs font-semibold text-slate-500 uppercase tracking-wider min-w-[220px]">
                     Name
                   </th>
-                  {/* PIM column */}
-                  <th className="px-3 py-2.5 text-center text-xs font-semibold text-blue-500 uppercase tracking-wider min-w-[100px]" title="PIM automated tracking — cumulative return since tracking start">
-                    PIM
-                  </th>
-                  {/* Standard period columns */}
-                  {PERF_COLS.filter((c) => c.key !== "name").map((col) => (
+                  {PERIOD_COLS.map((col) => (
                     <th
                       key={col.key}
                       className="px-3 py-2.5 text-center text-xs font-semibold text-slate-500 uppercase tracking-wider"
@@ -726,92 +786,23 @@ export default function AAPerformancePage() {
                 </tr>
               </thead>
               <tbody>
-                {data.performance.map((row, rowIdx) => {
-                  const mapping = data.pimMappings?.[rowIdx];
-                  const pimReturn = getPimReturn(pimData, mapping);
-
-                  // Build PIM mapping options
-                  const pimOptions: { label: string; value: string }[] = [
-                    { label: "—", value: "" },
-                  ];
-                  for (const group of pimModels.groups) {
-                    const profiles = [
-                      { key: "balanced", label: "Bal" },
-                      { key: "growth", label: "Grw" },
-                      { key: "allEquity", label: "AE" },
-                      { key: "alpha-balanced", label: "α Bal" },
-                      { key: "alpha-growth", label: "α Grw" },
-                      { key: "alpha-allEquity", label: "α AE" },
-                    ];
-                    for (const p of profiles) {
-                      pimOptions.push({
-                        label: `${group.name} ${p.label}`,
-                        value: `${group.id}|${p.key}`,
-                      });
-                    }
-                  }
-
-                  return (
-                    <tr key={rowIdx} className="border-b border-slate-50 hover:bg-slate-50/50">
-                      {/* Name column */}
-                      <td className="px-3 py-1.5">
-                        <input
-                          type="text"
-                          value={row.name}
-                          onChange={(e) => updatePerformance(rowIdx, "name", e.target.value)}
-                          className="w-full rounded-lg border border-transparent px-2 py-1 text-sm font-medium text-slate-800 hover:border-slate-200 hover:bg-slate-50 focus:border-blue-300 focus:outline-none focus:ring-2 focus:ring-blue-200 bg-transparent"
-                        />
-                      </td>
-                      {/* PIM column */}
-                      <td className="px-1 py-1.5 text-center">
-                        <div className="flex flex-col items-center gap-0.5">
-                          {pimReturn !== null ? (
-                            <span className={`text-sm font-semibold ${perfColor(pimReturn)}`}>
-                              {formatPerf(pimReturn)}
-                              <span className="text-[10px] text-slate-400 ml-0.5">%</span>
-                            </span>
-                          ) : pimLoading ? (
-                            <span className="text-[10px] text-slate-300 animate-pulse">...</span>
-                          ) : null}
-                          <select
-                            value={mapping ? `${mapping.groupId}|${mapping.profile}` : ""}
-                            onChange={(e) => {
-                              const val = e.target.value;
-                              if (!val) {
-                                updatePimMapping(rowIdx, null);
-                              } else {
-                                const [groupId, profile] = val.split("|");
-                                updatePimMapping(rowIdx, { groupId, profile });
-                              }
-                            }}
-                            className="w-24 text-[10px] text-slate-400 bg-transparent border-none outline-none cursor-pointer hover:text-slate-600 text-center"
-                          >
-                            {pimOptions.map((opt) => (
-                              <option key={opt.value} value={opt.value}>{opt.label}</option>
-                            ))}
-                          </select>
-                        </div>
-                      </td>
-                      {/* Numeric columns */}
-                      {PERF_COLS.filter((c) => c.key !== "name").map((col) => {
-                        const val = row[col.key] as number | null;
-                        return (
-                          <td key={col.key} className="px-1 py-1.5 text-center">
-                            <div className="flex items-center justify-center gap-0.5">
-                              <NumericInput
-                                value={val}
-                                onChange={(n) => updatePerformance(rowIdx, col.key, n)}
-                                placeholder="—"
-                                className={`w-16 rounded-lg border border-transparent px-1 py-1 text-sm text-center font-medium ${perfColor(val)} hover:border-slate-200 focus:border-blue-300 focus:outline-none focus:ring-2 focus:ring-blue-200 bg-slate-50/50 hover:bg-white`}
-                              />
-                              {val !== null && <span className="text-[10px] text-slate-400">%</span>}
-                            </div>
-                          </td>
-                        );
-                      })}
-                    </tr>
-                  );
-                })}
+                {autoPerformanceRows.map((row) => (
+                  <tr key={row.name} className="border-b border-slate-50 hover:bg-slate-50/50">
+                    <td className="px-3 py-2.5 text-sm font-medium text-slate-800">{row.name}</td>
+                    {PERIOD_COLS.map((col) => {
+                      const val = row[col.key];
+                      return (
+                        <td
+                          key={col.key}
+                          className={`px-3 py-2.5 text-center text-sm font-medium ${perfColor(val)}`}
+                        >
+                          {formatPerf(val)}
+                          {val !== null && <span className="text-[10px] text-slate-400 ml-0.5">%</span>}
+                        </td>
+                      );
+                    })}
+                  </tr>
+                ))}
               </tbody>
             </table>
           </div>
