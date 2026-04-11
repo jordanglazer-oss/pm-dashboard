@@ -290,6 +290,19 @@ export type ForwardPointStatus = "live" | "stale" | "failed" | "not-configured";
 
 export type SparkPointBundle = { date: string; value: number };
 
+// Mirror of TrendStats in app/lib/forward-looking.ts. Optional so older
+// briefs cached in Redis still decode without errors.
+export type TrendStatsBundle = {
+  current: number;
+  delta1w?: number | null;
+  delta1m?: number | null;
+  delta3m?: number | null;
+  rangeLow: number;
+  rangeHigh: number;
+  percentile: number;
+  trajectory: "falling fast" | "falling" | "stable" | "rising" | "rising fast";
+};
+
 export type ForwardPointBundle = {
   value: number | null;
   source: string;
@@ -299,6 +312,7 @@ export type ForwardPointBundle = {
   note?: string;
   status: ForwardPointStatus;
   history?: SparkPointBundle[];
+  trend?: TrendStatsBundle;
 };
 
 export type ForwardLookingBundle = {

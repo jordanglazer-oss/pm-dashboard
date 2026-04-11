@@ -622,7 +622,7 @@ export function MorningBrief({
             <h4 className="text-xs font-semibold text-slate-400 uppercase tracking-widest">Contrarian Indicators</h4>
             <SignalPill tone="green">INVERTED SIGNALS</SignalPill>
           </div>
-          <div className="grid grid-cols-2 gap-x-6 gap-y-4 md:grid-cols-4">
+          <div className="grid grid-cols-2 gap-x-6 gap-y-4 md:grid-cols-3">
             <div>
               <div className="flex items-center gap-1.5 mb-1">
                 <label className="text-xs font-semibold text-slate-400 uppercase tracking-wider">S&P Oscillator</label>
@@ -653,61 +653,25 @@ export function MorningBrief({
               />
               <p className="text-[10px] text-slate-400 mt-0.5">Total P/C ratio</p>
             </div>
-            <div>
+            <div className="col-span-2 md:col-span-1">
               <div className="flex items-center gap-1.5 mb-1">
-                <label className="text-xs font-semibold text-slate-400 uppercase tracking-wider">Fear & Greed (0-100)</label>
-                <a href="https://www.cnn.com/markets/fear-and-greed" target="_blank" rel="noopener noreferrer" className="text-blue-400 hover:text-blue-600 transition-colors" title="CNN Fear & Greed Index">
-                  <svg className="w-3 h-3" fill="none" stroke="currentColor" strokeWidth="2" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" d="M10 6H6a2 2 0 00-2 2v10a2 2 0 002 2h10a2 2 0 002-2v-4M14 4h6m0 0v6m0-6L10 14" /></svg>
-                </a>
+                <label className="text-xs font-semibold text-slate-400 uppercase tracking-wider">Oscillator Chart (optional)</label>
               </div>
-              <SaveableNumericInput
-                savedValue={marketData.fearGreed}
-                onSave={(n) => onUpdateMarketData({ fearGreed: n })}
-                inputClassName="w-full rounded-xl border border-slate-200 bg-slate-50 px-3 py-2.5 text-lg font-semibold focus:bg-white focus:border-blue-300 focus:ring-1 focus:ring-blue-200 transition-all outline-none"
+              <ImageUpload
+                section="spOscillator"
+                sectionLabel="S&P Oscillator chart"
+                attachments={attachments}
+                onAdd={addAttachment}
+                onRemove={removeAttachment}
               />
-              <p className="text-[10px] text-slate-400 mt-0.5">CNN index</p>
-            </div>
-            <div>
-              <div className="flex items-center gap-1.5 mb-1">
-                <label className="text-xs font-semibold text-slate-400 uppercase tracking-wider">AAII Survey (%)</label>
-                <a href="https://www.aaii.com/sentimentsurvey" target="_blank" rel="noopener noreferrer" className="text-blue-400 hover:text-blue-600 transition-colors" title="AAII Sentiment Survey">
-                  <svg className="w-3 h-3" fill="none" stroke="currentColor" strokeWidth="2" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" d="M10 6H6a2 2 0 00-2 2v10a2 2 0 002 2h10a2 2 0 002-2v-4M14 4h6m0 0v6m0-6L10 14" /></svg>
-                </a>
-              </div>
-              <div className="grid grid-cols-3 gap-1.5">
-                <div>
-                  <span className="text-[9px] font-semibold text-red-400 uppercase">Bull</span>
-                  <SaveableNumericInput
-                    savedValue={marketData.aaiiBull ?? 30}
-                    onSave={(n) => {
-                      const spread = parseFloat((n - (marketData.aaiiBear ?? 52)).toFixed(1));
-                      onUpdateMarketData({ aaiiBull: n, aaiiBullBear: spread });
-                    }}
-                    inputClassName="w-full rounded-lg border border-slate-200 bg-slate-50 px-2 py-2 text-sm font-semibold focus:bg-white focus:border-blue-300 focus:ring-1 focus:ring-blue-200 transition-all outline-none"
-                  />
-                </div>
-                <div>
-                  <span className="text-[9px] font-semibold text-amber-400 uppercase">Ntrl</span>
-                  <SaveableNumericInput
-                    savedValue={marketData.aaiiNeutral ?? 17}
-                    onSave={(n) => onUpdateMarketData({ aaiiNeutral: n })}
-                    inputClassName="w-full rounded-lg border border-slate-200 bg-slate-50 px-2 py-2 text-sm font-semibold focus:bg-white focus:border-blue-300 focus:ring-1 focus:ring-blue-200 transition-all outline-none"
-                  />
-                </div>
-                <div>
-                  <span className="text-[9px] font-semibold text-emerald-400 uppercase">Bear</span>
-                  <SaveableNumericInput
-                    savedValue={marketData.aaiiBear ?? 52}
-                    onSave={(n) => {
-                      const spread = parseFloat(((marketData.aaiiBull ?? 30) - n).toFixed(1));
-                      onUpdateMarketData({ aaiiBear: n, aaiiBullBear: spread });
-                    }}
-                    inputClassName="w-full rounded-lg border border-slate-200 bg-slate-50 px-2 py-2 text-sm font-semibold focus:bg-white focus:border-blue-300 focus:ring-1 focus:ring-blue-200 transition-all outline-none"
-                  />
-                </div>
-              </div>
+              <p className="text-[10px] text-slate-400 mt-1">Drop a MarketEdge chart screenshot — Claude will read the shape, levels, and recent extremes for the contrarian section.</p>
             </div>
           </div>
+          <p className="mt-3 text-[11px] text-slate-400">
+            CNN Fear &amp; Greed and AAII Sentiment are now auto-fetched on every load
+            (with full history) — see the live tiles in the Contrarian Sentiment
+            section below.
+          </p>
         </div>
 
         {/* ── Other Manual Inputs ── */}

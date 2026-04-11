@@ -27,9 +27,92 @@ export type ForwardPoint = {
   // Only points that have a true historical series populate this — anything
   // else leaves it undefined and the UI degrades to "no chart".
   history?: SparkPoint[];
+  // Optional momentum stats derived from history. When present, lets the
+  // brief prompt and the tile captions describe trajectory in plain English
+  // ("falling, 8th percentile of 1Y range") instead of just a spot value.
+  trend?: TrendStats;
 };
 
 export type SparkPoint = { date: string; value: number };
+
+// Multi-horizon momentum stats computed once from a SparkPoint series.
+// All deltas are absolute (current - lag-N), not percentage moves, because
+// the inputs are already on bounded/index scales (F&G 0-100, AAII bull-bear
+// is itself a percentage spread, oscillator is a small signed number).
+// percentile is 0-100, where 0 = at the trailing-window minimum and 100 =
+// at the trailing-window maximum. trajectory is a one-word descriptor for
+// human consumption — derived from the most relevant horizon for the series.
+export type TrendStats = {
+  current: number;
+  delta1w?: number | null; // value - value ~5 trading days ago (or 1 weekly bar)
+  delta1m?: number | null; // ~21 trading days / ~4 weekly bars
+  delta3m?: number | null; // ~63 trading days / ~13 weekly bars
+  rangeLow: number; // min over the trailing window
+  rangeHigh: number; // max over the trailing window
+  percentile: number; // 0-100, where current sits inside [rangeLow, rangeHigh]
+  trajectory: "falling fast" | "falling" | "stable" | "rising" | "rising fast";
+};
+
+// Generic trend computer. Caller picks the lag offsets so daily series
+// (F&G, oscillator) and weekly series (AAII) both feed the same shape.
+// `velocityThresholds` defines what counts as "fast" — e.g. for F&G a 1m
+// move of >20 is dramatic, for AAII bull-bear >15pp is dramatic.
+function computeTrendStats(
+  history: SparkPoint[],
+  opts: {
+    lag1w: number;
+    lag1m: number;
+    lag3m: number;
+    fastThreshold: number; // |delta1m| >= this → "rising/falling fast"
+    slowThreshold: number; // |delta1m| <  this → "stable"
+  }
+): TrendStats | null {
+  if (!history || history.length < 2) return null;
+  const n = history.length;
+  const current = history[n - 1].value;
+  const at = (lag: number): number | null => {
+    if (lag <= 0 || n - 1 - lag < 0) return null;
+    return history[n - 1 - lag].value;
+  };
+  const v1w = at(opts.lag1w);
+  const v1m = at(opts.lag1m);
+  const v3m = at(opts.lag3m);
+  const round1 = (x: number) => Math.round(x * 10) / 10;
+  const delta1w = v1w != null ? round1(current - v1w) : null;
+  const delta1m = v1m != null ? round1(current - v1m) : null;
+  const delta3m = v3m != null ? round1(current - v3m) : null;
+  // Use whichever is the largest available window for the range computation,
+  // capped at 1Y of daily samples (252) so we don't drag in stale data.
+  const windowLen = Math.min(n, Math.max(opts.lag3m, opts.lag1m, opts.lag1w) + 1, 252);
+  const windowVals = history.slice(n - windowLen).map((p) => p.value);
+  const rangeLow = Math.min(...windowVals);
+  const rangeHigh = Math.max(...windowVals);
+  const span = rangeHigh - rangeLow;
+  const percentile =
+    span === 0 ? 50 : Math.round(((current - rangeLow) / span) * 100);
+  // Pick the best trajectory descriptor from whichever delta we have. Prefer
+  // 1m for stability; fall back to 1w if the series is too short.
+  const trajectoryDelta = delta1m ?? delta1w ?? 0;
+  const abs = Math.abs(trajectoryDelta);
+  let trajectory: TrendStats["trajectory"];
+  if (abs >= opts.fastThreshold) {
+    trajectory = trajectoryDelta < 0 ? "falling fast" : "rising fast";
+  } else if (abs < opts.slowThreshold) {
+    trajectory = "stable";
+  } else {
+    trajectory = trajectoryDelta < 0 ? "falling" : "rising";
+  }
+  return {
+    current: round1(current),
+    delta1w,
+    delta1m,
+    delta3m,
+    rangeLow: round1(rangeLow),
+    rangeHigh: round1(rangeHigh),
+    percentile,
+    trajectory,
+  };
+}
 
 export type ForwardLookingData = {
   spxYtd: ForwardPoint; // S&P 500 % change YTD
@@ -1692,6 +1775,15 @@ export async function fetchForwardLookingData(): Promise<ForwardLookingData> {
   ]);
 
   if (cnnRes) {
+    // CNN's history is daily — 5 trading days = 1w, 21 = 1m, 63 = 3m. F&G
+    // is on a 0-100 scale so a 1m move >20 is dramatic, <5 is stable.
+    const fgTrend = computeTrendStats(cnnRes.history, {
+      lag1w: 5,
+      lag1m: 21,
+      lag3m: 63,
+      fastThreshold: 20,
+      slowThreshold: 5,
+    });
     fearGreed = {
       value: cnnRes.score,
       source: cnnUrl,
@@ -1701,6 +1793,7 @@ export async function fetchForwardLookingData(): Promise<ForwardLookingData> {
       note: `CNN Business Fear & Greed Index (0=extreme fear, 100=extreme greed). Sparkline shows trailing 1Y of daily readings from CNN's dataviz endpoint. Previous shown is the 1-week-ago value.`,
       status: "live",
       history: cnnRes.history,
+      ...(fgTrend ? { trend: fgTrend } : {}),
     };
   }
 
@@ -1713,6 +1806,16 @@ export async function fetchForwardLookingData(): Promise<ForwardLookingData> {
       note: `${label} from the weekly AAII Investor Sentiment Survey. Auto-fetched from aaii.com/files/surveys/sentiment.xls. Latest reading: ${aaiiRes.date}.`,
       status: "live",
     });
+    // AAII history is weekly — 1 bar = 1w, 4 = 1m, 13 = 3m. Bull-bear spread
+    // moves a lot more violently than F&G; >15pp over a month is extreme,
+    // <3pp is stable.
+    const aaiiTrend = computeTrendStats(aaiiRes.history, {
+      lag1w: 1,
+      lag1m: 4,
+      lag3m: 13,
+      fastThreshold: 15,
+      slowThreshold: 3,
+    });
     aaiiBullBear = {
       ...point(aaiiRes.bullBear, "Bull-Bear spread"),
       previous:
@@ -1720,6 +1823,7 @@ export async function fetchForwardLookingData(): Promise<ForwardLookingData> {
           ? aaiiRes.history[aaiiRes.history.length - 2].value
           : null,
       history: aaiiRes.history,
+      ...(aaiiTrend ? { trend: aaiiTrend } : {}),
     };
     aaiiBull = point(aaiiRes.bullish, "Bullish %");
     aaiiNeutral = point(aaiiRes.neutral, "Neutral %");
@@ -1730,6 +1834,22 @@ export async function fetchForwardLookingData(): Promise<ForwardLookingData> {
     const latest = oscHistory[oscHistory.length - 1];
     const previous =
       oscHistory.length >= 2 ? oscHistory[oscHistory.length - 2].value : null;
+    // Oscillator history is whatever the PM saved — typically a few entries
+    // per week, not strictly daily. Treat each entry as ~1 day for trend
+    // purposes; only attach trend stats if we have at least 3 entries (2 is
+    // enough for delta1w but not enough for a meaningful range).
+    const oscTrend =
+      oscHistory.length >= 3
+        ? computeTrendStats(oscHistory, {
+            lag1w: Math.min(5, oscHistory.length - 1),
+            lag1m: Math.min(21, oscHistory.length - 1),
+            lag3m: Math.min(63, oscHistory.length - 1),
+            // Oscillator typically lives in [-6, +6]; a 1m move >4 is huge,
+            // <1 is essentially flat.
+            fastThreshold: 4,
+            slowThreshold: 1,
+          })
+        : null;
     spOscillator = {
       value: latest.value,
       source: oscillatorUrl,
@@ -1739,6 +1859,7 @@ export async function fetchForwardLookingData(): Promise<ForwardLookingData> {
       note: `MarketEdge S&P Oscillator. The oscillator stays manually entered (MarketEdge requires login) — the sparkline shows the last ${OSCILLATOR_HISTORY_MAX_DAYS} days of values you've saved into the brief.`,
       status: "live",
       history: oscHistory,
+      ...(oscTrend ? { trend: oscTrend } : {}),
     };
   }
 

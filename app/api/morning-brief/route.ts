@@ -63,6 +63,7 @@ async function fetchSectorPerformance(): Promise<string> {
 }
 
 const ATTACHMENT_CACHE_KEY = "pm:attachment-analysis";
+const OSCILLATOR_ATTACHMENT_CACHE_KEY = "pm:oscillator-screenshot-analysis";
 
 const BRIEF_PROMPT = `You are a senior portfolio strategist generating a daily morning brief for a portfolio management team. Your audience is professional portfolio managers who need actionable, institutional-quality market intelligence.
 
@@ -263,6 +264,71 @@ Then write a concise 3-5 paragraph summary that a PM can reference daily.`,
   return message.content[0].type === "text" ? message.content[0].text : "";
 }
 
+// Separate vision pass for the S&P Oscillator chart screenshot. The oscillator
+// stays manually entered (MarketEdge requires login) and Redis only logs the
+// PM's saved values, so a 6-month logged history is sparse at best. When the
+// PM uploads a chart screenshot from MarketEdge, this analyzer extracts the
+// shape and key levels so Claude can reason about it in the contrarian section
+// even when our internal log doesn't yet have enough data points.
+async function analyzeOscillatorScreenshot(
+  attachments: AttachmentInput[]
+): Promise<string> {
+  const imageBlocks = buildImageBlocks(attachments);
+  const message = await client.messages.create({
+    model: "claude-sonnet-4-6",
+    max_tokens: 600,
+    messages: [
+      {
+        role: "user",
+        content: [
+          {
+            type: "text",
+            text: `You are reading an S&P Oscillator chart from MarketEdge. Extract concrete observations a PM can use:
+- Current value (approximate, with sign)
+- Recent extremes visible on the chart and roughly when they occurred
+- Whether the oscillator is crossing through key levels (-4, -2, 0, +2, +4) and the direction
+- Shape over the visible window (rolling over from overbought, basing in oversold, mean-reverting, etc.)
+
+Be concise: 4-6 bullet points, no preamble. Use only what is visible in the chart — do not guess about dates that aren't labeled.`,
+          },
+          ...imageBlocks,
+        ],
+      },
+    ],
+  });
+  return message.content[0].type === "text" ? message.content[0].text : "";
+}
+
+async function getCachedOscillatorAnalysis(
+  hash: string
+): Promise<string | null> {
+  try {
+    const redis = await getRedis();
+    const raw = await redis.get(OSCILLATOR_ATTACHMENT_CACHE_KEY);
+    if (!raw) return null;
+    const cached = JSON.parse(raw) as { hash: string; summary: string };
+    return cached.hash === hash ? cached.summary : null;
+  } catch {
+    return null;
+  }
+}
+
+async function saveCachedOscillatorAnalysis(hash: string, summary: string) {
+  try {
+    const redis = await getRedis();
+    await redis.set(
+      OSCILLATOR_ATTACHMENT_CACHE_KEY,
+      JSON.stringify({
+        hash,
+        summary,
+        analyzedAt: new Date().toISOString(),
+      })
+    );
+  } catch (e) {
+    console.error("Failed to cache oscillator screenshot analysis:", e);
+  }
+}
+
 // Compute dynamic hedge timing score from market data (mirrors HedgingIndicator logic)
 function computeHedgeScore(vix: number, termStructure: string, fearGreed: number): number {
   let optimalCount = 0;
@@ -360,6 +426,34 @@ export async function POST(request: NextRequest) {
       const sign = d >= 0 ? "+" : "";
       return ` (${period} ${sign}${d.toFixed(1)}pp)`;
     };
+    // Render the trajectory + multi-horizon delta + percentile-of-range context
+    // for any sentiment ForwardPoint that has a `trend` block. Falls back to
+    // an empty string if the point doesn't have one (e.g. fetch failed, or
+    // oscillator history is too short for percentiles to be meaningful).
+    const trendBlurb = (p: ForwardPoint | undefined): string => {
+      if (!p || !p.trend) return "";
+      const t = p.trend;
+      const parts: string[] = [];
+      const fmtDelta = (d: number | null | undefined): string | null => {
+        if (d == null) return null;
+        const sign = d >= 0 ? "+" : "";
+        return `${sign}${d}`;
+      };
+      const d1w = fmtDelta(t.delta1w);
+      const d1m = fmtDelta(t.delta1m);
+      const d3m = fmtDelta(t.delta3m);
+      const deltas: string[] = [];
+      if (d1w != null) deltas.push(`1w ${d1w}`);
+      if (d1m != null) deltas.push(`1m ${d1m}`);
+      if (d3m != null) deltas.push(`3m ${d3m}`);
+      parts.push(t.trajectory);
+      if (deltas.length > 0) parts.push(deltas.join(", "));
+      parts.push(
+        `${t.percentile}th pct of trailing range [${t.rangeLow}, ${t.rangeHigh}]`
+      );
+      return ` — ${parts.join("; ")}`;
+    };
+
     const pctDelta = (
       p: ForwardPoint | undefined
     ): { str: string; value: number | null } => {
@@ -474,22 +568,16 @@ Volatility Structure:
 Contrarian Indicators (ALL interpreted INVERSELY — oversold/fearful = BULLISH, overbought/greedy = BEARISH):
 - S&P Oscillator: ${
       forwardData?.spOscillator?.value ?? marketData.spOscillator
-    } — negative = oversold = BULLISH, positive = overbought = BEARISH
+    }${trendBlurb(forwardData?.spOscillator)} — negative = oversold = BULLISH, positive = overbought = BEARISH
 - Put/Call Ratio (Total): ${marketData.putCall} — >1.0 = excessive fear = BULLISH, <0.7 = complacency = BEARISH
 - Fear & Greed Index: ${
       forwardData?.fearGreed?.value ?? marketData.fearGreed
-    }/100${
-      forwardData?.fearGreed?.previous != null
-        ? ` (1wk ago ${forwardData.fearGreed.previous})`
-        : ""
-    } — <25 = extreme fear = BULLISH, >75 = extreme greed = BEARISH
+    }/100${trendBlurb(forwardData?.fearGreed)} — <25 = extreme fear = BULLISH, >75 = extreme greed = BEARISH
 - AAII Bull-Bear Spread: ${
       forwardData?.aaiiBullBear?.value ?? marketData.aaiiBullBear
-    }${
-      forwardData?.aaiiBullBear?.previous != null
-        ? ` (prev wk ${forwardData.aaiiBullBear.previous})`
-        : ""
-    } — <-20 = excessive bearishness = BULLISH, >+30 = excessive bullishness = BEARISH
+    }%${trendBlurb(forwardData?.aaiiBullBear)} — <-20 = excessive bearishness = BULLISH, >+30 = excessive bullishness = BEARISH
+
+IMPORTANT — interpret trajectory: a value at an extreme that is REVERSING (e.g. F&G at 22 but rising) is much weaker as a contrarian signal than the same value still moving deeper into the extreme. Use the percentile-of-1Y context and trajectory descriptors above when forming the contrarianAnalysis.
 
 Equity Flows: ${marketData.equityFlows}
 
@@ -500,23 +588,28 @@ ${sectorPerformance}
 
 Current Portfolio Holdings: ${holdingsSummary}`;
 
-    // Check if we can reuse cached screenshot analysis instead of re-sending images
-    const atts: AttachmentInput[] = attachments || [];
-    const attHash = hashAttachments(atts);
+    // Split attachments by section so JPM flows and oscillator screenshots
+    // each go through their own analyzer + cache. Anything else (future
+    // sections) is left untouched for now.
+    const allAtts: AttachmentInput[] = attachments || [];
+    const flowsAtts = allAtts.filter((a) => a.section === "equityFlows");
+    const oscAtts = allAtts.filter((a) => a.section === "spOscillator");
+
     let flowsContext = "";
+    let oscContext = "";
     let autoEquityFlows: string | undefined;
 
-    if (atts.length > 0) {
-      const cached = await getCachedAnalysis(attHash);
+    if (flowsAtts.length > 0) {
+      const flowsHash = hashAttachments(flowsAtts);
+      const cached = await getCachedAnalysis(flowsHash);
       if (cached) {
         // Images haven't changed — use cached summary (saves vision tokens)
         flowsContext = `\n\n--- JPM Flows & Liquidity Report Summary (from attached screenshots, unchanged since last analysis) ---\n${cached.summary}`;
         autoEquityFlows = cached.equityFlowsSignal;
-        console.log("Using cached attachment analysis (images unchanged)");
+        console.log("Using cached JPM flows analysis (images unchanged)");
       } else {
-        // New images — analyze them separately and cache the result
-        console.log("New attachments detected — running vision analysis...");
-        const summary = await analyzeAttachments(atts);
+        console.log("New JPM flows attachments detected — running vision analysis...");
+        const summary = await analyzeAttachments(flowsAtts);
         if (!summary || summary.trim().length === 0) {
           return NextResponse.json(
             { error: "JPM Flows screenshot analysis returned empty — the images may be unreadable. Try re-uploading clearer screenshots." },
@@ -525,14 +618,33 @@ Current Portfolio Holdings: ${holdingsSummary}`;
         }
         const flowsSignal = parseEquityFlowsSignal(summary);
         const cleanSummary = summary.replace(/^EQUITY_FLOWS_SIGNAL:.*\n?/m, "").trim();
-        await saveCachedAnalysis(attHash, cleanSummary, flowsSignal);
+        await saveCachedAnalysis(flowsHash, cleanSummary, flowsSignal);
         autoEquityFlows = flowsSignal;
         flowsContext = `\n\n--- JPM Flows & Liquidity Report Summary (freshly analyzed from screenshots) ---\n${cleanSummary}`;
       }
     }
 
+    if (oscAtts.length > 0) {
+      const oscHash = hashAttachments(oscAtts);
+      const cached = await getCachedOscillatorAnalysis(oscHash);
+      if (cached) {
+        oscContext = `\n\n--- S&P Oscillator Chart Observations (from attached screenshot, unchanged since last analysis) ---\n${cached}`;
+        console.log("Using cached oscillator chart analysis (images unchanged)");
+      } else {
+        console.log("New oscillator chart detected — running vision analysis...");
+        const summary = await analyzeOscillatorScreenshot(oscAtts);
+        if (summary && summary.trim().length > 0) {
+          await saveCachedOscillatorAnalysis(oscHash, summary.trim());
+          oscContext = `\n\n--- S&P Oscillator Chart Observations (freshly analyzed from screenshot) ---\n${summary.trim()}`;
+        }
+        // Soft-fail: if vision returns nothing, we just skip the context block
+        // rather than failing the whole brief — the textual oscillator value
+        // and Redis history are still in the prompt.
+      }
+    }
+
     const contentBlocks: Anthropic.Messages.ContentBlockParam[] = [
-      { type: "text", text: textContent + flowsContext },
+      { type: "text", text: textContent + flowsContext + oscContext },
     ];
 
     const message = await client.messages.create({
