@@ -861,13 +861,13 @@ function RankingTable({
               <th className={`${thClass} text-right`} onClick={() => toggleSort("price")}>Price{arrow("price")}</th>
               <th className={`${thClass} min-w-[220px]`}>What They Do</th>
               <th className={`${thClass} min-w-[220px]`}>Why Own It</th>
+              <th className={thClass} onClick={() => toggleSort("raw")}>Base{arrow("raw")}</th>
+              <th className={`${thClass} font-bold`} onClick={() => toggleSort("adjusted")}>Adj{arrow("adjusted")}</th>
               {SCORE_GROUPS.map((g) => (
                 <th key={g.name} className={`${thClass} ${GROUP_HEADER_COLORS[g.name] || ""}`} onClick={() => toggleSort(g.name)}>
                   {g.name === "Company Specific" ? "Company" : g.name}{arrow(g.name)}
                 </th>
               ))}
-              <th className={thClass} onClick={() => toggleSort("raw")}>Base{arrow("raw")}</th>
-              <th className={`${thClass} font-bold`} onClick={() => toggleSort("adjusted")}>Adj{arrow("adjusted")}</th>
               <th className={thClass} onClick={() => toggleSort("rating")}>Rating{arrow("rating")}</th>
               <th className="pb-2 pr-3">Signal</th>
             </tr>
@@ -933,11 +933,6 @@ function RankingTable({
                       </>
                     );
                   })()}
-                  {SCORE_GROUPS.map((g) => (
-                    <td key={g.name} className="py-3 pr-3 text-slate-600">
-                      {groupTotal(s, g)}/{g.maxTotal}
-                    </td>
-                  ))}
                   <td className="py-3 pr-3 text-slate-500">{s.raw}</td>
                   <td className="py-3 pr-3">
                     <span className="font-bold text-slate-900">{s.adjusted}</span>
@@ -945,6 +940,11 @@ function RankingTable({
                       {adj >= 0 ? "+" : ""}{adj}
                     </span>
                   </td>
+                  {SCORE_GROUPS.map((g) => (
+                    <td key={g.name} className="py-3 pr-3 text-slate-600">
+                      {groupTotal(s, g)}/{g.maxTotal}
+                    </td>
+                  ))}
                   <td className={`py-3 pr-3 font-medium ${ratingColor(label)}`}>{label}</td>
                   <td className="py-3 pr-3">
                     {isFlagged && flagType === "buy" && (
