@@ -52,16 +52,117 @@ async function yahooChart(
   symbol: string,
   range: string
 ): Promise<YahooChartResult | null> {
+  // Attach cookie+crumb if we can get them. Not strictly required for the
+  // v8 chart endpoint yet, but some edge regions now 401 without it. Fall
+  // back to anonymous request if auth fetch fails — chart is the cheapest
+  // endpoint and occasionally works unauthenticated where quoteSummary
+  // won't.
+  const auth = await getYahooAuth().catch(() => null);
+  const baseUrl = `https://query2.finance.yahoo.com/v8/finance/chart/${encodeURIComponent(
+    symbol
+  )}?range=${range}&interval=1d&includePrePost=false${
+    auth ? `&crumb=${encodeURIComponent(auth.crumb)}` : ""
+  }`;
   try {
-    const res = await fetch(
-      `https://query2.finance.yahoo.com/v8/finance/chart/${encodeURIComponent(
-        symbol
-      )}?range=${range}&interval=1d&includePrePost=false`,
-      { headers: { "User-Agent": YH_UA }, cache: "no-store" }
-    );
+    const res = await fetch(baseUrl, {
+      headers: {
+        "User-Agent": YH_UA,
+        Accept: "application/json",
+        ...(auth ? { Cookie: auth.cookie } : {}),
+      },
+      cache: "no-store",
+    });
     if (!res.ok) return null;
     const data = await res.json();
     return (data?.chart?.result?.[0] ?? null) as YahooChartResult | null;
+  } catch {
+    return null;
+  }
+}
+
+// ── Stooq free daily CSV ─────────────────────────────────────────────────
+// Stooq.com publishes free end-of-day CSV downloads with no auth or rate
+// limiting, and it's the industry-standard Yahoo Finance backup for hobby
+// projects. We use it for index series (^spx, ^vix, ^move, spy.us) whenever
+// FRED doesn't have the series or Yahoo refuses our requests. The CSV
+// shape is: Date,Open,High,Low,Close,Volume
+export type DailyRow = { date: string; close: number };
+
+async function fetchStooqDaily(symbol: string): Promise<DailyRow[] | null> {
+  try {
+    const url = `https://stooq.com/q/d/l/?s=${encodeURIComponent(
+      symbol.toLowerCase()
+    )}&i=d`;
+    const res = await fetch(url, {
+      headers: {
+        "User-Agent": YH_UA,
+        Accept: "text/csv,text/plain,*/*",
+      },
+      cache: "no-store",
+    });
+    if (!res.ok) return null;
+    const text = await res.text();
+    if (!text || text.length < 20 || /no data/i.test(text)) return null;
+    const lines = text.trim().split(/\r?\n/);
+    if (lines.length < 2) return null;
+    const header = lines[0].toLowerCase().split(",");
+    const dateIdx = header.indexOf("date");
+    const closeIdx = header.indexOf("close");
+    if (dateIdx === -1 || closeIdx === -1) return null;
+    const rows: DailyRow[] = [];
+    for (let i = 1; i < lines.length; i++) {
+      const parts = lines[i].split(",");
+      if (parts.length <= closeIdx) continue;
+      const d = parts[dateIdx];
+      const c = parseFloat(parts[closeIdx]);
+      if (d && !isNaN(c)) rows.push({ date: d, close: c });
+    }
+    if (rows.length === 0) return null;
+    // Sort descending so rows[0] is the most recent trading day, matching
+    // FRED's sort_order=desc output.
+    rows.sort((a, b) => (a.date < b.date ? 1 : -1));
+    return rows;
+  } catch {
+    return null;
+  }
+}
+
+// ── stockanalysis.com P/E scrape ─────────────────────────────────────────
+// Last-resort fallback for SPY Forward/Trailing P/E when Yahoo quoteSummary
+// is blocked. stockanalysis.com renders the statistics table server-side
+// with plain <td>label</td><td>value</td> markup, so a narrow regex is
+// durable enough for our needs. If the page structure changes, we silently
+// return null and the tile falls back to Stale.
+async function scrapeStockAnalysisPE(
+  symbol: string
+): Promise<{ forwardPE: number | null; trailingPE: number | null } | null> {
+  try {
+    const url = `https://stockanalysis.com/etf/${encodeURIComponent(
+      symbol.toLowerCase()
+    )}/statistics/`;
+    const res = await fetch(url, {
+      headers: {
+        "User-Agent": YH_UA,
+        Accept: "text/html,application/xhtml+xml,application/xml;q=0.9,*/*;q=0.8",
+      },
+      cache: "no-store",
+    });
+    if (!res.ok) return null;
+    const html = await res.text();
+    if (!html || html.length < 1000) return null;
+    // Match "PE Ratio" and "Forward PE" cells. We accept an optional span or
+    // tooltip wrapper before the value cell to stay robust to minor markup
+    // tweaks.
+    const trailingMatch = html.match(
+      />\s*PE Ratio\s*<\/(?:td|th)>[\s\S]{0,200}?<td[^>]*>\s*([0-9]+(?:\.[0-9]+)?)/i
+    );
+    const forwardMatch = html.match(
+      />\s*Forward PE\s*<\/(?:td|th)>[\s\S]{0,200}?<td[^>]*>\s*([0-9]+(?:\.[0-9]+)?)/i
+    );
+    const trailingPE = trailingMatch ? parseFloat(trailingMatch[1]) : null;
+    const forwardPE = forwardMatch ? parseFloat(forwardMatch[1]) : null;
+    if (trailingPE == null && forwardPE == null) return null;
+    return { forwardPE, trailingPE };
   } catch {
     return null;
   }
@@ -260,109 +361,174 @@ export async function fetchForwardLookingData(): Promise<ForwardLookingData> {
   const asOf = new Date().toISOString();
   const fredEnabled = !!process.env.FRED_API_KEY;
 
-  // ── S&P 500 YTD and weekly change (Yahoo ^GSPC) ───────────────────────────
-  const spxSource = "https://finance.yahoo.com/quote/%5EGSPC/";
+  // ── S&P 500 YTD and weekly change ─────────────────────────────────────────
+  // Multi-source fallback chain because Yahoo Finance now blocks a lot of
+  // server-side traffic outright (any Vercel/AWS IP range can get 429'd or
+  // 401'd without warning). Preference order:
+  //   1. FRED SP500  — most authoritative, updates daily, matches index
+  //                    values you'd pull on fred.stlouisfed.org
+  //   2. Stooq ^spx  — free daily CSV, no auth required
+  //   3. Yahoo ^GSPC — original path, kept as a final fallback
   let spxYtd: ForwardPoint = missing(
-    spxSource,
-    "Yahoo Finance ^GSPC",
-    "Yahoo chart unavailable"
+    "https://fred.stlouisfed.org/series/SP500",
+    "FRED SP500 / Stooq ^SPX / Yahoo ^GSPC",
+    "All SPX sources returned no data."
   );
   let spxWeek: ForwardPoint = missing(
-    spxSource,
-    "Yahoo Finance ^GSPC",
-    "Yahoo chart unavailable"
+    "https://fred.stlouisfed.org/series/SP500",
+    "FRED SP500 / Stooq ^SPX / Yahoo ^GSPC",
+    "All SPX sources returned no data."
   );
-  try {
-    const [ytdRes, wkRes] = await Promise.all([
-      yahooChart("^GSPC", "ytd"),
-      yahooChart("^GSPC", "5d"),
-    ]);
-    const ytdCloses: (number | null)[] =
-      ytdRes?.indicators?.quote?.[0]?.close ?? [];
-    const ytdFirst =
-      ytdCloses.find((v): v is number => typeof v === "number") ?? null;
-    const nowPrice: number | null =
-      ytdRes?.meta?.regularMarketPrice ??
-      (ytdCloses
-        .filter((v): v is number => typeof v === "number")
-        .slice(-1)[0] ??
-        null);
-    const spxYtdValue = pct(nowPrice, ytdFirst);
-    spxYtd = {
-      value: spxYtdValue,
-      source: spxSource,
-      sourceLabel: "Yahoo Finance ^GSPC",
-      asOf,
-      previous: ytdFirst,
-      note: "S&P 500 percent change from first trading day of the current calendar year.",
-      status: spxYtdValue != null ? "live" : "failed",
-    };
+  {
+    let rows: DailyRow[] | null = null;
+    let sourceLabel = "";
+    let sourceUrl = "";
 
-    const wkClosesAll: number[] = (wkRes?.indicators?.quote?.[0]?.close ?? [])
-      .filter((v): v is number => typeof v === "number");
-    const wkNow =
-      wkRes?.meta?.regularMarketPrice ??
-      (wkClosesAll.length ? wkClosesAll[wkClosesAll.length - 1] : null);
-    const wkFirst = wkClosesAll.length > 0 ? wkClosesAll[0] : null;
-    const spxWeekValue = pct(wkNow, wkFirst);
-    spxWeek = {
-      value: spxWeekValue,
-      source: spxSource,
-      sourceLabel: "Yahoo Finance ^GSPC",
-      asOf,
-      previous: wkFirst,
-      note: "S&P 500 percent change over the trailing 5 trading days.",
-      status: spxWeekValue != null ? "live" : "failed",
-    };
-  } catch {
-    // leave as missing
+    if (fredEnabled) {
+      const sp500 = await fredSeries("SP500", 260);
+      if (sp500 && sp500.length >= 2) {
+        rows = sp500.map((o) => ({ date: o.date, close: o.value }));
+        sourceLabel = "FRED SP500";
+        sourceUrl = "https://fred.stlouisfed.org/series/SP500";
+      }
+    }
+    if (!rows) {
+      const stooq = await fetchStooqDaily("^spx");
+      if (stooq && stooq.length >= 2) {
+        rows = stooq;
+        sourceLabel = "Stooq ^SPX";
+        sourceUrl = "https://stooq.com/q/?s=%5Espx";
+      }
+    }
+    if (!rows) {
+      // Last resort: rebuild a rows array from the Yahoo chart YTD range.
+      // Yahoo returns parallel timestamp[] and indicators.quote[0].close[]
+      // arrays in chronological order.
+      type YahooChartRaw = YahooChartResult & { timestamp?: number[] };
+      const ytdRes = (await yahooChart("^GSPC", "ytd")) as YahooChartRaw | null;
+      const timestamps: number[] = ytdRes?.timestamp ?? [];
+      const closes: (number | null)[] = ytdRes?.indicators?.quote?.[0]?.close ?? [];
+      if (timestamps.length === closes.length && closes.length >= 2) {
+        const built: DailyRow[] = [];
+        for (let i = 0; i < closes.length; i++) {
+          const c = closes[i];
+          if (typeof c === "number") {
+            built.push({
+              date: new Date(timestamps[i] * 1000).toISOString().slice(0, 10),
+              close: c,
+            });
+          }
+        }
+        if (built.length >= 2) {
+          built.sort((a, b) => (a.date < b.date ? 1 : -1));
+          rows = built;
+          sourceLabel = "Yahoo Finance ^GSPC";
+          sourceUrl = "https://finance.yahoo.com/quote/%5EGSPC/";
+        }
+      }
+    }
+
+    if (rows && rows.length >= 2) {
+      const now = rows[0].close;
+      const currentYear = rows[0].date.slice(0, 4);
+      // YTD baseline = oldest row in the current calendar year.
+      const inYear = rows.filter((r) => r.date.startsWith(currentYear));
+      const ytdBase = inYear[inYear.length - 1] ?? rows[rows.length - 1];
+      const wkBase = rows[Math.min(5, rows.length - 1)];
+
+      const ytdValue = pct(now, ytdBase?.close ?? null);
+      const wkValue = pct(now, wkBase?.close ?? null);
+
+      const status: ForwardStatus = fredStatusFromDate(rows[0].date);
+
+      spxYtd = {
+        value: ytdValue,
+        source: sourceUrl,
+        sourceLabel,
+        asOf: rows[0].date,
+        previous: ytdBase?.close ?? null,
+        note: `S&P 500 percent change from first trading day of ${currentYear}. Source: ${sourceLabel}. Latest close: ${rows[0].date}.`,
+        status: ytdValue != null ? status : "failed",
+      };
+      spxWeek = {
+        value: wkValue,
+        source: sourceUrl,
+        sourceLabel,
+        asOf: rows[0].date,
+        previous: wkBase?.close ?? null,
+        note: `S&P 500 5-trading-day percent change. Source: ${sourceLabel}. Latest close: ${rows[0].date}.`,
+        status: wkValue != null ? status : "failed",
+      };
+    }
   }
 
   // ── SPY forward / trailing P/E and implied EPS growth ────────────────────
+  // Yahoo's quoteSummary endpoint is intermittently blocked from server IPs
+  // even with a fresh crumb. stockanalysis.com renders the same P/E metrics
+  // server-side in a plain HTML table and is a reliable fallback.
   const spyKeyStatsUrl = "https://finance.yahoo.com/quote/SPY/key-statistics";
+  const spyStockAnalysisUrl = "https://stockanalysis.com/etf/spy/statistics/";
   let spyForwardPE: ForwardPoint = missing(
     spyKeyStatsUrl,
-    "Yahoo Finance SPY",
-    "Yahoo quote summary unavailable"
+    "Yahoo Finance SPY / stockanalysis.com",
+    "All SPY P/E sources returned no data."
   );
   let spyTrailingPE: ForwardPoint = missing(
     spyKeyStatsUrl,
-    "Yahoo Finance SPY",
-    "Yahoo quote summary unavailable"
+    "Yahoo Finance SPY / stockanalysis.com",
+    "All SPY P/E sources returned no data."
   );
   let impliedEpsGrowth: ForwardPoint = missing(
     spyKeyStatsUrl,
-    "Yahoo Finance SPY",
+    "Yahoo Finance SPY / stockanalysis.com",
     "Derived from (trailing P/E / forward P/E - 1); needs both values."
   );
-  try {
-    const summary = await yahooQuoteSummary(
-      "SPY",
-      "summaryDetail,defaultKeyStatistics"
-    );
-    const det = summary?.summaryDetail;
-    const ks = summary?.defaultKeyStatistics;
-    const fwd: number | null =
-      det?.forwardPE?.raw ?? ks?.forwardPE?.raw ?? null;
-    const trl: number | null =
-      det?.trailingPE?.raw ?? ks?.trailingPE?.raw ?? null;
+  {
+    let fwd: number | null = null;
+    let trl: number | null = null;
+    let peSourceUrl = spyKeyStatsUrl;
+    let peSourceLabel = "Yahoo Finance SPY";
+
+    try {
+      const summary = await yahooQuoteSummary(
+        "SPY",
+        "summaryDetail,defaultKeyStatistics"
+      );
+      const det = summary?.summaryDetail;
+      const ks = summary?.defaultKeyStatistics;
+      fwd = det?.forwardPE?.raw ?? ks?.forwardPE?.raw ?? null;
+      trl = det?.trailingPE?.raw ?? ks?.trailingPE?.raw ?? null;
+    } catch {
+      // leave null, fall through to scrape
+    }
+
+    if (fwd == null || trl == null) {
+      const scraped = await scrapeStockAnalysisPE("spy");
+      if (scraped) {
+        if (fwd == null && scraped.forwardPE != null) fwd = scraped.forwardPE;
+        if (trl == null && scraped.trailingPE != null) trl = scraped.trailingPE;
+        peSourceUrl = spyStockAnalysisUrl;
+        peSourceLabel = "stockanalysis.com SPY";
+      }
+    }
+
     if (fwd != null) {
       spyForwardPE = {
         value: parseFloat(fwd.toFixed(2)),
-        source: spyKeyStatsUrl,
-        sourceLabel: "Yahoo Finance SPY",
+        source: peSourceUrl,
+        sourceLabel: peSourceLabel,
         asOf,
-        note: "SPY forward blended P/E — used as the closest automated proxy for the S&P 500 forward multiple.",
+        note: `SPY forward blended P/E via ${peSourceLabel} — closest automated proxy for the S&P 500 forward multiple.`,
         status: "live",
       };
     }
     if (trl != null) {
       spyTrailingPE = {
         value: parseFloat(trl.toFixed(2)),
-        source: spyKeyStatsUrl,
-        sourceLabel: "Yahoo Finance SPY",
+        source: peSourceUrl,
+        sourceLabel: peSourceLabel,
         asOf,
-        note: "SPY trailing twelve-month P/E.",
+        note: `SPY trailing twelve-month P/E via ${peSourceLabel}.`,
         status: "live",
       };
     }
@@ -370,15 +536,13 @@ export async function fetchForwardLookingData(): Promise<ForwardLookingData> {
       const impl = (trl / fwd - 1) * 100;
       impliedEpsGrowth = {
         value: parseFloat(impl.toFixed(1)),
-        source: spyKeyStatsUrl,
-        sourceLabel: "Yahoo Finance SPY",
+        source: peSourceUrl,
+        sourceLabel: peSourceLabel,
         asOf,
         note: "Implied forward 12-month EPS growth, derived as (trailing P/E / forward P/E - 1) × 100.",
         status: "live",
       };
     }
-  } catch {
-    // leave as missing
   }
 
   // ── Yields: FRED preferred, Yahoo fallback ───────────────────────────────
@@ -575,49 +739,129 @@ export async function fetchForwardLookingData(): Promise<ForwardLookingData> {
     }
   }
 
-  // ── VIX / MOVE weekly deltas (Yahoo) ─────────────────────────────────────
-  const mkVolPoint = (
-    res: YahooChartResult | null,
-    tickerEncoded: string,
+  // ── VIX / MOVE weekly deltas (multi-source) ──────────────────────────────
+  // VIX fallback chain: FRED VIXCLS → Stooq ^vix → Yahoo ^VIX
+  // MOVE fallback chain: Stooq ^move → Yahoo ^MOVE (FRED has no MOVE series)
+  // Each source builds a DailyRow[] sorted newest-first so rows[0] is the
+  // latest close and rows[~5] is ~one trading week back.
+  const volPointFromRows = (
+    rows: DailyRow[],
+    sourceUrl: string,
+    sourceLabel: string,
     label: string
   ): ForwardPoint => {
-    const closes: number[] = (res?.indicators?.quote?.[0]?.close ?? []).filter(
-      (v): v is number => typeof v === "number"
-    );
-    const now =
-      res?.meta?.regularMarketPrice ??
-      (closes.length ? closes[closes.length - 1] : null);
-    const prior = closes.length > 0 ? closes[0] : null;
+    const now = rows[0]?.close ?? null;
+    const priorIdx = Math.min(5, rows.length - 1);
+    const prior = rows[priorIdx]?.close ?? null;
+    const status: ForwardStatus =
+      now != null ? fredStatusFromDate(rows[0].date) : "failed";
     return {
       value: now != null ? parseFloat(now.toFixed(2)) : null,
-      source: `https://finance.yahoo.com/quote/%5E${tickerEncoded}`,
-      sourceLabel: label,
-      asOf,
+      source: sourceUrl,
+      sourceLabel,
+      asOf: rows[0]?.date ?? asOf,
       previous: prior != null ? parseFloat(prior.toFixed(2)) : null,
-      note: `${label} current price with 5-trading-day prior for week-over-week delta.`,
-      status: now != null ? "live" : "failed",
+      note: `${label} latest close with ~5-trading-day prior for week-over-week delta. Source: ${sourceLabel}. Latest close: ${rows[0]?.date}.`,
+      status,
     };
   };
 
+  const yahooChartToRows = (
+    res:
+      | (YahooChartResult & { timestamp?: number[] })
+      | null
+  ): DailyRow[] | null => {
+    const timestamps: number[] = res?.timestamp ?? [];
+    const closes: (number | null)[] = res?.indicators?.quote?.[0]?.close ?? [];
+    if (timestamps.length !== closes.length || closes.length < 2) return null;
+    const built: DailyRow[] = [];
+    for (let i = 0; i < closes.length; i++) {
+      const c = closes[i];
+      if (typeof c === "number") {
+        built.push({
+          date: new Date(timestamps[i] * 1000).toISOString().slice(0, 10),
+          close: c,
+        });
+      }
+    }
+    if (built.length < 2) return null;
+    built.sort((a, b) => (a.date < b.date ? 1 : -1));
+    return built;
+  };
+
   let vixWeek: ForwardPoint = missing(
-    "https://finance.yahoo.com/quote/%5EVIX",
-    "Yahoo Finance ^VIX",
-    "Yahoo chart unavailable"
+    "https://fred.stlouisfed.org/series/VIXCLS",
+    "FRED VIXCLS / Stooq ^VIX / Yahoo ^VIX",
+    "All VIX sources returned no data."
   );
   let moveWeek: ForwardPoint = missing(
-    "https://finance.yahoo.com/quote/%5EMOVE",
-    "Yahoo Finance ^MOVE",
-    "Yahoo chart unavailable"
+    "https://stooq.com/q/?s=%5Emove",
+    "Stooq ^MOVE / Yahoo ^MOVE",
+    "All MOVE sources returned no data."
   );
-  try {
-    const [vix5d, move5d] = await Promise.all([
-      yahooChart("^VIX", "5d"),
-      yahooChart("^MOVE", "5d"),
-    ]);
-    vixWeek = mkVolPoint(vix5d, "VIX", "Yahoo Finance ^VIX");
-    moveWeek = mkVolPoint(move5d, "MOVE", "Yahoo Finance ^MOVE");
-  } catch {
-    // leave as missing
+
+  // VIX
+  {
+    let rows: DailyRow[] | null = null;
+    let sourceLabel = "";
+    let sourceUrl = "";
+
+    if (fredEnabled) {
+      const vixFred = await fredSeries("VIXCLS", 15);
+      if (vixFred && vixFred.length >= 2) {
+        rows = vixFred.map((o) => ({ date: o.date, close: o.value }));
+        sourceLabel = "FRED VIXCLS";
+        sourceUrl = "https://fred.stlouisfed.org/series/VIXCLS";
+      }
+    }
+    if (!rows) {
+      const stooq = await fetchStooqDaily("^vix");
+      if (stooq && stooq.length >= 2) {
+        rows = stooq;
+        sourceLabel = "Stooq ^VIX";
+        sourceUrl = "https://stooq.com/q/?s=%5Evix";
+      }
+    }
+    if (!rows) {
+      type Raw = YahooChartResult & { timestamp?: number[] };
+      const res = (await yahooChart("^VIX", "1mo")) as Raw | null;
+      const built = yahooChartToRows(res);
+      if (built) {
+        rows = built;
+        sourceLabel = "Yahoo Finance ^VIX";
+        sourceUrl = "https://finance.yahoo.com/quote/%5EVIX";
+      }
+    }
+    if (rows && rows.length >= 2) {
+      vixWeek = volPointFromRows(rows, sourceUrl, sourceLabel, "VIX");
+    }
+  }
+
+  // MOVE
+  {
+    let rows: DailyRow[] | null = null;
+    let sourceLabel = "";
+    let sourceUrl = "";
+
+    const stooq = await fetchStooqDaily("^move");
+    if (stooq && stooq.length >= 2) {
+      rows = stooq;
+      sourceLabel = "Stooq ^MOVE";
+      sourceUrl = "https://stooq.com/q/?s=%5Emove";
+    }
+    if (!rows) {
+      type Raw = YahooChartResult & { timestamp?: number[] };
+      const res = (await yahooChart("^MOVE", "1mo")) as Raw | null;
+      const built = yahooChartToRows(res);
+      if (built) {
+        rows = built;
+        sourceLabel = "Yahoo Finance ^MOVE";
+        sourceUrl = "https://finance.yahoo.com/quote/%5EMOVE";
+      }
+    }
+    if (rows && rows.length >= 2) {
+      moveWeek = volPointFromRows(rows, sourceUrl, sourceLabel, "MOVE");
+    }
   }
 
   return {
