@@ -184,7 +184,7 @@ function ForwardTile({
       : "text-red-600";
 
   return (
-    <div className="rounded-2xl border border-slate-100 bg-slate-50/60 p-4">
+    <div className="rounded-2xl border border-slate-100 bg-slate-50/60 p-3 md:p-4">
       <div className="flex items-start justify-between gap-2 mb-1">
         <span className="text-[11px] font-semibold uppercase tracking-wider text-slate-500">
           {label}
@@ -225,6 +225,50 @@ function ForwardTile({
   );
 }
 
+// Per-field live-fetch status. "live" = freshly fetched; "failed" = auto-fetch
+// attempted but the source was unreachable (showing last saved value as a
+// graceful fallback); "not-configured" = source needs setup the user hasn't
+// done yet (e.g. missing FRED_API_KEY), so the field stays manual.
+type LiveStatus = "live" | "failed" | "not-configured";
+
+/** Small pill shown next to an input label so the user can see at a glance
+ *  whether the field is live-fetched, stale (fetch failed), or manual
+ *  (source not configured). Hover reveals the specific reason. */
+function LiveStatusBadge({
+  status,
+  reason,
+}: {
+  status?: LiveStatus;
+  reason?: string;
+}) {
+  if (!status) return null;
+  if (status === "live") {
+    return (
+      <span className="rounded-full bg-emerald-100 px-1.5 py-0.5 text-[9px] font-bold text-emerald-700 uppercase leading-none">
+        Live
+      </span>
+    );
+  }
+  if (status === "not-configured") {
+    return (
+      <span
+        title={reason ?? "Source not configured — manual value shown"}
+        className="rounded-full bg-slate-100 px-1.5 py-0.5 text-[9px] font-bold text-slate-500 uppercase leading-none cursor-help"
+      >
+        Manual
+      </span>
+    );
+  }
+  return (
+    <span
+      title={reason ?? "Auto-fetch failed — last saved value shown"}
+      className="rounded-full bg-amber-100 px-1.5 py-0.5 text-[9px] font-bold text-amber-700 uppercase leading-none cursor-help"
+    >
+      Stale
+    </span>
+  );
+}
+
 type Props = {
   marketData: MarketData;
   offensiveExposure: number;
@@ -247,12 +291,15 @@ export function MorningBrief({
   const [generating, setGenerating] = useState(false);
   const [error, setError] = useState("");
   const [liveLoading, setLiveLoading] = useState(false);
-  const [liveFields, setLiveFields] = useState<Record<string, boolean>>({});
+  const [liveFields, setLiveFields] = useState<Record<string, LiveStatus>>({});
+  const [liveErrors, setLiveErrors] = useState<Record<string, string>>({});
+  const [marketDataError, setMarketDataError] = useState<string | null>(null);
 
   // Forward-looking data (SPX YTD, forward P/E, yield curve, credit trend, etc.)
   // fetched automatically with direct source links for user verification.
   const [forwardData, setForwardData] = useState<ForwardLookingBundle | null>(null);
   const [forwardLoading, setForwardLoading] = useState(false);
+  const [forwardError, setForwardError] = useState<string | null>(null);
 
   // Attachments (screenshots for brief sections)
   const [attachments, setAttachments] = useState<BriefAttachment[]>([]);
@@ -292,52 +339,52 @@ export function MorningBrief({
   //   VIX Term Structure — derived from ^VIX3M / ^VIX ratio
   //   Put/Call Ratio     — CBOE daily CSV
   // Any field that comes back null is left untouched so the user's prior
-  // manual entry or the last persisted value remains visible.
+  // manual entry or the last persisted value remains visible. Per-field
+  // status + error reasons drive visible Live/Stale/Manual badges so the
+  // user never has to guess whether a value was freshly fetched.
   useEffect(() => {
     let cancelled = false;
     async function fetchLiveData() {
       setLiveLoading(true);
       try {
         const res = await fetch("/api/market-data");
-        if (!res.ok) return;
+        if (!res.ok) {
+          if (!cancelled) {
+            setMarketDataError(
+              `Auto-fetch unavailable (HTTP ${res.status}). All live fields show your last saved values.`
+            );
+          }
+          return;
+        }
         const data = await res.json();
         if (cancelled) return;
+        setMarketDataError(null);
         const updates: Partial<MarketData> = {};
-        const live: Record<string, boolean> = {};
-        if (data.vix != null) {
-          updates.vix = data.vix;
-          live.vix = true;
-        }
-        if (data.move != null) {
-          updates.move = data.move;
-          live.move = true;
-        }
-        if (data.hyOas != null) {
-          updates.hyOas = data.hyOas;
-          live.hyOas = true;
-        }
-        if (data.igOas != null) {
-          updates.igOas = data.igOas;
-          live.igOas = true;
-        }
+        if (data.vix != null) updates.vix = data.vix;
+        if (data.move != null) updates.move = data.move;
+        if (data.hyOas != null) updates.hyOas = data.hyOas;
+        if (data.igOas != null) updates.igOas = data.igOas;
         if (
           data.termStructure === "Contango" ||
           data.termStructure === "Flat" ||
           data.termStructure === "Backwardation"
         ) {
           updates.termStructure = data.termStructure;
-          live.termStructure = true;
         }
-        if (data.putCall != null) {
-          updates.putCall = data.putCall;
-          live.putCall = true;
-        }
+        if (data.putCall != null) updates.putCall = data.putCall;
         if (Object.keys(updates).length > 0) {
           onUpdateMarketData(updates);
         }
-        setLiveFields(live);
-      } catch {
-        // Silently fail — user can still enter manually
+        setLiveFields((data.status as Record<string, LiveStatus>) ?? {});
+        setLiveErrors((data.errors as Record<string, string>) ?? {});
+      } catch (err) {
+        if (!cancelled) {
+          setMarketDataError(
+            `Auto-fetch network error: ${
+              err instanceof Error ? err.message : String(err)
+            }. All live fields show your last saved values.`
+          );
+        }
       } finally {
         if (!cancelled) setLiveLoading(false);
       }
@@ -347,18 +394,36 @@ export function MorningBrief({
   }, []); // eslint-disable-line react-hooks/exhaustive-deps
 
   // Auto-fetch forward-looking data (SPX YTD, forward P/E, yield curve, etc.)
-  // so the user sees it immediately and can click sources to verify.
+  // so the user sees it immediately and can click sources to verify. Fetch
+  // failures surface as a visible banner inside the Forward View section
+  // rather than silently leaving the tiles blank.
   useEffect(() => {
     let cancelled = false;
     async function fetchForward() {
       setForwardLoading(true);
       try {
         const res = await fetch("/api/forward-looking");
-        if (!res.ok) return;
+        if (!res.ok) {
+          if (!cancelled) {
+            setForwardError(
+              `Forward-looking fetch failed (HTTP ${res.status}). Tile values will be unavailable until the next refresh.`
+            );
+          }
+          return;
+        }
         const data: ForwardLookingBundle = await res.json();
-        if (!cancelled) setForwardData(data);
-      } catch {
-        // Silently fail — Forward View section will show unavailable
+        if (!cancelled) {
+          setForwardData(data);
+          setForwardError(null);
+        }
+      } catch (err) {
+        if (!cancelled) {
+          setForwardError(
+            `Forward-looking network error: ${
+              err instanceof Error ? err.message : String(err)
+            }`
+          );
+        }
       } finally {
         if (!cancelled) setForwardLoading(false);
       }
@@ -465,17 +530,63 @@ export function MorningBrief({
     <>
       {/* Editable Market & Sentiment Inputs */}
       <section className="rounded-[30px] border border-slate-200 bg-white p-6 md:p-8 shadow-sm overflow-hidden">
-        <div className="flex items-center gap-3 mb-6">
+        <div className="flex items-center gap-3 mb-6 flex-wrap">
           <h3 className="text-lg font-semibold text-slate-800">Daily Market Input</h3>
           {liveLoading && <span className="text-xs text-blue-500 animate-pulse">Fetching live data...</span>}
         </div>
+
+        {/* Surface any fetch-level or per-field auto-fetch failure as a visible
+            banner so the user never has to guess-and-check whether a field was
+            freshly pulled or is showing a stale saved value. */}
+        {(() => {
+          const failedKeys = Object.entries(liveFields)
+            .filter(([, s]) => s === "failed")
+            .map(([k]) => k);
+          const notConfiguredKeys = Object.entries(liveFields)
+            .filter(([, s]) => s === "not-configured")
+            .map(([k]) => k);
+          const fieldLabel: Record<string, string> = {
+            vix: "VIX",
+            move: "MOVE",
+            hyOas: "HY OAS",
+            igOas: "IG OAS",
+            putCall: "Put/Call",
+            termStructure: "VIX Term Structure",
+          };
+          if (marketDataError) {
+            return (
+              <div className="mb-5 rounded-xl border border-amber-200 bg-amber-50 px-4 py-3 text-xs text-amber-800">
+                <strong className="font-semibold">Auto-fetch unavailable:</strong> {marketDataError}
+              </div>
+            );
+          }
+          if (failedKeys.length > 0 || notConfiguredKeys.length > 0) {
+            return (
+              <div className="mb-5 rounded-xl border border-amber-200 bg-amber-50 px-4 py-3 text-xs text-amber-800 space-y-1">
+                {failedKeys.length > 0 && (
+                  <div>
+                    <strong className="font-semibold">Stale values shown for:</strong>{" "}
+                    {failedKeys.map((k) => fieldLabel[k] ?? k).join(", ")}. Hover each badge for the specific reason.
+                  </div>
+                )}
+                {notConfiguredKeys.length > 0 && (
+                  <div>
+                    <strong className="font-semibold">Manual entry required for:</strong>{" "}
+                    {notConfiguredKeys.map((k) => fieldLabel[k] ?? k).join(", ")}. Hover the Manual badge to see how to enable auto-fetch.
+                  </div>
+                )}
+              </div>
+            );
+          }
+          return null;
+        })()}
 
         {/* Live-fetched fields */}
         <div className="grid grid-cols-2 gap-x-6 gap-y-4 md:grid-cols-4 mb-6">
           <div>
             <div className="flex items-center gap-1.5 mb-1">
               <label className="text-xs font-semibold text-slate-400 uppercase tracking-wider">VIX</label>
-              {liveFields.vix && <span className="rounded-full bg-emerald-100 px-1.5 py-0.5 text-[9px] font-bold text-emerald-700 uppercase leading-none">Live</span>}
+              <LiveStatusBadge status={liveFields.vix} reason={liveErrors.vix} />
             </div>
             <SaveableNumericInput
               savedValue={marketData.vix}
@@ -486,7 +597,7 @@ export function MorningBrief({
           <div>
             <div className="flex items-center gap-1.5 mb-1">
               <label className="text-xs font-semibold text-slate-400 uppercase tracking-wider">MOVE Index</label>
-              {liveFields.move && <span className="rounded-full bg-emerald-100 px-1.5 py-0.5 text-[9px] font-bold text-emerald-700 uppercase leading-none">Live</span>}
+              <LiveStatusBadge status={liveFields.move} reason={liveErrors.move} />
             </div>
             <SaveableNumericInput
               savedValue={marketData.move}
@@ -500,7 +611,7 @@ export function MorningBrief({
               <a href="https://fred.stlouisfed.org/series/BAMLH0A0HYM2" target="_blank" rel="noopener noreferrer" className="text-blue-400 hover:text-blue-600 transition-colors" title="FRED HY OAS">
                 <svg className="w-3 h-3" fill="none" stroke="currentColor" strokeWidth="2" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" d="M10 6H6a2 2 0 00-2 2v10a2 2 0 002 2h10a2 2 0 002-2v-4M14 4h6m0 0v6m0-6L10 14" /></svg>
               </a>
-              {liveFields.hyOas && <span className="rounded-full bg-emerald-100 px-1.5 py-0.5 text-[9px] font-bold text-emerald-700 uppercase leading-none">Live</span>}
+              <LiveStatusBadge status={liveFields.hyOas} reason={liveErrors.hyOas} />
             </div>
             <SaveableNumericInput
               savedValue={marketData.hyOas}
@@ -514,7 +625,7 @@ export function MorningBrief({
               <a href="https://fred.stlouisfed.org/series/BAMLC0A0CM" target="_blank" rel="noopener noreferrer" className="text-blue-400 hover:text-blue-600 transition-colors" title="FRED IG OAS">
                 <svg className="w-3 h-3" fill="none" stroke="currentColor" strokeWidth="2" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" d="M10 6H6a2 2 0 00-2 2v10a2 2 0 002 2h10a2 2 0 002-2v-4M14 4h6m0 0v6m0-6L10 14" /></svg>
               </a>
-              {liveFields.igOas && <span className="rounded-full bg-emerald-100 px-1.5 py-0.5 text-[9px] font-bold text-emerald-700 uppercase leading-none">Live</span>}
+              <LiveStatusBadge status={liveFields.igOas} reason={liveErrors.igOas} />
             </div>
             <SaveableNumericInput
               savedValue={marketData.igOas}
@@ -629,7 +740,7 @@ export function MorningBrief({
                 <a href="https://www.cboe.com/us/options/market_statistics/daily/" target="_blank" rel="noopener noreferrer" className="text-blue-400 hover:text-blue-600 transition-colors" title="CBOE Total Put/Call">
                   <svg className="w-3 h-3" fill="none" stroke="currentColor" strokeWidth="2" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" d="M10 6H6a2 2 0 00-2 2v10a2 2 0 002 2h10a2 2 0 002-2v-4M14 4h6m0 0v6m0-6L10 14" /></svg>
                 </a>
-                {liveFields.putCall && <span className="rounded-full bg-emerald-100 px-1.5 py-0.5 text-[9px] font-bold text-emerald-700 uppercase leading-none">Live</span>}
+                <LiveStatusBadge status={liveFields.putCall} reason={liveErrors.putCall} />
               </div>
               <SaveableNumericInput
                 savedValue={marketData.putCall}
@@ -704,7 +815,10 @@ export function MorningBrief({
                 <a href="http://vixcentral.com" target="_blank" rel="noopener noreferrer" className="text-blue-400 hover:text-blue-600 transition-colors" title="VIX Central">
                   <svg className="w-3 h-3" fill="none" stroke="currentColor" strokeWidth="2" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" d="M10 6H6a2 2 0 00-2 2v10a2 2 0 002 2h10a2 2 0 002-2v-4M14 4h6m0 0v6m0-6L10 14" /></svg>
                 </a>
-                {liveFields.termStructure && <span className="rounded-full bg-emerald-100 px-1.5 py-0.5 text-[9px] font-bold text-emerald-700 uppercase leading-none" title="Derived from ^VIX3M / ^VIX ratio">Live</span>}
+                <LiveStatusBadge
+                  status={liveFields.termStructure}
+                  reason={liveErrors.termStructure ?? "Derived from ^VIX3M / ^VIX ratio"}
+                />
               </div>
               <SaveableSelect
                 savedValue={marketData.termStructure}
@@ -794,9 +908,9 @@ export function MorningBrief({
       </section>
 
       {/* Forward View — Next 2 Weeks */}
-      <section className="rounded-[30px] border border-blue-200 bg-gradient-to-br from-blue-50/60 to-white p-8 shadow-sm">
+      <section className="rounded-[30px] border border-blue-200 bg-gradient-to-br from-blue-50/60 to-white p-6 md:p-8 shadow-sm">
         <div className="flex flex-wrap items-center justify-between gap-3 mb-4">
-          <div className="flex items-center gap-3">
+          <div className="flex flex-wrap items-center gap-3">
             <span className="text-xl">🧭</span>
             <h2 className="text-2xl font-semibold text-slate-800">Forward View — Next 2 Weeks</h2>
             {forwardLoading && <span className="text-xs text-blue-500 animate-pulse">Fetching live data...</span>}
@@ -834,6 +948,17 @@ export function MorningBrief({
         <p className="max-w-6xl text-lg leading-8 text-slate-700 mb-6">
           {forwardView}
         </p>
+
+        {/* Visible banner when the forward-looking fetch fails or returns
+            no tiles at all — so the user knows the panel is unavailable
+            rather than silently blank. */}
+        {(forwardError || (!activeForward && !forwardLoading)) && (
+          <div className="mb-5 rounded-xl border border-amber-200 bg-amber-50 px-4 py-3 text-xs text-amber-800">
+            <strong className="font-semibold">Forward-looking data unavailable:</strong>{" "}
+            {forwardError ??
+              "The /api/forward-looking endpoint returned no data. Tile values will fill in on the next successful refresh."}
+          </div>
+        )}
 
         {activeForward && (
           <div className="grid gap-3 grid-cols-2 md:grid-cols-3 lg:grid-cols-4 mb-5">

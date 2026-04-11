@@ -96,10 +96,16 @@ async function fetchCboePutCall(): Promise<{
   return { ratio: null, asOf: null };
 }
 
+type FieldStatus = "live" | "failed" | "not-configured";
+
 export async function GET() {
+  const fredEnabled = !!process.env.FRED_API_KEY;
+
   // Fetch all live data points in parallel. Every source can fail
   // independently — the UI will keep the prior persisted value for any field
-  // that comes back null, and the user can still edit it manually.
+  // that comes back null. The returned `status` + `errors` maps let the UI
+  // render per-field badges (Live / Stale / Manual) and a summary banner so
+  // the user never has to guess whether a value was freshly fetched.
   const [vix, move, vix3m, putCall, hyObs, igObs] = await Promise.all([
     fetchYahooIndex("^VIX"),
     fetchYahooIndex("^MOVE"),
@@ -122,6 +128,41 @@ export async function GET() {
       ? Math.round(igObs[0].value * 100)
       : null;
 
+  const status: Record<string, FieldStatus> = {
+    vix: vix != null ? "live" : "failed",
+    move: move != null ? "live" : "failed",
+    hyOas:
+      hyOas != null ? "live" : fredEnabled ? "failed" : "not-configured",
+    igOas:
+      igOas != null ? "live" : fredEnabled ? "failed" : "not-configured",
+    termStructure: termStructure != null ? "live" : "failed",
+    putCall: putCall.ratio != null ? "live" : "failed",
+  };
+
+  const errors: Record<string, string> = {};
+  if (status.vix === "failed")
+    errors.vix = "Yahoo ^VIX fetch failed — showing your last saved value.";
+  if (status.move === "failed")
+    errors.move = "Yahoo ^MOVE fetch failed — showing your last saved value.";
+  if (status.hyOas === "not-configured")
+    errors.hyOas =
+      "HY OAS: FRED_API_KEY not set in .env.local — add a free key from fred.stlouisfed.org/docs/api/api_key.html to enable automated BAMLH0A0HYM2 fetch. Manual value shown.";
+  if (status.hyOas === "failed")
+    errors.hyOas =
+      "HY OAS: FRED BAMLH0A0HYM2 fetch failed — showing your last saved value.";
+  if (status.igOas === "not-configured")
+    errors.igOas =
+      "IG OAS: FRED_API_KEY not set in .env.local — add a free key from fred.stlouisfed.org/docs/api/api_key.html to enable automated BAMLC0A0CM fetch. Manual value shown.";
+  if (status.igOas === "failed")
+    errors.igOas =
+      "IG OAS: FRED BAMLC0A0CM fetch failed — showing your last saved value.";
+  if (status.termStructure === "failed")
+    errors.termStructure =
+      "VIX Term Structure: Yahoo ^VIX3M or ^VIX unreachable — showing your last saved selection.";
+  if (status.putCall === "failed")
+    errors.putCall =
+      "Put/Call Ratio: CBOE daily CSV parse failed — showing your last saved value. CBOE may have changed their CSV format.";
+
   return NextResponse.json({
     vix,
     move,
@@ -131,7 +172,9 @@ export async function GET() {
     putCallAsOf: putCall.asOf,
     hyOas, // bps, null if FRED key not set or fetch failed
     igOas, // bps, null if FRED key not set or fetch failed
-    fredEnabled: !!process.env.FRED_API_KEY,
+    fredEnabled,
+    status, // per-field: "live" | "failed" | "not-configured"
+    errors, // per-field human-readable reason when status != "live"
     fetchedAt: new Date().toISOString(),
   });
 }
