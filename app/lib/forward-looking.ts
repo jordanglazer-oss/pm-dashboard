@@ -89,10 +89,10 @@ async function yahooQuoteSummary(
   }
 }
 
-type FredObs = { date: string; value: number };
+export type FredObs = { date: string; value: number };
 
 // Optional — returns null when FRED_API_KEY is not set or the request fails.
-async function fredSeries(
+export async function fredSeries(
   seriesId: string,
   limit = 10
 ): Promise<FredObs[] | null> {

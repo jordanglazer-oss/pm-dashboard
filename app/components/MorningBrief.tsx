@@ -286,7 +286,13 @@ export function MorningBrief({
     persistAttachments(attachments.filter((a) => a.id !== id));
   }, [attachments, persistAttachments]);
 
-  // Auto-fetch live market data (VIX, MOVE, HY OAS, IG OAS) on mount
+  // Auto-fetch live market data on mount:
+  //   VIX, MOVE          — Yahoo ^VIX, ^MOVE
+  //   HY OAS, IG OAS     — FRED BAMLH0A0HYM2 / BAMLC0A0CM (when FRED_API_KEY set)
+  //   VIX Term Structure — derived from ^VIX3M / ^VIX ratio
+  //   Put/Call Ratio     — CBOE daily CSV
+  // Any field that comes back null is left untouched so the user's prior
+  // manual entry or the last persisted value remains visible.
   useEffect(() => {
     let cancelled = false;
     async function fetchLiveData() {
@@ -306,7 +312,26 @@ export function MorningBrief({
           updates.move = data.move;
           live.move = true;
         }
-        // HY OAS and IG OAS are manual — not auto-fetched
+        if (data.hyOas != null) {
+          updates.hyOas = data.hyOas;
+          live.hyOas = true;
+        }
+        if (data.igOas != null) {
+          updates.igOas = data.igOas;
+          live.igOas = true;
+        }
+        if (
+          data.termStructure === "Contango" ||
+          data.termStructure === "Flat" ||
+          data.termStructure === "Backwardation"
+        ) {
+          updates.termStructure = data.termStructure;
+          live.termStructure = true;
+        }
+        if (data.putCall != null) {
+          updates.putCall = data.putCall;
+          live.putCall = true;
+        }
         if (Object.keys(updates).length > 0) {
           onUpdateMarketData(updates);
         }
@@ -475,6 +500,7 @@ export function MorningBrief({
               <a href="https://fred.stlouisfed.org/series/BAMLH0A0HYM2" target="_blank" rel="noopener noreferrer" className="text-blue-400 hover:text-blue-600 transition-colors" title="FRED HY OAS">
                 <svg className="w-3 h-3" fill="none" stroke="currentColor" strokeWidth="2" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" d="M10 6H6a2 2 0 00-2 2v10a2 2 0 002 2h10a2 2 0 002-2v-4M14 4h6m0 0v6m0-6L10 14" /></svg>
               </a>
+              {liveFields.hyOas && <span className="rounded-full bg-emerald-100 px-1.5 py-0.5 text-[9px] font-bold text-emerald-700 uppercase leading-none">Live</span>}
             </div>
             <SaveableNumericInput
               savedValue={marketData.hyOas}
@@ -488,6 +514,7 @@ export function MorningBrief({
               <a href="https://fred.stlouisfed.org/series/BAMLC0A0CM" target="_blank" rel="noopener noreferrer" className="text-blue-400 hover:text-blue-600 transition-colors" title="FRED IG OAS">
                 <svg className="w-3 h-3" fill="none" stroke="currentColor" strokeWidth="2" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" d="M10 6H6a2 2 0 00-2 2v10a2 2 0 002 2h10a2 2 0 002-2v-4M14 4h6m0 0v6m0-6L10 14" /></svg>
               </a>
+              {liveFields.igOas && <span className="rounded-full bg-emerald-100 px-1.5 py-0.5 text-[9px] font-bold text-emerald-700 uppercase leading-none">Live</span>}
             </div>
             <SaveableNumericInput
               savedValue={marketData.igOas}
@@ -602,6 +629,7 @@ export function MorningBrief({
                 <a href="https://www.cboe.com/us/options/market_statistics/daily/" target="_blank" rel="noopener noreferrer" className="text-blue-400 hover:text-blue-600 transition-colors" title="CBOE Total Put/Call">
                   <svg className="w-3 h-3" fill="none" stroke="currentColor" strokeWidth="2" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" d="M10 6H6a2 2 0 00-2 2v10a2 2 0 002 2h10a2 2 0 002-2v-4M14 4h6m0 0v6m0-6L10 14" /></svg>
                 </a>
+                {liveFields.putCall && <span className="rounded-full bg-emerald-100 px-1.5 py-0.5 text-[9px] font-bold text-emerald-700 uppercase leading-none">Live</span>}
               </div>
               <SaveableNumericInput
                 savedValue={marketData.putCall}
@@ -676,6 +704,7 @@ export function MorningBrief({
                 <a href="http://vixcentral.com" target="_blank" rel="noopener noreferrer" className="text-blue-400 hover:text-blue-600 transition-colors" title="VIX Central">
                   <svg className="w-3 h-3" fill="none" stroke="currentColor" strokeWidth="2" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" d="M10 6H6a2 2 0 00-2 2v10a2 2 0 002 2h10a2 2 0 002-2v-4M14 4h6m0 0v6m0-6L10 14" /></svg>
                 </a>
+                {liveFields.termStructure && <span className="rounded-full bg-emerald-100 px-1.5 py-0.5 text-[9px] font-bold text-emerald-700 uppercase leading-none" title="Derived from ^VIX3M / ^VIX ratio">Live</span>}
               </div>
               <SaveableSelect
                 savedValue={marketData.termStructure}
