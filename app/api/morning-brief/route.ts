@@ -344,6 +344,22 @@ export async function POST(request: NextRequest) {
       const sign = d >= 0 ? "+" : "";
       return ` (wk/wk ${sign}${d.toFixed(unit === "bps" ? 0 : 2)}${unit})`;
     };
+    // Breadth tiles compare two percentages, so the delta is in percentage
+    // points. The history may not yet contain an entry for the target lag
+    // (fresh Redis cache), in which case the ForwardPoint exposes a value
+    // but no `previous` — we emit an explicit "(mo/mo n/a)" token so the
+    // model doesn't infer a bogus zero.
+    const breadthDelta = (
+      p: ForwardPoint | undefined,
+      period: "wk/wk" | "mo/mo"
+    ): string => {
+      if (!p || p.value == null) return "";
+      if (p.previous == null) return ` (${period} n/a)`;
+      const d = Number(p.value) - Number(p.previous);
+      if (isNaN(d)) return "";
+      const sign = d >= 0 ? "+" : "";
+      return ` (${period} ${sign}${d.toFixed(1)}pp)`;
+    };
     const pctDelta = (
       p: ForwardPoint | undefined
     ): { str: string; value: number | null } => {
@@ -401,7 +417,15 @@ export async function POST(request: NextRequest) {
 - HY OAS Trend: ${fmt(forwardData.hyOasTrend, "bps")}${delta(forwardData.hyOasTrend, "bps")}
 - IG OAS Trend: ${fmt(forwardData.igOasTrend, "bps")}${delta(forwardData.igOasTrend, "bps")}
 - VIX Week: ${fmt(forwardData.vixWeek)}${vixWeekPctObj.str}
-- MOVE Week: ${fmt(forwardData.moveWeek)}${pctDelta(forwardData.moveWeek).str}`
+- MOVE Week: ${fmt(forwardData.moveWeek)}${pctDelta(forwardData.moveWeek).str}
+- S&P 500 % >200DMA: ${fmt(forwardData.breadth200Wk, "%")}${breadthDelta(
+          forwardData.breadth200Wk,
+          "wk/wk"
+        )}${breadthDelta(forwardData.breadth200Mo, "mo/mo")}
+- S&P 500 % >50DMA: ${fmt(forwardData.breadth50Wk, "%")}${breadthDelta(
+          forwardData.breadth50Wk,
+          "wk/wk"
+        )}`
       : "\n\nForward-looking data unavailable for this run — fall back to the current snapshot indicators below.";
 
     // Inject today's date explicitly so Claude cannot drift to training-data

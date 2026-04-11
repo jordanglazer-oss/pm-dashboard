@@ -144,12 +144,14 @@ function ForwardTile({
   point,
   unit = "",
   deltaUnit,
+  deltaPeriod = "wk/wk",
   invertDeltaColor = false,
 }: {
   label: string;
   point: ForwardPointBundle | undefined;
   unit?: string;
-  deltaUnit?: "bps" | "pct" | "raw";
+  deltaUnit?: "bps" | "pct" | "raw" | "pp";
+  deltaPeriod?: "wk/wk" | "mo/mo";
   invertDeltaColor?: boolean;
 }) {
   const available = point && point.value != null;
@@ -163,16 +165,22 @@ function ForwardTile({
         if (prev !== 0) {
           const d = ((cur - prev) / prev) * 100;
           deltaPositive = d >= 0;
-          deltaStr = `${d >= 0 ? "+" : ""}${d.toFixed(1)}% wk/wk`;
+          deltaStr = `${d >= 0 ? "+" : ""}${d.toFixed(1)}% ${deltaPeriod}`;
         }
       } else if (deltaUnit === "bps") {
         const d = cur - prev;
         deltaPositive = d >= 0;
-        deltaStr = `${d >= 0 ? "+" : ""}${d.toFixed(0)}bps wk/wk`;
+        deltaStr = `${d >= 0 ? "+" : ""}${d.toFixed(0)}bps ${deltaPeriod}`;
       } else if (deltaUnit === "raw") {
         const d = cur - prev;
         deltaPositive = d >= 0;
-        deltaStr = `${d >= 0 ? "+" : ""}${d.toFixed(2)} wk/wk`;
+        deltaStr = `${d >= 0 ? "+" : ""}${d.toFixed(2)} ${deltaPeriod}`;
+      } else if (deltaUnit === "pp") {
+        // Percentage-point change — used for breadth where both current
+        // and prior are themselves percentages of the index.
+        const d = cur - prev;
+        deltaPositive = d >= 0;
+        deltaStr = `${d >= 0 ? "+" : ""}${d.toFixed(1)}pp ${deltaPeriod}`;
       }
     }
   }
@@ -999,6 +1007,9 @@ export function MorningBrief({
             <ForwardTile label="IG OAS Trend" point={activeForward.igOasTrend} unit="bps" deltaUnit="bps" invertDeltaColor />
             <ForwardTile label="VIX (wk/wk)" point={activeForward.vixWeek} deltaUnit="pct" invertDeltaColor />
             <ForwardTile label="MOVE (wk/wk)" point={activeForward.moveWeek} deltaUnit="pct" invertDeltaColor />
+            <ForwardTile label="S&P >200DMA (wk)" point={activeForward.breadth200Wk} unit="%" deltaUnit="pp" deltaPeriod="wk/wk" />
+            <ForwardTile label="S&P >200DMA (mo)" point={activeForward.breadth200Mo} unit="%" deltaUnit="pp" deltaPeriod="mo/mo" />
+            <ForwardTile label="S&P >50DMA (wk)" point={activeForward.breadth50Wk} unit="%" deltaUnit="pp" deltaPeriod="wk/wk" />
           </div>
         )}
 
