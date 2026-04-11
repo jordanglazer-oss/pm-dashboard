@@ -42,7 +42,7 @@ export function Sparkline({
         className={`flex items-center justify-center text-[10px] text-slate-300 ${
           className ?? ""
         }`}
-        style={{ width, height }}
+        style={{ width: "100%", maxWidth: width, height }}
       >
         building history…
       </div>
@@ -78,10 +78,12 @@ export function Sparkline({
 
   return (
     <svg
-      width={width}
+      width="100%"
       height={height}
       viewBox={`0 0 ${width} ${height}`}
+      preserveAspectRatio="none"
       className={className}
+      style={{ maxWidth: width, display: "block" }}
       role="img"
       aria-label={`Sparkline of ${points.length} values, latest ${last.value}`}
     >
