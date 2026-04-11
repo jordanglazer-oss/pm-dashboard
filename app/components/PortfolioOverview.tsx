@@ -1,12 +1,27 @@
 "use client";
 
-import React, { useState } from "react";
+import React, { useState, useCallback } from "react";
 import Link from "next/link";
 import { useStocks } from "@/app/lib/StockContext";
 import { SCORE_GROUPS, MAX_SCORE, INSTRUMENT_LABELS } from "@/app/lib/types";
-import type { ScoredStock } from "@/app/lib/types";
+import type { ScoredStock, ScoreKey, HealthData } from "@/app/lib/types";
+import type { TechnicalIndicators, RiskAlert } from "@/app/lib/technicals";
 import { groupTotal, isScoreable } from "@/app/lib/scoring";
 import { SignalPill } from "./SignalPill";
+
+/** Format an ISO timestamp for display next to Score All / Refresh All buttons. */
+function formatRelTimestamp(iso: string | undefined | null): string {
+  if (!iso) return "";
+  const d = new Date(iso);
+  if (isNaN(d.getTime())) return "";
+  return d.toLocaleString("en-US", {
+    month: "short",
+    day: "numeric",
+    hour: "numeric",
+    minute: "2-digit",
+    hour12: true,
+  });
+}
 
 // S&P 500 fallback sector weights (used when live SPY data is unavailable)
 const SP500_WEIGHTS_FALLBACK: Record<string, number> = {
@@ -118,7 +133,22 @@ function FundSortIcon({ field, sortField, sortDir }: { field: FundSortField; sor
 
 
 export function PortfolioOverview() {
-  const { portfolioStocks, watchlistStocks, marketData, updateStockFields, uiPrefs, setUiPref } = useStocks();
+  const {
+    portfolioStocks,
+    watchlistStocks,
+    marketData,
+    updateStockFields,
+    updateScore,
+    updateExplanations,
+    updateLastScored,
+    updatePrice,
+    updateHealthData,
+    updateTechnicals,
+    updateFundData,
+    updateMarketData,
+    uiPrefs,
+    setUiPref,
+  } = useStocks();
   const [dashFilter, setDashFilter] = useState<DashboardFilter>("all");
   const fundSort = (uiPrefs["fundSort"] as FundSortField) || "ticker";
   const fundSortDir = (uiPrefs["fundSortDir"] as SortDir) || "desc";
@@ -127,6 +157,200 @@ export function PortfolioOverview() {
     const val = typeof d === "function" ? d(fundSortDir) : d;
     setUiPref("fundSortDir", val);
   };
+
+  // ── Score All / Refresh All state ────────────────────────────────────────
+  // Per-bucket scoring state so clicking "Score All" under Portfolio Rankings
+  // doesn't disable the Watchlist Rankings button (and vice versa), but both
+  // share the same guard against firing refresh while either is running.
+  const [scoringBucket, setScoringBucket] = useState<"Portfolio" | "Watchlist" | null>(null);
+  const [scoreProgress, setScoreProgress] = useState("");
+  const [refreshingAll, setRefreshingAll] = useState(false);
+  const [refreshProgress, setRefreshProgress] = useState("");
+  const scoringAny = scoringBucket != null;
+
+  // Timestamps persist across reloads via the same uiPrefs → Redis KV bridge
+  // the rest of this screen already uses. Keys: scoreAll<Bucket>At, refreshAllAt.
+  const scoreAllPortfolioAt = uiPrefs["scoreAllPortfolioAt"] || "";
+  const scoreAllWatchlistAt = uiPrefs["scoreAllWatchlistAt"] || "";
+  const refreshAllAt = uiPrefs["refreshAllAt"] || "";
+
+  /** Score one stock by POSTing /api/score, then fanning the result out into
+   *  the context mutators so both the dashboard and PIM Model pick it up. */
+  const scoreOneStock = useCallback(async (ticker: string) => {
+    const res = await fetch("/api/score", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ ticker }),
+    });
+    if (!res.ok) {
+      const err = await res.json().catch(() => ({}));
+      throw new Error(err.error || `Failed to score ${ticker}`);
+    }
+    const data = await res.json();
+    if (data.scores) {
+      for (const [key, val] of Object.entries(data.scores)) {
+        updateScore(ticker, key as ScoreKey, val as number);
+      }
+    }
+    if (data.explanations) updateExplanations(ticker, data.explanations);
+    if (data.price != null) updatePrice(ticker, data.price);
+    if (data.healthData) updateHealthData(ticker, data.healthData);
+    if (data.technicals && data.riskAlert) {
+      updateTechnicals(ticker, data.technicals, data.riskAlert);
+    }
+    if (data.companySummary || data.investmentThesis || data.sector || data.name) {
+      updateStockFields(ticker, {
+        ...(data.companySummary ? { companySummary: data.companySummary } : {}),
+        ...(data.investmentThesis ? { investmentThesis: data.investmentThesis } : {}),
+        ...(data.sector ? { sector: data.sector } : {}),
+        ...(data.name && data.name !== "Unknown" ? { name: data.name } : {}),
+      });
+    }
+    updateLastScored(
+      ticker,
+      new Date().toLocaleString("en-US", {
+        month: "short", day: "numeric", year: "numeric",
+        hour: "numeric", minute: "2-digit", hour12: true,
+      })
+    );
+  }, [updateScore, updateExplanations, updateLastScored, updatePrice, updateHealthData, updateTechnicals, updateStockFields]);
+
+  /** Sequentially score every scoreable stock in a bucket, updating a progress
+   *  banner and finally stamping the "Score All" timestamp on success. */
+  const handleScoreBucket = useCallback(async (bucket: "Portfolio" | "Watchlist") => {
+    if (scoringAny || refreshingAll) return;
+    const source = bucket === "Portfolio" ? portfolioStocks : watchlistStocks;
+    const bucketStocks = source.filter((s) => isScoreable(s));
+    if (bucketStocks.length === 0) return;
+    setScoringBucket(bucket);
+    for (let i = 0; i < bucketStocks.length; i++) {
+      const s = bucketStocks[i];
+      setScoreProgress(`Scoring ${s.ticker} (${i + 1}/${bucketStocks.length})`);
+      try {
+        await scoreOneStock(s.ticker);
+      } catch { /* best-effort — keep going so one bad ticker doesn't block the rest */ }
+    }
+    setScoreProgress("");
+    setScoringBucket(null);
+    setUiPref(
+      bucket === "Portfolio" ? "scoreAllPortfolioAt" : "scoreAllWatchlistAt",
+      new Date().toISOString()
+    );
+  }, [scoringAny, refreshingAll, portfolioStocks, watchlistStocks, scoreOneStock, setUiPref]);
+
+  /** Refresh *every* position — portfolio holdings, fund & ETF holdings,
+   *  and watchlist — via /api/refresh-data, then re-fetch fund metadata for
+   *  ETFs/mutual funds, then refresh the live SPY sector weights that feed
+   *  the Portfolio Sector Exposure bar. Does NOT call Claude, so zero token
+   *  spend. Mirrors the Refresh All Data flow from the old Scoring page. */
+  const handleRefreshAll = useCallback(async () => {
+    if (refreshingAll || scoringAny) return;
+    setRefreshingAll(true);
+    setRefreshProgress("Fetching data...");
+    try {
+      const allStocks = [...portfolioStocks, ...watchlistStocks];
+      const tickers = allStocks.map((s) => s.ticker);
+      const res = await fetch("/api/refresh-data", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ tickers }),
+      });
+      if (!res.ok) {
+        const err = await res.json().catch(() => ({}));
+        throw new Error(err.error || "Failed to refresh data");
+      }
+      const data = await res.json();
+      const results: Array<{
+        ticker: string;
+        error?: string;
+        name?: string;
+        sector?: string;
+        price?: number;
+        technicals?: TechnicalIndicators;
+        healthData?: HealthData;
+        riskAlert?: RiskAlert;
+      }> = data.results || [];
+      let updated = 0;
+      for (const r of results) {
+        if (r.error) continue;
+        if (r.price != null) updatePrice(r.ticker, r.price);
+        if (r.healthData) updateHealthData(r.ticker, r.healthData);
+        if (r.technicals) {
+          const fallbackAlert: RiskAlert = {
+            level: "clear", signals: [], summary: "No signals", dangerCount: 0, cautionCount: 0,
+          };
+          updateTechnicals(r.ticker, r.technicals, r.riskAlert || fallbackAlert);
+        }
+        if (r.name || r.sector) {
+          updateStockFields(r.ticker, {
+            ...(r.name ? { name: r.name } : {}),
+            ...(r.sector ? { sector: r.sector } : {}),
+          });
+        }
+        updated++;
+      }
+      // Refresh fund metadata (holdings, performance) for ETFs and MFs —
+      // the /api/refresh-data route doesn't touch fundData.
+      const fundStocks = allStocks.filter(
+        (s) => s.instrumentType === "etf" || s.instrumentType === "mutual-fund"
+      );
+      if (fundStocks.length > 0) {
+        setRefreshProgress(`Updated ${updated} stocks. Refreshing ${fundStocks.length} fund(s)...`);
+        for (const fund of fundStocks) {
+          try {
+            const fRes = await fetch(`/api/fund-data?ticker=${encodeURIComponent(fund.ticker)}`);
+            if (!fRes.ok) continue;
+            const fData = await fRes.json();
+            if (fData.fundData) {
+              const existing = fund.fundData;
+              const merged = { ...fData.fundData };
+              // Preserve user-provided holdings when the API returns none.
+              if (!merged.topHoldings?.length && existing?.topHoldings?.length) {
+                merged.topHoldings = existing.topHoldings;
+                merged.sectorWeightings = existing.sectorWeightings;
+                merged.holdingsLastUpdated = existing.holdingsLastUpdated;
+              }
+              if (existing?.holdingsUrl && !merged.holdingsUrl) {
+                merged.holdingsUrl = existing.holdingsUrl;
+              }
+              if (existing?.holdingsLastUpdated && !merged.holdingsLastUpdated) {
+                merged.holdingsLastUpdated = existing.holdingsLastUpdated;
+              }
+              updateFundData(fund.ticker, merged);
+            }
+            if (fData.price != null && typeof fData.price === "number") {
+              updatePrice(fund.ticker, fData.price);
+            }
+          } catch { /* best effort per fund */ }
+        }
+      }
+      // Refresh S&P 500 sector weights from SPY so the sector exposure bar
+      // compares against current benchmark weights.
+      try {
+        setRefreshProgress("Updating S&P 500 sector weights...");
+        const spyRes = await fetch("/api/fund-data?ticker=SPY");
+        if (spyRes.ok) {
+          const spyData = await spyRes.json();
+          const sectorWeightings = spyData.fundData?.sectorWeightings;
+          if (Array.isArray(sectorWeightings) && sectorWeightings.length > 0) {
+            const weights: Record<string, number> = {};
+            for (const sw of sectorWeightings) {
+              weights[sw.sector] = parseFloat(sw.weight.toFixed(1));
+            }
+            updateMarketData({ sp500SectorWeights: weights });
+          }
+        }
+      } catch { /* best effort */ }
+      setRefreshProgress(`Updated ${updated}/${tickers.length} holdings`);
+      setUiPref("refreshAllAt", new Date().toISOString());
+      setTimeout(() => setRefreshProgress(""), 3000);
+    } catch (err) {
+      setRefreshProgress(err instanceof Error ? err.message : "Refresh failed");
+      setTimeout(() => setRefreshProgress(""), 5000);
+    } finally {
+      setRefreshingAll(false);
+    }
+  }, [refreshingAll, scoringAny, portfolioStocks, watchlistStocks, updatePrice, updateHealthData, updateTechnicals, updateStockFields, updateFundData, updateMarketData, setUiPref]);
 
   // Apply instrument filter first
   const filteredPortfolio = portfolioStocks.filter((s) => matchesDashFilter(s, dashFilter));
@@ -170,8 +394,10 @@ export function PortfolioOverview() {
 
   return (
     <div className="space-y-6">
-      {/* Instrument Type Filter */}
-      <div className="flex items-center gap-1 flex-wrap">
+      {/* Top toolbar: instrument filter + Refresh All Data (covers portfolio,
+          fund & ETF holdings, and watchlist). */}
+      <div className="flex items-center gap-3 flex-wrap">
+        <div className="flex items-center gap-1 flex-wrap">
         {(Object.keys(DASH_FILTER_LABELS) as DashboardFilter[]).map((key) => {
           const count = filterCounts[key];
           if (key !== "all" && count === 0) return null;
@@ -193,6 +419,32 @@ export function PortfolioOverview() {
             </button>
           );
         })}
+        </div>
+        <div className="ml-auto flex items-center gap-2">
+          {refreshAllAt && !refreshingAll && !refreshProgress && (
+            <span className="text-[11px] text-slate-400">Last refreshed {formatRelTimestamp(refreshAllAt)}</span>
+          )}
+          <button
+            onClick={handleRefreshAll}
+            disabled={refreshingAll || scoringAny}
+            className="flex items-center gap-1.5 rounded-xl bg-emerald-600 px-4 py-2 text-xs font-semibold text-white hover:bg-emerald-700 disabled:opacity-50 transition-colors"
+            title="Refresh prices, technicals, health data, fund metadata and risk alerts for every position (no AI scoring)"
+          >
+            {refreshingAll ? (
+              <>
+                <svg className="w-3.5 h-3.5 animate-spin" fill="none" stroke="currentColor" strokeWidth="2" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" d="M16.023 9.348h4.992v-.001M2.985 19.644v-4.992m0 0h4.992m-4.993 0 3.181 3.183a8.25 8.25 0 0 0 13.803-3.7M4.031 9.865a8.25 8.25 0 0 1 13.803-3.7l3.181 3.182" /></svg>
+                {refreshProgress || "Refreshing..."}
+              </>
+            ) : refreshProgress ? (
+              <>{refreshProgress}</>
+            ) : (
+              <>
+                <svg className="w-3.5 h-3.5" fill="none" stroke="currentColor" strokeWidth="2" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" d="M16.023 9.348h4.992v-.001M2.985 19.644v-4.992m0 0h4.992m-4.993 0 3.181 3.183a8.25 8.25 0 0 0 13.803-3.7M4.031 9.865a8.25 8.25 0 0 1 13.803-3.7l3.181 3.182" /></svg>
+                Refresh All Data
+              </>
+            )}
+          </button>
+        </div>
       </div>
 
       {/* Sector Exposure */}
@@ -238,7 +490,19 @@ export function PortfolioOverview() {
       </section>
 
       {/* Portfolio Rankings (scoreable stocks only) — moved above Fund & ETF Holdings */}
-      <RankingTable title="Portfolio Rankings" subtitle="Bottom 3 flagged for review" stocks={scoreablePortfolio} flagType="review" uiPrefs={uiPrefs} setUiPref={setUiPref} />
+      <RankingTable
+        title="Portfolio Rankings"
+        subtitle="Bottom 3 flagged for review"
+        stocks={scoreablePortfolio}
+        flagType="review"
+        uiPrefs={uiPrefs}
+        setUiPref={setUiPref}
+        onScoreAll={() => handleScoreBucket("Portfolio")}
+        scoring={scoringBucket === "Portfolio"}
+        scoreProgress={scoringBucket === "Portfolio" ? scoreProgress : ""}
+        scoreAllDisabled={scoringAny || refreshingAll}
+        lastScoredAt={scoreAllPortfolioAt}
+      />
 
       {/* Fund Holdings */}
       {fundPortfolio.length > 0 && (() => {
@@ -370,7 +634,19 @@ export function PortfolioOverview() {
       })()}
 
       {/* Watchlist Rankings (scoreable stocks only) */}
-      <RankingTable title="Watchlist Rankings" subtitle="Top 3 flagged as buy candidates" stocks={scoreableWatchlist} flagType="buy" uiPrefs={uiPrefs} setUiPref={setUiPref} />
+      <RankingTable
+        title="Watchlist Rankings"
+        subtitle="Top 3 flagged as buy candidates"
+        stocks={scoreableWatchlist}
+        flagType="buy"
+        uiPrefs={uiPrefs}
+        setUiPref={setUiPref}
+        onScoreAll={() => handleScoreBucket("Watchlist")}
+        scoring={scoringBucket === "Watchlist"}
+        scoreProgress={scoringBucket === "Watchlist" ? scoreProgress : ""}
+        scoreAllDisabled={scoringAny || refreshingAll}
+        lastScoredAt={scoreAllWatchlistAt}
+      />
 
       {/* Score Comparison (scoreable stocks only) */}
       <section className="rounded-[30px] border border-slate-200 bg-white p-5 shadow-sm">
@@ -436,6 +712,11 @@ function RankingTable({
   flagType,
   uiPrefs,
   setUiPref,
+  onScoreAll,
+  scoring,
+  scoreProgress,
+  scoreAllDisabled,
+  lastScoredAt,
 }: {
   title: string;
   subtitle: string;
@@ -443,6 +724,11 @@ function RankingTable({
   flagType: "review" | "buy";
   uiPrefs: Record<string, string>;
   setUiPref: (key: string, value: string) => void;
+  onScoreAll?: () => void;
+  scoring?: boolean;
+  scoreProgress?: string;
+  scoreAllDisabled?: boolean;
+  lastScoredAt?: string;
 }) {
   const prefPrefix = flagType === "review" ? "rankPort" : "rankWatch";
   const sort = {
@@ -508,13 +794,44 @@ function RankingTable({
   const stickyHeadCls =
     "pb-2 pr-4 cursor-pointer hover:text-slate-800 select-none whitespace-nowrap sticky left-0 z-20 bg-white";
   const stickyCellCls =
-    "py-3 pr-4 sticky left-0 z-10 bg-white group-hover:bg-slate-50/80";
+    "py-3 pr-4 sticky left-0 z-10 bg-white group-hover:bg-slate-50/80 align-top";
+
+  const scoreableCount = stocks.filter((s) => isScoreable(s)).length;
 
   return (
     <section className="rounded-[30px] border border-slate-200 bg-white p-5 shadow-sm">
-      <div className="flex items-center gap-3 mb-4">
+      <div className="flex items-center gap-3 mb-4 flex-wrap">
         <h2 className="text-lg font-bold text-slate-800">{title}</h2>
         <span className="text-sm text-slate-400">{subtitle}</span>
+        {onScoreAll && (
+          <div className="ml-auto flex items-center gap-2">
+            {lastScoredAt && !scoring && (
+              <span className="text-[11px] text-slate-400">
+                Last scored {formatRelTimestamp(lastScoredAt)}
+              </span>
+            )}
+            <button
+              onClick={onScoreAll}
+              disabled={scoreAllDisabled || scoreableCount === 0}
+              className={`flex items-center gap-1.5 rounded-lg px-3 py-1.5 text-xs font-semibold text-white transition-colors disabled:opacity-50 ${
+                flagType === "review" ? "bg-blue-600 hover:bg-blue-700" : "bg-slate-600 hover:bg-slate-700"
+              }`}
+              title={`Score all ${title.toLowerCase()} stocks with Claude`}
+            >
+              {scoring ? (
+                <>
+                  <svg className="w-3.5 h-3.5 animate-spin" fill="none" stroke="currentColor" strokeWidth="2" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" d="M16.023 9.348h4.992v-.001M2.985 19.644v-4.992m0 0h4.992m-4.993 0 3.181 3.183a8.25 8.25 0 0 0 13.803-3.7M4.031 9.865a8.25 8.25 0 0 1 13.803-3.7l3.181 3.182" /></svg>
+                  {scoreProgress || "Scoring..."}
+                </>
+              ) : (
+                <>
+                  <svg className="w-3.5 h-3.5" fill="none" stroke="currentColor" strokeWidth="2" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" d="M9.813 15.904 9 18.75l-.813-2.846a4.5 4.5 0 0 0-3.09-3.09L2.25 12l2.846-.813a4.5 4.5 0 0 0 3.09-3.09L9 5.25l.813 2.846a4.5 4.5 0 0 0 3.09 3.09L15.75 12l-2.846.813a4.5 4.5 0 0 0-3.09 3.09ZM18.259 8.715 18 9.75l-.259-1.035a3.375 3.375 0 0 0-2.455-2.456L14.25 6l1.036-.259a3.375 3.375 0 0 0 2.455-2.456L18 2.25l.259 1.035a3.375 3.375 0 0 0 2.456 2.456L21.75 6l-1.035.259a3.375 3.375 0 0 0-2.456 2.456Z" /></svg>
+                  Score All ({scoreableCount})
+                </>
+              )}
+            </button>
+          </div>
+        )}
       </div>
       <div className="overflow-x-auto">
         <table className="w-full min-w-[1400px] text-left text-sm">
@@ -546,7 +863,7 @@ function RankingTable({
                 flagType === "review" ? i >= sorted.length - 3 : i < 3;
 
               return (
-                <tr key={s.ticker} className="group border-b border-slate-50 hover:bg-slate-50/80 transition-colors">
+                <tr key={s.ticker} className="group border-b border-slate-50 hover:bg-slate-50/80 transition-colors [&>td]:align-top">
                   <td className={stickyCellCls}>
                     <div className="flex items-center gap-2">
                       <span className="text-slate-400 text-xs w-5 text-right">{i + 1}</span>
@@ -561,12 +878,12 @@ function RankingTable({
                     {s.price != null ? `$${s.price.toFixed(2)}` : "—"}
                   </td>
                   <td className="py-3 pr-3 text-xs text-slate-600 align-top">
-                    <div className="max-w-[260px] line-clamp-3" title={s.companySummary || ""}>
+                    <div className="max-w-[320px] whitespace-normal leading-relaxed">
                       {s.companySummary || <span className="text-slate-300">—</span>}
                     </div>
                   </td>
                   <td className="py-3 pr-3 text-xs text-slate-600 align-top">
-                    <div className="max-w-[260px] line-clamp-3" title={s.investmentThesis || ""}>
+                    <div className="max-w-[320px] whitespace-normal leading-relaxed">
                       {s.investmentThesis || <span className="text-slate-300">—</span>}
                     </div>
                   </td>
