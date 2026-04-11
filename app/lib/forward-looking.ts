@@ -309,21 +309,30 @@ async function recordBreadthSnapshot(
   return trimmed;
 }
 
-// Pick the snapshot closest to (but not newer than) a target trading-day
-// offset. We use calendar days to keep the math simple; 5 calendar days
-// corresponds to roughly 1 trading week, 30 calendar days to ~1 month.
+// Pick the snapshot closest to (but strictly older than) today's entry,
+// targeting a calendar-day lag. Returns null when the history is too
+// short to produce a real prior observation — the caller should then
+// render the tile without a delta rather than displaying a bogus 0.
+//
+// We deliberately reject any candidate whose date equals today's (or is
+// even newer) so a day-1 history containing only {today} yields null
+// rather than "compare today to today → 0pp".
 function pickHistoricalBreadth(
   history: BreadthSnapshot[],
   calendarDaysAgo: number
 ): BreadthSnapshot | null {
-  if (history.length === 0) return null;
-  const newest = new Date(history[0].date + "T00:00:00Z").getTime();
-  const targetMs = newest - calendarDaysAgo * 24 * 60 * 60 * 1000;
+  if (history.length < 2) return null;
+  const newestDate = history[0].date;
+  const newestMs = new Date(newestDate + "T00:00:00Z").getTime();
+  const targetMs = newestMs - calendarDaysAgo * 24 * 60 * 60 * 1000;
+
   let best: BreadthSnapshot | null = null;
   let bestDiff = Infinity;
   for (const s of history) {
+    // Never compare today to itself.
+    if (s.date === newestDate) continue;
     const t = new Date(s.date + "T00:00:00Z").getTime();
-    // Prefer entries on or before the target to avoid look-ahead bias.
+    // Prefer entries at or before the target to avoid look-ahead bias.
     if (t > targetMs) continue;
     const diff = Math.abs(t - targetMs);
     if (diff < bestDiff) {
@@ -331,9 +340,18 @@ function pickHistoricalBreadth(
       best = s;
     }
   }
-  // If nothing older than the target exists yet (short history), fall
-  // back to the oldest entry we do have.
-  if (!best) best = history[history.length - 1];
+  // If no entry old enough exists yet, degrade to the oldest non-today
+  // entry we do have — that still gives a directional comparison once
+  // the history has been seeded for at least one prior trading day,
+  // without fabricating a zero delta against today.
+  if (!best) {
+    for (let i = history.length - 1; i >= 0; i--) {
+      if (history[i].date !== newestDate) {
+        best = history[i];
+        break;
+      }
+    }
+  }
   return best;
 }
 

@@ -243,9 +243,16 @@ function ForwardTile({
           <span className="text-base font-normal text-slate-400">N/A</span>
         )}
       </div>
-      {deltaStr && (
+      {deltaStr ? (
         <div className={`text-xs font-semibold mt-0.5 ${deltaColor}`}>{deltaStr}</div>
-      )}
+      ) : available && deltaUnit && point?.previous == null ? (
+        <div
+          className="text-xs font-medium mt-0.5 text-slate-400"
+          title="Prior snapshot not yet in history cache. Deltas will populate as subsequent refreshes accumulate."
+        >
+          {deltaPeriod ?? "wk/wk"} building…
+        </div>
+      ) : null}
       {point?.sourceLabel && (
         <div className="text-[10px] text-slate-400 mt-1 truncate" title={point.note}>
           {point.sourceLabel}
