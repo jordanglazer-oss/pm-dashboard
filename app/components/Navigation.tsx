@@ -7,7 +7,6 @@ import { usePathname } from "next/navigation";
 const tabs = [
   { label: "Brief", href: "/brief" },
   { label: "Dashboard", href: "/" },
-  { label: "Scoring", href: "/scoring" },
   { label: "PIM Model", href: "/pim-model" },
   { label: "Positioning", href: "/portfolio" },
   { label: "Screener", href: "/screener" },
@@ -20,8 +19,10 @@ export function Navigation() {
   const pathname = usePathname();
   const [menuOpen, setMenuOpen] = useState(false);
 
+  // /stock/[ticker] detail pages and the legacy /scoring route both live under
+  // the consolidated Dashboard tab since scoring was folded into Dashboard.
   const activeTab = pathname.startsWith("/stock/") || pathname === "/scoring"
-    ? "Scoring"
+    ? "Dashboard"
     : pathname === "/brief"
     ? "Brief"
     : pathname === "/pim-model"
