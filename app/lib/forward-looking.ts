@@ -4,6 +4,13 @@
 // brief. FRED is used when FRED_API_KEY is set (more accurate for rates
 // and credit); otherwise we fall back to Yahoo Finance everywhere.
 
+// Per-point freshness so the UI can render a badge that tells the user
+// whether a number was actually just pulled ("live"), is an old cached
+// value from FRED's delayed publishing cycle ("stale"), couldn't be
+// reached at all ("failed"), or needs configuration the user hasn't done
+// yet ("not-configured", e.g. FRED_API_KEY missing).
+export type ForwardStatus = "live" | "stale" | "failed" | "not-configured";
+
 export type ForwardPoint = {
   value: number | null;
   source: string; // clickable URL the user can verify
@@ -11,6 +18,7 @@ export type ForwardPoint = {
   asOf: string; // ISO timestamp for the underlying data
   previous?: number | null; // prior-period value used for deltas
   note?: string; // optional methodology caveat
+  status: ForwardStatus;
 };
 
 export type ForwardLookingData = {
@@ -33,7 +41,7 @@ export type ForwardLookingData = {
 };
 
 const YH_UA =
-  "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36";
+  "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36";
 
 type YahooChartResult = {
   meta?: { regularMarketPrice?: number; chartPreviousClose?: number };
@@ -59,6 +67,66 @@ async function yahooChart(
   }
 }
 
+// Yahoo's v10 quoteSummary endpoint now requires an A1/A3 cookie pair and a
+// matching crumb. Without them every request returns 401 "Invalid Cookie",
+// which is why SPY forward P/E and trailing P/E were coming back N/A. The
+// flow below mirrors what yahoo-finance2 does under the hood: hit a page
+// that hands out consent cookies, then trade those for a crumb. Results are
+// cached for an hour so we don't pay the two-request overhead on every call.
+let cachedYahooAuth: {
+  crumb: string;
+  cookie: string;
+  expiresAt: number;
+} | null = null;
+
+async function getYahooAuth(): Promise<{ crumb: string; cookie: string } | null> {
+  if (cachedYahooAuth && cachedYahooAuth.expiresAt > Date.now()) {
+    return { crumb: cachedYahooAuth.crumb, cookie: cachedYahooAuth.cookie };
+  }
+  try {
+    // Step 1: hit fc.yahoo.com to receive A1/A3 cookies.
+    const cookieRes = await fetch("https://fc.yahoo.com/", {
+      headers: { "User-Agent": YH_UA, Accept: "*/*" },
+      redirect: "manual",
+    });
+    const raw = cookieRes.headers.get("set-cookie");
+    if (!raw) return null;
+    // Node's fetch collapses multiple Set-Cookie headers into one comma-joined
+    // string. Split on commas that precede a new cookie name=value pair.
+    const cookieParts = raw
+      .split(/,(?=[^;,]+=)/)
+      .map((c) => c.split(";")[0].trim())
+      .filter((c) => c.includes("="));
+    if (cookieParts.length === 0) return null;
+    const cookie = cookieParts.join("; ");
+
+    // Step 2: trade cookies for a crumb.
+    const crumbRes = await fetch(
+      "https://query2.finance.yahoo.com/v1/test/getcrumb",
+      {
+        headers: {
+          "User-Agent": YH_UA,
+          Cookie: cookie,
+          Accept: "text/plain",
+        },
+        cache: "no-store",
+      }
+    );
+    if (!crumbRes.ok) return null;
+    const crumb = (await crumbRes.text()).trim();
+    if (!crumb || crumb.length < 5 || crumb.includes("<")) return null;
+
+    cachedYahooAuth = {
+      crumb,
+      cookie,
+      expiresAt: Date.now() + 1000 * 60 * 60, // 1 hour
+    };
+    return { crumb, cookie };
+  } catch {
+    return null;
+  }
+}
+
 type YahooSummary = {
   summaryDetail?: {
     forwardPE?: { raw?: number };
@@ -74,13 +142,44 @@ async function yahooQuoteSummary(
   symbol: string,
   modules: string
 ): Promise<YahooSummary | null> {
+  const auth = await getYahooAuth();
+  if (!auth) return null;
   try {
-    const res = await fetch(
-      `https://query2.finance.yahoo.com/v10/finance/quoteSummary/${encodeURIComponent(
-        symbol
-      )}?modules=${modules}`,
-      { headers: { "User-Agent": YH_UA }, cache: "no-store" }
-    );
+    const url = `https://query2.finance.yahoo.com/v10/finance/quoteSummary/${encodeURIComponent(
+      symbol
+    )}?modules=${modules}&crumb=${encodeURIComponent(auth.crumb)}`;
+    const res = await fetch(url, {
+      headers: {
+        "User-Agent": YH_UA,
+        Cookie: auth.cookie,
+        Accept: "application/json",
+      },
+      cache: "no-store",
+    });
+    if (res.status === 401 || res.status === 403) {
+      // Auth expired — force refresh and retry once.
+      cachedYahooAuth = null;
+      const fresh = await getYahooAuth();
+      if (!fresh) return null;
+      const retry = await fetch(
+        `https://query2.finance.yahoo.com/v10/finance/quoteSummary/${encodeURIComponent(
+          symbol
+        )}?modules=${modules}&crumb=${encodeURIComponent(fresh.crumb)}`,
+        {
+          headers: {
+            "User-Agent": YH_UA,
+            Cookie: fresh.cookie,
+            Accept: "application/json",
+          },
+          cache: "no-store",
+        }
+      );
+      if (!retry.ok) return null;
+      const retryData = await retry.json();
+      return (retryData?.quoteSummary?.result?.[0] ?? null) as
+        | YahooSummary
+        | null;
+    }
     if (!res.ok) return null;
     const data = await res.json();
     return (data?.quoteSummary?.result?.[0] ?? null) as YahooSummary | null;
@@ -123,7 +222,8 @@ function pct(current: number | null, previous: number | null): number | null {
 function missing(
   source: string,
   sourceLabel: string,
-  note: string
+  note: string,
+  status: ForwardStatus = "failed"
 ): ForwardPoint {
   return {
     value: null,
@@ -131,7 +231,29 @@ function missing(
     sourceLabel,
     asOf: new Date().toISOString(),
     note,
+    status,
   };
+}
+
+// FRED publishes daily series with a ~1 business day lag. Anything within 5
+// calendar days of today is treated as fresh; anything older is "stale" so
+// the UI can warn that the series hasn't refreshed.
+function fredStatusFromDate(dateStr: string): ForwardStatus {
+  const d = new Date(dateStr + "T00:00:00Z");
+  if (isNaN(d.getTime())) return "stale";
+  const ageDays = (Date.now() - d.getTime()) / (1000 * 60 * 60 * 24);
+  return ageDays > 5 ? "stale" : "live";
+}
+
+// Derived points (curves, EPS growth) are only as fresh as their weakest leg.
+function worstStatus(...inputs: (ForwardStatus | undefined)[]): ForwardStatus {
+  const order: ForwardStatus[] = ["failed", "not-configured", "stale", "live"];
+  let worst: ForwardStatus = "live";
+  for (const s of inputs) {
+    if (!s) continue;
+    if (order.indexOf(s) < order.indexOf(worst)) worst = s;
+  }
+  return worst;
 }
 
 export async function fetchForwardLookingData(): Promise<ForwardLookingData> {
@@ -165,13 +287,15 @@ export async function fetchForwardLookingData(): Promise<ForwardLookingData> {
         .filter((v): v is number => typeof v === "number")
         .slice(-1)[0] ??
         null);
+    const spxYtdValue = pct(nowPrice, ytdFirst);
     spxYtd = {
-      value: pct(nowPrice, ytdFirst),
+      value: spxYtdValue,
       source: spxSource,
       sourceLabel: "Yahoo Finance ^GSPC",
       asOf,
       previous: ytdFirst,
       note: "S&P 500 percent change from first trading day of the current calendar year.",
+      status: spxYtdValue != null ? "live" : "failed",
     };
 
     const wkClosesAll: number[] = (wkRes?.indicators?.quote?.[0]?.close ?? [])
@@ -180,13 +304,15 @@ export async function fetchForwardLookingData(): Promise<ForwardLookingData> {
       wkRes?.meta?.regularMarketPrice ??
       (wkClosesAll.length ? wkClosesAll[wkClosesAll.length - 1] : null);
     const wkFirst = wkClosesAll.length > 0 ? wkClosesAll[0] : null;
+    const spxWeekValue = pct(wkNow, wkFirst);
     spxWeek = {
-      value: pct(wkNow, wkFirst),
+      value: spxWeekValue,
       source: spxSource,
       sourceLabel: "Yahoo Finance ^GSPC",
       asOf,
       previous: wkFirst,
       note: "S&P 500 percent change over the trailing 5 trading days.",
+      status: spxWeekValue != null ? "live" : "failed",
     };
   } catch {
     // leave as missing
@@ -227,6 +353,7 @@ export async function fetchForwardLookingData(): Promise<ForwardLookingData> {
         sourceLabel: "Yahoo Finance SPY",
         asOf,
         note: "SPY forward blended P/E — used as the closest automated proxy for the S&P 500 forward multiple.",
+        status: "live",
       };
     }
     if (trl != null) {
@@ -236,6 +363,7 @@ export async function fetchForwardLookingData(): Promise<ForwardLookingData> {
         sourceLabel: "Yahoo Finance SPY",
         asOf,
         note: "SPY trailing twelve-month P/E.",
+        status: "live",
       };
     }
     if (fwd != null && trl != null && fwd > 0) {
@@ -246,6 +374,7 @@ export async function fetchForwardLookingData(): Promise<ForwardLookingData> {
         sourceLabel: "Yahoo Finance SPY",
         asOf,
         note: "Implied forward 12-month EPS growth, derived as (trailing P/E / forward P/E - 1) × 100.",
+        status: "live",
       };
     }
   } catch {
@@ -271,7 +400,8 @@ export async function fetchForwardLookingData(): Promise<ForwardLookingData> {
             sourceLabel: "FRED DGS10",
             asOf: dgs10[0].date,
             previous: dgs10[1]?.value ?? null,
-            note: "10-Year Treasury constant-maturity yield (daily).",
+            note: `10-Year Treasury constant-maturity yield. Latest FRED observation: ${dgs10[0].date}.`,
+            status: fredStatusFromDate(dgs10[0].date),
           }
         : missing(
             "https://fred.stlouisfed.org/series/DGS10",
@@ -286,7 +416,8 @@ export async function fetchForwardLookingData(): Promise<ForwardLookingData> {
             sourceLabel: "FRED DGS2",
             asOf: dgs2[0].date,
             previous: dgs2[1]?.value ?? null,
-            note: "2-Year Treasury constant-maturity yield (daily).",
+            note: `2-Year Treasury constant-maturity yield. Latest FRED observation: ${dgs2[0].date}.`,
+            status: fredStatusFromDate(dgs2[0].date),
           }
         : missing(
             "https://fred.stlouisfed.org/series/DGS2",
@@ -301,7 +432,8 @@ export async function fetchForwardLookingData(): Promise<ForwardLookingData> {
             sourceLabel: "FRED DGS3MO",
             asOf: dgs3mo[0].date,
             previous: dgs3mo[1]?.value ?? null,
-            note: "3-Month Treasury bill secondary-market rate (daily).",
+            note: `3-Month Treasury bill secondary-market rate. Latest FRED observation: ${dgs3mo[0].date}.`,
+            status: fredStatusFromDate(dgs3mo[0].date),
           }
         : missing(
             "https://fred.stlouisfed.org/series/DGS3MO",
@@ -321,6 +453,7 @@ export async function fetchForwardLookingData(): Promise<ForwardLookingData> {
       sourceLabel: "Yahoo Finance ^TNX",
       asOf,
       note: "10-Year Treasury yield via Yahoo ^TNX. Add FRED_API_KEY to .env.local to switch to FRED DGS10 (official end-of-day series).",
+      status: tnxPrice != null ? "live" : "failed",
     };
     yield2y = {
       value: null,
@@ -328,6 +461,7 @@ export async function fetchForwardLookingData(): Promise<ForwardLookingData> {
       sourceLabel: "FRED DGS2 (requires API key)",
       asOf,
       note: "Yahoo does not expose a 2Y Treasury ticker. Add FRED_API_KEY to .env.local to enable.",
+      status: "not-configured",
     };
     yield3m = {
       value: irxPrice != null ? parseFloat(irxPrice.toFixed(2)) : null,
@@ -335,6 +469,7 @@ export async function fetchForwardLookingData(): Promise<ForwardLookingData> {
       sourceLabel: "Yahoo Finance ^IRX",
       asOf,
       note: "13-week T-Bill discount rate via Yahoo ^IRX. FRED DGS3MO is the constant-maturity equivalent.",
+      status: irxPrice != null ? "live" : "failed",
     };
   }
 
@@ -351,6 +486,7 @@ export async function fetchForwardLookingData(): Promise<ForwardLookingData> {
         note: fredEnabled
           ? "Computed from DGS10 - DGS2. Missing one leg."
           : "Needs FRED_API_KEY for DGS2 (Yahoo has no 2Y ticker).",
+        status: worstStatus(yield10y.status, yield2y.status),
       };
     }
     return {
@@ -359,6 +495,7 @@ export async function fetchForwardLookingData(): Promise<ForwardLookingData> {
       sourceLabel: "FRED T10Y2Y",
       asOf,
       note: "10Y - 2Y Treasury spread in basis points. Inversion (< 0) has historically preceded recessions.",
+      status: worstStatus(yield10y.status, yield2y.status),
     };
   })();
 
@@ -372,6 +509,7 @@ export async function fetchForwardLookingData(): Promise<ForwardLookingData> {
         sourceLabel: "FRED T10Y3M",
         asOf,
         note: "Computed from 10Y - 3M. Missing one leg.",
+        status: worstStatus(yield10y.status, yield3m.status),
       };
     }
     return {
@@ -380,6 +518,7 @@ export async function fetchForwardLookingData(): Promise<ForwardLookingData> {
       sourceLabel: "FRED T10Y3M",
       asOf,
       note: "10Y - 3M Treasury spread in basis points — the NY Fed's preferred recession indicator.",
+      status: worstStatus(yield10y.status, yield3m.status),
     };
   })();
 
@@ -389,14 +528,16 @@ export async function fetchForwardLookingData(): Promise<ForwardLookingData> {
     "FRED BAMLH0A0HYM2",
     fredEnabled
       ? "No data"
-      : "Add FRED_API_KEY to .env.local to enable automated HY OAS trend."
+      : "Add FRED_API_KEY to .env.local to enable automated HY OAS trend.",
+    fredEnabled ? "failed" : "not-configured"
   );
   let igOasTrend: ForwardPoint = missing(
     "https://fred.stlouisfed.org/series/BAMLC0A0CM",
     "FRED BAMLC0A0CM",
     fredEnabled
       ? "No data"
-      : "Add FRED_API_KEY to .env.local to enable automated IG OAS trend."
+      : "Add FRED_API_KEY to .env.local to enable automated IG OAS trend.",
+    fredEnabled ? "failed" : "not-configured"
   );
 
   if (fredEnabled) {
@@ -414,7 +555,8 @@ export async function fetchForwardLookingData(): Promise<ForwardLookingData> {
         sourceLabel: "FRED BAMLH0A0HYM2",
         asOf: hy[0].date,
         previous: prior != null ? Math.round(prior * 100) : null,
-        note: "ICE BofA US High Yield Index option-adjusted spread (bps). Previous = ~5 trading days ago.",
+        note: `ICE BofA US High Yield Index option-adjusted spread (bps). Previous = ~5 trading days ago. Latest FRED observation: ${hy[0].date}.`,
+        status: fredStatusFromDate(hy[0].date),
       };
     }
     if (ig && ig[0]) {
@@ -427,7 +569,8 @@ export async function fetchForwardLookingData(): Promise<ForwardLookingData> {
         sourceLabel: "FRED BAMLC0A0CM",
         asOf: ig[0].date,
         previous: prior != null ? Math.round(prior * 100) : null,
-        note: "ICE BofA US Corporate Index OAS (bps). Previous = ~5 trading days ago.",
+        note: `ICE BofA US Corporate Index OAS (bps). Previous = ~5 trading days ago. Latest FRED observation: ${ig[0].date}.`,
+        status: fredStatusFromDate(ig[0].date),
       };
     }
   }
@@ -452,6 +595,7 @@ export async function fetchForwardLookingData(): Promise<ForwardLookingData> {
       asOf,
       previous: prior != null ? parseFloat(prior.toFixed(2)) : null,
       note: `${label} current price with 5-trading-day prior for week-over-week delta.`,
+      status: now != null ? "live" : "failed",
     };
   };
 
