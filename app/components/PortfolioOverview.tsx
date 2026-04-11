@@ -730,17 +730,19 @@ function RankingTable({
   scoreAllDisabled?: boolean;
   lastScoredAt?: string;
 }) {
-  // Per-row expanded state for "What They Do" / "Why Own It" cells.
-  // Keyed `${ticker}::summary` and `${ticker}::thesis` so each ticker's
-  // two text cells expand independently. Collapsed rows line-clamp to 2
-  // lines so the default layout is compact and horizontal scroll is
-  // minimized; clicking "Show more" on a single row expands just that cell.
-  const [expandedCells, setExpandedCells] = useState<Set<string>>(new Set());
-  const toggleExpanded = (key: string) => {
-    setExpandedCells((prev) => {
+  // Per-row expanded state. Keyed by ticker — a single toggle on a row
+  // expands *both* the "What They Do" and "Why Own It" cells together,
+  // so the user only has to click once per row to see the full context.
+  // Collapsed rows line-clamp to 2 lines so the default layout stays
+  // compact. Either the Show more button under "What They Do" OR the
+  // one under "Why Own It" flips the same state, so whichever is closer
+  // to where the user is reading will do the job.
+  const [expandedRows, setExpandedRows] = useState<Set<string>>(new Set());
+  const toggleRowExpanded = (ticker: string) => {
+    setExpandedRows((prev) => {
       const next = new Set(prev);
-      if (next.has(key)) next.delete(key);
-      else next.add(key);
+      if (next.has(ticker)) next.delete(ticker);
+      else next.add(ticker);
       return next;
     });
   };
@@ -893,26 +895,25 @@ function RankingTable({
                     {s.price != null ? `$${s.price.toFixed(2)}` : "—"}
                   </td>
                   {(() => {
-                    // Render the two long-text cells with per-cell expand/collapse.
-                    // Collapsed rows use line-clamp-2 so the table stays compact.
-                    // The toggle is only rendered when the text is long enough to
-                    // actually be clamped (heuristic: > ~140 chars or contains a
-                    // newline) — shorter summaries show in full with no toggle.
-                    const renderExpandableCell = (
-                      text: string | undefined,
-                      kind: "summary" | "thesis"
-                    ) => {
-                      const key = `${s.ticker}::${kind}`;
-                      const expanded = expandedCells.has(key);
+                    // Both "What They Do" and "Why Own It" share a single
+                    // per-row expanded flag keyed on ticker — clicking Show
+                    // more under either cell toggles both at once.
+                    const expanded = expandedRows.has(s.ticker);
+                    // Only show the toggle if at least one of the two texts
+                    // is long enough to be clipped; short summaries render
+                    // in full with no button clutter.
+                    const anyLong =
+                      (!!s.companySummary && (s.companySummary.length > 140 || s.companySummary.includes("\n"))) ||
+                      (!!s.investmentThesis && (s.investmentThesis.length > 140 || s.investmentThesis.includes("\n")));
+                    const renderCell = (text: string | undefined) => {
                       if (!text) return <span className="text-slate-300">—</span>;
-                      const isLong = text.length > 140 || text.includes("\n");
                       return (
                         <div className="max-w-[320px] whitespace-normal leading-relaxed">
                           <div className={expanded ? "" : "line-clamp-2"}>{text}</div>
-                          {isLong && (
+                          {anyLong && (
                             <button
                               type="button"
-                              onClick={() => toggleExpanded(key)}
+                              onClick={() => toggleRowExpanded(s.ticker)}
                               className="mt-1 text-[10px] font-semibold text-blue-600 hover:text-blue-800 hover:underline"
                             >
                               {expanded ? "Show less" : "Show more"}
@@ -924,10 +925,10 @@ function RankingTable({
                     return (
                       <>
                         <td className="py-3 pr-3 text-xs text-slate-600 align-top">
-                          {renderExpandableCell(s.companySummary, "summary")}
+                          {renderCell(s.companySummary)}
                         </td>
                         <td className="py-3 pr-3 text-xs text-slate-600 align-top">
-                          {renderExpandableCell(s.investmentThesis, "thesis")}
+                          {renderCell(s.investmentThesis)}
                         </td>
                       </>
                     );
