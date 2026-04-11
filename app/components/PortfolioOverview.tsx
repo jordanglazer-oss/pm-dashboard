@@ -730,6 +730,21 @@ function RankingTable({
   scoreAllDisabled?: boolean;
   lastScoredAt?: string;
 }) {
+  // Per-row expanded state for "What They Do" / "Why Own It" cells.
+  // Keyed `${ticker}::summary` and `${ticker}::thesis` so each ticker's
+  // two text cells expand independently. Collapsed rows line-clamp to 2
+  // lines so the default layout is compact and horizontal scroll is
+  // minimized; clicking "Show more" on a single row expands just that cell.
+  const [expandedCells, setExpandedCells] = useState<Set<string>>(new Set());
+  const toggleExpanded = (key: string) => {
+    setExpandedCells((prev) => {
+      const next = new Set(prev);
+      if (next.has(key)) next.delete(key);
+      else next.add(key);
+      return next;
+    });
+  };
+
   const prefPrefix = flagType === "review" ? "rankPort" : "rankWatch";
   const sort = {
     key: (uiPrefs[`${prefPrefix}Sort`] as RankingSortKey) || "adjusted",
@@ -834,7 +849,7 @@ function RankingTable({
         )}
       </div>
       <div className="overflow-x-auto">
-        <table className="w-full min-w-[1400px] text-left text-sm">
+        <table className="w-full min-w-[1180px] text-left text-sm">
           <thead>
             <tr className="border-b border-slate-200 text-xs text-slate-500">
               <th className={stickyHeadCls} onClick={() => toggleSort("ticker")}>
@@ -842,8 +857,8 @@ function RankingTable({
               </th>
               <th className={thClass} onClick={() => toggleSort("sector")}>Sector{arrow("sector")}</th>
               <th className={`${thClass} text-right`} onClick={() => toggleSort("price")}>Price{arrow("price")}</th>
-              <th className={`${thClass} min-w-[220px]`}>What They Do</th>
-              <th className={`${thClass} min-w-[220px]`}>Why Own It</th>
+              <th className={thClass}>What They Do</th>
+              <th className={thClass}>Why Own It</th>
               {SCORE_GROUPS.map((g) => (
                 <th key={g.name} className={`${thClass} ${GROUP_HEADER_COLORS[g.name] || ""}`} onClick={() => toggleSort(g.name)}>
                   {g.name === "Company Specific" ? "Company" : g.name}{arrow(g.name)}
@@ -877,16 +892,46 @@ function RankingTable({
                   <td className="py-3 pr-3 text-right text-slate-600 tabular-nums">
                     {s.price != null ? `$${s.price.toFixed(2)}` : "—"}
                   </td>
-                  <td className="py-3 pr-3 text-xs text-slate-600 align-top">
-                    <div className="max-w-[320px] whitespace-normal leading-relaxed">
-                      {s.companySummary || <span className="text-slate-300">—</span>}
-                    </div>
-                  </td>
-                  <td className="py-3 pr-3 text-xs text-slate-600 align-top">
-                    <div className="max-w-[320px] whitespace-normal leading-relaxed">
-                      {s.investmentThesis || <span className="text-slate-300">—</span>}
-                    </div>
-                  </td>
+                  {(() => {
+                    // Render the two long-text cells with per-cell expand/collapse.
+                    // Collapsed rows use line-clamp-2 so the table stays compact.
+                    // The toggle is only rendered when the text is long enough to
+                    // actually be clamped (heuristic: > ~140 chars or contains a
+                    // newline) — shorter summaries show in full with no toggle.
+                    const renderExpandableCell = (
+                      text: string | undefined,
+                      kind: "summary" | "thesis"
+                    ) => {
+                      const key = `${s.ticker}::${kind}`;
+                      const expanded = expandedCells.has(key);
+                      if (!text) return <span className="text-slate-300">—</span>;
+                      const isLong = text.length > 140 || text.includes("\n");
+                      return (
+                        <div className="max-w-[260px] whitespace-normal leading-relaxed">
+                          <div className={expanded ? "" : "line-clamp-2"}>{text}</div>
+                          {isLong && (
+                            <button
+                              type="button"
+                              onClick={() => toggleExpanded(key)}
+                              className="mt-1 text-[10px] font-semibold text-blue-600 hover:text-blue-800 hover:underline"
+                            >
+                              {expanded ? "Show less" : "Show more"}
+                            </button>
+                          )}
+                        </div>
+                      );
+                    };
+                    return (
+                      <>
+                        <td className="py-3 pr-3 text-xs text-slate-600 align-top">
+                          {renderExpandableCell(s.companySummary, "summary")}
+                        </td>
+                        <td className="py-3 pr-3 text-xs text-slate-600 align-top">
+                          {renderExpandableCell(s.investmentThesis, "thesis")}
+                        </td>
+                      </>
+                    );
+                  })()}
                   {SCORE_GROUPS.map((g) => (
                     <td key={g.name} className="py-3 pr-3 text-slate-600">
                       {groupTotal(s, g)}/{g.maxTotal}
