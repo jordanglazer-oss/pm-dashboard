@@ -988,7 +988,8 @@ export function MorningBrief({
             <ForwardTile label="S&P 500 Week" point={activeForward.spxWeek} unit="%" />
             <ForwardTile label="SPY Forward P/E" point={activeForward.spyForwardPE} />
             <ForwardTile label="SPY Trailing P/E" point={activeForward.spyTrailingPE} />
-            <ForwardTile label="Implied Fwd EPS Growth" point={activeForward.impliedEpsGrowth} unit="%" />
+            <ForwardTile label="Implied 1Y EPS Growth (P/E)" point={activeForward.impliedEpsGrowth} unit="%" />
+            <ForwardTile label="Est 3-5Y EPS Growth" point={activeForward.eps35Growth} unit="%" />
             <ForwardTile label="10Y Treasury" point={activeForward.yield10y} unit="%" deltaUnit="raw" />
             <ForwardTile label="2Y Treasury" point={activeForward.yield2y} unit="%" deltaUnit="raw" />
             <ForwardTile label="3M T-Bill" point={activeForward.yield3m} unit="%" deltaUnit="raw" />

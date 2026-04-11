@@ -27,6 +27,7 @@ export type ForwardLookingData = {
   spyForwardPE: ForwardPoint; // SPY forward P/E (proxy for S&P 500)
   spyTrailingPE: ForwardPoint; // SPY trailing 12m P/E
   impliedEpsGrowth: ForwardPoint; // (trailing/forward - 1), % implied fwd EPS growth
+  eps35Growth: ForwardPoint; // SSGA "Estimated 3-5 Year EPS Growth" — analyst consensus CAGR
   yield10y: ForwardPoint; // 10Y Treasury
   yield2y: ForwardPoint; // 2Y Treasury (FRED only)
   yield3m: ForwardPoint; // 3M T-Bill
@@ -128,14 +129,16 @@ async function fetchStooqDaily(symbol: string): Promise<DailyRow[] | null> {
 }
 
 // ── SSGA official SPY product page scrape ────────────────────────────────
-// State Street publishes both trailing ("Price/Earnings") and forward
-// ("Price/Earnings Ratio FY1") P/E on SPY's official fund page. Because
+// State Street publishes trailing ("Price/Earnings"), forward
+// ("Price/Earnings Ratio FY1"), and 3-5 year analyst-consensus EPS growth
+// ("Estimated 3-5 Year EPS Growth") on SPY's official fund page. Because
 // it's the issuer's own site the numbers are authoritative and rarely
 // change structure. We parse the first numeric after each label — the
 // label-to-value distance is small in the rendered table markup.
-async function fetchSsgaSpyPE(): Promise<{
+async function fetchSsgaSpyData(): Promise<{
   forwardPE: number | null;
   trailingPE: number | null;
+  eps35Growth: number | null;
 } | null> {
   try {
     const url =
@@ -161,10 +164,19 @@ async function fetchSsgaSpyPE(): Promise<{
     const trailingMatch = html.match(
       /Price\/Earnings(?!\s*Ratio)[\s\S]{0,2000}?(\d+\.\d+)/
     );
+    // 3-5Y EPS Growth — SSGA renders "Estimated 3-5 Year EPS Growth" with a
+    // tooltip describing the FactSet methodology, and the value is written
+    // as "14.28%". We anchor on the specific label to avoid picking up
+    // trailing/forward growth numbers from elsewhere on the page.
+    const epsGrowthMatch = html.match(
+      /Estimated 3-5 Year EPS Growth[\s\S]{0,2000}?(\d+\.\d+)\s*%/
+    );
     const forwardPE = forwardMatch ? parseFloat(forwardMatch[1]) : null;
     const trailingPE = trailingMatch ? parseFloat(trailingMatch[1]) : null;
-    if (forwardPE == null && trailingPE == null) return null;
-    return { forwardPE, trailingPE };
+    const eps35Growth = epsGrowthMatch ? parseFloat(epsGrowthMatch[1]) : null;
+    if (forwardPE == null && trailingPE == null && eps35Growth == null)
+      return null;
+    return { forwardPE, trailingPE, eps35Growth };
   } catch {
     return null;
   }
@@ -532,6 +544,11 @@ export async function fetchForwardLookingData(): Promise<ForwardLookingData> {
     "SSGA SPY / Yahoo Finance SPY",
     "Derived from (trailing P/E / forward P/E - 1); needs both values."
   );
+  let eps35Growth: ForwardPoint = missing(
+    ssgaSpyUrl,
+    "SSGA SPY",
+    "SSGA product page did not expose Estimated 3-5 Year EPS Growth."
+  );
   {
     let fwd: number | null = null;
     let trl: number | null = null;
@@ -539,11 +556,22 @@ export async function fetchForwardLookingData(): Promise<ForwardLookingData> {
     let peSourceLabel = "SSGA SPY";
 
     // Try SSGA first — the issuer's own page is the most reliable source
-    // and is not blocked from Vercel/AWS IPs.
-    const ssga = await fetchSsgaSpyPE();
+    // and is not blocked from Vercel/AWS IPs. Also carries the 3-5Y
+    // consensus EPS growth number we surface in a separate tile below.
+    const ssga = await fetchSsgaSpyData();
     if (ssga) {
       if (ssga.forwardPE != null) fwd = ssga.forwardPE;
       if (ssga.trailingPE != null) trl = ssga.trailingPE;
+      if (ssga.eps35Growth != null) {
+        eps35Growth = {
+          value: ssga.eps35Growth,
+          source: ssgaSpyUrl,
+          sourceLabel: "SSGA SPY",
+          asOf,
+          note: "Estimated 3-5 Year EPS Growth for SPY's underlying holdings. Weighted-average analyst consensus sourced from FactSet Estimates on the SSGA product page.",
+          status: "live",
+        };
+      }
     }
 
     // Yahoo as a secondary source for anything SSGA didn't return.
@@ -946,6 +974,7 @@ export async function fetchForwardLookingData(): Promise<ForwardLookingData> {
     spyForwardPE,
     spyTrailingPE,
     impliedEpsGrowth,
+    eps35Growth,
     yield10y,
     yield2y,
     yield3m,

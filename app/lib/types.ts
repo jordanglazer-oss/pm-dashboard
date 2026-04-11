@@ -300,6 +300,9 @@ export type ForwardLookingBundle = {
   spyForwardPE: ForwardPointBundle;
   spyTrailingPE: ForwardPointBundle;
   impliedEpsGrowth: ForwardPointBundle;
+  // Optional so briefs cached in Redis before this field was introduced
+  // still decode without errors. New briefs populate it from SSGA.
+  eps35Growth?: ForwardPointBundle;
   yield10y: ForwardPointBundle;
   yield2y: ForwardPointBundle;
   yield3m: ForwardPointBundle;
