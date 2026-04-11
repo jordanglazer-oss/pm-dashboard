@@ -1,8 +1,9 @@
 "use client";
 
 import React from "react";
-import type { MarketData } from "@/app/lib/types";
+import type { MarketData, ForwardLookingBundle } from "@/app/lib/types";
 import { SignalPill } from "./SignalPill";
+import { Sparkline } from "./Sparkline";
 
 type Props = {
   marketData: MarketData;
@@ -10,6 +11,9 @@ type Props = {
   aaiiNeutral?: number;
   aaiiBear?: number;
   contrarianAnalysis?: string;
+  // Optional auto-fetched series. When present these override the manual
+  // marketData values for F&G / AAII / oscillator and unlock the sparklines.
+  forwardData?: ForwardLookingBundle | null;
 };
 
 function fearGreedLabel(value: number): string {
@@ -118,20 +122,45 @@ export function overallContrarianRating(fg: number, spread: number, spOsc: numbe
   return { label: "Strong Sell Signal", tone: "red" };
 }
 
-export function SentimentGauges({ marketData, aaiiBull = 30, aaiiNeutral = 17, aaiiBear = 52, contrarianAnalysis }: Props) {
-  const fgData = fearGreedContrarian(marketData.fearGreed);
-  const aaiiData = aaiiBullBearContrarian(marketData.aaiiBullBear);
-  const overall = overallContrarianRating(marketData.fearGreed, marketData.aaiiBullBear, marketData.spOscillator, marketData.putCall);
-  const fgLabel = fearGreedLabel(marketData.fearGreed);
+export function SentimentGauges({ marketData, aaiiBull = 30, aaiiNeutral = 17, aaiiBear = 52, contrarianAnalysis, forwardData }: Props) {
+  // Auto-fetched values win over manual entries when available. The fallback
+  // chain is: live forward data → marketData → hardcoded default. Each tile
+  // also surfaces a small "auto" badge so the PM can tell at a glance which
+  // values came from the live fetch vs. the manual snapshot.
+  const fgValue =
+    forwardData?.fearGreed?.value ?? marketData.fearGreed;
+  const fgIsAuto =
+    forwardData?.fearGreed?.value != null &&
+    forwardData.fearGreed.status === "live";
+  const fgHistory = forwardData?.fearGreed?.history ?? [];
+
+  const aaiiBullBearValue =
+    forwardData?.aaiiBullBear?.value ?? marketData.aaiiBullBear;
+  const aaiiIsAuto =
+    forwardData?.aaiiBullBear?.value != null &&
+    forwardData.aaiiBullBear.status === "live";
+  const aaiiBullBearHistory = forwardData?.aaiiBullBear?.history ?? [];
+  const effAaiiBull = forwardData?.aaiiBull?.value ?? aaiiBull;
+  const effAaiiNeutral = forwardData?.aaiiNeutral?.value ?? aaiiNeutral;
+  const effAaiiBear = forwardData?.aaiiBear?.value ?? aaiiBear;
+
+  const oscValue =
+    forwardData?.spOscillator?.value ?? marketData.spOscillator;
+  const oscHistory = forwardData?.spOscillator?.history ?? [];
+
+  const fgData = fearGreedContrarian(fgValue);
+  const aaiiData = aaiiBullBearContrarian(aaiiBullBearValue);
+  const overall = overallContrarianRating(fgValue, aaiiBullBearValue, oscValue, marketData.putCall);
+  const fgLabel = fearGreedLabel(fgValue);
 
   // Color for the donut gauge
   const fgColor =
-    marketData.fearGreed <= 25 ? "#ef4444" : marketData.fearGreed <= 50 ? "#f59e0b" : "#22c55e";
+    fgValue <= 25 ? "#ef4444" : fgValue <= 50 ? "#f59e0b" : "#22c55e";
 
   // SVG donut for F&G
   const radius = 40;
   const circumference = 2 * Math.PI * radius;
-  const pct = marketData.fearGreed / 100;
+  const pct = fgValue / 100;
   const dashOffset = circumference * (1 - pct);
 
   return (
@@ -148,7 +177,17 @@ export function SentimentGauges({ marketData, aaiiBull = 30, aaiiNeutral = 17, a
       <div className="grid gap-5 lg:grid-cols-2">
         {/* CNN Fear & Greed */}
         <div className="rounded-2xl border border-slate-100 bg-slate-50 p-5">
-          <div className="text-sm font-semibold text-slate-500 mb-4">CNN Fear & Greed</div>
+          <div className="flex items-center justify-between mb-4">
+            <div className="text-sm font-semibold text-slate-500 flex items-center gap-2">
+              CNN Fear &amp; Greed
+              <a href="https://www.cnn.com/markets/fear-and-greed" target="_blank" rel="noopener noreferrer" className="text-blue-500 hover:text-blue-700" title="CNN Fear & Greed source">
+                <svg className="w-3.5 h-3.5" fill="none" stroke="currentColor" strokeWidth="2" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" d="M10 6H6a2 2 0 00-2 2v10a2 2 0 002 2h10a2 2 0 002-2v-4M14 4h6m0 0v6m0-6L10 14" /></svg>
+              </a>
+            </div>
+            {fgIsAuto && (
+              <span className="rounded-full bg-emerald-100 px-2 py-0.5 text-[9px] font-bold uppercase text-emerald-700">live</span>
+            )}
+          </div>
           <div className="flex items-center gap-6">
             <svg width="100" height="100" viewBox="0 0 100 100" className="shrink-0">
               <circle cx="50" cy="50" r={radius} fill="none" stroke="#e2e8f0" strokeWidth="8" />
@@ -165,14 +204,29 @@ export function SentimentGauges({ marketData, aaiiBull = 30, aaiiNeutral = 17, a
                 transform="rotate(-90 50 50)"
               />
               <text x="50" y="46" textAnchor="middle" className="text-2xl font-bold" fill="#1e293b" fontSize="22">
-                {marketData.fearGreed}
+                {Math.round(fgValue)}
               </text>
               <text x="50" y="62" textAnchor="middle" fill="#94a3b8" fontSize="10">
                 /100
               </text>
             </svg>
-            <div>
+            <div className="flex-1 min-w-0">
               <div className="text-xl font-semibold" style={{ color: fgColor }}>{fgLabel}</div>
+              {fgHistory.length >= 2 && (
+                <div className="mt-2">
+                  <Sparkline
+                    points={fgHistory}
+                    width={180}
+                    height={36}
+                    stroke={fgColor}
+                    fill={`${fgColor}22`}
+                    yMin={0}
+                    yMax={100}
+                    referenceY={50}
+                  />
+                  <div className="text-[10px] text-slate-400 mt-0.5">trailing 1Y daily</div>
+                </div>
+              )}
               <p className="mt-2 text-sm text-slate-500 leading-relaxed">{fgData.detail}</p>
             </div>
           </div>
@@ -180,72 +234,113 @@ export function SentimentGauges({ marketData, aaiiBull = 30, aaiiNeutral = 17, a
 
         {/* AAII Sentiment */}
         <div className="rounded-2xl border border-slate-100 bg-slate-50 p-5">
-          <div className="text-sm font-semibold text-slate-500 mb-4">AAII Sentiment Survey</div>
+          <div className="flex items-center justify-between mb-4">
+            <div className="text-sm font-semibold text-slate-500 flex items-center gap-2">
+              AAII Sentiment Survey
+              <a href="https://www.aaii.com/sentimentsurvey" target="_blank" rel="noopener noreferrer" className="text-blue-500 hover:text-blue-700" title="AAII source">
+                <svg className="w-3.5 h-3.5" fill="none" stroke="currentColor" strokeWidth="2" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" d="M10 6H6a2 2 0 00-2 2v10a2 2 0 002 2h10a2 2 0 002-2v-4M14 4h6m0 0v6m0-6L10 14" /></svg>
+              </a>
+            </div>
+            {aaiiIsAuto && (
+              <span className="rounded-full bg-emerald-100 px-2 py-0.5 text-[9px] font-bold uppercase text-emerald-700">live</span>
+            )}
+          </div>
           <div className="space-y-3">
             <div className="flex items-center gap-3">
               <span className="w-16 text-sm text-slate-500">Bullish</span>
               <div className="flex-1 h-4 rounded-full bg-slate-200 overflow-hidden">
-                <div className="h-full rounded-full bg-emerald-500" style={{ width: `${aaiiBull}%` }} />
+                <div className="h-full rounded-full bg-emerald-500" style={{ width: `${effAaiiBull}%` }} />
               </div>
-              <span className="w-14 text-right font-mono text-sm font-semibold">{aaiiBull.toFixed(1)}%</span>
+              <span className="w-14 text-right font-mono text-sm font-semibold">{effAaiiBull.toFixed(1)}%</span>
             </div>
             <div className="flex items-center gap-3">
               <span className="w-16 text-sm text-slate-500">Neutral</span>
               <div className="flex-1 h-4 rounded-full bg-slate-200 overflow-hidden">
-                <div className="h-full rounded-full bg-amber-400" style={{ width: `${aaiiNeutral}%` }} />
+                <div className="h-full rounded-full bg-amber-400" style={{ width: `${effAaiiNeutral}%` }} />
               </div>
-              <span className="w-14 text-right font-mono text-sm font-semibold">{aaiiNeutral.toFixed(1)}%</span>
+              <span className="w-14 text-right font-mono text-sm font-semibold">{effAaiiNeutral.toFixed(1)}%</span>
             </div>
             <div className="flex items-center gap-3">
               <span className="w-16 text-sm text-slate-500">Bearish</span>
               <div className="flex-1 h-4 rounded-full bg-slate-200 overflow-hidden">
-                <div className="h-full rounded-full bg-red-500" style={{ width: `${aaiiBear}%` }} />
+                <div className="h-full rounded-full bg-red-500" style={{ width: `${effAaiiBear}%` }} />
               </div>
-              <span className="w-14 text-right font-mono text-sm font-semibold">{aaiiBear.toFixed(1)}%</span>
+              <span className="w-14 text-right font-mono text-sm font-semibold">{effAaiiBear.toFixed(1)}%</span>
             </div>
             <div className="text-right text-sm text-slate-400">
-              Bull-Bear Spread: <strong className="text-slate-700">{marketData.aaiiBullBear > 0 ? "+" : ""}{marketData.aaiiBullBear.toFixed(1)}%</strong>
+              Bull-Bear Spread: <strong className="text-slate-700">{aaiiBullBearValue > 0 ? "+" : ""}{aaiiBullBearValue.toFixed(1)}%</strong>
             </div>
           </div>
+          {aaiiBullBearHistory.length >= 2 && (
+            <div className="mt-3">
+              <Sparkline
+                points={aaiiBullBearHistory}
+                width={260}
+                height={36}
+                stroke="#6366f1"
+                fill="rgba(99, 102, 241, 0.12)"
+                referenceY={0}
+              />
+              <div className="text-[10px] text-slate-400 mt-0.5">bull-bear spread, trailing 52 weeks</div>
+            </div>
+          )}
           <p className="mt-3 text-sm text-slate-500 leading-relaxed">{aaiiData.detail}</p>
         </div>
 
         {/* S&P Oscillator */}
         <div className="rounded-2xl border border-slate-100 bg-slate-50 p-5">
-          <div className="text-sm font-semibold text-slate-500 mb-4 flex items-center gap-2">
-            S&amp;P Oscillator
-            <a href="https://app.marketedge.com/#!/markets" target="_blank" rel="noopener noreferrer" className="text-blue-500 hover:text-blue-700" title="MarketEdge S&P Oscillator">
-              <svg className="w-3.5 h-3.5" fill="none" stroke="currentColor" strokeWidth="2" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" d="M10 6H6a2 2 0 00-2 2v10a2 2 0 002 2h10a2 2 0 002-2v-4M14 4h6m0 0v6m0-6L10 14" /></svg>
-            </a>
+          <div className="flex items-center justify-between mb-4">
+            <div className="text-sm font-semibold text-slate-500 flex items-center gap-2">
+              S&amp;P Oscillator
+              <a href="https://app.marketedge.com/#!/markets" target="_blank" rel="noopener noreferrer" className="text-blue-500 hover:text-blue-700" title="MarketEdge S&P Oscillator">
+                <svg className="w-3.5 h-3.5" fill="none" stroke="currentColor" strokeWidth="2" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" d="M10 6H6a2 2 0 00-2 2v10a2 2 0 002 2h10a2 2 0 002-2v-4M14 4h6m0 0v6m0-6L10 14" /></svg>
+              </a>
+            </div>
+            {oscHistory.length > 0 && (
+              <span className="rounded-full bg-blue-100 px-2 py-0.5 text-[9px] font-bold uppercase text-blue-700" title="Sparkline shows your saved entries from Redis (pm:oscillator-history)">logged</span>
+            )}
           </div>
           <div className="flex items-center gap-6">
             <div className={`flex h-20 w-20 shrink-0 items-center justify-center rounded-2xl text-3xl font-bold ${
-              marketData.spOscillator <= -4 ? "bg-emerald-100 text-emerald-700"
-              : marketData.spOscillator <= -2 ? "bg-emerald-50 text-emerald-600"
-              : marketData.spOscillator >= 4 ? "bg-red-100 text-red-700"
-              : marketData.spOscillator >= 2 ? "bg-red-50 text-red-600"
+              oscValue <= -4 ? "bg-emerald-100 text-emerald-700"
+              : oscValue <= -2 ? "bg-emerald-50 text-emerald-600"
+              : oscValue >= 4 ? "bg-red-100 text-red-700"
+              : oscValue >= 2 ? "bg-red-50 text-red-600"
               : "bg-slate-100 text-slate-600"
             }`}>
-              {marketData.spOscillator > 0 ? "+" : ""}{marketData.spOscillator}
+              {oscValue > 0 ? "+" : ""}{oscValue}
             </div>
-            <div>
+            <div className="flex-1 min-w-0">
               <div className={`text-xl font-semibold ${
-                marketData.spOscillator <= -4 ? "text-emerald-700"
-                : marketData.spOscillator <= -2 ? "text-emerald-600"
-                : marketData.spOscillator >= 4 ? "text-red-700"
-                : marketData.spOscillator >= 2 ? "text-red-600"
+                oscValue <= -4 ? "text-emerald-700"
+                : oscValue <= -2 ? "text-emerald-600"
+                : oscValue >= 4 ? "text-red-700"
+                : oscValue >= 2 ? "text-red-600"
                 : "text-slate-600"
               }`}>
-                {marketData.spOscillator <= -4 ? "Deeply Oversold" : marketData.spOscillator <= -2 ? "Oversold" : marketData.spOscillator >= 4 ? "Deeply Overbought" : marketData.spOscillator >= 2 ? "Overbought" : "Neutral"}
+                {oscValue <= -4 ? "Deeply Oversold" : oscValue <= -2 ? "Oversold" : oscValue >= 4 ? "Deeply Overbought" : oscValue >= 2 ? "Overbought" : "Neutral"}
               </div>
+              {oscHistory.length >= 2 && (
+                <div className="mt-2">
+                  <Sparkline
+                    points={oscHistory}
+                    width={180}
+                    height={36}
+                    stroke="#0ea5e9"
+                    fill="rgba(14, 165, 233, 0.12)"
+                    referenceY={0}
+                  />
+                  <div className="text-[10px] text-slate-400 mt-0.5">your saved entries (last 6mo)</div>
+                </div>
+              )}
               <p className="mt-2 text-sm text-slate-500 leading-relaxed">
-                {marketData.spOscillator <= -4
+                {oscValue <= -4
                   ? "Extreme oversold conditions have historically preceded sharp mean-reversion rallies. High-conviction contrarian buy signal."
-                  : marketData.spOscillator <= -2
+                  : oscValue <= -2
                   ? "Market is stretched to the downside. Incrementally bullish on a contrarian basis."
-                  : marketData.spOscillator >= 4
+                  : oscValue >= 4
                   ? "Extreme overbought conditions. Risk of a pullback is elevated — consider trimming or hedging."
-                  : marketData.spOscillator >= 2
+                  : oscValue >= 2
                   ? "Market is getting stretched. Reduce marginal risk and tighten stops."
                   : "No strong directional signal from the oscillator at current levels."}
               </p>

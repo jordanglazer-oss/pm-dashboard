@@ -288,6 +288,8 @@ export type MarketData = {
 // (duplicated here to avoid server-only deps leaking into the client bundle).
 export type ForwardPointStatus = "live" | "stale" | "failed" | "not-configured";
 
+export type SparkPointBundle = { date: string; value: number };
+
 export type ForwardPointBundle = {
   value: number | null;
   source: string;
@@ -296,6 +298,7 @@ export type ForwardPointBundle = {
   previous?: number | null;
   note?: string;
   status: ForwardPointStatus;
+  history?: SparkPointBundle[];
 };
 
 export type ForwardLookingBundle = {
@@ -312,6 +315,14 @@ export type ForwardLookingBundle = {
   breadth200Wk?: ForwardPointBundle;
   breadth200Mo?: ForwardPointBundle;
   breadth50Wk?: ForwardPointBundle;
+  // Optional sentiment tiles (CNN F&G, AAII, S&P Oscillator) — added after
+  // launch, must be optional for Redis-cached briefs to decode.
+  fearGreed?: ForwardPointBundle;
+  aaiiBullBear?: ForwardPointBundle;
+  aaiiBull?: ForwardPointBundle;
+  aaiiNeutral?: ForwardPointBundle;
+  aaiiBear?: ForwardPointBundle;
+  spOscillator?: ForwardPointBundle;
   yield10y: ForwardPointBundle;
   yield2y: ForwardPointBundle;
   yield3m: ForwardPointBundle;
