@@ -391,7 +391,8 @@ export async function POST(request: NextRequest) {
 - S&P 500 Week: ${fmt(forwardData.spxWeek, "%")}
 - SPY Forward P/E: ${fmt(forwardData.spyForwardPE)}
 - SPY Trailing P/E: ${fmt(forwardData.spyTrailingPE)}
-- Implied Forward EPS Growth: ${fmt(forwardData.impliedEpsGrowth, "%")}
+- Implied 1Y EPS Growth (P/E compression): ${fmt(forwardData.impliedEpsGrowth, "%")}
+- Est 3-5Y EPS Growth (SSGA/FactSet analyst consensus): ${fmt(forwardData.eps35Growth, "%")}
 - 10Y Treasury: ${fmt(forwardData.yield10y, "%")}
 - 2Y Treasury: ${fmt(forwardData.yield2y, "%")}
 - 3M T-Bill: ${fmt(forwardData.yield3m, "%")}
