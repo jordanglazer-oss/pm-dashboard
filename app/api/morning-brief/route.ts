@@ -2,6 +2,12 @@ import Anthropic from "@anthropic-ai/sdk";
 import { NextRequest, NextResponse } from "next/server";
 import { createHash } from "crypto";
 import { getRedis } from "@/app/lib/redis";
+import {
+  fetchForwardLookingData,
+  classifyRegime,
+  type ForwardLookingData,
+  type ForwardPoint,
+} from "@/app/lib/forward-looking";
 
 const client = new Anthropic();
 
@@ -60,17 +66,27 @@ const ATTACHMENT_CACHE_KEY = "pm:attachment-analysis";
 
 const BRIEF_PROMPT = `You are a senior portfolio strategist generating a daily morning brief for a portfolio management team. Your audience is professional portfolio managers who need actionable, institutional-quality market intelligence.
 
-Given current market data indicators, portfolio holdings, and any attached research screenshots (e.g., JPM Flows & Liquidity reports, charts), generate a comprehensive morning brief. When screenshots are provided, analyze them carefully and incorporate their insights — especially fund flow data, positioning data, and liquidity metrics — directly into your analysis. Be specific about what the screenshots show.
+Given current market data indicators, a pre-classified regime, forward-looking data (yield curve, forward P/E, SPX YTD, credit and vol week-over-week deltas), portfolio holdings, and any attached research screenshots, generate a comprehensive morning brief. When screenshots are provided, analyze them carefully and incorporate their insights — especially fund flow data, positioning data, and liquidity metrics — directly into your analysis. Be specific about what the screenshots show.
 
 Be direct, opinionated, and specific. Avoid generic platitudes. Write like a seasoned PM talking to their team.
 
-Respond ONLY with valid JSON matching this exact structure:
+CRITICAL — TONE ADAPTATION:
+The user input contains a deterministic "Pre-classified Regime" line. Your marketRegime output MUST match it unless a data point in the payload contradicts it clearly (if so, explain briefly in bottomLine). Adapt tone accordingly:
+- Risk-On → Lean constructive. Highlight what's working, where to add exposure, which defensive names to rotate out of. Do NOT manufacture bearish warnings when breadth, credit, and trend are healthy.
+- Neutral → Balanced. Identify the swing variable and what would tip it either direction.
+- Risk-Off → Defensive. Emphasize protection, quality, what to avoid.
+
+CRITICAL — FORWARD-LOOKING ORIENTATION:
+The brief should focus on the NEXT 2 WEEKS, not recap yesterday. Use the week-over-week deltas and YTD framing to describe direction of travel. The "forwardView" field is where you explicitly project forward; other analysis fields should still interpret current data with a forward lens ("heading into the next two weeks, ...").
+
+Respond ONLY with valid JSON matching this exact structure (fields are intentionally ordered so Bottom Line → Forward View → Composite → Risk Scan flows naturally in the UI):
 {
-  "marketRegime": "Risk-On or Neutral or Risk-Off — your assessment based on all the data provided. This determines score multipliers for the portfolio.",
-  "bottomLine": "2-4 sentence executive summary of the market regime and what it means for portfolio positioning. Be bold and direct.",
-  "compositeAnalysis": "2-3 sentences on the overall market signal, what's driving it, and what PMs should focus on today.",
-  "creditAnalysis": "2-3 sentences on credit spread dynamics, what they're signaling about risk appetite, and implications for equity portfolios.",
-  "volatilityAnalysis": "2-3 sentences on the volatility regime, term structure, and what it means for hedging and position sizing.",
+  "marketRegime": "Risk-On or Neutral or Risk-Off — match the Pre-classified Regime unless clearly contradicted.",
+  "bottomLine": "2-4 sentence executive summary of the regime and what it means for portfolio positioning over the NEXT 2 WEEKS. Reference the direction of travel (e.g., 'S&P +X% YTD with VIX dropping', 'credit widening week-over-week'). Be bold and direct.",
+  "forwardView": "3-5 sentences titled 'Forward View — Next 2 Weeks'. Cover: (a) what the yield curve, forward P/E, and credit trend imply about risk appetite in the coming weeks; (b) the 1-2 specific catalysts or data releases to watch; (c) the asymmetry the PM should lean into. This is forward-looking ONLY — do not recap what already happened.",
+  "compositeAnalysis": "2-3 sentences on the overall market signal, what's driving it, and what PMs should focus on in the coming weeks.",
+  "creditAnalysis": "2-3 sentences on credit spread LEVELS and WEEK-OVER-WEEK TREND, what they signal about risk appetite, and implications for equity portfolios.",
+  "volatilityAnalysis": "2-3 sentences on the volatility regime, term structure, VIX week-over-week direction, and what it means for hedging and position sizing.",
   "breadthAnalysis": "2-3 sentences on market breadth and participation: S&P 500 and Nasdaq DMA participation rates, NYSE A/D line direction, and new highs vs new lows. Focus on market structure health — is the rally/selloff broad-based or narrow?",
   "contrarianAnalysis": "2-3 sentences providing the contrarian take. ALL four indicators (S&P Oscillator, Put/Call ratio, Fear & Greed, AAII survey) are interpreted INVERSELY: oversold/fearful = BULLISH opportunity, overbought/greedy = BEARISH warning. Provide an overall contrarian assessment and what it means for positioning.",
   "flowsAnalysis": "2-3 sentences on fund flows, positioning, and whether the market is washed out or still has room to deteriorate. If JPM Flows & Liquidity screenshots are attached, reference specific data points from them.",
@@ -101,7 +117,7 @@ Respond ONLY with valid JSON matching this exact structure:
 Notes:
 - sectorRotation.leading and .lagging should each have 2-3 entries with sector name, approximate MTD performance, and a brief reason.
 - riskScan should list portfolio holdings ordered from highest risk to lowest, with priority: "High", "Medium-High", "Medium", or "Low-Medium". Focus on the weakest/most at-risk names. Include 4-7 entries. USE the [RISK: ...] annotations on each holding — holdings tagged CRITICAL or WARNING should be prioritized highest. Incorporate specific risk signals (trend, momentum, MACD, volume, Ichimoku, short interest, valuation) into your summaries and actions.
-- forwardActions should contain 4-6 specific, actionable recommendations ordered by priority. Use "High", "Medium", or "Low" for priority.
+- forwardActions should contain 4-6 specific, actionable recommendations ordered by priority. Use "High", "Medium", or "Low" for priority. Actions should be forward-looking (what to do THIS week or next), not reactive to yesterday.
 - IMPORTANT: All portfolio positions are equally weighted and we only rebalance (restore equal weights), never trim individual positions relative to others. Do NOT recommend trimming, reducing, or overweighting specific names. Instead, recommend actions like: adding new names, removing names entirely if the thesis is broken, rebalancing back to equal weight, hedging, or adjusting overall portfolio exposure. Think in terms of "own or don't own" rather than position sizing.`;
 
 type AttachmentInput = {
@@ -296,8 +312,88 @@ export async function POST(request: NextRequest) {
           .join("\n")
       : "No holdings provided";
 
-    // Fetch live sector ETF data for sector rotation analysis
-    const sectorPerformance = await fetchSectorPerformance();
+    // Fetch live sector ETF data and forward-looking data in parallel.
+    // fetchForwardLookingData() is wrapped in try/catch so a transient Yahoo
+    // outage never blocks the brief — we just mark forward data as unavailable.
+    const [sectorPerformance, forwardData] = await Promise.all([
+      fetchSectorPerformance(),
+      fetchForwardLookingData().catch((e) => {
+        console.error("Forward-looking fetch failed:", e);
+        return null as ForwardLookingData | null;
+      }),
+    ]);
+
+    const fmt = (p: ForwardPoint | undefined, unit = ""): string => {
+      if (!p || p.value == null) {
+        return p?.note ? `N/A (${p.note})` : "N/A";
+      }
+      return `${p.value}${unit}`;
+    };
+    const delta = (p: ForwardPoint | undefined, unit = ""): string => {
+      if (!p || p.value == null || p.previous == null) return "";
+      const d = Number(p.value) - Number(p.previous);
+      if (isNaN(d)) return "";
+      const sign = d >= 0 ? "+" : "";
+      return ` (wk/wk ${sign}${d.toFixed(unit === "bps" ? 0 : 2)}${unit})`;
+    };
+    const pctDelta = (
+      p: ForwardPoint | undefined
+    ): { str: string; value: number | null } => {
+      if (!p || p.value == null || p.previous == null) {
+        return { str: "", value: null };
+      }
+      const cur = Number(p.value);
+      const prev = Number(p.previous);
+      if (prev === 0 || isNaN(cur) || isNaN(prev))
+        return { str: "", value: null };
+      const dPct = ((cur - prev) / prev) * 100;
+      const sign = dPct >= 0 ? "+" : "";
+      return { str: ` (wk/wk ${sign}${dPct.toFixed(1)}%)`, value: dPct };
+    };
+
+    // ── Deterministic regime pre-classification ─────────────────────────────
+    const vixWeekPctObj = forwardData ? pctDelta(forwardData.vixWeek) : { str: "", value: null };
+    const hyOasDeltaBps =
+      forwardData && forwardData.hyOasTrend.value != null && forwardData.hyOasTrend.previous != null
+        ? Number(forwardData.hyOasTrend.value) - Number(forwardData.hyOasTrend.previous)
+        : null;
+    const classification = classifyRegime({
+      vix: marketData.vix ?? 20,
+      vixWeekDeltaPct: vixWeekPctObj.value,
+      hyOas: marketData.hyOas ?? 350,
+      hyOasWeekDeltaBps: hyOasDeltaBps,
+      spxYtd:
+        forwardData && typeof forwardData.spxYtd.value === "number"
+          ? forwardData.spxYtd.value
+          : null,
+      spxWeek:
+        forwardData && typeof forwardData.spxWeek.value === "number"
+          ? forwardData.spxWeek.value
+          : null,
+      breadth: marketData.breadth ?? 50,
+      curve10y2y:
+        forwardData && typeof forwardData.curve10y2y.value === "number"
+          ? forwardData.curve10y2y.value
+          : null,
+    });
+
+    const forwardBlock = forwardData
+      ? `\n\nForward-Looking Data (use for Forward View and tone calibration):
+- S&P 500 YTD: ${fmt(forwardData.spxYtd, "%")}
+- S&P 500 Week: ${fmt(forwardData.spxWeek, "%")}
+- SPY Forward P/E: ${fmt(forwardData.spyForwardPE)}
+- SPY Trailing P/E: ${fmt(forwardData.spyTrailingPE)}
+- Implied Forward EPS Growth: ${fmt(forwardData.impliedEpsGrowth, "%")}
+- 10Y Treasury: ${fmt(forwardData.yield10y, "%")}
+- 2Y Treasury: ${fmt(forwardData.yield2y, "%")}
+- 3M T-Bill: ${fmt(forwardData.yield3m, "%")}
+- 10Y-2Y Curve: ${fmt(forwardData.curve10y2y, "bps")}
+- 10Y-3M Curve: ${fmt(forwardData.curve10y3m, "bps")}
+- HY OAS Trend: ${fmt(forwardData.hyOasTrend, "bps")}${delta(forwardData.hyOasTrend, "bps")}
+- IG OAS Trend: ${fmt(forwardData.igOasTrend, "bps")}${delta(forwardData.igOasTrend, "bps")}
+- VIX Week: ${fmt(forwardData.vixWeek)}${vixWeekPctObj.str}
+- MOVE Week: ${fmt(forwardData.moveWeek)}${pctDelta(forwardData.moveWeek).str}`
+      : "\n\nForward-looking data unavailable for this run — fall back to the current snapshot indicators below.";
 
     // Build content blocks: text prompt + any image attachments
     const textContent = `Generate the morning brief for today. Here are the current market indicators:
@@ -305,7 +401,9 @@ export async function POST(request: NextRequest) {
 Composite Signal: ${marketData.compositeSignal}
 Conviction: ${marketData.conviction}
 
-IMPORTANT: Based on ALL the data below, determine the market regime yourself (Risk-On, Neutral, or Risk-Off). Return it in the "marketRegime" field.
+Pre-classified Regime: ${classification.regime} (score ${classification.score})
+Regime drivers: ${classification.signals.length > 0 ? classification.signals.join("; ") : "mixed / no dominant signal"}
+IMPORTANT: Your marketRegime output MUST equal "${classification.regime}" unless the data below clearly contradicts it (in which case briefly note the contradiction in bottomLine).${forwardBlock}
 
 Volatility:
 - VIX: ${marketData.vix}
@@ -423,6 +521,15 @@ Current Portfolio Holdings: ${holdingsSummary}`;
     }
 
     const now = new Date();
+    // If Claude's marketRegime came back empty/bogus, fall back to our
+    // deterministic pre-classification so downstream consumers always have
+    // a consistent regime string.
+    const finalRegime =
+      parsed.marketRegime &&
+      ["Risk-On", "Neutral", "Risk-Off"].includes(parsed.marketRegime)
+        ? parsed.marketRegime
+        : classification.regime;
+
     return NextResponse.json({
       date: now.toLocaleDateString("en-US", {
         year: "numeric",
@@ -431,8 +538,12 @@ Current Portfolio Holdings: ${holdingsSummary}`;
       }),
       generatedAt: now.toISOString(),
       marketData,
+      regimeScore: classification.score,
+      regimeSignals: classification.signals,
+      forwardLooking: forwardData,
       ...(autoEquityFlows ? { autoEquityFlows } : {}),
       ...parsed,
+      marketRegime: finalRegime,
     });
   } catch (error) {
     const message = error instanceof Error ? error.message : String(error);

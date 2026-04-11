@@ -1,7 +1,14 @@
 "use client";
 
 import React, { useState, useEffect, useCallback, useRef } from "react";
-import type { MarketData, MorningBrief as MorningBriefType, Stock, ScoredStock } from "@/app/lib/types";
+import type {
+  MarketData,
+  MorningBrief as MorningBriefType,
+  Stock,
+  ScoredStock,
+  ForwardLookingBundle,
+  ForwardPointBundle,
+} from "@/app/lib/types";
 import { SignalPill } from "./SignalPill";
 import { LoadingOverlay } from "./LoadingSpinner";
 import { SentimentGauges } from "./SentimentGauges";
@@ -128,6 +135,96 @@ function SaveableSelect({
   );
 }
 
+/** Compact tile for a single forward-looking data point with source link.
+ *  Shows value, a week-over-week delta if `previous` is set, the source
+ *  badge that opens the underlying page in a new tab, and a methodology
+ *  note the user can hover for full provenance. */
+function ForwardTile({
+  label,
+  point,
+  unit = "",
+  deltaUnit,
+  invertDeltaColor = false,
+}: {
+  label: string;
+  point: ForwardPointBundle | undefined;
+  unit?: string;
+  deltaUnit?: "bps" | "pct" | "raw";
+  invertDeltaColor?: boolean;
+}) {
+  const available = point && point.value != null;
+  let deltaStr: string | null = null;
+  let deltaPositive: boolean | null = null;
+  if (available && point!.previous != null) {
+    const cur = Number(point!.value);
+    const prev = Number(point!.previous);
+    if (!isNaN(cur) && !isNaN(prev)) {
+      if (deltaUnit === "pct") {
+        if (prev !== 0) {
+          const d = ((cur - prev) / prev) * 100;
+          deltaPositive = d >= 0;
+          deltaStr = `${d >= 0 ? "+" : ""}${d.toFixed(1)}% wk/wk`;
+        }
+      } else if (deltaUnit === "bps") {
+        const d = cur - prev;
+        deltaPositive = d >= 0;
+        deltaStr = `${d >= 0 ? "+" : ""}${d.toFixed(0)}bps wk/wk`;
+      } else if (deltaUnit === "raw") {
+        const d = cur - prev;
+        deltaPositive = d >= 0;
+        deltaStr = `${d >= 0 ? "+" : ""}${d.toFixed(2)} wk/wk`;
+      }
+    }
+  }
+  const deltaColor =
+    deltaPositive == null
+      ? "text-slate-400"
+      : (invertDeltaColor ? !deltaPositive : deltaPositive)
+      ? "text-emerald-600"
+      : "text-red-600";
+
+  return (
+    <div className="rounded-2xl border border-slate-100 bg-slate-50/60 p-4">
+      <div className="flex items-start justify-between gap-2 mb-1">
+        <span className="text-[11px] font-semibold uppercase tracking-wider text-slate-500">
+          {label}
+        </span>
+        {point?.source && (
+          <a
+            href={point.source}
+            target="_blank"
+            rel="noopener noreferrer"
+            title={`${point.sourceLabel}${point.note ? " — " + point.note : ""}`}
+            className="text-blue-400 hover:text-blue-600 transition-colors shrink-0"
+          >
+            <svg className="w-3.5 h-3.5" fill="none" stroke="currentColor" strokeWidth="2" viewBox="0 0 24 24">
+              <path strokeLinecap="round" strokeLinejoin="round" d="M10 6H6a2 2 0 00-2 2v10a2 2 0 002 2h10a2 2 0 002-2v-4M14 4h6m0 0v6m0-6L10 14" />
+            </svg>
+          </a>
+        )}
+      </div>
+      <div className="text-2xl font-bold text-slate-800 leading-tight">
+        {available ? (
+          <>
+            {point!.value}
+            {unit && <span className="text-sm font-normal text-slate-400 ml-1">{unit}</span>}
+          </>
+        ) : (
+          <span className="text-base font-normal text-slate-400">N/A</span>
+        )}
+      </div>
+      {deltaStr && (
+        <div className={`text-xs font-semibold mt-0.5 ${deltaColor}`}>{deltaStr}</div>
+      )}
+      {point?.sourceLabel && (
+        <div className="text-[10px] text-slate-400 mt-1 truncate" title={point.note}>
+          {point.sourceLabel}
+        </div>
+      )}
+    </div>
+  );
+}
+
 type Props = {
   marketData: MarketData;
   offensiveExposure: number;
@@ -151,6 +248,11 @@ export function MorningBrief({
   const [error, setError] = useState("");
   const [liveLoading, setLiveLoading] = useState(false);
   const [liveFields, setLiveFields] = useState<Record<string, boolean>>({});
+
+  // Forward-looking data (SPX YTD, forward P/E, yield curve, credit trend, etc.)
+  // fetched automatically with direct source links for user verification.
+  const [forwardData, setForwardData] = useState<ForwardLookingBundle | null>(null);
+  const [forwardLoading, setForwardLoading] = useState(false);
 
   // Attachments (screenshots for brief sections)
   const [attachments, setAttachments] = useState<BriefAttachment[]>([]);
@@ -219,6 +321,32 @@ export function MorningBrief({
     return () => { cancelled = true; };
   }, []); // eslint-disable-line react-hooks/exhaustive-deps
 
+  // Auto-fetch forward-looking data (SPX YTD, forward P/E, yield curve, etc.)
+  // so the user sees it immediately and can click sources to verify.
+  useEffect(() => {
+    let cancelled = false;
+    async function fetchForward() {
+      setForwardLoading(true);
+      try {
+        const res = await fetch("/api/forward-looking");
+        if (!res.ok) return;
+        const data: ForwardLookingBundle = await res.json();
+        if (!cancelled) setForwardData(data);
+      } catch {
+        // Silently fail — Forward View section will show unavailable
+      } finally {
+        if (!cancelled) setForwardLoading(false);
+      }
+    }
+    fetchForward();
+    return () => { cancelled = true; };
+  }, []);
+
+  // Prefer the bundle Claude just used for this brief so the UI reflects the
+  // exact numbers the brief was written against. Fall back to the page-load
+  // bundle otherwise.
+  const activeForward = brief?.forwardLooking ?? forwardData;
+
   async function generateBrief() {
     setGenerating(true);
     setError("");
@@ -267,6 +395,10 @@ export function MorningBrief({
   const bottomLine =
     brief?.bottomLine ||
     "Click \"Refresh Brief\" to have Claude analyze current market conditions and produce your morning brief.";
+
+  const forwardView =
+    brief?.forwardView ||
+    "The Forward View (next 2 weeks) will appear here after generating the brief. Automated forward-looking data below is already live and verifiable.";
 
   const compositeAnalysis =
     brief?.compositeAnalysis ||
@@ -630,6 +762,93 @@ export function MorningBrief({
         <p className="max-w-6xl text-lg leading-8 text-slate-800">
           {bottomLine}
         </p>
+      </section>
+
+      {/* Forward View — Next 2 Weeks */}
+      <section className="rounded-[30px] border border-blue-200 bg-gradient-to-br from-blue-50/60 to-white p-8 shadow-sm">
+        <div className="flex flex-wrap items-center justify-between gap-3 mb-4">
+          <div className="flex items-center gap-3">
+            <span className="text-xl">🧭</span>
+            <h2 className="text-2xl font-semibold text-slate-800">Forward View — Next 2 Weeks</h2>
+            {forwardLoading && <span className="text-xs text-blue-500 animate-pulse">Fetching live data...</span>}
+            {activeForward && (
+              <span
+                className={`rounded-full px-2 py-0.5 text-[10px] font-bold uppercase leading-none ${
+                  activeForward.fredEnabled
+                    ? "bg-emerald-100 text-emerald-700"
+                    : "bg-slate-100 text-slate-500"
+                }`}
+                title={
+                  activeForward.fredEnabled
+                    ? "FRED API connected — rates and credit use official end-of-day series"
+                    : "FRED API key not configured — rates use Yahoo ^TNX/^IRX. Add FRED_API_KEY to .env.local for DGS10/DGS2/DGS3MO/HY OAS/IG OAS."
+                }
+              >
+                {activeForward.fredEnabled ? "FRED + Yahoo" : "Yahoo only"}
+              </span>
+            )}
+          </div>
+          {brief?.marketRegime && (
+            <div className="flex items-center gap-2">
+              <span className="text-[10px] font-bold uppercase tracking-wider text-slate-400">Regime</span>
+              <SignalPill tone={brief.marketRegime === "Risk-Off" ? "red" : brief.marketRegime === "Risk-On" ? "green" : "amber"}>
+                {brief.marketRegime}
+              </SignalPill>
+              {typeof brief.regimeScore === "number" && (
+                <span className="text-xs text-slate-400">
+                  score {brief.regimeScore >= 0 ? "+" : ""}{brief.regimeScore}
+                </span>
+              )}
+            </div>
+          )}
+        </div>
+        <p className="max-w-6xl text-lg leading-8 text-slate-700 mb-6">
+          {forwardView}
+        </p>
+
+        {activeForward && (
+          <div className="grid gap-3 grid-cols-2 md:grid-cols-3 lg:grid-cols-4 mb-5">
+            <ForwardTile label="S&P 500 YTD" point={activeForward.spxYtd} unit="%" />
+            <ForwardTile label="S&P 500 Week" point={activeForward.spxWeek} unit="%" />
+            <ForwardTile label="SPY Forward P/E" point={activeForward.spyForwardPE} />
+            <ForwardTile label="SPY Trailing P/E" point={activeForward.spyTrailingPE} />
+            <ForwardTile label="Implied Fwd EPS Growth" point={activeForward.impliedEpsGrowth} unit="%" />
+            <ForwardTile label="10Y Treasury" point={activeForward.yield10y} unit="%" deltaUnit="raw" />
+            <ForwardTile label="2Y Treasury" point={activeForward.yield2y} unit="%" deltaUnit="raw" />
+            <ForwardTile label="3M T-Bill" point={activeForward.yield3m} unit="%" deltaUnit="raw" />
+            <ForwardTile label="10Y-2Y Curve" point={activeForward.curve10y2y} unit="bps" />
+            <ForwardTile label="10Y-3M Curve" point={activeForward.curve10y3m} unit="bps" />
+            <ForwardTile label="HY OAS Trend" point={activeForward.hyOasTrend} unit="bps" deltaUnit="bps" invertDeltaColor />
+            <ForwardTile label="IG OAS Trend" point={activeForward.igOasTrend} unit="bps" deltaUnit="bps" invertDeltaColor />
+            <ForwardTile label="VIX (wk/wk)" point={activeForward.vixWeek} deltaUnit="pct" invertDeltaColor />
+            <ForwardTile label="MOVE (wk/wk)" point={activeForward.moveWeek} deltaUnit="pct" invertDeltaColor />
+          </div>
+        )}
+
+        {brief?.regimeSignals && brief.regimeSignals.length > 0 && (
+          <div className="rounded-2xl border border-slate-100 bg-white/70 p-4">
+            <div className="text-[10px] font-bold uppercase tracking-wider text-slate-400 mb-2">
+              Regime Drivers (deterministic)
+            </div>
+            <div className="flex flex-wrap gap-2">
+              {brief.regimeSignals.map((signal, i) => (
+                <span
+                  key={i}
+                  className="rounded-full bg-slate-100 px-3 py-1 text-xs font-medium text-slate-600"
+                >
+                  {signal}
+                </span>
+              ))}
+            </div>
+          </div>
+        )}
+
+        {activeForward?.fetchedAt && (
+          <p className="text-[10px] text-slate-400 mt-3">
+            Data fetched {new Date(activeForward.fetchedAt).toLocaleString("en-US", { month: "short", day: "numeric", hour: "numeric", minute: "2-digit", hour12: true })}
+            {" · "}Click any icon to verify the source.
+          </p>
+        )}
       </section>
 
       {/* Composite Signal */}
