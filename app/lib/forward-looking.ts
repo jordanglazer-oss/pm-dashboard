@@ -21,7 +21,15 @@ export type ForwardPoint = {
   previous?: number | null; // prior-period value used for deltas
   note?: string; // optional methodology caveat
   status: ForwardStatus;
+  // Optional sparkline series. Daily samples sorted oldest→newest. Used by
+  // the sentiment tiles (CNN F&G, AAII bull-bear, S&P Oscillator) so the PM
+  // can see the trajectory at a glance instead of just the spot reading.
+  // Only points that have a true historical series populate this — anything
+  // else leaves it undefined and the UI degrades to "no chart".
+  history?: SparkPoint[];
 };
+
+export type SparkPoint = { date: string; value: number };
 
 export type ForwardLookingData = {
   spxYtd: ForwardPoint; // S&P 500 % change YTD
@@ -42,6 +50,14 @@ export type ForwardLookingData = {
   breadth200Wk: ForwardPoint; // % of S&P above 200DMA with ~5 trading day prior
   breadth200Mo: ForwardPoint; // % of S&P above 200DMA with ~21 trading day prior
   breadth50Wk: ForwardPoint; // % of S&P above 50DMA with ~5 trading day prior
+  // ── Sentiment tiles with sparkline history ──
+  fearGreed: ForwardPoint; // CNN Fear & Greed (0-100), 1Y daily history
+  aaiiBullBear: ForwardPoint; // AAII Bull-Bear spread %, last ~52 weekly readings
+  aaiiBull: ForwardPoint; // AAII bullish %
+  aaiiNeutral: ForwardPoint; // AAII neutral %
+  aaiiBear: ForwardPoint; // AAII bearish %
+  spOscillator: ForwardPoint; // S&P Oscillator manual entry, history is whatever
+                              // the PM has typed in over time (Redis-backed)
   fredEnabled: boolean;
   fetchedAt: string;
 };
@@ -683,6 +699,282 @@ function worstStatus(...inputs: (ForwardStatus | undefined)[]): ForwardStatus {
     if (order.indexOf(s) < order.indexOf(worst)) worst = s;
   }
   return worst;
+}
+
+// ── CNN Fear & Greed ──────────────────────────────────────────────────────
+// CNN exposes the index plus full daily history at the same dataviz endpoint
+// the cnn.com/markets/fear-and-greed page consumes. The endpoint 418's any
+// request that doesn't look like a real browser, so we have to send the full
+// origin/referer/sec-fetch headers — confirmed working from server IPs as of
+// 2026-04. The response carries:
+//   • current score (0-100)
+//   • previous_close, previous_1_week, previous_1_month, previous_1_year
+//   • fear_and_greed_historical.data → 1Y of daily {x: ms, y: score}
+// We use the historical array directly as the sparkline series, no Redis
+// persistence needed (CNN already gives us the full history we want every
+// fetch).
+type CnnFearGreedResult = {
+  score: number;
+  previousClose: number | null;
+  previousWeek: number | null;
+  asOfIso: string; // YYYY-MM-DD
+  history: SparkPoint[]; // oldest → newest, 1Y daily
+};
+
+async function fetchCnnFearGreed(): Promise<CnnFearGreedResult | null> {
+  try {
+    const res = await fetch(
+      "https://production.dataviz.cnn.io/index/fearandgreed/graphdata",
+      {
+        headers: {
+          "User-Agent": YH_UA,
+          Accept: "application/json, text/plain, */*",
+          "Accept-Language": "en-US,en;q=0.9",
+          Origin: "https://www.cnn.com",
+          Referer: "https://www.cnn.com/",
+          "Sec-Fetch-Dest": "empty",
+          "Sec-Fetch-Mode": "cors",
+          "Sec-Fetch-Site": "cross-site",
+        },
+        cache: "no-store",
+      }
+    );
+    if (!res.ok) {
+      console.error(`CNN F&G fetch HTTP ${res.status}`);
+      return null;
+    }
+    const data = await res.json();
+    const fg = data?.fear_and_greed;
+    const histArr = data?.fear_and_greed_historical?.data;
+    if (!fg || typeof fg.score !== "number" || !Array.isArray(histArr)) {
+      return null;
+    }
+    const history: SparkPoint[] = histArr
+      .filter(
+        (d: { x?: number; y?: number }) =>
+          typeof d?.x === "number" && typeof d?.y === "number"
+      )
+      .map((d: { x: number; y: number }) => ({
+        date: new Date(d.x).toISOString().slice(0, 10),
+        value: parseFloat(d.y.toFixed(2)),
+      }));
+    const asOfIso =
+      typeof fg.timestamp === "string"
+        ? fg.timestamp.slice(0, 10)
+        : new Date().toISOString().slice(0, 10);
+    return {
+      score: parseFloat(fg.score.toFixed(2)),
+      previousClose:
+        typeof fg.previous_close === "number"
+          ? parseFloat(fg.previous_close.toFixed(2))
+          : null,
+      previousWeek:
+        typeof fg.previous_1_week === "number"
+          ? parseFloat(fg.previous_1_week.toFixed(2))
+          : null,
+      asOfIso,
+      history,
+    };
+  } catch (e) {
+    console.error("CNN F&G fetch failed:", e);
+    return null;
+  }
+}
+
+// ── AAII Investor Sentiment ───────────────────────────────────────────────
+// AAII publishes the full weekly history (back to 1987) as a public xls at
+// aaii.com/files/surveys/sentiment.xls. The "SENTIMENT" sheet has columns:
+//   0=Date, 1=Bullish, 2=Neutral, 3=Bearish, 4=Total, 5=8wk MA, 6=Bull-Bear
+// Percentages are stored as strings like "35.75%". We parse the latest row
+// for the spot reading and the trailing ~52 rows for the sparkline.
+//
+// Note: dynamic import of xlsx so the parser only loads when this code path
+// runs (it's a chunky CJS module — keeping it out of the cold-start path).
+type AaiiResult = {
+  date: string;
+  bullish: number;
+  neutral: number;
+  bearish: number;
+  bullBear: number;
+  history: SparkPoint[]; // bull-bear spread, oldest → newest
+};
+
+function parsePctString(raw: unknown): number | null {
+  if (typeof raw !== "string") return null;
+  const trimmed = raw.replace(/%/g, "").trim();
+  if (!trimmed) return null;
+  const n = parseFloat(trimmed);
+  return isNaN(n) ? null : n;
+}
+
+// AAII writes dates as M-D-YY; convert to ISO YYYY-MM-DD assuming 19xx for
+// year >= 80, 20xx otherwise. Anchor: the survey started in 1987.
+function parseAaiiDate(raw: unknown): string | null {
+  if (typeof raw !== "string") return null;
+  const m = raw.match(/^(\d{1,2})-(\d{1,2})-(\d{2,4})$/);
+  if (!m) return null;
+  const month = parseInt(m[1], 10);
+  const day = parseInt(m[2], 10);
+  let year = parseInt(m[3], 10);
+  if (m[3].length === 2) year = year >= 80 ? 1900 + year : 2000 + year;
+  if (
+    isNaN(year) ||
+    isNaN(month) ||
+    isNaN(day) ||
+    month < 1 ||
+    month > 12 ||
+    day < 1 ||
+    day > 31
+  ) {
+    return null;
+  }
+  return `${year.toString().padStart(4, "0")}-${month
+    .toString()
+    .padStart(2, "0")}-${day.toString().padStart(2, "0")}`;
+}
+
+async function fetchAaiiSentiment(): Promise<AaiiResult | null> {
+  try {
+    const res = await fetch("https://www.aaii.com/files/surveys/sentiment.xls", {
+      headers: {
+        "User-Agent": YH_UA,
+        Accept:
+          "application/vnd.ms-excel,application/vnd.openxmlformats-officedocument.spreadsheetml.sheet,*/*",
+      },
+      cache: "no-store",
+    });
+    if (!res.ok) {
+      console.error(`AAII xls fetch HTTP ${res.status}`);
+      return null;
+    }
+    const buf = Buffer.from(await res.arrayBuffer());
+
+    // Dynamic import — xlsx is ~1MB CJS, only pay the cost when this runs.
+    const XLSX = await import("xlsx");
+    const wb = XLSX.read(buf, { type: "buffer" });
+    const sheet = wb.Sheets["SENTIMENT"] ?? wb.Sheets[wb.SheetNames[0]];
+    if (!sheet) return null;
+    const rows = XLSX.utils.sheet_to_json<unknown[]>(sheet, {
+      header: 1,
+      raw: false,
+    });
+
+    // Walk backwards to find the most recent row with parseable date + pcts.
+    type Parsed = {
+      date: string;
+      bullish: number;
+      neutral: number;
+      bearish: number;
+      bullBear: number;
+    };
+    const parsed: Parsed[] = [];
+    for (const r of rows) {
+      if (!Array.isArray(r) || r.length < 7) continue;
+      const date = parseAaiiDate(r[0]);
+      const bullish = parsePctString(r[1]);
+      const neutral = parsePctString(r[2]);
+      const bearish = parsePctString(r[3]);
+      const bullBear = parsePctString(r[6]);
+      if (
+        date &&
+        bullish != null &&
+        neutral != null &&
+        bearish != null &&
+        bullBear != null
+      ) {
+        parsed.push({ date, bullish, neutral, bearish, bullBear });
+      }
+    }
+    if (parsed.length === 0) return null;
+    // Oldest → newest after sort.
+    parsed.sort((a, b) => (a.date < b.date ? -1 : 1));
+    const latest = parsed[parsed.length - 1];
+    // Last 52 weekly readings → ~1 year of sparkline data.
+    const history: SparkPoint[] = parsed
+      .slice(-52)
+      .map((p) => ({ date: p.date, value: p.bullBear }));
+    return {
+      date: latest.date,
+      bullish: latest.bullish,
+      neutral: latest.neutral,
+      bearish: latest.bearish,
+      bullBear: latest.bullBear,
+      history,
+    };
+  } catch (e) {
+    console.error("AAII xls fetch/parse failed:", e);
+    return null;
+  }
+}
+
+// ── S&P Oscillator history (Redis-backed manual entry log) ───────────────
+// MarketEdge requires a paid login, so the oscillator stays manual. But we
+// log every value the PM saves into Redis so the tile can render a sparkline
+// of his own historical entries — context the raw single number lacks.
+// Lookups happen via append + getOscillatorHistory(); writes happen from
+// /api/kv/market when the user updates marketData.spOscillator.
+const OSCILLATOR_HISTORY_KEY = "pm:oscillator-history";
+const OSCILLATOR_HISTORY_MAX_DAYS = 180; // 6 months — enough for trend context
+
+export async function appendOscillatorEntry(value: number): Promise<void> {
+  if (typeof value !== "number" || isNaN(value)) return;
+  try {
+    const redis = await getRedis();
+    const raw = await redis.get(OSCILLATOR_HISTORY_KEY);
+    const today = new Date().toISOString().slice(0, 10);
+    let history: SparkPoint[] = [];
+    if (raw) {
+      try {
+        const parsed = JSON.parse(raw);
+        if (Array.isArray(parsed)) {
+          history = parsed.filter(
+            (x): x is SparkPoint =>
+              x &&
+              typeof x.date === "string" &&
+              typeof x.value === "number"
+          );
+        }
+      } catch {
+        history = [];
+      }
+    }
+    // Replace today's entry if one exists; otherwise append.
+    const existingIdx = history.findIndex((s) => s.date === today);
+    if (existingIdx >= 0) {
+      // Skip the write if the value hasn't actually changed — keeps the
+      // history clean across multi-save days.
+      if (history[existingIdx].value === value) return;
+      history[existingIdx] = { date: today, value };
+    } else {
+      history.push({ date: today, value });
+    }
+    history.sort((a, b) => (a.date < b.date ? -1 : 1));
+    const cutoffMs =
+      Date.now() - OSCILLATOR_HISTORY_MAX_DAYS * 24 * 60 * 60 * 1000;
+    history = history.filter(
+      (s) => new Date(s.date + "T00:00:00Z").getTime() >= cutoffMs
+    );
+    await redis.set(OSCILLATOR_HISTORY_KEY, JSON.stringify(history));
+  } catch (e) {
+    console.error("Oscillator history write failed:", e);
+  }
+}
+
+async function loadOscillatorHistory(): Promise<SparkPoint[]> {
+  try {
+    const redis = await getRedis();
+    const raw = await redis.get(OSCILLATOR_HISTORY_KEY);
+    if (!raw) return [];
+    const parsed = JSON.parse(raw);
+    if (!Array.isArray(parsed)) return [];
+    return parsed.filter(
+      (x): x is SparkPoint =>
+        x && typeof x.date === "string" && typeof x.value === "number"
+    );
+  } catch (e) {
+    console.error("Oscillator history read failed:", e);
+    return [];
+  }
 }
 
 export async function fetchForwardLookingData(): Promise<ForwardLookingData> {
@@ -1354,6 +1646,102 @@ export async function fetchForwardLookingData(): Promise<ForwardLookingData> {
     console.error("Breadth fetch failed:", e);
   }
 
+  // ── Sentiment tiles (CNN F&G + AAII + S&P Oscillator history) ───────────
+  // All three are independent of the macro fetch chain above. Run them in
+  // parallel and let each one fail individually — the tile will fall back
+  // to a "stale" state showing the last persisted value.
+  const cnnUrl = "https://www.cnn.com/markets/fear-and-greed";
+  const aaiiUrl = "https://www.aaii.com/sentimentsurvey";
+  const oscillatorUrl = "https://app.marketedge.com/#!/markets";
+
+  let fearGreed: ForwardPoint = missing(
+    cnnUrl,
+    "CNN Fear & Greed",
+    "CNN dataviz endpoint returned no data."
+  );
+  let aaiiBullBear: ForwardPoint = missing(
+    aaiiUrl,
+    "AAII Investor Sentiment Survey",
+    "AAII xls download returned no data."
+  );
+  let aaiiBull: ForwardPoint = missing(
+    aaiiUrl,
+    "AAII Investor Sentiment Survey",
+    "AAII xls download returned no data."
+  );
+  let aaiiNeutral: ForwardPoint = missing(
+    aaiiUrl,
+    "AAII Investor Sentiment Survey",
+    "AAII xls download returned no data."
+  );
+  let aaiiBear: ForwardPoint = missing(
+    aaiiUrl,
+    "AAII Investor Sentiment Survey",
+    "AAII xls download returned no data."
+  );
+  let spOscillator: ForwardPoint = missing(
+    oscillatorUrl,
+    "S&P Oscillator (manual entry)",
+    "No oscillator history yet — type a value into the brief form to start the log."
+  );
+
+  const [cnnRes, aaiiRes, oscHistory] = await Promise.all([
+    fetchCnnFearGreed(),
+    fetchAaiiSentiment(),
+    loadOscillatorHistory(),
+  ]);
+
+  if (cnnRes) {
+    fearGreed = {
+      value: cnnRes.score,
+      source: cnnUrl,
+      sourceLabel: "CNN Fear & Greed",
+      asOf: cnnRes.asOfIso,
+      previous: cnnRes.previousWeek,
+      note: `CNN Business Fear & Greed Index (0=extreme fear, 100=extreme greed). Sparkline shows trailing 1Y of daily readings from CNN's dataviz endpoint. Previous shown is the 1-week-ago value.`,
+      status: "live",
+      history: cnnRes.history,
+    };
+  }
+
+  if (aaiiRes) {
+    const point = (value: number, label: string): ForwardPoint => ({
+      value,
+      source: aaiiUrl,
+      sourceLabel: "AAII Investor Sentiment Survey",
+      asOf: aaiiRes.date,
+      note: `${label} from the weekly AAII Investor Sentiment Survey. Auto-fetched from aaii.com/files/surveys/sentiment.xls. Latest reading: ${aaiiRes.date}.`,
+      status: "live",
+    });
+    aaiiBullBear = {
+      ...point(aaiiRes.bullBear, "Bull-Bear spread"),
+      previous:
+        aaiiRes.history.length >= 2
+          ? aaiiRes.history[aaiiRes.history.length - 2].value
+          : null,
+      history: aaiiRes.history,
+    };
+    aaiiBull = point(aaiiRes.bullish, "Bullish %");
+    aaiiNeutral = point(aaiiRes.neutral, "Neutral %");
+    aaiiBear = point(aaiiRes.bearish, "Bearish %");
+  }
+
+  if (oscHistory.length > 0) {
+    const latest = oscHistory[oscHistory.length - 1];
+    const previous =
+      oscHistory.length >= 2 ? oscHistory[oscHistory.length - 2].value : null;
+    spOscillator = {
+      value: latest.value,
+      source: oscillatorUrl,
+      sourceLabel: "S&P Oscillator (manual entry)",
+      asOf: latest.date,
+      previous,
+      note: `MarketEdge S&P Oscillator. The oscillator stays manually entered (MarketEdge requires login) — the sparkline shows the last ${OSCILLATOR_HISTORY_MAX_DAYS} days of values you've saved into the brief.`,
+      status: "live",
+      history: oscHistory,
+    };
+  }
+
   return {
     spxYtd,
     spxWeek,
@@ -1373,6 +1761,12 @@ export async function fetchForwardLookingData(): Promise<ForwardLookingData> {
     breadth200Wk,
     breadth200Mo,
     breadth50Wk,
+    fearGreed,
+    aaiiBullBear,
+    aaiiBull,
+    aaiiNeutral,
+    aaiiBear,
+    spOscillator,
     fredEnabled,
     fetchedAt: asOf,
   };

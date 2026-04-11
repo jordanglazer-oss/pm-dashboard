@@ -1,6 +1,7 @@
 import { getRedis } from "@/app/lib/redis";
 import { NextRequest, NextResponse } from "next/server";
 import { defaultMarketData } from "@/app/lib/defaults";
+import { appendOscillatorEntry } from "@/app/lib/forward-looking";
 
 const KEY = "pm:market";
 
@@ -27,6 +28,21 @@ export async function PUT(req: NextRequest) {
     const existing = raw ? JSON.parse(raw) : defaultMarketData;
     const merged = { ...existing, ...updates };
     await redis.set(KEY, JSON.stringify(merged));
+
+    // If the PM updated the S&P Oscillator, append it to the rolling history
+    // log so the sparkline tile in SentimentGauges has trajectory data. The
+    // oscillator stays manual (MarketEdge requires login), but logging every
+    // saved value lets us show context that a single number can't.
+    if (
+      typeof updates?.spOscillator === "number" &&
+      !isNaN(updates.spOscillator)
+    ) {
+      // Fire-and-forget — failure to log shouldn't block the save.
+      appendOscillatorEntry(updates.spOscillator).catch((err) =>
+        console.error("Oscillator history append failed:", err)
+      );
+    }
+
     return NextResponse.json({ market: merged });
   } catch (e) {
     console.error("Redis write error (market):", e);

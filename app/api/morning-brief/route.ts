@@ -472,14 +472,28 @@ Volatility Structure:
 - VIX Term Structure: ${marketData.termStructure}
 
 Contrarian Indicators (ALL interpreted INVERSELY — oversold/fearful = BULLISH, overbought/greedy = BEARISH):
-- S&P Oscillator: ${marketData.spOscillator} — negative = oversold = BULLISH, positive = overbought = BEARISH
+- S&P Oscillator: ${
+      forwardData?.spOscillator?.value ?? marketData.spOscillator
+    } — negative = oversold = BULLISH, positive = overbought = BEARISH
 - Put/Call Ratio (Total): ${marketData.putCall} — >1.0 = excessive fear = BULLISH, <0.7 = complacency = BEARISH
-- Fear & Greed Index: ${marketData.fearGreed}/100 — <25 = extreme fear = BULLISH, >75 = extreme greed = BEARISH
-- AAII Bull-Bear Spread: ${marketData.aaiiBullBear} — <-20 = excessive bearishness = BULLISH, >+30 = excessive bullishness = BEARISH
+- Fear & Greed Index: ${
+      forwardData?.fearGreed?.value ?? marketData.fearGreed
+    }/100${
+      forwardData?.fearGreed?.previous != null
+        ? ` (1wk ago ${forwardData.fearGreed.previous})`
+        : ""
+    } — <25 = extreme fear = BULLISH, >75 = extreme greed = BEARISH
+- AAII Bull-Bear Spread: ${
+      forwardData?.aaiiBullBear?.value ?? marketData.aaiiBullBear
+    }${
+      forwardData?.aaiiBullBear?.previous != null
+        ? ` (prev wk ${forwardData.aaiiBullBear.previous})`
+        : ""
+    } — <-20 = excessive bearishness = BULLISH, >+30 = excessive bullishness = BEARISH
 
 Equity Flows: ${marketData.equityFlows}
 
-Hedge Timing Score: ${computeHedgeScore(fwdVix ?? 20, marketData.termStructure ?? "Contango", marketData.fearGreed ?? 50)}/100 (dynamically computed from VIX, term structure, and sentiment)
+Hedge Timing Score: ${computeHedgeScore(fwdVix ?? 20, marketData.termStructure ?? "Contango", forwardData?.fearGreed?.value ?? marketData.fearGreed ?? 50)}/100 (dynamically computed from VIX, term structure, and sentiment)
 
 Live Sector ETF Performance (from Yahoo Finance — use this for sector rotation analysis):
 ${sectorPerformance}

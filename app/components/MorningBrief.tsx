@@ -934,7 +934,14 @@ export function MorningBrief({
       </section>
 
       {/* Contrarian Sentiment — all 4 indicators + Claude analysis */}
-      <SentimentGauges marketData={marketData} aaiiBull={marketData.aaiiBull ?? 30} aaiiNeutral={marketData.aaiiNeutral ?? 17} aaiiBear={marketData.aaiiBear ?? 52} contrarianAnalysis={contrarianAnalysis} />
+      <SentimentGauges
+        marketData={marketData}
+        aaiiBull={marketData.aaiiBull ?? 30}
+        aaiiNeutral={marketData.aaiiNeutral ?? 17}
+        aaiiBear={marketData.aaiiBear ?? 52}
+        contrarianAnalysis={contrarianAnalysis}
+        forwardData={activeForward}
+      />
 
       {/* Credit & Volatility — values pulled from auto-fetched ForwardLookingData */}
       {(() => {
