@@ -303,6 +303,11 @@ export type ForwardLookingBundle = {
   // Optional so briefs cached in Redis before this field was introduced
   // still decode without errors. New briefs populate it from SSGA.
   eps35Growth?: ForwardPointBundle;
+  // Optional breadth tiles — also added post-launch, so must be optional
+  // for Redis backward compatibility with existing cached briefs.
+  breadth200Wk?: ForwardPointBundle;
+  breadth200Mo?: ForwardPointBundle;
+  breadth50Wk?: ForwardPointBundle;
   yield10y: ForwardPointBundle;
   yield2y: ForwardPointBundle;
   yield3m: ForwardPointBundle;
