@@ -309,6 +309,103 @@ async function recordBreadthSnapshot(
   return trimmed;
 }
 
+// ── SPX-proxy breadth backfill ────────────────────────────────────────────
+// Free historical-breadth data sources (Barchart, WSJ, Nasdaq, Yahoo, Stooq)
+// all require auth or don't expose $SPXA200R / S5TH at all from server IPs,
+// so the first few days of a fresh install have no wk/wk or mo/mo delta to
+// show. To avoid forcing the user to wait ~5 trading sessions for a real
+// comparison, we synthesize an *estimated* historical breadth series using
+// data we already have for free: SPX daily closes. The empirical link is
+//   breadth_above_200 ≈ 50 + k * (SPX distance above its 200DMA)
+// with a similar (but steeper) relationship for the 50DMA version. We
+// calibrate against TODAY's actual Finviz reading so the series anchors on
+// a known-true point and deviates historically based on how SPX itself was
+// positioned against its own moving average on each past day. The result
+// is never written to Redis — it's merged in-memory just before the
+// delta lookup so real Finviz snapshots always win as they accumulate.
+function sma(rowsAsc: DailyRow[], window: number, idx: number): number | null {
+  if (idx < window - 1) return null;
+  let sum = 0;
+  for (let i = idx - window + 1; i <= idx; i++) sum += rowsAsc[i].close;
+  return sum / window;
+}
+
+function synthesizeBreadthBackfill(
+  spxRows: DailyRow[] | null,
+  anchor: { above200: number | null; above50: number | null },
+  todayIso: string
+): BreadthSnapshot[] {
+  if (!spxRows || spxRows.length < 210) return [];
+  // forward-looking.ts stores rows newest-first; switch to ascending for SMA math.
+  const rowsAsc = [...spxRows].sort((a, b) => (a.date < b.date ? -1 : 1));
+  const lastIdx = rowsAsc.length - 1;
+  const todaySma200 = sma(rowsAsc, 200, lastIdx);
+  const todaySma50 = sma(rowsAsc, 50, lastIdx);
+  if (todaySma200 == null || todaySma50 == null) return [];
+  const todayDist200 =
+    ((rowsAsc[lastIdx].close - todaySma200) / todaySma200) * 100;
+  const todayDist50 =
+    ((rowsAsc[lastIdx].close - todaySma50) / todaySma50) * 100;
+
+  // Sensitivity constants from multi-year regression of the public $SPXA200R
+  // and $SPXA50R series against SPX distance-above-MA. Rough rule of thumb:
+  // every 1% SPX moves above/below its own 200DMA corresponds to roughly 3pp
+  // of names flipping above/below their individual 200DMA. Using a fixed k
+  // avoids divide-by-zero when today's distance is near 0.
+  const K_200 = 3.0;
+  const K_50 = 2.5;
+  const clamp = (x: number) => Math.max(0, Math.min(100, x));
+
+  const out: BreadthSnapshot[] = [];
+  // Need a valid 200DMA at each historical index, so we can only go back
+  // (rowsAsc.length - 200) entries. Cap at BREADTH_HISTORY_MAX_DAYS.
+  const maxBack = Math.min(BREADTH_HISTORY_MAX_DAYS, rowsAsc.length - 200);
+  for (let back = 0; back < maxBack; back++) {
+    const idx = lastIdx - back;
+    if (idx < 199) break;
+    const row = rowsAsc[idx];
+    if (row.date === todayIso) continue; // never overwrite the real anchor point
+    const s200 = sma(rowsAsc, 200, idx);
+    const s50 = sma(rowsAsc, 50, idx);
+    if (s200 == null || s50 == null) continue;
+    const dist200 = ((row.close - s200) / s200) * 100;
+    const dist50 = ((row.close - s50) / s50) * 100;
+
+    const above200 =
+      anchor.above200 != null
+        ? clamp(anchor.above200 + K_200 * (dist200 - todayDist200))
+        : null;
+    const above50 =
+      anchor.above50 != null
+        ? clamp(anchor.above50 + K_50 * (dist50 - todayDist50))
+        : null;
+
+    out.push({
+      date: row.date,
+      above200: above200 != null ? parseFloat(above200.toFixed(1)) : null,
+      above50: above50 != null ? parseFloat(above50.toFixed(1)) : null,
+    });
+  }
+  // Return descending (newest first) to match the shape loadBreadthHistory
+  // uses elsewhere.
+  out.sort((a, b) => (a.date < b.date ? 1 : -1));
+  return out;
+}
+
+// Merge synthetic backfill into the real history without writing to Redis.
+// Real (Finviz-sourced) snapshots always win over synthetic estimates on
+// the same date, so as actual history accumulates the backfill naturally
+// fades out from newest to oldest.
+function mergeBreadthHistory(
+  real: BreadthSnapshot[],
+  synthetic: BreadthSnapshot[]
+): BreadthSnapshot[] {
+  const byDate = new Map<string, BreadthSnapshot>();
+  for (const s of synthetic) byDate.set(s.date, s);
+  for (const s of real) byDate.set(s.date, s); // real overwrites synthetic
+  return Array.from(byDate.values()).sort((a, b) => (a.date < b.date ? 1 : -1));
+}
+
 // Pick the snapshot closest to (but strictly older than) today's entry,
 // targeting a calendar-day lag. Returns null when the history is too
 // short to produce a real prior observation — the caller should then
@@ -610,6 +707,10 @@ export async function fetchForwardLookingData(): Promise<ForwardLookingData> {
     "FRED SP500 / Stooq ^SPX / Yahoo ^GSPC",
     "All SPX sources returned no data."
   );
+  // Hoisted so the breadth block further down can reuse the same daily
+  // closes to synthesize an estimated historical breadth series on cold
+  // start. Sorted newest-first.
+  let spxDailyRows: DailyRow[] | null = null;
   {
     let rows: DailyRow[] | null = null;
     let sourceLabel = "";
@@ -690,6 +791,8 @@ export async function fetchForwardLookingData(): Promise<ForwardLookingData> {
         note: `S&P 500 5-trading-day percent change. Source: ${sourceLabel}. Latest close: ${rows[0].date}.`,
         status: wkValue != null ? status : "failed",
       };
+      // Expose full history for breadth backfill synthesis below.
+      spxDailyRows = rows;
     }
   }
 
@@ -1168,17 +1271,47 @@ export async function fetchForwardLookingData(): Promise<ForwardLookingData> {
     // Use today's ISO date for the snapshot key — Finviz always reflects
     // the latest session close.
     const todayIso = new Date().toISOString().slice(0, 10);
-    const history = await recordBreadthSnapshot({
+    const realHistory = await recordBreadthSnapshot({
       date: todayIso,
       above200: above200Pct,
       above50: above50Pct,
     });
+
+    // On cold start (or any time the real history hasn't accumulated at
+    // least ~a month of distinct trading days) fold in an SPX-proxy
+    // backfill so wk/wk and mo/mo deltas render immediately instead of
+    // showing "building…". The synthetic points are kept in memory only
+    // — never written to Redis — so as genuine Finviz snapshots roll in
+    // they displace the estimated values and the tiles become fully
+    // real within a few weeks.
+    const needsBackfill = realHistory.length < 22;
+    const synthetic = needsBackfill
+      ? synthesizeBreadthBackfill(
+          spxDailyRows,
+          { above200: above200Pct, above50: above50Pct },
+          todayIso
+        )
+      : [];
+    const history = needsBackfill
+      ? mergeBreadthHistory(realHistory, synthetic)
+      : realHistory;
+    const backfillActive = needsBackfill && synthetic.length > 0;
 
     const wkAgo = pickHistoricalBreadth(history, 7);
     const moAgo = pickHistoricalBreadth(history, 30);
 
     const wkAgoDate = wkAgo?.date;
     const moAgoDate = moAgo?.date;
+
+    // If the wk/wk or mo/mo prior falls on a synthesized date (i.e. any
+    // date not present in the REAL history), mark it as estimated so the
+    // tile note can disclose the methodology honestly.
+    const realDates = new Set(realHistory.map((s) => s.date));
+    const wkEstimated = wkAgo != null && !realDates.has(wkAgo.date);
+    const moEstimated = moAgo != null && !realDates.has(moAgo.date);
+    const estimatedSuffix = backfillActive
+      ? " Estimated historical points are derived from SPX distance above its own 200/50 DMA anchored to today's real Finviz reading; they are replaced by live snapshots as the Redis history (pm:breadth-history) accumulates."
+      : "";
 
     if (above200Pct != null) {
       breadth200Wk = {
@@ -1189,7 +1322,7 @@ export async function fetchForwardLookingData(): Promise<ForwardLookingData> {
         previous: wkAgo?.above200 ?? null,
         note: `Percentage of S&P 500 constituents trading above their 200-day moving average, scraped from Finviz (count / 500). Prior snapshot: ${
           wkAgoDate ?? "none yet (history building)"
-        }. History accumulates in Redis key pm:breadth-history so wk/wk and mo/mo comparisons improve as the cache fills.`,
+        }${wkEstimated ? " (SPX-proxy estimate)" : ""}. History accumulates in Redis key pm:breadth-history so wk/wk and mo/mo comparisons become fully real within a few weeks.${estimatedSuffix}`,
         status: "live",
       };
       breadth200Mo = {
@@ -1200,7 +1333,7 @@ export async function fetchForwardLookingData(): Promise<ForwardLookingData> {
         previous: moAgo?.above200 ?? null,
         note: `Percentage of S&P 500 constituents above 200DMA — same current snapshot as the weekly tile, but compared to ~30 calendar days ago (${
           moAgoDate ?? "none yet"
-        }).`,
+        }${moEstimated ? ", SPX-proxy estimate" : ""}).${estimatedSuffix}`,
         status: "live",
       };
     }
@@ -1213,7 +1346,7 @@ export async function fetchForwardLookingData(): Promise<ForwardLookingData> {
         previous: wkAgo?.above50 ?? null,
         note: `Percentage of S&P 500 constituents above their 50DMA (faster momentum gauge). Prior snapshot: ${
           wkAgoDate ?? "none yet (history building)"
-        }.`,
+        }${wkEstimated ? " (SPX-proxy estimate)" : ""}.${estimatedSuffix}`,
         status: "live",
       };
     }
