@@ -280,11 +280,45 @@ export type MarketData = {
   sp500SectorWeights?: Record<string, number>; // Live S&P 500 sector weights from SPY
 };
 
+// Shape matches ForwardLookingData in app/lib/forward-looking.ts
+// (duplicated here to avoid server-only deps leaking into the client bundle).
+export type ForwardPointBundle = {
+  value: number | null;
+  source: string;
+  sourceLabel: string;
+  asOf: string;
+  previous?: number | null;
+  note?: string;
+};
+
+export type ForwardLookingBundle = {
+  spxYtd: ForwardPointBundle;
+  spxWeek: ForwardPointBundle;
+  spyForwardPE: ForwardPointBundle;
+  spyTrailingPE: ForwardPointBundle;
+  impliedEpsGrowth: ForwardPointBundle;
+  yield10y: ForwardPointBundle;
+  yield2y: ForwardPointBundle;
+  yield3m: ForwardPointBundle;
+  curve10y2y: ForwardPointBundle;
+  curve10y3m: ForwardPointBundle;
+  hyOasTrend: ForwardPointBundle;
+  igOasTrend: ForwardPointBundle;
+  vixWeek: ForwardPointBundle;
+  moveWeek: ForwardPointBundle;
+  fredEnabled: boolean;
+  fetchedAt: string;
+};
+
 export type MorningBrief = {
   date: string;
   generatedAt?: string;
   marketData: MarketData;
   marketRegime?: string;
+  regimeScore?: number; // Deterministic pre-classification score, -6 to +6
+  regimeSignals?: string[]; // Drivers that produced the score
+  forwardView?: string; // Next 2-weeks forward-looking section
+  forwardLooking?: ForwardLookingBundle; // Automated data powering Forward View
   bottomLine: string;
   compositeAnalysis: string;
   creditAnalysis: string;
