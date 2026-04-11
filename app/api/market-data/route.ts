@@ -1,5 +1,4 @@
 import { NextResponse } from "next/server";
-import { fredSeries } from "@/app/lib/forward-looking";
 
 const YH_UA =
   "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36";
@@ -101,61 +100,26 @@ type FieldStatus = "live" | "failed" | "not-configured";
 export async function GET() {
   const fredEnabled = !!process.env.FRED_API_KEY;
 
-  // Fetch all live data points in parallel. Every source can fail
-  // independently — the UI will keep the prior persisted value for any field
-  // that comes back null. The returned `status` + `errors` maps let the UI
-  // render per-field badges (Live / Stale / Manual) and a summary banner so
-  // the user never has to guess whether a value was freshly fetched.
-  const [vix, move, vix3m, putCall, hyObs, igObs] = await Promise.all([
+  // VIX/MOVE/HY OAS/IG OAS used to live here, but those values are now
+  // sourced from /api/forward-looking which already exposes them with
+  // history-aware deltas. This route only still serves the two fields that
+  // belong to the brief's "manual sentiment" category:
+  //   • VIX term structure (derived from ^VIX1M / ^VIX3M ratio)
+  //   • CBOE total put/call ratio (daily CSV)
+  const [vix, vix3m, putCall] = await Promise.all([
     fetchYahooIndex("^VIX"),
-    fetchYahooIndex("^MOVE"),
     fetchYahooIndex("^VIX3M"),
     fetchCboePutCall(),
-    fredSeries("BAMLH0A0HYM2", 1),
-    fredSeries("BAMLC0A0CM", 1),
   ]);
 
   const termStructure = deriveTermStructure(vix, vix3m);
 
-  // FRED BAML OAS series are published in percent — convert to bps for parity
-  // with how the rest of the app stores credit spreads.
-  const hyOas =
-    hyObs && hyObs[0] && !isNaN(hyObs[0].value)
-      ? Math.round(hyObs[0].value * 100)
-      : null;
-  const igOas =
-    igObs && igObs[0] && !isNaN(igObs[0].value)
-      ? Math.round(igObs[0].value * 100)
-      : null;
-
   const status: Record<string, FieldStatus> = {
-    vix: vix != null ? "live" : "failed",
-    move: move != null ? "live" : "failed",
-    hyOas:
-      hyOas != null ? "live" : fredEnabled ? "failed" : "not-configured",
-    igOas:
-      igOas != null ? "live" : fredEnabled ? "failed" : "not-configured",
     termStructure: termStructure != null ? "live" : "failed",
     putCall: putCall.ratio != null ? "live" : "failed",
   };
 
   const errors: Record<string, string> = {};
-  if (status.vix === "failed")
-    errors.vix = "Yahoo ^VIX fetch failed — showing your last saved value.";
-  if (status.move === "failed")
-    errors.move = "Yahoo ^MOVE fetch failed — showing your last saved value.";
-  if (status.hyOas === "not-configured")
-    errors.hyOas =
-      "HY OAS: FRED_API_KEY not set in .env.local — add a free key from fred.stlouisfed.org/docs/api/api_key.html to enable automated BAMLH0A0HYM2 fetch. Manual value shown.";
-  if (status.hyOas === "failed")
-    errors.hyOas =
-      "HY OAS: FRED BAMLH0A0HYM2 fetch failed — showing your last saved value.";
-  if (status.igOas === "not-configured")
-    errors.igOas =
-      "IG OAS: FRED_API_KEY not set in .env.local — add a free key from fred.stlouisfed.org/docs/api/api_key.html to enable automated BAMLC0A0CM fetch. Manual value shown.";
-  if (status.igOas === "failed")
-    errors.igOas =
-      "IG OAS: FRED BAMLC0A0CM fetch failed — showing your last saved value.";
   if (status.termStructure === "failed")
     errors.termStructure =
       "VIX Term Structure: Yahoo ^VIX3M or ^VIX unreachable — showing your last saved selection.";
@@ -164,14 +128,9 @@ export async function GET() {
       "Put/Call Ratio: CBOE daily CSV parse failed — showing your last saved value. CBOE may have changed their CSV format.";
 
   return NextResponse.json({
-    vix,
-    move,
-    vix3m,
     termStructure, // "Contango" | "Flat" | "Backwardation" | null
     putCall: putCall.ratio,
     putCallAsOf: putCall.asOf,
-    hyOas, // bps, null if FRED key not set or fetch failed
-    igOas, // bps, null if FRED key not set or fetch failed
     fredEnabled,
     status, // per-field: "live" | "failed" | "not-configured"
     errors, // per-field human-readable reason when status != "live"

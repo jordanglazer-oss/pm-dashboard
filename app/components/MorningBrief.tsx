@@ -397,10 +397,6 @@ export function MorningBrief({
         if (cancelled) return;
         setMarketDataError(null);
         const updates: Partial<MarketData> = {};
-        if (data.vix != null) updates.vix = data.vix;
-        if (data.move != null) updates.move = data.move;
-        if (data.hyOas != null) updates.hyOas = data.hyOas;
-        if (data.igOas != null) updates.igOas = data.igOas;
         if (
           data.termStructure === "Contango" ||
           data.termStructure === "Flat" ||
@@ -583,10 +579,6 @@ export function MorningBrief({
             .filter(([, s]) => s === "not-configured")
             .map(([k]) => k);
           const fieldLabel: Record<string, string> = {
-            vix: "VIX",
-            move: "MOVE",
-            hyOas: "HY OAS",
-            igOas: "IG OAS",
             putCall: "Put/Call",
             termStructure: "VIX Term Structure",
           };
@@ -618,136 +610,11 @@ export function MorningBrief({
           return null;
         })()}
 
-        {/* Live-fetched fields */}
-        <div className="grid grid-cols-2 gap-x-6 gap-y-4 md:grid-cols-4 mb-6">
-          <div>
-            <div className="flex items-center gap-1.5 mb-1">
-              <label className="text-xs font-semibold text-slate-400 uppercase tracking-wider">VIX</label>
-              <LiveStatusBadge status={liveFields.vix} reason={liveErrors.vix} />
-            </div>
-            <SaveableNumericInput
-              savedValue={marketData.vix}
-              onSave={(n) => onUpdateMarketData({ vix: n })}
-              inputClassName="w-full rounded-xl border border-slate-200 bg-slate-50 px-3 py-2.5 text-lg font-semibold focus:bg-white focus:border-blue-300 focus:ring-1 focus:ring-blue-200 transition-all outline-none"
-            />
-          </div>
-          <div>
-            <div className="flex items-center gap-1.5 mb-1">
-              <label className="text-xs font-semibold text-slate-400 uppercase tracking-wider">MOVE Index</label>
-              <LiveStatusBadge status={liveFields.move} reason={liveErrors.move} />
-            </div>
-            <SaveableNumericInput
-              savedValue={marketData.move}
-              onSave={(n) => onUpdateMarketData({ move: n })}
-              inputClassName="w-full rounded-xl border border-slate-200 bg-slate-50 px-3 py-2.5 text-lg font-semibold focus:bg-white focus:border-blue-300 focus:ring-1 focus:ring-blue-200 transition-all outline-none"
-            />
-          </div>
-          <div>
-            <div className="flex items-center gap-1.5 mb-1">
-              <label className="text-xs font-semibold text-slate-400 uppercase tracking-wider">HY OAS (bps)</label>
-              <a href="https://fred.stlouisfed.org/series/BAMLH0A0HYM2" target="_blank" rel="noopener noreferrer" className="text-blue-400 hover:text-blue-600 transition-colors" title="FRED HY OAS">
-                <svg className="w-3 h-3" fill="none" stroke="currentColor" strokeWidth="2" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" d="M10 6H6a2 2 0 00-2 2v10a2 2 0 002 2h10a2 2 0 002-2v-4M14 4h6m0 0v6m0-6L10 14" /></svg>
-              </a>
-              <LiveStatusBadge status={liveFields.hyOas} reason={liveErrors.hyOas} />
-            </div>
-            <SaveableNumericInput
-              savedValue={marketData.hyOas}
-              onSave={(n) => onUpdateMarketData({ hyOas: n })}
-              inputClassName="w-full rounded-xl border border-slate-200 bg-slate-50 px-3 py-2.5 text-lg font-semibold focus:bg-white focus:border-blue-300 focus:ring-1 focus:ring-blue-200 transition-all outline-none"
-            />
-          </div>
-          <div>
-            <div className="flex items-center gap-1.5 mb-1">
-              <label className="text-xs font-semibold text-slate-400 uppercase tracking-wider">IG OAS (bps)</label>
-              <a href="https://fred.stlouisfed.org/series/BAMLC0A0CM" target="_blank" rel="noopener noreferrer" className="text-blue-400 hover:text-blue-600 transition-colors" title="FRED IG OAS">
-                <svg className="w-3 h-3" fill="none" stroke="currentColor" strokeWidth="2" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" d="M10 6H6a2 2 0 00-2 2v10a2 2 0 002 2h10a2 2 0 002-2v-4M14 4h6m0 0v6m0-6L10 14" /></svg>
-              </a>
-              <LiveStatusBadge status={liveFields.igOas} reason={liveErrors.igOas} />
-            </div>
-            <SaveableNumericInput
-              savedValue={marketData.igOas}
-              onSave={(n) => onUpdateMarketData({ igOas: n })}
-              inputClassName="w-full rounded-xl border border-slate-200 bg-slate-50 px-3 py-2.5 text-lg font-semibold focus:bg-white focus:border-blue-300 focus:ring-1 focus:ring-blue-200 transition-all outline-none"
-            />
-          </div>
-        </div>
-
-        {/* ── Breadth & Market Structure ── */}
-        <div className="border-t border-slate-100 pt-5 mb-6">
-          <div className="flex items-center gap-3 mb-4">
-            <h4 className="text-xs font-semibold text-slate-400 uppercase tracking-widest">Breadth & Market Structure</h4>
-          </div>
-          <div className="grid grid-cols-2 gap-x-6 gap-y-4 md:grid-cols-3 lg:grid-cols-5">
-            <div>
-              <div className="flex items-center gap-1.5 mb-1">
-                <label className="text-xs font-semibold text-slate-400 uppercase tracking-wider">S&P % &gt; 200 DMA</label>
-                <a href="https://www.marketinout.com/chart/market.php?breadth=above-sma-200" target="_blank" rel="noopener noreferrer" className="text-blue-400 hover:text-blue-600 transition-colors" title="MarketInOut S&P Breadth">
-                  <svg className="w-3 h-3" fill="none" stroke="currentColor" strokeWidth="2" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" d="M10 6H6a2 2 0 00-2 2v10a2 2 0 002 2h10a2 2 0 002-2v-4M14 4h6m0 0v6m0-6L10 14" /></svg>
-                </a>
-              </div>
-              <SaveableNumericInput
-                savedValue={marketData.breadth}
-                onSave={(n) => onUpdateMarketData({ breadth: n })}
-                inputClassName="w-full rounded-xl border border-slate-200 bg-slate-50 px-3 py-2.5 text-lg font-semibold focus:bg-white focus:border-blue-300 focus:ring-1 focus:ring-blue-200 transition-all outline-none"
-              />
-            </div>
-            <div>
-              <div className="flex items-center gap-1.5 mb-1">
-                <label className="text-xs font-semibold text-slate-400 uppercase tracking-wider">Nasdaq % &gt; 200 DMA</label>
-                <a href="https://www.marketinout.com/chart/market.php?breadth=above-sma-200" target="_blank" rel="noopener noreferrer" className="text-blue-400 hover:text-blue-600 transition-colors" title="MarketInOut Nasdaq Breadth">
-                  <svg className="w-3 h-3" fill="none" stroke="currentColor" strokeWidth="2" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" d="M10 6H6a2 2 0 00-2 2v10a2 2 0 002 2h10a2 2 0 002-2v-4M14 4h6m0 0v6m0-6L10 14" /></svg>
-                </a>
-              </div>
-              <SaveableNumericInput
-                savedValue={marketData.nasdaqBreadth}
-                onSave={(n) => onUpdateMarketData({ nasdaqBreadth: n })}
-                inputClassName="w-full rounded-xl border border-slate-200 bg-slate-50 px-3 py-2.5 text-lg font-semibold focus:bg-white focus:border-blue-300 focus:ring-1 focus:ring-blue-200 transition-all outline-none"
-              />
-            </div>
-            <div>
-              <div className="flex items-center gap-1.5 mb-1">
-                <label className="text-xs font-semibold text-slate-400 uppercase tracking-wider">S&P % &gt; 50 DMA</label>
-                <a href="https://www.marketinout.com/chart/market.php?breadth=above-sma-50" target="_blank" rel="noopener noreferrer" className="text-blue-400 hover:text-blue-600 transition-colors" title="MarketInOut 50 DMA Breadth">
-                  <svg className="w-3 h-3" fill="none" stroke="currentColor" strokeWidth="2" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" d="M10 6H6a2 2 0 00-2 2v10a2 2 0 002 2h10a2 2 0 002-2v-4M14 4h6m0 0v6m0-6L10 14" /></svg>
-                </a>
-              </div>
-              <SaveableNumericInput
-                savedValue={marketData.sp50dma}
-                onSave={(n) => onUpdateMarketData({ sp50dma: n })}
-                inputClassName="w-full rounded-xl border border-slate-200 bg-slate-50 px-3 py-2.5 text-lg font-semibold focus:bg-white focus:border-blue-300 focus:ring-1 focus:ring-blue-200 transition-all outline-none"
-              />
-            </div>
-            <div>
-              <div className="flex items-center gap-1.5 mb-1">
-                <label className="text-xs font-semibold text-slate-400 uppercase tracking-wider">NYSE A/D Line</label>
-                <a href="https://www.marketinout.com/chart/market.php?breadth=advance-decline-line" target="_blank" rel="noopener noreferrer" className="text-blue-400 hover:text-blue-600 transition-colors" title="NYSE A/D Line">
-                  <svg className="w-3 h-3" fill="none" stroke="currentColor" strokeWidth="2" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" d="M10 6H6a2 2 0 00-2 2v10a2 2 0 002 2h10a2 2 0 002-2v-4M14 4h6m0 0v6m0-6L10 14" /></svg>
-                </a>
-              </div>
-              <SaveableNumericInput
-                savedValue={marketData.nyseAdLine}
-                onSave={(n) => onUpdateMarketData({ nyseAdLine: n })}
-                allowNegative
-                inputClassName="w-full rounded-xl border border-slate-200 bg-slate-50 px-3 py-2.5 text-lg font-semibold focus:bg-white focus:border-blue-300 focus:ring-1 focus:ring-blue-200 transition-all outline-none"
-              />
-            </div>
-            <div>
-              <div className="flex items-center gap-1.5 mb-1">
-                <label className="text-xs font-semibold text-slate-400 uppercase tracking-wider">New Highs - Lows</label>
-                <a href="https://www.marketinout.com/chart/market.php?breadth=new-highs-new-lows" target="_blank" rel="noopener noreferrer" className="text-blue-400 hover:text-blue-600 transition-colors" title="New Highs vs New Lows">
-                  <svg className="w-3 h-3" fill="none" stroke="currentColor" strokeWidth="2" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" d="M10 6H6a2 2 0 00-2 2v10a2 2 0 002 2h10a2 2 0 002-2v-4M14 4h6m0 0v6m0-6L10 14" /></svg>
-                </a>
-              </div>
-              <SaveableNumericInput
-                savedValue={marketData.newHighsLows}
-                onSave={(n) => onUpdateMarketData({ newHighsLows: n })}
-                allowNegative
-                inputClassName="w-full rounded-xl border border-slate-200 bg-slate-50 px-3 py-2.5 text-lg font-semibold focus:bg-white focus:border-blue-300 focus:ring-1 focus:ring-blue-200 transition-all outline-none"
-              />
-              <p className="text-[10px] text-slate-400 mt-0.5">S&P 500</p>
-            </div>
-          </div>
-        </div>
+        {/* VIX, MOVE, HY/IG OAS and breadth tiles are now sourced from the
+            Forward View auto-fetch — see the Forward View section at the top
+            of this page for live values, history-aware deltas, and source
+            links. Manual fields below are only the inputs that have no
+            reliable free auto-source. */}
 
         {/* ── Contrarian Indicators ── */}
         <div className="border-t border-slate-100 pt-5 mb-6">
@@ -909,7 +776,7 @@ export function MorningBrief({
             {generating ? "Generating..." : "\u21BB Refresh Brief"}
           </button>
           <span className="text-sm text-slate-400">
-            VIX: <strong>{marketData.vix}</strong> | MOVE: <strong>{marketData.move}</strong> | HY: <strong>{marketData.hyOas}</strong> | Osc: <strong>{marketData.spOscillator}</strong> | F&G: <strong>{marketData.fearGreed}</strong>
+            VIX: <strong>{activeForward?.vixWeek?.value ?? "—"}</strong> | MOVE: <strong>{activeForward?.moveWeek?.value ?? "—"}</strong> | HY: <strong>{activeForward?.hyOasTrend?.value ?? "—"}</strong> | Osc: <strong>{marketData.spOscillator}</strong> | F&G: <strong>{marketData.fearGreed}</strong>
           </span>
         </div>
       </section>
@@ -1069,7 +936,18 @@ export function MorningBrief({
       {/* Contrarian Sentiment — all 4 indicators + Claude analysis */}
       <SentimentGauges marketData={marketData} aaiiBull={marketData.aaiiBull ?? 30} aaiiNeutral={marketData.aaiiNeutral ?? 17} aaiiBear={marketData.aaiiBear ?? 52} contrarianAnalysis={contrarianAnalysis} />
 
-      {/* Credit & Volatility */}
+      {/* Credit & Volatility — values pulled from auto-fetched ForwardLookingData */}
+      {(() => {
+        const fmtNum = (v: number | null | undefined): string =>
+          v == null ? "—" : String(v);
+        const hyVal = activeForward?.hyOasTrend?.value ?? null;
+        const igVal = activeForward?.igOasTrend?.value ?? null;
+        const vixVal = activeForward?.vixWeek?.value ?? null;
+        const moveVal = activeForward?.moveWeek?.value ?? null;
+        const breadth200Val = activeForward?.breadth200Wk?.value ?? null;
+        const breadth50Val = activeForward?.breadth50Wk?.value ?? null;
+        return (
+      <>
       <section className="grid gap-5 lg:grid-cols-2">
         <div className="rounded-[30px] border border-slate-200 bg-white p-6 shadow-sm">
           <div className="flex items-center justify-between gap-3">
@@ -1077,21 +955,21 @@ export function MorningBrief({
               <span className="text-xl">📉</span>
               <h3 className="text-2xl font-semibold">Credit Spreads</h3>
             </div>
-            <SignalPill tone={marketData.hyOas >= 300 ? "red" : marketData.hyOas >= 200 ? "amber" : "green"}>
-              {marketData.hyOas >= 300 ? "Widening" : marketData.hyOas >= 200 ? "Neutral" : "Tight"}
+            <SignalPill tone={hyVal != null && hyVal >= 300 ? "red" : hyVal != null && hyVal >= 200 ? "amber" : "green"}>
+              {hyVal != null && hyVal >= 300 ? "Widening" : hyVal != null && hyVal >= 200 ? "Neutral" : "Tight"}
             </SignalPill>
           </div>
           <div className="mt-5 grid grid-cols-2 gap-4">
             <div className="rounded-2xl bg-slate-50 p-4">
               <div className="text-xs font-semibold uppercase tracking-wider text-slate-400">HY OAS</div>
-              <div className="mt-2 text-3xl font-bold">{marketData.hyOas} <span className="text-base font-normal text-slate-400">bps</span></div>
+              <div className="mt-2 text-3xl font-bold">{fmtNum(hyVal)} <span className="text-base font-normal text-slate-400">bps</span></div>
             </div>
             <div className="rounded-2xl bg-slate-50 p-4">
               <div className="text-xs font-semibold uppercase tracking-wider text-slate-400">IG OAS</div>
-              <div className="mt-2 text-3xl font-bold">{marketData.igOas} <span className="text-base font-normal text-slate-400">bps</span></div>
+              <div className="mt-2 text-3xl font-bold">{fmtNum(igVal)} <span className="text-base font-normal text-slate-400">bps</span></div>
             </div>
           </div>
-          <p className="mt-4 text-sm text-slate-500">Trend: {marketData.hyOas >= 300 ? "Widening modestly" : "Stable"}</p>
+          <p className="mt-4 text-sm text-slate-500">Trend: {hyVal != null && hyVal >= 300 ? "Widening modestly" : "Stable"}</p>
           <p className="mt-2 text-lg leading-8 text-slate-600">{creditAnalysis}</p>
         </div>
 
@@ -1101,14 +979,14 @@ export function MorningBrief({
               <span className="text-xl">⚡</span>
               <h3 className="text-2xl font-semibold">Volatility Regime</h3>
             </div>
-            <SignalPill tone={marketData.vix >= 22 ? "red" : marketData.vix >= 16 ? "amber" : "green"}>
-              {marketData.vix >= 22 ? "Elevated" : marketData.vix >= 16 ? "Moderate" : "Low"}
+            <SignalPill tone={vixVal != null && vixVal >= 22 ? "red" : vixVal != null && vixVal >= 16 ? "amber" : "green"}>
+              {vixVal != null && vixVal >= 22 ? "Elevated" : vixVal != null && vixVal >= 16 ? "Moderate" : "Low"}
             </SignalPill>
           </div>
           <div className="mt-5 grid grid-cols-3 gap-4">
             <div className="rounded-2xl bg-slate-50 p-4">
               <div className="text-xs font-semibold uppercase tracking-wider text-slate-400">VIX</div>
-              <div className="mt-2 text-3xl font-bold">{marketData.vix}</div>
+              <div className="mt-2 text-3xl font-bold">{fmtNum(vixVal)}</div>
             </div>
             <div className="rounded-2xl bg-slate-50 p-4">
               <div className="text-xs font-semibold uppercase tracking-wider text-slate-400">TERM</div>
@@ -1116,7 +994,7 @@ export function MorningBrief({
             </div>
             <div className="rounded-2xl bg-slate-50 p-4">
               <div className="text-xs font-semibold uppercase tracking-wider text-slate-400">MOVE</div>
-              <div className="mt-2 text-3xl font-bold">{marketData.move}</div>
+              <div className="mt-2 text-3xl font-bold">{fmtNum(moveVal)}</div>
             </div>
           </div>
           <p className="mt-4 text-lg leading-8 text-slate-600">{volatilityAnalysis}</p>
@@ -1131,47 +1009,18 @@ export function MorningBrief({
               <span className="text-xl">📊</span>
               <h3 className="text-2xl font-semibold">Breadth & Market Structure</h3>
             </div>
-            <SignalPill tone={marketData.breadth <= 50 ? "red" : marketData.breadth >= 65 ? "green" : "amber"}>
-              {marketData.breadth <= 50 ? "Weak" : marketData.breadth >= 65 ? "Healthy" : "Mixed"}
+            <SignalPill tone={breadth200Val != null && breadth200Val <= 50 ? "red" : breadth200Val != null && breadth200Val >= 65 ? "green" : "amber"}>
+              {breadth200Val != null && breadth200Val <= 50 ? "Weak" : breadth200Val != null && breadth200Val >= 65 ? "Healthy" : "Mixed"}
             </SignalPill>
           </div>
           <div className="mt-5 space-y-3">
             <div className="flex justify-between border-b border-slate-100 pb-3">
-              <a href="https://www.marketinout.com/chart/market.php?breadth=above-sma-200" target="_blank" rel="noopener noreferrer" className="text-slate-500 hover:text-blue-600 flex items-center gap-1.5">
-                S&amp;P 500 % &gt; 200 DMA
-                <svg className="w-3 h-3 text-blue-400" fill="none" stroke="currentColor" strokeWidth="2" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" d="M10 6H6a2 2 0 00-2 2v10a2 2 0 002 2h10a2 2 0 002-2v-4M14 4h6m0 0v6m0-6L10 14" /></svg>
-              </a>
-              <span className="font-mono font-medium">{marketData.breadth}%</span>
-            </div>
-            <div className="flex justify-between border-b border-slate-100 pb-3">
-              <a href="https://www.marketinout.com/chart/market.php?breadth=above-sma-200" target="_blank" rel="noopener noreferrer" className="text-slate-500 hover:text-blue-600 flex items-center gap-1.5">
-                Nasdaq % &gt; 200 DMA
-                <svg className="w-3 h-3 text-blue-400" fill="none" stroke="currentColor" strokeWidth="2" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" d="M10 6H6a2 2 0 00-2 2v10a2 2 0 002 2h10a2 2 0 002-2v-4M14 4h6m0 0v6m0-6L10 14" /></svg>
-              </a>
-              <span className="font-mono font-medium">{marketData.nasdaqBreadth}%</span>
-            </div>
-            <div className="flex justify-between border-b border-slate-100 pb-3">
-              <a href="https://www.marketinout.com/chart/market.php?breadth=above-sma-50" target="_blank" rel="noopener noreferrer" className="text-slate-500 hover:text-blue-600 flex items-center gap-1.5">
-                S&amp;P 500 % &gt; 50 DMA
-                <svg className="w-3 h-3 text-blue-400" fill="none" stroke="currentColor" strokeWidth="2" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" d="M10 6H6a2 2 0 00-2 2v10a2 2 0 002 2h10a2 2 0 002-2v-4M14 4h6m0 0v6m0-6L10 14" /></svg>
-              </a>
-              <span className="font-mono font-medium">{marketData.sp50dma}%</span>
-            </div>
-            <div className="flex justify-between border-b border-slate-100 pb-3">
-              <a href="https://www.marketinout.com/chart/market.php?breadth=advance-decline-line" target="_blank" rel="noopener noreferrer" className="text-slate-500 hover:text-blue-600 flex items-center gap-1.5">
-                NYSE A/D Line
-                <svg className="w-3 h-3 text-blue-400" fill="none" stroke="currentColor" strokeWidth="2" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" d="M10 6H6a2 2 0 00-2 2v10a2 2 0 002 2h10a2 2 0 002-2v-4M14 4h6m0 0v6m0-6L10 14" /></svg>
-              </a>
-              <span className="font-mono font-medium">{marketData.nyseAdLine.toLocaleString()}</span>
+              <span className="text-slate-500">S&amp;P 500 % &gt; 200 DMA</span>
+              <span className="font-mono font-medium">{breadth200Val != null ? `${breadth200Val}%` : "—"}</span>
             </div>
             <div className="flex justify-between pb-3">
-              <a href="https://www.marketinout.com/chart/market.php?breadth=new-highs-new-lows" target="_blank" rel="noopener noreferrer" className="text-slate-500 hover:text-blue-600 flex items-center gap-1.5">
-                New Highs - Lows
-                <svg className="w-3 h-3 text-blue-400" fill="none" stroke="currentColor" strokeWidth="2" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" d="M10 6H6a2 2 0 00-2 2v10a2 2 0 002 2h10a2 2 0 002-2v-4M14 4h6m0 0v6m0-6L10 14" /></svg>
-              </a>
-              <span className={`font-mono font-medium ${marketData.newHighsLows > 0 ? "text-emerald-600" : marketData.newHighsLows < -50 ? "text-red-600" : "text-slate-700"}`}>
-                {marketData.newHighsLows > 0 ? "+" : ""}{marketData.newHighsLows}
-              </span>
+              <span className="text-slate-500">S&amp;P 500 % &gt; 50 DMA</span>
+              <span className="font-mono font-medium">{breadth50Val != null ? `${breadth50Val}%` : "—"}</span>
             </div>
           </div>
           <p className="mt-4 text-lg leading-8 text-slate-600">{breadthAnalysis}</p>
@@ -1225,9 +1074,17 @@ export function MorningBrief({
           )}
         </div>
       </section>
+      </>
+        );
+      })()}
 
       {/* Hedging Window */}
-      <HedgingIndicator marketData={marketData} hedgingAnalysis={hedgingAnalysis} />
+      <HedgingIndicator
+        vix={activeForward?.vixWeek?.value ?? 20}
+        termStructure={marketData.termStructure}
+        fearGreed={marketData.fearGreed}
+        hedgingAnalysis={hedgingAnalysis}
+      />
 
       {/* Sector Rotation */}
       {sectorRotation && (

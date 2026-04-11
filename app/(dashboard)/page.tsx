@@ -191,7 +191,7 @@ export default function DashboardPage() {
                     <span className="font-semibold text-emerald-600">Defensive sectors</span> (Energy, Utilities, Staples, Financials, Materials, Industrials) → <span className="font-bold">1.10x</span> — boosted for capital preservation.
                   </li>
                   <li>
-                    VIX at {marketData.vix}, HY OAS at {marketData.hyOas}bps, breadth at {marketData.breadth}% — conditions support defensive positioning.
+                    Elevated volatility, wider credit spreads, and weak breadth — conditions support defensive positioning. See the Morning Brief for live readings.
                   </li>
                 </ul>
               </div>
@@ -210,7 +210,7 @@ export default function DashboardPage() {
                     <span className="font-semibold text-emerald-600">Defensive sectors</span> → <span className="font-bold">1.03x</span> — marginal safety premium.
                   </li>
                   <li>
-                    VIX at {marketData.vix}, breadth at {marketData.breadth}% — cross-currents suggest balanced positioning until a clearer signal emerges.
+                    Volatility and breadth send mixed signals — cross-currents suggest balanced positioning until a clearer signal emerges. See the Morning Brief for live readings.
                   </li>
                 </ul>
               </div>
@@ -229,7 +229,7 @@ export default function DashboardPage() {
                     <span className="font-semibold text-amber-600">Defensive sectors</span> → <span className="font-bold">0.95x</span> — slight headwind as safety is less rewarded.
                   </li>
                   <li>
-                    VIX at {marketData.vix}, breadth at {marketData.breadth}% — conditions favor full risk exposure and growth/cyclical tilt.
+                    Subdued volatility and healthy breadth — conditions favor full risk exposure and growth/cyclical tilt. See the Morning Brief for live readings.
                   </li>
                 </ul>
               </div>

@@ -1,11 +1,12 @@
 "use client";
 
 import React from "react";
-import type { MarketData } from "@/app/lib/types";
 import { SignalPill } from "./SignalPill";
 
 type Props = {
-  marketData: MarketData;
+  vix: number;
+  termStructure: string;
+  fearGreed: number;
   hedgingAnalysis: string;
 };
 
@@ -150,10 +151,10 @@ function getHedgingVerdict(factors: HedgeFactor[]): {
   };
 }
 
-export function HedgingIndicator({ marketData, hedgingAnalysis }: Props) {
-  const putCost = assessPutCost(marketData.vix);
-  const vixContext = assessVixContext(marketData.vix, marketData.termStructure);
-  const sentiment = assessSentiment(marketData.fearGreed);
+export function HedgingIndicator({ vix, termStructure, fearGreed, hedgingAnalysis }: Props) {
+  const putCost = assessPutCost(vix);
+  const vixContext = assessVixContext(vix, termStructure);
+  const sentiment = assessSentiment(fearGreed);
 
   const factors = [putCost, vixContext, sentiment];
   const verdict = getHedgingVerdict(factors);

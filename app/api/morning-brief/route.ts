@@ -381,10 +381,24 @@ export async function POST(request: NextRequest) {
       forwardData && forwardData.hyOasTrend.value != null && forwardData.hyOasTrend.previous != null
         ? Number(forwardData.hyOasTrend.value) - Number(forwardData.hyOasTrend.previous)
         : null;
+    // Pull regime inputs from forward-looking data (auto). Fall back to neutral
+     // defaults if forward fetch failed entirely so the brief still generates.
+    const fwdVix =
+      forwardData && typeof forwardData.vixWeek.value === "number"
+        ? forwardData.vixWeek.value
+        : null;
+    const fwdHyOas =
+      forwardData && typeof forwardData.hyOasTrend.value === "number"
+        ? forwardData.hyOasTrend.value
+        : null;
+    const fwdBreadth =
+      forwardData && typeof forwardData.breadth200Wk?.value === "number"
+        ? forwardData.breadth200Wk.value
+        : null;
     const classification = classifyRegime({
-      vix: marketData.vix ?? 20,
+      vix: fwdVix ?? 20,
       vixWeekDeltaPct: vixWeekPctObj.value,
-      hyOas: marketData.hyOas ?? 350,
+      hyOas: fwdHyOas ?? 350,
       hyOasWeekDeltaBps: hyOasDeltaBps,
       spxYtd:
         forwardData && typeof forwardData.spxYtd.value === "number"
@@ -394,7 +408,7 @@ export async function POST(request: NextRequest) {
         forwardData && typeof forwardData.spxWeek.value === "number"
           ? forwardData.spxWeek.value
           : null,
-      breadth: marketData.breadth ?? 50,
+      breadth: fwdBreadth ?? 50,
       curve10y2y:
         forwardData && typeof forwardData.curve10y2y.value === "number"
           ? forwardData.curve10y2y.value
@@ -454,21 +468,8 @@ Pre-classified Regime: ${classification.regime} (score ${classification.score})
 Regime drivers: ${classification.signals.length > 0 ? classification.signals.join("; ") : "mixed / no dominant signal"}
 IMPORTANT: Your marketRegime output MUST equal "${classification.regime}" unless the data below clearly contradicts it (in which case briefly note the contradiction in bottomLine).${forwardBlock}
 
-Volatility:
-- VIX: ${marketData.vix}
-- MOVE Index: ${marketData.move}
+Volatility Structure:
 - VIX Term Structure: ${marketData.termStructure}
-
-Credit Spreads:
-- HY OAS: ${marketData.hyOas} bps
-- IG OAS: ${marketData.igOas} bps
-
-Breadth & Market Structure:
-- S&P 500 % Above 200 DMA: ${marketData.breadth}%
-- Nasdaq % Above 200 DMA: ${marketData.nasdaqBreadth}%
-- S&P 500 % Above 50 DMA: ${marketData.sp50dma}%
-- NYSE A/D Line: ${marketData.nyseAdLine}
-- New Highs - New Lows: ${marketData.newHighsLows}
 
 Contrarian Indicators (ALL interpreted INVERSELY — oversold/fearful = BULLISH, overbought/greedy = BEARISH):
 - S&P Oscillator: ${marketData.spOscillator} — negative = oversold = BULLISH, positive = overbought = BEARISH
@@ -478,7 +479,7 @@ Contrarian Indicators (ALL interpreted INVERSELY — oversold/fearful = BULLISH,
 
 Equity Flows: ${marketData.equityFlows}
 
-Hedge Timing Score: ${computeHedgeScore(marketData.vix ?? 20, marketData.termStructure ?? "Contango", marketData.fearGreed ?? 50)}/100 (dynamically computed from VIX, term structure, and sentiment)
+Hedge Timing Score: ${computeHedgeScore(fwdVix ?? 20, marketData.termStructure ?? "Contango", marketData.fearGreed ?? 50)}/100 (dynamically computed from VIX, term structure, and sentiment)
 
 Live Sector ETF Performance (from Yahoo Finance — use this for sector rotation analysis):
 ${sectorPerformance}
