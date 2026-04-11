@@ -1,10 +1,10 @@
 "use client";
 
-import React, { useState, useMemo, useEffect } from "react";
+import React, { useState } from "react";
 import Link from "next/link";
 import { useStocks } from "@/app/lib/StockContext";
 import { SCORE_GROUPS, MAX_SCORE, INSTRUMENT_LABELS } from "@/app/lib/types";
-import type { ScoredStock, ScoreKey } from "@/app/lib/types";
+import type { ScoredStock } from "@/app/lib/types";
 import { groupTotal, isScoreable } from "@/app/lib/scoring";
 import { SignalPill } from "./SignalPill";
 
@@ -118,7 +118,7 @@ function FundSortIcon({ field, sortField, sortDir }: { field: FundSortField; sor
 
 
 export function PortfolioOverview() {
-  const { portfolioStocks, watchlistStocks, scoredStocks, marketData, updateStockFields, uiPrefs, setUiPref } = useStocks();
+  const { portfolioStocks, watchlistStocks, marketData, updateStockFields, uiPrefs, setUiPref } = useStocks();
   const [dashFilter, setDashFilter] = useState<DashboardFilter>("all");
   const fundSort = (uiPrefs["fundSort"] as FundSortField) || "ticker";
   const fundSortDir = (uiPrefs["fundSortDir"] as SortDir) || "desc";
@@ -154,7 +154,6 @@ export function PortfolioOverview() {
   // Sector exposure — Alpha picks only (excludes Core indexed holdings)
   // Normalize sector names so Yahoo variants map to GICS standard
   const alphaPortfolio = scoreablePortfolio.filter((s) => s.designation !== "core");
-  const pfCount = scoreablePortfolio.length;
   const alphaCount = alphaPortfolio.length;
   const sectorCounts: Record<string, number> = {};
   alphaPortfolio.forEach((s) => {
@@ -168,19 +167,6 @@ export function PortfolioOverview() {
       count,
     }))
     .sort((a, b) => b.weight - a.weight);
-
-  // Action items (only for scoreable stocks)
-  const bottomPortfolio = [...scoreablePortfolio].reverse().slice(0, 3);
-  const topWatchlist = scoreableWatchlist.slice(0, 3);
-  const reviewCount = bottomPortfolio.filter((s) => s.adjusted < 20).length;
-  const buyCount = topWatchlist.filter((s) => s.adjusted >= 18).length;
-
-  // Averages (only for scoreable stocks)
-  const pfAvgBase = pfCount > 0 ? Math.round(scoreablePortfolio.reduce((s, x) => s + x.raw, 0) / pfCount) : 0;
-  const pfAvgAdj = pfCount > 0 ? Math.round(scoreablePortfolio.reduce((s, x) => s + x.adjusted, 0) / pfCount) : 0;
-  const wlCount = scoreableWatchlist.length;
-  const wlAvgBase = wlCount > 0 ? Math.round(scoreableWatchlist.reduce((s, x) => s + x.raw, 0) / wlCount) : 0;
-  const wlAvgAdj = wlCount > 0 ? Math.round(scoreableWatchlist.reduce((s, x) => s + x.adjusted, 0) / wlCount) : 0;
 
   return (
     <div className="space-y-6">
@@ -251,30 +237,8 @@ export function PortfolioOverview() {
         </div>
       </section>
 
-      {/* Summary Cards */}
-      <section className="grid gap-4 md:grid-cols-3 xl:grid-cols-4">
-        <div className="rounded-[24px] border border-slate-200 bg-white p-5 shadow-sm">
-          <div className="text-xs font-semibold uppercase tracking-wider text-slate-400">Stocks</div>
-          <div className="mt-2 text-4xl font-bold text-slate-900">{pfCount}</div>
-          <div className="mt-1 text-sm text-slate-500">Avg adj: {pfAvgAdj} (base: {pfAvgBase})</div>
-        </div>
-        {fundPortfolio.length > 0 && (
-          <div className="rounded-[24px] border border-indigo-200 bg-indigo-50/50 p-5 shadow-sm">
-            <div className="text-xs font-semibold uppercase tracking-wider text-indigo-400">Funds / ETFs</div>
-            <div className="mt-2 text-4xl font-bold text-indigo-700">{fundPortfolio.length}</div>
-          </div>
-        )}
-        <div className="rounded-[24px] border border-slate-200 bg-white p-5 shadow-sm">
-          <div className="text-xs font-semibold uppercase tracking-wider text-slate-400">Watchlist</div>
-          <div className="mt-2 text-4xl font-bold text-slate-900">{wlCount}</div>
-          <div className="mt-1 text-sm text-slate-500">Avg adj: {wlAvgAdj} (base: {wlAvgBase})</div>
-        </div>
-        <div className="rounded-[24px] border border-slate-200 bg-white p-5 shadow-sm">
-          <div className="text-xs font-semibold uppercase tracking-wider text-slate-400">Action Items</div>
-          <div className="mt-2 text-4xl font-bold text-amber-600">{reviewCount + buyCount}</div>
-          <div className="mt-1 text-sm text-slate-500">{reviewCount} review · {buyCount} buy candidates</div>
-        </div>
-      </section>
+      {/* Portfolio Rankings (scoreable stocks only) — moved above Fund & ETF Holdings */}
+      <RankingTable title="Portfolio Rankings" subtitle="Bottom 3 flagged for review" stocks={scoreablePortfolio} flagType="review" uiPrefs={uiPrefs} setUiPref={setUiPref} />
 
       {/* Fund Holdings */}
       {fundPortfolio.length > 0 && (() => {
@@ -405,9 +369,6 @@ export function PortfolioOverview() {
         );
       })()}
 
-      {/* Portfolio Rankings (scoreable stocks only) */}
-      <RankingTable title="Portfolio Rankings" subtitle="Bottom 3 flagged for review" stocks={scoreablePortfolio} flagType="review" uiPrefs={uiPrefs} setUiPref={setUiPref} />
-
       {/* Watchlist Rankings (scoreable stocks only) */}
       <RankingTable title="Watchlist Rankings" subtitle="Top 3 flagged as buy candidates" stocks={scoreableWatchlist} flagType="buy" uiPrefs={uiPrefs} setUiPref={setUiPref} />
 
@@ -459,7 +420,14 @@ export function PortfolioOverview() {
   );
 }
 
-type RankingSortKey = "ticker" | "raw" | "adjusted" | "rating" | string;
+type RankingSortKey =
+  | "ticker"
+  | "raw"
+  | "adjusted"
+  | "rating"
+  | "sector"
+  | "price"
+  | string;
 
 function RankingTable({
   title,
@@ -514,6 +482,10 @@ function RankingTable({
       cmp = a.raw - b.raw;
     } else if (key === "adjusted") {
       cmp = a.adjusted - b.adjusted;
+    } else if (key === "sector") {
+      cmp = (a.sector || "").localeCompare(b.sector || "");
+    } else if (key === "price") {
+      cmp = (a.price ?? -Infinity) - (b.price ?? -Infinity);
     } else if (key === "rating") {
       const order = { "Sell": 0, "Underweight": 1, "Hold": 2, "Moderate Buy": 3, "Strong Buy": 4 };
       cmp = (order[(a.ratingLabel || a.rating) as keyof typeof order] ?? 2) - (order[(b.ratingLabel || b.rating) as keyof typeof order] ?? 2);
@@ -527,7 +499,16 @@ function RankingTable({
     return dir === "asc" ? cmp : -cmp;
   });
 
-  const thClass = "pb-2 cursor-pointer hover:text-slate-800 select-none";
+  const thClass = "pb-2 pr-3 cursor-pointer hover:text-slate-800 select-none whitespace-nowrap";
+  // Sticky first column — ticker + company name stay visible while the rest of
+  // the row scrolls horizontally. `left-0` pins it to the scroll container.
+  // The explicit bg matches the row background (white, or the hover tint via
+  // the `group` pattern on the parent <tr>) so the scrolled-under columns
+  // don't bleed through. `z-10` on body cells, `z-20` on header to stay above.
+  const stickyHeadCls =
+    "pb-2 pr-4 cursor-pointer hover:text-slate-800 select-none whitespace-nowrap sticky left-0 z-20 bg-white";
+  const stickyCellCls =
+    "py-3 pr-4 sticky left-0 z-10 bg-white group-hover:bg-slate-50/80";
 
   return (
     <section className="rounded-[30px] border border-slate-200 bg-white p-5 shadow-sm">
@@ -536,11 +517,16 @@ function RankingTable({
         <span className="text-sm text-slate-400">{subtitle}</span>
       </div>
       <div className="overflow-x-auto">
-        <table className="w-full min-w-[900px] text-left text-sm">
+        <table className="w-full min-w-[1400px] text-left text-sm">
           <thead>
             <tr className="border-b border-slate-200 text-xs text-slate-500">
-              <th className="pb-2 w-8">#</th>
-              <th className={thClass} onClick={() => toggleSort("ticker")}>Ticker{arrow("ticker")}</th>
+              <th className={stickyHeadCls} onClick={() => toggleSort("ticker")}>
+                <span className="text-slate-400 mr-1">#</span>Ticker{arrow("ticker")}
+              </th>
+              <th className={thClass} onClick={() => toggleSort("sector")}>Sector{arrow("sector")}</th>
+              <th className={`${thClass} text-right`} onClick={() => toggleSort("price")}>Price{arrow("price")}</th>
+              <th className={`${thClass} min-w-[220px]`}>What They Do</th>
+              <th className={`${thClass} min-w-[220px]`}>Why Own It</th>
               {SCORE_GROUPS.map((g) => (
                 <th key={g.name} className={`${thClass} ${GROUP_HEADER_COLORS[g.name] || ""}`} onClick={() => toggleSort(g.name)}>
                   {g.name === "Company Specific" ? "Company" : g.name}{arrow(g.name)}
@@ -549,7 +535,7 @@ function RankingTable({
               <th className={thClass} onClick={() => toggleSort("raw")}>Base{arrow("raw")}</th>
               <th className={`${thClass} font-bold`} onClick={() => toggleSort("adjusted")}>Adj{arrow("adjusted")}</th>
               <th className={thClass} onClick={() => toggleSort("rating")}>Rating{arrow("rating")}</th>
-              <th className="pb-2">Signal</th>
+              <th className="pb-2 pr-3">Signal</th>
             </tr>
           </thead>
           <tbody>
@@ -560,28 +546,44 @@ function RankingTable({
                 flagType === "review" ? i >= sorted.length - 3 : i < 3;
 
               return (
-                <tr key={s.ticker} className="border-b border-slate-50 hover:bg-slate-50/50 transition-colors">
-                  <td className="py-3 text-slate-400">{i + 1}</td>
-                  <td className="py-3">
-                    <Link href={`/stock/${s.ticker.toLowerCase()}`} className="hover:underline">
-                      <div className="font-bold text-slate-800">{s.ticker}</div>
-                      <div className="text-xs text-slate-400">{s.name}</div>
-                    </Link>
+                <tr key={s.ticker} className="group border-b border-slate-50 hover:bg-slate-50/80 transition-colors">
+                  <td className={stickyCellCls}>
+                    <div className="flex items-center gap-2">
+                      <span className="text-slate-400 text-xs w-5 text-right">{i + 1}</span>
+                      <Link href={`/stock/${s.ticker.toLowerCase()}`} className="hover:underline block">
+                        <div className="font-bold text-slate-800 font-mono">{s.ticker}</div>
+                        <div className="text-xs text-slate-400 max-w-[160px] truncate" title={s.name}>{s.name}</div>
+                      </Link>
+                    </div>
+                  </td>
+                  <td className="py-3 pr-3 text-slate-600 text-xs whitespace-nowrap">{s.sector || "—"}</td>
+                  <td className="py-3 pr-3 text-right text-slate-600 tabular-nums">
+                    {s.price != null ? `$${s.price.toFixed(2)}` : "—"}
+                  </td>
+                  <td className="py-3 pr-3 text-xs text-slate-600 align-top">
+                    <div className="max-w-[260px] line-clamp-3" title={s.companySummary || ""}>
+                      {s.companySummary || <span className="text-slate-300">—</span>}
+                    </div>
+                  </td>
+                  <td className="py-3 pr-3 text-xs text-slate-600 align-top">
+                    <div className="max-w-[260px] line-clamp-3" title={s.investmentThesis || ""}>
+                      {s.investmentThesis || <span className="text-slate-300">—</span>}
+                    </div>
                   </td>
                   {SCORE_GROUPS.map((g) => (
-                    <td key={g.name} className="py-3 text-slate-600">
+                    <td key={g.name} className="py-3 pr-3 text-slate-600">
                       {groupTotal(s, g)}/{g.maxTotal}
                     </td>
                   ))}
-                  <td className="py-3 text-slate-500">{s.raw}</td>
-                  <td className="py-3">
+                  <td className="py-3 pr-3 text-slate-500">{s.raw}</td>
+                  <td className="py-3 pr-3">
                     <span className="font-bold text-slate-900">{s.adjusted}</span>
                     <span className={`ml-0.5 text-xs ${adj >= 0 ? "text-emerald-500" : "text-red-500"}`}>
                       {adj >= 0 ? "+" : ""}{adj}
                     </span>
                   </td>
-                  <td className={`py-3 font-medium ${ratingColor(label)}`}>{label}</td>
-                  <td className="py-3">
+                  <td className={`py-3 pr-3 font-medium ${ratingColor(label)}`}>{label}</td>
+                  <td className="py-3 pr-3">
                     {isFlagged && flagType === "buy" && (
                       <span className="rounded-full border border-emerald-200 bg-emerald-50 px-2 py-0.5 text-[10px] font-bold text-emerald-600">
                         BUY CANDIDATE
