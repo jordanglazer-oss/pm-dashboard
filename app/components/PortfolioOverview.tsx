@@ -849,7 +849,7 @@ function RankingTable({
         )}
       </div>
       <div className="overflow-x-auto">
-        <table className="w-full min-w-[1180px] text-left text-sm">
+        <table className="w-full min-w-[1400px] text-left text-sm">
           <thead>
             <tr className="border-b border-slate-200 text-xs text-slate-500">
               <th className={stickyHeadCls} onClick={() => toggleSort("ticker")}>
@@ -857,8 +857,8 @@ function RankingTable({
               </th>
               <th className={thClass} onClick={() => toggleSort("sector")}>Sector{arrow("sector")}</th>
               <th className={`${thClass} text-right`} onClick={() => toggleSort("price")}>Price{arrow("price")}</th>
-              <th className={thClass}>What They Do</th>
-              <th className={thClass}>Why Own It</th>
+              <th className={`${thClass} min-w-[220px]`}>What They Do</th>
+              <th className={`${thClass} min-w-[220px]`}>Why Own It</th>
               {SCORE_GROUPS.map((g) => (
                 <th key={g.name} className={`${thClass} ${GROUP_HEADER_COLORS[g.name] || ""}`} onClick={() => toggleSort(g.name)}>
                   {g.name === "Company Specific" ? "Company" : g.name}{arrow(g.name)}
@@ -907,7 +907,7 @@ function RankingTable({
                       if (!text) return <span className="text-slate-300">—</span>;
                       const isLong = text.length > 140 || text.includes("\n");
                       return (
-                        <div className="max-w-[260px] whitespace-normal leading-relaxed">
+                        <div className="max-w-[320px] whitespace-normal leading-relaxed">
                           <div className={expanded ? "" : "line-clamp-2"}>{text}</div>
                           {isLong && (
                             <button
