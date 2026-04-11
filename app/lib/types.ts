@@ -259,25 +259,29 @@ export type MarketData = {
   riskRegime: string;
   hedgeScore: number;
   hedgeTiming: string;
-  breadth: number;
-  vix: number;
-  move: number;
   fearGreed: number;
-  hyOas: number;
-  igOas: number;
   aaiiBullBear: number;
   putCall: number;
   termStructure: string;
   spOscillator: number;
   equityFlows: string;
-  nasdaqBreadth: number;
-  sp50dma: number;
-  nyseAdLine: number;
-  newHighsLows: number;
   aaiiBull: number;
   aaiiNeutral: number;
   aaiiBear: number;
   sp500SectorWeights?: Record<string, number>; // Live S&P 500 sector weights from SPY
+  // ── Deprecated manual fields ──
+  // These were superseded by ForwardLookingData (auto-fetched). They remain
+  // optional so cached briefs in Redis (pm:brief) decode without errors.
+  // New briefs no longer set or read these.
+  breadth?: number;
+  vix?: number;
+  move?: number;
+  hyOas?: number;
+  igOas?: number;
+  nasdaqBreadth?: number;
+  sp50dma?: number;
+  nyseAdLine?: number;
+  newHighsLows?: number;
 };
 
 // Shape matches ForwardLookingData in app/lib/forward-looking.ts
