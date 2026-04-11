@@ -282,6 +282,8 @@ export type MarketData = {
 
 // Shape matches ForwardLookingData in app/lib/forward-looking.ts
 // (duplicated here to avoid server-only deps leaking into the client bundle).
+export type ForwardPointStatus = "live" | "stale" | "failed" | "not-configured";
+
 export type ForwardPointBundle = {
   value: number | null;
   source: string;
@@ -289,6 +291,7 @@ export type ForwardPointBundle = {
   asOf: string;
   previous?: number | null;
   note?: string;
+  status: ForwardPointStatus;
 };
 
 export type ForwardLookingBundle = {

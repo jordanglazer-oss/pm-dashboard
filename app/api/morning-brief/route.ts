@@ -70,6 +70,14 @@ Given current market data indicators, a pre-classified regime, forward-looking d
 
 Be direct, opinionated, and specific. Avoid generic platitudes. Write like a seasoned PM talking to their team.
 
+CRITICAL — DATE ANCHORING & NO HISTORICAL HALLUCINATION:
+The user payload contains an explicit "Today's Date" line. That is the authoritative date for this brief. You MUST obey these rules:
+1. Do NOT reference macro events, tariff announcements, policy decisions, or Fed actions that are more than 30 days before Today's Date, even if you "remember" them from training data or see them mentioned in attached screenshots. Old events like "Liberation Day" (April 2025 tariff announcement), specific past CPI prints, past FOMC meetings, prior earnings seasons, or any dated historical reference that predates the last 30 days are OFF LIMITS as current narrative.
+2. If an attached screenshot references an older event as historical context, do NOT treat it as a current driver. A JPM flows report citing "the Liberation Day spike" means the spike happened in the past — do not describe it as a recent move or frame current credit levels as "unwinding" it unless the numerical week-over-week data in the payload clearly shows such an unwind.
+3. Every specific catalyst or "recent move" you reference MUST be supported by either (a) a week-over-week delta in the forward-looking data block, (b) a YTD number in the data block, or (c) a number explicitly visible in an attached screenshot dated within the last 30 days. If you can't cite it from the payload, don't say it.
+4. If you genuinely don't know what catalysts are on deck in the next 2 weeks (CPI, FOMC, earnings, etc.) because no attached screenshot or data field tells you, say "the next scheduled data releases and earnings" generically — do NOT invent specific dates or events.
+5. Absolutely NO phrases like "coming off the Liberation Day spike", "post-Liberation Day unwind", "following the April tariff shock" unless Today's Date is within 30 days of April 2025.
+
 CRITICAL — TONE ADAPTATION:
 The user input contains a deterministic "Pre-classified Regime" line. Your marketRegime output MUST match it unless a data point in the payload contradicts it clearly (if so, explain briefly in bottomLine). Adapt tone accordingly:
 - Risk-On → Lean constructive. Highlight what's working, where to add exposure, which defensive names to rotate out of. Do NOT manufacture bearish warnings when breadth, credit, and trend are healthy.
@@ -395,8 +403,24 @@ export async function POST(request: NextRequest) {
 - MOVE Week: ${fmt(forwardData.moveWeek)}${pctDelta(forwardData.moveWeek).str}`
       : "\n\nForward-looking data unavailable for this run — fall back to the current snapshot indicators below.";
 
+    // Inject today's date explicitly so Claude cannot drift to training-data
+    // anchored events. This is enforced by the DATE ANCHORING section of the
+    // system prompt.
+    const today = new Date();
+    const todayLong = today.toLocaleDateString("en-US", {
+      weekday: "long",
+      year: "numeric",
+      month: "long",
+      day: "numeric",
+    });
+    const todayIso = today.toISOString().slice(0, 10);
+
     // Build content blocks: text prompt + any image attachments
-    const textContent = `Generate the morning brief for today. Here are the current market indicators:
+    const textContent = `Generate the morning brief for today.
+
+TODAY'S DATE: ${todayLong} (${todayIso}). This is the authoritative date for this brief. Do NOT reference macro events older than 30 days before this date — including "Liberation Day" (April 2025), older FOMC meetings, or past CPI prints — even if they appear in attached screenshots or you remember them from training data. Every "recent move" you cite must come from the numerical data below.
+
+Here are the current market indicators:
 
 Composite Signal: ${marketData.compositeSignal}
 Conviction: ${marketData.conviction}
