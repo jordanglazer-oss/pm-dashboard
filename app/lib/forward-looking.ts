@@ -127,42 +127,88 @@ async function fetchStooqDaily(symbol: string): Promise<DailyRow[] | null> {
   }
 }
 
-// ── stockanalysis.com P/E scrape ─────────────────────────────────────────
-// Last-resort fallback for SPY Forward/Trailing P/E when Yahoo quoteSummary
-// is blocked. stockanalysis.com renders the statistics table server-side
-// with plain <td>label</td><td>value</td> markup, so a narrow regex is
-// durable enough for our needs. If the page structure changes, we silently
-// return null and the tile falls back to Stale.
-async function scrapeStockAnalysisPE(
-  symbol: string
-): Promise<{ forwardPE: number | null; trailingPE: number | null } | null> {
+// ── SSGA official SPY product page scrape ────────────────────────────────
+// State Street publishes both trailing ("Price/Earnings") and forward
+// ("Price/Earnings Ratio FY1") P/E on SPY's official fund page. Because
+// it's the issuer's own site the numbers are authoritative and rarely
+// change structure. We parse the first numeric after each label — the
+// label-to-value distance is small in the rendered table markup.
+async function fetchSsgaSpyPE(): Promise<{
+  forwardPE: number | null;
+  trailingPE: number | null;
+} | null> {
   try {
-    const url = `https://stockanalysis.com/etf/${encodeURIComponent(
-      symbol.toLowerCase()
-    )}/statistics/`;
+    const url =
+      "https://www.ssga.com/us/en/intermediary/etfs/spdr-sp-500-etf-trust-spy";
     const res = await fetch(url, {
       headers: {
         "User-Agent": YH_UA,
-        Accept: "text/html,application/xhtml+xml,application/xml;q=0.9,*/*;q=0.8",
+        Accept:
+          "text/html,application/xhtml+xml,application/xml;q=0.9,*/*;q=0.8",
       },
       cache: "no-store",
+      redirect: "follow",
     });
     if (!res.ok) return null;
     const html = await res.text();
-    if (!html || html.length < 1000) return null;
-    // Match "PE Ratio" and "Forward PE" cells. We accept an optional span or
-    // tooltip wrapper before the value cell to stay robust to minor markup
-    // tweaks.
-    const trailingMatch = html.match(
-      />\s*PE Ratio\s*<\/(?:td|th)>[\s\S]{0,200}?<td[^>]*>\s*([0-9]+(?:\.[0-9]+)?)/i
-    );
+    if (!html || html.length < 5000) return null;
+    // Forward P/E = "Price/Earnings Ratio FY1" → first decimal that follows.
     const forwardMatch = html.match(
-      />\s*Forward PE\s*<\/(?:td|th)>[\s\S]{0,200}?<td[^>]*>\s*([0-9]+(?:\.[0-9]+)?)/i
+      /Price\/Earnings Ratio FY1[\s\S]{0,2000}?(\d+\.\d+)/
     );
-    const trailingPE = trailingMatch ? parseFloat(trailingMatch[1]) : null;
+    // Trailing P/E = "Price/Earnings" NOT followed by "Ratio". The table
+    // format puts "Price/Earnings<...>27.12" on the same row.
+    const trailingMatch = html.match(
+      /Price\/Earnings(?!\s*Ratio)[\s\S]{0,2000}?(\d+\.\d+)/
+    );
     const forwardPE = forwardMatch ? parseFloat(forwardMatch[1]) : null;
-    if (trailingPE == null && forwardPE == null) return null;
+    const trailingPE = trailingMatch ? parseFloat(trailingMatch[1]) : null;
+    if (forwardPE == null && trailingPE == null) return null;
     return { forwardPE, trailingPE };
+  } catch {
+    return null;
+  }
+}
+
+// ── CNBC quote page scrape for MOVE index ────────────────────────────────
+// CNBC inlines a JSON payload on /quotes/.MOVE that contains the current
+// price (`"last":"72.15"`), previous close (`"previous_day_closing"`), the
+// `last_time` ISO date, and a `returnsData` array with `5D` / `1MO` / etc.
+// close prices. Since Stooq now requires an API key and Yahoo 429s our
+// server, this is the cleanest free source for MOVE.
+async function fetchCnbcQuote(
+  path: string
+): Promise<{
+  last: number | null;
+  prior5d: number | null;
+  asOf: string;
+} | null> {
+  try {
+    const res = await fetch(`https://www.cnbc.com/quotes/${path}`, {
+      headers: {
+        "User-Agent": YH_UA,
+        Accept:
+          "text/html,application/xhtml+xml,application/xml;q=0.9,*/*;q=0.8",
+      },
+      cache: "no-store",
+      redirect: "follow",
+    });
+    if (!res.ok) return null;
+    const html = await res.text();
+    if (!html || html.length < 5000) return null;
+    const lastMatch = html.match(/"last"\s*:\s*"?(-?\d+\.\d+)/);
+    const asOfMatch = html.match(/"last_time"\s*:\s*"([^"]+)"/);
+    // "returnsData":[{"type":"5D","closePrice":81.78,...
+    const fiveDayMatch = html.match(
+      /"type"\s*:\s*"5D"\s*,\s*"closePrice"\s*:\s*(-?\d+\.\d+)/
+    );
+    const last = lastMatch ? parseFloat(lastMatch[1]) : null;
+    const prior5d = fiveDayMatch ? parseFloat(fiveDayMatch[1]) : null;
+    const asOf = asOfMatch
+      ? asOfMatch[1].slice(0, 10)
+      : new Date().toISOString().slice(0, 10);
+    if (last == null) return null;
+    return { last, prior5d, asOf };
   } catch {
     return null;
   }
@@ -463,52 +509,66 @@ export async function fetchForwardLookingData(): Promise<ForwardLookingData> {
   }
 
   // ── SPY forward / trailing P/E and implied EPS growth ────────────────────
-  // Yahoo's quoteSummary endpoint is intermittently blocked from server IPs
-  // even with a fresh crumb. stockanalysis.com renders the same P/E metrics
-  // server-side in a plain HTML table and is a reliable fallback.
+  // Yahoo's quoteSummary endpoint is blocked from most server IPs (returns
+  // "Too Many Requests" even with a fresh crumb). State Street's own SPY
+  // product page is the authoritative fallback — it publishes both the
+  // trailing "Price/Earnings" and the forward "Price/Earnings Ratio FY1"
+  // straight from the fund's index basket.
   const spyKeyStatsUrl = "https://finance.yahoo.com/quote/SPY/key-statistics";
-  const spyStockAnalysisUrl = "https://stockanalysis.com/etf/spy/statistics/";
+  const ssgaSpyUrl =
+    "https://www.ssga.com/us/en/intermediary/etfs/spdr-sp-500-etf-trust-spy";
   let spyForwardPE: ForwardPoint = missing(
-    spyKeyStatsUrl,
-    "Yahoo Finance SPY / stockanalysis.com",
+    ssgaSpyUrl,
+    "SSGA SPY / Yahoo Finance SPY",
     "All SPY P/E sources returned no data."
   );
   let spyTrailingPE: ForwardPoint = missing(
-    spyKeyStatsUrl,
-    "Yahoo Finance SPY / stockanalysis.com",
+    ssgaSpyUrl,
+    "SSGA SPY / Yahoo Finance SPY",
     "All SPY P/E sources returned no data."
   );
   let impliedEpsGrowth: ForwardPoint = missing(
-    spyKeyStatsUrl,
-    "Yahoo Finance SPY / stockanalysis.com",
+    ssgaSpyUrl,
+    "SSGA SPY / Yahoo Finance SPY",
     "Derived from (trailing P/E / forward P/E - 1); needs both values."
   );
   {
     let fwd: number | null = null;
     let trl: number | null = null;
-    let peSourceUrl = spyKeyStatsUrl;
-    let peSourceLabel = "Yahoo Finance SPY";
+    let peSourceUrl = ssgaSpyUrl;
+    let peSourceLabel = "SSGA SPY";
 
-    try {
-      const summary = await yahooQuoteSummary(
-        "SPY",
-        "summaryDetail,defaultKeyStatistics"
-      );
-      const det = summary?.summaryDetail;
-      const ks = summary?.defaultKeyStatistics;
-      fwd = det?.forwardPE?.raw ?? ks?.forwardPE?.raw ?? null;
-      trl = det?.trailingPE?.raw ?? ks?.trailingPE?.raw ?? null;
-    } catch {
-      // leave null, fall through to scrape
+    // Try SSGA first — the issuer's own page is the most reliable source
+    // and is not blocked from Vercel/AWS IPs.
+    const ssga = await fetchSsgaSpyPE();
+    if (ssga) {
+      if (ssga.forwardPE != null) fwd = ssga.forwardPE;
+      if (ssga.trailingPE != null) trl = ssga.trailingPE;
     }
 
+    // Yahoo as a secondary source for anything SSGA didn't return.
     if (fwd == null || trl == null) {
-      const scraped = await scrapeStockAnalysisPE("spy");
-      if (scraped) {
-        if (fwd == null && scraped.forwardPE != null) fwd = scraped.forwardPE;
-        if (trl == null && scraped.trailingPE != null) trl = scraped.trailingPE;
-        peSourceUrl = spyStockAnalysisUrl;
-        peSourceLabel = "stockanalysis.com SPY";
+      try {
+        const summary = await yahooQuoteSummary(
+          "SPY",
+          "summaryDetail,defaultKeyStatistics"
+        );
+        const det = summary?.summaryDetail;
+        const ks = summary?.defaultKeyStatistics;
+        const yFwd = det?.forwardPE?.raw ?? ks?.forwardPE?.raw ?? null;
+        const yTrl = det?.trailingPE?.raw ?? ks?.trailingPE?.raw ?? null;
+        if (fwd == null && yFwd != null) {
+          fwd = yFwd;
+          peSourceUrl = spyKeyStatsUrl;
+          peSourceLabel = "Yahoo Finance SPY";
+        }
+        if (trl == null && yTrl != null) {
+          trl = yTrl;
+          peSourceUrl = spyKeyStatsUrl;
+          peSourceLabel = "Yahoo Finance SPY";
+        }
+      } catch {
+        // leave null, tile falls back to Stale
       }
     }
 
@@ -795,8 +855,8 @@ export async function fetchForwardLookingData(): Promise<ForwardLookingData> {
     "All VIX sources returned no data."
   );
   let moveWeek: ForwardPoint = missing(
-    "https://stooq.com/q/?s=%5Emove",
-    "Stooq ^MOVE / Yahoo ^MOVE",
+    "https://www.cnbc.com/quotes/.MOVE",
+    "CNBC .MOVE / Stooq ^MOVE / Yahoo ^MOVE",
     "All MOVE sources returned no data."
   );
 
@@ -837,30 +897,46 @@ export async function fetchForwardLookingData(): Promise<ForwardLookingData> {
     }
   }
 
-  // MOVE
+  // MOVE — CNBC primary (inlines current + 5D return), Stooq/Yahoo as
+  // remote possibilities (both currently blocked for most server IPs).
   {
-    let rows: DailyRow[] | null = null;
-    let sourceLabel = "";
-    let sourceUrl = "";
+    const cnbc = await fetchCnbcQuote(".MOVE");
+    if (cnbc && cnbc.last != null) {
+      moveWeek = {
+        value: parseFloat(cnbc.last.toFixed(2)),
+        source: "https://www.cnbc.com/quotes/.MOVE",
+        sourceLabel: "CNBC .MOVE",
+        asOf: cnbc.asOf,
+        previous:
+          cnbc.prior5d != null ? parseFloat(cnbc.prior5d.toFixed(2)) : null,
+        note: `ICE BofA MOVE index latest close with 5-trading-day prior from CNBC's inlined returnsData. Latest close: ${cnbc.asOf}.`,
+        status: fredStatusFromDate(cnbc.asOf),
+      };
+    } else {
+      // Fallback chain if CNBC ever changes markup or blocks us.
+      let rows: DailyRow[] | null = null;
+      let sourceLabel = "";
+      let sourceUrl = "";
 
-    const stooq = await fetchStooqDaily("^move");
-    if (stooq && stooq.length >= 2) {
-      rows = stooq;
-      sourceLabel = "Stooq ^MOVE";
-      sourceUrl = "https://stooq.com/q/?s=%5Emove";
-    }
-    if (!rows) {
-      type Raw = YahooChartResult & { timestamp?: number[] };
-      const res = (await yahooChart("^MOVE", "1mo")) as Raw | null;
-      const built = yahooChartToRows(res);
-      if (built) {
-        rows = built;
-        sourceLabel = "Yahoo Finance ^MOVE";
-        sourceUrl = "https://finance.yahoo.com/quote/%5EMOVE";
+      const stooq = await fetchStooqDaily("^move");
+      if (stooq && stooq.length >= 2) {
+        rows = stooq;
+        sourceLabel = "Stooq ^MOVE";
+        sourceUrl = "https://stooq.com/q/?s=%5Emove";
       }
-    }
-    if (rows && rows.length >= 2) {
-      moveWeek = volPointFromRows(rows, sourceUrl, sourceLabel, "MOVE");
+      if (!rows) {
+        type Raw = YahooChartResult & { timestamp?: number[] };
+        const res = (await yahooChart("^MOVE", "1mo")) as Raw | null;
+        const built = yahooChartToRows(res);
+        if (built) {
+          rows = built;
+          sourceLabel = "Yahoo Finance ^MOVE";
+          sourceUrl = "https://finance.yahoo.com/quote/%5EMOVE";
+        }
+      }
+      if (rows && rows.length >= 2) {
+        moveWeek = volPointFromRows(rows, sourceUrl, sourceLabel, "MOVE");
+      }
     }
   }
 
