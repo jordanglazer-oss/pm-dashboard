@@ -135,6 +135,96 @@ function SaveableSelect({
   );
 }
 
+/** Collapsible multi-line textarea with save-on-blur. Used for pasting
+ *  strategist daily reports (Newton, Lee). The textarea auto-grows to fit
+ *  its content and collapses to a single "Paste…" placeholder when empty. */
+function SaveableTextarea({
+  savedValue,
+  onSave,
+  placeholder = "Paste report text here…",
+  label,
+}: {
+  savedValue: string;
+  onSave: (v: string) => void;
+  placeholder?: string;
+  label: string;
+}) {
+  const [text, setText] = React.useState(savedValue);
+  const [open, setOpen] = React.useState(!!savedValue);
+  const isDirty = text !== savedValue;
+
+  const prevSaved = React.useRef(savedValue);
+  React.useEffect(() => {
+    if (prevSaved.current !== savedValue) {
+      setText(savedValue);
+      prevSaved.current = savedValue;
+      if (savedValue) setOpen(true);
+    }
+  }, [savedValue]);
+
+  function handleSave() {
+    if (isDirty) {
+      onSave(text);
+      prevSaved.current = text;
+    }
+  }
+
+  if (!open) {
+    return (
+      <button
+        onClick={() => setOpen(true)}
+        className="w-full rounded-xl border border-dashed border-slate-200 bg-slate-50 px-3 py-2.5 text-left text-sm text-slate-400 hover:bg-white hover:border-slate-300 transition-all"
+      >
+        + Paste {label} report
+      </button>
+    );
+  }
+
+  const charCount = text.length;
+  const wordCount = text.trim() ? text.trim().split(/\s+/).length : 0;
+
+  return (
+    <div className="relative">
+      <textarea
+        value={text}
+        onChange={(e) => setText(e.target.value)}
+        onBlur={handleSave}
+        placeholder={placeholder}
+        rows={4}
+        className="w-full rounded-xl border border-slate-200 bg-slate-50 px-3 py-2.5 text-sm leading-relaxed focus:bg-white focus:border-blue-300 focus:ring-1 focus:ring-blue-200 transition-all outline-none resize-y min-h-[80px] max-h-[300px]"
+      />
+      <div className="flex items-center justify-between mt-1">
+        <span className="text-[10px] text-slate-400">
+          {wordCount > 0 ? `${wordCount} words` : "empty"}
+        </span>
+        <div className="flex items-center gap-2">
+          {isDirty && (
+            <button
+              onClick={handleSave}
+              className="rounded-full bg-blue-600 px-2 py-0.5 text-[10px] font-bold text-white hover:bg-blue-700 transition-all"
+            >
+              Save
+            </button>
+          )}
+          {text && (
+            <button
+              onClick={() => {
+                setText("");
+                onSave("");
+                setOpen(false);
+              }}
+              className="text-[10px] text-slate-400 hover:text-red-500 transition-colors"
+              title="Clear report"
+            >
+              Clear
+            </button>
+          )}
+        </div>
+      </div>
+    </div>
+  );
+}
+
 /** Compact tile for a single forward-looking data point with source link.
  *  Shows value, a week-over-week delta if `previous` is set, the source
  *  badge that opens the underlying page in a new tab, and a methodology
@@ -180,7 +270,7 @@ function ForwardTile({
         // and prior are themselves percentages of the index.
         const d = cur - prev;
         deltaPositive = d >= 0;
-        deltaStr = `${d >= 0 ? "+" : ""}${d.toFixed(1)}pp ${deltaPeriod}`;
+        deltaStr = `${d >= 0 ? "+" : ""}${d.toFixed(1)}% ${deltaPeriod}`;
       }
     }
   }
@@ -726,6 +816,54 @@ export function MorningBrief({
                 attachments={attachments}
                 onAdd={addAttachment}
                 onRemove={removeAttachment}
+              />
+            </div>
+          </div>
+        </div>
+
+        {/* ── Strategist Notes (Fundstrat) ── */}
+        <div className="border-t border-slate-100 pt-5 mb-4">
+          <div className="flex items-center gap-3 mb-3">
+            <h4 className="text-xs font-semibold text-slate-400 uppercase tracking-widest">Strategist Notes</h4>
+            <span className="text-[10px] text-slate-400">Copy-paste daily reports — Claude will incorporate key takeaways into the brief</span>
+          </div>
+          <div className="grid gap-4 md:grid-cols-2">
+            <div>
+              <div className="flex items-center gap-1.5 mb-1">
+                <label className="text-xs font-semibold text-slate-400 uppercase tracking-wider">Mark Newton</label>
+                <span className="text-[10px] text-slate-400">(Technical Strategy)</span>
+              </div>
+              <SaveableTextarea
+                savedValue={marketData.strategistNotes?.newton ?? ""}
+                onSave={(v) =>
+                  onUpdateMarketData({
+                    strategistNotes: {
+                      ...marketData.strategistNotes,
+                      newton: v || undefined,
+                    },
+                  })
+                }
+                label="Newton"
+                placeholder="Paste Mark Newton's daily technical strategy report here…"
+              />
+            </div>
+            <div>
+              <div className="flex items-center gap-1.5 mb-1">
+                <label className="text-xs font-semibold text-slate-400 uppercase tracking-wider">Tom Lee</label>
+                <span className="text-[10px] text-slate-400">(Head of Research)</span>
+              </div>
+              <SaveableTextarea
+                savedValue={marketData.strategistNotes?.lee ?? ""}
+                onSave={(v) =>
+                  onUpdateMarketData({
+                    strategistNotes: {
+                      ...marketData.strategistNotes,
+                      lee: v || undefined,
+                    },
+                  })
+                }
+                label="Tom Lee"
+                placeholder="Paste Tom Lee's daily strategy report here…"
               />
             </div>
           </div>
