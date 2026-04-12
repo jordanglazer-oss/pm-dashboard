@@ -269,6 +269,13 @@ export type MarketData = {
   aaiiNeutral: number;
   aaiiBear: number;
   sp500SectorWeights?: Record<string, number>; // Live S&P 500 sector weights from SPY
+  // ── Strategist notes (copy-pasted daily reports) ──
+  // These get injected into the morning brief prompt so Claude can
+  // incorporate Fundstrat/external research when forming its view.
+  strategistNotes?: {
+    newton?: string; // Mark Newton (Fundstrat Technical Strategy)
+    lee?: string; // Tom Lee (Fundstrat Head of Research)
+  };
   // ── Deprecated manual fields ──
   // These were superseded by ForwardLookingData (auto-fetched). They remain
   // optional so cached briefs in Redis (pm:brief) decode without errors.

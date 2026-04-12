@@ -585,6 +585,25 @@ Hedge Timing Score: ${computeHedgeScore(fwdVix ?? 20, marketData.termStructure ?
 
 Live Sector ETF Performance (from Yahoo Finance — use this for sector rotation analysis):
 ${sectorPerformance}
+${(() => {
+  const notes = marketData.strategistNotes;
+  if (!notes) return "";
+  const blocks: string[] = [];
+  if (notes.newton?.trim()) {
+    blocks.push(`--- Mark Newton (Fundstrat Technical Strategy) Daily Report ---
+${notes.newton.trim()}`);
+  }
+  if (notes.lee?.trim()) {
+    blocks.push(`--- Tom Lee (Fundstrat Head of Research) Daily Report ---
+${notes.lee.trim()}`);
+  }
+  if (blocks.length === 0) return "";
+  return `
+
+STRATEGIST NOTES — The PM follows these two Fundstrat strategists closely. Incorporate their key takeaways where they support or contradict the quantitative data above. Attribute insights to the strategist by name (e.g. "Newton's technical work flags…" or "Lee points to…"). Do NOT regurgitate the full text — distill the 2-3 most actionable points from each and weave them into the relevant analysis sections (compositeAnalysis, contrarianAnalysis, forwardView, hedgingAnalysis, etc.). If a strategist's view conflicts with the data, note the tension.
+
+${blocks.join("\n\n")}`;
+})()}
 
 Current Portfolio Holdings: ${holdingsSummary}`;
 
