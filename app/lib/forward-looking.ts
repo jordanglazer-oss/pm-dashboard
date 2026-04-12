@@ -141,6 +141,8 @@ export type ForwardLookingData = {
   aaiiBear: ForwardPoint; // AAII bearish %
   spOscillator: ForwardPoint; // S&P Oscillator manual entry, history is whatever
                               // the PM has typed in over time (Redis-backed)
+  putCallRatio: ForwardPoint; // Total Put/Call Ratio (CBOE), manual entry with
+                               // Redis-backed history for sparkline + trend
   fredEnabled: boolean;
   fetchedAt: string;
 };
@@ -1060,6 +1062,68 @@ async function loadOscillatorHistory(): Promise<SparkPoint[]> {
   }
 }
 
+// ── Put/Call Ratio history (Redis-backed manual entry log) ───────────────
+// Same pattern as the oscillator — the PM types in the CBOE total put/call
+// ratio daily, and we log each value so the sparkline tile and the brief
+// prompt get trajectory context instead of just a spot reading.
+const PUTCALL_HISTORY_KEY = "pm:putcall-history";
+const PUTCALL_HISTORY_MAX_DAYS = 180;
+
+export async function appendPutCallEntry(value: number): Promise<void> {
+  if (typeof value !== "number" || isNaN(value)) return;
+  try {
+    const redis = await getRedis();
+    const raw = await redis.get(PUTCALL_HISTORY_KEY);
+    const today = new Date().toISOString().slice(0, 10);
+    let history: SparkPoint[] = [];
+    if (raw) {
+      try {
+        const parsed = JSON.parse(raw);
+        if (Array.isArray(parsed)) {
+          history = parsed.filter(
+            (x): x is SparkPoint =>
+              x && typeof x.date === "string" && typeof x.value === "number"
+          );
+        }
+      } catch {
+        history = [];
+      }
+    }
+    const existingIdx = history.findIndex((s) => s.date === today);
+    if (existingIdx >= 0) {
+      if (history[existingIdx].value === value) return;
+      history[existingIdx] = { date: today, value };
+    } else {
+      history.push({ date: today, value });
+    }
+    history.sort((a, b) => (a.date < b.date ? -1 : 1));
+    const cutoffMs = Date.now() - PUTCALL_HISTORY_MAX_DAYS * 24 * 60 * 60 * 1000;
+    history = history.filter(
+      (s) => new Date(s.date + "T00:00:00Z").getTime() >= cutoffMs
+    );
+    await redis.set(PUTCALL_HISTORY_KEY, JSON.stringify(history));
+  } catch (e) {
+    console.error("Put/Call history write failed:", e);
+  }
+}
+
+async function loadPutCallHistory(): Promise<SparkPoint[]> {
+  try {
+    const redis = await getRedis();
+    const raw = await redis.get(PUTCALL_HISTORY_KEY);
+    if (!raw) return [];
+    const parsed = JSON.parse(raw);
+    if (!Array.isArray(parsed)) return [];
+    return parsed.filter(
+      (x): x is SparkPoint =>
+        x && typeof x.date === "string" && typeof x.value === "number"
+    );
+  } catch (e) {
+    console.error("Put/Call history read failed:", e);
+    return [];
+  }
+}
+
 // ── Strategist notes history (rolling 7-day log) ────────────────────────
 // When the PM pastes a daily report from Newton or Lee, each save appends
 // to a dated log in Redis. The brief prompt includes the trailing week of
@@ -1864,11 +1928,18 @@ export async function fetchForwardLookingData(): Promise<ForwardLookingData> {
     "S&P Oscillator (manual entry)",
     "No oscillator history yet — type a value into the brief form to start the log."
   );
+  const putCallUrl = "https://www.cboe.com/us/options/market_statistics/daily/";
+  let putCallRatio: ForwardPoint = missing(
+    putCallUrl,
+    "Total Put/Call Ratio (manual entry)",
+    "No put/call history yet — type a value into the brief form to start the log."
+  );
 
-  const [cnnRes, aaiiRes, oscHistory] = await Promise.all([
+  const [cnnRes, aaiiRes, oscHistory, pcHistory] = await Promise.all([
     fetchCnnFearGreed(),
     fetchAaiiSentiment(),
     loadOscillatorHistory(),
+    loadPutCallHistory(),
   ]);
 
   if (cnnRes) {
@@ -1931,18 +2002,12 @@ export async function fetchForwardLookingData(): Promise<ForwardLookingData> {
     const latest = oscHistory[oscHistory.length - 1];
     const previous =
       oscHistory.length >= 2 ? oscHistory[oscHistory.length - 2].value : null;
-    // Oscillator history is whatever the PM saved — typically a few entries
-    // per week, not strictly daily. Treat each entry as ~1 day for trend
-    // purposes; only attach trend stats if we have at least 3 entries (2 is
-    // enough for delta1w but not enough for a meaningful range).
     const oscTrend =
       oscHistory.length >= 3
         ? computeTrendStats(oscHistory, {
             lag1w: Math.min(5, oscHistory.length - 1),
             lag1m: Math.min(21, oscHistory.length - 1),
             lag3m: Math.min(63, oscHistory.length - 1),
-            // Oscillator typically lives in [-6, +6]; a 1m move >4 is huge,
-            // <1 is essentially flat.
             fastThreshold: 4,
             slowThreshold: 1,
           })
@@ -1957,6 +2022,36 @@ export async function fetchForwardLookingData(): Promise<ForwardLookingData> {
       status: "live",
       history: oscHistory,
       ...(oscTrend ? { trend: oscTrend } : {}),
+    };
+  }
+
+  if (pcHistory.length > 0) {
+    const latest = pcHistory[pcHistory.length - 1];
+    const previous =
+      pcHistory.length >= 2 ? pcHistory[pcHistory.length - 2].value : null;
+    // Put/Call ratio entries mirror oscillator — PM's saved values, roughly
+    // daily. The ratio typically sits between 0.6 and 1.4; a 1m move >0.25
+    // is significant, <0.05 is flat.
+    const pcTrend =
+      pcHistory.length >= 3
+        ? computeTrendStats(pcHistory, {
+            lag1w: Math.min(5, pcHistory.length - 1),
+            lag1m: Math.min(21, pcHistory.length - 1),
+            lag3m: Math.min(63, pcHistory.length - 1),
+            fastThreshold: 0.25,
+            slowThreshold: 0.05,
+          })
+        : null;
+    putCallRatio = {
+      value: latest.value,
+      source: putCallUrl,
+      sourceLabel: "Total Put/Call Ratio (manual entry)",
+      asOf: latest.date,
+      previous,
+      note: `CBOE Total Put/Call Ratio. Manually entered — the sparkline shows the last ${PUTCALL_HISTORY_MAX_DAYS} days of values you've saved.`,
+      status: "live",
+      history: pcHistory,
+      ...(pcTrend ? { trend: pcTrend } : {}),
     };
   }
 
@@ -1985,6 +2080,7 @@ export async function fetchForwardLookingData(): Promise<ForwardLookingData> {
     aaiiNeutral,
     aaiiBear,
     spOscillator,
+    putCallRatio,
     fredEnabled,
     fetchedAt: asOf,
   };

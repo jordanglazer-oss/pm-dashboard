@@ -3,6 +3,7 @@ import { NextRequest, NextResponse } from "next/server";
 import { defaultMarketData } from "@/app/lib/defaults";
 import {
   appendOscillatorEntry,
+  appendPutCallEntry,
   appendStrategistNote,
 } from "@/app/lib/forward-looking";
 
@@ -43,6 +44,16 @@ export async function PUT(req: NextRequest) {
       // Fire-and-forget — failure to log shouldn't block the save.
       appendOscillatorEntry(updates.spOscillator).catch((err) =>
         console.error("Oscillator history append failed:", err)
+      );
+    }
+
+    // If the PM updated the Put/Call Ratio, log it to rolling history.
+    if (
+      typeof updates?.putCall === "number" &&
+      !isNaN(updates.putCall)
+    ) {
+      appendPutCallEntry(updates.putCall).catch((err) =>
+        console.error("Put/Call history append failed:", err)
       );
     }
 

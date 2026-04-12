@@ -344,6 +344,7 @@ export type ForwardLookingBundle = {
   aaiiNeutral?: ForwardPointBundle;
   aaiiBear?: ForwardPointBundle;
   spOscillator?: ForwardPointBundle;
+  putCallRatio?: ForwardPointBundle;
   yield10y: ForwardPointBundle;
   yield2y: ForwardPointBundle;
   yield3m: ForwardPointBundle;
