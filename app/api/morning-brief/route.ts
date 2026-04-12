@@ -71,7 +71,7 @@ const OSCILLATOR_ATTACHMENT_CACHE_KEY = "pm:oscillator-screenshot-analysis";
 
 const BRIEF_PROMPT = `You are a senior portfolio strategist generating a daily morning brief for a portfolio management team. Your audience is professional portfolio managers who need actionable, institutional-quality market intelligence.
 
-Given current market data indicators, a pre-classified regime, forward-looking data (yield curve, forward P/E, SPX YTD, credit and vol week-over-week deltas), portfolio holdings, and any attached research screenshots, generate a comprehensive morning brief. When screenshots are provided, analyze them carefully and incorporate their insights — especially fund flow data, positioning data, and liquidity metrics — directly into your analysis. Be specific about what the screenshots show.
+Given current market data indicators, a pre-classified regime, forward-looking data (yield curve, forward P/E, SPX YTD, credit and vol week-over-week deltas), portfolio holdings, strategist research, and any attached screenshots, generate a comprehensive morning brief. When screenshots are provided (JPM flows, oscillator charts, etc.), incorporate their data points where relevant — but weigh them equally with all other inputs. Screenshots are supplementary context, not the primary driver of the brief.
 
 Be direct, opinionated, and specific. Avoid generic platitudes. Write like a seasoned PM talking to their team.
 
@@ -102,7 +102,7 @@ Respond ONLY with valid JSON matching this exact structure (fields are intention
   "volatilityAnalysis": "2-3 sentences on the volatility regime, term structure, VIX week-over-week direction, and what it means for hedging and position sizing.",
   "breadthAnalysis": "2-3 sentences on market breadth and participation: S&P 500 and Nasdaq DMA participation rates, NYSE A/D line direction, and new highs vs new lows. Focus on market structure health — is the rally/selloff broad-based or narrow?",
   "contrarianAnalysis": "2-3 sentences providing the contrarian take. ALL four indicators (S&P Oscillator, Put/Call ratio, Fear & Greed, AAII survey) are interpreted INVERSELY: oversold/fearful = BULLISH opportunity, overbought/greedy = BEARISH warning. Provide an overall contrarian assessment and what it means for positioning.",
-  "flowsAnalysis": "2-3 sentences on fund flows, positioning, and whether the market is washed out or still has room to deteriorate. If JPM Flows & Liquidity screenshots are attached, reference specific data points from them.",
+  "flowsAnalysis": "2-3 sentences on fund flows and positioning. If JPM screenshots are attached, reference 1-2 key data points. If NO screenshots are attached and the Equity Flows field is a generic label (e.g. 'Mixed'), keep this section brief and focus on what the other indicators imply about positioning instead of speculating about flows. Do NOT over-weight flows relative to credit, vol, and breadth.",
   "hedgingAnalysis": "2-3 sentences on whether current conditions favor adding hedges (focused on cost efficiency: hedge when VIX is low and puts are cheap, not when expensive). Consider put cost environment, VIX context, and whether sentiment suggests complacency (cheap protection) or fear (expensive protection).",
   "sectorRotation": {
     "summary": "1-2 sentence overview of which sectors are leading vs lagging based on the LIVE sector ETF performance data provided.",
@@ -641,14 +641,14 @@ ${(() => {
   if (blocks.length === 0) return "";
   return `
 
-STRATEGIST NOTES — The PM follows these two Fundstrat strategists closely. Each block below contains the trailing week of daily notes labeled by date (most recent = TODAY).
+STRATEGIST NOTES — The PM follows these Fundstrat strategists. Notes below contain the trailing week where available. Note: Tom Lee primarily communicates via video, so his written notes will often be absent — that is normal, not an error. When Lee notes ARE present, treat them like Newton's. When they are absent, rely on his Focus Areas (in the FUNDSTRAT RESEARCH CONTEXT section) as background context instead.
 
 Key instructions:
 1. Track THEMES ACROSS DAYS — if a strategist keeps mentioning the same level, catalyst, or risk multiple sessions in a row, that consistency matters more than a one-off mention. Call it out (e.g. "Newton has flagged 5,200 support three consecutive sessions").
-2. Note SHIFTS in stance — if a strategist changes their view from one day to the next, that transition is significant. Highlight it (e.g. "Lee moved from cautious to outright bullish mid-week").
+2. Note SHIFTS in stance — if a strategist changes their view from one day to the next, that transition is significant.
 3. Items mentioned one day but NOT the next may still be relevant — do not discard them just because the latest note omits them. Use judgment.
-4. Attribute insights by name (e.g. "Newton's technical work flags…" or "Lee points to…").
-5. Do NOT regurgitate full text — distill the 2-3 most actionable points from each and weave them into compositeAnalysis, contrarianAnalysis, forwardView, hedgingAnalysis, etc.
+4. Attribute insights by name (e.g. "Newton's technical work flags…").
+5. Do NOT regurgitate full text — distill the 2-3 most actionable points and weave them into compositeAnalysis, contrarianAnalysis, forwardView, hedgingAnalysis, etc.
 6. If a strategist's view conflicts with the quantitative data, note the tension explicitly.
 
 ${blocks.join("\n\n")}`;
@@ -682,12 +682,14 @@ ${(() => {
     blocks.push(`Newton's Sector Views: ${parts.join(" | ")}\nUse these to inform sectorRotation analysis — if today's sector ETF performance aligns with Newton's OW/UW views, reinforce the signal; if it contradicts, note the tension.`);
   }
 
-  // Lee focus areas
+  // Lee focus areas — background context the PM wants Claude to internalize.
+  // These don't need to be explicitly mentioned every day, but should inform
+  // the analysis when they naturally intersect with today's data.
   const leeAreas = (research.leeFocusAreas ?? []).map((a) => a.label);
   if (leeAreas.length > 0) {
     blocks.push(
-      `Tom Lee's Current Focus Areas: ${leeAreas.join(", ")}\n` +
-      `These are the themes Lee is currently emphasizing. Reference them when they intersect with today's data or sector performance — e.g. if Lee is focused on "AI infrastructure" and XLK is leading, connect the dots.`
+      `Tom Lee's Current Focus Areas (background context): ${leeAreas.join(", ")}\n` +
+      `These are the themes Lee is currently emphasizing. You do NOT need to mention these every day — only surface them when they naturally intersect with today's data or sector performance. They serve as background lens, not a checklist. Lee rarely publishes written notes, so these focus areas are often the primary signal of his current view.`
     );
   }
 
@@ -755,8 +757,11 @@ Current Portfolio Holdings: ${holdingsSummary}`;
       }
     }
 
+    // Append screenshot context BEFORE the main text so it doesn't get
+    // recency-bias advantage over the quantitative data. The textContent
+    // already ends with portfolio holdings — screenshots are supplementary.
     const contentBlocks: Anthropic.Messages.ContentBlockParam[] = [
-      { type: "text", text: textContent + flowsContext + oscContext },
+      { type: "text", text: flowsContext + oscContext + "\n\n" + textContent },
     ];
 
     const message = await client.messages.create({
