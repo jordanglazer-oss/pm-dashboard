@@ -184,6 +184,8 @@ export type ResearchState = {
   // Newton's sector overweight/underweight views. Pre-populated with all
   // 11 GICS sectors defaulting to "neutral"; the PM toggles as needed.
   newtonSectors?: SectorViewEntry[];
+  // Tom Lee's sector overweight/underweight views. Same format as Newton's.
+  leeSectors?: SectorViewEntry[];
   // Tom Lee's areas to focus on — free-text labels the PM types in because
   // Lee's themes often aren't standard GICS sectors (e.g. "AI beneficiaries",
   // "GARP names", "epicenter stocks").
@@ -214,5 +216,6 @@ export const defaultResearch: ResearchState = {
   generalNotes: "",
   attachments: [],
   newtonSectors: GICS_SECTORS.map((s) => ({ sector: s, view: "neutral" as SectorView })),
+  leeSectors: GICS_SECTORS.map((s) => ({ sector: s, view: "neutral" as SectorView })),
   leeFocusAreas: [],
 };

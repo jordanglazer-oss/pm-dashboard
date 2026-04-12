@@ -649,6 +649,44 @@ export default function ResearchPage() {
               })}
             </div>
           </div>
+
+          {/* Lee sector views — same toggle pattern as Newton */}
+          <div className="mt-4 border-t border-slate-100 pt-4">
+            <div className="flex items-center gap-3 mb-3">
+              <h4 className="text-sm font-bold text-amber-700">Lee&apos;s Sector Views</h4>
+              <span className="text-[10px] text-slate-400">Click to toggle OW / N / UW</span>
+            </div>
+            <div className="flex flex-wrap gap-2">
+              {(state.leeSectors ?? GICS_SECTORS.map((s) => ({ sector: s, view: "neutral" as SectorView }))).map((sv) => {
+                const cycle = () => {
+                  const next: SectorView =
+                    sv.view === "neutral" ? "overweight" : sv.view === "overweight" ? "underweight" : "neutral";
+                  const updated = (state.leeSectors ?? GICS_SECTORS.map((s) => ({ sector: s, view: "neutral" as SectorView }))).map((e) =>
+                    e.sector === sv.sector ? { ...e, view: next } : e
+                  );
+                  save({ ...state, leeSectors: updated });
+                };
+                const bg =
+                  sv.view === "overweight"
+                    ? "bg-amber-100 text-amber-800 border-amber-300"
+                    : sv.view === "underweight"
+                    ? "bg-red-100 text-red-800 border-red-300"
+                    : "bg-slate-100 text-slate-500 border-slate-200";
+                const badge =
+                  sv.view === "overweight" ? "OW" : sv.view === "underweight" ? "UW" : "N";
+                return (
+                  <button
+                    key={sv.sector}
+                    onClick={cycle}
+                    className={`rounded-full border px-3 py-1 text-xs font-semibold transition-all hover:shadow-sm select-none ${bg}`}
+                    title={`${sv.sector}: ${sv.view} — click to cycle`}
+                  >
+                    {sv.sector} <span className="font-bold ml-0.5">{badge}</span>
+                  </button>
+                );
+              })}
+            </div>
+          </div>
         </section>
 
         {/* ── Fundstrat Ideas ── */}
