@@ -10,6 +10,8 @@ import {
   type ForwardPoint,
   type StrategistHistory,
 } from "@/app/lib/forward-looking";
+import type { ResearchState } from "@/app/lib/defaults";
+import { defaultResearch } from "@/app/lib/defaults";
 
 const client = new Anthropic();
 
@@ -388,10 +390,21 @@ export async function POST(request: NextRequest) {
           .join("\n")
       : "No holdings provided";
 
-    // Fetch live sector ETF data, forward-looking data, and strategist
-    // history in parallel. Each is wrapped in try/catch so a single failure
-    // never blocks the whole brief — we just degrade that section.
-    const [sectorPerformance, forwardData, strategistHistory] =
+    // Fetch live sector ETF data, forward-looking data, strategist history,
+    // and research state in parallel. Each is wrapped in try/catch so a
+    // single failure never blocks the whole brief — we just degrade.
+    const loadResearch = async (): Promise<ResearchState> => {
+      try {
+        const redis = await getRedis();
+        const raw = await redis.get("pm:research");
+        if (!raw) return defaultResearch;
+        return { ...defaultResearch, ...JSON.parse(raw) };
+      } catch {
+        return defaultResearch;
+      }
+    };
+
+    const [sectorPerformance, forwardData, strategistHistory, research] =
       await Promise.all([
         fetchSectorPerformance(),
         fetchForwardLookingData().catch((e) => {
@@ -402,6 +415,7 @@ export async function POST(request: NextRequest) {
           console.error("Strategist history load failed:", e);
           return { newton: [], lee: [] } as StrategistHistory;
         }),
+        loadResearch(),
       ]);
 
     const fmt = (p: ForwardPoint | undefined, unit = ""): string => {
@@ -637,6 +651,50 @@ Key instructions:
 5. Do NOT regurgitate full text — distill the 2-3 most actionable points from each and weave them into compositeAnalysis, contrarianAnalysis, forwardView, hedgingAnalysis, etc.
 6. If a strategist's view conflicts with the quantitative data, note the tension explicitly.
 
+${blocks.join("\n\n")}`;
+})()}
+
+${(() => {
+  // ── Fundstrat research context ──
+  // Pull in Newton's uptick list, sector views, and Lee's focus areas
+  // from the Research tab. The uptick tickers are listed so Claude can
+  // cross-reference them with Newton's daily report — if a stock Newton
+  // mentions today also appears on his uptick list, it's a double signal.
+  const blocks: string[] = [];
+
+  // Newton uptick tickers
+  const uptickTickers = (research.newtonUpticks ?? []).map((u) => u.ticker);
+  if (uptickTickers.length > 0) {
+    blocks.push(
+      `Newton's Active Uptick List (${uptickTickers.length} names): ${uptickTickers.join(", ")}\n` +
+      `IMPORTANT: When Newton mentions any of these tickers in his daily report above, flag it explicitly — a stock on the uptick list that is also called out in the daily note is a DOUBLE technical signal and should be highlighted in compositeAnalysis or forwardActions.`
+    );
+  }
+
+  // Newton sector views
+  const sectorViews = research.newtonSectors ?? [];
+  const ow = sectorViews.filter((s) => s.view === "overweight").map((s) => s.sector);
+  const uw = sectorViews.filter((s) => s.view === "underweight").map((s) => s.sector);
+  if (ow.length > 0 || uw.length > 0) {
+    const parts: string[] = [];
+    if (ow.length > 0) parts.push(`Overweight: ${ow.join(", ")}`);
+    if (uw.length > 0) parts.push(`Underweight: ${uw.join(", ")}`);
+    blocks.push(`Newton's Sector Views: ${parts.join(" | ")}\nUse these to inform sectorRotation analysis — if today's sector ETF performance aligns with Newton's OW/UW views, reinforce the signal; if it contradicts, note the tension.`);
+  }
+
+  // Lee focus areas
+  const leeAreas = (research.leeFocusAreas ?? []).map((a) => a.label);
+  if (leeAreas.length > 0) {
+    blocks.push(
+      `Tom Lee's Current Focus Areas: ${leeAreas.join(", ")}\n` +
+      `These are the themes Lee is currently emphasizing. Reference them when they intersect with today's data or sector performance — e.g. if Lee is focused on "AI infrastructure" and XLK is leading, connect the dots.`
+    );
+  }
+
+  if (blocks.length === 0) return "";
+  return `
+
+FUNDSTRAT RESEARCH CONTEXT (from the PM's Research tab — these persist across days and only change when the PM updates them):
 ${blocks.join("\n\n")}`;
 })()}
 

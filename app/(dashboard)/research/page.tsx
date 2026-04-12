@@ -1,8 +1,8 @@
 "use client";
 
 import React, { useState, useEffect, useCallback, useRef } from "react";
-import type { ResearchState, UptickEntry, IdeaEntry, RBCEntry } from "@/app/lib/defaults";
-import { defaultResearch } from "@/app/lib/defaults";
+import type { ResearchState, UptickEntry, IdeaEntry, RBCEntry, SectorViewEntry, SectorView, LeeFocusArea } from "@/app/lib/defaults";
+import { defaultResearch, GICS_SECTORS } from "@/app/lib/defaults";
 import { ImageUpload, type BriefAttachment } from "@/app/components/ImageUpload";
 import { useStocks } from "@/app/lib/StockContext";
 import type { Stock, ScoreKey } from "@/app/lib/types";
@@ -611,6 +611,44 @@ export default function ResearchPage() {
           </div>
 
           <UptickAddForm onAdd={addUptick} />
+
+          {/* Newton sector views — compact inline toggles */}
+          <div className="mt-5 border-t border-slate-100 pt-4">
+            <div className="flex items-center gap-3 mb-3">
+              <h4 className="text-sm font-bold text-teal-700">Newton&apos;s Sector Views</h4>
+              <span className="text-[10px] text-slate-400">Click to toggle OW / N / UW</span>
+            </div>
+            <div className="flex flex-wrap gap-2">
+              {(state.newtonSectors ?? GICS_SECTORS.map((s) => ({ sector: s, view: "neutral" as SectorView }))).map((sv) => {
+                const cycle = () => {
+                  const next: SectorView =
+                    sv.view === "neutral" ? "overweight" : sv.view === "overweight" ? "underweight" : "neutral";
+                  const updated = (state.newtonSectors ?? GICS_SECTORS.map((s) => ({ sector: s, view: "neutral" as SectorView }))).map((e) =>
+                    e.sector === sv.sector ? { ...e, view: next } : e
+                  );
+                  save({ ...state, newtonSectors: updated });
+                };
+                const bg =
+                  sv.view === "overweight"
+                    ? "bg-emerald-100 text-emerald-800 border-emerald-300"
+                    : sv.view === "underweight"
+                    ? "bg-red-100 text-red-800 border-red-300"
+                    : "bg-slate-100 text-slate-500 border-slate-200";
+                const badge =
+                  sv.view === "overweight" ? "OW" : sv.view === "underweight" ? "UW" : "N";
+                return (
+                  <button
+                    key={sv.sector}
+                    onClick={cycle}
+                    className={`rounded-full border px-3 py-1 text-xs font-semibold transition-all hover:shadow-sm select-none ${bg}`}
+                    title={`${sv.sector}: ${sv.view} — click to cycle`}
+                  >
+                    {sv.sector} <span className="font-bold ml-0.5">{badge}</span>
+                  </button>
+                );
+              })}
+            </div>
+          </div>
         </section>
 
         {/* ── Fundstrat Ideas ── */}
@@ -773,6 +811,66 @@ export default function ResearchPage() {
             <IdeaAddForm onAdd={(e) => addIdea("fundstratBottom", e)} />
           </section>
         </div>
+
+        {/* ── Tom Lee Focus Areas ── */}
+        <section className="rounded-[24px] border border-amber-200 bg-white p-6 shadow-sm">
+          <div className="flex items-center justify-between mb-3">
+            <div>
+              <h3 className="text-lg font-bold text-amber-800">Tom Lee&apos;s Focus Areas</h3>
+              <p className="text-xs text-slate-400">Key themes and areas Lee is emphasizing — type freely, these feed into the morning brief</p>
+            </div>
+            <span className="text-sm text-slate-400">{(state.leeFocusAreas ?? []).length} themes</span>
+          </div>
+          <div className="flex flex-wrap gap-2 mb-3">
+            {(state.leeFocusAreas ?? []).map((area, idx) => (
+              <span
+                key={idx}
+                className="inline-flex items-center gap-1 rounded-full border border-amber-200 bg-amber-50 px-3 py-1 text-sm font-medium text-amber-800"
+              >
+                {area.label}
+                <button
+                  onClick={() => {
+                    const updated = (state.leeFocusAreas ?? []).filter((_, i) => i !== idx);
+                    save({ ...state, leeFocusAreas: updated });
+                  }}
+                  className="ml-0.5 text-amber-400 hover:text-red-500 font-bold transition-colors text-xs"
+                  title="Remove"
+                >
+                  &times;
+                </button>
+              </span>
+            ))}
+            {(state.leeFocusAreas ?? []).length === 0 && (
+              <span className="text-sm text-slate-400 italic">No focus areas added yet</span>
+            )}
+          </div>
+          <form
+            className="flex gap-2"
+            onSubmit={(e) => {
+              e.preventDefault();
+              const input = (e.currentTarget.elements.namedItem("leeArea") as HTMLInputElement);
+              const val = input.value.trim();
+              if (!val) return;
+              save({
+                ...state,
+                leeFocusAreas: [...(state.leeFocusAreas ?? []), { label: val }],
+              });
+              input.value = "";
+            }}
+          >
+            <input
+              name="leeArea"
+              placeholder="e.g. AI infrastructure, GARP names, epicenter stocks…"
+              className="flex-1 rounded-xl border border-slate-200 bg-slate-50 px-3 py-2 text-sm outline-none placeholder:text-slate-400 focus:bg-white focus:border-amber-300 focus:ring-1 focus:ring-amber-200 transition-all"
+            />
+            <button
+              type="submit"
+              className="rounded-xl bg-amber-600 px-4 py-2 text-sm font-semibold text-white hover:bg-amber-700 transition-colors"
+            >
+              Add
+            </button>
+          </form>
+        </section>
 
         {/* ── RBC Canadian Focus List ── */}
         <section className="rounded-[24px] border border-blue-200 bg-white p-6 shadow-sm">

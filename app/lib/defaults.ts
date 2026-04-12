@@ -148,6 +148,32 @@ export type RBCEntry = {
   dateAdded: string;
 };
 
+export type SectorView = "overweight" | "neutral" | "underweight";
+
+export type SectorViewEntry = {
+  sector: string;
+  view: SectorView;
+};
+
+// The 11 GICS sectors pre-populated so the PM only has to toggle views.
+export const GICS_SECTORS = [
+  "Technology",
+  "Health Care",
+  "Financials",
+  "Consumer Discretionary",
+  "Consumer Staples",
+  "Energy",
+  "Utilities",
+  "Industrials",
+  "Materials",
+  "Communication Services",
+  "Real Estate",
+] as const;
+
+export type LeeFocusArea = {
+  label: string; // free-text theme, e.g. "AI infrastructure", "GARP names"
+};
+
 export type ResearchState = {
   newtonUpticks: UptickEntry[];
   fundstratTop: IdeaEntry[];
@@ -155,6 +181,13 @@ export type ResearchState = {
   rbcCanadianFocus: RBCEntry[];
   generalNotes: string;
   attachments?: import("@/app/components/ImageUpload").BriefAttachment[];
+  // Newton's sector overweight/underweight views. Pre-populated with all
+  // 11 GICS sectors defaulting to "neutral"; the PM toggles as needed.
+  newtonSectors?: SectorViewEntry[];
+  // Tom Lee's areas to focus on — free-text labels the PM types in because
+  // Lee's themes often aren't standard GICS sectors (e.g. "AI beneficiaries",
+  // "GARP names", "epicenter stocks").
+  leeFocusAreas?: LeeFocusArea[];
 };
 
 export type UptickEntry = {
@@ -180,4 +213,6 @@ export const defaultResearch: ResearchState = {
   rbcCanadianFocus: [],
   generalNotes: "",
   attachments: [],
+  newtonSectors: GICS_SECTORS.map((s) => ({ sector: s, view: "neutral" as SectorView })),
+  leeFocusAreas: [],
 };
