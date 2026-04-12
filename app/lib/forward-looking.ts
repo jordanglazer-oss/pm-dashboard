@@ -1060,6 +1060,103 @@ async function loadOscillatorHistory(): Promise<SparkPoint[]> {
   }
 }
 
+// ── Strategist notes history (rolling 7-day log) ────────────────────────
+// When the PM pastes a daily report from Newton or Lee, each save appends
+// to a dated log in Redis. The brief prompt includes the trailing week of
+// notes so Claude can see how a strategist's view evolves — e.g. Newton
+// flagging a key level for three consecutive sessions, or Lee shifting
+// from cautious to outright bullish mid-week.
+const STRATEGIST_HISTORY_KEY = "pm:strategist-history";
+const STRATEGIST_HISTORY_MAX_DAYS = 7; // ~1 trading week
+
+export type StrategistEntry = { date: string; text: string };
+export type StrategistHistory = {
+  newton: StrategistEntry[];
+  lee: StrategistEntry[];
+};
+
+export async function appendStrategistNote(
+  strategist: "newton" | "lee",
+  text: string
+): Promise<void> {
+  try {
+    const redis = await getRedis();
+    const raw = await redis.get(STRATEGIST_HISTORY_KEY);
+    let history: StrategistHistory = { newton: [], lee: [] };
+    if (raw) {
+      try {
+        const parsed = JSON.parse(raw);
+        if (parsed && typeof parsed === "object") {
+          history = {
+            newton: Array.isArray(parsed.newton) ? parsed.newton : [],
+            lee: Array.isArray(parsed.lee) ? parsed.lee : [],
+          };
+        }
+      } catch {
+        history = { newton: [], lee: [] };
+      }
+    }
+    const today = new Date().toISOString().slice(0, 10);
+    const entries = history[strategist];
+    const existingIdx = entries.findIndex((e) => e.date === today);
+    const trimmed = text.trim();
+
+    if (!trimmed) {
+      // If the PM cleared the text, remove today's entry (if any).
+      if (existingIdx >= 0) entries.splice(existingIdx, 1);
+    } else if (existingIdx >= 0) {
+      // Skip write if unchanged (avoid churn on multi-save days).
+      if (entries[existingIdx].text === trimmed) return;
+      entries[existingIdx] = { date: today, text: trimmed };
+    } else {
+      entries.push({ date: today, text: trimmed });
+    }
+
+    // Sort oldest → newest, then trim to the last N days.
+    entries.sort((a, b) => (a.date < b.date ? -1 : 1));
+    const cutoff = new Date(
+      Date.now() - STRATEGIST_HISTORY_MAX_DAYS * 24 * 60 * 60 * 1000
+    )
+      .toISOString()
+      .slice(0, 10);
+    history[strategist] = entries.filter((e) => e.date >= cutoff);
+
+    await redis.set(STRATEGIST_HISTORY_KEY, JSON.stringify(history));
+  } catch (e) {
+    console.error(`Strategist history write failed (${strategist}):`, e);
+  }
+}
+
+export async function loadStrategistHistory(): Promise<StrategistHistory> {
+  try {
+    const redis = await getRedis();
+    const raw = await redis.get(STRATEGIST_HISTORY_KEY);
+    if (!raw) return { newton: [], lee: [] };
+    const parsed = JSON.parse(raw);
+    return {
+      newton: Array.isArray(parsed?.newton)
+        ? parsed.newton.filter(
+            (e: unknown): e is StrategistEntry =>
+              !!e &&
+              typeof (e as StrategistEntry).date === "string" &&
+              typeof (e as StrategistEntry).text === "string"
+          )
+        : [],
+      lee: Array.isArray(parsed?.lee)
+        ? parsed.lee.filter(
+            (e: unknown): e is StrategistEntry =>
+              !!e &&
+              typeof (e as StrategistEntry).date === "string" &&
+              typeof (e as StrategistEntry).text === "string"
+          )
+        : [],
+    };
+  } catch (e) {
+    console.error("Strategist history read failed:", e);
+    return { newton: [], lee: [] };
+  }
+}
+
 export async function fetchForwardLookingData(): Promise<ForwardLookingData> {
   const asOf = new Date().toISOString();
   const fredEnabled = !!process.env.FRED_API_KEY;

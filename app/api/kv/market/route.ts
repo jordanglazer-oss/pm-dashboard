@@ -1,7 +1,10 @@
 import { getRedis } from "@/app/lib/redis";
 import { NextRequest, NextResponse } from "next/server";
 import { defaultMarketData } from "@/app/lib/defaults";
-import { appendOscillatorEntry } from "@/app/lib/forward-looking";
+import {
+  appendOscillatorEntry,
+  appendStrategistNote,
+} from "@/app/lib/forward-looking";
 
 const KEY = "pm:market";
 
@@ -41,6 +44,26 @@ export async function PUT(req: NextRequest) {
       appendOscillatorEntry(updates.spOscillator).catch((err) =>
         console.error("Oscillator history append failed:", err)
       );
+    }
+
+    // If strategist notes changed, append them to the rolling 7-day history
+    // log. Each strategist gets its own dated entry so the brief prompt can
+    // show the trailing week of notes and Claude can track theme evolution.
+    if (updates?.strategistNotes) {
+      const notes = updates.strategistNotes as {
+        newton?: string;
+        lee?: string;
+      };
+      if (typeof notes.newton === "string") {
+        appendStrategistNote("newton", notes.newton).catch((err) =>
+          console.error("Newton note history append failed:", err)
+        );
+      }
+      if (typeof notes.lee === "string") {
+        appendStrategistNote("lee", notes.lee).catch((err) =>
+          console.error("Lee note history append failed:", err)
+        );
+      }
     }
 
     return NextResponse.json({ market: merged });

@@ -5,8 +5,10 @@ import { getRedis } from "@/app/lib/redis";
 import {
   fetchForwardLookingData,
   classifyRegime,
+  loadStrategistHistory,
   type ForwardLookingData,
   type ForwardPoint,
+  type StrategistHistory,
 } from "@/app/lib/forward-looking";
 
 const client = new Anthropic();
@@ -386,16 +388,21 @@ export async function POST(request: NextRequest) {
           .join("\n")
       : "No holdings provided";
 
-    // Fetch live sector ETF data and forward-looking data in parallel.
-    // fetchForwardLookingData() is wrapped in try/catch so a transient Yahoo
-    // outage never blocks the brief — we just mark forward data as unavailable.
-    const [sectorPerformance, forwardData] = await Promise.all([
-      fetchSectorPerformance(),
-      fetchForwardLookingData().catch((e) => {
-        console.error("Forward-looking fetch failed:", e);
-        return null as ForwardLookingData | null;
-      }),
-    ]);
+    // Fetch live sector ETF data, forward-looking data, and strategist
+    // history in parallel. Each is wrapped in try/catch so a single failure
+    // never blocks the whole brief — we just degrade that section.
+    const [sectorPerformance, forwardData, strategistHistory] =
+      await Promise.all([
+        fetchSectorPerformance(),
+        fetchForwardLookingData().catch((e) => {
+          console.error("Forward-looking fetch failed:", e);
+          return null as ForwardLookingData | null;
+        }),
+        loadStrategistHistory().catch((e) => {
+          console.error("Strategist history load failed:", e);
+          return { newton: [], lee: [] } as StrategistHistory;
+        }),
+      ]);
 
     const fmt = (p: ForwardPoint | undefined, unit = ""): string => {
       if (!p || p.value == null) {
@@ -586,21 +593,49 @@ Hedge Timing Score: ${computeHedgeScore(fwdVix ?? 20, marketData.termStructure ?
 Live Sector ETF Performance (from Yahoo Finance — use this for sector rotation analysis):
 ${sectorPerformance}
 ${(() => {
-  const notes = marketData.strategistNotes;
-  if (!notes) return "";
+  // Build strategist notes block from the rolling 7-day Redis history.
+  // Today's full note is labeled "TODAY"; prior days are labeled by date
+  // so Claude can track how a strategist's view evolves across the week
+  // (e.g. Newton flags a key support level for 3 consecutive sessions,
+  // or Lee shifts from cautious to outright bullish mid-week).
+  const formatEntries = (
+    entries: { date: string; text: string }[],
+    name: string,
+    title: string
+  ): string | null => {
+    if (entries.length === 0) return null;
+    const today = new Date().toISOString().slice(0, 10);
+    const lines = entries.map((e) => {
+      const label = e.date === today ? "TODAY" : e.date;
+      return `[${label}] ${e.text}`;
+    });
+    return `--- ${name} (${title}) — trailing ${entries.length} day${entries.length > 1 ? "s" : ""} ---\n${lines.join("\n\n")}`;
+  };
   const blocks: string[] = [];
-  if (notes.newton?.trim()) {
-    blocks.push(`--- Mark Newton (Fundstrat Technical Strategy) Daily Report ---
-${notes.newton.trim()}`);
-  }
-  if (notes.lee?.trim()) {
-    blocks.push(`--- Tom Lee (Fundstrat Head of Research) Daily Report ---
-${notes.lee.trim()}`);
-  }
+  const nb = formatEntries(
+    strategistHistory.newton,
+    "Mark Newton",
+    "Fundstrat Technical Strategy"
+  );
+  const lb = formatEntries(
+    strategistHistory.lee,
+    "Tom Lee",
+    "Fundstrat Head of Research"
+  );
+  if (nb) blocks.push(nb);
+  if (lb) blocks.push(lb);
   if (blocks.length === 0) return "";
   return `
 
-STRATEGIST NOTES — The PM follows these two Fundstrat strategists closely. Incorporate their key takeaways where they support or contradict the quantitative data above. Attribute insights to the strategist by name (e.g. "Newton's technical work flags…" or "Lee points to…"). Do NOT regurgitate the full text — distill the 2-3 most actionable points from each and weave them into the relevant analysis sections (compositeAnalysis, contrarianAnalysis, forwardView, hedgingAnalysis, etc.). If a strategist's view conflicts with the data, note the tension.
+STRATEGIST NOTES — The PM follows these two Fundstrat strategists closely. Each block below contains the trailing week of daily notes labeled by date (most recent = TODAY).
+
+Key instructions:
+1. Track THEMES ACROSS DAYS — if a strategist keeps mentioning the same level, catalyst, or risk multiple sessions in a row, that consistency matters more than a one-off mention. Call it out (e.g. "Newton has flagged 5,200 support three consecutive sessions").
+2. Note SHIFTS in stance — if a strategist changes their view from one day to the next, that transition is significant. Highlight it (e.g. "Lee moved from cautious to outright bullish mid-week").
+3. Items mentioned one day but NOT the next may still be relevant — do not discard them just because the latest note omits them. Use judgment.
+4. Attribute insights by name (e.g. "Newton's technical work flags…" or "Lee points to…").
+5. Do NOT regurgitate full text — distill the 2-3 most actionable points from each and weave them into compositeAnalysis, contrarianAnalysis, forwardView, hedgingAnalysis, etc.
+6. If a strategist's view conflicts with the quantitative data, note the tension explicitly.
 
 ${blocks.join("\n\n")}`;
 })()}
