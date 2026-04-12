@@ -668,7 +668,7 @@ export default function ResearchPage() {
                 };
                 const bg =
                   sv.view === "overweight"
-                    ? "bg-amber-100 text-amber-800 border-amber-300"
+                    ? "bg-emerald-100 text-emerald-800 border-emerald-300"
                     : sv.view === "underweight"
                     ? "bg-red-100 text-red-800 border-red-300"
                     : "bg-slate-100 text-slate-500 border-slate-200";
