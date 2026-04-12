@@ -235,7 +235,13 @@ export function PimPerformance({ groupId, groupName, selectedProfile }: Props) {
     setAutoUpdating(false);
   }, []);
 
-  // Auto-update daily values once on first load (per group)
+  // Auto-update daily values once on first load (per group).
+  // Runs on ALL days including weekends so the recalc window (last 2
+  // trading days) corrects entries that were captured mid-day with live
+  // prices. Without this, weekend page loads show stale mid-day values
+  // instead of finalized end-of-day adjusted closes. The server-side API
+  // already skips "today" entries when the market is closed, so weekend
+  // calls only correct historical entries — they never create new ones.
   const autoUpdatedRef = useRef<string | null>(null);
   useEffect(() => {
     if (!perfData || perfData.models.length === 0 || autoUpdating) return;
@@ -244,13 +250,8 @@ export function PimPerformance({ groupId, groupName, selectedProfile }: Props) {
     const groupModels = perfData.models.filter((m) => m.groupId === groupId);
     if (groupModels.length === 0) return;
 
-    const dayOfWeek = new Date().getDay();
-    const isWeekday = dayOfWeek >= 1 && dayOfWeek <= 5;
-
-    if (isWeekday) {
-      autoUpdatedRef.current = groupId;
-      autoUpdateDailyValue();
-    }
+    autoUpdatedRef.current = groupId;
+    autoUpdateDailyValue();
   // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [perfData?.lastUpdated, groupId]);
 
