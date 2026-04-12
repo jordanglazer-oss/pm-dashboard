@@ -1,9 +1,33 @@
 "use client";
 
 import React from "react";
-import type { MarketData, ForwardLookingBundle } from "@/app/lib/types";
+import type {
+  MarketData,
+  ForwardLookingBundle,
+  TrendStatsBundle,
+} from "@/app/lib/types";
 import { SignalPill } from "./SignalPill";
 import { Sparkline } from "./Sparkline";
+
+// Render the multi-horizon delta line shown under each sentiment sparkline.
+// Uses whichever deltas are available in the bundle so a fresh oscillator
+// log (only 1w / 1m) doesn't print "3m null".
+function trendCaption(t: TrendStatsBundle | undefined): string | null {
+  if (!t) return null;
+  const fmt = (d: number | null | undefined): string | null => {
+    if (d == null) return null;
+    return `${d >= 0 ? "+" : ""}${d}`;
+  };
+  const parts: string[] = [];
+  const d1w = fmt(t.delta1w);
+  const d1m = fmt(t.delta1m);
+  const d3m = fmt(t.delta3m);
+  if (d1w) parts.push(`1w ${d1w}`);
+  if (d1m) parts.push(`1m ${d1m}`);
+  if (d3m) parts.push(`3m ${d3m}`);
+  if (parts.length === 0) return null;
+  return `${t.trajectory} · ${parts.join(" · ")} · p${t.percentile}/100`;
+}
 
 type Props = {
   marketData: MarketData;
@@ -225,6 +249,11 @@ export function SentimentGauges({ marketData, aaiiBull = 30, aaiiNeutral = 17, a
                     referenceY={50}
                   />
                   <div className="text-[10px] text-slate-400 mt-0.5">trailing 1Y daily</div>
+                  {trendCaption(forwardData?.fearGreed?.trend) && (
+                    <div className="text-[10px] font-medium text-slate-500 mt-0.5">
+                      {trendCaption(forwardData?.fearGreed?.trend)}
+                    </div>
+                  )}
                 </div>
               )}
               <p className="mt-2 text-sm text-slate-500 leading-relaxed">{fgData.detail}</p>
@@ -282,6 +311,11 @@ export function SentimentGauges({ marketData, aaiiBull = 30, aaiiNeutral = 17, a
                 referenceY={0}
               />
               <div className="text-[10px] text-slate-400 mt-0.5">bull-bear spread, trailing 52 weeks</div>
+              {trendCaption(forwardData?.aaiiBullBear?.trend) && (
+                <div className="text-[10px] font-medium text-slate-500 mt-0.5">
+                  {trendCaption(forwardData?.aaiiBullBear?.trend)}
+                </div>
+              )}
             </div>
           )}
           <p className="mt-3 text-sm text-slate-500 leading-relaxed">{aaiiData.detail}</p>
@@ -331,6 +365,11 @@ export function SentimentGauges({ marketData, aaiiBull = 30, aaiiNeutral = 17, a
                     referenceY={0}
                   />
                   <div className="text-[10px] text-slate-400 mt-0.5">your saved entries (last 6mo)</div>
+                  {trendCaption(forwardData?.spOscillator?.trend) && (
+                    <div className="text-[10px] font-medium text-slate-500 mt-0.5">
+                      {trendCaption(forwardData?.spOscillator?.trend)}
+                    </div>
+                  )}
                 </div>
               )}
               <p className="mt-2 text-sm text-slate-500 leading-relaxed">
