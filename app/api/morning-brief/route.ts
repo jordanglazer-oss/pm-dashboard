@@ -684,6 +684,17 @@ ${(() => {
     blocks.push(`Newton's Sector Views: ${parts.join(" | ")}\nUse these to inform sectorRotation analysis — if today's sector ETF performance aligns with Newton's OW/UW views, reinforce the signal; if it contradicts, note the tension.`);
   }
 
+  // Lee sector views — same format as Newton's
+  const leeSectorViews = research.leeSectors ?? [];
+  const leeOw = leeSectorViews.filter((s) => s.view === "overweight").map((s) => s.sector);
+  const leeUw = leeSectorViews.filter((s) => s.view === "underweight").map((s) => s.sector);
+  if (leeOw.length > 0 || leeUw.length > 0) {
+    const parts: string[] = [];
+    if (leeOw.length > 0) parts.push(`Overweight: ${leeOw.join(", ")}`);
+    if (leeUw.length > 0) parts.push(`Underweight: ${leeUw.join(", ")}`);
+    blocks.push(`Lee's Sector Views: ${parts.join(" | ")}\nUse these alongside Newton's sector views to inform sectorRotation analysis — when both strategists agree on a sector tilt, it's a stronger signal. When they diverge, note the tension.`);
+  }
+
   // Lee focus areas — background context the PM wants Claude to internalize.
   // These don't need to be explicitly mentioned every day, but should inform
   // the analysis when they naturally intersect with today's data.
