@@ -590,7 +590,9 @@ Contrarian Indicators (ALL interpreted INVERSELY — oversold/fearful = BULLISH,
 - S&P Oscillator: ${
       forwardData?.spOscillator?.value ?? marketData.spOscillator
     }${trendBlurb(forwardData?.spOscillator)} — negative = oversold = BULLISH, positive = overbought = BEARISH
-- Put/Call Ratio (Total): ${marketData.putCall} — >1.0 = excessive fear = BULLISH, <0.7 = complacency = BEARISH
+- Put/Call Ratio (Total): ${
+      forwardData?.putCallRatio?.value ?? marketData.putCall
+    }${trendBlurb(forwardData?.putCallRatio)} — >1.0 = excessive fear = BULLISH, <0.7 = complacency = BEARISH
 - Fear & Greed Index: ${
       forwardData?.fearGreed?.value ?? marketData.fearGreed
     }/100${trendBlurb(forwardData?.fearGreed)} — <25 = extreme fear = BULLISH, >75 = extreme greed = BEARISH

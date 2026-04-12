@@ -172,6 +172,10 @@ export function SentimentGauges({ marketData, aaiiBull = 30, aaiiNeutral = 17, a
     forwardData?.spOscillator?.value ?? marketData.spOscillator;
   const oscHistory = forwardData?.spOscillator?.history ?? [];
 
+  const pcValue =
+    forwardData?.putCallRatio?.value ?? marketData.putCall;
+  const pcHistory = forwardData?.putCallRatio?.history ?? [];
+
   const fgData = fearGreedContrarian(fgValue);
   const aaiiData = aaiiBullBearContrarian(aaiiBullBearValue);
   const overall = overallContrarianRating(fgValue, aaiiBullBearValue, oscValue, marketData.putCall);
@@ -389,40 +393,63 @@ export function SentimentGauges({ marketData, aaiiBull = 30, aaiiNeutral = 17, a
 
         {/* Put/Call Ratio */}
         <div className="rounded-2xl border border-slate-100 bg-slate-50 p-5">
-          <div className="text-sm font-semibold text-slate-500 mb-4 flex items-center gap-2">
-            Total Put/Call Ratio
-            <a href="https://www.cboe.com/us/options/market_statistics/daily/" target="_blank" rel="noopener noreferrer" className="text-blue-500 hover:text-blue-700" title="CBOE Total Put/Call">
-              <svg className="w-3.5 h-3.5" fill="none" stroke="currentColor" strokeWidth="2" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" d="M10 6H6a2 2 0 00-2 2v10a2 2 0 002 2h10a2 2 0 002-2v-4M14 4h6m0 0v6m0-6L10 14" /></svg>
-            </a>
+          <div className="flex items-center justify-between mb-4">
+            <div className="text-sm font-semibold text-slate-500 flex items-center gap-2">
+              Total Put/Call Ratio
+              <a href="https://www.cboe.com/us/options/market_statistics/daily/" target="_blank" rel="noopener noreferrer" className="text-blue-500 hover:text-blue-700" title="CBOE Total Put/Call">
+                <svg className="w-3.5 h-3.5" fill="none" stroke="currentColor" strokeWidth="2" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" d="M10 6H6a2 2 0 00-2 2v10a2 2 0 002 2h10a2 2 0 002-2v-4M14 4h6m0 0v6m0-6L10 14" /></svg>
+              </a>
+            </div>
+            {pcHistory.length > 0 && (
+              <span className="rounded-full bg-blue-100 px-2 py-0.5 text-[9px] font-bold uppercase text-blue-700" title="Sparkline shows your saved entries from Redis (pm:putcall-history)">logged</span>
+            )}
           </div>
           <div className="flex items-center gap-6">
             <div className={`flex h-20 w-20 shrink-0 items-center justify-center rounded-2xl text-3xl font-bold ${
-              marketData.putCall >= 1.2 ? "bg-emerald-100 text-emerald-700"
-              : marketData.putCall >= 1.0 ? "bg-emerald-50 text-emerald-600"
-              : marketData.putCall <= 0.5 ? "bg-red-100 text-red-700"
-              : marketData.putCall <= 0.7 ? "bg-red-50 text-red-600"
+              pcValue >= 1.2 ? "bg-emerald-100 text-emerald-700"
+              : pcValue >= 1.0 ? "bg-emerald-50 text-emerald-600"
+              : pcValue <= 0.5 ? "bg-red-100 text-red-700"
+              : pcValue <= 0.7 ? "bg-red-50 text-red-600"
               : "bg-slate-100 text-slate-600"
             }`}>
-              {marketData.putCall.toFixed(2)}
+              {pcValue.toFixed(2)}
             </div>
-            <div>
+            <div className="flex-1 min-w-0">
               <div className={`text-xl font-semibold ${
-                marketData.putCall >= 1.2 ? "text-emerald-700"
-                : marketData.putCall >= 1.0 ? "text-emerald-600"
-                : marketData.putCall <= 0.5 ? "text-red-700"
-                : marketData.putCall <= 0.7 ? "text-red-600"
+                pcValue >= 1.2 ? "text-emerald-700"
+                : pcValue >= 1.0 ? "text-emerald-600"
+                : pcValue <= 0.5 ? "text-red-700"
+                : pcValue <= 0.7 ? "text-red-600"
                 : "text-slate-600"
               }`}>
-                {marketData.putCall >= 1.2 ? "Extreme Fear" : marketData.putCall >= 1.0 ? "Elevated Fear" : marketData.putCall <= 0.5 ? "Extreme Complacency" : marketData.putCall <= 0.7 ? "Complacent" : "Neutral"}
+                {pcValue >= 1.2 ? "Extreme Fear" : pcValue >= 1.0 ? "Elevated Fear" : pcValue <= 0.5 ? "Extreme Complacency" : pcValue <= 0.7 ? "Complacent" : "Neutral"}
               </div>
+              {pcHistory.length >= 2 && (
+                <div className="mt-2">
+                  <Sparkline
+                    points={pcHistory}
+                    width={180}
+                    height={36}
+                    stroke="#8b5cf6"
+                    fill="rgba(139, 92, 246, 0.12)"
+                    referenceY={0.85}
+                  />
+                  <div className="text-[10px] text-slate-400 mt-0.5">your saved entries (last 6mo)</div>
+                  {trendCaption(forwardData?.putCallRatio?.trend) && (
+                    <div className="text-[10px] font-medium text-slate-500 mt-0.5">
+                      {trendCaption(forwardData?.putCallRatio?.trend)}
+                    </div>
+                  )}
+                </div>
+              )}
               <p className="mt-2 text-sm text-slate-500 leading-relaxed">
-                {marketData.putCall >= 1.2
+                {pcValue >= 1.2
                   ? "Heavy put buying signals panic. Historically a strong contrarian buy signal — protection is expensive and the crowd is hedged."
-                  : marketData.putCall >= 1.0
+                  : pcValue >= 1.0
                   ? "Put buying is elevated, suggesting caution in the market. Incrementally bullish on a contrarian basis."
-                  : marketData.putCall <= 0.5
+                  : pcValue <= 0.5
                   ? "Extreme complacency — virtually no hedging activity. This is a strong contrarian warning sign."
-                  : marketData.putCall <= 0.7
+                  : pcValue <= 0.7
                   ? "Low put demand suggests complacency. Protection is cheap, which is when disciplined PMs should be hedging."
                   : "Put/Call ratio is in a neutral range. No strong contrarian signal."}
               </p>
