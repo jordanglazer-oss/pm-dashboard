@@ -1552,7 +1552,10 @@ export function PimPortfolio({ groups }: Props) {
       {usdCadRate > 1 && (
         <div className="flex items-center gap-2 text-[10px] text-slate-400">
           <span className="inline-block w-2 h-2 rounded-full bg-blue-300" />
-          USD/CAD: {usdCadRate.toFixed(4)}
+          USD/CAD: {usdCadRate.toFixed(4)} (live)
+          {prevCloseUsdCad > 1 && prevCloseUsdCad !== usdCadRate && (
+            <span className="ml-1">| {prevCloseUsdCad.toFixed(4)} (prev close)</span>
+          )}
         </div>
       )}
 
