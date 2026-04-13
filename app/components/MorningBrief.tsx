@@ -828,7 +828,7 @@ export function MorningBrief({
           </div>
           <div className="grid gap-4 md:grid-cols-2">
             <div>
-              <div className="flex items-center gap-1.5 mb-1">
+              <div className="flex flex-wrap items-center gap-1.5 mb-1">
                 <label className="text-xs font-semibold text-slate-400 uppercase tracking-wider">Mark Newton</label>
                 <span className="text-[10px] text-slate-400">(Technical Strategy)</span>
                 <input
@@ -862,7 +862,7 @@ export function MorningBrief({
               />
             </div>
             <div>
-              <div className="flex items-center gap-1.5 mb-1">
+              <div className="flex flex-wrap items-center gap-1.5 mb-1">
                 <label className="text-xs font-semibold text-slate-400 uppercase tracking-wider">Tom Lee</label>
                 <span className="text-[10px] text-slate-400">(Head of Research)</span>
                 <input

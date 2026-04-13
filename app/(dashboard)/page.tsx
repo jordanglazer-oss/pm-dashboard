@@ -271,12 +271,12 @@ export default function DashboardPage() {
                 <thead>
                   <tr className="border-b-2 border-slate-200 text-left">
                     <th className="py-2 pr-3 text-xs font-semibold text-slate-500">Ticker</th>
-                    <th className="py-2 pr-3 text-xs font-semibold text-slate-500">Sector</th>
+                    <th className="py-2 pr-3 text-xs font-semibold text-slate-500 hidden md:table-cell">Sector</th>
                     <th className="py-2 pr-3 text-xs font-semibold text-slate-500">Tier</th>
                     <th className="py-2 pr-3 text-xs font-semibold text-slate-500 text-right">Quality</th>
-                    <th className="py-2 pr-3 text-xs font-semibold text-slate-500 text-right">Base</th>
-                    <th className="py-2 pr-3 text-xs font-semibold text-slate-500 text-right">Adjusted</th>
-                    <th className="py-2 text-xs font-semibold text-slate-500 text-right">Raw → Adj Score</th>
+                    <th className="py-2 pr-3 text-xs font-semibold text-slate-500 text-right hidden sm:table-cell">Base</th>
+                    <th className="py-2 pr-3 text-xs font-semibold text-slate-500 text-right">Adj.</th>
+                    <th className="py-2 text-xs font-semibold text-slate-500 text-right">Score</th>
                   </tr>
                 </thead>
                 <tbody>
@@ -309,12 +309,12 @@ export default function DashboardPage() {
                       return (
                         <tr key={s.ticker} className="border-b border-slate-100 hover:bg-slate-50/50 transition-colors">
                           <td className="py-2 pr-3 font-mono font-bold text-slate-700">{s.ticker}</td>
-                          <td className="py-2 pr-3 text-slate-500">{normalized}</td>
+                          <td className="py-2 pr-3 text-slate-500 hidden md:table-cell">{normalized}</td>
                           <td className="py-2 pr-3">
                             <span className={`rounded-full px-2 py-0.5 text-[10px] font-bold ${tierColor}`}>{tier}</span>
                           </td>
                           <td className="py-2 pr-3 text-right font-mono text-slate-600">{qualityScore}/8</td>
-                          <td className="py-2 pr-3 text-right font-mono text-slate-400">{baseMultiplier.toFixed(2)}x</td>
+                          <td className="py-2 pr-3 text-right font-mono text-slate-400 hidden sm:table-cell">{baseMultiplier.toFixed(2)}x</td>
                           <td className={`py-2 pr-3 text-right font-mono font-semibold ${multColor}`}>{adjustedMultiplier.toFixed(3)}x</td>
                           <td className="py-2 text-right font-mono text-slate-500">
                             {s.raw} → <span className="font-semibold text-slate-700">{s.adjusted}</span>
