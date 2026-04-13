@@ -114,18 +114,18 @@ export async function GET() {
 
   const termStructure = deriveTermStructure(vix, vix3m);
 
+  // Put/Call is intentionally excluded from status tracking — it's a
+  // manual-entry field with Redis-backed history. The CBOE auto-fetch is
+  // a best-effort convenience; when it fails we silently fall back to the
+  // user's last saved value instead of showing a stale-data warning.
   const status: Record<string, FieldStatus> = {
     termStructure: termStructure != null ? "live" : "failed",
-    putCall: putCall.ratio != null ? "live" : "failed",
   };
 
   const errors: Record<string, string> = {};
   if (status.termStructure === "failed")
     errors.termStructure =
       "VIX Term Structure: Yahoo ^VIX3M or ^VIX unreachable — showing your last saved selection.";
-  if (status.putCall === "failed")
-    errors.putCall =
-      "Put/Call Ratio: CBOE daily CSV parse failed — showing your last saved value. CBOE may have changed their CSV format.";
 
   return NextResponse.json({
     termStructure, // "Contango" | "Flat" | "Backwardation" | null
