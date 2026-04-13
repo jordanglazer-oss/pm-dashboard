@@ -865,6 +865,20 @@ export function MorningBrief({
               <div className="flex items-center gap-1.5 mb-1">
                 <label className="text-xs font-semibold text-slate-400 uppercase tracking-wider">Tom Lee</label>
                 <span className="text-[10px] text-slate-400">(Head of Research)</span>
+                <input
+                  type="date"
+                  value={marketData.strategistNotes?.leeDate ?? new Date().toISOString().slice(0, 10)}
+                  onChange={(e) =>
+                    onUpdateMarketData({
+                      strategistNotes: {
+                        ...marketData.strategistNotes,
+                        leeDate: e.target.value,
+                      },
+                    })
+                  }
+                  className="ml-auto rounded-lg border border-slate-200 bg-slate-50 px-2 py-0.5 text-[11px] text-slate-500 outline-none focus:border-blue-300 focus:ring-1 focus:ring-blue-200 transition-all"
+                  title="Date this report pertains to"
+                />
               </div>
               <SaveableTextarea
                 savedValue={marketData.strategistNotes?.lee ?? ""}
@@ -873,6 +887,7 @@ export function MorningBrief({
                     strategistNotes: {
                       ...marketData.strategistNotes,
                       lee: v || undefined,
+                      leeDate: marketData.strategistNotes?.leeDate ?? new Date().toISOString().slice(0, 10),
                     },
                   })
                 }

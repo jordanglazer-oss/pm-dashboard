@@ -276,6 +276,7 @@ export type MarketData = {
     newton?: string; // Mark Newton (Fundstrat Technical Strategy)
     newtonDate?: string; // YYYY-MM-DD date the Newton note pertains to
     lee?: string; // Tom Lee (Fundstrat Head of Research)
+    leeDate?: string; // YYYY-MM-DD date the Lee note pertains to
   };
   // ── Deprecated manual fields ──
   // These were superseded by ForwardLookingData (auto-fetched). They remain
