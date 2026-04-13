@@ -33,42 +33,107 @@ const DEFENSIVE_SECTORS = [
 // from falling rates but suffers from rising rates regardless of regime.
 // No regime tilt applied (1.0x always).
 
+// ── Quality dampening ──────────────────────────────────────────────────
+// Quality score categories used to dampen the regime multiplier.
+// These capture whether a business can sustain itself through a cycle:
+//   growth (max 3) + leverageCoverage (max 2) + cashFlowQuality (max 1)
+//   + competitiveMoat (max 2) = max 8.
+// A stock scoring 7-8/8 is high quality; 0-2/8 is low quality.
+const QUALITY_KEYS: ScoreKey[] = [
+  "growth",
+  "leverageCoverage",
+  "cashFlowQuality",
+  "competitiveMoat",
+];
+const QUALITY_MAX = 8; // sum of individual maxes: 3 + 2 + 1 + 2
+
 /**
- * Regime multiplier system — three-tier sector model:
+ * Compute a quality factor (0 → 1) from the stock's quality-related scores.
+ * 0 = lowest quality (all zeros), 1 = highest quality (all maxed out).
+ */
+function qualityFactor(scores: Record<string, number> | undefined): number {
+  if (!scores) return 0.5; // unknown quality → no adjustment
+  const sum = QUALITY_KEYS.reduce((s, k) => s + (scores[k] || 0), 0);
+  return sum / QUALITY_MAX; // 0..1
+}
+
+/**
+ * Regime multiplier system — three-tier sector model with quality dampening.
+ *
+ * Base multipliers by sector tier and regime:
  *
  * Risk-Off (bearish macro):
- *   Growth   (Tech, Comm Svc, Consumer Disc) → 0.82x (penalized — drawdown leaders)
- *   Cyclical (Financials, Industrials, Materials, Energy) → 0.90x (penalized — economic sensitivity)
- *   Defensive (Utilities, Staples, Health Care) → 1.10x (boosted — capital preservation)
+ *   Growth   (Tech, Comm Svc, Consumer Disc) → 0.82x base
+ *   Cyclical (Financials, Industrials, Materials, Energy) → 0.90x base
+ *   Defensive (Utilities, Staples, Health Care) → 1.10x base
  *
  * Neutral (mixed/uncertain macro):
- *   Growth   → 0.95x (slight headwind)
- *   Cyclical → 0.97x (marginal headwind)
- *   Defensive → 1.03x (slight tailwind)
+ *   Growth   → 0.95x base
+ *   Cyclical → 0.97x base
+ *   Defensive → 1.03x base
  *
  * Risk-On (bullish macro):
- *   Growth   → 1.10x (boosted — momentum/multiple expansion favored)
- *   Cyclical → 1.05x (boosted — economic activity tailwind)
- *   Defensive → 0.95x (slight headwind — safety less rewarded)
+ *   Growth   → 1.10x base
+ *   Cyclical → 1.05x base
+ *   Defensive → 0.95x base
+ *
+ * Quality dampening (applied to all sectors):
+ *   The regime effect is dampened toward 1.0x for high-quality names and
+ *   amplified for low-quality names. This recognizes that a high-quality
+ *   growth name (GOOGL) holds up better in Risk-Off than a pre-revenue
+ *   SaaS company, and a high-quality cyclical (JPM) is more resilient
+ *   than a leveraged regional bank.
+ *
+ *   quality factor (qf) = sum of quality scores / 8 → 0..1
+ *   dampening = (qf - 0.5) × QUALITY_DAMPENING_STRENGTH
+ *
+ *   At qf=1.0 (max quality): regime effect softened by 25%
+ *   At qf=0.5 (average):     no adjustment
+ *   At qf=0.0 (min quality): regime effect amplified by 25%
+ *
+ *   Example — Growth in Risk-Off (base 0.82x, deviation = -0.18):
+ *     High quality (qf=1.0): 0.82 + 0.18 × 0.25 = 0.865x
+ *     Average     (qf=0.5):  0.82 (unchanged)
+ *     Low quality (qf=0.0):  0.82 - 0.18 × 0.25 = 0.775x
  */
-export function regimeMultiplier(sector: string, riskRegime: string): number {
+const QUALITY_DAMPENING_STRENGTH = 0.5;
+
+export function regimeMultiplier(
+  sector: string,
+  riskRegime: string,
+  scores?: Record<string, number>
+): number {
+  let base: number;
   if (riskRegime === "Risk-Off") {
-    if (DEFENSIVE_SECTORS.includes(sector)) return 1.1;
-    if (GROWTH_SECTORS.includes(sector)) return 0.82;
-    if (CYCLICAL_SECTORS.includes(sector)) return 0.90;
-    return 1;
+    if (DEFENSIVE_SECTORS.includes(sector)) base = 1.1;
+    else if (GROWTH_SECTORS.includes(sector)) base = 0.82;
+    else if (CYCLICAL_SECTORS.includes(sector)) base = 0.90;
+    else base = 1;
+  } else if (riskRegime === "Neutral") {
+    if (DEFENSIVE_SECTORS.includes(sector)) base = 1.03;
+    else if (GROWTH_SECTORS.includes(sector)) base = 0.95;
+    else if (CYCLICAL_SECTORS.includes(sector)) base = 0.97;
+    else base = 1;
+  } else {
+    // Risk-On
+    if (GROWTH_SECTORS.includes(sector)) base = 1.1;
+    else if (CYCLICAL_SECTORS.includes(sector)) base = 1.05;
+    else if (DEFENSIVE_SECTORS.includes(sector)) base = 0.95;
+    else base = 1;
   }
-  if (riskRegime === "Neutral") {
-    if (DEFENSIVE_SECTORS.includes(sector)) return 1.03;
-    if (GROWTH_SECTORS.includes(sector)) return 0.95;
-    if (CYCLICAL_SECTORS.includes(sector)) return 0.97;
-    return 1;
-  }
-  // Risk-On
-  if (GROWTH_SECTORS.includes(sector)) return 1.1;
-  if (CYCLICAL_SECTORS.includes(sector)) return 1.05;
-  if (DEFENSIVE_SECTORS.includes(sector)) return 0.95;
-  return 1;
+
+  // No dampening needed if multiplier is neutral or scores unavailable
+  if (base === 1 || !scores) return base;
+
+  // Dampen: shift the multiplier toward 1.0 for high quality, away for low quality
+  const qf = qualityFactor(scores);
+  const deviation = base - 1; // negative for penalties, positive for boosts
+  const dampening = (qf - 0.5) * QUALITY_DAMPENING_STRENGTH;
+  // For penalties (deviation < 0): high quality reduces the penalty (dampening > 0)
+  // For boosts (deviation > 0): high quality also reduces the boost slightly —
+  //   which is correct: high-quality defensives don't need as big a boost because
+  //   their quality already provides resilience.
+  return Math.round((base - deviation * dampening) * 1000) / 1000;
 }
 
 // Legacy aliases for backward compatibility
@@ -83,7 +148,7 @@ export function computeScores(
     0
   );
 
-  const multiplier = regimeMultiplier(stock.sector, marketData.riskRegime);
+  const multiplier = regimeMultiplier(stock.sector, marketData.riskRegime, stock.scores);
   const adjusted = Math.round(raw * multiplier * 10) / 10;
 
   let rating: "Buy" | "Hold" | "Sell" = "Hold";
