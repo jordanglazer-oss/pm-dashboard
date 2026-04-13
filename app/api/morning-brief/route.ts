@@ -380,12 +380,16 @@ export async function POST(request: NextRequest) {
 
               // ETFs and mutual funds are not scored in our system — omit score
               // to prevent Claude from interpreting 0/40 as a weakness signal.
+              // Individual stocks are all equally weighted in the portfolio — omit
+              // the legacy weights.portfolio field to prevent Claude from making
+              // incorrect weight-based conclusions (e.g. "0% weight = not held").
+              // The bucket field (Portfolio/Watchlist) is the real indicator.
               let line: string;
               if (isEtfOrFund) {
                 line = `${h.ticker} (${typeLabel}, ${h.bucket}, ${h.sector}, ${h.weights.portfolio}% weight)`;
               } else {
                 const rawScore = h.scores ? Object.values(h.scores).reduce((a: number, b: number) => a + b, 0) : 0;
-                line = `${h.ticker} (${h.bucket}, ${h.sector}, ${h.weights.portfolio}% weight, score ${rawScore}/40)`;
+                line = `${h.ticker} (${h.bucket}, ${h.sector}, score ${rawScore}/40)`;
               }
 
               // Risk alerts apply to all instrument types (technicals are universal)
