@@ -101,9 +101,19 @@ async function fetchFundservCloses(ticker: string): Promise<DailyPriceData[]> {
       if (parts.length < 6) continue;
       const close = parseFloat(parts[5]);
       if (!isFinite(close)) continue;
-      const dateParts = parts[1]?.split("/");
-      if (!dateParts || dateParts.length !== 3) continue;
-      const isoDate = `${dateParts[2]}-${dateParts[0].padStart(2, "0")}-${dateParts[1].padStart(2, "0")}`;
+      // Barchart returns dates as YYYY-MM-DD; accept both dash and slash formats
+      const rawDate = parts[1]?.trim();
+      if (!rawDate) continue;
+      let isoDate: string;
+      if (rawDate.includes("/")) {
+        const dateParts = rawDate.split("/");
+        if (dateParts.length !== 3) continue;
+        isoDate = `${dateParts[2]}-${dateParts[0].padStart(2, "0")}-${dateParts[1].padStart(2, "0")}`;
+      } else if (/^\d{4}-\d{2}-\d{2}$/.test(rawDate)) {
+        isoDate = rawDate;
+      } else {
+        continue;
+      }
       result.push({ date: isoDate, adjClose: close });
     }
     return result.sort((a, b) => a.date.localeCompare(b.date));
