@@ -366,6 +366,7 @@ export async function POST(request: NextRequest) {
       ticker: string;
       bucket: string;
       sector: string;
+      instrumentType?: string;
       scores?: Record<string, number>;
       weights: { portfolio: number };
       riskAlert?: { level: string; summary: string; dangerCount: number; cautionCount: number; signals?: { name: string; status: string; detail: string }[] };
@@ -374,8 +375,20 @@ export async function POST(request: NextRequest) {
     const holdingsSummary = holdings
       ? (holdings as HoldingInput[])
           .map((h) => {
-              const rawScore = h.scores ? Object.values(h.scores).reduce((a: number, b: number) => a + b, 0) : 0;
-              let line = `${h.ticker} (${h.bucket}, ${h.sector}, ${h.weights.portfolio}% weight, score ${rawScore}/40)`;
+              const isEtfOrFund = h.instrumentType === "etf" || h.instrumentType === "mutual-fund";
+              const typeLabel = h.instrumentType === "etf" ? "ETF" : h.instrumentType === "mutual-fund" ? "Fund" : null;
+
+              // ETFs and mutual funds are not scored in our system — omit score
+              // to prevent Claude from interpreting 0/40 as a weakness signal.
+              let line: string;
+              if (isEtfOrFund) {
+                line = `${h.ticker} (${typeLabel}, ${h.bucket}, ${h.sector}, ${h.weights.portfolio}% weight)`;
+              } else {
+                const rawScore = h.scores ? Object.values(h.scores).reduce((a: number, b: number) => a + b, 0) : 0;
+                line = `${h.ticker} (${h.bucket}, ${h.sector}, ${h.weights.portfolio}% weight, score ${rawScore}/40)`;
+              }
+
+              // Risk alerts apply to all instrument types (technicals are universal)
               if (h.riskAlert && h.riskAlert.level !== "clear") {
                 const dangerSignals = h.riskAlert.signals?.filter(s => s.status === "danger").map(s => s.name) || [];
                 const cautionSignals = h.riskAlert.signals?.filter(s => s.status === "caution").map(s => s.name) || [];
