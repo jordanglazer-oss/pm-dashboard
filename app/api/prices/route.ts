@@ -66,9 +66,12 @@ async function fetchPrice(ticker: string): Promise<{ price: number | null; previ
     const meta = data?.chart?.result?.[0]?.meta;
     const price = meta?.regularMarketPrice ?? meta?.previousClose ?? null;
     const previousClose = meta?.chartPreviousClose ?? meta?.previousClose ?? null;
+    // FX pairs (e.g. USDCAD=X) need full precision; stocks use 2 decimals
+    const isFx = yahooSymbol.includes("=X");
+    const decimals = isFx ? 6 : 2;
     return {
-      price: price ? parseFloat(price.toFixed(2)) : null,
-      previousClose: previousClose ? parseFloat(previousClose.toFixed(2)) : null,
+      price: price ? parseFloat(price.toFixed(decimals)) : null,
+      previousClose: previousClose ? parseFloat(previousClose.toFixed(decimals)) : null,
     };
   } catch {
     return { price: null, previousClose: null };

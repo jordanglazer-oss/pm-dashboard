@@ -96,6 +96,7 @@ export function PimPortfolio({ groups }: Props) {
   const [livePrices, setLivePrices] = useState<Record<string, number>>({});
   const [prevCloses, setPrevCloses] = useState<Record<string, number>>({});
   const [usdCadRate, setUsdCadRate] = useState<number>(1.0);
+  const [prevCloseUsdCad, setPrevCloseUsdCad] = useState<number>(1.0);
   const [pricesLoading, setPricesLoading] = useState(false);
   const [editMode, setEditMode] = useState(false);
   const [editPositions, setEditPositions] = useState<PimPosition[]>([]);
@@ -295,7 +296,7 @@ export function PimPortfolio({ groups }: Props) {
     setLivePrices(mapped);
     setPrevCloses(prevCloseMapped);
 
-    // Fetch USD/CAD rate
+    // Fetch USD/CAD rate (live + previous close for rebalance math)
     try {
       const fxRes = await fetch("/api/prices", {
         method: "POST",
@@ -306,6 +307,9 @@ export function PimPortfolio({ groups }: Props) {
         const fxData = await fxRes.json();
         const rate = fxData.prices?.["USDCAD=X"];
         if (rate && rate > 0) setUsdCadRate(rate);
+        const pcFx = fxData.previousCloses?.["USDCAD=X"];
+        if (pcFx && pcFx > 0) setPrevCloseUsdCad(pcFx);
+        else if (rate && rate > 0) setPrevCloseUsdCad(rate); // fallback
       }
     } catch { /* ignore */ }
 
@@ -445,6 +449,26 @@ export function PimPortfolio({ groups }: Props) {
   const totalCostCad = useMemo(() => {
     return holdingRows.reduce((s, r) => s + r.costValueCad, 0);
   }, [holdingRows]);
+
+  // Total portfolio value using PREVIOUS CLOSE prices (for rebalance math).
+  // Rebalance quantities should match the trading desk which runs off prior close.
+  const prevCloseTotalCad = useMemo(() => {
+    if (!effectiveGroup || !profileWeights) return 0;
+    let total = currentPositions?.cashBalance || 0;
+    for (const h of effectiveGroup.holdings) {
+      let alloc = 0;
+      if (h.assetClass === "fixedIncome") alloc = profileWeights.fixedIncome;
+      else if (h.assetClass === "equity") alloc = profileWeights.equity;
+      else if (h.assetClass === "alternative") alloc = profileWeights.alternatives;
+      if (h.weightInClass * alloc <= 0) continue;
+      const pos = positionMap.get(h.symbol);
+      const units = pos?.units || 0;
+      const pc = prevCloses[h.symbol] || livePrices[h.symbol] || 0;
+      const fxRate = h.currency === "USD" ? prevCloseUsdCad : 1;
+      total += units * pc * fxRate;
+    }
+    return total;
+  }, [effectiveGroup, profileWeights, prevCloses, livePrices, positionMap, currentPositions, prevCloseUsdCad]);
 
   const cashBalance = currentPositions?.cashBalance || 0;
   const cashPct = totalValueCadSummary > 0 ? cashBalance / totalValueCadSummary : 0;
@@ -608,7 +632,8 @@ export function PimPortfolio({ groups }: Props) {
       };
     }
 
-    // Compute total value for this profile (CAD)
+    // Compute total value for this profile using PREVIOUS CLOSE prices.
+    // Rebalance quantities must match the trading desk which runs off prior close.
     let totalValCad = profPortfolio?.cashBalance || 0;
     const holdingInfo: { symbol: string; modelPct: number; units: number; priceCad: number; currency: "CAD" | "USD"; costBasis: number }[] = [];
     for (const h of profGroup.holdings) {
@@ -622,8 +647,9 @@ export function PimPortfolio({ groups }: Props) {
       const pos = profPositionMap.get(h.symbol);
       const units = pos?.units || 0;
       const costBasis = pos?.costBasis || sharedCostBasisMap.get(h.symbol) || 0;
-      const price = livePrices[h.symbol] || 0;
-      const fxRate = h.currency === "USD" ? usdCadRate : 1;
+      // Use previous close for rebalance math; fall back to live if unavailable
+      const price = prevCloses[h.symbol] || livePrices[h.symbol] || 0;
+      const fxRate = h.currency === "USD" ? prevCloseUsdCad : 1;
       const priceCad = price * fxRate;
       totalValCad += units * priceCad;
       holdingInfo.push({ symbol: h.symbol, modelPct, units, priceCad, currency: h.currency, costBasis });
@@ -713,7 +739,7 @@ export function PimPortfolio({ groups }: Props) {
     }
 
     return { transactions, positionUpdates: newPositions };
-  }, [selectedGroup, positions, selectedGroupId, livePrices, usdCadRate, sharedCostBasisMap, coreSymbols]);
+  }, [selectedGroup, positions, selectedGroupId, prevCloses, livePrices, usdCadRate, prevCloseUsdCad, sharedCostBasisMap, coreSymbols]);
 
   // Compute pending trades across all profiles
   const pendingTrades = useMemo(() => {
@@ -1227,8 +1253,9 @@ export function PimPortfolio({ groups }: Props) {
             <span className="ml-2 text-[10px] font-normal text-slate-400">({PROFILE_LABELS[activeProfile]})</span>
           </h3>
           <p className="text-xs text-slate-500 mb-3">
-            Enter execution prices for stocks &amp; ETFs. Mutual funds (FUNDSERV) will be recorded as pending and settled tomorrow when NAV is available.
-            Prices are shared across profiles — switch tabs and they stay filled.
+            Target units are calculated from <strong>previous close</strong> prices to match the trading desk.
+            Enter the actual execution price for ACB tracking. Mutual funds are recorded as pending and settled when NAV is available.
+            Prices are shared across profiles.
           </p>
           <div className="overflow-x-auto">
             <table className="w-full text-sm">
@@ -1242,19 +1269,24 @@ export function PimPortfolio({ groups }: Props) {
                   <th className="text-right py-2 font-semibold">Current Units</th>
                   <th className="text-right py-2 font-semibold">Target Units</th>
                   <th className="text-right py-2 font-semibold">Δ Units</th>
-                  <th className="text-right py-2 font-semibold">Mkt Price</th>
+                  <th className="text-right py-2 font-semibold">Prev Close</th>
                   <th className="text-right py-2 font-semibold">Exec Price</th>
                   <th className="text-right py-2 font-semibold">Cost (CAD)</th>
                 </tr>
               </thead>
               <tbody>
                 {sortedRows.filter((r) => r.modelPct > 0).map((r) => {
-                  const targetValueCad = totalValueCadSummary * r.modelPct;
-                  const targetUnits = r.priceCad > 0 ? targetValueCad / r.priceCad : 0;
+                  // Rebalance math uses PREVIOUS CLOSE to match trading desk
+                  const pcPrice = prevCloses[r.symbol] || r.price;
+                  const pcFx = r.currency === "USD" ? prevCloseUsdCad : 1;
+                  const pcPriceCad = pcPrice * pcFx;
+                  const pcValueCad = r.units * pcPriceCad;
+                  const targetValueCad = prevCloseTotalCad * r.modelPct;
+                  const targetUnits = pcPriceCad > 0 ? targetValueCad / pcPriceCad : 0;
                   const deltaUnits = targetUnits - r.units;
                   const absDelta = Math.abs(deltaUnits);
                   const isMF = isFundservCode(r.symbol);
-                  const deltaValueCad = targetValueCad - r.valueCad;
+                  const deltaValueCad = targetValueCad - pcValueCad;
                   const action = isMF
                     ? (Math.abs(deltaValueCad) < 0.01 ? "HOLD" : deltaValueCad > 0 ? "BUY" : "SELL")
                     : (absDelta < 0.001 ? "HOLD" : deltaUnits > 0 ? "BUY" : "SELL");
@@ -1275,10 +1307,17 @@ export function PimPortfolio({ groups }: Props) {
                         )}
                       </td>
                       <td className="py-2 text-right font-mono text-xs">{pct(r.modelPct)}</td>
-                      <td className="py-2 text-right font-mono text-xs">{pct(r.currentPct)}</td>
-                      <td className={`py-2 text-right font-mono text-xs font-semibold ${r.driftPct > 0 ? "text-emerald-600" : r.driftPct < 0 ? "text-red-500" : "text-slate-400"}`}>
-                        {r.driftPct > 0 ? "+" : ""}{(r.driftPct * 10000).toFixed(0)}bp
+                      <td className="py-2 text-right font-mono text-xs" title="Based on previous close">
+                        {prevCloseTotalCad > 0 ? pct(pcValueCad / prevCloseTotalCad) : pct(r.currentPct)}
                       </td>
+                      {(() => {
+                        const pcDrift = prevCloseTotalCad > 0 ? (pcValueCad / prevCloseTotalCad) - r.modelPct : r.driftPct;
+                        return (
+                          <td className={`py-2 text-right font-mono text-xs font-semibold ${pcDrift > 0 ? "text-emerald-600" : pcDrift < 0 ? "text-red-500" : "text-slate-400"}`}>
+                            {pcDrift > 0 ? "+" : ""}{(pcDrift * 10000).toFixed(0)}bp
+                          </td>
+                        );
+                      })()}
                       <td className="py-2 text-center">
                         {action !== "HOLD" && (
                           <span className={`rounded px-1.5 py-0.5 text-[10px] font-bold ${action === "SELL" ? "bg-red-100 text-red-700" : "bg-emerald-100 text-emerald-700"}`}>
@@ -1298,7 +1337,7 @@ export function PimPortfolio({ groups }: Props) {
                           <span title="Dollar amount — units determined at settlement">${Math.abs(deltaValueCad).toFixed(0)}</span>
                         ) : `${deltaUnits > 0 ? "+" : ""}${deltaUnits.toFixed(2)}`}
                       </td>
-                      <td className="py-2 text-right font-mono text-xs text-slate-500">{r.price > 0 ? `$${r.price.toFixed(2)}` : "\u2014"}</td>
+                      <td className="py-2 text-right font-mono text-xs text-slate-500">{pcPrice > 0 ? `$${pcPrice.toFixed(2)}` : "\u2014"}</td>
                       <td className="py-2 text-right">
                         {isMF ? (
                           <span className="text-[10px] text-violet-500 italic">Pending</span>
@@ -1513,7 +1552,10 @@ export function PimPortfolio({ groups }: Props) {
       {usdCadRate > 1 && (
         <div className="flex items-center gap-2 text-[10px] text-slate-400">
           <span className="inline-block w-2 h-2 rounded-full bg-blue-300" />
-          USD/CAD: {usdCadRate.toFixed(4)}
+          USD/CAD: {usdCadRate.toFixed(4)} (live)
+          {prevCloseUsdCad > 1 && prevCloseUsdCad !== usdCadRate && (
+            <span className="ml-1">| {prevCloseUsdCad.toFixed(4)} (prev close)</span>
+          )}
         </div>
       )}
 
