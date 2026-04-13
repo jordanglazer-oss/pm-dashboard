@@ -1,52 +1,78 @@
 import type { Stock, ScoredStock, MarketData, ScoreKey } from "./types";
 import { MAX_SCORE, SCORE_GROUPS } from "./types";
 
-const OFFENSIVE_SECTORS = [
+// Sector behavioral clusters for regime scoring.
+//
+// GROWTH: High-duration, multiple-expansion sectors that lead in risk-on
+// and get hit hardest in risk-off. Sensitive to rates and liquidity.
+const GROWTH_SECTORS = [
   "Technology",
   "Communication Services",
   "Consumer Discretionary",
 ];
 
-const DEFENSIVE_SECTORS = [
-  "Energy",
-  "Utilities",
-  "Consumer Staples",
+// CYCLICAL: Economically sensitive sectors that benefit from expansion
+// but suffer in contraction. Less rate-sensitive than growth, more tied
+// to real economic activity, capex, and credit cycles.
+const CYCLICAL_SECTORS = [
   "Financials",
-  "Materials",
   "Industrials",
+  "Materials",
+  "Energy",
 ];
 
+// DEFENSIVE: Low-beta, income-oriented sectors that outperform in
+// drawdowns and underperform in rallies. True safe havens.
+const DEFENSIVE_SECTORS = [
+  "Utilities",
+  "Consumer Staples",
+  "Health Care",
+];
+
+// NEUTRAL: Real Estate is rate-sensitive in both directions — benefits
+// from falling rates but suffers from rising rates regardless of regime.
+// No regime tilt applied (1.0x always).
+
 /**
- * Regime multiplier system:
+ * Regime multiplier system — three-tier sector model:
  *
  * Risk-Off (bearish macro):
- *   Offensive sectors (Tech, Comm Svc, Consumer Disc) → 0.82x (penalized)
- *   Defensive sectors (Energy, Utilities, Staples, Financials, Materials, Industrials) → 1.10x (boosted)
+ *   Growth   (Tech, Comm Svc, Consumer Disc) → 0.82x (penalized — drawdown leaders)
+ *   Cyclical (Financials, Industrials, Materials, Energy) → 0.90x (penalized — economic sensitivity)
+ *   Defensive (Utilities, Staples, Health Care) → 1.10x (boosted — capital preservation)
  *
  * Neutral (mixed/uncertain macro):
- *   Offensive sectors → 0.95x (slight headwind)
- *   Defensive sectors → 1.03x (slight tailwind)
+ *   Growth   → 0.95x (slight headwind)
+ *   Cyclical → 0.97x (marginal headwind)
+ *   Defensive → 1.03x (slight tailwind)
  *
  * Risk-On (bullish macro):
- *   Offensive sectors → 1.10x (boosted — growth/momentum favored)
- *   Defensive sectors → 0.95x (slight headwind — less need for safety)
+ *   Growth   → 1.10x (boosted — momentum/multiple expansion favored)
+ *   Cyclical → 1.05x (boosted — economic activity tailwind)
+ *   Defensive → 0.95x (slight headwind — safety less rewarded)
  */
 export function regimeMultiplier(sector: string, riskRegime: string): number {
   if (riskRegime === "Risk-Off") {
     if (DEFENSIVE_SECTORS.includes(sector)) return 1.1;
-    if (OFFENSIVE_SECTORS.includes(sector)) return 0.82;
+    if (GROWTH_SECTORS.includes(sector)) return 0.82;
+    if (CYCLICAL_SECTORS.includes(sector)) return 0.90;
     return 1;
   }
   if (riskRegime === "Neutral") {
     if (DEFENSIVE_SECTORS.includes(sector)) return 1.03;
-    if (OFFENSIVE_SECTORS.includes(sector)) return 0.95;
+    if (GROWTH_SECTORS.includes(sector)) return 0.95;
+    if (CYCLICAL_SECTORS.includes(sector)) return 0.97;
     return 1;
   }
   // Risk-On
-  if (OFFENSIVE_SECTORS.includes(sector)) return 1.1;
+  if (GROWTH_SECTORS.includes(sector)) return 1.1;
+  if (CYCLICAL_SECTORS.includes(sector)) return 1.05;
   if (DEFENSIVE_SECTORS.includes(sector)) return 0.95;
   return 1;
 }
+
+// Legacy aliases for backward compatibility
+const OFFENSIVE_SECTORS = GROWTH_SECTORS;
 
 export function computeScores(
   stock: Stock,
@@ -74,7 +100,7 @@ export function computeScores(
   let risk: "High" | "Medium" | "Low" = "Medium";
   if (marketData.riskRegime === "Risk-Off" && stock.beta >= 1.15)
     risk = "High";
-  if (["Utilities", "Consumer Staples"].includes(stock.sector)) risk = "Low";
+  if (DEFENSIVE_SECTORS.includes(stock.sector)) risk = "Low";
 
   return { ...stock, raw, adjusted, rating, ratingLabel, risk };
 }
