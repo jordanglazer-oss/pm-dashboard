@@ -274,6 +274,7 @@ export type MarketData = {
   // incorporate Fundstrat/external research when forming its view.
   strategistNotes?: {
     newton?: string; // Mark Newton (Fundstrat Technical Strategy)
+    newtonDate?: string; // YYYY-MM-DD date the Newton note pertains to
     lee?: string; // Tom Lee (Fundstrat Head of Research)
   };
   // ── Deprecated manual fields ──

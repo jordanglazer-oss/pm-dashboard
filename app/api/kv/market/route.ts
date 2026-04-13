@@ -63,10 +63,11 @@ export async function PUT(req: NextRequest) {
     if (updates?.strategistNotes) {
       const notes = updates.strategistNotes as {
         newton?: string;
+        newtonDate?: string;
         lee?: string;
       };
       if (typeof notes.newton === "string") {
-        appendStrategistNote("newton", notes.newton).catch((err) =>
+        appendStrategistNote("newton", notes.newton, notes.newtonDate).catch((err) =>
           console.error("Newton note history append failed:", err)
         );
       }

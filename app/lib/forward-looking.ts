@@ -1141,7 +1141,11 @@ export type StrategistHistory = {
 
 export async function appendStrategistNote(
   strategist: "newton" | "lee",
-  text: string
+  text: string,
+  /** Optional date override (YYYY-MM-DD). When the PM sets a note date
+   *  that differs from today, the entry is stored under that date so
+   *  the brief knows which trading day the note actually pertains to. */
+  noteDate?: string
 ): Promise<void> {
   try {
     const redis = await getRedis();
@@ -1160,20 +1164,20 @@ export async function appendStrategistNote(
         history = { newton: [], lee: [] };
       }
     }
-    const today = new Date().toISOString().slice(0, 10);
+    const targetDate = noteDate || new Date().toISOString().slice(0, 10);
     const entries = history[strategist];
-    const existingIdx = entries.findIndex((e) => e.date === today);
+    const existingIdx = entries.findIndex((e) => e.date === targetDate);
     const trimmed = text.trim();
 
     if (!trimmed) {
-      // If the PM cleared the text, remove today's entry (if any).
+      // If the PM cleared the text, remove the entry for this date (if any).
       if (existingIdx >= 0) entries.splice(existingIdx, 1);
     } else if (existingIdx >= 0) {
       // Skip write if unchanged (avoid churn on multi-save days).
       if (entries[existingIdx].text === trimmed) return;
-      entries[existingIdx] = { date: today, text: trimmed };
+      entries[existingIdx] = { date: targetDate, text: trimmed };
     } else {
-      entries.push({ date: today, text: trimmed });
+      entries.push({ date: targetDate, text: trimmed });
     }
 
     // Sort oldest → newest, then trim to the last N days.

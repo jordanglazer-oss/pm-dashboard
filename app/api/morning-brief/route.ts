@@ -649,9 +649,10 @@ Key instructions:
 1. Track THEMES ACROSS DAYS — if a strategist keeps mentioning the same level, catalyst, or risk multiple sessions in a row, that consistency matters more than a one-off mention. Call it out (e.g. "Newton has flagged 5,200 support three consecutive sessions").
 2. Note SHIFTS in stance — if a strategist changes their view from one day to the next, that transition is significant.
 3. Items mentioned one day but NOT the next may still be relevant — do not discard them just because the latest note omits them. Use judgment.
-4. Attribute insights by name (e.g. "Newton's technical work flags…").
-5. Do NOT regurgitate full text — distill the 2-3 most actionable points and weave them into compositeAnalysis, contrarianAnalysis, forwardView, hedgingAnalysis, etc.
-6. If a strategist's view conflicts with the quantitative data, note the tension explicitly.
+4. PAY ATTENTION TO DATES — if the most recent note is labeled with a past date (not TODAY), it means no report was issued since then. Treat it as still-relevant context but note the age when citing it (e.g. "Newton's most recent note from April 10 flagged…").
+5. Attribute insights by name (e.g. "Newton's technical work flags…").
+6. Do NOT regurgitate full text — distill the 2-3 most actionable points and weave them into compositeAnalysis, contrarianAnalysis, forwardView, hedgingAnalysis, etc.
+7. If a strategist's view conflicts with the quantitative data, note the tension explicitly.
 
 ${blocks.join("\n\n")}`;
 })()}
