@@ -185,10 +185,13 @@ export default function DashboardPage() {
                 </p>
                 <ul className="list-disc list-inside space-y-1 text-slate-600">
                   <li>
-                    <span className="font-semibold text-red-600">Offensive sectors</span> (Tech, Comm Services, Consumer Disc) → <span className="font-bold">0.82x</span> — penalized for elevated drawdown risk.
+                    <span className="font-semibold text-red-600">Growth sectors</span> (Tech, Comm Services, Consumer Disc) → <span className="font-bold">0.82x</span> — penalized for elevated drawdown risk.
                   </li>
                   <li>
-                    <span className="font-semibold text-emerald-600">Defensive sectors</span> (Energy, Utilities, Staples, Financials, Materials, Industrials) → <span className="font-bold">1.10x</span> — boosted for capital preservation.
+                    <span className="font-semibold text-amber-600">Cyclical sectors</span> (Financials, Industrials, Materials, Energy) → <span className="font-bold">0.90x</span> — penalized for economic sensitivity.
+                  </li>
+                  <li>
+                    <span className="font-semibold text-emerald-600">Defensive sectors</span> (Utilities, Staples, Health Care) → <span className="font-bold">1.10x</span> — boosted for capital preservation.
                   </li>
                   <li>
                     Elevated volatility, wider credit spreads, and weak breadth — conditions support defensive positioning. See the Morning Brief for live readings.
@@ -204,7 +207,10 @@ export default function DashboardPage() {
                 </p>
                 <ul className="list-disc list-inside space-y-1 text-slate-600">
                   <li>
-                    <span className="font-semibold text-amber-700">Offensive sectors</span> → <span className="font-bold">0.95x</span> — slight headwind reflecting macro uncertainty.
+                    <span className="font-semibold text-amber-700">Growth sectors</span> → <span className="font-bold">0.95x</span> — slight headwind reflecting macro uncertainty.
+                  </li>
+                  <li>
+                    <span className="font-semibold text-amber-600">Cyclical sectors</span> → <span className="font-bold">0.97x</span> — marginal headwind.
                   </li>
                   <li>
                     <span className="font-semibold text-emerald-600">Defensive sectors</span> → <span className="font-bold">1.03x</span> — marginal safety premium.
@@ -219,14 +225,17 @@ export default function DashboardPage() {
             {regime === "Risk-On" && (
               <div className="space-y-2 text-sm text-slate-700">
                 <p className="font-medium text-emerald-800">
-                  Growth-favoring environment — scores tilted toward offensive sectors:
+                  Growth-favoring environment — scores tilted toward growth and cyclicals:
                 </p>
                 <ul className="list-disc list-inside space-y-1 text-slate-600">
                   <li>
-                    <span className="font-semibold text-emerald-600">Offensive sectors</span> (Tech, Comm Services, Consumer Disc) → <span className="font-bold">1.10x</span> — boosted to reflect momentum and risk appetite.
+                    <span className="font-semibold text-emerald-600">Growth sectors</span> (Tech, Comm Services, Consumer Disc) → <span className="font-bold">1.10x</span> — boosted to reflect momentum and risk appetite.
                   </li>
                   <li>
-                    <span className="font-semibold text-amber-600">Defensive sectors</span> → <span className="font-bold">0.95x</span> — slight headwind as safety is less rewarded.
+                    <span className="font-semibold text-emerald-500">Cyclical sectors</span> (Financials, Industrials, Materials, Energy) → <span className="font-bold">1.05x</span> — boosted for economic activity tailwind.
+                  </li>
+                  <li>
+                    <span className="font-semibold text-amber-600">Defensive sectors</span> (Utilities, Staples, Health Care) → <span className="font-bold">0.95x</span> — slight headwind as safety is less rewarded.
                   </li>
                   <li>
                     Subdued volatility and healthy breadth — conditions favor full risk exposure and growth/cyclical tilt. See the Morning Brief for live readings.
