@@ -117,6 +117,11 @@ export type PimTransaction = {
   targetWeight: number; // model target weight at time of trade
   notes?: string;
   pairedWith?: string; // for switch: the other symbol in the pair
+  // Two-phase settlement for mutual funds (NAV lag)
+  status?: "settled" | "pending"; // defaults to "settled" for backward compat
+  targetAmount?: number; // dollar amount for pending mutual fund trades (CAD)
+  profile?: PimProfileType; // which profile this transaction belongs to
+  settledAt?: string; // ISO datetime when pending trade was settled
 };
 
 export type PimModelGroupState = {

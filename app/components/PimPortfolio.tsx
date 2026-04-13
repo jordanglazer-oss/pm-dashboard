@@ -27,6 +27,10 @@ function generateId(): string {
   return Date.now().toString(36) + Math.random().toString(36).slice(2, 8);
 }
 
+function isFundservCode(ticker: string): boolean {
+  return /^[A-Z]{2,4}\d{2,5}$/i.test(ticker);
+}
+
 function symbolToTicker(symbol: string): string {
   if (symbol.endsWith("-T")) return symbol.replace(/-T$/, ".TO");
   return symbol;
@@ -101,9 +105,16 @@ export function PimPortfolio({ groups }: Props) {
   // Rebalance & Buy/Sell state
   const [showRebalance, setShowRebalance] = useState(false);
   const [showSwitch, setShowSwitch] = useState(false);
+  // Rebalance prices are shared across profiles (cross-model price sharing)
   const [rebalancePrices, setRebalancePrices] = useState<Record<string, string>>({});
   const [switchSell, setSwitchSell] = useState({ symbol: "", price: "" });
   const [switchBuy, setSwitchBuy] = useState({ symbol: "", price: "", ticker: "", name: "", resolving: false });
+
+  // Pending trades settlement
+  const [showSettlement, setShowSettlement] = useState(false);
+  const [settlementPrices, setSettlementPrices] = useState<Record<string, string>>({});
+  const [settlementLoading, setSettlementLoading] = useState(false);
+  const [settling, setSettling] = useState(false);
 
   const sortField = (uiPrefs["portfolioSort"] as SortField) || "value";
   const sortDir = (uiPrefs["portfolioSortDir"] as SortDir) || "desc";
@@ -561,76 +572,172 @@ export function PimPortfolio({ groups }: Props) {
     });
   }, [effectiveGroup, profileWeights]);
 
-  const handleExecuteRebalance = useCallback(async () => {
-    if (!selectedGroup || !profileWeights) return;
+  // Execute rebalance for a specific profile. Two-phase: stocks/ETFs settle
+  // immediately; mutual funds (FUNDSERV codes) become "pending" trades that
+  // settle the next morning when NAV is known.
+  const executeRebalanceForProfile = useCallback(async (
+    profile: PimProfileType,
+    priceOverrides: Record<string, string>,
+  ) => {
+    if (!selectedGroup) return { transactions: [] as PimTransaction[], positionUpdates: [] as PimPosition[] };
+
+    // Resolve profile weights
+    const pWeights = profile === "alpha"
+      ? { cash: 0, fixedIncome: 0, equity: 1, alternatives: 0 }
+      : selectedGroup.profiles[profile];
+    if (!pWeights) return { transactions: [] as PimTransaction[], positionUpdates: [] as PimPosition[] };
+
+    // Get profile positions
+    const profPortfolio = positions.find(
+      (p) => p.groupId === selectedGroupId && p.profile === profile
+    );
+    const profPositionMap = new Map<string, PimPosition>();
+    for (const pos of profPortfolio?.positions || []) {
+      profPositionMap.set(pos.symbol, pos);
+    }
+
+    // Build effective group for this profile (handle alpha filtering)
+    let profGroup = selectedGroup;
+    if (profile === "alpha") {
+      const alphaHoldings = selectedGroup.holdings.filter(
+        (h) => h.assetClass === "equity" && !coreSymbols.has(symbolToTicker(h.symbol))
+      );
+      const totalW = alphaHoldings.reduce((s, h) => s + h.weightInClass, 0);
+      profGroup = {
+        ...selectedGroup,
+        holdings: totalW > 0 ? alphaHoldings.map((h) => ({ ...h, weightInClass: h.weightInClass / totalW })) : alphaHoldings,
+      };
+    }
+
+    // Compute total value for this profile (CAD)
+    let totalValCad = profPortfolio?.cashBalance || 0;
+    const holdingInfo: { symbol: string; modelPct: number; units: number; priceCad: number; currency: "CAD" | "USD"; costBasis: number }[] = [];
+    for (const h of profGroup.holdings) {
+      let alloc = 0;
+      if (h.assetClass === "fixedIncome") alloc = pWeights.fixedIncome;
+      else if (h.assetClass === "equity") alloc = pWeights.equity;
+      else if (h.assetClass === "alternative") alloc = pWeights.alternatives;
+      const modelPct = h.weightInClass * alloc;
+      if (modelPct <= 0) continue;
+
+      const pos = profPositionMap.get(h.symbol);
+      const units = pos?.units || 0;
+      const costBasis = pos?.costBasis || sharedCostBasisMap.get(h.symbol) || 0;
+      const price = livePrices[h.symbol] || 0;
+      const fxRate = h.currency === "USD" ? usdCadRate : 1;
+      const priceCad = price * fxRate;
+      totalValCad += units * priceCad;
+      holdingInfo.push({ symbol: h.symbol, modelPct, units, priceCad, currency: h.currency, costBasis });
+    }
+
     const transactions: PimTransaction[] = [];
-    const newPrices: Record<string, number> = { ...(groupState.lastRebalance?.prices || {}) };
-
-    // Build updated positions from rebalance deltas
     const updatedPositionMap = new Map<string, { units: number; costBasis: number }>();
-    // Start with existing positions
-    for (const row of sortedRows) {
-      if (row.modelPct <= 0) continue;
-      const existing = positionMap.get(row.symbol);
-      updatedPositionMap.set(row.symbol, {
-        units: existing?.units || 0,
-        costBasis: existing?.costBasis || sharedCostBasisMap.get(row.symbol) || 0,
+    for (const hi of holdingInfo) {
+      const pos = profPositionMap.get(hi.symbol);
+      updatedPositionMap.set(hi.symbol, {
+        units: pos?.units || 0,
+        costBasis: pos?.costBasis || sharedCostBasisMap.get(hi.symbol) || 0,
       });
     }
 
-    for (const row of sortedRows) {
-      if (row.modelPct <= 0) continue;
-      const execPriceStr = rebalancePrices[row.symbol];
+    for (const hi of holdingInfo) {
+      const execPriceStr = priceOverrides[hi.symbol];
       const execPrice = parseFloat(execPriceStr);
-      if (!execPrice || isNaN(execPrice)) continue;
+      const isMutualFund = isFundservCode(hi.symbol);
 
-      const targetValueCad = totalValueCadSummary * row.modelPct;
-      const targetUnits = row.priceCad > 0 ? targetValueCad / row.priceCad : 0;
-      const deltaUnits = targetUnits - row.units;
-      if (Math.abs(deltaUnits) < 0.5) continue;
+      // Mutual funds: we don't need an exec price — we record dollar amount
+      // Stocks/ETFs: need an exec price
+      if (!isMutualFund && (!execPrice || isNaN(execPrice))) continue;
 
-      const direction = deltaUnits > 0 ? "buy" as const : "sell" as const;
-      const fxRate = row.currency === "USD" ? usdCadRate : 1;
-      const execPriceCad = execPrice * fxRate;
+      const targetValueCad = totalValCad * hi.modelPct;
+      const deltaValueCad = targetValueCad - (hi.units * hi.priceCad);
 
-      // Update position: new units and weighted average ACB (in CAD)
-      const pos = updatedPositionMap.get(row.symbol)!;
-      const oldUnits = pos.units;
-      const oldCostBasis = pos.costBasis;
-      const newUnits = oldUnits + deltaUnits;
+      if (!isMutualFund) {
+        // Stocks/ETFs: settle immediately
+        const targetUnits = hi.priceCad > 0 ? targetValueCad / hi.priceCad : 0;
+        const deltaUnits = targetUnits - hi.units;
+        if (Math.abs(deltaUnits) < 0.5) continue;
 
-      let newCostBasis = oldCostBasis;
-      if (direction === "buy" && newUnits > 0) {
-        // Weighted average: (oldUnits * oldACB + boughtUnits * execPriceCad) / newUnits
-        newCostBasis = (oldUnits * oldCostBasis + Math.abs(deltaUnits) * execPriceCad) / newUnits;
+        const direction = deltaUnits > 0 ? "buy" as const : "sell" as const;
+        const fxRate = hi.currency === "USD" ? usdCadRate : 1;
+        const execPriceCad = execPrice * fxRate;
+
+        const pos = updatedPositionMap.get(hi.symbol)!;
+        const oldUnits = pos.units;
+        const oldCostBasis = pos.costBasis;
+        const newUnits = oldUnits + deltaUnits;
+
+        let newCostBasis = oldCostBasis;
+        if (direction === "buy" && newUnits > 0) {
+          newCostBasis = (oldUnits * oldCostBasis + Math.abs(deltaUnits) * execPriceCad) / newUnits;
+        }
+
+        updatedPositionMap.set(hi.symbol, { units: Math.max(0, newUnits), costBasis: parseFloat(newCostBasis.toFixed(4)) });
+
+        transactions.push({
+          id: generateId(),
+          date: new Date().toISOString(),
+          groupId: selectedGroupId,
+          type: "rebalance",
+          symbol: hi.symbol,
+          direction,
+          price: execPrice,
+          targetWeight: hi.modelPct,
+          status: "settled",
+          profile,
+        });
+      } else {
+        // Mutual funds: pending — record dollar amount, settle when NAV is known
+        if (Math.abs(deltaValueCad) < 1) continue; // skip trivial amounts
+        const direction = deltaValueCad > 0 ? "buy" as const : "sell" as const;
+
+        transactions.push({
+          id: generateId(),
+          date: new Date().toISOString(),
+          groupId: selectedGroupId,
+          type: "rebalance",
+          symbol: hi.symbol,
+          direction,
+          price: 0, // unknown until settlement
+          targetWeight: hi.modelPct,
+          status: "pending",
+          targetAmount: parseFloat(Math.abs(deltaValueCad).toFixed(2)),
+          profile,
+        });
       }
-      // For sells, ACB per unit stays the same
-
-      updatedPositionMap.set(row.symbol, { units: Math.max(0, newUnits), costBasis: parseFloat(newCostBasis.toFixed(4)) });
-
-      newPrices[row.symbol] = execPrice;
-      transactions.push({
-        id: generateId(),
-        date: new Date().toISOString(),
-        groupId: selectedGroupId,
-        type: "rebalance",
-        symbol: row.symbol,
-        direction,
-        price: execPrice,
-        targetWeight: row.modelPct,
-      });
     }
 
-    // Persist updated positions
+    // Build updated position list (only for settled trades)
     const newPositions: PimPosition[] = [];
     for (const [symbol, data] of updatedPositionMap) {
       newPositions.push({ symbol, units: parseFloat(data.units.toFixed(4)), costBasis: data.costBasis });
     }
-    // Merge: keep positions for symbols not in the rebalance
+
+    return { transactions, positionUpdates: newPositions };
+  }, [selectedGroup, positions, selectedGroupId, livePrices, usdCadRate, sharedCostBasisMap, coreSymbols]);
+
+  // Compute pending trades across all profiles
+  const pendingTrades = useMemo(() => {
+    return groupState.transactions.filter((t) => t.status === "pending");
+  }, [groupState.transactions]);
+
+  const handleExecuteRebalance = useCallback(async () => {
+    if (!selectedGroup || !profileWeights) return;
+
+    // Execute for active profile
+    const { transactions, positionUpdates } = await executeRebalanceForProfile(activeProfile, rebalancePrices);
+    if (transactions.length === 0) return;
+
+    const newPrices: Record<string, number> = { ...(groupState.lastRebalance?.prices || {}) };
+    for (const t of transactions) {
+      if (t.price > 0) newPrices[t.symbol] = t.price;
+    }
+
+    // Merge positions
     const existingPositions = currentPositions?.positions || [];
-    const rebalancedSymbols = new Set(updatedPositionMap.keys());
+    const rebalancedSymbols = new Set(positionUpdates.map((p) => p.symbol));
     const keptPositions = existingPositions.filter((p) => !rebalancedSymbols.has(p.symbol));
-    const mergedPositions = [...keptPositions, ...newPositions];
+    const mergedPositions = [...keptPositions, ...positionUpdates];
 
     const updatedPortfolio: PimPortfolioPositions = {
       groupId: selectedGroupId,
@@ -644,7 +751,7 @@ export function PimPortfolio({ groups }: Props) {
     );
     // Sync costBasis across profiles
     const costBasisMap = new Map<string, number>();
-    for (const p of newPositions) {
+    for (const p of positionUpdates) {
       if (p.costBasis > 0) costBasisMap.set(p.symbol, p.costBasis);
     }
     const synced = otherPortfolios.map((p) => {
@@ -666,7 +773,7 @@ export function PimPortfolio({ groups }: Props) {
       });
     } catch { /* ignore */ }
 
-    // Update portfolio state (rebalance timestamp + transactions)
+    // Update portfolio state
     const updatedState: PimPortfolioState = {
       ...pimPortfolioState,
       groupStates: [
@@ -681,11 +788,262 @@ export function PimPortfolio({ groups }: Props) {
     };
     updatePimPortfolioState(updatedState);
     setShowRebalance(false);
-    setRebalancePrices({});
+    // Don't clear rebalancePrices — they're shared across profiles for cross-model use
     fetchPrices();
   }, [sortedRows, rebalancePrices, totalValueCadSummary, usdCadRate, positionMap, sharedCostBasisMap,
       positions, currentPositions, activeProfile, selectedGroup, profileWeights,
-      pimPortfolioState, selectedGroupId, groupState, updatePimPortfolioState, fetchPrices]);
+      pimPortfolioState, selectedGroupId, groupState, updatePimPortfolioState, fetchPrices,
+      executeRebalanceForProfile]);
+
+  // Execute rebalance across ALL profiles at once (cross-model price sharing)
+  const handleExecuteAllProfiles = useCallback(async () => {
+    if (!selectedGroup) return;
+
+    let allNewTransactions: PimTransaction[] = [];
+    let allPositionsList = [...positions];
+    const newPrices: Record<string, number> = { ...(groupState.lastRebalance?.prices || {}) };
+
+    for (const profile of availableProfiles) {
+      const { transactions, positionUpdates } = await executeRebalanceForProfile(profile, rebalancePrices);
+      if (transactions.length === 0) continue;
+
+      for (const t of transactions) {
+        if (t.price > 0) newPrices[t.symbol] = t.price;
+      }
+      allNewTransactions = [...allNewTransactions, ...transactions];
+
+      // Get existing portfolio for this profile
+      const existingPortfolio = allPositionsList.find(
+        (p) => p.groupId === selectedGroupId && p.profile === profile
+      );
+      const existingPos = existingPortfolio?.positions || [];
+      const updatedSymbols = new Set(positionUpdates.map((p) => p.symbol));
+      const keptPos = existingPos.filter((p) => !updatedSymbols.has(p.symbol));
+      const mergedPos = [...keptPos, ...positionUpdates];
+
+      const updatedPortfolio: PimPortfolioPositions = {
+        groupId: selectedGroupId,
+        profile,
+        positions: mergedPos,
+        cashBalance: existingPortfolio?.cashBalance || 0,
+        lastUpdated: new Date().toISOString(),
+      };
+
+      allPositionsList = [
+        ...allPositionsList.filter((p) => !(p.groupId === selectedGroupId && p.profile === profile)),
+        updatedPortfolio,
+      ];
+    }
+
+    // Sync costBasis across all profiles
+    const costBasisMap = new Map<string, number>();
+    for (const p of allPositionsList) {
+      if (p.groupId !== selectedGroupId) continue;
+      for (const pos of p.positions) {
+        if (pos.costBasis > 0 && !costBasisMap.has(pos.symbol)) {
+          costBasisMap.set(pos.symbol, pos.costBasis);
+        }
+      }
+    }
+    allPositionsList = allPositionsList.map((p) => {
+      if (p.groupId !== selectedGroupId) return p;
+      return {
+        ...p,
+        positions: p.positions.map((pos) => {
+          const synced = costBasisMap.get(pos.symbol);
+          return synced != null ? { ...pos, costBasis: synced } : pos;
+        }),
+      };
+    });
+
+    setPositions(allPositionsList);
+    try {
+      await fetch("/api/kv/pim-positions", {
+        method: "PUT",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ portfolios: allPositionsList }),
+      });
+    } catch { /* ignore */ }
+
+    const updatedState: PimPortfolioState = {
+      ...pimPortfolioState,
+      groupStates: [
+        ...pimPortfolioState.groupStates.filter((gs) => gs.groupId !== selectedGroupId),
+        {
+          ...groupState,
+          lastRebalance: { date: new Date().toISOString(), prices: newPrices },
+          transactions: [...groupState.transactions, ...allNewTransactions],
+        },
+      ],
+      lastUpdated: new Date().toISOString(),
+    };
+    updatePimPortfolioState(updatedState);
+    setShowRebalance(false);
+    setRebalancePrices({});
+    fetchPrices();
+  }, [selectedGroup, availableProfiles, rebalancePrices, positions, pimPortfolioState,
+      selectedGroupId, groupState, updatePimPortfolioState, fetchPrices, executeRebalanceForProfile]);
+
+  // Fetch NAV prices for pending mutual fund trades using the same /api/prices
+  // route that the rest of the app uses for live fund pricing (Barchart EOD).
+  const handleFetchSettlementPrices = useCallback(async () => {
+    const fundSymbols = [...new Set(pendingTrades.map((t) => t.symbol))];
+    if (fundSymbols.length === 0) return;
+
+    setSettlementLoading(true);
+    try {
+      const res = await fetch("/api/prices", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ tickers: fundSymbols }),
+      });
+      if (res.ok) {
+        const data = await res.json();
+        const prices: Record<string, string> = {};
+        for (const sym of fundSymbols) {
+          const price = data.prices?.[sym];
+          if (price != null && price > 0) {
+            prices[sym] = price.toFixed(4);
+          }
+        }
+        setSettlementPrices((prev) => ({ ...prev, ...prices }));
+      }
+    } catch { /* ignore */ }
+    setSettlementLoading(false);
+  }, [pendingTrades]);
+
+  // Open settlement panel and auto-fetch prices
+  const handleOpenSettlement = useCallback(() => {
+    setShowSettlement(true);
+    handleFetchSettlementPrices();
+  }, [handleFetchSettlementPrices]);
+
+  // Settle pending mutual fund trades: calculate units from targetAmount / NAV
+  const handleSettlePending = useCallback(async () => {
+    if (pendingTrades.length === 0) return;
+    setSettling(true);
+
+    let updatedPositionsList = [...positions];
+    const settledTransactions: PimTransaction[] = [];
+    const now = new Date().toISOString();
+
+    for (const trade of pendingTrades) {
+      const navStr = settlementPrices[trade.symbol];
+      const nav = parseFloat(navStr);
+      if (!nav || isNaN(nav) || nav <= 0) continue;
+
+      const profile = trade.profile || activeProfile;
+      const targetAmount = trade.targetAmount || 0;
+      if (targetAmount <= 0) continue;
+
+      const units = targetAmount / nav;
+
+      // Find the portfolio for this profile
+      const portfolioIdx = updatedPositionsList.findIndex(
+        (p) => p.groupId === selectedGroupId && p.profile === profile
+      );
+      if (portfolioIdx === -1) continue;
+
+      const portfolio = updatedPositionsList[portfolioIdx];
+      const existingPos = portfolio.positions.find((p) => p.symbol === trade.symbol);
+      const oldUnits = existingPos?.units || 0;
+      const oldCostBasis = existingPos?.costBasis || sharedCostBasisMap.get(trade.symbol) || 0;
+
+      let newUnits: number;
+      let newCostBasis: number;
+
+      if (trade.direction === "buy") {
+        newUnits = oldUnits + units;
+        newCostBasis = newUnits > 0
+          ? (oldUnits * oldCostBasis + units * nav) / newUnits
+          : nav;
+      } else {
+        newUnits = Math.max(0, oldUnits - units);
+        newCostBasis = oldCostBasis; // ACB per unit stays same on sell
+      }
+
+      // Update position in portfolio
+      const updatedPos = portfolio.positions.map((p) =>
+        p.symbol === trade.symbol
+          ? { ...p, units: parseFloat(newUnits.toFixed(4)), costBasis: parseFloat(newCostBasis.toFixed(4)) }
+          : p
+      );
+      // If position didn't exist, add it
+      if (!existingPos) {
+        updatedPos.push({
+          symbol: trade.symbol,
+          units: parseFloat(units.toFixed(4)),
+          costBasis: parseFloat(nav.toFixed(4)),
+        });
+      }
+
+      updatedPositionsList[portfolioIdx] = {
+        ...portfolio,
+        positions: updatedPos,
+        lastUpdated: now,
+      };
+
+      // Mark transaction as settled
+      settledTransactions.push({
+        ...trade,
+        status: "settled",
+        price: nav,
+        settledAt: now,
+      });
+    }
+
+    // Sync costBasis across profiles
+    const costBasisMap = new Map<string, number>();
+    for (const p of updatedPositionsList) {
+      if (p.groupId !== selectedGroupId) continue;
+      for (const pos of p.positions) {
+        if (pos.costBasis > 0 && !costBasisMap.has(pos.symbol)) {
+          costBasisMap.set(pos.symbol, pos.costBasis);
+        }
+      }
+    }
+    updatedPositionsList = updatedPositionsList.map((p) => {
+      if (p.groupId !== selectedGroupId) return p;
+      return {
+        ...p,
+        positions: p.positions.map((pos) => {
+          const synced = costBasisMap.get(pos.symbol);
+          return synced != null ? { ...pos, costBasis: synced } : pos;
+        }),
+      };
+    });
+
+    setPositions(updatedPositionsList);
+    try {
+      await fetch("/api/kv/pim-positions", {
+        method: "PUT",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ portfolios: updatedPositionsList }),
+      });
+    } catch { /* ignore */ }
+
+    // Update transactions: replace pending with settled
+    const settledIds = new Set(settledTransactions.map((t) => t.id));
+    const updatedTransactions = [
+      ...groupState.transactions.filter((t) => !settledIds.has(t.id)),
+      ...settledTransactions,
+    ];
+
+    const updatedState: PimPortfolioState = {
+      ...pimPortfolioState,
+      groupStates: [
+        ...pimPortfolioState.groupStates.filter((gs) => gs.groupId !== selectedGroupId),
+        { ...groupState, transactions: updatedTransactions },
+      ],
+      lastUpdated: now,
+    };
+    updatePimPortfolioState(updatedState);
+    setShowSettlement(false);
+    setSettlementPrices({});
+    setSettling(false);
+    fetchPrices();
+  }, [pendingTrades, settlementPrices, positions, activeProfile, selectedGroupId,
+      sharedCostBasisMap, groupState, pimPortfolioState, updatePimPortfolioState, fetchPrices]);
 
   const handleResolveBuyTicker = useCallback(async (ticker: string) => {
     if (!ticker.trim()) return;
@@ -805,7 +1163,7 @@ export function PimPortfolio({ groups }: Props) {
         </div>
 
         {/* Actions */}
-        <div className="flex items-center gap-2">
+        <div className="flex flex-wrap items-center gap-2">
           <button
             onClick={fetchPrices}
             disabled={pricesLoading}
@@ -845,6 +1203,15 @@ export function PimPortfolio({ groups }: Props) {
               Buy / Sell
             </button>
           )}
+          {!editMode && pendingTrades.length > 0 && (
+            <button onClick={handleOpenSettlement}
+              className="rounded-lg bg-violet-600 px-3 py-1.5 text-xs font-semibold text-white hover:bg-violet-700 transition-colors relative">
+              Settle Pending
+              <span className="absolute -top-1.5 -right-1.5 flex h-4 w-4 items-center justify-center rounded-full bg-red-500 text-[9px] font-bold text-white">
+                {pendingTrades.length}
+              </span>
+            </button>
+          )}
           {groupState.lastRebalance && (
             <span className="text-[10px] text-slate-400 ml-1">
               Last rebalance: {new Date(groupState.lastRebalance.date).toLocaleDateString()}
@@ -856,10 +1223,13 @@ export function PimPortfolio({ groups }: Props) {
       {/* Rebalance Panel */}
       {showRebalance && (
         <div className="rounded-2xl border border-emerald-200 bg-emerald-50/50 p-5 shadow-sm">
-          <h3 className="text-sm font-bold text-slate-800 mb-3">Rebalance Preview</h3>
+          <h3 className="text-sm font-bold text-slate-800 mb-3">
+            Rebalance Preview
+            <span className="ml-2 text-[10px] font-normal text-slate-400">({PROFILE_LABELS[activeProfile]})</span>
+          </h3>
           <p className="text-xs text-slate-500 mb-3">
-            Shows the units to buy or sell for each holding to match model weights.
-            Enter the execution price (in holding currency) to confirm — ACB (CAD) will be recalculated automatically.
+            Enter execution prices for stocks &amp; ETFs. Mutual funds (FUNDSERV) will be recorded as pending and settled tomorrow when NAV is available.
+            Prices are shared across profiles — switch tabs and they stay filled.
           </p>
           <div className="overflow-x-auto">
             <table className="w-full text-sm">
@@ -884,17 +1254,26 @@ export function PimPortfolio({ groups }: Props) {
                   const targetUnits = r.priceCad > 0 ? targetValueCad / r.priceCad : 0;
                   const deltaUnits = targetUnits - r.units;
                   const absDelta = Math.abs(deltaUnits);
-                  const action = absDelta < 0.5 ? "HOLD" : deltaUnits > 0 ? "BUY" : "SELL";
+                  const isMF = isFundservCode(r.symbol);
+                  const deltaValueCad = targetValueCad - r.valueCad;
+                  const action = isMF
+                    ? (Math.abs(deltaValueCad) < 1 ? "HOLD" : deltaValueCad > 0 ? "BUY" : "SELL")
+                    : (absDelta < 0.5 ? "HOLD" : deltaUnits > 0 ? "BUY" : "SELL");
                   const execPrice = parseFloat(rebalancePrices[r.symbol] || "0");
                   const fxRate = r.currency === "USD" ? usdCadRate : 1;
-                  const costCad = execPrice > 0 ? absDelta * execPrice * fxRate : 0;
+                  const costCad = isMF
+                    ? Math.abs(deltaValueCad)
+                    : (execPrice > 0 ? absDelta * execPrice * fxRate : 0);
 
                   return (
-                    <tr key={r.symbol} className="border-b border-emerald-100">
+                    <tr key={r.symbol} className={`border-b border-emerald-100 ${isMF ? "bg-violet-50/30" : ""}`}>
                       <td className="py-2 font-mono text-xs font-semibold">
                         <Link href={`/stock/${symbolToTicker(r.symbol).toLowerCase()}?from=positioning`} className="hover:underline hover:text-blue-600 transition-colors">
                           {r.symbol}
                         </Link>
+                        {isMF && (
+                          <span className="ml-1 rounded bg-violet-100 px-1 py-0.5 text-[8px] font-bold text-violet-600">FUND</span>
+                        )}
                       </td>
                       <td className="py-2 text-right font-mono text-xs">{pct(r.modelPct)}</td>
                       <td className="py-2 text-right font-mono text-xs">{pct(r.currentPct)}</td>
@@ -907,24 +1286,32 @@ export function PimPortfolio({ groups }: Props) {
                             {action}
                           </span>
                         )}
-                        {action === "HOLD" && <span className="text-[10px] text-slate-400">—</span>}
+                        {action === "HOLD" && <span className="text-[10px] text-slate-400">{"\u2014"}</span>}
                       </td>
-                      <td className="py-2 text-right font-mono text-xs">{r.units > 0 ? r.units.toFixed(2) : "—"}</td>
-                      <td className="py-2 text-right font-mono text-xs">{targetUnits.toFixed(2)}</td>
+                      <td className="py-2 text-right font-mono text-xs">{r.units > 0 ? r.units.toFixed(2) : "\u2014"}</td>
+                      <td className="py-2 text-right font-mono text-xs">
+                        {isMF ? (
+                          <span className="text-violet-500" title="Units calculated at settlement">{"\u2014"}</span>
+                        ) : targetUnits.toFixed(2)}
+                      </td>
                       <td className={`py-2 text-right font-mono text-xs font-semibold ${action === "BUY" ? "text-emerald-600" : action === "SELL" ? "text-red-500" : "text-slate-400"}`}>
-                        {action === "HOLD" ? "—" : `${deltaUnits > 0 ? "+" : ""}${deltaUnits.toFixed(2)}`}
+                        {action === "HOLD" ? "\u2014" : isMF ? (
+                          <span title="Dollar amount — units determined at settlement">${Math.abs(deltaValueCad).toFixed(0)}</span>
+                        ) : `${deltaUnits > 0 ? "+" : ""}${deltaUnits.toFixed(2)}`}
                       </td>
-                      <td className="py-2 text-right font-mono text-xs text-slate-500">{r.price > 0 ? `$${r.price.toFixed(2)}` : "—"}</td>
+                      <td className="py-2 text-right font-mono text-xs text-slate-500">{r.price > 0 ? `$${r.price.toFixed(2)}` : "\u2014"}</td>
                       <td className="py-2 text-right">
-                        {action !== "HOLD" ? (
+                        {isMF ? (
+                          <span className="text-[10px] text-violet-500 italic">Pending</span>
+                        ) : action !== "HOLD" ? (
                           <input type="number" step="0.01" placeholder="Price"
                             value={rebalancePrices[r.symbol] || ""}
                             onChange={(e) => setRebalancePrices((p) => ({ ...p, [r.symbol]: e.target.value }))}
                             className="w-20 rounded border border-slate-200 px-2 py-1 text-xs text-right outline-none focus:border-emerald-300" />
-                        ) : <span className="text-xs text-slate-400">—</span>}
+                        ) : <span className="text-xs text-slate-400">{"\u2014"}</span>}
                       </td>
                       <td className="py-2 text-right font-mono text-xs text-slate-600">
-                        {costCad > 0 ? `$${costCad.toFixed(2)}` : "—"}
+                        {costCad > 0 ? `$${costCad.toFixed(2)}` : "\u2014"}
                       </td>
                     </tr>
                   );
@@ -932,12 +1319,94 @@ export function PimPortfolio({ groups }: Props) {
               </tbody>
             </table>
           </div>
-          <div className="flex gap-2 mt-3">
+          <div className="flex flex-wrap items-center gap-2 mt-3">
             <button onClick={handleExecuteRebalance}
               className="rounded-lg bg-emerald-600 px-4 py-2 text-xs font-semibold text-white hover:bg-emerald-700 transition-colors">
-              Execute Rebalance
+              Execute ({PROFILE_LABELS[activeProfile]})
             </button>
+            {availableProfiles.length > 1 && (
+              <button onClick={handleExecuteAllProfiles}
+                className="rounded-lg bg-blue-600 px-4 py-2 text-xs font-semibold text-white hover:bg-blue-700 transition-colors">
+                Execute All Profiles
+              </button>
+            )}
             <button onClick={() => { setShowRebalance(false); setRebalancePrices({}); }}
+              className="rounded-lg bg-slate-200 px-4 py-2 text-xs font-semibold text-slate-600 hover:bg-slate-300 transition-colors">
+              Cancel
+            </button>
+            {sortedRows.some((r) => r.modelPct > 0 && isFundservCode(r.symbol)) && (
+              <span className="text-[10px] text-violet-500 ml-2">
+                Mutual fund trades will be recorded as pending — settle tomorrow when NAV is available.
+              </span>
+            )}
+          </div>
+        </div>
+      )}
+
+      {/* Settle Pending Trades Panel */}
+      {showSettlement && pendingTrades.length > 0 && (
+        <div className="rounded-2xl border border-violet-200 bg-violet-50/50 p-5 shadow-sm">
+          <h3 className="text-sm font-bold text-slate-800 mb-1">Settle Pending Mutual Fund Trades</h3>
+          <p className="text-xs text-slate-500 mb-3">
+            Enter the settlement NAV for each mutual fund. NAV is auto-fetched from Barchart — verify and adjust if needed.
+          </p>
+          <div className="overflow-x-auto">
+            <table className="w-full text-sm">
+              <thead>
+                <tr className="border-b border-violet-200 text-xs text-slate-500">
+                  <th className="text-left py-2 font-semibold">Symbol</th>
+                  <th className="text-left py-2 font-semibold hidden sm:table-cell">Profile</th>
+                  <th className="text-center py-2 font-semibold">Direction</th>
+                  <th className="text-right py-2 font-semibold">Amount (CAD)</th>
+                  <th className="text-right py-2 font-semibold">NAV Price</th>
+                  <th className="text-right py-2 font-semibold">Units</th>
+                  <th className="text-left py-2 font-semibold hidden md:table-cell">Trade Date</th>
+                </tr>
+              </thead>
+              <tbody>
+                {pendingTrades.map((t) => {
+                  const nav = parseFloat(settlementPrices[t.symbol] || "0");
+                  const units = nav > 0 && t.targetAmount ? t.targetAmount / nav : 0;
+                  return (
+                    <tr key={t.id} className="border-b border-violet-100">
+                      <td className="py-2 font-mono text-xs font-semibold text-violet-700">{t.symbol}</td>
+                      <td className="py-2 text-xs text-slate-600 hidden sm:table-cell">{PROFILE_LABELS[(t.profile || activeProfile) as PimProfileType]}</td>
+                      <td className="py-2 text-center">
+                        <span className={`rounded px-1.5 py-0.5 text-[10px] font-bold ${t.direction === "sell" ? "bg-red-100 text-red-700" : "bg-emerald-100 text-emerald-700"}`}>
+                          {t.direction.toUpperCase()}
+                        </span>
+                      </td>
+                      <td className="py-2 text-right font-mono text-xs">${(t.targetAmount || 0).toFixed(2)}</td>
+                      <td className="py-2 text-right">
+                        <input type="number" step="0.0001" placeholder="NAV"
+                          value={settlementPrices[t.symbol] || ""}
+                          onChange={(e) => setSettlementPrices((p) => ({ ...p, [t.symbol]: e.target.value }))}
+                          className="w-24 rounded border border-slate-200 px-2 py-1 text-xs text-right outline-none focus:border-violet-300" />
+                      </td>
+                      <td className="py-2 text-right font-mono text-xs font-semibold text-violet-700">
+                        {units > 0 ? units.toFixed(4) : "\u2014"}
+                      </td>
+                      <td className="py-2 text-xs text-slate-400 hidden md:table-cell">
+                        {new Date(t.date).toLocaleDateString()}
+                      </td>
+                    </tr>
+                  );
+                })}
+              </tbody>
+            </table>
+          </div>
+          <div className="flex flex-wrap items-center gap-2 mt-3">
+            <button onClick={handleSettlePending}
+              disabled={settling || !pendingTrades.some((t) => parseFloat(settlementPrices[t.symbol] || "0") > 0)}
+              className="rounded-lg bg-violet-600 px-4 py-2 text-xs font-semibold text-white hover:bg-violet-700 transition-colors disabled:opacity-50">
+              {settling ? "Settling..." : "Settle All"}
+            </button>
+            <button onClick={handleFetchSettlementPrices}
+              disabled={settlementLoading}
+              className="rounded-lg bg-slate-100 px-4 py-2 text-xs font-semibold text-slate-600 hover:bg-slate-200 transition-colors disabled:opacity-50">
+              {settlementLoading ? "Fetching..." : "Refresh NAV"}
+            </button>
+            <button onClick={() => { setShowSettlement(false); setSettlementPrices({}); }}
               className="rounded-lg bg-slate-200 px-4 py-2 text-xs font-semibold text-slate-600 hover:bg-slate-300 transition-colors">
               Cancel
             </button>
