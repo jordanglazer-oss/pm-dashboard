@@ -65,6 +65,7 @@ export async function PUT(req: NextRequest) {
         newton?: string;
         newtonDate?: string;
         lee?: string;
+        leeDate?: string;
       };
       if (typeof notes.newton === "string") {
         appendStrategistNote("newton", notes.newton, notes.newtonDate).catch((err) =>
@@ -72,7 +73,7 @@ export async function PUT(req: NextRequest) {
         );
       }
       if (typeof notes.lee === "string") {
-        appendStrategistNote("lee", notes.lee).catch((err) =>
+        appendStrategistNote("lee", notes.lee, notes.leeDate).catch((err) =>
           console.error("Lee note history append failed:", err)
         );
       }
