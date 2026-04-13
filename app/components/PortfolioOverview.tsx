@@ -6,7 +6,7 @@ import { useStocks } from "@/app/lib/StockContext";
 import { SCORE_GROUPS, MAX_SCORE, INSTRUMENT_LABELS } from "@/app/lib/types";
 import type { ScoredStock, ScoreKey, HealthData } from "@/app/lib/types";
 import type { TechnicalIndicators, RiskAlert } from "@/app/lib/technicals";
-import { groupTotal, isScoreable } from "@/app/lib/scoring";
+import { groupTotal, isScoreable, normalizeSector } from "@/app/lib/scoring";
 import { SignalPill } from "./SignalPill";
 
 /** Format an ISO timestamp for display next to Score All / Refresh All buttons. */
@@ -39,17 +39,7 @@ const SP500_WEIGHTS_FALLBACK: Record<string, number> = {
 };
 
 // Normalize sector names — Yahoo uses different names than GICS standard
-// e.g., "Consumer Cyclical" vs "Consumer Discretionary", "Financial Services" vs "Financials"
-function normalizeSector(sector: string): string {
-  const map: Record<string, string> = {
-    "Consumer Cyclical": "Consumer Discretionary",
-    "Consumer Defensive": "Consumer Staples",
-    "Financial Services": "Financials",
-    "Basic Materials": "Materials",
-    "Healthcare": "Health Care",
-  };
-  return map[sector] || sector;
-}
+// normalizeSector imported from scoring.ts — centralized Yahoo→GICS mapping
 
 // Distinct colors for each GICS sector — all visually distinguishable
 const sectorColors: Record<string, string> = {

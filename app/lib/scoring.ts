@@ -1,6 +1,36 @@
 import type { Stock, ScoredStock, MarketData, ScoreKey } from "./types";
 import { MAX_SCORE, SCORE_GROUPS } from "./types";
 
+// ── Sector name normalization ──────────────────────────────────────────
+// Yahoo Finance, fund data providers, and other sources use non-standard
+// sector names. This map normalizes them to GICS standard labels so the
+// regime multiplier and sector-based logic applies correctly.
+const SECTOR_ALIASES: Record<string, string> = {
+  "Consumer Cyclical": "Consumer Discretionary",
+  "Consumer Defensive": "Consumer Staples",
+  "Financial Services": "Financials",
+  "Basic Materials": "Materials",
+  "Healthcare": "Health Care",
+  // Yahoo lowercase variants (from fund-data)
+  "consumer_cyclical": "Consumer Discretionary",
+  "consumer_defensive": "Consumer Staples",
+  "financial_services": "Financials",
+  "basic_materials": "Materials",
+  "healthcare": "Health Care",
+  "technology": "Technology",
+  "communication_services": "Communication Services",
+  "energy": "Energy",
+  "utilities": "Utilities",
+  "industrials": "Industrials",
+  "real_estate": "Real Estate",
+  "realestate": "Real Estate",
+};
+
+/** Normalize a sector name to GICS standard. */
+export function normalizeSector(sector: string): string {
+  return SECTOR_ALIASES[sector] || sector;
+}
+
 // Sector behavioral clusters for regime scoring.
 //
 // GROWTH: High-duration, multiple-expansion sectors that lead in risk-on
@@ -103,22 +133,23 @@ export function regimeMultiplier(
   riskRegime: string,
   scores?: Record<string, number>
 ): number {
+  const s = normalizeSector(sector);
   let base: number;
   if (riskRegime === "Risk-Off") {
-    if (DEFENSIVE_SECTORS.includes(sector)) base = 1.1;
-    else if (GROWTH_SECTORS.includes(sector)) base = 0.82;
-    else if (CYCLICAL_SECTORS.includes(sector)) base = 0.90;
+    if (DEFENSIVE_SECTORS.includes(s)) base = 1.1;
+    else if (GROWTH_SECTORS.includes(s)) base = 0.82;
+    else if (CYCLICAL_SECTORS.includes(s)) base = 0.90;
     else base = 1;
   } else if (riskRegime === "Neutral") {
-    if (DEFENSIVE_SECTORS.includes(sector)) base = 1.03;
-    else if (GROWTH_SECTORS.includes(sector)) base = 0.95;
-    else if (CYCLICAL_SECTORS.includes(sector)) base = 0.97;
+    if (DEFENSIVE_SECTORS.includes(s)) base = 1.03;
+    else if (GROWTH_SECTORS.includes(s)) base = 0.95;
+    else if (CYCLICAL_SECTORS.includes(s)) base = 0.97;
     else base = 1;
   } else {
     // Risk-On
-    if (GROWTH_SECTORS.includes(sector)) base = 1.1;
-    else if (CYCLICAL_SECTORS.includes(sector)) base = 1.05;
-    else if (DEFENSIVE_SECTORS.includes(sector)) base = 0.95;
+    if (GROWTH_SECTORS.includes(s)) base = 1.1;
+    else if (CYCLICAL_SECTORS.includes(s)) base = 1.05;
+    else if (DEFENSIVE_SECTORS.includes(s)) base = 0.95;
     else base = 1;
   }
 
@@ -165,13 +196,13 @@ export function computeScores(
   let risk: "High" | "Medium" | "Low" = "Medium";
   if (marketData.riskRegime === "Risk-Off" && stock.beta >= 1.15)
     risk = "High";
-  if (DEFENSIVE_SECTORS.includes(stock.sector)) risk = "Low";
+  if (DEFENSIVE_SECTORS.includes(normalizeSector(stock.sector))) risk = "Low";
 
   return { ...stock, raw, adjusted, rating, ratingLabel, risk };
 }
 
 export function isOffensiveSector(sector: string): boolean {
-  return OFFENSIVE_SECTORS.includes(sector);
+  return OFFENSIVE_SECTORS.includes(normalizeSector(sector));
 }
 
 /** Returns true if the instrument can be scored (individual stocks only, not ETFs/funds) */
