@@ -3,7 +3,7 @@
 import React, { useState } from "react";
 import { useStocks } from "@/app/lib/StockContext";
 import { PortfolioOverview } from "@/app/components/PortfolioOverview";
-import { regimeMultiplier, isOffensiveSector } from "@/app/lib/scoring";
+import { regimeMultiplier, isOffensiveSector, normalizeSector } from "@/app/lib/scoring";
 import type { Stock, ScoreKey, InstrumentType } from "@/app/lib/types";
 import { INSTRUMENT_LABELS } from "@/app/lib/types";
 
@@ -197,6 +197,7 @@ export default function DashboardPage() {
                     Elevated volatility, wider credit spreads, and weak breadth — conditions support defensive positioning. See the Morning Brief for live readings.
                   </li>
                 </ul>
+                <a href="#regime-detail" className="mt-2 inline-block text-xs font-semibold text-red-600 hover:text-red-800 transition-colors">View per-stock regime detail ↓</a>
               </div>
             )}
 
@@ -219,6 +220,7 @@ export default function DashboardPage() {
                     Volatility and breadth send mixed signals — cross-currents suggest balanced positioning until a clearer signal emerges. See the Morning Brief for live readings.
                   </li>
                 </ul>
+                <a href="#regime-detail" className="mt-2 inline-block text-xs font-semibold text-amber-600 hover:text-amber-800 transition-colors">View per-stock regime detail ↓</a>
               </div>
             )}
 
@@ -241,6 +243,7 @@ export default function DashboardPage() {
                     Subdued volatility and healthy breadth — conditions favor full risk exposure and growth/cyclical tilt. See the Morning Brief for live readings.
                   </li>
                 </ul>
+                <a href="#regime-detail" className="mt-2 inline-block text-xs font-semibold text-emerald-600 hover:text-emerald-800 transition-colors">View per-stock regime detail ↓</a>
               </div>
             )}
           </div>
@@ -248,6 +251,82 @@ export default function DashboardPage() {
 
         {/* ── Portfolio Overview ── */}
         <PortfolioOverview />
+
+        {/* ── Regime Detail — per-stock multiplier breakdown ── */}
+        <div id="regime-detail" className="scroll-mt-6">
+          <section className="rounded-[24px] border border-slate-200 bg-white p-6 shadow-sm">
+            <div className="flex items-center gap-3 mb-4">
+              <h2 className="text-lg font-bold text-slate-800">Regime Multiplier Detail</h2>
+              <span className={`rounded-full px-2.5 py-0.5 text-xs font-bold ${
+                regime === "Risk-Off" ? "bg-red-100 text-red-700"
+                : regime === "Neutral" ? "bg-amber-100 text-amber-700"
+                : "bg-emerald-100 text-emerald-700"
+              }`}>{regime}</span>
+            </div>
+            <p className="text-xs text-slate-400 mb-4">
+              Each stock&apos;s regime multiplier is determined by its sector tier (Growth / Cyclical / Defensive) and dampened by its quality score (growth + leverage + cash flow quality + moat, max 8). Higher quality → softer regime effect.
+            </p>
+            <div className="overflow-x-auto">
+              <table className="w-full text-sm">
+                <thead>
+                  <tr className="border-b-2 border-slate-200 text-left">
+                    <th className="py-2 pr-3 text-xs font-semibold text-slate-500">Ticker</th>
+                    <th className="py-2 pr-3 text-xs font-semibold text-slate-500">Sector</th>
+                    <th className="py-2 pr-3 text-xs font-semibold text-slate-500">Tier</th>
+                    <th className="py-2 pr-3 text-xs font-semibold text-slate-500 text-right">Quality</th>
+                    <th className="py-2 pr-3 text-xs font-semibold text-slate-500 text-right">Base</th>
+                    <th className="py-2 pr-3 text-xs font-semibold text-slate-500 text-right">Adjusted</th>
+                    <th className="py-2 text-xs font-semibold text-slate-500 text-right">Raw → Adj Score</th>
+                  </tr>
+                </thead>
+                <tbody>
+                  {scoredStocks
+                    .filter((s) => !s.instrumentType || s.instrumentType === "stock")
+                    .sort((a, b) => {
+                      const ma = regimeMultiplier(a.sector, regime, a.scores);
+                      const mb = regimeMultiplier(b.sector, regime, b.scores);
+                      return ma - mb; // most penalized first
+                    })
+                    .map((s) => {
+                      const normalized = normalizeSector(s.sector);
+                      const tier =
+                        ["Technology", "Communication Services", "Consumer Discretionary"].includes(normalized) ? "Growth"
+                        : ["Financials", "Industrials", "Materials", "Energy"].includes(normalized) ? "Cyclical"
+                        : ["Utilities", "Consumer Staples", "Health Care"].includes(normalized) ? "Defensive"
+                        : "Neutral";
+                      const qualityKeys = ["growth", "leverageCoverage", "cashFlowQuality", "competitiveMoat"] as const;
+                      const qualityScore = qualityKeys.reduce((sum, k) => sum + (s.scores[k] || 0), 0);
+                      const baseMultiplier = regimeMultiplier(s.sector, regime); // no scores = base
+                      const adjustedMultiplier = regimeMultiplier(s.sector, regime, s.scores);
+                      const tierColor =
+                        tier === "Growth" ? "text-blue-600 bg-blue-50"
+                        : tier === "Cyclical" ? "text-amber-700 bg-amber-50"
+                        : tier === "Defensive" ? "text-emerald-700 bg-emerald-50"
+                        : "text-slate-500 bg-slate-50";
+                      const multColor = adjustedMultiplier < 1
+                        ? "text-red-600" : adjustedMultiplier > 1
+                        ? "text-emerald-600" : "text-slate-500";
+                      return (
+                        <tr key={s.ticker} className="border-b border-slate-100 hover:bg-slate-50/50 transition-colors">
+                          <td className="py-2 pr-3 font-mono font-bold text-slate-700">{s.ticker}</td>
+                          <td className="py-2 pr-3 text-slate-500">{normalized}</td>
+                          <td className="py-2 pr-3">
+                            <span className={`rounded-full px-2 py-0.5 text-[10px] font-bold ${tierColor}`}>{tier}</span>
+                          </td>
+                          <td className="py-2 pr-3 text-right font-mono text-slate-600">{qualityScore}/8</td>
+                          <td className="py-2 pr-3 text-right font-mono text-slate-400">{baseMultiplier.toFixed(2)}x</td>
+                          <td className={`py-2 pr-3 text-right font-mono font-semibold ${multColor}`}>{adjustedMultiplier.toFixed(3)}x</td>
+                          <td className="py-2 text-right font-mono text-slate-500">
+                            {s.raw} → <span className="font-semibold text-slate-700">{s.adjusted}</span>
+                          </td>
+                        </tr>
+                      );
+                    })}
+                </tbody>
+              </table>
+            </div>
+          </section>
+        </div>
       </div>
     </main>
   );
