@@ -388,8 +388,7 @@ export function PimPortfolio({ groups }: Props) {
       const gainLoss = r.costValueCad > 0 ? ((r.valueCad - r.costValueCad) / r.costValueCad) * 100 : 0;
 
       let action: "BUY" | "SELL" | "HOLD" = "HOLD";
-      const driftBps = Math.abs(driftPct * 10000);
-      if (driftBps > 25) {
+      if (Math.abs(driftPct) > 0.0001) {
         action = driftPct < 0 ? "BUY" : "SELL";
       }
 
@@ -656,7 +655,7 @@ export function PimPortfolio({ groups }: Props) {
         // Stocks/ETFs: settle immediately
         const targetUnits = hi.priceCad > 0 ? targetValueCad / hi.priceCad : 0;
         const deltaUnits = targetUnits - hi.units;
-        if (Math.abs(deltaUnits) < 0.5) continue;
+        if (Math.abs(deltaUnits) < 0.001) continue; // skip only rounding noise
 
         const direction = deltaUnits > 0 ? "buy" as const : "sell" as const;
         const fxRate = hi.currency === "USD" ? usdCadRate : 1;
@@ -688,7 +687,7 @@ export function PimPortfolio({ groups }: Props) {
         });
       } else {
         // Mutual funds: pending — record dollar amount, settle when NAV is known
-        if (Math.abs(deltaValueCad) < 1) continue; // skip trivial amounts
+        if (Math.abs(deltaValueCad) < 0.01) continue; // skip only rounding noise
         const direction = deltaValueCad > 0 ? "buy" as const : "sell" as const;
 
         transactions.push({
@@ -1257,8 +1256,8 @@ export function PimPortfolio({ groups }: Props) {
                   const isMF = isFundservCode(r.symbol);
                   const deltaValueCad = targetValueCad - r.valueCad;
                   const action = isMF
-                    ? (Math.abs(deltaValueCad) < 1 ? "HOLD" : deltaValueCad > 0 ? "BUY" : "SELL")
-                    : (absDelta < 0.5 ? "HOLD" : deltaUnits > 0 ? "BUY" : "SELL");
+                    ? (Math.abs(deltaValueCad) < 0.01 ? "HOLD" : deltaValueCad > 0 ? "BUY" : "SELL")
+                    : (absDelta < 0.001 ? "HOLD" : deltaUnits > 0 ? "BUY" : "SELL");
                   const execPrice = parseFloat(rebalancePrices[r.symbol] || "0");
                   const fxRate = r.currency === "USD" ? usdCadRate : 1;
                   const costCad = isMF
