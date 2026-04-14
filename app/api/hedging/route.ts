@@ -75,11 +75,21 @@ function parseOptionSymbol(sym: string): { expiry: string; type: "C" | "P"; stri
   };
 }
 
-/** Is this ISO date (YYYY-MM-DD) a standard monthly option (3rd Friday)? */
-function isMonthlyExpiry(iso: string): boolean {
-  const [y, m, d] = iso.split("-").map(Number);
-  const dt = new Date(Date.UTC(y, m - 1, d));
-  return dt.getUTCDay() === 5 && d >= 15 && d <= 21;
+/** ISO date of the 3rd Friday of (year, month) — the standard monthly expiry. */
+function thirdFridayIso(year: number, month: number): string {
+  // Day-of-week of the 1st of the month (0=Sun..6=Sat)
+  const first = new Date(Date.UTC(year, month - 1, 1)).getUTCDay();
+  // First Friday: offset from day 1 to first Friday (5 = Fri)
+  const firstFri = ((5 - first + 7) % 7) + 1;
+  const thirdFri = firstFri + 14;
+  return `${year}-${String(month).padStart(2, "0")}-${String(thirdFri).padStart(2, "0")}`;
+}
+
+/** Absolute day difference between two YYYY-MM-DD strings. */
+function dayDiff(a: string, b: string): number {
+  const [ay, am, ad] = a.split("-").map(Number);
+  const [by, bm, bd] = b.split("-").map(Number);
+  return Math.abs((Date.UTC(ay, am - 1, ad) - Date.UTC(by, bm - 1, bd)) / 86400000);
 }
 
 function isoToShortLabel(iso: string): string {
@@ -130,12 +140,32 @@ export async function GET() {
       putsByExpiry.get(parsed.expiry)!.set(parsed.strike, opt);
     }
 
-    // Select all standard monthly expiries (3rd Friday) in the current calendar year
-    const currentYear = new Date().getUTCFullYear();
-    const monthlyExpiries = [...putsByExpiry.keys()]
-      .filter(isMonthlyExpiry)
-      .filter((iso) => parseInt(iso.slice(0, 4), 10) === currentYear)
-      .sort();
+    // For each of the next 9 calendar months, pick the best available expiry
+    // from the option chain — preferring the standard 3rd-Friday monthly, but
+    // falling back to whichever expiry in that month sits closest to it (some
+    // months CBOE lists EOM/quarterly expiries instead of the 3rd Friday).
+    const allExpiries = [...putsByExpiry.keys()].sort();
+    const now = new Date();
+    const monthlyExpiries: string[] = [];
+    const seen = new Set<string>();
+    for (let i = 0; i < 9; i++) {
+      const probe = new Date(Date.UTC(now.getUTCFullYear(), now.getUTCMonth() + i, 1));
+      const y = probe.getUTCFullYear();
+      const m = probe.getUTCMonth() + 1;
+      const monthPrefix = `${y}-${String(m).padStart(2, "0")}-`;
+      const target = thirdFridayIso(y, m);
+      // Candidates = any expiry in this calendar month that hasn't expired
+      const candidates = allExpiries.filter((e) => e.startsWith(monthPrefix) && e > todayIso);
+      if (candidates.length === 0) continue;
+      // Prefer the expiry closest to the 3rd Friday
+      candidates.sort((a, b) => dayDiff(a, target) - dayDiff(b, target));
+      const pick = candidates[0];
+      if (!seen.has(pick)) {
+        seen.add(pick);
+        monthlyExpiries.push(pick);
+      }
+    }
+    monthlyExpiries.sort();
 
     if (monthlyExpiries.length === 0) {
       return NextResponse.json({ error: "No monthly expiries in option chain" }, { status: 502 });
