@@ -44,10 +44,7 @@ export function Navigation() {
       <div className="mx-auto flex items-center justify-between px-4 py-3 md:px-8">
         {/* Branding */}
         <div className="flex items-center gap-3 shrink-0">
-          <h1 className="text-lg font-bold tracking-tight whitespace-nowrap">PIM Scoring System</h1>
-          <span className="hidden lg:inline text-sm text-slate-400 whitespace-nowrap">
-            Equity Evaluation &middot; Shared Team Data &middot; Max 40
-          </span>
+          <h1 className="text-xl font-bold tracking-tight whitespace-nowrap">PIM Dashboard</h1>
         </div>
 
         {/* Hamburger button — mobile only */}
