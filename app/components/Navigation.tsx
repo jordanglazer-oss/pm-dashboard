@@ -12,6 +12,7 @@ const tabs = [
   { label: "Screener", href: "/screener" },
   { label: "Research", href: "/research" },
   { label: "AA & Perf", href: "/aa-performance" },
+  { label: "Hedging", href: "/hedging" },
   { label: "Appendix", href: "/appendix" },
 ];
 
@@ -35,6 +36,8 @@ export function Navigation() {
     ? "Screener"
     : pathname === "/aa-performance"
     ? "AA & Perf"
+    : pathname === "/hedging"
+    ? "Hedging"
     : pathname === "/appendix"
     ? "Appendix"
     : "Dashboard";
