@@ -1,4 +1,4 @@
-import { NextResponse } from "next/server";
+import { NextRequest, NextResponse } from "next/server";
 
 /**
  * Live SPY protective put hedging cost table.
@@ -41,10 +41,23 @@ export type HedgingQuote = {
   otm10PctOfSpot: number | null;
 };
 
+/** One premium per expiry for a user-specified custom strike. */
+export type CustomStrikeQuote = {
+  expiry: string;
+  premium: number | null;
+  pctOfSpot: number | null;
+};
+
+export type CustomStrikeRow = {
+  strike: number;
+  quotes: CustomStrikeQuote[];
+};
+
 export type HedgingLiveData = {
   fetchedAt: string;
   spotPrice: number;
   quotes: HedgingQuote[];
+  customRows: CustomStrikeRow[];
 };
 
 const MONTHS = ["Jan", "Feb", "Mar", "Apr", "May", "Jun", "Jul", "Aug", "Sep", "Oct", "Nov", "Dec"];
@@ -113,8 +126,15 @@ function midPrice(bid: number | undefined, ask: number | undefined, last: number
   return null;
 }
 
-export async function GET() {
+export async function GET(req: NextRequest) {
   try {
+    // Optional ?extraStrikes=680,640 — user-specified custom strikes to price
+    // at every expiry, in addition to ATM / ~5% OTM / ~10% OTM.
+    const extraStrikes = (req.nextUrl.searchParams.get("extraStrikes") || "")
+      .split(",")
+      .map((s) => parseFloat(s.trim()))
+      .filter((n) => Number.isFinite(n) && n > 0);
+
     const res = await fetch("https://cdn.cboe.com/api/global/delayed_quotes/options/SPY.json", {
       headers: { "User-Agent": "Mozilla/5.0" },
       cache: "no-store",
@@ -202,10 +222,26 @@ export async function GET() {
       };
     });
 
+    // Price each user-specified custom strike at every monthly expiry
+    const customRows: CustomStrikeRow[] = extraStrikes.map((strike) => ({
+      strike,
+      quotes: monthlyExpiries.map((expiry) => {
+        const strikeMap = putsByExpiry.get(expiry)!;
+        const opt = strikeMap.get(strike);
+        const premium = opt ? midPrice(opt.bid, opt.ask, opt.last_trade_price) : null;
+        return {
+          expiry,
+          premium,
+          pctOfSpot: premium != null ? parseFloat(((premium / spot) * 100).toFixed(2)) : null,
+        };
+      }),
+    }));
+
     const data: HedgingLiveData = {
       fetchedAt: new Date().toISOString(),
       spotPrice: parseFloat(spot.toFixed(2)),
       quotes,
+      customRows,
     };
 
     return NextResponse.json(data);
