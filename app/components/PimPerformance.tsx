@@ -53,6 +53,8 @@ export function PimPerformance({ groupId, groupName, selectedProfile }: Props) {
   const [loading, setLoading] = useState(false);
   const [refreshing, setRefreshing] = useState(false);
   const [period, setPeriod] = useState("All");
+  const [hoverIdx, setHoverIdx] = useState<number | null>(null);
+  const svgRef = useRef<SVGSVGElement | null>(null);
   const [autoUpdating, setAutoUpdating] = useState(false);
   const [seeded, setSeeded] = useState(false);
 
@@ -432,10 +434,52 @@ export function PimPerformance({ groupId, groupName, selectedProfile }: Props) {
       yLabels.push({ y, label: v.toFixed(1) });
     }
 
-    const xLabels = [];
-    const xStep = Math.max(1, Math.floor(filteredHistory.length / 5));
-    for (let i = 0; i < filteredHistory.length; i += xStep) {
-      xLabels.push({ x: points[i].x, label: fmtDate(filteredHistory[i].date) });
+    // Smart x-axis labels: prefer year boundaries for long spans, month boundaries
+    // for medium spans, and evenly-spaced dates for short spans.
+    const xLabels: { x: number; label: string }[] = [];
+    const firstDate = new Date(filteredHistory[0].date + "T12:00:00");
+    const lastDate = new Date(filteredHistory[filteredHistory.length - 1].date + "T12:00:00");
+    const spanDays = (lastDate.getTime() - firstDate.getTime()) / (24 * 60 * 60 * 1000);
+
+    if (spanDays >= 365) {
+      // Year-start labels: first trading day of each year
+      let prevYear = -1;
+      for (let i = 0; i < filteredHistory.length; i++) {
+        const y = parseInt(filteredHistory[i].date.slice(0, 4), 10);
+        if (y !== prevYear) {
+          xLabels.push({ x: points[i].x, label: String(y) });
+          prevYear = y;
+        }
+      }
+      // Thin to ~8 labels max to avoid overlap
+      if (xLabels.length > 8) {
+        const step = Math.ceil(xLabels.length / 8);
+        const thinned = xLabels.filter((_, i) => i % step === 0);
+        xLabels.splice(0, xLabels.length, ...thinned);
+      }
+    } else if (spanDays >= 90) {
+      // Month-start labels
+      let prevYM = "";
+      for (let i = 0; i < filteredHistory.length; i++) {
+        const ym = filteredHistory[i].date.slice(0, 7); // YYYY-MM
+        if (ym !== prevYM) {
+          const d = new Date(filteredHistory[i].date + "T12:00:00");
+          const label = d.toLocaleDateString("en-US", { month: "short" })
+            + (d.getMonth() === 0 ? ` ${d.getFullYear().toString().slice(-2)}` : "");
+          xLabels.push({ x: points[i].x, label });
+          prevYM = ym;
+        }
+      }
+      if (xLabels.length > 8) {
+        const step = Math.ceil(xLabels.length / 8);
+        const thinned = xLabels.filter((_, i) => i % step === 0);
+        xLabels.splice(0, xLabels.length, ...thinned);
+      }
+    } else {
+      const xStep = Math.max(1, Math.floor(filteredHistory.length / 5));
+      for (let i = 0; i < filteredHistory.length; i += xStep) {
+        xLabels.push({ x: points[i].x, label: fmtDate(filteredHistory[i].date) });
+      }
     }
 
     const isPositive = points[points.length - 1].value >= points[0].value;
@@ -527,7 +571,7 @@ export function PimPerformance({ groupId, groupName, selectedProfile }: Props) {
           {PERIOD_OPTIONS.map((p) => (
             <button
               key={p.label}
-              onClick={() => setPeriod(p.label)}
+              onClick={() => { setPeriod(p.label); setHoverIdx(null); }}
               className={`rounded-lg px-2.5 py-1 text-[10px] font-bold transition-colors ${
                 period === p.label ? "bg-slate-800 text-white" : "bg-slate-100 text-slate-500 hover:bg-slate-200"
               }`}
@@ -576,8 +620,34 @@ export function PimPerformance({ groupId, groupName, selectedProfile }: Props) {
 
       {/* Chart */}
       {chartData ? (
-        <div className="w-full overflow-x-auto">
-          <svg viewBox={`0 0 ${chartWidth} ${chartHeight}`} className="w-full h-auto min-w-[400px]" preserveAspectRatio="xMidYMid meet">
+        <div className="relative w-full overflow-x-auto">
+          <svg
+            ref={svgRef}
+            viewBox={`0 0 ${chartWidth} ${chartHeight}`}
+            className="w-full h-auto min-w-[400px] touch-none select-none"
+            preserveAspectRatio="xMidYMid meet"
+            onPointerMove={(e) => {
+              if (!svgRef.current || !chartData) return;
+              const rect = svgRef.current.getBoundingClientRect();
+              const svgX = ((e.clientX - rect.left) / rect.width) * chartWidth;
+              // Find nearest point by x
+              let closest = 0;
+              let closestDist = Infinity;
+              for (let i = 0; i < chartData.points.length; i++) {
+                const d = Math.abs(chartData.points[i].x - svgX);
+                if (d < closestDist) { closestDist = d; closest = i; }
+              }
+              setHoverIdx(closest);
+            }}
+            onPointerLeave={() => setHoverIdx(null)}
+            onPointerDown={(e) => {
+              // Capture pointer for touch drag across the chart
+              e.currentTarget.setPointerCapture(e.pointerId);
+            }}
+            onPointerUp={(e) => {
+              e.currentTarget.releasePointerCapture(e.pointerId);
+            }}
+          >
             {chartData.yLabels.map((yl, i) => (
               <g key={i}>
                 <line x1={chartPadding.left} x2={chartWidth - chartPadding.right} y1={yl.y} y2={yl.y} stroke="#e2e8f0" strokeWidth="0.5" />
@@ -585,7 +655,17 @@ export function PimPerformance({ groupId, groupName, selectedProfile }: Props) {
               </g>
             ))}
             {chartData.xLabels.map((xl, i) => (
-              <text key={i} x={xl.x} y={chartHeight - 5} textAnchor="middle" className="text-[7px] fill-slate-400">{xl.label}</text>
+              <g key={i}>
+                <line
+                  x1={xl.x}
+                  x2={xl.x}
+                  y1={chartPadding.top}
+                  y2={chartHeight - chartPadding.bottom}
+                  stroke="#f1f5f9"
+                  strokeWidth="0.5"
+                />
+                <text x={xl.x} y={chartHeight - 5} textAnchor="middle" className="text-[7px] fill-slate-400">{xl.label}</text>
+              </g>
             ))}
             <path d={chartData.areaPath} fill={chartData.isPositive ? "rgba(16,185,129,0.08)" : "rgba(239,68,68,0.08)"} />
             <path d={chartData.path} fill="none" stroke={chartData.isPositive ? "#10b981" : "#ef4444"} strokeWidth="2" strokeLinejoin="round" />
@@ -598,7 +678,29 @@ export function PimPerformance({ groupId, groupName, selectedProfile }: Props) {
                 stroke="#94a3b8" strokeWidth="0.5" strokeDasharray="4,2"
               />
             )}
-            {chartData.points.length > 0 && (
+            {/* Hover crosshair + highlighted point */}
+            {hoverIdx != null && chartData.points[hoverIdx] && (
+              <g pointerEvents="none">
+                <line
+                  x1={chartData.points[hoverIdx].x}
+                  x2={chartData.points[hoverIdx].x}
+                  y1={chartPadding.top}
+                  y2={chartHeight - chartPadding.bottom}
+                  stroke="#94a3b8"
+                  strokeWidth="0.75"
+                  strokeDasharray="3,2"
+                />
+                <circle
+                  cx={chartData.points[hoverIdx].x}
+                  cy={chartData.points[hoverIdx].y}
+                  r="3.5"
+                  fill={chartData.isPositive ? "#10b981" : "#ef4444"}
+                  stroke="white"
+                  strokeWidth="1.5"
+                />
+              </g>
+            )}
+            {chartData.points.length > 0 && hoverIdx == null && (
               <circle
                 cx={chartData.points[chartData.points.length - 1].x}
                 cy={chartData.points[chartData.points.length - 1].y}
@@ -608,6 +710,43 @@ export function PimPerformance({ groupId, groupName, selectedProfile }: Props) {
               />
             )}
           </svg>
+          {/* Tooltip */}
+          {hoverIdx != null && chartData.points[hoverIdx] && (() => {
+            const pt = chartData.points[hoverIdx];
+            const firstVal = chartData.points[0].value;
+            const periodReturn = ((pt.value - firstVal) / firstVal) * 100;
+            // Position tooltip relative to chart area in %
+            const xPct = (pt.x / chartWidth) * 100;
+            const alignRight = xPct > 60;
+            return (
+              <div
+                className="pointer-events-none absolute top-2 z-10 rounded-lg border border-slate-200 bg-white/95 px-3 py-2 shadow-lg backdrop-blur-sm text-xs"
+                style={{
+                  left: alignRight ? undefined : `calc(${xPct}% + 12px)`,
+                  right: alignRight ? `calc(${100 - xPct}% + 12px)` : undefined,
+                  minWidth: "140px",
+                }}
+              >
+                <div className="font-semibold text-slate-700 mb-1">{fmtDateFull(pt.date)}</div>
+                <div className="flex items-center justify-between gap-3">
+                  <span className="text-slate-400">Index</span>
+                  <span className="font-mono font-semibold text-slate-800">{pt.value.toFixed(2)}</span>
+                </div>
+                <div className="flex items-center justify-between gap-3">
+                  <span className="text-slate-400">Daily</span>
+                  <span className={`font-mono font-semibold ${pt.ret >= 0 ? "text-emerald-600" : "text-red-500"}`}>
+                    {pt.ret === 0 ? "—" : fmtPct(pt.ret)}
+                  </span>
+                </div>
+                <div className="flex items-center justify-between gap-3">
+                  <span className="text-slate-400">Period</span>
+                  <span className={`font-mono font-semibold ${periodReturn >= 0 ? "text-emerald-600" : "text-red-500"}`}>
+                    {fmtPct(periodReturn)}
+                  </span>
+                </div>
+              </div>
+            );
+          })()}
         </div>
       ) : (
         <div className="flex items-center justify-center h-40 text-sm text-slate-400">
