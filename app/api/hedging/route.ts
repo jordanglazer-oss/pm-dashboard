@@ -130,11 +130,12 @@ export async function GET() {
       putsByExpiry.get(parsed.expiry)!.set(parsed.strike, opt);
     }
 
-    // Select the next 6 standard monthly expiries (3rd Friday)
+    // Select all standard monthly expiries (3rd Friday) in the current calendar year
+    const currentYear = new Date().getUTCFullYear();
     const monthlyExpiries = [...putsByExpiry.keys()]
       .filter(isMonthlyExpiry)
-      .sort()
-      .slice(0, 6);
+      .filter((iso) => parseInt(iso.slice(0, 4), 10) === currentYear)
+      .sort();
 
     if (monthlyExpiries.length === 0) {
       return NextResponse.json({ error: "No monthly expiries in option chain" }, { status: 502 });
