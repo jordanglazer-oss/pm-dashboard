@@ -286,6 +286,12 @@ export async function GET(req: NextRequest) {
       prevPrice: number | null;
       curPrice: number | null;
       prevPriceSource: string;
+      // Both candidate prev prices, for bug-hunting: if these don't
+      // agree, chartPreviousClose from range=5d/15d is wrong (it returns
+      // the close before the START of the chart range, not yesterday).
+      chartPrevClose: number | null;
+      historyPrevClose: number | null;
+      historyPrevDate: string | null;
       localReturnPct: number | null;
       cadReturnPct: number | null;
       contributionPct: number;
@@ -316,6 +322,9 @@ export async function GET(req: NextRequest) {
           prevPrice: null,
           curPrice: null,
           prevPriceSource: "missing",
+          chartPrevClose: null,
+          historyPrevClose: null,
+          historyPrevDate: null,
           localReturnPct: null,
           cadReturnPct: null,
           contributionPct: 0,
@@ -325,19 +334,27 @@ export async function GET(req: NextRequest) {
       }
 
       const curPrice = pm.get(today) ?? null;
+      // Record BOTH candidate prev prices so we can verify whether
+      // chartPreviousClose (from range=5d/15d) and the previous date
+      // in the history map actually agree.
+      const chartPrev = chartPreviousCloses.get(h.symbol) ?? null;
+      const histDates = [...pm.keys()].filter((d) => d < today).sort();
+      const histPrevDate = histDates.length > 0 ? histDates[histDates.length - 1] : null;
+      const histPrev = histPrevDate ? pm.get(histPrevDate) ?? null : null;
+
+      // Prefer history-based prev price (always = most recent trading day
+      // before today in the returned data). chartPreviousClose is only
+      // used as a fallback when history has nothing.
       let prevPrice: number | null = null;
       let prevPriceSource = "";
-      if (chartPreviousCloses.has(h.symbol)) {
-        prevPrice = chartPreviousCloses.get(h.symbol) ?? null;
+      if (histPrev != null) {
+        prevPrice = histPrev;
+        prevPriceSource = `history:${histPrevDate}`;
+      } else if (chartPrev != null) {
+        prevPrice = chartPrev;
         prevPriceSource = "chartPreviousClose";
       } else {
-        const allDates = [...pm.keys()].filter((d) => d < today).sort();
-        if (allDates.length > 0) {
-          prevPrice = pm.get(allDates[allDates.length - 1]) ?? null;
-          prevPriceSource = `history:${allDates[allDates.length - 1]}`;
-        } else {
-          prevPriceSource = "missing";
-        }
+        prevPriceSource = "missing";
       }
 
       if (curPrice == null || prevPrice == null || prevPrice <= 0) {
@@ -351,6 +368,9 @@ export async function GET(req: NextRequest) {
           prevPrice,
           curPrice,
           prevPriceSource,
+          chartPrevClose: chartPrev,
+          historyPrevClose: histPrev,
+          historyPrevDate: histPrevDate,
           localReturnPct: null,
           cadReturnPct: null,
           contributionPct: 0,
@@ -380,6 +400,9 @@ export async function GET(req: NextRequest) {
         prevPrice,
         curPrice,
         prevPriceSource,
+        chartPrevClose: chartPrev,
+        historyPrevClose: histPrev,
+        historyPrevDate: histPrevDate,
         localReturnPct: localReturn * 100,
         cadReturnPct: cadReturn * 100,
         contributionPct: contributionFxInclusive * 100,
@@ -412,7 +435,13 @@ export async function GET(req: NextRequest) {
       const pm = holdingPriceMaps.get(h.symbol);
       if (!pm) continue;
       const curPrice = pm.get(today);
-      const prev = chartPreviousCloses.get(h.symbol);
+      // Prefer the most recent trading day in the history map —
+      // chartPreviousClose from range=5d/15d is the close BEFORE the
+      // start of the chart (several days ago), not yesterday.
+      const dwHistDates = [...pm.keys()].filter((d) => d < today).sort();
+      const prev = dwHistDates.length > 0
+        ? pm.get(dwHistDates[dwHistDates.length - 1])
+        : chartPreviousCloses.get(h.symbol);
       if (curPrice == null || prev == null || prev <= 0) continue;
       const prevFxR = h.currency === "USD" ? usdCadPrevSafe : 1;
       const currFxR = h.currency === "USD" ? usdCadLiveSafe : 1;
