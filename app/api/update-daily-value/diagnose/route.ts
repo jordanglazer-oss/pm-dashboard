@@ -396,6 +396,34 @@ export async function GET(req: NextRequest) {
       ? weightedReturnFxNetted / activeWeight
       : weightedReturnFxNetted;
 
+    // Dollar-weighted (matches the live UI tile exactly): sum
+    // units × prevPrice × FX on the prev side and units × currPrice × FX
+    // on the curr side, then take the ratio. This is the unbiased
+    // portfolio return and is what /api/update-daily-value now writes
+    // for today's Appendix entry (when positions are available).
+    let dwPrevTotalCad = 0;
+    let dwCurrTotalCad = 0;
+    let dwCoveredWeight = 0;
+    const usdCadLiveSafe = usdCadLive ?? 1;
+    const usdCadPrevSafe = usdCadPrev ?? usdCadLiveSafe;
+    for (const h of holdingsWithWeight) {
+      const pos = posMap.get(h.symbol);
+      if (!pos || pos.units <= 0) continue;
+      const pm = holdingPriceMaps.get(h.symbol);
+      if (!pm) continue;
+      const curPrice = pm.get(today);
+      const prev = chartPreviousCloses.get(h.symbol);
+      if (curPrice == null || prev == null || prev <= 0) continue;
+      const prevFxR = h.currency === "USD" ? usdCadPrevSafe : 1;
+      const currFxR = h.currency === "USD" ? usdCadLiveSafe : 1;
+      dwPrevTotalCad += pos.units * prev * prevFxR;
+      dwCurrTotalCad += pos.units * curPrice * currFxR;
+      dwCoveredWeight += totalWeight > 0 ? h.portfolioWeight / totalWeight : 0;
+    }
+    const dollarWeightedPct = dwPrevTotalCad > 0
+      ? ((dwCurrTotalCad - dwPrevTotalCad) / dwPrevTotalCad) * 100
+      : null;
+
     // Sort rows by absolute contribution so biggest movers surface
     rows.sort((a, b) => Math.abs(b.contributionPct) - Math.abs(a.contributionPct));
 
@@ -417,9 +445,12 @@ export async function GET(req: NextRequest) {
         normalizationApplied: needsNorm,
       },
       result: {
-        todayReturnFxInclusivePct: weightedFxInclusiveNormalized * 100,
-        todayReturnFxNettedPct: weightedFxNettedNormalized * 100,
-        // Delta = how much of the return comes purely from USDCAD translation
+        // What the Appendix NOW writes (unified with live UI)
+        todayReturnDollarWeightedPct: dollarWeightedPct,
+        dollarWeightedCoveragePct: dwCoveredWeight * 100,
+        // Older return-weighted numbers kept for comparison / diagnosis
+        todayReturnFxInclusiveReturnWeightedPct: weightedFxInclusiveNormalized * 100,
+        todayReturnFxNettedReturnWeightedPct: weightedFxNettedNormalized * 100,
         fxContributionPct: (weightedFxInclusiveNormalized - weightedFxNettedNormalized) * 100,
       },
       rows,
