@@ -664,7 +664,26 @@ export async function POST() {
       perfData.lastUpdated = new Date().toISOString();
       await redis.set(PERF_KEY, JSON.stringify(perfData));
 
-      // Also append new entries to the immutable Appendix ledger
+      // Append SETTLED entries to the immutable Appendix ledger.
+      //
+      // Policy: today's entry is NEVER written to the Appendix while it
+      // is still "today". Today's number moves throughout the session
+      // (live prices, pending mutual-fund NAVs), so persisting it causes
+      // the Appendix row to drift from the Performance Tracker's live
+      // "Today" tile. Instead, the Appendix only captures a day once it
+      // has closed: on the next trading day's first refresh, today
+      // becomes yesterday and gets written with its settled value —
+      // which by then includes end-of-day mutual-fund NAVs from the 2-day
+      // recalc, so coverage is ~100% and the entry is final.
+      //
+      // The Performance Tracker and Positioning tiles continue to show
+      // today's live return (via pm:pim-performance + useLiveTodayReturn
+      // client-side overlay), so nothing the user sees disappears.
+      //
+      // Cleanup: any existing today-dated entry in the ledger (from
+      // previous deploys that wrote mid-session) is removed so the
+      // Appendix view shows a clean picture through yesterday. It will
+      // be re-added tomorrow morning with the settled value.
       try {
         const appendixRaw = await redis.get(APPENDIX_KEY);
         const appendixData: { ledgers: { profile: string; entries: { date: string; value: number; dailyReturn: number; addedAt: string }[] }[] } =
@@ -684,9 +703,19 @@ export async function POST() {
             appendixData.ledgers.push(ledger);
           }
 
+          // Remove any stale today-dated entry left over from prior
+          // mid-session writes. Historical entries (date < today) are
+          // preserved untouched.
+          const todayIdx = ledger.entries.findIndex((e) => e.date === today);
+          if (todayIdx >= 0) ledger.entries.splice(todayIdx, 1);
+
           const recentEntries = model.history.slice(-upd.addedDays);
           for (const entry of recentEntries) {
-            // Replace today's entry if it exists, otherwise append
+            // Skip today — only settled (closed-day) entries land here.
+            if (entry.date === today) continue;
+
+            // Replace same-date entry if it exists (e.g. yesterday's
+            // refinement from the 2-day recalc), otherwise append.
             const existingIdx = ledger.entries.findIndex((e) => e.date === entry.date);
             if (existingIdx >= 0) {
               ledger.entries[existingIdx] = {
