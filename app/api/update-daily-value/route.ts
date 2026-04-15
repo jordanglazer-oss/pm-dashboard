@@ -187,6 +187,16 @@ function getTradingDaysNeeded(lastDate: string, today: string): string[] {
   return dates;
 }
 
+/** Get the closest rate on or before the given date */
+function getRateForDate(rates: Map<string, number>, date: string): number | null {
+  const rate = rates.get(date);
+  if (rate) return rate;
+  // Fall back to the most recent rate before this date
+  const sorted = [...rates.keys()].filter((d) => d <= date).sort();
+  if (sorted.length > 0) return rates.get(sorted[sorted.length - 1]) ?? null;
+  return null;
+}
+
 export async function POST() {
   try {
     const redis = await getRedis();
@@ -279,11 +289,8 @@ export async function POST() {
       }
     }
 
-    // Fetch USD/CAD rates. We only need the latest rate (for converting
-    // current USD position values to CAD when computing live portfolio
-    // weights). Prior-day FX is not used anywhere — the daily return
-    // excludes FX translation, so we don't need to know yesterday's rate.
-    const { rates: usdCadRates } = await fetchUsdCadRates(yahooRange);
+    // Fetch USD/CAD rates
+    const { rates: usdCadRates, previousClose: fxPreviousClose } = await fetchUsdCadRates(yahooRange);
 
     // Ensure alpha model exists for PIM group — seed from Appendix if missing
     const pimGroup = pimData.groups.find((g) => g.id === "pim");
@@ -454,19 +461,20 @@ export async function POST() {
         // pricing would record yesterday's return as today's.
         if (isToday && !marketOpen) continue;
 
-        // NB: FX translation is intentionally EXCLUDED from the daily return.
-        // Each USD holding contributes only its local-currency price change,
-        // which mirrors the live "Today" tiles in PimPerformance and
-        // PimPortfolio (useLiveTodayReturn). Rationale: a daily % change on
-        // a CAD account holding USD stocks mixing FX translation with price
-        // movement tends to overstate/understate the return by the day's
-        // USDCAD move scaled by USD weight — e.g. a +1.8% USDCAD day would
-        // previously push the stored return up by ~0.9% on a 50% USD sleeve
-        // even if no security actually moved. Dollar-valued portfolio
-        // weights (computed above from live positions × today's FX) still
-        // correctly reflect the current CAD weight of each holding; FX is
-        // simply held constant when converting each holding's % move to
-        // the portfolio-level % move for this one day.
+        // Get USD/CAD rates for FX conversion
+        // For today: use chartPreviousClose as base (matches Positioning tab)
+        const todayRate = getRateForDate(usdCadRates, date);
+        let prevRate: number | null;
+        if (isToday && fxPreviousClose != null) {
+          prevRate = fxPreviousClose;
+        } else {
+          const prevDates = [...usdCadRates.keys()].filter((d) => d < date).sort();
+          prevRate = prevDates.length > 0 ? usdCadRates.get(prevDates[prevDates.length - 1]) ?? null : null;
+        }
+        const fxChange = (todayRate && prevRate && prevRate > 0)
+          ? (todayRate - prevRate) / prevRate
+          : 0;
+
         for (const h of holdingsWithWeight) {
           const pm = holdingPriceMaps.get(h.symbol);
           if (!pm) continue;
@@ -485,7 +493,13 @@ export async function POST() {
           }
 
           if (prevPrice && prevPrice > 0) {
-            const holdingReturn = (curPrice - prevPrice) / prevPrice;
+            let holdingReturn = (curPrice - prevPrice) / prevPrice;
+
+            // Convert USD returns to CAD: (1 + USD return) * (1 + FX change) - 1
+            if (h.currency === "USD" && fxChange !== 0) {
+              holdingReturn = (1 + holdingReturn) * (1 + fxChange) - 1;
+            }
+
             const normWeight = h.portfolioWeight / totalWeight;
             weightedReturn += holdingReturn * normWeight;
             activeWeight += normWeight;
