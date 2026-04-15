@@ -237,23 +237,22 @@ export function PimPerformance({ groupId, groupName, selectedProfile }: Props) {
     setAutoUpdating(false);
   }, []);
 
-  // Auto-refresh on user toggle only: fires when the user switches
-  // groupId or selectedProfile (balanced / growth / all-equity / alpha).
-  // Initial mount is skipped — opening the page no longer kicks off
-  // /api/update-daily-value automatically. To pull fresh data on load,
-  // the user presses the Refresh button. This keeps the "Updating…"
-  // indicator reserved for deliberate user actions rather than implicit
-  // page-load polling.
-  const hasInitializedRef = useRef(false);
+  // Auto-refresh fires once per (groupId, selectedProfile) combination:
+  // on initial mount (as soon as cached data has loaded) and whenever
+  // the user toggles groupId or selectedProfile (balanced / growth /
+  // all-equity / alpha). The ref-keyed guard prevents the effect from
+  // re-triggering itself after autoUpdateDailyValue writes back to
+  // perfData.lastUpdated — so the "Updating…" indicator shows once per
+  // deliberate state change, never in a loop.
+  const autoUpdatedKeyRef = useRef<string | null>(null);
   useEffect(() => {
-    if (!hasInitializedRef.current) {
-      hasInitializedRef.current = true;
-      return;
-    }
     if (!perfData || perfData.models.length === 0 || autoUpdating) return;
+    const key = `${groupId}:${selectedProfile}`;
+    if (autoUpdatedKeyRef.current === key) return;
+    autoUpdatedKeyRef.current = key;
     autoUpdateDailyValue();
   // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [groupId, selectedProfile]);
+  }, [perfData?.lastUpdated, groupId, selectedProfile]);
 
   // Get models for selected group
   const groupModels = useMemo(() => {
