@@ -509,7 +509,19 @@ export async function POST() {
             if (!pm) continue;
             const curPrice = pm.get(date);
             if (curPrice == null) continue;
-            const prev = chartPreviousCloses.get(h.symbol);
+
+            // Prev price: use the most recent trading day in the fetched
+            // price history (yesterday's close), NOT chartPreviousClose.
+            // chartPreviousClose from range=5d/15d returns the close from
+            // BEFORE the chart's start (~5-15 days ago), which would turn
+            // "today's daily return" into a multi-day return. The live UI
+            // calls /api/prices with range=1d where chartPreviousClose
+            // coincidentally equals yesterday's close, which is why the
+            // UI has been correct while the Appendix has been inflated.
+            const histDates = [...pm.keys()].filter((d) => d < date).sort();
+            const prev = histDates.length > 0
+              ? pm.get(histDates[histDates.length - 1])
+              : chartPreviousCloses.get(h.symbol);
             if (prev == null || prev <= 0) continue;
 
             const prevFxRate = h.currency === "USD" ? prevFx : 1;
@@ -546,14 +558,17 @@ export async function POST() {
           const curPrice = pm.get(date);
           if (curPrice == null) continue;
 
-          // For today: use chartPreviousClose (matches Positioning tab's previousClose)
-          // For past days: use previous trading day's adjClose from history
+          // Previous price = most recent trading day before `date` in the
+          // fetched price history. Do NOT use chartPreviousClose here —
+          // with range=5d/15d it returns the close from before the chart's
+          // start (several days ago), not yesterday, which would inflate
+          // today's stored daily return into a multi-day return.
           let prevPrice: number | undefined;
-          if (isToday && chartPreviousCloses.has(h.symbol)) {
+          const allDates = [...pm.keys()].filter((d) => d < date).sort();
+          if (allDates.length > 0) {
+            prevPrice = pm.get(allDates[allDates.length - 1]);
+          } else if (isToday) {
             prevPrice = chartPreviousCloses.get(h.symbol);
-          } else {
-            const allDates = [...pm.keys()].filter((d) => d < date).sort();
-            prevPrice = allDates.length > 0 ? pm.get(allDates[allDates.length - 1]) : undefined;
           }
 
           if (prevPrice && prevPrice > 0) {
