@@ -474,12 +474,10 @@ export function PimPortfolio({ groups }: Props) {
   const cashPct = totalValueCadSummary > 0 ? cashBalance / totalValueCadSummary : 0;
 
   // Today's return: weighted sum of each holding's daily % change (prev close → current price).
-  // USD holdings use yesterday's USDCAD for the prev side and today's USDCAD
-  // for the curr side so that FX translation gain/loss is reflected in the
-  // CAD return — matching the methodology used by /api/update-daily-value
-  // (the Appendix ledger). Using the same rate on both sides cancels FX out
-  // entirely and makes this tile disagree with the Appendix by the amount
-  // of the day's USDCAD move scaled by the portfolio's USD weight.
+  // FX is applied identically to both sides for USD holdings so the CAD
+  // return reflects only the local-currency price move — FX translation
+  // gain/loss is intentionally excluded from "Today". /api/update-daily-value
+  // mirrors this so the Appendix ledger records the same number.
   const todayReturn = useMemo(() => {
     // Pre-market data is unreliable: Yahoo's regularMarketPrice still
     // reports yesterday's close before 9:30 AM ET, so the computed return
@@ -491,14 +489,13 @@ export function PimPortfolio({ groups }: Props) {
     for (const r of holdingRows) {
       const pc = prevCloses[r.symbol];
       if (pc == null || pc <= 0 || r.units <= 0) continue;
-      const prevFx = r.currency === "USD" ? prevCloseUsdCad : 1;
-      const currFx = r.currency === "USD" ? usdCadRate : 1;
-      prevTotalCad += r.units * pc * prevFx;
-      currTotalCad += r.units * r.price * currFx;
+      const fxRate = r.currency === "USD" ? usdCadRate : 1;
+      prevTotalCad += r.units * pc * fxRate;
+      currTotalCad += r.units * r.price * fxRate;
     }
     if (prevTotalCad <= 0) return null;
     return ((currTotalCad - prevTotalCad) / prevTotalCad) * 100;
-  }, [holdingRows, prevCloses, usdCadRate, prevCloseUsdCad]);
+  }, [holdingRows, prevCloses, usdCadRate]);
 
   const handleSort = (field: SortField) => {
     if (sortField === field) {
