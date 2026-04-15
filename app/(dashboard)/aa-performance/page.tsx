@@ -5,7 +5,7 @@ import Link from "next/link";
 import { ImageUpload, type BriefAttachment } from "@/app/components/ImageUpload";
 import { useStocks } from "@/app/lib/StockContext";
 import { isScoreable } from "@/app/lib/scoring";
-import type { AppendixData, PimPerformanceData } from "@/app/lib/pim-types";
+import type { AppendixData, PimPerformanceData, PimProfileWeights } from "@/app/lib/pim-types";
 import { useLiveTodayReturn } from "@/app/lib/useLiveTodayReturn";
 import { getTodayET } from "@/app/lib/market-hours";
 
@@ -584,7 +584,7 @@ export default function AAPerformancePage() {
   // as a cascading-render anti-pattern).
   const [indexLoading, setIndexLoading] = useState(true);
   const persist = useDebouncedPersist(500);
-  const { scoredStocks } = useStocks();
+  const { scoredStocks, pimModels, updatePimModels } = useStocks();
 
   // Derive funds and ETFs from portfolio holdings
   const portfolioFunds = scoredStocks.filter((s) => s.bucket === "Portfolio" && !isScoreable(s));
@@ -703,7 +703,43 @@ export default function AAPerformancePage() {
     [persist]
   );
 
-  /* Allocation update */
+  /* Displayed allocations — the "Current" row is sourced from the live
+   * PIM Model profile weights (pm:pim-models) so the AA & Perf tab
+   * becomes the authoritative editor. Target / Min / Max continue to
+   * come from this page's own aa-performance store.
+   *
+   * Weights on the PIM model are stored as fractions (0–1); the UI
+   * displays them as percentages. cadSplit / usdSplit live on the
+   * group itself and are intentionally not touched here. */
+  const fracToPct = (f: number) => Math.round(f * 10000) / 100;
+  const displayedAllocations = useMemo(() => {
+    const pimGroup = pimModels.groups.find((g) => g.id === "pim");
+    const profiles: ("balanced" | "growth" | "allEquity")[] = ["balanced", "growth", "allEquity"];
+    const out: AAPerformanceData["allocations"] = { ...data.allocations };
+    for (const p of profiles) {
+      const w = pimGroup?.profiles[p];
+      if (!w) continue;
+      out[p] = {
+        ...data.allocations[p],
+        current: {
+          fixedIncome: fracToPct(w.fixedIncome),
+          equity: fracToPct(w.equity),
+          alternatives: fracToPct(w.alternatives),
+        },
+      };
+    }
+    return out;
+  }, [data.allocations, pimModels]);
+
+  /* Allocation update.
+   *
+   * Current row → writes to pm:pim-models profile weights (source of
+   * truth for the PIM Model screen, Positioning tab, performance
+   * calcs, and Appendix). Cash is the implicit remainder: 1 − (fi + eq
+   * + alt). cadSplit / usdSplit are unchanged.
+   *
+   * Target / Min / Max rows → persist to pm:aa-performance only (these
+   * are policy bounds, not model weights). */
   const updateAllocation = useCallback(
     (
       tableKey: "balanced" | "growth" | "allEquity",
@@ -711,6 +747,42 @@ export default function AAPerformancePage() {
       colKey: keyof AllocationRow,
       value: number
     ) => {
+      if (rowKey === "current") {
+        const pimGroup = pimModels.groups.find((g) => g.id === "pim");
+        if (!pimGroup || !pimGroup.profiles[tableKey]) return;
+
+        // Start from whatever's currently shown (sourced from pim-models)
+        // and override the edited cell. Other cells keep their live values.
+        const shown = displayedAllocations[tableKey].current;
+        const nextRowPct = { ...shown, [colKey]: value };
+
+        const fi = Math.max(0, nextRowPct.fixedIncome) / 100;
+        const eq = Math.max(0, nextRowPct.equity) / 100;
+        const alt = Math.max(0, nextRowPct.alternatives) / 100;
+        // Cash = remainder. If fi+eq+alt > 1 (user overshot), cash
+        // clamps to 0 and the downstream math still balances.
+        const cash = Math.max(0, 1 - fi - eq - alt);
+        const nextWeights: PimProfileWeights = {
+          cash,
+          fixedIncome: fi,
+          equity: eq,
+          alternatives: alt,
+        };
+
+        const nextGroups = pimModels.groups.map((g) =>
+          g.id === "pim"
+            ? { ...g, profiles: { ...g.profiles, [tableKey]: nextWeights } }
+            : g
+        );
+        updatePimModels({
+          ...pimModels,
+          groups: nextGroups,
+          lastUpdated: new Date().toISOString(),
+        });
+        return;
+      }
+
+      // target / min / max — policy bounds only, stays on aa-performance
       updateData((prev) => ({
         ...prev,
         allocations: {
@@ -725,7 +797,7 @@ export default function AAPerformancePage() {
         },
       }));
     },
-    [updateData]
+    [updateData, pimModels, updatePimModels, displayedAllocations]
   );
 
   /* Funds / ETFs helpers */
@@ -881,17 +953,17 @@ export default function AAPerformancePage() {
         <div className="grid grid-cols-1 lg:grid-cols-3 gap-4">
           <AllocationTableCard
             title="Balanced"
-            table={data.allocations.balanced}
+            table={displayedAllocations.balanced}
             onUpdate={(rowKey, colKey, value) => updateAllocation("balanced", rowKey, colKey, value)}
           />
           <AllocationTableCard
             title="Growth"
-            table={data.allocations.growth}
+            table={displayedAllocations.growth}
             onUpdate={(rowKey, colKey, value) => updateAllocation("growth", rowKey, colKey, value)}
           />
           <AllocationTableCard
             title="All-Equity"
-            table={data.allocations.allEquity}
+            table={displayedAllocations.allEquity}
             onUpdate={(rowKey, colKey, value) => updateAllocation("allEquity", rowKey, colKey, value)}
           />
         </div>
