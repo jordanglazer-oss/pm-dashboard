@@ -1,6 +1,7 @@
 import { NextResponse } from "next/server";
 import { getRedis } from "@/app/lib/redis";
 import { getTodayET, isMarketOpenOrAfterET } from "@/app/lib/market-hours";
+import { fetchLivePriceSnapshot, type LivePriceSnapshot } from "@/app/lib/live-prices";
 import type {
   PimPerformanceData,
   PimDailyReturn,
@@ -292,6 +293,23 @@ export async function POST() {
     // Fetch USD/CAD rates
     const { rates: usdCadRates, previousClose: fxPreviousClose } = await fetchUsdCadRates(yahooRange);
 
+    // Fetch a SINGLE live price snapshot — same source the UI tiles use
+    // (/api/prices, Yahoo range=1d, raw close, 2-decimal rounding). This
+    // is used only for today's dollar-weighted return so the Appendix
+    // number matches the Performance Tracker and Positioning tiles
+    // exactly. Historical day recalcs still use adjusted close above.
+    // Fetched once here, outside the model loop, so all profiles see
+    // the same snapshot timestamp.
+    let liveSnapshot: LivePriceSnapshot | null = null;
+    if (marketOpen) {
+      try {
+        const snapshotTickers = [...symbols, "USDCAD=X"];
+        liveSnapshot = await fetchLivePriceSnapshot(snapshotTickers);
+      } catch {
+        liveSnapshot = null; // falls back to adjusted-close history below
+      }
+    }
+
     // Ensure alpha model exists for PIM group — seed from Appendix if missing
     const pimGroup = pimData.groups.find((g) => g.id === "pim");
     const hasAlphaModel = perfData.models.some(
@@ -496,8 +514,18 @@ export async function POST() {
         // trading morning will re-compute this entry once the mutual
         // fund NAVs arrive, so no data is permanently biased.
         if (isToday && hasPositions && portfolio) {
-          const todayFx = todayRate ?? 1;
-          const prevFx = prevRate ?? todayFx;
+          // Prefer the live snapshot (same source UI tiles use) so the
+          // Appendix number matches the Performance Tracker exactly.
+          // FX rates from the snapshot, same fallback chain as prices.
+          const snapFxLive = liveSnapshot?.prices["USDCAD=X"] ?? null;
+          const snapFxPrev = liveSnapshot?.previousCloses["USDCAD=X"] ?? null;
+          const todayFx = (snapFxLive && snapFxLive > 0)
+            ? snapFxLive
+            : (todayRate ?? 1);
+          const prevFx = (snapFxPrev && snapFxPrev > 0)
+            ? snapFxPrev
+            : (prevRate ?? todayFx);
+
           let prevTotalCad = 0;
           let currTotalCad = 0;
           let coveredWeight = 0; // share of portfolioWeight actually priced
@@ -505,23 +533,31 @@ export async function POST() {
           for (const h of holdingsWithWeight) {
             const pos = posMap.get(h.symbol);
             if (!pos || pos.units <= 0) continue;
+
+            // Current price: prefer live snapshot (identical to UI).
+            // Fall back to Yahoo adjusted-close history if the snapshot
+            // fetch failed or this ticker was missing from the snapshot
+            // (e.g. mutual fund NAV not yet posted today).
+            let curPrice: number | null | undefined =
+              liveSnapshot?.prices[h.symbol] ?? null;
             const pm = holdingPriceMaps.get(h.symbol);
-            if (!pm) continue;
-            const curPrice = pm.get(date);
+            if (curPrice == null && pm) curPrice = pm.get(date);
             if (curPrice == null) continue;
 
-            // Prev price: use the most recent trading day in the fetched
-            // price history (yesterday's close), NOT chartPreviousClose.
-            // chartPreviousClose from range=5d/15d returns the close from
-            // BEFORE the chart's start (~5-15 days ago), which would turn
-            // "today's daily return" into a multi-day return. The live UI
-            // calls /api/prices with range=1d where chartPreviousClose
-            // coincidentally equals yesterday's close, which is why the
-            // UI has been correct while the Appendix has been inflated.
-            const histDates = [...pm.keys()].filter((d) => d < date).sort();
-            const prev = histDates.length > 0
-              ? pm.get(histDates[histDates.length - 1])
-              : chartPreviousCloses.get(h.symbol);
+            // Prev price: prefer live snapshot's chartPreviousClose (Yahoo
+            // range=1d → yesterday's close, matching the UI). For Fundserv
+            // the snapshot returns null, so fall back to the most recent
+            // trading day in the fetched price history. Never use the
+            // range=5d/15d chartPreviousClose directly — it would return
+            // the close from BEFORE the chart's start.
+            let prev: number | null | undefined =
+              liveSnapshot?.previousCloses[h.symbol] ?? null;
+            if (prev == null && pm) {
+              const histDates = [...pm.keys()].filter((d) => d < date).sort();
+              prev = histDates.length > 0
+                ? pm.get(histDates[histDates.length - 1])
+                : null;
+            }
             if (prev == null || prev <= 0) continue;
 
             const prevFxRate = h.currency === "USD" ? prevFx : 1;
