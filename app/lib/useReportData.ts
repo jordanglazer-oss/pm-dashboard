@@ -119,6 +119,10 @@ export type ReportTrackerPerformance = {
   yearlyReturns: { year: number; returnPct: number }[];
   /** Cumulative return since inception (percent, not fraction). */
   sinceInceptionReturnPct: number | null;
+  /** Annualized return since inception (percent, not fraction). null if <30 days history. */
+  annualizedReturnPct: number | null;
+  /** Duration of the history in calendar years (e.g. 2.4). null if unknown. */
+  yearsOfHistory: number | null;
 };
 
 export type ReportData = {
@@ -683,10 +687,30 @@ function buildTrackerPerformance(
   const sinceInceptionReturnPct =
     first != null && last != null && first > 0 ? (last / first - 1) * 100 : null;
 
+  // Annualized return: (endValue / startValue)^(1/years) - 1. Only meaningful
+  // for ≥30 days of history; below that, short-term noise dominates and the
+  // extrapolation is misleading.
+  let yearsOfHistory: number | null = null;
+  let annualizedReturnPct: number | null = null;
+  if (sorted.length >= 2) {
+    const startMs = new Date(sorted[0].date).getTime();
+    const endMs = new Date(sorted[sorted.length - 1].date).getTime();
+    if (isFinite(startMs) && isFinite(endMs) && endMs > startMs) {
+      const years = (endMs - startMs) / (365.25 * 24 * 60 * 60 * 1000);
+      yearsOfHistory = years;
+      if (years >= 30 / 365.25 && first != null && last != null && first > 0) {
+        const total = last / first;
+        if (total > 0) annualizedReturnPct = (Math.pow(total, 1 / years) - 1) * 100;
+      }
+    }
+  }
+
   return {
     history: sorted,
     yearlyReturns,
     sinceInceptionReturnPct,
+    annualizedReturnPct,
+    yearsOfHistory,
   };
 }
 

@@ -301,6 +301,28 @@ function OnePager({
           <div className="grid grid-cols-5 gap-4 mt-2">
             <div className="col-span-3">
               <PerformanceChart tracker={data.tracker} />
+              {data.tracker.annualizedReturnPct != null && (
+                <div className="mt-1 text-center text-[11px] text-slate-700">
+                  Annualized Return:{" "}
+                  <span
+                    className="font-bold tabular-nums"
+                    style={{
+                      color:
+                        data.tracker.annualizedReturnPct >= 0
+                          ? "#059669"
+                          : "#dc2626",
+                    }}
+                  >
+                    {fmtPctSigned(data.tracker.annualizedReturnPct, 2)}
+                  </span>
+                  {data.tracker.yearsOfHistory != null && (
+                    <span className="text-slate-400">
+                      {" "}
+                      · {data.tracker.yearsOfHistory.toFixed(1)}y history
+                    </span>
+                  )}
+                </div>
+              )}
             </div>
             <div className="col-span-2">
               <YearlyReturnsTable tracker={data.tracker} />
@@ -530,9 +552,10 @@ function AllocationPie({ slices }: { slices: ReportAllocationSlice[] }) {
 
 /**
  * Line chart of the tracker history. Built as an SVG polyline so it
- * prints crisply. Y-axis is the published index value (starts at 100);
- * X-axis ticks are rendered as vertical gridlines every ~25% of width
- * with date labels beneath.
+ * prints crisply. Styled to match the PIM Performance Tracker tab —
+ * emerald/red area fill + stroke depending on whether cumulative return
+ * is positive, with a dashed reference line at value=100. Y-axis is the
+ * published index value; X-axis shows start and end dates only.
  */
 function PerformanceChart({ tracker }: { tracker: ReportTrackerPerformance }) {
   const { history } = tracker;
@@ -560,39 +583,61 @@ function PerformanceChart({ tracker }: { tracker: ReportTrackerPerformance }) {
   const last = history[history.length - 1];
   const first = history[0];
 
-  // Baseline at inception value (100) if it falls inside the visible
-  // range — gives the reader a natural "above / below starting point"
-  // reference.
-  const baselineV = first.value;
-  const baselineInRange = baselineV >= minV && baselineV <= maxV;
+  // Positive if cumulative return ≥ 0 — mirrors the Performance Tracker's
+  // "100 is the inception value" convention.
+  const isPositive = last.value >= first.value;
+  const lineColor = isPositive ? "#10b981" : "#ef4444";
+  const areaFill = isPositive ? "rgba(16,185,129,0.08)" : "rgba(239,68,68,0.08)";
 
-  // Midpoint tick on the x-axis.
-  const midIdx = Math.floor(history.length / 2);
+  // Build a filled-area path (polyline + drop to baseline at each end).
+  const baseY = h - padB;
+  const areaPath = [
+    `M ${x(0)} ${baseY}`,
+    `L ${x(0)} ${y(history[0].value)}`,
+    ...history.slice(1).map((d, i) => `L ${x(i + 1)} ${y(d.value)}`),
+    `L ${x(history.length - 1)} ${baseY}`,
+    "Z",
+  ].join(" ");
+
+  // Dashed reference line at inception value (100) — matches the
+  // Performance Tracker chart.
+  const ref100InRange = 100 >= minV && 100 <= maxV;
 
   return (
     <svg viewBox={`0 0 ${w} ${h}`} width="100%" height="110" aria-label="Performance chart">
       {/* Top / bottom grid */}
       <line x1={padL} y1={padT} x2={w - padR} y2={padT} stroke="#e2e8f0" strokeWidth={0.5} />
       <line x1={padL} y1={h - padB} x2={w - padR} y2={h - padB} stroke="#e2e8f0" strokeWidth={0.5} />
-      {/* Baseline (inception value) */}
-      {baselineInRange && (
+      {/* Filled area (transparent green/red beneath the line) */}
+      <path d={areaPath} fill={areaFill} />
+      {/* Inception reference line at value = 100 */}
+      {ref100InRange && (
         <line
           x1={padL}
-          y1={y(baselineV)}
+          y1={y(100)}
           x2={w - padR}
-          y2={y(baselineV)}
-          stroke={RBC_GOLD}
-          strokeDasharray="2 2"
-          strokeWidth={0.75}
+          y2={y(100)}
+          stroke="#94a3b8"
+          strokeDasharray="4,2"
+          strokeWidth={0.5}
         />
       )}
-      {/* Polyline */}
+      {/* Line */}
       <polyline
         fill="none"
-        stroke={RBC_NAVY}
-        strokeWidth={1.25}
+        stroke={lineColor}
+        strokeWidth={1.5}
         strokeLinejoin="round"
         points={points}
+      />
+      {/* End-point marker, matching the Performance Tracker */}
+      <circle
+        cx={x(history.length - 1)}
+        cy={y(last.value)}
+        r={2.5}
+        fill={lineColor}
+        stroke="white"
+        strokeWidth={1}
       />
       {/* Value labels (min / max) */}
       <text x={2} y={padT + 6} fontSize={7} fill="#64748b">
@@ -601,12 +646,9 @@ function PerformanceChart({ tracker }: { tracker: ReportTrackerPerformance }) {
       <text x={2} y={h - padB} fontSize={7} fill="#64748b">
         {minV.toFixed(1)}
       </text>
-      {/* Date labels (start, middle, end) */}
+      {/* Date labels — start and end only (no midpoint clutter). */}
       <text x={padL} y={h - 2} fontSize={7} fill="#64748b">
         {first.date}
-      </text>
-      <text x={(padL + w - padR) / 2} y={h - 2} fontSize={7} fill="#64748b" textAnchor="middle">
-        {history[midIdx].date}
       </text>
       <text x={w - padR} y={h - 2} fontSize={7} fill="#64748b" textAnchor="end">
         {last.date}
