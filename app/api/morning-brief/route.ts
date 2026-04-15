@@ -12,6 +12,7 @@ import {
 } from "@/app/lib/forward-looking";
 import type { ResearchState } from "@/app/lib/defaults";
 import { defaultResearch } from "@/app/lib/defaults";
+import { buildHedgingCostsBlock } from "@/app/lib/hedging";
 
 const client = new Anthropic();
 
@@ -103,7 +104,7 @@ Respond ONLY with valid JSON matching this exact structure (fields are intention
   "breadthAnalysis": "2-3 sentences on market breadth and participation: S&P 500 and Nasdaq DMA participation rates, NYSE A/D line direction, and new highs vs new lows. Focus on market structure health — is the rally/selloff broad-based or narrow?",
   "contrarianAnalysis": "2-3 sentences providing the contrarian take. ALL four indicators (S&P Oscillator, Put/Call ratio, Fear & Greed, AAII survey) are interpreted INVERSELY: oversold/fearful = BULLISH opportunity, overbought/greedy = BEARISH warning. Provide an overall contrarian assessment and what it means for positioning.",
   "flowsAnalysis": "2-3 sentences on fund flows and positioning. If JPM screenshots are attached, reference 1-2 key data points. If NO screenshots are attached and the Equity Flows field is a generic label (e.g. 'Mixed'), keep this section brief and focus on what the other indicators imply about positioning instead of speculating about flows. Do NOT over-weight flows relative to credit, vol, and breadth.",
-  "hedgingAnalysis": "2-3 sentences on whether current conditions favor adding hedges (focused on cost efficiency: hedge when VIX is low and puts are cheap, not when expensive). Consider put cost environment, VIX context, and whether sentiment suggests complacency (cheap protection) or fear (expensive protection).",
+  "hedgingAnalysis": "3-4 sentences on whether current conditions favor adding SPY put protection. When a 'Live SPY Hedging Costs' block is present in the data payload, you MUST cite at least one specific premium (e.g. '3-month ATM SPY put is X% of spot at $Y') and reference the week-over-week or month-over-month direction of those premiums when provided. Integrate VIX, term structure, and sentiment as the qualitative lens on top of the actual option prices — not as a substitute for them. Give a clear directional recommendation (add / hold / skip) grounded in the dollar cost of protection relative to the portfolio, not generic platitudes.",
   "sectorRotation": {
     "summary": "1-2 sentence overview of which sectors are leading vs lagging based on the LIVE sector ETF performance data provided.",
     "leading": ["Sector (+X.XX% today, reason)", "Sector (+X.XX% today, reason)"],
@@ -421,7 +422,7 @@ export async function POST(request: NextRequest) {
       }
     };
 
-    const [sectorPerformance, forwardData, strategistHistory, research] =
+    const [sectorPerformance, forwardData, strategistHistory, research, hedgingCostsBlock] =
       await Promise.all([
         fetchSectorPerformance(),
         fetchForwardLookingData().catch((e) => {
@@ -433,6 +434,10 @@ export async function POST(request: NextRequest) {
           return { newton: [], lee: [] } as StrategistHistory;
         }),
         loadResearch(),
+        buildHedgingCostsBlock().catch((e) => {
+          console.error("Hedging costs block failed:", e);
+          return "";
+        }),
       ]);
 
     const fmt = (p: ForwardPoint | undefined, unit = ""): string => {
@@ -622,6 +627,7 @@ IMPORTANT — interpret trajectory: a value at an extreme that is REVERSING (e.g
 Equity Flows: ${marketData.equityFlows}
 
 Hedge Timing Score: ${computeHedgeScore(fwdVix ?? 20, marketData.termStructure ?? "Contango", forwardData?.fearGreed?.value ?? marketData.fearGreed ?? 50)}/100 (dynamically computed from VIX, term structure, and sentiment)
+${hedgingCostsBlock ? `\n${hedgingCostsBlock}\n\nWhen writing hedgingAnalysis, cite at least one specific premium from the table above (e.g. "the 3-month ATM SPY put costs X% of spot") and reference the week-over-week or month-over-month direction when available. Anchor claims like "puts are cheap" or "protection is expensive" to these actual dollar/percent figures rather than generalizing from VIX alone.` : ""}
 
 Live Sector ETF Performance (from Yahoo Finance — use this for sector rotation analysis):
 ${sectorPerformance}

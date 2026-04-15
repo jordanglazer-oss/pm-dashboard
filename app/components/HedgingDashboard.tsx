@@ -1,8 +1,9 @@
 "use client";
 
 import React, { useCallback, useEffect, useMemo, useState } from "react";
-import type { HedgingLiveData, HedgingQuote } from "@/app/api/hedging/route";
+import type { HedgingLiveData, HedgingQuote, CustomStrikeRow } from "@/app/api/hedging/route";
 import type { HedgingHistory, HedgingSnapshot } from "@/app/api/kv/hedging-history/route";
+import type { HedgingCustomStrikes } from "@/app/api/kv/hedging-custom-strikes/route";
 
 type StrikeKey = "atm" | "otm5" | "otm10";
 
@@ -26,6 +27,13 @@ function premiumFromSnapshot(snap: HedgingSnapshot, expiry: string, k: StrikeKey
   const row = snap.quotes.find((q) => q.expiry === expiry);
   if (!row) return null;
   return k === "atm" ? row.atmPremium : k === "otm5" ? row.otm5Premium : row.otm10Premium;
+}
+
+/** WoW/MoM lookup for a custom strike: match by numeric strike, then by expiry. */
+function customPremiumFromSnapshot(snap: HedgingSnapshot, strike: number, expiry: string): number | null {
+  const row = snap.customRows?.find((r) => r.strike === strike);
+  if (!row) return null;
+  return row.quotes.find((q) => q.expiry === expiry)?.premium ?? null;
 }
 
 /** Find snapshot closest to target days-ago (within tolerance) */
@@ -76,15 +84,18 @@ type ViewMode = "current" | "wow" | "mom";
 export default function HedgingDashboard() {
   const [data, setData] = useState<HedgingLiveData | null>(null);
   const [history, setHistory] = useState<HedgingSnapshot[]>([]);
+  const [customStrikes, setCustomStrikes] = useState<number[]>([]);
+  const [newStrikeInput, setNewStrikeInput] = useState("");
   const [loading, setLoading] = useState(true);
   const [refreshing, setRefreshing] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [view, setView] = useState<ViewMode>("current");
 
-  const loadAll = useCallback(async (persist: boolean) => {
+  const loadAll = useCallback(async (persist: boolean, strikes: number[]) => {
     setError(null);
+    const qs = strikes.length > 0 ? `?extraStrikes=${strikes.join(",")}` : "";
     const pending: Promise<unknown>[] = [
-      fetch("/api/hedging", { cache: "no-store" }).then(async (r) => {
+      fetch(`/api/hedging${qs}`, { cache: "no-store" }).then(async (r) => {
         if (!r.ok) throw new Error(`Hedging fetch failed (${r.status})`);
         return r.json() as Promise<HedgingLiveData>;
       }),
@@ -99,7 +110,7 @@ export default function HedgingDashboard() {
       setData(live);
       setHistory(hist.snapshots || []);
 
-      // Persist today's snapshot
+      // Persist today's snapshot (includes custom strike premiums for WoW/MoM)
       if (persist && live && live.quotes.length > 0) {
         const today = new Date().toISOString().slice(0, 10);
         const snapshot: HedgingSnapshot = {
@@ -115,6 +126,10 @@ export default function HedgingDashboard() {
             otm10Strike: q.otm10Strike,
             otm10Premium: q.otm10Premium,
           })),
+          customRows: (live.customRows || []).map((r) => ({
+            strike: r.strike,
+            quotes: r.quotes.map((q) => ({ expiry: q.expiry, premium: q.premium })),
+          })),
         };
         fetch("/api/kv/hedging-history", {
           method: "POST",
@@ -127,19 +142,64 @@ export default function HedgingDashboard() {
     }
   }, []);
 
+  // Initial mount: load custom strikes first, then live data with them
   useEffect(() => {
     (async () => {
       setLoading(true);
-      await loadAll(true);
+      try {
+        const r = await fetch("/api/kv/hedging-custom-strikes", { cache: "no-store" });
+        if (r.ok) {
+          const cs = (await r.json()) as HedgingCustomStrikes;
+          const clean = (cs.strikes || []).filter((n) => Number.isFinite(n) && n > 0);
+          setCustomStrikes(clean);
+          await loadAll(true, clean);
+        } else {
+          await loadAll(true, []);
+        }
+      } catch {
+        await loadAll(true, []);
+      }
       setLoading(false);
     })();
   }, [loadAll]);
 
+  const persistCustomStrikes = useCallback(async (next: number[]) => {
+    try {
+      await fetch("/api/kv/hedging-custom-strikes", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ strikes: next }),
+      });
+    } catch {
+      /* non-blocking */
+    }
+  }, []);
+
+  const handleAddStrike = useCallback(async () => {
+    const parsed = parseFloat(newStrikeInput.trim());
+    if (!Number.isFinite(parsed) || parsed <= 0) return;
+    if (customStrikes.includes(parsed)) {
+      setNewStrikeInput("");
+      return;
+    }
+    const next = [...customStrikes, parsed].sort((a, b) => b - a);
+    setCustomStrikes(next);
+    setNewStrikeInput("");
+    // Re-fetch live data with the new strike and persist the list
+    await Promise.all([persistCustomStrikes(next), loadAll(false, next)]);
+  }, [newStrikeInput, customStrikes, persistCustomStrikes, loadAll]);
+
+  const handleRemoveStrike = useCallback(async (strike: number) => {
+    const next = customStrikes.filter((s) => s !== strike);
+    setCustomStrikes(next);
+    await Promise.all([persistCustomStrikes(next), loadAll(false, next)]);
+  }, [customStrikes, persistCustomStrikes, loadAll]);
+
   const handleRefresh = useCallback(async () => {
     setRefreshing(true);
-    await loadAll(true);
+    await loadAll(true, customStrikes);
     setRefreshing(false);
-  }, [loadAll]);
+  }, [loadAll, customStrikes]);
 
   // WoW / MoM reference snapshots
   const wowSnap = useMemo(() => findSnapshotDaysAgo(history, 7, 2), [history]);
@@ -153,6 +213,18 @@ export default function HedgingDashboard() {
     if (prior == null || curr == null || prior === 0) return null;
     return ((curr - prior) / prior) * 100;
   }, []);
+
+  /** WoW/MoM % change for a custom strike at a given expiry */
+  const customDeltaFor = useCallback(
+    (row: CustomStrikeRow, expiry: string, refSnap: HedgingSnapshot | null): number | null => {
+      if (!refSnap) return null;
+      const prior = customPremiumFromSnapshot(refSnap, row.strike, expiry);
+      const curr = row.quotes.find((q) => q.expiry === expiry)?.premium ?? null;
+      if (prior == null || curr == null || prior === 0) return null;
+      return ((curr - prior) / prior) * 100;
+    },
+    [],
+  );
 
   return (
     <main className="min-h-screen bg-[#f4f5f7] px-4 py-6 text-slate-900 md:px-8 md:py-8 overflow-x-hidden">
@@ -304,6 +376,100 @@ export default function HedgingDashboard() {
                         })}
                       </tr>
                     ))}
+
+                    {/* Custom user-added strike rows */}
+                    {(data.customRows || []).map((row) => (
+                      <tr key={`custom-${row.strike}`} className="border-b border-slate-50 hover:bg-slate-50/50 transition-colors">
+                        <td className="py-2.5 pl-5 pr-2 font-semibold text-slate-700 text-xs">
+                          <div className="flex items-center gap-1.5">
+                            <span>Custom</span>
+                            <button
+                              type="button"
+                              onClick={() => handleRemoveStrike(row.strike)}
+                              className="text-slate-300 hover:text-red-500 transition-colors text-[11px]"
+                              aria-label={`Remove ${row.strike}`}
+                              title="Remove row"
+                            >
+                              <svg className="w-3 h-3" fill="none" stroke="currentColor" strokeWidth="2" viewBox="0 0 24 24">
+                                <path strokeLinecap="round" strokeLinejoin="round" d="M6 18L18 6M6 6l12 12" />
+                              </svg>
+                            </button>
+                          </div>
+                        </td>
+                        <td className="py-2.5 px-2 text-right font-mono text-xs font-semibold text-slate-600">
+                          ${row.strike}
+                        </td>
+                        {data.quotes.map((q) => {
+                          const cq = row.quotes.find((r) => r.expiry === q.expiry);
+                          if (view === "current") {
+                            return (
+                              <td key={q.expiry} className="py-2.5 px-2 text-right">
+                                <div className="font-mono text-xs font-semibold text-slate-800">
+                                  {fmtDollar(cq?.premium ?? null)}
+                                </div>
+                                <div className="font-mono text-[10px] text-slate-400">
+                                  {fmtPct(cq?.pctOfSpot ?? null)}
+                                </div>
+                              </td>
+                            );
+                          }
+                          const ref = view === "wow" ? wowSnap : momSnap;
+                          const delta = customDeltaFor(row, q.expiry, ref);
+                          const prior = ref ? customPremiumFromSnapshot(ref, row.strike, q.expiry) : null;
+                          const curr = cq?.premium ?? null;
+                          return (
+                            <td key={q.expiry} className="py-2.5 px-2 text-right">
+                              <div className={`font-mono text-xs font-semibold ${
+                                delta == null ? "text-slate-400" :
+                                delta > 0 ? "text-red-600" :
+                                delta < 0 ? "text-emerald-600" : "text-slate-500"
+                              }`}>
+                                {fmtDelta(delta)}
+                              </div>
+                              <div className="font-mono text-[10px] text-slate-400">
+                                {prior != null && curr != null ? `${fmtDollar(prior)} → ${fmtDollar(curr)}` : "—"}
+                              </div>
+                            </td>
+                          );
+                        })}
+                      </tr>
+                    ))}
+
+                    {/* Add-custom-strike input row */}
+                    <tr className="bg-slate-50/30">
+                      <td className="py-2 pl-5 pr-2 text-xs text-slate-500 font-medium">Add strike</td>
+                      <td className="py-2 px-2 text-right" colSpan={1 + data.quotes.length}>
+                        <div className="flex items-center justify-end gap-2">
+                          <div className="flex items-center rounded-md border border-slate-200 bg-white px-2 py-1 focus-within:border-blue-400 focus-within:ring-1 focus-within:ring-blue-200">
+                            <span className="text-xs text-slate-400 mr-1">$</span>
+                            <input
+                              type="number"
+                              inputMode="decimal"
+                              step="1"
+                              min="1"
+                              placeholder="e.g. 680"
+                              value={newStrikeInput}
+                              onChange={(e) => setNewStrikeInput(e.target.value)}
+                              onKeyDown={(e) => {
+                                if (e.key === "Enter") {
+                                  e.preventDefault();
+                                  handleAddStrike();
+                                }
+                              }}
+                              className="w-20 text-xs font-mono text-slate-700 outline-none bg-transparent"
+                            />
+                          </div>
+                          <button
+                            type="button"
+                            onClick={handleAddStrike}
+                            disabled={!newStrikeInput.trim()}
+                            className="rounded-md bg-slate-800 px-3 py-1 text-xs font-semibold text-white hover:bg-slate-700 transition-colors disabled:opacity-40 disabled:cursor-not-allowed"
+                          >
+                            Add
+                          </button>
+                        </div>
+                      </td>
+                    </tr>
                   </tbody>
                 </table>
               </div>
@@ -330,7 +496,8 @@ export default function HedgingDashboard() {
             {/* Footnote */}
             <p className="mt-3 text-[11px] text-slate-400">
               Premiums are mid-prices (bid+ask)/2 where available, else last traded price. Strikes round to
-              nearest $5 from the live SPY spot. Standard monthly expiries (3rd-Friday contracts) only.
+              nearest $5 from the live SPY spot. One expiry per calendar month (3rd-Friday preferred).
+              Custom strikes are priced only if that exact strike is listed on CBOE; otherwise the cell shows &quot;—&quot;.
               Snapshots are captured on every refresh and stored permanently for week/month comparisons.
             </p>
           </>

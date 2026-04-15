@@ -9,6 +9,11 @@ import { NextRequest, NextResponse } from "next/server";
 
 const KEY = "pm:hedging-history";
 
+export type HedgingSnapshotCustomRow = {
+  strike: number;
+  quotes: Array<{ expiry: string; premium: number | null }>;
+};
+
 export type HedgingSnapshot = {
   date: string; // YYYY-MM-DD (capture date, UTC)
   fetchedAt: string; // ISO timestamp
@@ -22,6 +27,8 @@ export type HedgingSnapshot = {
     otm10Strike: number;
     otm10Premium: number | null;
   }>;
+  /** Optional — captured premiums for any custom strikes in scope at snapshot time. */
+  customRows?: HedgingSnapshotCustomRow[];
 };
 
 export type HedgingHistory = {
