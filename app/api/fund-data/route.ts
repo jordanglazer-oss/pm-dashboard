@@ -832,6 +832,7 @@ async function fetchCanadianFundData(
     turnover: yahooData.turnover,
     topHoldings: yahooData.topHoldings,
     sectorWeightings: yahooData.sectorWeightings,
+    holdingsSource: yahooData.topHoldings?.length ? "Yahoo Finance" : undefined,
     assetAllocation: yahooData.assetAllocation,
     categoryPerformance: yahooData.categoryPerformance,
     riskStats: yahooData.riskStats,
@@ -853,6 +854,7 @@ async function fetchCanadianFundData(
 type ProviderHoldingsResult = {
   topHoldings?: FundHolding[];
   sectorWeightings?: FundSectorWeight[];
+  provider?: string; // Human-readable label for which provider answered (e.g. "iShares", "BMO", "Vanguard")
 };
 
 /**
@@ -1068,18 +1070,24 @@ async function fetchProviderHoldings(
 
   // BMO ETFs
   if (family.includes("bmo") || name.includes("bmo")) {
-    return fetchBMOHoldings(ticker);
+    const r = await fetchBMOHoldings(ticker);
+    if (r.topHoldings?.length) r.provider = "BMO";
+    return r;
   }
 
   // iShares / BlackRock ETFs
   if (family.includes("ishares") || family.includes("blackrock") ||
       name.includes("ishares") || name.includes("blackrock")) {
-    return fetchISharesHoldings(ticker, isCanadian ? "ca" : "us");
+    const r = await fetchISharesHoldings(ticker, isCanadian ? "ca" : "us");
+    if (r.topHoldings?.length) r.provider = "iShares";
+    return r;
   }
 
   // Vanguard ETFs
   if (family.includes("vanguard") || name.includes("vanguard")) {
-    return fetchVanguardHoldings(ticker, isCanadian);
+    const r = await fetchVanguardHoldings(ticker, isCanadian);
+    if (r.topHoldings?.length) r.provider = "Vanguard";
+    return r;
   }
 
   // SPDR / State Street ETFs (use iShares-style approach — they also use the same BlackRock CSV pattern for some)
@@ -1259,6 +1267,13 @@ export async function GET(request: NextRequest) {
 
     const fundData = extractYahooFundData(result);
 
+    // Track where the current topHoldings came from so the UI can show
+    // whether the embedded scraper succeeded or if the user should provide
+    // a URL. Updated as each source overrides the previous one.
+    if (fundData.topHoldings?.length) {
+      fundData.holdingsSource = "Yahoo Finance";
+    }
+
     // Merge performance: primary source wins, Yahoo fills gaps
     const yp = fundData.performance || {};
     // Merge performance: Yahoo trailingReturns is primary (total return, matches
@@ -1299,7 +1314,10 @@ export async function GET(request: NextRequest) {
     if (msData.riskStats) fundData.riskStats = msData.riskStats;
     if (msData.equityMetrics) fundData.equityMetrics = msData.equityMetrics;
     // Morningstar holdings override Yahoo (when available)
-    if (msHoldings.topHoldings?.length) fundData.topHoldings = msHoldings.topHoldings;
+    if (msHoldings.topHoldings?.length) {
+      fundData.topHoldings = msHoldings.topHoldings;
+      fundData.holdingsSource = "Morningstar";
+    }
     if (msHoldings.sectorWeightings?.length) fundData.sectorWeightings = msHoldings.sectorWeightings;
 
     // Real-time YTD from chart prices — overrides stale month-end API values
@@ -1315,7 +1333,10 @@ export async function GET(request: NextRequest) {
       fundData.fundFamily,
       msETFLookup?.name,
     );
-    if (providerHoldings.topHoldings?.length) fundData.topHoldings = providerHoldings.topHoldings;
+    if (providerHoldings.topHoldings?.length) {
+      fundData.topHoldings = providerHoldings.topHoldings;
+      fundData.holdingsSource = providerHoldings.provider || "Fund provider";
+    }
     if (providerHoldings.sectorWeightings?.length) fundData.sectorWeightings = providerHoldings.sectorWeightings;
 
     return NextResponse.json({ ticker, fundData });
@@ -1332,25 +1353,38 @@ export async function GET(request: NextRequest) {
 
 /**
  * Scrape holdings from a generic HTML page.
- * Looks for table-like structures containing: Ticker/Symbol, Name, Weight/%, Sector
+ *
+ * Tries to locate a holdings table by header text. Pages vary in what columns
+ * they expose — some (e.g. Morningstar global fund pages) only show the
+ * company name, others (e.g. certain provider CSV-style pages) only show the
+ * ticker. We accept the row as long as the table has a weight column plus
+ * at least one of ticker/name, and use whichever is available as the display
+ * identifier.
+ *
+ * Also falls back to `__NEXT_DATA__`-embedded JSON for SPA pages where the
+ * holdings are never rendered as HTML at all.
  */
 function scrapeGenericHoldings(html: string): ProviderHoldingsResult {
   const result: ProviderHoldingsResult = {};
   const $ = cheerio.load(html);
 
-  // Strategy 1: Look for a table with a header containing "Ticker"/"Symbol" and "Weight"/%
+  // Strategy 1: Look for a table with a header containing either ticker/symbol
+  // OR a name-style column, plus weight.
   const tables = $("table");
   for (let t = 0; t < tables.length; t++) {
     const table = $(tables[t]);
     const headers = table.find("th, thead td").map((_, el) => $(el).text().trim().toLowerCase()).get();
 
-    // Find relevant column indices
-    const tickerIdx = headers.findIndex(h => /^(ticker|symbol)$/i.test(h));
-    const nameIdx = headers.findIndex(h => /^(name|security|holding|company)$/i.test(h));
-    const weightIdx = headers.findIndex(h => /weight|%|allocation|pct/i.test(h));
-    const sectorIdx = headers.findIndex(h => /sector|industry/i.test(h));
+    // Widened column detection — substring match, since provider pages use
+    // labels like "Name of Security", "Ticker Symbol", "% of Net Assets", etc.
+    const tickerIdx = headers.findIndex(h => /\b(ticker|symbol|cusip|isin|identifier)\b/i.test(h));
+    const nameIdx = headers.findIndex(h => /\b(name|security|holding|company|description|issuer)\b/i.test(h));
+    const weightIdx = headers.findIndex(h => /weight|%|allocation|pct|percent/i.test(h));
+    const sectorIdx = headers.findIndex(h => /sector|industry|gics/i.test(h));
 
-    if (weightIdx < 0) continue; // Must have a weight column
+    // Must have a weight column AND at least one of ticker/name
+    if (weightIdx < 0) continue;
+    if (tickerIdx < 0 && nameIdx < 0) continue;
 
     const allHoldings: FundHolding[] = [];
     const sectorWeights: Record<string, number> = {};
@@ -1361,19 +1395,26 @@ function scrapeGenericHoldings(html: string): ProviderHoldingsResult {
       if (cells.length < 2) return;
 
       const getCellText = (idx: number) => idx >= 0 && idx < cells.length ? $(cells[idx]).text().trim() : "";
-      const ticker = getCellText(tickerIdx);
-      const name = getCellText(nameIdx) || ticker;
+      const tickerRaw = getCellText(tickerIdx);
+      const nameRaw = getCellText(nameIdx);
       const weightText = getCellText(weightIdx);
       const sector = getCellText(sectorIdx);
+
+      // Require at least one of ticker / name to have content
+      if (!tickerRaw && !nameRaw) return;
+
+      // Prefer name as display label when present; fall back to ticker
+      const displayName = nameRaw || tickerRaw;
+      const symbol = tickerRaw.replace(/[^A-Z0-9.]/gi, "").substring(0, 10);
 
       const weight = parseFloat(weightText.replace(/[%,]/g, ""));
       if (!isFinite(weight) || weight <= 0) return;
       // Skip cash/derivatives entries
-      if (/^(cash|usd|cad|forward|swap|future|derivative)/i.test(name) || /^(cash|usd|cad)/i.test(ticker)) return;
+      if (/^(cash|usd|cad|forward|swap|future|derivative)/i.test(displayName) || /^(cash|usd|cad)/i.test(tickerRaw)) return;
 
       allHoldings.push({
-        symbol: ticker.replace(/[^A-Z0-9.]/gi, "").substring(0, 10),
-        name: name.length > 60 ? name.substring(0, 57) + "..." : name,
+        symbol,
+        name: displayName.length > 60 ? displayName.substring(0, 57) + "..." : displayName,
         weight: parseFloat(weight.toFixed(2)),
       });
       if (sector) {
@@ -1394,7 +1435,87 @@ function scrapeGenericHoldings(html: string): ProviderHoldingsResult {
     }
   }
 
+  // Strategy 2: SPA fallback — Morningstar global / other Next.js-rendered
+  // fund pages embed holdings in a `__NEXT_DATA__` JSON script tag rather
+  // than the DOM. Look for any array of objects that resembles a holdings
+  // list (weight + name or ticker).
+  if (!result.topHoldings?.length) {
+    const nextData = $("#__NEXT_DATA__").html();
+    if (nextData) {
+      try {
+        const parsed = JSON.parse(nextData);
+        const found = findHoldingsInJson(parsed);
+        if (found.length >= 3) {
+          found.sort((a, b) => b.weight - a.weight);
+          result.topHoldings = found.slice(0, 10);
+        }
+      } catch {
+        // swallow — not JSON or shape we recognise
+      }
+    }
+  }
+
   return result;
+}
+
+/**
+ * Walk an arbitrary JSON tree looking for arrays of objects that look like
+ * fund holdings — at minimum a weight field and a name or ticker field.
+ */
+function findHoldingsInJson(node: unknown, depth = 0): FundHolding[] {
+  if (!node || depth > 8) return [];
+  if (Array.isArray(node)) {
+    // Does this array look like a list of holdings?
+    if (node.length >= 3 && node.every(item => item && typeof item === "object")) {
+      const sample = node[0] as Record<string, unknown>;
+      const keys = Object.keys(sample).map(k => k.toLowerCase());
+      const hasWeight = keys.some(k => /weight|percent|pct|allocation/.test(k));
+      const hasIdent = keys.some(k => /name|security|holding|ticker|symbol|issuer|company/.test(k));
+      if (hasWeight && hasIdent) {
+        const out: FundHolding[] = [];
+        for (const item of node) {
+          const o = item as Record<string, unknown>;
+          const entries = Object.entries(o);
+          let ticker = "";
+          let name = "";
+          let weight = NaN;
+          for (const [k, v] of entries) {
+            const lk = k.toLowerCase();
+            if (!weight && /weight|percent|pct|allocation/.test(lk) && typeof v === "number") weight = v;
+            else if (!weight && /weight|percent|pct|allocation/.test(lk) && typeof v === "string") {
+              const n = parseFloat(v.replace(/[%,]/g, ""));
+              if (isFinite(n)) weight = n;
+            }
+            if (!ticker && /ticker|symbol/.test(lk) && typeof v === "string") ticker = v;
+            if (!name && /name|security|holding|issuer|company|description/.test(lk) && typeof v === "string") name = v;
+          }
+          if (!isFinite(weight) || weight <= 0) continue;
+          if (!ticker && !name) continue;
+          const displayName = name || ticker;
+          if (/^(cash|usd|cad|forward|swap|future|derivative)/i.test(displayName)) continue;
+          out.push({
+            symbol: ticker.replace(/[^A-Z0-9.]/gi, "").substring(0, 10),
+            name: displayName.length > 60 ? displayName.substring(0, 57) + "..." : displayName,
+            weight: parseFloat(weight.toFixed(2)),
+          });
+        }
+        if (out.length >= 3) return out;
+      }
+    }
+    // Recurse into children
+    for (const child of node) {
+      const found = findHoldingsInJson(child, depth + 1);
+      if (found.length) return found;
+    }
+    return [];
+  }
+  if (typeof node === "object") {
+    for (const value of Object.values(node as Record<string, unknown>)) {
+      const found = findHoldingsInJson(value, depth + 1);
+      if (found.length) return found;
+    }
+  }
+  return [];
 }
 
 export async function POST(request: NextRequest) {
@@ -1463,7 +1584,7 @@ export async function POST(request: NextRequest) {
 
     if (!holdings.topHoldings?.length) {
       return NextResponse.json(
-        { error: "Could not find holdings data on this page. The page should contain a table with Ticker/Symbol, Name, and Weight/% columns." },
+        { error: "Could not find holdings data on this page. The page needs a weight/percent column plus either a ticker or a name column (either is fine — both is not required)." },
         { status: 422 }
       );
     }

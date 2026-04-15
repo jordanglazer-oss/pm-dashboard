@@ -207,6 +207,7 @@ export type FundData = {
   yahooTicker?: string; // Resolved Yahoo ticker for Canadian funds (e.g., 0P000071WA.TO)
   holdingsUrl?: string; // User-provided URL for scraping holdings from fund website
   holdingsLastUpdated?: string; // Timestamp when holdings were last fetched via URL
+  holdingsSource?: string; // Where the current topHoldings came from (e.g. "iShares", "Morningstar", "Yahoo", or the hostname of a user URL). Useful for knowing whether to provide a URL manually.
   lastUpdated?: string;
 };
 
