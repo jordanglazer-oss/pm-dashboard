@@ -237,25 +237,22 @@ export function PimPerformance({ groupId, groupName, selectedProfile }: Props) {
     setAutoUpdating(false);
   }, []);
 
-  // Auto-update daily values once on first load (per group).
-  // Runs on ALL days including weekends so the recalc window (last 2
-  // trading days) corrects entries that were captured mid-day with live
-  // prices. Without this, weekend page loads show stale mid-day values
-  // instead of finalized end-of-day adjusted closes. The server-side API
-  // already skips "today" entries when the market is closed, so weekend
-  // calls only correct historical entries — they never create new ones.
-  const autoUpdatedRef = useRef<string | null>(null);
+  // Auto-refresh fires once per (groupId, selectedProfile) combination:
+  // on initial mount (as soon as cached data has loaded) and whenever
+  // the user toggles groupId or selectedProfile (balanced / growth /
+  // all-equity / alpha). The ref-keyed guard prevents the effect from
+  // re-triggering itself after autoUpdateDailyValue writes back to
+  // perfData.lastUpdated — so the "Updating…" indicator shows once per
+  // deliberate state change, never in a loop.
+  const autoUpdatedKeyRef = useRef<string | null>(null);
   useEffect(() => {
     if (!perfData || perfData.models.length === 0 || autoUpdating) return;
-    if (autoUpdatedRef.current === groupId) return; // already updated this group
-
-    const groupModels = perfData.models.filter((m) => m.groupId === groupId);
-    if (groupModels.length === 0) return;
-
-    autoUpdatedRef.current = groupId;
+    const key = `${groupId}:${selectedProfile}`;
+    if (autoUpdatedKeyRef.current === key) return;
+    autoUpdatedKeyRef.current = key;
     autoUpdateDailyValue();
   // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [perfData?.lastUpdated, groupId]);
+  }, [perfData?.lastUpdated, groupId, selectedProfile]);
 
   // Get models for selected group
   const groupModels = useMemo(() => {
