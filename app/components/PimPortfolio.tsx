@@ -1235,6 +1235,21 @@ export function PimPortfolio({ groups }: Props) {
               Buy / Sell
             </button>
           )}
+          {/* Client Report — opens the one-pager preview in a new tab,
+              seeded with the currently-selected profile. Disabled for
+              Alpha because the one-pager is only built for the three
+              full-model profiles (Balanced / Growth / All-Equity). */}
+          {!editMode && activeProfile !== "alpha" && (
+            <Link
+              href={`/client-report?group=${encodeURIComponent(selectedGroupId)}&profile=${encodeURIComponent(activeProfile)}`}
+              target="_blank"
+              rel="noopener"
+              className="rounded-lg px-3 py-1.5 text-xs font-semibold text-white transition-colors"
+              style={{ backgroundColor: "#002855" }}
+            >
+              Client Report
+            </Link>
+          )}
           {!editMode && pendingTrades.length > 0 && (
             <button onClick={handleOpenSettlement}
               className="rounded-lg bg-violet-600 px-3 py-1.5 text-xs font-semibold text-white hover:bg-violet-700 transition-colors relative">
