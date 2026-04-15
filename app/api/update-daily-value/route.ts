@@ -452,6 +452,12 @@ export async function POST() {
       let currentValue = lastEntry.value;
       let addedDays = 0;
 
+      // Build a positions map for O(1) lookup in the today dollar-weighted path
+      const posMap = new Map<string, { symbol: string; units: number; costBasis: number }>();
+      if (portfolio) {
+        for (const p of portfolio.positions) posMap.set(p.symbol, p);
+      }
+
       for (const date of daysNeeded) {
         let weightedReturn = 0;
         let activeWeight = 0;
@@ -475,6 +481,64 @@ export async function POST() {
           ? (todayRate - prevRate) / prevRate
           : 0;
 
+        // ── TODAY: dollar-weighted path (matches the live UI exactly) ──
+        // When we have position data, compute today's return as
+        // (currTotalCad - prevTotalCad) / prevTotalCad — identical to the
+        // useLiveTodayReturn hook and PimPortfolio.todayReturn. This is
+        // the unbiased portfolio return and the number the user sees in
+        // the Performance Tracker / Positioning tiles.
+        //
+        // The older return-weighted path (below) over-weights winners
+        // when coverage is below 100% (e.g. mutual fund NAVs lag by a
+        // day), inflating the stored Appendix number vs the live tile.
+        // Dollar-weighted naturally handles missing prices by excluding
+        // both sides cleanly — and the 2-day recalc that runs the next
+        // trading morning will re-compute this entry once the mutual
+        // fund NAVs arrive, so no data is permanently biased.
+        if (isToday && hasPositions && portfolio) {
+          const todayFx = todayRate ?? 1;
+          const prevFx = prevRate ?? todayFx;
+          let prevTotalCad = 0;
+          let currTotalCad = 0;
+          let coveredWeight = 0; // share of portfolioWeight actually priced
+
+          for (const h of holdingsWithWeight) {
+            const pos = posMap.get(h.symbol);
+            if (!pos || pos.units <= 0) continue;
+            const pm = holdingPriceMaps.get(h.symbol);
+            if (!pm) continue;
+            const curPrice = pm.get(date);
+            if (curPrice == null) continue;
+            const prev = chartPreviousCloses.get(h.symbol);
+            if (prev == null || prev <= 0) continue;
+
+            const prevFxRate = h.currency === "USD" ? prevFx : 1;
+            const currFxRate = h.currency === "USD" ? todayFx : 1;
+            prevTotalCad += pos.units * prev * prevFxRate;
+            currTotalCad += pos.units * curPrice * currFxRate;
+            coveredWeight += h.portfolioWeight / totalWeight;
+          }
+
+          // Same 30% coverage floor as the return-weighted path — don't
+          // record an entry computed from a tiny slice of the portfolio.
+          if (prevTotalCad > 0 && coveredWeight >= 0.3) {
+            const dailyReturnDecimal = (currTotalCad - prevTotalCad) / prevTotalCad;
+            const dailyReturnPct = dailyReturnDecimal * 100;
+            currentValue = currentValue * (1 + dailyReturnDecimal);
+            model.history.push({
+              date,
+              value: parseFloat(currentValue.toFixed(4)),
+              dailyReturn: parseFloat(dailyReturnPct.toFixed(4)),
+            });
+            addedDays++;
+          }
+          continue;
+        }
+
+        // ── PAST DAYS (or today without positions): return-weighted ──
+        // Used for the yesterday recalc and the rare "no positions" case.
+        // On past days, mutual fund NAVs should be available so coverage
+        // is near 100% and the normalization correction doesn't distort.
         for (const h of holdingsWithWeight) {
           const pm = holdingPriceMaps.get(h.symbol);
           if (!pm) continue;
