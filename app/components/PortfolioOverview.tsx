@@ -299,12 +299,16 @@ export function PortfolioOverview() {
                 merged.topHoldings = existing.topHoldings;
                 merged.sectorWeightings = existing.sectorWeightings;
                 merged.holdingsLastUpdated = existing.holdingsLastUpdated;
+                merged.holdingsSource = existing.holdingsSource;
               }
               if (existing?.holdingsUrl && !merged.holdingsUrl) {
                 merged.holdingsUrl = existing.holdingsUrl;
               }
               if (existing?.holdingsLastUpdated && !merged.holdingsLastUpdated) {
                 merged.holdingsLastUpdated = existing.holdingsLastUpdated;
+              }
+              if (merged.topHoldings?.length && !merged.holdingsLastUpdated) {
+                merged.holdingsLastUpdated = new Date().toISOString();
               }
               updateFundData(fund.ticker, merged);
             }

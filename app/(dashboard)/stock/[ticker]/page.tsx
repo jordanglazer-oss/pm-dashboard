@@ -340,11 +340,36 @@ function FundDataPanels({ fundData, ticker, onHoldingsUpdate }: { fundData: Fund
           {/* Holdings source info + URL input */}
           {onHoldingsUpdate && (
             <div className="mt-3 pt-3 border-t border-slate-100">
-              {fundData.holdingsLastUpdated && fundData.holdingsUrl && (
-                <p className="text-[10px] text-slate-400 mb-2">
-                  Holdings fetched from URL on {new Date(fundData.holdingsLastUpdated).toLocaleDateString("en-US", { month: "short", day: "numeric", year: "numeric", hour: "numeric", minute: "2-digit" })}
-                </p>
-              )}
+              {(() => {
+                const hasHoldings = Boolean(fundData.topHoldings?.length);
+                const fromUrl = Boolean(fundData.holdingsUrl);
+                const sourceLabel = fundData.holdingsSource || (fromUrl ? "Custom URL" : "Embedded scraper");
+                const whenStr = fundData.holdingsLastUpdated
+                  ? new Date(fundData.holdingsLastUpdated).toLocaleDateString("en-US", { month: "short", day: "numeric", year: "numeric", hour: "numeric", minute: "2-digit" })
+                  : null;
+                if (!hasHoldings) {
+                  return (
+                    <div className="mb-2 inline-flex items-center gap-1.5 rounded-full bg-amber-50 px-2 py-0.5 text-[10px] font-semibold text-amber-700 border border-amber-200">
+                      <span className="h-1.5 w-1.5 rounded-full bg-amber-500" />
+                      No holdings found — paste a URL below
+                    </div>
+                  );
+                }
+                return (
+                  <div className="mb-2 flex flex-wrap items-center gap-x-2 gap-y-1">
+                    <span className={`inline-flex items-center gap-1.5 rounded-full px-2 py-0.5 text-[10px] font-semibold border ${fromUrl ? "bg-indigo-50 text-indigo-700 border-indigo-200" : "bg-emerald-50 text-emerald-700 border-emerald-200"}`}>
+                      <span className={`h-1.5 w-1.5 rounded-full ${fromUrl ? "bg-indigo-500" : "bg-emerald-500"}`} />
+                      {fromUrl ? "Fetched from your URL" : "Auto-found by embedded scraper"}
+                    </span>
+                    <span className="text-[10px] text-slate-500">
+                      Source: <span className="font-semibold text-slate-700">{sourceLabel}</span>
+                    </span>
+                    {whenStr && (
+                      <span className="text-[10px] text-slate-400">· {whenStr}</span>
+                    )}
+                  </div>
+                );
+              })()}
               <label className="text-[10px] font-semibold text-slate-400 uppercase tracking-wider">
                 Holdings source URL
               </label>
@@ -510,6 +535,7 @@ export default function StockDetailPage() {
             merged.topHoldings = existing.topHoldings;
             merged.sectorWeightings = existing.sectorWeightings;
             merged.holdingsLastUpdated = existing.holdingsLastUpdated;
+            merged.holdingsSource = existing.holdingsSource;
           }
           // Always preserve the holdings URL
           if (existing?.holdingsUrl && !merged.holdingsUrl) {
@@ -518,6 +544,12 @@ export default function StockDetailPage() {
           // Preserve holdingsLastUpdated for URL-sourced holdings
           if (existing?.holdingsLastUpdated && !merged.holdingsLastUpdated) {
             merged.holdingsLastUpdated = existing.holdingsLastUpdated;
+          }
+          // Stamp a fresh timestamp whenever the embedded scraper populated
+          // holdings but didn't yet have a last-updated marker — otherwise the
+          // UI can't tell the user "we found these live".
+          if (merged.topHoldings?.length && !merged.holdingsLastUpdated && !existing?.holdingsLastUpdated) {
+            merged.holdingsLastUpdated = new Date().toISOString();
           }
           updateFundData(ticker, merged);
         }
@@ -972,12 +1004,19 @@ export default function StockDetailPage() {
               fundData={stock.fundData}
               ticker={stock.ticker}
               onHoldingsUpdate={(holdings, sectors, url) => {
+                let sourceLabel = "Custom URL";
+                try {
+                  sourceLabel = new URL(url).hostname.replace(/^www\./, "");
+                } catch {
+                  /* fall through to default label */
+                }
                 updateFundData(stock.ticker, {
                   ...stock.fundData!,
                   topHoldings: holdings,
                   sectorWeightings: sectors,
                   holdingsUrl: url,
                   holdingsLastUpdated: new Date().toISOString(),
+                  holdingsSource: sourceLabel,
                 });
               }}
             />
