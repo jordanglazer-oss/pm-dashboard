@@ -81,6 +81,13 @@ export type PimModelPerformance = {
 export type PimPerformanceData = {
   models: PimModelPerformance[];
   lastUpdated: string;
+  /**
+   * YYYY-MM-DD (ET). Set after a full 2-day recalc runs with the market open,
+   * i.e. once yesterday's entry is considered finalized for the current session.
+   * Used to gate same-day refreshes to a lighter "today-only" path.
+   * Optional so pre-existing Redis payloads remain valid.
+   */
+  yesterdayFinalizedOn?: string;
 };
 
 // ── Position / Holdings Data ──

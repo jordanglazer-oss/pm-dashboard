@@ -33,15 +33,16 @@ type SymbolPriceResult = { history: DailyPriceData[]; chartPreviousClose: number
 
 /** Fetch adjusted close prices from Yahoo (dividends/splits adjusted).
  *  For today's date, uses regularMarketPrice from meta (live intraday)
- *  and returns chartPreviousClose so today's return matches Positioning tab. */
-async function fetchAdjustedCloses(symbol: string): Promise<SymbolPriceResult> {
+ *  and returns chartPreviousClose so today's return matches Positioning tab.
+ *  @param range Yahoo range string; "15d" for full recalc, "5d" for today-only path. */
+async function fetchAdjustedCloses(symbol: string, range: string = "15d"): Promise<SymbolPriceResult> {
   let yahooSymbol = symbol;
   if (symbol.endsWith("-T")) yahooSymbol = symbol.replace("-T", ".TO");
   else if (symbol.endsWith(".U")) yahooSymbol = symbol.replace(".U", "-U.TO");
   if (/^[A-Z]{2,4}\d{2,5}$/i.test(symbol)) return { history: [], chartPreviousClose: null };
 
   try {
-    const url = `https://query2.finance.yahoo.com/v8/finance/chart/${encodeURIComponent(yahooSymbol)}?range=15d&interval=1d`;
+    const url = `https://query2.finance.yahoo.com/v8/finance/chart/${encodeURIComponent(yahooSymbol)}?range=${range}&interval=1d`;
     const res = await fetch(url, { cache: "no-store", headers: { "User-Agent": UA } });
     if (!res.ok) return { history: [], chartPreviousClose: null };
     const data = await res.json();
@@ -124,12 +125,13 @@ async function fetchFundservCloses(ticker: string): Promise<DailyPriceData[]> {
 
 /** Fetch USD/CAD exchange rate history from Yahoo.
  *  Uses live regularMarketPrice for today's rate.
- *  Returns { rates, previousClose } where previousClose is chartPreviousClose for today's FX calc. */
-async function fetchUsdCadRates(): Promise<{ rates: Map<string, number>; previousClose: number | null }> {
+ *  Returns { rates, previousClose } where previousClose is chartPreviousClose for today's FX calc.
+ *  @param range Yahoo range string; "15d" for full recalc, "5d" for today-only path. */
+async function fetchUsdCadRates(range: string = "15d"): Promise<{ rates: Map<string, number>; previousClose: number | null }> {
   const rates = new Map<string, number>();
   let previousClose: number | null = null;
   try {
-    const url = `https://query2.finance.yahoo.com/v8/finance/chart/USDCAD=X?range=15d&interval=1d`;
+    const url = `https://query2.finance.yahoo.com/v8/finance/chart/USDCAD=X?range=${range}&interval=1d`;
     const res = await fetch(url, { cache: "no-store", headers: { "User-Agent": UA } });
     if (!res.ok) return { rates, previousClose };
     const data = await res.json();
@@ -245,6 +247,17 @@ export async function POST() {
     // yesterday's close before 9:30 AM ET, so any "today" return computed
     // before market open is actually yesterday's return mislabeled.
     const marketOpen = isMarketOpenOrAfterET();
+
+    // Today-only mode: if yesterday has already been finalized on this
+    // trading day (i.e. we did a full 2-day recalc with the market open
+    // earlier today), subsequent refreshes only need to recompute today.
+    // This skips the redundant rewrite of yesterday's locked entry and
+    // lets us fetch a shorter Yahoo range for faster refreshes.
+    // Safety: falls back to full 2-day recalc whenever the marker is
+    // stale or missing, so mutual fund NAVs that post late (next AM)
+    // still get captured by the first refresh of the next session.
+    const todayOnlyMode = marketOpen && perfData.yesterdayFinalizedOn === today;
+    const yahooRange = todayOnlyMode ? "5d" : "15d";
     const updates: Array<{ groupId: string; profile: string; addedDays: number; lastDate: string }> = [];
 
     // Collect all symbols
@@ -266,7 +279,7 @@ export async function POST() {
           if (isFundserv(s)) {
             return { symbol: s, history: await fetchFundservCloses(s), chartPreviousClose: null as number | null };
           }
-          const res = await fetchAdjustedCloses(s);
+          const res = await fetchAdjustedCloses(s, yahooRange);
           return { symbol: s, ...res };
         })
       );
@@ -277,7 +290,7 @@ export async function POST() {
     }
 
     // Fetch USD/CAD rates
-    const { rates: usdCadRates, previousClose: fxPreviousClose } = await fetchUsdCadRates();
+    const { rates: usdCadRates, previousClose: fxPreviousClose } = await fetchUsdCadRates(yahooRange);
 
     // Ensure alpha model exists for PIM group — seed from Appendix if missing
     const pimGroup = pimData.groups.find((g) => g.id === "pim");
@@ -335,8 +348,10 @@ export async function POST() {
       // Recalculate the last 2 trading days to account for:
       // - Intraday prices that were captured before market close
       // - Mutual fund NAVs that only populate the next day
-      // This also serves as a one-time fix for any recently locked incorrect entries
-      const RECALC_DAYS = 2;
+      // This also serves as a one-time fix for any recently locked incorrect entries.
+      // On same-day refreshes after yesterday has been finalized this session,
+      // drop to 1 (today only) — yesterday's entry is already stable.
+      const RECALC_DAYS = todayOnlyMode ? 1 : 2;
       let popped = 0;
       while (
         model.history.length > 1 &&
@@ -518,6 +533,16 @@ export async function POST() {
           lastDate: model.history[model.history.length - 1].date,
         });
       }
+    }
+
+    // Mark yesterday as finalized once we've run a full 2-day recalc with
+    // the market open AND the recalc produced real updates. After this
+    // point, same-day refreshes take the lighter today-only path.
+    // Guarding on updates.length > 0 prevents a failed Yahoo fetch (which
+    // pops entries without re-adding) from prematurely locking yesterday
+    // in — next refresh stays on the full 2-day path and self-heals.
+    if (marketOpen && !todayOnlyMode && updates.length > 0) {
+      perfData.yesterdayFinalizedOn = today;
     }
 
     if (updates.length > 0) {
