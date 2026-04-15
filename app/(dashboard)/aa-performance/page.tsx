@@ -749,7 +749,13 @@ export default function AAPerformancePage() {
     ) => {
       if (rowKey === "current") {
         const pimGroup = pimModels.groups.find((g) => g.id === "pim");
-        if (!pimGroup || !pimGroup.profiles[tableKey]) return;
+        if (!pimGroup || !pimGroup.profiles[tableKey]) {
+          console.warn(
+            "[AA→PIM] skipping write — no pim group or profile",
+            { tableKey, hasGroup: !!pimGroup, hasProfile: !!pimGroup?.profiles[tableKey] }
+          );
+          return;
+        }
 
         // Start from whatever's currently shown (sourced from pim-models)
         // and override the edited cell. Other cells keep their live values.
@@ -768,6 +774,14 @@ export default function AAPerformancePage() {
           equity: eq,
           alternatives: alt,
         };
+
+        console.log("[AA→PIM] write profile weights", {
+          profile: tableKey,
+          changed: colKey,
+          to: value,
+          prev: pimGroup.profiles[tableKey],
+          next: nextWeights,
+        });
 
         const nextGroups = pimModels.groups.map((g) =>
           g.id === "pim"
@@ -949,7 +963,20 @@ export default function AAPerformancePage() {
     <div className="space-y-8 pb-12">
       {/* ── Asset Allocation Section ── */}
       <section>
-        <h2 className="text-xl font-bold text-slate-800 mb-4">Asset Allocation</h2>
+        <div className="flex items-baseline justify-between mb-4">
+          <h2 className="text-xl font-bold text-slate-800">Asset Allocation</h2>
+          <p className="text-xs text-slate-400">
+            <span className="text-emerald-700 font-semibold">Current</span> row edits the PIM Model profile weights.
+            {pimModels.lastUpdated && (
+              <>
+                {" "}Last saved{" "}
+                <span className="font-mono">
+                  {new Date(pimModels.lastUpdated).toLocaleTimeString()}
+                </span>
+              </>
+            )}
+          </p>
+        </div>
         <div className="grid grid-cols-1 lg:grid-cols-3 gap-4">
           <AllocationTableCard
             title="Balanced"
