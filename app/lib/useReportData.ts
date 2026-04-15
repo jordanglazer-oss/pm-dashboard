@@ -2,26 +2,39 @@
 
 /**
  * Aggregator hook for the Client Report one-pager. Pulls current
- * positioning, holdings metadata, live prices, sector breakdowns, and
- * 5-year historical series — then computes everything the PDF needs:
+ * positioning, holdings metadata, live prices, sector breakdowns,
+ * 5-year historical series, and the PIM Model performance tracker —
+ * then computes everything the PDF needs:
  *
- *   • Holdings table (Core ETFs consolidated into family rows with
- *     CAD/USD sub-splits; Alpha & individual names listed separately).
- *   • Geography mix (country-level weighted exposure).
+ *   • Holdings table — weighted by CURRENT positions (units × live
+ *     price in CAD) so the one-pager shows how the model is invested
+ *     right now, not the long-term target mix. Falls back to target
+ *     weights when no positions are saved in Redis (e.g. a new group).
+ *   • Asset allocation pie — Fixed Income, Alternatives, Core ETFs,
+ *     US Equity, Canadian Equity, Global Equity (active non-core
+ *     equity broken out by the holding's country of exposure).
+ *   • Geography mix (country-level weighted exposure) — still exposed
+ *     for any downstream consumers that want raw country totals.
  *   • Top sector exposures (equity slice only, look-through on ETFs).
- *   • Performance metrics (1Y / 3Y / 5Y annualized return + volatility
- *     + upside/downside capture vs S&P 500).
+ *   • Look-through X-ray — direct stock positions plus each fund's
+ *     Top-10 holdings combined into an effective exposure table, so
+ *     AAPL inside XUS.U shows up alongside a direct AAPL position.
+ *   • PIM Model performance tracker history + calendar-year returns
+ *     (same source the Performance Tracker tab uses — Redis KV
+ *     `pm:pim-performance`).
+ *   • 5Y annualized return / volatility / upside-downside capture vs
+ *     S&P 500 (computed from holdings' adjusted-close history).
  *
- * "Live data" contract: every fetch here is `cache: no-store` and runs
- * against the same endpoints the dashboard already uses, so the one-
- * pager can never show data the rest of the app doesn't already see.
- * If the market is closed, performance metrics use yesterday's close —
- * same as the Appendix ledger.
+ * "Live data" contract: every fetch here is `cache: no-store` and
+ * runs against the same endpoints the dashboard already uses, so the
+ * one-pager can never show data the rest of the app doesn't already
+ * see. If the market is closed, performance metrics use yesterday's
+ * close — same as the Appendix ledger.
  */
 
 import { useCallback, useEffect, useState } from "react";
 import { useStocks } from "./StockContext";
-import { countryFor, CORE_ETF_FAMILIES, coreFamilyFor, type Country } from "./geography";
+import { countryFor, CORE_ETF_FAMILIES, coreFamilyFor, isCoreEtf, type Country } from "./geography";
 import {
   alignSeries,
   annualizedReturn,
@@ -30,7 +43,12 @@ import {
   dailyReturns,
   windowYears,
 } from "./report-metrics";
-import type { PimHolding, PimProfileType } from "./pim-types";
+import type {
+  PimHolding,
+  PimPerformanceData,
+  PimPortfolioPositions,
+  PimProfileType,
+} from "./pim-types";
 import type { FundData, Stock } from "./types";
 
 // ───────── Output shape ─────────
@@ -56,6 +74,33 @@ export type ReportGeographyRow = { country: Country | "Other"; weight: number };
 
 export type ReportSectorRow = { sector: string; weight: number };
 
+/** One slice of the asset allocation pie. Weights are percentages. */
+export type ReportAllocationSlice = {
+  key:
+    | "fixedIncome"
+    | "alternatives"
+    | "coreEtfs"
+    | "usEquity"
+    | "canadianEquity"
+    | "globalEquity";
+  label: string;
+  weight: number;
+  /** CSS hex colour — shared between pie and legend. */
+  color: string;
+};
+
+/** One row of the look-through X-ray table (top effective exposures). */
+export type ReportXRayRow = {
+  symbol: string;
+  name: string;
+  /** Total effective weight (%) = direct + look-through. */
+  weight: number;
+  /** Weight from direct holdings in the model. */
+  direct: number;
+  /** Weight contributed via fund look-through (e.g. AAPL inside XUS.U). */
+  lookThrough: number;
+};
+
 export type ReportPerformanceMetrics = {
   oneYearReturn: number | null;
   threeYearReturn: number | null;
@@ -66,16 +111,31 @@ export type ReportPerformanceMetrics = {
   downsideCapture: number | null;
 };
 
+/** PIM Model performance tracker payload for the chart + yearly-return table. */
+export type ReportTrackerPerformance = {
+  /** Full daily-value history from `pm:pim-performance` (value starts at 100). */
+  history: { date: string; value: number; dailyReturn: number }[];
+  /** Calendar-year returns derived from the history, descending by year. */
+  yearlyReturns: { year: number; returnPct: number }[];
+  /** Cumulative return since inception (percent, not fraction). */
+  sinceInceptionReturnPct: number | null;
+};
+
 export type ReportData = {
   groupId: string;
   groupName: string;
   profile: PimProfileType;
   profileLabel: string;
   generatedAt: string;
+  /** "live" = weighted by current positions; "target" = weighted by model targets (fallback). */
+  weightsSource: "live" | "target";
   holdings: ReportHoldingRow[];
+  allocation: ReportAllocationSlice[];
   geography: ReportGeographyRow[];
   sectors: ReportSectorRow[];
+  xray: ReportXRayRow[];
   performance: ReportPerformanceMetrics;
+  tracker: ReportTrackerPerformance | null;
   /**
    * Summary totals of the holdings table, for quick sanity display on
    * the preview and inside the PDF footer.
@@ -99,6 +159,27 @@ const PROFILE_LABELS: Record<PimProfileType, string> = {
   alpha: "Alpha",
 };
 
+/** Asset allocation pie palette. RBC navy is reserved for Core ETFs
+ *  (the flagship slice); equities get a related blue ramp; income and
+ *  alternatives use earth tones so they visually recede. */
+const SLICE_COLORS: Record<ReportAllocationSlice["key"], string> = {
+  fixedIncome: "#5b6b8a",
+  alternatives: "#a16207",
+  coreEtfs: "#002855",
+  usEquity: "#005DAA",
+  canadianEquity: "#c8102e",
+  globalEquity: "#0d9488",
+};
+
+const SLICE_LABELS: Record<ReportAllocationSlice["key"], string> = {
+  fixedIncome: "Fixed Income",
+  alternatives: "Alternatives",
+  coreEtfs: "Core ETFs",
+  usEquity: "US Equity",
+  canadianEquity: "Canadian Equity",
+  globalEquity: "Global Equity",
+};
+
 function toYahoo(symbol: string): string {
   if (symbol.endsWith(".U")) return symbol.replace(/\.U$/, "-U.TO");
   if (symbol.endsWith("-T")) return symbol.replace(/-T$/, ".TO");
@@ -106,12 +187,10 @@ function toYahoo(symbol: string): string {
 }
 
 /** Target portfolio weight (as a fraction 0-1) of a holding within its model. */
-function targetWeight(h: PimHolding, profileWeights: {
-  cash: number;
-  fixedIncome: number;
-  equity: number;
-  alternatives: number;
-}): number {
+function targetWeight(
+  h: PimHolding,
+  profileWeights: { cash: number; fixedIncome: number; equity: number; alternatives: number }
+): number {
   if (h.assetClass === "fixedIncome") return h.weightInClass * profileWeights.fixedIncome;
   if (h.assetClass === "equity") return h.weightInClass * profileWeights.equity;
   if (h.assetClass === "alternative") return h.weightInClass * profileWeights.alternatives;
@@ -196,19 +275,103 @@ export function useReportData(
       if (!profileWeights)
         throw new Error(`Profile "${profile}" not defined for ${group.name}`);
 
-      // 1. Compute target weights for every holding. We use target
-      //    (model) weights rather than drift-adjusted live weights so
-      //    the one-pager represents our intended positioning.
-      const weighted: (PimHolding & { weight: number })[] = group.holdings.map((h) => ({
-        ...h,
-        weight: targetWeight(h, profileWeights),
-      }));
+      // ── 1. Current positions + live prices for live weight calc.
+      //    We kick these off in parallel so the total network time is
+      //    max(positions, prices) rather than a sum.
+      const tickerList = group.holdings.map((h) => h.symbol);
+      const [positionsRes, priceRes, fxRes] = await Promise.all([
+        fetch("/api/kv/pim-positions", { cache: "no-store" }).catch(() => null),
+        fetch("/api/prices", {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ tickers: tickerList }),
+          cache: "no-store",
+        }).catch(() => null),
+        fetch("/api/prices", {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ tickers: ["USDCAD=X"] }),
+          cache: "no-store",
+        }).catch(() => null),
+      ]);
 
-      // Filter out zero-weighted holdings (e.g. alternatives when
-      // alternatives allocation is 0 for some profile).
+      let positions: PimPortfolioPositions | null = null;
+      if (positionsRes?.ok) {
+        try {
+          const payload = await positionsRes.json();
+          const portfolios: PimPortfolioPositions[] = payload?.portfolios ?? [];
+          positions =
+            portfolios.find((p) => p.groupId === groupId && p.profile === profile) ??
+            null;
+        } catch {
+          /* ignore malformed positions payload — fall back to target */
+        }
+      }
+
+      let prices: Record<string, number | null> = {};
+      if (priceRes?.ok) {
+        try {
+          const payload = await priceRes.json();
+          prices = payload?.prices ?? {};
+        } catch {
+          /* ignore — fall back to target below */
+        }
+      }
+
+      let usdCad = 1;
+      if (fxRes?.ok) {
+        try {
+          const payload = await fxRes.json();
+          const rate = payload?.prices?.["USDCAD=X"];
+          if (rate && rate > 0) usdCad = rate;
+        } catch {
+          /* keep 1:1 fallback */
+        }
+      }
+
+      // ── 2. Compute weights. Prefer live (positions × price × FX) and
+      //    fall back to target if positions are missing or add up to
+      //    zero value. `weightsSource` is surfaced to the UI so we can
+      //    label the report honestly.
+      let weightsSource: "live" | "target" = "target";
+      const weighted: (PimHolding & { weight: number })[] = [];
+
+      if (positions && positions.positions.length > 0) {
+        const posMap = new Map(
+          positions.positions.map((p) => [p.symbol, p])
+        );
+        const valuesCad: { h: PimHolding; valueCad: number }[] = [];
+        let totalCad = 0;
+        for (const h of group.holdings) {
+          const pos = posMap.get(h.symbol);
+          if (!pos || pos.units <= 0) continue;
+          // `/api/prices` keys by the caller's input ticker, so look up
+          // by the raw symbol first, then yahoo-mapped as a safety net.
+          const live = prices[h.symbol] ?? prices[toYahoo(h.symbol)] ?? null;
+          if (live == null || !isFinite(live) || live <= 0) continue;
+          const fx = h.currency === "USD" ? usdCad : 1;
+          const valueCad = pos.units * live * fx;
+          if (!isFinite(valueCad) || valueCad <= 0) continue;
+          valuesCad.push({ h, valueCad });
+          totalCad += valueCad;
+        }
+        if (totalCad > 0 && valuesCad.length > 0) {
+          weightsSource = "live";
+          for (const { h, valueCad } of valuesCad) {
+            weighted.push({ ...h, weight: valueCad / totalCad });
+          }
+        }
+      }
+
+      if (weightsSource === "target") {
+        for (const h of group.holdings) {
+          weighted.push({ ...h, weight: targetWeight(h, profileWeights) });
+        }
+      }
+
       const activeHoldings = weighted.filter((h) => h.weight > 1e-9);
 
-      // 2. Holdings table (Core ETFs collapsed to families).
+      // ── 3. Holdings table (Core ETFs collapsed to families).
       const holdingRows = consolidateCoreEtfs(activeHoldings);
 
       // Stamp Alpha bucket for equity rows where the linked Stock is
@@ -217,7 +380,6 @@ export function useReportData(
       const stockBySymbol = new Map<string, Stock>();
       for (const s of stocks) {
         stockBySymbol.set(s.ticker, s);
-        // Also index the CAD-suffix variant we use internally ("-T").
         if (s.ticker.endsWith(".TO")) {
           stockBySymbol.set(s.ticker.replace(/\.TO$/, "-T"), s);
         }
@@ -229,9 +391,46 @@ export function useReportData(
         else row.bucket = "Alpha";
       }
 
-      // 3. Geography — weighted by holding weight. Individual equities
-      //    and Core family rows all contribute; unknown symbols land in
-      //    "Other".
+      // ── 4. Asset allocation pie. Rolls each active holding into one
+      //    of six named slices. Core ETFs are kept as a single slice,
+      //    as requested — X-ray handles their look-through separately.
+      const sliceTotals: Record<ReportAllocationSlice["key"], number> = {
+        fixedIncome: 0,
+        alternatives: 0,
+        coreEtfs: 0,
+        usEquity: 0,
+        canadianEquity: 0,
+        globalEquity: 0,
+      };
+      for (const h of activeHoldings) {
+        const wPct = h.weight * 100;
+        if (h.assetClass === "fixedIncome") {
+          sliceTotals.fixedIncome += wPct;
+        } else if (h.assetClass === "alternative") {
+          sliceTotals.alternatives += wPct;
+        } else if (isCoreEtf(h.symbol)) {
+          sliceTotals.coreEtfs += wPct;
+        } else {
+          // Non-core equity: split by country of the underlying.
+          const c = countryFor(h.symbol);
+          if (c === "Canada") sliceTotals.canadianEquity += wPct;
+          else if (c === "Global") sliceTotals.globalEquity += wPct;
+          else sliceTotals.usEquity += wPct;
+        }
+      }
+      const allocation: ReportAllocationSlice[] = (
+        Object.keys(sliceTotals) as ReportAllocationSlice["key"][]
+      )
+        .map((key) => ({
+          key,
+          label: SLICE_LABELS[key],
+          weight: sliceTotals[key],
+          color: SLICE_COLORS[key],
+        }))
+        .filter((s) => s.weight > 0.05)
+        .sort((a, b) => b.weight - a.weight);
+
+      // ── 5. Geography — raw country rollup (kept for downstream use).
       const geoMap = new Map<Country | "Other", number>();
       for (const row of holdingRows) {
         const c = row.country ?? "Other";
@@ -241,56 +440,121 @@ export function useReportData(
         .map(([country, weight]) => ({ country, weight }))
         .sort((a, b) => b.weight - a.weight);
 
-      // 4. Sectors — look up cached fund-data for each ETF / fund and
-      //    combine with direct `sector` on Stock records for names.
-      //    This fetch is per-symbol and sequential-via-Promise.all to
-      //    keep things simple; it'll be quick because results are
-      //    cached server-side.
+      // ── 6. Sectors AND X-ray in one fund-data pass — we look up the
+      //    same fund payloads for both, so sharing the fetch keeps
+      //    network traffic low. Each equity holding either contributes
+      //    at its full weight (if it's a direct stock with a known
+      //    sector) or is looked through into its top holdings/sectors.
       const sectorMap = new Map<string, number>();
       const addSector = (name: string, w: number) => {
         if (!name || w <= 0) return;
         sectorMap.set(name, (sectorMap.get(name) ?? 0) + w);
       };
 
+      // X-ray accumulator: effective weight by underlying symbol. We
+      // track direct vs look-through separately so the UI can indicate
+      // where each exposure came from.
+      const xrayAcc = new Map<
+        string,
+        { name: string; direct: number; lookThrough: number }
+      >();
+      const addXRay = (
+        symbol: string,
+        name: string,
+        direct: number,
+        lookThrough: number
+      ) => {
+        const key = (symbol || name).toUpperCase();
+        const prev = xrayAcc.get(key) ?? { name, direct: 0, lookThrough: 0 };
+        prev.direct += direct;
+        prev.lookThrough += lookThrough;
+        // Prefer the longer, more descriptive name we've seen.
+        if (name && name.length > prev.name.length) prev.name = name;
+        xrayAcc.set(key, prev);
+      };
+
       await Promise.all(
-        activeHoldings
-          .filter((h) => h.assetClass === "equity")
-          .map(async (h) => {
-            const st = stockBySymbol.get(h.symbol);
-            // If this is a direct equity with a known sector, attribute
-            // the full weight to that sector and skip the fund look-up.
-            if (st?.sector && st.instrumentType === "stock") {
-              addSector(st.sector, h.weight * 100);
-              return;
-            }
-            // Otherwise look up fund sector breakdown (ETFs, MFs).
-            try {
-              const res = await fetch(
-                `/api/fund-data?ticker=${encodeURIComponent(h.symbol)}`,
-                { cache: "no-store" }
+        activeHoldings.map(async (h) => {
+          if (h.assetClass !== "equity") return;
+          const wPct = h.weight * 100;
+          const st = stockBySymbol.get(h.symbol);
+          const isDirectStock =
+            st?.instrumentType === "stock" || (!isCoreEtf(h.symbol) && !!st?.sector);
+
+          // Direct single-stock exposure: full sector + full X-ray
+          // weight to the holding itself.
+          if (isDirectStock && st?.sector) {
+            addSector(st.sector, wPct);
+            addXRay(h.symbol, st.name || h.name, wPct, 0);
+            return;
+          }
+
+          // Fund (ETF / MF) — look up topHoldings + sectorWeightings.
+          try {
+            const res = await fetch(
+              `/api/fund-data?ticker=${encodeURIComponent(h.symbol)}`,
+              { cache: "no-store" }
+            );
+            if (!res.ok) return;
+            const fund: FundData | null = await res.json().catch(() => null);
+            const sectorBreakdown = fund?.sectorWeightings ?? [];
+            const top = fund?.topHoldings ?? [];
+            for (const sw of sectorBreakdown) addSector(sw.sector, (wPct * sw.weight) / 100);
+            // topHoldings weights are % of fund → contribute pPct * fundPct/100 to portfolio.
+            for (const holding of top) {
+              addXRay(
+                holding.symbol || holding.name,
+                holding.name,
+                0,
+                (wPct * holding.weight) / 100
               );
-              if (!res.ok) return;
-              const fund: FundData | null = await res.json().catch(() => null);
-              const breakdown = fund?.sectorWeightings ?? [];
-              if (!breakdown.length) return;
-              // sectorWeightings are already % of fund → multiply by
-              // portfolio weight to get contribution.
-              for (const sw of breakdown) {
-                addSector(sw.sector, h.weight * sw.weight);
-              }
-            } catch {
-              /* swallow — sector attribution best-effort */
             }
-          })
+            // If we couldn't get sector breakdown, at least record the
+            // ETF itself as a single X-ray line so it isn't invisible.
+            if (!top.length) {
+              addXRay(h.symbol, h.name, 0, wPct);
+            }
+          } catch {
+            /* best-effort — skip this fund */
+          }
+        })
       );
 
       const sectors: ReportSectorRow[] = Array.from(sectorMap.entries())
         .map(([sector, weight]) => ({ sector, weight }))
         .sort((a, b) => b.weight - a.weight);
 
-      // 5. Performance metrics — fetch 5y adjusted close for every
-      //    holding + S&P 500 (^GSPC). Build a weighted return series
-      //    for the portfolio and compare against the benchmark.
+      const xray: ReportXRayRow[] = Array.from(xrayAcc.entries())
+        .map(([symbol, v]) => ({
+          symbol,
+          name: v.name,
+          direct: v.direct,
+          lookThrough: v.lookThrough,
+          weight: v.direct + v.lookThrough,
+        }))
+        .filter((r) => r.weight > 0.05)
+        .sort((a, b) => b.weight - a.weight);
+
+      // ── 7. PIM Model performance tracker history + yearly returns.
+      let tracker: ReportTrackerPerformance | null = null;
+      try {
+        const res = await fetch("/api/kv/pim-performance", { cache: "no-store" });
+        if (res.ok) {
+          const payload = (await res.json()) as PimPerformanceData | null;
+          const model = payload?.models?.find(
+            (m) => m.groupId === groupId && m.profile === profile
+          );
+          if (model && model.history.length > 1) {
+            tracker = buildTrackerPerformance(model.history);
+          }
+        }
+      } catch {
+        /* leave tracker null */
+      }
+
+      // ── 8. 5Y analytic metrics from adjusted-close history (kept
+      //     from v1 for vol + upside/downside capture; the display on
+      //     the report leans on tracker history for yearly returns).
       const tickers = activeHoldings.map((h) => h.symbol);
       let performance: ReportPerformanceMetrics = {
         oneYearReturn: null,
@@ -317,7 +581,7 @@ export function useReportData(
         /* leave performance as all-null */
       }
 
-      // 6. Totals — straight sum of weights by currency bucket.
+      // ── 9. Totals — straight sum of weights by currency bucket.
       const totals = { cad: 0, usd: 0, cash: 0 };
       for (const h of activeHoldings) {
         if (h.currency === "CAD") totals.cad += h.weight * 100;
@@ -346,10 +610,14 @@ export function useReportData(
         profile,
         profileLabel: PROFILE_LABELS[profile] ?? String(profile),
         generatedAt: new Date().toISOString(),
+        weightsSource,
         holdings: holdingRows,
+        allocation,
         geography,
         sectors,
+        xray,
         performance,
+        tracker,
         totals,
       });
     } catch (e) {
@@ -361,26 +629,78 @@ export function useReportData(
   }, [groupId, profile, pimModels, stocks]);
 
   useEffect(() => {
-    // Async setState inside — can't cascade-render synchronously.
     compute();
   }, [compute]);
 
   return { data, loading, error, refetch: compute };
 }
 
+// ───────── Tracker (calendar-year returns) ─────────
+
+/**
+ * Build the tracker-performance block from the Redis pim-performance
+ * history. Yearly return = (last entry of year N) / (last entry of
+ * year N-1, or seed value if year N is the first year). Current year
+ * is computed YTD from Dec 31 of the prior year to the latest entry.
+ *
+ * We feed the raw history straight into the chart component and let
+ * it downsample visually — the PDF renders fine with a few thousand
+ * points as long as the SVG path stays < ~100KB.
+ */
+function buildTrackerPerformance(
+  history: { date: string; value: number; dailyReturn: number }[]
+): ReportTrackerPerformance {
+  const sorted = [...history].sort((a, b) => a.date.localeCompare(b.date));
+
+  // Group the last entry of each year (and also the first to anchor).
+  const lastByYear = new Map<number, { date: string; value: number }>();
+  for (const h of sorted) {
+    const y = Number(h.date.slice(0, 4));
+    if (!isFinite(y)) continue;
+    lastByYear.set(y, { date: h.date, value: h.value });
+  }
+
+  const years = Array.from(lastByYear.keys()).sort((a, b) => a - b);
+  const firstEntry = sorted[0];
+  const yearlyReturns: { year: number; returnPct: number }[] = [];
+  for (let i = 0; i < years.length; i++) {
+    const y = years[i];
+    const endOfY = lastByYear.get(y);
+    if (!endOfY) continue;
+    // Prior year-end is the anchor. If no prior year exists, use the
+    // first history entry as the anchor (inception year partial return).
+    const startVal =
+      i === 0 ? firstEntry.value : lastByYear.get(years[i - 1])?.value ?? firstEntry.value;
+    if (!startVal) continue;
+    const ret = (endOfY.value / startVal - 1) * 100;
+    if (isFinite(ret)) yearlyReturns.push({ year: y, returnPct: ret });
+  }
+  // Most-recent year first in the table.
+  yearlyReturns.sort((a, b) => b.year - a.year);
+
+  const first = sorted[0]?.value ?? null;
+  const last = sorted[sorted.length - 1]?.value ?? null;
+  const sinceInceptionReturnPct =
+    first != null && last != null && first > 0 ? (last / first - 1) * 100 : null;
+
+  return {
+    history: sorted,
+    yearlyReturns,
+    sinceInceptionReturnPct,
+  };
+}
+
 // ───────── Performance metrics (local helper) ─────────
 
 /**
  * Given target-weighted holdings and a map of adjusted-close series,
- * compute the model's 1Y / 3Y / 5Y annualized returns, annualized
- * volatility, and upside/downside capture vs S&P 500.
+ * compute 1Y / 3Y / 5Y annualized returns, annualized volatility, and
+ * upside/downside capture vs S&P 500.
  *
- * Uses target weights throughout (rebalanced daily, implicitly) rather
- * than accreting weights — this represents the "model" return, which
- * is what the one-pager advertises. Per-holding FX noise is ignored
- * because capture ratios and return-based vol are FX-invariant when
- * the benchmark is in a single currency: both numerator and
- * denominator drift together.
+ * Uses the weights the caller passes in throughout (rebalanced daily,
+ * implicitly). Per-holding FX noise is ignored because capture ratios
+ * and return-based vol are FX-invariant when the benchmark is in a
+ * single currency: both numerator and denominator drift together.
  */
 function computePerformance(
   holdings: (PimHolding & { weight: number })[],
@@ -398,14 +718,7 @@ function computePerformance(
     };
   }
 
-  // Collect series for every holding that has data. Fall back to the
-  // Yahoo-suffixed variant if the raw symbol wasn't keyed directly
-  // (report-history API keys by the caller's input ticker, so this
-  // should be a no-op — belt and suspenders).
-  const entries: {
-    weight: number;
-    series: [number, number][];
-  }[] = [];
+  const entries: { weight: number; series: [number, number][] }[] = [];
   let covered = 0;
   for (const h of holdings) {
     const raw = series[h.symbol] ?? series[toYahoo(h.symbol)] ?? [];
@@ -415,8 +728,6 @@ function computePerformance(
   }
 
   if (!entries.length || covered < 0.5) {
-    // Less than half the portfolio has history — not enough to make
-    // an honest claim about performance. Bail.
     return {
       oneYearReturn: null,
       threeYearReturn: null,
@@ -427,25 +738,13 @@ function computePerformance(
     };
   }
 
-  // Normalize weights across covered holdings so they sum to 1 — this
-  // redistributes FUNDSERV-missing weight proportionally rather than
-  // pretending it's cash.
   const scale = 1 / covered;
   for (const e of entries) e.weight *= scale;
 
-  // Build a single sorted-by-date "union" calendar from the benchmark
-  // (densest trading calendar available), then sample each holding on
-  // those dates. Holdings with gaps on a given day get their previous
-  // close carried forward (typical in ETFs with thin trading days).
   const benchDates = bench.map(([t]) => t);
   const benchPrices = bench.map(([, p]) => p);
-
-  // For each entry, build a ffill-sampled price series on benchmark dates.
   const sampled: number[][] = entries.map((e) => sampleOnDates(e.series, benchDates));
-
-  // Portfolio value series = weighted sum of each entry's normalized
-  // price series (start each at 1, so weights blend correctly).
-  const normalized = sampled.map((series) => normalizeToStart(series));
+  const normalized = sampled.map((s) => normalizeToStart(s));
   const portfolio: number[] = new Array(benchDates.length).fill(0);
   for (let i = 0; i < benchDates.length; i++) {
     let v = 0;
@@ -455,11 +754,9 @@ function computePerformance(
     portfolio[i] = v;
   }
 
-  // Pair as [t, price] for windowYears helpers.
   const portfolioSeries: [number, number][] = benchDates.map((t, i) => [t, portfolio[i]]);
   const benchSeries: [number, number][] = benchDates.map((t, i) => [t, benchPrices[i]]);
 
-  // Annualized returns over 1y / 3y / 5y windows.
   const pricesIn = (s: [number, number][], years: number) =>
     windowYears(s, years).map(([, p]) => p);
 
@@ -467,7 +764,6 @@ function computePerformance(
   const threeYearReturn = annualizedReturn(pricesIn(portfolioSeries, 3), 3);
   const fiveYearReturn = annualizedReturn(pricesIn(portfolioSeries, 5), 5);
 
-  // Volatility + capture use full 5y window.
   const portReturns = dailyReturns(pricesIn(portfolioSeries, 5));
   const volatility = annualizedVolatility(portReturns);
 
@@ -486,12 +782,6 @@ function computePerformance(
   };
 }
 
-/**
- * Resample a sparse `[t, price]` series onto a dense date vector by
- * carrying forward the last observed price (no interpolation). Prices
- * before the first observation become NaN so downstream math can skip
- * them.
- */
 function sampleOnDates(series: [number, number][], dates: number[]): number[] {
   const out: number[] = new Array(dates.length).fill(NaN);
   let j = 0;
@@ -507,7 +797,6 @@ function sampleOnDates(series: [number, number][], dates: number[]): number[] {
   return out;
 }
 
-/** Rebase a price series so the first finite value becomes 1. */
 function normalizeToStart(series: number[]): number[] {
   let base = NaN;
   for (const v of series) {
