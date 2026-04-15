@@ -158,11 +158,157 @@ function ScoreDonut({ score, max, groups, stock }: { score: number; max: number;
 }
 
 // ── Fund Data Panels ──
+
+/**
+ * Expand fund-of-funds holdings so ETF/MF positions are replaced by
+ * their underlying equity (or bond) constituents, weighted by the
+ * parent's weight in this fund.
+ *
+ * Example: XSP.TO → IVV at 98.6%. If IVV's topHoldings include AAPL at
+ * 7.5%, the look-through view shows AAPL at 98.6% × 7.5% = 7.4%.
+ *
+ * - Only expands when the child fund's `topHoldings` are already
+ *   cached on our stock list — we don't trigger network fetches during
+ *   render.
+ * - Combines direct + via-fund exposure to the same symbol (e.g. if
+ *   the parent holds AAPL directly AND via IVV).
+ * - Recurses up to `maxDepth` levels deep to handle ETF-of-ETF-of-ETF.
+ * - Falls back to the original holding if no underlying data is
+ *   available (so the view degrades gracefully).
+ *
+ * `lookedThrough` accumulates the set of symbols that were expanded so
+ * the UI can tell the user which funds it looked through.
+ */
+type LookThroughLookup = (symbol: string) => FundData["topHoldings"] | undefined;
+
+function expandLookThrough(
+  holdings: NonNullable<FundData["topHoldings"]>,
+  lookup: LookThroughLookup,
+  lookedThrough: Set<string>,
+  maxDepth = 3,
+  depth = 0,
+): NonNullable<FundData["topHoldings"]> {
+  const acc = new Map<string, { symbol: string; name: string; weight: number }>();
+
+  const add = (sym: string, name: string, weight: number) => {
+    const key = (sym || name).toUpperCase();
+    if (!key) return;
+    const prev = acc.get(key);
+    if (prev) {
+      prev.weight += weight;
+    } else {
+      acc.set(key, { symbol: sym, name, weight });
+    }
+  };
+
+  for (const h of holdings) {
+    const sym = (h.symbol || "").toUpperCase();
+    const childHoldings = sym && depth < maxDepth ? lookup(sym) : undefined;
+
+    if (childHoldings && childHoldings.length > 0) {
+      // Recurse so an ETF-of-ETFs also gets expanded.
+      const expandedChildren = depth + 1 < maxDepth
+        ? expandLookThrough(childHoldings, lookup, lookedThrough, maxDepth, depth + 1)
+        : childHoldings;
+      lookedThrough.add(sym);
+      // Scale each child by the parent weight as a fraction.
+      // (Child weights already sum ≤ 100 in percent terms.)
+      const scale = h.weight / 100;
+      for (const c of expandedChildren) {
+        add(c.symbol || "", c.name, c.weight * scale);
+      }
+    } else {
+      add(sym, h.name, h.weight);
+    }
+  }
+
+  return Array.from(acc.values())
+    .sort((a, b) => b.weight - a.weight)
+    .map((r) => ({
+      symbol: r.symbol,
+      name: r.name,
+      weight: parseFloat(r.weight.toFixed(2)),
+    }));
+}
+
 function FundDataPanels({ fundData, ticker, onHoldingsUpdate }: { fundData: FundData; ticker: string; onHoldingsUpdate?: (holdings: FundData["topHoldings"], sectors: FundData["sectorWeightings"], url: string) => void }) {
+  const { scoredStocks } = useStocks();
   const [holdingsUrl, setHoldingsUrl] = useState(fundData.holdingsUrl || "");
   const [scrapingHoldings, setScrapingHoldings] = useState(false);
   const [scrapeError, setScrapeError] = useState("");
   const [scrapeSuccess, setScrapeSuccess] = useState(false);
+  const [lookThroughEnabled, setLookThroughEnabled] = useState(true);
+  // Cache for holdings fetched on-the-fly for look-through expansion.
+  // These aren't persisted to the user's stock list — just held in
+  // memory for this page render so we don't pollute the main KV with
+  // arbitrary ETF constituents.
+  const [extraCache, setExtraCache] = useState<Record<string, FundData["topHoldings"]>>({});
+
+  // Build a symbol → cached topHoldings lookup. Combines stocks the
+  // user has already visited (persisted) with the on-the-fly cache we
+  // populate below. Excludes the current ticker to avoid self-recursion.
+  const lookup = React.useMemo<LookThroughLookup>(() => {
+    const map = new Map<string, FundData["topHoldings"]>();
+    for (const s of scoredStocks) {
+      if (s.ticker.toUpperCase() === ticker.toUpperCase()) continue;
+      if (s.fundData?.topHoldings?.length) {
+        map.set(s.ticker.toUpperCase(), s.fundData.topHoldings);
+      }
+    }
+    for (const [sym, h] of Object.entries(extraCache)) {
+      if (sym.toUpperCase() === ticker.toUpperCase()) continue;
+      if (h?.length && !map.has(sym.toUpperCase())) {
+        map.set(sym.toUpperCase(), h);
+      }
+    }
+    return (sym: string) => map.get(sym.toUpperCase());
+  }, [scoredStocks, ticker, extraCache]);
+
+  // Auto-fetch underlying holdings for any heavily-weighted (≥20%)
+  // constituent that we don't already have cached. A 20%+ weight is
+  // almost always a sub-fund (e.g. XSP.TO → IVV at 98.6%), not an
+  // individual stock, so this doesn't fire fetches for normal stock
+  // holdings in diversified ETFs.
+  useEffect(() => {
+    if (!lookThroughEnabled) return;
+    const hs = fundData.topHoldings;
+    if (!hs?.length) return;
+    const already = new Set<string>(scoredStocks
+      .filter((s) => s.fundData?.topHoldings?.length)
+      .map((s) => s.ticker.toUpperCase()));
+    Object.keys(extraCache).forEach((k) => already.add(k.toUpperCase()));
+    already.add(ticker.toUpperCase());
+
+    for (const h of hs) {
+      if (!h.symbol || h.weight < 20) continue;
+      const sym = h.symbol.toUpperCase();
+      if (already.has(sym)) continue;
+      already.add(sym); // prevent duplicate fires while fetch is in flight
+      fetch(`/api/fund-data?ticker=${encodeURIComponent(sym)}`)
+        .then((r) => (r.ok ? r.json() : null))
+        .then((data) => {
+          const holdings = data?.fundData?.topHoldings as FundData["topHoldings"] | undefined;
+          if (holdings?.length) {
+            setExtraCache((prev) => ({ ...prev, [sym]: holdings }));
+          }
+        })
+        .catch(() => { /* best effort */ });
+    }
+  }, [lookThroughEnabled, fundData.topHoldings, scoredStocks, extraCache, ticker]);
+
+  // Apply look-through (when enabled). `lookedThroughSymbols` reflects
+  // which fund tickers were actually expanded, for the UI hint.
+  const { displayedHoldings, lookedThroughSymbols } = React.useMemo(() => {
+    const symbols = new Set<string>();
+    if (!fundData.topHoldings?.length) {
+      return { displayedHoldings: [] as NonNullable<FundData["topHoldings"]>, lookedThroughSymbols: symbols };
+    }
+    if (!lookThroughEnabled) {
+      return { displayedHoldings: fundData.topHoldings, lookedThroughSymbols: symbols };
+    }
+    const expanded = expandLookThrough(fundData.topHoldings, lookup, symbols);
+    return { displayedHoldings: expanded.slice(0, 10), lookedThroughSymbols: symbols };
+  }, [fundData.topHoldings, lookThroughEnabled, lookup]);
 
   const handleScrapeHoldings = async () => {
     if (!holdingsUrl.trim()) return;
@@ -298,10 +444,39 @@ function FundDataPanels({ fundData, ticker, onHoldingsUpdate }: { fundData: Fund
       <div className="grid gap-4 md:grid-cols-2">
         {/* Top Holdings */}
         <div className="rounded-[24px] border border-slate-200 bg-white p-4 sm:p-5 shadow-sm overflow-hidden">
-          <h2 className="text-base font-bold text-slate-800 mb-3">Top Holdings</h2>
-          {fundData.topHoldings && fundData.topHoldings.length > 0 ? (
+          <div className="flex items-center justify-between gap-2 mb-3">
+            <h2 className="text-base font-bold text-slate-800">Top Holdings</h2>
+            {fundData.topHoldings && fundData.topHoldings.length > 0 && (
+              <div className="flex items-center gap-1 rounded-full bg-slate-100 p-0.5 text-[10px] font-semibold">
+                <button
+                  onClick={() => setLookThroughEnabled(true)}
+                  className={`px-2 py-0.5 rounded-full transition-colors ${lookThroughEnabled ? "bg-white text-slate-800 shadow-sm" : "text-slate-500 hover:text-slate-700"}`}
+                  title="Expand ETF / fund holdings to their underlying positions, scaled proportionally"
+                >
+                  Look-through
+                </button>
+                <button
+                  onClick={() => setLookThroughEnabled(false)}
+                  className={`px-2 py-0.5 rounded-full transition-colors ${!lookThroughEnabled ? "bg-white text-slate-800 shadow-sm" : "text-slate-500 hover:text-slate-700"}`}
+                  title="Show holdings exactly as the fund reports them"
+                >
+                  As reported
+                </button>
+              </div>
+            )}
+          </div>
+          {lookThroughEnabled && lookedThroughSymbols.size > 0 && (
+            <p className="text-[10px] text-slate-500 mb-2">
+              Looked through{" "}
+              <span className="font-semibold text-slate-700">
+                {Array.from(lookedThroughSymbols).join(", ")}
+              </span>{" "}
+              to show underlying positions. Switch to <em>As reported</em> to see the raw holdings.
+            </p>
+          )}
+          {displayedHoldings.length > 0 ? (
             <div className="space-y-1.5">
-              {fundData.topHoldings.map((h, i) => (
+              {displayedHoldings.map((h, i) => (
                 <div key={i} className="flex items-center gap-2 sm:gap-3">
                   <span className="w-4 sm:w-5 text-xs text-slate-400 text-right shrink-0">{i + 1}</span>
                   <div className="flex-1 min-w-0">
