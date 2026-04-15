@@ -115,11 +115,25 @@ export function useLiveTodayReturn(
       if (!priceRes.ok) return;
       const priceData = await priceRes.json();
 
-      let usdCadRate = 1;
+      // Pull BOTH today's live USDCAD and its previous close. We apply the
+      // previous-close rate to the prev side of the return ratio and the
+      // live rate to the current side so FX translation gain/loss becomes
+      // part of the CAD return — matching the methodology in
+      // /api/update-daily-value, which is what the Appendix ledger stores.
+      // Using the same rate on both sides (the prior behaviour) cancelled
+      // out FX movement entirely, which caused the Performance Tracker's
+      // "Today" number to diverge from the Appendix's daily return.
+      let usdCadCurrRate = 1;
+      let usdCadPrevRate = 1;
       if (fxRes.ok) {
         const fxData = await fxRes.json();
         const rate = fxData.prices?.["USDCAD=X"];
-        if (rate && rate > 0) usdCadRate = rate;
+        const prevRate = fxData.previousCloses?.["USDCAD=X"];
+        if (rate && rate > 0) usdCadCurrRate = rate;
+        // Fall back to live rate if previousClose is missing, so CAD-only
+        // portfolios keep working and USD portfolios degrade gracefully
+        // to the old (FX-cancelled) behaviour rather than NaN-ing out.
+        usdCadPrevRate = prevRate && prevRate > 0 ? prevRate : usdCadCurrRate;
       }
 
       // Identical to PimPortfolio.todayReturn
@@ -139,9 +153,10 @@ export function useLiveTodayReturn(
 
         if (prevClose == null || prevClose <= 0 || currentPrice == null) continue;
 
-        const fxRate = h.currency === "USD" ? usdCadRate : 1;
-        prevTotalCad += pos.units * prevClose * fxRate;
-        currTotalCad += pos.units * currentPrice * fxRate;
+        const prevFx = h.currency === "USD" ? usdCadPrevRate : 1;
+        const currFx = h.currency === "USD" ? usdCadCurrRate : 1;
+        prevTotalCad += pos.units * prevClose * prevFx;
+        currTotalCad += pos.units * currentPrice * currFx;
       }
 
       if (prevTotalCad > 0) {
