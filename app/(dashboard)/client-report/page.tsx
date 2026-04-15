@@ -18,7 +18,13 @@
 
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { useRouter, useSearchParams } from "next/navigation";
-import { useReportData, type ReportData } from "@/app/lib/useReportData";
+import {
+  useReportData,
+  type ReportAllocationSlice,
+  type ReportData,
+  type ReportTrackerPerformance,
+  type ReportXRayRow,
+} from "@/app/lib/useReportData";
 import type { PimProfileType } from "@/app/lib/pim-types";
 
 const VALID_PROFILES: readonly PimProfileType[] = ["balanced", "growth", "allEquity"];
@@ -31,7 +37,13 @@ const RBC_GOLD = "#FED141";
 
 function fmtPct(v: number | null | undefined, digits = 1): string {
   if (v == null || !isFinite(v)) return "—";
-  return `${v >= 0 ? "" : ""}${v.toFixed(digits)}%`;
+  return `${v.toFixed(digits)}%`;
+}
+
+function fmtPctSigned(v: number | null | undefined, digits = 1): string {
+  if (v == null || !isFinite(v)) return "—";
+  const sign = v > 0 ? "+" : "";
+  return `${sign}${v.toFixed(digits)}%`;
 }
 
 function fmtPctFrac(v: number | null | undefined, digits = 1): string {
@@ -55,7 +67,6 @@ export default function ClientReportPage() {
   const [commentarySaving, setCommentarySaving] = useState(false);
   const commentaryLoaded = useRef(false);
 
-  // Load existing commentary once per (group, profile).
   useEffect(() => {
     let cancelled = false;
     commentaryLoaded.current = false;
@@ -75,15 +86,12 @@ export default function ClientReportPage() {
     };
   }, [noteKey]);
 
-  // Debounced save on change.
   useEffect(() => {
     if (!commentaryLoaded.current) return;
     setCommentarySaving(true);
     const handle = setTimeout(async () => {
       try {
-        const current = await fetch("/api/kv/client-report-notes", {
-          cache: "no-store",
-        })
+        const current = await fetch("/api/kv/client-report-notes", { cache: "no-store" })
           .then((r) => (r.ok ? r.json() : { notes: {} }))
           .catch(() => ({ notes: {} }));
         const notes = { ...(current.notes ?? {}), [noteKey]: commentary };
@@ -100,25 +108,23 @@ export default function ClientReportPage() {
   }, [commentary, noteKey]);
 
   const handlePrint = useCallback(() => {
-    // Trigger the browser's native print dialog. Users pick "Save as
-    // PDF" (Chrome/Safari both offer this) to end up with a real PDF.
-    // The print CSS below strips the toolbar and backdrop so the page
-    // reproduces exactly as previewed.
     window.print();
   }, []);
 
   return (
     <div className="min-h-screen bg-slate-100">
       {/* Print CSS — scoped to this route so we don't interfere with
-          any other dashboard page. Ensures the letter-sized frame
-          bleeds edge-to-edge and the screen toolbar is hidden. */}
+          any other dashboard page. Letter-sized, 0.4" margins. Any
+          natural page break inside the one-pager falls at section
+          boundaries because key panels are marked `break-inside-avoid`. */}
       <style jsx global>{`
         @media print {
           @page {
             size: letter;
             margin: 0.4in;
           }
-          html, body {
+          html,
+          body {
             background: #fff !important;
           }
           .report-preview-frame {
@@ -128,8 +134,8 @@ export default function ClientReportPage() {
           }
         }
       `}</style>
-      {/* Screen-only toolbar — hidden on print so the page renders
-          exactly as it will download. */}
+
+      {/* Screen-only toolbar. */}
       <div className="print:hidden sticky top-0 z-10 border-b border-slate-200 bg-white/95 backdrop-blur px-6 py-3 flex items-center gap-3 shadow-sm">
         <button
           onClick={() => router.back()}
@@ -139,6 +145,22 @@ export default function ClientReportPage() {
           ← Back
         </button>
         <div className="text-sm font-semibold text-slate-800">Client Report Preview</div>
+        {data && (
+          <span
+            className="text-[10px] rounded px-1.5 py-0.5 font-semibold uppercase tracking-wider"
+            style={{
+              backgroundColor: data.weightsSource === "live" ? "#dcfce7" : "#fef3c7",
+              color: data.weightsSource === "live" ? "#166534" : "#854d0e",
+            }}
+            title={
+              data.weightsSource === "live"
+                ? "Weights derived from current positions × live prices."
+                : "No saved positions — falling back to target model weights."
+            }
+          >
+            {data.weightsSource === "live" ? "Live positions" : "Target weights"}
+          </span>
+        )}
         <div className="flex-1" />
         <button
           onClick={() => refetch()}
@@ -157,16 +179,21 @@ export default function ClientReportPage() {
         </button>
       </div>
 
-      {/* Page frame — letter-sized for print. On screen we show the
-          same frame centred on a grey backdrop so what you see really
-          is what you get. */}
-      <div className="report-preview-frame mx-auto my-6 bg-white shadow-lg print:shadow-none print:my-0" style={{ width: "8.5in", minHeight: "11in" }}>
+      {/* Letter-sized frame. */}
+      <div
+        className="report-preview-frame mx-auto my-6 bg-white shadow-lg print:shadow-none print:my-0"
+        style={{ width: "8.5in", minHeight: "11in" }}
+      >
         {loading && !data && (
           <div className="p-12 text-center text-slate-500 text-sm">Loading live data…</div>
         )}
         {error && (
           <div className="p-12 text-center text-rose-600 text-sm">
-            {error}. <button onClick={() => refetch()} className="underline">Try again</button>.
+            {error}.{" "}
+            <button onClick={() => refetch()} className="underline">
+              Try again
+            </button>
+            .
           </div>
         )}
         {data && (
@@ -206,53 +233,98 @@ function OnePager({
   );
 
   return (
-    <div className="p-8 text-slate-800" style={{ fontFamily: "system-ui, -apple-system, sans-serif" }}>
+    <div
+      className="p-6 text-slate-800"
+      style={{ fontFamily: "system-ui, -apple-system, sans-serif" }}
+    >
       {/* ── Header ── */}
-      <div className="flex items-start justify-between pb-4 border-b-4" style={{ borderColor: RBC_NAVY }}>
+      <div
+        className="flex items-start justify-between pb-3 border-b-4"
+        style={{ borderColor: RBC_NAVY }}
+      >
         <div>
-          <div className="text-xs tracking-[0.2em] uppercase text-slate-500">RBC Dominion Securities</div>
-          <div className="mt-1 text-2xl font-bold" style={{ color: RBC_NAVY }}>
+          <div className="text-[10px] tracking-[0.2em] uppercase text-slate-500">
+            RBC Dominion Securities
+          </div>
+          <div className="mt-0.5 text-xl font-bold" style={{ color: RBC_NAVY }}>
             Di Iorio Wealth Management
           </div>
-          <div className="mt-1 text-sm text-slate-600">
+          <div className="mt-0.5 text-xs text-slate-600">
             {data.profileLabel} Model — Current Positioning
           </div>
         </div>
         <div className="text-right">
-          {/* Logo slot — drops in once we have the asset. Until then a
-              tasteful placeholder labelled correctly so it prints. */}
           <div
-            className="w-24 h-12 border rounded flex items-center justify-center text-[10px] text-slate-400"
+            className="w-20 h-10 border rounded flex items-center justify-center text-[10px] text-slate-400"
             style={{ borderColor: RBC_NAVY }}
             aria-label="RBC logo placeholder"
           >
             RBC
           </div>
-          <div className="mt-2 text-xs text-slate-500">{dateStr}</div>
+          <div className="mt-1 text-[10px] text-slate-500">{dateStr}</div>
         </div>
       </div>
 
-      {/* ── Top row: holdings + geography ── */}
-      <div className="grid grid-cols-3 gap-6 mt-5">
-        <div className="col-span-2">
+      {/* ── Row 1: Holdings table + Allocation pie ── */}
+      <div className="grid grid-cols-5 gap-5 mt-4 break-inside-avoid">
+        <div className="col-span-3">
           <SectionTitle>Current Positioning</SectionTitle>
           <HoldingsTable data={data} />
-          <div className="mt-2 text-[10px] text-slate-400 flex justify-between">
-            <span>CAD: {data.totals.cad.toFixed(1)}% · USD: {data.totals.usd.toFixed(1)}%</span>
-            <span>Core ETF family rows show CAD/USD split when both variants are held.</span>
+          <div className="mt-1 text-[9px] text-slate-400 flex justify-between">
+            <span>
+              CAD: {data.totals.cad.toFixed(1)}% · USD: {data.totals.usd.toFixed(1)}%
+            </span>
+            <span>
+              {data.weightsSource === "live"
+                ? "Weights reflect current positions × live prices."
+                : "No positions saved — showing target model weights."}
+            </span>
           </div>
         </div>
-        <div>
-          <SectionTitle>Geography</SectionTitle>
-          <BarList
-            rows={data.geography.map((g) => ({ label: g.country, value: g.weight }))}
-            accent={RBC_NAVY}
-          />
+        <div className="col-span-2">
+          <SectionTitle>Asset Allocation</SectionTitle>
+          <AllocationPie slices={data.allocation} />
         </div>
       </div>
 
-      {/* ── Middle row: sectors + performance ── */}
-      <div className="grid grid-cols-2 gap-6 mt-6">
+      {/* ── Row 2: Performance tracker chart + yearly returns ── */}
+      <div className="mt-4 break-inside-avoid">
+        <div className="flex items-baseline justify-between">
+          <SectionTitle>Model Performance (Since Inception)</SectionTitle>
+          {data.tracker?.sinceInceptionReturnPct != null && (
+            <span className="text-[10px] text-slate-600 font-semibold tabular-nums">
+              Cumulative: {fmtPctSigned(data.tracker.sinceInceptionReturnPct, 2)}
+            </span>
+          )}
+        </div>
+        {data.tracker ? (
+          <div className="grid grid-cols-5 gap-4 mt-2">
+            <div className="col-span-3">
+              <PerformanceChart tracker={data.tracker} />
+            </div>
+            <div className="col-span-2">
+              <YearlyReturnsTable tracker={data.tracker} />
+            </div>
+          </div>
+        ) : (
+          <div className="text-[10px] text-slate-400 italic mt-2">
+            No performance tracker history yet — seed the model in the Performance tab to
+            populate this section.
+          </div>
+        )}
+      </div>
+
+      {/* ── Row 3: X-ray + Sectors ── */}
+      <div className="grid grid-cols-2 gap-5 mt-4 break-inside-avoid">
+        <div>
+          <SectionTitle>Top Exposures (Look-Through)</SectionTitle>
+          <XRayTable rows={data.xray.slice(0, 12)} />
+          {!data.xray.length && (
+            <div className="text-[10px] text-slate-400 italic mt-2">
+              Look-through exposures populate once fund-data holdings have been cached.
+            </div>
+          )}
+        </div>
         <div>
           <SectionTitle>Top Sector Exposures</SectionTitle>
           <BarList
@@ -261,23 +333,26 @@ function OnePager({
             textColor={RBC_NAVY}
           />
           {!data.sectors.length && (
-            <div className="text-[11px] text-slate-400 italic mt-2">
-              Sector data will populate once look-through fund data is cached for this model&apos;s ETFs.
+            <div className="text-[10px] text-slate-400 italic mt-2">
+              Sector data will populate once look-through fund data is cached for this
+              model&apos;s ETFs.
             </div>
           )}
         </div>
-        <div>
-          <SectionTitle>Performance vs S&amp;P 500</SectionTitle>
-          <PerformanceBlock data={data} />
+      </div>
+
+      {/* ── Risk metrics strip ── */}
+      <div className="mt-4 break-inside-avoid">
+        <SectionTitle>Risk Profile vs S&amp;P 500 (5Y)</SectionTitle>
+        <div className="mt-2 grid grid-cols-3 gap-2 text-[11px]">
+          <Stat label="Volatility (ann.)" value={fmtPctFrac(data.performance.volatility)} />
+          <Stat label="Upside Capture" value={fmtPct(data.performance.upsideCapture)} />
+          <Stat label="Downside Capture" value={fmtPct(data.performance.downsideCapture)} />
         </div>
       </div>
 
-      {/* ── Manager commentary ──
-           On screen we render an editable textarea (debounced-save to
-           Redis so it survives reloads). On print, we swap to a plain
-           div with the same content so the PDF doesn't include form
-           chrome. */}
-      <div className="mt-6">
+      {/* ── Manager commentary ── */}
+      <div className="mt-4 break-inside-avoid">
         <div className="flex items-center justify-between">
           <SectionTitle>Manager Commentary</SectionTitle>
           <span className="print:hidden text-[9px] text-slate-400 pl-2 pb-1">
@@ -288,9 +363,9 @@ function OnePager({
           value={commentary}
           onChange={(e) => onCommentaryChange(e.target.value)}
           placeholder="Optional — leave blank if not used."
-          className="print:hidden mt-2 w-full min-h-[64px] rounded border border-slate-200 p-3 text-xs text-slate-700 focus:outline-none focus:ring-1"
+          className="print:hidden mt-2 w-full min-h-[48px] rounded border border-slate-200 p-2 text-xs text-slate-700 focus:outline-none focus:ring-1"
           style={{ resize: "vertical" }}
-          rows={3}
+          rows={2}
         />
         <div className="hidden print:block mt-2 text-xs text-slate-700 whitespace-pre-wrap">
           {commentary}
@@ -298,11 +373,21 @@ function OnePager({
       </div>
 
       {/* ── Footer ── */}
-      <div className="mt-6 pt-3 border-t text-[9px] text-slate-400 flex justify-between" style={{ borderColor: RBC_GOLD }}>
+      <div
+        className="mt-4 pt-2 border-t text-[9px] text-slate-400 flex justify-between"
+        style={{ borderColor: RBC_GOLD }}
+      >
         <span>
-          Di Iorio Wealth Management · RBC Dominion Securities Inc. · For client presentation purposes only.
+          Di Iorio Wealth Management · RBC Dominion Securities Inc. · For client
+          presentation purposes only.
         </span>
-        <span>Generated {new Date(data.generatedAt).toLocaleTimeString("en-CA", { hour: "2-digit", minute: "2-digit" })}</span>
+        <span>
+          Generated{" "}
+          {new Date(data.generatedAt).toLocaleTimeString("en-CA", {
+            hour: "2-digit",
+            minute: "2-digit",
+          })}
+        </span>
       </div>
     </div>
   );
@@ -313,7 +398,7 @@ function OnePager({
 function SectionTitle({ children }: { children: React.ReactNode }) {
   return (
     <div
-      className="text-[11px] font-bold uppercase tracking-[0.15em] pb-1 border-b"
+      className="text-[10px] font-bold uppercase tracking-[0.15em] pb-1 border-b"
       style={{ color: RBC_NAVY, borderColor: RBC_GOLD }}
     >
       {children}
@@ -323,7 +408,7 @@ function SectionTitle({ children }: { children: React.ReactNode }) {
 
 function HoldingsTable({ data }: { data: ReportData }) {
   return (
-    <table className="w-full mt-2 text-[11px]">
+    <table className="w-full mt-2 text-[10px]">
       <thead>
         <tr className="text-slate-500 border-b border-slate-200">
           <th className="text-left font-semibold py-1">Holding</th>
@@ -335,16 +420,263 @@ function HoldingsTable({ data }: { data: ReportData }) {
       <tbody>
         {data.holdings.map((h, i) => (
           <tr key={h.id} className={i % 2 ? "bg-slate-50" : ""}>
-            <td className="py-1">
+            <td className="py-0.5">
               <span className="text-slate-800">{h.name}</span>
-              <span className="ml-2 text-[9px] text-slate-400 uppercase">{h.bucket}</span>
+              <span className="ml-2 text-[8px] text-slate-400 uppercase">{h.bucket}</span>
             </td>
-            <td className="text-right py-1 tabular-nums font-semibold">{h.weight.toFixed(2)}%</td>
-            <td className="text-right py-1 tabular-nums text-slate-500">
+            <td className="text-right py-0.5 tabular-nums font-semibold">
+              {h.weight.toFixed(2)}%
+            </td>
+            <td className="text-right py-0.5 tabular-nums text-slate-500">
               {h.cadWeight != null ? `${h.cadWeight.toFixed(2)}%` : ""}
             </td>
-            <td className="text-right py-1 tabular-nums text-slate-500">
+            <td className="text-right py-0.5 tabular-nums text-slate-500">
               {h.usdWeight != null ? `${h.usdWeight.toFixed(2)}%` : ""}
+            </td>
+          </tr>
+        ))}
+      </tbody>
+    </table>
+  );
+}
+
+// ───────── Allocation pie ─────────
+
+/**
+ * Pie chart rendered as an SVG so it prints crisply without a chart
+ * library. Slices are laid out clockwise starting at 12 o'clock; the
+ * legend sits beside the pie and uses the same colours.
+ */
+function AllocationPie({ slices }: { slices: ReportAllocationSlice[] }) {
+  const filtered = slices.filter((s) => s.weight > 0);
+  const total = filtered.reduce((acc, s) => acc + s.weight, 0);
+  if (!filtered.length || total <= 0) {
+    return (
+      <div className="text-[10px] text-slate-400 italic mt-2">
+        No allocation data available.
+      </div>
+    );
+  }
+
+  // Pie geometry. View box 200×200; radius 80. Legend uses flex so the
+  // whole block flows under the pie when the parent column is narrow.
+  const cx = 100;
+  const cy = 100;
+  const r = 80;
+
+  // Pre-compute cumulative fractions so the slice loop is pure. (We
+  // avoid `let acc += frac` patterns inside .map callbacks because
+  // React 19's linter treats captured mutation as unsafe after render.)
+  const fractions = filtered.map((s) => s.weight / total);
+  const cumulative: number[] = [];
+  fractions.reduce((sum, f) => {
+    const next = sum + f;
+    cumulative.push(next);
+    return next;
+  }, 0);
+
+  const paths = filtered.map((slice, idx) => {
+    const frac = fractions[idx];
+    const startAngle = (idx === 0 ? 0 : cumulative[idx - 1]) * 2 * Math.PI;
+    const endAngle = cumulative[idx] * 2 * Math.PI;
+    const large = endAngle - startAngle > Math.PI ? 1 : 0;
+    const x1 = cx + r * Math.cos(startAngle);
+    const y1 = cy + r * Math.sin(startAngle);
+    const x2 = cx + r * Math.cos(endAngle);
+    const y2 = cy + r * Math.sin(endAngle);
+    const d =
+      frac >= 0.9999
+        ? // Full circle — SVG arc can't draw 360° in a single path, so
+          // fall back to two half-circles joined at the start.
+          `M ${cx - r} ${cy} A ${r} ${r} 0 1 1 ${cx + r} ${cy} A ${r} ${r} 0 1 1 ${cx - r} ${cy} Z`
+        : `M ${cx} ${cy} L ${x1} ${y1} A ${r} ${r} 0 ${large} 1 ${x2} ${y2} Z`;
+    return { slice, d };
+  });
+
+  return (
+    <div className="mt-2 flex items-center gap-3">
+      <svg
+        viewBox="0 0 200 200"
+        width="120"
+        height="120"
+        style={{ transform: "rotate(-90deg)" }}
+        aria-label="Asset allocation pie chart"
+      >
+        {paths.map(({ slice, d }) => (
+          <path key={slice.key} d={d} fill={slice.color} stroke="#fff" strokeWidth={1.5} />
+        ))}
+      </svg>
+      <div className="flex-1 text-[10px] space-y-0.5">
+        {filtered.map((s) => (
+          <div key={s.key} className="flex items-center justify-between gap-2">
+            <span className="flex items-center gap-1.5">
+              <span
+                className="inline-block w-2.5 h-2.5 rounded-sm"
+                style={{ backgroundColor: s.color }}
+              />
+              <span style={{ color: RBC_NAVY }}>{s.label}</span>
+            </span>
+            <span className="tabular-nums font-semibold text-slate-700">
+              {s.weight.toFixed(1)}%
+            </span>
+          </div>
+        ))}
+      </div>
+    </div>
+  );
+}
+
+// ───────── Performance chart ─────────
+
+/**
+ * Line chart of the tracker history. Built as an SVG polyline so it
+ * prints crisply. Y-axis is the published index value (starts at 100);
+ * X-axis ticks are rendered as vertical gridlines every ~25% of width
+ * with date labels beneath.
+ */
+function PerformanceChart({ tracker }: { tracker: ReportTrackerPerformance }) {
+  const { history } = tracker;
+  if (history.length < 2) {
+    return <div className="text-[10px] text-slate-400 italic">Insufficient history.</div>;
+  }
+
+  // Normalize to a 0..1 viewport. 400×110 keeps it compact next to
+  // the yearly-return table without overwhelming the row.
+  const w = 400;
+  const h = 110;
+  const padL = 24; // left axis room for value labels
+  const padR = 2;
+  const padT = 4;
+  const padB = 14;
+
+  const values = history.map((d) => d.value);
+  const minV = Math.min(...values);
+  const maxV = Math.max(...values);
+  const span = Math.max(1e-6, maxV - minV);
+  const x = (i: number) => padL + (i / (history.length - 1)) * (w - padL - padR);
+  const y = (v: number) => padT + (1 - (v - minV) / span) * (h - padT - padB);
+
+  const points = history.map((d, i) => `${x(i)},${y(d.value)}`).join(" ");
+  const last = history[history.length - 1];
+  const first = history[0];
+
+  // Baseline at inception value (100) if it falls inside the visible
+  // range — gives the reader a natural "above / below starting point"
+  // reference.
+  const baselineV = first.value;
+  const baselineInRange = baselineV >= minV && baselineV <= maxV;
+
+  // Midpoint tick on the x-axis.
+  const midIdx = Math.floor(history.length / 2);
+
+  return (
+    <svg viewBox={`0 0 ${w} ${h}`} width="100%" height="110" aria-label="Performance chart">
+      {/* Top / bottom grid */}
+      <line x1={padL} y1={padT} x2={w - padR} y2={padT} stroke="#e2e8f0" strokeWidth={0.5} />
+      <line x1={padL} y1={h - padB} x2={w - padR} y2={h - padB} stroke="#e2e8f0" strokeWidth={0.5} />
+      {/* Baseline (inception value) */}
+      {baselineInRange && (
+        <line
+          x1={padL}
+          y1={y(baselineV)}
+          x2={w - padR}
+          y2={y(baselineV)}
+          stroke={RBC_GOLD}
+          strokeDasharray="2 2"
+          strokeWidth={0.75}
+        />
+      )}
+      {/* Polyline */}
+      <polyline
+        fill="none"
+        stroke={RBC_NAVY}
+        strokeWidth={1.25}
+        strokeLinejoin="round"
+        points={points}
+      />
+      {/* Value labels (min / max) */}
+      <text x={2} y={padT + 6} fontSize={7} fill="#64748b">
+        {maxV.toFixed(1)}
+      </text>
+      <text x={2} y={h - padB} fontSize={7} fill="#64748b">
+        {minV.toFixed(1)}
+      </text>
+      {/* Date labels (start, middle, end) */}
+      <text x={padL} y={h - 2} fontSize={7} fill="#64748b">
+        {first.date}
+      </text>
+      <text x={(padL + w - padR) / 2} y={h - 2} fontSize={7} fill="#64748b" textAnchor="middle">
+        {history[midIdx].date}
+      </text>
+      <text x={w - padR} y={h - 2} fontSize={7} fill="#64748b" textAnchor="end">
+        {last.date}
+      </text>
+    </svg>
+  );
+}
+
+function YearlyReturnsTable({ tracker }: { tracker: ReportTrackerPerformance }) {
+  if (!tracker.yearlyReturns.length) {
+    return <div className="text-[10px] text-slate-400 italic mt-2">No yearly returns yet.</div>;
+  }
+  return (
+    <table className="w-full text-[10px] mt-2">
+      <thead>
+        <tr className="text-slate-500 border-b border-slate-200">
+          <th className="text-left font-semibold py-1">Year</th>
+          <th className="text-right font-semibold py-1">Return</th>
+        </tr>
+      </thead>
+      <tbody>
+        {tracker.yearlyReturns.map((r) => (
+          <tr key={r.year}>
+            <td className="py-0.5 text-slate-800">{r.year}</td>
+            <td
+              className="text-right py-0.5 tabular-nums font-semibold"
+              style={{ color: r.returnPct >= 0 ? "#166534" : "#be123c" }}
+            >
+              {fmtPctSigned(r.returnPct, 2)}
+            </td>
+          </tr>
+        ))}
+      </tbody>
+    </table>
+  );
+}
+
+// ───────── X-ray table ─────────
+
+function XRayTable({ rows }: { rows: ReportXRayRow[] }) {
+  if (!rows.length) {
+    return null;
+  }
+  return (
+    <table className="w-full text-[10px] mt-2">
+      <thead>
+        <tr className="text-slate-500 border-b border-slate-200">
+          <th className="text-left font-semibold py-1">Position</th>
+          <th className="text-right font-semibold py-1">Direct</th>
+          <th className="text-right font-semibold py-1">Look-Through</th>
+          <th className="text-right font-semibold py-1">Total</th>
+        </tr>
+      </thead>
+      <tbody>
+        {rows.map((r, i) => (
+          <tr key={r.symbol} className={i % 2 ? "bg-slate-50" : ""}>
+            <td className="py-0.5 text-slate-800">
+              <span>{r.name || r.symbol}</span>
+              {r.symbol && r.symbol !== r.name && (
+                <span className="ml-1 text-[8px] text-slate-400">{r.symbol}</span>
+              )}
+            </td>
+            <td className="text-right py-0.5 tabular-nums text-slate-500">
+              {r.direct > 0 ? `${r.direct.toFixed(2)}%` : "—"}
+            </td>
+            <td className="text-right py-0.5 tabular-nums text-slate-500">
+              {r.lookThrough > 0 ? `${r.lookThrough.toFixed(2)}%` : "—"}
+            </td>
+            <td className="text-right py-0.5 tabular-nums font-semibold">
+              {r.weight.toFixed(2)}%
             </td>
           </tr>
         ))}
@@ -363,39 +695,30 @@ function BarList({
   textColor?: string;
 }) {
   if (!rows.length) {
-    return <div className="text-[11px] text-slate-400 italic mt-2">No data.</div>;
+    return <div className="text-[10px] text-slate-400 italic mt-2">No data.</div>;
   }
   const max = Math.max(...rows.map((r) => r.value), 1);
   return (
-    <div className="mt-2 space-y-1.5">
+    <div className="mt-2 space-y-1">
       {rows.map((r) => (
-        <div key={r.label} className="text-[11px]">
+        <div key={r.label} className="text-[10px]">
           <div className="flex justify-between">
             <span style={{ color: textColor }}>{r.label}</span>
-            <span className="tabular-nums text-slate-600 font-semibold">{r.value.toFixed(1)}%</span>
+            <span className="tabular-nums text-slate-600 font-semibold">
+              {r.value.toFixed(1)}%
+            </span>
           </div>
           <div className="h-1.5 rounded-full bg-slate-100 mt-0.5 overflow-hidden">
             <div
               className="h-full rounded-full"
-              style={{ width: `${Math.min(100, (r.value / max) * 100)}%`, backgroundColor: accent }}
+              style={{
+                width: `${Math.min(100, (r.value / max) * 100)}%`,
+                backgroundColor: accent,
+              }}
             />
           </div>
         </div>
       ))}
-    </div>
-  );
-}
-
-function PerformanceBlock({ data }: { data: ReportData }) {
-  const { performance: p } = data;
-  return (
-    <div className="mt-2 grid grid-cols-3 gap-2 text-[11px]">
-      <Stat label="1Y Return" value={fmtPctFrac(p.oneYearReturn)} />
-      <Stat label="3Y Return (ann.)" value={fmtPctFrac(p.threeYearReturn)} />
-      <Stat label="5Y Return (ann.)" value={fmtPctFrac(p.fiveYearReturn)} />
-      <Stat label="Volatility (5Y)" value={fmtPctFrac(p.volatility)} />
-      <Stat label="Upside Capture" value={fmtPct(p.upsideCapture)} />
-      <Stat label="Downside Capture" value={fmtPct(p.downsideCapture)} />
     </div>
   );
 }
