@@ -1009,16 +1009,19 @@ export default function ResearchPage() {
               <div className="text-xs font-bold uppercase tracking-wider text-slate-400 mb-3">Regime Multipliers</div>
               <div className="space-y-1.5 text-sm">
                 <div className="text-xs font-bold text-red-700 mt-1">Risk-Off</div>
-                <div className="flex justify-between"><span>Offensive</span><span className="text-red-600 font-medium">0.82x</span></div>
+                <div className="flex justify-between"><span>Growth</span><span className="text-red-600 font-medium">0.85x</span></div>
+                <div className="flex justify-between"><span>Cyclical</span><span className="text-amber-600 font-medium">0.90x</span></div>
                 <div className="flex justify-between"><span>Defensive</span><span className="text-emerald-600 font-medium">1.10x</span></div>
                 <div className="text-xs font-bold text-amber-700 mt-2">Neutral</div>
-                <div className="flex justify-between"><span>Offensive</span><span className="text-amber-600 font-medium">0.95x</span></div>
-                <div className="flex justify-between"><span>Defensive</span><span className="text-emerald-600 font-medium">1.03x</span></div>
+                <div className="flex justify-between"><span>Growth</span><span className="text-amber-600 font-medium">0.98x</span></div>
+                <div className="flex justify-between"><span>Cyclical</span><span className="text-amber-600 font-medium">0.99x</span></div>
+                <div className="flex justify-between"><span>Defensive</span><span className="text-emerald-600 font-medium">1.01x</span></div>
                 <div className="text-xs font-bold text-emerald-700 mt-2">Risk-On</div>
-                <div className="flex justify-between"><span>Offensive</span><span className="text-emerald-600 font-medium">1.10x</span></div>
-                <div className="flex justify-between"><span>Defensive</span><span className="text-amber-600 font-medium">0.95x</span></div>
+                <div className="flex justify-between"><span>Growth</span><span className="text-emerald-600 font-medium">1.10x</span></div>
+                <div className="flex justify-between"><span>Cyclical</span><span className="text-emerald-600 font-medium">1.05x</span></div>
+                <div className="flex justify-between"><span>Defensive</span><span className="text-amber-600 font-medium">0.92x</span></div>
               </div>
-              <p className="mt-3 text-xs text-slate-400">Offensive: Tech, Comm Services, Consumer Disc</p>
+              <p className="mt-3 text-xs text-slate-400">Growth: Tech, Comm Svc, Consumer Disc · Cyclical: Fin, Ind, Mat, Energy · Quality dampening ±35%</p>
             </div>
             <div className="rounded-xl bg-slate-50 p-4">
               <div className="text-xs font-bold uppercase tracking-wider text-slate-400 mb-3">Contrarian Thresholds</div>
