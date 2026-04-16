@@ -27,6 +27,30 @@ import {
 } from "@/app/lib/useReportData";
 import type { PimProfileType } from "@/app/lib/pim-types";
 
+// ───────── Client portfolio comparison types ─────────
+
+type ClientPosition = {
+  id: string; // unique key for React
+  ticker: string;
+  name: string;
+  units: number;
+};
+
+type ClientPortfolioResult = {
+  positions: { ticker: string; name: string; weight: number; marketValue: number }[];
+  cash: number;
+  cashWeight: number;
+  totalValue: number;
+  slices: { label: string; weight: number; color: string }[];
+};
+
+/** Colour ramp for client portfolio pie slices. */
+const CLIENT_PIE_COLORS = [
+  "#002855", "#005DAA", "#c8102e", "#0d9488", "#a16207",
+  "#7c3aed", "#dc2626", "#2563eb", "#059669", "#d97706",
+  "#6366f1", "#84cc16", "#f43f5e", "#06b6d4", "#8b5cf6",
+];
+
 const VALID_PROFILES: readonly PimProfileType[] = ["balanced", "growth", "allEquity"];
 
 // RBC Dominion Securities palette. Navy is the primary brand colour;
@@ -59,6 +83,147 @@ export default function ClientReportPage() {
   const profile = VALID_PROFILES.includes(profileParam) ? profileParam : "balanced";
 
   const { data, loading, error, refetch } = useReportData(groupId, profile);
+
+  // ── Client portfolio comparison state ──
+  const [clientPositions, setClientPositions] = useState<ClientPosition[]>([]);
+  const [clientCash, setClientCash] = useState<number>(0);
+  const [clientResult, setClientResult] = useState<ClientPortfolioResult | null>(null);
+  const [clientLoading, setClientLoading] = useState(false);
+  const [clientError, setClientError] = useState<string | null>(null);
+  const [showComparison, setShowComparison] = useState(false);
+
+  const addPosition = useCallback(() => {
+    setClientPositions((prev) => [
+      ...prev,
+      { id: crypto.randomUUID(), ticker: "", name: "", units: 0 },
+    ]);
+  }, []);
+
+  const removePosition = useCallback((id: string) => {
+    setClientPositions((prev) => prev.filter((p) => p.id !== id));
+  }, []);
+
+  const updatePosition = useCallback(
+    (id: string, field: keyof Omit<ClientPosition, "id">, value: string | number) => {
+      setClientPositions((prev) =>
+        prev.map((p) => (p.id === id ? { ...p, [field]: value } : p))
+      );
+    },
+    []
+  );
+
+  const computeClientPortfolio = useCallback(async () => {
+    const validPositions = clientPositions.filter(
+      (p) => p.ticker.trim() && p.units > 0
+    );
+    if (validPositions.length === 0 && clientCash <= 0) {
+      setClientError("Add at least one position or cash amount.");
+      return;
+    }
+    setClientError(null);
+    setClientLoading(true);
+    try {
+      // Fetch live prices for all client tickers.
+      const tickers = validPositions.map((p) => p.ticker.trim().toUpperCase());
+      let prices: Record<string, number | null> = {};
+      if (tickers.length > 0) {
+        const res = await fetch("/api/prices", {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ tickers }),
+          cache: "no-store",
+        });
+        if (res.ok) {
+          const payload = await res.json();
+          prices = payload?.prices ?? {};
+        }
+      }
+
+      // Compute market values and weights.
+      const positionsWithValue: {
+        ticker: string;
+        name: string;
+        units: number;
+        price: number;
+        marketValue: number;
+      }[] = [];
+      for (const p of validPositions) {
+        const ticker = p.ticker.trim().toUpperCase();
+        const price = prices[ticker] ?? prices[p.ticker.trim()] ?? null;
+        if (price == null || price <= 0) continue;
+        positionsWithValue.push({
+          ticker,
+          name: p.name.trim() || ticker,
+          units: p.units,
+          price,
+          marketValue: p.units * price,
+        });
+      }
+
+      const totalEquity = positionsWithValue.reduce(
+        (sum, p) => sum + p.marketValue,
+        0
+      );
+      const totalValue = totalEquity + clientCash;
+      if (totalValue <= 0) {
+        setClientError("Could not compute portfolio value — check tickers and prices.");
+        setClientLoading(false);
+        return;
+      }
+
+      const positions = positionsWithValue
+        .map((p) => ({
+          ticker: p.ticker,
+          name: p.name,
+          weight: (p.marketValue / totalValue) * 100,
+          marketValue: p.marketValue,
+        }))
+        .sort((a, b) => b.weight - a.weight);
+
+      const cashWeight = totalValue > 0 ? (clientCash / totalValue) * 100 : 0;
+
+      // Build pie slices — top positions + cash.
+      const slicePositions = positions.slice(0, 12);
+      const otherWeight =
+        positions.slice(12).reduce((s, p) => s + p.weight, 0);
+      const slices: ClientPortfolioResult["slices"] = slicePositions.map(
+        (p, i) => ({
+          label: p.name || p.ticker,
+          weight: p.weight,
+          color: CLIENT_PIE_COLORS[i % CLIENT_PIE_COLORS.length],
+        })
+      );
+      if (otherWeight > 0.05) {
+        slices.push({
+          label: "Other",
+          weight: otherWeight,
+          color: "#94a3b8",
+        });
+      }
+      if (cashWeight > 0.05) {
+        slices.push({
+          label: "Cash",
+          weight: cashWeight,
+          color: "#5b6b8a",
+        });
+      }
+
+      setClientResult({
+        positions,
+        cash: clientCash,
+        cashWeight,
+        totalValue,
+        slices,
+      });
+      setShowComparison(true);
+    } catch (e) {
+      setClientError(
+        e instanceof Error ? e.message : "Failed to compute client portfolio"
+      );
+    } finally {
+      setClientLoading(false);
+    }
+  }, [clientPositions, clientCash]);
 
   // Manager commentary — persisted per (group, profile) so switching
   // between Balanced / Growth doesn't clobber one with the other.
@@ -179,6 +344,128 @@ export default function ClientReportPage() {
         </button>
       </div>
 
+      {/* ── Client Portfolio Input (screen only) ── */}
+      <div className="print:hidden max-w-4xl mx-auto my-4 px-4">
+        <details className="bg-white rounded-lg shadow border border-slate-200">
+          <summary className="px-4 py-3 cursor-pointer text-sm font-semibold text-slate-700 hover:text-slate-900 select-none">
+            Client Portfolio Comparison
+            {clientResult && (
+              <span className="ml-2 text-xs font-normal text-emerald-600">
+                (active — {clientResult.positions.length} positions)
+              </span>
+            )}
+          </summary>
+          <div className="px-4 pb-4 border-t border-slate-100 pt-3">
+            <p className="text-xs text-slate-500 mb-3">
+              Add the client&apos;s current holdings to generate a side-by-side comparison on the PDF.
+            </p>
+
+            {/* Position rows */}
+            <div className="space-y-2 mb-3">
+              {clientPositions.map((pos) => (
+                <div key={pos.id} className="flex items-center gap-2">
+                  <input
+                    type="text"
+                    placeholder="Ticker (e.g. AAPL)"
+                    value={pos.ticker}
+                    onChange={(e) =>
+                      updatePosition(pos.id, "ticker", e.target.value)
+                    }
+                    className="w-32 rounded border border-slate-200 px-2 py-1.5 text-xs focus:outline-none focus:ring-1 focus:ring-blue-400"
+                  />
+                  <input
+                    type="text"
+                    placeholder="Name (optional)"
+                    value={pos.name}
+                    onChange={(e) =>
+                      updatePosition(pos.id, "name", e.target.value)
+                    }
+                    className="flex-1 rounded border border-slate-200 px-2 py-1.5 text-xs focus:outline-none focus:ring-1 focus:ring-blue-400"
+                  />
+                  <input
+                    type="number"
+                    placeholder="Units"
+                    value={pos.units || ""}
+                    onChange={(e) =>
+                      updatePosition(
+                        pos.id,
+                        "units",
+                        parseFloat(e.target.value) || 0
+                      )
+                    }
+                    min={0}
+                    step="any"
+                    className="w-24 rounded border border-slate-200 px-2 py-1.5 text-xs tabular-nums focus:outline-none focus:ring-1 focus:ring-blue-400"
+                  />
+                  <button
+                    onClick={() => removePosition(pos.id)}
+                    className="text-slate-400 hover:text-rose-500 text-sm px-1"
+                    title="Remove"
+                  >
+                    x
+                  </button>
+                </div>
+              ))}
+            </div>
+
+            {/* Cash input + action buttons */}
+            <div className="flex items-center gap-3 flex-wrap">
+              <button
+                onClick={addPosition}
+                className="rounded bg-slate-100 px-3 py-1.5 text-xs font-semibold text-slate-600 hover:bg-slate-200"
+              >
+                + Add Position
+              </button>
+              <div className="flex items-center gap-1.5">
+                <label className="text-xs text-slate-500">Cash ($):</label>
+                <input
+                  type="number"
+                  value={clientCash || ""}
+                  onChange={(e) =>
+                    setClientCash(parseFloat(e.target.value) || 0)
+                  }
+                  min={0}
+                  step="any"
+                  placeholder="0"
+                  className="w-28 rounded border border-slate-200 px-2 py-1.5 text-xs tabular-nums focus:outline-none focus:ring-1 focus:ring-blue-400"
+                />
+              </div>
+              <div className="flex-1" />
+              {clientResult && (
+                <button
+                  onClick={() => {
+                    setClientResult(null);
+                    setShowComparison(false);
+                  }}
+                  className="rounded bg-slate-100 px-3 py-1.5 text-xs font-semibold text-slate-500 hover:bg-slate-200"
+                >
+                  Clear Comparison
+                </button>
+              )}
+              <button
+                onClick={computeClientPortfolio}
+                disabled={clientLoading}
+                className="rounded-lg px-4 py-1.5 text-xs font-semibold text-white disabled:opacity-50"
+                style={{ backgroundColor: RBC_NAVY }}
+              >
+                {clientLoading ? "Computing…" : "Analyze"}
+              </button>
+            </div>
+
+            {clientError && (
+              <div className="mt-2 text-xs text-rose-600">{clientError}</div>
+            )}
+            {clientResult && (
+              <div className="mt-2 text-xs text-emerald-600">
+                Portfolio analyzed: {clientResult.positions.length} positions,
+                total value ${clientResult.totalValue.toLocaleString(undefined, { maximumFractionDigits: 0 })}.
+                Comparison will appear on the PDF.
+              </div>
+            )}
+          </div>
+        </details>
+      </div>
+
       {/* Letter-sized frame. */}
       <div
         className="report-preview-frame mx-auto my-6 bg-white shadow-lg print:shadow-none print:my-0"
@@ -202,6 +489,7 @@ export default function ClientReportPage() {
             commentary={commentary}
             onCommentaryChange={setCommentary}
             commentarySaving={commentarySaving}
+            clientPortfolio={showComparison ? clientResult : null}
           />
         )}
       </div>
@@ -216,11 +504,13 @@ function OnePager({
   commentary,
   onCommentaryChange,
   commentarySaving,
+  clientPortfolio,
 }: {
   data: ReportData;
   commentary: string;
   onCommentaryChange: (v: string) => void;
   commentarySaving: boolean;
+  clientPortfolio: ClientPortfolioResult | null;
 }) {
   const dateStr = useMemo(
     () =>
@@ -394,6 +684,63 @@ function OnePager({
         </div>
       </div>
 
+      {/* ── Client Portfolio Comparison (only when active) ── */}
+      {clientPortfolio && (
+        <div className="mt-6 break-inside-avoid">
+          <div
+            className="pb-3 border-b-4 mb-4"
+            style={{ borderColor: RBC_NAVY }}
+          >
+            <div
+              className="text-lg font-bold"
+              style={{ color: RBC_NAVY }}
+            >
+              Portfolio Comparison
+            </div>
+            <div className="text-[10px] text-slate-500">
+              Client&apos;s current holdings vs {data.profileLabel} Model
+            </div>
+          </div>
+
+          {/* Side-by-side pies */}
+          <div className="grid grid-cols-2 gap-5 break-inside-avoid">
+            <div>
+              <SectionTitle>Client — Current Holdings</SectionTitle>
+              <GenericPie slices={clientPortfolio.slices} />
+            </div>
+            <div>
+              <SectionTitle>{data.profileLabel} — Asset Allocation</SectionTitle>
+              <AllocationPie slices={data.allocation} />
+            </div>
+          </div>
+
+          {/* Side-by-side holdings tables */}
+          <div className="grid grid-cols-2 gap-5 mt-4 break-inside-avoid">
+            <div>
+              <SectionTitle>Client — Top Holdings</SectionTitle>
+              <SimpleHoldingsTable
+                rows={clientPortfolio.positions.slice(0, 12).map((p) => ({
+                  name: p.name || p.ticker,
+                  ticker: p.ticker,
+                  weight: p.weight,
+                }))}
+                cashWeight={clientPortfolio.cashWeight}
+              />
+            </div>
+            <div>
+              <SectionTitle>{data.profileLabel} — Top Holdings</SectionTitle>
+              <SimpleHoldingsTable
+                rows={data.xray.slice(0, 12).map((r) => ({
+                  name: r.name || r.symbol,
+                  ticker: r.symbol,
+                  weight: r.weight,
+                }))}
+              />
+            </div>
+          </div>
+        </div>
+      )}
+
       {/* ── Footer ── */}
       <div
         className="mt-4 pt-2 border-t text-[9px] text-slate-400 flex justify-between"
@@ -557,6 +904,152 @@ function AllocationPie({ slices }: { slices: ReportAllocationSlice[] }) {
         ))}
       </div>
     </div>
+  );
+}
+
+// ───────── Generic pie (for client portfolio) ─────────
+
+/**
+ * Generic pie chart that works with any { label, weight, color } slices.
+ * Used for the client portfolio comparison where slices are individual
+ * holdings rather than allocation categories.
+ */
+function GenericPie({
+  slices,
+}: {
+  slices: { label: string; weight: number; color: string }[];
+}) {
+  const filtered = slices.filter((s) => s.weight > 0);
+  const total = filtered.reduce((acc, s) => acc + s.weight, 0);
+  if (!filtered.length || total <= 0) {
+    return (
+      <div className="text-[10px] text-slate-400 italic mt-2">
+        No allocation data available.
+      </div>
+    );
+  }
+
+  const cx = 100;
+  const cy = 100;
+  const r = 80;
+
+  const fractions = filtered.map((s) => s.weight / total);
+  const cumulative: number[] = [];
+  fractions.reduce((sum, f) => {
+    const next = sum + f;
+    cumulative.push(next);
+    return next;
+  }, 0);
+
+  const paths = filtered.map((slice, idx) => {
+    const frac = fractions[idx];
+    const startAngle = (idx === 0 ? 0 : cumulative[idx - 1]) * 2 * Math.PI;
+    const endAngle = cumulative[idx] * 2 * Math.PI;
+    const large = endAngle - startAngle > Math.PI ? 1 : 0;
+    const x1 = cx + r * Math.cos(startAngle);
+    const y1 = cy + r * Math.sin(startAngle);
+    const x2 = cx + r * Math.cos(endAngle);
+    const y2 = cy + r * Math.sin(endAngle);
+    const d =
+      frac >= 0.9999
+        ? `M ${cx - r} ${cy} A ${r} ${r} 0 1 1 ${cx + r} ${cy} A ${r} ${r} 0 1 1 ${cx - r} ${cy} Z`
+        : `M ${cx} ${cy} L ${x1} ${y1} A ${r} ${r} 0 ${large} 1 ${x2} ${y2} Z`;
+    return { slice, d };
+  });
+
+  return (
+    <div className="mt-2 flex items-center gap-3">
+      <svg
+        viewBox="0 0 200 200"
+        width="120"
+        height="120"
+        style={{ transform: "rotate(-90deg)" }}
+        aria-label="Client portfolio pie chart"
+      >
+        {paths.map(({ slice, d }) => (
+          <path
+            key={slice.label}
+            d={d}
+            fill={slice.color}
+            stroke="#fff"
+            strokeWidth={1.5}
+          />
+        ))}
+      </svg>
+      <div className="flex-1 text-[10px] space-y-0.5">
+        {filtered.map((s) => (
+          <div key={s.label} className="flex items-center justify-between gap-2">
+            <span className="flex items-center gap-1.5">
+              <span
+                className="inline-block w-2.5 h-2.5 rounded-sm"
+                style={{ backgroundColor: s.color }}
+              />
+              <span style={{ color: RBC_NAVY }}>{s.label}</span>
+            </span>
+            <span className="tabular-nums font-semibold text-slate-700">
+              {s.weight.toFixed(1)}%
+            </span>
+          </div>
+        ))}
+      </div>
+    </div>
+  );
+}
+
+// ───────── Simple holdings table (for comparison) ─────────
+
+/**
+ * A minimal holdings table used in the comparison section. Shows name,
+ * ticker, and weight. Optional cash row at the bottom.
+ */
+function SimpleHoldingsTable({
+  rows,
+  cashWeight,
+}: {
+  rows: { name: string; ticker: string; weight: number }[];
+  cashWeight?: number;
+}) {
+  if (!rows.length && (!cashWeight || cashWeight <= 0)) {
+    return (
+      <div className="text-[10px] text-slate-400 italic mt-2">
+        No holdings data.
+      </div>
+    );
+  }
+  return (
+    <table className="w-full mt-2 text-[10px]">
+      <thead>
+        <tr className="text-slate-500 border-b border-slate-200">
+          <th className="text-left font-semibold py-1">Holding</th>
+          <th className="text-right font-semibold py-1">Weight</th>
+        </tr>
+      </thead>
+      <tbody>
+        {rows.map((r, i) => (
+          <tr key={r.ticker} className={i % 2 ? "bg-slate-50" : ""}>
+            <td className="py-0.5 text-slate-800">
+              <span>{r.name}</span>
+              {r.ticker && r.ticker !== r.name && (
+                <span className="ml-1 text-[8px] text-slate-400">
+                  {r.ticker}
+                </span>
+              )}
+            </td>
+            <td className="text-right py-0.5 tabular-nums font-semibold">
+              {r.weight.toFixed(2)}%
+            </td>
+          </tr>
+        ))}
+        {cashWeight != null && cashWeight > 0.05 && (
+          <tr className={rows.length % 2 ? "bg-slate-50" : ""}>
+            <td className="py-0.5 text-slate-600 italic">Cash</td>
+            <td className="text-right py-0.5 tabular-nums font-semibold text-slate-600">
+              {cashWeight.toFixed(2)}%
+            </td>
+          </tr>
+        )}
+      </tbody>
+    </table>
   );
 }
 
