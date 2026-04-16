@@ -989,21 +989,24 @@ function parseISharesCSV(csv: string): ProviderHoldingsResult {
     const fields = parseCSVLine(line);
     if (fields.length < 6) continue;
 
-    const ticker = fields[0].replace(/"/g, "").trim();
+    const rawTicker = fields[0].replace(/"/g, "").trim();
     const name = fields[1].replace(/"/g, "").trim();
     const sector = fields[2].replace(/"/g, "").trim();
     const assetClass = fields[3].replace(/"/g, "").trim();
     const weight = parseFloat(fields[5].replace(/"/g, "").replace(/,/g, "").trim());
+    // Exchange is field[10] in the iShares CSV schema:
+    // Ticker, Name, Sector, Asset Class, Market Value, Weight, Notional,
+    // Shares, Price, Location, Exchange, Currency, FX Rate, Market Currency
+    const exchange = (fields[10] || "").replace(/"/g, "").trim();
 
     // Skip obviously non-equity-exposure rows (cash balances, FX
     // forwards, currency derivatives). We DO want to keep "Fund" /
     // "ETF" asset classes though — for fund-of-fund products like
-    // XUH.TO (iShares Core S&P 500 CAD-Hedged), the primary holding
-    // is IVV at ~99% with asset class "Fund" or "Equity" depending on
-    // iShares' categorization. Dropping those would leave the fund
-    // looking empty, which is exactly what was breaking look-through
-    // for XUH.TO.
-    if (!ticker || !name || !isFinite(weight) || weight <= 0) continue;
+    // XUH.TO (iShares Core S&P 500 CAD-Hedged → XUU), the primary
+    // holding is another iShares ETF at ~99%. Dropping those would
+    // leave the fund looking empty, which is what was breaking
+    // look-through.
+    if (!rawTicker || !name || !isFinite(weight) || weight <= 0) continue;
     const lcAsset = assetClass.toLowerCase();
     const isCashLike =
       lcAsset.includes("cash") ||
@@ -1012,6 +1015,16 @@ function parseISharesCSV(csv: string): ProviderHoldingsResult {
       lcAsset.includes("derivative") ||
       lcAsset.includes("forward");
     if (isCashLike) continue;
+
+    // TSX-listed holdings come through the CSV as bare tickers ("XUU")
+    // with the suffix only recoverable from the Exchange column.
+    // Stamping `.TO` back on is what lets downstream lookups (Yahoo,
+    // our own /api/fund-data, the fund-data-cache crawl) actually
+    // resolve the Canadian listing rather than silently matching a
+    // US ticker of the same name or 404ing outright.
+    const isTsxListed = /toronto|tsx|neo\s*exchange|neo\b|tsxv|aequitas/i.test(exchange);
+    const hasExchangeSuffix = /\.(TO|NE|V|CN)$/i.test(rawTicker) || /-U$/i.test(rawTicker);
+    const ticker = isTsxListed && !hasExchangeSuffix ? `${rawTicker}.TO` : rawTicker;
 
     // Keep top 10 for display
     if (holdings.length < 10) {
