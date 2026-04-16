@@ -310,6 +310,41 @@ export function PortfolioOverview() {
               if (merged.topHoldings?.length && !merged.holdingsLastUpdated) {
                 merged.holdingsLastUpdated = new Date().toISOString();
               }
+
+              // If the user had previously pasted a URL as the holdings
+              // source, re-scrape it so URL-sourced holdings stay current
+              // (the embedded scraper's result is otherwise frozen in
+              // time from the moment the user first clicked Fetch). The
+              // URL result takes precedence over the embedded result —
+              // the user explicitly chose that source.
+              const urlToRefresh = merged.holdingsUrl;
+              if (urlToRefresh) {
+                try {
+                  const urlRes = await fetch("/api/fund-data", {
+                    method: "POST",
+                    headers: { "Content-Type": "application/json" },
+                    body: JSON.stringify({ url: urlToRefresh, ticker: fund.ticker }),
+                  });
+                  if (urlRes.ok) {
+                    const urlData = await urlRes.json();
+                    if (Array.isArray(urlData.topHoldings) && urlData.topHoldings.length > 0) {
+                      merged.topHoldings = urlData.topHoldings;
+                      if (Array.isArray(urlData.sectorWeightings) && urlData.sectorWeightings.length > 0) {
+                        merged.sectorWeightings = urlData.sectorWeightings;
+                      }
+                      merged.holdingsLastUpdated = new Date().toISOString();
+                      try {
+                        merged.holdingsSource = new URL(urlToRefresh).hostname.replace(/^www\./, "");
+                      } catch {
+                        merged.holdingsSource = "Custom URL";
+                      }
+                    }
+                  }
+                } catch {
+                  /* URL re-scrape failed — fall back to whatever merged already has */
+                }
+              }
+
               updateFundData(fund.ticker, merged);
             }
             if (fData.price != null && typeof fData.price === "number") {
