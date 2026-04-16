@@ -479,8 +479,14 @@ export function useReportData(
       // sector contributions, because that would double-count through
       // the fund → stock chain.
       const sectorMap = new Map<string, number>();
+      // Filter out non-equity sector names that some providers include
+      // (cash, fixed income, government bonds, etc.). The sector chart
+      // should reflect equity exposure only and sum to 100%.
+      const NON_EQUITY_SECTOR_RE =
+        /\b(cash|money\s*market|fixed\s*income|bond|treasury|government|sovereign|short[- ]term|preferred)\b/i;
       const addSector = (name: string, w: number) => {
         if (!name || w <= 0) return;
+        if (NON_EQUITY_SECTOR_RE.test(name)) return;
         sectorMap.set(name, (sectorMap.get(name) ?? 0) + w);
       };
 
@@ -683,9 +689,24 @@ export function useReportData(
         })
       );
 
-      const sectors: ReportSectorRow[] = Array.from(sectorMap.entries())
-        .map(([sector, weight]) => ({ sector, weight }))
-        .sort((a, b) => b.weight - a.weight);
+      // Normalize sector weights to sum to 100%. Raw weights are
+      // proportional to each holding's portfolio weight, so they sum
+      // to less than 100% when the portfolio includes non-equity
+      // positions (fixed income, alternatives, cash). Dividing by the
+      // raw total rescales to a pure equity-sector breakdown.
+      const rawSectorTotal = Array.from(sectorMap.values()).reduce(
+        (s, v) => s + v,
+        0
+      );
+      const sectors: ReportSectorRow[] =
+        rawSectorTotal > 0
+          ? Array.from(sectorMap.entries())
+              .map(([sector, weight]) => ({
+                sector,
+                weight: (weight / rawSectorTotal) * 100,
+              }))
+              .sort((a, b) => b.weight - a.weight)
+          : [];
 
       const xray: ReportXRayRow[] = Array.from(xrayAcc.entries())
         .map(([symbol, v]) => ({
