@@ -513,14 +513,27 @@ export function useReportData(
         string,
         { topHoldings?: FundHolding[]; sectorWeightings?: FundSectorWeight[] } | null
       >();
+      // Normalize symbol format for API calls and cache lookups.
+      // PIM model symbols use "-T" for TSX (Globe and Mail convention)
+      // while the API and fund-data-cache use ".TO". Normalizing
+      // up-front prevents silent misses where XSP-T ≠ XSP.TO in a
+      // cache Map, or the API routes XSP-T through the US ETF path.
+      const normalizeForApi = (sym: string) =>
+        sym.replace(/-T$/, ".TO");
+
       const getFundInfo = async (sym: string) => {
         const key = sym.toUpperCase();
+        // Also check the .TO equivalent key so fund-data-cache entries
+        // stored as "XSP.TO" are found when PIM passes "XSP-T".
+        const altKey = normalizeForApi(key);
         if (fundInfoCache.has(key)) return fundInfoCache.get(key) ?? null;
+        if (key !== altKey && fundInfoCache.has(altKey)) return fundInfoCache.get(altKey) ?? null;
         // 1. User's own stocks list — highest priority because it
         //    includes holdings the user manually fetched via the stock
         //    page's Fetch/URL flow (e.g. FID5982, GRNJ) that may not
         //    be on any of the live sources /api/fund-data hits.
-        const ownStock = stockBySymbol.get(sym) ?? stockBySymbol.get(key);
+        const ownStock = stockBySymbol.get(sym) ?? stockBySymbol.get(key)
+          ?? stockBySymbol.get(altKey);
         if (ownStock?.fundData?.topHoldings?.length) {
           const info = {
             topHoldings: ownStock.fundData.topHoldings,
@@ -531,7 +544,7 @@ export function useReportData(
         }
         // 2. Persisted fund-data-cache (populated by Refresh All's
         //    heavy-child crawl + write-throughs from stock pages).
-        const cached = fundCache[key];
+        const cached = fundCache[key] ?? fundCache[altKey];
         if (cached?.topHoldings?.length) {
           const info = {
             topHoldings: cached.topHoldings,
@@ -540,10 +553,12 @@ export function useReportData(
           fundInfoCache.set(key, info);
           return info;
         }
-        // 3. Last-resort live fetch.
+        // 3. Last-resort live fetch. Use .TO-normalized ticker so the
+        //    API routes Canadian ETFs through the correct path.
+        const fetchTicker = normalizeForApi(sym);
         try {
           const res = await fetch(
-            `/api/fund-data?ticker=${encodeURIComponent(sym)}`,
+            `/api/fund-data?ticker=${encodeURIComponent(fetchTicker)}`,
             { cache: "no-store" }
           );
           if (!res.ok) { fundInfoCache.set(key, null); return null; }
@@ -563,19 +578,30 @@ export function useReportData(
 
       // Heuristic used by the recursive expander to decide whether a
       // symbol should be treated as a fund (recurse) or a stock (leaf).
-      // We lean toward "stock" when uncertain so we don't accidentally
-      // drop a direct stock the user holds (e.g. "Berkshire Hathaway
-      // Class B" shouldn't be mistaken for a fund just because the
-      // name contains "Class").
+      // Leans toward "stock" when uncertain so we don't drop a direct
+      // holding (e.g. "Berkshire Hathaway Class B" shouldn't be treated
+      // as a fund). Multiple signals are checked so we don't miss
+      // funds whose PIM-holding name is abbreviated ("XSP" vs.
+      // "iShares Core S&P 500 Index ETF").
       const looksLikeFund = (sym: string, name: string, st: Stock | undefined): boolean => {
+        // Explicit instrument type from the user's stock list.
         if (st?.instrumentType === "stock") return false;
         if (st?.instrumentType === "etf" || st?.instrumentType === "mutual-fund") return true;
-        if (/^[A-Z]{2,4}\d{2,5}$/.test(sym)) return true; // FUNDSERV code
+        // The stock has fund data cached on it (topHoldings populated
+        // from Fetch button / Refresh All).
+        if (st?.fundData?.topHoldings?.length) return true;
+        // Core ETF list from geography module (isCoreEtf).
+        if (isCoreEtf(sym)) return true;
+        // FUNDSERV code pattern (FID5982, TDB900, etc.).
+        if (/^[A-Z]{2,4}\d{2,5}$/.test(sym)) return true;
+        // Fund-data-cache hit — Refresh All's crawl put it there.
+        if (fundCache[sym.toUpperCase()]?.topHoldings?.length) return true;
+        // Name-based heuristics — last resort.
         const u = (name || "").toUpperCase();
         if (/\bETF\b/.test(u)) return true;
         if (/\bINDEX\b/.test(u)) return true;
         if (/\b(MUTUAL|INDEX|INCOME|BOND|EQUITY)\s+FUND\b/.test(u)) return true;
-        if (/\bCLASS\s+[FIOAD]\b/.test(u)) return true; // mutual-fund share classes
+        if (/\bCLASS\s+[FIOAD]\b/.test(u)) return true;
         if (/\bSERIES\s+[FIOAD]\b/.test(u)) return true;
         return false;
       };
