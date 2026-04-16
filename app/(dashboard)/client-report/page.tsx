@@ -25,7 +25,10 @@ import {
   type ReportTrackerPerformance,
   type ReportXRayRow,
 } from "@/app/lib/useReportData";
+import { useStocks } from "@/app/lib/StockContext";
+import { countryFor, isCoreEtf } from "@/app/lib/geography";
 import type { PimProfileType } from "@/app/lib/pim-types";
+import type { FundData, FundHolding, FundSectorWeight, Stock } from "@/app/lib/types";
 
 // ───────── Client portfolio comparison types ─────────
 
@@ -41,19 +44,16 @@ type ClientPosition = {
 };
 
 type ClientPortfolioResult = {
+  /** Raw input positions (pre-look-through) with weights and names. */
   positions: { ticker: string; name: string; weight: number; marketValue: number }[];
   cash: number;
   cashWeight: number;
   totalValue: number;
-  slices: { label: string; weight: number; color: string }[];
+  /** PIM-style allocation pie: Fixed Income, US Equity, etc. (no "Core ETFs" bucket). */
+  allocation: ReportAllocationSlice[];
+  /** Look-through xray — individual stock/preferred share holdings only. */
+  xray: ReportXRayRow[];
 };
-
-/** Colour ramp for client portfolio pie slices. */
-const CLIENT_PIE_COLORS = [
-  "#002855", "#005DAA", "#c8102e", "#0d9488", "#a16207",
-  "#7c3aed", "#dc2626", "#2563eb", "#059669", "#d97706",
-  "#6366f1", "#84cc16", "#f43f5e", "#06b6d4", "#8b5cf6",
-];
 
 const VALID_PROFILES: readonly PimProfileType[] = ["balanced", "growth", "allEquity"];
 
@@ -87,6 +87,7 @@ export default function ClientReportPage() {
   const profile = VALID_PROFILES.includes(profileParam) ? profileParam : "balanced";
 
   const { data, loading, error, refetch } = useReportData(groupId, profile);
+  const { stocks } = useStocks();
 
   // ── Client portfolio comparison state ──
   const [clientInputMode, setClientInputMode] = useState<ClientInputMode>("units");
@@ -117,16 +118,64 @@ export default function ClientReportPage() {
     []
   );
 
+  // Auto-fetch name when the user finishes typing a ticker (on blur).
+  const fetchTickerName = useCallback(
+    async (id: string, ticker: string) => {
+      const t = ticker.trim().toUpperCase();
+      if (!t) return;
+      try {
+        const res = await fetch("/api/prices", {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ tickers: [t] }),
+          cache: "no-store",
+        });
+        if (!res.ok) return;
+        const payload = await res.json();
+        const name = payload?.names?.[t];
+        if (name) {
+          setClientPositions((prev) =>
+            prev.map((p) =>
+              p.id === id && !p.name.trim() ? { ...p, name } : p
+            )
+          );
+        }
+      } catch {
+        /* best effort */
+      }
+    },
+    []
+  );
+
   const computeClientPortfolio = useCallback(async () => {
     setClientError(null);
     setClientLoading(true);
     try {
-      let positions: { ticker: string; name: string; weight: number; marketValue: number }[];
+      // Build a stockBySymbol map for look-through.
+      const stockBySymbol = new Map<string, Stock>();
+      for (const s of stocks) {
+        stockBySymbol.set(s.ticker, s);
+        if (s.ticker.endsWith(".TO")) {
+          stockBySymbol.set(s.ticker.replace(/\.TO$/, "-T"), s);
+        }
+      }
+
+      // Fetch fund-data-cache for look-through expansion.
+      let fundCache: Record<string, { topHoldings?: FundHolding[] }> = {};
+      try {
+        const fcRes = await fetch("/api/kv/fund-data-cache", { cache: "no-store" });
+        if (fcRes.ok) {
+          const payload = await fcRes.json();
+          fundCache = payload?.entries ?? {};
+        }
+      } catch { /* ignore */ }
+
+      // ── Step 1: Resolve positions with weights ──
+      let positions: { ticker: string; name: string; weight: number; marketValue: number; quoteType: string | null }[];
       let cashWeight: number;
       let totalValue: number;
 
       if (clientInputMode === "weight") {
-        // ── Weight mode: user supplies % directly, no price fetch needed.
         const validPositions = clientPositions.filter(
           (p) => p.ticker.trim() && p.weight > 0
         );
@@ -135,7 +184,6 @@ export default function ClientReportPage() {
           setClientLoading(false);
           return;
         }
-        // In weight mode, clientCash is treated as a weight percentage.
         const rawTotal =
           validPositions.reduce((s, p) => s + p.weight, 0) + clientCash;
         if (rawTotal <= 0) {
@@ -143,19 +191,40 @@ export default function ClientReportPage() {
           setClientLoading(false);
           return;
         }
-        // Normalize so weights sum to 100%.
+        // Fetch names + quoteTypes for all tickers.
+        const tickers = validPositions.map((p) => p.ticker.trim().toUpperCase());
+        let names: Record<string, string | null> = {};
+        let quoteTypes: Record<string, string | null> = {};
+        if (tickers.length > 0) {
+          try {
+            const res = await fetch("/api/prices", {
+              method: "POST",
+              headers: { "Content-Type": "application/json" },
+              body: JSON.stringify({ tickers }),
+              cache: "no-store",
+            });
+            if (res.ok) {
+              const payload = await res.json();
+              names = payload?.names ?? {};
+              quoteTypes = payload?.quoteTypes ?? {};
+            }
+          } catch { /* ignore */ }
+        }
         positions = validPositions
-          .map((p) => ({
-            ticker: p.ticker.trim().toUpperCase(),
-            name: p.name.trim() || p.ticker.trim().toUpperCase(),
-            weight: (p.weight / rawTotal) * 100,
-            marketValue: 0,
-          }))
+          .map((p) => {
+            const ticker = p.ticker.trim().toUpperCase();
+            return {
+              ticker,
+              name: p.name.trim() || names[ticker] || ticker,
+              weight: (p.weight / rawTotal) * 100,
+              marketValue: 0,
+              quoteType: quoteTypes[ticker] ?? null,
+            };
+          })
           .sort((a, b) => b.weight - a.weight);
         cashWeight = (clientCash / rawTotal) * 100;
-        totalValue = 0; // not meaningful in weight mode
+        totalValue = 0;
       } else {
-        // ── Units mode: fetch live prices, compute market values.
         const validPositions = clientPositions.filter(
           (p) => p.ticker.trim() && p.units > 0
         );
@@ -166,6 +235,8 @@ export default function ClientReportPage() {
         }
         const tickers = validPositions.map((p) => p.ticker.trim().toUpperCase());
         let prices: Record<string, number | null> = {};
+        let names: Record<string, string | null> = {};
+        let quoteTypes: Record<string, string | null> = {};
         if (tickers.length > 0) {
           const res = await fetch("/api/prices", {
             method: "POST",
@@ -176,15 +247,14 @@ export default function ClientReportPage() {
           if (res.ok) {
             const payload = await res.json();
             prices = payload?.prices ?? {};
+            names = payload?.names ?? {};
+            quoteTypes = payload?.quoteTypes ?? {};
           }
         }
 
         const positionsWithValue: {
-          ticker: string;
-          name: string;
-          units: number;
-          price: number;
-          marketValue: number;
+          ticker: string; name: string; units: number;
+          price: number; marketValue: number; quoteType: string | null;
         }[] = [];
         for (const p of validPositions) {
           const ticker = p.ticker.trim().toUpperCase();
@@ -192,17 +262,14 @@ export default function ClientReportPage() {
           if (price == null || price <= 0) continue;
           positionsWithValue.push({
             ticker,
-            name: p.name.trim() || ticker,
-            units: p.units,
-            price,
+            name: p.name.trim() || names[ticker] || ticker,
+            units: p.units, price,
             marketValue: p.units * price,
+            quoteType: quoteTypes[ticker] ?? null,
           });
         }
 
-        const totalEquity = positionsWithValue.reduce(
-          (sum, p) => sum + p.marketValue,
-          0
-        );
+        const totalEquity = positionsWithValue.reduce((sum, p) => sum + p.marketValue, 0);
         totalValue = totalEquity + clientCash;
         if (totalValue <= 0) {
           setClientError("Could not compute portfolio value — check tickers and prices.");
@@ -212,47 +279,221 @@ export default function ClientReportPage() {
 
         positions = positionsWithValue
           .map((p) => ({
-            ticker: p.ticker,
-            name: p.name,
+            ticker: p.ticker, name: p.name,
             weight: (p.marketValue / totalValue) * 100,
-            marketValue: p.marketValue,
+            marketValue: p.marketValue, quoteType: p.quoteType,
           }))
           .sort((a, b) => b.weight - a.weight);
         cashWeight = totalValue > 0 ? (clientCash / totalValue) * 100 : 0;
       }
 
-      // Build pie slices — top positions + cash.
-      const slicePositions = positions.slice(0, 12);
-      const otherWeight =
-        positions.slice(12).reduce((s, p) => s + p.weight, 0);
-      const slices: ClientPortfolioResult["slices"] = slicePositions.map(
-        (p, i) => ({
-          label: p.name || p.ticker,
-          weight: p.weight,
-          color: CLIENT_PIE_COLORS[i % CLIENT_PIE_COLORS.length],
+      // ── Step 2: Classify each position for PIM-style allocation pie ──
+      // Categories: Fixed Income, Alternatives, US Equity, Canadian Equity, Global Equity
+      // No "Core ETFs" bucket — everything is classified by its underlying exposure.
+      const SLICE_COLORS_CLIENT: Record<string, string> = {
+        fixedIncome: "#5b6b8a",
+        alternatives: "#a16207",
+        usEquity: "#005DAA",
+        canadianEquity: "#c8102e",
+        globalEquity: "#0d9488",
+        cash: "#94a3b8",
+      };
+      const SLICE_LABELS_CLIENT: Record<string, string> = {
+        fixedIncome: "Fixed Income",
+        alternatives: "Alternatives",
+        usEquity: "US Equity",
+        canadianEquity: "Canadian Equity",
+        globalEquity: "Global Equity",
+        cash: "Cash",
+      };
+      const allocTotals: Record<string, number> = {
+        fixedIncome: 0, alternatives: 0,
+        usEquity: 0, canadianEquity: 0, globalEquity: 0, cash: 0,
+      };
+
+      const isBondLike = (name: string, qt: string | null): boolean => {
+        if (qt === "MUTUALFUND" || qt === "ETF") {
+          const u = name.toUpperCase();
+          if (/\b(BOND|FIXED\s*INCOME|AGGREGATE|TREASURY|INCOME\s*FUND|GOVT|CORE\s*PLUS)\b/.test(u)) return true;
+        }
+        return false;
+      };
+      const isAltLike = (name: string): boolean => {
+        const u = name.toUpperCase();
+        return /\b(PREMIUM\s*YIELD|COVERED\s*CALL|OPTION|ALTERNATIVE|HEDGE|REAL\s*ESTATE|REIT|INFRASTRUCTURE)\b/.test(u);
+      };
+
+      for (const p of positions) {
+        if (isBondLike(p.name, p.quoteType)) {
+          allocTotals.fixedIncome += p.weight;
+        } else if (isAltLike(p.name)) {
+          allocTotals.alternatives += p.weight;
+        } else {
+          const c = countryFor(p.ticker);
+          if (c === "Canada") allocTotals.canadianEquity += p.weight;
+          else if (c === "Global") allocTotals.globalEquity += p.weight;
+          else allocTotals.usEquity += p.weight;
+        }
+      }
+      if (cashWeight > 0.05) allocTotals.cash += cashWeight;
+
+      const allocation: ReportAllocationSlice[] = Object.entries(allocTotals)
+        .filter(([, w]) => w > 0.05)
+        .map(([key, weight]) => ({
+          key: key as ReportAllocationSlice["key"],
+          label: SLICE_LABELS_CLIENT[key] ?? key,
+          weight,
+          color: SLICE_COLORS_CLIENT[key] ?? "#94a3b8",
+        }))
+        .sort((a, b) => b.weight - a.weight);
+
+      // ── Step 3: Look-through X-ray expansion ──
+      // Same logic as useReportData: recursively expand funds/ETFs into
+      // underlying stock and preferred share holdings.
+      const normalizeForApi = (sym: string) => sym.replace(/-T$/, ".TO");
+
+      const fundInfoCache = new Map<
+        string,
+        { topHoldings?: FundHolding[]; sectorWeightings?: FundSectorWeight[] } | null
+      >();
+
+      const getFundInfo = async (sym: string) => {
+        const key = sym.toUpperCase();
+        const altKey = normalizeForApi(key);
+        if (fundInfoCache.has(key)) return fundInfoCache.get(key) ?? null;
+        if (key !== altKey && fundInfoCache.has(altKey)) return fundInfoCache.get(altKey) ?? null;
+        const ownStock = stockBySymbol.get(sym) ?? stockBySymbol.get(key) ?? stockBySymbol.get(altKey);
+        if (ownStock?.fundData?.topHoldings?.length) {
+          const info = { topHoldings: ownStock.fundData.topHoldings, sectorWeightings: ownStock.fundData.sectorWeightings };
+          fundInfoCache.set(key, info);
+          return info;
+        }
+        const cached = fundCache[key] ?? fundCache[altKey];
+        if (cached?.topHoldings?.length) {
+          const info = { topHoldings: cached.topHoldings, sectorWeightings: undefined as FundSectorWeight[] | undefined };
+          fundInfoCache.set(key, info);
+          return info;
+        }
+        const fetchTicker = normalizeForApi(sym);
+        try {
+          const res = await fetch(`/api/fund-data?ticker=${encodeURIComponent(fetchTicker)}`, { cache: "no-store" });
+          if (!res.ok) { fundInfoCache.set(key, null); return null; }
+          const d = await res.json().catch(() => null);
+          const fd = d?.fundData as FundData | undefined;
+          const info = { topHoldings: fd?.topHoldings, sectorWeightings: fd?.sectorWeightings };
+          fundInfoCache.set(key, info);
+          return info;
+        } catch {
+          fundInfoCache.set(key, null);
+          return null;
+        }
+      };
+
+      const looksLikeFund = (sym: string, name: string, st: Stock | undefined, qt: string | null): boolean => {
+        if (st?.instrumentType === "stock") return false;
+        if (st?.instrumentType === "etf" || st?.instrumentType === "mutual-fund") return true;
+        if (st?.fundData?.topHoldings?.length) return true;
+        if (isCoreEtf(sym)) return true;
+        if (/^[A-Z]{2,4}\d{2,5}$/.test(sym)) return true;
+        if (fundCache[sym.toUpperCase()]?.topHoldings?.length) return true;
+        if (qt === "ETF" || qt === "MUTUALFUND") return true;
+        const u = (name || "").toUpperCase();
+        if (/\bETF\b/.test(u)) return true;
+        if (/\bINDEX\b/.test(u)) return true;
+        if (/\b(MUTUAL|INDEX|INCOME|BOND|EQUITY)\s+FUND\b/.test(u)) return true;
+        if (/\bCLASS\s+[FIOAD]\b/.test(u)) return true;
+        if (/\bSERIES\s+[FIOAD]\b/.test(u)) return true;
+        return false;
+      };
+
+      // Non-equity filter: skip fixed-income and cash-like holdings at the leaf level.
+      const NON_EQUITY_NAME_RE =
+        /\b(TREASURY|T-BILL|BOND|GOVT|GOVERNMENT|CASH|MONEY\s*MARKET|REPO|COMMERCIAL\s*PAPER)\b/i;
+
+      const xrayAcc = new Map<string, { name: string; direct: number; lookThrough: number }>();
+      const addXRay = (symbol: string, name: string, direct: number, lookThrough: number) => {
+        const key = (symbol || name).toUpperCase();
+        if (!key) return;
+        // Skip obviously non-equity leaf holdings.
+        if (NON_EQUITY_NAME_RE.test(name)) return;
+        const prev = xrayAcc.get(key) ?? { name, direct: 0, lookThrough: 0 };
+        prev.direct += direct;
+        prev.lookThrough += lookThrough;
+        if (name && name.length > prev.name.length) prev.name = name;
+        xrayAcc.set(key, prev);
+      };
+
+      const MAX_DEPTH = 4;
+      const expandClient = async (
+        sym: string, name: string, weightPct: number,
+        depth: number, qt: string | null,
+      ): Promise<void> => {
+        if (weightPct <= 0 || !sym) return;
+        const st = stockBySymbol.get(sym);
+        const isFund = looksLikeFund(sym, name, st, qt);
+        if (!isFund) {
+          // Stock or preferred share leaf — include in xray.
+          const direct = depth === 0 ? weightPct : 0;
+          const lookThrough = depth === 0 ? 0 : weightPct;
+          addXRay(sym, st?.name || name, direct, lookThrough);
+          return;
+        }
+        // Bond/FI funds: skip expansion entirely (not equity).
+        if (isBondLike(name, qt)) return;
+        if (depth >= MAX_DEPTH) return;
+        const info = await getFundInfo(sym);
+        const top = info?.topHoldings ?? [];
+        if (!top.length) return;
+        await Promise.all(
+          top.map((h) => {
+            const childSym = (h.symbol || h.name || "").trim();
+            if (!childSym) return Promise.resolve();
+            const childWeight = (weightPct * h.weight) / 100;
+            return expandClient(childSym, h.name, childWeight, depth + 1, null);
+          })
+        );
+      };
+
+      // Run look-through on all positions.
+      // Build a quoteType map from the positions for the fund heuristic.
+      const qtMap = new Map(positions.map((p) => [p.ticker, p.quoteType]));
+      await Promise.all(
+        positions.map((p) =>
+          expandClient(p.ticker, p.name, p.weight, 0, qtMap.get(p.ticker) ?? null)
+        )
+      );
+
+      const xray: ReportXRayRow[] = Array.from(xrayAcc.entries())
+        .map(([symbol, v]) => ({
+          symbol,
+          name: v.name,
+          direct: v.direct,
+          lookThrough: v.lookThrough,
+          weight: v.direct + v.lookThrough,
+        }))
+        .filter((r) => r.weight > 0.05)
+        .sort((a, b) => b.weight - a.weight);
+
+      // Also backfill names from the API results into the input form.
+      setClientPositions((prev) =>
+        prev.map((p) => {
+          if (p.name.trim()) return p;
+          const match = positions.find(
+            (pos) => pos.ticker === p.ticker.trim().toUpperCase()
+          );
+          return match && match.name !== match.ticker
+            ? { ...p, name: match.name }
+            : p;
         })
       );
-      if (otherWeight > 0.05) {
-        slices.push({
-          label: "Other",
-          weight: otherWeight,
-          color: "#94a3b8",
-        });
-      }
-      if (cashWeight > 0.05) {
-        slices.push({
-          label: "Cash",
-          weight: cashWeight,
-          color: "#5b6b8a",
-        });
-      }
 
       setClientResult({
-        positions,
+        positions: positions.map(({ quoteType: _qt, ...rest }) => rest),
         cash: clientCash,
         cashWeight,
         totalValue,
-        slices,
+        allocation,
+        xray,
       });
       setShowComparison(true);
     } catch (e) {
@@ -262,7 +503,7 @@ export default function ClientReportPage() {
     } finally {
       setClientLoading(false);
     }
-  }, [clientPositions, clientCash, clientInputMode]);
+  }, [clientPositions, clientCash, clientInputMode, stocks]);
 
   // Manager commentary — persisted per (group, profile) so switching
   // between Balanced / Growth doesn't clobber one with the other.
@@ -435,6 +676,11 @@ export default function ClientReportPage() {
                     onChange={(e) =>
                       updatePosition(pos.id, "ticker", e.target.value)
                     }
+                    onBlur={() => {
+                      if (pos.ticker.trim() && !pos.name.trim()) {
+                        fetchTickerName(pos.id, pos.ticker);
+                      }
+                    }}
                     className="w-32 rounded border border-slate-200 px-2 py-1.5 text-xs focus:outline-none focus:ring-1 focus:ring-blue-400"
                   />
                   <input
@@ -542,8 +788,10 @@ export default function ClientReportPage() {
             )}
             {clientResult && (
               <div className="mt-2 text-xs text-emerald-600">
-                Portfolio analyzed: {clientResult.positions.length} positions,
-                total value ${clientResult.totalValue.toLocaleString(undefined, { maximumFractionDigits: 0 })}.
+                Portfolio analyzed: {clientResult.positions.length} positions
+                {clientResult.totalValue > 0 &&
+                  `, total value $${clientResult.totalValue.toLocaleString(undefined, { maximumFractionDigits: 0 })}`}
+                , {clientResult.xray.length} underlying stock exposures via look-through.
                 Comparison will appear on the PDF.
               </div>
             )}
@@ -787,11 +1035,11 @@ function OnePager({
             </div>
           </div>
 
-          {/* Side-by-side pies */}
+          {/* Side-by-side allocation pies */}
           <div className="grid grid-cols-2 gap-5 break-inside-avoid">
             <div>
-              <SectionTitle>Client — Current Holdings</SectionTitle>
-              <GenericPie slices={clientPortfolio.slices} />
+              <SectionTitle>Client — Asset Allocation</SectionTitle>
+              <AllocationPie slices={clientPortfolio.allocation} />
             </div>
             <div>
               <SectionTitle>{data.profileLabel} — Asset Allocation</SectionTitle>
@@ -799,21 +1047,21 @@ function OnePager({
             </div>
           </div>
 
-          {/* Side-by-side holdings tables */}
+          {/* Side-by-side top holdings (look-through) */}
           <div className="grid grid-cols-2 gap-5 mt-4 break-inside-avoid">
             <div>
-              <SectionTitle>Client — Top Holdings</SectionTitle>
+              <SectionTitle>Client — Top Holdings (Look-Through)</SectionTitle>
               <SimpleHoldingsTable
-                rows={clientPortfolio.positions.slice(0, 12).map((p) => ({
-                  name: p.name || p.ticker,
-                  ticker: p.ticker,
-                  weight: p.weight,
+                rows={clientPortfolio.xray.slice(0, 12).map((r) => ({
+                  name: r.name || r.symbol,
+                  ticker: r.symbol,
+                  weight: r.weight,
                 }))}
                 cashWeight={clientPortfolio.cashWeight}
               />
             </div>
             <div>
-              <SectionTitle>{data.profileLabel} — Top Holdings</SectionTitle>
+              <SectionTitle>{data.profileLabel} — Top Holdings (Look-Through)</SectionTitle>
               <SimpleHoldingsTable
                 rows={data.xray.slice(0, 12).map((r) => ({
                   name: r.name || r.symbol,
@@ -975,95 +1223,6 @@ function AllocationPie({ slices }: { slices: ReportAllocationSlice[] }) {
       <div className="flex-1 text-[10px] space-y-0.5">
         {filtered.map((s) => (
           <div key={s.key} className="flex items-center justify-between gap-2">
-            <span className="flex items-center gap-1.5">
-              <span
-                className="inline-block w-2.5 h-2.5 rounded-sm"
-                style={{ backgroundColor: s.color }}
-              />
-              <span style={{ color: RBC_NAVY }}>{s.label}</span>
-            </span>
-            <span className="tabular-nums font-semibold text-slate-700">
-              {s.weight.toFixed(1)}%
-            </span>
-          </div>
-        ))}
-      </div>
-    </div>
-  );
-}
-
-// ───────── Generic pie (for client portfolio) ─────────
-
-/**
- * Generic pie chart that works with any { label, weight, color } slices.
- * Used for the client portfolio comparison where slices are individual
- * holdings rather than allocation categories.
- */
-function GenericPie({
-  slices,
-}: {
-  slices: { label: string; weight: number; color: string }[];
-}) {
-  const filtered = slices.filter((s) => s.weight > 0);
-  const total = filtered.reduce((acc, s) => acc + s.weight, 0);
-  if (!filtered.length || total <= 0) {
-    return (
-      <div className="text-[10px] text-slate-400 italic mt-2">
-        No allocation data available.
-      </div>
-    );
-  }
-
-  const cx = 100;
-  const cy = 100;
-  const r = 80;
-
-  const fractions = filtered.map((s) => s.weight / total);
-  const cumulative: number[] = [];
-  fractions.reduce((sum, f) => {
-    const next = sum + f;
-    cumulative.push(next);
-    return next;
-  }, 0);
-
-  const paths = filtered.map((slice, idx) => {
-    const frac = fractions[idx];
-    const startAngle = (idx === 0 ? 0 : cumulative[idx - 1]) * 2 * Math.PI;
-    const endAngle = cumulative[idx] * 2 * Math.PI;
-    const large = endAngle - startAngle > Math.PI ? 1 : 0;
-    const x1 = cx + r * Math.cos(startAngle);
-    const y1 = cy + r * Math.sin(startAngle);
-    const x2 = cx + r * Math.cos(endAngle);
-    const y2 = cy + r * Math.sin(endAngle);
-    const d =
-      frac >= 0.9999
-        ? `M ${cx - r} ${cy} A ${r} ${r} 0 1 1 ${cx + r} ${cy} A ${r} ${r} 0 1 1 ${cx - r} ${cy} Z`
-        : `M ${cx} ${cy} L ${x1} ${y1} A ${r} ${r} 0 ${large} 1 ${x2} ${y2} Z`;
-    return { slice, d };
-  });
-
-  return (
-    <div className="mt-2 flex items-center gap-3">
-      <svg
-        viewBox="0 0 200 200"
-        width="120"
-        height="120"
-        style={{ transform: "rotate(-90deg)" }}
-        aria-label="Client portfolio pie chart"
-      >
-        {paths.map(({ slice, d }) => (
-          <path
-            key={slice.label}
-            d={d}
-            fill={slice.color}
-            stroke="#fff"
-            strokeWidth={1.5}
-          />
-        ))}
-      </svg>
-      <div className="flex-1 text-[10px] space-y-0.5">
-        {filtered.map((s) => (
-          <div key={s.label} className="flex items-center justify-between gap-2">
             <span className="flex items-center gap-1.5">
               <span
                 className="inline-block w-2.5 h-2.5 rounded-sm"

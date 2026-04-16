@@ -82,7 +82,8 @@ export type ReportAllocationSlice = {
     | "coreEtfs"
     | "usEquity"
     | "canadianEquity"
-    | "globalEquity";
+    | "globalEquity"
+    | "cash";
   label: string;
   weight: number;
   /** CSS hex colour — shared between pie and legend. */
@@ -173,6 +174,7 @@ const SLICE_COLORS: Record<ReportAllocationSlice["key"], string> = {
   usEquity: "#005DAA",
   canadianEquity: "#c8102e",
   globalEquity: "#0d9488",
+  cash: "#94a3b8",
 };
 
 const SLICE_LABELS: Record<ReportAllocationSlice["key"], string> = {
@@ -182,6 +184,7 @@ const SLICE_LABELS: Record<ReportAllocationSlice["key"], string> = {
   usEquity: "US Equity",
   canadianEquity: "Canadian Equity",
   globalEquity: "Global Equity",
+  cash: "Cash",
 };
 
 function toYahoo(symbol: string): string {
@@ -422,6 +425,7 @@ export function useReportData(
         usEquity: 0,
         canadianEquity: 0,
         globalEquity: 0,
+        cash: 0,
       };
       for (const h of activeHoldings) {
         const wPct = h.weight * 100;
