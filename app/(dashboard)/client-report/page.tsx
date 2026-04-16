@@ -97,6 +97,47 @@ export default function ClientReportPage() {
   const [clientLoading, setClientLoading] = useState(false);
   const [clientError, setClientError] = useState<string | null>(null);
   const [showComparison, setShowComparison] = useState(false);
+  const clientPortfolioLoaded = useRef(false);
+
+  // Load saved client portfolio positions from Redis on mount.
+  useEffect(() => {
+    let cancelled = false;
+    fetch("/api/kv/client-portfolio", { cache: "no-store" })
+      .then((r) => (r.ok ? r.json() : { data: null }))
+      .then((payload: { data?: { positions?: ClientPosition[]; cash?: number; inputMode?: ClientInputMode } | null }) => {
+        if (cancelled) return;
+        const d = payload?.data;
+        if (d) {
+          if (Array.isArray(d.positions) && d.positions.length > 0) {
+            setClientPositions(d.positions);
+          }
+          if (typeof d.cash === "number") setClientCash(d.cash);
+          if (d.inputMode === "units" || d.inputMode === "weight") setClientInputMode(d.inputMode);
+        }
+        clientPortfolioLoaded.current = true;
+      })
+      .catch(() => {
+        clientPortfolioLoaded.current = true;
+      });
+    return () => { cancelled = true; };
+  }, []);
+
+  // Auto-save client portfolio positions to Redis (debounced).
+  useEffect(() => {
+    if (!clientPortfolioLoaded.current) return;
+    const handle = setTimeout(() => {
+      fetch("/api/kv/client-portfolio", {
+        method: "PUT",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          positions: clientPositions,
+          cash: clientCash,
+          inputMode: clientInputMode,
+        }),
+      }).catch(() => { /* best effort */ });
+    }, 800);
+    return () => clearTimeout(handle);
+  }, [clientPositions, clientCash, clientInputMode]);
 
   const addPosition = useCallback(() => {
     setClientPositions((prev) => [
