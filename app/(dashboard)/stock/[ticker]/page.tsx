@@ -239,10 +239,36 @@ function FundDataPanels({ fundData, ticker, onHoldingsUpdate }: { fundData: Fund
   const [scrapeSuccess, setScrapeSuccess] = useState(false);
   const [lookThroughEnabled, setLookThroughEnabled] = useState(true);
   // Cache for holdings fetched on-the-fly for look-through expansion.
-  // These aren't persisted to the user's stock list — just held in
-  // memory for this page render so we don't pollute the main KV with
-  // arbitrary ETF constituents.
+  // Seeded on mount from the shared pm:fund-data-cache (populated by
+  // Refresh All crawling heavy sub-funds), then augmented with any
+  // on-the-fly fetches done here. We also PATCH back into the shared
+  // cache when an on-the-fly fetch succeeds, so visiting one fund's
+  // page can populate look-through data for others without having to
+  // pollute the main stock list KV with arbitrary ETF constituents.
   const [extraCache, setExtraCache] = useState<Record<string, FundData["topHoldings"]>>({});
+
+  // Mount-time: pull the shared fund-data-cache and seed extraCache so
+  // look-through works immediately without waiting for the on-the-fly
+  // 20%-weight auto-fetch below.
+  useEffect(() => {
+    let cancelled = false;
+    fetch("/api/kv/fund-data-cache")
+      .then((r) => (r.ok ? r.json() : null))
+      .then((data) => {
+        if (cancelled) return;
+        const entries = data?.entries as Record<string, { topHoldings?: FundData["topHoldings"] }> | undefined;
+        if (!entries) return;
+        const seed: Record<string, FundData["topHoldings"]> = {};
+        for (const [sym, entry] of Object.entries(entries)) {
+          if (entry?.topHoldings?.length) seed[sym.toUpperCase()] = entry.topHoldings;
+        }
+        if (Object.keys(seed).length) {
+          setExtraCache((prev) => ({ ...seed, ...prev }));
+        }
+      })
+      .catch(() => { /* best effort */ });
+    return () => { cancelled = true; };
+  }, []);
 
   // Build a symbol → cached topHoldings lookup. Combines stocks the
   // user has already visited (persisted) with the on-the-fly cache we
@@ -287,9 +313,29 @@ function FundDataPanels({ fundData, ticker, onHoldingsUpdate }: { fundData: Fund
       fetch(`/api/fund-data?ticker=${encodeURIComponent(sym)}`)
         .then((r) => (r.ok ? r.json() : null))
         .then((data) => {
-          const holdings = data?.fundData?.topHoldings as FundData["topHoldings"] | undefined;
+          const fd = data?.fundData as FundData | undefined;
+          const holdings = fd?.topHoldings;
           if (holdings?.length) {
             setExtraCache((prev) => ({ ...prev, [sym]: holdings }));
+            // Write through to the shared KV cache so other pages /
+            // the Client Report X-ray pick this up without having to
+            // re-fetch. Best-effort — failure here doesn't break
+            // anything user-visible.
+            fetch("/api/kv/fund-data-cache", {
+              method: "PATCH",
+              headers: { "Content-Type": "application/json" },
+              body: JSON.stringify({
+                entries: {
+                  [sym]: {
+                    topHoldings: holdings,
+                    sectorWeightings: fd?.sectorWeightings,
+                    holdingsSource: fd?.holdingsSource,
+                    fundFamily: fd?.fundFamily,
+                    lastUpdated: new Date().toISOString(),
+                  },
+                },
+              }),
+            }).catch(() => { /* best effort */ });
           }
         })
         .catch(() => { /* best effort */ });
