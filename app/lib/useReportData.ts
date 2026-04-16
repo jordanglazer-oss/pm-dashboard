@@ -607,11 +607,25 @@ export function useReportData(
       };
 
       const MAX_EXPAND_DEPTH = 4;
+      /**
+       * Recursive expander: resolves funds into their underlying stock
+       * leaves for the X-ray table, while simultaneously accumulating
+       * sector contributions.
+       *
+       * `collectSectors` controls whether this branch of the tree should
+       * contribute to the sector breakdown. When a fund has its own
+       * sectorWeightings, we use those (most accurate — pre-aggregated by
+       * the fund provider) and pass `false` to children so we don't
+       * double-count. When a fund has no sectorWeightings, children
+       * inherit the flag and contribute their own sectors (either from a
+       * deeper fund's sectorWeightings or from individual stock sectors).
+       */
       const expand = async (
         sym: string,
         name: string,
         weightPct: number,
         depth: number,
+        collectSectors: boolean,
       ): Promise<void> => {
         if (weightPct <= 0 || !sym) return;
         const st = stockBySymbol.get(sym);
@@ -622,6 +636,10 @@ export function useReportData(
           const direct = depth === 0 ? weightPct : 0;
           const lookThrough = depth === 0 ? 0 : weightPct;
           addXRay(sym, st?.name || name, direct, lookThrough);
+          // Contribute sector from the stock's metadata.
+          if (collectSectors && st?.sector) {
+            addSector(st.sector, weightPct);
+          }
           return;
         }
 
@@ -630,13 +648,28 @@ export function useReportData(
         if (depth >= MAX_EXPAND_DEPTH) return;
         const info = await getFundInfo(sym);
         const top = info?.topHoldings ?? [];
+
+        // Sector handling: use fund-level sectorWeightings when
+        // available — they're more accurate than rolling up individual
+        // stock sectors and they prevent double-counting through the
+        // fund → stock chain.
+        const hasFundSectors =
+          collectSectors && (info?.sectorWeightings?.length ?? 0) > 0;
+        if (hasFundSectors) {
+          for (const sw of info!.sectorWeightings!) {
+            addSector(sw.sector, (weightPct * sw.weight) / 100);
+          }
+        }
+
         if (!top.length) return;
+        // Children only contribute sectors when this fund didn't already.
+        const childCollectSectors = collectSectors && !hasFundSectors;
         await Promise.all(
           top.map((h) => {
             const childSym = (h.symbol || h.name || "").trim();
             if (!childSym) return Promise.resolve();
             const childWeight = (weightPct * h.weight) / 100;
-            return expand(childSym, h.name, childWeight, depth + 1);
+            return expand(childSym, h.name, childWeight, depth + 1, childCollectSectors);
           })
         );
       };
@@ -645,20 +678,8 @@ export function useReportData(
         activeHoldings.map(async (h) => {
           if (h.assetClass !== "equity") return;
           const wPct = h.weight * 100;
-          const st = stockBySymbol.get(h.symbol);
-
-          // Top-level sector contribution.
-          if (st?.instrumentType === "stock" && st?.sector) {
-            addSector(st.sector, wPct);
-          } else {
-            const info = await getFundInfo(h.symbol);
-            for (const sw of info?.sectorWeightings ?? []) {
-              addSector(sw.sector, (wPct * sw.weight) / 100);
-            }
-          }
-
-          // Deep recursive expansion for the positions table.
-          await expand(h.symbol, h.name, wPct, 0);
+          // Deep recursive expansion for positions AND sectors.
+          await expand(h.symbol, h.name, wPct, 0, true);
         })
       );
 
