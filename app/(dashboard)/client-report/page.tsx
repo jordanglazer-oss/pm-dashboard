@@ -29,11 +29,15 @@ import type { PimProfileType } from "@/app/lib/pim-types";
 
 // ───────── Client portfolio comparison types ─────────
 
+type ClientInputMode = "units" | "weight";
+
 type ClientPosition = {
   id: string; // unique key for React
   ticker: string;
   name: string;
   units: number;
+  /** Portfolio weight (%) — used when inputMode is "weight". */
+  weight: number;
 };
 
 type ClientPortfolioResult = {
@@ -85,6 +89,7 @@ export default function ClientReportPage() {
   const { data, loading, error, refetch } = useReportData(groupId, profile);
 
   // ── Client portfolio comparison state ──
+  const [clientInputMode, setClientInputMode] = useState<ClientInputMode>("units");
   const [clientPositions, setClientPositions] = useState<ClientPosition[]>([]);
   const [clientCash, setClientCash] = useState<number>(0);
   const [clientResult, setClientResult] = useState<ClientPortfolioResult | null>(null);
@@ -95,7 +100,7 @@ export default function ClientReportPage() {
   const addPosition = useCallback(() => {
     setClientPositions((prev) => [
       ...prev,
-      { id: crypto.randomUUID(), ticker: "", name: "", units: 0 },
+      { id: crypto.randomUUID(), ticker: "", name: "", units: 0, weight: 0 },
     ]);
   }, []);
 
@@ -113,74 +118,108 @@ export default function ClientReportPage() {
   );
 
   const computeClientPortfolio = useCallback(async () => {
-    const validPositions = clientPositions.filter(
-      (p) => p.ticker.trim() && p.units > 0
-    );
-    if (validPositions.length === 0 && clientCash <= 0) {
-      setClientError("Add at least one position or cash amount.");
-      return;
-    }
     setClientError(null);
     setClientLoading(true);
     try {
-      // Fetch live prices for all client tickers.
-      const tickers = validPositions.map((p) => p.ticker.trim().toUpperCase());
-      let prices: Record<string, number | null> = {};
-      if (tickers.length > 0) {
-        const res = await fetch("/api/prices", {
-          method: "POST",
-          headers: { "Content-Type": "application/json" },
-          body: JSON.stringify({ tickers }),
-          cache: "no-store",
-        });
-        if (res.ok) {
-          const payload = await res.json();
-          prices = payload?.prices ?? {};
+      let positions: { ticker: string; name: string; weight: number; marketValue: number }[];
+      let cashWeight: number;
+      let totalValue: number;
+
+      if (clientInputMode === "weight") {
+        // ── Weight mode: user supplies % directly, no price fetch needed.
+        const validPositions = clientPositions.filter(
+          (p) => p.ticker.trim() && p.weight > 0
+        );
+        if (validPositions.length === 0 && clientCash <= 0) {
+          setClientError("Add at least one position with a weight, or a cash weight.");
+          setClientLoading(false);
+          return;
         }
+        // In weight mode, clientCash is treated as a weight percentage.
+        const rawTotal =
+          validPositions.reduce((s, p) => s + p.weight, 0) + clientCash;
+        if (rawTotal <= 0) {
+          setClientError("Total weight must be positive.");
+          setClientLoading(false);
+          return;
+        }
+        // Normalize so weights sum to 100%.
+        positions = validPositions
+          .map((p) => ({
+            ticker: p.ticker.trim().toUpperCase(),
+            name: p.name.trim() || p.ticker.trim().toUpperCase(),
+            weight: (p.weight / rawTotal) * 100,
+            marketValue: 0,
+          }))
+          .sort((a, b) => b.weight - a.weight);
+        cashWeight = (clientCash / rawTotal) * 100;
+        totalValue = 0; // not meaningful in weight mode
+      } else {
+        // ── Units mode: fetch live prices, compute market values.
+        const validPositions = clientPositions.filter(
+          (p) => p.ticker.trim() && p.units > 0
+        );
+        if (validPositions.length === 0 && clientCash <= 0) {
+          setClientError("Add at least one position or cash amount.");
+          setClientLoading(false);
+          return;
+        }
+        const tickers = validPositions.map((p) => p.ticker.trim().toUpperCase());
+        let prices: Record<string, number | null> = {};
+        if (tickers.length > 0) {
+          const res = await fetch("/api/prices", {
+            method: "POST",
+            headers: { "Content-Type": "application/json" },
+            body: JSON.stringify({ tickers }),
+            cache: "no-store",
+          });
+          if (res.ok) {
+            const payload = await res.json();
+            prices = payload?.prices ?? {};
+          }
+        }
+
+        const positionsWithValue: {
+          ticker: string;
+          name: string;
+          units: number;
+          price: number;
+          marketValue: number;
+        }[] = [];
+        for (const p of validPositions) {
+          const ticker = p.ticker.trim().toUpperCase();
+          const price = prices[ticker] ?? prices[p.ticker.trim()] ?? null;
+          if (price == null || price <= 0) continue;
+          positionsWithValue.push({
+            ticker,
+            name: p.name.trim() || ticker,
+            units: p.units,
+            price,
+            marketValue: p.units * price,
+          });
+        }
+
+        const totalEquity = positionsWithValue.reduce(
+          (sum, p) => sum + p.marketValue,
+          0
+        );
+        totalValue = totalEquity + clientCash;
+        if (totalValue <= 0) {
+          setClientError("Could not compute portfolio value — check tickers and prices.");
+          setClientLoading(false);
+          return;
+        }
+
+        positions = positionsWithValue
+          .map((p) => ({
+            ticker: p.ticker,
+            name: p.name,
+            weight: (p.marketValue / totalValue) * 100,
+            marketValue: p.marketValue,
+          }))
+          .sort((a, b) => b.weight - a.weight);
+        cashWeight = totalValue > 0 ? (clientCash / totalValue) * 100 : 0;
       }
-
-      // Compute market values and weights.
-      const positionsWithValue: {
-        ticker: string;
-        name: string;
-        units: number;
-        price: number;
-        marketValue: number;
-      }[] = [];
-      for (const p of validPositions) {
-        const ticker = p.ticker.trim().toUpperCase();
-        const price = prices[ticker] ?? prices[p.ticker.trim()] ?? null;
-        if (price == null || price <= 0) continue;
-        positionsWithValue.push({
-          ticker,
-          name: p.name.trim() || ticker,
-          units: p.units,
-          price,
-          marketValue: p.units * price,
-        });
-      }
-
-      const totalEquity = positionsWithValue.reduce(
-        (sum, p) => sum + p.marketValue,
-        0
-      );
-      const totalValue = totalEquity + clientCash;
-      if (totalValue <= 0) {
-        setClientError("Could not compute portfolio value — check tickers and prices.");
-        setClientLoading(false);
-        return;
-      }
-
-      const positions = positionsWithValue
-        .map((p) => ({
-          ticker: p.ticker,
-          name: p.name,
-          weight: (p.marketValue / totalValue) * 100,
-          marketValue: p.marketValue,
-        }))
-        .sort((a, b) => b.weight - a.weight);
-
-      const cashWeight = totalValue > 0 ? (clientCash / totalValue) * 100 : 0;
 
       // Build pie slices — top positions + cash.
       const slicePositions = positions.slice(0, 12);
@@ -223,7 +262,7 @@ export default function ClientReportPage() {
     } finally {
       setClientLoading(false);
     }
-  }, [clientPositions, clientCash]);
+  }, [clientPositions, clientCash, clientInputMode]);
 
   // Manager commentary — persisted per (group, profile) so switching
   // between Balanced / Growth doesn't clobber one with the other.
@@ -356,9 +395,34 @@ export default function ClientReportPage() {
             )}
           </summary>
           <div className="px-4 pb-4 border-t border-slate-100 pt-3">
-            <p className="text-xs text-slate-500 mb-3">
-              Add the client&apos;s current holdings to generate a side-by-side comparison on the PDF.
-            </p>
+            <div className="flex items-center gap-3 mb-3">
+              <p className="text-xs text-slate-500 flex-1">
+                Add the client&apos;s current holdings to generate a side-by-side comparison on the PDF.
+              </p>
+              {/* Input mode toggle */}
+              <div className="flex rounded-md border border-slate-200 overflow-hidden text-xs">
+                <button
+                  onClick={() => setClientInputMode("units")}
+                  className={`px-3 py-1 font-semibold transition-colors ${
+                    clientInputMode === "units"
+                      ? "bg-slate-700 text-white"
+                      : "bg-white text-slate-500 hover:bg-slate-50"
+                  }`}
+                >
+                  Units
+                </button>
+                <button
+                  onClick={() => setClientInputMode("weight")}
+                  className={`px-3 py-1 font-semibold transition-colors ${
+                    clientInputMode === "weight"
+                      ? "bg-slate-700 text-white"
+                      : "bg-white text-slate-500 hover:bg-slate-50"
+                  }`}
+                >
+                  Weight %
+                </button>
+              </div>
+            </div>
 
             {/* Position rows */}
             <div className="space-y-2 mb-3">
@@ -382,21 +446,40 @@ export default function ClientReportPage() {
                     }
                     className="flex-1 rounded border border-slate-200 px-2 py-1.5 text-xs focus:outline-none focus:ring-1 focus:ring-blue-400"
                   />
-                  <input
-                    type="number"
-                    placeholder="Units"
-                    value={pos.units || ""}
-                    onChange={(e) =>
-                      updatePosition(
-                        pos.id,
-                        "units",
-                        parseFloat(e.target.value) || 0
-                      )
-                    }
-                    min={0}
-                    step="any"
-                    className="w-24 rounded border border-slate-200 px-2 py-1.5 text-xs tabular-nums focus:outline-none focus:ring-1 focus:ring-blue-400"
-                  />
+                  {clientInputMode === "units" ? (
+                    <input
+                      type="number"
+                      placeholder="Units"
+                      value={pos.units || ""}
+                      onChange={(e) =>
+                        updatePosition(
+                          pos.id,
+                          "units",
+                          parseFloat(e.target.value) || 0
+                        )
+                      }
+                      min={0}
+                      step="any"
+                      className="w-24 rounded border border-slate-200 px-2 py-1.5 text-xs tabular-nums focus:outline-none focus:ring-1 focus:ring-blue-400"
+                    />
+                  ) : (
+                    <input
+                      type="number"
+                      placeholder="Weight %"
+                      value={pos.weight || ""}
+                      onChange={(e) =>
+                        updatePosition(
+                          pos.id,
+                          "weight",
+                          parseFloat(e.target.value) || 0
+                        )
+                      }
+                      min={0}
+                      max={100}
+                      step="any"
+                      className="w-24 rounded border border-slate-200 px-2 py-1.5 text-xs tabular-nums focus:outline-none focus:ring-1 focus:ring-blue-400"
+                    />
+                  )}
                   <button
                     onClick={() => removePosition(pos.id)}
                     className="text-slate-400 hover:text-rose-500 text-sm px-1"
@@ -417,7 +500,9 @@ export default function ClientReportPage() {
                 + Add Position
               </button>
               <div className="flex items-center gap-1.5">
-                <label className="text-xs text-slate-500">Cash ($):</label>
+                <label className="text-xs text-slate-500">
+                  Cash {clientInputMode === "units" ? "($)" : "(%)"}:
+                </label>
                 <input
                   type="number"
                   value={clientCash || ""}
