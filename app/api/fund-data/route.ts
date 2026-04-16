@@ -995,9 +995,23 @@ function parseISharesCSV(csv: string): ProviderHoldingsResult {
     const assetClass = fields[3].replace(/"/g, "").trim();
     const weight = parseFloat(fields[5].replace(/"/g, "").replace(/,/g, "").trim());
 
-    // Only include equity holdings (skip cash, derivatives, etc.)
+    // Skip obviously non-equity-exposure rows (cash balances, FX
+    // forwards, currency derivatives). We DO want to keep "Fund" /
+    // "ETF" asset classes though — for fund-of-fund products like
+    // XUH.TO (iShares Core S&P 500 CAD-Hedged), the primary holding
+    // is IVV at ~99% with asset class "Fund" or "Equity" depending on
+    // iShares' categorization. Dropping those would leave the fund
+    // looking empty, which is exactly what was breaking look-through
+    // for XUH.TO.
     if (!ticker || !name || !isFinite(weight) || weight <= 0) continue;
-    if (assetClass && !assetClass.includes("Equity")) continue;
+    const lcAsset = assetClass.toLowerCase();
+    const isCashLike =
+      lcAsset.includes("cash") ||
+      lcAsset.includes("currency") ||
+      lcAsset.includes("money market") ||
+      lcAsset.includes("derivative") ||
+      lcAsset.includes("forward");
+    if (isCashLike) continue;
 
     // Keep top 10 for display
     if (holdings.length < 10) {
@@ -1272,6 +1286,24 @@ export async function GET(request: NextRequest) {
     // a URL. Updated as each source overrides the previous one.
     if (fundData.topHoldings?.length) {
       fundData.holdingsSource = "Yahoo Finance";
+    }
+
+    // Yahoo's trailingReturns for sparsely-tracked tickers (notably .U
+    // share classes like XUS.U → XUS-U.TO) comes back as a row of literal
+    // zeros rather than null. Those bogus zeros then win over the real
+    // Globe and Mail / Morningstar values below because `??` only falls
+    // back on null/undefined. If every trailing-return field is exactly
+    // 0 we treat the whole performance object as absent — a real ETF
+    // posting 0.00% across 1M / 3M / YTD / 1Y / 3Y / 5Y / 10Y is
+    // essentially impossible.
+    if (fundData.performance) {
+      const p = fundData.performance;
+      const fields = [p.oneMonth, p.threeMonth, p.ytd, p.oneYear, p.threeYear, p.fiveYear, p.tenYear];
+      const hasAny = fields.some((v) => v != null);
+      const allZero = hasAny && fields.every((v) => v == null || v === 0);
+      if (allZero) {
+        fundData.performance = undefined;
+      }
     }
 
     // Merge performance: primary source wins, Yahoo fills gaps
