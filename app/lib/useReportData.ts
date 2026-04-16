@@ -49,7 +49,7 @@ import type {
   PimPortfolioPositions,
   PimProfileType,
 } from "./pim-types";
-import type { FundData, FundHolding, Stock } from "./types";
+import type { FundData, FundHolding, FundSectorWeight, Stock } from "./types";
 
 // ───────── Output shape ─────────
 
@@ -461,20 +461,29 @@ export function useReportData(
         .map(([country, weight]) => ({ country, weight }))
         .sort((a, b) => b.weight - a.weight);
 
-      // ── 6. Sectors AND X-ray in one fund-data pass — we look up the
-      //    same fund payloads for both, so sharing the fetch keeps
-      //    network traffic low. Each equity holding either contributes
-      //    at its full weight (if it's a direct stock with a known
-      //    sector) or is looked through into its top holdings/sectors.
+      // ── 6. Sectors AND X-ray in one fund-data pass.
+      //
+      // The X-ray is the source of truth for the Current Positioning
+      // table, which the user explicitly wants scoped to *individual
+      // stock holdings* — core ETFs and mutual-fund positions shouldn't
+      // appear as rows themselves; their underlying stocks should roll
+      // up into the same pool as directly-held names. So we do a deep
+      // recursive expansion: at each level, if the symbol resolves as a
+      // stock we accumulate its weight; if it resolves as a fund we
+      // recurse into its top holdings with weights scaled by the parent
+      // weight; if we can't resolve it at all, we drop it.
+      //
+      // Sectors are still tallied at the top level (direct stock
+      // sector, or the fund's own sectorWeightings scaled by its
+      // portfolio weight) — deep recursion doesn't add additional
+      // sector contributions, because that would double-count through
+      // the fund → stock chain.
       const sectorMap = new Map<string, number>();
       const addSector = (name: string, w: number) => {
         if (!name || w <= 0) return;
         sectorMap.set(name, (sectorMap.get(name) ?? 0) + w);
       };
 
-      // X-ray accumulator: effective weight by underlying symbol. We
-      // track direct vs look-through separately so the UI can indicate
-      // where each exposure came from.
       const xrayAcc = new Map<
         string,
         { name: string; direct: number; lookThrough: number }
@@ -486,6 +495,7 @@ export function useReportData(
         lookThrough: number
       ) => {
         const key = (symbol || name).toUpperCase();
+        if (!key) return;
         const prev = xrayAcc.get(key) ?? { name, direct: 0, lookThrough: 0 };
         prev.direct += direct;
         prev.lookThrough += lookThrough;
@@ -494,73 +504,135 @@ export function useReportData(
         xrayAcc.set(key, prev);
       };
 
+      // Memoized fund-info lookup. First checks the in-memory
+      // fund-data-cache blob (populated by Refresh All), then falls
+      // back to a live /api/fund-data fetch. Caches the result per
+      // symbol — including negative results — so we only hit the
+      // network once per symbol per report render.
+      const fundInfoCache = new Map<
+        string,
+        { topHoldings?: FundHolding[]; sectorWeightings?: FundSectorWeight[] } | null
+      >();
+      const getFundInfo = async (sym: string) => {
+        const key = sym.toUpperCase();
+        if (fundInfoCache.has(key)) return fundInfoCache.get(key) ?? null;
+        // 1. User's own stocks list — highest priority because it
+        //    includes holdings the user manually fetched via the stock
+        //    page's Fetch/URL flow (e.g. FID5982, GRNJ) that may not
+        //    be on any of the live sources /api/fund-data hits.
+        const ownStock = stockBySymbol.get(sym) ?? stockBySymbol.get(key);
+        if (ownStock?.fundData?.topHoldings?.length) {
+          const info = {
+            topHoldings: ownStock.fundData.topHoldings,
+            sectorWeightings: ownStock.fundData.sectorWeightings,
+          };
+          fundInfoCache.set(key, info);
+          return info;
+        }
+        // 2. Persisted fund-data-cache (populated by Refresh All's
+        //    heavy-child crawl + write-throughs from stock pages).
+        const cached = fundCache[key];
+        if (cached?.topHoldings?.length) {
+          const info = {
+            topHoldings: cached.topHoldings,
+            sectorWeightings: undefined as FundSectorWeight[] | undefined,
+          };
+          fundInfoCache.set(key, info);
+          return info;
+        }
+        // 3. Last-resort live fetch.
+        try {
+          const res = await fetch(
+            `/api/fund-data?ticker=${encodeURIComponent(sym)}`,
+            { cache: "no-store" }
+          );
+          if (!res.ok) { fundInfoCache.set(key, null); return null; }
+          const data = await res.json().catch(() => null);
+          const fd = data?.fundData as FundData | undefined;
+          const info = {
+            topHoldings: fd?.topHoldings,
+            sectorWeightings: fd?.sectorWeightings,
+          };
+          fundInfoCache.set(key, info);
+          return info;
+        } catch {
+          fundInfoCache.set(key, null);
+          return null;
+        }
+      };
+
+      // Heuristic used by the recursive expander to decide whether a
+      // symbol should be treated as a fund (recurse) or a stock (leaf).
+      // We lean toward "stock" when uncertain so we don't accidentally
+      // drop a direct stock the user holds (e.g. "Berkshire Hathaway
+      // Class B" shouldn't be mistaken for a fund just because the
+      // name contains "Class").
+      const looksLikeFund = (sym: string, name: string, st: Stock | undefined): boolean => {
+        if (st?.instrumentType === "stock") return false;
+        if (st?.instrumentType === "etf" || st?.instrumentType === "mutual-fund") return true;
+        if (/^[A-Z]{2,4}\d{2,5}$/.test(sym)) return true; // FUNDSERV code
+        const u = (name || "").toUpperCase();
+        if (/\bETF\b/.test(u)) return true;
+        if (/\bINDEX\b/.test(u)) return true;
+        if (/\b(MUTUAL|INDEX|INCOME|BOND|EQUITY)\s+FUND\b/.test(u)) return true;
+        if (/\bCLASS\s+[FIOAD]\b/.test(u)) return true; // mutual-fund share classes
+        if (/\bSERIES\s+[FIOAD]\b/.test(u)) return true;
+        return false;
+      };
+
+      const MAX_EXPAND_DEPTH = 4;
+      const expand = async (
+        sym: string,
+        name: string,
+        weightPct: number,
+        depth: number,
+      ): Promise<void> => {
+        if (weightPct <= 0 || !sym) return;
+        const st = stockBySymbol.get(sym);
+        const isFund = looksLikeFund(sym, name, st);
+
+        // Leaf — known or assumed stock.
+        if (!isFund) {
+          const direct = depth === 0 ? weightPct : 0;
+          const lookThrough = depth === 0 ? 0 : weightPct;
+          addXRay(sym, st?.name || name, direct, lookThrough);
+          return;
+        }
+
+        // Fund: try to expand. Drop if we can't, per the "individual
+        // stocks only" directive.
+        if (depth >= MAX_EXPAND_DEPTH) return;
+        const info = await getFundInfo(sym);
+        const top = info?.topHoldings ?? [];
+        if (!top.length) return;
+        await Promise.all(
+          top.map((h) => {
+            const childSym = (h.symbol || h.name || "").trim();
+            if (!childSym) return Promise.resolve();
+            const childWeight = (weightPct * h.weight) / 100;
+            return expand(childSym, h.name, childWeight, depth + 1);
+          })
+        );
+      };
+
       await Promise.all(
         activeHoldings.map(async (h) => {
           if (h.assetClass !== "equity") return;
           const wPct = h.weight * 100;
           const st = stockBySymbol.get(h.symbol);
-          const isDirectStock =
-            st?.instrumentType === "stock" || (!isCoreEtf(h.symbol) && !!st?.sector);
 
-          // Direct single-stock exposure: full sector + full X-ray
-          // weight to the holding itself.
-          if (isDirectStock && st?.sector) {
+          // Top-level sector contribution.
+          if (st?.instrumentType === "stock" && st?.sector) {
             addSector(st.sector, wPct);
-            addXRay(h.symbol, st.name || h.name, wPct, 0);
-            return;
+          } else {
+            const info = await getFundInfo(h.symbol);
+            for (const sw of info?.sectorWeightings ?? []) {
+              addSector(sw.sector, (wPct * sw.weight) / 100);
+            }
           }
 
-          // Fund (ETF / MF) — look up topHoldings + sectorWeightings.
-          try {
-            const res = await fetch(
-              `/api/fund-data?ticker=${encodeURIComponent(h.symbol)}`,
-              { cache: "no-store" }
-            );
-            if (!res.ok) return;
-            const fund: FundData | null = await res.json().catch(() => null);
-            const sectorBreakdown = fund?.sectorWeightings ?? [];
-            const top = fund?.topHoldings ?? [];
-            for (const sw of sectorBreakdown) addSector(sw.sector, (wPct * sw.weight) / 100);
-            // topHoldings weights are % of fund → contribute pPct * fundPct/100 to portfolio.
-            //
-            // Two-level expansion: if this fund's holding is itself a
-            // fund (e.g. XSP.TO → IVV at 98.6%) AND we have cached data
-            // for it in pm:fund-data-cache, recurse one more level.
-            // This is what gives the X-ray a "real" look-through view
-            // of ETF-of-ETF positions: AAPL/MSFT/NVDA instead of just
-            // "IVV 98.6%". The cache is populated by Refresh All.
-            for (const holding of top) {
-              const childSym = (holding.symbol || "").toUpperCase();
-              const cached = childSym ? fundCache[childSym] : undefined;
-              const childTop = cached?.topHoldings;
-              const childWeightContribution = (wPct * holding.weight) / 100;
-
-              if (childTop && childTop.length > 0) {
-                for (const grandchild of childTop) {
-                  addXRay(
-                    grandchild.symbol || grandchild.name,
-                    grandchild.name,
-                    0,
-                    (childWeightContribution * grandchild.weight) / 100
-                  );
-                }
-              } else {
-                addXRay(
-                  holding.symbol || holding.name,
-                  holding.name,
-                  0,
-                  childWeightContribution
-                );
-              }
-            }
-            // If we couldn't get sector breakdown, at least record the
-            // ETF itself as a single X-ray line so it isn't invisible.
-            if (!top.length) {
-              addXRay(h.symbol, h.name, 0, wPct);
-            }
-          } catch {
-            /* best-effort — skip this fund */
-          }
+          // Deep recursive expansion for the positions table.
+          await expand(h.symbol, h.name, wPct, 0);
         })
       );
 

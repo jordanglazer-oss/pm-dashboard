@@ -901,7 +901,14 @@ async function fetchBMOHoldings(ticker: string): Promise<ProviderHoldingsResult>
 async function fetchISharesHoldings(ticker: string, country: "us" | "ca"): Promise<ProviderHoldingsResult> {
   const result: ProviderHoldingsResult = {};
   try {
-    const cleanTicker = ticker.replace(/\.TO$/i, "").toUpperCase();
+    // iShares' product listing shows the parent product (e.g. XUS),
+    // not the USD share-class suffix (XUS.U). Both classes share the
+    // same holdings, so we strip `.U` for the listing match and the
+    // CSV filename. Holdings are identical across share classes.
+    const cleanTicker = ticker
+      .replace(/\.TO$/i, "")
+      .replace(/\.U$/i, "")
+      .toUpperCase();
 
     // Step 1: Find the product page URL from the iShares/BlackRock product listing page
     // The listing page contains links like: <a href="/us/products/239726/ishares-core-sp-500-etf">IVV</a>
