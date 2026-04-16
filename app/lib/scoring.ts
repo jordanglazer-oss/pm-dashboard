@@ -48,7 +48,6 @@ const CYCLICAL_SECTORS = [
   "Financials",
   "Industrials",
   "Materials",
-  "Energy",
 ];
 
 // DEFENSIVE: Low-beta, income-oriented sectors that outperform in
@@ -59,9 +58,18 @@ const DEFENSIVE_SECTORS = [
   "Health Care",
 ];
 
-// NEUTRAL: Real Estate is rate-sensitive in both directions — benefits
-// from falling rates but suffers from rising rates regardless of regime.
-// No regime tilt applied (1.0x always).
+// NEUTRAL: Always 1.0x — sectors whose drivers don't map cleanly to
+// risk-on/risk-off dynamics.
+//
+// Real Estate is rate-sensitive in both directions — benefits from
+// falling rates but suffers from rising rates regardless of regime.
+//
+// Energy is commodity-price-driven rather than risk-appetite-driven.
+// It can rally in Risk-Off (geopolitical supply shocks, inflation
+// hedging) and lag in Risk-On (tech/AI-led rallies). The correlation
+// with the broader risk-on trade has weakened meaningfully — a blanket
+// cyclical classification would penalize Energy in Risk-Off and boost
+// it in Risk-On, both of which assume a correlation that isn't reliable.
 
 // ── Quality dampening ──────────────────────────────────────────────────
 // Quality score categories used to dampen the regime multiplier.
