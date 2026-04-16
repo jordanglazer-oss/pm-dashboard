@@ -269,15 +269,15 @@ function OnePager({
       <div className="grid grid-cols-5 gap-5 mt-4 break-inside-avoid">
         <div className="col-span-3">
           <SectionTitle>Current Positioning</SectionTitle>
-          <HoldingsTable data={data} />
+          <HoldingsTable rows={data.xray.slice(0, 15)} />
           <div className="mt-1 text-[9px] text-slate-400 flex justify-between">
             <span>
               CAD: {data.totals.cad.toFixed(1)}% · USD: {data.totals.usd.toFixed(1)}%
             </span>
             <span>
               {data.weightsSource === "live"
-                ? "Weights reflect current positions × live prices."
-                : "No positions saved — showing target model weights."}
+                ? "Weights reflect current positions × live prices (equity look-through)."
+                : "No positions saved — showing target model weights (equity look-through)."}
             </span>
           </div>
         </div>
@@ -428,32 +428,44 @@ function SectionTitle({ children }: { children: React.ReactNode }) {
   );
 }
 
-function HoldingsTable({ data }: { data: ReportData }) {
+/**
+ * Current Positioning table.
+ *
+ * Driven off the look-through X-ray rather than raw model holdings: the
+ * goal of this section is to show clients the *underlying equity
+ * exposures* — the actual stocks they own, including the ones sitting
+ * one level inside Core ETFs (e.g. AAPL/MSFT/NVDA via IVV rather than
+ * "iShares Core S&P 500" as a single line). Fixed income funds are
+ * excluded entirely since this block is scoped to top equity holdings;
+ * total fixed income weight still shows in the Allocation pie.
+ */
+function HoldingsTable({ rows }: { rows: ReportXRayRow[] }) {
+  if (!rows.length) {
+    return (
+      <div className="text-[10px] text-slate-400 italic mt-2">
+        No equity look-through positions available.
+      </div>
+    );
+  }
   return (
     <table className="w-full mt-2 text-[10px]">
       <thead>
         <tr className="text-slate-500 border-b border-slate-200">
           <th className="text-left font-semibold py-1">Holding</th>
           <th className="text-right font-semibold py-1">Weight</th>
-          <th className="text-right font-semibold py-1">CAD</th>
-          <th className="text-right font-semibold py-1">USD</th>
         </tr>
       </thead>
       <tbody>
-        {data.holdings.map((h, i) => (
-          <tr key={h.id} className={i % 2 ? "bg-slate-50" : ""}>
-            <td className="py-0.5">
-              <span className="text-slate-800">{h.name}</span>
-              <span className="ml-2 text-[8px] text-slate-400 uppercase">{h.bucket}</span>
+        {rows.map((r, i) => (
+          <tr key={r.symbol} className={i % 2 ? "bg-slate-50" : ""}>
+            <td className="py-0.5 text-slate-800">
+              <span>{r.name || r.symbol}</span>
+              {r.symbol && r.symbol !== r.name && (
+                <span className="ml-1 text-[8px] text-slate-400">{r.symbol}</span>
+              )}
             </td>
             <td className="text-right py-0.5 tabular-nums font-semibold">
-              {h.weight.toFixed(2)}%
-            </td>
-            <td className="text-right py-0.5 tabular-nums text-slate-500">
-              {h.cadWeight != null ? `${h.cadWeight.toFixed(2)}%` : ""}
-            </td>
-            <td className="text-right py-0.5 tabular-nums text-slate-500">
-              {h.usdWeight != null ? `${h.usdWeight.toFixed(2)}%` : ""}
+              {r.weight.toFixed(2)}%
             </td>
           </tr>
         ))}
