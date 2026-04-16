@@ -188,7 +188,7 @@ export default function DashboardPage() {
                     <span className="font-semibold text-red-600">Growth sectors</span> (Tech, Comm Services, Consumer Disc) → <span className="font-bold">0.85x</span> — penalized for elevated drawdown risk.
                   </li>
                   <li>
-                    <span className="font-semibold text-amber-600">Cyclical sectors</span> (Financials, Industrials, Materials, Energy) → <span className="font-bold">0.90x</span> — penalized for economic sensitivity.
+                    <span className="font-semibold text-amber-600">Cyclical sectors</span> (Financials, Industrials, Materials) → <span className="font-bold">0.90x</span> — penalized for economic sensitivity.
                   </li>
                   <li>
                     <span className="font-semibold text-emerald-600">Defensive sectors</span> (Utilities, Staples, Health Care) → <span className="font-bold">1.10x</span> — boosted for capital preservation.
@@ -234,7 +234,7 @@ export default function DashboardPage() {
                     <span className="font-semibold text-emerald-600">Growth sectors</span> (Tech, Comm Services, Consumer Disc) → <span className="font-bold">1.10x</span> — boosted to reflect momentum and risk appetite.
                   </li>
                   <li>
-                    <span className="font-semibold text-emerald-500">Cyclical sectors</span> (Financials, Industrials, Materials, Energy) → <span className="font-bold">1.05x</span> — boosted for economic activity tailwind.
+                    <span className="font-semibold text-emerald-500">Cyclical sectors</span> (Financials, Industrials, Materials) → <span className="font-bold">1.05x</span> — boosted for economic activity tailwind.
                   </li>
                   <li>
                     <span className="font-semibold text-amber-600">Defensive sectors</span> (Utilities, Staples, Health Care) → <span className="font-bold">0.92x</span> — penalized for opportunity cost in a risk-on environment.
