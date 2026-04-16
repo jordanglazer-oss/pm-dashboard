@@ -49,7 +49,7 @@ import type {
   PimPortfolioPositions,
   PimProfileType,
 } from "./pim-types";
-import type { FundData, Stock } from "./types";
+import type { FundData, FundHolding, Stock } from "./types";
 
 // ───────── Output shape ─────────
 
@@ -283,7 +283,7 @@ export function useReportData(
       //    We kick these off in parallel so the total network time is
       //    max(positions, prices) rather than a sum.
       const tickerList = group.holdings.map((h) => h.symbol);
-      const [positionsRes, priceRes, fxRes] = await Promise.all([
+      const [positionsRes, priceRes, fxRes, fundCacheRes] = await Promise.all([
         fetch("/api/kv/pim-positions", { cache: "no-store" }).catch(() => null),
         fetch("/api/prices", {
           method: "POST",
@@ -297,7 +297,24 @@ export function useReportData(
           body: JSON.stringify({ tickers: ["USDCAD=X"] }),
           cache: "no-store",
         }).catch(() => null),
+        // Shared cache of heavy sub-fund top-holdings — populated by
+        // Refresh All when it crawls one level deep. Used below to
+        // expand ETF-of-ETF positions in the X-ray.
+        fetch("/api/kv/fund-data-cache", { cache: "no-store" }).catch(() => null),
       ]);
+
+      // Load sub-fund cache entries. Shape: { "IVV": { topHoldings: [...] } }.
+      // Empty object if the cache has never been populated — we just
+      // degrade to one-level look-through in that case.
+      let fundCache: Record<string, { topHoldings?: FundHolding[] }> = {};
+      if (fundCacheRes?.ok) {
+        try {
+          const payload = await fundCacheRes.json();
+          fundCache = payload?.entries ?? {};
+        } catch {
+          /* ignore malformed cache — just use {} */
+        }
+      }
 
       let positions: PimPortfolioPositions | null = null;
       if (positionsRes?.ok) {
@@ -505,13 +522,36 @@ export function useReportData(
             const top = fund?.topHoldings ?? [];
             for (const sw of sectorBreakdown) addSector(sw.sector, (wPct * sw.weight) / 100);
             // topHoldings weights are % of fund → contribute pPct * fundPct/100 to portfolio.
+            //
+            // Two-level expansion: if this fund's holding is itself a
+            // fund (e.g. XSP.TO → IVV at 98.6%) AND we have cached data
+            // for it in pm:fund-data-cache, recurse one more level.
+            // This is what gives the X-ray a "real" look-through view
+            // of ETF-of-ETF positions: AAPL/MSFT/NVDA instead of just
+            // "IVV 98.6%". The cache is populated by Refresh All.
             for (const holding of top) {
-              addXRay(
-                holding.symbol || holding.name,
-                holding.name,
-                0,
-                (wPct * holding.weight) / 100
-              );
+              const childSym = (holding.symbol || "").toUpperCase();
+              const cached = childSym ? fundCache[childSym] : undefined;
+              const childTop = cached?.topHoldings;
+              const childWeightContribution = (wPct * holding.weight) / 100;
+
+              if (childTop && childTop.length > 0) {
+                for (const grandchild of childTop) {
+                  addXRay(
+                    grandchild.symbol || grandchild.name,
+                    grandchild.name,
+                    0,
+                    (childWeightContribution * grandchild.weight) / 100
+                  );
+                }
+              } else {
+                addXRay(
+                  holding.symbol || holding.name,
+                  holding.name,
+                  0,
+                  childWeightContribution
+                );
+              }
             }
             // If we couldn't get sector breakdown, at least record the
             // ETF itself as a single X-ray line so it isn't invisible.

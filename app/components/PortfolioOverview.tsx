@@ -4,7 +4,7 @@ import React, { useState, useCallback } from "react";
 import Link from "next/link";
 import { useStocks } from "@/app/lib/StockContext";
 import { SCORE_GROUPS, MAX_SCORE, INSTRUMENT_LABELS } from "@/app/lib/types";
-import type { ScoredStock, ScoreKey, HealthData } from "@/app/lib/types";
+import type { ScoredStock, ScoreKey, HealthData, FundHolding, FundSectorWeight } from "@/app/lib/types";
 import type { TechnicalIndicators, RiskAlert } from "@/app/lib/technicals";
 import { groupTotal, isScoreable, normalizeSector } from "@/app/lib/scoring";
 import { SignalPill } from "./SignalPill";
@@ -284,6 +284,10 @@ export function PortfolioOverview() {
       const fundStocks = allStocks.filter(
         (s) => s.instrumentType === "etf" || s.instrumentType === "mutual-fund"
       );
+      // Capture each fund's *just-fetched* top holdings so the
+      // sub-fund crawl pass (below) sees fresh data even when the
+      // closure's fund.fundData was empty going in.
+      const freshHoldingsByTicker = new Map<string, FundHolding[]>();
       if (fundStocks.length > 0) {
         setRefreshProgress(`Updated ${updated} stocks. Refreshing ${fundStocks.length} fund(s)...`);
         for (const fund of fundStocks) {
@@ -310,7 +314,45 @@ export function PortfolioOverview() {
               if (merged.topHoldings?.length && !merged.holdingsLastUpdated) {
                 merged.holdingsLastUpdated = new Date().toISOString();
               }
+
+              // If the user had previously pasted a URL as the holdings
+              // source, re-scrape it so URL-sourced holdings stay current
+              // (the embedded scraper's result is otherwise frozen in
+              // time from the moment the user first clicked Fetch). The
+              // URL result takes precedence over the embedded result —
+              // the user explicitly chose that source.
+              const urlToRefresh = merged.holdingsUrl;
+              if (urlToRefresh) {
+                try {
+                  const urlRes = await fetch("/api/fund-data", {
+                    method: "POST",
+                    headers: { "Content-Type": "application/json" },
+                    body: JSON.stringify({ url: urlToRefresh, ticker: fund.ticker }),
+                  });
+                  if (urlRes.ok) {
+                    const urlData = await urlRes.json();
+                    if (Array.isArray(urlData.topHoldings) && urlData.topHoldings.length > 0) {
+                      merged.topHoldings = urlData.topHoldings;
+                      if (Array.isArray(urlData.sectorWeightings) && urlData.sectorWeightings.length > 0) {
+                        merged.sectorWeightings = urlData.sectorWeightings;
+                      }
+                      merged.holdingsLastUpdated = new Date().toISOString();
+                      try {
+                        merged.holdingsSource = new URL(urlToRefresh).hostname.replace(/^www\./, "");
+                      } catch {
+                        merged.holdingsSource = "Custom URL";
+                      }
+                    }
+                  }
+                } catch {
+                  /* URL re-scrape failed — fall back to whatever merged already has */
+                }
+              }
+
               updateFundData(fund.ticker, merged);
+              if (merged.topHoldings?.length) {
+                freshHoldingsByTicker.set(fund.ticker.toUpperCase(), merged.topHoldings);
+              }
             }
             if (fData.price != null && typeof fData.price === "number") {
               updatePrice(fund.ticker, fData.price);
@@ -318,6 +360,74 @@ export function PortfolioOverview() {
           } catch { /* best effort per fund */ }
         }
       }
+      // Crawl one level deeper: for every fund we just refreshed, look
+      // at its top holdings and grab any ≥20%-weight constituent that
+      // isn't already in portfolio/watchlist. A 20%+ weight is almost
+      // always a sub-fund (e.g. XSP.TO → IVV at 98.6%), so this fills
+      // out look-through data the X-ray and Top Holdings panel need
+      // without polluting the user's stock list with foreign tickers.
+      //
+      // Cached results are written to pm:fund-data-cache in a single
+      // PATCH so one Refresh All click = at most one KV write per run.
+      try {
+        const inStockList = new Set(
+          [...portfolioStocks, ...watchlistStocks].map((s) => s.ticker.toUpperCase())
+        );
+        // Re-read the just-updated fund list from the ref would require
+        // a render; instead, re-fetch the handful of heavy children
+        // directly from the GET we already ran. Collect candidate
+        // tickers here.
+        const heavyChildren = new Set<string>();
+        for (const [, hs] of freshHoldingsByTicker) {
+          for (const h of hs) {
+            if (!h.symbol) continue;
+            if (h.weight < 20) continue;
+            const sym = h.symbol.toUpperCase();
+            if (inStockList.has(sym)) continue; // already refreshed above
+            heavyChildren.add(sym);
+          }
+        }
+
+        if (heavyChildren.size > 0) {
+          setRefreshProgress(`Crawling ${heavyChildren.size} sub-fund(s) for look-through...`);
+          const newCacheEntries: Record<
+            string,
+            {
+              topHoldings?: FundHolding[];
+              sectorWeightings?: FundSectorWeight[];
+              holdingsSource?: string;
+              fundFamily?: string;
+              lastUpdated: string;
+            }
+          > = {};
+          for (const sym of heavyChildren) {
+            try {
+              const r = await fetch(`/api/fund-data?ticker=${encodeURIComponent(sym)}`);
+              if (!r.ok) continue;
+              const d = await r.json();
+              const fd = d?.fundData;
+              if (!fd?.topHoldings?.length) continue;
+              newCacheEntries[sym] = {
+                topHoldings: fd.topHoldings,
+                sectorWeightings: fd.sectorWeightings,
+                holdingsSource: fd.holdingsSource,
+                fundFamily: fd.fundFamily,
+                lastUpdated: new Date().toISOString(),
+              };
+            } catch { /* best effort per child */ }
+          }
+          if (Object.keys(newCacheEntries).length > 0) {
+            try {
+              await fetch("/api/kv/fund-data-cache", {
+                method: "PATCH",
+                headers: { "Content-Type": "application/json" },
+                body: JSON.stringify({ entries: newCacheEntries }),
+              });
+            } catch { /* best effort — cache is optional */ }
+          }
+        }
+      } catch { /* best effort — cache is optional */ }
+
       // Refresh S&P 500 sector weights from SPY so the sector exposure bar
       // compares against current benchmark weights.
       try {
