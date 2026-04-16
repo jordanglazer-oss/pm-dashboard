@@ -185,7 +185,7 @@ export default function DashboardPage() {
                 </p>
                 <ul className="list-disc list-inside space-y-1 text-slate-600">
                   <li>
-                    <span className="font-semibold text-red-600">Growth sectors</span> (Tech, Comm Services, Consumer Disc) → <span className="font-bold">0.82x</span> — penalized for elevated drawdown risk.
+                    <span className="font-semibold text-red-600">Growth sectors</span> (Tech, Comm Services, Consumer Disc) → <span className="font-bold">0.85x</span> — penalized for elevated drawdown risk.
                   </li>
                   <li>
                     <span className="font-semibold text-amber-600">Cyclical sectors</span> (Financials, Industrials, Materials, Energy) → <span className="font-bold">0.90x</span> — penalized for economic sensitivity.
@@ -204,20 +204,20 @@ export default function DashboardPage() {
             {regime === "Neutral" && (
               <div className="space-y-2 text-sm text-slate-700">
                 <p className="font-medium text-amber-800">
-                  Mixed environment — mild regime adjustments applied:
+                  Mixed environment — near-neutral regime adjustments applied:
                 </p>
                 <ul className="list-disc list-inside space-y-1 text-slate-600">
                   <li>
-                    <span className="font-semibold text-amber-700">Growth sectors</span> → <span className="font-bold">0.95x</span> — slight headwind reflecting macro uncertainty.
+                    <span className="font-semibold text-amber-700">Growth sectors</span> → <span className="font-bold">0.98x</span> — negligible headwind; fundamentals dominate.
                   </li>
                   <li>
-                    <span className="font-semibold text-amber-600">Cyclical sectors</span> → <span className="font-bold">0.97x</span> — marginal headwind.
+                    <span className="font-semibold text-amber-600">Cyclical sectors</span> → <span className="font-bold">0.99x</span> — effectively neutral.
                   </li>
                   <li>
-                    <span className="font-semibold text-emerald-600">Defensive sectors</span> → <span className="font-bold">1.03x</span> — marginal safety premium.
+                    <span className="font-semibold text-emerald-600">Defensive sectors</span> → <span className="font-bold">1.01x</span> — effectively neutral.
                   </li>
                   <li>
-                    Volatility and breadth send mixed signals — cross-currents suggest balanced positioning until a clearer signal emerges. See the Morning Brief for live readings.
+                    No strong signal — scores are driven almost entirely by fundamentals and quality. Cross-currents suggest balanced positioning until a clearer regime emerges. See the Morning Brief for live readings.
                   </li>
                 </ul>
                 <a href="#regime-detail" className="mt-2 inline-block text-xs font-semibold text-amber-600 hover:text-amber-800 transition-colors">View per-stock regime detail ↓</a>
@@ -237,7 +237,7 @@ export default function DashboardPage() {
                     <span className="font-semibold text-emerald-500">Cyclical sectors</span> (Financials, Industrials, Materials, Energy) → <span className="font-bold">1.05x</span> — boosted for economic activity tailwind.
                   </li>
                   <li>
-                    <span className="font-semibold text-amber-600">Defensive sectors</span> (Utilities, Staples, Health Care) → <span className="font-bold">0.95x</span> — slight headwind as safety is less rewarded.
+                    <span className="font-semibold text-amber-600">Defensive sectors</span> (Utilities, Staples, Health Care) → <span className="font-bold">0.92x</span> — penalized for opportunity cost in a risk-on environment.
                   </li>
                   <li>
                     Subdued volatility and healthy breadth — conditions favor full risk exposure and growth/cyclical tilt. See the Morning Brief for live readings.

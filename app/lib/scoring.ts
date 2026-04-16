@@ -93,19 +93,23 @@ function qualityFactor(scores: Record<string, number> | undefined): number {
  * Base multipliers by sector tier and regime:
  *
  * Risk-Off (bearish macro):
- *   Growth   (Tech, Comm Svc, Consumer Disc) → 0.82x base
+ *   Growth   (Tech, Comm Svc, Consumer Disc) → 0.85x base
  *   Cyclical (Financials, Industrials, Materials, Energy) → 0.90x base
  *   Defensive (Utilities, Staples, Health Care) → 1.10x base
  *
  * Neutral (mixed/uncertain macro):
- *   Growth   → 0.95x base
- *   Cyclical → 0.97x base
- *   Defensive → 1.03x base
+ *   Growth   → 0.98x base
+ *   Cyclical → 0.99x base
+ *   Defensive → 1.01x base
+ *
+ *   Neutral means "no strong signal" — multipliers are near 1.0x to avoid
+ *   systematically biasing scores toward defensive names when the regime
+ *   doesn't call for it. Just enough tilt to stay directionally aware.
  *
  * Risk-On (bullish macro):
  *   Growth   → 1.10x base
  *   Cyclical → 1.05x base
- *   Defensive → 0.95x base
+ *   Defensive → 0.92x base
  *
  * Quality dampening (applied to all sectors):
  *   The regime effect is dampened toward 1.0x for high-quality names and
@@ -117,16 +121,19 @@ function qualityFactor(scores: Record<string, number> | undefined): number {
  *   quality factor (qf) = sum of quality scores / 8 → 0..1
  *   dampening = (qf - 0.5) × QUALITY_DAMPENING_STRENGTH
  *
- *   At qf=1.0 (max quality): regime effect softened by 25%
+ *   At qf=1.0 (max quality): regime effect softened by 35%
  *   At qf=0.5 (average):     no adjustment
- *   At qf=0.0 (min quality): regime effect amplified by 25%
+ *   At qf=0.0 (min quality): regime effect amplified by 35%
  *
- *   Example — Growth in Risk-Off (base 0.82x, deviation = -0.18):
- *     High quality (qf=1.0): 0.82 + 0.18 × 0.25 = 0.865x
- *     Average     (qf=0.5):  0.82 (unchanged)
- *     Low quality (qf=0.0):  0.82 - 0.18 × 0.25 = 0.775x
+ *   Example — Growth in Risk-Off (base 0.85x, deviation = -0.15):
+ *     High quality (qf=1.0): 0.85 + 0.15 × 0.35 = 0.903x  (~10% penalty)
+ *     Average     (qf=0.5):  0.85 (unchanged)               (~15% penalty)
+ *     Low quality (qf=0.0):  0.85 - 0.15 × 0.35 = 0.797x  (~20% penalty)
+ *
+ *   Quality is the dominant factor in determining how much regime matters:
+ *   a 14pp spread between max and min quality within the same sector/regime.
  */
-const QUALITY_DAMPENING_STRENGTH = 0.5;
+const QUALITY_DAMPENING_STRENGTH = 0.7;
 
 export function regimeMultiplier(
   sector: string,
@@ -136,20 +143,20 @@ export function regimeMultiplier(
   const s = normalizeSector(sector);
   let base: number;
   if (riskRegime === "Risk-Off") {
-    if (DEFENSIVE_SECTORS.includes(s)) base = 1.1;
-    else if (GROWTH_SECTORS.includes(s)) base = 0.82;
+    if (DEFENSIVE_SECTORS.includes(s)) base = 1.10;
+    else if (GROWTH_SECTORS.includes(s)) base = 0.85;
     else if (CYCLICAL_SECTORS.includes(s)) base = 0.90;
     else base = 1;
   } else if (riskRegime === "Neutral") {
-    if (DEFENSIVE_SECTORS.includes(s)) base = 1.03;
-    else if (GROWTH_SECTORS.includes(s)) base = 0.95;
-    else if (CYCLICAL_SECTORS.includes(s)) base = 0.97;
+    if (DEFENSIVE_SECTORS.includes(s)) base = 1.01;
+    else if (GROWTH_SECTORS.includes(s)) base = 0.98;
+    else if (CYCLICAL_SECTORS.includes(s)) base = 0.99;
     else base = 1;
   } else {
     // Risk-On
-    if (GROWTH_SECTORS.includes(s)) base = 1.1;
+    if (GROWTH_SECTORS.includes(s)) base = 1.10;
     else if (CYCLICAL_SECTORS.includes(s)) base = 1.05;
-    else if (DEFENSIVE_SECTORS.includes(s)) base = 0.95;
+    else if (DEFENSIVE_SECTORS.includes(s)) base = 0.92;
     else base = 1;
   }
 
