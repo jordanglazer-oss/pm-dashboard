@@ -2,6 +2,13 @@ import { NextRequest, NextResponse } from "next/server";
 import * as cheerio from "cheerio";
 import type { FundData, FundHolding, FundSectorWeight, FundPerformance, FundRiskStats } from "@/app/lib/types";
 
+// This route is fully dynamic — every call re-fetches Yahoo / Globe and
+// Mail / Morningstar at the source. Default Next.js GET caching could
+// otherwise serve stale data (notably the SPY sector weights used by the
+// dashboard), so opt out explicitly at every layer.
+export const dynamic = "force-dynamic";
+export const revalidate = 0;
+
 const YAHOO_BASE = "https://query2.finance.yahoo.com";
 
 // ── Yahoo Finance helpers ──
