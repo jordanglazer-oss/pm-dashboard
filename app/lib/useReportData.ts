@@ -83,6 +83,7 @@ export type ReportAllocationSlice = {
     | "usEquity"
     | "canadianEquity"
     | "globalEquity"
+    | "preferredShares"
     | "cash";
   label: string;
   weight: number;
@@ -174,6 +175,7 @@ const SLICE_COLORS: Record<ReportAllocationSlice["key"], string> = {
   usEquity: "#005DAA",
   canadianEquity: "#c8102e",
   globalEquity: "#0d9488",
+  preferredShares: "#7c3aed",
   cash: "#94a3b8",
 };
 
@@ -184,6 +186,7 @@ const SLICE_LABELS: Record<ReportAllocationSlice["key"], string> = {
   usEquity: "US Equity",
   canadianEquity: "Canadian Equity",
   globalEquity: "Global Equity",
+  preferredShares: "Preferred Shares",
   cash: "Cash",
 };
 
@@ -425,6 +428,7 @@ export function useReportData(
         usEquity: 0,
         canadianEquity: 0,
         globalEquity: 0,
+        preferredShares: 0,
         cash: 0,
       };
       for (const h of activeHoldings) {
