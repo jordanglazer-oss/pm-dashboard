@@ -18,7 +18,7 @@ type Props = {
   stocks: ScoredStock[];
   onScoreStock?: (ticker: string) => Promise<void>;
   onUpdateCostBasis?: (ticker: string, costBasis: number) => void;
-  onRefreshData?: (ticker: string, data: { name?: string; sector?: string; price?: number; technicals?: unknown; healthData?: unknown; riskAlert?: unknown }) => void;
+  onRefreshData?: (ticker: string, data: { name?: string; sector?: string; price?: number; beta?: number; technicals?: unknown; healthData?: unknown; riskAlert?: unknown }) => void;
   onUpdateFundData?: (ticker: string, fundData: import("@/app/lib/types").FundData) => void;
   onUpdateMarketData?: (data: Partial<import("@/app/lib/types").MarketData>) => void;
 };
@@ -163,6 +163,7 @@ export function StockScoring({ stocks, onScoreStock, onUpdateCostBasis, onRefres
           name: r.name,
           sector: r.sector,
           price: r.price,
+          beta: r.beta,
           technicals: r.technicals,
           healthData: r.healthData,
           riskAlert: r.riskAlert,
