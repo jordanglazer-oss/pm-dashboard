@@ -1,6 +1,6 @@
 "use client";
 
-import React, { useState, useCallback } from "react";
+import React, { useState, useCallback, useMemo } from "react";
 import Link from "next/link";
 import { useStocks } from "@/app/lib/StockContext";
 import { SCORE_GROUPS, MAX_SCORE, INSTRUMENT_LABELS } from "@/app/lib/types";
@@ -154,6 +154,35 @@ export function PortfolioOverview() {
     setUiPref,
   } = useStocks();
   const [dashFilter, setDashFilter] = useState<DashboardFilter>("all");
+
+  // Portfolio β — weighted average across individual stocks only, using
+  // the per-stock portfolio weight. ETFs and mutual funds are excluded
+  // (their beta is a different series and including them double-counts
+  // the stocks they hold). Falls back to equal-weight if weights sum to
+  // zero so the chip still renders something meaningful. Source values
+  // are auto-refreshed from Yahoo summaryDetail.beta on Refresh All Data.
+  const portfolioBeta = useMemo(() => {
+    const individualStocks = portfolioStocks.filter(
+      (s) => !s.instrumentType || s.instrumentType === "stock"
+    );
+    if (individualStocks.length === 0) return null;
+    const totalWeight = individualStocks.reduce(
+      (sum, s) => sum + (s.weights.portfolio || 0),
+      0
+    );
+    if (totalWeight > 0) {
+      const weighted = individualStocks.reduce(
+        (sum, s) => sum + s.beta * (s.weights.portfolio || 0),
+        0
+      );
+      return weighted / totalWeight;
+    }
+    return (
+      individualStocks.reduce((sum, s) => sum + s.beta, 0) /
+      individualStocks.length
+    );
+  }, [portfolioStocks]);
+
   const fundSort = (uiPrefs["fundSort"] as FundSortField) || "ticker";
   const fundSortDir = (uiPrefs["fundSortDir"] as SortDir) || "desc";
   const setFundSort = (f: FundSortField) => setUiPref("fundSort", f);
@@ -600,6 +629,14 @@ export function PortfolioOverview() {
       <section className="rounded-[30px] border border-slate-200 bg-white p-5 shadow-sm">
         <div className="flex items-center gap-3 mb-4 flex-wrap">
           <h2 className="text-lg font-bold text-slate-800">Portfolio Sector Exposure</h2>
+          {portfolioBeta != null && (
+            <span
+              className="rounded-full bg-slate-100 px-3 py-1 text-xs font-bold text-slate-700"
+              title="Weighted average beta across individual stocks only (excludes ETFs/mutual funds). Refreshed from Yahoo on Refresh All Data."
+            >
+              Portfolio {"\u03B2"} {portfolioBeta.toFixed(2)}
+            </span>
+          )}
           <span className="text-sm text-slate-400">Alpha picks only · {alphaCount} stocks (equal-weighted)</span>
           <span className="ml-auto text-xs text-slate-400">
             S&amp;P weights:{" "}
