@@ -25,35 +25,9 @@ export default function DashboardPage() {
 
   const regime = marketData.riskRegime;
 
-  // Portfolio-level beta — individual stocks only, weighted by the per-stock
-  // portfolio weight. ETFs and mutual funds are excluded because (a) their
-  // betas are reported on a different basis (Morningstar BetaM36 vs equity
-  // β), and (b) including them double-counts the stocks held inside the
-  // fund. If per-stock weights don't sum to a positive number (e.g. all
-  // zero), fall back to an equal-weighted average across the same stock
-  // subset so the tile still renders something meaningful.
-  const portfolioStocks = scoredStocks.filter((s) => s.bucket === "Portfolio");
-  const portfolioBeta = (() => {
-    const individualStocks = portfolioStocks.filter(
-      (s) => !s.instrumentType || s.instrumentType === "stock"
-    );
-    if (individualStocks.length === 0) return null;
-    const totalWeight = individualStocks.reduce(
-      (sum, s) => sum + (s.weights.portfolio || 0),
-      0
-    );
-    if (totalWeight > 0) {
-      const weighted = individualStocks.reduce(
-        (sum, s) => sum + s.beta * (s.weights.portfolio || 0),
-        0
-      );
-      return weighted / totalWeight;
-    }
-    return (
-      individualStocks.reduce((sum, s) => sum + s.beta, 0) /
-      individualStocks.length
-    );
-  })();
+  // Portfolio β is now rendered inside PortfolioOverview next to the
+  // Sector Exposure header — kept alongside other portfolio-level risk
+  // context rather than in the market regime card.
 
   async function handleAdd() {
     const ticker = newTicker.trim().toUpperCase();
@@ -195,11 +169,6 @@ export default function DashboardPage() {
               }`}>
                 {regime}
               </span>
-              {portfolioBeta != null && (
-                <span className="rounded-full bg-white/60 px-3 py-1 text-xs font-bold text-slate-700">
-                  Portfolio {"\u03B2"} {portfolioBeta.toFixed(2)}
-                </span>
-              )}
             </div>
 
             {regime === "Risk-Off" && (
