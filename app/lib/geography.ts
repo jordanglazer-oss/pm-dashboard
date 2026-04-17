@@ -82,8 +82,19 @@ export const SYMBOL_COUNTRY: Record<string, Country> = {
 export function countryFor(symbol: string): Country {
   const explicit = SYMBOL_COUNTRY[symbol];
   if (explicit) return explicit;
-  if (symbol.endsWith("-T")) return "Canada";
+  // .U / -U.TO before the .TO check — these are USD-denominated CAD-listed
+  // ETFs (e.g. XUS.U) tracking US markets. Underlying exposure is US.
   if (symbol.endsWith(".U") || symbol.endsWith("-U.TO")) return "United States";
+  if (symbol.endsWith("-T")) return "Canada";
+  // Yahoo Finance suffixes for Canadian listings: .TO (TSX), .V (TSXV),
+  // .CN (CSE), .NE (NEO Exchange).
+  if (
+    symbol.endsWith(".TO") ||
+    symbol.endsWith(".V") ||
+    symbol.endsWith(".CN") ||
+    symbol.endsWith(".NE")
+  )
+    return "Canada";
   return "United States";
 }
 

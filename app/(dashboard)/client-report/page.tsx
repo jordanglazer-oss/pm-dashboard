@@ -51,9 +51,36 @@ type ClientPortfolioResult = {
   totalValue: number;
   /** PIM-style allocation pie: Fixed Income, US Equity, etc. (no "Core ETFs" bucket). */
   allocation: ReportAllocationSlice[];
-  /** Look-through xray — individual stock/preferred share holdings only. */
+  /** Look-through xray — individual stock holdings only (preferred shares excluded). */
   xray: ReportXRayRow[];
 };
+
+/**
+ * Convert user-typed preferred share tickers to the format Yahoo Finance
+ * expects for its chart API. Common typing conventions:
+ *   "BMO.PR.E"  → "BMO-PE.TO"   (Canadian preferred, dotted format)
+ *   "CM.PR.O"   → "CM-PO.TO"    (Canadian preferred, dotted format)
+ *   "BAC.PRA"   → "BAC-PA"      (US preferred, dotted format)
+ *   "BAC.PR.A"  → "BAC-PA"      (US preferred, dotted with separator)
+ *   "BMO-PE.TO" → "BMO-PE.TO"   (already Yahoo format — no change)
+ *   "BAC-PA"    → "BAC-PA"      (already Yahoo format — no change)
+ *
+ * If we can't tell whether a `.PR.` ticker is US or Canadian, we default
+ * to Canadian (.TO suffix) since that's the most common case where this
+ * format is used. For US preferreds, Yahoo's format omits the exchange.
+ */
+function normalizePreferredTicker(ticker: string): string {
+  const t = ticker.trim().toUpperCase();
+  // Already in Yahoo format
+  if (/^[A-Z]+-P[A-Z]+(\.[A-Z]+)?$/.test(t)) return t;
+  // Canadian dotted format: TICKER.PR.LETTER → TICKER-PLETTER.TO
+  const cad = t.match(/^([A-Z]+)\.PR\.([A-Z]+)$/);
+  if (cad) return `${cad[1]}-P${cad[2]}.TO`;
+  // US dotted format: TICKER.PRLETTER → TICKER-PLETTER (no exchange)
+  const us = t.match(/^([A-Z]+)\.PR([A-Z]+)$/);
+  if (us) return `${us[1]}-P${us[2]}`;
+  return t;
+}
 
 const VALID_PROFILES: readonly PimProfileType[] = ["balanced", "growth", "allEquity"];
 
@@ -164,16 +191,19 @@ export default function ClientReportPage() {
     async (id: string, ticker: string) => {
       const t = ticker.trim().toUpperCase();
       if (!t) return;
+      // Convert preferred share formats to Yahoo's expected ticker so we
+      // can resolve the name (e.g. BMO.PR.E → BMO-PE.TO).
+      const yahooTicker = normalizePreferredTicker(t);
       try {
         const res = await fetch("/api/prices", {
           method: "POST",
           headers: { "Content-Type": "application/json" },
-          body: JSON.stringify({ tickers: [t] }),
+          body: JSON.stringify({ tickers: [yahooTicker] }),
           cache: "no-store",
         });
         if (!res.ok) return;
         const payload = await res.json();
-        const name = payload?.names?.[t];
+        const name = payload?.names?.[yahooTicker];
         if (name) {
           setClientPositions((prev) =>
             prev.map((p) =>
@@ -232,8 +262,11 @@ export default function ClientReportPage() {
           setClientLoading(false);
           return;
         }
-        // Fetch names + quoteTypes for all tickers.
-        const tickers = validPositions.map((p) => p.ticker.trim().toUpperCase());
+        // Fetch names + quoteTypes for all tickers. Normalize preferred
+        // share inputs (e.g. BMO.PR.E → BMO-PE.TO) so Yahoo can resolve them.
+        const tickers = validPositions.map((p) =>
+          normalizePreferredTicker(p.ticker.trim().toUpperCase())
+        );
         let names: Record<string, string | null> = {};
         let quoteTypes: Record<string, string | null> = {};
         if (tickers.length > 0) {
@@ -254,12 +287,13 @@ export default function ClientReportPage() {
         positions = validPositions
           .map((p) => {
             const ticker = p.ticker.trim().toUpperCase();
+            const yahooTicker = normalizePreferredTicker(ticker);
             return {
-              ticker,
-              name: p.name.trim() || names[ticker] || ticker,
+              ticker, // Keep the user's original ticker for display/classification.
+              name: p.name.trim() || names[yahooTicker] || ticker,
               weight: (p.weight / rawTotal) * 100,
               marketValue: 0,
-              quoteType: quoteTypes[ticker] ?? null,
+              quoteType: quoteTypes[yahooTicker] ?? null,
             };
           })
           .sort((a, b) => b.weight - a.weight);
@@ -274,7 +308,9 @@ export default function ClientReportPage() {
           setClientLoading(false);
           return;
         }
-        const tickers = validPositions.map((p) => p.ticker.trim().toUpperCase());
+        const tickers = validPositions.map((p) =>
+          normalizePreferredTicker(p.ticker.trim().toUpperCase())
+        );
         let prices: Record<string, number | null> = {};
         let names: Record<string, string | null> = {};
         let quoteTypes: Record<string, string | null> = {};
@@ -299,14 +335,15 @@ export default function ClientReportPage() {
         }[] = [];
         for (const p of validPositions) {
           const ticker = p.ticker.trim().toUpperCase();
-          const price = prices[ticker] ?? prices[p.ticker.trim()] ?? null;
+          const yahooTicker = normalizePreferredTicker(ticker);
+          const price = prices[yahooTicker] ?? prices[ticker] ?? prices[p.ticker.trim()] ?? null;
           if (price == null || price <= 0) continue;
           positionsWithValue.push({
-            ticker,
-            name: p.name.trim() || names[ticker] || ticker,
+            ticker, // Keep the user's original ticker for display/classification.
+            name: p.name.trim() || names[yahooTicker] || ticker,
             units: p.units, price,
             marketValue: p.units * price,
-            quoteType: quoteTypes[ticker] ?? null,
+            quoteType: quoteTypes[yahooTicker] ?? null,
           });
         }
 
@@ -328,15 +365,16 @@ export default function ClientReportPage() {
         cashWeight = totalValue > 0 ? (clientCash / totalValue) * 100 : 0;
       }
 
-      // ── Step 2: Classify each position for PIM-style allocation pie ──
-      // Categories: Fixed Income, Alternatives, US Equity, Canadian Equity, Global Equity
-      // No "Core ETFs" bucket — everything is classified by its underlying exposure.
+      // ── Step 2: Set up classification helpers + allocation buckets ──
+      // Categories: Fixed Income, Alternatives, US Equity, Canadian Equity,
+      // Global Equity, Preferred Shares, Cash. No "Core ETFs" bucket.
       const SLICE_COLORS_CLIENT: Record<string, string> = {
         fixedIncome: "#5b6b8a",
         alternatives: "#a16207",
         usEquity: "#005DAA",
         canadianEquity: "#c8102e",
         globalEquity: "#0d9488",
+        preferredShares: "#7c3aed",
         cash: "#94a3b8",
       };
       const SLICE_LABELS_CLIENT: Record<string, string> = {
@@ -345,11 +383,13 @@ export default function ClientReportPage() {
         usEquity: "US Equity",
         canadianEquity: "Canadian Equity",
         globalEquity: "Global Equity",
+        preferredShares: "Preferred Shares",
         cash: "Cash",
       };
       const allocTotals: Record<string, number> = {
         fixedIncome: 0, alternatives: 0,
-        usEquity: 0, canadianEquity: 0, globalEquity: 0, cash: 0,
+        usEquity: 0, canadianEquity: 0, globalEquity: 0,
+        preferredShares: 0, cash: 0,
       };
 
       const isBondLike = (name: string, qt: string | null): boolean => {
@@ -363,34 +403,30 @@ export default function ClientReportPage() {
         const u = name.toUpperCase();
         return /\b(PREMIUM\s*YIELD|COVERED\s*CALL|OPTION|ALTERNATIVE|HEDGE|REAL\s*ESTATE|REIT|INFRASTRUCTURE)\b/.test(u);
       };
-
-      for (const p of positions) {
-        if (isBondLike(p.name, p.quoteType)) {
-          allocTotals.fixedIncome += p.weight;
-        } else if (isAltLike(p.name)) {
-          allocTotals.alternatives += p.weight;
-        } else {
-          const c = countryFor(p.ticker);
-          if (c === "Canada") allocTotals.canadianEquity += p.weight;
-          else if (c === "Global") allocTotals.globalEquity += p.weight;
-          else allocTotals.usEquity += p.weight;
+      // Preferred share detection — covers both common typing formats and
+      // Yahoo's native format. Examples that match:
+      //   BMO.PR.E, CM.PR.O   (Canadian common)
+      //   BAC.PRA, BAC.PR.A   (US common)
+      //   BMO-PE.TO           (Canadian Yahoo)
+      //   BAC-PA              (US Yahoo)
+      // Also matches by name when "Preferred" / "Pref" / "Pfd" appears.
+      const isPreferredShare = (ticker: string, name: string): boolean => {
+        const t = ticker.trim().toUpperCase();
+        if (/^[A-Z]+\.PR\.[A-Z]+$/.test(t)) return true;
+        if (/^[A-Z]+\.PR[A-Z]+$/.test(t)) return true;
+        if (/^[A-Z]+-P[A-Z]+(\.[A-Z]+)?$/.test(t)) return true;
+        if (name) {
+          const u = name.toUpperCase();
+          if (/\bPREFERRED\b|\bPREF\b|\bPFD\b/.test(u)) return true;
         }
-      }
-      if (cashWeight > 0.05) allocTotals.cash += cashWeight;
+        return false;
+      };
 
-      const allocation: ReportAllocationSlice[] = Object.entries(allocTotals)
-        .filter(([, w]) => w > 0.05)
-        .map(([key, weight]) => ({
-          key: key as ReportAllocationSlice["key"],
-          label: SLICE_LABELS_CLIENT[key] ?? key,
-          weight,
-          color: SLICE_COLORS_CLIENT[key] ?? "#94a3b8",
-        }))
-        .sort((a, b) => b.weight - a.weight);
-
-      // ── Step 3: Look-through X-ray expansion ──
-      // Same logic as useReportData: recursively expand funds/ETFs into
-      // underlying stock and preferred share holdings.
+      // ── Step 3: Look-through X-ray expansion + allocation classification ──
+      // Recursively expand funds/ETFs into underlying stock holdings.
+      // Allocation is driven from look-through leaves so a CAD-listed
+      // ETF tracking US markets (e.g. XSP.TO) correctly classifies as
+      // US Equity, not Canadian Equity (its listing exchange).
       const normalizeForApi = (sym: string) => sym.replace(/-T$/, ".TO");
 
       const fundInfoCache = new Map<
@@ -464,6 +500,14 @@ export default function ClientReportPage() {
         xrayAcc.set(key, prev);
       };
 
+      // Helper: classify an equity leaf into a country bucket.
+      const addEquityToAllocation = (sym: string, weightPct: number) => {
+        const c = countryFor(sym);
+        if (c === "Canada") allocTotals.canadianEquity += weightPct;
+        else if (c === "Global") allocTotals.globalEquity += weightPct;
+        else allocTotals.usEquity += weightPct;
+      };
+
       const MAX_DEPTH = 4;
       const expandClient = async (
         sym: string, name: string, weightPct: number,
@@ -471,20 +515,42 @@ export default function ClientReportPage() {
       ): Promise<void> => {
         if (weightPct <= 0 || !sym) return;
         const st = stockBySymbol.get(sym);
+
+        // Preferred shares discovered during recursion are not equity —
+        // contribute to the Preferred Shares bucket, not equity, and don't
+        // include in the equity look-through xray.
+        if (isPreferredShare(sym, st?.name || name)) {
+          allocTotals.preferredShares += weightPct;
+          return;
+        }
+
         const isFund = looksLikeFund(sym, name, st, qt);
         if (!isFund) {
-          // Stock or preferred share leaf — include in xray.
+          // Stock leaf — include in xray AND classify by country for allocation.
           const direct = depth === 0 ? weightPct : 0;
           const lookThrough = depth === 0 ? 0 : weightPct;
           addXRay(sym, st?.name || name, direct, lookThrough);
+          addEquityToAllocation(sym, weightPct);
           return;
         }
-        // Bond/FI funds: skip expansion entirely (not equity).
+
+        // Bond/FI funds discovered during recursion: don't expand, don't
+        // contribute to equity. They've already been classified at top
+        // level if they were the input position.
         if (isBondLike(name, qt)) return;
-        if (depth >= MAX_DEPTH) return;
+
+        if (depth >= MAX_DEPTH) {
+          // Can't expand further — fall back to fund's own country for allocation.
+          addEquityToAllocation(sym, weightPct);
+          return;
+        }
         const info = await getFundInfo(sym);
         const top = info?.topHoldings ?? [];
-        if (!top.length) return;
+        if (!top.length) {
+          // Couldn't resolve underlying — use the fund's own country.
+          addEquityToAllocation(sym, weightPct);
+          return;
+        }
         await Promise.all(
           top.map((h) => {
             const childSym = (h.symbol || h.name || "").trim();
@@ -495,14 +561,39 @@ export default function ClientReportPage() {
         );
       };
 
-      // Run look-through on all positions.
-      // Build a quoteType map from the positions for the fund heuristic.
+      // Run look-through on all positions. Top-level branch by category:
+      // preferred shares → preferredShares bucket; bond funds → fixedIncome;
+      // alt funds → alternatives; everything else → equity look-through.
       const qtMap = new Map(positions.map((p) => [p.ticker, p.quoteType]));
       await Promise.all(
-        positions.map((p) =>
-          expandClient(p.ticker, p.name, p.weight, 0, qtMap.get(p.ticker) ?? null)
-        )
+        positions.map(async (p) => {
+          if (isPreferredShare(p.ticker, p.name)) {
+            allocTotals.preferredShares += p.weight;
+            return; // No xray entry for preferred shares.
+          }
+          if (isBondLike(p.name, p.quoteType)) {
+            allocTotals.fixedIncome += p.weight;
+            return; // No look-through for bonds.
+          }
+          if (isAltLike(p.name)) {
+            allocTotals.alternatives += p.weight;
+            return; // No look-through for alts.
+          }
+          await expandClient(p.ticker, p.name, p.weight, 0, qtMap.get(p.ticker) ?? null);
+        })
       );
+
+      if (cashWeight > 0.05) allocTotals.cash += cashWeight;
+
+      const allocation: ReportAllocationSlice[] = Object.entries(allocTotals)
+        .filter(([, w]) => w > 0.05)
+        .map(([key, weight]) => ({
+          key: key as ReportAllocationSlice["key"],
+          label: SLICE_LABELS_CLIENT[key] ?? key,
+          weight,
+          color: SLICE_COLORS_CLIENT[key] ?? "#94a3b8",
+        }))
+        .sort((a, b) => b.weight - a.weight);
 
       const xray: ReportXRayRow[] = Array.from(xrayAcc.entries())
         .map(([symbol, v]) => ({
