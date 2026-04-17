@@ -270,10 +270,15 @@ export function PortfolioOverview() {
         name?: string;
         sector?: string;
         price?: number;
+        beta?: number;
         technicals?: TechnicalIndicators;
         healthData?: HealthData;
         riskAlert?: RiskAlert;
       }> = data.results || [];
+      // Map ticker → current stock so we can check instrumentType when
+      // deciding whether to accept Yahoo's beta (funds use a different
+      // series via /api/fund-data and shouldn't be overwritten here).
+      const stockByTicker = new Map(allStocks.map((s) => [s.ticker, s] as const));
       let updated = 0;
       for (const r of results) {
         if (r.error) continue;
@@ -285,11 +290,16 @@ export function PortfolioOverview() {
           };
           updateTechnicals(r.ticker, r.technicals, r.riskAlert || fallbackAlert);
         }
-        if (r.name || r.sector) {
-          updateStockFields(r.ticker, {
-            ...(r.name ? { name: r.name } : {}),
-            ...(r.sector ? { sector: r.sector } : {}),
-          });
+        // Only persist Yahoo's beta for individual stocks — ETFs and
+        // mutual funds have their beta populated separately via fund-data.
+        const s = stockByTicker.get(r.ticker);
+        const isStock = !s?.instrumentType || s.instrumentType === "stock";
+        const fieldUpdate: Partial<typeof s> = {};
+        if (r.name) fieldUpdate.name = r.name;
+        if (r.sector) fieldUpdate.sector = r.sector;
+        if (isStock && typeof r.beta === "number") fieldUpdate.beta = r.beta;
+        if (Object.keys(fieldUpdate).length > 0) {
+          updateStockFields(r.ticker, fieldUpdate);
         }
         updated++;
       }

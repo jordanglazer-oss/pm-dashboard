@@ -25,11 +25,35 @@ export default function DashboardPage() {
 
   const regime = marketData.riskRegime;
 
-  // Portfolio-level beta
+  // Portfolio-level beta — individual stocks only, weighted by the per-stock
+  // portfolio weight. ETFs and mutual funds are excluded because (a) their
+  // betas are reported on a different basis (Morningstar BetaM36 vs equity
+  // β), and (b) including them double-counts the stocks held inside the
+  // fund. If per-stock weights don't sum to a positive number (e.g. all
+  // zero), fall back to an equal-weighted average across the same stock
+  // subset so the tile still renders something meaningful.
   const portfolioStocks = scoredStocks.filter((s) => s.bucket === "Portfolio");
-  const portfolioBeta = portfolioStocks.length > 0
-    ? portfolioStocks.reduce((sum, s) => sum + s.beta, 0) / portfolioStocks.length
-    : null;
+  const portfolioBeta = (() => {
+    const individualStocks = portfolioStocks.filter(
+      (s) => !s.instrumentType || s.instrumentType === "stock"
+    );
+    if (individualStocks.length === 0) return null;
+    const totalWeight = individualStocks.reduce(
+      (sum, s) => sum + (s.weights.portfolio || 0),
+      0
+    );
+    if (totalWeight > 0) {
+      const weighted = individualStocks.reduce(
+        (sum, s) => sum + s.beta * (s.weights.portfolio || 0),
+        0
+      );
+      return weighted / totalWeight;
+    }
+    return (
+      individualStocks.reduce((sum, s) => sum + s.beta, 0) /
+      individualStocks.length
+    );
+  })();
 
   async function handleAdd() {
     const ticker = newTicker.trim().toUpperCase();

@@ -232,6 +232,10 @@ type RefreshResult = {
   name?: string;
   sector?: string;
   price?: number;
+  /** Yahoo's published 3Y beta from summaryDetail; populated for stocks
+   *  (not ETFs/mutual funds, which use Morningstar BetaM36 via
+   *  /api/fund-data instead). Used by the Portfolio β tile. */
+  beta?: number;
   technicals?: TechnicalIndicators;
   healthData?: HealthData;
   riskAlert?: RiskAlert;
@@ -278,6 +282,25 @@ async function refreshSingleStock(
       technicals = computeTechnicals(priceHistory);
     }
 
+    // Extract beta (Yahoo 3Y). summaryDetail.beta is the standard field;
+    // defaultKeyStatistics.beta3Year is a backup some tickers expose.
+    // Sanity-clamp to [-3, 5]: anything outside that range is almost
+    // certainly a data error (e.g. a leveraged/inverse ETF or a ticker
+    // with too-short a price history), and we don't want a bad reading
+    // to blow up the weighted portfolio β.
+    let beta: number | undefined;
+    if (modules) {
+      const summary = modules.summaryDetail as Record<string, Record<string, unknown>> | undefined;
+      const keyStats = modules.defaultKeyStatistics as Record<string, Record<string, unknown>> | undefined;
+      const raw =
+        (summary?.beta?.raw as number | undefined) ??
+        (typeof summary?.beta === "number" ? (summary.beta as number) : undefined) ??
+        (keyStats?.beta3Year?.raw as number | undefined);
+      if (typeof raw === "number" && isFinite(raw) && raw >= -3 && raw <= 5) {
+        beta = parseFloat(raw.toFixed(3));
+      }
+    }
+
     // Extract health data
     const healthData = extractHealthData(modules ?? undefined, price);
 
@@ -294,6 +317,7 @@ async function refreshSingleStock(
       name,
       sector,
       price,
+      beta,
       technicals: technicals ?? undefined,
       healthData,
       riskAlert,
