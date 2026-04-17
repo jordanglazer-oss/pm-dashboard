@@ -310,10 +310,18 @@ export function useReportData(
         fetch("/api/kv/fund-data-cache", { cache: "no-store" }).catch(() => null),
       ]);
 
-      // Load sub-fund cache entries. Shape: { "IVV": { topHoldings: [...] } }.
-      // Empty object if the cache has never been populated — we just
-      // degrade to one-level look-through in that case.
-      let fundCache: Record<string, { topHoldings?: FundHolding[] }> = {};
+      // Load sub-fund cache entries. Shape:
+      //   { "IVV": { topHoldings: [...], sectorWeightings: [...] } }.
+      // The sectorWeightings field is critical: we rely on the fund's
+      // published sector mix to avoid the top-holdings bias (top 10
+      // holdings typically cover 30-40% of a broad ETF and are
+      // concentrated in the largest names, which systematically skews a
+      // rollup by sector). The previous typing omitted sectorWeightings,
+      // causing them to be silently dropped even when present in Redis.
+      let fundCache: Record<string, {
+        topHoldings?: FundHolding[];
+        sectorWeightings?: FundSectorWeight[];
+      }> = {};
       if (fundCacheRes?.ok) {
         try {
           const payload = await fundCacheRes.json();
@@ -565,11 +573,19 @@ export function useReportData(
         }
         // 2. Persisted fund-data-cache (populated by Refresh All's
         //    heavy-child crawl + write-throughs from stock pages).
+        //    IMPORTANT: only return early if the cache entry has
+        //    sectorWeightings. Without them, the recursive expander
+        //    falls back to rolling up sectors from top-10 holdings — a
+        //    heavily biased sample for broad ETFs (top 10 typically =
+        //    30-40% of the fund, dominated by large-caps, which for
+        //    TSX funds means banks). If the cache lacks sectorWeightings
+        //    we fall through to the live fetch to get them, even though
+        //    topHoldings are present.
         const cached = fundCache[key] ?? fundCache[altKey];
-        if (cached?.topHoldings?.length) {
+        if (cached?.topHoldings?.length && cached.sectorWeightings?.length) {
           const info = {
             topHoldings: cached.topHoldings,
-            sectorWeightings: undefined as FundSectorWeight[] | undefined,
+            sectorWeightings: cached.sectorWeightings,
           };
           fundInfoCache.set(key, info);
           return info;
@@ -683,8 +699,19 @@ export function useReportData(
         }
 
         if (!top.length) return;
-        // Children only contribute sectors when this fund didn't already.
-        const childCollectSectors = collectSectors && !hasFundSectors;
+        // Children only contribute sectors when this fund didn't already
+        // provide sectorWeightings. Even then, we only recurse into
+        // children for sector purposes if the top holdings are a
+        // reasonably complete sample of the fund — otherwise the
+        // rollup biases toward the largest names (typically banks in
+        // TSX funds), which systematically overstates Financials.
+        // Threshold: sum of child weights ≥ 70% of the fund. Below
+        // that, we skip sector contribution entirely for this branch
+        // rather than present a biased estimate.
+        const topHoldingsCoverage = top.reduce((s, h) => s + (h.weight || 0), 0);
+        const topHoldingsReliable = topHoldingsCoverage >= 70;
+        const childCollectSectors =
+          collectSectors && !hasFundSectors && topHoldingsReliable;
         await Promise.all(
           top.map((h) => {
             const childSym = (h.symbol || h.name || "").trim();
