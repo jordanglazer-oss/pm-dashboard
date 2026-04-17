@@ -35,6 +35,7 @@
 import { useCallback, useEffect, useState } from "react";
 import { useStocks } from "./StockContext";
 import { countryFor, CORE_ETF_FAMILIES, coreFamilyFor, isCoreEtf, type Country } from "./geography";
+import { normalizeSector } from "./scoring";
 import {
   alignSeries,
   annualizedReturn,
@@ -495,7 +496,13 @@ export function useReportData(
       const addSector = (name: string, w: number) => {
         if (!name || w <= 0) return;
         if (NON_EQUITY_SECTOR_RE.test(name)) return;
-        sectorMap.set(name, (sectorMap.get(name) ?? 0) + w);
+        // Normalize provider-specific sector names to GICS labels so
+        // Yahoo's "Financial Services" folds into "Financials",
+        // "Consumer Cyclical" into "Consumer Discretionary",
+        // "Information Technology" into "Technology", etc. Without this
+        // the same economic sector splits across multiple buckets.
+        const key = normalizeSector(name);
+        sectorMap.set(key, (sectorMap.get(key) ?? 0) + w);
       };
 
       const xrayAcc = new Map<
