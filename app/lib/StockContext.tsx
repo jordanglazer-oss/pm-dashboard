@@ -7,6 +7,17 @@ import { computeScores, isOffensiveSector, isScoreable } from "./scoring";
 import { defaultMarketData } from "./defaults";
 import { pimModelSeed } from "./pim-seed";
 
+// Locked equity holdings: specialty funds whose weightInClass is driven by
+// the per-model Balanced weight (%) input on the stock page — NOT by the
+// residual-redistribution math in rebalanceStockWeights. Without locking,
+// adding or removing any individual stock shifts their weight by a few bps
+// (the rebalancer scales the entire non-stock pool proportionally), which
+// propagates through to the PIM Model / Positioning tabs and the
+// automated performance numbers. Core index ETFs (XSP, XUS, XUH, XUU, XSU)
+// stay unlocked — they are the intended absorbers of residual equity
+// weight when stocks come and go.
+const LOCKED_EQUITY_SYMBOLS = new Set(["FID5982-T", "GRNJ"]);
+
 export type ChartAnalysisEntry = {
   analysis: string;
   range: string;
@@ -365,27 +376,41 @@ export function StockProvider({ children }: { children: React.ReactNode }) {
     const equityHoldings = holdings.filter((h) => h.assetClass === "equity");
     const nonEquity = holdings.filter((h) => h.assetClass !== "equity");
 
-    // Split equity holdings: individual stocks vs ETFs/funds (Core ETFs absorb freed weight)
+    // Split equity holdings into three pools:
+    //   1) individual stocks — locked at refPerStock
+    //   2) locked specialty funds — pass-through, keep current weightInClass
+    //   3) core ETFs — absorb residual equity weight proportionally
     const stockHoldings = equityHoldings.filter((h) => seedStockSymbols.has(h.symbol));
-    const etfHoldings = equityHoldings.filter((h) => !seedStockSymbols.has(h.symbol));
+    const lockedHoldings = equityHoldings.filter(
+      (h) => !seedStockSymbols.has(h.symbol) && LOCKED_EQUITY_SYMBOLS.has(h.symbol)
+    );
+    const etfHoldings = equityHoldings.filter(
+      (h) => !seedStockSymbols.has(h.symbol) && !LOCKED_EQUITY_SYMBOLS.has(h.symbol)
+    );
 
-    if (stockHoldings.length === 0 && etfHoldings.length === 0) return holdings;
+    if (stockHoldings.length === 0 && etfHoldings.length === 0 && lockedHoldings.length === 0) return holdings;
 
     // Each stock keeps the SAME per-stock weight as the PIM base model
     const stockTotal = refPerStock * stockHoldings.length;
 
-    // ALL non-stock equity holdings (ETFs/funds) absorb the remainder proportionally
-    // Use PIM base model ratios as reference for proportional distribution
+    // Locked specialty funds keep their existing weightInClass untouched
+    const lockedTotal = lockedHoldings.reduce((s, h) => s + h.weightInClass, 0);
+
+    // Core (unlocked) ETFs absorb the remainder proportionally per PIM seed ratios
     const seedEtfWeights = new Map<string, number>();
     if (pimBaseGroup) {
       for (const h of pimBaseGroup.holdings) {
-        if (h.assetClass === "equity" && !seedStockSymbols.has(h.symbol)) {
+        if (
+          h.assetClass === "equity" &&
+          !seedStockSymbols.has(h.symbol) &&
+          !LOCKED_EQUITY_SYMBOLS.has(h.symbol)
+        ) {
           seedEtfWeights.set(h.symbol, h.weightInClass);
         }
       }
     }
 
-    const etfTotal = Math.max(0, 1.0 - stockTotal);
+    const etfTotal = Math.max(0, 1.0 - stockTotal - lockedTotal);
     const seedEtfTotal = [...seedEtfWeights.values()].reduce((s, v) => s + v, 0);
 
     const rebalancedEtfs = etfHoldings.map((h) => {
@@ -399,6 +424,7 @@ export function StockProvider({ children }: { children: React.ReactNode }) {
 
     return [
       ...nonEquity,
+      ...lockedHoldings, // untouched — weightInClass preserved exactly
       ...rebalancedEtfs,
       ...stockHoldings.map((h) => ({ ...h, weightInClass: refPerStock })),
     ];
