@@ -54,7 +54,7 @@ function pctClean(v: number): string {
   return p.toFixed(2) + "%";
 }
 
-type SortField = "name" | "symbol" | "currency" | "weightInClass" | "weightInPortfolio" | "liveWeight" | "cadModelWeight" | "usdModelWeight";
+type SortField = "name" | "symbol" | "currency" | "weightInClass" | "weightInPortfolio" | "cadModelWeight" | "usdModelWeight";
 type SortDir = "asc" | "desc";
 
 function SortIcon({ field, sortField, sortDir }: { field: SortField; sortField: SortField; sortDir: SortDir }) {
@@ -369,8 +369,6 @@ export function PimModel({ groups }: Props) {
     return { cad: cadWeight / total, usd: usdWeight / total };
   }, [computedHoldings]);
 
-  const hasLiveWeights = computedHoldings.some((h) => h.liveWeight != null);
-
   // Sort handler
   const handleSort = (field: SortField) => {
     if (sortField === field) {
@@ -390,7 +388,6 @@ export function PimModel({ groups }: Props) {
         case "currency": cmp = a.currency.localeCompare(b.currency); break;
         case "weightInClass": cmp = a.weightInClass - b.weightInClass; break;
         case "weightInPortfolio": cmp = a.weightInPortfolio - b.weightInPortfolio; break;
-        case "liveWeight": cmp = (a.liveWeight ?? -1) - (b.liveWeight ?? -1); break;
         case "cadModelWeight": cmp = (a.cadModelWeight ?? -1) - (b.cadModelWeight ?? -1); break;
         case "usdModelWeight": cmp = (a.usdModelWeight ?? -1) - (b.usdModelWeight ?? -1); break;
       }
@@ -618,11 +615,6 @@ export function PimModel({ groups }: Props) {
                     <th className={`text-right ${thClass}`} onClick={() => handleSort("weightInPortfolio")}>
                       Target Wt<SortIcon field="weightInPortfolio" sortField={sortField} sortDir={sortDir} />
                     </th>
-                    {hasLiveWeights && (
-                      <th className={`text-right ${thClass}`} onClick={() => handleSort("liveWeight")}>
-                        Live Wt<SortIcon field="liveWeight" sortField={sortField} sortDir={sortDir} />
-                      </th>
-                    )}
                     <th className={`text-right ${thClass}`} onClick={() => handleSort("cadModelWeight")}>
                       CAD Model<SortIcon field="cadModelWeight" sortField={sortField} sortDir={sortDir} />
                     </th>
@@ -649,20 +641,6 @@ export function PimModel({ groups }: Props) {
                         <span className={`inline-block rounded px-1.5 py-0.5 text-[10px] font-bold ${h.currency === "CAD" ? "bg-red-50 text-red-600" : "bg-green-50 text-green-600"}`}>{h.currency}</span>
                       </td>
                       <td className="py-2 px-2 text-right font-mono text-xs font-semibold">{pctClean(h.weightInPortfolio)}</td>
-                      {hasLiveWeights && (
-                        <td className="py-2 px-2 text-right font-mono text-xs">
-                          {h.liveWeight != null ? (
-                            <span className="inline-flex items-center gap-1">
-                              <span className="font-semibold">{pctClean(h.liveWeight)}</span>
-                              {h.driftBps != null && h.driftBps !== 0 && (
-                                <span className={`text-[9px] font-bold ${h.driftBps > 0 ? "text-emerald-600" : "text-red-500"}`}>
-                                  {h.driftBps > 0 ? "+" : ""}{h.driftBps}bp
-                                </span>
-                              )}
-                            </span>
-                          ) : <span className="text-slate-300">&mdash;</span>}
-                        </td>
-                      )}
                       <td className="py-2 px-2 text-right font-mono text-xs">{h.cadModelWeight != null ? pctClean(h.cadModelWeight) : <span className="text-slate-300">&mdash;</span>}</td>
                       <td className="py-2 px-2 text-right font-mono text-xs">{h.usdModelWeight != null ? pctClean(h.usdModelWeight) : <span className="text-slate-300">&mdash;</span>}</td>
                       <td className="py-2 px-2 text-center">
@@ -683,9 +661,6 @@ export function PimModel({ groups }: Props) {
                   <tr className={`${colors.bg} font-semibold`}>
                     <td className="py-2 pl-5 pr-2 text-xs text-slate-500" colSpan={3}>TOTAL</td>
                     <td className="py-2 px-2 text-right font-mono text-xs font-bold">{pct(holdings.reduce((s, h) => s + h.weightInPortfolio, 0))}</td>
-                    {hasLiveWeights && (
-                      <td className="py-2 px-2 text-right font-mono text-xs font-bold">{pct(holdings.filter((h) => h.liveWeight != null).reduce((s, h) => s + (h.liveWeight || 0), 0))}</td>
-                    )}
                     <td className="py-2 px-2 text-right font-mono text-xs">{pct(holdings.filter((h) => h.cadModelWeight != null).reduce((s, h) => s + (h.cadModelWeight || 0), 0))}</td>
                     <td className="py-2 px-2 text-right font-mono text-xs">{pct(holdings.filter((h) => h.usdModelWeight != null).reduce((s, h) => s + (h.usdModelWeight || 0), 0))}</td>
                     <td></td>
