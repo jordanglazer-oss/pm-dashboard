@@ -6,11 +6,21 @@ import { MAX_SCORE, SCORE_GROUPS } from "./types";
 // sector names. This map normalizes them to GICS standard labels so the
 // regime multiplier and sector-based logic applies correctly.
 const SECTOR_ALIASES: Record<string, string> = {
+  // GICS standard variants — providers like SIACharts, Morningstar, and
+  // some fund factsheets use the full official GICS names. Without these,
+  // the regime multiplier silently no-ops for affected stocks because the
+  // sector tier .includes() checks expect our internal short labels.
+  "Information Technology": "Technology",
+  "Telecommunication Services": "Communication Services", // old GICS name
+  // Common provider variants
   "Consumer Cyclical": "Consumer Discretionary",
   "Consumer Defensive": "Consumer Staples",
   "Financial Services": "Financials",
   "Basic Materials": "Materials",
   "Healthcare": "Health Care",
+  "Telecom": "Communication Services",
+  "Telecommunications": "Communication Services",
+  "Info Tech": "Technology",
   // Yahoo lowercase variants (from fund-data)
   "consumer_cyclical": "Consumer Discretionary",
   "consumer_defensive": "Consumer Staples",
@@ -18,6 +28,7 @@ const SECTOR_ALIASES: Record<string, string> = {
   "basic_materials": "Materials",
   "healthcare": "Health Care",
   "technology": "Technology",
+  "information_technology": "Technology",
   "communication_services": "Communication Services",
   "energy": "Energy",
   "utilities": "Utilities",
@@ -26,9 +37,22 @@ const SECTOR_ALIASES: Record<string, string> = {
   "realestate": "Real Estate",
 };
 
-/** Normalize a sector name to GICS standard. */
+// Case-insensitive lookup table built once from SECTOR_ALIASES — lets us
+// catch odd casings ("INFORMATION TECHNOLOGY", "information_technology")
+// without having to enumerate every variant explicitly.
+const SECTOR_ALIASES_CI: Record<string, string> = Object.fromEntries(
+  Object.entries(SECTOR_ALIASES).map(([k, v]) => [k.toLowerCase(), v])
+);
+
+/** Normalize a sector name to GICS standard (case-insensitive). */
 export function normalizeSector(sector: string): string {
-  return SECTOR_ALIASES[sector] || sector;
+  if (!sector) return sector;
+  // Exact match wins (preserves any case-sensitive disambiguation).
+  if (SECTOR_ALIASES[sector]) return SECTOR_ALIASES[sector];
+  // Case-insensitive fallback.
+  const ci = SECTOR_ALIASES_CI[sector.toLowerCase()];
+  if (ci) return ci;
+  return sector;
 }
 
 // Sector behavioral clusters for regime scoring.
