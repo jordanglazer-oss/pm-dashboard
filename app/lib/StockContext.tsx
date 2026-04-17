@@ -416,6 +416,9 @@ export function StockProvider({ children }: { children: React.ReactNode }) {
 
   /* ─── Auto-add to PIM models when stock is added ─── */
   const addToPimModels = useCallback((stock: Stock) => {
+    // Defensive guard: Watchlist stocks never belong in PIM models.
+    // This backstops addStock / moveBucket callers.
+    if (stock.bucket !== "Portfolio") return;
     setPimModelsState((prev) => {
       const assetClass = detectAssetClass(stock);
       const currency = tickerCurrency(stock.ticker);
@@ -491,8 +494,13 @@ export function StockProvider({ children }: { children: React.ReactNode }) {
       persistStocks(next);
       return next;
     });
-    // Auto-add to eligible PIM models
-    addToPimModels(stock);
+    // Auto-add to eligible PIM models — Portfolio bucket ONLY.
+    // Watchlist names must never flow into PIM Model / Positioning /
+    // performance calculations. They are research candidates, not
+    // actual holdings.
+    if (stock.bucket === "Portfolio") {
+      addToPimModels(stock);
+    }
   }, [persistStocks, addToPimModels]);
 
   const removeStock = useCallback((ticker: string) => {
@@ -522,7 +530,8 @@ export function StockProvider({ children }: { children: React.ReactNode }) {
     if (wasPortfolio) {
       removeFromPimModels(ticker);
     } else if (stock) {
-      addToPimModels(stock);
+      // Pass the post-flip stock so downstream logic sees bucket="Portfolio"
+      addToPimModels({ ...stock, bucket: "Portfolio" });
     }
   }, [stocks, persistStocks, removeFromPimModels, addToPimModels]);
 
