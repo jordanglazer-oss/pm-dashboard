@@ -26,7 +26,7 @@ import {
   type ReportXRayRow,
 } from "@/app/lib/useReportData";
 import { useStocks } from "@/app/lib/StockContext";
-import { countryFor, isCoreEtf } from "@/app/lib/geography";
+import { countryFor, isCoreEtf, SYMBOL_COUNTRY, type Country } from "@/app/lib/geography";
 import type { PimProfileType } from "@/app/lib/pim-types";
 import type { FundData, FundHolding, FundSectorWeight, Stock } from "@/app/lib/types";
 
@@ -410,11 +410,19 @@ export default function ClientReportPage() {
       //   BMO-PE.TO           (Canadian Yahoo)
       //   BAC-PA              (US Yahoo)
       // Also matches by name when "Preferred" / "Pref" / "Pfd" appears.
+      //
+      // Fallback heuristic: if the ticker contains "PR" AND at least two
+      // periods, it's almost certainly a preferred share (common Canadian
+      // dotted format like BMO.PR.E, RY.PR.Z, etc.). Catches edge cases
+      // the strict regexes above might miss (e.g. extra suffixes,
+      // numerics, or non-standard issuer prefixes).
       const isPreferredShare = (ticker: string, name: string): boolean => {
         const t = ticker.trim().toUpperCase();
         if (/^[A-Z]+\.PR\.[A-Z]+$/.test(t)) return true;
         if (/^[A-Z]+\.PR[A-Z]+$/.test(t)) return true;
         if (/^[A-Z]+-P[A-Z]+(\.[A-Z]+)?$/.test(t)) return true;
+        // Simple structural heuristic per PM feedback.
+        if (t.includes("PR") && (t.match(/\./g) || []).length >= 2) return true;
         if (name) {
           const u = name.toUpperCase();
           if (/\bPREFERRED\b|\bPREF\b|\bPFD\b/.test(u)) return true;
@@ -501,8 +509,26 @@ export default function ClientReportPage() {
       };
 
       // Helper: classify an equity leaf into a country bucket.
-      const addEquityToAllocation = (sym: string, weightPct: number) => {
-        const c = countryFor(sym);
+      // `parentCountry` is the country of the enclosing fund when this
+      // symbol came from a fund's top-holdings list. Many fund-data
+      // feeds strip exchange suffixes from underlying tickers (e.g. a
+      // Canadian XIC.TO holding listed as "RY" rather than "RY.TO"),
+      // which would otherwise default to US Equity via countryFor().
+      // When we have a parent-country hint AND the ticker is ambiguous
+      // (no exchange suffix and not in our explicit table), inherit
+      // the parent's country.
+      const addEquityToAllocation = (
+        sym: string, weightPct: number, parentCountry?: Country,
+      ) => {
+        const explicit = SYMBOL_COUNTRY[sym];
+        const hasSuffix =
+          /\.(TO|V|CN|NE|U)$/.test(sym) || /-T$/.test(sym) || /-U\.TO$/.test(sym);
+        const c: Country =
+          explicit
+            ? explicit
+            : parentCountry && !hasSuffix
+              ? parentCountry
+              : countryFor(sym);
         if (c === "Canada") allocTotals.canadianEquity += weightPct;
         else if (c === "Global") allocTotals.globalEquity += weightPct;
         else allocTotals.usEquity += weightPct;
@@ -512,6 +538,7 @@ export default function ClientReportPage() {
       const expandClient = async (
         sym: string, name: string, weightPct: number,
         depth: number, qt: string | null,
+        parentCountry?: Country,
       ): Promise<void> => {
         if (weightPct <= 0 || !sym) return;
         const st = stockBySymbol.get(sym);
@@ -530,7 +557,7 @@ export default function ClientReportPage() {
           const direct = depth === 0 ? weightPct : 0;
           const lookThrough = depth === 0 ? 0 : weightPct;
           addXRay(sym, st?.name || name, direct, lookThrough);
-          addEquityToAllocation(sym, weightPct);
+          addEquityToAllocation(sym, weightPct, parentCountry);
           return;
         }
 
@@ -539,16 +566,20 @@ export default function ClientReportPage() {
         // level if they were the input position.
         if (isBondLike(name, qt)) return;
 
+        // Determine this fund's own country — used as the parentCountry
+        // hint for any unsuffixed children we recurse into.
+        const fundCountry: Country = countryFor(sym);
+
         if (depth >= MAX_DEPTH) {
           // Can't expand further — fall back to fund's own country for allocation.
-          addEquityToAllocation(sym, weightPct);
+          addEquityToAllocation(sym, weightPct, parentCountry);
           return;
         }
         const info = await getFundInfo(sym);
         const top = info?.topHoldings ?? [];
         if (!top.length) {
           // Couldn't resolve underlying — use the fund's own country.
-          addEquityToAllocation(sym, weightPct);
+          addEquityToAllocation(sym, weightPct, parentCountry);
           return;
         }
         await Promise.all(
@@ -556,7 +587,7 @@ export default function ClientReportPage() {
             const childSym = (h.symbol || h.name || "").trim();
             if (!childSym) return Promise.resolve();
             const childWeight = (weightPct * h.weight) / 100;
-            return expandClient(childSym, h.name, childWeight, depth + 1, null);
+            return expandClient(childSym, h.name, childWeight, depth + 1, null, fundCountry);
           })
         );
       };
