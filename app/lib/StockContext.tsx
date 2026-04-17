@@ -16,7 +16,11 @@ import { pimModelSeed } from "./pim-seed";
 // automated performance numbers. Core index ETFs (XSP, XUS, XUH, XUU, XSU)
 // stay unlocked — they are the intended absorbers of residual equity
 // weight when stocks come and go.
-const LOCKED_EQUITY_SYMBOLS = new Set(["FID5982-T", "GRNJ"]);
+// Both "FID5982" and "FID5982-T" listed because the persisted pm:pim-models
+// uses the bare "FID5982" (no -T suffix) even though pim-seed.ts stores it
+// as "FID5982-T". Listing both forms keeps the lock effective regardless of
+// which variant shows up after future migrations or re-adds.
+const LOCKED_EQUITY_SYMBOLS = new Set(["FID5982", "FID5982-T", "GRNJ"]);
 
 export type ChartAnalysisEntry = {
   analysis: string;
