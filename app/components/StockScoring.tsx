@@ -4,7 +4,7 @@ import React, { useState, useMemo, useEffect, useCallback } from "react";
 import { useRouter } from "next/navigation";
 import type { ScoredStock, ScoreKey } from "@/app/lib/types";
 import { MAX_SCORE, INSTRUMENT_LABELS } from "@/app/lib/types";
-import { isScoreable } from "@/app/lib/scoring";
+import { isScoreable, normalizeSector } from "@/app/lib/scoring";
 import { SignalPill, ratingTone, riskTone } from "./SignalPill";
 import { useStocks } from "@/app/lib/StockContext";
 
@@ -213,19 +213,33 @@ export function StockScoring({ stocks, onScoreStock, onUpdateCostBasis, onRefres
           }
         }
       }
-      // Refresh S&P 500 sector weights from SPY
+      // Refresh S&P 500 sector weights from SPY. Cache-busting + no-store
+      // to defeat any stale browser/CDN response, normalize sector names so
+      // they match our internal GICS labels, and skip the write if the
+      // payload looks malformed (sum < 50%).
       try {
         setRefreshProgress("Updating S&P 500 sector weights...");
-        const spyRes = await fetch("/api/fund-data?ticker=SPY");
+        const cacheBust = Date.now();
+        const spyRes = await fetch(
+          `/api/fund-data?ticker=SPY&_=${cacheBust}`,
+          { cache: "no-store" }
+        );
         if (spyRes.ok) {
           const spyData = await spyRes.json();
           const sectorWeightings = spyData.fundData?.sectorWeightings;
           if (Array.isArray(sectorWeightings) && sectorWeightings.length > 0) {
             const weights: Record<string, number> = {};
             for (const sw of sectorWeightings) {
-              weights[sw.sector] = parseFloat(sw.weight.toFixed(1));
+              const normalized = normalizeSector(sw.sector);
+              weights[normalized] = parseFloat(sw.weight.toFixed(1));
             }
-            if (onUpdateMarketData) onUpdateMarketData({ sp500SectorWeights: weights });
+            const total = Object.values(weights).reduce((a, b) => a + b, 0);
+            if (total >= 50 && onUpdateMarketData) {
+              onUpdateMarketData({
+                sp500SectorWeights: weights,
+                sp500SectorWeightsAt: new Date().toISOString(),
+              });
+            }
           }
         }
       } catch { /* best effort */ }

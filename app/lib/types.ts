@@ -270,6 +270,7 @@ export type MarketData = {
   aaiiNeutral: number;
   aaiiBear: number;
   sp500SectorWeights?: Record<string, number>; // Live S&P 500 sector weights from SPY
+  sp500SectorWeightsAt?: string; // ISO timestamp of last successful SPY weights refresh
   // ── Strategist notes (copy-pasted daily reports) ──
   // These get injected into the morning brief prompt so Claude can
   // incorporate Fundstrat/external research when forming its view.

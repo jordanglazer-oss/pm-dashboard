@@ -56,6 +56,20 @@ const sectorColors: Record<string, string> = {
   "Real Estate": "bg-pink-500",
 };
 
+/** Compact "x minutes/hours/days ago" formatter for last-updated labels. */
+function formatTimeAgo(iso: string): string {
+  const ts = Date.parse(iso);
+  if (!isFinite(ts)) return "—";
+  const diffMs = Date.now() - ts;
+  const mins = Math.floor(diffMs / 60_000);
+  if (mins < 1) return "just now";
+  if (mins < 60) return `${mins}m ago`;
+  const hours = Math.floor(mins / 60);
+  if (hours < 24) return `${hours}h ago`;
+  const days = Math.floor(hours / 24);
+  return `${days}d ago`;
+}
+
 function fundReturnFmt(val: number | undefined): string {
   if (val == null) return "—";
   return `${val >= 0 ? "+" : ""}${val.toFixed(1)}%`;
@@ -429,19 +443,40 @@ export function PortfolioOverview() {
       } catch { /* best effort — cache is optional */ }
 
       // Refresh S&P 500 sector weights from SPY so the sector exposure bar
-      // compares against current benchmark weights.
+      // compares against current benchmark weights. Uses a cache-busting
+      // query param + no-store to defeat any browser/CDN caching that
+      // could otherwise serve a stale SPY response and make it look like
+      // the weights "never update". We also normalize sector names so
+      // Yahoo's lower_case_underscore variants (e.g. "technology",
+      // "consumer_cyclical") align with our internal GICS labels — without
+      // this, the over/underweight diff vs. the portfolio sector bar
+      // misses entirely because the keys don't match.
       try {
         setRefreshProgress("Updating S&P 500 sector weights...");
-        const spyRes = await fetch("/api/fund-data?ticker=SPY");
+        const cacheBust = Date.now();
+        const spyRes = await fetch(
+          `/api/fund-data?ticker=SPY&_=${cacheBust}`,
+          { cache: "no-store" }
+        );
         if (spyRes.ok) {
           const spyData = await spyRes.json();
           const sectorWeightings = spyData.fundData?.sectorWeightings;
           if (Array.isArray(sectorWeightings) && sectorWeightings.length > 0) {
             const weights: Record<string, number> = {};
             for (const sw of sectorWeightings) {
-              weights[sw.sector] = parseFloat(sw.weight.toFixed(1));
+              const normalized = normalizeSector(sw.sector);
+              weights[normalized] = parseFloat(sw.weight.toFixed(1));
             }
-            updateMarketData({ sp500SectorWeights: weights });
+            // Sanity check: SPY weights should sum to ~100. If they sum to
+            // <50 we got a malformed payload — keep the previous saved
+            // values rather than overwriting with garbage.
+            const total = Object.values(weights).reduce((a, b) => a + b, 0);
+            if (total >= 50) {
+              updateMarketData({
+                sp500SectorWeights: weights,
+                sp500SectorWeightsAt: new Date().toISOString(),
+              });
+            }
           }
         }
       } catch { /* best effort */ }
@@ -553,9 +588,17 @@ export function PortfolioOverview() {
 
       {/* Sector Exposure */}
       <section className="rounded-[30px] border border-slate-200 bg-white p-5 shadow-sm">
-        <div className="flex items-center gap-3 mb-4">
+        <div className="flex items-center gap-3 mb-4 flex-wrap">
           <h2 className="text-lg font-bold text-slate-800">Portfolio Sector Exposure</h2>
           <span className="text-sm text-slate-400">Alpha picks only · {alphaCount} stocks (equal-weighted)</span>
+          <span className="ml-auto text-xs text-slate-400">
+            S&amp;P weights:{" "}
+            {marketData.sp500SectorWeightsAt
+              ? `updated ${formatTimeAgo(marketData.sp500SectorWeightsAt)}`
+              : marketData.sp500SectorWeights
+                ? "live (timestamp pending)"
+                : "fallback (run Refresh All Data)"}
+          </span>
         </div>
         <div className="flex h-8 rounded-xl overflow-hidden mb-3">
           {sectorExposure.map((s) => (
