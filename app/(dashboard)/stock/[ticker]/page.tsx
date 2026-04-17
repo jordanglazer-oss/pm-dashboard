@@ -6,7 +6,7 @@ import Link from "next/link";
 import { useStocks } from "@/app/lib/StockContext";
 import { SCORE_GROUPS, MAX_SCORE, INSTRUMENT_LABELS } from "@/app/lib/types";
 import type { ScoreKey, FundData } from "@/app/lib/types";
-import { groupTotal, isScoreable } from "@/app/lib/scoring";
+import { groupTotal, isScoreable, normalizeSector } from "@/app/lib/scoring";
 import { SignalPill, ratingTone } from "@/app/components/SignalPill";
 import StockHealthMonitor from "@/app/components/StockHealthMonitor";
 import RiskAlertPanel from "@/app/components/RiskAlertPanel";
@@ -621,12 +621,25 @@ function FundDataPanels({ fundData, ticker, onHoldingsUpdate }: { fundData: Fund
         </div>
 
         {/* Sector Breakdown */}
-        {fundData.sectorWeightings && fundData.sectorWeightings.length > 0 && (
+        {fundData.sectorWeightings && fundData.sectorWeightings.length > 0 && (() => {
+          // Normalize provider sector names (Yahoo / Morningstar / Globe
+          // and Mail all emit their own variants) so e.g. "Financial
+          // Services" and "Financials" roll into a single bucket instead
+          // of rendering as two bars with mismatched colors.
+          const bySector = new Map<string, number>();
+          for (const s of fundData.sectorWeightings) {
+            const key = normalizeSector(s.sector);
+            bySector.set(key, (bySector.get(key) ?? 0) + s.weight);
+          }
+          const normalizedSectors = Array.from(bySector.entries())
+            .map(([sector, weight]) => ({ sector, weight }))
+            .sort((a, b) => b.weight - a.weight);
+          return (
           <div className="rounded-[24px] border border-slate-200 bg-white p-4 sm:p-5 shadow-sm overflow-hidden">
             <h2 className="text-base font-bold text-slate-800 mb-3">Sector Breakdown</h2>
             {/* Stacked bar */}
             <div className="flex h-7 sm:h-8 rounded-xl overflow-hidden mb-3">
-              {fundData.sectorWeightings.map((s) => (
+              {normalizedSectors.map((s) => (
                 <div
                   key={s.sector}
                   className={`${sectorColors[s.sector] || "bg-slate-400"} flex items-center justify-center text-[9px] sm:text-[10px] font-semibold text-white`}
@@ -637,7 +650,7 @@ function FundDataPanels({ fundData, ticker, onHoldingsUpdate }: { fundData: Fund
               ))}
             </div>
             <div className="space-y-1.5">
-              {fundData.sectorWeightings.map((s) => (
+              {normalizedSectors.map((s) => (
                 <div key={s.sector} className="flex items-center gap-2 min-w-0">
                   <span className={`h-2.5 w-2.5 rounded-full shrink-0 ${sectorColors[s.sector] || "bg-slate-400"}`} />
                   <span className="flex-1 text-xs text-slate-600 truncate">{s.sector}</span>
@@ -679,7 +692,8 @@ function FundDataPanels({ fundData, ticker, onHoldingsUpdate }: { fundData: Fund
               </div>
             )}
           </div>
-        )}
+          );
+        })()}
       </div>
 
       {/* Row 3: Equity Metrics (P/E, P/B, etc.) */}
