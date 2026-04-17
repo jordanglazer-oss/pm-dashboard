@@ -57,9 +57,10 @@ export async function PUT(req: NextRequest) {
       );
     }
 
-    // If strategist notes changed, append them to the rolling 7-day history
+    // If strategist notes changed, append them to the rolling 14-day history
     // log. Each strategist gets its own dated entry so the brief prompt can
-    // show the trailing week of notes and Claude can track theme evolution.
+    // show the trailing two weeks of notes and Claude can track theme
+    // evolution and recurring themes over a longer window.
     if (updates?.strategistNotes) {
       const notes = updates.strategistNotes as {
         newton?: string;
