@@ -20,6 +20,8 @@ const SECTOR_ALIASES: Record<string, string> = {
   "Healthcare": "Health Care",
   "Telecom": "Communication Services",
   "Telecommunications": "Communication Services",
+  "Communication": "Communication Services", // BMO / some provider feeds use the bare label
+  "Communications": "Communication Services",
   "Info Tech": "Technology",
   // Yahoo lowercase variants (from fund-data)
   "consumer_cyclical": "Consumer Discretionary",
