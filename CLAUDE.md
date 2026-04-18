@@ -18,12 +18,15 @@ This app stores user-controlled data in Redis (Upstash KV). **Never make changes
 - **`pm:stocks`** — the user's portfolio + watchlist. Both buckets live in this single JSON blob (`bucket: "Portfolio" | "Watchlist"` on each entry). Losing this means the user re-enters every position by hand.
 - **`pm:pim-models`** — per-group equity/fixed-income holdings with `weightInClass` values. Drives every weight shown in PIM Model / Positioning tabs and the automated performance numbers.
 - **`pm:pim-positions`**, **`pm:pim-portfolio-state`**, **`pm:hedging-history`**, **`pm:client-portfolio`**, **`pm:client-report-notes`**, **`pm:appendix-daily-values`**, **`pm:aa-performance`**, **`pm:pim-performance`**, **`pm:brief`**, **`pm:research`**, **`pm:scanner`**, **`pm:fund-data-cache`**, **`pm:chart-analysis`**, **`pm:attachments`**, **`pm:ui-prefs`**, **`pm:market`**, **`pm:hedging-custom-strikes`** — all user-edited or expensive-to-rebuild state.
+- **`pm:portfolio-snapshots`** — **append-only** daily history of sector breakdowns and top holdings per (date, group, profile). Past-dated writes are rejected by the route. Used for trend analysis; losing it means losing all historical drift data.
+- **`pm:ratelimit:auth:*`** — per-IP login-attempt counters (auto-expire every 60s). Safe to ignore; not user data.
 
 Concrete rules:
 - KV GET routes must return empty (`[]` / `{}`) on missing-key or read-error — never seed defaults that could later overwrite real data via PUT.
 - Do not introduce code paths that call `redis.del`, `redis.set` with empty/seed values, or batch-overwrite a key from client default state during boot.
 - Schema changes to a stored blob require a read-merge-write migration that preserves unknown fields, not a clobber.
 - Refactors to `StockContext.tsx` must keep the bootstrap order: load from `/api/kv/*` first, only persist back after the initial load resolves.
+- **For any new historical / timeseries data, use the append-only pattern**: compose field keys by date (e.g. `YYYY-MM-DD:<dim1>:<dim2>`), validate on write that the leading date equals today's server date, and reject past-dated entries with 400. `pm:portfolio-snapshots` is the reference implementation — copy its `POST` handler's date-check invariant when adding similar stores.
 
 ## Common Commands
 
