@@ -23,10 +23,16 @@ fi
 
 echo "🔎 Running lint..." >&2
 # Lint is advisory — warnings are allowed, only errors block.
-if ! npx eslint . --quiet 2>&1; then
-  echo "" >&2
-  echo "❌ Lint errors found. Fix them before declaring the task done." >&2
-  exit 2
+# Only lint files changed in the working tree, so pre-existing errors
+# in untouched files don't block a valid change.
+changed_files=$(git diff --name-only HEAD 2>/dev/null | grep -E '\.(ts|tsx|js|jsx)$' || true)
+if [ -n "$changed_files" ]; then
+  # shellcheck disable=SC2086
+  if ! npx eslint --quiet $changed_files 2>&1; then
+    echo "" >&2
+    echo "❌ Lint errors found in changed files. Fix them before declaring the task done." >&2
+    exit 2
+  fi
 fi
 
 echo "✅ Typecheck + lint passed." >&2

@@ -686,12 +686,35 @@ export function useReportData(
         const info = await getFundInfo(sym);
         const top = info?.topHoldings ?? [];
 
+        // Fund-of-fund detection: when a fund's topHoldings is dominated
+        // by a single child that is itself a fund (e.g. XSP holds ~99%
+        // IVV; XUH holds ~99% XUU), the parent's sectorWeightings are
+        // unreliable across all providers — Yahoo, Morningstar, and
+        // iShares CSV all tend to mis-tag the underlying ETF position
+        // as a single sector (typically "Financials" because the wrapper
+        // structure looks like a financial product). In that case,
+        // discard the parent's sectorWeightings and force recursion into
+        // the underlying fund where the real sector breakdown lives.
+        const dominantChild = top.find((h) => (h.weight || 0) >= 70);
+        const dominantChildSym = (dominantChild?.symbol || dominantChild?.name || "").trim();
+        const dominantIsFund =
+          !!dominantChild &&
+          looksLikeFund(
+            dominantChildSym,
+            dominantChild.name || "",
+            stockBySymbol.get(dominantChildSym),
+          );
+        const isFundOfFund = !!dominantChild && dominantIsFund;
+
         // Sector handling: use fund-level sectorWeightings when
         // available — they're more accurate than rolling up individual
         // stock sectors and they prevent double-counting through the
-        // fund → stock chain.
+        // fund → stock chain. Skip when this is a fund-of-fund wrapper
+        // (see above).
         const hasFundSectors =
-          collectSectors && (info?.sectorWeightings?.length ?? 0) > 0;
+          collectSectors &&
+          !isFundOfFund &&
+          (info?.sectorWeightings?.length ?? 0) > 0;
         if (hasFundSectors) {
           for (const sw of info!.sectorWeightings!) {
             addSector(sw.sector, (weightPct * sw.weight) / 100);
