@@ -29,6 +29,7 @@ import { useStocks } from "@/app/lib/StockContext";
 import { countryFor, isCoreEtf, SYMBOL_COUNTRY, type Country } from "@/app/lib/geography";
 import type { PimProfileType } from "@/app/lib/pim-types";
 import type { FundData, FundHolding, FundSectorWeight, Stock } from "@/app/lib/types";
+import { colorForSector } from "@/app/lib/sectorColors";
 
 // ───────── Client portfolio comparison types ─────────
 
@@ -148,6 +149,49 @@ export default function ClientReportPage() {
       });
     return () => { cancelled = true; };
   }, []);
+
+  // ── Daily portfolio snapshot ──
+  // Saves today's sector breakdown + top holdings for (group, profile) once
+  // per page-render, de-duplicated per composite key within a session via
+  // `snapshotSavedRef`. The API route is APPEND-ONLY (see
+  // app/api/kv/portfolio-snapshots/route.ts): it rejects past-dated writes
+  // and preserves every previously-stored date verbatim on every merge, so
+  // historical snapshots can never be clobbered.
+  const snapshotSavedRef = useRef<Set<string>>(new Set());
+  useEffect(() => {
+    if (!data) return;
+    const today = new Date().toISOString().slice(0, 10);
+    const field = `${today}:${data.groupId}:${data.profile}`;
+    if (snapshotSavedRef.current.has(field)) return;
+    snapshotSavedRef.current.add(field);
+
+    const payload = {
+      entries: {
+        [field]: {
+          date: today,
+          groupId: data.groupId,
+          profile: data.profile,
+          totalValue: data.totals.cad + data.totals.usd + data.totals.cash,
+          sectors: data.sectors.map((s) => ({ sector: s.sector, weight: s.weight })),
+          topHoldings: data.xray.slice(0, 15).map((h) => ({
+            symbol: h.symbol,
+            name: h.name,
+            weight: h.weight,
+          })),
+          savedAt: new Date().toISOString(),
+        },
+      },
+    };
+
+    fetch("/api/kv/portfolio-snapshots", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify(payload),
+    }).catch(() => {
+      // Best-effort; allow retry on next render of this field.
+      snapshotSavedRef.current.delete(field);
+    });
+  }, [data]);
 
   // Auto-save client portfolio positions to Redis (debounced).
   useEffect(() => {
@@ -1136,7 +1180,12 @@ function OnePager({
         <div>
           <SectionTitle>Top Sector Exposures</SectionTitle>
           <BarList
-            rows={data.sectors.slice(0, 8).map((s) => ({ label: s.sector, value: s.weight }))}
+            rows={data.sectors.slice(0, 8).map((s) => ({
+              label: s.sector,
+              value: s.weight,
+              color: colorForSector(s.sector),
+              tooltip: `${s.sector}: ${s.weight.toFixed(2)}% of equity exposure (post-look-through)`,
+            }))}
             accent={RBC_GOLD}
             textColor={RBC_NAVY}
           />
@@ -1643,10 +1692,16 @@ function BarList({
   rows,
   accent,
   textColor = "#1e293b",
+  tooltip,
 }: {
-  rows: { label: string; value: number }[];
+  // `color` on the row overrides `accent` (lets the caller tint each bar
+  // individually — e.g. per-sector GICS colors). `tooltip` is a per-row
+  // hover string that also shows up in print preview context; it does
+  // nothing when printed.
+  rows: { label: string; value: number; color?: string; tooltip?: string }[];
   accent: string;
   textColor?: string;
+  tooltip?: (row: { label: string; value: number }) => string;
 }) {
   if (!rows.length) {
     return <div className="text-[10px] text-slate-400 italic mt-2">No data.</div>;
@@ -1654,25 +1709,28 @@ function BarList({
   const max = Math.max(...rows.map((r) => r.value), 1);
   return (
     <div className="mt-2 space-y-1">
-      {rows.map((r) => (
-        <div key={r.label} className="text-[10px]">
-          <div className="flex justify-between">
-            <span style={{ color: textColor }}>{r.label}</span>
-            <span className="tabular-nums text-slate-600 font-semibold">
-              {r.value.toFixed(1)}%
-            </span>
+      {rows.map((r) => {
+        const title = r.tooltip ?? (tooltip ? tooltip(r) : undefined);
+        return (
+          <div key={r.label} className="text-[10px]" title={title}>
+            <div className="flex justify-between">
+              <span style={{ color: textColor }}>{r.label}</span>
+              <span className="tabular-nums text-slate-600 font-semibold">
+                {r.value.toFixed(1)}%
+              </span>
+            </div>
+            <div className="h-1.5 rounded-full bg-slate-100 mt-0.5 overflow-hidden">
+              <div
+                className="h-full rounded-full transition-all"
+                style={{
+                  width: `${Math.min(100, (r.value / max) * 100)}%`,
+                  backgroundColor: r.color ?? accent,
+                }}
+              />
+            </div>
           </div>
-          <div className="h-1.5 rounded-full bg-slate-100 mt-0.5 overflow-hidden">
-            <div
-              className="h-full rounded-full"
-              style={{
-                width: `${Math.min(100, (r.value / max) * 100)}%`,
-                backgroundColor: accent,
-              }}
-            />
-          </div>
-        </div>
-      ))}
+        );
+      })}
     </div>
   );
 }
