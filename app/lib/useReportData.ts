@@ -706,14 +706,45 @@ export function useReportData(
           );
         const isFundOfFund = !!dominantChild && dominantIsFund;
 
+        // Single-sector concentration heuristic: if the fund's
+        // sectorWeightings claims a single sector >=80% of equity
+        // exposure, this is almost certainly bad provider data
+        // (a wrapper / fund-of-fund whose underlying ETF holding gets
+        // tagged as one sector by Yahoo / Morningstar). Genuine
+        // broad-market ETFs never concentrate >=80% in one sector.
+        // Sector-specific ETFs (XLF, XLE, etc.) would be impacted, but
+        // those should declare themselves via fund name; we only apply
+        // this when the fund name does NOT contain a sector keyword.
+        // This catches wrappers even when topHoldings is empty/stale
+        // (so the fund-of-fund check above can't fire).
+        const sectorKeywordRe =
+          /\b(financial|bank|energy|technology|tech|health|healthcare|materials?|industrial|utilit|real\s*estate|reit|communication|telecom|consumer|staples?|discretionary|metal|mining|gold|silver|oil|gas|pharma|biotech|semiconductor|infrastructure)\b/i;
+        const fundNameForCheck = (name || stockBySymbol.get(sym)?.name || "");
+        const isSectorSpecificByName = sectorKeywordRe.test(fundNameForCheck);
+        const sectorSum =
+          info?.sectorWeightings?.reduce((s, w) => s + (w.weight || 0), 0) || 0;
+        const dominantSectorWeight =
+          info?.sectorWeightings?.reduce(
+            (max, w) => Math.max(max, w.weight || 0),
+            0,
+          ) || 0;
+        const sectorConcentration =
+          sectorSum > 0 ? dominantSectorWeight / sectorSum : 0;
+        const isSingleSectorWrapper =
+          !isSectorSpecificByName &&
+          (info?.sectorWeightings?.length ?? 0) > 0 &&
+          sectorConcentration >= 0.8;
+
         // Sector handling: use fund-level sectorWeightings when
         // available — they're more accurate than rolling up individual
         // stock sectors and they prevent double-counting through the
         // fund → stock chain. Skip when this is a fund-of-fund wrapper
-        // (see above).
+        // (see above) or when the sectorWeightings is suspiciously
+        // single-sector (almost always bad provider data for a wrapper).
         const hasFundSectors =
           collectSectors &&
           !isFundOfFund &&
+          !isSingleSectorWrapper &&
           (info?.sectorWeightings?.length ?? 0) > 0;
         if (hasFundSectors) {
           for (const sw of info!.sectorWeightings!) {
