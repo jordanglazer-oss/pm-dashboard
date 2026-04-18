@@ -48,3 +48,4 @@ next-env.d.ts
 !tsconfig.json
 !tailwind.config.json
 !*.config.json
+!.claude/settings.json
