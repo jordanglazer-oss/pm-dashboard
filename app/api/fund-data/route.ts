@@ -1030,6 +1030,27 @@ function parseISharesCSV(csv: string): ProviderHoldingsResult {
       lcAsset.includes("forward");
     if (isCashLike) continue;
 
+    // Fund-of-fund detection. CAD-hedged S&P 500 wrappers (XSP, XUH) and
+    // similar products hold a single underlying ETF at ~99% weight. iShares'
+    // CSV tags that holding's "Sector" field as "Financials" / "Financial
+    // Services" because the holding vehicle itself is a corporate trust /
+    // fund unit — even though the underlying ETF's actual sector exposure
+    // is broad-market S&P 500 (~13% Financials, not ~99%).
+    //
+    // We must KEEP the row in topHoldings so look-through expansion can
+    // recurse into XUU / IVV / etc. and pick up the real sector mix from
+    // the underlying stocks. But we must NOT contribute its sector tag to
+    // sectorWeightings — doing so makes the report claim 99% Financials
+    // for what is actually a US large-cap fund.
+    const isFundLike =
+      lcAsset === "fund" ||
+      lcAsset === "etf" ||
+      lcAsset === "etp" ||
+      lcAsset.includes("equity fund") ||
+      lcAsset.includes("index fund") ||
+      lcAsset.includes("mutual fund") ||
+      lcAsset.includes("collective");
+
     // TSX-listed holdings come through the CSV as bare tickers ("XUU")
     // with the suffix only recoverable from the Exchange column.
     // Stamping `.TO` back on is what lets downstream lookups (Yahoo,
@@ -1044,8 +1065,12 @@ function parseISharesCSV(csv: string): ProviderHoldingsResult {
     if (holdings.length < 10) {
       holdings.push({ symbol: ticker, name: titleCase(name), weight: parseFloat(weight.toFixed(2)) });
     }
-    // Accumulate ALL equity sectors for complete sector weightings
-    if (sector) {
+    // Accumulate ALL equity sectors for complete sector weightings.
+    // Skip fund-of-fund rows: their "sector" tag reflects the holding
+    // vehicle (typically Financials), not the underlying economic exposure.
+    // The report's recursive expander will pick up the real sectors when
+    // it descends into the child ETF.
+    if (sector && !isFundLike) {
       sectorWeights[sector] = (sectorWeights[sector] || 0) + weight;
     }
   }
@@ -1476,7 +1501,21 @@ function scrapeGenericHoldings(html: string): ProviderHoldingsResult {
         name: displayName.length > 60 ? displayName.substring(0, 57) + "..." : displayName,
         weight: parseFloat(weight.toFixed(2)),
       });
-      if (sector) {
+      // Skip sector contribution for fund-of-fund rows. Without an asset
+      // class column we have to infer from the name — match common ETF /
+      // fund signal words. The look-through expander will recurse into
+      // the underlying fund and pick up real sector exposure from there.
+      const nameForFundCheck = displayName.toUpperCase();
+      const isFundLike =
+        /\bETF\b/.test(nameForFundCheck) ||
+        /\bINDEX\s+FUND\b/.test(nameForFundCheck) ||
+        /\bMUTUAL\s+FUND\b/.test(nameForFundCheck) ||
+        /\bUNITS?\s+FUND\b/.test(nameForFundCheck) ||
+        /\bSPDR\b/.test(nameForFundCheck) ||
+        /\bISHARES\b/.test(nameForFundCheck) ||
+        /\bVANGUARD\b/.test(nameForFundCheck) ||
+        /\bBMO\s+/.test(nameForFundCheck);
+      if (sector && !isFundLike) {
         sectorWeights[sector] = (sectorWeights[sector] || 0) + weight;
       }
     });
