@@ -1244,7 +1244,7 @@ export function PimPortfolio({ groups }: Props) {
               href={`/client-report?group=${encodeURIComponent(selectedGroupId)}&profile=${encodeURIComponent(activeProfile)}`}
               target="_blank"
               rel="noopener"
-              className="inline-flex items-center rounded-lg bg-[#002855] px-3 py-1.5 text-xs font-semibold !text-white hover:bg-[#003b7a] transition-colors"
+              className="inline-flex items-center leading-5 rounded-lg bg-[#002855] px-3 py-1.5 text-xs font-semibold !text-white hover:bg-[#003b7a] transition-colors"
             >
               Client Report
             </Link>
