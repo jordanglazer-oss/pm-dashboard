@@ -5,36 +5,113 @@ import { MAX_SCORE, SCORE_GROUPS } from "./types";
 // Yahoo Finance, fund data providers, and other sources use non-standard
 // sector names. This map normalizes them to GICS standard labels so the
 // regime multiplier and sector-based logic applies correctly.
+// Canonical GICS labels we collapse everything down to.
+//   Technology, Communication Services, Consumer Discretionary,
+//   Consumer Staples, Financials, Materials, Health Care, Energy,
+//   Utilities, Industrials, Real Estate
+//
+// Anything not in this map (after case-insensitive lookup) passes through
+// unchanged — so a brand-new sector name from a provider would still show up
+// in the chart, just not collapsed into one of the canonical buckets.
 const SECTOR_ALIASES: Record<string, string> = {
-  // GICS standard variants — providers like SIACharts, Morningstar, and
-  // some fund factsheets use the full official GICS names. Without these,
-  // the regime multiplier silently no-ops for affected stocks because the
-  // sector tier .includes() checks expect our internal short labels.
+  // ── Technology ────────────────────────────────────────────────────────
   "Information Technology": "Technology",
+  "Info Tech": "Technology",
+  "Tech": "Technology",
+  "Technologies": "Technology",
+  "information_technology": "Technology",
+  "technology": "Technology",
+
+  // ── Communication Services ────────────────────────────────────────────
   "Telecommunication Services": "Communication Services", // old GICS name
-  // Common provider variants
-  "Consumer Cyclical": "Consumer Discretionary",
-  "Consumer Defensive": "Consumer Staples",
-  "Financial Services": "Financials",
-  "Basic Materials": "Materials",
-  "Healthcare": "Health Care",
   "Telecom": "Communication Services",
   "Telecommunications": "Communication Services",
+  "Telecom Services": "Communication Services",
   "Communication": "Communication Services", // BMO / some provider feeds use the bare label
   "Communications": "Communication Services",
-  "Info Tech": "Technology",
-  // Yahoo lowercase variants (from fund-data)
-  "consumer_cyclical": "Consumer Discretionary",
-  "consumer_defensive": "Consumer Staples",
-  "financial_services": "Financials",
-  "basic_materials": "Materials",
-  "healthcare": "Health Care",
-  "technology": "Technology",
-  "information_technology": "Technology",
+  "Communication Svcs": "Communication Services",
+  "Communication Svc": "Communication Services",
+  "Commun Svs": "Communication Services", // Morningstar abbreviation
+  "Media": "Communication Services",
   "communication_services": "Communication Services",
+
+  // ── Consumer Discretionary ────────────────────────────────────────────
+  "Consumer Cyclical": "Consumer Discretionary",
+  "Consumer Cyclicals": "Consumer Discretionary",
+  "Consumer Cycl": "Consumer Discretionary", // Morningstar abbreviation
+  "Cyclical": "Consumer Discretionary",
+  "Cons Disc": "Consumer Discretionary",
+  "Consumer Services": "Consumer Discretionary",
+  "Retail": "Consumer Discretionary",
+  "consumer_cyclical": "Consumer Discretionary",
+  "consumer_discretionary": "Consumer Discretionary",
+
+  // ── Consumer Staples ──────────────────────────────────────────────────
+  "Consumer Defensive": "Consumer Staples",
+  "Consumer Def": "Consumer Staples", // Morningstar abbreviation
+  "Defensive": "Consumer Staples",
+  "Cons Stap": "Consumer Staples",
+  "Consumer Goods": "Consumer Staples",
+  "Food & Staples Retailing": "Consumer Staples",
+  "consumer_defensive": "Consumer Staples",
+  "consumer_staples": "Consumer Staples",
+
+  // ── Financials ────────────────────────────────────────────────────────
+  "Financial Services": "Financials",
+  "Financial Svs": "Financials", // Morningstar abbreviation
+  "Financial Svcs": "Financials",
+  "Financial": "Financials",
+  "Banks": "Financials",
+  "Banking": "Financials",
+  "Insurance": "Financials",
+  "Diversified Financials": "Financials",
+  "financial_services": "Financials",
+  "financials": "Financials",
+
+  // ── Materials ─────────────────────────────────────────────────────────
+  "Basic Materials": "Materials",
+  "Basic Matls": "Materials", // Morningstar abbreviation
+  "Material": "Materials",
+  "Mining": "Materials",
+  "Metals & Mining": "Materials",
+  "Chemicals": "Materials",
+  "basic_materials": "Materials",
+  "materials": "Materials",
+
+  // ── Health Care ───────────────────────────────────────────────────────
+  "Healthcare": "Health Care",
+  "Health": "Health Care",
+  "HealthCare": "Health Care",
+  "Pharma": "Health Care",
+  "Pharmaceuticals": "Health Care",
+  "Biotech": "Health Care",
+  "Biotechnology": "Health Care",
+  "healthcare": "Health Care",
+  "health_care": "Health Care",
+  "healthCare": "Health Care",
+
+  // ── Energy ────────────────────────────────────────────────────────────
+  "Oil & Gas": "Energy",
+  "Oil and Gas": "Energy",
+  "Oil, Gas & Consumable Fuels": "Energy",
   "energy": "Energy",
+
+  // ── Utilities ─────────────────────────────────────────────────────────
+  "Utility": "Utilities",
+  "Electric Utilities": "Utilities",
   "utilities": "Utilities",
+
+  // ── Industrials ───────────────────────────────────────────────────────
+  "Industrial": "Industrials",
+  "Capital Goods": "Industrials",
+  "Transportation": "Industrials",
   "industrials": "Industrials",
+
+  // ── Real Estate ───────────────────────────────────────────────────────
+  "Real Estate Investment Trusts": "Real Estate",
+  "REITs": "Real Estate",
+  "REIT": "Real Estate",
+  "Equity REITs": "Real Estate",
   "real_estate": "Real Estate",
   "realestate": "Real Estate",
 };
