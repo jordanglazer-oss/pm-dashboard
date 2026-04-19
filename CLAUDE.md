@@ -20,6 +20,7 @@ This app stores user-controlled data in Redis (Upstash KV). **Never make changes
 - **`pm:pim-positions`**, **`pm:pim-portfolio-state`**, **`pm:hedging-history`**, **`pm:client-portfolio`**, **`pm:client-report-notes`**, **`pm:appendix-daily-values`**, **`pm:aa-performance`**, **`pm:pim-performance`**, **`pm:brief`**, **`pm:research`**, **`pm:scanner`**, **`pm:fund-data-cache`**, **`pm:chart-analysis`**, **`pm:attachments`**, **`pm:ui-prefs`**, **`pm:market`**, **`pm:hedging-custom-strikes`** — all user-edited or expensive-to-rebuild state.
 - **`pm:portfolio-snapshots`** — **append-only** daily history of sector breakdowns and top holdings per (date, group, profile). Past-dated writes are rejected by the route. Used for trend analysis; losing it means losing all historical drift data.
 - **`pm:ratelimit:auth:*`** — per-IP login-attempt counters (auto-expire every 60s). Safe to ignore; not user data.
+- **`pm:upticks-scrape-cache`** — hash-gated cache of the Anthropic vision parse of the Newton's Upticks screenshot (`{ hash, entries, analyzedAt }`). Mirrors the JPM-flows caching pattern in `app/api/morning-brief/route.ts`: the Refresh button in Research always POSTs the current upticks attachments to `/api/upticks-scrape`, but the route only spends Anthropic tokens when the image fingerprint changes. Safe to nuke (worst case: one re-scan on next Refresh).
 
 Concrete rules:
 - KV GET routes must return empty (`[]` / `{}`) on missing-key or read-error — never seed defaults that could later overwrite real data via PUT.

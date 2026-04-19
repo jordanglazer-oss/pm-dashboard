@@ -8,10 +8,10 @@ export async function GET() {
   try {
     const redis = await getRedis();
     const raw = await redis.get(KEY);
-    if (!raw) {
-      await redis.set(KEY, JSON.stringify(defaultResearch));
-      return NextResponse.json({ research: defaultResearch });
-    }
+    // Per CLAUDE.md: NEVER seed Redis on read. If a stale client later PUTs
+    // its in-memory defaults, the seed would overwrite whatever was there.
+    // Return defaults in-memory only; the first user PUT creates the key.
+    if (!raw) return NextResponse.json({ research: defaultResearch });
     return NextResponse.json({ research: JSON.parse(raw) });
   } catch (e) {
     console.error("Redis read error (research):", e);
