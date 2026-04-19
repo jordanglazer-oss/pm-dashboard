@@ -136,19 +136,24 @@ async function runVision(atts: AttachmentInput[]): Promise<{ entries: ScrapedUpt
 
 Columns you should look for (they may be labeled differently or abbreviated):
   - Ticker / Symbol → \`ticker\` (string, uppercase, required)
-  - Support → \`support\` (keep whatever string is shown, e.g. "120.50" or "$120")
-  - Resistance → \`resistance\` (same — whatever string is shown)
+  - Support → \`support\` (see rules below)
+  - Resistance → \`resistance\` (see rules below)
   - Price Added / Entry Price / Price at Add → \`priceWhenAdded\` (NUMBER, strip $ and commas)
   - Date Added / Date → \`dateAdded\` (string, e.g. "4/15/2026")
 
-Important:
-  - If the screenshot shows support and resistance as a RANGE in one cell (e.g. "118 - 125"), split: support = low end, resistance = high end.
-  - If a cell is blank, OMIT that key for that row (do not return null or empty string).
+CRITICAL rules for support and resistance:
+  - Cells OFTEN contain MULTIPLE levels (S1/S2/S3 or R1/R2/R3). You MUST capture ALL of them, not just the first.
+  - Copy the cell contents VERBATIM as a single string, preserving whatever separator is shown (" / ", ", ", newline, etc.). Example: if the support cell reads "120.50 / 118.00 / 115.75", return "120.50 / 118.00 / 115.75" — NOT just "120.50".
+  - Include every number you can see in the cell, even if they're stacked on multiple lines. Join with " / " if no separator is clear.
+  - Do NOT split or parse the levels — return the raw string, leave interpretation to the caller.
+  - If a cell is truly blank, OMIT that key (do not return null or empty string).
+
+General rules:
   - Extract EVERY ticker row you can see. Do not stop short.
   - The current year is 2026; dates without a year should assume 2026 if ambiguous.
 
-Respond with ONLY a JSON array — no prose, no markdown fences. Example:
-[{"ticker":"NVDA","support":"120.50","resistance":"145.00","priceWhenAdded":132.10,"dateAdded":"4/15/2026"}]
+Respond with ONLY a JSON array — no prose, no markdown fences. Example with multi-level cells:
+[{"ticker":"NVDA","support":"120.50 / 118.00 / 115.75","resistance":"145.00 / 150.00 / 158.00","priceWhenAdded":132.10,"dateAdded":"4/15/2026"}]
 
 If you genuinely cannot read the screenshot, respond with: []`,
           },
