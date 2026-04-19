@@ -35,6 +35,13 @@ export function middleware(req: NextRequest) {
     return NextResponse.next();
   }
 
+  // Vercel cron runner has no auth cookie — it authenticates via the
+  // `Authorization: Bearer $CRON_SECRET` header, which the route itself
+  // verifies. Exempt the whole /api/cron/* namespace from the cookie gate.
+  if (pathname.startsWith("/api/cron/")) {
+    return NextResponse.next();
+  }
+
   // All other API routes require the auth cookie.
   const cookie = req.cookies.get(AUTH_COOKIE);
   if (cookie?.value === AUTH_COOKIE_VALUE) {
