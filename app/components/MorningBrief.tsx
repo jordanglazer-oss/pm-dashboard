@@ -13,7 +13,7 @@ import { SignalPill } from "./SignalPill";
 import { LoadingOverlay } from "./LoadingSpinner";
 import { SentimentGauges } from "./SentimentGauges";
 import { HedgingIndicator } from "./HedgingIndicator";
-import { ImageUpload, type BriefAttachment } from "./ImageUpload";
+import { ImageUpload, LightboxModal, type BriefAttachment } from "./ImageUpload";
 
 /** Numeric input with an inline save indicator.
  *  Value only persists when the user clicks the save icon (or presses Enter).
@@ -431,6 +431,11 @@ export function MorningBrief({
   // Attachments (screenshots for brief sections)
   const [attachments, setAttachments] = useState<BriefAttachment[]>([]);
   const attachSaveTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
+
+  // Lightbox state for the Fund Flows inline thumbnails (after brief
+  // generation). The upload widgets have their own internal lightbox;
+  // this separate state is only for the rendered-brief display.
+  const [flowsLightboxId, setFlowsLightboxId] = useState<string | null>(null);
 
   // Load attachments on mount
   useEffect(() => {
@@ -1186,30 +1191,45 @@ export function MorningBrief({
           </div>
           <p className="mt-4 text-lg leading-8 text-slate-600">{flowsAnalysis}</p>
 
-          {/* Attached screenshots displayed inline */}
-          {attachments.filter((a) => a.section === "equityFlows").length > 0 && (
-            <div className="mt-5 border-t border-slate-100 pt-5">
-              <div className="text-xs font-bold uppercase tracking-wider text-slate-400 mb-3">
-                JPM Flows & Liquidity Report
-              </div>
-              <div className="grid gap-3 md:grid-cols-2">
-                {attachments
-                  .filter((a) => a.section === "equityFlows")
-                  .map((att) => (
-                    <div key={att.id} className="rounded-xl border border-slate-200 overflow-hidden">
-                      <img
-                        src={att.dataUrl}
-                        alt={att.label}
-                        className="w-full h-auto"
-                      />
-                      <div className="px-3 py-1.5 bg-slate-50 text-xs text-slate-500">
-                        {att.label}
-                      </div>
-                    </div>
+          {/* Attached screenshots — compact thumbnails that open a centered
+              lightbox on click. Previously rendered full-width in a 2-col
+              grid, which forced a lot of scrolling when 11 JPM flows images
+              were attached. The data is still accessible (click any thumb to
+              see the full image); it just no longer dominates the brief. */}
+          {(() => {
+            const flowsAttachments = attachments.filter((a) => a.section === "equityFlows");
+            if (flowsAttachments.length === 0) return null;
+            return (
+              <div className="mt-5 border-t border-slate-100 pt-5">
+                <div className="text-xs font-bold uppercase tracking-wider text-slate-400 mb-3">
+                  JPM Flows & Liquidity Report
+                  <span className="ml-2 font-normal normal-case text-slate-400">
+                    ({flowsAttachments.length} {flowsAttachments.length === 1 ? "image" : "images"} — click to expand)
+                  </span>
+                </div>
+                <div className="flex flex-wrap gap-2">
+                  {flowsAttachments.map((att) => (
+                    <button
+                      key={att.id}
+                      type="button"
+                      onClick={() => setFlowsLightboxId(att.id)}
+                      className="block h-16 w-16 rounded-md border border-slate-200 overflow-hidden hover:border-blue-400 focus:border-blue-400 focus:outline-none transition-colors"
+                      title={`View ${att.label}`}
+                    >
+                      <img src={att.dataUrl} alt={att.label} className="h-full w-full object-cover" />
+                    </button>
                   ))}
+                </div>
+                {flowsLightboxId && (
+                  <LightboxModal
+                    attachments={flowsAttachments}
+                    currentId={flowsLightboxId}
+                    onClose={() => setFlowsLightboxId(null)}
+                  />
+                )}
               </div>
-            </div>
-          )}
+            );
+          })()}
         </div>
       </section>
       </>
