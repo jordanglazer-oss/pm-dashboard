@@ -455,9 +455,12 @@ export default function ResearchPage() {
         return null;
       }
 
-      // Normalize tickers for matching — strip $ and optional exchange suffix
-      // so the screenshot's "NVDA" matches a stored "NVDA" (or "$NVDA") etc.
-      const normalize = (t: string) => t.replace(/^\$+/, "").split(/[.\s]/)[0].toUpperCase();
+      // Normalize tickers for matching — strip $ prefix, map / → - (Newton
+      // writes dual-class shares as "BRK/B" but Yahoo uses "BRK-B"), and
+      // drop any trailing exchange suffix. Ensures "$BRK/B" from a
+      // screenshot matches "BRK-B" in the stored list.
+      const normalize = (t: string) =>
+        t.replace(/^\$+/, "").replace(/\//g, "-").split(/[.\s]/)[0].toUpperCase();
       const existingByNorm = new Map(state.newtonUpticks.map((u) => [normalize(u.ticker), u]));
 
       const merged = new Map(state.newtonUpticks.map((u) => [u.ticker, u]));

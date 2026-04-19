@@ -104,7 +104,12 @@ function parseRows(text: string): ScrapedUptick[] {
     return arr
       .filter((r) => r && typeof r === "object" && typeof r.ticker === "string" && r.ticker.trim())
       .map((r) => {
-        const out: ScrapedUptick = { ticker: String(r.ticker).trim().toUpperCase() };
+        // Normalize Newton's "BRK/B" to Yahoo's "BRK-B". Fundstrat uses a
+        // slash as the class separator for dual-share-class names; Yahoo
+        // (and this codebase) uses a dash. Any other slashes in a ticker
+        // would be unusual, so a blanket replace is safe.
+        const ticker = String(r.ticker).trim().toUpperCase().replace(/\//g, "-");
+        const out: ScrapedUptick = { ticker };
         if (r.support != null) out.support = String(r.support);
         if (r.resistance != null) out.resistance = String(r.resistance);
         if (r.priceWhenAdded != null) {
