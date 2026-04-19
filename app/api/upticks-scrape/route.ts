@@ -119,32 +119,38 @@ function parseRows(text: string): ScrapedUptick[] {
   }
 }
 
-async function runVision(atts: AttachmentInput[]): Promise<ScrapedUptick[]> {
+async function runVision(atts: AttachmentInput[]): Promise<{ entries: ScrapedUptick[]; rawText: string }> {
   const imageBlocks = buildImageBlocks(atts);
-  if (imageBlocks.length === 0) return [];
+  if (imageBlocks.length === 0) return { entries: [], rawText: "" };
 
   const msg = await client.messages.create({
     model: "claude-sonnet-4-6",
-    max_tokens: 2048,
+    max_tokens: 4096,
     messages: [
       {
         role: "user",
         content: [
           {
             type: "text",
-            text: `You are reading a Fundstrat "Newton's Upticks" technical screen screenshot. Extract every stock row into a JSON array.
+            text: `You are reading a Fundstrat "Newton's Upticks" technical screen screenshot. It is a TABLE of stocks. Extract every row.
 
-For each row, return an object with these fields (omit any that aren't visible):
-  - ticker: the stock ticker symbol (required, uppercase)
-  - support: the support level as shown (keep units/formatting, e.g. "$120" or "120.50")
-  - resistance: the resistance level as shown
-  - priceWhenAdded: the price at the time the ticker was added, as a NUMBER (strip $ and commas). Some screenshots call this "Price Added" or "Entry Price".
-  - dateAdded: the date added in M/D/YYYY format if visible
+Columns you should look for (they may be labeled differently or abbreviated):
+  - Ticker / Symbol → \`ticker\` (string, uppercase, required)
+  - Support → \`support\` (keep whatever string is shown, e.g. "120.50" or "$120")
+  - Resistance → \`resistance\` (same — whatever string is shown)
+  - Price Added / Entry Price / Price at Add → \`priceWhenAdded\` (NUMBER, strip $ and commas)
+  - Date Added / Date → \`dateAdded\` (string, e.g. "4/15/2026")
 
-Respond with ONLY a valid JSON array. No commentary, no markdown fences, no prose. Example:
+Important:
+  - If the screenshot shows support and resistance as a RANGE in one cell (e.g. "118 - 125"), split: support = low end, resistance = high end.
+  - If a cell is blank, OMIT that key for that row (do not return null or empty string).
+  - Extract EVERY ticker row you can see. Do not stop short.
+  - The current year is 2026; dates without a year should assume 2026 if ambiguous.
+
+Respond with ONLY a JSON array — no prose, no markdown fences. Example:
 [{"ticker":"NVDA","support":"120.50","resistance":"145.00","priceWhenAdded":132.10,"dateAdded":"4/15/2026"}]
 
-If no rows are visible, respond with: []`,
+If you genuinely cannot read the screenshot, respond with: []`,
           },
           ...imageBlocks,
         ],
@@ -153,13 +159,18 @@ If no rows are visible, respond with: []`,
   });
 
   const text = msg.content[0]?.type === "text" ? msg.content[0].text : "";
-  return parseRows(text);
+  // Surface the raw model output in server logs so you can diagnose parse
+  // failures ("why did support come back null for every row?"). Keeps the
+  // response body lean for the client while still making the data visible.
+  console.log("[upticks-scrape] raw vision output:", text.slice(0, 4000));
+  return { entries: parseRows(text), rawText: text };
 }
 
 export async function POST(req: NextRequest) {
   try {
     const body = await req.json();
     const attachments: AttachmentInput[] = Array.isArray(body?.attachments) ? body.attachments : [];
+    const force = Boolean(body?.force);
 
     if (attachments.length === 0) {
       return NextResponse.json({ entries: [], cached: false, reason: "no-attachments" });
@@ -167,17 +178,20 @@ export async function POST(req: NextRequest) {
 
     const hash = hashAttachments(attachments);
 
-    // Cache hit → zero Anthropic tokens spent. This is the whole point of
-    // the append-only cache: the Refresh button is free unless the image
-    // actually changed.
-    const cached = await getCached(hash);
-    if (cached) {
-      return NextResponse.json({ entries: cached, cached: true, hash });
+    // Cache hit → zero Anthropic tokens spent. `force: true` bypasses the
+    // cache so a user can re-run vision when the previous parse was bad
+    // (e.g. support/resistance came back empty because the prompt misread
+    // the screenshot format).
+    if (!force) {
+      const cached = await getCached(hash);
+      if (cached) {
+        return NextResponse.json({ entries: cached, cached: true, hash });
+      }
     }
 
-    const entries = await runVision(attachments);
+    const { entries, rawText } = await runVision(attachments);
     await saveCached(hash, entries);
-    return NextResponse.json({ entries, cached: false, hash });
+    return NextResponse.json({ entries, cached: false, hash, rawText });
   } catch (e) {
     console.error("upticks-scrape error:", e);
     return NextResponse.json({ error: "Failed to scrape upticks screenshot" }, { status: 500 });
