@@ -1,6 +1,6 @@
 "use client";
 
-import React, { useState, useRef, useCallback } from "react";
+import React, { useState, useRef, useCallback, useEffect } from "react";
 
 export type BriefAttachment = {
   id: string;
@@ -118,56 +118,46 @@ export function ImageUpload({ section, sectionLabel, attachments, onAdd, onRemov
         </span>
       </div>
 
-      {/* Thumbnails */}
+      {/* Thumbnails — small, but with a generous click target. The X stays
+          visible on touch devices (no hover) so it's always tappable, and
+          appears on hover on desktop. Clicking the image opens a full-size
+          lightbox instead of expanding inline (was eating too much vertical
+          space when many screenshots were attached). */}
       {sectionAttachments.length > 0 && (
         <div className="flex flex-wrap gap-2 mb-3">
           {sectionAttachments.map((att) => (
             <div key={att.id} className="group relative">
-              <img
-                src={att.dataUrl}
-                alt={att.label}
-                className="h-20 w-auto rounded-lg border border-slate-200 object-cover cursor-pointer hover:border-blue-400 transition-colors"
-                onClick={() => setPreviewId(previewId === att.id ? null : att.id)}
-              />
+              <button
+                type="button"
+                onClick={() => setPreviewId(att.id)}
+                className="block h-12 w-12 rounded-md border border-slate-200 overflow-hidden hover:border-blue-400 focus:border-blue-400 focus:outline-none transition-colors"
+                title={`View ${att.label}`}
+              >
+                <img src={att.dataUrl} alt={att.label} className="h-full w-full object-cover" />
+              </button>
               <button
                 onClick={(e) => {
                   e.stopPropagation();
                   onRemove(att.id);
                 }}
-                className="absolute -top-1.5 -right-1.5 flex md:hidden md:group-hover:flex h-5 w-5 items-center justify-center rounded-full bg-red-500 text-white text-xs font-bold shadow"
+                className="absolute -top-1.5 -right-1.5 flex h-5 w-5 items-center justify-center rounded-full bg-red-500 text-white text-xs font-bold shadow opacity-90 md:opacity-0 md:group-hover:opacity-100 md:focus:opacity-100 transition-opacity"
                 title="Remove"
               >
                 &times;
               </button>
-              <div className="text-[10px] text-slate-400 mt-0.5 max-w-[80px] truncate">
-                {att.label}
-              </div>
             </div>
           ))}
         </div>
       )}
 
-      {/* Expanded preview */}
+      {/* Full-size lightbox modal. Opens on thumbnail click; closes on X,
+          backdrop click, or Escape. Backdrop greys out the rest of the page. */}
       {previewId && (
-        <div className="mb-3">
-          {sectionAttachments
-            .filter((a) => a.id === previewId)
-            .map((att) => (
-              <div key={att.id} className="relative inline-block">
-                <img
-                  src={att.dataUrl}
-                  alt={att.label}
-                  className="max-w-full max-h-[400px] rounded-xl border border-slate-200 shadow-sm"
-                />
-                <button
-                  onClick={() => setPreviewId(null)}
-                  className="absolute top-2 right-2 rounded-full bg-slate-800/70 text-white px-2 py-0.5 text-xs hover:bg-slate-800"
-                >
-                  Close
-                </button>
-              </div>
-            ))}
-        </div>
+        <LightboxModal
+          attachments={sectionAttachments}
+          currentId={previewId}
+          onClose={() => setPreviewId(null)}
+        />
       )}
 
       {/* Drop zone */}
@@ -194,6 +184,128 @@ export function ImageUpload({ section, sectionLabel, attachments, onAdd, onRemov
           onChange={handleChange}
           className="hidden"
         />
+      </div>
+    </div>
+  );
+}
+
+/* ─── Lightbox modal ────────────────────────────────────────────────
+   Renders a centered full-size image with the page dimmed behind it.
+   Closes on: clicking the X, clicking the backdrop, or pressing Escape.
+   Arrow keys cycle between screenshots in the same section (handy when
+   a section has 11 JPM flows images and you want to flip through them
+   without reopening the modal each time).
+*/
+function LightboxModal({
+  attachments,
+  currentId,
+  onClose,
+}: {
+  attachments: BriefAttachment[];
+  currentId: string;
+  onClose: () => void;
+}) {
+  const [activeId, setActiveId] = useState(currentId);
+
+  const idx = attachments.findIndex((a) => a.id === activeId);
+  const active = idx >= 0 ? attachments[idx] : attachments[0];
+
+  const next = useCallback(() => {
+    if (attachments.length <= 1) return;
+    const i = attachments.findIndex((a) => a.id === activeId);
+    const n = attachments[(i + 1) % attachments.length];
+    setActiveId(n.id);
+  }, [attachments, activeId]);
+
+  const prev = useCallback(() => {
+    if (attachments.length <= 1) return;
+    const i = attachments.findIndex((a) => a.id === activeId);
+    const p = attachments[(i - 1 + attachments.length) % attachments.length];
+    setActiveId(p.id);
+  }, [attachments, activeId]);
+
+  // Escape closes; arrows navigate; body scroll locked while open so the
+  // background doesn't scroll out from under the modal.
+  useEffect(() => {
+    const onKey = (e: KeyboardEvent) => {
+      if (e.key === "Escape") onClose();
+      else if (e.key === "ArrowRight") next();
+      else if (e.key === "ArrowLeft") prev();
+    };
+    document.addEventListener("keydown", onKey);
+    const prevOverflow = document.body.style.overflow;
+    document.body.style.overflow = "hidden";
+    return () => {
+      document.removeEventListener("keydown", onKey);
+      document.body.style.overflow = prevOverflow;
+    };
+  }, [onClose, next, prev]);
+
+  if (!active) return null;
+
+  return (
+    <div
+      className="fixed inset-0 z-50 flex items-center justify-center bg-black/70 backdrop-blur-sm p-4"
+      onClick={onClose}
+      role="dialog"
+      aria-modal="true"
+    >
+      {/* Close button — top-right of viewport so it's always findable */}
+      <button
+        onClick={(e) => { e.stopPropagation(); onClose(); }}
+        className="absolute top-4 right-4 flex h-10 w-10 items-center justify-center rounded-full bg-white/90 text-slate-700 shadow-lg hover:bg-white hover:text-slate-900 transition-colors"
+        title="Close (Esc)"
+        aria-label="Close"
+      >
+        <svg className="w-5 h-5" fill="none" stroke="currentColor" strokeWidth="2.5" viewBox="0 0 24 24">
+          <path strokeLinecap="round" strokeLinejoin="round" d="M6 18L18 6M6 6l12 12" />
+        </svg>
+      </button>
+
+      {/* Prev/next navigation when the section has multiple screenshots */}
+      {attachments.length > 1 && (
+        <>
+          <button
+            onClick={(e) => { e.stopPropagation(); prev(); }}
+            className="absolute left-4 top-1/2 -translate-y-1/2 flex h-10 w-10 items-center justify-center rounded-full bg-white/90 text-slate-700 shadow-lg hover:bg-white hover:text-slate-900 transition-colors"
+            title="Previous (←)"
+            aria-label="Previous image"
+          >
+            <svg className="w-5 h-5" fill="none" stroke="currentColor" strokeWidth="2.5" viewBox="0 0 24 24">
+              <path strokeLinecap="round" strokeLinejoin="round" d="M15 19l-7-7 7-7" />
+            </svg>
+          </button>
+          <button
+            onClick={(e) => { e.stopPropagation(); next(); }}
+            className="absolute right-4 top-1/2 -translate-y-1/2 flex h-10 w-10 items-center justify-center rounded-full bg-white/90 text-slate-700 shadow-lg hover:bg-white hover:text-slate-900 transition-colors"
+            title="Next (→)"
+            aria-label="Next image"
+          >
+            <svg className="w-5 h-5" fill="none" stroke="currentColor" strokeWidth="2.5" viewBox="0 0 24 24">
+              <path strokeLinecap="round" strokeLinejoin="round" d="M9 5l7 7-7 7" />
+            </svg>
+          </button>
+        </>
+      )}
+
+      {/* Clicking the image itself should NOT close the modal */}
+      <div
+        className="max-w-[95vw] max-h-[90vh] flex flex-col items-center gap-3"
+        onClick={(e) => e.stopPropagation()}
+      >
+        <img
+          src={active.dataUrl}
+          alt={active.label}
+          className="max-w-full max-h-[85vh] object-contain rounded-lg shadow-2xl"
+        />
+        <div className="text-xs text-white/80 text-center">
+          <div className="font-medium">{active.label}</div>
+          {attachments.length > 1 && (
+            <div className="text-white/60 mt-0.5">
+              {idx + 1} of {attachments.length} · arrow keys to navigate · Esc to close
+            </div>
+          )}
+        </div>
       </div>
     </div>
   );
