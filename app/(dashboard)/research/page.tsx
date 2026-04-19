@@ -269,6 +269,8 @@ export default function ResearchPage() {
   }, [state]);
 
   const [namesLoading, setNamesLoading] = useState(false);
+  const [scrapeLoading, setScrapeLoading] = useState(false);
+  const [scrapeStatus, setScrapeStatus] = useState<string | null>(null);
 
   function toggleUptickSort(key: UptickSortKey) {
     setUptickSort(prev => prev.key === key ? { key, dir: prev.dir === "asc" ? "desc" : "asc" } : { key, dir: "asc" });
@@ -326,7 +328,7 @@ export default function ResearchPage() {
   const rArrow = (key: RBCSortKey) => rbcSort.key === key ? (rbcSort.dir === "asc" ? " ▲" : " ▼") : "";
 
   useEffect(() => {
-    fetch("/api/kv/research")
+    fetch("/api/kv/research", { cache: "no-store" })
       .then((r) => r.json())
       .then(async (data) => {
         if (data.research) {
@@ -417,6 +419,88 @@ export default function ResearchPage() {
     finally { setNamesLoading(false); }
   }, [state, save]);
 
+  /**
+   * Scrape uptick screenshot(s) via Anthropic vision, merge parsed rows into
+   * state.newtonUpticks. Mirrors the JPM-flows caching pattern: the server
+   * side fingerprints the image(s) and only spends tokens when the fingerprint
+   * changes. A "Refresh" with unchanged images is free.
+   *
+   * Merge rules:
+   *   - Existing ticker → overwrite only support/resistance/priceWhenAdded/
+   *     dateAdded. Preserve name/sector/price (those come from Yahoo).
+   *   - New ticker      → append with empty name/sector; the next
+   *     refreshUptickNames backfill will populate them.
+   */
+  const scrapeUpticks = useCallback(async (): Promise<{ merged: ResearchState; changed: boolean } | null> => {
+    const upticksAttachments = (state.attachments || []).filter((a) => a.section === "upticks");
+    if (upticksAttachments.length === 0) return null;
+    setScrapeLoading(true);
+    try {
+      const res = await fetch("/api/upticks-scrape", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          attachments: upticksAttachments.map((a) => ({ id: a.id, label: a.label, dataUrl: a.dataUrl })),
+        }),
+      });
+      if (!res.ok) { setScrapeStatus("Screenshot scan failed"); return null; }
+      const data = await res.json() as { entries?: Array<{ ticker: string; support?: string; resistance?: string; priceWhenAdded?: number; dateAdded?: string }>; cached?: boolean };
+      const entries = data.entries || [];
+      if (entries.length === 0) {
+        setScrapeStatus(data.cached ? "No rows in cached scan" : "Vision found no rows");
+        return null;
+      }
+
+      const byTicker = new Map(state.newtonUpticks.map((u) => [u.ticker, u]));
+      let changed = false;
+      for (const e of entries) {
+        const t = e.ticker.toUpperCase();
+        const existing = byTicker.get(t);
+        if (existing) {
+          const next: UptickEntry = {
+            ...existing,
+            support: e.support ?? existing.support,
+            resistance: e.resistance ?? existing.resistance,
+            priceWhenAdded: e.priceWhenAdded ?? existing.priceWhenAdded,
+            dateAdded: e.dateAdded ?? existing.dateAdded,
+          };
+          if (JSON.stringify(next) !== JSON.stringify(existing)) {
+            byTicker.set(t, next);
+            changed = true;
+          }
+        } else {
+          byTicker.set(t, {
+            ticker: t,
+            name: t,
+            sector: "—",
+            price: 0,
+            support: e.support ?? "",
+            resistance: e.resistance ?? "",
+            dateAdded: e.dateAdded ?? new Date().toLocaleDateString("en-US", { month: "numeric", day: "numeric", year: "numeric" }),
+            priceWhenAdded: e.priceWhenAdded ?? 0,
+          });
+          changed = true;
+        }
+      }
+
+      setScrapeStatus(
+        data.cached
+          ? `Scan up-to-date (cached) — ${entries.length} rows`
+          : `Scanned ${entries.length} rows from screenshot`,
+      );
+      if (!changed) return { merged: state, changed: false };
+      const nextState: ResearchState = { ...state, newtonUpticks: Array.from(byTicker.values()) };
+      save(nextState);
+      return { merged: nextState, changed: true };
+    } catch (e) {
+      console.error("Uptick scrape failed:", e);
+      setScrapeStatus("Screenshot scan failed");
+      return null;
+    } finally {
+      setScrapeLoading(false);
+    }
+  }, [state, save]);
+
   /* Uptick helpers */
   const addUptick = (entry: UptickEntry) => {
     if (state.newtonUpticks.some((u) => u.ticker === entry.ticker)) return;
@@ -425,7 +509,12 @@ export default function ResearchPage() {
   const removeUptick = (ticker: string) => {
     save({ ...state, newtonUpticks: state.newtonUpticks.filter((u) => u.ticker !== ticker) });
   };
-  const updateUptick = (idx: number, field: keyof UptickEntry, value: string) => {
+  const updateUptick = (ticker: string, field: keyof UptickEntry, value: string) => {
+    // Look up by ticker, not index. The table renders rows in sorted order,
+    // so the row's visual index does NOT match its index in state.newtonUpticks.
+    // Using an index here silently wrote edits to the wrong row.
+    const idx = state.newtonUpticks.findIndex((u) => u.ticker === ticker);
+    if (idx < 0) return;
     const updated = [...state.newtonUpticks];
     const entry = { ...updated[idx] };
     if (field === "price" || field === "priceWhenAdded") {
@@ -488,22 +577,22 @@ export default function ResearchPage() {
             </div>
             <div className="flex items-center gap-3">
               <button
-                onClick={refreshUptickNames}
-                disabled={namesLoading}
-                className="flex items-center gap-1.5 rounded-lg bg-slate-600 px-3 py-1.5 text-xs font-semibold text-white hover:bg-slate-700 disabled:opacity-50 transition-colors"
-                title="Refresh company names & sectors from Yahoo Finance"
-              >
-                <svg className={`w-3.5 h-3.5 ${namesLoading ? "animate-spin" : ""}`} fill="none" stroke="currentColor" strokeWidth="2" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" d="M16.023 9.348h4.992v-.001M2.985 19.644v-4.992m0 0h4.992m-4.993 0 3.181 3.183a8.25 8.25 0 0 0 13.803-3.7M4.031 9.865a8.25 8.25 0 0 1 13.803-3.7l3.181 3.182" /></svg>
-                {namesLoading ? "Updating..." : "Refresh Names"}
-              </button>
-              <button
-                onClick={() => fetchLivePrices()}
-                disabled={pricesLoading}
+                onClick={async () => {
+                  // Scrape first so any new tickers are in state before the
+                  // names backfill runs against them. Scrape is a no-op (and
+                  // free) when no upticks screenshot is attached, and is free
+                  // server-side when the attached image hasn't changed since
+                  // last scan — same caching pattern as JPM flows.
+                  await scrapeUpticks();
+                  void refreshUptickNames();
+                  void fetchLivePrices();
+                }}
+                disabled={namesLoading || pricesLoading || scrapeLoading}
                 className="flex items-center gap-1.5 rounded-lg bg-teal-600 px-3 py-1.5 text-xs font-semibold text-white hover:bg-teal-700 disabled:opacity-50 transition-colors"
-                title="Refresh all prices from Yahoo Finance"
+                title="Refresh prices + company names/sectors. If a screenshot is attached, re-scan it only if the image changed since last scan."
               >
-                <svg className={`w-3.5 h-3.5 ${pricesLoading ? "animate-spin" : ""}`} fill="none" stroke="currentColor" strokeWidth="2" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" d="M16.023 9.348h4.992v-.001M2.985 19.644v-4.992m0 0h4.992m-4.993 0 3.181 3.183a8.25 8.25 0 0 0 13.803-3.7M4.031 9.865a8.25 8.25 0 0 1 13.803-3.7l3.181 3.182" /></svg>
-                {pricesLoading ? "Updating..." : "Refresh Prices"}
+                <svg className={`w-3.5 h-3.5 ${(namesLoading || pricesLoading || scrapeLoading) ? "animate-spin" : ""}`} fill="none" stroke="currentColor" strokeWidth="2" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" d="M16.023 9.348h4.992v-.001M2.985 19.644v-4.992m0 0h4.992m-4.993 0 3.181 3.183a8.25 8.25 0 0 0 13.803-3.7M4.031 9.865a8.25 8.25 0 0 1 13.803-3.7l3.181 3.182" /></svg>
+                {(namesLoading || pricesLoading || scrapeLoading) ? "Updating..." : "Refresh"}
               </button>
               <span className="text-sm text-slate-400">{state.newtonUpticks.length} stocks</span>
             </div>
@@ -559,7 +648,7 @@ export default function ResearchPage() {
                       </td>
                       <td className="py-2 pr-3 text-right font-mono">
                         {u.priceWhenAdded ? (
-                          <EditableCell value={`$${u.priceWhenAdded.toFixed(2)}`} onChange={(v) => updateUptick(i, "priceWhenAdded", v.replace("$", ""))} />
+                          <EditableCell value={`$${u.priceWhenAdded.toFixed(2)}`} onChange={(v) => updateUptick(u.ticker, "priceWhenAdded", v.replace("$", ""))} />
                         ) : (
                           <span className="text-emerald-600 font-semibold">NEW</span>
                         )}
@@ -574,13 +663,13 @@ export default function ResearchPage() {
                         )}
                       </td>
                       <td className="py-2 pr-3 text-right font-mono">
-                        <EditableCell value={u.support} onChange={(v) => updateUptick(i, "support", v)} />
+                        <EditableCell value={u.support} onChange={(v) => updateUptick(u.ticker, "support", v)} />
                       </td>
                       <td className="py-2 pr-3 text-right font-mono">
-                        <EditableCell value={u.resistance} onChange={(v) => updateUptick(i, "resistance", v)} />
+                        <EditableCell value={u.resistance} onChange={(v) => updateUptick(u.ticker, "resistance", v)} />
                       </td>
                       <td className="py-2 pr-3 text-slate-500">
-                        <EditableCell value={u.dateAdded} onChange={(v) => updateUptick(i, "dateAdded", v)} />
+                        <EditableCell value={u.dateAdded} onChange={(v) => updateUptick(u.ticker, "dateAdded", v)} />
                       </td>
                       <td className="py-2 text-right whitespace-nowrap">
                         {scoredStocks.some((s) => s.ticker === u.ticker) ? (
@@ -611,6 +700,33 @@ export default function ResearchPage() {
           </div>
 
           <UptickAddForm onAdd={addUptick} />
+
+          {/*
+            Screenshot scraper. Uploads are persisted in state.attachments with
+            section === "upticks" (same storage the rest of Research uses).
+            On Refresh, scrapeUpticks() POSTs these images to
+            /api/upticks-scrape, which re-runs the Anthropic vision call ONLY
+            if the image fingerprint changed (same caching pattern as JPM
+            flows). Unchanged images = zero tokens spent.
+          */}
+          <div className="mt-5 border-t border-slate-100 pt-4">
+            <div className="flex items-center gap-3 mb-2">
+              <h4 className="text-sm font-bold text-teal-700">Screenshot Scanner</h4>
+              <span className="text-[10px] text-slate-400">
+                Upload a Newton&apos;s Upticks screenshot. On Refresh, support/resistance/price/date fields are auto-populated from the image. Re-scans only if the image changes.
+              </span>
+            </div>
+            <ImageUpload
+              section="upticks"
+              sectionLabel="Newton's Upticks"
+              attachments={state.attachments || []}
+              onAdd={addAttachment}
+              onRemove={removeAttachment}
+            />
+            {scrapeStatus && (
+              <p className="text-[10px] text-slate-500 mt-2">{scrapeStatus}</p>
+            )}
+          </div>
 
           {/* Newton sector views — compact inline toggles */}
           <div className="mt-5 border-t border-slate-100 pt-4">
