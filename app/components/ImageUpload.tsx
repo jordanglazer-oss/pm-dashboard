@@ -196,7 +196,7 @@ export function ImageUpload({ section, sectionLabel, attachments, onAdd, onRemov
    a section has 11 JPM flows images and you want to flip through them
    without reopening the modal each time).
 */
-function LightboxModal({
+export function LightboxModal({
   attachments,
   currentId,
   onClose,
