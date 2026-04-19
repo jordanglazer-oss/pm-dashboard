@@ -431,7 +431,9 @@ export default function ResearchPage() {
    *   - New ticker      → append with empty name/sector; the next
    *     refreshUptickNames backfill will populate them.
    */
-  const scrapeUpticks = useCallback(async (): Promise<{ merged: ResearchState; changed: boolean } | null> => {
+  const [lastScrape, setLastScrape] = useState<Array<{ ticker: string; support?: string; resistance?: string; priceWhenAdded?: number; dateAdded?: string }>>([]);
+
+  const scrapeUpticks = useCallback(async (force = false): Promise<{ merged: ResearchState; changed: boolean } | null> => {
     const upticksAttachments = (state.attachments || []).filter((a) => a.section === "upticks");
     if (upticksAttachments.length === 0) return null;
     setScrapeLoading(true);
@@ -440,23 +442,33 @@ export default function ResearchPage() {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({
+          force,
           attachments: upticksAttachments.map((a) => ({ id: a.id, label: a.label, dataUrl: a.dataUrl })),
         }),
       });
       if (!res.ok) { setScrapeStatus("Screenshot scan failed"); return null; }
       const data = await res.json() as { entries?: Array<{ ticker: string; support?: string; resistance?: string; priceWhenAdded?: number; dateAdded?: string }>; cached?: boolean };
       const entries = data.entries || [];
+      setLastScrape(entries);
       if (entries.length === 0) {
-        setScrapeStatus(data.cached ? "No rows in cached scan" : "Vision found no rows");
+        setScrapeStatus(data.cached ? "No rows in cached scan — click Force re-scan to retry" : "Vision found no rows — try Force re-scan or a clearer screenshot");
         return null;
       }
 
-      const byTicker = new Map(state.newtonUpticks.map((u) => [u.ticker, u]));
+      // Normalize tickers for matching — strip $ and optional exchange suffix
+      // so the screenshot's "NVDA" matches a stored "NVDA" (or "$NVDA") etc.
+      const normalize = (t: string) => t.replace(/^\$+/, "").split(/[.\s]/)[0].toUpperCase();
+      const existingByNorm = new Map(state.newtonUpticks.map((u) => [normalize(u.ticker), u]));
+
+      const merged = new Map(state.newtonUpticks.map((u) => [u.ticker, u]));
+      let matched = 0;
+      let updatedFields = 0;
       let changed = false;
       for (const e of entries) {
-        const t = e.ticker.toUpperCase();
-        const existing = byTicker.get(t);
+        const norm = normalize(e.ticker);
+        const existing = existingByNorm.get(norm);
         if (existing) {
+          matched += 1;
           const next: UptickEntry = {
             ...existing,
             support: e.support ?? existing.support,
@@ -465,13 +477,14 @@ export default function ResearchPage() {
             dateAdded: e.dateAdded ?? existing.dateAdded,
           };
           if (JSON.stringify(next) !== JSON.stringify(existing)) {
-            byTicker.set(t, next);
+            merged.set(existing.ticker, next);
+            updatedFields += 1;
             changed = true;
           }
         } else {
-          byTicker.set(t, {
-            ticker: t,
-            name: t,
+          merged.set(norm, {
+            ticker: norm,
+            name: norm,
             sector: "—",
             price: 0,
             support: e.support ?? "",
@@ -483,13 +496,12 @@ export default function ResearchPage() {
         }
       }
 
+      const cachedLabel = data.cached ? " (cached)" : "";
       setScrapeStatus(
-        data.cached
-          ? `Scan up-to-date (cached) — ${entries.length} rows`
-          : `Scanned ${entries.length} rows from screenshot`,
+        `${entries.length} rows in screenshot${cachedLabel} · ${matched} matched your list · ${updatedFields} updated`,
       );
       if (!changed) return { merged: state, changed: false };
-      const nextState: ResearchState = { ...state, newtonUpticks: Array.from(byTicker.values()) };
+      const nextState: ResearchState = { ...state, newtonUpticks: Array.from(merged.values()) };
       save(nextState);
       return { merged: nextState, changed: true };
     } catch (e) {
@@ -723,8 +735,53 @@ export default function ResearchPage() {
               onAdd={addAttachment}
               onRemove={removeAttachment}
             />
-            {scrapeStatus && (
-              <p className="text-[10px] text-slate-500 mt-2">{scrapeStatus}</p>
+            <div className="flex items-center gap-3 mt-2">
+              {scrapeStatus && (
+                <p className="text-[10px] text-slate-500">{scrapeStatus}</p>
+              )}
+              <button
+                onClick={() => { void scrapeUpticks(true); }}
+                disabled={scrapeLoading || (state.attachments || []).filter((a) => a.section === "upticks").length === 0}
+                className="ml-auto text-[10px] rounded-md border border-slate-300 bg-white px-2 py-1 font-medium text-slate-600 hover:bg-slate-100 disabled:opacity-50 transition-colors"
+                title="Ignore the cached parse and re-run Anthropic vision against the current screenshot. Use this if the last scan missed support/resistance or other fields."
+              >
+                Force re-scan
+              </button>
+            </div>
+            {/* Debug: show exactly what the vision call extracted so you can
+                see whether the model actually read support/resistance off
+                the screenshot. If rows show here with empty support/resistance,
+                the prompt needs improvement — not the merge logic. */}
+            {lastScrape.length > 0 && (
+              <details className="mt-2 text-[10px] text-slate-500">
+                <summary className="cursor-pointer hover:text-slate-700">
+                  View parsed rows from screenshot ({lastScrape.length})
+                </summary>
+                <div className="mt-1 overflow-x-auto">
+                  <table className="w-full text-[10px]">
+                    <thead>
+                      <tr className="text-slate-400 border-b border-slate-200">
+                        <th className="py-1 pr-2 text-left">Ticker</th>
+                        <th className="py-1 pr-2 text-left">Support</th>
+                        <th className="py-1 pr-2 text-left">Resistance</th>
+                        <th className="py-1 pr-2 text-right">Price Added</th>
+                        <th className="py-1 text-left">Date Added</th>
+                      </tr>
+                    </thead>
+                    <tbody>
+                      {lastScrape.map((r, i) => (
+                        <tr key={`${r.ticker}-${i}`} className="border-b border-slate-100">
+                          <td className="py-0.5 pr-2 font-mono font-semibold">{r.ticker}</td>
+                          <td className="py-0.5 pr-2">{r.support ?? <span className="text-slate-300">—</span>}</td>
+                          <td className="py-0.5 pr-2">{r.resistance ?? <span className="text-slate-300">—</span>}</td>
+                          <td className="py-0.5 pr-2 text-right">{r.priceWhenAdded != null ? `$${r.priceWhenAdded}` : <span className="text-slate-300">—</span>}</td>
+                          <td className="py-0.5">{r.dateAdded ?? <span className="text-slate-300">—</span>}</td>
+                        </tr>
+                      ))}
+                    </tbody>
+                  </table>
+                </div>
+              </details>
             )}
           </div>
 
