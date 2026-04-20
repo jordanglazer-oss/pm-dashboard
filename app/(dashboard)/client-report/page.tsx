@@ -1099,7 +1099,7 @@ function OnePager({
       <div className="grid grid-cols-5 gap-5 mt-4 break-inside-avoid">
         <div className="col-span-3">
           <SectionTitle>Current Positioning</SectionTitle>
-          <HoldingsTable rows={data.xray.slice(0, 15)} />
+          <HoldingsTable rows={data.xray.slice(0, 10)} />
           <div className="mt-1 text-[9px] text-slate-400 flex justify-between">
             <span>
               CAD: {data.totals.cad.toFixed(1)}% · USD: {data.totals.usd.toFixed(1)}%
