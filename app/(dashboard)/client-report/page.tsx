@@ -784,6 +784,16 @@ export default function ClientReportPage() {
             margin: 0 !important;
             width: 100% !important;
           }
+          /* Force colored backgrounds (pie slices, sector bars, legend
+             swatches) to render in the printed PDF. By default Chrome
+             strips these to save ink — which washed out the sector bar
+             colors and the pie-chart legend swatches. Apply inside and
+             below the report frame so the sticky toolbar is unaffected. */
+          .report-preview-frame,
+          .report-preview-frame * {
+            -webkit-print-color-adjust: exact !important;
+            print-color-adjust: exact !important;
+          }
         }
       `}</style>
 
@@ -1188,6 +1198,11 @@ function OnePager({
             }))}
             accent={RBC_GOLD}
             textColor={RBC_NAVY}
+            // Compress the visual range so Materials at ~4% doesn't get
+            // dwarfed by Technology at ~27%. The numeric labels on the
+            // right stay exact; only the bar lengths are re-scaled.
+            scale="sqrt"
+            minBarPct={12}
           />
           {!data.sectors.length && (
             <div className="text-[10px] text-slate-400 italic mt-2">
@@ -1693,6 +1708,8 @@ function BarList({
   accent,
   textColor = "#1e293b",
   tooltip,
+  scale = "linear",
+  minBarPct = 0,
 }: {
   // `color` on the row overrides `accent` (lets the caller tint each bar
   // individually — e.g. per-sector GICS colors). `tooltip` is a per-row
@@ -1702,15 +1719,33 @@ function BarList({
   accent: string;
   textColor?: string;
   tooltip?: (row: { label: string; value: number }) => string;
+  // Optional visual compression so a small value (e.g. Materials at 3.9%)
+  // doesn't render as a sliver next to a dominant one (Technology at
+  // 27.4%). Numeric labels on the right stay linear so the actual weight
+  // is never misrepresented — only the bar length is re-scaled.
+  //   "linear"  → proportional (current behavior)
+  //   "sqrt"    → square-root scaling, ~half-compresses the range
+  //   "pow0.6"  → even gentler; use when the spread is extreme
+  scale?: "linear" | "sqrt" | "pow0.6";
+  // Floor for rendered bar width (as a percentage of the longest bar) so
+  // the smallest slice is still clearly visible even after scaling.
+  minBarPct?: number;
 }) {
   if (!rows.length) {
     return <div className="text-[10px] text-slate-400 italic mt-2">No data.</div>;
   }
-  const max = Math.max(...rows.map((r) => r.value), 1);
+  const transform = (v: number) => {
+    if (scale === "sqrt") return Math.sqrt(Math.max(0, v));
+    if (scale === "pow0.6") return Math.pow(Math.max(0, v), 0.6);
+    return Math.max(0, v);
+  };
+  const maxT = Math.max(...rows.map((r) => transform(r.value)), 1);
   return (
     <div className="mt-2 space-y-1">
       {rows.map((r) => {
         const title = r.tooltip ?? (tooltip ? tooltip(r) : undefined);
+        const rawPct = (transform(r.value) / maxT) * 100;
+        const pct = r.value > 0 ? Math.max(minBarPct, rawPct) : 0;
         return (
           <div key={r.label} className="text-[10px]" title={title}>
             <div className="flex justify-between">
@@ -1723,7 +1758,7 @@ function BarList({
               <div
                 className="h-full rounded-full transition-all"
                 style={{
-                  width: `${Math.min(100, (r.value / max) * 100)}%`,
+                  width: `${Math.min(100, pct)}%`,
                   backgroundColor: r.color ?? accent,
                 }}
               />
