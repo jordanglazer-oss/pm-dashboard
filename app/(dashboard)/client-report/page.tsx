@@ -1364,17 +1364,47 @@ const ALL_CAPS_BRAND_EXCEPTIONS: ReadonlySet<string> = new Set([
 ]);
 
 /**
+ * Corporate suffixes that should always be normalized to title case,
+ * even when the rest of the company name is already mixed-case. Covers
+ * cases like Yahoo returning "Apple INC" where the stem is fine but the
+ * entity suffix is all-caps.
+ */
+const CORPORATE_SUFFIX_MAP: Record<string, string> = {
+  INC: "Inc",
+  INCORPORATED: "Incorporated",
+  CORP: "Corp",
+  CORPORATION: "Corporation",
+  LTD: "Ltd",
+  LIMITED: "Limited",
+  CO: "Co",
+  COMPANY: "Company",
+  HOLDINGS: "Holdings",
+  GROUP: "Group",
+  // Initialisms that are conventionally uppercase in English typography
+  // — list them here so the title-caser leaves them alone.
+  LLC: "LLC",
+  PLC: "PLC",
+  NV: "NV",
+  SA: "SA",
+  AG: "AG",
+  AB: "AB",
+  AS: "AS",
+  BV: "BV",
+  SE: "SE",
+};
+
+/**
  * Normalize company names for display. If the source already has a
- * lowercase letter we assume it's already styled correctly (Yahoo gives
- * us "NVIDIA Corp", "Apple Inc." etc.). If the source is ALL CAPS
- * (common for fund holdings and PIM entries), we title-case it while
- * preserving known brand acronyms. Hyphens and apostrophes are respected
- * ("COCA-COLA" → "Coca-Cola", "O'REILLY" → "O'Reilly").
+ * lowercase letter we trust the stem (Yahoo gives us "NVIDIA Corp",
+ * "Apple Inc." etc.) but still normalize corporate suffixes so
+ * "Apple INC" becomes "Apple Inc". If the source is entirely ALL CAPS
+ * we title-case it while preserving known brand acronyms. Hyphens and
+ * apostrophes are respected ("COCA-COLA" → "Coca-Cola", "O'REILLY" →
+ * "O'Reilly").
  */
 function formatCompanyName(name: string | undefined | null): string {
   if (!name) return "";
-  // Already mixed case — trust the source.
-  if (/[a-z]/.test(name)) return name;
+  const isAllCaps = !/[a-z]/.test(name);
   return name
     .split(/(\s+)/)
     .map((token) => {
@@ -1384,10 +1414,17 @@ function formatCompanyName(name: string | undefined | null): string {
       if (!m) return token;
       const core = m[1];
       const trailing = m[2];
-      if (ALL_CAPS_BRAND_EXCEPTIONS.has(core.toUpperCase())) {
-        return core.toUpperCase() + trailing;
+      const upper = core.toUpperCase();
+      // Suffix normalization applies regardless of the surrounding
+      // name's casing — handles "Apple INC", "Tesla, INC.", etc.
+      const suffix = CORPORATE_SUFFIX_MAP[upper];
+      if (suffix) return suffix + trailing;
+      // Mixed-case source: leave non-suffix tokens alone.
+      if (!isAllCaps) return token;
+      // All-caps source — title-case unless it's a known brand.
+      if (ALL_CAPS_BRAND_EXCEPTIONS.has(upper)) {
+        return upper + trailing;
       }
-      // Title-case, capitalizing after hyphens/apostrophes/slashes too.
       const cased = core
         .toLowerCase()
         .replace(/(^|[-'\/])([a-z])/g, (_, sep, letter) => sep + letter.toUpperCase());
