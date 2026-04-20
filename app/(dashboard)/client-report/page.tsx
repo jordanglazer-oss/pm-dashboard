@@ -1181,7 +1181,7 @@ function OnePager({
       <div className="grid grid-cols-2 gap-5 mt-4 break-inside-avoid">
         <div>
           <SectionTitle>Top Exposures (Look-Through)</SectionTitle>
-          <XRayTable rows={data.xray.slice(0, 12)} />
+          <XRayTable rows={data.xray.slice(0, 10)} />
           {!data.xray.length && (
             <div className="text-[10px] text-slate-400 italic mt-2">
               Look-through exposures populate once fund-data holdings have been cached.
@@ -1351,6 +1351,52 @@ function OnePager({
 // ───────── Subcomponents ─────────
 
 /**
+ * Brand acronyms that should stay uppercase even when the source name
+ * arrives in all caps. Keep the list small — anything NOT in here gets
+ * standard title-casing (e.g. "CONSTELLATION SOFTWARE INC." → "Constellation
+ * Software Inc."). Add sparingly when you notice a company name that
+ * should stylistically be ALL CAPS.
+ */
+const ALL_CAPS_BRAND_EXCEPTIONS: ReadonlySet<string> = new Set([
+  "NVIDIA", "IBM", "AMD", "HSBC", "SAP", "BMW", "UPS", "CVS", "TSMC",
+  "PNC", "AIG", "EOG", "AES", "CSX", "LVMH", "ASML", "AT&T", "P&G",
+  "USA", "UK", "US", "EU", "ETF", "REIT", "JPMORGAN",
+]);
+
+/**
+ * Normalize company names for display. If the source already has a
+ * lowercase letter we assume it's already styled correctly (Yahoo gives
+ * us "NVIDIA Corp", "Apple Inc." etc.). If the source is ALL CAPS
+ * (common for fund holdings and PIM entries), we title-case it while
+ * preserving known brand acronyms. Hyphens and apostrophes are respected
+ * ("COCA-COLA" → "Coca-Cola", "O'REILLY" → "O'Reilly").
+ */
+function formatCompanyName(name: string | undefined | null): string {
+  if (!name) return "";
+  // Already mixed case — trust the source.
+  if (/[a-z]/.test(name)) return name;
+  return name
+    .split(/(\s+)/)
+    .map((token) => {
+      if (/^\s+$/.test(token) || !token) return token;
+      // Split core word from trailing punctuation like "INC." or "CO.,"
+      const m = token.match(/^([A-Za-z0-9&'\-]+)(.*)$/);
+      if (!m) return token;
+      const core = m[1];
+      const trailing = m[2];
+      if (ALL_CAPS_BRAND_EXCEPTIONS.has(core.toUpperCase())) {
+        return core.toUpperCase() + trailing;
+      }
+      // Title-case, capitalizing after hyphens/apostrophes/slashes too.
+      const cased = core
+        .toLowerCase()
+        .replace(/(^|[-'\/])([a-z])/g, (_, sep, letter) => sep + letter.toUpperCase());
+      return cased + trailing;
+    })
+    .join("");
+}
+
+/**
  * Per-slice breakdown tables shown on page 2 of the PDF. Each slice from
  * the Asset Allocation pie renders as its own mini-table listing the
  * underlying holdings and their weight contribution (after look-through
@@ -1415,7 +1461,7 @@ function AllocationBreakdownTables({
                       {h.symbol}
                     </td>
                     <td className="px-2 py-1 text-slate-600 truncate">
-                      {h.name}
+                      {formatCompanyName(h.name)}
                     </td>
                     <td className="px-2 py-1 text-right tabular-nums text-slate-700 w-[48px]">
                       {h.weight.toFixed(2)}%
@@ -1473,7 +1519,7 @@ function HoldingsTable({ rows }: { rows: ReportXRayRow[] }) {
         {rows.map((r, i) => (
           <tr key={r.symbol} className={i % 2 ? "bg-slate-50" : ""}>
             <td className="py-0.5 text-slate-800">
-              <span>{r.name || r.symbol}</span>
+              <span>{formatCompanyName(r.name) || r.symbol}</span>
               {r.symbol && r.symbol !== r.name && (
                 <span className="ml-1 text-[8px] text-slate-400">{r.symbol}</span>
               )}
@@ -1606,7 +1652,7 @@ function SimpleHoldingsTable({
         {rows.map((r, i) => (
           <tr key={r.ticker} className={i % 2 ? "bg-slate-50" : ""}>
             <td className="py-0.5 text-slate-800">
-              <span>{r.name}</span>
+              <span>{formatCompanyName(r.name)}</span>
               {r.ticker && r.ticker !== r.name && (
                 <span className="ml-1 text-[8px] text-slate-400">
                   {r.ticker}
@@ -1789,7 +1835,7 @@ function XRayTable({ rows }: { rows: ReportXRayRow[] }) {
         {rows.map((r, i) => (
           <tr key={r.symbol} className={i % 2 ? "bg-slate-50" : ""}>
             <td className="py-0.5 text-slate-800">
-              <span>{r.name || r.symbol}</span>
+              <span>{formatCompanyName(r.name) || r.symbol}</span>
               {r.symbol && r.symbol !== r.name && (
                 <span className="ml-1 text-[8px] text-slate-400">{r.symbol}</span>
               )}
