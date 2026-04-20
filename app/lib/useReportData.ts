@@ -442,10 +442,23 @@ export function useReportData(
         if (s.ticker.endsWith(".TO")) {
           stockBySymbol.set(s.ticker.replace(/\.TO$/, "-T"), s);
         }
+        if (s.ticker.endsWith("-T")) {
+          stockBySymbol.set(s.ticker.replace(/-T$/, ".TO"), s);
+        }
       }
+      // Returns the Stock metadata for a PIM holding symbol, trying both
+      // .TO and -T variants since PIM models and the Dashboard disagree on
+      // Canadian suffix conventions.
+      const lookupStock = (sym: string): Stock | undefined => {
+        return (
+          stockBySymbol.get(sym) ??
+          stockBySymbol.get(sym.replace(/\.TO$/, "-T")) ??
+          stockBySymbol.get(sym.replace(/-T$/, ".TO"))
+        );
+      };
       for (const row of holdingRows) {
         if (row.bucket !== "Equity") continue;
-        const s = stockBySymbol.get(row.id);
+        const s = lookupStock(row.id);
         if (s?.designation === "core") row.bucket = "Core";
         else row.bucket = "Alpha";
       }
@@ -481,13 +494,24 @@ export function useReportData(
       };
       for (const h of activeHoldings) {
         const wPct = h.weight * 100;
+        // Respect the Dashboard's designation override: a symbol that
+        // appears in CORE_ETF_FAMILIES (e.g. XSU.TO) but is tagged as
+        // "alpha" on the Dashboard is an active/tactical holding — it
+        // should roll into the country-specific equity slice, not into
+        // Core ETFs. Symmetrically, a name explicitly tagged "core"
+        // counts as Core even if it's not in the built-in list.
+        const stockMeta = lookupStock(h.symbol);
+        const designation = stockMeta?.designation;
+        const treatAsCore =
+          designation === "core" ||
+          (designation !== "alpha" && isCoreEtf(h.symbol));
         if (h.assetClass === "fixedIncome") {
           sliceTotals.fixedIncome += wPct;
           recordHolding("fixedIncome", h, wPct);
         } else if (h.assetClass === "alternative") {
           sliceTotals.alternatives += wPct;
           recordHolding("alternatives", h, wPct);
-        } else if (isCoreEtf(h.symbol)) {
+        } else if (treatAsCore) {
           sliceTotals.coreEtfs += wPct;
           recordHolding("coreEtfs", h, wPct);
         } else {
