@@ -20,6 +20,7 @@ import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { useRouter, useSearchParams } from "next/navigation";
 import {
   useReportData,
+  type ReportAllocationBreakdown,
   type ReportAllocationSlice,
   type ReportData,
   type ReportTrackerPerformance,
@@ -1301,6 +1302,31 @@ function OnePager({
         </div>
       )}
 
+      {/* ── Allocation breakdown (new page) ──
+          Shows exactly which holdings feed into each slice of the Asset
+          Allocation pie. Added because Core ETFs were visually dominating
+          the pie and the prospect couldn't see what was inside that slice. */}
+      {data.allocationBreakdown.length > 0 && (
+        <div
+          className="mt-6"
+          style={{ breakBefore: "page", pageBreakBefore: "always" }}
+        >
+          <div
+            className="pb-3 border-b-4 mb-4"
+            style={{ borderColor: RBC_NAVY }}
+          >
+            <div className="text-lg font-bold" style={{ color: RBC_NAVY }}>
+              Asset Allocation — Holdings Breakdown
+            </div>
+            <div className="text-[10px] text-slate-500">
+              Each holding&apos;s contribution to the categories shown in the
+              Asset Allocation pie chart (post look-through).
+            </div>
+          </div>
+          <AllocationBreakdownTables breakdown={data.allocationBreakdown} />
+        </div>
+      )}
+
       {/* ── Footer ── */}
       <div
         className="mt-4 pt-2 border-t text-[9px] text-slate-400 flex justify-between"
@@ -1323,6 +1349,81 @@ function OnePager({
 }
 
 // ───────── Subcomponents ─────────
+
+/**
+ * Per-slice breakdown tables shown on page 2 of the PDF. Each slice from
+ * the Asset Allocation pie renders as its own mini-table listing the
+ * underlying holdings and their weight contribution (after look-through
+ * expansion — so Core ETFs, for instance, show the actual underlying
+ * holdings rather than just the ETF ticker).
+ */
+function AllocationBreakdownTables({
+  breakdown,
+}: {
+  breakdown: ReportAllocationBreakdown[];
+}) {
+  return (
+    <div className="grid grid-cols-2 gap-4">
+      {breakdown.map((slice) => (
+        <div
+          key={slice.key}
+          className="break-inside-avoid rounded border border-slate-200"
+        >
+          <div
+            className="flex items-center justify-between gap-2 px-2 py-1.5 border-b"
+            style={{ borderColor: RBC_GOLD, background: "#f8fafc" }}
+          >
+            <div className="flex items-center gap-2 min-w-0">
+              <span
+                className="inline-block h-3 w-3 rounded-sm flex-shrink-0"
+                style={{ background: slice.color }}
+                aria-hidden
+              />
+              <span
+                className="text-[11px] font-bold truncate"
+                style={{ color: RBC_NAVY }}
+              >
+                {slice.label}
+              </span>
+            </div>
+            <span
+              className="text-[11px] font-bold tabular-nums"
+              style={{ color: RBC_NAVY }}
+            >
+              {slice.weight.toFixed(1)}%
+            </span>
+          </div>
+          {slice.holdings.length === 0 ? (
+            <div className="px-2 py-2 text-[9px] text-slate-400 italic">
+              No underlying holdings available.
+            </div>
+          ) : (
+            <table className="w-full text-[10px]">
+              <tbody>
+                {slice.holdings.map((h, i) => (
+                  <tr
+                    key={`${slice.key}-${h.symbol}-${i}`}
+                    className="border-t border-slate-100"
+                  >
+                    <td className="px-2 py-1 font-semibold text-slate-700 tabular-nums w-[72px]">
+                      {h.symbol}
+                    </td>
+                    <td className="px-2 py-1 text-slate-600 truncate">
+                      {h.name}
+                    </td>
+                    <td className="px-2 py-1 text-right tabular-nums text-slate-700 w-[48px]">
+                      {h.weight.toFixed(2)}%
+                    </td>
+                  </tr>
+                ))}
+              </tbody>
+            </table>
+          )}
+        </div>
+      ))}
+    </div>
+  );
+}
 
 function SectionTitle({ children }: { children: React.ReactNode }) {
   return (

@@ -92,6 +92,25 @@ export type ReportAllocationSlice = {
   color: string;
 };
 
+/** One underlying holding contributing to a pie slice. Weights are
+ *  percentages of the total portfolio (same scale as the slice weight). */
+export type ReportAllocationHolding = {
+  symbol: string;
+  name: string;
+  weight: number;
+};
+
+/** Per-slice drill-down: which specific holdings feed into this slice,
+ *  and at what weights. Rendered as a breakdown table on page 2 of the
+ *  PDF so the audience can verify the pie isn't hiding composition. */
+export type ReportAllocationBreakdown = {
+  key: ReportAllocationSlice["key"];
+  label: string;
+  color: string;
+  weight: number;
+  holdings: ReportAllocationHolding[];
+};
+
 /** One row of the look-through X-ray table (top effective exposures). */
 export type ReportXRayRow = {
   symbol: string;
@@ -138,6 +157,10 @@ export type ReportData = {
   weightsSource: "live" | "target";
   holdings: ReportHoldingRow[];
   allocation: ReportAllocationSlice[];
+  /** Drill-down: which holdings contribute to each pie slice. Same
+   *  classification used to compute `allocation`, just emitted as a
+   *  per-slice list. Only slices with weight > 0 appear. */
+  allocationBreakdown: ReportAllocationBreakdown[];
   geography: ReportGeographyRow[];
   sectors: ReportSectorRow[];
   xray: ReportXRayRow[];
@@ -440,20 +463,39 @@ export function useReportData(
         preferredShares: 0,
         cash: 0,
       };
+      // Parallel accumulator: same classification, but also records which
+      // holdings feed each slice so we can render a drill-down table on
+      // page 2 of the PDF.
+      const sliceHoldings: Record<ReportAllocationSlice["key"], ReportAllocationHolding[]> = {
+        fixedIncome: [],
+        alternatives: [],
+        coreEtfs: [],
+        usEquity: [],
+        canadianEquity: [],
+        globalEquity: [],
+        preferredShares: [],
+        cash: [],
+      };
+      const recordHolding = (key: ReportAllocationSlice["key"], h: PimHolding & { weight: number }, wPct: number) => {
+        sliceHoldings[key].push({ symbol: h.symbol, name: h.name, weight: wPct });
+      };
       for (const h of activeHoldings) {
         const wPct = h.weight * 100;
         if (h.assetClass === "fixedIncome") {
           sliceTotals.fixedIncome += wPct;
+          recordHolding("fixedIncome", h, wPct);
         } else if (h.assetClass === "alternative") {
           sliceTotals.alternatives += wPct;
+          recordHolding("alternatives", h, wPct);
         } else if (isCoreEtf(h.symbol)) {
           sliceTotals.coreEtfs += wPct;
+          recordHolding("coreEtfs", h, wPct);
         } else {
           // Non-core equity: split by country of the underlying.
           const c = countryFor(h.symbol);
-          if (c === "Canada") sliceTotals.canadianEquity += wPct;
-          else if (c === "Global") sliceTotals.globalEquity += wPct;
-          else sliceTotals.usEquity += wPct;
+          if (c === "Canada") { sliceTotals.canadianEquity += wPct; recordHolding("canadianEquity", h, wPct); }
+          else if (c === "Global") { sliceTotals.globalEquity += wPct; recordHolding("globalEquity", h, wPct); }
+          else { sliceTotals.usEquity += wPct; recordHolding("usEquity", h, wPct); }
         }
       }
       const allocation: ReportAllocationSlice[] = (
@@ -467,6 +509,14 @@ export function useReportData(
         }))
         .filter((s) => s.weight > 0.05)
         .sort((a, b) => b.weight - a.weight);
+
+      const allocationBreakdown: ReportAllocationBreakdown[] = allocation.map((s) => ({
+        key: s.key,
+        label: s.label,
+        color: s.color,
+        weight: s.weight,
+        holdings: [...sliceHoldings[s.key]].sort((a, b) => b.weight - a.weight),
+      }));
 
       // ── 5. Geography — raw country rollup (kept for downstream use).
       const geoMap = new Map<Country | "Other", number>();
@@ -893,6 +943,7 @@ export function useReportData(
         weightsSource,
         holdings: holdingRows,
         allocation,
+        allocationBreakdown,
         geography,
         sectors,
         xray,
