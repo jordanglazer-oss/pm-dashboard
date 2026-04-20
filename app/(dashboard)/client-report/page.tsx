@@ -1308,7 +1308,7 @@ function OnePager({
           the pie and the prospect couldn't see what was inside that slice. */}
       {data.allocationBreakdown.length > 0 && (
         <div
-          className="mt-6"
+          className="relative z-10 mt-8 pt-6 bg-white"
           style={{ breakBefore: "page", pageBreakBefore: "always" }}
         >
           <div
@@ -1362,12 +1362,18 @@ function AllocationBreakdownTables({
 }: {
   breakdown: ReportAllocationBreakdown[];
 }) {
+  // Single-column stack: grid layouts with `break-inside-avoid` on
+  // children caused irregular row heights that let earlier sections
+  // (e.g. the sector BarList's weight labels) visually bleed through
+  // into the breakdown cards on screen. A vertical stack with solid
+  // white-backed cards sidesteps that entirely and still prints cleanly
+  // since each card is marked `break-inside-avoid`.
   return (
-    <div className="grid grid-cols-2 gap-4">
+    <div className="relative z-10 flex flex-col gap-3 bg-white">
       {breakdown.map((slice) => (
         <div
           key={slice.key}
-          className="break-inside-avoid rounded border border-slate-200"
+          className="break-inside-avoid rounded border border-slate-200 overflow-hidden bg-white"
         >
           <div
             className="flex items-center justify-between gap-2 px-2 py-1.5 border-b"
