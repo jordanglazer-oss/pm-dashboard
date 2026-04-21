@@ -131,6 +131,184 @@ function canonClientTicker(t: string): string {
   return up;
 }
 
+/** One row in the blended-MER contributors table. Every holding the
+ *  report is weighing maps to exactly one of these, so the PDF and the
+ *  API payload always agree on what's feeding the number. */
+type MerContribRow = {
+  symbol: string;        // uppercased ticker as shown on the report
+  name: string;
+  weight: number;        // portfolio weight, percent
+  mer: number | null;    // percent; null = uncovered (fund missing MER)
+  /** `stock` → contributes 0% with full coverage.
+   *  `fund-covered` → contributes weight × mer to the blended.
+   *  `fund-uncovered` → excluded from both numerator and denominator. */
+  classification: "stock" | "fund-covered" | "fund-uncovered";
+  /** Human-readable provenance for the audit table. */
+  source: string;
+};
+
+/** Classify one holding using the same priority chain as the payload
+ *  builder below. Centralising the logic here means the on-screen
+ *  contributors table cannot drift from what /api/client-report-analysis
+ *  actually receives. */
+function classifyMerRow(
+  holding: { symbol: string; name: string; weight: number },
+  dashByCanon: Map<string, Stock>,
+  typedOverride: { mer?: number; instrumentType?: "stock" | "fund" } | undefined,
+): MerContribRow {
+  const key = holding.symbol.trim().toUpperCase();
+  const name = holding.name || holding.symbol;
+  const weight = holding.weight;
+  const validEr = (v: number | null | undefined) =>
+    typeof v === "number" && Number.isFinite(v) && v > 0;
+
+  // 1. Per-row MER typed on this page — highest priority.
+  if (typedOverride && validEr(typedOverride.mer)) {
+    return {
+      symbol: key, name, weight,
+      mer: typedOverride.mer!,
+      classification: "fund-covered",
+      source: "Typed on report",
+    };
+  }
+  // 2. Explicit per-row Stock/Fund toggle.
+  if (typedOverride?.instrumentType === "fund") {
+    return {
+      symbol: key, name, weight, mer: null,
+      classification: "fund-uncovered",
+      source: "Set to Fund — no MER typed",
+    };
+  }
+  if (typedOverride?.instrumentType === "stock") {
+    return {
+      symbol: key, name, weight, mer: 0,
+      classification: "stock",
+      source: "Set to Stock",
+    };
+  }
+  // 3. Dashboard match (suffix-tolerant).
+  const dash = dashByCanon.get(canonClientTicker(key));
+  if (dash) {
+    const manual = dash.manualExpenseRatio;
+    const auto = dash.fundData?.expenseRatio;
+    if (validEr(manual)) {
+      return {
+        symbol: key, name, weight,
+        mer: manual as number,
+        classification: "fund-covered",
+        source: "Dashboard manual override",
+      };
+    }
+    if (validEr(auto)) {
+      return {
+        symbol: key, name, weight,
+        mer: auto as number,
+        classification: "fund-covered",
+        source: "Dashboard auto-fetch",
+      };
+    }
+    if (dash.instrumentType === "stock" || !dash.instrumentType) {
+      return {
+        symbol: key, name, weight, mer: 0,
+        classification: "stock",
+        source: "Dashboard: stock",
+      };
+    }
+    // Dashboard says ETF/mutual-fund but no MER on file.
+    return {
+      symbol: key, name, weight, mer: null,
+      classification: "fund-uncovered",
+      source: "Dashboard fund — no MER on file",
+    };
+  }
+  // 4. Not on Dashboard, no typed override → assume individual stock.
+  return {
+    symbol: key, name, weight, mer: 0,
+    classification: "stock",
+    source: "Assumed stock (not on Dashboard)",
+  };
+}
+
+/** Full on-screen breakdown for the Blended-MER Contributors table. */
+type MerBreakdown = {
+  client: {
+    rows: MerContribRow[];
+    blended: number;
+    coveragePct: number;
+  };
+  model: {
+    rows: MerContribRow[];
+    blended: number;
+    coveragePct: number;
+  };
+};
+
+/** Classify both sides of the comparison using the same pipeline the
+ *  /api/client-report-analysis payload uses, and return the result in
+ *  the shape the audit table wants. Passing the raw inputs (not the
+ *  payload) keeps this callable during render without side effects. */
+function buildMerBreakdown(
+  clientResult: ClientPortfolioResult,
+  data: ReportData,
+  clientPositions: ClientPosition[],
+  stocks: Stock[],
+): MerBreakdown {
+  const dashByCanon = new Map<string, Stock>();
+  for (const s of stocks) dashByCanon.set(canonClientTicker(s.ticker), s);
+  const typedByCanon = new Map<
+    string,
+    { mer?: number; instrumentType?: "stock" | "fund" }
+  >();
+  for (const pos of clientPositions) {
+    const key = canonClientTicker(pos.ticker);
+    if (!key) continue;
+    typedByCanon.set(key, { mer: pos.mer, instrumentType: pos.instrumentType });
+  }
+  const clientRows = clientResult.positions.map((p) =>
+    classifyMerRow(
+      { symbol: p.ticker, name: p.name, weight: p.weight },
+      dashByCanon,
+      typedByCanon.get(canonClientTicker(p.ticker)),
+    ),
+  );
+  const modelRows = data.rawHoldings.map((h) =>
+    classifyMerRow(
+      { symbol: h.symbol, name: h.name || h.symbol, weight: h.weight },
+      dashByCanon,
+      undefined,
+    ),
+  );
+  const c = summarizeMerRows(clientRows);
+  const m = summarizeMerRows(modelRows);
+  return {
+    client: { rows: clientRows, blended: c.blended, coveragePct: c.coveragePct },
+    model: { rows: modelRows, blended: m.blended, coveragePct: m.coveragePct },
+  };
+}
+
+/** Reduce classified rows to {blended %, covered weight, total weight}.
+ *  Matches the math the API's blendedMer() runs server-side. */
+function summarizeMerRows(rows: MerContribRow[]): {
+  blended: number;
+  coveredWeight: number;
+  totalWeight: number;
+  coveragePct: number;
+} {
+  let weightedSum = 0;
+  let coveredWeight = 0;
+  let totalWeight = 0;
+  for (const r of rows) {
+    if (r.weight <= 0) continue;
+    totalWeight += r.weight;
+    if (r.classification === "fund-uncovered") continue;
+    coveredWeight += r.weight;
+    weightedSum += r.weight * (r.mer ?? 0);
+  }
+  const blended = coveredWeight > 0 ? weightedSum / coveredWeight : 0;
+  const coveragePct = totalWeight > 0 ? (coveredWeight / totalWeight) * 100 : 0;
+  return { blended, coveredWeight, totalWeight, coveragePct };
+}
+
 function fmtPct(v: number | null | undefined, digits = 1): string {
   if (v == null || !isFinite(v)) return "—";
   return `${v.toFixed(digits)}%`;
@@ -792,86 +970,52 @@ export default function ClientReportPage() {
       setAnalysisLoading(true);
       setAnalysisError(null);
       try {
-        // Build per-ticker MER map from the Dashboard's Stock.fundData.
-        // Client-typed tickers that aren't in the portfolio/watchlist
-        // simply won't have an MER, and the route treats those as
-        // unknown (the blended value becomes a lower bound rather than
-        // guessed). Stocks with no fundData (i.e. individual equities)
-        // contribute 0% MER via stockSymbols below.
-        // Priority order for a ticker's MER:
-        //   1. Per-row input on this page (client holdings table) —
-        //      highest priority because the user just typed it here.
-        //   2. Stock-page manual override (`manualExpenseRatio`) —
-        //      wins over auto-fetch for Dashboard-tracked tickers.
-        //   3. Auto-fetched `fundData.expenseRatio`.
-        // Record priority in a Map so later writes don't clobber
-        // higher-priority earlier ones. Also track which tickers are
-        // individual common stocks (0 MER, full coverage) so the
-        // blended calc treats them correctly.
+        // Classify every holding on both sides into a MerContribRow,
+        // then derive the API payload's expenseRatios / stockSymbols
+        // from those rows. Single source of truth — the on-screen
+        // contributors table (rendered from the same classification
+        // pipeline via useMemo below) cannot drift from the numbers the
+        // API actually computes.
+        const dashByCanon = new Map<string, Stock>();
+        for (const s of stocks) dashByCanon.set(canonClientTicker(s.ticker), s);
+        const typedByCanon = new Map<
+          string,
+          { mer?: number; instrumentType?: "stock" | "fund" }
+        >();
+        for (const pos of clientPositions) {
+          const key = canonClientTicker(pos.ticker);
+          if (!key) continue;
+          typedByCanon.set(key, {
+            mer: pos.mer,
+            instrumentType: pos.instrumentType,
+          });
+        }
+        const clientRows: MerContribRow[] = clientResult.positions.map((p) =>
+          classifyMerRow(
+            { symbol: p.ticker, name: p.name, weight: p.weight },
+            dashByCanon,
+            typedByCanon.get(canonClientTicker(p.ticker)),
+          ),
+        );
+        const modelRows: MerContribRow[] = data.rawHoldings.map((h) =>
+          classifyMerRow(
+            { symbol: h.symbol, name: h.name || h.symbol, weight: h.weight },
+            dashByCanon,
+            // Model-side holdings don't accept per-row overrides here —
+            // the PM edits MERs on the Dashboard for those tickers.
+            undefined,
+          ),
+        );
         const expenseRatios: Record<string, number> = {};
         const stockSymbols: string[] = [];
-        // Build a canonical-keyed Dashboard lookup so client-typed tickers
-        // can inherit instrumentType / MER even when the suffix spelling
-        // differs (FID5982 vs FID5982-T, XIU vs XIU.TO).
-        const dashByCanon = new Map<string, (typeof stocks)[number]>();
-        for (const s of stocks) dashByCanon.set(canonClientTicker(s.ticker), s);
-        // Tier 3 → 2: Dashboard-tracked stocks. A 0 from either source
-        // is treated as "no credible MER" (fund/ETF MERs are never 0),
-        // so the row falls through to the uncovered bucket where the
-        // coverage subscript will flag it for the PM.
-        const validErVal = (v: number | null | undefined) =>
-          typeof v === "number" && Number.isFinite(v) && v > 0;
-        for (const s of stocks) {
-          const key = s.ticker.toUpperCase();
-          const manual = s.manualExpenseRatio;
-          const auto = s.fundData?.expenseRatio;
-          const er = validErVal(manual)
-            ? (manual as number)
-            : validErVal(auto)
-            ? (auto as number)
-            : null;
-          if (er != null) {
-            expenseRatios[key] = er;
-          } else if (s.instrumentType === "stock" || !s.instrumentType) {
-            stockSymbols.push(key);
+        for (const r of [...clientRows, ...modelRows]) {
+          if (r.classification === "fund-covered" && r.mer != null) {
+            expenseRatios[r.symbol] = r.mer;
+          } else if (r.classification === "stock") {
+            stockSymbols.push(r.symbol);
           }
-        }
-        // Tier 1 + classification for client-typed tickers. Priority:
-        //   1. Per-row typed MER → treat as fund with that MER.
-        //   2. Explicit per-row `instrumentType` the PM picked.
-        //   3. Dashboard match (by canonical ticker) → inherit its type.
-        //   4. Default: "stock" — individual equities are the common case
-        //      for client-typed holdings and contribute 0% to blended MER
-        //      with full coverage. Funds without an MER are the outlier
-        //      and surface via the per-row Stock/Fund toggle.
-        for (const pos of clientPositions) {
-          const raw = pos.ticker.trim();
-          const key = raw.toUpperCase();
-          if (!key) continue;
-          if (validErVal(pos.mer)) {
-            expenseRatios[key] = pos.mer as number;
-            continue;
-          }
-          const explicit = pos.instrumentType;
-          if (explicit === "fund") {
-            // Fund with no MER typed. Let the API treat as uncovered so
-            // the coverage subscript nudges the PM to add one.
-            continue;
-          }
-          if (explicit === "stock") {
-            stockSymbols.push(key);
-            continue;
-          }
-          // No explicit override — auto-detect.
-          const dash = dashByCanon.get(canonClientTicker(key));
-          if (dash) {
-            // Already handled in the stocks loop above under the
-            // Dashboard's own ticker form; the API canonicalizes both
-            // sides so the lookup still hits.
-            continue;
-          }
-          // Not on Dashboard, no typed MER, no explicit override → stock.
-          stockSymbols.push(key);
+          // fund-uncovered rows are intentionally omitted so the API
+          // reports their weight as uncovered, surfacing the gap.
         }
 
         const payload = {
@@ -1434,6 +1578,11 @@ export default function ClientReportPage() {
             commentarySaving={commentarySaving}
             clientPortfolio={showComparison ? clientResult : null}
             analysis={showComparison ? analysis : null}
+            merBreakdown={
+              showComparison && clientResult
+                ? buildMerBreakdown(clientResult, data, clientPositions, stocks)
+                : null
+            }
             metricsOverride={metricsOverrides[`${groupId}::${profile}`] ?? {}}
             onMetricsOverrideChange={(next) =>
               setMetricsOverrides((prev) => ({
@@ -1457,6 +1606,7 @@ function OnePager({
   commentarySaving,
   clientPortfolio,
   analysis,
+  merBreakdown,
   metricsOverride,
   onMetricsOverrideChange,
 }: {
@@ -1466,6 +1616,7 @@ function OnePager({
   commentarySaving: boolean;
   clientPortfolio: ClientPortfolioResult | null;
   analysis: ClientReportAnalysis | null;
+  merBreakdown: MerBreakdown | null;
   metricsOverride: MetricsOverride;
   onMetricsOverrideChange: (next: MetricsOverride) => void;
 }) {
@@ -1792,6 +1943,50 @@ function OnePager({
             </div>
           </div>
           <AllocationBreakdownTables breakdown={data.allocationBreakdown} />
+        </div>
+      )}
+
+      {/* ── Blended MER — Contributors (new page) ──
+          Shows every holding on both sides with its weight, MER source,
+          and contribution to the blended number. Intended as an audit
+          sheet so the PM can verify exactly what's feeding the fee
+          comparison — handy when the headline blended looks lower than
+          expected vs. a third-party reference (e.g. Morningstar). */}
+      {merBreakdown && (
+        <div
+          className="relative z-10 mt-8 pt-6 bg-white"
+          style={{ breakBefore: "page", pageBreakBefore: "always" }}
+        >
+          <div
+            className="pb-3 border-b-4 mb-4"
+            style={{ borderColor: RBC_NAVY }}
+          >
+            <div className="text-lg font-bold" style={{ color: RBC_NAVY }}>
+              Blended MER — Contributors
+            </div>
+            <div className="text-[10px] text-slate-500">
+              Per-holding breakdown of the blended management-fee calculation.
+              Contribution = Weight × MER ÷ 100 (percentage points of blended MER).
+              Stocks contribute 0 pp with full coverage; fund rows without an
+              MER are excluded from both the numerator and the denominator.
+            </div>
+          </div>
+          <div className="grid grid-cols-2 gap-4">
+            <MerContributorsTable
+              title="Current Portfolio"
+              rows={merBreakdown.client.rows}
+              blended={merBreakdown.client.blended}
+              coveragePct={merBreakdown.client.coveragePct}
+              accent={RBC_NAVY}
+            />
+            <MerContributorsTable
+              title={`${data.profileLabel} Model`}
+              rows={merBreakdown.model.rows}
+              blended={merBreakdown.model.blended}
+              coveragePct={merBreakdown.model.coveragePct}
+              accent="#059669"
+            />
+          </div>
         </div>
       )}
 
@@ -2166,6 +2361,167 @@ function AllocationBreakdownTables({
           )}
         </div>
       ))}
+    </div>
+  );
+}
+
+/** Audit table for the Blended MER tile. One row per holding with ticker,
+ *  weight, MER, and contribution in percentage points (weight × MER ÷ 100).
+ *  Sum of the Contribution column equals blended × covered-weight / 100,
+ *  so the PM can eyeball each row and see exactly where the blended number
+ *  comes from — including WHICH MER source (typed / Dashboard manual /
+ *  Dashboard auto / assumed stock) was used. */
+function MerContributorsTable({
+  title,
+  rows,
+  blended,
+  coveragePct,
+  accent,
+}: {
+  title: string;
+  rows: MerContribRow[];
+  blended: number;
+  coveragePct: number;
+  accent: string;
+}) {
+  // Sort: fund-covered by contribution desc, then uncovered, then stocks.
+  // The PM should see fee-contributing rows at the top.
+  const order = (r: MerContribRow) =>
+    r.classification === "fund-covered"
+      ? 0
+      : r.classification === "fund-uncovered"
+      ? 1
+      : 2;
+  const sorted = [...rows].sort((a, b) => {
+    const ao = order(a);
+    const bo = order(b);
+    if (ao !== bo) return ao - bo;
+    if (a.classification === "fund-covered") {
+      return (b.weight * (b.mer ?? 0)) - (a.weight * (a.mer ?? 0));
+    }
+    return b.weight - a.weight;
+  });
+  const totalContribPP = sorted.reduce(
+    (sum, r) =>
+      r.classification === "fund-covered"
+        ? sum + (r.weight * (r.mer ?? 0)) / 100
+        : sum,
+    0,
+  );
+  return (
+    <div className="break-inside-avoid rounded border border-slate-200 overflow-hidden bg-white">
+      <div
+        className="flex items-center justify-between gap-2 px-2 py-1.5 border-b"
+        style={{ borderColor: RBC_GOLD, background: "#f8fafc" }}
+      >
+        <span
+          className="text-[11px] font-bold truncate"
+          style={{ color: accent }}
+        >
+          {title}
+        </span>
+        <span
+          className="text-[11px] font-bold tabular-nums"
+          style={{ color: accent }}
+        >
+          {blended.toFixed(2)}%
+          <span className="ml-1 text-[9px] font-normal text-slate-500">
+            ({coveragePct.toFixed(0)}% covered)
+          </span>
+        </span>
+      </div>
+      {sorted.length === 0 ? (
+        <div className="px-2 py-2 text-[9px] text-slate-400 italic">
+          No holdings to break down.
+        </div>
+      ) : (
+        <table className="w-full text-[10px]">
+          <thead>
+            <tr className="border-b border-slate-100 text-[9px] uppercase tracking-wider text-slate-500">
+              <th className="px-2 py-1 text-left font-semibold w-[70px]">
+                Ticker
+              </th>
+              <th className="px-2 py-1 text-left font-semibold">Name</th>
+              <th className="px-2 py-1 text-right font-semibold w-[44px]">
+                Wt %
+              </th>
+              <th className="px-2 py-1 text-right font-semibold w-[44px]">
+                MER %
+              </th>
+              <th className="px-2 py-1 text-right font-semibold w-[56px]">
+                Contrib pp
+              </th>
+              <th className="px-2 py-1 text-left font-semibold w-[120px]">
+                Source
+              </th>
+            </tr>
+          </thead>
+          <tbody>
+            {sorted.map((r, i) => {
+              const contribPP =
+                r.classification === "fund-covered"
+                  ? (r.weight * (r.mer ?? 0)) / 100
+                  : 0;
+              const merCellClass =
+                r.classification === "fund-uncovered"
+                  ? "text-amber-600 italic"
+                  : r.classification === "stock"
+                  ? "text-slate-400"
+                  : "text-slate-800 font-semibold";
+              const merText =
+                r.classification === "fund-uncovered"
+                  ? "—"
+                  : r.classification === "stock"
+                  ? "0.00"
+                  : (r.mer ?? 0).toFixed(2);
+              const contribText =
+                r.classification === "fund-covered"
+                  ? contribPP.toFixed(3)
+                  : r.classification === "fund-uncovered"
+                  ? "excl."
+                  : "0.000";
+              return (
+                <tr
+                  key={`${r.symbol}-${i}`}
+                  className="border-t border-slate-100"
+                >
+                  <td className="px-2 py-1 font-mono font-semibold text-slate-700 tabular-nums">
+                    {r.symbol}
+                  </td>
+                  <td className="px-2 py-1 text-slate-600 truncate max-w-[180px]">
+                    {formatCompanyName(r.name)}
+                  </td>
+                  <td className="px-2 py-1 text-right tabular-nums text-slate-700">
+                    {r.weight.toFixed(2)}
+                  </td>
+                  <td
+                    className={`px-2 py-1 text-right tabular-nums ${merCellClass}`}
+                  >
+                    {merText}
+                  </td>
+                  <td className="px-2 py-1 text-right tabular-nums text-slate-700">
+                    {contribText}
+                  </td>
+                  <td className="px-2 py-1 text-[9px] text-slate-500 truncate">
+                    {r.source}
+                  </td>
+                </tr>
+              );
+            })}
+            <tr className="border-t-2 border-slate-300 bg-slate-50 font-semibold">
+              <td className="px-2 py-1" colSpan={4}>
+                Sum of covered contributions
+              </td>
+              <td className="px-2 py-1 text-right tabular-nums text-slate-800">
+                {totalContribPP.toFixed(3)}
+              </td>
+              <td className="px-2 py-1 text-[9px] text-slate-500">
+                ÷ {coveragePct.toFixed(1)}% = {blended.toFixed(2)}%
+              </td>
+            </tr>
+          </tbody>
+        </table>
+      )}
     </div>
   );
 }
