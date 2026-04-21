@@ -8,10 +8,26 @@ import { NextRequest, NextResponse } from "next/server";
  *
  * Shape on disk:
  *   {
- *     positions: [{ id, ticker, name, units, weight }],
+ *     positions: [{ id, ticker, name, units, weight, mer? }],
  *     cash: 0,
- *     inputMode: "units" | "weight"
+ *     inputMode: "units" | "weight",
+ *     analysis?: ClientReportAnalysis,
+ *     metricsOverrides?: {
+ *       // keyed by `${groupId}::${profile}`
+ *       [key: string]: {
+ *         stdDev?: number,           // fraction (0.14 = 14%)
+ *         benchmarkStdDev?: number,  // fraction
+ *         upsideCapture?: number,    // percent (95 = 95%)
+ *         downsideCapture?: number,  // percent
+ *       }
+ *     }
  *   }
+ *
+ * Note: a previous revision of this blob included a `clientName`
+ * string. That field was removed — client-identifying data should not
+ * be stored on the PM's personal device. The PUT below fully replaces
+ * the blob on every write, so any existing `clientName` on disk will
+ * be dropped on the next save (by design).
  */
 
 const KEY = "pm:client-portfolio";
