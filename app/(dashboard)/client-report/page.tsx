@@ -1998,13 +1998,13 @@ function OnePager({
               MER are excluded from both the numerator and the denominator.
             </div>
           </div>
-          <div
-            className={
-              merBreakdown.client
-                ? "grid grid-cols-2 gap-4"
-                : "grid grid-cols-1 gap-4"
-            }
-          >
+          {/* Stacked full-width rather than side-by-side. At letter-width
+              with 6 columns per table, a two-column grid crammed the
+              Contribution and Source cells (the left table's Contrib
+              column was getting clipped). Each table is
+              break-inside-avoid so one table doesn't straddle a page
+              break mid-rows. */}
+          <div className="grid grid-cols-1 gap-5">
             {merBreakdown.client && (
               <MerContributorsTable
                 title="Current Portfolio"
@@ -2591,7 +2591,7 @@ function MerContributorsTable({
                   <td className="px-2 py-1 font-mono font-semibold text-slate-700 tabular-nums">
                     {r.symbol}
                   </td>
-                  <td className="px-2 py-1 text-slate-600 truncate max-w-[180px]">
+                  <td className="px-2 py-1 text-slate-600 truncate max-w-[320px]">
                     {formatCompanyName(r.name)}
                   </td>
                   <td className="px-2 py-1 text-right tabular-nums text-slate-700">
