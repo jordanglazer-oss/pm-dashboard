@@ -171,6 +171,20 @@ async function saveCached(hash: string, result: ClientReportAnalysis) {
   }
 }
 
+/** Canonicalize a ticker for cross-store lookups. The rest of the app
+ *  uses a `-T` ↔ `.TO` tolerant compare (see StockContext.tickerMatch).
+ *  `pm:pim-models` sometimes stores the bare FUNDSERV code (`FID5982`)
+ *  while the Dashboard `stocks` blob uses the `-T` suffix (`FID5982-T`),
+ *  so an exact match under-counts coverage. Strip both Canadian-listing
+ *  suffixes so the lookup key is consistent regardless of source.
+ *  Uppercasing here keeps the rest of this file's casing assumption intact. */
+function canonTicker(t: string): string {
+  const up = t.toUpperCase().trim();
+  if (up.endsWith(".TO")) return up.slice(0, -3);
+  if (up.endsWith("-T")) return up.slice(0, -2);
+  return up;
+}
+
 /** Weighted blended MER over a holdings list given a {ticker: MER%} lookup.
  *  Returns the lower-bound blended value and the coverage (share of weight
  *  with a known MER). Stocks default to 0 MER (direct equity has none). */
@@ -186,7 +200,7 @@ function blendedMer(
   for (const h of holdings) {
     if (h.weight <= 0) continue;
     totalWeight += h.weight;
-    const sym = h.symbol.toUpperCase();
+    const sym = canonTicker(h.symbol);
     if (stockSymbols.has(sym)) {
       // Direct stock holding — zero management fee. Counts as covered.
       coveredWeight += h.weight;
@@ -211,10 +225,17 @@ function buildPrompt(body: RequestBody, mer: ClientReportAnalysis["blendedMer"])
   const clientName = body.clientName?.trim() || "the client";
   const fmtPct = (v: number | null | undefined, d = 2) =>
     typeof v === "number" && Number.isFinite(v) ? `${v.toFixed(d)}%` : "n/a";
+  // Use the same canonicalization as the blended-MER calc so the prompt
+  // agrees with the headline number (no rows showing "(MER missing)" in
+  // the Anthropic context while the top-line coverage counts them).
+  const merLookup: Record<string, number> = {};
+  for (const [k, v] of Object.entries(body.expenseRatios ?? {})) {
+    if (typeof v === "number" && Number.isFinite(v)) merLookup[canonTicker(k)] = v;
+  }
 
   const clientHoldingsBlock = body.clientHoldings
     .map((h) => {
-      const er = body.expenseRatios?.[h.symbol.toUpperCase()];
+      const er = merLookup[canonTicker(h.symbol)];
       const merStr = typeof er === "number" ? ` (MER ${er.toFixed(2)}%)` : "";
       return `  - ${h.symbol} — ${h.name} — ${h.weight.toFixed(2)}%${merStr}`;
     })
@@ -227,7 +248,7 @@ function buildPrompt(body: RequestBody, mer: ClientReportAnalysis["blendedMer"])
   const modelHoldingsBlock = body.modelHoldings
     .slice(0, 20)
     .map((h) => {
-      const er = body.expenseRatios?.[h.symbol.toUpperCase()];
+      const er = merLookup[canonTicker(h.symbol)];
       const merStr = typeof er === "number" ? ` (MER ${er.toFixed(2)}%)` : "";
       return `  - ${h.symbol} — ${h.name} — ${h.weight.toFixed(2)}%${merStr}`;
     })
@@ -386,12 +407,16 @@ export async function POST(req: NextRequest) {
   // Compute blended MERs. `stockSymbols` is the set of directly-held
   // common stocks (no management fee) — we treat these as zero-MER with
   // full coverage. Anything else falls through to the expenseRatios map.
+  // Normalize with canonTicker on both sides so a Dashboard entry stored
+  // as `FID5982-T` matches a model holding listed as `FID5982` (and vice
+  // versa for `.TO`). Prior code did a raw uppercased equality which
+  // silently dropped those rows from coverage.
   const stockSymbols = new Set<string>(
-    (body.stockSymbols ?? []).map((s) => s.toUpperCase()),
+    (body.stockSymbols ?? []).map(canonTicker),
   );
   const lookup: Record<string, number> = {};
   for (const [k, v] of Object.entries(body.expenseRatios ?? {})) {
-    if (typeof v === "number" && Number.isFinite(v)) lookup[k.toUpperCase()] = v;
+    if (typeof v === "number" && Number.isFinite(v)) lookup[canonTicker(k)] = v;
   }
   const cMer = blendedMer(body.clientHoldings, lookup, stockSymbols);
   const mMer = blendedMer(body.modelHoldings, lookup, stockSymbols);
