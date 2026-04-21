@@ -44,6 +44,10 @@ type ClientPosition = {
   units: number;
   /** Portfolio weight (%) — used when inputMode is "weight". */
   weight: number;
+  /** Optional MER (%) typed by the user for this holding. Feeds into
+   *  the blended-MER comparison in the AI analysis. Overrides any
+   *  Dashboard-side auto-fetch or manual override for the same ticker. */
+  mer?: number;
 };
 
 type ClientPortfolioResult = {
@@ -240,7 +244,11 @@ export default function ClientReportPage() {
   }, []);
 
   const updatePosition = useCallback(
-    (id: string, field: keyof Omit<ClientPosition, "id">, value: string | number) => {
+    (
+      id: string,
+      field: keyof Omit<ClientPosition, "id">,
+      value: string | number | undefined,
+    ) => {
       setClientPositions((prev) =>
         prev.map((p) => (p.id === id ? { ...p, [field]: value } : p))
       );
@@ -751,12 +759,19 @@ export default function ClientReportPage() {
         // unknown (the blended value becomes a lower bound rather than
         // guessed). Stocks with no fundData (i.e. individual equities)
         // contribute 0% MER via stockSymbols below.
-        // Prefer a user-typed manual MER over the auto-fetched one. The
-        // auto-fetch misses a lot of mutual-fund series (FUNDSERV codes
-        // whose Morningstar page layouts drift) and some lightly-covered
-        // Canadian ETFs, so the manual input is a reliable fallback.
+        // Priority order for a ticker's MER:
+        //   1. Per-row input on this page (client holdings table) —
+        //      highest priority because the user just typed it here.
+        //   2. Stock-page manual override (`manualExpenseRatio`) —
+        //      wins over auto-fetch for Dashboard-tracked tickers.
+        //   3. Auto-fetched `fundData.expenseRatio`.
+        // Record priority in a Map so later writes don't clobber
+        // higher-priority earlier ones. Also track which tickers are
+        // individual common stocks (0 MER, full coverage) so the
+        // blended calc treats them correctly.
         const expenseRatios: Record<string, number> = {};
         const stockSymbols: string[] = [];
+        // Tier 3 → 2: Dashboard-tracked stocks.
         for (const s of stocks) {
           const key = s.ticker.toUpperCase();
           const manual = s.manualExpenseRatio;
@@ -773,6 +788,16 @@ export default function ClientReportPage() {
             stockSymbols.push(key);
           }
         }
+        // Tier 1: per-row inputs for the client's typed holdings.
+        // Also treat a blank-MER client position whose ticker is known
+        // to the Dashboard as an individual stock (via fall-through).
+        for (const pos of clientPositions) {
+          const key = pos.ticker.trim().toUpperCase();
+          if (!key) continue;
+          if (typeof pos.mer === "number" && Number.isFinite(pos.mer)) {
+            expenseRatios[key] = pos.mer;
+          }
+        }
 
         const payload = {
           clientName: clientName.trim() || undefined,
@@ -787,7 +812,12 @@ export default function ClientReportPage() {
           })),
           clientCashWeight: clientResult.cashWeight,
           modelProfileLabel: data.profileLabel,
-          modelHoldings: data.xray.slice(0, 20).map((h) => ({
+          // IMPORTANT: use rawHoldings (actual ETF / fund tickers) here,
+          // NOT xray (look-through stock-level names). MER is a fund-
+          // level attribute — AAPL inside XUS.TO has no MER; XUS.TO
+          // does. Sending xray symbols to the blended-MER calc zeroed
+          // out the model blended fee in the previous version.
+          modelHoldings: data.rawHoldings.map((h) => ({
             symbol: h.symbol,
             name: h.name || h.symbol,
             weight: h.weight,
@@ -827,7 +857,7 @@ export default function ClientReportPage() {
         setAnalysisLoading(false);
       }
     },
-    [data, clientResult, clientName, stocks],
+    [data, clientResult, clientName, stocks, clientPositions],
   );
 
   // Manager commentary — persisted per (group, profile) so switching
@@ -1080,6 +1110,31 @@ export default function ClientReportPage() {
                       className="w-24 rounded border border-slate-200 px-2 py-1.5 text-xs tabular-nums focus:outline-none focus:ring-1 focus:ring-blue-400"
                     />
                   )}
+                  {/* Per-row MER input. Optional; individual stocks
+                      should be left blank (treated as 0% management fee
+                      by the blended-MER calc). ETFs and mutual funds
+                      whose MER isn't auto-fetched on the Dashboard can
+                      be typed here — this takes priority over whatever
+                      the scraper found. */}
+                  <input
+                    type="number"
+                    placeholder="MER %"
+                    value={pos.mer ?? ""}
+                    onChange={(e) => {
+                      const raw = e.target.value;
+                      if (raw === "") {
+                        updatePosition(pos.id, "mer", undefined);
+                        return;
+                      }
+                      const n = parseFloat(raw);
+                      updatePosition(pos.id, "mer", Number.isFinite(n) ? n : undefined);
+                    }}
+                    min={0}
+                    max={10}
+                    step="0.01"
+                    title="Optional MER (%) for ETFs / mutual funds. Blank = unknown (0 for direct equities)."
+                    className="w-20 rounded border border-slate-200 px-2 py-1.5 text-xs tabular-nums focus:outline-none focus:ring-1 focus:ring-blue-400"
+                  />
                   <button
                     onClick={() => removePosition(pos.id)}
                     className="text-slate-400 hover:text-rose-500 text-sm px-1"
@@ -1609,9 +1664,6 @@ function AnalysisSections({
           >
             Where You Are Now
           </div>
-          <div className="text-[10px] text-slate-500">
-            A plain-English read on {clientLabel}&apos;s current holdings.
-          </div>
         </div>
         <div className="grid grid-cols-2 gap-4">
           <BulletCard title="Strengths" bullets={pros} accent="#059669" />
@@ -1631,9 +1683,6 @@ function AnalysisSections({
           >
             Our Recommendations
           </div>
-          <div className="text-[10px] text-slate-500">
-            Concrete actions to move from today&apos;s portfolio toward the {profileLabel} model.
-          </div>
         </div>
         <BulletCard title="Action Items" bullets={recs} accent={RBC_NAVY} emphasis />
       </div>
@@ -1650,9 +1699,6 @@ function AnalysisSections({
             style={{ color: RBC_NAVY }}
           >
             Why This Works Better
-          </div>
-          <div className="text-[10px] text-slate-500">
-            Long-term fit vs {clientLabel}&apos;s current positioning.
           </div>
         </div>
         <BulletCard title="Summary" bullets={summary} accent={RBC_NAVY} />

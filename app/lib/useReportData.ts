@@ -160,6 +160,11 @@ export type ReportData = {
   /** "live" = weighted by current positions; "target" = weighted by model targets (fallback). */
   weightsSource: "live" | "target";
   holdings: ReportHoldingRow[];
+  /** Active PIM holdings as they appear in the model (fund tickers
+   *  preserved — pre-look-through, pre-consolidation). Used by
+   *  downstream callers that need to look up per-ticker attributes
+   *  such as MER (blended-fee calc). */
+  rawHoldings: { symbol: string; name: string; weight: number }[];
   allocation: ReportAllocationSlice[];
   /** Drill-down: which holdings contribute to each pie slice. Same
    *  classification used to compute `allocation`, just emitted as a
@@ -963,6 +968,16 @@ export function useReportData(
         return b.weight - a.weight;
       });
 
+      // Raw fund-level holdings (pre-consolidation, pre-look-through).
+      // Blended-MER lookups rely on the actual ETF / mutual-fund tickers
+      // rather than the look-through stock names — XUS.TO has an MER,
+      // AAPL (inside XUS.TO) does not.
+      const rawHoldings = activeHoldings.map((h) => ({
+        symbol: h.symbol,
+        name: h.name,
+        weight: h.weight * 100,
+      }));
+
       setData({
         groupId,
         groupName: group.name,
@@ -971,6 +986,7 @@ export function useReportData(
         generatedAt: new Date().toISOString(),
         weightsSource,
         holdings: holdingRows,
+        rawHoldings,
         allocation,
         allocationBreakdown,
         geography,
