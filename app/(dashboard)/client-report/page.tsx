@@ -751,12 +751,23 @@ export default function ClientReportPage() {
         // unknown (the blended value becomes a lower bound rather than
         // guessed). Stocks with no fundData (i.e. individual equities)
         // contribute 0% MER via stockSymbols below.
+        // Prefer a user-typed manual MER over the auto-fetched one. The
+        // auto-fetch misses a lot of mutual-fund series (FUNDSERV codes
+        // whose Morningstar page layouts drift) and some lightly-covered
+        // Canadian ETFs, so the manual input is a reliable fallback.
         const expenseRatios: Record<string, number> = {};
         const stockSymbols: string[] = [];
         for (const s of stocks) {
           const key = s.ticker.toUpperCase();
-          const er = s.fundData?.expenseRatio;
-          if (typeof er === "number" && Number.isFinite(er)) {
+          const manual = s.manualExpenseRatio;
+          const auto = s.fundData?.expenseRatio;
+          const er =
+            typeof manual === "number" && Number.isFinite(manual)
+              ? manual
+              : typeof auto === "number" && Number.isFinite(auto)
+              ? auto
+              : null;
+          if (er != null) {
             expenseRatios[key] = er;
           } else if (s.instrumentType === "stock" || !s.instrumentType) {
             stockSymbols.push(key);
@@ -1405,8 +1416,15 @@ function OnePager({
       {/* ── Risk metrics strip ── */}
       <div className="mt-4 break-inside-avoid">
         <SectionTitle>Risk Profile vs S&amp;P 500 (5Y)</SectionTitle>
-        <div className="mt-2 grid grid-cols-3 gap-2 text-[11px]">
-          <Stat label="Volatility (ann.)" value={fmtPctFrac(data.performance.volatility)} />
+        <div className="mt-2 grid grid-cols-4 gap-2 text-[11px]">
+          <Stat
+            label="Volatility — Portfolio (ann.)"
+            value={fmtPctFrac(data.performance.volatility)}
+          />
+          <Stat
+            label="Volatility — S&P 500 (ann.)"
+            value={fmtPctFrac(data.performance.benchmarkVolatility)}
+          />
           <Stat label="Upside Capture" value={fmtPct(data.performance.upsideCapture)} />
           <Stat label="Downside Capture" value={fmtPct(data.performance.downsideCapture)} />
         </div>

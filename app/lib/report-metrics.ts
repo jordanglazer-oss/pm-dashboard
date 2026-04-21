@@ -65,9 +65,20 @@ export function annualizedVolatility(returns: readonly number[]): number | null 
 /**
  * Upside / downside capture vs a benchmark.
  *
- * Standard convention (Morningstar-style): compound returns on days
- * where the benchmark is positive (upside) or negative (downside),
- * then annualize, then divide portfolio / benchmark × 100.
+ * Textbook Morningstar/CFA definition: compound the portfolio and
+ * benchmark returns separately over the up-market periods and the
+ * down-market periods, then divide total portfolio excess over
+ * benchmark excess × 100. We deliberately do NOT annualize — when
+ * the number of up-days ≠ down-days, the fractional-power annualization
+ * amplifies small differences into double-digit distortions (this was
+ * producing the "unrealistic" values on the Client Report page).
+ *
+ * Up-days  (b > 0): upside  = (∏(1+p) − 1) / (∏(1+b) − 1) × 100
+ * Down-days (b < 0): downside = (∏(1+p) − 1) / (∏(1+b) − 1) × 100
+ *
+ * A down-capture < 100 means the portfolio lost less than the benchmark
+ * on down-days (good). An up-capture > 100 means it gained more on
+ * up-days (good). Both are strictly scale-invariant in sample size.
  *
  * `portfolioReturns` and `benchmarkReturns` must be aligned — same
  * length, same calendar days. Pairs containing a non-finite value on
@@ -109,25 +120,18 @@ export function captureRatios(
     }
   }
 
-  const annualize = (compound: number, days: number): number | null => {
-    if (days < 5) return null;
-    const years = days / TRADING_DAYS_PER_YEAR;
-    if (years <= 0) return null;
-    return Math.pow(compound, 1 / years) - 1;
-  };
-
-  const upPortAnn = annualize(upPort, upCount);
-  const upBenchAnn = annualize(upBench, upCount);
-  const downPortAnn = annualize(downPort, downCount);
-  const downBenchAnn = annualize(downBench, downCount);
+  // Require a minimum sample of each side to avoid reporting noise.
+  const MIN_DAYS = 10;
+  const upBenchTotal = upBench - 1;
+  const downBenchTotal = downBench - 1;
 
   const upside =
-    upPortAnn != null && upBenchAnn != null && Math.abs(upBenchAnn) > 1e-9
-      ? (upPortAnn / upBenchAnn) * 100
+    upCount >= MIN_DAYS && Math.abs(upBenchTotal) > 1e-6
+      ? ((upPort - 1) / upBenchTotal) * 100
       : null;
   const downside =
-    downPortAnn != null && downBenchAnn != null && Math.abs(downBenchAnn) > 1e-9
-      ? (downPortAnn / downBenchAnn) * 100
+    downCount >= MIN_DAYS && Math.abs(downBenchTotal) > 1e-6
+      ? ((downPort - 1) / downBenchTotal) * 100
       : null;
 
   return { upside, downside };

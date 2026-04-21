@@ -129,6 +129,10 @@ export type ReportPerformanceMetrics = {
   fiveYearReturn: number | null;
   /** Annualized vol of daily returns, 5y window (fractions — UI multiplies by 100). */
   volatility: number | null;
+  /** Annualized vol of S&P 500 daily returns over the same 5y window.
+   *  Displayed next to `volatility` so the reader can contextualize
+   *  whether the portfolio is running hotter or calmer than the market. */
+  benchmarkVolatility: number | null;
   upsideCapture: number | null;
   downsideCapture: number | null;
 };
@@ -915,6 +919,7 @@ export function useReportData(
         threeYearReturn: null,
         fiveYearReturn: null,
         volatility: null,
+        benchmarkVolatility: null,
         upsideCapture: null,
         downsideCapture: null,
       };
@@ -1088,6 +1093,7 @@ function computePerformance(
       threeYearReturn: null,
       fiveYearReturn: null,
       volatility: null,
+      benchmarkVolatility: null,
       upsideCapture: null,
       downsideCapture: null,
     };
@@ -1108,6 +1114,7 @@ function computePerformance(
       threeYearReturn: null,
       fiveYearReturn: null,
       volatility: null,
+      benchmarkVolatility: null,
       upsideCapture: null,
       downsideCapture: null,
     };
@@ -1139,12 +1146,13 @@ function computePerformance(
   const threeYearReturn = annualizedReturn(pricesIn(portfolioSeries, 3), 3);
   const fiveYearReturn = annualizedReturn(pricesIn(portfolioSeries, 5), 5);
 
-  const portReturns = dailyReturns(pricesIn(portfolioSeries, 5));
-  const volatility = annualizedVolatility(portReturns);
-
   const aligned = alignSeries(windowYears(portfolioSeries, 5), windowYears(benchSeries, 5));
   const portR = dailyReturns(aligned.a);
   const benchR = dailyReturns(aligned.b);
+  // Use the aligned series for vol too so portfolio and benchmark vol
+  // are computed over the same day set (apples-to-apples comparison).
+  const volatility = annualizedVolatility(portR);
+  const benchmarkVolatility = annualizedVolatility(benchR);
   const { upside, downside } = captureRatios(portR, benchR);
 
   return {
@@ -1152,6 +1160,7 @@ function computePerformance(
     threeYearReturn,
     fiveYearReturn,
     volatility,
+    benchmarkVolatility,
     upsideCapture: upside,
     downsideCapture: downside,
   };

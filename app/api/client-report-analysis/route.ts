@@ -32,6 +32,14 @@ import { getRedis } from "@/app/lib/redis";
 const CACHE_KEY = "pm:client-report-analysis-cache";
 const client = new Anthropic();
 
+/**
+ * Bumped whenever the Anthropic prompt instructions change in a way
+ * that should invalidate previously-cached outputs. Folded into the
+ * hash so old cached JSON doesn't leak stock-level commentary after
+ * the prompt has been refocused on allocation-level reasoning.
+ */
+const PROMPT_VERSION = "v2-allocation-focus";
+
 // ───────── Request / response shapes ─────────
 
 type HoldingInput = {
@@ -131,6 +139,9 @@ function canonicalize(body: RequestBody): string {
       d: body.modelPerformance?.downsideCapture ?? null,
     },
     brief: (body.briefContext ?? "").trim().slice(0, 500),
+    // Include the prompt version so changes to the instructions bust
+    // any cached output that was produced under older framing.
+    pv: PROMPT_VERSION,
   };
   return JSON.stringify(norm);
 }
@@ -258,6 +269,8 @@ function buildPrompt(body: RequestBody, mer: ClientReportAnalysis["blendedMer"])
 
 Write in plain, concise English. Every output is a bullet. No filler, no hedging words like "somewhat" or "generally speaking". Each bullet is 1 short sentence (max ~18 words). Do not repeat the client's name. Do not use markdown bold/italic — the UI styles bullets itself.
 
+FOCUS: Frame every bullet around ASSET ALLOCATION and the LIKELIHOOD OF LONG-TERM RETURNS. Think like an asset allocator, not a stock picker. Do NOT critique or praise individual single-stock positions by name (e.g. avoid "overweight NVDA" or "good position in Tesla"). Holdings are listed below as context for assessing diversification, fees, and asset-class mix — not for stock-level commentary. Acceptable references to specific tickers are limited to: (a) Core ETF wrappers when discussing the equity sleeve, and (b) mutual funds / active ETFs when discussing fees or structural decisions. Everything else should roll up to the asset-class, sector-concentration, geography, or factor level.
+
 CLIENT'S CURRENT HOLDINGS:
 ${clientHoldingsBlock || "  (none provided)"}
 
@@ -287,11 +300,11 @@ Produce JSON with this exact shape (no prose before or after, no markdown fences
   "summary": [string, ...]
 }
 
-Requirements for each array:
-  - "currentPosition.pros": 2 to 4 bullets calling out what IS working in the client's portfolio (e.g. good single names, reasonable diversification within a sector, low-fee ETFs where applicable). If there's truly nothing positive to say, return a single bullet acknowledging the portfolio needs substantial repositioning.
-  - "currentPosition.cons": 3 to 5 bullets calling out real risks/weaknesses — cash drag, concentration, sector tilts, fee load, lack of diversification, missing asset classes, etc. Reference MER numerically only if a number is provided; otherwise describe qualitatively (e.g. "high fee drag" not "1.8% MER").
-  - "recommendations": 3 to 5 bullets. Each begins with a strong action verb (e.g. "Reduce cash to...", "Replace X with Y...", "Add fixed income sleeve...", "Trim concentrated position in..."). Tie each recommendation to a concrete change that moves the client toward the ${body.modelProfileLabel} model.
-  - "summary": 2 to 4 bullets explaining WHY the ${body.modelProfileLabel} model is a better long-term fit than the client's current mix. Draw on the performance stats, allocation differences, fee differential, and (if provided) the long-term market context. Focus on multi-year outcomes, not short-term tactics.
+Requirements for each array (all at the ASSET-ALLOCATION level, not stock-by-stock):
+  - "currentPosition.pros": 2 to 4 bullets on allocation-level strengths — e.g. reasonable equity/fixed-income split for the risk profile, low blended fee, meaningful geographic diversification, appropriate cash buffer, sensible use of passive core exposure. If there's truly nothing positive to say, return a single bullet acknowledging the portfolio needs substantial repositioning.
+  - "currentPosition.cons": 3 to 5 bullets on allocation-level risks — cash drag, asset-class gaps (e.g. no fixed income sleeve, no global equity exposure), sector or geography concentration, high blended MER, mismatch between the current mix and a long-horizon equity return target. Reference MER numerically only if a number is provided; otherwise describe qualitatively.
+  - "recommendations": 3 to 5 bullets. Each begins with a strong action verb. Recommendations must be ALLOCATION-level, not stock-level. Examples of acceptable phrasings: "Reduce cash from X% to Y% to capture long-term equity returns", "Add a fixed-income sleeve of ~Z% to dampen drawdowns", "Rotate single-stock risk into diversified ${body.modelProfileLabel} core ETFs", "Rebalance geography toward the model's US/Canada/Global split", "Lower blended MER by consolidating mutual funds into passive ETFs". Do NOT name individual common stocks as replacement candidates.
+  - "summary": 2 to 4 bullets on LIKELIHOOD OF LONG-TERM RETURNS. Each bullet should tie the reallocation to an expected multi-year outcome — e.g. "Higher equity allocation raises the probability of beating inflation over 10+ years", "Diversified exposure reduces the chance of a single-sector drawdown derailing the plan", "Lower fee drag compounds to meaningful extra return over a 20-year horizon", "Historical 5-year metrics (upside/downside capture, volatility) suggest the model delivers a better risk-adjusted return profile." Use the performance stats quantitatively when provided.
 
 If a data point is missing, omit the bullet rather than inventing numbers. Always return valid JSON.`;
 }
