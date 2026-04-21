@@ -37,6 +37,21 @@ import type { ClientReportAnalysis } from "@/app/api/client-report-analysis/rout
 
 type ClientInputMode = "units" | "weight";
 
+/** Manual overrides for the Risk Profile strip. Each field is optional —
+ *  when unset we fall back to the computed value. Keyed per (groupId,
+ *  profile) so switching between Balanced/Growth/All-Equity doesn't
+ *  clobber one profile's numbers with another's.
+ *
+ *  - stdDev / benchmarkStdDev are stored as FRACTIONS (e.g. 0.14 for 14%).
+ *  - upsideCapture / downsideCapture are stored as PERCENTS (e.g. 95).
+ *  This matches what `fmtPctFrac` and `fmtPct` expect at render time. */
+type MetricsOverride = {
+  stdDev?: number;
+  benchmarkStdDev?: number;
+  upsideCapture?: number;
+  downsideCapture?: number;
+};
+
 type ClientPosition = {
   id: string; // unique key for React
   ticker: string;
@@ -127,10 +142,13 @@ export default function ClientReportPage() {
   const [clientInputMode, setClientInputMode] = useState<ClientInputMode>("units");
   const [clientPositions, setClientPositions] = useState<ClientPosition[]>([]);
   const [clientCash, setClientCash] = useState<number>(0);
-  // Client display name (free-form) — replaces the literal "Client" label
-  // on the comparison section titles. Persisted alongside the positions
-  // blob in pm:client-portfolio.
-  const [clientName, setClientName] = useState<string>("");
+  // Manual overrides for the Risk Profile strip, keyed per (groupId,
+  // profile). Shape: { "groupId::profile": { stdDev?, benchmarkStdDev?,
+  // upsideCapture?, downsideCapture? } }. Populated from the saved
+  // pm:client-portfolio blob; cleared via the Reset button.
+  const [metricsOverrides, setMetricsOverrides] = useState<
+    Record<string, MetricsOverride>
+  >({});
   const [clientResult, setClientResult] = useState<ClientPortfolioResult | null>(null);
   const [clientLoading, setClientLoading] = useState(false);
   const [clientError, setClientError] = useState<string | null>(null);
@@ -150,7 +168,7 @@ export default function ClientReportPage() {
     let cancelled = false;
     fetch("/api/kv/client-portfolio", { cache: "no-store" })
       .then((r) => (r.ok ? r.json() : { data: null }))
-      .then((payload: { data?: { positions?: ClientPosition[]; cash?: number; inputMode?: ClientInputMode; clientName?: string; analysis?: ClientReportAnalysis } | null }) => {
+      .then((payload: { data?: { positions?: ClientPosition[]; cash?: number; inputMode?: ClientInputMode; analysis?: ClientReportAnalysis; metricsOverrides?: Record<string, MetricsOverride> } | null }) => {
         if (cancelled) return;
         const d = payload?.data;
         if (d) {
@@ -159,8 +177,10 @@ export default function ClientReportPage() {
           }
           if (typeof d.cash === "number") setClientCash(d.cash);
           if (d.inputMode === "units" || d.inputMode === "weight") setClientInputMode(d.inputMode);
-          if (typeof d.clientName === "string") setClientName(d.clientName);
           if (d.analysis && typeof d.analysis === "object") setAnalysis(d.analysis);
+          if (d.metricsOverrides && typeof d.metricsOverrides === "object") {
+            setMetricsOverrides(d.metricsOverrides);
+          }
         }
         clientPortfolioLoaded.current = true;
       })
@@ -224,13 +244,13 @@ export default function ClientReportPage() {
           positions: clientPositions,
           cash: clientCash,
           inputMode: clientInputMode,
-          clientName,
           analysis,
+          metricsOverrides,
         }),
       }).catch(() => { /* best effort */ });
     }, 800);
     return () => clearTimeout(handle);
-  }, [clientPositions, clientCash, clientInputMode, clientName, analysis]);
+  }, [clientPositions, clientCash, clientInputMode, analysis, metricsOverrides]);
 
   const addPosition = useCallback(() => {
     setClientPositions((prev) => [
@@ -800,7 +820,8 @@ export default function ClientReportPage() {
         }
 
         const payload = {
-          clientName: clientName.trim() || undefined,
+          // Intentionally no clientName — client-identifying text
+          // shouldn't flow through prompts or persisted caches.
           clientHoldings: clientResult.positions.map((p) => ({
             symbol: p.ticker,
             name: p.name,
@@ -828,13 +849,21 @@ export default function ClientReportPage() {
           })),
           expenseRatios,
           stockSymbols,
-          modelPerformance: {
-            annualizedReturnPct: data.tracker?.annualizedReturnPct ?? null,
-            volatility: data.performance.volatility ?? null,
-            upsideCapture: data.performance.upsideCapture ?? null,
-            downsideCapture: data.performance.downsideCapture ?? null,
-            yearsOfHistory: data.tracker?.yearsOfHistory ?? null,
-          },
+          modelPerformance: (() => {
+            // Prefer manual overrides over auto values so the AI
+            // analysis reflects whatever number the PM has chosen
+            // to show the client.
+            const o = metricsOverrides[`${groupId}::${profile}`] ?? {};
+            return {
+              annualizedReturnPct: data.tracker?.annualizedReturnPct ?? null,
+              volatility: o.stdDev ?? data.performance.volatility ?? null,
+              upsideCapture:
+                o.upsideCapture ?? data.performance.upsideCapture ?? null,
+              downsideCapture:
+                o.downsideCapture ?? data.performance.downsideCapture ?? null,
+              yearsOfHistory: data.tracker?.yearsOfHistory ?? null,
+            };
+          })(),
           force,
         };
 
@@ -857,7 +886,7 @@ export default function ClientReportPage() {
         setAnalysisLoading(false);
       }
     },
-    [data, clientResult, clientName, stocks, clientPositions],
+    [data, clientResult, stocks, clientPositions, metricsOverrides, groupId, profile],
   );
 
   // Manager commentary — persisted per (group, profile) so switching
@@ -1001,25 +1030,10 @@ export default function ClientReportPage() {
             )}
           </summary>
           <div className="px-4 pb-4 border-t border-slate-100 pt-3">
-            {/* Client display name — shown in place of "Client" on the
-                comparison section titles. Supports multiple names (e.g.
-                "John & Mary Smith"). Persists across refreshes. */}
-            <div className="flex items-center gap-2 mb-3">
-              <label
-                htmlFor="client-name"
-                className="text-xs font-semibold text-slate-600 whitespace-nowrap"
-              >
-                Client name
-              </label>
-              <input
-                id="client-name"
-                type="text"
-                value={clientName}
-                onChange={(e) => setClientName(e.target.value)}
-                placeholder="e.g. John & Mary Smith"
-                className="flex-1 rounded-md border border-slate-200 px-3 py-1.5 text-sm text-slate-700 focus:outline-none focus:ring-1 focus:ring-slate-400"
-              />
-            </div>
+            {/* Client name was removed — client-identifying labels
+                don't belong on personal devices. The comparison section
+                now uses generic "Current" labels instead of a typed
+                name. */}
             <div className="flex items-center gap-3 mb-3">
               <p className="text-xs text-slate-500 flex-1">
                 Add the client&apos;s current holdings to generate a side-by-side comparison on the PDF.
@@ -1286,8 +1300,14 @@ export default function ClientReportPage() {
             onCommentaryChange={setCommentary}
             commentarySaving={commentarySaving}
             clientPortfolio={showComparison ? clientResult : null}
-            clientName={clientName}
             analysis={showComparison ? analysis : null}
+            metricsOverride={metricsOverrides[`${groupId}::${profile}`] ?? {}}
+            onMetricsOverrideChange={(next) =>
+              setMetricsOverrides((prev) => ({
+                ...prev,
+                [`${groupId}::${profile}`]: next,
+              }))
+            }
           />
         )}
       </div>
@@ -1303,20 +1323,22 @@ function OnePager({
   onCommentaryChange,
   commentarySaving,
   clientPortfolio,
-  clientName,
   analysis,
+  metricsOverride,
+  onMetricsOverrideChange,
 }: {
   data: ReportData;
   commentary: string;
   onCommentaryChange: (v: string) => void;
   commentarySaving: boolean;
   clientPortfolio: ClientPortfolioResult | null;
-  clientName: string;
   analysis: ClientReportAnalysis | null;
+  metricsOverride: MetricsOverride;
+  onMetricsOverrideChange: (next: MetricsOverride) => void;
 }) {
-  // Resolved label: user-supplied name, or "Client" as a safe fallback so
-  // the report still reads naturally when no name has been entered yet.
-  const clientLabel = clientName.trim() || "Client";
+  // Client-identifying labels are intentionally absent; the comparison
+  // section titles read "Current …" so the PDF can be rendered without
+  // any name information on the device.
   const dateStr = useMemo(
     () =>
       new Date(data.generatedAt).toLocaleDateString("en-CA", {
@@ -1468,20 +1490,58 @@ function OnePager({
         </div>
       </div>
 
-      {/* ── Risk metrics strip ── */}
+      {/* ── Risk metrics strip ──
+          Four stats, each with a small inline override input so the PM
+          can replace the auto-computed number if the model tracker is
+          too short or the scrape looks wrong. Auto values come from
+          `data.performance` (tracker-based when available, 5Y synthetic
+          otherwise). Overrides are persisted per (group, profile) in
+          `pm:client-portfolio.metricsOverrides`. */}
       <div className="mt-4 break-inside-avoid">
-        <SectionTitle>Risk Profile vs S&amp;P 500 (5Y)</SectionTitle>
+        <SectionTitle>
+          Risk Profile vs S&amp;P 500 (since inception)
+        </SectionTitle>
         <div className="mt-2 grid grid-cols-4 gap-2 text-[11px]">
-          <Stat
-            label="Volatility — Portfolio (ann.)"
-            value={fmtPctFrac(data.performance.volatility)}
+          <OverridableStat
+            label="Std Dev — Portfolio (ann.)"
+            auto={data.performance.volatility}
+            override={metricsOverride.stdDev}
+            fraction
+            onChange={(v) =>
+              onMetricsOverrideChange({ ...metricsOverride, stdDev: v })
+            }
           />
-          <Stat
-            label="Volatility — S&P 500 (ann.)"
-            value={fmtPctFrac(data.performance.benchmarkVolatility)}
+          <OverridableStat
+            label="Std Dev — S&P 500 (ann.)"
+            auto={data.performance.benchmarkVolatility}
+            override={metricsOverride.benchmarkStdDev}
+            fraction
+            onChange={(v) =>
+              onMetricsOverrideChange({
+                ...metricsOverride,
+                benchmarkStdDev: v,
+              })
+            }
           />
-          <Stat label="Upside Capture" value={fmtPct(data.performance.upsideCapture)} />
-          <Stat label="Downside Capture" value={fmtPct(data.performance.downsideCapture)} />
+          <OverridableStat
+            label="Upside Capture"
+            auto={data.performance.upsideCapture}
+            override={metricsOverride.upsideCapture}
+            onChange={(v) =>
+              onMetricsOverrideChange({ ...metricsOverride, upsideCapture: v })
+            }
+          />
+          <OverridableStat
+            label="Downside Capture"
+            auto={data.performance.downsideCapture}
+            override={metricsOverride.downsideCapture}
+            onChange={(v) =>
+              onMetricsOverrideChange({
+                ...metricsOverride,
+                downsideCapture: v,
+              })
+            }
+          />
         </div>
       </div>
 
@@ -1520,14 +1580,14 @@ function OnePager({
               Portfolio Comparison
             </div>
             <div className="text-[10px] text-slate-500">
-              {clientLabel}&apos;s current holdings vs {data.profileLabel} Model
+              Current holdings vs {data.profileLabel} Model
             </div>
           </div>
 
           {/* Side-by-side allocation pies */}
           <div className="grid grid-cols-2 gap-5 break-inside-avoid">
             <div>
-              <SectionTitle>{clientLabel} — Asset Allocation</SectionTitle>
+              <SectionTitle>Current Asset Allocation</SectionTitle>
               <AllocationPie slices={clientPortfolio.allocation} />
             </div>
             <div>
@@ -1539,7 +1599,7 @@ function OnePager({
           {/* Side-by-side top holdings (look-through) */}
           <div className="grid grid-cols-2 gap-5 mt-4 break-inside-avoid">
             <div>
-              <SectionTitle>{clientLabel} — Top Holdings (Look-Through)</SectionTitle>
+              <SectionTitle>Current Top Holdings (Look-Through)</SectionTitle>
               <SimpleHoldingsTable
                 rows={clientPortfolio.xray.slice(0, 12).map((r) => ({
                   name: r.name || r.symbol,
@@ -1571,7 +1631,6 @@ function OnePager({
           {analysis && (
             <AnalysisSections
               analysis={analysis}
-              clientLabel={clientLabel}
               profileLabel={data.profileLabel}
             />
           )}
@@ -1635,11 +1694,9 @@ function OnePager({
  */
 function AnalysisSections({
   analysis,
-  clientLabel,
   profileLabel,
 }: {
   analysis: ClientReportAnalysis;
-  clientLabel: string;
   profileLabel: string;
 }) {
   const pros = analysis.currentPosition.pros ?? [];
@@ -1705,7 +1762,7 @@ function AnalysisSections({
         {showMer && (
           <div className="mt-3 grid grid-cols-2 gap-3 text-[11px]">
             <MerStat
-              label={`${clientLabel} — Blended MER`}
+              label="Current — Blended MER"
               value={mer.client}
               coverage={mer.clientCoveragePct}
               tone="neutral"
@@ -2432,6 +2489,85 @@ function Stat({ label, value }: { label: string; value: string }) {
       <div className="text-[9px] uppercase tracking-wider text-slate-500">{label}</div>
       <div className="text-sm font-bold mt-0.5 tabular-nums" style={{ color: RBC_NAVY }}>
         {value}
+      </div>
+    </div>
+  );
+}
+
+/**
+ * A risk-stat card with an inline override input. Displays the
+ * auto-computed value (from the tracker) when no override is set, and
+ * the override otherwise. The input is `print:hidden` so the PDF shows
+ * only the number, not the editing affordance.
+ *
+ * `fraction=true`: value stored as 0.14 for 14% (matches the raw std
+ * dev output). Capture ratios are stored as plain percents (e.g. 95).
+ */
+function OverridableStat({
+  label,
+  auto,
+  override,
+  fraction = false,
+  onChange,
+}: {
+  label: string;
+  auto: number | null;
+  override: number | undefined;
+  fraction?: boolean;
+  onChange: (v: number | undefined) => void;
+}) {
+  const displayed = override != null ? override : auto;
+  const displayStr =
+    displayed == null
+      ? "N/A"
+      : fraction
+      ? `${(displayed * 100).toFixed(1)}%`
+      : `${displayed.toFixed(1)}%`;
+  // Text shown in the input: the override value in its stored units
+  // (fraction → display as percent for easier typing, e.g. "14" for 0.14).
+  const inputStr =
+    override == null
+      ? ""
+      : fraction
+      ? String(+(override * 100).toFixed(2))
+      : String(+override.toFixed(2));
+
+  return (
+    <div className="rounded border p-2" style={{ borderColor: "#e2e8f0" }}>
+      <div className="text-[9px] uppercase tracking-wider text-slate-500">
+        {label}
+      </div>
+      <div
+        className="text-sm font-bold mt-0.5 tabular-nums"
+        style={{ color: RBC_NAVY }}
+      >
+        {displayStr}
+      </div>
+      <div className="print:hidden mt-1 flex items-center gap-1">
+        <input
+          type="number"
+          step="0.1"
+          placeholder={
+            auto != null
+              ? `auto: ${(fraction ? auto * 100 : auto).toFixed(1)}%`
+              : "override %"
+          }
+          value={inputStr}
+          onChange={(e) => {
+            const raw = e.target.value;
+            if (raw === "") {
+              onChange(undefined);
+              return;
+            }
+            const n = parseFloat(raw);
+            if (!Number.isFinite(n)) {
+              onChange(undefined);
+              return;
+            }
+            onChange(fraction ? n / 100 : n);
+          }}
+          className="w-full rounded border border-slate-200 px-1.5 py-0.5 text-[10px] tabular-nums focus:outline-none focus:ring-1 focus:ring-blue-400"
+        />
       </div>
     </div>
   );

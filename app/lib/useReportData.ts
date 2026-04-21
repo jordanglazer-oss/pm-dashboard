@@ -915,9 +915,20 @@ export function useReportData(
         /* leave tracker null */
       }
 
-      // ── 8. 5Y analytic metrics from adjusted-close history (kept
-      //     from v1 for vol + upside/downside capture; the display on
-      //     the report leans on tracker history for yearly returns).
+      // ── 8. Risk metrics (std dev + upside/downside capture vs S&P 500).
+      //
+      // When we have a PIM-performance tracker history, compute
+      // everything from the tracker's REALIZED daily returns vs ^GSPC
+      // aligned over the same calendar dates. This is far more accurate
+      // than the old 5Y synthetic-weighted adjusted-close calc, which
+      // (a) assumed current weights rebalanced daily for five years
+      // regardless of when holdings were actually added, and (b)
+      // produced unrealistic capture ratios when short-history holdings
+      // were mixed in. Using the tracker also naturally honours
+      // "since inception" — the window is exactly the tracker's span.
+      //
+      // When no tracker exists we fall back to the old 5Y synthetic
+      // calc so new model groups still get something on the report.
       const tickers = activeHoldings.map((h) => h.symbol);
       let performance: ReportPerformanceMetrics = {
         oneYearReturn: null,
@@ -940,6 +951,33 @@ export function useReportData(
             series: Record<string, [number, number][]>;
           };
           performance = computePerformance(activeHoldings, series);
+
+          // Overlay tracker-based metrics when available. We keep the
+          // return (oneYear/threeYear/fiveYear) fields from the synthetic
+          // calc — those are already shown elsewhere via `tracker` — but
+          // replace std dev + capture with inception-based realized
+          // numbers.
+          const bench = series["^GSPC"] ?? [];
+          if (tracker && tracker.history.length > 30 && bench.length) {
+            const trackerSeries: [number, number][] = tracker.history
+              .map((h) => [new Date(h.date).getTime(), h.value] as [number, number])
+              .filter(([t, v]) => isFinite(t) && isFinite(v) && v > 0);
+            const aligned = alignSeries(trackerSeries, bench);
+            if (aligned.a.length >= 30) {
+              const portR = dailyReturns(aligned.a);
+              const benchR = dailyReturns(aligned.b);
+              const stdDev = annualizedVolatility(portR);
+              const benchStdDev = annualizedVolatility(benchR);
+              const { upside, downside } = captureRatios(portR, benchR);
+              performance = {
+                ...performance,
+                volatility: stdDev,
+                benchmarkVolatility: benchStdDev,
+                upsideCapture: upside,
+                downsideCapture: downside,
+              };
+            }
+          }
         }
       } catch {
         /* leave performance as all-null */
