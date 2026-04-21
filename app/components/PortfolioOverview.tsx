@@ -776,12 +776,32 @@ export function PortfolioOverview() {
                 <tbody>
                   {sortedFunds.map((s) => {
                     const perf = s.fundData?.performance;
+                    // MER alert: neither auto-fetch nor manual override has
+                    // populated a value. Without this the Client Report's
+                    // blended-MER calculation silently treats the position
+                    // as 0%, which skews the comparison.
+                    const autoMer = s.fundData?.expenseRatio;
+                    const manualMer = s.manualExpenseRatio;
+                    const hasMer =
+                      (typeof autoMer === "number" && Number.isFinite(autoMer)) ||
+                      (typeof manualMer === "number" && Number.isFinite(manualMer));
                     return (
                       <tr key={s.ticker} className="border-b border-slate-50 hover:bg-slate-50/50 transition-colors">
                         <td className="py-3">
-                          <Link href={`/stock/${s.ticker.toLowerCase()}`} className="font-bold text-slate-800 hover:underline font-mono">
-                            {s.ticker}
-                          </Link>
+                          <div className="flex items-center gap-2">
+                            <Link href={`/stock/${s.ticker.toLowerCase()}`} className="font-bold text-slate-800 hover:underline font-mono">
+                              {s.ticker}
+                            </Link>
+                            {!hasMer && (
+                              <Link
+                                href={`/stock/${s.ticker.toLowerCase()}`}
+                                title="No MER on file — click to add a manual override. Missing MERs show as 0% in the Client Report blended-fee calc."
+                                className="rounded-md bg-amber-100 px-1.5 py-0.5 text-[9px] font-bold uppercase tracking-wider text-amber-700 hover:bg-amber-200 transition-colors"
+                              >
+                                ⚠ No MER
+                              </Link>
+                            )}
+                          </div>
                         </td>
                         <td className="py-3 text-slate-600 max-w-[180px] truncate">{s.name}</td>
                         <td className="py-3">
