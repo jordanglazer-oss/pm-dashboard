@@ -473,6 +473,71 @@ export function PimPortfolio({ groups }: Props) {
   const cashBalance = currentPositions?.cashBalance || 0;
   const cashPct = totalValueCadSummary > 0 ? cashBalance / totalValueCadSummary : 0;
 
+  // Live blended MER across the positioning view. Uses the SAME priority
+  // chain the Client Report audit page uses (Dashboard manual override →
+  // Dashboard auto-fetch), with suffix-tolerant matching for -T / .TO
+  // variants so model holdings stored as `FID5982` still match a
+  // Dashboard entry at `FID5982-T`. A 0 from any source is treated as
+  // "no credible MER" since funds/ETFs essentially never have a 0% fee.
+  // Cash weight is treated as fully covered at 0% — it dilutes the
+  // blended identically to a direct stock, which is correct for a PM's
+  // all-in fee view. Recomputes whenever positions or prices change,
+  // so the tile reflects live portfolio drift in real time.
+  const blendedMerTile = useMemo(() => {
+    const canon = (t: string): string => {
+      const up = t.toUpperCase().trim();
+      if (up.endsWith(".TO")) return up.slice(0, -3);
+      if (up.endsWith("-T")) return up.slice(0, -2);
+      return up;
+    };
+    const dashByCanon = new Map<string, (typeof stocks)[number]>();
+    for (const s of stocks) dashByCanon.set(canon(s.ticker), s);
+    const validEr = (v: number | null | undefined) =>
+      typeof v === "number" && Number.isFinite(v) && v > 0;
+
+    // Denominator includes cash + every holding row (whether or not we
+    // can price its MER). Cash always lands in the "covered at 0%" pool.
+    if (totalValueCadSummary <= 0) {
+      return { blended: null as number | null, coveragePct: 0 };
+    }
+    let weightedSum = 0; // Σ (weightPct × MER%)
+    let coveredWeightPct = 0;
+    let totalWeightPct = 0;
+    for (const r of holdingRows) {
+      const weightPct = (r.valueCad / totalValueCadSummary) * 100;
+      if (weightPct <= 0) continue;
+      totalWeightPct += weightPct;
+      const dash = dashByCanon.get(canon(r.symbol));
+      const manual = dash?.manualExpenseRatio;
+      const auto = dash?.fundData?.expenseRatio;
+      const isStock =
+        !dash || !dash.instrumentType || dash.instrumentType === "stock";
+      if (validEr(manual)) {
+        weightedSum += weightPct * (manual as number);
+        coveredWeightPct += weightPct;
+      } else if (validEr(auto)) {
+        weightedSum += weightPct * (auto as number);
+        coveredWeightPct += weightPct;
+      } else if (isStock) {
+        // Direct equity (or unknown ticker that isn't a Dashboard fund)
+        // contributes 0% with full coverage.
+        coveredWeightPct += weightPct;
+      }
+      // else: Dashboard fund with no credible MER on file → uncovered.
+    }
+    // Cash slice: treat as covered at 0%.
+    const cashWeightPct = (cashBalance / totalValueCadSummary) * 100;
+    if (cashWeightPct > 0) {
+      totalWeightPct += cashWeightPct;
+      coveredWeightPct += cashWeightPct;
+    }
+    const blended =
+      coveredWeightPct > 0 ? weightedSum / coveredWeightPct : null;
+    const coveragePct =
+      totalWeightPct > 0 ? (coveredWeightPct / totalWeightPct) * 100 : 0;
+    return { blended, coveragePct };
+  }, [holdingRows, totalValueCadSummary, cashBalance, stocks]);
+
   // Today's return: weighted sum of each holding's daily % change (prev close → current price).
   // USD holdings use yesterday's USDCAD for the prev side and today's USDCAD
   // for the curr side so that FX translation gain/loss is reflected in the
@@ -1562,10 +1627,21 @@ export function PimPortfolio({ groups }: Props) {
             {todayReturn != null ? fmtGainLoss(todayReturn) : "--"}
           </div>
         </div>
-        <div className="rounded-xl border border-slate-200 bg-white p-4 text-center">
-          <div className="text-[10px] font-semibold text-slate-400 uppercase">Cash</div>
-          <div className="text-lg font-bold text-slate-700">{fmtCurrency(cashBalance)}</div>
-          <div className="text-[9px] text-slate-400">{pct(cashPct)}</div>
+        <div
+          className="rounded-xl border border-slate-200 bg-white p-4 text-center"
+          title="Weighted-average management expense ratio across the current positions. Updates live as weights drift. Cash and direct equities contribute 0%. Funds without an MER on the Dashboard are excluded from the denominator — check the coverage % if the number looks low."
+        >
+          <div className="text-[10px] font-semibold text-slate-400 uppercase">Blended MER</div>
+          <div className="text-lg font-bold text-slate-700">
+            {blendedMerTile.blended != null
+              ? `${blendedMerTile.blended.toFixed(2)}%`
+              : "--"}
+          </div>
+          <div className="text-[9px] text-slate-400">
+            {blendedMerTile.coveragePct >= 99.5
+              ? `Cash ${pct(cashPct)}`
+              : `${blendedMerTile.coveragePct.toFixed(0)}% covered · Cash ${pct(cashPct)}`}
+          </div>
         </div>
       </div>
 

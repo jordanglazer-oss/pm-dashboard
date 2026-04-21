@@ -471,6 +471,21 @@ export default function ClientReportPage() {
     setClientPositions((prev) => prev.filter((p) => p.id !== id));
   }, []);
 
+  const clearAllPositions = useCallback(() => {
+    // Two-step confirmation: window.confirm keeps it native + undismissable
+    // by a stray page click, which matters because the action is destructive
+    // (wipes the PM's in-progress client-side holdings along with the cash
+    // field).
+    const count = clientPositions.length;
+    if (count === 0) return;
+    const ok = window.confirm(
+      `Clear all ${count} client-side ${count === 1 ? "holding" : "holdings"} and reset cash to 0? This cannot be undone.`
+    );
+    if (!ok) return;
+    setClientPositions([]);
+    setClientCash(0);
+  }, [clientPositions.length]);
+
   const updatePosition = useCallback(
     (
       id: string,
@@ -1455,6 +1470,14 @@ export default function ClientReportPage() {
                 className="rounded bg-slate-100 px-3 py-1.5 text-xs font-semibold text-slate-600 hover:bg-slate-200"
               >
                 + Add Position
+              </button>
+              <button
+                onClick={clearAllPositions}
+                disabled={clientPositions.length === 0}
+                className="rounded border border-red-200 bg-white px-3 py-1.5 text-xs font-semibold text-red-600 hover:bg-red-50 disabled:cursor-not-allowed disabled:border-slate-200 disabled:text-slate-300 disabled:hover:bg-white"
+                title="Remove every client-side holding in one shot (asks to confirm first)"
+              >
+                Clear All
               </button>
               <div className="flex items-center gap-1.5">
                 <label className="text-xs text-slate-500">

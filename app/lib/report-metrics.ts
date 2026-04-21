@@ -63,41 +63,48 @@ export function annualizedVolatility(returns: readonly number[]): number | null 
 }
 
 /**
- * Upside / downside capture vs a benchmark.
+ * Upside / downside capture vs a benchmark — Morningstar methodology.
  *
- * Textbook Morningstar/CFA definition: compound the portfolio and
- * benchmark returns separately over the up-market periods and the
- * down-market periods, then divide total portfolio excess over
- * benchmark excess × 100. We deliberately do NOT annualize — when
- * the number of up-days ≠ down-days, the fractional-power annualization
- * amplifies small differences into double-digit distortions (this was
- * producing the "unrealistic" values on the Client Report page).
- *
- * Up-days  (b > 0): upside  = (∏(1+p) − 1) / (∏(1+b) − 1) × 100
- * Down-days (b < 0): downside = (∏(1+p) − 1) / (∏(1+b) − 1) × 100
+ * Definition (matches Morningstar Direct / CFA Institute):
+ *   1. Separate the aligned period returns into up-market periods
+ *      (benchmark return > 0) and down-market periods (benchmark < 0).
+ *   2. Geometrically compound the portfolio AND the benchmark over
+ *      each set: R_cum = ∏(1 + r_i) − 1.
+ *   3. Annualize BOTH sides using the same exponent based on the
+ *      number of periods: R_ann = (1 + R_cum)^(periodsPerYear / N) − 1.
+ *   4. Upside  = R_ann_port_up  / R_ann_bench_up  × 100.
+ *      Downside = R_ann_port_dn  / R_ann_bench_dn  × 100.
  *
  * A down-capture < 100 means the portfolio lost less than the benchmark
- * on down-days (good). An up-capture > 100 means it gained more on
- * up-days (good). Both are strictly scale-invariant in sample size.
+ * on down-periods (good). An up-capture > 100 means it gained more on
+ * up-periods (good). Capture > 100 on the downside (or < 100 on the
+ * upside) is bad.
+ *
+ * Morningstar computes this from MONTHLY returns (periodsPerYear = 12).
+ * Daily returns (252) are also supported but introduce more noise and
+ * more small-magnitude up-days, which typically inflates up-capture
+ * toward 100 because tiny-positive bench days are treated the same as
+ * meaningful rallies. Prefer monthly.
  *
  * `portfolioReturns` and `benchmarkReturns` must be aligned — same
- * length, same calendar days. Pairs containing a non-finite value on
- * either side are skipped.
+ * length, same periods. Pairs containing a non-finite value on either
+ * side are skipped.
  */
 export function captureRatios(
   portfolioReturns: readonly number[],
-  benchmarkReturns: readonly number[]
+  benchmarkReturns: readonly number[],
+  periodsPerYear: number = TRADING_DAYS_PER_YEAR
 ): { upside: number | null; downside: number | null } {
   if (
     !portfolioReturns ||
     !benchmarkReturns ||
     portfolioReturns.length !== benchmarkReturns.length ||
-    portfolioReturns.length < 20
+    portfolioReturns.length < 1
   ) {
     return { upside: null, downside: null };
   }
 
-  // Accumulate compounded returns on up-days and down-days separately.
+  // Compound portfolio and benchmark separately over up/down periods.
   let upPort = 1;
   let upBench = 1;
   let upCount = 0;
@@ -118,23 +125,72 @@ export function captureRatios(
       downBench *= 1 + b;
       downCount++;
     }
+    // b === 0 exactly is dropped from both sets.
   }
 
-  // Require a minimum sample of each side to avoid reporting noise.
-  const MIN_DAYS = 10;
-  const upBenchTotal = upBench - 1;
-  const downBenchTotal = downBench - 1;
+  // Minimum sample on each side. For monthly input, 6 periods is the
+  // smallest window where the ratio is remotely stable; for daily input
+  // the caller is responsible for feeding at least ~6 months.
+  const MIN_PERIODS = periodsPerYear >= 200 ? 30 : 6;
+
+  // Annualize both cumulative returns with the same exponent before
+  // taking the ratio. Using the raw cumulative ratio biases the number
+  // whenever the portfolio and benchmark have different up-day counts —
+  // annualization rescales both to a comparable 1-year horizon.
+  const annualize = (cum: number, n: number): number | null => {
+    if (n <= 0 || !isFinite(cum) || cum <= 0) return null;
+    return Math.pow(cum, periodsPerYear / n) - 1;
+  };
+
+  const portUpAnn = annualize(upPort, upCount);
+  const benchUpAnn = annualize(upBench, upCount);
+  const portDnAnn = annualize(downPort, downCount);
+  const benchDnAnn = annualize(downBench, downCount);
 
   const upside =
-    upCount >= MIN_DAYS && Math.abs(upBenchTotal) > 1e-6
-      ? ((upPort - 1) / upBenchTotal) * 100
+    upCount >= MIN_PERIODS &&
+    portUpAnn != null &&
+    benchUpAnn != null &&
+    Math.abs(benchUpAnn) > 1e-6
+      ? (portUpAnn / benchUpAnn) * 100
       : null;
   const downside =
-    downCount >= MIN_DAYS && Math.abs(downBenchTotal) > 1e-6
-      ? ((downPort - 1) / downBenchTotal) * 100
+    downCount >= MIN_PERIODS &&
+    portDnAnn != null &&
+    benchDnAnn != null &&
+    Math.abs(benchDnAnn) > 1e-6
+      ? (portDnAnn / benchDnAnn) * 100
       : null;
 
   return { upside, downside };
+}
+
+/**
+ * Resample a daily `[epochMs, price]` series to end-of-month closes,
+ * returning a flat price array suitable for `dailyReturns()` (which,
+ * despite the name, is just "consecutive ratio - 1" and works for any
+ * cadence). We pick the LAST observation of each calendar month.
+ *
+ * Used to feed monthly returns into `captureRatios` — which is the
+ * standard Morningstar cadence — without throwing away the daily data
+ * the rest of the report already consumes.
+ */
+export function monthlyPricesFromDaily(
+  series: ReadonlyArray<readonly [number, number]>
+): number[] {
+  if (!series.length) return [];
+  const lastByMonth = new Map<string, { t: number; p: number }>();
+  for (const [t, p] of series) {
+    if (!isFinite(t) || !isFinite(p) || p <= 0) continue;
+    const d = new Date(t);
+    const key = `${d.getUTCFullYear()}-${String(d.getUTCMonth() + 1).padStart(2, "0")}`;
+    const existing = lastByMonth.get(key);
+    if (!existing || t >= existing.t) lastByMonth.set(key, { t, p });
+  }
+  // Order oldest → newest by the composite key (year-month sorts lexically).
+  return [...lastByMonth.entries()]
+    .sort((a, b) => (a[0] < b[0] ? -1 : a[0] > b[0] ? 1 : 0))
+    .map(([, v]) => v.p);
 }
 
 /**
