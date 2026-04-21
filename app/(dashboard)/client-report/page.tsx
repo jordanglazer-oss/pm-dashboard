@@ -229,26 +229,33 @@ function classifyMerRow(
   };
 }
 
-/** Full on-screen breakdown for the Blended-MER Contributors table. */
+/** Full on-screen breakdown for the Blended-MER Contributors table.
+ *  `model` is always populated once report data is loaded — it doesn't
+ *  depend on any client comparison being active. `client` is only
+ *  populated when a client portfolio has been analysed, so the PM can
+ *  audit the model's fees at any time and the client's fees only
+ *  once they've entered holdings. */
 type MerBreakdown = {
-  client: {
-    rows: MerContribRow[];
-    blended: number;
-    coveragePct: number;
-  };
   model: {
     rows: MerContribRow[];
     blended: number;
     coveragePct: number;
   };
+  client: {
+    rows: MerContribRow[];
+    blended: number;
+    coveragePct: number;
+  } | null;
 };
 
-/** Classify both sides of the comparison using the same pipeline the
+/** Classify holdings using the same pipeline the
  *  /api/client-report-analysis payload uses, and return the result in
- *  the shape the audit table wants. Passing the raw inputs (not the
- *  payload) keeps this callable during render without side effects. */
+ *  the shape the audit table wants. `clientResult` / `clientPositions`
+ *  are optional — when absent, only the model side is populated.
+ *  Passing the raw inputs (not the payload) keeps this callable during
+ *  render without side effects. */
 function buildMerBreakdown(
-  clientResult: ClientPortfolioResult,
+  clientResult: ClientPortfolioResult | null,
   data: ReportData,
   clientPositions: ClientPosition[],
   stocks: Stock[],
@@ -264,13 +271,6 @@ function buildMerBreakdown(
     if (!key) continue;
     typedByCanon.set(key, { mer: pos.mer, instrumentType: pos.instrumentType });
   }
-  const clientRows = clientResult.positions.map((p) =>
-    classifyMerRow(
-      { symbol: p.ticker, name: p.name, weight: p.weight },
-      dashByCanon,
-      typedByCanon.get(canonClientTicker(p.ticker)),
-    ),
-  );
   const modelRows = data.rawHoldings.map((h) =>
     classifyMerRow(
       { symbol: h.symbol, name: h.name || h.symbol, weight: h.weight },
@@ -278,11 +278,22 @@ function buildMerBreakdown(
       undefined,
     ),
   );
-  const c = summarizeMerRows(clientRows);
   const m = summarizeMerRows(modelRows);
+  let clientSide: MerBreakdown["client"] = null;
+  if (clientResult) {
+    const clientRows = clientResult.positions.map((p) =>
+      classifyMerRow(
+        { symbol: p.ticker, name: p.name, weight: p.weight },
+        dashByCanon,
+        typedByCanon.get(canonClientTicker(p.ticker)),
+      ),
+    );
+    const c = summarizeMerRows(clientRows);
+    clientSide = { rows: clientRows, blended: c.blended, coveragePct: c.coveragePct };
+  }
   return {
-    client: { rows: clientRows, blended: c.blended, coveragePct: c.coveragePct },
     model: { rows: modelRows, blended: m.blended, coveragePct: m.coveragePct },
+    client: clientSide,
   };
 }
 
@@ -1578,11 +1589,14 @@ export default function ClientReportPage() {
             commentarySaving={commentarySaving}
             clientPortfolio={showComparison ? clientResult : null}
             analysis={showComparison ? analysis : null}
-            merBreakdown={
-              showComparison && clientResult
-                ? buildMerBreakdown(clientResult, data, clientPositions, stocks)
-                : null
-            }
+            merBreakdown={buildMerBreakdown(
+              // Model side always renders; client side only when the PM
+              // has run Analyze and toggled the comparison on.
+              showComparison ? clientResult : null,
+              data,
+              clientPositions,
+              stocks,
+            )}
             metricsOverride={metricsOverrides[`${groupId}::${profile}`] ?? {}}
             onMetricsOverrideChange={(next) =>
               setMetricsOverrides((prev) => ({
@@ -1947,11 +1961,12 @@ function OnePager({
       )}
 
       {/* ── Blended MER — Contributors (new page) ──
-          Shows every holding on both sides with its weight, MER source,
-          and contribution to the blended number. Intended as an audit
-          sheet so the PM can verify exactly what's feeding the fee
-          comparison — handy when the headline blended looks lower than
-          expected vs. a third-party reference (e.g. Morningstar). */}
+          Shows every holding with its weight, MER source, and contribution
+          to the blended number. The model-side table ALWAYS renders once
+          report data is loaded — the PM shouldn't have to run a client
+          comparison to audit our own portfolio's fees. The client-side
+          table only appears when a comparison is active (same data that
+          feeds the comparison page's blended-MER tiles). */}
       {merBreakdown && (
         <div
           className="relative z-10 mt-8 pt-6 bg-white"
@@ -1971,14 +1986,22 @@ function OnePager({
               MER are excluded from both the numerator and the denominator.
             </div>
           </div>
-          <div className="grid grid-cols-2 gap-4">
-            <MerContributorsTable
-              title="Current Portfolio"
-              rows={merBreakdown.client.rows}
-              blended={merBreakdown.client.blended}
-              coveragePct={merBreakdown.client.coveragePct}
-              accent={RBC_NAVY}
-            />
+          <div
+            className={
+              merBreakdown.client
+                ? "grid grid-cols-2 gap-4"
+                : "grid grid-cols-1 gap-4"
+            }
+          >
+            {merBreakdown.client && (
+              <MerContributorsTable
+                title="Current Portfolio"
+                rows={merBreakdown.client.rows}
+                blended={merBreakdown.client.blended}
+                coveragePct={merBreakdown.client.coveragePct}
+                accent={RBC_NAVY}
+              />
+            )}
             <MerContributorsTable
               title={`${data.profileLabel} Model`}
               rows={merBreakdown.model.rows}
