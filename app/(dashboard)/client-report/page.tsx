@@ -63,6 +63,14 @@ type ClientPosition = {
    *  the blended-MER comparison in the AI analysis. Overrides any
    *  Dashboard-side auto-fetch or manual override for the same ticker. */
   mer?: number;
+  /** Instrument classification for the blended-MER / coverage calc.
+   *  - "stock": direct equity, contributes 0% MER with full coverage.
+   *  - "fund": ETF or mutual fund, must have an MER (typed here or
+   *    auto-fetched via a Dashboard match) to count as covered.
+   *  When undefined, the payload builder auto-detects: Dashboard-matched
+   *  tickers inherit their Dashboard `instrumentType`; everything else
+   *  defaults to "stock". Persisted so the PM's override sticks. */
+  instrumentType?: "stock" | "fund";
 };
 
 type ClientPortfolioResult = {
@@ -111,6 +119,17 @@ const VALID_PROFILES: readonly PimProfileType[] = ["balanced", "growth", "allEqu
 // marks. Everything else stays neutral so the PDF prints cleanly.
 const RBC_NAVY = "#002855";
 const RBC_GOLD = "#FED141";
+
+/** Strip Canadian-listing suffixes so two ticker variants (e.g.
+ *  `FID5982` vs `FID5982-T`, `XIU` vs `XIU.TO`) compare equal. Mirrors
+ *  the `-T` ↔ `.TO` tolerance used by `tickerMatch` elsewhere in the app
+ *  and by the blended-MER canonicalization in `/api/client-report-analysis`. */
+function canonClientTicker(t: string): string {
+  const up = t.toUpperCase().trim();
+  if (up.endsWith(".TO")) return up.slice(0, -3);
+  if (up.endsWith("-T")) return up.slice(0, -2);
+  return up;
+}
 
 function fmtPct(v: number | null | undefined, digits = 1): string {
   if (v == null || !isFinite(v)) return "—";
@@ -791,6 +810,11 @@ export default function ClientReportPage() {
         // blended calc treats them correctly.
         const expenseRatios: Record<string, number> = {};
         const stockSymbols: string[] = [];
+        // Build a canonical-keyed Dashboard lookup so client-typed tickers
+        // can inherit instrumentType / MER even when the suffix spelling
+        // differs (FID5982 vs FID5982-T, XIU vs XIU.TO).
+        const dashByCanon = new Map<string, (typeof stocks)[number]>();
+        for (const s of stocks) dashByCanon.set(canonClientTicker(s.ticker), s);
         // Tier 3 → 2: Dashboard-tracked stocks.
         for (const s of stocks) {
           const key = s.ticker.toUpperCase();
@@ -808,15 +832,42 @@ export default function ClientReportPage() {
             stockSymbols.push(key);
           }
         }
-        // Tier 1: per-row inputs for the client's typed holdings.
-        // Also treat a blank-MER client position whose ticker is known
-        // to the Dashboard as an individual stock (via fall-through).
+        // Tier 1 + classification for client-typed tickers. Priority:
+        //   1. Per-row typed MER → treat as fund with that MER.
+        //   2. Explicit per-row `instrumentType` the PM picked.
+        //   3. Dashboard match (by canonical ticker) → inherit its type.
+        //   4. Default: "stock" — individual equities are the common case
+        //      for client-typed holdings and contribute 0% to blended MER
+        //      with full coverage. Funds without an MER are the outlier
+        //      and surface via the per-row Stock/Fund toggle.
         for (const pos of clientPositions) {
-          const key = pos.ticker.trim().toUpperCase();
+          const raw = pos.ticker.trim();
+          const key = raw.toUpperCase();
           if (!key) continue;
           if (typeof pos.mer === "number" && Number.isFinite(pos.mer)) {
             expenseRatios[key] = pos.mer;
+            continue;
           }
+          const explicit = pos.instrumentType;
+          if (explicit === "fund") {
+            // Fund with no MER typed. Let the API treat as uncovered so
+            // the coverage subscript nudges the PM to add one.
+            continue;
+          }
+          if (explicit === "stock") {
+            stockSymbols.push(key);
+            continue;
+          }
+          // No explicit override — auto-detect.
+          const dash = dashByCanon.get(canonClientTicker(key));
+          if (dash) {
+            // Already handled in the stocks loop above under the
+            // Dashboard's own ticker form; the API canonicalizes both
+            // sides so the lookup still hits.
+            continue;
+          }
+          // Not on Dashboard, no typed MER, no explicit override → stock.
+          stockSymbols.push(key);
         }
 
         const payload = {
@@ -1149,6 +1200,84 @@ export default function ClientReportPage() {
                     title="Optional MER (%) for ETFs / mutual funds. Blank = unknown (0 for direct equities)."
                     className="w-20 rounded border border-slate-200 px-2 py-1.5 text-xs tabular-nums focus:outline-none focus:ring-1 focus:ring-blue-400"
                   />
+                  {/* Instrument type toggle (Stock / Fund). Auto-defaults
+                      based on a Dashboard match by canonical ticker; the
+                      PM can override per row for tickers not on the
+                      Dashboard. Direct stocks contribute 0% MER with full
+                      coverage in the blended-MER calc; funds require an
+                      MER to count as covered. */}
+                  {(() => {
+                    const dash = stocks.find(
+                      (s) => canonClientTicker(s.ticker) === canonClientTicker(pos.ticker),
+                    );
+                    const detected: "stock" | "fund" = dash
+                      ? (dash.instrumentType === "stock" || !dash.instrumentType
+                          ? "stock"
+                          : "fund")
+                      : typeof pos.mer === "number" && Number.isFinite(pos.mer) && pos.mer > 0
+                      ? "fund"
+                      : "stock";
+                    const effective: "stock" | "fund" = pos.instrumentType ?? detected;
+                    const isOverride = pos.instrumentType != null && pos.instrumentType !== detected;
+                    return (
+                      <div
+                        className="flex rounded border border-slate-200 overflow-hidden text-[10px]"
+                        title={
+                          isOverride
+                            ? "Type manually overridden. Click to clear override and auto-detect."
+                            : dash
+                            ? `Detected from Dashboard (${dash.instrumentType || "stock"}).`
+                            : "Auto-detected: not on Dashboard, so assumed a direct stock (0% MER). Click Fund if this is an ETF/MF."
+                        }
+                      >
+                        <button
+                          type="button"
+                          onClick={() =>
+                            updatePosition(
+                              pos.id,
+                              "instrumentType",
+                              // Clicking the already-effective side clears
+                              // an explicit override; clicking the other
+                              // side sets one.
+                              effective === "stock"
+                                ? pos.instrumentType === "stock"
+                                  ? undefined
+                                  : "stock"
+                                : "stock",
+                            )
+                          }
+                          className={`px-1.5 py-1.5 font-semibold transition-colors ${
+                            effective === "stock"
+                              ? "bg-slate-700 text-white"
+                              : "bg-white text-slate-500 hover:bg-slate-50"
+                          }`}
+                        >
+                          Stock
+                        </button>
+                        <button
+                          type="button"
+                          onClick={() =>
+                            updatePosition(
+                              pos.id,
+                              "instrumentType",
+                              effective === "fund"
+                                ? pos.instrumentType === "fund"
+                                  ? undefined
+                                  : "fund"
+                                : "fund",
+                            )
+                          }
+                          className={`px-1.5 py-1.5 font-semibold transition-colors ${
+                            effective === "fund"
+                              ? "bg-indigo-600 text-white"
+                              : "bg-white text-slate-500 hover:bg-slate-50"
+                          }`}
+                        >
+                          Fund
+                        </button>
+                      </div>
+                    );
+                  })()}
                   <button
                     onClick={() => removePosition(pos.id)}
                     className="text-slate-400 hover:text-rose-500 text-sm px-1"

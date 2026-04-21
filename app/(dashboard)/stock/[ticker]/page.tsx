@@ -1,6 +1,6 @@
 "use client";
 
-import React, { useState, useEffect, useCallback } from "react";
+import React, { useState, useEffect, useCallback, useRef } from "react";
 import { useParams, useRouter, useSearchParams } from "next/navigation";
 import Link from "next/link";
 import { useStocks } from "@/app/lib/StockContext";
@@ -754,6 +754,37 @@ export default function StockDetailPage() {
   const backHref = from === "pim-model" ? "/pim-model" : "/";
   const backLabel = from === "pim-model" ? "PIM Model" : "Dashboard";
   const fromSuffix = from ? `?from=${from}` : "";
+
+  // Preserve the horizontal scroll position of the ticker nav bar across
+  // ticker → ticker navigations. Each click is a full client-side route
+  // transition that remounts this page component and resets the bar to
+  // scrollLeft=0, which threw the PM back to the first ticker every time.
+  // We stash the last scrollLeft in sessionStorage (per-tab, cleared when
+  // the tab closes) and rehydrate on mount before the browser paints.
+  const tickerBarRef = useRef<HTMLDivElement | null>(null);
+  const TICKER_BAR_SCROLL_KEY = "stock-ticker-bar-scroll";
+  useEffect(() => {
+    const el = tickerBarRef.current;
+    if (!el) return;
+    try {
+      const raw = sessionStorage.getItem(TICKER_BAR_SCROLL_KEY);
+      if (raw) {
+        const n = Number(raw);
+        if (Number.isFinite(n)) el.scrollLeft = n;
+      }
+    } catch {
+      /* sessionStorage disabled — accept the reset, no-op */
+    }
+    const onScroll = () => {
+      try {
+        sessionStorage.setItem(TICKER_BAR_SCROLL_KEY, String(el.scrollLeft));
+      } catch {
+        /* quota / privacy mode — silently drop */
+      }
+    };
+    el.addEventListener("scroll", onScroll, { passive: true });
+    return () => el.removeEventListener("scroll", onScroll);
+  }, []);
   const { getStock, scoredStocks, marketData, updateScore, updateExplanations, updateLastScored, updatePrice, updateHealthData, updateTechnicals, updateStockFields, updateWeight, updateFundData, moveBucket, removeStock, pimModels, toggleModelEligibility, updateModelWeight } = useStocks();
   const stock = getStock(ticker);
   const [scoring, setScoring] = useState(false);
@@ -939,7 +970,7 @@ export default function StockDetailPage() {
   return (
     <main className="min-h-screen bg-[#f4f5f7] text-slate-900 overflow-x-hidden">
       {/* Ticker navigation bar */}
-      <div className="border-b border-slate-200 bg-white px-4 py-2.5 md:px-8 overflow-x-auto">
+      <div ref={tickerBarRef} className="border-b border-slate-200 bg-white px-4 py-2.5 md:px-8 overflow-x-auto">
         <div className="flex items-center gap-2 w-max">
           <Link
             href={backHref}
