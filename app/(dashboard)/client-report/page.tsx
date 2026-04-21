@@ -815,17 +815,21 @@ export default function ClientReportPage() {
         // differs (FID5982 vs FID5982-T, XIU vs XIU.TO).
         const dashByCanon = new Map<string, (typeof stocks)[number]>();
         for (const s of stocks) dashByCanon.set(canonClientTicker(s.ticker), s);
-        // Tier 3 → 2: Dashboard-tracked stocks.
+        // Tier 3 → 2: Dashboard-tracked stocks. A 0 from either source
+        // is treated as "no credible MER" (fund/ETF MERs are never 0),
+        // so the row falls through to the uncovered bucket where the
+        // coverage subscript will flag it for the PM.
+        const validErVal = (v: number | null | undefined) =>
+          typeof v === "number" && Number.isFinite(v) && v > 0;
         for (const s of stocks) {
           const key = s.ticker.toUpperCase();
           const manual = s.manualExpenseRatio;
           const auto = s.fundData?.expenseRatio;
-          const er =
-            typeof manual === "number" && Number.isFinite(manual)
-              ? manual
-              : typeof auto === "number" && Number.isFinite(auto)
-              ? auto
-              : null;
+          const er = validErVal(manual)
+            ? (manual as number)
+            : validErVal(auto)
+            ? (auto as number)
+            : null;
           if (er != null) {
             expenseRatios[key] = er;
           } else if (s.instrumentType === "stock" || !s.instrumentType) {
@@ -844,8 +848,8 @@ export default function ClientReportPage() {
           const raw = pos.ticker.trim();
           const key = raw.toUpperCase();
           if (!key) continue;
-          if (typeof pos.mer === "number" && Number.isFinite(pos.mer)) {
-            expenseRatios[key] = pos.mer;
+          if (validErVal(pos.mer)) {
+            expenseRatios[key] = pos.mer as number;
             continue;
           }
           const explicit = pos.instrumentType;

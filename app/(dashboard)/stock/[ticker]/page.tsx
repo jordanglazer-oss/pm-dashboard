@@ -1214,14 +1214,22 @@ export default function StockDetailPage() {
                 {!scoreable && (() => {
                   const manualMer = stock.manualExpenseRatio;
                   const autoMer = stock.fundData?.expenseRatio;
-                  const effectiveMer =
-                    typeof manualMer === "number" && Number.isFinite(manualMer)
-                      ? manualMer
-                      : typeof autoMer === "number" && Number.isFinite(autoMer)
-                      ? autoMer
-                      : null;
-                  const merIsManual =
-                    typeof manualMer === "number" && Number.isFinite(manualMer);
+                  // A fund/ETF essentially never has a 0% MER. When the
+                  // auto-fetch returns 0 it's almost always a scrape miss
+                  // (wrong field parsed), so treat 0 as "no credible MER"
+                  // and prefer any manual override. A manual 0 is also
+                  // treated as invalid for the same reason — there is no
+                  // legitimate reason to type 0 for a real fund/ETF.
+                  const validMer = (v: number | null | undefined) =>
+                    typeof v === "number" && Number.isFinite(v) && v > 0;
+                  const effectiveMer = validMer(manualMer)
+                    ? (manualMer as number)
+                    : validMer(autoMer)
+                    ? (autoMer as number)
+                    : null;
+                  const autoIsZero =
+                    typeof autoMer === "number" && Number.isFinite(autoMer) && autoMer === 0;
+                  const merIsManual = validMer(manualMer);
                   const merLabel =
                     stock.instrumentType === "mutual-fund" ? "MER" : "Expense Ratio";
                   return (
@@ -1229,6 +1237,18 @@ export default function StockDetailPage() {
                     {loadingFundData && !stock.fundData && (
                       <div className="rounded-xl bg-slate-50 p-4">
                         <p className="text-sm text-slate-400 animate-pulse">Loading fund data...</p>
+                      </div>
+                    )}
+                    {/* Suspect-zero warning — auto-fetch returned 0 and
+                        no manual override exists. 0% MER isn't realistic
+                        for a fund/ETF, so surface a visible nudge to type
+                        the real value into the Manual MER field below.
+                        Rendered above the fund-data grid so the PM sees
+                        it without scrolling. */}
+                    {autoIsZero && !merIsManual && (
+                      <div className="mb-3 rounded-lg border border-amber-200 bg-amber-50 px-3 py-2 text-[11px] text-amber-800">
+                        <span className="font-semibold">⚠ Auto-fetched {merLabel} is 0%.</span>{" "}
+                        This is almost certainly a scrape miss — funds and ETFs essentially never have a 0% MER. Enter the real value in the Manual MER field below so the Client Report blended-fee calc uses it.
                       </div>
                     )}
                     {/* Standalone MER tile — shown whenever we have an
