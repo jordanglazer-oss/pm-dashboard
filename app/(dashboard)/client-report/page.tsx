@@ -350,6 +350,12 @@ export default function ClientReportPage() {
   const [clientInputMode, setClientInputMode] = useState<ClientInputMode>("units");
   const [clientPositions, setClientPositions] = useState<ClientPosition[]>([]);
   const [clientCash, setClientCash] = useState<number>(0);
+  // Manual total portfolio value. Only used when inputMode === "weight"
+  // (where per-position market values aren't known). Feeds the fee-savings
+  // dollar calc; 0 or blank means "no dollar estimate available." Stored
+  // separately from per-position weights so typing a value here never
+  // alters the holding percentages.
+  const [clientManualTotalValue, setClientManualTotalValue] = useState<number>(0);
   // Manual overrides for the Risk Profile strip, keyed per (groupId,
   // profile). Shape: { "groupId::profile": { stdDev?, benchmarkStdDev?,
   // upsideCapture?, downsideCapture? } }. Populated from the saved
@@ -376,7 +382,7 @@ export default function ClientReportPage() {
     let cancelled = false;
     fetch("/api/kv/client-portfolio", { cache: "no-store" })
       .then((r) => (r.ok ? r.json() : { data: null }))
-      .then((payload: { data?: { positions?: ClientPosition[]; cash?: number; inputMode?: ClientInputMode; analysis?: ClientReportAnalysis; metricsOverrides?: Record<string, MetricsOverride> } | null }) => {
+      .then((payload: { data?: { positions?: ClientPosition[]; cash?: number; manualTotalValue?: number; inputMode?: ClientInputMode; analysis?: ClientReportAnalysis; metricsOverrides?: Record<string, MetricsOverride> } | null }) => {
         if (cancelled) return;
         const d = payload?.data;
         if (d) {
@@ -384,6 +390,9 @@ export default function ClientReportPage() {
             setClientPositions(d.positions);
           }
           if (typeof d.cash === "number") setClientCash(d.cash);
+          if (typeof d.manualTotalValue === "number") {
+            setClientManualTotalValue(d.manualTotalValue);
+          }
           if (d.inputMode === "units" || d.inputMode === "weight") setClientInputMode(d.inputMode);
           if (d.analysis && typeof d.analysis === "object") setAnalysis(d.analysis);
           if (d.metricsOverrides && typeof d.metricsOverrides === "object") {
@@ -451,6 +460,7 @@ export default function ClientReportPage() {
         body: JSON.stringify({
           positions: clientPositions,
           cash: clientCash,
+          manualTotalValue: clientManualTotalValue,
           inputMode: clientInputMode,
           analysis,
           metricsOverrides,
@@ -458,7 +468,7 @@ export default function ClientReportPage() {
       }).catch(() => { /* best effort */ });
     }, 800);
     return () => clearTimeout(handle);
-  }, [clientPositions, clientCash, clientInputMode, analysis, metricsOverrides]);
+  }, [clientPositions, clientCash, clientManualTotalValue, clientInputMode, analysis, metricsOverrides]);
 
   const addPosition = useCallback(() => {
     setClientPositions((prev) => [
@@ -611,7 +621,13 @@ export default function ClientReportPage() {
           })
           .sort((a, b) => b.weight - a.weight);
         cashWeight = (clientCash / rawTotal) * 100;
-        totalValue = 0;
+        // In weight mode the per-position market values aren't known,
+        // so totalValue defaults to 0 (hides dollar outputs). When the
+        // PM types a manual total in the UI we pass it through here so
+        // the fee-savings calc can still produce a dollar figure. This
+        // does NOT feed back into per-position weights — weights remain
+        // whatever the user typed, normalized above.
+        totalValue = clientManualTotalValue > 0 ? clientManualTotalValue : 0;
       } else {
         const validPositions = clientPositions.filter(
           (p) => p.ticker.trim() && p.units > 0
@@ -979,7 +995,7 @@ export default function ClientReportPage() {
     } finally {
       setClientLoading(false);
     }
-  }, [clientPositions, clientCash, clientInputMode, stocks]);
+  }, [clientPositions, clientCash, clientManualTotalValue, clientInputMode, stocks]);
 
   // ── Generate AI analysis ──
   // Builds the full comparison payload, looks up per-ticker MER from the
@@ -1057,6 +1073,11 @@ export default function ClientReportPage() {
             weight: a.weight,
           })),
           clientCashWeight: clientResult.cashWeight,
+          // Dollar value of the client portfolio, when known. Unit-mode
+          // computes this from live prices; weight-mode carries whatever
+          // the PM typed into the optional "Portfolio Value" field (0 if
+          // blank). Powers the fee-savings calculation on the server.
+          clientTotalValue: clientResult.totalValue > 0 ? clientResult.totalValue : 0,
           modelProfileLabel: data.profileLabel,
           // IMPORTANT: use rawHoldings (actual ETF / fund tickers) here,
           // NOT xray (look-through stock-level names). MER is a fund-
@@ -1114,52 +1135,10 @@ export default function ClientReportPage() {
     [data, clientResult, stocks, clientPositions, metricsOverrides, groupId, profile],
   );
 
-  // Manager commentary — persisted per (group, profile) so switching
-  // between Balanced / Growth doesn't clobber one with the other.
-  const noteKey = `${groupId}::${profile}`;
-  const [commentary, setCommentary] = useState("");
-  const [commentarySaving, setCommentarySaving] = useState(false);
-  const commentaryLoaded = useRef(false);
-
-  useEffect(() => {
-    let cancelled = false;
-    commentaryLoaded.current = false;
-    setCommentary("");
-    fetch("/api/kv/client-report-notes", { cache: "no-store" })
-      .then((r) => (r.ok ? r.json() : { notes: {} }))
-      .then((payload: { notes?: Record<string, string> }) => {
-        if (cancelled) return;
-        setCommentary(payload?.notes?.[noteKey] ?? "");
-        commentaryLoaded.current = true;
-      })
-      .catch(() => {
-        commentaryLoaded.current = true;
-      });
-    return () => {
-      cancelled = true;
-    };
-  }, [noteKey]);
-
-  useEffect(() => {
-    if (!commentaryLoaded.current) return;
-    setCommentarySaving(true);
-    const handle = setTimeout(async () => {
-      try {
-        const current = await fetch("/api/kv/client-report-notes", { cache: "no-store" })
-          .then((r) => (r.ok ? r.json() : { notes: {} }))
-          .catch(() => ({ notes: {} }));
-        const notes = { ...(current.notes ?? {}), [noteKey]: commentary };
-        await fetch("/api/kv/client-report-notes", {
-          method: "PUT",
-          headers: { "Content-Type": "application/json" },
-          body: JSON.stringify({ notes }),
-        });
-      } finally {
-        setCommentarySaving(false);
-      }
-    }, 600);
-    return () => clearTimeout(handle);
-  }, [commentary, noteKey]);
+  // Manager commentary was removed per PM request — it was almost
+  // never used. The Redis blob at `pm:client-report-notes` is left
+  // intact so any previously-written notes are preserved untouched
+  // (read-merge-write-safe: we simply stop reading or writing it).
 
   const handlePrint = useCallback(() => {
     window.print();
@@ -1495,6 +1474,27 @@ export default function ClientReportPage() {
                   className="w-28 rounded border border-slate-200 px-2 py-1.5 text-xs tabular-nums focus:outline-none focus:ring-1 focus:ring-blue-400"
                 />
               </div>
+              {clientInputMode === "weight" && (
+                <div
+                  className="flex items-center gap-1.5"
+                  title="Optional: total portfolio value in dollars. Used only to estimate fee savings in dollar terms — does not affect the position weights you typed above."
+                >
+                  <label className="text-xs text-slate-500">
+                    Portfolio Value ($):
+                  </label>
+                  <input
+                    type="number"
+                    value={clientManualTotalValue || ""}
+                    onChange={(e) =>
+                      setClientManualTotalValue(parseFloat(e.target.value) || 0)
+                    }
+                    min={0}
+                    step="any"
+                    placeholder="optional"
+                    className="w-32 rounded border border-slate-200 px-2 py-1.5 text-xs tabular-nums focus:outline-none focus:ring-1 focus:ring-blue-400"
+                  />
+                </div>
+              )}
               <div className="flex-1" />
               {clientResult && (
                 <button
@@ -1607,9 +1607,6 @@ export default function ClientReportPage() {
         {data && (
           <OnePager
             data={data}
-            commentary={commentary}
-            onCommentaryChange={setCommentary}
-            commentarySaving={commentarySaving}
             clientPortfolio={showComparison ? clientResult : null}
             analysis={showComparison ? analysis : null}
             merBreakdown={buildMerBreakdown(
@@ -1638,9 +1635,6 @@ export default function ClientReportPage() {
 
 function OnePager({
   data,
-  commentary,
-  onCommentaryChange,
-  commentarySaving,
   clientPortfolio,
   analysis,
   merBreakdown,
@@ -1648,9 +1642,6 @@ function OnePager({
   onMetricsOverrideChange,
 }: {
   data: ReportData;
-  commentary: string;
-  onCommentaryChange: (v: string) => void;
-  commentarySaving: boolean;
   clientPortfolio: ClientPortfolioResult | null;
   analysis: ClientReportAnalysis | null;
   merBreakdown: MerBreakdown | null;
@@ -1866,26 +1857,8 @@ function OnePager({
         </div>
       </div>
 
-      {/* ── Manager commentary ── */}
-      <div className="mt-4 break-inside-avoid">
-        <div className="flex items-center justify-between">
-          <SectionTitle>Manager Commentary</SectionTitle>
-          <span className="print:hidden text-[9px] text-slate-400 pl-2 pb-1">
-            {commentarySaving ? "Saving…" : "Auto-saved"}
-          </span>
-        </div>
-        <textarea
-          value={commentary}
-          onChange={(e) => onCommentaryChange(e.target.value)}
-          placeholder="Optional — leave blank if not used."
-          className="print:hidden mt-2 w-full min-h-[48px] rounded border border-slate-200 p-2 text-xs text-slate-700 focus:outline-none focus:ring-1"
-          style={{ resize: "vertical" }}
-          rows={2}
-        />
-        <div className="hidden print:block mt-2 text-xs text-slate-700 whitespace-pre-wrap">
-          {commentary}
-        </div>
-      </div>
+      {/* Manager Commentary section removed — almost never used in
+          practice, per the PM. The persisted notes blob is left intact. */}
 
       {/* ── Client Portfolio Comparison (only when active) ── */}
       {clientPortfolio && (
@@ -1922,7 +1895,7 @@ function OnePager({
             <div>
               <SectionTitle>Current Top Holdings (Look-Through)</SectionTitle>
               <SimpleHoldingsTable
-                rows={clientPortfolio.xray.slice(0, 12).map((r) => ({
+                rows={clientPortfolio.xray.slice(0, 10).map((r) => ({
                   name: r.name || r.symbol,
                   ticker: r.symbol,
                   weight: r.weight,
@@ -1933,7 +1906,7 @@ function OnePager({
             <div>
               <SectionTitle>{data.profileLabel} — Top Holdings (Look-Through)</SectionTitle>
               <SimpleHoldingsTable
-                rows={data.xray.slice(0, 12).map((r) => ({
+                rows={data.xray.slice(0, 10).map((r) => ({
                   name: r.name || r.symbol,
                   ticker: r.symbol,
                   weight: r.weight,
@@ -1941,6 +1914,22 @@ function OnePager({
               />
             </div>
           </div>
+
+          {/* Fee-savings tile — rendered whenever we have a portfolio
+              dollar value (unit-mode auto-fills from live prices,
+              weight-mode pulls from the PM-typed "Portfolio Value"
+              field) and the model's blended MER is meaningfully lower
+              than the client's. Independent of AI analysis so the PDF
+              always carries a concrete dollar anchor when the math
+              supports it. */}
+          {merBreakdown?.client != null && (
+            <FeeSavingsTile
+              clientMer={merBreakdown.client.blended}
+              modelMer={merBreakdown.model.blended}
+              portfolioValueUsd={clientPortfolio.totalValue}
+              profileLabel={data.profileLabel}
+            />
+          )}
 
           {/* AI-generated analysis: only rendered when it exists so the
               PDF layout stays clean when the user hasn't clicked
@@ -2058,6 +2047,74 @@ function OnePager({
 }
 
 // ───────── Subcomponents ─────────
+
+/**
+ * Fee-savings callout. Pure function of the blended MERs + portfolio
+ * value — no AI, no server round-trip. Renders nothing when:
+ *   - The MER difference is < 5 bps (not meaningful)
+ *   - No portfolio value is known (weight-mode without a PM-typed
+ *     "Portfolio Value", or unit-mode that never resolved prices)
+ *   - Even a 20-year horizon doesn't clear a $2K cumulative savings
+ *     threshold (per PM guidance: skip if the dollars aren't
+ *     meaningful enough to put in front of a client)
+ *
+ * Horizon is chosen as the SHORTEST span from [5, 10, 15, 20] where
+ * the cumulative estimate clears the threshold. Larger MER gaps
+ * collapse to shorter horizons; smaller gaps stretch out. Linear math
+ * (annual × years) — the PM explicitly said the formula doesn't need
+ * to be shown, just the result.
+ */
+function FeeSavingsTile({
+  clientMer,
+  modelMer,
+  portfolioValueUsd,
+  profileLabel,
+}: {
+  clientMer: number;
+  modelMer: number;
+  portfolioValueUsd: number;
+  profileLabel: string;
+}) {
+  const diff = clientMer - modelMer;
+  if (!(diff > 0.05)) return null;
+  if (!portfolioValueUsd || portfolioValueUsd <= 0) return null;
+
+  const annual = portfolioValueUsd * (diff / 100);
+  const THRESHOLD = 2000;
+  const horizons = [5, 10, 15, 20];
+  const horizon = horizons.find((y) => annual * y >= THRESHOLD);
+  if (!horizon) return null;
+
+  const total = Math.round(annual * horizon);
+  const annualRounded = Math.round(annual);
+  const fmt = (n: number) => `$${n.toLocaleString()}`;
+
+  return (
+    <div className="mt-4 break-inside-avoid">
+      <div
+        className="rounded-lg border px-4 py-3 text-xs text-slate-700"
+        style={{ borderColor: RBC_NAVY, backgroundColor: "#F6F8FC" }}
+      >
+        <div
+          className="text-[10px] font-semibold uppercase tracking-wider mb-1"
+          style={{ color: RBC_NAVY }}
+        >
+          Estimated Cost Savings
+        </div>
+        <div className="leading-relaxed">
+          Moving to the {profileLabel} model reduces the blended MER from{" "}
+          <span className="font-semibold">{clientMer.toFixed(2)}%</span> to{" "}
+          <span className="font-semibold">{modelMer.toFixed(2)}%</span>. On a
+          portfolio value of {fmt(Math.round(portfolioValueUsd))}, that is
+          approximately{" "}
+          <span className="font-semibold">{fmt(annualRounded)}</span> per year —{" "}
+          <span className="font-semibold">{fmt(total)}</span> over {horizon}{" "}
+          years.
+        </div>
+      </div>
+    </div>
+  );
+}
 
 /**
  * Three stacked bullet-list sections rendered at the end of the client

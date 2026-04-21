@@ -38,7 +38,7 @@ const client = new Anthropic();
  * hash so old cached JSON doesn't leak stock-level commentary after
  * the prompt has been refocused on allocation-level reasoning.
  */
-const PROMPT_VERSION = "v2-allocation-focus";
+const PROMPT_VERSION = "v3-positive-summary-global-fees";
 
 // ───────── Request / response shapes ─────────
 
@@ -69,6 +69,8 @@ type RequestBody = {
   clientHoldings: HoldingInput[];
   clientAllocation: AllocationSlice[];
   clientCashWeight?: number;
+  /** Dollar value of the client portfolio (0/absent ⇒ no dollar figure). */
+  clientTotalValue?: number;
   modelProfileLabel: string;
   modelHoldings: HoldingInput[];
   modelAllocation: AllocationSlice[];
@@ -123,6 +125,7 @@ function canonicalize(body: RequestBody): string {
       .map((a) => [a.label, +a.weight.toFixed(3)])
       .sort(),
     cc: +(body.clientCashWeight ?? 0).toFixed(3),
+    ctv: Math.round(body.clientTotalValue ?? 0),
     mh: [...body.modelHoldings]
       .map((h) => [h.symbol.toUpperCase(), +h.weight.toFixed(3)])
       .sort(),
@@ -219,9 +222,81 @@ function blendedMer(
   return { value, coveragePct: (coveredWeight / totalWeight) * 100 };
 }
 
+// ───────── Fee savings ─────────
+
+type FeeSavings = {
+  annualUsd: number;
+  horizonYears: number;
+  totalUsd: number;
+  clientMerPct: number;
+  modelMerPct: number;
+  portfolioValueUsd: number;
+};
+
+/**
+ * Produce a fee-savings dollar figure when both MERs are known, the
+ * model's MER is meaningfully lower, and we have a dollar value for the
+ * client portfolio. Horizon is chosen so the total comes out to a
+ * meaningful round amount — smaller differences → longer horizon. If
+ * even a 20Y horizon can't produce at least ~$2,000 of cumulative
+ * savings, we return null and the prompt omits the bullet entirely
+ * (per PM guidance — a ~$200 savings note isn't worth printing).
+ *
+ * Formula is linear (annual × years) rather than compounded. The PM
+ * doesn't want the full formula in the output, just a defensible
+ * round number, and linear is simpler to explain if asked.
+ */
+function computeFeeSavings(
+  clientMer: number | undefined,
+  modelMer: number | undefined,
+  portfolioValueUsd: number | undefined,
+): FeeSavings | null {
+  if (
+    typeof clientMer !== "number" ||
+    typeof modelMer !== "number" ||
+    !Number.isFinite(clientMer) ||
+    !Number.isFinite(modelMer) ||
+    !portfolioValueUsd ||
+    portfolioValueUsd <= 0
+  ) {
+    return null;
+  }
+  const diffPct = clientMer - modelMer;
+  if (diffPct <= 0.05) return null; // <5bps edge isn't worth highlighting.
+
+  const annual = portfolioValueUsd * (diffPct / 100);
+  if (annual <= 0) return null;
+
+  // Shortest horizon that clears the "meaningful" bar ($2K cumulative).
+  // Cap at 20Y — beyond that the number stops feeling relevant.
+  const THRESHOLD = 2000;
+  const candidateHorizons = [5, 10, 15, 20];
+  let chosen: number | null = null;
+  for (const y of candidateHorizons) {
+    if (annual * y >= THRESHOLD) {
+      chosen = y;
+      break;
+    }
+  }
+  if (chosen == null) return null;
+
+  return {
+    annualUsd: Math.round(annual),
+    horizonYears: chosen,
+    totalUsd: Math.round(annual * chosen),
+    clientMerPct: clientMer,
+    modelMerPct: modelMer,
+    portfolioValueUsd: Math.round(portfolioValueUsd),
+  };
+}
+
 // ───────── Anthropic call ─────────
 
-function buildPrompt(body: RequestBody, mer: ClientReportAnalysis["blendedMer"]): string {
+function buildPrompt(
+  body: RequestBody,
+  mer: ClientReportAnalysis["blendedMer"],
+  feeSavings: FeeSavings | null,
+): string {
   const clientName = body.clientName?.trim() || "the client";
   const fmtPct = (v: number | null | undefined, d = 2) =>
     typeof v === "number" && Number.isFinite(v) ? `${v.toFixed(d)}%` : "n/a";
@@ -286,6 +361,10 @@ function buildPrompt(body: RequestBody, mer: ClientReportAnalysis["blendedMer"])
     ? `\nLONG-TERM MARKET CONTEXT (from portfolio manager's notes):\n${body.briefContext.trim().slice(0, 1500)}\n`
     : "";
 
+  const feeSavingsBlock = feeSavings
+    ? `\nFEE SAVINGS (pre-computed — use these numbers verbatim):\n  - Client blended MER: ${feeSavings.clientMerPct.toFixed(2)}%\n  - ${body.modelProfileLabel} blended MER: ${feeSavings.modelMerPct.toFixed(2)}%\n  - Portfolio value: $${feeSavings.portfolioValueUsd.toLocaleString()}\n  - Estimated savings over ${feeSavings.horizonYears} years: ~$${feeSavings.totalUsd.toLocaleString()} (≈ $${feeSavings.annualUsd.toLocaleString()} per year)\n`
+    : "";
+
   return `You are writing the "where you are now vs where you could be" section of a client-facing investment report for a portfolio manager at RBC Dominion Securities. The reader is ${clientName}, a retail client deciding whether to move their portfolio into the manager's ${body.modelProfileLabel} PIM model.
 
 Write in plain, concise English. Every output is a bullet. No filler, no hedging words like "somewhat" or "generally speaking". Each bullet is 1 short sentence (max ~18 words). Do not repeat the client's name. Do not use markdown bold/italic — the UI styles bullets itself.
@@ -309,7 +388,11 @@ ${perfBlock}
 
 BLENDED FEES (management expense ratio):
 ${merBlock}
-${briefBlock}
+${feeSavingsBlock}${briefBlock}
+GEOGRAPHY LANGUAGE:
+  - NEVER use the phrase "international equity exposure", "international equities", or any variation. The model is heavy in US securities by design, and US mega-caps are globally diversified operators. When the concept of broad geographic diversification is useful, use "global exposure" or "global equity exposure" instead — US holdings count as global for commentary purposes.
+  - Do not suggest adding "international" or "ex-US" exposure.
+
 Produce JSON with this exact shape (no prose before or after, no markdown fences):
 
 {
@@ -325,7 +408,7 @@ Requirements for each array (all at the ASSET-ALLOCATION level, not stock-by-sto
   - "currentPosition.pros": 2 to 4 bullets on allocation-level strengths — e.g. reasonable equity/fixed-income split for the risk profile, low blended fee, meaningful geographic diversification, appropriate cash buffer, sensible use of passive core exposure. If there's truly nothing positive to say, return a single bullet acknowledging the portfolio needs substantial repositioning.
   - "currentPosition.cons": 3 to 5 bullets on allocation-level risks — cash drag, asset-class gaps (e.g. no fixed income sleeve, no global equity exposure), sector or geography concentration, high blended MER, mismatch between the current mix and a long-horizon equity return target. Reference MER numerically only if a number is provided; otherwise describe qualitatively.
   - "recommendations": 3 to 5 bullets. Each begins with a strong action verb. Recommendations must be ALLOCATION-level, not stock-level. Examples of acceptable phrasings: "Reduce cash from X% to Y% to capture long-term equity returns", "Add a fixed-income sleeve of ~Z% to dampen drawdowns", "Rotate single-stock risk into diversified ${body.modelProfileLabel} core ETFs", "Rebalance geography toward the model's US/Canada/Global split", "Lower blended MER by consolidating mutual funds into passive ETFs". Do NOT name individual common stocks as replacement candidates.
-  - "summary": 2 to 4 bullets on LIKELIHOOD OF LONG-TERM RETURNS. Each bullet should tie the reallocation to an expected multi-year outcome — e.g. "Higher equity allocation raises the probability of beating inflation over 10+ years", "Diversified exposure reduces the chance of a single-sector drawdown derailing the plan", "Lower fee drag compounds to meaningful extra return over a 20-year horizon", "Historical 5-year metrics (upside/downside capture, volatility) suggest the model delivers a better risk-adjusted return profile." Use the performance stats quantitatively when provided.
+  - "summary": 2 to 4 bullets on LIKELIHOOD OF LONG-TERM RETURNS — this is the "why this works better" section and must be STRICTLY POSITIVE about the ${body.modelProfileLabel} model. Every bullet frames a structural advantage of moving to the model: cost reduction, diversification, discipline of a managed structure, alignment with the client's risk profile, long-horizon equity premium, etc. NEVER include a bullet that implies the model underperforms the benchmark or the client's current portfolio on any dimension. If a specific model performance metric (e.g. upside or downside capture) does not favor the model, OMIT it from the summary entirely — do not try to "balance" the framing or acknowledge the weakness. It is fine to reference favorable metrics quantitatively. ${feeSavings ? `IMPORTANT: the FEE SAVINGS section above provides pre-computed dollar figures — include exactly one summary bullet quoting the ~$${feeSavings.totalUsd.toLocaleString()} figure over ${feeSavings.horizonYears} years (or the annual figure). Use the numbers verbatim; do not recompute or round further.` : "No dollar fee-savings figure is available — do not invent one."}
 
 If a data point is missing, omit the bullet rather than inventing numbers. Always return valid JSON.`;
 }
@@ -370,8 +453,9 @@ function tryParseJson(text: string): ClientReportAnalysis | null {
 async function runAnalysis(
   body: RequestBody,
   mer: ClientReportAnalysis["blendedMer"],
+  feeSavings: FeeSavings | null,
 ): Promise<ClientReportAnalysis | null> {
-  const prompt = buildPrompt(body, mer);
+  const prompt = buildPrompt(body, mer, feeSavings);
   const msg = await client.messages.create({
     model: "claude-sonnet-4-6",
     max_tokens: 2048,
@@ -427,6 +511,8 @@ export async function POST(req: NextRequest) {
     modelCoveragePct: +mMer.coveragePct.toFixed(1),
   };
 
+  const feeSavings = computeFeeSavings(mer.client, mer.model, body.clientTotalValue);
+
   const hash = hashBody(body);
   if (!body.force) {
     const cached = await getCached(hash);
@@ -435,7 +521,7 @@ export async function POST(req: NextRequest) {
     }
   }
 
-  const result = await runAnalysis(body, mer);
+  const result = await runAnalysis(body, mer, feeSavings);
   if (!result) {
     return NextResponse.json(
       { error: "Failed to generate analysis. Try again in a moment." },
