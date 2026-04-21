@@ -1173,22 +1173,67 @@ export default function StockDetailPage() {
                   </div>
                 )}
 
-                {/* Fund key stats for non-scoreable instruments */}
-                {!scoreable && (
+                {/* Fund key stats for non-scoreable instruments.
+                    `effectiveMer` prefers the manual override over the
+                    auto-fetched value — same precedence the Client
+                    Report uses. When the manual override is the only
+                    source (e.g. DYN3366 where auto-fetch missed), we
+                    still render the MER tile outside the fundData
+                    block so the value is prominent. */}
+                {!scoreable && (() => {
+                  const manualMer = stock.manualExpenseRatio;
+                  const autoMer = stock.fundData?.expenseRatio;
+                  const effectiveMer =
+                    typeof manualMer === "number" && Number.isFinite(manualMer)
+                      ? manualMer
+                      : typeof autoMer === "number" && Number.isFinite(autoMer)
+                      ? autoMer
+                      : null;
+                  const merIsManual =
+                    typeof manualMer === "number" && Number.isFinite(manualMer);
+                  const merLabel =
+                    stock.instrumentType === "mutual-fund" ? "MER" : "Expense Ratio";
+                  return (
                   <div className="mt-6 max-w-xl">
                     {loadingFundData && !stock.fundData && (
                       <div className="rounded-xl bg-slate-50 p-4">
                         <p className="text-sm text-slate-400 animate-pulse">Loading fund data...</p>
                       </div>
                     )}
+                    {/* Standalone MER tile — shown whenever we have an
+                        effective MER from EITHER source. Without this,
+                        tickers with only a manual override (no fundData
+                        block) had no visible MER at all. */}
+                    {effectiveMer != null && !stock.fundData && (
+                      <div className="rounded-xl bg-slate-50 p-3 w-40">
+                        <div className="text-[10px] font-semibold uppercase tracking-wider text-slate-400 flex items-center gap-1.5">
+                          {merLabel}
+                          {merIsManual && (
+                            <span className="rounded bg-indigo-100 px-1.5 py-0.5 text-[8px] font-bold tracking-wider text-indigo-700">
+                              MANUAL
+                            </span>
+                          )}
+                        </div>
+                        <div className="mt-1 text-lg font-bold text-slate-800">
+                          {effectiveMer.toFixed(2)}%
+                        </div>
+                      </div>
+                    )}
                     {stock.fundData && (
                       <div className="grid grid-cols-2 sm:grid-cols-4 gap-3">
-                        {stock.fundData.expenseRatio != null && (
+                        {effectiveMer != null && (
                           <div className="rounded-xl bg-slate-50 p-3">
-                            <div className="text-[10px] font-semibold uppercase tracking-wider text-slate-400">
-                              {stock.instrumentType === "mutual-fund" ? "MER" : "Expense Ratio"}
+                            <div className="text-[10px] font-semibold uppercase tracking-wider text-slate-400 flex items-center gap-1.5">
+                              {merLabel}
+                              {merIsManual && (
+                                <span className="rounded bg-indigo-100 px-1.5 py-0.5 text-[8px] font-bold tracking-wider text-indigo-700">
+                                  MANUAL
+                                </span>
+                              )}
                             </div>
-                            <div className="mt-1 text-lg font-bold text-slate-800">{stock.fundData.expenseRatio.toFixed(2)}%</div>
+                            <div className="mt-1 text-lg font-bold text-slate-800">
+                              {effectiveMer.toFixed(2)}%
+                            </div>
                           </div>
                         )}
                         {stock.fundData.totalAssets != null && (
@@ -1279,7 +1324,8 @@ export default function StockDetailPage() {
                       </div>
                     </div>
                   </div>
-                )}
+                  );
+                })()}
               </div>
 
               {/* Right: donut chart (stocks only) */}
