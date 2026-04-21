@@ -54,11 +54,11 @@ function ModelWeightInput({ groupId, modelWeight, isOverride, onCommit }: {
 }) {
   const [text, setText] = useState(String(modelWeight));
   const [focused, setFocused] = useState(false);
-
-  // Sync from parent when not focused
-  useEffect(() => {
-    if (!focused) setText(String(modelWeight));
-  }, [modelWeight, focused]);
+  // No sync-from-parent effect: when not focused the <input> displays
+  // `String(modelWeight)` directly via the value prop below, and on
+  // focus we reset `text` from the latest parent value. So keeping
+  // `text` in sync with `modelWeight` between focus events is
+  // unnecessary (and triggered a cascading-render lint error).
 
   const commit = (raw: string) => {
     const val = parseFloat(raw);
@@ -97,13 +97,27 @@ function ScoreDonut({ score, max, groups, stock }: { score: number; max: number;
   const center = 100;
   const gap = 4; // degrees gap between segments
 
-  const segments = groups.map((g) => ({
-    color: GROUP_COLORS[g.color]?.ring || "#94a3b8",
-    value: groupTotal(stock as never, g),
-    maxVal: g.maxTotal,
-  }));
-
-  let offset = -90;
+  // Precompute each segment's start-angle (`rotation`) up-front so we
+  // don't mutate a running accumulator inside the .map() below — that
+  // tripped the react-hooks/immutability lint rule. Start at -90° so
+  // the first segment begins at 12 o'clock.
+  const segments = groups.map((g) => {
+    const value = groupTotal(stock as never, g);
+    return {
+      color: GROUP_COLORS[g.color]?.ring || "#94a3b8",
+      value,
+      maxVal: g.maxTotal,
+      segDeg: (value / max) * 360,
+    };
+  });
+  const rotations: number[] = [];
+  {
+    let acc = -90;
+    for (const s of segments) {
+      rotations.push(acc);
+      acc += s.segDeg;
+    }
+  }
 
   // Rating label
   let ratingLabel = "Hold";
@@ -121,12 +135,10 @@ function ScoreDonut({ score, max, groups, stock }: { score: number; max: number;
         <circle cx={center} cy={center} r={radius} fill="none" stroke="#e2e8f0" strokeWidth={strokeWidth} />
         {segments.map((seg, i) => {
           const segPct = seg.value / max;
-          const segDeg = segPct * 360;
           const segLen = segPct * circumference;
           const gapLen = (gap / 360) * circumference;
           const dashArray = `${Math.max(segLen - gapLen, 0)} ${circumference - Math.max(segLen - gapLen, 0)}`;
-          const rotation = offset;
-          offset += segDeg;
+          const rotation = rotations[i];
           if (seg.value === 0) return null;
           return (
             <circle
@@ -1215,6 +1227,57 @@ export default function StockDetailPage() {
                         Load Fund Data
                       </button>
                     )}
+
+                    {/* Manual MER override.
+                        The auto-fetch in /api/fund-data misses many
+                        mutual-fund series and some lightly-covered ETFs
+                        (Morningstar page-layout drift, missing yfinance
+                        coverage). This input is a reliable fallback —
+                        the Client Report's blended-MER calculation reads
+                        `stock.manualExpenseRatio ?? fundData.expenseRatio`
+                        so a value typed here overrides whatever the
+                        scraper found (or didn't). Stored directly on the
+                        Stock record in Redis. */}
+                    <div className="mt-4 rounded-xl bg-slate-50 p-3 max-w-sm">
+                      <label className="block text-[10px] font-semibold uppercase tracking-wider text-slate-400 mb-1">
+                        Manual MER override (%)
+                      </label>
+                      <div className="flex items-center gap-2">
+                        <input
+                          type="number"
+                          step="0.01"
+                          min="0"
+                          max="10"
+                          placeholder={
+                            stock.fundData?.expenseRatio != null
+                              ? `auto: ${stock.fundData.expenseRatio.toFixed(2)}`
+                              : "e.g. 0.08"
+                          }
+                          defaultValue={
+                            stock.manualExpenseRatio != null
+                              ? String(stock.manualExpenseRatio)
+                              : ""
+                          }
+                          onBlur={(e) => {
+                            const raw = e.target.value.trim();
+                            if (raw === "") {
+                              if (stock.manualExpenseRatio != null) {
+                                updateStockFields(ticker, { manualExpenseRatio: undefined });
+                              }
+                              return;
+                            }
+                            const n = Number(raw);
+                            if (Number.isFinite(n) && n >= 0 && n <= 10) {
+                              updateStockFields(ticker, { manualExpenseRatio: n });
+                            }
+                          }}
+                          className="w-28 rounded border border-slate-300 px-2 py-1 text-sm"
+                        />
+                        <span className="text-[10px] text-slate-500">
+                          Used by the Client Report when auto-fetch is missing or wrong.
+                        </span>
+                      </div>
+                    </div>
                   </div>
                 )}
               </div>

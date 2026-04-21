@@ -239,6 +239,12 @@ export type Stock = {
   technicals?: TechnicalIndicators;
   riskAlert?: RiskAlert;
   fundData?: FundData;
+  /** User-provided MER override for ETFs / mutual funds where the
+   *  auto-fetch in /api/fund-data failed to resolve a value. Expressed
+   *  as a percentage (e.g. 0.08 for an 8 bps ETF). When set, this
+   *  takes precedence over `fundData.expenseRatio` in the Client
+   *  Report blended-MER calculation. */
+  manualExpenseRatio?: number;
   modelEligibility?: Record<string, boolean>; // PIM model group id → eligible (default all true)
   modelWeights?: Record<string, number>; // PIM model group id → weight% in Balanced (overrides weights.portfolio)
   designation?: "core" | "alpha"; // Core = indexed/passive, Alpha = active picks (default alpha)
