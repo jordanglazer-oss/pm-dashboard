@@ -31,6 +31,7 @@ import { countryFor, isCoreEtf, SYMBOL_COUNTRY, type Country } from "@/app/lib/g
 import type { PimProfileType } from "@/app/lib/pim-types";
 import type { FundData, FundHolding, FundSectorWeight, Stock } from "@/app/lib/types";
 import { colorForSector } from "@/app/lib/sectorColors";
+import type { ClientReportAnalysis } from "@/app/api/client-report-analysis/route";
 
 // ───────── Client portfolio comparison types ─────────
 
@@ -132,12 +133,20 @@ export default function ClientReportPage() {
   const [showComparison, setShowComparison] = useState(false);
   const clientPortfolioLoaded = useRef(false);
 
+  // ── AI-generated analysis (pros/cons + recommendations + summary) ──
+  // The result is cached server-side by payload hash and ALSO persisted
+  // locally in the pm:client-portfolio blob so the bullets survive page
+  // reloads without re-spending an Anthropic call.
+  const [analysis, setAnalysis] = useState<ClientReportAnalysis | null>(null);
+  const [analysisLoading, setAnalysisLoading] = useState(false);
+  const [analysisError, setAnalysisError] = useState<string | null>(null);
+
   // Load saved client portfolio positions from Redis on mount.
   useEffect(() => {
     let cancelled = false;
     fetch("/api/kv/client-portfolio", { cache: "no-store" })
       .then((r) => (r.ok ? r.json() : { data: null }))
-      .then((payload: { data?: { positions?: ClientPosition[]; cash?: number; inputMode?: ClientInputMode; clientName?: string } | null }) => {
+      .then((payload: { data?: { positions?: ClientPosition[]; cash?: number; inputMode?: ClientInputMode; clientName?: string; analysis?: ClientReportAnalysis } | null }) => {
         if (cancelled) return;
         const d = payload?.data;
         if (d) {
@@ -147,6 +156,7 @@ export default function ClientReportPage() {
           if (typeof d.cash === "number") setClientCash(d.cash);
           if (d.inputMode === "units" || d.inputMode === "weight") setClientInputMode(d.inputMode);
           if (typeof d.clientName === "string") setClientName(d.clientName);
+          if (d.analysis && typeof d.analysis === "object") setAnalysis(d.analysis);
         }
         clientPortfolioLoaded.current = true;
       })
@@ -211,11 +221,12 @@ export default function ClientReportPage() {
           cash: clientCash,
           inputMode: clientInputMode,
           clientName,
+          analysis,
         }),
       }).catch(() => { /* best effort */ });
     }, 800);
     return () => clearTimeout(handle);
-  }, [clientPositions, clientCash, clientInputMode, clientName]);
+  }, [clientPositions, clientCash, clientInputMode, clientName, analysis]);
 
   const addPosition = useCallback(() => {
     setClientPositions((prev) => [
@@ -719,6 +730,95 @@ export default function ClientReportPage() {
     }
   }, [clientPositions, clientCash, clientInputMode, stocks]);
 
+  // ── Generate AI analysis ──
+  // Builds the full comparison payload, looks up per-ticker MER from the
+  // Dashboard's fund-data cache (so blended MER is real, not invented),
+  // and hits /api/client-report-analysis. Results are cached server-side
+  // by payload hash — a second click on an unchanged portfolio returns
+  // the cached bullets for free. `force: true` bypasses the cache.
+  const generateAnalysis = useCallback(
+    async (force = false) => {
+      if (!data || !clientResult) {
+        setAnalysisError("Add client holdings first, then try again.");
+        return;
+      }
+      setAnalysisLoading(true);
+      setAnalysisError(null);
+      try {
+        // Build per-ticker MER map from the Dashboard's Stock.fundData.
+        // Client-typed tickers that aren't in the portfolio/watchlist
+        // simply won't have an MER, and the route treats those as
+        // unknown (the blended value becomes a lower bound rather than
+        // guessed). Stocks with no fundData (i.e. individual equities)
+        // contribute 0% MER via stockSymbols below.
+        const expenseRatios: Record<string, number> = {};
+        const stockSymbols: string[] = [];
+        for (const s of stocks) {
+          const key = s.ticker.toUpperCase();
+          const er = s.fundData?.expenseRatio;
+          if (typeof er === "number" && Number.isFinite(er)) {
+            expenseRatios[key] = er;
+          } else if (s.instrumentType === "stock" || !s.instrumentType) {
+            stockSymbols.push(key);
+          }
+        }
+
+        const payload = {
+          clientName: clientName.trim() || undefined,
+          clientHoldings: clientResult.positions.map((p) => ({
+            symbol: p.ticker,
+            name: p.name,
+            weight: p.weight,
+          })),
+          clientAllocation: clientResult.allocation.map((a) => ({
+            label: a.label,
+            weight: a.weight,
+          })),
+          clientCashWeight: clientResult.cashWeight,
+          modelProfileLabel: data.profileLabel,
+          modelHoldings: data.xray.slice(0, 20).map((h) => ({
+            symbol: h.symbol,
+            name: h.name || h.symbol,
+            weight: h.weight,
+          })),
+          modelAllocation: data.allocation.map((a) => ({
+            label: a.label,
+            weight: a.weight,
+          })),
+          expenseRatios,
+          stockSymbols,
+          modelPerformance: {
+            annualizedReturnPct: data.tracker?.annualizedReturnPct ?? null,
+            volatility: data.performance.volatility ?? null,
+            upsideCapture: data.performance.upsideCapture ?? null,
+            downsideCapture: data.performance.downsideCapture ?? null,
+            yearsOfHistory: data.tracker?.yearsOfHistory ?? null,
+          },
+          force,
+        };
+
+        const res = await fetch("/api/client-report-analysis", {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify(payload),
+        });
+        if (!res.ok) {
+          const body = await res.json().catch(() => ({}));
+          throw new Error(body.error || `Request failed (${res.status})`);
+        }
+        const { result } = (await res.json()) as { result: ClientReportAnalysis };
+        setAnalysis(result);
+      } catch (e) {
+        setAnalysisError(
+          e instanceof Error ? e.message : "Failed to generate analysis",
+        );
+      } finally {
+        setAnalysisLoading(false);
+      }
+    },
+    [data, clientResult, clientName, stocks],
+  );
+
   // Manager commentary — persisted per (group, profile) so switching
   // between Balanced / Growth doesn't clobber one with the other.
   const noteKey = `${groupId}::${profile}`;
@@ -1038,6 +1138,60 @@ export default function ClientReportPage() {
                 Comparison will appear on the PDF.
               </div>
             )}
+
+            {/* AI-generated analysis controls. Requires clientResult to
+                exist (we need the look-through holdings to send to the
+                model). "Regenerate" forces a fresh Anthropic call even
+                when the payload hash matches the cached result — useful
+                if the output wasn't what you wanted. */}
+            {clientResult && (
+              <div className="mt-4 pt-3 border-t border-slate-100">
+                <div className="flex items-center gap-2">
+                  <div className="flex-1">
+                    <div className="text-xs font-semibold text-slate-700">
+                      AI-generated analysis
+                    </div>
+                    <div className="text-[11px] text-slate-500">
+                      Bullet-form pros/cons, action items, and long-term summary for the PDF.
+                    </div>
+                  </div>
+                  {analysis && (
+                    <button
+                      onClick={() => generateAnalysis(true)}
+                      disabled={analysisLoading}
+                      className="rounded bg-slate-100 px-3 py-1.5 text-xs font-semibold text-slate-600 hover:bg-slate-200 disabled:opacity-50"
+                    >
+                      Regenerate
+                    </button>
+                  )}
+                  <button
+                    onClick={() => generateAnalysis(false)}
+                    disabled={analysisLoading}
+                    className="rounded-lg px-4 py-1.5 text-xs font-semibold text-white disabled:opacity-50"
+                    style={{ backgroundColor: RBC_NAVY }}
+                  >
+                    {analysisLoading
+                      ? "Generating…"
+                      : analysis
+                        ? "Regenerated"
+                        : "Generate analysis"}
+                  </button>
+                </div>
+                {analysisError && (
+                  <div className="mt-2 text-xs text-rose-600">{analysisError}</div>
+                )}
+                {analysis && (
+                  <div className="mt-2 text-[11px] text-slate-400">
+                    Generated{" "}
+                    {new Date(analysis.generatedAt).toLocaleString("en-CA", {
+                      dateStyle: "medium",
+                      timeStyle: "short",
+                    })}
+                    . Will render on the PDF below.
+                  </div>
+                )}
+              </div>
+            )}
           </div>
         </details>
       </div>
@@ -1067,6 +1221,7 @@ export default function ClientReportPage() {
             commentarySaving={commentarySaving}
             clientPortfolio={showComparison ? clientResult : null}
             clientName={clientName}
+            analysis={showComparison ? analysis : null}
           />
         )}
       </div>
@@ -1083,6 +1238,7 @@ function OnePager({
   commentarySaving,
   clientPortfolio,
   clientName,
+  analysis,
 }: {
   data: ReportData;
   commentary: string;
@@ -1090,6 +1246,7 @@ function OnePager({
   commentarySaving: boolean;
   clientPortfolio: ClientPortfolioResult | null;
   clientName: string;
+  analysis: ClientReportAnalysis | null;
 }) {
   // Resolved label: user-supplied name, or "Client" as a safe fallback so
   // the report still reads naturally when no name has been entered yet.
@@ -1330,6 +1487,21 @@ function OnePager({
               />
             </div>
           </div>
+
+          {/* AI-generated analysis: only rendered when it exists so the
+              PDF layout stays clean when the user hasn't clicked
+              "Generate analysis" yet. Three stacked bullet sections:
+              pros/cons of current position, recommended action items,
+              and long-term summary. Each section is break-inside-avoid
+              so the Chrome print engine doesn't split a bullet list
+              across pages mid-list. */}
+          {analysis && (
+            <AnalysisSections
+              analysis={analysis}
+              clientLabel={clientLabel}
+              profileLabel={data.profileLabel}
+            />
+          )}
         </div>
       )}
 
@@ -1380,6 +1552,205 @@ function OnePager({
 }
 
 // ───────── Subcomponents ─────────
+
+/**
+ * Three stacked bullet-list sections rendered at the end of the client
+ * portfolio comparison block. Kept visually distinct via different
+ * accent colors (red for cons, green for pros, navy/gold for action
+ * items, slate for the summary). Each card is `break-inside-avoid` so
+ * Chrome's print engine doesn't split a bullet list across pages.
+ */
+function AnalysisSections({
+  analysis,
+  clientLabel,
+  profileLabel,
+}: {
+  analysis: ClientReportAnalysis;
+  clientLabel: string;
+  profileLabel: string;
+}) {
+  const pros = analysis.currentPosition.pros ?? [];
+  const cons = analysis.currentPosition.cons ?? [];
+  const recs = analysis.recommendations ?? [];
+  const summary = analysis.summary ?? [];
+  const mer = analysis.blendedMer;
+  const showMer =
+    typeof mer?.client === "number" || typeof mer?.model === "number";
+
+  return (
+    <div className="mt-6 space-y-4">
+      {/* "Where you are now" — pros + cons side by side */}
+      <div className="break-inside-avoid">
+        <div
+          className="pb-2 mb-3 border-b-2"
+          style={{ borderColor: RBC_NAVY }}
+        >
+          <div
+            className="text-sm font-bold uppercase tracking-wider"
+            style={{ color: RBC_NAVY }}
+          >
+            Where You Are Now
+          </div>
+          <div className="text-[10px] text-slate-500">
+            A plain-English read on {clientLabel}&apos;s current holdings.
+          </div>
+        </div>
+        <div className="grid grid-cols-2 gap-4">
+          <BulletCard title="Strengths" bullets={pros} accent="#059669" />
+          <BulletCard title="Risks / Weaknesses" bullets={cons} accent="#dc2626" />
+        </div>
+      </div>
+
+      {/* Recommendations — action items */}
+      <div className="break-inside-avoid">
+        <div
+          className="pb-2 mb-3 border-b-2"
+          style={{ borderColor: RBC_GOLD }}
+        >
+          <div
+            className="text-sm font-bold uppercase tracking-wider"
+            style={{ color: RBC_NAVY }}
+          >
+            Our Recommendations
+          </div>
+          <div className="text-[10px] text-slate-500">
+            Concrete actions to move from today&apos;s portfolio toward the {profileLabel} model.
+          </div>
+        </div>
+        <BulletCard title="Action Items" bullets={recs} accent={RBC_NAVY} emphasis />
+      </div>
+
+      {/* Summary — why this works better. Optionally includes the
+          blended-MER comparison table as a quantitative anchor. */}
+      <div className="break-inside-avoid">
+        <div
+          className="pb-2 mb-3 border-b-2"
+          style={{ borderColor: RBC_NAVY }}
+        >
+          <div
+            className="text-sm font-bold uppercase tracking-wider"
+            style={{ color: RBC_NAVY }}
+          >
+            Why This Works Better
+          </div>
+          <div className="text-[10px] text-slate-500">
+            Long-term fit vs {clientLabel}&apos;s current positioning.
+          </div>
+        </div>
+        <BulletCard title="Summary" bullets={summary} accent={RBC_NAVY} />
+        {showMer && (
+          <div className="mt-3 grid grid-cols-2 gap-3 text-[11px]">
+            <MerStat
+              label={`${clientLabel} — Blended MER`}
+              value={mer.client}
+              coverage={mer.clientCoveragePct}
+              tone="neutral"
+            />
+            <MerStat
+              label={`${profileLabel} — Blended MER`}
+              value={mer.model}
+              coverage={mer.modelCoveragePct}
+              tone="positive"
+            />
+          </div>
+        )}
+      </div>
+    </div>
+  );
+}
+
+function BulletCard({
+  title,
+  bullets,
+  accent,
+  emphasis,
+}: {
+  title: string;
+  bullets: string[];
+  accent: string;
+  emphasis?: boolean;
+}) {
+  if (!bullets.length) {
+    return (
+      <div className="rounded border border-slate-200 p-3">
+        <div
+          className="text-[10px] font-bold uppercase tracking-wider mb-1"
+          style={{ color: accent }}
+        >
+          {title}
+        </div>
+        <div className="text-[11px] text-slate-400 italic">
+          No items available.
+        </div>
+      </div>
+    );
+  }
+  return (
+    <div
+      className="rounded border p-3"
+      style={{ borderColor: "#e2e8f0", borderLeftWidth: 4, borderLeftColor: accent }}
+    >
+      <div
+        className="text-[10px] font-bold uppercase tracking-wider mb-2"
+        style={{ color: accent }}
+      >
+        {title}
+      </div>
+      <ul className="space-y-1.5">
+        {bullets.map((b, i) => (
+          <li
+            key={i}
+            className={`text-[11px] leading-snug text-slate-700 flex gap-2 ${
+              emphasis ? "font-medium" : ""
+            }`}
+          >
+            <span
+              aria-hidden
+              className="mt-[5px] block h-1.5 w-1.5 rounded-full flex-shrink-0"
+              style={{ backgroundColor: accent }}
+            />
+            <span>{b}</span>
+          </li>
+        ))}
+      </ul>
+    </div>
+  );
+}
+
+function MerStat({
+  label,
+  value,
+  coverage,
+  tone,
+}: {
+  label: string;
+  value?: number;
+  coverage?: number;
+  tone: "neutral" | "positive";
+}) {
+  const color = tone === "positive" ? "#059669" : "#475569";
+  return (
+    <div
+      className="rounded border p-2"
+      style={{ borderColor: "#e2e8f0" }}
+    >
+      <div className="text-[9px] uppercase tracking-wider text-slate-500">
+        {label}
+      </div>
+      <div
+        className="mt-0.5 font-bold tabular-nums"
+        style={{ color, fontSize: "14px" }}
+      >
+        {typeof value === "number" ? `${value.toFixed(2)}%` : "—"}
+      </div>
+      {typeof coverage === "number" && coverage < 100 && (
+        <div className="text-[9px] text-slate-400 mt-0.5">
+          {coverage.toFixed(0)}% of weight covered
+        </div>
+      )}
+    </div>
+  );
+}
 
 /**
  * Brand acronyms that should stay uppercase even when the source name
