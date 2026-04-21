@@ -122,6 +122,10 @@ export default function ClientReportPage() {
   const [clientInputMode, setClientInputMode] = useState<ClientInputMode>("units");
   const [clientPositions, setClientPositions] = useState<ClientPosition[]>([]);
   const [clientCash, setClientCash] = useState<number>(0);
+  // Client display name (free-form) — replaces the literal "Client" label
+  // on the comparison section titles. Persisted alongside the positions
+  // blob in pm:client-portfolio.
+  const [clientName, setClientName] = useState<string>("");
   const [clientResult, setClientResult] = useState<ClientPortfolioResult | null>(null);
   const [clientLoading, setClientLoading] = useState(false);
   const [clientError, setClientError] = useState<string | null>(null);
@@ -133,7 +137,7 @@ export default function ClientReportPage() {
     let cancelled = false;
     fetch("/api/kv/client-portfolio", { cache: "no-store" })
       .then((r) => (r.ok ? r.json() : { data: null }))
-      .then((payload: { data?: { positions?: ClientPosition[]; cash?: number; inputMode?: ClientInputMode } | null }) => {
+      .then((payload: { data?: { positions?: ClientPosition[]; cash?: number; inputMode?: ClientInputMode; clientName?: string } | null }) => {
         if (cancelled) return;
         const d = payload?.data;
         if (d) {
@@ -142,6 +146,7 @@ export default function ClientReportPage() {
           }
           if (typeof d.cash === "number") setClientCash(d.cash);
           if (d.inputMode === "units" || d.inputMode === "weight") setClientInputMode(d.inputMode);
+          if (typeof d.clientName === "string") setClientName(d.clientName);
         }
         clientPortfolioLoaded.current = true;
       })
@@ -205,11 +210,12 @@ export default function ClientReportPage() {
           positions: clientPositions,
           cash: clientCash,
           inputMode: clientInputMode,
+          clientName,
         }),
       }).catch(() => { /* best effort */ });
     }, 800);
     return () => clearTimeout(handle);
-  }, [clientPositions, clientCash, clientInputMode]);
+  }, [clientPositions, clientCash, clientInputMode, clientName]);
 
   const addPosition = useCallback(() => {
     setClientPositions((prev) => [
@@ -854,6 +860,25 @@ export default function ClientReportPage() {
             )}
           </summary>
           <div className="px-4 pb-4 border-t border-slate-100 pt-3">
+            {/* Client display name — shown in place of "Client" on the
+                comparison section titles. Supports multiple names (e.g.
+                "John & Mary Smith"). Persists across refreshes. */}
+            <div className="flex items-center gap-2 mb-3">
+              <label
+                htmlFor="client-name"
+                className="text-xs font-semibold text-slate-600 whitespace-nowrap"
+              >
+                Client name
+              </label>
+              <input
+                id="client-name"
+                type="text"
+                value={clientName}
+                onChange={(e) => setClientName(e.target.value)}
+                placeholder="e.g. John & Mary Smith"
+                className="flex-1 rounded-md border border-slate-200 px-3 py-1.5 text-sm text-slate-700 focus:outline-none focus:ring-1 focus:ring-slate-400"
+              />
+            </div>
             <div className="flex items-center gap-3 mb-3">
               <p className="text-xs text-slate-500 flex-1">
                 Add the client&apos;s current holdings to generate a side-by-side comparison on the PDF.
@@ -1041,6 +1066,7 @@ export default function ClientReportPage() {
             onCommentaryChange={setCommentary}
             commentarySaving={commentarySaving}
             clientPortfolio={showComparison ? clientResult : null}
+            clientName={clientName}
           />
         )}
       </div>
@@ -1056,13 +1082,18 @@ function OnePager({
   onCommentaryChange,
   commentarySaving,
   clientPortfolio,
+  clientName,
 }: {
   data: ReportData;
   commentary: string;
   onCommentaryChange: (v: string) => void;
   commentarySaving: boolean;
   clientPortfolio: ClientPortfolioResult | null;
+  clientName: string;
 }) {
+  // Resolved label: user-supplied name, or "Client" as a safe fallback so
+  // the report still reads naturally when no name has been entered yet.
+  const clientLabel = clientName.trim() || "Client";
   const dateStr = useMemo(
     () =>
       new Date(data.generatedAt).toLocaleDateString("en-CA", {
@@ -1259,14 +1290,14 @@ function OnePager({
               Portfolio Comparison
             </div>
             <div className="text-[10px] text-slate-500">
-              Client&apos;s current holdings vs {data.profileLabel} Model
+              {clientLabel}&apos;s current holdings vs {data.profileLabel} Model
             </div>
           </div>
 
           {/* Side-by-side allocation pies */}
           <div className="grid grid-cols-2 gap-5 break-inside-avoid">
             <div>
-              <SectionTitle>Client — Asset Allocation</SectionTitle>
+              <SectionTitle>{clientLabel} — Asset Allocation</SectionTitle>
               <AllocationPie slices={clientPortfolio.allocation} />
             </div>
             <div>
@@ -1278,7 +1309,7 @@ function OnePager({
           {/* Side-by-side top holdings (look-through) */}
           <div className="grid grid-cols-2 gap-5 mt-4 break-inside-avoid">
             <div>
-              <SectionTitle>Client — Top Holdings (Look-Through)</SectionTitle>
+              <SectionTitle>{clientLabel} — Top Holdings (Look-Through)</SectionTitle>
               <SimpleHoldingsTable
                 rows={clientPortfolio.xray.slice(0, 12).map((r) => ({
                   name: r.name || r.symbol,

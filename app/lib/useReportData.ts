@@ -183,9 +183,9 @@ export type UseReportDataResult = {
 // ───────── Helpers ─────────
 
 const PROFILE_LABELS: Record<PimProfileType, string> = {
-  balanced: "PIM Balanced",
-  growth: "PIM Growth",
-  allEquity: "PIM All-Equity",
+  balanced: "Balanced",
+  growth: "Growth",
+  allEquity: "All-Equity",
   alpha: "Alpha",
 };
 
