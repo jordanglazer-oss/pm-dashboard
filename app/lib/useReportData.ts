@@ -42,6 +42,7 @@ import {
   annualizedVolatility,
   captureRatios,
   dailyReturns,
+  monthlyPricesFromDaily,
   windowYears,
 } from "./report-metrics";
 import type {
@@ -964,11 +965,45 @@ export function useReportData(
               .filter(([t, v]) => isFinite(t) && isFinite(v) && v > 0);
             const aligned = alignSeries(trackerSeries, bench);
             if (aligned.a.length >= 30) {
+              // Daily returns drive std-dev (which annualizes by √252 and
+              // benefits from the larger sample). Daily is kept for vol.
               const portR = dailyReturns(aligned.a);
               const benchR = dailyReturns(aligned.b);
               const stdDev = annualizedVolatility(portR);
               const benchStdDev = annualizedVolatility(benchR);
-              const { upside, downside } = captureRatios(portR, benchR);
+
+              // Capture ratios use MONTHLY returns per Morningstar. Daily
+              // capture is noisy and biased — every marginally-up bench day
+              // is counted the same as a real rally, which drags up-capture
+              // toward 100 artificially. Resample aligned series to
+              // end-of-month closes and compute from those.
+              const alignedDatesMs: [number, number][] = [];
+              const portDates: [number, number][] = [];
+              // Rebuild aligned series with timestamps. alignSeries drops
+              // timestamps, so recompute from trackerSeries using the same
+              // bucket logic — we need `[t, p]` pairs to do the monthly
+              // resample.
+              const benchByDay = new Map<number, number>();
+              for (const [t, p] of bench) {
+                benchByDay.set(Math.floor(t / 86_400_000), p);
+              }
+              for (const [t, p] of trackerSeries) {
+                const key = Math.floor(t / 86_400_000);
+                const bp = benchByDay.get(key);
+                if (bp == null || !isFinite(bp) || !isFinite(p)) continue;
+                portDates.push([t, p]);
+                alignedDatesMs.push([t, bp]);
+              }
+              const portMonthly = monthlyPricesFromDaily(portDates);
+              const benchMonthly = monthlyPricesFromDaily(alignedDatesMs);
+              const minLen = Math.min(portMonthly.length, benchMonthly.length);
+              const portMonthlyR = dailyReturns(portMonthly.slice(0, minLen));
+              const benchMonthlyR = dailyReturns(benchMonthly.slice(0, minLen));
+              const { upside, downside } = captureRatios(
+                portMonthlyR,
+                benchMonthlyR,
+                12
+              );
               performance = {
                 ...performance,
                 volatility: stdDev,
@@ -1200,14 +1235,26 @@ function computePerformance(
   const threeYearReturn = annualizedReturn(pricesIn(portfolioSeries, 3), 3);
   const fiveYearReturn = annualizedReturn(pricesIn(portfolioSeries, 5), 5);
 
-  const aligned = alignSeries(windowYears(portfolioSeries, 5), windowYears(benchSeries, 5));
+  const portWindow = windowYears(portfolioSeries, 5);
+  const benchWindow = windowYears(benchSeries, 5);
+  const aligned = alignSeries(portWindow, benchWindow);
   const portR = dailyReturns(aligned.a);
   const benchR = dailyReturns(aligned.b);
   // Use the aligned series for vol too so portfolio and benchmark vol
   // are computed over the same day set (apples-to-apples comparison).
   const volatility = annualizedVolatility(portR);
   const benchmarkVolatility = annualizedVolatility(benchR);
-  const { upside, downside } = captureRatios(portR, benchR);
+
+  // Capture ratios: resample daily to monthly closes (Morningstar
+  // standard — see report-metrics.ts). portfolioSeries and benchSeries
+  // are already aligned calendar-wise (both built off benchDates), so
+  // we can resample each independently.
+  const portMonthly = monthlyPricesFromDaily(portWindow);
+  const benchMonthly = monthlyPricesFromDaily(benchWindow);
+  const minLen = Math.min(portMonthly.length, benchMonthly.length);
+  const portMonthlyR = dailyReturns(portMonthly.slice(0, minLen));
+  const benchMonthlyR = dailyReturns(benchMonthly.slice(0, minLen));
+  const { upside, downside } = captureRatios(portMonthlyR, benchMonthlyR, 12);
 
   return {
     oneYearReturn,
