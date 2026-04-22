@@ -1287,89 +1287,89 @@ export function MorningBrief({
         const breadth50Val = activeForward?.breadth50Wk?.value ?? null;
         return (
       <>
-      <section className="grid gap-5 lg:grid-cols-2">
-        <div className="rounded-[30px] border border-slate-200 bg-white p-6 shadow-sm">
+      <section className="grid gap-4 lg:grid-cols-2">
+        <div className="rounded-2xl border border-slate-200 bg-white p-4 shadow-sm">
           <div className="flex items-center justify-between gap-3">
             <div className="flex items-center gap-2">
-              <span className="text-xl">📉</span>
-              <h3 className="text-2xl font-semibold">Credit Spreads</h3>
+              <span className="text-base">📉</span>
+              <h3 className="text-base font-semibold">Credit Spreads</h3>
             </div>
             <SignalPill tone={hyVal != null && hyVal >= 300 ? "red" : hyVal != null && hyVal >= 200 ? "amber" : "green"}>
               {hyVal != null && hyVal >= 300 ? "Widening" : hyVal != null && hyVal >= 200 ? "Neutral" : "Tight"}
             </SignalPill>
           </div>
-          <div className="mt-5 grid grid-cols-2 gap-4">
-            <div className="rounded-2xl bg-slate-50 p-4">
-              <div className="text-xs font-semibold uppercase tracking-wider text-slate-400">HY OAS</div>
-              <div className="mt-2 text-3xl font-bold">{fmtNum(hyVal)} <span className="text-base font-normal text-slate-400">bps</span></div>
+          <div className="mt-3 grid grid-cols-2 gap-2">
+            <div className="rounded-xl bg-slate-50 p-2.5">
+              <div className="text-[10px] font-semibold uppercase tracking-wider text-slate-400">HY OAS</div>
+              <div className="mt-1 text-xl font-bold">{fmtNum(hyVal)} <span className="text-xs font-normal text-slate-400">bps</span></div>
             </div>
-            <div className="rounded-2xl bg-slate-50 p-4">
-              <div className="text-xs font-semibold uppercase tracking-wider text-slate-400">IG OAS</div>
-              <div className="mt-2 text-3xl font-bold">{fmtNum(igVal)} <span className="text-base font-normal text-slate-400">bps</span></div>
+            <div className="rounded-xl bg-slate-50 p-2.5">
+              <div className="text-[10px] font-semibold uppercase tracking-wider text-slate-400">IG OAS</div>
+              <div className="mt-1 text-xl font-bold">{fmtNum(igVal)} <span className="text-xs font-normal text-slate-400">bps</span></div>
             </div>
           </div>
-          <p className="mt-4 text-sm text-slate-500">Trend: {hyVal != null && hyVal >= 300 ? "Widening modestly" : "Stable"}</p>
-          <p className="mt-2 text-lg leading-8 text-slate-600">{creditAnalysis}</p>
+          <p className="mt-2 text-xs text-slate-500">Trend: {hyVal != null && hyVal >= 300 ? "Widening modestly" : "Stable"}</p>
+          <p className="mt-1.5 text-sm leading-6 text-slate-600">{creditAnalysis}</p>
         </div>
 
-        <div className="rounded-[30px] border border-slate-200 bg-white p-6 shadow-sm">
+        <div className="rounded-2xl border border-slate-200 bg-white p-4 shadow-sm">
           <div className="flex items-center justify-between gap-3">
             <div className="flex items-center gap-2">
-              <span className="text-xl">⚡</span>
-              <h3 className="text-2xl font-semibold">Volatility Regime</h3>
+              <span className="text-base">⚡</span>
+              <h3 className="text-base font-semibold">Volatility Regime</h3>
             </div>
             <SignalPill tone={vixVal != null && vixVal >= 22 ? "red" : vixVal != null && vixVal >= 16 ? "amber" : "green"}>
               {vixVal != null && vixVal >= 22 ? "Elevated" : vixVal != null && vixVal >= 16 ? "Moderate" : "Low"}
             </SignalPill>
           </div>
-          <div className="mt-5 grid grid-cols-3 gap-4">
-            <div className="rounded-2xl bg-slate-50 p-4">
-              <div className="text-xs font-semibold uppercase tracking-wider text-slate-400">VIX</div>
-              <div className="mt-2 text-3xl font-bold">{fmtNum(vixVal)}</div>
+          <div className="mt-3 grid grid-cols-3 gap-2">
+            <div className="rounded-xl bg-slate-50 p-2.5">
+              <div className="text-[10px] font-semibold uppercase tracking-wider text-slate-400">VIX</div>
+              <div className="mt-1 text-xl font-bold">{fmtNum(vixVal)}</div>
             </div>
-            <div className="rounded-2xl bg-slate-50 p-4">
-              <div className="text-xs font-semibold uppercase tracking-wider text-slate-400">TERM</div>
-              <div className="mt-2 text-xl font-bold">{marketData.termStructure}</div>
+            <div className="rounded-xl bg-slate-50 p-2.5">
+              <div className="text-[10px] font-semibold uppercase tracking-wider text-slate-400">TERM</div>
+              <div className="mt-1 text-sm font-bold">{marketData.termStructure}</div>
             </div>
-            <div className="rounded-2xl bg-slate-50 p-4">
-              <div className="text-xs font-semibold uppercase tracking-wider text-slate-400">MOVE</div>
-              <div className="mt-2 text-3xl font-bold">{fmtNum(moveVal)}</div>
+            <div className="rounded-xl bg-slate-50 p-2.5">
+              <div className="text-[10px] font-semibold uppercase tracking-wider text-slate-400">MOVE</div>
+              <div className="mt-1 text-xl font-bold">{fmtNum(moveVal)}</div>
             </div>
           </div>
-          <p className="mt-4 text-lg leading-8 text-slate-600">{volatilityAnalysis}</p>
+          <p className="mt-3 text-sm leading-6 text-slate-600">{volatilityAnalysis}</p>
         </div>
       </section>
 
       {/* Breadth & Flows */}
-      <section className="grid gap-5 lg:grid-cols-2">
-        <div className="rounded-[30px] border border-slate-200 bg-white p-6 shadow-sm">
+      <section className="grid gap-4 lg:grid-cols-2">
+        <div className="rounded-2xl border border-slate-200 bg-white p-4 shadow-sm">
           <div className="flex items-center justify-between gap-3">
             <div className="flex items-center gap-2">
-              <span className="text-xl">📊</span>
-              <h3 className="text-2xl font-semibold">Breadth & Market Structure</h3>
+              <span className="text-base">📊</span>
+              <h3 className="text-base font-semibold">Breadth & Market Structure</h3>
             </div>
             <SignalPill tone={breadth200Val != null && breadth200Val <= 50 ? "red" : breadth200Val != null && breadth200Val >= 65 ? "green" : "amber"}>
               {breadth200Val != null && breadth200Val <= 50 ? "Weak" : breadth200Val != null && breadth200Val >= 65 ? "Healthy" : "Mixed"}
             </SignalPill>
           </div>
-          <div className="mt-5 space-y-3">
-            <div className="flex justify-between border-b border-slate-100 pb-3">
+          <div className="mt-3 space-y-2 text-sm">
+            <div className="flex justify-between border-b border-slate-100 pb-2">
               <span className="text-slate-500">S&amp;P 500 % &gt; 200 DMA</span>
               <span className="font-mono font-medium">{breadth200Val != null ? `${breadth200Val}%` : "—"}</span>
             </div>
-            <div className="flex justify-between pb-3">
+            <div className="flex justify-between pb-1">
               <span className="text-slate-500">S&amp;P 500 % &gt; 50 DMA</span>
               <span className="font-mono font-medium">{breadth50Val != null ? `${breadth50Val}%` : "—"}</span>
             </div>
           </div>
-          <p className="mt-4 text-lg leading-8 text-slate-600">{breadthAnalysis}</p>
+          <p className="mt-3 text-sm leading-6 text-slate-600">{breadthAnalysis}</p>
         </div>
 
-        <div className="rounded-[30px] border border-slate-200 bg-white p-6 shadow-sm">
+        <div className="rounded-2xl border border-slate-200 bg-white p-4 shadow-sm">
           <div className="flex items-center justify-between gap-3">
             <div className="flex items-center gap-2">
-              <span className="text-xl">💰</span>
-              <h3 className="text-2xl font-semibold">Fund Flows & Positioning</h3>
+              <span className="text-base">💰</span>
+              <h3 className="text-base font-semibold">Fund Flows & Positioning</h3>
             </div>
             <SignalPill tone={
               marketData.equityFlows.includes("Outflow") ? "red"
@@ -1379,13 +1379,13 @@ export function MorningBrief({
               {marketData.equityFlows}
             </SignalPill>
           </div>
-          <div className="mt-5 space-y-3">
-            <div className="flex justify-between pb-3">
+          <div className="mt-3 space-y-2 text-sm">
+            <div className="flex justify-between pb-1">
               <span className="text-slate-500">Equity Flows</span>
               <span className="font-medium">{marketData.equityFlows}</span>
             </div>
           </div>
-          <p className="mt-4 text-lg leading-8 text-slate-600">{flowsAnalysis}</p>
+          <p className="mt-3 text-sm leading-6 text-slate-600">{flowsAnalysis}</p>
 
           {/* Attached screenshots — compact thumbnails that open a centered
               lightbox on click. Previously rendered full-width in a 2-col
