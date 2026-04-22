@@ -13,6 +13,27 @@ import {
 import type { ResearchState } from "@/app/lib/defaults";
 import { defaultResearch } from "@/app/lib/defaults";
 import { buildHedgingCostsBlock } from "@/app/lib/hedging";
+import type { MarketRegimeData } from "@/app/lib/market-regime";
+
+/**
+ * Best-effort read of the deterministic market regime snapshot
+ * persisted by /api/market-regime (key: pm:market-regime). Returns
+ * null on missing/error — the brief prompt will then simply omit the
+ * regime block rather than fail. We deliberately do NOT trigger a
+ * recompute here; if the cache is cold, the dashboard / regime tile
+ * will warm it on next page load.
+ */
+async function readMarketRegime(): Promise<MarketRegimeData | null> {
+  try {
+    const redis = await getRedis();
+    const raw = await redis.get("pm:market-regime");
+    if (!raw) return null;
+    return JSON.parse(raw) as MarketRegimeData;
+  } catch (e) {
+    console.error("morning-brief: failed to read pm:market-regime", e);
+    return null;
+  }
+}
 
 const client = new Anthropic();
 
@@ -422,7 +443,7 @@ export async function POST(request: NextRequest) {
       }
     };
 
-    const [sectorPerformance, forwardData, strategistHistory, research, hedgingCostsBlock] =
+    const [sectorPerformance, forwardData, strategistHistory, research, hedgingCostsBlock, marketRegime] =
       await Promise.all([
         fetchSectorPerformance(),
         fetchForwardLookingData().catch((e) => {
@@ -438,6 +459,10 @@ export async function POST(request: NextRequest) {
           console.error("Hedging costs block failed:", e);
           return "";
         }),
+        // pm:market-regime is a best-effort cached snapshot. Missing →
+        // regime block is simply omitted from the prompt; brief still
+        // generates from the forward-looking signals.
+        readMarketRegime(),
       ]);
 
     const fmt = (p: ForwardPoint | undefined, unit = ""): string => {
@@ -579,6 +604,46 @@ export async function POST(request: NextRequest) {
         )}`
       : "\n\nForward-looking data unavailable for this run — fall back to the current snapshot indicators below.";
 
+    // Deterministic cross-asset / breadth regime from pm:market-regime.
+    // This is strictly context — Claude should treat it as additional
+    // confirmation signal for marketRegime, NOT as an override of the
+    // pre-classified regime above (which is computed from the macro
+    // inputs Claude is asked to cite).
+    const regimeBlock = marketRegime
+      ? (() => {
+          const r = marketRegime;
+          const fmtPct = (v: number | null | undefined): string =>
+            v == null || !isFinite(v) ? "N/A" : `${v >= 0 ? "+" : ""}${v.toFixed(1)}%`;
+          const ratio = (tag: string, x: { distancePct: number; change20dPct: number; direction: string } | null): string =>
+            x ? `${tag}: ${x.direction} (${x.distancePct >= 0 ? "+" : ""}${x.distancePct.toFixed(1)}% vs 50D, 20d ${x.change20dPct >= 0 ? "+" : ""}${x.change20dPct.toFixed(2)}%)` : `${tag}: n/a`;
+          const lines: string[] = [];
+          if (r.spx10m) {
+            lines.push(
+              `- SPX 10-Month Trend: ${r.spx10m.direction} — price ${r.spx10m.distancePct >= 0 ? "+" : ""}${r.spx10m.distancePct.toFixed(1)}% vs 10M MA`
+            );
+          }
+          if (r.breadth) lines.push(`- ${ratio("RSP/SPY Breadth", r.breadth)}`);
+          if (r.sectorRatios.xlyXlp) lines.push(`- ${ratio("XLY/XLP", r.sectorRatios.xlyXlp)}`);
+          if (r.sectorRatios.xlkXlu) lines.push(`- ${ratio("XLK/XLU", r.sectorRatios.xlkXlu)}`);
+          if (r.sectorRatios.mtumUsmv) lines.push(`- ${ratio("MTUM/USMV", r.sectorRatios.mtumUsmv)}`);
+          if (r.crossAsset.vix) lines.push(`- VIX Level: ${r.crossAsset.vix.direction} (${r.crossAsset.vix.price.toFixed(1)})`);
+          const crossParts: string[] = [];
+          if (r.crossAsset.dxy) crossParts.push(`DXY 20d ${fmtPct(r.crossAsset.dxy.change20dPct)}`);
+          if (r.crossAsset.tnx) crossParts.push(`10Y ${r.crossAsset.tnx.price.toFixed(2)}% (20d ${fmtPct(r.crossAsset.tnx.change20dPct)})`);
+          if (r.crossAsset.oil) crossParts.push(`WTI ${fmtPct(r.crossAsset.oil.change20dPct)}`);
+          if (crossParts.length > 0) lines.push(`- Cross-Asset Context: ${crossParts.join(" · ")}`);
+          const globalParts: string[] = [];
+          if (r.global.stoxx) globalParts.push(`STOXX 20d ${fmtPct(r.global.stoxx.change20dPct)}`);
+          if (r.global.nikkei) globalParts.push(`Nikkei 20d ${fmtPct(r.global.nikkei.change20dPct)}`);
+          if (globalParts.length > 0) lines.push(`- Global Context: ${globalParts.join(" · ")}`);
+          return `\n\nDeterministic Regime Snapshot (from pm:market-regime, computed ${r.computedAt}):
+Composite: ${r.composite.label} (${r.composite.score}/${r.composite.total} risk-on signals)
+${lines.join("\n")}
+
+Use this as additional confirmation for your marketRegime call, your breadthAnalysis (sector leadership rotation), and your forwardView. If the deterministic label conflicts with the pre-classified macro regime above, briefly reconcile in bottomLine — do not ignore either.`;
+        })()
+      : "";
+
     // Inject today's date explicitly so Claude cannot drift to training-data
     // anchored events. This is enforced by the DATE ANCHORING section of the
     // system prompt.
@@ -603,7 +668,7 @@ Conviction: ${marketData.conviction}
 
 Pre-classified Regime: ${classification.regime} (score ${classification.score})
 Regime drivers: ${classification.signals.length > 0 ? classification.signals.join("; ") : "mixed / no dominant signal"}
-IMPORTANT: Your marketRegime output MUST equal "${classification.regime}" unless the data below clearly contradicts it (in which case briefly note the contradiction in bottomLine).${forwardBlock}
+IMPORTANT: Your marketRegime output MUST equal "${classification.regime}" unless the data below clearly contradicts it (in which case briefly note the contradiction in bottomLine).${forwardBlock}${regimeBlock}
 
 Volatility Structure:
 - VIX Term Structure: ${marketData.termStructure}
