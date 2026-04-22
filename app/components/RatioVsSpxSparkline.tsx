@@ -130,7 +130,10 @@ export default function RatioVsSpxSparkline({ ticker, windowDays = 252, classNam
       <div className="flex items-start justify-between mb-2">
         <div>
           <div className="text-sm font-bold text-slate-700">Relative Strength vs S&amp;P 500 (SPY)</div>
-          <div className="text-[11px] text-slate-400">Ratio normalized to 1.00 at start of {windowLabel} window</div>
+          <div className="text-[11px] text-slate-400">
+            Rising = stock beating the index; falling = lagging it. Neutralizes market moves so you see the stock&apos;s own alpha.
+          </div>
+          <div className="text-[11px] text-slate-400 mt-0.5">Ratio normalized to 1.00 at start of {windowLabel} window</div>
         </div>
         <div className="text-right">
           <div className={`text-sm font-bold ${isOutperforming ? "text-emerald-600" : "text-red-600"}`}>

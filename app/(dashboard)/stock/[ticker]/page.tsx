@@ -11,6 +11,7 @@ import { SignalPill, ratingTone } from "@/app/components/SignalPill";
 import StockHealthMonitor from "@/app/components/StockHealthMonitor";
 import RiskAlertPanel from "@/app/components/RiskAlertPanel";
 import RatioVsSpxSparkline from "@/app/components/RatioVsSpxSparkline";
+import ScoreHistory from "@/app/components/ScoreHistory";
 import StockChart from "@/app/components/StockChart";
 
 // ── Helpers ──
@@ -790,6 +791,24 @@ export default function StockDetailPage() {
   const stock = getStock(ticker);
   const [scoring, setScoring] = useState(false);
   const [scoreError, setScoreError] = useState("");
+  // Narrative bullets for each scorable category can be long; collapse
+  // them by default so the page isn't a wall of text. Per-category
+  // toggle via the small chevron next to the category label.
+  const [expandedCategories, setExpandedCategories] = useState<Set<string>>(new Set());
+  const toggleCategory = useCallback((key: string) => {
+    setExpandedCategories((prev) => {
+      const next = new Set(prev);
+      if (next.has(key)) next.delete(key);
+      else next.add(key);
+      return next;
+    });
+  }, []);
+  // When handleRescore finishes it flips this ref so the effect below
+  // posts an append-only entry to pm:score-history once the updated
+  // `stock.adjusted` / `stock.raw` values have propagated through
+  // context. We can't POST inside handleRescore because those values
+  // are derived from context state set asynchronously.
+  const pendingScoreAppendRef = useRef(false);
   const [refreshing, setRefreshing] = useState(false);
   const [refreshError, setRefreshError] = useState("");
   const [editingWeight, setEditingWeight] = useState(false);
@@ -797,6 +816,33 @@ export default function StockDetailPage() {
   const [loadingFundData, setLoadingFundData] = useState(false);
 
   const scoreable = stock ? isScoreable(stock) : true;
+
+  // Append a score-history entry once the context-derived `stock.adjusted`
+  // reflects the latest rescore. The flag is set at the end of handleRescore.
+  useEffect(() => {
+    if (!pendingScoreAppendRef.current) return;
+    if (!stock || !scoreable) {
+      pendingScoreAppendRef.current = false;
+      return;
+    }
+    pendingScoreAppendRef.current = false;
+    const today = new Date().toISOString().slice(0, 10);
+    const entry = {
+      date: today,
+      timestamp: new Date().toISOString(),
+      total: stock.adjusted,
+      raw: stock.raw,
+      adjusted: stock.adjusted,
+      scores: stock.scores,
+    };
+    fetch("/api/kv/score-history", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ ticker: stock.ticker, entry }),
+    }).catch(() => {
+      // Non-fatal — history is informational.
+    });
+  }, [stock, scoreable]);
 
   const fetchFundData = useCallback(async () => {
     if (!stock || scoreable) return;
@@ -918,6 +964,10 @@ export default function StockDetailPage() {
         month: "short", day: "numeric", year: "numeric",
         hour: "numeric", minute: "2-digit", hour12: true,
       }));
+      // Flag that once React commits the updated scores into the derived
+      // `stock.adjusted` / `stock.raw`, the effect below should persist
+      // a new entry to the append-only pm:score-history log.
+      pendingScoreAppendRef.current = true;
     } catch (err) {
       setScoreError(err instanceof Error ? err.message : "Scoring failed");
     } finally {
@@ -1382,8 +1432,40 @@ export default function StockDetailPage() {
 
               {/* Right: donut chart (stocks only) */}
               {scoreable && (
-                <div className="flex justify-center lg:justify-end">
+                <div className="flex flex-col items-center lg:items-end">
                   <ScoreDonut score={stock.adjusted} max={MAX_SCORE} groups={SCORE_GROUPS} stock={stock} />
+                  {/* Regime-adjustment caption. Shows the delta between the
+                      raw (unadjusted) score and the regime-adjusted score
+                      displayed in the donut, so the user can see at a
+                      glance how much the current market regime is helping
+                      or hurting this stock's rating. */}
+                  {(() => {
+                    const delta = stock.adjusted - stock.raw;
+                    const absDelta = Math.abs(delta);
+                    if (absDelta < 0.05) {
+                      return (
+                        <div className="mt-2 flex items-center gap-1.5 rounded-full bg-slate-50 border border-slate-200 px-3 py-1 text-[11px]">
+                          <span className="text-slate-500">Regime: neutral</span>
+                          <span className="text-slate-400">•</span>
+                          <span className="text-slate-500">Raw {stock.raw.toFixed(1)}</span>
+                        </div>
+                      );
+                    }
+                    const positive = delta >= 0;
+                    return (
+                      <div className={`mt-2 flex items-center gap-1.5 rounded-full border px-3 py-1 text-[11px] ${
+                        positive
+                          ? "bg-emerald-50 border-emerald-200 text-emerald-700"
+                          : "bg-red-50 border-red-200 text-red-700"
+                      }`}>
+                        <span className="font-semibold">
+                          Regime: {positive ? "+" : ""}{delta.toFixed(1)} pt{absDelta === 1 ? "" : "s"}
+                        </span>
+                        <span className="opacity-60">•</span>
+                        <span className="opacity-80">Raw {stock.raw.toFixed(1)} → Adj {stock.adjusted.toFixed(1)}</span>
+                      </div>
+                    );
+                  })()}
                 </div>
               )}
             </div>
@@ -1543,6 +1625,8 @@ export default function StockDetailPage() {
                           ? "bg-blue-100 text-blue-700"
                           : "bg-slate-100 text-slate-600";
 
+                      const hasBullets = bullets && bullets.length > 0;
+                      const isExpanded = expandedCategories.has(cat.key);
                       return (
                         <div key={cat.key}>
                           <div className="flex items-center justify-between mb-2">
@@ -1552,6 +1636,17 @@ export default function StockDetailPage() {
                               <span className={`rounded px-1.5 py-0.5 text-[10px] font-semibold ${typeBg}`}>
                                 {cat.inputType.toUpperCase()}
                               </span>
+                              {hasBullets && (
+                                <button
+                                  onClick={() => toggleCategory(cat.key)}
+                                  className="flex items-center gap-0.5 rounded px-1.5 py-0.5 text-[10px] font-medium text-slate-500 hover:bg-slate-100 transition-colors"
+                                  aria-expanded={isExpanded}
+                                  aria-label={isExpanded ? "Hide explanation" : "Show explanation"}
+                                >
+                                  <span>{isExpanded ? "Hide" : "Show"}</span>
+                                  <span className={`transition-transform ${isExpanded ? "rotate-180" : ""}`}>{"\u25BE"}</span>
+                                </button>
+                              )}
                             </div>
                             <div className="flex gap-1">
                               {Array.from({ length: cat.max + 1 }, (_, i) => (
@@ -1569,9 +1664,9 @@ export default function StockDetailPage() {
                               ))}
                             </div>
                           </div>
-                          {bullets && bullets.length > 0 && (
+                          {hasBullets && isExpanded && (
                             <ul className="ml-1 space-y-1 mb-1">
-                              {bullets.map((b, i) => (
+                              {bullets!.map((b, i) => (
                                 <li key={i} className="flex gap-2 text-xs leading-relaxed text-slate-500">
                                   <span className="mt-1.5 h-1 w-1 shrink-0 rounded-full bg-slate-300" />
                                   {b}
@@ -1633,6 +1728,16 @@ export default function StockDetailPage() {
           {/* Stock Health Monitor */}
           {stock.healthData && (
             <StockHealthMonitor healthData={stock.healthData} technicals={stock.technicals} />
+          )}
+
+          {/* Score History — append-only change log */}
+          {scoreable && (
+            <ScoreHistory
+              ticker={stock.ticker}
+              currentTotal={stock.adjusted}
+              currentRaw={stock.raw}
+              className="mt-6"
+            />
           )}
         </div>
       </div>
