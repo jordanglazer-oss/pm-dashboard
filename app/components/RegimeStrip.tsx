@@ -1,90 +1,28 @@
 "use client";
 
 /**
- * Dashboard Market-Regime strip — compact 4-pill read of the
- * deterministic regime snapshot persisted in `pm:market-regime`
- * by /api/market-regime.
+ * Dashboard Market-Regime strip — compact read of the deterministic
+ * regime snapshot persisted in `pm:market-regime` by /api/market-regime.
  *
  * Reads only — no writes, no mutation of Redis. If the fetch fails
  * the strip silent-hides so the dashboard still renders cleanly.
  *
- * The four pills roll the six underlying signals into the four
- * dimensions most analysts actually glance at first:
- *
- *   1. Trend        ← SPX 10-month trend
- *   2. Breadth      ← RSP/SPY ratio (proxy for cap-weighted vs equal-weighted)
- *   3. Sector Lead  ← rollup of XLY/XLP, XLK/XLU, MTUM/USMV (majority wins)
- *   4. Volatility   ← VIX level bucket
- *
- * The composite label (Risk-On / Neutral / Risk-Off) sits on the
- * left so you get a one-glance answer before scanning the pills.
+ * Shows every signal the composite uses (SPX 10M, RSP/SPY breadth,
+ * XLY/XLP, XLK/XLU, MTUM/USMV, VIX level) as an individual pill,
+ * matching the Morning Brief's regime strip 1:1. The composite label
+ * (Risk-On / Neutral / Risk-Off) sits on the left so you get a
+ * one-glance answer before scanning the drivers.
  */
 
 import React, { useEffect, useState } from "react";
 import Link from "next/link";
 import type { MarketRegimeData, RegimeDirection } from "@/app/lib/market-regime";
 
-type RollupPill = {
-  label: string;
-  direction: RegimeDirection | "none";
-  detail: string;
-};
-
-function rollupSectorLeadership(r: MarketRegimeData): RollupPill {
-  const entries = [
-    { tag: "XLY/XLP", v: r.sectorRatios.xlyXlp },
-    { tag: "XLK/XLU", v: r.sectorRatios.xlkXlu },
-    { tag: "MTUM/USMV", v: r.sectorRatios.mtumUsmv },
-  ].filter((e) => e.v != null) as { tag: string; v: NonNullable<typeof r.sectorRatios.xlyXlp> }[];
-
-  if (entries.length === 0) {
-    return { label: "Sector Leadership", direction: "none", detail: "no data" };
-  }
-  const on = entries.filter((e) => e.v.direction === "risk-on").length;
-  const off = entries.filter((e) => e.v.direction === "risk-off").length;
-  let direction: RegimeDirection = "neutral";
-  if (on > off && on >= 2) direction = "risk-on";
-  else if (off > on && off >= 2) direction = "risk-off";
-  const detail = `${on}/${entries.length} offensive ratios above 50D`;
-  return { label: "Sector Leadership", direction, detail };
-}
-
-function trendPill(r: MarketRegimeData): RollupPill {
-  if (!r.spx10m) return { label: "Trend", direction: "none", detail: "no data" };
-  const d = r.spx10m.distancePct;
-  return {
-    label: "Trend",
-    direction: r.spx10m.direction,
-    detail: `SPX ${d >= 0 ? "+" : ""}${d.toFixed(1)}% vs 10M MA`,
-  };
-}
-
-function breadthPill(r: MarketRegimeData): RollupPill {
-  if (!r.breadth) return { label: "Breadth", direction: "none", detail: "no data" };
-  const c = r.breadth.change20dPct;
-  return {
-    label: "Breadth",
-    direction: r.breadth.direction,
-    detail: `RSP/SPY 20d ${c >= 0 ? "+" : ""}${c.toFixed(2)}%`,
-  };
-}
-
-function volPill(r: MarketRegimeData): RollupPill {
-  const vix = r.crossAsset.vix;
-  if (!vix) return { label: "Volatility", direction: "none", detail: "no data" };
-  return {
-    label: "Volatility",
-    direction: vix.direction,
-    detail: `VIX ${vix.price.toFixed(1)}`,
-  };
-}
-
-function pillClasses(d: RegimeDirection | "none"): string {
+function pillClasses(d: RegimeDirection): string {
   switch (d) {
     case "risk-on":  return "border-emerald-300 bg-emerald-50 text-emerald-700";
     case "risk-off": return "border-red-300 bg-red-50 text-red-700";
     case "neutral":  return "border-amber-300 bg-amber-50 text-amber-700";
-    default:         return "border-slate-200 bg-slate-50 text-slate-500";
   }
 }
 
@@ -135,13 +73,6 @@ export function RegimeStrip() {
   }
   if (!regime) return null;
 
-  const pills: RollupPill[] = [
-    trendPill(regime),
-    breadthPill(regime),
-    rollupSectorLeadership(regime),
-    volPill(regime),
-  ];
-
   return (
     <div className="rounded-[24px] border border-slate-200 bg-white p-4 shadow-sm">
       <div className="flex flex-wrap items-center gap-3">
@@ -156,15 +87,15 @@ export function RegimeStrip() {
         </div>
 
         <div className="flex flex-wrap gap-2 flex-1 min-w-0">
-          {pills.map((p, i) => (
+          {regime.composite.signals.map((s, i) => (
             <span
               key={i}
-              className={`inline-flex items-center gap-1.5 rounded-full border px-3 py-1 text-xs ${pillClasses(p.direction)}`}
-              title={p.detail}
+              className={`inline-flex items-center gap-1.5 rounded-full border px-3 py-1 text-xs ${pillClasses(s.direction)}`}
+              title={s.detail}
             >
-              <span className="font-semibold">{p.label}</span>
+              <span className="font-semibold">{s.name}</span>
               <span className="opacity-70">·</span>
-              <span className="font-mono opacity-80">{p.detail}</span>
+              <span className="font-mono opacity-80">{s.detail}</span>
             </span>
           ))}
         </div>
