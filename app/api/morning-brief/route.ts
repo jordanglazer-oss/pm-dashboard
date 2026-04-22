@@ -494,10 +494,16 @@ export async function POST(request: NextRequest) {
       const sign = d >= 0 ? "+" : "";
       return ` (${period} ${sign}${d.toFixed(1)}pp)`;
     };
-    // Render the trajectory + multi-horizon delta + percentile-of-range context
-    // for any sentiment ForwardPoint that has a `trend` block. Falls back to
-    // an empty string if the point doesn't have one (e.g. fetch failed, or
-    // oscillator history is too short for percentiles to be meaningful).
+    // Render the trajectory + multi-horizon delta context for any sentiment
+    // ForwardPoint that has a `trend` block. Falls back to an empty string if
+    // the point doesn't have one.
+    //
+    // Intentionally omits the "Nth percentile of trailing range" phrase that
+    // used to live here. Our rolling window is only as old as the app's own
+    // logging, which skews the percentile badly (e.g. F&G ranges that only
+    // span 40-70 make "p95" look meaningful when it isn't). Level-vs-history
+    // commentary is now the model's job using its trained knowledge of each
+    // indicator's true multi-decade range — see the IMPORTANT note below.
     const trendBlurb = (p: ForwardPoint | undefined): string => {
       if (!p || !p.trend) return "";
       const t = p.trend;
@@ -516,9 +522,6 @@ export async function POST(request: NextRequest) {
       if (d3m != null) deltas.push(`3m ${d3m}`);
       parts.push(t.trajectory);
       if (deltas.length > 0) parts.push(deltas.join(", "));
-      parts.push(
-        `${t.percentile}th pct of trailing range [${t.rangeLow}, ${t.rangeHigh}]`
-      );
       return ` — ${parts.join("; ")}`;
     };
 
@@ -687,7 +690,7 @@ Contrarian Indicators (ALL interpreted INVERSELY — oversold/fearful = BULLISH,
       forwardData?.aaiiBullBear?.value ?? marketData.aaiiBullBear
     }%${trendBlurb(forwardData?.aaiiBullBear)} — <-20 = excessive bearishness = BULLISH, >+30 = excessive bullishness = BEARISH
 
-IMPORTANT — interpret trajectory: a value at an extreme that is REVERSING (e.g. F&G at 22 but rising) is much weaker as a contrarian signal than the same value still moving deeper into the extreme. Use the percentile-of-1Y context and trajectory descriptors above when forming the contrarianAnalysis.
+IMPORTANT — interpret trajectory: a value at an extreme that is REVERSING (e.g. F&G at 22 but rising) is much weaker as a contrarian signal than the same value still moving deeper into the extreme. Use the trajectory descriptors above plus your own knowledge of each indicator's true multi-decade historical range (NOT any short rolling window) when forming the contrarianAnalysis — e.g. VIX typically sits 12-20 in quiet markets and spikes to 30+ in stress, AAII Bull-Bear spreads beyond ±25 are historically extreme, CBOE put/call typically oscillates 0.7-1.2 with >1.2 marking fear washouts, CNN F&G treats <25 as extreme fear and >75 as extreme greed. Characterize the level as elevated / subdued / extreme against THAT long-run backdrop, not against the few months of local data we happen to have cached.
 
 Equity Flows: ${marketData.equityFlows}
 

@@ -26,7 +26,12 @@ function trendCaption(t: TrendStatsBundle | undefined): string | null {
   if (d1m) parts.push(`1m ${d1m}`);
   if (d3m) parts.push(`3m ${d3m}`);
   if (parts.length === 0) return null;
-  return `${t.trajectory} · ${parts.join(" · ")} · p${t.percentile}/100`;
+  // Intentionally omits the trailing-range percentile that used to be
+  // appended here. Our rolling window is only as long as the app has
+  // been logging, which produces misleading percentiles when the true
+  // multi-decade range is much wider. Trajectory + multi-horizon deltas
+  // are kept because those are genuinely self-referential.
+  return `${t.trajectory} · ${parts.join(" · ")}`;
 }
 
 type Props = {
