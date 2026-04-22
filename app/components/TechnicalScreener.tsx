@@ -144,8 +144,32 @@ const FILTER_ACCESSORS: Record<FilterKey, (t: TechnicalIndicators) => "bullish" 
   cloudEdge: getCloudEdgeSignal,
 };
 
+/** Map MACD divergence to a directional signal for the composite score.
+ *  Bullish divergence = bullish (reversal setup); bearish = bearish; otherwise neutral. */
+function getMacdDivergenceSignal(t: TechnicalIndicators): "bullish" | "bearish" | "neutral" {
+  const type = t.macdDivergence?.type;
+  if (type === "bullish") return "bullish";
+  if (type === "bearish") return "bearish";
+  return "neutral";
+}
+
+// Composite score matches the Risk Alert ladder exactly: 6 factors —
+// Trend (DMA), RSI, MACD, Ichimoku, Volume, MACD Divergence. Short
+// Interest was dropped from Risk Alert (high short interest isn't
+// always bearish), so MACD Divergence takes its slot. 52-Week Position
+// is kept as a display column + filter but is not in the composite
+// score, because it duplicates what Trend / RSI already express.
+const COMPOSITE_TOTAL = 6;
+
 function compositeTechnicalScore(t: TechnicalIndicators): { bullish: number; bearish: number; neutral: number; net: number } {
-  const signals = [getTrendSignal(t), getRsiSignal(t), getMacdSignal(t), getIchimokuSignal(t), getVolumeSignal(t), getWeek52Signal(t)];
+  const signals = [
+    getTrendSignal(t),
+    getRsiSignal(t),
+    getMacdSignal(t),
+    getIchimokuSignal(t),
+    getVolumeSignal(t),
+    getMacdDivergenceSignal(t),
+  ];
   const bullish = signals.filter((s) => s === "bullish").length;
   const bearish = signals.filter((s) => s === "bearish").length;
   const neutral = signals.filter((s) => s === "neutral").length;
@@ -167,7 +191,7 @@ function TechPill({ signal }: { signal: "bullish" | "bearish" | "neutral" }) {
 }
 
 function CompositeBar({ bullish, bearish, neutral }: { bullish: number; bearish: number; neutral: number }) {
-  const total = 6;
+  const total = COMPOSITE_TOTAL;
   return (
     <div className="flex h-2.5 rounded-full overflow-hidden bg-slate-100 w-24">
       {bullish > 0 && <div className="bg-emerald-500 transition-all" style={{ width: `${(bullish / total) * 100}%` }} />}

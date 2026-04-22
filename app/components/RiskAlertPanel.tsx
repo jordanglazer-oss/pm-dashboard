@@ -367,6 +367,109 @@ export default function RiskAlertPanel({
         ))}
       </div>
 
+      {/* Higher-timeframe readout (informational — not contributing to
+          risk alert; present so user can see daily + weekly + monthly
+          at a glance for Newton-style multi-TF confluence). */}
+      {(technicals.weeklyMacd || technicals.monthlyMacd || technicals.weeklyRsi != null || technicals.monthlyRsi != null) && (
+        <div className="mt-5 rounded-[24px] border border-slate-200 bg-white p-5 shadow-sm">
+          <div className="flex items-center justify-between mb-3">
+            <h3 className="text-sm font-bold text-slate-700">Higher Timeframes</h3>
+            <span className="rounded-full bg-slate-100 px-2.5 py-0.5 text-[10px] font-medium text-slate-500">Informational</span>
+          </div>
+          <div className="grid gap-3 md:grid-cols-3">
+            {/* Daily column */}
+            <div className="rounded-xl border border-slate-200 bg-slate-50 px-4 py-3">
+              <div className="text-[11px] font-semibold uppercase tracking-wide text-slate-500 mb-2">Daily</div>
+              <div className="flex items-center justify-between text-xs py-1">
+                <span className="text-slate-600">RSI</span>
+                <span className={`font-bold font-mono ${technicals.rsi14 > 70 ? "text-red-600" : technicals.rsi14 < 30 ? "text-red-600" : technicals.rsi14 > 50 ? "text-emerald-600" : "text-slate-600"}`}>
+                  {technicals.rsi14.toFixed(0)}
+                </span>
+              </div>
+              <div className="flex items-center justify-between text-xs py-1">
+                <span className="text-slate-600">MACD</span>
+                <span className={`font-bold ${technicals.macdLine >= technicals.signalLine ? "text-emerald-600" : "text-red-600"}`}>
+                  {technicals.macdLine >= technicals.signalLine ? "Bullish" : "Bearish"}
+                </span>
+              </div>
+              <div className="flex items-center justify-between text-xs py-1">
+                <span className="text-slate-600">Hist.</span>
+                <span className={`font-mono ${technicals.macdHistogram >= 0 ? "text-emerald-600" : "text-red-600"}`}>
+                  {technicals.macdHistogram >= 0 ? "+" : ""}{technicals.macdHistogram.toFixed(2)}
+                </span>
+              </div>
+            </div>
+            {/* Weekly column */}
+            <div className="rounded-xl border border-slate-200 bg-slate-50 px-4 py-3">
+              <div className="text-[11px] font-semibold uppercase tracking-wide text-slate-500 mb-2">Weekly</div>
+              <div className="flex items-center justify-between text-xs py-1">
+                <span className="text-slate-600">RSI</span>
+                <span className={`font-bold font-mono ${
+                  technicals.weeklyRsi == null ? "text-slate-400"
+                    : technicals.weeklyRsi > 70 || technicals.weeklyRsi < 30 ? "text-red-600"
+                    : technicals.weeklyRsi > 50 ? "text-emerald-600" : "text-slate-600"
+                }`}>
+                  {technicals.weeklyRsi != null ? technicals.weeklyRsi.toFixed(0) : "\u2014"}
+                </span>
+              </div>
+              <div className="flex items-center justify-between text-xs py-1">
+                <span className="text-slate-600">MACD</span>
+                <span className={`font-bold ${
+                  !technicals.weeklyMacd ? "text-slate-400"
+                    : technicals.weeklyMacd.signal === "bullish" ? "text-emerald-600" : "text-red-600"
+                }`}>
+                  {technicals.weeklyMacd ? (technicals.weeklyMacd.signal === "bullish" ? "Bullish" : "Bearish") : "\u2014"}
+                </span>
+              </div>
+              <div className="flex items-center justify-between text-xs py-1">
+                <span className="text-slate-600">Hist.</span>
+                <span className={`font-mono ${
+                  !technicals.weeklyMacd ? "text-slate-400"
+                    : technicals.weeklyMacd.histogram >= 0 ? "text-emerald-600" : "text-red-600"
+                }`}>
+                  {technicals.weeklyMacd ? `${technicals.weeklyMacd.histogram >= 0 ? "+" : ""}${technicals.weeklyMacd.histogram.toFixed(2)}` : "\u2014"}
+                </span>
+              </div>
+            </div>
+            {/* Monthly column */}
+            <div className="rounded-xl border border-slate-200 bg-slate-50 px-4 py-3">
+              <div className="text-[11px] font-semibold uppercase tracking-wide text-slate-500 mb-2">Monthly</div>
+              <div className="flex items-center justify-between text-xs py-1">
+                <span className="text-slate-600">RSI</span>
+                <span className={`font-bold font-mono ${
+                  technicals.monthlyRsi == null ? "text-slate-400"
+                    : technicals.monthlyRsi > 70 || technicals.monthlyRsi < 30 ? "text-red-600"
+                    : technicals.monthlyRsi > 50 ? "text-emerald-600" : "text-slate-600"
+                }`}>
+                  {technicals.monthlyRsi != null ? technicals.monthlyRsi.toFixed(0) : "\u2014"}
+                </span>
+              </div>
+              <div className="flex items-center justify-between text-xs py-1">
+                <span className="text-slate-600">MACD</span>
+                <span className={`font-bold ${
+                  !technicals.monthlyMacd ? "text-slate-400"
+                    : technicals.monthlyMacd.signal === "bullish" ? "text-emerald-600" : "text-red-600"
+                }`}>
+                  {technicals.monthlyMacd ? (technicals.monthlyMacd.signal === "bullish" ? "Bullish" : "Bearish") : "\u2014"}
+                </span>
+              </div>
+              <div className="flex items-center justify-between text-xs py-1">
+                <span className="text-slate-600">Hist.</span>
+                <span className={`font-mono ${
+                  !technicals.monthlyMacd ? "text-slate-400"
+                    : technicals.monthlyMacd.histogram >= 0 ? "text-emerald-600" : "text-red-600"
+                }`}>
+                  {technicals.monthlyMacd ? `${technicals.monthlyMacd.histogram >= 0 ? "+" : ""}${technicals.monthlyMacd.histogram.toFixed(2)}` : "\u2014"}
+                </span>
+              </div>
+            </div>
+          </div>
+          <p className="mt-3 text-[11px] text-slate-400">
+            Higher-timeframe confluence: when daily + weekly + monthly RSI all agree (all {">"} 50 or all {"<"} 50), the trend is more durable.
+          </p>
+        </div>
+      )}
+
       {/* Technical Chart Indicators */}
       <div className="mt-5 rounded-[24px] border border-slate-200 bg-white p-5 shadow-sm">
         <h3 className="text-sm font-bold text-slate-700 mb-4">Technical Indicators</h3>
