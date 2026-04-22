@@ -226,6 +226,46 @@ function SaveableTextarea({
   );
 }
 
+/**
+ * Section wrapper for the Forward View macro-tile categories.
+ * Provides a strong, unambiguous visual break between groups:
+ *   - Colored left accent bar
+ *   - Bold title + one-line subtitle
+ *   - Divider between the header and the tile grid
+ *   - Subtle panel tint so each bucket reads as its own card
+ *
+ * Keeps ForwardTile styling unchanged.
+ */
+function BriefSection({
+  title,
+  subtitle,
+  accent,
+  children,
+}: {
+  title: string;
+  subtitle: string;
+  accent: "blue" | "emerald" | "amber" | "rose";
+  children: React.ReactNode;
+}) {
+  const accentMap: Record<typeof accent, { bar: string; text: string; dot: string; panel: string }> = {
+    blue:    { bar: "bg-blue-500",    text: "text-blue-700",    dot: "bg-blue-400",    panel: "border-l-blue-500" },
+    emerald: { bar: "bg-emerald-500", text: "text-emerald-700", dot: "bg-emerald-400", panel: "border-l-emerald-500" },
+    amber:   { bar: "bg-amber-500",   text: "text-amber-700",   dot: "bg-amber-400",   panel: "border-l-amber-500" },
+    rose:    { bar: "bg-rose-500",    text: "text-rose-700",    dot: "bg-rose-400",    panel: "border-l-rose-500" },
+  };
+  const a = accentMap[accent];
+  return (
+    <section className={`rounded-2xl border border-slate-200 border-l-4 ${a.panel} bg-white/60 shadow-sm overflow-hidden`}>
+      <header className="flex items-baseline gap-2 px-4 pt-3 pb-2">
+        <span className={`inline-block h-2 w-2 rounded-full ${a.dot}`} />
+        <h3 className={`text-sm font-bold tracking-tight ${a.text}`}>{title}</h3>
+        <span className="text-xs text-slate-400 truncate">· {subtitle}</span>
+      </header>
+      <div className="border-t border-slate-100 px-4 py-3">{children}</div>
+    </section>
+  );
+}
+
 /** Composite pill tone helper for the Market Regime strip. */
 function regimePillClasses(direction: RegimeDirection): string {
   if (direction === "risk-on") return "border-emerald-300 bg-emerald-50 text-emerald-700";
@@ -1114,13 +1154,14 @@ export function MorningBrief({
         {marketRegime && <MarketRegimeStrip regime={marketRegime} />}
 
         {activeForward && (
-          <div className="space-y-5 mb-5">
+          <div className="space-y-6 mb-5">
             {/* Momentum & Breadth — SPX trajectory plus % of index above
                 key DMAs. Tells you whether a move is broad or narrow. */}
-            <div>
-              <div className="mb-2 text-[11px] font-bold uppercase tracking-wider text-slate-500">
-                Momentum &amp; Breadth
-              </div>
+            <BriefSection
+              title="Momentum & Breadth"
+              subtitle="SPX trajectory and how broadly the move is participating."
+              accent="blue"
+            >
               <div className="grid gap-3 grid-cols-2 md:grid-cols-3 lg:grid-cols-5">
                 <ForwardTile label="S&P 500 YTD" point={activeForward.spxYtd} unit="%" />
                 <ForwardTile label="S&P 500 Week" point={activeForward.spxWeek} unit="%" />
@@ -1128,28 +1169,30 @@ export function MorningBrief({
                 <ForwardTile label="S&P >200DMA (mo)" point={activeForward.breadth200Mo} unit="%" deltaUnit="pp" deltaPeriod="mo/mo" />
                 <ForwardTile label="S&P >50DMA (wk)" point={activeForward.breadth50Wk} unit="%" deltaUnit="pp" deltaPeriod="wk/wk" />
               </div>
-            </div>
+            </BriefSection>
 
             {/* Valuation — SPY multiples and implied growth. Where
                 the tape is priced relative to earnings. */}
-            <div>
-              <div className="mb-2 text-[11px] font-bold uppercase tracking-wider text-slate-500">
-                Valuation
-              </div>
+            <BriefSection
+              title="Valuation"
+              subtitle="SPY multiples and the growth priced in at today's level."
+              accent="emerald"
+            >
               <div className="grid gap-3 grid-cols-2 md:grid-cols-3 lg:grid-cols-4">
                 <ForwardTile label="SPY Forward P/E" point={activeForward.spyForwardPE} />
                 <ForwardTile label="SPY Trailing P/E" point={activeForward.spyTrailingPE} />
                 <ForwardTile label="Implied 1Y EPS Growth (P/E)" point={activeForward.impliedEpsGrowth} unit="%" />
                 <ForwardTile label="Est 3-5Y EPS Growth" point={activeForward.eps35Growth} unit="%" />
               </div>
-            </div>
+            </BriefSection>
 
             {/* Rates & Curve — Treasury yields and two curve measures.
                 Drives discount-rate + growth expectations. */}
-            <div>
-              <div className="mb-2 text-[11px] font-bold uppercase tracking-wider text-slate-500">
-                Rates &amp; Curve
-              </div>
+            <BriefSection
+              title="Rates & Curve"
+              subtitle="Treasury yields and curve shape — the discount rate backdrop."
+              accent="amber"
+            >
               <div className="grid gap-3 grid-cols-2 md:grid-cols-3 lg:grid-cols-5">
                 <ForwardTile label="10Y Treasury" point={activeForward.yield10y} unit="%" deltaUnit="raw" />
                 <ForwardTile label="2Y Treasury" point={activeForward.yield2y} unit="%" deltaUnit="raw" />
@@ -1157,21 +1200,22 @@ export function MorningBrief({
                 <ForwardTile label="10Y-2Y Curve" point={activeForward.curve10y2y} unit="bps" />
                 <ForwardTile label="10Y-3M Curve" point={activeForward.curve10y3m} unit="bps" />
               </div>
-            </div>
+            </BriefSection>
 
             {/* Risk & Volatility — credit spreads + vol surface.
                 First place stress shows up before it hits price. */}
-            <div>
-              <div className="mb-2 text-[11px] font-bold uppercase tracking-wider text-slate-500">
-                Risk &amp; Volatility
-              </div>
+            <BriefSection
+              title="Risk & Volatility"
+              subtitle="Credit spreads and vol surface — where stress shows up first."
+              accent="rose"
+            >
               <div className="grid gap-3 grid-cols-2 md:grid-cols-3 lg:grid-cols-4">
                 <ForwardTile label="HY OAS Trend" point={activeForward.hyOasTrend} unit="bps" deltaUnit="bps" invertDeltaColor />
                 <ForwardTile label="IG OAS Trend" point={activeForward.igOasTrend} unit="bps" deltaUnit="bps" invertDeltaColor />
                 <ForwardTile label="VIX (wk/wk)" point={activeForward.vixWeek} deltaUnit="pct" invertDeltaColor />
                 <ForwardTile label="MOVE (wk/wk)" point={activeForward.moveWeek} deltaUnit="pct" invertDeltaColor />
               </div>
-            </div>
+            </BriefSection>
           </div>
         )}
 
