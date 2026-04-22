@@ -14,6 +14,7 @@ import { LoadingOverlay } from "./LoadingSpinner";
 import { SentimentGauges } from "./SentimentGauges";
 import { HedgingIndicator } from "./HedgingIndicator";
 import { ImageUpload, LightboxModal, type BriefAttachment } from "./ImageUpload";
+import type { MarketRegimeData, RegimeDirection } from "@/app/lib/market-regime";
 
 /** Numeric input with an inline save indicator.
  *  Value only persists when the user clicks the save icon (or presses Enter).
@@ -225,6 +226,86 @@ function SaveableTextarea({
   );
 }
 
+/** Composite pill tone helper for the Market Regime strip. */
+function regimePillClasses(direction: RegimeDirection): string {
+  if (direction === "risk-on") return "border-emerald-300 bg-emerald-50 text-emerald-700";
+  if (direction === "risk-off") return "border-red-300 bg-red-50 text-red-700";
+  return "border-slate-200 bg-slate-50 text-slate-600";
+}
+
+/** Format a signed pct number as "+X.X%" / "-X.X%" (or "—" when null). */
+function fmtPct(v: number | null | undefined, digits = 1): string {
+  if (v == null || !isFinite(v)) return "—";
+  return `${v >= 0 ? "+" : ""}${v.toFixed(digits)}%`;
+}
+
+/**
+ * Compact Market Regime strip shown above the forward-looking tile grid.
+ * Driven entirely by pm:market-regime (Yahoo-derived, deterministic).
+ * Composite label on the left, individual signal pills in the middle,
+ * cross-asset + global spot/20d moves on the bottom row.
+ */
+function MarketRegimeStrip({ regime }: { regime: MarketRegimeData }) {
+  const comp = regime.composite;
+  const label = comp.label;
+  const labelTone: "green" | "red" | "amber" =
+    label === "Risk-On" ? "green" : label === "Risk-Off" ? "red" : "amber";
+  const cross = regime.crossAsset;
+  const global = regime.global;
+  const crossRow: { label: string; body: string }[] = [];
+  if (cross.dxy) crossRow.push({ label: "DXY", body: `${cross.dxy.price.toFixed(2)} · 20d ${fmtPct(cross.dxy.change20dPct)}` });
+  if (cross.tnx) crossRow.push({ label: "10Y", body: `${cross.tnx.price.toFixed(2)}% · 20d ${fmtPct(cross.tnx.change20dPct)}` });
+  if (cross.oil) crossRow.push({ label: "WTI", body: `$${cross.oil.price.toFixed(2)} · 20d ${fmtPct(cross.oil.change20dPct)}` });
+  if (global.stoxx) crossRow.push({ label: "STOXX", body: `${global.stoxx.price.toFixed(0)} · 20d ${fmtPct(global.stoxx.change20dPct)}` });
+  if (global.nikkei) crossRow.push({ label: "Nikkei", body: `${global.nikkei.price.toFixed(0)} · 20d ${fmtPct(global.nikkei.change20dPct)}` });
+
+  return (
+    <div className="mb-5 rounded-2xl border border-slate-200 bg-white/80 p-4">
+      <div className="flex flex-wrap items-start justify-between gap-3 mb-3">
+        <div className="flex items-center gap-2">
+          <span className="text-[10px] font-bold uppercase tracking-wider text-slate-500">Market Regime</span>
+          <SignalPill tone={labelTone}>{label}</SignalPill>
+          <span className="text-xs text-slate-400">
+            {comp.score}/{comp.total} risk-on signals
+          </span>
+        </div>
+        <span
+          className="text-[10px] text-slate-400"
+          title={`Computed from Yahoo Finance at ${regime.computedAt}`}
+        >
+          Yahoo-derived · cached 30m
+        </span>
+      </div>
+
+      {comp.signals.length > 0 && (
+        <div className="flex flex-wrap gap-1.5 mb-3">
+          {comp.signals.map((s, i) => (
+            <span
+              key={i}
+              className={`inline-flex items-center gap-1.5 rounded-full border px-2.5 py-1 text-[11px] ${regimePillClasses(s.direction)}`}
+              title={s.detail}
+            >
+              <span className="font-semibold">{s.name}</span>
+              <span className="opacity-70">· {s.detail}</span>
+            </span>
+          ))}
+        </div>
+      )}
+
+      {crossRow.length > 0 && (
+        <div className="flex flex-wrap gap-x-4 gap-y-1 pt-2 border-t border-slate-100 text-[11px] text-slate-500">
+          {crossRow.map((r, i) => (
+            <span key={i}>
+              <span className="font-semibold text-slate-600">{r.label}</span>{" "}
+              <span className="font-mono">{r.body}</span>
+            </span>
+          ))}
+        </div>
+      )}
+    </div>
+  );
+}
+
 /** Compact tile for a single forward-looking data point with source link.
  *  Shows value, a week-over-week delta if `previous` is set, the source
  *  badge that opens the underlying page in a new tab, and a methodology
@@ -428,6 +509,13 @@ export function MorningBrief({
   const [forwardLoading, setForwardLoading] = useState(false);
   const [forwardError, setForwardError] = useState<string | null>(null);
 
+  // Deterministic regime snapshot from /api/market-regime (pm:market-regime).
+  // Rendered as a compact strip at the top of the Forward View so the PM
+  // sees the Yahoo-derived cross-asset read before the macro tiles. If the
+  // fetch fails the strip silently hides — the rest of the brief is
+  // unaffected.
+  const [marketRegime, setMarketRegime] = useState<MarketRegimeData | null>(null);
+
   // Attachments (screenshots for brief sections)
   const [attachments, setAttachments] = useState<BriefAttachment[]>([]);
   const attachSaveTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
@@ -557,6 +645,26 @@ export function MorningBrief({
       }
     }
     fetchForward();
+    return () => { cancelled = true; };
+  }, []);
+
+  // Fetch the deterministic market regime snapshot in parallel. The
+  // endpoint hits the pm:market-regime Redis cache; a cold cache takes
+  // a few seconds (~15 parallel Yahoo fetches), subsequent loads are
+  // instant. Silent-fail — if this doesn't return we simply hide the
+  // strip rather than blocking the brief.
+  useEffect(() => {
+    let cancelled = false;
+    (async () => {
+      try {
+        const res = await fetch("/api/market-regime");
+        if (!res.ok) return;
+        const data = await res.json();
+        if (!cancelled && data?.regime) setMarketRegime(data.regime as MarketRegimeData);
+      } catch {
+        // Intentionally silent — the rest of the brief renders fine.
+      }
+    })();
     return () => { cancelled = true; };
   }, []);
 
@@ -1000,26 +1108,70 @@ export function MorningBrief({
           </div>
         )}
 
+        {/* Deterministic Market Regime strip — derived from pm:market-regime.
+            Sits above the macro tiles so the PM can anchor on the composite
+            read before scanning individual indicators. */}
+        {marketRegime && <MarketRegimeStrip regime={marketRegime} />}
+
         {activeForward && (
-          <div className="grid gap-3 grid-cols-2 md:grid-cols-3 lg:grid-cols-4 mb-5">
-            <ForwardTile label="S&P 500 YTD" point={activeForward.spxYtd} unit="%" />
-            <ForwardTile label="S&P 500 Week" point={activeForward.spxWeek} unit="%" />
-            <ForwardTile label="SPY Forward P/E" point={activeForward.spyForwardPE} />
-            <ForwardTile label="SPY Trailing P/E" point={activeForward.spyTrailingPE} />
-            <ForwardTile label="Implied 1Y EPS Growth (P/E)" point={activeForward.impliedEpsGrowth} unit="%" />
-            <ForwardTile label="Est 3-5Y EPS Growth" point={activeForward.eps35Growth} unit="%" />
-            <ForwardTile label="10Y Treasury" point={activeForward.yield10y} unit="%" deltaUnit="raw" />
-            <ForwardTile label="2Y Treasury" point={activeForward.yield2y} unit="%" deltaUnit="raw" />
-            <ForwardTile label="3M T-Bill" point={activeForward.yield3m} unit="%" deltaUnit="raw" />
-            <ForwardTile label="10Y-2Y Curve" point={activeForward.curve10y2y} unit="bps" />
-            <ForwardTile label="10Y-3M Curve" point={activeForward.curve10y3m} unit="bps" />
-            <ForwardTile label="HY OAS Trend" point={activeForward.hyOasTrend} unit="bps" deltaUnit="bps" invertDeltaColor />
-            <ForwardTile label="IG OAS Trend" point={activeForward.igOasTrend} unit="bps" deltaUnit="bps" invertDeltaColor />
-            <ForwardTile label="VIX (wk/wk)" point={activeForward.vixWeek} deltaUnit="pct" invertDeltaColor />
-            <ForwardTile label="MOVE (wk/wk)" point={activeForward.moveWeek} deltaUnit="pct" invertDeltaColor />
-            <ForwardTile label="S&P >200DMA (wk)" point={activeForward.breadth200Wk} unit="%" deltaUnit="pp" deltaPeriod="wk/wk" />
-            <ForwardTile label="S&P >200DMA (mo)" point={activeForward.breadth200Mo} unit="%" deltaUnit="pp" deltaPeriod="mo/mo" />
-            <ForwardTile label="S&P >50DMA (wk)" point={activeForward.breadth50Wk} unit="%" deltaUnit="pp" deltaPeriod="wk/wk" />
+          <div className="space-y-5 mb-5">
+            {/* Momentum & Breadth — SPX trajectory plus % of index above
+                key DMAs. Tells you whether a move is broad or narrow. */}
+            <div>
+              <div className="mb-2 text-[11px] font-bold uppercase tracking-wider text-slate-500">
+                Momentum &amp; Breadth
+              </div>
+              <div className="grid gap-3 grid-cols-2 md:grid-cols-3 lg:grid-cols-5">
+                <ForwardTile label="S&P 500 YTD" point={activeForward.spxYtd} unit="%" />
+                <ForwardTile label="S&P 500 Week" point={activeForward.spxWeek} unit="%" />
+                <ForwardTile label="S&P >200DMA (wk)" point={activeForward.breadth200Wk} unit="%" deltaUnit="pp" deltaPeriod="wk/wk" />
+                <ForwardTile label="S&P >200DMA (mo)" point={activeForward.breadth200Mo} unit="%" deltaUnit="pp" deltaPeriod="mo/mo" />
+                <ForwardTile label="S&P >50DMA (wk)" point={activeForward.breadth50Wk} unit="%" deltaUnit="pp" deltaPeriod="wk/wk" />
+              </div>
+            </div>
+
+            {/* Valuation — SPY multiples and implied growth. Where
+                the tape is priced relative to earnings. */}
+            <div>
+              <div className="mb-2 text-[11px] font-bold uppercase tracking-wider text-slate-500">
+                Valuation
+              </div>
+              <div className="grid gap-3 grid-cols-2 md:grid-cols-3 lg:grid-cols-4">
+                <ForwardTile label="SPY Forward P/E" point={activeForward.spyForwardPE} />
+                <ForwardTile label="SPY Trailing P/E" point={activeForward.spyTrailingPE} />
+                <ForwardTile label="Implied 1Y EPS Growth (P/E)" point={activeForward.impliedEpsGrowth} unit="%" />
+                <ForwardTile label="Est 3-5Y EPS Growth" point={activeForward.eps35Growth} unit="%" />
+              </div>
+            </div>
+
+            {/* Rates & Curve — Treasury yields and two curve measures.
+                Drives discount-rate + growth expectations. */}
+            <div>
+              <div className="mb-2 text-[11px] font-bold uppercase tracking-wider text-slate-500">
+                Rates &amp; Curve
+              </div>
+              <div className="grid gap-3 grid-cols-2 md:grid-cols-3 lg:grid-cols-5">
+                <ForwardTile label="10Y Treasury" point={activeForward.yield10y} unit="%" deltaUnit="raw" />
+                <ForwardTile label="2Y Treasury" point={activeForward.yield2y} unit="%" deltaUnit="raw" />
+                <ForwardTile label="3M T-Bill" point={activeForward.yield3m} unit="%" deltaUnit="raw" />
+                <ForwardTile label="10Y-2Y Curve" point={activeForward.curve10y2y} unit="bps" />
+                <ForwardTile label="10Y-3M Curve" point={activeForward.curve10y3m} unit="bps" />
+              </div>
+            </div>
+
+            {/* Risk & Volatility — credit spreads + vol surface.
+                First place stress shows up before it hits price. */}
+            <div>
+              <div className="mb-2 text-[11px] font-bold uppercase tracking-wider text-slate-500">
+                Risk &amp; Volatility
+              </div>
+              <div className="grid gap-3 grid-cols-2 md:grid-cols-3 lg:grid-cols-4">
+                <ForwardTile label="HY OAS Trend" point={activeForward.hyOasTrend} unit="bps" deltaUnit="bps" invertDeltaColor />
+                <ForwardTile label="IG OAS Trend" point={activeForward.igOasTrend} unit="bps" deltaUnit="bps" invertDeltaColor />
+                <ForwardTile label="VIX (wk/wk)" point={activeForward.vixWeek} deltaUnit="pct" invertDeltaColor />
+                <ForwardTile label="MOVE (wk/wk)" point={activeForward.moveWeek} deltaUnit="pct" invertDeltaColor />
+              </div>
+            </div>
           </div>
         )}
 
