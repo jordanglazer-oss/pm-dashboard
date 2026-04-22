@@ -11,7 +11,18 @@ import { UNIVERSE_LABELS } from "@/app/lib/universes";
 
 // ── Signal helpers (shared) ──
 
-type FilterKey = "trend" | "rsi" | "macd" | "ichimoku" | "volume" | "week52";
+type FilterKey =
+  | "trend"
+  | "rsi"
+  | "macd"
+  | "ichimoku"
+  | "volume"
+  | "week52"
+  | "ath"
+  | "weeklyMacd"
+  | "monthlyMacd"
+  | "multiTfRsi"
+  | "cloudEdge";
 type FilterOption = "all" | "bullish" | "bearish" | "neutral";
 
 const FILTER_LABELS: Record<FilterKey, string> = {
@@ -21,6 +32,16 @@ const FILTER_LABELS: Record<FilterKey, string> = {
   ichimoku: "Ichimoku",
   volume: "Volume",
   week52: "52-Week Position",
+  ath: "% From ATH",
+  weeklyMacd: "Weekly MACD",
+  monthlyMacd: "Monthly MACD",
+  multiTfRsi: "RSI Confluence",
+  cloudEdge: "Cloud-Edge Dist.",
+};
+
+const ALL_FILTERS_CLEARED: Record<FilterKey, FilterOption> = {
+  trend: "all", rsi: "all", macd: "all", ichimoku: "all", volume: "all", week52: "all",
+  ath: "all", weeklyMacd: "all", monthlyMacd: "all", multiTfRsi: "all", cloudEdge: "all",
 };
 
 function getTrendSignal(t: TechnicalIndicators): "bullish" | "bearish" | "neutral" {
@@ -59,6 +80,69 @@ function getWeek52Signal(t: TechnicalIndicators): "bullish" | "bearish" | "neutr
   if (t.week52Position <= 0.3) return "bearish";
   return "neutral";
 }
+
+// ── Newton-toolkit filter helpers ──
+// Any indicator missing from the cached blob (older scans) returns "neutral"
+// so the filter behaves identically to pre-migration data.
+
+function getAthSignal(t: TechnicalIndicators): "bullish" | "bearish" | "neutral" {
+  const pct = t.distanceFromATH?.pct;
+  if (pct == null) return "neutral";
+  if (pct >= -5) return "bullish";       // within 5% of ATH — momentum leader
+  if (pct <= -20) return "bearish";      // deeply below ATH — broken trend
+  return "neutral";
+}
+
+function getWeeklyMacdSignal(t: TechnicalIndicators): "bullish" | "bearish" | "neutral" {
+  const sig = t.weeklyMacd?.signal;
+  if (!sig) return "neutral";
+  return sig; // "bullish" | "bearish"
+}
+
+function getMonthlyMacdSignal(t: TechnicalIndicators): "bullish" | "bearish" | "neutral" {
+  const sig = t.monthlyMacd?.signal;
+  if (!sig) return "neutral";
+  return sig;
+}
+
+/**
+ * Multi-timeframe RSI confluence: bullish if daily + weekly + monthly RSI
+ * are ALL above 50; bearish if ALL below 50; neutral otherwise (mixed
+ * or missing data).
+ */
+function getMultiTfRsiSignal(t: TechnicalIndicators): "bullish" | "bearish" | "neutral" {
+  const { weeklyRsi, monthlyRsi, rsi14 } = t;
+  if (weeklyRsi == null || monthlyRsi == null) return "neutral";
+  if (rsi14 > 50 && weeklyRsi > 50 && monthlyRsi > 50) return "bullish";
+  if (rsi14 < 50 && weeklyRsi < 50 && monthlyRsi < 50) return "bearish";
+  return "neutral";
+}
+
+/**
+ * Cloud-edge distance: bullish if price well above cloud (>3%), bearish
+ * if well below (<-3%), neutral if within 3% of cloud edges or inside.
+ */
+function getCloudEdgeSignal(t: TechnicalIndicators): "bullish" | "bearish" | "neutral" {
+  const e = t.distanceFromCloudEdge;
+  if (!e) return "neutral";
+  if (e.position === "above" && e.pct > 3) return "bullish";
+  if (e.position === "below" && e.pct < -3) return "bearish";
+  return "neutral";
+}
+
+const FILTER_ACCESSORS: Record<FilterKey, (t: TechnicalIndicators) => "bullish" | "bearish" | "neutral"> = {
+  trend: getTrendSignal,
+  rsi: getRsiSignal,
+  macd: getMacdSignal,
+  ichimoku: getIchimokuSignal,
+  volume: getVolumeSignal,
+  week52: getWeek52Signal,
+  ath: getAthSignal,
+  weeklyMacd: getWeeklyMacdSignal,
+  monthlyMacd: getMonthlyMacdSignal,
+  multiTfRsi: getMultiTfRsiSignal,
+  cloudEdge: getCloudEdgeSignal,
+};
 
 function compositeTechnicalScore(t: TechnicalIndicators): { bullish: number; bearish: number; neutral: number; net: number } {
   const signals = [getTrendSignal(t), getRsiSignal(t), getMacdSignal(t), getIchimokuSignal(t), getVolumeSignal(t), getWeek52Signal(t)];
@@ -144,9 +228,7 @@ export function TechnicalScreener({ stocks, onAddToWatchlist }: Props) {
   // ── Portfolio tab state ──
   const [query, setQuery] = useState("");
   const [bucketFilter, setBucketFilter] = useState<"All" | "Portfolio" | "Watchlist" | "Funds & ETFs">("All");
-  const [filters, setFilters] = useState<Record<FilterKey, FilterOption>>({
-    trend: "all", rsi: "all", macd: "all", ichimoku: "all", volume: "all", week52: "all",
-  });
+  const [filters, setFilters] = useState<Record<FilterKey, FilterOption>>({ ...ALL_FILTERS_CLEARED });
   const [sortKey, setSortKey] = useState<SortKey>("composite");
   const [sortDir, setSortDir] = useState<SortDir>("desc");
 
@@ -158,9 +240,7 @@ export function TechnicalScreener({ stocks, onAddToWatchlist }: Props) {
   const [scanResults, setScanResults] = useState<ScanResult[]>((scannerData?.results as ScanResult[]) || []);
   const [scanMeta, setScanMeta] = useState<{ total: number; found: number; scannedAt: string; universe: string; minScore: number } | null>(scannerData?.meta || null);
   const [scanQuery, setScanQuery] = useState("");
-  const [scanFilters, setScanFilters] = useState<Record<FilterKey, FilterOption>>({
-    trend: "all", rsi: "all", macd: "all", ichimoku: "all", volume: "all", week52: "all",
-  });
+  const [scanFilters, setScanFilters] = useState<Record<FilterKey, FilterOption>>({ ...ALL_FILTERS_CLEARED });
   const [scanSortKey, setScanSortKey] = useState<"improving" | "momentum" | "ticker" | "rsi" | "composite">("improving");
   const [scanSortDir, setScanSortDir] = useState<SortDir>("desc");
   const [addedTickers, setAddedTickers] = useState<Set<string>>(new Set());
@@ -233,12 +313,10 @@ export function TechnicalScreener({ stocks, onAddToWatchlist }: Props) {
     }
     result = result.filter((s) => {
       const t = s.technicals!;
-      if (filters.trend !== "all" && getTrendSignal(t) !== filters.trend) return false;
-      if (filters.rsi !== "all" && getRsiSignal(t) !== filters.rsi) return false;
-      if (filters.macd !== "all" && getMacdSignal(t) !== filters.macd) return false;
-      if (filters.ichimoku !== "all" && getIchimokuSignal(t) !== filters.ichimoku) return false;
-      if (filters.volume !== "all" && getVolumeSignal(t) !== filters.volume) return false;
-      if (filters.week52 !== "all" && getWeek52Signal(t) !== filters.week52) return false;
+      for (const key of Object.keys(filters) as FilterKey[]) {
+        const want = filters[key];
+        if (want !== "all" && FILTER_ACCESSORS[key](t) !== want) return false;
+      }
       return true;
     });
     result = [...result].sort((a, b) => {
@@ -323,12 +401,10 @@ export function TechnicalScreener({ stocks, onAddToWatchlist }: Props) {
     // Apply signal filters
     results = results.filter((r) => {
       const t = r.technicals;
-      if (scanFilters.trend !== "all" && getTrendSignal(t) !== scanFilters.trend) return false;
-      if (scanFilters.rsi !== "all" && getRsiSignal(t) !== scanFilters.rsi) return false;
-      if (scanFilters.macd !== "all" && getMacdSignal(t) !== scanFilters.macd) return false;
-      if (scanFilters.ichimoku !== "all" && getIchimokuSignal(t) !== scanFilters.ichimoku) return false;
-      if (scanFilters.volume !== "all" && getVolumeSignal(t) !== scanFilters.volume) return false;
-      if (scanFilters.week52 !== "all" && getWeek52Signal(t) !== scanFilters.week52) return false;
+      for (const key of Object.keys(scanFilters) as FilterKey[]) {
+        const want = scanFilters[key];
+        if (want !== "all" && FILTER_ACCESSORS[key](t) !== want) return false;
+      }
       return true;
     });
     return [...results].sort((a, b) => {
@@ -433,7 +509,7 @@ export function TechnicalScreener({ stocks, onAddToWatchlist }: Props) {
                 </select>
               ))}
               {activeFilterCount > 0 && (
-                <button onClick={() => setFilters({ trend: "all", rsi: "all", macd: "all", ichimoku: "all", volume: "all", week52: "all" })}
+                <button onClick={() => setFilters({ ...ALL_FILTERS_CLEARED })}
                   className="rounded-xl border border-slate-200 px-3 py-1.5 text-sm text-slate-500 hover:bg-slate-50 transition-colors">
                   Clear filters ({activeFilterCount})
                 </button>
@@ -567,7 +643,7 @@ export function TechnicalScreener({ stocks, onAddToWatchlist }: Props) {
                   </select>
                 ))}
                 {activeScanFilterCount > 0 && (
-                  <button onClick={() => setScanFilters({ trend: "all", rsi: "all", macd: "all", ichimoku: "all", volume: "all", week52: "all" })}
+                  <button onClick={() => setScanFilters({ ...ALL_FILTERS_CLEARED })}
                     className="rounded-xl border border-slate-200 px-3 py-1.5 text-sm text-slate-500 hover:bg-slate-50 transition-colors">
                     Clear filters ({activeScanFilterCount})
                   </button>

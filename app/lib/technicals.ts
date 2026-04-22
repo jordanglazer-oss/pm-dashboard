@@ -68,6 +68,44 @@ export type TechnicalIndicators = {
     overallSignal: "strong_bullish" | "bullish" | "neutral" | "bearish" | "strong_bearish";
     signalSummary: string;   // Human-readable summary
   };
+
+  // ── Higher-timeframe & Newton-toolkit extensions (all optional for
+  // backward compatibility with blobs cached before these were added) ──
+
+  /** Weekly MACD on weekly closes (resampled from daily). */
+  weeklyMacd?: {
+    macdLine: number;
+    signalLine: number;
+    histogram: number;
+    signal: "bullish" | "bearish";
+  };
+  /** Monthly MACD on monthly closes (resampled from daily). */
+  monthlyMacd?: {
+    macdLine: number;
+    signalLine: number;
+    histogram: number;
+    signal: "bullish" | "bearish";
+  };
+  /** RSI(14) computed on weekly closes. */
+  weeklyRsi?: number;
+  /** RSI(14) computed on monthly closes. */
+  monthlyRsi?: number;
+  /**
+   * Distance from all-time high in the available bar history.
+   * `pct` is a negative or zero number (0 = at ATH, -12.3 = 12.3% below).
+   */
+  distanceFromATH?: { pct: number; daysAgo: number; athPrice: number };
+  /**
+   * Distance from the nearest Ichimoku cloud edge, in % of current price.
+   * Positive = price is above cloud top by that %. Negative = below cloud bottom.
+   * Zero = inside the cloud.
+   */
+  distanceFromCloudEdge?: { pct: number; position: "above" | "below" | "inside" };
+  /** MACD divergence detection on daily bars vs recent MACD history. */
+  macdDivergence?: {
+    type: "bullish" | "bearish" | "none";
+    detail: string;
+  };
 };
 
 // ── Risk alert types ──
@@ -333,6 +371,159 @@ function computeIchimoku(
   };
 }
 
+// ── Resampling helpers ──
+//
+// Daily → weekly (ISO-week, Monday-anchored) or monthly (calendar month).
+// Aggregate OHLCV: first bar's open, max high, min low, last close,
+// summed volume. Bars with non-finite prices are skipped.
+//
+// Used to feed computeRSI / computeMACD on higher timeframes without
+// double-fetching from Yahoo — we already have daily bars for every
+// scored stock.
+
+export function resampleToWeekly(bars: readonly OHLCVBar[]): OHLCVBar[] {
+  if (!bars.length) return [];
+  const byWeek = new Map<string, OHLCVBar>();
+  for (const b of bars) {
+    if (!isFinite(b.close) || b.close <= 0) continue;
+    const d = new Date(b.date);
+    if (!isFinite(d.getTime())) continue;
+    const dayIdx = d.getUTCDay() || 7; // Sunday = 7
+    const monday = new Date(Date.UTC(d.getUTCFullYear(), d.getUTCMonth(), d.getUTCDate() - (dayIdx - 1)));
+    const key = monday.toISOString().slice(0, 10);
+    const ex = byWeek.get(key);
+    if (!ex) {
+      byWeek.set(key, { date: key, open: b.open, high: b.high, low: b.low, close: b.close, volume: b.volume });
+    } else {
+      ex.high = Math.max(ex.high, b.high);
+      ex.low = Math.min(ex.low, b.low);
+      ex.close = b.close;
+      ex.volume += b.volume;
+    }
+  }
+  return [...byWeek.values()].sort((a, b) => a.date.localeCompare(b.date));
+}
+
+export function resampleToMonthly(bars: readonly OHLCVBar[]): OHLCVBar[] {
+  if (!bars.length) return [];
+  const byMonth = new Map<string, OHLCVBar>();
+  for (const b of bars) {
+    if (!isFinite(b.close) || b.close <= 0) continue;
+    const d = new Date(b.date);
+    if (!isFinite(d.getTime())) continue;
+    const key = `${d.getUTCFullYear()}-${String(d.getUTCMonth() + 1).padStart(2, "0")}`;
+    const ex = byMonth.get(key);
+    if (!ex) {
+      byMonth.set(key, { date: `${key}-01`, open: b.open, high: b.high, low: b.low, close: b.close, volume: b.volume });
+    } else {
+      ex.high = Math.max(ex.high, b.high);
+      ex.low = Math.min(ex.low, b.low);
+      ex.close = b.close;
+      ex.volume += b.volume;
+    }
+  }
+  return [...byMonth.values()].sort((a, b) => a.date.localeCompare(b.date));
+}
+
+/**
+ * Distance from all-time high in the provided bar history. Returns null
+ * when there's no usable data. `pct` is <= 0: 0 means "at the ATH",
+ * -12.3 means 12.3% below ATH.
+ */
+export function computeDistanceFromATH(bars: readonly OHLCVBar[]): { pct: number; daysAgo: number; athPrice: number } | null {
+  if (!bars.length) return null;
+  let athIdx = -1;
+  let athPrice = -Infinity;
+  for (let i = 0; i < bars.length; i++) {
+    const h = bars[i].high;
+    if (isFinite(h) && h > athPrice) {
+      athPrice = h;
+      athIdx = i;
+    }
+  }
+  if (athIdx < 0 || !isFinite(athPrice) || athPrice <= 0) return null;
+  const last = bars[bars.length - 1].close;
+  if (!isFinite(last) || last <= 0) return null;
+  const pct = ((last - athPrice) / athPrice) * 100;
+  return { pct, daysAgo: bars.length - 1 - athIdx, athPrice };
+}
+
+/**
+ * Signed distance from the nearest Ichimoku cloud edge as a % of the
+ * current price.
+ *   - Price above cloud: +N% (distance above the cloud top).
+ *   - Price below cloud: -N% (distance below the cloud bottom).
+ *   - Price inside cloud: 0%.
+ */
+export function computeDistanceFromCloudEdge(
+  price: number,
+  cloudTop: number,
+  cloudBottom: number
+): { pct: number; position: "above" | "below" | "inside" } | null {
+  if (!isFinite(price) || price <= 0 || !isFinite(cloudTop) || !isFinite(cloudBottom)) return null;
+  if (price > cloudTop) return { pct: ((price - cloudTop) / price) * 100, position: "above" };
+  if (price < cloudBottom) return { pct: ((price - cloudBottom) / price) * 100, position: "below" };
+  return { pct: 0, position: "inside" };
+}
+
+/**
+ * MACD divergence detection over roughly the last N bars of MACD history.
+ *
+ *   - Bullish divergence: price prints a LOWER low but MACD prints a
+ *     HIGHER low (momentum diverging positively from price).
+ *   - Bearish divergence: price prints a HIGHER high but MACD prints a
+ *     LOWER high.
+ *
+ * We pick the two most-recent swing extremes inside the lookback window
+ * and compare them. This is an approximation (proper divergence uses
+ * confirmed pivots) but catches the same cases Newton flags on charts.
+ */
+export function computeMacdDivergence(
+  bars: readonly OHLCVBar[],
+  macdHistory: readonly number[],
+  lookback: number = 40
+): { type: "bullish" | "bearish" | "none"; detail: string } {
+  if (bars.length < lookback || macdHistory.length < lookback) {
+    return { type: "none", detail: "Insufficient history for divergence check" };
+  }
+  const n = bars.length;
+  const m = macdHistory.length;
+  const slice = bars.slice(n - lookback);
+  const macdSlice = macdHistory.slice(m - lookback);
+
+  // Split into two halves: older vs newer. Compare price low/high and
+  // macd low/high in each half.
+  const half = Math.floor(lookback / 2);
+  let oldLowIdx = 0, oldHighIdx = 0, newLowIdx = half, newHighIdx = half;
+  for (let i = 0; i < half; i++) {
+    if (slice[i].low < slice[oldLowIdx].low) oldLowIdx = i;
+    if (slice[i].high > slice[oldHighIdx].high) oldHighIdx = i;
+  }
+  for (let i = half; i < lookback; i++) {
+    if (slice[i].low < slice[newLowIdx].low) newLowIdx = i;
+    if (slice[i].high > slice[newHighIdx].high) newHighIdx = i;
+  }
+
+  const priceLowerLow = slice[newLowIdx].low < slice[oldLowIdx].low;
+  const macdHigherLow = macdSlice[newLowIdx] > macdSlice[oldLowIdx];
+  const priceHigherHigh = slice[newHighIdx].high > slice[oldHighIdx].high;
+  const macdLowerHigh = macdSlice[newHighIdx] < macdSlice[oldHighIdx];
+
+  // Require the newer swing to be in the most recent ~15 bars so we
+  // don't flag ancient divergences that already played out.
+  const recentWindow = Math.min(15, lookback);
+  const newLowRecent = newLowIdx >= lookback - recentWindow;
+  const newHighRecent = newHighIdx >= lookback - recentWindow;
+
+  if (priceLowerLow && macdHigherLow && newLowRecent) {
+    return { type: "bullish", detail: `Price made lower low; MACD made higher low — bullish divergence` };
+  }
+  if (priceHigherHigh && macdLowerHigh && newHighRecent) {
+    return { type: "bearish", detail: `Price made higher high; MACD made lower high — bearish divergence` };
+  }
+  return { type: "none", detail: "No divergence detected in recent swings" };
+}
+
 // ── Master computation function ──
 
 export function computeTechnicals(bars: OHLCVBar[]): TechnicalIndicators | null {
@@ -438,6 +629,19 @@ export function computeTechnicals(bars: OHLCVBar[]): TechnicalIndicators | null 
     ? ((currentPrice - closes[closes.length - 21]) / closes[closes.length - 21]) * 100
     : 0;
 
+  const ichimokuResolved = computeIchimoku(closes, highs, lows) ?? {
+    tenkanSen: 0, kijunSen: 0, senkouSpanA: 0, senkouSpanB: 0,
+    cloudTop: 0, cloudBottom: 0, chikouSpan: 0, chikouVsPrice: 0,
+    priceVsCloud: "inside" as const, tkCross: "neutral" as const, tkCrossRecent: false,
+    cloudTrend: "bullish" as const, chikouSignal: "neutral" as const,
+    cloudThickness: 0, overallSignal: "neutral" as const, signalSummary: "Insufficient data for Ichimoku",
+  };
+  const distanceFromCloudEdge = computeDistanceFromCloudEdge(
+    currentPrice,
+    ichimokuResolved.cloudTop,
+    ichimokuResolved.cloudBottom,
+  ) ?? undefined;
+
   return {
     sma50,
     sma200,
@@ -461,14 +665,44 @@ export function computeTechnicals(bars: OHLCVBar[]): TechnicalIndicators | null 
     priceChange5d,
     priceChange20d,
 
+    // Higher-timeframe MACD / RSI (resample in place from daily bars).
+    // Computed opportunistically: if there aren't enough weekly/monthly
+    // bars for a meaningful read, leave the field undefined.
+    ...(() => {
+      const weekly = resampleToWeekly(bars);
+      const monthly = resampleToMonthly(bars);
+      const wClose = weekly.map((b) => b.close);
+      const mClose = monthly.map((b) => b.close);
+      const extras: Partial<TechnicalIndicators> = {};
+      if (wClose.length >= 35) {
+        const wm = computeMACD(wClose);
+        extras.weeklyMacd = {
+          macdLine: wm.macdLine,
+          signalLine: wm.signalLine,
+          histogram: wm.histogram,
+          signal: wm.macdLine >= wm.signalLine ? "bullish" : "bearish",
+        };
+        extras.weeklyRsi = computeRSI(wClose, 14);
+      }
+      if (mClose.length >= 35) {
+        const mm = computeMACD(mClose);
+        extras.monthlyMacd = {
+          macdLine: mm.macdLine,
+          signalLine: mm.signalLine,
+          histogram: mm.histogram,
+          signal: mm.macdLine >= mm.signalLine ? "bullish" : "bearish",
+        };
+        extras.monthlyRsi = computeRSI(mClose, 14);
+      }
+      const ath = computeDistanceFromATH(bars);
+      if (ath) extras.distanceFromATH = ath;
+      extras.macdDivergence = computeMacdDivergence(bars, macd.macdHistory);
+      return extras;
+    })(),
+    distanceFromCloudEdge,
+
     // Ichimoku Cloud
-    ichimoku: computeIchimoku(closes, highs, lows) ?? {
-      tenkanSen: 0, kijunSen: 0, senkouSpanA: 0, senkouSpanB: 0,
-      cloudTop: 0, cloudBottom: 0, chikouSpan: 0, chikouVsPrice: 0,
-      priceVsCloud: "inside" as const, tkCross: "neutral" as const, tkCrossRecent: false,
-      cloudTrend: "bullish" as const, chikouSignal: "neutral" as const,
-      cloudThickness: 0, overallSignal: "neutral" as const, signalSummary: "Insufficient data for Ichimoku",
-    },
+    ichimoku: ichimokuResolved,
   };
 }
 
