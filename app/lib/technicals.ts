@@ -764,16 +764,23 @@ export function computeRiskAlert(
     signals.push({ name: "Ichimoku Cloud", status: "ok", detail: ichi.signalSummary });
   }
 
-  // 7. Short Interest (from healthData)
-  if (healthData?.shortPercentOfFloat != null) {
-    if (healthData.shortPercentOfFloat > 10) {
-      signals.push({ name: "Short Interest", status: "danger", detail: `Short interest at ${healthData.shortPercentOfFloat.toFixed(1)}% of float — elevated bearish positioning` });
-    } else if (healthData.shortPercentOfFloat > 5) {
-      signals.push({ name: "Short Interest", status: "caution", detail: `Short interest at ${healthData.shortPercentOfFloat.toFixed(1)}% of float — moderate` });
-    } else {
-      signals.push({ name: "Short Interest", status: "ok", detail: `Short interest at ${healthData.shortPercentOfFloat.toFixed(1)}% of float — low` });
-    }
+  // 6. MACD Divergence — flags early reversal setups that the raw MACD
+  // signal misses (price keeps making new lows/highs but momentum doesn't
+  // confirm). Bullish divergence on an oversold stock is a setup signal,
+  // not a warning — so it comes through as "ok". Bearish divergence is
+  // the real risk flag here.
+  const div = technicals.macdDivergence;
+  if (div?.type === "bearish") {
+    signals.push({ name: "MACD Divergence", status: "danger", detail: div.detail });
+  } else if (div?.type === "bullish") {
+    signals.push({ name: "MACD Divergence", status: "ok", detail: div.detail });
+  } else {
+    signals.push({ name: "MACD Divergence", status: "ok", detail: div?.detail ?? "No divergence detected" });
   }
+
+  // Short Interest intentionally excluded from risk alerts — high short
+  // interest isn't always bearish (can fuel squeezes). Reported in the
+  // Stock Health Monitor as informational-only.
 
   // Valuation (PEG) intentionally excluded from risk alerts — tracked in Stock Health Monitor only
 

@@ -2,6 +2,7 @@
 
 import React from "react";
 import type { HealthData } from "@/app/lib/types";
+import type { TechnicalIndicators } from "@/app/lib/technicals";
 
 // ── Helpers ──
 
@@ -104,8 +105,15 @@ function CategoryCard({ config, children }: { config: CategoryConfig; children: 
 
 // ── Main component ──
 
-export default function StockHealthMonitor({ healthData }: { healthData: HealthData }) {
+export default function StockHealthMonitor({
+  healthData,
+  technicals,
+}: {
+  healthData: HealthData;
+  technicals?: TechnicalIndicators;
+}) {
   const price = healthData.currentPrice;
+  const athInfo = technicals?.distanceFromATH;
 
   // Price & Technical signals
   const fiftyDmaSignal = aboveBelow(price, healthData.fiftyDayAvg);
@@ -130,11 +138,9 @@ export default function StockHealthMonitor({ healthData }: { healthData: HealthD
     pegSignal = healthData.pegRatio < 1.5 ? "green" : healthData.pegRatio > 2.5 ? "red" : "neutral";
   }
 
-  // Short interest signal
-  let shortSignal: "green" | "red" | "neutral" = "neutral";
-  if (healthData.shortPercentOfFloat != null) {
-    shortSignal = healthData.shortPercentOfFloat > 10 ? "red" : "neutral";
-  }
+  // Short interest is informational-only (high short interest isn't
+  // always bearish — can fuel squeezes). Always neutral signal.
+  const shortSignal: "green" | "red" | "neutral" = "neutral";
 
   // FCF margin signal
   let fcfSignal: "green" | "red" | "neutral" = "neutral";
@@ -188,6 +194,17 @@ export default function StockHealthMonitor({ healthData }: { healthData: HealthD
             value={healthData.revenueGrowth != null ? fmt(healthData.revenueGrowth, 1, "%") : "\u2014"}
             signal={healthData.revenueGrowth != null ? (healthData.revenueGrowth > 0 ? "green" : "red") : "neutral"}
           />
+          {athInfo && (
+            <IndicatorRow
+              label="% From All-Time High"
+              value={
+                athInfo.pct >= -0.1
+                  ? `At ATH ($${athInfo.athPrice.toFixed(2)})`
+                  : `${athInfo.pct.toFixed(1)}% ($${athInfo.athPrice.toFixed(2)}, ${athInfo.daysAgo}d ago)`
+              }
+              signal={athInfo.pct >= -5 ? "green" : athInfo.pct <= -20 ? "red" : "neutral"}
+            />
+          )}
         </CategoryCard>
 
         {/* Fundamental Quality */}

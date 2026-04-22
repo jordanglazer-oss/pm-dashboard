@@ -10,6 +10,7 @@ import { groupTotal, isScoreable, normalizeSector } from "@/app/lib/scoring";
 import { SignalPill, ratingTone } from "@/app/components/SignalPill";
 import StockHealthMonitor from "@/app/components/StockHealthMonitor";
 import RiskAlertPanel from "@/app/components/RiskAlertPanel";
+import RatioVsSpxSparkline from "@/app/components/RatioVsSpxSparkline";
 import StockChart from "@/app/components/StockChart";
 
 // ── Helpers ──
@@ -1621,13 +1622,18 @@ export default function StockDetailPage() {
             </div>
           </div>}
 
+          {/* Relative strength vs SPY — informational sparkline */}
+          <RatioVsSpxSparkline ticker={stock.ticker} className="mt-6" />
+
           {/* Risk Alert Panel */}
           {stock.riskAlert && stock.technicals && (
             <RiskAlertPanel riskAlert={stock.riskAlert} technicals={stock.technicals} />
           )}
 
           {/* Stock Health Monitor */}
-          {stock.healthData && <StockHealthMonitor healthData={stock.healthData} />}
+          {stock.healthData && (
+            <StockHealthMonitor healthData={stock.healthData} technicals={stock.technicals} />
+          )}
         </div>
       </div>
     </main>
