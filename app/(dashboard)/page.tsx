@@ -3,6 +3,7 @@
 import React, { useState } from "react";
 import { useStocks } from "@/app/lib/StockContext";
 import { PortfolioOverview } from "@/app/components/PortfolioOverview";
+import { RegimeStrip } from "@/app/components/RegimeStrip";
 import { regimeMultiplier, isOffensiveSector, normalizeSector } from "@/app/lib/scoring";
 import type { Stock, ScoreKey, InstrumentType } from "@/app/lib/types";
 import { INSTRUMENT_LABELS } from "@/app/lib/types";
@@ -90,6 +91,13 @@ export default function DashboardPage() {
   return (
     <main className="min-h-screen bg-[#f4f5f7] px-4 py-6 text-slate-900 md:px-8 md:py-8 overflow-x-hidden">
       <div className="mx-auto max-w-7xl space-y-6">
+
+        {/* Deterministic regime pulse — sits above the manual regime
+            card so the PM gets the Yahoo-derived cross-asset read at a
+            glance before scanning the fundamentals below. Reads
+            /api/market-regime which is cached in pm:market-regime; the
+            strip silently hides on fetch failure. */}
+        <RegimeStrip />
 
         {/* ── Add Stock + Regime Banner ── */}
         <div className="grid gap-4 lg:grid-cols-2">
