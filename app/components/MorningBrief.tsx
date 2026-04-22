@@ -1436,7 +1436,7 @@ export function MorningBrief({
       <HedgingIndicator
         vix={activeForward?.vixWeek?.value ?? 20}
         termStructure={marketData.termStructure}
-        fearGreed={marketData.fearGreed}
+        fearGreed={activeForward?.fearGreed?.value ?? marketData.fearGreed}
         hedgingAnalysis={hedgingAnalysis}
       />
 
