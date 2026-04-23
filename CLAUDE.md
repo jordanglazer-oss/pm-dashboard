@@ -2,6 +2,10 @@
 
 This file provides guidance to Claude Code (claude.ai/code) when working with code in this repository.
 
+## Critical: Always Push After Committing
+
+The user does not review code locally — they only see issues after Vercel deploys a preview. **Every `git commit` must be immediately followed by a `git push`** so a preview build kicks off. Never leave a commit sitting in the local branch unpushed. If a series of small commits is being made, push at least once per logical unit (don't batch 5 commits and push at the end).
+
 ## Critical: Preserve Existing Functionality
 
 When making a change, it is vital that functionality is unaffected, unless the explicit goal of the prompt is to change a certain piece of functionality. The website must continue to function correctly regardless of any minor or major tweaks made. Before any non-trivial edit:
