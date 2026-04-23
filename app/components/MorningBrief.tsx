@@ -729,13 +729,29 @@ export function MorningBrief({
     setError("");
 
     try {
+      // Defensive: filter out any attachments whose dataUrl is malformed
+      // before sending. A single corrupted base64 payload (e.g. a canvas
+      // compression edge case) was surfacing as the opaque DOMException
+      // "The string did not match the expected pattern." from the Anthropic
+      // SDK — strip those client-side so the brief still generates.
+      const validAttachments = attachments.filter((a) => {
+        const m = a.dataUrl?.match(/^data:image\/[a-z]+;base64,([A-Za-z0-9+/=\s]+)$/);
+        if (!m) return false;
+        const data = m[1].replace(/\s/g, "");
+        return data.length > 0 && data.length % 4 === 0 && /^[A-Za-z0-9+/]+={0,2}$/.test(data);
+      });
+      const skipped = attachments.length - validAttachments.length;
+      if (skipped > 0) {
+        console.warn(`[brief] skipped ${skipped} attachment(s) with malformed dataUrl`);
+      }
+
       const res = await fetch("/api/morning-brief", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({
           marketData,
           holdings: stocks,
-          attachments: attachments.map((a) => ({
+          attachments: validAttachments.map((a) => ({
             section: a.section,
             label: a.label,
             dataUrl: a.dataUrl,
