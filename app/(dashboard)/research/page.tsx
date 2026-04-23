@@ -201,6 +201,7 @@ const ZERO_SCORES: Record<ScoreKey, number> = {
 export default function ResearchPage() {
   const [state, setState] = useState<ResearchState>(defaultResearch);
   const [loaded, setLoaded] = useState(false);
+  const [attachmentsSaveError, setAttachmentsSaveError] = useState<string | null>(null);
   const saveTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
   const { scoredStocks, addStock } = useStocks();
 
@@ -333,6 +334,40 @@ export default function ResearchPage() {
       .then(async (data) => {
         if (data.research) {
           let research = data.research as ResearchState;
+
+          // Hydrate attachment dataUrls from per-image Redis keys. Legacy
+          // entries that still carry an inline dataUrl are migrated into
+          // the /[id] store on first load so the research blob stays lean.
+          if (research.attachments && research.attachments.length > 0) {
+            const hydrated = await Promise.all(
+              research.attachments.map(async (a) => {
+                if (a.dataUrl) {
+                  // Legacy: migrate inline dataUrl into its own key.
+                  try {
+                    await fetch(`/api/kv/attachments/${a.id}`, {
+                      method: "PUT",
+                      headers: { "Content-Type": "application/json" },
+                      body: JSON.stringify({ dataUrl: a.dataUrl }),
+                    });
+                  } catch { /* best-effort */ }
+                  return a;
+                }
+                try {
+                  const res = await fetch(`/api/kv/attachments/${a.id}`);
+                  if (!res.ok) return null;
+                  const imgData = await res.json();
+                  return imgData.dataUrl ? { ...a, dataUrl: imgData.dataUrl } : null;
+                } catch {
+                  return null;
+                }
+              })
+            );
+            research = {
+              ...research,
+              attachments: hydrated.filter((x): x is BriefAttachment => x !== null),
+            };
+          }
+
           setState(research);
           fetchLivePrices(research);
 
@@ -385,10 +420,25 @@ export default function ResearchPage() {
     setState(next);
     if (saveTimer.current) clearTimeout(saveTimer.current);
     saveTimer.current = setTimeout(() => {
+      // Strip attachment dataUrls before persisting the research blob — the
+      // image payloads live in their own Redis keys (see /api/kv/attachments/[id]).
+      // Keeping dataUrls inline used to balloon the blob past write limits
+      // and silently drop the save, which is why screenshots vanished on
+      // refresh when many were attached.
+      const serializable: ResearchState = {
+        ...next,
+        attachments: (next.attachments || []).map((a) => ({
+          id: a.id,
+          label: a.label,
+          section: a.section,
+          addedAt: a.addedAt,
+          dataUrl: "", // placeholder; not read client-side
+        })),
+      };
       fetch("/api/kv/research", {
         method: "PUT",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ research: next }),
+        body: JSON.stringify({ research: serializable }),
       }).catch((e) => console.error("Failed to save research:", e));
     }, 800);
   }, []);
@@ -565,37 +615,41 @@ export default function ResearchPage() {
     save({ ...state, rbcCanadianFocus: (state.rbcCanadianFocus || []).filter((r) => r.ticker !== ticker) });
   };
 
-  /* Attachment helpers — use setState's functional form so concurrent
-     processFile calls (multi-file drop) each see the latest attachments
-     array instead of the stale closure snapshot. The debounced PUT fires
-     once with the final list. */
-  const addAttachment = (att: BriefAttachment) => {
-    setState((prev) => {
-      const next = { ...prev, attachments: [...(prev.attachments || []), att] };
-      if (saveTimer.current) clearTimeout(saveTimer.current);
-      saveTimer.current = setTimeout(() => {
-        fetch("/api/kv/research", {
-          method: "PUT",
-          headers: { "Content-Type": "application/json" },
-          body: JSON.stringify({ research: next }),
-        }).catch((e) => console.error("Failed to save research:", e));
-      }, 800);
-      return next;
-    });
+  /* Attachment helpers — image payloads are stored in separate Redis keys
+     via /api/kv/attachments/[id] so they never blow up the research blob.
+     Only the lightweight manifest (id/label/section/addedAt) rides on
+     `state.attachments`. addAttachment writes the image synchronously
+     before updating state, so a drop-then-refresh is safe. */
+  const addAttachment = async (att: BriefAttachment) => {
+    try {
+      const res = await fetch(`/api/kv/attachments/${att.id}`, {
+        method: "PUT",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ dataUrl: att.dataUrl }),
+      });
+      if (!res.ok) {
+        const msg = `Screenshot save failed (HTTP ${res.status}) for "${att.label}". ${
+          res.status === 413 ? "Image too large — try a smaller screenshot." : ""
+        }`.trim();
+        setAttachmentsSaveError(msg);
+        return;
+      }
+      setAttachmentsSaveError(null);
+      // Keep the dataUrl in local state for previews, but strip it on save
+      // (see research GET/PUT helpers below — the manifest lives inside
+      // the research blob without dataUrls).
+      save({ ...state, attachments: [...(state.attachments || []), att] });
+    } catch (e) {
+      setAttachmentsSaveError(`Screenshot save network error: ${e instanceof Error ? e.message : String(e)}`);
+    }
   };
-  const removeAttachment = (id: string) => {
-    setState((prev) => {
-      const next = { ...prev, attachments: (prev.attachments || []).filter((a) => a.id !== id) };
-      if (saveTimer.current) clearTimeout(saveTimer.current);
-      saveTimer.current = setTimeout(() => {
-        fetch("/api/kv/research", {
-          method: "PUT",
-          headers: { "Content-Type": "application/json" },
-          body: JSON.stringify({ research: next }),
-        }).catch((e) => console.error("Failed to save research:", e));
-      }, 800);
-      return next;
-    });
+  const removeAttachment = async (id: string) => {
+    save({ ...state, attachments: (state.attachments || []).filter((a) => a.id !== id) });
+    try {
+      await fetch(`/api/kv/attachments/${id}`, { method: "DELETE" });
+    } catch {
+      // Orphan key cleanup — non-fatal if it fails.
+    }
   };
 
   if (!loaded) return null;
@@ -607,6 +661,12 @@ export default function ResearchPage() {
           <h1 className="text-3xl font-semibold tracking-tight">Research Notes</h1>
           <p className="text-slate-500 mt-1">Track external research sources, ideas, and notes. All changes are saved and shared across the team.</p>
         </div>
+
+        {attachmentsSaveError && (
+          <div className="rounded-xl border border-amber-200 bg-amber-50 px-4 py-3 text-sm text-amber-800">
+            <strong>Screenshots not saved:</strong> {attachmentsSaveError}
+          </div>
+        )}
 
         {/* ── Newton's Upticks ── */}
         <section className="rounded-[24px] border border-slate-200 bg-white p-6 shadow-sm">

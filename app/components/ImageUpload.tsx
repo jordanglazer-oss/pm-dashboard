@@ -160,7 +160,10 @@ export function ImageUpload({ section, sectionLabel, attachments, onAdd, onRemov
         />
       )}
 
-      {/* Drop zone */}
+      {/* Drop zone + explicit Browse button. Both the drop zone background
+          and the button trigger the same multi-file picker, but the button
+          makes it obvious to users that they can cmd/ctrl-click to select
+          many files at once from Finder/Explorer. */}
       <div
         onDragOver={(e) => {
           e.preventDefault();
@@ -168,14 +171,25 @@ export function ImageUpload({ section, sectionLabel, attachments, onAdd, onRemov
         }}
         onDragLeave={() => setDragActive(false)}
         onDrop={handleDrop}
-        onClick={() => inputRef.current?.click()}
-        className={`flex items-center justify-center rounded-xl border-2 border-dashed px-4 py-3 text-sm cursor-pointer transition-colors ${
+        className={`flex items-center justify-center gap-3 rounded-xl border-2 border-dashed px-4 py-3 text-sm transition-colors ${
           dragActive
             ? "border-blue-400 bg-blue-50 text-blue-600"
             : "border-slate-200 bg-slate-50/50 text-slate-400 hover:border-slate-300 hover:text-slate-500"
         }`}
       >
-        <span>{dragActive ? "Drop image here" : "Drop screenshot or click to upload"}</span>
+        <span className="flex-1 text-center">
+          {dragActive ? "Drop images here" : "Drop screenshots here (multiple files OK)"}
+        </span>
+        <button
+          type="button"
+          onClick={(e) => {
+            e.stopPropagation();
+            inputRef.current?.click();
+          }}
+          className="rounded-lg bg-white border border-slate-300 px-3 py-1.5 text-xs font-semibold text-slate-700 hover:bg-slate-50 hover:border-slate-400 transition-colors shrink-0"
+        >
+          Browse files…
+        </button>
         <input
           ref={inputRef}
           type="file"

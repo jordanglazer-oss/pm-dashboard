@@ -556,53 +556,128 @@ export function MorningBrief({
   // unaffected.
   const [marketRegime, setMarketRegime] = useState<MarketRegimeData | null>(null);
 
-  // Attachments (screenshots for brief sections)
+  // Attachments (screenshots for brief sections). Storage is split:
+  //   - /api/kv/attachments           → manifest only (id/label/section/addedAt)
+  //   - /api/kv/attachments/[id]      → the per-image base64 dataUrl
+  // This keeps every individual Redis write small so we never hit the
+  // per-value or Next.js body size limits, which was silently dropping
+  // attachments across refreshes when many screenshots were attached.
   const [attachments, setAttachments] = useState<BriefAttachment[]>([]);
-  const attachSaveTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
+  const [attachmentsHydrated, setAttachmentsHydrated] = useState(false);
+  const [attachmentsSaveError, setAttachmentsSaveError] = useState<string | null>(null);
+  const manifestSaveTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
 
   // Lightbox state for the Fund Flows inline thumbnails (after brief
   // generation). The upload widgets have their own internal lightbox;
   // this separate state is only for the rendered-brief display.
   const [flowsLightboxId, setFlowsLightboxId] = useState<string | null>(null);
 
-  // Load attachments on mount
+  // Load manifest on mount, then fetch each image's dataUrl in parallel.
+  // Missing per-image keys (e.g. a legacy manifest entry without a backing
+  // image) are filtered out so the UI never shows a broken thumbnail.
   useEffect(() => {
-    fetch("/api/kv/attachments")
-      .then((r) => r.json())
-      .then((data) => { if (data.attachments) setAttachments(data.attachments); })
-      .catch(() => {});
+    let cancelled = false;
+    (async () => {
+      try {
+        const res = await fetch("/api/kv/attachments");
+        const data = await res.json();
+        const manifest: Omit<BriefAttachment, "dataUrl">[] = data.attachments || [];
+        const hydrated = await Promise.all(
+          manifest.map(async (m) => {
+            try {
+              const imgRes = await fetch(`/api/kv/attachments/${m.id}`);
+              if (!imgRes.ok) return null;
+              const imgData = await imgRes.json();
+              if (!imgData.dataUrl) return null;
+              return { ...m, dataUrl: imgData.dataUrl } as BriefAttachment;
+            } catch {
+              return null;
+            }
+          })
+        );
+        if (!cancelled) {
+          setAttachments(hydrated.filter((x): x is BriefAttachment => x !== null));
+        }
+      } catch {
+        // Silent — the upload widgets will still work for new additions.
+      } finally {
+        if (!cancelled) setAttachmentsHydrated(true);
+      }
+    })();
+    return () => { cancelled = true; };
   }, []);
 
-  // Debounced save that always writes the latest attachments array. Called
-  // via setAttachments' functional form so it sees the up-to-date list even
-  // when many files are dropped at once (fixes the stale-closure bug where
-  // a multi-file drop only persisted the last image).
-  const scheduleAttachSave = useCallback((next: BriefAttachment[]) => {
-    if (attachSaveTimer.current) clearTimeout(attachSaveTimer.current);
-    attachSaveTimer.current = setTimeout(() => {
-      fetch("/api/kv/attachments", {
+  // Debounced manifest save. Only writes the lightweight list (no dataUrls)
+  // — the per-image payloads are written synchronously in addAttachment.
+  useEffect(() => {
+    if (!attachmentsHydrated) return;
+    if (manifestSaveTimer.current) clearTimeout(manifestSaveTimer.current);
+    const snapshot = attachments.map((a) => ({
+      id: a.id,
+      label: a.label,
+      section: a.section,
+      addedAt: a.addedAt,
+    }));
+    manifestSaveTimer.current = setTimeout(async () => {
+      try {
+        const res = await fetch("/api/kv/attachments", {
+          method: "PUT",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ attachments: snapshot }),
+        });
+        if (!res.ok) {
+          const msg = `Manifest save failed (HTTP ${res.status}).`;
+          console.error(msg);
+          setAttachmentsSaveError(msg);
+        } else {
+          setAttachmentsSaveError(null);
+        }
+      } catch (e) {
+        const msg = `Manifest save network error: ${e instanceof Error ? e.message : String(e)}`;
+        console.error(msg);
+        setAttachmentsSaveError(msg);
+      }
+    }, 400);
+    return () => {
+      if (manifestSaveTimer.current) clearTimeout(manifestSaveTimer.current);
+    };
+  }, [attachments, attachmentsHydrated]);
+
+  // Adding persists the image immediately to its own Redis key, then updates
+  // state (which triggers the debounced manifest save above). This way the
+  // image is durable the moment it's dropped — even if the user refreshes
+  // the page seconds later, the per-image key is already written.
+  const addAttachment = useCallback(async (att: BriefAttachment) => {
+    try {
+      const res = await fetch(`/api/kv/attachments/${att.id}`, {
         method: "PUT",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ attachments: next }),
-      }).catch((e) => console.error("Failed to save attachments:", e));
-    }, 500);
+        body: JSON.stringify({ dataUrl: att.dataUrl }),
+      });
+      if (!res.ok) {
+        const msg = `Screenshot save failed (HTTP ${res.status}) for "${att.label}". ${
+          res.status === 413 ? "Image too large — try a smaller screenshot." : ""
+        }`.trim();
+        setAttachmentsSaveError(msg);
+        return; // don't add to state; the save failed
+      }
+      setAttachmentsSaveError(null);
+      setAttachments((prev) => [...prev, att]);
+    } catch (e) {
+      setAttachmentsSaveError(`Screenshot save network error: ${e instanceof Error ? e.message : String(e)}`);
+    }
   }, []);
 
-  const addAttachment = useCallback((att: BriefAttachment) => {
-    setAttachments((prev) => {
-      const next = [...prev, att];
-      scheduleAttachSave(next);
-      return next;
-    });
-  }, [scheduleAttachSave]);
-
-  const removeAttachment = useCallback((id: string) => {
-    setAttachments((prev) => {
-      const next = prev.filter((a) => a.id !== id);
-      scheduleAttachSave(next);
-      return next;
-    });
-  }, [scheduleAttachSave]);
+  const removeAttachment = useCallback(async (id: string) => {
+    // Remove from state optimistically; the /[id] DELETE can fail silently
+    // (Redis will orphan the key but the manifest no longer references it).
+    setAttachments((prev) => prev.filter((a) => a.id !== id));
+    try {
+      await fetch(`/api/kv/attachments/${id}`, { method: "DELETE" });
+    } catch {
+      // Intentionally ignored — orphan key cleanup is not user-visible.
+    }
+  }, []);
 
   // Auto-fetch live market data on mount:
   //   VIX, MOVE          — Yahoo ^VIX, ^MOVE
@@ -1095,6 +1170,12 @@ export function MorningBrief({
       {error && (
         <div className="rounded-xl border border-red-200 bg-red-50 px-4 py-3 text-sm text-red-600">
           {error}
+        </div>
+      )}
+
+      {attachmentsSaveError && (
+        <div className="rounded-xl border border-amber-200 bg-amber-50 px-4 py-3 text-sm text-amber-800">
+          <strong>Screenshots not saved:</strong> {attachmentsSaveError}
         </div>
       )}
 
