@@ -375,7 +375,24 @@ export type MorningBrief = {
   marketRegime?: string;
   regimeScore?: number; // Deterministic pre-classification score, -6 to +6
   regimeSignals?: string[]; // Drivers that produced the score
-  forwardView?: string; // Next 2-weeks forward-looking section
+  forwardView?: string; // Legacy single-paragraph forward view; kept for backward compat with old briefs
+  /**
+   * Three-horizon forward outlook. New as of Phase 3 — old briefs in
+   * pm:brief predate these and the UI must tolerate `undefined` (falls
+   * back to the legacy `forwardView` paragraph).
+   *
+   *   tacticalView   — 1-3M flow/vol/momentum read; what to do this month
+   *   cyclicalView   — 3-6M sector rotation + business cycle (ISM PMI)
+   *   structuralView — 6-12M trend overlay (SPX 10M MA, PMI direction)
+   *
+   * Each is 2-3 sentences, written to be readable in isolation but
+   * intentionally interlocking — tactical sets the near-term action,
+   * cyclical confirms or contests the rotation thesis, structural is
+   * the don't-fight-the-tape veto.
+   */
+  tacticalView?: string;
+  cyclicalView?: string;
+  structuralView?: string;
   forwardLooking?: ForwardLookingBundle; // Automated data powering Forward View
   bottomLine: string;
   compositeAnalysis: string;
