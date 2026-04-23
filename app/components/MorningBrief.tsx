@@ -573,8 +573,11 @@ export function MorningBrief({
       .catch(() => {});
   }, []);
 
-  const persistAttachments = useCallback((next: BriefAttachment[]) => {
-    setAttachments(next);
+  // Debounced save that always writes the latest attachments array. Called
+  // via setAttachments' functional form so it sees the up-to-date list even
+  // when many files are dropped at once (fixes the stale-closure bug where
+  // a multi-file drop only persisted the last image).
+  const scheduleAttachSave = useCallback((next: BriefAttachment[]) => {
     if (attachSaveTimer.current) clearTimeout(attachSaveTimer.current);
     attachSaveTimer.current = setTimeout(() => {
       fetch("/api/kv/attachments", {
@@ -586,12 +589,20 @@ export function MorningBrief({
   }, []);
 
   const addAttachment = useCallback((att: BriefAttachment) => {
-    persistAttachments([...attachments, att]);
-  }, [attachments, persistAttachments]);
+    setAttachments((prev) => {
+      const next = [...prev, att];
+      scheduleAttachSave(next);
+      return next;
+    });
+  }, [scheduleAttachSave]);
 
   const removeAttachment = useCallback((id: string) => {
-    persistAttachments(attachments.filter((a) => a.id !== id));
-  }, [attachments, persistAttachments]);
+    setAttachments((prev) => {
+      const next = prev.filter((a) => a.id !== id);
+      scheduleAttachSave(next);
+      return next;
+    });
+  }, [scheduleAttachSave]);
 
   // Auto-fetch live market data on mount:
   //   VIX, MOVE          — Yahoo ^VIX, ^MOVE
