@@ -389,13 +389,44 @@ function computeHedgeScore(vix: number, termStructure: string, fearGreed: number
 
 export async function POST(request: NextRequest) {
   try {
-    const { marketData, holdings, attachments } = await request.json();
+    const body = await request.json();
+    const { marketData, holdings } = body;
 
     if (!marketData) {
       return NextResponse.json(
         { error: "Market data is required" },
         { status: 400 }
       );
+    }
+
+    // Attachments may arrive two ways:
+    //   (a) Legacy: full `[{section, label, dataUrl}]` inline — heavy; kept
+    //       for backward compat but avoid on the client.
+    //   (b) Preferred: `attachmentRefs: [{id, section, label}]` — tiny POST
+    //       body; the server fetches each image's dataUrl from its per-image
+    //       Redis key. Fixes the "The string did not match the expected
+    //       pattern" DOMException thrown when the request body got too big
+    //       for the platform / fetch encoder.
+    let attachments: AttachmentInput[] = Array.isArray(body.attachments) ? body.attachments : [];
+    if (Array.isArray(body.attachmentRefs) && body.attachmentRefs.length > 0) {
+      try {
+        const redis = await getRedis();
+        const fetched = await Promise.all(
+          (body.attachmentRefs as { id: string; section: string; label: string }[]).map(async (ref) => {
+            try {
+              const dataUrl = await redis.get(`pm:attachment:${ref.id}`);
+              if (!dataUrl || typeof dataUrl !== "string") return null;
+              return { section: ref.section, label: ref.label, dataUrl } as AttachmentInput;
+            } catch {
+              return null;
+            }
+          })
+        );
+        attachments = fetched.filter((x): x is AttachmentInput => x !== null);
+      } catch (e) {
+        console.error("Failed to hydrate attachmentRefs from Redis:", e);
+        // Fall through with whatever was in body.attachments (possibly empty).
+      }
     }
 
     type HoldingInput = {
