@@ -1075,6 +1075,7 @@ export function MorningBrief({
               attachments={attachments}
               onAdd={addAttachment}
               onRemove={removeAttachment}
+              collapsibleThumbs
             />
           </div>
         </div>

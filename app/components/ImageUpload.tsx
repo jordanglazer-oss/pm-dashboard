@@ -16,6 +16,12 @@ type Props = {
   attachments: BriefAttachment[];
   onAdd: (attachment: BriefAttachment) => void;
   onRemove: (id: string) => void;
+  /** When true, the thumbnail grid is collapsed by default behind a
+   *  "Show N screenshots" toggle. Useful for sections that routinely
+   *  accumulate many images (e.g. JPM Flows) where a 3-row thumbnail grid
+   *  eats valuable vertical space on every page load. The drop zone and
+   *  Browse button remain visible so adding more is always one click away. */
+  collapsibleThumbs?: boolean;
 };
 
 /** Resize and compress an image to keep it under the size limit.
@@ -54,9 +60,13 @@ function compressImage(file: File, maxWidth = 1600, quality = 0.8): Promise<stri
   });
 }
 
-export function ImageUpload({ section, sectionLabel, attachments, onAdd, onRemove }: Props) {
+export function ImageUpload({ section, sectionLabel, attachments, onAdd, onRemove, collapsibleThumbs }: Props) {
   const [dragActive, setDragActive] = useState(false);
   const [previewId, setPreviewId] = useState<string | null>(null);
+  // Default to collapsed only when collapsibleThumbs is on AND there are
+  // already images to hide. A fresh empty section shouldn't render the toggle
+  // at all (handled below), and non-collapsible sections behave as before.
+  const [thumbsExpanded, setThumbsExpanded] = useState(!collapsibleThumbs);
   const inputRef = useRef<HTMLInputElement>(null);
 
   const sectionAttachments = attachments.filter((a) => a.section === section);
@@ -116,14 +126,27 @@ export function ImageUpload({ section, sectionLabel, attachments, onAdd, onRemov
         <span className="text-xs text-slate-400">
           ({sectionAttachments.length} image{sectionAttachments.length !== 1 ? "s" : ""})
         </span>
+        {/* Toggle only renders when collapsibleThumbs is on AND there are
+            attachments to show/hide. Non-collapsible sections never see this. */}
+        {collapsibleThumbs && sectionAttachments.length > 0 && (
+          <button
+            type="button"
+            onClick={() => setThumbsExpanded((v) => !v)}
+            className="ml-auto text-[11px] font-semibold text-blue-600 hover:text-blue-700 focus:outline-none focus:underline"
+            title={thumbsExpanded ? "Hide thumbnails" : "Show thumbnails"}
+          >
+            {thumbsExpanded ? "Hide ▲" : `Show ${sectionAttachments.length} ▼`}
+          </button>
+        )}
       </div>
 
       {/* Thumbnails — small, but with a generous click target. The X stays
           visible on touch devices (no hover) so it's always tappable, and
           appears on hover on desktop. Clicking the image opens a full-size
           lightbox instead of expanding inline (was eating too much vertical
-          space when many screenshots were attached). */}
-      {sectionAttachments.length > 0 && (
+          space when many screenshots were attached). When collapsibleThumbs is
+          set, the whole grid is hidden until the user toggles "Show". */}
+      {sectionAttachments.length > 0 && thumbsExpanded && (
         <div className="flex flex-wrap gap-2 mb-3">
           {sectionAttachments.map((att) => (
             <div key={att.id} className="group relative">
