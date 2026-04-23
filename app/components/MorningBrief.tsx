@@ -15,6 +15,7 @@ import { SentimentGauges } from "./SentimentGauges";
 import { HedgingIndicator } from "./HedgingIndicator";
 import { ImageUpload, LightboxModal, type BriefAttachment } from "./ImageUpload";
 import type { MarketRegimeData, RegimeDirection } from "@/app/lib/market-regime";
+import { HORIZONS } from "@/app/lib/horizons";
 
 /** Numeric input with an inline save indicator.
  *  Value only persists when the user clicks the save icon (or presses Enter).
@@ -329,6 +330,54 @@ function MarketRegimeStrip({ regime }: { regime: MarketRegimeData }) {
               <span className="opacity-70">· {s.detail}</span>
             </span>
           ))}
+        </div>
+      )}
+
+      {/* Horizon-projected composites (1-3M / 3-6M / 6-12M, weighted 50/30/20).
+          Renders only when the cached blob has the new `horizons` field; older
+          snapshots silently skip and the rest of the strip is unaffected. */}
+      {regime.horizons && (
+        <div className="flex flex-wrap items-center gap-1.5 mb-3 pt-2 border-t border-slate-100">
+          <span className="text-[10px] font-bold uppercase tracking-wider text-slate-500 mr-1">By Horizon</span>
+          {HORIZONS.map((h) => {
+            const b = regime.horizons!.byHorizon[h.id];
+            const empty = b.total === 0;
+            const tone: "green" | "red" | "amber" = empty
+              ? "amber"
+              : b.label_ === "Risk-On" ? "green" : b.label_ === "Risk-Off" ? "red" : "amber";
+            return (
+              <span
+                key={h.id}
+                className={`inline-flex items-center gap-1.5 rounded-full border px-2.5 py-1 text-[11px] ${
+                  empty ? "border-slate-200 bg-slate-50 text-slate-400" : regimePillClasses(
+                    tone === "green" ? "risk-on" : tone === "red" ? "risk-off" : "neutral"
+                  )
+                }`}
+                title={
+                  empty
+                    ? `${h.description} · No signals available yet.`
+                    : `${h.description}\n\n${b.signals.map((s) => `• ${s.name}: ${s.detail}`).join("\n")}`
+                }
+              >
+                <span className="font-semibold">{h.shortLabel}</span>
+                <span className="opacity-70">·</span>
+                <span className="font-bold">{empty ? "—" : b.label_}</span>
+                {!empty && (
+                  <span className="font-mono opacity-70">{b.riskOn}-{b.riskOff}/{b.total}</span>
+                )}
+                <span className="opacity-50 text-[10px]">×{Math.round(h.weight * 100)}%</span>
+              </span>
+            );
+          })}
+          {isFinite(regime.horizons.weightedScore) && (
+            <span className="ml-auto text-[10px] text-slate-500">
+              Weighted: <span className="font-semibold text-slate-700">{regime.horizons.weightedLabel}</span>{" "}
+              <span className="font-mono opacity-70">
+                ({regime.horizons.weightedScore >= 0 ? "+" : ""}
+                {regime.horizons.weightedScore.toFixed(2)})
+              </span>
+            </span>
+          )}
         </div>
       )}
 
