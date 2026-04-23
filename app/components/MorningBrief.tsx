@@ -896,9 +896,9 @@ export function MorningBrief({
   return (
     <>
       {/* Editable Market & Sentiment Inputs */}
-      <section className="rounded-[30px] border border-slate-200 bg-white p-6 md:p-8 shadow-sm overflow-hidden">
-        <div className="flex items-center gap-3 mb-6 flex-wrap">
-          <h3 className="text-lg font-semibold text-slate-800">Daily Market Input</h3>
+      <section className="rounded-2xl border border-slate-200 bg-white p-4 md:p-5 shadow-sm overflow-hidden">
+        <div className="flex items-center gap-3 mb-4 flex-wrap">
+          <h3 className="text-base font-semibold text-slate-800">Daily Market Input</h3>
           {liveLoading && <span className="text-xs text-blue-500 animate-pulse">Fetching live data...</span>}
         </div>
 
@@ -1182,22 +1182,22 @@ export function MorningBrief({
       </header>
 
       {/* Bottom Line */}
-      <section className="relative rounded-[30px] bg-amber-50 border border-amber-200 p-8 shadow-sm">
+      <section className="relative rounded-2xl bg-amber-50 border border-amber-200 p-5 shadow-sm">
         {generating && <LoadingOverlay message="Claude is analyzing markets..." />}
-        <div className="text-sm font-bold uppercase tracking-[0.22em] text-amber-700 mb-4">
+        <div className="text-xs font-bold uppercase tracking-[0.22em] text-amber-700 mb-3">
           Bottom line
         </div>
-        <p className="max-w-6xl text-lg leading-8 text-slate-800">
+        <p className="max-w-6xl text-sm leading-6 text-slate-800">
           {bottomLine}
         </p>
       </section>
 
       {/* Forward View — Next 2 Weeks */}
-      <section className="rounded-[30px] border border-blue-200 bg-gradient-to-br from-blue-50/60 to-white p-6 md:p-8 shadow-sm">
-        <div className="flex flex-wrap items-center justify-between gap-3 mb-4">
-          <div className="flex flex-wrap items-center gap-3">
-            <span className="text-xl">🧭</span>
-            <h2 className="text-2xl font-semibold text-slate-800">Forward View — Next 2 Weeks</h2>
+      <section className="rounded-2xl border border-blue-200 bg-gradient-to-br from-blue-50/60 to-white p-4 md:p-5 shadow-sm">
+        <div className="flex flex-wrap items-center justify-between gap-3 mb-3">
+          <div className="flex flex-wrap items-center gap-2">
+            <span className="text-base">🧭</span>
+            <h2 className="text-base font-semibold text-slate-800">Forward View — Next 2 Weeks</h2>
             {forwardLoading && <span className="text-xs text-blue-500 animate-pulse">Fetching live data...</span>}
             {activeForward && (
               <span
@@ -1230,7 +1230,7 @@ export function MorningBrief({
             </div>
           )}
         </div>
-        <p className="max-w-6xl text-lg leading-8 text-slate-700 mb-6">
+        <p className="max-w-6xl text-sm leading-6 text-slate-700 mb-5">
           {forwardView}
         </p>
 
@@ -1343,12 +1343,12 @@ export function MorningBrief({
       </section>
 
       {/* Composite Signal */}
-      <section className="rounded-[30px] border border-slate-200 bg-white p-6 shadow-sm">
-        <div className="flex flex-wrap items-center gap-3">
-          <span className="text-2xl">🔍</span>
-          <h2 className="text-2xl font-semibold">Composite Signal</h2>
+      <section className="rounded-2xl border border-slate-200 bg-white p-4 shadow-sm">
+        <div className="flex flex-wrap items-center gap-2">
+          <span className="text-base">🔍</span>
+          <h2 className="text-base font-semibold">Composite Signal</h2>
           <SignalPill tone={compositeSignalTone}>{marketData.compositeSignal}</SignalPill>
-          <span className="text-slate-500">
+          <span className="text-xs text-slate-500">
             Conviction: {marketData.conviction}
           </span>
           {brief?.marketRegime && (
@@ -1357,7 +1357,7 @@ export function MorningBrief({
             </SignalPill>
           )}
         </div>
-        <p className="mt-4 text-lg leading-8 text-slate-700">
+        <p className="mt-3 text-sm leading-6 text-slate-700">
           {compositeAnalysis}
         </p>
       </section>
@@ -1539,42 +1539,42 @@ export function MorningBrief({
 
       {/* Sector Rotation */}
       {sectorRotation && (
-        <section className="rounded-[30px] border border-slate-200 bg-white p-6 shadow-sm">
-          <div className="flex items-center gap-2 mb-4">
-            <span className="text-xl">🔄</span>
-            <h3 className="text-2xl font-semibold">Sector Rotation</h3>
+        <section className="rounded-2xl border border-slate-200 bg-white p-4 shadow-sm">
+          <div className="flex items-center gap-2 mb-3">
+            <span className="text-base">🔄</span>
+            <h3 className="text-base font-semibold">Sector Rotation</h3>
           </div>
-          <p className="text-lg leading-8 text-slate-700 mb-5">{sectorRotation.summary}</p>
-          <div className="grid gap-5 md:grid-cols-2">
+          <p className="text-sm leading-6 text-slate-700 mb-4">{sectorRotation.summary}</p>
+          <div className="grid gap-4 md:grid-cols-2">
             <div>
-              <div className="text-sm font-bold uppercase tracking-wider text-emerald-600 mb-2">LEADING</div>
+              <div className="text-xs font-bold uppercase tracking-wider text-emerald-600 mb-1.5">LEADING</div>
               {sectorRotation.leading.map((s, i) => (
-                <div key={i} className="flex items-center gap-2 text-emerald-700 mb-1">
+                <div key={i} className="flex items-center gap-2 text-sm text-emerald-700 mb-1">
                   <span>▲</span> <span>{s}</span>
                 </div>
               ))}
             </div>
             <div>
-              <div className="text-sm font-bold uppercase tracking-wider text-red-600 mb-2">LAGGING</div>
+              <div className="text-xs font-bold uppercase tracking-wider text-red-600 mb-1.5">LAGGING</div>
               {sectorRotation.lagging.map((s, i) => (
-                <div key={i} className="flex items-center gap-2 text-red-600 mb-1">
+                <div key={i} className="flex items-center gap-2 text-sm text-red-600 mb-1">
                   <span>▼</span> <span>{s}</span>
                 </div>
               ))}
             </div>
           </div>
-          <p className="mt-4 text-lg italic leading-8 text-slate-500">{sectorRotation.pmImplication}</p>
+          <p className="mt-3 text-sm italic leading-6 text-slate-500">{sectorRotation.pmImplication}</p>
         </section>
       )}
 
       {/* Portfolio Risk Scan */}
       {riskScan && riskScan.length > 0 && (
-        <section className="rounded-[30px] border border-slate-200 bg-white p-6 shadow-sm">
-          <div className="flex items-center gap-2 mb-5">
-            <span className="text-xl">🛡️</span>
-            <h3 className="text-2xl font-semibold">Portfolio Risk Scan</h3>
+        <section className="rounded-2xl border border-slate-200 bg-white p-4 shadow-sm">
+          <div className="flex items-center gap-2 mb-3">
+            <span className="text-base">🛡️</span>
+            <h3 className="text-base font-semibold">Portfolio Risk Scan</h3>
           </div>
-          <div className="space-y-3">
+          <div className="space-y-2">
             {riskScan.map((item, i) => {
               const bgClass =
                 item.priority === "High"
@@ -1589,13 +1589,13 @@ export function MorningBrief({
                   ? "amber" as const
                   : "gray" as const;
               return (
-                <div key={i} className={`rounded-2xl border-l-4 p-4 ${bgClass}`}>
-                  <div className="flex flex-wrap items-center gap-3 mb-1">
-                    <span className="font-mono text-lg font-bold">{item.ticker}</span>
+                <div key={i} className={`rounded-xl border-l-4 p-3 ${bgClass}`}>
+                  <div className="flex flex-wrap items-center gap-2 mb-1">
+                    <span className="font-mono text-sm font-bold">{item.ticker}</span>
                     <SignalPill tone={tonePill}>{item.priority}</SignalPill>
-                    <span className="text-slate-700">{item.summary}</span>
+                    <span className="text-sm text-slate-700">{item.summary}</span>
                   </div>
-                  <div className="text-blue-600 font-medium">&rarr; {item.action}</div>
+                  <div className="text-sm text-blue-600 font-medium">&rarr; {item.action}</div>
                 </div>
               );
             })}
@@ -1605,12 +1605,12 @@ export function MorningBrief({
 
       {/* Action Items */}
       {forwardActions.length > 0 && (
-        <section className="rounded-[30px] border border-amber-100 bg-amber-50/30 p-6 shadow-sm">
-          <div className="flex items-center gap-2 mb-5">
-            <span className="text-xl">⚡</span>
-            <h3 className="text-2xl font-semibold">Action Items</h3>
+        <section className="rounded-2xl border border-amber-100 bg-amber-50/30 p-4 shadow-sm">
+          <div className="flex items-center gap-2 mb-3">
+            <span className="text-base">⚡</span>
+            <h3 className="text-base font-semibold">Action Items</h3>
           </div>
-          <div className="space-y-3">
+          <div className="space-y-2">
             {forwardActions.map((action, i) => {
               const bgClass =
                 action.priority === "High"
@@ -1619,14 +1619,14 @@ export function MorningBrief({
                   ? "border-amber-200 bg-amber-50/60"
                   : "border-emerald-200 bg-emerald-50/40";
               return (
-                <div key={i} className={`rounded-2xl border p-5 ${bgClass}`}>
-                  <div className="flex items-start gap-4">
-                    <div className="flex h-8 w-8 shrink-0 items-center justify-center rounded-full bg-amber-200 text-sm font-bold text-amber-800">
+                <div key={i} className={`rounded-xl border p-3 ${bgClass}`}>
+                  <div className="flex items-start gap-3">
+                    <div className="flex h-6 w-6 shrink-0 items-center justify-center rounded-full bg-amber-200 text-xs font-bold text-amber-800">
                       {i + 1}
                     </div>
                     <div>
-                      <h4 className="text-lg font-semibold">{action.title}</h4>
-                      <p className="mt-1 text-slate-600 leading-7">{action.detail}</p>
+                      <h4 className="text-sm font-semibold">{action.title}</h4>
+                      <p className="mt-0.5 text-sm text-slate-600 leading-6">{action.detail}</p>
                     </div>
                   </div>
                 </div>
