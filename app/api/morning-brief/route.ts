@@ -745,12 +745,13 @@ ${hedgingCostsBlock ? `\n${hedgingCostsBlock}\n\nWhen writing hedgingAnalysis, c
 Live Sector ETF Performance (from Yahoo Finance — use this for sector rotation analysis):
 ${sectorPerformance}
 ${(() => {
-  // Build strategist notes block from the rolling 14-day Redis history.
+  // Build strategist notes block from the rolling 30-day Redis history.
   // Today's full note is labeled "TODAY"; prior days are labeled by date
-  // so Claude can track how a strategist's view evolves across two weeks
-  // (e.g. Newton flags a key support level for multiple consecutive
+  // so Claude can track how a strategist's view evolves across the past
+  // month (e.g. Newton flags a key support level for multiple consecutive
   // sessions, or Lee shifts from cautious to outright bullish over a
-  // longer window). Two-week window helps surface recurring themes.
+  // longer window). 30-day window surfaces both short-term repetition
+  // and longer-arc shifts.
   const formatEntries = (
     entries: { date: string; text: string }[],
     name: string,
@@ -780,10 +781,10 @@ ${(() => {
   if (blocks.length === 0) return "";
   return `
 
-STRATEGIST NOTES — The PM follows these Fundstrat strategists. Notes below contain the trailing two weeks where available. Note: Tom Lee primarily communicates via video, so his written notes will often be absent — that is normal, not an error. When Lee notes ARE present, treat them like Newton's. When they are absent, rely on his Focus Areas (in the FUNDSTRAT RESEARCH CONTEXT section) as background context instead.
+STRATEGIST NOTES — The PM follows these Fundstrat strategists. Notes below contain the trailing 30 days where available. Note: Tom Lee primarily communicates via video, so his written notes will often be absent — that is normal, not an error. When Lee notes ARE present, treat them like Newton's. When they are absent, rely on his Focus Areas (in the FUNDSTRAT RESEARCH CONTEXT section) as background context instead.
 
 Key instructions:
-1. Track THEMES ACROSS DAYS — if a strategist keeps mentioning the same level, catalyst, or risk multiple sessions over the two-week window, that consistency matters more than a one-off mention. Call it out (e.g. "Newton has flagged 5,200 support across five sessions in the last two weeks"). Persistent themes carry more weight than recent ones in isolation.
+1. Track THEMES ACROSS DAYS — if a strategist keeps mentioning the same level, catalyst, or risk multiple sessions over the 30-day window, that consistency matters more than a one-off mention. Call it out (e.g. "Newton has flagged 5,200 support across eight sessions in the last month"). Persistent themes carry more weight than recent ones in isolation. Also watch for STANCE EVOLUTION over the longer window — a gradual shift from cautious to constructive over 3 weeks is a meaningful signal that's invisible in a 2-week view.
 2. Note SHIFTS in stance — if a strategist changes their view from one day to the next, that transition is significant.
 3. Items mentioned one day but NOT the next may still be relevant — do not discard them just because the latest note omits them. Use judgment.
 4. PAY ATTENTION TO DATES — if the most recent note is labeled with a past date (not TODAY), it means no report was issued since then. Treat it as still-relevant context but note the age when citing it (e.g. "Newton's most recent note from April 10 flagged…").

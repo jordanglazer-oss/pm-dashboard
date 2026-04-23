@@ -162,34 +162,34 @@ export function HedgingIndicator({ vix, termStructure, fearGreed, hedgingAnalysi
   const analysis = hedgingAnalysis || verdict.explanation;
 
   return (
-    <section className="rounded-[30px] border border-slate-200 bg-white p-6 shadow-sm">
-      <div className="flex flex-wrap items-center justify-between gap-4">
-        <h3 className="text-2xl font-semibold">Hedging Window (SPY Puts)</h3>
+    <section className="rounded-2xl border border-slate-200 bg-white p-4 shadow-sm">
+      <div className="flex flex-wrap items-center justify-between gap-3">
+        <h3 className="text-base font-semibold">Hedging Window (SPY Puts)</h3>
         <SignalPill tone={verdict.tone}>{verdict.label}</SignalPill>
       </div>
 
-      <div className="mt-5 grid gap-4 md:grid-cols-3">
+      <div className="mt-3 grid gap-2 md:grid-cols-3">
         {factors.map((f) => (
           <div
             key={f.label}
-            className={`rounded-2xl border p-4 ${
+            className={`rounded-xl border p-3 ${
               f.optimal
                 ? "border-emerald-200 bg-emerald-50/40"
                 : "border-slate-200 bg-slate-50"
             }`}
           >
-            <div className="text-xs font-semibold uppercase tracking-wider text-slate-400">
+            <div className="text-[10px] font-semibold uppercase tracking-wider text-slate-400">
               {f.label}
             </div>
-            <div className="mt-2 text-lg font-medium text-slate-900">
+            <div className="mt-1 text-sm font-medium text-slate-900 leading-snug">
               {f.value}
             </div>
           </div>
         ))}
       </div>
 
-      <div className="mt-5 rounded-2xl border-l-4 border-slate-300 bg-slate-50 p-4">
-        <p className="text-lg leading-8 text-slate-700">{analysis}</p>
+      <div className="mt-3 rounded-xl border-l-4 border-slate-300 bg-slate-50 p-3">
+        <p className="text-sm leading-6 text-slate-700">{analysis}</p>
       </div>
     </section>
   );

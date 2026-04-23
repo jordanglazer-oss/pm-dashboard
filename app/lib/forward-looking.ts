@@ -1124,16 +1124,20 @@ async function loadPutCallHistory(): Promise<SparkPoint[]> {
   }
 }
 
-// ── Strategist notes history (rolling 14-day log) ──────────────────────
+// ── Strategist notes history (rolling 30-day log) ──────────────────────
 // When the PM pastes a daily report from Newton or Lee, each save appends
-// to a dated log in Redis. The brief prompt includes the trailing two
-// weeks of notes so Claude can see how a strategist's view evolves and
-// track recurring themes — e.g. Newton flagging a key level for multiple
+// to a dated log in Redis. The brief prompt includes the trailing month
+// of notes so Claude can see how a strategist's view evolves and track
+// recurring themes — e.g. Newton flagging a key level for multiple
 // consecutive sessions, or Lee shifting from cautious to outright bullish
-// over a longer window. Two weeks gives enough signal to spot persistent
-// themes vs one-off mentions without bloating the prompt.
+// over a longer window. 30 days (~22 trading days) gives enough signal
+// to spot persistent themes and longer-arc shifts vs one-off mentions
+// without bloating the prompt. Bumping this up is non-destructive: the
+// cutoff filter on every write only PRUNES entries older than the new
+// window, never deletes anything within it, so existing 14-day data is
+// preserved automatically.
 const STRATEGIST_HISTORY_KEY = "pm:strategist-history";
-const STRATEGIST_HISTORY_MAX_DAYS = 14; // ~2 trading weeks
+const STRATEGIST_HISTORY_MAX_DAYS = 30; // ~22 trading days
 
 export type StrategistEntry = { date: string; text: string };
 export type StrategistHistory = {

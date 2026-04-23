@@ -197,21 +197,21 @@ export function SentimentGauges({ marketData, aaiiBull = 30, aaiiNeutral = 17, a
   const dashOffset = circumference * (1 - pct);
 
   return (
-    <section className="rounded-[30px] border border-slate-200 bg-white p-6 shadow-sm">
-      <div className="flex flex-wrap items-center justify-between gap-3 mb-5">
+    <section className="rounded-2xl border border-slate-200 bg-white p-4 shadow-sm">
+      <div className="flex flex-wrap items-center justify-between gap-2 mb-3">
         <div className="flex items-center gap-2">
-          <span className="text-xl">🎯</span>
-          <h3 className="text-2xl font-semibold">Contrarian Sentiment</h3>
+          <span className="text-base">🎯</span>
+          <h3 className="text-base font-semibold">Contrarian Sentiment</h3>
           <SignalPill tone="amber">COUNTER-SIGNAL</SignalPill>
         </div>
         <SignalPill tone={overall.tone}>{overall.label}</SignalPill>
       </div>
 
-      <div className="grid gap-5 lg:grid-cols-2">
+      <div className="grid gap-3 lg:grid-cols-2">
         {/* CNN Fear & Greed */}
-        <div className="rounded-2xl border border-slate-100 bg-slate-50 p-5">
-          <div className="flex items-center justify-between mb-4">
-            <div className="text-sm font-semibold text-slate-500 flex items-center gap-2">
+        <div className="rounded-xl border border-slate-100 bg-slate-50 p-3">
+          <div className="flex items-center justify-between mb-2">
+            <div className="text-xs font-semibold text-slate-500 flex items-center gap-2">
               CNN Fear &amp; Greed
               <a href="https://www.cnn.com/markets/fear-and-greed" target="_blank" rel="noopener noreferrer" className="text-blue-500 hover:text-blue-700" title="CNN Fear & Greed source">
                 <svg className="w-3.5 h-3.5" fill="none" stroke="currentColor" strokeWidth="2" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" d="M10 6H6a2 2 0 00-2 2v10a2 2 0 002 2h10a2 2 0 002-2v-4M14 4h6m0 0v6m0-6L10 14" /></svg>
@@ -221,8 +221,8 @@ export function SentimentGauges({ marketData, aaiiBull = 30, aaiiNeutral = 17, a
               <span className="rounded-full bg-emerald-100 px-2 py-0.5 text-[9px] font-bold uppercase text-emerald-700">live</span>
             )}
           </div>
-          <div className="flex items-center gap-6">
-            <svg width="100" height="100" viewBox="0 0 100 100" className="shrink-0">
+          <div className="flex items-center gap-4">
+            <svg width="80" height="80" viewBox="0 0 100 100" className="shrink-0">
               <circle cx="50" cy="50" r={radius} fill="none" stroke="#e2e8f0" strokeWidth="8" />
               <circle
                 cx="50"
@@ -236,7 +236,7 @@ export function SentimentGauges({ marketData, aaiiBull = 30, aaiiNeutral = 17, a
                 strokeDashoffset={dashOffset}
                 transform="rotate(-90 50 50)"
               />
-              <text x="50" y="46" textAnchor="middle" className="text-2xl font-bold" fill="#1e293b" fontSize="22">
+              <text x="50" y="46" textAnchor="middle" className="font-bold" fill="#1e293b" fontSize="22">
                 {Math.round(fgValue)}
               </text>
               <text x="50" y="62" textAnchor="middle" fill="#94a3b8" fontSize="10">
@@ -244,13 +244,13 @@ export function SentimentGauges({ marketData, aaiiBull = 30, aaiiNeutral = 17, a
               </text>
             </svg>
             <div className="flex-1 min-w-0">
-              <div className="text-xl font-semibold" style={{ color: fgColor }}>{fgLabel}</div>
+              <div className="text-base font-semibold" style={{ color: fgColor }}>{fgLabel}</div>
               {fgHistory.length >= 2 && (
-                <div className="mt-2">
+                <div className="mt-1.5">
                   <Sparkline
                     points={fgHistory}
                     width={180}
-                    height={36}
+                    height={32}
                     stroke={fgColor}
                     fill={`${fgColor}22`}
                     yMin={0}
@@ -265,15 +265,15 @@ export function SentimentGauges({ marketData, aaiiBull = 30, aaiiNeutral = 17, a
                   )}
                 </div>
               )}
-              <p className="mt-2 text-sm text-slate-500 leading-relaxed">{fgData.detail}</p>
+              <p className="mt-1.5 text-xs text-slate-500 leading-relaxed">{fgData.detail}</p>
             </div>
           </div>
         </div>
 
         {/* AAII Sentiment */}
-        <div className="rounded-2xl border border-slate-100 bg-slate-50 p-5">
-          <div className="flex items-center justify-between mb-4">
-            <div className="text-sm font-semibold text-slate-500 flex items-center gap-2">
+        <div className="rounded-xl border border-slate-100 bg-slate-50 p-3">
+          <div className="flex items-center justify-between mb-2">
+            <div className="text-xs font-semibold text-slate-500 flex items-center gap-2">
               AAII Sentiment Survey
               <a href="https://www.aaii.com/sentimentsurvey" target="_blank" rel="noopener noreferrer" className="text-blue-500 hover:text-blue-700" title="AAII source">
                 <svg className="w-3.5 h-3.5" fill="none" stroke="currentColor" strokeWidth="2" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" d="M10 6H6a2 2 0 00-2 2v10a2 2 0 002 2h10a2 2 0 002-2v-4M14 4h6m0 0v6m0-6L10 14" /></svg>
@@ -283,38 +283,38 @@ export function SentimentGauges({ marketData, aaiiBull = 30, aaiiNeutral = 17, a
               <span className="rounded-full bg-emerald-100 px-2 py-0.5 text-[9px] font-bold uppercase text-emerald-700">live</span>
             )}
           </div>
-          <div className="space-y-3">
-            <div className="flex items-center gap-3">
-              <span className="w-16 text-sm text-slate-500">Bullish</span>
-              <div className="flex-1 h-4 rounded-full bg-slate-200 overflow-hidden">
+          <div className="space-y-2">
+            <div className="flex items-center gap-2">
+              <span className="w-14 text-xs text-slate-500">Bullish</span>
+              <div className="flex-1 h-3 rounded-full bg-slate-200 overflow-hidden">
                 <div className="h-full rounded-full bg-emerald-500" style={{ width: `${effAaiiBull}%` }} />
               </div>
-              <span className="w-14 text-right font-mono text-sm font-semibold">{effAaiiBull.toFixed(1)}%</span>
+              <span className="w-12 text-right font-mono text-xs font-semibold">{effAaiiBull.toFixed(1)}%</span>
             </div>
-            <div className="flex items-center gap-3">
-              <span className="w-16 text-sm text-slate-500">Neutral</span>
-              <div className="flex-1 h-4 rounded-full bg-slate-200 overflow-hidden">
+            <div className="flex items-center gap-2">
+              <span className="w-14 text-xs text-slate-500">Neutral</span>
+              <div className="flex-1 h-3 rounded-full bg-slate-200 overflow-hidden">
                 <div className="h-full rounded-full bg-amber-400" style={{ width: `${effAaiiNeutral}%` }} />
               </div>
-              <span className="w-14 text-right font-mono text-sm font-semibold">{effAaiiNeutral.toFixed(1)}%</span>
+              <span className="w-12 text-right font-mono text-xs font-semibold">{effAaiiNeutral.toFixed(1)}%</span>
             </div>
-            <div className="flex items-center gap-3">
-              <span className="w-16 text-sm text-slate-500">Bearish</span>
-              <div className="flex-1 h-4 rounded-full bg-slate-200 overflow-hidden">
+            <div className="flex items-center gap-2">
+              <span className="w-14 text-xs text-slate-500">Bearish</span>
+              <div className="flex-1 h-3 rounded-full bg-slate-200 overflow-hidden">
                 <div className="h-full rounded-full bg-red-500" style={{ width: `${effAaiiBear}%` }} />
               </div>
-              <span className="w-14 text-right font-mono text-sm font-semibold">{effAaiiBear.toFixed(1)}%</span>
+              <span className="w-12 text-right font-mono text-xs font-semibold">{effAaiiBear.toFixed(1)}%</span>
             </div>
-            <div className="text-right text-sm text-slate-400">
+            <div className="text-right text-xs text-slate-400">
               Bull-Bear Spread: <strong className="text-slate-700">{aaiiBullBearValue > 0 ? "+" : ""}{aaiiBullBearValue.toFixed(1)}%</strong>
             </div>
           </div>
           {aaiiBullBearHistory.length >= 2 && (
-            <div className="mt-3">
+            <div className="mt-2">
               <Sparkline
                 points={aaiiBullBearHistory}
                 width={260}
-                height={36}
+                height={32}
                 stroke="#6366f1"
                 fill="rgba(99, 102, 241, 0.12)"
                 referenceY={0}
@@ -327,13 +327,13 @@ export function SentimentGauges({ marketData, aaiiBull = 30, aaiiNeutral = 17, a
               )}
             </div>
           )}
-          <p className="mt-3 text-sm text-slate-500 leading-relaxed">{aaiiData.detail}</p>
+          <p className="mt-2 text-xs text-slate-500 leading-relaxed">{aaiiData.detail}</p>
         </div>
 
         {/* S&P Oscillator */}
-        <div className="rounded-2xl border border-slate-100 bg-slate-50 p-5">
-          <div className="flex items-center justify-between mb-4">
-            <div className="text-sm font-semibold text-slate-500 flex items-center gap-2">
+        <div className="rounded-xl border border-slate-100 bg-slate-50 p-3">
+          <div className="flex items-center justify-between mb-2">
+            <div className="text-xs font-semibold text-slate-500 flex items-center gap-2">
               S&amp;P Oscillator
               <a href="https://app.marketedge.com/#!/markets" target="_blank" rel="noopener noreferrer" className="text-blue-500 hover:text-blue-700" title="MarketEdge S&P Oscillator">
                 <svg className="w-3.5 h-3.5" fill="none" stroke="currentColor" strokeWidth="2" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" d="M10 6H6a2 2 0 00-2 2v10a2 2 0 002 2h10a2 2 0 002-2v-4M14 4h6m0 0v6m0-6L10 14" /></svg>
@@ -343,8 +343,8 @@ export function SentimentGauges({ marketData, aaiiBull = 30, aaiiNeutral = 17, a
               <span className="rounded-full bg-blue-100 px-2 py-0.5 text-[9px] font-bold uppercase text-blue-700" title="Sparkline shows your saved entries from Redis (pm:oscillator-history)">logged</span>
             )}
           </div>
-          <div className="flex items-center gap-6">
-            <div className={`flex h-20 w-20 shrink-0 items-center justify-center rounded-2xl text-3xl font-bold ${
+          <div className="flex items-center gap-4">
+            <div className={`flex h-16 w-16 shrink-0 items-center justify-center rounded-xl text-xl font-bold ${
               oscValue <= -4 ? "bg-emerald-100 text-emerald-700"
               : oscValue <= -2 ? "bg-emerald-50 text-emerald-600"
               : oscValue >= 4 ? "bg-red-100 text-red-700"
@@ -354,7 +354,7 @@ export function SentimentGauges({ marketData, aaiiBull = 30, aaiiNeutral = 17, a
               {oscValue > 0 ? "+" : ""}{oscValue}
             </div>
             <div className="flex-1 min-w-0">
-              <div className={`text-xl font-semibold ${
+              <div className={`text-base font-semibold ${
                 oscValue <= -4 ? "text-emerald-700"
                 : oscValue <= -2 ? "text-emerald-600"
                 : oscValue >= 4 ? "text-red-700"
@@ -364,11 +364,11 @@ export function SentimentGauges({ marketData, aaiiBull = 30, aaiiNeutral = 17, a
                 {oscValue <= -4 ? "Deeply Oversold" : oscValue <= -2 ? "Oversold" : oscValue >= 4 ? "Deeply Overbought" : oscValue >= 2 ? "Overbought" : "Neutral"}
               </div>
               {oscHistory.length >= 2 && (
-                <div className="mt-2">
+                <div className="mt-1.5">
                   <Sparkline
                     points={oscHistory}
                     width={180}
-                    height={36}
+                    height={32}
                     stroke="#0ea5e9"
                     fill="rgba(14, 165, 233, 0.12)"
                     referenceY={0}
@@ -381,7 +381,7 @@ export function SentimentGauges({ marketData, aaiiBull = 30, aaiiNeutral = 17, a
                   )}
                 </div>
               )}
-              <p className="mt-2 text-sm text-slate-500 leading-relaxed">
+              <p className="mt-1.5 text-xs text-slate-500 leading-relaxed">
                 {oscValue <= -4
                   ? "Extreme oversold conditions have historically preceded sharp mean-reversion rallies. High-conviction contrarian buy signal."
                   : oscValue <= -2
@@ -397,9 +397,9 @@ export function SentimentGauges({ marketData, aaiiBull = 30, aaiiNeutral = 17, a
         </div>
 
         {/* Put/Call Ratio */}
-        <div className="rounded-2xl border border-slate-100 bg-slate-50 p-5">
-          <div className="flex items-center justify-between mb-4">
-            <div className="text-sm font-semibold text-slate-500 flex items-center gap-2">
+        <div className="rounded-xl border border-slate-100 bg-slate-50 p-3">
+          <div className="flex items-center justify-between mb-2">
+            <div className="text-xs font-semibold text-slate-500 flex items-center gap-2">
               Total Put/Call Ratio
               <a href="https://www.cboe.com/us/options/market_statistics/daily/" target="_blank" rel="noopener noreferrer" className="text-blue-500 hover:text-blue-700" title="CBOE Total Put/Call">
                 <svg className="w-3.5 h-3.5" fill="none" stroke="currentColor" strokeWidth="2" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" d="M10 6H6a2 2 0 00-2 2v10a2 2 0 002 2h10a2 2 0 002-2v-4M14 4h6m0 0v6m0-6L10 14" /></svg>
@@ -409,8 +409,8 @@ export function SentimentGauges({ marketData, aaiiBull = 30, aaiiNeutral = 17, a
               <span className="rounded-full bg-blue-100 px-2 py-0.5 text-[9px] font-bold uppercase text-blue-700" title="Sparkline shows your saved entries from Redis (pm:putcall-history)">logged</span>
             )}
           </div>
-          <div className="flex items-center gap-6">
-            <div className={`flex h-20 w-20 shrink-0 items-center justify-center rounded-2xl text-3xl font-bold ${
+          <div className="flex items-center gap-4">
+            <div className={`flex h-16 w-16 shrink-0 items-center justify-center rounded-xl text-xl font-bold ${
               pcValue >= 1.2 ? "bg-emerald-100 text-emerald-700"
               : pcValue >= 1.0 ? "bg-emerald-50 text-emerald-600"
               : pcValue <= 0.5 ? "bg-red-100 text-red-700"
@@ -420,7 +420,7 @@ export function SentimentGauges({ marketData, aaiiBull = 30, aaiiNeutral = 17, a
               {pcValue.toFixed(2)}
             </div>
             <div className="flex-1 min-w-0">
-              <div className={`text-xl font-semibold ${
+              <div className={`text-base font-semibold ${
                 pcValue >= 1.2 ? "text-emerald-700"
                 : pcValue >= 1.0 ? "text-emerald-600"
                 : pcValue <= 0.5 ? "text-red-700"
@@ -430,11 +430,11 @@ export function SentimentGauges({ marketData, aaiiBull = 30, aaiiNeutral = 17, a
                 {pcValue >= 1.2 ? "Extreme Fear" : pcValue >= 1.0 ? "Elevated Fear" : pcValue <= 0.5 ? "Extreme Complacency" : pcValue <= 0.7 ? "Complacent" : "Neutral"}
               </div>
               {pcHistory.length >= 2 && (
-                <div className="mt-2">
+                <div className="mt-1.5">
                   <Sparkline
                     points={pcHistory}
                     width={180}
-                    height={36}
+                    height={32}
                     stroke="#8b5cf6"
                     fill="rgba(139, 92, 246, 0.12)"
                     referenceY={0.85}
@@ -447,7 +447,7 @@ export function SentimentGauges({ marketData, aaiiBull = 30, aaiiNeutral = 17, a
                   )}
                 </div>
               )}
-              <p className="mt-2 text-sm text-slate-500 leading-relaxed">
+              <p className="mt-1.5 text-xs text-slate-500 leading-relaxed">
                 {pcValue >= 1.2
                   ? "Heavy put buying signals panic. Historically a strong contrarian buy signal — protection is expensive and the crowd is hedged."
                   : pcValue >= 1.0
@@ -465,12 +465,12 @@ export function SentimentGauges({ marketData, aaiiBull = 30, aaiiNeutral = 17, a
 
       {/* Claude's contrarian analysis */}
       {contrarianAnalysis && (
-        <div className="mt-5 border-t border-slate-100 pt-5">
-          <div className="flex items-center gap-2 mb-2">
-            <span className="text-sm font-bold uppercase tracking-wider text-slate-400">Contrarian Take</span>
+        <div className="mt-3 border-t border-slate-100 pt-3">
+          <div className="flex items-center gap-2 mb-1.5">
+            <span className="text-xs font-bold uppercase tracking-wider text-slate-400">Contrarian Take</span>
             <SignalPill tone={overall.tone}>{overall.label}</SignalPill>
           </div>
-          <p className="text-lg leading-8 text-slate-700">{contrarianAnalysis}</p>
+          <p className="text-sm leading-6 text-slate-700">{contrarianAnalysis}</p>
         </div>
       )}
     </section>
