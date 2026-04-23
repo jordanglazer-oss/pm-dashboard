@@ -950,8 +950,14 @@ export function MorningBrief({
             links. Manual fields below are only the inputs that have no
             reliable free auto-source. */}
 
+        {/* Two manual-input sub-sections rendered side-by-side on lg+ to halve
+            vertical space — the contrarian inputs (left) and the other manual
+            fields (right) are independent groupings, so the 2-col split keeps
+            their visual identity while reducing scroll. Stacks on mobile. */}
+        <div className="grid gap-6 lg:grid-cols-2 lg:gap-x-8 mb-6 border-t border-slate-100 pt-5">
+
         {/* ── Contrarian Indicators ── */}
-        <div className="border-t border-slate-100 pt-5 mb-6">
+        <div>
           <div className="flex items-center gap-3 mb-4">
             <h4 className="text-xs font-semibold text-slate-400 uppercase tracking-widest">Contrarian Indicators</h4>
             <SignalPill tone="green">INVERTED SIGNALS</SignalPill>
@@ -1008,7 +1014,10 @@ export function MorningBrief({
         </div>
 
         {/* ── Other Manual Inputs ── */}
-        <div className="border-t border-slate-100 pt-5 mb-4">
+        <div>
+          <div className="flex items-center gap-3 mb-4">
+            <h4 className="text-xs font-semibold text-slate-400 uppercase tracking-widest">Other Manual Inputs</h4>
+          </div>
           <div className="grid grid-cols-2 gap-x-6 gap-y-4 md:grid-cols-3">
             <div>
               <div className="flex items-center gap-1.5 mb-1">
@@ -1063,6 +1072,8 @@ export function MorningBrief({
             </div>
           </div>
         </div>
+
+        </div>{/* /lg:grid-cols-2 wrapper for the two manual-input sub-sections */}
 
         {/* ── Strategist Notes (Fundstrat) ── */}
         <div className="border-t border-slate-100 pt-5 mb-4">
