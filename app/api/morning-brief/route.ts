@@ -173,24 +173,39 @@ function buildImageBlocks(attachments: AttachmentInput[]): Anthropic.Messages.Co
     bySection[att.section].push(att);
   }
 
+  // Strict base64 payload regex — Anthropic rejects anything outside
+  // [A-Za-z0-9+/=] and certain SDKs throw "The string did not match the
+  // expected pattern" when validation fails. We'd rather skip a single
+  // corrupted attachment than have the whole brief call blow up.
+  const validBase64 = /^[A-Za-z0-9+/]+={0,2}$/;
+
   for (const [section, atts] of Object.entries(bySection)) {
-    blocks.push({
-      type: "text",
-      text: `\n--- Attached screenshots for ${section} (${atts.length} image${atts.length > 1 ? "s" : ""}) ---\nAnalyze these carefully and incorporate findings into your brief:`,
-    });
-
+    const validAtts: { att: AttachmentInput; mediaType: "image/jpeg" | "image/png" | "image/gif" | "image/webp"; data: string }[] = [];
     for (const att of atts) {
-      // Extract media type and base64 data from data URL
       const match = att.dataUrl.match(/^data:(image\/[^;]+);base64,(.+)$/);
-      if (!match) continue;
-
+      if (!match) {
+        console.warn(`[brief] skipping attachment '${att.label}' — malformed data URL`);
+        continue;
+      }
       const rawMediaType = match[1];
-      // Ensure media type is one that Anthropic accepts
       const allowedTypes = ["image/jpeg", "image/png", "image/gif", "image/webp"];
       const mediaType = (allowedTypes.includes(rawMediaType) ? rawMediaType : "image/png") as "image/jpeg" | "image/png" | "image/gif" | "image/webp";
-      // Strip any whitespace/newlines from base64 data
       const data = match[2].replace(/\s/g, "");
+      if (!data || !validBase64.test(data) || data.length % 4 !== 0) {
+        console.warn(`[brief] skipping attachment '${att.label}' — invalid base64 payload (${data.length} chars)`);
+        continue;
+      }
+      validAtts.push({ att, mediaType, data });
+    }
 
+    if (validAtts.length === 0) continue;
+
+    blocks.push({
+      type: "text",
+      text: `\n--- Attached screenshots for ${section} (${validAtts.length} image${validAtts.length > 1 ? "s" : ""}) ---\nAnalyze these carefully and incorporate findings into your brief:`,
+    });
+
+    for (const { att, mediaType, data } of validAtts) {
       blocks.push({
         type: "image",
         source: {
@@ -199,7 +214,6 @@ function buildImageBlocks(attachments: AttachmentInput[]): Anthropic.Messages.Co
           data,
         },
       });
-
       blocks.push({
         type: "text",
         text: `(Image: ${att.label})`,
@@ -947,8 +961,14 @@ Current Portfolio Holdings: ${holdingsSummary}`;
   } catch (error) {
     const message = error instanceof Error ? error.message : String(error);
     console.error("Morning brief API error:", message, error);
+    // The Anthropic SDK / Node web APIs surface malformed base64 as
+    // "The string did not match the expected pattern." — translate that
+    // into something actionable so the user knows to check attachments.
+    const userMessage = /did not match the expected pattern/i.test(message)
+      ? "One of the attached screenshots has a malformed image payload. Remove recently added screenshots (Equity Flows / Newton) and re-upload, then try again."
+      : `Failed to generate morning brief: ${message}`;
     return NextResponse.json(
-      { error: `Failed to generate morning brief: ${message}` },
+      { error: userMessage },
       { status: 500 }
     );
   }
