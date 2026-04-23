@@ -35,6 +35,7 @@
 
 import type { OHLCVBar } from "./technicals";
 import { computeSMA, resampleToMonthly } from "./technicals";
+import type { HorizonRollup } from "./horizons";
 
 // ── Public types ──────────────────────────────────────────────────
 
@@ -66,6 +67,33 @@ export type VixReadout = CrossAssetReadout & {
   direction: RegimeDirection; // <20 risk-on, >25 risk-off
 };
 
+/**
+ * ISM Manufacturing PMI — sourced from FRED series `NAPM` (monthly,
+ * diffusion index). The 50-line is the canonical expansion/contraction
+ * threshold: > 50 = expansion, < 50 = contraction. Newton specifically
+ * watches *crossover events* over the 50 line because the sign change
+ * tends to lead sector leadership shifts by 1-2 months.
+ *
+ * `level` direction:   level ≥ 50 → risk-on, < 50 → risk-off
+ * `trend` direction:   3-month change ≥ +1.0 → risk-on, ≤ -1.0 → risk-off,
+ *                      else neutral. The 1-point band keeps noise out.
+ * `crossedFiftyThisMonth`: true when the latest print and the prior print
+ *                      sit on opposite sides of 50 (either direction).
+ *                      The brief surfaces this as a callout because it
+ *                      historically marks a regime hand-off.
+ */
+export type IsmPmiReadout = {
+  level: number;
+  prior: number;
+  asOf: string; // YYYY-MM-DD of the latest observation
+  change1mAbs: number; // latest - prior (in PMI points)
+  change3mAbs: number; // latest - 3 months ago (in PMI points)
+  crossedFiftyThisMonth: boolean;
+  crossDirection: "above-to-below" | "below-to-above" | null;
+  level_direction: RegimeDirection;
+  trend_direction: RegimeDirection;
+};
+
 export type MarketRegimeData = {
   computedAt: string; // ISO timestamp of when this snapshot was computed
   spx10m: TrendReadout | null;
@@ -86,11 +114,24 @@ export type MarketRegimeData = {
     nikkei: CrossAssetReadout | null;
   };
   composite: {
-    score: number; // count of risk-on signals (0..6)
-    total: number; // total signals evaluated (max 6)
+    score: number; // count of risk-on signals (0..N)
+    total: number; // total signals evaluated
     label: "Risk-On" | "Neutral" | "Risk-Off";
     signals: { name: string; direction: RegimeDirection; detail: string }[];
   };
+  /**
+   * ISM PMI from FRED. Optional — older cached blobs predate this field
+   * and the UI must tolerate `undefined` (don't render the PMI tile,
+   * don't add it to horizon math). Cleared/null when FRED_API_KEY is
+   * not configured or the FRED fetch fails.
+   */
+  ismPmi?: IsmPmiReadout | null;
+  /**
+   * Per-horizon (1-3M / 3-6M / 6-12M) projection of the same composite
+   * signals plus ISM PMI. Optional for the same backward-compat reason
+   * as `ismPmi` — UI degrades to the flat composite when missing.
+   */
+  horizons?: HorizonRollup;
 };
 
 // ── Helpers ──────────────────────────────────────────────────────
@@ -200,9 +241,61 @@ export function vixReadout(bars: readonly OHLCVBar[]): VixReadout | null {
   return { ...base, direction };
 }
 
+// ── ISM PMI ─────────────────────────────────────────────────────
+
+/**
+ * Build an `IsmPmiReadout` from a FRED `NAPM` observation series sorted
+ * NEWEST first (matches `fredSeries` default sort_order=desc). Returns
+ * null when there are fewer than 4 monthly prints (need current + 1m
+ * for crossover + 3m back for trend).
+ *
+ * Pure function — no I/O. The route layer is responsible for calling
+ * FRED and passing the parsed observations in.
+ */
+export function computeIsmPmi(
+  observations: readonly { date: string; value: number }[]
+): IsmPmiReadout | null {
+  if (!observations || observations.length < 4) return null;
+  const latest = observations[0];
+  const prior = observations[1];
+  const threeAgo = observations[3]; // index 3 = 3 months back from latest
+  if (!latest || !prior || !threeAgo) return null;
+  if (!isFinite(latest.value) || !isFinite(prior.value) || !isFinite(threeAgo.value)) return null;
+
+  const change1mAbs = latest.value - prior.value;
+  const change3mAbs = latest.value - threeAgo.value;
+
+  // Crossover detection — only flag when the SIGN of (value - 50) flipped
+  // between the prior and latest print. Sitting at exactly 50 counts as
+  // "below" for sign purposes (rare in practice).
+  const latestAbove = latest.value > 50;
+  const priorAbove = prior.value > 50;
+  let crossedFiftyThisMonth = false;
+  let crossDirection: "above-to-below" | "below-to-above" | null = null;
+  if (latestAbove !== priorAbove) {
+    crossedFiftyThisMonth = true;
+    crossDirection = latestAbove ? "below-to-above" : "above-to-below";
+  }
+
+  return {
+    level: latest.value,
+    prior: prior.value,
+    asOf: latest.date,
+    change1mAbs,
+    change3mAbs,
+    crossedFiftyThisMonth,
+    crossDirection,
+    level_direction: latest.value >= 50 ? "risk-on" : "risk-off",
+    trend_direction:
+      change3mAbs >= 1.0 ? "risk-on" : change3mAbs <= -1.0 ? "risk-off" : "neutral",
+  };
+}
+
 // ── Composite ───────────────────────────────────────────────────
 
-export function composeRegime(parts: Omit<MarketRegimeData, "computedAt" | "composite">): MarketRegimeData["composite"] {
+export function composeRegime(
+  parts: Omit<MarketRegimeData, "computedAt" | "composite" | "horizons">
+): MarketRegimeData["composite"] {
   const signals: { name: string; direction: RegimeDirection; detail: string }[] = [];
 
   if (parts.spx10m) {
@@ -245,6 +338,30 @@ export function composeRegime(parts: Omit<MarketRegimeData, "computedAt" | "comp
       name: "VIX Level",
       direction: parts.crossAsset.vix.direction,
       detail: `${parts.crossAsset.vix.price.toFixed(1)} (<20 on, >25 off)`,
+    });
+  }
+
+  // ISM PMI — feeds two named signals so each one maps cleanly to its own
+  // horizon bucket in horizons.ts (level → cyclical, trend → structural).
+  // The names here MUST match SIGNAL_HORIZON keys verbatim; rename in both
+  // places or the horizon rollup silently drops them.
+  if (parts.ismPmi) {
+    const pmi = parts.ismPmi;
+    const crossNote = pmi.crossedFiftyThisMonth
+      ? pmi.crossDirection === "below-to-above"
+        ? " · CROSSED ABOVE 50"
+        : " · CROSSED BELOW 50"
+      : "";
+    signals.push({
+      name: "ISM PMI (50-line)",
+      direction: pmi.level_direction,
+      detail: `${pmi.level.toFixed(1)} (>50 on, <50 off)${crossNote}`,
+    });
+    const sign = pmi.change3mAbs >= 0 ? "+" : "";
+    signals.push({
+      name: "ISM PMI Trend",
+      direction: pmi.trend_direction,
+      detail: `${sign}${pmi.change3mAbs.toFixed(1)}pt 3M`,
     });
   }
 

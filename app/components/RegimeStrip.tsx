@@ -17,6 +17,7 @@
 import React, { useEffect, useState } from "react";
 import Link from "next/link";
 import type { MarketRegimeData, RegimeDirection } from "@/app/lib/market-regime";
+import { HORIZONS } from "@/app/lib/horizons";
 
 function pillClasses(d: RegimeDirection): string {
   switch (d) {
@@ -30,6 +31,12 @@ function compositeBadge(label: MarketRegimeData["composite"]["label"]): string {
   if (label === "Risk-On") return "bg-emerald-600 text-white";
   if (label === "Risk-Off") return "bg-red-600 text-white";
   return "bg-amber-500 text-white";
+}
+
+function horizonChipClasses(label: "Risk-On" | "Neutral" | "Risk-Off"): string {
+  if (label === "Risk-On") return "border-emerald-400 bg-emerald-50 text-emerald-800";
+  if (label === "Risk-Off") return "border-red-400 bg-red-50 text-red-800";
+  return "border-amber-400 bg-amber-50 text-amber-800";
 }
 
 export function RegimeStrip() {
@@ -108,6 +115,68 @@ export function RegimeStrip() {
           Open Brief →
         </Link>
       </div>
+
+      {/*
+        Horizon chips — renders only when the cached blob includes the new
+        `horizons` field (older snapshots still render the row above and
+        silently skip this sub-row, no layout jank). Each chip shows the
+        horizon's label, a colored composite tag, and the on/off count;
+        hover shows the per-horizon signal list.
+      */}
+      {regime.horizons && (
+        <div className="mt-3 border-t border-slate-100 pt-3">
+          <div className="flex flex-wrap items-center gap-2">
+            <span className="text-[10px] font-bold uppercase tracking-wider text-slate-500">
+              By Horizon
+            </span>
+            {HORIZONS.map((h) => {
+              const b = regime.horizons!.byHorizon[h.id];
+              const empty = b.total === 0;
+              return (
+                <span
+                  key={h.id}
+                  className={`inline-flex items-center gap-1.5 rounded-full border px-3 py-1 text-xs ${
+                    empty
+                      ? "border-slate-200 bg-slate-50 text-slate-400"
+                      : horizonChipClasses(b.label_)
+                  }`}
+                  title={
+                    empty
+                      ? `${h.description} · No signals available yet.`
+                      : `${h.description}\n\n${b.signals
+                          .map((s) => `• ${s.name}: ${s.detail}`)
+                          .join("\n")}`
+                  }
+                >
+                  <span className="font-semibold">{h.shortLabel}</span>
+                  <span className="opacity-70">·</span>
+                  <span className="font-bold">{empty ? "—" : b.label_}</span>
+                  {!empty && (
+                    <span className="font-mono opacity-70">
+                      {b.riskOn}-{b.riskOff}/{b.total}
+                    </span>
+                  )}
+                  <span className="opacity-50 text-[10px]">
+                    ×{Math.round(h.weight * 100)}%
+                  </span>
+                </span>
+              );
+            })}
+            {isFinite(regime.horizons.weightedScore) && (
+              <span className="ml-auto text-[11px] text-slate-500">
+                Weighted:{" "}
+                <span className="font-semibold text-slate-700">
+                  {regime.horizons.weightedLabel}
+                </span>{" "}
+                <span className="font-mono opacity-70">
+                  ({regime.horizons.weightedScore >= 0 ? "+" : ""}
+                  {regime.horizons.weightedScore.toFixed(2)})
+                </span>
+              </span>
+            )}
+          </div>
+        </div>
+      )}
     </div>
   );
 }

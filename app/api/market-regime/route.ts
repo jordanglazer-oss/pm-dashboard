@@ -5,10 +5,13 @@ import {
   type MarketRegimeData,
   composeRegime,
   computeCrossAssetReadout,
+  computeIsmPmi,
   computeRatioSignal,
   computeSpx10mTrend,
   vixReadout,
 } from "@/app/lib/market-regime";
+import { fredSeries } from "@/app/lib/forward-looking";
+import { rollupHorizons } from "@/app/lib/horizons";
 
 /**
  * Market regime endpoint.
@@ -74,6 +77,10 @@ async function computeFromYahoo(): Promise<MarketRegimeData> {
   // Fetch all required series in parallel. Daily 1y is enough to cover
   // a 50-day SMA with a 20-day lookback cushion (~70 trading days);
   // SPX needs monthly so we ask for 5y daily and resample.
+  // FRED NAPM = ISM Manufacturing PMI (monthly diffusion index). We pull
+  // 12 prints so the readout has plenty of history for the 3-month change
+  // and the 50-line crossover check. `fredSeries` returns null when
+  // FRED_API_KEY is missing or the request fails — we tolerate both.
   const [
     spxDaily,
     rsp, spy,
@@ -83,6 +90,7 @@ async function computeFromYahoo(): Promise<MarketRegimeData> {
     vix,
     dxy, tnx, oil,
     stoxx, nikkei,
+    napmObs,
   ] = await Promise.all([
     safeBars("^GSPC", "5y", "1d"),
     safeBars("RSP", "1y", "1d"),
@@ -99,6 +107,7 @@ async function computeFromYahoo(): Promise<MarketRegimeData> {
     safeBars("CL=F", "3mo", "1d"),
     safeBars("^STOXX", "3mo", "1d"),
     safeBars("^N225", "3mo", "1d"),
+    fredSeries("NAPM", 12).catch(() => null),
   ]);
 
   const spx10m = computeSpx10mTrend(spxDaily);
@@ -114,16 +123,20 @@ async function computeFromYahoo(): Promise<MarketRegimeData> {
   const stoxxR = computeCrossAssetReadout("^STOXX", stoxx);
   const nikkeiR = computeCrossAssetReadout("^N225", nikkei);
 
+  const ismPmi = napmObs ? computeIsmPmi(napmObs) : null;
+
   const parts = {
     spx10m,
     breadth,
     sectorRatios: { xlyXlp, xlkXlu, mtumUsmv },
     crossAsset: { vix: vixR, dxy: dxyR, tnx: tnxR, oil: oilR },
     global: { stoxx: stoxxR, nikkei: nikkeiR },
+    ismPmi,
   };
   const composite = composeRegime(parts);
+  const horizons = rollupHorizons(composite.signals);
 
-  return { computedAt: new Date().toISOString(), ...parts, composite };
+  return { computedAt: new Date().toISOString(), ...parts, composite, horizons };
 }
 
 async function readCache(): Promise<MarketRegimeData | null> {
@@ -131,7 +144,14 @@ async function readCache(): Promise<MarketRegimeData | null> {
     const redis = await getRedis();
     const raw = await redis.get(KEY);
     if (!raw) return null;
-    return JSON.parse(raw) as MarketRegimeData;
+    const parsed = JSON.parse(raw) as MarketRegimeData;
+    // Lazy backfill: older blobs predate the `horizons` field. Recompute it
+    // from the cached composite signals so the UI doesn't have to wait for
+    // the 30-min recompute window. Pure projection — no I/O, no risk.
+    if (!parsed.horizons && parsed.composite?.signals) {
+      parsed.horizons = rollupHorizons(parsed.composite.signals);
+    }
+    return parsed;
   } catch (e) {
     console.error("market-regime cache read error:", e);
     return null;
