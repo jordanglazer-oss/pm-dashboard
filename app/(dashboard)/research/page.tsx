@@ -565,12 +565,37 @@ export default function ResearchPage() {
     save({ ...state, rbcCanadianFocus: (state.rbcCanadianFocus || []).filter((r) => r.ticker !== ticker) });
   };
 
-  /* Attachment helpers */
+  /* Attachment helpers — use setState's functional form so concurrent
+     processFile calls (multi-file drop) each see the latest attachments
+     array instead of the stale closure snapshot. The debounced PUT fires
+     once with the final list. */
   const addAttachment = (att: BriefAttachment) => {
-    save({ ...state, attachments: [...(state.attachments || []), att] });
+    setState((prev) => {
+      const next = { ...prev, attachments: [...(prev.attachments || []), att] };
+      if (saveTimer.current) clearTimeout(saveTimer.current);
+      saveTimer.current = setTimeout(() => {
+        fetch("/api/kv/research", {
+          method: "PUT",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ research: next }),
+        }).catch((e) => console.error("Failed to save research:", e));
+      }, 800);
+      return next;
+    });
   };
   const removeAttachment = (id: string) => {
-    save({ ...state, attachments: (state.attachments || []).filter((a) => a.id !== id) });
+    setState((prev) => {
+      const next = { ...prev, attachments: (prev.attachments || []).filter((a) => a.id !== id) };
+      if (saveTimer.current) clearTimeout(saveTimer.current);
+      saveTimer.current = setTimeout(() => {
+        fetch("/api/kv/research", {
+          method: "PUT",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ research: next }),
+        }).catch((e) => console.error("Failed to save research:", e));
+      }, 800);
+      return next;
+    });
   };
 
   if (!loaded) return null;
