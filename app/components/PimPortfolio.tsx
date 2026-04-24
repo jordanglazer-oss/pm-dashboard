@@ -10,6 +10,8 @@ import type {
   PimPosition,
   PimTransaction,
   PimPortfolioState,
+  PimHolding,
+  PimModelGroupState,
 } from "@/app/lib/pim-types";
 import type { Stock, InstrumentType, ScoreKey } from "@/app/lib/types";
 
@@ -88,7 +90,7 @@ type Props = {
 };
 
 export function PimPortfolio({ groups }: Props) {
-  const { uiPrefs, setUiPref, stocks, pimPortfolioState, updatePimPortfolioState, getGroupState, addStock, scoredStocks } = useStocks();
+  const { uiPrefs, setUiPref, stocks, pimPortfolioState, updatePimPortfolioState, getGroupState, addStock, scoredStocks, pimModels, updatePimModels, moveBucket } = useStocks();
 
   const selectedGroupId = "pim";
   const [selectedProfile, setSelectedProfile] = useState<PimProfileType>("allEquity");
@@ -1167,29 +1169,66 @@ export function PimPortfolio({ groups }: Props) {
     if (!buyTicker || !buyPrice) return;
     if (switchSell.symbol && !sellPrice) return;
 
-    const existsInPortfolio = scoredStocks.some(
-      (s) => s.ticker === buyTicker || s.ticker.replace("-T", ".TO") === buyTicker.replace("-T", ".TO")
-    );
-    if (!existsInPortfolio) {
-      let name = switchBuy.name || buyTicker;
-      let instrumentType: InstrumentType = "stock";
-      let sector = "";
-      try {
-        const res = await fetch(`/api/company-name?tickers=${encodeURIComponent(buyTicker)}`);
-        if (res.ok) {
-          const data = await res.json();
-          if (data.names?.[buyTicker]) name = data.names[buyTicker];
-          if (data.sectors?.[buyTicker]) sector = data.sectors[buyTicker];
-          if (data.types?.[buyTicker]) instrumentType = data.types[buyTicker] as InstrumentType;
-        }
-      } catch { /* fallback */ }
+    // Local ticker-matcher (mirrors the one in StockContext).
+    const tickerEq = (a: string, b: string) =>
+      a === b || a.replace("-T", ".TO") === b.replace("-T", ".TO");
 
+    // ── Capture PRE-mutation pim-models snapshot for the atomic swap.
+    // A single Execute Switch action is treated as ONE firm-wide position
+    // change: the bought ticker replaces the sold ticker in EVERY group
+    // that currently holds the sold ticker, inheriting each group's own
+    // weightInClass and rebalance-price drift. Groups that already hold
+    // the bought ticker are skipped (to avoid double-holding) and surfaced
+    // to the user. Groups without the sold ticker are untouched.
+    const originalPim = pimModels;
+    const nowIso = new Date().toISOString();
+
+    type SwapPlan = {
+      groupId: string;
+      groupName: string;
+      soldHolding: PimHolding;
+    };
+    const swapPlan: SwapPlan[] = [];
+    const skippedDueToBoughtPresent: string[] = [];
+    if (switchSell.symbol) {
+      for (const g of originalPim.groups) {
+        const sold = g.holdings.find((h) => tickerEq(h.symbol, switchSell.symbol));
+        if (!sold) continue;
+        const boughtAlreadyPresent = g.holdings.some((h) => tickerEq(h.symbol, buyTicker));
+        if (boughtAlreadyPresent) {
+          skippedDueToBoughtPresent.push(g.name);
+          continue;
+        }
+        swapPlan.push({ groupId: g.id, groupName: g.name, soldHolding: sold });
+      }
+    }
+    const affectedGroupIds = new Set(swapPlan.map((p) => p.groupId));
+
+    // ── Resolve buy-side metadata up front so the atomic swap and the
+    // addStock call share the same name / instrumentType / sector.
+    const existsInPortfolio = scoredStocks.some(
+      (s) => tickerEq(s.ticker, buyTicker)
+    );
+    let buyName = switchBuy.name || buyTicker;
+    let buyInstrumentType: InstrumentType = "stock";
+    let buySector = "";
+    try {
+      const res = await fetch(`/api/company-name?tickers=${encodeURIComponent(buyTicker)}`);
+      if (res.ok) {
+        const data = await res.json();
+        if (data.names?.[buyTicker]) buyName = data.names[buyTicker];
+        if (data.sectors?.[buyTicker]) buySector = data.sectors[buyTicker];
+        if (data.types?.[buyTicker]) buyInstrumentType = data.types[buyTicker] as InstrumentType;
+      }
+    } catch { /* fallback to defaults */ }
+
+    if (!existsInPortfolio) {
       const stock: Stock = {
         ticker: buyTicker,
-        name,
-        instrumentType,
+        name: buyName,
+        instrumentType: buyInstrumentType,
         bucket: "Portfolio",
-        sector: instrumentType === "etf" || instrumentType === "mutual-fund" ? "" : sector,
+        sector: buyInstrumentType === "etf" || buyInstrumentType === "mutual-fund" ? "" : buySector,
         beta: 1.0,
         weights: { portfolio: 0 },
         scores: { ...ZERO_SCORES },
@@ -1198,45 +1237,127 @@ export function PimPortfolio({ groups }: Props) {
       addStock(stock);
     }
 
-    const sellHolding = switchSell.symbol ? computedHoldingsForSwitch.find((h) => h.symbol === switchSell.symbol) : null;
-    const transactions: PimTransaction[] = [];
-    if (switchSell.symbol && sellPrice) {
-      transactions.push({
-        id: generateId(), date: new Date().toISOString(), groupId: selectedGroupId,
-        type: switchSell.symbol ? "switch" : "buy", symbol: switchSell.symbol, direction: "sell",
-        price: sellPrice, targetWeight: sellHolding?.weightInPortfolio || 0, pairedWith: buyTicker,
+    // ── Move sold ticker Portfolio → Watchlist (operates on pm:stocks,
+    // which is not per-group). moveBucket triggers removeFromPimModels
+    // which rebalances; that's overwritten below by the atomic swap so
+    // the intermediate state doesn't survive.
+    if (switchSell.symbol) {
+      const soldStock = stocks.find((s) => tickerEq(s.ticker, switchSell.symbol));
+      if (soldStock?.bucket === "Portfolio") {
+        moveBucket(soldStock.ticker);
+      }
+    }
+
+    // ── Atomic firm-wide swap in pm:pim-models.
+    if (swapPlan.length > 0) {
+      const buyCurrency: "CAD" | "USD" =
+        buyTicker.endsWith(".U")
+          ? "USD"
+          : buyTicker.endsWith("-T") || buyTicker.endsWith(".TO")
+            ? "CAD"
+            : swapPlan[0].soldHolding.currency; // inherit when suffix is silent
+      const updatedGroups = originalPim.groups.map((g) => {
+        const plan = swapPlan.find((p) => p.groupId === g.id);
+        if (!plan) return g;
+        return {
+          ...g,
+          holdings: g.holdings.map((h) =>
+            h === plan.soldHolding
+              ? {
+                  name: buyName.toUpperCase(),
+                  symbol: buyTicker,
+                  currency: buyCurrency,
+                  assetClass: plan.soldHolding.assetClass,
+                  weightInClass: plan.soldHolding.weightInClass,
+                }
+              : h
+          ),
+        };
+      });
+      updatePimModels({ ...originalPim, groups: updatedGroups, lastUpdated: nowIso });
+    }
+
+    // ── Transaction log + price snapshot — propagated to EVERY affected
+    // group's state so each group's Appendix shows the swap. Drift
+    // inheritance is computed per-group using that group's own prior
+    // rebalance price for the sold ticker. If the sold ticker wasn't in
+    // any group (weird but possible), we fall back to writing just the
+    // selectedGroup entry so the transaction row still lands somewhere.
+    const existingStates = pimPortfolioState.groupStates;
+    const statesToUpdateMap = new Map<string, PimModelGroupState>();
+
+    // Seed: keep unaffected states as-is.
+    for (const gs of existingStates) {
+      if (!affectedGroupIds.has(gs.groupId)) {
+        statesToUpdateMap.set(gs.groupId, gs);
+      }
+    }
+
+    // For each affected group, build/patch its state.
+    const groupsToWrite: { groupId: string; soldWeightInClass: number }[] =
+      swapPlan.length > 0
+        ? swapPlan.map((p) => ({ groupId: p.groupId, soldWeightInClass: p.soldHolding.weightInClass }))
+        : [{ groupId: selectedGroupId, soldWeightInClass: 0 }]; // fallback for pure buy / ticker-not-in-any-model
+
+    for (const { groupId, soldWeightInClass } of groupsToWrite) {
+      const existing: PimModelGroupState = existingStates.find((gs) => gs.groupId === groupId)
+        ?? { groupId, lastRebalance: null, trackingStart: null, transactions: [] };
+      const prices = { ...(existing.lastRebalance?.prices || {}) };
+      const oldSellRebalancePrice = switchSell.symbol ? prices[switchSell.symbol] : undefined;
+      if (switchSell.symbol) prices[switchSell.symbol] = sellPrice;
+
+      // Drift inheritance: per-group, using THIS group's own prior rebalance price.
+      if (switchSell.symbol && oldSellRebalancePrice && sellPrice > 0) {
+        prices[buyTicker] = buyPrice * (oldSellRebalancePrice / sellPrice);
+      } else {
+        prices[buyTicker] = buyPrice;
+      }
+
+      const txns: PimTransaction[] = [];
+      if (switchSell.symbol && sellPrice) {
+        txns.push({
+          id: generateId(), date: nowIso, groupId,
+          type: "switch", symbol: switchSell.symbol, direction: "sell",
+          price: sellPrice, targetWeight: soldWeightInClass, pairedWith: buyTicker,
+        });
+      }
+      txns.push({
+        id: generateId(), date: nowIso, groupId,
+        type: switchSell.symbol ? "switch" : "buy", symbol: buyTicker, direction: "buy",
+        price: buyPrice, targetWeight: soldWeightInClass, pairedWith: switchSell.symbol || undefined,
+      });
+
+      statesToUpdateMap.set(groupId, {
+        ...existing,
+        lastRebalance: existing.lastRebalance
+          ? { ...existing.lastRebalance, prices }
+          : { date: nowIso, prices },
+        transactions: [...existing.transactions, ...txns],
       });
     }
-    transactions.push({
-      id: generateId(), date: new Date().toISOString(), groupId: selectedGroupId,
-      type: switchSell.symbol ? "switch" : "buy", symbol: buyTicker, direction: "buy",
-      price: buyPrice, targetWeight: 0, pairedWith: switchSell.symbol || undefined,
-    });
-
-    const newPrices = { ...(groupState.lastRebalance?.prices || {}) };
-    if (switchSell.symbol) newPrices[switchSell.symbol] = sellPrice;
-    newPrices[buyTicker] = buyPrice;
 
     const updatedState: PimPortfolioState = {
       ...pimPortfolioState,
-      groupStates: [
-        ...pimPortfolioState.groupStates.filter((gs) => gs.groupId !== selectedGroupId),
-        {
-          ...groupState,
-          lastRebalance: groupState.lastRebalance
-            ? { ...groupState.lastRebalance, prices: newPrices }
-            : { date: new Date().toISOString(), prices: newPrices },
-          transactions: [...groupState.transactions, ...transactions],
-        },
-      ],
-      lastUpdated: new Date().toISOString(),
+      groupStates: Array.from(statesToUpdateMap.values()),
+      lastUpdated: nowIso,
     };
     updatePimPortfolioState(updatedState);
+
+    // ── User feedback: warn about skipped groups where bought ticker
+    // was already present (can't double-hold).
+    if (skippedDueToBoughtPresent.length > 0) {
+      alert(
+        `${buyTicker} was already held in these models — swap was NOT applied there to avoid duplicate holdings:\n\n` +
+        skippedDueToBoughtPresent.map((n) => `  • ${n}`).join("\n") +
+        `\n\nIf you want to swap in those models too, manually remove ${buyTicker} there first.`
+      );
+    }
+
     setShowSwitch(false);
     setSwitchSell({ symbol: "", price: "" });
     setSwitchBuy({ symbol: "", price: "", ticker: "", name: "", resolving: false });
     fetchPrices();
-  }, [switchSell, switchBuy, computedHoldingsForSwitch, pimPortfolioState, selectedGroupId, groupState, updatePimPortfolioState, fetchPrices, scoredStocks, addStock]);
+  }, [switchSell, switchBuy, pimPortfolioState, selectedGroupId, updatePimPortfolioState, fetchPrices, scoredStocks, addStock, pimModels, updatePimModels, moveBucket, stocks]);
 
   return (
     <div className="space-y-6">
