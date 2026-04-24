@@ -1232,9 +1232,6 @@ export function MorningBrief({
           >
             {generating ? "Generating..." : "\u21BB Refresh Brief"}
           </button>
-          <span className="text-sm text-slate-400">
-            VIX: <strong>{activeForward?.vixWeek?.value ?? "—"}</strong> | MOVE: <strong>{activeForward?.moveWeek?.value ?? "—"}</strong> | HY: <strong>{activeForward?.hyOasTrend?.value ?? "—"}</strong> | Osc: <strong>{marketData.spOscillator}</strong> | F&G: <strong>{marketData.fearGreed}</strong>
-          </span>
         </div>
       </section>
 
