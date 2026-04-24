@@ -1343,6 +1343,79 @@ export function PimPortfolio({ groups }: Props) {
     };
     updatePimPortfolioState(updatedState);
 
+    // ── pm:pim-positions — replace the sold ticker's position with the
+    // bought ticker across EVERY (group, profile) combination where the
+    // sold ticker was actually held. This populates units / ACB / value
+    // / current % / gain-loss on the Positioning tab immediately.
+    //
+    // Math:
+    //   proceeds_cad = soldUnits × sellPrice × sellFx
+    //   boughtUnits  = proceeds_cad / (buyPrice × buyFx)
+    //   costBasis    = buyPrice × buyFx  (per-unit CAD cost)
+    //
+    // When both currencies match, FX cancels and boughtUnits reduces to
+    //   soldUnits × (sellPrice / buyPrice).
+    if (switchSell.symbol && sellPrice > 0 && buyPrice > 0) {
+      const sellCurrency: "CAD" | "USD" =
+        switchSell.symbol.endsWith(".U")
+          ? "USD"
+          : switchSell.symbol.endsWith("-T") || switchSell.symbol.endsWith(".TO")
+            ? "CAD"
+            : "USD";
+      const buyCurrencyForPos: "CAD" | "USD" =
+        buyTicker.endsWith(".U")
+          ? "USD"
+          : buyTicker.endsWith("-T") || buyTicker.endsWith(".TO")
+            ? "CAD"
+            : swapPlan[0]?.soldHolding.currency ?? sellCurrency;
+      const sellFx = sellCurrency === "USD" ? usdCadRate : 1;
+      const buyFx = buyCurrencyForPos === "USD" ? usdCadRate : 1;
+      const buyCostBasisCad = buyPrice * buyFx;
+
+      const updatedPositions = positions.map((pp) => {
+        // Only patch group+profile combos that match an affected group.
+        if (!affectedGroupIds.has(pp.groupId)) return pp;
+        const soldPos = pp.positions.find((p) => tickerEq(p.symbol, switchSell.symbol));
+        if (!soldPos || soldPos.units <= 0) return pp;
+
+        const proceedsCad = soldPos.units * sellPrice * sellFx;
+        const boughtUnits = buyCostBasisCad > 0 ? proceedsCad / buyCostBasisCad : 0;
+
+        // Remove sold + add bought (or update if BK already had a position).
+        const withoutSold = pp.positions.filter((p) => !tickerEq(p.symbol, switchSell.symbol));
+        const existingBought = withoutSold.find((p) => tickerEq(p.symbol, buyTicker));
+        let nextPositions;
+        if (existingBought) {
+          // Merge into existing: weighted-average costBasis, combine units.
+          const mergedUnits = existingBought.units + boughtUnits;
+          const mergedCostBasis =
+            mergedUnits > 0
+              ? (existingBought.units * existingBought.costBasis + boughtUnits * buyCostBasisCad) / mergedUnits
+              : buyCostBasisCad;
+          nextPositions = withoutSold.map((p) =>
+            tickerEq(p.symbol, buyTicker)
+              ? { ...p, units: mergedUnits, costBasis: mergedCostBasis }
+              : p
+          );
+        } else {
+          nextPositions = [
+            ...withoutSold,
+            { symbol: buyTicker, units: boughtUnits, costBasis: buyCostBasisCad },
+          ];
+        }
+        return { ...pp, positions: nextPositions, lastUpdated: nowIso };
+      });
+
+      setPositions(updatedPositions);
+      try {
+        await fetch("/api/kv/pim-positions", {
+          method: "PUT",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ portfolios: updatedPositions }),
+        });
+      } catch { /* non-fatal; local state is correct */ }
+    }
+
     // ── User feedback: warn about skipped groups where bought ticker
     // was already present (can't double-hold).
     if (skippedDueToBoughtPresent.length > 0) {
@@ -1357,7 +1430,7 @@ export function PimPortfolio({ groups }: Props) {
     setSwitchSell({ symbol: "", price: "" });
     setSwitchBuy({ symbol: "", price: "", ticker: "", name: "", resolving: false });
     fetchPrices();
-  }, [switchSell, switchBuy, pimPortfolioState, selectedGroupId, updatePimPortfolioState, fetchPrices, scoredStocks, addStock, pimModels, updatePimModels, moveBucket, stocks]);
+  }, [switchSell, switchBuy, pimPortfolioState, selectedGroupId, updatePimPortfolioState, fetchPrices, scoredStocks, addStock, pimModels, updatePimModels, moveBucket, stocks, positions, usdCadRate]);
 
   return (
     <div className="space-y-6">
