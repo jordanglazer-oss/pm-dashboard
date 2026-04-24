@@ -1279,8 +1279,25 @@ export function PimPortfolio({ groups }: Props) {
     });
 
     const newPrices = { ...(groupState.lastRebalance?.prices || {}) };
+    // Capture the sold ticker's OLD rebalance price BEFORE we overwrite it —
+    // we need it to inherit drift onto the bought ticker.
+    const oldSellRebalancePrice = switchSell.symbol ? newPrices[switchSell.symbol] : undefined;
     if (switchSell.symbol) newPrices[switchSell.symbol] = sellPrice;
-    newPrices[buyTicker] = buyPrice;
+
+    // Inherit drift: set the bought ticker's rebalance price so its
+    // growthFactor (currentPrice / rebalancePrice) equals the sold
+    // ticker's growthFactor at swap time. This makes both TARGET % and
+    // CURRENT (drifted) % on the Positioning tab match the sold position
+    // exactly — i.e. the swap is seamless from a weight-display and
+    // return-calculation standpoint until the next rebalance.
+    //   rebalancePriceBuy = buyPrice × (oldRebalancePriceSell / sellPrice)
+    // Falls back to buyPrice (zero drift) when there's no prior rebalance
+    // price for the sold ticker, or when it's a pure buy (no sell leg).
+    if (sellHoldingInModel && oldSellRebalancePrice && sellPrice > 0) {
+      newPrices[buyTicker] = buyPrice * (oldSellRebalancePrice / sellPrice);
+    } else {
+      newPrices[buyTicker] = buyPrice;
+    }
 
     const updatedState: PimPortfolioState = {
       ...pimPortfolioState,
