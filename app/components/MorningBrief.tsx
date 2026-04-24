@@ -1685,6 +1685,7 @@ export function MorningBrief({
         termStructure={marketData.termStructure}
         fearGreed={activeForward?.fearGreed?.value ?? marketData.fearGreed}
         hedgingAnalysis={hedgingAnalysis}
+        horizons={marketRegime?.horizons}
       />
 
       {/* Sector Rotation */}
