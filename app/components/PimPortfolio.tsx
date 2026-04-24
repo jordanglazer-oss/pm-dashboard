@@ -88,7 +88,7 @@ type Props = {
 };
 
 export function PimPortfolio({ groups }: Props) {
-  const { uiPrefs, setUiPref, stocks, pimPortfolioState, updatePimPortfolioState, getGroupState, addStock, scoredStocks } = useStocks();
+  const { uiPrefs, setUiPref, stocks, pimPortfolioState, updatePimPortfolioState, getGroupState, addStock, scoredStocks, pimModels, updatePimModels, moveBucket } = useStocks();
 
   const selectedGroupId = "pim";
   const [selectedProfile, setSelectedProfile] = useState<PimProfileType>("allEquity");
@@ -1167,29 +1167,48 @@ export function PimPortfolio({ groups }: Props) {
     if (!buyTicker || !buyPrice) return;
     if (switchSell.symbol && !sellPrice) return;
 
+    // ── Capture PRE-mutation pim-models snapshot for the atomic swap.
+    // We compute the final swap state from this snapshot rather than the
+    // post-helper state, because addStock / moveBucket trigger
+    // addToPimModels and removeFromPimModels which redistribute weights
+    // (correct for individual stocks at 1.82% lock, wrong for ETF/MF
+    // weight transfer). Last-write-wins on the pim-models KV blob.
+    const originalPim = pimModels;
+    const sellHoldingInModel = switchSell.symbol
+      ? originalPim.groups
+          .find((g) => g.id === selectedGroupId)
+          ?.holdings.find(
+            (h) =>
+              h.symbol === switchSell.symbol ||
+              h.symbol.replace("-T", ".TO") === switchSell.symbol.replace("-T", ".TO")
+          )
+      : null;
+
+    // ── Resolve buy-side metadata up front so the atomic swap and the
+    // addStock call share the same name / instrumentType / sector.
     const existsInPortfolio = scoredStocks.some(
       (s) => s.ticker === buyTicker || s.ticker.replace("-T", ".TO") === buyTicker.replace("-T", ".TO")
     );
-    if (!existsInPortfolio) {
-      let name = switchBuy.name || buyTicker;
-      let instrumentType: InstrumentType = "stock";
-      let sector = "";
-      try {
-        const res = await fetch(`/api/company-name?tickers=${encodeURIComponent(buyTicker)}`);
-        if (res.ok) {
-          const data = await res.json();
-          if (data.names?.[buyTicker]) name = data.names[buyTicker];
-          if (data.sectors?.[buyTicker]) sector = data.sectors[buyTicker];
-          if (data.types?.[buyTicker]) instrumentType = data.types[buyTicker] as InstrumentType;
-        }
-      } catch { /* fallback */ }
+    let buyName = switchBuy.name || buyTicker;
+    let buyInstrumentType: InstrumentType = "stock";
+    let buySector = "";
+    try {
+      const res = await fetch(`/api/company-name?tickers=${encodeURIComponent(buyTicker)}`);
+      if (res.ok) {
+        const data = await res.json();
+        if (data.names?.[buyTicker]) buyName = data.names[buyTicker];
+        if (data.sectors?.[buyTicker]) buySector = data.sectors[buyTicker];
+        if (data.types?.[buyTicker]) buyInstrumentType = data.types[buyTicker] as InstrumentType;
+      }
+    } catch { /* fallback to defaults */ }
 
+    if (!existsInPortfolio) {
       const stock: Stock = {
         ticker: buyTicker,
-        name,
-        instrumentType,
+        name: buyName,
+        instrumentType: buyInstrumentType,
         bucket: "Portfolio",
-        sector: instrumentType === "etf" || instrumentType === "mutual-fund" ? "" : sector,
+        sector: buyInstrumentType === "etf" || buyInstrumentType === "mutual-fund" ? "" : buySector,
         beta: 1.0,
         weights: { portfolio: 0 },
         scores: { ...ZERO_SCORES },
@@ -1198,6 +1217,52 @@ export function PimPortfolio({ groups }: Props) {
       addStock(stock);
     }
 
+    // ── Move sold ticker Portfolio → Watchlist (only if currently owned).
+    // moveBucket triggers removeFromPimModels which rebalances; that's
+    // overwritten below by the atomic swap, so the intermediate state
+    // doesn't survive.
+    if (switchSell.symbol) {
+      const soldStock = stocks.find(
+        (s) => s.ticker === switchSell.symbol || s.ticker.replace("-T", ".TO") === switchSell.symbol.replace("-T", ".TO")
+      );
+      if (soldStock?.bucket === "Portfolio") {
+        moveBucket(soldStock.ticker);
+      }
+    }
+
+    // ── Atomic 1-for-1 swap in pm:pim-models for the SELECTED group only.
+    // Bought ticker inherits the sold holding's weightInClass + assetClass,
+    // so ETF/MF weights transfer cleanly and stock swaps land at 1.82%
+    // (matching the locked invariant). Currency is detected fresh from
+    // the buy ticker. Other groups are untouched.
+    if (sellHoldingInModel) {
+      const buyCurrency: "CAD" | "USD" =
+        buyTicker.endsWith(".U")
+          ? "USD"
+          : buyTicker.endsWith("-T") || buyTicker.endsWith(".TO")
+            ? "CAD"
+            : sellHoldingInModel.currency; // inherit if unknowable from suffix
+      const updatedGroups = originalPim.groups.map((g) => {
+        if (g.id !== selectedGroupId) return g;
+        return {
+          ...g,
+          holdings: g.holdings.map((h) =>
+            h === sellHoldingInModel
+              ? {
+                  name: buyName.toUpperCase(),
+                  symbol: buyTicker,
+                  currency: buyCurrency,
+                  assetClass: sellHoldingInModel.assetClass,
+                  weightInClass: sellHoldingInModel.weightInClass,
+                }
+              : h
+          ),
+        };
+      });
+      updatePimModels({ ...originalPim, groups: updatedGroups, lastUpdated: new Date().toISOString() });
+    }
+
+    // ── Transaction log + price snapshot (unchanged).
     const sellHolding = switchSell.symbol ? computedHoldingsForSwitch.find((h) => h.symbol === switchSell.symbol) : null;
     const transactions: PimTransaction[] = [];
     if (switchSell.symbol && sellPrice) {
@@ -1210,7 +1275,7 @@ export function PimPortfolio({ groups }: Props) {
     transactions.push({
       id: generateId(), date: new Date().toISOString(), groupId: selectedGroupId,
       type: switchSell.symbol ? "switch" : "buy", symbol: buyTicker, direction: "buy",
-      price: buyPrice, targetWeight: 0, pairedWith: switchSell.symbol || undefined,
+      price: buyPrice, targetWeight: sellHoldingInModel?.weightInClass ?? 0, pairedWith: switchSell.symbol || undefined,
     });
 
     const newPrices = { ...(groupState.lastRebalance?.prices || {}) };
@@ -1236,7 +1301,7 @@ export function PimPortfolio({ groups }: Props) {
     setSwitchSell({ symbol: "", price: "" });
     setSwitchBuy({ symbol: "", price: "", ticker: "", name: "", resolving: false });
     fetchPrices();
-  }, [switchSell, switchBuy, computedHoldingsForSwitch, pimPortfolioState, selectedGroupId, groupState, updatePimPortfolioState, fetchPrices, scoredStocks, addStock]);
+  }, [switchSell, switchBuy, computedHoldingsForSwitch, pimPortfolioState, selectedGroupId, groupState, updatePimPortfolioState, fetchPrices, scoredStocks, addStock, pimModels, updatePimModels, moveBucket, stocks]);
 
   return (
     <div className="space-y-6">
