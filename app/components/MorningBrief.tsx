@@ -363,7 +363,7 @@ function MarketRegimeStrip({ regime }: { regime: MarketRegimeData }) {
                 <span className="opacity-70">·</span>
                 <span className="font-bold">{empty ? "—" : b.label_}</span>
                 {!empty && (
-                  <span className="font-mono opacity-70">{b.riskOn}-{b.riskOff}/{b.total}</span>
+                  <span className="font-mono opacity-70">{b.riskOn}↑ {b.riskOff}↓ <span className="opacity-60">/ {b.total}</span></span>
                 )}
                 <span className="opacity-50 text-[10px]">×{Math.round(h.weight * 100)}%</span>
               </span>
@@ -1342,9 +1342,12 @@ export function MorningBrief({
                       </div>
                       {b && !empty && (
                         <SignalPill tone={tone}>
-                          {b.label_}{" "}
-                          <span className="font-mono opacity-70">
-                            {b.riskOn}-{b.riskOff}/{b.total}
+                          <span title={`${b.riskOn} risk-on, ${b.riskOff} risk-off, of ${b.total} signal${b.total === 1 ? "" : "s"} in this horizon`}>
+                            {b.label_}
+                            <span className="mx-1.5 opacity-50">·</span>
+                            <span className="font-mono opacity-80">
+                              {b.riskOn}↑ {b.riskOff}↓ <span className="opacity-60">/ {b.total}</span>
+                            </span>
                           </span>
                         </SignalPill>
                       )}

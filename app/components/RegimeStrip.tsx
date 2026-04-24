@@ -153,7 +153,7 @@ export function RegimeStrip() {
                   <span className="font-bold">{empty ? "—" : b.label_}</span>
                   {!empty && (
                     <span className="font-mono opacity-70">
-                      {b.riskOn}-{b.riskOff}/{b.total}
+                      {b.riskOn}↑ {b.riskOff}↓ <span className="opacity-60">/ {b.total}</span>
                     </span>
                   )}
                   <span className="opacity-50 text-[10px]">
