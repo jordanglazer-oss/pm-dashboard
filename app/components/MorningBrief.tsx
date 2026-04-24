@@ -904,7 +904,22 @@ export function MorningBrief({
 
   const forwardView =
     brief?.forwardView ||
-    "The Forward View (next 2 weeks) will appear here after generating the brief. Automated forward-looking data below is already live and verifiable.";
+    "The Forward View synthesis will appear here after generating the brief. Automated forward-looking data below is already live and verifiable.";
+
+  // Three-horizon outlook (Phase 3). Falls back to a hint string per
+  // horizon when the brief hasn't been generated yet, or when an old
+  // pm:brief blob predates these fields. Keeps the section useful even
+  // with no AI text — the horizon composite chip from `marketRegime`
+  // is still informative on its own.
+  const tacticalView =
+    brief?.tacticalView ||
+    "Tactical (1-3M) outlook will appear here after generating the brief. The horizon composite below is live regardless.";
+  const cyclicalView =
+    brief?.cyclicalView ||
+    "Cyclical (3-6M) outlook will appear here after generating the brief. The horizon composite below is live regardless.";
+  const structuralView =
+    brief?.structuralView ||
+    "Structural (6-12M) outlook will appear here after generating the brief. The horizon composite below is live regardless.";
 
   const compositeAnalysis =
     brief?.compositeAnalysis ||
@@ -1264,7 +1279,7 @@ export function MorningBrief({
         <div className="flex flex-wrap items-center justify-between gap-3 mb-3">
           <div className="flex flex-wrap items-center gap-2">
             <span className="text-base">🧭</span>
-            <h2 className="text-base font-semibold text-slate-800">Forward View — Next 2 Weeks</h2>
+            <h2 className="text-base font-semibold text-slate-800">Forward View — Multi-Horizon</h2>
             {forwardLoading && <span className="text-xs text-blue-500 animate-pulse">Fetching live data...</span>}
             {activeForward && (
               <span
@@ -1297,9 +1312,80 @@ export function MorningBrief({
             </div>
           )}
         </div>
-        <p className="max-w-6xl text-sm leading-6 text-slate-700 mb-5">
-          {forwardView}
-        </p>
+        {/* Three-horizon outlook cards. Each card pairs the AI text with the
+            deterministic horizon composite from pm:market-regime so the PM
+            sees both qualitative and quantitative reads side-by-side. Stacks
+            vertically on mobile, 3 columns from md upward. The legacy single
+            "forwardView" synthesis sits in a slim row below the cards. */}
+        {(() => {
+          const horizonsData = marketRegime?.horizons;
+          const cards: { id: "tactical" | "cyclical" | "structural"; label: string; weight: string; text: string; accent: string }[] = [
+            { id: "tactical", label: "Tactical · 1–3M", weight: "50%", text: tacticalView, accent: "border-blue-200 bg-blue-50/40" },
+            { id: "cyclical", label: "Cyclical · 3–6M", weight: "30%", text: cyclicalView, accent: "border-emerald-200 bg-emerald-50/40" },
+            { id: "structural", label: "Structural · 6–12M", weight: "20%", text: structuralView, accent: "border-violet-200 bg-violet-50/40" },
+          ];
+          return (
+            <div className="mb-5 grid gap-3 grid-cols-1 md:grid-cols-3">
+              {cards.map((c) => {
+                const b = horizonsData?.byHorizon[c.id];
+                const empty = !b || b.total === 0;
+                const tone: "green" | "red" | "amber" = empty
+                  ? "amber"
+                  : b!.label_ === "Risk-On"
+                  ? "green"
+                  : b!.label_ === "Risk-Off"
+                  ? "red"
+                  : "amber";
+                return (
+                  <div key={c.id} className={`rounded-xl border p-3 ${c.accent}`}>
+                    <div className="flex items-center justify-between gap-2 mb-2">
+                      <div className="flex items-center gap-2">
+                        <span className="text-[10px] font-bold uppercase tracking-wider text-slate-600">{c.label}</span>
+                        <span className="text-[9px] font-semibold text-slate-400">×{c.weight}</span>
+                      </div>
+                      {b && !empty && (
+                        <SignalPill tone={tone}>
+                          {b.label_}{" "}
+                          <span className="font-mono opacity-70">
+                            {b.riskOn}-{b.riskOff}/{b.total}
+                          </span>
+                        </SignalPill>
+                      )}
+                      {(!b || empty) && (
+                        <span className="rounded-full border border-slate-200 bg-slate-50 px-2 py-0.5 text-[10px] text-slate-400">
+                          no signals
+                        </span>
+                      )}
+                    </div>
+                    <p className="text-sm leading-6 text-slate-700">{c.text}</p>
+                  </div>
+                );
+              })}
+            </div>
+          );
+        })()}
+
+        {/* Synthesis — single tying-it-together line. Shows only when the
+            brief has been generated, since the per-horizon cards already
+            cover the empty state. */}
+        {brief?.forwardView && (
+          <div className="mb-5 rounded-xl border border-slate-200 bg-slate-50/60 p-3">
+            <div className="flex items-center gap-2 mb-1">
+              <span className="text-[10px] font-bold uppercase tracking-wider text-slate-500">Synthesis</span>
+              {marketRegime?.horizons && isFinite(marketRegime.horizons.weightedScore) && (
+                <span className="text-[10px] text-slate-400">
+                  weighted{" "}
+                  <span className="font-semibold text-slate-600">
+                    {marketRegime.horizons.weightedLabel}
+                  </span>{" "}
+                  ({marketRegime.horizons.weightedScore >= 0 ? "+" : ""}
+                  {marketRegime.horizons.weightedScore.toFixed(2)})
+                </span>
+              )}
+            </div>
+            <p className="max-w-6xl text-sm leading-6 text-slate-700">{forwardView}</p>
+          </div>
+        )}
 
         {/* Visible banner when the forward-looking fetch fails or returns
             no tiles at all — so the user knows the panel is unavailable

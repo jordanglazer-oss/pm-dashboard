@@ -112,20 +112,32 @@ The user input contains a deterministic "Pre-classified Regime" line. Your marke
 - Risk-Off → Defensive. Emphasize protection, quality, what to avoid.
 
 CRITICAL — FORWARD-LOOKING ORIENTATION:
-The brief should focus on the NEXT 2 WEEKS, not recap yesterday. Use the week-over-week deltas and YTD framing to describe direction of travel. The "forwardView" field is where you explicitly project forward; other analysis fields should still interpret current data with a forward lens ("heading into the next two weeks, ...").
+The brief is forward-looking across THREE horizons, not a recap of yesterday. The three horizon fields (tacticalView, cyclicalView, structuralView) are the primary forward statements; everything else (compositeAnalysis, hedgingAnalysis, etc.) should interpret current data through a forward lens.
 
-Respond ONLY with valid JSON matching this exact structure (fields are intentionally ordered so Bottom Line → Forward View → Composite → Risk Scan flows naturally in the UI):
+The horizons map to specific time windows and weights in the overall composite:
+- tacticalView (1-3M, 50% weight): What the PM should DO this month. Driven by VIX, breadth, momentum-vs-defensive leadership. Concrete: lean in / take chips / hedge.
+- cyclicalView (3-6M, 30% weight): Sector rotation and business-cycle pulse. Driven by ISM PMI 50-line, XLY/XLP, XLK/XLU. Concrete: which sectors are accelerating / decelerating, what to rotate into.
+- structuralView (6-12M, 20% weight): Long-term trend overlay. Driven by SPX 10-month MA and ISM PMI direction. Concrete: are we in a bull cycle that allows risk-taking, or a topping process that vetoes tactical aggression?
+
+Each horizon view must be 2-3 sentences, reference at least one of its driving signals by name (from the Multi-Horizon Rollup block), and be concrete enough that a PM can act on it. If a horizon's signals contradict an adjacent one, NAME the disagreement — that's actionable information. If the horizon has "no signals available", lean qualitative for that horizon rather than fabricating a quantitative read.
+
+The legacy "forwardView" field should be a 2-3 sentence SYNTHESIS that ties the three horizons together for the bottom-of-page summary readers.
+
+Respond ONLY with valid JSON matching this exact structure (fields are intentionally ordered so Bottom Line → Tactical/Cyclical/Structural Views → Composite → Risk Scan flows naturally in the UI):
 {
   "marketRegime": "Risk-On or Neutral or Risk-Off — match the Pre-classified Regime unless clearly contradicted.",
-  "bottomLine": "2-4 sentence executive summary of the regime and what it means for portfolio positioning over the NEXT 2 WEEKS. Reference the direction of travel (e.g., 'S&P +X% YTD with VIX dropping', 'credit widening week-over-week'). Be bold and direct.",
-  "forwardView": "3-5 sentences titled 'Forward View — Next 2 Weeks'. Cover: (a) what the yield curve, forward P/E, and credit trend imply about risk appetite in the coming weeks; (b) the 1-2 specific catalysts or data releases to watch; (c) the asymmetry the PM should lean into. This is forward-looking ONLY — do not recap what already happened.",
+  "bottomLine": "2-4 sentence executive summary of the regime and what it means for portfolio positioning across the three horizons. Reference the weighted overall composite from the Multi-Horizon Rollup if present. Be bold and direct.",
+  "tacticalView": "2-3 sentences for the 1-3M tactical horizon. What the PM should DO this month. Cite at least one tactical-bucket signal by name (VIX Level, Breadth (RSP/SPY), MTUM/USMV). Concrete posture call: lean in, take chips, hedge, or hold. Reference live SPY hedging premiums if attached. This pairs with hedgingAnalysis.",
+  "cyclicalView": "2-3 sentences for the 3-6M cyclical horizon. Sector rotation + business cycle. Cite at least one cyclical-bucket signal by name (XLY/XLP, XLK/XLU, ISM PMI 50-line). Concrete: which sectors are accelerating, which to rotate into, whether the cycle is mid or late. Call out an ISM PMI 50-line CROSSOVER explicitly if one is flagged.",
+  "structuralView": "2-3 sentences for the 6-12M structural horizon. Long-term trend + macro direction. Cite at least one structural-bucket signal by name (SPX 10-Month Trend, ISM PMI Trend). Concrete: is the trend overlay supportive or vetoing? If structural disagrees with tactical, name the disagreement — the PM trades tactically but should know when the long window is pulling against them.",
+  "forwardView": "2-3 sentence SYNTHESIS that ties the three horizons together — leans heaviest on tactical (it's weighted 50%) but explicitly notes when cyclical or structural is in disagreement. This is the legacy single-paragraph view used by older read-only consumers; keep it tight.",
   "compositeAnalysis": "2-3 sentences on the overall market signal, what's driving it, and what PMs should focus on in the coming weeks.",
   "creditAnalysis": "2-3 sentences on credit spread LEVELS and WEEK-OVER-WEEK TREND, what they signal about risk appetite, and implications for equity portfolios.",
   "volatilityAnalysis": "2-3 sentences on the volatility regime, term structure, VIX week-over-week direction, and what it means for hedging and position sizing.",
   "breadthAnalysis": "2-3 sentences on market breadth and participation: S&P 500 and Nasdaq DMA participation rates, NYSE A/D line direction, and new highs vs new lows. Focus on market structure health — is the rally/selloff broad-based or narrow?",
   "contrarianAnalysis": "2-3 sentences providing the contrarian take. ALL four indicators (S&P Oscillator, Put/Call ratio, Fear & Greed, AAII survey) are interpreted INVERSELY: oversold/fearful = BULLISH opportunity, overbought/greedy = BEARISH warning. Provide an overall contrarian assessment and what it means for positioning.",
   "flowsAnalysis": "2-3 sentences on fund flows and positioning. If JPM screenshots are attached, reference 1-2 key data points. If NO screenshots are attached and the Equity Flows field is a generic label (e.g. 'Mixed'), keep this section brief and focus on what the other indicators imply about positioning instead of speculating about flows. Do NOT over-weight flows relative to credit, vol, and breadth.",
-  "hedgingAnalysis": "3-4 sentences on whether current conditions favor adding SPY put protection. When a 'Live SPY Hedging Costs' block is present in the data payload, you MUST cite at least one specific premium (e.g. '3-month ATM SPY put is X% of spot at $Y') and reference the week-over-week or month-over-month direction of those premiums when provided. Integrate VIX, term structure, and sentiment as the qualitative lens on top of the actual option prices — not as a substitute for them. Give a clear directional recommendation (add / hold / skip) grounded in the dollar cost of protection relative to the portfolio, not generic platitudes.",
+  "hedgingAnalysis": "3-4 sentences on whether current conditions favor adding SPY put protection (we are restricted to PROTECTIVE PUTS only — no speculative positions). When a 'Live SPY Hedging Costs' block is present in the data payload, you MUST cite at least one specific premium (e.g. '3-month ATM SPY put is X% of spot at $Y') and reference the week-over-week or month-over-month direction of those premiums when provided. Tie the recommendation to the TACTICAL horizon stance: a Risk-Off tactical bucket warrants a closer-dated put (1-3M tenor), a Risk-Off structural bucket with healthy tactical warrants a longer-dated put (6-12M LEAPS) as a strategic overlay. Strikes ATM to 10% OTM are in scope. Integrate VIX, term structure, and sentiment as the qualitative lens on top of the actual option prices. Give a clear directional recommendation (add / hold / skip) grounded in the dollar cost of protection relative to the portfolio.",
   "sectorRotation": {
     "summary": "1-2 sentence overview of which sectors are leading vs lagging based on the LIVE sector ETF performance data provided.",
     "leading": ["Sector (+X.XX% today, reason)", "Sector (+X.XX% today, reason)"],
@@ -675,6 +687,19 @@ export async function POST(request: NextRequest) {
           if (r.sectorRatios.xlkXlu) lines.push(`- ${ratio("XLK/XLU", r.sectorRatios.xlkXlu)}`);
           if (r.sectorRatios.mtumUsmv) lines.push(`- ${ratio("MTUM/USMV", r.sectorRatios.mtumUsmv)}`);
           if (r.crossAsset.vix) lines.push(`- VIX Level: ${r.crossAsset.vix.direction} (${r.crossAsset.vix.price.toFixed(1)})`);
+          // ISM PMI feeds two named signals: level (cyclical horizon) and
+          // 3M trend (structural). Crossover events are flagged because
+          // they historically lead sector leadership shifts by 1-2 months.
+          if (r.ismPmi) {
+            const cross = r.ismPmi.crossedFiftyThisMonth
+              ? r.ismPmi.crossDirection === "below-to-above"
+                ? " — CROSSED ABOVE 50 this month"
+                : " — CROSSED BELOW 50 this month"
+              : "";
+            lines.push(
+              `- ISM PMI: ${r.ismPmi.level.toFixed(1)} (prior ${r.ismPmi.prior.toFixed(1)}, 3M ${r.ismPmi.change3mAbs >= 0 ? "+" : ""}${r.ismPmi.change3mAbs.toFixed(1)}pt)${cross}`
+            );
+          }
           const crossParts: string[] = [];
           if (r.crossAsset.dxy) crossParts.push(`DXY 20d ${fmtPct(r.crossAsset.dxy.change20dPct)}`);
           if (r.crossAsset.tnx) crossParts.push(`10Y ${r.crossAsset.tnx.price.toFixed(2)}% (20d ${fmtPct(r.crossAsset.tnx.change20dPct)})`);
@@ -684,11 +709,38 @@ export async function POST(request: NextRequest) {
           if (r.global.stoxx) globalParts.push(`STOXX 20d ${fmtPct(r.global.stoxx.change20dPct)}`);
           if (r.global.nikkei) globalParts.push(`Nikkei 20d ${fmtPct(r.global.nikkei.change20dPct)}`);
           if (globalParts.length > 0) lines.push(`- Global Context: ${globalParts.join(" · ")}`);
+          // Per-horizon rollup — drives the new tacticalView / cyclicalView
+          // / structuralView fields. Empty buckets render as "no signals"
+          // so Claude knows to lean qualitative for that horizon rather
+          // than hallucinate a quantitative read.
+          let horizonsBlock = "";
+          if (r.horizons) {
+            const h = r.horizons;
+            const hLine = (id: "tactical" | "cyclical" | "structural", label: string) => {
+              const b = h.byHorizon[id];
+              if (b.total === 0) return `- ${label}: no signals available`;
+              const sigs = b.signals.map((s) => `${s.name} ${s.direction}`).join(", ");
+              const score = isFinite(b.score) ? (b.score >= 0 ? "+" : "") + b.score.toFixed(2) : "n/a";
+              return `- ${label}: ${b.label_} (${b.riskOn}-${b.riskOff}/${b.total}, score ${score}) — ${sigs}`;
+            };
+            const weighted = isFinite(h.weightedScore)
+              ? `${h.weightedLabel} (weighted score ${h.weightedScore >= 0 ? "+" : ""}${h.weightedScore.toFixed(2)})`
+              : "n/a";
+            horizonsBlock = `
+
+Multi-Horizon Rollup (1-3M tactical 50% / 3-6M cyclical 30% / 6-12M structural 20%):
+${hLine("tactical", "Tactical (1-3M)")}
+${hLine("cyclical", "Cyclical (3-6M)")}
+${hLine("structural", "Structural (6-12M)")}
+- Weighted Overall: ${weighted}
+
+Use this rollup as the SCAFFOLDING for tacticalView, cyclicalView, and structuralView. Each horizon view should be 2-3 sentences and reference at least one of its driving signals by name. The horizons are intentionally interlocking: tactical sets the immediate posture, cyclical confirms or contests the rotation, structural is the "don't-fight-the-tape" overlay. If two horizons disagree, name the disagreement explicitly — the PM trades on the tactical lens but should know when the longer windows are pulling the other way.`;
+          }
           return `\n\nDeterministic Regime Snapshot (from pm:market-regime, computed ${r.computedAt}):
 Composite: ${r.composite.label} (${r.composite.score}/${r.composite.total} risk-on signals)
-${lines.join("\n")}
+${lines.join("\n")}${horizonsBlock}
 
-Use this as additional confirmation for your marketRegime call, your breadthAnalysis (sector leadership rotation), and your forwardView. If the deterministic label conflicts with the pre-classified macro regime above, briefly reconcile in bottomLine — do not ignore either.`;
+Use this as additional confirmation for your marketRegime call, your breadthAnalysis (sector leadership rotation), and your three horizon views. If the deterministic label conflicts with the pre-classified macro regime above, briefly reconcile in bottomLine — do not ignore either.`;
         })()
       : "";
 
