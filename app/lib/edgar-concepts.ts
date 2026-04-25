@@ -174,10 +174,14 @@ const INDUSTRY_REGISTRY: Record<EdgarIndustry, Partial<Record<LogicalMetric, Con
       { concept: "InterestAndDividendIncomeOperating" },
     ],
     // Banks tag long-term debt under bank-specific concepts post-2013.
-    // Order: try bank-specific first, then default fallbacks.
+    // The freshness-aware lookup picks the most recently filed concept;
+    // the order here is just secondary tiebreaker.
+    // Verified for JPM (FY2025): LongTermDebtAndCapitalLeaseObligationsIncludingCurrentMaturities
+    // is their canonical tag (the bare LongTermDebt stopped at 2013).
     longTermDebt: [
-      { concept: "LongTermDebt" },
+      { concept: "LongTermDebtAndCapitalLeaseObligationsIncludingCurrentMaturities" },
       { concept: "LongTermDebtAndCapitalLeaseObligations" },
+      { concept: "LongTermDebt" },
       { concept: "Borrowings" },
       { concept: "BeneficialInterestsIssuedByConsolidatedVariableInterestEntities" },
     ],
