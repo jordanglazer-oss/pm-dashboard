@@ -4,6 +4,7 @@ import type { ScoreKey, ScoreExplanations, HealthData } from "@/app/lib/types";
 import { SCORE_GROUPS } from "@/app/lib/types";
 import type { OHLCVBar, TechnicalIndicators, RiskAlert } from "@/app/lib/technicals";
 import { computeTechnicals, computeRiskAlert, formatTechnicalsForPrompt } from "@/app/lib/technicals";
+import { formatEdgarSnapshotForPrompt } from "@/app/lib/edgar-prompt";
 
 const client = new Anthropic();
 
@@ -389,9 +390,17 @@ async function fetchFinancialData(ticker: string): Promise<{ context: string; pr
   };
 }
 
-const SCORING_PROMPT = `You are an institutional equity research analyst scoring a stock for a portfolio management scoring system. You will be provided with REAL FINANCIAL DATA from Yahoo Finance — you MUST use this data to produce accurate, specific explanations. Do not guess or fabricate numbers.
+const SCORING_PROMPT = `You are an institutional equity research analyst scoring a stock for a portfolio management scoring system. You will be provided with REAL FINANCIAL DATA from two sources — you MUST use this data to produce accurate, specific explanations. Do not guess or fabricate numbers.
 
-Note: Yahoo Finance data uses "raw" for numeric values and "fmt" for formatted strings. Always use the actual numbers.
+DATA SOURCES (in order of preference for fundamentals):
+
+1. SEC EDGAR XBRL DATA (when present) — this is the AUDITED AS-REPORTED source pulled directly from 10-K and 10-Q filings, normalized through an industry-aware concept registry. PREFER these numbers for any fundamental metric (revenue, net income, EPS, OCF, capex, debt, cash, equity, etc.). The block is clearly marked "=== SEC EDGAR XBRL FINANCIALS ===" and includes industry classification, multi-year annual history, and YoY/CAGR calculations. Each metric also names the exact XBRL concept used so you can be precise about what's measured. EDGAR is only available for US-listed issuers (Canadian -T/.TO and OTC names will not have this block — fall back to Yahoo for those).
+
+2. YAHOO FINANCE DATA (always present) — use for: current price, market cap, beta, sentiment metrics (P/E ratios when EDGAR isn't present), peer comparison data, analyst recommendations, dividend yield, and anything else EDGAR doesn't carry. Yahoo Finance data uses "raw" for numeric values and "fmt" for formatted strings; always use the actual numbers.
+
+If a metric appears in BOTH sources and the values differ slightly: trust EDGAR for as-reported figures. Yahoo sometimes restates silently and definitions can drift; EDGAR is point-in-time correct from the filing.
+
+STALE DATA HANDLING: any EDGAR field marked [STALE — last filed YYYY-MM-DD] has not been reported in over 18 months. Do NOT use stale fields as a current snapshot. Either omit analysis for that metric or note that the issuer no longer reports it discretely. Common stale cases include companies that stopped breaking out a line item in their financial statements (e.g., interest expense lumped into "other income/(expense), net").
 
 Each category has its own max score (shown as /N). Score from 0 to that max:
 - 0 = Poor / negative signal
@@ -499,9 +508,17 @@ export async function POST(request: NextRequest) {
     let riskAlert: RiskAlert | undefined;
 
     try {
-      const [financialResult, priceHistory] = await Promise.all([
+      // Fetch Yahoo + price history + EDGAR XBRL in parallel.
+      // EDGAR returns null cleanly for non-US tickers so the score
+      // route still works for Canadian/.TO names — they just don't
+      // get the audited as-reported supplement.
+      const [financialResult, priceHistory, edgarBlock] = await Promise.all([
         fetchFinancialData(upperTicker),
         fetchPriceHistory(upperTicker),
+        formatEdgarSnapshotForPrompt(upperTicker).catch((e) => {
+          console.error("[EDGAR] non-fatal fetch error:", e);
+          return null;
+        }),
       ]);
 
       financialContext = financialResult.context;
@@ -515,6 +532,13 @@ export async function POST(request: NextRequest) {
           // Append technical summary to financial context for Claude
           financialContext += `\n\n---\n\n${formatTechnicalsForPrompt(technicals)}`;
         }
+      }
+
+      // Append the EDGAR XBRL block for US issuers. It's clearly
+      // labeled inside the block so Claude can prefer it over Yahoo
+      // for fundamentals while still using Yahoo for price/beta/peers.
+      if (edgarBlock) {
+        financialContext += `\n\n---\n\n${edgarBlock}`;
       }
     } catch (e) {
       console.error("Failed to fetch financial data:", e);
