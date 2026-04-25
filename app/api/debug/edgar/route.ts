@@ -1,23 +1,34 @@
 import { NextResponse } from "next/server";
-import { getCikForTicker, getCompanyFacts, getConceptSeries, listConcepts } from "@/app/lib/edgar";
+import { getCikForTicker, getCompanyFacts, listConcepts } from "@/app/lib/edgar";
+import { classifyIssuer } from "@/app/lib/edgar-industry";
+import { buildScoringSnapshot } from "@/app/lib/edgar-concepts";
 
 /**
  * GET /api/debug/edgar?ticker=AAPL
  *
- * Stage 1 sanity-check endpoint for the SEC EDGAR integration.
+ * Stage 2 sanity-check: returns the same metadata as Stage 1 PLUS the
+ * industry classification AND the normalized scoring snapshot
+ * (deduped, sorted, industry-aware concept-priority applied).
  *
- * Verifies:
- *   1. The ticker→CIK lookup resolves (or returns null cleanly for
- *      non-US tickers like Canadian -T listings).
- *   2. The companyfacts JSON fetches without auth issues (i.e. the
- *      SEC_USER_AGENT env var is set correctly).
- *   3. A handful of marquee concepts (Revenues, NetIncomeLoss, etc.)
- *      come back with sensible values.
+ * Compare these fields between Stage 1 and Stage 2 for AAPL:
  *
- * Response shape is intentionally compact — full XBRL payloads can be
- * 5MB+. Use ?showAllConcepts=1 to dump the full list of available
- * concepts (useful for figuring out what tags to put in the Stage 2
- * industry-aware concept registry).
+ *   Stage 1 sampleConcepts.Revenues.latestEnd:
+ *     "2018-09-29"  ← stale (Apple stopped using us-gaap:Revenues)
+ *
+ *   Stage 2 metrics.revenue:
+ *     conceptUsed: "RevenueFromContractWithCustomerExcludingAssessedTax"
+ *     latest.end: "2025-12-27" or similar  ← live, post-ASC-606 tag
+ *
+ *   Stage 1 sampleConcepts.EarningsPerShareDiluted:
+ *     { available: false }  ← unit mismatch
+ *
+ *   Stage 2 metrics.epsDiluted:
+ *     unit: "USD/shares"
+ *     latest.val: ~6.16  ← actual EPS
+ *
+ * Use ?showAllConcepts=1 to dump the full available concept list (for
+ * adding new tags to the registry when a new issuer surfaces a tag we
+ * don't know about).
  */
 export async function GET(req: Request) {
   try {
@@ -37,74 +48,71 @@ export async function GET(req: Request) {
       return NextResponse.json({
         ticker,
         cik: null,
-        note: ticker.endsWith("-T") || ticker.endsWith(".TO") || ticker.endsWith(".U")
-          ? `${ticker} is a Canadian / international listing — not in SEC EDGAR by design. The scoring system will fall back to Yahoo for this ticker.`
-          : `${ticker} not found in the SEC ticker map. Could be OTC, recently delisted, or a non-SEC-registered issuer. Scoring will fall back to Yahoo.`,
+        note:
+          ticker.endsWith("-T") || ticker.endsWith(".TO") || ticker.endsWith(".U")
+            ? `${ticker} is a Canadian / international listing — not in SEC EDGAR by design. The scoring system will fall back to Yahoo for this ticker.`
+            : `${ticker} not found in the SEC ticker map. Could be OTC, recently delisted, or a non-SEC-registered issuer. Scoring will fall back to Yahoo.`,
       });
     }
 
-    const facts = await getCompanyFacts(ticker);
+    const [facts, classification] = await Promise.all([
+      getCompanyFacts(ticker),
+      classifyIssuer(cikInfo.paddedCik),
+    ]);
+
     if (!facts) {
       return NextResponse.json({
         ticker,
         cik: cikInfo.cik,
         entityName: cikInfo.entityName,
+        classification,
         note: `Resolved to CIK ${cikInfo.paddedCik} but companyfacts returned no data. Likely a recently filed entity or one that filed only non-XBRL forms.`,
       });
     }
 
-    // Pull a handful of marquee concepts so you can eyeball the data
-    // quality. These are the ones that exist for ~80% of US issuers.
-    const sampleConcepts = [
-      "Revenues",
-      "RevenueFromContractWithCustomerExcludingAssessedTax",
-      "NetIncomeLoss",
-      "EarningsPerShareDiluted",
-      "OperatingIncomeLoss",
-      "CashAndCashEquivalentsAtCarryingValue",
-      "LongTermDebt",
-      "StockholdersEquity",
-      "NetCashProvidedByUsedInOperatingActivities",
-    ];
-    const samples: Record<string, { latestVal: number; latestEnd: string; latestForm: string; observations: number; lastFour: { end: string; val: number; form: string }[] } | { available: false }> = {};
-    for (const concept of sampleConcepts) {
-      const series = getConceptSeries(facts, concept, { limit: 4 });
-      if (series.length === 0) {
-        samples[concept] = { available: false };
-      } else {
-        const latest = series[0];
-        samples[concept] = {
-          latestVal: latest.val,
-          latestEnd: latest.end,
-          latestForm: latest.form,
-          observations: facts.facts["us-gaap"]?.[concept]?.units.USD?.length ?? 0,
-          lastFour: series.map((f) => ({ end: f.end, val: f.val, form: f.form })),
-        };
-      }
+    const snapshot = buildScoringSnapshot(facts, classification.industry);
+
+    // Compact display: latest value + 4 most-recent annual + concept used.
+    const compactMetrics: Record<string, unknown> = {};
+    for (const [metric, info] of Object.entries(snapshot)) {
+      compactMetrics[metric] = {
+        conceptUsed: info.conceptUsed,
+        unit: info.unit,
+        latest: info.latest && {
+          end: info.latest.end,
+          val: info.latest.val,
+          form: info.latest.form,
+          fp: info.latest.fp,
+        },
+        recentAnnual: info.annual.slice(0, 4).map((f) => ({
+          end: f.end,
+          val: f.val,
+          form: f.form,
+        })),
+        recentQuarterly: info.quarterly.slice(0, 4).map((f) => ({
+          end: f.end,
+          val: f.val,
+          form: f.form,
+          fp: f.fp,
+        })),
+      };
     }
 
     const allConcepts = listConcepts(facts);
-    const earliestEnd = (() => {
-      // Find the earliest period end across all concepts to show data depth.
-      let earliest: string | null = null;
-      for (const concept of allConcepts) {
-        const usd = facts.facts["us-gaap"]?.[concept]?.units.USD;
-        if (!usd || usd.length === 0) continue;
-        for (const obs of usd) {
-          if (earliest === null || obs.end < earliest) earliest = obs.end;
-        }
-      }
-      return earliest;
-    })();
 
     return NextResponse.json({
       ticker,
       cik: cikInfo.cik,
       paddedCik: cikInfo.paddedCik,
       entityName: facts.entityName,
+      classification: {
+        industry: classification.industry,
+        sic: classification.sic,
+        sicDescription: classification.sicDescription,
+      },
       conceptCount: allConcepts.length,
-      earliestObservation: earliestEnd,
-      sampleConcepts: samples,
+      metricsCount: Object.keys(compactMetrics).length,
+      metrics: compactMetrics,
       ...(showAllConcepts ? { allConcepts } : { allConceptsHint: "Add &showAllConcepts=1 to dump the full concept list." }),
     });
   } catch (error) {
