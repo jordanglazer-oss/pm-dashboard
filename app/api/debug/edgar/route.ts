@@ -35,6 +35,7 @@ export async function GET(req: Request) {
     const url = new URL(req.url);
     const ticker = (url.searchParams.get("ticker") || "").trim().toUpperCase();
     const showAllConcepts = url.searchParams.get("showAllConcepts") === "1";
+    const conceptSearch = (url.searchParams.get("conceptSearch") || "").trim();
 
     if (!ticker) {
       return NextResponse.json(
@@ -100,6 +101,32 @@ export async function GET(req: Request) {
 
     const allConcepts = listConcepts(facts);
 
+    // Concept search: filter by case-insensitive substring and return
+    // concepts WITH their latest observation date and value, so the
+    // operator can quickly identify which tag a company actually uses
+    // for a given metric (e.g. ?conceptSearch=Debt to find JPM's
+    // long-term debt concept). Only returns USD-denominated facts;
+    // skips concepts with no data.
+    let conceptSearchResults: Array<{ concept: string; latestEnd: string; latestVal: number; observations: number }> | undefined;
+    if (conceptSearch) {
+      const needle = conceptSearch.toLowerCase();
+      const matches = allConcepts.filter((c) => c.toLowerCase().includes(needle));
+      conceptSearchResults = [];
+      for (const c of matches) {
+        const usd = facts.facts["us-gaap"]?.[c]?.units?.USD;
+        if (!usd || usd.length === 0) continue;
+        const sorted = [...usd].sort((a, b) => b.end.localeCompare(a.end));
+        conceptSearchResults.push({
+          concept: c,
+          latestEnd: sorted[0].end,
+          latestVal: sorted[0].val,
+          observations: usd.length,
+        });
+      }
+      // Sort by freshest first so the relevant tag is at the top.
+      conceptSearchResults.sort((a, b) => b.latestEnd.localeCompare(a.latestEnd));
+    }
+
     return NextResponse.json({
       ticker,
       cik: cikInfo.cik,
@@ -113,7 +140,8 @@ export async function GET(req: Request) {
       conceptCount: allConcepts.length,
       metricsCount: Object.keys(compactMetrics).length,
       metrics: compactMetrics,
-      ...(showAllConcepts ? { allConcepts } : { allConceptsHint: "Add &showAllConcepts=1 to dump the full concept list." }),
+      ...(conceptSearchResults ? { conceptSearch: { query: conceptSearch, matchesWithData: conceptSearchResults.length, results: conceptSearchResults } } : {}),
+      ...(showAllConcepts ? { allConcepts } : { allConceptsHint: "Add &showAllConcepts=1 to dump the full concept list, or &conceptSearch=Debt to search by keyword (returns matching concepts sorted by freshness)." }),
     });
   } catch (error) {
     const message = error instanceof Error ? error.message : String(error);
