@@ -399,6 +399,15 @@ function MarketRegimeStrip({ regime }: { regime: MarketRegimeData }) {
  *  Shows value, a week-over-week delta if `previous` is set, the source
  *  badge that opens the underlying page in a new tab, and a methodology
  *  note the user can hover for full provenance. */
+// Horizon chip metadata for ForwardTile. Colors mirror the Forward View
+// horizon cards (tactical=blue, cyclical=emerald, structural=violet) so
+// the same visual language carries across the Brief.
+const HORIZON_CHIP: Record<"tactical" | "cyclical" | "structural", { label: string; cls: string; full: string }> = {
+  tactical:  { label: "1–3M",  cls: "border-blue-200 bg-blue-50 text-blue-700",       full: "Tactical · 1–3M" },
+  cyclical:  { label: "3–6M",  cls: "border-emerald-200 bg-emerald-50 text-emerald-700", full: "Cyclical · 3–6M" },
+  structural:{ label: "6–12M", cls: "border-violet-200 bg-violet-50 text-violet-700",   full: "Structural · 6–12M" },
+};
+
 function ForwardTile({
   label,
   point,
@@ -406,6 +415,7 @@ function ForwardTile({
   deltaUnit,
   deltaPeriod = "wk/wk",
   invertDeltaColor = false,
+  horizon,
 }: {
   label: string;
   point: ForwardPointBundle | undefined;
@@ -413,6 +423,7 @@ function ForwardTile({
   deltaUnit?: "bps" | "pct" | "raw" | "pp";
   deltaPeriod?: "wk/wk" | "mo/mo";
   invertDeltaColor?: boolean;
+  horizon?: "tactical" | "cyclical" | "structural";
 }) {
   const available = point && point.value != null;
   let deltaStr: string | null = null;
@@ -473,9 +484,19 @@ function ForwardTile({
   return (
     <div className="rounded-2xl border border-slate-100 bg-slate-50/60 p-3 md:p-4">
       <div className="flex items-start justify-between gap-2 mb-1">
-        <span className="text-[11px] font-semibold uppercase tracking-wider text-slate-500">
-          {label}
-        </span>
+        <div className="flex items-center gap-1.5 min-w-0 flex-wrap">
+          <span className="text-[11px] font-semibold uppercase tracking-wider text-slate-500">
+            {label}
+          </span>
+          {horizon && (
+            <span
+              className={`inline-flex items-center rounded-full border px-1.5 py-px text-[9px] font-bold uppercase tracking-wider ${HORIZON_CHIP[horizon].cls}`}
+              title={HORIZON_CHIP[horizon].full}
+            >
+              {HORIZON_CHIP[horizon].label}
+            </span>
+          )}
+        </div>
         <div className="flex items-center gap-1.5 shrink-0">
           <LiveStatusBadge status={badgeStatus} reason={badgeReason} />
           {point?.source && (
@@ -1405,6 +1426,24 @@ export function MorningBrief({
 
         {activeForward && (
           <div className="space-y-6 mb-5">
+            {/* Horizon legend — explains the small color chips on each
+                tile. Mirrors the Forward View horizon palette. */}
+            <div className="flex flex-wrap items-center gap-2 rounded-xl border border-slate-100 bg-slate-50/60 px-3 py-2">
+              <span className="text-[10px] font-bold uppercase tracking-wider text-slate-500">Horizon</span>
+              <span className={`inline-flex items-center rounded-full border px-2 py-0.5 text-[10px] font-semibold ${HORIZON_CHIP.tactical.cls}`}>
+                Tactical · 1–3M
+              </span>
+              <span className={`inline-flex items-center rounded-full border px-2 py-0.5 text-[10px] font-semibold ${HORIZON_CHIP.cyclical.cls}`}>
+                Cyclical · 3–6M
+              </span>
+              <span className={`inline-flex items-center rounded-full border px-2 py-0.5 text-[10px] font-semibold ${HORIZON_CHIP.structural.cls}`}>
+                Structural · 6–12M
+              </span>
+              <span className="text-[11px] text-slate-500">
+                · Each indicator is tagged with the horizon it speaks to most directly.
+              </span>
+            </div>
+
             {/* Momentum & Breadth — SPX trajectory plus % of index above
                 key DMAs. Tells you whether a move is broad or narrow. */}
             <BriefSection
@@ -1413,11 +1452,11 @@ export function MorningBrief({
               accent="blue"
             >
               <div className="grid gap-3 grid-cols-2 md:grid-cols-3 lg:grid-cols-5">
-                <ForwardTile label="S&P 500 YTD" point={activeForward.spxYtd} unit="%" />
-                <ForwardTile label="S&P 500 Week" point={activeForward.spxWeek} unit="%" />
-                <ForwardTile label="S&P >200DMA (wk)" point={activeForward.breadth200Wk} unit="%" deltaUnit="pp" deltaPeriod="wk/wk" />
-                <ForwardTile label="S&P >200DMA (mo)" point={activeForward.breadth200Mo} unit="%" deltaUnit="pp" deltaPeriod="mo/mo" />
-                <ForwardTile label="S&P >50DMA (wk)" point={activeForward.breadth50Wk} unit="%" deltaUnit="pp" deltaPeriod="wk/wk" />
+                <ForwardTile label="S&P 500 YTD" point={activeForward.spxYtd} unit="%" horizon="cyclical" />
+                <ForwardTile label="S&P 500 Week" point={activeForward.spxWeek} unit="%" horizon="tactical" />
+                <ForwardTile label="S&P >200DMA (wk)" point={activeForward.breadth200Wk} unit="%" deltaUnit="pp" deltaPeriod="wk/wk" horizon="cyclical" />
+                <ForwardTile label="S&P >200DMA (mo)" point={activeForward.breadth200Mo} unit="%" deltaUnit="pp" deltaPeriod="mo/mo" horizon="cyclical" />
+                <ForwardTile label="S&P >50DMA (wk)" point={activeForward.breadth50Wk} unit="%" deltaUnit="pp" deltaPeriod="wk/wk" horizon="tactical" />
               </div>
             </BriefSection>
 
@@ -1429,10 +1468,10 @@ export function MorningBrief({
               accent="emerald"
             >
               <div className="grid gap-3 grid-cols-2 md:grid-cols-3 lg:grid-cols-4">
-                <ForwardTile label="SPY Forward P/E" point={activeForward.spyForwardPE} />
-                <ForwardTile label="SPY Trailing P/E" point={activeForward.spyTrailingPE} />
-                <ForwardTile label="Implied 1Y EPS Growth (P/E)" point={activeForward.impliedEpsGrowth} unit="%" />
-                <ForwardTile label="Est 3-5Y EPS Growth" point={activeForward.eps35Growth} unit="%" />
+                <ForwardTile label="SPY Forward P/E" point={activeForward.spyForwardPE} horizon="structural" />
+                <ForwardTile label="SPY Trailing P/E" point={activeForward.spyTrailingPE} horizon="structural" />
+                <ForwardTile label="Implied 1Y EPS Growth (P/E)" point={activeForward.impliedEpsGrowth} unit="%" horizon="cyclical" />
+                <ForwardTile label="Est 3-5Y EPS Growth" point={activeForward.eps35Growth} unit="%" horizon="structural" />
               </div>
             </BriefSection>
 
@@ -1444,11 +1483,11 @@ export function MorningBrief({
               accent="amber"
             >
               <div className="grid gap-3 grid-cols-2 md:grid-cols-3 lg:grid-cols-5">
-                <ForwardTile label="10Y Treasury" point={activeForward.yield10y} unit="%" deltaUnit="raw" />
-                <ForwardTile label="2Y Treasury" point={activeForward.yield2y} unit="%" deltaUnit="raw" />
-                <ForwardTile label="3M T-Bill" point={activeForward.yield3m} unit="%" deltaUnit="raw" />
-                <ForwardTile label="10Y-2Y Curve" point={activeForward.curve10y2y} unit="bps" />
-                <ForwardTile label="10Y-3M Curve" point={activeForward.curve10y3m} unit="bps" />
+                <ForwardTile label="10Y Treasury" point={activeForward.yield10y} unit="%" deltaUnit="raw" horizon="structural" />
+                <ForwardTile label="2Y Treasury" point={activeForward.yield2y} unit="%" deltaUnit="raw" horizon="cyclical" />
+                <ForwardTile label="3M T-Bill" point={activeForward.yield3m} unit="%" deltaUnit="raw" horizon="tactical" />
+                <ForwardTile label="10Y-2Y Curve" point={activeForward.curve10y2y} unit="bps" horizon="structural" />
+                <ForwardTile label="10Y-3M Curve" point={activeForward.curve10y3m} unit="bps" horizon="structural" />
               </div>
             </BriefSection>
 
@@ -1460,10 +1499,10 @@ export function MorningBrief({
               accent="rose"
             >
               <div className="grid gap-3 grid-cols-2 md:grid-cols-3 lg:grid-cols-4">
-                <ForwardTile label="HY OAS Trend" point={activeForward.hyOasTrend} unit="bps" deltaUnit="bps" invertDeltaColor />
-                <ForwardTile label="IG OAS Trend" point={activeForward.igOasTrend} unit="bps" deltaUnit="bps" invertDeltaColor />
-                <ForwardTile label="VIX (wk/wk)" point={activeForward.vixWeek} deltaUnit="pct" invertDeltaColor />
-                <ForwardTile label="MOVE (wk/wk)" point={activeForward.moveWeek} deltaUnit="pct" invertDeltaColor />
+                <ForwardTile label="HY OAS Trend" point={activeForward.hyOasTrend} unit="bps" deltaUnit="bps" invertDeltaColor horizon="cyclical" />
+                <ForwardTile label="IG OAS Trend" point={activeForward.igOasTrend} unit="bps" deltaUnit="bps" invertDeltaColor horizon="cyclical" />
+                <ForwardTile label="VIX (wk/wk)" point={activeForward.vixWeek} deltaUnit="pct" invertDeltaColor horizon="tactical" />
+                <ForwardTile label="MOVE (wk/wk)" point={activeForward.moveWeek} deltaUnit="pct" invertDeltaColor horizon="tactical" />
               </div>
             </BriefSection>
           </div>
