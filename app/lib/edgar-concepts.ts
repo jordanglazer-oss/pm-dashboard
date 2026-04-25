@@ -356,31 +356,63 @@ export function getMetric(
     ...(DEFAULT_REGISTRY[metric] ?? []),
   ];
 
-  for (const t of tries) {
+  // ── Freshness-aware selection.
+  //
+  // Earlier this function returned the FIRST matching concept and
+  // stopped. That broke for issuers who switched concept tags over
+  // time — e.g. JPM stopped using `LongTermDebt` (last filed 2013) and
+  // moved to `LongTermDebtAndCapitalLeaseObligations` (current). The
+  // lookup found `LongTermDebt` first, returned its 2013 series, and
+  // never tried the bank-specific fallback.
+  //
+  // Now we collect EVERY matching concept and pick the one whose most
+  // recent observation is newest. Tiebreak by priority order so an
+  // industry-specific tag still wins when both are equally fresh.
+  type Candidate = {
+    t: ConceptTry;
+    priority: number; // index in `tries` (lower = higher priority)
+    normalized: NormalizedFact[];
+    latestEnd: string;
+  };
+  const candidates: Candidate[] = [];
+
+  for (let i = 0; i < tries.length; i++) {
+    const t = tries[i];
     const unit = t.unit ?? "USD";
     const raw = getConceptSeries(facts, t.concept, {
       taxonomy: t.taxonomy ?? "us-gaap",
       unit,
-      limit: 1000, // pull all, dedupe later
+      limit: 1000,
     });
     if (raw.length === 0) continue;
-
-    let normalized = dedupeAndSort(raw);
-
-    if (opts.frequency === "annual") {
-      normalized = normalized.filter((f) => f.fp === "FY");
-    } else if (opts.frequency === "quarterly") {
-      // All quarterly observations including FY (which represents Q4
-      // when paired with the prior 9-month YTD value, but we don't
-      // attempt that here — the consumer can decompose).
-      normalized = normalized.filter((f) => /^Q[1-3]$/.test(f.fp) || f.fp === "FY");
-    }
-
-    if (opts.limit) normalized = normalized.slice(0, opts.limit);
-
-    return { conceptUsed: t.concept, unit, series: normalized };
+    const normalized = dedupeAndSort(raw);
+    if (normalized.length === 0) continue;
+    candidates.push({ t, priority: i, normalized, latestEnd: normalized[0].end });
   }
-  return null;
+
+  if (candidates.length === 0) return null;
+
+  // Sort: newest latestEnd first, then priority asc as tiebreaker.
+  candidates.sort((a, b) => {
+    if (a.latestEnd !== b.latestEnd) return b.latestEnd.localeCompare(a.latestEnd);
+    return a.priority - b.priority;
+  });
+
+  const winner = candidates[0];
+  let series = winner.normalized;
+
+  if (opts.frequency === "annual") {
+    series = series.filter((f) => f.fp === "FY");
+  } else if (opts.frequency === "quarterly") {
+    // All quarterly observations including FY (which represents Q4
+    // when paired with the prior 9-month YTD value, but we don't
+    // attempt that here — the consumer can decompose).
+    series = series.filter((f) => /^Q[1-3]$/.test(f.fp) || f.fp === "FY");
+  }
+
+  if (opts.limit) series = series.slice(0, opts.limit);
+
+  return { conceptUsed: winner.t.concept, unit: winner.t.unit ?? "USD", series };
 }
 
 /**
