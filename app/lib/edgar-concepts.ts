@@ -128,6 +128,8 @@ const DEFAULT_REGISTRY: Partial<Record<LogicalMetric, ConceptTry[]>> = {
     { concept: "CashAndCashEquivalentsAtCarryingValue" },
     { concept: "CashCashEquivalentsRestrictedCashAndRestrictedCashEquivalents" },
     { concept: "Cash" },
+    { concept: "CashAndDueFromBanks" }, // banks
+    { concept: "CashCashEquivalentsAndFederalFundsSold" }, // banks
   ],
   totalAssets: [
     { concept: "Assets" },
@@ -150,6 +152,9 @@ const DEFAULT_REGISTRY: Partial<Record<LogicalMetric, ConceptTry[]>> = {
   interestExpense: [
     { concept: "InterestExpense" },
     { concept: "InterestExpenseDebt" },
+    { concept: "InterestExpenseLongTermDebt" },
+    { concept: "InterestExpenseOperating" },
+    { concept: "InterestExpenseBorrowings" },
   ],
 };
 
@@ -167,6 +172,19 @@ const INDUSTRY_REGISTRY: Record<EdgarIndustry, Partial<Record<LogicalMetric, Con
     revenue: [
       { concept: "Revenues" },
       { concept: "InterestAndDividendIncomeOperating" },
+    ],
+    // Banks tag long-term debt under bank-specific concepts post-2013.
+    // Order: try bank-specific first, then default fallbacks.
+    longTermDebt: [
+      { concept: "LongTermDebt" },
+      { concept: "LongTermDebtAndCapitalLeaseObligations" },
+      { concept: "Borrowings" },
+      { concept: "BeneficialInterestsIssuedByConsolidatedVariableInterestEntities" },
+    ],
+    cash: [
+      { concept: "CashAndDueFromBanks" },
+      { concept: "CashCashEquivalentsAndFederalFundsSold" },
+      { concept: "CashAndCashEquivalentsAtCarryingValue" },
     ],
     netInterestIncome: [
       { concept: "InterestIncomeExpenseNet" },
@@ -202,6 +220,30 @@ const INDUSTRY_REGISTRY: Record<EdgarIndustry, Partial<Record<LogicalMetric, Con
     ],
   },
   reit: {
+    // REITs don't have ASC 606 customer contracts — revenue is rental
+    // / lease income tagged under different concepts.
+    revenue: [
+      { concept: "Revenues" },
+      { concept: "OperatingLeasesIncomeStatementLeaseRevenue" },
+      { concept: "OperatingLeaseLeaseIncome" },
+      { concept: "RealEstateInvestmentRevenues" },
+      { concept: "RentalIncome" },
+    ],
+    operatingIncome: [
+      { concept: "OperatingIncomeLoss" },
+      { concept: "IncomeLossFromContinuingOperationsBeforeIncomeTaxesExtraordinaryItemsNoncontrollingInterest" },
+      { concept: "IncomeLossFromContinuingOperationsBeforeIncomeTaxesMinorityInterestAndIncomeLossFromEquityMethodInvestments" },
+    ],
+    longTermDebt: [
+      { concept: "LongTermDebtNoncurrent" },
+      { concept: "LongTermDebt" },
+      { concept: "MortgageNotesPayable" },
+      { concept: "SeniorNotes" },
+      { concept: "LineOfCredit" },
+      { concept: "NotesPayable" },
+      { concept: "LongTermNotesPayable" },
+      { concept: "DebtLongtermAndShorttermCombinedAmount" },
+    ],
     ffo: [
       // FFO is non-GAAP and rarely tagged in us-gaap directly. REITs
       // often report it under company-specific extensions. Best-effort.
@@ -209,6 +251,7 @@ const INDUSTRY_REGISTRY: Record<EdgarIndustry, Partial<Record<LogicalMetric, Con
     ],
     noi: [
       { concept: "OperatingIncomeLoss" }, // closest GAAP proxy
+      { concept: "IncomeLossFromContinuingOperationsBeforeIncomeTaxesExtraordinaryItemsNoncontrollingInterest" },
     ],
   },
   saas: {
