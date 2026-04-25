@@ -402,6 +402,8 @@ If a metric appears in BOTH sources and the values differ slightly: trust EDGAR 
 
 STALE DATA HANDLING: any EDGAR field marked [STALE — last filed YYYY-MM-DD] has not been reported in over 18 months. Do NOT use stale fields as a current snapshot. Either omit analysis for that metric or note that the issuer no longer reports it discretely. Common stale cases include companies that stopped breaking out a line item in their financial statements (e.g., interest expense lumped into "other income/(expense), net").
 
+INSIDER ACTIVITY: when the EDGAR block includes a "=== INSIDER ACTIVITY (Form 4...) ===" sub-section, this is the PRIMARY data source for the ownershipTrends category. The data comes directly from SEC Form 4 filings (officers, directors, 10%+ owners) over the last 90 days, filtered to OPEN-MARKET trades only (P=Purchase, S=Sale). RSU grants/vests, option exercises, and tax-withholding sales are deliberately EXCLUDED because they're scheduled/mechanical, not discretionary signals. Cite specific insiders, transaction dates, dollar amounts, and the directional bias. A cluster of multi-officer BUYS is a strong bullish signal; sustained broad-based SELLING is a yellow flag (but contextualize: a single 10% owner trimming a position is different from the CFO + CEO + COO all selling). If no Form 4 transactions appear, say so explicitly — quiet insider behavior is itself a neutral data point, not a missing field.
+
 Each category has its own max score (shown as /N). Score from 0 to that max:
 - 0 = Poor / negative signal
 - Max = Strong / positive signal
