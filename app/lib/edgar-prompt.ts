@@ -17,6 +17,7 @@
 import { getCikForTicker, getCompanyFacts } from "./edgar";
 import { classifyIssuer } from "./edgar-industry";
 import { buildScoringSnapshot } from "./edgar-concepts";
+import { getInsiderActivity, type Form4Summary, type Form4Transaction } from "./edgar-form4";
 
 const STALE_THRESHOLD_DAYS = 540; // 18 months
 
@@ -117,9 +118,91 @@ export async function formatEdgarSnapshotForPrompt(ticker: string): Promise<stri
     }
 
     lines.push(`Coverage summary: ${freshCount} fresh metrics, ${staleCount} stale.`);
+
+    // ── Insider activity (Form 4) — non-fatal if it fails. Adds a
+    // 90-day insider transaction summary to feed the ownershipTrends
+    // scoring category, which previously had no real data input.
+    try {
+      const insider = await getInsiderActivity(ticker);
+      if (insider) {
+        lines.push(``);
+        lines.push(formatInsiderBlock(insider));
+      }
+    } catch (err) {
+      console.error(`[EDGAR] form4 fetch failed for ${ticker}:`, err);
+    }
+
     return lines.join("\n");
   } catch (err) {
     console.error(`[EDGAR] snapshot failed for ${ticker}:`, err);
     return null;
   }
+}
+
+// ─── Insider activity formatter ─────────────────────────────────────
+
+function fmtTx(t: Form4Transaction): string {
+  const role = t.officerTitle ? `${t.relationship} (${t.officerTitle})` : t.relationship;
+  const sharesStr = t.shares.toLocaleString(undefined, { maximumFractionDigits: 0 });
+  const totalStr = fmtUSD(t.totalValue);
+  return `  ${t.date}: ${t.insider} (${role}) ${t.code === "P" ? "BOUGHT" : "SOLD"} ${sharesStr} sh @ $${t.pricePerShare.toFixed(2)} = ${totalStr}`;
+}
+
+function formatInsiderBlock(s: Form4Summary): string {
+  const lines: string[] = [];
+  lines.push(`=== INSIDER ACTIVITY (Form 4, last ${s.windowDays} days) ===`);
+  if (s.transactionCount === 0) {
+    lines.push(`No open-market insider transactions reported in the last ${s.windowDays} days.`);
+    lines.push(`(Form 4 grants, vests, option exercises, and tax-withholding sales are excluded —`);
+    lines.push(`only direct discretionary buys and sells count as informational signal.)`);
+    return lines.join("\n");
+  }
+
+  lines.push(`Window: last ${s.windowDays} days. Source: SEC Form 4 filings (officers, directors, 10%+ owners).`);
+  lines.push(`Filtered to OPEN-MARKET trades only (codes P=Purchase, S=Sale).`);
+  lines.push(`Excludes RSU/option grants (A), exercises (M), tax withholding (F), gifts (G).`);
+  lines.push(``);
+  lines.push(`Aggregate:`);
+  lines.push(`  Total transactions: ${s.transactionCount} (${s.buyCount} buys, ${s.sellCount} sells)`);
+  lines.push(`  Total bought:  ${fmtUSD(s.totalBuyValue)}  (${s.uniqueBuyers.length} unique buyer${s.uniqueBuyers.length === 1 ? "" : "s"})`);
+  lines.push(`  Total sold:    ${fmtUSD(s.totalSellValue)}  (${s.uniqueSellers.length} unique seller${s.uniqueSellers.length === 1 ? "" : "s"})`);
+  lines.push(`  Net (buy − sell): ${s.netDollarValue >= 0 ? "+" : ""}${fmtUSD(s.netDollarValue)}`);
+
+  const directionalBias =
+    s.totalBuyValue === 0 && s.totalSellValue === 0 ? "no activity"
+    : s.totalBuyValue > s.totalSellValue * 2 ? "STRONGLY NET BUYING (bullish insider signal)"
+    : s.totalSellValue > s.totalBuyValue * 2 ? "STRONGLY NET SELLING (caution; could be diversification but sustained selling is a yellow flag)"
+    : s.totalBuyValue > s.totalSellValue ? "modestly net buying"
+    : s.totalSellValue > s.totalBuyValue ? "modestly net selling"
+    : "balanced";
+  lines.push(`  Directional bias: ${directionalBias}`);
+  lines.push(``);
+
+  if (s.topBuys.length > 0) {
+    lines.push(`Top buys (by dollar value):`);
+    for (const t of s.topBuys) lines.push(fmtTx(t));
+    lines.push(``);
+  }
+  if (s.topSells.length > 0) {
+    lines.push(`Top sells (by dollar value):`);
+    for (const t of s.topSells) lines.push(fmtTx(t));
+    lines.push(``);
+  }
+
+  // Skip "recent" if it would just duplicate top buys/sells.
+  const topIds = new Set([...s.topBuys, ...s.topSells].map((t) => `${t.insider}|${t.date}|${t.shares}`));
+  const otherRecent = s.recentTransactions.filter((t) => !topIds.has(`${t.insider}|${t.date}|${t.shares}`));
+  if (otherRecent.length > 0) {
+    lines.push(`Other recent transactions:`);
+    for (const t of otherRecent.slice(0, 5)) lines.push(fmtTx(t));
+  }
+
+  lines.push(``);
+  lines.push(`Use this to inform the ownershipTrends category. A cluster of insider BUYS by`);
+  lines.push(`multiple officers is a strong bullish signal — insiders rarely buy for non-thesis`);
+  lines.push(`reasons. Sustained insider SELLING is yellow-flag; consider scale relative to`);
+  lines.push(`their typical comp / the company's market cap, and whether selling is concentrated`);
+  lines.push(`in one person or broad-based.`);
+
+  return lines.join("\n");
 }
