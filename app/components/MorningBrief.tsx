@@ -301,9 +301,9 @@ function MarketRegimeStrip({ regime }: { regime: MarketRegimeData }) {
   if (global.nikkei) crossRow.push({ label: "Nikkei", body: `${global.nikkei.price.toFixed(0)} · 20d ${fmtPct(global.nikkei.change20dPct)}` });
 
   return (
-    <div className="mb-5 rounded-2xl border border-slate-200 bg-white/80 p-4">
-      <div className="flex flex-wrap items-start justify-between gap-3 mb-3">
-        <div className="flex items-center gap-2">
+    <div className="mb-5 overflow-hidden rounded-2xl border border-slate-200 bg-white/80 p-3 sm:p-4">
+      <div className="mb-3 flex flex-wrap items-start justify-between gap-2 sm:gap-3">
+        <div className="flex flex-wrap items-center gap-2">
           <span className="text-[10px] font-bold uppercase tracking-wider text-slate-500">Market Regime</span>
           <SignalPill tone={labelTone}>{label}</SignalPill>
           <span className="text-xs text-slate-400">
@@ -319,15 +319,15 @@ function MarketRegimeStrip({ regime }: { regime: MarketRegimeData }) {
       </div>
 
       {comp.signals.length > 0 && (
-        <div className="flex flex-wrap gap-1.5 mb-3">
+        <div className="mb-3 flex flex-wrap gap-1 sm:gap-1.5">
           {comp.signals.map((s, i) => (
             <span
               key={i}
-              className={`inline-flex items-center gap-1.5 rounded-full border px-2.5 py-1 text-[11px] ${regimePillClasses(s.direction)}`}
+              className={`inline-flex max-w-full items-center gap-1 rounded-full border px-2 py-0.5 text-[10px] sm:gap-1.5 sm:px-2.5 sm:py-1 sm:text-[11px] ${regimePillClasses(s.direction)}`}
               title={s.detail}
             >
-              <span className="font-semibold">{s.name}</span>
-              <span className="opacity-70">· {s.detail}</span>
+              <span className="truncate font-semibold">{s.name}</span>
+              <span className="truncate opacity-70">· {s.detail}</span>
             </span>
           ))}
         </div>
@@ -337,46 +337,48 @@ function MarketRegimeStrip({ regime }: { regime: MarketRegimeData }) {
           Renders only when the cached blob has the new `horizons` field; older
           snapshots silently skip and the rest of the strip is unaffected. */}
       {regime.horizons && (
-        <div className="flex flex-wrap items-center gap-1.5 mb-3 pt-2 border-t border-slate-100">
-          <span className="text-[10px] font-bold uppercase tracking-wider text-slate-500 mr-1">By Horizon</span>
-          {HORIZONS.map((h) => {
-            const b = regime.horizons!.byHorizon[h.id];
-            const empty = b.total === 0;
-            const tone: "green" | "red" | "amber" = empty
-              ? "amber"
-              : b.label_ === "Risk-On" ? "green" : b.label_ === "Risk-Off" ? "red" : "amber";
-            return (
-              <span
-                key={h.id}
-                className={`inline-flex items-center gap-1.5 rounded-full border px-2.5 py-1 text-[11px] ${
-                  empty ? "border-slate-200 bg-slate-50 text-slate-400" : regimePillClasses(
-                    tone === "green" ? "risk-on" : tone === "red" ? "risk-off" : "neutral"
-                  )
-                }`}
-                title={
-                  empty
-                    ? `${h.description} · No signals available yet.`
-                    : `${h.description}\n\n${b.signals.map((s) => `• ${s.name}: ${s.detail}`).join("\n")}`
-                }
-              >
-                <span className="font-semibold">{h.shortLabel}</span>
-                <span className="opacity-70">·</span>
-                <span className="font-bold">{empty ? "—" : b.label_}</span>
-                {!empty && (
-                  <span className="font-mono opacity-70">{b.riskOn}↑ {b.riskOff}↓ <span className="opacity-60">/ {b.total}</span></span>
-                )}
-                <span className="opacity-50 text-[10px]">×{Math.round(h.weight * 100)}%</span>
-              </span>
-            );
-          })}
+        <div className="mb-3 border-t border-slate-100 pt-2">
+          <div className="flex flex-wrap items-center gap-1 sm:gap-1.5">
+            <span className="mr-1 text-[10px] font-bold uppercase tracking-wider text-slate-500">By Horizon</span>
+            {HORIZONS.map((h) => {
+              const b = regime.horizons!.byHorizon[h.id];
+              const empty = b.total === 0;
+              const tone: "green" | "red" | "amber" = empty
+                ? "amber"
+                : b.label_ === "Risk-On" ? "green" : b.label_ === "Risk-Off" ? "red" : "amber";
+              return (
+                <span
+                  key={h.id}
+                  className={`inline-flex max-w-full items-center gap-1 rounded-full border px-2 py-0.5 text-[10px] sm:gap-1.5 sm:px-2.5 sm:py-1 sm:text-[11px] ${
+                    empty ? "border-slate-200 bg-slate-50 text-slate-400" : regimePillClasses(
+                      tone === "green" ? "risk-on" : tone === "red" ? "risk-off" : "neutral"
+                    )
+                  }`}
+                  title={
+                    empty
+                      ? `${h.description} · No signals available yet.`
+                      : `${h.description}\n\n${b.signals.map((s) => `• ${s.name}: ${s.detail}`).join("\n")}`
+                  }
+                >
+                  <span className="font-semibold">{h.shortLabel}</span>
+                  <span className="opacity-70">·</span>
+                  <span className="font-bold">{empty ? "—" : b.label_}</span>
+                  {!empty && (
+                    <span className="font-mono opacity-70">{b.riskOn}↑ {b.riskOff}↓ <span className="opacity-60">/ {b.total}</span></span>
+                  )}
+                  <span className="text-[10px] opacity-50">×{Math.round(h.weight * 100)}%</span>
+                </span>
+              );
+            })}
+          </div>
           {isFinite(regime.horizons.weightedScore) && (
-            <span className="ml-auto text-[10px] text-slate-500">
+            <div className="mt-2 text-[10px] text-slate-500 sm:text-right">
               Weighted: <span className="font-semibold text-slate-700">{regime.horizons.weightedLabel}</span>{" "}
               <span className="font-mono opacity-70">
                 ({regime.horizons.weightedScore >= 0 ? "+" : ""}
                 {regime.horizons.weightedScore.toFixed(2)})
               </span>
-            </span>
+            </div>
           )}
         </div>
       )}

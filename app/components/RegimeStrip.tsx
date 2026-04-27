@@ -81,9 +81,12 @@ export function RegimeStrip() {
   if (!regime) return null;
 
   return (
-    <div className="rounded-[24px] border border-slate-200 bg-white p-4 shadow-sm">
-      <div className="flex flex-wrap items-center gap-3">
-        <div className="flex items-center gap-2">
+    <div className="overflow-hidden rounded-[24px] border border-slate-200 bg-white p-3 shadow-sm sm:p-4">
+      {/* Top row — header chips wrap above the signal pills on mobile, sit
+          inline on desktop. The "Open Brief" link drops to its own row on
+          mobile so it never competes with pills for horizontal space. */}
+      <div className="flex flex-col gap-2 sm:flex-row sm:flex-wrap sm:items-center sm:gap-3">
+        <div className="flex flex-wrap items-center gap-2">
           <span className="text-[10px] font-bold uppercase tracking-wider text-slate-500">Market Regime</span>
           <span className={`rounded-full px-3 py-1 text-xs font-bold ${compositeBadge(regime.composite.label)}`}>
             {regime.composite.label}
@@ -93,23 +96,23 @@ export function RegimeStrip() {
           </span>
         </div>
 
-        <div className="flex flex-wrap gap-2 flex-1 min-w-0">
+        <div className="flex min-w-0 flex-1 flex-wrap gap-1.5 sm:gap-2">
           {regime.composite.signals.map((s, i) => (
             <span
               key={i}
-              className={`inline-flex items-center gap-1.5 rounded-full border px-3 py-1 text-xs ${pillClasses(s.direction)}`}
+              className={`inline-flex max-w-full items-center gap-1 rounded-full border px-2 py-0.5 text-[11px] sm:gap-1.5 sm:px-3 sm:py-1 sm:text-xs ${pillClasses(s.direction)}`}
               title={s.detail}
             >
-              <span className="font-semibold">{s.name}</span>
+              <span className="truncate font-semibold">{s.name}</span>
               <span className="opacity-70">·</span>
-              <span className="font-mono opacity-80">{s.detail}</span>
+              <span className="truncate font-mono opacity-80">{s.detail}</span>
             </span>
           ))}
         </div>
 
         <Link
           href="/brief"
-          className="text-[11px] font-medium text-blue-600 hover:text-blue-800 whitespace-nowrap"
+          className="self-start text-[11px] font-medium text-blue-600 hover:text-blue-800 sm:self-auto sm:whitespace-nowrap"
           title="Open the Morning Brief for the full analysis"
         >
           Open Brief →
@@ -125,7 +128,9 @@ export function RegimeStrip() {
       */}
       {regime.horizons && (
         <div className="mt-3 border-t border-slate-100 pt-3">
-          <div className="flex flex-wrap items-center gap-2">
+          {/* Horizon chips wrap on mobile; weighted score gets its own row
+              below them on mobile, sits flush-right inline on desktop. */}
+          <div className="flex flex-wrap items-center gap-1.5 sm:gap-2">
             <span className="text-[10px] font-bold uppercase tracking-wider text-slate-500">
               By Horizon
             </span>
@@ -135,7 +140,7 @@ export function RegimeStrip() {
               return (
                 <span
                   key={h.id}
-                  className={`inline-flex items-center gap-1.5 rounded-full border px-3 py-1 text-xs ${
+                  className={`inline-flex max-w-full items-center gap-1 rounded-full border px-2 py-0.5 text-[11px] sm:gap-1.5 sm:px-3 sm:py-1 sm:text-xs ${
                     empty
                       ? "border-slate-200 bg-slate-50 text-slate-400"
                       : horizonChipClasses(b.label_)
@@ -156,25 +161,25 @@ export function RegimeStrip() {
                       {b.riskOn}↑ {b.riskOff}↓ <span className="opacity-60">/ {b.total}</span>
                     </span>
                   )}
-                  <span className="opacity-50 text-[10px]">
+                  <span className="text-[10px] opacity-50">
                     ×{Math.round(h.weight * 100)}%
                   </span>
                 </span>
               );
             })}
-            {isFinite(regime.horizons.weightedScore) && (
-              <span className="ml-auto text-[11px] text-slate-500">
-                Weighted:{" "}
-                <span className="font-semibold text-slate-700">
-                  {regime.horizons.weightedLabel}
-                </span>{" "}
-                <span className="font-mono opacity-70">
-                  ({regime.horizons.weightedScore >= 0 ? "+" : ""}
-                  {regime.horizons.weightedScore.toFixed(2)})
-                </span>
-              </span>
-            )}
           </div>
+          {isFinite(regime.horizons.weightedScore) && (
+            <div className="mt-2 text-[11px] text-slate-500 sm:text-right">
+              Weighted:{" "}
+              <span className="font-semibold text-slate-700">
+                {regime.horizons.weightedLabel}
+              </span>{" "}
+              <span className="font-mono opacity-70">
+                ({regime.horizons.weightedScore >= 0 ? "+" : ""}
+                {regime.horizons.weightedScore.toFixed(2)})
+              </span>
+            </div>
+          )}
         </div>
       )}
     </div>
