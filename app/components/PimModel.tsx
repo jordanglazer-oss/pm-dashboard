@@ -122,28 +122,35 @@ export function PimModel({ groups }: Props) {
 
   const groupState = useMemo(() => getGroupState(selectedGroupId), [getGroupState, selectedGroupId]);
 
-  // Identify the most recently purchased ticker in this group so we can
-  // tag it with a "NEW" badge in the holdings table. Updates automatically
-  // when a new buy/switch executes — handleExecuteSwitch writes a fresh
-  // transaction to groupState.transactions, this memo recomputes, and the
-  // badge moves to the new ticker.
+  // Identify the most recently purchased ticker(s) in this group so we
+  // can tag them with a "NEW" badge in the holdings table. Updates
+  // automatically when a new buy/switch executes — handleExecuteSwitch
+  // writes fresh transactions to groupState.transactions, this memo
+  // recomputes, and the badge moves to the new ticker(s).
   //
-  // Treats both "buy" and "switch" directions=buy as purchases. Sorts by
-  // ISO date string (lexicographic = chronological for ISO).
-  const latestBuyTicker = useMemo<string | null>(() => {
+  // We tag EVERY buy that landed on the same calendar day (UTC date) as
+  // the most recent buy, not just the single latest transaction. So if
+  // you swap two names on the same day, both bought tickers get the
+  // badge. The next day's buy displaces them all.
+  const normalizeTicker = (s: string) => s.toUpperCase().replace("-T", ".TO");
+
+  const latestBuyTickers = useMemo<Set<string>>(() => {
+    const set = new Set<string>();
     const buys = groupState.transactions.filter((t) => t.direction === "buy");
-    if (buys.length === 0) return null;
+    if (buys.length === 0) return set;
+    // Sort newest-first by ISO timestamp (lexicographic = chronological).
     const sorted = [...buys].sort((a, b) => b.date.localeCompare(a.date));
-    return sorted[0].symbol.toUpperCase();
+    const latestDay = sorted[0].date.slice(0, 10); // YYYY-MM-DD prefix
+    for (const t of buys) {
+      if (t.date.slice(0, 10) === latestDay) {
+        set.add(normalizeTicker(t.symbol));
+      }
+    }
+    return set;
   }, [groupState.transactions]);
 
-  // Ticker-match helper for -T / .TO variants (mirrors StockContext).
-  const isLatestBuy = (symbol: string): boolean => {
-    if (!latestBuyTicker) return false;
-    const a = symbol.toUpperCase();
-    const b = latestBuyTicker;
-    return a === b || a.replace("-T", ".TO") === b.replace("-T", ".TO");
-  };
+  const isLatestBuy = (symbol: string): boolean =>
+    latestBuyTickers.has(normalizeTicker(symbol));
 
   // Build set of core-designated symbols (alpha model excludes these)
   const coreSymbols = useMemo(() => {
@@ -663,7 +670,7 @@ export function PimModel({ groups }: Props) {
                           {isLatestBuy(h.symbol) && (
                             <span
                               className="inline-flex items-center rounded-full bg-emerald-100 px-1.5 py-px text-[9px] font-bold uppercase tracking-wider text-emerald-700 ring-1 ring-emerald-200"
-                              title="Most recently purchased holding in this model"
+                              title="Purchased on the most recent buy day in this model"
                             >
                               NEW
                             </span>
