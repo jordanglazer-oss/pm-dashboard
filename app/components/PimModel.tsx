@@ -77,7 +77,7 @@ function SortIcon({ field, sortField, sortDir }: { field: SortField; sortField: 
 }
 
 export function PimModel({ groups }: Props) {
-  const { getGroupState, uiPrefs, setUiPref, addStock, stocks } = useStocks();
+  const { getGroupState, uiPrefs, setUiPref, addStock, stocks, pimPortfolioState } = useStocks();
   const [selectedGroupId, setSelectedGroupId] = useState(groups[0]?.id || "");
   const [selectedProfile, setSelectedProfile] = useState<PimProfileType>("balanced");
   const [dropdownOpen, setDropdownOpen] = useState(false);
@@ -122,32 +122,42 @@ export function PimModel({ groups }: Props) {
 
   const groupState = useMemo(() => getGroupState(selectedGroupId), [getGroupState, selectedGroupId]);
 
-  // Identify the most recently purchased ticker(s) in this group so we
-  // can tag them with a "NEW" badge in the holdings table. Updates
-  // automatically when a new buy/switch executes — handleExecuteSwitch
-  // writes fresh transactions to groupState.transactions, this memo
-  // recomputes, and the badge moves to the new ticker(s).
+  // Identify the most recently purchased ticker(s) FIRM-WIDE so we can
+  // tag them with a "NEW" badge in the holdings table on EVERY model
+  // (PIM, PC USA, Non-Res, EY, Deloitte, etc.) — not just the model
+  // where the trade was originally executed.
   //
-  // We tag EVERY buy that landed on the same calendar day (UTC date) as
-  // the most recent buy, not just the single latest transaction. So if
-  // you swap two names on the same day, both bought tickers get the
-  // badge. The next day's buy displaces them all.
+  // Why firm-wide: trades currently only happen in the "pim" group, but
+  // the firm-wide propagation we built earlier replaces the holding in
+  // every model that owns the sold ticker. So a swap creates transaction
+  // records in pim AND any other group that contained the sold ticker
+  // (timestamps match). The badge should follow the holding across all
+  // models that picked it up.
+  //
+  // Implementation: union all groupStates' transactions, find the
+  // latest buy day's date prefix (YYYY-MM-DD UTC), and tag every symbol
+  // bought on that day. Per-group divergence (rare, only if you ever
+  // do a one-off model-specific trade) is naturally handled — the
+  // latest day across the firm wins. Each model's holdings table then
+  // shows the badge on whichever of its holdings match.
   const normalizeTicker = (s: string) => s.toUpperCase().replace("-T", ".TO");
 
   const latestBuyTickers = useMemo<Set<string>>(() => {
     const set = new Set<string>();
-    const buys = groupState.transactions.filter((t) => t.direction === "buy");
-    if (buys.length === 0) return set;
+    const allBuys = pimPortfolioState.groupStates.flatMap((gs) =>
+      gs.transactions.filter((t) => t.direction === "buy")
+    );
+    if (allBuys.length === 0) return set;
     // Sort newest-first by ISO timestamp (lexicographic = chronological).
-    const sorted = [...buys].sort((a, b) => b.date.localeCompare(a.date));
+    const sorted = [...allBuys].sort((a, b) => b.date.localeCompare(a.date));
     const latestDay = sorted[0].date.slice(0, 10); // YYYY-MM-DD prefix
-    for (const t of buys) {
+    for (const t of allBuys) {
       if (t.date.slice(0, 10) === latestDay) {
         set.add(normalizeTicker(t.symbol));
       }
     }
     return set;
-  }, [groupState.transactions]);
+  }, [pimPortfolioState.groupStates]);
 
   const isLatestBuy = (symbol: string): boolean =>
     latestBuyTickers.has(normalizeTicker(symbol));
@@ -670,7 +680,7 @@ export function PimModel({ groups }: Props) {
                           {isLatestBuy(h.symbol) && (
                             <span
                               className="inline-flex items-center rounded-full bg-emerald-100 px-1.5 py-px text-[9px] font-bold uppercase tracking-wider text-emerald-700 ring-1 ring-emerald-200"
-                              title="Purchased on the most recent buy day in this model"
+                              title="Purchased on the most recent buy day (firm-wide)"
                             >
                               NEW
                             </span>
