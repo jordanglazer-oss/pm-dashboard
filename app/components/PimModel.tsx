@@ -122,6 +122,29 @@ export function PimModel({ groups }: Props) {
 
   const groupState = useMemo(() => getGroupState(selectedGroupId), [getGroupState, selectedGroupId]);
 
+  // Identify the most recently purchased ticker in this group so we can
+  // tag it with a "NEW" badge in the holdings table. Updates automatically
+  // when a new buy/switch executes — handleExecuteSwitch writes a fresh
+  // transaction to groupState.transactions, this memo recomputes, and the
+  // badge moves to the new ticker.
+  //
+  // Treats both "buy" and "switch" directions=buy as purchases. Sorts by
+  // ISO date string (lexicographic = chronological for ISO).
+  const latestBuyTicker = useMemo<string | null>(() => {
+    const buys = groupState.transactions.filter((t) => t.direction === "buy");
+    if (buys.length === 0) return null;
+    const sorted = [...buys].sort((a, b) => b.date.localeCompare(a.date));
+    return sorted[0].symbol.toUpperCase();
+  }, [groupState.transactions]);
+
+  // Ticker-match helper for -T / .TO variants (mirrors StockContext).
+  const isLatestBuy = (symbol: string): boolean => {
+    if (!latestBuyTicker) return false;
+    const a = symbol.toUpperCase();
+    const b = latestBuyTicker;
+    return a === b || a.replace("-T", ".TO") === b.replace("-T", ".TO");
+  };
+
   // Build set of core-designated symbols (alpha model excludes these)
   const coreSymbols = useMemo(() => {
     const set = new Set<string>();
@@ -633,9 +656,19 @@ export function PimModel({ groups }: Props) {
                         </Link>
                       </td>
                       <td className="py-2 px-2 font-mono text-xs text-slate-600">
-                        <Link href={`/stock/${symbolToTicker(h.symbol).toLowerCase()}?from=pim-model`} className="hover:underline hover:text-blue-600 transition-colors">
-                          {h.symbol}
-                        </Link>
+                        <span className="inline-flex items-center gap-1.5">
+                          <Link href={`/stock/${symbolToTicker(h.symbol).toLowerCase()}?from=pim-model`} className="hover:underline hover:text-blue-600 transition-colors">
+                            {h.symbol}
+                          </Link>
+                          {isLatestBuy(h.symbol) && (
+                            <span
+                              className="inline-flex items-center rounded-full bg-emerald-100 px-1.5 py-px text-[9px] font-bold uppercase tracking-wider text-emerald-700 ring-1 ring-emerald-200"
+                              title="Most recently purchased holding in this model"
+                            >
+                              NEW
+                            </span>
+                          )}
+                        </span>
                       </td>
                       <td className="py-2 px-2 text-center">
                         <span className={`inline-block rounded px-1.5 py-0.5 text-[10px] font-bold ${h.currency === "CAD" ? "bg-red-50 text-red-600" : "bg-green-50 text-green-600"}`}>{h.currency}</span>
