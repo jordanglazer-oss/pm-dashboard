@@ -192,8 +192,21 @@ function buildImageBlocks(attachments: AttachmentInput[]): Anthropic.Messages.Co
   const validBase64 = /^[A-Za-z0-9+/]+={0,2}$/;
 
   for (const [section, atts] of Object.entries(bySection)) {
-    const validAtts: { att: AttachmentInput; mediaType: "image/jpeg" | "image/png" | "image/gif" | "image/webp"; data: string }[] = [];
+    type ValidImg = { kind: "image"; att: AttachmentInput; mediaType: "image/jpeg" | "image/png" | "image/gif" | "image/webp"; data: string };
+    type ValidPdf = { kind: "pdf"; att: AttachmentInput; data: string };
+    const validAtts: (ValidImg | ValidPdf)[] = [];
     for (const att of atts) {
+      // Try PDF first.
+      const pdfMatch = att.dataUrl.match(/^data:application\/pdf;base64,(.+)$/);
+      if (pdfMatch) {
+        const data = pdfMatch[1].replace(/\s/g, "");
+        if (!data || !validBase64.test(data) || data.length % 4 !== 0) {
+          console.warn(`[brief] skipping PDF '${att.label}' — invalid base64 payload`);
+          continue;
+        }
+        validAtts.push({ kind: "pdf", att, data });
+        continue;
+      }
       const match = att.dataUrl.match(/^data:(image\/[^;]+);base64,(.+)$/);
       if (!match) {
         console.warn(`[brief] skipping attachment '${att.label}' — malformed data URL`);
@@ -207,29 +220,37 @@ function buildImageBlocks(attachments: AttachmentInput[]): Anthropic.Messages.Co
         console.warn(`[brief] skipping attachment '${att.label}' — invalid base64 payload (${data.length} chars)`);
         continue;
       }
-      validAtts.push({ att, mediaType, data });
+      validAtts.push({ kind: "image", att, mediaType, data });
     }
 
     if (validAtts.length === 0) continue;
 
+    const imgCount = validAtts.filter((v) => v.kind === "image").length;
+    const pdfCount = validAtts.filter((v) => v.kind === "pdf").length;
+    const summary = [
+      imgCount > 0 ? `${imgCount} image${imgCount > 1 ? "s" : ""}` : null,
+      pdfCount > 0 ? `${pdfCount} PDF${pdfCount > 1 ? "s" : ""}` : null,
+    ].filter(Boolean).join(" + ");
+
     blocks.push({
       type: "text",
-      text: `\n--- Attached screenshots for ${section} (${validAtts.length} image${validAtts.length > 1 ? "s" : ""}) ---\nAnalyze these carefully and incorporate findings into your brief:`,
+      text: `\n--- Attached files for ${section} (${summary}) ---\nAnalyze these carefully and incorporate findings into your brief:`,
     });
 
-    for (const { att, mediaType, data } of validAtts) {
-      blocks.push({
-        type: "image",
-        source: {
-          type: "base64",
-          media_type: mediaType,
-          data,
-        },
-      });
-      blocks.push({
-        type: "text",
-        text: `(Image: ${att.label})`,
-      });
+    for (const v of validAtts) {
+      if (v.kind === "pdf") {
+        blocks.push({
+          type: "document",
+          source: { type: "base64", media_type: "application/pdf", data: v.data },
+        });
+        blocks.push({ type: "text", text: `(PDF: ${v.att.label})` });
+      } else {
+        blocks.push({
+          type: "image",
+          source: { type: "base64", media_type: v.mediaType, data: v.data },
+        });
+        blocks.push({ type: "text", text: `(Image: ${v.att.label})` });
+      }
     }
   }
 

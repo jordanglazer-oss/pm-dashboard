@@ -24,6 +24,28 @@ type Props = {
   collapsibleThumbs?: boolean;
 };
 
+/** Returns true if the dataUrl points at a PDF rather than an image.
+ *  Used by callers (ImageUpload thumbnails, scrape routes) to switch
+ *  rendering / Anthropic block type. The MIME type is the source of
+ *  truth — we don't sniff content. */
+export function isPdfDataUrl(dataUrl: string): boolean {
+  return dataUrl.startsWith("data:application/pdf");
+}
+
+/** Read a PDF file and return it as a base64 dataUrl, no compression
+ *  (PDFs are already compressed and re-encoding would corrupt them).
+ *  Anthropic's Files API accepts PDFs up to 32MB / 100 pages; we cap
+ *  uploads at 15MB here so the resulting JSON payload (base64 inflates
+ *  ~33%) stays under Vercel's 4.5MB request body limit on Hobby tier. */
+function readPdfAsDataUrl(file: File): Promise<string> {
+  return new Promise((resolve, reject) => {
+    const reader = new FileReader();
+    reader.onerror = () => reject(new Error("Failed to read PDF"));
+    reader.onload = (e) => resolve(e.target?.result as string);
+    reader.readAsDataURL(file);
+  });
+}
+
 /** Resize and compress an image to keep it under the size limit.
  *  Mac Retina screenshots are 2x resolution PNGs — this converts them
  *  to JPEG at reasonable dimensions so they work reliably with the API. */
@@ -73,16 +95,29 @@ export function ImageUpload({ section, sectionLabel, attachments, onAdd, onRemov
 
   const processFile = useCallback(
     async (file: File) => {
-      if (!file.type.startsWith("image/")) return;
-      // Reject extremely large files (>10MB raw)
-      if (file.size > 10 * 1024 * 1024) {
+      const isImage = file.type.startsWith("image/");
+      const isPdf = file.type === "application/pdf";
+      if (!isImage && !isPdf) {
+        alert("Only images and PDFs are supported.");
+        return;
+      }
+
+      // Per-type size caps. Images are aggressively re-compressed to
+      // JPEG so 10MB raw is more than enough headroom. PDFs are
+      // pass-through (re-encoding would corrupt them) so we cap at
+      // 15MB to stay under Vercel's 4.5MB request body limit after
+      // base64 inflation (~33%) when the route forwards to Anthropic.
+      if (isImage && file.size > 10 * 1024 * 1024) {
         alert("Image too large. Please keep under 10MB.");
+        return;
+      }
+      if (isPdf && file.size > 15 * 1024 * 1024) {
+        alert("PDF too large. Please keep under 15MB. (Anthropic's hard limit is 32MB but we cap lower so requests fit Vercel's payload limit.)");
         return;
       }
 
       try {
-        // Compress and resize to JPEG — handles Retina PNGs gracefully
-        const dataUrl = await compressImage(file);
+        const dataUrl = isPdf ? await readPdfAsDataUrl(file) : await compressImage(file);
         onAdd({
           id: `${Date.now()}-${Math.random().toString(36).slice(2, 8)}`,
           label: file.name.replace(/\.[^.]+$/, ""),
@@ -91,8 +126,8 @@ export function ImageUpload({ section, sectionLabel, attachments, onAdd, onRemov
           addedAt: new Date().toISOString(),
         });
       } catch (err) {
-        console.error("Image processing failed:", err);
-        alert("Failed to process image. Try a smaller file or different format.");
+        console.error("File processing failed:", err);
+        alert("Failed to process file. Try a smaller file or different format.");
       }
     },
     [onAdd, section]
@@ -121,10 +156,10 @@ export function ImageUpload({ section, sectionLabel, attachments, onAdd, onRemov
     <div className="mt-3">
       <div className="flex items-center gap-2 mb-2">
         <span className="text-xs font-semibold text-slate-500 uppercase tracking-wider">
-          {sectionLabel} Screenshots
+          {sectionLabel} Screenshots / PDFs
         </span>
         <span className="text-xs text-slate-400">
-          ({sectionAttachments.length} image{sectionAttachments.length !== 1 ? "s" : ""})
+          ({sectionAttachments.length} file{sectionAttachments.length !== 1 ? "s" : ""})
         </span>
         {/* Toggle only renders when collapsibleThumbs is on AND there are
             attachments to show/hide. Non-collapsible sections never see this. */}
@@ -148,28 +183,37 @@ export function ImageUpload({ section, sectionLabel, attachments, onAdd, onRemov
           set, the whole grid is hidden until the user toggles "Show". */}
       {sectionAttachments.length > 0 && thumbsExpanded && (
         <div className="flex flex-wrap gap-2 mb-3">
-          {sectionAttachments.map((att) => (
-            <div key={att.id} className="group relative">
-              <button
-                type="button"
-                onClick={() => setPreviewId(att.id)}
-                className="block h-12 w-12 rounded-md border border-slate-200 overflow-hidden hover:border-blue-400 focus:border-blue-400 focus:outline-none transition-colors"
-                title={`View ${att.label}`}
-              >
-                <img src={att.dataUrl} alt={att.label} className="h-full w-full object-cover" />
-              </button>
-              <button
-                onClick={(e) => {
-                  e.stopPropagation();
-                  onRemove(att.id);
-                }}
-                className="absolute -top-1.5 -right-1.5 flex h-5 w-5 items-center justify-center rounded-full bg-red-500 text-white text-xs font-bold shadow opacity-90 md:opacity-0 md:group-hover:opacity-100 md:focus:opacity-100 transition-opacity"
-                title="Remove"
-              >
-                &times;
-              </button>
-            </div>
-          ))}
+          {sectionAttachments.map((att) => {
+            const isPdf = isPdfDataUrl(att.dataUrl);
+            return (
+              <div key={att.id} className="group relative">
+                <button
+                  type="button"
+                  onClick={() => setPreviewId(att.id)}
+                  className="block h-12 w-12 rounded-md border border-slate-200 overflow-hidden hover:border-blue-400 focus:border-blue-400 focus:outline-none transition-colors"
+                  title={`View ${att.label}${isPdf ? " (PDF)" : ""}`}
+                >
+                  {isPdf ? (
+                    <span className="flex h-full w-full items-center justify-center bg-rose-50 text-rose-600 text-[10px] font-bold tracking-wider">
+                      PDF
+                    </span>
+                  ) : (
+                    <img src={att.dataUrl} alt={att.label} className="h-full w-full object-cover" />
+                  )}
+                </button>
+                <button
+                  onClick={(e) => {
+                    e.stopPropagation();
+                    onRemove(att.id);
+                  }}
+                  className="absolute -top-1.5 -right-1.5 flex h-5 w-5 items-center justify-center rounded-full bg-red-500 text-white text-xs font-bold shadow opacity-90 md:opacity-0 md:group-hover:opacity-100 md:focus:opacity-100 transition-opacity"
+                  title="Remove"
+                >
+                  &times;
+                </button>
+              </div>
+            );
+          })}
         </div>
       )}
 
@@ -201,7 +245,7 @@ export function ImageUpload({ section, sectionLabel, attachments, onAdd, onRemov
         }`}
       >
         <span className="flex-1 text-center">
-          {dragActive ? "Drop images here" : "Drop screenshots here (multiple files OK)"}
+          {dragActive ? "Drop files here" : "Drop screenshots or PDFs here (multiple files OK)"}
         </span>
         <button
           type="button"
@@ -216,7 +260,7 @@ export function ImageUpload({ section, sectionLabel, attachments, onAdd, onRemov
         <input
           ref={inputRef}
           type="file"
-          accept="image/*"
+          accept="image/*,application/pdf"
           multiple
           onChange={handleChange}
           className="hidden"
@@ -325,18 +369,31 @@ export function LightboxModal({
         </>
       )}
 
-      {/* Clicking the image itself should NOT close the modal */}
+      {/* Clicking the file viewer itself should NOT close the modal.
+          PDFs render in an iframe; images render as <img>. Both share
+          the same container size so navigation between mixed types
+          stays smooth. */}
       <div
         className="max-w-[95vw] max-h-[90vh] flex flex-col items-center gap-3"
         onClick={(e) => e.stopPropagation()}
       >
-        <img
-          src={active.dataUrl}
-          alt={active.label}
-          className="max-w-full max-h-[85vh] object-contain rounded-lg shadow-2xl"
-        />
+        {isPdfDataUrl(active.dataUrl) ? (
+          <iframe
+            src={active.dataUrl}
+            title={active.label}
+            className="w-[90vw] h-[85vh] rounded-lg shadow-2xl bg-white"
+          />
+        ) : (
+          <img
+            src={active.dataUrl}
+            alt={active.label}
+            className="max-w-full max-h-[85vh] object-contain rounded-lg shadow-2xl"
+          />
+        )}
         <div className="text-xs text-white/80 text-center">
-          <div className="font-medium">{active.label}</div>
+          <div className="font-medium">
+            {active.label}{isPdfDataUrl(active.dataUrl) ? " (PDF)" : ""}
+          </div>
           {attachments.length > 1 && (
             <div className="text-white/60 mt-0.5">
               {idx + 1} of {attachments.length} · arrow keys to navigate · Esc to close
