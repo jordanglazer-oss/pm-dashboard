@@ -157,8 +157,19 @@ function buildContext(
 
   const rbc = research.rbcCanadianFocus || [];
   if (rbc.length > 0) {
-    lines.push(`Source 4: RBC Canadian Focus List (RBC Capital Markets buy recommendations, target portfolio weights)`);
+    lines.push(`Source 4: RBC Canadian Focus List (RBC Capital Markets Canadian equity buy recommendations, target portfolio weights)`);
     for (const r of rbc) {
+      const wt = r.weight ? ` · target ${r.weight}%` : "";
+      const sector = r.sector ? ` · ${r.sector}` : "";
+      lines.push(`  - ${r.ticker}${sector}${wt}`);
+    }
+    lines.push(``);
+  }
+
+  const rbcUs = research.rbcUsFocus || [];
+  if (rbcUs.length > 0) {
+    lines.push(`Source 5: RBC US Focus List (RBC Capital Markets US equity buy recommendations, target portfolio weights)`);
+    for (const r of rbcUs) {
       const wt = r.weight ? ` · target ${r.weight}%` : "";
       const sector = r.sector ? ` · ${r.sector}` : "";
       lines.push(`  - ${r.ticker}${sector}${wt}`);
@@ -168,7 +179,7 @@ function buildContext(
 
   const ap = research.alphaPicks || [];
   if (ap.length > 0) {
-    lines.push(`Source 5: Seeking Alpha — Alpha Picks (institutional buy recommendations)`);
+    lines.push(`Source 6: Seeking Alpha — Alpha Picks (institutional buy recommendations)`);
     for (const p of ap) {
       const price = p.priceWhenAdded ? ` · entry ${p.priceWhenAdded}` : "";
       const sector = p.sector && p.sector !== "—" ? ` · ${p.sector}` : "";
@@ -196,11 +207,8 @@ function buildContext(
     lines.push(`Tom Lee's focus themes: ${research.leeFocusAreas.map((a) => a.label).join(", ")}`);
   }
 
-  if (research.generalNotes && research.generalNotes.trim()) {
-    lines.push(``);
-    lines.push(`General notes:`);
-    lines.push(research.generalNotes.trim());
-  }
+  // generalNotes intentionally omitted — section removed from the UI;
+  // any legacy notes in older blobs are not surfaced to the synthesis.
 
   // Brief context
   lines.push(``);
@@ -221,7 +229,7 @@ function buildContext(
   lines.push(``);
   lines.push(`=== PORTFOLIO HOLDINGS (DO NOT RECOMMEND AS BUYS) ===`);
   if (portfolioTickers.length > 0) {
-    lines.push(`The PM already owns these positions in the live portfolio. They are NOT eligible for topPicks or honorableMentions — the user is asking for NEW buy ideas, not re-validation of existing positions. If a portfolio holding appears in the research sources, you may briefly note in summary or cautions that the source confirms the existing position, but do NOT include it as a pick.`);
+    lines.push(`The PM already owns these positions in the live portfolio. They are NOT eligible for topPicks or honorableMentions — the user is asking for NEW buy ideas, not re-validation of existing positions. SILENTLY EXCLUDE portfolio holdings from your output. Do not call them out in cautions, summary, or anywhere else — the PM does not need to be reminded of what they hold.`);
     lines.push(``);
     lines.push(`Portfolio tickers (already held): ${portfolioTickers.join(", ")}`);
   } else {
@@ -236,7 +244,7 @@ const SYSTEM_PROMPT = `You are an institutional portfolio manager synthesizing e
 CRITICAL RULES:
 1. A ticker mentioned in 2+ sources is a "Top Pick" candidate. Order topPicks by sourceCount desc, then alphabetically.
 2. NEVER include a ticker in topPicks or honorableMentions if it appears in Source 3 (Fundstrat Bottom Ideas / names to avoid). Note any conflict in summary or cautions instead.
-3. NEVER include a ticker in topPicks or honorableMentions if it appears in the "PORTFOLIO HOLDINGS (DO NOT RECOMMEND AS BUYS)" list. The PM already owns those positions — the synthesis is for NEW buy ideas. If a portfolio name is also in the research sources, you may note in cautions that the source CONFIRMS the existing position, but do NOT recommend buying more.
+3. NEVER include a ticker in topPicks or honorableMentions if it appears in the "PORTFOLIO HOLDINGS (DO NOT RECOMMEND AS BUYS)" list. The PM already owns those positions — the synthesis is for NEW buy ideas. Just SILENTLY EXCLUDE these from your output. Do NOT add "PORTFOLIO CONFIRMATION" or "source confirms the existing position" notes to cautions — the PM already knows what they hold and doesn't need re-validation. The cautions array should ONLY contain genuinely actionable warnings (bottom-ideas conflicts, regime mismatches, single-source quality concerns) — never positive confirmations of existing positions.
 4. Single-source picks can be honorableMentions IF the regime/sector/setup strongly aligns with the brief. Be selective — 3-6 honorable mentions is plenty.
 5. Each thesis MUST cite (a) which sources mentioned the ticker by name, and (b) why the current regime / horizon view supports the buy.
 6. If the brief is missing or empty, work purely from sources but note the limitation in summary.
@@ -251,7 +259,7 @@ Respond ONLY with valid JSON matching this schema:
   "honorableMentions": [
     {"ticker": "TICKER", "sources": ["..."], "sourceCount": N, "thesis": "..."}
   ],
-  "cautions": ["Optional: bottom-ideas conflicts, regime mismatches, or research that confirms existing portfolio positions."],
+  "cautions": ["Optional: bottom-ideas conflicts, regime mismatches, or other genuinely actionable warnings. Do NOT include 'portfolio confirmation' notes — the PM doesn't need to be told they own their own holdings."],
   "regimeContext": "Risk-On / Neutral / Risk-Off / unknown"
 }
 
@@ -292,16 +300,35 @@ function parseSynthesis(text: string): SynthesisResult | null {
   }
 }
 
-/** Defense-in-depth: server-side filter to strip any portfolio-ticker
- *  matches that the model may have included despite the prompt rule. */
+/** Defense-in-depth: strip portfolio-ticker matches from picks AND
+ *  remove any "PORTFOLIO CONFIRMATION" / "already holds" / "existing
+ *  position" notes from cautions if the model adds them anyway. The
+ *  user has explicitly asked not to be reminded of their own holdings.
+ */
 function filterPortfolioOut(result: SynthesisResult, portfolioTickers: string[]): SynthesisResult {
   if (portfolioTickers.length === 0) return result;
   const portfolio = new Set(portfolioTickers.map(normalizeTicker));
   const isHeld = (t: string) => isPortfolioMatch(t, portfolio);
+
+  // Strip caution lines that look like portfolio-confirmation noise.
+  // Keeps cautions that are genuinely actionable (bottom-ideas
+  // conflicts, regime mismatches, etc.).
+  const portfolioConfirmationPatterns = [
+    /^\s*PORTFOLIO\s+CONFIRMATION/i,
+    /\balready\s+(?:holds?|owns?|in\s+(?:the\s+)?portfolio)\b/i,
+    /\bsource\s+confirms?\s+(?:the\s+)?existing\b/i,
+    /\bexisting\s+position\s+is\s+well[-\s]supported\b/i,
+    /\bconfirms?\s+the\s+existing\b/i,
+  ];
+  const filteredCautions = result.cautions
+    ? result.cautions.filter((c) => !portfolioConfirmationPatterns.some((re) => re.test(c)))
+    : undefined;
+
   return {
     ...result,
     topPicks: result.topPicks.filter((p) => !isHeld(p.ticker)),
     honorableMentions: result.honorableMentions.filter((p) => !isHeld(p.ticker)),
+    cautions: filteredCautions && filteredCautions.length > 0 ? filteredCautions : undefined,
   };
 }
 
@@ -391,6 +418,7 @@ export async function POST(req: NextRequest) {
       research.fundstratTop.length +
       research.fundstratBottom.length +
       (research.rbcCanadianFocus?.length ?? 0) +
+      (research.rbcUsFocus?.length ?? 0) +
       (research.alphaPicks?.length ?? 0);
 
     if (totalSources === 0) {

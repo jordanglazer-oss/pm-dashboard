@@ -165,7 +165,7 @@ function AlphaPickAddForm({ onAdd }: { onAdd: (e: AlphaPickEntry) => void }) {
  * zero Anthropic tokens.
  */
 function ResearchScraperBlock(props: {
-  source: "fundstrat-top" | "fundstrat-bottom" | "rbc-focus" | "seeking-alpha-picks";
+  source: "fundstrat-top" | "fundstrat-bottom" | "rbc-focus" | "rbc-us-focus" | "seeking-alpha-picks";
   sectionLabel: string;
   helperText: string;
   attachments: BriefAttachment[];
@@ -351,6 +351,7 @@ export default function ResearchPage() {
   const [topSort, setTopSort] = useState<{ key: IdeaSortKey; dir: SortDir }>({ key: "ticker", dir: "asc" });
   const [bottomSort, setBottomSort] = useState<{ key: IdeaSortKey; dir: SortDir }>({ key: "ticker", dir: "asc" });
   const [rbcSort, setRbcSort] = useState<{ key: RBCSortKey; dir: SortDir }>({ key: "ticker", dir: "asc" });
+  const [rbcUsSort, setRbcUsSort] = useState<{ key: RBCSortKey; dir: SortDir }>({ key: "ticker", dir: "asc" });
 
   // Live prices from Yahoo Finance
   const [livePrices, setLivePrices] = useState<LivePrices>({});
@@ -396,7 +397,7 @@ export default function ResearchPage() {
   // `scrapeStatus` because its Refresh button does more than just scrape
   // (it also refreshes prices and names). The new sources are
   // scrape-only so a per-source map keeps each section's UI independent.
-  type SourceKey = "fundstrat-top" | "fundstrat-bottom" | "rbc-focus" | "seeking-alpha-picks";
+  type SourceKey = "fundstrat-top" | "fundstrat-bottom" | "rbc-focus" | "rbc-us-focus" | "seeking-alpha-picks";
   const [scrapeLoadingMap, setScrapeLoadingMap] = useState<Partial<Record<SourceKey, boolean>>>({});
   const [scrapeStatusMap, setScrapeStatusMap] = useState<Partial<Record<SourceKey, string>>>({});
 
@@ -430,6 +431,9 @@ export default function ResearchPage() {
   }
   function toggleRbcSort(key: RBCSortKey) {
     setRbcSort(prev => prev.key === key ? { key, dir: prev.dir === "asc" ? "desc" : "asc" } : { key, dir: "asc" });
+  }
+  function toggleRbcUsSort(key: RBCSortKey) {
+    setRbcUsSort(prev => prev.key === key ? { key, dir: prev.dir === "asc" ? "desc" : "asc" } : { key, dir: "asc" });
   }
 
   function sortedUpticks() {
@@ -468,11 +472,19 @@ export default function ResearchPage() {
       return dir === "asc" ? cmp : -cmp;
     });
   }
+  function sortedRbcUs() {
+    return [...(state.rbcUsFocus || [])].sort((a, b) => {
+      const { key, dir } = rbcUsSort;
+      const cmp = String(a[key] || "").localeCompare(String(b[key] || ""));
+      return dir === "asc" ? cmp : -cmp;
+    });
+  }
 
   const uArrow = (key: UptickSortKey) => uptickSort.key === key ? (uptickSort.dir === "asc" ? " ▲" : " ▼") : "";
   const tArrow = (key: IdeaSortKey) => topSort.key === key ? (topSort.dir === "asc" ? " ▲" : " ▼") : "";
   const bArrow = (key: IdeaSortKey) => bottomSort.key === key ? (bottomSort.dir === "asc" ? " ▲" : " ▼") : "";
   const rArrow = (key: RBCSortKey) => rbcSort.key === key ? (rbcSort.dir === "asc" ? " ▲" : " ▼") : "";
+  const rUsArrow = (key: RBCSortKey) => rbcUsSort.key === key ? (rbcUsSort.dir === "asc" ? " ▲" : " ▼") : "";
 
   useEffect(() => {
     fetch("/api/kv/research", { cache: "no-store" })
@@ -869,8 +881,11 @@ export default function ResearchPage() {
 
       let nextState: ResearchState = state;
 
-      if (source === "rbc-focus") {
-        const existing = state.rbcCanadianFocus || [];
+      if (source === "rbc-focus" || source === "rbc-us-focus") {
+        // Both RBC lists share the same RBCEntry shape and merge logic.
+        // The only difference is which state field they target.
+        const stateKey = source === "rbc-focus" ? "rbcCanadianFocus" : "rbcUsFocus";
+        const existing = (state[stateKey] as RBCEntry[] | undefined) || [];
         const byNorm = new Map(existing.map((r) => [normalize(r.ticker), r]));
         let matched = 0;
         let added = 0;
@@ -895,7 +910,7 @@ export default function ResearchPage() {
             });
           }
         }
-        nextState = { ...state, rbcCanadianFocus: Array.from(byNorm.values()) };
+        nextState = { ...state, [stateKey]: Array.from(byNorm.values()) } as ResearchState;
         const cachedLabel = data.cached ? " (cached)" : "";
         setScrapeStatusMap((m) => ({ ...m, [source]: `${entries.length} rows${cachedLabel} · ${matched} matched · ${added} added` }));
       } else if (source === "seeking-alpha-picks") {
@@ -1150,6 +1165,14 @@ export default function ResearchPage() {
   };
   const removeRbc = (ticker: string) => {
     save({ ...state, rbcCanadianFocus: (state.rbcCanadianFocus || []).filter((r) => r.ticker !== ticker) });
+  };
+  const addRbcUs = (entry: RBCEntry) => {
+    const list = state.rbcUsFocus || [];
+    if (list.some((r) => r.ticker === entry.ticker)) return;
+    save({ ...state, rbcUsFocus: [...list, entry] });
+  };
+  const removeRbcUs = (ticker: string) => {
+    save({ ...state, rbcUsFocus: (state.rbcUsFocus || []).filter((r) => r.ticker !== ticker) });
   };
 
   /* Attachment helpers — image payloads are stored in separate Redis keys
@@ -1938,6 +1961,79 @@ export default function ResearchPage() {
           />
         </section>
 
+        {/* ── RBC US Focus List ──
+            Parallel to the Canadian list. Same RBCEntry shape, same
+            manual-add + screenshot-scan flow; targets state.rbcUsFocus
+            so the two stay independent. Section is teal-accented to
+            visually distinguish it from the blue Canadian section. */}
+        <section className="rounded-[24px] border border-teal-200 bg-white p-6 shadow-sm">
+          <div className="flex items-center justify-between mb-4">
+            <div>
+              <h3 className="text-xl font-bold text-teal-800">RBC US Focus List</h3>
+              <p className="text-xs text-slate-400">RBC Capital Markets US equity picks</p>
+            </div>
+            <span className="text-sm text-slate-400">{(state.rbcUsFocus || []).length} names</span>
+          </div>
+
+          <table className="w-full text-sm">
+            <thead>
+              <tr className="border-b-2 border-teal-500 text-left">
+                <th className="py-2 pr-2 text-xs font-semibold text-teal-700 w-8">#</th>
+                <th className="py-2 pr-3 text-xs font-semibold text-teal-700 cursor-pointer hover:text-teal-900 select-none" onClick={() => toggleRbcUsSort("ticker")}>Ticker{rUsArrow("ticker")}</th>
+                <th className="py-2 pr-3 text-xs font-semibold text-teal-700 cursor-pointer hover:text-teal-900 select-none" onClick={() => toggleRbcUsSort("sector")}>Sector{rUsArrow("sector")}</th>
+                <th className="py-2 pr-3 text-xs font-semibold text-teal-700">Weight (%)</th>
+                <th className="py-2 w-8"></th>
+              </tr>
+            </thead>
+            <tbody>
+              {sortedRbcUs().map((item, i) => (
+                <tr key={item.ticker} className={`border-b border-slate-100 ${i % 2 === 0 ? "bg-white" : "bg-teal-50/30"} hover:bg-teal-50/60 transition-colors`}>
+                  <td className="py-2 pr-2 text-slate-400">{i + 1}</td>
+                  <td className="py-2 pr-3 font-mono font-bold text-teal-700">${item.ticker}</td>
+                  <td className="py-2 pr-3 text-slate-600">{item.sector}</td>
+                  <td className="py-2 pr-3 text-slate-500">
+                    <input
+                      type="text"
+                      inputMode="decimal"
+                      value={item.weight ?? 0}
+                      onChange={(e) => {
+                        const val = e.target.value;
+                        const list = [...(state.rbcUsFocus || [])];
+                        const idx = list.findIndex((r) => r.ticker === item.ticker);
+                        if (idx >= 0) {
+                          list[idx] = { ...list[idx], weight: val === "" || val === "-" ? 0 : parseFloat(val) || 0 };
+                          save({ ...state, rbcUsFocus: list });
+                        }
+                      }}
+                      className="w-16 rounded border border-transparent px-1 py-0.5 text-sm text-center hover:border-slate-200 focus:border-teal-300 focus:outline-none bg-transparent"
+                    />
+                  </td>
+                  <td className="py-2">
+                    <button onClick={() => removeRbcUs(item.ticker)} className="text-slate-300 hover:text-red-500 font-bold transition-colors">&times;</button>
+                  </td>
+                </tr>
+              ))}
+              {(state.rbcUsFocus || []).length === 0 && (
+                <tr><td colSpan={5} className="py-6 text-center text-slate-400 italic">No names added yet</td></tr>
+              )}
+            </tbody>
+          </table>
+
+          <RBCAddForm onAdd={addRbcUs} />
+
+          <ResearchScraperBlock
+            source="rbc-us-focus"
+            sectionLabel="RBC US Focus List"
+            helperText="Upload an RBC US Focus List screenshot. On Refresh, ticker + sector + weight + date are extracted and merged."
+            attachments={state.attachments || []}
+            onAddAttachment={addAttachment}
+            onRemoveAttachment={removeAttachment}
+            onScrape={(force) => scrapeResearchSource("rbc-us-focus", force)}
+            loading={!!scrapeLoadingMap["rbc-us-focus"]}
+            status={scrapeStatusMap["rbc-us-focus"]}
+          />
+        </section>
+
         {/* ── Seeking Alpha - Alpha Picks ──
             Mirrors the Newton's Upticks layout: name + sector + price
             + entry + dateAdded + change columns, screenshot-first flow
@@ -2047,17 +2143,10 @@ export default function ResearchPage() {
           />
         </section>
 
-        {/* ── General Notes ── */}
-        <section className="rounded-[24px] border border-slate-200 bg-white p-6 shadow-sm">
-          <h3 className="text-lg font-semibold mb-3">General Notes</h3>
-          <textarea
-            value={state.generalNotes}
-            onChange={(e) => save({ ...state, generalNotes: e.target.value })}
-            placeholder="Market observations, strategy notes, meeting takeaways..."
-            rows={8}
-            className="w-full rounded-xl border border-slate-200 bg-slate-50 p-4 text-sm leading-relaxed outline-none resize-y placeholder:text-slate-400 focus:bg-white focus:border-blue-300 focus:ring-1 focus:ring-blue-200 transition-all"
-          />
-        </section>
+        {/* General Notes section removed per user request — was unused
+            in the daily workflow. The generalNotes field stays on the
+            ResearchState schema for backward-compat with persisted
+            data; nothing renders it. */}
 
         {/* ── Quick Reference ── */}
         <section className="rounded-[24px] border border-slate-200 bg-white p-6 shadow-sm">

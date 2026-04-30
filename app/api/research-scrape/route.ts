@@ -35,12 +35,13 @@ const client = new Anthropic();
 
 type AttachmentInput = { id: string; label: string; dataUrl: string };
 
-type SourceKey = "fundstrat-top" | "fundstrat-bottom" | "rbc-focus" | "seeking-alpha-picks";
+type SourceKey = "fundstrat-top" | "fundstrat-bottom" | "rbc-focus" | "rbc-us-focus" | "seeking-alpha-picks";
 
 const VALID_SOURCES: readonly SourceKey[] = [
   "fundstrat-top",
   "fundstrat-bottom",
   "rbc-focus",
+  "rbc-us-focus",
   "seeking-alpha-picks",
 ] as const;
 
@@ -171,6 +172,22 @@ ${common}
 Example: [{"ticker":"RY-T","sector":"Financials","weight":5.5,"dateAdded":"3/12/2026"},{"ticker":"CNR-T","sector":"Industrials","weight":4.0,"dateAdded":"1/8/2026"}]`;
   }
 
+  if (source === "rbc-us-focus") {
+    return `You are reading the "RBC US Focus List" screenshot. It is a TABLE of US equity buy recommendations from RBC Capital Markets, with each name carrying a target portfolio weight. Extract every row.
+
+Columns to look for:
+  - Ticker / Symbol → \`ticker\` (string, required, UPPERCASE). US listings — DO NOT add a "-T" suffix. Tickers should be bare (e.g. "AAPL", "MSFT", "JPM"). For dual-class shares written with "/" (e.g. "BRK/B"), convert to dash form ("BRK-B").
+  - Sector → \`sector\` (string, the GICS or RBC sector label)
+  - Weight / Target Weight / Portfolio Weight → \`weight\` (NUMBER as a percentage, e.g. 5.0 for "5.0%". Strip % sign and commas.)
+  - Date Added / Date → \`dateAdded\` (string, e.g. "4/15/2026")
+
+If a column is missing or blank, OMIT that key (do not return null or empty string).
+
+${common}
+
+Example: [{"ticker":"MSFT","sector":"Technology","weight":5.0,"dateAdded":"3/12/2026"},{"ticker":"JPM","sector":"Financials","weight":4.0,"dateAdded":"1/8/2026"}]`;
+  }
+
   // seeking-alpha-picks
   return `You are reading a "Seeking Alpha — Alpha Picks" dashboard screenshot. It is a TABLE or list of buy recommendations from Seeking Alpha's institutional Alpha Picks service. Extract every pick.
 
@@ -260,7 +277,7 @@ async function runVision(source: SourceKey, atts: AttachmentInput[]): Promise<{ 
   const text = msg.content[0]?.type === "text" ? msg.content[0].text : "";
   console.log(`[research-scrape:${source}] raw vision output:`, text.slice(0, 4000));
 
-  const entries = source === "rbc-focus" ? parseRbcRows(text) : parseIdeaRows(text);
+  const entries = (source === "rbc-focus" || source === "rbc-us-focus") ? parseRbcRows(text) : parseIdeaRows(text);
   return { entries, rawText: text };
 }
 

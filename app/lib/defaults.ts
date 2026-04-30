@@ -179,6 +179,10 @@ export type ResearchState = {
   fundstratTop: IdeaEntry[];
   fundstratBottom: IdeaEntry[];
   rbcCanadianFocus: RBCEntry[];
+  // RBC US Focus List — same RBCEntry shape as the Canadian list,
+  // populated separately. US tickers (no -T suffix). Optional for
+  // backward compat with older pm:research blobs that predate this.
+  rbcUsFocus?: RBCEntry[];
   // Seeking Alpha Alpha Picks — institutional buy recommendations
   // populated from the Alpha Picks dashboard screenshot. Mirrors the
   // Newton's Upticks shape (name + sector + dateAdded + live price)
@@ -240,6 +244,7 @@ export const defaultResearch: ResearchState = {
   fundstratTop: [],
   fundstratBottom: [],
   rbcCanadianFocus: [],
+  rbcUsFocus: [],
   alphaPicks: [],
   generalNotes: "",
   attachments: [],
