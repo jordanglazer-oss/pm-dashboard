@@ -100,6 +100,66 @@ function IdeaAddForm({ onAdd }: { onAdd: (e: IdeaEntry) => void }) {
   );
 }
 
+/**
+ * Inline screenshot-scan block used by the four non-Newton research
+ * sources (Fundstrat Top/Bottom, RBC Canadian Focus, Alpha Picks).
+ * Mirrors the upticks scanner's UI pattern: ImageUpload + Refresh +
+ * Force re-scan + status line. The scrape itself is hash-gated per
+ * source on the server, so refreshes with unchanged screenshots cost
+ * zero Anthropic tokens.
+ */
+function ResearchScraperBlock(props: {
+  source: "fundstrat-top" | "fundstrat-bottom" | "rbc-focus" | "seeking-alpha-picks";
+  sectionLabel: string;
+  helperText: string;
+  attachments: BriefAttachment[];
+  onAddAttachment: (att: BriefAttachment) => Promise<void> | void;
+  onRemoveAttachment: (id: string) => Promise<void> | void;
+  onScrape: (force?: boolean) => Promise<boolean>;
+  loading: boolean;
+  status?: string;
+}) {
+  const hasAttachments = props.attachments.filter((a) => a.section === props.source).length > 0;
+  return (
+    <div className="mt-4 border-t border-slate-100 pt-4">
+      <div className="flex items-center gap-3 mb-2">
+        <h4 className="text-sm font-bold text-slate-700">Screenshot Scanner</h4>
+        <span className="text-[10px] text-slate-400">{props.helperText}</span>
+      </div>
+      <ImageUpload
+        section={props.source}
+        sectionLabel={props.sectionLabel}
+        attachments={props.attachments}
+        onAdd={props.onAddAttachment}
+        onRemove={props.onRemoveAttachment}
+      />
+      <div className="flex items-center gap-3 mt-2">
+        {props.status && (
+          <p className="text-[10px] text-slate-500">{props.status}</p>
+        )}
+        <div className="ml-auto flex items-center gap-2">
+          <button
+            onClick={() => { void props.onScrape(false); }}
+            disabled={props.loading || !hasAttachments}
+            className="text-[10px] rounded-md bg-blue-50 px-2.5 py-1 font-semibold text-blue-700 hover:bg-blue-100 disabled:opacity-50 transition-colors"
+            title="Re-run vision against the current screenshot. Cached if the image hasn't changed since last scan (no Anthropic cost)."
+          >
+            {props.loading ? "Scanning..." : "Refresh"}
+          </button>
+          <button
+            onClick={() => { void props.onScrape(true); }}
+            disabled={props.loading || !hasAttachments}
+            className="text-[10px] rounded-md border border-slate-300 bg-white px-2 py-1 font-medium text-slate-600 hover:bg-slate-100 disabled:opacity-50 transition-colors"
+            title="Bypass the cache and re-run Anthropic vision. Use when the previous parse was incomplete."
+          >
+            Force re-scan
+          </button>
+        </div>
+      </div>
+    </div>
+  );
+}
+
 /* ─── RBC Add Form ─── */
 function RBCAddForm({ onAdd }: { onAdd: (e: RBCEntry) => void }) {
   const [ticker, setTicker] = useState("");
@@ -247,6 +307,7 @@ export default function ResearchPage() {
       ...s.newtonUpticks.map((u) => u.ticker),
       ...s.fundstratTop.map((i) => i.ticker),
       ...s.fundstratBottom.map((i) => i.ticker),
+      ...(s.alphaPicks ?? []).map((i) => i.ticker),
     ];
     const unique = [...new Set(allTickers)];
     if (unique.length === 0) return;
@@ -272,6 +333,16 @@ export default function ResearchPage() {
   const [namesLoading, setNamesLoading] = useState(false);
   const [scrapeLoading, setScrapeLoading] = useState(false);
   const [scrapeStatus, setScrapeStatus] = useState<string | null>(null);
+
+  // Per-source loading + status state for the four research-scrape sources
+  // (Fundstrat Top, Fundstrat Bottom, RBC Canadian Focus, Alpha Picks).
+  // The Newton's Upticks scrape uses the older `scrapeLoading` /
+  // `scrapeStatus` because its Refresh button does more than just scrape
+  // (it also refreshes prices and names). The new sources are
+  // scrape-only so a per-source map keeps each section's UI independent.
+  type SourceKey = "fundstrat-top" | "fundstrat-bottom" | "rbc-focus" | "seeking-alpha-picks";
+  const [scrapeLoadingMap, setScrapeLoadingMap] = useState<Partial<Record<SourceKey, boolean>>>({});
+  const [scrapeStatusMap, setScrapeStatusMap] = useState<Partial<Record<SourceKey, string>>>({});
 
   function toggleUptickSort(key: UptickSortKey) {
     setUptickSort(prev => prev.key === key ? { key, dir: prev.dir === "asc" ? "desc" : "asc" } : { key, dir: "asc" });
@@ -563,6 +634,135 @@ export default function ResearchPage() {
       return null;
     } finally {
       setScrapeLoading(false);
+    }
+  }, [state, save]);
+
+  /**
+   * Scrape one of the four research sources beyond Newton's Upticks.
+   * POSTs the source-specific attachments to /api/research-scrape; the
+   * route hash-gates on image fingerprint per-source, so refreshes with
+   * unchanged screenshots cost zero Anthropic tokens.
+   *
+   * Merge rules:
+   *   - fundstrat-top / fundstrat-bottom / seeking-alpha-picks → upsert
+   *     IdeaEntry by ticker. Existing entries keep their dateAdded if any.
+   *   - rbc-focus → upsert RBCEntry by ticker. Sector / weight / dateAdded
+   *     overwrite when the screenshot provides them; entries with no
+   *     screenshot match are preserved as-is.
+   *
+   * Force=true bypasses the cache to re-run vision (use when the previous
+   * parse missed fields or returned [] on a complex screenshot).
+   */
+  const scrapeResearchSource = useCallback(async (source: SourceKey, force = false): Promise<boolean> => {
+    const sourceAttachments = (state.attachments || []).filter((a) => a.section === source);
+    if (sourceAttachments.length === 0) {
+      setScrapeStatusMap((m) => ({ ...m, [source]: "No screenshot uploaded for this source yet" }));
+      return false;
+    }
+    setScrapeLoadingMap((m) => ({ ...m, [source]: true }));
+    setScrapeStatusMap((m) => ({ ...m, [source]: undefined }));
+    try {
+      const res = await fetch("/api/research-scrape", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          source,
+          force,
+          attachments: sourceAttachments.map((a) => ({ id: a.id, label: a.label, dataUrl: a.dataUrl })),
+        }),
+      });
+      if (!res.ok) {
+        setScrapeStatusMap((m) => ({ ...m, [source]: "Screenshot scan failed" }));
+        return false;
+      }
+      const data = await res.json() as {
+        source: SourceKey;
+        entries?: Array<{ ticker: string; priceWhenAdded?: number; sector?: string; weight?: number; dateAdded?: string }>;
+        cached?: boolean;
+      };
+      const entries = data.entries || [];
+
+      if (entries.length === 0) {
+        setScrapeStatusMap((m) => ({ ...m, [source]: data.cached
+          ? "No rows in cached scan — click Force re-scan to retry"
+          : "Vision found no rows — try Force re-scan or a clearer screenshot" }));
+        return false;
+      }
+
+      // Normalize tickers same way upticks does so "$BRK/B" matches "BRK-B".
+      const normalize = (t: string) =>
+        t.replace(/^\$+/, "").replace(/\//g, "-").split(/[.\s]/)[0].toUpperCase();
+
+      let nextState: ResearchState = state;
+
+      if (source === "rbc-focus") {
+        const existing = state.rbcCanadianFocus || [];
+        const byNorm = new Map(existing.map((r) => [normalize(r.ticker), r]));
+        let matched = 0;
+        let added = 0;
+        for (const e of entries) {
+          const norm = normalize(e.ticker);
+          const ex = byNorm.get(norm);
+          if (ex) {
+            matched += 1;
+            byNorm.set(norm, {
+              ticker: ex.ticker,
+              sector: e.sector ?? ex.sector,
+              weight: e.weight ?? ex.weight,
+              dateAdded: e.dateAdded ?? ex.dateAdded,
+            });
+          } else {
+            added += 1;
+            byNorm.set(norm, {
+              ticker: norm,
+              sector: e.sector ?? "—",
+              weight: e.weight ?? 0,
+              dateAdded: e.dateAdded ?? new Date().toLocaleDateString("en-US", { month: "numeric", day: "numeric", year: "numeric" }),
+            });
+          }
+        }
+        nextState = { ...state, rbcCanadianFocus: Array.from(byNorm.values()) };
+        const cachedLabel = data.cached ? " (cached)" : "";
+        setScrapeStatusMap((m) => ({ ...m, [source]: `${entries.length} rows${cachedLabel} · ${matched} matched · ${added} added` }));
+      } else {
+        // IdeaEntry-shaped sources
+        const stateKey = source === "fundstrat-top" ? "fundstratTop"
+                       : source === "fundstrat-bottom" ? "fundstratBottom"
+                       : "alphaPicks";
+        const existing: IdeaEntry[] = (state[stateKey as keyof ResearchState] as IdeaEntry[]) || [];
+        const byNorm = new Map(existing.map((i) => [normalize(i.ticker), i]));
+        let matched = 0;
+        let added = 0;
+        for (const e of entries) {
+          const norm = normalize(e.ticker);
+          const ex = byNorm.get(norm);
+          if (ex) {
+            matched += 1;
+            byNorm.set(norm, {
+              ticker: ex.ticker,
+              priceWhenAdded: e.priceWhenAdded ?? ex.priceWhenAdded,
+            });
+          } else {
+            added += 1;
+            byNorm.set(norm, {
+              ticker: norm,
+              priceWhenAdded: e.priceWhenAdded ?? 0,
+            });
+          }
+        }
+        nextState = { ...state, [stateKey]: Array.from(byNorm.values()) } as ResearchState;
+        const cachedLabel = data.cached ? " (cached)" : "";
+        setScrapeStatusMap((m) => ({ ...m, [source]: `${entries.length} rows${cachedLabel} · ${matched} matched · ${added} added` }));
+      }
+
+      save(nextState);
+      return true;
+    } catch (e) {
+      console.error(`research-scrape:${source} failed:`, e);
+      setScrapeStatusMap((m) => ({ ...m, [source]: "Screenshot scan failed" }));
+      return false;
+    } finally {
+      setScrapeLoadingMap((m) => ({ ...m, [source]: false }));
     }
   }, [state, save]);
 
@@ -1029,6 +1229,18 @@ export default function ResearchPage() {
             </table>
 
             <IdeaAddForm onAdd={(e) => addIdea("fundstratTop", e)} />
+
+            <ResearchScraperBlock
+              source="fundstrat-top"
+              sectionLabel="Fundstrat Top Ideas"
+              helperText="Upload a Fundstrat Top Ideas screenshot. On Refresh, ticker + entry price are extracted and merged into the list. Re-scans only if the image changes."
+              attachments={state.attachments || []}
+              onAddAttachment={addAttachment}
+              onRemoveAttachment={removeAttachment}
+              onScrape={(force) => scrapeResearchSource("fundstrat-top", force)}
+              loading={!!scrapeLoadingMap["fundstrat-top"]}
+              status={scrapeStatusMap["fundstrat-top"]}
+            />
           </section>
 
           {/* Bottom Ideas */}
@@ -1108,6 +1320,18 @@ export default function ResearchPage() {
             </table>
 
             <IdeaAddForm onAdd={(e) => addIdea("fundstratBottom", e)} />
+
+            <ResearchScraperBlock
+              source="fundstrat-bottom"
+              sectionLabel="Fundstrat Bottom Ideas"
+              helperText="Upload a Fundstrat Bottom Ideas screenshot. On Refresh, ticker + entry price are extracted and merged into the list."
+              attachments={state.attachments || []}
+              onAddAttachment={addAttachment}
+              onRemoveAttachment={removeAttachment}
+              onScrape={(force) => scrapeResearchSource("fundstrat-bottom", force)}
+              loading={!!scrapeLoadingMap["fundstrat-bottom"]}
+              status={scrapeStatusMap["fundstrat-bottom"]}
+            />
           </section>
         </div>
 
@@ -1226,17 +1450,95 @@ export default function ResearchPage() {
           </table>
 
           <RBCAddForm onAdd={addRbc} />
+
+          <ResearchScraperBlock
+            source="rbc-focus"
+            sectionLabel="RBC Canadian Focus List"
+            helperText="Upload an RBC Canadian Focus List screenshot. On Refresh, ticker + sector + weight + date are extracted and merged."
+            attachments={state.attachments || []}
+            onAddAttachment={addAttachment}
+            onRemoveAttachment={removeAttachment}
+            onScrape={(force) => scrapeResearchSource("rbc-focus", force)}
+            loading={!!scrapeLoadingMap["rbc-focus"]}
+            status={scrapeStatusMap["rbc-focus"]}
+          />
         </section>
 
         {/* ── Seeking Alpha - Alpha Picks ── */}
         <section className="rounded-[24px] border border-slate-200 bg-white p-6 shadow-sm">
-          <h3 className="text-lg font-semibold mb-3">Seeking Alpha &mdash; Alpha Picks</h3>
-          <ImageUpload
-            section="seeking-alpha-picks"
+          <div className="flex items-center justify-between mb-3">
+            <div>
+              <h3 className="text-lg font-semibold">Seeking Alpha &mdash; Alpha Picks</h3>
+              <p className="text-xs text-slate-400">Institutional buy recommendations from Seeking Alpha</p>
+            </div>
+            <span className="text-sm text-slate-400">{(state.alphaPicks ?? []).length} picks</span>
+          </div>
+
+          {(state.alphaPicks ?? []).length > 0 ? (
+            <table className="w-full text-sm mb-3">
+              <thead>
+                <tr className="border-b border-slate-200 text-left">
+                  <th className="py-2 pr-2 text-xs font-semibold text-slate-600 w-8">#</th>
+                  <th className="py-2 pr-3 text-xs font-semibold text-slate-600">Ticker</th>
+                  <th className="py-2 pr-3 text-xs font-semibold text-slate-600 text-right">Current Price</th>
+                  <th className="py-2 pr-3 text-xs font-semibold text-slate-600 text-right">Price Picked</th>
+                  <th className="py-2 pr-2 text-xs font-semibold text-slate-600 text-right">Chg</th>
+                  <th className="py-2 w-8"></th>
+                </tr>
+              </thead>
+              <tbody>
+                {(state.alphaPicks ?? []).map((pick, i) => {
+                  const livePrice = livePrices[pick.ticker];
+                  const pctChange = livePrice && pick.priceWhenAdded
+                    ? ((livePrice - pick.priceWhenAdded) / pick.priceWhenAdded * 100)
+                    : null;
+                  return (
+                    <tr key={pick.ticker} className={`border-b border-slate-100 ${i % 2 === 0 ? "bg-white" : "bg-slate-50/40"}`}>
+                      <td className="py-2 pr-2 text-slate-400">{i + 1}</td>
+                      <td className="py-2 pr-3 font-mono font-bold">${pick.ticker}</td>
+                      <td className="py-2 pr-3 text-right font-mono">
+                        {pricesLoading ? <span className="text-slate-300 animate-pulse">...</span>
+                          : livePrice != null ? <span className="font-semibold">${livePrice.toFixed(2)}</span>
+                          : <span className="text-slate-300">—</span>}
+                      </td>
+                      <td className="py-2 pr-3 text-right font-mono">
+                        {pick.priceWhenAdded ? `$${pick.priceWhenAdded.toFixed(2)}` : <span className="text-slate-300">—</span>}
+                      </td>
+                      <td className="py-2 pr-2 text-right font-mono text-xs">
+                        {pctChange != null ? (
+                          <span className={pctChange >= 0 ? "text-emerald-600" : "text-red-500"}>
+                            {pctChange >= 0 ? "+" : ""}{pctChange.toFixed(1)}%
+                          </span>
+                        ) : <span className="text-slate-300">—</span>}
+                      </td>
+                      <td className="py-2 text-right whitespace-nowrap">
+                        <button
+                          onClick={() => save({ ...state, alphaPicks: (state.alphaPicks ?? []).filter((p) => p.ticker !== pick.ticker) })}
+                          className="text-slate-300 hover:text-red-500 font-bold transition-colors"
+                          title="Remove"
+                        >
+                          &times;
+                        </button>
+                      </td>
+                    </tr>
+                  );
+                })}
+              </tbody>
+            </table>
+          ) : (
+            <p className="text-sm text-slate-400 italic mb-3">No picks yet — upload a screenshot below to populate.</p>
+          )}
+
+          <ResearchScraperBlock
+            source="seeking-alpha-picks"
             sectionLabel="Alpha Picks"
+            helperText="Upload a Seeking Alpha — Alpha Picks dashboard screenshot. On Refresh, ticker + entry price are extracted into the list above."
             attachments={state.attachments || []}
-            onAdd={addAttachment}
-            onRemove={removeAttachment}
+            onAddAttachment={addAttachment}
+            onRemoveAttachment={removeAttachment}
+            onScrape={(force) => scrapeResearchSource("seeking-alpha-picks", force)}
+            loading={!!scrapeLoadingMap["seeking-alpha-picks"]}
+            status={scrapeStatusMap["seeking-alpha-picks"]}
           />
         </section>
 
