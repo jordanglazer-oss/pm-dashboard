@@ -1,7 +1,7 @@
 "use client";
 
 import React, { useState, useEffect, useCallback, useRef } from "react";
-import type { ResearchState, UptickEntry, IdeaEntry, RBCEntry, SectorViewEntry, SectorView, LeeFocusArea } from "@/app/lib/defaults";
+import type { ResearchState, UptickEntry, IdeaEntry, RBCEntry, SectorViewEntry, SectorView, LeeFocusArea, AlphaPickEntry } from "@/app/lib/defaults";
 import { defaultResearch, GICS_SECTORS } from "@/app/lib/defaults";
 import { ImageUpload, type BriefAttachment } from "@/app/components/ImageUpload";
 import { useStocks } from "@/app/lib/StockContext";
@@ -95,6 +95,62 @@ function IdeaAddForm({ onAdd }: { onAdd: (e: IdeaEntry) => void }) {
       </div>
       <button type="submit" className="rounded-xl bg-blue-600 px-5 py-2 text-sm font-semibold text-white hover:bg-blue-700 transition-colors">
         Add
+      </button>
+    </form>
+  );
+}
+
+/**
+ * Manual-entry form for Seeking Alpha Alpha Picks. Mirrors
+ * UptickAddForm: takes a ticker (required) + entry price, auto-fetches
+ * name + sector via /api/company-name so the row lands fully populated.
+ * Used as the manual fallback to the screenshot-driven primary flow.
+ */
+function AlphaPickAddForm({ onAdd }: { onAdd: (e: AlphaPickEntry) => void }) {
+  const [ticker, setTicker] = useState("");
+  const [priceWhenAdded, setPriceWhenAdded] = useState("");
+  const [adding, setAdding] = useState(false);
+
+  return (
+    <form
+      className="flex flex-wrap gap-2 mt-3 items-end"
+      onSubmit={async (e) => {
+        e.preventDefault();
+        const t = ticker.trim().toUpperCase();
+        if (!t) return;
+        setAdding(true);
+        let name = t;
+        let sector = "—";
+        try {
+          const res = await fetch(`/api/company-name?tickers=${encodeURIComponent(t)}`);
+          if (res.ok) {
+            const data = await res.json();
+            if (data.names?.[t]) name = data.names[t];
+            if (data.sectors?.[t]) sector = data.sectors[t];
+          }
+        } catch { /* fallback */ }
+        onAdd({
+          ticker: t,
+          name,
+          sector,
+          price: 0,
+          priceWhenAdded: parseFloat(priceWhenAdded) || 0,
+          dateAdded: new Date().toLocaleDateString("en-US", { month: "numeric", day: "numeric", year: "numeric" }),
+        });
+        setTicker(""); setPriceWhenAdded("");
+        setAdding(false);
+      }}
+    >
+      <div>
+        <label className="text-xs text-slate-400 block">Ticker*</label>
+        <input value={ticker} onChange={(e) => setTicker(e.target.value.toUpperCase())} placeholder="AMZN" className="w-24 rounded-xl border border-slate-200 bg-slate-50 px-3 py-2 text-sm font-mono outline-none placeholder:text-slate-400 focus:bg-white focus:border-blue-300 focus:ring-1 focus:ring-blue-200 transition-all" />
+      </div>
+      <div>
+        <label className="text-xs text-slate-400 block">Price Picked</label>
+        <input value={priceWhenAdded} onChange={(e) => setPriceWhenAdded(e.target.value)} placeholder="215.40" type="number" step="0.01" className="w-28 rounded-xl border border-slate-200 bg-slate-50 px-3 py-2 text-sm outline-none placeholder:text-slate-400 focus:bg-white focus:border-blue-300 focus:ring-1 focus:ring-blue-200 transition-all" />
+      </div>
+      <button type="submit" disabled={adding} className="rounded-xl bg-blue-600 px-5 py-2 text-sm font-semibold text-white hover:bg-blue-700 transition-colors disabled:opacity-50">
+        {adding ? "Adding..." : "Add"}
       </button>
     </form>
   );
@@ -458,6 +514,29 @@ export default function ResearchPage() {
             };
           }
 
+          // Migrate older pm:research blobs where alphaPicks was
+          // persisted as IdeaEntry[] (just ticker + priceWhenAdded).
+          // The Newton's Upticks-aligned shape adds name + sector +
+          // dateAdded + price; fill defaults so the table renders
+          // without throwing on missing fields. The next refreshAlpha
+          // PickNames pass will populate name + sector via Yahoo.
+          if (research.alphaPicks && research.alphaPicks.length > 0) {
+            research = {
+              ...research,
+              alphaPicks: research.alphaPicks.map((p): AlphaPickEntry => {
+                const partial = p as Partial<AlphaPickEntry> & IdeaEntry;
+                return {
+                  ticker: partial.ticker,
+                  name: partial.name ?? partial.ticker,
+                  sector: partial.sector ?? "—",
+                  price: typeof partial.price === "number" ? partial.price : 0,
+                  priceWhenAdded: partial.priceWhenAdded ?? 0,
+                  dateAdded: partial.dateAdded ?? "",
+                };
+              }),
+            };
+          }
+
           setState(research);
           fetchLivePrices(research);
 
@@ -491,6 +570,48 @@ export default function ResearchPage() {
                   research = { ...research, newtonUpticks: updated };
                   setState(research);
                   // Persist the backfilled data
+                  fetch("/api/kv/research", {
+                    method: "PUT",
+                    headers: { "Content-Type": "application/json" },
+                    body: JSON.stringify({ research }),
+                  }).catch(() => {});
+                }
+              }
+            } catch { /* best-effort */ }
+          }
+
+          // Same backfill for Alpha Picks: any rows persisted before
+          // the upticks-shape upgrade, or scraped under the older flow,
+          // arrive with name = ticker and sector = "—". Pull names +
+          // sectors via Yahoo and persist if anything changed.
+          const alphaPicksNeedFill = (research.alphaPicks ?? []).filter(
+            (p) => !p.name || p.name === p.ticker || !p.sector || p.sector === "—"
+          );
+          if (alphaPicksNeedFill.length > 0) {
+            try {
+              const tickers = alphaPicksNeedFill.map((p) => p.ticker).join(",");
+              const res = await fetch(`/api/company-name?tickers=${encodeURIComponent(tickers)}`);
+              if (res.ok) {
+                const info = await res.json();
+                let changed = false;
+                const updated = (research.alphaPicks ?? []).map((p) => {
+                  const newName = info.names?.[p.ticker];
+                  const newSector = info.sectors?.[p.ticker];
+                  const shouldUpdateName = newName && (!p.name || p.name === p.ticker);
+                  const shouldUpdateSector = newSector && (!p.sector || p.sector === "—");
+                  if (shouldUpdateName || shouldUpdateSector) {
+                    changed = true;
+                    return {
+                      ...p,
+                      ...(shouldUpdateName ? { name: newName } : {}),
+                      ...(shouldUpdateSector ? { sector: newSector } : {}),
+                    };
+                  }
+                  return p;
+                });
+                if (changed) {
+                  research = { ...research, alphaPicks: updated };
+                  setState(research);
                   fetch("/api/kv/research", {
                     method: "PUT",
                     headers: { "Content-Type": "application/json" },
@@ -557,6 +678,40 @@ export default function ResearchPage() {
       }
     } catch { /* silent */ }
     finally { setNamesLoading(false); }
+  }, [state, save]);
+
+  /**
+   * Mirror of refreshUptickNames for the Alpha Picks list. Pulls
+   * company names + sectors via /api/company-name in one batch and
+   * updates any rows whose name/sector are blank, "—", or just the
+   * ticker placeholder. Called automatically after a successful
+   * Alpha Picks scrape so newly added tickers land fully populated.
+   */
+  const refreshAlphaPickNames = useCallback(async (overrideState?: ResearchState) => {
+    const s = overrideState || state;
+    const list = s.alphaPicks ?? [];
+    if (list.length === 0) return;
+    const needsFill = list.filter((p) => !p.name || p.name === p.ticker || !p.sector || p.sector === "—");
+    if (needsFill.length === 0) return;
+    try {
+      const tickers = needsFill.map((p) => p.ticker).join(",");
+      const res = await fetch(`/api/company-name?tickers=${encodeURIComponent(tickers)}`);
+      if (!res.ok) return;
+      const info = await res.json();
+      let changed = false;
+      const updated = list.map((p) => {
+        const newName = info.names?.[p.ticker];
+        const newSector = info.sectors?.[p.ticker];
+        if ((newName && newName !== p.name) || (newSector && newSector !== p.sector)) {
+          changed = true;
+          return { ...p, name: newName || p.name, sector: newSector || p.sector };
+        }
+        return p;
+      });
+      if (changed) {
+        save({ ...s, alphaPicks: updated });
+      }
+    } catch { /* silent */ }
   }, [state, save]);
 
   /**
@@ -743,11 +898,49 @@ export default function ResearchPage() {
         nextState = { ...state, rbcCanadianFocus: Array.from(byNorm.values()) };
         const cachedLabel = data.cached ? " (cached)" : "";
         setScrapeStatusMap((m) => ({ ...m, [source]: `${entries.length} rows${cachedLabel} · ${matched} matched · ${added} added` }));
+      } else if (source === "seeking-alpha-picks") {
+        // Alpha Picks: rich entries (name + sector + dateAdded + price)
+        // mirroring Newton's Upticks. Server returns ticker + priceWhenAdded;
+        // we preserve existing name/sector for matched rows and stub
+        // defaults for new rows. The post-scrape refreshAlphaPickNames
+        // call backfills name/sector via /api/company-name in batch.
+        const existing: AlphaPickEntry[] = state.alphaPicks || [];
+        const byNorm = new Map(existing.map((i) => [normalize(i.ticker), i]));
+        let matched = 0;
+        let added = 0;
+        for (const e of entries) {
+          const norm = normalize(e.ticker);
+          const ex = byNorm.get(norm);
+          if (ex) {
+            matched += 1;
+            byNorm.set(norm, {
+              ...ex,
+              priceWhenAdded: e.priceWhenAdded ?? ex.priceWhenAdded,
+            });
+          } else {
+            added += 1;
+            byNorm.set(norm, {
+              ticker: norm,
+              name: norm,
+              sector: "—",
+              price: 0,
+              priceWhenAdded: e.priceWhenAdded ?? 0,
+              dateAdded: new Date().toLocaleDateString("en-US", { month: "numeric", day: "numeric", year: "numeric" }),
+            });
+          }
+        }
+        nextState = { ...state, alphaPicks: Array.from(byNorm.values()) };
+        const cachedLabel = data.cached ? " (cached)" : "";
+        setScrapeStatusMap((m) => ({ ...m, [source]: `${entries.length} rows${cachedLabel} · ${matched} matched · ${added} added` }));
+        // Save first, then backfill names/sectors via Yahoo for any new
+        // tickers (mirrors refreshUptickNames). Saves an extra round
+        // trip if everything is already populated.
+        save(nextState);
+        void refreshAlphaPickNames(nextState);
+        return true;
       } else {
-        // IdeaEntry-shaped sources
-        const stateKey = source === "fundstrat-top" ? "fundstratTop"
-                       : source === "fundstrat-bottom" ? "fundstratBottom"
-                       : "alphaPicks";
+        // IdeaEntry-shaped sources (Fundstrat Top, Fundstrat Bottom)
+        const stateKey = source === "fundstrat-top" ? "fundstratTop" : "fundstratBottom";
         const existing: IdeaEntry[] = (state[stateKey as keyof ResearchState] as IdeaEntry[]) || [];
         const byNorm = new Map(existing.map((i) => [normalize(i.ticker), i]));
         let matched = 0;
@@ -783,7 +976,7 @@ export default function ResearchPage() {
     } finally {
       setScrapeLoadingMap((m) => ({ ...m, [source]: false }));
     }
-  }, [state, save]);
+  }, [state, save, refreshAlphaPickNames]);
 
   /**
    * Cross-source synthesis: POSTs the current research state + brief
@@ -1681,26 +1874,36 @@ export default function ResearchPage() {
           />
         </section>
 
-        {/* ── Seeking Alpha - Alpha Picks ── */}
+        {/* ── Seeking Alpha - Alpha Picks ──
+            Mirrors the Newton's Upticks layout: name + sector + price
+            + entry + dateAdded + change columns, screenshot-first flow
+            with a manual add fallback. The screenshot is the primary
+            input; the manual form covers the case where you want to
+            log a pick without screenshotting. */}
         <section className="rounded-[24px] border border-slate-200 bg-white p-6 shadow-sm">
-          <div className="flex items-center justify-between mb-3">
+          <div className="flex items-center justify-between mb-4">
             <div>
-              <h3 className="text-lg font-semibold">Seeking Alpha &mdash; Alpha Picks</h3>
-              <p className="text-xs text-slate-400">Institutional buy recommendations from Seeking Alpha</p>
+              <h3 className="text-xl font-bold">Seeking Alpha &mdash; Alpha Picks</h3>
+              <p className="text-xs text-slate-400">
+                Institutional buy recommendations &mdash; primarily populated by uploading the Alpha Picks dashboard screenshot. Manual adds also work.
+              </p>
             </div>
             <span className="text-sm text-slate-400">{(state.alphaPicks ?? []).length} picks</span>
           </div>
 
-          {(state.alphaPicks ?? []).length > 0 ? (
-            <table className="w-full text-sm mb-3">
+          <div className="overflow-x-auto">
+            <table className="w-full text-sm">
               <thead>
-                <tr className="border-b border-slate-200 text-left">
+                <tr className="border-b-2 border-slate-300 text-left">
                   <th className="py-2 pr-2 text-xs font-semibold text-slate-600 w-8">#</th>
+                  <th className="py-2 pr-3 text-xs font-semibold text-slate-600">Name</th>
                   <th className="py-2 pr-3 text-xs font-semibold text-slate-600">Ticker</th>
+                  <th className="py-2 pr-3 text-xs font-semibold text-slate-600">Sector</th>
                   <th className="py-2 pr-3 text-xs font-semibold text-slate-600 text-right">Current Price</th>
                   <th className="py-2 pr-3 text-xs font-semibold text-slate-600 text-right">Price Picked</th>
+                  <th className="py-2 pr-3 text-xs font-semibold text-slate-600">Date Added</th>
                   <th className="py-2 pr-2 text-xs font-semibold text-slate-600 text-right">Chg</th>
-                  <th className="py-2 w-8"></th>
+                  <th className="py-2 w-16"></th>
                 </tr>
               </thead>
               <tbody>
@@ -1710,9 +1913,11 @@ export default function ResearchPage() {
                     ? ((livePrice - pick.priceWhenAdded) / pick.priceWhenAdded * 100)
                     : null;
                   return (
-                    <tr key={pick.ticker} className={`border-b border-slate-100 ${i % 2 === 0 ? "bg-white" : "bg-slate-50/40"}`}>
+                    <tr key={pick.ticker} className={`border-b border-slate-100 ${i % 2 === 0 ? "bg-white" : "bg-slate-50/40"} hover:bg-slate-50 transition-colors`}>
                       <td className="py-2 pr-2 text-slate-400">{i + 1}</td>
+                      <td className="py-2 pr-3 text-slate-700 truncate max-w-[200px]" title={pick.name}>{pick.name}</td>
                       <td className="py-2 pr-3 font-mono font-bold">${pick.ticker}</td>
+                      <td className="py-2 pr-3 text-xs text-slate-500">{pick.sector || "—"}</td>
                       <td className="py-2 pr-3 text-right font-mono">
                         {pricesLoading ? <span className="text-slate-300 animate-pulse">...</span>
                           : livePrice != null ? <span className="font-semibold">${livePrice.toFixed(2)}</span>
@@ -1721,6 +1926,7 @@ export default function ResearchPage() {
                       <td className="py-2 pr-3 text-right font-mono">
                         {pick.priceWhenAdded ? `$${pick.priceWhenAdded.toFixed(2)}` : <span className="text-slate-300">—</span>}
                       </td>
+                      <td className="py-2 pr-3 text-xs text-slate-500">{pick.dateAdded || "—"}</td>
                       <td className="py-2 pr-2 text-right font-mono text-xs">
                         {pctChange != null ? (
                           <span className={pctChange >= 0 ? "text-emerald-600" : "text-red-500"}>
@@ -1729,9 +1935,20 @@ export default function ResearchPage() {
                         ) : <span className="text-slate-300">—</span>}
                       </td>
                       <td className="py-2 text-right whitespace-nowrap">
+                        {scoredStocks.some((s) => s.ticker === pick.ticker) ? (
+                          <span className="text-[10px] text-emerald-500 font-medium">In list</span>
+                        ) : (
+                          <button
+                            onClick={(e) => { e.stopPropagation(); addToWatchlist(pick.ticker); }}
+                            className="text-[10px] text-blue-500 hover:text-blue-700 font-semibold transition-colors"
+                            title="Add to Watchlist"
+                          >
+                            + Watch
+                          </button>
+                        )}
                         <button
                           onClick={() => save({ ...state, alphaPicks: (state.alphaPicks ?? []).filter((p) => p.ticker !== pick.ticker) })}
-                          className="text-slate-300 hover:text-red-500 font-bold transition-colors"
+                          className="ml-2 text-slate-300 hover:text-red-500 font-bold transition-colors"
                           title="Remove"
                         >
                           &times;
@@ -1740,16 +1957,23 @@ export default function ResearchPage() {
                     </tr>
                   );
                 })}
+                {(state.alphaPicks ?? []).length === 0 && (
+                  <tr><td colSpan={9} className="py-8 text-center text-slate-400 italic">No picks yet &mdash; upload a screenshot below or add manually</td></tr>
+                )}
               </tbody>
             </table>
-          ) : (
-            <p className="text-sm text-slate-400 italic mb-3">No picks yet — upload a screenshot below to populate.</p>
-          )}
+          </div>
+
+          <AlphaPickAddForm onAdd={(entry) => {
+            const list = state.alphaPicks ?? [];
+            if (list.some((p) => p.ticker === entry.ticker)) return;
+            save({ ...state, alphaPicks: [...list, entry] });
+          }} />
 
           <ResearchScraperBlock
             source="seeking-alpha-picks"
             sectionLabel="Alpha Picks"
-            helperText="Upload a Seeking Alpha — Alpha Picks dashboard screenshot. On Refresh, ticker + entry price are extracted into the list above."
+            helperText="Upload a Seeking Alpha — Alpha Picks dashboard screenshot. On Refresh, ticker + entry price are extracted into the list above. Re-scans only if the image changes."
             attachments={state.attachments || []}
             onAddAttachment={addAttachment}
             onRemoveAttachment={removeAttachment}
