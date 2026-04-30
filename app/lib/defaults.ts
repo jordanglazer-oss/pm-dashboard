@@ -179,6 +179,11 @@ export type ResearchState = {
   fundstratTop: IdeaEntry[];
   fundstratBottom: IdeaEntry[];
   rbcCanadianFocus: RBCEntry[];
+  // Seeking Alpha Alpha Picks — institutional buy recommendations
+  // populated from the Alpha Picks dashboard screenshot. Same shape
+  // as IdeaEntry (ticker + entry price) for consistency with the
+  // Fundstrat lists.
+  alphaPicks?: IdeaEntry[];
   generalNotes: string;
   attachments?: import("@/app/components/ImageUpload").BriefAttachment[];
   // Newton's sector overweight/underweight views. Pre-populated with all
@@ -213,6 +218,7 @@ export const defaultResearch: ResearchState = {
   fundstratTop: [],
   fundstratBottom: [],
   rbcCanadianFocus: [],
+  alphaPicks: [],
   generalNotes: "",
   attachments: [],
   newtonSectors: GICS_SECTORS.map((s) => ({ sector: s, view: "neutral" as SectorView })),
