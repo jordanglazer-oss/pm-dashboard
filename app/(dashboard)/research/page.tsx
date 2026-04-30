@@ -263,7 +263,7 @@ export default function ResearchPage() {
   const [loaded, setLoaded] = useState(false);
   const [attachmentsSaveError, setAttachmentsSaveError] = useState<string | null>(null);
   const saveTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
-  const { scoredStocks, addStock } = useStocks();
+  const { scoredStocks, addStock, brief } = useStocks();
 
   // Add a research idea to the watchlist (auto-fetches name + sector)
   const addToWatchlist = useCallback(async (ticker: string) => {
@@ -343,6 +343,25 @@ export default function ResearchPage() {
   type SourceKey = "fundstrat-top" | "fundstrat-bottom" | "rbc-focus" | "seeking-alpha-picks";
   const [scrapeLoadingMap, setScrapeLoadingMap] = useState<Partial<Record<SourceKey, boolean>>>({});
   const [scrapeStatusMap, setScrapeStatusMap] = useState<Partial<Record<SourceKey, string>>>({});
+
+  // Cross-source synthesis state. The synthesis tile at the top of the
+  // page asks Claude to find the best buy targets across all five
+  // research sources, weighted by cross-source overlap and the brief's
+  // regime/horizon read. Hash-gated server-side so unchanged inputs
+  // don't spend Anthropic tokens.
+  type SynthesisPick = { ticker: string; sources: string[]; sourceCount: number; thesis: string };
+  type SynthesisResult = {
+    summary: string;
+    topPicks: SynthesisPick[];
+    honorableMentions: SynthesisPick[];
+    cautions?: string[];
+    regimeContext?: string;
+  };
+  const [synthesis, setSynthesis] = useState<SynthesisResult | null>(null);
+  const [synthesisGeneratedAt, setSynthesisGeneratedAt] = useState<string | null>(null);
+  const [synthesisLoading, setSynthesisLoading] = useState(false);
+  const [synthesisStatus, setSynthesisStatus] = useState<string | null>(null);
+  const [synthesisCached, setSynthesisCached] = useState(false);
 
   function toggleUptickSort(key: UptickSortKey) {
     setUptickSort(prev => prev.key === key ? { key, dir: prev.dir === "asc" ? "desc" : "asc" } : { key, dir: "asc" });
@@ -766,6 +785,72 @@ export default function ResearchPage() {
     }
   }, [state, save]);
 
+  /**
+   * Cross-source synthesis: POSTs the current research state + brief
+   * to /api/research-synthesis. Server hash-gates on the inputs:
+   * unchanged research + brief → returns the cached result with zero
+   * Anthropic spend. Force=true bypasses to re-generate against the
+   * same inputs (use when the previous output was thin or the prompt
+   * needs another shot).
+   *
+   * The result lives only on the server cache (pm:research-synthesis-cache).
+   * The page fires this once on mount with force=false to hydrate the
+   * tile from cache. The user's "Refresh" button calls it again with
+   * force=false (which is still essentially free if nothing changed),
+   * and "Force re-generate" passes force=true.
+   */
+  const generateSynthesis = useCallback(async (force = false): Promise<boolean> => {
+    setSynthesisLoading(true);
+    setSynthesisStatus(null);
+    try {
+      const res = await fetch("/api/research-synthesis", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ research: state, brief, force }),
+      });
+      if (!res.ok) {
+        setSynthesisStatus("Synthesis failed");
+        return false;
+      }
+      const data = await res.json() as {
+        result: SynthesisResult | null;
+        cached?: boolean;
+        generatedAt?: string;
+        reason?: string;
+        message?: string;
+      };
+      if (!data.result) {
+        setSynthesis(null);
+        setSynthesisStatus(data.message || "No synthesis available yet");
+        return false;
+      }
+      setSynthesis(data.result);
+      setSynthesisCached(!!data.cached);
+      setSynthesisGeneratedAt(data.generatedAt ?? null);
+      const cachedLabel = data.cached ? "cached" : "fresh";
+      const totalPicks = data.result.topPicks.length + data.result.honorableMentions.length;
+      setSynthesisStatus(`${totalPicks} picks · ${cachedLabel}`);
+      return true;
+    } catch (e) {
+      console.error("research-synthesis failed:", e);
+      setSynthesisStatus("Synthesis failed");
+      return false;
+    } finally {
+      setSynthesisLoading(false);
+    }
+  }, [state, brief]);
+
+  // Auto-hydrate the synthesis on first load. POSTs with force=false so
+  // the server returns the cached result if the inputs are unchanged
+  // since the last generation — zero token spend. We wait until research
+  // state is loaded before firing.
+  const synthesisHydratedRef = useRef(false);
+  useEffect(() => {
+    if (!loaded || synthesisHydratedRef.current) return;
+    synthesisHydratedRef.current = true;
+    void generateSynthesis(false);
+  }, [loaded, generateSynthesis]);
+
   /* Uptick helpers */
   const addUptick = (entry: UptickEntry) => {
     if (state.newtonUpticks.some((u) => u.ticker === entry.ticker)) return;
@@ -867,6 +952,138 @@ export default function ResearchPage() {
             <strong>Screenshots not saved:</strong> {attachmentsSaveError}
           </div>
         )}
+
+        {/* ── Cross-Source Synthesis ──
+            AI-generated buy-target list synthesizing all five research
+            sources + the brief's regime/horizon read. Cross-source
+            overlap (a ticker mentioned by 2+ sources) is weighted
+            higher. Cached server-side: refreshes with unchanged
+            research + brief return instantly with no Anthropic cost. */}
+        <section className="rounded-[24px] border border-indigo-200 bg-gradient-to-br from-indigo-50/60 to-white p-6 shadow-sm">
+          <div className="flex items-start justify-between gap-3 mb-3 flex-wrap">
+            <div>
+              <h3 className="text-xl font-bold text-indigo-900 flex items-center gap-2">
+                <span>✦</span> Cross-Source Synthesis
+              </h3>
+              <p className="text-xs text-slate-500 mt-1">
+                Best buy targets across all research sources, weighted by cross-source overlap and the morning brief. Names mentioned by 2+ sources rank as Top Picks.
+              </p>
+            </div>
+            <div className="flex items-center gap-2 flex-wrap">
+              {synthesisStatus && (
+                <span className="text-[11px] text-slate-500 mr-1">{synthesisStatus}</span>
+              )}
+              {synthesisGeneratedAt && (
+                <span className="text-[10px] text-slate-400 mr-1" title={`Generated ${new Date(synthesisGeneratedAt).toLocaleString()}`}>
+                  {new Date(synthesisGeneratedAt).toLocaleTimeString([], { hour: "numeric", minute: "2-digit" })}
+                </span>
+              )}
+              <button
+                onClick={() => { void generateSynthesis(false); }}
+                disabled={synthesisLoading}
+                className="text-[11px] rounded-md bg-indigo-600 px-3 py-1.5 font-semibold text-white hover:bg-indigo-700 disabled:opacity-50 transition-colors"
+                title={synthesis ? "Re-fetch the cached synthesis (free if inputs haven't changed)" : "Generate the cross-source synthesis from current research + brief"}
+              >
+                {synthesisLoading ? "Generating..." : synthesis ? "Refresh" : "Generate"}
+              </button>
+              <button
+                onClick={() => { void generateSynthesis(true); }}
+                disabled={synthesisLoading}
+                className="text-[11px] rounded-md border border-slate-300 bg-white px-2.5 py-1.5 font-medium text-slate-600 hover:bg-slate-100 disabled:opacity-50 transition-colors"
+                title="Bypass cache and re-run the synthesis prompt against current inputs"
+              >
+                Force re-generate
+              </button>
+            </div>
+          </div>
+
+          {!synthesis && !synthesisLoading && (
+            <div className="rounded-lg border border-dashed border-slate-300 bg-white/70 p-4 text-sm text-slate-500">
+              {synthesisStatus
+                ? <>{synthesisStatus}</>
+                : <>No synthesis generated yet. Add some research picks across the sources below, then click <strong>Generate</strong>.</>}
+            </div>
+          )}
+
+          {synthesis && (
+            <div className="space-y-4">
+              {/* Summary line + regime tag */}
+              <div className="flex items-start gap-2 flex-wrap">
+                {synthesis.regimeContext && (
+                  <span className={`text-[10px] font-bold uppercase tracking-wider rounded-full px-2 py-0.5 mt-0.5 ${
+                    synthesis.regimeContext === "Risk-On"  ? "bg-emerald-100 text-emerald-700"
+                    : synthesis.regimeContext === "Risk-Off" ? "bg-red-100 text-red-700"
+                    : "bg-amber-100 text-amber-700"
+                  }`}>
+                    {synthesis.regimeContext}
+                  </span>
+                )}
+                <p className="text-sm leading-6 text-slate-700 flex-1 min-w-[260px]">{synthesis.summary}</p>
+              </div>
+
+              {/* Top picks — multi-source */}
+              {synthesis.topPicks.length > 0 && (
+                <div>
+                  <h4 className="text-xs font-bold uppercase tracking-wider text-indigo-700 mb-2">
+                    Top Picks <span className="text-slate-400 font-normal">· cross-source overlap</span>
+                  </h4>
+                  <ul className="space-y-3">
+                    {synthesis.topPicks.map((p) => (
+                      <li key={p.ticker} className="rounded-xl border border-indigo-100 bg-white p-3 shadow-sm">
+                        <div className="flex items-center gap-2 flex-wrap mb-1.5">
+                          <span className="font-mono font-bold text-base text-indigo-900">${p.ticker}</span>
+                          <span className="text-[10px] font-bold rounded-full bg-indigo-600 text-white px-2 py-0.5">
+                            {p.sourceCount} sources
+                          </span>
+                          {p.sources.map((s) => (
+                            <span key={s} className="text-[10px] rounded-full bg-slate-100 text-slate-600 px-2 py-0.5">
+                              {s}
+                            </span>
+                          ))}
+                        </div>
+                        <p className="text-sm leading-6 text-slate-700">{p.thesis}</p>
+                      </li>
+                    ))}
+                  </ul>
+                </div>
+              )}
+
+              {/* Honorable mentions — single source */}
+              {synthesis.honorableMentions.length > 0 && (
+                <div>
+                  <h4 className="text-xs font-bold uppercase tracking-wider text-slate-600 mb-2">
+                    Honorable Mentions <span className="text-slate-400 font-normal">· single-source standouts</span>
+                  </h4>
+                  <ul className="space-y-2">
+                    {synthesis.honorableMentions.map((p) => (
+                      <li key={p.ticker} className="rounded-lg border border-slate-100 bg-white/70 p-2.5">
+                        <div className="flex items-center gap-2 flex-wrap mb-1">
+                          <span className="font-mono font-bold text-sm">${p.ticker}</span>
+                          {p.sources.map((s) => (
+                            <span key={s} className="text-[10px] rounded-full bg-slate-100 text-slate-600 px-2 py-0.5">
+                              {s}
+                            </span>
+                          ))}
+                        </div>
+                        <p className="text-xs leading-5 text-slate-600">{p.thesis}</p>
+                      </li>
+                    ))}
+                  </ul>
+                </div>
+              )}
+
+              {/* Cautions */}
+              {synthesis.cautions && synthesis.cautions.length > 0 && (
+                <div className="rounded-lg border border-amber-200 bg-amber-50 p-3">
+                  <h4 className="text-xs font-bold uppercase tracking-wider text-amber-800 mb-1">Cautions</h4>
+                  <ul className="text-xs leading-5 text-amber-900 list-disc list-inside space-y-0.5">
+                    {synthesis.cautions.map((c, i) => <li key={i}>{c}</li>)}
+                  </ul>
+                </div>
+              )}
+            </div>
+          )}
+        </section>
 
         {/* ── Newton's Upticks ── */}
         <section className="rounded-[24px] border border-slate-200 bg-white p-6 shadow-sm">
