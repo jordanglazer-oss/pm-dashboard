@@ -979,19 +979,54 @@ export default function ResearchPage() {
   }, [state, save, refreshAlphaPickNames]);
 
   /**
-   * Cross-source synthesis: POSTs the current research state + brief
-   * to /api/research-synthesis. Server hash-gates on the inputs:
-   * unchanged research + brief → returns the cached result with zero
-   * Anthropic spend. Force=true bypasses to re-generate against the
-   * same inputs (use when the previous output was thin or the prompt
-   * needs another shot).
+   * Cross-source synthesis with strict stickiness.
    *
-   * The result lives only on the server cache (pm:research-synthesis-cache).
-   * The page fires this once on mount with force=false to hydrate the
-   * tile from cache. The user's "Refresh" button calls it again with
-   * force=false (which is still essentially free if nothing changed),
-   * and "Force re-generate" passes force=true.
+   *   - On page mount, hydrate from the server's persisted blob via
+   *     a GET. No Anthropic call regardless of how many times the
+   *     research page is opened or reloaded across devices.
+   *   - If no synthesis is persisted yet (first-ever generation),
+   *     auto-fire a POST with force=false. The server generates,
+   *     persists, and returns. Subsequent loads then hit the
+   *     persisted blob via the GET path.
+   *   - "Force re-generate" passes force=true. The server overwrites
+   *     the persisted blob with a fresh synthesis using the current
+   *     research + current brief — this is the only path that mutates
+   *     the persisted state.
+   *
+   * Net effect: synthesis stays anchored to the brief at the moment
+   * it was first generated, doesn't migrate when the brief is
+   * regenerated, and doesn't waste tokens on every page load.
    */
+  const loadPersistedSynthesis = useCallback(async (): Promise<boolean> => {
+    try {
+      const res = await fetch("/api/research-synthesis", { method: "GET" });
+      if (!res.ok) return false;
+      const data = await res.json() as {
+        result: SynthesisResult | null;
+        generatedAt?: string | null;
+        generatedDate?: string | null;
+        briefRegime?: string;
+        briefDate?: string;
+      };
+      if (!data.result) {
+        setSynthesis(null);
+        setSynthesisGeneratedAt(null);
+        return false;
+      }
+      setSynthesis(data.result);
+      setSynthesisGeneratedAt(data.generatedAt ?? null);
+      setSynthesisCached(true);
+      const totalPicks = data.result.topPicks.length + data.result.honorableMentions.length;
+      const briefLabel = data.briefRegime ? ` · ${data.briefRegime} regime` : "";
+      const dateLabel = data.generatedDate ? ` · ${data.generatedDate}` : "";
+      setSynthesisStatus(`${totalPicks} picks${briefLabel}${dateLabel}`);
+      return true;
+    } catch (e) {
+      console.error("research-synthesis load failed:", e);
+      return false;
+    }
+  }, []);
+
   const generateSynthesis = useCallback(async (force = false): Promise<boolean> => {
     setSynthesisLoading(true);
     setSynthesisStatus(null);
@@ -1009,6 +1044,9 @@ export default function ResearchPage() {
         result: SynthesisResult | null;
         cached?: boolean;
         generatedAt?: string;
+        generatedDate?: string;
+        briefRegime?: string;
+        briefDate?: string;
         reason?: string;
         message?: string;
       };
@@ -1020,9 +1058,10 @@ export default function ResearchPage() {
       setSynthesis(data.result);
       setSynthesisCached(!!data.cached);
       setSynthesisGeneratedAt(data.generatedAt ?? null);
-      const cachedLabel = data.cached ? "cached" : "fresh";
       const totalPicks = data.result.topPicks.length + data.result.honorableMentions.length;
-      setSynthesisStatus(`${totalPicks} picks · ${cachedLabel}`);
+      const briefLabel = data.briefRegime ? ` · ${data.briefRegime} regime` : "";
+      const stickyLabel = data.cached ? " · sticky" : " · fresh";
+      setSynthesisStatus(`${totalPicks} picks${briefLabel}${stickyLabel}`);
       return true;
     } catch (e) {
       console.error("research-synthesis failed:", e);
@@ -1033,16 +1072,36 @@ export default function ResearchPage() {
     }
   }, [state, brief]);
 
-  // Auto-hydrate the synthesis on first load. POSTs with force=false so
-  // the server returns the cached result if the inputs are unchanged
-  // since the last generation — zero token spend. We wait until research
-  // state is loaded before firing.
+  // Hydrate from the persisted synthesis on mount. If nothing's
+  // persisted yet, auto-generate (one-time, after the brief has had a
+  // chance to load — see briefReadyRef below). Subsequent reloads
+  // never re-fire Anthropic; only Force re-generate does.
   const synthesisHydratedRef = useRef(false);
+  const briefReadyRef = useRef(false);
   useEffect(() => {
     if (!loaded || synthesisHydratedRef.current) return;
     synthesisHydratedRef.current = true;
-    void generateSynthesis(false);
-  }, [loaded, generateSynthesis]);
+    (async () => {
+      const hadStored = await loadPersistedSynthesis();
+      if (hadStored) return;
+      // No persisted synthesis — wait briefly for the brief to load
+      // from useStocks() so the first-ever generation has full context.
+      // If brief is still null after the wait, generate without it
+      // (the route handles null brief gracefully).
+      if (!brief && !briefReadyRef.current) {
+        // Defer by one tick so the next render with a populated brief
+        // can hit; if still null we proceed anyway.
+        await new Promise((r) => setTimeout(r, 800));
+      }
+      void generateSynthesis(false);
+    })();
+  }, [loaded, brief, loadPersistedSynthesis, generateSynthesis]);
+
+  // Track whether the brief has been seen yet so the auto-generate
+  // path can wait for it once.
+  useEffect(() => {
+    if (brief) briefReadyRef.current = true;
+  }, [brief]);
 
   /* Uptick helpers */
   const addUptick = (entry: UptickEntry) => {
@@ -1171,19 +1230,24 @@ export default function ResearchPage() {
                   {new Date(synthesisGeneratedAt).toLocaleTimeString([], { hour: "numeric", minute: "2-digit" })}
                 </span>
               )}
+              {!synthesis && (
+                <button
+                  onClick={() => { void generateSynthesis(false); }}
+                  disabled={synthesisLoading}
+                  className="text-[11px] rounded-md bg-indigo-600 px-3 py-1.5 font-semibold text-white hover:bg-indigo-700 disabled:opacity-50 transition-colors"
+                  title="Generate the cross-source synthesis from current research + brief. Persists across refreshes."
+                >
+                  {synthesisLoading ? "Generating..." : "Generate"}
+                </button>
+              )}
               <button
-                onClick={() => { void generateSynthesis(false); }}
-                disabled={synthesisLoading}
-                className="text-[11px] rounded-md bg-indigo-600 px-3 py-1.5 font-semibold text-white hover:bg-indigo-700 disabled:opacity-50 transition-colors"
-                title={synthesis ? "Re-fetch the cached synthesis (free if inputs haven't changed)" : "Generate the cross-source synthesis from current research + brief"}
-              >
-                {synthesisLoading ? "Generating..." : synthesis ? "Refresh" : "Generate"}
-              </button>
-              <button
-                onClick={() => { void generateSynthesis(true); }}
+                onClick={() => {
+                  if (!confirm("Force re-generate will overwrite the existing synthesis using the CURRENT brief. The previous synthesis (and its brief context) will be replaced. Continue?")) return;
+                  void generateSynthesis(true);
+                }}
                 disabled={synthesisLoading}
                 className="text-[11px] rounded-md border border-slate-300 bg-white px-2.5 py-1.5 font-medium text-slate-600 hover:bg-slate-100 disabled:opacity-50 transition-colors"
-                title="Bypass cache and re-run the synthesis prompt against current inputs"
+                title="Overwrite the persisted synthesis with a fresh one using the current brief. The new synthesis becomes the new sticky version."
               >
                 Force re-generate
               </button>

@@ -1,143 +1,128 @@
 import Anthropic from "@anthropic-ai/sdk";
 import { NextRequest, NextResponse } from "next/server";
-import { createHash } from "crypto";
 import { getRedis } from "@/app/lib/redis";
 import type { ResearchState } from "@/app/lib/defaults";
-import type { MorningBrief } from "@/app/lib/types";
+import type { MorningBrief, Stock } from "@/app/lib/types";
 
 /**
  * Cross-source research synthesis.
  *
- * Reads the five research sources on the Research page (Newton's
- * Upticks, Fundstrat Top Ideas, Fundstrat Bottom Ideas, RBC Canadian
- * Focus List, Seeking Alpha — Alpha Picks) plus the cached morning
- * brief, and asks Claude to identify the best buy targets — with
- * particular weight on tickers that show up in MULTIPLE sources
- * (cross-source overlap = stronger conviction).
+ * STICKINESS MODEL (the user's explicit requirement):
+ *   - Once a synthesis is generated for the day, it PERSISTS across
+ *     refreshes and devices. Reloading the Research page does NOT
+ *     re-fire Anthropic — it just reads the persisted blob.
+ *   - The synthesis is ANCHORED to the brief that existed at the
+ *     moment it was generated. If the brief is regenerated later in
+ *     the day, the synthesis does not migrate to the new brief
+ *     unless the user explicitly clicks "Force re-generate".
+ *   - "Force re-generate" overwrites the persisted synthesis with a
+ *     fresh one using the current research + current brief.
  *
- * Cache pattern (mirrors upticks-scrape):
- *   1. Hash inputs: sorted ticker lists per source + key brief
- *      fields (regime, horizons, bottomLine, hedging stance).
- *   2. If hash matches the cached one → return cached synthesis.
- *      Refresh of unchanged inputs = $0.
- *   3. If hash differs (or force=true) → run Anthropic, parse,
- *      cache, return.
+ * This is a behavior change from the previous hash-gated model. We
+ * still hash inputs internally (so a duplicate non-force POST with
+ * unchanged research+brief is a free no-op), but the persistent
+ * storage now lives at `pm:research-synthesis` (single blob) rather
+ * than `pm:research-synthesis-cache` (hash-keyed cache).
  *
- * Cache key: pm:research-synthesis-cache.
+ * PORTFOLIO EXCLUSION:
+ *   The synthesis excludes any ticker the user already holds in their
+ *   portfolio (pm:stocks where bucket === "Portfolio"). Watchlist
+ *   names are NOT excluded — those are research candidates the user
+ *   is tracking, fair game to recommend.
  *
- * The route also doubles as page-load: the frontend POSTs on mount
- * with the current research+brief; if the hash matches, the cached
- * result is returned with cached:true and zero token cost.
+ * Dual layer of defense:
+ *   1. The prompt is told the exclusion list explicitly.
+ *   2. Server-side filter strips any portfolio-ticker matches from
+ *      topPicks and honorableMentions after the model responds.
  */
 
-const CACHE_KEY = "pm:research-synthesis-cache";
+const STORE_KEY = "pm:research-synthesis";
+const STOCKS_KEY = "pm:stocks";
 const client = new Anthropic();
 
 // ── Output schema ───────────────────────────────────────────────────
 
 export type SynthesisPick = {
   ticker: string;
-  /** Human-readable source labels where this ticker was mentioned. */
   sources: string[];
-  /** Number of sources mentioning the ticker (sources.length). Convenience for sorting. */
   sourceCount: number;
-  /**
-   * 2-4 sentences explaining why this ticker is a good buy now,
-   * referencing the current regime + horizon views from the brief
-   * and citing what each mentioning source highlighted.
-   */
   thesis: string;
 };
 
 export type SynthesisResult = {
-  /** 1-2 sentence overall view tying the synthesis to the regime/horizon read. */
   summary: string;
-  /** Stocks mentioned in 2+ sources, ordered by sourceCount desc then by alphabetical ticker. */
   topPicks: SynthesisPick[];
-  /**
-   * Compelling single-source picks worth flagging — typically a strong
-   * buy from one source where the regime/sector/setup aligns. Honor
-   * roll, not the headline list.
-   */
   honorableMentions: SynthesisPick[];
-  /**
-   * Names appearing in Fundstrat Bottom Ideas that also appear in the
-   * portfolio's Watchlist or PIM models — a "consider exiting"
-   * cross-reference. Optional; omitted if no overlap.
-   */
   cautions?: string[];
-  /** Brief regime label at time of generation (Risk-On / Neutral / Risk-Off). */
   regimeContext?: string;
 };
 
-type CachedSynthesis = {
-  hash: string;
+type StoredSynthesis = {
   result: SynthesisResult;
   generatedAt: string;
+  /** ISO date (YYYY-MM-DD) the synthesis was generated. Useful for the
+   * frontend to display "synthesized this morning" vs "from yesterday". */
+  generatedDate: string;
+  /** Snapshot of the brief metadata at generation time so the user can
+   * see which brief context the synthesis was anchored to. */
+  briefRegime?: string;
+  briefDate?: string;
 };
 
-// ── Hashing ─────────────────────────────────────────────────────────
+// ── Storage ─────────────────────────────────────────────────────────
 
-function hashInputs(research: ResearchState, brief: MorningBrief | null): string {
-  // Build a canonical, order-independent projection so trivial
-  // reorderings don't bust the cache.
-  const projection = {
-    upticks: [...research.newtonUpticks].map((u) => u.ticker.toUpperCase()).sort(),
-    fundstratTop: [...research.fundstratTop].map((i) => i.ticker.toUpperCase()).sort(),
-    fundstratBottom: [...research.fundstratBottom].map((i) => i.ticker.toUpperCase()).sort(),
-    rbcFocus: [...(research.rbcCanadianFocus || [])].map((r) => r.ticker.toUpperCase()).sort(),
-    alphaPicks: [...(research.alphaPicks || [])].map((i) => i.ticker.toUpperCase()).sort(),
-    // Brief context — only the fields that drive the synthesis. Full
-    // bottomLine + horizon views are included so any meaningful brief
-    // change re-runs the synthesis.
-    brief: brief
-      ? {
-          regime: brief.marketRegime ?? "",
-          tactical: brief.tacticalView ?? "",
-          cyclical: brief.cyclicalView ?? "",
-          structural: brief.structuralView ?? "",
-          bottomLine: brief.bottomLine ?? "",
-          hedging: brief.hedgingAnalysis ?? "",
-        }
-      : null,
-  };
-  return createHash("md5").update(JSON.stringify(projection)).digest("hex");
-}
-
-async function getCached(hash: string): Promise<{ result: SynthesisResult; generatedAt: string } | null> {
+async function readStored(): Promise<StoredSynthesis | null> {
   try {
     const redis = await getRedis();
-    const raw = await redis.get(CACHE_KEY);
+    const raw = await redis.get(STORE_KEY);
     if (!raw) return null;
-    const cached = JSON.parse(raw) as CachedSynthesis;
-    return cached.hash === hash
-      ? { result: cached.result, generatedAt: cached.generatedAt }
-      : null;
+    return JSON.parse(raw) as StoredSynthesis;
   } catch {
     return null;
   }
 }
 
-async function saveCached(hash: string, result: SynthesisResult) {
+async function writeStored(stored: StoredSynthesis): Promise<void> {
   try {
     const redis = await getRedis();
-    const payload: CachedSynthesis = {
-      hash,
-      result,
-      generatedAt: new Date().toISOString(),
-    };
-    await redis.set(CACHE_KEY, JSON.stringify(payload));
+    await redis.set(STORE_KEY, JSON.stringify(stored));
   } catch (e) {
-    console.error("[research-synthesis] cache write failed:", e);
+    console.error("[research-synthesis] persist failed:", e);
   }
 }
 
-// ── Build the prompt context ────────────────────────────────────────
+async function readPortfolioTickers(): Promise<string[]> {
+  try {
+    const redis = await getRedis();
+    const raw = await redis.get(STOCKS_KEY);
+    if (!raw) return [];
+    const stocks = JSON.parse(raw) as Stock[];
+    if (!Array.isArray(stocks)) return [];
+    return stocks
+      .filter((s) => s.bucket === "Portfolio")
+      .map((s) => s.ticker.toUpperCase());
+  } catch {
+    return [];
+  }
+}
 
-function buildContext(research: ResearchState, brief: MorningBrief | null): string {
+const normalizeTicker = (t: string) =>
+  t.replace(/^\$+/, "").replace(/\//g, "-").split(/[.\s]/)[0].toUpperCase();
+
+function isPortfolioMatch(ticker: string, portfolio: Set<string>): boolean {
+  const normalized = normalizeTicker(ticker);
+  return portfolio.has(normalized) || portfolio.has(ticker.toUpperCase());
+}
+
+// ── Prompt construction ─────────────────────────────────────────────
+
+function buildContext(
+  research: ResearchState,
+  brief: MorningBrief | null,
+  portfolioTickers: string[]
+): string {
   const lines: string[] = [];
 
-  // --- Sources enumerated with the ticker lists ---
   lines.push(`=== RESEARCH SOURCES ===`);
   lines.push(``);
 
@@ -186,12 +171,13 @@ function buildContext(research: ResearchState, brief: MorningBrief | null): stri
     lines.push(`Source 5: Seeking Alpha — Alpha Picks (institutional buy recommendations)`);
     for (const p of ap) {
       const price = p.priceWhenAdded ? ` · entry ${p.priceWhenAdded}` : "";
-      lines.push(`  - ${p.ticker}${price}`);
+      const sector = p.sector && p.sector !== "—" ? ` · ${p.sector}` : "";
+      lines.push(`  - ${p.ticker} (${p.name || p.ticker})${sector}${price}`);
     }
     lines.push(``);
   }
 
-  // --- Sector views (Newton + Lee) ---
+  // Sector views
   if (research.newtonSectors && research.newtonSectors.length > 0) {
     const ows = research.newtonSectors.filter((s) => s.view === "overweight").map((s) => s.sector);
     const uws = research.newtonSectors.filter((s) => s.view === "underweight").map((s) => s.sector);
@@ -216,7 +202,7 @@ function buildContext(research: ResearchState, brief: MorningBrief | null): stri
     lines.push(research.generalNotes.trim());
   }
 
-  // --- Brief context ---
+  // Brief context
   lines.push(``);
   lines.push(`=== MORNING BRIEF CONTEXT ===`);
   if (brief) {
@@ -231,6 +217,17 @@ function buildContext(research: ResearchState, brief: MorningBrief | null): stri
     lines.push(`No brief available — synthesize purely from research sources, applying neutral regime assumptions.`);
   }
 
+  // Portfolio exclusion
+  lines.push(``);
+  lines.push(`=== PORTFOLIO HOLDINGS (DO NOT RECOMMEND AS BUYS) ===`);
+  if (portfolioTickers.length > 0) {
+    lines.push(`The PM already owns these positions in the live portfolio. They are NOT eligible for topPicks or honorableMentions — the user is asking for NEW buy ideas, not re-validation of existing positions. If a portfolio holding appears in the research sources, you may briefly note in summary or cautions that the source confirms the existing position, but do NOT include it as a pick.`);
+    lines.push(``);
+    lines.push(`Portfolio tickers (already held): ${portfolioTickers.join(", ")}`);
+  } else {
+    lines.push(`The portfolio is currently empty — every ticker in the research sources is a candidate.`);
+  }
+
   return lines.join("\n");
 }
 
@@ -238,33 +235,23 @@ const SYSTEM_PROMPT = `You are an institutional portfolio manager synthesizing e
 
 CRITICAL RULES:
 1. A ticker mentioned in 2+ sources is a "Top Pick" candidate. Order topPicks by sourceCount desc, then alphabetically.
-2. NEVER include a ticker in topPicks if it appears in Source 3 (Fundstrat Bottom Ideas / names to avoid). If a ticker is in Bottom Ideas, that's an automatic disqualification — note the conflict in summary or cautions instead.
-3. Single-source picks can be honorableMentions IF the regime/sector/setup strongly aligns with the brief. Be selective — 3-6 honorable mentions is plenty; not every single-source idea deserves a callout.
-4. Each thesis MUST cite (a) which sources mentioned the ticker by name, and (b) why the current regime / horizon view supports the buy. Reference specific brief content (e.g. "the cyclical view calls out tech rotation, and AAPL is on Fundstrat Top + Alpha Picks").
-5. If the brief is missing or empty, work purely from sources but note the limitation in summary.
-6. Prefer concrete reasoning over generic ("strong fundamentals") — name the catalyst, the price level, the sector tailwind.
-7. Use section labels EXACTLY as written in the source list (e.g. "Newton's Upticks", "Fundstrat Top Ideas", "RBC Canadian Focus List", "Alpha Picks") so the user knows where each ticker came from.
+2. NEVER include a ticker in topPicks or honorableMentions if it appears in Source 3 (Fundstrat Bottom Ideas / names to avoid). Note any conflict in summary or cautions instead.
+3. NEVER include a ticker in topPicks or honorableMentions if it appears in the "PORTFOLIO HOLDINGS (DO NOT RECOMMEND AS BUYS)" list. The PM already owns those positions — the synthesis is for NEW buy ideas. If a portfolio name is also in the research sources, you may note in cautions that the source CONFIRMS the existing position, but do NOT recommend buying more.
+4. Single-source picks can be honorableMentions IF the regime/sector/setup strongly aligns with the brief. Be selective — 3-6 honorable mentions is plenty.
+5. Each thesis MUST cite (a) which sources mentioned the ticker by name, and (b) why the current regime / horizon view supports the buy.
+6. If the brief is missing or empty, work purely from sources but note the limitation in summary.
+7. Use section labels EXACTLY as written in the source list (e.g. "Newton's Upticks", "Fundstrat Top Ideas", "RBC Canadian Focus List", "Alpha Picks").
 
 Respond ONLY with valid JSON matching this schema:
 {
   "summary": "1-2 sentence overall synthesis tying picks to the regime/horizon read.",
   "topPicks": [
-    {
-      "ticker": "TICKER",
-      "sources": ["Newton's Upticks", "Fundstrat Top Ideas"],
-      "sourceCount": 2,
-      "thesis": "2-4 sentences citing each source + why the regime supports the buy."
-    }
+    {"ticker": "TICKER", "sources": ["..."], "sourceCount": N, "thesis": "..."}
   ],
   "honorableMentions": [
-    {
-      "ticker": "TICKER",
-      "sources": ["Single Source Name"],
-      "sourceCount": 1,
-      "thesis": "2-3 sentences."
-    }
+    {"ticker": "TICKER", "sources": ["..."], "sourceCount": N, "thesis": "..."}
   ],
-  "cautions": ["Optional: notable bottom-ideas tickers, conflicts between sources, or regime mismatches worth flagging."],
+  "cautions": ["Optional: bottom-ideas conflicts, regime mismatches, or research that confirms existing portfolio positions."],
   "regimeContext": "Risk-On / Neutral / Risk-Off / unknown"
 }
 
@@ -305,8 +292,25 @@ function parseSynthesis(text: string): SynthesisResult | null {
   }
 }
 
-async function runSynthesis(research: ResearchState, brief: MorningBrief | null): Promise<SynthesisResult | null> {
-  const context = buildContext(research, brief);
+/** Defense-in-depth: server-side filter to strip any portfolio-ticker
+ *  matches that the model may have included despite the prompt rule. */
+function filterPortfolioOut(result: SynthesisResult, portfolioTickers: string[]): SynthesisResult {
+  if (portfolioTickers.length === 0) return result;
+  const portfolio = new Set(portfolioTickers.map(normalizeTicker));
+  const isHeld = (t: string) => isPortfolioMatch(t, portfolio);
+  return {
+    ...result,
+    topPicks: result.topPicks.filter((p) => !isHeld(p.ticker)),
+    honorableMentions: result.honorableMentions.filter((p) => !isHeld(p.ticker)),
+  };
+}
+
+async function runSynthesis(
+  research: ResearchState,
+  brief: MorningBrief | null,
+  portfolioTickers: string[]
+): Promise<SynthesisResult | null> {
+  const context = buildContext(research, brief, portfolioTickers);
 
   const msg = await client.messages.create({
     model: "claude-sonnet-4-6",
@@ -317,20 +321,69 @@ async function runSynthesis(research: ResearchState, brief: MorningBrief | null)
 
   const text = msg.content[0]?.type === "text" ? msg.content[0].text : "";
   console.log("[research-synthesis] raw output:", text.slice(0, 4000));
-  return parseSynthesis(text);
+  const parsed = parseSynthesis(text);
+  if (!parsed) return null;
+  return filterPortfolioOut(parsed, portfolioTickers);
 }
 
-// ── Route handler ───────────────────────────────────────────────────
+// ── Route handlers ──────────────────────────────────────────────────
 
+/** GET — read the persisted synthesis without firing Anthropic. */
+export async function GET() {
+  try {
+    const stored = await readStored();
+    if (!stored) {
+      return NextResponse.json({ result: null, generatedAt: null, generatedDate: null });
+    }
+    return NextResponse.json({
+      result: stored.result,
+      generatedAt: stored.generatedAt,
+      generatedDate: stored.generatedDate,
+      briefRegime: stored.briefRegime,
+      briefDate: stored.briefDate,
+    });
+  } catch (e) {
+    console.error("research-synthesis GET error:", e);
+    return NextResponse.json({ error: "Failed to read synthesis" }, { status: 500 });
+  }
+}
+
+/** POST — generate or re-generate the synthesis.
+ *
+ *  Behavior:
+ *    - force: false (or omitted) AND a synthesis is persisted → return
+ *      the persisted blob unchanged. Zero Anthropic spend.
+ *    - force: false AND no synthesis is persisted → generate one,
+ *      persist, return.
+ *    - force: true → always generate, overwrite the persisted blob,
+ *      return.
+ */
 export async function POST(req: NextRequest) {
   try {
-    const body = await req.json();
+    const body = await req.json().catch(() => ({}));
     const research = body?.research as ResearchState | undefined;
     const brief = (body?.brief ?? null) as MorningBrief | null;
     const force = Boolean(body?.force);
 
     if (!research) {
       return NextResponse.json({ error: "research payload required" }, { status: 400 });
+    }
+
+    // If not forcing, prefer the persisted synthesis. This is the
+    // stickiness rule: once a synthesis exists, refreshes don't
+    // re-run it.
+    if (!force) {
+      const stored = await readStored();
+      if (stored) {
+        return NextResponse.json({
+          result: stored.result,
+          cached: true,
+          generatedAt: stored.generatedAt,
+          generatedDate: stored.generatedDate,
+          briefRegime: stored.briefRegime,
+          briefDate: stored.briefDate,
+        });
+      }
     }
 
     const totalSources =
@@ -349,22 +402,8 @@ export async function POST(req: NextRequest) {
       });
     }
 
-    const hash = hashInputs(research, brief);
-
-    // Cache hit → zero Anthropic tokens spent.
-    if (!force) {
-      const cached = await getCached(hash);
-      if (cached) {
-        return NextResponse.json({
-          result: cached.result,
-          cached: true,
-          generatedAt: cached.generatedAt,
-          hash,
-        });
-      }
-    }
-
-    const result = await runSynthesis(research, brief);
+    const portfolioTickers = await readPortfolioTickers();
+    const result = await runSynthesis(research, brief, portfolioTickers);
     if (!result) {
       return NextResponse.json(
         { error: "Failed to parse synthesis from model" },
@@ -372,15 +411,27 @@ export async function POST(req: NextRequest) {
       );
     }
 
-    await saveCached(hash, result);
+    const now = new Date();
+    const generatedDate = now.toISOString().slice(0, 10);
+    const stored: StoredSynthesis = {
+      result,
+      generatedAt: now.toISOString(),
+      generatedDate,
+      briefRegime: brief?.marketRegime,
+      briefDate: brief?.date,
+    };
+    await writeStored(stored);
+
     return NextResponse.json({
       result,
       cached: false,
-      generatedAt: new Date().toISOString(),
-      hash,
+      generatedAt: stored.generatedAt,
+      generatedDate: stored.generatedDate,
+      briefRegime: stored.briefRegime,
+      briefDate: stored.briefDate,
     });
   } catch (e) {
-    console.error("research-synthesis error:", e);
+    console.error("research-synthesis POST error:", e);
     return NextResponse.json({ error: "Failed to generate research synthesis" }, { status: 500 });
   }
 }
