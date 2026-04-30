@@ -180,10 +180,12 @@ export type ResearchState = {
   fundstratBottom: IdeaEntry[];
   rbcCanadianFocus: RBCEntry[];
   // Seeking Alpha Alpha Picks — institutional buy recommendations
-  // populated from the Alpha Picks dashboard screenshot. Same shape
-  // as IdeaEntry (ticker + entry price) for consistency with the
-  // Fundstrat lists.
-  alphaPicks?: IdeaEntry[];
+  // populated from the Alpha Picks dashboard screenshot. Mirrors the
+  // Newton's Upticks shape (name + sector + dateAdded + live price)
+  // minus support/resistance — Alpha Picks is a fundamental list, not
+  // a technical one. Older blobs persisted this as IdeaEntry[]; the
+  // load path migrates those on read.
+  alphaPicks?: AlphaPickEntry[];
   generalNotes: string;
   attachments?: import("@/app/components/ImageUpload").BriefAttachment[];
   // Newton's sector overweight/underweight views. Pre-populated with all
@@ -211,6 +213,26 @@ export type UptickEntry = {
 export type IdeaEntry = {
   ticker: string;
   priceWhenAdded: number;
+};
+
+/**
+ * Seeking Alpha Alpha Picks entry. Parallels UptickEntry (Newton's
+ * Upticks) without the technical-level fields — Alpha Picks publishes
+ * fundamental buy recommendations, not technical setups, so support
+ * and resistance levels don't apply. Otherwise the same shape so the
+ * UI can render Alpha Picks the same way it renders Newton's Upticks.
+ *
+ * Backward-compat: existing pm:research blobs persisted alphaPicks as
+ * IdeaEntry[]. The page's load path migrates those by filling default
+ * name / sector / dateAdded / price values; no data is lost.
+ */
+export type AlphaPickEntry = {
+  ticker: string;
+  name: string;
+  sector: string;
+  price: number; // current live price, refreshed on page load
+  priceWhenAdded: number;
+  dateAdded: string;
 };
 
 export const defaultResearch: ResearchState = {
