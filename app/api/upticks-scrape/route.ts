@@ -73,6 +73,17 @@ async function saveCached(hash: string, entries: ScrapedUptick[]) {
 function buildImageBlocks(atts: AttachmentInput[]): Anthropic.Messages.ContentBlockParam[] {
   const blocks: Anthropic.Messages.ContentBlockParam[] = [];
   for (const att of atts) {
+    // PDF first — Anthropic accepts PDFs via the `document` block type.
+    const pdfMatch = att.dataUrl.match(/^data:application\/pdf;base64,(.+)$/);
+    if (pdfMatch) {
+      const data = pdfMatch[1].replace(/\s/g, "");
+      blocks.push({
+        type: "document",
+        source: { type: "base64", media_type: "application/pdf", data },
+      });
+      blocks.push({ type: "text", text: `(PDF: ${att.label})` });
+      continue;
+    }
     const match = att.dataUrl.match(/^data:(image\/[^;]+);base64,(.+)$/);
     if (!match) continue;
     const rawMediaType = match[1];
