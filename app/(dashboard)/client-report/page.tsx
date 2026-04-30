@@ -1155,6 +1155,20 @@ export default function ClientReportPage() {
           @page {
             size: letter;
             margin: 0.4in;
+            /* Suppress the browser's default page-margin content
+               (URL bottom-left, date top-right, page numbers, title).
+               Chrome 121+ honors these @page margin pseudo-elements
+               when they're set to empty content; older browsers
+               ignore them harmlessly. If the URL still appears, the
+               user can also uncheck 'Headers and footers' in the
+               Chrome print dialog (More settings → Options) — that
+               toggle is sticky once set. */
+            @top-left     { content: ""; }
+            @top-center   { content: ""; }
+            @top-right    { content: ""; }
+            @bottom-left  { content: ""; }
+            @bottom-center{ content: ""; }
+            @bottom-right { content: ""; }
           }
           html,
           body {
