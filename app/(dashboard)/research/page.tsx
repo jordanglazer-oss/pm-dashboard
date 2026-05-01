@@ -3,6 +3,7 @@
 import React, { useState, useEffect, useCallback, useRef } from "react";
 import type { ResearchState, UptickEntry, IdeaEntry, RBCEntry, SectorViewEntry, SectorView, LeeFocusArea, AlphaPickEntry } from "@/app/lib/defaults";
 import { defaultResearch, GICS_SECTORS } from "@/app/lib/defaults";
+import { dedupeRbcEntries } from "@/app/lib/rbc-canonical";
 import { ImageUpload, type BriefAttachment } from "@/app/components/ImageUpload";
 import { useStocks } from "@/app/lib/StockContext";
 import type { Stock, ScoreKey } from "@/app/lib/types";
@@ -638,25 +639,28 @@ export default function ResearchPage() {
             } catch { /* best-effort */ }
           }
 
-          // RBC Canadian Focus: one-shot migration from "-T" → ".TO"
-          // suffix. Old persisted entries used the RBC report convention;
-          // we now canonicalize to Yahoo Finance ".TO" so name lookups
-          // and price fetches work. Migration runs once per load if any
-          // entry still has "-T".
+          // RBC Canadian Focus: canonicalize every ticker to Yahoo
+          // ".TO" form AND dedupe duplicates that arose from RBC's
+          // multiple ticker conventions for the same security
+          // (e.g. BBD-B.TO vs BBD.B-T → both = Bombardier Class B,
+          // BIP-UN.TO vs BIP.UN-T → both = Brookfield Infra). Names
+          // looked up under malformed tickers (which Yahoo fuzzy-
+          // matched to wrong companies — BBD.B-T → "Banco Bradesco
+          // SA") are cleared so the next refreshRbcNames pass
+          // re-fetches under the canonical ticker.
           {
             const canadian = research.rbcCanadianFocus || [];
-            const needsToMigration = canadian.filter((r) => /-T$/i.test(r.ticker));
-            if (needsToMigration.length > 0) {
-              const migrated = canadian.map((r) =>
-                /-T$/i.test(r.ticker) ? { ...r, ticker: r.ticker.replace(/-T$/i, ".TO").toUpperCase() } : r
-              );
-              research = { ...research, rbcCanadianFocus: migrated };
-              setState(research);
-              fetch("/api/kv/research", {
-                method: "PUT",
-                headers: { "Content-Type": "application/json" },
-                body: JSON.stringify({ research }),
-              }).catch(() => {});
+            if (canadian.length > 0) {
+              const { entries: deduped, changed } = dedupeRbcEntries(canadian);
+              if (changed) {
+                research = { ...research, rbcCanadianFocus: deduped };
+                setState(research);
+                fetch("/api/kv/research", {
+                  method: "PUT",
+                  headers: { "Content-Type": "application/json" },
+                  body: JSON.stringify({ research }),
+                }).catch(() => {});
+              }
             }
           }
 
@@ -793,15 +797,20 @@ export default function ResearchPage() {
   /**
    * Refresh company names + sectors for both RBC focus lists in a
    * single batched call. Targets entries whose name is missing or
-   * placeholder. The "list" param picks which list to refresh; this
-   * lets the post-scrape merge call it with the same list it just
-   * updated, avoiding a stale-state read.
+   * placeholder, OR whose sector isn't a recognized GICS sector
+   * (RBC reports use labels like "Financials & Real Estate" /
+   * "Consumer Cyclical" that don't match the GICS form used
+   * elsewhere in the app — Yahoo returns the canonical GICS sector
+   * which we want to standardize on).
    */
   const refreshRbcNames = useCallback(async (list: "rbcCanadianFocus" | "rbcUsFocus", overrideState?: ResearchState) => {
     const s = overrideState || state;
     const entries = (s[list] || []) as RBCEntry[];
     if (entries.length === 0) return;
-    const needsFill = entries.filter((r) => !r.name || r.name === r.ticker || !r.sector || r.sector === "—");
+    const gicsSet = new Set<string>(GICS_SECTORS);
+    const needsFill = entries.filter(
+      (r) => !r.name || r.name === r.ticker || !r.sector || r.sector === "—" || !gicsSet.has(r.sector)
+    );
     if (needsFill.length === 0) return;
     try {
       const tickers = needsFill.map((r) => r.ticker).join(",");
@@ -812,9 +821,13 @@ export default function ResearchPage() {
       const updated = entries.map((r) => {
         const newName = info.names?.[r.ticker];
         const newSector = info.sectors?.[r.ticker];
-        if ((newName && newName !== r.name) || (newSector && newSector !== r.sector)) {
-          changed = true;
-          return { ...r, name: newName || r.name, sector: newSector || r.sector };
+        // Always overwrite when Yahoo returns a value — this normalizes
+        // RBC sector labels to the GICS form used elsewhere in the app.
+        if (newName || newSector) {
+          if ((newName && newName !== r.name) || (newSector && newSector !== r.sector)) {
+            changed = true;
+            return { ...r, name: newName || r.name, sector: newSector || r.sector };
+          }
         }
         return r;
       });
@@ -1009,7 +1022,18 @@ export default function ResearchPage() {
             });
           }
         }
-        nextState = { ...state, [stateKey]: Array.from(byNorm.values()) } as ResearchState;
+        // Dedupe Canadian list after merge — the scrape can emit
+        // conflicting ticker variants for the same security
+        // (BBD-B.TO vs BBD.B-T) which the byNorm map won't catch
+        // (their normalize() output differs because normalize strips
+        // .TO but keeps -T). dedupeRbcEntries collapses by canonical
+        // form. US list doesn't need this — bare tickers don't have
+        // the multi-variant problem.
+        const merged = Array.from(byNorm.values());
+        const finalList = source === "rbc-focus"
+          ? dedupeRbcEntries(merged).entries
+          : merged;
+        nextState = { ...state, [stateKey]: finalList } as ResearchState;
         const cachedLabel = data.cached ? " (cached)" : "";
         setScrapeStatusMap((m) => ({ ...m, [source]: `${entries.length} rows${cachedLabel} · ${matched} matched · ${added} added` }));
         // Save first, then backfill names + sectors for any new rows.
