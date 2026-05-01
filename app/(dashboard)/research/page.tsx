@@ -301,7 +301,7 @@ function EditableCell({
 
 type UptickSortKey = "ticker" | "name" | "sector" | "price" | "support" | "resistance" | "dateAdded" | "priceWhenAdded";
 type IdeaSortKey = "ticker" | "priceWhenAdded" | "currentPrice";
-type RBCSortKey = "ticker" | "sector" | "dateAdded";
+type RBCSortKey = "ticker" | "name" | "sector" | "weight" | "dateAdded";
 type SortDir = "asc" | "desc";
 
 type LivePrices = Record<string, number | null>;
@@ -465,17 +465,21 @@ export default function ResearchPage() {
     });
   }
 
+  function compareRbc(a: RBCEntry, b: RBCEntry, key: RBCSortKey): number {
+    if (key === "weight") return (a.weight ?? 0) - (b.weight ?? 0);
+    return String(a[key] || "").localeCompare(String(b[key] || ""));
+  }
   function sortedRbc() {
     return [...(state.rbcCanadianFocus || [])].sort((a, b) => {
       const { key, dir } = rbcSort;
-      const cmp = String(a[key] || "").localeCompare(String(b[key] || ""));
+      const cmp = compareRbc(a, b, key);
       return dir === "asc" ? cmp : -cmp;
     });
   }
   function sortedRbcUs() {
     return [...(state.rbcUsFocus || [])].sort((a, b) => {
       const { key, dir } = rbcUsSort;
-      const cmp = String(a[key] || "").localeCompare(String(b[key] || ""));
+      const cmp = compareRbc(a, b, key);
       return dir === "asc" ? cmp : -cmp;
     });
   }
@@ -633,6 +637,66 @@ export default function ResearchPage() {
               }
             } catch { /* best-effort */ }
           }
+
+          // RBC Canadian Focus: one-shot migration from "-T" → ".TO"
+          // suffix. Old persisted entries used the RBC report convention;
+          // we now canonicalize to Yahoo Finance ".TO" so name lookups
+          // and price fetches work. Migration runs once per load if any
+          // entry still has "-T".
+          {
+            const canadian = research.rbcCanadianFocus || [];
+            const needsToMigration = canadian.filter((r) => /-T$/i.test(r.ticker));
+            if (needsToMigration.length > 0) {
+              const migrated = canadian.map((r) =>
+                /-T$/i.test(r.ticker) ? { ...r, ticker: r.ticker.replace(/-T$/i, ".TO").toUpperCase() } : r
+              );
+              research = { ...research, rbcCanadianFocus: migrated };
+              setState(research);
+              fetch("/api/kv/research", {
+                method: "PUT",
+                headers: { "Content-Type": "application/json" },
+                body: JSON.stringify({ research }),
+              }).catch(() => {});
+            }
+          }
+
+          // Backfill missing names for both RBC lists.
+          for (const listKey of ["rbcCanadianFocus", "rbcUsFocus"] as const) {
+            const list = (research[listKey] || []) as RBCEntry[];
+            const needsFill = list.filter((r) => !r.name || r.name === r.ticker || !r.sector || r.sector === "—");
+            if (needsFill.length === 0) continue;
+            try {
+              const tickers = needsFill.map((r) => r.ticker).join(",");
+              const res = await fetch(`/api/company-name?tickers=${encodeURIComponent(tickers)}`);
+              if (!res.ok) continue;
+              const info = await res.json();
+              let changed = false;
+              const updated = list.map((r) => {
+                const newName = info.names?.[r.ticker];
+                const newSector = info.sectors?.[r.ticker];
+                const shouldUpdateName = newName && (!r.name || r.name === r.ticker);
+                const shouldUpdateSector = newSector && (!r.sector || r.sector === "—");
+                if (shouldUpdateName || shouldUpdateSector) {
+                  changed = true;
+                  return {
+                    ...r,
+                    ...(shouldUpdateName ? { name: newName } : {}),
+                    ...(shouldUpdateSector ? { sector: newSector } : {}),
+                  };
+                }
+                return r;
+              });
+              if (changed) {
+                research = { ...research, [listKey]: updated } as ResearchState;
+                setState(research);
+                fetch("/api/kv/research", {
+                  method: "PUT",
+                  headers: { "Content-Type": "application/json" },
+                  body: JSON.stringify({ research }),
+                }).catch(() => {});
+              }
+            } catch { /* best-effort */ }
+          }
         }
       })
       .catch(() => {})
@@ -722,6 +786,40 @@ export default function ResearchPage() {
       });
       if (changed) {
         save({ ...s, alphaPicks: updated });
+      }
+    } catch { /* silent */ }
+  }, [state, save]);
+
+  /**
+   * Refresh company names + sectors for both RBC focus lists in a
+   * single batched call. Targets entries whose name is missing or
+   * placeholder. The "list" param picks which list to refresh; this
+   * lets the post-scrape merge call it with the same list it just
+   * updated, avoiding a stale-state read.
+   */
+  const refreshRbcNames = useCallback(async (list: "rbcCanadianFocus" | "rbcUsFocus", overrideState?: ResearchState) => {
+    const s = overrideState || state;
+    const entries = (s[list] || []) as RBCEntry[];
+    if (entries.length === 0) return;
+    const needsFill = entries.filter((r) => !r.name || r.name === r.ticker || !r.sector || r.sector === "—");
+    if (needsFill.length === 0) return;
+    try {
+      const tickers = needsFill.map((r) => r.ticker).join(",");
+      const res = await fetch(`/api/company-name?tickers=${encodeURIComponent(tickers)}`);
+      if (!res.ok) return;
+      const info = await res.json();
+      let changed = false;
+      const updated = entries.map((r) => {
+        const newName = info.names?.[r.ticker];
+        const newSector = info.sectors?.[r.ticker];
+        if ((newName && newName !== r.name) || (newSector && newSector !== r.sector)) {
+          changed = true;
+          return { ...r, name: newName || r.name, sector: newSector || r.sector };
+        }
+        return r;
+      });
+      if (changed) {
+        save({ ...s, [list]: updated } as ResearchState);
       }
     } catch { /* silent */ }
   }, [state, save]);
@@ -895,7 +993,8 @@ export default function ResearchPage() {
           if (ex) {
             matched += 1;
             byNorm.set(norm, {
-              ticker: ex.ticker,
+              ticker: e.ticker || ex.ticker, // adopt scrape's canonical ticker (e.g. .TO form for Canadian)
+              name: ex.name, // preserve any name that's already been backfilled
               sector: e.sector ?? ex.sector,
               weight: e.weight ?? ex.weight,
               dateAdded: e.dateAdded ?? ex.dateAdded,
@@ -903,7 +1002,7 @@ export default function ResearchPage() {
           } else {
             added += 1;
             byNorm.set(norm, {
-              ticker: norm,
+              ticker: e.ticker, // already canonicalized by parseRbcRows (.TO for Canadian)
               sector: e.sector ?? "—",
               weight: e.weight ?? 0,
               dateAdded: e.dateAdded ?? new Date().toLocaleDateString("en-US", { month: "numeric", day: "numeric", year: "numeric" }),
@@ -913,6 +1012,10 @@ export default function ResearchPage() {
         nextState = { ...state, [stateKey]: Array.from(byNorm.values()) } as ResearchState;
         const cachedLabel = data.cached ? " (cached)" : "";
         setScrapeStatusMap((m) => ({ ...m, [source]: `${entries.length} rows${cachedLabel} · ${matched} matched · ${added} added` }));
+        // Save first, then backfill names + sectors for any new rows.
+        save(nextState);
+        void refreshRbcNames(stateKey, nextState);
+        return true;
       } else if (source === "seeking-alpha-picks") {
         // Alpha Picks: rich entries (name + sector + dateAdded + price)
         // mirroring Newton's Upticks. Server returns ticker + priceWhenAdded;
@@ -991,7 +1094,7 @@ export default function ResearchPage() {
     } finally {
       setScrapeLoadingMap((m) => ({ ...m, [source]: false }));
     }
-  }, [state, save, refreshAlphaPickNames]);
+  }, [state, save, refreshAlphaPickNames, refreshRbcNames]);
 
   /**
    * Cross-source synthesis with strict stickiness.
@@ -1907,9 +2010,10 @@ export default function ResearchPage() {
               <tr className="border-b-2 border-blue-500 text-left">
                 <th className="py-2 pr-2 text-xs font-semibold text-blue-700 w-8">#</th>
                 <th className="py-2 pr-3 text-xs font-semibold text-blue-700 cursor-pointer hover:text-blue-900 select-none" onClick={() => toggleRbcSort("ticker")}>Ticker{rArrow("ticker")}</th>
+                <th className="py-2 pr-3 text-xs font-semibold text-blue-700 cursor-pointer hover:text-blue-900 select-none" onClick={() => toggleRbcSort("name")}>Name{rArrow("name")}</th>
                 <th className="py-2 pr-3 text-xs font-semibold text-blue-700 cursor-pointer hover:text-blue-900 select-none" onClick={() => toggleRbcSort("sector")}>Sector{rArrow("sector")}</th>
-                <th className="py-2 pr-3 text-xs font-semibold text-blue-700">Weight (%)</th>
-                <th className="py-2 w-8"></th>
+                <th className="py-2 pr-3 text-xs font-semibold text-blue-700 cursor-pointer hover:text-blue-900 select-none" onClick={() => toggleRbcSort("weight")}>Weight (%){rArrow("weight")}</th>
+                <th className="py-2 w-24"></th>
               </tr>
             </thead>
             <tbody>
@@ -1917,6 +2021,7 @@ export default function ResearchPage() {
                 <tr key={item.ticker} className={`border-b border-slate-100 ${i % 2 === 0 ? "bg-white" : "bg-blue-50/30"} hover:bg-blue-50/60 transition-colors`}>
                   <td className="py-2 pr-2 text-slate-400">{i + 1}</td>
                   <td className="py-2 pr-3 font-mono font-bold text-blue-700">${item.ticker}</td>
+                  <td className="py-2 pr-3 text-slate-700 truncate max-w-[260px]" title={item.name || item.ticker}>{item.name || <span className="text-slate-300 italic">—</span>}</td>
                   <td className="py-2 pr-3 text-slate-600">{item.sector}</td>
                   <td className="py-2 pr-3 text-slate-500">
                     <input
@@ -1935,13 +2040,24 @@ export default function ResearchPage() {
                       className="w-16 rounded border border-transparent px-1 py-0.5 text-sm text-center hover:border-slate-200 focus:border-blue-300 focus:outline-none bg-transparent"
                     />
                   </td>
-                  <td className="py-2">
-                    <button onClick={() => removeRbc(item.ticker)} className="text-slate-300 hover:text-red-500 font-bold transition-colors">&times;</button>
+                  <td className="py-2 text-right whitespace-nowrap">
+                    {scoredStocks.some((s) => s.ticker === item.ticker) ? (
+                      <span className="text-[10px] text-emerald-500 font-medium">In list</span>
+                    ) : (
+                      <button
+                        onClick={(e) => { e.stopPropagation(); addToWatchlist(item.ticker); }}
+                        className="text-[10px] text-blue-500 hover:text-blue-700 font-semibold transition-colors"
+                        title="Add to Watchlist"
+                      >
+                        + Watch
+                      </button>
+                    )}
+                    <button onClick={() => removeRbc(item.ticker)} className="ml-2 text-slate-300 hover:text-red-500 font-bold transition-colors">&times;</button>
                   </td>
                 </tr>
               ))}
               {(state.rbcCanadianFocus || []).length === 0 && (
-                <tr><td colSpan={5} className="py-6 text-center text-slate-400 italic">No names added yet</td></tr>
+                <tr><td colSpan={6} className="py-6 text-center text-slate-400 italic">No names added yet</td></tr>
               )}
             </tbody>
           </table>
@@ -1980,9 +2096,10 @@ export default function ResearchPage() {
               <tr className="border-b-2 border-teal-500 text-left">
                 <th className="py-2 pr-2 text-xs font-semibold text-teal-700 w-8">#</th>
                 <th className="py-2 pr-3 text-xs font-semibold text-teal-700 cursor-pointer hover:text-teal-900 select-none" onClick={() => toggleRbcUsSort("ticker")}>Ticker{rUsArrow("ticker")}</th>
+                <th className="py-2 pr-3 text-xs font-semibold text-teal-700 cursor-pointer hover:text-teal-900 select-none" onClick={() => toggleRbcUsSort("name")}>Name{rUsArrow("name")}</th>
                 <th className="py-2 pr-3 text-xs font-semibold text-teal-700 cursor-pointer hover:text-teal-900 select-none" onClick={() => toggleRbcUsSort("sector")}>Sector{rUsArrow("sector")}</th>
-                <th className="py-2 pr-3 text-xs font-semibold text-teal-700">Weight (%)</th>
-                <th className="py-2 w-8"></th>
+                <th className="py-2 pr-3 text-xs font-semibold text-teal-700 cursor-pointer hover:text-teal-900 select-none" onClick={() => toggleRbcUsSort("weight")}>Weight (%){rUsArrow("weight")}</th>
+                <th className="py-2 w-24"></th>
               </tr>
             </thead>
             <tbody>
@@ -1990,6 +2107,7 @@ export default function ResearchPage() {
                 <tr key={item.ticker} className={`border-b border-slate-100 ${i % 2 === 0 ? "bg-white" : "bg-teal-50/30"} hover:bg-teal-50/60 transition-colors`}>
                   <td className="py-2 pr-2 text-slate-400">{i + 1}</td>
                   <td className="py-2 pr-3 font-mono font-bold text-teal-700">${item.ticker}</td>
+                  <td className="py-2 pr-3 text-slate-700 truncate max-w-[260px]" title={item.name || item.ticker}>{item.name || <span className="text-slate-300 italic">—</span>}</td>
                   <td className="py-2 pr-3 text-slate-600">{item.sector}</td>
                   <td className="py-2 pr-3 text-slate-500">
                     <input
@@ -2008,13 +2126,24 @@ export default function ResearchPage() {
                       className="w-16 rounded border border-transparent px-1 py-0.5 text-sm text-center hover:border-slate-200 focus:border-teal-300 focus:outline-none bg-transparent"
                     />
                   </td>
-                  <td className="py-2">
-                    <button onClick={() => removeRbcUs(item.ticker)} className="text-slate-300 hover:text-red-500 font-bold transition-colors">&times;</button>
+                  <td className="py-2 text-right whitespace-nowrap">
+                    {scoredStocks.some((s) => s.ticker === item.ticker) ? (
+                      <span className="text-[10px] text-emerald-500 font-medium">In list</span>
+                    ) : (
+                      <button
+                        onClick={(e) => { e.stopPropagation(); addToWatchlist(item.ticker); }}
+                        className="text-[10px] text-blue-500 hover:text-blue-700 font-semibold transition-colors"
+                        title="Add to Watchlist"
+                      >
+                        + Watch
+                      </button>
+                    )}
+                    <button onClick={() => removeRbcUs(item.ticker)} className="ml-2 text-slate-300 hover:text-red-500 font-bold transition-colors">&times;</button>
                   </td>
                 </tr>
               ))}
               {(state.rbcUsFocus || []).length === 0 && (
-                <tr><td colSpan={5} className="py-6 text-center text-slate-400 italic">No names added yet</td></tr>
+                <tr><td colSpan={6} className="py-6 text-center text-slate-400 italic">No names added yet</td></tr>
               )}
             </tbody>
           </table>

@@ -171,7 +171,7 @@ Example: [{"ticker":"INTC","priceWhenAdded":24.50},{"ticker":"BA","priceWhenAdde
     return `You are reading the "RBC Canadian Focus List" screenshot. It is a TABLE of Canadian equity buy recommendations from RBC Capital Markets, with each name carrying a target portfolio weight. Extract every row.
 
 Columns to look for:
-  - Ticker / Symbol → \`ticker\` (string, required, UPPERCASE). RBC tickers usually carry a "-T" suffix for TSX listings (e.g. "RY-T"). Preserve this suffix as-is.
+  - Ticker / Symbol → \`ticker\` (string, required, UPPERCASE). RBC reports use "-T" suffixes (e.g. "RY-T"); CONVERT these to Yahoo Finance "${"."}TO" form (e.g. "RY.TO", "CNR.TO", "BMO.TO") because that's the canonical convention used by the rest of the app for Canadian listings. If a row is already in ".TO" form leave it as-is. If it has no suffix at all, append ".TO" (it's the Canadian Focus List, every row is a TSX listing).
   - Sector → \`sector\` (string, the GICS or RBC sector label)
   - Weight / Target Weight / Portfolio Weight → \`weight\` (NUMBER as a percentage, e.g. 5.0 for "5.0%". Strip % sign and commas.)
   - Date Added / Date → \`dateAdded\` (string, e.g. "4/15/2026")
@@ -180,7 +180,7 @@ If a column is missing or blank, OMIT that key (do not return null or empty stri
 
 ${common}
 
-Example: [{"ticker":"RY-T","sector":"Financials","weight":5.5,"dateAdded":"3/12/2026"},{"ticker":"CNR-T","sector":"Industrials","weight":4.0,"dateAdded":"1/8/2026"}]`;
+Example: [{"ticker":"RY.TO","sector":"Financials","weight":5.5,"dateAdded":"3/12/2026"},{"ticker":"CNR.TO","sector":"Industrials","weight":4.0,"dateAdded":"1/8/2026"}]`;
   }
 
   if (source === "rbc-us-focus") {
@@ -239,7 +239,26 @@ function parseIdeaRows(text: string): ScrapedIdea[] {
   }
 }
 
-function parseRbcRows(text: string): ScrapedRbcRow[] {
+/**
+ * Normalize a Canadian RBC ticker to Yahoo Finance ".TO" form. RBC
+ * reports use "-T" suffixes; Yahoo Finance and the rest of the app
+ * use ".TO". Examples: RY-T → RY.TO, CNR-T → CNR.TO, BRK-B → BRK-B
+ * (US dual-class share, untouched). Bare TSX tickers with no suffix
+ * get ".TO" appended since the Canadian Focus List is by definition
+ * 100% TSX listings.
+ */
+function toCanadianYahooTicker(t: string): string {
+  // Already .TO → leave as-is.
+  if (/\.TO$/i.test(t)) return t.toUpperCase();
+  // Has -T suffix (single trailing -T, not -B or -A class share) → swap.
+  if (/-T$/i.test(t)) return t.replace(/-T$/i, ".TO").toUpperCase();
+  // Has any other dot suffix (e.g. -U, .V) → leave alone, not in scope.
+  if (/[.-][A-Z]+$/i.test(t)) return t.toUpperCase();
+  // Bare ticker, e.g. "BBD" — assume TSX (Canadian list).
+  return `${t.toUpperCase()}.TO`;
+}
+
+function parseRbcRows(text: string, source: SourceKey): ScrapedRbcRow[] {
   const cleaned = text.replace(/```json\s*|```/g, "");
   const start = cleaned.indexOf("[");
   const end = cleaned.lastIndexOf("]");
@@ -250,7 +269,9 @@ function parseRbcRows(text: string): ScrapedRbcRow[] {
     return arr
       .filter((r) => r && typeof r === "object" && typeof r.ticker === "string" && r.ticker.trim())
       .map((r) => {
-        const ticker = String(r.ticker).trim().toUpperCase().replace(/^\$+/, "").replace(/\//g, "-");
+        let ticker = String(r.ticker).trim().toUpperCase().replace(/^\$+/, "").replace(/\//g, "-");
+        // Canonicalize Canadian list to .TO so Yahoo lookups succeed.
+        if (source === "rbc-focus") ticker = toCanadianYahooTicker(ticker);
         const out: ScrapedRbcRow = { ticker };
         if (r.sector != null && String(r.sector).trim()) out.sector = String(r.sector).trim();
         if (r.weight != null) {
@@ -288,7 +309,7 @@ async function runVision(source: SourceKey, atts: AttachmentInput[]): Promise<{ 
   const text = msg.content[0]?.type === "text" ? msg.content[0].text : "";
   console.log(`[research-scrape:${source}] raw vision output:`, text.slice(0, 4000));
 
-  const entries = (source === "rbc-focus" || source === "rbc-us-focus") ? parseRbcRows(text) : parseIdeaRows(text);
+  const entries = (source === "rbc-focus" || source === "rbc-us-focus") ? parseRbcRows(text, source) : parseIdeaRows(text);
   return { entries, rawText: text };
 }
 
