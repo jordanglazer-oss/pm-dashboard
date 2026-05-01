@@ -2,6 +2,7 @@ import Anthropic from "@anthropic-ai/sdk";
 import { NextRequest, NextResponse } from "next/server";
 import { createHash } from "crypto";
 import { getRedis } from "@/app/lib/redis";
+import { toCanadianYahooTicker } from "@/app/lib/rbc-canonical";
 
 /**
  * Generic research-screenshot scraper for the four sources beyond
@@ -239,24 +240,9 @@ function parseIdeaRows(text: string): ScrapedIdea[] {
   }
 }
 
-/**
- * Normalize a Canadian RBC ticker to Yahoo Finance ".TO" form. RBC
- * reports use "-T" suffixes; Yahoo Finance and the rest of the app
- * use ".TO". Examples: RY-T → RY.TO, CNR-T → CNR.TO, BRK-B → BRK-B
- * (US dual-class share, untouched). Bare TSX tickers with no suffix
- * get ".TO" appended since the Canadian Focus List is by definition
- * 100% TSX listings.
- */
-function toCanadianYahooTicker(t: string): string {
-  // Already .TO → leave as-is.
-  if (/\.TO$/i.test(t)) return t.toUpperCase();
-  // Has -T suffix (single trailing -T, not -B or -A class share) → swap.
-  if (/-T$/i.test(t)) return t.replace(/-T$/i, ".TO").toUpperCase();
-  // Has any other dot suffix (e.g. -U, .V) → leave alone, not in scope.
-  if (/[.-][A-Z]+$/i.test(t)) return t.toUpperCase();
-  // Bare ticker, e.g. "BBD" — assume TSX (Canadian list).
-  return `${t.toUpperCase()}.TO`;
-}
+// Canadian ticker canonicalization is shared with the frontend (which
+// runs the same dedupe on load). Single source of truth lives in
+// app/lib/rbc-canonical.ts. Removed the inline duplicate.
 
 function parseRbcRows(text: string, source: SourceKey): ScrapedRbcRow[] {
   const cleaned = text.replace(/```json\s*|```/g, "");
