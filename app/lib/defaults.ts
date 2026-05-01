@@ -143,6 +143,11 @@ export const holdingsSeed: Stock[] = [
 
 export type RBCEntry = {
   ticker: string;
+  /** Company name auto-fetched from Yahoo Finance via /api/company-name.
+   *  Optional for backward compat with older rbcCanadianFocus blobs that
+   *  predate this field. The Research page backfills missing names on
+   *  load and after every scrape. */
+  name?: string;
   sector: string;
   weight: number;
   dateAdded: string;
