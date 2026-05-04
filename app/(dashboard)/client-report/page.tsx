@@ -823,13 +823,35 @@ export default function ClientReportPage() {
       };
 
       const looksLikeFund = (sym: string, name: string, st: Stock | undefined, qt: string | null): boolean => {
+        // ── Unambiguous fund signals checked FIRST, BEFORE consulting
+        // the user's pm:stocks instrumentType. The stockBySymbol cache
+        // can have wrong labels — e.g. a Morningstar ID like 0P0000UJ32
+        // gets stored as instrumentType "stock" by default because the
+        // company-name lookup can't resolve a non-Yahoo symbol. If we
+        // checked instrumentType first, the early "stock" return would
+        // hide actual mutual funds from the look-through. ──
+        if (/^0P[A-Z0-9]{8}$/i.test(sym)) return true; // Morningstar ID
+        if (/^[A-Z]{2,4}\d{2,5}$/.test(sym)) return true; // FUNDSERV code
+        const u0 = (name || "").toUpperCase();
+        // Allocation / lifestyle / target-date funds (e.g. JNL Moderate
+        // Allocation A, BlackRock Conservative Allocation, Vanguard
+        // Target Retirement 2050) — almost always insurance / variable
+        // annuity / pension funds whose tickers may resemble stocks.
+        if (/\b(MODERATE|CONSERVATIVE|AGGRESSIVE|BALANCED)\s+ALLOCATION\b/.test(u0)) return true;
+        if (/\bALLOCATION\s+(FUND|PORTFOLIO)\b/.test(u0)) return true;
+        if (/\bLIFESTYLE\b/.test(u0)) return true;
+        if (/\bTARGET\s+(DATE|RETIREMENT)\b/.test(u0)) return true;
+        // Trailing single-letter share class without the word "Class"
+        // (e.g. "JNL Moderate Allocation A", "Fidelity Contrafund I").
+        if (/\bALLOCATION\s+[A-F]$/.test(u0)) return true;
+        if (/\bPORTFOLIO\s+[A-F]$/.test(u0)) return true;
+
+        // ── Then the original instrumentType-based path (fast and
+        // correct when the cache has the right label). ──
         if (st?.instrumentType === "stock") return false;
         if (st?.instrumentType === "etf" || st?.instrumentType === "mutual-fund") return true;
         if (st?.fundData?.topHoldings?.length) return true;
         if (isCoreEtf(sym)) return true;
-        if (/^[A-Z]{2,4}\d{2,5}$/.test(sym)) return true;
-        // Morningstar IDs (e.g. "0P0000UJ32") — always a fund.
-        if (/^0P[A-Z0-9]{8}$/i.test(sym)) return true;
         if (fundCache[sym.toUpperCase()]?.topHoldings?.length) return true;
         if (qt === "ETF" || qt === "MUTUALFUND") return true;
         const u = (name || "").toUpperCase();
@@ -838,17 +860,6 @@ export default function ClientReportPage() {
         if (/\b(MUTUAL|INDEX|INCOME|BOND|EQUITY)\s+FUND\b/.test(u)) return true;
         if (/\bCLASS\s+[FIOAD]\b/.test(u)) return true;
         if (/\bSERIES\s+[FIOAD]\b/.test(u)) return true;
-        // Allocation / lifestyle / target-date funds (e.g. JNL Moderate
-        // Allocation A, BlackRock Conservative Allocation, Vanguard
-        // Target Retirement 2050).
-        if (/\b(MODERATE|CONSERVATIVE|AGGRESSIVE|BALANCED)\s+ALLOCATION\b/.test(u)) return true;
-        if (/\bALLOCATION\s+(FUND|PORTFOLIO)\b/.test(u)) return true;
-        if (/\bLIFESTYLE\b/.test(u)) return true;
-        if (/\bTARGET\s+(DATE|RETIREMENT)\b/.test(u)) return true;
-        // Trailing single-letter share class without the word "Class"
-        // (e.g. "JNL Moderate Allocation A", "Fidelity Contrafund I").
-        if (/\bALLOCATION\s+[A-F]$/.test(u)) return true;
-        if (/\bPORTFOLIO\s+[A-F]$/.test(u)) return true;
         return false;
       };
 
