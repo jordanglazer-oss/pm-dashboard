@@ -93,6 +93,78 @@ function UnresolvedFundsPanel({
   const [busy, setBusy] = useState<Record<string, boolean>>({});
   const [status, setStatus] = useState<Record<string, { ok?: string; err?: string }>>({});
 
+  /**
+   * Generate likely Morningstar URLs for a ticker. Morningstar's URL
+   * routing depends on whether it's an ETF or mutual fund, and which
+   * exchange. We can't always know up front, so we suggest the most
+   * common patterns. The PM clicks the one that matches and the URL
+   * pre-fills the input.
+   *
+   * Morningstar serves these pages to anonymous scrapers (no
+   * Cloudflare bot wall) and renders the holdings table as plain
+   * HTML, which the scraper picks up reliably.
+   */
+  const morningstarSuggestions = (symbol: string, name: string): Array<{ label: string; url: string }> => {
+    const sym = symbol.toLowerCase();
+    const isMorningstarId = /^0p[a-z0-9]{8}$/i.test(symbol);
+    const isLikelyMutualFund =
+      isMorningstarId ||
+      /\b(FUND|ALLOCATION|LIFESTYLE|TARGET\s+(DATE|RETIREMENT))\b/i.test(name) ||
+      /^[A-Z]{2,4}\d{2,5}$/.test(symbol); // FUNDSERV
+    if (isLikelyMutualFund) {
+      return [
+        { label: "Morningstar US fund", url: `https://www.morningstar.com/funds/xnas/${sym}/portfolio` },
+        { label: "Morningstar Canadian fund", url: `https://www.morningstar.ca/ca/funds/snapshot/snapshot.aspx?id=${symbol}` },
+      ];
+    }
+    // Likely ETF.
+    return [
+      { label: "Morningstar (NYSE)", url: `https://www.morningstar.com/etfs/arcx/${sym}/portfolio` },
+      { label: "Morningstar (NASDAQ)", url: `https://www.morningstar.com/etfs/xnas/${sym}/portfolio` },
+    ];
+  };
+
+  /**
+   * Force-retry the auto-resolution path via /api/fund-data?force=1.
+   * Useful when an ETF (like SCHG) was negative-cached after a
+   * transient Yahoo failure and the cache still says "no data" even
+   * though Yahoo would now return it. Bypasses both the negative
+   * cache and the in-app fund-data-cache positive cache.
+   */
+  const handleForceAutoResolve = async (symbol: string) => {
+    setBusy((b) => ({ ...b, [symbol]: true }));
+    setStatus((s) => ({ ...s, [symbol]: {} }));
+    try {
+      const res = await fetch(`/api/fund-data?ticker=${encodeURIComponent(symbol)}&force=1`, { cache: "no-store" });
+      const data = await res.json();
+      if (!res.ok || !data?.fundData?.topHoldings?.length) {
+        setStatus((s) => ({ ...s, [symbol]: { err: data?.error || "Auto-resolve still returned no holdings — try a URL above" } }));
+        return;
+      }
+      // Persist to the cache so future computes skip the live fetch.
+      await fetch("/api/kv/fund-data-cache", {
+        method: "PATCH",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          entries: {
+            [symbol.toUpperCase()]: {
+              topHoldings: data.fundData.topHoldings,
+              sectorWeightings: data.fundData.sectorWeightings || [],
+              holdingsSource: data.fundData.holdingsSource || "Yahoo Finance",
+              lastUpdated: new Date().toISOString(),
+            },
+          },
+        }),
+      });
+      setStatus((s) => ({ ...s, [symbol]: { ok: `Auto-resolved ${data.fundData.topHoldings.length} holdings — recomputing...` } }));
+      await onCachedAndRecompute();
+    } catch (e) {
+      setStatus((s) => ({ ...s, [symbol]: { err: e instanceof Error ? e.message : "Request failed" } }));
+    } finally {
+      setBusy((b) => ({ ...b, [symbol]: false }));
+    }
+  };
+
   const handleSave = async (symbol: string) => {
     const url = (urls[symbol] || "").trim();
     if (!url) return;
@@ -157,39 +229,80 @@ function UnresolvedFundsPanel({
         )}
       </div>
       <div className="space-y-2">
-        {funds.map((f) => (
-          <div key={f.symbol} className="rounded border border-amber-100 bg-white px-2.5 py-2">
-            <div className="flex items-center justify-between gap-2 mb-1.5">
-              <div className="text-xs font-medium text-slate-700 truncate">
-                <span className="font-mono font-bold">{f.symbol}</span>
-                {f.name && f.name !== f.symbol && <span className="text-slate-500"> · {f.name}</span>}
+        {funds.map((f) => {
+          const suggestions = morningstarSuggestions(f.symbol, f.name);
+          return (
+            <div key={f.symbol} className="rounded border border-amber-100 bg-white px-2.5 py-2">
+              <div className="flex items-center justify-between gap-2 mb-1.5">
+                <div className="text-xs font-medium text-slate-700 truncate">
+                  <span className="font-mono font-bold">{f.symbol}</span>
+                  {f.name && f.name !== f.symbol && <span className="text-slate-500"> · {f.name}</span>}
+                </div>
+                <span className="text-[10px] tabular-nums text-slate-500">{f.weight.toFixed(2)}% of portfolio</span>
               </div>
-              <span className="text-[10px] tabular-nums text-slate-500">{f.weight.toFixed(2)}% of portfolio</span>
+
+              {/* Quick-action row: try the auto-resolution path again
+                  (bypasses negative cache via force=1) before resorting
+                  to a manual URL. Useful for ETFs that were falsely
+                  cached as missing. */}
+              <div className="flex items-center gap-2 mb-1.5 flex-wrap text-[11px]">
+                <button
+                  onClick={() => { void handleForceAutoResolve(f.symbol); }}
+                  disabled={busy[f.symbol]}
+                  className="rounded border border-slate-300 bg-white px-2 py-0.5 font-medium text-slate-700 hover:bg-slate-50 disabled:opacity-50 transition-colors"
+                  title="Skip the cache and re-attempt the auto-resolution against Yahoo Finance. Use this if the fund SHOULD have data (major ETF, well-covered fund) and was likely cached as missing during a transient failure."
+                >
+                  Retry auto-resolution
+                </button>
+                <span className="text-slate-400">or paste a holdings URL:</span>
+              </div>
+
+              <div className="flex items-center gap-2">
+                <input
+                  type="url"
+                  value={urls[f.symbol] || ""}
+                  onChange={(e) => setUrls((u) => ({ ...u, [f.symbol]: e.target.value }))}
+                  placeholder="https://www.morningstar.com/... or fund factsheet URL"
+                  className="flex-1 rounded border border-slate-200 px-2 py-1 text-xs focus:outline-none focus:ring-1 focus:ring-blue-400"
+                />
+                <button
+                  onClick={() => { void handleSave(f.symbol); }}
+                  disabled={busy[f.symbol] || !(urls[f.symbol] || "").trim()}
+                  className="rounded bg-blue-600 px-3 py-1 text-xs font-semibold text-white hover:bg-blue-700 disabled:opacity-50 transition-colors whitespace-nowrap"
+                >
+                  {busy[f.symbol] ? "Scraping..." : "Save & Recompute"}
+                </button>
+              </div>
+
+              {/* Click-to-fill Morningstar URL suggestions. Morningstar
+                  serves to scrapers (no Cloudflare bot wall) and renders
+                  holdings as plain HTML, so it's the most reliable
+                  source. Issuer sites (Schwab, BlackRock, etc.) often
+                  block automated requests. */}
+              <div className="mt-1.5 text-[10px] text-slate-500 flex items-center gap-1.5 flex-wrap">
+                <span>Suggested URLs (click to fill):</span>
+                {suggestions.map((s) => (
+                  <button
+                    key={s.label}
+                    type="button"
+                    onClick={() => setUrls((u) => ({ ...u, [f.symbol]: s.url }))}
+                    className="rounded bg-slate-100 px-1.5 py-0.5 font-medium text-slate-600 hover:bg-slate-200 transition-colors"
+                    title={s.url}
+                  >
+                    {s.label}
+                  </button>
+                ))}
+              </div>
+
+              {status[f.symbol]?.ok && (
+                <div className="mt-1 text-[11px] text-emerald-700">{status[f.symbol].ok}</div>
+              )}
+              {status[f.symbol]?.err && (
+                <div className="mt-1 text-[11px] text-red-600">{status[f.symbol].err}</div>
+              )}
             </div>
-            <div className="flex items-center gap-2">
-              <input
-                type="url"
-                value={urls[f.symbol] || ""}
-                onChange={(e) => setUrls((u) => ({ ...u, [f.symbol]: e.target.value }))}
-                placeholder="https://fund-issuer.com/holdings or Morningstar URL..."
-                className="flex-1 rounded border border-slate-200 px-2 py-1 text-xs focus:outline-none focus:ring-1 focus:ring-blue-400"
-              />
-              <button
-                onClick={() => { void handleSave(f.symbol); }}
-                disabled={busy[f.symbol] || !(urls[f.symbol] || "").trim()}
-                className="rounded bg-blue-600 px-3 py-1 text-xs font-semibold text-white hover:bg-blue-700 disabled:opacity-50 transition-colors whitespace-nowrap"
-              >
-                {busy[f.symbol] ? "Scraping..." : "Save & Recompute"}
-              </button>
-            </div>
-            {status[f.symbol]?.ok && (
-              <div className="mt-1 text-[11px] text-emerald-700">{status[f.symbol].ok}</div>
-            )}
-            {status[f.symbol]?.err && (
-              <div className="mt-1 text-[11px] text-red-600">{status[f.symbol].err}</div>
-            )}
-          </div>
-        ))}
+          );
+        })}
       </div>
     </div>
   );
