@@ -836,6 +836,8 @@ export default function ClientReportPage() {
         if (st?.fundData?.topHoldings?.length) return true;
         if (isCoreEtf(sym)) return true;
         if (/^[A-Z]{2,4}\d{2,5}$/.test(sym)) return true;
+        // Morningstar IDs (e.g. "0P0000UJ32") — always a fund.
+        if (/^0P[A-Z0-9]{8}$/i.test(sym)) return true;
         if (fundCache[sym.toUpperCase()]?.topHoldings?.length) return true;
         if (qt === "ETF" || qt === "MUTUALFUND") return true;
         const u = (name || "").toUpperCase();
@@ -844,7 +846,39 @@ export default function ClientReportPage() {
         if (/\b(MUTUAL|INDEX|INCOME|BOND|EQUITY)\s+FUND\b/.test(u)) return true;
         if (/\bCLASS\s+[FIOAD]\b/.test(u)) return true;
         if (/\bSERIES\s+[FIOAD]\b/.test(u)) return true;
+        // Allocation / lifestyle / target-date funds (e.g. JNL Moderate
+        // Allocation A, BlackRock Conservative Allocation, Vanguard
+        // Target Retirement 2050).
+        if (/\b(MODERATE|CONSERVATIVE|AGGRESSIVE|BALANCED)\s+ALLOCATION\b/.test(u)) return true;
+        if (/\bALLOCATION\s+(FUND|PORTFOLIO)\b/.test(u)) return true;
+        if (/\bLIFESTYLE\b/.test(u)) return true;
+        if (/\bTARGET\s+(DATE|RETIREMENT)\b/.test(u)) return true;
+        // Trailing single-letter share class without the word "Class"
+        // (e.g. "JNL Moderate Allocation A", "Fidelity Contrafund I").
+        if (/\bALLOCATION\s+[A-F]$/.test(u)) return true;
+        if (/\bPORTFOLIO\s+[A-F]$/.test(u)) return true;
         return false;
+      };
+
+      /** For balanced/allocation funds whose underlying holdings can't
+       *  be resolved (Yahoo coverage of insurance variable annuity
+       *  funds, target-date funds, and lifestyle funds is spotty), use
+       *  a sensible default split between equity and fixed income based
+       *  on the fund's name. Better than attributing 100% to equity by
+       *  default, which is wrong for any "Moderate" / "Conservative"
+       *  fund. Returns null for funds that don't match an allocation
+       *  template (caller falls back to existing behavior). */
+      const balancedFundSplit = (name: string): { equity: number; fixedIncome: number } | null => {
+        const u = (name || "").toUpperCase();
+        if (/\bCONSERVATIVE\b/.test(u)) return { equity: 0.30, fixedIncome: 0.70 };
+        if (/\bMODERATE\b/.test(u)) return { equity: 0.60, fixedIncome: 0.40 };
+        if (/\bBALANCED\b/.test(u)) return { equity: 0.60, fixedIncome: 0.40 };
+        if (/\bAGGRESSIVE\b/.test(u)) return { equity: 0.80, fixedIncome: 0.20 };
+        if (/\bGROWTH\s+(ALLOCATION|PORTFOLIO|FUND)\b/.test(u)) return { equity: 0.70, fixedIncome: 0.30 };
+        if (/\bINCOME\s+ALLOCATION\b/.test(u)) return { equity: 0.40, fixedIncome: 0.60 };
+        if (/\bLIFESTYLE\b/.test(u)) return { equity: 0.60, fixedIncome: 0.40 };
+        if (/\bTARGET\s+(DATE|RETIREMENT)\b/.test(u)) return { equity: 0.65, fixedIncome: 0.35 };
+        return null;
       };
 
       // Non-equity filter: skip fixed-income and cash-like holdings at the leaf level.
@@ -934,8 +968,21 @@ export default function ClientReportPage() {
         const info = await getFundInfo(sym);
         const top = info?.topHoldings ?? [];
         if (!top.length) {
-          // Couldn't resolve underlying — use the fund's own country.
-          addEquityToAllocation(sym, weightPct, parentCountry);
+          // Couldn't resolve underlying. For balanced/allocation/
+          // lifestyle/target-date funds, split between equity and FI
+          // using a sensible default (see balancedFundSplit above) so
+          // the allocation pie isn't wildly wrong. For everything else
+          // fall back to the fund's own country bucket.
+          const split = balancedFundSplit(name);
+          if (split) {
+            addEquityToAllocation(sym, weightPct * split.equity, parentCountry);
+            allocTotals.fixedIncome += weightPct * split.fixedIncome;
+            // Surface the fund itself in the xray so the PM sees the
+            // chunk and knows where the equity portion came from.
+            addXRay(sym, name, depth === 0 ? weightPct * split.equity : 0, depth === 0 ? 0 : weightPct * split.equity);
+          } else {
+            addEquityToAllocation(sym, weightPct, parentCountry);
+          }
           return;
         }
         // Yahoo's top-holdings list typically covers only the top 10
