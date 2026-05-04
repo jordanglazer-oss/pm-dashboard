@@ -199,28 +199,22 @@ const PROFILE_LABELS: Record<PimProfileType, string> = {
   alpha: "Alpha",
 };
 
-/** Asset allocation pie palette. Aligned with the PIM Model pie's
- *  color language so the Growth and Current pies on the client report
- *  use the same visual identity:
- *    cash         → slate-400  (matches PIM)
- *    fixed income → blue-500   (matches PIM)
- *    equity       → emerald shades (matches PIM equity)
- *      coreEtfs        → emerald-700 (darkest, flagship slice)
- *      usEquity        → emerald-600
- *      canadianEquity  → emerald-500 (matches PIM equity exactly)
- *      globalEquity    → emerald-400
- *    alternatives → amber-500  (matches PIM)
- *    preferred    → purple-600 (no PIM equivalent)
+/** Asset allocation pie palette. RBC navy is reserved for Core ETFs
+ *  (the flagship slice); equities get a related blue ramp; income and
+ *  alternatives use earth tones so they visually recede.
+ *
+ *  This palette is the canonical one — the client-report Current pie
+ *  imports from here so both pies share identical colors per slice.
  */
-const SLICE_COLORS: Record<ReportAllocationSlice["key"], string> = {
-  fixedIncome: "#3b82f6",     // blue-500
-  alternatives: "#f59e0b",    // amber-500
-  coreEtfs: "#047857",        // emerald-700 — darkest, flagship
-  usEquity: "#059669",        // emerald-600
-  canadianEquity: "#10b981",  // emerald-500
-  globalEquity: "#34d399",    // emerald-400
-  preferredShares: "#7c3aed", // purple-600
-  cash: "#94a3b8",            // slate-400
+export const SLICE_COLORS: Record<ReportAllocationSlice["key"], string> = {
+  fixedIncome: "#5b6b8a",
+  alternatives: "#a16207",
+  coreEtfs: "#002855",
+  usEquity: "#005DAA",
+  canadianEquity: "#c8102e",
+  globalEquity: "#0d9488",
+  preferredShares: "#7c3aed",
+  cash: "#94a3b8",
 };
 
 const SLICE_LABELS: Record<ReportAllocationSlice["key"], string> = {
