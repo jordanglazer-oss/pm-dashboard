@@ -20,6 +20,7 @@ import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { useRouter, useSearchParams } from "next/navigation";
 import {
   useReportData,
+  SLICE_COLORS,
   type ReportAllocationBreakdown,
   type ReportAllocationSlice,
   type ReportData,
@@ -715,24 +716,15 @@ export default function ClientReportPage() {
 
       // ── Step 2: Set up classification helpers + allocation buckets ──
       // Categories: Fixed Income, Alternatives, US Equity, Canadian Equity,
-      // Global Equity, Preferred Shares, Cash. No "Core ETFs" bucket.
+      // Global Equity, Preferred Shares, Cash. No "Core ETFs" bucket
+      // (client-side accounts don't carry the firm's Core ETF flagship
+      // slice; that's a PIM-side concept only).
       //
-      // Color palette aligns with the PIM Model asset-allocation pie's
-      // language: cash = slate-400, fixed income = blue-500, equity =
-      // emerald (the three country sub-slices use emerald shades so the
-      // visual identity is "all green = equity" while still letting the
-      // PM see the country breakdown), alternatives = amber-500.
-      // Preferred Shares keeps its purple since the PIM Model doesn't
-      // have a Preferred bucket.
-      const SLICE_COLORS_CLIENT: Record<string, string> = {
-        fixedIncome: "#3b82f6",     // blue-500 — matches PIM
-        alternatives: "#f59e0b",    // amber-500 — matches PIM
-        usEquity: "#059669",        // emerald-600 — biggest equity slice typically
-        canadianEquity: "#10b981",  // emerald-500 — matches PIM equity
-        globalEquity: "#34d399",    // emerald-400 — lighter shade
-        preferredShares: "#7c3aed", // purple-600 — no PIM equivalent
-        cash: "#94a3b8",            // slate-400 — matches PIM
-      };
+      // Colors come from the canonical SLICE_COLORS palette in
+      // useReportData.ts. Imported (rather than redefined) so the
+      // Current pie and the Growth pie always render slices in
+      // identical colors — they can't drift apart.
+      const SLICE_COLORS_CLIENT: Record<string, string> = SLICE_COLORS;
       const SLICE_LABELS_CLIENT: Record<string, string> = {
         fixedIncome: "Fixed Income",
         alternatives: "Alternatives",
