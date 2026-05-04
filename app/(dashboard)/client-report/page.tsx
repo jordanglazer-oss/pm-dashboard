@@ -78,6 +78,14 @@ type ClientPortfolioResult = {
   positions: { ticker: string; name: string; weight: number; marketValue: number }[];
   cash: number;
   cashWeight: number;
+  /** Manual fixed-income placeholder. Lets the PM enter a fixed-income
+   *  weight ($ in units mode, % in weight mode) without typing a specific
+   *  bond fund — useful when the client account has a generic fixed
+   *  income sleeve the PM doesn't want to break out by ticker. Folds
+   *  into the allocation pie's Fixed Income bucket alongside any
+   *  bond-like positions classified from the actual ticker list. */
+  fixedIncome: number;
+  fixedIncomeWeight: number;
   totalValue: number;
   /** PIM-style allocation pie: Fixed Income, US Equity, etc. (no "Core ETFs" bucket). */
   allocation: ReportAllocationSlice[];
@@ -350,6 +358,11 @@ export default function ClientReportPage() {
   const [clientInputMode, setClientInputMode] = useState<ClientInputMode>("units");
   const [clientPositions, setClientPositions] = useState<ClientPosition[]>([]);
   const [clientCash, setClientCash] = useState<number>(0);
+  // Fixed-income placeholder. Same dual-mode UX as cash: dollars in
+  // units mode, percent in weight mode. Folds into the Fixed Income
+  // allocation bucket so the PM can represent a generic fixed-income
+  // sleeve without typing every bond holding.
+  const [clientFixedIncome, setClientFixedIncome] = useState<number>(0);
   // Manual total portfolio value. Only used when inputMode === "weight"
   // (where per-position market values aren't known). Feeds the fee-savings
   // dollar calc; 0 or blank means "no dollar estimate available." Stored
@@ -382,7 +395,7 @@ export default function ClientReportPage() {
     let cancelled = false;
     fetch("/api/kv/client-portfolio", { cache: "no-store" })
       .then((r) => (r.ok ? r.json() : { data: null }))
-      .then((payload: { data?: { positions?: ClientPosition[]; cash?: number; manualTotalValue?: number; inputMode?: ClientInputMode; analysis?: ClientReportAnalysis; metricsOverrides?: Record<string, MetricsOverride> } | null }) => {
+      .then((payload: { data?: { positions?: ClientPosition[]; cash?: number; fixedIncome?: number; manualTotalValue?: number; inputMode?: ClientInputMode; analysis?: ClientReportAnalysis; metricsOverrides?: Record<string, MetricsOverride> } | null }) => {
         if (cancelled) return;
         const d = payload?.data;
         if (d) {
@@ -390,6 +403,7 @@ export default function ClientReportPage() {
             setClientPositions(d.positions);
           }
           if (typeof d.cash === "number") setClientCash(d.cash);
+          if (typeof d.fixedIncome === "number") setClientFixedIncome(d.fixedIncome);
           if (typeof d.manualTotalValue === "number") {
             setClientManualTotalValue(d.manualTotalValue);
           }
@@ -460,6 +474,7 @@ export default function ClientReportPage() {
         body: JSON.stringify({
           positions: clientPositions,
           cash: clientCash,
+          fixedIncome: clientFixedIncome,
           manualTotalValue: clientManualTotalValue,
           inputMode: clientInputMode,
           analysis,
@@ -468,7 +483,7 @@ export default function ClientReportPage() {
       }).catch(() => { /* best effort */ });
     }, 800);
     return () => clearTimeout(handle);
-  }, [clientPositions, clientCash, clientManualTotalValue, clientInputMode, analysis, metricsOverrides]);
+  }, [clientPositions, clientCash, clientFixedIncome, clientManualTotalValue, clientInputMode, analysis, metricsOverrides]);
 
   const addPosition = useCallback(() => {
     setClientPositions((prev) => [
@@ -489,11 +504,12 @@ export default function ClientReportPage() {
     const count = clientPositions.length;
     if (count === 0) return;
     const ok = window.confirm(
-      `Clear all ${count} client-side ${count === 1 ? "holding" : "holdings"} and reset cash to 0? This cannot be undone.`
+      `Clear all ${count} client-side ${count === 1 ? "holding" : "holdings"} and reset cash + fixed income to 0? This cannot be undone.`
     );
     if (!ok) return;
     setClientPositions([]);
     setClientCash(0);
+    setClientFixedIncome(0);
   }, [clientPositions.length]);
 
   const updatePosition = useCallback(
@@ -567,19 +583,20 @@ export default function ClientReportPage() {
       // ── Step 1: Resolve positions with weights ──
       let positions: { ticker: string; name: string; weight: number; marketValue: number; quoteType: string | null }[];
       let cashWeight: number;
+      let fixedIncomeWeight: number;
       let totalValue: number;
 
       if (clientInputMode === "weight") {
         const validPositions = clientPositions.filter(
           (p) => p.ticker.trim() && p.weight > 0
         );
-        if (validPositions.length === 0 && clientCash <= 0) {
-          setClientError("Add at least one position with a weight, or a cash weight.");
+        if (validPositions.length === 0 && clientCash <= 0 && clientFixedIncome <= 0) {
+          setClientError("Add at least one position with a weight, or a cash / fixed income weight.");
           setClientLoading(false);
           return;
         }
         const rawTotal =
-          validPositions.reduce((s, p) => s + p.weight, 0) + clientCash;
+          validPositions.reduce((s, p) => s + p.weight, 0) + clientCash + clientFixedIncome;
         if (rawTotal <= 0) {
           setClientError("Total weight must be positive.");
           setClientLoading(false);
@@ -621,6 +638,7 @@ export default function ClientReportPage() {
           })
           .sort((a, b) => b.weight - a.weight);
         cashWeight = (clientCash / rawTotal) * 100;
+        fixedIncomeWeight = (clientFixedIncome / rawTotal) * 100;
         // In weight mode the per-position market values aren't known,
         // so totalValue defaults to 0 (hides dollar outputs). When the
         // PM types a manual total in the UI we pass it through here so
@@ -632,8 +650,8 @@ export default function ClientReportPage() {
         const validPositions = clientPositions.filter(
           (p) => p.ticker.trim() && p.units > 0
         );
-        if (validPositions.length === 0 && clientCash <= 0) {
-          setClientError("Add at least one position or cash amount.");
+        if (validPositions.length === 0 && clientCash <= 0 && clientFixedIncome <= 0) {
+          setClientError("Add at least one position, cash amount, or fixed income amount.");
           setClientLoading(false);
           return;
         }
@@ -677,7 +695,7 @@ export default function ClientReportPage() {
         }
 
         const totalEquity = positionsWithValue.reduce((sum, p) => sum + p.marketValue, 0);
-        totalValue = totalEquity + clientCash;
+        totalValue = totalEquity + clientCash + clientFixedIncome;
         if (totalValue <= 0) {
           setClientError("Could not compute portfolio value — check tickers and prices.");
           setClientLoading(false);
@@ -692,6 +710,7 @@ export default function ClientReportPage() {
           }))
           .sort((a, b) => b.weight - a.weight);
         cashWeight = totalValue > 0 ? (clientCash / totalValue) * 100 : 0;
+        fixedIncomeWeight = totalValue > 0 ? (clientFixedIncome / totalValue) * 100 : 0;
       }
 
       // ── Step 2: Set up classification helpers + allocation buckets ──
@@ -944,6 +963,9 @@ export default function ClientReportPage() {
       );
 
       if (cashWeight > 0.05) allocTotals.cash += cashWeight;
+      // Manual fixed-income placeholder folds into the same bucket as
+      // bond-like positions classified from the actual ticker list.
+      if (fixedIncomeWeight > 0.05) allocTotals.fixedIncome += fixedIncomeWeight;
 
       const allocation: ReportAllocationSlice[] = Object.entries(allocTotals)
         .filter(([, w]) => w > 0.05)
@@ -983,6 +1005,8 @@ export default function ClientReportPage() {
         positions: positions.map(({ quoteType: _qt, ...rest }) => rest),
         cash: clientCash,
         cashWeight,
+        fixedIncome: clientFixedIncome,
+        fixedIncomeWeight,
         totalValue,
         allocation,
         xray,
@@ -995,7 +1019,7 @@ export default function ClientReportPage() {
     } finally {
       setClientLoading(false);
     }
-  }, [clientPositions, clientCash, clientManualTotalValue, clientInputMode, stocks]);
+  }, [clientPositions, clientCash, clientFixedIncome, clientManualTotalValue, clientInputMode, stocks]);
 
   // ── Generate AI analysis ──
   // Builds the full comparison payload, looks up per-ticker MER from the
@@ -1481,6 +1505,25 @@ export default function ClientReportPage() {
                   value={clientCash || ""}
                   onChange={(e) =>
                     setClientCash(parseFloat(e.target.value) || 0)
+                  }
+                  min={0}
+                  step="any"
+                  placeholder="0"
+                  className="w-28 rounded border border-slate-200 px-2 py-1.5 text-xs tabular-nums focus:outline-none focus:ring-1 focus:ring-blue-400"
+                />
+              </div>
+              <div
+                className="flex items-center gap-1.5"
+                title="Optional: a fixed-income placeholder so you don't have to type every bond fund. Folds into the Fixed Income allocation bucket alongside any bond holdings classified from your ticker list."
+              >
+                <label className="text-xs text-slate-500">
+                  Fixed Income {clientInputMode === "units" ? "($)" : "(%)"}:
+                </label>
+                <input
+                  type="number"
+                  value={clientFixedIncome || ""}
+                  onChange={(e) =>
+                    setClientFixedIncome(parseFloat(e.target.value) || 0)
                   }
                   min={0}
                   step="any"
