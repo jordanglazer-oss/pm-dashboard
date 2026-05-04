@@ -605,20 +605,76 @@ export function useReportData(
         string,
         { name: string; direct: number; lookThrough: number }
       >();
+
+      /**
+       * Alias dual-class shares + name-keyed entries to a single
+       * canonical ticker so look-through weight from funds (which
+       * report Alphabet as GOOG/GOOGL/"Alphabet Inc Class A" etc.)
+       * accumulates into the SAME xray row as a direct holding.
+       *
+       * Without this, Alphabet exposure from SPY/QQQM/etc. lands on
+       * a separate "GOOG" row while the direct PIM holding ("GOOGL")
+       * shows zero look-through. The PM legitimately observed this
+       * for GOOGL — the ETF holdings inside SPY/QQQM weren't being
+       * added to the look-through weight column.
+       *
+       * Add new aliases here as they surface. Format:
+       *   <observed key> → <canonical ticker to consolidate under>
+       *
+       * Keys are uppercase since addXRay normalizes case.
+       */
+      const TICKER_ALIASES: Record<string, string> = {
+        // Alphabet — all variants → GOOGL (Class A, the voting one
+        // PMs typically buy directly). GOOG is Class C non-voting.
+        "GOOG": "GOOGL",
+        "ALPHABET INC CLASS A": "GOOGL",
+        "ALPHABET INC CLASS C": "GOOGL",
+        "ALPHABET INC.": "GOOGL",
+        "ALPHABET INC": "GOOGL",
+        "ALPHABET": "GOOGL",
+        // Meta — old FB ticker maps to META.
+        "FB": "META",
+        "META PLATFORMS INC": "META",
+        "META PLATFORMS, INC.": "META",
+        // Berkshire — both share classes consolidate into BRK-B
+        // (the practical one for retail PMs). Consider BRK-A only
+        // separately if directly held.
+        "BRK.B": "BRK-B",
+        "BRKB": "BRK-B",
+        "BERKSHIRE HATHAWAY INC CLASS B": "BRK-B",
+        "BERKSHIRE HATHAWAY INC.": "BRK-B",
+        // Fox — A and B share classes; consolidate to FOXA (voting).
+        "FOX": "FOXA",
+        // News Corp — same pattern.
+        "NWS": "NWSA",
+      };
+
+      const canonicalizeXRayKey = (raw: string): string => {
+        const upper = raw.toUpperCase().trim();
+        return TICKER_ALIASES[upper] ?? upper;
+      };
+
       const addXRay = (
         symbol: string,
         name: string,
         direct: number,
         lookThrough: number
       ) => {
-        const key = (symbol || name).toUpperCase();
-        if (!key) return;
-        const prev = xrayAcc.get(key) ?? { name, direct: 0, lookThrough: 0 };
+        // Try the symbol first; if missing, fall back to the name.
+        // Pass through the alias map so dual-class / name-keyed
+        // entries collapse into a single canonical row.
+        const rawKey = symbol || name;
+        if (!rawKey) return;
+        const key = canonicalizeXRayKey(rawKey);
+        // Also alias the name-string when it matches a known company.
+        const aliasedName = TICKER_ALIASES[name.toUpperCase().trim()];
+        const finalKey = aliasedName ?? key;
+        const prev = xrayAcc.get(finalKey) ?? { name, direct: 0, lookThrough: 0 };
         prev.direct += direct;
         prev.lookThrough += lookThrough;
         // Prefer the longer, more descriptive name we've seen.
         if (name && name.length > prev.name.length) prev.name = name;
-        xrayAcc.set(key, prev);
+        xrayAcc.set(finalKey, prev);
       };
 
       // Memoized fund-info lookup. First checks the in-memory
