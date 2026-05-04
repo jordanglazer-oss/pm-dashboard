@@ -807,20 +807,6 @@ export default function ClientReportPage() {
           fundInfoCache.set(key, info);
           return info;
         }
-        // Skip the API call entirely for ticker patterns Yahoo will
-        // never resolve. /api/fund-data ultimately calls Yahoo Finance,
-        // and Yahoo doesn't recognize Morningstar IDs (0P*) or some
-        // FUNDSERV codes. Without this short-circuit, each unresolvable
-        // fund hangs the look-through for several seconds while Yahoo
-        // times out — was the cause of the recent client-report
-        // slowness after fund detection got better. The caller (the
-        // balanced-fund split fallback in expandClient) handles the
-        // null return correctly.
-        if (/^0P[A-Z0-9]{8}$/i.test(sym)) {
-          fundInfoCache.set(key, null);
-          return null;
-        }
-
         const fetchTicker = normalizeForApi(sym);
         try {
           // Hard 5s timeout per fund lookup. Anything slower is almost
