@@ -903,16 +903,52 @@ export default function ClientReportPage() {
         /\b(TREASURY|T-BILL|BOND|GOVT|GOVERNMENT|CASH|MONEY\s*MARKET|REPO|COMMERCIAL\s*PAPER)\b/i;
 
       const xrayAcc = new Map<string, { name: string; direct: number; lookThrough: number }>();
+
+      // Alias dual-class shares + name-keyed entries so look-through
+      // weight accumulates into one row per security. Same map as the
+      // model report (useReportData.ts); kept inline here rather than
+      // shared because the two xrays were originally independent and
+      // we want to keep the merge logic isolated. Add new aliases as
+      // they surface during real PM use.
+      const TICKER_ALIASES: Record<string, string> = {
+        // Alphabet
+        "GOOG": "GOOGL",
+        "ALPHABET INC CLASS A": "GOOGL",
+        "ALPHABET INC CLASS C": "GOOGL",
+        "ALPHABET INC.": "GOOGL",
+        "ALPHABET INC": "GOOGL",
+        "ALPHABET": "GOOGL",
+        // Meta
+        "FB": "META",
+        "META PLATFORMS INC": "META",
+        "META PLATFORMS, INC.": "META",
+        // Berkshire
+        "BRK.B": "BRK-B",
+        "BRKB": "BRK-B",
+        "BERKSHIRE HATHAWAY INC CLASS B": "BRK-B",
+        "BERKSHIRE HATHAWAY INC.": "BRK-B",
+        // Fox / News Corp
+        "FOX": "FOXA",
+        "NWS": "NWSA",
+      };
+      const canonicalizeXRayKey = (raw: string): string => {
+        const upper = raw.toUpperCase().trim();
+        return TICKER_ALIASES[upper] ?? upper;
+      };
+
       const addXRay = (symbol: string, name: string, direct: number, lookThrough: number) => {
-        const key = (symbol || name).toUpperCase();
-        if (!key) return;
+        const rawKey = symbol || name;
+        if (!rawKey) return;
         // Skip obviously non-equity leaf holdings.
         if (NON_EQUITY_NAME_RE.test(name)) return;
-        const prev = xrayAcc.get(key) ?? { name, direct: 0, lookThrough: 0 };
+        const key = canonicalizeXRayKey(rawKey);
+        const aliasedName = TICKER_ALIASES[name.toUpperCase().trim()];
+        const finalKey = aliasedName ?? key;
+        const prev = xrayAcc.get(finalKey) ?? { name, direct: 0, lookThrough: 0 };
         prev.direct += direct;
         prev.lookThrough += lookThrough;
         if (name && name.length > prev.name.length) prev.name = name;
-        xrayAcc.set(key, prev);
+        xrayAcc.set(finalKey, prev);
       };
 
       // Helper: classify an equity leaf into a country bucket.
