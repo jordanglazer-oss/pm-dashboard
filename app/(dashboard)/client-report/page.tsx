@@ -74,6 +74,127 @@ type ClientPosition = {
   instrumentType?: "stock" | "fund";
 };
 
+/**
+ * Per-fund URL override card. Lets the PM paste a holdings URL for a
+ * fund the auto look-through couldn't resolve. POSTs the URL to
+ * /api/fund-data which scrapes the page (Morningstar, iShares CSV,
+ * issuer factsheet, etc.) and returns parsed top holdings. The
+ * holdings then get PATCHed into pm:fund-data-cache, which the
+ * look-through reads from on the next compute.
+ */
+function UnresolvedFundsPanel({
+  funds,
+  onCachedAndRecompute,
+}: {
+  funds: Array<{ symbol: string; name: string; weight: number; usedBalancedSplit: boolean }>;
+  onCachedAndRecompute: () => Promise<void> | void;
+}) {
+  const [urls, setUrls] = useState<Record<string, string>>({});
+  const [busy, setBusy] = useState<Record<string, boolean>>({});
+  const [status, setStatus] = useState<Record<string, { ok?: string; err?: string }>>({});
+
+  const handleSave = async (symbol: string) => {
+    const url = (urls[symbol] || "").trim();
+    if (!url) return;
+    setBusy((b) => ({ ...b, [symbol]: true }));
+    setStatus((s) => ({ ...s, [symbol]: {} }));
+    try {
+      // 1. Scrape the URL via the existing /api/fund-data POST handler.
+      const scrapeRes = await fetch("/api/fund-data", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ url, ticker: symbol }),
+      });
+      const scrapeData = await scrapeRes.json();
+      if (!scrapeRes.ok) {
+        setStatus((s) => ({ ...s, [symbol]: { err: scrapeData?.error || "Could not scrape this URL" } }));
+        return;
+      }
+      const topHoldings = scrapeData?.topHoldings;
+      if (!topHoldings?.length) {
+        setStatus((s) => ({ ...s, [symbol]: { err: "Page parsed but no holdings table was found" } }));
+        return;
+      }
+      // 2. Persist to pm:fund-data-cache so future look-throughs use it.
+      const cacheRes = await fetch("/api/kv/fund-data-cache", {
+        method: "PATCH",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          entries: {
+            [symbol.toUpperCase()]: {
+              topHoldings,
+              sectorWeightings: scrapeData.sectorWeightings || [],
+              holdingsSource: (() => {
+                try { return new URL(url).hostname; } catch { return "User URL"; }
+              })(),
+              lastUpdated: new Date().toISOString(),
+            },
+          },
+        }),
+      });
+      if (!cacheRes.ok) {
+        setStatus((s) => ({ ...s, [symbol]: { err: "Scraped OK but failed to save to cache" } }));
+        return;
+      }
+      setStatus((s) => ({ ...s, [symbol]: { ok: `Saved ${topHoldings.length} holdings — recomputing...` } }));
+      await onCachedAndRecompute();
+    } catch (e) {
+      setStatus((s) => ({ ...s, [symbol]: { err: e instanceof Error ? e.message : "Request failed" } }));
+    } finally {
+      setBusy((b) => ({ ...b, [symbol]: false }));
+    }
+  };
+
+  return (
+    <div className="mt-3 rounded-lg border border-amber-200 bg-amber-50 px-3 py-2.5">
+      <div className="text-xs font-semibold text-amber-900 mb-1">
+        ⚠ {funds.length} fund{funds.length === 1 ? "" : "s"} couldn&apos;t be auto-resolved
+      </div>
+      <div className="text-[11px] text-amber-800 mb-2.5">
+        Yahoo Finance doesn&apos;t have holdings data for {funds.length === 1 ? "this fund" : "these funds"}. Provide a holdings URL (Morningstar, fund factsheet, iShares CSV, etc.) to enable proper look-through. Cached after the first scrape — won&apos;t need to re-enter.
+        {funds.some((f) => f.usedBalancedSplit) && (
+          <> A name-based default split is being used in the meantime so the asset allocation isn&apos;t wildly wrong.</>
+        )}
+      </div>
+      <div className="space-y-2">
+        {funds.map((f) => (
+          <div key={f.symbol} className="rounded border border-amber-100 bg-white px-2.5 py-2">
+            <div className="flex items-center justify-between gap-2 mb-1.5">
+              <div className="text-xs font-medium text-slate-700 truncate">
+                <span className="font-mono font-bold">{f.symbol}</span>
+                {f.name && f.name !== f.symbol && <span className="text-slate-500"> · {f.name}</span>}
+              </div>
+              <span className="text-[10px] tabular-nums text-slate-500">{f.weight.toFixed(2)}% of portfolio</span>
+            </div>
+            <div className="flex items-center gap-2">
+              <input
+                type="url"
+                value={urls[f.symbol] || ""}
+                onChange={(e) => setUrls((u) => ({ ...u, [f.symbol]: e.target.value }))}
+                placeholder="https://fund-issuer.com/holdings or Morningstar URL..."
+                className="flex-1 rounded border border-slate-200 px-2 py-1 text-xs focus:outline-none focus:ring-1 focus:ring-blue-400"
+              />
+              <button
+                onClick={() => { void handleSave(f.symbol); }}
+                disabled={busy[f.symbol] || !(urls[f.symbol] || "").trim()}
+                className="rounded bg-blue-600 px-3 py-1 text-xs font-semibold text-white hover:bg-blue-700 disabled:opacity-50 transition-colors whitespace-nowrap"
+              >
+                {busy[f.symbol] ? "Scraping..." : "Save & Recompute"}
+              </button>
+            </div>
+            {status[f.symbol]?.ok && (
+              <div className="mt-1 text-[11px] text-emerald-700">{status[f.symbol].ok}</div>
+            )}
+            {status[f.symbol]?.err && (
+              <div className="mt-1 text-[11px] text-red-600">{status[f.symbol].err}</div>
+            )}
+          </div>
+        ))}
+      </div>
+    </div>
+  );
+}
+
 type ClientPortfolioResult = {
   /** Raw input positions (pre-look-through) with weights and names. */
   positions: { ticker: string; name: string; weight: number; marketValue: number }[];
@@ -92,6 +213,11 @@ type ClientPortfolioResult = {
   allocation: ReportAllocationSlice[];
   /** Look-through xray — individual stock holdings only (preferred shares excluded). */
   xray: ReportXRayRow[];
+  /** Funds the look-through couldn't auto-resolve (no Yahoo/cache data).
+   *  The PM can provide a holdings URL per fund to enable proper
+   *  look-through. The result is scraped via /api/fund-data and
+   *  written to pm:fund-data-cache for future use. */
+  unresolvedFunds?: Array<{ symbol: string; name: string; weight: number; usedBalancedSplit: boolean }>;
 };
 
 /**
@@ -904,6 +1030,19 @@ export default function ClientReportPage() {
 
       const xrayAcc = new Map<string, { name: string; direct: number; lookThrough: number }>();
 
+      // Track funds the look-through couldn't auto-resolve, so the UI
+      // can offer a "provide holdings URL" path. Only funds where
+      // looksLikeFund returned true AND we couldn't get top holdings
+      // are recorded — successful resolutions don't surface here.
+      const unresolvedFundsAcc = new Map<string, { name: string; weight: number; usedBalancedSplit: boolean }>();
+      const recordUnresolved = (sym: string, name: string, weight: number, usedBalancedSplit: boolean) => {
+        const key = sym.toUpperCase();
+        const prev = unresolvedFundsAcc.get(key) ?? { name, weight: 0, usedBalancedSplit };
+        prev.weight += weight;
+        if (name && name.length > prev.name.length) prev.name = name;
+        unresolvedFundsAcc.set(key, prev);
+      };
+
       // Alias dual-class shares + name-keyed entries so look-through
       // weight accumulates into one row per security. Same map as the
       // model report (useReportData.ts); kept inline here rather than
@@ -1021,17 +1160,14 @@ export default function ClientReportPage() {
         const info = await getFundInfo(sym);
         const top = info?.topHoldings ?? [];
         if (!top.length) {
-          // Couldn't resolve underlying. For balanced/allocation/
-          // lifestyle/target-date funds, split between equity and FI
-          // using a sensible default (see balancedFundSplit above) so
-          // the allocation pie isn't wildly wrong. For everything else
-          // fall back to the fund's own country bucket.
+          // Couldn't resolve underlying. Record so the UI can offer a
+          // "provide holdings URL" override for this fund. Balanced
+          // template OR fall back to country bucket.
           const split = balancedFundSplit(name);
+          recordUnresolved(sym, name, weightPct, !!split);
           if (split) {
             addEquityToAllocation(sym, weightPct * split.equity, parentCountry);
             allocTotals.fixedIncome += weightPct * split.fixedIncome;
-            // Surface the fund itself in the xray so the PM sees the
-            // chunk and knows where the equity portion came from.
             addXRay(sym, name, depth === 0 ? weightPct * split.equity : 0, depth === 0 ? 0 : weightPct * split.equity);
           } else {
             addEquityToAllocation(sym, weightPct, parentCountry);
@@ -1134,6 +1270,15 @@ export default function ClientReportPage() {
         })
       );
 
+      const unresolvedFunds = Array.from(unresolvedFundsAcc.entries())
+        .map(([symbol, v]) => ({
+          symbol,
+          name: v.name,
+          weight: v.weight,
+          usedBalancedSplit: v.usedBalancedSplit,
+        }))
+        .sort((a, b) => b.weight - a.weight);
+
       setClientResult({
         positions: positions.map(({ quoteType: _qt, ...rest }) => rest),
         cash: clientCash,
@@ -1143,6 +1288,7 @@ export default function ClientReportPage() {
         totalValue,
         allocation,
         xray,
+        unresolvedFunds: unresolvedFunds.length > 0 ? unresolvedFunds : undefined,
       });
       setShowComparison(true);
     } catch (e) {
@@ -1718,6 +1864,28 @@ export default function ClientReportPage() {
                 , {clientResult.xray.length} underlying stock exposures via look-through.
                 Comparison will appear on the PDF.
               </div>
+            )}
+
+            {/* Unresolved-funds override panel. Surfaces any funds the
+                look-through couldn't auto-resolve (Yahoo doesn't have
+                holdings for them). The PM can paste a holdings URL —
+                fund factsheet, Morningstar holdings page, an iShares
+                CSV, etc. — and we'll scrape it via /api/fund-data and
+                cache the result in pm:fund-data-cache. Future
+                computations use the cached data automatically.
+                Mirrors the URL-paste workflow on individual stock
+                pages for ETFs without auto-resolved holdings. */}
+            {clientResult?.unresolvedFunds && clientResult.unresolvedFunds.length > 0 && (
+              <UnresolvedFundsPanel
+                funds={clientResult.unresolvedFunds}
+                onCachedAndRecompute={async () => {
+                  // Recompute the comparison so the newly-cached
+                  // holdings flow into the look-through. The fund-info
+                  // memoization inside expandClient is per-call, so a
+                  // fresh compute picks up the cache change.
+                  await computeClientPortfolio();
+                }}
+              />
             )}
 
             {/* AI-generated analysis controls. Requires clientResult to
