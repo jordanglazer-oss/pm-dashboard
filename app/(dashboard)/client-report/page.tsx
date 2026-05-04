@@ -809,7 +809,20 @@ export default function ClientReportPage() {
         }
         const fetchTicker = normalizeForApi(sym);
         try {
-          const res = await fetch(`/api/fund-data?ticker=${encodeURIComponent(fetchTicker)}`, { cache: "no-store" });
+          // Hard 5s timeout per fund lookup. Anything slower is almost
+          // certainly Yahoo not knowing the ticker; the abort cuts off
+          // the wait so the rest of the look-through can proceed.
+          const controller = new AbortController();
+          const timer = setTimeout(() => controller.abort(), 5000);
+          let res: Response;
+          try {
+            res = await fetch(`/api/fund-data?ticker=${encodeURIComponent(fetchTicker)}`, {
+              cache: "no-store",
+              signal: controller.signal,
+            });
+          } finally {
+            clearTimeout(timer);
+          }
           if (!res.ok) { fundInfoCache.set(key, null); return null; }
           const d = await res.json().catch(() => null);
           const fd = d?.fundData as FundData | undefined;
@@ -817,6 +830,7 @@ export default function ClientReportPage() {
           fundInfoCache.set(key, info);
           return info;
         } catch {
+          // AbortError or any other failure → cache null, move on.
           fundInfoCache.set(key, null);
           return null;
         }

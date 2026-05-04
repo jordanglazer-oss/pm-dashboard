@@ -680,12 +680,22 @@ export function useReportData(
         }
         // 3. Last-resort live fetch. Use .TO-normalized ticker so the
         //    API routes Canadian ETFs through the correct path.
+        //    Hard 5s client timeout — the route itself negative-caches
+        //    server-side (see app/api/fund-data/route.ts), so a slow
+        //    miss happens once and subsequent calls hit the cache.
         const fetchTicker = normalizeForApi(sym);
         try {
-          const res = await fetch(
-            `/api/fund-data?ticker=${encodeURIComponent(fetchTicker)}`,
-            { cache: "no-store" }
-          );
+          const controller = new AbortController();
+          const timer = setTimeout(() => controller.abort(), 5000);
+          let res: Response;
+          try {
+            res = await fetch(
+              `/api/fund-data?ticker=${encodeURIComponent(fetchTicker)}`,
+              { cache: "no-store", signal: controller.signal }
+            );
+          } finally {
+            clearTimeout(timer);
+          }
           if (!res.ok) { fundInfoCache.set(key, null); return null; }
           const data = await res.json().catch(() => null);
           const fd = data?.fundData as FundData | undefined;

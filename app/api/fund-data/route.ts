@@ -1,6 +1,45 @@
 import { NextRequest, NextResponse } from "next/server";
 import * as cheerio from "cheerio";
 import type { FundData, FundHolding, FundSectorWeight, FundPerformance, FundRiskStats } from "@/app/lib/types";
+import { getRedis } from "@/app/lib/redis";
+
+// ── Negative caching ────────────────────────────────────────────────
+// Some tickers (Morningstar IDs like "0P0000UJ32", insurance variable
+// annuity funds, certain delisted symbols) consistently return nothing
+// from Yahoo / Globe and Mail / Morningstar. Each lookup blocks for
+// several seconds while Yahoo times out. Without negative caching, every
+// page load re-pays that cost — which is why the Client Report and PIM
+// model refresh got slow after fund detection improved.
+//
+// Stored at `pm:fund-data-negative:{TICKER}` with a 7-day TTL. After
+// expiry we retry in case the upstream finally got the data. Positive
+// results are cached separately in `pm:fund-data-cache` (managed by
+// the app's "Refresh All" flow), so this only short-circuits the
+// confirmed misses.
+const NEGATIVE_CACHE_TTL_SEC = 7 * 24 * 60 * 60;
+
+async function checkNegativeCache(ticker: string): Promise<boolean> {
+  try {
+    const redis = await getRedis();
+    const v = await redis.get(`pm:fund-data-negative:${ticker.toUpperCase()}`);
+    return v != null;
+  } catch {
+    return false;
+  }
+}
+
+async function setNegativeCache(ticker: string): Promise<void> {
+  try {
+    const redis = await getRedis();
+    await redis.set(
+      `pm:fund-data-negative:${ticker.toUpperCase()}`,
+      new Date().toISOString(),
+      { EX: NEGATIVE_CACHE_TTL_SEC }
+    );
+  } catch {
+    /* best-effort */
+  }
+}
 
 // This route is fully dynamic — every call re-fetches Yahoo / Globe and
 // Mail / Morningstar at the source. Default Next.js GET caching could
@@ -1257,12 +1296,29 @@ export async function GET(request: NextRequest) {
     return NextResponse.json({ error: "ticker is required" }, { status: 400 });
   }
 
+  // Negative-cache check FIRST. If we've already determined this ticker
+  // returns nothing useful, short-circuit immediately so we don't pay
+  // the multi-second Yahoo timeout again on every page load. Cache TTL
+  // is 7 days so we periodically retry in case the upstream finally
+  // gets the data (e.g. a newly-listed fund).
+  const force = searchParams.get("force") === "1";
+  if (!force) {
+    const isNegative = await checkNegativeCache(ticker);
+    if (isNegative) {
+      return NextResponse.json(
+        { error: `No fund data available for ticker: ${ticker} (negative-cached)`, cached: true },
+        { status: 404 }
+      );
+    }
+  }
+
   const auth = await getYahooCrumb();
 
   // Check if this is a FUNDSERV code (Canadian mutual fund)
   if (isFundservCode(ticker)) {
     const result = await fetchCanadianFundData(ticker, auth);
     if (!result) {
+      await setNegativeCache(ticker);
       return NextResponse.json(
         { error: `Could not find Canadian fund data for FUNDSERV code: ${ticker}` },
         { status: 404 }
@@ -1316,6 +1372,12 @@ export async function GET(request: NextRequest) {
       : [{} as MorningstarScreenerData, {} as Awaited<ReturnType<typeof fetchMorningstarHoldings>>];
 
     if (!yahooRes.ok) {
+      // Persistent Yahoo 4xx for this ticker → negative-cache so we don't
+      // re-attempt the slow lookup on every page load. 502/5xx (transient
+      // upstream failure) don't get cached — those should be retried.
+      if (yahooRes.status >= 400 && yahooRes.status < 500) {
+        await setNegativeCache(ticker);
+      }
       return NextResponse.json(
         { error: `Yahoo Finance returned ${yahooRes.status}` },
         { status: 502 }
@@ -1325,6 +1387,7 @@ export async function GET(request: NextRequest) {
     const data = await yahooRes.json();
     const result = data?.quoteSummary?.result?.[0];
     if (!result) {
+      await setNegativeCache(ticker);
       return NextResponse.json(
         { error: "No data returned for ticker" },
         { status: 404 }
