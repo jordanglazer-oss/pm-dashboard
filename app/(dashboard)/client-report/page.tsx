@@ -716,14 +716,22 @@ export default function ClientReportPage() {
       // ── Step 2: Set up classification helpers + allocation buckets ──
       // Categories: Fixed Income, Alternatives, US Equity, Canadian Equity,
       // Global Equity, Preferred Shares, Cash. No "Core ETFs" bucket.
+      //
+      // Color palette aligns with the PIM Model asset-allocation pie's
+      // language: cash = slate-400, fixed income = blue-500, equity =
+      // emerald (the three country sub-slices use emerald shades so the
+      // visual identity is "all green = equity" while still letting the
+      // PM see the country breakdown), alternatives = amber-500.
+      // Preferred Shares keeps its purple since the PIM Model doesn't
+      // have a Preferred bucket.
       const SLICE_COLORS_CLIENT: Record<string, string> = {
-        fixedIncome: "#5b6b8a",
-        alternatives: "#a16207",
-        usEquity: "#005DAA",
-        canadianEquity: "#c8102e",
-        globalEquity: "#0d9488",
-        preferredShares: "#7c3aed",
-        cash: "#94a3b8",
+        fixedIncome: "#3b82f6",     // blue-500 — matches PIM
+        alternatives: "#f59e0b",    // amber-500 — matches PIM
+        usEquity: "#059669",        // emerald-600 — biggest equity slice typically
+        canadianEquity: "#10b981",  // emerald-500 — matches PIM equity
+        globalEquity: "#34d399",    // emerald-400 — lighter shade
+        preferredShares: "#7c3aed", // purple-600 — no PIM equivalent
+        cash: "#94a3b8",            // slate-400 — matches PIM
       };
       const SLICE_LABELS_CLIENT: Record<string, string> = {
         fixedIncome: "Fixed Income",
@@ -930,6 +938,22 @@ export default function ClientReportPage() {
           addEquityToAllocation(sym, weightPct, parentCountry);
           return;
         }
+        // Yahoo's top-holdings list typically covers only the top 10
+        // names (sums to ~50-70% of the fund, not 100%). If we only
+        // expand those, the remaining 30-50% of the fund's portfolio
+        // weight silently disappears from the allocation totals —
+        // which is why pie totals were summing to ~60% instead of
+        // 100% on portfolios with multi-fund exposure.
+        //
+        // Fix: compute the unattributed remainder and attribute it to
+        // the fund's OWN country bucket, plus include it in the xray
+        // as the fund itself (so the PM sees "Fund X — residual" if
+        // they care). Capped at 100% to handle quirky Yahoo data
+        // where top-holdings sum slightly over 100% from rounding.
+        const childWeightSum = top.reduce((s, h) => s + (typeof h.weight === "number" ? h.weight : 0), 0);
+        const attributedFraction = Math.min(Math.max(childWeightSum / 100, 0), 1);
+        const unattributedWeight = weightPct * (1 - attributedFraction);
+
         await Promise.all(
           top.map((h) => {
             const childSym = (h.symbol || h.name || "").trim();
@@ -938,6 +962,15 @@ export default function ClientReportPage() {
             return expandClient(childSym, h.name, childWeight, depth + 1, null, fundCountry);
           })
         );
+
+        // Attribute the residual (anything Yahoo's top-N didn't cover)
+        // to the fund's own country and surface it as the fund itself
+        // in the xray. Threshold avoids cluttering the xray with tiny
+        // rounding remainders.
+        if (unattributedWeight > 0.01) {
+          addEquityToAllocation(sym, unattributedWeight, parentCountry);
+          addXRay(sym, name, depth === 0 ? unattributedWeight : 0, depth === 0 ? 0 : unattributedWeight);
+        }
       };
 
       // Run look-through on all positions. Top-level branch by category:
