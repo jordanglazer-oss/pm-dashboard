@@ -166,7 +166,7 @@ function AlphaPickAddForm({ onAdd }: { onAdd: (e: AlphaPickEntry) => void }) {
  * zero Anthropic tokens.
  */
 function ResearchScraperBlock(props: {
-  source: "fundstrat-top" | "fundstrat-bottom" | "rbc-focus" | "rbc-us-focus" | "seeking-alpha-picks";
+  source: "fundstrat-top" | "fundstrat-bottom" | "fundstrat-smid-top" | "fundstrat-smid-bottom" | "rbc-focus" | "rbc-us-focus" | "seeking-alpha-picks";
   sectionLabel: string;
   helperText: string;
   attachments: BriefAttachment[];
@@ -351,6 +351,8 @@ export default function ResearchPage() {
   const [uptickSort, setUptickSort] = useState<{ key: UptickSortKey; dir: SortDir }>({ key: "ticker", dir: "asc" });
   const [topSort, setTopSort] = useState<{ key: IdeaSortKey; dir: SortDir }>({ key: "ticker", dir: "asc" });
   const [bottomSort, setBottomSort] = useState<{ key: IdeaSortKey; dir: SortDir }>({ key: "ticker", dir: "asc" });
+  const [smidTopSort, setSmidTopSort] = useState<{ key: IdeaSortKey; dir: SortDir }>({ key: "ticker", dir: "asc" });
+  const [smidBottomSort, setSmidBottomSort] = useState<{ key: IdeaSortKey; dir: SortDir }>({ key: "ticker", dir: "asc" });
   const [rbcSort, setRbcSort] = useState<{ key: RBCSortKey; dir: SortDir }>({ key: "ticker", dir: "asc" });
   const [rbcUsSort, setRbcUsSort] = useState<{ key: RBCSortKey; dir: SortDir }>({ key: "ticker", dir: "asc" });
 
@@ -365,6 +367,8 @@ export default function ResearchPage() {
       ...s.newtonUpticks.map((u) => u.ticker),
       ...s.fundstratTop.map((i) => i.ticker),
       ...s.fundstratBottom.map((i) => i.ticker),
+      ...(s.fundstratSmidTop ?? []).map((i) => i.ticker),
+      ...(s.fundstratSmidBottom ?? []).map((i) => i.ticker),
       ...(s.alphaPicks ?? []).map((i) => i.ticker),
     ];
     const unique = [...new Set(allTickers)];
@@ -398,7 +402,7 @@ export default function ResearchPage() {
   // `scrapeStatus` because its Refresh button does more than just scrape
   // (it also refreshes prices and names). The new sources are
   // scrape-only so a per-source map keeps each section's UI independent.
-  type SourceKey = "fundstrat-top" | "fundstrat-bottom" | "rbc-focus" | "rbc-us-focus" | "seeking-alpha-picks";
+  type SourceKey = "fundstrat-top" | "fundstrat-bottom" | "fundstrat-smid-top" | "fundstrat-smid-bottom" | "rbc-focus" | "rbc-us-focus" | "seeking-alpha-picks";
   const [scrapeLoadingMap, setScrapeLoadingMap] = useState<Partial<Record<SourceKey, boolean>>>({});
   const [scrapeStatusMap, setScrapeStatusMap] = useState<Partial<Record<SourceKey, string>>>({});
 
@@ -423,6 +427,12 @@ export default function ResearchPage() {
 
   function toggleUptickSort(key: UptickSortKey) {
     setUptickSort(prev => prev.key === key ? { key, dir: prev.dir === "asc" ? "desc" : "asc" } : { key, dir: "asc" });
+  }
+  function toggleSmidTopSort(key: IdeaSortKey) {
+    setSmidTopSort(prev => prev.key === key ? { key, dir: prev.dir === "asc" ? "desc" : "asc" } : { key, dir: "asc" });
+  }
+  function toggleSmidBottomSort(key: IdeaSortKey) {
+    setSmidBottomSort(prev => prev.key === key ? { key, dir: prev.dir === "asc" ? "desc" : "asc" } : { key, dir: "asc" });
   }
   function toggleTopSort(key: IdeaSortKey) {
     setTopSort(prev => prev.key === key ? { key, dir: prev.dir === "asc" ? "desc" : "asc" } : { key, dir: "asc" });
@@ -488,6 +498,8 @@ export default function ResearchPage() {
   const uArrow = (key: UptickSortKey) => uptickSort.key === key ? (uptickSort.dir === "asc" ? " ▲" : " ▼") : "";
   const tArrow = (key: IdeaSortKey) => topSort.key === key ? (topSort.dir === "asc" ? " ▲" : " ▼") : "";
   const bArrow = (key: IdeaSortKey) => bottomSort.key === key ? (bottomSort.dir === "asc" ? " ▲" : " ▼") : "";
+  const stArrow = (key: IdeaSortKey) => smidTopSort.key === key ? (smidTopSort.dir === "asc" ? " ▲" : " ▼") : "";
+  const sbArrow = (key: IdeaSortKey) => smidBottomSort.key === key ? (smidBottomSort.dir === "asc" ? " ▲" : " ▼") : "";
   const rArrow = (key: RBCSortKey) => rbcSort.key === key ? (rbcSort.dir === "asc" ? " ▲" : " ▼") : "";
   const rUsArrow = (key: RBCSortKey) => rbcUsSort.key === key ? (rbcUsSort.dir === "asc" ? " ▲" : " ▼") : "";
 
@@ -1081,8 +1093,12 @@ export default function ResearchPage() {
         void refreshAlphaPickNames(nextState);
         return true;
       } else {
-        // IdeaEntry-shaped sources (Fundstrat Top, Fundstrat Bottom)
-        const stateKey = source === "fundstrat-top" ? "fundstratTop" : "fundstratBottom";
+        // IdeaEntry-shaped sources (Fundstrat Top/Bottom, SMID Top/Bottom)
+        const stateKey =
+          source === "fundstrat-top"         ? "fundstratTop"
+        : source === "fundstrat-bottom"      ? "fundstratBottom"
+        : source === "fundstrat-smid-top"    ? "fundstratSmidTop"
+        : /* fundstrat-smid-bottom */         "fundstratSmidBottom";
         const existing: IdeaEntry[] = (state[stateKey as keyof ResearchState] as IdeaEntry[]) || [];
         const byNorm = new Map(existing.map((i) => [normalize(i.ticker), i]));
         let matched = 0;
@@ -1271,17 +1287,21 @@ export default function ResearchPage() {
   };
 
   /* Idea helpers */
-  const addIdea = (key: "fundstratTop" | "fundstratBottom", entry: IdeaEntry) => {
-    if (state[key].some((i) => i.ticker === entry.ticker)) return;
-    save({ ...state, [key]: [...state[key], entry] });
+  type IdeaListKey = "fundstratTop" | "fundstratBottom" | "fundstratSmidTop" | "fundstratSmidBottom";
+  const ideaList = (key: IdeaListKey): IdeaEntry[] => (state[key] as IdeaEntry[] | undefined) || [];
+  const addIdea = (key: IdeaListKey, entry: IdeaEntry) => {
+    const list = ideaList(key);
+    if (list.some((i) => i.ticker === entry.ticker)) return;
+    save({ ...state, [key]: [...list, entry] } as ResearchState);
   };
-  const removeIdea = (key: "fundstratTop" | "fundstratBottom", ticker: string) => {
-    save({ ...state, [key]: state[key].filter((i) => i.ticker !== ticker) });
+  const removeIdea = (key: IdeaListKey, ticker: string) => {
+    save({ ...state, [key]: ideaList(key).filter((i) => i.ticker !== ticker) } as ResearchState);
   };
-  const updateIdea = (key: "fundstratTop" | "fundstratBottom", idx: number, price: string) => {
-    const updated = [...state[key]];
+  const updateIdea = (key: IdeaListKey, idx: number, price: string) => {
+    const updated = [...ideaList(key)];
+    if (idx < 0 || idx >= updated.length) return;
     updated[idx] = { ...updated[idx], priceWhenAdded: parseFloat(price) || 0 };
-    save({ ...state, [key]: updated });
+    save({ ...state, [key]: updated } as ResearchState);
   };
 
   /* RBC helpers */
@@ -1780,8 +1800,8 @@ export default function ResearchPage() {
           <section className="rounded-[24px] border border-emerald-200 bg-white p-6 shadow-sm">
             <div className="flex items-center justify-between mb-4">
               <div>
-                <h3 className="text-xl font-bold text-emerald-800">Fundstrat Top Ideas</h3>
-                <p className="text-xs text-slate-400">Best long ideas from research</p>
+                <h3 className="text-xl font-bold text-emerald-800">Fundstrat Large-Cap Top Ideas</h3>
+                <p className="text-xs text-slate-400">Best long ideas — large-cap names</p>
               </div>
               <span className="text-sm text-slate-400">{state.fundstratTop.length} names</span>
             </div>
@@ -1856,8 +1876,8 @@ export default function ResearchPage() {
 
             <ResearchScraperBlock
               source="fundstrat-top"
-              sectionLabel="Fundstrat Top Ideas"
-              helperText="Upload a Fundstrat Top Ideas screenshot. On Refresh, ticker + entry price are extracted and merged into the list. Re-scans only if the image changes."
+              sectionLabel="Fundstrat Large-Cap Top Ideas"
+              helperText="Upload a Fundstrat Large-Cap Top Ideas screenshot. On Refresh, ticker + entry price are extracted and merged into the list. Re-scans only if the image changes."
               attachments={state.attachments || []}
               onAddAttachment={addAttachment}
               onRemoveAttachment={removeAttachment}
@@ -1871,8 +1891,8 @@ export default function ResearchPage() {
           <section className="rounded-[24px] border border-red-200 bg-white p-6 shadow-sm">
             <div className="flex items-center justify-between mb-4">
               <div>
-                <h3 className="text-xl font-bold text-red-800">Fundstrat Bottom Ideas</h3>
-                <p className="text-xs text-slate-400">Names to avoid or short</p>
+                <h3 className="text-xl font-bold text-red-800">Fundstrat Large-Cap Bottom Ideas</h3>
+                <p className="text-xs text-slate-400">Names to avoid or short — large-cap</p>
               </div>
               <span className="text-sm text-slate-400">{state.fundstratBottom.length} names</span>
             </div>
@@ -1947,14 +1967,190 @@ export default function ResearchPage() {
 
             <ResearchScraperBlock
               source="fundstrat-bottom"
-              sectionLabel="Fundstrat Bottom Ideas"
-              helperText="Upload a Fundstrat Bottom Ideas screenshot. On Refresh, ticker + entry price are extracted and merged into the list."
+              sectionLabel="Fundstrat Large-Cap Bottom Ideas"
+              helperText="Upload a Fundstrat Large-Cap Bottom Ideas screenshot. On Refresh, ticker + entry price are extracted and merged into the list."
               attachments={state.attachments || []}
               onAddAttachment={addAttachment}
               onRemoveAttachment={removeAttachment}
               onScrape={(force) => scrapeResearchSource("fundstrat-bottom", force)}
               loading={!!scrapeLoadingMap["fundstrat-bottom"]}
               status={scrapeStatusMap["fundstrat-bottom"]}
+            />
+          </section>
+        </div>
+
+        {/* ── Fundstrat SMID-Cap Core Top + Bottom (mirrors the
+             Large-Cap pair). Top is positive (buy), Bottom is negative
+             (avoid/short, treated identically to Large-Cap Bottom by
+             the cross-source synthesis). */}
+        <div className="grid gap-5 lg:grid-cols-2">
+          {/* SMID Top Ideas */}
+          <section className="rounded-[24px] border border-emerald-200 bg-white p-6 shadow-sm">
+            <div className="flex items-center justify-between mb-4">
+              <div>
+                <h3 className="text-xl font-bold text-emerald-800">Fundstrat Top SMID-Cap Core Ideas</h3>
+                <p className="text-xs text-slate-400">Best long ideas — small/mid-cap names</p>
+              </div>
+              <span className="text-sm text-slate-400">{(state.fundstratSmidTop ?? []).length} names</span>
+            </div>
+
+            <table className="w-full text-sm">
+              <thead>
+                <tr className="border-b-2 border-emerald-500 text-left">
+                  <th className="py-2 pr-2 text-xs font-semibold text-emerald-700 w-8">#</th>
+                  <th className="py-2 pr-3 text-xs font-semibold text-emerald-700 cursor-pointer hover:text-emerald-900 select-none" onClick={() => toggleSmidTopSort("ticker")}>Ticker{stArrow("ticker")}</th>
+                  <th className="py-2 pr-3 text-xs font-semibold text-emerald-700 text-right cursor-pointer hover:text-emerald-900 select-none" onClick={() => toggleSmidTopSort("currentPrice")}>Current Price{stArrow("currentPrice")}</th>
+                  <th className="py-2 pr-3 text-xs font-semibold text-emerald-700 text-right cursor-pointer hover:text-emerald-900 select-none" onClick={() => toggleSmidTopSort("priceWhenAdded")}>Price Added{stArrow("priceWhenAdded")}</th>
+                  <th className="py-2 pr-2 text-xs font-semibold text-emerald-700 text-right">Chg</th>
+                  <th className="py-2 w-8"></th>
+                </tr>
+              </thead>
+              <tbody>
+                {sortedIdeas(state.fundstratSmidTop ?? [], smidTopSort).map((item, i) => {
+                  const livePrice = livePrices[item.ticker];
+                  const pctChange = livePrice && item.priceWhenAdded ? ((livePrice - item.priceWhenAdded) / item.priceWhenAdded * 100) : null;
+                  return (
+                    <tr key={item.ticker} className={`border-b border-slate-100 ${i % 2 === 0 ? "bg-white" : "bg-emerald-50/30"} hover:bg-emerald-50/60 transition-colors`}>
+                      <td className="py-2 pr-2 text-slate-400">{i + 1}</td>
+                      <td className="py-2 pr-3 font-mono font-bold text-emerald-700">${item.ticker}</td>
+                      <td className="py-2 pr-3 text-right font-mono">
+                        {pricesLoading ? <span className="text-slate-300 animate-pulse">...</span>
+                          : livePrice != null ? <span className="font-semibold">${livePrice.toFixed(2)}</span>
+                          : <span className="text-slate-300">—</span>}
+                      </td>
+                      <td className="py-2 pr-3 text-right font-mono">
+                        <EditableCell
+                          value={item.priceWhenAdded ? `$${item.priceWhenAdded.toFixed(2)}` : "—"}
+                          onChange={(v) => updateIdea("fundstratSmidTop", i, v.replace("$", ""))}
+                        />
+                      </td>
+                      <td className="py-2 pr-2 text-right font-mono text-xs">
+                        {pctChange != null ? (
+                          <span className={pctChange >= 0 ? "text-emerald-600" : "text-red-500"}>
+                            {pctChange >= 0 ? "+" : ""}{pctChange.toFixed(1)}%
+                          </span>
+                        ) : <span className="text-slate-300">—</span>}
+                      </td>
+                      <td className="py-2 text-right whitespace-nowrap">
+                        {scoredStocks.some((s) => s.ticker === item.ticker) ? (
+                          <span className="text-[10px] text-emerald-500 font-medium">In list</span>
+                        ) : (
+                          <button
+                            onClick={(e) => { e.stopPropagation(); addToWatchlist(item.ticker); }}
+                            className="text-[10px] text-blue-500 hover:text-blue-700 font-semibold transition-colors"
+                            title="Add to Watchlist"
+                          >
+                            + Watch
+                          </button>
+                        )}
+                        <button onClick={() => removeIdea("fundstratSmidTop", item.ticker)} className="ml-2 text-slate-300 hover:text-red-500 font-bold transition-colors">&times;</button>
+                      </td>
+                    </tr>
+                  );
+                })}
+                {(state.fundstratSmidTop ?? []).length === 0 && (
+                  <tr><td colSpan={6} className="py-6 text-center text-slate-400 italic">No top SMID ideas added yet</td></tr>
+                )}
+              </tbody>
+            </table>
+
+            <IdeaAddForm onAdd={(e) => addIdea("fundstratSmidTop", e)} />
+
+            <ResearchScraperBlock
+              source="fundstrat-smid-top"
+              sectionLabel="Fundstrat Top SMID-Cap Core Ideas"
+              helperText="Upload a Fundstrat Top SMID-Cap Core Ideas screenshot. On Refresh, ticker + entry price are extracted and merged into the list."
+              attachments={state.attachments || []}
+              onAddAttachment={addAttachment}
+              onRemoveAttachment={removeAttachment}
+              onScrape={(force) => scrapeResearchSource("fundstrat-smid-top", force)}
+              loading={!!scrapeLoadingMap["fundstrat-smid-top"]}
+              status={scrapeStatusMap["fundstrat-smid-top"]}
+            />
+          </section>
+
+          {/* SMID Bottom Ideas */}
+          <section className="rounded-[24px] border border-red-200 bg-white p-6 shadow-sm">
+            <div className="flex items-center justify-between mb-4">
+              <div>
+                <h3 className="text-xl font-bold text-red-800">Fundstrat Bottom SMID-Cap Core Ideas</h3>
+                <p className="text-xs text-slate-400">Names to avoid or short — small/mid-cap</p>
+              </div>
+              <span className="text-sm text-slate-400">{(state.fundstratSmidBottom ?? []).length} names</span>
+            </div>
+
+            <table className="w-full text-sm">
+              <thead>
+                <tr className="border-b-2 border-red-400 text-left">
+                  <th className="py-2 pr-2 text-xs font-semibold text-red-700 w-8">#</th>
+                  <th className="py-2 pr-3 text-xs font-semibold text-red-700 cursor-pointer hover:text-red-900 select-none" onClick={() => toggleSmidBottomSort("ticker")}>Ticker{sbArrow("ticker")}</th>
+                  <th className="py-2 pr-3 text-xs font-semibold text-red-700 text-right cursor-pointer hover:text-red-900 select-none" onClick={() => toggleSmidBottomSort("currentPrice")}>Current Price{sbArrow("currentPrice")}</th>
+                  <th className="py-2 pr-3 text-xs font-semibold text-red-700 text-right cursor-pointer hover:text-red-900 select-none" onClick={() => toggleSmidBottomSort("priceWhenAdded")}>Price Added{sbArrow("priceWhenAdded")}</th>
+                  <th className="py-2 pr-2 text-xs font-semibold text-red-700 text-right">Chg</th>
+                  <th className="py-2 w-8"></th>
+                </tr>
+              </thead>
+              <tbody>
+                {sortedIdeas(state.fundstratSmidBottom ?? [], smidBottomSort).map((item, i) => {
+                  const livePrice = livePrices[item.ticker];
+                  const pctChange = livePrice && item.priceWhenAdded ? ((livePrice - item.priceWhenAdded) / item.priceWhenAdded * 100) : null;
+                  return (
+                    <tr key={item.ticker} className={`border-b border-slate-100 ${i % 2 === 0 ? "bg-white" : "bg-red-50/30"} hover:bg-red-50/60 transition-colors`}>
+                      <td className="py-2 pr-2 text-slate-400">{i + 1}</td>
+                      <td className="py-2 pr-3 font-mono font-bold text-red-700">${item.ticker}</td>
+                      <td className="py-2 pr-3 text-right font-mono">
+                        {pricesLoading ? <span className="text-slate-300 animate-pulse">...</span>
+                          : livePrice != null ? <span className="font-semibold">${livePrice.toFixed(2)}</span>
+                          : <span className="text-slate-300">—</span>}
+                      </td>
+                      <td className="py-2 pr-3 text-right font-mono">
+                        <EditableCell
+                          value={item.priceWhenAdded ? `$${item.priceWhenAdded.toFixed(2)}` : "—"}
+                          onChange={(v) => updateIdea("fundstratSmidBottom", i, v.replace("$", ""))}
+                        />
+                      </td>
+                      <td className="py-2 pr-2 text-right font-mono text-xs">
+                        {pctChange != null ? (
+                          <span className={pctChange >= 0 ? "text-emerald-600" : "text-red-500"}>
+                            {pctChange >= 0 ? "+" : ""}{pctChange.toFixed(1)}%
+                          </span>
+                        ) : <span className="text-slate-300">—</span>}
+                      </td>
+                      <td className="py-2 text-right whitespace-nowrap">
+                        {scoredStocks.some((s) => s.ticker === item.ticker) ? (
+                          <span className="text-[10px] text-emerald-500 font-medium">In list</span>
+                        ) : (
+                          <button
+                            onClick={(e) => { e.stopPropagation(); addToWatchlist(item.ticker); }}
+                            className="text-[10px] text-blue-500 hover:text-blue-700 font-semibold transition-colors"
+                            title="Add to Watchlist"
+                          >
+                            + Watch
+                          </button>
+                        )}
+                        <button onClick={() => removeIdea("fundstratSmidBottom", item.ticker)} className="ml-2 text-slate-300 hover:text-red-500 font-bold transition-colors">&times;</button>
+                      </td>
+                    </tr>
+                  );
+                })}
+                {(state.fundstratSmidBottom ?? []).length === 0 && (
+                  <tr><td colSpan={6} className="py-6 text-center text-slate-400 italic">No bottom SMID ideas added yet</td></tr>
+                )}
+              </tbody>
+            </table>
+
+            <IdeaAddForm onAdd={(e) => addIdea("fundstratSmidBottom", e)} />
+
+            <ResearchScraperBlock
+              source="fundstrat-smid-bottom"
+              sectionLabel="Fundstrat Bottom SMID-Cap Core Ideas"
+              helperText="Upload a Fundstrat Bottom SMID-Cap Core Ideas screenshot. On Refresh, ticker + entry price are extracted and merged into the list."
+              attachments={state.attachments || []}
+              onAddAttachment={addAttachment}
+              onRemoveAttachment={removeAttachment}
+              onScrape={(force) => scrapeResearchSource("fundstrat-smid-bottom", force)}
+              loading={!!scrapeLoadingMap["fundstrat-smid-bottom"]}
+              status={scrapeStatusMap["fundstrat-smid-bottom"]}
             />
           </section>
         </div>

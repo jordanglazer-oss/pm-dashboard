@@ -181,8 +181,18 @@ export type LeeFocusArea = {
 
 export type ResearchState = {
   newtonUpticks: UptickEntry[];
+  // Fundstrat large-cap ideas. Renamed from "Top/Bottom Ideas" once
+  // the SMID-cap lists were added so the universe is unambiguous.
+  // Underlying schema stays IdeaEntry[] for backward compat with
+  // older pm:research blobs that used the unprefixed keys.
   fundstratTop: IdeaEntry[];
   fundstratBottom: IdeaEntry[];
+  // Fundstrat SMID-cap core ideas — small/mid-cap names. Same shape
+  // as the large-cap lists. Top is positive (buy), Bottom is negative
+  // (avoid/short, same posture as the large-cap bottom). Optional for
+  // backward compat with older blobs.
+  fundstratSmidTop?: IdeaEntry[];
+  fundstratSmidBottom?: IdeaEntry[];
   rbcCanadianFocus: RBCEntry[];
   // RBC US Focus List — same RBCEntry shape as the Canadian list,
   // populated separately. US tickers (no -T suffix). Optional for
@@ -248,6 +258,8 @@ export const defaultResearch: ResearchState = {
   newtonUpticks: [],
   fundstratTop: [],
   fundstratBottom: [],
+  fundstratSmidTop: [],
+  fundstratSmidBottom: [],
   rbcCanadianFocus: [],
   rbcUsFocus: [],
   alphaPicks: [],

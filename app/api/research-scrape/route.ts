@@ -36,11 +36,13 @@ const client = new Anthropic();
 
 type AttachmentInput = { id: string; label: string; dataUrl: string };
 
-type SourceKey = "fundstrat-top" | "fundstrat-bottom" | "rbc-focus" | "rbc-us-focus" | "seeking-alpha-picks";
+type SourceKey = "fundstrat-top" | "fundstrat-bottom" | "fundstrat-smid-top" | "fundstrat-smid-bottom" | "rbc-focus" | "rbc-us-focus" | "seeking-alpha-picks";
 
 const VALID_SOURCES: readonly SourceKey[] = [
   "fundstrat-top",
   "fundstrat-bottom",
+  "fundstrat-smid-top",
+  "fundstrat-smid-bottom",
   "rbc-focus",
   "rbc-us-focus",
   "seeking-alpha-picks",
@@ -155,7 +157,7 @@ Example: [{"ticker":"NVDA","priceWhenAdded":132.10},{"ticker":"META","priceWhenA
   }
 
   if (source === "fundstrat-bottom") {
-    return `You are reading a Fundstrat "Bottom Ideas" stock screen screenshot. It is a TABLE of sell-side / underperform stock recommendations. Extract every row.
+    return `You are reading a Fundstrat "Large-Cap Bottom Ideas" stock screen screenshot. It is a TABLE of sell-side / underperform stock recommendations on large-cap names. Extract every row.
 
 Columns to look for:
   - Ticker / Symbol → \`ticker\` (string, required)
@@ -166,6 +168,34 @@ If the price column isn't present, omit \`priceWhenAdded\`.
 ${common}
 
 Example: [{"ticker":"INTC","priceWhenAdded":24.50},{"ticker":"BA","priceWhenAdded":195.00}]`;
+  }
+
+  if (source === "fundstrat-smid-top") {
+    return `You are reading a Fundstrat "Top SMID-Cap Core Ideas" stock screen screenshot. It is a TABLE of buy-side recommendations on small / mid-cap (SMID-cap) names. Same column layout as the large-cap top ideas list. Extract every row.
+
+Columns to look for:
+  - Ticker / Symbol → \`ticker\` (string, required)
+  - Price Added / Entry Price / Price at Add → \`priceWhenAdded\` (NUMBER, strip $ and commas)
+
+If the price column isn't present, omit \`priceWhenAdded\`.
+
+${common}
+
+Example: [{"ticker":"AXON","priceWhenAdded":612.40},{"ticker":"CELH","priceWhenAdded":48.20}]`;
+  }
+
+  if (source === "fundstrat-smid-bottom") {
+    return `You are reading a Fundstrat "Bottom SMID-Cap Core Ideas" stock screen screenshot. It is a TABLE of sell-side / underperform recommendations on small / mid-cap (SMID-cap) names. Same column layout as the large-cap bottom ideas list. Extract every row.
+
+Columns to look for:
+  - Ticker / Symbol → \`ticker\` (string, required)
+  - Price Added / Entry Price → \`priceWhenAdded\` (NUMBER, strip $ and commas)
+
+If the price column isn't present, omit \`priceWhenAdded\`.
+
+${common}
+
+Example: [{"ticker":"GME","priceWhenAdded":18.40},{"ticker":"AMC","priceWhenAdded":4.85}]`;
   }
 
   if (source === "rbc-focus") {
