@@ -138,7 +138,7 @@ function buildContext(
   }
 
   if (research.fundstratTop.length > 0) {
-    lines.push(`Source 2: Fundstrat Top Ideas (buy-side recommendations from Fundstrat)`);
+    lines.push(`Source 2: Fundstrat Large-Cap Top Ideas (buy-side recommendations from Fundstrat on large-cap names)`);
     for (const i of research.fundstratTop) {
       const price = i.priceWhenAdded ? ` · entry ${i.priceWhenAdded}` : "";
       lines.push(`  - ${i.ticker}${price}`);
@@ -147,8 +147,28 @@ function buildContext(
   }
 
   if (research.fundstratBottom.length > 0) {
-    lines.push(`Source 3: Fundstrat Bottom Ideas (NAMES TO AVOID OR SHORT — do NOT recommend these as buys)`);
+    lines.push(`Source 3: Fundstrat Large-Cap Bottom Ideas (NAMES TO AVOID OR SHORT — do NOT recommend these as buys)`);
     for (const i of research.fundstratBottom) {
+      const price = i.priceWhenAdded ? ` · entry ${i.priceWhenAdded}` : "";
+      lines.push(`  - ${i.ticker}${price}`);
+    }
+    lines.push(``);
+  }
+
+  const smidTop = research.fundstratSmidTop || [];
+  if (smidTop.length > 0) {
+    lines.push(`Source 4: Fundstrat Top SMID-Cap Core Ideas (buy-side recommendations from Fundstrat on small/mid-cap names — same posture as Large-Cap Top: positive)`);
+    for (const i of smidTop) {
+      const price = i.priceWhenAdded ? ` · entry ${i.priceWhenAdded}` : "";
+      lines.push(`  - ${i.ticker}${price}`);
+    }
+    lines.push(``);
+  }
+
+  const smidBottom = research.fundstratSmidBottom || [];
+  if (smidBottom.length > 0) {
+    lines.push(`Source 5: Fundstrat Bottom SMID-Cap Core Ideas (NAMES TO AVOID OR SHORT on small/mid-cap names — same posture as Large-Cap Bottom: negative; do NOT recommend these as buys)`);
+    for (const i of smidBottom) {
       const price = i.priceWhenAdded ? ` · entry ${i.priceWhenAdded}` : "";
       lines.push(`  - ${i.ticker}${price}`);
     }
@@ -157,7 +177,7 @@ function buildContext(
 
   const rbc = research.rbcCanadianFocus || [];
   if (rbc.length > 0) {
-    lines.push(`Source 4: RBC Canadian Focus List (RBC Capital Markets Canadian equity buy recommendations, target portfolio weights)`);
+    lines.push(`Source 6: RBC Canadian Focus List (RBC Capital Markets Canadian equity buy recommendations, target portfolio weights)`);
     for (const r of rbc) {
       const wt = r.weight ? ` · target ${r.weight}%` : "";
       const sector = r.sector ? ` · ${r.sector}` : "";
@@ -168,7 +188,7 @@ function buildContext(
 
   const rbcUs = research.rbcUsFocus || [];
   if (rbcUs.length > 0) {
-    lines.push(`Source 5: RBC US Focus List (RBC Capital Markets US equity buy recommendations, target portfolio weights)`);
+    lines.push(`Source 7: RBC US Focus List (RBC Capital Markets US equity buy recommendations, target portfolio weights)`);
     for (const r of rbcUs) {
       const wt = r.weight ? ` · target ${r.weight}%` : "";
       const sector = r.sector ? ` · ${r.sector}` : "";
@@ -179,7 +199,7 @@ function buildContext(
 
   const ap = research.alphaPicks || [];
   if (ap.length > 0) {
-    lines.push(`Source 6: Seeking Alpha — Alpha Picks (institutional buy recommendations)`);
+    lines.push(`Source 8: Seeking Alpha — Alpha Picks (institutional buy recommendations)`);
     for (const p of ap) {
       const price = p.priceWhenAdded ? ` · entry ${p.priceWhenAdded}` : "";
       const sector = p.sector && p.sector !== "—" ? ` · ${p.sector}` : "";
@@ -243,7 +263,7 @@ const SYSTEM_PROMPT = `You are an institutional portfolio manager synthesizing e
 
 CRITICAL RULES:
 1. A ticker mentioned in 2+ sources is a "Top Pick" candidate. Order topPicks by sourceCount desc, then alphabetically.
-2. NEVER include a ticker in topPicks or honorableMentions if it appears in Source 3 (Fundstrat Bottom Ideas / names to avoid). Note any conflict in summary or cautions instead.
+2. NEVER include a ticker in topPicks or honorableMentions if it appears in Source 3 (Fundstrat Large-Cap Bottom Ideas) OR Source 5 (Fundstrat Bottom SMID-Cap Core Ideas). Both bottom lists carry NEGATIVE posture — names to avoid or short. Treat them identically as exclusions. Note any conflict in summary or cautions instead.
 3. NEVER include a ticker in topPicks or honorableMentions if it appears in the "PORTFOLIO HOLDINGS (DO NOT RECOMMEND AS BUYS)" list. The PM already owns those positions — the synthesis is for NEW buy ideas. Just SILENTLY EXCLUDE these from your output. Do NOT add "PORTFOLIO CONFIRMATION" or "source confirms the existing position" notes to cautions — the PM already knows what they hold and doesn't need re-validation. The cautions array should ONLY contain genuinely actionable warnings (bottom-ideas conflicts, regime mismatches, single-source quality concerns) — never positive confirmations of existing positions.
 4. Single-source picks can be honorableMentions IF the regime/sector/setup strongly aligns with the brief. Be selective — 3-6 honorable mentions is plenty.
 5. Each thesis MUST cite (a) which sources mentioned the ticker by name, and (b) why the current regime / horizon view supports the buy.
@@ -417,6 +437,8 @@ export async function POST(req: NextRequest) {
       research.newtonUpticks.length +
       research.fundstratTop.length +
       research.fundstratBottom.length +
+      (research.fundstratSmidTop?.length ?? 0) +
+      (research.fundstratSmidBottom?.length ?? 0) +
       (research.rbcCanadianFocus?.length ?? 0) +
       (research.rbcUsFocus?.length ?? 0) +
       (research.alphaPicks?.length ?? 0);
