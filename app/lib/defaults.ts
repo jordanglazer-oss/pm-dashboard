@@ -12,7 +12,9 @@ export const defaultMarketData: MarketData = {
   putCall: 1.08,
   termStructure: "Contango",
   spOscillator: 0,
-  equityFlows: "Mixed",
+  // equityFlows field removed from the brief in 2026-05; default
+  // dropped to keep the seed lean. Older blobs may still carry the
+  // value but nothing reads it.
   aaiiBull: 30,
   aaiiNeutral: 17,
   aaiiBear: 52,

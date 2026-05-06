@@ -93,14 +93,14 @@ const OSCILLATOR_ATTACHMENT_CACHE_KEY = "pm:oscillator-screenshot-analysis";
 
 const BRIEF_PROMPT = `You are a senior portfolio strategist generating a daily morning brief for a portfolio management team. Your audience is professional portfolio managers who need actionable, institutional-quality market intelligence.
 
-Given current market data indicators, a pre-classified regime, forward-looking data (yield curve, forward P/E, SPX YTD, credit and vol week-over-week deltas), portfolio holdings, strategist research, and any attached screenshots, generate a comprehensive morning brief. When screenshots are provided (JPM flows, oscillator charts, etc.), incorporate their data points where relevant — but weigh them equally with all other inputs. Screenshots are supplementary context, not the primary driver of the brief.
+Given current market data indicators, a pre-classified regime, forward-looking data (yield curve, forward P/E, SPX YTD, credit and vol week-over-week deltas), portfolio holdings, strategist research, and any attached screenshots, generate a comprehensive morning brief. When screenshots are provided (oscillator charts, etc.), incorporate their data points where relevant — but weigh them equally with all other inputs. Screenshots are supplementary context, not the primary driver of the brief.
 
 Be direct, opinionated, and specific. Avoid generic platitudes. Write like a seasoned PM talking to their team.
 
 CRITICAL — DATE ANCHORING & NO HISTORICAL HALLUCINATION:
 The user payload contains an explicit "Today's Date" line. That is the authoritative date for this brief. You MUST obey these rules:
 1. Do NOT reference macro events, tariff announcements, policy decisions, or Fed actions that are more than 30 days before Today's Date, even if you "remember" them from training data or see them mentioned in attached screenshots. Old events like "Liberation Day" (April 2025 tariff announcement), specific past CPI prints, past FOMC meetings, prior earnings seasons, or any dated historical reference that predates the last 30 days are OFF LIMITS as current narrative.
-2. If an attached screenshot references an older event as historical context, do NOT treat it as a current driver. A JPM flows report citing "the Liberation Day spike" means the spike happened in the past — do not describe it as a recent move or frame current credit levels as "unwinding" it unless the numerical week-over-week data in the payload clearly shows such an unwind.
+2. If an attached screenshot references an older event as historical context, do NOT treat it as a current driver. A research piece citing "the Liberation Day spike" means the spike happened in the past — do not describe it as a recent move or frame current credit levels as "unwinding" it unless the numerical week-over-week data in the payload clearly shows such an unwind.
 3. Every specific catalyst or "recent move" you reference MUST be supported by either (a) a week-over-week delta in the forward-looking data block, (b) a YTD number in the data block, or (c) a number explicitly visible in an attached screenshot dated within the last 30 days. If you can't cite it from the payload, don't say it.
 4. If you genuinely don't know what catalysts are on deck in the next 2 weeks (CPI, FOMC, earnings, etc.) because no attached screenshot or data field tells you, say "the next scheduled data releases and earnings" generically — do NOT invent specific dates or events.
 5. Absolutely NO phrases like "coming off the Liberation Day spike", "post-Liberation Day unwind", "following the April tariff shock" unless Today's Date is within 30 days of April 2025.
@@ -136,7 +136,6 @@ Respond ONLY with valid JSON matching this exact structure (fields are intention
   "volatilityAnalysis": "2-3 sentences on the volatility regime, term structure, VIX week-over-week direction, and what it means for hedging and position sizing.",
   "breadthAnalysis": "2-3 sentences on market breadth and participation: S&P 500 and Nasdaq DMA participation rates, NYSE A/D line direction, and new highs vs new lows. Focus on market structure health — is the rally/selloff broad-based or narrow?",
   "contrarianAnalysis": "2-3 sentences providing the contrarian take. ALL four indicators (S&P Oscillator, Put/Call ratio, Fear & Greed, AAII survey) are interpreted INVERSELY: oversold/fearful = BULLISH opportunity, overbought/greedy = BEARISH warning. Provide an overall contrarian assessment and what it means for positioning.",
-  "flowsAnalysis": "2-3 sentences on fund flows and positioning. If JPM screenshots are attached, reference 1-2 key data points. If NO screenshots are attached and the Equity Flows field is a generic label (e.g. 'Mixed'), keep this section brief and focus on what the other indicators imply about positioning instead of speculating about flows. Do NOT over-weight flows relative to credit, vol, and breadth.",
   "hedgingAnalysis": "3-4 sentences on whether current conditions favor adding SPY put protection (we are restricted to PROTECTIVE PUTS only — no speculative positions, no weeklies, no LEAPS). Tenor band is strictly 2–9 months: tactical (Risk-Off in the 1-3M bucket) → 2–3 month monthly contracts; cyclical (Risk-Off in the 3-6M bucket) → 3–6 month quarterly contracts; structural (Risk-Off in the 6-12M bucket while tactical holds up) → 6–9 month contracts as a strategic overlay (capped at 9M — never recommend LEAPS). Strikes ATM to 10% OTM only. When a 'Live SPY Hedging Costs' block is present in the data payload, you MUST cite at least one specific premium (e.g. '3-month ATM SPY put is X% of spot at $Y') and reference the week-over-week or month-over-month direction of those premiums when provided. Integrate VIX, term structure, and sentiment as the qualitative lens on top of the actual option prices. Give a clear directional recommendation — add, hold, OR skip — grounded in the dollar cost of protection relative to the portfolio. SKIP IS A FIRST-CLASS RECOMMENDATION: if all three horizons read Risk-On (or weighted overall is Risk-On), VIX is contained, term structure is in normal contango, AND premiums are normal-to-rich, the correct call is 'skip — protection is wasted premium when breadth, vol, and trend are all constructive'. Do not hedge for the sake of hedging; an explicit skip in a constructive regime is more valuable than a wishy-washy 'hold and reassess'.",
   "sectorRotation": {
     "summary": "1-2 sentence overview of which sectors are leading vs lagging based on the LIVE sector ETF performance data provided.",
@@ -810,8 +809,6 @@ Contrarian Indicators (ALL interpreted INVERSELY — oversold/fearful = BULLISH,
 
 IMPORTANT — interpret trajectory: a value at an extreme that is REVERSING (e.g. F&G at 22 but rising) is much weaker as a contrarian signal than the same value still moving deeper into the extreme. Use the trajectory descriptors above plus your own knowledge of each indicator's true multi-decade historical range (NOT any short rolling window) when forming the contrarianAnalysis — e.g. VIX typically sits 12-20 in quiet markets and spikes to 30+ in stress, AAII Bull-Bear spreads beyond ±25 are historically extreme, CBOE put/call typically oscillates 0.7-1.2 with >1.2 marking fear washouts, CNN F&G treats <25 as extreme fear and >75 as extreme greed. Characterize the level as elevated / subdued / extreme against THAT long-run backdrop, not against the few months of local data we happen to have cached.
 
-Equity Flows: ${marketData.equityFlows}
-
 Hedge Timing Score: ${computeHedgeScore(fwdVix ?? 20, marketData.termStructure ?? "Contango", forwardData?.fearGreed?.value ?? marketData.fearGreed ?? 50)}/100 (dynamically computed from VIX, term structure, and sentiment)
 ${hedgingCostsBlock ? `\n${hedgingCostsBlock}\n\nWhen writing hedgingAnalysis, cite at least one specific premium from the table above (e.g. "the 3-month ATM SPY put costs X% of spot") and reference the week-over-week or month-over-month direction when available. Anchor claims like "puts are cheap" or "protection is expensive" to these actual dollar/percent figures rather than generalizing from VIX alone.` : ""}
 
@@ -862,7 +859,7 @@ Key instructions:
 3. Items mentioned one day but NOT the next may still be relevant — do not discard them just because the latest note omits them. Use judgment.
 4. PAY ATTENTION TO DATES — if the most recent note is labeled with a past date (not TODAY), it means no report was issued since then. Treat it as still-relevant context but note the age when citing it (e.g. "Newton's most recent note from April 10 flagged…").
 5. Attribute insights by name (e.g. "Newton's technical work flags…").
-6. Do NOT regurgitate full text — distill the 2-3 most actionable points and weave them into compositeAnalysis, contrarianAnalysis, forwardView, hedgingAnalysis, etc.
+6. Do NOT regurgitate full text — distill the 2-3 most actionable points and weave them into compositeAnalysis, contrarianAnalysis, forwardView, hedgingAnalysis, etc. (flowsAnalysis was retired; if a strategist piece flags a flow extreme, fold it into contrarianAnalysis.)
 7. If a strategist's view conflicts with the quantitative data, note the tension explicitly.
 
 ${blocks.join("\n\n")}`;
@@ -927,41 +924,14 @@ ${blocks.join("\n\n")}`;
 
 Current Portfolio Holdings: ${holdingsSummary}`;
 
-    // Split attachments by section so JPM flows and oscillator screenshots
-    // each go through their own analyzer + cache. Anything else (future
-    // sections) is left untouched for now.
+    // JPM Flows section was retired in 2026-05 — flows are inherently
+    // backward-looking and contrarianAnalysis already covers
+    // sentiment/positioning extremes. The S&P oscillator screenshot
+    // path stays since it does feed contrarianAnalysis.
     const allAtts: AttachmentInput[] = attachments || [];
-    const flowsAtts = allAtts.filter((a) => a.section === "equityFlows");
     const oscAtts = allAtts.filter((a) => a.section === "spOscillator");
 
-    let flowsContext = "";
     let oscContext = "";
-    let autoEquityFlows: string | undefined;
-
-    if (flowsAtts.length > 0) {
-      const flowsHash = hashAttachments(flowsAtts);
-      const cached = await getCachedAnalysis(flowsHash);
-      if (cached) {
-        // Images haven't changed — use cached summary (saves vision tokens)
-        flowsContext = `\n\n--- JPM Flows & Liquidity Report Summary (from attached screenshots, unchanged since last analysis) ---\n${cached.summary}`;
-        autoEquityFlows = cached.equityFlowsSignal;
-        console.log("Using cached JPM flows analysis (images unchanged)");
-      } else {
-        console.log("New JPM flows attachments detected — running vision analysis...");
-        const summary = await analyzeAttachments(flowsAtts);
-        if (!summary || summary.trim().length === 0) {
-          return NextResponse.json(
-            { error: "JPM Flows screenshot analysis returned empty — the images may be unreadable. Try re-uploading clearer screenshots." },
-            { status: 500 }
-          );
-        }
-        const flowsSignal = parseEquityFlowsSignal(summary);
-        const cleanSummary = summary.replace(/^EQUITY_FLOWS_SIGNAL:.*\n?/m, "").trim();
-        await saveCachedAnalysis(flowsHash, cleanSummary, flowsSignal);
-        autoEquityFlows = flowsSignal;
-        flowsContext = `\n\n--- JPM Flows & Liquidity Report Summary (freshly analyzed from screenshots) ---\n${cleanSummary}`;
-      }
-    }
 
     if (oscAtts.length > 0) {
       const oscHash = hashAttachments(oscAtts);
@@ -986,7 +956,7 @@ Current Portfolio Holdings: ${holdingsSummary}`;
     // recency-bias advantage over the quantitative data. The textContent
     // already ends with portfolio holdings — screenshots are supplementary.
     const contentBlocks: Anthropic.Messages.ContentBlockParam[] = [
-      { type: "text", text: flowsContext + oscContext + "\n\n" + textContent },
+      { type: "text", text: oscContext + "\n\n" + textContent },
     ];
 
     const message = await client.messages.create({
@@ -1059,7 +1029,6 @@ Current Portfolio Holdings: ${holdingsSummary}`;
       regimeScore: classification.score,
       regimeSignals: classification.signals,
       forwardLooking: forwardData,
-      ...(autoEquityFlows ? { autoEquityFlows } : {}),
       ...parsed,
       marketRegime: finalRegime,
     });

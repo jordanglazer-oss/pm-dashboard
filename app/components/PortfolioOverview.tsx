@@ -1,6 +1,6 @@
 "use client";
 
-import React, { useState, useCallback, useMemo } from "react";
+import React, { useState, useCallback, useMemo, useEffect, useRef } from "react";
 import Link from "next/link";
 import { useStocks } from "@/app/lib/StockContext";
 import { SCORE_GROUPS, MAX_SCORE, INSTRUMENT_LABELS } from "@/app/lib/types";
@@ -529,6 +529,50 @@ export function PortfolioOverview() {
       setRefreshingAll(false);
     }
   }, [refreshingAll, scoringAny, portfolioStocks, watchlistStocks, updatePrice, updateHealthData, updateTechnicals, updateStockFields, updateFundData, updateMarketData, setUiPref]);
+
+  // ── Auto-refresh on first Dashboard view of the day ────────────────
+  //
+  // When the user opens the Dashboard tab and the persisted
+  // refreshAllAt timestamp is from a previous calendar day (or
+  // missing), automatically fire handleRefreshAll once. The function
+  // itself updates refreshAllAt at the end of a successful run, so
+  // subsequent visits the same day skip this auto-fire.
+  //
+  // Guards:
+  // - autoFireRef ensures we only attempt the fire once per mount
+  //   (React Strict Mode would otherwise double-fire effects).
+  // - We wait until portfolioStocks has loaded (length > 0) so the
+  //   refresh has actual tickers to operate on. This also serves as
+  //   a proxy for "uiPrefs has been hydrated from KV" since they
+  //   load together via StockContext.
+  // - Compare local-date strings (YYYY-MM-DD) — feels right to a PM
+  //   used to thinking in trading days, not UTC.
+  const autoFireRef = useRef(false);
+  useEffect(() => {
+    if (autoFireRef.current) return;
+    if (refreshingAll || scoringAny) return;
+    if (portfolioStocks.length === 0 && watchlistStocks.length === 0) return;
+    const todayLocal = (() => {
+      const d = new Date();
+      const yyyy = d.getFullYear();
+      const mm = String(d.getMonth() + 1).padStart(2, "0");
+      const dd = String(d.getDate()).padStart(2, "0");
+      return `${yyyy}-${mm}-${dd}`;
+    })();
+    const lastDateLocal = refreshAllAt
+      ? (() => {
+          const d = new Date(refreshAllAt);
+          if (isNaN(d.getTime())) return "";
+          const yyyy = d.getFullYear();
+          const mm = String(d.getMonth() + 1).padStart(2, "0");
+          const dd = String(d.getDate()).padStart(2, "0");
+          return `${yyyy}-${mm}-${dd}`;
+        })()
+      : "";
+    if (lastDateLocal === todayLocal) return; // already refreshed today
+    autoFireRef.current = true;
+    void handleRefreshAll();
+  }, [refreshAllAt, refreshingAll, scoringAny, portfolioStocks.length, watchlistStocks.length, handleRefreshAll]);
 
   // Apply instrument filter first
   const filteredPortfolio = portfolioStocks.filter((s) => matchesDashFilter(s, dashFilter));

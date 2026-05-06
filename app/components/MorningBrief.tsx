@@ -640,9 +640,9 @@ export function MorningBrief({
   const manifestSaveTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
 
   // Lightbox state for the Fund Flows inline thumbnails (after brief
-  // generation). The upload widgets have their own internal lightbox;
-  // this separate state is only for the rendered-brief display.
-  const [flowsLightboxId, setFlowsLightboxId] = useState<string | null>(null);
+  // (flowsLightboxId state removed in 2026-05 alongside the JPM Flows
+  // section retirement — there's no longer a separate lightbox for
+  // flows attachments since the section itself is gone.)
 
   // Load manifest on mount, then fetch each image's dataUrl in parallel.
   // Missing per-image keys (e.g. a legacy manifest entry without a backing
@@ -907,10 +907,6 @@ export function MorningBrief({
       if (data.marketRegime) {
         marketUpdates.riskRegime = data.marketRegime;
       }
-      // Auto-set equity flows from JPM screenshot analysis
-      if (data.autoEquityFlows) {
-        marketUpdates.equityFlows = data.autoEquityFlows;
-      }
       if (Object.keys(marketUpdates).length > 0) {
         onUpdateMarketData(marketUpdates);
       }
@@ -960,9 +956,9 @@ export function MorningBrief({
     brief?.breadthAnalysis ||
     "Breadth & internals analysis will appear here after generating the brief.";
 
-  const flowsAnalysis =
-    brief?.flowsAnalysis ||
-    "Fund flows & positioning analysis will appear here after generating the brief.";
+  // flowsAnalysis was retired in 2026-05 — flows are inherently
+  // backward-looking and contrarianAnalysis covers
+  // sentiment/positioning extremes already.
 
   const hedgingAnalysis = brief?.hedgingAnalysis || "";
 
@@ -1109,8 +1105,10 @@ export function MorningBrief({
           <div className="flex items-center gap-3 mb-4">
             <h4 className="text-xs font-semibold text-slate-400 uppercase tracking-widest">Other Manual Inputs</h4>
           </div>
-          {/* Same pattern as Contrarian Indicators: 2-col input row, then the
-              JPM Flows screenshot uploader spans full half-width below. */}
+          {/* Equity Flows + JPM Flows screenshot section was retired
+              in 2026-05. Flows are inherently backward-looking and
+              contrarianAnalysis already covers sentiment / positioning
+              extremes. Only VIX Term Structure remains here. */}
           <div className="grid grid-cols-2 gap-x-4 gap-y-3">
             <div>
               <div className="flex flex-wrap items-center gap-x-1.5 gap-y-0.5 mb-1">
@@ -1134,36 +1132,6 @@ export function MorningBrief({
                 selectClassName="w-full rounded-xl border border-slate-200 bg-slate-50 px-3 py-2.5 text-lg font-semibold focus:bg-white focus:border-blue-300 focus:ring-1 focus:ring-blue-200 transition-all outline-none appearance-none"
               />
             </div>
-            <div>
-              <div className="flex items-center gap-1.5 mb-1">
-                <label className="text-xs font-semibold text-slate-400 uppercase tracking-wider">Equity Flows</label>
-              </div>
-              <SaveableSelect
-                savedValue={marketData.equityFlows}
-                onSave={(v) => onUpdateMarketData({ equityFlows: v })}
-                options={[
-                  { value: "Strong Inflows", label: "Strong Inflows" },
-                  { value: "Moderate Inflows", label: "Moderate Inflows" },
-                  { value: "Mixed", label: "Mixed" },
-                  { value: "Moderate Outflows", label: "Moderate Outflows" },
-                  { value: "Heavy Outflows", label: "Heavy Outflows" },
-                ]}
-                selectClassName="w-full rounded-xl border border-slate-200 bg-slate-50 px-3 py-2.5 text-sm font-semibold focus:bg-white focus:border-blue-300 focus:ring-1 focus:ring-blue-200 transition-all outline-none appearance-none"
-              />
-            </div>
-          </div>
-          <div className="mt-3">
-            <div className="flex items-center gap-1.5 mb-1">
-              <label className="text-xs font-semibold text-slate-400 uppercase tracking-wider">JPM Flows Report</label>
-            </div>
-            <ImageUpload
-              section="equityFlows"
-              sectionLabel="JPM Flows & Liquidity"
-              attachments={attachments}
-              onAdd={addAttachment}
-              onRemove={removeAttachment}
-              collapsibleThumbs
-            />
           </div>
         </div>
 
@@ -1656,68 +1624,11 @@ export function MorningBrief({
           <p className="mt-3 text-sm leading-6 text-slate-600">{breadthAnalysis}</p>
         </div>
 
-        <div className="rounded-2xl border border-slate-200 bg-white p-4 shadow-sm">
-          <div className="flex items-center justify-between gap-3">
-            <div className="flex items-center gap-2">
-              <span className="text-base">💰</span>
-              <h3 className="text-base font-semibold">Fund Flows & Positioning</h3>
-            </div>
-            <SignalPill tone={
-              marketData.equityFlows.includes("Outflow") ? "red"
-              : marketData.equityFlows.includes("Inflow") ? "green"
-              : "amber"
-            }>
-              {marketData.equityFlows}
-            </SignalPill>
-          </div>
-          <div className="mt-3 space-y-2 text-sm">
-            <div className="flex justify-between pb-1">
-              <span className="text-slate-500">Equity Flows</span>
-              <span className="font-medium">{marketData.equityFlows}</span>
-            </div>
-          </div>
-          <p className="mt-3 text-sm leading-6 text-slate-600">{flowsAnalysis}</p>
-
-          {/* Attached screenshots — compact thumbnails that open a centered
-              lightbox on click. Previously rendered full-width in a 2-col
-              grid, which forced a lot of scrolling when 11 JPM flows images
-              were attached. The data is still accessible (click any thumb to
-              see the full image); it just no longer dominates the brief. */}
-          {(() => {
-            const flowsAttachments = attachments.filter((a) => a.section === "equityFlows");
-            if (flowsAttachments.length === 0) return null;
-            return (
-              <div className="mt-5 border-t border-slate-100 pt-5">
-                <div className="text-xs font-bold uppercase tracking-wider text-slate-400 mb-3">
-                  JPM Flows & Liquidity Report
-                  <span className="ml-2 font-normal normal-case text-slate-400">
-                    ({flowsAttachments.length} {flowsAttachments.length === 1 ? "image" : "images"} — click to expand)
-                  </span>
-                </div>
-                <div className="flex flex-wrap gap-2">
-                  {flowsAttachments.map((att) => (
-                    <button
-                      key={att.id}
-                      type="button"
-                      onClick={() => setFlowsLightboxId(att.id)}
-                      className="block h-16 w-16 rounded-md border border-slate-200 overflow-hidden hover:border-blue-400 focus:border-blue-400 focus:outline-none transition-colors"
-                      title={`View ${att.label}`}
-                    >
-                      <img src={att.dataUrl} alt={att.label} className="h-full w-full object-cover" />
-                    </button>
-                  ))}
-                </div>
-                {flowsLightboxId && (
-                  <LightboxModal
-                    attachments={flowsAttachments}
-                    currentId={flowsLightboxId}
-                    onClose={() => setFlowsLightboxId(null)}
-                  />
-                )}
-              </div>
-            );
-          })()}
-        </div>
+        {/* Fund Flows & Positioning tile retired in 2026-05. Flows
+            are inherently backward-looking and contrarianAnalysis
+            already covers sentiment / positioning extremes. The
+            attached JPM screenshots upload section was also removed
+            with this change. */}
       </section>
       </>
         );

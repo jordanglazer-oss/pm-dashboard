@@ -271,7 +271,10 @@ export type MarketData = {
   putCall: number;
   termStructure: string;
   spOscillator: number;
-  equityFlows: string;
+  /** @deprecated Removed from the brief in 2026-05. Field kept for
+   *  backward compat with persisted marketData blobs but no longer
+   *  read or rendered. Safe to ignore. */
+  equityFlows?: string;
   aaiiBull: number;
   aaiiNeutral: number;
   aaiiBear: number;
@@ -399,7 +402,12 @@ export type MorningBrief = {
   creditAnalysis: string;
   volatilityAnalysis: string;
   breadthAnalysis: string;
-  flowsAnalysis: string;
+  /** @deprecated Removed from the brief in 2026-05. Flows are
+   *  inherently backward-looking and contrarianAnalysis already
+   *  covers sentiment/positioning extremes — keeping flowsAnalysis
+   *  was duplicative. Field kept on the type for backward compat
+   *  with persisted briefs; nothing renders or generates it. */
+  flowsAnalysis?: string;
   hedgingAnalysis: string;
   contrarianAnalysis: string;
   sectorRotation?: {
