@@ -254,6 +254,37 @@ export type AlphaPickEntry = {
   price: number; // current live price, refreshed on page load
   priceWhenAdded: number;
   dateAdded: string;
+  /** Return % since the pick was added, as published by Seeking Alpha
+   *  on the Alpha Picks dashboard. Signed (negative for losers).
+   *  Used ONCE on first scrape to derive priceWhenAdded as
+   *  currentPrice / (1 + returnSinceAdded/100); after that
+   *  priceWhenAdded is fixed (the historical entry price doesn't
+   *  change). Stays on the entry for display in the SA Return column. */
+  returnSinceAdded?: number;
+  /** Seeking Alpha's current rating: "Strong Buy" / "Buy" / "Hold" /
+   *  "Sell" / "Strong Sell". Free-text since SA's badge labels can
+   *  drift; the UI does a case-insensitive match for color coding. */
+  rating?: string;
+  /** Per-pick portfolio weight as published by SA on the Alpha Picks
+   *  dashboard ("Holding %" column), e.g. 5.60. Captured on scrape.
+   *  When sell candidates are dropped via the section toolbar, the
+   *  combined dropped weight is redistributed equally across the
+   *  remaining picks — mirroring SA's documented rule that "cash
+   *  generated from sold positions will be equally invested across
+   *  the remaining stocks in the Alpha Picks portfolio." A subsequent
+   *  fresh screenshot upload overwrites with SA's actual post-
+   *  redistribution weights. */
+  holdingWeight?: number;
+  /** PM-flagged "this is sold" override. Independent of SA's rating —
+   *  set by the PM when they've exited a position even though SA
+   *  hasn't yet flipped the rating to Sell/Strong Sell (e.g.
+   *  conviction loss, tax-loss harvesting, portfolio rebalance).
+   *  Treated identically to a Sell-rated pick by the section's
+   *  sell-candidate logic: row highlights red, counts toward the
+   *  "Drop sell candidates" total, weight redistributes when dropped.
+   *  In the rating filter chip toolbar, manually-sold picks live in
+   *  their own "Manual Sell" bucket regardless of SA's current rating. */
+  manualSell?: boolean;
 };
 
 export const defaultResearch: ResearchState = {

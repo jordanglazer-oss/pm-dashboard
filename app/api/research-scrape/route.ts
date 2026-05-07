@@ -50,10 +50,26 @@ const VALID_SOURCES: readonly SourceKey[] = [
 
 // ── Source-specific output shapes ──────────────────────────────────
 
-/** Idea-style row: ticker + entry price. Used by all sources except RBC. */
+/** Idea-style row: ticker + entry price. Used by Fundstrat large-cap +
+ *  SMID-cap top/bottom lists. */
 export type ScrapedIdea = {
   ticker: string;
   priceWhenAdded?: number;
+};
+
+/** Seeking Alpha Alpha Picks row — richer than IdeaEntry because the
+ *  SA dashboard exposes name, sector, picked date, return %, rating
+ *  badge, and per-pick portfolio weight. The ticker may be Canadian
+ *  (with -T) when the model resolved a Canadian-HQ'd company to its
+ *  TSX listing. */
+export type ScrapedAlphaPick = {
+  ticker: string;
+  name?: string;
+  sector?: string;
+  dateAdded?: string;
+  returnSinceAdded?: number;
+  rating?: string;
+  holdingWeight?: number;
 };
 
 /** RBC Canadian Focus List row: includes sector and target weight. */
@@ -66,7 +82,7 @@ export type ScrapedRbcRow = {
 
 type CachedScrape = {
   hash: string;
-  entries: ScrapedIdea[] | ScrapedRbcRow[];
+  entries: ScrapedIdea[] | ScrapedRbcRow[] | ScrapedAlphaPick[];
   analyzedAt: string;
 };
 
@@ -231,17 +247,46 @@ Example: [{"ticker":"MSFT","sector":"Technology","weight":5.0,"dateAdded":"3/12/
   }
 
   // seeking-alpha-picks
-  return `You are reading a "Seeking Alpha — Alpha Picks" dashboard screenshot. It is a TABLE or list of buy recommendations from Seeking Alpha's institutional Alpha Picks service. Extract every pick.
+  return `You are reading a "Seeking Alpha — Alpha Picks" dashboard screenshot. It is a TABLE of buy recommendations from Seeking Alpha's institutional Alpha Picks service. Extract every active pick. Columns typically include: Company, Symbol, Picked (date), Return (%), Sector, Rating, Holding %.
 
-Columns to look for:
-  - Ticker / Symbol → \`ticker\` (string, required)
-  - Price When Picked / Entry Price / Selected At Price → \`priceWhenAdded\` (NUMBER, strip $ and commas)
+For EACH active pick, extract these fields:
+  - \`ticker\` (string, required) — see CANADIAN MAPPING rule below.
+  - \`name\` (string) — full company name from the Company column.
+  - \`sector\` (string) — sector label from the Sector column. Pass through verbatim; the app normalizes to GICS form via Yahoo afterward.
+  - \`dateAdded\` (string) — the Picked column date, e.g. "10/15/2024" → return as "10/15/2024" (don't reformat).
+  - \`returnSinceAdded\` (NUMBER, signed percent) — the Return column. "+510.57%" → 510.57; "-11.18%" → -11.18; strip the % and any commas.
+  - \`rating\` (string) — the Rating column. Use the EXACT label from the badge: "Strong Buy", "Buy", "Hold", "Sell", "Strong Sell". Use Title Case as shown.
+  - \`holdingWeight\` (NUMBER, percent) — the Holding % column, e.g. "5.60%" → 5.60. Strip the % sign. If absent, omit the field.
 
-If the entry price isn't visible for a row, omit \`priceWhenAdded\` (do not invent it). Skip closed/exited picks if the screenshot shows them — only include currently-active recommendations.
+CANADIAN MAPPING — when the company is HEADQUARTERED IN CANADA and has a TSX listing, use the TSX ticker form with a "-T" suffix instead of the US listing the screenshot shows. Use your knowledge of public companies. Examples:
+  - "Celestica, Inc." → "CLS-T" (NOT "CLS")
+  - "Constellation Software" → "CSU-T"
+  - "Brookfield Corporation" → "BN-T"
+  - "Brookfield Asset Management" → "BAM-T"
+  - "Shopify" → "SHOP-T"
+  - "Magna International" → "MG-T"
+  - "Royal Bank of Canada" → "RY-T"
+  - "TD Bank" → "TD-T"
+  - "Nutrien" → "NTR-T"
+  - "Suncor" → "SU-T"
+  - "Canadian National Railway" → "CNR-T"
+  - "BCE Inc" → "BCE-T"
+  - "Open Text" → "OTEX-T"
+  - "Manulife" → "MFC-T"
+  - "Sun Life Financial" → "SLF-T"
+
+For US companies (HQ in the United States) and non-Canadian foreign companies (e.g. Argentinian, European), keep the US ticker as shown — DO NOT add -T. For dual-class shares written with "/" like "BRK/B", convert to dash form ("BRK-B").
+
+Skip closed/exited picks if the screenshot shows them — only include currently-active recommendations.
 
 ${common}
 
-Example: [{"ticker":"AMZN","priceWhenAdded":215.40},{"ticker":"V","priceWhenAdded":312.75}]`;
+Example output:
+[
+  {"ticker":"AMZN","name":"Amazon.com, Inc.","sector":"Consumer Discretionary","dateAdded":"11/15/2023","returnSinceAdded":78.4,"rating":"Strong Buy","holdingWeight":5.41},
+  {"ticker":"CLS-T","name":"Celestica, Inc.","sector":"Information Technology","dateAdded":"10/16/2023","returnSinceAdded":1439.89,"rating":"Strong Buy","holdingWeight":5.99},
+  {"ticker":"BRK-B","name":"Berkshire Hathaway Inc.","sector":"Financials","dateAdded":"7/1/2024","returnSinceAdded":14.4,"rating":"Hold","holdingWeight":1.80}
+]`;
 }
 
 // ── Parsers ────────────────────────────────────────────────────────
@@ -273,6 +318,41 @@ function parseIdeaRows(text: string): ScrapedIdea[] {
 // Canadian ticker canonicalization is shared with the frontend (which
 // runs the same dedupe on load). Single source of truth lives in
 // app/lib/rbc-canonical.ts. Removed the inline duplicate.
+
+/** Parse Seeking Alpha Alpha Picks JSON output. Captures the richer
+ *  per-pick fields (name, sector, dateAdded, returnSinceAdded, rating)
+ *  in addition to the ticker. */
+function parseAlphaPickRows(text: string): ScrapedAlphaPick[] {
+  const cleaned = text.replace(/```json\s*|```/g, "");
+  const start = cleaned.indexOf("[");
+  const end = cleaned.lastIndexOf("]");
+  if (start < 0 || end <= start) return [];
+  try {
+    const arr = JSON.parse(cleaned.slice(start, end + 1));
+    if (!Array.isArray(arr)) return [];
+    return arr
+      .filter((r) => r && typeof r === "object" && typeof r.ticker === "string" && r.ticker.trim())
+      .map((r) => {
+        const ticker = String(r.ticker).trim().toUpperCase().replace(/^\$+/, "").replace(/\//g, "-");
+        const out: ScrapedAlphaPick = { ticker };
+        if (r.name && String(r.name).trim()) out.name = String(r.name).trim();
+        if (r.sector && String(r.sector).trim()) out.sector = String(r.sector).trim();
+        if (r.dateAdded && String(r.dateAdded).trim()) out.dateAdded = String(r.dateAdded).trim();
+        if (r.returnSinceAdded != null) {
+          const n = Number(String(r.returnSinceAdded).replace(/[%,+]/g, ""));
+          if (Number.isFinite(n)) out.returnSinceAdded = n;
+        }
+        if (r.rating && String(r.rating).trim()) out.rating = String(r.rating).trim();
+        if (r.holdingWeight != null) {
+          const n = Number(String(r.holdingWeight).replace(/[%,+]/g, ""));
+          if (Number.isFinite(n) && n > 0) out.holdingWeight = n;
+        }
+        return out;
+      });
+  } catch {
+    return [];
+  }
+}
 
 function parseRbcRows(text: string, source: SourceKey): ScrapedRbcRow[] {
   const cleaned = text.replace(/```json\s*|```/g, "");
@@ -325,7 +405,10 @@ async function runVision(source: SourceKey, atts: AttachmentInput[]): Promise<{ 
   const text = msg.content[0]?.type === "text" ? msg.content[0].text : "";
   console.log(`[research-scrape:${source}] raw vision output:`, text.slice(0, 4000));
 
-  const entries = (source === "rbc-focus" || source === "rbc-us-focus") ? parseRbcRows(text, source) : parseIdeaRows(text);
+  const entries =
+    (source === "rbc-focus" || source === "rbc-us-focus") ? parseRbcRows(text, source)
+  : source === "seeking-alpha-picks" ? parseAlphaPickRows(text)
+  : parseIdeaRows(text);
   return { entries, rawText: text };
 }
 
