@@ -2471,7 +2471,7 @@ export default function ResearchPage() {
             // and Title-case for the button label and use a tone map
             // for the color.
             const norm = (r: string | undefined) => (r || "").trim().toLowerCase();
-            const canonical = (r: string | undefined): string | null => {
+            const canonicalRating = (r: string | undefined): string | null => {
               const n = norm(r);
               if (n === "strong buy") return "Strong Buy";
               if (n === "buy") return "Buy";
@@ -2480,8 +2480,16 @@ export default function ResearchPage() {
               if (n === "strong sell") return "Strong Sell";
               return null;
             };
+            // Bucket assignment for the filter chips. Manual-sell
+            // overrides SA's rating so the PM can find their flagged
+            // positions in a single filter regardless of what SA
+            // still says.
+            const bucket = (p: AlphaPickEntry): string => {
+              if (p.manualSell) return "Manual Sell";
+              return canonicalRating(p.rating) ?? "(unrated)";
+            };
             const ratingTone = (r: string | undefined): string => {
-              const c = canonical(r);
+              const c = canonicalRating(r);
               if (c === "Strong Buy") return "bg-emerald-600 text-white";
               if (c === "Buy") return "bg-emerald-100 text-emerald-700 ring-1 ring-emerald-200";
               if (c === "Hold") return "bg-amber-100 text-amber-800 ring-1 ring-amber-200";
@@ -2489,12 +2497,14 @@ export default function ResearchPage() {
               if (c === "Strong Sell") return "bg-red-600 text-white";
               return "bg-slate-100 text-slate-500";
             };
+            const manualSellTone = "bg-red-700 text-white";
 
-            // SA's documented sell rules:
-            //   - Drops to Sell or Strong Sell → SA sells.
+            // Sell candidates per SA's rules + the PM's manual flag:
+            //   - Rating is Sell or Strong Sell → SA sells.
             //   - Hold for 180+ days → SA sells.
-            // Flag both as "sell candidates" so the PM can keep their
-            // list aligned with what SA is actually holding.
+            //   - Manually marked for sale by the PM → treated identically.
+            // All three flow through the "Drop sell candidates" button
+            // and trigger weight redistribution per SA's rule.
             const daysSince = (d: string | undefined): number | null => {
               if (!d) return null;
               const t = Date.parse(d);
@@ -2502,7 +2512,8 @@ export default function ResearchPage() {
               return Math.floor((Date.now() - t) / 86400000);
             };
             const isSellCandidate = (pick: AlphaPickEntry): boolean => {
-              const c = canonical(pick.rating);
+              if (pick.manualSell) return true;
+              const c = canonicalRating(pick.rating);
               if (c === "Sell" || c === "Strong Sell") return true;
               if (c === "Hold") {
                 const days = daysSince(pick.dateAdded);
@@ -2514,8 +2525,8 @@ export default function ResearchPage() {
             // Counts per filter button.
             const counts: Record<string, number> = { All: allPicks.length };
             for (const p of allPicks) {
-              const c = canonical(p.rating) ?? "(unrated)";
-              counts[c] = (counts[c] || 0) + 1;
+              const b = bucket(p);
+              counts[b] = (counts[b] || 0) + 1;
             }
             const filterButtons: Array<{ key: string | null; label: string }> = [
               { key: null, label: "All" },
@@ -2524,13 +2535,26 @@ export default function ResearchPage() {
               { key: "Hold", label: "Hold" },
               { key: "Sell", label: "Sell" },
               { key: "Strong Sell", label: "Strong Sell" },
+              { key: "Manual Sell", label: "Manual Sell" },
               { key: "(unrated)", label: "Unrated" },
             ];
 
             // Apply the rating filter.
             const visiblePicks = alphaRatingFilter == null
               ? allPicks
-              : allPicks.filter((p) => (canonical(p.rating) ?? "(unrated)") === alphaRatingFilter);
+              : allPicks.filter((p) => bucket(p) === alphaRatingFilter);
+
+            // Toggle the PM's manual-sell flag on a single pick.
+            // Updates state directly without touching the rest of the
+            // entry. Doesn't auto-drop — the pick stays visible (in
+            // the "Manual Sell" bucket and with red row highlight)
+            // until the user hits "Drop sell candidates."
+            const toggleManualSell = (ticker: string) => {
+              const updated = allPicks.map((p) =>
+                p.ticker === ticker ? { ...p, manualSell: !p.manualSell } : p
+              );
+              save({ ...state, alphaPicks: updated });
+            };
 
             const sellCandidateCount = allPicks.filter(isSellCandidate).length;
 
@@ -2642,11 +2666,18 @@ export default function ResearchPage() {
                             <td className="py-2 pr-3 font-mono font-bold">${pick.ticker}</td>
                             <td className="py-2 pr-3 text-xs text-slate-500">{pick.sector || "—"}</td>
                             <td className="py-2 pr-2">
-                              {pick.rating ? (
-                                <span className={`inline-flex items-center rounded-full px-2 py-0.5 text-[10px] font-bold uppercase tracking-wider ${ratingTone(pick.rating)}`}>
-                                  {canonical(pick.rating) ?? pick.rating}
-                                </span>
-                              ) : <span className="text-slate-300 text-[10px]">—</span>}
+                              <div className="flex items-center gap-1 flex-wrap">
+                                {pick.rating ? (
+                                  <span className={`inline-flex items-center rounded-full px-2 py-0.5 text-[10px] font-bold uppercase tracking-wider ${ratingTone(pick.rating)}`}>
+                                    {canonicalRating(pick.rating) ?? pick.rating}
+                                  </span>
+                                ) : <span className="text-slate-300 text-[10px]">—</span>}
+                                {pick.manualSell && (
+                                  <span className={`inline-flex items-center rounded-full px-2 py-0.5 text-[10px] font-bold uppercase tracking-wider ${manualSellTone}`} title="Manually flagged as sold by the PM (overrides SA rating for sell-candidate logic)">
+                                    Manual Sell
+                                  </span>
+                                )}
+                              </div>
                             </td>
                             <td className="py-2 pr-2 text-right font-mono text-xs">
                               {pick.holdingWeight != null
@@ -2673,7 +2704,7 @@ export default function ResearchPage() {
                             <td className="py-2 pr-3 text-xs text-slate-500">{pick.dateAdded || "—"}</td>
                             <td className="py-2 pr-2 text-right text-xs">
                               {days != null ? (
-                                <span className={canonical(pick.rating) === "Hold" && days >= 150 ? "text-red-600 font-semibold" : "text-slate-500"} title={canonical(pick.rating) === "Hold" && days >= 180 ? "Hold ≥ 180 days — SA would sell" : canonical(pick.rating) === "Hold" && days >= 150 ? "Approaching SA's 180-day Hold sell rule" : ""}>
+                                <span className={canonicalRating(pick.rating) === "Hold" && days >= 150 ? "text-red-600 font-semibold" : "text-slate-500"} title={canonicalRating(pick.rating) === "Hold" && days >= 180 ? "Hold ≥ 180 days — SA would sell" : canonicalRating(pick.rating) === "Hold" && days >= 150 ? "Approaching SA's 180-day Hold sell rule" : ""}>
                                   {days}d
                                 </span>
                               ) : <span className="text-slate-300">—</span>}
@@ -2691,9 +2722,16 @@ export default function ResearchPage() {
                                 </button>
                               )}
                               <button
+                                onClick={() => toggleManualSell(pick.ticker)}
+                                className={`ml-2 text-[10px] font-semibold transition-colors ${pick.manualSell ? "text-slate-500 hover:text-slate-700" : "text-red-600 hover:text-red-800"}`}
+                                title={pick.manualSell ? "Unmark as sold (return to normal rating bucket)" : "Mark as sold — flags this pick as a sell candidate, regardless of SA's current rating. Use 'Drop sell candidates' to remove and redistribute weight."}
+                              >
+                                {pick.manualSell ? "Unmark" : "Mark sold"}
+                              </button>
+                              <button
                                 onClick={() => save({ ...state, alphaPicks: allPicks.filter((p) => p.ticker !== pick.ticker) })}
                                 className="ml-2 text-slate-300 hover:text-red-500 font-bold transition-colors"
-                                title="Remove"
+                                title="Remove from list (no weight redistribution)"
                               >
                                 &times;
                               </button>

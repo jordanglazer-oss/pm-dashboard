@@ -275,6 +275,16 @@ export type AlphaPickEntry = {
    *  fresh screenshot upload overwrites with SA's actual post-
    *  redistribution weights. */
   holdingWeight?: number;
+  /** PM-flagged "this is sold" override. Independent of SA's rating —
+   *  set by the PM when they've exited a position even though SA
+   *  hasn't yet flipped the rating to Sell/Strong Sell (e.g.
+   *  conviction loss, tax-loss harvesting, portfolio rebalance).
+   *  Treated identically to a Sell-rated pick by the section's
+   *  sell-candidate logic: row highlights red, counts toward the
+   *  "Drop sell candidates" total, weight redistributes when dropped.
+   *  In the rating filter chip toolbar, manually-sold picks live in
+   *  their own "Manual Sell" bucket regardless of SA's current rating. */
+  manualSell?: boolean;
 };
 
 export const defaultResearch: ResearchState = {
