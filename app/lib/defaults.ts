@@ -254,6 +254,16 @@ export type AlphaPickEntry = {
   price: number; // current live price, refreshed on page load
   priceWhenAdded: number;
   dateAdded: string;
+  /** Return % since the pick was added, as published by Seeking Alpha
+   *  on the Alpha Picks dashboard. Signed (negative for losers).
+   *  When present alongside a live price, the table can derive
+   *  priceWhenAdded = price / (1 + returnSinceAdded/100) — useful
+   *  when SA only shows the return %, not the original price. */
+  returnSinceAdded?: number;
+  /** Seeking Alpha's current rating: "Strong Buy" / "Buy" / "Hold" /
+   *  "Sell" / "Strong Sell". Free-text since SA's badge labels can
+   *  drift; the UI does a case-insensitive match for color coding. */
+  rating?: string;
 };
 
 export const defaultResearch: ResearchState = {

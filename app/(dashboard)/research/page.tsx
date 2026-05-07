@@ -353,6 +353,11 @@ export default function ResearchPage() {
   const [bottomSort, setBottomSort] = useState<{ key: IdeaSortKey; dir: SortDir }>({ key: "ticker", dir: "asc" });
   const [smidTopSort, setSmidTopSort] = useState<{ key: IdeaSortKey; dir: SortDir }>({ key: "ticker", dir: "asc" });
   const [smidBottomSort, setSmidBottomSort] = useState<{ key: IdeaSortKey; dir: SortDir }>({ key: "ticker", dir: "asc" });
+  // Alpha Picks rating filter — null = show all, otherwise show only
+  // picks whose rating matches (case-insensitive). Strong Buy / Buy /
+  // Hold / Sell / Strong Sell, plus an "(unrated)" bucket for legacy
+  // picks scraped before the rating field existed.
+  const [alphaRatingFilter, setAlphaRatingFilter] = useState<string | null>(null);
   const [rbcSort, setRbcSort] = useState<{ key: RBCSortKey; dir: SortDir }>({ key: "ticker", dir: "asc" });
   const [rbcUsSort, setRbcUsSort] = useState<{ key: RBCSortKey; dir: SortDir }>({ key: "ticker", dir: "asc" });
 
@@ -1062,35 +1067,56 @@ export default function ResearchPage() {
         const byNorm = new Map(existing.map((i) => [normalize(i.ticker), i]));
         let matched = 0;
         let added = 0;
-        for (const e of entries) {
+        // Alpha Picks scrape returns rich entries (ticker + name +
+        // sector + dateAdded + returnSinceAdded + rating). Use those
+        // directly when present rather than falling back to the
+        // ticker-as-name placeholder. The Yahoo refreshAlphaPickNames
+        // pass after still normalizes sectors to GICS form.
+        type ScrapedAlpha = { ticker: string; name?: string; sector?: string; dateAdded?: string; returnSinceAdded?: number; rating?: string };
+        const today = new Date().toLocaleDateString("en-US", { month: "numeric", day: "numeric", year: "numeric" });
+        for (const eRaw of entries) {
+          const e = eRaw as ScrapedAlpha;
           const norm = normalize(e.ticker);
           const ex = byNorm.get(norm);
           if (ex) {
             matched += 1;
             byNorm.set(norm, {
               ...ex,
-              priceWhenAdded: e.priceWhenAdded ?? ex.priceWhenAdded,
+              // Prefer scraped values when they're populated; fall back
+              // to existing for unchanged fields.
+              name: e.name?.trim() || ex.name,
+              sector: e.sector?.trim() || ex.sector,
+              dateAdded: e.dateAdded?.trim() || ex.dateAdded,
+              returnSinceAdded: e.returnSinceAdded ?? ex.returnSinceAdded,
+              rating: e.rating?.trim() || ex.rating,
+              // priceWhenAdded retained from prior state — derived
+              // later in render from returnSinceAdded + livePrice when
+              // not manually set.
             });
           } else {
             added += 1;
             byNorm.set(norm, {
               ticker: norm,
-              name: norm,
-              sector: "—",
+              name: e.name?.trim() || norm,
+              sector: e.sector?.trim() || "—",
               price: 0,
-              priceWhenAdded: e.priceWhenAdded ?? 0,
-              dateAdded: new Date().toLocaleDateString("en-US", { month: "numeric", day: "numeric", year: "numeric" }),
+              priceWhenAdded: 0,
+              dateAdded: e.dateAdded?.trim() || today,
+              returnSinceAdded: e.returnSinceAdded,
+              rating: e.rating?.trim(),
             });
           }
         }
         nextState = { ...state, alphaPicks: Array.from(byNorm.values()) };
         const cachedLabel = data.cached ? " (cached)" : "";
         setScrapeStatusMap((m) => ({ ...m, [source]: `${entries.length} rows${cachedLabel} · ${matched} matched · ${added} added` }));
-        // Save first, then backfill names/sectors via Yahoo for any new
-        // tickers (mirrors refreshUptickNames). Saves an extra round
-        // trip if everything is already populated.
         save(nextState);
+        // Backfill names/sectors via Yahoo (normalizes RBC-style
+        // sector labels to GICS form). Then refresh live prices so
+        // the table populates Current Price + derived Price Picked
+        // immediately rather than waiting for the next manual refresh.
         void refreshAlphaPickNames(nextState);
+        void fetchLivePrices(nextState);
         return true;
       } else {
         // IdeaEntry-shaped sources (Fundstrat Top/Bottom, SMID Top/Bottom)
@@ -1134,7 +1160,7 @@ export default function ResearchPage() {
     } finally {
       setScrapeLoadingMap((m) => ({ ...m, [source]: false }));
     }
-  }, [state, save, refreshAlphaPickNames, refreshRbcNames]);
+  }, [state, save, refreshAlphaPickNames, refreshRbcNames, fetchLivePrices]);
 
   /**
    * Cross-source synthesis with strict stickiness.
@@ -2390,88 +2416,233 @@ export default function ResearchPage() {
             input; the manual form covers the case where you want to
             log a pick without screenshotting. */}
         <section className="rounded-[24px] border border-slate-200 bg-white p-6 shadow-sm">
-          <div className="flex items-center justify-between mb-4">
-            <div>
-              <h3 className="text-xl font-bold">Seeking Alpha &mdash; Alpha Picks</h3>
-              <p className="text-xs text-slate-400">
-                Institutional buy recommendations &mdash; primarily populated by uploading the Alpha Picks dashboard screenshot. Manual adds also work.
-              </p>
-            </div>
-            <span className="text-sm text-slate-400">{(state.alphaPicks ?? []).length} picks</span>
-          </div>
+          {(() => {
+            // ── Derived data for the Alpha Picks section ────────────
+            const allPicks = state.alphaPicks ?? [];
+            // Normalize ratings to a small set of canonical labels for
+            // filter buttons + color coding. SA badge text varies
+            // slightly ("Strong Buy" vs "STRONG BUY") so we lower-case
+            // and Title-case for the button label and use a tone map
+            // for the color.
+            const norm = (r: string | undefined) => (r || "").trim().toLowerCase();
+            const canonical = (r: string | undefined): string | null => {
+              const n = norm(r);
+              if (n === "strong buy") return "Strong Buy";
+              if (n === "buy") return "Buy";
+              if (n === "hold") return "Hold";
+              if (n === "sell") return "Sell";
+              if (n === "strong sell") return "Strong Sell";
+              return null;
+            };
+            const ratingTone = (r: string | undefined): string => {
+              const c = canonical(r);
+              if (c === "Strong Buy") return "bg-emerald-600 text-white";
+              if (c === "Buy") return "bg-emerald-100 text-emerald-700 ring-1 ring-emerald-200";
+              if (c === "Hold") return "bg-amber-100 text-amber-800 ring-1 ring-amber-200";
+              if (c === "Sell") return "bg-red-100 text-red-700 ring-1 ring-red-200";
+              if (c === "Strong Sell") return "bg-red-600 text-white";
+              return "bg-slate-100 text-slate-500";
+            };
 
-          <div className="overflow-x-auto">
-            <table className="w-full text-sm">
-              <thead>
-                <tr className="border-b-2 border-slate-300 text-left">
-                  <th className="py-2 pr-2 text-xs font-semibold text-slate-600 w-8">#</th>
-                  <th className="py-2 pr-3 text-xs font-semibold text-slate-600">Name</th>
-                  <th className="py-2 pr-3 text-xs font-semibold text-slate-600">Ticker</th>
-                  <th className="py-2 pr-3 text-xs font-semibold text-slate-600">Sector</th>
-                  <th className="py-2 pr-3 text-xs font-semibold text-slate-600 text-right">Current Price</th>
-                  <th className="py-2 pr-3 text-xs font-semibold text-slate-600 text-right">Price Picked</th>
-                  <th className="py-2 pr-3 text-xs font-semibold text-slate-600">Date Added</th>
-                  <th className="py-2 pr-2 text-xs font-semibold text-slate-600 text-right">Chg</th>
-                  <th className="py-2 w-16"></th>
-                </tr>
-              </thead>
-              <tbody>
-                {(state.alphaPicks ?? []).map((pick, i) => {
-                  const livePrice = livePrices[pick.ticker];
-                  const pctChange = livePrice && pick.priceWhenAdded
-                    ? ((livePrice - pick.priceWhenAdded) / pick.priceWhenAdded * 100)
-                    : null;
-                  return (
-                    <tr key={pick.ticker} className={`border-b border-slate-100 ${i % 2 === 0 ? "bg-white" : "bg-slate-50/40"} hover:bg-slate-50 transition-colors`}>
-                      <td className="py-2 pr-2 text-slate-400">{i + 1}</td>
-                      <td className="py-2 pr-3 text-slate-700 truncate max-w-[200px]" title={pick.name}>{pick.name}</td>
-                      <td className="py-2 pr-3 font-mono font-bold">${pick.ticker}</td>
-                      <td className="py-2 pr-3 text-xs text-slate-500">{pick.sector || "—"}</td>
-                      <td className="py-2 pr-3 text-right font-mono">
-                        {pricesLoading ? <span className="text-slate-300 animate-pulse">...</span>
-                          : livePrice != null ? <span className="font-semibold">${livePrice.toFixed(2)}</span>
-                          : <span className="text-slate-300">—</span>}
-                      </td>
-                      <td className="py-2 pr-3 text-right font-mono">
-                        {pick.priceWhenAdded ? `$${pick.priceWhenAdded.toFixed(2)}` : <span className="text-slate-300">—</span>}
-                      </td>
-                      <td className="py-2 pr-3 text-xs text-slate-500">{pick.dateAdded || "—"}</td>
-                      <td className="py-2 pr-2 text-right font-mono text-xs">
-                        {pctChange != null ? (
-                          <span className={pctChange >= 0 ? "text-emerald-600" : "text-red-500"}>
-                            {pctChange >= 0 ? "+" : ""}{pctChange.toFixed(1)}%
-                          </span>
-                        ) : <span className="text-slate-300">—</span>}
-                      </td>
-                      <td className="py-2 text-right whitespace-nowrap">
-                        {scoredStocks.some((s) => s.ticker === pick.ticker) ? (
-                          <span className="text-[10px] text-emerald-500 font-medium">In list</span>
-                        ) : (
-                          <button
-                            onClick={(e) => { e.stopPropagation(); addToWatchlist(pick.ticker); }}
-                            className="text-[10px] text-blue-500 hover:text-blue-700 font-semibold transition-colors"
-                            title="Add to Watchlist"
-                          >
-                            + Watch
-                          </button>
-                        )}
+            // SA's documented sell rules:
+            //   - Drops to Sell or Strong Sell → SA sells.
+            //   - Hold for 180+ days → SA sells.
+            // Flag both as "sell candidates" so the PM can keep their
+            // list aligned with what SA is actually holding.
+            const daysSince = (d: string | undefined): number | null => {
+              if (!d) return null;
+              const t = Date.parse(d);
+              if (isNaN(t)) return null;
+              return Math.floor((Date.now() - t) / 86400000);
+            };
+            const isSellCandidate = (pick: AlphaPickEntry): boolean => {
+              const c = canonical(pick.rating);
+              if (c === "Sell" || c === "Strong Sell") return true;
+              if (c === "Hold") {
+                const days = daysSince(pick.dateAdded);
+                if (days != null && days >= 180) return true;
+              }
+              return false;
+            };
+
+            // Counts per filter button.
+            const counts: Record<string, number> = { All: allPicks.length };
+            for (const p of allPicks) {
+              const c = canonical(p.rating) ?? "(unrated)";
+              counts[c] = (counts[c] || 0) + 1;
+            }
+            const filterButtons: Array<{ key: string | null; label: string }> = [
+              { key: null, label: "All" },
+              { key: "Strong Buy", label: "Strong Buy" },
+              { key: "Buy", label: "Buy" },
+              { key: "Hold", label: "Hold" },
+              { key: "Sell", label: "Sell" },
+              { key: "Strong Sell", label: "Strong Sell" },
+              { key: "(unrated)", label: "Unrated" },
+            ];
+
+            // Apply the rating filter.
+            const visiblePicks = alphaRatingFilter == null
+              ? allPicks
+              : allPicks.filter((p) => (canonical(p.rating) ?? "(unrated)") === alphaRatingFilter);
+
+            const sellCandidateCount = allPicks.filter(isSellCandidate).length;
+
+            const handleDropSellCandidates = () => {
+              if (sellCandidateCount === 0) return;
+              if (!confirm(`Drop ${sellCandidateCount} pick(s) flagged for sale (Sell/Strong Sell rating, or Hold ≥ 180 days)?`)) return;
+              save({
+                ...state,
+                alphaPicks: allPicks.filter((p) => !isSellCandidate(p)),
+              });
+            };
+
+            return (
+              <>
+                <div className="flex items-center justify-between mb-3">
+                  <div>
+                    <h3 className="text-xl font-bold">Seeking Alpha &mdash; Alpha Picks</h3>
+                    <p className="text-xs text-slate-400">
+                      Institutional buy recommendations &mdash; primarily populated by uploading the Alpha Picks dashboard screenshot. Manual adds also work.
+                    </p>
+                  </div>
+                  <span className="text-sm text-slate-400">{allPicks.length} picks</span>
+                </div>
+
+                {/* Rating filter chips + sell-candidate alert. */}
+                <div className="flex items-center justify-between gap-3 mb-3 flex-wrap">
+                  <div className="flex flex-wrap gap-1.5">
+                    {filterButtons.map((b) => {
+                      const active = alphaRatingFilter === b.key;
+                      const c = counts[b.key ?? "All"] ?? 0;
+                      if (b.key !== null && c === 0) return null; // hide empty buckets
+                      return (
                         <button
-                          onClick={() => save({ ...state, alphaPicks: (state.alphaPicks ?? []).filter((p) => p.ticker !== pick.ticker) })}
-                          className="ml-2 text-slate-300 hover:text-red-500 font-bold transition-colors"
-                          title="Remove"
+                          key={b.label}
+                          onClick={() => setAlphaRatingFilter(b.key)}
+                          className={`text-[11px] font-semibold rounded-full px-2.5 py-1 transition-colors ${
+                            active
+                              ? "bg-slate-800 text-white"
+                              : "bg-slate-100 text-slate-600 hover:bg-slate-200"
+                          }`}
                         >
-                          &times;
+                          {b.label} <span className="opacity-70">({c})</span>
                         </button>
-                      </td>
-                    </tr>
-                  );
-                })}
-                {(state.alphaPicks ?? []).length === 0 && (
-                  <tr><td colSpan={9} className="py-8 text-center text-slate-400 italic">No picks yet &mdash; upload a screenshot below or add manually</td></tr>
-                )}
-              </tbody>
-            </table>
-          </div>
+                      );
+                    })}
+                  </div>
+                  {sellCandidateCount > 0 && (
+                    <button
+                      onClick={handleDropSellCandidates}
+                      className="text-[11px] font-semibold rounded-full px-3 py-1 bg-red-50 text-red-700 ring-1 ring-red-200 hover:bg-red-100 transition-colors"
+                      title="SA sells stocks that drop to Sell/Strong Sell, OR that stay at Hold for 180+ days. This drops those picks from your list."
+                    >
+                      Drop {sellCandidateCount} sell candidate{sellCandidateCount === 1 ? "" : "s"}
+                    </button>
+                  )}
+                </div>
+
+                <div className="overflow-x-auto">
+                  <table className="w-full text-sm">
+                    <thead>
+                      <tr className="border-b-2 border-slate-300 text-left">
+                        <th className="py-2 pr-2 text-xs font-semibold text-slate-600 w-8">#</th>
+                        <th className="py-2 pr-3 text-xs font-semibold text-slate-600">Name</th>
+                        <th className="py-2 pr-3 text-xs font-semibold text-slate-600">Ticker</th>
+                        <th className="py-2 pr-3 text-xs font-semibold text-slate-600">Sector</th>
+                        <th className="py-2 pr-2 text-xs font-semibold text-slate-600">Rating</th>
+                        <th className="py-2 pr-3 text-xs font-semibold text-slate-600 text-right">Current Price</th>
+                        <th className="py-2 pr-3 text-xs font-semibold text-slate-600 text-right">Price Picked</th>
+                        <th className="py-2 pr-2 text-xs font-semibold text-slate-600 text-right">SA Return</th>
+                        <th className="py-2 pr-3 text-xs font-semibold text-slate-600">Date Added</th>
+                        <th className="py-2 pr-2 text-xs font-semibold text-slate-600 text-right">Days</th>
+                        <th className="py-2 w-16"></th>
+                      </tr>
+                    </thead>
+                    <tbody>
+                      {visiblePicks.map((pick, i) => {
+                        const livePrice = livePrices[pick.ticker];
+                        // Derive Price Picked from SA's reported return if not
+                        // manually set: pickedPrice = current / (1 + return%/100)
+                        const derivedPickedPrice =
+                          pick.priceWhenAdded > 0 ? pick.priceWhenAdded
+                          : (pick.returnSinceAdded != null && livePrice != null && (1 + pick.returnSinceAdded / 100) !== 0)
+                            ? livePrice / (1 + pick.returnSinceAdded / 100)
+                            : null;
+                        const days = daysSince(pick.dateAdded);
+                        const flagged = isSellCandidate(pick);
+                        return (
+                          <tr key={pick.ticker} className={`border-b border-slate-100 ${flagged ? "bg-red-50/40" : i % 2 === 0 ? "bg-white" : "bg-slate-50/40"} hover:bg-slate-50 transition-colors`}>
+                            <td className="py-2 pr-2 text-slate-400">{i + 1}</td>
+                            <td className="py-2 pr-3 text-slate-700 truncate max-w-[200px]" title={pick.name}>{pick.name}</td>
+                            <td className="py-2 pr-3 font-mono font-bold">${pick.ticker}</td>
+                            <td className="py-2 pr-3 text-xs text-slate-500">{pick.sector || "—"}</td>
+                            <td className="py-2 pr-2">
+                              {pick.rating ? (
+                                <span className={`inline-flex items-center rounded-full px-2 py-0.5 text-[10px] font-bold uppercase tracking-wider ${ratingTone(pick.rating)}`}>
+                                  {canonical(pick.rating) ?? pick.rating}
+                                </span>
+                              ) : <span className="text-slate-300 text-[10px]">—</span>}
+                            </td>
+                            <td className="py-2 pr-3 text-right font-mono">
+                              {pricesLoading ? <span className="text-slate-300 animate-pulse">...</span>
+                                : livePrice != null ? <span className="font-semibold">${livePrice.toFixed(2)}</span>
+                                : <span className="text-slate-300">—</span>}
+                            </td>
+                            <td className="py-2 pr-3 text-right font-mono">
+                              {derivedPickedPrice != null
+                                ? `$${derivedPickedPrice.toFixed(2)}`
+                                : <span className="text-slate-300">—</span>}
+                            </td>
+                            <td className="py-2 pr-2 text-right font-mono text-xs">
+                              {pick.returnSinceAdded != null ? (
+                                <span className={pick.returnSinceAdded >= 0 ? "text-emerald-600" : "text-red-500"}>
+                                  {pick.returnSinceAdded >= 0 ? "+" : ""}{pick.returnSinceAdded.toFixed(1)}%
+                                </span>
+                              ) : <span className="text-slate-300">—</span>}
+                            </td>
+                            <td className="py-2 pr-3 text-xs text-slate-500">{pick.dateAdded || "—"}</td>
+                            <td className="py-2 pr-2 text-right text-xs">
+                              {days != null ? (
+                                <span className={canonical(pick.rating) === "Hold" && days >= 150 ? "text-red-600 font-semibold" : "text-slate-500"} title={canonical(pick.rating) === "Hold" && days >= 180 ? "Hold ≥ 180 days — SA would sell" : canonical(pick.rating) === "Hold" && days >= 150 ? "Approaching SA's 180-day Hold sell rule" : ""}>
+                                  {days}d
+                                </span>
+                              ) : <span className="text-slate-300">—</span>}
+                            </td>
+                            <td className="py-2 text-right whitespace-nowrap">
+                              {scoredStocks.some((s) => s.ticker === pick.ticker) ? (
+                                <span className="text-[10px] text-emerald-500 font-medium">In list</span>
+                              ) : (
+                                <button
+                                  onClick={(e) => { e.stopPropagation(); addToWatchlist(pick.ticker); }}
+                                  className="text-[10px] text-blue-500 hover:text-blue-700 font-semibold transition-colors"
+                                  title="Add to Watchlist"
+                                >
+                                  + Watch
+                                </button>
+                              )}
+                              <button
+                                onClick={() => save({ ...state, alphaPicks: allPicks.filter((p) => p.ticker !== pick.ticker) })}
+                                className="ml-2 text-slate-300 hover:text-red-500 font-bold transition-colors"
+                                title="Remove"
+                              >
+                                &times;
+                              </button>
+                            </td>
+                          </tr>
+                        );
+                      })}
+                      {visiblePicks.length === 0 && (
+                        <tr><td colSpan={11} className="py-8 text-center text-slate-400 italic">
+                          {allPicks.length === 0 ? "No picks yet — upload a screenshot below or add manually" : "No picks match this rating filter"}
+                        </td></tr>
+                      )}
+                    </tbody>
+                  </table>
+                </div>
+              </>
+            );
+          })()}
 
           <AlphaPickAddForm onAdd={(entry) => {
             const list = state.alphaPicks ?? [];
