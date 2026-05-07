@@ -812,6 +812,44 @@ export default function ResearchPage() {
   }, [state, save]);
 
   /**
+   * One-time bootstrap of priceWhenAdded for Alpha Picks entries.
+   *
+   * The picked price is HISTORICAL — once known, it doesn't change.
+   * Seeking Alpha doesn't expose the original entry price directly,
+   * but we can derive it from the current price + their reported
+   * return %:
+   *   priceWhenAdded = currentPrice / (1 + returnSinceAdded / 100)
+   *
+   * This effect runs whenever livePrices update. For each Alpha Pick
+   * with returnSinceAdded set but priceWhenAdded still 0, it computes
+   * the historical price ONCE and persists it. After that the entry
+   * has a real priceWhenAdded that stays fixed across renders and
+   * even across re-scrapes (the merge intentionally preserves it).
+   *
+   * Without this, a render-time derivation against a moving live
+   * price would cause the displayed Price Picked to drift slightly
+   * every refresh — which is wrong for what's supposed to be a
+   * historical entry price.
+   */
+  useEffect(() => {
+    if (!loaded) return;
+    const picks = state.alphaPicks ?? [];
+    if (picks.length === 0) return;
+    let changed = false;
+    const updated = picks.map((p) => {
+      if (p.priceWhenAdded > 0) return p; // already bootstrapped
+      if (p.returnSinceAdded == null) return p; // can't derive
+      const live = livePrices[p.ticker];
+      if (live == null) return p; // no current price yet
+      const factor = 1 + p.returnSinceAdded / 100;
+      if (factor === 0) return p; // -100% return = total loss; can't divide
+      changed = true;
+      return { ...p, priceWhenAdded: live / factor };
+    });
+    if (changed) save({ ...state, alphaPicks: updated });
+  }, [loaded, state, livePrices, save]);
+
+  /**
    * Refresh company names + sectors for both RBC focus lists in a
    * single batched call. Targets entries whose name is missing or
    * placeholder, OR whose sector isn't a recognized GICS sector
@@ -1072,7 +1110,7 @@ export default function ResearchPage() {
         // directly when present rather than falling back to the
         // ticker-as-name placeholder. The Yahoo refreshAlphaPickNames
         // pass after still normalizes sectors to GICS form.
-        type ScrapedAlpha = { ticker: string; name?: string; sector?: string; dateAdded?: string; returnSinceAdded?: number; rating?: string };
+        type ScrapedAlpha = { ticker: string; name?: string; sector?: string; dateAdded?: string; returnSinceAdded?: number; rating?: string; holdingWeight?: number };
         const today = new Date().toLocaleDateString("en-US", { month: "numeric", day: "numeric", year: "numeric" });
         for (const eRaw of entries) {
           const e = eRaw as ScrapedAlpha;
@@ -1082,16 +1120,23 @@ export default function ResearchPage() {
             matched += 1;
             byNorm.set(norm, {
               ...ex,
-              // Prefer scraped values when they're populated; fall back
-              // to existing for unchanged fields.
+              // Prefer scraped values when populated; fall back to
+              // existing for unchanged fields. priceWhenAdded is
+              // intentionally retained — it's a HISTORICAL value and
+              // shouldn't drift each scrape. The bootstrap useEffect
+              // populates it once when livePrices arrives, then it
+              // stays fixed.
               name: e.name?.trim() || ex.name,
               sector: e.sector?.trim() || ex.sector,
               dateAdded: e.dateAdded?.trim() || ex.dateAdded,
               returnSinceAdded: e.returnSinceAdded ?? ex.returnSinceAdded,
               rating: e.rating?.trim() || ex.rating,
-              // priceWhenAdded retained from prior state — derived
-              // later in render from returnSinceAdded + livePrice when
-              // not manually set.
+              // holdingWeight DOES update on each scrape — SA's
+              // dashboard reflects the latest portfolio weight after
+              // their own redistributions, and a fresh scrape should
+              // overwrite any local redistribution we did between
+              // screenshot uploads.
+              holdingWeight: e.holdingWeight ?? ex.holdingWeight,
             });
           } else {
             added += 1;
@@ -1104,6 +1149,7 @@ export default function ResearchPage() {
               dateAdded: e.dateAdded?.trim() || today,
               returnSinceAdded: e.returnSinceAdded,
               rating: e.rating?.trim(),
+              holdingWeight: e.holdingWeight,
             });
           }
         }
@@ -2490,11 +2536,31 @@ export default function ResearchPage() {
 
             const handleDropSellCandidates = () => {
               if (sellCandidateCount === 0) return;
-              if (!confirm(`Drop ${sellCandidateCount} pick(s) flagged for sale (Sell/Strong Sell rating, or Hold ≥ 180 days)?`)) return;
-              save({
-                ...state,
-                alphaPicks: allPicks.filter((p) => !isSellCandidate(p)),
-              });
+              if (!confirm(`Drop ${sellCandidateCount} pick(s) flagged for sale (Sell/Strong Sell rating, or Hold ≥ 180 days)?\n\nWeight from dropped picks will be redistributed equally across the remaining picks (per SA's documented rule).`)) return;
+
+              // Per SA's rule: "the cash generated from sold positions
+              // will be equally invested across the remaining stocks
+              // in the Alpha Picks portfolio." So sum the dropped
+              // weight and split it equally across what's left. Picks
+              // without holdingWeight (legacy entries scraped before
+              // the field existed) don't contribute to or receive
+              // redistribution — they stay at undefined holdingWeight
+              // until the next fresh scrape pulls SA's actual numbers.
+              const dropped = allPicks.filter(isSellCandidate);
+              const remaining = allPicks.filter((p) => !isSellCandidate(p));
+              const droppedWeightTotal = dropped.reduce(
+                (sum, p) => sum + (p.holdingWeight ?? 0), 0
+              );
+              const remainingWithWeight = remaining.filter((p) => p.holdingWeight != null);
+              const perPickAdd = remainingWithWeight.length > 0
+                ? droppedWeightTotal / remainingWithWeight.length
+                : 0;
+              const updated = remaining.map((p) =>
+                p.holdingWeight != null
+                  ? { ...p, holdingWeight: parseFloat((p.holdingWeight + perPickAdd).toFixed(2)) }
+                  : p
+              );
+              save({ ...state, alphaPicks: updated });
             };
 
             return (
@@ -2551,6 +2617,7 @@ export default function ResearchPage() {
                         <th className="py-2 pr-3 text-xs font-semibold text-slate-600">Ticker</th>
                         <th className="py-2 pr-3 text-xs font-semibold text-slate-600">Sector</th>
                         <th className="py-2 pr-2 text-xs font-semibold text-slate-600">Rating</th>
+                        <th className="py-2 pr-2 text-xs font-semibold text-slate-600 text-right">Holding %</th>
                         <th className="py-2 pr-3 text-xs font-semibold text-slate-600 text-right">Current Price</th>
                         <th className="py-2 pr-3 text-xs font-semibold text-slate-600 text-right">Price Picked</th>
                         <th className="py-2 pr-2 text-xs font-semibold text-slate-600 text-right">SA Return</th>
@@ -2562,13 +2629,10 @@ export default function ResearchPage() {
                     <tbody>
                       {visiblePicks.map((pick, i) => {
                         const livePrice = livePrices[pick.ticker];
-                        // Derive Price Picked from SA's reported return if not
-                        // manually set: pickedPrice = current / (1 + return%/100)
-                        const derivedPickedPrice =
-                          pick.priceWhenAdded > 0 ? pick.priceWhenAdded
-                          : (pick.returnSinceAdded != null && livePrice != null && (1 + pick.returnSinceAdded / 100) !== 0)
-                            ? livePrice / (1 + pick.returnSinceAdded / 100)
-                            : null;
+                        // priceWhenAdded is bootstrapped once via the
+                        // Alpha-Picks bootstrap useEffect when livePrices
+                        // first arrives. Use it directly here — it's
+                        // historical and stays fixed across renders.
                         const days = daysSince(pick.dateAdded);
                         const flagged = isSellCandidate(pick);
                         return (
@@ -2584,14 +2648,19 @@ export default function ResearchPage() {
                                 </span>
                               ) : <span className="text-slate-300 text-[10px]">—</span>}
                             </td>
+                            <td className="py-2 pr-2 text-right font-mono text-xs">
+                              {pick.holdingWeight != null
+                                ? <span className="text-slate-700">{pick.holdingWeight.toFixed(2)}%</span>
+                                : <span className="text-slate-300">—</span>}
+                            </td>
                             <td className="py-2 pr-3 text-right font-mono">
                               {pricesLoading ? <span className="text-slate-300 animate-pulse">...</span>
                                 : livePrice != null ? <span className="font-semibold">${livePrice.toFixed(2)}</span>
                                 : <span className="text-slate-300">—</span>}
                             </td>
                             <td className="py-2 pr-3 text-right font-mono">
-                              {derivedPickedPrice != null
-                                ? `$${derivedPickedPrice.toFixed(2)}`
+                              {pick.priceWhenAdded > 0
+                                ? `$${pick.priceWhenAdded.toFixed(2)}`
                                 : <span className="text-slate-300">—</span>}
                             </td>
                             <td className="py-2 pr-2 text-right font-mono text-xs">
@@ -2633,7 +2702,7 @@ export default function ResearchPage() {
                         );
                       })}
                       {visiblePicks.length === 0 && (
-                        <tr><td colSpan={11} className="py-8 text-center text-slate-400 italic">
+                        <tr><td colSpan={12} className="py-8 text-center text-slate-400 italic">
                           {allPicks.length === 0 ? "No picks yet — upload a screenshot below or add manually" : "No picks match this rating filter"}
                         </td></tr>
                       )}

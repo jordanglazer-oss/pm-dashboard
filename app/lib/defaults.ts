@@ -256,14 +256,25 @@ export type AlphaPickEntry = {
   dateAdded: string;
   /** Return % since the pick was added, as published by Seeking Alpha
    *  on the Alpha Picks dashboard. Signed (negative for losers).
-   *  When present alongside a live price, the table can derive
-   *  priceWhenAdded = price / (1 + returnSinceAdded/100) — useful
-   *  when SA only shows the return %, not the original price. */
+   *  Used ONCE on first scrape to derive priceWhenAdded as
+   *  currentPrice / (1 + returnSinceAdded/100); after that
+   *  priceWhenAdded is fixed (the historical entry price doesn't
+   *  change). Stays on the entry for display in the SA Return column. */
   returnSinceAdded?: number;
   /** Seeking Alpha's current rating: "Strong Buy" / "Buy" / "Hold" /
    *  "Sell" / "Strong Sell". Free-text since SA's badge labels can
    *  drift; the UI does a case-insensitive match for color coding. */
   rating?: string;
+  /** Per-pick portfolio weight as published by SA on the Alpha Picks
+   *  dashboard ("Holding %" column), e.g. 5.60. Captured on scrape.
+   *  When sell candidates are dropped via the section toolbar, the
+   *  combined dropped weight is redistributed equally across the
+   *  remaining picks — mirroring SA's documented rule that "cash
+   *  generated from sold positions will be equally invested across
+   *  the remaining stocks in the Alpha Picks portfolio." A subsequent
+   *  fresh screenshot upload overwrites with SA's actual post-
+   *  redistribution weights. */
+  holdingWeight?: number;
 };
 
 export const defaultResearch: ResearchState = {

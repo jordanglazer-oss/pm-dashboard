@@ -58,9 +58,10 @@ export type ScrapedIdea = {
 };
 
 /** Seeking Alpha Alpha Picks row — richer than IdeaEntry because the
- *  SA dashboard exposes name, sector, picked date, return %, and a
- *  rating badge per pick. The ticker may be Canadian (with -T) when
- *  the model resolved a Canadian-HQ'd company to its TSX listing. */
+ *  SA dashboard exposes name, sector, picked date, return %, rating
+ *  badge, and per-pick portfolio weight. The ticker may be Canadian
+ *  (with -T) when the model resolved a Canadian-HQ'd company to its
+ *  TSX listing. */
 export type ScrapedAlphaPick = {
   ticker: string;
   name?: string;
@@ -68,6 +69,7 @@ export type ScrapedAlphaPick = {
   dateAdded?: string;
   returnSinceAdded?: number;
   rating?: string;
+  holdingWeight?: number;
 };
 
 /** RBC Canadian Focus List row: includes sector and target weight. */
@@ -254,6 +256,7 @@ For EACH active pick, extract these fields:
   - \`dateAdded\` (string) — the Picked column date, e.g. "10/15/2024" → return as "10/15/2024" (don't reformat).
   - \`returnSinceAdded\` (NUMBER, signed percent) — the Return column. "+510.57%" → 510.57; "-11.18%" → -11.18; strip the % and any commas.
   - \`rating\` (string) — the Rating column. Use the EXACT label from the badge: "Strong Buy", "Buy", "Hold", "Sell", "Strong Sell". Use Title Case as shown.
+  - \`holdingWeight\` (NUMBER, percent) — the Holding % column, e.g. "5.60%" → 5.60. Strip the % sign. If absent, omit the field.
 
 CANADIAN MAPPING — when the company is HEADQUARTERED IN CANADA and has a TSX listing, use the TSX ticker form with a "-T" suffix instead of the US listing the screenshot shows. Use your knowledge of public companies. Examples:
   - "Celestica, Inc." → "CLS-T" (NOT "CLS")
@@ -280,9 +283,9 @@ ${common}
 
 Example output:
 [
-  {"ticker":"AMZN","name":"Amazon.com, Inc.","sector":"Consumer Discretionary","dateAdded":"11/15/2023","returnSinceAdded":78.4,"rating":"Strong Buy"},
-  {"ticker":"CLS-T","name":"Celestica, Inc.","sector":"Information Technology","dateAdded":"10/16/2023","returnSinceAdded":1439.89,"rating":"Strong Buy"},
-  {"ticker":"BRK-B","name":"Berkshire Hathaway Inc.","sector":"Financials","dateAdded":"7/1/2024","returnSinceAdded":14.4,"rating":"Hold"}
+  {"ticker":"AMZN","name":"Amazon.com, Inc.","sector":"Consumer Discretionary","dateAdded":"11/15/2023","returnSinceAdded":78.4,"rating":"Strong Buy","holdingWeight":5.41},
+  {"ticker":"CLS-T","name":"Celestica, Inc.","sector":"Information Technology","dateAdded":"10/16/2023","returnSinceAdded":1439.89,"rating":"Strong Buy","holdingWeight":5.99},
+  {"ticker":"BRK-B","name":"Berkshire Hathaway Inc.","sector":"Financials","dateAdded":"7/1/2024","returnSinceAdded":14.4,"rating":"Hold","holdingWeight":1.80}
 ]`;
 }
 
@@ -340,6 +343,10 @@ function parseAlphaPickRows(text: string): ScrapedAlphaPick[] {
           if (Number.isFinite(n)) out.returnSinceAdded = n;
         }
         if (r.rating && String(r.rating).trim()) out.rating = String(r.rating).trim();
+        if (r.holdingWeight != null) {
+          const n = Number(String(r.holdingWeight).replace(/[%,+]/g, ""));
+          if (Number.isFinite(n) && n > 0) out.holdingWeight = n;
+        }
         return out;
       });
   } catch {
