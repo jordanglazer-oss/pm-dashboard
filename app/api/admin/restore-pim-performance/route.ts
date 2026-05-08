@@ -172,8 +172,27 @@ export async function GET() {
       return { count, firstDate, firstValue: firstVal, lastDate, lastValue: lastVal, periodReturn: `${(periodReturn * 100).toFixed(2)}%` };
     };
 
+    // Chain the dailyReturn fields independently to test the user's
+    // hypothesis: if the stored cumulative VALUE is corrupted but the
+    // per-entry dailyReturn is intact, chaining should give a different
+    // (correct) cumulative. If chained ≈ stored, the dailyReturns are
+    // themselves biased and re-chaining can't help.
+    const chainDailyReturns = (entries: Array<{ value: number; dailyReturn: number; date: string }> | undefined) => {
+      if (!entries || entries.length === 0) return null;
+      let cumulative = 100;
+      for (let i = 1; i < entries.length; i++) {
+        cumulative *= 1 + entries[i].dailyReturn / 100;
+      }
+      const periodReturn = cumulative / 100 - 1;
+      return { chainedFinalValue: parseFloat(cumulative.toFixed(4)), periodReturn: `${(periodReturn * 100).toFixed(2)}%` };
+    };
+
     const profiles = ["balanced", "growth", "allEquity", "alpha"] as const;
-    const compare: Record<string, { perfBlob: ReturnType<typeof summarize>; appendix: ReturnType<typeof summarize> }> = {};
+    const compare: Record<string, {
+      perfBlob: ReturnType<typeof summarize>;
+      appendix: ReturnType<typeof summarize>;
+      appendixChainedFromDailyReturns: ReturnType<typeof chainDailyReturns>;
+    }> = {};
     for (const p of profiles) {
       const perfModel = perf?.models.find((m) => m.groupId === "pim" && m.profile === p);
       const ledger = appendix?.ledgers.find((l) => l.profile === p);
@@ -186,6 +205,7 @@ export async function GET() {
           ledger.entries[0]?.value, ledger.entries[ledger.entries.length - 1]?.value,
           ledger.entries.length, ledger.entries[0]?.date, ledger.entries[ledger.entries.length - 1]?.date,
         ) : null,
+        appendixChainedFromDailyReturns: chainDailyReturns(ledger?.entries),
       };
     }
 
