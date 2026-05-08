@@ -96,8 +96,14 @@ export async function POST(request: NextRequest) {
       return NextResponse.json({ error: "tickers array required" }, { status: 400 });
     }
 
-    // Cap at 50 tickers to avoid abuse
-    const batch = tickers.slice(0, 50) as string[];
+    // Cap to keep request bounded. The Research page batches every
+    // ticker across Newton + Fundstrat + SMID + Alpha Picks into one
+    // call, which can exceed 100 unique tickers. The previous cap of
+    // 50 silently dropped late-arriving sources (Alpha Picks comes
+    // last in the assembly), so Canadian -T entries showed blank
+    // prices. 250 leaves headroom without making the upstream Yahoo
+    // fan-out abusive.
+    const batch = tickers.slice(0, 250) as string[];
     const results = await Promise.all(
       batch.map(async (t) => ({ ticker: t, ...(await fetchPrice(t)) }))
     );
