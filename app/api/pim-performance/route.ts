@@ -289,6 +289,17 @@ export async function POST() {
         trackingStarts.set(gs.groupId, gs.trackingStart || null);
       }
     }
+    // PIM's lastRebalance.date is the firm-wide drift anchor used by
+    // the Dynamic Weight column. Rebalances are always triggered from
+    // PIM and propagate trades across every group, but lastRebalance
+    // is only written to the selected group's state — so groups like
+    // EY, KPMG, Deloitte, RCGT never get their own. The core-${profile}
+    // series uses this as a fallback start date when a group has no
+    // trackingStart, so Dynamic Weight works for every group, not
+    // just the three that happen to have tracking enabled.
+    const pimGroupState = portfolioState?.groupStates.find((gs) => gs.groupId === "pim");
+    const firmRebalanceSnapshot: PimRebalanceSnapshot | null =
+      pimGroupState?.lastRebalance || null;
 
     // Collect all unique symbols
     const allSymbols = new Set<string>();
@@ -298,7 +309,10 @@ export async function POST() {
       }
     }
 
-    // Determine the earliest tracking start date across all groups
+    // Determine the earliest tracking start date across all groups.
+    // Also consider the firm rebalance date so histories cover the
+    // window the core-series fallback needs even when a group has no
+    // trackingStart.
     let earliestStart: string | undefined;
     for (const g of groups) {
       const ts = trackingStarts.get(g.id);
@@ -306,6 +320,11 @@ export async function POST() {
         if (!earliestStart || ts.date < earliestStart) {
           earliestStart = ts.date;
         }
+      }
+    }
+    if (firmRebalanceSnapshot?.date) {
+      if (!earliestStart || firmRebalanceSnapshot.date < earliestStart) {
+        earliestStart = firmRebalanceSnapshot.date;
       }
     }
 
@@ -347,10 +366,13 @@ export async function POST() {
     for (const group of groups) {
       const trackingStart = trackingStarts.get(group.id) || null;
 
-      // Only compute for groups that have a tracking start date set
-      // (forward-only: no backdating)
-      if (!trackingStart) continue;
-
+      // Main + alpha series remain forward-only from the group's own
+      // trackingStart. Core series falls through to firmRebalanceSnapshot
+      // below so Dynamic Weight works for groups that never had tracking
+      // turned on (EY, KPMG, Deloitte, RCGT).
+      if (!trackingStart) {
+        // Skip ahead to the core block, executed below.
+      } else {
       for (const profile of profiles) {
         // Alpha only applies to PIM group
         if (profile === "alpha" && group.id !== "pim") continue;
@@ -453,13 +475,18 @@ export async function POST() {
           }
         }
       }
+      } // end of `if (trackingStart) { ... }` for main + alpha series
 
       // Compute core-only returns for this group (equity holdings with core
       // designation, excluding LOCKED_EQUITY_SYMBOLS). Mirrors the alpha-only
       // block above. Powers the per-model "Dynamic Weight %" column: the
       // Core sleeve return is compared against the standalone Alpha Model
       // return to drift the Alpha-vs-Core split inside each model's equity
-      // sleeve since its last rebalance.
+      // sleeve since its last rebalance. Falls back to the firm-wide PIM
+      // rebalance snapshot when this group has no trackingStart of its own
+      // (so EY, KPMG, Deloitte, RCGT all get a core series even though the
+      // rebalance handler only writes lastRebalance to the selected group).
+      const coreStart = trackingStart || firmRebalanceSnapshot;
       const coreGroup: PimModelGroup = {
         ...group,
         holdings: group.holdings.filter(
@@ -468,7 +495,7 @@ export async function POST() {
             && !LOCKED_EQUITY_SYMBOLS.has(h.symbol)
         ),
       };
-      if (coreGroup.holdings.length > 0) {
+      if (coreStart && coreGroup.holdings.length > 0) {
         for (const profile of profiles) {
           // "alpha" profile is the standalone alpha model — a core-alpha
           // series is meaningless. The non-alpha profiles cover all the
@@ -481,7 +508,7 @@ export async function POST() {
               profile,
               priceHistories,
               currentPrices,
-              trackingStart
+              coreStart
             );
           if (coreHistory.length > 0) {
             if (coreIntraday != null) {
