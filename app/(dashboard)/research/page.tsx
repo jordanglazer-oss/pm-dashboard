@@ -1102,14 +1102,71 @@ export default function ResearchPage() {
         // defaults for new rows. The post-scrape refreshAlphaPickNames
         // call backfills name/sector via /api/company-name in batch.
         const existing: AlphaPickEntry[] = state.alphaPicks || [];
-        // Dedup existing entries: if both US and Canadian (-T) forms
-        // exist for the same base ticker, keep only the -T variant
-        // (the canonical form the scraper returns).
+        type ScrapedAlpha = { ticker: string; name?: string; sector?: string; dateAdded?: string; returnSinceAdded?: number; rating?: string; holdingWeight?: number };
+        // Strip corporate suffixes / punctuation so "Barrick Mining
+        // Corporation" and "Barrick Gold Corp." collapse to the same
+        // key. Used for cross-stem dedup ($B vs $ABX-T) where two
+        // tickers point at the same underlying issuer.
+        const normalizeName = (n: string | undefined): string => {
+          if (!n) return "";
+          return n.toLowerCase()
+            .replace(/[.,'&]/g, "")
+            .replace(/\b(inc|incorporated|corp|corporation|company|co|ltd|limited|plc|sa|nv|ag|holdings?|group|the)\b/g, "")
+            .replace(/\s+/g, " ")
+            .trim();
+        };
+        // Build incoming name→ticker FIRST, so the existing-dedup pass
+        // below can prefer the variant the current scrape returned
+        // (resolves SSRM-T vs SSR-T after a ticker rename, where both
+        // entries end with -T and the suffix heuristic alone can't tell
+        // which is current).
+        const incomingByName = new Map<string, string>();
+        for (const eRaw of entries) {
+          const e = eRaw as ScrapedAlpha;
+          const nm = normalizeName(e.name);
+          if (nm) incomingByName.set(nm, normalize(e.ticker));
+        }
+        // Dedup existing entries against themselves.
+        // Pass 1: collapse same-stem -T variants (CLS vs CLS-T) →
+        // keep the -T form, the canonical scrape output.
+        // Pass 2: collapse cross-stem variants ($B Barrick vs $ABX-T
+        // Barrick) by normalized company name → prefer the variant
+        // present in the incoming scrape, else the -T form, else the
+        // most-recently-added entry.
         const rawMap = new Map(existing.map((i) => [normalize(i.ticker), i]));
         for (const key of Array.from(rawMap.keys())) {
           if (!key.endsWith("-T") && rawMap.has(`${key}-T`)) rawMap.delete(key);
         }
+        const byName = new Map<string, AlphaPickEntry[]>();
+        for (const e of rawMap.values()) {
+          const nm = normalizeName(e.name);
+          if (!nm) continue;
+          const arr = byName.get(nm) || [];
+          arr.push(e);
+          byName.set(nm, arr);
+        }
+        for (const [name, arr] of byName) {
+          if (arr.length <= 1) continue;
+          const incomingTicker = incomingByName.get(name);
+          let keep: AlphaPickEntry | undefined;
+          if (incomingTicker) {
+            keep = arr.find((e) => normalize(e.ticker) === incomingTicker);
+          }
+          if (!keep) keep = arr.find((e) => normalize(e.ticker).endsWith("-T"));
+          if (!keep) keep = arr[arr.length - 1];
+          for (const e of arr) {
+            if (e !== keep) rawMap.delete(normalize(e.ticker));
+          }
+        }
         const byNorm = rawMap;
+        // Reverse lookup for matching incoming entries by company name
+        // when the ticker doesn't match (US ↔ Canadian listings of the
+        // same issuer).
+        const byNameForLookup = new Map<string, AlphaPickEntry>();
+        for (const e of byNorm.values()) {
+          const nm = normalizeName(e.name);
+          if (nm) byNameForLookup.set(nm, e);
+        }
         let matched = 0;
         let added = 0;
         // Alpha Picks scrape returns rich entries (ticker + name +
@@ -1117,25 +1174,32 @@ export default function ResearchPage() {
         // directly when present rather than falling back to the
         // ticker-as-name placeholder. The Yahoo refreshAlphaPickNames
         // pass after still normalizes sectors to GICS form.
-        type ScrapedAlpha = { ticker: string; name?: string; sector?: string; dateAdded?: string; returnSinceAdded?: number; rating?: string; holdingWeight?: number };
         const today = new Date().toLocaleDateString("en-US", { month: "numeric", day: "numeric", year: "numeric" });
         // Canadian-variant lookup: "-T" suffix may differ between
         // existing entries (US ticker) and freshly-scraped entries
         // (Canadian ticker) or vice-versa. When exact match fails,
         // try the counterpart form so the entry overwrites rather
         // than duplicating.
-        const findExisting = (norm: string): { key: string; entry: AlphaPickEntry } | undefined => {
+        const findExisting = (norm: string, name?: string): { key: string; entry: AlphaPickEntry } | undefined => {
           const direct = byNorm.get(norm);
           if (direct) return { key: norm, entry: direct };
           const alt = norm.endsWith("-T") ? norm.slice(0, -2) : `${norm}-T`;
           const fallback = byNorm.get(alt);
           if (fallback) return { key: alt, entry: fallback };
+          // Name-based fallback for cross-stem variants (e.g. $B vs
+          // $ABX-T for Barrick) when the prompt promotes a US-listed
+          // pick to its TSX form (or vice-versa).
+          if (name) {
+            const nm = normalizeName(name);
+            const byNm = nm ? byNameForLookup.get(nm) : undefined;
+            if (byNm) return { key: normalize(byNm.ticker), entry: byNm };
+          }
           return undefined;
         };
         for (const eRaw of entries) {
           const e = eRaw as ScrapedAlpha;
           const norm = normalize(e.ticker);
-          const found = findExisting(norm);
+          const found = findExisting(norm, e.name);
           if (found) {
             const ex = found.entry;
             // Remove old key if the ticker form changed (US→Canadian)

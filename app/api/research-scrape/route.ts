@@ -274,6 +274,25 @@ CANADIAN MAPPING — when the company is HEADQUARTERED IN CANADA and has a TSX l
   - "Open Text" → "OTEX-T"
   - "Manulife" → "MFC-T"
   - "Sun Life Financial" → "SLF-T"
+  - "Barrick Mining" / "Barrick Gold" → "ABX-T" (NOT "B" or "GOLD" — they renamed from GOLD to B in the US, but the Canadian listing is ABX-T)
+  - "Kinross Gold" → "K-T" (NOT "KGC")
+  - "SSR Mining" → "SSR-T" (NOT "SSRM-T" — they renamed)
+  - "Wheaton Precious Metals" → "WPM-T"
+  - "Franco-Nevada" → "FNV-T"
+  - "Agnico Eagle" → "AEM-T"
+  - "First Quantum Minerals" → "FM-T"
+  - "Teck Resources" → "TECK-B-T"
+  - "Cameco" → "CCO-T"
+  - "Lundin Mining" → "LUN-T"
+  - "Canadian Natural Resources" → "CNQ-T"
+  - "Cenovus Energy" → "CVE-T"
+  - "Enbridge" → "ENB-T"
+  - "TC Energy" → "TRP-T"
+  - "Bank of Montreal" → "BMO-T"
+  - "Bank of Nova Scotia" → "BNS-T"
+  - "CIBC" → "CM-T"
+
+CRITICAL DEDUP RULE — never return BOTH the US listing AND the Canadian listing for the same underlying company. Pick exactly ONE ticker per company. For Canadian-HQ companies that's the -T form above; for everyone else it's the US ticker the screenshot shows. If a Canadian-HQ company appears in the screenshot under its US ticker, replace it with the -T form — DO NOT emit two rows.
 
 For US companies (HQ in the United States) and non-Canadian foreign companies (e.g. Argentinian, European), keep the US ticker as shown — DO NOT add -T. For dual-class shares written with "/" like "BRK/B", convert to dash form ("BRK-B").
 
