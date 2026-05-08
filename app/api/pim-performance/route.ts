@@ -370,9 +370,28 @@ export async function POST() {
       }
     }
 
-    // Compute returns for each group x profile
+    // Compute returns for each group x profile.
+    // ADDITIVE merge: load any pre-existing series from pm:pim-performance
+    // and seed the output with them, then only compute+push series whose
+    // (groupId, profile) key is NOT already present. This protects the
+    // /api/update-daily-value daily ledger — the source of truth for
+    // historical values — from being overwritten by a Yahoo-derived
+    // recompute. The recompute is now safe to call any time: it only
+    // ever fills in missing series (e.g. the new core-${profile} series).
     const profiles: PimProfileType[] = ["balanced", "growth", "allEquity", "alpha"];
+    const existingPerfRaw = await redis.get(PERF_KEY);
+    const existingPerf: PimPerformanceData | null = existingPerfRaw
+      ? (JSON.parse(existingPerfRaw) as PimPerformanceData) : null;
+    const existingKeys = new Set<string>();
     const models: PimModelPerformance[] = [];
+    if (existingPerf?.models) {
+      for (const m of existingPerf.models) {
+        existingKeys.add(`${m.groupId}|${m.profile}`);
+        models.push(m);
+      }
+    }
+    const seriesExists = (groupId: string, profile: string) =>
+      existingKeys.has(`${groupId}|${profile}`);
 
     for (const group of groups) {
       const trackingStart = trackingStarts.get(group.id) || null;
@@ -388,6 +407,7 @@ export async function POST() {
         // Alpha only applies to PIM group
         if (profile === "alpha" && group.id !== "pim") continue;
         if (!group.profiles[profile]) continue;
+        if (seriesExists(group.id, profile)) continue;
         const { history, intradayReturn } = computeModelReturns(
           group,
           profile,
@@ -443,6 +463,7 @@ export async function POST() {
       if (alphaGroup.holdings.length > 0) {
         for (const profile of profiles) {
           if (!group.profiles[profile]) continue;
+          if (seriesExists(group.id, `alpha-${profile}`)) continue;
           const { history: alphaHistory, intradayReturn: alphaIntraday } =
             computeModelReturns(
               alphaGroup,
@@ -513,6 +534,7 @@ export async function POST() {
           // models the Dynamic Weight column will ever query.
           if (profile === "alpha") continue;
           if (!group.profiles[profile]) continue;
+          if (seriesExists(group.id, `core-${profile}`)) continue;
           const { history: coreHistory, intradayReturn: coreIntraday } =
             computeModelReturns(
               coreGroup,
