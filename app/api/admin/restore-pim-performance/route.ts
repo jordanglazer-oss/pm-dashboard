@@ -136,26 +136,64 @@ export async function GET() {
   try {
     const redis = await getRedis();
     const dates = await listBackupDates(redis);
-    const summary: Array<{ date: string; hasPerf: boolean; modelCount?: number; perfLastUpdated?: string }> = [];
+    const backupSummary: Array<{ date: string; hasPerf: boolean; modelCount?: number; perfLastUpdated?: string }> = [];
     for (const date of dates.slice(0, 10)) {
       const raw = await redis.get(`${BACKUP_PREFIX}${date}`);
-      if (!raw) { summary.push({ date, hasPerf: false }); continue; }
+      if (!raw) { backupSummary.push({ date, hasPerf: false }); continue; }
       const blob = JSON.parse(raw) as BackupBlob;
       const perfRaw = blob.data?.[PERF_KEY];
-      if (!perfRaw) { summary.push({ date, hasPerf: false }); continue; }
+      if (!perfRaw) { backupSummary.push({ date, hasPerf: false }); continue; }
       try {
         const perf = JSON.parse(perfRaw) as { models?: unknown[]; lastUpdated?: string };
-        summary.push({
+        backupSummary.push({
           date,
           hasPerf: true,
           modelCount: Array.isArray(perf.models) ? perf.models.length : undefined,
           perfLastUpdated: perf.lastUpdated,
         });
       } catch {
-        summary.push({ date, hasPerf: false });
+        backupSummary.push({ date, hasPerf: false });
       }
     }
-    return NextResponse.json({ backups: summary });
+
+    // Side-by-side diagnostic: compare what the live perf blob says
+    // for PIM/Balanced vs what the immutable appendix says. If both
+    // show ~250% ITD, the appendix itself is the culprit and an
+    // appendix-based restore can't help. If they diverge, the live
+    // blob is the corrupted one and the restore should fix it.
+    const perfRaw = await redis.get(PERF_KEY);
+    const appendixRaw = await redis.get(APPENDIX_KEY);
+    const perf = perfRaw ? (JSON.parse(perfRaw) as PimPerformanceData) : null;
+    const appendix = appendixRaw ? (JSON.parse(appendixRaw) as AppendixData) : null;
+
+    const summarize = (firstVal: number | undefined, lastVal: number | undefined, count: number, firstDate?: string, lastDate?: string) => {
+      if (firstVal == null || lastVal == null || firstVal <= 0) return null;
+      const periodReturn = lastVal / firstVal - 1;
+      return { count, firstDate, firstValue: firstVal, lastDate, lastValue: lastVal, periodReturn: `${(periodReturn * 100).toFixed(2)}%` };
+    };
+
+    const profiles = ["balanced", "growth", "allEquity", "alpha"] as const;
+    const compare: Record<string, { perfBlob: ReturnType<typeof summarize>; appendix: ReturnType<typeof summarize> }> = {};
+    for (const p of profiles) {
+      const perfModel = perf?.models.find((m) => m.groupId === "pim" && m.profile === p);
+      const ledger = appendix?.ledgers.find((l) => l.profile === p);
+      compare[p] = {
+        perfBlob: perfModel ? summarize(
+          perfModel.history[0]?.value, perfModel.history[perfModel.history.length - 1]?.value,
+          perfModel.history.length, perfModel.history[0]?.date, perfModel.history[perfModel.history.length - 1]?.date,
+        ) : null,
+        appendix: ledger ? summarize(
+          ledger.entries[0]?.value, ledger.entries[ledger.entries.length - 1]?.value,
+          ledger.entries.length, ledger.entries[0]?.date, ledger.entries[ledger.entries.length - 1]?.date,
+        ) : null,
+      };
+    }
+
+    return NextResponse.json({
+      backups: backupSummary,
+      pimGroupComparison: compare,
+      hint: "If perfBlob and appendix periodReturn agree, the appendix is also corrupted and appendix-restore can't help. If they diverge, run POST with { source: 'appendix' } to restore.",
+    });
   } catch (e) {
     return NextResponse.json({ error: e instanceof Error ? e.message : String(e) }, { status: 500 });
   }
