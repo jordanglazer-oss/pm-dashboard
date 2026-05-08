@@ -376,15 +376,21 @@ export function PimModel({ groups }: Props) {
       return latest / baseline - 1;
     };
 
-    // Use PIM group's lastRebalance for the Alpha Model anchor (the
-    // standalone "alpha" series only exists under groupId="pim").
+    // PIM's lastRebalance.date is the firm-wide drift anchor: every
+    // rebalance is triggered from PIM and propagates trades across all
+    // groups (PC-USA, Non-Res, EY, KPMG, Deloitte, RCGT), but the
+    // rebalance handler only writes lastRebalance to the selected
+    // group's state. Using PIM as the universal anchor means every
+    // model — including those whose own lastRebalance was never set —
+    // can compute drift from the same start date.
     const pimGroupState = getGroupState("pim");
+    const firmRebalanceDate = pimGroupState.lastRebalance?.date;
     const alphaReturn = activeProfile === "alpha"
       ? null
-      : returnSinceRebalance("pim", "alpha", pimGroupState.lastRebalance?.date);
+      : returnSinceRebalance("pim", "alpha", firmRebalanceDate);
     const coreReturn = activeProfile === "alpha"
       ? null
-      : returnSinceRebalance(effectiveGroup.id, `core-${activeProfile}`, groupState.lastRebalance?.date);
+      : returnSinceRebalance(effectiveGroup.id, `core-${activeProfile}`, firmRebalanceDate);
 
     // Tally sleeve target totals (equity only, excluding locked specialty
     // funds). Counts feed equal-weight distribution within each sleeve.
