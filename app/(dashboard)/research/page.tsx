@@ -1102,7 +1102,14 @@ export default function ResearchPage() {
         // defaults for new rows. The post-scrape refreshAlphaPickNames
         // call backfills name/sector via /api/company-name in batch.
         const existing: AlphaPickEntry[] = state.alphaPicks || [];
-        const byNorm = new Map(existing.map((i) => [normalize(i.ticker), i]));
+        // Dedup existing entries: if both US and Canadian (-T) forms
+        // exist for the same base ticker, keep only the -T variant
+        // (the canonical form the scraper returns).
+        const rawMap = new Map(existing.map((i) => [normalize(i.ticker), i]));
+        for (const key of Array.from(rawMap.keys())) {
+          if (!key.endsWith("-T") && rawMap.has(`${key}-T`)) rawMap.delete(key);
+        }
+        const byNorm = rawMap;
         let matched = 0;
         let added = 0;
         // Alpha Picks scrape returns rich entries (ticker + name +
@@ -1112,14 +1119,32 @@ export default function ResearchPage() {
         // pass after still normalizes sectors to GICS form.
         type ScrapedAlpha = { ticker: string; name?: string; sector?: string; dateAdded?: string; returnSinceAdded?: number; rating?: string; holdingWeight?: number };
         const today = new Date().toLocaleDateString("en-US", { month: "numeric", day: "numeric", year: "numeric" });
+        // Canadian-variant lookup: "-T" suffix may differ between
+        // existing entries (US ticker) and freshly-scraped entries
+        // (Canadian ticker) or vice-versa. When exact match fails,
+        // try the counterpart form so the entry overwrites rather
+        // than duplicating.
+        const findExisting = (norm: string): { key: string; entry: AlphaPickEntry } | undefined => {
+          const direct = byNorm.get(norm);
+          if (direct) return { key: norm, entry: direct };
+          const alt = norm.endsWith("-T") ? norm.slice(0, -2) : `${norm}-T`;
+          const fallback = byNorm.get(alt);
+          if (fallback) return { key: alt, entry: fallback };
+          return undefined;
+        };
         for (const eRaw of entries) {
           const e = eRaw as ScrapedAlpha;
           const norm = normalize(e.ticker);
-          const ex = byNorm.get(norm);
-          if (ex) {
+          const found = findExisting(norm);
+          if (found) {
+            const ex = found.entry;
+            // Remove old key if the ticker form changed (US→Canadian)
+            if (found.key !== norm) byNorm.delete(found.key);
             matched += 1;
             byNorm.set(norm, {
               ...ex,
+              // Adopt the scraped ticker form (e.g. US→Canadian -T)
+              ticker: norm,
               // Prefer scraped values when populated; fall back to
               // existing for unchanged fields. priceWhenAdded is
               // intentionally retained — it's a HISTORICAL value and
