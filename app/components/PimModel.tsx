@@ -102,6 +102,10 @@ export function PimModel({ groups }: Props) {
   // measured cumulatively from the group's lastRebalance.date. No
   // local-only state: all underlying data persists in Redis.
   const [perfData, setPerfData] = useState<PimPerformanceData | null>(null);
+  // Status of the one-shot core-series backfill (see useEffect below).
+  // Surfaced in the Dynamic Wt column header so the user can see when
+  // the column is being seeded for the first time.
+  const [perfBackfilling, setPerfBackfilling] = useState(false);
   const dropdownRef = useRef<HTMLDivElement>(null);
   const searchInputRef = useRef<HTMLInputElement>(null);
 
@@ -112,8 +116,34 @@ export function PimModel({ groups }: Props) {
         const res = await fetch("/api/kv/pim-performance");
         if (!res.ok) return;
         const data = await res.json();
-        if (!cancelled && data && Array.isArray((data as PimPerformanceData).models)) {
-          setPerfData(data as PimPerformanceData);
+        if (cancelled || !data || !Array.isArray((data as PimPerformanceData).models)) return;
+        const perf = data as PimPerformanceData;
+        setPerfData(perf);
+        // The Dynamic Weight column needs the core-${profile} series
+        // (added in this branch) to compute drift. The blob in Redis
+        // pre-dates that addition, so we trigger a full recompute via
+        // POST /api/pim-performance the first time we detect the new
+        // series is missing. The route writes back to pm:pim-performance,
+        // so subsequent loads on any device see the populated data.
+        // /api/update-daily-value (the Refresh button) only APPENDS
+        // daily values to existing series — it can't seed new types.
+        const hasCoreSeries = perf.models.some((m) =>
+          typeof m.profile === "string" && m.profile.startsWith("core-")
+        );
+        if (!hasCoreSeries) {
+          setPerfBackfilling(true);
+          try {
+            const recompute = await fetch("/api/pim-performance", { method: "POST" });
+            if (recompute.ok) {
+              const fresh = await recompute.json();
+              if (!cancelled) setPerfData(fresh as PimPerformanceData);
+            }
+          } catch {
+            // Leave column as "—"; user can retry from the Refresh
+            // button in the PimPerformance section.
+          } finally {
+            if (!cancelled) setPerfBackfilling(false);
+          }
         }
       } catch {
         // ignore — Dynamic Weight column falls back to target weight
@@ -791,6 +821,9 @@ export function PimModel({ groups }: Props) {
                       title="Equal-weighted sleeve allocation drifted by Alpha-Model vs Core return since the most recent rebalance. Equity-only; FI/Alts and locked specialty equities stay at target."
                     >
                       Dynamic Wt
+                      {perfBackfilling && (
+                        <span className="ml-1 font-normal text-[10px] text-slate-400">computing…</span>
+                      )}
                     </th>
                     <th className={`text-right ${thClass}`} onClick={() => handleSort("cadModelWeight")}>
                       CAD Model<SortIcon field="cadModelWeight" sortField={sortField} sortDir={sortDir} />
