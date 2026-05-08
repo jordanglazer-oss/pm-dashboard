@@ -56,6 +56,12 @@ export type PimComputedHolding = PimHolding & {
   driftBps?: number; // drift in basis points (live - target)
   currentPrice?: number; // latest price
   rebalancePrice?: number; // price at last rebalance
+  // Sleeve-aggregated drifted weight: equal-weighted within each sleeve
+  // (alpha vs core), where the sleeve totals scale by Alpha-Model return
+  // and per-group Core-sleeve return since the group's last rebalance.
+  // Equity-only; FI/alts/locked equity stay at weightInPortfolio.
+  // Undefined when the group has no lastRebalance or no perf data yet.
+  dynamicWeight?: number;
 };
 
 export type PimModelData = {
