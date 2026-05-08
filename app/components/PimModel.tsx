@@ -552,6 +552,34 @@ export function PimModel({ groups }: Props) {
     return totals;
   }, [computedHoldings]);
 
+  // Diagnostic for the Dynamic Weight column — when the column is
+  // blank, explain *why*. Walks the same prerequisites as the
+  // computation so the message stays in sync.
+  const dynamicWeightDiagnostic = useMemo<string | null>(() => {
+    if (activeProfile === "alpha") return "alpha profile shows no drift";
+    if (perfBackfilling) return null;
+    if (!perfData) return "perf data not loaded yet";
+    const pimRebal = getGroupState("pim").lastRebalance?.date;
+    if (!pimRebal) return "PIM has no rebalance date — execute a rebalance from PIM Portfolio";
+    const alphaSeries = perfData.models.find((m) => m.groupId === "pim" && m.profile === "alpha");
+    if (!alphaSeries || alphaSeries.history.length === 0) return "no \"alpha\" series under groupId=pim — confirm at least one stock has designation:'alpha' (or unset)";
+    if (!effectiveGroup) return null;
+    const coreKey = `core-${activeProfile}`;
+    const coreSeries = perfData.models.find((m) => m.groupId === effectiveGroup.id && m.profile === coreKey);
+    if (!coreSeries || coreSeries.history.length === 0) {
+      const coreCount = Array.from(coreSymbols).length;
+      return coreCount === 0
+        ? "no stocks tagged designation:'core' — visit the Stocks tab and tag your core ETFs (XSP, XUH, XUU, etc.)"
+        : `no "${coreKey}" series for ${effectiveGroup.id} — recompute may have failed`;
+    }
+    const day = pimRebal.slice(0, 10);
+    const alphaBase = [...alphaSeries.history].reverse().find((h) => h.date <= day);
+    if (!alphaBase) return `alpha series has no data on or before ${day} (earliest is ${alphaSeries.history[0]?.date})`;
+    const coreBase = [...coreSeries.history].reverse().find((h) => h.date <= day);
+    if (!coreBase) return `${coreKey} series has no data on or before ${day} (earliest is ${coreSeries.history[0]?.date})`;
+    return null;
+  }, [activeProfile, perfBackfilling, perfData, effectiveGroup, coreSymbols, getGroupState]);
+
   const portfolioTotal = useMemo(
     () => computedHoldings.reduce((sum, h) => sum + h.weightInPortfolio, 0),
     [computedHoldings]
@@ -818,11 +846,18 @@ export function PimModel({ groups }: Props) {
                     </th>
                     <th
                       className="py-2.5 px-2 text-right text-xs font-semibold whitespace-nowrap"
-                      title="Equal-weighted sleeve allocation drifted by Alpha-Model vs Core return since the most recent rebalance. Equity-only; FI/Alts and locked specialty equities stay at target."
+                      title={dynamicWeightDiagnostic
+                        ? `Dynamic Weight unavailable: ${dynamicWeightDiagnostic}`
+                        : "Equal-weighted sleeve allocation drifted by Alpha-Model vs Core return since the most recent rebalance. Equity-only; FI/Alts and locked specialty equities stay at target."}
                     >
                       Dynamic Wt
                       {perfBackfilling && (
                         <span className="ml-1 font-normal text-[10px] text-slate-400">computing…</span>
+                      )}
+                      {!perfBackfilling && dynamicWeightDiagnostic && (
+                        <span className="ml-1 font-normal text-[9px] text-amber-600 normal-case" title={dynamicWeightDiagnostic}>
+                          ⓘ
+                        </span>
                       )}
                     </th>
                     <th className={`text-right ${thClass}`} onClick={() => handleSort("cadModelWeight")}>
