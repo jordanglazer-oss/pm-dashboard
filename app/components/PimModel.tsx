@@ -855,9 +855,27 @@ export function PimModel({ groups }: Props) {
                         <span className="ml-1 font-normal text-[10px] text-slate-400">computing…</span>
                       )}
                       {!perfBackfilling && dynamicWeightDiagnostic && (
-                        <span className="ml-1 font-normal text-[9px] text-amber-600 normal-case" title={dynamicWeightDiagnostic}>
-                          ⓘ
-                        </span>
+                        <>
+                          <span className="ml-1 font-normal text-[9px] text-amber-600 normal-case" title={dynamicWeightDiagnostic}>
+                            ⓘ
+                          </span>
+                          <button
+                            onClick={async (e) => {
+                              e.stopPropagation();
+                              setPerfBackfilling(true);
+                              try {
+                                const res = await fetch("/api/pim-performance", { method: "POST" });
+                                if (res.ok) setPerfData(await res.json() as PimPerformanceData);
+                              } finally {
+                                setPerfBackfilling(false);
+                              }
+                            }}
+                            className="ml-1 font-normal text-[9px] text-blue-600 hover:underline normal-case"
+                            title="Force a full recompute of pm:pim-performance"
+                          >
+                            recompute
+                          </button>
+                        </>
                       )}
                     </th>
                     <th className={`text-right ${thClass}`} onClick={() => handleSort("cadModelWeight")}>

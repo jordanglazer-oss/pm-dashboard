@@ -280,6 +280,17 @@ export async function POST() {
     // by sleeve drift; excluded from both alpha and core sleeve series.
     const LOCKED_EQUITY_SYMBOLS = new Set(["FID5982", "FID5982-T", "GRNJ"]);
 
+    // PIM holdings store Canadian tickers as "-T" (e.g. "XSP-T") while
+    // pm:stocks (where Dashboard's Core/Alpha tags live) stores them as
+    // ".TO" (e.g. "XSP.TO"). Without this normalization, alpha/core
+    // designation lookups silently miss every Canadian holding — alpha
+    // series ends up US-only, core series ends up empty. Matches the
+    // helper in /api/update-daily-value/route.ts.
+    function pimSymbolToTicker(symbol: string): string {
+      if (symbol.endsWith("-T")) return symbol.replace(/-T$/, ".TO");
+      return symbol;
+    }
+
     const groups = pimData.groups;
 
     // Build a map of groupId → trackingStart
@@ -426,7 +437,7 @@ export async function POST() {
       const alphaGroup: PimModelGroup = {
         ...group,
         holdings: group.holdings.filter(
-          (h) => h.assetClass === "equity" && alphaSymbols.has(h.symbol)
+          (h) => h.assetClass === "equity" && alphaSymbols.has(pimSymbolToTicker(h.symbol))
         ),
       };
       if (alphaGroup.holdings.length > 0) {
@@ -491,7 +502,7 @@ export async function POST() {
         ...group,
         holdings: group.holdings.filter(
           (h) => h.assetClass === "equity"
-            && coreSymbols.has(h.symbol)
+            && coreSymbols.has(pimSymbolToTicker(h.symbol))
             && !LOCKED_EQUITY_SYMBOLS.has(h.symbol)
         ),
       };
