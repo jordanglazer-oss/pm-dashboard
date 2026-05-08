@@ -2,7 +2,7 @@
 
 import React, { useState, useMemo, useRef, useEffect, useCallback } from "react";
 import Link from "next/link";
-import type { PimModelGroup, PimProfileType, PimComputedHolding, PimAssetClass } from "@/app/lib/pim-types";
+import type { PimModelGroup, PimProfileType, PimComputedHolding, PimAssetClass, PimPerformanceData } from "@/app/lib/pim-types";
 import type { Stock, InstrumentType, ScoreKey } from "@/app/lib/types";
 import { useStocks } from "@/app/lib/StockContext";
 import { PimPerformance } from "./PimPerformance";
@@ -93,8 +93,34 @@ export function PimModel({ groups }: Props) {
   };
   const [livePrices, setLivePrices] = useState<Record<string, number>>({});
   const [pricesLoading, setPricesLoading] = useState(false);
+  // Persisted PIM model performance — read from Redis blob
+  // pm:pim-performance via /api/kv/pim-performance. Powers the
+  // sleeve-level "Dynamic Weight %" column in the holdings table:
+  // we read the standalone "alpha" series (groupId="pim") for the
+  // Alpha Model return, and the "core-${profile}" series for the
+  // current group/profile to get the Core sleeve return — both
+  // measured cumulatively from the group's lastRebalance.date. No
+  // local-only state: all underlying data persists in Redis.
+  const [perfData, setPerfData] = useState<PimPerformanceData | null>(null);
   const dropdownRef = useRef<HTMLDivElement>(null);
   const searchInputRef = useRef<HTMLInputElement>(null);
+
+  useEffect(() => {
+    let cancelled = false;
+    (async () => {
+      try {
+        const res = await fetch("/api/kv/pim-performance");
+        if (!res.ok) return;
+        const data = await res.json();
+        if (!cancelled && data && Array.isArray((data as PimPerformanceData).models)) {
+          setPerfData(data as PimPerformanceData);
+        }
+      } catch {
+        // ignore — Dynamic Weight column falls back to target weight
+      }
+    })();
+    return () => { cancelled = true; };
+  }, []);
 
   // Close dropdown when clicking outside
   useEffect(() => {
@@ -318,6 +344,88 @@ export function PimModel({ groups }: Props) {
       classCurrencyTotals[key] = (classCurrencyTotals[key] || 0) + h.weightInClass;
     });
 
+    // ── Dynamic Weight computation (sleeve-level drift) ────────────
+    // Read the standalone Alpha Model return (PIM "alpha" series) and
+    // this group's core-sleeve return (groupId/"core-${profile}"
+    // series), both as cumulative returns since the relevant
+    // lastRebalance.date. The Alpha Model anchors to PIM's lastRebalance
+    // since the standalone alpha series IS the PIM alpha profile.
+    // Returns null when no data is available (no rebalance yet, no
+    // perf cron run, or alpha profile selected) → dynamicWeight falls
+    // back to the target weight.
+    const LOCKED_EQUITY_SYMBOLS = new Set(["FID5982", "FID5982-T", "GRNJ"]);
+    const returnSinceRebalance = (
+      groupId: string,
+      profileKey: string,
+      rebalanceDate: string | undefined,
+    ): number | null => {
+      if (!perfData || !rebalanceDate) return null;
+      const series = perfData.models.find((m) => m.groupId === groupId && m.profile === profileKey);
+      if (!series || series.history.length === 0) return null;
+      const rebalDay = rebalanceDate.slice(0, 10);
+      // Walk newest-first to find the last entry on/before the rebalance day.
+      let baseline: number | null = null;
+      for (let i = series.history.length - 1; i >= 0; i--) {
+        if (series.history[i].date <= rebalDay) {
+          baseline = series.history[i].value;
+          break;
+        }
+      }
+      if (baseline == null || baseline <= 0) return null;
+      const latest = series.history[series.history.length - 1].value;
+      return latest / baseline - 1;
+    };
+
+    // Use PIM group's lastRebalance for the Alpha Model anchor (the
+    // standalone "alpha" series only exists under groupId="pim").
+    const pimGroupState = getGroupState("pim");
+    const alphaReturn = activeProfile === "alpha"
+      ? null
+      : returnSinceRebalance("pim", "alpha", pimGroupState.lastRebalance?.date);
+    const coreReturn = activeProfile === "alpha"
+      ? null
+      : returnSinceRebalance(effectiveGroup.id, `core-${activeProfile}`, groupState.lastRebalance?.date);
+
+    // Tally sleeve target totals (equity only, excluding locked specialty
+    // funds). Counts feed equal-weight distribution within each sleeve.
+    let alphaSleeveTarget = 0;
+    let coreSleeveTarget = 0;
+    let alphaCount = 0;
+    let coreCount = 0;
+    if (alphaReturn != null && coreReturn != null) {
+      let alphaAlloc = 0;
+      if (profileWeights) alphaAlloc = profileWeights.equity;
+      for (const h of holdings) {
+        if (h.assetClass !== "equity") continue;
+        const tk = symbolToTicker(h.symbol);
+        if (LOCKED_EQUITY_SYMBOLS.has(h.symbol)) continue;
+        const wInPortfolio = h.weightInClass * alphaAlloc;
+        if (coreSymbols.has(tk)) {
+          coreSleeveTarget += wInPortfolio;
+          coreCount += 1;
+        } else {
+          alphaSleeveTarget += wInPortfolio;
+          alphaCount += 1;
+        }
+      }
+    }
+    const totalSleeveTarget = alphaSleeveTarget + coreSleeveTarget;
+    let perAlphaDynamic = 0;
+    let perCoreDynamic = 0;
+    if (alphaReturn != null && coreReturn != null && totalSleeveTarget > 0) {
+      const driftedAlpha = alphaSleeveTarget * (1 + alphaReturn);
+      const driftedCore = coreSleeveTarget * (1 + coreReturn);
+      const driftedTotal = driftedAlpha + driftedCore;
+      // Renormalize to preserve the original equity sleeve allocation —
+      // FI/alts/locked equity are unaffected by sleeve drift, so the
+      // equity bucket as a whole stays at its profile target.
+      const scale = driftedTotal > 0 ? totalSleeveTarget / driftedTotal : 1;
+      const finalAlpha = driftedAlpha * scale;
+      const finalCore = driftedCore * scale;
+      perAlphaDynamic = alphaCount > 0 ? finalAlpha / alphaCount : 0;
+      perCoreDynamic = coreCount > 0 ? finalCore / coreCount : 0;
+    }
+
     // Compute growth factors for live weight drift
     const holdingsWithGrowth = holdings.map((h) => {
       let assetClassAllocation = 0;
@@ -360,12 +468,29 @@ export function PimModel({ groups }: Props) {
         driftBps = Math.round((liveWeight - weightInPortfolio) * 10000);
       }
 
+      // Sleeve-level drifted target for the Dynamic Weight column.
+      // FI/alts/locked equity stay at the static target; alpha and
+      // core equity holdings each get the equal-weighted share of
+      // their drifted sleeve total.
+      let dynamicWeight: number | undefined;
+      if (alphaReturn != null && coreReturn != null && totalSleeveTarget > 0) {
+        if (h.assetClass !== "equity") {
+          dynamicWeight = weightInPortfolio;
+        } else if (LOCKED_EQUITY_SYMBOLS.has(h.symbol)) {
+          dynamicWeight = weightInPortfolio;
+        } else {
+          const tk = symbolToTicker(h.symbol);
+          dynamicWeight = coreSymbols.has(tk) ? perCoreDynamic : perAlphaDynamic;
+        }
+      }
+
       return {
         ...h, weightInPortfolio, cadModelWeight, usdModelWeight,
         liveWeight, driftBps, currentPrice, rebalancePrice: rebalPrice,
+        dynamicWeight,
       };
     });
-  }, [effectiveGroup, profileWeights, livePrices, groupState]);
+  }, [effectiveGroup, profileWeights, livePrices, groupState, perfData, activeProfile, coreSymbols, getGroupState]);
 
   const filteredHoldings = useMemo(() => {
     if (!holdingSearch.trim()) return computedHoldings;
@@ -655,6 +780,12 @@ export function PimModel({ groups }: Props) {
                     <th className={`text-right ${thClass}`} onClick={() => handleSort("weightInPortfolio")}>
                       Target Wt<SortIcon field="weightInPortfolio" sortField={sortField} sortDir={sortDir} />
                     </th>
+                    <th
+                      className="py-2.5 px-2 text-right text-xs font-semibold whitespace-nowrap"
+                      title="Equal-weighted sleeve allocation drifted by Alpha-Model vs Core return since the most recent rebalance. Equity-only; FI/Alts and locked specialty equities stay at target."
+                    >
+                      Dynamic Wt
+                    </th>
                     <th className={`text-right ${thClass}`} onClick={() => handleSort("cadModelWeight")}>
                       CAD Model<SortIcon field="cadModelWeight" sortField={sortField} sortDir={sortDir} />
                     </th>
@@ -691,6 +822,15 @@ export function PimModel({ groups }: Props) {
                         <span className={`inline-block rounded px-1.5 py-0.5 text-[10px] font-bold ${h.currency === "CAD" ? "bg-red-50 text-red-600" : "bg-green-50 text-green-600"}`}>{h.currency}</span>
                       </td>
                       <td className="py-2 px-2 text-right font-mono text-xs font-semibold">{pctClean(h.weightInPortfolio)}</td>
+                      <td className="py-2 px-2 text-right font-mono text-xs">
+                        {h.dynamicWeight != null ? (
+                          <span className={h.dynamicWeight > h.weightInPortfolio ? "text-emerald-700" : h.dynamicWeight < h.weightInPortfolio ? "text-rose-700" : "text-slate-700"}>
+                            {pctClean(h.dynamicWeight)}
+                          </span>
+                        ) : (
+                          <span className="text-slate-300">&mdash;</span>
+                        )}
+                      </td>
                       <td className="py-2 px-2 text-right font-mono text-xs">{h.cadModelWeight != null ? pctClean(h.cadModelWeight) : <span className="text-slate-300">&mdash;</span>}</td>
                       <td className="py-2 px-2 text-right font-mono text-xs">{h.usdModelWeight != null ? pctClean(h.usdModelWeight) : <span className="text-slate-300">&mdash;</span>}</td>
                       <td className="py-2 px-2 text-center">
@@ -711,6 +851,11 @@ export function PimModel({ groups }: Props) {
                   <tr className={`${colors.bg} font-semibold`}>
                     <td className="py-2 pl-5 pr-2 text-xs text-slate-500" colSpan={3}>TOTAL</td>
                     <td className="py-2 px-2 text-right font-mono text-xs font-bold">{pct(holdings.reduce((s, h) => s + h.weightInPortfolio, 0))}</td>
+                    <td className="py-2 px-2 text-right font-mono text-xs font-bold">
+                      {holdings.some((h) => h.dynamicWeight != null)
+                        ? pct(holdings.reduce((s, h) => s + (h.dynamicWeight ?? h.weightInPortfolio), 0))
+                        : <span className="text-slate-300">&mdash;</span>}
+                    </td>
                     <td className="py-2 px-2 text-right font-mono text-xs">{pct(holdings.filter((h) => h.cadModelWeight != null).reduce((s, h) => s + (h.cadModelWeight || 0), 0))}</td>
                     <td className="py-2 px-2 text-right font-mono text-xs">{pct(holdings.filter((h) => h.usdModelWeight != null).reduce((s, h) => s + (h.usdModelWeight || 0), 0))}</td>
                     <td></td>

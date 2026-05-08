@@ -265,12 +265,20 @@ export async function POST() {
     // Build a set of alpha-designated symbols (for alpha-only performance)
     const stocks: Stock[] = stocksRaw ? JSON.parse(stocksRaw) : [];
     const alphaSymbols = new Set<string>();
+    const coreSymbols = new Set<string>();
     for (const s of stocks) {
       // Default designation is "alpha" if not set; only exclude explicit "core"
       if (s.designation !== "core") {
         alphaSymbols.add(s.ticker);
+      } else {
+        coreSymbols.add(s.ticker);
       }
     }
+    // Mirrors LOCKED_EQUITY_SYMBOLS in app/lib/StockContext.tsx:23 — duplicated
+    // (not imported) to keep the route free of client-only deps. Specialty
+    // funds whose weight is set by the per-group Balanced % input rather than
+    // by sleeve drift; excluded from both alpha and core sleeve series.
+    const LOCKED_EQUITY_SYMBOLS = new Set(["FID5982", "FID5982-T", "GRNJ"]);
 
     const groups = pimData.groups;
 
@@ -440,6 +448,71 @@ export async function POST() {
               groupId: group.id,
               profile: `alpha-${profile}` as PimProfileType,
               history: alphaHistory,
+              lastUpdated: new Date().toISOString(),
+            });
+          }
+        }
+      }
+
+      // Compute core-only returns for this group (equity holdings with core
+      // designation, excluding LOCKED_EQUITY_SYMBOLS). Mirrors the alpha-only
+      // block above. Powers the per-model "Dynamic Weight %" column: the
+      // Core sleeve return is compared against the standalone Alpha Model
+      // return to drift the Alpha-vs-Core split inside each model's equity
+      // sleeve since its last rebalance.
+      const coreGroup: PimModelGroup = {
+        ...group,
+        holdings: group.holdings.filter(
+          (h) => h.assetClass === "equity"
+            && coreSymbols.has(h.symbol)
+            && !LOCKED_EQUITY_SYMBOLS.has(h.symbol)
+        ),
+      };
+      if (coreGroup.holdings.length > 0) {
+        for (const profile of profiles) {
+          // "alpha" profile is the standalone alpha model — a core-alpha
+          // series is meaningless. The non-alpha profiles cover all the
+          // models the Dynamic Weight column will ever query.
+          if (profile === "alpha") continue;
+          if (!group.profiles[profile]) continue;
+          const { history: coreHistory, intradayReturn: coreIntraday } =
+            computeModelReturns(
+              coreGroup,
+              profile,
+              priceHistories,
+              currentPrices,
+              trackingStart
+            );
+          if (coreHistory.length > 0) {
+            if (coreIntraday != null) {
+              const last = coreHistory[coreHistory.length - 1];
+              const today = new Date().toISOString().split("T")[0];
+              if (last.date !== today) {
+                coreHistory.push({
+                  date: today,
+                  value: parseFloat(
+                    (last.value * (1 + coreIntraday / 100)).toFixed(4)
+                  ),
+                  dailyReturn: coreIntraday,
+                });
+              } else {
+                coreHistory[coreHistory.length - 1] = {
+                  date: today,
+                  value: parseFloat(
+                    (coreHistory.length > 1
+                      ? coreHistory[coreHistory.length - 2].value *
+                        (1 + coreIntraday / 100)
+                      : 100 * (1 + coreIntraday / 100)
+                    ).toFixed(4)
+                  ),
+                  dailyReturn: coreIntraday,
+                };
+              }
+            }
+            models.push({
+              groupId: group.id,
+              profile: `core-${profile}` as PimProfileType,
+              history: coreHistory,
               lastUpdated: new Date().toISOString(),
             });
           }
