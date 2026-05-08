@@ -1,8 +1,95 @@
 import { NextResponse } from "next/server";
 import { getRedis } from "@/app/lib/redis";
+import type { PimPerformanceData, PimModelPerformance, AppendixData, AppendixModelLedger, PimProfileType } from "@/app/lib/pim-types";
 
 const PERF_KEY = "pm:pim-performance";
+const APPENDIX_KEY = "pm:appendix-daily-values";
 const BACKUP_PREFIX = "pm:backup:";
+
+/**
+ * POST /api/admin/restore-pim-performance/from-appendix
+ *
+ * Rebuilds the PIM group's series in pm:pim-performance from the
+ * immutable pm:appendix-daily-values ledger. Mirrors the client-side
+ * seedFromAppendix flow in PimPerformance.tsx but runs server-side
+ * and unconditionally — useful when the existing pm:pim-performance
+ * blob was overwritten by a bad recompute and the auto-corruption
+ * check in the client didn't trip.
+ *
+ * Scope: only restores groupId === "pim". The Appendix has no
+ * per-group dimension, so non-PIM series (pc-usa, non-res, ey,
+ * kpmg, deloitte, rcgt) cannot be recovered from this endpoint.
+ *
+ * Side-effects:
+ *   - Stashes current pm:pim-performance to pm:pim-performance.
+ *     pre-restore-<timestamp> first.
+ *   - Preserves all non-PIM series in pm:pim-performance unchanged.
+ *   - For PIM series: replaces history with appendix entries, but
+ *     keeps any post-provider entries (dates after the appendix's
+ *     last entry) so live-tracked recent days don't get dropped.
+ */
+async function restoreFromAppendix(redis: Awaited<ReturnType<typeof getRedis>>) {
+  const appendixRaw = await redis.get(APPENDIX_KEY);
+  if (!appendixRaw) {
+    return { ok: false, error: "no pm:appendix-daily-values found" } as const;
+  }
+  const appendix = JSON.parse(appendixRaw) as AppendixData;
+  if (!appendix.ledgers || appendix.ledgers.length === 0) {
+    return { ok: false, error: "appendix has no ledgers" } as const;
+  }
+
+  const perfRaw = await redis.get(PERF_KEY);
+  const existingPerf: PimPerformanceData = perfRaw
+    ? (JSON.parse(perfRaw) as PimPerformanceData)
+    : { models: [], lastUpdated: new Date().toISOString() };
+
+  // Stash current blob
+  if (perfRaw) {
+    await redis.set(`${PERF_KEY}.pre-restore-${Date.now()}`, perfRaw);
+  }
+
+  // Preserve every non-PIM series as-is
+  const otherGroupModels = existingPerf.models.filter((m) => m.groupId !== "pim");
+
+  const rebuiltPimModels: PimModelPerformance[] = [];
+  for (const ledger of appendix.ledgers as AppendixModelLedger[]) {
+    const profile = ledger.profile as PimProfileType;
+    const providerLastDate = ledger.entries[ledger.entries.length - 1]?.date || "";
+    // Preserve any post-provider entries from the existing PIM series
+    const existingModel = existingPerf.models.find(
+      (m) => m.groupId === "pim" && m.profile === profile
+    );
+    const postProviderEntries = existingModel?.history.filter(
+      (h) => h.date > providerLastDate
+    ) || [];
+
+    const history = [
+      ...ledger.entries.map((e) => ({ date: e.date, value: e.value, dailyReturn: e.dailyReturn })),
+      ...postProviderEntries,
+    ];
+
+    rebuiltPimModels.push({
+      groupId: "pim",
+      profile,
+      history,
+      lastUpdated: new Date().toISOString(),
+    });
+  }
+
+  const restored: PimPerformanceData = {
+    models: [...otherGroupModels, ...rebuiltPimModels],
+    lastUpdated: new Date().toISOString(),
+  };
+
+  await redis.set(PERF_KEY, JSON.stringify(restored));
+
+  return {
+    ok: true,
+    profilesRestored: rebuiltPimModels.map((m) => m.profile),
+    pimModelCount: rebuiltPimModels.length,
+    nonPimModelCount: otherGroupModels.length,
+  } as const;
+}
 
 /**
  * POST /api/admin/restore-pim-performance
@@ -77,8 +164,18 @@ export async function GET() {
 export async function POST(req: Request) {
   try {
     const body = await req.json().catch(() => ({}));
-    const requestedDate = typeof body?.date === "string" ? body.date.trim() : "";
+    const source = typeof body?.source === "string" ? body.source : "";
     const redis = await getRedis();
+
+    // Source: "appendix" → rebuild PIM series from pm:appendix-daily-values.
+    // Default / "backup" → restore from a pm:backup:<date> snapshot.
+    if (source === "appendix") {
+      const result = await restoreFromAppendix(redis);
+      const status = result.ok ? 200 : 404;
+      return NextResponse.json(result, { status });
+    }
+
+    const requestedDate = typeof body?.date === "string" ? body.date.trim() : "";
 
     let chosenDate: string | null = null;
     let perfRaw: string | null = null;
