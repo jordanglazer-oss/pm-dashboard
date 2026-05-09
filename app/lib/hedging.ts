@@ -294,22 +294,26 @@ export async function buildHedgingCostsBlock(): Promise<string> {
       );
     }
 
-    // WoW / MoM trend on ATM premium for the anchor expiries
+    // WoW / MoM trend on the 5% OTM and 10% OTM premiums for the anchor
+    // expiries. These are the strikes the morning-brief hedgingAnalysis
+    // prompt cites by default (5–10% OTM tail protection), so the trend
+    // signal needs to follow the same strikes — tracking ATM here would
+    // force the model to extrapolate from a different point on the
+    // skew curve. ATM is omitted entirely.
     const trendBlock = (label: string, snap: HedgingSnapshotShape | null, daysAgoLabel: string): string[] => {
       if (!snap) return [`${label}: no snapshot ~${daysAgoLabel} ago in ledger yet`];
       const rows: string[] = [`${label} (vs ${snap.date}, SPY $${snap.spotPrice.toFixed(2)}):`];
       for (const a of anchors) {
-        // Match by expiry; if the old snapshot didn't have that exact expiry, fall back to closest by days
         const priorRow = snap.quotes.find((s) => s.expiry === a.expiry);
-        const prior = priorRow?.atmPremium ?? null;
-        const curr = a.atmPremium;
-        if (prior == null || curr == null || prior === 0) {
-          rows.push(`- ${a.expiryLabel} ATM: —`);
-          continue;
-        }
-        const dPct = ((curr - prior) / prior) * 100;
-        const sign = dPct >= 0 ? "+" : "";
-        rows.push(`- ${a.expiryLabel} ATM: $${prior.toFixed(2)} → $${curr.toFixed(2)} (${sign}${dPct.toFixed(1)}%)`);
+        const fmtDelta = (label: string, prior: number | null | undefined, curr: number | null) => {
+          if (prior == null || curr == null || prior === 0) return `${label} —`;
+          const dPct = ((curr - prior) / prior) * 100;
+          const sign = dPct >= 0 ? "+" : "";
+          return `${label} $${prior.toFixed(2)} → $${curr.toFixed(2)} (${sign}${dPct.toFixed(1)}%)`;
+        };
+        const otm5 = fmtDelta("5%OTM", priorRow?.otm5Premium, a.otm5Premium);
+        const otm10 = fmtDelta("10%OTM", priorRow?.otm10Premium, a.otm10Premium);
+        rows.push(`- ${a.expiryLabel}: ${otm5} | ${otm10}`);
       }
       return rows;
     };
