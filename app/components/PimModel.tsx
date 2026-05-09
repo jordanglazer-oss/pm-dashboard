@@ -268,58 +268,55 @@ export function PimModel({ groups }: Props) {
       return { ...selectedGroup, holdings: normalized };
     }
 
-    // Non-PIM groups: keep individual stock weights from PIM, excess to core ETFs by currency
+    // Non-PIM groups: every non-core equity holding picks up the
+    // canonical weight from PIM (so individual stock sizing stays in
+    // sync), and the group's own core ETFs absorb whatever deficit is
+    // left over so equity weightInClass sums cleanly to 100%.
+    //
+    // Replaces a previous "PIM weight + missing-share" calc that
+    // double-counted: it added the absent PIM holdings' weight on top
+    // of the core ETF's already-stored weight, pushing equity totals
+    // past 100% (PC USA / Non-Res equity sleeves were hitting 124%).
+    // The new deficit-based math is self-correcting — non-core total
+    // + core total always equals 1.0 by construction.
     if (selectedGroup.id !== "pim" && pimGroup) {
       const pimWeightMap = new Map<string, number>();
       for (const h of pimGroup.holdings) {
         if (h.assetClass === "equity") pimWeightMap.set(h.symbol, h.weightInClass);
       }
+      const isCore = (sym: string) => coreSymbols.has(symbolToTicker(sym));
+      const equityHoldings = selectedGroup.holdings.filter((h) => h.assetClass === "equity");
 
-      // Find which PIM equity holdings are missing from this group
-      const groupSymbols = new Set(selectedGroup.holdings.map((h) => h.symbol));
-      let cadMissing = 0;
-      let usdMissing = 0;
-      for (const h of pimGroup.holdings) {
-        if (h.assetClass === "equity" && !groupSymbols.has(h.symbol)) {
-          if (h.currency === "USD") usdMissing += h.weightInClass;
-          else cadMissing += h.weightInClass;
-        }
+      // Pass 1 — non-core holdings keep PIM's weight when PIM has the
+      // symbol, else fall back to whatever's stored on this group.
+      const adoptedWeights = new Map<string, number>();
+      let nonCoreTotal = 0;
+      for (const h of equityHoldings) {
+        if (isCore(h.symbol)) continue;
+        const w = pimWeightMap.get(h.symbol) ?? h.weightInClass;
+        adoptedWeights.set(h.symbol, w);
+        nonCoreTotal += w;
       }
 
-      if (cadMissing > 0 || usdMissing > 0) {
-        // Identify core ETFs in this group by currency
-        const coreCad: string[] = [];
-        const coreUsd: string[] = [];
-        let coreCadTotal = 0;
-        let coreUsdTotal = 0;
-        for (const h of selectedGroup.holdings) {
-          if (h.assetClass === "equity" && coreSymbols.has(symbolToTicker(h.symbol))) {
-            const pimW = pimWeightMap.get(h.symbol) || h.weightInClass;
-            if (h.currency === "USD") { coreUsd.push(h.symbol); coreUsdTotal += pimW; }
-            else { coreCad.push(h.symbol); coreCadTotal += pimW; }
-          }
-        }
-
-        const adjusted = selectedGroup.holdings.map((h) => {
-          if (h.assetClass !== "equity") return h;
-
-          // Non-core: use PIM weight
-          const pimW = pimWeightMap.get(h.symbol);
-          if (!coreSymbols.has(symbolToTicker(h.symbol))) {
-            return pimW != null ? { ...h, weightInClass: pimW } : h;
-          }
-
-          // Core ETF: PIM weight + proportional share of missing stocks' weight
-          const basePimW = pimW || h.weightInClass;
-          const isUsd = h.currency === "USD";
-          const missing = isUsd ? usdMissing : cadMissing;
-          const bucketTotal = isUsd ? coreUsdTotal : coreCadTotal;
-          const share = bucketTotal > 0 ? (basePimW / bucketTotal) * missing : 0;
-          return { ...h, weightInClass: basePimW + share };
-        });
-
-        return { ...selectedGroup, holdings: adjusted };
+      // Pass 2 — core ETFs split the deficit (1 − nonCoreTotal),
+      // proportional to their current stored weight if any are
+      // non-zero, else split evenly across the core ETFs.
+      const coreList = equityHoldings.filter((h) => isCore(h.symbol));
+      const deficit = Math.max(0, 1 - nonCoreTotal);
+      const coreStoredTotal = coreList.reduce((s, h) => s + h.weightInClass, 0);
+      for (const h of coreList) {
+        const ratio = coreStoredTotal > 0
+          ? h.weightInClass / coreStoredTotal
+          : 1 / Math.max(1, coreList.length);
+        adoptedWeights.set(h.symbol, deficit * ratio);
       }
+
+      const adjusted = selectedGroup.holdings.map((h) => {
+        if (h.assetClass !== "equity") return h;
+        const w = adoptedWeights.get(h.symbol);
+        return w != null ? { ...h, weightInClass: w } : h;
+      });
+      return { ...selectedGroup, holdings: adjusted };
     }
 
     return selectedGroup;
