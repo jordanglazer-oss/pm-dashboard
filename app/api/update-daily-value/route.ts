@@ -363,12 +363,13 @@ export async function POST() {
           })()
         : group.holdings;
 
-      // Recalculate the last 2 trading days to account for:
-      // - Intraday prices that were captured before market close
-      // - Mutual fund NAVs that only populate the next day
-      // This also serves as a one-time fix for any recently locked incorrect entries.
-      // On same-day refreshes after yesterday has been finalized this session,
-      // drop to 1 (today only) — yesterday's entry is already stable.
+      // Recalc window: today + yesterday (the period where mutual fund
+      // NAVs may still settle). Anything older than 5 calendar days is
+      // sealed permanently — see also the immutability guard in
+      // /api/kv/pim-performance PUT and /api/update-daily-value's
+      // appendix write below. todayOnlyMode shrinks the window to 1
+      // (today only) on same-session refreshes after yesterday has
+      // already been finalized.
       const RECALC_DAYS = todayOnlyMode ? 1 : 2;
       let popped = 0;
       while (
@@ -714,8 +715,12 @@ export async function POST() {
             // Skip today — only settled (closed-day) entries land here.
             if (entry.date === today) continue;
 
-            // Replace same-date entry if it exists (e.g. yesterday's
-            // refinement from the 2-day recalc), otherwise append.
+            // Recalc window: yesterday's entry may be refined here
+            // when mutual-fund NAVs publish next morning. Older entries
+            // are sealed — guarded both by upd.addedDays bounding the
+            // slice above (typically 1-2 days) and by the 5-day safety
+            // net in the perf-history pop loop. Anything beyond that
+            // window cannot reach this loop.
             const existingIdx = ledger.entries.findIndex((e) => e.date === entry.date);
             if (existingIdx >= 0) {
               ledger.entries[existingIdx] = {
