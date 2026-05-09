@@ -554,6 +554,40 @@ export function PimModel({ groups }: Props) {
     return totals;
   }, [computedHoldings]);
 
+  // Drift summary: surfaces the same alpha-vs-core returns that drive
+  // the Dynamic Wt column so they can be displayed standalone above
+  // the holdings table. Mirrors the computation in computedHoldings —
+  // alphaReturn from PIM "alpha" series, coreReturn from this group's
+  // "core-${profile}" series, both anchored to PIM lastRebalance.
+  const driftSummary = useMemo<{
+    anchorDate: string | null;
+    alphaReturn: number | null;
+    coreReturn: number | null;
+  }>(() => {
+    if (activeProfile === "alpha" || !perfData || !effectiveGroup) {
+      return { anchorDate: null, alphaReturn: null, coreReturn: null };
+    }
+    const anchor = getGroupState("pim").lastRebalance?.date || null;
+    if (!anchor) return { anchorDate: null, alphaReturn: null, coreReturn: null };
+    const day = anchor.slice(0, 10);
+    const compute = (groupId: string, profileKey: string): number | null => {
+      const series = perfData.models.find((m) => m.groupId === groupId && m.profile === profileKey);
+      if (!series || series.history.length === 0) return null;
+      let baseline: number | null = null;
+      for (let i = series.history.length - 1; i >= 0; i--) {
+        if (series.history[i].date <= day) { baseline = series.history[i].value; break; }
+      }
+      if (baseline == null || baseline <= 0) return null;
+      const latest = series.history[series.history.length - 1].value;
+      return latest / baseline - 1;
+    };
+    return {
+      anchorDate: day,
+      alphaReturn: compute("pim", "alpha"),
+      coreReturn: compute(effectiveGroup.id, `core-${activeProfile}`),
+    };
+  }, [activeProfile, perfData, effectiveGroup, getGroupState]);
+
   // Diagnostic for the Dynamic Weight column — when the column is
   // blank, explain *why*. Walks the same prerequisites as the
   // computation so the message stays in sync.
@@ -792,6 +826,75 @@ export function PimModel({ groups }: Props) {
       {/* Performance Tracker — only shown for the PIM group */}
       {selectedGroup.id === "pim" && (
         <PimPerformance groupId={selectedGroup.id} groupName={selectedGroup.name} selectedProfile={activeProfile} />
+      )}
+
+      {/* Sleeve Drift summary — Alpha Model and per-group Core sleeve
+          returns since the most recent firm-wide rebalance. These are
+          the inputs that drive the Dynamic Wt column. Hidden on the
+          Alpha profile (no drift to compare against itself). */}
+      {activeProfile !== "alpha" && driftSummary.anchorDate && (
+        <div className="rounded-2xl border border-slate-200 bg-white p-5 shadow-sm">
+          <div className="flex items-baseline justify-between mb-3">
+            <h3 className="text-sm font-bold text-slate-800">Sleeve Drift</h3>
+            <span className="text-xs text-slate-400">
+              since rebalance · {driftSummary.anchorDate}
+            </span>
+          </div>
+          <div className="grid grid-cols-3 gap-3">
+            <div className="rounded-xl bg-slate-50 px-4 py-3">
+              <div className="text-[10px] uppercase tracking-wider text-slate-500 font-semibold">Alpha Model</div>
+              <div className={`text-lg font-bold mt-1 ${
+                driftSummary.alphaReturn == null ? "text-slate-300"
+                : driftSummary.alphaReturn > 0 ? "text-emerald-700"
+                : driftSummary.alphaReturn < 0 ? "text-rose-700"
+                : "text-slate-700"
+              }`}>
+                {driftSummary.alphaReturn == null
+                  ? "—"
+                  : `${driftSummary.alphaReturn > 0 ? "+" : ""}${(driftSummary.alphaReturn * 100).toFixed(2)}%`}
+              </div>
+              <div className="text-[10px] text-slate-400 mt-0.5">PIM standalone alpha · firm-wide</div>
+            </div>
+            <div className="rounded-xl bg-slate-50 px-4 py-3">
+              <div className="text-[10px] uppercase tracking-wider text-slate-500 font-semibold">Core Sleeve</div>
+              <div className={`text-lg font-bold mt-1 ${
+                driftSummary.coreReturn == null ? "text-slate-300"
+                : driftSummary.coreReturn > 0 ? "text-emerald-700"
+                : driftSummary.coreReturn < 0 ? "text-rose-700"
+                : "text-slate-700"
+              }`}>
+                {driftSummary.coreReturn == null
+                  ? "—"
+                  : `${driftSummary.coreReturn > 0 ? "+" : ""}${(driftSummary.coreReturn * 100).toFixed(2)}%`}
+              </div>
+              <div className="text-[10px] text-slate-400 mt-0.5">{selectedGroup.name} core ETFs only</div>
+            </div>
+            <div className="rounded-xl bg-slate-50 px-4 py-3">
+              <div className="text-[10px] uppercase tracking-wider text-slate-500 font-semibold">Spread (α − Core)</div>
+              {driftSummary.alphaReturn != null && driftSummary.coreReturn != null ? (
+                <>
+                  <div className={`text-lg font-bold mt-1 ${
+                    driftSummary.alphaReturn - driftSummary.coreReturn > 0 ? "text-emerald-700"
+                    : driftSummary.alphaReturn - driftSummary.coreReturn < 0 ? "text-rose-700"
+                    : "text-slate-700"
+                  }`}>
+                    {driftSummary.alphaReturn - driftSummary.coreReturn > 0 ? "+" : ""}
+                    {((driftSummary.alphaReturn - driftSummary.coreReturn) * 100).toFixed(2)}%
+                  </div>
+                  <div className="text-[10px] text-slate-400 mt-0.5">
+                    {driftSummary.alphaReturn > driftSummary.coreReturn
+                      ? "Alpha outperforming → Dynamic Wt tilts toward alpha holdings"
+                      : driftSummary.alphaReturn < driftSummary.coreReturn
+                      ? "Core outperforming → Dynamic Wt tilts toward core ETFs"
+                      : "Sleeves matching → Dynamic Wt = Target Wt"}
+                  </div>
+                </>
+              ) : (
+                <div className="text-lg font-bold mt-1 text-slate-300">—</div>
+              )}
+            </div>
+          </div>
+        </div>
       )}
 
       {/* Holdings search */}
