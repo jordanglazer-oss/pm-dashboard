@@ -28,6 +28,97 @@ const BACKUP_PREFIX = "pm:backup:";
  *     keeps any post-provider entries (dates after the appendix's
  *     last entry) so live-tracked recent days don't get dropped.
  */
+/**
+ * Source-of-truth recovery: chain the per-day dailyReturn values in
+ * pm:appendix-daily-values to recompute correct cumulative `value`
+ * fields, then rebuild pm:pim-performance from the corrected appendix.
+ *
+ * Why: a recent recompute corrupted the cumulative `value` field
+ * across the live perf blob and (via update-daily-value's last-N
+ * write-through) the most recent entries of the appendix — but the
+ * historical per-day dailyReturn values were never overwritten.
+ * Chaining them from value=100 gives the correct historical curve.
+ *
+ * Behavior:
+ *   - Stashes pm:appendix-daily-values to pm:appendix-daily-values.
+ *     pre-chain-<timestamp> first.
+ *   - Stashes pm:pim-performance to pm:pim-performance.pre-chain-
+ *     <timestamp>.
+ *   - Rewrites the `value` field of every entry in every appendix
+ *     ledger via cumulative *= (1 + dailyReturn/100). dailyReturn,
+ *     date, addedAt are preserved.
+ *   - Rebuilds the PIM group's series in pm:pim-performance from
+ *     the corrected appendix, leaving non-PIM series untouched.
+ */
+async function chainDailyReturnsRebuild(redis: Awaited<ReturnType<typeof getRedis>>) {
+  const appendixRaw = await redis.get(APPENDIX_KEY);
+  if (!appendixRaw) return { ok: false, error: "no pm:appendix-daily-values found" } as const;
+  const appendix = JSON.parse(appendixRaw) as AppendixData;
+  if (!appendix.ledgers?.length) return { ok: false, error: "appendix has no ledgers" } as const;
+
+  // Stash both blobs first
+  const ts = Date.now();
+  await redis.set(`${APPENDIX_KEY}.pre-chain-${ts}`, appendixRaw);
+  const perfRawBefore = await redis.get(PERF_KEY);
+  if (perfRawBefore) await redis.set(`${PERF_KEY}.pre-chain-${ts}`, perfRawBefore);
+
+  // Chain dailyReturns to recompute correct value fields
+  type LedgerSummary = { profile: string; entries: number; finalValue: number; periodReturn: string };
+  const summaries: LedgerSummary[] = [];
+  for (const ledger of appendix.ledgers) {
+    let cumulative = 100;
+    if (ledger.entries.length > 0) {
+      // Anchor first entry at 100, dailyReturn 0
+      ledger.entries[0] = { ...ledger.entries[0], value: 100, dailyReturn: 0 };
+      for (let i = 1; i < ledger.entries.length; i++) {
+        cumulative *= 1 + ledger.entries[i].dailyReturn / 100;
+        ledger.entries[i] = {
+          ...ledger.entries[i],
+          value: parseFloat(cumulative.toFixed(4)),
+        };
+      }
+    }
+    summaries.push({
+      profile: ledger.profile,
+      entries: ledger.entries.length,
+      finalValue: cumulative,
+      periodReturn: `${(cumulative / 100 - 1) * 100}%`,
+    });
+  }
+
+  await redis.set(APPENDIX_KEY, JSON.stringify(appendix));
+
+  // Rebuild pm:pim-performance for the PIM group from corrected appendix.
+  // Mirrors restoreFromAppendix but uses the just-corrected ledgers.
+  const existingPerf: PimPerformanceData = perfRawBefore
+    ? (JSON.parse(perfRawBefore) as PimPerformanceData)
+    : { models: [], lastUpdated: new Date().toISOString() };
+  const otherGroupModels = existingPerf.models.filter((m) => m.groupId !== "pim");
+  const rebuiltPimModels: PimModelPerformance[] = [];
+  for (const ledger of appendix.ledgers as AppendixModelLedger[]) {
+    const profile = ledger.profile as PimProfileType;
+    rebuiltPimModels.push({
+      groupId: "pim",
+      profile,
+      history: ledger.entries.map((e) => ({ date: e.date, value: e.value, dailyReturn: e.dailyReturn })),
+      lastUpdated: new Date().toISOString(),
+    });
+  }
+  const restored: PimPerformanceData = {
+    models: [...otherGroupModels, ...rebuiltPimModels],
+    lastUpdated: new Date().toISOString(),
+  };
+  await redis.set(PERF_KEY, JSON.stringify(restored));
+
+  return {
+    ok: true,
+    stashedAt: ts,
+    ledgersRebuilt: summaries,
+    pimModelCount: rebuiltPimModels.length,
+    nonPimModelCount: otherGroupModels.length,
+  } as const;
+}
+
 async function restoreFromAppendix(redis: Awaited<ReturnType<typeof getRedis>>) {
   const appendixRaw = await redis.get(APPENDIX_KEY);
   if (!appendixRaw) {
@@ -225,8 +316,17 @@ export async function POST(req: Request) {
     const source = typeof body?.source === "string" ? body.source : "";
     const redis = await getRedis();
 
-    // Source: "appendix" → rebuild PIM series from pm:appendix-daily-values.
-    // Default / "backup" → restore from a pm:backup:<date> snapshot.
+    // Source: "chain-daily-returns" → recompute appendix value fields by
+    // chaining the per-day dailyReturn (the source of truth that was never
+    // corrupted), then rebuild PIM series in pm:pim-performance from
+    // corrected appendix. RECOMMENDED recovery path.
+    if (source === "chain-daily-returns") {
+      const result = await chainDailyReturnsRebuild(redis);
+      return NextResponse.json(result, { status: result.ok ? 200 : 404 });
+    }
+    // Source: "appendix" → rebuild PIM series from pm:appendix-daily-values
+    // as-is (does NOT rebuild appendix values). Use only if the appendix
+    // value fields are already correct.
     if (source === "appendix") {
       const result = await restoreFromAppendix(redis);
       const status = result.ok ? 200 : 404;
