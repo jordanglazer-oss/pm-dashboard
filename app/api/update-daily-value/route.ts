@@ -363,23 +363,20 @@ export async function POST() {
           })()
         : group.holdings;
 
-      // Recalculate the last 2 trading days to account for:
-      // - Intraday prices that were captured before market close
-      // - Mutual fund NAVs that only populate the next day
-      // This also serves as a one-time fix for any recently locked incorrect entries.
-      // On same-day refreshes after yesterday has been finalized this session,
-      // drop to 1 (today only) — yesterday's entry is already stable.
-      const RECALC_DAYS = todayOnlyMode ? 1 : 2;
+      // STRICT IMMUTABILITY: only the entry whose date === today may be
+      // popped and recomputed. Any entry with a date prior to today is
+      // sealed forever. The previous 2-day recalc that refined
+      // yesterday's value once mutual fund NAVs published is disabled
+      // by user directive ("past performance is NEVER adjusted again").
+      // The minor cost: yesterday's entry retains the intraday/pre-NAV
+      // value from when it was first written. Acceptable tradeoff in
+      // exchange for hard immutability of historical data.
+      void todayOnlyMode; // intentionally unused — gated by date equality below
       let popped = 0;
       while (
         model.history.length > 1 &&
-        popped < RECALC_DAYS &&
-        model.history[model.history.length - 1].date >= today.slice(0, 8) // same month prefix safety
+        model.history[model.history.length - 1].date === today
       ) {
-        const last = model.history[model.history.length - 1];
-        // Only pop recent entries (within last 5 calendar days of today)
-        const daysDiff = (new Date(today).getTime() - new Date(last.date).getTime()) / (1000 * 60 * 60 * 24);
-        if (daysDiff > 5) break;
         model.history.pop();
         popped++;
       }
@@ -714,24 +711,20 @@ export async function POST() {
             // Skip today — only settled (closed-day) entries land here.
             if (entry.date === today) continue;
 
-            // Replace same-date entry if it exists (e.g. yesterday's
-            // refinement from the 2-day recalc), otherwise append.
+            // STRICT IMMUTABILITY: once a date is in the appendix, its
+            // value is locked forever. Only ever APPEND new dates; never
+            // overwrite existing ones. The earlier 2-day recalc that
+            // refined yesterday's entry on next-day NAV settlement is
+            // disabled — the user has explicitly required that past
+            // performance NEVER be adjusted by any future code path.
             const existingIdx = ledger.entries.findIndex((e) => e.date === entry.date);
-            if (existingIdx >= 0) {
-              ledger.entries[existingIdx] = {
-                date: entry.date,
-                value: entry.value,
-                dailyReturn: entry.dailyReturn,
-                addedAt: now,
-              };
-            } else {
-              ledger.entries.push({
-                date: entry.date,
-                value: entry.value,
-                dailyReturn: entry.dailyReturn,
-                addedAt: now,
-              });
-            }
+            if (existingIdx >= 0) continue;
+            ledger.entries.push({
+              date: entry.date,
+              value: entry.value,
+              dailyReturn: entry.dailyReturn,
+              addedAt: now,
+            });
           }
           ledger.entries.sort((a, b) => a.date.localeCompare(b.date));
         }
