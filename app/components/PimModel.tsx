@@ -244,6 +244,28 @@ export function PimModel({ groups }: Props) {
     ? selectedProfile
     : availableProfiles[0] || "balanced";
 
+  // Keyboard navigation: left/right arrows cycle through the available
+  // profiles (balanced ↔ growth ↔ allEquity ↔ alpha, where applicable
+  // for the selected group). Skips when the user is typing in an input
+  // so search bars / forms aren't hijacked.
+  useEffect(() => {
+    function onKey(e: KeyboardEvent) {
+      if (e.key !== "ArrowLeft" && e.key !== "ArrowRight") return;
+      const target = e.target as HTMLElement | null;
+      const tag = target?.tagName?.toLowerCase();
+      if (tag === "input" || tag === "textarea" || tag === "select" || target?.isContentEditable) return;
+      if (availableProfiles.length <= 1) return;
+      const idx = availableProfiles.indexOf(activeProfile);
+      const nextIdx = e.key === "ArrowRight"
+        ? (idx + 1) % availableProfiles.length
+        : (idx - 1 + availableProfiles.length) % availableProfiles.length;
+      setSelectedProfile(availableProfiles[nextIdx]);
+      e.preventDefault();
+    }
+    window.addEventListener("keydown", onKey);
+    return () => window.removeEventListener("keydown", onKey);
+  }, [availableProfiles, activeProfile]);
+
   // Alpha profile = virtual 100% equity; otherwise use stored profile weights
   const ALPHA_WEIGHTS = { cash: 0, fixedIncome: 0, equity: 1, alternatives: 0 };
   const profileWeights = activeProfile === "alpha"
