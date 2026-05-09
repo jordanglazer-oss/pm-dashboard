@@ -898,6 +898,42 @@ export default function StockDetailPage() {
     }
   }, [stock, scoreable, fetchFundData]);
 
+  // Keyboard navigation: ← / → cycle through holdings in the same
+  // order as the top ticker bar (Portfolio Stocks → Portfolio Funds →
+  // Watchlist Stocks → Watchlist Funds, each alpha-sorted). Skips when
+  // focus is on a text input so search/notes/forms aren't hijacked.
+  // The ticker list is recomputed inside the effect so this hook stays
+  // unconditional even when the page falls through to the "not found"
+  // early return below.
+  useEffect(() => {
+    function onKey(e: KeyboardEvent) {
+      if (e.key !== "ArrowLeft" && e.key !== "ArrowRight") return;
+      const target = e.target as HTMLElement | null;
+      const tag = target?.tagName?.toLowerCase();
+      if (tag === "input" || tag === "textarea" || tag === "select" || target?.isContentEditable) return;
+
+      const alpha = (a: string, b: string) => a.localeCompare(b);
+      const port = scoredStocks.filter((s) => s.bucket === "Portfolio");
+      const watch = scoredStocks.filter((s) => s.bucket === "Watchlist");
+      const ordered = [
+        ...port.filter((s) => isScoreable(s)).map((s) => s.ticker).sort(alpha),
+        ...port.filter((s) => !isScoreable(s)).map((s) => s.ticker).sort(alpha),
+        ...watch.filter((s) => isScoreable(s)).map((s) => s.ticker).sort(alpha),
+        ...watch.filter((s) => !isScoreable(s)).map((s) => s.ticker).sort(alpha),
+      ];
+      if (ordered.length <= 1) return;
+      const idx = ordered.findIndex((t) => t === ticker);
+      if (idx < 0) return;
+      const nextIdx = e.key === "ArrowRight"
+        ? (idx + 1) % ordered.length
+        : (idx - 1 + ordered.length) % ordered.length;
+      e.preventDefault();
+      router.push(`/stock/${ordered[nextIdx].toLowerCase()}${fromSuffix}`);
+    }
+    window.addEventListener("keydown", onKey);
+    return () => window.removeEventListener("keydown", onKey);
+  }, [scoredStocks, ticker, router, fromSuffix]);
+
   if (!stock) {
     return (
       <main className="min-h-screen bg-[#f4f5f7] px-4 py-6 text-slate-900 md:px-8 md:py-8">
