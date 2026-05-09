@@ -363,20 +363,24 @@ export async function POST() {
           })()
         : group.holdings;
 
-      // STRICT IMMUTABILITY: only the entry whose date === today may be
-      // popped and recomputed. Any entry with a date prior to today is
-      // sealed forever. The previous 2-day recalc that refined
-      // yesterday's value once mutual fund NAVs published is disabled
-      // by user directive ("past performance is NEVER adjusted again").
-      // The minor cost: yesterday's entry retains the intraday/pre-NAV
-      // value from when it was first written. Acceptable tradeoff in
-      // exchange for hard immutability of historical data.
-      void todayOnlyMode; // intentionally unused — gated by date equality below
+      // Recalc window: today + yesterday (the period where mutual fund
+      // NAVs may still settle). Anything older than 5 calendar days is
+      // sealed permanently — see also the immutability guard in
+      // /api/kv/pim-performance PUT and /api/update-daily-value's
+      // appendix write below. todayOnlyMode shrinks the window to 1
+      // (today only) on same-session refreshes after yesterday has
+      // already been finalized.
+      const RECALC_DAYS = todayOnlyMode ? 1 : 2;
       let popped = 0;
       while (
         model.history.length > 1 &&
-        model.history[model.history.length - 1].date === today
+        popped < RECALC_DAYS &&
+        model.history[model.history.length - 1].date >= today.slice(0, 8) // same month prefix safety
       ) {
+        const last = model.history[model.history.length - 1];
+        // Only pop recent entries (within last 5 calendar days of today)
+        const daysDiff = (new Date(today).getTime() - new Date(last.date).getTime()) / (1000 * 60 * 60 * 24);
+        if (daysDiff > 5) break;
         model.history.pop();
         popped++;
       }
@@ -711,20 +715,28 @@ export async function POST() {
             // Skip today — only settled (closed-day) entries land here.
             if (entry.date === today) continue;
 
-            // STRICT IMMUTABILITY: once a date is in the appendix, its
-            // value is locked forever. Only ever APPEND new dates; never
-            // overwrite existing ones. The earlier 2-day recalc that
-            // refined yesterday's entry on next-day NAV settlement is
-            // disabled — the user has explicitly required that past
-            // performance NEVER be adjusted by any future code path.
+            // Recalc window: yesterday's entry may be refined here
+            // when mutual-fund NAVs publish next morning. Older entries
+            // are sealed — guarded both by upd.addedDays bounding the
+            // slice above (typically 1-2 days) and by the 5-day safety
+            // net in the perf-history pop loop. Anything beyond that
+            // window cannot reach this loop.
             const existingIdx = ledger.entries.findIndex((e) => e.date === entry.date);
-            if (existingIdx >= 0) continue;
-            ledger.entries.push({
-              date: entry.date,
-              value: entry.value,
-              dailyReturn: entry.dailyReturn,
-              addedAt: now,
-            });
+            if (existingIdx >= 0) {
+              ledger.entries[existingIdx] = {
+                date: entry.date,
+                value: entry.value,
+                dailyReturn: entry.dailyReturn,
+                addedAt: now,
+              };
+            } else {
+              ledger.entries.push({
+                date: entry.date,
+                value: entry.value,
+                dailyReturn: entry.dailyReturn,
+                addedAt: now,
+              });
+            }
           }
           ledger.entries.sort((a, b) => a.date.localeCompare(b.date));
         }
