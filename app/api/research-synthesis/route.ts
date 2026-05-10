@@ -42,16 +42,54 @@ const client = new Anthropic();
 
 // ── Output schema ───────────────────────────────────────────────────
 
+/**
+ * RegimeFit captures the model's OPINION on whether the current
+ * environment favors the name. Kept strictly separate from `thesis`
+ * (which is grounded in what the source analysts say) so the user can
+ * tell at a glance which part is research overlap and which is the
+ * model's opinionated read.
+ *
+ *   high     — regime tilts strongly favor this name; conviction add.
+ *   medium   — regime is neutral or mixed but doesn't argue against it.
+ *   low      — regime is unsupportive but the source signal is strong
+ *              enough to keep on the radar.
+ *   contrary — regime actively argues AGAINST this name; surface the
+ *              conflict in the rating so the PM sees the disagreement.
+ */
+export type RegimeFitRating = "high" | "medium" | "low" | "contrary";
+
 export type SynthesisPick = {
   ticker: string;
   sources: string[];
   sourceCount: number;
+  /** What the SOURCES say — research overlap, technical setups,
+   *  analyst ratings, target weights. Sticks to the data; not opinion. */
   thesis: string;
+  /** OPINIONATED regime-fit rating + 1-line justification grounded in
+   *  the brief's tilts. Separate from `thesis` so the line between
+   *  research and model opinion is always visible. */
+  regimeFit?: RegimeFitRating;
+  regimeFitRationale?: string;
 };
 
 export type SynthesisResult = {
   summary: string;
+  /** Distilled tilts the model derived from the brief — 2-4 short
+   *  bullets the PM can use as a lens for the picks below. Surfaced
+   *  prominently so the user sees WHY certain names get promoted. */
+  regimeTilts?: string[];
+  /** Cross-source picks (ticker in 2+ sources). Primary recommendation
+   *  set, sorted by sourceCount desc. Each pick still gets a regimeFit
+   *  rating so the user can spot multi-source names that the regime
+   *  doesn't actually favor. */
   topPicks: SynthesisPick[];
+  /** Single-source picks where regimeFit is "high" — names the model
+   *  thinks are well-positioned for the current environment even
+   *  though only one analyst flagged them. Replaces the looser
+   *  "honorableMentions" leftovers bucket. */
+  regimeAlignedHighlights: SynthesisPick[];
+  /** Remaining single-source mentions worth tracking but not strongly
+   *  regime-favored. Lower priority than regimeAlignedHighlights. */
   honorableMentions: SynthesisPick[];
   cautions?: string[];
   regimeContext?: string;
@@ -230,7 +268,11 @@ function buildContext(
   // generalNotes intentionally omitted — section removed from the UI;
   // any legacy notes in older blobs are not surfaced to the synthesis.
 
-  // Brief context
+  // Brief context — passed in detail because the synthesis is supposed
+  // to be opinionated about regime fit, not just a research overlap
+  // tabulation. The wider the brief context, the better the model can
+  // distill specific tilts (sector / market-cap / factor / defensive vs
+  // cyclical) and rank candidates against them.
   lines.push(``);
   lines.push(`=== MORNING BRIEF CONTEXT ===`);
   if (brief) {
@@ -239,8 +281,22 @@ function buildContext(
     if (brief.tacticalView) lines.push(`\nTactical view (1-3M, 50% weight): ${brief.tacticalView}`);
     if (brief.cyclicalView) lines.push(`\nCyclical view (3-6M, 30% weight): ${brief.cyclicalView}`);
     if (brief.structuralView) lines.push(`\nStructural view (6-12M, 20% weight): ${brief.structuralView}`);
+    if (brief.compositeAnalysis) lines.push(`\nComposite read: ${brief.compositeAnalysis}`);
+    if (brief.creditAnalysis) lines.push(`\nCredit: ${brief.creditAnalysis}`);
+    if (brief.volatilityAnalysis) lines.push(`\nVolatility: ${brief.volatilityAnalysis}`);
+    if (brief.breadthAnalysis) lines.push(`\nBreadth: ${brief.breadthAnalysis}`);
+    if (brief.contrarianAnalysis) lines.push(`\nContrarian read: ${brief.contrarianAnalysis}`);
     if (brief.hedgingAnalysis) lines.push(`\nHedging stance: ${brief.hedgingAnalysis}`);
     if (brief.sectorRotation?.summary) lines.push(`\nSector rotation: ${brief.sectorRotation.summary}`);
+    if (brief.sectorRotation?.leading?.length) {
+      lines.push(`Leading sectors: ${brief.sectorRotation.leading.join(" | ")}`);
+    }
+    if (brief.sectorRotation?.lagging?.length) {
+      lines.push(`Lagging sectors: ${brief.sectorRotation.lagging.join(" | ")}`);
+    }
+    if (brief.sectorRotation?.pmImplication) {
+      lines.push(`PM implication: ${brief.sectorRotation.pmImplication}`);
+    }
   } else {
     lines.push(`No brief available — synthesize purely from research sources, applying neutral regime assumptions.`);
   }
@@ -259,31 +315,66 @@ function buildContext(
   return lines.join("\n");
 }
 
-const SYSTEM_PROMPT = `You are an institutional portfolio manager synthesizing equity research from multiple analyst sources for a PM running a balanced/growth book at a wealth management firm. Your job: identify the BEST buy targets across the sources, with particular weight on names that appear in MULTIPLE sources (cross-source overlap = stronger conviction).
+const SYSTEM_PROMPT = `You are an institutional portfolio manager synthesizing equity research from multiple analyst sources for a PM running a balanced/growth book at a wealth management firm. Your job has TWO parts:
+  (A) RESEARCH: identify which names show up across multiple sources — cross-source overlap is the strongest conviction signal and these are always the primary picks.
+  (B) OPINION: form an opinionated view on which names the CURRENT MARKET ENVIRONMENT actually favors, using the brief's regime/horizon/breadth/credit/contrarian/volatility/sector reads — and apply that opinion to BOTH multi-source and single-source candidates.
+
+The PM relies on the synthesis as their main funnel of new buy ideas. Make the line between (A) what the SOURCES say and (B) what YOU think the regime favors visibly distinct in the output.
+
+STEP 1 — DISTILL REGIME TILTS FROM THE BRIEF (output as regimeTilts):
+  - Read the brief's tactical / cyclical / structural views, breadth, credit, volatility, contrarian, hedging stance, and sector rotation.
+  - Distill 2-4 specific tilts the current environment favors. Examples of useful tilt formats:
+      "Favor large-cap momentum, MAG7-adjacent AI infra; cautious on rate-sensitive defensives."
+      "Late-cycle: lean growth-at-reasonable-price, avoid speculative SMID until breadth confirms."
+      "Risk-Off tactical, Risk-On structural: favor quality compounders with cash flow durability over high-beta names."
+  - Tilts should mention specifics: sectors, market-cap bias, factor/style (growth vs value, momentum vs defensive, quality vs junk), geography (US vs Canadian).
+  - These tilts become the lens for ranking every candidate.
+
+STEP 2 — RANK CANDIDATES (overlap × regime-fit):
+  - sourceCount is the PRIMARY sort. Names in 2+ sources are always topPicks regardless of regime fit.
+  - regimeFit is a SECONDARY lens used to:
+      (a) break ties among multi-source picks (high regime-fit ranks above medium/low)
+      (b) promote single-source picks to "regimeAlignedHighlights" when fit is "high"
+      (c) flag multi-source picks that the regime doesn't actually support — keep them as topPicks but mark regimeFit "low" or "contrary" so the PM sees the disagreement
+  - regimeFit values:
+      high     — tilts strongly favor this name; conviction add.
+      medium   — neutral or mixed; doesn't argue against it.
+      low      — regime is unsupportive; source signal carries the call alone.
+      contrary — regime actively argues AGAINST it; flag the conflict.
+  - regimeFitRationale is ONE short sentence (≤25 words) tying the rating to specific tilt(s) — not a re-statement of the source thesis.
+
+STEP 3 — SEPARATE RESEARCH FROM OPINION IN THE OUTPUT:
+  - thesis = WHAT THE SOURCES SAY: list which sources mentioned the ticker, what they say (ratings, target weights, technical levels, entry prices), any setup specifics. Do not editorialize regime fit here.
+  - regimeFit + regimeFitRationale = THE MODEL'S OPINION on regime alignment. This is where your view goes.
 
 CRITICAL RULES:
-1. A ticker mentioned in 2+ sources is a "Top Pick" candidate. Order topPicks by sourceCount desc, then alphabetically.
-2. NEVER include a ticker in topPicks or honorableMentions if it appears in Source 3 (Fundstrat Large-Cap Bottom Ideas) OR Source 5 (Fundstrat Bottom SMID-Cap Core Ideas). Both bottom lists carry NEGATIVE posture — names to avoid or short. Treat them identically as exclusions. Note any conflict in summary or cautions instead.
-3. NEVER include a ticker in topPicks or honorableMentions if it appears in the "PORTFOLIO HOLDINGS (DO NOT RECOMMEND AS BUYS)" list. The PM already owns those positions — the synthesis is for NEW buy ideas. Just SILENTLY EXCLUDE these from your output. Do NOT add "PORTFOLIO CONFIRMATION" or "source confirms the existing position" notes to cautions — the PM already knows what they hold and doesn't need re-validation. The cautions array should ONLY contain genuinely actionable warnings (bottom-ideas conflicts, regime mismatches, single-source quality concerns) — never positive confirmations of existing positions.
-4. Single-source picks can be honorableMentions IF the regime/sector/setup strongly aligns with the brief. Be selective — 3-6 honorable mentions is plenty.
-5. Each thesis MUST cite (a) which sources mentioned the ticker by name, and (b) why the current regime / horizon view supports the buy.
-6. If the brief is missing or empty, work purely from sources but note the limitation in summary.
+1. topPicks = every ticker in 2+ sources, sorted by sourceCount desc, ties broken by regimeFit (high → medium → low → contrary), then alphabetically. Multi-source picks ALWAYS appear here — never demote a multi-source pick to a lower tier just because regime fit is poor; instead mark regimeFit accordingly.
+2. regimeAlignedHighlights = single-source picks where regimeFit is "high". Cap at 4-6 entries; only the strongest regime alignment makes it. Each one needs a regimeFitRationale that's specific (cites a tilt and ties to the name's profile).
+3. honorableMentions = remaining single-source mentions worth tracking but not strongly regime-favored. Cap at 3-5 entries; skip noise.
+4. NEVER include a ticker in topPicks, regimeAlignedHighlights, or honorableMentions if it appears in Source 3 (Fundstrat Large-Cap Bottom Ideas) OR Source 5 (Fundstrat Bottom SMID-Cap Core Ideas). Both bottom lists carry NEGATIVE posture — names to avoid or short. Treat them identically as exclusions. Note any conflict in cautions instead.
+5. NEVER include a ticker in any pick tier if it appears in the "PORTFOLIO HOLDINGS (DO NOT RECOMMEND AS BUYS)" list. SILENTLY EXCLUDE — do NOT add "PORTFOLIO CONFIRMATION" / "source confirms the existing position" notes anywhere. The PM already knows what they hold.
+6. cautions array is for genuinely actionable warnings ONLY (bottom-ideas conflicts, regime mismatches that aren't already captured by regimeFit:contrary on a pick, single-source quality concerns). Never use it for portfolio confirmations.
 7. Use section labels EXACTLY as written in the source list (e.g. "Newton's Upticks", "Fundstrat Top Ideas", "RBC Canadian Focus List", "Alpha Picks").
+8. If the brief is missing or empty: regimeTilts should be a single bullet "No brief context — regime fit unknown"; every regimeFit defaults to "medium" with rationale "no brief context"; regimeAlignedHighlights stays empty; surface the limitation in summary.
 
 Respond ONLY with valid JSON matching this schema:
 {
   "summary": "1-2 sentence overall synthesis tying picks to the regime/horizon read.",
+  "regimeTilts": ["Tilt 1 (specific: sector, market-cap, factor)", "Tilt 2", "..."],
   "topPicks": [
-    {"ticker": "TICKER", "sources": ["..."], "sourceCount": N, "thesis": "..."}
+    {"ticker": "TICKER", "sources": ["..."], "sourceCount": N, "thesis": "what the sources say", "regimeFit": "high|medium|low|contrary", "regimeFitRationale": "≤25 words tying rating to a specific tilt"}
+  ],
+  "regimeAlignedHighlights": [
+    {"ticker": "TICKER", "sources": ["..."], "sourceCount": 1, "thesis": "what the single source says", "regimeFit": "high", "regimeFitRationale": "≤25 words tying rating to a specific tilt"}
   ],
   "honorableMentions": [
-    {"ticker": "TICKER", "sources": ["..."], "sourceCount": N, "thesis": "..."}
+    {"ticker": "TICKER", "sources": ["..."], "sourceCount": 1, "thesis": "what the single source says", "regimeFit": "medium|low", "regimeFitRationale": "≤25 words"}
   ],
-  "cautions": ["Optional: bottom-ideas conflicts, regime mismatches, or other genuinely actionable warnings. Do NOT include 'portfolio confirmation' notes — the PM doesn't need to be told they own their own holdings."],
+  "cautions": ["Optional: bottom-ideas conflicts, single-source quality concerns. NOT for portfolio confirmations."],
   "regimeContext": "Risk-On / Neutral / Risk-Off / unknown"
 }
 
-Be concrete and actionable. The PM is going to read this and act on it the same day.`;
+Be concrete and actionable. The PM reads this and acts on it the same day.`;
 
 function parseSynthesis(text: string): SynthesisResult | null {
   const cleaned = text.replace(/```json\s*|```/g, "").trim();
@@ -293,25 +384,46 @@ function parseSynthesis(text: string): SynthesisResult | null {
   try {
     const parsed = JSON.parse(cleaned.slice(start, end + 1)) as Partial<SynthesisResult>;
     if (typeof parsed.summary !== "string") return null;
-    const topPicks = Array.isArray(parsed.topPicks) ? parsed.topPicks : [];
-    const honorableMentions = Array.isArray(parsed.honorableMentions) ? parsed.honorableMentions : [];
 
+    const validRatings: ReadonlySet<string> = new Set(["high", "medium", "low", "contrary"]);
     const normPicks = (arr: Partial<SynthesisPick>[]): SynthesisPick[] =>
       arr
         .filter((p) => p && typeof p.ticker === "string" && p.ticker.trim())
-        .map((p) => ({
-          ticker: String(p.ticker).trim().toUpperCase(),
-          sources: Array.isArray(p.sources) ? p.sources.map(String).filter(Boolean) : [],
-          sourceCount: typeof p.sourceCount === "number"
-            ? p.sourceCount
-            : (Array.isArray(p.sources) ? p.sources.length : 0),
-          thesis: typeof p.thesis === "string" ? p.thesis : "",
-        }));
+        .map((p) => {
+          const rawFit = typeof p.regimeFit === "string" ? p.regimeFit.toLowerCase() : "";
+          const regimeFit: RegimeFitRating | undefined = validRatings.has(rawFit)
+            ? (rawFit as RegimeFitRating)
+            : undefined;
+          return {
+            ticker: String(p.ticker).trim().toUpperCase(),
+            sources: Array.isArray(p.sources) ? p.sources.map(String).filter(Boolean) : [],
+            sourceCount: typeof p.sourceCount === "number"
+              ? p.sourceCount
+              : (Array.isArray(p.sources) ? p.sources.length : 0),
+            thesis: typeof p.thesis === "string" ? p.thesis : "",
+            regimeFit,
+            regimeFitRationale: typeof p.regimeFitRationale === "string"
+              ? p.regimeFitRationale
+              : undefined,
+          };
+        });
+
+    const topPicks = normPicks(Array.isArray(parsed.topPicks) ? parsed.topPicks : []);
+    const honorableMentions = normPicks(
+      Array.isArray(parsed.honorableMentions) ? parsed.honorableMentions : []
+    );
+    const regimeAlignedHighlights = normPicks(
+      Array.isArray(parsed.regimeAlignedHighlights) ? parsed.regimeAlignedHighlights : []
+    );
 
     return {
       summary: parsed.summary,
-      topPicks: normPicks(topPicks),
-      honorableMentions: normPicks(honorableMentions),
+      regimeTilts: Array.isArray(parsed.regimeTilts)
+        ? parsed.regimeTilts.map(String).filter((s) => s.trim().length > 0)
+        : undefined,
+      topPicks,
+      regimeAlignedHighlights,
+      honorableMentions,
       cautions: Array.isArray(parsed.cautions) ? parsed.cautions.map(String) : undefined,
       regimeContext: typeof parsed.regimeContext === "string" ? parsed.regimeContext : undefined,
     };
@@ -347,6 +459,7 @@ function filterPortfolioOut(result: SynthesisResult, portfolioTickers: string[])
   return {
     ...result,
     topPicks: result.topPicks.filter((p) => !isHeld(p.ticker)),
+    regimeAlignedHighlights: result.regimeAlignedHighlights.filter((p) => !isHeld(p.ticker)),
     honorableMentions: result.honorableMentions.filter((p) => !isHeld(p.ticker)),
     cautions: filteredCautions && filteredCautions.length > 0 ? filteredCautions : undefined,
   };

@@ -416,10 +416,22 @@ export default function ResearchPage() {
   // research sources, weighted by cross-source overlap and the brief's
   // regime/horizon read. Hash-gated server-side so unchanged inputs
   // don't spend Anthropic tokens.
-  type SynthesisPick = { ticker: string; sources: string[]; sourceCount: number; thesis: string };
+  type RegimeFitRating = "high" | "medium" | "low" | "contrary";
+  type SynthesisPick = {
+    ticker: string;
+    sources: string[];
+    sourceCount: number;
+    thesis: string;
+    regimeFit?: RegimeFitRating;
+    regimeFitRationale?: string;
+  };
   type SynthesisResult = {
     summary: string;
+    regimeTilts?: string[];
     topPicks: SynthesisPick[];
+    /** Optional for backward compatibility — old persisted blobs in
+     *  pm:research-synthesis predate this field. */
+    regimeAlignedHighlights?: SynthesisPick[];
     honorableMentions: SynthesisPick[];
     cautions?: string[];
     regimeContext?: string;
@@ -1335,7 +1347,7 @@ export default function ResearchPage() {
       setSynthesis(data.result);
       setSynthesisGeneratedAt(data.generatedAt ?? null);
       setSynthesisCached(true);
-      const totalPicks = data.result.topPicks.length + data.result.honorableMentions.length;
+      const totalPicks = data.result.topPicks.length + (data.result.regimeAlignedHighlights?.length ?? 0) + data.result.honorableMentions.length;
       const briefLabel = data.briefRegime ? ` · ${data.briefRegime} regime` : "";
       const dateLabel = data.generatedDate ? ` · ${data.generatedDate}` : "";
       setSynthesisStatus(`${totalPicks} picks${briefLabel}${dateLabel}`);
@@ -1377,7 +1389,7 @@ export default function ResearchPage() {
       setSynthesis(data.result);
       setSynthesisCached(!!data.cached);
       setSynthesisGeneratedAt(data.generatedAt ?? null);
-      const totalPicks = data.result.topPicks.length + data.result.honorableMentions.length;
+      const totalPicks = data.result.topPicks.length + (data.result.regimeAlignedHighlights?.length ?? 0) + data.result.honorableMentions.length;
       const briefLabel = data.briefRegime ? ` · ${data.briefRegime} regime` : "";
       const stickyLabel = data.cached ? " · sticky" : " · fresh";
       setSynthesisStatus(`${totalPicks} picks${briefLabel}${stickyLabel}`);
@@ -1593,84 +1605,163 @@ export default function ResearchPage() {
             </div>
           )}
 
-          {synthesis && (
-            <div className="space-y-4">
-              {/* Summary line + regime tag */}
-              <div className="flex items-start gap-2 flex-wrap">
-                {synthesis.regimeContext && (
-                  <span className={`text-[10px] font-bold uppercase tracking-wider rounded-full px-2 py-0.5 mt-0.5 ${
-                    synthesis.regimeContext === "Risk-On"  ? "bg-emerald-100 text-emerald-700"
-                    : synthesis.regimeContext === "Risk-Off" ? "bg-red-100 text-red-700"
-                    : "bg-amber-100 text-amber-700"
-                  }`}>
-                    {synthesis.regimeContext}
+          {synthesis && (() => {
+            // Render helper for the regime-fit pill on a pick. The
+            // colors visually separate the model's OPINION on regime
+            // alignment from the source-derived thesis text below.
+            const fitColor: Record<RegimeFitRating, string> = {
+              high: "bg-emerald-100 text-emerald-800 ring-1 ring-emerald-200",
+              medium: "bg-slate-100 text-slate-700 ring-1 ring-slate-200",
+              low: "bg-amber-100 text-amber-800 ring-1 ring-amber-200",
+              contrary: "bg-red-100 text-red-800 ring-1 ring-red-200",
+            };
+            const fitLabel: Record<RegimeFitRating, string> = {
+              high: "Regime: HIGH fit",
+              medium: "Regime: medium fit",
+              low: "Regime: LOW fit",
+              contrary: "Regime: CONTRARY",
+            };
+            const RegimeFitBlock = ({ p }: { p: SynthesisPick }) => {
+              if (!p.regimeFit) return null;
+              return (
+                <div className="mt-2 flex items-start gap-2 rounded-md bg-slate-50 px-2 py-1.5">
+                  <span className={`text-[10px] font-bold uppercase tracking-wider rounded-full px-2 py-0.5 whitespace-nowrap ${fitColor[p.regimeFit]}`}>
+                    {fitLabel[p.regimeFit]}
                   </span>
+                  {p.regimeFitRationale && (
+                    <span className="text-[11px] leading-5 text-slate-600 italic">
+                      {p.regimeFitRationale}
+                    </span>
+                  )}
+                </div>
+              );
+            };
+            return (
+              <div className="space-y-4">
+                {/* Summary line + regime tag */}
+                <div className="flex items-start gap-2 flex-wrap">
+                  {synthesis.regimeContext && (
+                    <span className={`text-[10px] font-bold uppercase tracking-wider rounded-full px-2 py-0.5 mt-0.5 ${
+                      synthesis.regimeContext === "Risk-On"  ? "bg-emerald-100 text-emerald-700"
+                      : synthesis.regimeContext === "Risk-Off" ? "bg-red-100 text-red-700"
+                      : "bg-amber-100 text-amber-700"
+                    }`}>
+                      {synthesis.regimeContext}
+                    </span>
+                  )}
+                  <p className="text-sm leading-6 text-slate-700 flex-1 min-w-[260px]">{synthesis.summary}</p>
+                </div>
+
+                {/* Regime tilts — the model's distilled view of what the
+                    current environment favors. These drove the regimeFit
+                    ratings on each pick below. */}
+                {synthesis.regimeTilts && synthesis.regimeTilts.length > 0 && (
+                  <div className="rounded-lg border border-blue-100 bg-blue-50/60 p-3">
+                    <h4 className="text-[10px] font-bold uppercase tracking-wider text-blue-800 mb-1.5">
+                      Regime Tilts <span className="text-blue-500 font-normal normal-case">· model&apos;s read of what this market favors</span>
+                    </h4>
+                    <ul className="text-xs leading-5 text-blue-900 space-y-0.5 list-disc list-inside">
+                      {synthesis.regimeTilts.map((t, i) => <li key={i}>{t}</li>)}
+                    </ul>
+                  </div>
                 )}
-                <p className="text-sm leading-6 text-slate-700 flex-1 min-w-[260px]">{synthesis.summary}</p>
+
+                {/* Top picks — multi-source. Always primary, regardless
+                    of regime fit. The fit pill on each card lets the PM
+                    spot multi-source picks the regime doesn't favor. */}
+                {synthesis.topPicks.length > 0 && (
+                  <div>
+                    <h4 className="text-xs font-bold uppercase tracking-wider text-indigo-700 mb-2">
+                      Top Picks <span className="text-slate-400 font-normal">· cross-source overlap (research-driven)</span>
+                    </h4>
+                    <ul className="space-y-3">
+                      {synthesis.topPicks.map((p) => (
+                        <li key={p.ticker} className="rounded-xl border border-indigo-100 bg-white p-3 shadow-sm">
+                          <div className="flex items-center gap-2 flex-wrap mb-1.5">
+                            <span className="font-mono font-bold text-base text-indigo-900">${p.ticker}</span>
+                            <span className="text-[10px] font-bold rounded-full bg-indigo-600 text-white px-2 py-0.5">
+                              {p.sourceCount} sources
+                            </span>
+                            {p.sources.map((s) => (
+                              <span key={s} className="text-[10px] rounded-full bg-slate-100 text-slate-600 px-2 py-0.5">
+                                {s}
+                              </span>
+                            ))}
+                          </div>
+                          <p className="text-sm leading-6 text-slate-700">{p.thesis}</p>
+                          <RegimeFitBlock p={p} />
+                        </li>
+                      ))}
+                    </ul>
+                  </div>
+                )}
+
+                {/* Regime-aligned highlights — single-source picks where
+                    the model thinks the regime strongly favors the name.
+                    This is opinion-driven; the orange/teal styling
+                    makes that visually distinct from the indigo top
+                    picks above. */}
+                {synthesis.regimeAlignedHighlights && synthesis.regimeAlignedHighlights.length > 0 && (
+                  <div>
+                    <h4 className="text-xs font-bold uppercase tracking-wider text-teal-700 mb-2">
+                      Regime-Aligned Highlights <span className="text-slate-400 font-normal">· single-source, opinion-driven by current environment</span>
+                    </h4>
+                    <ul className="space-y-2.5">
+                      {synthesis.regimeAlignedHighlights.map((p) => (
+                        <li key={p.ticker} className="rounded-xl border border-teal-100 bg-white p-3 shadow-sm">
+                          <div className="flex items-center gap-2 flex-wrap mb-1.5">
+                            <span className="font-mono font-bold text-base text-teal-900">${p.ticker}</span>
+                            {p.sources.map((s) => (
+                              <span key={s} className="text-[10px] rounded-full bg-slate-100 text-slate-600 px-2 py-0.5">
+                                {s}
+                              </span>
+                            ))}
+                          </div>
+                          <p className="text-sm leading-6 text-slate-700">{p.thesis}</p>
+                          <RegimeFitBlock p={p} />
+                        </li>
+                      ))}
+                    </ul>
+                  </div>
+                )}
+
+                {/* Honorable mentions — single source, weaker regime fit. */}
+                {synthesis.honorableMentions.length > 0 && (
+                  <div>
+                    <h4 className="text-xs font-bold uppercase tracking-wider text-slate-600 mb-2">
+                      Honorable Mentions <span className="text-slate-400 font-normal">· single-source, regime-neutral</span>
+                    </h4>
+                    <ul className="space-y-2">
+                      {synthesis.honorableMentions.map((p) => (
+                        <li key={p.ticker} className="rounded-lg border border-slate-100 bg-white/70 p-2.5">
+                          <div className="flex items-center gap-2 flex-wrap mb-1">
+                            <span className="font-mono font-bold text-sm">${p.ticker}</span>
+                            {p.sources.map((s) => (
+                              <span key={s} className="text-[10px] rounded-full bg-slate-100 text-slate-600 px-2 py-0.5">
+                                {s}
+                              </span>
+                            ))}
+                          </div>
+                          <p className="text-xs leading-5 text-slate-600">{p.thesis}</p>
+                          <RegimeFitBlock p={p} />
+                        </li>
+                      ))}
+                    </ul>
+                  </div>
+                )}
+
+                {/* Cautions */}
+                {synthesis.cautions && synthesis.cautions.length > 0 && (
+                  <div className="rounded-lg border border-amber-200 bg-amber-50 p-3">
+                    <h4 className="text-xs font-bold uppercase tracking-wider text-amber-800 mb-1">Cautions</h4>
+                    <ul className="text-xs leading-5 text-amber-900 list-disc list-inside space-y-0.5">
+                      {synthesis.cautions.map((c, i) => <li key={i}>{c}</li>)}
+                    </ul>
+                  </div>
+                )}
               </div>
-
-              {/* Top picks — multi-source */}
-              {synthesis.topPicks.length > 0 && (
-                <div>
-                  <h4 className="text-xs font-bold uppercase tracking-wider text-indigo-700 mb-2">
-                    Top Picks <span className="text-slate-400 font-normal">· cross-source overlap</span>
-                  </h4>
-                  <ul className="space-y-3">
-                    {synthesis.topPicks.map((p) => (
-                      <li key={p.ticker} className="rounded-xl border border-indigo-100 bg-white p-3 shadow-sm">
-                        <div className="flex items-center gap-2 flex-wrap mb-1.5">
-                          <span className="font-mono font-bold text-base text-indigo-900">${p.ticker}</span>
-                          <span className="text-[10px] font-bold rounded-full bg-indigo-600 text-white px-2 py-0.5">
-                            {p.sourceCount} sources
-                          </span>
-                          {p.sources.map((s) => (
-                            <span key={s} className="text-[10px] rounded-full bg-slate-100 text-slate-600 px-2 py-0.5">
-                              {s}
-                            </span>
-                          ))}
-                        </div>
-                        <p className="text-sm leading-6 text-slate-700">{p.thesis}</p>
-                      </li>
-                    ))}
-                  </ul>
-                </div>
-              )}
-
-              {/* Honorable mentions — single source */}
-              {synthesis.honorableMentions.length > 0 && (
-                <div>
-                  <h4 className="text-xs font-bold uppercase tracking-wider text-slate-600 mb-2">
-                    Honorable Mentions <span className="text-slate-400 font-normal">· single-source standouts</span>
-                  </h4>
-                  <ul className="space-y-2">
-                    {synthesis.honorableMentions.map((p) => (
-                      <li key={p.ticker} className="rounded-lg border border-slate-100 bg-white/70 p-2.5">
-                        <div className="flex items-center gap-2 flex-wrap mb-1">
-                          <span className="font-mono font-bold text-sm">${p.ticker}</span>
-                          {p.sources.map((s) => (
-                            <span key={s} className="text-[10px] rounded-full bg-slate-100 text-slate-600 px-2 py-0.5">
-                              {s}
-                            </span>
-                          ))}
-                        </div>
-                        <p className="text-xs leading-5 text-slate-600">{p.thesis}</p>
-                      </li>
-                    ))}
-                  </ul>
-                </div>
-              )}
-
-              {/* Cautions */}
-              {synthesis.cautions && synthesis.cautions.length > 0 && (
-                <div className="rounded-lg border border-amber-200 bg-amber-50 p-3">
-                  <h4 className="text-xs font-bold uppercase tracking-wider text-amber-800 mb-1">Cautions</h4>
-                  <ul className="text-xs leading-5 text-amber-900 list-disc list-inside space-y-0.5">
-                    {synthesis.cautions.map((c, i) => <li key={i}>{c}</li>)}
-                  </ul>
-                </div>
-              )}
-            </div>
-          )}
+            );
+          })()}
         </section>
 
         {/* ── Newton's Upticks ── */}
