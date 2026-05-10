@@ -152,7 +152,7 @@ export function PimModel({ groups }: Props) {
     return () => { cancelled = true; };
   }, []);
 
-  // Close dropdown when clicking outside
+  // Close dropdown when clicking outside, or when Escape is pressed.
   useEffect(() => {
     function handleClick(e: MouseEvent) {
       if (dropdownRef.current && !dropdownRef.current.contains(e.target as Node)) {
@@ -160,9 +160,19 @@ export function PimModel({ groups }: Props) {
         setDropdownSearch("");
       }
     }
+    function handleKey(e: KeyboardEvent) {
+      if (e.key === "Escape" && dropdownOpen) {
+        setDropdownOpen(false);
+        setDropdownSearch("");
+      }
+    }
     document.addEventListener("mousedown", handleClick);
-    return () => document.removeEventListener("mousedown", handleClick);
-  }, []);
+    document.addEventListener("keydown", handleKey);
+    return () => {
+      document.removeEventListener("mousedown", handleClick);
+      document.removeEventListener("keydown", handleKey);
+    };
+  }, [dropdownOpen]);
 
   // Focus search when dropdown opens
   useEffect(() => {
@@ -244,27 +254,44 @@ export function PimModel({ groups }: Props) {
     ? selectedProfile
     : availableProfiles[0] || "balanced";
 
-  // Keyboard navigation: left/right arrows cycle through the available
-  // profiles (balanced ↔ growth ↔ allEquity ↔ alpha, where applicable
-  // for the selected group). Skips when the user is typing in an input
-  // so search bars / forms aren't hijacked.
+  // Keyboard navigation:
+  //   ← / →  cycle through available profiles (balanced ↔ growth ↔
+  //          allEquity ↔ alpha, where applicable for the group)
+  //   ↑ / ↓  cycle through groups (PIM, PC USA, Non-Res, EY, KPMG,
+  //          Deloitte, RCGT, etc.)
+  // Skips when focus is on a text input so search bars / forms
+  // aren't hijacked.
   useEffect(() => {
     function onKey(e: KeyboardEvent) {
-      if (e.key !== "ArrowLeft" && e.key !== "ArrowRight") return;
       const target = e.target as HTMLElement | null;
       const tag = target?.tagName?.toLowerCase();
       if (tag === "input" || tag === "textarea" || tag === "select" || target?.isContentEditable) return;
-      if (availableProfiles.length <= 1) return;
-      const idx = availableProfiles.indexOf(activeProfile);
-      const nextIdx = e.key === "ArrowRight"
-        ? (idx + 1) % availableProfiles.length
-        : (idx - 1 + availableProfiles.length) % availableProfiles.length;
-      setSelectedProfile(availableProfiles[nextIdx]);
-      e.preventDefault();
+
+      if (e.key === "ArrowLeft" || e.key === "ArrowRight") {
+        if (availableProfiles.length <= 1) return;
+        const idx = availableProfiles.indexOf(activeProfile);
+        const nextIdx = e.key === "ArrowRight"
+          ? (idx + 1) % availableProfiles.length
+          : (idx - 1 + availableProfiles.length) % availableProfiles.length;
+        setSelectedProfile(availableProfiles[nextIdx]);
+        e.preventDefault();
+        return;
+      }
+
+      if (e.key === "ArrowUp" || e.key === "ArrowDown") {
+        if (groups.length <= 1) return;
+        const idx = groups.findIndex((g) => g.id === selectedGroupId);
+        if (idx < 0) return;
+        const nextIdx = e.key === "ArrowDown"
+          ? (idx + 1) % groups.length
+          : (idx - 1 + groups.length) % groups.length;
+        setSelectedGroupId(groups[nextIdx].id);
+        e.preventDefault();
+      }
     }
     window.addEventListener("keydown", onKey);
     return () => window.removeEventListener("keydown", onKey);
-  }, [availableProfiles, activeProfile]);
+  }, [availableProfiles, activeProfile, groups, selectedGroupId]);
 
   // Alpha profile = virtual 100% equity; otherwise use stored profile weights
   const ALPHA_WEIGHTS = { cash: 0, fixedIncome: 0, equity: 1, alternatives: 0 };
