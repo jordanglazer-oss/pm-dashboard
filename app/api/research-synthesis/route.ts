@@ -129,6 +129,111 @@ async function writeStored(stored: StoredSynthesis): Promise<void> {
   }
 }
 
+// ── Live price + trailing return snapshots ──────────────────────────
+//
+// Fetch current price, previous close, and trailing 1M / 3M returns
+// for each unique ticker across the research sources, so the synthesis
+// prompt has GROUNDED, CURRENT data to reason over instead of relying
+// on the model's training-data memory of stock prices and momentum.
+//
+// Uses Yahoo Finance v8/chart with range=3mo,interval=1d so we can
+// compute the trailing returns ourselves rather than depending on
+// Yahoo's quote-summary fields (which are flaky for some Canadian
+// listings). Same ticker normalization as /api/prices: -T → .TO,
+// .U → -U.TO. Batches of 10 in parallel keeps the fan-out polite.
+
+type LiveSnapshot = {
+  ticker: string;
+  price: number | null;
+  previousClose: number | null;
+  return1M: number | null;  // trailing 1-month % return
+  return3M: number | null;  // trailing 3-month % return
+};
+
+function toYahooSymbol(ticker: string): string {
+  if (ticker.endsWith(".U")) return ticker.replace(/\.U$/, "-U.TO");
+  if (ticker.endsWith("-T")) return ticker.replace(/-T$/, ".TO");
+  return ticker;
+}
+
+async function fetchSnapshot(ticker: string): Promise<LiveSnapshot> {
+  try {
+    const yahooSymbol = toYahooSymbol(ticker);
+    const res = await fetch(
+      `https://query2.finance.yahoo.com/v8/finance/chart/${encodeURIComponent(yahooSymbol)}?range=3mo&interval=1d`,
+      {
+        headers: {
+          "User-Agent":
+            "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36",
+        },
+        cache: "no-store",
+      }
+    );
+    if (!res.ok) return { ticker, price: null, previousClose: null, return1M: null, return3M: null };
+    const data = await res.json();
+    const meta = data?.chart?.result?.[0]?.meta;
+    const timestamps: number[] | undefined = data?.chart?.result?.[0]?.timestamp;
+    const closes: (number | null)[] | undefined = data?.chart?.result?.[0]?.indicators?.quote?.[0]?.close;
+    const price = meta?.regularMarketPrice ?? meta?.previousClose ?? null;
+    const previousClose = meta?.chartPreviousClose ?? meta?.previousClose ?? null;
+
+    // Compute trailing returns from the close series. The series goes
+    // back ~3 months; pick the first valid close (3M) and the close ~21
+    // trading days back (1M) and compare to the latest valid close.
+    let return1M: number | null = null;
+    let return3M: number | null = null;
+    if (timestamps && closes && closes.length > 0) {
+      const validIdxs: number[] = [];
+      for (let i = 0; i < closes.length; i++) if (closes[i] != null && closes[i]! > 0) validIdxs.push(i);
+      if (validIdxs.length >= 2) {
+        const lastIdx = validIdxs[validIdxs.length - 1];
+        const last = closes[lastIdx] as number;
+        // 1M ≈ 21 trading days back; clamp to first available
+        const oneMonthBack = validIdxs[Math.max(0, validIdxs.length - 1 - 21)];
+        const first = validIdxs[0];
+        const oneMonthPrice = closes[oneMonthBack] as number;
+        const threeMonthPrice = closes[first] as number;
+        if (oneMonthPrice > 0) return1M = ((last - oneMonthPrice) / oneMonthPrice) * 100;
+        if (threeMonthPrice > 0) return3M = ((last - threeMonthPrice) / threeMonthPrice) * 100;
+      }
+    }
+    return {
+      ticker,
+      price: price != null ? parseFloat(price.toFixed(2)) : null,
+      previousClose: previousClose != null ? parseFloat(previousClose.toFixed(2)) : null,
+      return1M: return1M != null ? parseFloat(return1M.toFixed(2)) : null,
+      return3M: return3M != null ? parseFloat(return3M.toFixed(2)) : null,
+    };
+  } catch {
+    return { ticker, price: null, previousClose: null, return1M: null, return3M: null };
+  }
+}
+
+async function fetchSnapshots(tickers: string[]): Promise<Map<string, LiveSnapshot>> {
+  const map = new Map<string, LiveSnapshot>();
+  const unique = [...new Set(tickers)];
+  const batchSize = 10;
+  for (let i = 0; i < unique.length; i += batchSize) {
+    const batch = unique.slice(i, i + batchSize);
+    const results = await Promise.all(batch.map((t) => fetchSnapshot(t)));
+    for (const r of results) map.set(r.ticker, r);
+  }
+  return map;
+}
+
+function collectAllTickers(research: ResearchState): string[] {
+  const tickers: string[] = [];
+  for (const u of research.newtonUpticks) tickers.push(u.ticker);
+  for (const i of research.fundstratTop) tickers.push(i.ticker);
+  for (const i of research.fundstratBottom) tickers.push(i.ticker);
+  for (const i of research.fundstratSmidTop ?? []) tickers.push(i.ticker);
+  for (const i of research.fundstratSmidBottom ?? []) tickers.push(i.ticker);
+  for (const r of research.rbcCanadianFocus ?? []) tickers.push(r.ticker);
+  for (const r of research.rbcUsFocus ?? []) tickers.push(r.ticker);
+  for (const p of research.alphaPicks ?? []) tickers.push(p.ticker);
+  return tickers;
+}
+
 async function readPortfolioTickers(): Promise<string[]> {
   try {
     const redis = await getRedis();
@@ -157,7 +262,8 @@ function isPortfolioMatch(ticker: string, portfolio: Set<string>): boolean {
 function buildContext(
   research: ResearchState,
   brief: MorningBrief | null,
-  portfolioTickers: string[]
+  portfolioTickers: string[],
+  snapshots: Map<string, LiveSnapshot>
 ): string {
   const lines: string[] = [];
 
@@ -268,6 +374,37 @@ function buildContext(
   // generalNotes intentionally omitted — section removed from the UI;
   // any legacy notes in older blobs are not surfaced to the synthesis.
 
+  // Live price + trailing return snapshot for every research candidate.
+  // GROUNDING DATA — the model should reason over these numbers rather
+  // than its training-data memory of stock prices and momentum. Names
+  // missing a snapshot (Yahoo fetch failed) are listed at the end so
+  // the model knows not to make claims about them.
+  if (snapshots.size > 0) {
+    lines.push(``);
+    lines.push(`=== LIVE PRICE SNAPSHOT (as of generation time) ===`);
+    lines.push(`Use these for any current-price / valuation / momentum claims. Do NOT cite numbers from training memory.`);
+    lines.push(``);
+    const withData: string[] = [];
+    const missing: string[] = [];
+    const sorted = [...snapshots.values()].sort((a, b) => a.ticker.localeCompare(b.ticker));
+    for (const s of sorted) {
+      if (s.price == null) {
+        missing.push(s.ticker);
+        continue;
+      }
+      const fmtPct = (v: number | null) => v == null ? "—" : `${v >= 0 ? "+" : ""}${v.toFixed(2)}%`;
+      const todayPct = (s.price != null && s.previousClose != null && s.previousClose > 0)
+        ? ((s.price - s.previousClose) / s.previousClose) * 100
+        : null;
+      withData.push(`  - ${s.ticker}: $${s.price.toFixed(2)} · today ${fmtPct(todayPct)} · 1M ${fmtPct(s.return1M)} · 3M ${fmtPct(s.return3M)}`);
+    }
+    lines.push(...withData);
+    if (missing.length > 0) {
+      lines.push(``);
+      lines.push(`Snapshot unavailable (do NOT assert price/return data for these): ${missing.join(", ")}`);
+    }
+  }
+
   // Brief context — passed in detail because the synthesis is supposed
   // to be opinionated about regime fit, not just a research overlap
   // tabulation. The wider the brief context, the better the model can
@@ -315,7 +452,17 @@ function buildContext(
   return lines.join("\n");
 }
 
-const SYSTEM_PROMPT = `You are an institutional portfolio manager synthesizing equity research from multiple analyst sources for a PM running a balanced/growth book at a wealth management firm. Your job has TWO parts:
+function buildSystemPrompt(todayISO: string): string {
+  return `You are an institutional portfolio manager synthesizing equity research from multiple analyst sources for a PM running a balanced/growth book at a wealth management firm.
+
+CONTEXT GROUNDING (read this first):
+  - Today's date is ${todayISO}. Your training data cutoff is May 2025 — roughly a year stale.
+  - You may NOT have current knowledge of company-level facts that changed after May 2025: M&A completions, leadership changes, business model pivots, recent product launches, restructurings, ticker renames, or recent earnings.
+  - DO NOT assert specific company facts unless they appear in the context I provide. If your memory of a name conflicts with the context, trust the context.
+  - Treat sector/theme classifications as fluid — verify against the SECTOR data and LIVE PRICE SNAPSHOT block I pass for each ticker rather than relying on training-data memory.
+  - For any valuation / current-price / trailing-momentum claim, cite the LIVE PRICE SNAPSHOT block, not memory. If a ticker has "Snapshot unavailable", say so explicitly rather than guessing.
+
+Your job has TWO parts:
   (A) RESEARCH: identify which names show up across multiple sources — cross-source overlap is the strongest conviction signal and these are always the primary picks.
   (B) FORWARD-LOOKING OPINION: form an opinionated view on which names will PERFORM WELL OVER THE NEXT 1-12 MONTHS, using the brief's forward-looking horizon reads (tactical 1-3M, cyclical 3-6M, structural 6-12M) plus breadth / credit / volatility / contrarian / hedging / sector rotation context. This is NOT a recap of what's already happened — it's a forward thesis about what positioning benefits over the brief's horizon windows. Apply this opinion to BOTH multi-source and single-source candidates.
 
@@ -376,6 +523,7 @@ Respond ONLY with valid JSON matching this schema:
 }
 
 Be concrete and actionable. The PM reads this and acts on it the same day.`;
+}
 
 function parseSynthesis(text: string): SynthesisResult | null {
   const cleaned = text.replace(/```json\s*|```/g, "").trim();
@@ -471,12 +619,20 @@ async function runSynthesis(
   brief: MorningBrief | null,
   portfolioTickers: string[]
 ): Promise<SynthesisResult | null> {
-  const context = buildContext(research, brief, portfolioTickers);
+  // Fetch live price + trailing 1M/3M return for every research
+  // candidate so the model can ground valuation / momentum claims in
+  // current data instead of training-data memory. Adds ~5-15s to a
+  // fresh synthesis; cached reads (the usual path) skip this entirely.
+  const allTickers = collectAllTickers(research);
+  const snapshots = await fetchSnapshots(allTickers);
+
+  const todayISO = new Date().toISOString().slice(0, 10);
+  const context = buildContext(research, brief, portfolioTickers, snapshots);
 
   const msg = await client.messages.create({
     model: "claude-sonnet-4-6",
     max_tokens: 4096,
-    system: SYSTEM_PROMPT,
+    system: buildSystemPrompt(todayISO),
     messages: [{ role: "user", content: context }],
   });
 
