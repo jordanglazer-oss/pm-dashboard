@@ -342,7 +342,7 @@ STEP 2 — RANK CANDIDATES (overlap × regime-fit):
       medium   — forward outlook is neutral or mixed; doesn't argue against it.
       low      — forward outlook is unsupportive; source signal carries the call alone.
       contrary — forward outlook actively argues AGAINST it; flag the conflict.
-  - regimeFitRationale is ONE short sentence (≤25 words) tying the rating to a specific FORWARD tilt and stating WHY the name benefits over that horizon. Avoid trailing/descriptive language ("has outperformed", "is currently leading"); use forward framing ("positioned for X over 1-3M because Y").
+  - regimeFitRationale is ONE short sentence (≤25 words) tying the rating to a specific FORWARD tilt. The rationale MUST conclude with a forward claim — what will benefit this name over the relevant horizon — but trailing context is fair to cite as supporting evidence (e.g., "leadership continuation thesis: name has led on breadth and earnings revisions, both consistent with tactical tilt"). What's NOT allowed: pure description that stops at the trailing observation without a forward claim ("XLK has outperformed YTD" — no forward conclusion → reject). The test: does the rationale say something about WHY the name benefits GOING FORWARD?
 
 STEP 3 — SEPARATE RESEARCH FROM OPINION IN THE OUTPUT:
   - thesis = WHAT THE SOURCES SAY: list which sources mentioned the ticker, what they say (ratings, target weights, technical levels, entry prices), any setup specifics. Do not editorialize regime fit here.
