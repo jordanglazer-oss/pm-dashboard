@@ -514,17 +514,30 @@ export async function POST() {
         // both sides cleanly — and the 2-day recalc that runs the next
         // trading morning will re-compute this entry once the mutual
         // fund NAVs arrive, so no data is permanently biased.
-        if (isToday && hasPositions && portfolio) {
-          // Prefer the live snapshot (same source UI tiles use) so the
-          // Appendix number matches the Performance Tracker exactly.
-          // FX rates from the snapshot, same fallback chain as prices.
+        if (hasPositions && portfolio) {
+          // Dollar-weighted path applies to ALL days within the recalc
+          // window, not just today. Yesterday's entry uses historical
+          // FX from the rate map; today's uses the live snapshot FX
+          // (matches the Performance Tracker tile exactly). Both
+          // produce the unbiased portfolio return — what (units ×
+          // priceNow) / (units × pricePrev) gives you when positions
+          // are held flat over the day, which they are within the 5-
+          // day recalc window for the cases we care about.
+          //
+          // Previously this path was gated by `isToday`, leaving the
+          // return-weighted path to handle yesterday's NAV refinement.
+          // That path renormalized when coverage was below 100%, which
+          // SYSTEMATICALLY UNDERSTATED returns whenever a missing-data
+          // holding (typically FUNDSERV like FID5982) was an outperformer.
+          // Dollar-weighted naturally excludes missing-price legs from
+          // BOTH sides of the ratio rather than scaling up the others.
           const snapFxLive = liveSnapshot?.prices["USDCAD=X"] ?? null;
           const snapFxPrev = liveSnapshot?.previousCloses["USDCAD=X"] ?? null;
-          const todayFx = (snapFxLive && snapFxLive > 0)
-            ? snapFxLive
+          const todayFx = isToday
+            ? ((snapFxLive && snapFxLive > 0) ? snapFxLive : (todayRate ?? 1))
             : (todayRate ?? 1);
-          const prevFx = (snapFxPrev && snapFxPrev > 0)
-            ? snapFxPrev
+          const prevFx = isToday
+            ? ((snapFxPrev && snapFxPrev > 0) ? snapFxPrev : (prevRate ?? todayFx))
             : (prevRate ?? todayFx);
 
           let prevTotalCad = 0;
@@ -535,24 +548,24 @@ export async function POST() {
             const pos = posMap.get(h.symbol);
             if (!pos || pos.units <= 0) continue;
 
-            // Current price: prefer live snapshot (identical to UI).
-            // Fall back to Yahoo adjusted-close history if the snapshot
-            // fetch failed or this ticker was missing from the snapshot
-            // (e.g. mutual fund NAV not yet posted today).
-            let curPrice: number | null | undefined =
-              liveSnapshot?.prices[h.symbol] ?? null;
+            // Current price for `date`:
+            //   - For today: prefer the live snapshot (matches UI).
+            //   - For past days: use the close in the fetched price history.
             const pm = holdingPriceMaps.get(h.symbol);
+            let curPrice: number | null | undefined = isToday
+              ? (liveSnapshot?.prices[h.symbol] ?? null)
+              : null;
             if (curPrice == null && pm) curPrice = pm.get(date);
             if (curPrice == null) continue;
 
-            // Prev price: prefer live snapshot's chartPreviousClose (Yahoo
-            // range=1d → yesterday's close, matching the UI). For Fundserv
-            // the snapshot returns null, so fall back to the most recent
-            // trading day in the fetched price history. Never use the
-            // range=5d/15d chartPreviousClose directly — it would return
-            // the close from BEFORE the chart's start.
-            let prev: number | null | undefined =
-              liveSnapshot?.previousCloses[h.symbol] ?? null;
+            // Prev price:
+            //   - For today: prefer the snapshot's chartPreviousClose
+            //     (Yahoo range=1d = yesterday's close, matches UI).
+            //   - For past days: most recent trading day in the price
+            //     history before `date`.
+            let prev: number | null | undefined = isToday
+              ? (liveSnapshot?.previousCloses[h.symbol] ?? null)
+              : null;
             if (prev == null && pm) {
               const histDates = [...pm.keys()].filter((d) => d < date).sort();
               prev = histDates.length > 0
