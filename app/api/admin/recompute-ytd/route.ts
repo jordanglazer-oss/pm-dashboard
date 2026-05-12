@@ -320,13 +320,21 @@ function simulateProfile(args: {
     warnings.push(`${profile}/${sym}: appears in 2026 txns but not in current pim-models — treated as removed-during-year, start weight = targetWeight × allocForClass = ${(txn.targetWeight * allocForClass * 100).toFixed(2)}%.`);
   }
 
-  // Renormalize initial weights to sum to totalAlloc.
+  // NO renormalization of initial weights. If positions were added
+  // during the year, their initial weight is 0 — the residual
+  // (totalAlloc − sum_of_initial_weights) represents implicit cash
+  // sitting in the portfolio waiting to be deployed when those
+  // positions get bought. Renormalizing here would artificially
+  // inflate existing positions' weights to fill the gap, which over-
+  // states YTD returns for everyone except the newly-added names.
   const initialSum = [...weights.values()].reduce((s, w) => s + w, 0);
-  if (initialSum > 0) {
-    for (const [sym, w] of weights) weights.set(sym, (w / initialSum) * totalAlloc);
-  } else {
+  if (initialSum <= 0) {
     warnings.push(`${profile}: initial weights sum to 0 — no holdings in this profile`);
     return { profile, history: [], startValue: baselineValue, endValue: baselineValue, ytdReturnPct: 0, daysSimulated: 0, warnings };
+  }
+  if (initialSum < totalAlloc - 0.001) {
+    const cashPct = (totalAlloc - initialSum) * 100;
+    warnings.push(`${profile}: initial weights sum to ${(initialSum * 100).toFixed(2)}% of target ${(totalAlloc * 100).toFixed(2)}% — ${cashPct.toFixed(2)}% treated as cash on Jan 1 (positions added during year deploy this cash on their rebalance dates).`);
   }
 
   // Walk forward day by day.
@@ -377,25 +385,22 @@ function simulateProfile(args: {
       });
     }
 
-    // Apply rebalance txns on `date` — update weights, then renormalize.
+    // Apply rebalance txns on `date` — set each touched symbol to its
+    // new target weight. Do NOT renormalize. Cash absorbs the
+    // difference. If a position is being added (weight 0 → target),
+    // the cash that was held in lieu of it is now deployed. If a
+    // position is removed (target = 0), its sale proceeds become cash.
+    // Renormalizing here would have the same over-counting bug as the
+    // initial-weights case.
     const txns = txnsByDate.get(date);
     if (txns && txns.length > 0) {
       for (const t of txns) {
         const sym = t.symbol;
-        // The asset-class allocation for the txn symbol. If the symbol
-        // is in current pim-models, look it up; else default to equity.
         const holding = group.holdings.find((h) => h.symbol === sym);
         const allocForClass = holding
           ? getAssetAllocFromProfile(profileWeights, holding.assetClass)
           : profileWeights.equity;
         weights.set(sym, t.targetWeight * allocForClass);
-      }
-      // Renormalize so weights sum to totalAlloc. This preserves the
-      // total invested fraction across all asset classes (=1 for
-      // AllEquity / Alpha; =0.66+0.28+0.06=1 for Balanced, etc.).
-      const sum = [...weights.values()].reduce((s, w) => s + w, 0);
-      if (sum > 0) {
-        for (const [s, w] of weights) weights.set(s, (w / sum) * totalAlloc);
       }
     }
   }
