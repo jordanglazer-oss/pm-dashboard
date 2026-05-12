@@ -370,6 +370,11 @@ export async function POST() {
       // appendix write below. todayOnlyMode shrinks the window to 1
       // (today only) on same-session refreshes after yesterday has
       // already been finalized.
+      //
+      // ANCHORED ENTRIES are also off-limits: if an admin recompute
+      // (e.g. /api/admin/anchor-ytd) has pinned an entry, the pop
+      // loop stops there. This prevents normal daily refreshes from
+      // overwriting a known-good correction that was hand-applied.
       const RECALC_DAYS = todayOnlyMode ? 1 : 2;
       let popped = 0;
       while (
@@ -378,6 +383,7 @@ export async function POST() {
         model.history[model.history.length - 1].date >= today.slice(0, 8) // same month prefix safety
       ) {
         const last = model.history[model.history.length - 1];
+        if (last.anchored) break; // pinned — do not touch
         // Only pop recent entries (within last 5 calendar days of today)
         const daysDiff = (new Date(today).getTime() - new Date(last.date).getTime()) / (1000 * 60 * 60 * 24);
         if (daysDiff > 5) break;
