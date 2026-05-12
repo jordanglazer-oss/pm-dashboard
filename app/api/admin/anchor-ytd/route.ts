@@ -107,6 +107,12 @@ function scaleEntries(
   // the final day's daily return so the cumulative chain lands on
   // the target exactly. The adjustment is typically <1% of the
   // last-day return, invisible on the chart.
+  //
+  // The last entry is also marked `anchored: true`. /api/update-
+  // daily-value's recalc-window pop loop stops when it hits an
+  // anchored entry, so the next time the user clicks Refresh,
+  // today's entry can still be appended/recomputed but May 11
+  // (the anchored value) stays pinned.
   if (targetEndValue != null && out.length >= 2) {
     const lastIdx = out.length - 1;
     const prevValue = out[lastIdx - 1].value;
@@ -117,6 +123,7 @@ function scaleEntries(
         date: out[lastIdx].date,
         value: newValue,
         dailyReturn: parseFloat(newDr.toFixed(4)),
+        anchored: true,
       };
     }
   }

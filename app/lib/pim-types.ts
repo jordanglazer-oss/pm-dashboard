@@ -75,6 +75,11 @@ export type PimDailyReturn = {
   date: string; // YYYY-MM-DD
   value: number; // cumulative index value (starts at 100)
   dailyReturn: number; // daily % change
+  /** When true, this entry has been pinned by an admin recompute /
+   *  anchor operation and should NOT be popped or recomputed by
+   *  /api/update-daily-value's recalc-window loop. Set by anchor-ytd
+   *  on the last entry it writes per profile. */
+  anchored?: boolean;
 };
 
 export type PimModelPerformance = {
