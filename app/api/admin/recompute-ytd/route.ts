@@ -193,21 +193,6 @@ function buildCurrencyMap(group: PimModelGroup): Map<string, "CAD" | "USD"> {
   return m;
 }
 
-/** Derive units for a transaction. Uses targetWeight × portfolioValue /
- *  price. Mutual-fund pending txns (price=0) are handled separately —
- *  they only settle later when NAV publishes, recorded as a separate
- *  trade. For now we approximate by using the day's close NAV as the
- *  execution price. */
-function deriveUnits(
-  txn: PimTransaction,
-  portfolioValueCadAtTxn: number,
-  priceCadAtTxn: number,
-): number {
-  if (priceCadAtTxn <= 0) return 0;
-  const targetValue = portfolioValueCadAtTxn * txn.targetWeight;
-  return targetValue / priceCadAtTxn;
-}
-
 type ProfileSimResult = {
   profile: PimProfileType;
   history: PimDailyReturn[];
@@ -218,30 +203,80 @@ type ProfileSimResult = {
   warnings: string[];
 };
 
+function getAssetAllocFromProfile(
+  profileWeights: { fixedIncome: number; equity: number; alternatives: number } | undefined,
+  assetClass: string,
+): number {
+  if (!profileWeights) return 0;
+  if (assetClass === "equity") return profileWeights.equity;
+  if (assetClass === "fixedIncome") return profileWeights.fixedIncome;
+  if (assetClass === "alternative") return profileWeights.alternatives;
+  return 0;
+}
+
+/**
+ * Weights-based time-weighted return simulation.
+ *
+ * Tracks each holding's weight as a fraction of the portfolio (NOT units
+ * — we don't have reliable unit history). Each trading day:
+ *   1. Compute daily return per symbol = (price_today × fx_today) /
+ *      (price_yesterday × fx_yesterday) − 1, in CAD terms.
+ *   2. Portfolio daily return = sum(weight_i × return_i).
+ *   3. Compound into the cumulative index.
+ *   4. On rebalance days, update weights for symbols touched by txns
+ *      (weight_i ← txn.targetWeight × profile_asset_class_allocation),
+ *      then renormalize all weights to sum to profile_total_allocation
+ *      (=1 for AllEquity). Renormalization redistributes the cash
+ *      impact of added/removed positions proportionally — equivalent
+ *      to saying "after the rebalance, the portfolio is fully invested
+ *      to the new targets, with proceeds from sells funding the buys".
+ *
+ * Initial weights at the start of fromDate:
+ *   - For each symbol in current pim-models for this profile's asset
+ *     classes: weight = weightInClass × profileAssetAllocation.
+ *   - Symbols whose earliest 2026 txn is a BUY are flagged as "added
+ *     during year" and their initial weight is set to 0; the rebalance
+ *     on that buy date promotes them into the portfolio.
+ *   - Symbols that appear in 2026 txns but NOT in current pim-models
+ *     are flagged as "removed during year"; their initial weight is
+ *     approximated by the targetWeight on the earliest 2026 txn for
+ *     that symbol (best available proxy for pre-year weight).
+ *
+ * No unit derivation — this completely sidesteps the over-counting
+ * bug from the prior approach where each rebalance txn was being
+ * treated as buying a full target-weight worth of units on top of
+ * existing position.
+ */
 function simulateProfile(args: {
   group: PimModelGroup;
   profile: PimProfileType;
   fromDate: string;
   baselineValue: number;
-  currentPositions: PimPortfolioPositions | null;
   transactions: PimTransaction[];
   priceMaps: Map<string, Map<string, number>>;
   fxMap: Map<string, number>;
   tradingDates: string[];
   currencyOf: (sym: string) => "CAD" | "USD";
 }): ProfileSimResult {
-  const { group, profile, fromDate, baselineValue, currentPositions, transactions, priceMaps, fxMap, tradingDates, currencyOf } = args;
+  const { group, profile, fromDate, baselineValue, transactions, priceMaps, fxMap, tradingDates, currencyOf } = args;
   const warnings: string[] = [];
 
-  // Filter txns to this profile in the current year.
+  const ALPHA_WEIGHTS = { cash: 0, fixedIncome: 0, equity: 1, alternatives: 0 };
+  const profileWeights = profile === "alpha"
+    ? ALPHA_WEIGHTS
+    : group.profiles[profile];
+  if (!profileWeights) {
+    return { profile, history: [], startValue: baselineValue, endValue: baselineValue, ytdReturnPct: 0, daysSimulated: 0, warnings: [`profile ${profile} not configured`] };
+  }
+  const totalAlloc = (profileWeights.equity ?? 0) + (profileWeights.fixedIncome ?? 0) + (profileWeights.alternatives ?? 0);
+
+  // Filter txns to this profile + current year + settled-only.
   const profileTxns = transactions
     .filter((t) => (t.profile ?? "balanced") === profile)
     .filter((t) => t.date.slice(0, 10) >= fromDate)
-    .filter((t) => t.status !== "pending") // pending mutual fund trades not yet settled
+    .filter((t) => t.status !== "pending")
     .sort((a, b) => a.date.localeCompare(b.date));
 
-  // Group txns by date (per profile, per date). All txns on the same
-  // date are applied atomically using that date's prices.
   const txnsByDate = new Map<string, PimTransaction[]>();
   for (const t of profileTxns) {
     const d = t.date.slice(0, 10);
@@ -250,178 +285,120 @@ function simulateProfile(args: {
     txnsByDate.set(d, arr);
   }
 
-  // Reconstruct positions at the START of the current year. We have
-  // current positions; reverse the net delta of each symbol's 2026 txns
-  // to get pre-year units. Without txn units we approximate by using
-  // the target-weight implied units at each txn date; sum the deltas
-  // for each symbol; subtract from current units.
-  //
-  // CAVEAT: this is approximate. If the user's txn log has imports
-  // without targetWeight or with stale targetWeight, the reconstructed
-  // pre-year position will drift from reality. We surface that as a
-  // warning if any reconstructed unit count goes negative (data
-  // anomaly) and clamp to zero.
-  const currentUnitMap = new Map<string, number>();
-  if (currentPositions) {
-    for (const p of currentPositions.positions) currentUnitMap.set(p.symbol, p.units);
+  // Find earliest 2026 txn per symbol to classify added/removed.
+  const earliestTxnPerSymbol = new Map<string, PimTransaction>();
+  for (const t of profileTxns) {
+    const existing = earliestTxnPerSymbol.get(t.symbol);
+    if (!existing || t.date < existing.date) earliestTxnPerSymbol.set(t.symbol, t);
   }
 
-  // First pass: walk forward day by day to compute portfolio value at
-  // each txn date, deriving units from targetWeight × value / price.
-  // We need an initial position state. Solve iteratively:
-  // - Iteration 0: assume current positions held all year. Compute daily
-  //   values. Use those values to derive txn units. Track net delta per
-  //   symbol. Initial-of-year units = current units - net delta.
-  // - This is a single-pass approximation that's good enough when daily
-  //   values don't swing wildly relative to txn sizes.
-
-  type DailyPositionState = Map<string, number>; // symbol → units
-
-  // Approximation: start with current units, run forward applying
-  // transactions, see resulting end-of-period units. If end-of-period
-  // doesn't match current (it won't), the difference is what the
-  // start-of-period units should have been. Re-anchor and run again.
-  const computeNetDeltaPerSymbol = (units: DailyPositionState): Map<string, number> => {
-    const delta = new Map<string, number>();
-    for (const [date, txns] of txnsByDate) {
-      // Estimate portfolio value at this date using current `units` state
-      // and prices on this date.
-      let portfolioValueCad = currentPositions?.cashBalance ?? 0;
-      for (const [sym, u] of units) {
-        const p = priceMaps.get(sym)?.get(date);
-        if (p == null) continue;
-        const fx = currencyOf(sym) === "USD" ? (fxMap.get(date) ?? 1) : 1;
-        portfolioValueCad += u * p * fx;
-      }
-      for (const t of txns) {
-        const sym = t.symbol;
-        const priceLocal = t.price > 0 ? t.price : (priceMaps.get(sym)?.get(date) ?? 0);
-        if (priceLocal <= 0) {
-          warnings.push(`${profile}/${sym} on ${date}: no price available, txn skipped`);
-          continue;
-        }
-        const fx = currencyOf(sym) === "USD" ? (fxMap.get(date) ?? 1) : 1;
-        const priceCad = priceLocal * fx;
-        const tradedUnits = deriveUnits(t, portfolioValueCad, priceCad);
-        const signedUnits = t.direction === "buy" ? tradedUnits : -tradedUnits;
-        delta.set(sym, (delta.get(sym) ?? 0) + signedUnits);
-      }
-    }
-    return delta;
-  };
-
-  // First-pass delta using current units as initial state
-  const firstPassDelta = computeNetDeltaPerSymbol(currentUnitMap);
-  const startOfYearUnits: DailyPositionState = new Map();
-  for (const [sym, u] of currentUnitMap) {
-    const delta = firstPassDelta.get(sym) ?? 0;
-    const startUnits = u - delta;
-    if (startUnits < -0.01) {
-      warnings.push(`${profile}/${sym}: reconstructed start-of-year units = ${startUnits.toFixed(2)} (negative — txn log may be missing entries before this year, or txn targetWeights produced over-large unit deltas). Clamped to 0.`);
-    }
-    startOfYearUnits.set(sym, Math.max(0, startUnits));
-  }
-  // Symbols sold off entirely during the year (no current units, but had
-  // 2026 txns) — add them back with the positive of their net sell delta.
-  for (const [sym, delta] of firstPassDelta) {
-    if (!startOfYearUnits.has(sym)) {
-      // Current units = 0, delta is net of sells (negative), so start = -delta.
-      const start = -delta;
-      if (start > 0) startOfYearUnits.set(sym, start);
+  // Build initial weights map.
+  const weights = new Map<string, number>();
+  const inPimModels = new Set(group.holdings.map((h) => h.symbol));
+  for (const h of group.holdings) {
+    const allocForClass = getAssetAllocFromProfile(profileWeights, h.assetClass);
+    if (allocForClass <= 0) continue; // skip asset classes not in this profile
+    const fullWeight = h.weightInClass * allocForClass;
+    const earliest = earliestTxnPerSymbol.get(h.symbol);
+    if (earliest && earliest.direction === "buy") {
+      // Added during the year — start at 0; first-buy rebalance brings
+      // it into the portfolio on its txn date.
+      weights.set(h.symbol, 0);
+    } else {
+      weights.set(h.symbol, fullWeight);
     }
   }
-
-  // Now walk forward day by day computing portfolio value and daily
-  // returns. cashBalance approximated as 0 historically (rebalance
-  // trades net to ~0 cash flow; we ignore external cash flows since
-  // we have no record of them).
-  const units: DailyPositionState = new Map(startOfYearUnits);
-  let cash = 0;
-
-  const history: PimDailyReturn[] = [];
-  // Anchor: baseline value at the day BEFORE fromDate (Dec 31 of
-  // prior year). The baseline maps to the cumulative index value
-  // carried in from the locked pre-current-year history.
-  let prevValueCad = 0;
-  for (const [sym, u] of units) {
-    const p = priceMaps.get(sym)?.get(tradingDates[0]);
-    if (p == null) continue;
-    const fx = currencyOf(sym) === "USD" ? (fxMap.get(tradingDates[0]) ?? 1) : 1;
-    prevValueCad += u * p * fx;
-  }
-  if (prevValueCad <= 0) {
-    warnings.push(`${profile}: initial portfolio value at ${tradingDates[0]} is zero — cannot compute daily returns. Check txn log and position data.`);
-    return {
-      profile,
-      history: [],
-      startValue: baselineValue,
-      endValue: baselineValue,
-      ytdReturnPct: 0,
-      daysSimulated: 0,
-      warnings,
-    };
+  // Symbols that had 2026 txns but aren't in current pim-models =
+  // removed during year. Approximate their start-of-year weight as the
+  // first 2026 txn's targetWeight (best proxy we have).
+  for (const [sym, txn] of earliestTxnPerSymbol) {
+    if (inPimModels.has(sym)) continue;
+    const allocForClass = (group.holdings.find((h) => h.symbol === sym)?.assetClass)
+      ? getAssetAllocFromProfile(profileWeights, group.holdings.find((h) => h.symbol === sym)!.assetClass)
+      : profileWeights.equity; // assume equity for removed-during-year names
+    weights.set(sym, txn.targetWeight * allocForClass);
+    warnings.push(`${profile}/${sym}: appears in 2026 txns but not in current pim-models — treated as removed-during-year, start weight = targetWeight × allocForClass = ${(txn.targetWeight * allocForClass * 100).toFixed(2)}%.`);
   }
 
+  // Renormalize initial weights to sum to totalAlloc.
+  const initialSum = [...weights.values()].reduce((s, w) => s + w, 0);
+  if (initialSum > 0) {
+    for (const [sym, w] of weights) weights.set(sym, (w / initialSum) * totalAlloc);
+  } else {
+    warnings.push(`${profile}: initial weights sum to 0 — no holdings in this profile`);
+    return { profile, history: [], startValue: baselineValue, endValue: baselineValue, ytdReturnPct: 0, daysSimulated: 0, warnings };
+  }
+
+  // Walk forward day by day.
   let cumulativeIndex = baselineValue;
-  // First entry: anchor day (no return, just the baseline).
+  const history: PimDailyReturn[] = [];
+  // Anchor entry at day 0 — the baseline carried in from prior year.
   history.push({ date: tradingDates[0], value: parseFloat(cumulativeIndex.toFixed(4)), dailyReturn: 0 });
 
   for (let i = 1; i < tradingDates.length; i++) {
     const date = tradingDates[i];
+    const prevDate = tradingDates[i - 1];
 
-    // Apply any txns on this date BEFORE computing the day's close
-    // value. Trades are assumed cash-neutral.
+    // Compute weighted daily return using YESTERDAY's weights and
+    // today-vs-yesterday price moves. Rebalance txns on `date` apply
+    // AFTER the daily return is computed — they don't affect today's
+    // return, only tomorrow's.
+    const fxToday = fxMap.get(date) ?? 1;
+    const fxPrev = fxMap.get(prevDate) ?? 1;
+    let dailyReturn = 0;
+    let coveredWeight = 0;
+    for (const [sym, w] of weights) {
+      if (w <= 0) continue;
+      const pToday = priceMaps.get(sym)?.get(date);
+      const pPrev = priceMaps.get(sym)?.get(prevDate);
+      if (pToday == null || pPrev == null || pPrev <= 0) continue;
+      const isUsd = currencyOf(sym) === "USD";
+      const rCad = isUsd
+        ? ((pToday * fxToday) / (pPrev * fxPrev)) - 1
+        : (pToday / pPrev) - 1;
+      dailyReturn += w * rCad;
+      coveredWeight += w;
+    }
+    // Coverage adjustment: when a holding's price is missing for one of
+    // the two days (typically FUNDSERV NAV lag), we exclude it from
+    // BOTH sides of the daily return (the right thing — dollar-weighted
+    // semantics in weight space). We do NOT scale up the remaining
+    // weights to compensate; that's the historical activeWeight bug.
+    // If coverage drops too low for the day to be meaningful, skip.
+    if (coveredWeight < 0.3 * totalAlloc) {
+      // Skip day — too sparse to be meaningful. Carry value forward.
+      history.push({ date, value: parseFloat(cumulativeIndex.toFixed(4)), dailyReturn: 0 });
+    } else {
+      cumulativeIndex = cumulativeIndex * (1 + dailyReturn);
+      history.push({
+        date,
+        value: parseFloat(cumulativeIndex.toFixed(4)),
+        dailyReturn: parseFloat((dailyReturn * 100).toFixed(4)),
+      });
+    }
+
+    // Apply rebalance txns on `date` — update weights, then renormalize.
     const txns = txnsByDate.get(date);
-    if (txns) {
+    if (txns && txns.length > 0) {
       for (const t of txns) {
         const sym = t.symbol;
-        const priceLocal = t.price > 0 ? t.price : (priceMaps.get(sym)?.get(date) ?? 0);
-        if (priceLocal <= 0) continue;
-        const fx = currencyOf(sym) === "USD" ? (fxMap.get(date) ?? 1) : 1;
-        const priceCad = priceLocal * fx;
-        // Recompute portfolio value JUST BEFORE the trade using prev
-        // day's units × today's prices (mark-to-market for trade sizing).
-        let portfolioValueCadNow = cash;
-        for (const [s, u] of units) {
-          const p = priceMaps.get(s)?.get(date);
-          if (p == null) continue;
-          const fxs = currencyOf(s) === "USD" ? (fxMap.get(date) ?? 1) : 1;
-          portfolioValueCadNow += u * p * fxs;
-        }
-        const tradedUnits = deriveUnits(t, portfolioValueCadNow, priceCad);
-        const signedUnits = t.direction === "buy" ? tradedUnits : -tradedUnits;
-        units.set(sym, (units.get(sym) ?? 0) + signedUnits);
-        // Cash-neutral assumption: buys/sells offset each other on a
-        // rebalance day. Single-leg trades would have a cash impact;
-        // ignored for simplicity.
+        // The asset-class allocation for the txn symbol. If the symbol
+        // is in current pim-models, look it up; else default to equity.
+        const holding = group.holdings.find((h) => h.symbol === sym);
+        const allocForClass = holding
+          ? getAssetAllocFromProfile(profileWeights, holding.assetClass)
+          : profileWeights.equity;
+        weights.set(sym, t.targetWeight * allocForClass);
+      }
+      // Renormalize so weights sum to totalAlloc. This preserves the
+      // total invested fraction across all asset classes (=1 for
+      // AllEquity / Alpha; =0.66+0.28+0.06=1 for Balanced, etc.).
+      const sum = [...weights.values()].reduce((s, w) => s + w, 0);
+      if (sum > 0) {
+        for (const [s, w] of weights) weights.set(s, (w / sum) * totalAlloc);
       }
     }
-
-    // Compute today's end-of-day portfolio value.
-    let todayValueCad = cash;
-    for (const [sym, u] of units) {
-      if (u <= 0) continue;
-      const p = priceMaps.get(sym)?.get(date);
-      if (p == null) continue;
-      const fx = currencyOf(sym) === "USD" ? (fxMap.get(date) ?? 1) : 1;
-      todayValueCad += u * p * fx;
-    }
-    if (todayValueCad <= 0) {
-      warnings.push(`${profile}/${date}: portfolio value collapsed to 0. Skipping day.`);
-      continue;
-    }
-
-    const dailyRet = (todayValueCad - prevValueCad) / prevValueCad;
-    cumulativeIndex = cumulativeIndex * (1 + dailyRet);
-    history.push({
-      date,
-      value: parseFloat(cumulativeIndex.toFixed(4)),
-      dailyReturn: parseFloat((dailyRet * 100).toFixed(4)),
-    });
-    prevValueCad = todayValueCad;
   }
-
-  void group; // model holdings list is only used for currency lookup, already extracted
 
   return {
     profile,
@@ -509,11 +486,12 @@ export async function POST(req: NextRequest) {
       return "USD";
     };
 
-    // Run simulations per profile.
+    // Run simulations per profile. The weights-based simulation
+    // doesn't need positionsBlob — initial weights come from
+    // pim-models, and rebalance txns drive weight updates.
+    void positionsBlob; // intentionally unused — see comment above
     const results: ProfileSimResult[] = [];
     for (const profile of profiles) {
-      const currentPositions = positionsBlob?.portfolios.find((p) => p.groupId === groupId && p.profile === profile) ?? null;
-
       // Baseline = last cumulative value in existing pre-fromDate
       // appendix (locked) or in pm:pim-performance, whichever is
       // available. The simulation will continue from there.
@@ -532,7 +510,6 @@ export async function POST(req: NextRequest) {
         profile,
         fromDate,
         baselineValue: baseline,
-        currentPositions,
         transactions: txns,
         priceMaps,
         fxMap,
