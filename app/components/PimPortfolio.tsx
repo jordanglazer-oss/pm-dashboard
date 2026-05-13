@@ -1488,7 +1488,7 @@ export function PimPortfolio({ groups }: Props) {
             <button
               key={p}
               onClick={() => setSelectedProfile(p)}
-              className={`rounded-lg px-4 py-2 text-sm font-semibold transition-colors ${
+              className={`rounded-lg px-4 py-2 text-sm font-semibold transition-colors whitespace-nowrap ${
                 activeProfile === p ? "bg-white text-slate-800 shadow-sm" : "text-slate-500 hover:text-slate-700"
               }`}
             >
