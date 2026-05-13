@@ -3,7 +3,69 @@
 import React, { useState, useEffect, useCallback, useRef, useMemo } from "react";
 import type { AppendixModelLedger, AppendixProfileType, PimTransaction, PimPortfolioState, PimProfileType, PimModelGroup } from "@/app/lib/pim-types";
 
-type ViewMode = "daily" | "transactions";
+type ViewMode = "daily" | "transactions" | "sia-import";
+
+type ParsedRow = { date: string; value: number };
+type SiaDryRunSummary = {
+  profile: string;
+  fromDate: string;
+  baselineValue: number;
+  importedValueCount: number;
+  firstImportedDate: string;
+  lastImportedDate: string;
+  newYtdPct: number;
+  existingYtdPct: number | null;
+  anchoredLastEntry: boolean;
+  entriesBeingReplaced: { perf: number; appendix: number };
+  preFromDateEntriesPreserved: { perf: number; appendix: number };
+  anchorPreValue: { date: string; value: number } | null;
+};
+type SiaImportResponse = {
+  ok: boolean;
+  dryRun: boolean;
+  wrote: boolean;
+  summary: SiaDryRunSummary;
+  stashKeys?: { perf: string | null; appendix: string | null };
+  error?: string;
+};
+
+/** Parse SIA Charts CSV: ,Edit,Date,Trades,"Corp. Act.",Cash,Total
+ *  Date in MM/DD/YYYY (col 3), Total quoted with $ and commas (col 7).
+ *  Returns ascending-by-date values. */
+function parseSiaCsvText(text: string): { rows: ParsedRow[]; warnings: string[] } {
+  function parseRow(line: string): string[] {
+    const out: string[] = [];
+    let cur = "";
+    let inQuote = false;
+    for (let i = 0; i < line.length; i++) {
+      const c = line[i];
+      if (c === '"') inQuote = !inQuote;
+      else if (c === "," && !inQuote) { out.push(cur); cur = ""; }
+      else cur += c;
+    }
+    out.push(cur);
+    return out;
+  }
+  const warnings: string[] = [];
+  const lines = text.trim().split(/\r?\n/);
+  const rows: ParsedRow[] = [];
+  for (let i = 1; i < lines.length; i++) {
+    const cols = parseRow(lines[i]);
+    if (cols.length < 7) continue;
+    const dateRaw = cols[2].trim();
+    const totalRaw = cols[6].trim().replace(/\$/g, "").replace(/,/g, "");
+    const total = parseFloat(totalRaw);
+    if (!isFinite(total) || total <= 0) continue;
+    const m = /^(\d{2})\/(\d{2})\/(\d{4})$/.exec(dateRaw);
+    if (!m) continue;
+    rows.push({ date: `${m[3]}-${m[1]}-${m[2]}`, value: total });
+  }
+  rows.sort((a, b) => a.date.localeCompare(b.date));
+  if (rows.length === 0) {
+    warnings.push("No rows parsed — verify the CSV is in SIA Charts format (Date in column 3, Total in column 7).");
+  }
+  return { rows, warnings };
+}
 
 const PROFILES: { key: AppendixProfileType; label: string }[] = [
   { key: "balanced", label: "Balanced" },
@@ -71,8 +133,20 @@ export default function AppendixPage() {
   const [importStatus, setImportStatus] = useState<string | null>(null);
   const fileInputRef = useRef<HTMLInputElement>(null);
 
-  // View mode: daily values vs transactions log
+  // View mode: daily values vs transactions log vs SIA import
   const [viewMode, setViewMode] = useState<ViewMode>("daily");
+
+  // SIA Import state (third view tab) — wraps /api/admin/import-third-
+  // party-values in a click-through UI for recurring CSV imports.
+  const [siaProfile, setSiaProfile] = useState<PimProfileType>("alpha");
+  const [siaFileName, setSiaFileName] = useState<string | null>(null);
+  const [siaParsed, setSiaParsed] = useState<ParsedRow[] | null>(null);
+  const [siaParseWarnings, setSiaParseWarnings] = useState<string[]>([]);
+  const [siaDryRun, setSiaDryRun] = useState<SiaImportResponse | null>(null);
+  const [siaWriteResult, setSiaWriteResult] = useState<SiaImportResponse | null>(null);
+  const [siaLoading, setSiaLoading] = useState(false);
+  const [siaError, setSiaError] = useState<string | null>(null);
+  const siaFileInputRef = useRef<HTMLInputElement>(null);
 
   // Transaction log state
   const [portfolioState, setPortfolioState] = useState<PimPortfolioState | null>(null);
@@ -286,6 +360,86 @@ export default function AppendixPage() {
     if (fileInputRef.current) fileInputRef.current.value = "";
   }, [activeTab, fetchData]);
 
+  // ── SIA Import handlers ──────────────────────────────────────────
+  // Pick a profile, upload a SIA Charts CSV, parse client-side, call
+  // /api/admin/import-third-party-values with dryRun:true to preview,
+  // then click Apply (with confirm dialog) to write. The endpoint
+  // marks all imported entries anchored:true so they're locked from
+  // future daily-update overwrites.
+  const handleSiaFile = useCallback(async (e: React.ChangeEvent<HTMLInputElement>) => {
+    const file = e.target.files?.[0];
+    if (!file) return;
+    setSiaFileName(file.name);
+    setSiaDryRun(null);
+    setSiaWriteResult(null);
+    setSiaError(null);
+    try {
+      const text = await file.text();
+      const { rows, warnings } = parseSiaCsvText(text);
+      setSiaParsed(rows);
+      setSiaParseWarnings(warnings);
+    } catch (err) {
+      setSiaError(err instanceof Error ? err.message : String(err));
+      setSiaParsed(null);
+    }
+  }, []);
+
+  const callSiaImport = useCallback(async (dryRunFlag: boolean): Promise<SiaImportResponse | null> => {
+    if (!siaParsed) return null;
+    setSiaLoading(true);
+    setSiaError(null);
+    try {
+      const priorYearStart = `${parseInt(new Date().toISOString().slice(0, 4)) - 1}-01-01`;
+      const values = siaParsed.filter((v) => v.date >= priorYearStart);
+      const res = await fetch("/api/admin/import-third-party-values", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ profile: siaProfile, values, dryRun: dryRunFlag }),
+      });
+      const data = await res.json() as SiaImportResponse;
+      if (!res.ok || data.error) {
+        setSiaError(data.error || `HTTP ${res.status}`);
+        return null;
+      }
+      return data;
+    } catch (err) {
+      setSiaError(err instanceof Error ? err.message : String(err));
+      return null;
+    } finally {
+      setSiaLoading(false);
+    }
+  }, [siaParsed, siaProfile]);
+
+  const handleSiaDryRun = useCallback(async () => {
+    const data = await callSiaImport(true);
+    if (data) {
+      setSiaDryRun(data);
+      setSiaWriteResult(null);
+    }
+  }, [callSiaImport]);
+
+  const handleSiaApply = useCallback(async () => {
+    if (!siaDryRun) return;
+    const ok = confirm(
+      `Confirm WRITE for ${siaProfile.toUpperCase()}?\n\n` +
+      `Replaces current-year daily values in pm:pim-performance and pm:appendix-daily-values ` +
+      `with ${siaDryRun.summary.importedValueCount} SIA-imported entries. All imported entries will be ` +
+      `marked anchored (locked from future recompute). Stash keys will be created for rollback.\n\n` +
+      `New YTD: ${siaDryRun.summary.newYtdPct}%\n` +
+      `Currently stored YTD: ${siaDryRun.summary.existingYtdPct ?? "n/a"}%\n\n` +
+      `Proceed?`
+    );
+    if (!ok) return;
+    const data = await callSiaImport(false);
+    if (data) {
+      setSiaWriteResult(data);
+      setSiaDryRun(null);
+      // Refresh appendix ledgers so the Daily Values view reflects
+      // the freshly-imported numbers if the user switches back.
+      void fetchData();
+    }
+  }, [callSiaImport, siaDryRun, siaProfile, fetchData]);
+
   return (
     <main className="min-h-screen bg-[#f4f5f7] px-4 py-6 text-slate-900 md:px-8 md:py-8 overflow-x-hidden">
       <div className="mx-auto max-w-7xl">
@@ -296,7 +450,9 @@ export default function AppendixPage() {
             <p className="text-sm text-slate-500 mt-1">
               {viewMode === "daily"
                 ? "Permanent daily value ledger — immutable historical record for each model"
-                : "Permanent transaction log — every rebalance, buy, sell, and switch"}
+                : viewMode === "transactions"
+                ? "Permanent transaction log — every rebalance, buy, sell, and switch"
+                : "Upload SIA Charts CSV exports to replace current-year daily values with third-party-tracker data"}
             </p>
           </div>
           <div className="flex items-center gap-2 flex-wrap">
@@ -356,6 +512,14 @@ export default function AppendixPage() {
               </span>
             )}
           </button>
+          <button
+            onClick={() => setViewMode("sia-import")}
+            className={`rounded-lg px-4 py-2 text-sm font-semibold transition-colors whitespace-nowrap ${
+              viewMode === "sia-import" ? "bg-slate-800 text-white" : "text-slate-500 hover:text-slate-800 hover:bg-slate-50"
+            }`}
+          >
+            SIA Import
+          </button>
         </div>
 
         {importStatus && viewMode === "daily" && (
@@ -367,7 +531,7 @@ export default function AppendixPage() {
           </div>
         )}
 
-        {viewMode === "daily" ? (
+        {viewMode === "daily" && (
           <>
             {/* Profile Tabs */}
             <div className="flex gap-1 mb-5 bg-white rounded-xl border border-slate-200 p-1 w-fit">
@@ -524,7 +688,8 @@ export default function AppendixPage() {
               </>
             )}
           </>
-        ) : (
+        )}
+        {viewMode === "transactions" && (
           // ── Transactions View ─────────────────────────────────
           <>
             {txLoading ? (
@@ -711,6 +876,189 @@ export default function AppendixPage() {
               </>
             )}
           </>
+        )}
+
+        {viewMode === "sia-import" && (
+          // ── SIA Import View ─────────────────────────────────
+          // Click-through UI for /api/admin/import-third-party-values.
+          // Replaces current-year daily values with SIA Charts CSV
+          // export. All imported entries anchored on the server.
+          <div className="space-y-6">
+            <div className="rounded-2xl border border-slate-200 bg-white p-6 shadow-sm space-y-4">
+              {/* Profile selector */}
+              <div>
+                <label className="block text-xs font-semibold text-slate-600 uppercase tracking-wider mb-2">
+                  Profile
+                </label>
+                <div className="flex gap-2 flex-wrap">
+                  {PROFILES.map((p) => (
+                    <button
+                      key={p.key}
+                      onClick={() => {
+                        setSiaProfile(p.key as PimProfileType);
+                        setSiaDryRun(null);
+                        setSiaWriteResult(null);
+                      }}
+                      className={`rounded-lg px-3 py-1.5 text-sm font-semibold transition-colors ${
+                        siaProfile === p.key
+                          ? "bg-blue-600 text-white"
+                          : "bg-slate-100 text-slate-700 hover:bg-slate-200"
+                      }`}
+                    >
+                      {p.label}
+                    </button>
+                  ))}
+                </div>
+              </div>
+
+              {/* File upload */}
+              <div>
+                <label className="block text-xs font-semibold text-slate-600 uppercase tracking-wider mb-2">
+                  CSV file (SIA Charts export)
+                </label>
+                <input
+                  ref={siaFileInputRef}
+                  type="file"
+                  accept=".csv,text/csv"
+                  onChange={handleSiaFile}
+                  className="block w-full text-sm text-slate-600 file:mr-4 file:py-2 file:px-4 file:rounded-lg file:border-0 file:text-sm file:font-semibold file:bg-blue-50 file:text-blue-700 hover:file:bg-blue-100"
+                />
+                {siaFileName && (
+                  <p className="text-xs text-slate-500 mt-2">Loaded: {siaFileName}</p>
+                )}
+              </div>
+
+              {/* Parsed preview */}
+              {siaParsed && (
+                <div className="rounded-lg bg-slate-50 p-4 text-sm space-y-1">
+                  <div className="font-semibold text-slate-700">Parsed {siaParsed.length} rows</div>
+                  {siaParsed.length > 0 && (
+                    <>
+                      <div className="text-slate-600">
+                        First: <span className="font-mono">{siaParsed[0].date}</span> → <span className="font-mono">${siaParsed[0].value.toLocaleString()}</span>
+                      </div>
+                      <div className="text-slate-600">
+                        Last: <span className="font-mono">{siaParsed[siaParsed.length - 1].date}</span> → <span className="font-mono">${siaParsed[siaParsed.length - 1].value.toLocaleString()}</span>
+                      </div>
+                    </>
+                  )}
+                  {siaParseWarnings.map((w, i) => (
+                    <div key={i} className="text-amber-700 text-xs">⚠ {w}</div>
+                  ))}
+                </div>
+              )}
+
+              {/* Action buttons */}
+              <div className="flex gap-2 pt-2">
+                <button
+                  onClick={handleSiaDryRun}
+                  disabled={!siaParsed || siaLoading}
+                  className="rounded-lg bg-slate-800 px-4 py-2 text-sm font-semibold text-white hover:bg-slate-900 disabled:opacity-50 disabled:cursor-not-allowed transition-colors"
+                >
+                  {siaLoading ? "Running…" : "Dry Run (preview)"}
+                </button>
+                <button
+                  onClick={handleSiaApply}
+                  disabled={!siaDryRun || siaLoading}
+                  className="rounded-lg bg-red-600 px-4 py-2 text-sm font-semibold text-white hover:bg-red-700 disabled:opacity-50 disabled:cursor-not-allowed transition-colors"
+                >
+                  {siaLoading ? "Writing…" : "Apply (Write to Redis)"}
+                </button>
+              </div>
+
+              {siaError && (
+                <div className="rounded-lg bg-red-50 border border-red-200 p-3 text-sm text-red-700">
+                  <strong>Error:</strong> {siaError}
+                </div>
+              )}
+            </div>
+
+            {/* Dry-run result */}
+            {siaDryRun && (
+              <div className="rounded-2xl border border-amber-200 bg-amber-50 p-6 shadow-sm space-y-3">
+                <h2 className="text-lg font-bold text-amber-900">Dry-run preview — NOT written yet</h2>
+                <div className="grid grid-cols-2 gap-3 text-sm">
+                  <div>
+                    <div className="text-xs uppercase tracking-wider text-amber-800 font-semibold">Profile</div>
+                    <div className="font-semibold text-slate-900">{siaDryRun.summary.profile}</div>
+                  </div>
+                  <div>
+                    <div className="text-xs uppercase tracking-wider text-amber-800 font-semibold">From date</div>
+                    <div className="font-mono text-slate-900">{siaDryRun.summary.fromDate}</div>
+                  </div>
+                  <div>
+                    <div className="text-xs uppercase tracking-wider text-amber-800 font-semibold">New YTD</div>
+                    <div className="font-semibold text-slate-900">{siaDryRun.summary.newYtdPct}%</div>
+                  </div>
+                  <div>
+                    <div className="text-xs uppercase tracking-wider text-amber-800 font-semibold">Existing YTD (replaced)</div>
+                    <div className="font-semibold text-slate-900">{siaDryRun.summary.existingYtdPct ?? "n/a"}%</div>
+                  </div>
+                  <div>
+                    <div className="text-xs uppercase tracking-wider text-amber-800 font-semibold">Entries imported</div>
+                    <div className="font-semibold text-slate-900">{siaDryRun.summary.importedValueCount}</div>
+                  </div>
+                  <div>
+                    <div className="text-xs uppercase tracking-wider text-amber-800 font-semibold">Range</div>
+                    <div className="font-mono text-slate-900 text-xs">{siaDryRun.summary.firstImportedDate} → {siaDryRun.summary.lastImportedDate}</div>
+                  </div>
+                  <div>
+                    <div className="text-xs uppercase tracking-wider text-amber-800 font-semibold">Anchor (pre-fromDate)</div>
+                    <div className="font-mono text-slate-900 text-xs">
+                      {siaDryRun.summary.anchorPreValue
+                        ? `${siaDryRun.summary.anchorPreValue.date} · $${siaDryRun.summary.anchorPreValue.value.toLocaleString()}`
+                        : "none — first day return collapses to 0"}
+                    </div>
+                  </div>
+                  <div>
+                    <div className="text-xs uppercase tracking-wider text-amber-800 font-semibold">Pre-fromDate preserved</div>
+                    <div className="font-semibold text-slate-900">{siaDryRun.summary.preFromDateEntriesPreserved.appendix} appendix · {siaDryRun.summary.preFromDateEntriesPreserved.perf} perf</div>
+                  </div>
+                </div>
+                <p className="text-xs text-amber-700 pt-1">
+                  Review these numbers. If correct, click <strong>Apply</strong> to write. If anything looks off, change profile / file and re-run Dry Run.
+                </p>
+              </div>
+            )}
+
+            {/* Write result */}
+            {siaWriteResult && (
+              <div className="rounded-2xl border border-emerald-200 bg-emerald-50 p-6 shadow-sm space-y-3">
+                <h2 className="text-lg font-bold text-emerald-900">✓ Imported successfully</h2>
+                <div className="text-sm text-slate-800">
+                  <strong>{siaWriteResult.summary.importedValueCount}</strong> daily values written for{" "}
+                  <strong>{siaWriteResult.summary.profile}</strong> covering{" "}
+                  <span className="font-mono">{siaWriteResult.summary.firstImportedDate}</span> →{" "}
+                  <span className="font-mono">{siaWriteResult.summary.lastImportedDate}</span>.
+                </div>
+                <div className="text-sm text-slate-800">
+                  New YTD: <strong>{siaWriteResult.summary.newYtdPct}%</strong>
+                </div>
+                {siaWriteResult.stashKeys && (
+                  <div className="text-xs text-slate-600 pt-2">
+                    Rollback stash keys (if ever needed):
+                    <ul className="list-disc list-inside pt-1 font-mono">
+                      <li>{siaWriteResult.stashKeys.perf}</li>
+                      <li>{siaWriteResult.stashKeys.appendix}</li>
+                    </ul>
+                  </div>
+                )}
+                <p className="text-xs text-emerald-700 pt-1">
+                  Refresh the PIM Model / PIM Performance pages to see the updated chart.
+                </p>
+              </div>
+            )}
+
+            {/* Quick reference */}
+            <div className="rounded-2xl border border-slate-200 bg-white p-6 text-xs text-slate-500 space-y-1">
+              <div className="font-semibold text-slate-700 mb-2 text-sm">Tips</div>
+              <div>• Bi-weekly / monthly cadence works well. Each import overwrites the current year&apos;s entries with the freshly exported SIA data.</div>
+              <div>• Pre-current-year history is permanently locked. Only this year&apos;s entries get replaced.</div>
+              <div>• Include Dec 31 of the prior year in the export so the Jan 2 boundary return is preserved.</div>
+              <div>• All imported entries are marked anchored — future <code>update-daily-value</code> runs and PUT writes cannot modify them.</div>
+              <div>• Today&apos;s entry is computed live by the daily-update path. Don&apos;t worry about it being in the CSV.</div>
+            </div>
+          </div>
         )}
       </div>
     </main>
