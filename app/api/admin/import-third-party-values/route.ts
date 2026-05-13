@@ -137,19 +137,17 @@ export async function POST(req: NextRequest) {
       const dailyRet = i === 0 && !anchorPreValue
         ? 0 // no anchor → first day's return collapses to 0
         : ((cumIndex - prevIndex) / prevIndex) * 100;
+      // Mark ALL imported entries anchored — they come from a
+      // third-party tracker we trust as the source of truth. Any
+      // future recompute / update-daily-value pop loop must stop at
+      // these entries rather than re-deriving them from price data.
       newEntries.push({
         date: v.date,
         value: parseFloat(cumIndex.toFixed(4)),
         dailyReturn: parseFloat(dailyRet.toFixed(4)),
+        anchored: true,
       });
       prevIndex = cumIndex;
-    }
-    // Mark the latest entry anchored so update-daily-value can't pop it.
-    if (newEntries.length > 0) {
-      newEntries[newEntries.length - 1] = {
-        ...newEntries[newEntries.length - 1],
-        anchored: true,
-      };
     }
 
     // Sanity check: the new YTD = (last / baseline) - 1 should match
