@@ -144,10 +144,13 @@ export function PimPortfolio({ groups }: Props) {
     const base = (["balanced", "growth", "allEquity"] as PimProfileType[]).filter(
       (p) => selectedGroup.profiles[p]
     );
-    // Alpha is only available for the PIM group
+    // Alpha + Core are firm-wide standalone models — PIM group only.
     if (selectedGroup.id === "pim") {
       const hasEquity = selectedGroup.holdings.some((h) => h.assetClass === "equity");
-      if (hasEquity) base.push("alpha");
+      if (hasEquity) {
+        base.push("alpha");
+        base.push("core");
+      }
     }
     return base;
   }, [selectedGroup]);
@@ -179,10 +182,14 @@ export function PimPortfolio({ groups }: Props) {
     return () => window.removeEventListener("keydown", onKey);
   }, [availableProfiles, activeProfile]);
 
-  // Alpha profile = virtual 100% equity; otherwise use stored profile weights
+  // Alpha + Core profiles = virtual 100% equity; otherwise use stored
+  // profile weights. Both are equity-only standalone models.
   const ALPHA_WEIGHTS = { cash: 0, fixedIncome: 0, equity: 1, alternatives: 0 };
+  const CORE_WEIGHTS = { cash: 0, fixedIncome: 0, equity: 1, alternatives: 0 };
   const profileWeights = activeProfile === "alpha"
     ? ALPHA_WEIGHTS
+    : activeProfile === "core"
+    ? CORE_WEIGHTS
     : selectedGroup?.profiles[activeProfile];
 
   // Reference PIM group for canonical individual stock weights
@@ -191,7 +198,7 @@ export function PimPortfolio({ groups }: Props) {
   const effectiveGroup = useMemo(() => {
     if (!selectedGroup) return selectedGroup;
 
-    // Alpha: equity-only, exclude core ETFs, re-normalize proportionally
+    // Alpha: equity-only, EXCLUDE core ETFs, re-normalize proportionally
     if (activeProfile === "alpha") {
       const alphaHoldings = selectedGroup.holdings.filter(
         (h) => h.assetClass === "equity" && !coreSymbols.has(symbolToTicker(h.symbol))
@@ -200,6 +207,19 @@ export function PimPortfolio({ groups }: Props) {
       const normalized = totalWeight > 0
         ? alphaHoldings.map((h) => ({ ...h, weightInClass: h.weightInClass / totalWeight }))
         : alphaHoldings;
+      return { ...selectedGroup, holdings: normalized };
+    }
+
+    // Core: equity-only, ONLY core ETFs (inverse of alpha filter),
+    // re-normalize proportionally to sum to 100%. Mirror of Alpha.
+    if (activeProfile === "core") {
+      const coreHoldings = selectedGroup.holdings.filter(
+        (h) => h.assetClass === "equity" && coreSymbols.has(symbolToTicker(h.symbol))
+      );
+      const totalWeight = coreHoldings.reduce((s, h) => s + h.weightInClass, 0);
+      const normalized = totalWeight > 0
+        ? coreHoldings.map((h) => ({ ...h, weightInClass: h.weightInClass / totalWeight }))
+        : coreHoldings;
       return { ...selectedGroup, holdings: normalized };
     }
 
