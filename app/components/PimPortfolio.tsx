@@ -1563,13 +1563,22 @@ export function PimPortfolio({ groups }: Props) {
               </span>
             </button>
           )}
-          {groupState.lastRebalance && (
-            <span className="text-[10px] text-slate-400 ml-1">
-              Last rebalance: {new Date(groupState.lastRebalance.date).toLocaleDateString()}
-            </span>
-          )}
         </div>
       </div>
+
+      {/* Last rebalance — rendered as a dedicated sub-row so its
+          position doesn't shift between profiles. Previously it was
+          inside the actions flex-wrap, which left it inline when
+          Client Report was hidden (Alpha/Core) but pushed it onto a
+          second line when Client Report was visible (Balanced /
+          Growth / All-Equity). Now consistent everywhere. */}
+      {groupState.lastRebalance && (
+        <div className="flex justify-end -mt-2">
+          <span className="text-[10px] text-slate-400">
+            Last rebalance: {new Date(groupState.lastRebalance.date).toLocaleDateString()}
+          </span>
+        </div>
+      )}
 
       {/* Rebalance Panel */}
       {showRebalance && (
