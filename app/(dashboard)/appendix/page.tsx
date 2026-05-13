@@ -148,6 +148,22 @@ export default function AppendixPage() {
   const [siaError, setSiaError] = useState<string | null>(null);
   const siaFileInputRef = useRef<HTMLInputElement>(null);
 
+  // Rollback state — list of available stashes (pm:*.pre-import-<ts>)
+  // and the result of any rollback action.
+  type StashRow = {
+    timestamp: number;
+    date: string;
+    perfKey: string | null;
+    appendixKey: string | null;
+    perfSizeBytes: number | null;
+    appendixSizeBytes: number | null;
+    complete: boolean;
+  };
+  const [stashes, setStashes] = useState<StashRow[]>([]);
+  const [stashesLoading, setStashesLoading] = useState(false);
+  const [rollbackResult, setRollbackResult] = useState<{ ok: boolean; wrote?: boolean; restoredFrom?: { timestamp: number; date: string }; preRollbackStashKeys?: { perf: string | null; appendix: string | null }; error?: string } | null>(null);
+  const [rollbackError, setRollbackError] = useState<string | null>(null);
+
   // Transaction log state
   const [portfolioState, setPortfolioState] = useState<PimPortfolioState | null>(null);
   const [groups, setGroups] = useState<PimModelGroup[]>([]);
@@ -437,8 +453,66 @@ export default function AppendixPage() {
       // Refresh appendix ledgers so the Daily Values view reflects
       // the freshly-imported numbers if the user switches back.
       void fetchData();
+      // Also refresh the stash list so the rollback section shows
+      // the just-created stash at the top.
+      void loadStashes();
     }
   }, [callSiaImport, siaDryRun, siaProfile, fetchData]);
+
+  // ── Rollback handlers ───────────────────────────────────────────
+  const loadStashes = useCallback(async () => {
+    setStashesLoading(true);
+    try {
+      const res = await fetch("/api/admin/restore-from-stash");
+      if (res.ok) {
+        const data = await res.json() as { stashes: StashRow[] };
+        setStashes(data.stashes || []);
+      }
+    } catch {
+      // silently fail — list just stays empty
+    } finally {
+      setStashesLoading(false);
+    }
+  }, []);
+
+  const handleRollback = useCallback(async (timestamp: number) => {
+    const target = stashes.find((s) => s.timestamp === timestamp);
+    if (!target) return;
+    const ok = confirm(
+      `Roll back to stash from ${target.date}?\n\n` +
+      `This restores pm:pim-performance and pm:appendix-daily-values to the values that existed ` +
+      `BEFORE this import. The current state will be stashed under a *.pre-rollback-* key so the ` +
+      `rollback itself is reversible.\n\n` +
+      `Proceed?`
+    );
+    if (!ok) return;
+    setRollbackError(null);
+    setRollbackResult(null);
+    try {
+      const res = await fetch("/api/admin/restore-from-stash", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ timestamp, dryRun: false }),
+      });
+      const data = await res.json();
+      if (!res.ok || data.error) {
+        setRollbackError(data.error || `HTTP ${res.status}`);
+        return;
+      }
+      setRollbackResult(data);
+      void fetchData();
+      void loadStashes();
+    } catch (err) {
+      setRollbackError(err instanceof Error ? err.message : String(err));
+    }
+  }, [stashes, fetchData, loadStashes]);
+
+  // Load the stash list when the user switches to the SIA Import tab.
+  useEffect(() => {
+    if (viewMode === "sia-import") {
+      void loadStashes();
+    }
+  }, [viewMode, loadStashes]);
 
   return (
     <main className="min-h-screen bg-[#f4f5f7] px-4 py-6 text-slate-900 md:px-8 md:py-8 overflow-x-hidden">
@@ -1049,6 +1123,71 @@ export default function AppendixPage() {
               </div>
             )}
 
+            {/* Rollback section — list of available stashes from prior
+                imports, each with a Rollback button. Useful when an
+                import produced unexpected numbers. */}
+            <div className="rounded-2xl border border-slate-200 bg-white p-6 shadow-sm space-y-3">
+              <div className="flex items-center justify-between">
+                <h3 className="text-base font-bold text-slate-800">Rollback previous imports</h3>
+                <button
+                  onClick={() => void loadStashes()}
+                  className="text-xs rounded-md bg-slate-100 px-2 py-1 font-medium text-slate-600 hover:bg-slate-200 transition-colors"
+                >
+                  {stashesLoading ? "Loading…" : "Refresh"}
+                </button>
+              </div>
+              <p className="text-xs text-slate-500">
+                Every import (and every rollback) writes a stash of the prior state.
+                Use this list to undo a recent import if the numbers look wrong.
+                Stashes are kept indefinitely in Redis — no auto-pruning yet.
+              </p>
+              {stashes.length === 0 && !stashesLoading && (
+                <div className="rounded-lg bg-slate-50 p-4 text-sm text-slate-500">
+                  No import stashes found.
+                </div>
+              )}
+              {stashes.length > 0 && (
+                <div className="space-y-2">
+                  {stashes.map((s, idx) => (
+                    <div key={s.timestamp} className="flex items-center justify-between rounded-lg border border-slate-200 bg-slate-50 px-3 py-2">
+                      <div className="text-xs">
+                        <div className="font-mono text-slate-800">{s.date.replace("T", " ").slice(0, 19)} UTC</div>
+                        <div className="text-slate-500 mt-0.5">
+                          {idx === 0 && <span className="inline-block rounded-full bg-blue-100 text-blue-700 px-1.5 py-0.5 mr-2 font-semibold uppercase text-[9px]">Most Recent</span>}
+                          perf: {s.perfSizeBytes ? (s.perfSizeBytes / 1024).toFixed(1) : "?"} KB · appendix: {s.appendixSizeBytes ? (s.appendixSizeBytes / 1024).toFixed(1) : "?"} KB
+                          {!s.complete && <span className="text-amber-600 ml-2">⚠ incomplete</span>}
+                        </div>
+                      </div>
+                      <button
+                        onClick={() => void handleRollback(s.timestamp)}
+                        disabled={!s.complete}
+                        className="text-xs rounded-lg bg-amber-600 px-3 py-1.5 font-semibold text-white hover:bg-amber-700 disabled:opacity-50 disabled:cursor-not-allowed transition-colors"
+                      >
+                        Rollback to this
+                      </button>
+                    </div>
+                  ))}
+                </div>
+              )}
+              {rollbackError && (
+                <div className="rounded-lg bg-red-50 border border-red-200 p-3 text-sm text-red-700">
+                  <strong>Error:</strong> {rollbackError}
+                </div>
+              )}
+              {rollbackResult?.ok && rollbackResult.wrote && (
+                <div className="rounded-lg bg-emerald-50 border border-emerald-200 p-3 text-sm text-emerald-800 space-y-1">
+                  <div className="font-semibold">✓ Restored to {rollbackResult.restoredFrom?.date.replace("T", " ").slice(0, 19)} UTC</div>
+                  <div className="text-xs">
+                    Pre-rollback state stashed for re-rollback:
+                    <ul className="list-disc list-inside pt-1 font-mono">
+                      <li>{rollbackResult.preRollbackStashKeys?.perf}</li>
+                      <li>{rollbackResult.preRollbackStashKeys?.appendix}</li>
+                    </ul>
+                  </div>
+                </div>
+              )}
+            </div>
+
             {/* Quick reference */}
             <div className="rounded-2xl border border-slate-200 bg-white p-6 text-xs text-slate-500 space-y-1">
               <div className="font-semibold text-slate-700 mb-2 text-sm">Tips</div>
@@ -1057,6 +1196,7 @@ export default function AppendixPage() {
               <div>• Include Dec 31 of the prior year in the export so the Jan 2 boundary return is preserved.</div>
               <div>• All imported entries are marked anchored — future <code>update-daily-value</code> runs and PUT writes cannot modify them.</div>
               <div>• Today&apos;s entry is computed live by the daily-update path. Don&apos;t worry about it being in the CSV.</div>
+              <div>• Every import creates a rollback stash. If an import produced wrong numbers, scroll up to the rollback section and click <strong>Rollback to this</strong> on the relevant entry.</div>
             </div>
           </div>
         )}
