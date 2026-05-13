@@ -17,6 +17,7 @@ const PROFILE_LABELS: Record<PimProfileType, string> = {
   growth: "Growth",
   allEquity: "All-Equity",
   alpha: "Alpha",
+  core: "Core",
 };
 
 const PAGE_SIZE = 50;

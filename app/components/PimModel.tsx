@@ -30,6 +30,7 @@ const PROFILE_LABELS: Record<PimProfileType, string> = {
   growth: "Growth",
   allEquity: "All-Equity",
   alpha: "Alpha",
+  core: "Core",
 };
 
 const ASSET_CLASS_LABELS: Record<PimAssetClass, string> = {
@@ -127,10 +128,17 @@ export function PimModel({ groups }: Props) {
         // so subsequent loads on any device see the populated data.
         // /api/update-daily-value (the Refresh button) only APPENDS
         // daily values to existing series — it can't seed new types.
+        // Trigger a recompute when EITHER the per-group "core-${profile}"
+        // series OR the firm-wide standalone "core" model (PIM-only)
+        // is missing. The firm-wide Core was added later; existing
+        // blobs may have core-${profile} but not "core".
         const hasCoreSeries = perf.models.some((m) =>
           typeof m.profile === "string" && m.profile.startsWith("core-")
         );
-        if (!hasCoreSeries) {
+        const hasFirmWideCore = perf.models.some((m) =>
+          m.groupId === "pim" && m.profile === "core"
+        );
+        if (!hasCoreSeries || !hasFirmWideCore) {
           setPerfBackfilling(true);
           try {
             const recompute = await fetch("/api/pim-performance", { method: "POST" });
@@ -242,10 +250,15 @@ export function PimModel({ groups }: Props) {
     const base = (["balanced", "growth", "allEquity"] as PimProfileType[]).filter(
       (p) => selectedGroup.profiles[p]
     );
-    // Alpha is only available for the PIM group
+    // Alpha and Core are firm-wide standalone models — only available
+    // under the PIM group (chartable views; their data is computed once
+    // and shared across all groups via the Sleeve Drift card).
     if (selectedGroup.id === "pim") {
       const hasEquity = selectedGroup.holdings.some((h) => h.assetClass === "equity");
-      if (hasEquity) base.push("alpha");
+      if (hasEquity) {
+        base.push("alpha");
+        base.push("core");
+      }
     }
     return base;
   }, [selectedGroup]);
@@ -293,10 +306,15 @@ export function PimModel({ groups }: Props) {
     return () => window.removeEventListener("keydown", onKey);
   }, [availableProfiles, activeProfile, groups, selectedGroupId]);
 
-  // Alpha profile = virtual 100% equity; otherwise use stored profile weights
+  // Alpha + Core profiles = virtual 100% equity; otherwise use stored
+  // profile weights. Both are standalone equity-only models composed
+  // from designation:"alpha" / designation:"core" stocks respectively.
   const ALPHA_WEIGHTS = { cash: 0, fixedIncome: 0, equity: 1, alternatives: 0 };
+  const CORE_WEIGHTS = { cash: 0, fixedIncome: 0, equity: 1, alternatives: 0 };
   const profileWeights = activeProfile === "alpha"
     ? ALPHA_WEIGHTS
+    : activeProfile === "core"
+    ? CORE_WEIGHTS
     : selectedGroup?.profiles[activeProfile];
 
   // Reference PIM group for canonical individual stock weights
@@ -314,6 +332,22 @@ export function PimModel({ groups }: Props) {
       const normalized = totalWeight > 0
         ? alphaHoldings.map((h) => ({ ...h, weightInClass: h.weightInClass / totalWeight }))
         : alphaHoldings;
+      return { ...selectedGroup, holdings: normalized };
+    }
+
+    // Core: equity-only, ONLY core-designated ETFs/funds, weighted
+    // proportionally and re-normalized to sum to 100%. Mirror of the
+    // Alpha view but for the core sleeve. Locked specialty funds
+    // (FID5982, GRNJ) are not in coreSymbols by default, so they
+    // appear in Alpha rather than here.
+    if (activeProfile === "core") {
+      const coreHoldings = selectedGroup.holdings.filter(
+        (h) => h.assetClass === "equity" && coreSymbols.has(symbolToTicker(h.symbol))
+      );
+      const totalWeight = coreHoldings.reduce((s, h) => s + h.weightInClass, 0);
+      const normalized = totalWeight > 0
+        ? coreHoldings.map((h) => ({ ...h, weightInClass: h.weightInClass / totalWeight }))
+        : coreHoldings;
       return { ...selectedGroup, holdings: normalized };
     }
 
@@ -460,12 +494,16 @@ export function PimModel({ groups }: Props) {
     // can compute drift from the same start date.
     const pimGroupState = getGroupState("pim");
     const firmRebalanceDate = pimGroupState.lastRebalance?.date;
-    const alphaReturn = activeProfile === "alpha"
+    // Both Alpha and Core are firm-wide standalone models — same single
+    // pair of return numbers powers Dynamic Wt across every group.
+    // Skip on Alpha / Core profiles themselves (no sleeves to drift).
+    const skipDrift = activeProfile === "alpha" || activeProfile === "core";
+    const alphaReturn = skipDrift
       ? null
       : returnSinceRebalance("pim", "alpha", firmRebalanceDate);
-    const coreReturn = activeProfile === "alpha"
+    const coreReturn = skipDrift
       ? null
-      : returnSinceRebalance(effectiveGroup.id, `core-${activeProfile}`, firmRebalanceDate);
+      : returnSinceRebalance("pim", "core", firmRebalanceDate);
 
     // Tally sleeve target totals across all equity (locked specialty
     // funds DO drift with the alpha sleeve here — they're excluded
@@ -613,7 +651,9 @@ export function PimModel({ groups }: Props) {
     alphaReturn: number | null;
     coreReturn: number | null;
   }>(() => {
-    if (activeProfile === "alpha" || !perfData || !effectiveGroup) {
+    // Hide on Alpha/Core profiles themselves (the standalone models —
+    // comparing them to themselves yields zero).
+    if (activeProfile === "alpha" || activeProfile === "core" || !perfData || !effectiveGroup) {
       return { anchorDate: null, alphaReturn: null, coreReturn: null };
     }
     const anchor = getGroupState("pim").lastRebalance?.date || null;
@@ -630,10 +670,13 @@ export function PimModel({ groups }: Props) {
       const latest = series.history[series.history.length - 1].value;
       return latest / baseline - 1;
     };
+    // BOTH Alpha and Core are firm-wide standalone models stored under
+    // groupId="pim". Every model uses the same Alpha return and the
+    // same Core return for the Sleeve Drift comparison.
     return {
       anchorDate: day,
       alphaReturn: compute("pim", "alpha"),
-      coreReturn: compute(effectiveGroup.id, `core-${activeProfile}`),
+      coreReturn: compute("pim", "core"),
     };
   }, [activeProfile, perfData, effectiveGroup, getGroupState]);
 
@@ -642,6 +685,7 @@ export function PimModel({ groups }: Props) {
   // computation so the message stays in sync.
   const dynamicWeightDiagnostic = useMemo<string | null>(() => {
     if (activeProfile === "alpha") return "alpha profile shows no drift";
+    if (activeProfile === "core") return "core profile shows no drift";
     if (perfBackfilling) return null;
     if (!perfData) return "perf data not loaded yet";
     const pimRebal = getGroupState("pim").lastRebalance?.date;
@@ -649,19 +693,19 @@ export function PimModel({ groups }: Props) {
     const alphaSeries = perfData.models.find((m) => m.groupId === "pim" && m.profile === "alpha");
     if (!alphaSeries || alphaSeries.history.length === 0) return "no \"alpha\" series under groupId=pim — confirm at least one stock has designation:'alpha' (or unset)";
     if (!effectiveGroup) return null;
-    const coreKey = `core-${activeProfile}`;
-    const coreSeries = perfData.models.find((m) => m.groupId === effectiveGroup.id && m.profile === coreKey);
+    // Firm-wide Core model: same series for every group.
+    const coreSeries = perfData.models.find((m) => m.groupId === "pim" && m.profile === "core");
     if (!coreSeries || coreSeries.history.length === 0) {
       const coreCount = Array.from(coreSymbols).length;
       return coreCount === 0
         ? "no stocks tagged designation:'core' — visit the Stocks tab and tag your core ETFs (XSP, XUH, XUU, etc.)"
-        : `no "${coreKey}" series for ${effectiveGroup.id} — recompute may have failed`;
+        : "no \"core\" series under groupId=pim — recompute may have failed";
     }
     const day = pimRebal.slice(0, 10);
     const alphaBase = [...alphaSeries.history].reverse().find((h) => h.date <= day);
     if (!alphaBase) return `alpha series has no data on or before ${day} (earliest is ${alphaSeries.history[0]?.date})`;
     const coreBase = [...coreSeries.history].reverse().find((h) => h.date <= day);
-    if (!coreBase) return `${coreKey} series has no data on or before ${day} (earliest is ${coreSeries.history[0]?.date})`;
+    if (!coreBase) return `core series has no data on or before ${day} (earliest is ${coreSeries.history[0]?.date})`;
     return null;
   }, [activeProfile, perfBackfilling, perfData, effectiveGroup, coreSymbols, getGroupState]);
 
@@ -881,7 +925,7 @@ export function PimModel({ groups }: Props) {
           returns since the most recent firm-wide rebalance. These are
           the inputs that drive the Dynamic Wt column. Hidden on the
           Alpha profile (no drift to compare against itself). */}
-      {activeProfile !== "alpha" && driftSummary.anchorDate && (
+      {activeProfile !== "alpha" && activeProfile !== "core" && driftSummary.anchorDate && (
         <div className="rounded-2xl border border-slate-200 bg-white p-5 shadow-sm">
           <div className="flex items-baseline justify-between mb-3">
             <h3 className="text-sm font-bold text-slate-800">Sleeve Drift</h3>
@@ -905,7 +949,7 @@ export function PimModel({ groups }: Props) {
               <div className="text-[10px] text-slate-400 mt-0.5">PIM standalone alpha · firm-wide</div>
             </div>
             <div className="rounded-xl bg-slate-50 px-4 py-3">
-              <div className="text-[10px] uppercase tracking-wider text-slate-500 font-semibold">Core Sleeve</div>
+              <div className="text-[10px] uppercase tracking-wider text-slate-500 font-semibold">Core Model</div>
               <div className={`text-lg font-bold mt-1 ${
                 driftSummary.coreReturn == null ? "text-slate-300"
                 : driftSummary.coreReturn > 0 ? "text-emerald-700"
@@ -916,7 +960,7 @@ export function PimModel({ groups }: Props) {
                   ? "—"
                   : `${driftSummary.coreReturn > 0 ? "+" : ""}${(driftSummary.coreReturn * 100).toFixed(2)}%`}
               </div>
-              <div className="text-[10px] text-slate-400 mt-0.5">{selectedGroup.name} core ETFs only</div>
+              <div className="text-[10px] text-slate-400 mt-0.5">PIM standalone core ETFs · firm-wide</div>
             </div>
             <div className="rounded-xl bg-slate-50 px-4 py-3">
               <div className="text-[10px] uppercase tracking-wider text-slate-500 font-semibold">Spread (α − Core)</div>
@@ -998,7 +1042,7 @@ export function PimModel({ groups }: Props) {
                     <th className={`text-right ${thClass}`} onClick={() => handleSort("weightInPortfolio")}>
                       Target Wt<SortIcon field="weightInPortfolio" sortField={sortField} sortDir={sortDir} />
                     </th>
-                    {activeProfile !== "alpha" && (
+                    {activeProfile !== "alpha" && activeProfile !== "core" && (
                       <th
                         className="py-2.5 px-2 text-right text-xs font-semibold whitespace-nowrap"
                         title={dynamicWeightDiagnostic
@@ -1070,7 +1114,7 @@ export function PimModel({ groups }: Props) {
                         <span className={`inline-block rounded px-1.5 py-0.5 text-[10px] font-bold ${h.currency === "CAD" ? "bg-red-50 text-red-600" : "bg-green-50 text-green-600"}`}>{h.currency}</span>
                       </td>
                       <td className="py-2 px-2 text-right font-mono text-xs font-semibold">{pctClean(h.weightInPortfolio)}</td>
-                      {activeProfile !== "alpha" && (
+                      {activeProfile !== "alpha" && activeProfile !== "core" && (
                         <td className="py-2 px-2 text-right font-mono text-xs">
                           {h.dynamicWeight != null ? (
                             <span className={h.dynamicWeight > h.weightInPortfolio ? "text-emerald-700" : h.dynamicWeight < h.weightInPortfolio ? "text-rose-700" : "text-slate-700"}>
@@ -1101,7 +1145,7 @@ export function PimModel({ groups }: Props) {
                   <tr className={`${colors.bg} font-semibold`}>
                     <td className="py-2 pl-5 pr-2 text-xs text-slate-500" colSpan={3}>TOTAL</td>
                     <td className="py-2 px-2 text-right font-mono text-xs font-bold">{pct(holdings.reduce((s, h) => s + h.weightInPortfolio, 0))}</td>
-                    {activeProfile !== "alpha" && (
+                    {activeProfile !== "alpha" && activeProfile !== "core" && (
                       <td className="py-2 px-2 text-right font-mono text-xs font-bold">
                         {holdings.some((h) => h.dynamicWeight != null)
                           ? pct(holdings.reduce((s, h) => s + (h.dynamicWeight ?? h.weightInPortfolio), 0))

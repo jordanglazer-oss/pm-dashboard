@@ -197,6 +197,7 @@ const PROFILE_LABELS: Record<PimProfileType, string> = {
   growth: "Growth",
   allEquity: "All-Equity",
   alpha: "Alpha",
+  core: "Core",
 };
 
 /** Asset allocation pie palette. RBC navy is reserved for Core ETFs
