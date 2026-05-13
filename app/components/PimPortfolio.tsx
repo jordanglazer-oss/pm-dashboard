@@ -1539,10 +1539,12 @@ export function PimPortfolio({ groups }: Props) {
             </button>
           )}
           {/* Client Report — opens the one-pager preview in a new tab,
-              seeded with the currently-selected profile. Disabled for
-              Alpha because the one-pager is only built for the three
-              full-model profiles (Balanced / Growth / All-Equity). */}
-          {!editMode && activeProfile !== "alpha" && (
+              seeded with the currently-selected profile. Hidden for
+              Alpha and Core because the one-pager is only built for
+              the three full-model profiles (Balanced / Growth /
+              All-Equity); the server-side route ALSO validates and
+              falls back to Balanced if those profiles are passed. */}
+          {!editMode && activeProfile !== "alpha" && activeProfile !== "core" && (
             <Link
               href={`/client-report?group=${encodeURIComponent(selectedGroupId)}&profile=${encodeURIComponent(activeProfile)}`}
               target="_blank"
