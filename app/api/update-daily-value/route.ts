@@ -346,20 +346,31 @@ export async function POST() {
       if (!group) continue;
 
       const isAlpha = model.profile === "alpha";
-      // Alpha only applies to PIM group
-      if (isAlpha && model.groupId !== "pim") continue;
+      const isCore = model.profile === "core";
+      // Alpha + Core are firm-wide standalone models — PIM group only.
+      if ((isAlpha || isCore) && model.groupId !== "pim") continue;
       const ALPHA_WEIGHTS = { cash: 0, fixedIncome: 0, equity: 1, alternatives: 0 };
-      const profileWeights = isAlpha ? ALPHA_WEIGHTS : group.profiles[model.profile as PimProfileType];
+      const CORE_WEIGHTS = { cash: 0, fixedIncome: 0, equity: 1, alternatives: 0 };
+      const profileWeights = isAlpha
+        ? ALPHA_WEIGHTS
+        : isCore
+        ? CORE_WEIGHTS
+        : group.profiles[model.profile as PimProfileType];
       if (!profileWeights) continue;
 
-      // For alpha: equity-only, exclude core ETFs, re-normalize proportionally
-      const effectiveHoldings = isAlpha
+      // For alpha: equity-only, EXCLUDE core ETFs (the alpha sleeve is
+      // everything-except-core).
+      // For core: equity-only, ONLY core ETFs (the inverse filter).
+      // Both renormalize their selected holdings to sum to 1.0.
+      const effectiveHoldings = (isAlpha || isCore)
         ? (() => {
-            const alphaH = group.holdings.filter(
-              (h) => h.assetClass === "equity" && !coreSymbols.has(pimSymbolToTicker(h.symbol))
-            );
-            const total = alphaH.reduce((s, h) => s + h.weightInClass, 0);
-            return total > 0 ? alphaH.map((h) => ({ ...h, weightInClass: h.weightInClass / total })) : alphaH;
+            const filtered = group.holdings.filter((h) => {
+              if (h.assetClass !== "equity") return false;
+              const isCoreSym = coreSymbols.has(pimSymbolToTicker(h.symbol));
+              return isAlpha ? !isCoreSym : isCoreSym;
+            });
+            const total = filtered.reduce((s, h) => s + h.weightInClass, 0);
+            return total > 0 ? filtered.map((h) => ({ ...h, weightInClass: h.weightInClass / total })) : filtered;
           })()
         : group.holdings;
 

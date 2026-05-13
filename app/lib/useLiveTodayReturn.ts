@@ -44,12 +44,20 @@ export function useLiveTodayReturn(
     if (!group) return;
 
     const isAlpha = profile === "alpha";
-    // Alpha is equity-only, excluding core ETFs.
+    const isCore = profile === "core";
+    // Alpha + Core are both equity-only standalone models. Alpha
+    // EXCLUDES core ETFs (everything-except-core); Core ONLY contains
+    // core ETFs (inverse filter).
     const ALPHA_WEIGHTS = { cash: 0, fixedIncome: 0, equity: 1, alternatives: 0 };
-    const profileWeights = isAlpha ? ALPHA_WEIGHTS : group.profiles[profile];
+    const CORE_WEIGHTS = { cash: 0, fixedIncome: 0, equity: 1, alternatives: 0 };
+    const profileWeights = isAlpha
+      ? ALPHA_WEIGHTS
+      : isCore
+      ? CORE_WEIGHTS
+      : group.profiles[profile];
     if (!profileWeights) return;
 
-    // Build the set of core-designated symbols for alpha filtering
+    // Build the set of core-designated symbols for alpha/core filtering
     const coreSymbols = new Set<string>();
     for (const s of stocks) {
       if (s.designation === "core") coreSymbols.add(s.ticker);
@@ -73,14 +81,18 @@ export function useLiveTodayReturn(
 
     const posMap = new Map(positions.positions.map((p) => [p.symbol, p]));
 
-    // For alpha: equity-only, exclude core ETFs; otherwise filter by >0% model weight
+    // Filter active holdings by profile semantics:
+    //   alpha → equity, EXCLUDE core symbols
+    //   core  → equity, ONLY core symbols
+    //   other → filter by >0% asset-class allocation
     let activeHoldings;
-    if (isAlpha) {
-      activeHoldings = group.holdings.filter(
-        (h) =>
-          h.assetClass === "equity" &&
-          !coreSymbols.has(h.symbol.endsWith("-T") ? h.symbol.replace(/-T$/, ".TO") : h.symbol)
-      );
+    if (isAlpha || isCore) {
+      activeHoldings = group.holdings.filter((h) => {
+        if (h.assetClass !== "equity") return false;
+        const tk = h.symbol.endsWith("-T") ? h.symbol.replace(/-T$/, ".TO") : h.symbol;
+        const isCoreSym = coreSymbols.has(tk);
+        return isAlpha ? !isCoreSym : isCoreSym;
+      });
     } else {
       activeHoldings = group.holdings.filter((h) => {
         let assetAlloc = 0;
