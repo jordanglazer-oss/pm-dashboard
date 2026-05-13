@@ -11,6 +11,7 @@ const PROFILE_LABELS: Record<PimProfileType, string> = {
   growth: "Growth",
   allEquity: "All-Equity",
   alpha: "Alpha",
+  core: "Core",
 };
 
 const PERIOD_OPTIONS = [

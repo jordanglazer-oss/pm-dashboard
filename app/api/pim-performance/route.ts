@@ -578,6 +578,71 @@ export async function POST() {
           }
         }
       }
+
+      // Firm-wide standalone Core model — mirror of the standalone
+      // Alpha. Only computed once, for the PIM group. The Sleeve Drift
+      // card on every model uses this as the universal "Core Model"
+      // comparison vs the firm-wide Alpha. Holdings: all core-
+      // designated equity, weighted PROPORTIONALLY to their pim-models
+      // weightInClass and normalized within computeModelReturns to
+      // sum to 100% via the equity-only allocation profile.
+      if (group.id === "pim" && coreStart && !seriesExists("pim", "core")) {
+        const coreModelGroup: PimModelGroup = {
+          ...group,
+          // Reuse the same filtered holdings as core-${profile} above —
+          // designation:"core" equity, excluding LOCKED_EQUITY_SYMBOLS.
+          holdings: coreGroup.holdings,
+          // Synthetic 100%-equity profile, injected only on this
+          // synthetic group so computeModelReturns finds it at the
+          // group.profiles[profile] lookup. The relative weights of
+          // core ETFs are preserved (normalized within
+          // computeModelReturns) so XUH stays bigger than XSP, etc.
+          profiles: {
+            ...group.profiles,
+            core: { cash: 0, fixedIncome: 0, equity: 1, alternatives: 0 },
+          },
+        };
+        if (coreModelGroup.holdings.length > 0) {
+          const { history: coreModelHistory, intradayReturn: coreModelIntraday } =
+            computeModelReturns(
+              coreModelGroup,
+              "core",
+              priceHistories,
+              currentPrices,
+              coreStart,
+            );
+          if (coreModelHistory.length > 0) {
+            if (coreModelIntraday != null) {
+              const last = coreModelHistory[coreModelHistory.length - 1];
+              const today = new Date().toISOString().split("T")[0];
+              if (last.date !== today) {
+                coreModelHistory.push({
+                  date: today,
+                  value: parseFloat((last.value * (1 + coreModelIntraday / 100)).toFixed(4)),
+                  dailyReturn: coreModelIntraday,
+                });
+              } else {
+                coreModelHistory[coreModelHistory.length - 1] = {
+                  date: today,
+                  value: parseFloat(
+                    (coreModelHistory.length > 1
+                      ? coreModelHistory[coreModelHistory.length - 2].value * (1 + coreModelIntraday / 100)
+                      : 100 * (1 + coreModelIntraday / 100)
+                    ).toFixed(4)
+                  ),
+                  dailyReturn: coreModelIntraday,
+                };
+              }
+            }
+            models.push({
+              groupId: "pim",
+              profile: "core",
+              history: coreModelHistory,
+              lastUpdated: new Date().toISOString(),
+            });
+          }
+        }
+      }
     }
 
     const perfData: PimPerformanceData = {
