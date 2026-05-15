@@ -246,8 +246,12 @@ export default function ChatPage() {
   // On mobile, sidebar is a drawer that defaults closed (so the chat area
   // gets the full screen). On md+ screens it's always visible.
   const [sidebarOpen, setSidebarOpen] = useState(false);
+  // Inline-rename state — when set, the sidebar row swaps to an input.
+  const [renamingId, setRenamingId] = useState<string | null>(null);
+  const [renameDraft, setRenameDraft] = useState("");
   const scrollRef = useRef<HTMLDivElement>(null);
   const textareaRef = useRef<HTMLTextAreaElement>(null);
+  const renameInputRef = useRef<HTMLInputElement>(null);
 
   // Load manifest on mount.
   useEffect(() => {
@@ -346,6 +350,64 @@ export default function ChatPage() {
       setActiveThread(null);
     }
   }, [activeThreadId]);
+
+  // Begin inline rename — populates draft state and focuses the input on next tick.
+  const beginRename = useCallback((id: string, currentTitle: string) => {
+    setRenamingId(id);
+    setRenameDraft(currentTitle);
+    // Focus + select after React renders the input.
+    setTimeout(() => {
+      renameInputRef.current?.focus();
+      renameInputRef.current?.select();
+    }, 0);
+  }, []);
+
+  const cancelRename = useCallback(() => {
+    setRenamingId(null);
+    setRenameDraft("");
+  }, []);
+
+  // Commit rename: writes the new title to both the manifest and the per-thread blob.
+  const commitRename = useCallback(async () => {
+    const id = renamingId;
+    const newTitle = renameDraft.trim();
+    setRenamingId(null);
+    setRenameDraft("");
+    if (!id || !newTitle) return;
+
+    // Optimistic local update to the manifest.
+    let manifestSnapshot: ChatThreadManifestEntry[] = [];
+    setThreads((prev) => {
+      const next = prev.map((t) => (t.id === id ? { ...t, title: newTitle } : t));
+      manifestSnapshot = next;
+      return next;
+    });
+    // Update the active thread state if it's the one being renamed.
+    if (activeThread?.id === id) {
+      setActiveThread({ ...activeThread, title: newTitle });
+    }
+
+    // Persist manifest + per-thread blob in parallel. The per-thread PUT
+    // requires fetching the current blob first so we don't clobber messages.
+    try {
+      await fetch("/api/kv/chat-threads", {
+        method: "PUT",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ threads: manifestSnapshot }),
+      });
+      const cur = await fetch(`/api/kv/chat-threads/${id}`).then((r) => (r.ok ? r.json() : null));
+      if (cur && typeof cur === "object" && cur.id === id) {
+        const updated: ChatThreadData = { ...(cur as ChatThreadData), title: newTitle, updatedAt: nowIso() };
+        await fetch(`/api/kv/chat-threads/${id}`, {
+          method: "PUT",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify(updated),
+        });
+      }
+    } catch (e) {
+      console.error("Failed to rename thread:", e);
+    }
+  }, [activeThread, renameDraft, renamingId]);
 
   const send = useCallback(async () => {
     const text = input.trim();
@@ -517,7 +579,7 @@ export default function ChatPage() {
   );
 
   return (
-    <div className="relative flex h-[calc(100vh-58px)] bg-slate-50 overflow-hidden">
+    <div className="relative flex h-[calc(100vh-46px)] bg-slate-50 overflow-hidden">
       {/* Mobile backdrop */}
       {sidebarOpen && (
         <div
@@ -560,35 +622,75 @@ export default function ChatPage() {
           )}
           {threads.map((t) => {
             const isActive = t.id === activeThreadId;
+            const isRenaming = renamingId === t.id;
             return (
               <div
                 key={t.id}
-                className={`group flex items-start gap-2 px-3 py-2.5 cursor-pointer border-b border-slate-100 ${
-                  isActive ? "bg-blue-50" : "hover:bg-slate-50"
-                }`}
+                className={`group flex items-start gap-1.5 px-3 py-2.5 border-b border-slate-100 ${
+                  isRenaming ? "" : "cursor-pointer"
+                } ${isActive ? "bg-blue-50" : "hover:bg-slate-50"}`}
                 onClick={() => {
+                  if (isRenaming) return;
                   setActiveThreadId(t.id);
                   setSidebarOpen(false);
                 }}
               >
                 <div className="flex-1 min-w-0">
-                  <p className={`text-sm truncate ${isActive ? "font-semibold text-blue-900" : "text-slate-700"}`}>{t.title}</p>
+                  {isRenaming ? (
+                    <input
+                      ref={renameInputRef}
+                      type="text"
+                      value={renameDraft}
+                      onChange={(e) => setRenameDraft(e.target.value)}
+                      onClick={(e) => e.stopPropagation()}
+                      onBlur={() => commitRename()}
+                      onKeyDown={(e) => {
+                        if (e.key === "Enter") {
+                          e.preventDefault();
+                          commitRename();
+                        } else if (e.key === "Escape") {
+                          e.preventDefault();
+                          cancelRename();
+                        }
+                      }}
+                      className="w-full text-sm font-semibold text-slate-900 bg-white border border-blue-400 rounded px-1.5 py-0.5 outline-none focus:ring-2 focus:ring-blue-200"
+                      maxLength={80}
+                    />
+                  ) : (
+                    <p className={`text-sm truncate ${isActive ? "font-semibold text-blue-900" : "text-slate-700"}`}>{t.title}</p>
+                  )}
                   <p className="text-[10px] text-slate-400 mt-0.5">
                     {t.messageCount} msg · {formatTime(t.updatedAt)}
                   </p>
                 </div>
-                <button
-                  onClick={(e) => {
-                    e.stopPropagation();
-                    deleteThread(t.id);
-                  }}
-                  className="md:opacity-0 md:group-hover:opacity-100 text-slate-400 hover:text-red-600 transition-opacity"
-                  title="Delete"
-                >
-                  <svg className="w-3.5 h-3.5" fill="none" stroke="currentColor" strokeWidth="2" viewBox="0 0 24 24">
-                    <path strokeLinecap="round" strokeLinejoin="round" d="M6 18L18 6M6 6l12 12" />
-                  </svg>
-                </button>
+                {!isRenaming && (
+                  <div className="flex items-center gap-1 md:opacity-0 md:group-hover:opacity-100 transition-opacity">
+                    <button
+                      onClick={(e) => {
+                        e.stopPropagation();
+                        beginRename(t.id, t.title);
+                      }}
+                      className="text-slate-400 hover:text-blue-600 p-0.5"
+                      title="Rename"
+                    >
+                      <svg className="w-3.5 h-3.5" fill="none" stroke="currentColor" strokeWidth="2" viewBox="0 0 24 24">
+                        <path strokeLinecap="round" strokeLinejoin="round" d="M11 5H6a2 2 0 00-2 2v11a2 2 0 002 2h11a2 2 0 002-2v-5m-1.414-9.414a2 2 0 112.828 2.828L11.828 15H9v-2.828l8.586-8.586z" />
+                      </svg>
+                    </button>
+                    <button
+                      onClick={(e) => {
+                        e.stopPropagation();
+                        deleteThread(t.id);
+                      }}
+                      className="text-slate-400 hover:text-red-600 p-0.5"
+                      title="Delete"
+                    >
+                      <svg className="w-3.5 h-3.5" fill="none" stroke="currentColor" strokeWidth="2" viewBox="0 0 24 24">
+                        <path strokeLinecap="round" strokeLinejoin="round" d="M6 18L18 6M6 6l12 12" />
+                      </svg>
+                    </button>
+                  </div>
+                )}
               </div>
             );
           })}
