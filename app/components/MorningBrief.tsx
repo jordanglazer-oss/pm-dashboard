@@ -1080,31 +1080,33 @@ export function MorningBrief({
               <p className="text-[10px] text-slate-400 mt-0.5">Total P/C ratio</p>
             </div>
           </div>
-          <div className="mt-3">
-            <div className="flex items-center gap-1.5 mb-1">
-              <label className="text-xs font-semibold text-slate-400 uppercase tracking-wider">Oscillator Chart (optional)</label>
+          <div className="mt-3 grid grid-cols-1 md:grid-cols-2 gap-4">
+            <div>
+              <div className="flex items-center gap-1.5 mb-1">
+                <label className="text-xs font-semibold text-slate-400 uppercase tracking-wider">Oscillator Chart (optional)</label>
+              </div>
+              <ImageUpload
+                section="spOscillator"
+                sectionLabel="S&P Oscillator chart"
+                attachments={attachments}
+                onAdd={addAttachment}
+                onRemove={removeAttachment}
+              />
+              <p className="text-[10px] text-slate-400 mt-1">Drop a MarketEdge chart screenshot — Claude will read the shape, levels, and recent extremes for the contrarian section.</p>
             </div>
-            <ImageUpload
-              section="spOscillator"
-              sectionLabel="S&P Oscillator chart"
-              attachments={attachments}
-              onAdd={addAttachment}
-              onRemove={removeAttachment}
-            />
-            <p className="text-[10px] text-slate-400 mt-1">Drop a MarketEdge chart screenshot — Claude will read the shape, levels, and recent extremes for the contrarian section.</p>
-          </div>
-          <div className="mt-3">
-            <div className="flex items-center gap-1.5 mb-1">
-              <label className="text-xs font-semibold text-slate-400 uppercase tracking-wider">Newton Technical Presentation (optional)</label>
+            <div>
+              <div className="flex items-center gap-1.5 mb-1">
+                <label className="text-xs font-semibold text-slate-400 uppercase tracking-wider">Newton Technical Presentation (optional)</label>
+              </div>
+              <ImageUpload
+                section="newtonTechnical"
+                sectionLabel="Newton Technical Presentation"
+                attachments={attachments}
+                onAdd={addAttachment}
+                onRemove={removeAttachment}
+              />
+              <p className="text-[10px] text-slate-400 mt-1">Drop Mark Newton&apos;s monthly/quarterly technical deck (PDF). Parsed once on upload, then cached — the brief reuses the same analysis on every refresh and only re-parses when you replace the file. Relevance decays with age: fresh (&lt;14d) full weight, 14-45d directional only, &gt;45d high-level context only.</p>
             </div>
-            <ImageUpload
-              section="newtonTechnical"
-              sectionLabel="Newton Technical Presentation"
-              attachments={attachments}
-              onAdd={addAttachment}
-              onRemove={removeAttachment}
-            />
-            <p className="text-[10px] text-slate-400 mt-1">Drop Mark Newton&apos;s monthly/quarterly technical deck (PDF). Parsed once on upload, then cached — the brief reuses the same analysis on every refresh and only re-parses when you replace the file. Relevance decays with age: fresh (&lt;14d) full weight, 14-45d directional only, &gt;45d high-level context only.</p>
           </div>
           <p className="mt-3 text-[11px] text-slate-400">
             CNN Fear &amp; Greed and AAII Sentiment are now auto-fetched on every load
