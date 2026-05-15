@@ -40,7 +40,14 @@ export async function PUT(req: NextRequest, context: { params: Promise<{ id: str
   if (!id) return NextResponse.json({ error: "Missing id" }, { status: 400 });
   try {
     const { dataUrl } = await req.json();
-    if (typeof dataUrl !== "string" || !dataUrl.startsWith("data:image/")) {
+    // Accept both images (data:image/...) and PDFs (data:application/pdf;base64,...).
+    // PDF support is required for the Newton Technical Presentation upload on the
+    // Brief page — those decks ship as PDF and we pass them through to Anthropic
+    // as `document` blocks without re-encoding.
+    if (
+      typeof dataUrl !== "string" ||
+      !(dataUrl.startsWith("data:image/") || dataUrl.startsWith("data:application/pdf;base64,"))
+    ) {
       return NextResponse.json({ error: "Invalid dataUrl" }, { status: 400 });
     }
     const redis = await getRedis();

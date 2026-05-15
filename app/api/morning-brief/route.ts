@@ -90,6 +90,7 @@ async function fetchSectorPerformance(): Promise<string> {
 
 const ATTACHMENT_CACHE_KEY = "pm:attachment-analysis";
 const OSCILLATOR_ATTACHMENT_CACHE_KEY = "pm:oscillator-screenshot-analysis";
+const NEWTON_TECHNICAL_CACHE_KEY = "pm:newton-technical-analysis";
 
 const BRIEF_PROMPT = `You are a senior portfolio strategist generating a daily morning brief for a portfolio management team. Your audience is professional portfolio managers who need actionable, institutional-quality market intelligence.
 
@@ -398,6 +399,79 @@ async function saveCachedOscillatorAnalysis(hash: string, summary: string) {
     );
   } catch (e) {
     console.error("Failed to cache oscillator screenshot analysis:", e);
+  }
+}
+
+// Separate vision pass for the Mark Newton (Fundstrat) Technical Presentation
+// PDF. Newton publishes a multi-page deck monthly/quarterly covering the
+// medium-term technical setup: regime, key SPX/NDX levels, sector leadership,
+// breadth, risk-asset relative strength, and event calendar. We parse it once
+// (hash-gated) and reuse the structured summary across every subsequent brief
+// until the user uploads a new copy. The brief route adds an age-based decay
+// note in the prompt so Claude weights stale analyses less heavily.
+async function analyzeNewtonTechnical(
+  attachments: AttachmentInput[]
+): Promise<string> {
+  const docBlocks = buildImageBlocks(attachments);
+  if (docBlocks.length === 0) return "";
+  const message = await client.messages.create({
+    model: "claude-sonnet-4-6",
+    max_tokens: 1500,
+    messages: [
+      {
+        role: "user",
+        content: [
+          {
+            type: "text",
+            text: `You are reading Mark Newton's (Fundstrat Head of Technical Strategy) monthly/quarterly Technical Presentation PDF. Extract a concise, structured summary a portfolio manager can reference for the next 4-12 weeks.
+
+Cover (only what is clearly stated — do not infer beyond the deck):
+- **Overall view**: bullish / neutral / bearish, plus time horizon (e.g. "constructive next 1-2 months, cautious into Q3")
+- **SPX key levels**: support and resistance from the deck
+- **NDX / sector leadership**: which sectors / themes Newton flags as leading or weakening
+- **Breadth & momentum**: any commentary on advance-decline, % of stocks above 200DMA, etc.
+- **Key risks / dates**: cycle/seasonal warnings or specific dates highlighted
+- **Conviction names** (if any tickers are explicitly called out as top picks or to avoid)
+
+Format as 6-10 tight bullets, no preamble, no markdown headers. Cite specific numbers/dates from the deck wherever possible. If the deck doesn't cover a section, omit it rather than padding.`,
+          },
+          ...docBlocks,
+        ],
+      },
+    ],
+  });
+  return message.content[0].type === "text" ? message.content[0].text : "";
+}
+
+type CachedNewtonTechnical = { hash: string; summary: string; analyzedAt: string };
+
+async function getCachedNewtonTechnical(
+  hash: string
+): Promise<CachedNewtonTechnical | null> {
+  try {
+    const redis = await getRedis();
+    const raw = await redis.get(NEWTON_TECHNICAL_CACHE_KEY);
+    if (!raw) return null;
+    const cached = JSON.parse(raw) as CachedNewtonTechnical;
+    return cached.hash === hash ? cached : null;
+  } catch {
+    return null;
+  }
+}
+
+async function saveCachedNewtonTechnical(hash: string, summary: string) {
+  try {
+    const redis = await getRedis();
+    await redis.set(
+      NEWTON_TECHNICAL_CACHE_KEY,
+      JSON.stringify({
+        hash,
+        summary,
+        analyzedAt: new Date().toISOString(),
+      } satisfies CachedNewtonTechnical)
+    );
+  } catch (e) {
+    console.error("Failed to cache Newton technical presentation analysis:", e);
   }
 }
 
@@ -930,8 +1004,10 @@ Current Portfolio Holdings: ${holdingsSummary}`;
     // path stays since it does feed contrarianAnalysis.
     const allAtts: AttachmentInput[] = attachments || [];
     const oscAtts = allAtts.filter((a) => a.section === "spOscillator");
+    const newtonTechAtts = allAtts.filter((a) => a.section === "newtonTechnical");
 
     let oscContext = "";
+    let newtonTechContext = "";
 
     if (oscAtts.length > 0) {
       const oscHash = hashAttachments(oscAtts);
@@ -952,11 +1028,49 @@ Current Portfolio Holdings: ${holdingsSummary}`;
       }
     }
 
+    // Newton Technical Presentation (monthly/quarterly PDF deck). Hash-gated
+    // so Anthropic tokens are only spent when the PM uploads a new copy.
+    // Soft prompt-only decay: we tell Claude how old the deck is and instruct
+    // it to weight conclusions less heavily as the document ages.
+    if (newtonTechAtts.length > 0) {
+      const newtonHash = hashAttachments(newtonTechAtts);
+      const cached = await getCachedNewtonTechnical(newtonHash);
+      let summary: string | null = null;
+      let analyzedAtIso: string | null = null;
+      if (cached) {
+        summary = cached.summary;
+        analyzedAtIso = cached.analyzedAt;
+        console.log("Using cached Newton Technical analysis (PDF unchanged)");
+      } else {
+        console.log("New Newton Technical PDF detected — running vision analysis...");
+        const fresh = await analyzeNewtonTechnical(newtonTechAtts);
+        if (fresh && fresh.trim().length > 0) {
+          await saveCachedNewtonTechnical(newtonHash, fresh.trim());
+          summary = fresh.trim();
+          analyzedAtIso = new Date().toISOString();
+        }
+      }
+      if (summary && analyzedAtIso) {
+        const ageDays = Math.max(
+          0,
+          Math.floor((Date.now() - new Date(analyzedAtIso).getTime()) / (24 * 60 * 60 * 1000))
+        );
+        // Decay guidance: <14d = fresh, 14-45d = mid, >45d = stale.
+        const decayNote =
+          ageDays <= 14
+            ? "This presentation is fresh — treat its technical setup, levels, and sector calls as current."
+            : ageDays <= 45
+            ? `This presentation is ${ageDays} days old — directional bias and medium-term setup likely still valid, but treat specific price levels and short-term timing calls as dated. Cross-check against current quantitative data before relying.`
+            : `This presentation is ${ageDays} days old — STALE. Use ONLY for high-level directional context (cycle view, structural themes). Do not cite specific price levels or near-term timing calls; they are likely obsolete. Defer to the live oscillator, sentiment, and breadth data for current positioning.`;
+        newtonTechContext = `\n\n--- Mark Newton Technical Presentation (analyzed ${ageDays} day(s) ago) ---\n${decayNote}\n\n${summary}`;
+      }
+    }
+
     // Append screenshot context BEFORE the main text so it doesn't get
     // recency-bias advantage over the quantitative data. The textContent
     // already ends with portfolio holdings — screenshots are supplementary.
     const contentBlocks: Anthropic.Messages.ContentBlockParam[] = [
-      { type: "text", text: oscContext + "\n\n" + textContent },
+      { type: "text", text: oscContext + newtonTechContext + "\n\n" + textContent },
     ];
 
     const message = await client.messages.create({

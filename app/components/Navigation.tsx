@@ -14,6 +14,7 @@ const tabs = [
   { label: "AA & Perf", href: "/aa-performance" },
   { label: "Hedging", href: "/hedging" },
   { label: "Appendix", href: "/appendix" },
+  { label: "Chat", href: "/chat" },
 ];
 
 export function Navigation() {
@@ -40,6 +41,8 @@ export function Navigation() {
     ? "Hedging"
     : pathname === "/appendix"
     ? "Appendix"
+    : pathname === "/chat"
+    ? "Chat"
     : "Dashboard";
 
   return (
