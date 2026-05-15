@@ -7,6 +7,7 @@ import { usePathname } from "next/navigation";
 const tabs = [
   { label: "Brief", href: "/brief" },
   { label: "Dashboard", href: "/" },
+  { label: "Chat", href: "/chat" },
   { label: "PIM Model", href: "/pim-model" },
   { label: "Positioning", href: "/portfolio" },
   { label: "Screener", href: "/screener" },
@@ -14,7 +15,6 @@ const tabs = [
   { label: "AA & Perf", href: "/aa-performance" },
   { label: "Hedging", href: "/hedging" },
   { label: "Appendix", href: "/appendix" },
-  { label: "Chat", href: "/chat" },
 ];
 
 export function Navigation() {
@@ -47,10 +47,10 @@ export function Navigation() {
 
   return (
     <header className="bg-slate-900 text-white">
-      <div className="mx-auto flex items-center justify-between px-4 py-3 md:px-8">
+      <div className="mx-auto flex items-center justify-between px-4 py-2 md:px-6">
         {/* Branding */}
         <div className="flex items-center gap-3 shrink-0">
-          <h1 className="text-xl font-bold tracking-tight whitespace-nowrap">PIM Dashboard</h1>
+          <h1 className="text-base font-bold tracking-tight whitespace-nowrap">PIM Dashboard</h1>
         </div>
 
         {/* Hamburger button — mobile only */}
@@ -67,14 +67,14 @@ export function Navigation() {
         </button>
 
         {/* Desktop nav */}
-        <nav className="hidden md:flex items-center gap-1 shrink-0 ml-4">
+        <nav className="hidden md:flex items-center gap-0.5 shrink-0 ml-4">
           {tabs.map((tab) => {
             const isActive = tab.label === activeTab;
             return (
               <Link
                 key={tab.label}
                 href={tab.href}
-                className={`rounded-lg px-4 py-2 text-sm font-semibold transition-colors whitespace-nowrap ${
+                className={`rounded-md px-2.5 py-1.5 text-[13px] font-medium transition-colors whitespace-nowrap ${
                   isActive
                     ? "bg-blue-600 text-white"
                     : "text-slate-300 hover:text-white hover:bg-slate-800"

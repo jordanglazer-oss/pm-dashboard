@@ -579,7 +579,7 @@ export default function ChatPage() {
   );
 
   return (
-    <div className="relative flex h-[calc(100vh-58px)] bg-slate-50 overflow-hidden">
+    <div className="relative flex h-[calc(100vh-46px)] bg-slate-50 overflow-hidden">
       {/* Mobile backdrop */}
       {sidebarOpen && (
         <div
