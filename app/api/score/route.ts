@@ -1,6 +1,6 @@
 import Anthropic from "@anthropic-ai/sdk";
 import { NextRequest, NextResponse } from "next/server";
-import type { ScoreKey, ScoreExplanations, HealthData } from "@/app/lib/types";
+import type { ScoreKey, ScoreExplanations, ScoreDataPointSource, HealthData } from "@/app/lib/types";
 import { SCORE_GROUPS } from "@/app/lib/types";
 import type { OHLCVBar, TechnicalIndicators, RiskAlert } from "@/app/lib/technicals";
 import { computeTechnicals, computeRiskAlert, formatTechnicalsForPrompt } from "@/app/lib/technicals";
@@ -442,16 +442,44 @@ MANAGEMENT GROUP:
 - ownershipTrends (max 2, SEMI): Ownership trends — institutional ownership quality, insider buying/selling patterns
 
 CRITICAL RULES FOR EXPLANATIONS:
-1. Every explanation MUST cite specific numbers from the provided financial data — NEVER make up numbers
-2. ALWAYS prefer the MOST RECENT data: use quarterly data over annual where available
+1. Every claim in the summary MUST be backed by a corresponding entry in the dataPoints array — NEVER make up numbers
+2. ALWAYS prefer the MOST RECENT data: use quarterly over annual where available
 3. Growth explanations must include actual revenue/earnings figures with YoY% changes
-4. Valuation explanations must use CURRENT multiples from the data and compare to peers
+4. Valuation explanations must use CURRENT multiples from the data and compare to NAMED peers
 5. Historical valuation must compare current vs prior year multiples with specific numbers
 6. Leverage must cite actual debt figures and coverage ratios from the balance sheet
 7. Cash flow must cite actual FCF figures and conversion rates
 8. Write in a dense, data-rich paragraph style — like an analyst note
-9. Each explanation should be 3-6 sentences with multiple data points
+9. Each summary should be 3-6 sentences with multiple data points
 10. If any data is unavailable, explicitly say "data not available" rather than guessing
+
+WEB SEARCH VERIFICATION (when web_search tool is available — see "Verified scoring" instructions in user message):
+You have the web_search tool. Use it to VERIFY and AUGMENT the provided data — not to chase rumors. Specific allowed uses, in this exact priority order:
+  1. Verify the MOST RECENT quarterly results are reflected in the data above (revenue, EPS, margins). If the company has reported AFTER the data above, use the press-release numbers and note the date.
+  2. Check for pre-announcements / guidance revisions issued in the last 90 days (from the company's IR page or 8-K filings).
+  3. Confirm latest analyst rating changes / price target revisions from NAMED firms (last 30 days only).
+  4. For non-US-listed companies (any ticker without an EDGAR block above — e.g. .TO, .V, -T, ADRs that aren't primary listings), use web_search as the PRIMARY financial verification layer: find the latest reported quarterly figures from the company's IR page or filings on SEDAR+ (Canadian) / regulatory filings (other jurisdictions). Cite the source URL/publication for each number.
+  5. Sanity-check structural items: stock splits, dividend changes, buybacks announced in last 90 days.
+
+EXPLICITLY IGNORE these in scoring (do NOT weight, do NOT cite):
+  - M&A rumors, "sources say" stories, unsourced speculation
+  - Blog opinions, social media sentiment, Seeking Alpha author opinions
+  - General industry / macro news not specific to this issuer
+  - Analyst chatter or downstream takes on already-public news
+  - Single-source claims with no corroborating filing or press release
+
+Trust hierarchy: company filings (10-K/Q, 8-K, MD&A) > company press releases > named analyst firms (MS, GS, JPM, etc.) > established financial press (WSJ, FT, Reuters, Bloomberg primary reporting) > everything else. If a claim only appears in one rumor blog or social post, IGNORE it.
+
+CANADIAN STOCKS (.TO / .V / -T tickers, no EDGAR block):
+EDGAR XBRL data is NOT available for Canadian-only listings. Use web_search aggressively for these names to verify Yahoo's fundamentals against the company's most recent MD&A or quarterly press release. Treat the company's own IR page and SEDAR+ filings as authoritative. Cite source URLs in sourceDetail.
+
+DATA POINT SOURCING (for the dataPoints array in each explanation):
+For every data point you cite, label its source:
+  - "edgar" — value came from the SEC EDGAR XBRL block in the data above
+  - "edgar-form4" — insider transaction data from the Form 4 block
+  - "yahoo" — value came from the Yahoo Finance block
+  - "web" — value came from a web_search result (sourceDetail = source name + date, e.g. "Apple Q4 2025 press release, Oct 30 2025")
+  - "model" — qualitative inference based on company description / industry (use sparingly, only for narrative claims)
 
 Also provide:
 - name: Full company name
@@ -460,7 +488,7 @@ Also provide:
 - companySummary: 1-2 sentences explaining what the company does in plain language that a portfolio manager can relay to clients. Focus on the core business, key products/services, and what drives revenue. Keep it simple and jargon-free.
 - investmentThesis: 1-2 sentences on why to own this stock right now given current market conditions. Reference specific catalysts, valuation support, or thematic tailwinds. This should be a concise "elevator pitch" a PM could use with clients.
 
-Respond ONLY with valid JSON:
+Respond ONLY with valid JSON (no markdown code fences, no commentary):
 {
   "name": "Company Name",
   "sector": "GICS Sector",
@@ -473,17 +501,28 @@ Respond ONLY with valid JSON:
     "trackRecord": 0, "ownershipTrends": 0
   },
   "explanations": {
-    "secular": ["paragraph explanation"],
-    "researchCoverage": ["paragraph explanation"],
-    "growth": ["paragraph explanation with actual revenue/earnings data"],
-    "relativeValuation": ["paragraph explanation citing specific peer names and their multiples"],
-    "historicalValuation": ["paragraph explanation comparing current vs historical multiples"],
-    "leverageCoverage": ["paragraph explanation with actual debt metrics"],
-    "cashFlowQuality": ["paragraph explanation with actual FCF data"],
-    "competitiveMoat": ["paragraph explanation comparing vs named peers"],
-    "catalysts": ["paragraph explanation"],
-    "trackRecord": ["paragraph explanation"],
-    "ownershipTrends": ["paragraph explanation"]
+    "secular": {
+      "summary": "3-6 sentence paragraph",
+      "dataPoints": [
+        { "label": "TAM growth (industry source)", "value": "+18% YoY through 2030", "source": "web", "sourceDetail": "Gartner 2026 forecast, Mar 2026" }
+      ]
+    },
+    "growth": {
+      "summary": "...",
+      "dataPoints": [
+        { "label": "Revenue (Q3 2026)", "value": "$5.62B (+12% YoY)", "source": "edgar", "sourceDetail": "10-Q filed 2026-10-30" },
+        { "label": "EPS (Q3 2026)", "value": "$2.34 vs $2.10 est", "source": "web", "sourceDetail": "Company press release, Oct 30 2026" }
+      ]
+    },
+    "relativeValuation": { "summary": "...", "dataPoints": [...] },
+    "historicalValuation": { "summary": "...", "dataPoints": [...] },
+    "leverageCoverage": { "summary": "...", "dataPoints": [...] },
+    "cashFlowQuality": { "summary": "...", "dataPoints": [...] },
+    "competitiveMoat": { "summary": "...", "dataPoints": [...] },
+    "catalysts": { "summary": "...", "dataPoints": [...] },
+    "trackRecord": { "summary": "...", "dataPoints": [...] },
+    "ownershipTrends": { "summary": "...", "dataPoints": [...] },
+    "researchCoverage": { "summary": "...", "dataPoints": [...] }
   },
   "companySummary": "Plain-language summary of what the company does.",
   "investmentThesis": "Why to own this stock now given market conditions."
@@ -491,7 +530,15 @@ Respond ONLY with valid JSON:
 
 export async function POST(request: NextRequest) {
   try {
-    const { ticker } = await request.json();
+    const body = await request.json();
+    const { ticker } = body;
+    // Optional flag: when true, the API call enables Anthropic's
+    // web_search tool so the model can verify cached fundamentals against
+    // the company's most recent press releases / filings / named analyst
+    // notes. Defaults to false for backward compatibility — callers must
+    // opt in explicitly via the UI "Verify" toggle. Canadian / non-EDGAR
+    // tickers benefit most from this since they lack the XBRL fallback.
+    const verifyWithWebSearch: boolean = body?.verifyWithWebSearch === true;
 
     if (!ticker || typeof ticker !== "string") {
       return NextResponse.json(
@@ -501,6 +548,11 @@ export async function POST(request: NextRequest) {
     }
 
     const upperTicker = ticker.toUpperCase();
+    // Whether this ticker is a Canadian-only listing (no EDGAR coverage).
+    // When verify mode is on, we instruct the model to lean harder on
+    // web_search for these names since the structured-feed quality is
+    // thinner.
+    const isCanadianListing = /\.TO$|\.V$|-T$|\.U$/i.test(upperTicker);
 
     // Fetch real financial data and price history in parallel
     let financialContext = "";
@@ -547,20 +599,62 @@ export async function POST(request: NextRequest) {
       financialContext = "Financial data API unavailable. Use your best knowledge but note that data should be verified.";
     }
 
+    // Verify-mode preamble: tells the model that web_search is active and
+    // it should use the tool aggressively for the items listed in the
+    // WEB SEARCH VERIFICATION section of the system prompt (and especially
+    // hard for Canadian listings, which have no EDGAR fallback).
+    const verifyPreamble = verifyWithWebSearch
+      ? `\n\n=== Verified scoring ===\nWeb search verification is ENABLED for this rescore. You MUST use the web_search tool to:\n  1. Confirm the most recent reported quarterly numbers match what's in the data above (or supersede them if the company reported AFTER the data was cached).\n  2. Check for guidance revisions / pre-announcements / 8-K filings issued in the last 90 days.\n  3. Find any analyst rating or price-target changes from named firms in the last 30 days.\n  4. ${isCanadianListing
+            ? `THIS IS A CANADIAN LISTING (${upperTicker}) — no EDGAR data is available. Use web_search as the PRIMARY financial verification: look up the company's most recent quarterly press release / MD&A / SEDAR+ filing and use those numbers in your dataPoints. Cite each source URL or publication name in sourceDetail.`
+            : `Verify the latest dividend / buyback / split changes.`}\nRespect the noise filter in the system prompt: ignore rumors, opinion blogs, and unsourced speculation. Cite source name and date in dataPoints.sourceDetail for every web-sourced fact.\nMax 4 searches.\n=== End verified scoring ===\n`
+      : "";
+
+    // Build tool list. Anthropic's web_search_20250305 tool runs server-side
+    // and returns its results inline; the SDK exposes them through
+    // server_tool_use and web_search_tool_result content blocks. We cap
+    // max_uses to keep cost/latency bounded.
+    type WebSearchTool = { type: "web_search_20250305"; name: "web_search"; max_uses?: number };
+    const tools: WebSearchTool[] = verifyWithWebSearch
+      ? [{ type: "web_search_20250305", name: "web_search", max_uses: 4 }]
+      : [];
+
     const message = await client.messages.create({
       model: "claude-sonnet-4-6",
       max_tokens: 8192,
       messages: [
         {
           role: "user",
-          content: `Score the following stock: ${upperTicker}\n\nHere is the real financial data for this company — USE THIS DATA for your scoring and explanations:\n\n${financialContext}`,
+          content: `Score the following stock: ${upperTicker}\n\nHere is the real financial data for this company — USE THIS DATA for your scoring and explanations:\n\n${financialContext}${verifyPreamble}`,
         },
       ],
       system: SCORING_PROMPT,
+      tools: tools as unknown as Anthropic.Messages.Tool[],
     });
 
-    const text =
-      message.content[0].type === "text" ? message.content[0].text : "";
+    // Walk the response content blocks to (a) collect the final text body
+    // for JSON parsing and (b) capture web_search metadata (queries issued,
+    // citations returned) so we can persist the audit trail to score-history.
+    let text = "";
+    const searchQueries: string[] = [];
+    const searchCitations: Array<{ url: string; title?: string }> = [];
+    for (const block of message.content) {
+      if (block.type === "text") {
+        text += block.text;
+      } else if ((block.type as string) === "server_tool_use") {
+        const stu = block as unknown as { name?: string; input?: { query?: string } };
+        if (stu.name === "web_search" && typeof stu.input?.query === "string") {
+          searchQueries.push(stu.input.query);
+        }
+      } else if ((block.type as string) === "web_search_tool_result") {
+        const wst = block as unknown as { content?: Array<{ type: string; url?: string; title?: string }> };
+        const items = Array.isArray(wst.content) ? wst.content : [];
+        for (const item of items) {
+          if (item?.type === "web_search_result" && typeof item.url === "string") {
+            searchCitations.push({ url: item.url, title: item.title ?? undefined });
+          }
+        }
+      }
+    }
 
     const jsonMatch = text.match(/\{[\s\S]*\}/);
     if (!jsonMatch) {
@@ -602,17 +696,41 @@ export async function POST(request: NextRequest) {
       scores[key as ScoreKey] = clamp(raw, max);
     }
 
-    // Parse explanations
+    // Parse explanations — supports new { summary, dataPoints } shape AND
+    // legacy string / string[] shapes (so old test fixtures and any model
+    // regressions don't 500 the endpoint).
     const explanations: ScoreExplanations = {};
-    if (parsed.explanations) {
+    if (parsed.explanations && typeof parsed.explanations === "object") {
       for (const key of AI_KEYS) {
         const val = parsed.explanations[key];
-        if (Array.isArray(val)) {
-          explanations[key as ScoreKey] = val.map((b: unknown) =>
-            typeof b === "string" ? b : String(b)
-          );
+        if (!val) continue;
+        if (typeof val === "object" && !Array.isArray(val) && typeof val.summary === "string") {
+          // New shape: { summary, dataPoints }
+          const dpsRaw = Array.isArray(val.dataPoints) ? val.dataPoints : [];
+          const allowedSources = new Set(["edgar", "edgar-form4", "yahoo", "web", "model"]);
+          const dataPoints = (dpsRaw as unknown[])
+            .filter((d: unknown): d is Record<string, unknown> => d != null && typeof d === "object")
+            .map((d: Record<string, unknown>) => {
+              const source = typeof d.source === "string" && allowedSources.has(d.source) ? d.source : "model";
+              return {
+                label: typeof d.label === "string" ? d.label : "(unnamed)",
+                value: typeof d.value === "string" ? d.value : String(d.value ?? ""),
+                source: source as ScoreDataPointSource,
+                sourceDetail: typeof d.sourceDetail === "string" ? d.sourceDetail : undefined,
+              };
+            });
+          explanations[key as ScoreKey] = {
+            summary: val.summary,
+            dataPoints,
+          };
+        } else if (Array.isArray(val)) {
+          // Legacy: array of strings → wrap as summary with no dataPoints.
+          explanations[key as ScoreKey] = {
+            summary: val.filter((s: unknown) => typeof s === "string").join(" "),
+            dataPoints: [],
+          };
         } else if (typeof val === "string") {
-          explanations[key as ScoreKey] = [val];
+          explanations[key as ScoreKey] = { summary: val, dataPoints: [] };
         }
       }
     }
@@ -641,6 +759,11 @@ export async function POST(request: NextRequest) {
       healthData,
       technicals,
       riskAlert,
+      // Verification metadata — surfaced for the score-history entry and
+      // the stock-page UI ("Verified · 3 searches").
+      verifiedSearch: verifyWithWebSearch,
+      searchQueries,
+      searchCitations,
     });
   } catch (error) {
     console.error("Score API error:", error);

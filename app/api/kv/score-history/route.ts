@@ -38,6 +38,16 @@ export type ScoreHistoryEntry = {
   raw: number;           // stock.raw at time of score
   adjusted: number;      // stock.adjusted (duplicate of total for clarity)
   scores: Scores;
+  /**
+   * Whether this rescore used Anthropic web_search to verify and augment
+   * the cached fundamentals. Optional for backward compat — entries written
+   * before the verify feature don't have it.
+   */
+  verifiedSearch?: boolean;
+  /** Web search queries the model issued during a verified rescore. */
+  searchQueries?: string[];
+  /** Web search citation URLs surfaced during a verified rescore (titles optional). */
+  searchCitations?: Array<{ url: string; title?: string }>;
 };
 
 export type ScoreHistoryStore = Record<string, ScoreHistoryEntry[]>;

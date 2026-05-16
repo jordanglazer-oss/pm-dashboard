@@ -5,7 +5,7 @@ import { useParams, useRouter, useSearchParams } from "next/navigation";
 import Link from "next/link";
 import { useStocks } from "@/app/lib/StockContext";
 import { SCORE_GROUPS, MAX_SCORE, INSTRUMENT_LABELS } from "@/app/lib/types";
-import type { ScoreKey, FundData } from "@/app/lib/types";
+import type { ScoreKey, FundData, ScoreDataPoint, ScoreDataPointSource } from "@/app/lib/types";
 import { groupTotal, isScoreable, normalizeSector } from "@/app/lib/scoring";
 import { SignalPill, ratingTone } from "@/app/components/SignalPill";
 import StockHealthMonitor from "@/app/components/StockHealthMonitor";
@@ -46,6 +46,30 @@ const GROUP_COLORS: Record<
   red:    { bar: "bg-red-500",     text: "text-red-600",     scoreText: "text-red-600",     activeBg: "bg-red-500",     activeText: "text-white", ring: "#ef4444", barBg: "bg-red-100" },
 };
 
+
+// Source-attribution chip rendered next to each scoring data point. Maps
+// the abstract source enum to a colored badge so the analyst can see at a
+// glance whether a number came from EDGAR (authoritative SEC filing), Yahoo
+// (third-party feed), web search (cited URL/date), or a model inference.
+function SourceChip({ source, detail }: { source: ScoreDataPointSource; detail?: string }) {
+  const style: Record<ScoreDataPointSource, { label: string; cls: string; title: string }> = {
+    edgar: { label: "EDGAR", cls: "bg-emerald-100 text-emerald-700 border-emerald-200", title: "SEC EDGAR XBRL — audited as-reported from 10-K/Q filings" },
+    "edgar-form4": { label: "Form 4", cls: "bg-emerald-50 text-emerald-700 border-emerald-200", title: "SEC Form 4 — insider transactions (open-market only)" },
+    yahoo: { label: "Yahoo", cls: "bg-slate-100 text-slate-600 border-slate-200", title: "Yahoo Finance data feed" },
+    web: { label: "Web", cls: "bg-blue-100 text-blue-700 border-blue-200", title: "Anthropic web_search result (verified during this rescore)" },
+    model: { label: "Model", cls: "bg-amber-50 text-amber-700 border-amber-200", title: "Qualitative inference by the model — no specific data source" },
+  };
+  const s = style[source] ?? style.model;
+  return (
+    <span
+      title={detail ? `${s.title}\n${detail}` : s.title}
+      className={`inline-flex items-center gap-1 rounded border px-1.5 py-0.5 text-[9px] font-semibold whitespace-nowrap ${s.cls}`}
+    >
+      {s.label}
+      {detail && <span className="font-normal opacity-80 max-w-[180px] truncate">· {detail}</span>}
+    </span>
+  );
+}
 
 // Per-model weight input with local string state (supports backspace/clearing)
 function ModelWeightInput({ groupId, modelWeight, isOverride, onCommit }: {
@@ -790,6 +814,21 @@ export default function StockDetailPage() {
   const { getStock, scoredStocks, marketData, updateScore, updateExplanations, updateLastScored, updatePrice, updateHealthData, updateTechnicals, updateStockFields, updateWeight, updateFundData, moveBucket, removeStock, pimModels, toggleModelEligibility, updateModelWeight } = useStocks();
   const stock = getStock(ticker);
   const [scoring, setScoring] = useState(false);
+  // When true, the next Score call enables Anthropic web_search verification:
+  // model issues up to 4 searches to cross-check the cached fundamentals
+  // against the company's latest press releases / filings / named analyst
+  // notes. Adds ~5-10s latency and ~$0.03-0.05 to the per-stock cost, but
+  // is the only way to catch recently-reported quarters, guidance revisions,
+  // analyst PT changes, and (for Canadian listings) any fundamentals at all.
+  const [verifyMode, setVerifyMode] = useState(true);
+  // Captures verification metadata from the last successful rescore so the
+  // score-history append effect (below) can tag the entry. Mirrors the
+  // pendingScoreAppendRef pattern.
+  const lastVerificationRef = useRef<{
+    verifiedSearch: boolean;
+    searchQueries: string[];
+    searchCitations: Array<{ url: string; title?: string }>;
+  } | null>(null);
   const [scoreError, setScoreError] = useState("");
   // Narrative bullets for each scorable category can be long; collapse
   // them by default so the page isn't a wall of text. Per-category
@@ -827,6 +866,8 @@ export default function StockDetailPage() {
     }
     pendingScoreAppendRef.current = false;
     const today = new Date().toISOString().slice(0, 10);
+    const vmeta = lastVerificationRef.current;
+    lastVerificationRef.current = null;
     const entry = {
       date: today,
       timestamp: new Date().toISOString(),
@@ -834,6 +875,13 @@ export default function StockDetailPage() {
       raw: stock.raw,
       adjusted: stock.adjusted,
       scores: stock.scores,
+      ...(vmeta
+        ? {
+            verifiedSearch: vmeta.verifiedSearch,
+            searchQueries: vmeta.searchQueries,
+            searchCitations: vmeta.searchCitations,
+          }
+        : {}),
     };
     fetch("/api/kv/score-history", {
       method: "POST",
@@ -963,7 +1011,7 @@ export default function StockDetailPage() {
       const res = await fetch("/api/score", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ ticker: stock.ticker }),
+        body: JSON.stringify({ ticker: stock.ticker, verifyWithWebSearch: verifyMode }),
       });
       if (!res.ok) {
         const errData = await res.json().catch(() => ({}));
@@ -971,6 +1019,12 @@ export default function StockDetailPage() {
         return;
       }
       const data = await res.json();
+      // Capture verification metadata for the score-history append below.
+      lastVerificationRef.current = {
+        verifiedSearch: Boolean(data.verifiedSearch),
+        searchQueries: Array.isArray(data.searchQueries) ? data.searchQueries : [],
+        searchCitations: Array.isArray(data.searchCitations) ? data.searchCitations : [],
+      };
       if (data.scores) {
         for (const [key, val] of Object.entries(data.scores)) {
           updateScore(ticker, key as ScoreKey, val as number);
@@ -1170,13 +1224,27 @@ export default function StockDetailPage() {
                 {/* Action buttons */}
                 <div className="flex items-center gap-1.5 sm:gap-2 flex-wrap mb-3">
                   {scoreable && (
-                    <button
-                      onClick={handleRescore}
-                      disabled={scoring}
-                      className="rounded-lg bg-blue-600 px-3 sm:px-4 py-1.5 text-xs sm:text-sm font-semibold text-white hover:bg-blue-700 transition-colors disabled:opacity-50"
-                    >
-                      {scoring ? "Scoring..." : "Score"}
-                    </button>
+                    <div className="flex items-stretch rounded-lg overflow-hidden">
+                      <button
+                        onClick={handleRescore}
+                        disabled={scoring}
+                        className="bg-blue-600 px-3 sm:px-4 py-1.5 text-xs sm:text-sm font-semibold text-white hover:bg-blue-700 transition-colors disabled:opacity-50"
+                        title={verifyMode ? "Score with web search verification (~5-10s slower, catches recent filings/guidance/analyst changes)" : "Score using cached financial data only (faster, deterministic)"}
+                      >
+                        {scoring ? (verifyMode ? "Verifying…" : "Scoring…") : "Score"}
+                      </button>
+                      <button
+                        onClick={() => setVerifyMode((v) => !v)}
+                        disabled={scoring}
+                        type="button"
+                        className={`px-2.5 py-1.5 text-[10px] sm:text-xs font-semibold border-l border-blue-800 transition-colors disabled:opacity-50 ${
+                          verifyMode ? "bg-blue-700 text-white hover:bg-blue-800" : "bg-slate-200 text-slate-600 hover:bg-slate-300"
+                        }`}
+                        title={verifyMode ? "Web verification ON — model issues up to 4 searches to verify quarterly results, guidance, analyst changes" : "Web verification OFF — cached data only"}
+                      >
+                        {verifyMode ? "✓ Verify" : "Verify"}
+                      </button>
+                    </div>
                   )}
                   <button
                     onClick={handleRefreshData}
@@ -1653,7 +1721,16 @@ export default function StockDetailPage() {
                   <div className="space-y-4">
                     {group.categories.map((cat) => {
                       const val = stock.scores[cat.key as ScoreKey] || 0;
-                      const bullets = stock.explanations?.[cat.key as ScoreKey];
+                      const rawExp = stock.explanations?.[cat.key as ScoreKey];
+                      // Normalize legacy (string[]) vs new ({summary, dataPoints}) shapes.
+                      let summary = "";
+                      let dataPoints: ScoreDataPoint[] = [];
+                      if (Array.isArray(rawExp)) {
+                        summary = rawExp.join(" ");
+                      } else if (rawExp && typeof rawExp === "object") {
+                        summary = rawExp.summary ?? "";
+                        dataPoints = Array.isArray(rawExp.dataPoints) ? rawExp.dataPoints : [];
+                      }
                       const typeBg =
                         cat.inputType === "auto"
                           ? "bg-emerald-100 text-emerald-700"
@@ -1661,7 +1738,7 @@ export default function StockDetailPage() {
                           ? "bg-blue-100 text-blue-700"
                           : "bg-slate-100 text-slate-600";
 
-                      const hasBullets = bullets && bullets.length > 0;
+                      const hasContent = summary.length > 0 || dataPoints.length > 0;
                       const isExpanded = expandedCategories.has(cat.key);
                       return (
                         <div key={cat.key}>
@@ -1672,7 +1749,7 @@ export default function StockDetailPage() {
                               <span className={`rounded px-1.5 py-0.5 text-[10px] font-semibold ${typeBg}`}>
                                 {cat.inputType.toUpperCase()}
                               </span>
-                              {hasBullets && (
+                              {hasContent && (
                                 <button
                                   onClick={() => toggleCategory(cat.key)}
                                   className="flex items-center gap-0.5 rounded px-1.5 py-0.5 text-[10px] font-medium text-slate-500 hover:bg-slate-100 transition-colors"
@@ -1700,17 +1777,31 @@ export default function StockDetailPage() {
                               ))}
                             </div>
                           </div>
-                          {hasBullets && isExpanded && (
-                            <ul className="ml-1 space-y-1 mb-1">
-                              {bullets!.map((b, i) => (
-                                <li key={i} className="flex gap-2 text-xs leading-relaxed text-slate-500">
-                                  <span className="mt-1.5 h-1 w-1 shrink-0 rounded-full bg-slate-300" />
-                                  {b}
-                                </li>
-                              ))}
-                            </ul>
+                          {hasContent && isExpanded && (
+                            <div className="ml-1 space-y-3 mb-1">
+                              {summary && (
+                                <p className="text-xs leading-relaxed text-slate-600">{summary}</p>
+                              )}
+                              {dataPoints.length > 0 && (
+                                <div>
+                                  <p className="text-[10px] font-semibold uppercase tracking-wider text-slate-400 mb-1.5">Data points</p>
+                                  <ul className="space-y-1">
+                                    {dataPoints.map((dp, i) => (
+                                      <li key={i} className="flex flex-wrap items-baseline gap-x-2 gap-y-0.5 text-xs leading-relaxed">
+                                        <span className="flex items-baseline gap-2">
+                                          <span className="mt-1.5 h-1 w-1 shrink-0 rounded-full bg-slate-300" />
+                                          <span className="text-slate-500">{dp.label}:</span>
+                                          <span className="font-medium text-slate-700">{dp.value}</span>
+                                        </span>
+                                        <SourceChip source={dp.source} detail={dp.sourceDetail} />
+                                      </li>
+                                    ))}
+                                  </ul>
+                                </div>
+                              )}
+                            </div>
                           )}
-                          {!bullets && cat.inputType !== "manual" && (
+                          {!hasContent && cat.inputType !== "manual" && (
                             <p className="text-[11px] text-slate-400 italic ml-1">Re-score via Claude to generate explanation</p>
                           )}
                         </div>
