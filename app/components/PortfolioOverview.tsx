@@ -208,12 +208,20 @@ export function PortfolioOverview() {
   const refreshAllAt = uiPrefs["refreshAllAt"] || "";
 
   /** Score one stock by POSTing /api/score, then fanning the result out into
-   *  the context mutators so both the dashboard and PIM Model pick it up. */
+   *  the context mutators so both the dashboard and PIM Model pick it up.
+   *
+   *  Web-search verification is always enabled for batch rescores. Each call
+   *  spends ~4 searches verifying the latest reported quarter, guidance
+   *  revisions, analyst rating/PT changes, and (for Canadian listings)
+   *  primary financial figures. A 50-name batch takes ~5-8 min total and
+   *  ~$1.50-2.50 in API spend, but produces fully audited scores rather
+   *  than scores derived from possibly-stale cached feeds.
+   */
   const scoreOneStock = useCallback(async (ticker: string) => {
     const res = await fetch("/api/score", {
       method: "POST",
       headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ ticker }),
+      body: JSON.stringify({ ticker, verifyWithWebSearch: true }),
     });
     if (!res.ok) {
       const err = await res.json().catch(() => ({}));

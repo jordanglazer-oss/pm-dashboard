@@ -814,16 +814,12 @@ export default function StockDetailPage() {
   const { getStock, scoredStocks, marketData, updateScore, updateExplanations, updateLastScored, updatePrice, updateHealthData, updateTechnicals, updateStockFields, updateWeight, updateFundData, moveBucket, removeStock, pimModels, toggleModelEligibility, updateModelWeight } = useStocks();
   const stock = getStock(ticker);
   const [scoring, setScoring] = useState(false);
-  // When true, the next Score call enables Anthropic web_search verification:
-  // model issues up to 4 searches to cross-check the cached fundamentals
-  // against the company's latest press releases / filings / named analyst
-  // notes. Adds ~5-10s latency and ~$0.03-0.05 to the per-stock cost, but
-  // is the only way to catch recently-reported quarters, guidance revisions,
-  // analyst PT changes, and (for Canadian listings) any fundamentals at all.
-  const [verifyMode, setVerifyMode] = useState(true);
   // Captures verification metadata from the last successful rescore so the
   // score-history append effect (below) can tag the entry. Mirrors the
-  // pendingScoreAppendRef pattern.
+  // pendingScoreAppendRef pattern. Web-search verification is always ON for
+  // every rescore — the model issues up to 4 searches to cross-check cached
+  // fundamentals against the company's latest filings / press releases /
+  // named-firm analyst notes. This is the only scoring mode in the UI.
   const lastVerificationRef = useRef<{
     verifiedSearch: boolean;
     searchQueries: string[];
@@ -1011,7 +1007,11 @@ export default function StockDetailPage() {
       const res = await fetch("/api/score", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ ticker: stock.ticker, verifyWithWebSearch: verifyMode }),
+        // Web-search verification is always enabled for UI-triggered rescores.
+        // The model issues up to 4 searches to verify quarterly results,
+        // pre-announcements, analyst changes, and (for Canadian listings)
+        // any fundamentals at all since EDGAR is US-only.
+        body: JSON.stringify({ ticker: stock.ticker, verifyWithWebSearch: true }),
       });
       if (!res.ok) {
         const errData = await res.json().catch(() => ({}));
@@ -1224,27 +1224,14 @@ export default function StockDetailPage() {
                 {/* Action buttons */}
                 <div className="flex items-center gap-1.5 sm:gap-2 flex-wrap mb-3">
                   {scoreable && (
-                    <div className="flex items-stretch rounded-lg overflow-hidden">
-                      <button
-                        onClick={handleRescore}
-                        disabled={scoring}
-                        className="bg-blue-600 px-3 sm:px-4 py-1.5 text-xs sm:text-sm font-semibold text-white hover:bg-blue-700 transition-colors disabled:opacity-50"
-                        title={verifyMode ? "Score with web search verification (~5-10s slower, catches recent filings/guidance/analyst changes)" : "Score using cached financial data only (faster, deterministic)"}
-                      >
-                        {scoring ? (verifyMode ? "Verifying…" : "Scoring…") : "Score"}
-                      </button>
-                      <button
-                        onClick={() => setVerifyMode((v) => !v)}
-                        disabled={scoring}
-                        type="button"
-                        className={`px-2.5 py-1.5 text-[10px] sm:text-xs font-semibold border-l border-blue-800 transition-colors disabled:opacity-50 ${
-                          verifyMode ? "bg-blue-700 text-white hover:bg-blue-800" : "bg-slate-200 text-slate-600 hover:bg-slate-300"
-                        }`}
-                        title={verifyMode ? "Web verification ON — model issues up to 4 searches to verify quarterly results, guidance, analyst changes" : "Web verification OFF — cached data only"}
-                      >
-                        {verifyMode ? "✓ Verify" : "Verify"}
-                      </button>
-                    </div>
+                    <button
+                      onClick={handleRescore}
+                      disabled={scoring}
+                      className="rounded-lg bg-blue-600 px-3 sm:px-4 py-1.5 text-xs sm:text-sm font-semibold text-white hover:bg-blue-700 transition-colors disabled:opacity-50"
+                      title="Score with web-search verification: model cross-checks cached fundamentals against the company's latest filings, press releases, and named-firm analyst notes (~5-10s, ~$0.03-0.05/stock)"
+                    >
+                      {scoring ? "Verifying…" : "Score"}
+                    </button>
                   )}
                   <button
                     onClick={handleRefreshData}
