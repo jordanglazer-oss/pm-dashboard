@@ -52,7 +52,53 @@ export type ScoreKey =
 
 export type Scores = Record<ScoreKey, number>;
 
-export type ScoreExplanations = Partial<Record<ScoreKey, string[]>>;
+/**
+ * A single data point referenced in a scoring explanation, with an
+ * attributed source so the analyst can audit where each number came from.
+ *
+ * Sources:
+ *   - "edgar": SEC XBRL (US filings) — most authoritative
+ *   - "edgar-form4": SEC insider trades (Form 4)
+ *   - "yahoo": Yahoo Finance data feed
+ *   - "web": Anthropic web_search result (cite source name in sourceDetail)
+ *   - "model": qualitative inference by the model with no specific data source
+ */
+export type ScoreDataPointSource =
+  | "edgar"
+  | "edgar-form4"
+  | "yahoo"
+  | "web"
+  | "model";
+
+export type ScoreDataPoint = {
+  /** Short label (e.g. "Revenue (Q4 2025)", "Forward P/E", "Insider buys") */
+  label: string;
+  /** Value as a string (already formatted, e.g. "$5.62B", "23.4x", "+12% YoY") */
+  value: string;
+  /** Provenance — which pipe/source the value came from */
+  source: ScoreDataPointSource;
+  /** Optional human-readable detail: filing date, publication name, search query, etc. */
+  sourceDetail?: string;
+};
+
+/**
+ * Per-category scoring explanation. The "summary" is the dense prose the
+ * analyst reads; "dataPoints" is the audit trail — every numeric or
+ * qualitative claim the summary makes should be backed by an entry here.
+ */
+export type ScoreCategoryExplanation = {
+  /** Dense paragraph (3-6 sentences) explaining the score */
+  summary: string;
+  /** Bulleted data points the summary cites, each with source attribution */
+  dataPoints: ScoreDataPoint[];
+};
+
+/**
+ * Backward-compatible explanations type. Old entries are `string[]` (legacy
+ * bullet form); new entries are `ScoreCategoryExplanation`. UI renderers
+ * handle both shapes — see the stock page accordion.
+ */
+export type ScoreExplanations = Partial<Record<ScoreKey, string[] | ScoreCategoryExplanation>>;
 
 export const SCORE_GROUPS: ScoreGroup[] = [
   {
