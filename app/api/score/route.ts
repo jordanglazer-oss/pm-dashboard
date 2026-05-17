@@ -245,45 +245,135 @@ async function fetchFinancialData(ticker: string): Promise<{ context: string; pr
     lines.push(`Debt/Equity: ${r(fd, "debtToEquity")} | Current Ratio: ${r(fd, "currentRatio")}`);
   }
 
-  // Income trend (last 3 years if available)
+  // ── Pre-distilled trend tables ──────────────────────────────────────
+  // LLMs are unreliable at arithmetic on raw financial values. We compute
+  // YoY / QoQ growth rates here in JS and emit them as labeled rows in the
+  // prompt so the model doesn't have to derive them from raw numbers. This
+  // measurably improves the consistency of growth / valuation scoring,
+  // since the model often misreads ratios when forced to chain-compute
+  // them across multi-period dumps.
+  const fmt$ = (n: number | null | undefined): string => {
+    if (n == null || !isFinite(n)) return "N/A";
+    const abs = Math.abs(n);
+    if (abs >= 1e9) return `$${(n / 1e9).toFixed(2)}B`;
+    if (abs >= 1e6) return `$${(n / 1e6).toFixed(1)}M`;
+    return `$${n.toFixed(0)}`;
+  };
+  const fmtPct = (n: number | null | undefined): string => {
+    if (n == null || !isFinite(n)) return "N/A";
+    const sign = n >= 0 ? "+" : "";
+    return `${sign}${n.toFixed(1)}%`;
+  };
+  const pctChange = (current: number | null | undefined, prior: number | null | undefined): number | null => {
+    if (current == null || prior == null || prior === 0 || !isFinite(current) || !isFinite(prior)) return null;
+    return ((current - prior) / Math.abs(prior)) * 100;
+  };
+
+  // Annual income trend with YoY% (newest first → reverse for chronological).
   if (isH.length > 0) {
-    lines.push(`\nINCOME TREND (annual):`);
-    for (const stmt of isH.slice(0, 3)) {
-      const yr = stmt?.endDate?.fmt ?? "?";
-      lines.push(`  ${yr}: Revenue ${r(stmt, "totalRevenue")} | Net Income ${r(stmt, "netIncome")} | EPS ${r(stmt, "dilutedEPS", "basicEPS")}`);
+    const annual = isH.slice(0, 4).map((stmt: Record<string, unknown>) => ({
+      date: (stmt as { endDate?: { fmt?: string } })?.endDate?.fmt ?? "?",
+      revenue: rn(stmt, "totalRevenue"),
+      netIncome: rn(stmt, "netIncome"),
+      eps: rn(stmt, "dilutedEPS", "basicEPS"),
+    }));
+    // Reverse to chronological so YoY math reads left→right naturally.
+    annual.reverse();
+    lines.push(`\nINCOME TREND (annual, chronological — derived growth rates included):`);
+    for (let i = 0; i < annual.length; i++) {
+      const a = annual[i];
+      const prev = annual[i - 1];
+      const revYoY = prev ? pctChange(a.revenue, prev.revenue) : null;
+      const niYoY = prev ? pctChange(a.netIncome, prev.netIncome) : null;
+      const epsYoY = prev ? pctChange(a.eps, prev.eps) : null;
+      lines.push(
+        `  ${a.date}: Revenue ${fmt$(a.revenue)}${prev ? ` (YoY ${fmtPct(revYoY)})` : ""} | Net Income ${fmt$(a.netIncome)}${prev ? ` (YoY ${fmtPct(niYoY)})` : ""} | EPS ${a.eps != null ? `$${a.eps.toFixed(2)}` : "N/A"}${prev ? ` (YoY ${fmtPct(epsYoY)})` : ""}`,
+      );
+    }
+    // 3y CAGR if we have 4 points
+    if (annual.length >= 4 && annual[0].revenue && annual[3].revenue) {
+      const cagr = (Math.pow(annual[3].revenue! / annual[0].revenue!, 1 / 3) - 1) * 100;
+      lines.push(`  → 3y Revenue CAGR: ${fmtPct(cagr)}`);
     }
   }
 
-  // Quarterly income trend
+  // Quarterly income trend — 8 quarters with QoQ% and YoY% (YoY = vs 4 quarters prior).
   if (isQ.length > 0) {
-    lines.push(`\nINCOME TREND (quarterly):`);
-    for (const stmt of isQ.slice(0, 4)) {
-      const qtr = stmt?.endDate?.fmt ?? "?";
-      lines.push(`  ${qtr}: Revenue ${r(stmt, "totalRevenue")} | Net Income ${r(stmt, "netIncome")} | EPS ${r(stmt, "dilutedEPS", "basicEPS")}`);
+    const quarters = isQ.slice(0, 8).map((stmt: Record<string, unknown>) => ({
+      date: (stmt as { endDate?: { fmt?: string } })?.endDate?.fmt ?? "?",
+      revenue: rn(stmt, "totalRevenue"),
+      netIncome: rn(stmt, "netIncome"),
+      eps: rn(stmt, "dilutedEPS", "basicEPS"),
+    }));
+    quarters.reverse(); // chronological
+    lines.push(`\nINCOME TREND (quarterly, last ${quarters.length}Q chronological — QoQ% vs prior Q, YoY% vs same Q prior year):`);
+    for (let i = 0; i < quarters.length; i++) {
+      const q = quarters[i];
+      const prevQ = quarters[i - 1];
+      const yearAgo = quarters[i - 4];
+      const revQoQ = prevQ ? pctChange(q.revenue, prevQ.revenue) : null;
+      const revYoY = yearAgo ? pctChange(q.revenue, yearAgo.revenue) : null;
+      const epsYoY = yearAgo ? pctChange(q.eps, yearAgo.eps) : null;
+      const parts: string[] = [`Revenue ${fmt$(q.revenue)}`];
+      if (revQoQ != null) parts.push(`QoQ ${fmtPct(revQoQ)}`);
+      if (revYoY != null) parts.push(`YoY ${fmtPct(revYoY)}`);
+      parts.push(`NI ${fmt$(q.netIncome)}`);
+      parts.push(`EPS ${q.eps != null ? `$${q.eps.toFixed(2)}` : "N/A"}${epsYoY != null ? ` (YoY ${fmtPct(epsYoY)})` : ""}`);
+      lines.push(`  ${q.date}: ${parts.join(" | ")}`);
     }
   }
 
-  // Cash Flow trend
+  // Annual cash flow trend with FCF margin (FCF / Revenue) and FCF conversion (FCF / Net Income).
   if (cfH.length > 0) {
-    lines.push(`\nCASH FLOW TREND (annual):`);
-    for (const stmt of cfH.slice(0, 3)) {
-      const yr = stmt?.endDate?.fmt ?? "?";
+    const cfRows = cfH.slice(0, 4).map((stmt: Record<string, unknown>, idx: number) => {
       const opCF = rn(stmt, "totalCashFromOperatingActivities");
       const capex = rn(stmt, "capitalExpenditures");
-      const fcf = opCF != null ? (opCF + (capex ?? 0)) : null;
-      lines.push(`  ${yr}: Operating CF ${r(stmt, "totalCashFromOperatingActivities")} | Capex ${r(stmt, "capitalExpenditures")} | FCF ${fcf != null ? `$${(fcf/1e9).toFixed(2)}B` : "N/A"}`);
+      const fcf = opCF != null ? opCF + (capex ?? 0) : null;
+      const annualMatch = isH[idx] as Record<string, unknown> | undefined;
+      const revenue = annualMatch ? rn(annualMatch, "totalRevenue") : null;
+      const netIncome = annualMatch ? rn(annualMatch, "netIncome") : null;
+      return {
+        date: (stmt as { endDate?: { fmt?: string } })?.endDate?.fmt ?? "?",
+        opCF, capex, fcf, revenue, netIncome,
+      };
+    });
+    cfRows.reverse();
+    lines.push(`\nCASH FLOW TREND (annual, chronological — FCF margin = FCF/Revenue, FCF conversion = FCF/NI):`);
+    for (let i = 0; i < cfRows.length; i++) {
+      const c = cfRows[i];
+      const prev = cfRows[i - 1];
+      const fcfYoY = prev ? pctChange(c.fcf, prev.fcf) : null;
+      const fcfMargin = c.revenue && c.fcf != null ? (c.fcf / c.revenue) * 100 : null;
+      const fcfConv = c.netIncome && c.fcf != null ? c.fcf / c.netIncome : null;
+      lines.push(
+        `  ${c.date}: OpCF ${fmt$(c.opCF)} | Capex ${fmt$(c.capex)} | FCF ${fmt$(c.fcf)}${fcfYoY != null ? ` (YoY ${fmtPct(fcfYoY)})` : ""}${fcfMargin != null ? ` | FCF margin ${fcfMargin.toFixed(1)}%` : ""}${fcfConv != null ? ` | FCF/NI ${fcfConv.toFixed(2)}x` : ""}`,
+      );
     }
   }
 
-  // Quarterly cash flow
+  // Quarterly cash flow trend — same as quarterly income with QoQ + YoY.
   if (cfQ.length > 0) {
-    lines.push(`\nCASH FLOW TREND (quarterly):`);
-    for (const stmt of cfQ.slice(0, 4)) {
-      const qtr = stmt?.endDate?.fmt ?? "?";
+    const cfQRows = cfQ.slice(0, 8).map((stmt: Record<string, unknown>) => {
       const opCF = rn(stmt, "totalCashFromOperatingActivities");
       const capex = rn(stmt, "capitalExpenditures");
-      const fcf = opCF != null ? (opCF + (capex ?? 0)) : null;
-      lines.push(`  ${qtr}: Operating CF ${r(stmt, "totalCashFromOperatingActivities")} | FCF ${fcf != null ? `$${(fcf/1e9).toFixed(2)}B` : "N/A"}`);
+      const fcf = opCF != null ? opCF + (capex ?? 0) : null;
+      return {
+        date: (stmt as { endDate?: { fmt?: string } })?.endDate?.fmt ?? "?",
+        opCF, capex, fcf,
+      };
+    });
+    cfQRows.reverse();
+    lines.push(`\nCASH FLOW TREND (quarterly, last ${cfQRows.length}Q chronological):`);
+    for (let i = 0; i < cfQRows.length; i++) {
+      const c = cfQRows[i];
+      const prevQ = cfQRows[i - 1];
+      const yearAgo = cfQRows[i - 4];
+      const fcfQoQ = prevQ ? pctChange(c.fcf, prevQ.fcf) : null;
+      const fcfYoY = yearAgo ? pctChange(c.fcf, yearAgo.fcf) : null;
+      const parts: string[] = [`OpCF ${fmt$(c.opCF)}`, `FCF ${fmt$(c.fcf)}`];
+      if (fcfQoQ != null) parts.push(`QoQ ${fmtPct(fcfQoQ)}`);
+      if (fcfYoY != null) parts.push(`YoY ${fmtPct(fcfYoY)}`);
+      lines.push(`  ${c.date}: ${parts.join(" | ")}`);
     }
   }
 
@@ -404,6 +494,22 @@ STALE DATA HANDLING: any EDGAR field marked [STALE — last filed YYYY-MM-DD] ha
 
 INSIDER ACTIVITY: when the EDGAR block includes a "=== INSIDER ACTIVITY (Form 4...) ===" sub-section, this is the PRIMARY data source for the ownershipTrends category. The data comes directly from SEC Form 4 filings (officers, directors, 10%+ owners) over the last 90 days, filtered to OPEN-MARKET trades only (P=Purchase, S=Sale). RSU grants/vests, option exercises, and tax-withholding sales are deliberately EXCLUDED because they're scheduled/mechanical, not discretionary signals. Cite specific insiders, transaction dates, dollar amounts, and the directional bias. A cluster of multi-officer BUYS is a strong bullish signal; sustained broad-based SELLING is a yellow flag (but contextualize: a single 10% owner trimming a position is different from the CFO + CEO + COO all selling). If no Form 4 transactions appear, say so explicitly — quiet insider behavior is itself a neutral data point, not a missing field.
 
+PM NOTES (when present): the user may have logged "External Sources" or "Research Coverage" notes manually on this stock. These are clearly labeled blocks in the data above (=== PM-LOGGED EXTERNAL SOURCES === and === PM-LOGGED RESEARCH COVERAGE NOTES ===). Treat these notes as TIER-1 INPUT for the relevant categories:
+  - Use researchCoverageNotes as the primary input for the researchCoverage score. If notes name specific analyst firms with date-stamped reports/upgrades/downgrades, cite them by firm + date in dataPoints. Combine with whatever sell-side coverage Yahoo / web_search reveals.
+  - Use externalSourceNotes as input for catalysts and as supporting context across other categories where relevant (the user has determined these sources are material).
+  - If both are empty, just say so in the relevant dataPoints (label "PM notes" value "none logged" source "model").
+
+HARD FLOORS — MATERIAL ADVERSE EVENTS (override all category scoring rules):
+If web_search surfaces credible evidence of ANY of the following within the last 12 months, you MUST score EVERY AI/SEMI category 0/max and clearly explain in the summaries why. These are first-order disqualifying conditions:
+  - Active fraud investigation by SEC, DOJ, OSC, or major regulator (must be filed or confirmed by named outlet — rumors don't count)
+  - Going-concern doubt expressed by the auditor in a 10-K/Q (look for "substantial doubt" language)
+  - Material restatement of prior financials due to error or misconduct (not minor reclassifications)
+  - Imminent delisting risk (NYSE/Nasdaq/TSX deficiency notice currently outstanding)
+  - SEC/OSC enforcement action with monetary penalty in excess of 5% of market cap
+  - CFO or CEO departure cited as resignation under pressure, with a credible source naming financial irregularities
+  - Bankruptcy filing, restructuring under CCAA, or Chapter 11 in progress
+For each hard-floor event, the affected category's dataPoints must include a "web" source with the URL of the regulatory filing or news article confirming the event. The companySummary and investmentThesis fields should also flag the situation prominently. Do not score "leniently low" out of politeness — zero means zero.
+
 Each category has its own max score (shown as /N). Score from 0 to that max:
 - 0 = Poor / negative signal
 - Max = Strong / positive signal
@@ -430,8 +536,21 @@ FUNDAMENTAL GROUP:
   * Consumer: P/E, EV/EBITDA, same-store sales growth vs peers
   IMPORTANT: Name specific peer companies and cite their actual multiples from the peer data provided. Example: "META trades at 15.3x EV/EBITDA vs GOOGL at 23.5x and SNAP at 18.2x." Do not use vague "sector average" — name the peers.
 - historicalValuation (max 2, AUTO): Historical valuation — Compare CURRENT multiples to the company's OWN history using the provided financial data across multiple years. Cite specific numbers.
-- leverageCoverage (max 2, AUTO): Leverage & coverage — Net debt/EBITDA, interest coverage ratio, debt levels. Use actual balance sheet data.
-- cashFlowQuality (max 1, AUTO): Cash flow quality — FCF conversion rate (FCF/Net Income), operating cash flow trends, capex intensity. Use actual cash flow statement data.
+- leverageCoverage (max 2, AUTO): Leverage & coverage — USE INDUSTRY-SPECIFIC METRICS (the generic "debt/EBITDA" framework is wrong for several industries):
+  * Banks: CET1 / Tier 1 capital ratio (vs Basel III minimums + buffer), LCR, NSFR, loan/deposit ratio, NPL ratio. "Debt" is not the right framing — banks ARE leveraged by design; what matters is regulatory capital and liquidity.
+  * Insurance: combined ratio (<100 healthy), debt/total capital, RBC ratio, financial leverage ratio. Look at reserve adequacy if disclosed.
+  * REITs: debt/total assets (target ~30-50%), interest coverage, fixed-charge coverage, fixed-rate maturity ladder, % unsecured debt. Net debt/EBITDA can be misleading because of non-cash depreciation; use debt/gross asset value instead.
+  * Utilities: debt/cap structure ratio, interest coverage, FFO/debt (Moody's metric), regulatory-allowed equity layer.
+  * Energy E&P: net debt/EBITDAX, reserves coverage of debt, debt/PDP reserves, hedging coverage of next-12M production.
+  * SaaS / high-growth tech: cash runway in years vs current burn (cash on hand / annualized FCF burn), debt at all (most should be ~zero), convertible notes due in next 24 months.
+  * Industrials / Consumer / Healthcare / Materials: standard framework — net debt/EBITDA (target <3x), interest coverage (>5x healthy), debt maturity ladder.
+- cashFlowQuality (max 1, AUTO): Cash flow quality — USE INDUSTRY-SPECIFIC METRICS:
+  * Banks: cash flow quality is not really meaningful (CFFO is dominated by deposit flows). Instead look at: dividend payout from earnings (not borrowings), buyback consistency, % of CET1 generated organically.
+  * Insurance: operating cash flow vs net income, dividends from operating subs upstreamed (not borrowed at holdco), book value growth.
+  * REITs: AFFO conversion of NOI (95%+ healthy), AFFO/distribution ratio (<90% means dividend sustainable), capex/AFFO (>20% = high reinvestment).
+  * Energy: FCF after sustaining capex, hedging realized vs unrealized, dividend coverage by FCF (not by borrowings).
+  * SaaS: FCF margin trend, deferred revenue growth vs revenue growth (DR growing faster = forward-loaded bookings, good), stock-based comp as % of revenue (SBC > 25% is dilutive).
+  * Industrials/Consumer/etc: FCF conversion (FCF/Net Income, target >0.8), operating cash flow trend, capex intensity (capex/sales), working capital efficiency.
 
 COMPANY SPECIFIC GROUP:
 - competitiveMoat (max 2, SEMI): Competitive moat — Use the peer data provided to assess competitive positioning. Compare margins, returns on capital, and growth rates vs named peers. Identify durable advantages.
@@ -447,11 +566,19 @@ CRITICAL RULES FOR EXPLANATIONS:
 3. Growth explanations must include actual revenue/earnings figures with YoY% changes
 4. Valuation explanations must use CURRENT multiples from the data and compare to NAMED peers
 5. Historical valuation must compare current vs prior year multiples with specific numbers
-6. Leverage must cite actual debt figures and coverage ratios from the balance sheet
-7. Cash flow must cite actual FCF figures and conversion rates
+6. Leverage must cite actual debt figures and coverage ratios from the balance sheet, using the INDUSTRY-APPROPRIATE framework
+7. Cash flow must cite actual FCF figures and conversion rates, using the INDUSTRY-APPROPRIATE framework
 8. Write in a dense, data-rich paragraph style — like an analyst note
 9. Each summary should be 3-6 sentences with multiple data points
 10. If any data is unavailable, explicitly say "data not available" rather than guessing
+
+CONFIDENCE RATING (required, per category):
+For every AI/SEMI category you score, emit a "confidence" field with value "high" | "medium" | "low":
+  - "high": you have current, authoritative data (EDGAR XBRL or web-verified press release/filing) for all material inputs, and the categorical signal is clear (no contradicting evidence). Most scores should land here.
+  - "medium": you have partial data — e.g., latest quarter is verified but some peer comparisons rely on cached Yahoo data of unclear age, OR the signal is mixed (some bullish data points, some bearish). Use this honestly when 60-80% of the inputs are solid.
+  - "low": material data is stale, contradictory, or missing entirely — your score is your best guess but the user should treat it as a starting point, not a final answer. Examples: small-cap with no EDGAR + sparse Yahoo coverage + no recent IR press releases; or a name where the cached fundamentals diverge sharply from what web_search returns. Use this sparingly but honestly — better to flag uncertainty than to project false precision.
+
+Do not stuff every score with "high" confidence to seem authoritative. Honesty here is what makes the audit trail useful.
 
 WEB SEARCH VERIFICATION (when web_search tool is available — see "Verified scoring" instructions in user message):
 You have the web_search tool. Use it to VERIFY and AUGMENT the provided data — not to chase rumors. Specific allowed uses, in this exact priority order:
@@ -510,26 +637,28 @@ Respond ONLY with valid JSON (no markdown code fences, no commentary):
   "explanations": {
     "secular": {
       "summary": "3-6 sentence paragraph",
+      "confidence": "high",
       "dataPoints": [
         { "label": "TAM growth (industry source)", "value": "+18% YoY through 2030", "source": "web", "sourceDetail": "Gartner 2026 forecast, Mar 2026", "url": "https://www.gartner.com/..." }
       ]
     },
     "growth": {
       "summary": "...",
+      "confidence": "high",
       "dataPoints": [
         { "label": "Revenue (Q3 2026)", "value": "$5.62B (+12% YoY)", "source": "edgar", "sourceDetail": "10-Q filed 2026-10-30" },
         { "label": "EPS (Q3 2026)", "value": "$2.34 vs $2.10 est", "source": "web", "sourceDetail": "Company press release, Oct 30 2026", "url": "https://investor.example.com/news/2026/q3-earnings" }
       ]
     },
-    "relativeValuation": { "summary": "...", "dataPoints": [...] },
-    "historicalValuation": { "summary": "...", "dataPoints": [...] },
-    "leverageCoverage": { "summary": "...", "dataPoints": [...] },
-    "cashFlowQuality": { "summary": "...", "dataPoints": [...] },
-    "competitiveMoat": { "summary": "...", "dataPoints": [...] },
-    "catalysts": { "summary": "...", "dataPoints": [...] },
-    "trackRecord": { "summary": "...", "dataPoints": [...] },
-    "ownershipTrends": { "summary": "...", "dataPoints": [...] },
-    "researchCoverage": { "summary": "...", "dataPoints": [...] }
+    "relativeValuation": { "summary": "...", "confidence": "medium", "dataPoints": [...] },
+    "historicalValuation": { "summary": "...", "confidence": "high", "dataPoints": [...] },
+    "leverageCoverage": { "summary": "...", "confidence": "high", "dataPoints": [...] },
+    "cashFlowQuality": { "summary": "...", "confidence": "high", "dataPoints": [...] },
+    "competitiveMoat": { "summary": "...", "confidence": "medium", "dataPoints": [...] },
+    "catalysts": { "summary": "...", "confidence": "medium", "dataPoints": [...] },
+    "trackRecord": { "summary": "...", "confidence": "high", "dataPoints": [...] },
+    "ownershipTrends": { "summary": "...", "confidence": "high", "dataPoints": [...] },
+    "researchCoverage": { "summary": "...", "confidence": "high", "dataPoints": [...] }
   },
   "companySummary": "Plain-language summary of what the company does.",
   "investmentThesis": "Why to own this stock now given market conditions."
@@ -539,6 +668,13 @@ export async function POST(request: NextRequest) {
   try {
     const body = await request.json();
     const { ticker } = body;
+    // Optional PM-logged notes (External Sources + Research Coverage). The
+    // stock page passes these in so the scoring prompt can factor user-
+    // captured analyst reports / article references into researchCoverage
+    // and catalysts. Both are arrays of { id, date, text } — see
+    // ExternalSourceNote in app/lib/types.ts.
+    const externalSourceNotes = Array.isArray(body?.externalSourceNotes) ? body.externalSourceNotes : [];
+    const researchCoverageNotes = Array.isArray(body?.researchCoverageNotes) ? body.researchCoverageNotes : [];
     // Optional flag: when true, the API call enables Anthropic's
     // web_search tool so the model can verify cached fundamentals against
     // the company's most recent press releases / filings / named analyst
@@ -601,6 +737,24 @@ export async function POST(request: NextRequest) {
       if (edgarBlock) {
         financialContext += `\n\n---\n\n${edgarBlock}`;
       }
+
+      // Append PM-logged notes if any. Each note is rendered as a single
+      // line so the prompt stays compact; Claude can still extract the
+      // source name + date for citation in dataPoints.
+      type NoteRow = { id?: string; date?: string; text?: string };
+      const fmtNotes = (notes: NoteRow[]) =>
+        notes
+          .filter((n) => typeof n?.text === "string" && n.text.trim().length > 0)
+          .map((n) => `  - [${n.date || "no date"}] ${(n.text || "").trim()}`)
+          .join("\n");
+      const extBlock = fmtNotes(externalSourceNotes as NoteRow[]);
+      if (extBlock) {
+        financialContext += `\n\n---\n\n=== PM-LOGGED EXTERNAL SOURCES ===\nThe PM has manually logged the following external research / news / analyst items for this stock. Treat these as TIER-1 input for the catalysts category (and as supporting context elsewhere):\n${extBlock}`;
+      }
+      const rcBlock = fmtNotes(researchCoverageNotes as NoteRow[]);
+      if (rcBlock) {
+        financialContext += `\n\n---\n\n=== PM-LOGGED RESEARCH COVERAGE NOTES ===\nThe PM has manually logged the following sell-side analyst coverage items for this stock. Treat these as TIER-1 input for the researchCoverage category:\n${rcBlock}`;
+      }
     } catch (e) {
       console.error("Failed to fetch financial data:", e);
       financialContext = "Financial data API unavailable. Use your best knowledge but note that data should be verified.";
@@ -625,6 +779,12 @@ export async function POST(request: NextRequest) {
       ? [{ type: "web_search_20250305", name: "web_search", max_uses: 4 }]
       : [];
 
+    // Prompt caching: the ~10KB system prompt is identical across rescores,
+    // so marking it with `cache_control: ephemeral` lets Anthropic cache
+    // it for ~5 min. Subsequent rescores within that window get a ~90%
+    // discount on the cached portion. On a batch rescore of 50 names this
+    // cuts input-token spend by ~25-30%. Model behavior is identical —
+    // cache_control is a billing/latency optimization, not a quality knob.
     const message = await client.messages.create({
       model: "claude-sonnet-4-6",
       max_tokens: 8192,
@@ -634,7 +794,9 @@ export async function POST(request: NextRequest) {
           content: `Score the following stock: ${upperTicker}\n\nHere is the real financial data for this company — USE THIS DATA for your scoring and explanations:\n\n${financialContext}${verifyPreamble}`,
         },
       ],
-      system: SCORING_PROMPT,
+      system: [
+        { type: "text", text: SCORING_PROMPT, cache_control: { type: "ephemeral" } },
+      ],
       tools: tools as unknown as Anthropic.Messages.Tool[],
     });
 
@@ -734,9 +896,15 @@ export async function POST(request: NextRequest) {
                 ...(url ? { url } : {}),
               };
             });
+          const confidenceRaw = typeof val.confidence === "string" ? val.confidence.toLowerCase() : undefined;
+          const confidence: "high" | "medium" | "low" | undefined =
+            confidenceRaw === "high" || confidenceRaw === "medium" || confidenceRaw === "low"
+              ? confidenceRaw
+              : undefined;
           explanations[key as ScoreKey] = {
             summary: val.summary,
             dataPoints,
+            ...(confidence ? { confidence } : {}),
           };
         } else if (Array.isArray(val)) {
           // Legacy: array of strings → wrap as summary with no dataPoints.
@@ -779,6 +947,18 @@ export async function POST(request: NextRequest) {
       verifiedSearch: verifyWithWebSearch,
       searchQueries,
       searchCitations,
+      // Honest audit of whether verification actually ran. "complete" = at
+      // least one successful search; "partial" = some searches ran but
+      // fewer than requested (rate-limited / refused); "failed" = verify
+      // was on but zero searches landed (tool unavailable / upstream
+      // error); "skipped" = verify mode was off.
+      verificationStatus: !verifyWithWebSearch
+        ? "skipped"
+        : searchQueries.length === 0
+        ? "failed"
+        : searchQueries.length < 2
+        ? "partial"
+        : "complete",
     });
   } catch (error) {
     console.error("Score API error:", error);

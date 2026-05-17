@@ -6,7 +6,7 @@ import { useStocks } from "@/app/lib/StockContext";
 import { SCORE_GROUPS, MAX_SCORE, INSTRUMENT_LABELS } from "@/app/lib/types";
 import type { ScoredStock, ScoreKey, HealthData, FundHolding, FundSectorWeight } from "@/app/lib/types";
 import type { TechnicalIndicators, RiskAlert } from "@/app/lib/technicals";
-import { groupTotal, isScoreable, normalizeSector } from "@/app/lib/scoring";
+import { groupTotal, isScoreable, normalizeSector, computeScores } from "@/app/lib/scoring";
 import { SignalPill } from "./SignalPill";
 
 /** Format an ISO timestamp for display next to Score All / Refresh All buttons. */
@@ -216,12 +216,28 @@ export function PortfolioOverview() {
    *  primary financial figures. A 50-name batch takes ~5-8 min total and
    *  ~$1.50-2.50 in API spend, but produces fully audited scores rather
    *  than scores derived from possibly-stale cached feeds.
+   *
+   *  After the score lands and the manual technical categories (charting,
+   *  relativeStrength, aiRating) are all set, this also writes an entry to
+   *  pm:score-history so the audit timeline captures batch-verified scores
+   *  alongside per-stock rescores. The "all manual technicals scored" gate
+   *  prevents the history from filling up with half-complete entries from
+   *  fresh batch runs the PM hasn't yet manually graded.
    */
   const scoreOneStock = useCallback(async (ticker: string) => {
+    // Look up the current stock so we can pass PM-logged notes into the API
+    // call (External Sources + Research Coverage). The score route uses
+    // these as Tier-1 input for catalysts / researchCoverage scoring.
+    const currentStock = portfolioStocks.find((s) => s.ticker === ticker) ?? watchlistStocks.find((s) => s.ticker === ticker);
     const res = await fetch("/api/score", {
       method: "POST",
       headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ ticker, verifyWithWebSearch: true }),
+      body: JSON.stringify({
+        ticker,
+        verifyWithWebSearch: true,
+        externalSourceNotes: currentStock?.externalSourceNotes ?? [],
+        researchCoverageNotes: currentStock?.researchCoverageNotes ?? [],
+      }),
     });
     if (!res.ok) {
       const err = await res.json().catch(() => ({}));
@@ -254,7 +270,69 @@ export function PortfolioOverview() {
         hour: "numeric", minute: "2-digit", hour12: true,
       })
     );
-  }, [updateScore, updateExplanations, updateLastScored, updatePrice, updateHealthData, updateTechnicals, updateStockFields]);
+
+    // Append a score-history entry — BUT ONLY when the manual technical
+    // categories (charting, relativeStrength, aiRating) are all > 0 AND the
+    // brand category is set. The rationale: a batch rescore only updates
+    // AI/SEMI categories; the manual technical scoring is the gate that
+    // says "the PM has fully evaluated this name." Writing to history
+    // before that would flood the log with half-graded entries that
+    // distort the timeline of composite-score changes.
+    //
+    // Look up the freshly-updated stock (we can't rely on `currentStock`
+    // from earlier — the manual scores wouldn't be reflected). We pull
+    // from portfolioStocks / watchlistStocks via the latest closure values.
+    // If the manual gates aren't met, silently skip — the per-stock
+    // handleRescore path on the stock page still writes its own entry.
+    const latestStock = portfolioStocks.find((s) => s.ticker === ticker) ?? watchlistStocks.find((s) => s.ticker === ticker);
+    if (latestStock) {
+      // The manual technical scores aren't touched by the rescore (the API
+      // only updates AI/SEMI categories), so reading them off the stale
+      // closure ref is correct. Gate: don't write to history until the PM
+      // has manually graded all three technical categories.
+      const sc = latestStock.scores;
+      const technicalsAllScored = (sc.charting ?? 0) > 0 && (sc.relativeStrength ?? 0) > 0 && (sc.aiRating ?? 0) > 0;
+      if (technicalsAllScored) {
+        // Recompute total/raw/adjusted from the merged-scores state. The
+        // stale closure's `latestStock.scores` has old AI category values;
+        // the API just returned new ones in data.scores. Merge them and
+        // hand to computeScores to get the canonical adjusted value
+        // (sector- + regime-multiplier-aware).
+        const mergedScores = { ...latestStock.scores } as typeof latestStock.scores;
+        if (data.scores && typeof data.scores === "object") {
+          for (const [k, v] of Object.entries(data.scores)) {
+            if (typeof v === "number") (mergedScores as Record<string, number>)[k] = v;
+          }
+        }
+        const merged = computeScores({ ...latestStock, scores: mergedScores }, marketData);
+        const today = new Date().toISOString().slice(0, 10);
+        const verificationStatus: "complete" | "partial" | "skipped" | "failed" =
+          typeof data.verificationStatus === "string" &&
+          (data.verificationStatus === "complete" || data.verificationStatus === "partial" || data.verificationStatus === "skipped" || data.verificationStatus === "failed")
+            ? data.verificationStatus
+            : "skipped";
+        const entry = {
+          date: today,
+          timestamp: new Date().toISOString(),
+          total: merged.adjusted,
+          raw: merged.raw,
+          adjusted: merged.adjusted,
+          scores: mergedScores,
+          verifiedSearch: Boolean(data.verifiedSearch),
+          searchQueries: Array.isArray(data.searchQueries) ? data.searchQueries : [],
+          searchCitations: Array.isArray(data.searchCitations) ? data.searchCitations : [],
+          verificationStatus,
+        };
+        fetch("/api/kv/score-history", {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ ticker, entry }),
+        }).catch(() => {
+          // Non-fatal — history is informational, scoring already completed.
+        });
+      }
+    }
+  }, [updateScore, updateExplanations, updateLastScored, updatePrice, updateHealthData, updateTechnicals, updateStockFields, portfolioStocks, watchlistStocks, marketData]);
 
   /** Sequentially score every scoreable stock in a bucket, updating a progress
    *  banner and finally stamping the "Score All" timestamp on success. */

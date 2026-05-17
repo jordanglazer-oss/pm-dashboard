@@ -105,6 +105,14 @@ export type ExternalSourceNote = {
 };
 
 /**
+ * The model's confidence in its score for this category, independent of the
+ * score value itself. A 2/3 with "high" confidence is meaningfully different
+ * from a 2/3 with "low" confidence — the latter flags scores that need a
+ * second look. Surfaced as a small chip in the accordion UI.
+ */
+export type ScoreConfidence = "high" | "medium" | "low";
+
+/**
  * Per-category scoring explanation. The "summary" is the dense prose the
  * analyst reads; "dataPoints" is the audit trail — every numeric or
  * qualitative claim the summary makes should be backed by an entry here.
@@ -114,6 +122,9 @@ export type ScoreCategoryExplanation = {
   summary: string;
   /** Bulleted data points the summary cites, each with source attribution */
   dataPoints: ScoreDataPoint[];
+  /** Optional confidence rating — emitted by the model on new scores; older
+   *  scores predating this field render without the confidence chip. */
+  confidence?: ScoreConfidence;
 };
 
 /**
@@ -311,6 +322,14 @@ export type Stock = {
    * pm:stocks so notes survive refreshes and sync across devices.
    */
   externalSourceNotes?: ExternalSourceNote[];
+  /**
+   * PM-entered notes for the "Research coverage" scoring category (semi-
+   * automated). Same shape as externalSourceNotes — one row per analyst
+   * report / sell-side note / coverage initiation, with a date stamp.
+   * Surfaced into the scoring prompt so Claude can factor named-firm
+   * coverage and PT changes into the researchCoverage score.
+   */
+  researchCoverageNotes?: ExternalSourceNote[];
   healthData?: HealthData;
   technicals?: TechnicalIndicators;
   riskAlert?: RiskAlert;
