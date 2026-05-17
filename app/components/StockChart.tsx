@@ -43,7 +43,7 @@ type Props = {
 };
 
 export default function StockChart({ ticker, technicals, className = "" }: Props) {
-  const { chartAnalyses, setChartAnalysis } = useStocks();
+  const { chartAnalyses, setChartAnalysis, clearChartAnalysis } = useStocks();
   const containerRef = useRef<HTMLDivElement>(null);
   // eslint-disable-next-line @typescript-eslint/no-explicit-any
   const chartRef = useRef<any>(null);
@@ -406,6 +406,16 @@ export default function StockChart({ ticker, technicals, className = "" }: Props
                 <> &middot; {new Date(savedAnalysis.analyzedAt).toLocaleString("en-US", { month: "short", day: "numeric", hour: "numeric", minute: "2-digit", hour12: true })}</>
               )}
             </span>
+            <button
+              onClick={() => {
+                if (!confirm("Clear this saved chart analysis? You can always regenerate it with the Analyze Chart button.")) return;
+                clearChartAnalysis(ticker);
+              }}
+              className="rounded-md border border-slate-200 bg-white px-2 py-1 text-[11px] font-semibold text-slate-500 hover:bg-red-50 hover:text-red-600 hover:border-red-200 transition-colors"
+              title="Delete this saved AI chart analysis (Redis-backed, syncs across devices)"
+            >
+              Clear
+            </button>
           </div>
           <div className="text-sm leading-relaxed text-slate-600 space-y-0.5">
             {analysis.split("\n").map((line, i) => {

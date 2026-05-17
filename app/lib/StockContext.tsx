@@ -57,6 +57,7 @@ type StockContextType = {
   updateStockFields: (ticker: string, fields: Partial<Stock>) => void;
   setBrief: (brief: MorningBrief) => void;
   setChartAnalysis: (ticker: string, entry: ChartAnalysisEntry) => void;
+  clearChartAnalysis: (ticker: string) => void;
   setScannerData: (data: ScannerData) => void;
   updateMarketData: (updates: Partial<MarketData>) => void;
   getStock: (ticker: string) => ScoredStock | undefined;
@@ -776,6 +777,19 @@ export function StockProvider({ children }: { children: React.ReactNode }) {
     });
   }, [persistChartAnalyses]);
 
+  // Remove the saved analysis for a single ticker. Persists the deletion
+  // to pm:chart-analysis via the same debounced PUT path so the entry
+  // is gone across devices and refreshes.
+  const clearChartAnalysis = useCallback((ticker: string) => {
+    setChartAnalysesState((prev) => {
+      if (!(ticker in prev)) return prev;
+      const next = { ...prev };
+      delete next[ticker];
+      persistChartAnalyses(next);
+      return next;
+    });
+  }, [persistChartAnalyses]);
+
   /* ─── Scanner Data ─── */
   const setScannerData = useCallback((data: ScannerData) => {
     setScannerDataState(data);
@@ -916,6 +930,7 @@ export function StockProvider({ children }: { children: React.ReactNode }) {
         updateStockFields,
         setBrief,
         setChartAnalysis,
+        clearChartAnalysis,
         setScannerData,
         updateMarketData,
         getStock,
