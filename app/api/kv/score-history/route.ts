@@ -48,6 +48,19 @@ export type ScoreHistoryEntry = {
   searchQueries?: string[];
   /** Web search citation URLs surfaced during a verified rescore (titles optional). */
   searchCitations?: Array<{ url: string; title?: string }>;
+  /**
+   * Verification audit status — distinguishes "verification ran and completed"
+   * from "verification was attempted but produced no results" from "no
+   * verification attempted at all". Optional for backward compat.
+   *   - "complete": verifiedSearch=true and at least one search ran cleanly
+   *   - "partial": verifiedSearch=true but the model issued fewer searches than
+   *     the prompt asked for (likely rate-limited, refused, or no useful hits)
+   *   - "skipped": verifiedSearch=false (verify mode was off — should not
+   *     happen from the UI today since verify is always on)
+   *   - "failed": verifiedSearch=true but zero searches ran (tool unavailable
+   *     or upstream error)
+   */
+  verificationStatus?: "complete" | "partial" | "skipped" | "failed";
 };
 
 export type ScoreHistoryStore = Record<string, ScoreHistoryEntry[]>;

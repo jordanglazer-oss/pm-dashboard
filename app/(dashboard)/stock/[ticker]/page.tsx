@@ -149,7 +149,7 @@ function SourceChip({ source, detail, url, label, ticker }: { source: ScoreDataP
  * doesn't wait on the network — it updates the local view immediately,
  * then fires a debounced save 500ms after the last keystroke.
  */
-function ExternalSourcesEditor({ notes, onChange }: { notes: ExternalSourceNote[]; onChange: (next: ExternalSourceNote[]) => void }) {
+function ExternalSourcesEditor({ notes, onChange, headerLabel = "External Sources Log", emptyHint, placeholder = "Source (e.g. RBC Capital Markets — Upgraded to Outperform, PT $245)" }: { notes: ExternalSourceNote[]; onChange: (next: ExternalSourceNote[]) => void; headerLabel?: string; emptyHint?: string; placeholder?: string }) {
   const [local, setLocal] = useState<ExternalSourceNote[]>(() => notes ?? []);
   const onChangeRef = useRef(onChange);
   onChangeRef.current = onChange;
@@ -209,9 +209,9 @@ function ExternalSourcesEditor({ notes, onChange }: { notes: ExternalSourceNote[
 
   return (
     <div className="ml-1 space-y-2 mb-1">
-      <p className="text-[10px] font-semibold uppercase tracking-wider text-slate-400">External Sources Log</p>
+      <p className="text-[10px] font-semibold uppercase tracking-wider text-slate-400">{headerLabel}</p>
       {local.length === 0 && (
-        <p className="text-[11px] text-slate-400 italic">No sources logged. Click &quot;+ Add source&quot; to track analyst reports, news, podcasts, or other external research feeding this score.</p>
+        <p className="text-[11px] text-slate-400 italic">{emptyHint ?? "No sources logged. Click “+ Add source” to track analyst reports, news, podcasts, or other external research feeding this score."}</p>
       )}
       <div className="space-y-1.5">
         {local.map((note) => (
@@ -227,7 +227,7 @@ function ExternalSourcesEditor({ notes, onChange }: { notes: ExternalSourceNote[
               type="text"
               value={note.text}
               onChange={(e) => updateRow(note.id, { text: e.target.value })}
-              placeholder="Source (e.g. RBC Capital Markets — Upgraded to Outperform, PT $245)"
+              placeholder={placeholder}
               className="flex-1 min-w-0 rounded border border-slate-200 bg-white px-2 py-1 text-xs text-slate-700 outline-none focus:border-blue-400 focus:ring-1 focus:ring-blue-200"
             />
             <button
@@ -1196,7 +1196,17 @@ export default function StockDetailPage() {
         // The model issues up to 4 searches to verify quarterly results,
         // pre-announcements, analyst changes, and (for Canadian listings)
         // any fundamentals at all since EDGAR is US-only.
-        body: JSON.stringify({ ticker: stock.ticker, verifyWithWebSearch: true }),
+        //
+        // PM-logged notes are passed through so the scoring prompt can
+        // factor them into researchCoverage and catalysts. They're stored
+        // on the Stock blob in pm:stocks via the External Sources / Research
+        // Coverage notes editors on this page.
+        body: JSON.stringify({
+          ticker: stock.ticker,
+          verifyWithWebSearch: true,
+          externalSourceNotes: stock.externalSourceNotes ?? [],
+          researchCoverageNotes: stock.researchCoverageNotes ?? [],
+        }),
       });
       if (!res.ok) {
         const errData = await res.json().catch(() => ({}));
@@ -1894,14 +1904,16 @@ export default function StockDetailPage() {
                     {group.categories.map((cat) => {
                       const val = stock.scores[cat.key as ScoreKey] || 0;
                       const rawExp = stock.explanations?.[cat.key as ScoreKey];
-                      // Normalize legacy (string[]) vs new ({summary, dataPoints}) shapes.
+                      // Normalize legacy (string[]) vs new ({summary, dataPoints, confidence?}) shapes.
                       let summary = "";
                       let dataPoints: ScoreDataPoint[] = [];
+                      let confidence: "high" | "medium" | "low" | undefined;
                       if (Array.isArray(rawExp)) {
                         summary = rawExp.join(" ");
                       } else if (rawExp && typeof rawExp === "object") {
                         summary = rawExp.summary ?? "";
                         dataPoints = Array.isArray(rawExp.dataPoints) ? rawExp.dataPoints : [];
+                        confidence = rawExp.confidence;
                       }
                       const typeBg =
                         cat.inputType === "auto"
@@ -1911,13 +1923,18 @@ export default function StockDetailPage() {
                           : "bg-slate-100 text-slate-600";
 
                       const hasContent = summary.length > 0 || dataPoints.length > 0;
-                      // The "External sources" category is manual-scored and
-                      // has no AI-generated content, but it gets a custom
-                      // notes editor in the expanded body \u2014 so the Show
-                      // toggle always appears for it.
+                      // The "External sources" and "Research coverage" categories
+                      // both get a custom notes editor in the expanded body so
+                      // the PM can log analyst reports / source URLs / dates that
+                      // feed back into the scoring prompt. The Show toggle always
+                      // appears for these two, even when no AI content exists.
                       const isExternalSources = cat.key === "externalSources";
+                      const isResearchCoverage = cat.key === "researchCoverage";
+                      const hasNotesEditor = isExternalSources || isResearchCoverage;
                       const externalNotes = stock.externalSourceNotes ?? [];
-                      const showToggle = hasContent || isExternalSources;
+                      const researchNotes = stock.researchCoverageNotes ?? [];
+                      const notesForThis = isExternalSources ? externalNotes : isResearchCoverage ? researchNotes : [];
+                      const showToggle = hasContent || hasNotesEditor;
                       const isExpanded = expandedCategories.has(cat.key);
                       return (
                         <div key={cat.key}>
@@ -1928,6 +1945,26 @@ export default function StockDetailPage() {
                               <span className={`rounded px-1.5 py-0.5 text-[10px] font-semibold ${typeBg}`}>
                                 {cat.inputType.toUpperCase()}
                               </span>
+                              {confidence && (
+                                <span
+                                  className={`rounded px-1.5 py-0.5 text-[9px] font-bold uppercase tracking-wider ${
+                                    confidence === "high"
+                                      ? "bg-emerald-50 text-emerald-700 border border-emerald-200"
+                                      : confidence === "medium"
+                                      ? "bg-amber-50 text-amber-700 border border-amber-200"
+                                      : "bg-red-50 text-red-700 border border-red-200"
+                                  }`}
+                                  title={
+                                    confidence === "high"
+                                      ? "High confidence: current authoritative data for all material inputs"
+                                      : confidence === "medium"
+                                      ? "Medium confidence: partial / mixed data \u2014 worth a second look"
+                                      : "Low confidence: stale / contradictory / missing data \u2014 treat score as a starting point"
+                                  }
+                                >
+                                  {confidence}
+                                </span>
+                              )}
                               {showToggle && (
                                 <button
                                   onClick={() => toggleCategory(cat.key)}
@@ -1936,8 +1973,8 @@ export default function StockDetailPage() {
                                   aria-label={isExpanded ? "Hide explanation" : "Show explanation"}
                                 >
                                   <span>{isExpanded ? "Hide" : "Show"}</span>
-                                  {isExternalSources && externalNotes.length > 0 && (
-                                    <span className="ml-0.5 rounded-full bg-slate-200 px-1 text-[9px] font-bold text-slate-600">{externalNotes.length}</span>
+                                  {hasNotesEditor && notesForThis.length > 0 && (
+                                    <span className="ml-0.5 rounded-full bg-slate-200 px-1 text-[9px] font-bold text-slate-600">{notesForThis.length}</span>
                                   )}
                                   <span className={`transition-transform ${isExpanded ? "rotate-180" : ""}`}>{"\u25BE"}</span>
                                 </button>
@@ -1959,14 +1996,21 @@ export default function StockDetailPage() {
                               ))}
                             </div>
                           </div>
-                          {isExternalSources && isExpanded && (
+                          {isExpanded && hasNotesEditor && (
                             <ExternalSourcesEditor
-                              notes={externalNotes}
-                              onChange={(next) => updateStockFields(ticker, { externalSourceNotes: next })}
+                              notes={notesForThis}
+                              onChange={(next) => updateStockFields(ticker, isExternalSources ? { externalSourceNotes: next } : { researchCoverageNotes: next })}
+                              headerLabel={isExternalSources ? "External Sources Log" : "Research Coverage Log"}
+                              emptyHint={isExternalSources
+                                ? "No sources logged. Click “+ Add source” to track analyst reports, news, podcasts, or other external research feeding this score."
+                                : "No coverage logged. Click “+ Add source” to record sell-side reports, initiations, rating/PT changes — feeds directly into the AI’s researchCoverage scoring."}
+                              placeholder={isExternalSources
+                                ? "Source (e.g. RBC Capital Markets — Upgraded to Outperform, PT $245)"
+                                : "Coverage note (e.g. Morgan Stanley initiated Overweight, PT $310, Apr 12)"}
                             />
                           )}
-                          {!isExternalSources && hasContent && isExpanded && (
-                            <div className="ml-1 space-y-3 mb-1">
+                          {isExpanded && !isExternalSources && hasContent && (
+                            <div className="ml-1 space-y-3 mb-1 mt-3">
                               {summary && (
                                 <p className="text-xs leading-relaxed text-slate-600">{summary}</p>
                               )}
@@ -1989,7 +2033,7 @@ export default function StockDetailPage() {
                               )}
                             </div>
                           )}
-                          {!isExternalSources && !hasContent && cat.inputType !== "manual" && (
+                          {!hasNotesEditor && !hasContent && cat.inputType !== "manual" && (
                             <p className="text-[11px] text-slate-400 italic ml-1">Re-score via Claude to generate explanation</p>
                           )}
                         </div>
