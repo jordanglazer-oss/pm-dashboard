@@ -79,6 +79,29 @@ export type ScoreDataPoint = {
   source: ScoreDataPointSource;
   /** Optional human-readable detail: filing date, publication name, search query, etc. */
   sourceDetail?: string;
+  /**
+   * Optional URL to the underlying source so the analyst can click through
+   * to verify the number directly. Required for `source: "web"` data points
+   * (the model is instructed to include the actual cited URL). For Yahoo
+   * sources, the UI computes a default Yahoo Finance subpage URL from the
+   * label and ticker if this is absent.
+   */
+  url?: string;
+};
+
+/**
+ * A free-text "External Source" note entered by the PM under the External
+ * sources scoring category. Each note is a single source (e.g. a sell-side
+ * analyst report, news article, trade pub) with a date stamp. The whole
+ * list lives on the Stock and persists in pm:stocks so notes survive
+ * refreshes and sync across devices.
+ */
+export type ExternalSourceNote = {
+  id: string;
+  /** YYYY-MM-DD; empty string allowed for partial entries */
+  date: string;
+  /** Free-text describing the source (analyst name, publication, URL, etc.) */
+  text: string;
 };
 
 /**
@@ -281,6 +304,13 @@ export type Stock = {
   notes: string;
   companySummary?: string;
   investmentThesis?: string;
+  /**
+   * PM-entered notes for the "External sources" scoring category (a manual
+   * category). Each entry is a single source (analyst report, article, etc)
+   * with its own date. Persisted with the rest of the stock blob in
+   * pm:stocks so notes survive refreshes and sync across devices.
+   */
+  externalSourceNotes?: ExternalSourceNote[];
   healthData?: HealthData;
   technicals?: TechnicalIndicators;
   riskAlert?: RiskAlert;

@@ -5,7 +5,7 @@ import { useParams, useRouter, useSearchParams } from "next/navigation";
 import Link from "next/link";
 import { useStocks } from "@/app/lib/StockContext";
 import { SCORE_GROUPS, MAX_SCORE, INSTRUMENT_LABELS } from "@/app/lib/types";
-import type { ScoreKey, FundData, ScoreDataPoint, ScoreDataPointSource } from "@/app/lib/types";
+import type { ScoreKey, FundData, ScoreDataPoint, ScoreDataPointSource, ExternalSourceNote } from "@/app/lib/types";
 import { groupTotal, isScoreable, normalizeSector } from "@/app/lib/scoring";
 import { SignalPill, ratingTone } from "@/app/components/SignalPill";
 import StockHealthMonitor from "@/app/components/StockHealthMonitor";
@@ -47,27 +47,212 @@ const GROUP_COLORS: Record<
 };
 
 
+// Route a Yahoo-sourced data point to the most relevant Yahoo Finance
+// subpage so the chip can be a click-through to verify the value. We use
+// label keyword heuristics — not every label maps perfectly, but the
+// fallback is the main /quote page which has tabs to every subview.
+function yahooUrlForLabel(ticker: string, label: string): string {
+  const lower = label.toLowerCase();
+  const base = `https://finance.yahoo.com/quote/${encodeURIComponent(ticker)}`;
+  if (/(revenue|net income|ebit|ebitda|earnings|eps |operating cash|free cash|fcf|capex|margin|cogs|opex|cash flow)/i.test(lower)) {
+    return `${base}/financials`;
+  }
+  if (/(balance|debt|assets|liabilit|equity|cash on hand|current ratio|leverage)/i.test(lower)) {
+    return `${base}/balance-sheet`;
+  }
+  if (/(cash flow|operating cash|free cash|fcf|capex)/i.test(lower)) {
+    return `${base}/cash-flow`;
+  }
+  if (/(p\/e|peg|p\/b|p\/s|ev\/|enterprise value|forward p|trailing p|valuation|book value|market cap|short interest|short %|short percent|float|shares out|beta)/i.test(lower)) {
+    return `${base}/key-statistics`;
+  }
+  if (/(target price|analyst|consensus|recommendation|estimate|forecast)/i.test(lower)) {
+    return `${base}/analysis`;
+  }
+  if (/(institutional|holders|ownership|insider)/i.test(lower)) {
+    return `${base}/holders`;
+  }
+  if (/(profile|sector|industry|description|business)/i.test(lower)) {
+    return `${base}/profile`;
+  }
+  return base;
+}
+
 // Source-attribution chip rendered next to each scoring data point. Maps
 // the abstract source enum to a colored badge so the analyst can see at a
 // glance whether a number came from EDGAR (authoritative SEC filing), Yahoo
 // (third-party feed), web search (cited URL/date), or a model inference.
-function SourceChip({ source, detail }: { source: ScoreDataPointSource; detail?: string }) {
-  const style: Record<ScoreDataPointSource, { label: string; cls: string; title: string }> = {
-    edgar: { label: "EDGAR", cls: "bg-emerald-100 text-emerald-700 border-emerald-200", title: "SEC EDGAR XBRL — audited as-reported from 10-K/Q filings" },
-    "edgar-form4": { label: "Form 4", cls: "bg-emerald-50 text-emerald-700 border-emerald-200", title: "SEC Form 4 — insider transactions (open-market only)" },
-    yahoo: { label: "Yahoo", cls: "bg-slate-100 text-slate-600 border-slate-200", title: "Yahoo Finance data feed" },
-    web: { label: "Web", cls: "bg-blue-100 text-blue-700 border-blue-200", title: "Anthropic web_search result (verified during this rescore)" },
-    model: { label: "Model", cls: "bg-amber-50 text-amber-700 border-amber-200", title: "Qualitative inference by the model — no specific data source" },
+// Chips render as clickable <a> tags when a URL is available so the
+// analyst can verify the underlying source in one click.
+function SourceChip({ source, detail, url, label, ticker }: { source: ScoreDataPointSource; detail?: string; url?: string; label: string; ticker: string }) {
+  const style: Record<ScoreDataPointSource, { label: string; cls: string; clsLink: string; title: string }> = {
+    edgar: { label: "EDGAR", cls: "bg-emerald-100 text-emerald-700 border-emerald-200", clsLink: "hover:bg-emerald-200", title: "SEC EDGAR XBRL — audited as-reported from 10-K/Q filings. Click to open the company's EDGAR filings page." },
+    "edgar-form4": { label: "Form 4", cls: "bg-emerald-50 text-emerald-700 border-emerald-200", clsLink: "hover:bg-emerald-100", title: "SEC Form 4 — insider transactions (open-market only). Click to open the company's Form 4 filings on EDGAR." },
+    yahoo: { label: "Yahoo", cls: "bg-slate-100 text-slate-600 border-slate-200", clsLink: "hover:bg-slate-200", title: "Yahoo Finance data feed. Click to open the relevant Yahoo Finance page." },
+    web: { label: "Web", cls: "bg-blue-100 text-blue-700 border-blue-200", clsLink: "hover:bg-blue-200", title: "Anthropic web_search result (verified during this rescore). Click to open the cited source." },
+    model: { label: "Model", cls: "bg-amber-50 text-amber-700 border-amber-200", clsLink: "", title: "Qualitative inference by the model — no specific data source." },
   };
   const s = style[source] ?? style.model;
-  return (
-    <span
-      title={detail ? `${s.title}\n${detail}` : s.title}
-      className={`inline-flex items-center gap-1 rounded border px-1.5 py-0.5 text-[9px] font-semibold whitespace-nowrap ${s.cls}`}
-    >
+
+  // Compute the click-through URL based on source type. EDGAR uses the
+  // SEC's browse-by-CIK redirect-by-ticker path; Yahoo uses our label-based
+  // routing; Web uses the URL the model cited (if any).
+  let href: string | undefined;
+  if (source === "web") {
+    href = url;
+  } else if (source === "yahoo") {
+    href = yahooUrlForLabel(ticker, label);
+  } else if (source === "edgar") {
+    // SEC EDGAR — direct CIK-by-ticker browse URL.
+    href = `https://www.sec.gov/cgi-bin/browse-edgar?action=getcompany&CIK=${encodeURIComponent(ticker)}&type=10&dateb=&owner=include&count=40`;
+  } else if (source === "edgar-form4") {
+    href = `https://www.sec.gov/cgi-bin/browse-edgar?action=getcompany&CIK=${encodeURIComponent(ticker)}&type=4&dateb=&owner=include&count=40`;
+  }
+
+  const inner = (
+    <>
       {s.label}
       {detail && <span className="font-normal opacity-80 max-w-[180px] truncate">· {detail}</span>}
+    </>
+  );
+  const cls = `inline-flex items-center gap-1 rounded border px-1.5 py-0.5 text-[9px] font-semibold whitespace-nowrap ${s.cls}`;
+
+  if (href) {
+    return (
+      <a
+        href={href}
+        target="_blank"
+        rel="noopener noreferrer"
+        title={detail ? `${s.title}\n${detail}\n\n→ ${href}` : `${s.title}\n\n→ ${href}`}
+        className={`${cls} ${s.clsLink} transition-colors cursor-pointer`}
+      >
+        {inner}
+      </a>
+    );
+  }
+  return (
+    <span title={detail ? `${s.title}\n${detail}` : s.title} className={cls}>
+      {inner}
     </span>
+  );
+}
+
+/**
+ * Notes editor for the "External sources" scoring category (manual scoring).
+ * Each row is a single source: a date input + a free-text field + delete
+ * button. The PM clicks "+ Add source" to add rows. All changes are
+ * debounced and pushed back through the parent's onChange so the host
+ * stock context can persist them to pm:stocks (round-trips through Redis
+ * and syncs across devices).
+ *
+ * Local state is kept in sync with the incoming `notes` prop. Typing
+ * doesn't wait on the network — it updates the local view immediately,
+ * then fires a debounced save 500ms after the last keystroke.
+ */
+function ExternalSourcesEditor({ notes, onChange }: { notes: ExternalSourceNote[]; onChange: (next: ExternalSourceNote[]) => void }) {
+  const [local, setLocal] = useState<ExternalSourceNote[]>(() => notes ?? []);
+  const onChangeRef = useRef(onChange);
+  onChangeRef.current = onChange;
+  // Sync local state when the incoming notes change (e.g. data loaded from
+  // a different device, or the stock was just swapped). We guard against
+  // overwriting in-flight edits by skipping when the local list already
+  // matches the incoming one structurally.
+  useEffect(() => {
+    const incoming = notes ?? [];
+    // Cheap equality: compare lengths + JSON. The notes list is small so
+    // this is fine; avoids a fight between the debounced save and an
+    // unrelated context update.
+    const a = JSON.stringify(local);
+    const b = JSON.stringify(incoming);
+    if (a !== b) setLocal(incoming);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [notes]);
+
+  // Debounced auto-save: 500ms after the last keystroke, fire onChange so
+  // the parent can persist to pm:stocks. Cancels prior timer on each edit.
+  const saveTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+  const scheduleSave = useCallback((next: ExternalSourceNote[]) => {
+    if (saveTimerRef.current) clearTimeout(saveTimerRef.current);
+    saveTimerRef.current = setTimeout(() => {
+      onChangeRef.current(next);
+      saveTimerRef.current = null;
+    }, 500);
+  }, []);
+  // Flush pending save on unmount so a half-typed note isn't lost when the
+  // user navigates to a different ticker.
+  useEffect(() => {
+    return () => {
+      if (saveTimerRef.current) {
+        clearTimeout(saveTimerRef.current);
+        onChangeRef.current(local);
+      }
+    };
+    // Only run the cleanup on unmount, not on every `local` change.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []);
+
+  const updateRow = (id: string, patch: Partial<ExternalSourceNote>) => {
+    const next = local.map((n) => (n.id === id ? { ...n, ...patch } : n));
+    setLocal(next);
+    scheduleSave(next);
+  };
+  const addRow = () => {
+    const next = [...local, { id: Math.random().toString(36).slice(2, 11) + Date.now().toString(36), date: "", text: "" }];
+    setLocal(next);
+    scheduleSave(next);
+  };
+  const removeRow = (id: string) => {
+    const next = local.filter((n) => n.id !== id);
+    setLocal(next);
+    scheduleSave(next);
+  };
+
+  return (
+    <div className="ml-1 space-y-2 mb-1">
+      <p className="text-[10px] font-semibold uppercase tracking-wider text-slate-400">External Sources Log</p>
+      {local.length === 0 && (
+        <p className="text-[11px] text-slate-400 italic">No sources logged. Click &quot;+ Add source&quot; to track analyst reports, news, podcasts, or other external research feeding this score.</p>
+      )}
+      <div className="space-y-1.5">
+        {local.map((note) => (
+          <div key={note.id} className="flex items-start gap-1.5">
+            <input
+              type="date"
+              value={note.date}
+              onChange={(e) => updateRow(note.id, { date: e.target.value })}
+              className="shrink-0 rounded border border-slate-200 bg-white px-1.5 py-1 text-[11px] text-slate-700 outline-none focus:border-blue-400 focus:ring-1 focus:ring-blue-200"
+              title="Date of the source (publication or read date)"
+            />
+            <input
+              type="text"
+              value={note.text}
+              onChange={(e) => updateRow(note.id, { text: e.target.value })}
+              placeholder="Source (e.g. RBC Capital Markets — Upgraded to Outperform, PT $245)"
+              className="flex-1 min-w-0 rounded border border-slate-200 bg-white px-2 py-1 text-xs text-slate-700 outline-none focus:border-blue-400 focus:ring-1 focus:ring-blue-200"
+            />
+            <button
+              type="button"
+              onClick={() => removeRow(note.id)}
+              className="shrink-0 rounded p-1 text-slate-400 hover:bg-red-50 hover:text-red-600 transition-colors"
+              title="Remove this source"
+              aria-label="Remove source"
+            >
+              <svg className="w-3.5 h-3.5" fill="none" stroke="currentColor" strokeWidth="2" viewBox="0 0 24 24">
+                <path strokeLinecap="round" strokeLinejoin="round" d="M6 18L18 6M6 6l12 12" />
+              </svg>
+            </button>
+          </div>
+        ))}
+      </div>
+      <button
+        type="button"
+        onClick={addRow}
+        className="rounded-lg border border-dashed border-slate-300 bg-slate-50 px-2.5 py-1 text-[11px] font-semibold text-slate-600 hover:border-slate-400 hover:bg-slate-100 transition-colors"
+      >
+        + Add source
+      </button>
+      <p className="text-[10px] text-slate-400 italic">Auto-saves 0.5s after you stop typing. Persists in Redis — syncs across refreshes and devices.</p>
+    </div>
   );
 }
 
@@ -1726,6 +1911,13 @@ export default function StockDetailPage() {
                           : "bg-slate-100 text-slate-600";
 
                       const hasContent = summary.length > 0 || dataPoints.length > 0;
+                      // The "External sources" category is manual-scored and
+                      // has no AI-generated content, but it gets a custom
+                      // notes editor in the expanded body \u2014 so the Show
+                      // toggle always appears for it.
+                      const isExternalSources = cat.key === "externalSources";
+                      const externalNotes = stock.externalSourceNotes ?? [];
+                      const showToggle = hasContent || isExternalSources;
                       const isExpanded = expandedCategories.has(cat.key);
                       return (
                         <div key={cat.key}>
@@ -1736,7 +1928,7 @@ export default function StockDetailPage() {
                               <span className={`rounded px-1.5 py-0.5 text-[10px] font-semibold ${typeBg}`}>
                                 {cat.inputType.toUpperCase()}
                               </span>
-                              {hasContent && (
+                              {showToggle && (
                                 <button
                                   onClick={() => toggleCategory(cat.key)}
                                   className="flex items-center gap-0.5 rounded px-1.5 py-0.5 text-[10px] font-medium text-slate-500 hover:bg-slate-100 transition-colors"
@@ -1744,6 +1936,9 @@ export default function StockDetailPage() {
                                   aria-label={isExpanded ? "Hide explanation" : "Show explanation"}
                                 >
                                   <span>{isExpanded ? "Hide" : "Show"}</span>
+                                  {isExternalSources && externalNotes.length > 0 && (
+                                    <span className="ml-0.5 rounded-full bg-slate-200 px-1 text-[9px] font-bold text-slate-600">{externalNotes.length}</span>
+                                  )}
                                   <span className={`transition-transform ${isExpanded ? "rotate-180" : ""}`}>{"\u25BE"}</span>
                                 </button>
                               )}
@@ -1764,7 +1959,13 @@ export default function StockDetailPage() {
                               ))}
                             </div>
                           </div>
-                          {hasContent && isExpanded && (
+                          {isExternalSources && isExpanded && (
+                            <ExternalSourcesEditor
+                              notes={externalNotes}
+                              onChange={(next) => updateStockFields(ticker, { externalSourceNotes: next })}
+                            />
+                          )}
+                          {!isExternalSources && hasContent && isExpanded && (
                             <div className="ml-1 space-y-3 mb-1">
                               {summary && (
                                 <p className="text-xs leading-relaxed text-slate-600">{summary}</p>
@@ -1780,7 +1981,7 @@ export default function StockDetailPage() {
                                           <span className="text-slate-500">{dp.label}:</span>
                                           <span className="font-medium text-slate-700">{dp.value}</span>
                                         </span>
-                                        <SourceChip source={dp.source} detail={dp.sourceDetail} />
+                                        <SourceChip source={dp.source} detail={dp.sourceDetail} url={dp.url} label={dp.label} ticker={ticker} />
                                       </li>
                                     ))}
                                   </ul>
@@ -1788,7 +1989,7 @@ export default function StockDetailPage() {
                               )}
                             </div>
                           )}
-                          {!hasContent && cat.inputType !== "manual" && (
+                          {!isExternalSources && !hasContent && cat.inputType !== "manual" && (
                             <p className="text-[11px] text-slate-400 italic ml-1">Re-score via Claude to generate explanation</p>
                           )}
                         </div>

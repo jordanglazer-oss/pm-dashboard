@@ -481,6 +481,13 @@ For every data point you cite, label its source:
   - "web" — value came from a web_search result (sourceDetail = source name + date, e.g. "Apple Q4 2025 press release, Oct 30 2025")
   - "model" — qualitative inference based on company description / industry (use sparingly, only for narrative claims)
 
+URL ATTRIBUTION (REQUIRED for web sources):
+For every data point with source: "web", you MUST include a "url" field with the actual URL of the source you cited (the underlying press release, filing, analyst note, article, etc.). The URL should come from the web_search results you accessed during this rescore. If the underlying source has multiple URLs (e.g. you saw the press release on both the company's IR page AND on a Reuters re-print), prefer the primary source URL (company IR page > regulatory filing portal > established news outlet > aggregator).
+
+For EDGAR / EDGAR-Form4 sources, do NOT include a URL — the UI will construct the SEC filing URL automatically from the ticker.
+For Yahoo sources, do NOT include a URL — the UI will route to the appropriate Yahoo Finance subpage automatically based on the label (financials, key-statistics, analysis, etc.).
+For Model sources, do NOT include a URL (qualitative inference has no source URL).
+
 Also provide:
 - name: Full company name
 - sector: GICS sector
@@ -504,14 +511,14 @@ Respond ONLY with valid JSON (no markdown code fences, no commentary):
     "secular": {
       "summary": "3-6 sentence paragraph",
       "dataPoints": [
-        { "label": "TAM growth (industry source)", "value": "+18% YoY through 2030", "source": "web", "sourceDetail": "Gartner 2026 forecast, Mar 2026" }
+        { "label": "TAM growth (industry source)", "value": "+18% YoY through 2030", "source": "web", "sourceDetail": "Gartner 2026 forecast, Mar 2026", "url": "https://www.gartner.com/..." }
       ]
     },
     "growth": {
       "summary": "...",
       "dataPoints": [
         { "label": "Revenue (Q3 2026)", "value": "$5.62B (+12% YoY)", "source": "edgar", "sourceDetail": "10-Q filed 2026-10-30" },
-        { "label": "EPS (Q3 2026)", "value": "$2.34 vs $2.10 est", "source": "web", "sourceDetail": "Company press release, Oct 30 2026" }
+        { "label": "EPS (Q3 2026)", "value": "$2.34 vs $2.10 est", "source": "web", "sourceDetail": "Company press release, Oct 30 2026", "url": "https://investor.example.com/news/2026/q3-earnings" }
       ]
     },
     "relativeValuation": { "summary": "...", "dataPoints": [...] },
@@ -712,11 +719,19 @@ export async function POST(request: NextRequest) {
             .filter((d: unknown): d is Record<string, unknown> => d != null && typeof d === "object")
             .map((d: Record<string, unknown>) => {
               const source = typeof d.source === "string" && allowedSources.has(d.source) ? d.source : "model";
+              // Only accept URLs that look like real http(s) addresses, to
+              // defend against the model fabricating placeholder strings
+              // like "(URL not available)" or "n/a". Anything else falls
+              // back to undefined → UI either skips the link (web) or
+              // computes a default Yahoo subpage URL.
+              const rawUrl = typeof d.url === "string" ? d.url.trim() : "";
+              const url = /^https?:\/\/\S+$/.test(rawUrl) ? rawUrl : undefined;
               return {
                 label: typeof d.label === "string" ? d.label : "(unnamed)",
                 value: typeof d.value === "string" ? d.value : String(d.value ?? ""),
                 source: source as ScoreDataPointSource,
                 sourceDetail: typeof d.sourceDetail === "string" ? d.sourceDetail : undefined,
+                ...(url ? { url } : {}),
               };
             });
           explanations[key as ScoreKey] = {
