@@ -2015,10 +2015,10 @@ export default function StockDetailPage() {
                               headerLabel={isExternalSources ? "External Sources Log" : "Research Coverage Log"}
                               emptyHint={isExternalSources
                                 ? "No sources logged. Click “+ Add source” to track analyst reports, news, podcasts, or other external research feeding this score."
-                                : "No coverage logged. Click “+ Add source” to record sell-side reports, initiations, rating/PT changes — feeds directly into the AI’s researchCoverage scoring."}
+                                : "No coverage logged. Log named-firm activity (Morgan Stanley initiation, Goldman PT change, etc.) here as evidence of an active information environment. RBC and JPM go in the Analyst consensus panel; this is for everyone else."}
                               placeholder={isExternalSources
                                 ? "Source (e.g. RBC Capital Markets — Upgraded to Outperform, PT $245)"
-                                : "Coverage note (e.g. Morgan Stanley initiated Overweight, PT $310, Apr 12)"}
+                                : "Coverage event (e.g. Wells Fargo initiated Buy, PT $52, Apr 18)"}
                             />
                           )}
                           {isExpanded && !isExternalSources && hasContent && (
