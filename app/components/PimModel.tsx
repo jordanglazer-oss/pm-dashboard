@@ -9,6 +9,7 @@ import { PimPerformance } from "./PimPerformance";
 
 const ZERO_SCORES: Record<ScoreKey, number> = {
   brand: 0, secular: 0, researchCoverage: 0, externalSources: 0,
+  analystConsensus: 0, researchMentions: 0,
   charting: 0, relativeStrength: 0, aiRating: 0, growth: 0,
   relativeValuation: 0, historicalValuation: 0, leverageCoverage: 0,
   cashFlowQuality: 0, competitiveMoat: 0, turnaround: 0, catalysts: 0,

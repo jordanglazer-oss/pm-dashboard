@@ -22,6 +22,40 @@ import { pimModelSeed } from "./pim-seed";
 // which variant shows up after future migrations or re-adds.
 const LOCKED_EQUITY_SYMBOLS = new Set(["FID5982", "FID5982-T", "GRNJ"]);
 
+// One-shot migration for the Research-category restructure (researchCoverage
+// shrank from max 4 → 1, externalSources from max 4 → 1, and two new
+// deterministic keys analystConsensus + researchMentions were added at max 3
+// each). Clamps over-cap values and defaults missing keys to 0 so old blobs
+// keep rendering until the PM rescores. Returns the migrated stocks plus a
+// boolean indicating whether any stock changed so the caller can persist.
+function migrateStockScores(stocks: Stock[]): { migrated: Stock[]; changed: boolean } {
+  let changed = false;
+  const migrated = stocks.map((s) => {
+    const scores = s.scores || ({} as Stock["scores"]);
+    const rc = scores.researchCoverage ?? 0;
+    const es = scores.externalSources ?? 0;
+    const ac = scores.analystConsensus;
+    const rm = scores.researchMentions;
+    const needsRcClamp = rc > 1;
+    const needsEsClamp = es > 1;
+    const needsAcDefault = ac === undefined || ac === null;
+    const needsRmDefault = rm === undefined || rm === null;
+    if (!needsRcClamp && !needsEsClamp && !needsAcDefault && !needsRmDefault) return s;
+    changed = true;
+    return {
+      ...s,
+      scores: {
+        ...scores,
+        researchCoverage: Math.min(rc, 1),
+        externalSources: Math.min(es, 1),
+        analystConsensus: needsAcDefault ? 0 : ac,
+        researchMentions: needsRmDefault ? 0 : rm,
+      },
+    };
+  });
+  return { migrated, changed };
+}
+
 export type ChartAnalysisEntry = {
   analysis: string;
   range: string;
@@ -153,8 +187,10 @@ export function StockProvider({ children }: { children: React.ReactNode }) {
       fetch("/api/kv/pim-portfolio-state").then((r) => r.json()).catch(() => ({ groupStates: [], lastUpdated: "" })),
       fetch("/api/kv/ui-prefs").then((r) => r.json()).catch(() => ({ uiPrefs: {} })),
     ]).then(async ([stocksRes, marketRes, briefRes, chartRes, scannerRes, pimRes, portfolioStateRes, uiPrefsRes]) => {
-      const loadedStocks: Stock[] = stocksRes.stocks || [];
+      const rawLoadedStocks: Stock[] = stocksRes.stocks || [];
+      const { migrated: loadedStocks, changed: scoresMigrated } = migrateStockScores(rawLoadedStocks);
       setStocks(loadedStocks);
+      if (scoresMigrated) persistStocks(loadedStocks);
       if (marketRes.market) setMarketData({ ...defaultMarketData, ...marketRes.market });
       if (briefRes.brief) setBriefState(briefRes.brief);
       if (chartRes.chartAnalyses) setChartAnalysesState(chartRes.chartAnalyses);
