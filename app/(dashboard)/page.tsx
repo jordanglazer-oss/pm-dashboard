@@ -19,7 +19,7 @@ const ZERO_SCORES: Record<ScoreKey, number> = {
 };
 
 export default function DashboardPage() {
-  const { scoredStocks, marketData, addStock } = useStocks();
+  const { scoredStocks, marketData, addStock, uiPrefs, setUiPref } = useStocks();
   const [newTicker, setNewTicker] = useState("");
   const [newBucket, setNewBucket] = useState<"Portfolio" | "Watchlist">("Watchlist");
   const [detectedType, setDetectedType] = useState<InstrumentType | null>(null);
@@ -256,16 +256,31 @@ export default function DashboardPage() {
         <PortfolioOverview />
 
         {/* ── Regime Detail — per-stock multiplier breakdown ── */}
+        {(() => {
+          const regimeCollapsed = uiPrefs["dashboard.regimeMultiplier.collapsed"] === "1";
+          const toggleRegimeCollapsed = () => setUiPref("dashboard.regimeMultiplier.collapsed", regimeCollapsed ? "0" : "1");
+          return (
         <div id="regime-detail" className="scroll-mt-6">
           <section className="rounded-[24px] border border-slate-200 bg-white p-6 shadow-sm">
-            <div className="flex items-center gap-3 mb-4">
-              <h2 className="text-lg font-bold text-slate-800">Regime Multiplier Detail</h2>
+            <div className={`flex items-center gap-3 ${regimeCollapsed ? "" : "mb-4"}`}>
+              <button
+                onClick={toggleRegimeCollapsed}
+                className="flex items-center gap-2 cursor-pointer hover:opacity-80 transition-opacity"
+                aria-expanded={!regimeCollapsed}
+                aria-label={regimeCollapsed ? "Expand Regime Multiplier Detail" : "Collapse Regime Multiplier Detail"}
+              >
+                <svg className={`w-4 h-4 text-slate-400 transition-transform ${regimeCollapsed ? "-rotate-90" : ""}`} fill="none" stroke="currentColor" strokeWidth="2.5" viewBox="0 0 24 24">
+                  <path strokeLinecap="round" strokeLinejoin="round" d="M19 9l-7 7-7-7" />
+                </svg>
+                <h2 className="text-lg font-bold text-slate-800">Regime Multiplier Detail</h2>
+              </button>
               <span className={`rounded-full px-2.5 py-0.5 text-xs font-bold ${
                 regime === "Risk-Off" ? "bg-red-100 text-red-700"
                 : regime === "Neutral" ? "bg-amber-100 text-amber-700"
                 : "bg-emerald-100 text-emerald-700"
               }`}>{regime}</span>
             </div>
+            {!regimeCollapsed && (<>
             <p className="text-xs text-slate-400 mb-4">
               Each stock&apos;s regime multiplier is determined by its sector tier (Growth / Cyclical / Defensive) and dampened by its quality score (growth + leverage + cash flow quality + moat, max 8). Higher quality → softer regime effect.
             </p>
@@ -328,8 +343,11 @@ export default function DashboardPage() {
                 </tbody>
               </table>
             </div>
+            </>)}
           </section>
         </div>
+          );
+        })()}
       </div>
     </main>
   );

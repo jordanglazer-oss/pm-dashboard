@@ -3,12 +3,11 @@
 import React, { useState, useCallback, useMemo, useEffect, useRef } from "react";
 import Link from "next/link";
 import { useStocks } from "@/app/lib/StockContext";
-import { SCORE_GROUPS, MAX_SCORE, INSTRUMENT_LABELS } from "@/app/lib/types";
+import { SCORE_GROUPS, INSTRUMENT_LABELS } from "@/app/lib/types";
 import type { ScoredStock, ScoreKey, HealthData, FundHolding, FundSectorWeight } from "@/app/lib/types";
 import type { TechnicalIndicators, RiskAlert } from "@/app/lib/technicals";
 import { groupTotal, isScoreable, normalizeSector, computeScores } from "@/app/lib/scoring";
 import { displayTicker } from "@/app/lib/ticker";
-import { SignalPill } from "./SignalPill";
 
 /** Format an ISO timestamp for display next to Score All / Refresh All buttons. */
 function formatRelTimestamp(iso: string | undefined | null): string {
@@ -814,7 +813,7 @@ export function PortfolioOverview() {
         </div>
       </section>
 
-      {/* Portfolio Rankings (scoreable stocks only) — moved above Fund & ETF Holdings */}
+      {/* Portfolio Rankings (scoreable stocks only) */}
       <RankingTable
         title="Portfolio Rankings"
         subtitle="Bottom 3 flagged for review"
@@ -827,10 +826,32 @@ export function PortfolioOverview() {
         scoreProgress={scoringBucket === "Portfolio" ? scoreProgress : ""}
         scoreAllDisabled={scoringAny || refreshingAll}
         lastScoredAt={scoreAllPortfolioAt}
+        collapseKey="dashboard.portfolioRankings.collapsed"
       />
 
-      {/* Fund Holdings */}
+
+      {/* Watchlist Rankings (scoreable stocks only) */}
+      <RankingTable
+        title="Watchlist Rankings"
+        subtitle="Top 3 flagged as buy candidates"
+        stocks={scoreableWatchlist}
+        flagType="buy"
+        uiPrefs={uiPrefs}
+        setUiPref={setUiPref}
+        onScoreAll={() => handleScoreBucket("Watchlist")}
+        scoring={scoringBucket === "Watchlist"}
+        scoreProgress={scoringBucket === "Watchlist" ? scoreProgress : ""}
+        scoreAllDisabled={scoringAny || refreshingAll}
+        lastScoredAt={scoreAllWatchlistAt}
+        collapseKey="dashboard.watchlistRankings.collapsed"
+      />
+
+      {/* Fund & ETF Holdings — moved below Watchlist Rankings per Dashboard
+          layout request. Collapsible via uiPrefs (cross-device via Redis). */}
       {fundPortfolio.length > 0 && (() => {
+        const fundCollapsed = uiPrefs["dashboard.fundEtfHoldings.collapsed"] === "1";
+        const toggleFundCollapsed = () => setUiPref("dashboard.fundEtfHoldings.collapsed", fundCollapsed ? "0" : "1");
+
         const handleFundSort = (field: FundSortField) => {
           if (fundSort === field) {
             setFundSortDir((d) => (d === "asc" ? "desc" : "asc"));
@@ -864,10 +885,21 @@ export function PortfolioOverview() {
 
         return (
           <section className="rounded-[30px] border border-indigo-200 bg-white p-5 shadow-sm">
-            <div className="flex items-center gap-3 mb-4">
-              <h2 className="text-lg font-bold text-slate-800">Fund & ETF Holdings</h2>
+            <div className={`flex items-center gap-3 ${fundCollapsed ? "" : "mb-4"}`}>
+              <button
+                onClick={toggleFundCollapsed}
+                className="flex items-center gap-2 cursor-pointer hover:opacity-80 transition-opacity"
+                aria-expanded={!fundCollapsed}
+                aria-label={fundCollapsed ? "Expand Fund & ETF Holdings" : "Collapse Fund & ETF Holdings"}
+              >
+                <svg className={`w-4 h-4 text-slate-400 transition-transform ${fundCollapsed ? "-rotate-90" : ""}`} fill="none" stroke="currentColor" strokeWidth="2.5" viewBox="0 0 24 24">
+                  <path strokeLinecap="round" strokeLinejoin="round" d="M19 9l-7 7-7-7" />
+                </svg>
+                <h2 className="text-lg font-bold text-slate-800">Fund & ETF Holdings</h2>
+              </button>
               <span className="text-sm text-slate-400">{fundPortfolio.length} holdings</span>
             </div>
+            {!fundCollapsed && (
             <div className="overflow-x-auto">
               <table className="w-full min-w-[800px] text-left text-sm">
                 <thead>
@@ -983,69 +1015,10 @@ export function PortfolioOverview() {
                 </tbody>
               </table>
             </div>
+            )}
           </section>
         );
       })()}
-
-      {/* Watchlist Rankings (scoreable stocks only) */}
-      <RankingTable
-        title="Watchlist Rankings"
-        subtitle="Top 3 flagged as buy candidates"
-        stocks={scoreableWatchlist}
-        flagType="buy"
-        uiPrefs={uiPrefs}
-        setUiPref={setUiPref}
-        onScoreAll={() => handleScoreBucket("Watchlist")}
-        scoring={scoringBucket === "Watchlist"}
-        scoreProgress={scoringBucket === "Watchlist" ? scoreProgress : ""}
-        scoreAllDisabled={scoringAny || refreshingAll}
-        lastScoredAt={scoreAllWatchlistAt}
-      />
-
-      {/* Score Comparison (scoreable stocks only) */}
-      <section className="rounded-[30px] border border-slate-200 bg-white p-5 shadow-sm">
-        <h2 className="text-lg font-bold text-slate-800 mb-4">Score Comparison</h2>
-        <div className="space-y-2">
-          {allScoreable.map((s) => {
-            const pct = (s.adjusted / MAX_SCORE) * 100;
-            const adj = Math.round((s.adjusted - s.raw) * 10) / 10;
-            const label = s.ratingLabel || s.rating;
-            const barColor =
-              s.adjusted >= 22
-                ? "bg-gradient-to-r from-emerald-400 to-emerald-500"
-                : s.adjusted >= 18
-                ? "bg-gradient-to-r from-amber-300 to-amber-400"
-                : "bg-gradient-to-r from-orange-400 to-red-400";
-
-            return (
-              <Link
-                key={s.ticker}
-                href={`/stock/${s.ticker.toLowerCase()}`}
-                className="flex items-center gap-3 rounded-xl py-1.5 hover:bg-slate-50 transition-colors"
-              >
-                <span className="w-16 text-sm font-bold text-slate-800 text-right font-mono">{displayTicker(s.ticker)}</span>
-                <SignalPill tone={s.bucket === "Portfolio" ? "blue" : "gray"}>
-                  {s.bucket === "Portfolio" ? "PF" : "WL"}
-                </SignalPill>
-                <div className="flex-1 h-6 rounded-full bg-slate-100 overflow-hidden relative">
-                  <div
-                    className={`h-full rounded-full ${barColor} flex items-center justify-end pr-2`}
-                    style={{ width: `${Math.max(pct, 5)}%` }}
-                  >
-                    <span className="text-xs font-bold text-white">{s.adjusted}</span>
-                  </div>
-                </div>
-                <span className={`w-6 text-xs font-semibold ${adj >= 0 ? "text-emerald-600" : "text-red-500"}`}>
-                  {adj >= 0 ? "+" : ""}{adj}
-                </span>
-                <span className={`w-24 text-xs font-medium text-right ${ratingColor(label)}`}>
-                  {label}
-                </span>
-              </Link>
-            );
-          })}
-        </div>
-      </section>
     </div>
   );
 }
@@ -1071,6 +1044,7 @@ function RankingTable({
   scoreProgress,
   scoreAllDisabled,
   lastScoredAt,
+  collapseKey,
 }: {
   title: string;
   subtitle: string;
@@ -1083,7 +1057,19 @@ function RankingTable({
   scoreProgress?: string;
   scoreAllDisabled?: boolean;
   lastScoredAt?: string;
+  /** When set, this section is collapsible and its collapsed state is
+   *  persisted under this uiPrefs key (cross-device via Redis). */
+  collapseKey?: string;
 }) {
+  // Collapse state — defaults to expanded. Persisted in uiPrefs so it
+  // sticks across refreshes and syncs to other devices via Redis. The
+  // Score All button stays visible even when collapsed so the user can
+  // trigger a batch rescore without expanding the table first.
+  const collapsed = collapseKey ? uiPrefs[collapseKey] === "1" : false;
+  const toggleCollapsed = () => {
+    if (!collapseKey) return;
+    setUiPref(collapseKey, collapsed ? "0" : "1");
+  };
   // Per-row expanded state. Keyed by ticker — a single toggle on a row
   // expands *both* the "What They Do" and "Why Own It" cells together,
   // so the user only has to click once per row to see the full context.
@@ -1171,8 +1157,28 @@ function RankingTable({
 
   return (
     <section className="rounded-[30px] border border-slate-200 bg-white p-5 shadow-sm">
-      <div className="flex items-center gap-3 mb-4 flex-wrap">
-        <h2 className="text-lg font-bold text-slate-800">{title}</h2>
+      <div className={`flex items-center gap-3 flex-wrap ${collapsed ? "" : "mb-4"}`}>
+        {collapseKey ? (
+          <button
+            onClick={toggleCollapsed}
+            className="flex items-center gap-2 cursor-pointer hover:opacity-80 transition-opacity"
+            aria-expanded={!collapsed}
+            aria-label={collapsed ? `Expand ${title}` : `Collapse ${title}`}
+          >
+            <svg
+              className={`w-4 h-4 text-slate-400 transition-transform ${collapsed ? "-rotate-90" : ""}`}
+              fill="none"
+              stroke="currentColor"
+              strokeWidth="2.5"
+              viewBox="0 0 24 24"
+            >
+              <path strokeLinecap="round" strokeLinejoin="round" d="M19 9l-7 7-7-7" />
+            </svg>
+            <h2 className="text-lg font-bold text-slate-800">{title}</h2>
+          </button>
+        ) : (
+          <h2 className="text-lg font-bold text-slate-800">{title}</h2>
+        )}
         <span className="text-sm text-slate-400">{subtitle}</span>
         {onScoreAll && (
           <div className="ml-auto flex items-center gap-2">
@@ -1204,6 +1210,7 @@ function RankingTable({
           </div>
         )}
       </div>
+      {!collapsed && (
       <div className="overflow-x-auto">
         <table className="w-full min-w-[1400px] text-left text-sm">
           <thead>
@@ -1313,6 +1320,7 @@ function RankingTable({
           </tbody>
         </table>
       </div>
+      )}
     </section>
   );
 }
