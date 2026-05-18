@@ -1114,12 +1114,15 @@ export default function ResearchPage() {
         // we preserve existing name/sector for matched rows and stub
         // defaults for new rows. The post-scrape refreshAlphaPickNames
         // call backfills name/sector via /api/company-name in batch.
+        //
+        // Merge key is COMPOSITE: `${ticker}|${dateAdded}`. The same
+        // company can legitimately appear twice on different dates (sold
+        // and re-bought, or added to a position) — both entries must be
+        // preserved. Dedup passes (same-stem -T, cross-stem by name) now
+        // run within same-date scope only, so different dates of the
+        // same ticker stay as separate rows.
         const existing: AlphaPickEntry[] = state.alphaPicks || [];
         type ScrapedAlpha = { ticker: string; name?: string; sector?: string; dateAdded?: string; returnSinceAdded?: number; rating?: string; holdingWeight?: number };
-        // Strip corporate suffixes / punctuation so "Barrick Mining
-        // Corporation" and "Barrick Gold Corp." collapse to the same
-        // key. Used for cross-stem dedup ($B vs $ABX-T) where two
-        // tickers point at the same underlying issuer.
         const normalizeName = (n: string | undefined): string => {
           if (!n) return "";
           return n.toLowerCase()
@@ -1128,121 +1131,112 @@ export default function ResearchPage() {
             .replace(/\s+/g, " ")
             .trim();
         };
-        // Build incoming name→ticker FIRST, so the existing-dedup pass
-        // below can prefer the variant the current scrape returned
-        // (resolves SSRM-T vs SSR-T after a ticker rename, where both
-        // entries end with -T and the suffix heuristic alone can't tell
-        // which is current).
-        const incomingByName = new Map<string, string>();
+        const dateKey = (d: string | undefined) => (d || "").trim();
+        const compositeKey = (ticker: string, date: string | undefined) => `${normalize(ticker)}|${dateKey(date)}`;
+        // Build incoming name+date → composite-key index, so existing-dedup
+        // pass below can prefer the variant returned by the current scrape
+        // (within the same date scope).
+        const incomingByNameDate = new Map<string, Set<string>>();
         for (const eRaw of entries) {
           const e = eRaw as ScrapedAlpha;
           const nm = normalizeName(e.name);
-          if (nm) incomingByName.set(nm, normalize(e.ticker));
+          if (!nm) continue;
+          const groupKey = `${nm}|${dateKey(e.dateAdded)}`;
+          const set = incomingByNameDate.get(groupKey) || new Set<string>();
+          set.add(compositeKey(e.ticker, e.dateAdded));
+          incomingByNameDate.set(groupKey, set);
         }
-        // Dedup existing entries against themselves.
-        // Pass 1: collapse same-stem -T variants (CLS vs CLS-T) →
-        // keep the -T form, the canonical scrape output.
-        // Pass 2: collapse cross-stem variants ($B Barrick vs $ABX-T
-        // Barrick) by normalized company name → prefer the variant
-        // present in the incoming scrape, else the -T form, else the
-        // most-recently-added entry.
-        const rawMap = new Map(existing.map((i) => [normalize(i.ticker), i]));
+        const rawMap = new Map(existing.map((i) => [compositeKey(i.ticker, i.dateAdded), i]));
+        // Pass 1: collapse same-stem -T variants ON SAME DATE.
+        // "CLS|1/1/2024" + "CLS-T|1/1/2024" → keep "CLS-T|1/1/2024".
+        // Different dates stay separate.
         for (const key of Array.from(rawMap.keys())) {
-          if (!key.endsWith("-T") && rawMap.has(`${key}-T`)) rawMap.delete(key);
+          const sepIdx = key.indexOf("|");
+          if (sepIdx < 0) continue;
+          const tickerPart = key.slice(0, sepIdx);
+          const datePart = key.slice(sepIdx + 1);
+          if (!tickerPart.endsWith("-T") && rawMap.has(`${tickerPart}-T|${datePart}`)) {
+            rawMap.delete(key);
+          }
         }
-        const byName = new Map<string, AlphaPickEntry[]>();
+        // Pass 2: cross-stem name dedup WITHIN same date.
+        // "$B|1/1/2024" + "$ABX-T|1/1/2024" → collapse to one Barrick row.
+        const byNameDate = new Map<string, AlphaPickEntry[]>();
         for (const e of rawMap.values()) {
           const nm = normalizeName(e.name);
           if (!nm) continue;
-          const arr = byName.get(nm) || [];
+          const groupKey = `${nm}|${dateKey(e.dateAdded)}`;
+          const arr = byNameDate.get(groupKey) || [];
           arr.push(e);
-          byName.set(nm, arr);
+          byNameDate.set(groupKey, arr);
         }
-        for (const [name, arr] of byName) {
+        for (const [groupKey, arr] of byNameDate) {
           if (arr.length <= 1) continue;
-          const incomingTicker = incomingByName.get(name);
+          const incomingSet = incomingByNameDate.get(groupKey);
           let keep: AlphaPickEntry | undefined;
-          if (incomingTicker) {
-            keep = arr.find((e) => normalize(e.ticker) === incomingTicker);
+          if (incomingSet) {
+            keep = arr.find((e) => incomingSet.has(compositeKey(e.ticker, e.dateAdded)));
           }
           if (!keep) keep = arr.find((e) => normalize(e.ticker).endsWith("-T"));
           if (!keep) keep = arr[arr.length - 1];
           for (const e of arr) {
-            if (e !== keep) rawMap.delete(normalize(e.ticker));
+            if (e !== keep) rawMap.delete(compositeKey(e.ticker, e.dateAdded));
           }
         }
-        const byNorm = rawMap;
-        // Reverse lookup for matching incoming entries by company name
-        // when the ticker doesn't match (US ↔ Canadian listings of the
-        // same issuer).
-        const byNameForLookup = new Map<string, AlphaPickEntry>();
-        for (const e of byNorm.values()) {
+        const byKey = rawMap;
+        // Reverse lookup by (name, date) for cross-stem incoming matches.
+        const byNameDateForLookup = new Map<string, AlphaPickEntry>();
+        for (const e of byKey.values()) {
           const nm = normalizeName(e.name);
-          if (nm) byNameForLookup.set(nm, e);
+          if (!nm) continue;
+          byNameDateForLookup.set(`${nm}|${dateKey(e.dateAdded)}`, e);
         }
         let matched = 0;
         let added = 0;
-        // Alpha Picks scrape returns rich entries (ticker + name +
-        // sector + dateAdded + returnSinceAdded + rating). Use those
-        // directly when present rather than falling back to the
-        // ticker-as-name placeholder. The Yahoo refreshAlphaPickNames
-        // pass after still normalizes sectors to GICS form.
         const today = new Date().toLocaleDateString("en-US", { month: "numeric", day: "numeric", year: "numeric" });
-        // Canadian-variant lookup: "-T" suffix may differ between
-        // existing entries (US ticker) and freshly-scraped entries
-        // (Canadian ticker) or vice-versa. When exact match fails,
-        // try the counterpart form so the entry overwrites rather
-        // than duplicating.
-        const findExisting = (norm: string, name?: string): { key: string; entry: AlphaPickEntry } | undefined => {
-          const direct = byNorm.get(norm);
-          if (direct) return { key: norm, entry: direct };
-          const alt = norm.endsWith("-T") ? norm.slice(0, -2) : `${norm}-T`;
-          const fallback = byNorm.get(alt);
-          if (fallback) return { key: alt, entry: fallback };
-          // Name-based fallback for cross-stem variants (e.g. $B vs
-          // $ABX-T for Barrick) when the prompt promotes a US-listed
-          // pick to its TSX form (or vice-versa).
+        // Lookup by (ticker, date) with -T-variant fallback and name+date
+        // fallback. All within same-date scope so different-date picks
+        // for the same ticker don't accidentally match.
+        const findExisting = (ticker: string, date: string, name?: string): { key: string; entry: AlphaPickEntry } | undefined => {
+          const norm = normalize(ticker);
+          const direct = byKey.get(`${norm}|${date}`);
+          if (direct) return { key: `${norm}|${date}`, entry: direct };
+          const altTicker = norm.endsWith("-T") ? norm.slice(0, -2) : `${norm}-T`;
+          const fallback = byKey.get(`${altTicker}|${date}`);
+          if (fallback) return { key: `${altTicker}|${date}`, entry: fallback };
           if (name) {
             const nm = normalizeName(name);
-            const byNm = nm ? byNameForLookup.get(nm) : undefined;
-            if (byNm) return { key: normalize(byNm.ticker), entry: byNm };
+            const byNm = nm ? byNameDateForLookup.get(`${nm}|${date}`) : undefined;
+            if (byNm) return { key: compositeKey(byNm.ticker, byNm.dateAdded), entry: byNm };
           }
           return undefined;
         };
         for (const eRaw of entries) {
           const e = eRaw as ScrapedAlpha;
           const norm = normalize(e.ticker);
-          const found = findExisting(norm, e.name);
+          const date = dateKey(e.dateAdded);
+          const compKey = `${norm}|${date}`;
+          const found = findExisting(e.ticker, date, e.name);
           if (found) {
             const ex = found.entry;
-            // Remove old key if the ticker form changed (US→Canadian)
-            if (found.key !== norm) byNorm.delete(found.key);
+            if (found.key !== compKey) byKey.delete(found.key);
             matched += 1;
-            byNorm.set(norm, {
+            byKey.set(compKey, {
               ...ex,
-              // Adopt the scraped ticker form (e.g. US→Canadian -T)
               ticker: norm,
-              // Prefer scraped values when populated; fall back to
-              // existing for unchanged fields. priceWhenAdded is
-              // intentionally retained — it's a HISTORICAL value and
-              // shouldn't drift each scrape. The bootstrap useEffect
-              // populates it once when livePrices arrives, then it
-              // stays fixed.
               name: e.name?.trim() || ex.name,
               sector: e.sector?.trim() || ex.sector,
+              // dateAdded should not drift on update — it's part of the
+              // composite key. Adopt the scraped value if it differs (it
+              // shouldn't, since the key includes the date), else keep.
               dateAdded: e.dateAdded?.trim() || ex.dateAdded,
               returnSinceAdded: e.returnSinceAdded ?? ex.returnSinceAdded,
               rating: e.rating?.trim() || ex.rating,
-              // holdingWeight DOES update on each scrape — SA's
-              // dashboard reflects the latest portfolio weight after
-              // their own redistributions, and a fresh scrape should
-              // overwrite any local redistribution we did between
-              // screenshot uploads.
               holdingWeight: e.holdingWeight ?? ex.holdingWeight,
             });
           } else {
             added += 1;
-            byNorm.set(norm, {
+            byKey.set(compKey, {
               ticker: norm,
               name: e.name?.trim() || norm,
               sector: e.sector?.trim() || "—",
@@ -1255,7 +1249,7 @@ export default function ResearchPage() {
             });
           }
         }
-        nextState = { ...state, alphaPicks: Array.from(byNorm.values()) };
+        nextState = { ...state, alphaPicks: Array.from(byKey.values()) };
         const cachedLabel = data.cached ? " (cached)" : "";
         setScrapeStatusMap((m) => ({ ...m, [source]: `${entries.length} rows${cachedLabel} · ${matched} matched · ${added} added` }));
         save(nextState);
@@ -2730,9 +2724,13 @@ export default function ResearchPage() {
             // entry. Doesn't auto-drop — the pick stays visible (in
             // the "Manual Sell" bucket and with red row highlight)
             // until the user hits "Drop sell candidates."
-            const toggleManualSell = (ticker: string) => {
+            // Match by ticker + dateAdded so a manual-sell flag on one
+            // pick doesn't bleed across same-ticker-different-date duplicates.
+            const toggleManualSell = (ticker: string, dateAdded: string | undefined) => {
               const updated = allPicks.map((p) =>
-                p.ticker === ticker ? { ...p, manualSell: !p.manualSell } : p
+                p.ticker === ticker && (p.dateAdded || "") === (dateAdded || "")
+                  ? { ...p, manualSell: !p.manualSell }
+                  : p
               );
               save({ ...state, alphaPicks: updated });
             };
@@ -2903,16 +2901,16 @@ export default function ResearchPage() {
                                 </button>
                               )}
                               <button
-                                onClick={() => toggleManualSell(pick.ticker)}
+                                onClick={() => toggleManualSell(pick.ticker, pick.dateAdded)}
                                 className={`ml-2 text-[10px] font-semibold transition-colors ${pick.manualSell ? "text-slate-500 hover:text-slate-700" : "text-red-600 hover:text-red-800"}`}
                                 title={pick.manualSell ? "Unmark as sold (return to normal rating bucket)" : "Mark as sold — flags this pick as a sell candidate, regardless of SA's current rating. Use 'Drop sell candidates' to remove and redistribute weight."}
                               >
                                 {pick.manualSell ? "Unmark" : "Mark sold"}
                               </button>
                               <button
-                                onClick={() => save({ ...state, alphaPicks: allPicks.filter((p) => p.ticker !== pick.ticker) })}
+                                onClick={() => save({ ...state, alphaPicks: allPicks.filter((p) => !(p.ticker === pick.ticker && (p.dateAdded || "") === (pick.dateAdded || ""))) })}
                                 className="ml-2 text-slate-300 hover:text-red-500 font-bold transition-colors"
-                                title="Remove from list (no weight redistribution)"
+                                title="Remove this specific pick (no weight redistribution). Other picks with the same ticker on different dates stay."
                               >
                                 &times;
                               </button>

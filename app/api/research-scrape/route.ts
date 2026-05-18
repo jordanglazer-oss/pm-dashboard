@@ -276,7 +276,7 @@ CANADIAN MAPPING — when the company is HEADQUARTERED IN CANADA and has a TSX l
   - "Sun Life Financial" → "SLF-T"
   - "Barrick Mining" / "Barrick Gold" → "ABX-T" (NOT "B" or "GOLD" — they renamed from GOLD to B in the US, but the Canadian listing is ABX-T)
   - "Kinross Gold" → "K-T" (NOT "KGC")
-  - "SSR Mining" → "SSR-T" (NOT "SSRM-T" — they renamed)
+  - "SSR Mining" → "SSRM-T" (ticker is SSRM on both NASDAQ and TSX, append -T for the TSX listing)
   - "Wheaton Precious Metals" → "WPM-T"
   - "Franco-Nevada" → "FNV-T"
   - "Agnico Eagle" → "AEM-T"
@@ -292,7 +292,11 @@ CANADIAN MAPPING — when the company is HEADQUARTERED IN CANADA and has a TSX l
   - "Bank of Nova Scotia" → "BNS-T"
   - "CIBC" → "CM-T"
 
-CRITICAL DEDUP RULE — never return BOTH the US listing AND the Canadian listing for the same underlying company. Pick exactly ONE ticker per company. For Canadian-HQ companies that's the -T form above; for everyone else it's the US ticker the screenshot shows. If a Canadian-HQ company appears in the screenshot under its US ticker, replace it with the -T form — DO NOT emit two rows.
+CROSS-LISTING RULE — for the same underlying company in the screenshot, emit ONE row per (ticker, date) combination. If a Canadian-HQ company appears in the screenshot under its US ticker, replace it with the -T form per the mapping above. DO NOT emit two rows for the same company on the same date.
+
+TICKER ACCURACY — if you are NOT 100% sure of a Canadian-HQ company's correct TSX ticker, emit the ticker AS SHOWN in the screenshot rather than guessing. Do NOT invent ticker renames or assume a company changed symbols. The mapping list above is the authoritative source; if a company isn't on it and the screenshot shows a US ticker, keep that US ticker.
+
+DUPLICATE ROWS ARE OK — the screenshot may legitimately show the same company appearing twice on different dates (a position was sold and later re-bought, or added to over time). If a ticker appears in the table with two different "Picked" dates, emit BOTH rows. Each (ticker, dateAdded) pair is a unique pick.
 
 For US companies (HQ in the United States) and non-Canadian foreign companies (e.g. Argentinian, European), keep the US ticker as shown — DO NOT add -T. For dual-class shares written with "/" like "BRK/B", convert to dash form ("BRK-B").
 
