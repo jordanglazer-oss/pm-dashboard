@@ -6,6 +6,7 @@ import { useStocks } from "@/app/lib/StockContext";
 import type { ScoredStock, Stock, ScoreKey } from "@/app/lib/types";
 import type { TechnicalIndicators, ImprovingScore } from "@/app/lib/technicals";
 import { isScoreable } from "@/app/lib/scoring";
+import { displayTicker } from "@/app/lib/ticker";
 import type { UniverseKey } from "@/app/lib/universes";
 import { UNIVERSE_LABELS } from "@/app/lib/universes";
 
@@ -569,7 +570,7 @@ export function TechnicalScreener({ stocks, onAddToWatchlist }: Props) {
                   return (
                     <tr key={s.ticker} className="border-b border-slate-100 align-middle cursor-pointer hover:bg-slate-50/50 transition-colors"
                       onClick={() => router.push(`/stock/${s.ticker.toLowerCase()}`)}>
-                      <td className="py-3"><div className="font-semibold text-slate-900 font-mono">{s.ticker}</div></td>
+                      <td className="py-3"><div className="font-semibold text-slate-900 font-mono">{displayTicker(s.ticker)}</div></td>
                       <td className="py-3 text-xs text-slate-500 truncate max-w-[160px]">{s.name !== s.ticker ? s.name : ""}</td>
                       <td className="py-3 text-xs text-slate-500">{s.sector}</td>
                       <td className="py-3"><div className="flex items-center gap-2"><span className={`text-sm font-bold rounded px-1.5 py-0.5 ${compositeColor}`}>{composite.net > 0 ? "+" : ""}{composite.net}</span><CompositeBar bullish={composite.bullish} bearish={composite.bearish} neutral={composite.neutral} /></div></td>
@@ -753,7 +754,7 @@ export function TechnicalScreener({ stocks, onAddToWatchlist }: Props) {
                           }
                         }}>
                         <td className="py-3">
-                          <div className="font-semibold text-slate-900 font-mono">{r.ticker}</div>
+                          <div className="font-semibold text-slate-900 font-mono">{displayTicker(r.ticker)}</div>
                         </td>
                         <td className="py-3 text-xs text-slate-500 truncate max-w-[160px]">
                           {r.name && r.name !== r.ticker ? r.name : ""}

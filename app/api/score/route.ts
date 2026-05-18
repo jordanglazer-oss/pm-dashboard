@@ -518,13 +518,21 @@ Each category has its own max score (shown as /N). Score from 0 to that max:
 - 0 = Poor / negative signal
 - Max = Strong / positive signal
 
-Score ONLY the following categories (AUTO and SEMI categories — the PM handles MANUAL ones like charting, relative strength, AI rating, brand, external sources, and turnaround):
+Score ONLY the following categories (AUTO and SEMI categories — the PM handles MANUAL ones like charting, relative strength, AI rating, brand, external sources, and turnaround).
+
+DO NOT SCORE these two — they are deterministic and computed server-side from structured inputs; your output for them is ignored and overwritten:
+  - analystConsensus (COMPUTED): driven by the RBC + JPM + FactSet snapshot panel.
+  - researchMentions (COMPUTED): tallied from cached research-screen scrapes.
+Omit both from the "scores" and "explanations" objects in your response. Including them is harmless but wastes tokens.
 
 LONG-TERM GROUP:
 - secular (max 2, AUTO): Secular growth trend — long-term industry tailwinds favoring the company
 
 RESEARCH GROUP:
-- researchCoverage (max 1, SEMI): Research coverage — meta-signal about the information environment for this stock. Score 1 if coverage is deep (10+ analysts), revisions are recent, and dispersion is moderate-to-low; score 0 if coverage is thin (<5 analysts), revisions are stale, and the signal is uninformative; score 0.5 for in-between cases. This category is intentionally narrow: directional consensus is now scored separately in analystConsensus (deterministic, formula-driven, not your concern); your job here is purely to assess the breadth and quality of the information environment, NOT whether analysts are bullish or bearish.
+- researchCoverage (max 1, SEMI): Information-environment meta-signal — score is BINARY (0 or 1, no half-points; values like 0.5 will be rounded up).
+  - 1 = stock has an active sell-side following: at least ~5 analysts, recent revision activity in the last 90 days, named-firm coverage events (initiations / PT changes / rating changes) visible in Yahoo's recommendation data or the PM-logged researchCoverageNotes block.
+  - 0 = thinly covered, stale revisions, no named-firm activity. Default for micro-caps and most non-US tickers without sell-side support.
+  This category is intentionally narrow. DIRECTIONAL analyst sentiment (bullish vs bearish) is scored separately in analystConsensus from the RBC/JPM/FactSet panel — do NOT factor rating direction into researchCoverage. Your job here is purely "is this stock well-watched?", not "do analysts like it?".
 
 FUNDAMENTAL GROUP:
 - growth (max 3, AUTO): Growth (rev / earnings / FCF) — USE THE PROVIDED DATA. Cite actual revenue figures, YoY growth rates, EPS, net income changes, FCF trends. Compare sequential quarters and year-over-year. Include guidance if available from analyst estimates.

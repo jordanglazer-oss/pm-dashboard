@@ -8,6 +8,7 @@ import { SCORE_GROUPS, MAX_SCORE, INSTRUMENT_LABELS } from "@/app/lib/types";
 import type { ScoreKey, FundData, ScoreDataPoint, ScoreDataPointSource, ExternalSourceNote } from "@/app/lib/types";
 import { groupTotal, isScoreable, normalizeSector } from "@/app/lib/scoring";
 import { computeAnalystConsensus } from "@/app/lib/analyst-snapshots";
+import { displayTicker } from "@/app/lib/ticker";
 import { AnalystSnapshotPanel } from "@/app/components/AnalystSnapshotPanel";
 import { SignalPill, ratingTone } from "@/app/components/SignalPill";
 import StockHealthMonitor from "@/app/components/StockHealthMonitor";
@@ -752,7 +753,7 @@ function FundDataPanels({ fundData, ticker, onHoldingsUpdate }: { fundData: Fund
                   <span className="w-4 sm:w-5 text-xs text-slate-400 text-right shrink-0">{i + 1}</span>
                   <div className="flex-1 min-w-0">
                     <div className="flex items-center gap-1 sm:gap-2">
-                      {h.symbol && <span className="text-xs font-bold font-mono text-slate-700 shrink-0">{h.symbol}</span>}
+                      {h.symbol && <span className="text-xs font-bold font-mono text-slate-700 shrink-0">{displayTicker(h.symbol)}</span>}
                       <span className="text-xs text-slate-500 truncate">{h.name}</span>
                     </div>
                   </div>
@@ -1404,7 +1405,7 @@ export default function StockDetailPage() {
               <div className="min-w-0">
                 {/* Ticker + price */}
                 <div className="flex items-baseline gap-2 sm:gap-3 flex-wrap mb-1">
-                  <h1 className="text-2xl sm:text-3xl font-bold font-mono tracking-tight">{stock.ticker}</h1>
+                  <h1 className="text-2xl sm:text-3xl font-bold font-mono tracking-tight">{displayTicker(stock.ticker)}</h1>
                   {stock.price != null && (
                     <span className="text-xl sm:text-2xl font-semibold text-slate-600">${stock.price.toFixed(2)}</span>
                   )}
@@ -2015,10 +2016,10 @@ export default function StockDetailPage() {
                               headerLabel={isExternalSources ? "External Sources Log" : "Research Coverage Log"}
                               emptyHint={isExternalSources
                                 ? "No sources logged. Click “+ Add source” to track analyst reports, news, podcasts, or other external research feeding this score."
-                                : "No coverage logged. Click “+ Add source” to record sell-side reports, initiations, rating/PT changes — feeds directly into the AI’s researchCoverage scoring."}
+                                : "No coverage logged. Log named-firm activity (Morgan Stanley initiation, Goldman PT change, etc.) here as evidence of an active information environment. RBC and JPM go in the Analyst consensus panel; this is for everyone else."}
                               placeholder={isExternalSources
                                 ? "Source (e.g. RBC Capital Markets — Upgraded to Outperform, PT $245)"
-                                : "Coverage note (e.g. Morgan Stanley initiated Overweight, PT $310, Apr 12)"}
+                                : "Coverage event (e.g. Wells Fargo initiated Buy, PT $52, Apr 18)"}
                             />
                           )}
                           {isExpanded && !isExternalSources && hasContent && (
