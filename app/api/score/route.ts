@@ -5,6 +5,7 @@ import { SCORE_GROUPS } from "@/app/lib/types";
 import type { OHLCVBar, TechnicalIndicators, RiskAlert } from "@/app/lib/technicals";
 import { computeTechnicals, computeRiskAlert, formatTechnicalsForPrompt } from "@/app/lib/technicals";
 import { formatEdgarSnapshotForPrompt } from "@/app/lib/edgar-prompt";
+import { tallyResearchMentions } from "@/app/lib/research-mentions";
 
 const client = new Anthropic();
 
@@ -865,6 +866,15 @@ export async function POST(request: NextRequest) {
       scores[key as ScoreKey] = clamp(raw, max);
     }
 
+    // Deterministic categories ("computed" inputType) are NOT in AI_KEYS — the
+    // LLM doesn't score them. Compute them server-side and inject.
+    const mentionsTally = await tallyResearchMentions(upperTicker);
+    scores.researchMentions = mentionsTally.score;
+    // analystConsensus lands in a follow-up commit (needs the analyst-snapshot
+    // store + manual-entry panel). Default to 0 here so the field is present
+    // and the composite math works.
+    scores.analystConsensus = 0;
+
     // Parse explanations — supports new { summary, dataPoints } shape AND
     // legacy string / string[] shapes (so old test fixtures and any model
     // regressions don't 500 the endpoint).
@@ -917,6 +927,24 @@ export async function POST(request: NextRequest) {
         }
       }
     }
+
+    // Synthesize the researchMentions explanation from the tally citations.
+    // No confidence field: deterministic categories don't render a chip.
+    const bullishCount = mentionsTally.mentions.filter((m) => m.direction === "bullish").length;
+    const bearishCount = mentionsTally.mentions.filter((m) => m.direction === "bearish").length;
+    const mentionsSummary =
+      mentionsTally.mentions.length === 0
+        ? `No mentions of ${upperTicker} found across cached research feeds. Score: ${mentionsTally.score}/3.`
+        : `Tallied ${mentionsTally.mentions.length} mention${mentionsTally.mentions.length === 1 ? "" : "s"} across cached research feeds (${bullishCount} bullish, ${bearishCount} bearish). Raw delta: ${mentionsTally.rawDelta >= 0 ? "+" : ""}${mentionsTally.rawDelta}, clamped to ${mentionsTally.score}/3.`;
+    explanations.researchMentions = {
+      summary: mentionsSummary,
+      dataPoints: mentionsTally.mentions.map((m) => ({
+        label: m.label,
+        value: m.direction === "bullish" ? "Bullish (+1)" : "Bearish (−1)",
+        source: "model" as ScoreDataPointSource,
+        sourceDetail: m.analyzedAt ? `Analyzed ${m.analyzedAt.slice(0, 10)}` : undefined,
+      })),
+    };
 
     // Extract health monitor data from raw Yahoo modules
     const healthData = extractHealthData(rawModules, stockPrice);
