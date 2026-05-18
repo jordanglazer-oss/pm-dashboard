@@ -3,7 +3,6 @@
 import React, { useCallback, useEffect, useRef, useState } from "react";
 import type {
   TickerSnapshot,
-  AnalystEntry,
   AnalystRating,
   FactSetEntry,
   ConsensusBreakdown,
@@ -13,7 +12,6 @@ import type {
 
 type Props = {
   ticker: string;
-  currentPrice?: number;
   snapshot: TickerSnapshot | undefined;
   breakdown: ConsensusBreakdown;
   reports: TickerReports | undefined;
@@ -39,7 +37,7 @@ function freshnessChip(label: "fresh" | "stale" | "very-stale") {
   return "bg-red-50 text-red-700 border-red-200";
 }
 
-export function AnalystSnapshotPanel({ ticker, currentPrice, snapshot, breakdown, reports, onChange, onUpload, onRemoveReport }: Props) {
+export function AnalystSnapshotPanel({ ticker, snapshot, breakdown, reports, onChange, onUpload, onRemoveReport }: Props) {
   const [local, setLocal] = useState<TickerSnapshot>(() => snapshot ?? {});
   const [uploading, setUploading] = useState<{ source: "rbc" | "jpm" } | null>(null);
   const [uploadError, setUploadError] = useState<{ source: "rbc" | "jpm"; message: string } | null>(null);
@@ -73,22 +71,6 @@ export function AnalystSnapshotPanel({ ticker, currentPrice, snapshot, breakdown
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
 
-  const patchAnalyst = (which: "rbc" | "jpm", patch: Partial<AnalystEntry>) => {
-    const existing: AnalystEntry = local[which] ?? { rating: "not-covered" };
-    const merged: AnalystEntry = { ...existing, ...patch, lastUpdated: new Date().toISOString() };
-    // Auto-fill priceAtReport from current Yahoo price when the user enters
-    // a target without one. Override preserved if the user already set it.
-    if (patch.target !== undefined && merged.priceAtReport === undefined && currentPrice) {
-      merged.priceAtReport = currentPrice;
-    }
-    if (!merged.asOf && (patch.rating !== undefined || patch.target !== undefined)) {
-      merged.asOf = todayIso();
-    }
-    const next: TickerSnapshot = { ...local, [which]: merged };
-    setLocal(next);
-    scheduleSave(next);
-  };
-
   const patchFactSet = (patch: Partial<FactSetEntry>) => {
     const existing: FactSetEntry = local.factset ?? {};
     const merged: FactSetEntry = { ...existing, ...patch, lastUpdated: new Date().toISOString() };
@@ -96,13 +78,6 @@ export function AnalystSnapshotPanel({ ticker, currentPrice, snapshot, breakdown
       merged.asOf = todayIso();
     }
     const next: TickerSnapshot = { ...local, factset: merged };
-    setLocal(next);
-    scheduleSave(next);
-  };
-
-  const clearAnalyst = (which: "rbc" | "jpm") => {
-    const next: TickerSnapshot = { ...local };
-    delete next[which];
     setLocal(next);
     scheduleSave(next);
   };
@@ -188,19 +163,9 @@ export function AnalystSnapshotPanel({ ticker, currentPrice, snapshot, breakdown
                 type="button"
                 onClick={() => void onRemoveReport(which)}
                 className="text-[10px] text-slate-400 hover:text-red-600"
-                title="Remove the uploaded PDF (snapshot fields remain editable)"
+                title="Remove the uploaded PDF and clear extracted fields"
               >
                 Remove PDF
-              </button>
-            )}
-            {entry && (
-              <button
-                type="button"
-                onClick={() => clearAnalyst(which)}
-                className="text-[10px] text-slate-400 hover:text-red-600"
-                title={`Clear ${label} entry`}
-              >
-                Clear
               </button>
             )}
           </div>
@@ -208,53 +173,42 @@ export function AnalystSnapshotPanel({ ticker, currentPrice, snapshot, breakdown
         {errMsg && (
           <p className="text-[10px] text-red-600 mb-2">{errMsg}</p>
         )}
-        <div className="grid grid-cols-1 sm:grid-cols-2 gap-2 text-[11px]">
-          <label className="flex flex-col gap-0.5">
-            <span className="text-slate-500">Rating</span>
-            <select
-              value={entry?.rating ?? "not-covered"}
-              onChange={(e) => patchAnalyst(which, { rating: e.target.value as AnalystRating })}
-              className="rounded border border-slate-200 bg-white px-1.5 py-1 outline-none focus:border-blue-400"
-            >
-              {RATING_OPTIONS.map((opt) => (
-                <option key={opt.value} value={opt.value}>{opt.label}</option>
-              ))}
-            </select>
-          </label>
-          <label className="flex flex-col gap-0.5">
-            <span className="text-slate-500">Target price</span>
-            <input
-              type="number"
-              step="0.01"
-              value={entry?.target ?? ""}
-              onChange={(e) => patchAnalyst(which, { target: e.target.value === "" ? undefined : Number(e.target.value) })}
-              placeholder="$"
-              className="rounded border border-slate-200 bg-white px-1.5 py-1 outline-none focus:border-blue-400"
-            />
-          </label>
-          <label className="flex flex-col gap-0.5">
-            <span className="text-slate-500">Report date</span>
-            <input
-              type="date"
-              value={entry?.asOf ?? ""}
-              onChange={(e) => patchAnalyst(which, { asOf: e.target.value })}
-              className="rounded border border-slate-200 bg-white px-1.5 py-1 outline-none focus:border-blue-400"
-            />
-          </label>
-          <label className="flex flex-col gap-0.5">
-            <span className="text-slate-500" title="Underlying price at the time of the report. Used to detect adverse moves for freshness decay.">
-              Price at report
-            </span>
-            <input
-              type="number"
-              step="0.01"
-              value={entry?.priceAtReport ?? ""}
-              onChange={(e) => patchAnalyst(which, { priceAtReport: e.target.value === "" ? undefined : Number(e.target.value) })}
-              placeholder={currentPrice ? `Auto: $${currentPrice.toFixed(2)}` : "$"}
-              className="rounded border border-slate-200 bg-white px-1.5 py-1 outline-none focus:border-blue-400"
-            />
-          </label>
-        </div>
+        {!report ? (
+          <p className="text-[11px] text-slate-400 italic">
+            No PDF uploaded. Click <span className="font-medium">Upload PDF</span> above to extract rating, target, and report date.
+          </p>
+        ) : (
+          <div className="grid grid-cols-1 sm:grid-cols-2 gap-2 text-[11px]">
+            <div className="flex flex-col gap-0.5">
+              <span className="text-slate-500">Rating</span>
+              <span className="rounded border border-slate-100 bg-slate-50 px-1.5 py-1 text-slate-700">
+                {entry?.rating && entry.rating !== "not-covered"
+                  ? RATING_OPTIONS.find((o) => o.value === entry.rating)?.label ?? entry.rating
+                  : <span className="italic text-slate-400">Not extracted</span>}
+              </span>
+            </div>
+            <div className="flex flex-col gap-0.5">
+              <span className="text-slate-500">Target price</span>
+              <span className="rounded border border-slate-100 bg-slate-50 px-1.5 py-1 text-slate-700">
+                {entry?.target ? `$${entry.target.toFixed(2)}` : <span className="italic text-slate-400">Not extracted</span>}
+              </span>
+            </div>
+            <div className="flex flex-col gap-0.5">
+              <span className="text-slate-500">Report date</span>
+              <span className="rounded border border-slate-100 bg-slate-50 px-1.5 py-1 text-slate-700">
+                {entry?.asOf || <span className="italic text-slate-400">Not extracted</span>}
+              </span>
+            </div>
+            <div className="flex flex-col gap-0.5">
+              <span className="text-slate-500" title="Underlying price captured at upload time. Used to detect adverse moves for freshness decay.">
+                Price at report
+              </span>
+              <span className="rounded border border-slate-100 bg-slate-50 px-1.5 py-1 text-slate-700">
+                {entry?.priceAtReport ? `$${entry.priceAtReport.toFixed(2)}` : <span className="italic text-slate-400">—</span>}
+              </span>
+            </div>
+          </div>
+        )}
         {report && (report.extracted.thesis?.length || report.extracted.risks?.length || report.extracted.sectorView || report.extracted.keyMetrics?.length) && (
           <div className="mt-3 pt-3 border-t border-slate-100 space-y-2">
             {report.extracted.sectorView && (
