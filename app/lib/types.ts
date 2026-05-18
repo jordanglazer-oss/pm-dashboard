@@ -339,17 +339,23 @@ export type Stock = {
    */
   researchCoverageNotes?: ExternalSourceNote[];
   /**
-   * Raw BoostedAI score (0-5 scale) as published by BoostedAI's research
-   * tool. Tracked separately from the dashboard's aiRating field (which
-   * is a 0-2 derived score used in the composite). Entered inline on the
-   * Inbox tab's Coverage Checklist for bulk entry; visible on each stock
-   * page next to the scoring inputs.
+   * Raw BoostedAI rating (0-5 scale, decimals allowed) as published by
+   * BoostedAI's research tool. Combined with boostedAiConsensus below to
+   * derive the dashboard's aiRating (0-2). See app/lib/external-scoring.ts
+   * for the mapping logic.
    */
   boostedAi?: number;
   /**
-   * Raw SIA (SIACharts relative strength) score (0-10 scale). Same
-   * distinction as boostedAi vs aiRating — this is the raw input, the
-   * scoring system's relativeStrength (0-2) is the derived composite.
+   * BoostedAI's discrete consensus recommendation. Tracked alongside the
+   * numeric rating because the two outputs sometimes diverge (e.g., high
+   * rating but Hold consensus when the model thinks upside is priced in).
+   * The combined mapping is conservative — both signals have to be
+   * bullish for a 2/2 aiRating.
+   */
+  boostedAiConsensus?: "strong-buy" | "buy" | "hold" | "sell" | "strong-sell";
+  /**
+   * Raw SIA SMAX score (0-10 integer, no decimals). Mapped to the
+   * dashboard's relativeStrength (0-2) via app/lib/external-scoring.ts.
    */
   sia?: number;
   healthData?: HealthData;

@@ -6,6 +6,13 @@ import type { AnalystReports, FactSetEntry, TickerSnapshot } from "@/app/lib/ana
 import { useStocks } from "@/app/lib/StockContext";
 import { isScoreable } from "@/app/lib/scoring";
 import { canonicalTicker } from "@/app/lib/ticker";
+import {
+  mapBoostedAiToAiRating,
+  mapSmaxToRelativeStrength,
+  consensusLabel,
+  consensusToneClass,
+  type BoostedAiConsensus,
+} from "@/app/lib/external-scoring";
 import Link from "next/link";
 
 type Status = {
@@ -213,7 +220,7 @@ export default function InboxPage() {
   // cached events are mostly noise; the PM cares about fresh ingestions
   // and errors. State persists via uiPrefs (Redis) so the preference
   // sticks across refreshes and syncs across devices.
-  const { uiPrefs, setUiPref, stocks, analystSnapshots, getAnalystSnapshot, updateAnalystSnapshot, updateStockFields } = useStocks();
+  const { uiPrefs, setUiPref, stocks, analystSnapshots, getAnalystSnapshot, updateAnalystSnapshot, updateStockFields, updateScore } = useStocks();
   const hideCached = uiPrefs["inbox.hideCached"] !== "0"; // default true (hidden)
   const toggleHideCached = () => setUiPref("inbox.hideCached", hideCached ? "0" : "1");
   const [error, setError] = useState<string | null>(null);
@@ -363,8 +370,10 @@ export default function InboxPage() {
     factsetTarget: number | null;
     factsetCount: number | null;
     factsetAsOf: string | null;
-    /** Raw BoostedAI score (0-5). Lives on the Stock itself. */
+    /** Raw BoostedAI rating (0-5). Lives on the Stock itself. */
     boostedAi: number | null;
+    /** BoostedAI consensus recommendation. */
+    boostedAiConsensus: BoostedAiConsensus | null;
     /** Raw SIA score (0-10). Lives on the Stock itself. */
     sia: number | null;
   };
@@ -412,6 +421,7 @@ export default function InboxPage() {
       factsetCount: fs?.count ?? null,
       factsetAsOf: fs?.asOf ?? null,
       boostedAi: typeof s.boostedAi === "number" ? s.boostedAi : null,
+      boostedAiConsensus: s.boostedAiConsensus ?? null,
       sia: typeof s.sia === "number" ? s.sia : null,
     };
   });
@@ -421,7 +431,7 @@ export default function InboxPage() {
 
   // Column sort, persisted via uiPrefs so the preference sticks across
   // refreshes and devices.
-  type CoverageSortKey = "ticker" | "name" | "bucket" | "rbc" | "jpm" | "factset" | "analysts" | "boostedAi" | "sia" | "status";
+  type CoverageSortKey = "ticker" | "name" | "bucket" | "rbc" | "jpm" | "factset" | "analysts" | "boostedAi" | "consensus" | "sia" | "status";
   const covSortKey = (uiPrefs["inbox.coverageSortKey"] as CoverageSortKey) || "status";
   const covSortDir = uiPrefs["inbox.coverageSortDir"] || "asc";
   const toggleCovSort = (key: CoverageSortKey) => {
@@ -467,6 +477,18 @@ export default function InboxPage() {
         case "factset": cmp = cmpNum(a.factsetTarget, b.factsetTarget); break;
         case "analysts": cmp = cmpNum(a.factsetCount, b.factsetCount); break;
         case "boostedAi": cmp = cmpNum(a.boostedAi, b.boostedAi); break;
+        case "consensus": {
+          // Sort by bullishness: Strong Sell (0) → Sell (1) → Hold (2) → Buy (3) → Strong Buy (4)
+          const order: Record<string, number> = { "strong-sell": 0, "sell": 1, "hold": 2, "buy": 3, "strong-buy": 4 };
+          const ac = a.boostedAiConsensus ? order[a.boostedAiConsensus] : -1;
+          const bc = b.boostedAiConsensus ? order[b.boostedAiConsensus] : -1;
+          // Nulls (no consensus) sort to the end regardless of direction
+          if (ac < 0 && bc < 0) cmp = 0;
+          else if (ac < 0) cmp = 1;
+          else if (bc < 0) cmp = -1;
+          else cmp = ac - bc;
+          break;
+        }
         case "sia": cmp = cmpNum(a.sia, b.sia); break;
         case "status":
         default: {
@@ -520,11 +542,34 @@ export default function InboxPage() {
     updateAnalystSnapshot(ticker, anyValue ? nextSnapshot : undefined);
   };
 
-  // Save BoostedAI / SIA raw scores to the Stock object via the same
-  // updateStockFields path the Dashboard / stock pages use. null clears
-  // the field entirely so we don't store 0 vs missing ambiguously.
-  const saveStockField = (ticker: string, field: "boostedAi" | "sia", value: number | null) => {
-    updateStockFields(ticker, { [field]: value == null ? undefined : value });
+  // Save raw BoostedAI rating (0-5). Also recomputes and writes the
+  // derived dashboard aiRating score (0-2) using the current consensus.
+  // Falls back to null if both rating + consensus end up missing, in
+  // which case the existing manual aiRating is left untouched.
+  const saveBoostedAi = (ticker: string, rating: number | null) => {
+    updateStockFields(ticker, { boostedAi: rating == null ? undefined : rating });
+    const current = stocks.find((s) => s.ticker === ticker);
+    const consensus = current?.boostedAiConsensus ?? null;
+    const mapped = mapBoostedAiToAiRating(rating, consensus);
+    if (mapped != null) updateScore(ticker, "aiRating", mapped);
+  };
+
+  // Save BoostedAI consensus. Also recomputes aiRating using the current
+  // rating + new consensus.
+  const saveBoostedAiConsensus = (ticker: string, consensus: BoostedAiConsensus | null) => {
+    updateStockFields(ticker, { boostedAiConsensus: consensus ?? undefined });
+    const current = stocks.find((s) => s.ticker === ticker);
+    const rating = current?.boostedAi ?? null;
+    const mapped = mapBoostedAiToAiRating(rating, consensus);
+    if (mapped != null) updateScore(ticker, "aiRating", mapped);
+  };
+
+  // Save SIA SMAX (0-10). Also recomputes the derived relativeStrength
+  // score (0-2) via the SIA bucket mapping.
+  const saveSia = (ticker: string, smax: number | null) => {
+    updateStockFields(ticker, { sia: smax == null ? undefined : smax });
+    const mapped = mapSmaxToRelativeStrength(smax);
+    if (mapped != null) updateScore(ticker, "relativeStrength", mapped);
   };
 
   const totalCovered = coverageRows.filter((r) => r.hasRbc || r.hasJpm).length;
@@ -736,8 +781,9 @@ export default function InboxPage() {
                 <th className="px-3 py-2 text-center w-16 cursor-pointer select-none hover:text-slate-700" onClick={() => toggleCovSort("jpm")}>JPM{covArrow("jpm")}</th>
                 <th className="px-3 py-2 text-right w-28 cursor-pointer select-none hover:text-slate-700" onClick={() => toggleCovSort("factset")} title="FactSet street-consensus average price target. Click the cell value to edit; click the header to sort. Persists to pm:analyst-snapshots — same field shown on the stock page.">FactSet ${covArrow("factset")}</th>
                 <th className="px-3 py-2 text-right w-20 cursor-pointer select-none hover:text-slate-700" onClick={() => toggleCovSort("analysts")} title="Number of analysts in the FactSet consensus. Click the cell value to edit; click the header to sort.">Analysts{covArrow("analysts")}</th>
-                <th className="px-3 py-2 text-right w-20 cursor-pointer select-none hover:text-slate-700" onClick={() => toggleCovSort("boostedAi")} title="Raw BoostedAI score (0-5). Click the cell value to edit; click the header to sort. Persists to pm:stocks.">Boosted.ai{covArrow("boostedAi")}</th>
-                <th className="px-3 py-2 text-right w-20 cursor-pointer select-none hover:text-slate-700" onClick={() => toggleCovSort("sia")} title="Raw SIA (SIACharts) relative-strength score (0-10). Click the cell value to edit; click the header to sort. Persists to pm:stocks.">SIA{covArrow("sia")}</th>
+                <th className="px-3 py-2 text-right w-20 cursor-pointer select-none hover:text-slate-700" onClick={() => toggleCovSort("boostedAi")} title="Raw BoostedAI rating (0-5, decimals OK). Combined with Consensus to auto-derive the dashboard's aiRating (0-2).">Boosted.ai{covArrow("boostedAi")}</th>
+                <th className="px-3 py-2 text-left w-28 cursor-pointer select-none hover:text-slate-700" onClick={() => toggleCovSort("consensus")} title="BoostedAI consensus recommendation. Combined with the numeric rating to auto-derive aiRating (Strong Buy / Buy → 2, Hold → 1, Sell / Strong Sell → 0).">Consensus{covArrow("consensus")}</th>
+                <th className="px-3 py-2 text-right w-20 cursor-pointer select-none hover:text-slate-700" onClick={() => toggleCovSort("sia")} title="SIA SMAX score (0-10 integer). Maps to relativeStrength: 8-10 → 2, 6-7 → 1, 0-5 → 0.">SIA{covArrow("sia")}</th>
                 <th className="px-3 py-2 text-left w-32 cursor-pointer select-none hover:text-slate-700" onClick={() => toggleCovSort("status")} title="Sort by overall coverage status (No reports / Partial / Both). Ascending shows gaps first.">Status{covArrow("status")}</th>
               </tr>
             </thead>
@@ -816,24 +862,46 @@ export default function InboxPage() {
                         step="0.1"
                         min={0}
                         max={5}
-                        onCommit={(next) => saveStockField(r.displayTicker, "boostedAi", next)}
+                        onCommit={(next) => saveBoostedAi(r.displayTicker, next)}
                         width="w-14"
                         placeholder="—"
-                        ariaLabel={`BoostedAI score for ${r.displayTicker}`}
+                        ariaLabel={`BoostedAI rating for ${r.displayTicker}`}
                         formatDisplay={(n) => n.toFixed(1)}
                       />
+                    </td>
+                    <td className="px-3 py-2">
+                      <select
+                        value={r.boostedAiConsensus ?? ""}
+                        onChange={(e) => {
+                          const v = e.target.value;
+                          saveBoostedAiConsensus(
+                            r.displayTicker,
+                            v === "" ? null : (v as BoostedAiConsensus),
+                          );
+                        }}
+                        aria-label={`BoostedAI consensus for ${r.displayTicker}`}
+                        className={`rounded border px-1.5 py-0.5 text-[10px] font-semibold uppercase tracking-wider outline-none focus:ring-1 focus:ring-blue-200 cursor-pointer ${consensusToneClass(r.boostedAiConsensus)}`}
+                        title="BoostedAI consensus recommendation. Drives aiRating along with the numeric rating."
+                      >
+                        <option value="">—</option>
+                        <option value="strong-buy">{consensusLabel("strong-buy")}</option>
+                        <option value="buy">{consensusLabel("buy")}</option>
+                        <option value="hold">{consensusLabel("hold")}</option>
+                        <option value="sell">{consensusLabel("sell")}</option>
+                        <option value="strong-sell">{consensusLabel("strong-sell")}</option>
+                      </select>
                     </td>
                     <td className="px-3 py-2 text-right">
                       <EditableNumberCell
                         value={r.sia}
-                        step="0.1"
+                        step="1"
                         min={0}
                         max={10}
-                        onCommit={(next) => saveStockField(r.displayTicker, "sia", next)}
+                        onCommit={(next) => saveSia(r.displayTicker, next)}
                         width="w-14"
                         placeholder="—"
-                        ariaLabel={`SIA score for ${r.displayTicker}`}
-                        formatDisplay={(n) => n.toFixed(1)}
+                        ariaLabel={`SIA SMAX for ${r.displayTicker}`}
+                        formatDisplay={(n) => String(Math.round(n))}
                       />
                     </td>
                     <td className="px-3 py-2">
