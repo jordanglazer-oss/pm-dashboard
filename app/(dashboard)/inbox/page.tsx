@@ -4,6 +4,8 @@ import React, { useCallback, useEffect, useState } from "react";
 import type { InboxEvent } from "@/app/lib/inbox-log";
 import type { AnalystReports } from "@/app/lib/analyst-snapshots";
 import { useStocks } from "@/app/lib/StockContext";
+import { isScoreable } from "@/app/lib/scoring";
+import { canonicalTicker } from "@/app/lib/ticker";
 import Link from "next/link";
 
 type Status = {
@@ -62,7 +64,7 @@ export default function InboxPage() {
   // cached events are mostly noise; the PM cares about fresh ingestions
   // and errors. State persists via uiPrefs (Redis) so the preference
   // sticks across refreshes and syncs across devices.
-  const { uiPrefs, setUiPref } = useStocks();
+  const { uiPrefs, setUiPref, stocks } = useStocks();
   const hideCached = uiPrefs["inbox.hideCached"] !== "0"; // default true (hidden)
   const toggleHideCached = () => setUiPref("inbox.hideCached", hideCached ? "0" : "1");
   const [error, setError] = useState<string | null>(null);
@@ -183,6 +185,71 @@ export default function InboxPage() {
   };
   const reportsArrow = (key: string) =>
     reportsSortKey === key ? (reportsSortDir === "asc" ? " ▲" : " ▼") : "";
+
+  // ── Coverage checklist ─────────────────────────────────────────────
+  // Cross-reference pm:stocks (portfolio + watchlist) against the
+  // pm:analyst-reports manifest to surface coverage gaps. The PM cares
+  // about ensuring every scoreable name they're tracking has at least
+  // ONE analyst report ingested.
+  //
+  // Match by canonical ticker so dashboard tickers stored as e.g. "CCO-T"
+  // still match analyst-reports keyed as "CCO.TO" (and vice versa).
+  type Coverage = {
+    ticker: string;
+    displayTicker: string;
+    name: string;
+    bucket: "Portfolio" | "Watchlist";
+    hasRbc: boolean;
+    hasJpm: boolean;
+  };
+  // Build lookup of canonical-ticker → which sources have reports.
+  // Reports manifest itself is keyed by canonical form already, so we just
+  // need to canonicalize the stock ticker before lookup.
+  const reportsByCanonical = new Map<string, { rbc: boolean; jpm: boolean }>();
+  if (reports) {
+    for (const [key, tr] of Object.entries(reports)) {
+      const canon = canonicalTicker(key);
+      if (!tr) continue;
+      reportsByCanonical.set(canon, { rbc: !!tr.rbc, jpm: !!tr.jpm });
+    }
+  }
+  const scoreableStocks = stocks.filter((s) => isScoreable(s) && (s.bucket === "Portfolio" || s.bucket === "Watchlist"));
+  const coverageRows: Coverage[] = scoreableStocks.map((s) => {
+    const canon = canonicalTicker(s.ticker);
+    const has = reportsByCanonical.get(canon);
+    return {
+      ticker: canon,
+      displayTicker: s.ticker,
+      name: s.name || s.ticker,
+      bucket: s.bucket as "Portfolio" | "Watchlist",
+      hasRbc: !!has?.rbc,
+      hasJpm: !!has?.jpm,
+    };
+  });
+
+  const coverageFilter = uiPrefs["inbox.coverageFilter"] || "all"; // all | missing | portfolio | watchlist
+  const setCoverageFilter = (val: string) => setUiPref("inbox.coverageFilter", val);
+  const filteredCoverage = coverageRows.filter((r) => {
+    if (coverageFilter === "all") return true;
+    if (coverageFilter === "missing") return !r.hasRbc && !r.hasJpm;
+    if (coverageFilter === "portfolio") return r.bucket === "Portfolio";
+    if (coverageFilter === "watchlist") return r.bucket === "Watchlist";
+    return true;
+  }).sort((a, b) => {
+    // Sort by: missing first, then by bucket (Portfolio first), then ticker.
+    const aMissing = !a.hasRbc && !a.hasJpm ? 0 : 1;
+    const bMissing = !b.hasRbc && !b.hasJpm ? 0 : 1;
+    if (aMissing !== bMissing) return aMissing - bMissing;
+    if (a.bucket !== b.bucket) return a.bucket === "Portfolio" ? -1 : 1;
+    return a.displayTicker.localeCompare(b.displayTicker);
+  });
+
+  const totalCovered = coverageRows.filter((r) => r.hasRbc || r.hasJpm).length;
+  const portfolioCovered = coverageRows.filter((r) => r.bucket === "Portfolio" && (r.hasRbc || r.hasJpm)).length;
+  const portfolioTotal = coverageRows.filter((r) => r.bucket === "Portfolio").length;
+  const watchlistCovered = coverageRows.filter((r) => r.bucket === "Watchlist" && (r.hasRbc || r.hasJpm)).length;
+  const watchlistTotal = coverageRows.filter((r) => r.bucket === "Watchlist").length;
+  const missingCount = coverageRows.filter((r) => !r.hasRbc && !r.hasJpm).length;
 
   return (
     <div className="p-6 max-w-5xl mx-auto">
@@ -312,6 +379,129 @@ export default function InboxPage() {
                   </td>
                 </tr>
               ))}
+            </tbody>
+          </table>
+        )}
+      </div>
+
+      {/* ── Coverage Checklist ──
+          Cross-references pm:stocks against pm:analyst-reports to surface
+          gaps: scoreable Portfolio + Watchlist tickers that don't yet have
+          a single analyst report ingested. Surfaces the actionable
+          "what's still missing" view alongside the activity log. */}
+      <div className="mt-6 rounded-lg border border-slate-200 bg-white overflow-hidden">
+        <div className="border-b border-slate-100 px-4 py-2 flex items-center justify-between flex-wrap gap-2">
+          <div className="flex items-center gap-3 flex-wrap">
+            <div className="text-xs font-semibold uppercase tracking-wider text-slate-500">
+              Coverage Checklist
+            </div>
+            <span className="text-[11px] text-slate-500">
+              {totalCovered}/{coverageRows.length} covered ·
+              <span className="ml-1">Portfolio {portfolioCovered}/{portfolioTotal}</span> ·
+              <span className="ml-1">Watchlist {watchlistCovered}/{watchlistTotal}</span>
+              {missingCount > 0 && (
+                <span className="ml-2 inline-flex items-center rounded-full bg-red-50 text-red-700 border border-red-200 px-2 py-0.5 text-[10px] font-bold uppercase">
+                  {missingCount} missing
+                </span>
+              )}
+            </span>
+          </div>
+          <div className="flex flex-wrap gap-1">
+            {[
+              { key: "all", label: "All" },
+              { key: "missing", label: "Missing only" },
+              { key: "portfolio", label: "Portfolio" },
+              { key: "watchlist", label: "Watchlist" },
+            ].map((b) => (
+              <button
+                key={b.key}
+                onClick={() => setCoverageFilter(b.key)}
+                className={`text-[11px] font-semibold rounded-full px-2.5 py-0.5 transition-colors ${
+                  coverageFilter === b.key
+                    ? "bg-slate-800 text-white"
+                    : "bg-slate-100 text-slate-600 hover:bg-slate-200"
+                }`}
+              >
+                {b.label}
+              </button>
+            ))}
+          </div>
+        </div>
+        {coverageRows.length === 0 ? (
+          <p className="text-sm text-slate-400 p-4 italic">
+            No scoreable stocks in your Portfolio or Watchlist yet. Add stocks on the Dashboard to start tracking analyst coverage.
+          </p>
+        ) : filteredCoverage.length === 0 ? (
+          <p className="text-sm text-slate-400 p-4 italic">
+            {coverageFilter === "missing"
+              ? "🎉 Every scoreable stock has at least one report. No gaps."
+              : "No stocks match this filter."}
+          </p>
+        ) : (
+          <table className="w-full text-sm">
+            <thead className="bg-slate-50 text-xs uppercase tracking-wider text-slate-500">
+              <tr>
+                <th className="px-3 py-2 text-left">Ticker</th>
+                <th className="px-3 py-2 text-left">Name</th>
+                <th className="px-3 py-2 text-left">Bucket</th>
+                <th className="px-3 py-2 text-center w-16">RBC</th>
+                <th className="px-3 py-2 text-center w-16">JPM</th>
+                <th className="px-3 py-2 text-left w-32">Status</th>
+              </tr>
+            </thead>
+            <tbody>
+              {filteredCoverage.map((r) => {
+                const fullyCovered = r.hasRbc && r.hasJpm;
+                const partiallyCovered = (r.hasRbc || r.hasJpm) && !fullyCovered;
+                const noCoverage = !r.hasRbc && !r.hasJpm;
+                return (
+                  <tr
+                    key={`${r.bucket}-${r.displayTicker}`}
+                    className={`border-t border-slate-100 transition-colors ${
+                      noCoverage ? "bg-red-50/40 hover:bg-red-50/60" : "hover:bg-slate-50/60"
+                    }`}
+                  >
+                    <td className="px-3 py-2">
+                      <Link href={`/stock/${r.displayTicker.toLowerCase()}`} className="font-mono font-semibold text-slate-800 hover:underline">
+                        {r.displayTicker}
+                      </Link>
+                    </td>
+                    <td className="px-3 py-2 text-xs text-slate-600 truncate max-w-[260px]" title={r.name}>{r.name}</td>
+                    <td className="px-3 py-2">
+                      <span className={`inline-block rounded px-1.5 py-0.5 text-[10px] font-semibold ${
+                        r.bucket === "Portfolio"
+                          ? "bg-blue-50 text-blue-700 border border-blue-200"
+                          : "bg-slate-100 text-slate-600 border border-slate-200"
+                      }`}>{r.bucket}</span>
+                    </td>
+                    <td className="px-3 py-2 text-center">
+                      {r.hasRbc ? (
+                        <span className="inline-block text-emerald-600 font-bold text-base" title="RBC report ingested">✓</span>
+                      ) : (
+                        <span className="inline-block text-slate-300 text-base" title="No RBC report yet">—</span>
+                      )}
+                    </td>
+                    <td className="px-3 py-2 text-center">
+                      {r.hasJpm ? (
+                        <span className="inline-block text-emerald-600 font-bold text-base" title="JPM report ingested">✓</span>
+                      ) : (
+                        <span className="inline-block text-slate-300 text-base" title="No JPM report yet">—</span>
+                      )}
+                    </td>
+                    <td className="px-3 py-2">
+                      <span className={`inline-block rounded-full px-2 py-0.5 text-[10px] font-semibold ${
+                        fullyCovered
+                          ? "bg-emerald-50 text-emerald-700 border border-emerald-200"
+                          : partiallyCovered
+                          ? "bg-amber-50 text-amber-700 border border-amber-200"
+                          : "bg-red-100 text-red-700 border border-red-200"
+                      }`}>
+                        {fullyCovered ? "Both" : partiallyCovered ? "Partial" : "No reports"}
+                      </span>
+                    </td>
+                  </tr>
+                );
+              })}
             </tbody>
           </table>
         )}
