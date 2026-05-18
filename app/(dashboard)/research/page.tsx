@@ -4,6 +4,7 @@ import React, { useState, useEffect, useCallback, useRef } from "react";
 import type { ResearchState, UptickEntry, IdeaEntry, RBCEntry, SectorViewEntry, SectorView, LeeFocusArea, AlphaPickEntry } from "@/app/lib/defaults";
 import { defaultResearch, GICS_SECTORS } from "@/app/lib/defaults";
 import { dedupeRbcEntries } from "@/app/lib/rbc-canonical";
+import { displayTicker } from "@/app/lib/ticker";
 import { ImageUpload, type BriefAttachment } from "@/app/components/ImageUpload";
 import { useStocks } from "@/app/lib/StockContext";
 import type { Stock, ScoreKey } from "@/app/lib/types";
@@ -1673,7 +1674,7 @@ export default function ResearchPage() {
                       {synthesis.topPicks.map((p) => (
                         <li key={p.ticker} className="rounded-xl border border-indigo-100 bg-white p-3 shadow-sm">
                           <div className="flex items-center gap-2 flex-wrap mb-1.5">
-                            <span className="font-mono font-bold text-base text-indigo-900">${p.ticker}</span>
+                            <span className="font-mono font-bold text-base text-indigo-900">${displayTicker(p.ticker)}</span>
                             <span className="text-[10px] font-bold rounded-full bg-indigo-600 text-white px-2 py-0.5">
                               {p.sourceCount} sources
                             </span>
@@ -1705,7 +1706,7 @@ export default function ResearchPage() {
                       {synthesis.regimeAlignedHighlights.map((p) => (
                         <li key={p.ticker} className="rounded-xl border border-teal-100 bg-white p-3 shadow-sm">
                           <div className="flex items-center gap-2 flex-wrap mb-1.5">
-                            <span className="font-mono font-bold text-base text-teal-900">${p.ticker}</span>
+                            <span className="font-mono font-bold text-base text-teal-900">${displayTicker(p.ticker)}</span>
                             {p.sources.map((s) => (
                               <span key={s} className="text-[10px] rounded-full bg-slate-100 text-slate-600 px-2 py-0.5">
                                 {s}
@@ -1730,7 +1731,7 @@ export default function ResearchPage() {
                       {synthesis.honorableMentions.map((p) => (
                         <li key={p.ticker} className="rounded-lg border border-slate-100 bg-white/70 p-2.5">
                           <div className="flex items-center gap-2 flex-wrap mb-1">
-                            <span className="font-mono font-bold text-sm">${p.ticker}</span>
+                            <span className="font-mono font-bold text-sm">${displayTicker(p.ticker)}</span>
                             {p.sources.map((s) => (
                               <span key={s} className="text-[10px] rounded-full bg-slate-100 text-slate-600 px-2 py-0.5">
                                 {s}
@@ -1821,7 +1822,7 @@ export default function ResearchPage() {
                   return (
                     <tr key={u.ticker} className={`border-b border-slate-100 ${rowBg} hover:bg-blue-50/40 transition-colors`}>
                       <td className="py-2 pr-2 text-slate-400">{i + 1}</td>
-                      <td className="py-2 pr-3 font-mono font-bold text-teal-700">${u.ticker}</td>
+                      <td className="py-2 pr-3 font-mono font-bold text-teal-700">${displayTicker(u.ticker)}</td>
                       <td className="py-2 pr-3 text-slate-700 truncate max-w-[160px]">
                         {u.name && u.name !== u.ticker ? u.name : <span className="text-slate-300 italic text-xs">loading...</span>}
                       </td>
@@ -1950,7 +1951,7 @@ export default function ResearchPage() {
                     <tbody>
                       {lastScrape.map((r, i) => (
                         <tr key={`${r.ticker}-${i}`} className="border-b border-slate-100">
-                          <td className="py-0.5 pr-2 font-mono font-semibold">{r.ticker}</td>
+                          <td className="py-0.5 pr-2 font-mono font-semibold">{displayTicker(r.ticker)}</td>
                           <td className="py-0.5 pr-2">{r.support ?? <span className="text-slate-300">—</span>}</td>
                           <td className="py-0.5 pr-2">{r.resistance ?? <span className="text-slate-300">—</span>}</td>
                           <td className="py-0.5 pr-2 text-right">{r.priceWhenAdded != null ? `$${r.priceWhenAdded}` : <span className="text-slate-300">—</span>}</td>
@@ -2071,7 +2072,7 @@ export default function ResearchPage() {
                   return (
                     <tr key={item.ticker} className={`border-b border-slate-100 ${i % 2 === 0 ? "bg-white" : "bg-emerald-50/30"} hover:bg-emerald-50/60 transition-colors`}>
                       <td className="py-2 pr-2 text-slate-400">{i + 1}</td>
-                      <td className="py-2 pr-3 font-mono font-bold text-emerald-700">${item.ticker}</td>
+                      <td className="py-2 pr-3 font-mono font-bold text-emerald-700">${displayTicker(item.ticker)}</td>
                       <td className="py-2 pr-3 text-right font-mono">
                         {pricesLoading ? (
                           <span className="text-slate-300 animate-pulse">...</span>
@@ -2162,7 +2163,7 @@ export default function ResearchPage() {
                   return (
                     <tr key={item.ticker} className={`border-b border-slate-100 ${i % 2 === 0 ? "bg-white" : "bg-red-50/30"} hover:bg-red-50/60 transition-colors`}>
                       <td className="py-2 pr-2 text-slate-400">{i + 1}</td>
-                      <td className="py-2 pr-3 font-mono font-bold text-red-700">${item.ticker}</td>
+                      <td className="py-2 pr-3 font-mono font-bold text-red-700">${displayTicker(item.ticker)}</td>
                       <td className="py-2 pr-3 text-right font-mono">
                         {pricesLoading ? (
                           <span className="text-slate-300 animate-pulse">...</span>
@@ -2259,7 +2260,7 @@ export default function ResearchPage() {
                   return (
                     <tr key={item.ticker} className={`border-b border-slate-100 ${i % 2 === 0 ? "bg-white" : "bg-emerald-50/30"} hover:bg-emerald-50/60 transition-colors`}>
                       <td className="py-2 pr-2 text-slate-400">{i + 1}</td>
-                      <td className="py-2 pr-3 font-mono font-bold text-emerald-700">${item.ticker}</td>
+                      <td className="py-2 pr-3 font-mono font-bold text-emerald-700">${displayTicker(item.ticker)}</td>
                       <td className="py-2 pr-3 text-right font-mono">
                         {pricesLoading ? <span className="text-slate-300 animate-pulse">...</span>
                           : livePrice != null ? <span className="font-semibold">${livePrice.toFixed(2)}</span>
@@ -2344,7 +2345,7 @@ export default function ResearchPage() {
                   return (
                     <tr key={item.ticker} className={`border-b border-slate-100 ${i % 2 === 0 ? "bg-white" : "bg-red-50/30"} hover:bg-red-50/60 transition-colors`}>
                       <td className="py-2 pr-2 text-slate-400">{i + 1}</td>
-                      <td className="py-2 pr-3 font-mono font-bold text-red-700">${item.ticker}</td>
+                      <td className="py-2 pr-3 font-mono font-bold text-red-700">${displayTicker(item.ticker)}</td>
                       <td className="py-2 pr-3 text-right font-mono">
                         {pricesLoading ? <span className="text-slate-300 animate-pulse">...</span>
                           : livePrice != null ? <span className="font-semibold">${livePrice.toFixed(2)}</span>
@@ -2487,7 +2488,7 @@ export default function ResearchPage() {
               {sortedRbc().map((item, i) => (
                 <tr key={item.ticker} className={`border-b border-slate-100 ${i % 2 === 0 ? "bg-white" : "bg-blue-50/30"} hover:bg-blue-50/60 transition-colors`}>
                   <td className="py-2 pr-2 text-slate-400">{i + 1}</td>
-                  <td className="py-2 pr-3 font-mono font-bold text-blue-700">${item.ticker}</td>
+                  <td className="py-2 pr-3 font-mono font-bold text-blue-700">${displayTicker(item.ticker)}</td>
                   <td className="py-2 pr-3 text-slate-700 truncate max-w-[260px]" title={item.name || item.ticker}>{item.name || <span className="text-slate-300 italic">—</span>}</td>
                   <td className="py-2 pr-3 text-slate-600">{item.sector}</td>
                   <td className="py-2 pr-3 text-slate-500">
@@ -2573,7 +2574,7 @@ export default function ResearchPage() {
               {sortedRbcUs().map((item, i) => (
                 <tr key={item.ticker} className={`border-b border-slate-100 ${i % 2 === 0 ? "bg-white" : "bg-teal-50/30"} hover:bg-teal-50/60 transition-colors`}>
                   <td className="py-2 pr-2 text-slate-400">{i + 1}</td>
-                  <td className="py-2 pr-3 font-mono font-bold text-teal-700">${item.ticker}</td>
+                  <td className="py-2 pr-3 font-mono font-bold text-teal-700">${displayTicker(item.ticker)}</td>
                   <td className="py-2 pr-3 text-slate-700 truncate max-w-[260px]" title={item.name || item.ticker}>{item.name || <span className="text-slate-300 italic">—</span>}</td>
                   <td className="py-2 pr-3 text-slate-600">{item.sector}</td>
                   <td className="py-2 pr-3 text-slate-500">
@@ -2839,10 +2840,10 @@ export default function ResearchPage() {
                         const days = daysSince(pick.dateAdded);
                         const flagged = isSellCandidate(pick);
                         return (
-                          <tr key={pick.ticker} className={`border-b border-slate-100 ${flagged ? "bg-red-50/40" : i % 2 === 0 ? "bg-white" : "bg-slate-50/40"} hover:bg-slate-50 transition-colors`}>
+                          <tr key={`${pick.ticker}|${pick.dateAdded || ""}|${i}`} className={`border-b border-slate-100 ${flagged ? "bg-red-50/40" : i % 2 === 0 ? "bg-white" : "bg-slate-50/40"} hover:bg-slate-50 transition-colors`}>
                             <td className="py-2 pr-2 text-slate-400">{i + 1}</td>
                             <td className="py-2 pr-3 text-slate-700 truncate max-w-[200px]" title={pick.name}>{pick.name}</td>
-                            <td className="py-2 pr-3 font-mono font-bold">${pick.ticker}</td>
+                            <td className="py-2 pr-3 font-mono font-bold">${displayTicker(pick.ticker)}</td>
                             <td className="py-2 pr-3 text-xs text-slate-500">{pick.sector || "—"}</td>
                             <td className="py-2 pr-2">
                               <div className="flex items-center gap-1 flex-wrap">

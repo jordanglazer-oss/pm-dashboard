@@ -7,6 +7,7 @@ import { RegimeStrip } from "@/app/components/RegimeStrip";
 import { regimeMultiplier, isOffensiveSector, normalizeSector } from "@/app/lib/scoring";
 import type { Stock, ScoreKey, InstrumentType } from "@/app/lib/types";
 import { INSTRUMENT_LABELS } from "@/app/lib/types";
+import { displayTicker } from "@/app/lib/ticker";
 
 const ZERO_SCORES: Record<ScoreKey, number> = {
   brand: 0, secular: 0, researchCoverage: 0, externalSources: 0,
@@ -310,7 +311,7 @@ export default function DashboardPage() {
                         ? "text-emerald-600" : "text-slate-500";
                       return (
                         <tr key={s.ticker} className="border-b border-slate-100 hover:bg-slate-50/50 transition-colors">
-                          <td className="py-2 pr-3 font-mono font-bold text-slate-700">{s.ticker}</td>
+                          <td className="py-2 pr-3 font-mono font-bold text-slate-700">{displayTicker(s.ticker)}</td>
                           <td className="py-2 pr-3 text-slate-500 hidden md:table-cell">{normalized}</td>
                           <td className="py-2 pr-3">
                             <span className={`rounded-full px-2 py-0.5 text-[10px] font-bold ${tierColor}`}>{tier}</span>

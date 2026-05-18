@@ -4,6 +4,7 @@ import React, { useState, useMemo, useRef, useEffect, useCallback } from "react"
 import Link from "next/link";
 import type { PimModelGroup, PimProfileType, PimComputedHolding, PimAssetClass, PimPerformanceData } from "@/app/lib/pim-types";
 import type { Stock, InstrumentType, ScoreKey } from "@/app/lib/types";
+import { displayTicker } from "@/app/lib/ticker";
 import { useStocks } from "@/app/lib/StockContext";
 import { PimPerformance } from "./PimPerformance";
 
@@ -1099,7 +1100,7 @@ export function PimModel({ groups }: Props) {
                       <td className="py-2 px-2 font-mono text-xs text-slate-600">
                         <span className="inline-flex items-center gap-1.5">
                           <Link href={`/stock/${symbolToTicker(h.symbol).toLowerCase()}?from=pim-model`} className="hover:underline hover:text-blue-600 transition-colors">
-                            {h.symbol}
+                            {displayTicker(h.symbol)}
                           </Link>
                           {isLatestBuy(h.symbol) && (
                             <span
@@ -1190,7 +1191,7 @@ export function PimModel({ groups }: Props) {
                     <td className="py-1.5 text-xs">
                       <span className="rounded px-1.5 py-0.5 text-[9px] font-bold bg-slate-100 text-slate-600">{t.type}</span>
                     </td>
-                    <td className="py-1.5 text-xs font-mono font-semibold">{t.symbol}</td>
+                    <td className="py-1.5 text-xs font-mono font-semibold">{displayTicker(t.symbol)}</td>
                     <td className="py-1.5 text-center">
                       <span className={`rounded px-1.5 py-0.5 text-[9px] font-bold ${t.direction === "sell" ? "bg-red-100 text-red-700" : "bg-emerald-100 text-emerald-700"}`}>
                         {t.direction.toUpperCase()}

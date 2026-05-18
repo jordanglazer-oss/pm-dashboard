@@ -10,6 +10,7 @@ import type {
   ForwardPointBundle,
 } from "@/app/lib/types";
 import { SignalPill } from "./SignalPill";
+import { displayTicker } from "@/app/lib/ticker";
 import { LoadingOverlay } from "./LoadingSpinner";
 import { SentimentGauges } from "./SentimentGauges";
 import { HedgingIndicator } from "./HedgingIndicator";
@@ -1712,7 +1713,7 @@ export function MorningBrief({
               return (
                 <div key={i} className={`rounded-xl border-l-4 p-3 ${bgClass}`}>
                   <div className="flex flex-wrap items-center gap-2 mb-1">
-                    <span className="font-mono text-sm font-bold">{item.ticker}</span>
+                    <span className="font-mono text-sm font-bold">{displayTicker(item.ticker)}</span>
                     <SignalPill tone={tonePill}>{item.priority}</SignalPill>
                     <span className="text-sm text-slate-700">{item.summary}</span>
                   </div>

@@ -5,6 +5,7 @@ import { useRouter } from "next/navigation";
 import type { ScoredStock, ScoreKey } from "@/app/lib/types";
 import { MAX_SCORE, INSTRUMENT_LABELS } from "@/app/lib/types";
 import { isScoreable, normalizeSector } from "@/app/lib/scoring";
+import { displayTicker } from "@/app/lib/ticker";
 import { SignalPill, ratingTone, riskTone } from "./SignalPill";
 import { useStocks } from "@/app/lib/StockContext";
 
@@ -462,7 +463,7 @@ export function StockScoring({ stocks, onScoreStock, onUpdateCostBasis, onRefres
                   >
                     <div className="flex items-center justify-between mb-2">
                       <div className="flex items-center gap-2">
-                        <span className="text-lg font-bold text-slate-900">{s.ticker}</span>
+                        <span className="text-lg font-bold text-slate-900">{displayTicker(s.ticker)}</span>
                         {s.instrumentType && s.instrumentType !== "stock" && (
                           <span className={`rounded px-1.5 py-0.5 text-[9px] font-bold ${s.instrumentType === "etf" ? "bg-indigo-100 text-indigo-700" : "bg-purple-100 text-purple-700"}`}>
                             {INSTRUMENT_LABELS[s.instrumentType]}
@@ -559,7 +560,7 @@ export function StockScoring({ stocks, onScoreStock, onUpdateCostBasis, onRefres
                       >
                         <td className="py-3 pr-2">
                           <div className="flex items-center gap-1.5">
-                            <span className="font-semibold text-slate-900">{s.ticker}</span>
+                            <span className="font-semibold text-slate-900">{displayTicker(s.ticker)}</span>
                             {s.instrumentType && s.instrumentType !== "stock" && (
                               <span className={`rounded px-1.5 py-0.5 text-[9px] font-bold ${s.instrumentType === "etf" ? "bg-indigo-100 text-indigo-700" : "bg-purple-100 text-purple-700"}`}>
                                 {INSTRUMENT_LABELS[s.instrumentType]}

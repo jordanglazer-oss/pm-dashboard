@@ -31,3 +31,24 @@ export function canonicalTicker(raw: string): string {
 export function tickersEqual(a: string, b: string): boolean {
   return canonicalTicker(a) === canonicalTicker(b);
 }
+
+/**
+ * Display normalization for tickers. Renders Canadian listings in the
+ * canonical Yahoo form (".TO") regardless of how they're stored in the
+ * underlying blob ("-T" or ".TO" — pm:stocks and pm:pim-models have a
+ * historical mix). US tickers pass through unchanged.
+ *
+ * Data integrity rule: this is for DISPLAY ONLY. Never use the returned
+ * value as a lookup key against pm:stocks etc. — lookups must go through
+ * `tickersEqual` / `canonicalTicker` so the original storage form is
+ * preserved. Internal `s.ticker === ticker` comparisons inside
+ * StockContext rely on stored forms; rewriting them would break.
+ *
+ * The canonical form was chosen to match Yahoo Finance because every
+ * upstream data fetch (prices, fund data, technicals) keys off the
+ * Yahoo ticker — the same form the user sees on Yahoo's site when they
+ * click through.
+ */
+export function displayTicker(raw: string): string {
+  return canonicalTicker(raw);
+}

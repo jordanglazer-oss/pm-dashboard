@@ -9,6 +9,7 @@ import type {
   TickerReports,
   ExtractedReport,
 } from "@/app/lib/analyst-snapshots";
+import { displayTicker } from "@/app/lib/ticker";
 
 type Props = {
   ticker: string;
@@ -250,7 +251,7 @@ export function AnalystSnapshotPanel({ ticker, snapshot, breakdown, reports, onC
   return (
     <div className="ml-1 mt-3 mb-1 space-y-3">
       <p className="text-[10px] font-semibold uppercase tracking-wider text-slate-400">
-        Analyst Snapshot · {ticker}
+        Analyst Snapshot · {displayTicker(ticker)}
       </p>
 
       {/* FactSet street consensus */}

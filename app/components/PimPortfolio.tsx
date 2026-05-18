@@ -14,6 +14,7 @@ import type {
   PimModelGroupState,
 } from "@/app/lib/pim-types";
 import type { Stock, InstrumentType, ScoreKey } from "@/app/lib/types";
+import { displayTicker } from "@/app/lib/ticker";
 
 const ZERO_SCORES: Record<ScoreKey, number> = {
   brand: 0, secular: 0, researchCoverage: 0, externalSources: 0,
@@ -1636,7 +1637,7 @@ export function PimPortfolio({ groups }: Props) {
                     <tr key={r.symbol} className={`border-b border-emerald-100 ${isMF ? "bg-violet-50/30" : ""}`}>
                       <td className="py-2 font-mono text-xs font-semibold">
                         <Link href={`/stock/${symbolToTicker(r.symbol).toLowerCase()}?from=positioning`} className="hover:underline hover:text-blue-600 transition-colors">
-                          {r.symbol}
+                          {displayTicker(r.symbol)}
                         </Link>
                         {isMF && (
                           <span className="ml-1 rounded bg-violet-100 px-1 py-0.5 text-[8px] font-bold text-violet-600">FUND</span>
@@ -1743,7 +1744,7 @@ export function PimPortfolio({ groups }: Props) {
                   const units = nav > 0 && t.targetAmount ? t.targetAmount / nav : 0;
                   return (
                     <tr key={t.id} className="border-b border-violet-100">
-                      <td className="py-2 font-mono text-xs font-semibold text-violet-700">{t.symbol}</td>
+                      <td className="py-2 font-mono text-xs font-semibold text-violet-700">{displayTicker(t.symbol)}</td>
                       <td className="py-2 text-xs text-slate-600 hidden sm:table-cell">{PROFILE_LABELS[(t.profile || activeProfile) as PimProfileType]}</td>
                       <td className="py-2 text-center">
                         <span className={`rounded px-1.5 py-0.5 text-[10px] font-bold ${t.direction === "sell" ? "bg-red-100 text-red-700" : "bg-emerald-100 text-emerald-700"}`}>
@@ -1988,7 +1989,7 @@ export function PimPortfolio({ groups }: Props) {
 
                 return (
                   <tr key={row.symbol} className="border-b border-slate-50 hover:bg-slate-25 transition-colors">
-                    <td className="py-2.5 px-2 font-semibold text-slate-700">{row.symbol}</td>
+                    <td className="py-2.5 px-2 font-semibold text-slate-700">{displayTicker(row.symbol)}</td>
                     <td className="py-2.5 px-2 text-slate-600 max-w-[200px] truncate">{row.name}</td>
                     <td className="py-2.5 px-2 text-right font-mono text-slate-700">
                       {editMode ? (

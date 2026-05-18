@@ -7,6 +7,7 @@ import { SCORE_GROUPS, MAX_SCORE, INSTRUMENT_LABELS } from "@/app/lib/types";
 import type { ScoredStock, ScoreKey, HealthData, FundHolding, FundSectorWeight } from "@/app/lib/types";
 import type { TechnicalIndicators, RiskAlert } from "@/app/lib/technicals";
 import { groupTotal, isScoreable, normalizeSector, computeScores } from "@/app/lib/scoring";
+import { displayTicker } from "@/app/lib/ticker";
 import { SignalPill } from "./SignalPill";
 
 /** Format an ISO timestamp for display next to Score All / Refresh All buttons. */
@@ -923,7 +924,7 @@ export function PortfolioOverview() {
                         <td className="py-3">
                           <div className="flex items-center gap-2">
                             <Link href={`/stock/${s.ticker.toLowerCase()}`} className="font-bold text-slate-800 hover:underline font-mono">
-                              {s.ticker}
+                              {displayTicker(s.ticker)}
                             </Link>
                             {!hasMer && (
                               <Link
@@ -1022,7 +1023,7 @@ export function PortfolioOverview() {
                 href={`/stock/${s.ticker.toLowerCase()}`}
                 className="flex items-center gap-3 rounded-xl py-1.5 hover:bg-slate-50 transition-colors"
               >
-                <span className="w-16 text-sm font-bold text-slate-800 text-right font-mono">{s.ticker}</span>
+                <span className="w-16 text-sm font-bold text-slate-800 text-right font-mono">{displayTicker(s.ticker)}</span>
                 <SignalPill tone={s.bucket === "Portfolio" ? "blue" : "gray"}>
                   {s.bucket === "Portfolio" ? "PF" : "WL"}
                 </SignalPill>
@@ -1238,7 +1239,7 @@ function RankingTable({
                     <div className="flex items-center gap-2">
                       <span className="text-slate-400 text-xs w-5 text-right">{i + 1}</span>
                       <Link href={`/stock/${s.ticker.toLowerCase()}`} className="hover:underline block">
-                        <div className="font-bold text-slate-800 font-mono">{s.ticker}</div>
+                        <div className="font-bold text-slate-800 font-mono">{displayTicker(s.ticker)}</div>
                         <div className="text-xs text-slate-400 max-w-[160px] truncate" title={s.name}>{s.name}</div>
                       </Link>
                     </div>
