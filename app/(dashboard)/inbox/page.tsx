@@ -99,6 +99,8 @@ function EditableNumberCell({
   placeholder,
   ariaLabel,
   formatDisplay,
+  min,
+  max,
 }: {
   value: number | null;
   step: string; // e.g. "0.01" or "1"
@@ -107,6 +109,10 @@ function EditableNumberCell({
   placeholder?: string;
   ariaLabel: string;
   formatDisplay?: (n: number) => string;
+  /** Optional inclusive bounds. When set, the input enforces them via the
+   *  native HTML attribute AND the commit handler clamps to the range. */
+  min?: number;
+  max?: number;
 }) {
   // Local string state so the user can type partial values (e.g. "12.")
   // without the parent coercing the value to a number mid-keystroke.
@@ -133,14 +139,21 @@ function EditableNumberCell({
       initialRef.current = "";
       return;
     }
-    const n = parseFloat(trimmed);
+    let n = parseFloat(trimmed);
     if (!isFinite(n) || n < 0) {
       // Invalid input — snap back to prior value
       setStr(initialRef.current);
       return;
     }
+    // Clamp to optional bounds. Out-of-range inputs are saved as the
+    // nearest legal value AND the displayed text updates so the user
+    // sees the clamp happen.
+    if (typeof min === "number" && n < min) n = min;
+    if (typeof max === "number" && n > max) n = max;
     onCommit(n);
-    initialRef.current = str;
+    const finalDisplay = formatDisplay ? formatDisplay(n) : String(n);
+    setStr(finalDisplay);
+    initialRef.current = finalDisplay;
   };
 
   return (
@@ -148,6 +161,8 @@ function EditableNumberCell({
       ref={inputRef}
       type="number"
       step={step}
+      min={min}
+      max={max}
       value={str}
       onChange={(e) => setStr(e.target.value)}
       onBlur={commit}
@@ -198,7 +213,7 @@ export default function InboxPage() {
   // cached events are mostly noise; the PM cares about fresh ingestions
   // and errors. State persists via uiPrefs (Redis) so the preference
   // sticks across refreshes and syncs across devices.
-  const { uiPrefs, setUiPref, stocks, analystSnapshots, getAnalystSnapshot, updateAnalystSnapshot } = useStocks();
+  const { uiPrefs, setUiPref, stocks, analystSnapshots, getAnalystSnapshot, updateAnalystSnapshot, updateStockFields } = useStocks();
   const hideCached = uiPrefs["inbox.hideCached"] !== "0"; // default true (hidden)
   const toggleHideCached = () => setUiPref("inbox.hideCached", hideCached ? "0" : "1");
   const [error, setError] = useState<string | null>(null);
@@ -348,6 +363,10 @@ export default function InboxPage() {
     factsetTarget: number | null;
     factsetCount: number | null;
     factsetAsOf: string | null;
+    /** Raw BoostedAI score (0-5). Lives on the Stock itself. */
+    boostedAi: number | null;
+    /** Raw SIA score (0-10). Lives on the Stock itself. */
+    sia: number | null;
   };
   // Build lookup of canonical-ticker → which sources have reports.
   // Reports manifest itself is keyed by canonical form already, so we just
@@ -392,6 +411,8 @@ export default function InboxPage() {
       factsetTarget: fs?.target ?? null,
       factsetCount: fs?.count ?? null,
       factsetAsOf: fs?.asOf ?? null,
+      boostedAi: typeof s.boostedAi === "number" ? s.boostedAi : null,
+      sia: typeof s.sia === "number" ? s.sia : null,
     };
   });
 
@@ -400,7 +421,7 @@ export default function InboxPage() {
 
   // Column sort, persisted via uiPrefs so the preference sticks across
   // refreshes and devices.
-  type CoverageSortKey = "ticker" | "name" | "bucket" | "rbc" | "jpm" | "factset" | "analysts" | "status";
+  type CoverageSortKey = "ticker" | "name" | "bucket" | "rbc" | "jpm" | "factset" | "analysts" | "boostedAi" | "sia" | "status";
   const covSortKey = (uiPrefs["inbox.coverageSortKey"] as CoverageSortKey) || "status";
   const covSortDir = uiPrefs["inbox.coverageSortDir"] || "asc";
   const toggleCovSort = (key: CoverageSortKey) => {
@@ -445,6 +466,8 @@ export default function InboxPage() {
         case "jpm": cmp = (a.hasJpm ? 1 : 0) - (b.hasJpm ? 1 : 0); break;
         case "factset": cmp = cmpNum(a.factsetTarget, b.factsetTarget); break;
         case "analysts": cmp = cmpNum(a.factsetCount, b.factsetCount); break;
+        case "boostedAi": cmp = cmpNum(a.boostedAi, b.boostedAi); break;
+        case "sia": cmp = cmpNum(a.sia, b.sia); break;
         case "status":
         default: {
           // Status priority: 0 = no reports (urgent), 1-2 = partial, 3 = all
@@ -495,6 +518,13 @@ export default function InboxPage() {
     const nextSnapshot: TickerSnapshot = { ...existing, factset: nextFactset };
     const anyValue = nextSnapshot.rbc || nextSnapshot.jpm || nextSnapshot.factset;
     updateAnalystSnapshot(ticker, anyValue ? nextSnapshot : undefined);
+  };
+
+  // Save BoostedAI / SIA raw scores to the Stock object via the same
+  // updateStockFields path the Dashboard / stock pages use. null clears
+  // the field entirely so we don't store 0 vs missing ambiguously.
+  const saveStockField = (ticker: string, field: "boostedAi" | "sia", value: number | null) => {
+    updateStockFields(ticker, { [field]: value == null ? undefined : value });
   };
 
   const totalCovered = coverageRows.filter((r) => r.hasRbc || r.hasJpm).length;
@@ -706,6 +736,8 @@ export default function InboxPage() {
                 <th className="px-3 py-2 text-center w-16 cursor-pointer select-none hover:text-slate-700" onClick={() => toggleCovSort("jpm")}>JPM{covArrow("jpm")}</th>
                 <th className="px-3 py-2 text-right w-28 cursor-pointer select-none hover:text-slate-700" onClick={() => toggleCovSort("factset")} title="FactSet street-consensus average price target. Click the cell value to edit; click the header to sort. Persists to pm:analyst-snapshots — same field shown on the stock page.">FactSet ${covArrow("factset")}</th>
                 <th className="px-3 py-2 text-right w-20 cursor-pointer select-none hover:text-slate-700" onClick={() => toggleCovSort("analysts")} title="Number of analysts in the FactSet consensus. Click the cell value to edit; click the header to sort.">Analysts{covArrow("analysts")}</th>
+                <th className="px-3 py-2 text-right w-20 cursor-pointer select-none hover:text-slate-700" onClick={() => toggleCovSort("boostedAi")} title="Raw BoostedAI score (0-5). Click the cell value to edit; click the header to sort. Persists to pm:stocks.">Boosted.ai{covArrow("boostedAi")}</th>
+                <th className="px-3 py-2 text-right w-20 cursor-pointer select-none hover:text-slate-700" onClick={() => toggleCovSort("sia")} title="Raw SIA (SIACharts) relative-strength score (0-10). Click the cell value to edit; click the header to sort. Persists to pm:stocks.">SIA{covArrow("sia")}</th>
                 <th className="px-3 py-2 text-left w-32 cursor-pointer select-none hover:text-slate-700" onClick={() => toggleCovSort("status")} title="Sort by overall coverage status (No reports / Partial / Both). Ascending shows gaps first.">Status{covArrow("status")}</th>
               </tr>
             </thead>
@@ -776,6 +808,32 @@ export default function InboxPage() {
                         placeholder="—"
                         ariaLabel={`Number of analysts for ${r.displayTicker}`}
                         formatDisplay={(n) => String(Math.round(n))}
+                      />
+                    </td>
+                    <td className="px-3 py-2 text-right">
+                      <EditableNumberCell
+                        value={r.boostedAi}
+                        step="0.1"
+                        min={0}
+                        max={5}
+                        onCommit={(next) => saveStockField(r.displayTicker, "boostedAi", next)}
+                        width="w-14"
+                        placeholder="—"
+                        ariaLabel={`BoostedAI score for ${r.displayTicker}`}
+                        formatDisplay={(n) => n.toFixed(1)}
+                      />
+                    </td>
+                    <td className="px-3 py-2 text-right">
+                      <EditableNumberCell
+                        value={r.sia}
+                        step="0.1"
+                        min={0}
+                        max={10}
+                        onCommit={(next) => saveStockField(r.displayTicker, "sia", next)}
+                        width="w-14"
+                        placeholder="—"
+                        ariaLabel={`SIA score for ${r.displayTicker}`}
+                        formatDisplay={(n) => n.toFixed(1)}
                       />
                     </td>
                     <td className="px-3 py-2">

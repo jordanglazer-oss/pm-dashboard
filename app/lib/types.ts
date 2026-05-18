@@ -338,6 +338,20 @@ export type Stock = {
    * coverage and PT changes into the researchCoverage score.
    */
   researchCoverageNotes?: ExternalSourceNote[];
+  /**
+   * Raw BoostedAI score (0-5 scale) as published by BoostedAI's research
+   * tool. Tracked separately from the dashboard's aiRating field (which
+   * is a 0-2 derived score used in the composite). Entered inline on the
+   * Inbox tab's Coverage Checklist for bulk entry; visible on each stock
+   * page next to the scoring inputs.
+   */
+  boostedAi?: number;
+  /**
+   * Raw SIA (SIACharts relative strength) score (0-10 scale). Same
+   * distinction as boostedAi vs aiRating — this is the raw input, the
+   * scoring system's relativeStrength (0-2) is the derived composite.
+   */
+  sia?: number;
   healthData?: HealthData;
   technicals?: TechnicalIndicators;
   riskAlert?: RiskAlert;
