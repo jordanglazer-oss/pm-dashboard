@@ -304,6 +304,7 @@ function EditableCell({
 type UptickSortKey = "ticker" | "name" | "sector" | "price" | "support" | "resistance" | "dateAdded" | "priceWhenAdded";
 type IdeaSortKey = "ticker" | "priceWhenAdded" | "currentPrice";
 type RBCSortKey = "ticker" | "name" | "sector" | "weight" | "dateAdded";
+type AlphaSortKey = "name" | "ticker" | "sector" | "rating" | "holdingWeight" | "currentPrice" | "priceWhenAdded" | "returnSinceAdded" | "dateAdded" | "days";
 type SortDir = "asc" | "desc";
 
 type LivePrices = Record<string, number | null>;
@@ -360,6 +361,10 @@ export default function ResearchPage() {
   // Hold / Sell / Strong Sell, plus an "(unrated)" bucket for legacy
   // picks scraped before the rating field existed.
   const [alphaRatingFilter, setAlphaRatingFilter] = useState<string | null>(null);
+  // Column sort for the Alpha Picks table. Default: highest holding-weight
+  // first, since SA's published portfolio weights are the primary ranking
+  // a PM uses to read the table.
+  const [alphaSort, setAlphaSort] = useState<{ key: AlphaSortKey; dir: SortDir }>({ key: "holdingWeight", dir: "desc" });
   const [rbcSort, setRbcSort] = useState<{ key: RBCSortKey; dir: SortDir }>({ key: "ticker", dir: "asc" });
   const [rbcUsSort, setRbcUsSort] = useState<{ key: RBCSortKey; dir: SortDir }>({ key: "ticker", dir: "asc" });
 
@@ -738,32 +743,76 @@ export default function ResearchPage() {
       .finally(() => setLoaded(true));
   }, []); // eslint-disable-line react-hooks/exhaustive-deps
 
+  // Holds the most recent state we want to persist. `save()` updates this
+  // on every call, and the unload handler (below) reads it synchronously
+  // to flush any in-flight debounced save before the tab closes / refreshes.
+  // Without this, a quick refresh after a user action could drop the save
+  // since the debounce hadn't fired yet.
+  const pendingSaveRef = useRef<ResearchState | null>(null);
+
+  // Build the wire-shape state (strips inline dataUrls from attachments) and
+  // POST it. Used by both the debounced save and the unload-flush path.
+  const sendResearchSave = useCallback((next: ResearchState, useBeacon = false) => {
+    const serializable: ResearchState = {
+      ...next,
+      attachments: (next.attachments || []).map((a) => ({
+        id: a.id,
+        label: a.label,
+        section: a.section,
+        addedAt: a.addedAt,
+        dataUrl: "", // placeholder; not read client-side
+      })),
+    };
+    const body = JSON.stringify({ research: serializable });
+    if (useBeacon && typeof navigator !== "undefined" && "sendBeacon" in navigator) {
+      // beforeunload fires synchronously; fetch() can't reliably complete
+      // before the tab is torn down. navigator.sendBeacon is designed for
+      // exactly this case — fire-and-forget POST that survives the unload.
+      try {
+        const blob = new Blob([body], { type: "application/json" });
+        navigator.sendBeacon("/api/kv/research", blob);
+        return;
+      } catch {
+        // Fall through to fetch on beacon failure (unlikely).
+      }
+    }
+    fetch("/api/kv/research", {
+      method: "PUT",
+      headers: { "Content-Type": "application/json" },
+      body,
+    }).catch((e) => console.error("Failed to save research:", e));
+  }, []);
+
   const save = useCallback((next: ResearchState) => {
     setState(next);
+    pendingSaveRef.current = next;
     if (saveTimer.current) clearTimeout(saveTimer.current);
+    // 300ms debounce (was 800ms) — short enough that the user almost never
+    // hits "refresh before save" in practice, long enough to coalesce
+    // rapid-fire updates (e.g. scrape → name backfill → price backfill all
+    // queuing saves within ~200ms of each other). The unload handler below
+    // catches the rare case where the user refreshes inside the window.
     saveTimer.current = setTimeout(() => {
-      // Strip attachment dataUrls before persisting the research blob — the
-      // image payloads live in their own Redis keys (see /api/kv/attachments/[id]).
-      // Keeping dataUrls inline used to balloon the blob past write limits
-      // and silently drop the save, which is why screenshots vanished on
-      // refresh when many were attached.
-      const serializable: ResearchState = {
-        ...next,
-        attachments: (next.attachments || []).map((a) => ({
-          id: a.id,
-          label: a.label,
-          section: a.section,
-          addedAt: a.addedAt,
-          dataUrl: "", // placeholder; not read client-side
-        })),
-      };
-      fetch("/api/kv/research", {
-        method: "PUT",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ research: serializable }),
-      }).catch((e) => console.error("Failed to save research:", e));
-    }, 800);
-  }, []);
+      pendingSaveRef.current = null;
+      sendResearchSave(next);
+    }, 300);
+  }, [sendResearchSave]);
+
+  // Flush any pending debounced save on page unload (refresh, close, nav
+  // away). Uses sendBeacon so the POST survives the tab teardown — fetch()
+  // would be cancelled mid-flight. This is the safety net that makes the
+  // debounce shorter without risking lost data on quick refreshes.
+  useEffect(() => {
+    const onBeforeUnload = () => {
+      const pending = pendingSaveRef.current;
+      if (!pending) return;
+      if (saveTimer.current) clearTimeout(saveTimer.current);
+      pendingSaveRef.current = null;
+      sendResearchSave(pending, /*useBeacon=*/true);
+    };
+    window.addEventListener("beforeunload", onBeforeUnload);
+    return () => window.removeEventListener("beforeunload", onBeforeUnload);
+  }, [sendResearchSave]);
 
   const refreshUptickNames = useCallback(async () => {
     if (state.newtonUpticks.length === 0) return;
@@ -2716,9 +2765,71 @@ export default function ResearchPage() {
             ];
 
             // Apply the rating filter.
-            const visiblePicks = alphaRatingFilter == null
+            const filteredPicks = alphaRatingFilter == null
               ? allPicks
               : allPicks.filter((p) => bucket(p) === alphaRatingFilter);
+
+            // Apply column sort. Numeric fields use signed comparison;
+            // strings use locale-aware compare. Missing values sort to the
+            // end regardless of direction (so an unfilled Holding %
+            // doesn't accidentally float to the top of an ascending sort).
+            // The ratingOrder array gives Strong Sell → Strong Buy a
+            // natural ordinal for the Rating column.
+            const ratingOrder: Record<string, number> = {
+              "strong sell": 0,
+              "sell": 1,
+              "(unrated)": 2,
+              "hold": 3,
+              "buy": 4,
+              "strong buy": 5,
+            };
+            const cmpNum = (a: number | null | undefined, b: number | null | undefined): number => {
+              if (a == null && b == null) return 0;
+              if (a == null) return 1; // nulls always last
+              if (b == null) return -1;
+              return a - b;
+            };
+            const cmpStr = (a: string | null | undefined, b: string | null | undefined): number => {
+              const av = (a ?? "").trim();
+              const bv = (b ?? "").trim();
+              if (!av && !bv) return 0;
+              if (!av) return 1;
+              if (!bv) return -1;
+              return av.localeCompare(bv);
+            };
+            const visiblePicks = [...filteredPicks].sort((a, b) => {
+              let cmp = 0;
+              switch (alphaSort.key) {
+                case "name": cmp = cmpStr(a.name, b.name); break;
+                case "ticker": cmp = cmpStr(a.ticker, b.ticker); break;
+                case "sector": cmp = cmpStr(a.sector, b.sector); break;
+                case "rating": {
+                  const ar = ratingOrder[(a.rating || "(unrated)").toLowerCase()] ?? -1;
+                  const br = ratingOrder[(b.rating || "(unrated)").toLowerCase()] ?? -1;
+                  cmp = ar - br;
+                  break;
+                }
+                case "holdingWeight": cmp = cmpNum(a.holdingWeight, b.holdingWeight); break;
+                case "currentPrice": cmp = cmpNum(livePrices[a.ticker], livePrices[b.ticker]); break;
+                case "priceWhenAdded": cmp = cmpNum(a.priceWhenAdded > 0 ? a.priceWhenAdded : null, b.priceWhenAdded > 0 ? b.priceWhenAdded : null); break;
+                case "returnSinceAdded": cmp = cmpNum(a.returnSinceAdded, b.returnSinceAdded); break;
+                case "dateAdded": {
+                  const at = a.dateAdded ? Date.parse(a.dateAdded) : NaN;
+                  const bt = b.dateAdded ? Date.parse(b.dateAdded) : NaN;
+                  cmp = cmpNum(isFinite(at) ? at : null, isFinite(bt) ? bt : null);
+                  break;
+                }
+                case "days": cmp = cmpNum(daysSince(a.dateAdded), daysSince(b.dateAdded)); break;
+              }
+              return alphaSort.dir === "asc" ? cmp : -cmp;
+            });
+
+            const toggleAlphaSort = (key: AlphaSortKey) => {
+              setAlphaSort((prev) => prev.key === key
+                ? { key, dir: prev.dir === "asc" ? "desc" : "asc" }
+                : { key, dir: key === "name" || key === "ticker" || key === "sector" || key === "dateAdded" ? "asc" : "desc" });
+            };
+            const alphaArrow = (key: AlphaSortKey) => alphaSort.key === key ? (alphaSort.dir === "asc" ? " ▲" : " ▼") : "";
 
             // Toggle the PM's manual-sell flag on a single pick.
             // Updates state directly without touching the rest of the
@@ -2817,16 +2928,16 @@ export default function ResearchPage() {
                     <thead>
                       <tr className="border-b-2 border-slate-300 text-left">
                         <th className="py-2 pr-2 text-xs font-semibold text-slate-600 w-8">#</th>
-                        <th className="py-2 pr-3 text-xs font-semibold text-slate-600">Name</th>
-                        <th className="py-2 pr-3 text-xs font-semibold text-slate-600">Ticker</th>
-                        <th className="py-2 pr-3 text-xs font-semibold text-slate-600">Sector</th>
-                        <th className="py-2 pr-2 text-xs font-semibold text-slate-600">Rating</th>
-                        <th className="py-2 pr-2 text-xs font-semibold text-slate-600 text-right">Holding %</th>
-                        <th className="py-2 pr-3 text-xs font-semibold text-slate-600 text-right">Current Price</th>
-                        <th className="py-2 pr-3 text-xs font-semibold text-slate-600 text-right">Price Picked</th>
-                        <th className="py-2 pr-2 text-xs font-semibold text-slate-600 text-right">SA Return</th>
-                        <th className="py-2 pr-3 text-xs font-semibold text-slate-600">Date Added</th>
-                        <th className="py-2 pr-2 text-xs font-semibold text-slate-600 text-right">Days</th>
+                        <th className="py-2 pr-3 text-xs font-semibold text-slate-600 cursor-pointer select-none hover:text-slate-900" onClick={() => toggleAlphaSort("name")}>Name{alphaArrow("name")}</th>
+                        <th className="py-2 pr-3 text-xs font-semibold text-slate-600 cursor-pointer select-none hover:text-slate-900" onClick={() => toggleAlphaSort("ticker")}>Ticker{alphaArrow("ticker")}</th>
+                        <th className="py-2 pr-3 text-xs font-semibold text-slate-600 cursor-pointer select-none hover:text-slate-900" onClick={() => toggleAlphaSort("sector")}>Sector{alphaArrow("sector")}</th>
+                        <th className="py-2 pr-2 text-xs font-semibold text-slate-600 cursor-pointer select-none hover:text-slate-900" onClick={() => toggleAlphaSort("rating")}>Rating{alphaArrow("rating")}</th>
+                        <th className="py-2 pr-2 text-xs font-semibold text-slate-600 text-right cursor-pointer select-none hover:text-slate-900" onClick={() => toggleAlphaSort("holdingWeight")}>Holding %{alphaArrow("holdingWeight")}</th>
+                        <th className="py-2 pr-3 text-xs font-semibold text-slate-600 text-right cursor-pointer select-none hover:text-slate-900" onClick={() => toggleAlphaSort("currentPrice")}>Current Price{alphaArrow("currentPrice")}</th>
+                        <th className="py-2 pr-3 text-xs font-semibold text-slate-600 text-right cursor-pointer select-none hover:text-slate-900" onClick={() => toggleAlphaSort("priceWhenAdded")}>Price Picked{alphaArrow("priceWhenAdded")}</th>
+                        <th className="py-2 pr-2 text-xs font-semibold text-slate-600 text-right cursor-pointer select-none hover:text-slate-900" onClick={() => toggleAlphaSort("returnSinceAdded")}>SA Return{alphaArrow("returnSinceAdded")}</th>
+                        <th className="py-2 pr-3 text-xs font-semibold text-slate-600 cursor-pointer select-none hover:text-slate-900" onClick={() => toggleAlphaSort("dateAdded")}>Date Added{alphaArrow("dateAdded")}</th>
+                        <th className="py-2 pr-2 text-xs font-semibold text-slate-600 text-right cursor-pointer select-none hover:text-slate-900" onClick={() => toggleAlphaSort("days")}>Days{alphaArrow("days")}</th>
                         <th className="py-2 w-16"></th>
                       </tr>
                     </thead>
