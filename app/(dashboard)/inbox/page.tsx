@@ -34,28 +34,43 @@ function fmtTime(iso: string): string {
 export default function InboxPage() {
   const [data, setData] = useState<Status | null>(null);
   const [loading, setLoading] = useState(true);
+  // Separate "refreshing" state so the button can show a spinner on manual
+  // clicks without flashing the full-page loading state every 15s for the
+  // auto-poll. The first load uses `loading`; subsequent loads (auto-poll
+  // OR manual refresh button) use `refreshing` for visual feedback.
+  const [refreshing, setRefreshing] = useState(false);
+  const [lastUpdated, setLastUpdated] = useState<Date | null>(null);
   const [error, setError] = useState<string | null>(null);
 
-  const load = useCallback(async () => {
-    setLoading(true);
+  // `manual` = true when triggered by the button click, false for auto-poll.
+  // Auto-polls don't need to flash the refreshing spinner (no UI affordance),
+  // but manual clicks DO so the user gets immediate feedback that the click
+  // landed. Cache-busting query param prevents any browser/CDN caching of
+  // the /api/inbox/status response.
+  const load = useCallback(async (manual = false) => {
+    if (manual) setRefreshing(true);
     setError(null);
     try {
-      const res = await fetch("/api/inbox/status");
+      const res = await fetch(`/api/inbox/status?t=${Date.now()}`, {
+        cache: "no-store",
+      });
       if (!res.ok) {
         setError(`Failed to load (${res.status})`);
         return;
       }
       setData(await res.json());
+      setLastUpdated(new Date());
     } catch (e) {
       setError(e instanceof Error ? e.message : "Load failed");
     } finally {
+      if (manual) setRefreshing(false);
       setLoading(false);
     }
   }, []);
 
   useEffect(() => {
-    void load();
-    const t = setInterval(load, 15000);
+    void load(false);
+    const t = setInterval(() => void load(false), 15000);
     return () => clearInterval(t);
   }, [load]);
 
@@ -72,12 +87,23 @@ export default function InboxPage() {
             Live log of analyst-report PDFs received via the dfwreports123@gmail.com Apps Script webhook.
           </p>
         </div>
-        <button
-          onClick={() => void load()}
-          className="rounded-md border border-slate-200 px-3 py-1.5 text-sm hover:bg-slate-50"
-        >
-          Refresh
-        </button>
+        <div className="flex items-center gap-3">
+          {lastUpdated && (
+            <span className="text-[11px] text-slate-400">
+              Updated {lastUpdated.toLocaleTimeString("en-US", { hour: "numeric", minute: "2-digit", second: "2-digit", hour12: true })}
+            </span>
+          )}
+          <button
+            onClick={() => void load(true)}
+            disabled={refreshing}
+            className="rounded-md border border-slate-200 px-3 py-1.5 text-sm hover:bg-slate-50 disabled:opacity-50 disabled:cursor-not-allowed flex items-center gap-1.5"
+          >
+            {refreshing && (
+              <span className="inline-block w-3 h-3 border-2 border-slate-400 border-t-transparent rounded-full animate-spin" />
+            )}
+            {refreshing ? "Refreshing…" : "Refresh"}
+          </button>
+        </div>
       </div>
 
       <div className="grid grid-cols-3 gap-3 mb-6">
@@ -170,10 +196,21 @@ export default function InboxPage() {
         <p className="text-blue-800">
           From any email account, send <span className="font-mono">dfwreports123@gmail.com</span> a message with:
         </p>
-        <ul className="mt-2 ml-4 list-disc text-blue-800 text-xs space-y-0.5">
-          <li>Subject: <span className="font-mono">Analyst Report: &lt;TICKER&gt; &lt;RBC|JPM&gt;</span> (e.g. <span className="font-mono">Analyst Report: NVDA RBC</span>)</li>
-          <li>Attach the analyst-report PDF (max ~15 MB). Multiple PDFs in one email all get ingested under the same ticker/source.</li>
+        <ul className="mt-2 ml-4 list-disc text-blue-800 text-xs space-y-1">
+          <li>
+            <span className="font-semibold">Subject:</span> <span className="font-mono">Analyst Report: &lt;TICKER&gt;</span>
+            <span className="ml-1 text-blue-700">(e.g. <span className="font-mono">Analyst Report: AVGO</span>)</span>
+          </li>
+          <li>
+            <span className="font-semibold">Attach 1–2 PDFs</span> named <span className="font-mono">&lt;TICKER&gt;_JPM.pdf</span> and/or <span className="font-mono">&lt;TICKER&gt;_RBC.pdf</span>
+            <span className="ml-1 text-blue-700">(e.g. <span className="font-mono">AVGO_JPM.pdf</span>, <span className="font-mono">AVGO_RBC.pdf</span>)</span>
+            <span className="ml-1 text-blue-700">— filename determines which slot each PDF lands in</span>
+          </li>
           <li>The Apps Script polls every 5 minutes — events show up in this log within ~5 min.</li>
+          <li>Max ~15 MB per PDF.</li>
+          <li className="text-blue-700">
+            <span className="italic">Legacy subject format also supported:</span> <span className="font-mono">Analyst Report: &lt;TICKER&gt; &lt;RBC|JPM&gt;</span> with any filename.
+          </li>
         </ul>
       </div>
     </div>
