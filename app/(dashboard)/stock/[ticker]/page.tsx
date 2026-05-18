@@ -998,7 +998,7 @@ export default function StockDetailPage() {
     el.addEventListener("scroll", onScroll, { passive: true });
     return () => el.removeEventListener("scroll", onScroll);
   }, []);
-  const { getStock, scoredStocks, marketData, updateScore, updateExplanations, updateLastScored, updatePrice, updateHealthData, updateTechnicals, updateStockFields, updateWeight, updateFundData, moveBucket, removeStock, pimModels, toggleModelEligibility, updateModelWeight, getAnalystSnapshot, updateAnalystSnapshot } = useStocks();
+  const { getStock, scoredStocks, marketData, updateScore, updateExplanations, updateLastScored, updatePrice, updateHealthData, updateTechnicals, updateStockFields, updateWeight, updateFundData, moveBucket, removeStock, pimModels, toggleModelEligibility, updateModelWeight, getAnalystSnapshot, updateAnalystSnapshot, getAnalystReports, uploadAnalystReport, removeAnalystReport } = useStocks();
   const stock = getStock(ticker);
   const [scoring, setScoring] = useState(false);
   // Captures verification metadata from the last successful rescore so the
@@ -2051,7 +2051,10 @@ export default function StockDetailPage() {
                               currentPrice={stock.price}
                               snapshot={getAnalystSnapshot(ticker)}
                               breakdown={computeAnalystConsensus(getAnalystSnapshot(ticker), stock.price)}
+                              reports={getAnalystReports(ticker)}
                               onChange={(next) => updateAnalystSnapshot(ticker, next)}
+                              onUpload={(source, dataUrl, label) => uploadAnalystReport(ticker, source, dataUrl, label)}
+                              onRemoveReport={(source) => removeAnalystReport(ticker, source)}
                             />
                           )}
                           {!hasNotesEditor && !isAnalystConsensus && !hasContent && cat.inputType !== "manual" && cat.inputType !== "computed" && (

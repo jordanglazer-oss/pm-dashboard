@@ -7,6 +7,8 @@ import type {
   AnalystRating,
   FactSetEntry,
   ConsensusBreakdown,
+  TickerReports,
+  ExtractedReport,
 } from "@/app/lib/analyst-snapshots";
 
 type Props = {
@@ -14,7 +16,10 @@ type Props = {
   currentPrice?: number;
   snapshot: TickerSnapshot | undefined;
   breakdown: ConsensusBreakdown;
+  reports: TickerReports | undefined;
   onChange: (next: TickerSnapshot | undefined) => void;
+  onUpload: (source: "rbc" | "jpm", dataUrl: string, label: string) => Promise<{ ok: true; extracted: ExtractedReport } | { ok: false; error: string }>;
+  onRemoveReport: (source: "rbc" | "jpm") => Promise<void>;
 };
 
 const RATING_OPTIONS: { value: AnalystRating; label: string }[] = [
@@ -34,8 +39,10 @@ function freshnessChip(label: "fresh" | "stale" | "very-stale") {
   return "bg-red-50 text-red-700 border-red-200";
 }
 
-export function AnalystSnapshotPanel({ ticker, currentPrice, snapshot, breakdown, onChange }: Props) {
+export function AnalystSnapshotPanel({ ticker, currentPrice, snapshot, breakdown, reports, onChange, onUpload, onRemoveReport }: Props) {
   const [local, setLocal] = useState<TickerSnapshot>(() => snapshot ?? {});
+  const [uploading, setUploading] = useState<{ source: "rbc" | "jpm" } | null>(null);
+  const [uploadError, setUploadError] = useState<{ source: "rbc" | "jpm"; message: string } | null>(null);
   const onChangeRef = useRef(onChange);
   onChangeRef.current = onChange;
 
@@ -107,13 +114,40 @@ export function AnalystSnapshotPanel({ ticker, currentPrice, snapshot, breakdown
     scheduleSave(next);
   };
 
+  const handleFile = async (which: "rbc" | "jpm", file: File) => {
+    if (!file) return;
+    if (file.size > 15 * 1024 * 1024) {
+      setUploadError({ source: which, message: `PDF too large (${(file.size / 1024 / 1024).toFixed(1)} MB). Max 15 MB.` });
+      return;
+    }
+    setUploadError(null);
+    setUploading({ source: which });
+    try {
+      const dataUrl = await new Promise<string>((resolve, reject) => {
+        const reader = new FileReader();
+        reader.onload = () => resolve(String(reader.result || ""));
+        reader.onerror = () => reject(new Error("Failed to read file"));
+        reader.readAsDataURL(file);
+      });
+      const res = await onUpload(which, dataUrl, file.name);
+      if (!res.ok) setUploadError({ source: which, message: res.error });
+    } catch (e) {
+      setUploadError({ source: which, message: e instanceof Error ? e.message : "Upload failed" });
+    } finally {
+      setUploading(null);
+    }
+  };
+
   const renderAnalyst = (which: "rbc" | "jpm", label: string) => {
     const entry = local[which];
     const contribution = which === "rbc" ? breakdown.rbc : breakdown.jpm;
+    const report = reports?.[which];
+    const isUploading = uploading?.source === which;
+    const errMsg = uploadError?.source === which ? uploadError.message : null;
     return (
       <div className="rounded-lg border border-slate-200 bg-white p-3">
         <div className="flex items-center justify-between mb-2">
-          <div className="flex items-center gap-2">
+          <div className="flex items-center gap-2 flex-wrap">
             <span className="text-xs font-semibold text-slate-700">{label}</span>
             {contribution && (
               <span
@@ -128,18 +162,52 @@ export function AnalystSnapshotPanel({ ticker, currentPrice, snapshot, breakdown
                 {contribution.contribution.toFixed(2)} pts
               </span>
             )}
+            {report && (
+              <span className="text-[10px] text-slate-500" title={`Uploaded ${report.uploadedAt.slice(0, 10)} · ${report.label}`}>
+                · PDF: {report.label.length > 30 ? report.label.slice(0, 27) + "..." : report.label}
+              </span>
+            )}
           </div>
-          {entry && (
-            <button
-              type="button"
-              onClick={() => clearAnalyst(which)}
-              className="text-[10px] text-slate-400 hover:text-red-600"
-              title={`Clear ${label} entry`}
-            >
-              Clear
-            </button>
-          )}
+          <div className="flex items-center gap-2">
+            <label className={`text-[10px] cursor-pointer ${isUploading ? "text-slate-300" : "text-blue-600 hover:text-blue-800"}`}>
+              <input
+                type="file"
+                accept="application/pdf"
+                className="hidden"
+                disabled={isUploading}
+                onChange={(e) => {
+                  const f = e.target.files?.[0];
+                  if (f) void handleFile(which, f);
+                  e.target.value = ""; // allow re-upload of same file
+                }}
+              />
+              {isUploading ? "Extracting…" : report ? "Replace PDF" : "Upload PDF"}
+            </label>
+            {report && (
+              <button
+                type="button"
+                onClick={() => void onRemoveReport(which)}
+                className="text-[10px] text-slate-400 hover:text-red-600"
+                title="Remove the uploaded PDF (snapshot fields remain editable)"
+              >
+                Remove PDF
+              </button>
+            )}
+            {entry && (
+              <button
+                type="button"
+                onClick={() => clearAnalyst(which)}
+                className="text-[10px] text-slate-400 hover:text-red-600"
+                title={`Clear ${label} entry`}
+              >
+                Clear
+              </button>
+            )}
+          </div>
         </div>
+        {errMsg && (
+          <p className="text-[10px] text-red-600 mb-2">{errMsg}</p>
+        )}
         <div className="grid grid-cols-1 sm:grid-cols-2 gap-2 text-[11px]">
           <label className="flex flex-col gap-0.5">
             <span className="text-slate-500">Rating</span>
@@ -187,6 +255,39 @@ export function AnalystSnapshotPanel({ ticker, currentPrice, snapshot, breakdown
             />
           </label>
         </div>
+        {report && (report.extracted.thesis?.length || report.extracted.risks?.length || report.extracted.sectorView || report.extracted.keyMetrics?.length) && (
+          <div className="mt-3 pt-3 border-t border-slate-100 space-y-2">
+            {report.extracted.sectorView && (
+              <p className="text-[11px] text-slate-600 italic">{report.extracted.sectorView}</p>
+            )}
+            {report.extracted.thesis && report.extracted.thesis.length > 0 && (
+              <div>
+                <p className="text-[9px] font-semibold uppercase tracking-wider text-slate-400 mb-1">Thesis</p>
+                <ul className="text-[11px] text-slate-600 space-y-0.5 list-disc list-inside">
+                  {report.extracted.thesis.map((t, i) => <li key={i}>{t}</li>)}
+                </ul>
+              </div>
+            )}
+            {report.extracted.risks && report.extracted.risks.length > 0 && (
+              <div>
+                <p className="text-[9px] font-semibold uppercase tracking-wider text-slate-400 mb-1">Risks</p>
+                <ul className="text-[11px] text-slate-600 space-y-0.5 list-disc list-inside">
+                  {report.extracted.risks.map((r, i) => <li key={i}>{r}</li>)}
+                </ul>
+              </div>
+            )}
+            {report.extracted.keyMetrics && report.extracted.keyMetrics.length > 0 && (
+              <div>
+                <p className="text-[9px] font-semibold uppercase tracking-wider text-slate-400 mb-1">Key metrics</p>
+                <ul className="text-[11px] text-slate-600 space-y-0.5">
+                  {report.extracted.keyMetrics.map((m, i) => (
+                    <li key={i}><span className="text-slate-500">{m.label}:</span> <span className="font-medium">{m.value}</span></li>
+                  ))}
+                </ul>
+              </div>
+            )}
+          </div>
+        )}
       </div>
     );
   };

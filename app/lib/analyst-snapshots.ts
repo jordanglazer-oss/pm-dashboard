@@ -48,6 +48,62 @@ export type TickerSnapshot = {
 
 export type AnalystSnapshots = Record<string, TickerSnapshot>;
 
+// ── Report manifest (PDF extractions) ─────────────────────────────────
+
+export type ExtractedReport = {
+  rating?: AnalystRating;
+  target?: number;
+  asOf?: string;
+  thesis?: string[];
+  risks?: string[];
+  sectorView?: string;
+  keyMetrics?: { label: string; value: string }[];
+};
+
+export type ReportMeta = {
+  /** Deterministic id: `<canonicalTicker>-<source>`. The PDF dataUrl lives at
+   *  pm:analyst-report-pdf:<id>; the manifest only holds metadata. */
+  id: string;
+  /** User-supplied label (e.g. "Q1 2026 update"). Falls back to the file name
+   *  the user uploaded. */
+  label: string;
+  uploadedAt: string;
+  /** SHA-256 of the source dataUrl — same PDF → same hash → cache hit. */
+  hash: string;
+  extracted: ExtractedReport;
+};
+
+export type TickerReports = {
+  rbc?: ReportMeta;
+  jpm?: ReportMeta;
+};
+
+export type AnalystReports = Record<string, TickerReports>;
+
+export function reportIdFor(ticker: string, source: "rbc" | "jpm"): string {
+  return `${canonicalTicker(ticker)}-${source}`;
+}
+
+export function getReportsForTicker(blob: AnalystReports | undefined, ticker: string): TickerReports | undefined {
+  if (!blob) return undefined;
+  const key = canonicalTicker(ticker);
+  if (blob[key]) return blob[key];
+  return blob[ticker.toUpperCase()];
+}
+
+export function setReportsForTicker(blob: AnalystReports, ticker: string, next: TickerReports | undefined): AnalystReports {
+  const key = canonicalTicker(ticker);
+  const out: AnalystReports = { ...blob };
+  if (!next || (!next.rbc && !next.jpm)) {
+    delete out[key];
+    delete out[ticker.toUpperCase()];
+  } else {
+    out[key] = next;
+    if (ticker.toUpperCase() !== key) delete out[ticker.toUpperCase()];
+  }
+  return out;
+}
+
 // ── Pure scoring helpers ───────────────────────────────────────────────
 
 export function ratingScore(rating: AnalystRating): number {

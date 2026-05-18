@@ -6,8 +6,8 @@ import type { PimHolding, PimModelData, PimPortfolioState, PimModelGroupState } 
 import { computeScores, isOffensiveSector, isScoreable } from "./scoring";
 import { defaultMarketData } from "./defaults";
 import { pimModelSeed } from "./pim-seed";
-import type { AnalystSnapshots, TickerSnapshot } from "./analyst-snapshots";
-import { setSnapshotForTicker, getSnapshotForTicker } from "./analyst-snapshots";
+import type { AnalystSnapshots, TickerSnapshot, AnalystReports, TickerReports, AnalystEntry, ExtractedReport } from "./analyst-snapshots";
+import { setSnapshotForTicker, getSnapshotForTicker, setReportsForTicker, getReportsForTicker, reportIdFor } from "./analyst-snapshots";
 
 // Locked equity holdings: specialty funds whose weightInClass is driven by
 // the per-model Balanced weight (%) input on the stock page — NOT by the
@@ -111,6 +111,16 @@ type StockContextType = {
   analystSnapshots: AnalystSnapshots;
   getAnalystSnapshot: (ticker: string) => TickerSnapshot | undefined;
   updateAnalystSnapshot: (ticker: string, next: TickerSnapshot | undefined) => void;
+  analystReports: AnalystReports;
+  getAnalystReports: (ticker: string) => TickerReports | undefined;
+  /** Upload + extract + persist an analyst report PDF for (ticker, source).
+   *  On success: stores the PDF dataUrl at pm:analyst-report-pdf:<id>, updates
+   *  pm:analyst-reports with the extracted metadata, and merges the extracted
+   *  rating/target/asOf into pm:analyst-snapshots[ticker][source]. */
+  uploadAnalystReport: (ticker: string, source: "rbc" | "jpm", dataUrl: string, label: string) => Promise<{ ok: true; extracted: ExtractedReport } | { ok: false; error: string }>;
+  /** Remove the stored report and the PDF dataUrl. Leaves the snapshot
+   *  fields alone — the user can still edit the values manually. */
+  removeAnalystReport: (ticker: string, source: "rbc" | "jpm") => Promise<void>;
 };
 
 const StockContext = createContext<StockContextType | null>(null);
@@ -150,6 +160,7 @@ export function StockProvider({ children }: { children: React.ReactNode }) {
   const [pimPortfolioState, setPimPortfolioState] = useState<PimPortfolioState>({ groupStates: [], lastUpdated: "" });
   const [uiPrefs, setUiPrefsState] = useState<Record<string, string>>({});
   const [analystSnapshots, setAnalystSnapshotsState] = useState<AnalystSnapshots>({});
+  const [analystReports, setAnalystReportsState] = useState<AnalystReports>({});
   const [loading, setLoading] = useState(true);
 
   const persistStocks = useDebouncedPersist("/api/kv/stocks", "stocks");
@@ -181,6 +192,13 @@ export function StockProvider({ children }: { children: React.ReactNode }) {
   }, []);
   const persistUiPrefs = useDebouncedPersist("/api/kv/ui-prefs", "uiPrefs", 300);
   const persistAnalystSnapshots = useDebouncedPersist("/api/kv/analyst-snapshots", "snapshots", 400);
+  const persistAnalystReports = useCallback((data: AnalystReports) => {
+    fetch("/api/kv/analyst-reports", {
+      method: "PUT",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ reports: data }),
+    }).catch((e) => console.error("Failed to persist analyst-reports:", e));
+  }, []);
 
   /* ─── Load from KV on mount ─── */
   useEffect(() => {
@@ -194,7 +212,8 @@ export function StockProvider({ children }: { children: React.ReactNode }) {
       fetch("/api/kv/pim-portfolio-state").then((r) => r.json()).catch(() => ({ groupStates: [], lastUpdated: "" })),
       fetch("/api/kv/ui-prefs").then((r) => r.json()).catch(() => ({ uiPrefs: {} })),
       fetch("/api/kv/analyst-snapshots").then((r) => r.json()).catch(() => ({ snapshots: {} })),
-    ]).then(async ([stocksRes, marketRes, briefRes, chartRes, scannerRes, pimRes, portfolioStateRes, uiPrefsRes, analystSnapshotsRes]) => {
+      fetch("/api/kv/analyst-reports").then((r) => r.json()).catch(() => ({ reports: {} })),
+    ]).then(async ([stocksRes, marketRes, briefRes, chartRes, scannerRes, pimRes, portfolioStateRes, uiPrefsRes, analystSnapshotsRes, analystReportsRes]) => {
       const rawLoadedStocks: Stock[] = stocksRes.stocks || [];
       const { migrated: loadedStocks, changed: scoresMigrated } = migrateStockScores(rawLoadedStocks);
       setStocks(loadedStocks);
@@ -234,6 +253,7 @@ export function StockProvider({ children }: { children: React.ReactNode }) {
       if (portfolioStateRes.groupStates) setPimPortfolioState(portfolioStateRes);
       if (uiPrefsRes.uiPrefs) setUiPrefsState(uiPrefsRes.uiPrefs);
       if (analystSnapshotsRes.snapshots) setAnalystSnapshotsState(analystSnapshotsRes.snapshots);
+      if (analystReportsRes.reports) setAnalystReportsState(analystReportsRes.reports);
       setLoading(false);
 
       // Backfill missing names from Yahoo Finance for all stocks
@@ -880,6 +900,123 @@ export function StockProvider({ children }: { children: React.ReactNode }) {
     });
   }, [persistAnalystSnapshots]);
 
+  const getAnalystReports = useCallback((ticker: string) => {
+    return getReportsForTicker(analystReports, ticker);
+  }, [analystReports]);
+
+  const uploadAnalystReport = useCallback(async (
+    ticker: string,
+    source: "rbc" | "jpm",
+    dataUrl: string,
+    label: string
+  ): Promise<{ ok: true; extracted: ExtractedReport } | { ok: false; error: string }> => {
+    if (!dataUrl.startsWith("data:application/pdf;base64,")) {
+      return { ok: false, error: "Expected a base64-encoded PDF" };
+    }
+    const reportId = reportIdFor(ticker, source);
+
+    // 1) Extract (hash-gated cache → free if same PDF as last time).
+    let extractRes: { result: ExtractedReport; hash: string } | null = null;
+    try {
+      const res = await fetch("/api/analyst-report-extract", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ ticker, source, dataUrl }),
+      });
+      if (!res.ok) {
+        const err = await res.json().catch(() => ({}));
+        return { ok: false, error: err.error || `Extraction failed (${res.status})` };
+      }
+      const data = await res.json();
+      extractRes = { result: data.result ?? {}, hash: data.hash };
+    } catch (e) {
+      return { ok: false, error: e instanceof Error ? e.message : "Extraction request failed" };
+    }
+
+    // 2) Store the PDF dataUrl.
+    try {
+      const res = await fetch(`/api/kv/analyst-reports/${encodeURIComponent(reportId)}`, {
+        method: "PUT",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ dataUrl }),
+      });
+      if (!res.ok) {
+        return { ok: false, error: `Failed to store PDF (${res.status})` };
+      }
+    } catch (e) {
+      return { ok: false, error: e instanceof Error ? e.message : "PDF storage failed" };
+    }
+
+    // 3) Update the manifest with the new ReportMeta.
+    const meta = {
+      id: reportId,
+      label,
+      uploadedAt: new Date().toISOString(),
+      hash: extractRes.hash,
+      extracted: extractRes.result,
+    };
+    setAnalystReportsState((prev) => {
+      const current = getReportsForTicker(prev, ticker) ?? {};
+      const nextForTicker: TickerReports = { ...current, [source]: meta };
+      const updated = setReportsForTicker(prev, ticker, nextForTicker);
+      persistAnalystReports(updated);
+      return updated;
+    });
+
+    // 4) Merge extracted rating/target/asOf into the snapshot (preserve any
+    //    fields the user already entered manually that the extraction didn't
+    //    cover, e.g. priceAtReport overrides).
+    setAnalystSnapshotsState((prev) => {
+      const currentSnapshot = getSnapshotForTicker(prev, ticker) ?? {};
+      const existing: AnalystEntry = (currentSnapshot[source] as AnalystEntry | undefined) ?? { rating: "not-covered" };
+      const merged: AnalystEntry = {
+        ...existing,
+        rating: extractRes!.result.rating ?? existing.rating,
+        target: extractRes!.result.target ?? existing.target,
+        asOf: extractRes!.result.asOf ?? existing.asOf,
+        reportId,
+        lastUpdated: new Date().toISOString(),
+      };
+      const nextSnapshot: TickerSnapshot = { ...currentSnapshot, [source]: merged };
+      const updated = setSnapshotForTicker(prev, ticker, nextSnapshot);
+      persistAnalystSnapshots(updated);
+      return updated;
+    });
+
+    return { ok: true, extracted: extractRes.result };
+  }, [persistAnalystReports, persistAnalystSnapshots]);
+
+  const removeAnalystReport = useCallback(async (ticker: string, source: "rbc" | "jpm") => {
+    const reportId = reportIdFor(ticker, source);
+    try {
+      await fetch(`/api/kv/analyst-reports/${encodeURIComponent(reportId)}`, { method: "DELETE" });
+    } catch (e) {
+      console.error("Failed to delete PDF blob:", e);
+    }
+    setAnalystReportsState((prev) => {
+      const current = getReportsForTicker(prev, ticker);
+      if (!current || !current[source]) return prev;
+      const nextForTicker: TickerReports = { ...current };
+      delete nextForTicker[source];
+      const updated = setReportsForTicker(prev, ticker, Object.keys(nextForTicker).length ? nextForTicker : undefined);
+      persistAnalystReports(updated);
+      return updated;
+    });
+    // Clear the reportId pointer on the snapshot but leave the other fields.
+    setAnalystSnapshotsState((prev) => {
+      const currentSnapshot = getSnapshotForTicker(prev, ticker);
+      if (!currentSnapshot || !currentSnapshot[source]) return prev;
+      const entry = currentSnapshot[source] as AnalystEntry;
+      if (!entry.reportId) return prev;
+      const nextEntry: AnalystEntry = { ...entry };
+      delete nextEntry.reportId;
+      const nextSnapshot: TickerSnapshot = { ...currentSnapshot, [source]: nextEntry };
+      const updated = setSnapshotForTicker(prev, ticker, nextSnapshot);
+      persistAnalystSnapshots(updated);
+      return updated;
+    });
+  }, [persistAnalystReports, persistAnalystSnapshots]);
+
   /* ─── Toggle model eligibility: updates stock field AND syncs model holdings ─── */
   const toggleModelEligibility = useCallback((ticker: string, groupId: string, eligible: boolean) => {
     // 1. Update the stock's modelEligibility field
@@ -1006,6 +1143,10 @@ export function StockProvider({ children }: { children: React.ReactNode }) {
         analystSnapshots,
         getAnalystSnapshot,
         updateAnalystSnapshot,
+        analystReports,
+        getAnalystReports,
+        uploadAnalystReport,
+        removeAnalystReport,
       }}
     >
       {children}
