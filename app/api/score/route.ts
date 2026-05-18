@@ -631,8 +631,8 @@ Also provide:
 - name: Full company name
 - sector: GICS sector
 - beta: Use the beta from the provided data
-- companySummary: 1-2 sentences explaining what the company does in plain language that a portfolio manager can relay to clients. Focus on the core business, key products/services, and what drives revenue. Keep it simple and jargon-free.
-- investmentThesis: 1-2 sentences on why to own this stock right now given current market conditions. Reference specific catalysts, valuation support, or thematic tailwinds. This should be a concise "elevator pitch" a PM could use with clients.
+- companySummary: STRICT 1-2 SENTENCES explaining what the company does in plain language that a portfolio manager can relay to clients. Focus on the core business, key products/services, and what drives revenue. Keep it simple and jargon-free. When the "INGESTED ANALYST REPORTS" block is present above, you may ground the description in the analysts' framing of the business — but do NOT extend the length beyond 1-2 sentences. If you draw a fact from a specific report, name the source briefly (e.g., "RBC describes the company as ...").
+- investmentThesis: STRICT 1-2 SENTENCES on why to own this stock right now given current market conditions. Reference specific catalysts, valuation support, or thematic tailwinds. This should be a concise "elevator pitch" a PM could use with clients. When the "INGESTED ANALYST REPORTS" block is present above, USE the analysts' actual bull-case thesis bullets as your source material — do not paraphrase from your own training data when RBC/JPM have laid out the rationale. Still capped at 1-2 sentences; pick the strongest 1-2 thesis points and compress them. If the analysts disagree (e.g., one bullish, one bearish), reflect that briefly (e.g., "RBC sees X driving upside; JPM cautions about Y"). When both RBC and JPM rate the stock favorably with similar drivers, lean on their shared thesis. Never let the analyst material lengthen this field beyond 2 sentences.
 
 Respond ONLY with valid JSON (no markdown code fences, no commentary):
 {
@@ -766,6 +766,53 @@ export async function POST(request: NextRequest) {
       const rcBlock = fmtNotes(researchCoverageNotes as NoteRow[]);
       if (rcBlock) {
         financialContext += `\n\n---\n\n=== PM-LOGGED RESEARCH COVERAGE NOTES ===\nThe PM has manually logged the following sell-side analyst coverage items for this stock. Treat these as TIER-1 input for the researchCoverage category:\n${rcBlock}`;
+      }
+
+      // Append ingested analyst-report extractions (RBC + JPM) when available.
+      // The Gmail-inbox webhook + manual-upload flow both store extracted
+      // thesis/risks/sectorView bullets at pm:analyst-reports keyed by
+      // canonical ticker. Surfacing them in the scoring prompt lets the
+      // model ground the companySummary + investmentThesis in the actual
+      // analyst rationale (vs. its own paraphrase) without affecting the
+      // word-count rule for those fields. Compact rendering — one bullet
+      // per line — keeps the prompt budget tight.
+      try {
+        const redis = await getRedis();
+        const rawReports = await redis.get("pm:analyst-reports");
+        if (rawReports) {
+          const reportsBlob = JSON.parse(rawReports) as Record<string, { rbc?: { extracted?: import("@/app/lib/analyst-snapshots").ExtractedReport; uploadedAt?: string }; jpm?: { extracted?: import("@/app/lib/analyst-snapshots").ExtractedReport; uploadedAt?: string } }>;
+          const canonical = upperTicker.toUpperCase();
+          const tickerReports = reportsBlob[canonical];
+          if (tickerReports?.rbc?.extracted || tickerReports?.jpm?.extracted) {
+            const lines: string[] = ["=== INGESTED ANALYST REPORTS (RBC / JPM) ==="];
+            lines.push("PDF-extracted thesis, risks, and sector view from the most recent reports stored in pm:analyst-reports. Use these to ground the companySummary and investmentThesis fields in the analysts' actual rationale (not your paraphrase). DO NOT extend the length of those fields beyond 1-2 sentences each — the rule still applies.");
+            for (const src of ["rbc", "jpm"] as const) {
+              const r = tickerReports[src]?.extracted;
+              if (!r) continue;
+              const headerBits: string[] = [src.toUpperCase()];
+              if (r.rating) headerBits.push(`rating=${r.rating}`);
+              if (r.target != null) headerBits.push(`target=${r.target}`);
+              if (r.asOf) headerBits.push(`as of ${r.asOf}`);
+              lines.push(`\n--- ${headerBits.join(" · ")} ---`);
+              if (r.sectorView) lines.push(`Sector view: ${r.sectorView}`);
+              if (Array.isArray(r.thesis) && r.thesis.length > 0) {
+                lines.push("Thesis:");
+                for (const b of r.thesis.slice(0, 5)) lines.push(`  - ${b}`);
+              }
+              if (Array.isArray(r.risks) && r.risks.length > 0) {
+                lines.push("Risks:");
+                for (const b of r.risks.slice(0, 4)) lines.push(`  - ${b}`);
+              }
+              if (Array.isArray(r.keyMetrics) && r.keyMetrics.length > 0) {
+                lines.push("Key metrics cited:");
+                for (const m of r.keyMetrics.slice(0, 6)) lines.push(`  - ${m.label}: ${m.value}`);
+              }
+            }
+            financialContext += `\n\n---\n\n${lines.join("\n")}`;
+          }
+        }
+      } catch (e) {
+        console.error("[score] Failed to load analyst reports for prompt context:", e);
       }
     } catch (e) {
       console.error("Failed to fetch financial data:", e);
