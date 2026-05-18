@@ -42,6 +42,17 @@ export function middleware(req: NextRequest) {
     return NextResponse.next();
   }
 
+  // The Gmail Apps Script webhook authenticates with
+  // `Authorization: Bearer $INBOX_SECRET` instead of the auth cookie —
+  // it's running on Google's servers and can't send the cookie. The
+  // route handler validates the bearer token itself, so we exempt the
+  // ingest endpoint here. NOTE: only the ingest endpoint is exempted;
+  // /api/inbox/status stays cookie-gated because it's called from the
+  // browser (the /inbox admin page) and exposes the recent-events log.
+  if (pathname === "/api/inbox/ingest") {
+    return NextResponse.next();
+  }
+
   // All other API routes require the auth cookie.
   const cookie = req.cookies.get(AUTH_COOKIE);
   if (cookie?.value === AUTH_COOKIE_VALUE) {
