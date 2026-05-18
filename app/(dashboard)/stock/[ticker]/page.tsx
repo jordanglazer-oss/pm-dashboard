@@ -7,6 +7,8 @@ import { useStocks } from "@/app/lib/StockContext";
 import { SCORE_GROUPS, MAX_SCORE, INSTRUMENT_LABELS } from "@/app/lib/types";
 import type { ScoreKey, FundData, ScoreDataPoint, ScoreDataPointSource, ExternalSourceNote } from "@/app/lib/types";
 import { groupTotal, isScoreable, normalizeSector } from "@/app/lib/scoring";
+import { computeAnalystConsensus } from "@/app/lib/analyst-snapshots";
+import { AnalystSnapshotPanel } from "@/app/components/AnalystSnapshotPanel";
 import { SignalPill, ratingTone } from "@/app/components/SignalPill";
 import StockHealthMonitor from "@/app/components/StockHealthMonitor";
 import RiskAlertPanel from "@/app/components/RiskAlertPanel";
@@ -996,7 +998,7 @@ export default function StockDetailPage() {
     el.addEventListener("scroll", onScroll, { passive: true });
     return () => el.removeEventListener("scroll", onScroll);
   }, []);
-  const { getStock, scoredStocks, marketData, updateScore, updateExplanations, updateLastScored, updatePrice, updateHealthData, updateTechnicals, updateStockFields, updateWeight, updateFundData, moveBucket, removeStock, pimModels, toggleModelEligibility, updateModelWeight } = useStocks();
+  const { getStock, scoredStocks, marketData, updateScore, updateExplanations, updateLastScored, updatePrice, updateHealthData, updateTechnicals, updateStockFields, updateWeight, updateFundData, moveBucket, removeStock, pimModels, toggleModelEligibility, updateModelWeight, getAnalystSnapshot, updateAnalystSnapshot, getAnalystReports, uploadAnalystReport, removeAnalystReport } = useStocks();
   const stock = getStock(ticker);
   const [scoring, setScoring] = useState(false);
   // Captures verification metadata from the last successful rescore so the
@@ -1933,11 +1935,12 @@ export default function StockDetailPage() {
                       // appears for these two, even when no AI content exists.
                       const isExternalSources = cat.key === "externalSources";
                       const isResearchCoverage = cat.key === "researchCoverage";
+                      const isAnalystConsensus = cat.key === "analystConsensus";
                       const hasNotesEditor = isExternalSources || isResearchCoverage;
                       const externalNotes = stock.externalSourceNotes ?? [];
                       const researchNotes = stock.researchCoverageNotes ?? [];
                       const notesForThis = isExternalSources ? externalNotes : isResearchCoverage ? researchNotes : [];
-                      const showToggle = hasContent || hasNotesEditor;
+                      const showToggle = hasContent || hasNotesEditor || isAnalystConsensus;
                       const isExpanded = expandedCategories.has(cat.key);
                       return (
                         <div key={cat.key}>
@@ -2042,7 +2045,19 @@ export default function StockDetailPage() {
                               )}
                             </div>
                           )}
-                          {!hasNotesEditor && !hasContent && cat.inputType !== "manual" && (
+                          {isExpanded && isAnalystConsensus && (
+                            <AnalystSnapshotPanel
+                              ticker={ticker}
+                              currentPrice={stock.price}
+                              snapshot={getAnalystSnapshot(ticker)}
+                              breakdown={computeAnalystConsensus(getAnalystSnapshot(ticker), stock.price)}
+                              reports={getAnalystReports(ticker)}
+                              onChange={(next) => updateAnalystSnapshot(ticker, next)}
+                              onUpload={(source, dataUrl, label) => uploadAnalystReport(ticker, source, dataUrl, label)}
+                              onRemoveReport={(source) => removeAnalystReport(ticker, source)}
+                            />
+                          )}
+                          {!hasNotesEditor && !isAnalystConsensus && !hasContent && cat.inputType !== "manual" && cat.inputType !== "computed" && (
                             <p className="text-[11px] text-slate-400 italic ml-1">Re-score via Claude to generate explanation</p>
                           )}
                         </div>
