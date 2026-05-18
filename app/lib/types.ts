@@ -5,15 +5,19 @@ export type { TechnicalIndicators, RiskAlert };
 
 // ── Scoring category definitions ──
 // Each sub-category has a max score and an input type:
-//   AUTO  = Claude scores automatically
-//   SEMI  = Claude provides initial score, PM can override
-//   MANUAL = PM scores manually (defaults provided)
+//   AUTO     = Claude scores automatically
+//   SEMI     = Claude provides initial score, PM can override
+//   MANUAL   = PM scores manually (defaults provided)
+//   COMPUTED = Deterministically computed server-side from structured inputs
+//              (e.g. analyst snapshot, research-scrape tally). Not in the LLM
+//              prompt and not user-editable; the value is overwritten on every
+//              rescore by the formula. No confidence chip — it's a formula.
 
 export type ScoreCategory = {
   key: string;
   label: string;
   max: number;
-  inputType: "auto" | "semi" | "manual";
+  inputType: "auto" | "semi" | "manual" | "computed";
 };
 
 export type ScoreGroup = {
@@ -32,6 +36,8 @@ export type ScoreKey =
   // Research
   | "researchCoverage"
   | "externalSources"
+  | "analystConsensus"
+  | "researchMentions"
   // Technicals
   | "charting"
   | "relativeStrength"
@@ -151,8 +157,10 @@ export const SCORE_GROUPS: ScoreGroup[] = [
     icon: "◇",
     maxTotal: 8,
     categories: [
-      { key: "researchCoverage", label: "Research coverage", max: 4, inputType: "semi" },
-      { key: "externalSources", label: "External sources", max: 4, inputType: "manual" },
+      { key: "researchCoverage", label: "Research coverage", max: 1, inputType: "semi" },
+      { key: "externalSources", label: "External sources", max: 1, inputType: "manual" },
+      { key: "analystConsensus", label: "Analyst consensus", max: 3, inputType: "computed" },
+      { key: "researchMentions", label: "Research mentions", max: 3, inputType: "computed" },
     ],
   },
   {

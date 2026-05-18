@@ -494,8 +494,8 @@ STALE DATA HANDLING: any EDGAR field marked [STALE — last filed YYYY-MM-DD] ha
 
 INSIDER ACTIVITY: when the EDGAR block includes a "=== INSIDER ACTIVITY (Form 4...) ===" sub-section, this is the PRIMARY data source for the ownershipTrends category. The data comes directly from SEC Form 4 filings (officers, directors, 10%+ owners) over the last 90 days, filtered to OPEN-MARKET trades only (P=Purchase, S=Sale). RSU grants/vests, option exercises, and tax-withholding sales are deliberately EXCLUDED because they're scheduled/mechanical, not discretionary signals. Cite specific insiders, transaction dates, dollar amounts, and the directional bias. A cluster of multi-officer BUYS is a strong bullish signal; sustained broad-based SELLING is a yellow flag (but contextualize: a single 10% owner trimming a position is different from the CFO + CEO + COO all selling). If no Form 4 transactions appear, say so explicitly — quiet insider behavior is itself a neutral data point, not a missing field.
 
-PM NOTES (when present): the user may have logged "External Sources" or "Research Coverage" notes manually on this stock. These are clearly labeled blocks in the data above (=== PM-LOGGED EXTERNAL SOURCES === and === PM-LOGGED RESEARCH COVERAGE NOTES ===). Treat these notes as TIER-1 INPUT for the relevant categories:
-  - Use researchCoverageNotes as the primary input for the researchCoverage score. If notes name specific analyst firms with date-stamped reports/upgrades/downgrades, cite them by firm + date in dataPoints. Combine with whatever sell-side coverage Yahoo / web_search reveals.
+PM NOTES (when present): the user may have logged "External Sources" or "Research Coverage" notes manually on this stock. These are clearly labeled blocks in the data above (=== PM-LOGGED EXTERNAL SOURCES === and === PM-LOGGED RESEARCH COVERAGE NOTES ===). Treat these notes as supporting context for the relevant categories:
+  - researchCoverageNotes describe analyst activity (named-firm coverage initiations, PT changes, upgrades/downgrades). Use them as evidence of an active information environment when scoring researchCoverage (which is now a breadth/dispersion meta-signal, not a directional score — see the researchCoverage rubric below). DO NOT use these notes to score directional bullishness or bearishness; that signal is scored separately and deterministically in analystConsensus, which is computed server-side and not your responsibility.
   - Use externalSourceNotes as input for catalysts and as supporting context across other categories where relevant (the user has determined these sources are material).
   - If both are empty, just say so in the relevant dataPoints (label "PM notes" value "none logged" source "model").
 
@@ -520,7 +520,7 @@ LONG-TERM GROUP:
 - secular (max 2, AUTO): Secular growth trend — long-term industry tailwinds favoring the company
 
 RESEARCH GROUP:
-- researchCoverage (max 4, SEMI): Research coverage — depth/breadth of sell-side coverage, estimate dispersion, quality of analyst pool
+- researchCoverage (max 1, SEMI): Research coverage — meta-signal about the information environment for this stock. Score 1 if coverage is deep (10+ analysts), revisions are recent, and dispersion is moderate-to-low; score 0 if coverage is thin (<5 analysts), revisions are stale, and the signal is uninformative; score 0.5 for in-between cases. This category is intentionally narrow: directional consensus is now scored separately in analystConsensus (deterministic, formula-driven, not your concern); your job here is purely to assess the breadth and quality of the information environment, NOT whether analysts are bullish or bearish.
 
 FUNDAMENTAL GROUP:
 - growth (max 3, AUTO): Growth (rev / earnings / FCF) — USE THE PROVIDED DATA. Cite actual revenue figures, YoY growth rates, EPS, net income changes, FCF trends. Compare sequential quarters and year-over-year. Include guidance if available from analyst estimates.
