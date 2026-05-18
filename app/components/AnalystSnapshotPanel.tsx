@@ -10,7 +10,6 @@ import type {
   ExtractedReport,
 } from "@/app/lib/analyst-snapshots";
 import { displayTicker } from "@/app/lib/ticker";
-import { tickerDisplayCurrency, formatCurrency } from "@/app/lib/currency";
 
 type Props = {
   ticker: string;
@@ -192,32 +191,8 @@ export function AnalystSnapshotPanel({ ticker, snapshot, breakdown, reports, onC
             <div className="flex flex-col gap-0.5">
               <span className="text-slate-500">Target price</span>
               <span className="rounded border border-slate-100 bg-slate-50 px-1.5 py-1 text-slate-700">
-                {(() => {
-                  if (entry?.target == null) return <span className="italic text-slate-400">Not extracted</span>;
-                  // Display currency: prefer the entry's stored targetCurrency
-                  // (set by ingestion after conversion); fall back to deriving
-                  // from the ticker for legacy entries that predate the field.
-                  const displayCcy =
-                    entry.targetCurrency || tickerDisplayCurrency(ticker)?.currency || "USD";
-                  return formatCurrency(entry.target, displayCcy);
-                })()}
+                {entry?.target ? `$${entry.target.toFixed(2)}` : <span className="italic text-slate-400">Not extracted</span>}
               </span>
-              {/* Conversion provenance — small grey note when the analyst
-                  report was in a different currency than the dashboard. */}
-              {entry?.target != null && entry.originalTarget != null && entry.originalCurrency && entry.targetCurrency && entry.originalCurrency !== entry.targetCurrency && (
-                <span className="text-[10px] text-slate-400 italic" title={`Converted at FX rate ${entry.fxRateApplied?.toFixed(4)}${entry.fxRateDate ? ` (close on ${entry.fxRateDate})` : ""}`}>
-                  converted from {formatCurrency(entry.originalTarget, entry.originalCurrency)}
-                  {entry.fxRateApplied && ` @ ${entry.fxRateApplied.toFixed(4)}`}
-                </span>
-              )}
-              {/* Warnings: conversion failed, currency couldn't be read, or
-                  ticker suffix unknown. The target is shown raw in these cases
-                  and the user should manually verify. */}
-              {entry?.target != null && !entry.targetCurrency && (
-                <span className="text-[10px] text-amber-700 italic" title="The model could not determine the report's currency from the PDF, or no FX conversion could be applied. Verify manually.">
-                  ⚠ currency unverified — manually check the report
-                </span>
-              )}
             </div>
             <div className="flex flex-col gap-0.5">
               <span className="text-slate-500">Report date</span>
@@ -230,11 +205,7 @@ export function AnalystSnapshotPanel({ ticker, snapshot, breakdown, reports, onC
                 Price at report
               </span>
               <span className="rounded border border-slate-100 bg-slate-50 px-1.5 py-1 text-slate-700">
-                {entry?.priceAtReport ? (
-                  formatCurrency(entry.priceAtReport, tickerDisplayCurrency(ticker)?.currency || "USD")
-                ) : (
-                  <span className="italic text-slate-400">—</span>
-                )}
+                {entry?.priceAtReport ? `$${entry.priceAtReport.toFixed(2)}` : <span className="italic text-slate-400">—</span>}
               </span>
             </div>
           </div>
@@ -299,17 +270,14 @@ export function AnalystSnapshotPanel({ ticker, snapshot, breakdown, reports, onC
         </div>
         <div className="grid grid-cols-1 sm:grid-cols-3 gap-2 text-[11px]">
           <label className="flex flex-col gap-0.5">
-            <span className="text-slate-500">
-              Avg target price <span className="text-slate-400">({tickerDisplayCurrency(ticker)?.currency ?? "USD"})</span>
-            </span>
+            <span className="text-slate-500">Avg target price</span>
             <input
               type="number"
               step="0.01"
               value={factset?.averageTarget ?? ""}
               onChange={(e) => patchFactSet({ averageTarget: e.target.value === "" ? undefined : Number(e.target.value) })}
-              placeholder={tickerDisplayCurrency(ticker)?.currency === "USD" ? "$" : tickerDisplayCurrency(ticker)?.currency ?? "$"}
+              placeholder="$"
               className="rounded border border-slate-200 bg-white px-1.5 py-1 outline-none focus:border-blue-400"
-              title={`Enter the FactSet average target in ${tickerDisplayCurrency(ticker)?.currency ?? "USD"} (the dashboard ticker's currency). Convert manually if FactSet shows it in a different currency.`}
             />
           </label>
           <label className="flex flex-col gap-0.5">

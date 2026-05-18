@@ -19,36 +19,13 @@ export type AnalystRating = "outperform" | "neutral" | "underperform" | "not-cov
 
 export type AnalystEntry = {
   rating: AnalystRating;
-  /** Analyst's price target IN THE DASHBOARD TICKER'S DISPLAY CURRENCY.
-   *  For dual-listed names (CCJ/CCO.TO, NVO/NOVO-B.CO, CLS/CLS.TO), this
-   *  is the converted value — see `originalTarget` / `originalCurrency` /
-   *  `fxRateApplied` for the audit trail. */
+  /** Analyst's price target. Numeric; currency is implicit from the ticker. */
   target?: number;
-  /** ISO 4217 code of `target`. Matches the ticker's display currency
-   *  (USD for CCJ, CAD for CCO.TO, DKK for NOVO-B.CO, etc). Optional for
-   *  backward compatibility — entries written before currency support
-   *  was added have this missing and are rendered using a heuristic. */
-  targetCurrency?: string;
-  /** When the analyst report's currency differed from the dashboard
-   *  display currency, this holds the un-converted target as the analyst
-   *  wrote it (in major units — GBp / ZAc / ILA are pre-normalized to
-   *  GBP / ZAR / ILS before storage). */
-  originalTarget?: number;
-  /** ISO 4217 code of `originalTarget` (always major-unit). */
-  originalCurrency?: string;
-  /** FX rate used for the conversion: 1 originalCurrency = N targetCurrency.
-   *  Stored for audit so the user can verify the math. */
-  fxRateApplied?: number;
-  /** Actual close date the rate came from. May differ from `asOf` when
-   *  the report's date was a weekend or holiday (Yahoo doesn't quote
-   *  on those, so we fall back to the most recent prior trading day). */
-  fxRateDate?: string;
   /** YYYY-MM-DD — date of the report or the rating-as-of date. */
   asOf?: string;
   /** Underlying price at the time of the report. Auto-filled from current
    *  Yahoo price at save time; user can override. Drives convergence-based
-   *  freshness decay (target hit / adverse move). Always in the dashboard
-   *  ticker's display currency. */
+   *  freshness decay (target hit / adverse move). */
   priceAtReport?: number;
   /** Optional reference to an uploaded PDF (step 3b). */
   reportId?: string;
@@ -75,17 +52,7 @@ export type AnalystSnapshots = Record<string, TickerSnapshot>;
 
 export type ExtractedReport = {
   rating?: AnalystRating;
-  /** Numeric target as written in the PDF (in `targetCurrency` units). When
-   *  `targetCurrency` is a minor unit (GBp / ZAc / ILA), this is the
-   *  minor-unit number — conversion to major units happens during
-   *  ingestion via normalizeToMajorUnit. */
   target?: number;
-  /** ISO 4217 code of `target` AS WRITTEN IN THE REPORT. May be a major
-   *  unit (USD, CAD, EUR, GBP, DKK, …) or a minor unit (GBp = pence,
-   *  ZAc = SA cents, ILA = Israeli agorot). Case is significant for
-   *  minor-unit detection. Missing when the PDF didn't state currency
-   *  explicitly — the inbox-log flags these as "currency unverified". */
-  targetCurrency?: string;
   asOf?: string;
   thesis?: string[];
   risks?: string[];
