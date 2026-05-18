@@ -397,20 +397,69 @@ export default function InboxPage() {
 
   const coverageFilter = uiPrefs["inbox.coverageFilter"] || "all"; // all | missing | portfolio | watchlist
   const setCoverageFilter = (val: string) => setUiPref("inbox.coverageFilter", val);
+
+  // Column sort, persisted via uiPrefs so the preference sticks across
+  // refreshes and devices.
+  type CoverageSortKey = "ticker" | "name" | "bucket" | "rbc" | "jpm" | "factset" | "analysts" | "status";
+  const covSortKey = (uiPrefs["inbox.coverageSortKey"] as CoverageSortKey) || "status";
+  const covSortDir = uiPrefs["inbox.coverageSortDir"] || "asc";
+  const toggleCovSort = (key: CoverageSortKey) => {
+    if (covSortKey === key) {
+      setUiPref("inbox.coverageSortDir", covSortDir === "asc" ? "desc" : "asc");
+    } else {
+      setUiPref("inbox.coverageSortKey", key);
+      // Sensible default: ascending for the new key. The user can flip on
+      // a second click. "asc" for status surfaces missing rows first
+      // (urgent at the top), which is the most useful default.
+      setUiPref("inbox.coverageSortDir", "asc");
+    }
+  };
+  const covArrow = (key: CoverageSortKey) =>
+    covSortKey === key ? (covSortDir === "asc" ? " ▲" : " ▼") : "";
+
+  // Filter THEN sort. Comparator handles missing values by floating them
+  // to the end of the sort regardless of direction, so an empty FactSet $
+  // doesn't accidentally jump to the top of an ascending sort.
   const filteredCoverage = coverageRows.filter((r) => {
     if (coverageFilter === "all") return true;
-    if (coverageFilter === "missing") return !r.hasRbc && !r.hasJpm;
+    if (coverageFilter === "missing") return !r.hasRbc && !r.hasJpm && r.factsetTarget == null;
     if (coverageFilter === "portfolio") return r.bucket === "Portfolio";
     if (coverageFilter === "watchlist") return r.bucket === "Watchlist";
     return true;
-  }).sort((a, b) => {
-    // Sort by: missing first, then by bucket (Portfolio first), then ticker.
-    const aMissing = !a.hasRbc && !a.hasJpm ? 0 : 1;
-    const bMissing = !b.hasRbc && !b.hasJpm ? 0 : 1;
-    if (aMissing !== bMissing) return aMissing - bMissing;
-    if (a.bucket !== b.bucket) return a.bucket === "Portfolio" ? -1 : 1;
-    return a.displayTicker.localeCompare(b.displayTicker);
   });
+  const sortedCoverage = (() => {
+    const dir = covSortDir === "asc" ? 1 : -1;
+    const cmpNum = (a: number | null, b: number | null): number => {
+      if (a == null && b == null) return 0;
+      if (a == null) return 1;
+      if (b == null) return -1;
+      return a - b;
+    };
+    return [...filteredCoverage].sort((a, b) => {
+      let cmp = 0;
+      switch (covSortKey) {
+        case "ticker": cmp = a.displayTicker.localeCompare(b.displayTicker); break;
+        case "name": cmp = a.name.localeCompare(b.name); break;
+        case "bucket": cmp = a.bucket.localeCompare(b.bucket); break;
+        case "rbc": cmp = (a.hasRbc ? 1 : 0) - (b.hasRbc ? 1 : 0); break;
+        case "jpm": cmp = (a.hasJpm ? 1 : 0) - (b.hasJpm ? 1 : 0); break;
+        case "factset": cmp = cmpNum(a.factsetTarget, b.factsetTarget); break;
+        case "analysts": cmp = cmpNum(a.factsetCount, b.factsetCount); break;
+        case "status":
+        default: {
+          // Status priority: 0 = no reports (urgent), 1-2 = partial, 3 = all
+          // Ascending → urgent first. Descending → all-covered first.
+          const score = (r: Coverage) =>
+            (r.hasRbc ? 1 : 0) + (r.hasJpm ? 1 : 0) + (r.factsetTarget != null ? 1 : 0);
+          cmp = score(a) - score(b);
+          // Tie-break on ticker for stability
+          if (cmp === 0) cmp = a.displayTicker.localeCompare(b.displayTicker);
+          break;
+        }
+      }
+      return dir * cmp;
+    });
+  })();
 
   // Commit a FactSet edit for the given ticker. Pull the latest snapshot
   // from context (NOT the closure-captured value, which could be stale),
@@ -640,28 +689,28 @@ export default function InboxPage() {
           <p className="text-sm text-slate-400 p-4 italic">
             No scoreable stocks in your Portfolio or Watchlist yet. Add stocks on the Dashboard to start tracking analyst coverage.
           </p>
-        ) : filteredCoverage.length === 0 ? (
+        ) : sortedCoverage.length === 0 ? (
           <p className="text-sm text-slate-400 p-4 italic">
             {coverageFilter === "missing"
-              ? "🎉 Every scoreable stock has at least one report. No gaps."
+              ? "🎉 Every scoreable stock has at least one source. No gaps."
               : "No stocks match this filter."}
           </p>
         ) : (
           <table className="w-full text-sm">
             <thead className="bg-slate-50 text-xs uppercase tracking-wider text-slate-500">
               <tr>
-                <th className="px-3 py-2 text-left">Ticker</th>
-                <th className="px-3 py-2 text-left">Name</th>
-                <th className="px-3 py-2 text-left">Bucket</th>
-                <th className="px-3 py-2 text-center w-16">RBC</th>
-                <th className="px-3 py-2 text-center w-16">JPM</th>
-                <th className="px-3 py-2 text-right w-28" title="FactSet street-consensus average price target. Click the cell to edit. Persists to pm:analyst-snapshots — same field shown on the stock page.">FactSet $</th>
-                <th className="px-3 py-2 text-right w-20" title="Number of analysts in the FactSet consensus. Click the cell to edit.">Analysts</th>
-                <th className="px-3 py-2 text-left w-32">Status</th>
+                <th className="px-3 py-2 text-left cursor-pointer select-none hover:text-slate-700" onClick={() => toggleCovSort("ticker")}>Ticker{covArrow("ticker")}</th>
+                <th className="px-3 py-2 text-left cursor-pointer select-none hover:text-slate-700" onClick={() => toggleCovSort("name")}>Name{covArrow("name")}</th>
+                <th className="px-3 py-2 text-left cursor-pointer select-none hover:text-slate-700" onClick={() => toggleCovSort("bucket")}>Bucket{covArrow("bucket")}</th>
+                <th className="px-3 py-2 text-center w-16 cursor-pointer select-none hover:text-slate-700" onClick={() => toggleCovSort("rbc")}>RBC{covArrow("rbc")}</th>
+                <th className="px-3 py-2 text-center w-16 cursor-pointer select-none hover:text-slate-700" onClick={() => toggleCovSort("jpm")}>JPM{covArrow("jpm")}</th>
+                <th className="px-3 py-2 text-right w-28 cursor-pointer select-none hover:text-slate-700" onClick={() => toggleCovSort("factset")} title="FactSet street-consensus average price target. Click the cell value to edit; click the header to sort. Persists to pm:analyst-snapshots — same field shown on the stock page.">FactSet ${covArrow("factset")}</th>
+                <th className="px-3 py-2 text-right w-20 cursor-pointer select-none hover:text-slate-700" onClick={() => toggleCovSort("analysts")} title="Number of analysts in the FactSet consensus. Click the cell value to edit; click the header to sort.">Analysts{covArrow("analysts")}</th>
+                <th className="px-3 py-2 text-left w-32 cursor-pointer select-none hover:text-slate-700" onClick={() => toggleCovSort("status")} title="Sort by overall coverage status (No reports / Partial / Both). Ascending shows gaps first.">Status{covArrow("status")}</th>
               </tr>
             </thead>
             <tbody>
-              {filteredCoverage.map((r) => {
+              {sortedCoverage.map((r) => {
                 const fullyCovered = r.hasRbc && r.hasJpm;
                 const partiallyCovered = (r.hasRbc || r.hasJpm) && !fullyCovered;
                 const noCoverage = !r.hasRbc && !r.hasJpm;
