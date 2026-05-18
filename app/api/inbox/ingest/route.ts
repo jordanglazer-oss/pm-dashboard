@@ -16,6 +16,7 @@ import {
 } from "@/app/lib/analyst-snapshots";
 import { canonicalTicker, tickersEqual } from "@/app/lib/ticker";
 import { appendInboxEvent } from "@/app/lib/inbox-log";
+import { tickerDisplayCurrency, convertAnalystTarget } from "@/app/lib/currency";
 
 /**
  * Webhook target for the Gmail Apps Script. The script POSTs one PDF per
@@ -121,13 +122,76 @@ async function persistReportToRedis(args: {
   const currentSnapshot = getSnapshotForTicker(snapshots, args.ticker) ?? {};
   const stocks = await readJson<Stock[]>("pm:stocks", []);
   const priceAtUpload = stocks.find((s) => tickersEqual(s.ticker, args.ticker))?.price;
+
+  // ── Currency conversion ─────────────────────────────────────────────
+  // Convert the analyst's price target from whatever currency the report
+  // used (CAD, USD, DKK, GBp, etc) into the dashboard ticker's display
+  // currency (derived from suffix: .TO → CAD, bare → USD, .CO → DKK, …).
+  // The conversion uses the FX rate from the report's `asOf` date so the
+  // stored target matches what the analyst saw. Failures are logged as
+  // inbox-log warnings; the raw target is stored as-is in that case.
+  const displayCcy = tickerDisplayCurrency(args.ticker);
+  let conversionFields: Partial<AnalystEntry> = {};
+
+  if (args.extracted.target != null && displayCcy && args.extracted.targetCurrency) {
+    const conv = await convertAnalystTarget({
+      rawTarget: args.extracted.target,
+      reportedCurrency: args.extracted.targetCurrency,
+      displayCurrency: displayCcy.currency,
+      asOf: args.extracted.asOf,
+    });
+    if (conv) {
+      conversionFields = {
+        target: conv.converted,
+        targetCurrency: displayCcy.currency,
+        originalTarget: conv.originalTarget,
+        originalCurrency: conv.originalCurrency,
+        fxRateApplied: conv.fxRateApplied,
+        fxRateDate: conv.fxRateDate,
+      };
+    } else {
+      // FX fetch failed — store the raw target but flag it as unconverted.
+      conversionFields = {
+        target: args.extracted.target,
+        targetCurrency: args.extracted.targetCurrency,
+      };
+      await appendInboxEvent({
+        status: "error",
+        ticker: args.ticker,
+        source: args.source,
+        message: `FX conversion failed for ${args.extracted.targetCurrency} → ${displayCcy.currency}. Target stored raw; manually verify on the stock page.`,
+      });
+    }
+  } else if (args.extracted.target != null && displayCcy && !args.extracted.targetCurrency) {
+    // Currency wasn't extracted from the PDF — model couldn't tell.
+    conversionFields = { target: args.extracted.target };
+    await appendInboxEvent({
+      status: "error",
+      ticker: args.ticker,
+      source: args.source,
+      message: `Currency could not be determined from the report. Target ${args.extracted.target} stored raw; verify currency on the stock page (dashboard ticker displays in ${displayCcy.currency}).`,
+    });
+  } else if (args.extracted.target != null && !displayCcy) {
+    // Dashboard ticker has an unknown suffix — store raw, flag for review.
+    conversionFields = {
+      target: args.extracted.target,
+      targetCurrency: args.extracted.targetCurrency,
+    };
+    await appendInboxEvent({
+      status: "error",
+      ticker: args.ticker,
+      source: args.source,
+      message: `Ticker suffix is unknown to the currency router. Target stored raw with currency tag "${args.extracted.targetCurrency ?? "unknown"}".`,
+    });
+  }
+
   const entry: AnalystEntry = {
     rating: args.extracted.rating ?? "not-covered",
-    target: args.extracted.target,
     asOf: args.extracted.asOf,
     priceAtReport: priceAtUpload,
     reportId,
     lastUpdated: new Date().toISOString(),
+    ...conversionFields,
   };
   const nextSnapshot: TickerSnapshot = { ...currentSnapshot, [args.source]: entry };
   const nextSnapshots = setSnapshotForTicker(snapshots, args.ticker, nextSnapshot);

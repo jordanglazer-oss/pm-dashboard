@@ -916,7 +916,19 @@ export function StockProvider({ children }: { children: React.ReactNode }) {
     const reportId = reportIdFor(ticker, source);
 
     // 1) Extract (hash-gated cache → free if same PDF as last time).
-    let extractRes: { result: ExtractedReport; hash: string } | null = null;
+    //    The response includes a `conversion` block computed server-side
+    //    from the extracted target + targetCurrency + dashboard ticker
+    //    currency (FX rate pinned to the report's asOf date).
+    type ConversionBlock = {
+      target?: number;
+      targetCurrency?: string;
+      originalTarget?: number;
+      originalCurrency?: string;
+      fxRateApplied?: number;
+      fxRateDate?: string;
+      conversionStatus: "converted" | "no-conversion-needed" | "currency-unknown" | "ticker-unknown" | "fx-failed" | "no-target";
+    };
+    let extractRes: { result: ExtractedReport; hash: string; conversion: ConversionBlock } | null = null;
     try {
       const res = await fetch("/api/analyst-report-extract", {
         method: "POST",
@@ -928,7 +940,11 @@ export function StockProvider({ children }: { children: React.ReactNode }) {
         return { ok: false, error: err.error || `Extraction failed (${res.status})` };
       }
       const data = await res.json();
-      extractRes = { result: data.result ?? {}, hash: data.hash };
+      extractRes = {
+        result: data.result ?? {},
+        hash: data.hash,
+        conversion: (data.conversion ?? { conversionStatus: "no-target" }) as ConversionBlock,
+      };
     } catch (e) {
       return { ok: false, error: e instanceof Error ? e.message : "Extraction request failed" };
     }
@@ -967,16 +983,32 @@ export function StockProvider({ children }: { children: React.ReactNode }) {
     //    are strictly PDF-driven now — no carryover from a previous PDF, no
     //    manual entry path. priceAtReport snapshots the current Yahoo price
     //    at upload time so freshness decay can detect adverse moves later.
+    //
+    //    Target / targetCurrency / originalTarget / originalCurrency /
+    //    fxRateApplied / fxRateDate come from the server-computed
+    //    `conversion` block — the extracted ExtractedReport is the raw
+    //    PDF-derived data; the conversion block is what got applied for
+    //    THIS specific ticker context.
     const priceAtUpload = stocks.find((s) => s.ticker === ticker || s.ticker.toUpperCase() === ticker.toUpperCase())?.price;
+    const conv = extractRes.conversion;
     setAnalystSnapshotsState((prev) => {
       const currentSnapshot = getSnapshotForTicker(prev, ticker) ?? {};
       const merged: AnalystEntry = {
         rating: extractRes!.result.rating ?? "not-covered",
-        target: extractRes!.result.target,
         asOf: extractRes!.result.asOf,
         priceAtReport: priceAtUpload,
         reportId,
         lastUpdated: new Date().toISOString(),
+        // Conversion-aware fields. When conversion failed or the model
+        // couldn't determine currency, we still store the raw target so
+        // the user sees a number — the UI shows a "currency unverified"
+        // flag in those cases.
+        ...(conv.target != null ? { target: conv.target } : {}),
+        ...(conv.targetCurrency ? { targetCurrency: conv.targetCurrency } : {}),
+        ...(conv.originalTarget != null ? { originalTarget: conv.originalTarget } : {}),
+        ...(conv.originalCurrency ? { originalCurrency: conv.originalCurrency } : {}),
+        ...(conv.fxRateApplied != null ? { fxRateApplied: conv.fxRateApplied } : {}),
+        ...(conv.fxRateDate ? { fxRateDate: conv.fxRateDate } : {}),
       };
       const nextSnapshot: TickerSnapshot = { ...currentSnapshot, [source]: merged };
       const updated = setSnapshotForTicker(prev, ticker, nextSnapshot);
