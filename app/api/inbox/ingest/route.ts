@@ -116,12 +116,20 @@ export async function POST(request: NextRequest) {
   }
 
   // ── Parse body ──────────────────────────────────────────────────────
-  let body: { subject?: string; sender?: string; filename?: string; dataUrl?: string };
+  let body: { subject?: string; sender?: string; filename?: string; dataUrl?: string; ping?: boolean };
   try {
     body = await request.json();
   } catch {
     await appendInboxEvent({ status: "error", message: "Request body was not valid JSON" });
     return NextResponse.json({ error: "Invalid JSON" }, { status: 400 });
+  }
+
+  // Ping mode — confirms the webhook is reachable and the bearer secret
+  // matches, without burning an Anthropic call on dummy PDF data. Used by
+  // the Apps Script's `testWebhook` function during setup. Skipped from
+  // the inbox-log so health checks don't clutter the audit trail.
+  if (body.ping === true) {
+    return NextResponse.json({ ok: true, ping: true, message: "Webhook reachable and authorized." });
   }
 
   const subject = (body.subject ?? "").trim();
