@@ -3,6 +3,11 @@ import { NextRequest, NextResponse } from "next/server";
 
 const KEY = "pm:analyst-snapshots";
 
+// Force-dynamic ensures the Inbox tab's Coverage Checklist sees fresh
+// FactSet target data on every Refresh — without this, Next's default
+// route caching could serve a stale snapshot.
+export const dynamic = "force-dynamic";
+
 export async function GET() {
   try {
     const redis = await getRedis();
