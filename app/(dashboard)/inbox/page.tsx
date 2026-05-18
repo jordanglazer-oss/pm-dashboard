@@ -1,8 +1,8 @@
 "use client";
 
-import React, { useCallback, useEffect, useState } from "react";
+import React, { useCallback, useEffect, useRef, useState } from "react";
 import type { InboxEvent } from "@/app/lib/inbox-log";
-import type { AnalystReports, AnalystSnapshots } from "@/app/lib/analyst-snapshots";
+import type { AnalystReports, FactSetEntry, TickerSnapshot } from "@/app/lib/analyst-snapshots";
 import { useStocks } from "@/app/lib/StockContext";
 import { isScoreable } from "@/app/lib/scoring";
 import { canonicalTicker } from "@/app/lib/ticker";
@@ -82,6 +82,89 @@ function CollapsibleHeader({
   );
 }
 
+/**
+ * Inline-editable numeric input for the Coverage Checklist's FactSet
+ * columns. Commits on blur or Enter; sync's local state when the parent
+ * value changes (e.g. via a refresh). Treats blank as "clear this field"
+ * so the user can delete a value by emptying the input.
+ *
+ * Validates client-side: positive numbers only, NaN ignored. Bad input
+ * silently snaps back to the prior value on commit.
+ */
+function EditableNumberCell({
+  value,
+  step,
+  onCommit,
+  width,
+  placeholder,
+  ariaLabel,
+  formatDisplay,
+}: {
+  value: number | null;
+  step: string; // e.g. "0.01" or "1"
+  onCommit: (next: number | null) => void;
+  width: string; // tailwind class
+  placeholder?: string;
+  ariaLabel: string;
+  formatDisplay?: (n: number) => string;
+}) {
+  // Local string state so the user can type partial values (e.g. "12.")
+  // without the parent coercing the value to a number mid-keystroke.
+  const [str, setStr] = useState<string>(value != null ? (formatDisplay ? formatDisplay(value) : String(value)) : "");
+  const initialRef = useRef(str);
+
+  // Re-sync when parent value changes (e.g. another device edited, or
+  // a refresh pulled new data). Skip when the field is focused so we
+  // don't yank the value out from under the user mid-type.
+  const inputRef = useRef<HTMLInputElement>(null);
+  useEffect(() => {
+    if (document.activeElement === inputRef.current) return;
+    const next = value != null ? (formatDisplay ? formatDisplay(value) : String(value)) : "";
+    setStr(next);
+    initialRef.current = next;
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [value]);
+
+  const commit = () => {
+    if (str === initialRef.current) return; // no change
+    const trimmed = str.trim();
+    if (trimmed === "") {
+      onCommit(null);
+      initialRef.current = "";
+      return;
+    }
+    const n = parseFloat(trimmed);
+    if (!isFinite(n) || n < 0) {
+      // Invalid input — snap back to prior value
+      setStr(initialRef.current);
+      return;
+    }
+    onCommit(n);
+    initialRef.current = str;
+  };
+
+  return (
+    <input
+      ref={inputRef}
+      type="number"
+      step={step}
+      value={str}
+      onChange={(e) => setStr(e.target.value)}
+      onBlur={commit}
+      onKeyDown={(e) => {
+        if (e.key === "Enter") (e.target as HTMLInputElement).blur();
+        if (e.key === "Escape") {
+          setStr(initialRef.current);
+          (e.target as HTMLInputElement).blur();
+        }
+      }}
+      placeholder={placeholder ?? "—"}
+      aria-label={ariaLabel}
+      className={`${width} rounded border border-slate-200 bg-white px-1.5 py-0.5 text-xs font-mono text-right outline-none focus:border-blue-400 focus:ring-1 focus:ring-blue-200 placeholder-slate-300`}
+    />
+  );
+}
+
 type ReportsRow = {
   ticker: string;
   source: "rbc" | "jpm";
@@ -99,10 +182,11 @@ export default function InboxPage() {
   // (ticker, source) slot in the system regardless of how many cached
   // retries have rolled off the event log.
   const [reports, setReports] = useState<AnalystReports | null>(null);
-  // pm:analyst-snapshots — holds the FactSet entry (averageTarget,
-  // analystCount, asOf) per ticker. We display FactSet target in the
-  // coverage checklist alongside RBC/JPM status.
-  const [snapshots, setSnapshots] = useState<AnalystSnapshots | null>(null);
+  // pm:analyst-snapshots (which holds FactSet entries) is sourced from
+  // StockContext rather than fetched separately here — that way edits to
+  // the FactSet target / analyst count below round-trip through the same
+  // path the stock page uses, so changes on either side stay in sync
+  // without a manual reload.
   const [loading, setLoading] = useState(true);
   // Separate "refreshing" state so the button can show a spinner on manual
   // clicks without flashing the full-page loading state every 15s for the
@@ -114,7 +198,7 @@ export default function InboxPage() {
   // cached events are mostly noise; the PM cares about fresh ingestions
   // and errors. State persists via uiPrefs (Redis) so the preference
   // sticks across refreshes and syncs across devices.
-  const { uiPrefs, setUiPref, stocks } = useStocks();
+  const { uiPrefs, setUiPref, stocks, analystSnapshots, getAnalystSnapshot, updateAnalystSnapshot } = useStocks();
   const hideCached = uiPrefs["inbox.hideCached"] !== "0"; // default true (hidden)
   const toggleHideCached = () => setUiPref("inbox.hideCached", hideCached ? "0" : "1");
   const [error, setError] = useState<string | null>(null);
@@ -128,13 +212,11 @@ export default function InboxPage() {
     if (manual) setRefreshing(true);
     setError(null);
     try {
-      // Fetch the inbox status (recent events), analyst-reports manifest
-      // (per-stock ingestion history), and analyst-snapshots (FactSet
-      // average targets) in parallel. Each feeds a different section.
-      const [statusRes, reportsRes, snapshotsRes] = await Promise.all([
+      // Fetch the inbox status (recent events) and the analyst-reports
+      // manifest (per-stock ingestion history) in parallel.
+      const [statusRes, reportsRes] = await Promise.all([
         fetch(`/api/inbox/status?t=${Date.now()}`, { cache: "no-store" }),
         fetch(`/api/kv/analyst-reports?t=${Date.now()}`, { cache: "no-store" }),
-        fetch(`/api/kv/analyst-snapshots?t=${Date.now()}`, { cache: "no-store" }),
       ]);
       if (!statusRes.ok) {
         setError(`Failed to load (${statusRes.status})`);
@@ -145,11 +227,6 @@ export default function InboxPage() {
         const reportsBody = await reportsRes.json();
         const r = reportsBody?.reports ?? reportsBody;
         setReports(r && typeof r === "object" ? (r as AnalystReports) : {});
-      }
-      if (snapshotsRes.ok) {
-        const snapshotsBody = await snapshotsRes.json();
-        const s = snapshotsBody?.snapshots ?? snapshotsBody;
-        setSnapshots(s && typeof s === "object" ? (s as AnalystSnapshots) : {});
       }
       setLastUpdated(new Date());
     } catch (e) {
@@ -270,6 +347,7 @@ export default function InboxPage() {
      *  entry has been logged for this ticker yet. */
     factsetTarget: number | null;
     factsetCount: number | null;
+    factsetAsOf: string | null;
   };
   // Build lookup of canonical-ticker → which sources have reports.
   // Reports manifest itself is keyed by canonical form already, so we just
@@ -283,17 +361,21 @@ export default function InboxPage() {
     }
   }
   // FactSet data lives in pm:analyst-snapshots[ticker].factset — same
-  // canonical-ticker keying.
-  const factsetByCanonical = new Map<string, { target: number | null; count: number | null }>();
-  if (snapshots) {
-    for (const [key, snap] of Object.entries(snapshots)) {
-      const canon = canonicalTicker(key);
-      if (!snap?.factset) continue;
-      factsetByCanonical.set(canon, {
-        target: typeof snap.factset.averageTarget === "number" ? snap.factset.averageTarget : null,
-        count: typeof snap.factset.analystCount === "number" ? snap.factset.analystCount : null,
-      });
-    }
+  // canonical-ticker keying. We pull from StockContext's analystSnapshots
+  // (which mirrors pm:analyst-snapshots and is the same source the stock
+  // page reads). When the user edits a FactSet cell below, the edit flows
+  // through updateAnalystSnapshot → context state updates → this map
+  // recomputes on the next render → row reflects the new value. Same
+  // path round-trips persistence to Redis.
+  const factsetByCanonical = new Map<string, { target: number | null; count: number | null; asOf: string | null }>();
+  for (const [key, snap] of Object.entries(analystSnapshots ?? {})) {
+    const canon = canonicalTicker(key);
+    if (!snap?.factset) continue;
+    factsetByCanonical.set(canon, {
+      target: typeof snap.factset.averageTarget === "number" ? snap.factset.averageTarget : null,
+      count: typeof snap.factset.analystCount === "number" ? snap.factset.analystCount : null,
+      asOf: typeof snap.factset.asOf === "string" ? snap.factset.asOf : null,
+    });
   }
   const scoreableStocks = stocks.filter((s) => isScoreable(s) && (s.bucket === "Portfolio" || s.bucket === "Watchlist"));
   const coverageRows: Coverage[] = scoreableStocks.map((s) => {
@@ -309,6 +391,7 @@ export default function InboxPage() {
       hasJpm: !!has?.jpm,
       factsetTarget: fs?.target ?? null,
       factsetCount: fs?.count ?? null,
+      factsetAsOf: fs?.asOf ?? null,
     };
   });
 
@@ -328,6 +411,42 @@ export default function InboxPage() {
     if (a.bucket !== b.bucket) return a.bucket === "Portfolio" ? -1 : 1;
     return a.displayTicker.localeCompare(b.displayTicker);
   });
+
+  // Commit a FactSet edit for the given ticker. Pull the latest snapshot
+  // from context (NOT the closure-captured value, which could be stale),
+  // overwrite the factset slot with the new target/count, stamp asOf to
+  // today, and call updateAnalystSnapshot. That helper handles canonical-
+  // ticker keying and persistence to pm:analyst-snapshots so the stock
+  // page reflects the change automatically.
+  //
+  // When both target and count come back null (user cleared both fields),
+  // remove the factset slot entirely. If RBC/JPM are also absent, remove
+  // the whole snapshot entry to keep the blob clean.
+  const saveFactSet = (ticker: string, target: number | null, count: number | null) => {
+    const existing = getAnalystSnapshot(ticker) ?? {};
+    const today = new Date().toISOString().slice(0, 10);
+    const nowIso = new Date().toISOString();
+    let nextFactset: FactSetEntry | undefined;
+    if (target == null && count == null) {
+      nextFactset = undefined;
+    } else {
+      // Preserve any fields we don't touch (lastUpdated metadata, etc.)
+      // The asOf field auto-stamps to TODAY on every edit per the spec:
+      // "the date should default to the date the target price is last
+      // changed" — applying it whenever EITHER field is edited (since
+      // both are the user's manual entry).
+      nextFactset = {
+        ...(existing.factset ?? {}),
+        ...(target != null ? { averageTarget: target } : { averageTarget: undefined }),
+        ...(count != null ? { analystCount: count } : { analystCount: undefined }),
+        asOf: today,
+        lastUpdated: nowIso,
+      };
+    }
+    const nextSnapshot: TickerSnapshot = { ...existing, factset: nextFactset };
+    const anyValue = nextSnapshot.rbc || nextSnapshot.jpm || nextSnapshot.factset;
+    updateAnalystSnapshot(ticker, anyValue ? nextSnapshot : undefined);
+  };
 
   const totalCovered = coverageRows.filter((r) => r.hasRbc || r.hasJpm).length;
   const portfolioCovered = coverageRows.filter((r) => r.bucket === "Portfolio" && (r.hasRbc || r.hasJpm)).length;
@@ -536,7 +655,8 @@ export default function InboxPage() {
                 <th className="px-3 py-2 text-left">Bucket</th>
                 <th className="px-3 py-2 text-center w-16">RBC</th>
                 <th className="px-3 py-2 text-center w-16">JPM</th>
-                <th className="px-3 py-2 text-right w-28" title="FactSet street-consensus average price target. Entered manually on each stock page.">FactSet $</th>
+                <th className="px-3 py-2 text-right w-28" title="FactSet street-consensus average price target. Click the cell to edit. Persists to pm:analyst-snapshots — same field shown on the stock page.">FactSet $</th>
+                <th className="px-3 py-2 text-right w-20" title="Number of analysts in the FactSet consensus. Click the cell to edit.">Analysts</th>
                 <th className="px-3 py-2 text-left w-32">Status</th>
               </tr>
             </thead>
@@ -579,14 +699,35 @@ export default function InboxPage() {
                         <span className="inline-block text-slate-300 text-base" title="No JPM report yet">—</span>
                       )}
                     </td>
-                    <td className="px-3 py-2 text-right font-mono text-xs">
-                      {r.factsetTarget != null ? (
-                        <span className="text-slate-700" title={r.factsetCount != null ? `FactSet consensus from ${r.factsetCount} analysts` : "FactSet consensus"}>
-                          ${r.factsetTarget.toFixed(2)}
-                        </span>
-                      ) : (
-                        <span className="text-slate-300" title="No FactSet average price target on file. Enter via the analyst panel on the stock page.">—</span>
+                    <td className="px-3 py-2 text-right">
+                      <div className="flex items-center justify-end gap-1">
+                        <span className="text-slate-400 text-[10px]">$</span>
+                        <EditableNumberCell
+                          value={r.factsetTarget}
+                          step="0.01"
+                          onCommit={(next) => saveFactSet(r.displayTicker, next, r.factsetCount)}
+                          width="w-20"
+                          placeholder="—"
+                          ariaLabel={`FactSet target price for ${r.displayTicker}`}
+                          formatDisplay={(n) => n.toFixed(2)}
+                        />
+                      </div>
+                      {r.factsetAsOf && (
+                        <div className="text-[9px] text-slate-400 mt-0.5" title="Date the FactSet target was last updated. Auto-stamps to today on every edit.">
+                          as of {r.factsetAsOf}
+                        </div>
                       )}
+                    </td>
+                    <td className="px-3 py-2 text-right">
+                      <EditableNumberCell
+                        value={r.factsetCount}
+                        step="1"
+                        onCommit={(next) => saveFactSet(r.displayTicker, r.factsetTarget, next)}
+                        width="w-14"
+                        placeholder="—"
+                        ariaLabel={`Number of analysts for ${r.displayTicker}`}
+                        formatDisplay={(n) => String(Math.round(n))}
+                      />
                     </td>
                     <td className="px-3 py-2">
                       <span className={`inline-block rounded-full px-2 py-0.5 text-[10px] font-semibold ${
