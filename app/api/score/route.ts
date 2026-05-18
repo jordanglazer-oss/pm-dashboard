@@ -6,6 +6,9 @@ import type { OHLCVBar, TechnicalIndicators, RiskAlert } from "@/app/lib/technic
 import { computeTechnicals, computeRiskAlert, formatTechnicalsForPrompt } from "@/app/lib/technicals";
 import { formatEdgarSnapshotForPrompt } from "@/app/lib/edgar-prompt";
 import { tallyResearchMentions } from "@/app/lib/research-mentions";
+import { computeAnalystConsensus, getSnapshotForTicker } from "@/app/lib/analyst-snapshots";
+import type { AnalystSnapshots } from "@/app/lib/analyst-snapshots";
+import { getRedis } from "@/app/lib/redis";
 
 const client = new Anthropic();
 
@@ -870,10 +873,21 @@ export async function POST(request: NextRequest) {
     // LLM doesn't score them. Compute them server-side and inject.
     const mentionsTally = await tallyResearchMentions(upperTicker);
     scores.researchMentions = mentionsTally.score;
-    // analystConsensus lands in a follow-up commit (needs the analyst-snapshot
-    // store + manual-entry panel). Default to 0 here so the field is present
-    // and the composite math works.
-    scores.analystConsensus = 0;
+
+    // analystConsensus: read pm:analyst-snapshots, compute RBC + JPM + FactSet
+    // formula against current price. Returns 0 with no contributions when no
+    // snapshot exists for this ticker yet.
+    let analystSnapshotsBlob: AnalystSnapshots = {};
+    try {
+      const redis = await getRedis();
+      const rawSnap = await redis.get("pm:analyst-snapshots");
+      if (rawSnap) analystSnapshotsBlob = JSON.parse(rawSnap) as AnalystSnapshots;
+    } catch (e) {
+      console.error("Failed to read pm:analyst-snapshots:", e);
+    }
+    const tickerSnapshot = getSnapshotForTicker(analystSnapshotsBlob, upperTicker);
+    const consensus = computeAnalystConsensus(tickerSnapshot, stockPrice);
+    scores.analystConsensus = consensus.score;
 
     // Parse explanations — supports new { summary, dataPoints } shape AND
     // legacy string / string[] shapes (so old test fixtures and any model
@@ -944,6 +958,47 @@ export async function POST(request: NextRequest) {
         source: "model" as ScoreDataPointSource,
         sourceDetail: m.analyzedAt ? `Analyzed ${m.analyzedAt.slice(0, 10)}` : undefined,
       })),
+    };
+
+    // Synthesize the analystConsensus explanation from the formula breakdown.
+    // No confidence field — deterministic category, no chip in the UI.
+    const consensusDataPoints: { label: string; value: string; source: ScoreDataPointSource; sourceDetail?: string }[] = [];
+    if (consensus.rbc) {
+      const labelSuffix = consensus.rbc.freshnessLabel === "fresh" ? "" : ` · ${consensus.rbc.freshnessLabel}${consensus.rbc.freshnessReason ? ` (${consensus.rbc.freshnessReason})` : ""}`;
+      consensusDataPoints.push({
+        label: "RBC",
+        value: `${consensus.rbc.rating.toFixed(2)} × ${consensus.rbc.freshness.toFixed(2)} = ${consensus.rbc.contribution.toFixed(2)} pts${labelSuffix}`,
+        source: "model",
+      });
+    } else if (tickerSnapshot?.rbc) {
+      consensusDataPoints.push({ label: "RBC", value: "Not covered (0 pts)", source: "model" });
+    }
+    if (consensus.jpm) {
+      const labelSuffix = consensus.jpm.freshnessLabel === "fresh" ? "" : ` · ${consensus.jpm.freshnessLabel}${consensus.jpm.freshnessReason ? ` (${consensus.jpm.freshnessReason})` : ""}`;
+      consensusDataPoints.push({
+        label: "JPM",
+        value: `${consensus.jpm.rating.toFixed(2)} × ${consensus.jpm.freshness.toFixed(2)} = ${consensus.jpm.contribution.toFixed(2)} pts${labelSuffix}`,
+        source: "model",
+      });
+    } else if (tickerSnapshot?.jpm) {
+      consensusDataPoints.push({ label: "JPM", value: "Not covered (0 pts)", source: "model" });
+    }
+    if (consensus.upside.target && consensus.upside.upsidePercent !== undefined) {
+      const sourceLabel = consensus.upside.targetSource === "factset" ? "FactSet street avg" : "RBC/JPM avg (FactSet missing)";
+      consensusDataPoints.push({
+        label: "Upside",
+        value: `Target $${consensus.upside.target.toFixed(2)} vs current — ${consensus.upside.upsidePercent >= 0 ? "+" : ""}${consensus.upside.upsidePercent.toFixed(1)}% → ${consensus.upside.contribution.toFixed(2)} pts`,
+        source: "model",
+        sourceDetail: sourceLabel,
+      });
+    }
+    const consensusSummary =
+      consensusDataPoints.length === 0
+        ? `No analyst snapshot logged for ${upperTicker}. Use the Analyst Consensus panel below to record RBC / JPM ratings and the FactSet street-avg target.`
+        : `Computed from RBC + JPM ratings + FactSet street-avg upside. Raw sum: ${consensus.rawScore.toFixed(2)}, rounded to ${consensus.score}/3.`;
+    explanations.analystConsensus = {
+      summary: consensusSummary,
+      dataPoints: consensusDataPoints,
     };
 
     // Extract health monitor data from raw Yahoo modules

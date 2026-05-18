@@ -6,6 +6,8 @@ import type { PimHolding, PimModelData, PimPortfolioState, PimModelGroupState } 
 import { computeScores, isOffensiveSector, isScoreable } from "./scoring";
 import { defaultMarketData } from "./defaults";
 import { pimModelSeed } from "./pim-seed";
+import type { AnalystSnapshots, TickerSnapshot } from "./analyst-snapshots";
+import { setSnapshotForTicker, getSnapshotForTicker } from "./analyst-snapshots";
 
 // Locked equity holdings: specialty funds whose weightInClass is driven by
 // the per-model Balanced weight (%) input on the stock page — NOT by the
@@ -106,6 +108,9 @@ type StockContextType = {
   getGroupState: (groupId: string) => PimModelGroupState;
   uiPrefs: Record<string, string>;
   setUiPref: (key: string, value: string) => void;
+  analystSnapshots: AnalystSnapshots;
+  getAnalystSnapshot: (ticker: string) => TickerSnapshot | undefined;
+  updateAnalystSnapshot: (ticker: string, next: TickerSnapshot | undefined) => void;
 };
 
 const StockContext = createContext<StockContextType | null>(null);
@@ -144,6 +149,7 @@ export function StockProvider({ children }: { children: React.ReactNode }) {
   const [pimModels, setPimModelsState] = useState<PimModelData>({ groups: pimModelSeed });
   const [pimPortfolioState, setPimPortfolioState] = useState<PimPortfolioState>({ groupStates: [], lastUpdated: "" });
   const [uiPrefs, setUiPrefsState] = useState<Record<string, string>>({});
+  const [analystSnapshots, setAnalystSnapshotsState] = useState<AnalystSnapshots>({});
   const [loading, setLoading] = useState(true);
 
   const persistStocks = useDebouncedPersist("/api/kv/stocks", "stocks");
@@ -174,6 +180,7 @@ export function StockProvider({ children }: { children: React.ReactNode }) {
     }).catch((e) => console.error("Failed to persist pim-portfolio-state:", e));
   }, []);
   const persistUiPrefs = useDebouncedPersist("/api/kv/ui-prefs", "uiPrefs", 300);
+  const persistAnalystSnapshots = useDebouncedPersist("/api/kv/analyst-snapshots", "snapshots", 400);
 
   /* ─── Load from KV on mount ─── */
   useEffect(() => {
@@ -186,7 +193,8 @@ export function StockProvider({ children }: { children: React.ReactNode }) {
       fetch("/api/kv/pim-models").then((r) => r.json()).catch(() => ({ groups: pimModelSeed })),
       fetch("/api/kv/pim-portfolio-state").then((r) => r.json()).catch(() => ({ groupStates: [], lastUpdated: "" })),
       fetch("/api/kv/ui-prefs").then((r) => r.json()).catch(() => ({ uiPrefs: {} })),
-    ]).then(async ([stocksRes, marketRes, briefRes, chartRes, scannerRes, pimRes, portfolioStateRes, uiPrefsRes]) => {
+      fetch("/api/kv/analyst-snapshots").then((r) => r.json()).catch(() => ({ snapshots: {} })),
+    ]).then(async ([stocksRes, marketRes, briefRes, chartRes, scannerRes, pimRes, portfolioStateRes, uiPrefsRes, analystSnapshotsRes]) => {
       const rawLoadedStocks: Stock[] = stocksRes.stocks || [];
       const { migrated: loadedStocks, changed: scoresMigrated } = migrateStockScores(rawLoadedStocks);
       setStocks(loadedStocks);
@@ -225,6 +233,7 @@ export function StockProvider({ children }: { children: React.ReactNode }) {
       }
       if (portfolioStateRes.groupStates) setPimPortfolioState(portfolioStateRes);
       if (uiPrefsRes.uiPrefs) setUiPrefsState(uiPrefsRes.uiPrefs);
+      if (analystSnapshotsRes.snapshots) setAnalystSnapshotsState(analystSnapshotsRes.snapshots);
       setLoading(false);
 
       // Backfill missing names from Yahoo Finance for all stocks
@@ -858,6 +867,19 @@ export function StockProvider({ children }: { children: React.ReactNode }) {
     });
   }, [persistUiPrefs]);
 
+  /* ─── Analyst snapshots (RBC / JPM / FactSet manual entry) ─── */
+  const getAnalystSnapshot = useCallback((ticker: string) => {
+    return getSnapshotForTicker(analystSnapshots, ticker);
+  }, [analystSnapshots]);
+
+  const updateAnalystSnapshot = useCallback((ticker: string, next: TickerSnapshot | undefined) => {
+    setAnalystSnapshotsState((prev) => {
+      const updated = setSnapshotForTicker(prev, ticker, next);
+      persistAnalystSnapshots(updated);
+      return updated;
+    });
+  }, [persistAnalystSnapshots]);
+
   /* ─── Toggle model eligibility: updates stock field AND syncs model holdings ─── */
   const toggleModelEligibility = useCallback((ticker: string, groupId: string, eligible: boolean) => {
     // 1. Update the stock's modelEligibility field
@@ -981,6 +1003,9 @@ export function StockProvider({ children }: { children: React.ReactNode }) {
         getGroupState,
         uiPrefs,
         setUiPref,
+        analystSnapshots,
+        getAnalystSnapshot,
+        updateAnalystSnapshot,
       }}
     >
       {children}
