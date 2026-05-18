@@ -2048,7 +2048,6 @@ export default function StockDetailPage() {
                           {isExpanded && isAnalystConsensus && (
                             <AnalystSnapshotPanel
                               ticker={ticker}
-                              currentPrice={stock.price}
                               snapshot={getAnalystSnapshot(ticker)}
                               breakdown={computeAnalystConsensus(getAnalystSnapshot(ticker), stock.price)}
                               reports={getAnalystReports(ticker)}

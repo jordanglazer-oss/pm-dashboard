@@ -963,17 +963,18 @@ export function StockProvider({ children }: { children: React.ReactNode }) {
       return updated;
     });
 
-    // 4) Merge extracted rating/target/asOf into the snapshot (preserve any
-    //    fields the user already entered manually that the extraction didn't
-    //    cover, e.g. priceAtReport overrides).
+    // 4) Replace the snapshot entry with the new extraction. RBC/JPM fields
+    //    are strictly PDF-driven now — no carryover from a previous PDF, no
+    //    manual entry path. priceAtReport snapshots the current Yahoo price
+    //    at upload time so freshness decay can detect adverse moves later.
+    const priceAtUpload = stocks.find((s) => s.ticker === ticker || s.ticker.toUpperCase() === ticker.toUpperCase())?.price;
     setAnalystSnapshotsState((prev) => {
       const currentSnapshot = getSnapshotForTicker(prev, ticker) ?? {};
-      const existing: AnalystEntry = (currentSnapshot[source] as AnalystEntry | undefined) ?? { rating: "not-covered" };
       const merged: AnalystEntry = {
-        ...existing,
-        rating: extractRes!.result.rating ?? existing.rating,
-        target: extractRes!.result.target ?? existing.target,
-        asOf: extractRes!.result.asOf ?? existing.asOf,
+        rating: extractRes!.result.rating ?? "not-covered",
+        target: extractRes!.result.target,
+        asOf: extractRes!.result.asOf,
+        priceAtReport: priceAtUpload,
         reportId,
         lastUpdated: new Date().toISOString(),
       };
@@ -984,7 +985,7 @@ export function StockProvider({ children }: { children: React.ReactNode }) {
     });
 
     return { ok: true, extracted: extractRes.result };
-  }, [persistAnalystReports, persistAnalystSnapshots]);
+  }, [persistAnalystReports, persistAnalystSnapshots, stocks]);
 
   const removeAnalystReport = useCallback(async (ticker: string, source: "rbc" | "jpm") => {
     const reportId = reportIdFor(ticker, source);
@@ -1002,15 +1003,13 @@ export function StockProvider({ children }: { children: React.ReactNode }) {
       persistAnalystReports(updated);
       return updated;
     });
-    // Clear the reportId pointer on the snapshot but leave the other fields.
+    // RBC/JPM fields are PDF-driven only — removing the PDF removes the entry
+    // entirely so no orphan rating/target lingers in the composite.
     setAnalystSnapshotsState((prev) => {
       const currentSnapshot = getSnapshotForTicker(prev, ticker);
       if (!currentSnapshot || !currentSnapshot[source]) return prev;
-      const entry = currentSnapshot[source] as AnalystEntry;
-      if (!entry.reportId) return prev;
-      const nextEntry: AnalystEntry = { ...entry };
-      delete nextEntry.reportId;
-      const nextSnapshot: TickerSnapshot = { ...currentSnapshot, [source]: nextEntry };
+      const nextSnapshot: TickerSnapshot = { ...currentSnapshot };
+      delete nextSnapshot[source];
       const updated = setSnapshotForTicker(prev, ticker, nextSnapshot);
       persistAnalystSnapshots(updated);
       return updated;
