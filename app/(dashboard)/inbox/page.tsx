@@ -2,6 +2,7 @@
 
 import React, { useCallback, useEffect, useState } from "react";
 import type { InboxEvent } from "@/app/lib/inbox-log";
+import { useStocks } from "@/app/lib/StockContext";
 
 type Status = {
   events: InboxEvent[];
@@ -40,6 +41,13 @@ export default function InboxPage() {
   // OR manual refresh button) use `refreshing` for visual feedback.
   const [refreshing, setRefreshing] = useState(false);
   const [lastUpdated, setLastUpdated] = useState<Date | null>(null);
+  // Hide-cached toggle — defaults to ON because once dedup is working,
+  // cached events are mostly noise; the PM cares about fresh ingestions
+  // and errors. State persists via uiPrefs (Redis) so the preference
+  // sticks across refreshes and syncs across devices.
+  const { uiPrefs, setUiPref } = useStocks();
+  const hideCached = uiPrefs["inbox.hideCached"] !== "0"; // default true (hidden)
+  const toggleHideCached = () => setUiPref("inbox.hideCached", hideCached ? "0" : "1");
   const [error, setError] = useState<string | null>(null);
 
   // `manual` = true when triggered by the button click, false for auto-poll.
@@ -77,6 +85,14 @@ export default function InboxPage() {
   const events = data?.events ?? [];
   const successes = events.filter((e) => e.status === "success").length;
   const failures = events.filter((e) => e.status === "error").length;
+  // Cached events are SUCCESS + cached:true (the hash-cache short-circuited
+  // the Anthropic call). Once ingestion is steady-state, these are noise —
+  // the PM cares about fresh extractions and errors. Filtering happens
+  // client-side so the underlying log still contains everything for audit.
+  const cachedCount = events.filter((e) => e.status === "success" && e.cached).length;
+  const visibleEvents = hideCached
+    ? events.filter((e) => !(e.status === "success" && e.cached))
+    : events;
 
   return (
     <div className="p-6 max-w-5xl mx-auto">
@@ -88,6 +104,22 @@ export default function InboxPage() {
           </p>
         </div>
         <div className="flex items-center gap-3">
+          {/* Hide-cached toggle. Defaults to ON because cached events are
+              just dedup confirmations — the PM cares about fresh ingestions
+              and errors. Toggle off temporarily if you want to verify
+              specific cache hits. State persists in pm:ui-prefs. */}
+          <label className="flex items-center gap-1.5 text-xs text-slate-600 cursor-pointer select-none">
+            <input
+              type="checkbox"
+              checked={hideCached}
+              onChange={toggleHideCached}
+              className="w-3.5 h-3.5 rounded border-slate-300 text-blue-600 focus:ring-blue-400"
+            />
+            <span>Hide cached</span>
+            {cachedCount > 0 && (
+              <span className="text-[10px] text-slate-400">({cachedCount} hidden)</span>
+            )}
+          </label>
           {lastUpdated && (
             <span className="text-[11px] text-slate-400">
               Updated {lastUpdated.toLocaleTimeString("en-US", { hour: "numeric", minute: "2-digit", second: "2-digit", hour12: true })}
@@ -139,6 +171,10 @@ export default function InboxPage() {
           <p className="text-sm text-slate-400 p-4 italic">
             No ingestion events yet. Once the Apps Script runs and forwards an email, events will appear here.
           </p>
+        ) : visibleEvents.length === 0 ? (
+          <p className="text-sm text-slate-400 p-4 italic">
+            All {cachedCount} recent event{cachedCount === 1 ? "" : "s"} {cachedCount === 1 ? "is" : "are"} cached re-ingestions (no Anthropic spend, data unchanged). Uncheck &quot;Hide cached&quot; above to see them.
+          </p>
         ) : (
           <table className="w-full text-sm">
             <thead className="bg-slate-50 text-xs uppercase tracking-wider text-slate-500">
@@ -151,7 +187,7 @@ export default function InboxPage() {
               </tr>
             </thead>
             <tbody>
-              {events.map((e) => (
+              {visibleEvents.map((e) => (
                 <tr key={e.id} className="border-t border-slate-100 align-top">
                   <td className="px-3 py-2 whitespace-nowrap text-slate-500 text-xs">{fmtTime(e.receivedAt)}</td>
                   <td className="px-3 py-2">
