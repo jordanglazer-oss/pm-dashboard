@@ -571,14 +571,24 @@ export default function ResearchPage() {
           // persisted as IdeaEntry[] (just ticker + priceWhenAdded).
           // The Newton's Upticks-aligned shape adds name + sector +
           // dateAdded + price; fill defaults so the table renders
-          // without throwing on missing fields. The next refreshAlpha
-          // PickNames pass will populate name + sector via Yahoo.
+          // without throwing on missing fields.
+          //
+          // CRITICAL: spread `partial` first so ALL existing fields
+          // (rating, holdingWeight, returnSinceAdded, manualSell, etc)
+          // pass through. The previous shape of this migration listed
+          // each field explicitly and dropped anything not enumerated —
+          // which meant every page load silently wiped Rating, Holding %,
+          // and SA Return on every Alpha Pick, requiring a fresh scrape
+          // to restore them. The spread + per-field defaults keep both
+          // properties: legacy blobs get safe defaults, new blobs retain
+          // every field.
           if (research.alphaPicks && research.alphaPicks.length > 0) {
             research = {
               ...research,
               alphaPicks: research.alphaPicks.map((p): AlphaPickEntry => {
                 const partial = p as Partial<AlphaPickEntry> & IdeaEntry;
                 return {
+                  ...partial,
                   ticker: partial.ticker,
                   name: partial.name ?? partial.ticker,
                   sector: partial.sector ?? "—",
@@ -2833,45 +2843,34 @@ export default function ResearchPage() {
 
             // Toggle the PM's manual-sell flag on a single pick.
             // Updates state directly without touching the rest of the
-            // entry. Doesn't auto-drop — the pick stays visible (in
-            // the "Manual Sell" bucket and with red row highlight)
-            // until the user hits "Drop sell candidates."
-            // Match by ticker + dateAdded so a manual-sell flag on one
-            // pick doesn't bleed across same-ticker-different-date duplicates.
-            const toggleManualSell = (ticker: string, dateAdded: string | undefined) => {
-              const updated = allPicks.map((p) =>
+            // Sell a single pick — removes it from the list AND
+            // redistributes its weight equally across the remaining
+            // picks (mirrors SA's documented rule: "cash generated
+            // from sold positions will be equally invested across the
+            // remaining stocks in the Alpha Picks portfolio").
+            //
+            // Match by ticker + dateAdded so a sell action on one pick
+            // doesn't accidentally remove a same-ticker duplicate from
+            // a different date. Picks without holdingWeight (legacy
+            // entries) are skipped from both sides of the redistribution
+            // — they stay at undefined holdingWeight until the next
+            // fresh scrape pulls SA's actual numbers.
+            const sellPick = (ticker: string, dateAdded: string | undefined) => {
+              const dropped = allPicks.find((p) =>
                 p.ticker === ticker && (p.dateAdded || "") === (dateAdded || "")
-                  ? { ...p, manualSell: !p.manualSell }
-                  : p
               );
-              save({ ...state, alphaPicks: updated });
-            };
-
-            const sellCandidateCount = allPicks.filter(isSellCandidate).length;
-
-            const handleDropSellCandidates = () => {
-              if (sellCandidateCount === 0) return;
-              if (!confirm(`Drop ${sellCandidateCount} pick(s) flagged for sale (Sell/Strong Sell rating, or Hold ≥ 180 days)?\n\nWeight from dropped picks will be redistributed equally across the remaining picks (per SA's documented rule).`)) return;
-
-              // Per SA's rule: "the cash generated from sold positions
-              // will be equally invested across the remaining stocks
-              // in the Alpha Picks portfolio." So sum the dropped
-              // weight and split it equally across what's left. Picks
-              // without holdingWeight (legacy entries scraped before
-              // the field existed) don't contribute to or receive
-              // redistribution — they stay at undefined holdingWeight
-              // until the next fresh scrape pulls SA's actual numbers.
-              const dropped = allPicks.filter(isSellCandidate);
-              const remaining = allPicks.filter((p) => !isSellCandidate(p));
-              const droppedWeightTotal = dropped.reduce(
-                (sum, p) => sum + (p.holdingWeight ?? 0), 0
+              if (!dropped) return;
+              if (!confirm(`Sell ${dropped.name || ticker} from Alpha Picks?\n\nWeight (${dropped.holdingWeight != null ? dropped.holdingWeight.toFixed(2) + "%" : "—"}) will be redistributed equally across the remaining picks.`)) return;
+              const remaining = allPicks.filter((p) =>
+                !(p.ticker === ticker && (p.dateAdded || "") === (dateAdded || ""))
               );
+              const droppedWeight = dropped.holdingWeight ?? 0;
               const remainingWithWeight = remaining.filter((p) => p.holdingWeight != null);
-              const perPickAdd = remainingWithWeight.length > 0
-                ? droppedWeightTotal / remainingWithWeight.length
+              const perPickAdd = remainingWithWeight.length > 0 && droppedWeight > 0
+                ? droppedWeight / remainingWithWeight.length
                 : 0;
               const updated = remaining.map((p) =>
-                p.holdingWeight != null
+                p.holdingWeight != null && perPickAdd > 0
                   ? { ...p, holdingWeight: parseFloat((p.holdingWeight + perPickAdd).toFixed(2)) }
                   : p
               );
@@ -2890,8 +2889,10 @@ export default function ResearchPage() {
                   <span className="text-sm text-slate-400">{allPicks.length} picks</span>
                 </div>
 
-                {/* Rating filter chips + sell-candidate alert. */}
-                <div className="flex items-center justify-between gap-3 mb-3 flex-wrap">
+                {/* Rating filter chips. The 'Drop sell candidates' bulk
+                    action was removed in favor of the per-row 'Sell' button
+                    which handles removal + weight redistribution directly. */}
+                <div className="flex items-center gap-3 mb-3 flex-wrap">
                   <div className="flex flex-wrap gap-1.5">
                     {filterButtons.map((b) => {
                       const active = alphaRatingFilter === b.key;
@@ -2912,15 +2913,6 @@ export default function ResearchPage() {
                       );
                     })}
                   </div>
-                  {sellCandidateCount > 0 && (
-                    <button
-                      onClick={handleDropSellCandidates}
-                      className="text-[11px] font-semibold rounded-full px-3 py-1 bg-red-50 text-red-700 ring-1 ring-red-200 hover:bg-red-100 transition-colors"
-                      title="SA sells stocks that drop to Sell/Strong Sell, OR that stay at Hold for 180+ days. This drops those picks from your list."
-                    >
-                      Drop {sellCandidateCount} sell candidate{sellCandidateCount === 1 ? "" : "s"}
-                    </button>
-                  )}
                 </div>
 
                 <div className="overflow-x-auto">
@@ -3013,16 +3005,19 @@ export default function ResearchPage() {
                                 </button>
                               )}
                               <button
-                                onClick={() => toggleManualSell(pick.ticker, pick.dateAdded)}
-                                className={`ml-2 text-[10px] font-semibold transition-colors ${pick.manualSell ? "text-slate-500 hover:text-slate-700" : "text-red-600 hover:text-red-800"}`}
-                                title={pick.manualSell ? "Unmark as sold (return to normal rating bucket)" : "Mark as sold — flags this pick as a sell candidate, regardless of SA's current rating. Use 'Drop sell candidates' to remove and redistribute weight."}
+                                onClick={() => sellPick(pick.ticker, pick.dateAdded)}
+                                className="ml-2 text-[10px] font-semibold text-red-600 hover:text-red-800 transition-colors"
+                                title="Sell this pick — removes it from the list AND redistributes its weight equally across the remaining picks (per SA's documented rule)."
                               >
-                                {pick.manualSell ? "Unmark" : "Mark sold"}
+                                Sell
                               </button>
                               <button
-                                onClick={() => save({ ...state, alphaPicks: allPicks.filter((p) => !(p.ticker === pick.ticker && (p.dateAdded || "") === (pick.dateAdded || ""))) })}
+                                onClick={() => {
+                                  if (!confirm(`Remove ${pick.name || pick.ticker} from the list WITHOUT redistributing weight?\n\n(Use the "Sell" button if you want weight redistribution.)`)) return;
+                                  save({ ...state, alphaPicks: allPicks.filter((p) => !(p.ticker === pick.ticker && (p.dateAdded || "") === (pick.dateAdded || ""))) });
+                                }}
                                 className="ml-2 text-slate-300 hover:text-red-500 font-bold transition-colors"
-                                title="Remove this specific pick (no weight redistribution). Other picks with the same ticker on different dates stay."
+                                title="Remove this specific pick with NO weight redistribution. Use this for duplicates or wrong tickers. Other picks with the same ticker on different dates stay."
                               >
                                 &times;
                               </button>
