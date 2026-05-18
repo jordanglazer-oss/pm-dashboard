@@ -19,7 +19,7 @@ import { appendInboxEvent } from "@/app/lib/inbox-log";
 
 /**
  * Webhook target for the Gmail Apps Script. The script POSTs one PDF per
- * call, with the email subject + sender so we can route the PDF to the
+ * call, with the email subject + filename so we can route the PDF to the
  * right (ticker, source) slot.
  *
  * Expected request:
@@ -27,16 +27,47 @@ import { appendInboxEvent } from "@/app/lib/inbox-log";
  *   Authorization: Bearer <INBOX_SECRET>
  *   { subject: string, sender?: string, filename?: string, dataUrl: string }
  *
- * Where `dataUrl` is `data:application/pdf;base64,<base64>` and `subject`
- * matches the pattern: `Analyst Report: <TICKER> <RBC|JPM>` (case-insensitive,
- * with optional extra text after the source).
+ * Where `dataUrl` is `data:application/pdf;base64,<base64>`.
+ *
+ * Routing supports three workflows (in order of preference):
+ *
+ *   1. Filename-driven (preferred — enables batching multiple PDFs per email):
+ *      - Subject: "Analyst Report: <TICKER>"  (or anything starting with that —
+ *        the subject's source is OPTIONAL when filenames carry it)
+ *      - PDFs:    "<TICKER>_JPM.pdf", "<TICKER>_RBC.pdf", "AVGO-RBC.pdf",
+ *                 "AVGO_RBC_2026Q3.pdf", "BRK.B_JPM.pdf"
+ *      The webhook reads ticker + source from the filename per attachment.
+ *      One email → many slots, each routed independently.
+ *
+ *   2. Subject-driven (legacy, fully supported):
+ *      - Subject: "Analyst Report: AVGO RBC"
+ *      - PDF:     any name
+ *      One PDF per email — the subject alone determines the slot.
+ *
+ *   3. Hybrid (subject names ticker, filename names source):
+ *      - Subject: "Analyst Report: AVGO"
+ *      - PDF:     "AVGO_RBC.pdf"
+ *      Useful when you want to send a single PDF but find filename routing
+ *      easier than typing the full subject.
  *
  * Every call appends an entry to pm:inbox-log so the user can see in the
  * admin panel what was ingested, what was skipped (cache hit), and what
  * failed (parse / extraction / storage error).
  */
 
-const SUBJECT_RE = /^analyst report:\s*([a-z0-9.\-]+)\s+(rbc|jpm)\b/i;
+// Subject regex — supports BOTH the new short form ("Analyst Report: AVGO")
+// and the legacy long form ("Analyst Report: AVGO RBC"). The source group is
+// optional; when omitted the source comes from the filename. Subject-derived
+// ticker is used as a fallback when the filename doesn't carry one.
+const SUBJECT_RE = /^analyst report:\s*([a-z0-9.\-]+)(?:\s+(rbc|jpm)\b)?/i;
+
+// Filename regex — extracts ticker + source from PDFs named like
+// "AVGO_JPM.pdf", "AVGO-RBC.pdf", "AVGO_RBC_2026Q3.pdf", "BRK.B_JPM.pdf".
+// This enables multi-PDF batching: send one email with several attachments
+// (e.g. AVGO_JPM.pdf + AVGO_RBC.pdf) and each gets routed correctly. The
+// underscore/hyphen/space separator covers however the user's email client
+// formats names.
+const FILENAME_RE = /([a-z0-9.\-]+)[_\s\-]+(rbc|jpm)(?:[._\s\-].*)?\.pdf$/i;
 
 type Stock = { ticker: string; price?: number };
 
@@ -152,21 +183,41 @@ export async function POST(request: NextRequest) {
     return NextResponse.json({ error: "PDF too large" }, { status: 413 });
   }
 
-  // ── Parse subject ───────────────────────────────────────────────────
-  const m = subject.match(SUBJECT_RE);
-  if (!m) {
-    await appendInboxEvent({
-      status: "error",
-      subject,
-      sender,
-      filename,
-      message: `Subject doesn't match "Analyst Report: <TICKER> <RBC|JPM>" — got: "${subject}"`,
-    });
-    return NextResponse.json({ error: "Subject does not match expected format" }, { status: 400 });
+  // ── Route the PDF to a (ticker, source) slot ───────────────────────
+  // Preferred routing: filename carries both ticker and source
+  // (e.g. "AVGO_JPM.pdf"). This is what enables multi-PDF batching —
+  // attach several PDFs to one email and each gets routed independently.
+  // Fallback: subject carries them ("Analyst Report: AVGO RBC", legacy).
+  // Hybrid: subject carries ticker ("Analyst Report: AVGO"), filename
+  // carries source ("AVGO_RBC.pdf"). All three modes are accepted.
+  const fnMatch = filename ? filename.match(FILENAME_RE) : null;
+  const subjMatch = subject.match(SUBJECT_RE);
+
+  let rawTicker: string | null = null;
+  let source: AnalystSource | null = null;
+
+  if (fnMatch) {
+    rawTicker = fnMatch[1].toUpperCase();
+    source = fnMatch[2].toLowerCase() as AnalystSource;
+  } else if (subjMatch && subjMatch[2]) {
+    // Legacy full-subject form: "Analyst Report: AVGO RBC"
+    rawTicker = subjMatch[1].toUpperCase();
+    source = subjMatch[2].toLowerCase() as AnalystSource;
   }
-  const rawTicker = m[1].toUpperCase();
+  // If filename gave us source but no ticker (unusual — filename regex
+  // requires both), or vice versa, prefer the subject's ticker as a
+  // tie-breaker since subject ALWAYS carries one in any supported workflow.
+  if (!rawTicker && subjMatch) rawTicker = subjMatch[1].toUpperCase();
+
+  if (!rawTicker || !source) {
+    const reason = !source
+      ? `Couldn't determine source (RBC/JPM). Name the PDF "<TICKER>_RBC.pdf" or "<TICKER>_JPM.pdf", or use legacy subject "Analyst Report: <TICKER> <RBC|JPM>". Got subject="${subject}", filename="${filename ?? "(none)"}"`
+      : `Couldn't determine ticker. Subject should start with "Analyst Report: <TICKER>", or PDF should be named "<TICKER>_<RBC|JPM>.pdf". Got subject="${subject}", filename="${filename ?? "(none)"}"`;
+    await appendInboxEvent({ status: "error", subject, sender, filename, message: reason });
+    return NextResponse.json({ error: reason }, { status: 400 });
+  }
+
   const ticker = canonicalTicker(rawTicker);
-  const source = m[2].toLowerCase() as AnalystSource;
 
   // ── Extract ─────────────────────────────────────────────────────────
   let extractRes;
