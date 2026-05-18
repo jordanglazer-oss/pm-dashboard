@@ -916,7 +916,11 @@ export function StockProvider({ children }: { children: React.ReactNode }) {
     const reportId = reportIdFor(ticker, source);
 
     // 1) Extract (hash-gated cache → free if same PDF as last time).
-    let extractRes: { result: ExtractedReport; hash: string } | null = null;
+    //    `extractedAt` is the ORIGINAL extraction timestamp from
+    //    pm:analyst-report-extract-cache. On cache hits, this is when the
+    //    PDF was first extracted (not the retry date) — which is what gets
+    //    surfaced in the "All Ingested Reports" view on the Inbox page.
+    let extractRes: { result: ExtractedReport; hash: string; extractedAt: string } | null = null;
     try {
       const res = await fetch("/api/analyst-report-extract", {
         method: "POST",
@@ -928,7 +932,11 @@ export function StockProvider({ children }: { children: React.ReactNode }) {
         return { ok: false, error: err.error || `Extraction failed (${res.status})` };
       }
       const data = await res.json();
-      extractRes = { result: data.result ?? {}, hash: data.hash };
+      extractRes = {
+        result: data.result ?? {},
+        hash: data.hash,
+        extractedAt: typeof data.extractedAt === "string" ? data.extractedAt : new Date().toISOString(),
+      };
     } catch (e) {
       return { ok: false, error: e instanceof Error ? e.message : "Extraction request failed" };
     }
@@ -952,6 +960,7 @@ export function StockProvider({ children }: { children: React.ReactNode }) {
       id: reportId,
       label,
       uploadedAt: new Date().toISOString(),
+      extractedAt: extractRes.extractedAt,
       hash: extractRes.hash,
       extracted: extractRes.result,
     };

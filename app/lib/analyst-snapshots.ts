@@ -67,7 +67,17 @@ export type ReportMeta = {
   /** User-supplied label (e.g. "Q1 2026 update"). Falls back to the file name
    *  the user uploaded. */
   label: string;
+  /** Timestamp the manifest entry was last written. Updates on every
+   *  persist, including cached-retry re-ingestions where the underlying
+   *  data didn't actually change. Kept for backward compat / audit. */
   uploadedAt: string;
+  /** Timestamp the EXTRACTED DATA in this entry was originally produced by
+   *  Anthropic. This is taken from extractAnalystReport's cached result on
+   *  cache hits, so it doesn't drift forward on retry re-ingestions. When
+   *  a different PDF replaces the slot, this becomes the new fresh-extract
+   *  date. Optional for backward compat — entries written before this field
+   *  was added fall back to uploadedAt in the UI. */
+  extractedAt?: string;
   /** SHA-256 of the source dataUrl — same PDF → same hash → cache hit. */
   hash: string;
   extracted: ExtractedReport;

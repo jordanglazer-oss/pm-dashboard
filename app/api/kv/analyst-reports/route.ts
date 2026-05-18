@@ -19,6 +19,12 @@ import { NextRequest, NextResponse } from "next/server";
 
 const KEY = "pm:analyst-reports";
 
+// Force-dynamic ensures the Inbox tab's "All Ingested Reports" table sees
+// fresh data on every Refresh click — without this, Next's default route
+// caching could serve a stale snapshot that doesn't include just-ingested
+// reports.
+export const dynamic = "force-dynamic";
+
 export async function GET() {
   try {
     const redis = await getRedis();

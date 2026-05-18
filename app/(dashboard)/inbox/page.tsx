@@ -2,7 +2,9 @@
 
 import React, { useCallback, useEffect, useState } from "react";
 import type { InboxEvent } from "@/app/lib/inbox-log";
+import type { AnalystReports } from "@/app/lib/analyst-snapshots";
 import { useStocks } from "@/app/lib/StockContext";
+import Link from "next/link";
 
 type Status = {
   events: InboxEvent[];
@@ -32,8 +34,23 @@ function fmtTime(iso: string): string {
   }
 }
 
+type ReportsRow = {
+  ticker: string;
+  source: "rbc" | "jpm";
+  date: string; // YYYY-MM-DD or "—"
+  dateRaw: string; // ISO timestamp for sorting
+  rating: string;
+  target: string;
+  fileSize: string;
+};
+
 export default function InboxPage() {
   const [data, setData] = useState<Status | null>(null);
+  // pm:analyst-reports manifest — persistent (not capped at 100 events).
+  // Read separately so the "All Ingested Reports" table can show every
+  // (ticker, source) slot in the system regardless of how many cached
+  // retries have rolled off the event log.
+  const [reports, setReports] = useState<AnalystReports | null>(null);
   const [loading, setLoading] = useState(true);
   // Separate "refreshing" state so the button can show a spinner on manual
   // clicks without flashing the full-page loading state every 15s for the
@@ -59,14 +76,25 @@ export default function InboxPage() {
     if (manual) setRefreshing(true);
     setError(null);
     try {
-      const res = await fetch(`/api/inbox/status?t=${Date.now()}`, {
-        cache: "no-store",
-      });
-      if (!res.ok) {
-        setError(`Failed to load (${res.status})`);
+      // Fetch the inbox status (recent events) and the analyst-reports
+      // manifest (full per-stock ingestion history) in parallel. Both feed
+      // separate tables in the UI.
+      const [statusRes, reportsRes] = await Promise.all([
+        fetch(`/api/inbox/status?t=${Date.now()}`, { cache: "no-store" }),
+        fetch(`/api/kv/analyst-reports?t=${Date.now()}`, { cache: "no-store" }),
+      ]);
+      if (!statusRes.ok) {
+        setError(`Failed to load (${statusRes.status})`);
         return;
       }
-      setData(await res.json());
+      setData(await statusRes.json());
+      if (reportsRes.ok) {
+        const reportsBody = await reportsRes.json();
+        // Endpoint returns { reports: AnalystReports } or AnalystReports directly
+        // depending on shape; handle both for safety.
+        const r = reportsBody?.reports ?? reportsBody;
+        setReports(r && typeof r === "object" ? (r as AnalystReports) : {});
+      }
       setLastUpdated(new Date());
     } catch (e) {
       setError(e instanceof Error ? e.message : "Load failed");
@@ -93,6 +121,68 @@ export default function InboxPage() {
   const visibleEvents = hideCached
     ? events.filter((e) => !(e.status === "success" && e.cached))
     : events;
+
+  // Flatten the per-ticker manifest into one row per (ticker, source).
+  // extractedAt is the date the underlying PDF was originally extracted by
+  // Anthropic; it doesn't drift forward on cached retries. Falls back to
+  // uploadedAt for legacy entries that predate the extractedAt field.
+  const reportRows: ReportsRow[] = [];
+  if (reports) {
+    for (const ticker of Object.keys(reports)) {
+      const tr = reports[ticker];
+      if (!tr) continue;
+      for (const src of ["rbc", "jpm"] as const) {
+        const meta = tr[src];
+        if (!meta) continue;
+        const dateRaw = meta.extractedAt || meta.uploadedAt || "";
+        const date = dateRaw ? dateRaw.slice(0, 10) : "—";
+        const rating = meta.extracted?.rating
+          ? meta.extracted.rating.replace(/-/g, " ").replace(/\b\w/g, (c) => c.toUpperCase())
+          : "—";
+        const target = typeof meta.extracted?.target === "number"
+          ? `$${meta.extracted.target.toFixed(2)}`
+          : "—";
+        const fileSize = meta.label ? meta.label : `${ticker}_${src.toUpperCase()}.pdf`;
+        reportRows.push({ ticker, source: src, date, dateRaw, rating, target, fileSize });
+      }
+    }
+  }
+  // Sort: most recently extracted first by default. The user can re-sort
+  // via the column header clicks below.
+  const reportsSortKey = uiPrefs["inbox.reportsSortKey"] || "date";
+  const reportsSortDir = uiPrefs["inbox.reportsSortDir"] || "desc";
+  const sortReports = (rows: ReportsRow[]) => {
+    const dir = reportsSortDir === "asc" ? 1 : -1;
+    return [...rows].sort((a, b) => {
+      let cmp = 0;
+      switch (reportsSortKey) {
+        case "ticker": cmp = a.ticker.localeCompare(b.ticker); break;
+        case "source": cmp = a.source.localeCompare(b.source); break;
+        case "rating": cmp = a.rating.localeCompare(b.rating); break;
+        case "target": {
+          const av = parseFloat(a.target.replace(/[^0-9.-]/g, ""));
+          const bv = parseFloat(b.target.replace(/[^0-9.-]/g, ""));
+          cmp = (isFinite(av) ? av : -Infinity) - (isFinite(bv) ? bv : -Infinity);
+          break;
+        }
+        case "date":
+        default:
+          cmp = a.dateRaw.localeCompare(b.dateRaw); break;
+      }
+      return dir * cmp;
+    });
+  };
+  const sortedReports = sortReports(reportRows);
+  const toggleReportsSort = (key: string) => {
+    if (reportsSortKey === key) {
+      setUiPref("inbox.reportsSortDir", reportsSortDir === "asc" ? "desc" : "asc");
+    } else {
+      setUiPref("inbox.reportsSortKey", key);
+      setUiPref("inbox.reportsSortDir", key === "ticker" || key === "source" ? "asc" : "desc");
+    }
+  };
+  const reportsArrow = (key: string) =>
+    reportsSortKey === key ? (reportsSortDir === "asc" ? " ▲" : " ▼") : "";
 
   return (
     <div className="p-6 max-w-5xl mx-auto">
@@ -220,6 +310,71 @@ export default function InboxPage() {
                       </div>
                     )}
                   </td>
+                </tr>
+              ))}
+            </tbody>
+          </table>
+        )}
+      </div>
+
+      {/* ── All Ingested Reports ──
+          Permanent per-(ticker, source) view read directly from
+          pm:analyst-reports — not capped at 100 like the events log.
+          Shows the ORIGINAL extraction date (extractedAt) rather than the
+          last-retry date, so cached re-ingestions don't make stale reports
+          look freshly processed. */}
+      <div className="mt-6 rounded-lg border border-slate-200 bg-white overflow-hidden">
+        <div className="border-b border-slate-100 px-4 py-2 flex items-center justify-between">
+          <div className="text-xs font-semibold uppercase tracking-wider text-slate-500">
+            All Ingested Reports
+          </div>
+          <div className="text-[11px] text-slate-400">
+            {reportRows.length} report{reportRows.length === 1 ? "" : "s"} across {new Set(reportRows.map((r) => r.ticker)).size} ticker{new Set(reportRows.map((r) => r.ticker)).size === 1 ? "" : "s"}
+          </div>
+        </div>
+        {reports === null ? (
+          <p className="text-sm text-slate-400 p-4">Loading…</p>
+        ) : reportRows.length === 0 ? (
+          <p className="text-sm text-slate-400 p-4 italic">
+            No reports stored yet. Once any PDF gets fully ingested (via inbox webhook or manual upload), it appears here permanently.
+          </p>
+        ) : (
+          <table className="w-full text-sm">
+            <thead className="bg-slate-50 text-xs uppercase tracking-wider text-slate-500">
+              <tr>
+                <th className="px-3 py-2 text-left cursor-pointer select-none hover:text-slate-700" onClick={() => toggleReportsSort("ticker")}>Ticker{reportsArrow("ticker")}</th>
+                <th className="px-3 py-2 text-left cursor-pointer select-none hover:text-slate-700" onClick={() => toggleReportsSort("source")}>Source{reportsArrow("source")}</th>
+                <th className="px-3 py-2 text-left cursor-pointer select-none hover:text-slate-700" onClick={() => toggleReportsSort("date")}>Extracted{reportsArrow("date")}</th>
+                <th className="px-3 py-2 text-left cursor-pointer select-none hover:text-slate-700" onClick={() => toggleReportsSort("rating")}>Rating{reportsArrow("rating")}</th>
+                <th className="px-3 py-2 text-right cursor-pointer select-none hover:text-slate-700" onClick={() => toggleReportsSort("target")}>Target{reportsArrow("target")}</th>
+                <th className="px-3 py-2 text-left">File</th>
+              </tr>
+            </thead>
+            <tbody>
+              {sortedReports.map((r) => (
+                <tr key={`${r.ticker}-${r.source}`} className="border-t border-slate-100 hover:bg-slate-50/60 transition-colors">
+                  <td className="px-3 py-2">
+                    <Link href={`/stock/${r.ticker.toLowerCase()}`} className="font-mono font-semibold text-slate-800 hover:underline">
+                      {r.ticker}
+                    </Link>
+                  </td>
+                  <td className="px-3 py-2 text-xs uppercase tracking-wider text-slate-500">{r.source}</td>
+                  <td className="px-3 py-2 text-xs text-slate-700 whitespace-nowrap">{r.date}</td>
+                  <td className="px-3 py-2 text-xs">
+                    <span className={`inline-block rounded px-1.5 py-0.5 text-[10px] font-semibold ${
+                      r.rating.toLowerCase().includes("outperform") || r.rating.toLowerCase().includes("overweight")
+                        ? "bg-emerald-50 text-emerald-700 border border-emerald-200"
+                        : r.rating.toLowerCase().includes("underperform") || r.rating.toLowerCase().includes("underweight")
+                        ? "bg-red-50 text-red-700 border border-red-200"
+                        : r.rating === "—"
+                        ? "bg-slate-50 text-slate-400 border border-slate-200"
+                        : "bg-amber-50 text-amber-700 border border-amber-200"
+                    }`}>
+                      {r.rating}
+                    </span>
+                  </td>
+                  <td className="px-3 py-2 text-right text-xs font-mono text-slate-700">{r.target}</td>
+                  <td className="px-3 py-2 text-xs text-slate-500 truncate max-w-[260px]" title={r.fileSize}>{r.fileSize}</td>
                 </tr>
               ))}
             </tbody>

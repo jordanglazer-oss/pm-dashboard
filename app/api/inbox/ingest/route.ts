@@ -94,6 +94,11 @@ async function persistReportToRedis(args: {
   label: string;
   extracted: import("@/app/lib/analyst-snapshots").ExtractedReport;
   hash: string;
+  /** Timestamp the extraction was originally computed. On cache hits this
+   *  is the cached entry's original date (from pm:analyst-report-extract-cache),
+   *  not the retry date — so the manifest reflects when the data was actually
+   *  produced, not when it was re-written during a deduped retry. */
+  extractedAt: string;
 }) {
   const reportId = reportIdFor(args.ticker, args.source);
 
@@ -108,6 +113,7 @@ async function persistReportToRedis(args: {
     id: reportId,
     label: args.label,
     uploadedAt: new Date().toISOString(),
+    extractedAt: args.extractedAt,
     hash: args.hash,
     extracted: args.extracted,
   };
@@ -238,6 +244,7 @@ export async function POST(request: NextRequest) {
       label: filename || `${source.toUpperCase()} ${ticker}`,
       extracted: extractRes.result,
       hash: extractRes.hash,
+      extractedAt: extractRes.extractedAt,
     });
   } catch (e) {
     const msg = e instanceof Error ? e.message : "Storage failed";
