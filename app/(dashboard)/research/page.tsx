@@ -323,7 +323,7 @@ export default function ResearchPage() {
   const [loaded, setLoaded] = useState(false);
   const [attachmentsSaveError, setAttachmentsSaveError] = useState<string | null>(null);
   const saveTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
-  const { scoredStocks, addStock, brief } = useStocks();
+  const { scoredStocks, addStock, brief, uiPrefs, setUiPref } = useStocks();
 
   // Add a research idea to the watchlist (auto-fetches name + sector)
   const addToWatchlist = useCallback(async (ticker: string) => {
@@ -361,10 +361,23 @@ export default function ResearchPage() {
   // Hold / Sell / Strong Sell, plus an "(unrated)" bucket for legacy
   // picks scraped before the rating field existed.
   const [alphaRatingFilter, setAlphaRatingFilter] = useState<string | null>(null);
-  // Column sort for the Alpha Picks table. Default: highest holding-weight
-  // first, since SA's published portfolio weights are the primary ranking
-  // a PM uses to read the table.
-  const [alphaSort, setAlphaSort] = useState<{ key: AlphaSortKey; dir: SortDir }>({ key: "holdingWeight", dir: "desc" });
+  // Column sort for the Alpha Picks table — persisted via uiPrefs so the
+  // user's choice survives refreshes AND syncs across devices via
+  // pm:ui-prefs. Default: highest holding-weight first (SA's published
+  // portfolio order). User can override and the choice sticks.
+  const ALPHA_SORT_KEYS: ReadonlyArray<AlphaSortKey> = ["name", "ticker", "sector", "rating", "holdingWeight", "currentPrice", "priceWhenAdded", "returnSinceAdded", "dateAdded", "days"];
+  const rawAlphaSortKey = uiPrefs["research.alphaSortKey"];
+  const rawAlphaSortDir = uiPrefs["research.alphaSortDir"];
+  const alphaSort = {
+    key: (ALPHA_SORT_KEYS.includes(rawAlphaSortKey as AlphaSortKey)
+      ? (rawAlphaSortKey as AlphaSortKey)
+      : "holdingWeight") as AlphaSortKey,
+    dir: (rawAlphaSortDir === "asc" ? "asc" : "desc") as SortDir,
+  };
+  const setAlphaSort = (next: { key: AlphaSortKey; dir: SortDir }) => {
+    setUiPref("research.alphaSortKey", next.key);
+    setUiPref("research.alphaSortDir", next.dir);
+  };
   const [rbcSort, setRbcSort] = useState<{ key: RBCSortKey; dir: SortDir }>({ key: "ticker", dir: "asc" });
   const [rbcUsSort, setRbcUsSort] = useState<{ key: RBCSortKey; dir: SortDir }>({ key: "ticker", dir: "asc" });
 
@@ -2835,9 +2848,15 @@ export default function ResearchPage() {
             });
 
             const toggleAlphaSort = (key: AlphaSortKey) => {
-              setAlphaSort((prev) => prev.key === key
-                ? { key, dir: prev.dir === "asc" ? "desc" : "asc" }
-                : { key, dir: key === "name" || key === "ticker" || key === "sector" || key === "dateAdded" ? "asc" : "desc" });
+              // alphaSort is now derived from uiPrefs (not React state), so
+              // we read the current value directly rather than using the
+              // functional update form.
+              if (alphaSort.key === key) {
+                setAlphaSort({ key, dir: alphaSort.dir === "asc" ? "desc" : "asc" });
+              } else {
+                const defaultDir: SortDir = key === "name" || key === "ticker" || key === "sector" || key === "dateAdded" ? "asc" : "desc";
+                setAlphaSort({ key, dir: defaultDir });
+              }
             };
             const alphaArrow = (key: AlphaSortKey) => alphaSort.key === key ? (alphaSort.dir === "asc" ? " ▲" : " ▼") : "";
 
