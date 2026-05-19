@@ -292,10 +292,13 @@ export function computeScores(
   stock: Stock,
   marketData: MarketData
 ): ScoredStock {
-  const raw = (Object.keys(stock.scores) as ScoreKey[]).reduce(
+  const rawSum = (Object.keys(stock.scores) as ScoreKey[]).reduce(
     (sum, key) => sum + (stock.scores[key] || 0),
     0
   );
+  // Round to 1 decimal to avoid IEEE 754 floating-point noise
+  // (e.g. 21.490000000000002 → 21.5)
+  const raw = Math.round(rawSum * 10) / 10;
 
   const multiplier = regimeMultiplier(stock.sector, marketData.riskRegime, stock.scores);
   const adjusted = Math.round(raw * multiplier * 10) / 10;

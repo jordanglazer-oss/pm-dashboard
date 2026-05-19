@@ -500,7 +500,7 @@ export function StockScoring({ stocks, onScoreStock, onUpdateCostBasis, onRefres
                       </div>
                       <div>
                         <div className="text-[10px] text-slate-400 uppercase tracking-wider">{isFundsSection ? "Weight" : "Score"}</div>
-                        <div className="text-sm font-semibold text-slate-900">{isFundsSection ? `${s.weights.portfolio}%` : `${s.adjusted}/${MAX_SCORE}`}</div>
+                        <div className="text-sm font-semibold text-slate-900">{isFundsSection ? `${s.weights.portfolio}%` : `${Number(s.adjusted.toFixed(1))}/${MAX_SCORE}`}</div>
                       </div>
                       {isPortfolioHolding && (
                         <div>
@@ -624,10 +624,10 @@ export function StockScoring({ stocks, onScoreStock, onUpdateCostBasis, onRefres
                         {!isFundsSection && (
                           <>
                             <td className="py-3 pr-2 text-right text-sm text-slate-600">
-                              {`${s.raw}/${MAX_SCORE}`}
+                              {`${Number(s.raw.toFixed(1))}/${MAX_SCORE}`}
                             </td>
                             <td className="py-3 pr-2 text-right text-sm font-semibold text-slate-900">
-                              {`${s.adjusted}/${MAX_SCORE}`}
+                              {`${Number(s.adjusted.toFixed(1))}/${MAX_SCORE}`}
                             </td>
                             <td className="py-3 pr-2">
                               <SignalPill tone={ratingTone(s.rating)}>{s.rating}</SignalPill>

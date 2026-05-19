@@ -1294,9 +1294,9 @@ function RankingTable({
                       </>
                     );
                   })()}
-                  <td className="py-3 pr-3 text-slate-500">{s.raw}</td>
+                  <td className="py-3 pr-3 text-slate-500">{Number(s.raw.toFixed(1))}</td>
                   <td className="py-3 pr-3">
-                    <span className="font-bold text-slate-900">{s.adjusted}</span>
+                    <span className="font-bold text-slate-900">{Number(s.adjusted.toFixed(1))}</span>
                     <span className={`ml-0.5 text-xs ${adj >= 0 ? "text-emerald-500" : "text-red-500"}`}>
                       {adj >= 0 ? "+" : ""}{adj}
                     </span>

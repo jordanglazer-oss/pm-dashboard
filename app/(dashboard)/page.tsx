@@ -335,7 +335,7 @@ export default function DashboardPage() {
                           <td className="py-2 pr-3 text-right font-mono text-slate-400 hidden sm:table-cell">{baseMultiplier.toFixed(2)}x</td>
                           <td className={`py-2 pr-3 text-right font-mono font-semibold ${multColor}`}>{adjustedMultiplier.toFixed(3)}x</td>
                           <td className="py-2 text-right font-mono text-slate-500">
-                            {s.raw} → <span className="font-semibold text-slate-700">{s.adjusted}</span>
+                            {Number(s.raw.toFixed(1))} → <span className="font-semibold text-slate-700">{Number(s.adjusted.toFixed(1))}</span>
                           </td>
                         </tr>
                       );
