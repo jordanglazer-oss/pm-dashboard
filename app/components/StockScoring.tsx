@@ -53,7 +53,7 @@ function matchesFilter(s: ScoredStock, filter: InstrumentFilter): boolean {
 
 export function StockScoring({ stocks, onScoreStock, onUpdateCostBasis, onRefreshData, onUpdateFundData, onUpdateMarketData }: Props) {
   const router = useRouter();
-  const { uiPrefs, setUiPref, updatePrice, updateStockFields } = useStocks();
+  const { uiPrefs, setUiPref, updatePrice, updateStockFields, updateScore } = useStocks();
   const [query, setQuery] = useState("");
 
   // Persist sort state across refreshes and devices via Redis KV
@@ -447,6 +447,19 @@ export function StockScoring({ stocks, onScoreStock, onUpdateCostBasis, onRefres
                   ) : (
                     <>Score All ({sectionStocks.filter((s) => isScoreable(s)).length})</>
                   )}
+                </button>
+              )}
+              {!isFundsSection && (
+                <button
+                  onClick={() => {
+                    const targets = sectionStocks.filter((s) => (s.scores?.charting ?? 0) > 0);
+                    if (targets.length === 0) return;
+                    for (const s of targets) updateScore(s.ticker, "charting", 0);
+                  }}
+                  className="rounded-lg px-2.5 py-1 text-[10px] font-medium text-slate-500 border border-slate-200 hover:bg-slate-50 hover:text-slate-700 transition-colors"
+                  title={`Reset charting score to 0 for all ${section.toLowerCase()} stocks`}
+                >
+                  Clear Charting
                 </button>
               )}
               <div className={`flex-1 border-t ${isPortfolio ? "border-blue-200" : isFundsSection ? "border-indigo-200" : "border-slate-200"}`} />
