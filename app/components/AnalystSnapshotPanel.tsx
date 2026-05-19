@@ -4,6 +4,7 @@ import React, { useCallback, useEffect, useRef, useState } from "react";
 import type {
   TickerSnapshot,
   AnalystRating,
+  AnalystEntry,
   FactSetEntry,
   ConsensusBreakdown,
   TickerReports,
@@ -92,6 +93,21 @@ export function AnalystSnapshotPanel({ ticker, stockCurrency, snapshot, breakdow
   const clearFactSet = () => {
     const next: TickerSnapshot = { ...local };
     delete next.factset;
+    setLocal(next);
+    scheduleSave(next);
+  };
+
+  const patchAnalyst = (which: "rbc" | "jpm", patch: Partial<AnalystEntry>) => {
+    const existing: AnalystEntry = local[which] ?? { rating: "not-covered" };
+    const merged: AnalystEntry = { ...existing, ...patch, lastUpdated: new Date().toISOString() };
+    // When the user manually edits the target, clear any prior FX conversion
+    // fields so the new value is treated as already in the stock's currency.
+    if ("target" in patch) {
+      delete merged.targetOriginal;
+      delete merged.targetCurrency;
+      delete merged.fxRate;
+    }
+    const next: TickerSnapshot = { ...local, [which]: merged };
     setLocal(next);
     scheduleSave(next);
   };
@@ -186,65 +202,67 @@ export function AnalystSnapshotPanel({ ticker, stockCurrency, snapshot, breakdow
           </p>
         ) : (
           <div className="grid grid-cols-1 sm:grid-cols-2 gap-2 text-[11px]">
-            <div className="flex flex-col gap-0.5">
+            <label className="flex flex-col gap-0.5">
               <span className="text-slate-500">Rating</span>
-              <span className="rounded border border-slate-100 bg-slate-50 px-1.5 py-1 text-slate-700">
-                {entry?.rating && entry.rating !== "not-covered"
-                  ? RATING_OPTIONS.find((o) => o.value === entry.rating)?.label ?? entry.rating
-                  : <span className="italic text-slate-400">Not extracted</span>}
-              </span>
-            </div>
+              <select
+                value={entry?.rating ?? "not-covered"}
+                onChange={(e) => patchAnalyst(which, { rating: e.target.value as AnalystRating })}
+                className="rounded border border-slate-200 bg-white px-1.5 py-1 outline-none focus:border-blue-400"
+              >
+                {RATING_OPTIONS.map((o) => (
+                  <option key={o.value} value={o.value}>{o.label}</option>
+                ))}
+              </select>
+            </label>
             <div className="flex flex-col gap-0.5">
-              <span className="text-slate-500">Target price</span>
-              <span className="rounded border border-slate-100 bg-slate-50 px-1.5 py-1 text-slate-700">
-                {entry?.target ? (
-                  <span className="inline-flex items-center gap-1 flex-wrap">
-                    <span>${entry.target.toFixed(2)}</span>
-                    {entry.targetOriginal && entry.targetCurrency && (
-                      <span className="text-[9px] text-slate-400" title={`Converted from ${entry.targetCurrency} $${entry.targetOriginal.toFixed(2)} at report-date rate ${entry.targetCurrency}${stockCurrency}=${entry.fxRate?.toFixed(4) ?? "?"}`}>
-                        ({entry.targetCurrency} ${entry.targetOriginal.toFixed(2)})
-                      </span>
-                    )}
-                    {/* Show currency-fix button when target exists but hasn't been
-                        currency-converted yet (pre-existing data) or currency is unknown */}
-                    {!entry.targetOriginal && !entry.targetCurrency && (
-                      <span className="inline-flex items-center gap-0.5">
-                        <select
-                          className="text-[9px] border border-slate-200 rounded px-0.5 py-0 bg-white text-blue-600 cursor-pointer"
-                          defaultValue=""
-                          disabled={converting === which}
-                          onChange={async (e) => {
-                            const fromCcy = e.target.value;
-                            if (!fromCcy) return;
-                            setConverting(which);
-                            try {
-                              await onConvertTarget(which, fromCcy);
-                            } finally {
-                              setConverting(null);
-                            }
-                          }}
-                          title={`This target has no currency info. Select the PDF's original currency to convert to ${stockCurrency} using the report-date FX rate.`}
-                        >
-                          <option value="">Fix ccy…</option>
-                          {["USD", "CAD", "DKK", "SEK", "NOK", "GBP", "EUR", "CHF", "JPY", "AUD"]
-                            .filter((c) => c !== stockCurrency)
-                            .map((c) => <option key={c} value={c}>{c}</option>)}
-                        </select>
-                        {converting === which && <span className="text-[9px] text-slate-400">…</span>}
-                      </span>
-                    )}
+              <span className="text-slate-500">Target price ({stockCurrency})</span>
+              <div className="flex items-center gap-1">
+                <input
+                  type="number"
+                  step="0.01"
+                  value={entry?.target ?? ""}
+                  onChange={(e) => patchAnalyst(which, { target: e.target.value === "" ? undefined : Number(e.target.value) })}
+                  placeholder="$"
+                  className="rounded border border-slate-200 bg-white px-1.5 py-1 outline-none focus:border-blue-400 flex-1 min-w-0"
+                />
+                {entry?.targetOriginal && entry.targetCurrency && (
+                  <span className="text-[9px] text-slate-400 whitespace-nowrap" title={`Converted from ${entry.targetCurrency} $${entry.targetOriginal.toFixed(2)} at report-date rate ${entry.targetCurrency}${stockCurrency}=${entry.fxRate?.toFixed(4) ?? "?"}`}>
+                    ({entry.targetCurrency} ${entry.targetOriginal.toFixed(2)})
                   </span>
-                ) : <span className="italic text-slate-400">Not extracted</span>}
-              </span>
+                )}
+                {entry?.target && !entry.targetOriginal && !entry.targetCurrency && (
+                  <select
+                    className="text-[9px] border border-slate-200 rounded px-0.5 py-0.5 bg-white text-blue-600 cursor-pointer shrink-0"
+                    defaultValue=""
+                    disabled={converting === which}
+                    onChange={async (e) => {
+                      const fromCcy = e.target.value;
+                      if (!fromCcy) return;
+                      setConverting(which);
+                      try { await onConvertTarget(which, fromCcy); } finally { setConverting(null); }
+                    }}
+                    title={`If this target is in a different currency, select it to convert to ${stockCurrency} at the report-date FX rate.`}
+                  >
+                    <option value="">Ccy…</option>
+                    {["USD", "CAD", "DKK", "SEK", "NOK", "GBP", "EUR", "CHF", "JPY", "AUD"]
+                      .filter((c) => c !== stockCurrency)
+                      .map((c) => <option key={c} value={c}>{c}</option>)}
+                  </select>
+                )}
+                {converting === which && <span className="text-[9px] text-slate-400">…</span>}
+              </div>
             </div>
-            <div className="flex flex-col gap-0.5">
+            <label className="flex flex-col gap-0.5">
               <span className="text-slate-500">Report date</span>
-              <span className="rounded border border-slate-100 bg-slate-50 px-1.5 py-1 text-slate-700">
-                {entry?.asOf || <span className="italic text-slate-400">Not extracted</span>}
-              </span>
-            </div>
+              <input
+                type="date"
+                value={entry?.asOf ?? ""}
+                onChange={(e) => patchAnalyst(which, { asOf: e.target.value || undefined })}
+                className="rounded border border-slate-200 bg-white px-1.5 py-1 outline-none focus:border-blue-400"
+              />
+            </label>
             <div className="flex flex-col gap-0.5">
-              <span className="text-slate-500" title="Underlying price captured at upload time. Used to detect adverse moves for freshness decay.">
+              <span className="text-slate-500" title="Underlying price captured at upload time.">
                 Price at report
               </span>
               <span className="rounded border border-slate-100 bg-slate-50 px-1.5 py-1 text-slate-700">
