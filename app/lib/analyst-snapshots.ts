@@ -201,7 +201,7 @@ export type UpsideContribution = {
 };
 
 export type ConsensusBreakdown = {
-  /** Final score, rounded to nearest 0.5, clamped to [0, 3]. */
+  /** Final score, clamped to [0, 3], kept at full precision (2 decimals). */
   score: number;
   /** Pre-rounding sum of contributions. */
   rawScore: number;
@@ -254,7 +254,10 @@ export function computeAnalystConsensus(
       : { target, targetSource, contribution: 0 };
 
   const rawScore = (rbc?.contribution ?? 0) + (jpm?.contribution ?? 0) + upsideContribution.contribution;
-  const score = Math.max(0, Math.min(3, Math.round(rawScore * 2) / 2));
+  // Keep full precision (e.g. 2.75) — clamped to [0, 3] but NOT rounded.
+  // The UI displays the exact fractional value; rounding was masking real
+  // signal (e.g. 2.75 → 3 hid the missing 0.25).
+  const score = Math.max(0, Math.min(3, Math.round(rawScore * 100) / 100));
 
   // Confidence (informational only — UI doesn't render a chip for computed cats).
   const rbcFresh = rbc && rbc.freshnessLabel === "fresh";
@@ -320,7 +323,7 @@ export function buildConsensusExplanation(
   const summary =
     dataPoints.length === 0
       ? "No analyst snapshot data available. Enter RBC/JPM reports and a FactSet target via the Coverage Checklist."
-      : `Auto-derived from RBC + JPM ratings + FactSet street-avg upside. Raw sum: ${breakdown.rawScore.toFixed(2)}, rounded to ${breakdown.score}/3.`;
+      : `Auto-derived from RBC + JPM ratings + FactSet street-avg upside. Score: ${breakdown.score}/3.`;
 
   return { summary, dataPoints, confidence: breakdown.confidence };
 }

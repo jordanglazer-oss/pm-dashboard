@@ -372,7 +372,7 @@ function ScoreDonut({ score, max, groups, stock }: { score: number; max: number;
           );
         })}
         <text x={center} y={center - 4} textAnchor="middle" style={{ fontSize: "32px", fontWeight: 700 }} className="fill-slate-900">
-          {score}
+          {Number.isInteger(score) ? score : score.toFixed(1)}
         </text>
         <text x={center} y={center + 16} textAnchor="middle" style={{ fontSize: "13px" }} className="fill-slate-400">
           / {max}
@@ -1535,8 +1535,8 @@ export default function StockDetailPage() {
                               style={{ width: `${pct}%` }}
                             />
                           </div>
-                          <span className={`w-10 text-right text-xs font-bold shrink-0 ${colors.scoreText}`}>
-                            {total}/{group.maxTotal}
+                          <span className={`w-14 text-right text-xs font-bold shrink-0 ${colors.scoreText}`}>
+                            {Number.isInteger(total) ? total : total.toFixed(2)}/{group.maxTotal}
                           </span>
                         </div>
                       );
@@ -1894,7 +1894,7 @@ export default function StockDetailPage() {
                       <h2 className="text-base font-bold text-slate-800">{group.name}</h2>
                     </div>
                     <div className="flex items-baseline gap-0.5">
-                      <span className={`text-2xl font-bold ${colors.scoreText}`}>{total}</span>
+                      <span className={`text-2xl font-bold ${colors.scoreText}`}>{Number.isInteger(total) ? total : total.toFixed(2)}</span>
                       <span className="text-sm text-slate-400">/{group.maxTotal}</span>
                     </div>
                   </div>
@@ -2004,7 +2004,8 @@ export default function StockDetailPage() {
                                   className={`flex h-7 min-w-[28px] px-1.5 items-center justify-center rounded-md text-xs font-semibold ${colors.activeBg} ${colors.activeText}`}
                                   title={`Auto-derived: ${val}/${cat.max}`}
                                 >
-                                  {Number.isInteger(val) ? val : val.toFixed(1)}
+                                  {Number.isInteger(val) ? val : val.toFixed(2)}
+                                  <span className="ml-0.5 text-[10px] opacity-60">/{cat.max}</span>
                                 </span>
                               ) : (
                                 Array.from({ length: cat.max + 1 }, (_, i) => (
