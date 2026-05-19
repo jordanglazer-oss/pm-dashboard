@@ -197,6 +197,7 @@ export function PortfolioOverview() {
   // share the same guard against firing refresh while either is running.
   const [scoringBucket, setScoringBucket] = useState<"Portfolio" | "Watchlist" | null>(null);
   const [scoreProgress, setScoreProgress] = useState("");
+  const [scoreFailures, setScoreFailures] = useState<string[]>([]);
   const [refreshingAll, setRefreshingAll] = useState(false);
   const [refreshProgress, setRefreshProgress] = useState("");
   const scoringAny = scoringBucket != null;
@@ -335,27 +336,125 @@ export function PortfolioOverview() {
   }, [updateScore, updateExplanations, updateLastScored, updatePrice, updateHealthData, updateTechnicals, updateStockFields, portfolioStocks, watchlistStocks, marketData]);
 
   /** Sequentially score every scoreable stock in a bucket, updating a progress
-   *  banner and finally stamping the "Score All" timestamp on success. */
+   *  banner and finally stamping the "Score All" timestamp on success.
+   *
+   *  Tracks failures so the user sees exactly which tickers errored out.
+   *  After scoring, auto-backfills companySummary + investmentThesis for any
+   *  stock that's still missing them (cheap ~$0.002/stock call). */
   const handleScoreBucket = useCallback(async (bucket: "Portfolio" | "Watchlist") => {
     if (scoringAny || refreshingAll) return;
     const source = bucket === "Portfolio" ? portfolioStocks : watchlistStocks;
     const bucketStocks = source.filter((s) => isScoreable(s));
     if (bucketStocks.length === 0) return;
     setScoringBucket(bucket);
+    setScoreFailures([]);
+    const failed: string[] = [];
     for (let i = 0; i < bucketStocks.length; i++) {
       const s = bucketStocks[i];
       setScoreProgress(`Scoring ${s.ticker} (${i + 1}/${bucketStocks.length})`);
       try {
         await scoreOneStock(s.ticker);
-      } catch { /* best-effort — keep going so one bad ticker doesn't block the rest */ }
+      } catch (err) {
+        console.error(`[Score All] Failed to score ${s.ticker}:`, err);
+        failed.push(s.ticker);
+      }
     }
-    setScoreProgress("");
+
+    // Auto-backfill companySummary + investmentThesis for stocks missing them.
+    // Re-read from the latest state (source is stale closure from start of fn).
+    const freshSource = bucket === "Portfolio" ? portfolioStocks : watchlistStocks;
+    const needBackfill = freshSource.filter(
+      (s) => isScoreable(s) && !failed.includes(s.ticker) && (!s.companySummary || !s.investmentThesis)
+    );
+    if (needBackfill.length > 0) {
+      setScoreProgress(`Backfilling summaries (${needBackfill.length} stocks)...`);
+      for (const s of needBackfill) {
+        try {
+          const res = await fetch("/api/backfill-summaries", {
+            method: "POST",
+            headers: { "Content-Type": "application/json" },
+            body: JSON.stringify({
+              ticker: s.ticker,
+              name: s.name,
+              sector: s.sector,
+              scores: s.scores,
+              explanations: s.explanations,
+            }),
+          });
+          if (res.ok) {
+            const data = await res.json();
+            if (data.companySummary || data.investmentThesis) {
+              updateStockFields(s.ticker, {
+                ...(data.companySummary ? { companySummary: data.companySummary } : {}),
+                ...(data.investmentThesis ? { investmentThesis: data.investmentThesis } : {}),
+              });
+            }
+          }
+        } catch {
+          // Non-fatal — summaries are nice-to-have, not critical
+        }
+      }
+    }
+
+    if (failed.length > 0) {
+      setScoreFailures(failed);
+      setScoreProgress(`Done — ${failed.length} failed: ${failed.join(", ")}`);
+    } else {
+      setScoreProgress("");
+    }
     setScoringBucket(null);
     setUiPref(
       bucket === "Portfolio" ? "scoreAllPortfolioAt" : "scoreAllWatchlistAt",
       new Date().toISOString()
     );
-  }, [scoringAny, refreshingAll, portfolioStocks, watchlistStocks, scoreOneStock, setUiPref]);
+  }, [scoringAny, refreshingAll, portfolioStocks, watchlistStocks, scoreOneStock, setUiPref, updateStockFields]);
+
+  // Backfill state — separate from Score All so it can run independently.
+  const [backfilling, setBackfilling] = useState(false);
+  const [backfillProgress, setBackfillProgress] = useState("");
+
+  /** Cheap backfill: generate only companySummary + investmentThesis for
+   *  stocks that already have scores but are missing these text fields.
+   *  ~$0.002/stock vs ~$0.18 for a full rescore. */
+  const handleBackfillSummaries = useCallback(async (bucket: "Portfolio" | "Watchlist") => {
+    if (backfilling || scoringAny || refreshingAll) return;
+    const source = bucket === "Portfolio" ? portfolioStocks : watchlistStocks;
+    const needBackfill = source.filter(
+      (s) => isScoreable(s) && (!s.companySummary || !s.investmentThesis)
+    );
+    if (needBackfill.length === 0) return;
+    setBackfilling(true);
+    let done = 0;
+    for (const s of needBackfill) {
+      setBackfillProgress(`Generating summaries ${++done}/${needBackfill.length} (${s.ticker})...`);
+      try {
+        const res = await fetch("/api/backfill-summaries", {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({
+            ticker: s.ticker,
+            name: s.name,
+            sector: s.sector,
+            scores: s.scores,
+            explanations: s.explanations,
+          }),
+        });
+        if (res.ok) {
+          const data = await res.json();
+          if (data.companySummary || data.investmentThesis) {
+            updateStockFields(s.ticker, {
+              ...(data.companySummary ? { companySummary: data.companySummary } : {}),
+              ...(data.investmentThesis ? { investmentThesis: data.investmentThesis } : {}),
+            });
+          }
+        }
+      } catch {
+        // Non-fatal
+      }
+    }
+    setBackfillProgress("");
+    setBackfilling(false);
+  }, [backfilling, scoringAny, refreshingAll, portfolioStocks, watchlistStocks, updateStockFields]);
 
   /** Refresh *every* position — portfolio holdings, fund & ETF holdings,
    *  and watchlist — via /api/refresh-data, then re-fetch fund metadata for
@@ -824,9 +923,14 @@ export function PortfolioOverview() {
         onScoreAll={() => handleScoreBucket("Portfolio")}
         scoring={scoringBucket === "Portfolio"}
         scoreProgress={scoringBucket === "Portfolio" ? scoreProgress : ""}
+        scoreFailures={scoringBucket !== "Watchlist" ? scoreFailures : []}
+        onDismissFailures={() => { setScoreFailures([]); setScoreProgress(""); }}
         scoreAllDisabled={scoringAny || refreshingAll}
         lastScoredAt={scoreAllPortfolioAt}
         collapseKey="dashboard.portfolioRankings.collapsed"
+        onBackfillSummaries={() => handleBackfillSummaries("Portfolio")}
+        backfilling={backfilling}
+        backfillProgress={backfillProgress}
       />
 
 
@@ -841,9 +945,14 @@ export function PortfolioOverview() {
         onScoreAll={() => handleScoreBucket("Watchlist")}
         scoring={scoringBucket === "Watchlist"}
         scoreProgress={scoringBucket === "Watchlist" ? scoreProgress : ""}
+        scoreFailures={scoringBucket !== "Portfolio" ? scoreFailures : []}
+        onDismissFailures={() => { setScoreFailures([]); setScoreProgress(""); }}
         scoreAllDisabled={scoringAny || refreshingAll}
         lastScoredAt={scoreAllWatchlistAt}
         collapseKey="dashboard.watchlistRankings.collapsed"
+        onBackfillSummaries={() => handleBackfillSummaries("Watchlist")}
+        backfilling={backfilling}
+        backfillProgress={backfillProgress}
       />
 
       {/* Fund & ETF Holdings — moved below Watchlist Rankings per Dashboard
@@ -1042,9 +1151,14 @@ function RankingTable({
   onScoreAll,
   scoring,
   scoreProgress,
+  scoreFailures,
+  onDismissFailures,
   scoreAllDisabled,
   lastScoredAt,
   collapseKey,
+  onBackfillSummaries,
+  backfilling,
+  backfillProgress,
 }: {
   title: string;
   subtitle: string;
@@ -1055,11 +1169,16 @@ function RankingTable({
   onScoreAll?: () => void;
   scoring?: boolean;
   scoreProgress?: string;
+  scoreFailures?: string[];
+  onDismissFailures?: () => void;
   scoreAllDisabled?: boolean;
   lastScoredAt?: string;
   /** When set, this section is collapsible and its collapsed state is
    *  persisted under this uiPrefs key (cross-device via Redis). */
   collapseKey?: string;
+  onBackfillSummaries?: () => void;
+  backfilling?: boolean;
+  backfillProgress?: string;
 }) {
   // Collapse state — defaults to expanded. Persisted in uiPrefs so it
   // sticks across refreshes and syncs to other devices via Redis. The
@@ -1210,6 +1329,50 @@ function RankingTable({
           </div>
         )}
       </div>
+      {/* Score All failure banner — persists until dismissed */}
+      {!scoring && scoreFailures && scoreFailures.length > 0 && (
+        <div className="mx-4 mt-2 flex items-center gap-2 rounded-lg bg-red-50 border border-red-200 px-3 py-2 text-xs text-red-700">
+          <svg className="w-4 h-4 flex-shrink-0" fill="none" stroke="currentColor" strokeWidth="2" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" d="M12 9v3.75m-9.303 3.376c-.866 1.5.217 3.374 1.948 3.374h14.71c1.73 0 2.813-1.874 1.948-3.374L13.949 3.378c-.866-1.5-3.032-1.5-3.898 0L2.697 16.126ZM12 15.75h.007v.008H12v-.008Z" /></svg>
+          <span className="font-medium">{scoreFailures.length} stock{scoreFailures.length > 1 ? "s" : ""} failed to score: {scoreFailures.join(", ")}</span>
+          <span className="text-red-500">— try scoring individually from the stock page</span>
+          {onDismissFailures && (
+            <button onClick={onDismissFailures} className="ml-auto text-red-400 hover:text-red-600">
+              <svg className="w-4 h-4" fill="none" stroke="currentColor" strokeWidth="2" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" d="M6 18 18 6M6 6l12 12" /></svg>
+            </button>
+          )}
+        </div>
+      )}
+      {/* Backfill summaries banner — shown when stocks have scores but missing What They Do / Why Own It */}
+      {(() => {
+        const missingSummaries = stocks.filter(
+          (s) => isScoreable(s) && s.raw > 0 && (!s.companySummary || !s.investmentThesis)
+        );
+        if (missingSummaries.length === 0 && !backfilling) return null;
+        return (
+          <div className="mx-4 mt-2 flex items-center gap-2 rounded-lg bg-amber-50 border border-amber-200 px-3 py-2 text-xs text-amber-700">
+            {backfilling ? (
+              <>
+                <svg className="w-3.5 h-3.5 animate-spin flex-shrink-0" fill="none" stroke="currentColor" strokeWidth="2" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" d="M16.023 9.348h4.992v-.001M2.985 19.644v-4.992m0 0h4.992m-4.993 0 3.181 3.183a8.25 8.25 0 0 0 13.803-3.7M4.031 9.865a8.25 8.25 0 0 1 13.803-3.7l3.181 3.182" /></svg>
+                <span>{backfillProgress || "Generating summaries..."}</span>
+              </>
+            ) : (
+              <>
+                <svg className="w-4 h-4 flex-shrink-0" fill="none" stroke="currentColor" strokeWidth="2" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" d="m11.25 11.25.041-.02a.75.75 0 0 1 1.063.852l-.708 2.836a.75.75 0 0 0 1.063.853l.041-.021M21 12a9 9 0 1 1-18 0 9 9 0 0 1 18 0Zm-9-3.75h.008v.008H12V8.25Z" /></svg>
+                <span>{missingSummaries.length} stock{missingSummaries.length > 1 ? "s" : ""} missing &quot;What They Do&quot; / &quot;Why Own It&quot;</span>
+                {onBackfillSummaries && (
+                  <button
+                    onClick={onBackfillSummaries}
+                    disabled={scoreAllDisabled}
+                    className="ml-1 rounded bg-amber-600 px-2 py-0.5 text-[11px] font-semibold text-white hover:bg-amber-700 disabled:opacity-50"
+                  >
+                    Fill ({missingSummaries.length}) — ~$0.01
+                  </button>
+                )}
+              </>
+            )}
+          </div>
+        );
+      })()}
       {!collapsed && (
       <div className="overflow-x-auto">
         <table className="w-full min-w-[1400px] text-left text-sm">
