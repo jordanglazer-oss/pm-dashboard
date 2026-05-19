@@ -127,51 +127,14 @@ export type FreshnessLabel = "fresh" | "stale" | "very-stale";
 export type FreshnessResult = { weight: number; label: FreshnessLabel; reason?: string };
 
 /**
- * Per-analyst freshness multiplier (0.5–1.0). Applied to the rating score
- * only — the upside sub-point is naturally self-correcting since it
- * recomputes against current price every score.
+ * Per-analyst freshness multiplier. Always 1.0 — no decay.
  *
- * Rules (any one triggers the 0.5 stale floor):
- *   - >180 days since report
- *   - >90 days since report (linear taper 1.0 → 0.5 over the 90–180 window)
- *   - Target hit (current price ≥ target)
- *   - Price moved <-20% from priceAtReport AND >60 days since report
+ * Analysts keep their reports current when material changes occur, so
+ * penalizing older reports distorts the score. The rating stands at full
+ * weight until the PM uploads a newer report that replaces it.
  */
-export function freshnessWeight(entry: AnalystEntry, currentPrice?: number): FreshnessResult {
-  const reasons: string[] = [];
-  const now = Date.now();
-  const asOfMs = entry.asOf ? Date.parse(entry.asOf) : NaN;
-  const daysSince = Number.isFinite(asOfMs) ? (now - asOfMs) / (1000 * 60 * 60 * 24) : 0;
-
-  let weight = 1.0;
-  let label: FreshnessLabel = "fresh";
-
-  if (daysSince > 180) {
-    weight = 0.5;
-    label = "very-stale";
-    reasons.push(`Report is ${Math.floor(daysSince)} days old`);
-  } else if (daysSince > 90) {
-    weight = 1.0 - 0.5 * ((daysSince - 90) / 90);
-    label = "stale";
-    reasons.push(`Report is ${Math.floor(daysSince)} days old`);
-  }
-
-  if (entry.target && currentPrice && currentPrice >= entry.target) {
-    if (weight > 0.5) weight = 0.5;
-    if (label === "fresh") label = "stale";
-    reasons.push(`Target $${entry.target.toFixed(2)} reached (price $${currentPrice.toFixed(2)})`);
-  }
-
-  if (entry.priceAtReport && currentPrice && daysSince > 60) {
-    const move = (currentPrice - entry.priceAtReport) / entry.priceAtReport;
-    if (move < -0.2) {
-      if (weight > 0.5) weight = 0.5;
-      if (label === "fresh") label = "stale";
-      reasons.push(`Price down ${(move * 100).toFixed(0)}% from report-time level`);
-    }
-  }
-
-  return { weight, label, reason: reasons.join("; ") || undefined };
+export function freshnessWeight(_entry: AnalystEntry, _currentPrice?: number): FreshnessResult {
+  return { weight: 1.0, label: "fresh", reason: undefined };
 }
 
 /** FactSet target → upside sub-point (0–1). */
