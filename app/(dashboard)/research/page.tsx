@@ -351,11 +351,35 @@ export default function ResearchPage() {
     addStock(stock);
     return true;
   }, [scoredStocks, addStock]);
-  const [uptickSort, setUptickSort] = useState<{ key: UptickSortKey; dir: SortDir }>({ key: "ticker", dir: "asc" });
-  const [topSort, setTopSort] = useState<{ key: IdeaSortKey; dir: SortDir }>({ key: "ticker", dir: "asc" });
-  const [bottomSort, setBottomSort] = useState<{ key: IdeaSortKey; dir: SortDir }>({ key: "ticker", dir: "asc" });
-  const [smidTopSort, setSmidTopSort] = useState<{ key: IdeaSortKey; dir: SortDir }>({ key: "ticker", dir: "asc" });
-  const [smidBottomSort, setSmidBottomSort] = useState<{ key: IdeaSortKey; dir: SortDir }>({ key: "ticker", dir: "asc" });
+  // Per-table column sorts — all persisted via uiPrefs so the user's
+  // choices survive refreshes AND sync across devices through pm:ui-prefs.
+  // Same pattern as the Alpha Picks sort above; each table gets its own
+  // uiPrefs keys so the seven sorts don't collide.
+  const UPTICK_SORT_KEYS: ReadonlyArray<UptickSortKey> = ["ticker", "name", "sector", "price", "support", "resistance", "dateAdded", "priceWhenAdded"];
+  const IDEA_SORT_KEYS: ReadonlyArray<IdeaSortKey> = ["ticker", "priceWhenAdded", "currentPrice"];
+  const readSort = <K extends string>(keyPrefName: string, dirPrefName: string, allowed: ReadonlyArray<K>, defaultKey: K, defaultDir: SortDir): { key: K; dir: SortDir } => {
+    const rawKey = uiPrefs[keyPrefName];
+    const rawDir = uiPrefs[dirPrefName];
+    return {
+      key: (allowed.includes(rawKey as K) ? (rawKey as K) : defaultKey) as K,
+      dir: (rawDir === "asc" || rawDir === "desc") ? (rawDir as SortDir) : defaultDir,
+    };
+  };
+  const writeSort = (keyPrefName: string, dirPrefName: string, next: { key: string; dir: SortDir }) => {
+    setUiPref(keyPrefName, next.key);
+    setUiPref(dirPrefName, next.dir);
+  };
+
+  const uptickSort = readSort<UptickSortKey>("research.uptickSortKey", "research.uptickSortDir", UPTICK_SORT_KEYS, "ticker", "asc");
+  const setUptickSort = (next: { key: UptickSortKey; dir: SortDir }) => writeSort("research.uptickSortKey", "research.uptickSortDir", next);
+  const topSort = readSort<IdeaSortKey>("research.topSortKey", "research.topSortDir", IDEA_SORT_KEYS, "ticker", "asc");
+  const setTopSort = (next: { key: IdeaSortKey; dir: SortDir }) => writeSort("research.topSortKey", "research.topSortDir", next);
+  const bottomSort = readSort<IdeaSortKey>("research.bottomSortKey", "research.bottomSortDir", IDEA_SORT_KEYS, "ticker", "asc");
+  const setBottomSort = (next: { key: IdeaSortKey; dir: SortDir }) => writeSort("research.bottomSortKey", "research.bottomSortDir", next);
+  const smidTopSort = readSort<IdeaSortKey>("research.smidTopSortKey", "research.smidTopSortDir", IDEA_SORT_KEYS, "ticker", "asc");
+  const setSmidTopSort = (next: { key: IdeaSortKey; dir: SortDir }) => writeSort("research.smidTopSortKey", "research.smidTopSortDir", next);
+  const smidBottomSort = readSort<IdeaSortKey>("research.smidBottomSortKey", "research.smidBottomSortDir", IDEA_SORT_KEYS, "ticker", "asc");
+  const setSmidBottomSort = (next: { key: IdeaSortKey; dir: SortDir }) => writeSort("research.smidBottomSortKey", "research.smidBottomSortDir", next);
   // Alpha Picks rating filter — null = show all, otherwise show only
   // picks whose rating matches (case-insensitive). Strong Buy / Buy /
   // Hold / Sell / Strong Sell, plus an "(unrated)" bucket for legacy
@@ -378,8 +402,11 @@ export default function ResearchPage() {
     setUiPref("research.alphaSortKey", next.key);
     setUiPref("research.alphaSortDir", next.dir);
   };
-  const [rbcSort, setRbcSort] = useState<{ key: RBCSortKey; dir: SortDir }>({ key: "ticker", dir: "asc" });
-  const [rbcUsSort, setRbcUsSort] = useState<{ key: RBCSortKey; dir: SortDir }>({ key: "ticker", dir: "asc" });
+  const RBC_SORT_KEYS: ReadonlyArray<RBCSortKey> = ["ticker", "name", "sector", "weight", "dateAdded"];
+  const rbcSort = readSort<RBCSortKey>("research.rbcSortKey", "research.rbcSortDir", RBC_SORT_KEYS, "ticker", "asc");
+  const setRbcSort = (next: { key: RBCSortKey; dir: SortDir }) => writeSort("research.rbcSortKey", "research.rbcSortDir", next);
+  const rbcUsSort = readSort<RBCSortKey>("research.rbcUsSortKey", "research.rbcUsSortDir", RBC_SORT_KEYS, "ticker", "asc");
+  const setRbcUsSort = (next: { key: RBCSortKey; dir: SortDir }) => writeSort("research.rbcUsSortKey", "research.rbcUsSortDir", next);
 
   // Live prices from Yahoo Finance
   const [livePrices, setLivePrices] = useState<LivePrices>({});
@@ -462,26 +489,30 @@ export default function ResearchPage() {
   const [synthesisStatus, setSynthesisStatus] = useState<string | null>(null);
   const [synthesisCached, setSynthesisCached] = useState(false);
 
+  // Toggle handlers — read the current sort object directly (no functional
+  // setState since these sorts are now derived from uiPrefs rather than
+  // local React state). Behavior is identical: same column → flip dir;
+  // different column → reset to ascending for that column.
   function toggleUptickSort(key: UptickSortKey) {
-    setUptickSort(prev => prev.key === key ? { key, dir: prev.dir === "asc" ? "desc" : "asc" } : { key, dir: "asc" });
+    setUptickSort(uptickSort.key === key ? { key, dir: uptickSort.dir === "asc" ? "desc" : "asc" } : { key, dir: "asc" });
   }
   function toggleSmidTopSort(key: IdeaSortKey) {
-    setSmidTopSort(prev => prev.key === key ? { key, dir: prev.dir === "asc" ? "desc" : "asc" } : { key, dir: "asc" });
+    setSmidTopSort(smidTopSort.key === key ? { key, dir: smidTopSort.dir === "asc" ? "desc" : "asc" } : { key, dir: "asc" });
   }
   function toggleSmidBottomSort(key: IdeaSortKey) {
-    setSmidBottomSort(prev => prev.key === key ? { key, dir: prev.dir === "asc" ? "desc" : "asc" } : { key, dir: "asc" });
+    setSmidBottomSort(smidBottomSort.key === key ? { key, dir: smidBottomSort.dir === "asc" ? "desc" : "asc" } : { key, dir: "asc" });
   }
   function toggleTopSort(key: IdeaSortKey) {
-    setTopSort(prev => prev.key === key ? { key, dir: prev.dir === "asc" ? "desc" : "asc" } : { key, dir: "asc" });
+    setTopSort(topSort.key === key ? { key, dir: topSort.dir === "asc" ? "desc" : "asc" } : { key, dir: "asc" });
   }
   function toggleBottomSort(key: IdeaSortKey) {
-    setBottomSort(prev => prev.key === key ? { key, dir: prev.dir === "asc" ? "desc" : "asc" } : { key, dir: "asc" });
+    setBottomSort(bottomSort.key === key ? { key, dir: bottomSort.dir === "asc" ? "desc" : "asc" } : { key, dir: "asc" });
   }
   function toggleRbcSort(key: RBCSortKey) {
-    setRbcSort(prev => prev.key === key ? { key, dir: prev.dir === "asc" ? "desc" : "asc" } : { key, dir: "asc" });
+    setRbcSort(rbcSort.key === key ? { key, dir: rbcSort.dir === "asc" ? "desc" : "asc" } : { key, dir: "asc" });
   }
   function toggleRbcUsSort(key: RBCSortKey) {
-    setRbcUsSort(prev => prev.key === key ? { key, dir: prev.dir === "asc" ? "desc" : "asc" } : { key, dir: "asc" });
+    setRbcUsSort(rbcUsSort.key === key ? { key, dir: rbcUsSort.dir === "asc" ? "desc" : "asc" } : { key, dir: "asc" });
   }
 
   function sortedUpticks() {
