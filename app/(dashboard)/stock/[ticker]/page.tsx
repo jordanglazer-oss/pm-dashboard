@@ -1140,6 +1140,9 @@ export default function StockDetailPage() {
   useEffect(() => {
     function onKey(e: KeyboardEvent) {
       if (e.key !== "ArrowLeft" && e.key !== "ArrowRight") return;
+      // Ctrl+Arrow switches between stocks; Cmd/Win+Arrow switches tabs
+      // (handled by Navigation). Plain arrows are left for normal use.
+      if (!e.ctrlKey || e.metaKey) return;
       const target = e.target as HTMLElement | null;
       const tag = target?.tagName?.toLowerCase();
       if (tag === "input" || tag === "textarea" || tag === "select" || target?.isContentEditable) return;
