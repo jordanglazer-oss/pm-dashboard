@@ -127,6 +127,10 @@ type StockContextType = {
   convertAnalystTarget: (ticker: string, source: "rbc" | "jpm", fromCurrency: string) => Promise<void>;
   /** Detect the trading currency for a ticker (from Yahoo or heuristic). */
   tickerCurrency: (ticker: string) => string;
+  /** Immediately persist any pending debounced stock data to Redis.
+   *  Call after batch operations (Score All, Refresh All) to guarantee
+   *  data is saved before the user navigates away. Returns a Promise. */
+  flushStocks: () => Promise<void>;
 };
 
 const StockContext = createContext<StockContextType | null>(null);
@@ -147,38 +151,57 @@ if (typeof window !== "undefined") {
   });
 }
 
-function useDebouncedPersist(url: string, bodyKey: string, delay = 500) {
+/**
+ * Returns [debouncedPersist, flushNow].
+ *
+ * debouncedPersist(data) — queues a persist that fires after `delay` ms.
+ * flushNow()            — immediately persists the latest queued data
+ *                          (if any), cancelling the pending debounce.
+ *                          Returns a Promise that resolves when the PUT
+ *                          completes, so callers can `await flushNow()`
+ *                          at the end of a batch operation.
+ *
+ * On beforeunload, all pending debounces auto-flush via fetch+keepalive
+ * (sendBeacon has a ~64KB limit that the stocks blob can exceed).
+ */
+function useDebouncedPersist(url: string, bodyKey: string, delay = 500): [
+  (data: unknown) => void,
+  () => Promise<void>,
+] {
   const timer = useRef<ReturnType<typeof setTimeout> | null>(null);
   const latestData = useRef<unknown>(null);
 
   // Flush function: immediately persists the latest data if a debounce is pending.
-  const flush = useCallback(() => {
+  const flush = useCallback((): Promise<void> => {
     if (timer.current && latestData.current !== null) {
       clearTimeout(timer.current);
       timer.current = null;
-      // Use sendBeacon for reliability during page unload; fall back to fetch.
       const body = JSON.stringify({ [bodyKey]: latestData.current });
-      if (typeof navigator?.sendBeacon === "function") {
-        navigator.sendBeacon(url, new Blob([body], { type: "application/json" }));
-      } else {
-        fetch(url, {
-          method: "PUT",
-          headers: { "Content-Type": "application/json" },
-          body,
-          keepalive: true,
-        }).catch(() => {});
-      }
       latestData.current = null;
+      // fetch with keepalive works during unload and handles large payloads
+      // better than sendBeacon (which has a ~64KB limit — the stocks blob
+      // with explanations can be 500KB+).
+      return fetch(url, {
+        method: "PUT",
+        headers: { "Content-Type": "application/json" },
+        body,
+        keepalive: true,
+      }).then(() => {}).catch((e) => console.error(`Failed to flush ${bodyKey}:`, e));
     }
+    return Promise.resolve();
   }, [url, bodyKey]);
 
-  // Register/unregister the flush function in the global registry
+  // Register/unregister the flush function in the global registry.
+  // The beforeunload handler calls these synchronously, so the fetch
+  // fires but we can't await it — keepalive ensures the browser doesn't
+  // cancel it on navigation.
   useEffect(() => {
-    pendingFlushes.add(flush);
-    return () => { pendingFlushes.delete(flush); };
+    const syncFlush = () => { flush(); };
+    pendingFlushes.add(syncFlush);
+    return () => { pendingFlushes.delete(syncFlush); };
   }, [flush]);
 
-  return useCallback(
+  const debounced = useCallback(
     (data: unknown) => {
       latestData.current = data;
       if (timer.current) clearTimeout(timer.current);
@@ -194,6 +217,8 @@ function useDebouncedPersist(url: string, bodyKey: string, delay = 500) {
     },
     [url, bodyKey, delay]
   );
+
+  return [debounced, flush];
 }
 
 export function StockProvider({ children }: { children: React.ReactNode }) {
@@ -209,7 +234,7 @@ export function StockProvider({ children }: { children: React.ReactNode }) {
   const [analystReports, setAnalystReportsState] = useState<AnalystReports>({});
   const [loading, setLoading] = useState(true);
 
-  const persistStocks = useDebouncedPersist("/api/kv/stocks", "stocks");
+  const [persistStocks, flushStocks] = useDebouncedPersist("/api/kv/stocks", "stocks");
   // Market data persists immediately (not debounced) since updates are explicit save actions
   const persistMarket = useCallback((data: unknown) => {
     fetch("/api/kv/market", {
@@ -218,9 +243,9 @@ export function StockProvider({ children }: { children: React.ReactNode }) {
       body: JSON.stringify({ updates: data }),
     }).catch((e) => console.error("Failed to persist market:", e));
   }, []);
-  const persistBrief = useDebouncedPersist("/api/kv/brief", "brief", 100);
-  const persistChartAnalyses = useDebouncedPersist("/api/kv/chart-analysis", "chartAnalyses", 300);
-  const persistScanner = useDebouncedPersist("/api/kv/scanner", "scanner", 300);
+  const [persistBrief] = useDebouncedPersist("/api/kv/brief", "brief", 100);
+  const [persistChartAnalyses] = useDebouncedPersist("/api/kv/chart-analysis", "chartAnalyses", 300);
+  const [persistScanner] = useDebouncedPersist("/api/kv/scanner", "scanner", 300);
   // Custom persist for pim-models (sends full object, not wrapped in key)
   const persistPim = useCallback((data: PimModelData) => {
     fetch("/api/kv/pim-models", {
@@ -236,8 +261,8 @@ export function StockProvider({ children }: { children: React.ReactNode }) {
       body: JSON.stringify(data),
     }).catch((e) => console.error("Failed to persist pim-portfolio-state:", e));
   }, []);
-  const persistUiPrefs = useDebouncedPersist("/api/kv/ui-prefs", "uiPrefs", 300);
-  const persistAnalystSnapshots = useDebouncedPersist("/api/kv/analyst-snapshots", "snapshots", 400);
+  const [persistUiPrefs] = useDebouncedPersist("/api/kv/ui-prefs", "uiPrefs", 300);
+  const [persistAnalystSnapshots] = useDebouncedPersist("/api/kv/analyst-snapshots", "snapshots", 400);
   const persistAnalystReports = useCallback((data: AnalystReports) => {
     fetch("/api/kv/analyst-reports", {
       method: "PUT",
@@ -1345,6 +1370,7 @@ export function StockProvider({ children }: { children: React.ReactNode }) {
         removeAnalystReport,
         convertAnalystTarget,
         tickerCurrency,
+        flushStocks,
       }}
     >
       {children}

@@ -162,6 +162,7 @@ export function PortfolioOverview() {
     updateMarketData,
     uiPrefs,
     setUiPref,
+    flushStocks,
   } = useStocks();
   const [dashFilter, setDashFilter] = useState<DashboardFilter>("all");
 
@@ -380,7 +381,9 @@ export function PortfolioOverview() {
       bucket === "Portfolio" ? "scoreAllPortfolioAt" : "scoreAllWatchlistAt",
       new Date().toISOString()
     );
-  }, [scoringAny, refreshingAll, portfolioStocks, watchlistStocks, setUiPref, updateStockFields, updateScore, updateExplanations, updatePrice, updateHealthData, updateTechnicals, updateLastScored]);
+    // Guarantee all state changes are persisted to Redis before we're done
+    await flushStocks();
+  }, [scoringAny, refreshingAll, portfolioStocks, watchlistStocks, setUiPref, updateStockFields, updateScore, updateExplanations, updatePrice, updateHealthData, updateTechnicals, updateLastScored, flushStocks]);
 
   // Backfill state — separate from Score All so it can run independently.
   const [backfilling, setBackfilling] = useState(false);
@@ -427,7 +430,8 @@ export function PortfolioOverview() {
     }
     setBackfillProgress("");
     setBackfilling(false);
-  }, [backfilling, scoringAny, refreshingAll, portfolioStocks, watchlistStocks, updateStockFields]);
+    await flushStocks();
+  }, [backfilling, scoringAny, refreshingAll, portfolioStocks, watchlistStocks, updateStockFields, flushStocks]);
 
   // AI/SEMI category keys that should always have explanations after scoring
   const AI_SEMI_KEYS = useMemo(() =>
@@ -492,7 +496,8 @@ export function PortfolioOverview() {
     }
     setFillGapsProgress("");
     setFillingGaps(false);
-  }, [fillingGaps, scoringAny, refreshingAll, portfolioStocks, watchlistStocks, AI_SEMI_KEYS, updateScore, updateExplanations]);
+    await flushStocks();
+  }, [fillingGaps, scoringAny, refreshingAll, portfolioStocks, watchlistStocks, AI_SEMI_KEYS, updateScore, updateExplanations, flushStocks]);
 
   /** Refresh *every* position — portfolio holdings, fund & ETF holdings,
    *  and watchlist — via /api/refresh-data, then re-fetch fund metadata for
@@ -750,8 +755,9 @@ export function PortfolioOverview() {
       setTimeout(() => setRefreshProgress(""), 5000);
     } finally {
       setRefreshingAll(false);
+      await flushStocks();
     }
-  }, [refreshingAll, scoringAny, portfolioStocks, watchlistStocks, updatePrice, updateHealthData, updateTechnicals, updateStockFields, updateFundData, updateMarketData, setUiPref]);
+  }, [refreshingAll, scoringAny, portfolioStocks, watchlistStocks, updatePrice, updateHealthData, updateTechnicals, updateStockFields, updateFundData, updateMarketData, setUiPref, flushStocks]);
 
   // ── Auto-refresh on first Dashboard view of the day ────────────────
   //
