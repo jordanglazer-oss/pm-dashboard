@@ -237,7 +237,7 @@ function ConsensusButton({
       }}
       aria-label={ariaLabel}
       title="Click to cycle to the next consensus value. Shift-click or right-click to go backwards. Drives aiRating along with the numeric rating."
-      className={`inline-flex items-center rounded border px-2 py-1 text-[10px] font-semibold uppercase tracking-wider transition-all hover:opacity-90 hover:shadow-sm cursor-pointer whitespace-nowrap ${consensusToneClass(value)}`}
+      className={`inline-flex items-center rounded border px-1.5 py-0.5 text-[8px] font-bold uppercase tracking-wide transition-all hover:opacity-90 hover:shadow-sm cursor-pointer whitespace-nowrap ${consensusToneClass(value)}`}
     >
       {consensusLabel(value)}
     </button>
@@ -637,15 +637,15 @@ export default function InboxPage() {
   const missingCount = coverageRows.filter((r) => !r.hasRbc && !r.hasJpm).length;
 
   return (
-    <div className="p-6 max-w-5xl mx-auto">
-      <div className="flex items-center justify-between mb-4">
+    <div className="p-3 sm:p-6 max-w-7xl mx-auto">
+      <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-3 mb-4">
         <div>
-          <h1 className="text-2xl font-bold">Email Inbox Ingestion</h1>
-          <p className="text-sm text-slate-500 mt-1">
+          <h1 className="text-xl sm:text-2xl font-bold">Email Inbox Ingestion</h1>
+          <p className="text-xs sm:text-sm text-slate-500 mt-1">
             Live log of analyst-report PDFs received via the dfwreports123@gmail.com Apps Script webhook.
           </p>
         </div>
-        <div className="flex items-center gap-3">
+        <div className="flex items-center gap-3 flex-wrap">
           {/* Hide-cached toggle. Defaults to ON because cached events are
               just dedup confirmations — the PM cares about fresh ingestions
               and errors. Toggle off temporarily if you want to verify
@@ -680,7 +680,7 @@ export default function InboxPage() {
         </div>
       </div>
 
-      <div className="grid grid-cols-3 gap-3 mb-6">
+      <div className="grid grid-cols-1 sm:grid-cols-3 gap-3 mb-6">
         <div className="rounded-lg border border-slate-200 bg-white p-3">
           <div className="text-xs text-slate-500">Webhook secret</div>
           <div className="mt-1 text-sm font-semibold">
@@ -721,7 +721,8 @@ export default function InboxPage() {
             All {cachedCount} recent event{cachedCount === 1 ? "" : "s"} {cachedCount === 1 ? "is" : "are"} cached re-ingestions (no Anthropic spend, data unchanged). Uncheck &quot;Hide cached&quot; above to see them.
           </p>
         ) : (
-          <table className="w-full text-sm">
+          <div className="overflow-x-auto">
+          <table className="w-full min-w-[700px] text-sm">
             <thead className="bg-slate-50 text-xs uppercase tracking-wider text-slate-500">
               <tr>
                 <th className="px-3 py-2 text-left">Time</th>
@@ -769,6 +770,7 @@ export default function InboxPage() {
               ))}
             </tbody>
           </table>
+          </div>
         ))}
       </div>
 
@@ -828,7 +830,8 @@ export default function InboxPage() {
               : "No stocks match this filter."}
           </p>
         ) : (
-          <table className="w-full text-sm">
+          <div className="overflow-x-auto">
+          <table className="w-full min-w-[1200px] text-sm">
             <thead className="bg-slate-50 text-xs uppercase tracking-wider text-slate-500">
               <tr>
                 <th className="px-3 py-2 text-left cursor-pointer select-none hover:text-slate-700" onClick={() => toggleCovSort("ticker")}>Ticker{covArrow("ticker")}</th>
@@ -962,6 +965,7 @@ export default function InboxPage() {
               })}
             </tbody>
           </table>
+          </div>
         ))}
       </div>
 
@@ -989,7 +993,8 @@ export default function InboxPage() {
             No reports stored yet. Once any PDF gets fully ingested (via inbox webhook or manual upload), it appears here permanently.
           </p>
         ) : (
-          <table className="w-full text-sm">
+          <div className="overflow-x-auto">
+          <table className="w-full min-w-[700px] text-sm">
             <thead className="bg-slate-50 text-xs uppercase tracking-wider text-slate-500">
               <tr>
                 <th className="px-3 py-2 text-left cursor-pointer select-none hover:text-slate-700" onClick={() => toggleReportsSort("ticker")}>Ticker{reportsArrow("ticker")}</th>
@@ -1029,6 +1034,7 @@ export default function InboxPage() {
               ))}
             </tbody>
           </table>
+          </div>
         ))}
       </div>
 
