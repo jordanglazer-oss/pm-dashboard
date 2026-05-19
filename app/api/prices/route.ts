@@ -47,6 +47,7 @@ type PriceResult = {
   previousClose: number | null;
   name: string | null;
   quoteType: string | null; // "EQUITY", "ETF", "MUTUALFUND", etc.
+  currency: string | null;  // "USD", "CAD", "DKK", etc. from Yahoo meta
 };
 
 // Batch-fetch current prices from Yahoo Finance v8 chart API
@@ -54,7 +55,7 @@ async function fetchPrice(ticker: string): Promise<PriceResult> {
   // FUNDSERV codes (mutual funds) — fetch NAV from Globe and Mail / Barchart
   if (isFundservCode(ticker)) {
     const nav = await fetchFundservPrice(ticker);
-    return { price: nav, previousClose: null, name: null, quoteType: "MUTUALFUND" };
+    return { price: nav, previousClose: null, name: null, quoteType: "MUTUALFUND", currency: "CAD" };
   }
   try {
     const yahooSymbol = toYahoo(ticker);
@@ -68,13 +69,14 @@ async function fetchPrice(ticker: string): Promise<PriceResult> {
         cache: "no-store",
       }
     );
-    if (!res.ok) return { price: null, previousClose: null, name: null, quoteType: null };
+    if (!res.ok) return { price: null, previousClose: null, name: null, quoteType: null, currency: null };
     const data = await res.json();
     const meta = data?.chart?.result?.[0]?.meta;
     const price = meta?.regularMarketPrice ?? meta?.previousClose ?? null;
     const previousClose = meta?.chartPreviousClose ?? meta?.previousClose ?? null;
     const name = meta?.longName ?? meta?.shortName ?? null;
     const quoteType = meta?.instrumentType ?? meta?.quoteType ?? null;
+    const currency = typeof meta?.currency === "string" ? meta.currency.toUpperCase() : null;
     // FX pairs (e.g. USDCAD=X) need full precision; stocks use 2 decimals
     const isFx = yahooSymbol.includes("=X");
     const decimals = isFx ? 6 : 2;
@@ -83,9 +85,10 @@ async function fetchPrice(ticker: string): Promise<PriceResult> {
       previousClose: previousClose ? parseFloat(previousClose.toFixed(decimals)) : null,
       name: name ?? null,
       quoteType: quoteType ?? null,
+      currency,
     };
   } catch {
-    return { price: null, previousClose: null, name: null, quoteType: null };
+    return { price: null, previousClose: null, name: null, quoteType: null, currency: null };
   }
 }
 
@@ -112,11 +115,13 @@ export async function POST(request: NextRequest) {
     const previousCloses: Record<string, number | null> = {};
     const names: Record<string, string | null> = {};
     const quoteTypes: Record<string, string | null> = {};
+    const currencies: Record<string, string | null> = {};
     for (const r of results) {
       prices[r.ticker] = r.price;
       previousCloses[r.ticker] = r.previousClose;
       names[r.ticker] = r.name;
       quoteTypes[r.ticker] = r.quoteType;
+      currencies[r.ticker] = r.currency;
     }
 
     return NextResponse.json({
@@ -124,6 +129,7 @@ export async function POST(request: NextRequest) {
       previousCloses,
       names,
       quoteTypes,
+      currencies,
       fetchedAt: new Date().toISOString(),
     });
   } catch (error) {

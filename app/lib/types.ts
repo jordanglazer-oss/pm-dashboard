@@ -371,6 +371,11 @@ export type Stock = {
   modelEligibility?: Record<string, boolean>; // PIM model group id → eligible (default all true)
   modelWeights?: Record<string, number>; // PIM model group id → weight% in Balanced (overrides weights.portfolio)
   designation?: "core" | "alpha"; // Core = indexed/passive, Alpha = active picks (default alpha)
+  /** Trading currency from Yahoo Finance (e.g. "USD", "CAD", "DKK").
+   *  Auto-populated from /api/prices response on price fetches. Used by
+   *  analyst-report FX conversion to convert PDF targets to the stock's
+   *  native currency. */
+  currency?: string;
 };
 
 export type ScoredStock = Stock & {

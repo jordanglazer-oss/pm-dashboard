@@ -13,12 +13,17 @@ import { displayTicker } from "@/app/lib/ticker";
 
 type Props = {
   ticker: string;
+  /** Trading currency of this stock (from Yahoo, e.g. "USD", "CAD", "DKK"). */
+  stockCurrency: string;
   snapshot: TickerSnapshot | undefined;
   breakdown: ConsensusBreakdown;
   reports: TickerReports | undefined;
   onChange: (next: TickerSnapshot | undefined) => void;
   onUpload: (source: "rbc" | "jpm", dataUrl: string, label: string) => Promise<{ ok: true; extracted: ExtractedReport } | { ok: false; error: string }>;
   onRemoveReport: (source: "rbc" | "jpm") => Promise<void>;
+  /** Convert an analyst target from one currency to the stock's trading currency.
+   *  Returns the converted target and FX rate, or null on failure. */
+  onConvertTarget: (source: "rbc" | "jpm", fromCurrency: string) => Promise<void>;
 };
 
 const RATING_OPTIONS: { value: AnalystRating; label: string }[] = [
@@ -38,10 +43,11 @@ function freshnessChip(label: "fresh" | "stale" | "very-stale") {
   return "bg-red-50 text-red-700 border-red-200";
 }
 
-export function AnalystSnapshotPanel({ ticker, snapshot, breakdown, reports, onChange, onUpload, onRemoveReport }: Props) {
+export function AnalystSnapshotPanel({ ticker, stockCurrency, snapshot, breakdown, reports, onChange, onUpload, onRemoveReport, onConvertTarget }: Props) {
   const [local, setLocal] = useState<TickerSnapshot>(() => snapshot ?? {});
   const [uploading, setUploading] = useState<{ source: "rbc" | "jpm" } | null>(null);
   const [uploadError, setUploadError] = useState<{ source: "rbc" | "jpm"; message: string } | null>(null);
+  const [converting, setConverting] = useState<"rbc" | "jpm" | null>(null);
   const onChangeRef = useRef(onChange);
   onChangeRef.current = onChange;
 
@@ -192,14 +198,42 @@ export function AnalystSnapshotPanel({ ticker, snapshot, breakdown, reports, onC
               <span className="text-slate-500">Target price</span>
               <span className="rounded border border-slate-100 bg-slate-50 px-1.5 py-1 text-slate-700">
                 {entry?.target ? (
-                  <>
-                    ${entry.target.toFixed(2)}
+                  <span className="inline-flex items-center gap-1 flex-wrap">
+                    <span>${entry.target.toFixed(2)}</span>
                     {entry.targetOriginal && entry.targetCurrency && (
-                      <span className="ml-1 text-[9px] text-slate-400" title={`Converted from ${entry.targetCurrency} $${entry.targetOriginal.toFixed(2)} at USDCAD=${entry.fxRate?.toFixed(4) ?? "?"}`}>
+                      <span className="text-[9px] text-slate-400" title={`Converted from ${entry.targetCurrency} $${entry.targetOriginal.toFixed(2)} at ${entry.targetCurrency}${stockCurrency}=${entry.fxRate?.toFixed(4) ?? "?"}`}>
                         ({entry.targetCurrency} ${entry.targetOriginal.toFixed(2)})
                       </span>
                     )}
-                  </>
+                    {/* Show currency-fix button when target exists but hasn't been
+                        currency-converted yet (pre-existing data) or currency is unknown */}
+                    {!entry.targetOriginal && !entry.targetCurrency && (
+                      <span className="inline-flex items-center gap-0.5">
+                        <select
+                          className="text-[9px] border border-slate-200 rounded px-0.5 py-0 bg-white text-blue-600 cursor-pointer"
+                          defaultValue=""
+                          disabled={converting === which}
+                          onChange={async (e) => {
+                            const fromCcy = e.target.value;
+                            if (!fromCcy) return;
+                            setConverting(which);
+                            try {
+                              await onConvertTarget(which, fromCcy);
+                            } finally {
+                              setConverting(null);
+                            }
+                          }}
+                          title={`This target has no currency info. Select the PDF's currency to convert to ${stockCurrency}.`}
+                        >
+                          <option value="">Fix ccy…</option>
+                          {["USD", "CAD", "DKK", "SEK", "NOK", "GBP", "EUR", "CHF", "JPY", "AUD"]
+                            .filter((c) => c !== stockCurrency)
+                            .map((c) => <option key={c} value={c}>{c}</option>)}
+                        </select>
+                        {converting === which && <span className="text-[9px] text-slate-400">…</span>}
+                      </span>
+                    )}
+                  </span>
                 ) : <span className="italic text-slate-400">Not extracted</span>}
               </span>
             </div>

@@ -53,7 +53,7 @@ function matchesFilter(s: ScoredStock, filter: InstrumentFilter): boolean {
 
 export function StockScoring({ stocks, onScoreStock, onUpdateCostBasis, onRefreshData, onUpdateFundData, onUpdateMarketData }: Props) {
   const router = useRouter();
-  const { uiPrefs, setUiPref, updatePrice } = useStocks();
+  const { uiPrefs, setUiPref, updatePrice, updateStockFields } = useStocks();
   const [query, setQuery] = useState("");
 
   // Persist sort state across refreshes and devices via Redis KV
@@ -99,17 +99,21 @@ export function StockScoring({ stocks, onScoreStock, onUpdateCostBasis, onRefres
       if (res.ok) {
         const data = await res.json();
         const prices: LivePrices = data.prices || {};
+        const currencies: Record<string, string | null> = data.currencies || {};
         setLivePrices(prices);
         setPricesFetchedAt(data.fetchedAt || new Date().toISOString());
-        // Persist all fetched prices to Redis KV via stock objects
+        // Persist all fetched prices + currencies to Redis KV via stock objects
         for (const [t, p] of Object.entries(prices)) {
           if (p != null) updatePrice(t, p);
+        }
+        for (const [t, ccy] of Object.entries(currencies)) {
+          if (ccy) updateStockFields(t, { currency: ccy });
         }
       }
     } catch { /* silent */ } finally {
       setPricesLoading(false);
     }
-  }, [stocks, updatePrice]);
+  }, [stocks, updatePrice, updateStockFields]);
 
   // Auto-fetch prices on mount
   useEffect(() => {

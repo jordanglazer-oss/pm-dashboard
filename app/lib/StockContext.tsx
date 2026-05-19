@@ -122,6 +122,11 @@ type StockContextType = {
   /** Remove the stored report and the PDF dataUrl. Leaves the snapshot
    *  fields alone — the user can still edit the values manually. */
   removeAnalystReport: (ticker: string, source: "rbc" | "jpm") => Promise<void>;
+  /** Convert an existing analyst target from a given currency to the stock's
+   *  trading currency. Uses live FX from Yahoo. No re-extraction needed. */
+  convertAnalystTarget: (ticker: string, source: "rbc" | "jpm", fromCurrency: string) => Promise<void>;
+  /** Detect the trading currency for a ticker (from Yahoo or heuristic). */
+  tickerCurrency: (ticker: string) => string;
 };
 
 const StockContext = createContext<StockContextType | null>(null);
@@ -412,23 +417,31 @@ export function StockProvider({ children }: { children: React.ReactNode }) {
   }, []);
 
   /* ─── Helper: detect currency from ticker ─── */
-  // .U suffix = USD-denominated Canadian-listed ETF (e.g., XUS.U, XUU.U)
-  // FUNDSERV codes: check pim-seed for authoritative currency, default CAD
-  const tickerCurrency = useCallback((ticker: string): "CAD" | "USD" => {
+  // Preferred source: the `currency` field from Yahoo (stored on each Stock
+  // object from /api/prices responses). Fallback heuristic for tickers that
+  // haven't been price-fetched yet:
+  //   .U suffix = USD-denominated Canadian-listed ETF
+  //   -T / .TO  = CAD
+  //   FUNDSERV  = pim-seed lookup, default CAD
+  //   everything else = USD
+  const tickerCurrency = useCallback((ticker: string): string => {
+    // 1) Check stored Yahoo currency on the stock object (most authoritative)
+    const stock = stocks.find((s) => s.ticker === ticker || s.ticker.toUpperCase() === ticker.toUpperCase());
+    if (stock?.currency) return stock.currency;
+    // 2) Heuristic fallbacks
     if (ticker.endsWith(".U")) return "USD";
     if (ticker.endsWith("-T") || ticker.endsWith(".TO")) return "CAD";
     // FUNDSERV codes — look up in seed data for authoritative currency
     const base = ticker.replace(/-T$/, "");
     if (/^[A-Z]{2,4}\d{2,5}$/i.test(base)) {
-      // Check seed for this symbol's currency
       for (const g of pimModelSeed) {
         const seedHolding = g.holdings.find((h) => h.symbol === ticker || h.symbol === base);
         if (seedHolding) return seedHolding.currency;
       }
-      return "CAD"; // default for unknown FUNDSERV
+      return "CAD";
     }
     return "USD";
-  }, []);
+  }, [stocks]);
 
   /* ─── Rebalance: individual stocks keep fixed weight, freed weight → Core ETFs ─── */
   const rebalanceStockWeights = useCallback((holdings: PimHolding[], extraStock?: Stock): PimHolding[] => {
@@ -536,7 +549,8 @@ export function StockProvider({ children }: { children: React.ReactNode }) {
     if (stock.bucket !== "Portfolio") return;
     setPimModelsState((prev) => {
       const assetClass = detectAssetClass(stock);
-      const currency = tickerCurrency(stock.ticker);
+      // PIM models only support CAD/USD — cast the general currency string
+      const currency = tickerCurrency(stock.ticker) as "CAD" | "USD";
       const eligibility = stock.modelEligibility || {};
 
       const updatedGroups = prev.groups.map((group) => {
@@ -1009,29 +1023,25 @@ export function StockProvider({ children }: { children: React.ReactNode }) {
 
     if (convertedTarget != null && pdfCcy && pdfCcy !== stockCcy) {
       try {
+        // Fetch the FX rate for the specific currency pair via Yahoo.
+        // Yahoo symbol format: {FROM}{TO}=X (e.g. USDCAD=X, DKKUSD=X)
+        const fxSymbol = `${pdfCcy}${stockCcy}=X`;
         const fxRes = await fetch("/api/prices", {
           method: "POST",
           headers: { "Content-Type": "application/json" },
-          body: JSON.stringify({ tickers: ["USDCAD=X"] }),
+          body: JSON.stringify({ tickers: [fxSymbol] }),
         });
         const fxData = await fxRes.json();
-        const usdcad = fxData.prices?.["USDCAD=X"];
-        if (typeof usdcad === "number" && usdcad > 0) {
+        const rate = fxData.prices?.[fxSymbol];
+        if (typeof rate === "number" && rate > 0) {
           targetOriginal = convertedTarget;
           targetCurrencyField = pdfCcy;
-          if (pdfCcy === "USD" && stockCcy === "CAD") {
-            // USD target → CAD stock: multiply by USDCAD
-            convertedTarget = Math.round(convertedTarget * usdcad * 100) / 100;
-            fxRateField = usdcad;
-          } else if (pdfCcy === "CAD" && stockCcy === "USD") {
-            // CAD target → USD stock: divide by USDCAD
-            convertedTarget = Math.round((convertedTarget / usdcad) * 100) / 100;
-            fxRateField = usdcad;
-          }
-          console.log(`[FX] ${ticker}: converted ${pdfCcy} $${targetOriginal} → ${stockCcy} $${convertedTarget} (USDCAD=${usdcad})`);
+          fxRateField = rate;
+          convertedTarget = Math.round(convertedTarget * rate * 100) / 100;
+          console.log(`[FX] ${ticker}: converted ${pdfCcy} $${targetOriginal} → ${stockCcy} $${convertedTarget} (${fxSymbol}=${rate})`);
         }
       } catch (e) {
-        console.error("Failed to fetch USDCAD for target conversion:", e);
+        console.error(`Failed to fetch FX rate for ${pdfCcy}→${stockCcy}:`, e);
         // Fallback: use unconverted target (better than nothing)
       }
     }
@@ -1065,7 +1075,7 @@ export function StockProvider({ children }: { children: React.ReactNode }) {
     }
 
     return { ok: true, extracted: extractRes.result };
-  }, [persistAnalystReports, persistAnalystSnapshots, stocks, updateScore]);
+  }, [persistAnalystReports, persistAnalystSnapshots, stocks, updateScore, updateExplanations, tickerCurrency]);
 
   const removeAnalystReport = useCallback(async (ticker: string, source: "rbc" | "jpm") => {
     const reportId = reportIdFor(ticker, source);
@@ -1105,6 +1115,67 @@ export function StockProvider({ children }: { children: React.ReactNode }) {
     updateExplanations(ticker, { analystConsensus: buildConsensusExplanation(consensus) });
   }, [persistAnalystReports, persistAnalystSnapshots, stocks, updateScore, updateExplanations]);
 
+  // Convert an existing analyst target's currency without re-extraction.
+  // This is for pre-existing data where `targetCurrency` wasn't captured.
+  const convertAnalystTarget = useCallback(async (ticker: string, source: "rbc" | "jpm", fromCurrency: string) => {
+    const stockCcy = tickerCurrency(ticker);
+    if (fromCurrency === stockCcy) return; // no conversion needed
+
+    const snap = getSnapshotForTicker(analystSnapshots, ticker);
+    const entry = snap?.[source];
+    if (!entry?.target) return;
+
+    // Fetch live FX rate
+    const fxSymbol = `${fromCurrency}${stockCcy}=X`;
+    try {
+      const fxRes = await fetch("/api/prices", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ tickers: [fxSymbol] }),
+      });
+      const fxData = await fxRes.json();
+      const rate = fxData.prices?.[fxSymbol];
+      if (typeof rate !== "number" || rate <= 0) {
+        console.error(`[FX] No rate for ${fxSymbol}`);
+        return;
+      }
+
+      const originalTarget = entry.target;
+      const convertedTarget = Math.round(originalTarget * rate * 100) / 100;
+      console.log(`[FX] ${ticker}/${source}: converting ${fromCurrency} $${originalTarget} → ${stockCcy} $${convertedTarget} (${fxSymbol}=${rate})`);
+
+      let derivedSnapshot: TickerSnapshot | undefined;
+      setAnalystSnapshotsState((prev) => {
+        const currentSnapshot = getSnapshotForTicker(prev, ticker) ?? {};
+        const currentEntry = currentSnapshot[source];
+        if (!currentEntry?.target) return prev;
+        const updatedEntry: AnalystEntry = {
+          ...currentEntry,
+          target: convertedTarget,
+          targetOriginal: originalTarget,
+          targetCurrency: fromCurrency,
+          fxRate: rate,
+          lastUpdated: new Date().toISOString(),
+        };
+        const nextSnapshot: TickerSnapshot = { ...currentSnapshot, [source]: updatedEntry };
+        derivedSnapshot = nextSnapshot;
+        const updated = setSnapshotForTicker(prev, ticker, nextSnapshot);
+        persistAnalystSnapshots(updated);
+        return updated;
+      });
+
+      // Re-derive analystConsensus score + explanation
+      if (derivedSnapshot) {
+        const stockPrice = stocks.find((s) => s.ticker === ticker || s.ticker.toUpperCase() === ticker.toUpperCase())?.price;
+        const consensus = computeAnalystConsensus(derivedSnapshot, stockPrice);
+        updateScore(ticker, "analystConsensus", consensus.score);
+        updateExplanations(ticker, { analystConsensus: buildConsensusExplanation(consensus) });
+      }
+    } catch (e) {
+      console.error(`Failed to convert ${source} target for ${ticker}:`, e);
+    }
+  }, [analystSnapshots, persistAnalystSnapshots, stocks, updateScore, updateExplanations, tickerCurrency]);
+
   /* ─── Toggle model eligibility: updates stock field AND syncs model holdings ─── */
   const toggleModelEligibility = useCallback((ticker: string, groupId: string, eligible: boolean) => {
     // 1. Update the stock's modelEligibility field
@@ -1125,7 +1196,8 @@ export function StockProvider({ children }: { children: React.ReactNode }) {
     if (eligible) {
       // Add to this specific model group
       const assetClass = detectAssetClass(stock);
-      const currency = tickerCurrency(stock.ticker);
+      // PIM models only support CAD/USD — cast the general currency string
+      const currency = tickerCurrency(stock.ticker) as "CAD" | "USD";
 
       setPimModelsState((prev) => {
         const updatedGroups = prev.groups.map((group) => {
@@ -1235,6 +1307,8 @@ export function StockProvider({ children }: { children: React.ReactNode }) {
         getAnalystReports,
         uploadAnalystReport,
         removeAnalystReport,
+        convertAnalystTarget,
+        tickerCurrency,
       }}
     >
       {children}

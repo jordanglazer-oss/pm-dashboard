@@ -999,7 +999,7 @@ export default function StockDetailPage() {
     el.addEventListener("scroll", onScroll, { passive: true });
     return () => el.removeEventListener("scroll", onScroll);
   }, []);
-  const { getStock, scoredStocks, marketData, updateScore, updateExplanations, updateLastScored, updatePrice, updateHealthData, updateTechnicals, updateStockFields, updateWeight, updateFundData, moveBucket, removeStock, pimModels, toggleModelEligibility, updateModelWeight, getAnalystSnapshot, updateAnalystSnapshot, getAnalystReports, uploadAnalystReport, removeAnalystReport } = useStocks();
+  const { getStock, scoredStocks, marketData, updateScore, updateExplanations, updateLastScored, updatePrice, updateHealthData, updateTechnicals, updateStockFields, updateWeight, updateFundData, moveBucket, removeStock, pimModels, toggleModelEligibility, updateModelWeight, getAnalystSnapshot, updateAnalystSnapshot, getAnalystReports, uploadAnalystReport, removeAnalystReport, convertAnalystTarget, tickerCurrency } = useStocks();
   const stock = getStock(ticker);
   const [scoring, setScoring] = useState(false);
   // Captures verification metadata from the last successful rescore so the
@@ -2073,6 +2073,7 @@ export default function StockDetailPage() {
                           {isExpanded && isAnalystConsensus && (
                             <AnalystSnapshotPanel
                               ticker={ticker}
+                              stockCurrency={tickerCurrency(ticker)}
                               snapshot={getAnalystSnapshot(ticker)}
                               breakdown={computeAnalystConsensus(getAnalystSnapshot(ticker), stock.price)}
                               reports={getAnalystReports(ticker)}
@@ -2086,6 +2087,7 @@ export default function StockDetailPage() {
                               }}
                               onUpload={(source, dataUrl, label) => uploadAnalystReport(ticker, source, dataUrl, label)}
                               onRemoveReport={(source) => removeAnalystReport(ticker, source)}
+                              onConvertTarget={(source, fromCurrency) => convertAnalystTarget(ticker, source, fromCurrency)}
                             />
                           )}
                           {!hasNotesEditor && !isAnalystConsensus && !hasContent && cat.inputType !== "manual" && cat.inputType !== "computed" && (
