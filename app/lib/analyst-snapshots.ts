@@ -195,7 +195,7 @@ export type AnalystContribution = {
 
 export type UpsideContribution = {
   target?: number;
-  targetSource: "factset" | "rbc-jpm-average" | "none";
+  targetSource: "factset" | "none";
   upsidePercent?: number;
   contribution: number;
 };
@@ -231,21 +231,16 @@ export function computeAnalystConsensus(
   const rbc = analystContribution(snapshot?.rbc, currentPrice);
   const jpm = analystContribution(snapshot?.jpm, currentPrice);
 
-  // Target: prefer FactSet street-average; fall back to mean of RBC/JPM targets.
+  // Target: use FactSet street-average ONLY. RBC/JPM individual targets
+  // are not used — the PM enters the FactSet consensus target explicitly
+  // and doesn't want stale broker targets inflating/deflating the upside
+  // component before FactSet data is entered.
   let target: number | undefined;
   let targetSource: UpsideContribution["targetSource"] = "none";
   const factsetTarget = snapshot?.factset?.averageTarget;
   if (typeof factsetTarget === "number" && factsetTarget > 0) {
     target = factsetTarget;
     targetSource = "factset";
-  } else {
-    const analystTargets = [snapshot?.rbc?.target, snapshot?.jpm?.target].filter(
-      (t): t is number => typeof t === "number" && t > 0
-    );
-    if (analystTargets.length > 0) {
-      target = analystTargets.reduce((a, b) => a + b, 0) / analystTargets.length;
-      targetSource = "rbc-jpm-average";
-    }
   }
 
   const upsideContribution: UpsideContribution =

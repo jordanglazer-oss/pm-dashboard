@@ -1039,7 +1039,7 @@ export async function POST(request: NextRequest) {
       consensusDataPoints.push({ label: "JPM", value: "Not covered (0 pts)", source: "model" });
     }
     if (consensus.upside.target && consensus.upside.upsidePercent !== undefined) {
-      const sourceLabel = consensus.upside.targetSource === "factset" ? "FactSet street avg" : "RBC/JPM avg (FactSet missing)";
+      const sourceLabel = "FactSet street avg";
       consensusDataPoints.push({
         label: "Upside",
         value: `Target $${consensus.upside.target.toFixed(2)} vs current — ${consensus.upside.upsidePercent >= 0 ? "+" : ""}${consensus.upside.upsidePercent.toFixed(1)}% → ${consensus.upside.contribution.toFixed(2)} pts`,

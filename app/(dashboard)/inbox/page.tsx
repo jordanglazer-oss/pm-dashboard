@@ -2,6 +2,7 @@
 
 import React, { useCallback, useEffect, useRef, useState } from "react";
 import type { InboxEvent } from "@/app/lib/inbox-log";
+import { computeAnalystConsensus } from "@/app/lib/analyst-snapshots";
 import type { AnalystReports, FactSetEntry, TickerSnapshot } from "@/app/lib/analyst-snapshots";
 import { useStocks } from "@/app/lib/StockContext";
 import { isScoreable } from "@/app/lib/scoring";
@@ -600,6 +601,15 @@ export default function InboxPage() {
     const nextSnapshot: TickerSnapshot = { ...existing, factset: nextFactset };
     const anyValue = nextSnapshot.rbc || nextSnapshot.jpm || nextSnapshot.factset;
     updateAnalystSnapshot(ticker, anyValue ? nextSnapshot : undefined);
+
+    // Auto-derive the analystConsensus score (0-3) from the updated
+    // snapshot, mirroring how BoostedAI/SIA edits auto-derive aiRating
+    // and relativeStrength. Uses the stock's current price for the
+    // upside component.
+    const stock = stocks.find((s) => s.ticker === ticker);
+    const price = stock?.price ?? undefined;
+    const consensus = computeAnalystConsensus(anyValue ? nextSnapshot : undefined, price);
+    updateScore(ticker, "analystConsensus", consensus.score);
   };
 
   // Save raw BoostedAI rating (0-5). Also recomputes and writes the

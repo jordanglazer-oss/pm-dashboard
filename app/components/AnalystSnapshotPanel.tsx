@@ -303,8 +303,8 @@ export function AnalystSnapshotPanel({ ticker, snapshot, breakdown, reports, onC
           <p className="mt-2 text-[10px] text-slate-500">
             Implied upside: {breakdown.upside.upsidePercent >= 0 ? "+" : ""}
             {breakdown.upside.upsidePercent.toFixed(1)}% → contribution {breakdown.upside.contribution.toFixed(2)} pts
-            {breakdown.upside.targetSource === "rbc-jpm-average" && (
-              <span className="ml-1 italic">(no FactSet target — fell back to RBC/JPM average)</span>
+            {breakdown.upside.targetSource === "none" && (
+              <span className="ml-1 italic">(no FactSet target entered — upside not computed)</span>
             )}
           </p>
         )}
@@ -314,7 +314,7 @@ export function AnalystSnapshotPanel({ ticker, snapshot, breakdown, reports, onC
       {renderAnalyst("jpm", "JPM")}
 
       <p className="text-[10px] text-slate-400 italic">
-        Edits save automatically. Score updates on next rescore.
+        Edits save automatically. The analystConsensus score auto-updates when FactSet target is changed via the Coverage Checklist.
       </p>
     </div>
   );

@@ -2052,7 +2052,13 @@ export default function StockDetailPage() {
                               snapshot={getAnalystSnapshot(ticker)}
                               breakdown={computeAnalystConsensus(getAnalystSnapshot(ticker), stock.price)}
                               reports={getAnalystReports(ticker)}
-                              onChange={(next) => updateAnalystSnapshot(ticker, next)}
+                              onChange={(next) => {
+                                updateAnalystSnapshot(ticker, next);
+                                // Auto-derive analystConsensus score when
+                                // snapshot changes (FactSet target edit, etc.)
+                                const consensus = computeAnalystConsensus(next, stock.price);
+                                updateScore(ticker, "analystConsensus", consensus.score);
+                              }}
                               onUpload={(source, dataUrl, label) => uploadAnalystReport(ticker, source, dataUrl, label)}
                               onRemoveReport={(source) => removeAnalystReport(ticker, source)}
                             />
