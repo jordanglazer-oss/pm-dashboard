@@ -276,7 +276,7 @@ async function fetchFinancialData(ticker: string): Promise<{ context: string; pr
 
   // Annual income trend with YoY% (newest first → reverse for chronological).
   if (isH.length > 0) {
-    const annual = isH.slice(0, 4).map((stmt: Record<string, unknown>) => ({
+    const annual = isH.slice(0, 3).map((stmt: Record<string, unknown>) => ({
       date: (stmt as { endDate?: { fmt?: string } })?.endDate?.fmt ?? "?",
       revenue: rn(stmt, "totalRevenue"),
       netIncome: rn(stmt, "netIncome"),
@@ -295,16 +295,16 @@ async function fetchFinancialData(ticker: string): Promise<{ context: string; pr
         `  ${a.date}: Revenue ${fmt$(a.revenue)}${prev ? ` (YoY ${fmtPct(revYoY)})` : ""} | Net Income ${fmt$(a.netIncome)}${prev ? ` (YoY ${fmtPct(niYoY)})` : ""} | EPS ${a.eps != null ? `$${a.eps.toFixed(2)}` : "N/A"}${prev ? ` (YoY ${fmtPct(epsYoY)})` : ""}`,
       );
     }
-    // 3y CAGR if we have 4 points
-    if (annual.length >= 4 && annual[0].revenue && annual[3].revenue) {
-      const cagr = (Math.pow(annual[3].revenue! / annual[0].revenue!, 1 / 3) - 1) * 100;
-      lines.push(`  → 3y Revenue CAGR: ${fmtPct(cagr)}`);
+    // 2y CAGR if we have 3 points
+    if (annual.length >= 3 && annual[0].revenue && annual[2].revenue) {
+      const cagr = (Math.pow(annual[2].revenue! / annual[0].revenue!, 1 / 2) - 1) * 100;
+      lines.push(`  → 2y Revenue CAGR: ${fmtPct(cagr)}`);
     }
   }
 
-  // Quarterly income trend — 8 quarters with QoQ% and YoY% (YoY = vs 4 quarters prior).
+  // Quarterly income trend — 4 quarters with QoQ% and YoY% (YoY = vs 4 quarters prior).
   if (isQ.length > 0) {
-    const quarters = isQ.slice(0, 8).map((stmt: Record<string, unknown>) => ({
+    const quarters = isQ.slice(0, 4).map((stmt: Record<string, unknown>) => ({
       date: (stmt as { endDate?: { fmt?: string } })?.endDate?.fmt ?? "?",
       revenue: rn(stmt, "totalRevenue"),
       netIncome: rn(stmt, "netIncome"),
@@ -330,7 +330,7 @@ async function fetchFinancialData(ticker: string): Promise<{ context: string; pr
 
   // Annual cash flow trend with FCF margin (FCF / Revenue) and FCF conversion (FCF / Net Income).
   if (cfH.length > 0) {
-    const cfRows = cfH.slice(0, 4).map((stmt: Record<string, unknown>, idx: number) => {
+    const cfRows = cfH.slice(0, 3).map((stmt: Record<string, unknown>, idx: number) => {
       const opCF = rn(stmt, "totalCashFromOperatingActivities");
       const capex = rn(stmt, "capitalExpenditures");
       const fcf = opCF != null ? opCF + (capex ?? 0) : null;
@@ -356,9 +356,9 @@ async function fetchFinancialData(ticker: string): Promise<{ context: string; pr
     }
   }
 
-  // Quarterly cash flow trend — same as quarterly income with QoQ + YoY.
+  // Quarterly cash flow trend — 4 quarters with QoQ + YoY.
   if (cfQ.length > 0) {
-    const cfQRows = cfQ.slice(0, 8).map((stmt: Record<string, unknown>) => {
+    const cfQRows = cfQ.slice(0, 4).map((stmt: Record<string, unknown>) => {
       const opCF = rn(stmt, "totalCashFromOperatingActivities");
       const capex = rn(stmt, "capitalExpenditures");
       const fcf = opCF != null ? opCF + (capex ?? 0) : null;
@@ -582,7 +582,7 @@ CRITICAL RULES FOR EXPLANATIONS:
 6. Leverage must cite actual debt figures and coverage ratios from the balance sheet, using the INDUSTRY-APPROPRIATE framework
 7. Cash flow must cite actual FCF figures and conversion rates, using the INDUSTRY-APPROPRIATE framework
 8. Write in a dense, data-rich paragraph style — like an analyst note
-9. Each summary should be 3-6 sentences with multiple data points
+9. Each summary should be 2-3 sentences with key data points (max 4 dataPoints per category)
 10. If any data is unavailable, explicitly say "data not available" rather than guessing
 
 CONFIDENCE RATING (required, per category):
@@ -635,11 +635,15 @@ Also provide:
 - companySummary: STRICT 1-2 SENTENCES explaining what the company does in plain language that a portfolio manager can relay to clients. Focus on the core business, key products/services, and what drives revenue. Keep it simple and jargon-free. When the "INGESTED ANALYST REPORTS" block is present above, you may ground the description in the analysts' framing of the business — but do NOT extend the length beyond 1-2 sentences. If you draw a fact from a specific report, name the source briefly (e.g., "RBC describes the company as ...").
 - investmentThesis: STRICT 1-2 SENTENCES on why to own this stock right now given current market conditions. Reference specific catalysts, valuation support, or thematic tailwinds. This should be a concise "elevator pitch" a PM could use with clients. When the "INGESTED ANALYST REPORTS" block is present above, USE the analysts' actual bull-case thesis bullets as your source material — do not paraphrase from your own training data when RBC/JPM have laid out the rationale. Still capped at 1-2 sentences; pick the strongest 1-2 thesis points and compress them. If the analysts disagree (e.g., one bullish, one bearish), reflect that briefly (e.g., "RBC sees X driving upside; JPM cautions about Y"). When both RBC and JPM rate the stock favorably with similar drivers, lean on their shared thesis. Never let the analyst material lengthen this field beyond 2 sentences.
 
-Respond ONLY with valid JSON (no markdown code fences, no commentary):
+Respond ONLY with valid JSON (no markdown code fences, no commentary).
+IMPORTANT: companySummary and investmentThesis MUST appear BEFORE explanations in your output — they are short fields that must never be truncated.
+Keep each explanation summary to 2-3 sentences and max 4 dataPoints per category.
 {
   "name": "Company Name",
   "sector": "GICS Sector",
   "beta": 1.0,
+  "companySummary": "Plain-language summary of what the company does.",
+  "investmentThesis": "Why to own this stock now given market conditions.",
   "scores": {
     "secular": 0, "researchCoverage": 0,
     "growth": 0, "relativeValuation": 0, "historicalValuation": 0,
@@ -649,7 +653,7 @@ Respond ONLY with valid JSON (no markdown code fences, no commentary):
   },
   "explanations": {
     "secular": {
-      "summary": "3-6 sentence paragraph",
+      "summary": "2-3 sentence paragraph",
       "confidence": "high",
       "dataPoints": [
         { "label": "TAM growth (industry source)", "value": "+18% YoY through 2030", "source": "web", "sourceDetail": "Gartner 2026 forecast, Mar 2026", "url": "https://www.gartner.com/..." }
@@ -672,9 +676,7 @@ Respond ONLY with valid JSON (no markdown code fences, no commentary):
     "trackRecord": { "summary": "...", "confidence": "high", "dataPoints": [...] },
     "ownershipTrends": { "summary": "...", "confidence": "high", "dataPoints": [...] },
     "researchCoverage": { "summary": "...", "confidence": "high", "dataPoints": [...] }
-  },
-  "companySummary": "Plain-language summary of what the company does.",
-  "investmentThesis": "Why to own this stock now given market conditions."
+  }
 }`;
 
 export async function POST(request: NextRequest) {
@@ -827,7 +829,7 @@ export async function POST(request: NextRequest) {
     const verifyPreamble = verifyWithWebSearch
       ? `\n\n=== Verified scoring ===\nWeb search verification is ENABLED for this rescore. You MUST use the web_search tool to:\n  1. Confirm the most recent reported quarterly numbers match what's in the data above (or supersede them if the company reported AFTER the data was cached).\n  2. Check for guidance revisions / pre-announcements / 8-K filings issued in the last 90 days.\n  3. Find any analyst rating or price-target changes from named firms in the last 30 days.\n  4. ${isCanadianListing
             ? `THIS IS A CANADIAN LISTING (${upperTicker}) — no EDGAR data is available. Use web_search as the PRIMARY financial verification: look up the company's most recent quarterly press release / MD&A / SEDAR+ filing and use those numbers in your dataPoints. Cite each source URL or publication name in sourceDetail.`
-            : `Verify the latest dividend / buyback / split changes.`}\nRespect the noise filter in the system prompt: ignore rumors, opinion blogs, and unsourced speculation. Cite source name and date in dataPoints.sourceDetail for every web-sourced fact.\nMax 4 searches.\n=== End verified scoring ===\n`
+            : `Verify the latest dividend / buyback / split changes.`}\nRespect the noise filter in the system prompt: ignore rumors, opinion blogs, and unsourced speculation. Cite source name and date in dataPoints.sourceDetail for every web-sourced fact.\nMax 2 searches — be targeted.\n=== End verified scoring ===\n`
       : "";
 
     // Build tool list. Anthropic's web_search_20250305 tool runs server-side
@@ -836,7 +838,7 @@ export async function POST(request: NextRequest) {
     // max_uses to keep cost/latency bounded.
     type WebSearchTool = { type: "web_search_20250305"; name: "web_search"; max_uses?: number };
     const tools: WebSearchTool[] = verifyWithWebSearch
-      ? [{ type: "web_search_20250305", name: "web_search", max_uses: 4 }]
+      ? [{ type: "web_search_20250305", name: "web_search", max_uses: 2 }]
       : [];
 
     // Prompt caching: the ~10KB system prompt is identical across rescores,
@@ -847,7 +849,7 @@ export async function POST(request: NextRequest) {
     // cache_control is a billing/latency optimization, not a quality knob.
     const message = await client.messages.create({
       model: "claude-sonnet-4-6",
-      max_tokens: 8192,
+      max_tokens: 6144,
       messages: [
         {
           role: "user",

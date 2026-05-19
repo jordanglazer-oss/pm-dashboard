@@ -77,7 +77,7 @@ export async function formatEdgarSnapshotForPrompt(ticker: string): Promise<stri
     lines.push(`sentiment-style metrics that EDGAR doesn't carry.`);
     lines.push(``);
     lines.push(`Format: each metric shows the concept tag used, latest filing, and`);
-    lines.push(`up to 5 annual prints. Fields marked [STALE] have not been reported`);
+    lines.push(`up to 3 annual prints. Fields marked [STALE] have not been reported`);
     lines.push(`in over 18 months — DO NOT use these as a current snapshot; either`);
     lines.push(`omit the analysis for that metric or note the issuer no longer reports it.`);
     lines.push(``);
@@ -95,7 +95,7 @@ export async function formatEdgarSnapshotForPrompt(ticker: string): Promise<stri
       lines.push(`  latest (${info.latest.end}, ${info.latest.form}): ${fmtValue(info.latest.val, info.unit)}`);
 
       if (info.annual.length >= 2) {
-        const recent = info.annual.slice(0, 5);
+        const recent = info.annual.slice(0, 3);
         const seriesStr = recent
           .map((f) => `${f.end.slice(0, 4)}=${fmtValue(f.val, info.unit)}`)
           .join("  ");
@@ -106,11 +106,11 @@ export async function formatEdgarSnapshotForPrompt(ticker: string): Promise<stri
           lines.push(`  YoY: ${yoy >= 0 ? "+" : ""}${yoy.toFixed(1)}%`);
         }
 
-        if (recent.length >= 5 && recent[4].val !== 0) {
-          // 4-year CAGR (5 prints span 4 periods)
-          const cagr = (Math.pow(recent[0].val / recent[4].val, 1 / 4) - 1) * 100;
+        if (recent.length >= 3 && recent[2].val !== 0) {
+          // 2-year CAGR (3 prints span 2 periods)
+          const cagr = (Math.pow(recent[0].val / recent[2].val, 1 / 2) - 1) * 100;
           if (isFinite(cagr)) {
-            lines.push(`  4Y CAGR: ${cagr >= 0 ? "+" : ""}${cagr.toFixed(1)}%`);
+            lines.push(`  2Y CAGR: ${cagr >= 0 ? "+" : ""}${cagr.toFixed(1)}%`);
           }
         }
       }
