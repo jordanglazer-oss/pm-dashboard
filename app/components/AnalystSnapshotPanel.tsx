@@ -201,7 +201,7 @@ export function AnalystSnapshotPanel({ ticker, stockCurrency, snapshot, breakdow
                   <span className="inline-flex items-center gap-1 flex-wrap">
                     <span>${entry.target.toFixed(2)}</span>
                     {entry.targetOriginal && entry.targetCurrency && (
-                      <span className="text-[9px] text-slate-400" title={`Converted from ${entry.targetCurrency} $${entry.targetOriginal.toFixed(2)} at ${entry.targetCurrency}${stockCurrency}=${entry.fxRate?.toFixed(4) ?? "?"}`}>
+                      <span className="text-[9px] text-slate-400" title={`Converted from ${entry.targetCurrency} $${entry.targetOriginal.toFixed(2)} at report-date rate ${entry.targetCurrency}${stockCurrency}=${entry.fxRate?.toFixed(4) ?? "?"}`}>
                         ({entry.targetCurrency} ${entry.targetOriginal.toFixed(2)})
                       </span>
                     )}
@@ -223,7 +223,7 @@ export function AnalystSnapshotPanel({ ticker, stockCurrency, snapshot, breakdow
                               setConverting(null);
                             }
                           }}
-                          title={`This target has no currency info. Select the PDF's currency to convert to ${stockCurrency}.`}
+                          title={`This target has no currency info. Select the PDF's original currency to convert to ${stockCurrency} using the report-date FX rate.`}
                         >
                           <option value="">Fix ccy…</option>
                           {["USD", "CAD", "DKK", "SEK", "NOK", "GBP", "EUR", "CHF", "JPY", "AUD"]

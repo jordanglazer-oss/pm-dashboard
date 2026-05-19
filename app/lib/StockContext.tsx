@@ -1023,22 +1023,20 @@ export function StockProvider({ children }: { children: React.ReactNode }) {
 
     if (convertedTarget != null && pdfCcy && pdfCcy !== stockCcy) {
       try {
-        // Fetch the FX rate for the specific currency pair via Yahoo.
-        // Yahoo symbol format: {FROM}{TO}=X (e.g. USDCAD=X, DKKUSD=X)
-        const fxSymbol = `${pdfCcy}${stockCcy}=X`;
-        const fxRes = await fetch("/api/prices", {
-          method: "POST",
-          headers: { "Content-Type": "application/json" },
-          body: JSON.stringify({ tickers: [fxSymbol] }),
-        });
+        // Use the report-date FX rate (not today's) — the analyst set their
+        // target relative to FX conditions on the publication date.
+        const reportDate = extractRes!.result.asOf; // YYYY-MM-DD or undefined
+        const fxPair = `${pdfCcy}${stockCcy}`;
+        const dateParam = reportDate ? `&date=${reportDate}` : "";
+        const fxRes = await fetch(`/api/fx-rate?pair=${fxPair}${dateParam}`);
         const fxData = await fxRes.json();
-        const rate = fxData.prices?.[fxSymbol];
+        const rate = fxData.rate;
         if (typeof rate === "number" && rate > 0) {
           targetOriginal = convertedTarget;
           targetCurrencyField = pdfCcy;
           fxRateField = rate;
           convertedTarget = Math.round(convertedTarget * rate * 100) / 100;
-          console.log(`[FX] ${ticker}: converted ${pdfCcy} $${targetOriginal} → ${stockCcy} $${convertedTarget} (${fxSymbol}=${rate})`);
+          console.log(`[FX] ${ticker}: converted ${pdfCcy} $${targetOriginal} → ${stockCcy} $${convertedTarget} (${fxPair}=${rate}, date=${fxData.date})`);
         }
       } catch (e) {
         console.error(`Failed to fetch FX rate for ${pdfCcy}→${stockCcy}:`, e);
@@ -1125,24 +1123,22 @@ export function StockProvider({ children }: { children: React.ReactNode }) {
     const entry = snap?.[source];
     if (!entry?.target) return;
 
-    // Fetch live FX rate
-    const fxSymbol = `${fromCurrency}${stockCcy}=X`;
+    // Use the report-date FX rate when available (analyst set their target
+    // relative to FX conditions at publication). Falls back to live rate.
+    const fxPair = `${fromCurrency}${stockCcy}`;
+    const dateParam = entry.asOf ? `&date=${entry.asOf}` : "";
     try {
-      const fxRes = await fetch("/api/prices", {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ tickers: [fxSymbol] }),
-      });
+      const fxRes = await fetch(`/api/fx-rate?pair=${fxPair}${dateParam}`);
       const fxData = await fxRes.json();
-      const rate = fxData.prices?.[fxSymbol];
+      const rate = fxData.rate;
       if (typeof rate !== "number" || rate <= 0) {
-        console.error(`[FX] No rate for ${fxSymbol}`);
+        console.error(`[FX] No rate for ${fxPair} on ${entry.asOf ?? "live"}`);
         return;
       }
 
       const originalTarget = entry.target;
       const convertedTarget = Math.round(originalTarget * rate * 100) / 100;
-      console.log(`[FX] ${ticker}/${source}: converting ${fromCurrency} $${originalTarget} → ${stockCcy} $${convertedTarget} (${fxSymbol}=${rate})`);
+      console.log(`[FX] ${ticker}/${source}: converting ${fromCurrency} $${originalTarget} → ${stockCcy} $${convertedTarget} (${fxPair}=${rate}, date=${fxData.date})`);
 
       let derivedSnapshot: TickerSnapshot | undefined;
       setAnalystSnapshotsState((prev) => {
