@@ -7,7 +7,7 @@ import { computeScores, isOffensiveSector, isScoreable } from "./scoring";
 import { defaultMarketData } from "./defaults";
 import { pimModelSeed } from "./pim-seed";
 import type { AnalystSnapshots, TickerSnapshot, AnalystReports, TickerReports, AnalystEntry, ExtractedReport } from "./analyst-snapshots";
-import { setSnapshotForTicker, getSnapshotForTicker, setReportsForTicker, getReportsForTicker, reportIdFor } from "./analyst-snapshots";
+import { setSnapshotForTicker, getSnapshotForTicker, setReportsForTicker, getReportsForTicker, reportIdFor, computeAnalystConsensus } from "./analyst-snapshots";
 
 // Locked equity holdings: specialty funds whose weightInClass is driven by
 // the per-model Balanced weight (%) input on the stock page — NOT by the
@@ -976,7 +976,9 @@ export function StockProvider({ children }: { children: React.ReactNode }) {
     //    are strictly PDF-driven now — no carryover from a previous PDF, no
     //    manual entry path. priceAtReport snapshots the current Yahoo price
     //    at upload time so freshness decay can detect adverse moves later.
-    const priceAtUpload = stocks.find((s) => s.ticker === ticker || s.ticker.toUpperCase() === ticker.toUpperCase())?.price;
+    const stockMatch = stocks.find((s) => s.ticker === ticker || s.ticker.toUpperCase() === ticker.toUpperCase());
+    const priceAtUpload = stockMatch?.price;
+    let derivedSnapshot: TickerSnapshot | undefined;
     setAnalystSnapshotsState((prev) => {
       const currentSnapshot = getSnapshotForTicker(prev, ticker) ?? {};
       const merged: AnalystEntry = {
@@ -988,13 +990,22 @@ export function StockProvider({ children }: { children: React.ReactNode }) {
         lastUpdated: new Date().toISOString(),
       };
       const nextSnapshot: TickerSnapshot = { ...currentSnapshot, [source]: merged };
+      derivedSnapshot = nextSnapshot;
       const updated = setSnapshotForTicker(prev, ticker, nextSnapshot);
       persistAnalystSnapshots(updated);
       return updated;
     });
 
+    // Auto-derive analystConsensus score from the updated snapshot so the
+    // RBC/JPM rating + FactSet upside components are immediately reflected
+    // without waiting for a full Claude rescore.
+    if (derivedSnapshot) {
+      const consensus = computeAnalystConsensus(derivedSnapshot, priceAtUpload);
+      updateScore(ticker, "analystConsensus", consensus.score);
+    }
+
     return { ok: true, extracted: extractRes.result };
-  }, [persistAnalystReports, persistAnalystSnapshots, stocks]);
+  }, [persistAnalystReports, persistAnalystSnapshots, stocks, updateScore]);
 
   const removeAnalystReport = useCallback(async (ticker: string, source: "rbc" | "jpm") => {
     const reportId = reportIdFor(ticker, source);
@@ -1014,16 +1025,24 @@ export function StockProvider({ children }: { children: React.ReactNode }) {
     });
     // RBC/JPM fields are PDF-driven only — removing the PDF removes the entry
     // entirely so no orphan rating/target lingers in the composite.
+    let derivedSnapshot: TickerSnapshot | undefined;
     setAnalystSnapshotsState((prev) => {
       const currentSnapshot = getSnapshotForTicker(prev, ticker);
       if (!currentSnapshot || !currentSnapshot[source]) return prev;
       const nextSnapshot: TickerSnapshot = { ...currentSnapshot };
       delete nextSnapshot[source];
+      derivedSnapshot = nextSnapshot;
       const updated = setSnapshotForTicker(prev, ticker, nextSnapshot);
       persistAnalystSnapshots(updated);
       return updated;
     });
-  }, [persistAnalystReports, persistAnalystSnapshots]);
+
+    // Re-derive analystConsensus with the removed analyst entry gone.
+    const stockPrice = stocks.find((s) => s.ticker === ticker || s.ticker.toUpperCase() === ticker.toUpperCase())?.price;
+    const hasAny = derivedSnapshot && (derivedSnapshot.rbc || derivedSnapshot.jpm || derivedSnapshot.factset);
+    const consensus = computeAnalystConsensus(hasAny ? derivedSnapshot : undefined, stockPrice);
+    updateScore(ticker, "analystConsensus", consensus.score);
+  }, [persistAnalystReports, persistAnalystSnapshots, stocks, updateScore]);
 
   /* ─── Toggle model eligibility: updates stock field AND syncs model holdings ─── */
   const toggleModelEligibility = useCallback((ticker: string, groupId: string, eligible: boolean) => {
