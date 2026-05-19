@@ -7,7 +7,7 @@ import { computeScores, isOffensiveSector, isScoreable } from "./scoring";
 import { defaultMarketData } from "./defaults";
 import { pimModelSeed } from "./pim-seed";
 import type { AnalystSnapshots, TickerSnapshot, AnalystReports, TickerReports, AnalystEntry, ExtractedReport } from "./analyst-snapshots";
-import { setSnapshotForTicker, getSnapshotForTicker, setReportsForTicker, getReportsForTicker, reportIdFor, computeAnalystConsensus } from "./analyst-snapshots";
+import { setSnapshotForTicker, getSnapshotForTicker, setReportsForTicker, getReportsForTicker, reportIdFor, computeAnalystConsensus, buildConsensusExplanation } from "./analyst-snapshots";
 
 // Locked equity holdings: specialty funds whose weightInClass is driven by
 // the per-model Balanced weight (%) input on the stock page — NOT by the
@@ -996,12 +996,13 @@ export function StockProvider({ children }: { children: React.ReactNode }) {
       return updated;
     });
 
-    // Auto-derive analystConsensus score from the updated snapshot so the
-    // RBC/JPM rating + FactSet upside components are immediately reflected
-    // without waiting for a full Claude rescore.
+    // Auto-derive analystConsensus score + explanation from the updated
+    // snapshot so the RBC/JPM rating + FactSet upside components are
+    // immediately reflected without waiting for a full Claude rescore.
     if (derivedSnapshot) {
       const consensus = computeAnalystConsensus(derivedSnapshot, priceAtUpload);
       updateScore(ticker, "analystConsensus", consensus.score);
+      updateExplanations(ticker, { analystConsensus: buildConsensusExplanation(consensus) });
     }
 
     return { ok: true, extracted: extractRes.result };
@@ -1037,12 +1038,13 @@ export function StockProvider({ children }: { children: React.ReactNode }) {
       return updated;
     });
 
-    // Re-derive analystConsensus with the removed analyst entry gone.
+    // Re-derive analystConsensus score + explanation with the removed entry gone.
     const stockPrice = stocks.find((s) => s.ticker === ticker || s.ticker.toUpperCase() === ticker.toUpperCase())?.price;
     const hasAny = derivedSnapshot && (derivedSnapshot.rbc || derivedSnapshot.jpm || derivedSnapshot.factset);
     const consensus = computeAnalystConsensus(hasAny ? derivedSnapshot : undefined, stockPrice);
     updateScore(ticker, "analystConsensus", consensus.score);
-  }, [persistAnalystReports, persistAnalystSnapshots, stocks, updateScore]);
+    updateExplanations(ticker, { analystConsensus: buildConsensusExplanation(consensus) });
+  }, [persistAnalystReports, persistAnalystSnapshots, stocks, updateScore, updateExplanations]);
 
   /* ─── Toggle model eligibility: updates stock field AND syncs model holdings ─── */
   const toggleModelEligibility = useCallback((ticker: string, groupId: string, eligible: boolean) => {

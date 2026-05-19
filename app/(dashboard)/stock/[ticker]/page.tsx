@@ -7,7 +7,7 @@ import { useStocks } from "@/app/lib/StockContext";
 import { SCORE_GROUPS, MAX_SCORE, INSTRUMENT_LABELS } from "@/app/lib/types";
 import type { ScoreKey, FundData, ScoreDataPoint, ScoreDataPointSource, ExternalSourceNote } from "@/app/lib/types";
 import { groupTotal, isScoreable, normalizeSector } from "@/app/lib/scoring";
-import { computeAnalystConsensus } from "@/app/lib/analyst-snapshots";
+import { computeAnalystConsensus, buildConsensusExplanation } from "@/app/lib/analyst-snapshots";
 import { displayTicker } from "@/app/lib/ticker";
 import { AnalystSnapshotPanel } from "@/app/components/AnalystSnapshotPanel";
 import { SignalPill, ratingTone } from "@/app/components/SignalPill";
@@ -2054,10 +2054,11 @@ export default function StockDetailPage() {
                               reports={getAnalystReports(ticker)}
                               onChange={(next) => {
                                 updateAnalystSnapshot(ticker, next);
-                                // Auto-derive analystConsensus score when
-                                // snapshot changes (FactSet target edit, etc.)
+                                // Auto-derive analystConsensus score + explanation
+                                // when snapshot changes (FactSet target edit, etc.)
                                 const consensus = computeAnalystConsensus(next, stock.price);
                                 updateScore(ticker, "analystConsensus", consensus.score);
+                                updateExplanations(ticker, { analystConsensus: buildConsensusExplanation(consensus) });
                               }}
                               onUpload={(source, dataUrl, label) => uploadAnalystReport(ticker, source, dataUrl, label)}
                               onRemoveReport={(source) => removeAnalystReport(ticker, source)}

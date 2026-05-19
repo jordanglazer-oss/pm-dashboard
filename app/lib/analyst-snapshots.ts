@@ -273,6 +273,58 @@ export function computeAnalystConsensus(
   return { score, rawScore, rbc, jpm, upside: upsideContribution, confidence };
 }
 
+// ── Explanation builder ──────────────────────────────────────────────
+//
+// Builds a ScoreCategoryExplanation from a ConsensusBreakdown so that
+// auto-derived score updates (FactSet edit, PDF upload/remove) also
+// refresh the explanation text without requiring a full Claude rescore.
+
+import type { ScoreCategoryExplanation, ScoreDataPoint } from "./types";
+
+export function buildConsensusExplanation(
+  breakdown: ConsensusBreakdown,
+): ScoreCategoryExplanation {
+  const dataPoints: ScoreDataPoint[] = [];
+
+  if (breakdown.rbc) {
+    const r = breakdown.rbc;
+    dataPoints.push({
+      label: "RBC",
+      value: `${r.rating.toFixed(2)} × ${r.freshness.toFixed(2)} = ${r.contribution.toFixed(2)} pts (${r.freshnessLabel})`,
+      source: "model",
+    });
+  }
+  if (breakdown.jpm) {
+    const j = breakdown.jpm;
+    dataPoints.push({
+      label: "JPM",
+      value: `${j.rating.toFixed(2)} × ${j.freshness.toFixed(2)} = ${j.contribution.toFixed(2)} pts (${j.freshnessLabel})`,
+      source: "model",
+    });
+  }
+  if (breakdown.upside.target && breakdown.upside.upsidePercent !== undefined) {
+    dataPoints.push({
+      label: "Upside",
+      value: `Target $${breakdown.upside.target.toFixed(2)} — ${breakdown.upside.upsidePercent >= 0 ? "+" : ""}${breakdown.upside.upsidePercent.toFixed(1)}% → ${breakdown.upside.contribution.toFixed(2)} pts`,
+      source: "model",
+      sourceDetail: "FactSet street avg",
+    });
+  } else if (breakdown.upside.targetSource === "none") {
+    dataPoints.push({
+      label: "Upside",
+      value: "No FactSet target entered — upside component 0 pts",
+      source: "model",
+    });
+  }
+
+  const summary =
+    dataPoints.length === 0
+      ? "No analyst snapshot data available. Enter RBC/JPM reports and a FactSet target via the Coverage Checklist."
+      : `Auto-derived from RBC + JPM ratings + FactSet street-avg upside. Raw sum: ${breakdown.rawScore.toFixed(2)}, rounded to ${breakdown.score}/3.`;
+
+  return { summary, dataPoints, confidence: breakdown.confidence };
+}
+
 // ── Snapshot CRUD helpers ─────────────────────────────────────────────
 
 export function getSnapshotForTicker(blob: AnalystSnapshots | undefined, ticker: string): TickerSnapshot | undefined {

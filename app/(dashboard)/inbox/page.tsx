@@ -2,7 +2,7 @@
 
 import React, { useCallback, useEffect, useRef, useState } from "react";
 import type { InboxEvent } from "@/app/lib/inbox-log";
-import { computeAnalystConsensus } from "@/app/lib/analyst-snapshots";
+import { computeAnalystConsensus, buildConsensusExplanation } from "@/app/lib/analyst-snapshots";
 import type { AnalystReports, FactSetEntry, TickerSnapshot } from "@/app/lib/analyst-snapshots";
 import { useStocks } from "@/app/lib/StockContext";
 import { isScoreable } from "@/app/lib/scoring";
@@ -281,7 +281,7 @@ export default function InboxPage() {
   // cached events are mostly noise; the PM cares about fresh ingestions
   // and errors. State persists via uiPrefs (Redis) so the preference
   // sticks across refreshes and syncs across devices.
-  const { uiPrefs, setUiPref, stocks, analystSnapshots, getAnalystSnapshot, updateAnalystSnapshot, updateStockFields, updateScore } = useStocks();
+  const { uiPrefs, setUiPref, stocks, analystSnapshots, getAnalystSnapshot, updateAnalystSnapshot, updateStockFields, updateScore, updateExplanations } = useStocks();
   const hideCached = uiPrefs["inbox.hideCached"] !== "0"; // default true (hidden)
   const toggleHideCached = () => setUiPref("inbox.hideCached", hideCached ? "0" : "1");
   const [error, setError] = useState<string | null>(null);
@@ -602,7 +602,7 @@ export default function InboxPage() {
     const anyValue = nextSnapshot.rbc || nextSnapshot.jpm || nextSnapshot.factset;
     updateAnalystSnapshot(ticker, anyValue ? nextSnapshot : undefined);
 
-    // Auto-derive the analystConsensus score (0-3) from the updated
+    // Auto-derive the analystConsensus score + explanation from the updated
     // snapshot, mirroring how BoostedAI/SIA edits auto-derive aiRating
     // and relativeStrength. Uses the stock's current price for the
     // upside component.
@@ -610,6 +610,7 @@ export default function InboxPage() {
     const price = stock?.price ?? undefined;
     const consensus = computeAnalystConsensus(anyValue ? nextSnapshot : undefined, price);
     updateScore(ticker, "analystConsensus", consensus.score);
+    updateExplanations(ticker, { analystConsensus: buildConsensusExplanation(consensus) });
   };
 
   // Save raw BoostedAI rating (0-5). Also recomputes and writes the
