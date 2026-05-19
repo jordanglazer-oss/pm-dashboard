@@ -9,6 +9,16 @@ import type { TechnicalIndicators, RiskAlert } from "@/app/lib/technicals";
 import { groupTotal, isScoreable, normalizeSector, computeScores } from "@/app/lib/scoring";
 import { displayTicker } from "@/app/lib/ticker";
 
+/** Check if a stock has a non-empty explanation for a given category key.
+ *  Handles both legacy string[] and new ScoreCategoryExplanation shapes. */
+function hasExplanation(s: { explanations?: Record<string, unknown> }, key: string): boolean {
+  const val = s.explanations?.[key];
+  if (!val) return false;
+  if (Array.isArray(val)) return val.length > 0;
+  if (typeof val === "object" && (val as { summary?: string }).summary) return true;
+  return false;
+}
+
 /** Format an ISO timestamp for display next to Score All / Refresh All buttons. */
 function formatRelTimestamp(iso: string | undefined | null): string {
   if (!iso) return "";
@@ -396,6 +406,45 @@ export function PortfolioOverview() {
       }
     }
 
+    // Auto-fill category gaps (missing AI/SEMI explanations) — cheap targeted calls.
+    const aiSemiKeys = SCORE_GROUPS.flatMap((g) =>
+      g.categories.filter((c) => c.inputType === "auto" || c.inputType === "semi").map((c) => c.key)
+    );
+    const freshForGaps = bucket === "Portfolio" ? portfolioStocks : watchlistStocks;
+    const gapStocks = freshForGaps.filter((s) => {
+      if (!isScoreable(s) || failed.includes(s.ticker) || s.raw <= 0) return false;
+      return aiSemiKeys.some((k) => !hasExplanation(s, k));
+    });
+    if (gapStocks.length > 0) {
+      setScoreProgress(`Filling ${gapStocks.length} stocks with missing categories...`);
+      for (const s of gapStocks) {
+        const missingKeys = aiSemiKeys.filter((k) => !hasExplanation(s, k));
+        try {
+          const res = await fetch("/api/score-gaps", {
+            method: "POST",
+            headers: { "Content-Type": "application/json" },
+            body: JSON.stringify({
+              ticker: s.ticker, missingKeys,
+              name: s.name, sector: s.sector, existingExplanations: s.explanations,
+            }),
+          });
+          if (res.ok) {
+            const data = await res.json();
+            if (data.scores) {
+              for (const [key, val] of Object.entries(data.scores)) {
+                if ((s.scores[key as ScoreKey] ?? 0) === 0 && typeof val === "number") {
+                  updateScore(s.ticker, key as ScoreKey, val as number);
+                }
+              }
+            }
+            if (data.explanations) {
+              updateExplanations(s.ticker, { ...s.explanations, ...data.explanations });
+            }
+          }
+        } catch { /* non-fatal */ }
+      }
+    }
+
     if (failed.length > 0) {
       setScoreFailures(failed);
       setScoreProgress(`Done — ${failed.length} failed: ${failed.join(", ")}`);
@@ -407,7 +456,7 @@ export function PortfolioOverview() {
       bucket === "Portfolio" ? "scoreAllPortfolioAt" : "scoreAllWatchlistAt",
       new Date().toISOString()
     );
-  }, [scoringAny, refreshingAll, portfolioStocks, watchlistStocks, scoreOneStock, setUiPref, updateStockFields]);
+  }, [scoringAny, refreshingAll, portfolioStocks, watchlistStocks, scoreOneStock, setUiPref, updateStockFields, updateScore, updateExplanations]);
 
   // Backfill state — separate from Score All so it can run independently.
   const [backfilling, setBackfilling] = useState(false);
@@ -455,6 +504,71 @@ export function PortfolioOverview() {
     setBackfillProgress("");
     setBackfilling(false);
   }, [backfilling, scoringAny, refreshingAll, portfolioStocks, watchlistStocks, updateStockFields]);
+
+  // AI/SEMI category keys that should always have explanations after scoring
+  const AI_SEMI_KEYS = useMemo(() =>
+    SCORE_GROUPS.flatMap((g) =>
+      g.categories
+        .filter((c) => c.inputType === "auto" || c.inputType === "semi")
+        .map((c) => c.key)
+    ), []);
+
+  // Fill-gaps state
+  const [fillingGaps, setFillingGaps] = useState(false);
+  const [fillGapsProgress, setFillGapsProgress] = useState("");
+
+  /** Targeted fill: score ONLY the categories missing explanations.
+   *  ~$0.01/stock — no web search, minimal context. */
+  const handleFillGaps = useCallback(async (bucket: "Portfolio" | "Watchlist") => {
+    if (fillingGaps || scoringAny || refreshingAll) return;
+    const source = bucket === "Portfolio" ? portfolioStocks : watchlistStocks;
+    // Find stocks that have been scored (raw > 0) but have missing AI/SEMI explanations
+    const stocksWithGaps = source.filter((s) => {
+      if (!isScoreable(s) || s.raw <= 0) return false;
+      return AI_SEMI_KEYS.some((k) => !hasExplanation(s, k));
+    });
+    if (stocksWithGaps.length === 0) return;
+    setFillingGaps(true);
+    let done = 0;
+    for (const s of stocksWithGaps) {
+      const missingKeys = AI_SEMI_KEYS.filter((k) => !hasExplanation(s, k));
+      setFillGapsProgress(`Filling ${s.ticker} (${++done}/${stocksWithGaps.length}) — ${missingKeys.length} categories`);
+      try {
+        const res = await fetch("/api/score-gaps", {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({
+            ticker: s.ticker,
+            missingKeys,
+            name: s.name,
+            sector: s.sector,
+            existingExplanations: s.explanations,
+          }),
+        });
+        if (res.ok) {
+          const data = await res.json();
+          // Update scores for the missing categories
+          if (data.scores) {
+            for (const [key, val] of Object.entries(data.scores)) {
+              // Only update if the current score is 0 (was missing/defaulted)
+              if ((s.scores[key as ScoreKey] ?? 0) === 0 && typeof val === "number") {
+                updateScore(s.ticker, key as ScoreKey, val as number);
+              }
+            }
+          }
+          // Merge new explanations with existing ones
+          if (data.explanations) {
+            const merged = { ...s.explanations, ...data.explanations };
+            updateExplanations(s.ticker, merged);
+          }
+        }
+      } catch {
+        // Non-fatal — best effort
+      }
+    }
+    setFillGapsProgress("");
+    setFillingGaps(false);
+  }, [fillingGaps, scoringAny, refreshingAll, portfolioStocks, watchlistStocks, AI_SEMI_KEYS, updateScore, updateExplanations]);
 
   /** Refresh *every* position — portfolio holdings, fund & ETF holdings,
    *  and watchlist — via /api/refresh-data, then re-fetch fund metadata for
@@ -931,6 +1045,10 @@ export function PortfolioOverview() {
         onBackfillSummaries={() => handleBackfillSummaries("Portfolio")}
         backfilling={backfilling}
         backfillProgress={backfillProgress}
+        onFillGaps={() => handleFillGaps("Portfolio")}
+        fillingGaps={fillingGaps}
+        fillGapsProgress={fillGapsProgress}
+        aiSemiKeys={AI_SEMI_KEYS}
       />
 
 
@@ -953,6 +1071,10 @@ export function PortfolioOverview() {
         onBackfillSummaries={() => handleBackfillSummaries("Watchlist")}
         backfilling={backfilling}
         backfillProgress={backfillProgress}
+        onFillGaps={() => handleFillGaps("Watchlist")}
+        fillingGaps={fillingGaps}
+        fillGapsProgress={fillGapsProgress}
+        aiSemiKeys={AI_SEMI_KEYS}
       />
 
       {/* Fund & ETF Holdings — moved below Watchlist Rankings per Dashboard
@@ -1159,6 +1281,10 @@ function RankingTable({
   onBackfillSummaries,
   backfilling,
   backfillProgress,
+  onFillGaps,
+  fillingGaps,
+  fillGapsProgress,
+  aiSemiKeys,
 }: {
   title: string;
   subtitle: string;
@@ -1179,6 +1305,10 @@ function RankingTable({
   onBackfillSummaries?: () => void;
   backfilling?: boolean;
   backfillProgress?: string;
+  onFillGaps?: () => void;
+  fillingGaps?: boolean;
+  fillGapsProgress?: string;
+  aiSemiKeys?: string[];
 }) {
   // Collapse state — defaults to expanded. Persisted in uiPrefs so it
   // sticks across refreshes and syncs to other devices via Redis. The
@@ -1366,6 +1496,42 @@ function RankingTable({
                     className="ml-1 rounded bg-amber-600 px-2 py-0.5 text-[11px] font-semibold text-white hover:bg-amber-700 disabled:opacity-50"
                   >
                     Fill ({missingSummaries.length}) — ~$0.01
+                  </button>
+                )}
+              </>
+            )}
+          </div>
+        );
+      })()}
+      {/* Fill unscored categories banner — shown when stocks have been scored but some AI/SEMI categories lack explanations */}
+      {(() => {
+        if (!aiSemiKeys || aiSemiKeys.length === 0) return null;
+        const stocksWithGaps = stocks.filter((s) => {
+          if (!isScoreable(s) || s.raw <= 0) return false;
+          return aiSemiKeys.some((k) => !hasExplanation(s, k));
+        });
+        const totalGaps = stocksWithGaps.reduce(
+          (sum, s) => sum + aiSemiKeys.filter((k) => !hasExplanation(s, k)).length, 0
+        );
+        if (stocksWithGaps.length === 0 && !fillingGaps) return null;
+        return (
+          <div className="mx-4 mt-2 flex items-center gap-2 rounded-lg bg-violet-50 border border-violet-200 px-3 py-2 text-xs text-violet-700">
+            {fillingGaps ? (
+              <>
+                <svg className="w-3.5 h-3.5 animate-spin flex-shrink-0" fill="none" stroke="currentColor" strokeWidth="2" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" d="M16.023 9.348h4.992v-.001M2.985 19.644v-4.992m0 0h4.992m-4.993 0 3.181 3.183a8.25 8.25 0 0 0 13.803-3.7M4.031 9.865a8.25 8.25 0 0 1 13.803-3.7l3.181 3.182" /></svg>
+                <span>{fillGapsProgress || "Filling unscored categories..."}</span>
+              </>
+            ) : (
+              <>
+                <svg className="w-4 h-4 flex-shrink-0" fill="none" stroke="currentColor" strokeWidth="2" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" d="M9.813 15.904 9 18.75l-.813-2.846a4.5 4.5 0 0 0-3.09-3.09L2.25 12l2.846-.813a4.5 4.5 0 0 0 3.09-3.09L9 5.25l.813 2.846a4.5 4.5 0 0 0 3.09 3.09L15.75 12l-2.846.813a4.5 4.5 0 0 0-3.09 3.09ZM18.259 8.715 18 9.75l-.259-1.035a3.375 3.375 0 0 0-2.455-2.456L14.25 6l1.036-.259a3.375 3.375 0 0 0 2.455-2.456L18 2.25l.259 1.035a3.375 3.375 0 0 0 2.456 2.456L21.75 6l-1.035.259a3.375 3.375 0 0 0-2.456 2.456Z" /></svg>
+                <span>{totalGaps} unscored categor{totalGaps === 1 ? "y" : "ies"} across {stocksWithGaps.length} stock{stocksWithGaps.length > 1 ? "s" : ""}</span>
+                {onFillGaps && (
+                  <button
+                    onClick={onFillGaps}
+                    disabled={scoreAllDisabled}
+                    className="ml-1 rounded bg-violet-600 px-2 py-0.5 text-[11px] font-semibold text-white hover:bg-violet-700 disabled:opacity-50"
+                  >
+                    Fill gaps ({stocksWithGaps.length} stocks) — ~${(stocksWithGaps.length * 0.01).toFixed(2)}
                   </button>
                 )}
               </>

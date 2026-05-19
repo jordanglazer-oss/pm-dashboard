@@ -635,9 +635,14 @@ Also provide:
 - companySummary: STRICT 1-2 SENTENCES explaining what the company does in plain language that a portfolio manager can relay to clients. Focus on the core business, key products/services, and what drives revenue. Keep it simple and jargon-free. When the "INGESTED ANALYST REPORTS" block is present above, you may ground the description in the analysts' framing of the business — but do NOT extend the length beyond 1-2 sentences. If you draw a fact from a specific report, name the source briefly (e.g., "RBC describes the company as ...").
 - investmentThesis: STRICT 1-2 SENTENCES on why to own this stock right now given current market conditions. Reference specific catalysts, valuation support, or thematic tailwinds. This should be a concise "elevator pitch" a PM could use with clients. When the "INGESTED ANALYST REPORTS" block is present above, USE the analysts' actual bull-case thesis bullets as your source material — do not paraphrase from your own training data when RBC/JPM have laid out the rationale. Still capped at 1-2 sentences; pick the strongest 1-2 thesis points and compress them. If the analysts disagree (e.g., one bullish, one bearish), reflect that briefly (e.g., "RBC sees X driving upside; JPM cautions about Y"). When both RBC and JPM rate the stock favorably with similar drivers, lean on their shared thesis. Never let the analyst material lengthen this field beyond 2 sentences.
 
+COMPLETENESS REQUIREMENT: You MUST score ALL 11 categories listed above and include an explanation for EVERY one. Do not skip, omit, or abbreviate any category. If data is sparse for a category, still provide a score (even 0) with a brief explanation noting the data gap. Incomplete responses are unusable.
+
 Respond ONLY with valid JSON (no markdown code fences, no commentary).
 IMPORTANT: companySummary and investmentThesis MUST appear BEFORE explanations in your output — they are short fields that must never be truncated.
 Keep each explanation summary to 2-3 sentences and max 4 dataPoints per category.
+
+OUTPUT ORDER: within "explanations", emit categories in this EXACT order (shorter categories first to ensure completeness):
+  secular, researchCoverage, trackRecord, ownershipTrends, cashFlowQuality, competitiveMoat, catalysts, historicalValuation, leverageCoverage, relativeValuation, growth
 {
   "name": "Company Name",
   "sector": "GICS Sector",
@@ -659,6 +664,15 @@ Keep each explanation summary to 2-3 sentences and max 4 dataPoints per category
         { "label": "TAM growth (industry source)", "value": "+18% YoY through 2030", "source": "web", "sourceDetail": "Gartner 2026 forecast, Mar 2026", "url": "https://www.gartner.com/..." }
       ]
     },
+    "researchCoverage": { "summary": "...", "confidence": "high", "dataPoints": [...] },
+    "trackRecord": { "summary": "...", "confidence": "high", "dataPoints": [...] },
+    "ownershipTrends": { "summary": "...", "confidence": "high", "dataPoints": [...] },
+    "cashFlowQuality": { "summary": "...", "confidence": "high", "dataPoints": [...] },
+    "competitiveMoat": { "summary": "...", "confidence": "medium", "dataPoints": [...] },
+    "catalysts": { "summary": "...", "confidence": "medium", "dataPoints": [...] },
+    "historicalValuation": { "summary": "...", "confidence": "high", "dataPoints": [...] },
+    "leverageCoverage": { "summary": "...", "confidence": "high", "dataPoints": [...] },
+    "relativeValuation": { "summary": "...", "confidence": "medium", "dataPoints": [...] },
     "growth": {
       "summary": "...",
       "confidence": "high",
@@ -666,16 +680,7 @@ Keep each explanation summary to 2-3 sentences and max 4 dataPoints per category
         { "label": "Revenue (Q3 2026)", "value": "$5.62B (+12% YoY)", "source": "edgar", "sourceDetail": "10-Q filed 2026-10-30" },
         { "label": "EPS (Q3 2026)", "value": "$2.34 vs $2.10 est", "source": "web", "sourceDetail": "Company press release, Oct 30 2026", "url": "https://investor.example.com/news/2026/q3-earnings" }
       ]
-    },
-    "relativeValuation": { "summary": "...", "confidence": "medium", "dataPoints": [...] },
-    "historicalValuation": { "summary": "...", "confidence": "high", "dataPoints": [...] },
-    "leverageCoverage": { "summary": "...", "confidence": "high", "dataPoints": [...] },
-    "cashFlowQuality": { "summary": "...", "confidence": "high", "dataPoints": [...] },
-    "competitiveMoat": { "summary": "...", "confidence": "medium", "dataPoints": [...] },
-    "catalysts": { "summary": "...", "confidence": "medium", "dataPoints": [...] },
-    "trackRecord": { "summary": "...", "confidence": "high", "dataPoints": [...] },
-    "ownershipTrends": { "summary": "...", "confidence": "high", "dataPoints": [...] },
-    "researchCoverage": { "summary": "...", "confidence": "high", "dataPoints": [...] }
+    }
   }
 }`;
 
@@ -849,7 +854,7 @@ export async function POST(request: NextRequest) {
     // cache_control is a billing/latency optimization, not a quality knob.
     const message = await client.messages.create({
       model: "claude-sonnet-4-6",
-      max_tokens: 6144,
+      max_tokens: 8192,
       messages: [
         {
           role: "user",
