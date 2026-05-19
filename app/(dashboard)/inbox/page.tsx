@@ -240,7 +240,7 @@ function ConsensusButton({
       }}
       aria-label={ariaLabel}
       title="Click to cycle to the next consensus value. Shift-click or right-click to go backwards. Drives aiRating along with the numeric rating."
-      className={`inline-flex w-[68px] items-center justify-center rounded border px-1 py-0.5 text-[7px] font-bold uppercase tracking-wide transition-all hover:opacity-90 hover:shadow-sm cursor-pointer whitespace-nowrap ${consensusToneClass(value)}`}
+      className={`inline-flex w-[82px] items-center justify-center rounded-full border px-2 py-0.5 text-[10px] font-semibold transition-all hover:opacity-90 hover:shadow-sm cursor-pointer whitespace-nowrap ${consensusToneClass(value)}`}
     >
       {consensusLabel(value)}
     </button>
