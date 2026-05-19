@@ -1906,7 +1906,14 @@ export default function StockDetailPage() {
                   <div className="space-y-4">
                     {group.categories.map((cat) => {
                       const val = stock.scores[cat.key as ScoreKey] || 0;
-                      const rawExp = stock.explanations?.[cat.key as ScoreKey];
+                      // For analystConsensus, ALWAYS use the live computed breakdown
+                      // instead of the persisted explanation. This ensures the data
+                      // points shown match the current snapshot (FactSet target,
+                      // RBC/JPM ratings) rather than whatever was last written by a
+                      // full rescore — which may reference the old RBC/JPM fallback.
+                      const rawExp = cat.key === "analystConsensus"
+                        ? buildConsensusExplanation(computeAnalystConsensus(getAnalystSnapshot(ticker), stock.price))
+                        : stock.explanations?.[cat.key as ScoreKey];
                       // Normalize legacy (string[]) vs new ({summary, dataPoints, confidence?}) shapes.
                       let summary = "";
                       let dataPoints: ScoreDataPoint[] = [];
