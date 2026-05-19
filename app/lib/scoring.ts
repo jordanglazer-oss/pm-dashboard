@@ -332,8 +332,10 @@ export function isScoreable(stock: Stock): boolean {
 }
 
 export function groupTotal(stock: Stock, group: typeof SCORE_GROUPS[number]): number {
-  return group.categories.reduce(
-    (sum, cat) => sum + (stock.scores[cat.key as ScoreKey] || 0),
+  const sum = group.categories.reduce(
+    (acc, cat) => acc + (stock.scores[cat.key as ScoreKey] || 0),
     0
   );
+  // Round to 1 decimal to avoid IEEE 754 floating-point noise
+  return Math.round(sum * 10) / 10;
 }

@@ -1540,7 +1540,7 @@ export default function StockDetailPage() {
                             />
                           </div>
                           <span className={`w-14 text-right text-xs font-bold shrink-0 ${colors.scoreText}`}>
-                            {Number.isInteger(total) ? total : total.toFixed(2)}/{group.maxTotal}
+                            {Number.isInteger(total) ? total : total.toFixed(1)}/{group.maxTotal}
                           </span>
                         </div>
                       );
@@ -1898,7 +1898,7 @@ export default function StockDetailPage() {
                       <h2 className="text-base font-bold text-slate-800">{group.name}</h2>
                     </div>
                     <div className="flex items-baseline gap-0.5">
-                      <span className={`text-2xl font-bold ${colors.scoreText}`}>{Number.isInteger(total) ? total : total.toFixed(2)}</span>
+                      <span className={`text-2xl font-bold ${colors.scoreText}`}>{Number.isInteger(total) ? total : total.toFixed(1)}</span>
                       <span className="text-sm text-slate-400">/{group.maxTotal}</span>
                     </div>
                   </div>
