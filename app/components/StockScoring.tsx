@@ -449,19 +449,53 @@ export function StockScoring({ stocks, onScoreStock, onUpdateCostBasis, onRefres
                   )}
                 </button>
               )}
-              {!isFundsSection && (
-                <button
-                  onClick={() => {
-                    const targets = sectionStocks.filter((s) => (s.scores?.charting ?? 0) > 0);
-                    if (targets.length === 0) return;
-                    for (const s of targets) updateScore(s.ticker, "charting", 0);
-                  }}
-                  className="rounded-lg px-2.5 py-1 text-[10px] font-medium text-slate-500 border border-slate-200 hover:bg-slate-50 hover:text-slate-700 transition-colors"
-                  title={`Reset charting score to 0 for all ${section.toLowerCase()} stocks`}
-                >
-                  Clear Charting
-                </button>
-              )}
+              {!isFundsSection && (() => {
+                const prefKey = `chartingCleared_${section}`;
+                const lastCleared = uiPrefs[prefKey];
+                const confirmKey = `chartingConfirm_${section}`;
+                const isConfirming = uiPrefs[confirmKey] === "1";
+                const charted = sectionStocks.filter((s) => (s.scores?.charting ?? 0) > 0).length;
+                return (
+                  <span className="inline-flex items-center gap-1.5">
+                    <button
+                      onClick={() => {
+                        if (!isConfirming) {
+                          setUiPref(confirmKey, "1");
+                          setTimeout(() => setUiPref(confirmKey, ""), 4000);
+                          return;
+                        }
+                        setUiPref(confirmKey, "");
+                        if (charted === 0) return;
+                        for (const s of sectionStocks) {
+                          if ((s.scores?.charting ?? 0) > 0) updateScore(s.ticker, "charting", 0);
+                        }
+                        setUiPref(prefKey, new Date().toISOString());
+                      }}
+                      className={`rounded-lg px-2.5 py-1 text-[10px] font-medium transition-colors ${
+                        isConfirming
+                          ? "text-red-600 border border-red-300 bg-red-50 hover:bg-red-100"
+                          : "text-slate-500 border border-slate-200 hover:bg-slate-50 hover:text-slate-700"
+                      }`}
+                      title={`Reset charting score to 0 for all ${section.toLowerCase()} stocks`}
+                    >
+                      {isConfirming ? `Confirm clear ${charted} stocks?` : "Clear Charting"}
+                    </button>
+                    {isConfirming && (
+                      <button
+                        onClick={() => setUiPref(confirmKey, "")}
+                        className="text-[10px] text-slate-400 hover:text-slate-600"
+                      >
+                        Cancel
+                      </button>
+                    )}
+                    {!isConfirming && lastCleared && (
+                      <span className="text-[9px] text-slate-400" title={lastCleared}>
+                        Last cleared {new Date(lastCleared).toLocaleDateString("en-US", { month: "short", day: "numeric" })}
+                      </span>
+                    )}
+                  </span>
+                );
+              })()}
               <div className={`flex-1 border-t ${isPortfolio ? "border-blue-200" : isFundsSection ? "border-indigo-200" : "border-slate-200"}`} />
             </div>
 
