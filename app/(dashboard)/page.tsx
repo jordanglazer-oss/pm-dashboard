@@ -207,20 +207,14 @@ export default function DashboardPage() {
             {regime === "Neutral" && (
               <div className="space-y-2 text-sm text-slate-700">
                 <p className="font-medium text-amber-800">
-                  Mixed environment — near-neutral regime adjustments applied:
+                  Mixed environment — no regime adjustment applied:
                 </p>
                 <ul className="list-disc list-inside space-y-1 text-slate-600">
                   <li>
-                    <span className="font-semibold text-amber-700">Growth sectors</span> → <span className="font-bold">0.98x</span> — negligible headwind; fundamentals dominate.
+                    All sectors → <span className="font-bold">1.0x</span> — raw score equals adjusted score.
                   </li>
                   <li>
-                    <span className="font-semibold text-amber-600">Cyclical sectors</span> → <span className="font-bold">0.99x</span> — effectively neutral.
-                  </li>
-                  <li>
-                    <span className="font-semibold text-emerald-600">Defensive sectors</span> → <span className="font-bold">1.01x</span> — effectively neutral.
-                  </li>
-                  <li>
-                    No strong signal — scores are driven almost entirely by fundamentals and quality. Cross-currents suggest balanced positioning until a clearer regime emerges. See the Morning Brief for live readings.
+                    No strong signal — scores are driven entirely by fundamentals and quality. Cross-currents suggest balanced positioning until a clearer regime emerges. See the Morning Brief for live readings.
                   </li>
                 </ul>
                 <a href="#regime-detail" className="mt-2 inline-block text-xs font-semibold text-amber-600 hover:text-amber-800 transition-colors">View per-stock regime detail ↓</a>

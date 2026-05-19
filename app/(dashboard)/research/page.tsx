@@ -3133,9 +3133,7 @@ export default function ResearchPage() {
                 <div className="flex justify-between"><span>Cyclical</span><span className="text-amber-600 font-medium">0.90x</span></div>
                 <div className="flex justify-between"><span>Defensive</span><span className="text-emerald-600 font-medium">1.10x</span></div>
                 <div className="text-xs font-bold text-amber-700 mt-2">Neutral</div>
-                <div className="flex justify-between"><span>Growth</span><span className="text-amber-600 font-medium">0.98x</span></div>
-                <div className="flex justify-between"><span>Cyclical</span><span className="text-amber-600 font-medium">0.99x</span></div>
-                <div className="flex justify-between"><span>Defensive</span><span className="text-emerald-600 font-medium">1.01x</span></div>
+                <div className="flex justify-between"><span>All sectors</span><span className="text-slate-500 font-medium">1.0x</span></div>
                 <div className="text-xs font-bold text-emerald-700 mt-2">Risk-On</div>
                 <div className="flex justify-between"><span>Growth</span><span className="text-emerald-600 font-medium">1.10x</span></div>
                 <div className="flex justify-between"><span>Cyclical</span><span className="text-emerald-600 font-medium">1.05x</span></div>
