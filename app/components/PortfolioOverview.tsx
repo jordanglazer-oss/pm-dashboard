@@ -218,133 +218,6 @@ export function PortfolioOverview() {
   const scoreAllWatchlistAt = uiPrefs["scoreAllWatchlistAt"] || "";
   const refreshAllAt = uiPrefs["refreshAllAt"] || "";
 
-  /** Score one stock by POSTing /api/score, then fanning the result out into
-   *  the context mutators so both the dashboard and PIM Model pick it up.
-   *
-   *  Web-search verification is always enabled for batch rescores. Each call
-   *  spends ~4 searches verifying the latest reported quarter, guidance
-   *  revisions, analyst rating/PT changes, and (for Canadian listings)
-   *  primary financial figures. A 50-name batch takes ~5-8 min total and
-   *  ~$1.50-2.50 in API spend, but produces fully audited scores rather
-   *  than scores derived from possibly-stale cached feeds.
-   *
-   *  After the score lands and the manual technical categories (charting,
-   *  relativeStrength, aiRating) are all set, this also writes an entry to
-   *  pm:score-history so the audit timeline captures batch-verified scores
-   *  alongside per-stock rescores. The "all manual technicals scored" gate
-   *  prevents the history from filling up with half-complete entries from
-   *  fresh batch runs the PM hasn't yet manually graded.
-   */
-  const scoreOneStock = useCallback(async (ticker: string) => {
-    // Look up the current stock so we can pass PM-logged notes into the API
-    // call (External Sources + Research Coverage). The score route uses
-    // these as Tier-1 input for catalysts / researchCoverage scoring.
-    const currentStock = portfolioStocks.find((s) => s.ticker === ticker) ?? watchlistStocks.find((s) => s.ticker === ticker);
-    const res = await fetch("/api/score", {
-      method: "POST",
-      headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({
-        ticker,
-        verifyWithWebSearch: true,
-        externalSourceNotes: currentStock?.externalSourceNotes ?? [],
-        researchCoverageNotes: currentStock?.researchCoverageNotes ?? [],
-      }),
-    });
-    if (!res.ok) {
-      const err = await res.json().catch(() => ({}));
-      throw new Error(err.error || `Failed to score ${ticker}`);
-    }
-    const data = await res.json();
-    if (data.scores) {
-      for (const [key, val] of Object.entries(data.scores)) {
-        updateScore(ticker, key as ScoreKey, val as number);
-      }
-    }
-    if (data.explanations) updateExplanations(ticker, data.explanations);
-    if (data.price != null) updatePrice(ticker, data.price);
-    if (data.healthData) updateHealthData(ticker, data.healthData);
-    if (data.technicals && data.riskAlert) {
-      updateTechnicals(ticker, data.technicals, data.riskAlert);
-    }
-    if (data.companySummary || data.investmentThesis || data.sector || data.name) {
-      updateStockFields(ticker, {
-        ...(data.companySummary ? { companySummary: data.companySummary } : {}),
-        ...(data.investmentThesis ? { investmentThesis: data.investmentThesis } : {}),
-        ...(data.sector ? { sector: data.sector } : {}),
-        ...(data.name && data.name !== "Unknown" ? { name: data.name } : {}),
-      });
-    }
-    updateLastScored(
-      ticker,
-      new Date().toLocaleString("en-US", {
-        month: "short", day: "numeric", year: "numeric",
-        hour: "numeric", minute: "2-digit", hour12: true,
-      })
-    );
-
-    // Append a score-history entry — BUT ONLY when the manual technical
-    // categories (charting, relativeStrength, aiRating) are all > 0 AND the
-    // brand category is set. The rationale: a batch rescore only updates
-    // AI/SEMI categories; the manual technical scoring is the gate that
-    // says "the PM has fully evaluated this name." Writing to history
-    // before that would flood the log with half-graded entries that
-    // distort the timeline of composite-score changes.
-    //
-    // Look up the freshly-updated stock (we can't rely on `currentStock`
-    // from earlier — the manual scores wouldn't be reflected). We pull
-    // from portfolioStocks / watchlistStocks via the latest closure values.
-    // If the manual gates aren't met, silently skip — the per-stock
-    // handleRescore path on the stock page still writes its own entry.
-    const latestStock = portfolioStocks.find((s) => s.ticker === ticker) ?? watchlistStocks.find((s) => s.ticker === ticker);
-    if (latestStock) {
-      // The manual technical scores aren't touched by the rescore (the API
-      // only updates AI/SEMI categories), so reading them off the stale
-      // closure ref is correct. Gate: don't write to history until the PM
-      // has manually graded all three technical categories.
-      const sc = latestStock.scores;
-      const technicalsAllScored = (sc.charting ?? 0) > 0 && (sc.relativeStrength ?? 0) > 0 && (sc.aiRating ?? 0) > 0;
-      if (technicalsAllScored) {
-        // Recompute total/raw/adjusted from the merged-scores state. The
-        // stale closure's `latestStock.scores` has old AI category values;
-        // the API just returned new ones in data.scores. Merge them and
-        // hand to computeScores to get the canonical adjusted value
-        // (sector- + regime-multiplier-aware).
-        const mergedScores = { ...latestStock.scores } as typeof latestStock.scores;
-        if (data.scores && typeof data.scores === "object") {
-          for (const [k, v] of Object.entries(data.scores)) {
-            if (typeof v === "number") (mergedScores as Record<string, number>)[k] = v;
-          }
-        }
-        const merged = computeScores({ ...latestStock, scores: mergedScores }, marketData);
-        const today = new Date().toISOString().slice(0, 10);
-        const verificationStatus: "complete" | "partial" | "skipped" | "failed" =
-          typeof data.verificationStatus === "string" &&
-          (data.verificationStatus === "complete" || data.verificationStatus === "partial" || data.verificationStatus === "skipped" || data.verificationStatus === "failed")
-            ? data.verificationStatus
-            : "skipped";
-        const entry = {
-          date: today,
-          timestamp: new Date().toISOString(),
-          total: merged.adjusted,
-          raw: merged.raw,
-          adjusted: merged.adjusted,
-          scores: mergedScores,
-          verifiedSearch: Boolean(data.verifiedSearch),
-          searchQueries: Array.isArray(data.searchQueries) ? data.searchQueries : [],
-          searchCitations: Array.isArray(data.searchCitations) ? data.searchCitations : [],
-          verificationStatus,
-        };
-        fetch("/api/kv/score-history", {
-          method: "POST",
-          headers: { "Content-Type": "application/json" },
-          body: JSON.stringify({ ticker, entry }),
-        }).catch(() => {
-          // Non-fatal — history is informational, scoring already completed.
-        });
-      }
-    }
-  }, [updateScore, updateExplanations, updateLastScored, updatePrice, updateHealthData, updateTechnicals, updateStockFields, portfolioStocks, watchlistStocks, marketData]);
-
   /** Sequentially score every scoreable stock in a bucket, updating a progress
    *  banner and finally stamping the "Score All" timestamp on success.
    *
@@ -359,23 +232,81 @@ export function PortfolioOverview() {
     setScoringBucket(bucket);
     setScoreFailures([]);
     const failed: string[] = [];
+
+    // Track what the score API returned per ticker during the loop so the
+    // backfill/gap-fill passes don't rely on stale closure state.
+    const scoreResults = new Map<string, { truncated?: boolean; missingCategories?: string[]; companySummary?: string; investmentThesis?: string }>();
+
     for (let i = 0; i < bucketStocks.length; i++) {
       const s = bucketStocks[i];
       setScoreProgress(`Scoring ${s.ticker} (${i + 1}/${bucketStocks.length})`);
       try {
-        await scoreOneStock(s.ticker);
+        // Inline the score call so we can capture the raw API response metadata
+        const res = await fetch("/api/score", {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({
+            ticker: s.ticker,
+            verifyWithWebSearch: true,
+            externalSourceNotes: s.externalSourceNotes ?? [],
+            researchCoverageNotes: s.researchCoverageNotes ?? [],
+          }),
+        });
+        if (!res.ok) {
+          const err = await res.json().catch(() => ({}));
+          throw new Error(err.error || `Failed to score ${s.ticker}`);
+        }
+        const data = await res.json();
+
+        // Apply results via the existing context mutators
+        if (data.scores) {
+          for (const [key, val] of Object.entries(data.scores)) {
+            updateScore(s.ticker, key as ScoreKey, val as number);
+          }
+        }
+        if (data.explanations) updateExplanations(s.ticker, data.explanations);
+        if (data.price != null) updatePrice(s.ticker, data.price);
+        if (data.healthData) updateHealthData(s.ticker, data.healthData);
+        if (data.technicals && data.riskAlert) {
+          updateTechnicals(s.ticker, data.technicals, data.riskAlert);
+        }
+        if (data.companySummary || data.investmentThesis || data.sector || data.name) {
+          updateStockFields(s.ticker, {
+            ...(data.companySummary ? { companySummary: data.companySummary } : {}),
+            ...(data.investmentThesis ? { investmentThesis: data.investmentThesis } : {}),
+            ...(data.sector ? { sector: data.sector } : {}),
+            ...(data.name && data.name !== "Unknown" ? { name: data.name } : {}),
+          });
+        }
+        updateLastScored(
+          s.ticker,
+          new Date().toLocaleString("en-US", {
+            month: "short", day: "numeric", year: "numeric",
+            hour: "numeric", minute: "2-digit", hour12: true,
+          })
+        );
+
+        // Record API response metadata for backfill/gap-fill decisions
+        scoreResults.set(s.ticker, {
+          truncated: data.truncated,
+          missingCategories: data.missingCategories,
+          companySummary: data.companySummary,
+          investmentThesis: data.investmentThesis,
+        });
       } catch (err) {
         console.error(`[Score All] Failed to score ${s.ticker}:`, err);
         failed.push(s.ticker);
       }
     }
 
-    // Auto-backfill companySummary + investmentThesis for stocks missing them.
-    // Re-read from the latest state (source is stale closure from start of fn).
-    const freshSource = bucket === "Portfolio" ? portfolioStocks : watchlistStocks;
-    const needBackfill = freshSource.filter(
-      (s) => isScoreable(s) && !failed.includes(s.ticker) && (!s.companySummary || !s.investmentThesis)
-    );
+    // Auto-backfill companySummary + investmentThesis for stocks the API
+    // flagged as truncated or that didn't return these fields. Uses the
+    // scoreResults map (not stale closure state) to decide.
+    const needBackfill = bucketStocks.filter((s) => {
+      if (failed.includes(s.ticker)) return false;
+      const result = scoreResults.get(s.ticker);
+      return !result?.companySummary || !result?.investmentThesis;
+    });
     if (needBackfill.length > 0) {
       setScoreProgress(`Backfilling summaries (${needBackfill.length} stocks)...`);
       for (const s of needBackfill) {
@@ -384,11 +315,8 @@ export function PortfolioOverview() {
             method: "POST",
             headers: { "Content-Type": "application/json" },
             body: JSON.stringify({
-              ticker: s.ticker,
-              name: s.name,
-              sector: s.sector,
-              scores: s.scores,
-              explanations: s.explanations,
+              ticker: s.ticker, name: s.name, sector: s.sector,
+              scores: s.scores, explanations: s.explanations,
             }),
           });
           if (res.ok) {
@@ -400,25 +328,21 @@ export function PortfolioOverview() {
               });
             }
           }
-        } catch {
-          // Non-fatal — summaries are nice-to-have, not critical
-        }
+        } catch { /* non-fatal */ }
       }
     }
 
-    // Auto-fill category gaps (missing AI/SEMI explanations) — cheap targeted calls.
-    const aiSemiKeys = SCORE_GROUPS.flatMap((g) =>
-      g.categories.filter((c) => c.inputType === "auto" || c.inputType === "semi").map((c) => c.key)
-    );
-    const freshForGaps = bucket === "Portfolio" ? portfolioStocks : watchlistStocks;
-    const gapStocks = freshForGaps.filter((s) => {
-      if (!isScoreable(s) || failed.includes(s.ticker) || s.raw <= 0) return false;
-      return aiSemiKeys.some((k) => !hasExplanation(s, k));
+    // Auto-fill category gaps using the API's missingCategories metadata.
+    const gapStocks = bucketStocks.filter((s) => {
+      if (failed.includes(s.ticker)) return false;
+      const result = scoreResults.get(s.ticker);
+      return result?.missingCategories && result.missingCategories.length > 0;
     });
     if (gapStocks.length > 0) {
       setScoreProgress(`Filling ${gapStocks.length} stocks with missing categories...`);
       for (const s of gapStocks) {
-        const missingKeys = aiSemiKeys.filter((k) => !hasExplanation(s, k));
+        const missingKeys = scoreResults.get(s.ticker)?.missingCategories ?? [];
+        if (missingKeys.length === 0) continue;
         try {
           const res = await fetch("/api/score-gaps", {
             method: "POST",
@@ -432,7 +356,7 @@ export function PortfolioOverview() {
             const data = await res.json();
             if (data.scores) {
               for (const [key, val] of Object.entries(data.scores)) {
-                if ((s.scores[key as ScoreKey] ?? 0) === 0 && typeof val === "number") {
+                if (typeof val === "number") {
                   updateScore(s.ticker, key as ScoreKey, val as number);
                 }
               }
@@ -456,7 +380,7 @@ export function PortfolioOverview() {
       bucket === "Portfolio" ? "scoreAllPortfolioAt" : "scoreAllWatchlistAt",
       new Date().toISOString()
     );
-  }, [scoringAny, refreshingAll, portfolioStocks, watchlistStocks, scoreOneStock, setUiPref, updateStockFields, updateScore, updateExplanations]);
+  }, [scoringAny, refreshingAll, portfolioStocks, watchlistStocks, setUiPref, updateStockFields, updateScore, updateExplanations, updatePrice, updateHealthData, updateTechnicals, updateLastScored]);
 
   // Backfill state — separate from Score All so it can run independently.
   const [backfilling, setBackfilling] = useState(false);

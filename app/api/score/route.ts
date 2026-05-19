@@ -916,6 +916,21 @@ export async function POST(request: NextRequest) {
       }
     }
 
+    // ── Post-parse completeness check ──────────────────────────────────
+    // Detect truncated JSON that parsed successfully but is missing critical
+    // fields. This catches the exact class of bugs that caused missing
+    // companySummary, investmentThesis, and explanation categories.
+    const missingCategories: string[] = [];
+    for (const key of AI_KEYS) {
+      if (parsed.scores?.[key] === undefined && parsed.explanations?.[key] === undefined) {
+        missingCategories.push(key);
+      }
+    }
+    // Log truncation for diagnostics (which categories were lost)
+    if (missingCategories.length > 0) {
+      console.warn(`[Score] ${upperTicker}: response missing ${missingCategories.length} categories: ${missingCategories.join(", ")}`);
+    }
+
     // Clamp each AI-scored category to its max
     const scores: Partial<Record<ScoreKey, number>> = {};
     for (const key of AI_KEYS) {
@@ -1113,6 +1128,10 @@ export async function POST(request: NextRequest) {
         : searchQueries.length < 2
         ? "partial"
         : "complete",
+      // Truncation audit — lets callers detect incomplete responses and
+      // trigger gap-fill passes automatically.
+      missingCategories,
+      truncated: missingCategories.length > 0 || !parsed.companySummary || !parsed.investmentThesis,
     });
   } catch (error) {
     console.error("Score API error:", error);

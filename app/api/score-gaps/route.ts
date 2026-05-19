@@ -143,7 +143,13 @@ Respond ONLY with valid JSON:
       const openBrackets = (repaired.match(/\[/g) || []).length - (repaired.match(/\]/g) || []).length;
       repaired += "]".repeat(Math.max(0, openBrackets));
       repaired += "}".repeat(Math.max(0, openBraces));
-      parsed = JSON.parse(repaired);
+      try {
+        parsed = JSON.parse(repaired);
+        console.log(`[Score-gaps] Repaired truncated JSON for ${ticker}`);
+      } catch (e2) {
+        const msg = e2 instanceof Error ? e2.message : String(e2);
+        return NextResponse.json({ error: `Failed to parse gap-fill response: ${msg}` }, { status: 500 });
+      }
     }
 
     // Extract scores with clamping

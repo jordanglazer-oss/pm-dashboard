@@ -138,13 +138,53 @@ export function useStocks() {
 }
 
 /* ─── Debounced persist helper ─── */
+// Registry of all pending flush functions so beforeunload can fire them all.
+const pendingFlushes: Set<() => void> = new Set();
+
+if (typeof window !== "undefined") {
+  window.addEventListener("beforeunload", () => {
+    for (const flush of pendingFlushes) flush();
+  });
+}
+
 function useDebouncedPersist(url: string, bodyKey: string, delay = 500) {
   const timer = useRef<ReturnType<typeof setTimeout> | null>(null);
+  const latestData = useRef<unknown>(null);
+
+  // Flush function: immediately persists the latest data if a debounce is pending.
+  const flush = useCallback(() => {
+    if (timer.current && latestData.current !== null) {
+      clearTimeout(timer.current);
+      timer.current = null;
+      // Use sendBeacon for reliability during page unload; fall back to fetch.
+      const body = JSON.stringify({ [bodyKey]: latestData.current });
+      if (typeof navigator?.sendBeacon === "function") {
+        navigator.sendBeacon(url, new Blob([body], { type: "application/json" }));
+      } else {
+        fetch(url, {
+          method: "PUT",
+          headers: { "Content-Type": "application/json" },
+          body,
+          keepalive: true,
+        }).catch(() => {});
+      }
+      latestData.current = null;
+    }
+  }, [url, bodyKey]);
+
+  // Register/unregister the flush function in the global registry
+  useEffect(() => {
+    pendingFlushes.add(flush);
+    return () => { pendingFlushes.delete(flush); };
+  }, [flush]);
 
   return useCallback(
     (data: unknown) => {
+      latestData.current = data;
       if (timer.current) clearTimeout(timer.current);
       timer.current = setTimeout(() => {
+        timer.current = null;
+        latestData.current = null;
         fetch(url, {
           method: "PUT",
           headers: { "Content-Type": "application/json" },

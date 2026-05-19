@@ -78,7 +78,13 @@ Respond with ONLY valid JSON (no markdown):
       return NextResponse.json({ error: "No JSON in response" }, { status: 500 });
     }
 
-    const parsed = JSON.parse(jsonMatch[0]);
+    let parsed;
+    try {
+      parsed = JSON.parse(jsonMatch[0]);
+    } catch (parseErr) {
+      console.error("Backfill summaries JSON parse error:", parseErr);
+      return NextResponse.json({ error: "Malformed JSON in response" }, { status: 500 });
+    }
     return NextResponse.json({
       companySummary: parsed.companySummary || "",
       investmentThesis: parsed.investmentThesis || "",
