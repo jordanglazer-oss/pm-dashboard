@@ -53,6 +53,7 @@ Schema:
 {
   "rating": "outperform" | "neutral" | "underperform",     // map bank-specific terms: RBC (Outperform/Sector Perform/Underperform), JPM (Overweight/Neutral/Underweight). Omit if not stated.
   "target": <number>,                                       // 12-month price target, numeric, no currency symbol. Omit if not stated.
+  "targetCurrency": "USD" | "CAD",                          // currency of the price target. Look for currency symbols (C$, CA$, US$, $), disclaimers, or the exchange the report references. Default "USD" for US-listed stocks, "CAD" for TSX-listed (.TO). Omit only if target is omitted.
   "asOf": "YYYY-MM-DD",                                     // publication date of THIS report. Omit if not clearly stated.
   "thesis": ["bullet 1", "bullet 2", ...],                  // 3-5 dense bullets capturing the analyst's investment thesis (bull case if Outperform, bear case if Underperform, sideways thesis if Neutral). Each bullet ≤ 25 words.
   "risks": ["risk 1", "risk 2", ...],                       // 2-4 bullets capturing key downside risks the report flags. ≤ 25 words each.
@@ -94,6 +95,10 @@ function parseExtraction(text: string): ExtractedReport {
     if (r === "outperform" || r === "neutral" || r === "underperform") out.rating = r as AnalystRating;
   }
   if (typeof parsed.target === "number" && Number.isFinite(parsed.target)) out.target = parsed.target;
+  if (typeof parsed.targetCurrency === "string") {
+    const cur = parsed.targetCurrency.toUpperCase().trim();
+    if (cur === "USD" || cur === "CAD") out.targetCurrency = cur;
+  }
   if (typeof parsed.asOf === "string" && /^\d{4}-\d{2}-\d{2}$/.test(parsed.asOf)) out.asOf = parsed.asOf;
   if (typeof parsed.sectorView === "string" && parsed.sectorView.trim()) out.sectorView = parsed.sectorView.trim();
   if (Array.isArray(parsed.thesis)) {

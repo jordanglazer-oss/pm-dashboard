@@ -19,13 +19,22 @@ export type AnalystRating = "outperform" | "neutral" | "underperform" | "not-cov
 
 export type AnalystEntry = {
   rating: AnalystRating;
-  /** Analyst's price target. Numeric; currency is implicit from the ticker. */
+  /** Analyst's price target, converted to the stock's trading currency.
+   *  If the PDF target was in a different currency, this stores the
+   *  converted value; the original is in `targetOriginal`. */
   target?: number;
+  /** Original target as extracted from the PDF (before FX conversion).
+   *  Only set when conversion occurred; absent when no conversion needed. */
+  targetOriginal?: number;
+  /** Currency of the original target from the PDF (e.g. "USD", "CAD").
+   *  Only set when conversion occurred. */
+  targetCurrency?: string;
+  /** FX rate used for conversion (e.g. USDCAD rate). Audit trail. */
+  fxRate?: number;
   /** YYYY-MM-DD — date of the report or the rating-as-of date. */
   asOf?: string;
   /** Underlying price at the time of the report. Auto-filled from current
-   *  Yahoo price at save time; user can override. Drives convergence-based
-   *  freshness decay (target hit / adverse move). */
+   *  Yahoo price at save time; user can override. */
   priceAtReport?: number;
   /** Optional reference to an uploaded PDF (step 3b). */
   reportId?: string;
@@ -53,6 +62,10 @@ export type AnalystSnapshots = Record<string, TickerSnapshot>;
 export type ExtractedReport = {
   rating?: AnalystRating;
   target?: number;
+  /** Currency of the extracted target price (e.g. "USD", "CAD").
+   *  Extracted from the PDF by the Anthropic model. Used to convert the
+   *  target to the stock's trading currency before storing in the snapshot. */
+  targetCurrency?: string;
   asOf?: string;
   thesis?: string[];
   risks?: string[];

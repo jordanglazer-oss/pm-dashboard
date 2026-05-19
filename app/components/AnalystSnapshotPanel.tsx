@@ -191,7 +191,16 @@ export function AnalystSnapshotPanel({ ticker, snapshot, breakdown, reports, onC
             <div className="flex flex-col gap-0.5">
               <span className="text-slate-500">Target price</span>
               <span className="rounded border border-slate-100 bg-slate-50 px-1.5 py-1 text-slate-700">
-                {entry?.target ? `$${entry.target.toFixed(2)}` : <span className="italic text-slate-400">Not extracted</span>}
+                {entry?.target ? (
+                  <>
+                    ${entry.target.toFixed(2)}
+                    {entry.targetOriginal && entry.targetCurrency && (
+                      <span className="ml-1 text-[9px] text-slate-400" title={`Converted from ${entry.targetCurrency} $${entry.targetOriginal.toFixed(2)} at USDCAD=${entry.fxRate?.toFixed(4) ?? "?"}`}>
+                        ({entry.targetCurrency} ${entry.targetOriginal.toFixed(2)})
+                      </span>
+                    )}
+                  </>
+                ) : <span className="italic text-slate-400">Not extracted</span>}
               </span>
             </div>
             <div className="flex flex-col gap-0.5">

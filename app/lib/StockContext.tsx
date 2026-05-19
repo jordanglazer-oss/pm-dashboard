@@ -994,15 +994,55 @@ export function StockProvider({ children }: { children: React.ReactNode }) {
     // 4) Replace the snapshot entry with the new extraction. RBC/JPM fields
     //    are strictly PDF-driven now — no carryover from a previous PDF, no
     //    manual entry path. priceAtReport snapshots the current Yahoo price
-    //    at upload time so freshness decay can detect adverse moves later.
+    //    at upload time.
     const stockMatch = stocks.find((s) => s.ticker === ticker || s.ticker.toUpperCase() === ticker.toUpperCase());
     const priceAtUpload = stockMatch?.price;
+
+    // 4a) Currency conversion: if the PDF target is in a different currency
+    //     than the stock's trading currency, convert it using live USDCAD.
+    const stockCcy = tickerCurrency(ticker);
+    const pdfCcy = extractRes!.result.targetCurrency?.toUpperCase();
+    let convertedTarget = extractRes!.result.target;
+    let targetOriginal: number | undefined;
+    let targetCurrencyField: string | undefined;
+    let fxRateField: number | undefined;
+
+    if (convertedTarget != null && pdfCcy && pdfCcy !== stockCcy) {
+      try {
+        const fxRes = await fetch("/api/prices", {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ tickers: ["USDCAD=X"] }),
+        });
+        const fxData = await fxRes.json();
+        const usdcad = fxData.prices?.["USDCAD=X"];
+        if (typeof usdcad === "number" && usdcad > 0) {
+          targetOriginal = convertedTarget;
+          targetCurrencyField = pdfCcy;
+          if (pdfCcy === "USD" && stockCcy === "CAD") {
+            // USD target → CAD stock: multiply by USDCAD
+            convertedTarget = Math.round(convertedTarget * usdcad * 100) / 100;
+            fxRateField = usdcad;
+          } else if (pdfCcy === "CAD" && stockCcy === "USD") {
+            // CAD target → USD stock: divide by USDCAD
+            convertedTarget = Math.round((convertedTarget / usdcad) * 100) / 100;
+            fxRateField = usdcad;
+          }
+          console.log(`[FX] ${ticker}: converted ${pdfCcy} $${targetOriginal} → ${stockCcy} $${convertedTarget} (USDCAD=${usdcad})`);
+        }
+      } catch (e) {
+        console.error("Failed to fetch USDCAD for target conversion:", e);
+        // Fallback: use unconverted target (better than nothing)
+      }
+    }
+
     let derivedSnapshot: TickerSnapshot | undefined;
     setAnalystSnapshotsState((prev) => {
       const currentSnapshot = getSnapshotForTicker(prev, ticker) ?? {};
       const merged: AnalystEntry = {
         rating: extractRes!.result.rating ?? "not-covered",
-        target: extractRes!.result.target,
+        target: convertedTarget,
+        ...(targetOriginal != null ? { targetOriginal, targetCurrency: targetCurrencyField, fxRate: fxRateField } : {}),
         asOf: extractRes!.result.asOf,
         priceAtReport: priceAtUpload,
         reportId,
