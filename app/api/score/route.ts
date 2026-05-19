@@ -1052,7 +1052,7 @@ export async function POST(request: NextRequest) {
       if (stockBoostedAiConsensus) parts.push(`Consensus: ${consensusLabel(stockBoostedAiConsensus)}`);
       explanations.aiRating = {
         summary: parts.length > 0
-          ? `Auto-derived from BoostedAI inputs (${parts.join(", ")}). Bucket-mapped to ${derivedAiRating}/2.`
+          ? `Auto-derived from BoostedAI inputs (${parts.join(", ")}). Mapped to ${derivedAiRating}/2.`
           : `No BoostedAI data entered. Score: ${derivedAiRating}/2.`,
         dataPoints: [
           ...(stockBoostedAi != null ? [{ label: "BoostedAI rating", value: `${stockBoostedAi.toFixed(1)}/5`, source: "model" as ScoreDataPointSource }] : []),
@@ -1065,7 +1065,7 @@ export async function POST(request: NextRequest) {
     if (derivedRelativeStrength != null) {
       explanations.relativeStrength = {
         summary: stockSia != null
-          ? `Auto-derived from SIA SMAX score of ${stockSia}/10. Bucket-mapped to ${derivedRelativeStrength}/2.`
+          ? `Auto-derived from SIA SMAX score of ${stockSia}/10. Mapped to ${derivedRelativeStrength}/2.`
           : `No SIA SMAX score entered. Score: ${derivedRelativeStrength}/2.`,
         dataPoints: stockSia != null
           ? [{ label: "SIA SMAX", value: `${stockSia}/10`, source: "model" as ScoreDataPointSource }]

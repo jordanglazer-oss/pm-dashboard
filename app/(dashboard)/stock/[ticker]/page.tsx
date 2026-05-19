@@ -2007,7 +2007,9 @@ export default function StockDetailPage() {
                                    No toggle buttons — the Coverage Checklist / research
                                    feeds are the only input path. */
                                 <span
-                                  className={`flex h-7 min-w-[28px] px-1.5 items-center justify-center rounded-md text-xs font-semibold ${colors.activeBg} ${colors.activeText}`}
+                                  className={`flex h-7 min-w-[28px] px-1.5 items-center justify-center rounded-md text-xs font-semibold ${
+                                    val < 0 ? "bg-red-100 text-red-700" : `${colors.activeBg} ${colors.activeText}`
+                                  }`}
                                   title={`Auto-derived: ${val}/${cat.max}`}
                                 >
                                   {Number.isInteger(val) ? val : val.toFixed(2)}
