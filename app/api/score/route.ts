@@ -641,8 +641,6 @@ Respond ONLY with valid JSON (no markdown code fences, no commentary).
 IMPORTANT: companySummary and investmentThesis MUST appear BEFORE explanations in your output — they are short fields that must never be truncated.
 Keep each explanation summary to 2-3 sentences and max 4 dataPoints per category.
 
-OUTPUT ORDER: within "explanations", emit categories in this EXACT order (shorter categories first to ensure completeness):
-  secular, researchCoverage, trackRecord, ownershipTrends, cashFlowQuality, competitiveMoat, catalysts, historicalValuation, leverageCoverage, relativeValuation, growth
 {
   "name": "Company Name",
   "sector": "GICS Sector",
@@ -657,30 +655,24 @@ OUTPUT ORDER: within "explanations", emit categories in this EXACT order (shorte
     "trackRecord": 0, "ownershipTrends": 0
   },
   "explanations": {
-    "secular": {
-      "summary": "2-3 sentence paragraph",
-      "confidence": "high",
-      "dataPoints": [
-        { "label": "TAM growth (industry source)", "value": "+18% YoY through 2030", "source": "web", "sourceDetail": "Gartner 2026 forecast, Mar 2026", "url": "https://www.gartner.com/..." }
-      ]
-    },
-    "researchCoverage": { "summary": "...", "confidence": "high", "dataPoints": [...] },
-    "trackRecord": { "summary": "...", "confidence": "high", "dataPoints": [...] },
-    "ownershipTrends": { "summary": "...", "confidence": "high", "dataPoints": [...] },
-    "cashFlowQuality": { "summary": "...", "confidence": "high", "dataPoints": [...] },
-    "competitiveMoat": { "summary": "...", "confidence": "medium", "dataPoints": [...] },
-    "catalysts": { "summary": "...", "confidence": "medium", "dataPoints": [...] },
-    "historicalValuation": { "summary": "...", "confidence": "high", "dataPoints": [...] },
-    "leverageCoverage": { "summary": "...", "confidence": "high", "dataPoints": [...] },
-    "relativeValuation": { "summary": "...", "confidence": "medium", "dataPoints": [...] },
     "growth": {
-      "summary": "...",
+      "summary": "2-3 sentence paragraph",
       "confidence": "high",
       "dataPoints": [
         { "label": "Revenue (Q3 2026)", "value": "$5.62B (+12% YoY)", "source": "edgar", "sourceDetail": "10-Q filed 2026-10-30" },
         { "label": "EPS (Q3 2026)", "value": "$2.34 vs $2.10 est", "source": "web", "sourceDetail": "Company press release, Oct 30 2026", "url": "https://investor.example.com/news/2026/q3-earnings" }
       ]
-    }
+    },
+    "relativeValuation": { "summary": "...", "confidence": "medium", "dataPoints": [...] },
+    "historicalValuation": { "summary": "...", "confidence": "high", "dataPoints": [...] },
+    "leverageCoverage": { "summary": "...", "confidence": "high", "dataPoints": [...] },
+    "cashFlowQuality": { "summary": "...", "confidence": "high", "dataPoints": [...] },
+    "competitiveMoat": { "summary": "...", "confidence": "medium", "dataPoints": [...] },
+    "catalysts": { "summary": "...", "confidence": "medium", "dataPoints": [...] },
+    "secular": { "summary": "...", "confidence": "high", "dataPoints": [...] },
+    "researchCoverage": { "summary": "...", "confidence": "high", "dataPoints": [...] },
+    "trackRecord": { "summary": "...", "confidence": "high", "dataPoints": [...] },
+    "ownershipTrends": { "summary": "...", "confidence": "high", "dataPoints": [...] }
   }
 }`;
 
