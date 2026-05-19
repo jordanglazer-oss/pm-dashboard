@@ -142,6 +142,13 @@ export function Navigation() {
           })}
         </nav>
       )}
+      {/* Keyboard shortcut hint — desktop only, subtle */}
+      <div className="hidden md:flex items-center justify-center gap-4 bg-slate-800 px-4 py-0.5 text-[10px] text-slate-500">
+        <span><kbd className="rounded bg-slate-700 px-1 py-px text-slate-400">⌘/Win</kbd> + <kbd className="rounded bg-slate-700 px-1 py-px text-slate-400">←→</kbd> switch tabs</span>
+        {pathname.startsWith("/stock/") && (
+          <span><kbd className="rounded bg-slate-700 px-1 py-px text-slate-400">Ctrl</kbd> + <kbd className="rounded bg-slate-700 px-1 py-px text-slate-400">←→</kbd> switch stocks</span>
+        )}
+      </div>
     </header>
   );
 }

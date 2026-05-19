@@ -3,6 +3,12 @@
  * into the dashboard's internal 0-2 scoring categories (aiRating,
  * relativeStrength).
  *
+ * Both mappings use LINEAR INTERPOLATION to preserve full fractional
+ * precision — e.g. a BoostedAI 4.5 maps to 1.8/2 rather than bucketing
+ * to an integer. The consensus is categorical so it stays as a 0/1/2
+ * bucket; when both rating and consensus are present, the final aiRating
+ * is their average (no floor).
+ *
  * Used by the Inbox-tab Coverage Checklist edits and any future bulk-entry
  * surfaces — the PM enters the raw tool output, and the composite scoring
  * system automatically picks up the derived value.
@@ -16,80 +22,68 @@ export type BoostedAiConsensus =
   | "strong-sell";
 
 /**
- * BoostedAI consensus → 0-2 bucket.
+ * BoostedAI consensus → 0-2 bucket (categorical, no gradient).
  *   Strong Buy / Buy → 2
  *   Hold            → 1
  *   Sell / Strong Sell → 0
- *
- * Treating "Buy" and "Strong Buy" identically (and same for the sell side)
- * matches how PMs typically use the consensus — the gradient is usually
- * already captured in the numeric rating.
  */
-function bucketConsensus(c: BoostedAiConsensus): 0 | 1 | 2 {
+function consensusBucket(c: BoostedAiConsensus): 0 | 1 | 2 {
   if (c === "strong-buy" || c === "buy") return 2;
   if (c === "hold") return 1;
   return 0; // sell, strong-sell
 }
 
 /**
- * BoostedAI numeric rating (0-5, decimals allowed) → 0-2 bucket.
- *   4.0 – 5.0 → 2
- *   2.5 – 3.99 → 1
- *   0.0 – 2.49 → 0
+ * BoostedAI numeric rating (0-5) → linear 0-2 scale.
+ *   rating × 0.4, clamped to [0, 2].
+ *   Examples: 5→2.0, 4.5→1.8, 3.2→1.28, 2.5→1.0, 1→0.4, 0→0
  */
-function bucketRating(rating: number): 0 | 1 | 2 {
-  if (rating >= 4) return 2;
-  if (rating >= 2.5) return 1;
-  return 0;
+function linearRating(rating: number): number {
+  return Math.max(0, Math.min(2, Math.round(rating * 0.4 * 100) / 100));
 }
 
 /**
- * Combined BoostedAI → aiRating mapping.
+ * Combined BoostedAI → aiRating mapping (fractional 0-2).
  *
- *   Both inputs present: floor((ratingBucket + consensusBucket) / 2).
- *     Conservative — a divergence (e.g. 4.5 rating but Hold consensus)
- *     drops to 1 instead of averaging to 1.5.
- *   Only rating present: rating bucket directly.
+ *   Both inputs present: average of linearRating + consensusBucket.
+ *     e.g. rating 4.5 + Buy = (1.8 + 2) / 2 = 1.9
+ *   Only rating present: linearRating directly.
  *   Only consensus present: consensus bucket directly.
  *   Neither present: returns null (caller leaves aiRating unchanged).
  *
  * Returns:
- *   - integer 0/1/2 when mappable
- *   - null when nothing to map (caller should NOT overwrite the existing
- *     manual aiRating in this case)
+ *   - number in [0, 2] (fractional) when mappable
+ *   - null when nothing to map
  */
 export function mapBoostedAiToAiRating(
   rating: number | null | undefined,
   consensus: BoostedAiConsensus | null | undefined,
-): 0 | 1 | 2 | null {
+): number | null {
   const haveRating = typeof rating === "number" && isFinite(rating);
   const haveConsensus = !!consensus;
   if (!haveRating && !haveConsensus) return null;
 
-  const r = haveRating ? bucketRating(rating as number) : null;
-  const c = haveConsensus ? bucketConsensus(consensus as BoostedAiConsensus) : null;
+  const r = haveRating ? linearRating(rating as number) : null;
+  const c = haveConsensus ? consensusBucket(consensus as BoostedAiConsensus) : null;
   if (r != null && c != null) {
-    return Math.floor((r + c) / 2) as 0 | 1 | 2;
+    return Math.round(((r + c) / 2) * 100) / 100;
   }
-  return (r ?? c) as 0 | 1 | 2;
+  return (r ?? c) as number;
 }
 
 /**
- * SIA SMAX (0-10 integer) → relativeStrength (0-2).
- *   SMAX 8-10 → 2  (SIA's "Favored Zone" — actionable on the long side)
- *   SMAX 6-7  → 1  (above average, watchlist-worthy)
- *   SMAX 0-5  → 0  (below SIA's actionable threshold)
+ * SIA SMAX (0-10) → relativeStrength (linear 0-2).
+ *   smax × 0.2, clamped to [0, 2].
+ *   Examples: 10→2.0, 8→1.6, 7→1.4, 5→1.0, 3→0.6, 0→0
  *
  * Returns null when SMAX is missing — caller should leave the existing
  * relativeStrength score untouched rather than wiping it to 0.
  */
 export function mapSmaxToRelativeStrength(
   smax: number | null | undefined,
-): 0 | 1 | 2 | null {
+): number | null {
   if (typeof smax !== "number" || !isFinite(smax)) return null;
-  if (smax >= 8) return 2;
-  if (smax >= 6) return 1;
-  return 0;
+  return Math.max(0, Math.min(2, Math.round(smax * 0.2 * 100) / 100));
 }
 
 /**
