@@ -187,6 +187,63 @@ function EditableNumberCell({
   );
 }
 
+/**
+ * BoostedAI consensus value as a click-through cycling chip. Each click
+ * advances to the next value in the cycle:
+ *
+ *   — (empty) → Strong Buy → Buy → Hold → Sell → Strong Sell → — → ...
+ *
+ * Right-click / shift-click reverses the direction (handy for over-shoots).
+ * The chip is color-coded by current value via consensusToneClass.
+ *
+ * Cycling order goes bullish → bearish on left-click. The full cycle
+ * (5 values + empty) is 6 states, so worst case the user clicks 5x to
+ * reach a target. With shift-click reversing, the actual maximum is 3
+ * clicks (cycle is bi-directional, midpoint is 3 from any other state).
+ */
+function ConsensusButton({
+  value,
+  onChange,
+  ariaLabel,
+}: {
+  value: BoostedAiConsensus | null;
+  onChange: (next: BoostedAiConsensus | null) => void;
+  ariaLabel: string;
+}) {
+  // Cycle order — bullish first since that's the most common starting
+  // point when triaging Coverage Checklist entries.
+  const cycle: (BoostedAiConsensus | null)[] = [
+    null,
+    "strong-buy",
+    "buy",
+    "hold",
+    "sell",
+    "strong-sell",
+  ];
+  const idx = value == null ? 0 : Math.max(0, cycle.indexOf(value));
+  const advance = (forward: boolean) => {
+    const len = cycle.length;
+    const next = forward ? (idx + 1) % len : (idx - 1 + len) % len;
+    onChange(cycle[next]);
+  };
+
+  return (
+    <button
+      type="button"
+      onClick={(e) => advance(!e.shiftKey)}
+      onContextMenu={(e) => {
+        e.preventDefault();
+        advance(false);
+      }}
+      aria-label={ariaLabel}
+      title="Click to cycle to the next consensus value. Shift-click or right-click to go backwards. Drives aiRating along with the numeric rating."
+      className={`inline-flex items-center rounded border px-2 py-1 text-[10px] font-semibold uppercase tracking-wider transition-all hover:opacity-90 hover:shadow-sm cursor-pointer whitespace-nowrap ${consensusToneClass(value)}`}
+    >
+      {consensusLabel(value)}
+    </button>
+  );
+}
+
 type ReportsRow = {
   ticker: string;
   source: "rbc" | "jpm";
@@ -870,26 +927,11 @@ export default function InboxPage() {
                       />
                     </td>
                     <td className="px-3 py-2">
-                      <select
-                        value={r.boostedAiConsensus ?? ""}
-                        onChange={(e) => {
-                          const v = e.target.value;
-                          saveBoostedAiConsensus(
-                            r.displayTicker,
-                            v === "" ? null : (v as BoostedAiConsensus),
-                          );
-                        }}
-                        aria-label={`BoostedAI consensus for ${r.displayTicker}`}
-                        className={`rounded border px-1.5 py-0.5 text-[10px] font-semibold uppercase tracking-wider outline-none focus:ring-1 focus:ring-blue-200 cursor-pointer ${consensusToneClass(r.boostedAiConsensus)}`}
-                        title="BoostedAI consensus recommendation. Drives aiRating along with the numeric rating."
-                      >
-                        <option value="">—</option>
-                        <option value="strong-buy">{consensusLabel("strong-buy")}</option>
-                        <option value="buy">{consensusLabel("buy")}</option>
-                        <option value="hold">{consensusLabel("hold")}</option>
-                        <option value="sell">{consensusLabel("sell")}</option>
-                        <option value="strong-sell">{consensusLabel("strong-sell")}</option>
-                      </select>
+                      <ConsensusButton
+                        value={r.boostedAiConsensus}
+                        ariaLabel={`BoostedAI consensus for ${r.displayTicker}`}
+                        onChange={(next) => saveBoostedAiConsensus(r.displayTicker, next)}
+                      />
                     </td>
                     <td className="px-3 py-2 text-right">
                       <EditableNumberCell
