@@ -1,8 +1,8 @@
 "use client";
 
-import React, { useState } from "react";
+import React, { useEffect, useState } from "react";
 import Link from "next/link";
-import { usePathname } from "next/navigation";
+import { usePathname, useRouter } from "next/navigation";
 
 const tabs = [
   { label: "Brief", href: "/brief" },
@@ -20,7 +20,37 @@ const tabs = [
 
 export function Navigation() {
   const pathname = usePathname();
+  const router = useRouter();
   const [menuOpen, setMenuOpen] = useState(false);
+
+  // Cmd/Win + Left/Right arrow → move one tab at a time, wrapping at the ends.
+  // The browser's default Cmd+Left/Right is history back/forward, which on this
+  // app jumps the user multiple tabs at once because every tab click pushes a
+  // history entry. preventDefault overrides that so the shortcut becomes a
+  // single-tab step. `metaKey` covers both macOS Cmd and Windows Win key.
+  useEffect(() => {
+    const onKey = (e: KeyboardEvent) => {
+      if (!e.metaKey) return;
+      if (e.key !== "ArrowLeft" && e.key !== "ArrowRight") return;
+      // Don't hijack the shortcut inside text inputs / textareas / contenteditable.
+      const t = e.target as HTMLElement | null;
+      if (t) {
+        const tag = t.tagName;
+        if (tag === "INPUT" || tag === "TEXTAREA" || tag === "SELECT" || t.isContentEditable) return;
+      }
+      // Find current tab index — fall back to Dashboard for /stock/* etc.
+      let idx = tabs.findIndex((tab) => tab.href === pathname);
+      if (idx < 0) {
+        idx = tabs.findIndex((tab) => tab.label === "Dashboard");
+      }
+      const delta = e.key === "ArrowRight" ? 1 : -1;
+      const next = tabs[(idx + delta + tabs.length) % tabs.length];
+      e.preventDefault();
+      router.push(next.href);
+    };
+    window.addEventListener("keydown", onKey);
+    return () => window.removeEventListener("keydown", onKey);
+  }, [pathname, router]);
 
   // /stock/[ticker] detail pages and the legacy /scoring route both live under
   // the consolidated Dashboard tab since scoring was folded into Dashboard.

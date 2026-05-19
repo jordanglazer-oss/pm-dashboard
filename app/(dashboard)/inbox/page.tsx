@@ -227,6 +227,9 @@ function ConsensusButton({
     onChange(cycle[next]);
   };
 
+  // Button is locked to w-[68px] + text-[7px] so the Coverage Checklist's
+  // Consensus column stays the same width whether the chip shows "BUY" or
+  // "STRONG SELL" — otherwise every cycle shifts the entire table.
   return (
     <button
       type="button"
@@ -237,7 +240,7 @@ function ConsensusButton({
       }}
       aria-label={ariaLabel}
       title="Click to cycle to the next consensus value. Shift-click or right-click to go backwards. Drives aiRating along with the numeric rating."
-      className={`inline-flex items-center rounded border px-1.5 py-0.5 text-[8px] font-bold uppercase tracking-wide transition-all hover:opacity-90 hover:shadow-sm cursor-pointer whitespace-nowrap ${consensusToneClass(value)}`}
+      className={`inline-flex w-[68px] items-center justify-center rounded border px-1 py-0.5 text-[7px] font-bold uppercase tracking-wide transition-all hover:opacity-90 hover:shadow-sm cursor-pointer whitespace-nowrap ${consensusToneClass(value)}`}
     >
       {consensusLabel(value)}
     </button>
