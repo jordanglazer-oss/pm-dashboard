@@ -170,8 +170,8 @@ export const SCORE_GROUPS: ScoreGroup[] = [
     maxTotal: 7,
     categories: [
       { key: "charting", label: "Charting", max: 3, inputType: "manual" },
-      { key: "relativeStrength", label: "SIA (relative strength)", max: 2, inputType: "manual" },
-      { key: "aiRating", label: "BoostedAI (AI rating)", max: 2, inputType: "manual" },
+      { key: "relativeStrength", label: "SIA (relative strength)", max: 2, inputType: "computed" },
+      { key: "aiRating", label: "BoostedAI (AI rating)", max: 2, inputType: "computed" },
     ],
   },
   {

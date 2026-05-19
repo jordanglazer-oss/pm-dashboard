@@ -6,8 +6,9 @@ import type { OHLCVBar, TechnicalIndicators, RiskAlert } from "@/app/lib/technic
 import { computeTechnicals, computeRiskAlert, formatTechnicalsForPrompt } from "@/app/lib/technicals";
 import { formatEdgarSnapshotForPrompt } from "@/app/lib/edgar-prompt";
 import { tallyResearchMentions } from "@/app/lib/research-mentions";
-import { computeAnalystConsensus, getSnapshotForTicker } from "@/app/lib/analyst-snapshots";
+import { computeAnalystConsensus, getSnapshotForTicker, buildConsensusExplanation } from "@/app/lib/analyst-snapshots";
 import type { AnalystSnapshots } from "@/app/lib/analyst-snapshots";
+import { mapBoostedAiToAiRating, mapSmaxToRelativeStrength, consensusLabel, type BoostedAiConsensus } from "@/app/lib/external-scoring";
 import { getRedis } from "@/app/lib/redis";
 
 const client = new Anthropic();
@@ -944,6 +945,31 @@ export async function POST(request: NextRequest) {
     const consensus = computeAnalystConsensus(tickerSnapshot, stockPrice);
     scores.analystConsensus = consensus.score;
 
+    // aiRating & relativeStrength: derived from BoostedAI / SIA fields on the
+    // stock. Read pm:stocks to get the external-tool inputs, then bucket-map.
+    let stockBoostedAi: number | null = null;
+    let stockBoostedAiConsensus: BoostedAiConsensus | null = null;
+    let stockSia: number | null = null;
+    try {
+      const redis = await getRedis();
+      const rawStocks = await redis.get("pm:stocks");
+      if (rawStocks) {
+        const stocksArr = JSON.parse(rawStocks) as Array<{ ticker: string; boostedAi?: number; boostedAiConsensus?: string; sia?: number }>;
+        const match = stocksArr.find((s) => s.ticker.toUpperCase() === upperTicker);
+        if (match) {
+          stockBoostedAi = typeof match.boostedAi === "number" ? match.boostedAi : null;
+          stockBoostedAiConsensus = (match.boostedAiConsensus as BoostedAiConsensus) ?? null;
+          stockSia = typeof match.sia === "number" ? match.sia : null;
+        }
+      }
+    } catch (e) {
+      console.error("Failed to read pm:stocks for external-tool fields:", e);
+    }
+    const derivedAiRating = mapBoostedAiToAiRating(stockBoostedAi, stockBoostedAiConsensus);
+    if (derivedAiRating != null) scores.aiRating = derivedAiRating;
+    const derivedRelativeStrength = mapSmaxToRelativeStrength(stockSia);
+    if (derivedRelativeStrength != null) scores.relativeStrength = derivedRelativeStrength;
+
     // Parse explanations — supports new { summary, dataPoints } shape AND
     // legacy string / string[] shapes (so old test fixtures and any model
     // regressions don't 500 the endpoint).
@@ -1015,46 +1041,37 @@ export async function POST(request: NextRequest) {
       })),
     };
 
-    // Synthesize the analystConsensus explanation from the formula breakdown.
-    // No confidence field — deterministic category, no chip in the UI.
-    const consensusDataPoints: { label: string; value: string; source: ScoreDataPointSource; sourceDetail?: string }[] = [];
-    if (consensus.rbc) {
-      const labelSuffix = consensus.rbc.freshnessLabel === "fresh" ? "" : ` · ${consensus.rbc.freshnessLabel}${consensus.rbc.freshnessReason ? ` (${consensus.rbc.freshnessReason})` : ""}`;
-      consensusDataPoints.push({
-        label: "RBC",
-        value: `${consensus.rbc.rating.toFixed(2)} × ${consensus.rbc.freshness.toFixed(2)} = ${consensus.rbc.contribution.toFixed(2)} pts${labelSuffix}`,
-        source: "model",
-      });
-    } else if (tickerSnapshot?.rbc) {
-      consensusDataPoints.push({ label: "RBC", value: "Not covered (0 pts)", source: "model" });
+    // analystConsensus explanation — uses the shared builder so the score
+    // route, Coverage Checklist, and stock page all produce identical output.
+    explanations.analystConsensus = buildConsensusExplanation(consensus);
+
+    // aiRating explanation (BoostedAI derived)
+    if (derivedAiRating != null) {
+      const parts: string[] = [];
+      if (stockBoostedAi != null) parts.push(`Rating: ${stockBoostedAi.toFixed(1)}/5`);
+      if (stockBoostedAiConsensus) parts.push(`Consensus: ${consensusLabel(stockBoostedAiConsensus)}`);
+      explanations.aiRating = {
+        summary: parts.length > 0
+          ? `Auto-derived from BoostedAI inputs (${parts.join(", ")}). Bucket-mapped to ${derivedAiRating}/2.`
+          : `No BoostedAI data entered. Score: ${derivedAiRating}/2.`,
+        dataPoints: [
+          ...(stockBoostedAi != null ? [{ label: "BoostedAI rating", value: `${stockBoostedAi.toFixed(1)}/5`, source: "model" as ScoreDataPointSource }] : []),
+          ...(stockBoostedAiConsensus ? [{ label: "BoostedAI consensus", value: consensusLabel(stockBoostedAiConsensus), source: "model" as ScoreDataPointSource }] : []),
+        ],
+      };
     }
-    if (consensus.jpm) {
-      const labelSuffix = consensus.jpm.freshnessLabel === "fresh" ? "" : ` · ${consensus.jpm.freshnessLabel}${consensus.jpm.freshnessReason ? ` (${consensus.jpm.freshnessReason})` : ""}`;
-      consensusDataPoints.push({
-        label: "JPM",
-        value: `${consensus.jpm.rating.toFixed(2)} × ${consensus.jpm.freshness.toFixed(2)} = ${consensus.jpm.contribution.toFixed(2)} pts${labelSuffix}`,
-        source: "model",
-      });
-    } else if (tickerSnapshot?.jpm) {
-      consensusDataPoints.push({ label: "JPM", value: "Not covered (0 pts)", source: "model" });
+
+    // relativeStrength explanation (SIA derived)
+    if (derivedRelativeStrength != null) {
+      explanations.relativeStrength = {
+        summary: stockSia != null
+          ? `Auto-derived from SIA SMAX score of ${stockSia}/10. Bucket-mapped to ${derivedRelativeStrength}/2.`
+          : `No SIA SMAX score entered. Score: ${derivedRelativeStrength}/2.`,
+        dataPoints: stockSia != null
+          ? [{ label: "SIA SMAX", value: `${stockSia}/10`, source: "model" as ScoreDataPointSource }]
+          : [],
+      };
     }
-    if (consensus.upside.target && consensus.upside.upsidePercent !== undefined) {
-      const sourceLabel = "FactSet street avg";
-      consensusDataPoints.push({
-        label: "Upside",
-        value: `Target $${consensus.upside.target.toFixed(2)} vs current — ${consensus.upside.upsidePercent >= 0 ? "+" : ""}${consensus.upside.upsidePercent.toFixed(1)}% → ${consensus.upside.contribution.toFixed(2)} pts`,
-        source: "model",
-        sourceDetail: sourceLabel,
-      });
-    }
-    const consensusSummary =
-      consensusDataPoints.length === 0
-        ? `No analyst snapshot logged for ${upperTicker}. Use the Analyst Consensus panel below to record RBC / JPM ratings and the FactSet street-avg target.`
-        : `Computed from RBC + JPM ratings + FactSet street-avg upside. Raw sum: ${consensus.rawScore.toFixed(2)}, rounded to ${consensus.score}/3.`;
-    explanations.analystConsensus = {
-      summary: consensusSummary,
-      dataPoints: consensusDataPoints,
-    };
 
     // Extract health monitor data from raw Yahoo modules
     const healthData = extractHealthData(rawModules, stockPrice);

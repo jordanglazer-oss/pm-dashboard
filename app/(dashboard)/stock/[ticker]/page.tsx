@@ -1995,25 +1995,32 @@ export default function StockDetailPage() {
                               )}
                             </div>
                             <div className="flex gap-1">
-                              {Array.from({ length: cat.max + 1 }, (_, i) => (
-                                <button
-                                  key={i}
-                                  onClick={isComputed ? undefined : () => updateScore(ticker, cat.key as ScoreKey, i)}
-                                  disabled={isComputed}
-                                  title={isComputed ? "Computed automatically — not user-editable" : undefined}
-                                  className={`flex h-7 w-7 items-center justify-center rounded-md text-xs font-semibold transition-colors ${
-                                    isComputed ? "cursor-default" : "cursor-pointer hover:opacity-80"
-                                  } ${
-                                    i === val
-                                      ? `${colors.activeBg} ${colors.activeText}`
-                                      : isComputed
-                                      ? "bg-slate-50 text-slate-300"
-                                      : "bg-slate-100 text-slate-400 hover:bg-slate-200"
-                                  }`}
+                              {isComputed ? (
+                                /* Computed categories show a single static chip with
+                                   the auto-derived value (may be fractional, e.g. 2.5).
+                                   No toggle buttons — the Coverage Checklist / research
+                                   feeds are the only input path. */
+                                <span
+                                  className={`flex h-7 min-w-[28px] px-1.5 items-center justify-center rounded-md text-xs font-semibold ${colors.activeBg} ${colors.activeText}`}
+                                  title={`Auto-derived: ${val}/${cat.max}`}
                                 >
-                                  {i}
-                                </button>
-                              ))}
+                                  {Number.isInteger(val) ? val : val.toFixed(1)}
+                                </span>
+                              ) : (
+                                Array.from({ length: cat.max + 1 }, (_, i) => (
+                                  <button
+                                    key={i}
+                                    onClick={() => updateScore(ticker, cat.key as ScoreKey, i)}
+                                    className={`flex h-7 w-7 items-center justify-center rounded-md text-xs font-semibold transition-colors cursor-pointer hover:opacity-80 ${
+                                      i === val
+                                        ? `${colors.activeBg} ${colors.activeText}`
+                                        : "bg-slate-100 text-slate-400 hover:bg-slate-200"
+                                    }`}
+                                  >
+                                    {i}
+                                  </button>
+                                ))
+                              )}
                             </div>
                           </div>
                           {isExpanded && hasNotesEditor && (
