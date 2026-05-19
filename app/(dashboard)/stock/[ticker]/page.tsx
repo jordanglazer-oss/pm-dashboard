@@ -1905,15 +1905,18 @@ export default function StockDetailPage() {
 
                   <div className="space-y-4">
                     {group.categories.map((cat) => {
-                      const val = stock.scores[cat.key as ScoreKey] || 0;
-                      // For analystConsensus, ALWAYS use the live computed breakdown
-                      // instead of the persisted explanation. This ensures the data
-                      // points shown match the current snapshot (FactSet target,
-                      // RBC/JPM ratings) rather than whatever was last written by a
-                      // full rescore — which may reference the old RBC/JPM fallback.
-                      const rawExp = cat.key === "analystConsensus"
-                        ? buildConsensusExplanation(computeAnalystConsensus(getAnalystSnapshot(ticker), stock.price))
-                        : stock.explanations?.[cat.key as ScoreKey];
+                      // For computed categories, ALWAYS use the live-derived score
+                      // rather than the persisted value — the persisted value may be
+                      // stale (e.g. old rounded analystConsensus of 3 when the true
+                      // value is 2.75). This ensures the category chip, group subtotal,
+                      // and overall score all reflect current data without re-scoring.
+                      let val = stock.scores[cat.key as ScoreKey] || 0;
+                      let rawExp = stock.explanations?.[cat.key as ScoreKey];
+                      if (cat.key === "analystConsensus") {
+                        const consensus = computeAnalystConsensus(getAnalystSnapshot(ticker), stock.price);
+                        val = consensus.score;
+                        rawExp = buildConsensusExplanation(consensus);
+                      }
                       // Normalize legacy (string[]) vs new ({summary, dataPoints, confidence?}) shapes.
                       let summary = "";
                       let dataPoints: ScoreDataPoint[] = [];

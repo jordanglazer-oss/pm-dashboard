@@ -8,6 +8,7 @@ import { defaultMarketData } from "./defaults";
 import { pimModelSeed } from "./pim-seed";
 import type { AnalystSnapshots, TickerSnapshot, AnalystReports, TickerReports, AnalystEntry, ExtractedReport } from "./analyst-snapshots";
 import { setSnapshotForTicker, getSnapshotForTicker, setReportsForTicker, getReportsForTicker, reportIdFor, computeAnalystConsensus, buildConsensusExplanation } from "./analyst-snapshots";
+import { mapBoostedAiToAiRating, mapSmaxToRelativeStrength, type BoostedAiConsensus } from "./external-scoring";
 
 // Locked equity holdings: specialty funds whose weightInClass is driven by
 // the per-model Balanced weight (%) input on the stock page — NOT by the
@@ -344,9 +345,27 @@ export function StockProvider({ children }: { children: React.ReactNode }) {
   // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
 
+  // Live-patch computed category scores before computing totals so the
+  // dashboard, stock page, and every consumer sees current values without
+  // requiring a full rescore. The persisted scores in pm:stocks may be stale
+  // (old rounding, pre-FactSet fallback, etc.).
   const scoredStocks = useMemo(
-    () => stocks.map((s) => computeScores(s, marketData)),
-    [stocks, marketData]
+    () => stocks.map((s) => {
+      const overrides: Partial<Record<ScoreKey, number>> = {};
+      // analystConsensus: live from analyst snapshot
+      const snap = getSnapshotForTicker(analystSnapshots, s.ticker);
+      overrides.analystConsensus = computeAnalystConsensus(snap, s.price).score;
+      // aiRating: live from BoostedAI fields
+      const ai = mapBoostedAiToAiRating(s.boostedAi ?? null, (s.boostedAiConsensus as BoostedAiConsensus) ?? null);
+      if (ai != null) overrides.aiRating = ai;
+      // relativeStrength: live from SIA SMAX
+      const rs = mapSmaxToRelativeStrength(s.sia ?? null);
+      if (rs != null) overrides.relativeStrength = rs;
+
+      const patched = { ...s, scores: { ...s.scores, ...overrides } };
+      return computeScores(patched, marketData);
+    }),
+    [stocks, marketData, analystSnapshots]
   );
 
   const portfolioStocks = useMemo(
