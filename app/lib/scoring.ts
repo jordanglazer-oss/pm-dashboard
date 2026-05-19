@@ -209,13 +209,10 @@ function qualityFactor(scores: Record<string, number> | undefined): number {
  *   Defensive (Utilities, Staples, Health Care) → 1.10x base
  *
  * Neutral (mixed/uncertain macro):
- *   Growth   → 0.98x base
- *   Cyclical → 0.99x base
- *   Defensive → 1.01x base
+ *   All sectors → 1.0x (pure pass-through, raw = adjusted)
  *
- *   Neutral means "no strong signal" — multipliers are near 1.0x to avoid
- *   systematically biasing scores toward defensive names when the regime
- *   doesn't call for it. Just enough tilt to stay directionally aware.
+ *   Neutral means "no strong signal" — no multiplier effect at all.
+ *   The regime only matters in Risk-On or Risk-Off.
  *
  * Risk-On (bullish macro):
  *   Growth   → 1.10x base
@@ -259,10 +256,9 @@ export function regimeMultiplier(
     else if (CYCLICAL_SECTORS.includes(s)) base = 0.90;
     else base = 1;
   } else if (riskRegime === "Neutral") {
-    if (DEFENSIVE_SECTORS.includes(s)) base = 1.01;
-    else if (GROWTH_SECTORS.includes(s)) base = 0.98;
-    else if (CYCLICAL_SECTORS.includes(s)) base = 0.99;
-    else base = 1;
+    // Neutral = no strong signal → pure pass-through (1.0x for all sectors).
+    // The regime multiplier only matters in Risk-On or Risk-Off.
+    base = 1;
   } else {
     // Risk-On
     if (GROWTH_SECTORS.includes(s)) base = 1.10;
