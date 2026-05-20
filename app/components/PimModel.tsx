@@ -973,9 +973,19 @@ export function PimModel({ groups }: Props) {
         </div>
       )}
 
-      {/* Performance Tracker — only shown for the PIM group */}
+      {/* Performance Tracker — only shown for the PIM group. The
+          onPerfDataChanged callback keeps THIS component's perfData in
+          sync with whatever PimPerformance just loaded (initial load,
+          auto-update, manual Refresh, or seed) so the Sleeve Drift
+          card and Dynamic Wt column reflect the same data the chart
+          is showing without needing a remount. */}
       {selectedGroup.id === "pim" && (
-        <PimPerformance groupId={selectedGroup.id} groupName={selectedGroup.name} selectedProfile={activeProfile} />
+        <PimPerformance
+          groupId={selectedGroup.id}
+          groupName={selectedGroup.name}
+          selectedProfile={activeProfile}
+          onPerfDataChanged={setPerfData}
+        />
       )}
 
       {/* Sleeve Drift summary — Alpha Model and per-group Core sleeve

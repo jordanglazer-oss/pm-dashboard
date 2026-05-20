@@ -50,14 +50,25 @@ type Props = {
   groupId: string;
   groupName: string;
   selectedProfile: PimProfileType;
+  /** Notified whenever PimPerformance loads fresh perf data — used by
+   *  PimModel to keep its own copy (which drives the Sleeve Drift card
+   *  and the Dynamic Wt column) in sync with what the chart is showing. */
+  onPerfDataChanged?: (data: PimPerformanceData) => void;
 };
 
-export function PimPerformance({ groupId, groupName, selectedProfile }: Props) {
+export function PimPerformance({ groupId, groupName, selectedProfile, onPerfDataChanged }: Props) {
   const { getGroupState } = useStocks();
   const groupState = getGroupState(groupId);
   const trackingStart = groupState?.trackingStart;
 
   const [perfData, setPerfData] = useState<PimPerformanceData | null>(null);
+  // Bubble fresh perf data up to PimModel whenever it changes so the
+  // Sleeve Drift card and the Dynamic Wt column reflect the same
+  // numbers as the chart immediately after a Refresh / auto-update /
+  // seed — without forcing PimModel to re-mount or re-poll Redis.
+  useEffect(() => {
+    if (perfData && onPerfDataChanged) onPerfDataChanged(perfData);
+  }, [perfData, onPerfDataChanged]);
   const [loading, setLoading] = useState(false);
   const [refreshing, setRefreshing] = useState(false);
   const [period, setPeriod] = useState("All");
