@@ -499,6 +499,19 @@ export function PortfolioOverview() {
     await flushStocks();
   }, [fillingGaps, scoringAny, refreshingAll, portfolioStocks, watchlistStocks, AI_SEMI_KEYS, updateScore, updateExplanations, flushStocks]);
 
+  /** Reset the "charting" manual score to 0 for every scoreable stock in
+   *  the given bucket. Useful when chart signals have rotated and the PM
+   *  wants a clean slate before re-evaluating. */
+  const handleClearCharting = useCallback(async (bucket: "Portfolio" | "Watchlist") => {
+    const source = bucket === "Portfolio" ? portfolioStocks : watchlistStocks;
+    const targets = source.filter((s) => isScoreable(s) && (s.scores?.charting ?? 0) > 0);
+    if (targets.length === 0) return;
+    for (const s of targets) {
+      updateScore(s.ticker, "charting", 0);
+    }
+    await flushStocks();
+  }, [portfolioStocks, watchlistStocks, updateScore, flushStocks]);
+
   /** Refresh *every* position — portfolio holdings, fund & ETF holdings,
    *  and watchlist — via /api/refresh-data, then re-fetch fund metadata for
    *  ETFs/mutual funds, then refresh the live SPY sector weights that feed
@@ -979,6 +992,7 @@ export function PortfolioOverview() {
         fillingGaps={fillingGaps}
         fillGapsProgress={fillGapsProgress}
         aiSemiKeys={AI_SEMI_KEYS}
+        onClearCharting={() => handleClearCharting("Portfolio")}
       />
 
 
@@ -1005,6 +1019,7 @@ export function PortfolioOverview() {
         fillingGaps={fillingGaps}
         fillGapsProgress={fillGapsProgress}
         aiSemiKeys={AI_SEMI_KEYS}
+        onClearCharting={() => handleClearCharting("Watchlist")}
       />
 
       {/* Fund & ETF Holdings — moved below Watchlist Rankings per Dashboard
@@ -1215,6 +1230,7 @@ function RankingTable({
   fillingGaps,
   fillGapsProgress,
   aiSemiKeys,
+  onClearCharting,
 }: {
   title: string;
   subtitle: string;
@@ -1239,6 +1255,7 @@ function RankingTable({
   fillingGaps?: boolean;
   fillGapsProgress?: string;
   aiSemiKeys?: string[];
+  onClearCharting?: () => void;
 }) {
   // Collapse state — defaults to expanded. Persisted in uiPrefs so it
   // sticks across refreshes and syncs to other devices via Redis. The
@@ -1333,6 +1350,7 @@ function RankingTable({
     "py-3 pr-4 sticky left-0 z-10 bg-white group-hover:bg-slate-50/80 align-top";
 
   const scoreableCount = stocks.filter((s) => isScoreable(s)).length;
+  const chartingNonZeroCount = stocks.filter((s) => isScoreable(s) && (s.scores?.charting ?? 0) > 0).length;
 
   return (
     <section className="rounded-[30px] border border-slate-200 bg-white p-5 shadow-sm">
@@ -1365,6 +1383,16 @@ function RankingTable({
               <span className="text-[11px] text-slate-400">
                 Last scored {formatRelTimestamp(lastScoredAt)}
               </span>
+            )}
+            {onClearCharting && chartingNonZeroCount > 0 && (
+              <button
+                onClick={onClearCharting}
+                className="flex items-center gap-1 rounded-lg px-2.5 py-1.5 text-xs font-semibold text-slate-600 bg-slate-100 hover:bg-slate-200 border border-slate-200 transition-colors"
+                title={`Reset charting score to 0 for ${chartingNonZeroCount} stock${chartingNonZeroCount > 1 ? "s" : ""}`}
+              >
+                <svg className="w-3.5 h-3.5" fill="none" stroke="currentColor" strokeWidth="2" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" d="M16.023 9.348h4.992v-.001M2.985 19.644v-4.992m0 0h4.992m-4.993 0 3.181 3.183a8.25 8.25 0 0 0 13.803-3.7M4.031 9.865a8.25 8.25 0 0 1 13.803-3.7l3.181 3.182" /></svg>
+                Clear Charting ({chartingNonZeroCount})
+              </button>
             )}
             <button
               onClick={onScoreAll}
