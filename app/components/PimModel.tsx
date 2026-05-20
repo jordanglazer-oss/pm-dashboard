@@ -504,8 +504,27 @@ export function PimModel({ groups }: Props) {
   // would lag the chart's Period Return by exactly today's intraday
   // move (the chart applies the overlay; these consumers would
   // otherwise read raw persisted history and miss it).
-  const { value: alphaLiveToday } = useLiveTodayReturn("pim", "alpha");
-  const { value: coreLiveToday } = useLiveTodayReturn("pim", "core");
+  //
+  // These are SEPARATE hook instances from PimPerformance's own
+  // useLiveTodayReturn — each instance fetches prices independently
+  // on mount and re-fetches only when refetch() is called. We hook
+  // those refetchers into the onPerfDataChanged callback below so
+  // every PimPerformance refresh (manual Refresh button, auto-update,
+  // seed-from-Appendix) also refreshes our prices, keeping Sleeve
+  // Drift in lockstep with the chart's Period Return.
+  const { value: alphaLiveToday, refetch: refetchAlphaLive } = useLiveTodayReturn("pim", "alpha");
+  const { value: coreLiveToday, refetch: refetchCoreLive } = useLiveTodayReturn("pim", "core");
+
+  const handlePerfDataChanged = useCallback((data: PimPerformanceData) => {
+    setPerfData(data);
+    // PimPerformance refreshed (or auto-updated, or seeded) — refetch
+    // our live prices too. Without these calls, the chart's instance
+    // refetches via PimPerformance.refreshPerformance but ours stay
+    // stuck at the prices they fetched on mount, drifting away from
+    // the chart over the course of a session.
+    refetchAlphaLive();
+    refetchCoreLive();
+  }, [refetchAlphaLive, refetchCoreLive]);
 
   const computedHoldings = useMemo<PimComputedHolding[]>(() => {
     if (!effectiveGroup || !profileWeights) return [];
@@ -1015,7 +1034,7 @@ export function PimModel({ groups }: Props) {
           groupId={selectedGroup.id}
           groupName={selectedGroup.name}
           selectedProfile={activeProfile}
-          onPerfDataChanged={setPerfData}
+          onPerfDataChanged={handlePerfDataChanged}
         />
       )}
 
