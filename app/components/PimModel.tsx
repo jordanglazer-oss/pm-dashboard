@@ -23,6 +23,23 @@ function symbolToTicker(symbol: string): string {
   return symbol;
 }
 
+/** Render an ISO timestamp as "Xm ago" / "Xh ago" / "MMM D h:mm a" so the
+ *  Sleeve Drift "Last updated" label stays compact and human-readable. */
+function formatPerfRelTime(iso: string | undefined | null): string {
+  if (!iso) return "";
+  const t = new Date(iso).getTime();
+  if (!Number.isFinite(t)) return "";
+  const diffMs = Date.now() - t;
+  const min = Math.floor(diffMs / 60000);
+  if (min < 1) return "just now";
+  if (min < 60) return `${min}m ago`;
+  const hr = Math.floor(min / 60);
+  if (hr < 24) return `${hr}h ago`;
+  return new Date(t).toLocaleString("en-US", {
+    month: "short", day: "numeric", hour: "numeric", minute: "2-digit", hour12: true,
+  });
+}
+
 type Props = {
   groups: PimModelGroup[];
 };
@@ -109,6 +126,9 @@ export function PimModel({ groups }: Props) {
   // Surfaced in the Dynamic Wt column header so the user can see when
   // the column is being seeded for the first time.
   const [perfBackfilling, setPerfBackfilling] = useState(false);
+  // True while the auto-refresh on first tab open is appending today's
+  // prices. Drives the "Refreshing..." indicator on the Sleeve Drift card.
+  const [perfAutoRefreshing, setPerfAutoRefreshing] = useState(false);
   const dropdownRef = useRef<HTMLDivElement>(null);
   const searchInputRef = useRef<HTMLInputElement>(null);
 
@@ -153,6 +173,39 @@ export function PimModel({ groups }: Props) {
             // button in the PimPerformance section.
           } finally {
             if (!cancelled) setPerfBackfilling(false);
+          }
+          // Backfill already produced fresh data — skip the auto-refresh below.
+          return;
+        }
+        // Auto-refresh on first tab open when the cached perf data is
+        // stale (>15 min old). Fires /api/update-daily-value, which
+        // appends today's prices to every series, then re-reads the
+        // updated blob. Sleeve Drift / Dynamic Wt columns then reflect
+        // intraday prices without the user having to click Refresh
+        // on the Performance section. Skipped when a fresh backfill
+        // just ran (above) or when cancelled mid-flight.
+        const STALE_MS = 15 * 60 * 1000;
+        const lastUpdatedMs = perf.lastUpdated ? new Date(perf.lastUpdated).getTime() : 0;
+        const isStale = !lastUpdatedMs || Date.now() - lastUpdatedMs > STALE_MS;
+        if (isStale && !cancelled) {
+          setPerfAutoRefreshing(true);
+          try {
+            const refresh = await fetch("/api/update-daily-value", { method: "POST" });
+            if (refresh.ok && !cancelled) {
+              // The route writes to pm:pim-performance — re-read to get
+              // the freshly appended values.
+              const fresh = await fetch("/api/kv/pim-performance");
+              if (fresh.ok && !cancelled) {
+                const freshData = await fresh.json();
+                if (freshData && Array.isArray((freshData as PimPerformanceData).models)) {
+                  setPerfData(freshData as PimPerformanceData);
+                }
+              }
+            }
+          } catch {
+            // Non-fatal — Sleeve Drift just shows the stale numbers.
+          } finally {
+            if (!cancelled) setPerfAutoRefreshing(false);
           }
         }
       } catch {
@@ -929,11 +982,21 @@ export function PimModel({ groups }: Props) {
           Alpha profile (no drift to compare against itself). */}
       {activeProfile !== "alpha" && activeProfile !== "core" && driftSummary.anchorDate && (
         <div className="rounded-2xl border border-slate-200 bg-white p-5 shadow-sm">
-          <div className="flex items-baseline justify-between mb-3">
+          <div className="flex items-baseline justify-between mb-3 gap-3 flex-wrap">
             <h3 className="text-sm font-bold text-slate-800">Sleeve Drift</h3>
-            <span className="text-xs text-slate-400">
-              since rebalance · {driftSummary.anchorDate}
-            </span>
+            <div className="flex items-baseline gap-3 text-xs text-slate-400">
+              {perfAutoRefreshing ? (
+                <span className="flex items-center gap-1 text-slate-500">
+                  <svg className="w-3 h-3 animate-spin" fill="none" stroke="currentColor" strokeWidth="2" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" d="M16.023 9.348h4.992v-.001M2.985 19.644v-4.992m0 0h4.992m-4.993 0 3.181 3.183a8.25 8.25 0 0 0 13.803-3.7M4.031 9.865a8.25 8.25 0 0 1 13.803-3.7l3.181 3.182" /></svg>
+                  Refreshing prices...
+                </span>
+              ) : (
+                perfData?.lastUpdated && (
+                  <span>Last updated {formatPerfRelTime(perfData.lastUpdated)}</span>
+                )
+              )}
+              <span>since rebalance · {driftSummary.anchorDate}</span>
+            </div>
           </div>
           <div className="grid grid-cols-3 gap-3">
             <div className="rounded-xl bg-slate-50 px-4 py-3">
