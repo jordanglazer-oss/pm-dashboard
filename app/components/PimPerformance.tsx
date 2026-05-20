@@ -14,11 +14,18 @@ const PROFILE_LABELS: Record<PimProfileType, string> = {
   core: "Core",
 };
 
+// Period buttons. `days` is the lookback window; sentinel values:
+//   0  → return full history ("All")
+//  -1  → YTD (slice from Jan 1, prepend Dec 31 prior-year baseline)
+//  -2  → SLR ("Since Last Rebalance") — slice from groupState.lastRebalance.date
+//        anchor onwards. Only surfaced for the Alpha / Core firm-wide
+//        models since those are the ones the Sleeve Drift card tracks.
 const PERIOD_OPTIONS = [
   { label: "1M", days: 21 },
   { label: "3M", days: 63 },
   { label: "6M", days: 126 },
   { label: "YTD", days: -1 },
+  { label: "SLR", days: -2 },
   { label: "1Y", days: 252 },
   { label: "3Y", days: 756 },
   { label: "5Y", days: 1260 },
@@ -54,6 +61,14 @@ export function PimPerformance({ groupId, groupName, selectedProfile }: Props) {
   const [loading, setLoading] = useState(false);
   const [refreshing, setRefreshing] = useState(false);
   const [period, setPeriod] = useState("All");
+  // If the user picked SLR on Alpha/Core and then switches to a
+  // profile where SLR isn't surfaced, fall back to "All" so we don't
+  // render an empty chart from a hidden filter.
+  useEffect(() => {
+    if (period === "SLR" && selectedProfile !== "alpha" && selectedProfile !== "core") {
+      setPeriod("All");
+    }
+  }, [period, selectedProfile]);
   const [hoverIdx, setHoverIdx] = useState<number | null>(null);
   const svgRef = useRef<SVGSVGElement | null>(null);
   const [autoUpdating, setAutoUpdating] = useState(false);
@@ -316,8 +331,27 @@ export function PimPerformance({ groupId, groupName, selectedProfile }: Props) {
       return ytdEntries;
     }
 
+    // SLR — Since Last Rebalance. Uses the firm-wide PIM rebalance date
+    // as the anchor (same one driving the Sleeve Drift card). Includes
+    // the history entry ON the rebalance date as the baseline so the
+    // first point is 0% return. If the anchor isn't set (no rebalance
+    // recorded yet) we fall back to the full history so the chart
+    // never goes blank.
+    if (periodOpt.days === -2) {
+      const anchor = groupState?.lastRebalance?.date?.slice(0, 10);
+      if (!anchor) return hist;
+      // Find the index of the last history entry on or before the
+      // anchor — that's the baseline (= 0% return at the rebalance).
+      let baselineIdx = -1;
+      for (let i = hist.length - 1; i >= 0; i--) {
+        if (hist[i].date <= anchor) { baselineIdx = i; break; }
+      }
+      if (baselineIdx === -1) return hist;
+      return hist.slice(baselineIdx);
+    }
+
     return hist.slice(-periodOpt.days);
-  }, [effectiveHistory, period]);
+  }, [effectiveHistory, period, groupState?.lastRebalance?.date]);
 
   // Compute summary stats
   const stats = useMemo(() => {
@@ -563,16 +597,21 @@ export function PimPerformance({ groupId, groupName, selectedProfile }: Props) {
         </div>
       </div>
 
-      {/* Period selector */}
+      {/* Period selector — SLR ("Since Last Rebalance") is only shown
+          for the Alpha / Core firm-wide models, since those are what
+          the Sleeve Drift card anchors to. */}
       <div className="flex justify-end">
         <div className="flex gap-1">
-          {PERIOD_OPTIONS.map((p) => (
+          {PERIOD_OPTIONS.filter((p) =>
+            p.label !== "SLR" || selectedProfile === "alpha" || selectedProfile === "core"
+          ).map((p) => (
             <button
               key={p.label}
               onClick={() => { setPeriod(p.label); setHoverIdx(null); }}
               className={`rounded-lg px-2.5 py-1 text-[10px] font-bold transition-colors ${
                 period === p.label ? "bg-slate-800 text-white" : "bg-slate-100 text-slate-500 hover:bg-slate-200"
               }`}
+              title={p.label === "SLR" ? "Since Last Rebalance" : undefined}
             >
               {p.label}
               </button>

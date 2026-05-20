@@ -706,9 +706,11 @@ export function PimModel({ groups }: Props) {
     alphaReturn: number | null;
     coreReturn: number | null;
   }>(() => {
-    // Hide on Alpha/Core profiles themselves (the standalone models —
-    // comparing them to themselves yields zero).
-    if (activeProfile === "alpha" || activeProfile === "core" || !perfData || !effectiveGroup) {
+    // Show on every profile, including Alpha and Core themselves —
+    // on those tabs the card displays the same Alpha / Core / Spread
+    // numbers as a cumulative return since the last rebalance, which
+    // is what the SLR period view in the chart is anchored to.
+    if (!perfData || !effectiveGroup) {
       return { anchorDate: null, alphaReturn: null, coreReturn: null };
     }
     const anchor = getGroupState("pim").lastRebalance?.date || null;
@@ -978,9 +980,10 @@ export function PimModel({ groups }: Props) {
 
       {/* Sleeve Drift summary — Alpha Model and per-group Core sleeve
           returns since the most recent firm-wide rebalance. These are
-          the inputs that drive the Dynamic Wt column. Hidden on the
-          Alpha profile (no drift to compare against itself). */}
-      {activeProfile !== "alpha" && activeProfile !== "core" && driftSummary.anchorDate && (
+          the inputs that drive the Dynamic Wt column. Shown on every
+          profile including Alpha and Core so the SLR view in the
+          performance chart has a matching summary card. */}
+      {driftSummary.anchorDate && (
         <div className="rounded-2xl border border-slate-200 bg-white p-5 shadow-sm">
           <div className="flex items-baseline justify-between mb-3 gap-3 flex-wrap">
             <h3 className="text-sm font-bold text-slate-800">Sleeve Drift</h3>
