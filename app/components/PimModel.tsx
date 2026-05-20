@@ -6,6 +6,8 @@ import type { PimModelGroup, PimProfileType, PimComputedHolding, PimAssetClass, 
 import type { Stock, InstrumentType, ScoreKey } from "@/app/lib/types";
 import { displayTicker } from "@/app/lib/ticker";
 import { useStocks } from "@/app/lib/StockContext";
+import { useLiveTodayReturn } from "@/app/lib/useLiveTodayReturn";
+import { getTodayET } from "@/app/lib/market-hours";
 import { PimPerformance } from "./PimPerformance";
 
 const ZERO_SCORES: Record<ScoreKey, number> = {
@@ -496,6 +498,15 @@ export function PimModel({ groups }: Props) {
   // Auto-fetch prices on group change
   useEffect(() => { fetchPrices(); }, [selectedGroupId]); // eslint-disable-line react-hooks/exhaustive-deps
 
+  // Live today returns for the two firm-wide standalone models —
+  // mirrors what PimPerformance feeds into its `effectiveHistory`
+  // overlay. Without these, Sleeve Drift and the Dynamic Wt column
+  // would lag the chart's Period Return by exactly today's intraday
+  // move (the chart applies the overlay; these consumers would
+  // otherwise read raw persisted history and miss it).
+  const { value: alphaLiveToday } = useLiveTodayReturn("pim", "alpha");
+  const { value: coreLiveToday } = useLiveTodayReturn("pim", "core");
+
   const computedHoldings = useMemo<PimComputedHolding[]>(() => {
     if (!effectiveGroup || !profileWeights) return [];
 
@@ -522,6 +533,7 @@ export function PimModel({ groups }: Props) {
       groupId: string,
       profileKey: string,
       rebalanceDate: string | undefined,
+      liveToday: number | null,
     ): number | null => {
       if (!perfData || !rebalanceDate) return null;
       const series = perfData.models.find((m) => m.groupId === groupId && m.profile === profileKey);
@@ -536,7 +548,15 @@ export function PimModel({ groups }: Props) {
         }
       }
       if (baseline == null || baseline <= 0) return null;
-      const latest = series.history[series.history.length - 1].value;
+      // Apply the same live-today overlay PimPerformance uses for its
+      // Period Return / chart, so the Dynamic Wt column reflects
+      // intraday moves rather than yesterday's close.
+      const lastEntry = series.history[series.history.length - 1];
+      let latest = lastEntry.value;
+      if (liveToday != null && lastEntry.date === getTodayET() && series.history.length >= 2) {
+        const yesterdayValue = series.history[series.history.length - 2].value;
+        latest = yesterdayValue * (1 + liveToday / 100);
+      }
       return latest / baseline - 1;
     };
 
@@ -555,10 +575,10 @@ export function PimModel({ groups }: Props) {
     const skipDrift = activeProfile === "alpha" || activeProfile === "core";
     const alphaReturn = skipDrift
       ? null
-      : returnSinceRebalance("pim", "alpha", firmRebalanceDate);
+      : returnSinceRebalance("pim", "alpha", firmRebalanceDate, alphaLiveToday);
     const coreReturn = skipDrift
       ? null
-      : returnSinceRebalance("pim", "core", firmRebalanceDate);
+      : returnSinceRebalance("pim", "core", firmRebalanceDate, coreLiveToday);
 
     // Tally sleeve target totals across all equity (locked specialty
     // funds DO drift with the alpha sleeve here — they're excluded
@@ -670,7 +690,7 @@ export function PimModel({ groups }: Props) {
         dynamicWeight,
       };
     });
-  }, [effectiveGroup, profileWeights, livePrices, groupState, perfData, activeProfile, coreSymbols, getGroupState]);
+  }, [effectiveGroup, profileWeights, livePrices, groupState, perfData, activeProfile, coreSymbols, getGroupState, alphaLiveToday, coreLiveToday]);
 
   const filteredHoldings = useMemo(() => {
     if (!holdingSearch.trim()) return computedHoldings;
@@ -716,7 +736,8 @@ export function PimModel({ groups }: Props) {
     const anchor = getGroupState("pim").lastRebalance?.date || null;
     if (!anchor) return { anchorDate: null, alphaReturn: null, coreReturn: null };
     const day = anchor.slice(0, 10);
-    const compute = (groupId: string, profileKey: string): number | null => {
+    const todayET = getTodayET();
+    const compute = (groupId: string, profileKey: string, liveToday: number | null): number | null => {
       const series = perfData.models.find((m) => m.groupId === groupId && m.profile === profileKey);
       if (!series || series.history.length === 0) return null;
       let baseline: number | null = null;
@@ -724,7 +745,17 @@ export function PimModel({ groups }: Props) {
         if (series.history[i].date <= day) { baseline = series.history[i].value; break; }
       }
       if (baseline == null || baseline <= 0) return null;
-      const latest = series.history[series.history.length - 1].value;
+      // Match PimPerformance's `effectiveHistory` overlay: when the
+      // last persisted entry is dated today and we have a live Today
+      // return (market open / after-hours), replace today's value with
+      // yesterday × (1 + liveToday/100). This keeps Sleeve Drift in
+      // lockstep with the chart's Period Return.
+      const lastEntry = series.history[series.history.length - 1];
+      let latest = lastEntry.value;
+      if (liveToday != null && lastEntry.date === todayET && series.history.length >= 2) {
+        const yesterdayValue = series.history[series.history.length - 2].value;
+        latest = yesterdayValue * (1 + liveToday / 100);
+      }
       return latest / baseline - 1;
     };
     // BOTH Alpha and Core are firm-wide standalone models stored under
@@ -732,10 +763,10 @@ export function PimModel({ groups }: Props) {
     // same Core return for the Sleeve Drift comparison.
     return {
       anchorDate: day,
-      alphaReturn: compute("pim", "alpha"),
-      coreReturn: compute("pim", "core"),
+      alphaReturn: compute("pim", "alpha", alphaLiveToday),
+      coreReturn: compute("pim", "core", coreLiveToday),
     };
-  }, [activeProfile, perfData, effectiveGroup, getGroupState]);
+  }, [activeProfile, perfData, effectiveGroup, getGroupState, alphaLiveToday, coreLiveToday]);
 
   // Diagnostic for the Dynamic Weight column — when the column is
   // blank, explain *why*. Walks the same prerequisites as the
