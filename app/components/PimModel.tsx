@@ -499,29 +499,26 @@ export function PimModel({ groups }: Props) {
   useEffect(() => { fetchPrices(); }, [selectedGroupId]); // eslint-disable-line react-hooks/exhaustive-deps
 
   // Live today returns for the two firm-wide standalone models —
-  // mirrors what PimPerformance feeds into its `effectiveHistory`
-  // overlay. Without these, Sleeve Drift and the Dynamic Wt column
-  // would lag the chart's Period Return by exactly today's intraday
-  // move (the chart applies the overlay; these consumers would
-  // otherwise read raw persisted history and miss it).
+  // these feed both the Sleeve Drift card and the Dynamic Wt column.
   //
-  // These are SEPARATE hook instances from PimPerformance's own
-  // useLiveTodayReturn — each instance fetches prices independently
-  // on mount and re-fetches only when refetch() is called. We hook
-  // those refetchers into the onPerfDataChanged callback below so
-  // every PimPerformance refresh (manual Refresh button, auto-update,
-  // seed-from-Appendix) also refreshes our prices, keeping Sleeve
-  // Drift in lockstep with the chart's Period Return.
+  // useLiveTodayReturn is backed by a module-level cache keyed on
+  // (groupId, profile), so PimPerformance's ("pim", selectedProfile)
+  // instance, PimPortfolio's tile, and these two calls all share the
+  // exact same fetched value per key. When ANY consumer calls refetch
+  // the cache fan-outs the new value to every subscriber — no more
+  // drift between chart Period Return and Sleeve Drift.
+  //
+  // We still proactively refetch alpha + core when PimPerformance
+  // reloads its perf data, because PimPerformance's own refetch only
+  // covers the selectedProfile key. When the user is on the Balanced
+  // tab (say), refreshing the chart would refetch ("pim","balanced")
+  // but leave ("pim","alpha") and ("pim","core") stale until the
+  // next StockContext mutation. This callback closes that gap.
   const { value: alphaLiveToday, refetch: refetchAlphaLive } = useLiveTodayReturn("pim", "alpha");
   const { value: coreLiveToday, refetch: refetchCoreLive } = useLiveTodayReturn("pim", "core");
 
   const handlePerfDataChanged = useCallback((data: PimPerformanceData) => {
     setPerfData(data);
-    // PimPerformance refreshed (or auto-updated, or seeded) — refetch
-    // our live prices too. Without these calls, the chart's instance
-    // refetches via PimPerformance.refreshPerformance but ours stay
-    // stuck at the prices they fetched on mount, drifting away from
-    // the chart over the course of a session.
     refetchAlphaLive();
     refetchCoreLive();
   }, [refetchAlphaLive, refetchCoreLive]);
