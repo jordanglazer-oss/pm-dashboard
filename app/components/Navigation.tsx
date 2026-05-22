@@ -181,6 +181,9 @@ export function Navigation() {
         {pathname.startsWith("/stock/") && (
           <span><kbd className="rounded bg-slate-700 px-1 py-px text-slate-400">⌥/Alt</kbd> + <kbd className="rounded bg-slate-700 px-1 py-px text-slate-400">←→</kbd> switch stocks</span>
         )}
+        <Link href="/admin/health" className="ml-auto text-slate-500 hover:text-slate-300 transition-colors">
+          health
+        </Link>
       </div>
       <QuickAddStock open={quickAddOpen} onClose={() => setQuickAddOpen(false)} />
     </header>
