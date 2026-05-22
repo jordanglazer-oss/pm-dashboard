@@ -1,6 +1,6 @@
 "use client";
 
-import React, { useState, useEffect, useCallback, useRef } from "react";
+import React, { useState, useEffect, useCallback, useMemo, useRef } from "react";
 import type {
   MarketData,
   MorningBrief as MorningBriefType,
@@ -870,7 +870,47 @@ export function MorningBrief({
   // Prefer the bundle Claude just used for this brief so the UI reflects the
   // exact numbers the brief was written against. Fall back to the page-load
   // bundle otherwise.
-  const activeForward = brief?.forwardLooking ?? forwardData;
+  //
+  // PER-FIELD FALLBACK: if a saved brief's field has no value (status
+  // "failed" or value null) but the live fetch produced one, use the live
+  // value instead. Otherwise a single fetch failure at brief-generation
+  // time gets "frozen in" — the tile shows N/A all day even after the
+  // upstream source recovers. This came up after Finviz changed their
+  // screener URL: briefs generated during the outage carried null breadth
+  // values, and the tiles kept showing N/A even once the fetcher was
+  // fixed because we were reading the cached brief's bundle.
+  const activeForward = useMemo(() => {
+    if (!brief?.forwardLooking) return forwardData;
+    if (!forwardData) return brief.forwardLooking;
+    const merged: ForwardLookingBundle = { ...brief.forwardLooking };
+    const briefBundle = brief.forwardLooking as unknown as Record<string, unknown>;
+    const liveBundle = forwardData as unknown as Record<string, unknown>;
+    for (const key of Object.keys(liveBundle)) {
+      const briefField = briefBundle[key];
+      const liveField = liveBundle[key];
+      // Only patch ForwardPointBundle objects — skip scalar fields like
+      // `fredEnabled` and `fetchedAt` (those stay from the brief).
+      if (
+        liveField &&
+        typeof liveField === "object" &&
+        "value" in (liveField as Record<string, unknown>)
+      ) {
+        const briefVal = (briefField as { value?: unknown } | null | undefined)?.value;
+        const briefStatus = (briefField as { status?: unknown } | null | undefined)?.status;
+        const liveVal = (liveField as { value?: unknown }).value;
+        // Replace when the saved brief's field is missing/failed AND the
+        // live fetch produced a real value. Don't otherwise touch the
+        // brief's data (so the narrative stays consistent with the tiles).
+        if (
+          (briefVal == null || briefStatus === "failed") &&
+          liveVal != null
+        ) {
+          (merged as unknown as Record<string, unknown>)[key] = liveField;
+        }
+      }
+    }
+    return merged;
+  }, [brief?.forwardLooking, forwardData]);
 
   async function generateBrief() {
     setGenerating(true);
