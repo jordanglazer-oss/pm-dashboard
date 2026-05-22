@@ -4,6 +4,7 @@ import React, { useEffect, useState } from "react";
 import Link from "next/link";
 import { usePathname, useRouter } from "next/navigation";
 import { QuickAddStock } from "./QuickAddStock";
+import { CommandPalette } from "./CommandPalette";
 
 const tabs = [
   { label: "Brief", href: "/brief" },
@@ -24,6 +25,7 @@ export function Navigation() {
   const router = useRouter();
   const [menuOpen, setMenuOpen] = useState(false);
   const [quickAddOpen, setQuickAddOpen] = useState(false);
+  const [paletteOpen, setPaletteOpen] = useState(false);
 
   // Cmd/Win + Left/Right arrow → move one tab at a time, wrapping at the ends.
   // The browser's default Cmd+Left/Right is history back/forward, which on this
@@ -32,7 +34,16 @@ export function Navigation() {
   // single-tab step. `metaKey` covers both macOS Cmd and Windows Win key.
   useEffect(() => {
     const onKey = (e: KeyboardEvent) => {
-      // Don't hijack any shortcut inside text inputs / textareas / contenteditable.
+      // Cmd/Ctrl+K → open Command Palette. This shortcut is allowed
+      // even inside text fields (matches Spotlight / Linear / GitHub
+      // convention) because the user often wants to jump away mid-edit.
+      if ((e.metaKey || e.ctrlKey) && !e.shiftKey && !e.altKey && (e.key === "k" || e.key === "K")) {
+        e.preventDefault();
+        setPaletteOpen(true);
+        return;
+      }
+
+      // Don't hijack any other shortcut inside text inputs / textareas / contenteditable.
       const t = e.target as HTMLElement | null;
       if (t) {
         const tag = t.tagName;
@@ -177,6 +188,7 @@ export function Navigation() {
       {/* Keyboard shortcut hint — desktop only, subtle */}
       <div className="hidden md:flex items-center justify-center gap-4 bg-slate-800 px-4 py-0.5 text-[10px] text-slate-500">
         <span><kbd className="rounded bg-slate-700 px-1 py-px text-slate-400">⌘/Win</kbd> + <kbd className="rounded bg-slate-700 px-1 py-px text-slate-400">←→</kbd> switch tabs</span>
+        <span><kbd className="rounded bg-slate-700 px-1 py-px text-slate-400">⌘/Ctrl</kbd> + <kbd className="rounded bg-slate-700 px-1 py-px text-slate-400">K</kbd> search</span>
         <span><kbd className="rounded bg-slate-700 px-1 py-px text-slate-400">Shift</kbd> + <kbd className="rounded bg-slate-700 px-1 py-px text-slate-400">A</kbd> add stock</span>
         {pathname.startsWith("/stock/") && (
           <span><kbd className="rounded bg-slate-700 px-1 py-px text-slate-400">⌥/Alt</kbd> + <kbd className="rounded bg-slate-700 px-1 py-px text-slate-400">←→</kbd> switch stocks</span>
@@ -186,6 +198,11 @@ export function Navigation() {
         </Link>
       </div>
       <QuickAddStock open={quickAddOpen} onClose={() => setQuickAddOpen(false)} />
+      <CommandPalette
+        open={paletteOpen}
+        onClose={() => setPaletteOpen(false)}
+        onTriggerQuickAdd={() => setQuickAddOpen(true)}
+      />
     </header>
   );
 }
