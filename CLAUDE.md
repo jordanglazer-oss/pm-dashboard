@@ -96,3 +96,15 @@ When adding/removing a holding to a group, **do not** re-run rebalance on locked
 
 ### Seed files
 `pim-seed.ts`, `pim-daily-value-seed.ts`, `defaults.ts`, the root `pim-model-data.json`, and the `*.xlsx` files at the repo root are reference data only — they are NOT loaded into Redis automatically. Do not wire them into any boot path.
+
+### Logging convention
+API routes use a shared helper at `app/lib/logger.ts` that prefixes every log line with a route-specific tag:
+```ts
+import { createLogger } from "@/app/lib/logger";
+const log = createLogger("Score");  // or "Brief", "Score-gaps", etc.
+
+log.info("started for", ticker);    // → "[Score] started for AAPL"
+log.warn("non-200 from Yahoo");     // → "[Score] non-200 from Yahoo"
+log.error("Anthropic failed:", e);  // → "[Score] Anthropic failed: ..."
+```
+New routes should use this rather than bare `console.log` so Vercel runtime log search ("[Score]", "[Finviz breadth]", "[Backfill-summaries]") finds the right output during incidents.

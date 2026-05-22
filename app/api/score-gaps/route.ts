@@ -22,8 +22,10 @@ import Anthropic from "@anthropic-ai/sdk";
 import { NextRequest, NextResponse } from "next/server";
 import type { ScoreKey, ScoreExplanations, ScoreDataPointSource } from "@/app/lib/types";
 import { SCORE_GROUPS } from "@/app/lib/types";
+import { createLogger } from "@/app/lib/logger";
 
 const client = new Anthropic();
+const log = createLogger("Score-gaps");
 
 // Build category rubrics map from the score groups
 const CATEGORY_RUBRICS: Record<string, { max: number; group: string; description: string }> = {};
@@ -145,7 +147,7 @@ Respond ONLY with valid JSON:
       repaired += "}".repeat(Math.max(0, openBraces));
       try {
         parsed = JSON.parse(repaired);
-        console.log(`[Score-gaps] Repaired truncated JSON for ${ticker}`);
+        log.info(`Repaired truncated JSON for ${ticker}`);
       } catch (e2) {
         const msg = e2 instanceof Error ? e2.message : String(e2);
         return NextResponse.json({ error: `Failed to parse gap-fill response: ${msg}` }, { status: 500 });
@@ -199,7 +201,7 @@ Respond ONLY with valid JSON:
 
     return NextResponse.json({ scores, explanations });
   } catch (error) {
-    console.error("Score gaps error:", error);
+    log.error("Failed:", error);
     return NextResponse.json({ error: "Failed to score missing categories" }, { status: 500 });
   }
 }

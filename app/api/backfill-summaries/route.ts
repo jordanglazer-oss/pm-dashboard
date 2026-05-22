@@ -12,8 +12,10 @@
  */
 import Anthropic from "@anthropic-ai/sdk";
 import { NextRequest, NextResponse } from "next/server";
+import { createLogger } from "@/app/lib/logger";
 
 const client = new Anthropic();
+const log = createLogger("Backfill-summaries");
 
 export async function POST(request: NextRequest) {
   try {
@@ -82,7 +84,7 @@ Respond with ONLY valid JSON (no markdown):
     try {
       parsed = JSON.parse(jsonMatch[0]);
     } catch (parseErr) {
-      console.error("Backfill summaries JSON parse error:", parseErr);
+      log.error("JSON parse error:", parseErr);
       return NextResponse.json({ error: "Malformed JSON in response" }, { status: 500 });
     }
     return NextResponse.json({
@@ -90,7 +92,7 @@ Respond with ONLY valid JSON (no markdown):
       investmentThesis: parsed.investmentThesis || "",
     });
   } catch (error) {
-    console.error("Backfill summaries error:", error);
+    log.error("Failed:", error);
     return NextResponse.json({ error: "Failed to generate summaries" }, { status: 500 });
   }
 }
