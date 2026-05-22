@@ -291,14 +291,27 @@ async function fetchSsgaSpyData(): Promise<{
 // ── Finviz breadth scrape ────────────────────────────────────────────────
 // Finviz's public S&P 500 screener pages report how many constituents match
 // a given technical filter (e.g. "price above 200DMA"). The result box
-// always renders as "#1 / N" at the top of the results table, which we
-// regex out and divide by the constant 500 to get the percentage. Two
-// filters give us the classic breadth pair: above 200DMA (long-term trend
-// participation) and above 50DMA (short-term momentum participation).
+// renders as "#1 / N" (or "1 / N Total") at the top of the table; we regex
+// out N and divide by 500 to get the percentage. Two filters give us the
+// classic breadth pair: above 200DMA (long-term trend participation) and
+// above 50DMA (short-term momentum participation).
+//
+// IMPORTANT: Finviz retired the `.ashx` URL pattern in 2026, so we now use
+// the bare `/screener` path. Hitting the old path still works via 301 →
+// new path, but stricter Cloudflare bot rules sometimes block the redirect
+// or strip headers on the second hop, which has caused intermittent N/A
+// values in production. Going direct avoids that.
+//
+// Cloudflare is also more aggressive with cloud-provider egress IPs than
+// with residential ones — so we send a full set of realistic browser
+// headers (Sec-Fetch-*, Accept-Language, Referer, sec-ch-ua) to maximise
+// the chance the request looks human. A short Referer of finviz.com makes
+// the request look like a same-origin navigation rather than a bare API
+// hit.
 const FINVIZ_SP500_ABOVE_200DMA =
-  "https://finviz.com/screener.ashx?v=111&f=idx_sp500,ta_sma200_pa&ft=4";
+  "https://finviz.com/screener?v=111&f=idx_sp500,ta_sma200_pa&ft=4";
 const FINVIZ_SP500_ABOVE_50DMA =
-  "https://finviz.com/screener.ashx?v=111&f=idx_sp500,ta_sma50_pa&ft=4";
+  "https://finviz.com/screener?v=111&f=idx_sp500,ta_sma50_pa&ft=4";
 
 async function fetchFinvizCount(url: string): Promise<number | null> {
   try {
@@ -306,21 +319,57 @@ async function fetchFinvizCount(url: string): Promise<number | null> {
       headers: {
         "User-Agent": YH_UA,
         Accept:
-          "text/html,application/xhtml+xml,application/xml;q=0.9,*/*;q=0.8",
+          "text/html,application/xhtml+xml,application/xml;q=0.9,image/webp,image/apng,*/*;q=0.8",
+        "Accept-Language": "en-US,en;q=0.9",
+        "Accept-Encoding": "gzip, deflate, br",
+        "Cache-Control": "no-cache",
+        Pragma: "no-cache",
+        Referer: "https://finviz.com/",
+        "Sec-Fetch-Dest": "document",
+        "Sec-Fetch-Mode": "navigate",
+        "Sec-Fetch-Site": "same-origin",
+        "Sec-Fetch-User": "?1",
+        "Upgrade-Insecure-Requests": "1",
+        "sec-ch-ua":
+          '"Not_A Brand";v="8", "Chromium";v="120", "Google Chrome";v="120"',
+        "sec-ch-ua-mobile": "?0",
+        "sec-ch-ua-platform": '"macOS"',
       },
       cache: "no-store",
       redirect: "follow",
     });
-    if (!res.ok) return null;
+    if (!res.ok) {
+      console.warn(`[Finviz breadth] non-200 (${res.status}) for ${url}`);
+      return null;
+    }
     const html = await res.text();
-    if (!html || html.length < 2000) return null;
-    // Pattern: '#1 / 268' in the count-text span.
-    const m = html.match(/#1\s*\/\s*(\d+)/);
-    if (!m) return null;
+    if (!html || html.length < 2000) {
+      console.warn(
+        `[Finviz breadth] suspiciously short body (${html?.length ?? 0} chars) for ${url}`
+      );
+      return null;
+    }
+    // Primary pattern: "#1 / 278" (legacy count-text span).
+    // Fallback pattern: "1 / 278 Total" (newer screener layout).
+    // Both encode the matching-row count as the second capture.
+    const m = html.match(/#1\s*\/\s*(\d+)/) || html.match(/\b1\s*\/\s*(\d+)\s*Total\b/i);
+    if (!m) {
+      console.warn(
+        `[Finviz breadth] no count pattern matched for ${url}; HTML may be a bot challenge page (len=${html.length})`
+      );
+      return null;
+    }
     const n = parseInt(m[1], 10);
-    if (isNaN(n) || n < 0 || n > 520) return null;
+    if (isNaN(n) || n < 0 || n > 520) {
+      console.warn(`[Finviz breadth] parsed count out of range (${n}) for ${url}`);
+      return null;
+    }
     return n;
-  } catch {
+  } catch (e) {
+    console.warn(
+      `[Finviz breadth] fetch threw for ${url}:`,
+      e instanceof Error ? e.message : String(e)
+    );
     return null;
   }
 }
@@ -1796,7 +1845,7 @@ export async function fetchForwardLookingData(): Promise<ForwardLookingData> {
   // ("pm:breadth-history") so every subsequent run can compute wk/wk and
   // mo/mo deltas without ever having to reach a paid data provider. The
   // history key is new so it can't clobber anything that's already cached.
-  const finvizUrl = "https://finviz.com/screener.ashx?f=idx_sp500";
+  const finvizUrl = "https://finviz.com/screener?f=idx_sp500";
   let breadth200Wk: ForwardPoint = missing(
     FINVIZ_SP500_ABOVE_200DMA,
     "Finviz S&P 500 >200DMA",
