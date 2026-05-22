@@ -3,6 +3,7 @@
 import React, { useState, useCallback, useMemo, useEffect, useRef } from "react";
 import Link from "next/link";
 import { useStocks } from "@/app/lib/StockContext";
+import { useNotifications } from "@/app/lib/NotificationsContext";
 import { SCORE_GROUPS, INSTRUMENT_LABELS } from "@/app/lib/types";
 import type { ScoredStock, ScoreKey, HealthData, FundHolding, FundSectorWeight } from "@/app/lib/types";
 import type { TechnicalIndicators, RiskAlert } from "@/app/lib/technicals";
@@ -164,6 +165,7 @@ export function PortfolioOverview() {
     setUiPref,
     flushStocks,
   } = useStocks();
+  const { notify } = useNotifications();
   const [dashFilter, setDashFilter] = useState<DashboardFilter>("all");
 
   // Portfolio β — weighted average across individual stocks only, using
@@ -373,8 +375,20 @@ export function PortfolioOverview() {
     if (failed.length > 0) {
       setScoreFailures(failed);
       setScoreProgress(`Done — ${failed.length} failed: ${failed.join(", ")}`);
+      notify({
+        level: "error",
+        title: `Score All ${bucket}: ${failed.length} failed`,
+        message: `Did not score: ${failed.join(", ")}`,
+        source: "Score All",
+      });
     } else {
       setScoreProgress("");
+      notify({
+        level: "success",
+        title: `Score All ${bucket} completed`,
+        message: `Scored ${bucketStocks.length} stock${bucketStocks.length === 1 ? "" : "s"} with no failures.`,
+        source: "Score All",
+      });
     }
     setScoringBucket(null);
     setUiPref(
@@ -383,7 +397,7 @@ export function PortfolioOverview() {
     );
     // Guarantee all state changes are persisted to Redis before we're done
     await flushStocks();
-  }, [scoringAny, refreshingAll, portfolioStocks, watchlistStocks, setUiPref, updateStockFields, updateScore, updateExplanations, updatePrice, updateHealthData, updateTechnicals, updateLastScored, flushStocks]);
+  }, [scoringAny, refreshingAll, portfolioStocks, watchlistStocks, setUiPref, updateStockFields, updateScore, updateExplanations, updatePrice, updateHealthData, updateTechnicals, updateLastScored, flushStocks, notify]);
 
   // Backfill state — separate from Score All so it can run independently.
   const [backfilling, setBackfilling] = useState(false);

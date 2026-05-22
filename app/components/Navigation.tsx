@@ -5,6 +5,7 @@ import Link from "next/link";
 import { usePathname, useRouter } from "next/navigation";
 import { QuickAddStock } from "./QuickAddStock";
 import { CommandPalette } from "./CommandPalette";
+import { NotificationTray } from "./NotificationTray";
 
 const tabs = [
   { label: "Brief", href: "/brief" },
@@ -144,15 +145,18 @@ export function Navigation() {
               </Link>
             );
           })}
-          {/* Quick-Add Stock — visible from every page. */}
-          <button
-            onClick={() => setQuickAddOpen(true)}
-            className="ml-2 flex items-center gap-1 rounded-md bg-emerald-600 hover:bg-emerald-700 px-2.5 py-1.5 text-[13px] font-semibold text-white transition-colors whitespace-nowrap"
-            title="Add a stock (Shift+A)"
-          >
-            <svg className="w-3.5 h-3.5" fill="none" stroke="currentColor" strokeWidth="2.5" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" d="M12 4.5v15m7.5-7.5h-15" /></svg>
-            Add
-          </button>
+          {/* Notifications tray + Quick-Add — visible from every page. */}
+          <div className="ml-2 flex items-center gap-1">
+            <NotificationTray />
+            <button
+              onClick={() => setQuickAddOpen(true)}
+              className="flex items-center gap-1 rounded-md bg-emerald-600 hover:bg-emerald-700 px-2.5 py-1.5 text-[13px] font-semibold text-white transition-colors whitespace-nowrap"
+              title="Add a stock (Shift+A)"
+            >
+              <svg className="w-3.5 h-3.5" fill="none" stroke="currentColor" strokeWidth="2.5" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" d="M12 4.5v15m7.5-7.5h-15" /></svg>
+              Add
+            </button>
+          </div>
         </nav>
       </div>
 
