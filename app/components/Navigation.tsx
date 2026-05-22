@@ -4,6 +4,8 @@ import React, { useEffect, useState } from "react";
 import Link from "next/link";
 import { usePathname, useRouter } from "next/navigation";
 import { QuickAddStock } from "./QuickAddStock";
+import { CommandPalette } from "./CommandPalette";
+import { NotificationTray } from "./NotificationTray";
 
 const tabs = [
   { label: "Brief", href: "/brief" },
@@ -24,6 +26,7 @@ export function Navigation() {
   const router = useRouter();
   const [menuOpen, setMenuOpen] = useState(false);
   const [quickAddOpen, setQuickAddOpen] = useState(false);
+  const [paletteOpen, setPaletteOpen] = useState(false);
 
   // Cmd/Win + Left/Right arrow → move one tab at a time, wrapping at the ends.
   // The browser's default Cmd+Left/Right is history back/forward, which on this
@@ -32,7 +35,16 @@ export function Navigation() {
   // single-tab step. `metaKey` covers both macOS Cmd and Windows Win key.
   useEffect(() => {
     const onKey = (e: KeyboardEvent) => {
-      // Don't hijack any shortcut inside text inputs / textareas / contenteditable.
+      // Cmd/Ctrl+K → open Command Palette. This shortcut is allowed
+      // even inside text fields (matches Spotlight / Linear / GitHub
+      // convention) because the user often wants to jump away mid-edit.
+      if ((e.metaKey || e.ctrlKey) && !e.shiftKey && !e.altKey && (e.key === "k" || e.key === "K")) {
+        e.preventDefault();
+        setPaletteOpen(true);
+        return;
+      }
+
+      // Don't hijack any other shortcut inside text inputs / textareas / contenteditable.
       const t = e.target as HTMLElement | null;
       if (t) {
         const tag = t.tagName;
@@ -133,15 +145,18 @@ export function Navigation() {
               </Link>
             );
           })}
-          {/* Quick-Add Stock — visible from every page. */}
-          <button
-            onClick={() => setQuickAddOpen(true)}
-            className="ml-2 flex items-center gap-1 rounded-md bg-emerald-600 hover:bg-emerald-700 px-2.5 py-1.5 text-[13px] font-semibold text-white transition-colors whitespace-nowrap"
-            title="Add a stock (Shift+A)"
-          >
-            <svg className="w-3.5 h-3.5" fill="none" stroke="currentColor" strokeWidth="2.5" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" d="M12 4.5v15m7.5-7.5h-15" /></svg>
-            Add
-          </button>
+          {/* Notifications tray + Quick-Add — visible from every page. */}
+          <div className="ml-2 flex items-center gap-1">
+            <NotificationTray />
+            <button
+              onClick={() => setQuickAddOpen(true)}
+              className="flex items-center gap-1 rounded-md bg-emerald-600 hover:bg-emerald-700 px-2.5 py-1.5 text-[13px] font-semibold text-white transition-colors whitespace-nowrap"
+              title="Add a stock (Shift+A)"
+            >
+              <svg className="w-3.5 h-3.5" fill="none" stroke="currentColor" strokeWidth="2.5" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" d="M12 4.5v15m7.5-7.5h-15" /></svg>
+              Add
+            </button>
+          </div>
         </nav>
       </div>
 
@@ -177,12 +192,21 @@ export function Navigation() {
       {/* Keyboard shortcut hint — desktop only, subtle */}
       <div className="hidden md:flex items-center justify-center gap-4 bg-slate-800 px-4 py-0.5 text-[10px] text-slate-500">
         <span><kbd className="rounded bg-slate-700 px-1 py-px text-slate-400">⌘/Win</kbd> + <kbd className="rounded bg-slate-700 px-1 py-px text-slate-400">←→</kbd> switch tabs</span>
+        <span><kbd className="rounded bg-slate-700 px-1 py-px text-slate-400">⌘/Ctrl</kbd> + <kbd className="rounded bg-slate-700 px-1 py-px text-slate-400">K</kbd> search</span>
         <span><kbd className="rounded bg-slate-700 px-1 py-px text-slate-400">Shift</kbd> + <kbd className="rounded bg-slate-700 px-1 py-px text-slate-400">A</kbd> add stock</span>
         {pathname.startsWith("/stock/") && (
           <span><kbd className="rounded bg-slate-700 px-1 py-px text-slate-400">⌥/Alt</kbd> + <kbd className="rounded bg-slate-700 px-1 py-px text-slate-400">←→</kbd> switch stocks</span>
         )}
+        <Link href="/admin/health" className="ml-auto text-slate-500 hover:text-slate-300 transition-colors">
+          health
+        </Link>
       </div>
       <QuickAddStock open={quickAddOpen} onClose={() => setQuickAddOpen(false)} />
+      <CommandPalette
+        open={paletteOpen}
+        onClose={() => setPaletteOpen(false)}
+        onTriggerQuickAdd={() => setQuickAddOpen(true)}
+      />
     </header>
   );
 }
