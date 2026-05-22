@@ -31,6 +31,25 @@ function generateId(): string {
   return Date.now().toString(36) + Math.random().toString(36).slice(2, 8);
 }
 
+/** Compact "Xm ago" / "Xh ago" relative-time formatter for tile freshness
+ *  labels. Falls back to a full date+time string past 24 hours so the
+ *  number doesn't grow unwieldy. Returns "" on invalid input so callers
+ *  can gate rendering on truthy. */
+function formatRelTimeShort(iso: string | undefined | null): string {
+  if (!iso) return "";
+  const t = new Date(iso).getTime();
+  if (!Number.isFinite(t)) return "";
+  const diffMs = Date.now() - t;
+  const min = Math.floor(diffMs / 60000);
+  if (min < 1) return "just now";
+  if (min < 60) return `${min}m ago`;
+  const hr = Math.floor(min / 60);
+  if (hr < 24) return `${hr}h ago`;
+  return new Date(t).toLocaleString("en-US", {
+    month: "short", day: "numeric", hour: "numeric", minute: "2-digit", hour12: true,
+  });
+}
+
 function isFundservCode(ticker: string): boolean {
   return /^[A-Z]{2,4}\d{2,5}$/i.test(ticker);
 }
@@ -99,6 +118,10 @@ export function PimPortfolio({ groups }: Props) {
   const [selectedProfile, setSelectedProfile] = useState<PimProfileType>("allEquity");
   const [positions, setPositions] = useState<PimPortfolioPositions[]>([]);
   const [livePrices, setLivePrices] = useState<Record<string, number>>({});
+  // Tracks when the most recent price fetch completed so the Positioning
+  // summary tiles can surface a "Prices · Xm ago" indicator. Pure UI
+  // signal — not persisted, not used for any math.
+  const [pricesFetchedAt, setPricesFetchedAt] = useState<string | null>(null);
   const [prevCloses, setPrevCloses] = useState<Record<string, number>>({});
   const [usdCadRate, setUsdCadRate] = useState<number>(1.0);
   const [prevCloseUsdCad, setPrevCloseUsdCad] = useState<number>(1.0);
@@ -343,6 +366,7 @@ export function PimPortfolio({ groups }: Props) {
 
     setLivePrices(mapped);
     setPrevCloses(prevCloseMapped);
+    setPricesFetchedAt(new Date().toISOString());
 
     // Fetch USD/CAD rate (live + previous close for rebalance math)
     try {
@@ -1851,6 +1875,13 @@ export function PimPortfolio({ groups }: Props) {
       )}
 
       {/* Portfolio summary (all CAD) */}
+      {pricesFetchedAt && (
+        <div className="flex justify-end text-[11px] text-slate-400">
+          <span title="When live prices and FX were last fetched from Yahoo. Refreshes when the page mounts or the group changes.">
+            Prices updated {formatRelTimeShort(pricesFetchedAt)}
+          </span>
+        </div>
+      )}
       <div className="grid grid-cols-2 sm:grid-cols-6 gap-3">
         <div className="rounded-xl border border-slate-200 bg-white p-4 text-center">
           <div className="text-[10px] font-semibold text-slate-400 uppercase">Total Value (CAD)</div>
