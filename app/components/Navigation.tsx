@@ -3,6 +3,7 @@
 import React, { useEffect, useState } from "react";
 import Link from "next/link";
 import { usePathname, useRouter } from "next/navigation";
+import { QuickAddStock } from "./QuickAddStock";
 
 const tabs = [
   { label: "Brief", href: "/brief" },
@@ -22,6 +23,7 @@ export function Navigation() {
   const pathname = usePathname();
   const router = useRouter();
   const [menuOpen, setMenuOpen] = useState(false);
+  const [quickAddOpen, setQuickAddOpen] = useState(false);
 
   // Cmd/Win + Left/Right arrow → move one tab at a time, wrapping at the ends.
   // The browser's default Cmd+Left/Right is history back/forward, which on this
@@ -30,14 +32,28 @@ export function Navigation() {
   // single-tab step. `metaKey` covers both macOS Cmd and Windows Win key.
   useEffect(() => {
     const onKey = (e: KeyboardEvent) => {
-      if (!e.metaKey) return;
-      if (e.key !== "ArrowLeft" && e.key !== "ArrowRight") return;
-      // Don't hijack the shortcut inside text inputs / textareas / contenteditable.
+      // Don't hijack any shortcut inside text inputs / textareas / contenteditable.
       const t = e.target as HTMLElement | null;
       if (t) {
         const tag = t.tagName;
         if (tag === "INPUT" || tag === "TEXTAREA" || tag === "SELECT" || t.isContentEditable) return;
       }
+
+      // Shift+A → open Quick-Add Stock modal. Picked because it doesn't
+      // collide with any browser default and is reachable one-handed.
+      if (e.shiftKey && !e.metaKey && !e.ctrlKey && !e.altKey && (e.key === "A" || e.key === "a")) {
+        e.preventDefault();
+        setQuickAddOpen(true);
+        return;
+      }
+
+      // Cmd/Win + Left/Right arrow → move one tab at a time, wrapping at the ends.
+      // The browser's default Cmd+Left/Right is history back/forward, which on this
+      // app jumps the user multiple tabs at once because every tab click pushes a
+      // history entry. preventDefault overrides that so the shortcut becomes a
+      // single-tab step. `metaKey` covers both macOS Cmd and Windows Win key.
+      if (!e.metaKey) return;
+      if (e.key !== "ArrowLeft" && e.key !== "ArrowRight") return;
       // Find current tab index — fall back to Dashboard for /stock/* etc.
       let idx = tabs.findIndex((tab) => tab.href === pathname);
       if (idx < 0) {
@@ -117,6 +133,15 @@ export function Navigation() {
               </Link>
             );
           })}
+          {/* Quick-Add Stock — visible from every page. */}
+          <button
+            onClick={() => setQuickAddOpen(true)}
+            className="ml-2 flex items-center gap-1 rounded-md bg-emerald-600 hover:bg-emerald-700 px-2.5 py-1.5 text-[13px] font-semibold text-white transition-colors whitespace-nowrap"
+            title="Add a stock (Shift+A)"
+          >
+            <svg className="w-3.5 h-3.5" fill="none" stroke="currentColor" strokeWidth="2.5" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" d="M12 4.5v15m7.5-7.5h-15" /></svg>
+            Add
+          </button>
         </nav>
       </div>
 
@@ -140,15 +165,24 @@ export function Navigation() {
               </Link>
             );
           })}
+          <button
+            onClick={() => { setMenuOpen(false); setQuickAddOpen(true); }}
+            className="mt-1 w-full flex items-center justify-center gap-2 rounded-lg bg-emerald-600 hover:bg-emerald-700 px-4 py-2.5 text-sm font-semibold text-white transition-colors"
+          >
+            <svg className="w-4 h-4" fill="none" stroke="currentColor" strokeWidth="2.5" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" d="M12 4.5v15m7.5-7.5h-15" /></svg>
+            Add Stock
+          </button>
         </nav>
       )}
       {/* Keyboard shortcut hint — desktop only, subtle */}
       <div className="hidden md:flex items-center justify-center gap-4 bg-slate-800 px-4 py-0.5 text-[10px] text-slate-500">
         <span><kbd className="rounded bg-slate-700 px-1 py-px text-slate-400">⌘/Win</kbd> + <kbd className="rounded bg-slate-700 px-1 py-px text-slate-400">←→</kbd> switch tabs</span>
+        <span><kbd className="rounded bg-slate-700 px-1 py-px text-slate-400">Shift</kbd> + <kbd className="rounded bg-slate-700 px-1 py-px text-slate-400">A</kbd> add stock</span>
         {pathname.startsWith("/stock/") && (
           <span><kbd className="rounded bg-slate-700 px-1 py-px text-slate-400">⌥/Alt</kbd> + <kbd className="rounded bg-slate-700 px-1 py-px text-slate-400">←→</kbd> switch stocks</span>
         )}
       </div>
+      <QuickAddStock open={quickAddOpen} onClose={() => setQuickAddOpen(false)} />
     </header>
   );
 }
