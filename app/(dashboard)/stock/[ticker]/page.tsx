@@ -15,6 +15,7 @@ import StockHealthMonitor from "@/app/components/StockHealthMonitor";
 import RiskAlertPanel from "@/app/components/RiskAlertPanel";
 import RatioVsSpxSparkline from "@/app/components/RatioVsSpxSparkline";
 import ScoreHistory from "@/app/components/ScoreHistory";
+import { ScoreDelta } from "@/app/components/ScoreDelta";
 import StockChart from "@/app/components/StockChart";
 
 // ── Helpers ──
@@ -1759,6 +1760,10 @@ export default function StockDetailPage() {
                       </div>
                     );
                   })()}
+                  {/* Score change since last rescore. Renders nothing
+                      until the ticker has >=2 entries in pm:score-history,
+                      so the slot collapses cleanly on first-ever scores. */}
+                  <ScoreDelta ticker={stock.ticker} />
                 </div>
               )}
             </div>
