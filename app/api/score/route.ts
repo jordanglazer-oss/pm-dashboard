@@ -829,6 +829,40 @@ export async function POST(request: NextRequest) {
       financialContext = "Financial data API unavailable. Use your best knowledge but note that data should be verified.";
     }
 
+    // ── Previous-rescore context ────────────────────────────────────
+    // Read the most recent entry from pm:score-history (if any) for this
+    // ticker and embed it in the prompt. Asking the model to "affirm or
+    // explain changes" against last week's scores stabilises a category
+    // that would otherwise oscillate (0→2→1→2) on each rescore, and
+    // produces honest diff narratives: "downgraded growth from 3 to 2
+    // because Q3 revenue growth decelerated to 8% from 14%."
+    try {
+      const redis = await getRedis();
+      const raw = await redis.get("pm:score-history");
+      if (raw) {
+        const blob = JSON.parse(raw) as Record<string, Array<{ date?: string; timestamp?: string; total?: number; scores?: Record<string, number> }>>;
+        const arr = blob[upperTicker];
+        if (Array.isArray(arr) && arr.length > 0) {
+          const latest = arr[arr.length - 1];
+          if (latest?.scores && typeof latest.scores === "object") {
+            const ageDays = latest.timestamp
+              ? Math.round((Date.now() - new Date(latest.timestamp).getTime()) / 86400000)
+              : null;
+            const scoreLines = Object.entries(latest.scores)
+              .filter(([, v]) => typeof v === "number")
+              .map(([k, v]) => `  ${k}: ${v}`)
+              .join("\n");
+            const ageLabel = ageDays != null ? `${ageDays} day${ageDays === 1 ? "" : "s"} ago` : "previously";
+            financialContext += `\n\n---\n\n=== PREVIOUS RESCORE (${ageLabel}) ===\nLast week's per-category scores for ${upperTicker} (composite ${typeof latest.total === "number" ? latest.total.toFixed(1) : "n/a"}):\n${scoreLines}\n\nTreat these as your prior. AFFIRM the score for a category when the underlying data hasn't materially changed — re-deriving from scratch produces unnecessary volatility. Only change a category's value when there's a concrete reason rooted in the new data (a fresh earnings print, a guidance change, a new analyst note, a sector regime shift). When you DO change a category, briefly state the trigger in the explanation summary so the diff is auditable (e.g. "downgraded from 3 to 2: Q3 revenue growth decelerated to 8% YoY from 14%").\n`;
+          }
+        }
+      }
+    } catch (e) {
+      // Non-fatal — without prior context the model just rescores from
+      // scratch like it did before this branch existed.
+      console.error("[Score] failed to load previous score-history for prompt context:", e);
+    }
+
     // Verify-mode preamble: tells the model that web_search is active and
     // it should use the tool aggressively for the items listed in the
     // WEB SEARCH VERIFICATION section of the system prompt (and especially
