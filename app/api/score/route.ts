@@ -2,6 +2,7 @@ import Anthropic from "@anthropic-ai/sdk";
 import { NextRequest, NextResponse } from "next/server";
 import type { ScoreKey, ScoreExplanations, ScoreDataPointSource, HealthData } from "@/app/lib/types";
 import { SCORE_GROUPS } from "@/app/lib/types";
+import { callAnthropicWithRetry } from "@/app/lib/anthropic-retry";
 import type { OHLCVBar, TechnicalIndicators, RiskAlert } from "@/app/lib/technicals";
 import { computeTechnicals, computeRiskAlert, formatTechnicalsForPrompt } from "@/app/lib/technicals";
 import { formatEdgarSnapshotForPrompt } from "@/app/lib/edgar-prompt";
@@ -844,20 +845,33 @@ export async function POST(request: NextRequest) {
     // discount on the cached portion. On a batch rescore of 50 names this
     // cuts input-token spend by ~25-30%. Model behavior is identical —
     // cache_control is a billing/latency optimization, not a quality knob.
-    const message = await client.messages.create({
-      model: "claude-sonnet-4-6",
-      max_tokens: 8192,
-      messages: [
-        {
-          role: "user",
-          content: `Score the following stock: ${upperTicker}\n\nHere is the real financial data for this company — USE THIS DATA for your scoring and explanations:\n\n${financialContext}${verifyPreamble}`,
-        },
-      ],
-      system: [
-        { type: "text", text: SCORING_PROMPT, cache_control: { type: "ephemeral" } },
-      ],
-      tools: tools as unknown as Anthropic.Messages.Tool[],
-    });
+    // temperature: 0 makes scoring reproducible — the same inputs should
+    // always produce the same scores. Without this Anthropic's sampling
+    // can cause a category to oscillate (e.g. 0→2→1→2) across weekly
+    // rescores even when nothing about the underlying company changed.
+    //
+    // callAnthropicWithRetry wraps this in up to 3 attempts with
+    // exponential backoff (1s, 2s) on transient errors — 429 rate
+    // limits, 5xx server errors, 529 overloaded, and network errors.
+    // Non-retryable errors (400, 401, 404, JSON parse) throw on first
+    // attempt so we don't waste retries on a real bug.
+    const message = await callAnthropicWithRetry(`Score ${upperTicker}`, () =>
+      client.messages.create({
+        model: "claude-sonnet-4-6",
+        max_tokens: 8192,
+        temperature: 0,
+        messages: [
+          {
+            role: "user",
+            content: `Score the following stock: ${upperTicker}\n\nHere is the real financial data for this company — USE THIS DATA for your scoring and explanations:\n\n${financialContext}${verifyPreamble}`,
+          },
+        ],
+        system: [
+          { type: "text", text: SCORING_PROMPT, cache_control: { type: "ephemeral" } },
+        ],
+        tools: tools as unknown as Anthropic.Messages.Tool[],
+      })
+    );
 
     // Walk the response content blocks to (a) collect the final text body
     // for JSON parsing and (b) capture web_search metadata (queries issued,
