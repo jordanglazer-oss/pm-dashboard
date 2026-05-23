@@ -1588,9 +1588,9 @@ function RankingTable({
         );
       })()}
       {!collapsed && (
-      <div className="overflow-x-auto">
+      <div className="max-h-[80vh] overflow-auto">
         <table className="w-full min-w-[1400px] text-left text-sm">
-          <thead>
+          <thead className="sticky top-0 z-20 bg-white shadow-[0_1px_0_0_rgb(226_232_240)]">
             <tr className="border-b border-slate-200 text-xs text-slate-500">
               <th className={stickyHeadCls} onClick={() => toggleSort("ticker")}>
                 <span className="text-slate-400 mr-1">#</span>Ticker{arrow("ticker")}

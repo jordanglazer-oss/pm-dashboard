@@ -1940,9 +1940,9 @@ export function PimPortfolio({ groups }: Props) {
 
       {/* Holdings table */}
       <div className="rounded-2xl border border-slate-200 bg-white shadow-sm overflow-hidden">
-        <div className="overflow-x-auto">
+        <div className="max-h-[80vh] overflow-auto">
           <table className="w-full text-xs">
-            <thead>
+            <thead className="sticky top-0 z-10 bg-slate-50 shadow-[0_1px_0_0_rgb(226_232_240)]">
               <tr className="border-b border-slate-100 bg-slate-50">
                 <th className={`text-left ${thClass}`} onClick={() => handleSort("symbol")}>
                   Symbol<SortIcon field="symbol" />
