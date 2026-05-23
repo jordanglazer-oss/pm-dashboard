@@ -133,13 +133,26 @@ type StockContextType = {
   flushStocks: () => Promise<void>;
   /**
    * Fast global price refresh — fetches current prices for every ticker
-   * in `stocks` via /api/prices (single batched call) and applies them
-   * via `updatePrice`. Deliberately does NOT do fund-data deep refresh,
-   * sub-fund crawl, technicals, or riskAlert — the heavier flow lives
-   * in PortfolioOverview's `handleRefreshAll`. Resolves to a count of
-   * tickers that came back with a usable price.
+   * in `stocks` PLUS every ticker referenced in the Research page blob
+   * (Newton Upticks, Fundstrat large + SMID lists, RBC Canadian + US
+   * Focus, Alpha Picks). Single batched /api/prices call, single
+   * setStocks update, single optional PUT back to pm:research for the
+   * blob entries that store prices inline (newtonUpticks, alphaPicks).
+   *
+   * Deliberately scoped:
+   *   - NO fund-data deep refresh, sub-fund crawl, or technicals — the
+   *     heavier flow stays on PortfolioOverview's "Refresh All Data".
+   *
+   * Resolves to: {
+   *   updated:  how many tickers we successfully applied a new price for
+   *   total:    how many unique tickers we attempted
+   *   missing:  tickers that came back null or zero — surfaced to the
+   *             notification tray so the PM knows which symbols Yahoo
+   *             refused (typically Fundserv fund codes, delisted names,
+   *             or temporarily-throttled requests).
+   * }
    */
-  refreshAllPrices: () => Promise<{ updated: number; total: number }>;
+  refreshAllPrices: () => Promise<{ updated: number; total: number; missing: string[] }>;
 };
 
 const StockContext = createContext<StockContextType | null>(null);
@@ -789,35 +802,122 @@ export function StockProvider({ children }: { children: React.ReactNode }) {
    * Data button's job. This one is meant to be fast and runnable from
    * anywhere in the app.
    */
-  const refreshAllPrices = useCallback(async (): Promise<{ updated: number; total: number }> => {
-    const tickers = stocks.map((s) => s.ticker);
-    if (tickers.length === 0) return { updated: 0, total: 0 };
+  const refreshAllPrices = useCallback(async (): Promise<{ updated: number; total: number; missing: string[] }> => {
+    // ── 1. Collect stock tickers (Portfolio + Watchlist + funds/ETFs) ──
+    const stockTickers = stocks.map((s) => s.ticker);
+
+    // ── 2. Pull research blob tickers ──
+    // Tries to GET pm:research; if the call fails we just refresh
+    // stocks-only (degraded mode) rather than blocking the user.
+    type ResearchEntry = { ticker?: string; price?: number };
+    type ResearchBlob = {
+      newtonUpticks?: ResearchEntry[];
+      fundstratTop?: ResearchEntry[];
+      fundstratBottom?: ResearchEntry[];
+      fundstratSmidTop?: ResearchEntry[];
+      fundstratSmidBottom?: ResearchEntry[];
+      rbcCanadianFocus?: ResearchEntry[];
+      rbcUsFocus?: ResearchEntry[];
+      alphaPicks?: ResearchEntry[];
+    };
+    let research: ResearchBlob | null = null;
+    let researchTickers: string[] = [];
+    try {
+      const r = await fetch("/api/kv/research", { cache: "no-store" });
+      if (r.ok) {
+        const blob = (await r.json()) as ResearchBlob;
+        research = blob;
+        const collect = (arr: ResearchEntry[] | undefined) =>
+          (arr ?? []).map((e) => e?.ticker).filter((t): t is string => typeof t === "string" && t.length > 0);
+        researchTickers = [
+          ...collect(blob.newtonUpticks),
+          ...collect(blob.fundstratTop),
+          ...collect(blob.fundstratBottom),
+          ...collect(blob.fundstratSmidTop),
+          ...collect(blob.fundstratSmidBottom),
+          ...collect(blob.rbcCanadianFocus),
+          ...collect(blob.rbcUsFocus),
+          ...collect(blob.alphaPicks),
+        ];
+      }
+    } catch { /* non-fatal — refresh stocks-only */ }
+
+    // ── 3. Dedupe combined ticker set ──
+    const allTickers = Array.from(new Set([...stockTickers, ...researchTickers]));
+    if (allTickers.length === 0) return { updated: 0, total: 0, missing: [] };
+
+    // ── 4. Batched /api/prices fetch (route caps at 250) ──
+    let priceMap: Record<string, number | null> = {};
     try {
       const res = await fetch("/api/prices", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ tickers }),
+        body: JSON.stringify({ tickers: allTickers }),
       });
-      if (!res.ok) return { updated: 0, total: tickers.length };
+      if (!res.ok) {
+        // Total failure — every ticker is "missing".
+        return { updated: 0, total: allTickers.length, missing: allTickers };
+      }
       const data = await res.json();
-      const priceMap = (data.prices ?? {}) as Record<string, number | null>;
-      let applied = 0;
-      setStocks((prev) => {
-        const next = prev.map((s) => {
-          const p = priceMap[s.ticker];
-          if (typeof p === "number" && p > 0 && p !== s.price) {
-            applied++;
-            return { ...s, price: p };
-          }
-          return s;
-        });
-        persistStocks(next);
-        return next;
-      });
-      return { updated: applied, total: tickers.length };
+      priceMap = (data.prices ?? {}) as Record<string, number | null>;
     } catch {
-      return { updated: 0, total: tickers.length };
+      return { updated: 0, total: allTickers.length, missing: allTickers };
     }
+
+    // ── 5. Apply to pm:stocks via a single setStocks update ──
+    let applied = 0;
+    setStocks((prev) => {
+      const next = prev.map((s) => {
+        const p = priceMap[s.ticker];
+        if (typeof p === "number" && p > 0 && p !== s.price) {
+          applied++;
+          return { ...s, price: p };
+        }
+        return s;
+      });
+      persistStocks(next);
+      return next;
+    });
+
+    // ── 6. Apply to pm:research for blob entries that carry an inline
+    // price (Newton Upticks and Alpha Picks store one; the Idea/RBC
+    // lists don't). One PUT only fires if at least one price changed.
+    if (research) {
+      const patched = { ...research };
+      let changed = false;
+      const applyPrice = (arr: ResearchEntry[] | undefined): ResearchEntry[] | undefined => {
+        if (!Array.isArray(arr)) return arr;
+        return arr.map((e) => {
+          if (!e?.ticker) return e;
+          const p = priceMap[e.ticker];
+          if (typeof p === "number" && p > 0 && p !== e.price) {
+            changed = true;
+            applied++;
+            return { ...e, price: p };
+          }
+          return e;
+        });
+      };
+      patched.newtonUpticks = applyPrice(patched.newtonUpticks);
+      patched.alphaPicks = applyPrice(patched.alphaPicks);
+      if (changed) {
+        try {
+          await fetch("/api/kv/research", {
+            method: "PUT",
+            headers: { "Content-Type": "application/json" },
+            body: JSON.stringify(patched),
+          });
+        } catch { /* non-fatal — display will refresh on next page load */ }
+      }
+    }
+
+    // ── 7. Tickers Yahoo didn't return a usable price for ──
+    const missing = allTickers.filter((t) => {
+      const p = priceMap[t];
+      return p == null || p <= 0;
+    });
+
+    return { updated: applied, total: allTickers.length, missing };
   }, [stocks, persistStocks]);
 
   const updateSector = useCallback((ticker: string, sector: string) => {

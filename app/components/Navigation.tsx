@@ -30,38 +30,75 @@ export function Navigation() {
   const [quickAddOpen, setQuickAddOpen] = useState(false);
   const [paletteOpen, setPaletteOpen] = useState(false);
   const [refreshing, setRefreshing] = useState(false);
-  const { refreshAllPrices } = useStocks();
+  const { refreshAllPrices, loading: stocksLoading } = useStocks();
   const { notify } = useNotifications();
 
-  // Fast global price refresh — hits /api/prices for every ticker in
-  // pm:stocks in a single batched call. No fund-data deep refresh, no
-  // sub-fund crawl, no technicals recalc — the heavier flow still lives
-  // on the Dashboard's "Refresh All Data" button. This one just keeps
-  // prices fresh from anywhere in the app.
+  // Fast global price refresh — single batched /api/prices call across
+  // every ticker in pm:stocks AND every ticker referenced in the
+  // Research blob (Newton Upticks, Fundstrat, RBC Focus, Alpha Picks).
+  // No fund-data deep refresh, no sub-fund crawl, no technicals
+  // recompute — the heavier flow still lives on the Dashboard's
+  // "Refresh All Data" button. This one just keeps prices fresh from
+  // anywhere in the app, including the Research tickers that aren't
+  // in pm:stocks.
+  //
+  // Surfaces which tickers Yahoo refused (typically Fundserv codes,
+  // delisted symbols, throttled responses) directly in the
+  // notification so the PM can decide whether to retry or investigate.
   const handleGlobalRefresh = async () => {
     if (refreshing) return;
+    // Don't fire while StockContext is still hydrating from KV —
+    // refreshAllPrices would otherwise see an empty stocks array and
+    // report "Nothing to refresh" even though the portfolio is non-empty.
+    if (stocksLoading) {
+      notify({
+        level: "info",
+        title: "Still loading…",
+        message: "Holdings are still hydrating from Redis. Try again in a second.",
+        source: "Global refresh",
+      });
+      return;
+    }
     setRefreshing(true);
     try {
-      const { updated, total } = await refreshAllPrices();
-      if (updated > 0) {
-        notify({
-          level: "success",
-          title: "Prices refreshed",
-          message: `${updated} of ${total} updated`,
-          source: "Global refresh",
-        });
-      } else if (total === 0) {
+      const { updated, total, missing } = await refreshAllPrices();
+      // Build a compact "missing" label that fits in the notification.
+      // Show up to 10 tickers verbatim, then "+N more" if there are more.
+      const MAX_LISTED = 10;
+      const missingLabel = missing.length === 0
+        ? ""
+        : missing.length <= MAX_LISTED
+          ? `Didn't refresh: ${missing.join(", ")}`
+          : `Didn't refresh: ${missing.slice(0, MAX_LISTED).join(", ")} (+${missing.length - MAX_LISTED} more)`;
+
+      if (total === 0) {
         notify({
           level: "info",
           title: "Nothing to refresh",
-          message: "No stocks in Portfolio or Watchlist yet.",
+          message: "No stocks, ETFs, or Research tickers found.",
+          source: "Global refresh",
+        });
+      } else if (updated === 0 && missing.length === total) {
+        // Total failure — Yahoo returned nothing usable for anything.
+        notify({
+          level: "error",
+          title: "Refresh failed",
+          message: missingLabel || "All tickers came back empty from Yahoo.",
+          source: "Global refresh",
+        });
+      } else if (missing.length === 0) {
+        notify({
+          level: "success",
+          title: "Prices refreshed",
+          message: `${updated} of ${total} updated · nothing missing`,
           source: "Global refresh",
         });
       } else {
+        // Partial success — most refreshed, some didn't.
         notify({
           level: "warn",
-          title: "Prices unchanged",
-          message: `Checked ${total} tickers — nothing newer came back from Yahoo.`,
+          title: "Prices refreshed (with gaps)",
+          message: `${updated} of ${total} updated · ${missingLabel}`,
           source: "Global refresh",
         });
       }
