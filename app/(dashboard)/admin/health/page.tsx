@@ -151,7 +151,7 @@ export default function AdminHealthPage() {
       </header>
 
       {data && (
-        <div className="grid grid-cols-4 gap-2">
+        <div className="grid grid-cols-2 sm:grid-cols-4 gap-2">
           <SummaryTile label="OK" count={data.summary.ok} tone="ok" />
           <SummaryTile label="Warn" count={data.summary.warn} tone="warn" />
           <SummaryTile label="Fail" count={data.summary.fail} tone="fail" />

@@ -16,6 +16,12 @@ import RiskAlertPanel from "@/app/components/RiskAlertPanel";
 import RatioVsSpxSparkline from "@/app/components/RatioVsSpxSparkline";
 import ScoreHistory from "@/app/components/ScoreHistory";
 import { ScoreDelta } from "@/app/components/ScoreDelta";
+import { useNotifications } from "@/app/lib/NotificationsContext";
+
+// Same threshold as the Score All flow in PortfolioOverview — a
+// composite move >5 pts is worth a "Score variance" warning so the PM
+// can confirm it reflects real news rather than an AI artifact.
+const VARIANCE_ALERT_THRESHOLD = 5;
 import StockChart from "@/app/components/StockChart";
 
 // ── Helpers ──
@@ -1001,6 +1007,7 @@ export default function StockDetailPage() {
     return () => el.removeEventListener("scroll", onScroll);
   }, []);
   const { getStock, scoredStocks, marketData, updateScore, updateExplanations, updateLastScored, updatePrice, updateHealthData, updateTechnicals, updateStockFields, updateWeight, updateFundData, moveBucket, removeStock, pimModels, toggleModelEligibility, updateModelWeight, getAnalystSnapshot, updateAnalystSnapshot, getAnalystReports, uploadAnalystReport, removeAnalystReport, convertAnalystTarget, tickerCurrency } = useStocks();
+  const { notify } = useNotifications();
   const stock = getStock(ticker);
   const [scoring, setScoring] = useState(false);
   // Captures verification metadata from the last successful rescore so the
@@ -1094,11 +1101,29 @@ export default function StockDetailPage() {
             }
           : {}),
       };
+      // The POST returns { delta, priorTotal, newTotal }. When the
+      // composite moved by more than VARIANCE_ALERT_THRESHOLD points,
+      // fire a warn notification so the PM is prompted to verify the
+      // change reflects real news rather than an AI artifact.
       fetch("/api/kv/score-history", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({ ticker: stock.ticker, entry, mode: "append" }),
-      }).catch(() => { /* non-fatal — history is informational */ });
+      })
+        .then((r) => r.ok ? r.json() : null)
+        .then((result) => {
+          if (!result || typeof result.delta !== "number") return;
+          if (Math.abs(result.delta) > VARIANCE_ALERT_THRESHOLD) {
+            const sign = result.delta > 0 ? "+" : "";
+            notify({
+              level: "warn",
+              title: `${stock.ticker}: composite moved ${sign}${result.delta.toFixed(1)} pts`,
+              message: `${typeof result.priorTotal === "number" ? result.priorTotal.toFixed(1) : "?"} → ${typeof result.newTotal === "number" ? result.newTotal.toFixed(1) : "?"} — confirm this reflects real new data rather than an AI artifact.`,
+              source: "Score variance",
+            });
+          }
+        })
+        .catch(() => { /* non-fatal — history is informational */ });
       prevScoresRef.current = stock.scores;
       return;
     }

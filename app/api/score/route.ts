@@ -2,6 +2,7 @@ import Anthropic from "@anthropic-ai/sdk";
 import { NextRequest, NextResponse } from "next/server";
 import type { ScoreKey, ScoreExplanations, ScoreDataPointSource, HealthData } from "@/app/lib/types";
 import { SCORE_GROUPS } from "@/app/lib/types";
+import { callAnthropicWithRetry } from "@/app/lib/anthropic-retry";
 import type { OHLCVBar, TechnicalIndicators, RiskAlert } from "@/app/lib/technicals";
 import { computeTechnicals, computeRiskAlert, formatTechnicalsForPrompt } from "@/app/lib/technicals";
 import { formatEdgarSnapshotForPrompt } from "@/app/lib/edgar-prompt";
@@ -746,8 +747,17 @@ export async function POST(request: NextRequest) {
       // Append the EDGAR XBRL block for US issuers. It's clearly
       // labeled inside the block so Claude can prefer it over Yahoo
       // for fundamentals while still using Yahoo for price/beta/peers.
+      //
+      // When there's no EDGAR block AND the ticker is Canadian, emit
+      // an explicit "no SEC data" hint so Claude doesn't sit waiting
+      // for a structured-feed block that's never going to arrive.
+      // Tells the model to lean harder on web_search of the issuer's
+      // own MD&A / IR press releases / SEDAR+ filings as the
+      // authoritative source.
       if (edgarBlock) {
         financialContext += `\n\n---\n\n${edgarBlock}`;
+      } else if (isCanadianListing) {
+        financialContext += `\n\n---\n\n=== NO SEC EDGAR DATA AVAILABLE ===\n${upperTicker} is a Canadian-only listing (no US dual-listing in the SEC ticker map). SEC EDGAR XBRL data is unavailable for this issuer.\n\nFor fundamental categories (growth, leverageCoverage, cashFlowQuality, relativeValuation, historicalValuation), use the Yahoo Finance data block above as the primary source and aggressively use web_search to verify against the company's MOST RECENT quarterly MD&A or earnings press release (cite the IR-page or SEDAR+ filing URL in sourceDetail). For ownershipTrends (normally driven by Form 4 in the US): no SEDI insider feed is available in this pipeline — report the most recent insider activity disclosed via the company's MD&A or news releases if web_search surfaces it, otherwise score conservatively at the midpoint and confidence: "low". Do not pretend Form 4-style data exists when it doesn't.\n`;
       }
 
       // Append PM-logged notes if any. Each note is rendered as a single
@@ -819,6 +829,40 @@ export async function POST(request: NextRequest) {
       financialContext = "Financial data API unavailable. Use your best knowledge but note that data should be verified.";
     }
 
+    // ── Previous-rescore context ────────────────────────────────────
+    // Read the most recent entry from pm:score-history (if any) for this
+    // ticker and embed it in the prompt. Asking the model to "affirm or
+    // explain changes" against last week's scores stabilises a category
+    // that would otherwise oscillate (0→2→1→2) on each rescore, and
+    // produces honest diff narratives: "downgraded growth from 3 to 2
+    // because Q3 revenue growth decelerated to 8% from 14%."
+    try {
+      const redis = await getRedis();
+      const raw = await redis.get("pm:score-history");
+      if (raw) {
+        const blob = JSON.parse(raw) as Record<string, Array<{ date?: string; timestamp?: string; total?: number; scores?: Record<string, number> }>>;
+        const arr = blob[upperTicker];
+        if (Array.isArray(arr) && arr.length > 0) {
+          const latest = arr[arr.length - 1];
+          if (latest?.scores && typeof latest.scores === "object") {
+            const ageDays = latest.timestamp
+              ? Math.round((Date.now() - new Date(latest.timestamp).getTime()) / 86400000)
+              : null;
+            const scoreLines = Object.entries(latest.scores)
+              .filter(([, v]) => typeof v === "number")
+              .map(([k, v]) => `  ${k}: ${v}`)
+              .join("\n");
+            const ageLabel = ageDays != null ? `${ageDays} day${ageDays === 1 ? "" : "s"} ago` : "previously";
+            financialContext += `\n\n---\n\n=== PREVIOUS RESCORE (${ageLabel}) ===\nLast week's per-category scores for ${upperTicker} (composite ${typeof latest.total === "number" ? latest.total.toFixed(1) : "n/a"}):\n${scoreLines}\n\nTreat these as your prior. AFFIRM the score for a category when the underlying data hasn't materially changed — re-deriving from scratch produces unnecessary volatility. Only change a category's value when there's a concrete reason rooted in the new data (a fresh earnings print, a guidance change, a new analyst note, a sector regime shift). When you DO change a category, briefly state the trigger in the explanation summary so the diff is auditable (e.g. "downgraded from 3 to 2: Q3 revenue growth decelerated to 8% YoY from 14%").\n`;
+          }
+        }
+      }
+    } catch (e) {
+      // Non-fatal — without prior context the model just rescores from
+      // scratch like it did before this branch existed.
+      console.error("[Score] failed to load previous score-history for prompt context:", e);
+    }
+
     // Verify-mode preamble: tells the model that web_search is active and
     // it should use the tool aggressively for the items listed in the
     // WEB SEARCH VERIFICATION section of the system prompt (and especially
@@ -828,6 +872,51 @@ export async function POST(request: NextRequest) {
             ? `THIS IS A CANADIAN LISTING (${upperTicker}) — no EDGAR data is available. Use web_search as the PRIMARY financial verification: look up the company's most recent quarterly press release / MD&A / SEDAR+ filing and use those numbers in your dataPoints. Cite each source URL or publication name in sourceDetail.`
             : `Verify the latest dividend / buyback / split changes.`}\nRespect the noise filter in the system prompt: ignore rumors, opinion blogs, and unsourced speculation. Cite source name and date in dataPoints.sourceDetail for every web-sourced fact.\nMax 2 searches — be targeted.\n=== End verified scoring ===\n`
       : "";
+
+    // ── Input health check ────────────────────────────────────────────
+    // Before paying Anthropic ~$0.18 to score this stock, make sure we
+    // actually have enough input data to produce a credible result.
+    //
+    // Yahoo financialContext is the universal floor: if Yahoo returned
+    // nothing (or the resulting context is suspiciously short — typically
+    // a fallback "API unavailable" stub), every fundamental category
+    // would be Claude guessing. Better to skip and surface the upstream
+    // failure to the user so they can retry after Yahoo recovers.
+    //
+    // For US-listed tickers we ALSO expect EDGAR data; its absence on
+    // a US ticker is a real signal something's off (CIK lookup failed,
+    // company facts endpoint returned 4xx, etc.). We don't hard-fail on
+    // missing EDGAR alone since some legitimate small caps don't have
+    // XBRL filings, but we log a warning so the [Score] log line in
+    // Vercel surfaces the degraded run.
+    //
+    // Returns 422 (Unprocessable Entity) + `skipped: true` so the Score
+    // All loop can distinguish "we deliberately didn't run" from "the
+    // run failed inside Anthropic" — different recovery paths.
+    const FINANCIAL_CONTEXT_MIN_CHARS = 500;
+    const yahooOk = rawModules != null && financialContext.length >= FINANCIAL_CONTEXT_MIN_CHARS;
+    if (!yahooOk) {
+      const reason = rawModules == null
+        ? "Yahoo Finance returned no modules"
+        : `financial context too short (${financialContext.length} chars; need ${FINANCIAL_CONTEXT_MIN_CHARS}+)`;
+      console.warn(`[Score] ${upperTicker} skipped: ${reason}. Saved ~$0.18 in Anthropic spend.`);
+      return NextResponse.json(
+        {
+          error: `Skipped scoring ${upperTicker}: ${reason}. Refresh prices and retry — usually a transient Yahoo issue.`,
+          skipped: true,
+          reason: "input-health-check-failed",
+        },
+        { status: 422 },
+      );
+    }
+    // EDGAR is scoped inside the try block above; proxy "did we get
+    // EDGAR data" by looking for the labeled header in financialContext.
+    const edgarPresent = financialContext.includes("=== SEC EDGAR XBRL FINANCIALS");
+    if (!isCanadianListing && !edgarPresent) {
+      // Soft warning — proceed but log so the Vercel dashboard shows
+      // which US tickers are scoring without EDGAR backing.
+      console.warn(`[Score] ${upperTicker} US-listed but EDGAR returned null — proceeding with Yahoo-only scoring (lower confidence expected)`);
+    }
 
     // Build tool list. Anthropic's web_search_20250305 tool runs server-side
     // and returns its results inline; the SDK exposes them through
@@ -844,20 +933,33 @@ export async function POST(request: NextRequest) {
     // discount on the cached portion. On a batch rescore of 50 names this
     // cuts input-token spend by ~25-30%. Model behavior is identical —
     // cache_control is a billing/latency optimization, not a quality knob.
-    const message = await client.messages.create({
-      model: "claude-sonnet-4-6",
-      max_tokens: 8192,
-      messages: [
-        {
-          role: "user",
-          content: `Score the following stock: ${upperTicker}\n\nHere is the real financial data for this company — USE THIS DATA for your scoring and explanations:\n\n${financialContext}${verifyPreamble}`,
-        },
-      ],
-      system: [
-        { type: "text", text: SCORING_PROMPT, cache_control: { type: "ephemeral" } },
-      ],
-      tools: tools as unknown as Anthropic.Messages.Tool[],
-    });
+    // temperature: 0 makes scoring reproducible — the same inputs should
+    // always produce the same scores. Without this Anthropic's sampling
+    // can cause a category to oscillate (e.g. 0→2→1→2) across weekly
+    // rescores even when nothing about the underlying company changed.
+    //
+    // callAnthropicWithRetry wraps this in up to 3 attempts with
+    // exponential backoff (1s, 2s) on transient errors — 429 rate
+    // limits, 5xx server errors, 529 overloaded, and network errors.
+    // Non-retryable errors (400, 401, 404, JSON parse) throw on first
+    // attempt so we don't waste retries on a real bug.
+    const message = await callAnthropicWithRetry(`Score ${upperTicker}`, () =>
+      client.messages.create({
+        model: "claude-sonnet-4-6",
+        max_tokens: 8192,
+        temperature: 0,
+        messages: [
+          {
+            role: "user",
+            content: `Score the following stock: ${upperTicker}\n\nHere is the real financial data for this company — USE THIS DATA for your scoring and explanations:\n\n${financialContext}${verifyPreamble}`,
+          },
+        ],
+        system: [
+          { type: "text", text: SCORING_PROMPT, cache_control: { type: "ephemeral" } },
+        ],
+        tools: tools as unknown as Anthropic.Messages.Tool[],
+      })
+    );
 
     // Walk the response content blocks to (a) collect the final text body
     // for JSON parsing and (b) capture web_search metadata (queries issued,

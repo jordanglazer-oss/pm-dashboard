@@ -13,6 +13,7 @@
 import Anthropic from "@anthropic-ai/sdk";
 import { NextRequest, NextResponse } from "next/server";
 import { createLogger } from "@/app/lib/logger";
+import { callAnthropicWithRetry } from "@/app/lib/anthropic-retry";
 
 const client = new Anthropic();
 const log = createLogger("Backfill-summaries");
@@ -51,13 +52,15 @@ export async function POST(request: NextRequest) {
       }
     }
 
-    const message = await client.messages.create({
-      model: "claude-sonnet-4-6",
-      max_tokens: 512,
-      messages: [
-        {
-          role: "user",
-          content: `Given the following stock data, generate two fields as JSON:
+    const message = await callAnthropicWithRetry(`Backfill ${ticker.toUpperCase()}`, () =>
+      client.messages.create({
+        model: "claude-sonnet-4-6",
+        max_tokens: 512,
+        temperature: 0,
+        messages: [
+          {
+            role: "user",
+            content: `Given the following stock data, generate two fields as JSON:
 
 ${contextLines.join("\n")}
 
@@ -66,9 +69,10 @@ Respond with ONLY valid JSON (no markdown):
   "companySummary": "1-2 sentences: what the company does in plain language a PM can relay to clients. Focus on core business, key products/services, and revenue drivers.",
   "investmentThesis": "1-2 sentences: why to own this stock now. Reference specific catalysts, valuation support, or thematic tailwinds. A concise elevator pitch."
 }`,
-        },
-      ],
-    });
+          },
+        ],
+      })
+    );
 
     const text = message.content
       .filter((b): b is Anthropic.TextBlock => b.type === "text")

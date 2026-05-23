@@ -1058,7 +1058,7 @@ export function PimModel({ groups }: Props) {
               <span>since rebalance · {driftSummary.anchorDate}</span>
             </div>
           </div>
-          <div className="grid grid-cols-3 gap-3">
+          <div className="grid grid-cols-1 sm:grid-cols-3 gap-3">
             <div className="rounded-xl bg-slate-50 px-4 py-3">
               <div className="text-[10px] uppercase tracking-wider text-slate-500 font-semibold">Alpha Model</div>
               <div className={`text-lg font-bold mt-1 ${

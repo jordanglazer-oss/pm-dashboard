@@ -1296,11 +1296,11 @@ export function MorningBrief({
 
       {/* Header */}
       <header>
-        <h1 className="text-4xl font-semibold tracking-tight">Morning Brief</h1>
-        <p className="mt-2 text-xl text-slate-400">
-          {brief?.date || marketData.date}
+        <h1 className="text-2xl sm:text-4xl font-semibold tracking-tight">Morning Brief</h1>
+        <p className="mt-2 text-base sm:text-xl text-slate-400 flex flex-wrap items-baseline gap-x-3">
+          <span>{brief?.date || marketData.date}</span>
           {brief?.generatedAt && (
-            <span className="ml-3 text-base text-slate-300">
+            <span className="text-sm sm:text-base text-slate-300">
               Generated {new Date(brief.generatedAt).toLocaleString("en-US", { month: "short", day: "numeric", hour: "numeric", minute: "2-digit", hour12: true })}
             </span>
           )}

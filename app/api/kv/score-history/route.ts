@@ -202,13 +202,29 @@ export async function POST(req: NextRequest) {
         { status: 400 },
       );
     }
+    // Snapshot the prior latest entry BEFORE the append, so the response
+    // can carry the composite delta back to the client. The client uses
+    // this to fire a "Score moved significantly" warning when the
+    // |delta| exceeds the variance threshold — pulling the comparison
+    // server-side keeps the source of truth in one place.
+    const priorLatest = arr[arr.length - 1];
+    const priorTotal = typeof priorLatest?.total === "number" ? priorLatest.total : null;
     arr.push({
       ...entry,
       timestamp: entry.timestamp || new Date().toISOString(),
     });
     current[ticker] = arr;
     await redis.set(KEY, JSON.stringify(current));
-    return NextResponse.json({ ok: true, count: arr.length, mode: "append" });
+    const newTotal = typeof entry.total === "number" ? entry.total : null;
+    const delta = priorTotal != null && newTotal != null ? newTotal - priorTotal : null;
+    return NextResponse.json({
+      ok: true,
+      count: arr.length,
+      mode: "append",
+      priorTotal,
+      newTotal,
+      delta,
+    });
   } catch (e) {
     console.error("Redis write error (score-history):", e);
     return NextResponse.json({ error: "Failed to save" }, { status: 500 });

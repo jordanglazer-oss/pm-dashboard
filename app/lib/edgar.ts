@@ -121,11 +121,25 @@ async function secFetch(url: string): Promise<Response> {
  * tickers (no -T / .TO suffixes), so Canadian listings are not
  * findable here — that's expected, callers should fall back to Yahoo.
  */
+/** Suffixes that identify a Canadian listing on TSX / TSXV / NEO / CSE.
+ *  Used both to short-circuit EDGAR lookups (saves a Redis hit and an
+ *  HTTP fetch) and to drive the cross-listing fallback in
+ *  getCikForTickerWithCrossList. */
+const CANADIAN_SUFFIX_RE = /(\.TO|\.V|\.NE|\.CN|-T|\.U)$/i;
+
+export function stripCanadianSuffix(ticker: string): string {
+  return ticker.replace(CANADIAN_SUFFIX_RE, "");
+}
+
+export function isCanadianTicker(ticker: string): boolean {
+  return CANADIAN_SUFFIX_RE.test(ticker.trim());
+}
+
 export async function getCikForTicker(ticker: string): Promise<{ cik: number; paddedCik: string; entityName: string } | null> {
   const upper = ticker.trim().toUpperCase();
   // Quick exit for obvious non-US tickers — saves a Redis hit and a
   // pointless EDGAR fetch for Canadian / international names.
-  if (upper.endsWith("-T") || upper.endsWith(".TO") || upper.endsWith(".U")) return null;
+  if (isCanadianTicker(upper)) return null;
 
   const map = await loadTickerMap();
   for (const entry of Object.values(map)) {
@@ -137,6 +151,62 @@ export async function getCikForTicker(ticker: string): Promise<{ cik: number; pa
       };
     }
   }
+  return null;
+}
+
+/**
+ * Cross-listing-aware CIK lookup. For US tickers behaves identically to
+ * getCikForTicker. For Canadian tickers (with .TO / .V / .NE / .CN / -T
+ * suffix), strips the suffix and tries the resulting base ticker in the
+ * SEC map — recovers EDGAR data for big SEC dual-filers like RY, TD,
+ * BNS, BMO, ENB, BCE, BAM, BIP, BEP, SHOP, SU, etc.
+ *
+ * Returns the matched CIK info plus a `crossListed: true` flag when the
+ * match came via the cross-listing fallback rather than a direct hit,
+ * so callers can warn the scoring prompt that the SEC reports may
+ * reflect the US dual-listing rather than the primary Canadian one
+ * (line items can differ slightly under US GAAP vs IFRS — typically
+ * small but worth flagging for the model).
+ */
+export async function getCikForTickerWithCrossList(
+  ticker: string,
+): Promise<{ cik: number; paddedCik: string; entityName: string; crossListed: boolean } | null> {
+  const upper = ticker.trim().toUpperCase();
+
+  // Direct match first (covers US listings and any Canadian tickers
+  // that happen to appear in the SEC map under their TSX symbol — rare
+  // but defensive).
+  const map = await loadTickerMap();
+  for (const entry of Object.values(map)) {
+    if (entry.ticker.toUpperCase() === upper) {
+      return {
+        cik: entry.cik_str,
+        paddedCik: padCik(entry.cik_str),
+        entityName: entry.title,
+        crossListed: false,
+      };
+    }
+  }
+
+  // Canadian-suffix fallback: try the suffix-stripped form. Many TSX
+  // bluechips (RY, TD, BNS, BMO, ENB, BCE, etc.) file with the SEC
+  // under their bare ticker, so RY.TO → RY in the SEC map.
+  if (isCanadianTicker(upper)) {
+    const stripped = stripCanadianSuffix(upper);
+    if (stripped && stripped !== upper) {
+      for (const entry of Object.values(map)) {
+        if (entry.ticker.toUpperCase() === stripped) {
+          return {
+            cik: entry.cik_str,
+            paddedCik: padCik(entry.cik_str),
+            entityName: entry.title,
+            crossListed: true,
+          };
+        }
+      }
+    }
+  }
+
   return null;
 }
 

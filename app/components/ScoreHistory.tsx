@@ -26,6 +26,17 @@ type Entry = {
   raw: number;
   adjusted: number;
   scores: Scores;
+  /** Set when the rescore used Anthropic web_search to verify cached
+   *  fundamentals against the latest filings / press releases. */
+  verifiedSearch?: boolean;
+  /** Each query the model issued during the verified rescore. */
+  searchQueries?: string[];
+  /** URLs the model cited as sources. */
+  searchCitations?: Array<{ url: string; title?: string }>;
+  /** ISO timestamp of the most recent manual-edit overwrite of this
+   *  entry's total/scores. Present when a category was tweaked within
+   *  the 72h revision window. */
+  revisedAt?: string;
 };
 
 type Props = {
@@ -53,6 +64,11 @@ export default function ScoreHistory({ ticker, currentTotal, currentRaw, classNa
   const [entries, setEntries] = useState<Entry[] | null>(null);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
+  // Which entries have their Sources panel expanded. Keyed by the
+  // entry's timestamp since that's unique per rescore (history is
+  // strictly chronological). Collapsed by default to keep the panel
+  // compact; the PM expands when they want to audit Claude's sourcing.
+  const [expandedSources, setExpandedSources] = useState<Set<string>>(new Set());
 
   const load = useCallback(async () => {
     setLoading(true);
@@ -169,6 +185,71 @@ export default function ScoreHistory({ ticker, currentTotal, currentRaw, classNa
                 {categoryChanges.length === 0 && totalDelta != null && totalDelta !== 0 && (
                   <div className="mt-1 text-[10px] text-slate-400">Regime-adjusted change only (no category edits)</div>
                 )}
+                {/* Sources audit: web_search queries + citation URLs.
+                    Collapsed by default to keep the panel compact;
+                    PM clicks to expand when they want to verify Claude's
+                    sourcing on a specific rescore. */}
+                {(() => {
+                  const queries = entry.searchQueries ?? [];
+                  const citations = entry.searchCitations ?? [];
+                  if (queries.length === 0 && citations.length === 0) return null;
+                  const expanded = expandedSources.has(entry.timestamp);
+                  return (
+                    <div className="mt-1.5">
+                      <button
+                        onClick={() => {
+                          setExpandedSources((prev) => {
+                            const next = new Set(prev);
+                            if (next.has(entry.timestamp)) next.delete(entry.timestamp);
+                            else next.add(entry.timestamp);
+                            return next;
+                          });
+                        }}
+                        className="inline-flex items-center gap-1 text-[10px] text-slate-400 hover:text-slate-600 transition-colors"
+                      >
+                        <svg className={`w-2.5 h-2.5 transition-transform ${expanded ? "rotate-90" : ""}`} fill="none" stroke="currentColor" strokeWidth="2.5" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" d="m8.25 4.5 7.5 7.5-7.5 7.5" /></svg>
+                        Sources · {queries.length} {queries.length === 1 ? "search" : "searches"}
+                        {citations.length > 0 && ` · ${citations.length} ${citations.length === 1 ? "citation" : "citations"}`}
+                      </button>
+                      {expanded && (
+                        <div className="mt-1.5 rounded-lg bg-slate-50 border border-slate-200 p-2.5 space-y-2">
+                          {queries.length > 0 && (
+                            <div>
+                              <div className="text-[10px] uppercase tracking-wider font-semibold text-slate-500 mb-1">Search queries Claude issued</div>
+                              <ul className="space-y-0.5">
+                                {queries.map((q, i) => (
+                                  <li key={i} className="text-[11px] text-slate-700 break-words">
+                                    <span className="text-slate-400">{i + 1}.</span> {q}
+                                  </li>
+                                ))}
+                              </ul>
+                            </div>
+                          )}
+                          {citations.length > 0 && (
+                            <div>
+                              <div className="text-[10px] uppercase tracking-wider font-semibold text-slate-500 mb-1">Citation URLs</div>
+                              <ul className="space-y-0.5">
+                                {citations.map((c, i) => (
+                                  <li key={i} className="text-[11px] break-all">
+                                    <a
+                                      href={c.url}
+                                      target="_blank"
+                                      rel="noreferrer noopener"
+                                      className="text-blue-600 hover:underline"
+                                      title={c.title ?? c.url}
+                                    >
+                                      {c.title ? `${c.title} ↗` : `${c.url} ↗`}
+                                    </a>
+                                  </li>
+                                ))}
+                              </ul>
+                            </div>
+                          )}
+                        </div>
+                      )}
+                    </div>
+                  );
+                })()}
               </div>
             );
           })}

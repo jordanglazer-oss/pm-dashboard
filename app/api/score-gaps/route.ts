@@ -23,6 +23,7 @@ import { NextRequest, NextResponse } from "next/server";
 import type { ScoreKey, ScoreExplanations, ScoreDataPointSource } from "@/app/lib/types";
 import { SCORE_GROUPS } from "@/app/lib/types";
 import { createLogger } from "@/app/lib/logger";
+import { callAnthropicWithRetry } from "@/app/lib/anthropic-retry";
 
 const client = new Anthropic();
 const log = createLogger("Score-gaps");
@@ -94,9 +95,11 @@ export async function POST(request: NextRequest) {
       return acc;
     }, {});
 
-    const message = await client.messages.create({
+    const message = await callAnthropicWithRetry(`Score-gaps ${ticker.toUpperCase()}`, () =>
+      client.messages.create({
       model: "claude-sonnet-4-6",
       max_tokens: 2048,
+      temperature: 0,
       messages: [
         {
           role: "user",
@@ -121,7 +124,8 @@ Respond ONLY with valid JSON:
 }`,
         },
       ],
-    });
+      })
+    );
 
     const text = message.content
       .filter((b): b is Anthropic.TextBlock => b.type === "text")

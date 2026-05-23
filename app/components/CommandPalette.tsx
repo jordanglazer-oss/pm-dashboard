@@ -222,7 +222,7 @@ export function CommandPalette({ open, onClose, onTriggerQuickAdd }: Props) {
 
   return (
     <div
-      className="fixed inset-0 z-[110] flex items-start justify-center bg-slate-900/60 backdrop-blur-sm pt-20 px-4"
+      className="fixed inset-0 z-[110] flex items-start justify-center bg-slate-900/60 backdrop-blur-sm pt-10 sm:pt-20 px-4"
       onClick={onClose}
     >
       <div
