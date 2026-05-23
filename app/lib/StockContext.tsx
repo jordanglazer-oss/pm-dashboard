@@ -153,6 +153,18 @@ type StockContextType = {
    * }
    */
   refreshAllPrices: () => Promise<{ updated: number; total: number; missing: string[] }>;
+  /**
+   * Recompute the deterministic `researchMentions` category for every
+   * Portfolio + Watchlist ticker from the current research-scrape
+   * caches. Applies the new score + explanation via updateScore +
+   * updateExplanations so the category reflects today's mentions
+   * without forcing a full Anthropic rescore.
+   *
+   * Called automatically on initial context hydration, and can be
+   * called from the Research page after a scrape lands so the score
+   * jumps as soon as the new mentions cache is written.
+   */
+  refreshResearchMentions: () => Promise<void>;
 };
 
 const StockContext = createContext<StockContextType | null>(null);
@@ -920,6 +932,83 @@ export function StockProvider({ children }: { children: React.ReactNode }) {
     return { updated: applied, total: allTickers.length, missing };
   }, [stocks, persistStocks]);
 
+  /**
+   * Batch-refresh researchMentions across all known tickers from the
+   * current research-scrape caches. POSTs to /api/research-mentions
+   * (deterministic, no Anthropic spend) and applies each result via
+   * updateScore + updateExplanations.
+   */
+  const refreshResearchMentions = useCallback(async (): Promise<void> => {
+    const tickers = stocks.map((s) => s.ticker);
+    if (tickers.length === 0) return;
+    try {
+      const res = await fetch("/api/research-mentions", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ tickers }),
+      });
+      if (!res.ok) return;
+      const data = await res.json();
+      const results = (data?.results ?? {}) as Record<string, {
+        score: number;
+        rawDelta: number;
+        mentions: Array<{ source: string; label: string; direction: string; analyzedAt?: string }>;
+      }>;
+      // Apply each ticker's new score + explanation. Wrapped in a
+      // single setStocks below would be cleaner perf-wise, but
+      // updateScore/updateExplanations already batch through
+      // persistStocks's debounce — fine for one-shot updates triggered
+      // a few times per session.
+      const { buildResearchMentionsExplanation } = await import("./research-mentions");
+      for (const [tickerKey, result] of Object.entries(results)) {
+        // Find the matching stock by case-insensitive ticker match —
+        // the API normalises to uppercase, our context may have mixed
+        // case (e.g. CN, RY.TO).
+        const stock = stocks.find((s) => s.ticker.toUpperCase() === tickerKey);
+        if (!stock) continue;
+        if (typeof result.score !== "number") continue;
+        // Only update when something actually changed — avoids
+        // pointless re-renders + persistStocks calls.
+        if (stock.scores.researchMentions === result.score) {
+          // Score unchanged. Still refresh the explanation in case the
+          // mentions list rotated (different sources contributed but
+          // delta clamped to the same value).
+        }
+        updateScore(stock.ticker, "researchMentions", result.score);
+        const explanation = buildResearchMentionsExplanation(stock.ticker, {
+          score: result.score,
+          rawDelta: result.rawDelta,
+          mentions: result.mentions.map((m) => ({
+            source: m.source as never,
+            label: m.label,
+            direction: m.direction as "bullish" | "bearish",
+            analyzedAt: m.analyzedAt,
+          })),
+          confidence: "high",
+        });
+        updateExplanations(stock.ticker, { researchMentions: explanation });
+      }
+    } catch {
+      // Non-fatal — UI just keeps the prior score until next refresh.
+    }
+  // updateScore / updateExplanations are stable from useCallback; including
+  // them satisfies the lint without changing identity.
+  }, [stocks, updateScore, updateExplanations]);
+
+  // Auto-refresh researchMentions once stocks have hydrated. Pure
+  // Redis read on the server, no Anthropic spend — fires once per
+  // session so the category always reflects today's research caches
+  // when the dashboard opens. Ref-gated to dodge React-Strict-Mode
+  // double-invocations and avoid re-firing on every stocks mutation.
+  const mentionsBootstrapRef = useRef(false);
+  useEffect(() => {
+    if (loading) return;
+    if (mentionsBootstrapRef.current) return;
+    if (stocks.length === 0) return;
+    mentionsBootstrapRef.current = true;
+    void refreshResearchMentions();
+  }, [loading, stocks.length, refreshResearchMentions]);
+
   const updateSector = useCallback((ticker: string, sector: string) => {
     setStocks((prev) => {
       const next = prev.map((s) => (s.ticker === ticker ? { ...s, sector } : s));
@@ -1490,6 +1579,7 @@ export function StockProvider({ children }: { children: React.ReactNode }) {
         updateLastScored,
         updatePrice,
         refreshAllPrices,
+        refreshResearchMentions,
         updateSector,
         updateWeight,
         updateFundData,

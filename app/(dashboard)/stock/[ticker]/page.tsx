@@ -17,6 +17,8 @@ import RatioVsSpxSparkline from "@/app/components/RatioVsSpxSparkline";
 import ScoreHistory from "@/app/components/ScoreHistory";
 import { ScoreDelta } from "@/app/components/ScoreDelta";
 import { useNotifications } from "@/app/lib/NotificationsContext";
+import { EditableNumberCell, ConsensusButton } from "@/app/components/EditableScoreInputs";
+import { mapBoostedAiToAiRating, mapSmaxToRelativeStrength } from "@/app/lib/external-scoring";
 
 // Same threshold as the Score All flow in PortfolioOverview — a
 // composite move >5 pts is worth a "Score variance" warning so the PM
@@ -2177,6 +2179,82 @@ export default function StockDetailPage() {
                               onRemoveReport={(source) => removeAnalystReport(ticker, source)}
                               onConvertTarget={(source, fromCurrency) => convertAnalystTarget(ticker, source, fromCurrency)}
                             />
+                          )}
+                          {/* AI Rating: editable BoostedAI rating (0-5) +
+                              cycling consensus chip. Score auto-derives
+                              via mapBoostedAiToAiRating — same logic the
+                              Inbox tab uses, so edits on either page
+                              produce identical results. */}
+                          {isExpanded && cat.key === "aiRating" && (
+                            <div className="rounded-lg border border-slate-200 bg-slate-50 p-3 space-y-2">
+                              <div className="text-[10px] uppercase tracking-wider font-semibold text-slate-500">BoostedAI inputs</div>
+                              <div className="flex flex-wrap items-center gap-3">
+                                <label className="flex items-center gap-2 text-xs">
+                                  <span className="text-slate-600">Rating (0-5):</span>
+                                  <EditableNumberCell
+                                    value={stock.boostedAi ?? null}
+                                    step="0.1"
+                                    min={0}
+                                    max={5}
+                                    onCommit={(next) => {
+                                      const rating = next == null ? undefined : next;
+                                      updateStockFields(ticker, { boostedAi: rating });
+                                      const mapped = mapBoostedAiToAiRating(next ?? null, stock.boostedAiConsensus ?? null);
+                                      if (mapped != null) updateScore(ticker, "aiRating", mapped);
+                                    }}
+                                    width="w-16"
+                                    placeholder="—"
+                                    ariaLabel={`BoostedAI rating for ${ticker}`}
+                                    formatDisplay={(n) => n.toFixed(1)}
+                                  />
+                                </label>
+                                <label className="flex items-center gap-2 text-xs">
+                                  <span className="text-slate-600">Consensus:</span>
+                                  <ConsensusButton
+                                    value={stock.boostedAiConsensus ?? null}
+                                    ariaLabel={`BoostedAI consensus for ${ticker}`}
+                                    onChange={(next) => {
+                                      updateStockFields(ticker, { boostedAiConsensus: next ?? undefined });
+                                      const mapped = mapBoostedAiToAiRating(stock.boostedAi ?? null, next);
+                                      if (mapped != null) updateScore(ticker, "aiRating", mapped);
+                                    }}
+                                  />
+                                </label>
+                              </div>
+                              <p className="text-[10px] text-slate-400">
+                                Score maps: rating 4.5+ &amp; bullish consensus → 2, 3.5+ &amp; any non-bearish → 1, else 0. Same logic as the Inbox tab.
+                              </p>
+                            </div>
+                          )}
+                          {/* Relative Strength: editable SIA SMAX (0-10).
+                              Score auto-derives via mapSmaxToRelativeStrength. */}
+                          {isExpanded && cat.key === "relativeStrength" && (
+                            <div className="rounded-lg border border-slate-200 bg-slate-50 p-3 space-y-2">
+                              <div className="text-[10px] uppercase tracking-wider font-semibold text-slate-500">SIA SMAX input</div>
+                              <div className="flex flex-wrap items-center gap-3">
+                                <label className="flex items-center gap-2 text-xs">
+                                  <span className="text-slate-600">SMAX (0-10):</span>
+                                  <EditableNumberCell
+                                    value={(stock as { sia?: number | null }).sia ?? null}
+                                    step="1"
+                                    min={0}
+                                    max={10}
+                                    onCommit={(next) => {
+                                      updateStockFields(ticker, { sia: next == null ? undefined : next } as Partial<typeof stock>);
+                                      const mapped = mapSmaxToRelativeStrength(next ?? null);
+                                      if (mapped != null) updateScore(ticker, "relativeStrength", mapped);
+                                    }}
+                                    width="w-16"
+                                    placeholder="—"
+                                    ariaLabel={`SIA SMAX for ${ticker}`}
+                                    formatDisplay={(n) => String(Math.round(n))}
+                                  />
+                                </label>
+                              </div>
+                              <p className="text-[10px] text-slate-400">
+                                Score maps: 8-10 → 2, 6-7 → 1, 0-5 → 0. Same logic as the Inbox tab.
+                              </p>
+                            </div>
                           )}
                           {!hasNotesEditor && !isAnalystConsensus && !hasContent && cat.inputType !== "manual" && cat.inputType !== "computed" && (
                             <p className="text-[11px] text-slate-400 italic ml-1">Re-score via Claude to generate explanation</p>

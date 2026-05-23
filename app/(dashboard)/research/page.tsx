@@ -323,7 +323,7 @@ export default function ResearchPage() {
   const [loaded, setLoaded] = useState(false);
   const [attachmentsSaveError, setAttachmentsSaveError] = useState<string | null>(null);
   const saveTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
-  const { scoredStocks, addStock, brief, uiPrefs, setUiPref } = useStocks();
+  const { scoredStocks, addStock, brief, uiPrefs, setUiPref, refreshResearchMentions } = useStocks();
 
   // Add a research idea to the watchlist (auto-fetches name + sector)
   const addToWatchlist = useCallback(async (ticker: string) => {
@@ -1103,8 +1103,15 @@ export default function ResearchPage() {
       return null;
     } finally {
       setScrapeLoading(false);
+      // Recompute researchMentions for every Portfolio + Watchlist
+      // ticker so newly-scraped Upticks tickers immediately show their
+      // updated researchMentions score without waiting for a rescore.
+      // Fire-and-forget — the deterministic recompute is cheap (pure
+      // Redis read fan-out) and any failure leaves the prior scores in
+      // place until next refresh.
+      void refreshResearchMentions();
     }
-  }, [state, save]);
+  }, [state, save, refreshResearchMentions]);
 
   /**
    * Scrape one of the four research sources beyond Newton's Upticks.
@@ -1405,8 +1412,12 @@ export default function ResearchPage() {
       return false;
     } finally {
       setScrapeLoadingMap((m) => ({ ...m, [source]: false }));
+      // Recompute researchMentions across the portfolio + watchlist so
+      // tickers that newly appeared on (or fell off) this source see
+      // their score update immediately, without waiting for a rescore.
+      void refreshResearchMentions();
     }
-  }, [state, save, refreshAlphaPickNames, refreshRbcNames, fetchLivePrices]);
+  }, [state, save, refreshAlphaPickNames, refreshRbcNames, fetchLivePrices, refreshResearchMentions]);
 
   /**
    * Cross-source synthesis with strict stickiness.
