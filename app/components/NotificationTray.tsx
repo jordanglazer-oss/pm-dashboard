@@ -83,7 +83,7 @@ export function NotificationTray() {
       </button>
 
       {open && (
-        <div className="absolute right-0 mt-2 w-96 rounded-xl bg-white shadow-2xl border border-slate-200 z-[120] overflow-hidden">
+        <div className="absolute right-0 mt-2 w-[calc(100vw-1rem)] sm:w-96 max-w-md rounded-xl bg-white shadow-2xl border border-slate-200 z-[120] overflow-hidden">
           <div className="flex items-center justify-between px-4 py-2.5 border-b border-slate-100">
             <h3 className="text-sm font-bold text-slate-800">Notifications</h3>
             <div className="flex items-center gap-2 text-[11px]">

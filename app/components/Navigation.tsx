@@ -163,18 +163,41 @@ export function Navigation() {
           <h1 className="text-base font-bold tracking-tight whitespace-nowrap">PIM Dashboard</h1>
         </div>
 
-        {/* Hamburger button — mobile only */}
-        <button
-          onClick={() => setMenuOpen(!menuOpen)}
-          className="md:hidden flex items-center justify-center w-9 h-9 rounded-lg hover:bg-slate-800 transition-colors"
-          aria-label="Toggle menu"
-        >
-          {menuOpen ? (
-            <svg className="w-5 h-5" fill="none" stroke="currentColor" strokeWidth="2" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" d="M6 18L18 6M6 6l12 12" /></svg>
-          ) : (
-            <svg className="w-5 h-5" fill="none" stroke="currentColor" strokeWidth="2" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" d="M3.75 6.75h16.5M3.75 12h16.5m-16.5 5.25h16.5" /></svg>
-          )}
-        </button>
+        {/* Mobile action cluster — icon-only Bell / Refresh / Add + hamburger.
+            On desktop these live inside the .md:flex nav below; on mobile
+            they sit next to the hamburger so the PM keeps one-tap access
+            to global actions without opening the menu first. */}
+        <div className="md:hidden flex items-center gap-1">
+          <NotificationTray />
+          <button
+            onClick={handleGlobalRefresh}
+            disabled={refreshing}
+            aria-label="Refresh prices"
+            title="Refresh prices"
+            className="flex items-center justify-center w-9 h-9 rounded-lg hover:bg-slate-800 transition-colors text-slate-300 hover:text-white disabled:opacity-60 disabled:cursor-not-allowed"
+          >
+            <svg className={`w-5 h-5 ${refreshing ? "animate-spin" : ""}`} fill="none" stroke="currentColor" strokeWidth="2" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" d="M16.023 9.348h4.992v-.001M2.985 19.644v-4.992m0 0h4.992m-4.993 0 3.181 3.183a8.25 8.25 0 0 0 13.803-3.7M4.031 9.865a8.25 8.25 0 0 1 13.803-3.7l3.181 3.182" /></svg>
+          </button>
+          <button
+            onClick={() => setQuickAddOpen(true)}
+            aria-label="Add stock"
+            title="Add stock"
+            className="flex items-center justify-center w-9 h-9 rounded-lg bg-emerald-600 hover:bg-emerald-700 transition-colors text-white"
+          >
+            <svg className="w-5 h-5" fill="none" stroke="currentColor" strokeWidth="2.5" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" d="M12 4.5v15m7.5-7.5h-15" /></svg>
+          </button>
+          <button
+            onClick={() => setMenuOpen(!menuOpen)}
+            className="flex items-center justify-center w-9 h-9 rounded-lg hover:bg-slate-800 transition-colors"
+            aria-label="Toggle menu"
+          >
+            {menuOpen ? (
+              <svg className="w-5 h-5" fill="none" stroke="currentColor" strokeWidth="2" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" d="M6 18L18 6M6 6l12 12" /></svg>
+            ) : (
+              <svg className="w-5 h-5" fill="none" stroke="currentColor" strokeWidth="2" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" d="M3.75 6.75h16.5M3.75 12h16.5m-16.5 5.25h16.5" /></svg>
+            )}
+          </button>
+        </div>
 
         {/* Desktop nav */}
         <nav className="hidden md:flex items-center gap-0.5 shrink-0 ml-4">
@@ -238,13 +261,8 @@ export function Navigation() {
               </Link>
             );
           })}
-          <button
-            onClick={() => { setMenuOpen(false); setQuickAddOpen(true); }}
-            className="mt-1 w-full flex items-center justify-center gap-2 rounded-lg bg-emerald-600 hover:bg-emerald-700 px-4 py-2.5 text-sm font-semibold text-white transition-colors"
-          >
-            <svg className="w-4 h-4" fill="none" stroke="currentColor" strokeWidth="2.5" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" d="M12 4.5v15m7.5-7.5h-15" /></svg>
-            Add Stock
-          </button>
+          {/* Add Stock is reachable from the top-bar + button on mobile;
+              the menu just holds page links so it doesn't get crowded. */}
         </nav>
       )}
       {/* Keyboard shortcut hint — desktop only, subtle */}
