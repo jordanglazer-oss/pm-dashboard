@@ -90,7 +90,7 @@ export function ScoreDelta({ ticker, className = "" }: Props) {
   return (
     <div
       className={`mt-2 flex items-center gap-1.5 rounded-full border px-3 py-1 text-[11px] ${palette} ${className}`}
-      title={`Last rescore on ${fmtDate(latest.timestamp)} changed the composite from ${prior.total.toFixed(1)} to ${latest.total.toFixed(1)} (prior rescore: ${fmtDate(prior.timestamp)}).`}
+      title={`Last rescore on ${fmtDate(latest.timestamp)} changed the composite from ${prior.total.toFixed(1)} to ${latest.total.toFixed(1)} (prior rescore: ${fmtDate(prior.timestamp)}). Manual category edits within 72h of a rescore roll into the same entry, so the number reflects your final reviewed composite — not the AI-only value.`}
     >
       <span className="font-semibold">
         {neutral ? "Unchanged" : `${sign}${delta.toFixed(1)} pt${absDelta === 1 ? "" : "s"}`}

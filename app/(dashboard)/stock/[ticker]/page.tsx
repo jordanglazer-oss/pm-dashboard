@@ -5,7 +5,7 @@ import { useParams, useRouter, useSearchParams } from "next/navigation";
 import Link from "next/link";
 import { useStocks } from "@/app/lib/StockContext";
 import { SCORE_GROUPS, MAX_SCORE, INSTRUMENT_LABELS } from "@/app/lib/types";
-import type { ScoreKey, FundData, ScoreDataPoint, ScoreDataPointSource, ExternalSourceNote } from "@/app/lib/types";
+import type { ScoreKey, Scores, FundData, ScoreDataPoint, ScoreDataPointSource, ExternalSourceNote } from "@/app/lib/types";
 import { groupTotal, isScoreable, normalizeSector } from "@/app/lib/scoring";
 import { computeAnalystConsensus, buildConsensusExplanation } from "@/app/lib/analyst-snapshots";
 import { displayTicker } from "@/app/lib/ticker";
@@ -1041,40 +1041,98 @@ export default function StockDetailPage() {
 
   const scoreable = stock ? isScoreable(stock) : true;
 
-  // Append a score-history entry once the context-derived `stock.adjusted`
-  // reflects the latest rescore. The flag is set at the end of handleRescore.
+  // Watches stock.scores changes and writes to pm:score-history. Two
+  // branches:
+  //
+  // A) Rescore: pendingScoreAppendRef was flipped by handleRescore →
+  //    POST a NEW entry (append). The pill on the page top reflects
+  //    this entry once it lands.
+  //
+  // B) Manual tweak: scores changed but no rescore was just triggered
+  //    (e.g. PM bumps `charting` from 0 → 2 a day after the weekly
+  //    rescore). PATCH the most-recent entry IF it's within the 72h
+  //    revision window. Outside the window, the server returns
+  //    { patched: false } and nothing happens — manual edits do NOT
+  //    create new entries on their own.
+  //
+  // Debounced so that flipping a 0-3 slider in quick succession only
+  // posts once after the user stops. Cancelled when (A) wins on the
+  // same render so a rescore doesn't get followed by a stale patch.
+  const patchTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+  const prevScoresRef = useRef<Scores | null>(null);
+
   useEffect(() => {
-    if (!pendingScoreAppendRef.current) return;
     if (!stock || !scoreable) {
       pendingScoreAppendRef.current = false;
+      prevScoresRef.current = stock?.scores ?? null;
       return;
     }
-    pendingScoreAppendRef.current = false;
-    const today = new Date().toISOString().slice(0, 10);
-    const vmeta = lastVerificationRef.current;
-    lastVerificationRef.current = null;
-    const entry = {
-      date: today,
-      timestamp: new Date().toISOString(),
-      total: stock.adjusted,
-      raw: stock.raw,
-      adjusted: stock.adjusted,
-      scores: stock.scores,
-      ...(vmeta
-        ? {
-            verifiedSearch: vmeta.verifiedSearch,
-            searchQueries: vmeta.searchQueries,
-            searchCitations: vmeta.searchCitations,
-          }
-        : {}),
-    };
-    fetch("/api/kv/score-history", {
-      method: "POST",
-      headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ ticker: stock.ticker, entry }),
-    }).catch(() => {
-      // Non-fatal — history is informational.
-    });
+
+    // Branch A — rescore append.
+    if (pendingScoreAppendRef.current) {
+      pendingScoreAppendRef.current = false;
+      // A rescore supersedes any pending manual-edit patch; drop it.
+      if (patchTimerRef.current) {
+        clearTimeout(patchTimerRef.current);
+        patchTimerRef.current = null;
+      }
+      const today = new Date().toISOString().slice(0, 10);
+      const vmeta = lastVerificationRef.current;
+      lastVerificationRef.current = null;
+      const entry = {
+        date: today,
+        timestamp: new Date().toISOString(),
+        total: stock.adjusted,
+        raw: stock.raw,
+        adjusted: stock.adjusted,
+        scores: stock.scores,
+        ...(vmeta
+          ? {
+              verifiedSearch: vmeta.verifiedSearch,
+              searchQueries: vmeta.searchQueries,
+              searchCitations: vmeta.searchCitations,
+            }
+          : {}),
+      };
+      fetch("/api/kv/score-history", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ ticker: stock.ticker, entry, mode: "append" }),
+      }).catch(() => { /* non-fatal — history is informational */ });
+      prevScoresRef.current = stock.scores;
+      return;
+    }
+
+    // Branch B — manual tweak: schedule a debounced patch-recent.
+    // We diff against the previously-seen scores so we only fire when
+    // something actually changed. On first render (no prev) we just
+    // seed the ref and bail.
+    const prev = prevScoresRef.current;
+    prevScoresRef.current = stock.scores;
+    if (!prev) return;
+    const keys = Object.keys(stock.scores) as ScoreKey[];
+    const changed = keys.some((k) => prev[k] !== stock.scores[k]);
+    if (!changed) return;
+
+    if (patchTimerRef.current) clearTimeout(patchTimerRef.current);
+    patchTimerRef.current = setTimeout(() => {
+      patchTimerRef.current = null;
+      const entry = {
+        // patch-recent ignores date/timestamp on the server side, but
+        // we send placeholders so the type contract stays satisfied.
+        date: new Date().toISOString().slice(0, 10),
+        timestamp: new Date().toISOString(),
+        total: stock.adjusted,
+        raw: stock.raw,
+        adjusted: stock.adjusted,
+        scores: stock.scores,
+      };
+      fetch("/api/kv/score-history", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ ticker: stock.ticker, entry, mode: "patch-recent" }),
+      }).catch(() => { /* non-fatal */ });
+    }, 1500);
   }, [stock, scoreable]);
 
   const fetchFundData = useCallback(async () => {

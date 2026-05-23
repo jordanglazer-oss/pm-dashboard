@@ -237,8 +237,20 @@ export function PortfolioOverview() {
     const failed: string[] = [];
 
     // Track what the score API returned per ticker during the loop so the
-    // backfill/gap-fill passes don't rely on stale closure state.
-    const scoreResults = new Map<string, { truncated?: boolean; missingCategories?: string[]; companySummary?: string; investmentThesis?: string }>();
+    // backfill/gap-fill passes don't rely on stale closure state. Also
+    // captures the merged scores so a single pm:score-history append can
+    // run AFTER the full Score-All + backfill + gap-fill flow completes.
+    const scoreResults = new Map<string, {
+      truncated?: boolean;
+      missingCategories?: string[];
+      companySummary?: string;
+      investmentThesis?: string;
+      // Accumulated post-rescore scores per category — starts from the
+      // pre-rescore stock state, then gets union-merged with every score
+      // the AI returns (initial rescore + gap-fill) so the final history
+      // entry reflects the truly latest values.
+      mergedScores?: Partial<Record<ScoreKey, number>>;
+    }>();
 
     for (let i = 0; i < bucketStocks.length; i++) {
       const s = bucketStocks[i];
@@ -289,12 +301,24 @@ export function PortfolioOverview() {
           })
         );
 
-        // Record API response metadata for backfill/gap-fill decisions
+        // Record API response metadata for backfill/gap-fill decisions.
+        // Seed mergedScores with pre-rescore values (so manual categories
+        // and any AI/SEMI category the API didn't return both carry forward)
+        // and then overlay the new rescore scores on top.
+        const mergedScores: Partial<Record<ScoreKey, number>> = { ...s.scores };
+        if (data.scores) {
+          for (const [key, val] of Object.entries(data.scores)) {
+            if (typeof val === "number") {
+              mergedScores[key as ScoreKey] = val;
+            }
+          }
+        }
         scoreResults.set(s.ticker, {
           truncated: data.truncated,
           missingCategories: data.missingCategories,
           companySummary: data.companySummary,
           investmentThesis: data.investmentThesis,
+          mergedScores,
         });
       } catch (err) {
         console.error(`[Score All] Failed to score ${s.ticker}:`, err);
@@ -361,6 +385,14 @@ export function PortfolioOverview() {
               for (const [key, val] of Object.entries(data.scores)) {
                 if (typeof val === "number") {
                   updateScore(s.ticker, key as ScoreKey, val as number);
+                  // Roll gap-fill scores into the running mergedScores so
+                  // the history entry posted below reflects them too.
+                  const existing = scoreResults.get(s.ticker);
+                  if (existing) {
+                    const merged = { ...(existing.mergedScores ?? s.scores) };
+                    merged[key as ScoreKey] = val;
+                    scoreResults.set(s.ticker, { ...existing, mergedScores: merged });
+                  }
                 }
               }
             }
@@ -370,6 +402,50 @@ export function PortfolioOverview() {
           }
         } catch { /* non-fatal */ }
       }
+    }
+
+    // ── Append a score-history entry per successfully scored stock ──
+    // Mirrors the per-stock Score button's pendingScoreAppendRef flow,
+    // but runs from the batch loop after backfill + gap-fill complete
+    // so the entry reflects the final merged composite — not the
+    // pre-gap-fill snapshot.
+    //
+    // The pill on the Stock page reads these entries to render the
+    // "since last rescore" delta. Without this Score-All-as-source path,
+    // a PM who relies exclusively on Score All would never see the pill
+    // because pm:score-history would stay empty.
+    const todayIso = new Date().toISOString().slice(0, 10);
+    for (const s of bucketStocks) {
+      if (failed.includes(s.ticker)) continue;
+      const result = scoreResults.get(s.ticker);
+      const mergedScores = result?.mergedScores;
+      if (!mergedScores) continue;
+      // Build a "synthetic" Stock with the merged scores so we can run
+      // computeScores against the real market regime. This produces the
+      // same raw/adjusted numbers the Stock page would derive on next
+      // render — keeping history-entry math in lockstep with what the
+      // user sees.
+      const fullScores = { ...s.scores } as Record<ScoreKey, number>;
+      for (const [k, v] of Object.entries(mergedScores)) {
+        if (typeof v === "number") fullScores[k as ScoreKey] = v;
+      }
+      const scored = computeScores({ ...s, scores: fullScores }, marketData);
+      const entry = {
+        date: todayIso,
+        timestamp: new Date().toISOString(),
+        total: scored.adjusted,
+        raw: scored.raw,
+        adjusted: scored.adjusted,
+        scores: fullScores,
+      };
+      // Fire-and-forget — failures fall through to the existing
+      // scoreFailures error pipeline only for the score itself; missing
+      // history rows are merely informational, not a workflow blocker.
+      fetch("/api/kv/score-history", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ ticker: s.ticker, entry, mode: "append" }),
+      }).catch(() => { /* non-fatal */ });
     }
 
     if (failed.length > 0) {
