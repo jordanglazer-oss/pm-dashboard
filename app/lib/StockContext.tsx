@@ -131,6 +131,15 @@ type StockContextType = {
    *  Call after batch operations (Score All, Refresh All) to guarantee
    *  data is saved before the user navigates away. Returns a Promise. */
   flushStocks: () => Promise<void>;
+  /**
+   * Fast global price refresh — fetches current prices for every ticker
+   * in `stocks` via /api/prices (single batched call) and applies them
+   * via `updatePrice`. Deliberately does NOT do fund-data deep refresh,
+   * sub-fund crawl, technicals, or riskAlert — the heavier flow lives
+   * in PortfolioOverview's `handleRefreshAll`. Resolves to a count of
+   * tickers that came back with a usable price.
+   */
+  refreshAllPrices: () => Promise<{ updated: number; total: number }>;
 };
 
 const StockContext = createContext<StockContextType | null>(null);
@@ -769,6 +778,48 @@ export function StockProvider({ children }: { children: React.ReactNode }) {
     });
   }, [persistStocks]);
 
+  /**
+   * Bulk price refresh for the global nav Refresh button. POSTs all
+   * tickers in a single /api/prices batch and applies the prices via
+   * one setStocks call (rather than N individual updatePrice calls,
+   * which would queue N renders and N debounced persists).
+   *
+   * Skips fund-data deep refresh, sub-fund crawl, technicals, and
+   * riskAlert by design — those are the PortfolioOverview Refresh All
+   * Data button's job. This one is meant to be fast and runnable from
+   * anywhere in the app.
+   */
+  const refreshAllPrices = useCallback(async (): Promise<{ updated: number; total: number }> => {
+    const tickers = stocks.map((s) => s.ticker);
+    if (tickers.length === 0) return { updated: 0, total: 0 };
+    try {
+      const res = await fetch("/api/prices", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ tickers }),
+      });
+      if (!res.ok) return { updated: 0, total: tickers.length };
+      const data = await res.json();
+      const priceMap = (data.prices ?? {}) as Record<string, number | null>;
+      let applied = 0;
+      setStocks((prev) => {
+        const next = prev.map((s) => {
+          const p = priceMap[s.ticker];
+          if (typeof p === "number" && p > 0 && p !== s.price) {
+            applied++;
+            return { ...s, price: p };
+          }
+          return s;
+        });
+        persistStocks(next);
+        return next;
+      });
+      return { updated: applied, total: tickers.length };
+    } catch {
+      return { updated: 0, total: tickers.length };
+    }
+  }, [stocks, persistStocks]);
+
   const updateSector = useCallback((ticker: string, sector: string) => {
     setStocks((prev) => {
       const next = prev.map((s) => (s.ticker === ticker ? { ...s, sector } : s));
@@ -1338,6 +1389,7 @@ export function StockProvider({ children }: { children: React.ReactNode }) {
         updateExplanations,
         updateLastScored,
         updatePrice,
+        refreshAllPrices,
         updateSector,
         updateWeight,
         updateFundData,

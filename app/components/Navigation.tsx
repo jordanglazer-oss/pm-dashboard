@@ -6,6 +6,8 @@ import { usePathname, useRouter } from "next/navigation";
 import { QuickAddStock } from "./QuickAddStock";
 import { CommandPalette } from "./CommandPalette";
 import { NotificationTray } from "./NotificationTray";
+import { useStocks } from "@/app/lib/StockContext";
+import { useNotifications } from "@/app/lib/NotificationsContext";
 
 const tabs = [
   { label: "Brief", href: "/brief" },
@@ -27,6 +29,53 @@ export function Navigation() {
   const [menuOpen, setMenuOpen] = useState(false);
   const [quickAddOpen, setQuickAddOpen] = useState(false);
   const [paletteOpen, setPaletteOpen] = useState(false);
+  const [refreshing, setRefreshing] = useState(false);
+  const { refreshAllPrices } = useStocks();
+  const { notify } = useNotifications();
+
+  // Fast global price refresh — hits /api/prices for every ticker in
+  // pm:stocks in a single batched call. No fund-data deep refresh, no
+  // sub-fund crawl, no technicals recalc — the heavier flow still lives
+  // on the Dashboard's "Refresh All Data" button. This one just keeps
+  // prices fresh from anywhere in the app.
+  const handleGlobalRefresh = async () => {
+    if (refreshing) return;
+    setRefreshing(true);
+    try {
+      const { updated, total } = await refreshAllPrices();
+      if (updated > 0) {
+        notify({
+          level: "success",
+          title: "Prices refreshed",
+          message: `${updated} of ${total} updated`,
+          source: "Global refresh",
+        });
+      } else if (total === 0) {
+        notify({
+          level: "info",
+          title: "Nothing to refresh",
+          message: "No stocks in Portfolio or Watchlist yet.",
+          source: "Global refresh",
+        });
+      } else {
+        notify({
+          level: "warn",
+          title: "Prices unchanged",
+          message: `Checked ${total} tickers — nothing newer came back from Yahoo.`,
+          source: "Global refresh",
+        });
+      }
+    } catch (err) {
+      notify({
+        level: "error",
+        title: "Refresh failed",
+        message: err instanceof Error ? err.message : String(err),
+        source: "Global refresh",
+      });
+    } finally {
+      setRefreshing(false);
+    }
+  };
 
   // Cmd/Win + Left/Right arrow → move one tab at a time, wrapping at the ends.
   // The browser's default Cmd+Left/Right is history back/forward, which on this
@@ -145,9 +194,18 @@ export function Navigation() {
               </Link>
             );
           })}
-          {/* Notifications tray + Quick-Add — visible from every page. */}
+          {/* Notifications tray + Refresh + Quick-Add — visible from every page. */}
           <div className="ml-2 flex items-center gap-1">
             <NotificationTray />
+            <button
+              onClick={handleGlobalRefresh}
+              disabled={refreshing}
+              className="flex items-center gap-1 rounded-md bg-slate-700 hover:bg-slate-600 disabled:opacity-60 disabled:cursor-not-allowed px-2.5 py-1.5 text-[13px] font-semibold text-white transition-colors whitespace-nowrap"
+              title="Refresh prices for every stock, ETF, and fund (Yahoo)"
+            >
+              <svg className={`w-3.5 h-3.5 ${refreshing ? "animate-spin" : ""}`} fill="none" stroke="currentColor" strokeWidth="2.5" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" d="M16.023 9.348h4.992v-.001M2.985 19.644v-4.992m0 0h4.992m-4.993 0 3.181 3.183a8.25 8.25 0 0 0 13.803-3.7M4.031 9.865a8.25 8.25 0 0 1 13.803-3.7l3.181 3.182" /></svg>
+              {refreshing ? "Refreshing..." : "Refresh"}
+            </button>
             <button
               onClick={() => setQuickAddOpen(true)}
               className="flex items-center gap-1 rounded-md bg-emerald-600 hover:bg-emerald-700 px-2.5 py-1.5 text-[13px] font-semibold text-white transition-colors whitespace-nowrap"
