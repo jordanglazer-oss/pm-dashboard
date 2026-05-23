@@ -178,7 +178,7 @@ export function QuickAddStock({ open, onClose }: Props) {
               placeholder="AAPL, MSFT.TO, etc."
               autoComplete="off"
               spellCheck={false}
-              className="w-full rounded-lg border border-slate-300 px-3 py-2 text-sm font-mono uppercase placeholder:font-sans placeholder:normal-case focus:border-blue-500 focus:outline-none focus:ring-1 focus:ring-blue-500"
+              className="w-full rounded-lg border border-slate-300 bg-white text-slate-900 px-3 py-2 text-sm font-mono uppercase placeholder:font-sans placeholder:normal-case placeholder:text-slate-400 focus:border-blue-500 focus:outline-none focus:ring-1 focus:ring-blue-500"
             />
             <p className="text-[11px] text-slate-400 mt-1">
               Use the Yahoo-style ticker (e.g. <code>.TO</code> for TSX listings).

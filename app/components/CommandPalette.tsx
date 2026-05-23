@@ -238,7 +238,7 @@ export function CommandPalette({ open, onClose, onTriggerQuickAdd }: Props) {
             value={query}
             onChange={(e) => setQuery(e.target.value)}
             placeholder="Search pages, stocks, or actions..."
-            className="flex-1 bg-transparent text-sm outline-none placeholder:text-slate-400"
+            className="flex-1 bg-transparent text-slate-900 text-sm outline-none placeholder:text-slate-400"
           />
           <kbd className="text-[10px] text-slate-400 border border-slate-200 rounded px-1.5 py-0.5">Esc</kbd>
         </div>
