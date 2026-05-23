@@ -672,7 +672,7 @@ export function PimPerformance({ groupId, groupName, selectedProfile, onPerfData
           <svg
             ref={svgRef}
             viewBox={`0 0 ${chartWidth} ${chartHeight}`}
-            className="w-full h-auto min-w-[400px] touch-none select-none"
+            className="w-full h-auto min-w-[300px] touch-none select-none"
             preserveAspectRatio="xMidYMid meet"
             onPointerMove={(e) => {
               if (!svgRef.current || !chartData) return;

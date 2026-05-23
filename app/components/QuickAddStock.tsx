@@ -145,7 +145,7 @@ export function QuickAddStock({ open, onClose }: Props) {
   return (
     <div
       // Backdrop — click anywhere outside the panel to dismiss.
-      className="fixed inset-0 z-[100] flex items-start justify-center bg-slate-900/60 backdrop-blur-sm pt-24 px-4"
+      className="fixed inset-0 z-[100] flex items-start justify-center bg-slate-900/60 backdrop-blur-sm pt-10 sm:pt-24 px-4"
       onClick={onClose}
     >
       <div
