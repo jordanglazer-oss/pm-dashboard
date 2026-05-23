@@ -235,6 +235,11 @@ export function PortfolioOverview() {
     setScoringBucket(bucket);
     setScoreFailures([]);
     const failed: string[] = [];
+    // Tickers the server deliberately skipped (HTTP 422, skipped: true)
+    // because critical input data (typically Yahoo) was unavailable.
+    // Surfaced separately so the user knows these aren't AI failures —
+    // they're upstream data issues fixable by hitting Refresh and retrying.
+    const skipped: { ticker: string; reason: string }[] = [];
 
     // Track what the score API returned per ticker during the loop so the
     // backfill/gap-fill passes don't rely on stale closure state. Also
@@ -269,6 +274,14 @@ export function PortfolioOverview() {
         });
         if (!res.ok) {
           const err = await res.json().catch(() => ({}));
+          // 422 + skipped: true means the server ran an input health
+          // check and declined to call Anthropic — typically because
+          // Yahoo returned nothing for this ticker. Treat as a soft
+          // outcome, not a hard failure.
+          if (res.status === 422 && err?.skipped) {
+            skipped.push({ ticker: s.ticker, reason: err.error || "input health check failed" });
+            continue;
+          }
           throw new Error(err.error || `Failed to score ${s.ticker}`);
         }
         const data = await res.json();
@@ -459,10 +472,24 @@ export function PortfolioOverview() {
       });
     } else {
       setScoreProgress("");
+      const scoredCount = bucketStocks.length - skipped.length;
       notify({
         level: "success",
         title: `Score All ${bucket} completed`,
-        message: `Scored ${bucketStocks.length} stock${bucketStocks.length === 1 ? "" : "s"} with no failures.`,
+        message: scoredCount === bucketStocks.length
+          ? `Scored ${bucketStocks.length} stock${bucketStocks.length === 1 ? "" : "s"} with no failures.`
+          : `Scored ${scoredCount} of ${bucketStocks.length} stocks.`,
+        source: "Score All",
+      });
+    }
+    // Separate notification for skipped tickers (input health check
+    // bounce, typically Yahoo unavailable). Surfaced as a warn so the
+    // PM can hit Refresh and retry once upstream recovers.
+    if (skipped.length > 0) {
+      notify({
+        level: "warn",
+        title: `Score All ${bucket}: ${skipped.length} skipped`,
+        message: `Yahoo data unavailable — try Refresh and retry: ${skipped.map((x) => x.ticker).join(", ")}`,
         source: "Score All",
       });
     }

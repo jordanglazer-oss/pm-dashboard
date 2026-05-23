@@ -839,6 +839,51 @@ export async function POST(request: NextRequest) {
             : `Verify the latest dividend / buyback / split changes.`}\nRespect the noise filter in the system prompt: ignore rumors, opinion blogs, and unsourced speculation. Cite source name and date in dataPoints.sourceDetail for every web-sourced fact.\nMax 2 searches — be targeted.\n=== End verified scoring ===\n`
       : "";
 
+    // ── Input health check ────────────────────────────────────────────
+    // Before paying Anthropic ~$0.18 to score this stock, make sure we
+    // actually have enough input data to produce a credible result.
+    //
+    // Yahoo financialContext is the universal floor: if Yahoo returned
+    // nothing (or the resulting context is suspiciously short — typically
+    // a fallback "API unavailable" stub), every fundamental category
+    // would be Claude guessing. Better to skip and surface the upstream
+    // failure to the user so they can retry after Yahoo recovers.
+    //
+    // For US-listed tickers we ALSO expect EDGAR data; its absence on
+    // a US ticker is a real signal something's off (CIK lookup failed,
+    // company facts endpoint returned 4xx, etc.). We don't hard-fail on
+    // missing EDGAR alone since some legitimate small caps don't have
+    // XBRL filings, but we log a warning so the [Score] log line in
+    // Vercel surfaces the degraded run.
+    //
+    // Returns 422 (Unprocessable Entity) + `skipped: true` so the Score
+    // All loop can distinguish "we deliberately didn't run" from "the
+    // run failed inside Anthropic" — different recovery paths.
+    const FINANCIAL_CONTEXT_MIN_CHARS = 500;
+    const yahooOk = rawModules != null && financialContext.length >= FINANCIAL_CONTEXT_MIN_CHARS;
+    if (!yahooOk) {
+      const reason = rawModules == null
+        ? "Yahoo Finance returned no modules"
+        : `financial context too short (${financialContext.length} chars; need ${FINANCIAL_CONTEXT_MIN_CHARS}+)`;
+      console.warn(`[Score] ${upperTicker} skipped: ${reason}. Saved ~$0.18 in Anthropic spend.`);
+      return NextResponse.json(
+        {
+          error: `Skipped scoring ${upperTicker}: ${reason}. Refresh prices and retry — usually a transient Yahoo issue.`,
+          skipped: true,
+          reason: "input-health-check-failed",
+        },
+        { status: 422 },
+      );
+    }
+    // EDGAR is scoped inside the try block above; proxy "did we get
+    // EDGAR data" by looking for the labeled header in financialContext.
+    const edgarPresent = financialContext.includes("=== SEC EDGAR XBRL FINANCIALS");
+    if (!isCanadianListing && !edgarPresent) {
+      // Soft warning — proceed but log so the Vercel dashboard shows
+      // which US tickers are scoring without EDGAR backing.
+      console.warn(`[Score] ${upperTicker} US-listed but EDGAR returned null — proceeding with Yahoo-only scoring (lower confidence expected)`);
+    }
+
     // Build tool list. Anthropic's web_search_20250305 tool runs server-side
     // and returns its results inline; the SDK exposes them through
     // server_tool_use and web_search_tool_result content blocks. We cap
