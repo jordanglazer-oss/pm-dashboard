@@ -143,29 +143,8 @@ export async function tallyResearchMentions(ticker: string): Promise<ResearchMen
   return { score, rawDelta, mentions, confidence };
 }
 
-/**
- * Build the per-category explanation block (summary + dataPoints) for
- * researchMentions. Mirrors the logic inlined in /api/score/route.ts
- * so the client can render the same structure when it recomputes
- * mentions live (post-scrape, on bootstrap, etc.) without making a
- * full Anthropic call.
- */
-export function buildResearchMentionsExplanation(
-  ticker: string,
-  result: ResearchMentionsResult,
-): { summary: string; dataPoints: Array<{ label: string; value: string; source: "model"; sourceDetail?: string }> } {
-  const upper = ticker.toUpperCase();
-  const bullishCount = result.mentions.filter((m) => m.direction === "bullish").length;
-  const bearishCount = result.mentions.filter((m) => m.direction === "bearish").length;
-  const summary =
-    result.mentions.length === 0
-      ? `No mentions of ${upper} found across cached research feeds. Score: ${result.score}/3.`
-      : `Tallied ${result.mentions.length} mention${result.mentions.length === 1 ? "" : "s"} across cached research feeds (${bullishCount} bullish, ${bearishCount} bearish). Raw delta: ${result.rawDelta >= 0 ? "+" : ""}${result.rawDelta}, clamped to ${result.score}/3.`;
-  const dataPoints = result.mentions.map((m) => ({
-    label: m.label,
-    value: m.direction === "bullish" ? "Bullish (+1)" : "Bearish (−1)",
-    source: "model" as const,
-    sourceDetail: m.analyzedAt ? `Analyzed ${m.analyzedAt.slice(0, 10)}` : undefined,
-  }));
-  return { summary, dataPoints };
-}
+// Pure-display helpers live in `research-mentions-display.ts` so client
+// components can import them without pulling the `redis` package into
+// the browser bundle. Re-exported here so the score route's
+// server-side code can still import everything from one place.
+export { buildResearchMentionsExplanation } from "./research-mentions-display";

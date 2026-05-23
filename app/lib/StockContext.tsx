@@ -9,6 +9,7 @@ import { pimModelSeed } from "./pim-seed";
 import type { AnalystSnapshots, TickerSnapshot, AnalystReports, TickerReports, AnalystEntry, ExtractedReport } from "./analyst-snapshots";
 import { setSnapshotForTicker, getSnapshotForTicker, setReportsForTicker, getReportsForTicker, reportIdFor, computeAnalystConsensus, buildConsensusExplanation } from "./analyst-snapshots";
 import { mapBoostedAiToAiRating, mapSmaxToRelativeStrength, type BoostedAiConsensus } from "./external-scoring";
+import { buildResearchMentionsExplanation } from "./research-mentions-display";
 
 // Locked equity holdings: specialty funds whose weightInClass is driven by
 // the per-model Balanced weight (%) input on the stock page — NOT by the
@@ -959,7 +960,11 @@ export function StockProvider({ children }: { children: React.ReactNode }) {
       // updateScore/updateExplanations already batch through
       // persistStocks's debounce — fine for one-shot updates triggered
       // a few times per session.
-      const { buildResearchMentionsExplanation } = await import("./research-mentions");
+      //
+      // Imports the pure-display builder from research-mentions-display.ts
+      // (NOT research-mentions.ts) — the latter imports the `redis`
+      // package, which Node-only modules `net`/`dns` and would crash the
+      // client bundle. The display file is intentionally redis-free.
       for (const [tickerKey, result] of Object.entries(results)) {
         // Find the matching stock by case-insensitive ticker match —
         // the API normalises to uppercase, our context may have mixed
@@ -979,12 +984,10 @@ export function StockProvider({ children }: { children: React.ReactNode }) {
           score: result.score,
           rawDelta: result.rawDelta,
           mentions: result.mentions.map((m) => ({
-            source: m.source as never,
             label: m.label,
             direction: m.direction as "bullish" | "bearish",
             analyzedAt: m.analyzedAt,
           })),
-          confidence: "high",
         });
         updateExplanations(stock.ticker, { researchMentions: explanation });
       }
