@@ -1151,9 +1151,9 @@ export function PimModel({ groups }: Props) {
                 </span>
               </div>
             </div>
-            <div className="overflow-x-auto">
+            <div className="max-h-[80vh] overflow-auto">
               <table className="w-full text-sm">
-                <thead>
+                <thead className="sticky top-0 z-10 bg-white shadow-[0_1px_0_0_rgb(226_232_240)]">
                   <tr className="border-b border-slate-100 text-xs text-slate-500">
                     <th className={`text-left pl-5 pr-2 ${thClass}`} onClick={() => handleSort("name")}>
                       Name<SortIcon field="name" sortField={sortField} sortDir={sortDir} />

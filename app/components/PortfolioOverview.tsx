@@ -1587,10 +1587,28 @@ function RankingTable({
           </div>
         );
       })()}
-      {!collapsed && (
-      <div className="overflow-x-auto">
+      {!collapsed && sorted.length === 0 && (
+        <div className="mx-4 my-6 rounded-xl border border-dashed border-slate-300 bg-slate-50 p-8 text-center">
+          <svg className="w-10 h-10 mx-auto mb-3 text-slate-300" fill="none" stroke="currentColor" strokeWidth="1.5" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" d="M3.75 6h16.5M3.75 12h16.5m-16.5 5.25h16.5" /></svg>
+          <p className="text-sm font-semibold text-slate-600 mb-1">
+            {flagType === "review"
+              ? "No portfolio holdings yet"
+              : "Watchlist is empty"}
+          </p>
+          <p className="text-xs text-slate-400 mb-3 max-w-md mx-auto">
+            {flagType === "review"
+              ? "Add a stock to start building your portfolio. Click + Add in the top nav or press Shift + A."
+              : "Add candidates here when you're researching but not yet ready to own. Click + Add or press Shift + A."}
+          </p>
+          <kbd className="rounded border border-slate-300 bg-white px-2 py-1 text-[11px] font-mono text-slate-500">
+            Shift + A
+          </kbd>
+        </div>
+      )}
+      {!collapsed && sorted.length > 0 && (
+      <div className="max-h-[80vh] overflow-auto">
         <table className="w-full min-w-[1400px] text-left text-sm">
-          <thead>
+          <thead className="sticky top-0 z-20 bg-white shadow-[0_1px_0_0_rgb(226_232_240)]">
             <tr className="border-b border-slate-200 text-xs text-slate-500">
               <th className={stickyHeadCls} onClick={() => toggleSort("ticker")}>
                 <span className="text-slate-400 mr-1">#</span>Ticker{arrow("ticker")}
