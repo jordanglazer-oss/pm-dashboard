@@ -265,19 +265,22 @@ export function buildConsensusExplanation(
 ): ScoreCategoryExplanation {
   const dataPoints: ScoreDataPoint[] = [];
 
+  // Freshness decay was removed (freshnessWeight always returns 1.0),
+  // so the previous "rating × multiplier = pts (fresh)" format was
+  // just noise — the rating, the multiplier-product, and the
+  // contribution were all identical. Surface the contribution
+  // directly and drop the freshness label.
   if (breakdown.rbc) {
-    const r = breakdown.rbc;
     dataPoints.push({
       label: "RBC",
-      value: `${r.rating.toFixed(2)} × ${r.freshness.toFixed(2)} = ${r.contribution.toFixed(2)} pts (${r.freshnessLabel})`,
+      value: `${breakdown.rbc.contribution.toFixed(2)} pts`,
       source: "model",
     });
   }
   if (breakdown.jpm) {
-    const j = breakdown.jpm;
     dataPoints.push({
       label: "JPM",
-      value: `${j.rating.toFixed(2)} × ${j.freshness.toFixed(2)} = ${j.contribution.toFixed(2)} pts (${j.freshnessLabel})`,
+      value: `${breakdown.jpm.contribution.toFixed(2)} pts`,
       source: "model",
     });
   }

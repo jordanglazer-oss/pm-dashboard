@@ -38,12 +38,6 @@ function todayIso() {
   return new Date().toISOString().slice(0, 10);
 }
 
-function freshnessChip(label: "fresh" | "stale" | "very-stale") {
-  if (label === "fresh") return "bg-emerald-50 text-emerald-700 border-emerald-200";
-  if (label === "stale") return "bg-amber-50 text-amber-700 border-amber-200";
-  return "bg-red-50 text-red-700 border-red-200";
-}
-
 export function AnalystSnapshotPanel({ ticker, stockCurrency, snapshot, breakdown, reports, onChange, onUpload, onRemoveReport, onConvertTarget }: Props) {
   const [local, setLocal] = useState<TickerSnapshot>(() => snapshot ?? {});
   const [uploading, setUploading] = useState<{ source: "rbc" | "jpm" } | null>(null);
@@ -147,14 +141,9 @@ export function AnalystSnapshotPanel({ ticker, stockCurrency, snapshot, breakdow
         <div className="flex items-center justify-between mb-2">
           <div className="flex items-center gap-2 flex-wrap">
             <span className="text-xs font-semibold text-slate-700">{label}</span>
-            {contribution && (
-              <span
-                className={`rounded border px-1.5 py-0.5 text-[9px] font-bold uppercase tracking-wider ${freshnessChip(contribution.freshnessLabel)}`}
-                title={contribution.freshnessReason || `Freshness multiplier ${contribution.freshness.toFixed(2)}×`}
-              >
-                {contribution.freshnessLabel}
-              </span>
-            )}
+            {/* Freshness chip removed — the underlying multiplier is now
+                always 1.0 (no decay), so the chip would only ever read
+                "FRESH" and added visual noise without information. */}
             {contribution && (
               <span className="text-[10px] text-slate-500">
                 {contribution.contribution.toFixed(2)} pts
