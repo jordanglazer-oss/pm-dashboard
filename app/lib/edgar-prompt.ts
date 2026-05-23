@@ -14,7 +14,7 @@
  * tuned for the model rather than for parseability.
  */
 
-import { getCikForTicker, getCompanyFacts } from "./edgar";
+import { getCikForTickerWithCrossList, getCompanyFacts, isCanadianTicker, stripCanadianSuffix } from "./edgar";
 import { classifyIssuer } from "./edgar-industry";
 import { buildScoringSnapshot } from "./edgar-concepts";
 import { getInsiderActivity, type Form4Summary, type Form4Transaction } from "./edgar-form4";
@@ -56,9 +56,16 @@ function fmtValue(val: number, unit: string): string {
  */
 export async function formatEdgarSnapshotForPrompt(ticker: string): Promise<string | null> {
   try {
-    const cikInfo = await getCikForTicker(ticker);
+    const cikInfo = await getCikForTickerWithCrossList(ticker);
     if (!cikInfo) return null;
-    const facts = await getCompanyFacts(ticker);
+    // For cross-listed Canadian names (RY.TO → RY in SEC map) the
+    // facts cache needs the SEC-base ticker, not the TSX symbol — the
+    // facts endpoint and Form 4 lookup both key off CIK behind the
+    // scenes, but the local Redis cache uses the ticker as its key.
+    // Using the SEC base avoids double-caching the same CIK under two
+    // ticker names.
+    const secTicker = cikInfo.crossListed ? stripCanadianSuffix(ticker.toUpperCase()) : ticker;
+    const facts = await getCompanyFacts(secTicker);
     if (!facts) return null;
     const classification = await classifyIssuer(cikInfo.paddedCik);
     const snapshot = buildScoringSnapshot(facts, classification.industry);
@@ -68,6 +75,23 @@ export async function formatEdgarSnapshotForPrompt(ticker: string): Promise<stri
     lines.push(`Issuer: ${facts.entityName} (CIK ${cikInfo.paddedCik})`);
     lines.push(`Industry classification: ${classification.industry}` +
       (classification.sic ? ` (SIC ${classification.sic} — ${classification.sicDescription})` : ""));
+    // Cross-listing note: when the requested ticker was Canadian (.TO
+    // etc.) but we matched a US dual-listing in the SEC map, flag it so
+    // Claude knows the SEC figures may reflect the US filer's reporting
+    // convention. For most Canadian banks/utilities that ALSO file
+    // under IFRS in Canada the numbers track within a few percent, but
+    // line items can differ (e.g. some Canadian banks report under
+    // both IFRS and US GAAP — Royal Bank, TD).
+    if (cikInfo.crossListed) {
+      lines.push(``);
+      lines.push(`>>> NOTE: This issuer is dual-listed. The TSX symbol ${ticker.toUpperCase()} was`);
+      lines.push(`    resolved via its US dual-listing (${stripCanadianSuffix(ticker.toUpperCase())}) in the SEC map. The XBRL`);
+      lines.push(`    data below comes from that US filing entity. Numbers track`);
+      lines.push(`    the primary Canadian reporting closely but may differ slightly`);
+      lines.push(`    on line items where IFRS and US GAAP diverge (e.g. lease`);
+      lines.push(`    accounting, goodwill impairment). Where a metric matters,`);
+      lines.push(`    web_search the issuer's Canadian MD&A to cross-check.`);
+    }
     lines.push(``);
     lines.push(`These figures come directly from the company's 10-K and 10-Q filings,`);
     lines.push(`normalized through the freshness-aware concept registry. PREFER these`);
@@ -123,13 +147,15 @@ export async function formatEdgarSnapshotForPrompt(ticker: string): Promise<stri
     // 90-day insider transaction summary to feed the ownershipTrends
     // scoring category, which previously had no real data input.
     try {
-      const insider = await getInsiderActivity(ticker);
+      // Use the SEC-resolved ticker so Form 4 hits the right CIK when
+      // we matched via cross-listing (e.g. RY.TO → RY).
+      const insider = await getInsiderActivity(secTicker);
       if (insider) {
         lines.push(``);
         lines.push(formatInsiderBlock(insider));
       }
     } catch (err) {
-      console.error(`[EDGAR] form4 fetch failed for ${ticker}:`, err);
+      console.error(`[EDGAR] form4 fetch failed for ${secTicker}:`, err);
     }
 
     return lines.join("\n");

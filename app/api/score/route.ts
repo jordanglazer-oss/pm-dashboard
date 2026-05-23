@@ -747,8 +747,17 @@ export async function POST(request: NextRequest) {
       // Append the EDGAR XBRL block for US issuers. It's clearly
       // labeled inside the block so Claude can prefer it over Yahoo
       // for fundamentals while still using Yahoo for price/beta/peers.
+      //
+      // When there's no EDGAR block AND the ticker is Canadian, emit
+      // an explicit "no SEC data" hint so Claude doesn't sit waiting
+      // for a structured-feed block that's never going to arrive.
+      // Tells the model to lean harder on web_search of the issuer's
+      // own MD&A / IR press releases / SEDAR+ filings as the
+      // authoritative source.
       if (edgarBlock) {
         financialContext += `\n\n---\n\n${edgarBlock}`;
+      } else if (isCanadianListing) {
+        financialContext += `\n\n---\n\n=== NO SEC EDGAR DATA AVAILABLE ===\n${upperTicker} is a Canadian-only listing (no US dual-listing in the SEC ticker map). SEC EDGAR XBRL data is unavailable for this issuer.\n\nFor fundamental categories (growth, leverageCoverage, cashFlowQuality, relativeValuation, historicalValuation), use the Yahoo Finance data block above as the primary source and aggressively use web_search to verify against the company's MOST RECENT quarterly MD&A or earnings press release (cite the IR-page or SEDAR+ filing URL in sourceDetail). For ownershipTrends (normally driven by Form 4 in the US): no SEDI insider feed is available in this pipeline — report the most recent insider activity disclosed via the company's MD&A or news releases if web_search surfaces it, otherwise score conservatively at the midpoint and confidence: "low". Do not pretend Form 4-style data exists when it doesn't.\n`;
       }
 
       // Append PM-logged notes if any. Each note is rendered as a single
