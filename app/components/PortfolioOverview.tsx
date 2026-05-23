@@ -100,6 +100,14 @@ function ratingColor(label: string): string {
 
 type DashboardFilter = "all" | "stocks" | "etf-usd" | "etf-cad" | "mutual-fund";
 
+/** A composite-score move greater than this many points between
+ *  consecutive rescores triggers a "Score variance" warning in the
+ *  notifications tray. Picked at 5 because the max composite is 35 —
+ *  a 5-pt shift is >14% of the total scale and almost certainly worth
+ *  the PM's attention to confirm it reflects real news vs. an AI
+ *  artifact. Lower the threshold if variance alerts feel too rare. */
+const VARIANCE_ALERT_THRESHOLD = 5;
+
 const DASH_FILTER_LABELS: Record<DashboardFilter, string> = {
   all: "All",
   stocks: "Stocks",
@@ -451,14 +459,35 @@ export function PortfolioOverview() {
         adjusted: scored.adjusted,
         scores: fullScores,
       };
-      // Fire-and-forget — failures fall through to the existing
-      // scoreFailures error pipeline only for the score itself; missing
-      // history rows are merely informational, not a workflow blocker.
+      // The POST returns { delta, priorTotal, newTotal } — used below
+      // to fire a variance alert when the composite moved significantly.
+      // Failures fall through to the existing scoreFailures pipeline
+      // only for the score itself; missing history rows are merely
+      // informational, not a workflow blocker.
       fetch("/api/kv/score-history", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({ ticker: s.ticker, entry, mode: "append" }),
-      }).catch(() => { /* non-fatal */ });
+      })
+        .then((r) => r.ok ? r.json() : null)
+        .then((result) => {
+          if (!result || typeof result.delta !== "number") return;
+          // Variance alert: any composite move >5 points between
+          // consecutive rescores is worth flagging for review — could
+          // be a legitimate news event OR an AI artifact. Routed at
+          // warn level so it surfaces in the tray without sounding the
+          // hard-failure alarm.
+          if (Math.abs(result.delta) > VARIANCE_ALERT_THRESHOLD) {
+            const sign = result.delta > 0 ? "+" : "";
+            notify({
+              level: "warn",
+              title: `${s.ticker}: composite moved ${sign}${result.delta.toFixed(1)} pts`,
+              message: `${typeof result.priorTotal === "number" ? result.priorTotal.toFixed(1) : "?"} → ${typeof result.newTotal === "number" ? result.newTotal.toFixed(1) : "?"} — review whether the rescore is justified by new data or an AI artifact.`,
+              source: "Score variance",
+            });
+          }
+        })
+        .catch(() => { /* non-fatal */ });
     }
 
     if (failed.length > 0) {
