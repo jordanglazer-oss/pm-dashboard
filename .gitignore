@@ -49,4 +49,5 @@ next-env.d.ts
 !tailwind.config.json
 !*.config.json
 !.claude/settings.json
+!vercel.json
 /SIAChartsTableExport*.csv
