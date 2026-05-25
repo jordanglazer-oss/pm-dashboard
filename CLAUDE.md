@@ -19,6 +19,30 @@ When making a change, it is vital that functionality is unaffected, unless the e
 - After editing, run `npx tsc --noEmit` and `npm run lint`, and reason through what user-visible flows could be impacted (data fetching, persistence, rebalance math, render conditions).
 - If a change has potential blast radius beyond the stated goal, surface it and confirm with the user before proceeding.
 
+## Critical: Verify Redis Safety Before Every Commit
+
+**Read this every time you are about to commit or push a change.** This rule was added after a multi-trade Buy/Sell bug + an automated "repair" endpoint together corrupted live PIM model + positions data with no backup available for recovery. The fix took hours and reconstruction was only possible because of a screenshot the user happened to share earlier.
+
+Before committing ANY change — including:
+- New code paths
+- Refactors (no matter how small)
+- New admin / repair / migration endpoints
+- "Quick fix" snippets suggested via DevTools console
+- Editing in-place state in StockContext, PimPortfolio, PimModel, or any route under `/api/kv/*` or `/api/admin/*`
+
+…you MUST work through this checklist explicitly in the response you give the user. Not silently — actually write out the answers so the user can verify:
+
+1. **What Redis keys does this touch?** List every `pm:*` key the change reads or writes. Include indirect writes through context methods (e.g. `addStock` → `pm:stocks`, `updatePimModels` → `pm:pim-models`).
+2. **For each write, does it preserve unrelated fields?** A `redis.set(key, JSON.stringify(...))` that drops a top-level field present in the existing blob will silently delete data. Always read-modify-write rather than overwrite. When in doubt, spread the previous object: `JSON.stringify({ ...prev, changedField: ... })`.
+3. **Are there other code paths writing the same key concurrently?** Client-side React closures can lag behind Redis. If a back-end endpoint and a front-end persist hook can race against each other on the same key, that's a known data-loss pattern (see commit `a0edb9c` for the multi-trade closure fix). Either gate one path or use functional setState + refs.
+4. **What's the rollback story if this goes wrong?** For any mutation of persisted data, the change should be reversible. Prefer one of: (a) the existing `*.pre-import-{ts}` stash pattern, (b) a fresh write-aside before the mutation, (c) explicit user confirmation that the change is irreversible.
+5. **If this is an admin/repair endpoint:** does it require a `?confirm=YES` query param? Does it stash the prior state before mutating? Does it return a diff summary so the user can verify the result?
+6. **Are nightly backups actually running?** Don't trust the existence of `pm:backup:YYYY-MM-DD` keys on faith. The cron in `vercel.json` can be misconfigured or rejected by the `CRON_SECRET` check. Before relying on backups as a safety net, verify a recent one exists.
+
+**For DevTools-console snippets you suggest to the user**: the same rules apply. A `fetch("/api/kv/...", { method: "PUT", body: ... })` from the console is as destructive as any server-side write. Walk through the checklist above before recommending such a snippet, and prefer GET-only diagnostic snippets when at all possible.
+
+**When you are unsure whether a change is safe**, the answer is to STOP and ask the user before committing. The cost of pausing to confirm is always lower than the cost of recovering from corrupted production data.
+
 ## Critical: Persisted User Data
 
 This app stores user-controlled data in Redis (Upstash KV). **Never make changes that wipe, reseed, or migrate persisted data without explicit user confirmation.** In particular:
