@@ -31,6 +31,30 @@ function generateId(): string {
   return Date.now().toString(36) + Math.random().toString(36).slice(2, 8);
 }
 
+/** Queue entry shape for the Buy / Sell multi-trade panel. Defined at
+ *  module scope so the useCallback in executeAllTrades doesn't need
+ *  newTrade in its dep array (newTrade closes over generateId only). */
+type QueuedTrade = {
+  id: string;
+  sellSymbol: string;
+  sellPrice: string;
+  sellPercent: string;
+  buyTicker: string;
+  buyPrice: string;
+  buyName: string;
+};
+function newTrade(): QueuedTrade {
+  return {
+    id: generateId(),
+    sellSymbol: "",
+    sellPrice: "",
+    sellPercent: "100",
+    buyTicker: "",
+    buyPrice: "",
+    buyName: "",
+  };
+}
+
 /** Compact "Xm ago" / "Xh ago" relative-time formatter for tile freshness
  *  labels. Falls back to a full date+time string past 24 hours so the
  *  number doesn't grow unwieldy. Returns "" on invalid input so callers
@@ -136,8 +160,22 @@ export function PimPortfolio({ groups }: Props) {
   const [showSwitch, setShowSwitch] = useState(false);
   // Rebalance prices are shared across profiles (cross-model price sharing)
   const [rebalancePrices, setRebalancePrices] = useState<Record<string, string>>({});
-  const [switchSell, setSwitchSell] = useState({ symbol: "", price: "" });
-  const [switchBuy, setSwitchBuy] = useState({ symbol: "", price: "", ticker: "", name: "", resolving: false });
+  // ── Buy / Sell trade queue ───────────────────────────────────────
+  // The Buy / Sell panel supports queueing multiple (sell, buy) pairs
+  // and executing them together. Each row is an independent trade:
+  //
+  //   - sellSymbol="" + buyTicker set     → buy only (cash deployment)
+  //   - sellSymbol set + buyTicker=""     → sell only (raise cash)
+  //   - sellSymbol set + buyTicker set    → switch (sell + buy paired)
+  //
+  // sellPercent defaults to "100" — full position liquidation, which
+  // routes through the original atomic-swap logic in pim-models. A
+  // value <100 is a partial sell: only pm:pim-positions is touched
+  // (reduce sold units by X%, increase bought units proportionally),
+  // pm:pim-models stays as-is, and the sold ticker remains in Portfolio.
+  const [trades, setTrades] = useState<QueuedTrade[]>(() => [newTrade()]);
+  const [executingTrades, setExecutingTrades] = useState(false);
+  const [tradeExecProgress, setTradeExecProgress] = useState("");
 
   // Pending trades settlement
   const [showSettlement, setShowSettlement] = useState(false);
@@ -1219,12 +1257,51 @@ export function PimPortfolio({ groups }: Props) {
   // is now read directly from the picked Stock instead of being
   // resolved via /api/company-name on blur.
 
-  const handleExecuteSwitch = useCallback(async () => {
-    const sellPrice = switchSell.symbol ? parseFloat(switchSell.price) : 0;
-    const buyPrice = parseFloat(switchBuy.price);
-    const buyTicker = switchBuy.symbol.trim().toUpperCase();
-    if (!buyTicker || !buyPrice) return;
-    if (switchSell.symbol && !sellPrice) return;
+  /**
+   * Execute a single trade from the Buy / Sell queue.
+   *
+   * Three shapes a trade can take:
+   *   - Buy-only:     sellSymbol="", buyTicker set      → deploy cash
+   *   - Sell-only:    sellSymbol set,  buyTicker=""     → raise cash
+   *   - Switch:       both set                          → sell then buy
+   *
+   * Partial sell (sellPercent < 100):
+   *   - pm:pim-positions: reduce sold units by X%, route proceeds into
+   *     the bought position. Per-unit cost basis on the residual sold
+   *     position is preserved.
+   *   - pm:stocks: sold STAYS in Portfolio (not demoted to Watchlist).
+   *   - pm:pim-models: NOT touched — target model weights are a
+   *     separate concern from realized positions.
+   *
+   * Full sell (sellPercent === 100, the default):
+   *   - All of the above plus the original atomic pim-models swap and
+   *     Portfolio → Watchlist demotion for the sold ticker.
+   *
+   * Returns { ok, error } so the multi-trade caller can surface per-row
+   * results.
+   */
+  const executeTrade = useCallback(async (trade: QueuedTrade): Promise<{ ok: boolean; error?: string; warning?: string }> => {
+    const sellPrice = trade.sellSymbol ? parseFloat(trade.sellPrice) : 0;
+    const buyPrice = trade.buyTicker ? parseFloat(trade.buyPrice) : 0;
+    const buyTicker = trade.buyTicker.trim().toUpperCase();
+    const sellPercentRaw = parseFloat(trade.sellPercent);
+    const sellPercent = Number.isFinite(sellPercentRaw)
+      ? Math.max(1, Math.min(100, sellPercentRaw))
+      : 100;
+    const isPartialSell = !!trade.sellSymbol && sellPercent < 100;
+    const sellOnly = !!trade.sellSymbol && !buyTicker;
+    const buyOnly = !trade.sellSymbol && !!buyTicker;
+
+    // Validation per trade.
+    if (!buyTicker && !trade.sellSymbol) {
+      return { ok: false, error: "Empty trade — pick a sell, a buy, or both" };
+    }
+    if (buyTicker && !buyPrice) {
+      return { ok: false, error: `${buyTicker}: buy price required` };
+    }
+    if (trade.sellSymbol && !sellPrice) {
+      return { ok: false, error: `${trade.sellSymbol}: sell price required` };
+    }
 
     // Local ticker-matcher (mirrors the one in StockContext).
     const tickerEq = (a: string, b: string) =>
@@ -1247,9 +1324,9 @@ export function PimPortfolio({ groups }: Props) {
     };
     const swapPlan: SwapPlan[] = [];
     const skippedDueToBoughtPresent: string[] = [];
-    if (switchSell.symbol) {
+    if (trade.sellSymbol) {
       for (const g of originalPim.groups) {
-        const sold = g.holdings.find((h) => tickerEq(h.symbol, switchSell.symbol));
+        const sold = g.holdings.find((h) => tickerEq(h.symbol, trade.sellSymbol));
         if (!sold) continue;
         const boughtAlreadyPresent = g.holdings.some((h) => tickerEq(h.symbol, buyTicker));
         if (boughtAlreadyPresent) {
@@ -1263,50 +1340,59 @@ export function PimPortfolio({ groups }: Props) {
 
     // ── Resolve buy-side metadata up front so the atomic swap and the
     // addStock call share the same name / instrumentType / sector.
-    const existsInPortfolio = scoredStocks.some(
-      (s) => tickerEq(s.ticker, buyTicker)
-    );
-    let buyName = switchBuy.name || buyTicker;
+    // Only relevant when there IS a buy side — sell-only trades skip
+    // this whole block.
+    let buyName = trade.buyName || buyTicker;
     let buyInstrumentType: InstrumentType = "stock";
     let buySector = "";
-    try {
-      const res = await fetch(`/api/company-name?tickers=${encodeURIComponent(buyTicker)}`);
-      if (res.ok) {
-        const data = await res.json();
-        if (data.names?.[buyTicker]) buyName = data.names[buyTicker];
-        if (data.sectors?.[buyTicker]) buySector = data.sectors[buyTicker];
-        if (data.types?.[buyTicker]) buyInstrumentType = data.types[buyTicker] as InstrumentType;
-      }
-    } catch { /* fallback to defaults */ }
+    if (buyTicker) {
+      const existsInPortfolio = scoredStocks.some(
+        (s) => tickerEq(s.ticker, buyTicker)
+      );
+      try {
+        const res = await fetch(`/api/company-name?tickers=${encodeURIComponent(buyTicker)}`);
+        if (res.ok) {
+          const data = await res.json();
+          if (data.names?.[buyTicker]) buyName = data.names[buyTicker];
+          if (data.sectors?.[buyTicker]) buySector = data.sectors[buyTicker];
+          if (data.types?.[buyTicker]) buyInstrumentType = data.types[buyTicker] as InstrumentType;
+        }
+      } catch { /* fallback to defaults */ }
 
-    if (!existsInPortfolio) {
-      const stock: Stock = {
-        ticker: buyTicker,
-        name: buyName,
-        instrumentType: buyInstrumentType,
-        bucket: "Portfolio",
-        sector: buyInstrumentType === "etf" || buyInstrumentType === "mutual-fund" ? "" : buySector,
-        beta: 1.0,
-        weights: { portfolio: 0 },
-        scores: { ...ZERO_SCORES },
-        notes: "",
-      };
-      addStock(stock);
+      if (!existsInPortfolio) {
+        const stock: Stock = {
+          ticker: buyTicker,
+          name: buyName,
+          instrumentType: buyInstrumentType,
+          bucket: "Portfolio",
+          sector: buyInstrumentType === "etf" || buyInstrumentType === "mutual-fund" ? "" : buySector,
+          beta: 1.0,
+          weights: { portfolio: 0 },
+          scores: { ...ZERO_SCORES },
+          notes: "",
+        };
+        addStock(stock);
+      }
     }
 
     // ── Move sold ticker Portfolio → Watchlist (operates on pm:stocks,
     // which is not per-group). moveBucket triggers removeFromPimModels
     // which rebalances; that's overwritten below by the atomic swap so
     // the intermediate state doesn't survive.
-    if (switchSell.symbol) {
-      const soldStock = stocks.find((s) => tickerEq(s.ticker, switchSell.symbol));
+    //
+    // SKIPPED for partial sells — the position is being reduced, not
+    // closed out, so the stock stays in Portfolio.
+    if (trade.sellSymbol && !isPartialSell) {
+      const soldStock = stocks.find((s) => tickerEq(s.ticker, trade.sellSymbol));
       if (soldStock?.bucket === "Portfolio") {
         moveBucket(soldStock.ticker);
       }
     }
 
     // ── Atomic firm-wide swap in pm:pim-models.
-    if (swapPlan.length > 0) {
+    // SKIPPED for partial sells — target model weights stay as
+    // designed; only the realized position shifts.
+    if (swapPlan.length > 0 && !isPartialSell && buyTicker) {
       const buyCurrency: "CAD" | "USD" =
         buyTicker.endsWith(".U")
           ? "USD"
@@ -1350,39 +1436,75 @@ export function PimPortfolio({ groups }: Props) {
       }
     }
 
-    // For each affected group, build/patch its state.
+    // For each affected group, build/patch its state. Three branches:
+    //   - Full sell + buy:  swapPlan drives it (one entry per affected group)
+    //   - Partial sell:     swapPlan is empty; log to every group that
+    //                       actually holds the sold position so each
+    //                       group's transaction tape reflects the reduce
+    //   - Pure buy:         fallback to selectedGroupId (single txn row)
     const groupsToWrite: { groupId: string; soldWeightInClass: number }[] =
       swapPlan.length > 0
         ? swapPlan.map((p) => ({ groupId: p.groupId, soldWeightInClass: p.soldHolding.weightInClass }))
-        : [{ groupId: selectedGroupId, soldWeightInClass: 0 }]; // fallback for pure buy / ticker-not-in-any-model
+        : isPartialSell
+          ? Array.from(
+              new Set(
+                positions
+                  .filter((pp) => pp.positions.some((p) => tickerEq(p.symbol, trade.sellSymbol) && p.units > 0))
+                  .map((pp) => pp.groupId),
+              )
+            ).map((gid) => ({ groupId: gid, soldWeightInClass: 0 }))
+          : [{ groupId: selectedGroupId, soldWeightInClass: 0 }]; // fallback for pure buy / ticker-not-in-any-model
 
     for (const { groupId, soldWeightInClass } of groupsToWrite) {
       const existing: PimModelGroupState = existingStates.find((gs) => gs.groupId === groupId)
         ?? { groupId, lastRebalance: null, trackingStart: null, transactions: [] };
       const prices = { ...(existing.lastRebalance?.prices || {}) };
-      const oldSellRebalancePrice = switchSell.symbol ? prices[switchSell.symbol] : undefined;
-      if (switchSell.symbol) prices[switchSell.symbol] = sellPrice;
 
-      // Drift inheritance: per-group, using THIS group's own prior rebalance price.
-      if (switchSell.symbol && oldSellRebalancePrice && sellPrice > 0) {
-        prices[buyTicker] = buyPrice * (oldSellRebalancePrice / sellPrice);
-      } else {
-        prices[buyTicker] = buyPrice;
+      // Update lastRebalance.prices map ONLY for full-sell + buy paths.
+      // Partial sells leave model weights alone and shouldn't pollute the
+      // drift-inheritance basis with a sub-position price.
+      // Sell-only trades update the sold ticker's price but don't add a
+      // bought-ticker entry.
+      if (!isPartialSell) {
+        const oldSellRebalancePrice = trade.sellSymbol ? prices[trade.sellSymbol] : undefined;
+        if (trade.sellSymbol) prices[trade.sellSymbol] = sellPrice;
+        if (buyTicker) {
+          if (trade.sellSymbol && oldSellRebalancePrice && sellPrice > 0) {
+            // Drift inheritance per-group using THIS group's prior rebalance price.
+            prices[buyTicker] = buyPrice * (oldSellRebalancePrice / sellPrice);
+          } else {
+            prices[buyTicker] = buyPrice;
+          }
+        }
       }
 
       const txns: PimTransaction[] = [];
-      if (switchSell.symbol && sellPrice) {
+      const txnType: "switch" | "buy" | "sell" =
+        isPartialSell ? (buyTicker ? "switch" : "sell")
+          : trade.sellSymbol && buyTicker ? "switch"
+          : trade.sellSymbol ? "sell"
+          : "buy";
+      if (trade.sellSymbol && sellPrice) {
+        // Partial-sell txns include the percent in the targetWeight as a
+        // convenience signal — readers (Appendix, Audit) can detect
+        // partial vs full by checking the % alongside the type.
         txns.push({
           id: generateId(), date: nowIso, groupId,
-          type: "switch", symbol: switchSell.symbol, direction: "sell",
-          price: sellPrice, targetWeight: soldWeightInClass, pairedWith: buyTicker,
+          type: txnType, symbol: trade.sellSymbol, direction: "sell",
+          price: sellPrice,
+          targetWeight: isPartialSell ? soldWeightInClass * (sellPercent / 100) : soldWeightInClass,
+          pairedWith: buyTicker || undefined,
         });
       }
-      txns.push({
-        id: generateId(), date: nowIso, groupId,
-        type: switchSell.symbol ? "switch" : "buy", symbol: buyTicker, direction: "buy",
-        price: buyPrice, targetWeight: soldWeightInClass, pairedWith: switchSell.symbol || undefined,
-      });
+      if (buyTicker && buyPrice) {
+        txns.push({
+          id: generateId(), date: nowIso, groupId,
+          type: txnType, symbol: buyTicker, direction: "buy",
+          price: buyPrice,
+          targetWeight: isPartialSell ? soldWeightInClass * (sellPercent / 100) : soldWeightInClass,
+          pairedWith: trade.sellSymbol || undefined,
+        });
+      }
 
       statesToUpdateMap.set(groupId, {
         ...existing,
@@ -1400,23 +1522,35 @@ export function PimPortfolio({ groups }: Props) {
     };
     updatePimPortfolioState(updatedState);
 
-    // ── pm:pim-positions — replace the sold ticker's position with the
-    // bought ticker across EVERY (group, profile) combination where the
-    // sold ticker was actually held. This populates units / ACB / value
-    // / current % / gain-loss on the Positioning tab immediately.
+    // ── pm:pim-positions — rewrite each affected (group, profile)
+    // combo's positions to reflect the sell + buy. Three branches
+    // depending on the trade shape:
+    //
+    //   Full sell + buy (isPartialSell=false, buyTicker set):
+    //     - Remove sold entirely; add bought sized from proceeds.
+    //
+    //   Partial sell + buy (isPartialSell=true, buyTicker set):
+    //     - Reduce sold units by sellPercent; keep its per-unit costBasis.
+    //     - Add bought sized from the partial proceeds (or merge).
+    //
+    //   Buy-only / sell-only:
+    //     - Existing behavior: position math is skipped (the trade
+    //       logs to the transaction tape, but pm:pim-positions isn't
+    //       re-derived from a cash side). The PM updates positions
+    //       manually for cash-only trades.
     //
     // Math:
-    //   proceeds_cad = soldUnits × sellPrice × sellFx
-    //   boughtUnits  = proceeds_cad / (buyPrice × buyFx)
-    //   costBasis    = buyPrice × buyFx  (per-unit CAD cost)
-    //
-    // When both currencies match, FX cancels and boughtUnits reduces to
-    //   soldUnits × (sellPrice / buyPrice).
-    if (switchSell.symbol && sellPrice > 0 && buyPrice > 0) {
+    //   soldUnitsToTrade = soldPos.units × (sellPercent / 100)
+    //   proceeds_cad     = soldUnitsToTrade × sellPrice × sellFx
+    //   boughtUnits      = proceeds_cad / (buyPrice × buyFx)
+    //   buyCostBasisCad  = buyPrice × buyFx  (per-unit CAD cost)
+    //   When sellPercent === 100 and currencies match this reduces to the
+    //   prior soldUnits × (sellPrice / buyPrice).
+    if (trade.sellSymbol && buyTicker && sellPrice > 0 && buyPrice > 0) {
       const sellCurrency: "CAD" | "USD" =
-        switchSell.symbol.endsWith(".U")
+        trade.sellSymbol.endsWith(".U")
           ? "USD"
-          : switchSell.symbol.endsWith("-T") || switchSell.symbol.endsWith(".TO")
+          : trade.sellSymbol.endsWith("-T") || trade.sellSymbol.endsWith(".TO")
             ? "CAD"
             : "USD";
       const buyCurrencyForPos: "CAD" | "USD" =
@@ -1428,35 +1562,53 @@ export function PimPortfolio({ groups }: Props) {
       const sellFx = sellCurrency === "USD" ? usdCadRate : 1;
       const buyFx = buyCurrencyForPos === "USD" ? usdCadRate : 1;
       const buyCostBasisCad = buyPrice * buyFx;
+      const sellFraction = sellPercent / 100;
+
+      // For partial sells the swapPlan is empty (we skip pim-models), so
+      // affectedGroupIds is also empty. Fall back to every group whose
+      // positions actually hold the sold ticker so the partial trade
+      // applies wherever the position exists.
+      const positionGroupsToTouch = isPartialSell
+        ? new Set(
+            positions
+              .filter((pp) => pp.positions.some((p) => tickerEq(p.symbol, trade.sellSymbol) && p.units > 0))
+              .map((pp) => pp.groupId)
+          )
+        : affectedGroupIds;
 
       const updatedPositions = positions.map((pp) => {
-        // Only patch group+profile combos that match an affected group.
-        if (!affectedGroupIds.has(pp.groupId)) return pp;
-        const soldPos = pp.positions.find((p) => tickerEq(p.symbol, switchSell.symbol));
+        if (!positionGroupsToTouch.has(pp.groupId)) return pp;
+        const soldPos = pp.positions.find((p) => tickerEq(p.symbol, trade.sellSymbol));
         if (!soldPos || soldPos.units <= 0) return pp;
 
-        const proceedsCad = soldPos.units * sellPrice * sellFx;
+        const soldUnitsToTrade = soldPos.units * sellFraction;
+        const remainingSoldUnits = soldPos.units - soldUnitsToTrade;
+        const proceedsCad = soldUnitsToTrade * sellPrice * sellFx;
         const boughtUnits = buyCostBasisCad > 0 ? proceedsCad / buyCostBasisCad : 0;
 
-        // Remove sold + add bought (or update if BK already had a position).
-        const withoutSold = pp.positions.filter((p) => !tickerEq(p.symbol, switchSell.symbol));
-        const existingBought = withoutSold.find((p) => tickerEq(p.symbol, buyTicker));
+        // Build the residual position list: optionally keep a reduced
+        // sold position (partial sell), then add/merge the bought.
+        const withoutSold = pp.positions.filter((p) => !tickerEq(p.symbol, trade.sellSymbol));
+        const carryResidualSold = isPartialSell && remainingSoldUnits > 0
+          ? [{ symbol: soldPos.symbol, units: remainingSoldUnits, costBasis: soldPos.costBasis }]
+          : [];
+        const baseList = [...withoutSold, ...carryResidualSold];
+        const existingBought = baseList.find((p) => tickerEq(p.symbol, buyTicker));
         let nextPositions;
         if (existingBought) {
-          // Merge into existing: weighted-average costBasis, combine units.
           const mergedUnits = existingBought.units + boughtUnits;
           const mergedCostBasis =
             mergedUnits > 0
               ? (existingBought.units * existingBought.costBasis + boughtUnits * buyCostBasisCad) / mergedUnits
               : buyCostBasisCad;
-          nextPositions = withoutSold.map((p) =>
+          nextPositions = baseList.map((p) =>
             tickerEq(p.symbol, buyTicker)
               ? { ...p, units: mergedUnits, costBasis: mergedCostBasis }
               : p
           );
         } else {
           nextPositions = [
-            ...withoutSold,
+            ...baseList,
             { symbol: buyTicker, units: boughtUnits, costBasis: buyCostBasisCad },
           ];
         }
@@ -1473,21 +1625,64 @@ export function PimPortfolio({ groups }: Props) {
       } catch { /* non-fatal; local state is correct */ }
     }
 
-    // ── User feedback: warn about skipped groups where bought ticker
-    // was already present (can't double-hold).
-    if (skippedDueToBoughtPresent.length > 0) {
-      alert(
-        `${buyTicker} was already held in these models — swap was NOT applied there to avoid duplicate holdings:\n\n` +
-        skippedDueToBoughtPresent.map((n) => `  • ${n}`).join("\n") +
-        `\n\nIf you want to swap in those models too, manually remove ${buyTicker} there first.`
-      );
-    }
+    // Surface skipped-group warnings via the return value rather than
+    // alert() — the multi-trade caller aggregates them into the
+    // tradeExecProgress label so one alert popup per queue execution
+    // is shown at the end (not per trade).
+    const warning = skippedDueToBoughtPresent.length > 0
+      ? `${buyTicker} was already held in these models — swap was NOT applied there: ${skippedDueToBoughtPresent.join(", ")}.`
+      : undefined;
+    return { ok: true, warning };
+  }, [pimPortfolioState, selectedGroupId, updatePimPortfolioState, scoredStocks, addStock, pimModels, updatePimModels, moveBucket, stocks, positions, usdCadRate]);
 
-    setShowSwitch(false);
-    setSwitchSell({ symbol: "", price: "" });
-    setSwitchBuy({ symbol: "", price: "", ticker: "", name: "", resolving: false });
+  /**
+   * Run every valid trade in the queue sequentially. Skips invalid rows
+   * (e.g. empty trade, missing price) and surfaces a summary at the end.
+   * Each trade goes through the existing internally-consistent atomic
+   * logic; if one fails, prior trades stay committed (no cross-trade
+   * rollback — would need a working-state refactor).
+   */
+  const executeAllTrades = useCallback(async () => {
+    if (executingTrades) return;
+    setExecutingTrades(true);
+    setTradeExecProgress("");
+    let executed = 0;
+    let skipped = 0;
+    const errors: string[] = [];
+    const warnings: string[] = [];
+    for (let i = 0; i < trades.length; i++) {
+      const t = trades[i];
+      // Skip trades with no sell + no buy (empty rows).
+      if (!t.sellSymbol && !t.buyTicker) {
+        skipped++;
+        continue;
+      }
+      setTradeExecProgress(`Executing trade ${i + 1} of ${trades.length}...`);
+      const res = await executeTrade(t);
+      if (!res.ok) {
+        errors.push(`Trade ${i + 1}: ${res.error || "unknown error"}`);
+      } else {
+        executed++;
+        if (res.warning) warnings.push(`Trade ${i + 1}: ${res.warning}`);
+      }
+    }
+    setTradeExecProgress(
+      `${executed} of ${trades.length} executed${skipped > 0 ? ` · ${skipped} skipped (empty)` : ""}${errors.length > 0 ? ` · ${errors.length} failed` : ""}`
+    );
+    if (warnings.length > 0) {
+      alert("Warnings:\n\n" + warnings.join("\n\n"));
+    }
+    if (errors.length > 0) {
+      alert("Errors:\n\n" + errors.join("\n\n"));
+    } else {
+      // Clean close on full success.
+      setShowSwitch(false);
+      setTrades([newTrade()]);
+      setTradeExecProgress("");
+    }
     fetchPrices();
-  }, [switchSell, switchBuy, pimPortfolioState, selectedGroupId, updatePimPortfolioState, fetchPrices, scoredStocks, addStock, pimModels, updatePimModels, moveBucket, stocks, positions, usdCadRate]);
+    setExecutingTrades(false);
+  }, [trades, executingTrades, executeTrade, fetchPrices]);
 
   return (
     <div className="space-y-6">
@@ -1800,100 +1995,160 @@ export function PimPortfolio({ groups }: Props) {
         </div>
       )}
 
-      {/* Buy/Sell Panel */}
-      {showSwitch && (
+      {/* Buy/Sell Panel \u2014 supports a queue of trades, each independently
+          configurable as buy-only / sell-only / switch. Sell % defaults
+          to 100; lower values run a partial-sell that only touches
+          pm:pim-positions, not pm:pim-models (target weights stay as
+          designed). Execute All runs the queue sequentially. */}
+      {showSwitch && (() => {
+        const watchlistStocks = stocks
+          .filter((s) => s.bucket === "Watchlist")
+          .slice()
+          .sort((a, b) => a.ticker.localeCompare(b.ticker));
+        const updateTrade = (id: string, patch: Partial<QueuedTrade>) => {
+          setTrades((arr) => arr.map((t) => (t.id === id ? { ...t, ...patch } : t)));
+        };
+        const removeTrade = (id: string) => {
+          setTrades((arr) => arr.length > 1 ? arr.filter((t) => t.id !== id) : arr);
+        };
+        const addTrade = () => setTrades((arr) => [...arr, newTrade()]);
+        const closeAndReset = () => {
+          setShowSwitch(false);
+          setTrades([newTrade()]);
+          setTradeExecProgress("");
+        };
+        const anyValid = trades.some((t) => {
+          if (!t.sellSymbol && !t.buyTicker) return false;
+          if (t.sellSymbol && !parseFloat(t.sellPrice)) return false;
+          if (t.buyTicker && !parseFloat(t.buyPrice)) return false;
+          return true;
+        });
+        return (
         <div className="rounded-2xl border border-amber-200 bg-amber-50/50 p-5 shadow-sm">
-          <h3 className="text-sm font-bold text-slate-800 mb-3">Buy / Sell</h3>
-          <p className="text-xs text-slate-500 mb-3">Buy a new position or sell an existing one. Optionally pair as a switch (sell one, buy another).</p>
-          <div className="grid gap-4 sm:grid-cols-2">
-            <div className="space-y-2">
-              <label className="text-xs font-semibold text-red-600 uppercase">Sell (optional)</label>
-              <select value={switchSell.symbol} onChange={(e) => setSwitchSell((s) => ({ ...s, symbol: e.target.value }))}
-                className="w-full rounded-lg border border-slate-200 bg-white px-3 py-2 text-sm outline-none focus:border-amber-300">
-                <option value="">None \u2014 buy only</option>
-                {computedHoldingsForSwitch.filter((h) => h.weightInPortfolio > 0).map((h) => (
-                  <option key={h.symbol} value={h.symbol}>{symbolToTicker(h.symbol)} — {h.name}</option>
-                ))}
-              </select>
-              {switchSell.symbol && (
-                <>
-                  <input type="number" step="0.01" placeholder="Sell price"
-                    value={switchSell.price} onChange={(e) => setSwitchSell((s) => ({ ...s, price: e.target.value }))}
-                    className="w-full rounded-lg border border-slate-200 bg-white px-3 py-2 text-sm outline-none focus:border-red-300" />
-                  {livePrices[switchSell.symbol] && (
-                    <p className="text-[10px] text-slate-400">Market: ${livePrices[switchSell.symbol].toFixed(2)}</p>
-                  )}
-                </>
-              )}
+          <div className="flex items-baseline justify-between gap-3 mb-3 flex-wrap">
+            <div>
+              <h3 className="text-sm font-bold text-slate-800">Buy / Sell</h3>
+              <p className="text-xs text-slate-500 mt-0.5">
+                Queue one or more trades. Sell % defaults to 100 (full position); lower it for a partial sell \u2014 only the positions table is touched, model weights stay as designed.
+              </p>
             </div>
-            <div className="space-y-2">
-              <label className="text-xs font-semibold text-emerald-600 uppercase">Buy</label>
-              {/* Buy candidates are restricted to the Watchlist by design.
-                  Promoting a name into the Portfolio must go through here
-                  so the entry carries a real buy price + cost basis, which
-                  in turn feeds the PIM model and Sleeve Drift math. To
-                  add a fresh research candidate, use Quick-Add (Shift+A)
-                  which adds it to the Watchlist; once it appears in this
-                  dropdown the PM can execute the buy. */}
-              {(() => {
-                const watchlistStocks = stocks
-                  .filter((s) => s.bucket === "Watchlist")
-                  .slice()
-                  .sort((a, b) => a.ticker.localeCompare(b.ticker));
-                if (watchlistStocks.length === 0) {
-                  return (
-                    <div className="rounded-lg border border-dashed border-slate-300 bg-slate-50 p-3 text-xs text-slate-500">
-                      Watchlist is empty. Press <kbd className="rounded border border-slate-300 bg-white px-1 py-px text-[10px] font-mono">Shift + A</kbd> to add a research candidate first; it&apos;ll appear here once added.
-                    </div>
-                  );
-                }
-                return (
-                  <select
-                    value={switchBuy.ticker}
-                    onChange={(e) => {
-                      const t = e.target.value;
-                      if (!t) {
-                        setSwitchBuy({ symbol: "", price: "", ticker: "", name: "", resolving: false });
-                        return;
-                      }
-                      const picked = watchlistStocks.find((s) => s.ticker === t);
-                      setSwitchBuy((s) => ({
-                        ...s,
-                        ticker: t,
-                        symbol: t,
-                        name: picked?.name || t,
-                        resolving: false,
-                      }));
-                    }}
-                    className="w-full rounded-lg border border-slate-200 bg-white text-slate-900 px-3 py-2 text-sm outline-none focus:border-emerald-300 font-mono"
-                  >
-                    <option value="">— Pick a Watchlist stock —</option>
-                    {watchlistStocks.map((s) => (
-                      <option key={s.ticker} value={s.ticker}>
-                        {s.ticker}{s.name && s.name !== s.ticker ? ` · ${s.name}` : ""}
-                      </option>
-                    ))}
-                  </select>
-                );
-              })()}
-              <input type="number" step="0.01" placeholder="Buy price"
-                value={switchBuy.price} onChange={(e) => setSwitchBuy((s) => ({ ...s, price: e.target.value }))}
-                className="w-full rounded-lg border border-slate-200 bg-white text-slate-900 px-3 py-2 text-sm outline-none focus:border-emerald-300" />
-            </div>
-          </div>
-          <div className="flex gap-2 mt-3">
-            <button onClick={handleExecuteSwitch}
-              disabled={!switchBuy.symbol || !switchBuy.price || switchBuy.resolving || (!!switchSell.symbol && !switchSell.price)}
-              className="rounded-lg bg-amber-600 px-4 py-2 text-xs font-semibold text-white hover:bg-amber-700 transition-colors disabled:opacity-50">
-              {switchSell.symbol ? "Execute Switch" : "Execute Buy"}
+            <button onClick={addTrade}
+              className="rounded-lg bg-white border border-amber-300 text-amber-700 hover:bg-amber-100 px-3 py-1.5 text-xs font-semibold transition-colors">
+              + Add another trade
             </button>
-            <button onClick={() => { setShowSwitch(false); setSwitchSell({ symbol: "", price: "" }); setSwitchBuy({ symbol: "", price: "", ticker: "", name: "", resolving: false }); }}
-              className="rounded-lg bg-slate-200 px-4 py-2 text-xs font-semibold text-slate-600 hover:bg-slate-300 transition-colors">
+          </div>
+          <div className="space-y-3">
+            {trades.map((t, idx) => {
+              const sellPctParsed = parseFloat(t.sellPercent);
+              const isPartial = !!t.sellSymbol && Number.isFinite(sellPctParsed) && sellPctParsed > 0 && sellPctParsed < 100;
+              return (
+                <div key={t.id} className="rounded-xl border border-slate-200 bg-white p-3">
+                  <div className="flex items-center justify-between mb-2">
+                    <span className="text-[10px] uppercase tracking-wider font-semibold text-slate-500">
+                      Trade {idx + 1}{isPartial ? " \u00b7 partial" : t.sellSymbol && t.buyTicker ? " \u00b7 switch" : t.sellSymbol ? " \u00b7 sell" : t.buyTicker ? " \u00b7 buy" : ""}
+                    </span>
+                    {trades.length > 1 && (
+                      <button onClick={() => removeTrade(t.id)}
+                        className="text-slate-400 hover:text-red-600 text-xs"
+                        title="Remove this trade from the queue">
+                        \u00d7 Remove
+                      </button>
+                    )}
+                  </div>
+                  <div className="grid gap-3 sm:grid-cols-2">
+                    <div className="space-y-1.5">
+                      <label className="text-[10px] font-semibold text-red-600 uppercase">Sell (optional)</label>
+                      <select value={t.sellSymbol}
+                        onChange={(e) => updateTrade(t.id, { sellSymbol: e.target.value, sellPrice: e.target.value ? t.sellPrice : "" })}
+                        className="w-full rounded-lg border border-slate-200 bg-white text-slate-900 px-3 py-2 text-sm outline-none focus:border-amber-300">
+                        <option value="">None \u2014 buy only</option>
+                {computedHoldingsForSwitch.filter((h) => h.weightInPortfolio > 0).map((h) => (
+                          <option key={h.symbol} value={h.symbol}>{symbolToTicker(h.symbol)} — {h.name}</option>
+                        ))}
+                      </select>
+                      {t.sellSymbol && (
+                        <>
+                          <div className="grid grid-cols-[1fr_88px] gap-2">
+                            <input type="number" step="0.01" placeholder="Sell price"
+                              value={t.sellPrice}
+                              onChange={(e) => updateTrade(t.id, { sellPrice: e.target.value })}
+                              className="w-full rounded-lg border border-slate-200 bg-white text-slate-900 px-3 py-2 text-sm outline-none focus:border-red-300" />
+                            <div className="relative">
+                              <input type="number" step="1" min="1" max="100"
+                                value={t.sellPercent}
+                                onChange={(e) => updateTrade(t.id, { sellPercent: e.target.value })}
+                                aria-label="Percent of position to sell"
+                                title="Percent of the position to sell. 100 = full liquidation (touches model weights); <100 = partial sell (positions only)."
+                                className="w-full rounded-lg border border-slate-200 bg-white text-slate-900 px-3 pr-6 py-2 text-sm outline-none focus:border-red-300" />
+                              <span className="absolute right-2 top-1/2 -translate-y-1/2 text-xs text-slate-400 pointer-events-none">%</span>
+                            </div>
+                          </div>
+                          {livePrices[t.sellSymbol] && (
+                            <p className="text-[10px] text-slate-400">Market: ${livePrices[t.sellSymbol].toFixed(2)}</p>
+                          )}
+                          {isPartial && (
+                            <p className="text-[10px] text-amber-700">
+                              Partial sell — pim-models weights unchanged; only the realized position shifts.
+                            </p>
+                          )}
+                        </>
+                      )}
+                    </div>
+                    <div className="space-y-1.5">
+                      <label className="text-[10px] font-semibold text-emerald-600 uppercase">Buy (from Watchlist)</label>
+                      {watchlistStocks.length === 0 ? (
+                        <div className="rounded-lg border border-dashed border-slate-300 bg-slate-50 p-2.5 text-[11px] text-slate-500">
+                          Watchlist is empty. Press <kbd className="rounded border border-slate-300 bg-white px-1 py-px text-[10px] font-mono">Shift + A</kbd> to add a research candidate first.
+                        </div>
+                      ) : (
+                        <select value={t.buyTicker}
+                          onChange={(e) => {
+                            const picked = watchlistStocks.find((s) => s.ticker === e.target.value);
+                            updateTrade(t.id, {
+                              buyTicker: e.target.value,
+                              buyName: picked?.name || e.target.value,
+                              buyPrice: e.target.value ? t.buyPrice : "",
+                            });
+                          }}
+                          className="w-full rounded-lg border border-slate-200 bg-white text-slate-900 px-3 py-2 text-sm outline-none focus:border-emerald-300 font-mono">
+                          <option value="">— None — sell only —</option>
+                          {watchlistStocks.map((s) => (
+                            <option key={s.ticker} value={s.ticker}>
+                              {s.ticker}{s.name && s.name !== s.ticker ? ` · ${s.name}` : ""}
+                            </option>
+                          ))}
+                        </select>
+                      )}
+                      {t.buyTicker && (
+                        <input type="number" step="0.01" placeholder="Buy price"
+                          value={t.buyPrice}
+                          onChange={(e) => updateTrade(t.id, { buyPrice: e.target.value })}
+                          className="w-full rounded-lg border border-slate-200 bg-white text-slate-900 px-3 py-2 text-sm outline-none focus:border-emerald-300" />
+                      )}
+                    </div>
+                  </div>
+                </div>
+              );
+            })}
+          </div>
+          {tradeExecProgress && (
+            <p className="mt-3 text-xs text-amber-700">{tradeExecProgress}</p>
+          )}
+          <div className="flex flex-wrap gap-2 mt-3">
+            <button onClick={() => void executeAllTrades()}
+              disabled={!anyValid || executingTrades}
+              className="rounded-lg bg-amber-600 px-4 py-2 text-xs font-semibold text-white hover:bg-amber-700 transition-colors disabled:opacity-50">
+              {executingTrades ? "Executing..." : `Execute All (${trades.length})`}
+            </button>
+            <button onClick={closeAndReset}
+              disabled={executingTrades}
+              className="rounded-lg bg-slate-200 px-4 py-2 text-xs font-semibold text-slate-600 hover:bg-slate-300 transition-colors disabled:opacity-50">
               Cancel
             </button>
           </div>
         </div>
-      )}
+        );
+      })()}
 
       {/* Portfolio summary (all CAD) */}
       {pricesFetchedAt && (
