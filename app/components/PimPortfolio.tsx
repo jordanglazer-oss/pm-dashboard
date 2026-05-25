@@ -1,6 +1,6 @@
 "use client";
 
-import React, { useState, useEffect, useMemo, useCallback } from "react";
+import React, { useState, useEffect, useMemo, useCallback, useRef } from "react";
 import Link from "next/link";
 import type {
   PimModelGroup,
@@ -141,6 +141,18 @@ export function PimPortfolio({ groups }: Props) {
   const selectedGroupId = "pim";
   const [selectedProfile, setSelectedProfile] = useState<PimProfileType>("allEquity");
   const [positions, setPositions] = useState<PimPortfolioPositions[]>([]);
+  // Refs that mirror the live state for use inside the Buy / Sell
+  // multi-trade loop. React's setState is async — back-to-back trades
+  // inside one Execute All click otherwise read stale closure values
+  // and clobber each other's writes. These refs are updated
+  // SYNCHRONOUSLY alongside each setState call so the next trade in
+  // the queue sees the post-previous-trade state.
+  const pimModelsRef = useRef(pimModels);
+  const positionsRef = useRef<PimPortfolioPositions[]>([]);
+  const pimPortfolioStateRef = useRef(pimPortfolioState);
+  useEffect(() => { pimModelsRef.current = pimModels; }, [pimModels]);
+  useEffect(() => { positionsRef.current = positions; }, [positions]);
+  useEffect(() => { pimPortfolioStateRef.current = pimPortfolioState; }, [pimPortfolioState]);
   const [livePrices, setLivePrices] = useState<Record<string, number>>({});
   // Tracks when the most recent price fetch completed so the Positioning
   // summary tiles can surface a "Prices · Xm ago" indicator. Pure UI
@@ -1314,7 +1326,10 @@ export function PimPortfolio({ groups }: Props) {
     // weightInClass and rebalance-price drift. Groups that already hold
     // the bought ticker are skipped (to avoid double-holding) and surfaced
     // to the user. Groups without the sold ticker are untouched.
-    const originalPim = pimModels;
+    // Read from refs so back-to-back trades in Execute All see the
+    // post-previous-trade state. Reading from `pimModels` directly
+    // would close over the pre-loop snapshot for every iteration.
+    const originalPim = pimModelsRef.current;
     const nowIso = new Date().toISOString();
 
     type SwapPlan = {
@@ -1417,7 +1432,10 @@ export function PimPortfolio({ groups }: Props) {
           ),
         };
       });
-      updatePimModels({ ...originalPim, groups: updatedGroups, lastUpdated: nowIso });
+      const nextPim = { ...originalPim, groups: updatedGroups, lastUpdated: nowIso };
+      updatePimModels(nextPim);
+      // Sync the ref so the next trade in the queue sees this update.
+      pimModelsRef.current = nextPim;
     }
 
     // ── Transaction log + price snapshot — propagated to EVERY affected
@@ -1426,7 +1444,10 @@ export function PimPortfolio({ groups }: Props) {
     // rebalance price for the sold ticker. If the sold ticker wasn't in
     // any group (weird but possible), we fall back to writing just the
     // selectedGroup entry so the transaction row still lands somewhere.
-    const existingStates = pimPortfolioState.groupStates;
+    // Read from the ref so back-to-back trades see the post-previous-
+    // trade transaction log + price snapshots.
+    const currentPortfolioState = pimPortfolioStateRef.current;
+    const existingStates = currentPortfolioState.groupStates;
     const statesToUpdateMap = new Map<string, PimModelGroupState>();
 
     // Seed: keep unaffected states as-is.
@@ -1516,11 +1537,13 @@ export function PimPortfolio({ groups }: Props) {
     }
 
     const updatedState: PimPortfolioState = {
-      ...pimPortfolioState,
+      ...currentPortfolioState,
       groupStates: Array.from(statesToUpdateMap.values()),
       lastUpdated: nowIso,
     };
     updatePimPortfolioState(updatedState);
+    // Sync the ref so the next trade sees this transaction log update.
+    pimPortfolioStateRef.current = updatedState;
 
     // ── pm:pim-positions — rewrite each affected (group, profile)
     // combo's positions to reflect the sell + buy. Three branches
@@ -1568,15 +1591,20 @@ export function PimPortfolio({ groups }: Props) {
       // affectedGroupIds is also empty. Fall back to every group whose
       // positions actually hold the sold ticker so the partial trade
       // applies wherever the position exists.
+      // Read positions from the ref so back-to-back trades see the
+      // post-previous-trade unit counts. Reading from `positions`
+      // directly would close over the pre-loop snapshot for every
+      // iteration, and trade 2's write would overwrite trade 1's.
+      const currentPositions = positionsRef.current;
       const positionGroupsToTouch = isPartialSell
         ? new Set(
-            positions
+            currentPositions
               .filter((pp) => pp.positions.some((p) => tickerEq(p.symbol, trade.sellSymbol) && p.units > 0))
               .map((pp) => pp.groupId)
           )
         : affectedGroupIds;
 
-      const updatedPositions = positions.map((pp) => {
+      const updatedPositions = currentPositions.map((pp) => {
         if (!positionGroupsToTouch.has(pp.groupId)) return pp;
         const soldPos = pp.positions.find((p) => tickerEq(p.symbol, trade.sellSymbol));
         if (!soldPos || soldPos.units <= 0) return pp;
@@ -1616,6 +1644,8 @@ export function PimPortfolio({ groups }: Props) {
       });
 
       setPositions(updatedPositions);
+      // Sync the ref so the next trade in the queue sees this update.
+      positionsRef.current = updatedPositions;
       try {
         await fetch("/api/kv/pim-positions", {
           method: "PUT",
