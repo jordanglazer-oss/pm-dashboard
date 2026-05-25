@@ -1214,23 +1214,10 @@ export function PimPortfolio({ groups }: Props) {
   }, [pendingTrades, settlementPrices, positions, activeProfile, selectedGroupId,
       sharedCostBasisMap, groupState, pimPortfolioState, updatePimPortfolioState, fetchPrices]);
 
-  const handleResolveBuyTicker = useCallback(async (ticker: string) => {
-    if (!ticker.trim()) return;
-    const t = ticker.trim().toUpperCase();
-    setSwitchBuy((s) => ({ ...s, ticker: t, resolving: true, name: "" }));
-    try {
-      const res = await fetch(`/api/company-name?tickers=${encodeURIComponent(t)}`);
-      if (res.ok) {
-        const data = await res.json();
-        const name = data.names?.[t] || t;
-        setSwitchBuy((s) => ({ ...s, name, symbol: t, resolving: false }));
-      } else {
-        setSwitchBuy((s) => ({ ...s, name: t, symbol: t, resolving: false }));
-      }
-    } catch {
-      setSwitchBuy((s) => ({ ...s, name: t, symbol: t, resolving: false }));
-    }
-  }, []);
+  // handleResolveBuyTicker (free-text ticker name lookup) was removed
+  // when the Buy input switched to a Watchlist-only dropdown — the name
+  // is now read directly from the picked Stock instead of being
+  // resolved via /api/company-name on blur.
 
   const handleExecuteSwitch = useCallback(async () => {
     const sellPrice = switchSell.symbol ? parseFloat(switchSell.price) : 0;
@@ -1841,23 +1828,57 @@ export function PimPortfolio({ groups }: Props) {
             </div>
             <div className="space-y-2">
               <label className="text-xs font-semibold text-emerald-600 uppercase">Buy</label>
-              <div className="relative">
-                <input type="text" value={switchBuy.ticker}
-                  onChange={(e) => setSwitchBuy((s) => ({ ...s, ticker: e.target.value.toUpperCase() }))}
-                  onBlur={() => switchBuy.ticker.trim() && handleResolveBuyTicker(switchBuy.ticker)}
-                  onKeyDown={(e) => { if (e.key === "Enter") handleResolveBuyTicker(switchBuy.ticker); }}
-                  placeholder="e.g. AAPL, XSP.TO, TDB900"
-                  className="w-full rounded-lg border border-slate-200 bg-white px-3 py-2 text-sm outline-none focus:border-emerald-300 font-mono" />
-                {switchBuy.resolving && (
-                  <span className="absolute right-2 top-1/2 -translate-y-1/2 text-[10px] text-slate-400 animate-pulse">Looking up...</span>
-                )}
-              </div>
-              {switchBuy.name && !switchBuy.resolving && (
-                <p className="text-xs text-slate-600 truncate">{switchBuy.name}</p>
-              )}
+              {/* Buy candidates are restricted to the Watchlist by design.
+                  Promoting a name into the Portfolio must go through here
+                  so the entry carries a real buy price + cost basis, which
+                  in turn feeds the PIM model and Sleeve Drift math. To
+                  add a fresh research candidate, use Quick-Add (Shift+A)
+                  which adds it to the Watchlist; once it appears in this
+                  dropdown the PM can execute the buy. */}
+              {(() => {
+                const watchlistStocks = stocks
+                  .filter((s) => s.bucket === "Watchlist")
+                  .slice()
+                  .sort((a, b) => a.ticker.localeCompare(b.ticker));
+                if (watchlistStocks.length === 0) {
+                  return (
+                    <div className="rounded-lg border border-dashed border-slate-300 bg-slate-50 p-3 text-xs text-slate-500">
+                      Watchlist is empty. Press <kbd className="rounded border border-slate-300 bg-white px-1 py-px text-[10px] font-mono">Shift + A</kbd> to add a research candidate first; it&apos;ll appear here once added.
+                    </div>
+                  );
+                }
+                return (
+                  <select
+                    value={switchBuy.ticker}
+                    onChange={(e) => {
+                      const t = e.target.value;
+                      if (!t) {
+                        setSwitchBuy({ symbol: "", price: "", ticker: "", name: "", resolving: false });
+                        return;
+                      }
+                      const picked = watchlistStocks.find((s) => s.ticker === t);
+                      setSwitchBuy((s) => ({
+                        ...s,
+                        ticker: t,
+                        symbol: t,
+                        name: picked?.name || t,
+                        resolving: false,
+                      }));
+                    }}
+                    className="w-full rounded-lg border border-slate-200 bg-white text-slate-900 px-3 py-2 text-sm outline-none focus:border-emerald-300 font-mono"
+                  >
+                    <option value="">— Pick a Watchlist stock —</option>
+                    {watchlistStocks.map((s) => (
+                      <option key={s.ticker} value={s.ticker}>
+                        {s.ticker}{s.name && s.name !== s.ticker ? ` · ${s.name}` : ""}
+                      </option>
+                    ))}
+                  </select>
+                );
+              })()}
               <input type="number" step="0.01" placeholder="Buy price"
                 value={switchBuy.price} onChange={(e) => setSwitchBuy((s) => ({ ...s, price: e.target.value }))}
-                className="w-full rounded-lg border border-slate-200 bg-white px-3 py-2 text-sm outline-none focus:border-emerald-300" />
+                className="w-full rounded-lg border border-slate-200 bg-white text-slate-900 px-3 py-2 text-sm outline-none focus:border-emerald-300" />
             </div>
           </div>
           <div className="flex gap-2 mt-3">

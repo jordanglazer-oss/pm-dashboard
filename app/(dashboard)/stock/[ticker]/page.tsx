@@ -1528,12 +1528,20 @@ export default function StockDetailPage() {
                   >
                     {refreshing ? "Refreshing..." : "Refresh Data"}
                   </button>
-                  <button
-                    onClick={() => moveBucket(ticker)}
-                    className="rounded-lg border border-slate-300 px-3 sm:px-4 py-1.5 text-xs sm:text-sm font-medium text-slate-600 hover:bg-slate-50 transition-colors"
-                  >
-                    Move to {stock.bucket === "Portfolio" ? "Watchlist" : "Portfolio"}
-                  </button>
+                  {/* Move-to-Portfolio is intentionally hidden — promoting
+                      a Watchlist name into the Portfolio is only allowed
+                      via the Buy / Sell flow on the Positioning tab so
+                      every Portfolio entry carries a real buy price + cost
+                      basis. Demoting (Portfolio → Watchlist) is still
+                      offered here as a one-click move. */}
+                  {stock.bucket === "Portfolio" && (
+                    <button
+                      onClick={() => moveBucket(ticker)}
+                      className="rounded-lg border border-slate-300 px-3 sm:px-4 py-1.5 text-xs sm:text-sm font-medium text-slate-600 hover:bg-slate-50 transition-colors"
+                    >
+                      Move to Watchlist
+                    </button>
+                  )}
                   <button
                     onClick={handleDelete}
                     className="rounded-lg border border-red-200 px-3 sm:px-4 py-1.5 text-xs sm:text-sm font-semibold text-red-600 hover:bg-red-50 transition-colors"

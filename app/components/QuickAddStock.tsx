@@ -2,14 +2,15 @@
 
 /**
  * Quick-Add Stock modal — accessible from the top navigation on every
- * page. The PM types a ticker, picks a bucket (Portfolio / Watchlist),
- * optionally picks a designation (Core / Alpha) for Portfolio names, and
- * the stock is added with metadata auto-resolved via /api/company-name.
+ * page. The PM types a ticker; the stock is added to the WATCHLIST
+ * with metadata auto-resolved via /api/company-name.
  *
- * Mirrors the construction pattern used everywhere else (PimPortfolio
- * switch-buy, TechnicalScreener "Add to Watchlist") so behaviour is
- * identical — same default ZERO_SCORES, same auto-routing into PIM
- * models for Portfolio names (StockContext.addStock handles that).
+ * Why Watchlist-only: portfolio additions are a meaningful trading
+ * decision and must go through the Buy / Sell flow on the Positioning
+ * tab, which records the buy price + cost basis and properly enters
+ * the position into the PIM model. Quick-Add is the lightweight path
+ * for capturing research candidates; promotion to portfolio happens
+ * downstream once a buy is actually executed.
  *
  * Keyboard:
  *   - `Esc`           closes the modal
@@ -17,8 +18,8 @@
  *   - The ticker input takes focus on open
  *
  * Safe by design: the modal calls into the same addStock context method
- * the rest of the app uses, so persistence, PIM auto-add, and rebalance
- * math all flow through the existing tested code paths.
+ * the rest of the app uses, so persistence and dedup all flow through
+ * the existing tested code paths.
  */
 
 import React, { useEffect, useRef, useState } from "react";
@@ -42,8 +43,6 @@ type Props = {
 export function QuickAddStock({ open, onClose }: Props) {
   const { addStock, stocks } = useStocks();
   const [ticker, setTicker] = useState("");
-  const [bucket, setBucket] = useState<"Portfolio" | "Watchlist">("Watchlist");
-  const [designation, setDesignation] = useState<"alpha" | "core">("alpha");
   const [submitting, setSubmitting] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const inputRef = useRef<HTMLInputElement | null>(null);
@@ -53,8 +52,6 @@ export function QuickAddStock({ open, onClose }: Props) {
     if (open) {
       setError(null);
       setTicker("");
-      setBucket("Watchlist");
-      setDesignation("alpha");
       // setTimeout so the input exists in the DOM before .focus() runs.
       setTimeout(() => inputRef.current?.focus(), 50);
     }
@@ -116,20 +113,14 @@ export function QuickAddStock({ open, onClose }: Props) {
       ticker: cleaned,
       name,
       instrumentType,
-      bucket,
-      // Funds/ETFs don't carry a single sector — leave blank to match the
-      // pattern used in PimPortfolio switch-buy and TechnicalScreener.
+      bucket: "Watchlist",
+      // Funds/ETFs don't carry a single sector — leave blank to match
+      // the pattern used in PimPortfolio switch-buy and TechnicalScreener.
       sector: instrumentType === "etf" || instrumentType === "mutual-fund" ? "" : sector,
       beta: 1.0,
-      // Portfolio bucket gets weight 2 (matches moveBucket() default);
-      // Watchlist names default to 0.
-      weights: { portfolio: bucket === "Portfolio" ? 2 : 0 },
+      weights: { portfolio: 0 },
       scores: { ...ZERO_SCORES },
       notes: "Added via Quick-Add",
-      // Designation only applies to Portfolio bucket — alpha vs core
-      // gates whether the stock enters the Alpha sleeve or the Core
-      // sleeve for Sleeve Drift / Dynamic Wt math.
-      ...(bucket === "Portfolio" ? { designation } : {}),
     };
 
     try {
@@ -154,12 +145,17 @@ export function QuickAddStock({ open, onClose }: Props) {
         onClick={(e) => e.stopPropagation()}
         className="w-full max-w-md rounded-2xl bg-white shadow-2xl border border-slate-200 p-5"
       >
-        <div className="flex items-center justify-between mb-4">
-          <h2 className="text-base font-bold text-slate-800">Quick-Add Stock</h2>
+        <div className="flex items-start justify-between mb-4 gap-3">
+          <div>
+            <h2 className="text-base font-bold text-slate-800">Add to Watchlist</h2>
+            <p className="text-[11px] text-slate-500 mt-0.5">
+              New names land on the Watchlist. Promote to Portfolio via the Buy / Sell flow on Positioning.
+            </p>
+          </div>
           <button
             onClick={onClose}
             aria-label="Close"
-            className="text-slate-400 hover:text-slate-600"
+            className="text-slate-400 hover:text-slate-600 shrink-0"
           >
             <svg className="w-5 h-5" fill="none" stroke="currentColor" strokeWidth="2" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" d="M6 18 18 6M6 6l12 12" /></svg>
           </button>
@@ -186,73 +182,6 @@ export function QuickAddStock({ open, onClose }: Props) {
             </p>
           </div>
 
-          <div>
-            <label className="block text-xs font-semibold text-slate-500 uppercase tracking-wider mb-1">
-              Bucket
-            </label>
-            <div className="grid grid-cols-2 gap-2">
-              <button
-                type="button"
-                onClick={() => setBucket("Watchlist")}
-                className={`rounded-lg border px-3 py-2 text-sm font-semibold transition-colors ${
-                  bucket === "Watchlist"
-                    ? "border-slate-800 bg-slate-800 text-white"
-                    : "border-slate-200 bg-white text-slate-700 hover:bg-slate-50"
-                }`}
-              >
-                Watchlist
-              </button>
-              <button
-                type="button"
-                onClick={() => setBucket("Portfolio")}
-                className={`rounded-lg border px-3 py-2 text-sm font-semibold transition-colors ${
-                  bucket === "Portfolio"
-                    ? "border-blue-600 bg-blue-600 text-white"
-                    : "border-slate-200 bg-white text-slate-700 hover:bg-slate-50"
-                }`}
-              >
-                Portfolio
-              </button>
-            </div>
-          </div>
-
-          {/* Designation — only relevant for Portfolio bucket. Hidden on
-              Watchlist since watchlist names don't feed Sleeve Drift. */}
-          {bucket === "Portfolio" && (
-            <div>
-              <label className="block text-xs font-semibold text-slate-500 uppercase tracking-wider mb-1">
-                Designation
-              </label>
-              <div className="grid grid-cols-2 gap-2">
-                <button
-                  type="button"
-                  onClick={() => setDesignation("alpha")}
-                  className={`rounded-lg border px-3 py-2 text-sm font-semibold transition-colors ${
-                    designation === "alpha"
-                      ? "border-purple-600 bg-purple-600 text-white"
-                      : "border-slate-200 bg-white text-slate-700 hover:bg-slate-50"
-                  }`}
-                >
-                  Alpha
-                </button>
-                <button
-                  type="button"
-                  onClick={() => setDesignation("core")}
-                  className={`rounded-lg border px-3 py-2 text-sm font-semibold transition-colors ${
-                    designation === "core"
-                      ? "border-emerald-600 bg-emerald-600 text-white"
-                      : "border-slate-200 bg-white text-slate-700 hover:bg-slate-50"
-                  }`}
-                >
-                  Core
-                </button>
-              </div>
-              <p className="text-[11px] text-slate-400 mt-1">
-                Alpha = active pick, Core = indexed/passive ETF. Drives Sleeve Drift bucketing.
-              </p>
-            </div>
-          )}
-
           {error && (
             <div className="rounded-lg bg-red-50 border border-red-200 px-3 py-2 text-xs text-red-700">
               {error}
@@ -275,7 +204,7 @@ export function QuickAddStock({ open, onClose }: Props) {
               {submitting && (
                 <svg className="w-3.5 h-3.5 animate-spin" fill="none" stroke="currentColor" strokeWidth="2" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" d="M16.023 9.348h4.992v-.001M2.985 19.644v-4.992m0 0h4.992m-4.993 0 3.181 3.183a8.25 8.25 0 0 0 13.803-3.7M4.031 9.865a8.25 8.25 0 0 1 13.803-3.7l3.181 3.182" /></svg>
               )}
-              {submitting ? "Adding..." : "Add Stock"}
+              {submitting ? "Adding..." : "Add to Watchlist"}
             </button>
           </div>
         </form>
