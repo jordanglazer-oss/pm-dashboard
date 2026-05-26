@@ -2,18 +2,28 @@ import { NextRequest, NextResponse } from "next/server";
 import { getRedis } from "@/app/lib/redis";
 
 /**
- * Nightly Redis snapshot backup.
+ * Redis snapshot backup — runs 3× daily via Vercel cron.
  *
- * Runs at 06:00 UTC (≈ 2 AM ET) via Vercel cron — see vercel.json.
+ * Runs at 06:00 / 14:00 / 22:00 UTC (≈ 2 AM / 10 AM / 6 PM ET) — see
+ * vercel.json. Three runs/day caps worst-case data loss between snapshots
+ * at ~8 hours rather than 24.
  *
  * What it does:
  *   1. SCANs every `pm:*` key (except ephemeral ones we don't care about).
  *   2. Serializes the full {key → value} map into a single JSON blob.
- *   3. Writes it to `pm:backup:YYYY-MM-DD`.
+ *   3. Writes it to `pm:backup:YYYY-MM-DDTHH:00:00Z` (ISO timestamp prefix,
+ *      hour included so the three runs/day don't overwrite each other).
  *   4. Prunes backups older than BACKUP_RETENTION_DAYS.
  *
+ * Key format note: this route used to write `pm:backup:YYYY-MM-DD` (date
+ * only). Legacy date-only keys are still readable and still get pruned by
+ * the cutoff logic below (Date.parse handles both formats). Restore
+ * scripts that look up a specific date should now include the hour.
+ *
  * Restore procedure (manual, run from a one-off script):
- *   const raw = await redis.get("pm:backup:2026-04-18");
+ *   // List recent backups:
+ *   //   const keys = await redis.keys("pm:backup:*");
+ *   const raw = await redis.get("pm:backup:2026-05-26T14:00:00Z");
  *   const snapshot = JSON.parse(raw);
  *   for (const [key, value] of Object.entries(snapshot.data)) {
  *     await redis.set(key, value as string);
@@ -26,7 +36,11 @@ import { getRedis } from "@/app/lib/redis";
  */
 
 const BACKUP_PREFIX = "pm:backup:";
-const BACKUP_RETENTION_DAYS = 14;
+// 60 days × 3 backups/day = up to 180 retained snapshots. Storage cost is
+// modest (each backup ~1-5 MB compressed in Redis); the recovery window
+// is the precious resource — bumped from 14d after the 2026-05-25 incident
+// where the issue was discovered post-hoc.
+const BACKUP_RETENTION_DAYS = 60;
 
 // Keys we intentionally do NOT back up:
 //   - pm:backup:*         previous backups (would recursively bloat)
@@ -42,8 +56,15 @@ function shouldExclude(key: string): boolean {
   return EXCLUDE_PATTERNS.some((re) => re.test(key));
 }
 
-function todayUTC(): string {
-  return new Date().toISOString().slice(0, 10);
+/**
+ * Hour-truncated ISO timestamp (e.g. "2026-05-26T14:00:00Z"). Used as the
+ * backup key suffix so the three daily runs (06/14/22 UTC) produce three
+ * distinct keys per day instead of overwriting each other.
+ */
+function backupStampUTC(): string {
+  const now = new Date();
+  // Truncate to the hour: YYYY-MM-DDTHH:00:00Z
+  return `${now.toISOString().slice(0, 13)}:00:00Z`;
 }
 
 /** Scan all keys matching a pattern. Uses SCAN (not KEYS) so it stays safe
@@ -103,7 +124,7 @@ export async function GET(req: NextRequest) {
       }
     }
 
-    const today = todayUTC();
+    const stamp = backupStampUTC();
     const snapshot = {
       backedUpAt: new Date().toISOString(),
       keyCount: Object.keys(data).length,
@@ -111,8 +132,8 @@ export async function GET(req: NextRequest) {
       data,
     };
 
-    // ── 3. Write today's backup ─────────────────────────────────────
-    const backupKey = `${BACKUP_PREFIX}${today}`;
+    // ── 3. Write this run's backup ──────────────────────────────────
+    const backupKey = `${BACKUP_PREFIX}${stamp}`;
     await redis.set(backupKey, JSON.stringify(snapshot));
 
     // ── 4. Prune old backups ────────────────────────────────────────
