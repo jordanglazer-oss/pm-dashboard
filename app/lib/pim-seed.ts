@@ -99,7 +99,7 @@ export const pimModelSeed: PimModelGroup[] = [
       { name: "CELESTICA", symbol: "CLS-T", currency: "CAD", assetClass: "equity", weightInClass: 0.018182 },
       { name: "CONSTELLATION SOFTWARE", symbol: "CSU-T", currency: "CAD", assetClass: "equity", weightInClass: 0.018182 },
       { name: "ECHOSTAR", symbol: "SATS", currency: "USD", assetClass: "equity", weightInClass: 0.018182 },
-      { name: "FIDELITY GLOBAL INNOVATORS ETF", symbol: "FINN-T", currency: "CAD", assetClass: "equity", weightInClass: 0.068182 },
+      { name: "FIDELITY GLOBAL INNOVATORS ETF", symbol: "FINN.NE", currency: "CAD", assetClass: "equity", weightInClass: 0.068182 },
       { name: "FUNDSTRAT GRANNY SHOTS US SMALL & MID-CAP ETF", symbol: "GRNJ", currency: "USD", assetClass: "equity", weightInClass: 0.05 },
       { name: "GE VERNOVA", symbol: "GEV", currency: "USD", assetClass: "equity", weightInClass: 0.018182 },
       { name: "ISHARES CORE S&P 500 INDEX ETF (CAD-HEDGED)", symbol: "XSP-T", currency: "CAD", assetClass: "equity", weightInClass: 0.083333 },
