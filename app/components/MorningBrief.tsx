@@ -946,7 +946,7 @@ export function MorningBrief({
     return merged;
   }, [brief?.forwardLooking, forwardData]);
 
-  async function generateBrief() {
+  async function generateBrief(force = true) {
     setGenerating(true);
     setError("");
 
@@ -960,6 +960,11 @@ export function MorningBrief({
         .filter((a) => a.id && a.section)
         .map((a) => ({ id: a.id, section: a.section, label: a.label }));
 
+      // `force: true` bypasses the server-side day-cache and pays for a
+      // fresh Anthropic call. Default true here because the only call
+      // site is the Generate / Regenerate button — the PM explicitly
+      // wants a refreshed brief when they click. Pass force=false from
+      // background/auto-refresh paths to take the cache fast-path.
       const res = await fetch("/api/morning-brief", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
@@ -967,6 +972,7 @@ export function MorningBrief({
           marketData,
           holdings: stocks,
           attachmentRefs,
+          force,
         }),
       });
 
@@ -1309,7 +1315,7 @@ export function MorningBrief({
 
         <div className="mt-5 flex items-center gap-4">
           <button
-            onClick={generateBrief}
+            onClick={() => generateBrief(true)}
             disabled={generating}
             className="rounded-2xl bg-blue-600 px-5 py-3 text-sm font-semibold text-white hover:bg-blue-700 disabled:opacity-50 transition-colors"
           >

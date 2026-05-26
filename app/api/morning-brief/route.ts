@@ -521,6 +521,46 @@ export async function POST(request: NextRequest) {
       );
     }
 
+    // ── Day-cache short-circuit ────────────────────────────────────────
+    // If today's brief already lives in pm:brief and the caller didn't
+    // explicitly request a regenerate, return it directly without paying
+    // the Anthropic round-trip. Cuts token cost dramatically when the PM
+    // (or another team member, on the same Redis) reloads the dashboard
+    // mid-day. The "force" flag from the frontend Regenerate button
+    // bypasses the cache.
+    //
+    // Determinism note: with temperature=0 the same input always produces
+    // the same output, but day-caching is still worth doing because (a)
+    // it avoids the cost, (b) it eliminates round-trip latency on every
+    // page load, and (c) the brief is timestamped — readers know "this is
+    // today's brief" rather than "this is freshly generated 5 minutes ago
+    // and might subtly differ from what my colleague saw at 9am."
+    const force = body?.force === true;
+    if (!force) {
+      try {
+        const redis = await getRedis();
+        const cachedRaw = await redis.get("pm:brief");
+        if (cachedRaw) {
+          const cached = JSON.parse(cachedRaw) as { generatedAt?: string; date?: string };
+          const todayUTC = new Date().toISOString().slice(0, 10);
+          // Match on generatedAt date-prefix (covers ISO timestamps written
+          // by either the frontend persist path or this route's prior runs).
+          const cachedDay = cached?.generatedAt
+            ? cached.generatedAt.slice(0, 10)
+            : cached?.date
+              ? cached.date.slice(0, 10)
+              : null;
+          if (cachedDay === todayUTC) {
+            console.log("[Brief] day-cache hit — returning today's pm:brief without Anthropic call");
+            return NextResponse.json({ ...cached, cached: true });
+          }
+        }
+      } catch (e) {
+        // Cache miss / parse error is non-fatal — fall through and generate fresh.
+        console.warn("[Brief] day-cache check failed; generating fresh:", e);
+      }
+    }
+
     // Attachments may arrive two ways:
     //   (a) Legacy: full `[{section, label, dataUrl}]` inline — heavy; kept
     //       for backward compat but avoid on the client.
