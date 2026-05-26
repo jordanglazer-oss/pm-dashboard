@@ -2,10 +2,17 @@
 
 import React, { createContext, useContext, useState, useMemo, useCallback, useEffect, useRef } from "react";
 import type { Stock, MarketData, ScoredStock, MorningBrief, ScoreKey, ScoreExplanations, HealthData, TechnicalIndicators, RiskAlert, FundData } from "./types";
-import type { PimHolding, PimModelData, PimPortfolioState, PimModelGroupState } from "./pim-types";
+import type { PimHolding, PimModelData, PimModelGroup, PimPortfolioState, PimModelGroupState } from "./pim-types";
 import { computeScores, isOffensiveSector, isScoreable } from "./scoring";
 import { defaultMarketData } from "./defaults";
-import { pimModelSeed } from "./pim-seed";
+// pim-seed is now a LAST-RESORT FALLBACK only. The authoritative baseline
+// lives in Redis under `pm:pim-model-baseline` and is fetched on mount into
+// the `pimBaseline` state below. The seed is used (a) as the synchronous
+// initial value for the first render before the Redis fetch resolves, and
+// (b) if the Redis fetch fails or the key is missing. This makes the app
+// resilient to a missing Redis key without making the seed the source of
+// truth for the rebalance math.
+import { pimModelSeed as pimModelSeedFallback } from "./pim-seed";
 import type { AnalystSnapshots, TickerSnapshot, AnalystReports, TickerReports, AnalystEntry, ExtractedReport } from "./analyst-snapshots";
 import { setSnapshotForTicker, getSnapshotForTicker, setReportsForTicker, getReportsForTicker, reportIdFor, computeAnalystConsensus, buildConsensusExplanation } from "./analyst-snapshots";
 import { mapBoostedAiToAiRating, mapSmaxToRelativeStrength, type BoostedAiConsensus } from "./external-scoring";
@@ -260,7 +267,11 @@ export function StockProvider({ children }: { children: React.ReactNode }) {
   const [brief, setBriefState] = useState<MorningBrief | null>(null);
   const [chartAnalyses, setChartAnalysesState] = useState<Record<string, ChartAnalysisEntry>>({});
   const [scannerData, setScannerDataState] = useState<ScannerData | null>(null);
-  const [pimModels, setPimModelsState] = useState<PimModelData>({ groups: pimModelSeed });
+  const [pimModels, setPimModelsState] = useState<PimModelData>({ groups: pimModelSeedFallback });
+  // Authoritative model baseline (per-group profile %s, cad/usd splits, intended
+  // holdings + weightInClass). Hydrated from pm:pim-model-baseline on mount;
+  // the seed import is only the synchronous initial value for the first render.
+  const [pimBaseline, setPimBaseline] = useState<PimModelGroup[]>(pimModelSeedFallback);
   const [pimPortfolioState, setPimPortfolioState] = useState<PimPortfolioState>({ groupStates: [], lastUpdated: "" });
   const [uiPrefs, setUiPrefsState] = useState<Record<string, string>>({});
   const [analystSnapshots, setAnalystSnapshotsState] = useState<AnalystSnapshots>({});
@@ -312,12 +323,21 @@ export function StockProvider({ children }: { children: React.ReactNode }) {
       fetch("/api/kv/brief").then((r) => r.json()).catch(() => ({ brief: null })),
       fetch("/api/kv/chart-analysis").then((r) => r.json()).catch(() => ({ chartAnalyses: {} })),
       fetch("/api/kv/scanner").then((r) => r.json()).catch(() => ({ scanner: null })),
-      fetch("/api/kv/pim-models").then((r) => r.json()).catch(() => ({ groups: pimModelSeed })),
+      fetch("/api/kv/pim-models").then((r) => r.json()).catch(() => ({ groups: pimModelSeedFallback })),
       fetch("/api/kv/pim-portfolio-state").then((r) => r.json()).catch(() => ({ groupStates: [], lastUpdated: "" })),
       fetch("/api/kv/ui-prefs").then((r) => r.json()).catch(() => ({ uiPrefs: {} })),
       fetch("/api/kv/analyst-snapshots").then((r) => r.json()).catch(() => ({ snapshots: {} })),
       fetch("/api/kv/analyst-reports").then((r) => r.json()).catch(() => ({ reports: {} })),
-    ]).then(async ([stocksRes, marketRes, briefRes, chartRes, scannerRes, pimRes, portfolioStateRes, uiPrefsRes, analystSnapshotsRes, analystReportsRes]) => {
+      fetch("/api/kv/pim-model-baseline").then((r) => r.json()).catch(() => ({ baseline: null })),
+    ]).then(async ([stocksRes, marketRes, briefRes, chartRes, scannerRes, pimRes, portfolioStateRes, uiPrefsRes, analystSnapshotsRes, analystReportsRes, baselineRes]) => {
+      // Resolve the authoritative baseline (Redis first, seed fallback) and
+      // promote it into state for all downstream rebalance math. The seed
+      // fallback runs only if pm:pim-model-baseline is missing or unreadable.
+      const baselineGroups: PimModelGroup[] =
+        baselineRes?.baseline?.groups && Array.isArray(baselineRes.baseline.groups) && baselineRes.baseline.groups.length > 0
+          ? (baselineRes.baseline.groups as PimModelGroup[])
+          : pimModelSeedFallback;
+      setPimBaseline(baselineGroups);
       const rawLoadedStocks: Stock[] = stocksRes.stocks || [];
       const { migrated: loadedStocks, changed: scoresMigrated } = migrateStockScores(rawLoadedStocks);
       setStocks(loadedStocks);
@@ -336,9 +356,9 @@ export function StockProvider({ children }: { children: React.ReactNode }) {
             holdings: g.holdings.map((h: { symbol: string; currency: string }) => {
               const base = h.symbol.replace(/-T$/, "");
               if (/^[A-Z]{2,4}\d{2,5}$/i.test(base)) {
-                // Look up the correct currency from pim-seed
+                // Look up the correct currency from the loaded baseline (Redis first, seed fallback)
                 let seedCurrency: "CAD" | "USD" = "CAD"; // default fallback
-                for (const sg of pimModelSeed) {
+                for (const sg of baselineGroups) {
                   const seedHolding = sg.holdings.find((sh) => sh.symbol === h.symbol || sh.symbol === base);
                   if (seedHolding) { seedCurrency = seedHolding.currency; break; }
                 }
@@ -529,23 +549,23 @@ export function StockProvider({ children }: { children: React.ReactNode }) {
     // 2) Heuristic fallbacks
     if (ticker.endsWith(".U")) return "USD";
     if (ticker.endsWith("-T") || ticker.endsWith(".TO")) return "CAD";
-    // FUNDSERV codes — look up in seed data for authoritative currency
+    // FUNDSERV codes — look up in baseline (Redis-backed, seed fallback) for authoritative currency
     const base = ticker.replace(/-T$/, "");
     if (/^[A-Z]{2,4}\d{2,5}$/i.test(base)) {
-      for (const g of pimModelSeed) {
+      for (const g of pimBaseline) {
         const seedHolding = g.holdings.find((h) => h.symbol === ticker || h.symbol === base);
         if (seedHolding) return seedHolding.currency;
       }
       return "CAD";
     }
     return "USD";
-  }, [stocks]);
+  }, [stocks, pimBaseline]);
 
   /* ─── Rebalance: individual stocks keep fixed weight, freed weight → Core ETFs ─── */
   const rebalanceStockWeights = useCallback((holdings: PimHolding[], extraStock?: Stock): PimHolding[] => {
-    // Reference per-stock weight from PIM base model seed (constant across all models)
-    const pimBaseGroup = pimModelSeed.find((g) => g.id === "pim");
-    const refPerStock = 0.018182; // PIM seed default for individual stocks
+    // Reference per-stock weight from PIM base model (Redis-backed baseline, seed fallback)
+    const pimBaseGroup = pimBaseline.find((g) => g.id === "pim");
+    const refPerStock = 0.018182; // PIM baseline default for individual stocks
 
     // Build a set of individual stock symbols from the PIM base model seed
     // Stocks are equity holdings with weightInClass === refPerStock (the fixed per-stock weight)
@@ -655,7 +675,7 @@ export function StockProvider({ children }: { children: React.ReactNode }) {
       ...rebalancedEtfs,
       ...stockHoldings.map((h) => ({ ...h, weightInClass: refPerStock })),
     ];
-  }, [stocks, isStock]);
+  }, [stocks, isStock, pimBaseline]);
 
   /* ─── Helper: get balanced asset class allocation for a group ─── */
   const getBalancedAlloc = useCallback((group: { profiles: Partial<Record<string, { fixedIncome: number; equity: number; alternatives: number }>> }, assetClass: "fixedIncome" | "equity" | "alternative"): number => {
