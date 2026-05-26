@@ -1,19 +1,28 @@
 import { NextRequest, NextResponse } from "next/server";
 import { getRedis } from "@/app/lib/redis";
+import { checkInvariants, persistInvariantResult } from "@/app/lib/redis-invariants";
 
 /**
- * Redis snapshot backup — runs 3× daily via Vercel cron.
+ * Daily Redis snapshot backup + invariant check.
  *
- * Runs at 06:00 / 14:00 / 22:00 UTC (≈ 2 AM / 10 AM / 6 PM ET) — see
- * vercel.json. Three runs/day caps worst-case data loss between snapshots
- * at ~8 hours rather than 24.
+ * Runs at 06:00 UTC (~2 AM ET) via Vercel cron — see vercel.json. Vercel
+ * Hobby tier allows only one cron entry running once per day, so this
+ * route does double duty: backup first, then invariant check inline. If
+ * we ever upgrade to Pro we can split them onto their own schedules; the
+ * invariant logic lives in app/lib/redis-invariants.ts and is re-exported
+ * by /api/cron/verify-invariants for ad-hoc use.
  *
  * What it does:
  *   1. SCANs every `pm:*` key (except ephemeral ones we don't care about).
  *   2. Serializes the full {key → value} map into a single JSON blob.
- *   3. Writes it to `pm:backup:YYYY-MM-DDTHH:00:00Z` (ISO timestamp prefix,
- *      hour included so the three runs/day don't overwrite each other).
+ *   3. Writes it to `pm:backup:YYYY-MM-DDTHH:00:00Z` (ISO timestamp prefix
+ *      so multi-time-of-day cadence — if we upgrade to Pro — doesn't
+ *      overwrite earlier runs).
  *   4. Prunes backups older than BACKUP_RETENTION_DAYS.
+ *   5. Runs the structural invariant check. Writes any violations to
+ *      pm:invariant-alerts:YYYY-MM-DD, or clears that key on healthy run.
+ *      The check is best-effort: if it throws, we log but still return
+ *      success for the backup (the backup is the critical path).
  *
  * Key format note: this route used to write `pm:backup:YYYY-MM-DD` (date
  * only). Legacy date-only keys are still readable and still get pruned by
@@ -23,7 +32,7 @@ import { getRedis } from "@/app/lib/redis";
  * Restore procedure (manual, run from a one-off script):
  *   // List recent backups:
  *   //   const keys = await redis.keys("pm:backup:*");
- *   const raw = await redis.get("pm:backup:2026-05-26T14:00:00Z");
+ *   const raw = await redis.get("pm:backup:2026-05-26T06:00:00Z");
  *   const snapshot = JSON.parse(raw);
  *   for (const [key, value] of Object.entries(snapshot.data)) {
  *     await redis.set(key, value as string);
@@ -149,12 +158,37 @@ export async function GET(req: NextRequest) {
       await redis.del(key);
     }
 
+    // ── 5. Run invariant check inline ────────────────────────────────
+    // Best-effort: a thrown invariant check must not turn a successful
+    // backup into a failed response. We log + carry on if it errors.
+    let invariantSummary:
+      | { ran: true; status: "healthy" | "violations-found"; count: number; alertKey: string }
+      | { ran: false; error: string };
+    try {
+      const violations = await checkInvariants(redis);
+      const alertKey = await persistInvariantResult(redis, violations);
+      invariantSummary = {
+        ran: true,
+        status: violations.length > 0 ? "violations-found" : "healthy",
+        count: violations.length,
+        alertKey,
+      };
+      if (violations.length > 0) {
+        console.warn("[backup-redis] Invariant violations:", JSON.stringify(violations));
+      }
+    } catch (e) {
+      const msg = e instanceof Error ? e.message : String(e);
+      console.error("[backup-redis] Invariant check threw (backup itself succeeded):", msg);
+      invariantSummary = { ran: false, error: msg };
+    }
+
     return NextResponse.json({
       ok: true,
       backupKey,
       keyCount: snapshot.keyCount,
       totalBytes: snapshot.totalBytes,
       pruned: toDelete,
+      invariantCheck: invariantSummary,
       elapsedMs: Date.now() - startedAt,
     });
   } catch (e) {
