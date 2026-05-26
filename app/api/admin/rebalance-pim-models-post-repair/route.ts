@@ -205,24 +205,11 @@ export async function POST(req: NextRequest) {
       return LEGACY_LOCKED_EQUITY_SYMBOLS.has(symbol);
     };
 
-    // ── PIM base group seed ratios for Core ETF redistribution ──
-    // Mirrors StockContext.rebalanceStockWeights' seed-ratio approach so
-    // server-side rebalance produces results identical to what the UI
-    // would produce after a clean add-remove cycle.
-    const pimBaseSeed = pimModelSeed.find((g) => g.id === "pim");
-    const pimBaseSeedEtfWeights = new Map<string, number>();
-    if (pimBaseSeed) {
-      for (const h of pimBaseSeed.holdings) {
-        if (
-          h.assetClass === "equity" &&
-          !seedStockSymbols.has(h.symbol) &&
-          !isAlphaLocked(h.symbol)
-        ) {
-          pimBaseSeedEtfWeights.set(h.symbol, h.weightInClass);
-        }
-      }
-    }
-    const pimBaseSeedEtfTotal = [...pimBaseSeedEtfWeights.values()].reduce((s, v) => s + v, 0);
+    // (Per-group seed Core ETF distribution is computed inline below — no
+    // PIM-base lookup needed. Each group's freed CAD weight flows only into
+    // that group's CAD Core ETFs by their seed ratios, and same for USD.
+    // This preserves cadSplit/usdSplit when stocks are missing relative to
+    // seed.)
 
     // ── Process each group ──
     const groupDiffs: Array<{
@@ -236,14 +223,32 @@ export async function POST(req: NextRequest) {
     }> = [];
 
     const updatedGroups: Group[] = groups.map((group): Group => {
-      // Per-group seed equity weights for Alpha restoration
+      // Per-group seed equity weights for Alpha restoration AND for Core
+      // ETF currency-aware redistribution. Also capture each seed holding's
+      // currency so we know the seed's CAD/USD split per role.
       const groupSeed = pimModelSeed.find((g) => g.id === group.id);
       const seedAlphaWeights = new Map<string, number>();
+      const seedCoreCadWeights = new Map<string, number>(); // symbol → seed weight (CAD core ETFs)
+      const seedCoreUsdWeights = new Map<string, number>(); // symbol → seed weight (USD core ETFs)
+      let seedCadEquityTotal = 0;
+      let seedUsdEquityTotal = 0;
       if (groupSeed) {
         for (const h of groupSeed.holdings) {
-          if (h.assetClass === "equity") {
-            const norm = normalizeTicker(h.symbol);
-            seedAlphaWeights.set(norm, h.weightInClass);
+          if (h.assetClass !== "equity") continue;
+          const norm = normalizeTicker(h.symbol);
+          seedAlphaWeights.set(norm, h.weightInClass);
+          const cur = h.currency === "USD" ? "USD" : "CAD";
+          if (cur === "CAD") seedCadEquityTotal += h.weightInClass;
+          else seedUsdEquityTotal += h.weightInClass;
+          // We only need core seed ratios for symbols that turn out to be Core
+          // ETFs in the live data (decided in the first pass below), but
+          // capturing every non-stock-non-alpha seed entry is fine.
+          if (
+            Math.abs(h.weightInClass - REF_PER_STOCK) > 0.001 &&
+            !isAlphaLocked(h.symbol)
+          ) {
+            if (cur === "CAD") seedCoreCadWeights.set(h.symbol, h.weightInClass);
+            else seedCoreUsdWeights.set(h.symbol, h.weightInClass);
           }
         }
       }
@@ -257,27 +262,54 @@ export async function POST(req: NextRequest) {
       const coreRescaled: Array<{ symbol: string; before: number; after: number }> = [];
       let csRenamed = false;
 
-      // First pass: identify stocks, locked, core; compute residual
-      let numStocks = 0;
-      let lockedSum = 0;
-      const coreHoldingsInGroup: Array<{ symbol: string; before: number }> = [];
+      // First pass: classify each equity holding, tracking currency for the
+      // stock/locked sums so we can compute per-currency Core residuals.
+      let cadStockCount = 0;
+      let usdStockCount = 0;
+      let cadLockedSum = 0;
+      let usdLockedSum = 0;
+      const coreCadHoldings: Array<{ symbol: string }> = [];
+      const coreUsdHoldings: Array<{ symbol: string }> = [];
+
+      const holdingCurrency = (h: Holding): "CAD" | "USD" =>
+        h.currency === "USD" ? "USD" : "CAD";
 
       for (const h of group.holdings) {
         if (h.assetClass !== "equity") continue;
+        const cur = holdingCurrency(h);
         if (seedStockSymbols.has(h.symbol)) {
-          numStocks++;
+          if (cur === "CAD") cadStockCount++;
+          else usdStockCount++;
         } else if (isAlphaLocked(h.symbol)) {
-          // Determine restored alpha weight: per-group seed value if present
           const seedW = seedAlphaWeights.get(normalizeTicker(h.symbol));
           const restoredWeight = seedW !== undefined ? seedW : h.weightInClass;
-          lockedSum += restoredWeight;
+          if (cur === "CAD") cadLockedSum += restoredWeight;
+          else usdLockedSum += restoredWeight;
         } else {
-          coreHoldingsInGroup.push({ symbol: h.symbol, before: h.weightInClass || 0 });
+          if (cur === "CAD") coreCadHoldings.push({ symbol: h.symbol });
+          else coreUsdHoldings.push({ symbol: h.symbol });
         }
       }
 
-      const stockSum = numStocks * REF_PER_STOCK;
-      const residual = Math.max(0, 1.0 - stockSum - lockedSum);
+      const cadStockSum = cadStockCount * REF_PER_STOCK;
+      const usdStockSum = usdStockCount * REF_PER_STOCK;
+
+      // Per-currency residual: each currency's Core ETFs absorb only the
+      // freed weight WITHIN that currency, preserving the group's seed
+      // CAD/USD equity split even when stocks are missing relative to seed.
+      const cadCoreResidual = Math.max(0, seedCadEquityTotal - cadStockSum - cadLockedSum);
+      const usdCoreResidual = Math.max(0, seedUsdEquityTotal - usdStockSum - usdLockedSum);
+
+      // Sum of seed weights for the Core holdings actually present in the
+      // live group (per currency), used to scale the residual proportionally.
+      const cadSeedCoreTotal = coreCadHoldings.reduce(
+        (s, e) => s + (seedCoreCadWeights.get(e.symbol) ?? 0),
+        0,
+      );
+      const usdSeedCoreTotal = coreUsdHoldings.reduce(
+        (s, e) => s + (seedCoreUsdWeights.get(e.symbol) ?? 0),
+        0,
+      );
 
       // Second pass: apply changes
       const newHoldings: Holding[] = group.holdings.map((h): Holding => {
@@ -311,13 +343,15 @@ export async function POST(req: NextRequest) {
           return { ...h, weightInClass: restoredWeight };
         }
 
-        // Core ETF — scale to residual via PIM base seed ratio when known
-        const seedW = pimBaseSeedEtfWeights.get(h.symbol);
-        const currentCoreSum = coreHoldingsInGroup.reduce((s, e) => s + e.before, 0);
-        const ratio = seedW !== undefined && pimBaseSeedEtfTotal > 0
-          ? seedW / pimBaseSeedEtfTotal
-          : (currentCoreSum > 0 ? h.weightInClass / currentCoreSum : 0);
-        const newWeight = parseFloat((ratio * residual).toFixed(6));
+        // Core ETF — distribute this currency's residual to this currency's
+        // Core ETFs only, by seed-ratio (within that currency bucket).
+        const cur = holdingCurrency(h);
+        const seedMap = cur === "CAD" ? seedCoreCadWeights : seedCoreUsdWeights;
+        const seedTotal = cur === "CAD" ? cadSeedCoreTotal : usdSeedCoreTotal;
+        const residualForCur = cur === "CAD" ? cadCoreResidual : usdCoreResidual;
+        const seedW = seedMap.get(h.symbol);
+        const ratio = seedW !== undefined && seedTotal > 0 ? seedW / seedTotal : 0;
+        const newWeight = parseFloat((ratio * residualForCur).toFixed(6));
         if (Math.abs(h.weightInClass - newWeight) > 0.000001) {
           coreRescaled.push({ symbol: h.symbol, before: h.weightInClass, after: newWeight });
         }
