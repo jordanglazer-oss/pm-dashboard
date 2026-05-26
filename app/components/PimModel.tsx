@@ -529,28 +529,32 @@ export function PimModel({ groups }: Props) {
     const holdings = effectiveGroup.holdings;
     const rebalancePriceMap = groupState.lastRebalance?.prices || {};
 
-    // Pre-compute total CAD/USD PORTFOLIO weight across ALL asset classes,
-    // weighted by each holding's asset-class allocation for the active
-    // profile. This is the denominator for the CAD Model / USD Model
-    // columns: each holding's value is its portfolio weight (weightInClass ×
-    // asset-class allocation) divided by the total CAD-side or USD-side of
-    // the portfolio.
-    //
-    // The result: CAD Model column sums to 100% across all three asset-class
-    // tables combined (not within each table independently), and same for
-    // USD Model. In a group like PC USA where all CAD positions are equity
-    // stocks, the equity table's CAD Model column will sum to 100% on its
-    // own because no other asset class has CAD holdings.
+    // CAD Model column denominator: total CAD-side of the portfolio across
+    // ALL asset classes. Each holding's CAD Model value is its portfolio
+    // weight (weightInClass × asset-class allocation) divided by this total.
+    // Result: CAD Model column sums to 100% across all three asset-class
+    // tables combined. For PC USA where all CAD holdings are equity stocks,
+    // the equity table's CAD Model column sums to 100% on its own because
+    // no other asset class has CAD holdings.
     let totalCadPortfolio = 0;
-    let totalUsdPortfolio = 0;
     holdings.forEach((h) => {
+      if (h.currency !== "CAD") return;
       let alloc = 0;
       if (h.assetClass === "fixedIncome") alloc = profileWeights.fixedIncome;
       else if (h.assetClass === "equity") alloc = profileWeights.equity;
       else if (h.assetClass === "alternative") alloc = profileWeights.alternatives;
-      const portfolioWeight = h.weightInClass * alloc;
-      if (h.currency === "CAD") totalCadPortfolio += portfolioWeight;
-      else if (h.currency === "USD") totalUsdPortfolio += portfolioWeight;
+      totalCadPortfolio += h.weightInClass * alloc;
+    });
+
+    // USD Model column: original per-asset-class normalization, scaled by
+    // asset-class allocation. Reverted from the cross-asset-class version
+    // (which threw off USD Model display in groups whose USD positions
+    // span multiple asset classes). Per-asset-class normalization is
+    // computed from this lookup table.
+    const classUsdTotals: Record<string, number> = {};
+    holdings.forEach((h) => {
+      if (h.currency !== "USD") return;
+      classUsdTotals[h.assetClass] = (classUsdTotals[h.assetClass] || 0) + h.weightInClass;
     });
 
     // ── Dynamic Weight computation (sleeve-level drift) ────────────
@@ -688,13 +692,18 @@ export function PimModel({ groups }: Props) {
       const assetClassAllocation = x.assetClassAllocation;
       const holdingPortfolioWeight = h.weightInClass * assetClassAllocation;
 
-      // CAD/USD Model = this holding's portfolio weight as a % of the
-      // total CAD-side or USD-side of the portfolio. Sums to 100% across
-      // every asset-class table combined (not within each table).
+      // CAD Model: cross-asset-class normalization (sums to 100% across
+      // all three asset-class tables combined).
       const cadModelWeight = h.currency === "CAD" && totalCadPortfolio > 0
         ? holdingPortfolioWeight / totalCadPortfolio : null;
-      const usdModelWeight = h.currency === "USD" && totalUsdPortfolio > 0
-        ? holdingPortfolioWeight / totalUsdPortfolio : null;
+
+      // USD Model: per-asset-class normalization, scaled by asset-class
+      // allocation (each asset-class table's USD Model column sums to the
+      // USD-equity / USD-FI / USD-alt sleeve weight, matching prior
+      // behavior).
+      const classUsdTotal = classUsdTotals[h.assetClass] || 0;
+      const usdModelWeight = h.currency === "USD" && classUsdTotal > 0
+        ? (h.weightInClass / classUsdTotal) * assetClassAllocation : null;
 
       // Live weight with drift
       let liveWeight: number | undefined;
