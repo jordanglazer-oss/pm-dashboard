@@ -55,10 +55,34 @@
 
 import { NextRequest, NextResponse } from "next/server";
 import { getRedis } from "@/app/lib/redis";
-import { pimModelSeed } from "@/app/lib/pim-seed";
+import { pimModelSeed as pimModelSeedFallback } from "@/app/lib/pim-seed";
+import type { PimModelGroup } from "@/app/lib/pim-types";
 
 const REF_PER_STOCK = 0.018182;
 const LEGACY_LOCKED_EQUITY_SYMBOLS = new Set(["FID5982", "FID5982-T", "GRNJ"]);
+
+const BASELINE_KEY = "pm:pim-model-baseline";
+
+/**
+ * Loads the PIM model baseline. Tries Redis first (pm:pim-model-baseline);
+ * if missing or unreadable, falls back to the in-repo pim-seed.ts. Returns
+ * the array of baseline groups plus a `source` tag for the response.
+ */
+async function loadBaseline(): Promise<{ groups: PimModelGroup[]; source: "redis" | "seed-fallback" }> {
+  try {
+    const redis = await getRedis();
+    const raw = await redis.get(BASELINE_KEY);
+    if (raw) {
+      const parsed = JSON.parse(raw) as { groups?: PimModelGroup[] };
+      if (parsed && Array.isArray(parsed.groups) && parsed.groups.length > 0) {
+        return { groups: parsed.groups, source: "redis" };
+      }
+    }
+  } catch (e) {
+    console.error("[Rebalance] Failed to read pm:pim-model-baseline, using seed fallback:", e);
+  }
+  return { groups: pimModelSeedFallback, source: "seed-fallback" };
+}
 
 const normalizeTicker = (s: string): string => s.toUpperCase().replace(/-T$/, ".TO");
 const tickerEq = (a: string | undefined, b: string): boolean => {
@@ -153,6 +177,9 @@ export async function POST(req: NextRequest) {
         "pm:pim-models": pimRaw,
       }),
     );
+
+    // ── Load baseline (Redis first, seed fallback) ──
+    const { groups: pimModelSeed, source: baselineSource } = await loadBaseline();
 
     // ── Build classification helpers ──
     // Build the seed-defined "stock" symbol set (any equity holding in any
@@ -391,6 +418,7 @@ export async function POST(req: NextRequest) {
         status: "no-op",
         note: "All groups already at correct weights and names. No write performed.",
         stashKey,
+        baselineSource,
         groupDiffs,
       });
     }
@@ -406,6 +434,7 @@ export async function POST(req: NextRequest) {
       status: "rebalanced",
       stashKey,
       undoUrl: `/api/admin/undo-rebalance?stashKey=${encodeURIComponent(stashKey)}&confirm=YES`,
+      baselineSource,
       totalChanges,
       groupDiffs,
     });
