@@ -2246,7 +2246,7 @@ export function PimPortfolio({ groups }: Props) {
 
       {/* Holdings table */}
       <div className="rounded-2xl border border-slate-200 bg-white shadow-sm overflow-hidden">
-        <div className="max-h-[80vh] overflow-auto">
+        <div className="overflow-x-auto">
           <table className="w-full text-xs">
             <thead className="sticky top-0 z-10 bg-slate-50 shadow-[0_1px_0_0_rgb(226_232_240)]">
               <tr className="border-b border-slate-100 bg-slate-50">
@@ -2287,37 +2287,10 @@ export function PimPortfolio({ groups }: Props) {
               </tr>
             </thead>
             <tbody>
-              {/* Cash row */}
-              <tr className="border-b border-slate-50 bg-slate-25">
-                <td className="py-2.5 px-2 font-semibold text-slate-700">Cash</td>
-                <td className="py-2.5 px-2 text-slate-500">Cash &amp; Dividends</td>
-                <td className="py-2.5 px-2 text-right" />
-                <td className="py-2.5 px-2 text-right" />
-                <td className="py-2.5 px-2 text-right font-mono font-semibold text-slate-700">
-                  {editMode ? (
-                    <input
-                      type="number"
-                      value={editCash || ""}
-                      onChange={(e) => setEditCash(parseFloat(e.target.value) || 0)}
-                      className="w-24 rounded border border-slate-200 px-2 py-1 text-right text-xs font-mono"
-                      step="0.01"
-                    />
-                  ) : (
-                    fmtCurrency(cashBalance)
-                  )}
-                </td>
-                <td className="py-2.5 px-2 text-right font-mono text-slate-500">-</td>
-                <td className="py-2.5 px-2 text-right font-mono text-slate-500">{pct(cashPct)}</td>
-                {hasPositions && (
-                  <>
-                    <td className="py-2.5 px-2 text-right font-mono text-slate-500">{pct(cashPct)}</td>
-                    <td className="py-2.5 px-2 text-center">
-                      <span className="inline-block rounded px-2 py-0.5 text-[9px] font-bold bg-slate-100 text-slate-500">HOLD</span>
-                    </td>
-                    <td className="py-2.5 px-2 text-right">-</td>
-                  </>
-                )}
-              </tr>
+              {/* Cash row removed from UI — cashBalance is still tracked in
+                  pm:pim-positions and feeds total value + MER coverage. To
+                  expose an edit affordance for cash again, re-add this row
+                  or surface an inline input elsewhere. */}
 
               {sortedRows.map((row) => {
                 const currBadge = row.currency === "USD" ? (
