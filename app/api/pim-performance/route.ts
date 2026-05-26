@@ -274,11 +274,31 @@ export async function POST() {
         coreSymbols.add(s.ticker);
       }
     }
-    // Mirrors LOCKED_EQUITY_SYMBOLS in app/lib/StockContext.tsx:23 — duplicated
-    // (not imported) to keep the route free of client-only deps. Specialty
-    // funds whose weight is set by the per-group Balanced % input rather than
-    // by sleeve drift; excluded from both alpha and core sleeve series.
-    const LOCKED_EQUITY_SYMBOLS = new Set(["FID5982", "FID5982-T", "GRNJ"]);
+    // Legacy fallback set, mirrors LEGACY_LOCKED_EQUITY_SYMBOLS in
+    // app/lib/StockContext.tsx — duplicated (not imported) to keep the route
+    // free of client-only deps. The PRIMARY lock mechanism is now the
+    // `designation` field on each pm:stocks entry (already loaded above as
+    // alphaSymbols / coreSymbols), set by the user via the Stocks-tab Role
+    // toggle. This hardcoded set is only consulted as a safety net when a
+    // pm:pim-models holding has NO corresponding entry in pm:stocks (and
+    // therefore no designation). Specialty funds whose weight is set by the
+    // per-group Balanced % input rather than by sleeve drift; excluded from
+    // both alpha and core sleeve series.
+    const LEGACY_LOCKED_EQUITY_SYMBOLS = new Set(["FID5982", "FID5982-T", "GRNJ"]);
+
+    // Helper: is this holding Alpha-locked? Primary check: designation field
+    // on pm:stocks. Fallback: legacy hardcoded set.
+    const isAlphaLockedHolding = (pimSymbol: string): boolean => {
+      const ticker = pimSymbolToTicker(pimSymbol);
+      if (alphaSymbols.has(ticker)) {
+        // pm:stocks has this ticker designated "alpha" (or no designation,
+        // which defaults to "alpha" per the existing convention above)
+        return true;
+      }
+      if (coreSymbols.has(ticker)) return false;
+      // No pm:stocks entry at all — fall back to the legacy hardcoded list
+      return LEGACY_LOCKED_EQUITY_SYMBOLS.has(pimSymbol);
+    };
 
     // PIM holdings store Canadian tickers as "-T" (e.g. "XSP-T") while
     // pm:stocks (where Dashboard's Core/Alpha tags live) stores them as
@@ -524,7 +544,7 @@ export async function POST() {
         holdings: group.holdings.filter(
           (h) => h.assetClass === "equity"
             && coreSymbols.has(pimSymbolToTicker(h.symbol))
-            && !LOCKED_EQUITY_SYMBOLS.has(h.symbol)
+            && !isAlphaLockedHolding(h.symbol)
         ),
       };
       if (coreStart && coreGroup.holdings.length > 0) {

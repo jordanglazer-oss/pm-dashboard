@@ -11,20 +11,18 @@ import { setSnapshotForTicker, getSnapshotForTicker, setReportsForTicker, getRep
 import { mapBoostedAiToAiRating, mapSmaxToRelativeStrength, type BoostedAiConsensus } from "./external-scoring";
 import { buildResearchMentionsExplanation } from "./research-mentions-display";
 
-// Locked equity holdings: specialty funds whose weightInClass is driven by
-// the per-model Balanced weight (%) input on the stock page — NOT by the
-// residual-redistribution math in rebalanceStockWeights. Without locking,
-// adding or removing any individual stock shifts their weight by a few bps
-// (the rebalancer scales the entire non-stock pool proportionally), which
-// propagates through to the PIM Model / Positioning tabs and the
-// automated performance numbers. Core index ETFs (XSP, XUS, XUH, XUU, XSU)
-// stay unlocked — they are the intended absorbers of residual equity
-// weight when stocks come and go.
-// Both "FID5982" and "FID5982-T" listed because the persisted pm:pim-models
-// uses the bare "FID5982" (no -T suffix) even though pim-seed.ts stores it
-// as "FID5982-T". Listing both forms keeps the lock effective regardless of
-// which variant shows up after future migrations or re-adds.
-const LOCKED_EQUITY_SYMBOLS = new Set(["FID5982", "FID5982-T", "GRNJ"]);
+// Legacy lock list — kept ONLY as a fallback for holdings that have no
+// corresponding entry in pm:stocks (and therefore no `designation` field).
+// The primary lock mechanism is now driven by per-stock `designation` in
+// pm:stocks (Core vs Alpha), set by the user via the Role toggle in the
+// Stocks tab. See `isAlphaLockedHolding` below.
+//
+// Why this fallback exists: historically the lock list was the only
+// mechanism. If pm:stocks somehow loses an entry (or one was never created
+// for a fund that exists in pm:pim-models), we want to fail safe by still
+// locking the three specialty funds that were originally hardcoded — they
+// would otherwise be silently re-scaled into the Core ETF residual pool.
+const LEGACY_LOCKED_EQUITY_SYMBOLS = new Set(["FID5982", "FID5982-T", "GRNJ"]);
 
 // One-shot migration for the Research-category restructure (researchCoverage
 // shrank from max 4 → 1, externalSources from max 4 → 1, and two new
@@ -575,19 +573,40 @@ export function StockProvider({ children }: { children: React.ReactNode }) {
       seedStockSymbols.add(extraStock.ticker.replace("-T", ".TO"));
     }
 
+    // Determine whether an equity ETF/MF holding should be Alpha-locked (weight
+    // preserved through rebalance) vs Core (absorbs residual). The PRIMARY
+    // mechanism is the per-stock `designation` field in pm:stocks, set by the
+    // user via the Role toggle in the Stocks tab:
+    //   - designation === "alpha" → locked
+    //   - designation === "core"  → residual-absorbing (Core ETF)
+    // When a holding has NO corresponding pm:stocks entry (rare — should only
+    // happen for stale or never-tagged data), the historical hardcoded set
+    // in LEGACY_LOCKED_EQUITY_SYMBOLS is consulted as a safety net.
+    const isAlphaLockedHolding = (symbol: string): boolean => {
+      const stockEntry = stocks.find((s) =>
+        s.ticker === symbol ||
+        s.ticker.replace(/\.TO$/, "-T") === symbol ||
+        s.ticker.replace(/-T$/, ".TO") === symbol,
+      );
+      if (stockEntry?.designation === "alpha") return true;
+      if (stockEntry?.designation === "core") return false;
+      // No designation set or no pm:stocks entry → legacy fallback
+      return LEGACY_LOCKED_EQUITY_SYMBOLS.has(symbol);
+    };
+
     const equityHoldings = holdings.filter((h) => h.assetClass === "equity");
     const nonEquity = holdings.filter((h) => h.assetClass !== "equity");
 
     // Split equity holdings into three pools:
     //   1) individual stocks — locked at refPerStock
-    //   2) locked specialty funds — pass-through, keep current weightInClass
-    //   3) core ETFs — absorb residual equity weight proportionally
+    //   2) Alpha-tagged funds — pass-through, keep current weightInClass
+    //   3) Core-tagged ETFs — absorb residual equity weight proportionally
     const stockHoldings = equityHoldings.filter((h) => seedStockSymbols.has(h.symbol));
     const lockedHoldings = equityHoldings.filter(
-      (h) => !seedStockSymbols.has(h.symbol) && LOCKED_EQUITY_SYMBOLS.has(h.symbol)
+      (h) => !seedStockSymbols.has(h.symbol) && isAlphaLockedHolding(h.symbol),
     );
     const etfHoldings = equityHoldings.filter(
-      (h) => !seedStockSymbols.has(h.symbol) && !LOCKED_EQUITY_SYMBOLS.has(h.symbol)
+      (h) => !seedStockSymbols.has(h.symbol) && !isAlphaLockedHolding(h.symbol),
     );
 
     if (stockHoldings.length === 0 && etfHoldings.length === 0 && lockedHoldings.length === 0) return holdings;
@@ -605,7 +624,7 @@ export function StockProvider({ children }: { children: React.ReactNode }) {
         if (
           h.assetClass === "equity" &&
           !seedStockSymbols.has(h.symbol) &&
-          !LOCKED_EQUITY_SYMBOLS.has(h.symbol)
+          !isAlphaLockedHolding(h.symbol)
         ) {
           seedEtfWeights.set(h.symbol, h.weightInClass);
         }
