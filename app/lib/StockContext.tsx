@@ -576,21 +576,27 @@ export function StockProvider({ children }: { children: React.ReactNode }) {
     // Determine whether an equity ETF/MF holding should be Alpha-locked (weight
     // preserved through rebalance) vs Core (absorbs residual). The PRIMARY
     // mechanism is the per-stock `designation` field in pm:stocks, set by the
-    // user via the Role toggle in the Stocks tab:
-    //   - designation === "alpha" → locked
-    //   - designation === "core"  → residual-absorbing (Core ETF)
-    // When a holding has NO corresponding pm:stocks entry (rare — should only
-    // happen for stale or never-tagged data), the historical hardcoded set
-    // in LEGACY_LOCKED_EQUITY_SYMBOLS is consulted as a safety net.
+    // user via the Role toggle in the Stocks tab. Default-undefined designation
+    // is treated as Alpha — this matches both the UI default (PortfolioOverview
+    // renders `(s.designation || "alpha") === "core"`) and types.ts which
+    // documents the field as "default alpha". Only an EXPLICIT "core" tag
+    // makes a holding residual-absorbing.
+    //
+    // Behavior decision tree:
+    //   - pm:stocks entry has designation === "core"   → NOT locked (Core ETF)
+    //   - pm:stocks entry exists, any other state      → Alpha-locked
+    //   - no pm:stocks entry at all (rare/stale data)  → legacy fallback
     const isAlphaLockedHolding = (symbol: string): boolean => {
       const stockEntry = stocks.find((s) =>
         s.ticker === symbol ||
         s.ticker.replace(/\.TO$/, "-T") === symbol ||
         s.ticker.replace(/-T$/, ".TO") === symbol,
       );
-      if (stockEntry?.designation === "alpha") return true;
-      if (stockEntry?.designation === "core") return false;
-      // No designation set or no pm:stocks entry → legacy fallback
+      if (stockEntry) {
+        // Any tagged-or-untagged pm:stocks entry locks UNLESS explicitly "core"
+        return stockEntry.designation !== "core";
+      }
+      // No pm:stocks entry at all → legacy fallback
       return LEGACY_LOCKED_EQUITY_SYMBOLS.has(symbol);
     };
 

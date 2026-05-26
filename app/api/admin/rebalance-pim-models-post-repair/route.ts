@@ -177,21 +177,31 @@ export async function POST(req: NextRequest) {
       }
     }
 
-    // designation lookup
-    const designationByNormTicker = new Map<string, "core" | "alpha">();
+    // Build a map of normalized-ticker → presence-and-designation. Anything
+    // that has a pm:stocks entry but isn't explicitly tagged "core" defaults
+    // to Alpha (locked) — matches the UI default in PortfolioOverview where
+    // `(s.designation || "alpha") === "core"` controls the Role badge, and
+    // types.ts documents the field as "default alpha".
+    type DesigInfo = { hasEntry: true; designation: "core" | "alpha" | undefined };
+    const designationByNormTicker = new Map<string, DesigInfo>();
     for (const s of stocks) {
       if (!s.ticker) continue;
       const norm = normalizeTicker(s.ticker);
-      if (s.designation === "core" || s.designation === "alpha") {
-        designationByNormTicker.set(norm, s.designation);
-      }
+      designationByNormTicker.set(norm, {
+        hasEntry: true,
+        designation:
+          s.designation === "core" || s.designation === "alpha" ? s.designation : undefined,
+      });
     }
 
     const isAlphaLocked = (symbol: string): boolean => {
       const norm = normalizeTicker(symbol);
-      const d = designationByNormTicker.get(norm);
-      if (d === "alpha") return true;
-      if (d === "core") return false;
+      const info = designationByNormTicker.get(norm);
+      if (info) {
+        // pm:stocks entry exists — Alpha unless EXPLICITLY tagged Core
+        return info.designation !== "core";
+      }
+      // No pm:stocks entry at all → legacy fallback
       return LEGACY_LOCKED_EQUITY_SYMBOLS.has(symbol);
     };
 
