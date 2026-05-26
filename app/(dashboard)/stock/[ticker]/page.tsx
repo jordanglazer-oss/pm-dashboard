@@ -203,6 +203,30 @@ function ExternalSourcesEditor({ notes, onChange, headerLabel = "External Source
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
 
+  // Flush pending save on tab close / page refresh / browser nav so a
+  // half-typed note in the 500ms debounce window doesn't get lost. We
+  // synchronously call onChange so the parent (StockContext)'s state
+  // updates immediately; the StockContext useDebouncedPersist already
+  // installs its own beforeunload handler that fires a keepalive fetch
+  // for any pending /api/kv/stocks write. Combined, the worst-case
+  // window for character loss is collapsed to ~zero.
+  //
+  // We use a ref to `local` so the handler always reads the freshest
+  // typed content without re-registering on every keystroke.
+  const localRef = useRef(local);
+  localRef.current = local;
+  useEffect(() => {
+    const handler = () => {
+      if (saveTimerRef.current) {
+        clearTimeout(saveTimerRef.current);
+        saveTimerRef.current = null;
+        onChangeRef.current(localRef.current);
+      }
+    };
+    window.addEventListener("beforeunload", handler);
+    return () => window.removeEventListener("beforeunload", handler);
+  }, []);
+
   const updateRow = (id: string, patch: Partial<ExternalSourceNote>) => {
     const next = local.map((n) => (n.id === id ? { ...n, ...patch } : n));
     setLocal(next);

@@ -682,6 +682,10 @@ export function MorningBrief({
 
   // Debounced manifest save. Only writes the lightweight list (no dataUrls)
   // — the per-image payloads are written synchronously in addAttachment.
+  // We keep the latest snapshot in a ref so the beforeunload handler below
+  // can fire a synchronous keepalive flush without re-registering on every
+  // attachment change.
+  const latestManifestRef = useRef<Array<{ id: string; label: string; section: string; addedAt: string }>>([]);
   useEffect(() => {
     if (!attachmentsHydrated) return;
     if (manifestSaveTimer.current) clearTimeout(manifestSaveTimer.current);
@@ -691,6 +695,7 @@ export function MorningBrief({
       section: a.section,
       addedAt: a.addedAt,
     }));
+    latestManifestRef.current = snapshot;
     manifestSaveTimer.current = setTimeout(async () => {
       try {
         const res = await fetch("/api/kv/attachments", {
@@ -715,6 +720,35 @@ export function MorningBrief({
       if (manifestSaveTimer.current) clearTimeout(manifestSaveTimer.current);
     };
   }, [attachments, attachmentsHydrated]);
+
+  // Flush pending manifest save on tab close / refresh / nav. Without this,
+  // an image uploaded within 400ms of the user hitting refresh would have
+  // its per-image dataUrl key written to Redis (immediate, in addAttachment)
+  // but its manifest entry dropped — leaving the upload effectively invisible
+  // on next load even though the bytes survived. The fetch uses `keepalive`
+  // so the browser doesn't cancel it on unload (sendBeacon would be cleaner
+  // but has a 64KB limit; the manifest is tiny so either would work — we
+  // pick keepalive for consistency with the useDebouncedPersist pattern).
+  useEffect(() => {
+    if (!attachmentsHydrated) return;
+    const handler = () => {
+      if (!manifestSaveTimer.current) return;
+      clearTimeout(manifestSaveTimer.current);
+      manifestSaveTimer.current = null;
+      try {
+        fetch("/api/kv/attachments", {
+          method: "PUT",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ attachments: latestManifestRef.current }),
+          keepalive: true,
+        }).catch((e) => console.error("Manifest flush on unload failed:", e));
+      } catch (e) {
+        console.error("Manifest flush on unload threw:", e);
+      }
+    };
+    window.addEventListener("beforeunload", handler);
+    return () => window.removeEventListener("beforeunload", handler);
+  }, [attachmentsHydrated]);
 
   // Adding persists the image immediately to its own Redis key, then updates
   // state (which triggers the debounced manifest save above). This way the
