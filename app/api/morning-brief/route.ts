@@ -158,13 +158,26 @@ Respond ONLY with valid JSON matching this exact structure (fields are intention
       "title": "Short actionable title",
       "detail": "1-2 sentence explanation of why this action matters now."
     }
-  ]
+  ],
+  "topActionsToday": [
+    "Imperative one-liner action #1 (≤ 12 words, starts with a verb, specific enough that the PM could execute today).",
+    "Imperative one-liner action #2.",
+    "Imperative one-liner action #3."
+  ],
+  "hedgingCall": {
+    "action": "ADD or HOLD or SKIP — must match the directional recommendation in hedgingAnalysis.",
+    "strike": "5% OTM or 7% OTM etc. — required when action=ADD, omit otherwise.",
+    "tenor": "3 months / 6 months etc. — required when action=ADD, omit otherwise.",
+    "reason": "ONE sentence, ≤ 25 words, plain English. Why this call is right today."
+  }
 }
 
 Notes:
 - sectorRotation.leading and .lagging should each have 2-3 entries with sector name, approximate MTD performance, and a brief reason.
 - riskScan MUST ONLY include holdings tagged "(Portfolio, ...)" — NEVER include Watchlist names (those are candidates, not owned positions). Order from highest risk to lowest, with priority: "High", "Medium-High", "Medium", or "Low-Medium". Focus on the weakest/most at-risk Portfolio names. Include 4-7 entries drawn exclusively from the Portfolio bucket. USE the [RISK: ...] annotations on each holding — holdings tagged CRITICAL or WARNING should be prioritized highest. Incorporate specific risk signals (trend, momentum, MACD, volume, Ichimoku, valuation) into your summaries and actions. Do NOT reference short interest as a risk driver — it is informational only.
 - forwardActions should contain 4-6 specific, actionable recommendations ordered by priority. Use "High", "Medium", or "Low" for priority. Actions should be forward-looking (what to do THIS week or next), not reactive to yesterday.
+- topActionsToday is the PM's at-a-glance executive summary — 3 to 5 imperative one-liners that distill the most important decisions for today. Each entry must (a) start with a verb (Add / Trim / Hedge / Rotate / Watch / Skip / Hold), (b) be ≤ 12 words, (c) be specific enough that the PM could execute on it without further interpretation ("Add 2% SPY 3M 7%-OTM puts" not "Consider hedging"), and (d) be a subset/restatement of the most important forwardActions and hedgingCall items so the executive summary is consistent with the detail panels below it. Do NOT include "review", "monitor", "consider" — those are too vague. If a forwardAction is High priority it should usually have a corresponding topActionsToday entry.
+- hedgingCall MUST mirror the recommendation in hedgingAnalysis. If hedgingAnalysis says "SKIP", hedgingCall.action is "SKIP" and strike/tenor are omitted (null/missing). If it says "ADD", populate strike + tenor with the specific values referenced in the prose (e.g. "5% OTM" / "3 months"). reason must be one short sentence that captures the WHY (cheap insurance + late-cycle warning, classic Risk-Off, etc.) so the PM can decide in one read whether to act.
 - IMPORTANT: All portfolio positions are equally weighted and we only rebalance (restore equal weights), never trim individual positions relative to others. Do NOT recommend trimming, reducing, or overweighting specific names. Instead, recommend actions like: adding new names, removing names entirely if the thesis is broken, rebalancing back to equal weight, hedging, or adjusting overall portfolio exposure. Think in terms of "own or don't own" rather than position sizing.`;
 
 type AttachmentInput = {

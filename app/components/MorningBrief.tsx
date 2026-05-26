@@ -1044,6 +1044,8 @@ export function MorningBrief({
   const riskScan = brief?.riskScan || null;
 
   const forwardActions = brief?.forwardActions || [];
+  const topActionsToday = brief?.topActionsToday || [];
+  const hedgingCall = brief?.hedgingCall || null;
 
   const compositeSignalTone = marketData.compositeSignal.toLowerCase().includes("bear")
     ? "red" as const
@@ -1351,6 +1353,69 @@ export function MorningBrief({
           {bottomLine}
         </p>
       </section>
+
+      {/* Top Actions Today + Hedging Call — at-a-glance executive summary.
+          Renders only when the brief has the new fields populated (old briefs
+          in pm:brief pre-date these and fall through gracefully). */}
+      {(topActionsToday.length > 0 || hedgingCall) && (
+        <section className="grid grid-cols-1 md:grid-cols-3 gap-4">
+          {topActionsToday.length > 0 && (
+            <div className="md:col-span-2 rounded-2xl border border-slate-200 bg-white p-5 shadow-sm">
+              <div className="text-xs font-bold uppercase tracking-[0.22em] text-slate-500 mb-3">
+                Top actions today
+              </div>
+              <ul className="space-y-2">
+                {topActionsToday.map((action, i) => (
+                  <li key={i} className="flex items-start gap-3 text-sm leading-6 text-slate-800">
+                    <span className="mt-[3px] inline-flex h-5 w-5 flex-none items-center justify-center rounded-full bg-slate-900 text-[10px] font-bold text-white">
+                      {i + 1}
+                    </span>
+                    <span>{action}</span>
+                  </li>
+                ))}
+              </ul>
+            </div>
+          )}
+          {hedgingCall && (
+            <div className={`rounded-2xl border p-5 shadow-sm ${
+              hedgingCall.action === "ADD"
+                ? "border-rose-300 bg-rose-50"
+                : hedgingCall.action === "SKIP"
+                  ? "border-emerald-300 bg-emerald-50"
+                  : "border-slate-300 bg-slate-50"
+            }`}>
+              <div className={`text-xs font-bold uppercase tracking-[0.22em] mb-3 ${
+                hedgingCall.action === "ADD"
+                  ? "text-rose-700"
+                  : hedgingCall.action === "SKIP"
+                    ? "text-emerald-700"
+                    : "text-slate-600"
+              }`}>
+                Hedging
+              </div>
+              <div className="flex items-baseline gap-2 mb-2">
+                <span className={`text-2xl font-semibold tracking-tight ${
+                  hedgingCall.action === "ADD"
+                    ? "text-rose-900"
+                    : hedgingCall.action === "SKIP"
+                      ? "text-emerald-900"
+                      : "text-slate-900"
+                }`}>
+                  {hedgingCall.action}
+                </span>
+                {hedgingCall.action === "ADD" && (hedgingCall.strike || hedgingCall.tenor) && (
+                  <span className="text-sm text-slate-700">
+                    {[hedgingCall.tenor, hedgingCall.strike].filter(Boolean).join(" · ")}
+                  </span>
+                )}
+              </div>
+              <p className="text-sm leading-5 text-slate-700">
+                {hedgingCall.reason}
+              </p>
+            </div>
+          )}
+        </section>
+      )}
 
       {/* Forward View — Next 2 Weeks */}
       <section className="rounded-2xl border border-blue-200 bg-gradient-to-br from-blue-50/60 to-white p-4 md:p-5 shadow-sm">

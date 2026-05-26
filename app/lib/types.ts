@@ -555,6 +555,31 @@ export type MorningBrief = {
     title: string;
     detail: string;
   }[];
+  /**
+   * Glanceable 3–5 item executive summary of the most actionable items
+   * for today. Distinct from `forwardActions` — these are imperative
+   * one-liners ("Add 2% SPY 3M 7%-OTM puts") meant to be scannable in
+   * < 5 seconds at the top of the brief. forwardActions remains the
+   * fuller {priority, title, detail} list below.
+   *
+   * Optional so older briefs in pm:brief continue to render — the UI
+   * hides the panel when the array is empty/undefined.
+   */
+  topActionsToday?: string[];
+  /**
+   * Structured hedging recommendation extracted from hedgingAnalysis.
+   * The prose still lives in hedgingAnalysis for context; this object
+   * is the scannable headline so the PM can spot the call (ADD vs HOLD
+   * vs SKIP) without parsing a paragraph.
+   *
+   * Optional for the same backward-compat reason as topActionsToday.
+   */
+  hedgingCall?: {
+    action: "ADD" | "HOLD" | "SKIP";
+    strike?: string; // e.g. "5% OTM" or "7% OTM" — omitted on SKIP
+    tenor?: string;  // e.g. "3 months"             — omitted on SKIP
+    reason: string;  // 1 sentence ≤ 25 words
+  };
 };
 
 export type ScoreResponse = {
