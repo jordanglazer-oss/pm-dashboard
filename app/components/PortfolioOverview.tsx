@@ -116,6 +116,12 @@ const DASH_FILTER_LABELS: Record<DashboardFilter, string> = {
   "mutual-fund": "Mutual Funds",
 };
 
+/** Normalize ticker for cross-list matching. Brief riskScan may emit "ABX.TO"
+ *  while pm:stocks holds "ABX-T" (or vice versa); convert both to ".TO". */
+function normalizeRiskTicker(t: string): string {
+  return t.toUpperCase().replace(/-T$/, ".TO");
+}
+
 function isCanadianTicker(ticker: string): boolean {
   // .U suffix = USD-denominated Canadian-listed ETF (e.g., XUS.U, XUU.U) — NOT Canadian
   if (ticker.endsWith(".U")) return false;
@@ -160,6 +166,7 @@ export function PortfolioOverview() {
     portfolioStocks,
     watchlistStocks,
     marketData,
+    brief,
     updateStockFields,
     updateScore,
     updateExplanations,
@@ -173,6 +180,29 @@ export function PortfolioOverview() {
     setUiPref,
     flushStocks,
   } = useStocks();
+
+  /* ── Brief risk-scan flag lookup ─────────────────────────────────────
+   *  The morning brief lists at-risk Portfolio holdings in `riskScan`
+   *  with priority + action + summary. Surface that as a small badge
+   *  next to the ticker so the PM doesn't have to remember "what did
+   *  the brief say about XYZ" while looking at the table.
+   *
+   *  Normalize on both sides so .TO / -T variants match — Claude's
+   *  riskScan typically writes "ABX.TO" but pm:stocks may carry "ABX-T".
+   */
+  const riskScanByTicker = useMemo(() => {
+    const map = new Map<string, { priority: string; summary: string; action: string }>();
+    if (!brief?.riskScan) return map;
+    for (const r of brief.riskScan) {
+      if (!r.ticker) continue;
+      map.set(normalizeRiskTicker(r.ticker), {
+        priority: r.priority,
+        summary: r.summary,
+        action: r.action,
+      });
+    }
+    return map;
+  }, [brief?.riskScan]);
   const { notify } = useNotifications();
   const [dashFilter, setDashFilter] = useState<DashboardFilter>("all");
 
@@ -1139,6 +1169,7 @@ export function PortfolioOverview() {
         fillGapsProgress={fillGapsProgress}
         aiSemiKeys={AI_SEMI_KEYS}
         onClearCharting={() => handleClearCharting("Portfolio")}
+        riskScanByTicker={riskScanByTicker}
       />
 
 
@@ -1166,6 +1197,7 @@ export function PortfolioOverview() {
         fillGapsProgress={fillGapsProgress}
         aiSemiKeys={AI_SEMI_KEYS}
         onClearCharting={() => handleClearCharting("Watchlist")}
+        riskScanByTicker={riskScanByTicker}
       />
 
       {/* Fund & ETF Holdings — moved below Watchlist Rankings per Dashboard
@@ -1280,6 +1312,25 @@ export function PortfolioOverview() {
                             <Link href={`/stock/${s.ticker.toLowerCase()}`} className="font-bold text-slate-800 hover:underline font-mono">
                               {displayTicker(s.ticker)}
                             </Link>
+                            {(() => {
+                              const risk = riskScanByTicker.get(normalizeRiskTicker(s.ticker));
+                              if (!risk) return null;
+                              const tone = risk.priority === "High"
+                                ? "bg-rose-100 text-rose-800 border-rose-300"
+                                : risk.priority === "Medium-High"
+                                  ? "bg-orange-100 text-orange-800 border-orange-300"
+                                  : risk.priority === "Medium"
+                                    ? "bg-amber-100 text-amber-800 border-amber-300"
+                                    : "bg-yellow-100 text-yellow-800 border-yellow-300";
+                              return (
+                                <span
+                                  className={`rounded-md border px-1.5 py-0.5 text-[9px] font-bold uppercase tracking-wider ${tone}`}
+                                  title={`Today's brief — ${risk.priority} risk. ${risk.summary} Action: ${risk.action}`}
+                                >
+                                  ⚠ {risk.priority === "Medium-High" ? "Med-Hi" : risk.priority}
+                                </span>
+                              );
+                            })()}
                             {!hasMer && (
                               <Link
                                 href={`/stock/${s.ticker.toLowerCase()}`}
@@ -1377,6 +1428,7 @@ function RankingTable({
   fillGapsProgress,
   aiSemiKeys,
   onClearCharting,
+  riskScanByTicker,
 }: {
   title: string;
   subtitle: string;
@@ -1402,6 +1454,9 @@ function RankingTable({
   fillGapsProgress?: string;
   aiSemiKeys?: string[];
   onClearCharting?: () => void;
+  /** Lookup of today's brief.riskScan keyed by normalized ticker.
+   *  Optional — when absent or empty, the badge simply isn't rendered. */
+  riskScanByTicker?: Map<string, { priority: string; summary: string; action: string }>;
 }) {
   // Collapse state — defaults to expanded. Persisted in uiPrefs so it
   // sticks across refreshes and syncs to other devices via Redis. The
@@ -1697,7 +1752,28 @@ function RankingTable({
                     <div className="flex items-center gap-2">
                       <span className="text-slate-400 text-xs w-5 text-right">{i + 1}</span>
                       <Link href={`/stock/${s.ticker.toLowerCase()}`} className="hover:underline block">
-                        <div className="font-bold text-slate-800 font-mono">{displayTicker(s.ticker)}</div>
+                        <div className="font-bold text-slate-800 font-mono flex items-center gap-1.5">
+                          {displayTicker(s.ticker)}
+                          {(() => {
+                            const risk = riskScanByTicker?.get(normalizeRiskTicker(s.ticker));
+                            if (!risk) return null;
+                            const tone = risk.priority === "High"
+                              ? "bg-rose-100 text-rose-800 border-rose-300"
+                              : risk.priority === "Medium-High"
+                                ? "bg-orange-100 text-orange-800 border-orange-300"
+                                : risk.priority === "Medium"
+                                  ? "bg-amber-100 text-amber-800 border-amber-300"
+                                  : "bg-yellow-100 text-yellow-800 border-yellow-300";
+                            return (
+                              <span
+                                className={`rounded-md border px-1 py-0 text-[8px] font-bold uppercase tracking-wider ${tone}`}
+                                title={`Today's brief — ${risk.priority} risk. ${risk.summary} Action: ${risk.action}`}
+                              >
+                                ⚠ {risk.priority === "Medium-High" ? "MH" : risk.priority.slice(0, 3).toUpperCase()}
+                              </span>
+                            );
+                          })()}
+                        </div>
                         <div className="text-xs text-slate-400 max-w-[160px] truncate" title={s.name}>{s.name}</div>
                       </Link>
                     </div>
