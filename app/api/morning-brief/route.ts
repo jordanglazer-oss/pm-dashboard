@@ -172,6 +172,15 @@ Respond ONLY with valid JSON matching this exact structure (fields are intention
     "strike": "5% OTM or 7% OTM etc. — required when action=ADD, omit otherwise.",
     "tenor": "3 months / 6 months etc. — required when action=ADD, omit otherwise.",
     "reason": "ONE sentence, ≤ 25 words, plain English. Why this call is right today."
+  },
+  "cashDeploymentCall": {
+    "action": "DEPLOY or DEPLOY_PARTIAL or WAIT — see rubric below.",
+    "score": 78,
+    "window": "≤ 12 words — when to act. Examples: 'Deploy now', 'Next 1-2 sessions', 'Wait 3-5 trading days'.",
+    "reason": "ONE sentence, ≤ 25 words. The single most important factor tipping today's call.",
+    "triggersMet": ["≤ 8 word bullets of what's working today. 0-4 entries."],
+    "triggersMissing": ["≤ 8 word bullets of what's NOT yet in place. 0-4 entries."],
+    "newtonPersistence": "ONE line on Newton's 30-day pattern: persistence, inflection, or staleness. Omit if no Newton notes are in the strategist context."
   }
 }
 
@@ -181,6 +190,37 @@ Notes:
 - forwardActions should contain 4-6 specific, actionable recommendations ordered by priority. Use "High", "Medium", or "Low" for priority. Actions should be forward-looking (what to do THIS week or next), not reactive to yesterday.
 - topActionsToday is the PM's at-a-glance executive summary — 3 to 5 imperative one-liners that distill the most important decisions for today. Each entry must (a) start with a verb (Add / Trim / Hedge / Rotate / Watch / Skip / Hold), (b) be ≤ 12 words, (c) be specific enough that the PM could execute on it without further interpretation ("Add 2% SPY 3M 7%-OTM puts" not "Consider hedging"), and (d) be a subset/restatement of the most important forwardActions and hedgingCall items so the executive summary is consistent with the detail panels below it. Do NOT include "review", "monitor", "consider" — those are too vague. If a forwardAction is High priority it should usually have a corresponding topActionsToday entry.
 - hedgingCall MUST mirror the recommendation in hedgingAnalysis. If hedgingAnalysis says "SKIP", hedgingCall.action is "SKIP" and strike/tenor are omitted (null/missing). If it says "ADD", populate strike + tenor with the specific values referenced in the prose (e.g. "5% OTM" / "3 months"). reason must be one short sentence that captures the WHY (cheap insurance + late-cycle warning, classic Risk-Off, etc.) so the PM can decide in one read whether to act.
+
+- cashDeploymentCall answers a SPECIFIC question: "We make monthly-installment deployments of new client cash, normally between the 1st and the 20th. Is today a good day to deploy, or should we wait a few sessions for a better entry?" This is NOT macro market timing — the decision to deploy this month is already made; we are only optimizing day-of-deployment within a roughly 2-week window. Apply this rubric:
+  INPUT WEIGHTS (blend in this order of priority):
+    40% — Mark Newton's daily strategist note + the 30-day Newton history block. This is the dominant signal. Look explicitly for:
+      (a) PERSISTENCE: Has Newton been calling the same dip-buy / pullback opportunity for multiple consecutive sessions? (Mature signal — strong DEPLOY tilt; he's been right and a bounce is overdue, OR he's been wrong and the setup is fading. Use his tone in the most recent note to disambiguate.)
+      (b) INFLECTION: Did Newton flip direction recently (cautious → constructive, or vice versa)? A fresh constructive flip after 2+ weeks of caution is the strongest single DEPLOY signal we can identify. The reverse — fresh caution after a constructive run — is the strongest single WAIT signal.
+      (c) STALENESS: Is Newton's bullish thesis 2+ weeks old without confirming market action? Reduce his weight in that case; the call is no longer fresh.
+      Populate newtonPersistence with a ONE-line summary of which of these patterns is active (e.g. "Newton calling dip-buy 4 sessions running; constructive tone holding" or "Newton flipped cautious 2 sessions ago — wait"). Omit the field entirely if no Newton notes are in the context.
+    25% — S&P Oscillator (from the oscillator screenshot if attached, otherwise from oscContext text). Oversold readings (oscillator below -2, especially below -3) are strong DEPLOY signals. Overbought (above +2.5) is a strong WAIT signal. Mid-range (-1 to +1) is neutral.
+    15% — Breadth: RSP/SPY ratio direction, MTUM/USMV ratio, % of S&P above 50-DMA and 200-DMA. Broad weakness with thrust signs (a/d line turning up, new lows peaking) is DEPLOY. Narrow leadership weakening is WAIT.
+    10% — VIX state. A VIX spike to 20-25 that's stalling/reversing is a classic DEPLOY trigger. A runaway VIX above 28 still climbing is WAIT (we haven't hit peak fear). VIX <16 is mid-range — no edge either way from this signal alone.
+    6%  — Sentiment: Fear & Greed below 30, AAII bears > bulls, elevated put/call. Capitulation is DEPLOY.
+    4%  — Short-term momentum: 5-day SPY return. A clean -2% to -5% pullback over 5 days is a healthy DEPLOY setup; deeper than -7% may indicate a regime break (WAIT for the bottom to confirm).
+  COMPUTING THE SCORE (0-100): Anchor to this banding — do NOT drift to 50 when uncertain.
+    85-100: At least 3 weights firing DEPLOY with no major WAIT signal. Rare; reserve for genuine "buy the dip" days.
+    70-84:  Newton constructive + at least one quant signal confirming + no major WAIT signal. Strong default for a clean DEPLOY day.
+    55-69:  Mixed but tilting DEPLOY (e.g. Newton constructive but quant neutral, or quant oversold but Newton cautious). Action = DEPLOY_PARTIAL (deploy half now, hold half for stronger setup).
+    40-54:  Mid-range / no edge. Default action = DEPLOY anyway (mid-range is fine; never WAIT just because signals are quiet).
+    25-39:  WAIT zone — affirmative evidence a better day is likely within ~5 trading days (Newton cautious + overbought oscillator + narrow breadth).
+    Below 25: Strong WAIT — multiple WAIT signals stacking. Very rare; should only trigger on clear deterioration.
+  ACTION → SCORE mapping (must be consistent):
+    score >= 70  → action "DEPLOY"
+    score 55-69  → action "DEPLOY_PARTIAL"
+    score 40-54  → action "DEPLOY" (mid-range defaults to deploy; never WAIT in this band)
+    score < 40   → action "WAIT"
+  HARD RULES:
+    - Mid-range (40-54) is ALWAYS DEPLOY, never WAIT. We do not delay deployment for "no edge". WAIT requires AFFIRMATIVE evidence a better day is likely.
+    - window must be specific: "Deploy now", "Next 1-2 sessions", "Wait 3-5 trading days" — never vague like "soon" or "this week."
+    - triggersMet and triggersMissing should each be 2-4 short bullets (≤ 8 words each). Cite specific signals/levels, not generalities. "Oscillator -2.3" not "Oscillator weak."
+    - reason is the SINGLE most important factor tipping today's call. If the call is DEPLOY because Newton flipped constructive after 3 weeks cautious, the reason is THAT — not a summary of all signals.
+    - The same inputs MUST produce the same score (temperature=0). Anchor to the rubric; resist drifting to round numbers.
 - IMPORTANT: All portfolio positions are equally weighted and we only rebalance (restore equal weights), never trim individual positions relative to others. Do NOT recommend trimming, reducing, or overweighting specific names. Instead, recommend actions like: adding new names, removing names entirely if the thesis is broken, rebalancing back to equal weight, hedging, or adjusting overall portfolio exposure. Think in terms of "own or don't own" rather than position sizing.`;
 
 type AttachmentInput = {

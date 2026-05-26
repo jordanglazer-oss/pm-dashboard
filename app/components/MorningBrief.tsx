@@ -1052,6 +1052,22 @@ export function MorningBrief({
   const forwardActions = brief?.forwardActions || [];
   const topActionsToday = brief?.topActionsToday || [];
   const hedgingCall = brief?.hedgingCall || null;
+  const cashDeploymentCall = brief?.cashDeploymentCall || null;
+
+  // Days-left-in-window calendar logic for the Cash Deployment tile.
+  // Normal monthly deployment window is the 1st-20th of each month. After
+  // the 15th we surface a soft-urgency cue; after the 20th the window is
+  // technically past. We never block the recommendation — this is advisory,
+  // and the PM can deploy whenever — but the calendar context goes on the
+  // card so timing decisions account for the runway left.
+  const deploymentWindowStatus = useMemo(() => {
+    const now = new Date();
+    const day = now.getDate(); // 1-31, local time — close enough for a soft cue
+    if (day <= 14) return { phase: "open" as const, label: `Day ${day} — window open through 20th`, tone: "slate" as const };
+    if (day <= 17) return { phase: "closing" as const, label: `Day ${day} — ${20 - day} day(s) left in window`, tone: "amber" as const };
+    if (day <= 20) return { phase: "late" as const, label: `Day ${day} — late window, ${20 - day} day(s) to deploy`, tone: "orange" as const };
+    return { phase: "past" as const, label: `Day ${day} — past normal window; document if deferred further`, tone: "rose" as const };
+  }, []);
 
   const compositeSignalTone = marketData.compositeSignal.toLowerCase().includes("bear")
     ? "red" as const
@@ -1360,11 +1376,16 @@ export function MorningBrief({
         </p>
       </section>
 
-      {/* Top Actions Today + Hedging Call — at-a-glance executive summary.
-          Renders only when the brief has the new fields populated (old briefs
-          in pm:brief pre-date these and fall through gracefully). */}
-      {(topActionsToday.length > 0 || hedgingCall) && (
-        <section className="grid grid-cols-1 md:grid-cols-3 gap-4">
+      {/* Top Actions Today + Hedging Call + Cash Deployment — at-a-glance
+          executive summary. Renders only when the brief has the new fields
+          populated (old briefs in pm:brief pre-date these and fall through
+          gracefully).
+
+          Layout: Top Actions spans 2 cols on wide screens; Hedging and Cash
+          Deployment each take 1 col. On narrow screens everything stacks
+          single-column. */}
+      {(topActionsToday.length > 0 || hedgingCall || cashDeploymentCall) && (
+        <section className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-4">
           {topActionsToday.length > 0 && (
             <div className="md:col-span-2 rounded-2xl border border-slate-200 bg-white p-5 shadow-sm">
               <div className="text-xs font-bold uppercase tracking-[0.22em] text-slate-500 mb-3">
@@ -1420,6 +1441,67 @@ export function MorningBrief({
               </p>
             </div>
           )}
+          {cashDeploymentCall && (() => {
+            const action = cashDeploymentCall.action;
+            const tone =
+              action === "DEPLOY"
+                ? { border: "border-emerald-300", bg: "bg-emerald-50", label: "text-emerald-700", value: "text-emerald-900" }
+                : action === "WAIT"
+                  ? { border: "border-amber-300", bg: "bg-amber-50", label: "text-amber-700", value: "text-amber-900" }
+                  : { border: "border-blue-300", bg: "bg-blue-50", label: "text-blue-700", value: "text-blue-900" };
+            const windowToneClass =
+              deploymentWindowStatus.tone === "amber" ? "bg-amber-100 text-amber-800"
+              : deploymentWindowStatus.tone === "orange" ? "bg-orange-100 text-orange-800"
+              : deploymentWindowStatus.tone === "rose" ? "bg-rose-100 text-rose-800"
+              : "bg-slate-100 text-slate-600";
+            return (
+              <div className={`rounded-2xl border p-5 shadow-sm ${tone.border} ${tone.bg}`}>
+                <div className="flex items-center justify-between gap-2 mb-3">
+                  <div className={`text-xs font-bold uppercase tracking-[0.22em] ${tone.label}`}>
+                    Cash Deployment
+                  </div>
+                  {typeof cashDeploymentCall.score === "number" && (
+                    <span className="text-[10px] font-bold text-slate-500" title="Composite score 0-100">
+                      {cashDeploymentCall.score}/100
+                    </span>
+                  )}
+                </div>
+                <div className="flex items-baseline gap-2 mb-2 flex-wrap">
+                  <span className={`text-2xl font-semibold tracking-tight ${tone.value}`}>
+                    {action === "DEPLOY_PARTIAL" ? "PARTIAL" : action}
+                  </span>
+                  <span className="text-xs text-slate-700">{cashDeploymentCall.window}</span>
+                </div>
+                <p className="text-sm leading-5 text-slate-700 mb-2.5">
+                  {cashDeploymentCall.reason}
+                </p>
+                {cashDeploymentCall.newtonPersistence && (
+                  <p className="text-xs leading-5 text-slate-600 italic mb-2.5">
+                    Newton: {cashDeploymentCall.newtonPersistence}
+                  </p>
+                )}
+                {(cashDeploymentCall.triggersMet?.length || cashDeploymentCall.triggersMissing?.length) ? (
+                  <div className="space-y-1 mb-2.5 text-[11px] leading-4">
+                    {cashDeploymentCall.triggersMet?.slice(0, 4).map((t, i) => (
+                      <div key={`m${i}`} className="flex items-start gap-1 text-emerald-800">
+                        <span className="flex-none mt-[1px]">✓</span>
+                        <span>{t}</span>
+                      </div>
+                    ))}
+                    {cashDeploymentCall.triggersMissing?.slice(0, 4).map((t, i) => (
+                      <div key={`x${i}`} className="flex items-start gap-1 text-slate-500">
+                        <span className="flex-none mt-[1px]">·</span>
+                        <span>{t}</span>
+                      </div>
+                    ))}
+                  </div>
+                ) : null}
+                <div className={`mt-2 -mx-2 -mb-1 px-2 py-1 rounded-md text-[10px] font-semibold ${windowToneClass}`}>
+                  {deploymentWindowStatus.label}
+                </div>
+              </div>
+            );
+          })()}
         </section>
       )}
 

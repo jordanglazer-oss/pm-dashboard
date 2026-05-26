@@ -589,6 +589,40 @@ export type MorningBrief = {
     tenor?: string;  // e.g. "3 months"             — omitted on SKIP
     reason: string;  // 1 sentence ≤ 25 words
   };
+  /**
+   * Cash Deployment Indicator — answers "is today a good day to deploy
+   * monthly-installment new client cash, or should we wait a few days?"
+   *
+   * Inputs are blended by Claude per the rubric in the brief prompt:
+   *   - Newton daily strategist notes + 30-day persistence/inflection: 40%
+   *   - S&P Oscillator: 25%
+   *   - Breadth (RSP/SPY, MTUM/USMV, % above 50/200-DMA): 15%
+   *   - VIX state: 10%
+   *   - Sentiment (Fear & Greed, AAII, put/call): 6%
+   *   - Short-term momentum (5-day SPY drawdown): 4%
+   *
+   * Window: 1st–20th of each month is the normal deployment window.
+   * Days 15-17: window-closing label appears. Days 18-20: urgency cue.
+   * Day 21+: past-window label. Action remains advisory — the PM can
+   * always override; this tile is a soft suggestion, not a hard gate.
+   *
+   * newtonPersistence captures the 30-day-history signal that's the
+   * key differentiator vs eyeballing today's note in isolation —
+   * e.g. "Newton calling dip-buy 5 sessions running" or "Newton flipped
+   * cautious → constructive today after 3 weeks of caution".
+   *
+   * Optional so old briefs in pm:brief render gracefully — the UI hides
+   * the card when the field is absent.
+   */
+  cashDeploymentCall?: {
+    action: "DEPLOY" | "DEPLOY_PARTIAL" | "WAIT";
+    score: number; // 0-100; higher = better day to deploy
+    window: string; // ≤ 12 words — e.g. "Deploy now" / "Wait 3-5 trading days" / "Next 1-2 sessions"
+    reason: string; // 1 sentence ≤ 25 words — what tipped the call
+    triggersMet: string[]; // 0-4 short bullets of what's working
+    triggersMissing: string[]; // 0-4 short bullets of what's missing
+    newtonPersistence?: string; // 1 line on Newton's 30-day pattern; omitted if no notes
+  };
 };
 
 export type ScoreResponse = {
