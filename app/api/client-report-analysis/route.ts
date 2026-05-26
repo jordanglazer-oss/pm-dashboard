@@ -458,6 +458,7 @@ async function runAnalysis(
   const prompt = buildPrompt(body, mer, feeSavings);
   const msg = await client.messages.create({
     model: "claude-sonnet-4-6",
+    temperature: 0,
     max_tokens: 2048,
     messages: [{ role: "user", content: prompt }],
   });

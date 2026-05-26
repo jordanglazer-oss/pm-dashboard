@@ -24,6 +24,7 @@ export async function POST(req: NextRequest) {
 
     const msg = await client.messages.create({
       model: "claude-haiku-4-5",
+      temperature: 0,
       max_tokens: 32,
       messages: [
         {

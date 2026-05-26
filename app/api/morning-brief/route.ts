@@ -315,6 +315,7 @@ async function analyzeAttachments(attachments: AttachmentInput[]): Promise<strin
   const imageBlocks = buildImageBlocks(attachments);
   const message = await client.messages.create({
     model: "claude-sonnet-4-6",
+    temperature: 0,
     max_tokens: 1024,
     messages: [
       {
@@ -349,6 +350,7 @@ async function analyzeOscillatorScreenshot(
   const imageBlocks = buildImageBlocks(attachments);
   const message = await client.messages.create({
     model: "claude-sonnet-4-6",
+    temperature: 0,
     max_tokens: 600,
     messages: [
       {
@@ -416,6 +418,7 @@ async function analyzeNewtonTechnical(
   if (docBlocks.length === 0) return "";
   const message = await client.messages.create({
     model: "claude-sonnet-4-6",
+    temperature: 0,
     max_tokens: 1500,
     messages: [
       {
@@ -1075,6 +1078,7 @@ Current Portfolio Holdings: ${holdingsSummary}`;
 
     const message = await client.messages.create({
       model: "claude-sonnet-4-6",
+      temperature: 0,
       max_tokens: 8192,
       messages: [
         {

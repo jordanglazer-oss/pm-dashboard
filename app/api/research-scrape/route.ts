@@ -413,6 +413,7 @@ async function runVision(source: SourceKey, atts: AttachmentInput[]): Promise<{ 
 
   const msg = await client.messages.create({
     model: "claude-sonnet-4-6",
+    temperature: 0,
     max_tokens: 4096,
     messages: [
       {

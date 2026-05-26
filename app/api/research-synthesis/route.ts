@@ -631,6 +631,7 @@ async function runSynthesis(
 
   const msg = await client.messages.create({
     model: "claude-sonnet-4-6",
+    temperature: 0,
     max_tokens: 4096,
     system: buildSystemPrompt(todayISO),
     messages: [{ role: "user", content: context }],

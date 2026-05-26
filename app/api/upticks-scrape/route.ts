@@ -141,6 +141,7 @@ async function runVision(atts: AttachmentInput[]): Promise<{ entries: ScrapedUpt
 
   const msg = await client.messages.create({
     model: "claude-sonnet-4-6",
+    temperature: 0,
     max_tokens: 4096,
     messages: [
       {
