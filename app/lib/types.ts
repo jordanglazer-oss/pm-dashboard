@@ -524,6 +524,15 @@ export type MorningBrief = {
   tacticalView?: string;
   cyclicalView?: string;
   structuralView?: string;
+  /**
+   * One-sentence "what would invalidate this view" pointers, one per
+   * horizon. Added 2026-05 so the PM can spot when their thesis is
+   * actually broken without re-reading the whole brief. Optional so old
+   * briefs in pm:brief render gracefully without the line.
+   */
+  tacticalInvalidator?: string;
+  cyclicalInvalidator?: string;
+  structuralInvalidator?: string;
   forwardLooking?: ForwardLookingBundle; // Automated data powering Forward View
   bottomLine: string;
   compositeAnalysis: string;

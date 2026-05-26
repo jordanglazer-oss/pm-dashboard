@@ -1468,10 +1468,10 @@ export function MorningBrief({
             "forwardView" synthesis sits in a slim row below the cards. */}
         {(() => {
           const horizonsData = marketRegime?.horizons;
-          const cards: { id: "tactical" | "cyclical" | "structural"; label: string; weight: string; text: string; accent: string }[] = [
-            { id: "tactical", label: "Tactical · 1–3M", weight: "50%", text: tacticalView, accent: "border-blue-200 bg-blue-50/40" },
-            { id: "cyclical", label: "Cyclical · 3–6M", weight: "30%", text: cyclicalView, accent: "border-emerald-200 bg-emerald-50/40" },
-            { id: "structural", label: "Structural · 6–12M", weight: "20%", text: structuralView, accent: "border-violet-200 bg-violet-50/40" },
+          const cards: { id: "tactical" | "cyclical" | "structural"; label: string; weight: string; text: string; invalidator?: string; accent: string }[] = [
+            { id: "tactical", label: "Tactical · 1–3M", weight: "50%", text: tacticalView, invalidator: brief?.tacticalInvalidator, accent: "border-blue-200 bg-blue-50/40" },
+            { id: "cyclical", label: "Cyclical · 3–6M", weight: "30%", text: cyclicalView, invalidator: brief?.cyclicalInvalidator, accent: "border-emerald-200 bg-emerald-50/40" },
+            { id: "structural", label: "Structural · 6–12M", weight: "20%", text: structuralView, invalidator: brief?.structuralInvalidator, accent: "border-violet-200 bg-violet-50/40" },
           ];
           return (
             <div className="mb-5 grid gap-3 grid-cols-1 md:grid-cols-3">
@@ -1510,6 +1510,16 @@ export function MorningBrief({
                       )}
                     </div>
                     <p className="text-sm leading-6 text-slate-700">{c.text}</p>
+                    {c.invalidator && (
+                      <div className="mt-2 pt-2 border-t border-slate-200/70 flex items-start gap-1.5">
+                        <span className="text-[9px] font-bold uppercase tracking-wider text-slate-500 mt-[1px] flex-none">
+                          Invalidator
+                        </span>
+                        <span className="text-xs leading-5 text-slate-600 italic">
+                          {c.invalidator}
+                        </span>
+                      </div>
+                    )}
                   </div>
                 );
               })}
