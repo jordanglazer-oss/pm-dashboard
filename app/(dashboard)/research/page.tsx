@@ -471,6 +471,9 @@ export default function ResearchPage() {
     thesis: string;
     regimeFit?: RegimeFitRating;
     regimeFitRationale?: string;
+    /** 0-100 model conviction. Optional — saved synthesis blobs from
+     *  before this field was added decode without errors. */
+    conviction?: number;
   };
   type SynthesisResult = {
     summary: string;
@@ -1731,6 +1734,26 @@ export default function ResearchPage() {
               low: "Regime: LOW fit",
               contrary: "Regime: CONTRARY",
             };
+            // Conviction badge: 0-100 model conviction. Color-banded so the
+            // PM can spot high-conviction picks at a glance without reading
+            // the number — green ≥75, amber 60-74, slate <60. Hidden when
+            // the field is missing (old persisted synthesis blobs).
+            const ConvictionBadge = ({ p }: { p: SynthesisPick }) => {
+              if (typeof p.conviction !== "number") return null;
+              const c = p.conviction;
+              const tone =
+                c >= 75 ? "bg-emerald-100 text-emerald-800 border-emerald-300"
+                : c >= 60 ? "bg-amber-100 text-amber-800 border-amber-300"
+                : "bg-slate-100 text-slate-700 border-slate-300";
+              return (
+                <span
+                  className={`text-[10px] font-bold rounded-full px-2 py-0.5 border ${tone}`}
+                  title={`Model conviction: ${c}/100 (combines source count, regime fit, and absence of dissent)`}
+                >
+                  Conviction {c}
+                </span>
+              );
+            };
             const RegimeFitBlock = ({ p }: { p: SynthesisPick }) => {
               if (!p.regimeFit) return null;
               return (
@@ -1792,6 +1815,7 @@ export default function ResearchPage() {
                             <span className="text-[10px] font-bold rounded-full bg-indigo-600 text-white px-2 py-0.5">
                               {p.sourceCount} sources
                             </span>
+                            <ConvictionBadge p={p} />
                             {p.sources.map((s) => (
                               <span key={s} className="text-[10px] rounded-full bg-slate-100 text-slate-600 px-2 py-0.5">
                                 {s}
@@ -1821,6 +1845,7 @@ export default function ResearchPage() {
                         <li key={p.ticker} className="rounded-xl border border-teal-100 bg-white p-3 shadow-sm">
                           <div className="flex items-center gap-2 flex-wrap mb-1.5">
                             <span className="font-mono font-bold text-base text-teal-900">${displayTicker(p.ticker)}</span>
+                            <ConvictionBadge p={p} />
                             {p.sources.map((s) => (
                               <span key={s} className="text-[10px] rounded-full bg-slate-100 text-slate-600 px-2 py-0.5">
                                 {s}
@@ -1846,6 +1871,7 @@ export default function ResearchPage() {
                         <li key={p.ticker} className="rounded-lg border border-slate-100 bg-white/70 p-2.5">
                           <div className="flex items-center gap-2 flex-wrap mb-1">
                             <span className="font-mono font-bold text-sm">${displayTicker(p.ticker)}</span>
+                            <ConvictionBadge p={p} />
                             {p.sources.map((s) => (
                               <span key={s} className="text-[10px] rounded-full bg-slate-100 text-slate-600 px-2 py-0.5">
                                 {s}

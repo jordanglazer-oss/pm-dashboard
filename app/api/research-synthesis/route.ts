@@ -70,6 +70,11 @@ export type SynthesisPick = {
    *  research and model opinion is always visible. */
   regimeFit?: RegimeFitRating;
   regimeFitRationale?: string;
+  /** 0-100 conviction score the model assigns to this pick, derived from a
+   *  rubric in the prompt (source count × regime fit × dissent absence).
+   *  Optional so saved synthesis blobs generated before this field was
+   *  added decode without errors. UI can sort/filter by this. */
+  conviction?: number;
 };
 
 export type SynthesisResult = {
@@ -494,6 +499,13 @@ STEP 2 — RANK CANDIDATES (overlap × regime-fit):
 STEP 3 — SEPARATE RESEARCH FROM OPINION IN THE OUTPUT:
   - thesis = WHAT THE SOURCES SAY: list which sources mentioned the ticker, what they say (ratings, target weights, technical levels, entry prices), any setup specifics. Do not editorialize regime fit here.
   - regimeFit + regimeFitRationale = THE MODEL'S OPINION on regime alignment. This is where your view goes.
+  - conviction = INTEGER 0-100 capturing how strongly the model believes this pick is worth acting on TODAY. Combines sourceCount, regimeFit, and absence of dissents within the source pool. Use this rubric — anchor to it; don't drift toward the middle:
+      90-100: Multi-source consensus on the SAME thesis (2+ sources, no material disagreement on direction/level) + regimeFit "high" + no contrary signals in the brief. Rare; reserve for genuine highest-conviction names.
+      75-89:  EITHER multi-source consensus with regimeFit "medium-to-high" and only minor dissent, OR single-source with regimeFit "high" and very specific entry/target. The strong default for clean topPicks.
+      60-74:  Multi-source with mixed regime fit, OR single-source with regimeFit "high" but less specific setup, OR multi-source where regimeFit is "low" (sources clearly disagree with the regime).
+      45-59:  Worth watching but signals are mixed (analyst disagreement on direction OR contrary regime fit OR single source with regimeFit "medium"). Default for honorableMentions.
+      Below 45: Edge case — only include if there's a specific reason (e.g., contrarian pick the PM should know exists). Should rarely appear in topPicks.
+    The same inputs MUST produce the same number (temperature=0). Two picks with identical sourceCount and regimeFit should get the same conviction unless dissents differ.
 
 CRITICAL RULES:
 1. topPicks = every ticker in 2+ sources, sorted by sourceCount desc, ties broken by regimeFit (high → medium → low → contrary), then alphabetically. Multi-source picks ALWAYS appear here — never demote a multi-source pick to a lower tier just because regime fit is poor; instead mark regimeFit accordingly.
@@ -510,13 +522,13 @@ Respond ONLY with valid JSON matching this schema:
   "summary": "1-2 sentence overall synthesis tying picks to the regime/horizon read.",
   "regimeTilts": ["Tilt 1 (specific: sector, market-cap, factor)", "Tilt 2", "..."],
   "topPicks": [
-    {"ticker": "TICKER", "sources": ["..."], "sourceCount": N, "thesis": "what the sources say", "regimeFit": "high|medium|low|contrary", "regimeFitRationale": "≤25 words tying rating to a specific tilt"}
+    {"ticker": "TICKER", "sources": ["..."], "sourceCount": N, "thesis": "what the sources say", "regimeFit": "high|medium|low|contrary", "regimeFitRationale": "≤25 words tying rating to a specific tilt", "conviction": 82}
   ],
   "regimeAlignedHighlights": [
-    {"ticker": "TICKER", "sources": ["..."], "sourceCount": 1, "thesis": "what the single source says", "regimeFit": "high", "regimeFitRationale": "≤25 words tying rating to a specific tilt"}
+    {"ticker": "TICKER", "sources": ["..."], "sourceCount": 1, "thesis": "what the single source says", "regimeFit": "high", "regimeFitRationale": "≤25 words tying rating to a specific tilt", "conviction": 75}
   ],
   "honorableMentions": [
-    {"ticker": "TICKER", "sources": ["..."], "sourceCount": 1, "thesis": "what the single source says", "regimeFit": "medium|low", "regimeFitRationale": "≤25 words"}
+    {"ticker": "TICKER", "sources": ["..."], "sourceCount": 1, "thesis": "what the single source says", "regimeFit": "medium|low", "regimeFitRationale": "≤25 words", "conviction": 55}
   ],
   "cautions": ["Optional: bottom-ideas conflicts, single-source quality concerns. NOT for portfolio confirmations."],
   "regimeContext": "Risk-On / Neutral / Risk-Off / unknown"
@@ -543,6 +555,13 @@ function parseSynthesis(text: string): SynthesisResult | null {
           const regimeFit: RegimeFitRating | undefined = validRatings.has(rawFit)
             ? (rawFit as RegimeFitRating)
             : undefined;
+          // Clamp conviction to [0, 100] and round to integer. Missing /
+          // out-of-range values fall back to undefined so the UI can hide
+          // the badge gracefully rather than show 0.
+          let conviction: number | undefined;
+          if (typeof p.conviction === "number" && Number.isFinite(p.conviction)) {
+            conviction = Math.max(0, Math.min(100, Math.round(p.conviction)));
+          }
           return {
             ticker: String(p.ticker).trim().toUpperCase(),
             sources: Array.isArray(p.sources) ? p.sources.map(String).filter(Boolean) : [],
@@ -554,6 +573,7 @@ function parseSynthesis(text: string): SynthesisResult | null {
             regimeFitRationale: typeof p.regimeFitRationale === "string"
               ? p.regimeFitRationale
               : undefined,
+            conviction,
           };
         });
 
