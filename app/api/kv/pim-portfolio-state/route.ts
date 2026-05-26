@@ -20,6 +20,24 @@ export async function GET() {
 export async function PUT(req: NextRequest) {
   try {
     const data = await req.json();
+    // Shape guard: must be an object with a 'groupStates' array. This blob
+    // holds per-group transactions and rebalance snapshots — losing it
+    // means losing the entire trade history. Reject anything malformed.
+    if (data === null || typeof data !== "object" || Array.isArray(data)) {
+      console.error("[pm:pim-portfolio-state PUT] Rejected non-object body:", typeof data);
+      return NextResponse.json(
+        { error: "pm:pim-portfolio-state body must be an object with a 'groupStates' array" },
+        { status: 400 },
+      );
+    }
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+    if (!Array.isArray((data as any).groupStates)) {
+      console.error("[pm:pim-portfolio-state PUT] Rejected body missing 'groupStates' array");
+      return NextResponse.json(
+        { error: "pm:pim-portfolio-state body must include a 'groupStates' array" },
+        { status: 400 },
+      );
+    }
     const redis = await getRedis();
     await redis.set(KEY, JSON.stringify(data));
     return NextResponse.json({ ok: true });

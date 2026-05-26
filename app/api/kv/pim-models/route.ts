@@ -39,6 +39,24 @@ export async function GET() {
 export async function PUT(req: NextRequest) {
   try {
     const data = await req.json();
+    // Shape guard: pm:pim-models MUST be an object with a `groups` array.
+    // The whole PIM rebalance pipeline assumes this — silently writing a
+    // wrong shape would corrupt every model.
+    if (data === null || typeof data !== "object" || Array.isArray(data)) {
+      console.error("[pm:pim-models PUT] Rejected non-object body:", typeof data);
+      return NextResponse.json(
+        { error: "pm:pim-models body must be an object with a 'groups' array" },
+        { status: 400 },
+      );
+    }
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+    if (!Array.isArray((data as any).groups)) {
+      console.error("[pm:pim-models PUT] Rejected body missing 'groups' array");
+      return NextResponse.json(
+        { error: "pm:pim-models body must include a 'groups' array" },
+        { status: 400 },
+      );
+    }
     const redis = await getRedis();
     await redis.set(KEY, JSON.stringify(data));
     return NextResponse.json({ ok: true });

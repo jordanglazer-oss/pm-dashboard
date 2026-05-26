@@ -21,7 +21,20 @@ export async function GET() {
 
 export async function PUT(req: NextRequest) {
   try {
-    const { stocks } = await req.json();
+    const body = await req.json();
+    const stocks = body?.stocks;
+    // Shape guard: pm:stocks MUST be an array. This invariant is what got
+    // violated in the 2026-05-25 incident — a buggy admin script wrote an
+    // object literal, which downstream readers Object.spread'd into the
+    // wrong shape and silently corrupted the portfolio. Reject any non-array
+    // body up front so the same class of bug can't reach Redis again.
+    if (!Array.isArray(stocks)) {
+      console.error("[pm:stocks PUT] Rejected non-array body:", typeof stocks);
+      return NextResponse.json(
+        { error: `pm:stocks must be an array, got ${stocks === null ? "null" : typeof stocks}` },
+        { status: 400 },
+      );
+    }
     const redis = await getRedis();
     await redis.set(KEY, JSON.stringify(stocks));
     return NextResponse.json({ ok: true });

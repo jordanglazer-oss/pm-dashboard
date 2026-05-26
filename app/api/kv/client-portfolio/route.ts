@@ -47,6 +47,24 @@ export async function GET() {
 export async function PUT(req: NextRequest) {
   try {
     const body = await req.json();
+    // Shape guard: must be an object with a 'positions' array. Body shape
+    // is documented at the top of this file. Reject anything else to avoid
+    // overwriting hand-entered client data with a malformed blob.
+    if (body === null || typeof body !== "object" || Array.isArray(body)) {
+      console.error("[pm:client-portfolio PUT] Rejected non-object body:", typeof body);
+      return NextResponse.json(
+        { error: "pm:client-portfolio body must be an object with a 'positions' array" },
+        { status: 400 },
+      );
+    }
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+    if (!Array.isArray((body as any).positions)) {
+      console.error("[pm:client-portfolio PUT] Rejected body missing 'positions' array");
+      return NextResponse.json(
+        { error: "pm:client-portfolio body must include a 'positions' array" },
+        { status: 400 },
+      );
+    }
     const redis = await getRedis();
     await redis.set(KEY, JSON.stringify(body));
     return NextResponse.json({ ok: true });
