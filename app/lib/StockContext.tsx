@@ -69,6 +69,17 @@ export type ChartAnalysisEntry = {
   analysis: string;
   range: string;
   analyzedAt: string;
+  // Structured fields added 2026-05-26. All optional so saved analyses
+  // generated before this commit (which only have `analysis`) continue to
+  // render via the legacy prose path.
+  outlook?: "Bullish" | "Neutral" | "Bearish";
+  confidence?: number; // 0–1
+  bullCase?: string;
+  bearCase?: string;
+  support?: number[];
+  resistance?: number[];
+  stopBelow?: number | null;
+  nextAction?: string;
 };
 
 export type ScannerData = {

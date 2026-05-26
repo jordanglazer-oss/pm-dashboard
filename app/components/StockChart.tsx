@@ -290,6 +290,17 @@ export default function StockChart({ ticker, technicals, className = "" }: Props
         analysis: data.analysis,
         range: viewRange,
         analyzedAt: new Date().toISOString(),
+        // New structured fields — present on fresh analyses, absent on
+        // saved analyses generated before this commit (which still
+        // render via the legacy prose path below).
+        outlook: data.outlook,
+        confidence: typeof data.confidence === "number" ? data.confidence : undefined,
+        bullCase: data.bullCase,
+        bearCase: data.bearCase,
+        support: Array.isArray(data.support) ? data.support : undefined,
+        resistance: Array.isArray(data.resistance) ? data.resistance : undefined,
+        stopBelow: typeof data.stopBelow === "number" ? data.stopBelow : null,
+        nextAction: data.nextAction,
       });
     } catch (err) {
       setAnalysisError(err instanceof Error ? err.message : "Analysis failed");
@@ -417,6 +428,81 @@ export default function StockChart({ ticker, technicals, className = "" }: Props
               Clear
             </button>
           </div>
+
+          {/* Structured summary — renders only when the saved analysis has
+              the new fields. Old analyses fall through to the prose block. */}
+          {savedAnalysis?.outlook && (
+            <div className="mb-4 rounded-xl border border-slate-200 bg-slate-50 p-4">
+              <div className="flex flex-wrap items-baseline gap-3 mb-3">
+                <span className={`text-lg font-semibold tracking-tight ${
+                  savedAnalysis.outlook === "Bullish"
+                    ? "text-emerald-700"
+                    : savedAnalysis.outlook === "Bearish"
+                      ? "text-rose-700"
+                      : "text-slate-700"
+                }`}>
+                  {savedAnalysis.outlook}
+                </span>
+                {typeof savedAnalysis.confidence === "number" && (
+                  <span className="text-xs font-medium text-slate-500">
+                    Confidence {Math.round(savedAnalysis.confidence * 100)}%
+                  </span>
+                )}
+                {savedAnalysis.nextAction && (
+                  <span className="ml-auto text-sm text-slate-700 italic">
+                    {savedAnalysis.nextAction}
+                  </span>
+                )}
+              </div>
+              <div className="grid grid-cols-1 md:grid-cols-2 gap-3 mb-3">
+                {savedAnalysis.bullCase && (
+                  <div className="rounded-md bg-emerald-50 border border-emerald-200 p-3">
+                    <div className="text-[10px] font-bold uppercase tracking-wider text-emerald-700 mb-1">
+                      Bull Case
+                    </div>
+                    <p className="text-xs leading-5 text-slate-700">{savedAnalysis.bullCase}</p>
+                  </div>
+                )}
+                {savedAnalysis.bearCase && (
+                  <div className="rounded-md bg-rose-50 border border-rose-200 p-3">
+                    <div className="text-[10px] font-bold uppercase tracking-wider text-rose-700 mb-1">
+                      Bear Case
+                    </div>
+                    <p className="text-xs leading-5 text-slate-700">{savedAnalysis.bearCase}</p>
+                  </div>
+                )}
+              </div>
+              {((savedAnalysis.support && savedAnalysis.support.length > 0) ||
+                (savedAnalysis.resistance && savedAnalysis.resistance.length > 0) ||
+                typeof savedAnalysis.stopBelow === "number") && (
+                <div className="flex flex-wrap gap-x-6 gap-y-1 text-xs">
+                  {savedAnalysis.support && savedAnalysis.support.length > 0 && (
+                    <span>
+                      <span className="font-semibold text-emerald-700">Support:</span>{" "}
+                      <span className="font-mono text-slate-700">
+                        {savedAnalysis.support.map((s) => s.toFixed(2)).join(", ")}
+                      </span>
+                    </span>
+                  )}
+                  {savedAnalysis.resistance && savedAnalysis.resistance.length > 0 && (
+                    <span>
+                      <span className="font-semibold text-rose-700">Resistance:</span>{" "}
+                      <span className="font-mono text-slate-700">
+                        {savedAnalysis.resistance.map((r) => r.toFixed(2)).join(", ")}
+                      </span>
+                    </span>
+                  )}
+                  {typeof savedAnalysis.stopBelow === "number" && (
+                    <span>
+                      <span className="font-semibold text-slate-600">Stop below:</span>{" "}
+                      <span className="font-mono text-slate-700">{savedAnalysis.stopBelow.toFixed(2)}</span>
+                    </span>
+                  )}
+                </div>
+              )}
+            </div>
+          )}
+
           <div className="text-sm leading-relaxed text-slate-600 space-y-0.5">
             {analysis.split("\n").map((line, i) => {
               // Skip horizontal rules and empty decorative lines
