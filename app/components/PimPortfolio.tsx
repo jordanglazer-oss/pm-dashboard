@@ -1676,6 +1676,26 @@ export function PimPortfolio({ groups }: Props) {
     if (executingTrades) return;
     setExecutingTrades(true);
     setTradeExecProgress("");
+
+    // Pre-trade snapshot: freeze pm:pim-models, pm:pim-positions,
+    // pm:pim-portfolio-state, pm:stocks BEFORE any mutation so we have an
+    // instant-rollback point if the queue corrupts something. Fire-and-
+    // forget — a snapshot failure must not block the trade itself (the
+    // daily backup cron is still the long-term safety net), but we await
+    // the response anyway so the snapshot finishes before pm:* keys start
+    // changing under us. Non-blocking on network errors.
+    try {
+      await fetch("/api/admin/pre-trade-snapshot", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          reason: `executeAllTrades from PimPortfolio (${trades.filter((t) => t.sellSymbol || t.buyTicker).length} trade(s))`,
+        }),
+      });
+    } catch (e) {
+      console.warn("[PimPortfolio] pre-trade snapshot failed (continuing anyway):", e);
+    }
+
     let executed = 0;
     let skipped = 0;
     const errors: string[] = [];
