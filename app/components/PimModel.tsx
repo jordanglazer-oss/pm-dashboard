@@ -1151,7 +1151,7 @@ export function PimModel({ groups }: Props) {
                 </span>
               </div>
             </div>
-            <div className="max-h-[80vh] overflow-auto">
+            <div className="overflow-x-auto">
               <table className="w-full text-sm">
                 <thead className="sticky top-0 z-10 bg-white shadow-[0_1px_0_0_rgb(226_232_240)]">
                   <tr className="border-b border-slate-100 text-xs text-slate-500">
