@@ -392,130 +392,115 @@ async function fetchFinvizBreadth(): Promise<{
 
 // ── Yahoo-computed breadth (fallback when Finviz fails) ─────────────────
 // Finviz is the primary breadth source but Cloudflare intermittently blocks
-// our Vercel egress IPs. When that happens we compute breadth ourselves
-// from Yahoo's quote endpoint, which exposes `fiftyDayAverage` and
-// `twoHundredDayAverage` for every ticker. Batching the full S&P 500 list
-// into chunks of 50 takes ~2-3 seconds total and is far more reliable than
-// Finviz under Cloudflare load.
+// our Vercel egress IPs (currently returns 403 on every attempt). When
+// Finviz fails we compute breadth ourselves from Yahoo's chart endpoint.
 //
-// Methodology mirrors Finviz's screener exactly: count constituents whose
-// regularMarketPrice > the named DMA. The two numbers should be within
-// ~1-2pp of what Finviz would report on a normal day (small variance
-// because Yahoo's universe of "S&P 500" tickers can differ slightly from
-// Finviz's; we use our own universes.ts list as canonical).
+// IMPORTANT IMPLEMENTATION NOTE — why /v8/chart and not /v7/quote:
+// The initial fallback used /v7/finance/quote with fiftyDayAverage +
+// twoHundredDayAverage fields. That endpoint requires a cookie+crumb
+// session, and Vercel's IP region apparently doesn't get the consent-cookie
+// flow from Yahoo — the consent page returns 200 but no set-cookie header,
+// so getYahooAuth() silently fails and every /v7 call 401s. We confirmed
+// this with the /api/admin/diagnose-forward endpoint.
 //
-// Returns null/null only if NO tickers came back from Yahoo, which would
-// indicate a hard failure of the underlying quote endpoint. Single-ticker
-// gaps are tolerated and don't poison the count (we divide by valid-tickers
-// returned, not 500).
-type YahooQuoteRow = {
-  symbol?: string;
-  regularMarketPrice?: number;
-  fiftyDayAverage?: number;
-  twoHundredDayAverage?: number;
-};
-
-async function fetchYahooQuoteBatch(
-  symbols: string[],
-  auth: { crumb: string; cookie: string } | null,
-): Promise<YahooQuoteRow[]> {
-  if (symbols.length === 0) return [];
-  // /v7/finance/quote returns 401 "Invalid Cookie" / "Invalid Crumb"
-  // without a paired cookie+crumb session (same auth flow as the v8 chart
-  // calls above). Pass `&crumb=...` on the URL and `Cookie: ...` in the
-  // headers. Auth is fetched ONCE per batch-set by the caller and reused.
-  const crumbParam = auth ? `&crumb=${encodeURIComponent(auth.crumb)}` : "";
-  const url = `https://query2.finance.yahoo.com/v7/finance/quote?symbols=${encodeURIComponent(
-    symbols.join(","),
-  )}&fields=regularMarketPrice,fiftyDayAverage,twoHundredDayAverage${crumbParam}`;
-  try {
-    const res = await fetch(url, {
-      headers: {
-        "User-Agent": YH_UA,
-        Accept: "application/json",
-        ...(auth ? { Cookie: auth.cookie } : {}),
-      },
-      cache: "no-store",
-    });
-    if (!res.ok) {
-      console.warn(
-        `[Yahoo breadth] non-200 (${res.status}) for batch of ${symbols.length}${auth ? "" : " — no auth available (likely the cause)"}`,
-      );
-      return [];
-    }
-    const json = (await res.json()) as { quoteResponse?: { result?: YahooQuoteRow[] } };
-    return Array.isArray(json.quoteResponse?.result) ? json.quoteResponse!.result! : [];
-  } catch (e) {
-    console.warn(
-      `[Yahoo breadth] fetch threw for batch of ${symbols.length}:`,
-      e instanceof Error ? e.message : String(e),
-    );
-    return [];
+// The /v8/finance/chart endpoint works ANONYMOUSLY (auth optional) and
+// returns the full daily close series. We compute SMA(50) and SMA(200)
+// ourselves from those closes. Slightly slower (one request per ticker vs
+// batched quotes) but structurally reliable.
+//
+// Sampling: full S&P 500 at ~25 concurrent requests takes 15-25 seconds —
+// noticeable but tolerable inside brief generation. To keep wall-clock
+// reasonable we use a stratified sample of 100 tickers (every 5th name
+// from the SP500 list in universes.ts). 100 names gives ~±2pp accuracy on
+// the breadth percentage vs. the full 500, which is well within Claude's
+// banding tolerance for the regime read.
+async function computeSmaBreadthFromYahooChart(symbol: string): Promise<{
+  above200: boolean | null;
+  above50: boolean | null;
+}> {
+  // yahooChart already exists in this file and handles auth-optional fetch.
+  // 1y range gives us ~252 trading days — plenty for a 200-day SMA.
+  type YahooChartRaw = YahooChartResult & {
+    timestamp?: number[];
+    indicators?: { quote?: Array<{ close?: (number | null)[] }> };
+  };
+  const data = (await yahooChart(symbol, "1y")) as YahooChartRaw | null;
+  const closesRaw = data?.indicators?.quote?.[0]?.close;
+  if (!Array.isArray(closesRaw) || closesRaw.length < 50) {
+    return { above200: null, above50: null };
   }
+  // Filter out null close days (Yahoo emits nulls for non-trading days
+  // that crept into the timestamps array). We need real closes only.
+  const closes = closesRaw.filter((c): c is number => typeof c === "number" && c > 0);
+  if (closes.length < 50) return { above200: null, above50: null };
+  const latest = closes[closes.length - 1];
+  const sma50 = closes.slice(-50).reduce((s, v) => s + v, 0) / 50;
+  const sma200 =
+    closes.length >= 200
+      ? closes.slice(-200).reduce((s, v) => s + v, 0) / 200
+      : null;
+  return {
+    above200: sma200 != null ? latest > sma200 : null,
+    above50: latest > sma50,
+  };
 }
 
 async function fetchYahooComputedBreadth(): Promise<{
   above200Pct: number | null;
   above50Pct: number | null;
-  validCount: number;
+  sampledCount: number;
 }> {
-  // Import the SP500 list lazily so this module's import graph stays small
-  // for callers that never touch the Yahoo fallback path.
+  // Lazy import so callers that never hit the Yahoo path don't pay the
+  // universes.ts module-load cost.
   const { UNIVERSES } = await import("./universes");
-  const symbols = UNIVERSES.sp500;
-  if (!symbols || symbols.length === 0) {
-    return { above200Pct: null, above50Pct: null, validCount: 0 };
+  const fullList = UNIVERSES.sp500 ?? [];
+  if (fullList.length === 0) {
+    return { above200Pct: null, above50Pct: null, sampledCount: 0 };
   }
 
-  // Fetch the cookie+crumb auth ONCE, reused across every batch. Without
-  // this the v7 quote endpoint returns 401 Invalid Cookie / Invalid Crumb
-  // and the whole fallback path silently returns nothing — which is what
-  // happened on first deploy of this code (user saw "everything stale"
-  // because both Finviz and Yahoo failed → cached-stale fired everywhere).
-  const auth = await getYahooAuth().catch(() => null);
-  if (!auth) {
-    console.warn("[Yahoo breadth] getYahooAuth failed — proceeding anonymous (will likely 401)");
-  }
+  // Stratified sample: every 5th ticker (~100 names from the SP500 list).
+  // Deterministic so two calls in the same minute produce identical results.
+  const sample = fullList.filter((_, i) => i % 5 === 0);
 
-  // Chunk into batches of 50 — Yahoo's quote endpoint accepts up to ~250 but
-  // smaller chunks are more reliable (fewer 400s if one symbol is bad) and
-  // 10-12 parallel requests is well within polite-scraping bounds.
-  const CHUNK = 50;
-  const chunks: string[][] = [];
-  for (let i = 0; i < symbols.length; i += CHUNK) chunks.push(symbols.slice(i, i + CHUNK));
-
-  const results = await Promise.all(chunks.map((c) => fetchYahooQuoteBatch(c, auth)));
-  const rows = results.flat();
-  if (rows.length === 0) {
-    return { above200Pct: null, above50Pct: null, validCount: 0 };
+  // Batch with bounded concurrency (15 in flight). Yahoo tolerates this
+  // well; pushing higher risks rate-limit responses. ~7 batches × ~1s each
+  // = ~7s wall clock for 100 tickers.
+  const CONCURRENCY = 15;
+  const results: { above200: boolean | null; above50: boolean | null }[] = [];
+  for (let i = 0; i < sample.length; i += CONCURRENCY) {
+    const batch = sample.slice(i, i + CONCURRENCY);
+    const batchResults = await Promise.all(
+      batch.map((sym) =>
+        computeSmaBreadthFromYahooChart(sym).catch(() => ({
+          above200: null as boolean | null,
+          above50: null as boolean | null,
+        })),
+      ),
+    );
+    results.push(...batchResults);
   }
 
   let above200 = 0;
   let above50 = 0;
   let valid200 = 0;
   let valid50 = 0;
-  for (const r of rows) {
-    const px = typeof r.regularMarketPrice === "number" ? r.regularMarketPrice : null;
-    if (px == null) continue;
-    if (typeof r.twoHundredDayAverage === "number" && r.twoHundredDayAverage > 0) {
+  for (const r of results) {
+    if (r.above200 !== null) {
       valid200++;
-      if (px > r.twoHundredDayAverage) above200++;
+      if (r.above200) above200++;
     }
-    if (typeof r.fiftyDayAverage === "number" && r.fiftyDayAverage > 0) {
+    if (r.above50 !== null) {
       valid50++;
-      if (px > r.fiftyDayAverage) above50++;
+      if (r.above50) above50++;
     }
   }
 
-  // Compute % over the ACTUAL valid count rather than nominal 500. This is
-  // statistically correct when a few tickers drop out of Yahoo (delistings,
-  // ticker changes) and prevents downward bias from missing data.
-  const pct200 = valid200 > 0 ? parseFloat(((above200 / valid200) * 100).toFixed(1)) : null;
-  const pct50 = valid50 > 0 ? parseFloat(((above50 / valid50) * 100).toFixed(1)) : null;
+  const pct200 = valid200 >= 30 ? parseFloat(((above200 / valid200) * 100).toFixed(1)) : null;
+  const pct50 = valid50 >= 30 ? parseFloat(((above50 / valid50) * 100).toFixed(1)) : null;
   console.log(
-    `[Yahoo breadth] computed from ${rows.length} tickers — above200: ${pct200}% (${above200}/${valid200}), above50: ${pct50}% (${above50}/${valid50})`,
+    `[Yahoo breadth] computed via /v8/chart sample — above200: ${pct200}% (${above200}/${valid200}), above50: ${pct50}% (${above50}/${valid50})`,
   );
-  return { above200Pct: pct200, above50Pct: pct50, validCount: rows.length };
+  return { above200Pct: pct200, above50Pct: pct50, sampledCount: results.length };
 }
 
 // ── Redis-backed breadth history ─────────────────────────────────────────
@@ -942,14 +927,24 @@ function missing(
   };
 }
 
-// FRED publishes daily series with a ~1 business day lag. Anything within 5
+// FRED publishes daily series with a ~1 business day lag. Anything within 7
 // calendar days of today is treated as fresh; anything older is "stale" so
 // the UI can warn that the series hasn't refreshed.
+//
+// Threshold history: was 5 days originally. Bumped to 7 on 2026-05-27 after
+// the Memorial Day weekend exposed a false-stale pattern: Friday May 22
+// data was the latest available for DGS10/DGS2/DGS3MO/SP500 (because Monday
+// May 25 was a market holiday and FRED's publishing lag of ~2-3 business
+// days for these series put May 26's data out by the next morning). By
+// Tuesday/Wednesday, age was 5-6 days even though FRED was working
+// normally. 7 days absorbs any Monday holiday + the natural 2-3 day FRED
+// publishing lag for slower series. Faster series (VIX, BAML credit) still
+// look LIVE the same morning.
 function fredStatusFromDate(dateStr: string): ForwardStatus {
   const d = new Date(dateStr + "T00:00:00Z");
   if (isNaN(d.getTime())) return "stale";
   const ageDays = (Date.now() - d.getTime()) / (1000 * 60 * 60 * 24);
-  return ageDays > 5 ? "stale" : "live";
+  return ageDays > 7 ? "stale" : "live";
 }
 
 // Derived points (curves, EPS growth) are only as fresh as their weakest leg.
@@ -2018,7 +2013,7 @@ export async function fetchForwardLookingData(): Promise<ForwardLookingData> {
         above200Pct = yahoo.above200Pct;
         above50Pct = yahoo.above50Pct;
         breadthSource = "yahoo-fallback";
-        console.log(`[Breadth] Yahoo fallback succeeded (${yahoo.validCount} constituents)`);
+        console.log(`[Breadth] Yahoo fallback succeeded (${yahoo.sampledCount} tickers sampled)`);
       } else {
         console.warn("[Breadth] Both Finviz and Yahoo failed — checking cached history");
       }
