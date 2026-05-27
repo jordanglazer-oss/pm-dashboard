@@ -415,18 +415,32 @@ type YahooQuoteRow = {
   twoHundredDayAverage?: number;
 };
 
-async function fetchYahooQuoteBatch(symbols: string[]): Promise<YahooQuoteRow[]> {
+async function fetchYahooQuoteBatch(
+  symbols: string[],
+  auth: { crumb: string; cookie: string } | null,
+): Promise<YahooQuoteRow[]> {
   if (symbols.length === 0) return [];
+  // /v7/finance/quote returns 401 "Invalid Cookie" / "Invalid Crumb"
+  // without a paired cookie+crumb session (same auth flow as the v8 chart
+  // calls above). Pass `&crumb=...` on the URL and `Cookie: ...` in the
+  // headers. Auth is fetched ONCE per batch-set by the caller and reused.
+  const crumbParam = auth ? `&crumb=${encodeURIComponent(auth.crumb)}` : "";
   const url = `https://query2.finance.yahoo.com/v7/finance/quote?symbols=${encodeURIComponent(
     symbols.join(","),
-  )}&fields=regularMarketPrice,fiftyDayAverage,twoHundredDayAverage`;
+  )}&fields=regularMarketPrice,fiftyDayAverage,twoHundredDayAverage${crumbParam}`;
   try {
     const res = await fetch(url, {
-      headers: { "User-Agent": YH_UA, Accept: "application/json" },
+      headers: {
+        "User-Agent": YH_UA,
+        Accept: "application/json",
+        ...(auth ? { Cookie: auth.cookie } : {}),
+      },
       cache: "no-store",
     });
     if (!res.ok) {
-      console.warn(`[Yahoo breadth] non-200 (${res.status}) for batch of ${symbols.length}`);
+      console.warn(
+        `[Yahoo breadth] non-200 (${res.status}) for batch of ${symbols.length}${auth ? "" : " — no auth available (likely the cause)"}`,
+      );
       return [];
     }
     const json = (await res.json()) as { quoteResponse?: { result?: YahooQuoteRow[] } };
@@ -453,6 +467,16 @@ async function fetchYahooComputedBreadth(): Promise<{
     return { above200Pct: null, above50Pct: null, validCount: 0 };
   }
 
+  // Fetch the cookie+crumb auth ONCE, reused across every batch. Without
+  // this the v7 quote endpoint returns 401 Invalid Cookie / Invalid Crumb
+  // and the whole fallback path silently returns nothing — which is what
+  // happened on first deploy of this code (user saw "everything stale"
+  // because both Finviz and Yahoo failed → cached-stale fired everywhere).
+  const auth = await getYahooAuth().catch(() => null);
+  if (!auth) {
+    console.warn("[Yahoo breadth] getYahooAuth failed — proceeding anonymous (will likely 401)");
+  }
+
   // Chunk into batches of 50 — Yahoo's quote endpoint accepts up to ~250 but
   // smaller chunks are more reliable (fewer 400s if one symbol is bad) and
   // 10-12 parallel requests is well within polite-scraping bounds.
@@ -460,7 +484,7 @@ async function fetchYahooComputedBreadth(): Promise<{
   const chunks: string[][] = [];
   for (let i = 0; i < symbols.length; i += CHUNK) chunks.push(symbols.slice(i, i + CHUNK));
 
-  const results = await Promise.all(chunks.map((c) => fetchYahooQuoteBatch(c)));
+  const results = await Promise.all(chunks.map((c) => fetchYahooQuoteBatch(c, auth)));
   const rows = results.flat();
   if (rows.length === 0) {
     return { above200Pct: null, above50Pct: null, validCount: 0 };
