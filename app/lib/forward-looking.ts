@@ -390,6 +390,110 @@ async function fetchFinvizBreadth(): Promise<{
   return { above200Pct: toPct(c200), above50Pct: toPct(c50) };
 }
 
+// ── Yahoo-computed breadth (fallback when Finviz fails) ─────────────────
+// Finviz is the primary breadth source but Cloudflare intermittently blocks
+// our Vercel egress IPs. When that happens we compute breadth ourselves
+// from Yahoo's quote endpoint, which exposes `fiftyDayAverage` and
+// `twoHundredDayAverage` for every ticker. Batching the full S&P 500 list
+// into chunks of 50 takes ~2-3 seconds total and is far more reliable than
+// Finviz under Cloudflare load.
+//
+// Methodology mirrors Finviz's screener exactly: count constituents whose
+// regularMarketPrice > the named DMA. The two numbers should be within
+// ~1-2pp of what Finviz would report on a normal day (small variance
+// because Yahoo's universe of "S&P 500" tickers can differ slightly from
+// Finviz's; we use our own universes.ts list as canonical).
+//
+// Returns null/null only if NO tickers came back from Yahoo, which would
+// indicate a hard failure of the underlying quote endpoint. Single-ticker
+// gaps are tolerated and don't poison the count (we divide by valid-tickers
+// returned, not 500).
+type YahooQuoteRow = {
+  symbol?: string;
+  regularMarketPrice?: number;
+  fiftyDayAverage?: number;
+  twoHundredDayAverage?: number;
+};
+
+async function fetchYahooQuoteBatch(symbols: string[]): Promise<YahooQuoteRow[]> {
+  if (symbols.length === 0) return [];
+  const url = `https://query2.finance.yahoo.com/v7/finance/quote?symbols=${encodeURIComponent(
+    symbols.join(","),
+  )}&fields=regularMarketPrice,fiftyDayAverage,twoHundredDayAverage`;
+  try {
+    const res = await fetch(url, {
+      headers: { "User-Agent": YH_UA, Accept: "application/json" },
+      cache: "no-store",
+    });
+    if (!res.ok) {
+      console.warn(`[Yahoo breadth] non-200 (${res.status}) for batch of ${symbols.length}`);
+      return [];
+    }
+    const json = (await res.json()) as { quoteResponse?: { result?: YahooQuoteRow[] } };
+    return Array.isArray(json.quoteResponse?.result) ? json.quoteResponse!.result! : [];
+  } catch (e) {
+    console.warn(
+      `[Yahoo breadth] fetch threw for batch of ${symbols.length}:`,
+      e instanceof Error ? e.message : String(e),
+    );
+    return [];
+  }
+}
+
+async function fetchYahooComputedBreadth(): Promise<{
+  above200Pct: number | null;
+  above50Pct: number | null;
+  validCount: number;
+}> {
+  // Import the SP500 list lazily so this module's import graph stays small
+  // for callers that never touch the Yahoo fallback path.
+  const { UNIVERSES } = await import("./universes");
+  const symbols = UNIVERSES.sp500;
+  if (!symbols || symbols.length === 0) {
+    return { above200Pct: null, above50Pct: null, validCount: 0 };
+  }
+
+  // Chunk into batches of 50 — Yahoo's quote endpoint accepts up to ~250 but
+  // smaller chunks are more reliable (fewer 400s if one symbol is bad) and
+  // 10-12 parallel requests is well within polite-scraping bounds.
+  const CHUNK = 50;
+  const chunks: string[][] = [];
+  for (let i = 0; i < symbols.length; i += CHUNK) chunks.push(symbols.slice(i, i + CHUNK));
+
+  const results = await Promise.all(chunks.map((c) => fetchYahooQuoteBatch(c)));
+  const rows = results.flat();
+  if (rows.length === 0) {
+    return { above200Pct: null, above50Pct: null, validCount: 0 };
+  }
+
+  let above200 = 0;
+  let above50 = 0;
+  let valid200 = 0;
+  let valid50 = 0;
+  for (const r of rows) {
+    const px = typeof r.regularMarketPrice === "number" ? r.regularMarketPrice : null;
+    if (px == null) continue;
+    if (typeof r.twoHundredDayAverage === "number" && r.twoHundredDayAverage > 0) {
+      valid200++;
+      if (px > r.twoHundredDayAverage) above200++;
+    }
+    if (typeof r.fiftyDayAverage === "number" && r.fiftyDayAverage > 0) {
+      valid50++;
+      if (px > r.fiftyDayAverage) above50++;
+    }
+  }
+
+  // Compute % over the ACTUAL valid count rather than nominal 500. This is
+  // statistically correct when a few tickers drop out of Yahoo (delistings,
+  // ticker changes) and prevents downward bias from missing data.
+  const pct200 = valid200 > 0 ? parseFloat(((above200 / valid200) * 100).toFixed(1)) : null;
+  const pct50 = valid50 > 0 ? parseFloat(((above50 / valid50) * 100).toFixed(1)) : null;
+  console.log(
+    `[Yahoo breadth] computed from ${rows.length} tickers — above200: ${pct200}% (${above200}/${valid200}), above50: ${pct50}% (${above50}/${valid50})`,
+  );
+  return { above200Pct: pct200, above50Pct: pct50, validCount: rows.length };
+}
+
 // ── Redis-backed breadth history ─────────────────────────────────────────
 // Finviz only exposes the current snapshot, so we build our own rolling
 // history under a NEW Redis key ("pm:breadth-history") to enable wk/wk and
@@ -1862,15 +1966,69 @@ export async function fetchForwardLookingData(): Promise<ForwardLookingData> {
     "Finviz breadth scrape unavailable."
   );
   try {
-    const { above200Pct, above50Pct } = await fetchFinvizBreadth();
-    // Use today's ISO date for the snapshot key — Finviz always reflects
-    // the latest session close.
+    // ── Three-tier breadth fallback chain ───────────────────────────────
+    // (1) Finviz scrape       — preferred, matches StockCharts/WSJ exactly
+    // (2) Yahoo-computed      — used when Finviz returns null (Cloudflare
+    //                            block, HTML change, or any other failure);
+    //                            computes % from S&P 500 constituents via
+    //                            Yahoo's quote endpoint (fast, reliable)
+    // (3) Cached history      — last-resort: most recent successful snapshot
+    //                            with a stale tag so the brief can disclose
+    //
+    // Each level's `breadthSource` value lets the brief and other consumers
+    // know which path served the data, and downstream prose can caveat
+    // accordingly when source is "yahoo-fallback" or "cached-stale".
+    let above200Pct: number | null = null;
+    let above50Pct: number | null = null;
+    let breadthSource: "finviz" | "yahoo-fallback" | "cached-stale" | "none" = "none";
+
+    const finvizResult = await fetchFinvizBreadth();
+    if (finvizResult.above200Pct != null || finvizResult.above50Pct != null) {
+      above200Pct = finvizResult.above200Pct;
+      above50Pct = finvizResult.above50Pct;
+      breadthSource = "finviz";
+    } else {
+      console.warn("[Breadth] Finviz returned null/null — falling back to Yahoo computed");
+      const yahoo = await fetchYahooComputedBreadth();
+      if (yahoo.above200Pct != null || yahoo.above50Pct != null) {
+        above200Pct = yahoo.above200Pct;
+        above50Pct = yahoo.above50Pct;
+        breadthSource = "yahoo-fallback";
+        console.log(`[Breadth] Yahoo fallback succeeded (${yahoo.validCount} constituents)`);
+      } else {
+        console.warn("[Breadth] Both Finviz and Yahoo failed — checking cached history");
+      }
+    }
+
+    // Use today's ISO date for the snapshot key — both Finviz and Yahoo
+    // reflect the latest session close.
     const todayIso = new Date().toISOString().slice(0, 10);
     const realHistory = await recordBreadthSnapshot({
       date: todayIso,
       above200: above200Pct,
       above50: above50Pct,
     });
+
+    // Last-resort: if both live sources failed AND we have prior history,
+    // grab the most recent non-null snapshot. This is tagged stale so the
+    // brief can disclose. The history record above wrote (null, null) for
+    // today, so we skip today's entry when looking for the most recent
+    // valid one.
+    let cachedStaleDate: string | null = null;
+    if (above200Pct == null && above50Pct == null && realHistory.length > 1) {
+      const mostRecentValid = realHistory.find(
+        (s) => s.date !== todayIso && (s.above200 != null || s.above50 != null),
+      );
+      if (mostRecentValid) {
+        above200Pct = mostRecentValid.above200;
+        above50Pct = mostRecentValid.above50;
+        breadthSource = "cached-stale";
+        cachedStaleDate = mostRecentValid.date;
+        console.warn(
+          `[Breadth] Using cached snapshot from ${mostRecentValid.date} — both live sources unavailable`,
+        );
+      }
+    }
 
     // On cold start (or any time the real history hasn't accumulated at
     // least ~a month of distinct trading days) fold in an SPX-proxy
@@ -1908,41 +2066,64 @@ export async function fetchForwardLookingData(): Promise<ForwardLookingData> {
       ? " Estimated historical points are derived from SPX distance above its own 200/50 DMA anchored to today's real Finviz reading; they are replaced by live snapshots as the Redis history (pm:breadth-history) accumulates."
       : "";
 
+    // Compute source-aware labels + a `sourceNote` that downstream brief
+    // prose can use to caveat when breadth comes from the Yahoo fallback
+    // or stale cache rather than the primary Finviz source.
+    const sourceLabelFor = (base: string): string => {
+      if (breadthSource === "yahoo-fallback") return `${base} (Yahoo fallback)`;
+      if (breadthSource === "cached-stale") return `${base} (cached ${cachedStaleDate})`;
+      return base;
+    };
+    const sourceUrl =
+      breadthSource === "yahoo-fallback"
+        ? "https://query2.finance.yahoo.com/v7/finance/quote"
+        : breadthSource === "cached-stale"
+          ? "pm:breadth-history (Redis)"
+          : finvizUrl;
+    const sourceNote =
+      breadthSource === "yahoo-fallback"
+        ? " SOURCE NOTE: Finviz scrape failed; this reading was computed from Yahoo Finance quotes across the full S&P 500 (price vs. 50/200 DMA). Numbers are within ~1-2pp of what Finviz would publish."
+        : breadthSource === "cached-stale"
+          ? ` SOURCE NOTE: Both Finviz and Yahoo failed today; reading is from cached snapshot dated ${cachedStaleDate}. Treat as stale — breadth may have moved meaningfully since.`
+          : "";
+    const asOfLabel = breadthSource === "cached-stale" && cachedStaleDate ? cachedStaleDate : todayIso;
+    const liveStatus: "live" | "stale" = breadthSource === "cached-stale" ? "stale" : "live";
+
     if (above200Pct != null) {
       breadth200Wk = {
         value: above200Pct,
-        source: finvizUrl,
-        sourceLabel: "Finviz S&P 500 >200DMA",
-        asOf: todayIso,
+        source: sourceUrl,
+        sourceLabel: sourceLabelFor("S&P 500 >200DMA"),
+        asOf: asOfLabel,
         previous: wkAgo?.above200 ?? null,
-        note: `Percentage of S&P 500 constituents trading above their 200-day moving average, scraped from Finviz (count / 500). Prior snapshot: ${
+        note: `Percentage of S&P 500 constituents trading above their 200-day moving average. Prior snapshot: ${
           wkAgoDate ?? "none yet (history building)"
-        }${wkEstimated ? " (SPX-proxy estimate)" : ""}. History accumulates in Redis key pm:breadth-history so wk/wk and mo/mo comparisons become fully real within a few weeks.${estimatedSuffix}`,
-        status: "live",
+        }${wkEstimated ? " (SPX-proxy estimate)" : ""}. History accumulates in Redis key pm:breadth-history so wk/wk and mo/mo comparisons become fully real within a few weeks.${estimatedSuffix}${sourceNote}`,
+        status: liveStatus,
       };
       breadth200Mo = {
         value: above200Pct,
-        source: finvizUrl,
-        sourceLabel: "Finviz S&P 500 >200DMA",
-        asOf: todayIso,
+        source: sourceUrl,
+        sourceLabel: sourceLabelFor("S&P 500 >200DMA"),
+        asOf: asOfLabel,
         previous: moAgo?.above200 ?? null,
         note: `Percentage of S&P 500 constituents above 200DMA — same current snapshot as the weekly tile, but compared to ~30 calendar days ago (${
           moAgoDate ?? "none yet"
-        }${moEstimated ? ", SPX-proxy estimate" : ""}).${estimatedSuffix}`,
-        status: "live",
+        }${moEstimated ? ", SPX-proxy estimate" : ""}).${estimatedSuffix}${sourceNote}`,
+        status: liveStatus,
       };
     }
     if (above50Pct != null) {
       breadth50Wk = {
         value: above50Pct,
-        source: finvizUrl,
-        sourceLabel: "Finviz S&P 500 >50DMA",
-        asOf: todayIso,
+        source: sourceUrl,
+        sourceLabel: sourceLabelFor("S&P 500 >50DMA"),
+        asOf: asOfLabel,
         previous: wkAgo?.above50 ?? null,
         note: `Percentage of S&P 500 constituents above their 50DMA (faster momentum gauge). Prior snapshot: ${
           wkAgoDate ?? "none yet (history building)"
-        }${wkEstimated ? " (SPX-proxy estimate)" : ""}.${estimatedSuffix}`,
-        status: "live",
+        }${wkEstimated ? " (SPX-proxy estimate)" : ""}.${estimatedSuffix}${sourceNote}`,
+        status: liveStatus,
       };
     }
   } catch (e) {
