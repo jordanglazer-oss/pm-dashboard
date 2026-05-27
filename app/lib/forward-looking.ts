@@ -518,6 +518,11 @@ type BreadthSnapshot = {
   date: string; // ISO YYYY-MM-DD
   above200: number | null;
   above50: number | null;
+  // Source tag added 2026-05-27 to distinguish PM-entered manual values
+  // from automated scrapes. Optional so historical entries (pre-tag)
+  // continue to parse without changes. UI never branches on this; it's
+  // for diagnostic visibility only.
+  source?: "manual" | "finviz" | "yahoo-chart";
 };
 
 async function loadBreadthHistory(): Promise<BreadthSnapshot[]> {
@@ -1403,7 +1408,15 @@ export async function loadStrategistHistory(): Promise<StrategistHistory> {
   }
 }
 
-export async function fetchForwardLookingData(): Promise<ForwardLookingData> {
+export type ManualBreadthInput = {
+  date?: string;
+  above200?: number;
+  above50?: number;
+};
+
+export async function fetchForwardLookingData(
+  manualBreadth?: ManualBreadthInput,
+): Promise<ForwardLookingData> {
   const asOf = new Date().toISOString();
   const fredEnabled = !!process.env.FRED_API_KEY;
 
@@ -1968,86 +1981,79 @@ export async function fetchForwardLookingData(): Promise<ForwardLookingData> {
   // ("pm:breadth-history") so every subsequent run can compute wk/wk and
   // mo/mo deltas without ever having to reach a paid data provider. The
   // history key is new so it can't clobber anything that's already cached.
-  const finvizUrl = "https://finviz.com/screener?f=idx_sp500";
+  // Default state: "Not entered today" placeholder. Replaced below when the
+  // PM has supplied today's manualBreadth values in the brief composer.
+  const manualEntryHelp =
+    "Not entered today. Type today's % above 200/50 DMA in the brief composer (sources: Mark Newton's note, StockCharts $SPXA200R/$SPXA50R, WSJ).";
   let breadth200Wk: ForwardPoint = missing(
-    FINVIZ_SP500_ABOVE_200DMA,
-    "Finviz S&P 500 >200DMA",
-    "Finviz breadth scrape unavailable."
+    "manual entry",
+    "S&P 500 >200DMA",
+    manualEntryHelp,
+    "not-configured",
   );
   let breadth200Mo: ForwardPoint = missing(
-    FINVIZ_SP500_ABOVE_200DMA,
-    "Finviz S&P 500 >200DMA",
-    "Finviz breadth scrape unavailable."
+    "manual entry",
+    "S&P 500 >200DMA",
+    manualEntryHelp,
+    "not-configured",
   );
   let breadth50Wk: ForwardPoint = missing(
-    FINVIZ_SP500_ABOVE_50DMA,
-    "Finviz S&P 500 >50DMA",
-    "Finviz breadth scrape unavailable."
+    "manual entry",
+    "S&P 500 >50DMA",
+    manualEntryHelp,
+    "not-configured",
   );
   try {
-    // ── Three-tier breadth fallback chain ───────────────────────────────
-    // (1) Finviz scrape       — preferred, matches StockCharts/WSJ exactly
-    // (2) Yahoo-computed      — used when Finviz returns null (Cloudflare
-    //                            block, HTML change, or any other failure);
-    //                            computes % from S&P 500 constituents via
-    //                            Yahoo's quote endpoint (fast, reliable)
-    // (3) Cached history      — last-resort: most recent successful snapshot
-    //                            with a stale tag so the brief can disclose
+    // ── Manual breadth entry ─────────────────────────────────────────────
+    // After 2026-05-27 we no longer scrape Finviz/Yahoo for breadth (Finviz
+    // blocks our Vercel IP with Cloudflare 403; Yahoo's auth flow doesn't
+    // work from Vercel's IP region). PM enters today's % above 200/50 DMA
+    // values directly in the brief composer — sources: Mark Newton's note,
+    // StockCharts $SPXA200R/$SPXA50R, WSJ market data, etc.
     //
-    // Each level's `breadthSource` value lets the brief and other consumers
-    // know which path served the data, and downstream prose can caveat
-    // accordingly when source is "yahoo-fallback" or "cached-stale".
+    // Behavior:
+    //   - When manualBreadth is present and its date equals today (UTC):
+    //     values are used, written to pm:breadth-history with source:
+    //     "manual" so future days' wk/wk and mo/mo comparisons can use
+    //     them, and breadthSource = "manual".
+    //   - When absent or stale-dated: tiles show "Not entered today" status
+    //     (status: "not-configured") and the brief is told breadth is
+    //     unavailable. No fallback scrape, no cached value substitution —
+    //     explicit > best-effort, per user preference 2026-05-27.
+    const todayIso = new Date().toISOString().slice(0, 10);
     let above200Pct: number | null = null;
     let above50Pct: number | null = null;
-    let breadthSource: "finviz" | "yahoo-fallback" | "cached-stale" | "none" = "none";
+    let breadthSource: "manual" | "none" = "none";
 
-    const finvizResult = await fetchFinvizBreadth();
-    if (finvizResult.above200Pct != null || finvizResult.above50Pct != null) {
-      above200Pct = finvizResult.above200Pct;
-      above50Pct = finvizResult.above50Pct;
-      breadthSource = "finviz";
-    } else {
-      console.warn("[Breadth] Finviz returned null/null — falling back to Yahoo computed");
-      const yahoo = await fetchYahooComputedBreadth();
-      if (yahoo.above200Pct != null || yahoo.above50Pct != null) {
-        above200Pct = yahoo.above200Pct;
-        above50Pct = yahoo.above50Pct;
-        breadthSource = "yahoo-fallback";
-        console.log(`[Breadth] Yahoo fallback succeeded (${yahoo.sampledCount} tickers sampled)`);
-      } else {
-        console.warn("[Breadth] Both Finviz and Yahoo failed — checking cached history");
-      }
+    if (
+      manualBreadth &&
+      manualBreadth.date === todayIso &&
+      (typeof manualBreadth.above200 === "number" || typeof manualBreadth.above50 === "number")
+    ) {
+      above200Pct =
+        typeof manualBreadth.above200 === "number" ? manualBreadth.above200 : null;
+      above50Pct =
+        typeof manualBreadth.above50 === "number" ? manualBreadth.above50 : null;
+      breadthSource = "manual";
+      console.log(
+        `[Breadth] Using manual entry — above200: ${above200Pct}%, above50: ${above50Pct}%`,
+      );
+    } else if (manualBreadth?.date && manualBreadth.date !== todayIso) {
+      console.log(
+        `[Breadth] Manual entry is stale-dated (${manualBreadth.date} != ${todayIso}) — treating as not entered today`,
+      );
     }
 
-    // Use today's ISO date for the snapshot key — both Finviz and Yahoo
-    // reflect the latest session close.
-    const todayIso = new Date().toISOString().slice(0, 10);
+    // Always record today's entry to history (even when null) so the date
+    // is in the timeline. When manual values are present they're saved
+    // with source: "manual" so the diagnostic can distinguish.
     const realHistory = await recordBreadthSnapshot({
       date: todayIso,
       above200: above200Pct,
       above50: above50Pct,
+      source: breadthSource === "manual" ? "manual" : undefined,
     });
-
-    // Last-resort: if both live sources failed AND we have prior history,
-    // grab the most recent non-null snapshot. This is tagged stale so the
-    // brief can disclose. The history record above wrote (null, null) for
-    // today, so we skip today's entry when looking for the most recent
-    // valid one.
-    let cachedStaleDate: string | null = null;
-    if (above200Pct == null && above50Pct == null && realHistory.length > 1) {
-      const mostRecentValid = realHistory.find(
-        (s) => s.date !== todayIso && (s.above200 != null || s.above50 != null),
-      );
-      if (mostRecentValid) {
-        above200Pct = mostRecentValid.above200;
-        above50Pct = mostRecentValid.above50;
-        breadthSource = "cached-stale";
-        cachedStaleDate = mostRecentValid.date;
-        console.warn(
-          `[Breadth] Using cached snapshot from ${mostRecentValid.date} — both live sources unavailable`,
-        );
-      }
-    }
+    const cachedStaleDate: string | null = null;
 
     // On cold start (or any time the real history hasn't accumulated at
     // least ~a month of distinct trading days) fold in an SPX-proxy
@@ -2085,28 +2091,20 @@ export async function fetchForwardLookingData(): Promise<ForwardLookingData> {
       ? " Estimated historical points are derived from SPX distance above its own 200/50 DMA anchored to today's real Finviz reading; they are replaced by live snapshots as the Redis history (pm:breadth-history) accumulates."
       : "";
 
-    // Compute source-aware labels + a `sourceNote` that downstream brief
-    // prose can use to caveat when breadth comes from the Yahoo fallback
-    // or stale cache rather than the primary Finviz source.
+    // Source-aware labels. After the switch to manual-only entry, the
+    // only "live" source is "manual"; everything else is the empty
+    // "not-entered-today" state.
     const sourceLabelFor = (base: string): string => {
-      if (breadthSource === "yahoo-fallback") return `${base} (Yahoo fallback)`;
-      if (breadthSource === "cached-stale") return `${base} (cached ${cachedStaleDate})`;
+      if (breadthSource === "manual") return `${base} (manual entry)`;
       return base;
     };
-    const sourceUrl =
-      breadthSource === "yahoo-fallback"
-        ? "https://query2.finance.yahoo.com/v7/finance/quote"
-        : breadthSource === "cached-stale"
-          ? "pm:breadth-history (Redis)"
-          : finvizUrl;
+    const sourceUrl = "manual entry via brief composer";
     const sourceNote =
-      breadthSource === "yahoo-fallback"
-        ? " SOURCE NOTE: Finviz scrape failed; this reading was computed from Yahoo Finance quotes across the full S&P 500 (price vs. 50/200 DMA). Numbers are within ~1-2pp of what Finviz would publish."
-        : breadthSource === "cached-stale"
-          ? ` SOURCE NOTE: Both Finviz and Yahoo failed today; reading is from cached snapshot dated ${cachedStaleDate}. Treat as stale — breadth may have moved meaningfully since.`
-          : "";
-    const asOfLabel = breadthSource === "cached-stale" && cachedStaleDate ? cachedStaleDate : todayIso;
-    const liveStatus: "live" | "stale" = breadthSource === "cached-stale" ? "stale" : "live";
+      breadthSource === "manual"
+        ? " SOURCE NOTE: Value entered manually by the PM in the brief composer (typed from Mark Newton's note, StockCharts, or similar)."
+        : "";
+    const asOfLabel = todayIso;
+    const liveStatus: "live" = "live";
 
     if (above200Pct != null) {
       breadth200Wk = {

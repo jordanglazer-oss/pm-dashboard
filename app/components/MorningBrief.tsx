@@ -1251,6 +1251,94 @@ export function MorningBrief({
 
         </div>{/* /lg:grid-cols-2 wrapper for the two manual-input sub-sections */}
 
+        {/* ── Breadth (manual entry) ──
+            After the Finviz/Yahoo scrape became unreliable from Vercel,
+            the PM types today's % above 200/50 DMA directly here. Stored
+            in marketData.breadthOverride and persisted to pm:breadth-history
+            with source: "manual" so wk/wk and mo/mo comparisons compound.
+            Sources: Mark Newton's note, StockCharts $SPXA200R/$SPXA50R, WSJ. */}
+        <div className="border-t border-slate-100 pt-5 mb-4">
+          <div className="flex items-center gap-3 mb-3">
+            <h4 className="text-xs font-semibold text-slate-400 uppercase tracking-widest">Breadth (manual entry)</h4>
+            <span className="text-[10px] text-slate-400">% of S&P 500 above 200DMA / 50DMA — source: Newton, StockCharts ($SPXA200R / $SPXA50R), or WSJ. When date = today, used directly.</span>
+          </div>
+          <div className="grid gap-4 md:grid-cols-3">
+            <div>
+              <label className="text-[10px] font-semibold text-slate-400 uppercase tracking-wider block mb-1">Date</label>
+              <input
+                type="date"
+                value={marketData.breadthOverride?.date ?? new Date().toISOString().slice(0, 10)}
+                onChange={(e) =>
+                  onUpdateMarketData({
+                    breadthOverride: {
+                      ...marketData.breadthOverride,
+                      date: e.target.value,
+                    },
+                  })
+                }
+                className="w-full rounded-lg border border-slate-200 bg-slate-50 px-3 py-2 text-sm text-slate-700 outline-none focus:border-blue-300 focus:ring-1 focus:ring-blue-200 transition-all"
+                title="Must equal today's UTC date to be used. Earlier dates are treated as 'not entered today'."
+              />
+            </div>
+            <div>
+              <label className="text-[10px] font-semibold text-slate-400 uppercase tracking-wider block mb-1">% above 200DMA</label>
+              <input
+                type="number"
+                step="0.1"
+                min={0}
+                max={100}
+                placeholder="51.2"
+                value={
+                  typeof marketData.breadthOverride?.above200 === "number"
+                    ? marketData.breadthOverride.above200
+                    : ""
+                }
+                onChange={(e) => {
+                  const v = e.target.value === "" ? undefined : parseFloat(e.target.value);
+                  onUpdateMarketData({
+                    breadthOverride: {
+                      ...marketData.breadthOverride,
+                      date:
+                        marketData.breadthOverride?.date ??
+                        new Date().toISOString().slice(0, 10),
+                      above200: v != null && !isNaN(v) ? v : undefined,
+                    },
+                  });
+                }}
+                className="w-full rounded-lg border border-slate-200 bg-slate-50 px-3 py-2 text-sm text-slate-700 outline-none focus:border-blue-300 focus:ring-1 focus:ring-blue-200 transition-all"
+              />
+            </div>
+            <div>
+              <label className="text-[10px] font-semibold text-slate-400 uppercase tracking-wider block mb-1">% above 50DMA</label>
+              <input
+                type="number"
+                step="0.1"
+                min={0}
+                max={100}
+                placeholder="44.6"
+                value={
+                  typeof marketData.breadthOverride?.above50 === "number"
+                    ? marketData.breadthOverride.above50
+                    : ""
+                }
+                onChange={(e) => {
+                  const v = e.target.value === "" ? undefined : parseFloat(e.target.value);
+                  onUpdateMarketData({
+                    breadthOverride: {
+                      ...marketData.breadthOverride,
+                      date:
+                        marketData.breadthOverride?.date ??
+                        new Date().toISOString().slice(0, 10),
+                      above50: v != null && !isNaN(v) ? v : undefined,
+                    },
+                  });
+                }}
+                className="w-full rounded-lg border border-slate-200 bg-slate-50 px-3 py-2 text-sm text-slate-700 outline-none focus:border-blue-300 focus:ring-1 focus:ring-blue-200 transition-all"
+              />
+            </div>
+          </div>
+        </div>
+
         {/* ── Strategist Notes (Fundstrat) ── */}
         <div className="border-t border-slate-100 pt-5 mb-4">
           <div className="flex items-center gap-3 mb-3">

@@ -700,10 +700,17 @@ export async function POST(request: NextRequest) {
       }
     };
 
+    // Extract the manual breadth override from the caller's marketData so
+    // the forward-looking fetch can use today's PM-entered values instead
+    // of (no longer running) the Finviz/Yahoo scrape. Shape matches
+    // MarketData.breadthOverride in app/lib/types.ts.
+    const manualBreadth = (marketData as { breadthOverride?: { date?: string; above200?: number; above50?: number } })
+      ?.breadthOverride;
+
     const [sectorPerformance, forwardData, strategistHistory, research, hedgingCostsBlock, marketRegime] =
       await Promise.all([
         fetchSectorPerformance(),
-        fetchForwardLookingData().catch((e) => {
+        fetchForwardLookingData(manualBreadth).catch((e) => {
           console.error("Forward-looking fetch failed:", e);
           return null as ForwardLookingData | null;
         }),

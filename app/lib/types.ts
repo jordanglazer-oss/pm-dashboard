@@ -417,6 +417,23 @@ export type MarketData = {
     lee?: string; // Tom Lee (Fundstrat Head of Research)
     leeDate?: string; // YYYY-MM-DD date the Lee note pertains to
   };
+  // ── Manual breadth entry (replaces scraping after 2026-05-27) ──
+  // The PM types today's % above 200/50 DMA values from StockCharts,
+  // Mark Newton's note, or any other reliable source. When `date` matches
+  // today (server UTC), the forward-looking bundle uses these directly
+  // and persists them to pm:breadth-history (source: "manual"). When
+  // missing or stale, the breadth tiles show "Not entered today" rather
+  // than falling back to scraping — explicit > best-effort.
+  //
+  // Why this replaced the Finviz/Yahoo scrape chain: Finviz blocks our
+  // Vercel IP with Cloudflare 403s consistently, and Yahoo's quote auth
+  // flow is broken from Vercel's IP region (consent cookie not returned).
+  // Reliable automation isn't possible without paying for a breadth API.
+  breadthOverride?: {
+    date?: string; // YYYY-MM-DD — must equal today for values to be used
+    above200?: number; // % of S&P 500 trading above 200-day MA, e.g. 51.4
+    above50?: number; // % of S&P 500 trading above 50-day MA
+  };
   // ── Deprecated manual fields ──
   // These were superseded by ForwardLookingData (auto-fetched). They remain
   // optional so cached briefs in Redis (pm:brief) decode without errors.
