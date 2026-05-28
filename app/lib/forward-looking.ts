@@ -2089,14 +2089,35 @@ export async function fetchForwardLookingData(
     let newHighsCount: number | null = null;
     let newLowsCount: number | null = null;
     let breadthSource: "manual" | "none" = "none";
+    // The "as of" date the entered values pertain to — defaults to today
+    // but is overwritten with the PM's entered date when a manual entry is
+    // accepted. Breadth is an end-of-session figure, so the freshest data
+    // is almost always dated yesterday (or Friday on a Monday).
+    let breadthAsOf = todayIso;
 
     // Helper to pull a field from manualBreadth only when it's a finite number.
     const pickNum = (v: unknown): number | null =>
       typeof v === "number" && Number.isFinite(v) ? v : null;
 
-    if (manualBreadth && manualBreadth.date === todayIso) {
+    // Accept a manual entry when its date is recent. Breadth is measured at
+    // session close, so "fresh" data is never dated today intraday — it's
+    // yesterday's close, or Friday's on a Monday, or Thursday's after a
+    // Friday holiday. We therefore accept any entry dated within the last
+    // MAX_BREADTH_AGE_DAYS calendar days (not just today). Older than that =
+    // the PM forgot to update, so we treat it as "not entered."
+    const MAX_BREADTH_AGE_DAYS = 6;
+    let breadthAgeDays = Infinity;
+    if (manualBreadth?.date) {
+      const enteredMs = Date.parse(manualBreadth.date + "T00:00:00Z");
+      const todayMs = Date.parse(todayIso + "T00:00:00Z");
+      if (Number.isFinite(enteredMs)) {
+        breadthAgeDays = (todayMs - enteredMs) / 86400000;
+      }
+    }
+
+    if (manualBreadth && breadthAgeDays >= 0 && breadthAgeDays <= MAX_BREADTH_AGE_DAYS) {
       // Any of the 6 fields counts as a manual entry — partial entry is fine
-      // (e.g. PM types SP500 + R3000 but skips new H/L on a quiet day).
+      // (e.g. PM types SP500 + Broad but skips new H/L on a quiet day).
       above200Pct = pickNum(manualBreadth.above200);
       above50Pct = pickNum(manualBreadth.above50);
       broadAbove200Pct = pickNum(manualBreadth.broadAbove200);
@@ -2110,22 +2131,29 @@ export async function fetchForwardLookingData(
         broadAbove50Pct != null ||
         newHighsCount != null ||
         newLowsCount != null;
-      if (anyEntered) breadthSource = "manual";
+      if (anyEntered) {
+        breadthSource = "manual";
+        breadthAsOf = manualBreadth.date!; // accepted entry's date is the as-of
+      }
       console.log(
-        `[Breadth] Using manual entry — SP200: ${above200Pct}, SP50: ${above50Pct}, Broad200: ${broadAbove200Pct}, Broad50: ${broadAbove50Pct}, NH: ${newHighsCount}, NL: ${newLowsCount}`,
+        `[Breadth] Using manual entry (as of ${manualBreadth.date}, ${breadthAgeDays.toFixed(0)}d old) — SP200: ${above200Pct}, SP50: ${above50Pct}, Broad200: ${broadAbove200Pct}, Broad50: ${broadAbove50Pct}, NH: ${newHighsCount}, NL: ${newLowsCount}`,
       );
-    } else if (manualBreadth?.date && manualBreadth.date !== todayIso) {
+    } else if (manualBreadth?.date && breadthAgeDays > MAX_BREADTH_AGE_DAYS) {
       console.log(
-        `[Breadth] Manual entry is stale-dated (${manualBreadth.date} != ${todayIso}) — treating as not entered today`,
+        `[Breadth] Manual entry is too old (${manualBreadth.date}, ${breadthAgeDays.toFixed(0)}d > ${MAX_BREADTH_AGE_DAYS}d) — treating as not entered`,
+      );
+    } else if (manualBreadth?.date && breadthAgeDays < 0) {
+      console.log(
+        `[Breadth] Manual entry is future-dated (${manualBreadth.date}) — ignoring as data-entry error`,
       );
     }
 
-    // Always record today's entry to history (even when all null) so the date
-    // is in the timeline. The new optional fields (r3000_*, newHighs, newLows)
-    // ride along with the existing snapshot so wk/wk comparisons can use them
-    // once the history accumulates.
+    // Record the snapshot under the AS-OF date (the date the values pertain
+    // to), not today, so wk/wk and mo/mo comparisons line up against the
+    // correct historical points. recordBreadthSnapshot dedupes by date, so
+    // re-saving the same as-of date updates in place.
     const realHistory = await recordBreadthSnapshot({
-      date: todayIso,
+      date: breadthAsOf,
       above200: above200Pct,
       above50: above50Pct,
       source: breadthSource === "manual" ? "manual" : undefined,
@@ -2182,10 +2210,14 @@ export async function fetchForwardLookingData(
     const sourceUrl = "manual entry via brief composer";
     const sourceNote =
       breadthSource === "manual"
-        ? " SOURCE NOTE: Value entered manually by the PM in the brief composer (typed from Mark Newton's note, StockCharts, or similar)."
+        ? ` SOURCE NOTE: Value entered manually by the PM (as of ${breadthAsOf}; breadth is an end-of-session figure so this is typically the most recent close).`
         : "";
-    const asOfLabel = todayIso;
-    const liveStatus: "live" = "live";
+    // As-of is the date the values pertain to (the PM's entered date), not
+    // necessarily today. Status is "live" when the data is recent (<=2
+    // calendar days, i.e. yesterday's or today's close), "stale" when older
+    // (3-6 days, e.g. the PM hasn't updated since a holiday) but still shown.
+    const asOfLabel = breadthAsOf;
+    const liveStatus: "live" | "stale" = breadthAgeDays <= 2 ? "live" : "stale";
 
     if (above200Pct != null) {
       breadth200Wk = {
