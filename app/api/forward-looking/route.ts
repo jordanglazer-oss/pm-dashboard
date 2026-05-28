@@ -14,16 +14,28 @@ import { getRedis } from "@/app/lib/redis";
 export async function GET() {
   try {
     // Read the saved marketData blob to pick up today's manual breadth entry.
-    // pm:market shape: { updates: MarketData } per the /api/kv/market PUT.
-    let manualBreadth: { date?: string; above200?: number; above50?: number } | undefined;
+    // pm:market shape: the FLAT MarketData object. The /api/kv/market PUT
+    // receives { updates } in the request body but stores the MERGED flat
+    // object (merged = { ...existing, ...updates }) — so breadthOverride
+    // lives at pm:market.breadthOverride, NOT pm:market.updates.breadthOverride.
+    // (The earlier `.updates.` path was a bug that made all breadth tiles
+    // render N/A even when values were entered.)
+    type ManualBreadthShape = {
+      date?: string;
+      above200?: number;
+      above50?: number;
+      broadAbove200?: number;
+      broadAbove50?: number;
+      newHighs?: number;
+      newLows?: number;
+    };
+    let manualBreadth: ManualBreadthShape | undefined;
     try {
       const redis = await getRedis();
       const raw = await redis.get("pm:market");
       if (raw) {
-        const parsed = JSON.parse(raw) as {
-          updates?: { breadthOverride?: { date?: string; above200?: number; above50?: number } };
-        };
-        manualBreadth = parsed?.updates?.breadthOverride;
+        const parsed = JSON.parse(raw) as { breadthOverride?: ManualBreadthShape };
+        manualBreadth = parsed?.breadthOverride;
       }
     } catch (e) {
       console.warn("[/api/forward-looking] pm:market read failed; continuing without manual breadth:", e);
