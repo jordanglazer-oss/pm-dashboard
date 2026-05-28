@@ -433,11 +433,14 @@ export type MarketData = {
     date?: string; // YYYY-MM-DD — must equal today for values to be used
     above200?: number; // % of S&P 500 trading above 200-day MA, e.g. 51.4
     above50?: number; // % of S&P 500 trading above 50-day MA
-    // Russell 3000 breadth — captures the broad-market view that S&P 500
-    // misses when mega-caps are masking small/mid-cap deterioration.
-    // Newton flags this divergence as a late-cycle warning.
-    r3000Above200?: number; // % of Russell 3000 above 200-day MA
-    r3000Above50?: number; // % of Russell 3000 above 50-day MA
+    // Broad-market breadth — universe-agnostic. PM's preferred source can
+    // be Barchart $BCMM (~5,168 stocks), Russell 3000 ($RUA via StockCharts),
+    // or any other broad-market measure their data feed provides. What
+    // matters for the signal is "broader than S&P 500" — captures
+    // small/mid-cap participation that mega-cap-heavy SPX masks. Newton
+    // flags broad-vs-large-cap divergence as a classic late-cycle warning.
+    broadAbove200?: number; // % above 200-day MA in the PM's broad-market universe
+    broadAbove50?: number; // % above 50-day MA in the PM's broad-market universe
     // NYSE new highs / new lows raw counts. A spike in new lows is a
     // classic capitulation signal (tradable bottom often forms within
     // days); an expansion in new highs is a thrust / healthy participation
@@ -506,11 +509,11 @@ export type ForwardLookingBundle = {
   breadth200Wk?: ForwardPointBundle;
   breadth200Mo?: ForwardPointBundle;
   breadth50Wk?: ForwardPointBundle;
-  // Russell 3000 + NYSE new H/L tiles (2026-05-27). All optional so old
-  // briefs without manual R3000 entries decode without errors.
-  breadthR3000_200Wk?: ForwardPointBundle;
-  breadthR3000_200Mo?: ForwardPointBundle;
-  breadthR3000_50Wk?: ForwardPointBundle;
+  // Broad-market breadth + NYSE new H/L tiles (2026-05-27). All optional
+  // so old briefs without manual entries decode without errors.
+  breadthBroad_200Wk?: ForwardPointBundle;
+  breadthBroad_200Mo?: ForwardPointBundle;
+  breadthBroad_50Wk?: ForwardPointBundle;
   newHighsWk?: ForwardPointBundle;
   newLowsWk?: ForwardPointBundle;
   // Optional sentiment tiles (CNN F&G, AAII, S&P Oscillator) — added after

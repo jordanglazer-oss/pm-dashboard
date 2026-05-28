@@ -1260,7 +1260,7 @@ export function MorningBrief({
         <div className="border-t border-slate-100 pt-5 mb-4">
           <div className="flex items-center gap-3 mb-3">
             <h4 className="text-xs font-semibold text-slate-400 uppercase tracking-widest">Breadth (manual entry)</h4>
-            <span className="text-[10px] text-slate-400">% of S&P 500 above 200DMA / 50DMA — source: Newton, StockCharts ($SPXA200R / $SPXA50R), or WSJ. When date = today, used directly.</span>
+            <span className="text-[10px] text-slate-400">% above 200/50 DMA + NYSE new H/L — sources: Mark Newton's note, your Claude skill, Barchart ($BCMM / $S5TH / $MAHN), StockCharts, WSJ. When date = today, used directly. Partial entry is fine.</span>
           </div>
           {/* Helper to keep the date in sync whenever the PM types a value.
               All six fields share the same date — partial entry is fine. */}
@@ -1318,26 +1318,26 @@ export function MorningBrief({
                     />
                   </div>
                 </div>
-                {/* Row 2: R3000 200/50 + (blank slot for grid alignment) */}
+                {/* Row 2: Broad Market 200/50 + (blank slot for grid alignment) */}
                 <div className="grid gap-4 md:grid-cols-3 mb-3">
                   <div>
-                    <label className="text-[10px] font-semibold text-slate-400 uppercase tracking-wider block mb-1">R3000 &gt;200DMA (%)</label>
+                    <label className="text-[10px] font-semibold text-slate-400 uppercase tracking-wider block mb-1">Broad Market &gt;200DMA (%)</label>
                     <input
-                      type="number" step="0.1" min={0} max={100} placeholder="38.4"
-                      value={numVal(marketData.breadthOverride?.r3000Above200)}
-                      onChange={(e) => updateBreadthField("r3000Above200", e.target.value)}
+                      type="number" step="0.1" min={0} max={100} placeholder="54.9"
+                      value={numVal(marketData.breadthOverride?.broadAbove200)}
+                      onChange={(e) => updateBreadthField("broadAbove200", e.target.value)}
                       className="w-full rounded-lg border border-slate-200 bg-slate-50 px-3 py-2 text-sm text-slate-700 outline-none focus:border-blue-300 focus:ring-1 focus:ring-blue-200 transition-all"
-                      title="% of Russell 3000 above its 200-day MA. Lower than SP500 = broad-market divergence."
+                      title="% of broad-market universe above 200-day MA. Source: Barchart BCMM ~5,168 names, Russell 3000 ~3,000 names, or whichever broader-than-SPX measure your Claude skill returns. Materially lower than SP500 = broad-market divergence."
                     />
                   </div>
                   <div>
-                    <label className="text-[10px] font-semibold text-slate-400 uppercase tracking-wider block mb-1">R3000 &gt;50DMA (%)</label>
+                    <label className="text-[10px] font-semibold text-slate-400 uppercase tracking-wider block mb-1">Broad Market &gt;50DMA (%)</label>
                     <input
-                      type="number" step="0.1" min={0} max={100} placeholder="32.1"
-                      value={numVal(marketData.breadthOverride?.r3000Above50)}
-                      onChange={(e) => updateBreadthField("r3000Above50", e.target.value)}
+                      type="number" step="0.1" min={0} max={100} placeholder="59.4"
+                      value={numVal(marketData.breadthOverride?.broadAbove50)}
+                      onChange={(e) => updateBreadthField("broadAbove50", e.target.value)}
                       className="w-full rounded-lg border border-slate-200 bg-slate-50 px-3 py-2 text-sm text-slate-700 outline-none focus:border-blue-300 focus:ring-1 focus:ring-blue-200 transition-all"
-                      title="% of Russell 3000 above its 50-day MA."
+                      title="% of broad-market universe above 50-day MA — broader-than-SPX faster momentum gauge."
                     />
                   </div>
                   <div /> {/* empty cell for grid alignment */}
@@ -1800,14 +1800,14 @@ export function MorningBrief({
                 <ForwardTile label="S&P >200DMA (wk)" point={activeForward.breadth200Wk} unit="%" deltaUnit="pp" deltaPeriod="wk/wk" horizon="cyclical" />
                 <ForwardTile label="S&P >200DMA (mo)" point={activeForward.breadth200Mo} unit="%" deltaUnit="pp" deltaPeriod="mo/mo" horizon="cyclical" />
                 <ForwardTile label="S&P >50DMA (wk)" point={activeForward.breadth50Wk} unit="%" deltaUnit="pp" deltaPeriod="wk/wk" horizon="tactical" />
-                {activeForward.breadthR3000_200Wk && (
-                  <ForwardTile label="R3000 >200DMA (wk)" point={activeForward.breadthR3000_200Wk} unit="%" deltaUnit="pp" deltaPeriod="wk/wk" horizon="cyclical" />
+                {activeForward.breadthBroad_200Wk && (
+                  <ForwardTile label="Broad >200DMA (wk)" point={activeForward.breadthBroad_200Wk} unit="%" deltaUnit="pp" deltaPeriod="wk/wk" horizon="cyclical" />
                 )}
-                {activeForward.breadthR3000_200Mo && (
-                  <ForwardTile label="R3000 >200DMA (mo)" point={activeForward.breadthR3000_200Mo} unit="%" deltaUnit="pp" deltaPeriod="mo/mo" horizon="cyclical" />
+                {activeForward.breadthBroad_200Mo && (
+                  <ForwardTile label="Broad >200DMA (mo)" point={activeForward.breadthBroad_200Mo} unit="%" deltaUnit="pp" deltaPeriod="mo/mo" horizon="cyclical" />
                 )}
-                {activeForward.breadthR3000_50Wk && (
-                  <ForwardTile label="R3000 >50DMA (wk)" point={activeForward.breadthR3000_50Wk} unit="%" deltaUnit="pp" deltaPeriod="wk/wk" horizon="tactical" />
+                {activeForward.breadthBroad_50Wk && (
+                  <ForwardTile label="Broad >50DMA (wk)" point={activeForward.breadthBroad_50Wk} unit="%" deltaUnit="pp" deltaPeriod="wk/wk" horizon="tactical" />
                 )}
                 {activeForward.newHighsWk && (
                   <ForwardTile label="NYSE New Highs" point={activeForward.newHighsWk} unit="" deltaPeriod="wk/wk" horizon="tactical" />

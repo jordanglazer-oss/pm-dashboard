@@ -206,13 +206,14 @@ Notes:
       +1.5% to +2.5%: Stretched. Mild WAIT tilt.
       +2.5% or higher: Overbought (occurs ~3-5x per year). WAIT signal.
       When citing the oscillator in reason/triggersMet/triggersMissing, ALWAYS reference the actual current reading and the appropriate band, not a generic "if oscillator hits -5%". Saying "Oscillator at -1.8% — meaningful pullback" is correct; saying "Oscillator not yet at -5%" is anchoring wrong.
-    15% — Breadth: blend SP500 + Russell 3000 % above 50/200-DMA plus NYSE new highs / new lows when present. Decision tree:
-      (a) SP500 and R3000 BOTH in the same band (both ~40% or both ~60%) → clean signal, weight breadth normally.
-      (b) SP500 healthy (≥50%) but R3000 materially weaker (≥10pp gap, e.g. SP500 55% / R3000 38%) → NARROWING LEADERSHIP. Newton's classic late-cycle warning. Tilt toward WAIT or DEPLOY_PARTIAL even if SPX-only metrics look fine. Call this out explicitly in the reason field when active.
+    15% — Breadth: blend SP500 + broad-market % above 50/200-DMA plus NYSE new highs / new lows when present. The "broad-market" field is universe-agnostic — the PM's source is typically Barchart BCMM (~5,168 stocks) but may also be Russell 3000 (~3,000 stocks) or another broader-than-SPX measure. Decision tree:
+      (a) SP500 and broad-market BOTH in the same band (both ~40% or both ~60%) → clean signal, weight breadth normally.
+      (b) SP500 healthy (≥50%) but broad-market materially weaker (≥10pp gap, e.g. SP500 55% / broad 38%) → NARROWING LEADERSHIP. Newton's classic late-cycle warning. Tilt toward WAIT or DEPLOY_PARTIAL even if SPX-only metrics look fine. Call this out explicitly in the reason field when active.
       (c) Both deeply oversold (<30%) AND new lows spiking (>150-200/day) → CAPITULATION. Tradable bottom often forms within days. Strong DEPLOY signal.
       (d) Both stretched (>70%) AND new highs expanding (>100/day) → healthy thrust, confirms DEPLOY when other signals support.
-      (e) When any breadth field is missing (PM didn't enter today's R3000 or new H/L numbers), explicitly note in reason that you're working without that data — don't fabricate the divergence read.
-      Cite specific numbers when present: "SP500 55%, R3000 38% — 17pp gap" not "breadth divergent."
+      (e) When any breadth field is missing (PM didn't enter today's broad-market or new H/L numbers), explicitly note in reason that you're working without that data — don't fabricate the divergence read.
+      Cite specific numbers when present: "SP500 55%, broad market 38% — 17pp gap" not "breadth divergent."
+      EQUIVALENCY NOTE — BCMM vs Russell 3000: When Newton's strategist note references Russell 3000 breadth and the "Broad Market" field in this brief contains a BCMM value (or vice versa), treat them as near-equivalent readings of the same underlying broad-participation signal. The two universes typically read within 3-5pp of each other directionally — confirming readings, not independent inputs. If the two diverge by more than ~5pp, note the gap explicitly in the reason rather than picking one — the gap itself is a signal worth surfacing. Do NOT double-count BCMM and R3000 as separate signals.
     10% — VIX state. A VIX spike to 20-25 that's stalling/reversing is a classic DEPLOY trigger. A runaway VIX above 28 still climbing is WAIT (we haven't hit peak fear). VIX <16 is mid-range — no edge either way from this signal alone.
     6%  — Sentiment: Fear & Greed below 30, AAII bears > bulls, elevated put/call. Capitulation is DEPLOY.
     4%  — Short-term momentum: 5-day SPY return. A clean -2% to -5% pullback over 5 days is a healthy DEPLOY setup; deeper than -7% may indicate a regime break (WAIT for the bottom to confirm).

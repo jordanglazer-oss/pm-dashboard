@@ -133,12 +133,13 @@ export type ForwardLookingData = {
   breadth200Wk: ForwardPoint; // % of S&P above 200DMA with ~5 trading day prior
   breadth200Mo: ForwardPoint; // % of S&P above 200DMA with ~21 trading day prior
   breadth50Wk: ForwardPoint; // % of S&P above 50DMA with ~5 trading day prior
-  // ── Russell 3000 breadth (manual entry, added 2026-05-27) ──
-  // Broad-market participation — reveals the SPX-vs-broader divergence
-  // that Newton calls out repeatedly as a late-cycle warning.
-  breadthR3000_200Wk?: ForwardPoint;
-  breadthR3000_200Mo?: ForwardPoint;
-  breadthR3000_50Wk?: ForwardPoint;
+  // ── Broad-market breadth (manual entry, added 2026-05-27) ──
+  // Universe-agnostic — PM types from BCMM, Russell 3000, or whatever
+  // broad-market measure their source publishes. Reveals the SPX-vs-
+  // broader divergence Newton flags as a late-cycle warning.
+  breadthBroad_200Wk?: ForwardPoint;
+  breadthBroad_200Mo?: ForwardPoint;
+  breadthBroad_50Wk?: ForwardPoint;
   // ── NYSE new highs / new lows (manual entry, added 2026-05-27) ──
   // Daily counts with wk/wk delta. New lows spiking = classic capitulation
   // signal; new highs expanding = healthy thrust. Kept as separate fields
@@ -535,11 +536,12 @@ type BreadthSnapshot = {
   // continue to parse without changes. UI never branches on this; it's
   // for diagnostic visibility only.
   source?: "manual" | "finviz" | "yahoo-chart";
-  // Russell 3000 breadth + NYSE new H/L counts — added 2026-05-27 alongside
-  // R3000 / new highs / new lows manual entry. All optional for backward
-  // compat with historical snapshots that only had SP500 breadth.
-  r3000Above200?: number | null;
-  r3000Above50?: number | null;
+  // Broad-market breadth + NYSE new H/L counts. The PM's source for the
+  // broad-market field can be Barchart BCMM, Russell 3000, or any other
+  // broader-than-SPX universe. All optional for backward compat with
+  // historical snapshots that only had SP500 breadth.
+  broadAbove200?: number | null;
+  broadAbove50?: number | null;
   newHighs?: number | null;
   newLows?: number | null;
 };
@@ -1431,9 +1433,9 @@ export type ManualBreadthInput = {
   date?: string;
   above200?: number;
   above50?: number;
-  // 2026-05-27 extensions
-  r3000Above200?: number;
-  r3000Above50?: number;
+  // 2026-05-27 extensions — broad-market universe is PM-chosen (BCMM, R3000, ...)
+  broadAbove200?: number;
+  broadAbove50?: number;
   newHighs?: number;
   newLows?: number;
 };
@@ -2027,27 +2029,27 @@ export async function fetchForwardLookingData(
     manualEntryHelp,
     "not-configured",
   );
-  // Russell 3000 + NYSE new H/L placeholders (same manual-entry pattern).
-  const r3000Help =
-    "Not entered today. Type today's % of Russell 3000 above 200/50 DMA in the brief composer (sources: Newton's note, StockCharts $RUA breadth, WSJ).";
+  // Broad-market breadth + NYSE new H/L placeholders (same manual-entry pattern).
+  const broadHelp =
+    "Not entered today. Type today's % above 200/50 DMA for your broad-market universe (Barchart BCMM, Russell 3000 via StockCharts $RUA, or any source broader than the S&P 500) in the brief composer.";
   const newHlHelp =
-    "Not entered today. Type today's NYSE new-highs and new-lows counts in the brief composer (sources: Newton's note, StockCharts $NYHGH/$NYLOW, WSJ).";
-  let breadthR3000_200Wk: ForwardPoint = missing(
+    "Not entered today. Type today's NYSE new-highs and new-lows counts in the brief composer (sources: Newton's note, StockCharts $NYHGH/$NYLOW, Barchart $MAHN/$MALN, WSJ).";
+  let breadthBroad_200Wk: ForwardPoint = missing(
     "manual entry",
-    "Russell 3000 >200DMA",
-    r3000Help,
+    "Broad Market >200DMA",
+    broadHelp,
     "not-configured",
   );
-  let breadthR3000_200Mo: ForwardPoint = missing(
+  let breadthBroad_200Mo: ForwardPoint = missing(
     "manual entry",
-    "Russell 3000 >200DMA",
-    r3000Help,
+    "Broad Market >200DMA",
+    broadHelp,
     "not-configured",
   );
-  let breadthR3000_50Wk: ForwardPoint = missing(
+  let breadthBroad_50Wk: ForwardPoint = missing(
     "manual entry",
-    "Russell 3000 >50DMA",
-    r3000Help,
+    "Broad Market >50DMA",
+    broadHelp,
     "not-configured",
   );
   let newHighsWk: ForwardPoint = missing(
@@ -2082,8 +2084,8 @@ export async function fetchForwardLookingData(
     const todayIso = new Date().toISOString().slice(0, 10);
     let above200Pct: number | null = null;
     let above50Pct: number | null = null;
-    let r3000Above200Pct: number | null = null;
-    let r3000Above50Pct: number | null = null;
+    let broadAbove200Pct: number | null = null;
+    let broadAbove50Pct: number | null = null;
     let newHighsCount: number | null = null;
     let newLowsCount: number | null = null;
     let breadthSource: "manual" | "none" = "none";
@@ -2097,20 +2099,20 @@ export async function fetchForwardLookingData(
       // (e.g. PM types SP500 + R3000 but skips new H/L on a quiet day).
       above200Pct = pickNum(manualBreadth.above200);
       above50Pct = pickNum(manualBreadth.above50);
-      r3000Above200Pct = pickNum(manualBreadth.r3000Above200);
-      r3000Above50Pct = pickNum(manualBreadth.r3000Above50);
+      broadAbove200Pct = pickNum(manualBreadth.broadAbove200);
+      broadAbove50Pct = pickNum(manualBreadth.broadAbove50);
       newHighsCount = pickNum(manualBreadth.newHighs);
       newLowsCount = pickNum(manualBreadth.newLows);
       const anyEntered =
         above200Pct != null ||
         above50Pct != null ||
-        r3000Above200Pct != null ||
-        r3000Above50Pct != null ||
+        broadAbove200Pct != null ||
+        broadAbove50Pct != null ||
         newHighsCount != null ||
         newLowsCount != null;
       if (anyEntered) breadthSource = "manual";
       console.log(
-        `[Breadth] Using manual entry — SP200: ${above200Pct}, SP50: ${above50Pct}, R3000_200: ${r3000Above200Pct}, R3000_50: ${r3000Above50Pct}, NH: ${newHighsCount}, NL: ${newLowsCount}`,
+        `[Breadth] Using manual entry — SP200: ${above200Pct}, SP50: ${above50Pct}, Broad200: ${broadAbove200Pct}, Broad50: ${broadAbove50Pct}, NH: ${newHighsCount}, NL: ${newLowsCount}`,
       );
     } else if (manualBreadth?.date && manualBreadth.date !== todayIso) {
       console.log(
@@ -2127,8 +2129,8 @@ export async function fetchForwardLookingData(
       above200: above200Pct,
       above50: above50Pct,
       source: breadthSource === "manual" ? "manual" : undefined,
-      r3000Above200: r3000Above200Pct,
-      r3000Above50: r3000Above50Pct,
+      broadAbove200: broadAbove200Pct,
+      broadAbove50: broadAbove50Pct,
       newHighs: newHighsCount,
       newLows: newLowsCount,
     });
@@ -2223,42 +2225,44 @@ export async function fetchForwardLookingData(
       };
     }
 
-    // ── Russell 3000 tiles ───────────────────────────────────────────────
-    // Populate only when the PM entered today's R3000 values. wk/wk and
-    // mo/mo comparisons pull from the same pm:breadth-history (the new
-    // r3000Above200/r3000Above50 fields on each snapshot).
-    if (r3000Above200Pct != null) {
-      breadthR3000_200Wk = {
-        value: r3000Above200Pct,
+    // ── Broad-market tiles ──────────────────────────────────────────────
+    // Populate only when the PM entered today's broad-market values. wk/wk
+    // and mo/mo comparisons pull from pm:breadth-history (broadAbove200/
+    // broadAbove50 fields). Universe is whatever the PM types from (BCMM
+    // ~5,168 stocks, Russell 3000 ~3,000 stocks, etc.) — the signal is the
+    // same regardless of which broader-than-SPX measure is used.
+    if (broadAbove200Pct != null) {
+      breadthBroad_200Wk = {
+        value: broadAbove200Pct,
         source: sourceUrl,
-        sourceLabel: sourceLabelFor("Russell 3000 >200DMA"),
+        sourceLabel: sourceLabelFor("Broad Market >200DMA"),
         asOf: asOfLabel,
-        previous: wkAgo?.r3000Above200 ?? null,
-        note: `Percentage of Russell 3000 constituents above their 200-day moving average — the true broad-market participation read. Diverges from the S&P 500 figure when mega-caps mask weakness in the broader market (Newton's classic late-cycle warning). Prior snapshot: ${
+        previous: wkAgo?.broadAbove200 ?? null,
+        note: `Percentage of broad-market constituents (PM source: typically Barchart BCMM ~5,168 names or Russell 3000 ~3,000 names) above their 200-day moving average. Diverges from the S&P 500 figure when mega-caps mask weakness in the broader market — Newton's classic late-cycle warning. Prior snapshot: ${
           wkAgoDate ?? "none yet (history building)"
         }.${sourceNote}`,
         status: liveStatus,
       };
-      breadthR3000_200Mo = {
-        value: r3000Above200Pct,
+      breadthBroad_200Mo = {
+        value: broadAbove200Pct,
         source: sourceUrl,
-        sourceLabel: sourceLabelFor("Russell 3000 >200DMA"),
+        sourceLabel: sourceLabelFor("Broad Market >200DMA"),
         asOf: asOfLabel,
-        previous: moAgo?.r3000Above200 ?? null,
-        note: `Russell 3000 % above 200DMA — same current value as the weekly tile, but compared to ~30 calendar days ago (${
+        previous: moAgo?.broadAbove200 ?? null,
+        note: `Broad-market % above 200DMA — same current value as the weekly tile, but compared to ~30 calendar days ago (${
           moAgoDate ?? "none yet"
         }).${sourceNote}`,
         status: liveStatus,
       };
     }
-    if (r3000Above50Pct != null) {
-      breadthR3000_50Wk = {
-        value: r3000Above50Pct,
+    if (broadAbove50Pct != null) {
+      breadthBroad_50Wk = {
+        value: broadAbove50Pct,
         source: sourceUrl,
-        sourceLabel: sourceLabelFor("Russell 3000 >50DMA"),
+        sourceLabel: sourceLabelFor("Broad Market >50DMA"),
         asOf: asOfLabel,
-        previous: wkAgo?.r3000Above50 ?? null,
-        note: `Russell 3000 % above 50DMA — broad-market faster momentum gauge. Prior snapshot: ${
+        previous: wkAgo?.broadAbove50 ?? null,
+        note: `Broad-market % above 50DMA — broader-than-SPX faster momentum gauge. Prior snapshot: ${
           wkAgoDate ?? "none yet (history building)"
         }.${sourceNote}`,
         status: liveStatus,
@@ -2482,9 +2486,9 @@ export async function fetchForwardLookingData(
     breadth200Wk,
     breadth200Mo,
     breadth50Wk,
-    breadthR3000_200Wk,
-    breadthR3000_200Mo,
-    breadthR3000_50Wk,
+    breadthBroad_200Wk,
+    breadthBroad_200Mo,
+    breadthBroad_50Wk,
     newHighsWk,
     newLowsWk,
     fearGreed,
