@@ -433,6 +433,18 @@ export type MarketData = {
     date?: string; // YYYY-MM-DD — must equal today for values to be used
     above200?: number; // % of S&P 500 trading above 200-day MA, e.g. 51.4
     above50?: number; // % of S&P 500 trading above 50-day MA
+    // Russell 3000 breadth — captures the broad-market view that S&P 500
+    // misses when mega-caps are masking small/mid-cap deterioration.
+    // Newton flags this divergence as a late-cycle warning.
+    r3000Above200?: number; // % of Russell 3000 above 200-day MA
+    r3000Above50?: number; // % of Russell 3000 above 50-day MA
+    // NYSE new highs / new lows raw counts. A spike in new lows is a
+    // classic capitulation signal (tradable bottom often forms within
+    // days); an expansion in new highs is a thrust / healthy participation
+    // signal. Kept as separate counts (not net) because absolute levels
+    // matter — 160 new lows is capitulation regardless of new highs.
+    newHighs?: number; // NYSE 52-week new highs, daily count
+    newLows?: number; // NYSE 52-week new lows, daily count
   };
   // ── Deprecated manual fields ──
   // These were superseded by ForwardLookingData (auto-fetched). They remain
@@ -494,6 +506,13 @@ export type ForwardLookingBundle = {
   breadth200Wk?: ForwardPointBundle;
   breadth200Mo?: ForwardPointBundle;
   breadth50Wk?: ForwardPointBundle;
+  // Russell 3000 + NYSE new H/L tiles (2026-05-27). All optional so old
+  // briefs without manual R3000 entries decode without errors.
+  breadthR3000_200Wk?: ForwardPointBundle;
+  breadthR3000_200Mo?: ForwardPointBundle;
+  breadthR3000_50Wk?: ForwardPointBundle;
+  newHighsWk?: ForwardPointBundle;
+  newLowsWk?: ForwardPointBundle;
   // Optional sentiment tiles (CNN F&G, AAII, S&P Oscillator) — added after
   // launch, must be optional for Redis-cached briefs to decode.
   fearGreed?: ForwardPointBundle;

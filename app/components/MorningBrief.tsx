@@ -1262,81 +1262,113 @@ export function MorningBrief({
             <h4 className="text-xs font-semibold text-slate-400 uppercase tracking-widest">Breadth (manual entry)</h4>
             <span className="text-[10px] text-slate-400">% of S&P 500 above 200DMA / 50DMA — source: Newton, StockCharts ($SPXA200R / $SPXA50R), or WSJ. When date = today, used directly.</span>
           </div>
-          <div className="grid gap-4 md:grid-cols-3">
-            <div>
-              <label className="text-[10px] font-semibold text-slate-400 uppercase tracking-wider block mb-1">Date</label>
-              <input
-                type="date"
-                value={marketData.breadthOverride?.date ?? new Date().toISOString().slice(0, 10)}
-                onChange={(e) =>
-                  onUpdateMarketData({
-                    breadthOverride: {
-                      ...marketData.breadthOverride,
-                      date: e.target.value,
-                    },
-                  })
-                }
-                className="w-full rounded-lg border border-slate-200 bg-slate-50 px-3 py-2 text-sm text-slate-700 outline-none focus:border-blue-300 focus:ring-1 focus:ring-blue-200 transition-all"
-                title="Must equal today's UTC date to be used. Earlier dates are treated as 'not entered today'."
-              />
-            </div>
-            <div>
-              <label className="text-[10px] font-semibold text-slate-400 uppercase tracking-wider block mb-1">% above 200DMA</label>
-              <input
-                type="number"
-                step="0.1"
-                min={0}
-                max={100}
-                placeholder="51.2"
-                value={
-                  typeof marketData.breadthOverride?.above200 === "number"
-                    ? marketData.breadthOverride.above200
-                    : ""
-                }
-                onChange={(e) => {
-                  const v = e.target.value === "" ? undefined : parseFloat(e.target.value);
-                  onUpdateMarketData({
-                    breadthOverride: {
-                      ...marketData.breadthOverride,
-                      date:
-                        marketData.breadthOverride?.date ??
-                        new Date().toISOString().slice(0, 10),
-                      above200: v != null && !isNaN(v) ? v : undefined,
-                    },
-                  });
-                }}
-                className="w-full rounded-lg border border-slate-200 bg-slate-50 px-3 py-2 text-sm text-slate-700 outline-none focus:border-blue-300 focus:ring-1 focus:ring-blue-200 transition-all"
-              />
-            </div>
-            <div>
-              <label className="text-[10px] font-semibold text-slate-400 uppercase tracking-wider block mb-1">% above 50DMA</label>
-              <input
-                type="number"
-                step="0.1"
-                min={0}
-                max={100}
-                placeholder="44.6"
-                value={
-                  typeof marketData.breadthOverride?.above50 === "number"
-                    ? marketData.breadthOverride.above50
-                    : ""
-                }
-                onChange={(e) => {
-                  const v = e.target.value === "" ? undefined : parseFloat(e.target.value);
-                  onUpdateMarketData({
-                    breadthOverride: {
-                      ...marketData.breadthOverride,
-                      date:
-                        marketData.breadthOverride?.date ??
-                        new Date().toISOString().slice(0, 10),
-                      above50: v != null && !isNaN(v) ? v : undefined,
-                    },
-                  });
-                }}
-                className="w-full rounded-lg border border-slate-200 bg-slate-50 px-3 py-2 text-sm text-slate-700 outline-none focus:border-blue-300 focus:ring-1 focus:ring-blue-200 transition-all"
-              />
-            </div>
-          </div>
+          {/* Helper to keep the date in sync whenever the PM types a value.
+              All six fields share the same date — partial entry is fine. */}
+          {(() => {
+            const today = new Date().toISOString().slice(0, 10);
+            const updateBreadthField = (field: string, raw: string) => {
+              const v = raw === "" ? undefined : parseFloat(raw);
+              onUpdateMarketData({
+                breadthOverride: {
+                  ...marketData.breadthOverride,
+                  date: marketData.breadthOverride?.date ?? today,
+                  [field]: v != null && !isNaN(v) ? v : undefined,
+                },
+              });
+            };
+            const numVal = (v: unknown): number | "" =>
+              typeof v === "number" ? v : "";
+            return (
+              <>
+                {/* Row 1: Date + SP500 200/50 */}
+                <div className="grid gap-4 md:grid-cols-3 mb-3">
+                  <div>
+                    <label className="text-[10px] font-semibold text-slate-400 uppercase tracking-wider block mb-1">Date</label>
+                    <input
+                      type="date"
+                      value={marketData.breadthOverride?.date ?? today}
+                      onChange={(e) =>
+                        onUpdateMarketData({
+                          breadthOverride: {
+                            ...marketData.breadthOverride,
+                            date: e.target.value,
+                          },
+                        })
+                      }
+                      className="w-full rounded-lg border border-slate-200 bg-slate-50 px-3 py-2 text-sm text-slate-700 outline-none focus:border-blue-300 focus:ring-1 focus:ring-blue-200 transition-all"
+                      title="Must equal today's UTC date to be used. Earlier dates are treated as 'not entered today'."
+                    />
+                  </div>
+                  <div>
+                    <label className="text-[10px] font-semibold text-slate-400 uppercase tracking-wider block mb-1">SP500 &gt;200DMA (%)</label>
+                    <input
+                      type="number" step="0.1" min={0} max={100} placeholder="51.2"
+                      value={numVal(marketData.breadthOverride?.above200)}
+                      onChange={(e) => updateBreadthField("above200", e.target.value)}
+                      className="w-full rounded-lg border border-slate-200 bg-slate-50 px-3 py-2 text-sm text-slate-700 outline-none focus:border-blue-300 focus:ring-1 focus:ring-blue-200 transition-all"
+                    />
+                  </div>
+                  <div>
+                    <label className="text-[10px] font-semibold text-slate-400 uppercase tracking-wider block mb-1">SP500 &gt;50DMA (%)</label>
+                    <input
+                      type="number" step="0.1" min={0} max={100} placeholder="44.6"
+                      value={numVal(marketData.breadthOverride?.above50)}
+                      onChange={(e) => updateBreadthField("above50", e.target.value)}
+                      className="w-full rounded-lg border border-slate-200 bg-slate-50 px-3 py-2 text-sm text-slate-700 outline-none focus:border-blue-300 focus:ring-1 focus:ring-blue-200 transition-all"
+                    />
+                  </div>
+                </div>
+                {/* Row 2: R3000 200/50 + (blank slot for grid alignment) */}
+                <div className="grid gap-4 md:grid-cols-3 mb-3">
+                  <div>
+                    <label className="text-[10px] font-semibold text-slate-400 uppercase tracking-wider block mb-1">R3000 &gt;200DMA (%)</label>
+                    <input
+                      type="number" step="0.1" min={0} max={100} placeholder="38.4"
+                      value={numVal(marketData.breadthOverride?.r3000Above200)}
+                      onChange={(e) => updateBreadthField("r3000Above200", e.target.value)}
+                      className="w-full rounded-lg border border-slate-200 bg-slate-50 px-3 py-2 text-sm text-slate-700 outline-none focus:border-blue-300 focus:ring-1 focus:ring-blue-200 transition-all"
+                      title="% of Russell 3000 above its 200-day MA. Lower than SP500 = broad-market divergence."
+                    />
+                  </div>
+                  <div>
+                    <label className="text-[10px] font-semibold text-slate-400 uppercase tracking-wider block mb-1">R3000 &gt;50DMA (%)</label>
+                    <input
+                      type="number" step="0.1" min={0} max={100} placeholder="32.1"
+                      value={numVal(marketData.breadthOverride?.r3000Above50)}
+                      onChange={(e) => updateBreadthField("r3000Above50", e.target.value)}
+                      className="w-full rounded-lg border border-slate-200 bg-slate-50 px-3 py-2 text-sm text-slate-700 outline-none focus:border-blue-300 focus:ring-1 focus:ring-blue-200 transition-all"
+                      title="% of Russell 3000 above its 50-day MA."
+                    />
+                  </div>
+                  <div /> {/* empty cell for grid alignment */}
+                </div>
+                {/* Row 3: NYSE new highs / new lows */}
+                <div className="grid gap-4 md:grid-cols-3">
+                  <div>
+                    <label className="text-[10px] font-semibold text-slate-400 uppercase tracking-wider block mb-1">NYSE New Highs (count)</label>
+                    <input
+                      type="number" step="1" min={0} placeholder="78"
+                      value={numVal(marketData.breadthOverride?.newHighs)}
+                      onChange={(e) => updateBreadthField("newHighs", e.target.value)}
+                      className="w-full rounded-lg border border-slate-200 bg-slate-50 px-3 py-2 text-sm text-slate-700 outline-none focus:border-blue-300 focus:ring-1 focus:ring-blue-200 transition-all"
+                      title="Daily count of NYSE 52-week new highs. Expansion above 100 = healthy thrust."
+                    />
+                  </div>
+                  <div>
+                    <label className="text-[10px] font-semibold text-slate-400 uppercase tracking-wider block mb-1">NYSE New Lows (count)</label>
+                    <input
+                      type="number" step="1" min={0} placeholder="142"
+                      value={numVal(marketData.breadthOverride?.newLows)}
+                      onChange={(e) => updateBreadthField("newLows", e.target.value)}
+                      className="w-full rounded-lg border border-slate-200 bg-slate-50 px-3 py-2 text-sm text-slate-700 outline-none focus:border-blue-300 focus:ring-1 focus:ring-blue-200 transition-all"
+                      title="Daily count of NYSE 52-week new lows. Spike above 200 = capitulation signal."
+                    />
+                  </div>
+                  <div /> {/* empty cell for grid alignment */}
+                </div>
+              </>
+            );
+          })()}
         </div>
 
         {/* ── Strategist Notes (Fundstrat) ── */}
@@ -1768,6 +1800,21 @@ export function MorningBrief({
                 <ForwardTile label="S&P >200DMA (wk)" point={activeForward.breadth200Wk} unit="%" deltaUnit="pp" deltaPeriod="wk/wk" horizon="cyclical" />
                 <ForwardTile label="S&P >200DMA (mo)" point={activeForward.breadth200Mo} unit="%" deltaUnit="pp" deltaPeriod="mo/mo" horizon="cyclical" />
                 <ForwardTile label="S&P >50DMA (wk)" point={activeForward.breadth50Wk} unit="%" deltaUnit="pp" deltaPeriod="wk/wk" horizon="tactical" />
+                {activeForward.breadthR3000_200Wk && (
+                  <ForwardTile label="R3000 >200DMA (wk)" point={activeForward.breadthR3000_200Wk} unit="%" deltaUnit="pp" deltaPeriod="wk/wk" horizon="cyclical" />
+                )}
+                {activeForward.breadthR3000_200Mo && (
+                  <ForwardTile label="R3000 >200DMA (mo)" point={activeForward.breadthR3000_200Mo} unit="%" deltaUnit="pp" deltaPeriod="mo/mo" horizon="cyclical" />
+                )}
+                {activeForward.breadthR3000_50Wk && (
+                  <ForwardTile label="R3000 >50DMA (wk)" point={activeForward.breadthR3000_50Wk} unit="%" deltaUnit="pp" deltaPeriod="wk/wk" horizon="tactical" />
+                )}
+                {activeForward.newHighsWk && (
+                  <ForwardTile label="NYSE New Highs" point={activeForward.newHighsWk} unit="" deltaPeriod="wk/wk" horizon="tactical" />
+                )}
+                {activeForward.newLowsWk && (
+                  <ForwardTile label="NYSE New Lows" point={activeForward.newLowsWk} unit="" deltaPeriod="wk/wk" horizon="tactical" />
+                )}
               </div>
             </BriefSection>
 

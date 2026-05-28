@@ -133,6 +133,18 @@ export type ForwardLookingData = {
   breadth200Wk: ForwardPoint; // % of S&P above 200DMA with ~5 trading day prior
   breadth200Mo: ForwardPoint; // % of S&P above 200DMA with ~21 trading day prior
   breadth50Wk: ForwardPoint; // % of S&P above 50DMA with ~5 trading day prior
+  // ── Russell 3000 breadth (manual entry, added 2026-05-27) ──
+  // Broad-market participation — reveals the SPX-vs-broader divergence
+  // that Newton calls out repeatedly as a late-cycle warning.
+  breadthR3000_200Wk?: ForwardPoint;
+  breadthR3000_200Mo?: ForwardPoint;
+  breadthR3000_50Wk?: ForwardPoint;
+  // ── NYSE new highs / new lows (manual entry, added 2026-05-27) ──
+  // Daily counts with wk/wk delta. New lows spiking = classic capitulation
+  // signal; new highs expanding = healthy thrust. Kept as separate fields
+  // (not net) because absolute levels matter for the regime read.
+  newHighsWk?: ForwardPoint;
+  newLowsWk?: ForwardPoint;
   // ── Sentiment tiles with sparkline history ──
   fearGreed: ForwardPoint; // CNN Fear & Greed (0-100), 1Y daily history
   aaiiBullBear: ForwardPoint; // AAII Bull-Bear spread %, last ~52 weekly readings
@@ -523,6 +535,13 @@ type BreadthSnapshot = {
   // continue to parse without changes. UI never branches on this; it's
   // for diagnostic visibility only.
   source?: "manual" | "finviz" | "yahoo-chart";
+  // Russell 3000 breadth + NYSE new H/L counts — added 2026-05-27 alongside
+  // R3000 / new highs / new lows manual entry. All optional for backward
+  // compat with historical snapshots that only had SP500 breadth.
+  r3000Above200?: number | null;
+  r3000Above50?: number | null;
+  newHighs?: number | null;
+  newLows?: number | null;
 };
 
 async function loadBreadthHistory(): Promise<BreadthSnapshot[]> {
@@ -1412,6 +1431,11 @@ export type ManualBreadthInput = {
   date?: string;
   above200?: number;
   above50?: number;
+  // 2026-05-27 extensions
+  r3000Above200?: number;
+  r3000Above50?: number;
+  newHighs?: number;
+  newLows?: number;
 };
 
 export async function fetchForwardLookingData(
@@ -2003,6 +2027,41 @@ export async function fetchForwardLookingData(
     manualEntryHelp,
     "not-configured",
   );
+  // Russell 3000 + NYSE new H/L placeholders (same manual-entry pattern).
+  const r3000Help =
+    "Not entered today. Type today's % of Russell 3000 above 200/50 DMA in the brief composer (sources: Newton's note, StockCharts $RUA breadth, WSJ).";
+  const newHlHelp =
+    "Not entered today. Type today's NYSE new-highs and new-lows counts in the brief composer (sources: Newton's note, StockCharts $NYHGH/$NYLOW, WSJ).";
+  let breadthR3000_200Wk: ForwardPoint = missing(
+    "manual entry",
+    "Russell 3000 >200DMA",
+    r3000Help,
+    "not-configured",
+  );
+  let breadthR3000_200Mo: ForwardPoint = missing(
+    "manual entry",
+    "Russell 3000 >200DMA",
+    r3000Help,
+    "not-configured",
+  );
+  let breadthR3000_50Wk: ForwardPoint = missing(
+    "manual entry",
+    "Russell 3000 >50DMA",
+    r3000Help,
+    "not-configured",
+  );
+  let newHighsWk: ForwardPoint = missing(
+    "manual entry",
+    "NYSE New Highs",
+    newHlHelp,
+    "not-configured",
+  );
+  let newLowsWk: ForwardPoint = missing(
+    "manual entry",
+    "NYSE New Lows",
+    newHlHelp,
+    "not-configured",
+  );
   try {
     // ── Manual breadth entry ─────────────────────────────────────────────
     // After 2026-05-27 we no longer scrape Finviz/Yahoo for breadth (Finviz
@@ -2023,20 +2082,35 @@ export async function fetchForwardLookingData(
     const todayIso = new Date().toISOString().slice(0, 10);
     let above200Pct: number | null = null;
     let above50Pct: number | null = null;
+    let r3000Above200Pct: number | null = null;
+    let r3000Above50Pct: number | null = null;
+    let newHighsCount: number | null = null;
+    let newLowsCount: number | null = null;
     let breadthSource: "manual" | "none" = "none";
 
-    if (
-      manualBreadth &&
-      manualBreadth.date === todayIso &&
-      (typeof manualBreadth.above200 === "number" || typeof manualBreadth.above50 === "number")
-    ) {
-      above200Pct =
-        typeof manualBreadth.above200 === "number" ? manualBreadth.above200 : null;
-      above50Pct =
-        typeof manualBreadth.above50 === "number" ? manualBreadth.above50 : null;
-      breadthSource = "manual";
+    // Helper to pull a field from manualBreadth only when it's a finite number.
+    const pickNum = (v: unknown): number | null =>
+      typeof v === "number" && Number.isFinite(v) ? v : null;
+
+    if (manualBreadth && manualBreadth.date === todayIso) {
+      // Any of the 6 fields counts as a manual entry — partial entry is fine
+      // (e.g. PM types SP500 + R3000 but skips new H/L on a quiet day).
+      above200Pct = pickNum(manualBreadth.above200);
+      above50Pct = pickNum(manualBreadth.above50);
+      r3000Above200Pct = pickNum(manualBreadth.r3000Above200);
+      r3000Above50Pct = pickNum(manualBreadth.r3000Above50);
+      newHighsCount = pickNum(manualBreadth.newHighs);
+      newLowsCount = pickNum(manualBreadth.newLows);
+      const anyEntered =
+        above200Pct != null ||
+        above50Pct != null ||
+        r3000Above200Pct != null ||
+        r3000Above50Pct != null ||
+        newHighsCount != null ||
+        newLowsCount != null;
+      if (anyEntered) breadthSource = "manual";
       console.log(
-        `[Breadth] Using manual entry — above200: ${above200Pct}%, above50: ${above50Pct}%`,
+        `[Breadth] Using manual entry — SP200: ${above200Pct}, SP50: ${above50Pct}, R3000_200: ${r3000Above200Pct}, R3000_50: ${r3000Above50Pct}, NH: ${newHighsCount}, NL: ${newLowsCount}`,
       );
     } else if (manualBreadth?.date && manualBreadth.date !== todayIso) {
       console.log(
@@ -2044,14 +2118,19 @@ export async function fetchForwardLookingData(
       );
     }
 
-    // Always record today's entry to history (even when null) so the date
-    // is in the timeline. When manual values are present they're saved
-    // with source: "manual" so the diagnostic can distinguish.
+    // Always record today's entry to history (even when all null) so the date
+    // is in the timeline. The new optional fields (r3000_*, newHighs, newLows)
+    // ride along with the existing snapshot so wk/wk comparisons can use them
+    // once the history accumulates.
     const realHistory = await recordBreadthSnapshot({
       date: todayIso,
       above200: above200Pct,
       above50: above50Pct,
       source: breadthSource === "manual" ? "manual" : undefined,
+      r3000Above200: r3000Above200Pct,
+      r3000Above50: r3000Above50Pct,
+      newHighs: newHighsCount,
+      newLows: newLowsCount,
     });
     const cachedStaleDate: string | null = null;
 
@@ -2140,6 +2219,78 @@ export async function fetchForwardLookingData(
         note: `Percentage of S&P 500 constituents above their 50DMA (faster momentum gauge). Prior snapshot: ${
           wkAgoDate ?? "none yet (history building)"
         }${wkEstimated ? " (SPX-proxy estimate)" : ""}.${estimatedSuffix}${sourceNote}`,
+        status: liveStatus,
+      };
+    }
+
+    // ── Russell 3000 tiles ───────────────────────────────────────────────
+    // Populate only when the PM entered today's R3000 values. wk/wk and
+    // mo/mo comparisons pull from the same pm:breadth-history (the new
+    // r3000Above200/r3000Above50 fields on each snapshot).
+    if (r3000Above200Pct != null) {
+      breadthR3000_200Wk = {
+        value: r3000Above200Pct,
+        source: sourceUrl,
+        sourceLabel: sourceLabelFor("Russell 3000 >200DMA"),
+        asOf: asOfLabel,
+        previous: wkAgo?.r3000Above200 ?? null,
+        note: `Percentage of Russell 3000 constituents above their 200-day moving average — the true broad-market participation read. Diverges from the S&P 500 figure when mega-caps mask weakness in the broader market (Newton's classic late-cycle warning). Prior snapshot: ${
+          wkAgoDate ?? "none yet (history building)"
+        }.${sourceNote}`,
+        status: liveStatus,
+      };
+      breadthR3000_200Mo = {
+        value: r3000Above200Pct,
+        source: sourceUrl,
+        sourceLabel: sourceLabelFor("Russell 3000 >200DMA"),
+        asOf: asOfLabel,
+        previous: moAgo?.r3000Above200 ?? null,
+        note: `Russell 3000 % above 200DMA — same current value as the weekly tile, but compared to ~30 calendar days ago (${
+          moAgoDate ?? "none yet"
+        }).${sourceNote}`,
+        status: liveStatus,
+      };
+    }
+    if (r3000Above50Pct != null) {
+      breadthR3000_50Wk = {
+        value: r3000Above50Pct,
+        source: sourceUrl,
+        sourceLabel: sourceLabelFor("Russell 3000 >50DMA"),
+        asOf: asOfLabel,
+        previous: wkAgo?.r3000Above50 ?? null,
+        note: `Russell 3000 % above 50DMA — broad-market faster momentum gauge. Prior snapshot: ${
+          wkAgoDate ?? "none yet (history building)"
+        }.${sourceNote}`,
+        status: liveStatus,
+      };
+    }
+
+    // ── NYSE new highs / new lows ─────────────────────────────────────────
+    // Daily counts with a wk-ago comparison. Spike in new lows is a classic
+    // capitulation signal; expansion of new highs is healthy thrust.
+    if (newHighsCount != null) {
+      newHighsWk = {
+        value: newHighsCount,
+        source: sourceUrl,
+        sourceLabel: sourceLabelFor("NYSE New Highs"),
+        asOf: asOfLabel,
+        previous: wkAgo?.newHighs ?? null,
+        note: `Number of NYSE-listed stocks making new 52-week highs today. Expansion above ~100/day is a healthy thrust signal; contraction toward zero is leadership narrowing. Prior count: ${
+          wkAgoDate ?? "none yet (history building)"
+        }.${sourceNote}`,
+        status: liveStatus,
+      };
+    }
+    if (newLowsCount != null) {
+      newLowsWk = {
+        value: newLowsCount,
+        source: sourceUrl,
+        sourceLabel: sourceLabelFor("NYSE New Lows"),
+        asOf: asOfLabel,
+        previous: wkAgo?.newLows ?? null,
+        note: `Number of NYSE-listed stocks making new 52-week lows today. Spike above ~200/day is a classic capitulation signal — tradable bottom often forms within days. Sub-50 is healthy. Prior count: ${
+          wkAgoDate ?? "none yet (history building)"
+        }.${sourceNote}`,
         status: liveStatus,
       };
     }
@@ -2331,6 +2482,11 @@ export async function fetchForwardLookingData(
     breadth200Wk,
     breadth200Mo,
     breadth50Wk,
+    breadthR3000_200Wk,
+    breadthR3000_200Mo,
+    breadthR3000_50Wk,
+    newHighsWk,
+    newLowsWk,
     fearGreed,
     aaiiBullBear,
     aaiiBull,
