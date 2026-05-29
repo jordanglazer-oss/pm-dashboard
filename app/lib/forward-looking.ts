@@ -2384,7 +2384,7 @@ export async function fetchForwardLookingData(
           : null;
       upVolumePct = {
         value: upPct,
-        source: "https://www.wsj.com/market-data/stocks/marketsdiary",
+        source: BARCHART.broad, // same Barchart momentum page as the broad-market tiles
         sourceLabel: sourceLabelFor("NYSE Up Volume %"),
         asOf: asOfLabel,
         previous: prevPct,

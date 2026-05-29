@@ -1392,7 +1392,7 @@ export function MorningBrief({
                     keep both fields in the same unit. */}
                 <div className="grid gap-4 md:grid-cols-3 mt-3">
                   <div>
-                    <LabelLink text="NYSE Up Volume" href="https://www.wsj.com/market-data/stocks/marketsdiary" />
+                    <LabelLink text="NYSE Up Volume" href={BC.broad} />
                     <input
                       type="number" step="0.01" min={0} placeholder="3.19"
                       value={numVal(marketData.breadthOverride?.upVolume)}
@@ -1402,7 +1402,7 @@ export function MorningBrief({
                     />
                   </div>
                   <div>
-                    <LabelLink text="NYSE Down Volume" href="https://www.wsj.com/market-data/stocks/marketsdiary" />
+                    <LabelLink text="NYSE Down Volume" href={BC.broad} />
                     <input
                       type="number" step="0.01" min={0} placeholder="2.24"
                       value={numVal(marketData.breadthOverride?.downVolume)}
@@ -1412,6 +1412,32 @@ export function MorningBrief({
                     />
                   </div>
                   <div /> {/* empty cell for grid alignment */}
+                </div>
+                {/* Consolidated source legend — each distinct page listed ONCE
+                    so the PM opens it a single time rather than clicking the
+                    same momentum page from four different field icons. */}
+                <div className="mt-4 pt-3 border-t border-slate-100 flex flex-wrap items-center gap-x-4 gap-y-1.5 text-[10px] text-slate-400">
+                  <span className="font-semibold uppercase tracking-wider">Sources (open once):</span>
+                  <a href={BC.broad} target="_blank" rel="noopener noreferrer" className="inline-flex items-center gap-1 text-blue-500 hover:text-blue-700 transition-colors">
+                    <svg className="w-3 h-3" fill="none" stroke="currentColor" strokeWidth="2" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" d="M10 6H6a2 2 0 00-2 2v10a2 2 0 002 2h10a2 2 0 002-2v-4M14 4h6m0 0v6m0-6L10 14" /></svg>
+                    Barchart Momentum <span className="text-slate-400 normal-case">— Broad Market 200/50 + Up/Down Volume</span>
+                  </a>
+                  <a href={BC.sp200} target="_blank" rel="noopener noreferrer" className="inline-flex items-center gap-1 text-blue-500 hover:text-blue-700 transition-colors">
+                    <svg className="w-3 h-3" fill="none" stroke="currentColor" strokeWidth="2" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" d="M10 6H6a2 2 0 00-2 2v10a2 2 0 002 2h10a2 2 0 002-2v-4M14 4h6m0 0v6m0-6L10 14" /></svg>
+                    $S5TH <span className="text-slate-400">— SP500 &gt;200</span>
+                  </a>
+                  <a href={BC.sp50} target="_blank" rel="noopener noreferrer" className="inline-flex items-center gap-1 text-blue-500 hover:text-blue-700 transition-colors">
+                    <svg className="w-3 h-3" fill="none" stroke="currentColor" strokeWidth="2" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" d="M10 6H6a2 2 0 00-2 2v10a2 2 0 002 2h10a2 2 0 002-2v-4M14 4h6m0 0v6m0-6L10 14" /></svg>
+                    $S5FI <span className="text-slate-400">— SP500 &gt;50</span>
+                  </a>
+                  <a href={BC.nh} target="_blank" rel="noopener noreferrer" className="inline-flex items-center gap-1 text-blue-500 hover:text-blue-700 transition-colors">
+                    <svg className="w-3 h-3" fill="none" stroke="currentColor" strokeWidth="2" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" d="M10 6H6a2 2 0 00-2 2v10a2 2 0 002 2h10a2 2 0 002-2v-4M14 4h6m0 0v6m0-6L10 14" /></svg>
+                    $MAHN <span className="text-slate-400">— New Highs</span>
+                  </a>
+                  <a href={BC.nl} target="_blank" rel="noopener noreferrer" className="inline-flex items-center gap-1 text-blue-500 hover:text-blue-700 transition-colors">
+                    <svg className="w-3 h-3" fill="none" stroke="currentColor" strokeWidth="2" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" d="M10 6H6a2 2 0 00-2 2v10a2 2 0 002 2h10a2 2 0 002-2v-4M14 4h6m0 0v6m0-6L10 14" /></svg>
+                    $MALN <span className="text-slate-400">— New Lows</span>
+                  </a>
                 </div>
               </>
             );
