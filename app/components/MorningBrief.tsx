@@ -1387,6 +1387,32 @@ export function MorningBrief({
                   </div>
                   <div /> {/* empty cell for grid alignment */}
                 </div>
+                {/* Row 4: NYSE up/down volume (conviction / thrust). Only the
+                    ratio matters, so enter in billions or raw shares — just
+                    keep both fields in the same unit. */}
+                <div className="grid gap-4 md:grid-cols-3 mt-3">
+                  <div>
+                    <LabelLink text="NYSE Up Volume" href="https://www.wsj.com/market-data/stocks/marketsdiary" />
+                    <input
+                      type="number" step="0.01" min={0} placeholder="3.19"
+                      value={numVal(marketData.breadthOverride?.upVolume)}
+                      onChange={(e) => updateBreadthField("upVolume", e.target.value)}
+                      className="w-full rounded-lg border border-slate-200 bg-slate-50 px-3 py-2 text-sm text-slate-700 outline-none focus:border-blue-300 focus:ring-1 focus:ring-blue-200 transition-all"
+                      title="NYSE advancing volume. Enter in billions (3.19) or raw shares (3194510000) — only the ratio vs down-volume matters, so keep both fields in the same unit."
+                    />
+                  </div>
+                  <div>
+                    <LabelLink text="NYSE Down Volume" href="https://www.wsj.com/market-data/stocks/marketsdiary" />
+                    <input
+                      type="number" step="0.01" min={0} placeholder="2.24"
+                      value={numVal(marketData.breadthOverride?.downVolume)}
+                      onChange={(e) => updateBreadthField("downVolume", e.target.value)}
+                      className="w-full rounded-lg border border-slate-200 bg-slate-50 px-3 py-2 text-sm text-slate-700 outline-none focus:border-blue-300 focus:ring-1 focus:ring-blue-200 transition-all"
+                      title="NYSE declining volume. Same unit as Up Volume. Up % = up / (up + down): >85% = thrust, <15% = capitulation."
+                    />
+                  </div>
+                  <div /> {/* empty cell for grid alignment */}
+                </div>
               </>
             );
           })()}
@@ -1835,6 +1861,9 @@ export function MorningBrief({
                 )}
                 {activeForward.newLowsWk && (
                   <ForwardTile label="NYSE New Lows" point={activeForward.newLowsWk} unit="" deltaPeriod="wk/wk" horizon="tactical" />
+                )}
+                {activeForward.upVolumePct && (
+                  <ForwardTile label="NYSE Up Volume" point={activeForward.upVolumePct} unit="%" deltaUnit="pp" deltaPeriod="wk/wk" horizon="tactical" />
                 )}
               </div>
             </BriefSection>

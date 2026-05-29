@@ -140,6 +140,8 @@ export type ForwardLookingData = {
   breadthBroad_200Wk?: ForwardPoint;
   breadthBroad_200Mo?: ForwardPoint;
   breadthBroad_50Wk?: ForwardPoint;
+  // Up-volume % (advancing volume / total) — conviction/thrust gauge.
+  upVolumePct?: ForwardPoint;
   // ── NYSE new highs / new lows (manual entry, added 2026-05-27) ──
   // Daily counts with wk/wk delta. New lows spiking = classic capitulation
   // signal; new highs expanding = healthy thrust. Kept as separate fields
@@ -563,6 +565,9 @@ type BreadthSnapshot = {
   broadAbove50?: number | null;
   newHighs?: number | null;
   newLows?: number | null;
+  // NYSE up/down volume (shares or billions — ratio is unit-invariant).
+  upVolume?: number | null;
+  downVolume?: number | null;
 };
 
 async function loadBreadthHistory(): Promise<BreadthSnapshot[]> {
@@ -1457,6 +1462,8 @@ export type ManualBreadthInput = {
   broadAbove50?: number;
   newHighs?: number;
   newLows?: number;
+  upVolume?: number;
+  downVolume?: number;
 };
 
 export async function fetchForwardLookingData(
@@ -2083,6 +2090,12 @@ export async function fetchForwardLookingData(
     newHlHelp,
     "not-configured",
   );
+  let upVolumePct: ForwardPoint = missing(
+    "manual entry",
+    "NYSE Up Volume %",
+    "Not entered today. Type today's NYSE advancing + declining volume in the brief composer — up-volume % = advancing / (advancing + declining). >85% = breadth thrust, <15% = capitulation.",
+    "not-configured",
+  );
   try {
     // ── Manual breadth entry ─────────────────────────────────────────────
     // After 2026-05-27 we no longer scrape Finviz/Yahoo for breadth (Finviz
@@ -2107,6 +2120,8 @@ export async function fetchForwardLookingData(
     let broadAbove50Pct: number | null = null;
     let newHighsCount: number | null = null;
     let newLowsCount: number | null = null;
+    let upVolume: number | null = null;
+    let downVolume: number | null = null;
     let breadthSource: "manual" | "none" = "none";
     // The "as of" date the entered values pertain to — defaults to today
     // but is overwritten with the PM's entered date when a manual entry is
@@ -2143,13 +2158,17 @@ export async function fetchForwardLookingData(
       broadAbove50Pct = pickNum(manualBreadth.broadAbove50);
       newHighsCount = pickNum(manualBreadth.newHighs);
       newLowsCount = pickNum(manualBreadth.newLows);
+      upVolume = pickNum(manualBreadth.upVolume);
+      downVolume = pickNum(manualBreadth.downVolume);
       const anyEntered =
         above200Pct != null ||
         above50Pct != null ||
         broadAbove200Pct != null ||
         broadAbove50Pct != null ||
         newHighsCount != null ||
-        newLowsCount != null;
+        newLowsCount != null ||
+        upVolume != null ||
+        downVolume != null;
       if (anyEntered) {
         breadthSource = "manual";
         breadthAsOf = manualBreadth.date!; // accepted entry's date is the as-of
@@ -2180,6 +2199,8 @@ export async function fetchForwardLookingData(
       broadAbove50: broadAbove50Pct,
       newHighs: newHighsCount,
       newLows: newLowsCount,
+      upVolume,
+      downVolume,
     });
 
     // On cold start (or any time the real history hasn't accumulated at
@@ -2342,6 +2363,32 @@ export async function fetchForwardLookingData(
         asOf: asOfLabel,
         previous: wkAgo?.newLows ?? null,
         note: `Number of NYSE-listed stocks making new 52-week lows today. Spike above ~200/day is a classic capitulation signal — tradable bottom often forms within days. Sub-50 is healthy. Prior count: ${
+          wkAgoDate ?? "none yet (history building)"
+        }.${sourceNote}`,
+        status: liveStatus,
+      };
+    }
+
+    // ── Up-volume % (conviction / thrust gauge) ──────────────────────────
+    // Computed from the PM's NYSE advancing + declining volume entry. The
+    // ratio is unit-invariant (raw shares or billions both work). wk/wk
+    // comparison recomputes the prior day's ratio from history.
+    if (upVolume != null && downVolume != null && upVolume + downVolume > 0) {
+      const upPct = parseFloat(((upVolume / (upVolume + downVolume)) * 100).toFixed(1));
+      // Prior up-volume % from the wk-ago snapshot, if both legs present.
+      const prevUp = wkAgo?.upVolume;
+      const prevDown = wkAgo?.downVolume;
+      const prevPct =
+        typeof prevUp === "number" && typeof prevDown === "number" && prevUp + prevDown > 0
+          ? parseFloat(((prevUp / (prevUp + prevDown)) * 100).toFixed(1))
+          : null;
+      upVolumePct = {
+        value: upPct,
+        source: "https://www.wsj.com/market-data/stocks/marketsdiary",
+        sourceLabel: sourceLabelFor("NYSE Up Volume %"),
+        asOf: asOfLabel,
+        previous: prevPct,
+        note: `Advancing volume as a % of total (advancing + declining) NYSE volume — the conviction behind today's move. >85-90% = breadth thrust (powerful bullish signal, esp. coming off a low); <10-15% (i.e. down-volume >85-90%) = capitulation selling. Today: ${upVolume} up vs ${downVolume} down. Prior reading: ${
           wkAgoDate ?? "none yet (history building)"
         }.${sourceNote}`,
         status: liveStatus,
@@ -2540,6 +2587,7 @@ export async function fetchForwardLookingData(
     breadthBroad_50Wk,
     newHighsWk,
     newLowsWk,
+    upVolumePct,
     fearGreed,
     aaiiBullBear,
     aaiiBull,

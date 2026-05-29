@@ -448,6 +448,14 @@ export type MarketData = {
     // matter — 160 new lows is capitulation regardless of new highs.
     newHighs?: number; // NYSE 52-week new highs, daily count
     newLows?: number; // NYSE 52-week new lows, daily count
+    // NYSE advancing / declining VOLUME (shares). Only the ratio matters,
+    // so the PM can enter raw shares or in billions — as long as up and
+    // down use the same unit. up-volume % = up / (up + down):
+    //   >85-90% = breadth thrust (powerful bullish conviction signal)
+    //   <10-15% (i.e. down-volume >85-90%) = capitulation
+    // Nothing else in the breadth set measures conviction behind the move.
+    upVolume?: number; // NYSE advancing volume (shares or billions)
+    downVolume?: number; // NYSE declining volume (same unit as upVolume)
   };
   // ── Deprecated manual fields ──
   // These were superseded by ForwardLookingData (auto-fetched). They remain
@@ -516,6 +524,9 @@ export type ForwardLookingBundle = {
   breadthBroad_50Wk?: ForwardPointBundle;
   newHighsWk?: ForwardPointBundle;
   newLowsWk?: ForwardPointBundle;
+  // Up-volume % = advancing volume / (advancing + declining). Single tile
+  // computed from the PM's NYSE up/down volume entry. Optional.
+  upVolumePct?: ForwardPointBundle;
   // Optional sentiment tiles (CNN F&G, AAII, S&P Oscillator) — added after
   // launch, must be optional for Redis-cached briefs to decode.
   fearGreed?: ForwardPointBundle;
