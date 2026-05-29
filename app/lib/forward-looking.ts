@@ -326,6 +326,25 @@ const FINVIZ_SP500_ABOVE_200DMA =
 const FINVIZ_SP500_ABOVE_50DMA =
   "https://finviz.com/screener?v=111&f=idx_sp500,ta_sma50_pa&ft=4";
 
+// Barchart source pages for the manual breadth tiles. Clicking the
+// external-link icon on each tile takes the PM straight to the page where
+// they'll find that indicator (matches the S&P Oscillator / Put-Call
+// pattern). These are quote pages for Barchart's $-prefixed breadth
+// symbols. Centralized here so the URLs are easy to adjust if Barchart
+// changes their paths.
+//   $S5TH = S&P 500 % above 200DMA   $S5FI = S&P 500 % above 50DMA
+//   $BCMM = Barchart Market Momentum (broad-market universe, ~5,168 names)
+//   $MAHN = NYSE 52-week new highs   $MALN = NYSE 52-week new lows
+const BARCHART = {
+  sp500_200: "https://www.barchart.com/stocks/quotes/$S5TH",
+  sp500_50: "https://www.barchart.com/stocks/quotes/$S5FI",
+  // BCMM momentum page shows both the >200DMA and >50DMA breadth for the
+  // broad universe, so both broad tiles link to the same momentum page.
+  broad: "https://www.barchart.com/stocks/momentum",
+  newHighs: "https://www.barchart.com/stocks/quotes/$MAHN",
+  newLows: "https://www.barchart.com/stocks/quotes/$MALN",
+} as const;
+
 async function fetchFinvizCount(url: string): Promise<number | null> {
   try {
     const res = await fetch(url, {
@@ -2162,7 +2181,6 @@ export async function fetchForwardLookingData(
       newHighs: newHighsCount,
       newLows: newLowsCount,
     });
-    const cachedStaleDate: string | null = null;
 
     // On cold start (or any time the real history hasn't accumulated at
     // least ~a month of distinct trading days) fold in an SPX-proxy
@@ -2207,7 +2225,6 @@ export async function fetchForwardLookingData(
       if (breadthSource === "manual") return `${base} (manual entry)`;
       return base;
     };
-    const sourceUrl = "manual entry via brief composer";
     const sourceNote =
       breadthSource === "manual"
         ? ` SOURCE NOTE: Value entered manually by the PM (as of ${breadthAsOf}; breadth is an end-of-session figure so this is typically the most recent close).`
@@ -2222,7 +2239,7 @@ export async function fetchForwardLookingData(
     if (above200Pct != null) {
       breadth200Wk = {
         value: above200Pct,
-        source: sourceUrl,
+        source: BARCHART.sp500_200,
         sourceLabel: sourceLabelFor("S&P 500 >200DMA"),
         asOf: asOfLabel,
         previous: wkAgo?.above200 ?? null,
@@ -2233,7 +2250,7 @@ export async function fetchForwardLookingData(
       };
       breadth200Mo = {
         value: above200Pct,
-        source: sourceUrl,
+        source: BARCHART.sp500_200,
         sourceLabel: sourceLabelFor("S&P 500 >200DMA"),
         asOf: asOfLabel,
         previous: moAgo?.above200 ?? null,
@@ -2246,7 +2263,7 @@ export async function fetchForwardLookingData(
     if (above50Pct != null) {
       breadth50Wk = {
         value: above50Pct,
-        source: sourceUrl,
+        source: BARCHART.sp500_50,
         sourceLabel: sourceLabelFor("S&P 500 >50DMA"),
         asOf: asOfLabel,
         previous: wkAgo?.above50 ?? null,
@@ -2266,7 +2283,7 @@ export async function fetchForwardLookingData(
     if (broadAbove200Pct != null) {
       breadthBroad_200Wk = {
         value: broadAbove200Pct,
-        source: sourceUrl,
+        source: BARCHART.broad,
         sourceLabel: sourceLabelFor("Broad Market >200DMA"),
         asOf: asOfLabel,
         previous: wkAgo?.broadAbove200 ?? null,
@@ -2277,7 +2294,7 @@ export async function fetchForwardLookingData(
       };
       breadthBroad_200Mo = {
         value: broadAbove200Pct,
-        source: sourceUrl,
+        source: BARCHART.broad,
         sourceLabel: sourceLabelFor("Broad Market >200DMA"),
         asOf: asOfLabel,
         previous: moAgo?.broadAbove200 ?? null,
@@ -2290,7 +2307,7 @@ export async function fetchForwardLookingData(
     if (broadAbove50Pct != null) {
       breadthBroad_50Wk = {
         value: broadAbove50Pct,
-        source: sourceUrl,
+        source: BARCHART.broad,
         sourceLabel: sourceLabelFor("Broad Market >50DMA"),
         asOf: asOfLabel,
         previous: wkAgo?.broadAbove50 ?? null,
@@ -2307,7 +2324,7 @@ export async function fetchForwardLookingData(
     if (newHighsCount != null) {
       newHighsWk = {
         value: newHighsCount,
-        source: sourceUrl,
+        source: BARCHART.newHighs,
         sourceLabel: sourceLabelFor("NYSE New Highs"),
         asOf: asOfLabel,
         previous: wkAgo?.newHighs ?? null,
@@ -2320,7 +2337,7 @@ export async function fetchForwardLookingData(
     if (newLowsCount != null) {
       newLowsWk = {
         value: newLowsCount,
-        source: sourceUrl,
+        source: BARCHART.newLows,
         sourceLabel: sourceLabelFor("NYSE New Lows"),
         asOf: asOfLabel,
         previous: wkAgo?.newLows ?? null,
