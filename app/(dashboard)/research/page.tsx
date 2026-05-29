@@ -809,7 +809,7 @@ export default function ResearchPage() {
 
   // Build the wire-shape state (strips inline dataUrls from attachments) and
   // POST it. Used by both the debounced save and the unload-flush path.
-  const sendResearchSave = useCallback((next: ResearchState, useBeacon = false) => {
+  const sendResearchSave = useCallback((next: ResearchState, useBeacon = false): Promise<void> => {
     const serializable: ResearchState = {
       ...next,
       attachments: (next.attachments || []).map((a) => ({
@@ -828,16 +828,21 @@ export default function ResearchPage() {
       try {
         const blob = new Blob([body], { type: "application/json" });
         navigator.sendBeacon("/api/kv/research", blob);
-        return;
+        return Promise.resolve();
       } catch {
         // Fall through to fetch on beacon failure (unlikely).
       }
     }
-    fetch("/api/kv/research", {
+    // Return the promise so callers can await the PUT before triggering a
+    // researchMentions recompute — the tally reads pm:research, so it must
+    // run AFTER this write lands or it reads the pre-edit state.
+    return fetch("/api/kv/research", {
       method: "PUT",
       headers: { "Content-Type": "application/json" },
       body,
-    }).catch((e) => console.error("Failed to save research:", e));
+    })
+      .then(() => {})
+      .catch((e) => console.error("Failed to save research:", e));
   }, []);
 
   const save = useCallback((next: ResearchState) => {
@@ -849,11 +854,20 @@ export default function ResearchPage() {
     // rapid-fire updates (e.g. scrape → name backfill → price backfill all
     // queuing saves within ~200ms of each other). The unload handler below
     // catches the rare case where the user refreshes inside the window.
-    saveTimer.current = setTimeout(() => {
+    saveTimer.current = setTimeout(async () => {
       pendingSaveRef.current = null;
-      sendResearchSave(next);
+      // Await the PUT so pm:research is persisted BEFORE the recompute reads
+      // it — otherwise the tally races the write and reads the pre-edit
+      // state. Recompute researchMentions on EVERY research change (manual
+      // add/remove of a list entry, not just scrapes). The recompute is a
+      // cheap deterministic Redis read; the only-when-changed guard in
+      // refreshResearchMentions means it persists/re-renders only when a
+      // score actually moved. This makes researchMentions update on edit
+      // the way SIA/BoostedAI do, from the PM's point of view.
+      await sendResearchSave(next);
+      void refreshResearchMentions();
     }, 300);
-  }, [sendResearchSave]);
+  }, [sendResearchSave, refreshResearchMentions]);
 
   // Flush any pending debounced save on page unload (refresh, close, nav
   // away). Uses sendBeacon so the POST survives the tab teardown — fetch()
@@ -1106,15 +1120,13 @@ export default function ResearchPage() {
       return null;
     } finally {
       setScrapeLoading(false);
-      // Recompute researchMentions for every Portfolio + Watchlist
-      // ticker so newly-scraped Upticks tickers immediately show their
-      // updated researchMentions score without waiting for a rescore.
-      // Fire-and-forget — the deterministic recompute is cheap (pure
-      // Redis read fan-out) and any failure leaves the prior scores in
-      // place until next refresh.
-      void refreshResearchMentions();
+      // researchMentions recompute is now handled by save() — it fires the
+      // recompute AFTER the pm:research PUT lands, so it reads the freshly
+      // merged list rather than racing the write. (Previously this finally
+      // block called refreshResearchMentions directly, which could read
+      // pm:research before save's debounced PUT completed.)
     }
-  }, [state, save, refreshResearchMentions]);
+  }, [state, save]);
 
   /**
    * Scrape one of the four research sources beyond Newton's Upticks.
@@ -1415,12 +1427,10 @@ export default function ResearchPage() {
       return false;
     } finally {
       setScrapeLoadingMap((m) => ({ ...m, [source]: false }));
-      // Recompute researchMentions across the portfolio + watchlist so
-      // tickers that newly appeared on (or fell off) this source see
-      // their score update immediately, without waiting for a rescore.
-      void refreshResearchMentions();
+      // researchMentions recompute is handled by save() (post-PUT), so it
+      // reads the freshly merged list instead of racing the write.
     }
-  }, [state, save, refreshAlphaPickNames, refreshRbcNames, fetchLivePrices, refreshResearchMentions]);
+  }, [state, save, refreshAlphaPickNames, refreshRbcNames, fetchLivePrices]);
 
   /**
    * Cross-source synthesis with strict stickiness.
