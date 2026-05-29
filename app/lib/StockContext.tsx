@@ -1028,14 +1028,6 @@ export function StockProvider({ children }: { children: React.ReactNode }) {
         const stock = stocks.find((s) => s.ticker.toUpperCase() === tickerKey);
         if (!stock) continue;
         if (typeof result.score !== "number") continue;
-        // Only update when something actually changed — avoids
-        // pointless re-renders + persistStocks calls.
-        if (stock.scores.researchMentions === result.score) {
-          // Score unchanged. Still refresh the explanation in case the
-          // mentions list rotated (different sources contributed but
-          // delta clamped to the same value).
-        }
-        updateScore(stock.ticker, "researchMentions", result.score);
         const explanation = buildResearchMentionsExplanation(stock.ticker, {
           score: result.score,
           rawDelta: result.rawDelta,
@@ -1045,7 +1037,15 @@ export function StockProvider({ children }: { children: React.ReactNode }) {
             analyzedAt: m.analyzedAt,
           })),
         });
-        updateExplanations(stock.ticker, { researchMentions: explanation });
+        // Only write when the score OR the explanation actually changed.
+        // This matters now that the refresh fires on window focus too —
+        // without the guard, every tab-back would persist + re-render the
+        // whole stocks blob even when nothing moved.
+        const scoreChanged = stock.scores.researchMentions !== result.score;
+        const explChanged = stock.explanations?.researchMentions !== explanation;
+        if (!scoreChanged && !explChanged) continue;
+        if (scoreChanged) updateScore(stock.ticker, "researchMentions", result.score);
+        if (explChanged) updateExplanations(stock.ticker, { researchMentions: explanation });
       }
     } catch {
       // Non-fatal — UI just keeps the prior score until next refresh.
@@ -1067,6 +1067,32 @@ export function StockProvider({ children }: { children: React.ReactNode }) {
     mentionsBootstrapRef.current = true;
     void refreshResearchMentions();
   }, [loading, stocks.length, refreshResearchMentions]);
+
+  // Re-refresh researchMentions when the user returns to the app (window
+  // focus or tab becomes visible). This closes the gap where research was
+  // updated in another tab/session while the dashboard stayed open — the
+  // category now reflects the latest scrape caches without a full rescore
+  // or a page reload. Throttled to once per 30s so rapid tab-switching
+  // doesn't spam the (cheap, deterministic) endpoint. The only-when-changed
+  // guard inside refreshResearchMentions means no persist/re-render fires
+  // unless a score actually moved.
+  const lastMentionsRefreshRef = useRef(0);
+  useEffect(() => {
+    if (loading) return;
+    const maybeRefresh = () => {
+      if (document.visibilityState === "hidden") return;
+      const now = Date.now();
+      if (now - lastMentionsRefreshRef.current < 30_000) return;
+      lastMentionsRefreshRef.current = now;
+      void refreshResearchMentions();
+    };
+    window.addEventListener("focus", maybeRefresh);
+    document.addEventListener("visibilitychange", maybeRefresh);
+    return () => {
+      window.removeEventListener("focus", maybeRefresh);
+      document.removeEventListener("visibilitychange", maybeRefresh);
+    };
+  }, [loading, refreshResearchMentions]);
 
   const updateSector = useCallback((ticker: string, sector: string) => {
     setStocks((prev) => {
