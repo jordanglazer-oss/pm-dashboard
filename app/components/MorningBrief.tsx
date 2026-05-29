@@ -1278,12 +1278,33 @@ export function MorningBrief({
             };
             const numVal = (v: unknown): number | "" =>
               typeof v === "number" ? v : "";
+            // Barchart source pages — clicking the icon next to each label
+            // opens the page where the PM finds that indicator. Mirrors the
+            // S&P Oscillator input's source-link pattern. Kept in sync with
+            // the BARCHART constant in forward-looking.ts.
+            const BC = {
+              sp200: "https://www.barchart.com/stocks/quotes/$S5TH",
+              sp50: "https://www.barchart.com/stocks/quotes/$S5FI",
+              broad: "https://www.barchart.com/stocks/momentum",
+              nh: "https://www.barchart.com/stocks/quotes/$MAHN",
+              nl: "https://www.barchart.com/stocks/quotes/$MALN",
+            };
+            const LabelLink = ({ text, href }: { text: string; href?: string }) => (
+              <div className="flex items-center gap-1 mb-1">
+                <label className="text-[10px] font-semibold text-slate-400 uppercase tracking-wider">{text}</label>
+                {href && (
+                  <a href={href} target="_blank" rel="noopener noreferrer" className="text-blue-400 hover:text-blue-600 transition-colors" title={`Open source: ${href}`}>
+                    <svg className="w-3 h-3" fill="none" stroke="currentColor" strokeWidth="2" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" d="M10 6H6a2 2 0 00-2 2v10a2 2 0 002 2h10a2 2 0 002-2v-4M14 4h6m0 0v6m0-6L10 14" /></svg>
+                  </a>
+                )}
+              </div>
+            );
             return (
               <>
                 {/* Row 1: Date + SP500 200/50 */}
                 <div className="grid gap-4 md:grid-cols-3 mb-3">
                   <div>
-                    <label className="text-[10px] font-semibold text-slate-400 uppercase tracking-wider block mb-1">Date</label>
+                    <LabelLink text="Date" />
                     <input
                       type="date"
                       value={marketData.breadthOverride?.date ?? today}
@@ -1300,7 +1321,7 @@ export function MorningBrief({
                     />
                   </div>
                   <div>
-                    <label className="text-[10px] font-semibold text-slate-400 uppercase tracking-wider block mb-1">SP500 &gt;200DMA (%)</label>
+                    <LabelLink text="SP500 >200DMA (%)" href={BC.sp200} />
                     <input
                       type="number" step="0.1" min={0} max={100} placeholder="51.2"
                       value={numVal(marketData.breadthOverride?.above200)}
@@ -1309,7 +1330,7 @@ export function MorningBrief({
                     />
                   </div>
                   <div>
-                    <label className="text-[10px] font-semibold text-slate-400 uppercase tracking-wider block mb-1">SP500 &gt;50DMA (%)</label>
+                    <LabelLink text="SP500 >50DMA (%)" href={BC.sp50} />
                     <input
                       type="number" step="0.1" min={0} max={100} placeholder="44.6"
                       value={numVal(marketData.breadthOverride?.above50)}
@@ -1321,7 +1342,7 @@ export function MorningBrief({
                 {/* Row 2: Broad Market 200/50 + (blank slot for grid alignment) */}
                 <div className="grid gap-4 md:grid-cols-3 mb-3">
                   <div>
-                    <label className="text-[10px] font-semibold text-slate-400 uppercase tracking-wider block mb-1">Broad Market &gt;200DMA (%)</label>
+                    <LabelLink text="Broad Market >200DMA (%)" href={BC.broad} />
                     <input
                       type="number" step="0.1" min={0} max={100} placeholder="54.9"
                       value={numVal(marketData.breadthOverride?.broadAbove200)}
@@ -1331,7 +1352,7 @@ export function MorningBrief({
                     />
                   </div>
                   <div>
-                    <label className="text-[10px] font-semibold text-slate-400 uppercase tracking-wider block mb-1">Broad Market &gt;50DMA (%)</label>
+                    <LabelLink text="Broad Market >50DMA (%)" href={BC.broad} />
                     <input
                       type="number" step="0.1" min={0} max={100} placeholder="59.4"
                       value={numVal(marketData.breadthOverride?.broadAbove50)}
@@ -1345,7 +1366,7 @@ export function MorningBrief({
                 {/* Row 3: NYSE new highs / new lows */}
                 <div className="grid gap-4 md:grid-cols-3">
                   <div>
-                    <label className="text-[10px] font-semibold text-slate-400 uppercase tracking-wider block mb-1">NYSE New Highs (count)</label>
+                    <LabelLink text="NYSE New Highs (count)" href={BC.nh} />
                     <input
                       type="number" step="1" min={0} placeholder="78"
                       value={numVal(marketData.breadthOverride?.newHighs)}
@@ -1355,7 +1376,7 @@ export function MorningBrief({
                     />
                   </div>
                   <div>
-                    <label className="text-[10px] font-semibold text-slate-400 uppercase tracking-wider block mb-1">NYSE New Lows (count)</label>
+                    <LabelLink text="NYSE New Lows (count)" href={BC.nl} />
                     <input
                       type="number" step="1" min={0} placeholder="142"
                       value={numVal(marketData.breadthOverride?.newLows)}
