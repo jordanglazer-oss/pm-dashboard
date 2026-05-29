@@ -1491,7 +1491,11 @@ export default function ResearchPage() {
         body: JSON.stringify({ research: state, brief, force }),
       });
       if (!res.ok) {
-        setSynthesisStatus("Synthesis failed");
+        // Surface the server's actual error message (the route now returns
+        // it) so failures are diagnosable instead of an opaque label.
+        const errBody = await res.json().catch(() => null);
+        const detail = errBody?.error ? `: ${errBody.error}` : ` (HTTP ${res.status})`;
+        setSynthesisStatus(`Synthesis failed${detail}`);
         return false;
       }
       const data = await res.json() as {

@@ -537,13 +537,51 @@ Respond ONLY with valid JSON matching this schema:
 Be concrete and actionable. The PM reads this and acts on it the same day.`;
 }
 
+/**
+ * Attempt to repair a truncated JSON object (model hit max_tokens mid-output):
+ * drop a trailing incomplete key/value, then close any unbalanced brackets
+ * and braces. Mirrors the repair logic in the morning-brief route. Returns
+ * null if even the repair can't parse.
+ */
+function repairTruncatedJson(raw: string): unknown | null {
+  let repaired = raw;
+  // Remove a trailing incomplete `"key": "value...` (string cut mid-value).
+  repaired = repaired.replace(/,\s*"[^"]*":\s*"[^"]*$/, "");
+  // Remove a trailing incomplete `"key"...` (cut mid-key).
+  repaired = repaired.replace(/,\s*"[^"]*$/, "");
+  // Remove a dangling trailing comma.
+  repaired = repaired.replace(/,\s*$/, "");
+  const openBraces = (repaired.match(/\{/g) || []).length - (repaired.match(/\}/g) || []).length;
+  const openBrackets = (repaired.match(/\[/g) || []).length - (repaired.match(/\]/g) || []).length;
+  repaired += "]".repeat(Math.max(0, openBrackets));
+  repaired += "}".repeat(Math.max(0, openBraces));
+  try {
+    return JSON.parse(repaired);
+  } catch {
+    return null;
+  }
+}
+
 function parseSynthesis(text: string): SynthesisResult | null {
   const cleaned = text.replace(/```json\s*|```/g, "").trim();
   const start = cleaned.indexOf("{");
   const end = cleaned.lastIndexOf("}");
-  if (start < 0 || end <= start) return null;
+  if (start < 0) return null;
+  // Prefer the clean slice (first { → last }); if that fails to parse
+  // (e.g. the output was truncated and has no closing brace, or an
+  // unbalanced one), fall back to repairing from the first { to end.
+  const sliceEnd = end > start ? end + 1 : cleaned.length;
+  const candidate = cleaned.slice(start, sliceEnd);
   try {
-    const parsed = JSON.parse(cleaned.slice(start, end + 1)) as Partial<SynthesisResult>;
+    let parsedRaw: unknown;
+    try {
+      parsedRaw = JSON.parse(candidate);
+    } catch {
+      parsedRaw = repairTruncatedJson(cleaned.slice(start));
+      if (parsedRaw == null) return null;
+      console.warn("[research-synthesis] recovered from truncated JSON via repair");
+    }
+    const parsed = parsedRaw as Partial<SynthesisResult>;
     if (typeof parsed.summary !== "string") return null;
 
     const validRatings: ReadonlySet<string> = new Set(["high", "medium", "low", "contrary"]);
@@ -652,15 +690,25 @@ async function runSynthesis(
   const msg = await client.messages.create({
     model: "claude-sonnet-4-6",
     temperature: 0,
-    max_tokens: 4096,
+    // 8192 (was 4096): adding the per-pick `conviction` field + the
+    // conviction rubric pushed a research set with many picks past the
+    // 4096 ceiling, truncating the JSON mid-object and breaking the parse.
+    // Headroom prevents that; parseSynthesis also repairs truncation now.
+    max_tokens: 8192,
     system: buildSystemPrompt(todayISO),
     messages: [{ role: "user", content: context }],
   });
 
   const text = msg.content[0]?.type === "text" ? msg.content[0].text : "";
-  console.log("[research-synthesis] raw output:", text.slice(0, 4000));
+  console.log(
+    `[research-synthesis] stop_reason=${msg.stop_reason} output_len=${text.length}; head:`,
+    text.slice(0, 2000),
+  );
   const parsed = parseSynthesis(text);
-  if (!parsed) return null;
+  if (!parsed) {
+    console.error("[research-synthesis] parse failed. Full output:", text);
+    return null;
+  }
   return filterPortfolioOut(parsed, portfolioTickers);
 }
 
@@ -724,10 +772,13 @@ export async function POST(req: NextRequest) {
       }
     }
 
+    // Defensive ?.length everywhere — an older/partial pm:research blob
+    // from the client could be missing a list, and a bare `.length` on
+    // undefined would throw and surface as a generic 500.
     const totalSources =
-      research.newtonUpticks.length +
-      research.fundstratTop.length +
-      research.fundstratBottom.length +
+      (research.newtonUpticks?.length ?? 0) +
+      (research.fundstratTop?.length ?? 0) +
+      (research.fundstratBottom?.length ?? 0) +
       (research.fundstratSmidTop?.length ?? 0) +
       (research.fundstratSmidBottom?.length ?? 0) +
       (research.rbcCanadianFocus?.length ?? 0) +
@@ -772,7 +823,13 @@ export async function POST(req: NextRequest) {
       briefDate: stored.briefDate,
     });
   } catch (e) {
-    console.error("research-synthesis POST error:", e);
-    return NextResponse.json({ error: "Failed to generate research synthesis" }, { status: 500 });
+    const msg = e instanceof Error ? e.message : String(e);
+    console.error("research-synthesis POST error:", msg, e);
+    // Surface the actual error message so a failure is diagnosable from the
+    // client/network tab instead of an opaque "Failed to generate".
+    return NextResponse.json(
+      { error: `Failed to generate research synthesis: ${msg}` },
+      { status: 500 },
+    );
   }
 }
