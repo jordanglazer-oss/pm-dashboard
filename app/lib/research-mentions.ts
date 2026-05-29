@@ -52,72 +52,57 @@ export type ResearchMentionsResult = {
 type SourceConfig = {
   source: MentionSource;
   label: string;
-  cacheKey: string;
+  /** Field name on the pm:research blob whose entry list this source maps to. */
+  field: string;
   direction: MentionDirection;
 };
 
+// Sources now map to the LISTS on the pm:research blob — the same merged,
+// curated lists shown on the Research page — rather than the raw AI-parse
+// scrape caches (pm:research-scrape-cache:*). This makes the tally WYSIWYG:
+// if a ticker is on the list the PM sees, it counts. Previously the tally
+// read the scrape caches, which diverge from pm:research whenever an entry
+// is manually added, merged, or survives across re-scrapes — that's why a
+// name visibly on "Fundstrat Top Ideas" could still score 0/3.
+//
+// pm:research is a superset of any single scrape cache (scrape entries are
+// merged INTO it), so reading it is strictly fuller coverage.
 const SOURCES: SourceConfig[] = [
-  { source: "upticks", label: "Newton Upticks", cacheKey: "pm:upticks-scrape-cache", direction: "bullish" },
-  { source: "fundstrat-top", label: "Fundstrat Top Ideas", cacheKey: "pm:research-scrape-cache:fundstrat-top", direction: "bullish" },
-  { source: "fundstrat-bottom", label: "Fundstrat Bottom Ideas", cacheKey: "pm:research-scrape-cache:fundstrat-bottom", direction: "bearish" },
-  { source: "fundstrat-smid-top", label: "Fundstrat SMID Top", cacheKey: "pm:research-scrape-cache:fundstrat-smid-top", direction: "bullish" },
-  { source: "fundstrat-smid-bottom", label: "Fundstrat SMID Bottom", cacheKey: "pm:research-scrape-cache:fundstrat-smid-bottom", direction: "bearish" },
-  { source: "rbc-focus", label: "RBC Canadian Focus", cacheKey: "pm:research-scrape-cache:rbc-focus", direction: "bullish" },
-  { source: "rbc-us-focus", label: "RBC US Focus", cacheKey: "pm:research-scrape-cache:rbc-us-focus", direction: "bullish" },
-  { source: "seeking-alpha-picks", label: "Seeking Alpha Picks", cacheKey: "pm:research-scrape-cache:seeking-alpha-picks", direction: "bullish" },
+  { source: "upticks", label: "Newton Upticks", field: "newtonUpticks", direction: "bullish" },
+  { source: "fundstrat-top", label: "Fundstrat Top Ideas", field: "fundstratTop", direction: "bullish" },
+  { source: "fundstrat-bottom", label: "Fundstrat Bottom Ideas", field: "fundstratBottom", direction: "bearish" },
+  { source: "fundstrat-smid-top", label: "Fundstrat SMID Top", field: "fundstratSmidTop", direction: "bullish" },
+  { source: "fundstrat-smid-bottom", label: "Fundstrat SMID Bottom", field: "fundstratSmidBottom", direction: "bearish" },
+  { source: "rbc-focus", label: "RBC Canadian Focus", field: "rbcCanadianFocus", direction: "bullish" },
+  { source: "rbc-us-focus", label: "RBC US Focus", field: "rbcUsFocus", direction: "bullish" },
+  { source: "seeking-alpha-picks", label: "Seeking Alpha Picks", field: "alphaPicks", direction: "bullish" },
 ];
 
-type CachedScrape = {
-  hash: string;
-  entries: Array<{ ticker?: unknown }>;
-  analyzedAt: string;
-};
-
-async function readCache(cacheKey: string): Promise<CachedScrape | null> {
-  try {
-    const redis = await getRedis();
-    const raw = await redis.get(cacheKey);
-    if (!raw) return null;
-    const parsed = JSON.parse(raw) as CachedScrape;
-    if (!parsed || !Array.isArray(parsed.entries)) return null;
-    return parsed;
-  } catch {
-    return null;
-  }
-}
-
-const FRESH_WINDOW_DAYS = 14;
-const STALE_WINDOW_DAYS = 30;
-
-function daysSince(iso: string | undefined): number {
-  if (!iso) return Infinity;
-  const t = Date.parse(iso);
-  if (Number.isNaN(t)) return Infinity;
-  return (Date.now() - t) / (1000 * 60 * 60 * 24);
-}
+type ResearchListEntry = { ticker?: unknown; analyzedAt?: unknown; dateAdded?: unknown };
 
 export async function tallyResearchMentions(ticker: string): Promise<ResearchMentionsResult> {
   if (!ticker) return { score: 0, rawDelta: 0, mentions: [], confidence: "low" };
   const target = canonicalTicker(ticker);
 
-  const cacheResults = await Promise.all(
-    SOURCES.map(async (cfg) => ({ cfg, cache: await readCache(cfg.cacheKey) }))
-  );
+  // Read the merged research state once (the same blob the Research page
+  // displays). One Redis read instead of eight cache reads.
+  let research: Record<string, unknown> | null = null;
+  try {
+    const redis = await getRedis();
+    const raw = await redis.get("pm:research");
+    if (raw) research = JSON.parse(raw) as Record<string, unknown>;
+  } catch {
+    research = null;
+  }
+  if (!research) return { score: 0, rawDelta: 0, mentions: [], confidence: "low" };
 
   const mentions: Mention[] = [];
   let rawDelta = 0;
-  let freshSources = 0;
-  let staleSources = 0;
-  let anySource = 0;
 
-  for (const { cfg, cache } of cacheResults) {
-    if (!cache) continue;
-    anySource += 1;
-    const ageDays = daysSince(cache.analyzedAt);
-    if (ageDays <= FRESH_WINDOW_DAYS) freshSources += 1;
-    else if (ageDays > STALE_WINDOW_DAYS) staleSources += 1;
-
-    const hit = cache.entries.find((e) => {
+  for (const cfg of SOURCES) {
+    const list = research[cfg.field];
+    if (!Array.isArray(list)) continue;
+    const hit = (list as ResearchListEntry[]).find((e) => {
       const t = typeof e?.ticker === "string" ? e.ticker : "";
       return t && tickersEqual(t, target);
     });
@@ -127,18 +112,25 @@ export async function tallyResearchMentions(ticker: string): Promise<ResearchMen
       source: cfg.source,
       label: cfg.label,
       direction: cfg.direction,
-      analyzedAt: cache.analyzedAt,
+      // Per-entry date if present (dateAdded on idea/RBC entries, analyzedAt
+      // on upticks); informational only.
+      analyzedAt:
+        typeof hit.analyzedAt === "string"
+          ? hit.analyzedAt
+          : typeof hit.dateAdded === "string"
+            ? hit.dateAdded
+            : undefined,
     });
     rawDelta += cfg.direction === "bullish" ? 1 : -1;
   }
 
   const score = Math.max(0, Math.min(3, rawDelta));
-
-  let confidence: "high" | "medium" | "low";
-  if (anySource === 0) confidence = "low";
-  else if (freshSources >= 3) confidence = "high";
-  else if (staleSources === anySource) confidence = "low";
-  else confidence = "medium";
+  // Confidence is informational-only (not rendered in the UI per the rule
+  // that deterministic categories don't show a confidence chip). With
+  // pm:research as the source we no longer track per-cache freshness, so
+  // report "high" when any mention exists, "low" otherwise. Kept for the
+  // return-shape contract used by the score route / audit views.
+  const confidence: "high" | "medium" | "low" = mentions.length > 0 ? "high" : "low";
 
   return { score, rawDelta, mentions, confidence };
 }
