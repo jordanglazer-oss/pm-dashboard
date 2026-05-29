@@ -91,6 +91,12 @@ async function fetchSectorPerformance(): Promise<string> {
 const ATTACHMENT_CACHE_KEY = "pm:attachment-analysis";
 const OSCILLATOR_ATTACHMENT_CACHE_KEY = "pm:oscillator-screenshot-analysis";
 const NEWTON_TECHNICAL_CACHE_KEY = "pm:newton-technical-analysis";
+// Generic analyst/strategist report dropbox — any research PDF/screenshot
+// (a strategist note, a sell-side deck, an economics piece). Same
+// hash-gated, parse-once-then-cache behavior as the Newton deck. NOTE: this
+// is distinct from pm:analyst-reports (the per-ticker RBC/JPM analyst
+// snapshots in analyst-snapshots.ts) — different data entirely.
+const STRATEGIST_REPORTS_CACHE_KEY = "pm:strategist-reports-analysis";
 
 const BRIEF_PROMPT = `You are a senior portfolio strategist generating a daily morning brief for a portfolio management team. Your audience is professional portfolio managers who need actionable, institutional-quality market intelligence.
 
@@ -546,6 +552,78 @@ async function saveCachedNewtonTechnical(hash: string, summary: string) {
     );
   } catch (e) {
     console.error("Failed to cache Newton technical presentation analysis:", e);
+  }
+}
+
+// Generic analyst/strategist report vision pass. Same parse-once-then-cache
+// pattern as the Newton deck, but the prompt is source-agnostic so it works
+// for any research the PM drops in — a strategist note, a sell-side deck, an
+// economics piece, etc. Hash-gated: tokens are only spent when the file set
+// changes. The brief route adds the same age-based decay note as Newton.
+async function analyzeStrategistReports(
+  attachments: AttachmentInput[]
+): Promise<string> {
+  const docBlocks = buildImageBlocks(attachments);
+  if (docBlocks.length === 0) return "";
+  const message = await client.messages.create({
+    model: "claude-sonnet-4-6",
+    temperature: 0,
+    max_tokens: 1800,
+    messages: [
+      {
+        role: "user",
+        content: [
+          {
+            type: "text",
+            text: `You are reading one or more analyst / strategist research reports a portfolio manager has attached (could be a sell-side strategy note, an economics piece, a technical deck, a thematic report — anything). Extract a concise, structured summary the PM can reference over the coming weeks.
+
+For EACH distinct report/author present, cover (only what is clearly stated — do not infer beyond the document):
+- **Source & author**: firm / strategist name and the report date if visible
+- **Overall view**: bullish / neutral / bearish (or the report's central thesis), plus time horizon
+- **Key calls**: specific market/sector/asset-class recommendations, target levels, over/underweights
+- **Supporting drivers**: the main reasons given (macro, earnings, valuation, technicals, positioning)
+- **Risks / catalysts**: what the author flags as the key risks or upcoming catalysts/dates
+- **Named tickers** (if any are explicitly called out as buys/sells/avoids)
+
+If multiple reports are attached, summarize each under its own clearly-labeled mini-section. Format as tight bullets, no preamble, no long markdown headers. Cite specific numbers/dates wherever the report provides them. Omit any section a report doesn't cover rather than padding.`,
+          },
+          ...docBlocks,
+        ],
+      },
+    ],
+  });
+  return message.content[0].type === "text" ? message.content[0].text : "";
+}
+
+type CachedStrategistReports = { hash: string; summary: string; analyzedAt: string };
+
+async function getCachedStrategistReports(
+  hash: string
+): Promise<CachedStrategistReports | null> {
+  try {
+    const redis = await getRedis();
+    const raw = await redis.get(STRATEGIST_REPORTS_CACHE_KEY);
+    if (!raw) return null;
+    const cached = JSON.parse(raw) as CachedStrategistReports;
+    return cached.hash === hash ? cached : null;
+  } catch {
+    return null;
+  }
+}
+
+async function saveCachedStrategistReports(hash: string, summary: string) {
+  try {
+    const redis = await getRedis();
+    await redis.set(
+      STRATEGIST_REPORTS_CACHE_KEY,
+      JSON.stringify({
+        hash,
+        summary,
+        analyzedAt: new Date().toISOString(),
+      } satisfies CachedStrategistReports)
+    );
+  } catch (e) {
+    console.error("Failed to cache strategist reports analysis:", e);
   }
 }
 
@@ -1126,9 +1204,11 @@ Current Portfolio Holdings: ${holdingsSummary}`;
     const allAtts: AttachmentInput[] = attachments || [];
     const oscAtts = allAtts.filter((a) => a.section === "spOscillator");
     const newtonTechAtts = allAtts.filter((a) => a.section === "newtonTechnical");
+    const strategistReportAtts = allAtts.filter((a) => a.section === "strategistReports");
 
     let oscContext = "";
     let newtonTechContext = "";
+    let strategistReportsContext = "";
 
     if (oscAtts.length > 0) {
       const oscHash = hashAttachments(oscAtts);
@@ -1187,11 +1267,47 @@ Current Portfolio Holdings: ${holdingsSummary}`;
       }
     }
 
+    // Generic analyst/strategist reports dropbox. Identical hash-gated +
+    // age-decay handling as the Newton deck — parse once, reuse the cached
+    // summary across briefs until the file set changes.
+    if (strategistReportAtts.length > 0) {
+      const srHash = hashAttachments(strategistReportAtts);
+      const cached = await getCachedStrategistReports(srHash);
+      let summary: string | null = null;
+      let analyzedAtIso: string | null = null;
+      if (cached) {
+        summary = cached.summary;
+        analyzedAtIso = cached.analyzedAt;
+        console.log("Using cached strategist-reports analysis (files unchanged)");
+      } else {
+        console.log("New strategist report(s) detected — running vision analysis...");
+        const fresh = await analyzeStrategistReports(strategistReportAtts);
+        if (fresh && fresh.trim().length > 0) {
+          await saveCachedStrategistReports(srHash, fresh.trim());
+          summary = fresh.trim();
+          analyzedAtIso = new Date().toISOString();
+        }
+      }
+      if (summary && analyzedAtIso) {
+        const ageDays = Math.max(
+          0,
+          Math.floor((Date.now() - new Date(analyzedAtIso).getTime()) / (24 * 60 * 60 * 1000))
+        );
+        const decayNote =
+          ageDays <= 14
+            ? "These reports are fresh — treat their views, levels, and calls as current."
+            : ageDays <= 45
+            ? `These reports are ${ageDays} days old — directional theses likely still valid, but treat specific levels and short-term timing calls as dated. Cross-check against current data.`
+            : `These reports are ${ageDays} days old — STALE. Use ONLY for high-level directional/thematic context. Do not cite specific levels or near-term calls; defer to live data for current positioning.`;
+        strategistReportsContext = `\n\n--- Analyst / Strategist Reports (analyzed ${ageDays} day(s) ago) ---\n${decayNote}\n\n${summary}`;
+      }
+    }
+
     // Append screenshot context BEFORE the main text so it doesn't get
     // recency-bias advantage over the quantitative data. The textContent
     // already ends with portfolio holdings — screenshots are supplementary.
     const contentBlocks: Anthropic.Messages.ContentBlockParam[] = [
-      { type: "text", text: oscContext + newtonTechContext + "\n\n" + textContent },
+      { type: "text", text: oscContext + newtonTechContext + strategistReportsContext + "\n\n" + textContent },
     ];
 
     const message = await client.messages.create({
