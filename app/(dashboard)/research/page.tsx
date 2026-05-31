@@ -9,6 +9,17 @@ import { ImageUpload, type BriefAttachment } from "@/app/components/ImageUpload"
 import { useStocks } from "@/app/lib/StockContext";
 import type { Stock, ScoreKey } from "@/app/lib/types";
 
+/**
+ * Canonicalize an Uptick ticker for matching across the scrape and the
+ * stored list: strip a leading $, convert dual-class "/" to "-", drop any
+ * trailing exchange suffix after a "." or space, uppercase. Used by the
+ * scrape-merge AND the dismissed-tombstone logic so "$BRK/B" from a
+ * screenshot, "BRK-B" in the list, and "BRK.B" all collapse to one key.
+ */
+function normalizeUptickTicker(t: string): string {
+  return t.replace(/^\$+/, "").replace(/\//g, "-").split(/[.\s]/)[0].toUpperCase();
+}
+
 /* ─── Uptick Add Form ─── */
 function UptickAddForm({ onAdd }: { onAdd: (e: UptickEntry) => void }) {
   const [ticker, setTicker] = useState("");
@@ -1070,16 +1081,19 @@ export default function ResearchPage() {
       // writes dual-class shares as "BRK/B" but Yahoo uses "BRK-B"), and
       // drop any trailing exchange suffix. Ensures "$BRK/B" from a
       // screenshot matches "BRK-B" in the stored list.
-      const normalize = (t: string) =>
-        t.replace(/^\$+/, "").replace(/\//g, "-").split(/[.\s]/)[0].toUpperCase();
-      const existingByNorm = new Map(state.newtonUpticks.map((u) => [normalize(u.ticker), u]));
+      const existingByNorm = new Map(state.newtonUpticks.map((u) => [normalizeUptickTicker(u.ticker), u]));
+      // Tombstones — tickers the PM removed with the X. The scrape must
+      // never re-add these (they're usually OCR/vision hallucinations the
+      // PM deliberately deleted). Manually re-adding clears the tombstone.
+      const dismissed = new Set((state.dismissedUpticks ?? []).map(normalizeUptickTicker));
 
       const merged = new Map(state.newtonUpticks.map((u) => [u.ticker, u]));
       let matched = 0;
       let updatedFields = 0;
+      let skippedDismissed = 0;
       let changed = false;
       for (const e of entries) {
-        const norm = normalize(e.ticker);
+        const norm = normalizeUptickTicker(e.ticker);
         const existing = existingByNorm.get(norm);
         if (existing) {
           matched += 1;
@@ -1095,6 +1109,10 @@ export default function ResearchPage() {
             updatedFields += 1;
             changed = true;
           }
+        } else if (dismissed.has(norm)) {
+          // Previously removed by the PM — do NOT re-add. Refresh only
+          // updates existing rows; it never resurrects a deleted one.
+          skippedDismissed += 1;
         } else {
           merged.set(norm, {
             ticker: norm,
@@ -1111,8 +1129,9 @@ export default function ResearchPage() {
       }
 
       const cachedLabel = data.cached ? " (cached)" : "";
+      const dismissedLabel = skippedDismissed > 0 ? ` · ${skippedDismissed} skipped (removed)` : "";
       setScrapeStatus(
-        `${entries.length} rows in screenshot${cachedLabel} · ${matched} matched your list · ${updatedFields} updated`,
+        `${entries.length} rows in screenshot${cachedLabel} · ${matched} matched your list · ${updatedFields} updated${dismissedLabel}`,
       );
       if (!changed) return { merged: state, changed: false };
       const nextState: ResearchState = { ...state, newtonUpticks: Array.from(merged.values()) };
@@ -1568,10 +1587,27 @@ export default function ResearchPage() {
   /* Uptick helpers */
   const addUptick = (entry: UptickEntry) => {
     if (state.newtonUpticks.some((u) => u.ticker === entry.ticker)) return;
-    save({ ...state, newtonUpticks: [...state.newtonUpticks, entry] });
+    // Manually adding a ticker clears any tombstone for it, so an explicit
+    // re-add un-dismisses a previously-removed name.
+    const norm = normalizeUptickTicker(entry.ticker);
+    const dismissedUpticks = (state.dismissedUpticks ?? []).filter(
+      (t) => normalizeUptickTicker(t) !== norm,
+    );
+    save({ ...state, newtonUpticks: [...state.newtonUpticks, entry], dismissedUpticks });
   };
   const removeUptick = (ticker: string) => {
-    save({ ...state, newtonUpticks: state.newtonUpticks.filter((u) => u.ticker !== ticker) });
+    // Record a tombstone so the scrape never re-adds this entry on Refresh.
+    // De-duped, normalized. This is what stops a removed hallucination from
+    // reappearing.
+    const norm = normalizeUptickTicker(ticker);
+    const dismissedUpticks = Array.from(
+      new Set([...(state.dismissedUpticks ?? []).map(normalizeUptickTicker), norm]),
+    );
+    save({
+      ...state,
+      newtonUpticks: state.newtonUpticks.filter((u) => u.ticker !== ticker),
+      dismissedUpticks,
+    });
   };
   const updateUptick = (ticker: string, field: keyof UptickEntry, value: string) => {
     // Look up by ticker, not index. The table renders rows in sorted order,

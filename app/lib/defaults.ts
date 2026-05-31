@@ -218,6 +218,12 @@ export type ResearchState = {
   // Lee's themes often aren't standard GICS sectors (e.g. "AI beneficiaries",
   // "GARP names", "epicenter stocks").
   leeFocusAreas?: LeeFocusArea[];
+  // Tombstones: normalized tickers the PM explicitly removed (X'd) from
+  // Newton's Upticks. The scrape-merge skips these so a removed entry —
+  // often an OCR/vision hallucination — is never re-added on Refresh.
+  // Manually re-adding a ticker clears its tombstone. Optional for
+  // backward compat with older pm:research blobs.
+  dismissedUpticks?: string[];
 };
 
 export type UptickEntry = {
