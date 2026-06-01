@@ -1469,7 +1469,10 @@ export function PimPortfolio({ groups }: Props) {
         : isPartialSell
           ? Array.from(
               new Set(
-                positions
+                // Read from the ref (not the `positions` closure) so back-to-
+                // back partial sells pick groups from the post-previous-trade
+                // state — consistent with the position math below.
+                positionsRef.current
                   .filter((pp) => pp.positions.some((p) => tickerEq(p.symbol, trade.sellSymbol) && p.units > 0))
                   .map((pp) => pp.groupId),
               )
