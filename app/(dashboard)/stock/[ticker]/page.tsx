@@ -2077,7 +2077,15 @@ export default function StockDetailPage() {
                       const externalNotes = stock.externalSourceNotes ?? [];
                       const researchNotes = stock.researchCoverageNotes ?? [];
                       const notesForThis = isExternalSources ? externalNotes : isResearchCoverage ? researchNotes : [];
-                      const showToggle = hasContent || hasNotesEditor || isAnalystConsensus;
+                      // aiRating + relativeStrength have inline BoostedAI / SIA SMAX
+                      // editors in their expanded body. Always offer the Show toggle
+                      // for them so the PM can enter those raw scores directly on the
+                      // stock page — even before a Claude re-score has produced an
+                      // explanation. Previously the toggle only appeared once an AI
+                      // explanation existed (hasContent), leaving the inputs reachable
+                      // only via the Inbox tab.
+                      const hasExternalEditor = cat.key === "aiRating" || cat.key === "relativeStrength";
+                      const showToggle = hasContent || hasNotesEditor || isAnalystConsensus || hasExternalEditor;
                       const isExpanded = expandedCategories.has(cat.key);
                       return (
                         <div key={cat.key}>
