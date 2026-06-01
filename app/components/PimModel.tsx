@@ -568,29 +568,40 @@ export function PimModel({ groups }: Props) {
     // and have no Core ETF to absorb a residual). Alpha/Core virtual
     // profiles also keep actual-share (their views drop the Core sleeve).
     // DISPLAY-ONLY — none of this feeds weightInClass or rebalance math.
-    const isPcUsa = effectiveGroup.id === "pc-usa";
     const isVirtualProfile = activeProfile === "alpha" || activeProfile === "core";
-    const use2xEquity = !isPcUsa && !isVirtualProfile;
     const isCoreHolding = (h: PimHolding) => coreSymbols.has(symbolToTicker(h.symbol));
-    // Per-currency residual info for the standard equity 2× construction.
-    const equityCore: Record<"CAD" | "USD", { residualClass: number; coreStoredTotal: number; coreCount: number }> = {
-      CAD: { residualClass: 0, coreStoredTotal: 0, coreCount: 0 },
-      USD: { residualClass: 0, coreStoredTotal: 0, coreCount: 0 },
+    // Per-currency equity construction, decided by whether the sleeve has
+    // Core ETFs to absorb a residual:
+    //   • Sleeve HAS Core ETFs → 2× rule: individual stocks + Alpha-locked
+    //     funds are fixed at 2× their class weight (each currency is half of
+    //     a 50/50 model → 1/0.5 = 2×), and the same-currency Core ETFs
+    //     absorb the residual so the column sums to the class target.
+    //     (Applies to both EY sleeves AND PC USA's USD sleeve, which holds
+    //     ITOT/VTWO.)
+    //   • Sleeve has NO Core ETF (e.g. PC USA's CAD sleeve = CAD stocks
+    //     only) → can't absorb a residual, so normalize the stocks to 100%
+    //     and FREEZE at the All-Equity allocation across every profile
+    //     (a stocks-only sleeve's internal proportions are profile-invariant).
+    // DISPLAY-ONLY — none of this feeds weightInClass or rebalance math.
+    const allEquityAlloc = effectiveGroup.profiles.allEquity?.equity ?? 1;
+    const equityCcy: Record<"CAD" | "USD", { hasCore: boolean; residualClass: number; coreStoredTotal: number; coreCount: number; classTotal: number }> = {
+      CAD: { hasCore: false, residualClass: 0, coreStoredTotal: 0, coreCount: 0, classTotal: 0 },
+      USD: { hasCore: false, residualClass: 0, coreStoredTotal: 0, coreCount: 0, classTotal: 0 },
     };
-    if (use2xEquity) {
+    if (!isVirtualProfile) {
       (["CAD", "USD"] as const).forEach((ccy) => {
         const eq = holdings.filter((h) => h.assetClass === "equity" && h.currency === ccy);
-        const nonCoreClassSum = eq.filter((h) => !isCoreHolding(h)).reduce((s, h) => s + h.weightInClass, 0);
         const core = eq.filter((h) => isCoreHolding(h));
-        equityCore[ccy] = {
+        const nonCoreClassSum = eq.filter((h) => !isCoreHolding(h)).reduce((s, h) => s + h.weightInClass, 0);
+        equityCcy[ccy] = {
+          hasCore: core.length > 0,
           residualClass: Math.max(0, 1 - nonCoreClassSum * 2),
           coreStoredTotal: core.reduce((s, h) => s + h.weightInClass, 0),
           coreCount: core.length,
+          classTotal: eq.reduce((s, h) => s + h.weightInClass, 0),
         };
       });
     }
-    // PC USA frozen-CAD allocation = the All-Equity equity weight (1.0).
-    const pcUsaCadAlloc = effectiveGroup.profiles.allEquity?.equity ?? 1;
 
     // ── Dynamic Weight computation (sleeve-level drift) ────────────
     // Read the standalone Alpha Model return (PIM "alpha" series) and
@@ -732,38 +743,26 @@ export function PimModel({ groups }: Props) {
       let cadModelWeight: number | null = null;
       let usdModelWeight: number | null = null;
 
-      if (h.assetClass === "equity" && use2xEquity) {
-        // Standard 50/50: stocks + Alpha funds fixed at 2×; same-currency
-        // Core ETFs absorb the residual so the column sums to the class target.
-        if (h.currency === "CAD") {
+      if (h.assetClass === "equity" && !isVirtualProfile && (h.currency === "CAD" || h.currency === "USD")) {
+        const info = equityCcy[h.currency];
+        let w: number | null;
+        if (info.hasCore) {
+          // 2× rule: stocks + Alpha funds at 2×; Core ETFs absorb residual.
           if (isCoreHolding(h)) {
-            const info = equityCore.CAD;
             const ratio = info.coreStoredTotal > 0
               ? h.weightInClass / info.coreStoredTotal
               : (info.coreCount > 0 ? 1 / info.coreCount : 0);
-            cadModelWeight = info.residualClass * ratio * assetClassAllocation;
+            w = info.residualClass * ratio * assetClassAllocation;
           } else {
-            cadModelWeight = h.weightInClass * 2 * assetClassAllocation;
+            w = h.weightInClass * 2 * assetClassAllocation;
           }
-        } else if (h.currency === "USD") {
-          if (isCoreHolding(h)) {
-            const info = equityCore.USD;
-            const ratio = info.coreStoredTotal > 0
-              ? h.weightInClass / info.coreStoredTotal
-              : (info.coreCount > 0 ? 1 / info.coreCount : 0);
-            usdModelWeight = info.residualClass * ratio * assetClassAllocation;
-          } else {
-            usdModelWeight = h.weightInClass * 2 * assetClassAllocation;
-          }
+        } else {
+          // Stocks-only sleeve (e.g. PC USA CAD): normalize to 100% and
+          // freeze at the All-Equity allocation across every profile.
+          w = info.classTotal > 0 ? (h.weightInClass / info.classTotal) * allEquityAlloc : null;
         }
-      } else if (h.assetClass === "equity" && isPcUsa) {
-        // PC USA equity: CAD column frozen at the All-Equity actual-share
-        // (CAD sleeve = CAD stocks only, not 50/50); USD column per-profile.
-        if (h.currency === "CAD") {
-          cadModelWeight = classCadTotal > 0 ? (h.weightInClass / classCadTotal) * pcUsaCadAlloc : null;
-        } else if (h.currency === "USD") {
-          usdModelWeight = classUsdTotal > 0 ? (h.weightInClass / classUsdTotal) * assetClassAllocation : null;
-        }
+        if (h.currency === "CAD") cadModelWeight = w;
+        else usdModelWeight = w;
       } else {
         // FI / alt (every model) + equity under Alpha/Core profiles:
         // per-asset-class actual-share normalization (symmetric CAD/USD).
