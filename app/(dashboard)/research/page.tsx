@@ -1,7 +1,7 @@
 "use client";
 
 import React, { useState, useEffect, useCallback, useRef } from "react";
-import type { ResearchState, UptickEntry, IdeaEntry, RBCEntry, SectorViewEntry, SectorView, LeeFocusArea, AlphaPickEntry } from "@/app/lib/defaults";
+import type { ResearchState, UptickEntry, IdeaEntry, RBCEntry, SectorViewEntry, SectorView, LeeFocusArea, AlphaPickEntry, FewEntry } from "@/app/lib/defaults";
 import { defaultResearch, GICS_SECTORS } from "@/app/lib/defaults";
 import { dedupeRbcEntries } from "@/app/lib/rbc-canonical";
 import { displayTicker } from "@/app/lib/ticker";
@@ -178,7 +178,7 @@ function AlphaPickAddForm({ onAdd }: { onAdd: (e: AlphaPickEntry) => void }) {
  * zero Anthropic tokens.
  */
 function ResearchScraperBlock(props: {
-  source: "fundstrat-top" | "fundstrat-bottom" | "fundstrat-smid-top" | "fundstrat-smid-bottom" | "rbc-focus" | "rbc-us-focus" | "seeking-alpha-picks";
+  source: "fundstrat-top" | "fundstrat-bottom" | "fundstrat-smid-top" | "fundstrat-smid-bottom" | "rbc-focus" | "rbc-us-focus" | "seeking-alpha-picks" | "rbccm-few";
   sectionLabel: string;
   helperText: string;
   attachments: BriefAttachment[];
@@ -271,6 +271,46 @@ function RBCAddForm({ onAdd }: { onAdd: (e: RBCEntry) => void }) {
   );
 }
 
+/* ─── RBCCM FEW Add Form ─── */
+function FewAddForm({ onAdd }: { onAdd: (e: FewEntry) => void }) {
+  const [ticker, setTicker] = useState("");
+  const [adding, setAdding] = useState(false);
+  return (
+    <form
+      className="flex gap-2 mt-3 items-end"
+      onSubmit={async (e) => {
+        e.preventDefault();
+        let t = ticker.trim().toUpperCase();
+        if (!t) return;
+        // Canadian list — ensure a .TO suffix so prices/names resolve.
+        if (!/\.(TO|NE)$/.test(t) && !/-T$/.test(t)) t = `${t}.TO`;
+        setAdding(true);
+        let name: string | undefined;
+        let industry: string | undefined;
+        try {
+          const res = await fetch(`/api/company-name?tickers=${encodeURIComponent(t)}`);
+          if (res.ok) {
+            const data = await res.json();
+            if (data.names?.[t]) name = data.names[t];
+            if (data.sectors?.[t]) industry = data.sectors[t];
+          }
+        } catch { /* fallback */ }
+        onAdd({ ticker: t, name, industry });
+        setTicker("");
+        setAdding(false);
+      }}
+    >
+      <div>
+        <label className="text-xs text-slate-400 block">Ticker*</label>
+        <input value={ticker} onChange={(e) => setTicker(e.target.value.toUpperCase())} placeholder="RY" className="w-24 rounded-xl border border-slate-200 bg-slate-50 px-3 py-2 text-sm font-mono outline-none placeholder:text-slate-400 focus:bg-white focus:border-indigo-300 focus:ring-1 focus:ring-indigo-200 transition-all" />
+      </div>
+      <button type="submit" disabled={adding} className="rounded-xl bg-indigo-600 px-5 py-2 text-sm font-semibold text-white hover:bg-indigo-700 transition-colors disabled:opacity-50">
+        {adding ? "Adding..." : "Add"}
+      </button>
+    </form>
+  );
+}
+
 /* ─── Editable Cell ─── */
 function EditableCell({
   value,
@@ -315,6 +355,7 @@ function EditableCell({
 type UptickSortKey = "ticker" | "name" | "sector" | "price" | "support" | "resistance" | "dateAdded" | "priceWhenAdded";
 type IdeaSortKey = "ticker" | "priceWhenAdded" | "currentPrice";
 type RBCSortKey = "ticker" | "name" | "sector" | "weight" | "dateAdded";
+type FewSortKey = "ticker" | "name" | "industry" | "price";
 type AlphaSortKey = "name" | "ticker" | "sector" | "rating" | "holdingWeight" | "currentPrice" | "priceWhenAdded" | "returnSinceAdded" | "dateAdded" | "days";
 type SortDir = "asc" | "desc";
 
@@ -418,6 +459,9 @@ export default function ResearchPage() {
   const setRbcSort = (next: { key: RBCSortKey; dir: SortDir }) => writeSort("research.rbcSortKey", "research.rbcSortDir", next);
   const rbcUsSort = readSort<RBCSortKey>("research.rbcUsSortKey", "research.rbcUsSortDir", RBC_SORT_KEYS, "ticker", "asc");
   const setRbcUsSort = (next: { key: RBCSortKey; dir: SortDir }) => writeSort("research.rbcUsSortKey", "research.rbcUsSortDir", next);
+  const FEW_SORT_KEYS: ReadonlyArray<FewSortKey> = ["ticker", "name", "industry", "price"];
+  const fewSort = readSort<FewSortKey>("research.fewSortKey", "research.fewSortDir", FEW_SORT_KEYS, "ticker", "asc");
+  const setFewSort = (next: { key: FewSortKey; dir: SortDir }) => writeSort("research.fewSortKey", "research.fewSortDir", next);
 
   // Live prices from Yahoo Finance
   const [livePrices, setLivePrices] = useState<LivePrices>({});
@@ -433,6 +477,7 @@ export default function ResearchPage() {
       ...(s.fundstratSmidTop ?? []).map((i) => i.ticker),
       ...(s.fundstratSmidBottom ?? []).map((i) => i.ticker),
       ...(s.alphaPicks ?? []).map((i) => i.ticker),
+      ...(s.rbccmFew ?? []).map((i) => i.ticker),
     ];
     const unique = [...new Set(allTickers)];
     if (unique.length === 0) return;
@@ -465,7 +510,7 @@ export default function ResearchPage() {
   // `scrapeStatus` because its Refresh button does more than just scrape
   // (it also refreshes prices and names). The new sources are
   // scrape-only so a per-source map keeps each section's UI independent.
-  type SourceKey = "fundstrat-top" | "fundstrat-bottom" | "fundstrat-smid-top" | "fundstrat-smid-bottom" | "rbc-focus" | "rbc-us-focus" | "seeking-alpha-picks";
+  type SourceKey = "fundstrat-top" | "fundstrat-bottom" | "fundstrat-smid-top" | "fundstrat-smid-bottom" | "rbc-focus" | "rbc-us-focus" | "seeking-alpha-picks" | "rbccm-few";
   const [scrapeLoadingMap, setScrapeLoadingMap] = useState<Partial<Record<SourceKey, boolean>>>({});
   const [scrapeStatusMap, setScrapeStatusMap] = useState<Partial<Record<SourceKey, string>>>({});
 
@@ -532,6 +577,9 @@ export default function ResearchPage() {
   function toggleRbcUsSort(key: RBCSortKey) {
     setRbcUsSort(rbcUsSort.key === key ? { key, dir: rbcUsSort.dir === "asc" ? "desc" : "asc" } : { key, dir: "asc" });
   }
+  function toggleFewSort(key: FewSortKey) {
+    setFewSort(fewSort.key === key ? { key, dir: fewSort.dir === "asc" ? "desc" : "asc" } : { key, dir: "asc" });
+  }
 
   function sortedUpticks() {
     return [...state.newtonUpticks].sort((a, b) => {
@@ -581,6 +629,27 @@ export default function ResearchPage() {
     });
   }
 
+  // FEW price sort/display prefers the live Yahoo price, falling back to
+  // the price captured from the screenshot.
+  function fewPrice(e: FewEntry): number {
+    const live = livePrices[e.ticker];
+    if (typeof live === "number" && live > 0) return live;
+    return e.price ?? 0;
+  }
+  function compareFew(a: FewEntry, b: FewEntry, key: FewSortKey): number {
+    if (key === "price") return fewPrice(a) - fewPrice(b);
+    if (key === "industry") return String(a.industry || "").localeCompare(String(b.industry || ""));
+    if (key === "name") return String(a.name || "").localeCompare(String(b.name || ""));
+    return String(a.ticker || "").localeCompare(String(b.ticker || ""));
+  }
+  function sortedFew() {
+    return [...(state.rbccmFew || [])].sort((a, b) => {
+      const { key, dir } = fewSort;
+      const cmp = compareFew(a, b, key);
+      return dir === "asc" ? cmp : -cmp;
+    });
+  }
+
   const uArrow = (key: UptickSortKey) => uptickSort.key === key ? (uptickSort.dir === "asc" ? " ▲" : " ▼") : "";
   const tArrow = (key: IdeaSortKey) => topSort.key === key ? (topSort.dir === "asc" ? " ▲" : " ▼") : "";
   const bArrow = (key: IdeaSortKey) => bottomSort.key === key ? (bottomSort.dir === "asc" ? " ▲" : " ▼") : "";
@@ -588,6 +657,7 @@ export default function ResearchPage() {
   const sbArrow = (key: IdeaSortKey) => smidBottomSort.key === key ? (smidBottomSort.dir === "asc" ? " ▲" : " ▼") : "";
   const rArrow = (key: RBCSortKey) => rbcSort.key === key ? (rbcSort.dir === "asc" ? " ▲" : " ▼") : "";
   const rUsArrow = (key: RBCSortKey) => rbcUsSort.key === key ? (rbcUsSort.dir === "asc" ? " ▲" : " ▼") : "";
+  const fArrow = (key: FewSortKey) => fewSort.key === key ? (fewSort.dir === "asc" ? " ▲" : " ▼") : "";
 
   useEffect(() => {
     fetch("/api/kv/research", { cache: "no-store" })
@@ -1041,6 +1111,35 @@ export default function ResearchPage() {
     } catch { /* silent */ }
   }, [state, save]);
 
+  /** Backfill missing company names for the RBCCM FEW list. The screenshot
+   *  usually supplies the company + industry; this only fills the name for
+   *  rows that arrived without one (e.g. manual ticker-only adds). Industry
+   *  is left as-scraped (Yahoo exposes GICS sector, not the finer industry
+   *  label the FEW report uses). */
+  const refreshFewNames = useCallback(async (overrideState?: ResearchState) => {
+    const s = overrideState || state;
+    const entries = s.rbccmFew || [];
+    if (entries.length === 0) return;
+    const needsFill = entries.filter((r) => !r.name || r.name === r.ticker);
+    if (needsFill.length === 0) return;
+    try {
+      const tickers = needsFill.map((r) => r.ticker).join(",");
+      const res = await fetch(`/api/company-name?tickers=${encodeURIComponent(tickers)}`);
+      if (!res.ok) return;
+      const info = await res.json();
+      let changed = false;
+      const updated = entries.map((r) => {
+        const newName = info.names?.[r.ticker];
+        if (newName && newName !== r.name) {
+          changed = true;
+          return { ...r, name: newName };
+        }
+        return r;
+      });
+      if (changed) save({ ...s, rbccmFew: updated });
+    } catch { /* silent */ }
+  }, [state, save]);
+
   /**
    * Scrape uptick screenshot(s) via Anthropic vision, merge parsed rows into
    * state.newtonUpticks. Mirrors the JPM-flows caching pattern: the server
@@ -1191,7 +1290,7 @@ export default function ResearchPage() {
       }
       const data = await res.json() as {
         source: SourceKey;
-        entries?: Array<{ ticker: string; priceWhenAdded?: number; sector?: string; weight?: number; dateAdded?: string }>;
+        entries?: Array<{ ticker: string; priceWhenAdded?: number; sector?: string; weight?: number; dateAdded?: string; name?: string; industry?: string; price?: number }>;
         cached?: boolean;
       };
       const entries = data.entries || [];
@@ -1407,6 +1506,43 @@ export default function ResearchPage() {
         // the table populates Current Price + derived Price Picked
         // immediately rather than waiting for the next manual refresh.
         void refreshAlphaPickNames(nextState);
+        void fetchLivePrices(nextState);
+        return true;
+      } else if (source === "rbccm-few") {
+        // RBCCM Canadian FEW Portfolio — merge by normalized ticker
+        // (the scrape canonicalizes to .TO; normalize() strips the suffix
+        // so variants collapse). Capture company name, industry, and the
+        // screenshot price; preserve existing values on matched rows.
+        const existing = state.rbccmFew || [];
+        const byNorm = new Map(existing.map((r) => [normalize(r.ticker), r]));
+        let matched = 0;
+        let added = 0;
+        for (const e of entries) {
+          const norm = normalize(e.ticker);
+          const ex = byNorm.get(norm);
+          if (ex) {
+            matched += 1;
+            byNorm.set(norm, {
+              ticker: e.ticker || ex.ticker, // adopt scrape's .TO form
+              name: e.name ?? ex.name,
+              industry: e.industry ?? ex.industry,
+              price: e.price ?? ex.price,
+            });
+          } else {
+            added += 1;
+            byNorm.set(norm, {
+              ticker: e.ticker, // already canonicalized to .TO server-side
+              name: e.name,
+              industry: e.industry,
+              price: e.price,
+            });
+          }
+        }
+        nextState = { ...state, rbccmFew: Array.from(byNorm.values()) };
+        const cachedLabel = data.cached ? " (cached)" : "";
+        setScrapeStatusMap((m) => ({ ...m, [source]: `${entries.length} rows${cachedLabel} · ${matched} matched · ${added} added` }));
+        save(nextState);
+        void refreshFewNames(nextState);
         void fetchLivePrices(nextState);
         return true;
       } else {
@@ -1660,6 +1796,14 @@ export default function ResearchPage() {
   };
   const removeRbcUs = (ticker: string) => {
     save({ ...state, rbcUsFocus: (state.rbcUsFocus || []).filter((r) => r.ticker !== ticker) });
+  };
+  const addFew = (entry: FewEntry) => {
+    const list = state.rbccmFew || [];
+    if (list.some((r) => r.ticker === entry.ticker)) return;
+    save({ ...state, rbccmFew: [...list, entry] });
+  };
+  const removeFew = (ticker: string) => {
+    save({ ...state, rbccmFew: (state.rbccmFew || []).filter((r) => r.ticker !== ticker) });
   };
 
   /* Attachment helpers — image payloads are stored in separate Redis keys
@@ -2833,6 +2977,79 @@ export default function ResearchPage() {
             onScrape={(force) => scrapeResearchSource("rbc-us-focus", force)}
             loading={!!scrapeLoadingMap["rbc-us-focus"]}
             status={scrapeStatusMap["rbc-us-focus"]}
+          />
+        </section>
+
+        {/* ── RBCCM Canadian Fundamental Equity Weighting (FEW) Portfolio ──
+            Canadian equity list. Tickers in the screenshot omit the
+            suffix, so the scrape canonicalizes to ".TO". Only the four
+            columns the PM tracks are captured: ticker, company, industry,
+            price. Indigo-accented to distinguish from the RBC focus lists. */}
+        <section className="rounded-[24px] border border-indigo-200 bg-white p-6 shadow-sm">
+          <div className="flex items-center justify-between mb-4">
+            <div>
+              <h3 className="text-xl font-bold text-indigo-800">RBCCM Canadian FEW Portfolio</h3>
+              <p className="text-xs text-slate-400">RBC Capital Markets Canadian Fundamental Equity Weighting portfolio</p>
+            </div>
+            <span className="text-sm text-slate-400">{(state.rbccmFew || []).length} names</span>
+          </div>
+
+          <table className="w-full text-sm">
+            <thead>
+              <tr className="border-b-2 border-indigo-500 text-left">
+                <th className="py-2 pr-2 text-xs font-semibold text-indigo-700 w-8">#</th>
+                <th className="py-2 pr-3 text-xs font-semibold text-indigo-700 cursor-pointer hover:text-indigo-900 select-none" onClick={() => toggleFewSort("ticker")}>Ticker{fArrow("ticker")}</th>
+                <th className="py-2 pr-3 text-xs font-semibold text-indigo-700 cursor-pointer hover:text-indigo-900 select-none" onClick={() => toggleFewSort("name")}>Company{fArrow("name")}</th>
+                <th className="py-2 pr-3 text-xs font-semibold text-indigo-700 cursor-pointer hover:text-indigo-900 select-none" onClick={() => toggleFewSort("industry")}>Industry{fArrow("industry")}</th>
+                <th className="py-2 pr-3 text-xs font-semibold text-indigo-700 cursor-pointer hover:text-indigo-900 select-none text-right" onClick={() => toggleFewSort("price")}>Price{fArrow("price")}</th>
+                <th className="py-2 w-24"></th>
+              </tr>
+            </thead>
+            <tbody>
+              {sortedFew().map((item, i) => {
+                const px = fewPrice(item);
+                return (
+                <tr key={item.ticker} className={`border-b border-slate-100 ${i % 2 === 0 ? "bg-white" : "bg-indigo-50/30"} hover:bg-indigo-50/60 transition-colors`}>
+                  <td className="py-2 pr-2 text-slate-400">{i + 1}</td>
+                  <td className="py-2 pr-3 font-mono font-bold text-indigo-700">${displayTicker(item.ticker)}</td>
+                  <td className="py-2 pr-3 text-slate-700 truncate max-w-[260px]" title={item.name || item.ticker}>{item.name || <span className="text-slate-300 italic">—</span>}</td>
+                  <td className="py-2 pr-3 text-slate-600">{item.industry || <span className="text-slate-300 italic">—</span>}</td>
+                  <td className="py-2 pr-3 text-slate-600 text-right font-mono">{px > 0 ? `$${px.toFixed(2)}` : <span className="text-slate-300">—</span>}</td>
+                  <td className="py-2 text-right whitespace-nowrap">
+                    {scoredStocks.some((s) => s.ticker === item.ticker) ? (
+                      <span className="text-[10px] text-emerald-500 font-medium">In list</span>
+                    ) : (
+                      <button
+                        onClick={(e) => { e.stopPropagation(); addToWatchlist(item.ticker); }}
+                        className="text-[10px] text-indigo-500 hover:text-indigo-700 font-semibold transition-colors"
+                        title="Add to Watchlist"
+                      >
+                        + Watch
+                      </button>
+                    )}
+                    <button onClick={() => removeFew(item.ticker)} className="ml-2 text-slate-300 hover:text-red-500 font-bold transition-colors">&times;</button>
+                  </td>
+                </tr>
+                );
+              })}
+              {(state.rbccmFew || []).length === 0 && (
+                <tr><td colSpan={6} className="py-6 text-center text-slate-400 italic">No names added yet</td></tr>
+              )}
+            </tbody>
+          </table>
+
+          <FewAddForm onAdd={addFew} />
+
+          <ResearchScraperBlock
+            source="rbccm-few"
+            sectionLabel="RBCCM Canadian FEW Portfolio"
+            helperText="Upload an RBCCM Canadian FEW Portfolio screenshot. On Refresh, ticker (auto-suffixed .TO) + company + industry + price are extracted and merged."
+            attachments={state.attachments || []}
+            onAddAttachment={addAttachment}
+            onRemoveAttachment={removeAttachment}
+            onScrape={(force) => scrapeResearchSource("rbccm-few", force)}
+            loading={!!scrapeLoadingMap["rbccm-few"]}
+            status={scrapeStatusMap["rbccm-few"]}
           />
         </section>
 

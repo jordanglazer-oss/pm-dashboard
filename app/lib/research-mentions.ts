@@ -29,7 +29,8 @@ export type MentionSource =
   | "fundstrat-smid-bottom"
   | "rbc-focus"
   | "rbc-us-focus"
-  | "seeking-alpha-picks";
+  | "seeking-alpha-picks"
+  | "rbccm-few";
 
 export type Mention = {
   source: MentionSource;
@@ -76,6 +77,7 @@ const SOURCES: SourceConfig[] = [
   { source: "rbc-focus", label: "RBC Canadian Focus", field: "rbcCanadianFocus", direction: "bullish" },
   { source: "rbc-us-focus", label: "RBC US Focus", field: "rbcUsFocus", direction: "bullish" },
   { source: "seeking-alpha-picks", label: "Seeking Alpha Picks", field: "alphaPicks", direction: "bullish" },
+  { source: "rbccm-few", label: "RBCCM Canadian FEW", field: "rbccmFew", direction: "bullish" },
 ];
 
 type ResearchListEntry = { ticker?: unknown; analyzedAt?: unknown; dateAdded?: unknown };

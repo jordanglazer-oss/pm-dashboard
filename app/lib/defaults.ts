@@ -155,6 +155,26 @@ export type RBCEntry = {
   dateAdded: string;
 };
 
+/**
+ * RBCCM Canadian Fundamental Equity Weighting (FEW) Portfolio row.
+ * Canadian equity list — every ticker is a TSX listing, so the scrape
+ * canonicalizes to ".TO" form (the screenshot omits the suffix). Only
+ * the four columns the PM cares about are captured: ticker, company
+ * name, industry, and stock price (as shown in the screenshot). All
+ * optional besides ticker for backward-compat with older blobs.
+ */
+export type FewEntry = {
+  ticker: string;
+  /** Company name — from the screenshot's Company column; backfilled
+   *  via /api/company-name when missing. */
+  name?: string;
+  /** Industry label as shown in the screenshot's Industry column. */
+  industry?: string;
+  /** Stock price as shown in the screenshot. The Research page prefers
+   *  the live Yahoo price when available and falls back to this. */
+  price?: number;
+};
+
 export type SectorView = "overweight" | "neutral" | "underweight";
 
 export type SectorViewEntry = {
@@ -207,6 +227,10 @@ export type ResearchState = {
   // a technical one. Older blobs persisted this as IdeaEntry[]; the
   // load path migrates those on read.
   alphaPicks?: AlphaPickEntry[];
+  // RBCCM Canadian Fundamental Equity Weighting (FEW) Portfolio — a
+  // Canadian equity list scanned from a screenshot. Optional for
+  // backward compat with older pm:research blobs that predate it.
+  rbccmFew?: FewEntry[];
   generalNotes: string;
   attachments?: import("@/app/components/ImageUpload").BriefAttachment[];
   // Newton's sector overweight/underweight views. Pre-populated with all
@@ -302,6 +326,7 @@ export const defaultResearch: ResearchState = {
   rbcCanadianFocus: [],
   rbcUsFocus: [],
   alphaPicks: [],
+  rbccmFew: [],
   generalNotes: "",
   attachments: [],
   newtonSectors: GICS_SECTORS.map((s) => ({ sector: s, view: "neutral" as SectorView })),

@@ -36,7 +36,7 @@ const client = new Anthropic();
 
 type AttachmentInput = { id: string; label: string; dataUrl: string };
 
-type SourceKey = "fundstrat-top" | "fundstrat-bottom" | "fundstrat-smid-top" | "fundstrat-smid-bottom" | "rbc-focus" | "rbc-us-focus" | "seeking-alpha-picks";
+type SourceKey = "fundstrat-top" | "fundstrat-bottom" | "fundstrat-smid-top" | "fundstrat-smid-bottom" | "rbc-focus" | "rbc-us-focus" | "seeking-alpha-picks" | "rbccm-few";
 
 const VALID_SOURCES: readonly SourceKey[] = [
   "fundstrat-top",
@@ -46,6 +46,7 @@ const VALID_SOURCES: readonly SourceKey[] = [
   "rbc-focus",
   "rbc-us-focus",
   "seeking-alpha-picks",
+  "rbccm-few",
 ] as const;
 
 // ── Source-specific output shapes ──────────────────────────────────
@@ -80,9 +81,18 @@ export type ScrapedRbcRow = {
   dateAdded?: string;
 };
 
+/** RBCCM Canadian FEW Portfolio row: ticker (canonicalized to .TO),
+ *  company name, industry, and stock price. */
+export type ScrapedFewRow = {
+  ticker: string;
+  name?: string;
+  industry?: string;
+  price?: number;
+};
+
 type CachedScrape = {
   hash: string;
-  entries: ScrapedIdea[] | ScrapedRbcRow[] | ScrapedAlphaPick[];
+  entries: ScrapedIdea[] | ScrapedRbcRow[] | ScrapedAlphaPick[] | ScrapedFewRow[];
   analyzedAt: string;
 };
 
@@ -246,6 +256,22 @@ ${common}
 Example: [{"ticker":"MSFT","sector":"Technology","weight":5.0,"dateAdded":"3/12/2026"},{"ticker":"JPM","sector":"Financials","weight":4.0,"dateAdded":"1/8/2026"}]`;
   }
 
+  if (source === "rbccm-few") {
+    return `You are reading the "RBCCM Canadian Fundamental Equity Weighting (FEW) Portfolio" screenshot. It is a TABLE of Canadian equities. Extract EVERY row.
+
+Columns to look for (extract ONLY these four — ignore any other columns):
+  - Ticker / Symbol → \`ticker\` (string, required, UPPERCASE). The screenshot generally shows the ticker WITHOUT a suffix (e.g. "RY", "CNR", "BMO"). Because this is a Canadian (TSX) list, append ".TO" to every ticker so it resolves on Yahoo Finance (e.g. "RY" → "RY.TO", "CNR" → "CNR.TO"). If a row already shows "-T" or ".TO", keep the ".TO" form. For dual-class shares written with "/" (e.g. "BBD/B"), convert the slash to a dash BEFORE adding the suffix ("BBD-B.TO").
+  - Company / Name → \`name\` (string, the company name as shown)
+  - Industry / Sector → \`industry\` (string, the industry label as shown — pass through verbatim)
+  - Price / Stock Price / Last → \`price\` (NUMBER, strip $ and commas)
+
+If a column is missing or blank for a row, OMIT that key (do not return null or empty string). Do NOT invent prices.
+
+${common}
+
+Example: [{"ticker":"RY.TO","name":"Royal Bank of Canada","industry":"Banks","price":178.42},{"ticker":"CNR.TO","name":"Canadian National Railway","industry":"Road & Rail","price":154.10}]`;
+  }
+
   // seeking-alpha-picks
   return `You are reading a "Seeking Alpha — Alpha Picks" dashboard screenshot. It is a TABLE of buy recommendations from Seeking Alpha's institutional Alpha Picks service. Extract every active pick. Columns typically include: Company, Symbol, Picked (date), Return (%), Sector, Rating, Holding %.
 
@@ -405,6 +431,36 @@ function parseRbcRows(text: string, source: SourceKey): ScrapedRbcRow[] {
   }
 }
 
+/** Parse RBCCM Canadian FEW rows. Canonicalizes every ticker to .TO
+ *  (the screenshot omits the suffix; it's an all-TSX list). */
+function parseFewRows(text: string): ScrapedFewRow[] {
+  const cleaned = text.replace(/```json\s*|```/g, "");
+  const start = cleaned.indexOf("[");
+  const end = cleaned.lastIndexOf("]");
+  if (start < 0 || end <= start) return [];
+  try {
+    const arr = JSON.parse(cleaned.slice(start, end + 1));
+    if (!Array.isArray(arr)) return [];
+    return arr
+      .filter((r) => r && typeof r === "object" && typeof r.ticker === "string" && r.ticker.trim())
+      .map((r) => {
+        let ticker = String(r.ticker).trim().toUpperCase().replace(/^\$+/, "").replace(/\//g, "-");
+        // Force every row to the Canadian Yahoo (.TO) convention.
+        ticker = toCanadianYahooTicker(ticker);
+        const out: ScrapedFewRow = { ticker };
+        if (r.name != null && String(r.name).trim()) out.name = String(r.name).trim();
+        if (r.industry != null && String(r.industry).trim()) out.industry = String(r.industry).trim();
+        if (r.price != null) {
+          const n = Number(String(r.price).replace(/[$,]/g, ""));
+          if (Number.isFinite(n) && n > 0) out.price = n;
+        }
+        return out;
+      });
+  } catch {
+    return [];
+  }
+}
+
 // ── Vision call ────────────────────────────────────────────────────
 
 async function runVision(source: SourceKey, atts: AttachmentInput[]): Promise<{ entries: CachedScrape["entries"]; rawText: string }> {
@@ -432,6 +488,7 @@ async function runVision(source: SourceKey, atts: AttachmentInput[]): Promise<{ 
   const entries =
     (source === "rbc-focus" || source === "rbc-us-focus") ? parseRbcRows(text, source)
   : source === "seeking-alpha-picks" ? parseAlphaPickRows(text)
+  : source === "rbccm-few" ? parseFewRows(text)
   : parseIdeaRows(text);
   return { entries, rawText: text };
 }
