@@ -17,7 +17,7 @@
  */
 
 import { getRedis } from "./redis";
-import { canonicalTicker, tickersEqual } from "./ticker";
+import { canonicalTicker, sameCompanyLoose } from "./ticker";
 
 export type MentionDirection = "bullish" | "bearish";
 
@@ -106,7 +106,11 @@ export async function tallyResearchMentions(ticker: string): Promise<ResearchMen
     if (!Array.isArray(list)) continue;
     const hit = (list as ResearchListEntry[]).find((e) => {
       const t = typeof e?.ticker === "string" ? e.ticker : "";
-      return t && tickersEqual(t, target);
+      // Dual-listing aware: a research mention of the US ticker (e.g. "CLS")
+      // credits the Canadian holding ("CLS.TO") of the same company, and
+      // vice-versa, so a point isn't lost just because the list and the
+      // portfolio reference different interlistings of the same name.
+      return t && sameCompanyLoose(t, target);
     });
     if (!hit) continue;
 
