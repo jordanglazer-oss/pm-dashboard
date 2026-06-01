@@ -1,0 +1,115 @@
+import { NextRequest, NextResponse } from "next/server";
+import { getRedis } from "@/app/lib/redis";
+
+/**
+ * On-demand, purely-additive Redis backup.
+ *
+ * Unlike the scheduled /api/cron/backup-redis route (which requires the
+ * CRON_SECRET bearer header and also prunes + runs invariant checks), this
+ * endpoint exists so the PM can trigger a manual snapshot from the browser
+ * BEFORE a risky change. It lives under /api/admin/* which is gated by the
+ * auth-cookie middleware, so only a logged-in session can reach it.
+ *
+ * Safety properties (deliberate):
+ *   - READS every pm:* key (except the excluded ephemeral/derivable ones)
+ *     and WRITES a single new snapshot at pm:backup:<full-ISO-timestamp>.
+ *   - Deletes NOTHING. No pruning, no invariant writes, no mutation of any
+ *     existing key. The worst case is one extra backup blob in Redis.
+ *   - Requires ?confirm=YES so an accidental prefetch / link-scan can't fire
+ *     it (even though it's non-destructive).
+ *
+ * Restore is identical to the cron backups: read pm:backup:<stamp>, then
+ * redis.set(key, value) for each entry in snapshot.data.
+ */
+
+const BACKUP_PREFIX = "pm:backup:";
+
+const EXCLUDE_PATTERNS = [
+  /^pm:backup:/,        // never back up backups (recursive bloat)
+  /^pm:ratelimit:/,     // ephemeral, auto-expires
+  /^pm:fund-data-cache/, // large + deterministically re-fetchable
+];
+
+function shouldExclude(key: string): boolean {
+  return EXCLUDE_PATTERNS.some((re) => re.test(key));
+}
+
+async function scanAll(
+  redis: Awaited<ReturnType<typeof getRedis>>,
+  match: string,
+): Promise<string[]> {
+  const keys: string[] = [];
+  for await (const key of redis.scanIterator({ MATCH: match, COUNT: 200 })) {
+    if (Array.isArray(key)) keys.push(...key);
+    else keys.push(key);
+  }
+  return keys;
+}
+
+export async function GET(req: NextRequest) {
+  if (req.nextUrl.searchParams.get("confirm") !== "YES") {
+    return NextResponse.json(
+      {
+        error: "Confirmation required",
+        hint: "Append ?confirm=YES to run a manual backup. This is read-only except for writing one new pm:backup:* snapshot — it deletes nothing.",
+      },
+      { status: 400 },
+    );
+  }
+
+  const startedAt = Date.now();
+  try {
+    const redis = await getRedis();
+
+    const allKeys = await scanAll(redis, "pm:*");
+    const backupKeys = allKeys.filter((k) => !shouldExclude(k));
+
+    if (backupKeys.length === 0) {
+      return NextResponse.json(
+        { ok: false, warning: "No pm:* keys found to back up — refusing to write empty backup" },
+        { status: 200 },
+      );
+    }
+
+    const data: Record<string, string> = {};
+    let totalBytes = 0;
+    for (const key of backupKeys) {
+      const value = await redis.get(key);
+      if (value != null) {
+        data[key] = value;
+        totalBytes += value.length;
+      }
+    }
+
+    // Full-precision ISO timestamp so a manual backup never collides with
+    // the hour-truncated cron key, and stays prunable by the cron's 60-day
+    // cutoff (Date.parse handles this format).
+    const stamp = new Date().toISOString();
+    const backupKey = `${BACKUP_PREFIX}${stamp}`;
+    const snapshot = {
+      backedUpAt: stamp,
+      trigger: "manual-admin",
+      keyCount: Object.keys(data).length,
+      totalBytes,
+      data,
+    };
+
+    // The ONLY write — additive. No prune, no invariant mutation.
+    await redis.set(backupKey, JSON.stringify(snapshot));
+
+    return NextResponse.json({
+      ok: true,
+      backupKey,
+      keyCount: snapshot.keyCount,
+      totalBytes: snapshot.totalBytes,
+      keys: backupKeys.sort(),
+      elapsedMs: Date.now() - startedAt,
+    });
+  } catch (e) {
+    console.error("[backup-now] manual backup failed:", e);
+    return NextResponse.json(
+      { error: "Backup failed", message: e instanceof Error ? e.message : String(e) },
+      { status: 500 },
+    );
+  }
+}
