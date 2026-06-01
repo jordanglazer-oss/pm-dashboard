@@ -28,7 +28,11 @@
 import { getRedis } from "./redis";
 import { getCikForTicker } from "./edgar";
 
-const CACHE_TTL_SEC = 24 * 60 * 60; // 24 hours
+const CACHE_TTL_SEC = 24 * 60 * 60; // 24 hours (in-app freshness)
+// Native Redis eviction TTL so per-ticker Form 4 summaries auto-expire when
+// not re-written within the window, bounding memory. Re-fetches identical
+// data on next access. See edgar.ts for the full rationale.
+const REDIS_TTL_SEC = 14 * 24 * 60 * 60; // evict after 14d unused
 const SUBMISSIONS_URL = (paddedCik: string) =>
   `https://data.sec.gov/submissions/CIK${paddedCik}.json`;
 const FILING_BASE = (cikUnpadded: number, accessionNoDashes: string, primaryDoc: string) =>
@@ -267,7 +271,7 @@ export async function getInsiderActivity(ticker: string): Promise<Form4Summary |
       topSells: [],
       recentTransactions: [],
     };
-    await redis.set(cacheKey, JSON.stringify({ fetchedAt: todayIso(), data: empty }));
+    await redis.set(cacheKey, JSON.stringify({ fetchedAt: todayIso(), data: empty }), { EX: REDIS_TTL_SEC });
     return empty;
   }
 
@@ -320,7 +324,7 @@ export async function getInsiderActivity(ticker: string): Promise<Form4Summary |
     recentTransactions,
   };
 
-  await redis.set(cacheKey, JSON.stringify({ fetchedAt: todayIso(), data: summary }));
+  await redis.set(cacheKey, JSON.stringify({ fetchedAt: todayIso(), data: summary }), { EX: REDIS_TTL_SEC });
   return summary;
 
   // Suppress unused-import warning during build if daysBetween isn't

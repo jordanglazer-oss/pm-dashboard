@@ -37,8 +37,21 @@ const TICKER_MAP_URL = "https://www.sec.gov/files/company_tickers.json";
 const FACTS_URL = (paddedCik: string) =>
   `https://data.sec.gov/api/xbrl/companyfacts/CIK${paddedCik}.json`;
 
-const TICKER_MAP_TTL_SEC = 7 * 24 * 60 * 60; // 7 days
-const FACTS_TTL_SEC = 24 * 60 * 60;          // 24 hours
+const TICKER_MAP_TTL_SEC = 7 * 24 * 60 * 60; // 7 days (in-app freshness)
+const FACTS_TTL_SEC = 24 * 60 * 60;          // 24 hours (in-app freshness)
+
+// ── Native Redis eviction TTLs (memory bounding) ───────────────────────
+// These are SEPARATE from the in-app freshness windows above. The freshness
+// window decides when to RE-FETCH a still-present entry; this TTL lets Redis
+// auto-EXPIRE entries that haven't been re-written in a while, so the cache
+// can't grow without bound across every ticker ever scored. Set comfortably
+// LONGER than the freshness window so an actively-used entry (which is
+// re-written on each refresh, resetting its TTL) never expires mid-use. An
+// expired entry simply re-fetches identical data on next access — zero
+// quality loss, just a one-off latency cost. pm:edgar-facts is the big one
+// (~4MB/ticker), so it gets the most aggressive bound.
+const FACTS_REDIS_TTL_SEC = 7 * 24 * 60 * 60;        // evict after 7d unused
+const TICKER_MAP_REDIS_TTL_SEC = 30 * 24 * 60 * 60;  // tiny + shared — keep 30d
 
 // ─── Types ──────────────────────────────────────────────────────────
 
@@ -237,7 +250,8 @@ async function loadTickerMap(): Promise<SecTickerMap> {
   const data = (await res.json()) as SecTickerMap;
   await redis.set(
     TICKER_MAP_KEY,
-    JSON.stringify({ fetchedAt: new Date().toISOString(), data })
+    JSON.stringify({ fetchedAt: new Date().toISOString(), data }),
+    { EX: TICKER_MAP_REDIS_TTL_SEC },
   );
   return data;
 }
@@ -284,7 +298,8 @@ export async function getCompanyFacts(ticker: string): Promise<EdgarCompanyFacts
   const data = (await res.json()) as EdgarCompanyFacts;
   await redis.set(
     cacheKey,
-    JSON.stringify({ fetchedAt: new Date().toISOString(), data })
+    JSON.stringify({ fetchedAt: new Date().toISOString(), data }),
+    { EX: FACTS_REDIS_TTL_SEC },
   );
   return data;
 }

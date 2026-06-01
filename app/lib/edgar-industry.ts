@@ -20,7 +20,12 @@ import { getRedis } from "./redis";
 
 const SUBMISSIONS_URL = (paddedCik: string) =>
   `https://data.sec.gov/submissions/CIK${paddedCik}.json`;
-const SUBMISSIONS_TTL_SEC = 7 * 24 * 60 * 60; // 7 days
+const SUBMISSIONS_TTL_SEC = 7 * 24 * 60 * 60; // 7 days (in-app freshness)
+// Native Redis eviction TTL — bounds memory by auto-expiring submissions
+// caches not re-written within the window. Longer than the freshness window
+// so active entries (re-written on refresh) never expire mid-use; an expired
+// entry re-fetches identical data. See edgar.ts for the full rationale.
+const SUBMISSIONS_REDIS_TTL_SEC = 14 * 24 * 60 * 60; // evict after 14d unused
 
 export type EdgarIndustry =
   | "bank"
@@ -90,7 +95,8 @@ export async function getSubmissions(paddedCik: string): Promise<EdgarSubmission
   const data = (await res.json()) as EdgarSubmissions;
   await redis.set(
     cacheKey,
-    JSON.stringify({ fetchedAt: new Date().toISOString(), data })
+    JSON.stringify({ fetchedAt: new Date().toISOString(), data }),
+    { EX: SUBMISSIONS_REDIS_TTL_SEC },
   );
   return data;
 }
