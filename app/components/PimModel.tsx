@@ -529,32 +529,28 @@ export function PimModel({ groups }: Props) {
     const holdings = effectiveGroup.holdings;
     const rebalancePriceMap = groupState.lastRebalance?.prices || {};
 
-    // CAD Model column denominator: total CAD-side of the portfolio across
-    // ALL asset classes. Each holding's CAD Model value is its portfolio
-    // weight (weightInClass × asset-class allocation) divided by this total.
-    // Result: CAD Model column sums to 100% across all three asset-class
-    // tables combined. For PC USA where all CAD holdings are equity stocks,
-    // the equity table's CAD Model column sums to 100% on its own because
-    // no other asset class has CAD holdings.
-    let totalCadPortfolio = 0;
-    holdings.forEach((h) => {
-      if (h.currency !== "CAD") return;
-      let alloc = 0;
-      if (h.assetClass === "fixedIncome") alloc = profileWeights.fixedIncome;
-      else if (h.assetClass === "equity") alloc = profileWeights.equity;
-      else if (h.assetClass === "alternative") alloc = profileWeights.alternatives;
-      totalCadPortfolio += h.weightInClass * alloc;
-    });
-
-    // USD Model column: original per-asset-class normalization, scaled by
-    // asset-class allocation. Reverted from the cross-asset-class version
-    // (which threw off USD Model display in groups whose USD positions
-    // span multiple asset classes). Per-asset-class normalization is
-    // computed from this lookup table.
+    // CAD Model & USD Model columns: per-asset-class, per-currency-sleeve
+    // normalization, scaled by the asset-class allocation. Each currency
+    // column independently sums to that class's target weight (e.g. for
+    // Balanced: FI 28%, equity 66%, alt 6%) — i.e. each column answers
+    // "if this asset class were entirely <currency>, what weight would
+    // each holding have?", with positions proportionally filling the
+    // class target by their share of that currency's sleeve.
+    //
+    // This replaced an earlier CAD-only scheme that divided by the total
+    // CAD portfolio across ALL classes (so the CAD column summed to ~100%
+    // and drifted whenever a trade shifted the CAD/USD mix). The symmetric
+    // per-class version makes CAD and USD behave identically and keeps
+    // each column's total locked to the class target. DISPLAY-ONLY — these
+    // values never feed weightInClass or any persisted/rebalance math.
+    const classCadTotals: Record<string, number> = {};
     const classUsdTotals: Record<string, number> = {};
     holdings.forEach((h) => {
-      if (h.currency !== "USD") return;
-      classUsdTotals[h.assetClass] = (classUsdTotals[h.assetClass] || 0) + h.weightInClass;
+      if (h.currency === "CAD") {
+        classCadTotals[h.assetClass] = (classCadTotals[h.assetClass] || 0) + h.weightInClass;
+      } else if (h.currency === "USD") {
+        classUsdTotals[h.assetClass] = (classUsdTotals[h.assetClass] || 0) + h.weightInClass;
+      }
     });
 
     // ── Dynamic Weight computation (sleeve-level drift) ────────────
@@ -690,17 +686,16 @@ export function PimModel({ groups }: Props) {
       const { h, weightInPortfolio, currentPrice, rebalPrice, growthFactor } = x;
 
       const assetClassAllocation = x.assetClassAllocation;
-      const holdingPortfolioWeight = h.weightInClass * assetClassAllocation;
 
-      // CAD Model: cross-asset-class normalization (sums to 100% across
-      // all three asset-class tables combined).
-      const cadModelWeight = h.currency === "CAD" && totalCadPortfolio > 0
-        ? holdingPortfolioWeight / totalCadPortfolio : null;
+      // CAD Model: per-asset-class CAD-sleeve normalization, scaled by the
+      // asset-class allocation. The CAD column sums to the class target
+      // (28% FI / 66% equity / 6% alt for Balanced) — symmetric with USD.
+      const classCadTotal = classCadTotals[h.assetClass] || 0;
+      const cadModelWeight = h.currency === "CAD" && classCadTotal > 0
+        ? (h.weightInClass / classCadTotal) * assetClassAllocation : null;
 
-      // USD Model: per-asset-class normalization, scaled by asset-class
-      // allocation (each asset-class table's USD Model column sums to the
-      // USD-equity / USD-FI / USD-alt sleeve weight, matching prior
-      // behavior).
+      // USD Model: per-asset-class USD-sleeve normalization, scaled by the
+      // asset-class allocation. Sums to the same class target as CAD.
       const classUsdTotal = classUsdTotals[h.assetClass] || 0;
       const usdModelWeight = h.currency === "USD" && classUsdTotal > 0
         ? (h.weightInClass / classUsdTotal) * assetClassAllocation : null;
