@@ -236,6 +236,7 @@ function collectAllTickers(research: ResearchState): string[] {
   for (const r of research.rbcCanadianFocus ?? []) tickers.push(r.ticker);
   for (const r of research.rbcUsFocus ?? []) tickers.push(r.ticker);
   for (const p of research.alphaPicks ?? []) tickers.push(p.ticker);
+  for (const f of research.rbccmFew ?? []) tickers.push(f.ticker);
   return tickers;
 }
 
@@ -353,6 +354,16 @@ function buildContext(
       const price = p.priceWhenAdded ? ` · entry ${p.priceWhenAdded}` : "";
       const sector = p.sector && p.sector !== "—" ? ` · ${p.sector}` : "";
       lines.push(`  - ${p.ticker} (${p.name || p.ticker})${sector}${price}`);
+    }
+    lines.push(``);
+  }
+
+  const few = research.rbccmFew || [];
+  if (few.length > 0) {
+    lines.push(`Source 9: RBCCM Canadian FEW Portfolio (RBC Capital Markets Canadian Fundamental Equity Weighting model holdings — Canadian buy-list names)`);
+    for (const f of few) {
+      const industry = f.industry ? ` · ${f.industry}` : "";
+      lines.push(`  - ${f.ticker} (${f.name || f.ticker})${industry}`);
     }
     lines.push(``);
   }
@@ -514,7 +525,7 @@ CRITICAL RULES:
 4. NEVER include a ticker in topPicks, regimeAlignedHighlights, or honorableMentions if it appears in Source 3 (Fundstrat Large-Cap Bottom Ideas) OR Source 5 (Fundstrat Bottom SMID-Cap Core Ideas). Both bottom lists carry NEGATIVE posture — names to avoid or short. Treat them identically as exclusions. Note any conflict in cautions instead.
 5. NEVER include a ticker in any pick tier if it appears in the "PORTFOLIO HOLDINGS (DO NOT RECOMMEND AS BUYS)" list. SILENTLY EXCLUDE — do NOT add "PORTFOLIO CONFIRMATION" / "source confirms the existing position" notes anywhere. The PM already knows what they hold.
 6. cautions array is for genuinely actionable warnings ONLY (bottom-ideas conflicts, regime mismatches that aren't already captured by regimeFit:contrary on a pick, single-source quality concerns). Never use it for portfolio confirmations.
-7. Use section labels EXACTLY as written in the source list (e.g. "Newton's Upticks", "Fundstrat Top Ideas", "RBC Canadian Focus List", "Alpha Picks").
+7. Use section labels EXACTLY as written in the source list (e.g. "Newton's Upticks", "Fundstrat Top Ideas", "RBC Canadian Focus List", "Alpha Picks", "RBCCM Canadian FEW Portfolio").
 8. If the brief is missing or empty: regimeTilts should be a single bullet "No brief context — regime fit unknown"; every regimeFit defaults to "medium" with rationale "no brief context"; regimeAlignedHighlights stays empty; surface the limitation in summary.
 
 Respond ONLY with valid JSON matching this schema:
@@ -783,7 +794,8 @@ export async function POST(req: NextRequest) {
       (research.fundstratSmidBottom?.length ?? 0) +
       (research.rbcCanadianFocus?.length ?? 0) +
       (research.rbcUsFocus?.length ?? 0) +
-      (research.alphaPicks?.length ?? 0);
+      (research.alphaPicks?.length ?? 0) +
+      (research.rbccmFew?.length ?? 0);
 
     if (totalSources === 0) {
       return NextResponse.json({
