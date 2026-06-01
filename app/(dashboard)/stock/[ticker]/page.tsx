@@ -1605,7 +1605,7 @@ export default function StockDetailPage() {
                             value={weightInput}
                             onChange={(e) => setWeightInput(e.target.value)}
                             type="number"
-                            step="0.1"
+                            step="0.01"
                             min="0"
                             autoFocus
                             className="w-16 rounded-md border border-slate-300 px-2 py-1 text-sm outline-none focus:border-blue-400"
