@@ -50,15 +50,11 @@ type PriceResult = {
   currency: string | null;  // "USD", "CAD", "DKK", etc. from Yahoo meta
 };
 
-// Batch-fetch current prices from Yahoo Finance v8 chart API
-async function fetchPrice(ticker: string): Promise<PriceResult> {
-  // FUNDSERV codes (mutual funds) — fetch NAV from Globe and Mail / Barchart
-  if (isFundservCode(ticker)) {
-    const nav = await fetchFundservPrice(ticker);
-    return { price: nav, previousClose: null, name: null, quoteType: "MUTUALFUND", currency: "CAD" };
-  }
+const EMPTY_RESULT: PriceResult = { price: null, previousClose: null, name: null, quoteType: null, currency: null };
+
+/** Single Yahoo v8/chart lookup for an already-resolved Yahoo symbol. */
+async function fetchYahooChart(yahooSymbol: string): Promise<PriceResult> {
   try {
-    const yahooSymbol = toYahoo(ticker);
     const res = await fetch(
       `https://query2.finance.yahoo.com/v8/finance/chart/${encodeURIComponent(yahooSymbol)}?range=1d&interval=1d`,
       {
@@ -69,7 +65,7 @@ async function fetchPrice(ticker: string): Promise<PriceResult> {
         cache: "no-store",
       }
     );
-    if (!res.ok) return { price: null, previousClose: null, name: null, quoteType: null, currency: null };
+    if (!res.ok) return EMPTY_RESULT;
     const data = await res.json();
     const meta = data?.chart?.result?.[0]?.meta;
     const price = meta?.regularMarketPrice ?? meta?.previousClose ?? null;
@@ -88,8 +84,29 @@ async function fetchPrice(ticker: string): Promise<PriceResult> {
       currency,
     };
   } catch {
-    return { price: null, previousClose: null, name: null, quoteType: null, currency: null };
+    return EMPTY_RESULT;
   }
+}
+
+// Batch-fetch current prices from Yahoo Finance v8 chart API
+async function fetchPrice(ticker: string): Promise<PriceResult> {
+  // FUNDSERV codes (mutual funds) — fetch NAV from Globe and Mail / Barchart
+  if (isFundservCode(ticker)) {
+    const nav = await fetchFundservPrice(ticker);
+    return { price: nav, previousClose: null, name: null, quoteType: "MUTUALFUND", currency: "CAD" };
+  }
+  const yahooSymbol = toYahoo(ticker);
+  const result = await fetchYahooChart(yahooSymbol);
+  // TSX Venture fallback: tickers scraped from Canadian lists get a blanket
+  // ".TO" suffix, but TSXV-listed names (e.g. Artemis Gold → ARTG) actually
+  // live on ".V". If the ".TO" lookup found nothing, retry on ".V". Purely
+  // additive — only fires when ".TO" already returned no price, so it can't
+  // change any symbol that already resolves.
+  if (result.price == null && yahooSymbol.endsWith(".TO")) {
+    const vResult = await fetchYahooChart(yahooSymbol.replace(/\.TO$/, ".V"));
+    if (vResult.price != null) return vResult;
+  }
+  return result;
 }
 
 export async function POST(request: NextRequest) {

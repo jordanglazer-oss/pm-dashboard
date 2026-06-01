@@ -162,8 +162,20 @@ function toYahooSymbol(ticker: string): string {
 }
 
 async function fetchSnapshot(ticker: string): Promise<LiveSnapshot> {
+  const primary = toYahooSymbol(ticker);
+  const snap = await chartSnapshot(ticker, primary);
+  // TSX Venture fallback (mirrors /api/prices): Canadian-list tickers get a
+  // blanket ".TO" suffix, but TSXV names (e.g. ARTG) live on ".V". Retry on
+  // ".V" only when ".TO" found no price — additive, can't break a working symbol.
+  if (snap.price == null && primary.endsWith(".TO")) {
+    const v = await chartSnapshot(ticker, primary.replace(/\.TO$/, ".V"));
+    if (v.price != null) return v;
+  }
+  return snap;
+}
+
+async function chartSnapshot(ticker: string, yahooSymbol: string): Promise<LiveSnapshot> {
   try {
-    const yahooSymbol = toYahooSymbol(ticker);
     const res = await fetch(
       `https://query2.finance.yahoo.com/v8/finance/chart/${encodeURIComponent(yahooSymbol)}?range=3mo&interval=1d`,
       {
