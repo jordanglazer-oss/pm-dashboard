@@ -42,6 +42,12 @@ type QueuedTrade = {
   buyTicker: string;
   buyPrice: string;
   buyName: string;
+  /** Model group ids the bought ticker is INELIGIBLE for. Defaults to the
+   *  auto-rule exclusion (No US Situs when the buy is US-listed/USD). The user
+   *  can override per-model via the eligibility checkboxes in the buy ticket.
+   *  Excluded models that held the sold ticker get the freed weight
+   *  redistributed to their Core ETFs (NOT a formal rebalance). */
+  excludedGroupIds: string[];
 };
 function newTrade(): QueuedTrade {
   return {
@@ -52,8 +58,29 @@ function newTrade(): QueuedTrade {
     buyTicker: "",
     buyPrice: "",
     buyName: "",
+    excludedGroupIds: [],
   };
 }
+
+/** US-situs detection for the No-US-Situs tax mandate. A security is US-situs
+ *  (and therefore ineligible for the No US Situs model) when it is US-listed:
+ *  priced in USD with no Canadian listing suffix (.TO/-T/.NE/.U) and not a
+ *  FUNDSERV mutual-fund code. Canadian USD ETFs (.U) and FUNDSERV funds are
+ *  NOT US-situs. Used to seed the auto-exclusion in the buy ticket. */
+function isUsSitusTicker(ticker: string, currency?: string): boolean {
+  const t = (ticker || "").trim().toUpperCase();
+  if (!t) return false;
+  // Canadian listing suffixes → never US-situs
+  if (/\.TO$/.test(t) || /-T$/.test(t) || /\.NE$/.test(t) || /\.U$/.test(t)) return false;
+  // FUNDSERV codes (Canadian mutual funds) → never US-situs
+  if (isFundservCode(t)) return false;
+  // Anything left that is USD-denominated is US-listed → US-situs.
+  // If currency is unknown, treat a plain (suffix-less, non-FUNDSERV) symbol
+  // as US-listed since that's the dominant case for bare tickers here.
+  return currency ? currency.toUpperCase() === "USD" : true;
+}
+
+const NO_US_SITUS_GROUP_ID = "no-us-situs";
 
 /** Compact "Xm ago" / "Xh ago" relative-time formatter for tile freshness
  *  labels. Falls back to a full date+time string past 24 hours so the
@@ -136,7 +163,7 @@ type Props = {
 };
 
 export function PimPortfolio({ groups }: Props) {
-  const { uiPrefs, setUiPref, stocks, pimPortfolioState, updatePimPortfolioState, getGroupState, addStock, scoredStocks, pimModels, updatePimModels, moveBucket } = useStocks();
+  const { uiPrefs, setUiPref, stocks, pimPortfolioState, updatePimPortfolioState, getGroupState, addStock, scoredStocks, pimModels, updatePimModels, moveBucket, rebalanceStockWeights, updateStockFields } = useStocks();
 
   const selectedGroupId = "pim";
   const [selectedProfile, setSelectedProfile] = useState<PimProfileType>("allEquity");
@@ -1383,6 +1410,17 @@ export function PimPortfolio({ groups }: Props) {
     // addStock call share the same name / instrumentType / sector.
     // Only relevant when there IS a buy side — sell-only trades skip
     // this whole block.
+    // ── Per-model eligibility for the bought ticker.
+    // `trade.excludedGroupIds` is the set of model groups the user (or the
+    // No-US-Situs auto-rule) has marked the buy INELIGIBLE for. Build the
+    // full eligibility map so it can be persisted on pm:stocks (stock-page
+    // display + future ops) and consulted by addToPimModels on pure buys.
+    const excludedSet = new Set(trade.excludedGroupIds || []);
+    const eligibilityMap: Record<string, boolean> = {};
+    for (const g of originalPim.groups) {
+      eligibilityMap[g.id] = !excludedSet.has(g.id);
+    }
+
     let buyName = trade.buyName || buyTicker;
     let buyInstrumentType: InstrumentType = "stock";
     let buySector = "";
@@ -1411,8 +1449,14 @@ export function PimPortfolio({ groups }: Props) {
           weights: { portfolio: 0 },
           scores: { ...ZERO_SCORES },
           notes: "",
+          ...(excludedSet.size > 0 ? { modelEligibility: eligibilityMap } : {}),
         };
         addStock(stock);
+      } else if (excludedSet.size > 0) {
+        // Already in portfolio — persist the eligibility choice so the
+        // stock page reflects it. (For switches the pm:models membership
+        // is driven by the atomic swap below, not by this field.)
+        updateStockFields(buyTicker, { modelEligibility: eligibilityMap });
       }
     }
 
@@ -1443,6 +1487,16 @@ export function PimPortfolio({ groups }: Props) {
       const updatedGroups = originalPim.groups.map((g) => {
         const plan = swapPlan.find((p) => p.groupId === g.id);
         if (!plan) return g;
+        if (excludedSet.has(g.id)) {
+          // Buy is INELIGIBLE for this model (e.g. No US Situs + US-listed
+          // buy). Remove the sold holding and redistribute its freed weight
+          // to this group's Core ETFs via rebalanceStockWeights. This is NOT
+          // the formal Rebalance feature — no transaction log, no rebalance
+          // prices, no drift reset; just a weight redistribution so the
+          // class still sums to 100%.
+          const remaining = g.holdings.filter((h) => h !== plan.soldHolding);
+          return { ...g, holdings: rebalanceStockWeights(remaining) };
+        }
         return {
           ...g,
           holdings: g.holdings.map((h) =>
@@ -1458,6 +1512,30 @@ export function PimPortfolio({ groups }: Props) {
           ),
         };
       });
+
+      // ── Hard abort-guard: every touched group's per-asset-class
+      // weightInClass must still sum to ~100%. The eligible-group swap
+      // preserves weights exactly and rebalanceStockWeights preserves the
+      // invariant by construction, so this should never fire — but if it
+      // ever did, persisting would corrupt model weights. Abort instead
+      // and persist NOTHING from the swap. (The pre-trade snapshot taken
+      // by Execute All covers rollback of the earlier addStock/moveBucket.)
+      const ASSET_CLASSES: PimHolding["assetClass"][] = ["equity", "fixedIncome", "alternative"];
+      for (const g of updatedGroups) {
+        if (!affectedGroupIds.has(g.id)) continue;
+        for (const ac of ASSET_CLASSES) {
+          const inClass = g.holdings.filter((h) => h.assetClass === ac);
+          if (inClass.length === 0) continue;
+          const sum = inClass.reduce((s, h) => s + h.weightInClass, 0);
+          if (Math.abs(sum - 1.0) > 0.005) {
+            return {
+              ok: false,
+              error: `Aborted: ${g.name} ${ac} weights sum to ${(sum * 100).toFixed(2)}% (expected 100%). No model changes persisted.`,
+            };
+          }
+        }
+      }
+
       const nextPim = { ...originalPim, groups: updatedGroups, lastUpdated: nowIso };
       updatePimModels(nextPim);
       // Sync the ref so the next trade in the queue sees this update.
@@ -1692,7 +1770,7 @@ export function PimPortfolio({ groups }: Props) {
       ? `${buyTicker} was already held in these models — swap was NOT applied there: ${skippedDueToBoughtPresent.join(", ")}.`
       : undefined;
     return { ok: true, warning };
-  }, [pimPortfolioState, selectedGroupId, updatePimPortfolioState, scoredStocks, addStock, pimModels, updatePimModels, moveBucket, stocks, positions, usdCadRate]);
+  }, [pimPortfolioState, selectedGroupId, updatePimPortfolioState, scoredStocks, addStock, pimModels, updatePimModels, moveBucket, stocks, positions, usdCadRate, rebalanceStockWeights, updateStockFields]);
 
   /**
    * Run every valid trade in the queue sequentially. Skips invalid rows
@@ -2192,10 +2270,19 @@ export function PimPortfolio({ groups }: Props) {
                         <select value={t.buyTicker}
                           onChange={(e) => {
                             const picked = watchlistStocks.find((s) => s.ticker === e.target.value);
+                            // Auto-rule: a US-listed/USD buy is US-situs → ineligible
+                            // for the No US Situs tax-mandate model. Pre-checks that
+                            // exclusion; user can still override via the checkboxes.
+                            const autoExcluded =
+                              e.target.value && isUsSitusTicker(e.target.value) &&
+                              pimModels.groups.some((g) => g.id === NO_US_SITUS_GROUP_ID)
+                                ? [NO_US_SITUS_GROUP_ID]
+                                : [];
                             updateTrade(t.id, {
                               buyTicker: e.target.value,
                               buyName: picked?.name || e.target.value,
                               buyPrice: e.target.value ? t.buyPrice : "",
+                              excludedGroupIds: autoExcluded,
                             });
                           }}
                           className="w-full rounded-lg border border-slate-200 bg-white text-slate-900 px-3 py-2 text-sm outline-none focus:border-emerald-300 font-mono">
@@ -2215,6 +2302,47 @@ export function PimPortfolio({ groups }: Props) {
                       )}
                     </div>
                   </div>
+                  {t.buyTicker && (
+                    <div className="mt-3 rounded-lg border border-slate-200 bg-slate-50 p-2.5">
+                      <div className="flex items-center justify-between gap-2 mb-1.5">
+                        <span className="text-[10px] uppercase tracking-wider font-semibold text-slate-500">
+                          Eligible models for {t.buyTicker}
+                        </span>
+                        {t.excludedGroupIds.includes(NO_US_SITUS_GROUP_ID) &&
+                          isUsSitusTicker(t.buyTicker) && (
+                          <span className="text-[10px] text-amber-700">
+                            No US Situs auto-excluded (US-listed)
+                          </span>
+                        )}
+                      </div>
+                      <div className="flex flex-wrap gap-x-4 gap-y-1.5">
+                        {pimModels.groups.map((g) => {
+                          const eligible = !t.excludedGroupIds.includes(g.id);
+                          return (
+                            <label key={g.id} className="inline-flex items-center gap-1.5 text-xs text-slate-700 cursor-pointer">
+                              <input
+                                type="checkbox"
+                                checked={eligible}
+                                onChange={(e) => {
+                                  const next = new Set(t.excludedGroupIds);
+                                  if (e.target.checked) next.delete(g.id);
+                                  else next.add(g.id);
+                                  updateTrade(t.id, { excludedGroupIds: [...next] });
+                                }}
+                                className="h-3.5 w-3.5 rounded border-slate-300"
+                              />
+                              {g.name}
+                            </label>
+                          );
+                        })}
+                      </div>
+                      {t.sellSymbol && t.excludedGroupIds.length > 0 && (
+                        <p className="mt-1.5 text-[10px] text-slate-500">
+                          For excluded models that hold {symbolToTicker(t.sellSymbol)}, the freed weight is redistributed to that model&apos;s Core ETFs (not a formal rebalance).
+                        </p>
+                      )}
+                    </div>
+                  )}
                 </div>
               );
             })}

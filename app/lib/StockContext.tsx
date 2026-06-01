@@ -119,6 +119,7 @@ type StockContextType = {
   watchlistStocks: ScoredStock[];
   pimModels: PimModelData;
   updatePimModels: (data: PimModelData) => void;
+  rebalanceStockWeights: (holdings: PimHolding[], extraStock?: Stock) => PimHolding[];
   toggleModelEligibility: (ticker: string, groupId: string, eligible: boolean) => void;
   updateModelWeight: (ticker: string, groupId: string, weight: number) => void;
   pimPortfolioState: PimPortfolioState;
@@ -1681,6 +1682,7 @@ export function StockProvider({ children }: { children: React.ReactNode }) {
         watchlistStocks,
         pimModels,
         updatePimModels,
+        rebalanceStockWeights,
         toggleModelEligibility,
         updateModelWeight,
         pimPortfolioState,
