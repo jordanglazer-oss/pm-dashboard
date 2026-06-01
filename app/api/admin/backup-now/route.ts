@@ -24,10 +24,29 @@ import { getRedis } from "@/app/lib/redis";
 
 const BACKUP_PREFIX = "pm:backup:";
 
+// The backup is a SINGLE JSON value, so it must stay small enough to write
+// on a memory-constrained instance. We therefore exclude (a) regenerable
+// caches and (b) bulky binary uploads that are independently restorable and
+// unaffected by model/score logic. What remains is the hand-entered /
+// computed state that actually matters for a revert: pm:stocks,
+// pm:pim-models, pm:research, positions, snapshots, history, etc.
 const EXCLUDE_PATTERNS = [
-  /^pm:backup:/,        // never back up backups (recursive bloat)
-  /^pm:ratelimit:/,     // ephemeral, auto-expires
-  /^pm:fund-data-cache/, // large + deterministically re-fetchable
+  /^pm:backup:/,             // never back up backups (recursive bloat)
+  /^pm:ratelimit:/,          // ephemeral, auto-expires
+  // ── Regenerable caches (CLAUDE.md: "Pure cache. Safe to nuke.") ──
+  /^pm:fund-data-cache/,
+  /^pm:fund-data-negative:/,
+  /^pm:edgar-/,              // edgar-facts / -submissions / -form4 / -ticker-map (~110MB)
+  /^pm:market-regime$/,
+  /-cache$/,                 // *-analysis-cache, *-scrape-cache (hash-gated)
+  /-scrape-cache:/,
+  // ── Derived (recomputed from daily values + models) ──
+  /^pm:pim-performance/,     // includes .pre-* migration stashes
+  // ── Bulky binary uploads — separately restorable, not model/score data ──
+  /^pm:analyst-report-pdf:/, // 70MB of uploaded PDFs
+  /^pm:attachment:/,         // base64 screenshots/PDFs (the per-file keys)
+  // NOTE: pm:attachments (the lightweight manifest, no trailing colon) is
+  // intentionally KEPT — it's tiny and lists which files exist.
 ];
 
 function shouldExclude(key: string): boolean {
