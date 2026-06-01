@@ -1494,8 +1494,29 @@ export function PimPortfolio({ groups }: Props) {
           // the formal Rebalance feature — no transaction log, no rebalance
           // prices, no drift reset; just a weight redistribution so the
           // class still sums to 100%.
-          const remaining = g.holdings.filter((h) => h !== plan.soldHolding);
-          return { ...g, holdings: rebalanceStockWeights(remaining) };
+          const sold = plan.soldHolding;
+          const remaining = g.holdings.filter((h) => h !== sold);
+          // Prefer same-currency Core ETFs so the 50/50 CAD/USD balance is
+          // preserved (e.g. a freed USD weight flows to XUU.U / XUS.U, not
+          // the CAD Core ETFs). Distribute proportional to current weight.
+          const sameCcyCore = remaining.filter(
+            (h) => h.assetClass === "equity" && h.currency === sold.currency &&
+              coreSymbols.has(symbolToTicker(h.symbol)),
+          );
+          if (sameCcyCore.length === 0) {
+            // No same-currency Core ETF in this group (e.g. PC USA's CAD
+            // sleeve is stocks-only) — fall back to the generic Core
+            // redistribution so the class still sums to 100%.
+            return { ...g, holdings: rebalanceStockWeights(remaining) };
+          }
+          const coreTotal = sameCcyCore.reduce((s, h) => s + h.weightInClass, 0);
+          const freed = sold.weightInClass;
+          const redistributed = remaining.map((h) => {
+            if (!sameCcyCore.includes(h)) return h;
+            const share = coreTotal > 0 ? h.weightInClass / coreTotal : 1 / sameCcyCore.length;
+            return { ...h, weightInClass: h.weightInClass + freed * share };
+          });
+          return { ...g, holdings: redistributed };
         }
         return {
           ...g,
@@ -1770,7 +1791,7 @@ export function PimPortfolio({ groups }: Props) {
       ? `${buyTicker} was already held in these models — swap was NOT applied there: ${skippedDueToBoughtPresent.join(", ")}.`
       : undefined;
     return { ok: true, warning };
-  }, [pimPortfolioState, selectedGroupId, updatePimPortfolioState, scoredStocks, addStock, pimModels, updatePimModels, moveBucket, stocks, positions, usdCadRate, rebalanceStockWeights, updateStockFields]);
+  }, [pimPortfolioState, selectedGroupId, updatePimPortfolioState, scoredStocks, addStock, pimModels, updatePimModels, moveBucket, stocks, positions, usdCadRate, rebalanceStockWeights, updateStockFields, coreSymbols]);
 
   /**
    * Run every valid trade in the queue sequentially. Skips invalid rows
