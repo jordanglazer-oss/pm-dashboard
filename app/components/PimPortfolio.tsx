@@ -660,6 +660,32 @@ export function PimPortfolio({ groups }: Props) {
     return { blended, coveragePct };
   }, [holdingRows, totalValueCadSummary, cashBalance, stocks]);
 
+  // Per-symbol "fund missing its MER" check for the positioning table's
+  // warning badge. A holding flags ⚠ when it's a fund/ETF (FUNDSERV code,
+  // or instrumentType etf/mutual-fund on its Dashboard stock) AND has no
+  // credible MER (neither a manual override nor a valid auto-fetched
+  // expense ratio > 0). Individual stocks never flag — they have no MER.
+  // Mirrors the canon/validEr logic in the blended-MER tile so the two
+  // always agree on what counts as a missing MER.
+  const fundMissingMer = useCallback((symbol: string): boolean => {
+    const canon = (t: string): string => {
+      const up = t.toUpperCase().trim();
+      if (up.endsWith(".TO")) return up.slice(0, -3);
+      if (up.endsWith("-T")) return up.slice(0, -2);
+      return up;
+    };
+    const target = canon(symbol);
+    const stock = stocks.find((s) => canon(s.ticker) === target);
+    const isFund =
+      isFundservCode(symbol) ||
+      stock?.instrumentType === "etf" ||
+      stock?.instrumentType === "mutual-fund";
+    if (!isFund) return false;
+    const validEr = (v: number | null | undefined) =>
+      typeof v === "number" && Number.isFinite(v) && v > 0;
+    return !(validEr(stock?.manualExpenseRatio) || validEr(stock?.fundData?.expenseRatio));
+  }, [stocks]);
+
   // Today's return: weighted sum of each holding's daily % change (prev close → current price).
   // USD holdings use yesterday's USDCAD for the prev side and today's USDCAD
   // for the curr side so that FX translation gain/loss is reflected in the
@@ -1900,6 +1926,15 @@ export function PimPortfolio({ groups }: Props) {
                         </Link>
                         {isMF && (
                           <span className="ml-1 rounded bg-violet-100 px-1 py-0.5 text-[8px] font-bold text-violet-600">FUND</span>
+                        )}
+                        {fundMissingMer(r.symbol) && (
+                          <Link
+                            href={`/stock/${symbolToTicker(r.symbol).toLowerCase()}?from=positioning`}
+                            title="No MER on file for this fund/ETF — click to add a manual override. Missing MERs are treated as 0% in the blended-fee calc, understating total fees."
+                            className="ml-1 inline-block rounded bg-amber-100 px-1 py-0.5 text-[8px] font-bold uppercase tracking-wider text-amber-700 hover:bg-amber-200 transition-colors"
+                          >
+                            ⚠ No MER
+                          </Link>
                         )}
                       </td>
                       <td className="py-2 text-right font-mono text-xs">{pct(r.modelPct)}</td>
