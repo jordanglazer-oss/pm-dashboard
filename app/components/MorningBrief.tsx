@@ -1276,7 +1276,7 @@ export function MorningBrief({
         <div className="border-t border-slate-100 pt-5 mb-4">
           <div className="flex items-center gap-3 mb-3">
             <h4 className="text-xs font-semibold text-slate-400 uppercase tracking-widest">Breadth (manual entry)</h4>
-            <span className="text-[10px] text-slate-400">% above 200/50 DMA + NYSE new H/L — sources: Mark Newton's note, your Claude skill, Barchart ($BCMM / $S5TH / $MAHN), StockCharts, WSJ. When date = today, used directly. Partial entry is fine.</span>
+            <span className="text-[10px] text-slate-400">% above 200/50 DMA + NYSE new H/L — sources: Mark Newton&apos;s note, your Claude skill, Barchart ($BCMM / $S5TH / $MAHN), StockCharts, WSJ. When date = today, used directly. Partial entry is fine.</span>
           </div>
           {/* Helper to keep the date in sync whenever the PM types a value.
               All six fields share the same date — partial entry is fine. */}
@@ -1408,23 +1408,23 @@ export function MorningBrief({
                     keep both fields in the same unit. */}
                 <div className="grid gap-4 md:grid-cols-3 mt-3">
                   <div>
-                    <LabelLink text="NYSE Up Volume" href={BC.broad} />
+                    <LabelLink text="NYSE Up Volume (billions)" href={BC.broad} />
                     <input
-                      type="number" step="0.01" min={0} placeholder="3.19"
+                      type="number" step="0.01" min={0} placeholder="0.90"
                       value={numVal(marketData.breadthOverride?.upVolume)}
                       onChange={(e) => updateBreadthField("upVolume", e.target.value)}
                       className="w-full rounded-lg border border-slate-200 bg-slate-50 px-3 py-2 text-sm text-slate-700 outline-none focus:border-blue-300 focus:ring-1 focus:ring-blue-200 transition-all"
-                      title="NYSE advancing volume. Enter in billions (3.19) or raw shares (3194510000) — only the ratio vs down-volume matters, so keep both fields in the same unit."
+                      title="NYSE advancing (up) share volume, in BILLIONS — e.g. 900,520,000 shares → 0.90. Only the ratio vs down-volume matters, so just keep both fields in the same unit (billions is easiest: drop the last 9 digits). Raw shares (900520000) also work if you use raw in both."
                     />
                   </div>
                   <div>
-                    <LabelLink text="NYSE Down Volume" href={BC.broad} />
+                    <LabelLink text="NYSE Down Volume (billions)" href={BC.broad} />
                     <input
-                      type="number" step="0.01" min={0} placeholder="2.24"
+                      type="number" step="0.01" min={0} placeholder="3.45"
                       value={numVal(marketData.breadthOverride?.downVolume)}
                       onChange={(e) => updateBreadthField("downVolume", e.target.value)}
                       className="w-full rounded-lg border border-slate-200 bg-slate-50 px-3 py-2 text-sm text-slate-700 outline-none focus:border-blue-300 focus:ring-1 focus:ring-blue-200 transition-all"
-                      title="NYSE declining volume. Same unit as Up Volume. Up % = up / (up + down): >85% = thrust, <15% = capitulation."
+                      title="NYSE declining (down) share volume, in BILLIONS — e.g. 3,446,500,000 shares → 3.45. Must use the SAME unit as Up Volume. Up % = up / (up + down): >85% = thrust, <15% = capitulation."
                     />
                   </div>
                   <div /> {/* empty cell for grid alignment */}
