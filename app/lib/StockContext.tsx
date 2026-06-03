@@ -655,22 +655,23 @@ export function StockProvider({ children }: { children: React.ReactNode }) {
     // Locked specialty funds keep their existing weightInClass untouched
     const lockedTotal = lockedHoldings.reduce((s, h) => s + h.weightInClass, 0);
 
-    // ── PC USA override (INVERSE of the default rule) ────────────────
-    // For the pc-usa group ONLY: the Core ETFs and Alpha funds are the
-    // FIXED, manually-set weights, and the individual stocks equal-weight
-    // whatever residual is left over. This is the mirror image of the
-    // default rule below (stocks locked at refPerStock, Core ETFs absorb
-    // the residual).
+    // ── Residual rule: Core/Alpha fixed, individual stocks fill the gap ──
+    // For EVERY model: the Core ETFs and Alpha funds keep their FIXED,
+    // manually-set weightInClass, and the individual stocks equal-weight
+    // whatever residual is left over (residual / N). This is the mirror
+    // image of the legacy default rule below (stocks locked at refPerStock,
+    // Core ETFs absorb the residual), which now only runs as a fallback
+    // when a model has no individual stocks (nothing could absorb the
+    // residual), so the asset class can never drop below 100%.
     //
-    // Scoped strictly to groupId === "pc-usa" so every other model keeps
-    // the documented locked-stock behavior byte-for-byte. It is a no-op on
-    // currently-balanced data — today's Core weights already equal the
-    // residual, so perStock resolves right back to refPerStock — and the
-    // two rules only diverge once a Core/Alpha weight is edited. Falls
-    // through to the default rule when pc-usa has no individual stocks
-    // (nothing could absorb the residual), so the class can't drop below
-    // 100%.
-    if (groupId === "pc-usa" && stockHoldings.length > 0) {
+    // It is a no-op on currently-balanced data — today's Core weights
+    // already equal the residual, so perStock resolves right back to
+    // refPerStock and no rebalance fires on deploy — and the two rules only
+    // diverge once a Core/Alpha weight is edited, at which point that weight
+    // sticks and the stocks flex to keep the class at 100%. (`groupId` is
+    // retained on the signature for call-site auditability / future
+    // per-model hooks even though the rule is now uniform.)
+    if (stockHoldings.length > 0) {
       const coreTotalFixed = etfHoldings.reduce((s, h) => s + h.weightInClass, 0);
       const stockResidual = Math.max(0, 1.0 - coreTotalFixed - lockedTotal);
       const perStock = parseFloat((stockResidual / stockHoldings.length).toFixed(6));
