@@ -119,7 +119,7 @@ type StockContextType = {
   watchlistStocks: ScoredStock[];
   pimModels: PimModelData;
   updatePimModels: (data: PimModelData) => void;
-  rebalanceStockWeights: (holdings: PimHolding[], extraStock?: Stock) => PimHolding[];
+  rebalanceStockWeights: (holdings: PimHolding[], extraStock?: Stock, groupId?: string) => PimHolding[];
   toggleModelEligibility: (ticker: string, groupId: string, eligible: boolean) => void;
   updateModelWeight: (ticker: string, groupId: string, weight: number) => void;
   pimPortfolioState: PimPortfolioState;
@@ -574,7 +574,7 @@ export function StockProvider({ children }: { children: React.ReactNode }) {
   }, [stocks, pimBaseline]);
 
   /* ─── Rebalance: individual stocks keep fixed weight, freed weight → Core ETFs ─── */
-  const rebalanceStockWeights = useCallback((holdings: PimHolding[], extraStock?: Stock): PimHolding[] => {
+  const rebalanceStockWeights = useCallback((holdings: PimHolding[], extraStock?: Stock, groupId?: string): PimHolding[] => {
     // Reference per-stock weight from PIM base model (Redis-backed baseline, seed fallback)
     const pimBaseGroup = pimBaseline.find((g) => g.id === "pim");
     const refPerStock = 0.018182; // PIM baseline default for individual stocks
@@ -654,6 +654,33 @@ export function StockProvider({ children }: { children: React.ReactNode }) {
 
     // Locked specialty funds keep their existing weightInClass untouched
     const lockedTotal = lockedHoldings.reduce((s, h) => s + h.weightInClass, 0);
+
+    // ── PC USA override (INVERSE of the default rule) ────────────────
+    // For the pc-usa group ONLY: the Core ETFs and Alpha funds are the
+    // FIXED, manually-set weights, and the individual stocks equal-weight
+    // whatever residual is left over. This is the mirror image of the
+    // default rule below (stocks locked at refPerStock, Core ETFs absorb
+    // the residual).
+    //
+    // Scoped strictly to groupId === "pc-usa" so every other model keeps
+    // the documented locked-stock behavior byte-for-byte. It is a no-op on
+    // currently-balanced data — today's Core weights already equal the
+    // residual, so perStock resolves right back to refPerStock — and the
+    // two rules only diverge once a Core/Alpha weight is edited. Falls
+    // through to the default rule when pc-usa has no individual stocks
+    // (nothing could absorb the residual), so the class can't drop below
+    // 100%.
+    if (groupId === "pc-usa" && stockHoldings.length > 0) {
+      const coreTotalFixed = etfHoldings.reduce((s, h) => s + h.weightInClass, 0);
+      const stockResidual = Math.max(0, 1.0 - coreTotalFixed - lockedTotal);
+      const perStock = parseFloat((stockResidual / stockHoldings.length).toFixed(6));
+      return [
+        ...nonEquity,
+        ...lockedHoldings,             // Alpha funds — weightInClass preserved
+        ...etfHoldings,                // Core ETFs — manually-set weight preserved
+        ...stockHoldings.map((h) => ({ ...h, weightInClass: perStock })),
+      ];
+    }
 
     // Core (unlocked) ETFs absorb the remainder proportionally per PIM seed ratios
     const seedEtfWeights = new Map<string, number>();
@@ -742,10 +769,10 @@ export function StockProvider({ children }: { children: React.ReactNode }) {
         // For individual stocks: rebalance all stocks to equal weight
         // For ETFs/MFs: weight is derived from manual input, just rebalance stocks
         if (isStock(stock)) {
-          return { ...group, holdings: rebalanceStockWeights(newHoldings, stock) };
+          return { ...group, holdings: rebalanceStockWeights(newHoldings, stock, group.id) };
         } else {
           // Rebalance individual stocks in case ETF is in equity class
-          return { ...group, holdings: rebalanceStockWeights(newHoldings) };
+          return { ...group, holdings: rebalanceStockWeights(newHoldings, undefined, group.id) };
         }
       });
 
@@ -764,7 +791,7 @@ export function StockProvider({ children }: { children: React.ReactNode }) {
 
         const remainingHoldings = group.holdings.filter((_, i) => i !== holdingIdx);
         // Rebalance individual stocks to redistribute freed equity weight
-        return { ...group, holdings: rebalanceStockWeights(remainingHoldings) };
+        return { ...group, holdings: rebalanceStockWeights(remainingHoldings, undefined, group.id) };
       });
 
       const updated = { ...prev, groups: updatedGroups, lastUpdated: new Date().toISOString() };
@@ -1165,7 +1192,7 @@ export function StockProvider({ children }: { children: React.ReactNode }) {
             i === holdingIdx ? { ...h, weightInClass: newWeightInClass } : h
           );
 
-          return { ...group, holdings: rebalanceStockWeights(updatedHoldings) };
+          return { ...group, holdings: rebalanceStockWeights(updatedHoldings, undefined, group.id) };
         });
 
         const updated = { ...prev, groups: updatedGroups, lastUpdated: new Date().toISOString() };
@@ -1211,7 +1238,7 @@ export function StockProvider({ children }: { children: React.ReactNode }) {
             i === holdingIdx ? { ...h, weightInClass: newWeightInClass } : h
           );
 
-          return { ...group, holdings: rebalanceStockWeights(updatedHoldings) };
+          return { ...group, holdings: rebalanceStockWeights(updatedHoldings, undefined, groupId) };
         });
 
         const updated = { ...prev, groups: updatedGroups, lastUpdated: new Date().toISOString() };
@@ -1613,9 +1640,9 @@ export function StockProvider({ children }: { children: React.ReactNode }) {
 
           // Rebalance individual stocks (works for both stock and ETF/MF additions)
           if (isStock(stock)) {
-            return { ...group, holdings: rebalanceStockWeights(newHoldings, stock) };
+            return { ...group, holdings: rebalanceStockWeights(newHoldings, stock, group.id) };
           } else {
-            return { ...group, holdings: rebalanceStockWeights(newHoldings) };
+            return { ...group, holdings: rebalanceStockWeights(newHoldings, undefined, group.id) };
           }
         });
         const data = { ...prev, groups: updatedGroups, lastUpdated: new Date().toISOString() };
@@ -1632,7 +1659,7 @@ export function StockProvider({ children }: { children: React.ReactNode }) {
 
           const remaining = group.holdings.filter((_, i) => i !== holdingIdx);
           // Rebalance individual stocks to redistribute freed weight
-          return { ...group, holdings: rebalanceStockWeights(remaining) };
+          return { ...group, holdings: rebalanceStockWeights(remaining, undefined, group.id) };
         });
         const data = { ...prev, groups: updatedGroups, lastUpdated: new Date().toISOString() };
         persistPim(data);

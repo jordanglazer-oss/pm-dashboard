@@ -138,6 +138,14 @@ function fmtGainLoss(v: number): string {
 type SortField = "symbol" | "name" | "units" | "price" | "value" | "acb" | "modelPct" | "currentPct" | "drift" | "gainLoss";
 type SortDir = "asc" | "desc";
 
+/** Sort-direction chevron for the holdings table header. Defined at module
+ *  scope (not inside the component) so it isn't re-created every render —
+ *  takes the active sortField/sortDir as props. */
+function SortIcon({ field, sortField, sortDir }: { field: SortField; sortField: SortField; sortDir: SortDir }) {
+  if (sortField !== field) return <span className="ml-0.5 text-slate-300">↕</span>;
+  return <span className="ml-0.5 text-slate-600">{sortDir === "asc" ? "↑" : "↓"}</span>;
+}
+
 type HoldingRow = {
   symbol: string;
   name: string;
@@ -465,7 +473,10 @@ export function PimPortfolio({ groups }: Props) {
     setPricesLoading(false);
   }, [selectedGroup, stocks]);
 
-  useEffect(() => { fetchPrices(); }, [selectedGroupId]); // eslint-disable-line react-hooks/exhaustive-deps
+  // fetchPrices flips a loading flag synchronously then resolves async — the
+  // standard "refetch when the group changes" pattern, not a cascading-render
+  // bug. Disable both exhaustive-deps and set-state-in-effect here.
+  useEffect(() => { fetchPrices(); }, [selectedGroupId]); // eslint-disable-line react-hooks/exhaustive-deps, react-hooks/set-state-in-effect
 
   // Get positions for current group + profile
   const currentPositions = useMemo(() => {
@@ -503,8 +514,6 @@ export function PimPortfolio({ groups }: Props) {
     if (!effectiveGroup || !profileWeights) return [];
 
     const rows: HoldingRow[] = [];
-    // Cash is always CAD
-    let totalValueCad = currentPositions?.cashBalance || 0;
 
     // First pass: compute values (all in CAD for weight calculation)
     const rawRows = effectiveGroup.holdings.map((h) => {
@@ -527,9 +536,15 @@ export function PimPortfolio({ groups }: Props) {
       const costValue = units * costBasis; // in CAD (input is CAD)
       const costValueCad = units * costBasisCad; // ACB in CAD
 
-      totalValueCad += valueCad;
       return { h, modelPct, units, costBasis, costBasisCad, price, priceCad, value, valueCad, costValue, costValueCad, fxRate };
     });
+
+    // Total CAD value = cash + every holding's CAD value. Computed via reduce
+    // AFTER the map (rather than mutating an outer `let` inside the map) so we
+    // don't reassign a variable mid-render. Same value as before: the old
+    // accumulator summed valueCad across ALL holdings, which is exactly this.
+    const totalValueCad = (currentPositions?.cashBalance || 0)
+      + rawRows.reduce((sum, r) => sum + r.valueCad, 0);
 
     // Filter out holdings with 0% model weight for this profile
     const activeRows = rawRows.filter((r) => r.modelPct > 0);
@@ -818,11 +833,6 @@ export function PimPortfolio({ groups }: Props) {
 
     setEditMode(false);
     setSaving(false);
-  };
-
-  const SortIcon = ({ field }: { field: SortField }) => {
-    if (sortField !== field) return <span className="ml-0.5 text-slate-300">↕</span>;
-    return <span className="ml-0.5 text-slate-600">{sortDir === "asc" ? "↑" : "↓"}</span>;
   };
 
   const hasPositions = holdingRows.some((r) => r.units > 0);
@@ -1507,7 +1517,7 @@ export function PimPortfolio({ groups }: Props) {
             // No same-currency Core ETF in this group (e.g. PC USA's CAD
             // sleeve is stocks-only) — fall back to the generic Core
             // redistribution so the class still sums to 100%.
-            return { ...g, holdings: rebalanceStockWeights(remaining) };
+            return { ...g, holdings: rebalanceStockWeights(remaining, undefined, g.id) };
           }
           const coreTotal = sameCcyCore.reduce((s, h) => s + h.weightInClass, 0);
           const freed = sold.weightInClass;
@@ -2458,36 +2468,36 @@ export function PimPortfolio({ groups }: Props) {
             <thead className="sticky top-0 z-10 bg-slate-50 shadow-[0_1px_0_0_rgb(226_232_240)]">
               <tr className="border-b border-slate-100 bg-slate-50">
                 <th className={`text-left ${thClass}`} onClick={() => handleSort("symbol")}>
-                  Symbol<SortIcon field="symbol" />
+                  Symbol<SortIcon field="symbol" sortField={sortField} sortDir={sortDir} />
                 </th>
                 <th className={`text-left ${thClass}`} onClick={() => handleSort("name")}>
-                  Name<SortIcon field="name" />
+                  Name<SortIcon field="name" sortField={sortField} sortDir={sortDir} />
                 </th>
                 <th className={`text-right ${thClass}`} onClick={() => handleSort("units")}>
-                  Units<SortIcon field="units" />
+                  Units<SortIcon field="units" sortField={sortField} sortDir={sortDir} />
                 </th>
                 <th className={`text-right ${thClass}`} onClick={() => handleSort("price")}>
-                  Price<SortIcon field="price" />
+                  Price<SortIcon field="price" sortField={sortField} sortDir={sortDir} />
                 </th>
                 <th className={`text-right ${thClass}`} onClick={() => handleSort("value")}>
-                  Value (CAD)<SortIcon field="value" />
+                  Value (CAD)<SortIcon field="value" sortField={sortField} sortDir={sortDir} />
                 </th>
                 <th className={`text-right ${thClass}`} onClick={() => handleSort("acb")}>
-                  ACB (CAD)<SortIcon field="acb" />
+                  ACB (CAD)<SortIcon field="acb" sortField={sortField} sortDir={sortDir} />
                 </th>
                 <th className={`text-right ${thClass}`} onClick={() => handleSort("modelPct")}>
-                  Model %<SortIcon field="modelPct" />
+                  Model %<SortIcon field="modelPct" sortField={sortField} sortDir={sortDir} />
                 </th>
                 {hasPositions && (
                   <>
                     <th className={`text-right ${thClass}`} onClick={() => handleSort("currentPct")}>
-                      Current %<SortIcon field="currentPct" />
+                      Current %<SortIcon field="currentPct" sortField={sortField} sortDir={sortDir} />
                     </th>
                     <th className={`text-center ${thClass}`} onClick={() => handleSort("drift")}>
-                      Action<SortIcon field="drift" />
+                      Action<SortIcon field="drift" sortField={sortField} sortDir={sortDir} />
                     </th>
                     <th className={`text-right ${thClass}`} onClick={() => handleSort("gainLoss")}>
-                      Gain/Loss<SortIcon field="gainLoss" />
+                      Gain/Loss<SortIcon field="gainLoss" sortField={sortField} sortDir={sortDir} />
                     </th>
                   </>
                 )}
