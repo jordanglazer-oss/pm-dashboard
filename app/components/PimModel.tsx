@@ -408,54 +408,31 @@ export function PimModel({ groups }: Props) {
       return { ...selectedGroup, holdings: normalized };
     }
 
-    // Non-PIM groups: every non-core equity holding picks up the
-    // canonical weight from PIM (so individual stock sizing stays in
-    // sync), and the group's own core ETFs absorb whatever deficit is
-    // left over so equity weightInClass sums cleanly to 100%.
+    // Non-PIM groups: RESPECT the stored equity weightInClass. StockContext's
+    // rebalanceStockWeights is the single source of truth — it keeps Core ETFs
+    // + Alpha funds at their manually-set weights and flexes the individual
+    // stocks to fill the residual, always summing the equity class to 100%.
+    // The page therefore just uses those stored weights (so a manual Core /
+    // Alpha weight edit is actually VISIBLE) and only normalizes the equity
+    // class to 1.0 as a safety net against any stale/legacy blob whose weights
+    // don't already sum cleanly.
     //
-    // Replaces a previous "PIM weight + missing-share" calc that
-    // double-counted: it added the absent PIM holdings' weight on top
-    // of the core ETF's already-stored weight, pushing equity totals
-    // past 100% (PC USA / Non-Res equity sleeves were hitting 124%).
-    // The new deficit-based math is self-correcting — non-core total
-    // + core total always equals 1.0 by construction.
+    // Replaces an older deficit-split that force-adopted PIM-canonical weights
+    // for individual stocks and made Core ETFs absorb the residual. That math
+    // overrode manual Core/Alpha weight edits on screen — the stored value
+    // changed but the page recomputed and hid it, so edits appeared to do
+    // nothing. (No-op on currently-balanced data: stored equity already sums
+    // to 1.0, so normalization changes nothing until a weight is edited.)
     if (selectedGroup.id !== "pim" && pimGroup) {
-      const pimWeightMap = new Map<string, number>();
-      for (const h of pimGroup.holdings) {
-        if (h.assetClass === "equity") pimWeightMap.set(h.symbol, h.weightInClass);
-      }
-      const isCore = (sym: string) => coreSymbols.has(symbolToTicker(sym));
-      const equityHoldings = selectedGroup.holdings.filter((h) => h.assetClass === "equity");
-
-      // Pass 1 — non-core holdings keep PIM's weight when PIM has the
-      // symbol, else fall back to whatever's stored on this group.
-      const adoptedWeights = new Map<string, number>();
-      let nonCoreTotal = 0;
-      for (const h of equityHoldings) {
-        if (isCore(h.symbol)) continue;
-        const w = pimWeightMap.get(h.symbol) ?? h.weightInClass;
-        adoptedWeights.set(h.symbol, w);
-        nonCoreTotal += w;
-      }
-
-      // Pass 2 — core ETFs split the deficit (1 − nonCoreTotal),
-      // proportional to their current stored weight if any are
-      // non-zero, else split evenly across the core ETFs.
-      const coreList = equityHoldings.filter((h) => isCore(h.symbol));
-      const deficit = Math.max(0, 1 - nonCoreTotal);
-      const coreStoredTotal = coreList.reduce((s, h) => s + h.weightInClass, 0);
-      for (const h of coreList) {
-        const ratio = coreStoredTotal > 0
-          ? h.weightInClass / coreStoredTotal
-          : 1 / Math.max(1, coreList.length);
-        adoptedWeights.set(h.symbol, deficit * ratio);
-      }
-
-      const adjusted = selectedGroup.holdings.map((h) => {
-        if (h.assetClass !== "equity") return h;
-        const w = adoptedWeights.get(h.symbol);
-        return w != null ? { ...h, weightInClass: w } : h;
-      });
+      const equityTotal = selectedGroup.holdings
+        .filter((h) => h.assetClass === "equity")
+        .reduce((s, h) => s + h.weightInClass, 0);
+      if (equityTotal <= 0) return selectedGroup;
+      const adjusted = selectedGroup.holdings.map((h) =>
+        h.assetClass === "equity"
+          ? { ...h, weightInClass: h.weightInClass / equityTotal }
+          : h,
+      );
       return { ...selectedGroup, holdings: adjusted };
     }
 
