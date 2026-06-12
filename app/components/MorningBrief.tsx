@@ -238,6 +238,37 @@ function SaveableTextarea({
  *
  * Keeps ForwardTile styling unchanged.
  */
+/** One-click "information horizon" toggle for a strategist note. Cycles
+ *  unset → Prior close → Pre-mkt on click. Module-scope so it isn't a
+ *  render-defined component. */
+function StrategistTimingToggle({
+  value,
+  onChange,
+}: {
+  value?: "prior-close" | "pre-market";
+  onChange: (next: "prior-close" | "pre-market" | undefined) => void;
+}) {
+  const cycle: ("prior-close" | "pre-market" | undefined)[] = [undefined, "prior-close", "pre-market"];
+  const idx = value == null ? 0 : Math.max(0, cycle.indexOf(value));
+  const label = value === "prior-close" ? "Prior close" : value === "pre-market" ? "Pre-mkt" : "Timing?";
+  const tone =
+    value === "pre-market"
+      ? "bg-emerald-50 text-emerald-700 border-emerald-200"
+      : value === "prior-close"
+        ? "bg-amber-50 text-amber-700 border-amber-200"
+        : "bg-slate-50 text-slate-400 border-slate-200";
+  return (
+    <button
+      type="button"
+      onClick={() => onChange(cycle[(idx + 1) % cycle.length])}
+      title="Information horizon of this note. Click to cycle: unset → Prior close (reflects yesterday's close, has NOT seen the overnight move) → Pre-mkt (published this morning, already digests the overnight tape). The Brief down-weights a prior-close read on a gap day and prefers the fresher horizon when notes conflict."
+      className={`rounded-full border px-2 py-0.5 text-[10px] font-semibold transition-colors hover:opacity-90 ${tone}`}
+    >
+      {label}
+    </button>
+  );
+}
+
 function BriefSection({
   title,
   subtitle,
@@ -1519,6 +1550,14 @@ export function MorningBrief({
               <div className="flex flex-wrap items-center gap-1.5 mb-1">
                 <label className="text-xs font-semibold text-slate-400 uppercase tracking-wider">Mark Newton</label>
                 <span className="text-[10px] text-slate-400">(Technical Strategy)</span>
+                <StrategistTimingToggle
+                  value={marketData.strategistNotes?.newtonTiming}
+                  onChange={(next) =>
+                    onUpdateMarketData({
+                      strategistNotes: { ...marketData.strategistNotes, newtonTiming: next },
+                    })
+                  }
+                />
                 <input
                   type="date"
                   value={marketData.strategistNotes?.newtonDate ?? new Date().toISOString().slice(0, 10)}
@@ -1553,6 +1592,14 @@ export function MorningBrief({
               <div className="flex flex-wrap items-center gap-1.5 mb-1">
                 <label className="text-xs font-semibold text-slate-400 uppercase tracking-wider">Tom Lee</label>
                 <span className="text-[10px] text-slate-400">(Head of Research)</span>
+                <StrategistTimingToggle
+                  value={marketData.strategistNotes?.leeTiming}
+                  onChange={(next) =>
+                    onUpdateMarketData({
+                      strategistNotes: { ...marketData.strategistNotes, leeTiming: next },
+                    })
+                  }
+                />
                 <input
                   type="date"
                   value={marketData.strategistNotes?.leeDate ?? new Date().toISOString().slice(0, 10)}

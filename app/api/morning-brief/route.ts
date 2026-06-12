@@ -1098,26 +1098,37 @@ ${(() => {
   const formatEntries = (
     entries: { date: string; text: string }[],
     name: string,
-    title: string
+    title: string,
+    todayTiming?: string
   ): string | null => {
     if (entries.length === 0) return null;
     const today = new Date().toISOString().slice(0, 10);
     const lines = entries.map((e) => {
-      const label = e.date === today ? "TODAY" : e.date;
+      const label = e.date === today ? (todayTiming ? `TODAY · ${todayTiming}` : "TODAY") : e.date;
       return `[${label}] ${e.text}`;
     });
     return `--- ${name} (${title}) — trailing ${entries.length} day${entries.length > 1 ? "s" : ""} ---\n${lines.join("\n\n")}`;
   };
+  // Manual "information horizon" tag the PM set on TODAY's note (see
+  // MarketData.strategistNotes.*Timing). Surfaced inline on the TODAY line so
+  // the model knows whether the read has seen the overnight move.
+  const sn = (marketData as { strategistNotes?: { newtonTiming?: "prior-close" | "pre-market"; leeTiming?: "prior-close" | "pre-market" } }).strategistNotes;
+  const timingLabel = (t?: "prior-close" | "pre-market"): string | undefined =>
+    t === "prior-close" ? "as of prior close (has NOT seen the overnight / pre-market move)"
+      : t === "pre-market" ? "pre-market today (already digests the overnight tape)"
+        : undefined;
   const blocks: string[] = [];
   const nb = formatEntries(
     strategistHistory.newton,
     "Mark Newton",
-    "Fundstrat Technical Strategy"
+    "Fundstrat Technical Strategy",
+    timingLabel(sn?.newtonTiming)
   );
   const lb = formatEntries(
     strategistHistory.lee,
     "Tom Lee",
-    "Fundstrat Head of Research"
+    "Fundstrat Head of Research",
+    timingLabel(sn?.leeTiming)
   );
   if (nb) blocks.push(nb);
   if (lb) blocks.push(lb);
@@ -1134,6 +1145,7 @@ Key instructions:
 5. Attribute insights by name (e.g. "Newton's technical work flags…").
 6. Do NOT regurgitate full text — distill the 2-3 most actionable points and weave them into compositeAnalysis, contrarianAnalysis, forwardView, hedgingAnalysis, etc. (flowsAnalysis was retired; if a strategist piece flags a flow extreme, fold it into contrarianAnalysis.)
 7. If a strategist's view conflicts with the quantitative data, note the tension explicitly.
+8. INFORMATION HORIZON — a TODAY line may carry a timing tag ("as of prior close" or "pre-market today"). A "prior close" note does NOT yet reflect any overnight / pre-market move. On a MATERIAL overnight gap (large S&P futures move, a significant overnight headline), down-weight a "prior close" read for the tactical and cash-deployment calls — its technical levels predate the gap — and lean on the fresher "pre-market" read; say so in the reason. When two strategists conflict and one is "pre-market" while the other is "prior close", prefer the newer horizon. On a quiet/gapless morning the tag doesn't matter — treat the notes normally. Untagged notes: no timing assumption.
 
 ${blocks.join("\n\n")}`;
 })()}

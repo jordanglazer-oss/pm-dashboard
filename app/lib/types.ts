@@ -416,6 +416,15 @@ export type MarketData = {
     newtonDate?: string; // YYYY-MM-DD date the Newton note pertains to
     lee?: string; // Tom Lee (Fundstrat Head of Research)
     leeDate?: string; // YYYY-MM-DD date the Lee note pertains to
+    // Manual "information horizon" tag for each strategist's TODAY note.
+    //   "prior-close" → note reflects yesterday's close, has NOT seen the
+    //                   overnight / pre-market move (Newton's common pattern).
+    //   "pre-market"  → published pre-market today, already digests the
+    //                   overnight tape (Tom Lee's morning note pattern).
+    // The Brief uses this to down-weight a prior-close read on a material
+    // overnight gap and to prefer the fresher horizon when the two conflict.
+    newtonTiming?: "prior-close" | "pre-market";
+    leeTiming?: "prior-close" | "pre-market";
   };
   // ── Manual breadth entry (replaces scraping after 2026-05-27) ──
   // The PM types today's % above 200/50 DMA values from StockCharts,
