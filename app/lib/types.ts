@@ -582,6 +582,14 @@ export type MorningBrief = {
   marketRegime?: string;
   regimeScore?: number; // Deterministic pre-classification score, -6 to +6
   regimeSignals?: string[]; // Drivers that produced the score
+  /**
+   * One-line verdict pinned to the bottom of the brief: the objective quant
+   * regime PLUS whether the Brief's synthesized read (notes + reports + data)
+   * concurs or cautions, with a terse so-what. Surfaces agreement/divergence
+   * between the mechanical tape and the judgment instead of burying it in
+   * prose. Optional — old briefs in pm:brief predate it and render without it.
+   */
+  regimeVerdict?: string;
   forwardView?: string; // Legacy single-paragraph forward view; kept for backward compat with old briefs
   /**
    * Three-horizon forward outlook. New as of Phase 3 — old briefs in

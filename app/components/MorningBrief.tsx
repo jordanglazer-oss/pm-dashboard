@@ -1032,6 +1032,10 @@ export function MorningBrief({
   const bottomLine =
     brief?.bottomLine ||
     "Click \"Refresh Brief\" to have Claude analyze current market conditions and produce your morning brief.";
+  // One-line regime verdict — objective quant regime + whether the Brief
+  // concurs/cautions/diverges. Pinned in bold under the Bottom Line so the
+  // agreement (or divergence) between the tape and the synthesis isn't buried.
+  const regimeVerdict = brief?.regimeVerdict || null;
 
   const forwardView =
     brief?.forwardView ||
@@ -1678,6 +1682,11 @@ export function MorningBrief({
         <p className="max-w-6xl text-sm leading-6 text-slate-800">
           {bottomLine}
         </p>
+        {regimeVerdict && (
+          <p className="mt-3 border-t border-amber-200 pt-3 max-w-6xl text-sm font-bold text-slate-900">
+            {regimeVerdict}
+          </p>
+        )}
       </section>
 
       {/* Top Actions Today + Hedging Call + Cash Deployment — at-a-glance
