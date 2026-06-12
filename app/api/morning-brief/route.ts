@@ -1112,20 +1112,49 @@ ${(() => {
   // Manual "information horizon" tag the PM set on TODAY's note (see
   // MarketData.strategistNotes.*Timing). Surfaced inline on the TODAY line so
   // the model knows whether the read has seen the overnight move.
-  const sn = (marketData as { strategistNotes?: { newtonTiming?: "prior-close" | "pre-market"; leeTiming?: "prior-close" | "pre-market" } }).strategistNotes;
+  const sn = (marketData as {
+    strategistNotes?: {
+      newton?: string; newtonDate?: string;
+      lee?: string; leeDate?: string;
+      newtonTiming?: "prior-close" | "pre-market";
+      leeTiming?: "prior-close" | "pre-market";
+    };
+  }).strategistNotes;
   const timingLabel = (t?: "prior-close" | "pre-market"): string | undefined =>
     t === "prior-close" ? "as of prior close (has NOT seen the overnight / pre-market move)"
       : t === "pre-market" ? "pre-market today (already digests the overnight tape)"
         : undefined;
+  // Overlay TODAY's note straight from the request body so it's guaranteed in
+  // the brief even if the async history append (fired by /api/kv/market on
+  // save) hasn't landed yet — the Redis history still supplies prior days.
+  // The body text always wins for its own date (it's the freshest copy).
+  const todayIso2 = new Date().toISOString().slice(0, 10);
+  const withTodayNote = (
+    hist: { date: string; text: string }[],
+    todayText?: string,
+    todayDate?: string,
+  ): { date: string; text: string }[] => {
+    const t = (todayText ?? "").trim();
+    if (!t) return hist;
+    const d = todayDate || todayIso2;
+    const idx = hist.findIndex((e) => e.date === d);
+    if (idx >= 0) {
+      if (hist[idx].text === t) return hist;
+      const copy = hist.slice();
+      copy[idx] = { date: d, text: t };
+      return copy;
+    }
+    return [...hist, { date: d, text: t }];
+  };
   const blocks: string[] = [];
   const nb = formatEntries(
-    strategistHistory.newton,
+    withTodayNote(strategistHistory.newton, sn?.newton, sn?.newtonDate),
     "Mark Newton",
     "Fundstrat Technical Strategy",
     timingLabel(sn?.newtonTiming)
   );
   const lb = formatEntries(
-    strategistHistory.lee,
+    withTodayNote(strategistHistory.lee, sn?.lee, sn?.leeDate),
     "Tom Lee",
     "Fundstrat Head of Research",
     timingLabel(sn?.leeTiming)
