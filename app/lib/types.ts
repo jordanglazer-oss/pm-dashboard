@@ -439,7 +439,12 @@ export type MarketData = {
   // flow is broken from Vercel's IP region (consent cookie not returned).
   // Reliable automation isn't possible without paying for a breadth API.
   breadthOverride?: {
-    date?: string; // YYYY-MM-DD — must equal today for values to be used
+    date?: string; // YYYY-MM-DD "as-of" date the values pertain to (the market
+                   // close they reflect — typically yesterday when entered in the
+                   // morning). USED when within 6 calendar days of today (see
+                   // MAX_BREADTH_AGE_DAYS in forward-looking.ts); older = treated
+                   // as "not entered"; future-dated = ignored. Store the CLOSE
+                   // date, not today, so wk/wk + mo/mo deltas land on the right days.
     above200?: number; // % of S&P 500 trading above 200-day MA, e.g. 51.4
     above50?: number; // % of S&P 500 trading above 50-day MA
     // Broad-market breadth — universe-agnostic. PM's preferred source can
