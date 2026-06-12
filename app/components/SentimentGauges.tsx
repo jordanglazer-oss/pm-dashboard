@@ -45,10 +45,11 @@ type Props = {
   forwardData?: ForwardLookingBundle | null;
 };
 
+// CNN Fear & Greed official category bands (so the label matches cnn.com):
+//   0-24 Extreme Fear · 25-44 Fear · 45-55 Neutral · 56-75 Greed · 76-100 Extreme Greed
 function fearGreedLabel(value: number): string {
-  if (value <= 10) return "Extreme Fear";
-  if (value <= 25) return "Fear";
-  if (value <= 45) return "Neutral-Bearish";
+  if (value <= 24) return "Extreme Fear";
+  if (value <= 44) return "Fear";
   if (value <= 55) return "Neutral";
   if (value <= 75) return "Greed";
   return "Extreme Greed";
