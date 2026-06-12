@@ -456,6 +456,18 @@ export type MarketData = {
     // Nothing else in the breadth set measures conviction behind the move.
     upVolume?: number; // NYSE advancing volume (shares or billions)
     downVolume?: number; // NYSE declining volume (same unit as upVolume)
+    // Per-field "last edited" timestamps (ISO). Stamped whenever the PM
+    // types a value into that specific box, so the UI can show a small
+    // freshness tag and flag any field that wasn't refreshed today (i.e.
+    // a stale value left over from a previous session). Persisted alongside
+    // the values in pm:market, so the tags survive refreshes / sync across
+    // devices. Keyed by the same field names as above.
+    editedAt?: {
+      above200?: string; above50?: string;
+      broadAbove200?: string; broadAbove50?: string;
+      newHighs?: string; newLows?: string;
+      upVolume?: string; downVolume?: string;
+    };
   };
   // ── Deprecated manual fields ──
   // These were superseded by ForwardLookingData (auto-fetched). They remain

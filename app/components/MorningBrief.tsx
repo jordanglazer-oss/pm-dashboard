@@ -1284,16 +1284,52 @@ export function MorningBrief({
             const today = new Date().toISOString().slice(0, 10);
             const updateBreadthField = (field: string, raw: string) => {
               const v = raw === "" ? undefined : parseFloat(raw);
+              const prev = marketData.breadthOverride ?? {};
+              const valid = v != null && !isNaN(v);
+              // Stamp this box's last-edited time so the freshness tag can
+              // flag stale fields; clear the stamp when the box is emptied.
+              const nextEditedAt: Record<string, string> = { ...(prev.editedAt ?? {}) };
+              if (valid) nextEditedAt[field] = new Date().toISOString();
+              else delete nextEditedAt[field];
               onUpdateMarketData({
                 breadthOverride: {
-                  ...marketData.breadthOverride,
-                  date: marketData.breadthOverride?.date ?? today,
-                  [field]: v != null && !isNaN(v) ? v : undefined,
+                  ...prev,
+                  date: prev.date ?? today,
+                  [field]: valid ? v : undefined,
+                  editedAt: nextEditedAt,
                 },
               });
             };
+            // Wipe every manual breadth value + its freshness stamp in one
+            // click. Persists to pm:market (so the clear syncs across devices).
+            const clearAllBreadth = () => {
+              if (!window.confirm("Clear all manual breadth values? You'll need to re-enter them from the source.")) return;
+              onUpdateMarketData({ breadthOverride: { date: today } });
+            };
             const numVal = (v: unknown): number | "" =>
               typeof v === "number" ? v : "";
+            // Tiny per-box freshness tag: green "today" when the value was
+            // entered on the current date, amber + the edit date when it's
+            // older (stale — a value left from a prior session that may have
+            // been missed in today's update). Renders nothing for empty boxes.
+            const editedMap = marketData.breadthOverride?.editedAt;
+            const FreshnessTag = ({ ts }: { ts?: string }) => {
+              if (!ts) return null;
+              const day = ts.slice(0, 10);
+              const isToday = day === today;
+              return (
+                <span
+                  className={`text-[8px] leading-none px-1 py-0.5 rounded font-semibold border ${
+                    isToday
+                      ? "bg-emerald-50 text-emerald-600 border-emerald-200"
+                      : "bg-amber-50 text-amber-700 border-amber-200"
+                  }`}
+                  title={isToday ? "Edited today" : `Last edited ${day} — may be stale`}
+                >
+                  {isToday ? "today" : day.slice(5)}
+                </span>
+              );
+            };
             // Barchart source pages — clicking the icon next to each label
             // opens the page where the PM finds that indicator. Mirrors the
             // S&P Oscillator input's source-link pattern. Kept in sync with
@@ -1305,7 +1341,7 @@ export function MorningBrief({
               nh: "https://www.barchart.com/stocks/quotes/$MAHN",
               nl: "https://www.barchart.com/stocks/quotes/$MALN",
             };
-            const LabelLink = ({ text, href }: { text: string; href?: string }) => (
+            const LabelLink = ({ text, href, editedAt }: { text: string; href?: string; editedAt?: string }) => (
               <div className="flex items-center gap-1 mb-1">
                 <label className="text-[10px] font-semibold text-slate-400 uppercase tracking-wider">{text}</label>
                 {href && (
@@ -1313,10 +1349,22 @@ export function MorningBrief({
                     <svg className="w-3 h-3" fill="none" stroke="currentColor" strokeWidth="2" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" d="M10 6H6a2 2 0 00-2 2v10a2 2 0 002 2h10a2 2 0 002-2v-4M14 4h6m0 0v6m0-6L10 14" /></svg>
                   </a>
                 )}
+                <FreshnessTag ts={editedAt} />
               </div>
             );
             return (
               <>
+                {/* Toolbar: Clear all manual breadth values in one click. */}
+                <div className="flex justify-end mb-2">
+                  <button
+                    type="button"
+                    onClick={clearAllBreadth}
+                    className="text-[10px] font-semibold text-slate-400 hover:text-red-600 border border-slate-200 hover:border-red-200 rounded px-2 py-0.5 transition-colors"
+                    title="Clear every manual breadth value and its freshness tag. Persists to pm:market, so it syncs across refreshes and devices."
+                  >
+                    Clear all
+                  </button>
+                </div>
                 {/* Row 1: Date + SP500 200/50 */}
                 <div className="grid gap-4 md:grid-cols-3 mb-3">
                   <div>
@@ -1337,7 +1385,7 @@ export function MorningBrief({
                     />
                   </div>
                   <div>
-                    <LabelLink text="SP500 >200DMA (%)" href={BC.sp200} />
+                    <LabelLink text="SP500 >200DMA (%)" href={BC.sp200} editedAt={editedMap?.above200} />
                     <input
                       type="number" step="0.1" min={0} max={100} placeholder="51.2"
                       value={numVal(marketData.breadthOverride?.above200)}
@@ -1346,7 +1394,7 @@ export function MorningBrief({
                     />
                   </div>
                   <div>
-                    <LabelLink text="SP500 >50DMA (%)" href={BC.sp50} />
+                    <LabelLink text="SP500 >50DMA (%)" href={BC.sp50} editedAt={editedMap?.above50} />
                     <input
                       type="number" step="0.1" min={0} max={100} placeholder="44.6"
                       value={numVal(marketData.breadthOverride?.above50)}
@@ -1358,7 +1406,7 @@ export function MorningBrief({
                 {/* Row 2: Broad Market 200/50 + (blank slot for grid alignment) */}
                 <div className="grid gap-4 md:grid-cols-3 mb-3">
                   <div>
-                    <LabelLink text="Broad Market >200DMA (%)" href={BC.broad} />
+                    <LabelLink text="Broad Market >200DMA (%)" href={BC.broad} editedAt={editedMap?.broadAbove200} />
                     <input
                       type="number" step="0.1" min={0} max={100} placeholder="54.9"
                       value={numVal(marketData.breadthOverride?.broadAbove200)}
@@ -1368,7 +1416,7 @@ export function MorningBrief({
                     />
                   </div>
                   <div>
-                    <LabelLink text="Broad Market >50DMA (%)" href={BC.broad} />
+                    <LabelLink text="Broad Market >50DMA (%)" href={BC.broad} editedAt={editedMap?.broadAbove50} />
                     <input
                       type="number" step="0.1" min={0} max={100} placeholder="59.4"
                       value={numVal(marketData.breadthOverride?.broadAbove50)}
@@ -1382,7 +1430,7 @@ export function MorningBrief({
                 {/* Row 3: NYSE new highs / new lows */}
                 <div className="grid gap-4 md:grid-cols-3">
                   <div>
-                    <LabelLink text="NYSE New Highs (count)" href={BC.nh} />
+                    <LabelLink text="NYSE New Highs (count)" href={BC.nh} editedAt={editedMap?.newHighs} />
                     <input
                       type="number" step="1" min={0} placeholder="78"
                       value={numVal(marketData.breadthOverride?.newHighs)}
@@ -1392,7 +1440,7 @@ export function MorningBrief({
                     />
                   </div>
                   <div>
-                    <LabelLink text="NYSE New Lows (count)" href={BC.nl} />
+                    <LabelLink text="NYSE New Lows (count)" href={BC.nl} editedAt={editedMap?.newLows} />
                     <input
                       type="number" step="1" min={0} placeholder="142"
                       value={numVal(marketData.breadthOverride?.newLows)}
@@ -1408,7 +1456,7 @@ export function MorningBrief({
                     keep both fields in the same unit. */}
                 <div className="grid gap-4 md:grid-cols-3 mt-3">
                   <div>
-                    <LabelLink text="NYSE Up Volume (billions)" href={BC.broad} />
+                    <LabelLink text="NYSE Up Volume (billions)" href={BC.broad} editedAt={editedMap?.upVolume} />
                     <input
                       type="number" step="0.01" min={0} placeholder="0.90"
                       value={numVal(marketData.breadthOverride?.upVolume)}
@@ -1418,7 +1466,7 @@ export function MorningBrief({
                     />
                   </div>
                   <div>
-                    <LabelLink text="NYSE Down Volume (billions)" href={BC.broad} />
+                    <LabelLink text="NYSE Down Volume (billions)" href={BC.broad} editedAt={editedMap?.downVolume} />
                     <input
                       type="number" step="0.01" min={0} placeholder="3.45"
                       value={numVal(marketData.breadthOverride?.downVolume)}
