@@ -2146,7 +2146,7 @@ export default function ResearchPage() {
           )}
 
           <div className="overflow-x-auto">
-            <table className="w-full text-sm">
+            <div className="overflow-x-auto"><table className="w-full text-sm">
               <thead>
                 <tr className="border-b-2 border-teal-600 text-left">
                   <th className="py-2 pr-2 text-xs font-semibold text-teal-700 w-8">#</th>
@@ -2237,7 +2237,7 @@ export default function ResearchPage() {
                   </tr>
                 )}
               </tbody>
-            </table>
+            </table></div>
           </div>
 
           <UptickAddForm onAdd={addUptick} />
@@ -2287,7 +2287,7 @@ export default function ResearchPage() {
                   View parsed rows from screenshot ({lastScrape.length})
                 </summary>
                 <div className="mt-1 overflow-x-auto">
-                  <table className="w-full text-[10px]">
+                  <div className="overflow-x-auto"><table className="w-full text-[10px]">
                     <thead>
                       <tr className="text-slate-400 border-b border-slate-200">
                         <th className="py-1 pr-2 text-left">Ticker</th>
@@ -2308,7 +2308,7 @@ export default function ResearchPage() {
                         </tr>
                       ))}
                     </tbody>
-                  </table>
+                  </table></div>
                 </div>
               </details>
             )}
@@ -2403,7 +2403,7 @@ export default function ResearchPage() {
               <span className="text-sm text-slate-400">{state.fundstratTop.length} names</span>
             </div>
 
-            <table className="w-full text-sm">
+            <div className="overflow-x-auto"><table className="w-full text-sm">
               <thead>
                 <tr className="border-b-2 border-emerald-500 text-left">
                   <th className="py-2 pr-2 text-xs font-semibold text-emerald-700 w-8">#</th>
@@ -2467,7 +2467,7 @@ export default function ResearchPage() {
                   <tr><td colSpan={6} className="py-6 text-center text-slate-400 italic">No top ideas added yet</td></tr>
                 )}
               </tbody>
-            </table>
+            </table></div>
 
             <IdeaAddForm onAdd={(e) => addIdea("fundstratTop", e)} />
 
@@ -2494,7 +2494,7 @@ export default function ResearchPage() {
               <span className="text-sm text-slate-400">{state.fundstratBottom.length} names</span>
             </div>
 
-            <table className="w-full text-sm">
+            <div className="overflow-x-auto"><table className="w-full text-sm">
               <thead>
                 <tr className="border-b-2 border-red-400 text-left">
                   <th className="py-2 pr-2 text-xs font-semibold text-red-700 w-8">#</th>
@@ -2558,7 +2558,7 @@ export default function ResearchPage() {
                   <tr><td colSpan={6} className="py-6 text-center text-slate-400 italic">No bottom ideas added yet</td></tr>
                 )}
               </tbody>
-            </table>
+            </table></div>
 
             <IdeaAddForm onAdd={(e) => addIdea("fundstratBottom", e)} />
 
@@ -2591,7 +2591,7 @@ export default function ResearchPage() {
               <span className="text-sm text-slate-400">{(state.fundstratSmidTop ?? []).length} names</span>
             </div>
 
-            <table className="w-full text-sm">
+            <div className="overflow-x-auto"><table className="w-full text-sm">
               <thead>
                 <tr className="border-b-2 border-emerald-500 text-left">
                   <th className="py-2 pr-2 text-xs font-semibold text-emerald-700 w-8">#</th>
@@ -2649,7 +2649,7 @@ export default function ResearchPage() {
                   <tr><td colSpan={6} className="py-6 text-center text-slate-400 italic">No top SMID ideas added yet</td></tr>
                 )}
               </tbody>
-            </table>
+            </table></div>
 
             <IdeaAddForm onAdd={(e) => addIdea("fundstratSmidTop", e)} />
 
@@ -2676,7 +2676,7 @@ export default function ResearchPage() {
               <span className="text-sm text-slate-400">{(state.fundstratSmidBottom ?? []).length} names</span>
             </div>
 
-            <table className="w-full text-sm">
+            <div className="overflow-x-auto"><table className="w-full text-sm">
               <thead>
                 <tr className="border-b-2 border-red-400 text-left">
                   <th className="py-2 pr-2 text-xs font-semibold text-red-700 w-8">#</th>
@@ -2734,7 +2734,7 @@ export default function ResearchPage() {
                   <tr><td colSpan={6} className="py-6 text-center text-slate-400 italic">No bottom SMID ideas added yet</td></tr>
                 )}
               </tbody>
-            </table>
+            </table></div>
 
             <IdeaAddForm onAdd={(e) => addIdea("fundstratSmidBottom", e)} />
 
@@ -2822,7 +2822,7 @@ export default function ResearchPage() {
             <span className="text-sm text-slate-400">{(state.rbcCanadianFocus || []).length} names</span>
           </div>
 
-          <table className="w-full text-sm">
+          <div className="overflow-x-auto"><table className="w-full text-sm">
             <thead>
               <tr className="border-b-2 border-blue-500 text-left">
                 <th className="py-2 pr-2 text-xs font-semibold text-blue-700 w-8">#</th>
@@ -2877,7 +2877,7 @@ export default function ResearchPage() {
                 <tr><td colSpan={6} className="py-6 text-center text-slate-400 italic">No names added yet</td></tr>
               )}
             </tbody>
-          </table>
+          </table></div>
 
           <RBCAddForm onAdd={addRbc} />
 
@@ -2908,7 +2908,7 @@ export default function ResearchPage() {
             <span className="text-sm text-slate-400">{(state.rbcUsFocus || []).length} names</span>
           </div>
 
-          <table className="w-full text-sm">
+          <div className="overflow-x-auto"><table className="w-full text-sm">
             <thead>
               <tr className="border-b-2 border-teal-500 text-left">
                 <th className="py-2 pr-2 text-xs font-semibold text-teal-700 w-8">#</th>
@@ -2963,7 +2963,7 @@ export default function ResearchPage() {
                 <tr><td colSpan={6} className="py-6 text-center text-slate-400 italic">No names added yet</td></tr>
               )}
             </tbody>
-          </table>
+          </table></div>
 
           <RBCAddForm onAdd={addRbcUs} />
 
@@ -2994,7 +2994,7 @@ export default function ResearchPage() {
             <span className="text-sm text-slate-400">{(state.rbccmFew || []).length} names</span>
           </div>
 
-          <table className="w-full text-sm">
+          <div className="overflow-x-auto"><table className="w-full text-sm">
             <thead>
               <tr className="border-b-2 border-indigo-500 text-left">
                 <th className="py-2 pr-2 text-xs font-semibold text-indigo-700 w-8">#</th>
@@ -3036,7 +3036,7 @@ export default function ResearchPage() {
                 <tr><td colSpan={6} className="py-6 text-center text-slate-400 italic">No names added yet</td></tr>
               )}
             </tbody>
-          </table>
+          </table></div>
 
           <FewAddForm onAdd={addFew} />
 
@@ -3285,7 +3285,7 @@ export default function ResearchPage() {
                 </div>
 
                 <div className="overflow-x-auto">
-                  <table className="w-full text-sm">
+                  <div className="overflow-x-auto"><table className="w-full text-sm">
                     <thead>
                       <tr className="border-b-2 border-slate-300 text-left">
                         <th className="py-2 pr-2 text-xs font-semibold text-slate-600 w-8">#</th>
@@ -3400,7 +3400,7 @@ export default function ResearchPage() {
                         </td></tr>
                       )}
                     </tbody>
-                  </table>
+                  </table></div>
                 </div>
               </>
             );

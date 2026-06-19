@@ -193,7 +193,7 @@ export function Navigation() {
     : "Dashboard";
 
   return (
-    <header className="bg-slate-900 text-white">
+    <header className="bg-slate-900 text-white print:hidden">
       <div className="mx-auto flex items-center justify-between px-4 py-2 md:px-6">
         {/* Branding */}
         <div className="flex items-center gap-3 shrink-0">
