@@ -724,7 +724,10 @@ export default function InboxPage() {
       // the priority rule, dual-listing match, and timestamp bookkeeping.
       const expected = stocks.filter(isScoreable);
       const now = new Date().toISOString();
-      const { patches, summary } = applySiaEntries(expected, data.entries || [], now);
+      // Pass `stocks` (full Portfolio + Watchlist) so any held ETFs/funds
+      // in the screenshot drop out of "unmatched" silently — they don't
+      // feed relativeStrength so the warning would be misleading.
+      const { patches, summary } = applySiaEntries(expected, data.entries || [], now, stocks);
       dispatchPatches(patches);
       setScreenshotImportSummary({
         source: "sia",
@@ -772,7 +775,8 @@ export default function InboxPage() {
       };
       const expected = stocks.filter(isScoreable);
       const now = new Date().toISOString();
-      const { patches, summary } = applyBoostedEntries(expected, data.entries || [], now);
+      // Pass `stocks` so held ETFs/funds drop out of "unmatched" silently.
+      const { patches, summary } = applyBoostedEntries(expected, data.entries || [], now, stocks);
       dispatchPatches(patches);
       setScreenshotImportSummary({
         source: "boosted",

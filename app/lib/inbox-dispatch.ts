@@ -166,7 +166,9 @@ async function handleSia(att: AttachmentInput, label: string): Promise<DispatchR
   const { entries, cached } = await extractSiaFromAttachments([att]);
   const stocks = await readStocks();
   const expected = stocks.filter(isScoreable);
-  const { patches, summary } = applySiaEntries(expected, entries, new Date().toISOString());
+  // Pass full pm:stocks pool so held ETFs/funds in the screenshot drop
+  // out of "unmatched" silently (they don't feed relativeStrength).
+  const { patches, summary } = applySiaEntries(expected, entries, new Date().toISOString(), stocks);
   const { touched } = await applyPatchesToRedis(patches);
   return {
     ok: true,
@@ -183,7 +185,7 @@ async function handleBoosted(att: AttachmentInput, label: string): Promise<Dispa
   const { entries, cached } = await extractBoostedFromAttachments([att]);
   const stocks = await readStocks();
   const expected = stocks.filter(isScoreable);
-  const { patches, summary } = applyBoostedEntries(expected, entries, new Date().toISOString());
+  const { patches, summary } = applyBoostedEntries(expected, entries, new Date().toISOString(), stocks);
   const { touched } = await applyPatchesToRedis(patches);
   return {
     ok: true,

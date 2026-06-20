@@ -57,15 +57,30 @@ export function applySiaEntries(
   /** Wall-clock to stamp on siaLastScreenshotAt / siaLastReadAt. Pass an
    *  explicit value so the caller (server) can use one timestamp per upload. */
   now: string,
+  /** Optional: full Portfolio + Watchlist (including ETFs / mutual funds).
+   *  Used to silently filter held-but-not-scoreable names (ETFs/funds) out
+   *  of the "unmatched" warning — those names show up in SIA exports too,
+   *  but they don't feed the relativeStrength score so we just drop them
+   *  rather than clutter the actionable warning. Pass `expected` (or omit)
+   *  if you want the legacy behavior. */
+  allHeld?: Stock[],
 ): { patches: StockPatch[]; summary: IngestSummary } {
   const patches: StockPatch[] = [];
   const summary = emptySummary();
   summary.rowsParsed = entries.length;
   const matchedStockTickers = new Set<string>();
+  const held = allHeld ?? expected;
 
   for (const e of entries) {
     const stock = expected.find((s) => sameCompanyLoose(s.ticker, e.ticker));
-    if (!stock) { summary.unmatched.push(e.ticker); continue; }
+    if (!stock) {
+      // If this is an ETF/fund the PM holds, silently drop it — SIA assigns
+      // SMAX scores to ETFs too but our scoring system only applies to
+      // individual stocks. Putting them in "unmatched" was misleading noise.
+      const heldNotScoreable = held.find((s) => sameCompanyLoose(s.ticker, e.ticker));
+      if (!heldNotScoreable) summary.unmatched.push(e.ticker);
+      continue;
+    }
     summary.matched += 1;
     matchedStockTickers.add(stock.ticker);
     if (typeof e.smax === "number" && Number.isFinite(e.smax)) {
@@ -98,15 +113,24 @@ export function applyBoostedEntries(
   expected: Stock[],
   entries: ScrapedBoosted[],
   now: string,
+  /** See applySiaEntries — same ETF/fund silent-filter behavior. */
+  allHeld?: Stock[],
 ): { patches: StockPatch[]; summary: IngestSummary } {
   const patches: StockPatch[] = [];
   const summary = emptySummary();
   summary.rowsParsed = entries.length;
   const matchedStockTickers = new Set<string>();
+  const held = allHeld ?? expected;
 
   for (const e of entries) {
     const stock = expected.find((s) => sameCompanyLoose(s.ticker, e.ticker));
-    if (!stock) { summary.unmatched.push(e.ticker); continue; }
+    if (!stock) {
+      // Held ETFs/funds with BoostedAI ratings get silently filtered —
+      // they don't feed aiRating and would just clutter "unmatched".
+      const heldNotScoreable = held.find((s) => sameCompanyLoose(s.ticker, e.ticker));
+      if (!heldNotScoreable) summary.unmatched.push(e.ticker);
+      continue;
+    }
     summary.matched += 1;
     matchedStockTickers.add(stock.ticker);
 
