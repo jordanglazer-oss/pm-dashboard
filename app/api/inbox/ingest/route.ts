@@ -16,6 +16,7 @@ import {
 } from "@/app/lib/analyst-snapshots";
 import { canonicalTicker, tickersEqual } from "@/app/lib/ticker";
 import { appendInboxEvent } from "@/app/lib/inbox-log";
+import { classifySubject, dispatchInbox } from "@/app/lib/inbox-dispatch";
 
 /**
  * Webhook target for the Gmail Apps Script. The script POSTs one PDF per
@@ -178,6 +179,43 @@ export async function POST(request: NextRequest) {
     await appendInboxEvent({ status: "error", subject, sender, filename, message: "Missing subject or dataUrl" });
     return NextResponse.json({ error: "Missing subject or dataUrl" }, { status: 400 });
   }
+
+  // ── New-kinds dispatcher ───────────────────────────────────────────
+  // SIA / BoostedAI / MarketEdge / Strategist subjects route through the
+  // shared dispatcher (app/lib/inbox-dispatch.ts), which reuses the same
+  // parsing + matching code as the manual Inbox UI. The classic
+  // "Analyst Report: <TICKER>" flow falls through to the legacy path
+  // below (PDF-only, ticker/source routing).
+  const kind = classifySubject(subject);
+  if (kind !== "analyst-report" && kind !== "unknown") {
+    try {
+      const result = await dispatchInbox({ kind, subject, filename, dataUrl });
+      // result is guaranteed non-null for these kinds (only analyst-report /
+      // unknown return null from the dispatcher).
+      if (!result) {
+        await appendInboxEvent({ status: "error", subject, sender, filename, message: `Dispatcher returned no result for kind=${kind}` });
+        return NextResponse.json({ error: "Internal dispatch error" }, { status: 500 });
+      }
+      await appendInboxEvent({
+        status: result.ok ? "success" : "error",
+        subject,
+        sender,
+        filename,
+        size: dataUrl.length,
+        message: result.message,
+      });
+      return NextResponse.json(
+        { ok: result.ok, kind: result.kind, message: result.message, detail: result.detail ?? {} },
+        { status: result.ok ? 200 : (result.status ?? 400) },
+      );
+    } catch (e) {
+      const msg = e instanceof Error ? e.message : String(e);
+      await appendInboxEvent({ status: "error", subject, sender, filename, message: `${kind} handler threw: ${msg}` });
+      return NextResponse.json({ error: msg }, { status: 500 });
+    }
+  }
+
+  // Legacy Analyst Report PDF flow — unchanged below.
   if (!dataUrl.startsWith("data:application/pdf;base64,")) {
     await appendInboxEvent({ status: "error", subject, sender, filename, message: "Attachment is not a base64-encoded PDF" });
     return NextResponse.json({ error: "Expected base64 PDF" }, { status: 400 });

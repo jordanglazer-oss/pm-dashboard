@@ -10,13 +10,12 @@ import { canonicalTicker } from "@/app/lib/ticker";
 import {
   mapBoostedAiToAiRating,
   mapSmaxToRelativeStrength,
-  mapPowerRatingToMarketEdge,
   consensusLabel,
   consensusToneClass,
   type BoostedAiConsensus,
-  type MarketEdgeOpinion,
 } from "@/app/lib/external-scoring";
-import { sameCompanyLoose } from "@/app/lib/ticker";
+import { applySiaEntries, applyBoostedEntries, applyMarketEdgeRows, type StockPatch } from "@/app/lib/stock-patches";
+import { parseMarketEdgeCsv } from "@/app/lib/marketedge-csv";
 import Link from "next/link";
 
 type Status = {
@@ -673,6 +672,15 @@ export default function InboxPage() {
     unmatched: string[];                 // tickers in screenshot not in P+W
     errors: string[];
   };
+  /** Dispatch a StockPatch[] through the React context. Used by SIA + Boosted
+   *  + MarketEdge importers to apply the patches computed by the shared
+   *  app/lib/stock-patches helpers. */
+  const dispatchPatches = useCallback((patches: StockPatch[]) => {
+    for (const p of patches) {
+      if (Object.keys(p.fields).length > 0) updateStockFields(p.ticker, p.fields);
+      for (const su of p.scoreUpdates ?? []) updateScore(p.ticker, su.key, su.value);
+    }
+  }, [updateStockFields, updateScore]);
   const [screenshotImportSummary, setScreenshotImportSummary] = useState<ScreenshotImportSummary | null>(null);
   const [siaImporting, setSiaImporting] = useState(false);
   const [boostedImporting, setBoostedImporting] = useState(false);
@@ -711,61 +719,17 @@ export default function InboxPage() {
         throw new Error(`scrape failed (HTTP ${res.status}): ${t.slice(0, 200)}`);
       }
       const data = await res.json() as { entries: Array<{ ticker: string; smax?: number }>; cached?: boolean };
-      const entries = data.entries || [];
-
-      // The set of "expected" tickers = scoreable individual stocks in
-      // Portfolio + Watchlist (ETFs and funds don't have SIA scores).
-      const expected = stocks.filter((s) => isScoreable(s));
+      // Expected = scoreable individual stocks in Portfolio + Watchlist
+      // (ETFs and funds don't have SIA scores). The shared helper handles
+      // the priority rule, dual-listing match, and timestamp bookkeeping.
+      const expected = stocks.filter(isScoreable);
       const now = new Date().toISOString();
-      const inScreenshotButUnreadable: string[] = [];
-      const unmatched: string[] = [];
-      let matched = 0;
-      let updated = 0;
-      const matchedStockTickers = new Set<string>();
-
-      for (const e of entries) {
-        const stock = expected.find((s) => sameCompanyLoose(s.ticker, e.ticker));
-        if (!stock) { unmatched.push(e.ticker); continue; }
-        matched += 1;
-        matchedStockTickers.add(stock.ticker);
-        if (typeof e.smax === "number" && Number.isFinite(e.smax)) {
-          // Vision read a value → overwrite manual + bump LastReadAt.
-          updateStockFields(stock.ticker, {
-            sia: e.smax,
-            siaLastScreenshotAt: now,
-            siaLastReadAt: now,
-          });
-          const mapped = mapSmaxToRelativeStrength(e.smax);
-          if (mapped != null) updateScore(stock.ticker, "relativeStrength", mapped);
-          updated += 1;
-        } else {
-          // Vision saw the ticker but couldn't read SMAX — leave manual value
-          // alone, but mark "screenshot uploaded with no value read" so the
-          // per-stock chip appears until the next successful read.
-          inScreenshotButUnreadable.push(stock.ticker);
-          updateStockFields(stock.ticker, { siaLastScreenshotAt: now });
-        }
-      }
-
-      // Stamp every expected stock that wasn't in the screenshot — so the
-      // chip flags them too. Per the user's rule: warn on values that don't
-      // read properly OR at all.
-      const expectedButMissing: string[] = [];
-      for (const s of expected) {
-        if (matchedStockTickers.has(s.ticker)) continue;
-        expectedButMissing.push(s.ticker);
-        updateStockFields(s.ticker, { siaLastScreenshotAt: now });
-      }
-
+      const { patches, summary } = applySiaEntries(expected, data.entries || [], now);
+      dispatchPatches(patches);
       setScreenshotImportSummary({
         source: "sia",
         cached: Boolean(data.cached),
-        rowsParsed: entries.length,
-        matched,
-        updated,
-        inScreenshotButUnreadable,
-        expectedButMissing,
-        unmatched,
+        ...summary,
         errors,
       });
     } catch (e) {
@@ -778,7 +742,7 @@ export default function InboxPage() {
       setSiaImporting(false);
       if (siaFileRef.current) siaFileRef.current.value = "";
     }
-  }, [stocks, updateStockFields, updateScore]);
+  }, [stocks, dispatchPatches]);
 
   const handleBoostedScreenshots = useCallback(async (files: FileList | null) => {
     if (!files || files.length === 0) return;
@@ -806,58 +770,14 @@ export default function InboxPage() {
         entries: Array<{ ticker: string; rating?: number; consensus?: BoostedAiConsensus }>;
         cached?: boolean;
       };
-      const entries = data.entries || [];
-
-      const expected = stocks.filter((s) => isScoreable(s));
+      const expected = stocks.filter(isScoreable);
       const now = new Date().toISOString();
-      const inScreenshotButUnreadable: string[] = [];
-      const unmatched: string[] = [];
-      let matched = 0;
-      let updated = 0;
-      const matchedStockTickers = new Set<string>();
-
-      for (const e of entries) {
-        const stock = expected.find((s) => sameCompanyLoose(s.ticker, e.ticker));
-        if (!stock) { unmatched.push(e.ticker); continue; }
-        matched += 1;
-        matchedStockTickers.add(stock.ticker);
-        const hasRating = typeof e.rating === "number" && Number.isFinite(e.rating);
-        const hasConsensus = !!e.consensus;
-        if (hasRating || hasConsensus) {
-          const patch: Partial<typeof stock> = {
-            boostedLastScreenshotAt: now,
-            boostedLastReadAt: now,
-          };
-          if (hasRating) patch.boostedAi = e.rating;
-          if (hasConsensus) patch.boostedAiConsensus = e.consensus;
-          updateStockFields(stock.ticker, patch);
-          const nextRating = hasRating ? e.rating! : stock.boostedAi ?? null;
-          const nextConsensus = hasConsensus ? e.consensus! : stock.boostedAiConsensus ?? null;
-          const mapped = mapBoostedAiToAiRating(nextRating, nextConsensus);
-          if (mapped != null) updateScore(stock.ticker, "aiRating", mapped);
-          updated += 1;
-        } else {
-          inScreenshotButUnreadable.push(stock.ticker);
-          updateStockFields(stock.ticker, { boostedLastScreenshotAt: now });
-        }
-      }
-
-      const expectedButMissing: string[] = [];
-      for (const s of expected) {
-        if (matchedStockTickers.has(s.ticker)) continue;
-        expectedButMissing.push(s.ticker);
-        updateStockFields(s.ticker, { boostedLastScreenshotAt: now });
-      }
-
+      const { patches, summary } = applyBoostedEntries(expected, data.entries || [], now);
+      dispatchPatches(patches);
       setScreenshotImportSummary({
         source: "boosted",
         cached: Boolean(data.cached),
-        rowsParsed: entries.length,
-        matched,
-        updated,
-        inScreenshotButUnreadable,
-        expectedButMissing,
-        unmatched,
+        ...summary,
         errors,
       });
     } catch (e) {
@@ -870,7 +790,7 @@ export default function InboxPage() {
       setBoostedImporting(false);
       if (boostedFileRef.current) boostedFileRef.current.value = "";
     }
-  }, [stocks, updateStockFields, updateScore]);
+  }, [stocks, dispatchPatches]);
 
   // ── MarketEdge ("ChartScout") CSV importer ────────────────────────
   // Weekly upload of the ChartScout Likes export. We pull just the four
@@ -892,107 +812,35 @@ export default function InboxPage() {
   const [marketEdgeImporting, setMarketEdgeImporting] = useState(false);
   const marketEdgeFileRef = useRef<HTMLInputElement>(null);
 
-  /** Tab/comma-tolerant CSV row splitter that respects double-quoted fields. */
-  const splitCsvRow = (line: string): string[] => {
-    // Auto-detect tab vs comma per file (the ChartScout export is tab-separated
-    // when copied from Numbers but downloads as comma-separated; both work).
-    const sep = line.includes("\t") && !line.includes(",") ? "\t" : ",";
-    const out: string[] = [];
-    let cur = "";
-    let inQuotes = false;
-    for (let i = 0; i < line.length; i++) {
-      const ch = line[i];
-      if (ch === '"') {
-        if (inQuotes && line[i + 1] === '"') { cur += '"'; i++; }
-        else inQuotes = !inQuotes;
-      } else if (ch === sep && !inQuotes) {
-        out.push(cur); cur = "";
-      } else {
-        cur += ch;
-      }
-    }
-    out.push(cur);
-    return out.map((s) => s.trim());
-  };
-
   const handleMarketEdgeCsv = useCallback(async (file: File) => {
     setMarketEdgeImporting(true);
     setMarketEdgeImportSummary(null);
-    const errors: string[] = [];
-    const unmatched: string[] = [];
-    let matched = 0;
-    let updated = 0;
     try {
       const text = await file.text();
-      // Strip BOM if present and split on any line ending.
-      const lines = text.replace(/^﻿/, "").split(/\r?\n/).filter((l) => l.trim().length > 0);
-      if (lines.length < 2) {
-        errors.push("CSV looks empty (no data rows found).");
-        setMarketEdgeImportSummary({ rows: 0, matched: 0, updated: 0, unmatched, errors });
+      const parsed = parseMarketEdgeCsv(text);
+      if (parsed.errors.length > 0) {
+        setMarketEdgeImportSummary({ rows: 0, matched: 0, updated: 0, unmatched: [], errors: parsed.errors });
         return;
       }
-      const header = splitCsvRow(lines[0]).map((h) => h.toLowerCase());
-      const idx = {
-        symbol: header.findIndex((h) => h === "symbol" || h === "ticker"),
-        opinion: header.findIndex((h) => h === "opinion"),
-        score: header.findIndex((h) => h === "score" || h === "opinion score"),
-        powerRating: header.findIndex((h) => h === "power rating"),
-        date: header.findIndex((h) => h === "opinion date" || h === "date"),
-      };
-      if (idx.symbol < 0) {
-        errors.push("CSV is missing a 'Symbol' column.");
-        setMarketEdgeImportSummary({ rows: 0, matched: 0, updated: 0, unmatched, errors });
-        return;
-      }
-      const dataRows = lines.slice(1);
-      for (const raw of dataRows) {
-        const cells = splitCsvRow(raw);
-        const sym = (cells[idx.symbol] ?? "").trim().toUpperCase();
-        if (!sym) continue;
-        const stock = stocks.find((s) => sameCompanyLoose(s.ticker, sym));
-        if (!stock) { unmatched.push(sym); continue; }
-        matched += 1;
-        const me = { ...(stock.marketEdge ?? {}) };
-        let touched = false;
-        if (idx.opinion >= 0) {
-          const v = (cells[idx.opinion] ?? "").trim().toLowerCase();
-          const opinion: MarketEdgeOpinion | undefined =
-            v === "long" ? "long" : v === "avoid" ? "avoid" : v === "neutral" ? "neutral" : undefined;
-          if (opinion !== me.opinion) { me.opinion = opinion; touched = true; }
-        }
-        if (idx.score >= 0) {
-          const n = parseFloat((cells[idx.score] ?? "").trim());
-          const next = Number.isFinite(n) ? Math.max(-4, Math.min(4, Math.round(n))) : undefined;
-          if (next !== me.opinionScore) { me.opinionScore = next; touched = true; }
-        }
-        let prMapped: number | null = null;
-        if (idx.powerRating >= 0) {
-          const n = parseFloat((cells[idx.powerRating] ?? "").trim());
-          const next = Number.isFinite(n) ? Math.max(-60, Math.min(100, Math.round(n))) : undefined;
-          if (next !== me.powerRating) { me.powerRating = next; touched = true; }
-          prMapped = mapPowerRatingToMarketEdge(next ?? null);
-        }
-        if (idx.date >= 0) {
-          const d = (cells[idx.date] ?? "").trim();
-          if (d && d !== me.opinionDate) { me.opinionDate = d; touched = true; }
-        }
-        if (touched) {
-          updateStockFields(stock.ticker, { marketEdge: me });
-          if (prMapped != null && stock.scores.marketEdge !== prMapped) {
-            updateScore(stock.ticker, "marketEdge", prMapped);
-          }
-          updated += 1;
-        }
-      }
-      setMarketEdgeImportSummary({ rows: dataRows.length, matched, updated, unmatched, errors });
+      const { patches, summary } = applyMarketEdgeRows(stocks, parsed.rows);
+      dispatchPatches(patches);
+      setMarketEdgeImportSummary({
+        rows: summary.rowsParsed,
+        matched: summary.matched,
+        updated: summary.updated,
+        unmatched: summary.unmatched,
+        errors: [],
+      });
     } catch (e) {
-      errors.push(`Parse failed: ${e instanceof Error ? e.message : String(e)}`);
-      setMarketEdgeImportSummary({ rows: 0, matched: 0, updated: 0, unmatched, errors });
+      setMarketEdgeImportSummary({
+        rows: 0, matched: 0, updated: 0, unmatched: [],
+        errors: [`Parse failed: ${e instanceof Error ? e.message : String(e)}`],
+      });
     } finally {
       setMarketEdgeImporting(false);
       if (marketEdgeFileRef.current) marketEdgeFileRef.current.value = "";
     }
-  }, [stocks, updateStockFields, updateScore]);
+  }, [stocks, dispatchPatches]);
 
   const totalCovered = coverageRows.filter((r) => r.hasRbc || r.hasJpm).length;
   const portfolioCovered = coverageRows.filter((r) => r.bucket === "Portfolio" && (r.hasRbc || r.hasJpm)).length;
