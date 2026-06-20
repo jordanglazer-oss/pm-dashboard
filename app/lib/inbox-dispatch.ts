@@ -33,7 +33,9 @@ import {
   type AttachmentInput,
 } from "./screenshot-extractors";
 import { parseMarketEdgeCsv } from "./marketedge-csv";
+import { parseSiaCsv } from "./sia-csv";
 import { applySiaEntries, applyBoostedEntries, applyMarketEdgeRows, type StockPatch } from "./stock-patches";
+import { decodeBase64DataUrl } from "./csv-utils";
 
 // ── Subject → kind ──────────────────────────────────────────────────
 
@@ -61,12 +63,7 @@ export function isImageDataUrl(dataUrl: string): boolean { return IMAGE_MIME_RE.
 export function isPdfDataUrl(dataUrl: string): boolean { return PDF_MIME_RE.test(dataUrl); }
 export function isCsvDataUrl(dataUrl: string): boolean { return CSV_MIME_RE.test(dataUrl); }
 
-/** Decode a base64 data URL to a string. Used for CSVs. */
-function decodeBase64Utf8(dataUrl: string): string {
-  const m = dataUrl.match(/^data:[^;]+;base64,(.+)$/);
-  if (!m) return "";
-  return Buffer.from(m[1], "base64").toString("utf8");
-}
+// CSV decoder is shared with the manual UI via app/lib/csv-utils.ts.
 
 // ── Server-side pm:stocks read-modify-write ────────────────────────
 
@@ -160,8 +157,28 @@ export type DispatchResult = {
 // ── Handlers ───────────────────────────────────────────────────────
 
 async function handleSia(att: AttachmentInput, label: string): Promise<DispatchResult> {
+  // Auto-detect CSV vs image. CSV is the preferred path (instant, $0, 100%
+  // reliable) — when SIA's CSV export is attached, the email subject stays
+  // the same ("SIA …") and we just parse it directly.
+  if (isCsvDataUrl(att.dataUrl)) {
+    const text = decodeBase64DataUrl(att.dataUrl);
+    const parsed = parseSiaCsv(text);
+    if (parsed.errors.length > 0) {
+      return { ok: false, kind: "sia", status: 400, message: `SIA CSV parse error: ${parsed.errors.join("; ")}` };
+    }
+    const stocks = await readStocks();
+    const expected = stocks.filter(isScoreable);
+    const { patches, summary } = applySiaEntries(expected, parsed.rows, new Date().toISOString(), stocks);
+    const { touched } = await applyPatchesToRedis(patches);
+    return {
+      ok: true,
+      kind: "sia",
+      message: `SIA CSV: ${summary.matched} matched / ${summary.rowsParsed} rows · ${summary.updated} updated${summary.expectedButMissing.length ? ` · ${summary.expectedButMissing.length} expected names missing` : ""}.`,
+      detail: { label, source: "csv", summary, touched },
+    };
+  }
   if (!isImageDataUrl(att.dataUrl) && !isPdfDataUrl(att.dataUrl)) {
-    return { ok: false, kind: "sia", status: 400, message: "SIA email expects an image or PDF attachment." };
+    return { ok: false, kind: "sia", status: 400, message: "SIA email expects a CSV export, screenshot (PNG/JPG), or PDF." };
   }
   const { entries, cached } = await extractSiaFromAttachments([att]);
   const stocks = await readStocks();
@@ -174,7 +191,7 @@ async function handleSia(att: AttachmentInput, label: string): Promise<DispatchR
     ok: true,
     kind: "sia",
     message: `SIA${cached ? " (cached)" : ""}: ${summary.matched} matched · ${summary.updated} updated${summary.inScreenshotButUnreadable.length ? ` · ${summary.inScreenshotButUnreadable.length} unreadable` : ""}${summary.expectedButMissing.length ? ` · ${summary.expectedButMissing.length} expected names missing` : ""}.`,
-    detail: { label, cached, summary, touched },
+    detail: { label, source: "vision", cached, summary, touched },
   };
 }
 
@@ -199,7 +216,7 @@ async function handleMarketEdge(att: AttachmentInput, label: string): Promise<Di
   if (!isCsvDataUrl(att.dataUrl)) {
     return { ok: false, kind: "marketedge", status: 400, message: "MarketEdge email expects a CSV attachment (.csv)." };
   }
-  const text = decodeBase64Utf8(att.dataUrl);
+  const text = decodeBase64DataUrl(att.dataUrl);
   const parsed = parseMarketEdgeCsv(text);
   if (parsed.errors.length > 0) {
     return { ok: false, kind: "marketedge", status: 400, message: `MarketEdge CSV parse error: ${parsed.errors.join("; ")}` };

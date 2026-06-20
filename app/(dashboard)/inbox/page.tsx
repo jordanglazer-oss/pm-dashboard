@@ -16,6 +16,7 @@ import {
 } from "@/app/lib/external-scoring";
 import { applySiaEntries, applyBoostedEntries, applyMarketEdgeRows, type StockPatch } from "@/app/lib/stock-patches";
 import { parseMarketEdgeCsv } from "@/app/lib/marketedge-csv";
+import { parseSiaCsv } from "@/app/lib/sia-csv";
 import Link from "next/link";
 
 type Status = {
@@ -685,6 +686,7 @@ export default function InboxPage() {
   const [siaImporting, setSiaImporting] = useState(false);
   const [boostedImporting, setBoostedImporting] = useState(false);
   const siaFileRef = useRef<HTMLInputElement>(null);
+  const siaCsvFileRef = useRef<HTMLInputElement>(null);
   const boostedFileRef = useRef<HTMLInputElement>(null);
 
   /** Read a File as a base64 data URL — the format the scrape endpoints accept. */
@@ -744,6 +746,47 @@ export default function InboxPage() {
     } finally {
       setSiaImporting(false);
       if (siaFileRef.current) siaFileRef.current.value = "";
+    }
+  }, [stocks, dispatchPatches]);
+
+  /** Same priority rule + dual-listing match + held-ETF filter as the
+   *  screenshot path — just feeds CSV-parsed rows through the same
+   *  applySiaEntries helper. Strictly preferred over the screenshot route
+   *  when SIA's CSV export is available: 100% reliable, zero Anthropic
+   *  spend, instant. */
+  const handleSiaCsv = useCallback(async (file: File) => {
+    setSiaImporting(true);
+    setScreenshotImportSummary(null);
+    try {
+      const text = await file.text();
+      const parsed = parseSiaCsv(text);
+      if (parsed.errors.length > 0) {
+        setScreenshotImportSummary({
+          source: "sia", cached: false, rowsParsed: 0, matched: 0, updated: 0,
+          inScreenshotButUnreadable: [], expectedButMissing: [], unmatched: [],
+          errors: parsed.errors,
+        });
+        return;
+      }
+      const expected = stocks.filter(isScoreable);
+      const now = new Date().toISOString();
+      const { patches, summary } = applySiaEntries(expected, parsed.rows, now, stocks);
+      dispatchPatches(patches);
+      setScreenshotImportSummary({
+        source: "sia",
+        cached: false,
+        ...summary,
+        errors: [],
+      });
+    } catch (e) {
+      setScreenshotImportSummary({
+        source: "sia", cached: false, rowsParsed: 0, matched: 0, updated: 0,
+        inScreenshotButUnreadable: [], expectedButMissing: [], unmatched: [],
+        errors: [`Parse failed: ${e instanceof Error ? e.message : String(e)}`],
+      });
+    } finally {
+      setSiaImporting(false);
+      if (siaCsvFileRef.current) siaCsvFileRef.current.value = "";
     }
   }, [stocks, dispatchPatches]);
 
@@ -1004,32 +1047,60 @@ export default function InboxPage() {
           </p>
         </div>
         <div className="grid sm:grid-cols-2 divide-y sm:divide-y-0 sm:divide-x divide-violet-100">
-          {/* SIA upload zone */}
+          {/* SIA upload zone — CSV preferred (instant, $0, 100% reliable);
+              screenshot is the fallback when CSV isn't available. */}
           <div className="p-4">
-            <div className="flex items-center justify-between mb-1.5">
+            <div className="flex flex-wrap items-center justify-between gap-2 mb-1.5">
               <h3 className="text-xs font-semibold text-slate-700 uppercase tracking-wider">SIA watchlist</h3>
-              <input
-                ref={siaFileRef}
-                type="file"
-                accept="image/*,.pdf,application/pdf"
-                multiple
-                onChange={(e) => void handleSiaScreenshots(e.target.files)}
-                className="hidden"
-                id="sia-screenshot-input"
-              />
-              <label
-                htmlFor="sia-screenshot-input"
-                className={`text-xs font-semibold px-3 py-1.5 rounded-md cursor-pointer transition-colors ${
-                  siaImporting
-                    ? "bg-slate-200 text-slate-500 cursor-wait"
-                    : "bg-violet-600 text-white hover:bg-violet-700"
-                }`}
-              >
-                {siaImporting ? "Scanning…" : "Upload screenshot"}
-              </label>
+              <div className="flex items-center gap-1.5">
+                {/* CSV (preferred) */}
+                <input
+                  ref={siaCsvFileRef}
+                  type="file"
+                  accept=".csv,.tsv,text/csv,text/tab-separated-values,text/plain"
+                  onChange={(e) => {
+                    const f = e.target.files?.[0];
+                    if (f) void handleSiaCsv(f);
+                  }}
+                  className="hidden"
+                  id="sia-csv-input"
+                />
+                <label
+                  htmlFor="sia-csv-input"
+                  className={`text-xs font-semibold px-3 py-1.5 rounded-md cursor-pointer transition-colors ${
+                    siaImporting
+                      ? "bg-slate-200 text-slate-500 cursor-wait"
+                      : "bg-violet-600 text-white hover:bg-violet-700"
+                  }`}
+                  title="Preferred: upload the SIA CSV export. 100% reliable, no Anthropic spend, instant."
+                >
+                  {siaImporting ? "Working…" : "Upload CSV"}
+                </label>
+                {/* Screenshot (fallback) */}
+                <input
+                  ref={siaFileRef}
+                  type="file"
+                  accept="image/*,.pdf,application/pdf"
+                  multiple
+                  onChange={(e) => void handleSiaScreenshots(e.target.files)}
+                  className="hidden"
+                  id="sia-screenshot-input"
+                />
+                <label
+                  htmlFor="sia-screenshot-input"
+                  className={`text-xs font-semibold px-2.5 py-1.5 rounded-md cursor-pointer border transition-colors ${
+                    siaImporting
+                      ? "bg-slate-100 text-slate-400 border-slate-200 cursor-wait"
+                      : "bg-white text-violet-700 border-violet-300 hover:bg-violet-50"
+                  }`}
+                  title="Fallback when CSV export isn't available. Vision-parsed; ~95% reliable; one Anthropic call per upload."
+                >
+                  Screenshot
+                </label>
+              </div>
             </div>
             <p className="text-[10px] text-slate-500">
-              Reads <span className="font-mono">ticker · SMAX</span> per row. Updates <code>sia</code> and recomputes the relativeStrength score.
+              Reads <span className="font-mono">SYM · SMAX</span> per row (CSV) or via vision (screenshot). Updates <code>sia</code> and recomputes the relativeStrength score.
             </p>
           </div>
           {/* BoostedAI upload zone */}
@@ -1446,8 +1517,11 @@ export default function InboxPage() {
               </tr>
               <tr className="border-b border-blue-100">
                 <td className="py-2 pr-3 font-mono whitespace-nowrap">SIA</td>
-                <td className="py-2 pr-3 whitespace-nowrap">Screenshot (PNG/JPG/PDF)</td>
-                <td className="py-2 pr-3">Reads ticker + SMAX per row. Updates each matched stock&apos;s SMAX and recomputes the SIA score. Per-stock chip flags any names the screenshot didn&apos;t capture.</td>
+                <td className="py-2 pr-3 whitespace-nowrap">
+                  <span className="text-emerald-700 font-semibold">CSV (preferred)</span>
+                  <br />or screenshot (PNG/JPG/PDF)
+                </td>
+                <td className="py-2 pr-3">Reads <span className="font-mono">SYM</span> + <span className="font-mono">SMAX</span> per row. Updates each matched stock&apos;s SMAX and recomputes the SIA score. CSV is auto-detected; held ETFs/funds are skipped silently.</td>
                 <td className="py-2 font-mono whitespace-nowrap">SIA — Mar 5</td>
               </tr>
               <tr className="border-b border-blue-100">

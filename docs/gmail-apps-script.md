@@ -10,7 +10,7 @@ handles the rest.
 | Prefix | What to send | Lands in |
 |---|---|---|
 | `Analyst Report: <TICKER>` (with `JPM` or `RBC` in subject or filename) | PDF | Per-ticker analyst snapshot (existing flow, unchanged) |
-| `SIA …` | SIACharts watchlist screenshot (PNG/JPG/PDF) | Each matched stock's SIA SMAX + score |
+| `SIA …` | **CSV export (preferred)** or screenshot (PNG/JPG/PDF) | Each matched stock's SIA SMAX + score. CSV is auto-detected — same subject either way. |
 | `BoostedAI …` *or* `Boosted …` | Boosted.ai watchlist screenshot (PNG/JPG/PDF) | Each matched stock's BoostedAI rating + consensus + score |
 | `MarketEdge …` *or* `ChartScout …` | ChartScout Likes export (CSV) | Each matched stock's `marketEdge` fields + composite score |
 | `Strategist …` | Any analyst/strategist research (PDF or image) | Brief's "Analyst / Strategist Reports" dropbox |

@@ -10,6 +10,7 @@
  */
 
 import type { MarketEdgeOpinion } from "./external-scoring";
+import { splitCsvRow } from "./csv-utils";
 
 export type MarketEdgeCsvRow = {
   ticker: string;
@@ -23,29 +24,6 @@ export type MarketEdgeParseResult = {
   rows: MarketEdgeCsvRow[];
   errors: string[];
 };
-
-/** Tab/comma-tolerant CSV row splitter that respects double-quoted fields. */
-function splitCsvRow(line: string): string[] {
-  // Auto-detect tab vs comma per file (the ChartScout export is tab-separated
-  // when copied from Numbers but downloads as comma-separated; both work).
-  const sep = line.includes("\t") && !line.includes(",") ? "\t" : ",";
-  const out: string[] = [];
-  let cur = "";
-  let inQuotes = false;
-  for (let i = 0; i < line.length; i++) {
-    const ch = line[i];
-    if (ch === '"') {
-      if (inQuotes && line[i + 1] === '"') { cur += '"'; i++; }
-      else inQuotes = !inQuotes;
-    } else if (ch === sep && !inQuotes) {
-      out.push(cur); cur = "";
-    } else {
-      cur += ch;
-    }
-  }
-  out.push(cur);
-  return out.map((s) => s.trim());
-}
 
 export function parseMarketEdgeCsv(text: string): MarketEdgeParseResult {
   const errors: string[] = [];
