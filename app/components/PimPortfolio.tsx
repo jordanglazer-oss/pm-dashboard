@@ -1435,9 +1435,18 @@ export function PimPortfolio({ groups }: Props) {
     let buyInstrumentType: InstrumentType = "stock";
     let buySector = "";
     if (buyTicker) {
-      const existsInPortfolio = scoredStocks.some(
-        (s) => tickerEq(s.ticker, buyTicker)
-      );
+      // Important distinction:
+      //   - existingStock — stock exists in ANY bucket (Portfolio OR Watchlist).
+      //   - isOnWatchlist — stock exists but bucket === "Watchlist" today.
+      // The Buy/Sell flow needs to promote a held-on-Watchlist name to
+      // Portfolio so the Dashboard + stock pages reflect that it's now owned.
+      // Previous version checked `scoredStocks.some(...)` and called the
+      // result `existsInPortfolio`, but scoredStocks includes BOTH buckets —
+      // so buying a Watchlist name silently left the bucket unchanged while
+      // pim-models / positions were updated correctly. That mismatch is what
+      // left AVGO + ORCL stuck on the Watchlist after the last trade.
+      const existingStock = stocks.find((s) => tickerEq(s.ticker, buyTicker));
+      const isOnWatchlist = existingStock?.bucket === "Watchlist";
       try {
         const res = await fetch(`/api/company-name?tickers=${encodeURIComponent(buyTicker)}`);
         if (res.ok) {
@@ -1448,7 +1457,7 @@ export function PimPortfolio({ groups }: Props) {
         }
       } catch { /* fallback to defaults */ }
 
-      if (!existsInPortfolio) {
+      if (!existingStock) {
         const stock: Stock = {
           ticker: buyTicker,
           name: buyName,
@@ -1462,11 +1471,23 @@ export function PimPortfolio({ groups }: Props) {
           ...(excludedSet.size > 0 ? { modelEligibility: eligibilityMap } : {}),
         };
         addStock(stock);
-      } else if (excludedSet.size > 0) {
-        // Already in portfolio — persist the eligibility choice so the
-        // stock page reflects it. (For switches the pm:models membership
-        // is driven by the atomic swap below, not by this field.)
-        updateStockFields(buyTicker, { modelEligibility: eligibilityMap });
+      } else {
+        // Persist any user-set eligibility BEFORE the bucket flip so the
+        // addToPimModels triggered by moveBucket (Watchlist → Portfolio)
+        // respects the choice. (For switches the atomic swap below
+        // overrides pim-models membership anyway, but eligibility still
+        // needs to land on the stock for stock-page consistency.)
+        if (excludedSet.size > 0) {
+          updateStockFields(buyTicker, { modelEligibility: eligibilityMap });
+        }
+        // Promote Watchlist → Portfolio. Synchronously flips bucket on
+        // pm:stocks; the atomic swap below then overrides the pim-models
+        // state (which moveBucket touches via addToPimModels). Order is
+        // safe: the atomic swap runs last and `updatePimModels(nextPim)`
+        // is built from pimModelsRef.current, so it wins.
+        if (isOnWatchlist) {
+          moveBucket(existingStock.ticker);
+        }
       }
     }
 
