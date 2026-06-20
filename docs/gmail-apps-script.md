@@ -73,7 +73,13 @@ function processInbox() {
       const subject = (msg.getSubject() || "").trim();
       if (!SUBJECT_RE.test(subject)) continue;
       const sender = msg.getFrom();
-      const attachments = msg.getAttachments({ includeInlineImages: false, includeAttachments: true });
+      // includeInlineImages: true picks up pasted/embedded screenshots
+      // (Outlook generates these as image001.png inline parts), which is
+      // a common way people email screenshots. The route's MIME validation
+      // rejects anything that doesn't match the kind, so inline logos in
+      // analyst-report email signatures fail harmlessly with a logged
+      // 400 — they don't corrupt anything.
+      const attachments = msg.getAttachments({ includeInlineImages: true, includeAttachments: true });
       for (const att of attachments) {
         try {
           const dataUrl = "data:" + att.getContentType() + ";base64," + Utilities.base64Encode(att.getBytes());
