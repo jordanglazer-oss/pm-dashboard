@@ -118,6 +118,86 @@ const PROFILE_LABELS: Record<PimProfileType, string> = {
   core: "Core",
 };
 
+// Asset-allocation pie for the active model profile. Driven directly by the
+// profile's PimProfileWeights (equity / fixedIncome / alternatives / cash),
+// so it updates live as the profile tab changes. Same SVG geometry as the
+// client-report AllocationPie (200×200 viewBox, r=80, rotated -90° so the
+// first slice starts at 12 o'clock).
+const ALLOC_COLORS: Record<"equity" | "fixedIncome" | "alternatives" | "cash", string> = {
+  equity: "#2563eb",       // blue
+  fixedIncome: "#0d9488",  // teal
+  alternatives: "#d97706", // amber
+  cash: "#94a3b8",         // slate
+};
+
+function AssetAllocationPie({ weights, profileLabel }: { weights: PimProfileWeights; profileLabel: string }) {
+  const slices = [
+    { key: "equity", label: "Equity", color: ALLOC_COLORS.equity, weight: (weights.equity ?? 0) * 100 },
+    { key: "fixedIncome", label: "Fixed Income", color: ALLOC_COLORS.fixedIncome, weight: (weights.fixedIncome ?? 0) * 100 },
+    { key: "alternatives", label: "Alternatives", color: ALLOC_COLORS.alternatives, weight: (weights.alternatives ?? 0) * 100 },
+    { key: "cash", label: "Cash", color: ALLOC_COLORS.cash, weight: (weights.cash ?? 0) * 100 },
+  ].filter((s) => s.weight > 0.0001);
+
+  const total = slices.reduce((acc, s) => acc + s.weight, 0);
+  if (!slices.length || total <= 0) {
+    return <div className="text-xs text-slate-400 italic">No allocation data for this model.</div>;
+  }
+
+  const cx = 100, cy = 100, r = 80;
+  const fractions = slices.map((s) => s.weight / total);
+  const cumulative: number[] = [];
+  fractions.reduce((sum, f) => { const next = sum + f; cumulative.push(next); return next; }, 0);
+
+  const paths = slices.map((slice, idx) => {
+    const frac = fractions[idx];
+    const startAngle = (idx === 0 ? 0 : cumulative[idx - 1]) * 2 * Math.PI;
+    const endAngle = cumulative[idx] * 2 * Math.PI;
+    const large = endAngle - startAngle > Math.PI ? 1 : 0;
+    const x1 = cx + r * Math.cos(startAngle);
+    const y1 = cy + r * Math.sin(startAngle);
+    const x2 = cx + r * Math.cos(endAngle);
+    const y2 = cy + r * Math.sin(endAngle);
+    const d = frac >= 0.9999
+      ? `M ${cx - r} ${cy} A ${r} ${r} 0 1 1 ${cx + r} ${cy} A ${r} ${r} 0 1 1 ${cx - r} ${cy} Z`
+      : `M ${cx} ${cy} L ${x1} ${y1} A ${r} ${r} 0 ${large} 1 ${x2} ${y2} Z`;
+    return { slice, d };
+  });
+
+  return (
+    <div className="rounded-2xl border border-slate-200 bg-white p-5 shadow-sm">
+      <h3 className="text-sm font-bold text-slate-800">
+        Asset Allocation
+        <span className="ml-2 text-[11px] font-normal text-slate-400">({profileLabel})</span>
+      </h3>
+      <div className="mt-3 flex items-center gap-5">
+        <svg
+          viewBox="0 0 200 200"
+          width="140"
+          height="140"
+          style={{ transform: "rotate(-90deg)" }}
+          aria-label={`${profileLabel} asset allocation pie chart`}
+          className="shrink-0"
+        >
+          {paths.map(({ slice, d }) => (
+            <path key={slice.key} d={d} fill={slice.color} stroke="#fff" strokeWidth={1.5} />
+          ))}
+        </svg>
+        <div className="flex-1 text-xs space-y-1.5">
+          {slices.map((s) => (
+            <div key={s.key} className="flex items-center justify-between gap-3">
+              <span className="flex items-center gap-2">
+                <span className="inline-block w-3 h-3 rounded-sm" style={{ backgroundColor: s.color }} />
+                <span className="text-slate-700">{s.label}</span>
+              </span>
+              <span className="tabular-nums font-semibold text-slate-800">{s.weight.toFixed(1)}%</span>
+            </div>
+          ))}
+        </div>
+      </div>
+    </div>
+  );
+}
+
 function pct(v: number): string {
   return `${(v * 100).toFixed(2)}%`;
 }
@@ -1995,6 +2075,13 @@ export function PimPortfolio({ groups }: Props) {
             Last rebalance: {new Date(groupState.lastRebalance.date).toLocaleDateString()}
           </span>
         </div>
+      )}
+
+      {/* Asset-allocation pie for the active profile. Driven by the
+          profile's PimProfileWeights, so it re-renders whenever the
+          profile tab changes — one allocation view per model. */}
+      {profileWeights && (
+        <AssetAllocationPie weights={profileWeights} profileLabel={PROFILE_LABELS[activeProfile]} />
       )}
 
       {/* Rebalance Panel */}
