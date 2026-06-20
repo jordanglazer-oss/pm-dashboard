@@ -2394,7 +2394,7 @@ export default function ResearchPage() {
         {/* ── Fundstrat Ideas ── */}
         <div className="grid gap-5 lg:grid-cols-2">
           {/* Top Ideas */}
-          <section className="rounded-[24px] border border-emerald-200 bg-white p-6 shadow-sm">
+          <section className="rounded-[24px] border border-emerald-200 bg-white p-6 shadow-sm min-w-0">
             <div className="flex items-center justify-between mb-4">
               <div>
                 <h3 className="text-xl font-bold text-emerald-800">Fundstrat Large-Cap Top Ideas</h3>
@@ -2485,7 +2485,7 @@ export default function ResearchPage() {
           </section>
 
           {/* Bottom Ideas */}
-          <section className="rounded-[24px] border border-red-200 bg-white p-6 shadow-sm">
+          <section className="rounded-[24px] border border-red-200 bg-white p-6 shadow-sm min-w-0">
             <div className="flex items-center justify-between mb-4">
               <div>
                 <h3 className="text-xl font-bold text-red-800">Fundstrat Large-Cap Bottom Ideas</h3>
@@ -2582,7 +2582,7 @@ export default function ResearchPage() {
              the cross-source synthesis). */}
         <div className="grid gap-5 lg:grid-cols-2">
           {/* SMID Top Ideas */}
-          <section className="rounded-[24px] border border-emerald-200 bg-white p-6 shadow-sm">
+          <section className="rounded-[24px] border border-emerald-200 bg-white p-6 shadow-sm min-w-0">
             <div className="flex items-center justify-between mb-4">
               <div>
                 <h3 className="text-xl font-bold text-emerald-800">Fundstrat Top SMID-Cap Core Ideas</h3>
@@ -2667,7 +2667,7 @@ export default function ResearchPage() {
           </section>
 
           {/* SMID Bottom Ideas */}
-          <section className="rounded-[24px] border border-red-200 bg-white p-6 shadow-sm">
+          <section className="rounded-[24px] border border-red-200 bg-white p-6 shadow-sm min-w-0">
             <div className="flex items-center justify-between mb-4">
               <div>
                 <h3 className="text-xl font-bold text-red-800">Fundstrat Bottom SMID-Cap Core Ideas</h3>
