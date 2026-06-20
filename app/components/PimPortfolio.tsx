@@ -130,25 +130,46 @@ const ALLOC_COLORS: Record<"equity" | "fixedIncome" | "alternatives" | "cash", s
   cash: "#94a3b8",         // slate
 };
 
-function AssetAllocationPie({ weights, profileLabel }: { weights: PimProfileWeights; profileLabel: string }) {
-  const slices = [
-    { key: "equity", label: "Equity", color: ALLOC_COLORS.equity, weight: (weights.equity ?? 0) * 100 },
-    { key: "fixedIncome", label: "Fixed Income", color: ALLOC_COLORS.fixedIncome, weight: (weights.fixedIncome ?? 0) * 100 },
-    { key: "alternatives", label: "Alternatives", color: ALLOC_COLORS.alternatives, weight: (weights.alternatives ?? 0) * 100 },
-    { key: "cash", label: "Cash", color: ALLOC_COLORS.cash, weight: (weights.cash ?? 0) * 100 },
-  ].filter((s) => s.weight > 0.0001);
+type ClassWeights = { equity: number; fixedIncome: number; alternatives: number; cash: number };
 
-  const total = slices.reduce((acc, s) => acc + s.weight, 0);
-  if (!slices.length || total <= 0) {
-    return <div className="text-xs text-slate-400 italic">No allocation data for this model.</div>;
+function AssetAllocationPie({ live, target, profileLabel }: { live: ClassWeights; target: ClassWeights; profileLabel: string }) {
+  // Each row carries the LIVE (drifted) weight and the TARGET weight, both as
+  // percentages. The pie renders from live weights; the legend shows
+  // live vs target vs drift so the PM can see where the book has drifted.
+  const rows = ([
+    { key: "equity", label: "Equity", color: ALLOC_COLORS.equity },
+    { key: "fixedIncome", label: "Fixed Income", color: ALLOC_COLORS.fixedIncome },
+    { key: "alternatives", label: "Alternatives", color: ALLOC_COLORS.alternatives },
+    { key: "cash", label: "Cash", color: ALLOC_COLORS.cash },
+  ] as const).map((c) => ({
+    ...c,
+    liveW: (live[c.key] ?? 0) * 100,
+    targetW: (target[c.key] ?? 0) * 100,
+  })).filter((s) => s.liveW > 0.01 || s.targetW > 0.01);
+
+  const liveTotal = rows.reduce((acc, s) => acc + s.liveW, 0);
+  const targetTotal = rows.reduce((acc, s) => acc + s.targetW, 0);
+  // Render the pie from live weights once they've loaded; before prices come
+  // back (live all 0) fall back to target so the chart isn't blank.
+  const usingLive = liveTotal > 0.01;
+  const pieField: "liveW" | "targetW" = usingLive ? "liveW" : "targetW";
+  const pieTotal = usingLive ? liveTotal : targetTotal;
+
+  if (!rows.length || pieTotal <= 0) {
+    return (
+      <div className="rounded-2xl border border-slate-200 bg-white p-5 shadow-sm">
+        <h3 className="text-sm font-bold text-slate-800">Asset Allocation <span className="ml-2 text-[11px] font-normal text-slate-400">({profileLabel})</span></h3>
+        <div className="mt-2 text-xs text-slate-400 italic">No allocation data for this model.</div>
+      </div>
+    );
   }
 
   const cx = 100, cy = 100, r = 80;
-  const fractions = slices.map((s) => s.weight / total);
+  const fractions = rows.map((s) => s[pieField] / pieTotal);
   const cumulative: number[] = [];
   fractions.reduce((sum, f) => { const next = sum + f; cumulative.push(next); return next; }, 0);
 
-  const paths = slices.map((slice, idx) => {
+  const paths = rows.map((slice, idx) => {
     const frac = fractions[idx];
     const startAngle = (idx === 0 ? 0 : cumulative[idx - 1]) * 2 * Math.PI;
     const endAngle = cumulative[idx] * 2 * Math.PI;
@@ -168,30 +189,50 @@ function AssetAllocationPie({ weights, profileLabel }: { weights: PimProfileWeig
       <h3 className="text-sm font-bold text-slate-800">
         Asset Allocation
         <span className="ml-2 text-[11px] font-normal text-slate-400">({profileLabel})</span>
+        <span className="ml-2 text-[10px] font-medium text-slate-400">{usingLive ? "Live — current market weights" : "Target (awaiting live prices)"}</span>
       </h3>
-      <div className="mt-3 flex items-center gap-5">
+      <div className="mt-3 flex flex-col sm:flex-row sm:items-center gap-5">
         <svg
           viewBox="0 0 200 200"
-          width="140"
-          height="140"
+          width="150"
+          height="150"
           style={{ transform: "rotate(-90deg)" }}
-          aria-label={`${profileLabel} asset allocation pie chart`}
-          className="shrink-0"
+          aria-label={`${profileLabel} live asset allocation pie chart`}
+          className="shrink-0 self-center"
         >
           {paths.map(({ slice, d }) => (
             <path key={slice.key} d={d} fill={slice.color} stroke="#fff" strokeWidth={1.5} />
           ))}
         </svg>
-        <div className="flex-1 text-xs space-y-1.5">
-          {slices.map((s) => (
-            <div key={s.key} className="flex items-center justify-between gap-3">
-              <span className="flex items-center gap-2">
-                <span className="inline-block w-3 h-3 rounded-sm" style={{ backgroundColor: s.color }} />
-                <span className="text-slate-700">{s.label}</span>
-              </span>
-              <span className="tabular-nums font-semibold text-slate-800">{s.weight.toFixed(1)}%</span>
-            </div>
-          ))}
+        <div className="flex-1 text-xs">
+          {/* Header row */}
+          <div className="flex items-center justify-between gap-3 pb-1 mb-1 border-b border-slate-100 text-[10px] uppercase tracking-wider text-slate-400 font-semibold">
+            <span>Class</span>
+            <span className="flex gap-4">
+              <span className="w-12 text-right">Live</span>
+              <span className="w-12 text-right">Target</span>
+              <span className="w-12 text-right">Drift</span>
+            </span>
+          </div>
+          {rows.map((s) => {
+            const drift = s.liveW - s.targetW;
+            const driftColor = Math.abs(drift) < 0.05 ? "text-slate-400" : drift > 0 ? "text-emerald-600" : "text-rose-600";
+            return (
+              <div key={s.key} className="flex items-center justify-between gap-3 py-0.5">
+                <span className="flex items-center gap-2">
+                  <span className="inline-block w-3 h-3 rounded-sm" style={{ backgroundColor: s.color }} />
+                  <span className="text-slate-700">{s.label}</span>
+                </span>
+                <span className="flex gap-4 tabular-nums">
+                  <span className="w-12 text-right font-semibold text-slate-800">{s.liveW.toFixed(1)}%</span>
+                  <span className="w-12 text-right text-slate-500">{s.targetW.toFixed(1)}%</span>
+                  <span className={`w-12 text-right font-medium ${driftColor}`}>
+                    {Math.abs(drift) < 0.05 ? "—" : `${drift > 0 ? "+" : ""}${drift.toFixed(1)}`}
+                  </span>
+                </span>
+              </div>
+            );
+          })}
         </div>
       </div>
     </div>
@@ -693,6 +734,34 @@ export function PimPortfolio({ groups }: Props) {
   const totalCostCad = useMemo(() => {
     return holdingRows.reduce((s, r) => s + r.costValueCad, 0);
   }, [holdingRows]);
+
+  // Live (drifted) asset-allocation vs target, for the active profile.
+  // Aggregates each holding's live currentPct by asset class; cash is its
+  // own slice (cashBalance / total). The live weights are real market
+  // weights and drift from target as prices move. Returns fractions (0-1).
+  const allocationBreakdown = useMemo(() => {
+    if (!profileWeights || !effectiveGroup) return null;
+    const classBySymbol = new Map(effectiveGroup.holdings.map((h) => [h.symbol, h.assetClass]));
+    let equity = 0, fixedIncome = 0, alternatives = 0;
+    for (const r of holdingRows) {
+      const cls = classBySymbol.get(r.symbol);
+      if (cls === "equity") equity += r.currentPct;
+      else if (cls === "fixedIncome") fixedIncome += r.currentPct;
+      else if (cls === "alternative") alternatives += r.currentPct;
+    }
+    const cash = totalValueCadSummary > 0
+      ? (currentPositions?.cashBalance || 0) / totalValueCadSummary
+      : 0;
+    return {
+      live: { equity, fixedIncome, alternatives, cash },
+      target: {
+        equity: profileWeights.equity ?? 0,
+        fixedIncome: profileWeights.fixedIncome ?? 0,
+        alternatives: profileWeights.alternatives ?? 0,
+        cash: profileWeights.cash ?? 0,
+      },
+    };
+  }, [holdingRows, effectiveGroup, profileWeights, currentPositions, totalValueCadSummary]);
 
   // Total portfolio value using PREVIOUS CLOSE prices (for rebalance math).
   // Rebalance quantities should match the trading desk which runs off prior close.
@@ -2077,11 +2146,15 @@ export function PimPortfolio({ groups }: Props) {
         </div>
       )}
 
-      {/* Asset-allocation pie for the active profile. Driven by the
-          profile's PimProfileWeights, so it re-renders whenever the
-          profile tab changes — one allocation view per model. */}
-      {profileWeights && (
-        <AssetAllocationPie weights={profileWeights} profileLabel={PROFILE_LABELS[activeProfile]} />
+      {/* Live (drifted) asset-allocation pie for the active profile, with
+          target + drift in the legend. Re-renders whenever prices refresh
+          or the profile tab changes. */}
+      {allocationBreakdown && (
+        <AssetAllocationPie
+          live={allocationBreakdown.live}
+          target={allocationBreakdown.target}
+          profileLabel={PROFILE_LABELS[activeProfile]}
+        />
       )}
 
       {/* Rebalance Panel */}
