@@ -36,6 +36,38 @@ export async function PUT(req: NextRequest) {
       );
     }
     const redis = await getRedis();
+
+    // ── Write tracer (diagnostic for the AVGO/ORCL bucket drift) ──
+    // Persist a rolling tail of the last 10 writes to pm:stocks so we can
+    // see WHO is writing it: request timestamp, requester IP/UA, plus a
+    // tiny shape summary (bucket counts + AVGO/ORCL bucket) of the
+    // incoming payload. Read it back via /api/admin/peek-stock-writes.
+    // Best-effort — failures don't block the save.
+    try {
+      const bucketCounts: Record<string, number> = {};
+      for (const s of stocks as Array<{ ticker: string; bucket: string }>) {
+        bucketCounts[s.bucket] = (bucketCounts[s.bucket] || 0) + 1;
+      }
+      const avgo = (stocks as Array<{ ticker: string; bucket: string }>).find((s) => s.ticker === "AVGO");
+      const orcl = (stocks as Array<{ ticker: string; bucket: string }>).find((s) => s.ticker === "ORCL");
+      const entry = {
+        at: new Date().toISOString(),
+        userAgent: req.headers.get("user-agent") ?? null,
+        forwardedFor: req.headers.get("x-forwarded-for") ?? null,
+        referer: req.headers.get("referer") ?? null,
+        bucketCounts,
+        avgoBucket: avgo?.bucket ?? null,
+        orclBucket: orcl?.bucket ?? null,
+        stocksCount: stocks.length,
+      };
+      const existingRaw = await redis.get("pm:stocks-write-trace");
+      const existing: unknown[] = existingRaw ? JSON.parse(existingRaw) : [];
+      const trimmed = [...existing.slice(-9), entry];
+      await redis.set("pm:stocks-write-trace", JSON.stringify(trimmed));
+    } catch (traceErr) {
+      console.error("[pm:stocks PUT] write-trace failed (non-blocking):", traceErr);
+    }
+
     await redis.set(KEY, JSON.stringify(stocks));
     return NextResponse.json({ ok: true });
   } catch (e) {
