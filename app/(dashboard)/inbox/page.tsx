@@ -620,31 +620,257 @@ export default function InboxPage() {
   // derived dashboard aiRating score (0-2) using the current consensus.
   // Falls back to null if both rating + consensus end up missing, in
   // which case the existing manual aiRating is left untouched.
+  // Manual edits to BoostedAI / SIA bump *LastReadAt — that's the user's
+  // own way of telling the system "this value is current." Clears the
+  // post-screenshot warning chip on the stock page.
   const saveBoostedAi = (ticker: string, rating: number | null) => {
-    updateStockFields(ticker, { boostedAi: rating == null ? undefined : rating });
+    updateStockFields(ticker, {
+      boostedAi: rating == null ? undefined : rating,
+      boostedLastReadAt: new Date().toISOString(),
+    });
     const current = stocks.find((s) => s.ticker === ticker);
     const consensus = current?.boostedAiConsensus ?? null;
     const mapped = mapBoostedAiToAiRating(rating, consensus);
     if (mapped != null) updateScore(ticker, "aiRating", mapped);
   };
 
-  // Save BoostedAI consensus. Also recomputes aiRating using the current
-  // rating + new consensus.
   const saveBoostedAiConsensus = (ticker: string, consensus: BoostedAiConsensus | null) => {
-    updateStockFields(ticker, { boostedAiConsensus: consensus ?? undefined });
+    updateStockFields(ticker, {
+      boostedAiConsensus: consensus ?? undefined,
+      boostedLastReadAt: new Date().toISOString(),
+    });
     const current = stocks.find((s) => s.ticker === ticker);
     const rating = current?.boostedAi ?? null;
     const mapped = mapBoostedAiToAiRating(rating, consensus);
     if (mapped != null) updateScore(ticker, "aiRating", mapped);
   };
 
-  // Save SIA SMAX (0-10). Also recomputes the derived relativeStrength
-  // score (0-2) via the SIA bucket mapping.
   const saveSia = (ticker: string, smax: number | null) => {
-    updateStockFields(ticker, { sia: smax == null ? undefined : smax });
+    updateStockFields(ticker, {
+      sia: smax == null ? undefined : smax,
+      siaLastReadAt: new Date().toISOString(),
+    });
     const mapped = mapSmaxToRelativeStrength(smax);
     if (mapped != null) updateScore(ticker, "relativeStrength", mapped);
   };
+
+  // ── SIA + BoostedAI screenshot importer ───────────────────────────
+  // Watchlist screenshots → Anthropic vision → per-stock updates.
+  // - Screenshot wins ONLY when it has a value (a row vision couldn't read
+  //   leaves the existing manual value alone).
+  // - Per-stock chip appears when stock.siaLastScreenshotAt >
+  //   stock.siaLastReadAt — i.e. an upload happened that did NOT read a
+  //   value for this name. Manual edits clear the chip by bumping
+  //   siaLastReadAt. Same for Boosted.
+  type ScreenshotImportSummary = {
+    source: "sia" | "boosted";
+    cached: boolean;
+    rowsParsed: number;
+    matched: number;
+    updated: number;
+    inScreenshotButUnreadable: string[]; // tickers vision saw but couldn't parse the value
+    expectedButMissing: string[];        // scoreable P+W stocks not in screenshot
+    unmatched: string[];                 // tickers in screenshot not in P+W
+    errors: string[];
+  };
+  const [screenshotImportSummary, setScreenshotImportSummary] = useState<ScreenshotImportSummary | null>(null);
+  const [siaImporting, setSiaImporting] = useState(false);
+  const [boostedImporting, setBoostedImporting] = useState(false);
+  const siaFileRef = useRef<HTMLInputElement>(null);
+  const boostedFileRef = useRef<HTMLInputElement>(null);
+
+  /** Read a File as a base64 data URL — the format the scrape endpoints accept. */
+  const fileToDataUrl = (file: File): Promise<string> =>
+    new Promise((resolve, reject) => {
+      const reader = new FileReader();
+      reader.onload = () => resolve(String(reader.result || ""));
+      reader.onerror = () => reject(reader.error ?? new Error("read failed"));
+      reader.readAsDataURL(file);
+    });
+
+  const handleSiaScreenshots = useCallback(async (files: FileList | null) => {
+    if (!files || files.length === 0) return;
+    setSiaImporting(true);
+    setScreenshotImportSummary(null);
+    const errors: string[] = [];
+    try {
+      const attachments = await Promise.all(
+        Array.from(files).map(async (f) => ({
+          id: `sia-${f.name}-${f.size}-${f.lastModified}`,
+          label: f.name,
+          dataUrl: await fileToDataUrl(f),
+        })),
+      );
+      const res = await fetch("/api/sia-scrape", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ attachments }),
+      });
+      if (!res.ok) {
+        const t = await res.text();
+        throw new Error(`scrape failed (HTTP ${res.status}): ${t.slice(0, 200)}`);
+      }
+      const data = await res.json() as { entries: Array<{ ticker: string; smax?: number }>; cached?: boolean };
+      const entries = data.entries || [];
+
+      // The set of "expected" tickers = scoreable individual stocks in
+      // Portfolio + Watchlist (ETFs and funds don't have SIA scores).
+      const expected = stocks.filter((s) => isScoreable(s));
+      const now = new Date().toISOString();
+      const inScreenshotButUnreadable: string[] = [];
+      const unmatched: string[] = [];
+      let matched = 0;
+      let updated = 0;
+      const matchedStockTickers = new Set<string>();
+
+      for (const e of entries) {
+        const stock = expected.find((s) => sameCompanyLoose(s.ticker, e.ticker));
+        if (!stock) { unmatched.push(e.ticker); continue; }
+        matched += 1;
+        matchedStockTickers.add(stock.ticker);
+        if (typeof e.smax === "number" && Number.isFinite(e.smax)) {
+          // Vision read a value → overwrite manual + bump LastReadAt.
+          updateStockFields(stock.ticker, {
+            sia: e.smax,
+            siaLastScreenshotAt: now,
+            siaLastReadAt: now,
+          });
+          const mapped = mapSmaxToRelativeStrength(e.smax);
+          if (mapped != null) updateScore(stock.ticker, "relativeStrength", mapped);
+          updated += 1;
+        } else {
+          // Vision saw the ticker but couldn't read SMAX — leave manual value
+          // alone, but mark "screenshot uploaded with no value read" so the
+          // per-stock chip appears until the next successful read.
+          inScreenshotButUnreadable.push(stock.ticker);
+          updateStockFields(stock.ticker, { siaLastScreenshotAt: now });
+        }
+      }
+
+      // Stamp every expected stock that wasn't in the screenshot — so the
+      // chip flags them too. Per the user's rule: warn on values that don't
+      // read properly OR at all.
+      const expectedButMissing: string[] = [];
+      for (const s of expected) {
+        if (matchedStockTickers.has(s.ticker)) continue;
+        expectedButMissing.push(s.ticker);
+        updateStockFields(s.ticker, { siaLastScreenshotAt: now });
+      }
+
+      setScreenshotImportSummary({
+        source: "sia",
+        cached: Boolean(data.cached),
+        rowsParsed: entries.length,
+        matched,
+        updated,
+        inScreenshotButUnreadable,
+        expectedButMissing,
+        unmatched,
+        errors,
+      });
+    } catch (e) {
+      errors.push(e instanceof Error ? e.message : String(e));
+      setScreenshotImportSummary({
+        source: "sia", cached: false, rowsParsed: 0, matched: 0, updated: 0,
+        inScreenshotButUnreadable: [], expectedButMissing: [], unmatched: [], errors,
+      });
+    } finally {
+      setSiaImporting(false);
+      if (siaFileRef.current) siaFileRef.current.value = "";
+    }
+  }, [stocks, updateStockFields, updateScore]);
+
+  const handleBoostedScreenshots = useCallback(async (files: FileList | null) => {
+    if (!files || files.length === 0) return;
+    setBoostedImporting(true);
+    setScreenshotImportSummary(null);
+    const errors: string[] = [];
+    try {
+      const attachments = await Promise.all(
+        Array.from(files).map(async (f) => ({
+          id: `boosted-${f.name}-${f.size}-${f.lastModified}`,
+          label: f.name,
+          dataUrl: await fileToDataUrl(f),
+        })),
+      );
+      const res = await fetch("/api/boosted-ai-scrape", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ attachments }),
+      });
+      if (!res.ok) {
+        const t = await res.text();
+        throw new Error(`scrape failed (HTTP ${res.status}): ${t.slice(0, 200)}`);
+      }
+      const data = await res.json() as {
+        entries: Array<{ ticker: string; rating?: number; consensus?: BoostedAiConsensus }>;
+        cached?: boolean;
+      };
+      const entries = data.entries || [];
+
+      const expected = stocks.filter((s) => isScoreable(s));
+      const now = new Date().toISOString();
+      const inScreenshotButUnreadable: string[] = [];
+      const unmatched: string[] = [];
+      let matched = 0;
+      let updated = 0;
+      const matchedStockTickers = new Set<string>();
+
+      for (const e of entries) {
+        const stock = expected.find((s) => sameCompanyLoose(s.ticker, e.ticker));
+        if (!stock) { unmatched.push(e.ticker); continue; }
+        matched += 1;
+        matchedStockTickers.add(stock.ticker);
+        const hasRating = typeof e.rating === "number" && Number.isFinite(e.rating);
+        const hasConsensus = !!e.consensus;
+        if (hasRating || hasConsensus) {
+          const patch: Partial<typeof stock> = {
+            boostedLastScreenshotAt: now,
+            boostedLastReadAt: now,
+          };
+          if (hasRating) patch.boostedAi = e.rating;
+          if (hasConsensus) patch.boostedAiConsensus = e.consensus;
+          updateStockFields(stock.ticker, patch);
+          const nextRating = hasRating ? e.rating! : stock.boostedAi ?? null;
+          const nextConsensus = hasConsensus ? e.consensus! : stock.boostedAiConsensus ?? null;
+          const mapped = mapBoostedAiToAiRating(nextRating, nextConsensus);
+          if (mapped != null) updateScore(stock.ticker, "aiRating", mapped);
+          updated += 1;
+        } else {
+          inScreenshotButUnreadable.push(stock.ticker);
+          updateStockFields(stock.ticker, { boostedLastScreenshotAt: now });
+        }
+      }
+
+      const expectedButMissing: string[] = [];
+      for (const s of expected) {
+        if (matchedStockTickers.has(s.ticker)) continue;
+        expectedButMissing.push(s.ticker);
+        updateStockFields(s.ticker, { boostedLastScreenshotAt: now });
+      }
+
+      setScreenshotImportSummary({
+        source: "boosted",
+        cached: Boolean(data.cached),
+        rowsParsed: entries.length,
+        matched,
+        updated,
+        inScreenshotButUnreadable,
+        expectedButMissing,
+        unmatched,
+        errors,
+      });
+    } catch (e) {
+      errors.push(e instanceof Error ? e.message : String(e));
+      setScreenshotImportSummary({
+        source: "boosted", cached: false, rowsParsed: 0, matched: 0, updated: 0,
+        inScreenshotButUnreadable: [], expectedButMissing: [], unmatched: [], errors,
+      });
+    } finally {
+      setBoostedImporting(false);
+      if (boostedFileRef.current) boostedFileRef.current.value = "";
+    }
+  }, [stocks, updateStockFields, updateScore]);
 
   // ── MarketEdge ("ChartScout") CSV importer ────────────────────────
   // Weekly upload of the ChartScout Likes export. We pull just the four
@@ -911,6 +1137,108 @@ export default function InboxPage() {
           </table>
           </div>
         ))}
+      </div>
+
+      {/* ── SIA + BoostedAI screenshot importer ──
+          Watchlist screenshots → Anthropic vision → per-stock updates.
+          Screenshot wins ONLY when it has a value; manual stays otherwise.
+          Hash-gated cache (pm:sia-scrape-cache, pm:boosted-ai-scrape-cache)
+          so re-uploading an unchanged image costs zero Anthropic tokens. */}
+      <div className="mt-6 rounded-lg border border-violet-200 bg-white overflow-hidden">
+        <div className="border-b border-violet-100 bg-violet-50/40 px-4 py-3">
+          <h2 className="text-sm font-semibold text-slate-800">SIA + BoostedAI — Screenshot upload</h2>
+          <p className="text-[11px] text-slate-500 mt-0.5">
+            Drop a watchlist screenshot from SIACharts or Boosted.ai. Anthropic vision reads the rows and updates every matched ticker (dual-listed names included). A value already on a stock is preserved if the vision can&apos;t read its new value — a yellow chip shows up on that stock&apos;s SIA / BoostedAI input until the next successful read.
+          </p>
+        </div>
+        <div className="grid sm:grid-cols-2 divide-y sm:divide-y-0 sm:divide-x divide-violet-100">
+          {/* SIA upload zone */}
+          <div className="p-4">
+            <div className="flex items-center justify-between mb-1.5">
+              <h3 className="text-xs font-semibold text-slate-700 uppercase tracking-wider">SIA watchlist</h3>
+              <input
+                ref={siaFileRef}
+                type="file"
+                accept="image/*,.pdf,application/pdf"
+                multiple
+                onChange={(e) => void handleSiaScreenshots(e.target.files)}
+                className="hidden"
+                id="sia-screenshot-input"
+              />
+              <label
+                htmlFor="sia-screenshot-input"
+                className={`text-xs font-semibold px-3 py-1.5 rounded-md cursor-pointer transition-colors ${
+                  siaImporting
+                    ? "bg-slate-200 text-slate-500 cursor-wait"
+                    : "bg-violet-600 text-white hover:bg-violet-700"
+                }`}
+              >
+                {siaImporting ? "Scanning…" : "Upload screenshot"}
+              </label>
+            </div>
+            <p className="text-[10px] text-slate-500">
+              Reads <span className="font-mono">ticker · SMAX</span> per row. Updates <code>sia</code> and recomputes the relativeStrength score.
+            </p>
+          </div>
+          {/* BoostedAI upload zone */}
+          <div className="p-4">
+            <div className="flex items-center justify-between mb-1.5">
+              <h3 className="text-xs font-semibold text-slate-700 uppercase tracking-wider">BoostedAI watchlist</h3>
+              <input
+                ref={boostedFileRef}
+                type="file"
+                accept="image/*,.pdf,application/pdf"
+                multiple
+                onChange={(e) => void handleBoostedScreenshots(e.target.files)}
+                className="hidden"
+                id="boosted-screenshot-input"
+              />
+              <label
+                htmlFor="boosted-screenshot-input"
+                className={`text-xs font-semibold px-3 py-1.5 rounded-md cursor-pointer transition-colors ${
+                  boostedImporting
+                    ? "bg-slate-200 text-slate-500 cursor-wait"
+                    : "bg-violet-600 text-white hover:bg-violet-700"
+                }`}
+              >
+                {boostedImporting ? "Scanning…" : "Upload screenshot"}
+              </label>
+            </div>
+            <p className="text-[10px] text-slate-500">
+              Reads <span className="font-mono">ticker · rating · consensus</span> per row. Updates both BoostedAI fields and recomputes the aiRating score.
+            </p>
+          </div>
+        </div>
+        {screenshotImportSummary && (
+          <div className="px-4 py-3 text-xs space-y-1 border-t border-violet-100 bg-violet-50/20">
+            <div className="text-slate-700">
+              <span className="font-semibold capitalize">{screenshotImportSummary.source}:</span>{" "}
+              <span className="font-semibold">{screenshotImportSummary.matched}</span> matched / {screenshotImportSummary.rowsParsed} rows ·{" "}
+              <span className="font-semibold text-emerald-700">{screenshotImportSummary.updated}</span> updated
+              {screenshotImportSummary.cached && <span className="ml-1 text-slate-400">(cached, no AI spend)</span>}
+            </div>
+            {screenshotImportSummary.inScreenshotButUnreadable.length > 0 && (
+              <div className="text-amber-700">
+                ⚠ In screenshot but value unreadable: <span className="font-mono">{screenshotImportSummary.inScreenshotButUnreadable.join(", ")}</span>
+              </div>
+            )}
+            {screenshotImportSummary.expectedButMissing.length > 0 && (
+              <div className="text-amber-700">
+                ⚠ Expected scoreable names NOT in screenshot: <span className="font-mono">{screenshotImportSummary.expectedButMissing.join(", ")}</span>
+              </div>
+            )}
+            {screenshotImportSummary.unmatched.length > 0 && (
+              <div className="text-slate-500">
+                Tickers in screenshot but not in Portfolio/Watchlist: <span className="font-mono">{screenshotImportSummary.unmatched.join(", ")}</span>
+              </div>
+            )}
+            {screenshotImportSummary.errors.length > 0 && (
+              <div className="text-red-700">
+                {screenshotImportSummary.errors.map((err, i) => <div key={i}>{err}</div>)}
+              </div>
+            )}
+          </div>
+        )}
       </div>
 
       {/* ── MarketEdge ("ChartScout") CSV importer ──

@@ -359,6 +359,21 @@ export type Stock = {
    */
   sia?: number;
   /**
+   * Per-stock SIA / BoostedAI screenshot ingestion timestamps. Used to
+   * surface a "last screenshot didn't capture this name" warning on the
+   * stock-page input block: if the most recent screenshot upload (siaLastScreenshotAt)
+   * is newer than the most recent successful read for this ticker (siaLastReadAt),
+   * the warning chip appears until the next screenshot reads the value.
+   * Manual edits also bump *LastReadAt so a manually-entered value clears
+   * the warning. Same fields mirrored for BoostedAI.
+   *
+   * Empty when the PM has never run a screenshot upload — no warning shown.
+   */
+  siaLastScreenshotAt?: string;
+  siaLastReadAt?: string;
+  boostedLastScreenshotAt?: string;
+  boostedLastReadAt?: string;
+  /**
    * MarketEdge ("ChartScout") technical read, entered manually per name
    * (weekly CSV upload or stock-page entry). Power Rating drives the
    * dashboard's `marketEdge` score (0-2) via app/lib/external-scoring.ts;

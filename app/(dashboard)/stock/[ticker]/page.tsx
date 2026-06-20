@@ -2225,77 +2225,117 @@ export default function StockDetailPage() {
                               via mapBoostedAiToAiRating — same logic the
                               Inbox tab uses, so edits on either page
                               produce identical results. */}
-                          {isExpanded && cat.key === "aiRating" && (
-                            <div className="rounded-lg border border-slate-200 bg-slate-50 p-3 space-y-2">
-                              <div className="text-[10px] uppercase tracking-wider font-semibold text-slate-500">BoostedAI inputs</div>
-                              <div className="flex flex-wrap items-center gap-3">
-                                <label className="flex items-center gap-2 text-xs">
-                                  <span className="text-slate-600">Rating (0-5):</span>
-                                  <EditableNumberCell
-                                    value={stock.boostedAi ?? null}
-                                    step="0.1"
-                                    min={0}
-                                    max={5}
-                                    onCommit={(next) => {
-                                      const rating = next == null ? undefined : next;
-                                      updateStockFields(ticker, { boostedAi: rating });
-                                      const mapped = mapBoostedAiToAiRating(next ?? null, stock.boostedAiConsensus ?? null);
-                                      if (mapped != null) updateScore(ticker, "aiRating", mapped);
-                                    }}
-                                    width="w-16"
-                                    placeholder="—"
-                                    ariaLabel={`BoostedAI rating for ${ticker}`}
-                                    formatDisplay={(n) => n.toFixed(1)}
-                                  />
-                                </label>
-                                <label className="flex items-center gap-2 text-xs">
-                                  <span className="text-slate-600">Consensus:</span>
-                                  <ConsensusButton
-                                    value={stock.boostedAiConsensus ?? null}
-                                    ariaLabel={`BoostedAI consensus for ${ticker}`}
-                                    onChange={(next) => {
-                                      updateStockFields(ticker, { boostedAiConsensus: next ?? undefined });
-                                      const mapped = mapBoostedAiToAiRating(stock.boostedAi ?? null, next);
-                                      if (mapped != null) updateScore(ticker, "aiRating", mapped);
-                                    }}
-                                  />
-                                </label>
+                          {isExpanded && cat.key === "aiRating" && (() => {
+                            // Warning chip: the most recent BoostedAI screenshot
+                            // upload did NOT read a value for this name. Cleared
+                            // by either a successful screenshot read OR a manual
+                            // edit (both bump boostedLastReadAt).
+                            const lastShot = stock.boostedLastScreenshotAt;
+                            const lastRead = stock.boostedLastReadAt;
+                            const showChip =
+                              !!lastShot &&
+                              (!lastRead || Date.parse(lastShot) > Date.parse(lastRead));
+                            const nowIso = () => new Date().toISOString();
+                            return (
+                              <div className="rounded-lg border border-slate-200 bg-slate-50 p-3 space-y-2">
+                                <div className="flex items-center gap-2">
+                                  <div className="text-[10px] uppercase tracking-wider font-semibold text-slate-500">BoostedAI inputs</div>
+                                  {showChip && (
+                                    <span
+                                      className="text-[10px] font-semibold rounded-full border border-amber-300 bg-amber-50 text-amber-700 px-2 py-0.5"
+                                      title={`Last BoostedAI screenshot didn't read a value for ${ticker} (uploaded ${lastShot?.slice(0, 10)}). Re-screenshot or edit a value below to clear.`}
+                                    >
+                                      ⚠ Last screenshot didn&apos;t capture this name
+                                    </span>
+                                  )}
+                                </div>
+                                <div className="flex flex-wrap items-center gap-3">
+                                  <label className="flex items-center gap-2 text-xs">
+                                    <span className="text-slate-600">Rating (0-5):</span>
+                                    <EditableNumberCell
+                                      value={stock.boostedAi ?? null}
+                                      step="0.1"
+                                      min={0}
+                                      max={5}
+                                      onCommit={(next) => {
+                                        const rating = next == null ? undefined : next;
+                                        updateStockFields(ticker, { boostedAi: rating, boostedLastReadAt: nowIso() });
+                                        const mapped = mapBoostedAiToAiRating(next ?? null, stock.boostedAiConsensus ?? null);
+                                        if (mapped != null) updateScore(ticker, "aiRating", mapped);
+                                      }}
+                                      width="w-16"
+                                      placeholder="—"
+                                      ariaLabel={`BoostedAI rating for ${ticker}`}
+                                      formatDisplay={(n) => n.toFixed(1)}
+                                    />
+                                  </label>
+                                  <label className="flex items-center gap-2 text-xs">
+                                    <span className="text-slate-600">Consensus:</span>
+                                    <ConsensusButton
+                                      value={stock.boostedAiConsensus ?? null}
+                                      ariaLabel={`BoostedAI consensus for ${ticker}`}
+                                      onChange={(next) => {
+                                        updateStockFields(ticker, { boostedAiConsensus: next ?? undefined, boostedLastReadAt: nowIso() });
+                                        const mapped = mapBoostedAiToAiRating(stock.boostedAi ?? null, next);
+                                        if (mapped != null) updateScore(ticker, "aiRating", mapped);
+                                      }}
+                                    />
+                                  </label>
+                                </div>
+                                <p className="text-[10px] text-slate-400">
+                                  Score maps: rating 4.5+ &amp; bullish consensus → 2, 3.5+ &amp; any non-bearish → 1, else 0. Same logic as the Inbox tab.
+                                </p>
                               </div>
-                              <p className="text-[10px] text-slate-400">
-                                Score maps: rating 4.5+ &amp; bullish consensus → 2, 3.5+ &amp; any non-bearish → 1, else 0. Same logic as the Inbox tab.
-                              </p>
-                            </div>
-                          )}
+                            );
+                          })()}
                           {/* Relative Strength: editable SIA SMAX (0-10).
                               Score auto-derives via mapSmaxToRelativeStrength. */}
-                          {isExpanded && cat.key === "relativeStrength" && (
-                            <div className="rounded-lg border border-slate-200 bg-slate-50 p-3 space-y-2">
-                              <div className="text-[10px] uppercase tracking-wider font-semibold text-slate-500">SIA SMAX input</div>
-                              <div className="flex flex-wrap items-center gap-3">
-                                <label className="flex items-center gap-2 text-xs">
-                                  <span className="text-slate-600">SMAX (0-10):</span>
-                                  <EditableNumberCell
-                                    value={(stock as { sia?: number | null }).sia ?? null}
-                                    step="1"
-                                    min={0}
-                                    max={10}
-                                    onCommit={(next) => {
-                                      updateStockFields(ticker, { sia: next == null ? undefined : next } as Partial<typeof stock>);
-                                      const mapped = mapSmaxToRelativeStrength(next ?? null);
-                                      if (mapped != null) updateScore(ticker, "relativeStrength", mapped);
-                                    }}
-                                    width="w-16"
-                                    placeholder="—"
-                                    ariaLabel={`SIA SMAX for ${ticker}`}
-                                    formatDisplay={(n) => String(Math.round(n))}
-                                  />
-                                </label>
+                          {isExpanded && cat.key === "relativeStrength" && (() => {
+                            const lastShot = stock.siaLastScreenshotAt;
+                            const lastRead = stock.siaLastReadAt;
+                            const showChip =
+                              !!lastShot &&
+                              (!lastRead || Date.parse(lastShot) > Date.parse(lastRead));
+                            const nowIso = () => new Date().toISOString();
+                            return (
+                              <div className="rounded-lg border border-slate-200 bg-slate-50 p-3 space-y-2">
+                                <div className="flex items-center gap-2">
+                                  <div className="text-[10px] uppercase tracking-wider font-semibold text-slate-500">SIA SMAX input</div>
+                                  {showChip && (
+                                    <span
+                                      className="text-[10px] font-semibold rounded-full border border-amber-300 bg-amber-50 text-amber-700 px-2 py-0.5"
+                                      title={`Last SIA screenshot didn't read a value for ${ticker} (uploaded ${lastShot?.slice(0, 10)}). Re-screenshot or edit a value below to clear.`}
+                                    >
+                                      ⚠ Last screenshot didn&apos;t capture this name
+                                    </span>
+                                  )}
+                                </div>
+                                <div className="flex flex-wrap items-center gap-3">
+                                  <label className="flex items-center gap-2 text-xs">
+                                    <span className="text-slate-600">SMAX (0-10):</span>
+                                    <EditableNumberCell
+                                      value={(stock as { sia?: number | null }).sia ?? null}
+                                      step="1"
+                                      min={0}
+                                      max={10}
+                                      onCommit={(next) => {
+                                        updateStockFields(ticker, { sia: next == null ? undefined : next, siaLastReadAt: nowIso() } as Partial<typeof stock>);
+                                        const mapped = mapSmaxToRelativeStrength(next ?? null);
+                                        if (mapped != null) updateScore(ticker, "relativeStrength", mapped);
+                                      }}
+                                      width="w-16"
+                                      placeholder="—"
+                                      ariaLabel={`SIA SMAX for ${ticker}`}
+                                      formatDisplay={(n) => String(Math.round(n))}
+                                    />
+                                  </label>
+                                </div>
+                                <p className="text-[10px] text-slate-400">
+                                  Score maps: 8-10 → 2, 6-7 → 1, 0-5 → 0. Same logic as the Inbox tab.
+                                </p>
                               </div>
-                              <p className="text-[10px] text-slate-400">
-                                Score maps: 8-10 → 2, 6-7 → 1, 0-5 → 0. Same logic as the Inbox tab.
-                              </p>
-                            </div>
-                          )}
+                            );
+                          })()}
                           {/* MarketEdge: editable Power Rating (-60..100), Opinion,
                               Opinion Score (-4..4), Opinion Date. Power Rating drives
                               the marketEdge score; Opinion + Score drive the
