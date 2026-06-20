@@ -33,7 +33,7 @@ function SignalRow({ label, signal, detail }: { label: string; signal: "bullish"
 }
 
 const ZERO_SCORES = {
-  brand: 0, secular: 0, researchCoverage: 0, externalSources: 0,
+  brand: 0, secular: 0, researchCoverage: 0, marketEdge: 0,
   analystConsensus: 0, researchMentions: 0,
   charting: 0, relativeStrength: 0, aiRating: 0, growth: 0,
   relativeValuation: 0, historicalValuation: 0, leverageCoverage: 0,
@@ -60,6 +60,8 @@ export default function ScanPreviewPage() {
     }
     try {
       const raw = sessionStorage.getItem(`scan_preview_${rawTicker}`);
+      // Mount-time hydration from sessionStorage — intentional setState in effect.
+      // eslint-disable-next-line react-hooks/set-state-in-effect
       if (raw) setData(JSON.parse(raw));
     } catch {}
   }, [rawTicker, alreadyExists, cleanTicker, router]);

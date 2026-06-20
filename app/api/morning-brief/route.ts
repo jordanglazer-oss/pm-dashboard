@@ -194,6 +194,7 @@ Respond ONLY with valid JSON matching this exact structure (fields are intention
 Notes:
 - sectorRotation.leading and .lagging should each have 2-3 entries with sector name, approximate MTD performance, and a brief reason.
 - riskScan MUST ONLY include holdings tagged "(Portfolio, ...)" — NEVER include Watchlist names (those are candidates, not owned positions). Order from highest risk to lowest, with priority: "High", "Medium-High", "Medium", or "Low-Medium". Focus on the weakest/most at-risk Portfolio names. Include 4-7 entries drawn exclusively from the Portfolio bucket. USE the [RISK: ...] annotations on each holding — holdings tagged CRITICAL or WARNING should be prioritized highest. Incorporate specific risk signals (trend, momentum, MACD, volume, Ichimoku, valuation) into your summaries and actions. Do NOT reference short interest as a risk driver — it is informational only.
+- MARKETEDGE DETERIORATION RULE: Any Portfolio holding tagged "[MARKETEDGE: deteriorating Long, …]" MUST appear in riskScan with priority at least "Medium" — this is a deliberate flag from MarketEdge that a winning position's technicals are significantly breaking down (Long opinion with Score ≤ −3). Cite the Opinion Score and Power Rating in the summary. If the broader environment corroborates (Risk-Off regime, weakening breadth, deteriorating tactical view, or matching CRITICAL/WARNING riskAlert on the same name), ELEVATE to "High" and add a forwardActions item proposing a concrete next step (review/trim/tighten thesis). Do NOT silently downgrade or omit a MARKETEDGE deteriorating-Long flag.
 - forwardActions should contain 4-6 specific, actionable recommendations ordered by priority. Use "High", "Medium", or "Low" for priority. Actions should be forward-looking (what to do THIS week or next), not reactive to yesterday.
 - topActionsToday is the PM's at-a-glance executive summary — 3 to 5 imperative one-liners that distill the most important decisions for today. Each entry must (a) start with a verb (Add / Trim / Hedge / Rotate / Watch / Skip / Hold), (b) be ≤ 12 words, (c) be specific enough that the PM could execute on it without further interpretation ("Add 2% SPY 3M 7%-OTM puts" not "Consider hedging"), and (d) be a subset/restatement of the most important forwardActions and hedgingCall items so the executive summary is consistent with the detail panels below it. Do NOT include "review", "monitor", "consider" — those are too vague. If a forwardAction is High priority it should usually have a corresponding topActionsToday entry.
 - hedgingCall MUST mirror the recommendation in hedgingAnalysis. If hedgingAnalysis says "SKIP", hedgingCall.action is "SKIP" and strike/tenor are omitted (null/missing). If it says "ADD", populate strike + tenor with the specific values referenced in the prose (e.g. "5% OTM" / "3 months"). reason must be one short sentence that captures the WHY (cheap insurance + late-cycle warning, classic Risk-Off, etc.) so the PM can decide in one read whether to act.
@@ -736,6 +737,14 @@ export async function POST(request: NextRequest) {
       scores?: Record<string, number>;
       weights: { portfolio: number };
       riskAlert?: { level: string; summary: string; dangerCount: number; cautionCount: number; signals?: { name: string; status: string; detail: string }[] };
+      // MarketEdge ("ChartScout") technical read. Used to surface
+      // deteriorating-Long warnings in the brief's risk context.
+      marketEdge?: {
+        opinion?: "long" | "neutral" | "avoid";
+        opinionScore?: number;
+        powerRating?: number;
+        opinionDate?: string;
+      };
     };
 
     const holdingsSummary = holdings
@@ -766,6 +775,18 @@ export async function POST(request: NextRequest) {
                 if (dangerSignals.length > 0) line += ` | Danger: ${dangerSignals.join(", ")}`;
                 if (cautionSignals.length > 0) line += ` | Caution: ${cautionSignals.join(", ")}`;
                 line += `]`;
+              }
+              // MarketEdge deteriorating-Long / reversal-Avoid early warning.
+              // Inline so Claude can reference the specific name + score in
+              // the risk callout. Held Long with score ≤ −3 = winner's thesis
+              // cracking; Avoid with score ≥ +3 = reversal watch.
+              if (h.marketEdge) {
+                const me = h.marketEdge;
+                if (me.opinion === "long" && typeof me.opinionScore === "number" && me.opinionScore <= -3) {
+                  line += ` [MARKETEDGE: deteriorating Long, Opinion Score ${me.opinionScore}${typeof me.powerRating === "number" ? `, Power Rating ${me.powerRating}` : ""} — technicals breaking down since ${me.opinionDate ?? "the opinion date"}]`;
+                } else if (me.opinion === "avoid" && typeof me.opinionScore === "number" && me.opinionScore >= 3) {
+                  line += ` [MARKETEDGE: reversal watch, Opinion Score ${me.opinionScore}${typeof me.powerRating === "number" ? `, Power Rating ${me.powerRating}` : ""}]`;
+                }
               }
               return line;
             }

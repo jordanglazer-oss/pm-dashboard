@@ -35,13 +35,13 @@ export type ScoreKey =
   | "secular"
   // Research
   | "researchCoverage"
-  | "externalSources"
   | "analystConsensus"
   | "researchMentions"
   // Technicals
   | "charting"
   | "relativeStrength"
   | "aiRating"
+  | "marketEdge"
   // Fundamental
   | "growth"
   | "relativeValuation"
@@ -155,10 +155,9 @@ export const SCORE_GROUPS: ScoreGroup[] = [
     name: "Research",
     color: "purple",
     icon: "◇",
-    maxTotal: 8,
+    maxTotal: 7,
     categories: [
       { key: "researchCoverage", label: "Research coverage", max: 1, inputType: "semi" },
-      { key: "externalSources", label: "External sources", max: 1, inputType: "manual" },
       { key: "analystConsensus", label: "Analyst consensus", max: 3, inputType: "computed" },
       { key: "researchMentions", label: "Research mentions", max: 3, inputType: "computed" },
     ],
@@ -167,11 +166,12 @@ export const SCORE_GROUPS: ScoreGroup[] = [
     name: "Technicals",
     color: "teal",
     icon: "◆",
-    maxTotal: 7,
+    maxTotal: 9,
     categories: [
       { key: "charting", label: "Charting", max: 3, inputType: "manual" },
       { key: "relativeStrength", label: "SIA (relative strength)", max: 2, inputType: "computed" },
       { key: "aiRating", label: "BoostedAI (AI rating)", max: 2, inputType: "computed" },
+      { key: "marketEdge", label: "MarketEdge (Power Rating)", max: 2, inputType: "computed" },
     ],
   },
   {
@@ -358,6 +358,26 @@ export type Stock = {
    * dashboard's relativeStrength (0-2) via app/lib/external-scoring.ts.
    */
   sia?: number;
+  /**
+   * MarketEdge ("ChartScout") technical read, entered manually per name
+   * (weekly CSV upload or stock-page entry). Power Rating drives the
+   * dashboard's `marketEdge` score (0-2) via app/lib/external-scoring.ts;
+   * opinion + opinionScore drive the deteriorating-Long early-warning flag
+   * (NOT the composite). See the MarketEdge integration.
+   */
+  marketEdge?: {
+    /** Long (buy) / Neutral / Avoid. Derived by MarketEdge from the Power Rating. */
+    opinion?: "long" | "neutral" | "avoid";
+    /** Opinion Score: how far the technical condition has deteriorated (Long,
+     *  −4…0) or improved (Avoid, 0…+4) since the opinion was issued. Trajectory
+     *  / inflection-risk signal — feeds the early-warning flag, not the score. */
+    opinionScore?: number;
+    /** Power Rating (−60…+100): MarketEdge's 7-indicator technical composite.
+     *  Mapped to the marketEdge score: ≥0 → 2, −27…−1 → 1, < −27 → 0. */
+    powerRating?: number;
+    /** Date the opinion last changed (MarketEdge "Opinion Date"). */
+    opinionDate?: string;
+  };
   healthData?: HealthData;
   technicals?: TechnicalIndicators;
   riskAlert?: RiskAlert;

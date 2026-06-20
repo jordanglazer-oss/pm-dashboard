@@ -115,6 +115,50 @@ export function mapSmaxToRelativeStrength(
   return tiers[clamped] ?? 0;
 }
 
+// ── MarketEdge ("ChartScout") ──────────────────────────────────────────
+
+export type MarketEdgeOpinion = "long" | "neutral" | "avoid";
+
+/**
+ * MarketEdge Power Rating (−60…+100) → the dashboard's `marketEdge` score (0-2).
+ * Anchored to the PM's "positive readings are 2" rule and MarketEdge's own
+ * Avoid trigger at −27:
+ *   ≥ 0      → 2  (positive / bullish technical condition)
+ *   −27…−1   → 1  (neutral-to-weak)
+ *   < −27    → 0  (MarketEdge "Avoid" zone)
+ * Returns null when no Power Rating is present, so the caller leaves the score
+ * untouched rather than zeroing it.
+ */
+export function mapPowerRatingToMarketEdge(
+  powerRating: number | null | undefined,
+): number | null {
+  if (typeof powerRating !== "number" || !isFinite(powerRating)) return null;
+  if (powerRating >= 0) return 2;
+  if (powerRating >= -27) return 1;
+  return 0;
+}
+
+/**
+ * Deteriorating-Long / reversal-Avoid early-warning from Opinion + Opinion
+ * Score. NOT part of the composite — purely a risk flag:
+ *   Long  + score ≤ −3 → "Technicals deteriorating" (a winner's thesis cracking)
+ *   Avoid + score ≥ +3 → "Reversal watch" (a beaten-down name turning up)
+ * Returns null when neither condition holds.
+ */
+export function marketEdgeWarning(
+  opinion: MarketEdgeOpinion | null | undefined,
+  opinionScore: number | null | undefined,
+): { kind: "deteriorating" | "reversal"; label: string } | null {
+  if (typeof opinionScore !== "number" || !isFinite(opinionScore)) return null;
+  if (opinion === "long" && opinionScore <= -3) {
+    return { kind: "deteriorating", label: "Technicals deteriorating" };
+  }
+  if (opinion === "avoid" && opinionScore >= 3) {
+    return { kind: "reversal", label: "Reversal watch" };
+  }
+  return null;
+}
+
 /**
  * Pretty label for a consensus value (UI display).
  */

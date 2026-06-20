@@ -18,7 +18,7 @@ import ScoreHistory from "@/app/components/ScoreHistory";
 import { ScoreDelta } from "@/app/components/ScoreDelta";
 import { useNotifications } from "@/app/lib/NotificationsContext";
 import { EditableNumberCell, ConsensusButton } from "@/app/components/EditableScoreInputs";
-import { mapBoostedAiToAiRating, mapSmaxToRelativeStrength } from "@/app/lib/external-scoring";
+import { mapBoostedAiToAiRating, mapSmaxToRelativeStrength, mapPowerRatingToMarketEdge, marketEdgeWarning, type MarketEdgeOpinion } from "@/app/lib/external-scoring";
 
 // Same threshold as the Score All flow in PortfolioOverview — a
 // composite move >5 pts is worth a "Score variance" warning so the PM
@@ -2084,7 +2084,7 @@ export default function StockDetailPage() {
                       // explanation. Previously the toggle only appeared once an AI
                       // explanation existed (hasContent), leaving the inputs reachable
                       // only via the Inbox tab.
-                      const hasExternalEditor = cat.key === "aiRating" || cat.key === "relativeStrength";
+                      const hasExternalEditor = cat.key === "aiRating" || cat.key === "relativeStrength" || cat.key === "marketEdge";
                       const showToggle = hasContent || hasNotesEditor || isAnalystConsensus || hasExternalEditor;
                       const isExpanded = expandedCategories.has(cat.key);
                       return (
@@ -2296,6 +2296,110 @@ export default function StockDetailPage() {
                               </p>
                             </div>
                           )}
+                          {/* MarketEdge: editable Power Rating (-60..100), Opinion,
+                              Opinion Score (-4..4), Opinion Date. Power Rating drives
+                              the marketEdge score; Opinion + Score drive the
+                              deteriorating-Long / reversal-Avoid warning badge. */}
+                          {isExpanded && cat.key === "marketEdge" && (() => {
+                            const me = stock.marketEdge ?? {};
+                            const warning = marketEdgeWarning(me.opinion, me.opinionScore);
+                            const opinionTone =
+                              me.opinion === "long" ? "bg-emerald-50 text-emerald-700 border-emerald-200"
+                              : me.opinion === "avoid" ? "bg-red-50 text-red-700 border-red-200"
+                              : me.opinion === "neutral" ? "bg-slate-50 text-slate-600 border-slate-300"
+                              : "bg-white text-slate-400 border-slate-200";
+                            const cycleOpinion = () => {
+                              const cycle: (MarketEdgeOpinion | undefined)[] = [undefined, "long", "neutral", "avoid"];
+                              const idx = me.opinion == null ? 0 : Math.max(0, cycle.indexOf(me.opinion));
+                              const next = cycle[(idx + 1) % cycle.length];
+                              updateStockFields(ticker, { marketEdge: { ...me, opinion: next } });
+                            };
+                            return (
+                              <div className="rounded-lg border border-slate-200 bg-slate-50 p-3 space-y-2">
+                                <div className="flex items-center gap-2">
+                                  <div className="text-[10px] uppercase tracking-wider font-semibold text-slate-500">MarketEdge inputs</div>
+                                  {warning && (
+                                    <span
+                                      className={`text-[10px] font-semibold rounded-full border px-2 py-0.5 ${
+                                        warning.kind === "deteriorating"
+                                          ? "bg-amber-50 text-amber-700 border-amber-300"
+                                          : "bg-blue-50 text-blue-700 border-blue-300"
+                                      }`}
+                                      title={
+                                        warning.kind === "deteriorating"
+                                          ? `Held Long with Opinion Score ${me.opinionScore} — MarketEdge flags significant technical deterioration. Surfaced in the morning brief risk context.`
+                                          : `Avoid name with Opinion Score ${me.opinionScore} — MarketEdge flags significant technical improvement (reversal watch).`
+                                      }
+                                    >
+                                      ⚠ {warning.label}
+                                    </span>
+                                  )}
+                                </div>
+                                <div className="flex flex-wrap items-center gap-3">
+                                  <label className="flex items-center gap-2 text-xs">
+                                    <span className="text-slate-600">Power Rating:</span>
+                                    <EditableNumberCell
+                                      value={me.powerRating ?? null}
+                                      step="1"
+                                      min={-60}
+                                      max={100}
+                                      onCommit={(next) => {
+                                        const nextMe = { ...me, powerRating: next == null ? undefined : next };
+                                        updateStockFields(ticker, { marketEdge: nextMe });
+                                        const mapped = mapPowerRatingToMarketEdge(next ?? null);
+                                        if (mapped != null) updateScore(ticker, "marketEdge", mapped);
+                                      }}
+                                      width="w-16"
+                                      placeholder="—"
+                                      ariaLabel={`MarketEdge Power Rating for ${ticker}`}
+                                      formatDisplay={(n) => String(Math.round(n))}
+                                    />
+                                  </label>
+                                  <label className="flex items-center gap-2 text-xs">
+                                    <span className="text-slate-600">Opinion:</span>
+                                    <button
+                                      type="button"
+                                      onClick={cycleOpinion}
+                                      title="Click to cycle: — → Long → Neutral → Avoid. The Opinion + Opinion Score drive the deteriorating-Long / reversal-Avoid warning."
+                                      className={`inline-flex w-[68px] items-center justify-center rounded-full border px-2 py-0.5 text-[10px] font-semibold transition-colors ${opinionTone}`}
+                                    >
+                                      {me.opinion === "long" ? "Long" : me.opinion === "avoid" ? "Avoid" : me.opinion === "neutral" ? "Neutral" : "—"}
+                                    </button>
+                                  </label>
+                                  <label className="flex items-center gap-2 text-xs">
+                                    <span className="text-slate-600">Opinion Score:</span>
+                                    <EditableNumberCell
+                                      value={me.opinionScore ?? null}
+                                      step="1"
+                                      min={-4}
+                                      max={4}
+                                      onCommit={(next) => {
+                                        const nextMe = { ...me, opinionScore: next == null ? undefined : next };
+                                        updateStockFields(ticker, { marketEdge: nextMe });
+                                      }}
+                                      width="w-14"
+                                      placeholder="—"
+                                      ariaLabel={`MarketEdge Opinion Score for ${ticker}`}
+                                      formatDisplay={(n) => String(Math.round(n))}
+                                    />
+                                  </label>
+                                  <label className="flex items-center gap-2 text-xs">
+                                    <span className="text-slate-600">Opinion Date:</span>
+                                    <input
+                                      type="date"
+                                      value={me.opinionDate ?? ""}
+                                      onChange={(e) => updateStockFields(ticker, { marketEdge: { ...me, opinionDate: e.target.value || undefined } })}
+                                      className="rounded border border-slate-200 bg-white px-1.5 py-0.5 text-xs text-slate-700 outline-none focus:border-blue-400 focus:ring-1 focus:ring-blue-200"
+                                      aria-label={`MarketEdge Opinion Date for ${ticker}`}
+                                    />
+                                  </label>
+                                </div>
+                                <p className="text-[10px] text-slate-400">
+                                  Power Rating maps: ≥0 → 2, −27 to −1 → 1, &lt;−27 → 0. Opinion + Opinion Score drive the warning flag (Long &amp; score ≤ −3, or Avoid &amp; score ≥ +3) — NOT the composite. Updated weekly via CSV upload on the Inbox tab.
+                                </p>
+                              </div>
+                            );
+                          })()}
                           {!hasNotesEditor && !isAnalystConsensus && !hasContent && cat.inputType !== "manual" && cat.inputType !== "computed" && (
                             <p className="text-[11px] text-slate-400 italic ml-1">Re-score via Claude to generate explanation</p>
                           )}

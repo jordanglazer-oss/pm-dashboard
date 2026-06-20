@@ -42,21 +42,18 @@ function migrateStockScores(stocks: Stock[]): { migrated: Stock[]; changed: bool
   const migrated = stocks.map((s) => {
     const scores = s.scores || ({} as Stock["scores"]);
     const rc = scores.researchCoverage ?? 0;
-    const es = scores.externalSources ?? 0;
     const ac = scores.analystConsensus;
     const rm = scores.researchMentions;
     const needsRcClamp = rc > 1;
-    const needsEsClamp = es > 1;
     const needsAcDefault = ac === undefined || ac === null;
     const needsRmDefault = rm === undefined || rm === null;
-    if (!needsRcClamp && !needsEsClamp && !needsAcDefault && !needsRmDefault) return s;
+    if (!needsRcClamp && !needsAcDefault && !needsRmDefault) return s;
     changed = true;
     return {
       ...s,
       scores: {
         ...scores,
         researchCoverage: Math.min(rc, 1),
-        externalSources: Math.min(es, 1),
         analystConsensus: needsAcDefault ? 0 : ac,
         researchMentions: needsRmDefault ? 0 : rm,
       },

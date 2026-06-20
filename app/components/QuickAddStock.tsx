@@ -27,7 +27,7 @@ import type { Stock, InstrumentType, ScoreKey } from "@/app/lib/types";
 import { useStocks } from "@/app/lib/StockContext";
 
 const ZERO_SCORES: Record<ScoreKey, number> = {
-  brand: 0, secular: 0, researchCoverage: 0, externalSources: 0,
+  brand: 0, secular: 0, researchCoverage: 0, marketEdge: 0,
   analystConsensus: 0, researchMentions: 0,
   charting: 0, relativeStrength: 0, aiRating: 0, growth: 0,
   relativeValuation: 0, historicalValuation: 0, leverageCoverage: 0,
@@ -50,7 +50,10 @@ export function QuickAddStock({ open, onClose }: Props) {
   // Focus the ticker input when the modal opens, reset state when closed.
   useEffect(() => {
     if (open) {
+      // Intentional setState in effect — reset on modal open is the design.
+      // eslint-disable-next-line react-hooks/set-state-in-effect
       setError(null);
+      // eslint-disable-next-line react-hooks/set-state-in-effect
       setTicker("");
       // setTimeout so the input exists in the DOM before .focus() runs.
       setTimeout(() => inputRef.current?.focus(), 50);

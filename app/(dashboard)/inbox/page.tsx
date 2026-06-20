@@ -10,10 +10,13 @@ import { canonicalTicker } from "@/app/lib/ticker";
 import {
   mapBoostedAiToAiRating,
   mapSmaxToRelativeStrength,
+  mapPowerRatingToMarketEdge,
   consensusLabel,
   consensusToneClass,
   type BoostedAiConsensus,
+  type MarketEdgeOpinion,
 } from "@/app/lib/external-scoring";
+import { sameCompanyLoose } from "@/app/lib/ticker";
 import Link from "next/link";
 
 type Status = {
@@ -643,6 +646,128 @@ export default function InboxPage() {
     if (mapped != null) updateScore(ticker, "relativeStrength", mapped);
   };
 
+  // ── MarketEdge ("ChartScout") CSV importer ────────────────────────
+  // Weekly upload of the ChartScout Likes export. We pull just the four
+  // columns we care about by HEADER NAME (so re-ordered exports keep
+  // working): Symbol, Opinion, Score, Power Rating, Opinion Date. Each
+  // row is matched against pm:stocks by ticker — with the dual-listing
+  // fallback (sameCompanyLoose) so a US "CLS" in the CSV updates a held
+  // "CLS.TO" automatically. Each matched stock gets its marketEdge fields
+  // refreshed AND its marketEdge composite score recomputed from the new
+  // Power Rating (≥0→2, −27..−1→1, <−27→0).
+  type MarketEdgeImportSummary = {
+    rows: number;
+    matched: number;
+    updated: number;
+    unmatched: string[];
+    errors: string[];
+  };
+  const [marketEdgeImportSummary, setMarketEdgeImportSummary] = useState<MarketEdgeImportSummary | null>(null);
+  const [marketEdgeImporting, setMarketEdgeImporting] = useState(false);
+  const marketEdgeFileRef = useRef<HTMLInputElement>(null);
+
+  /** Tab/comma-tolerant CSV row splitter that respects double-quoted fields. */
+  const splitCsvRow = (line: string): string[] => {
+    // Auto-detect tab vs comma per file (the ChartScout export is tab-separated
+    // when copied from Numbers but downloads as comma-separated; both work).
+    const sep = line.includes("\t") && !line.includes(",") ? "\t" : ",";
+    const out: string[] = [];
+    let cur = "";
+    let inQuotes = false;
+    for (let i = 0; i < line.length; i++) {
+      const ch = line[i];
+      if (ch === '"') {
+        if (inQuotes && line[i + 1] === '"') { cur += '"'; i++; }
+        else inQuotes = !inQuotes;
+      } else if (ch === sep && !inQuotes) {
+        out.push(cur); cur = "";
+      } else {
+        cur += ch;
+      }
+    }
+    out.push(cur);
+    return out.map((s) => s.trim());
+  };
+
+  const handleMarketEdgeCsv = useCallback(async (file: File) => {
+    setMarketEdgeImporting(true);
+    setMarketEdgeImportSummary(null);
+    const errors: string[] = [];
+    const unmatched: string[] = [];
+    let matched = 0;
+    let updated = 0;
+    try {
+      const text = await file.text();
+      // Strip BOM if present and split on any line ending.
+      const lines = text.replace(/^﻿/, "").split(/\r?\n/).filter((l) => l.trim().length > 0);
+      if (lines.length < 2) {
+        errors.push("CSV looks empty (no data rows found).");
+        setMarketEdgeImportSummary({ rows: 0, matched: 0, updated: 0, unmatched, errors });
+        return;
+      }
+      const header = splitCsvRow(lines[0]).map((h) => h.toLowerCase());
+      const idx = {
+        symbol: header.findIndex((h) => h === "symbol" || h === "ticker"),
+        opinion: header.findIndex((h) => h === "opinion"),
+        score: header.findIndex((h) => h === "score" || h === "opinion score"),
+        powerRating: header.findIndex((h) => h === "power rating"),
+        date: header.findIndex((h) => h === "opinion date" || h === "date"),
+      };
+      if (idx.symbol < 0) {
+        errors.push("CSV is missing a 'Symbol' column.");
+        setMarketEdgeImportSummary({ rows: 0, matched: 0, updated: 0, unmatched, errors });
+        return;
+      }
+      const dataRows = lines.slice(1);
+      for (const raw of dataRows) {
+        const cells = splitCsvRow(raw);
+        const sym = (cells[idx.symbol] ?? "").trim().toUpperCase();
+        if (!sym) continue;
+        const stock = stocks.find((s) => sameCompanyLoose(s.ticker, sym));
+        if (!stock) { unmatched.push(sym); continue; }
+        matched += 1;
+        const me = { ...(stock.marketEdge ?? {}) };
+        let touched = false;
+        if (idx.opinion >= 0) {
+          const v = (cells[idx.opinion] ?? "").trim().toLowerCase();
+          const opinion: MarketEdgeOpinion | undefined =
+            v === "long" ? "long" : v === "avoid" ? "avoid" : v === "neutral" ? "neutral" : undefined;
+          if (opinion !== me.opinion) { me.opinion = opinion; touched = true; }
+        }
+        if (idx.score >= 0) {
+          const n = parseFloat((cells[idx.score] ?? "").trim());
+          const next = Number.isFinite(n) ? Math.max(-4, Math.min(4, Math.round(n))) : undefined;
+          if (next !== me.opinionScore) { me.opinionScore = next; touched = true; }
+        }
+        let prMapped: number | null = null;
+        if (idx.powerRating >= 0) {
+          const n = parseFloat((cells[idx.powerRating] ?? "").trim());
+          const next = Number.isFinite(n) ? Math.max(-60, Math.min(100, Math.round(n))) : undefined;
+          if (next !== me.powerRating) { me.powerRating = next; touched = true; }
+          prMapped = mapPowerRatingToMarketEdge(next ?? null);
+        }
+        if (idx.date >= 0) {
+          const d = (cells[idx.date] ?? "").trim();
+          if (d && d !== me.opinionDate) { me.opinionDate = d; touched = true; }
+        }
+        if (touched) {
+          updateStockFields(stock.ticker, { marketEdge: me });
+          if (prMapped != null && stock.scores.marketEdge !== prMapped) {
+            updateScore(stock.ticker, "marketEdge", prMapped);
+          }
+          updated += 1;
+        }
+      }
+      setMarketEdgeImportSummary({ rows: dataRows.length, matched, updated, unmatched, errors });
+    } catch (e) {
+      errors.push(`Parse failed: ${e instanceof Error ? e.message : String(e)}`);
+      setMarketEdgeImportSummary({ rows: 0, matched: 0, updated: 0, unmatched, errors });
+    } finally {
+      setMarketEdgeImporting(false);
+      if (marketEdgeFileRef.current) marketEdgeFileRef.current.value = "";
+    }
+  }, [stocks, updateStockFields, updateScore]);
+
   const totalCovered = coverageRows.filter((r) => r.hasRbc || r.hasJpm).length;
   const portfolioCovered = coverageRows.filter((r) => r.bucket === "Portfolio" && (r.hasRbc || r.hasJpm)).length;
   const portfolioTotal = coverageRows.filter((r) => r.bucket === "Portfolio").length;
@@ -786,6 +911,66 @@ export default function InboxPage() {
           </table>
           </div>
         ))}
+      </div>
+
+      {/* ── MarketEdge ("ChartScout") CSV importer ──
+          Weekly upload — matches each row's Symbol against pm:stocks (with
+          dual-listing fallback) and refreshes the marketEdge fields +
+          recomputes the marketEdge composite score from Power Rating. The
+          per-stock writes go through updateStockFields / updateScore so
+          they persist via the usual debounced pm:stocks PUT (no new key). */}
+      <div className="mt-6 rounded-lg border border-indigo-200 bg-white overflow-hidden">
+        <div className="border-b border-indigo-100 bg-indigo-50/40 px-4 py-3 flex items-center justify-between flex-wrap gap-2">
+          <div>
+            <h2 className="text-sm font-semibold text-slate-800">MarketEdge — Weekly CSV upload</h2>
+            <p className="text-[11px] text-slate-500 mt-0.5">
+              ChartScout Likes export. Reads <span className="font-mono">Symbol · Opinion · Score · Power Rating · Opinion Date</span> by header (other columns ignored). Matches by ticker — including dual-listed names (US ↔ Canadian). Recomputes the MarketEdge composite score from Power Rating; Opinion + Opinion Score drive the warning flag, not the score.
+            </p>
+          </div>
+          <div className="flex items-center gap-2">
+            <input
+              ref={marketEdgeFileRef}
+              type="file"
+              accept=".csv,.tsv,text/csv,text/tab-separated-values,text/plain"
+              onChange={(e) => {
+                const f = e.target.files?.[0];
+                if (f) void handleMarketEdgeCsv(f);
+              }}
+              className="hidden"
+              id="marketedge-csv-input"
+            />
+            <label
+              htmlFor="marketedge-csv-input"
+              className={`text-xs font-semibold px-3 py-1.5 rounded-md cursor-pointer transition-colors ${
+                marketEdgeImporting
+                  ? "bg-slate-200 text-slate-500 cursor-wait"
+                  : "bg-indigo-600 text-white hover:bg-indigo-700"
+              }`}
+            >
+              {marketEdgeImporting ? "Importing…" : "Upload CSV"}
+            </label>
+          </div>
+        </div>
+        {marketEdgeImportSummary && (
+          <div className="px-4 py-3 text-xs space-y-1">
+            <div className="text-slate-700">
+              <span className="font-semibold">{marketEdgeImportSummary.matched}</span> matched / {marketEdgeImportSummary.rows} rows ·{" "}
+              <span className="font-semibold text-emerald-700">{marketEdgeImportSummary.updated}</span> updated
+            </div>
+            {marketEdgeImportSummary.unmatched.length > 0 && (
+              <div className="text-amber-700">
+                Unmatched (no Portfolio/Watchlist stock): <span className="font-mono">{marketEdgeImportSummary.unmatched.join(", ")}</span>
+              </div>
+            )}
+            {marketEdgeImportSummary.errors.length > 0 && (
+              <div className="text-red-700">
+                {marketEdgeImportSummary.errors.map((err, i) => (
+                  <div key={i}>{err}</div>
+                ))}
+              </div>
+            )}
+          </div>
+        )}
       </div>
 
       {/* ── Coverage Checklist ──

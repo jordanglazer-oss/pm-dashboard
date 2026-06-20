@@ -10,7 +10,7 @@ import { INSTRUMENT_LABELS } from "@/app/lib/types";
 import { displayTicker } from "@/app/lib/ticker";
 
 const ZERO_SCORES: Record<ScoreKey, number> = {
-  brand: 0, secular: 0, researchCoverage: 0, externalSources: 0,
+  brand: 0, secular: 0, researchCoverage: 0, marketEdge: 0,
   analystConsensus: 0, researchMentions: 0,
   charting: 0, relativeStrength: 0, aiRating: 0, growth: 0,
   relativeValuation: 0, historicalValuation: 0, leverageCoverage: 0,
