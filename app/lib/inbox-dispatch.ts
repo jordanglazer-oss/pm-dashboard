@@ -36,15 +36,43 @@ import { parseMarketEdgeCsv } from "./marketedge-csv";
 import { parseSiaCsv } from "./sia-csv";
 import { applySiaEntries, applyBoostedEntries, applyMarketEdgeRows, type StockPatch } from "./stock-patches";
 import { decodeBase64DataUrl } from "./csv-utils";
+import { extractResearchEntries, type SourceKey as ResearchSourceKey } from "@/app/api/research-scrape/route";
+import { applyResearchEntries } from "./research-merge";
+import type { ResearchState } from "./defaults";
+import { defaultResearch } from "./defaults";
 
 // ── Subject → kind ──────────────────────────────────────────────────
 
-export type InboxKind = "sia" | "boosted" | "marketedge" | "strategist" | "analyst-report" | "unknown";
+/** Research kinds map 1:1 to the source keys the research-scrape route
+ *  accepts; subject-prefix routing produces one of these. */
+export type ResearchKind =
+  | { kind: "research"; source: ResearchSourceKey };
 
-/** Classify the email's subject. Case-insensitive prefix match. */
+export type InboxKind =
+  | "sia"
+  | "boosted"
+  | "marketedge"
+  | "strategist"
+  | "analyst-report"
+  | "unknown"
+  | ResearchKind;
+
+/** Classify the email's subject. Case-insensitive prefix match. The research
+ *  prefixes are ordered most-specific first ("Fundstrat SMID Top" before
+ *  "Fundstrat Top") so the regex alternation matches correctly. */
 export function classifySubject(subject: string): InboxKind {
   const s = subject.trim();
   if (/^analyst report:/i.test(s)) return "analyst-report";
+  // ── Research lists (RBC / Fundstrat / Seeking Alpha / RBCCM FEW) ──
+  if (/^fundstrat\s+smid\s+top\b/i.test(s)) return { kind: "research", source: "fundstrat-smid-top" };
+  if (/^fundstrat\s+smid\s+bottom\b/i.test(s)) return { kind: "research", source: "fundstrat-smid-bottom" };
+  if (/^fundstrat\s+top\b/i.test(s)) return { kind: "research", source: "fundstrat-top" };
+  if (/^fundstrat\s+bottom\b/i.test(s)) return { kind: "research", source: "fundstrat-bottom" };
+  if (/^rbc\s+canadian\b/i.test(s)) return { kind: "research", source: "rbc-focus" };
+  if (/^rbc\s+us\b/i.test(s)) return { kind: "research", source: "rbc-us-focus" };
+  if (/^rbccm\s+few\b/i.test(s)) return { kind: "research", source: "rbccm-few" };
+  if (/^(seeking\s+alpha|alpha\s+picks)\b/i.test(s)) return { kind: "research", source: "seeking-alpha-picks" };
+  // ── Per-stock external-tool kinds ──
   if (/^sia\b/i.test(s)) return "sia";
   if (/^(boostedai|boosted)\b/i.test(s)) return "boosted";
   if (/^(marketedge|chartscout)\b/i.test(s)) return "marketedge";
@@ -245,6 +273,55 @@ async function handleStrategist(att: AttachmentInput, label: string): Promise<Di
   };
 }
 
+// ── Research list handler (Fundstrat / RBC / Alpha Picks / FEW) ─────
+
+/** Read pm:research, falling back to the default empty state. */
+async function readResearch(): Promise<ResearchState> {
+  try {
+    const redis = await getRedis();
+    const raw = await redis.get("pm:research");
+    if (!raw) return defaultResearch;
+    return JSON.parse(raw) as ResearchState;
+  } catch {
+    return defaultResearch;
+  }
+}
+
+/** Read-modify-write helper for pm:research. The dispatcher's research
+ *  handler reads the current state, calls applyResearchEntries, and writes
+ *  back — so unrelated lists on the blob are preserved verbatim. */
+async function writeResearch(state: ResearchState): Promise<void> {
+  const redis = await getRedis();
+  await redis.set("pm:research", JSON.stringify(state));
+}
+
+async function handleResearch(
+  source: ResearchSourceKey,
+  att: AttachmentInput,
+  label: string,
+): Promise<DispatchResult> {
+  if (!isImageDataUrl(att.dataUrl) && !isPdfDataUrl(att.dataUrl)) {
+    return {
+      ok: false,
+      kind: { kind: "research", source },
+      status: 400,
+      message: "Research email expects a screenshot (PNG/JPG) or PDF attachment.",
+    };
+  }
+  // Reuse the SAME vision + hash-gated cache the manual /api/research-scrape
+  // route uses — re-uploading an unchanged screenshot costs $0.
+  const { entries, cached } = await extractResearchEntries(source, [att]);
+  const state = await readResearch();
+  const { nextState, summary } = applyResearchEntries(state, source, entries);
+  await writeResearch(nextState);
+  return {
+    ok: true,
+    kind: { kind: "research", source },
+    message: `${source}${cached ? " (cached)" : ""}: ${summary.matched} matched · ${summary.added} added / ${summary.rowsParsed} rows.`,
+    detail: { label, source, cached, summary },
+  };
+}
+
 // ── Public entry point ─────────────────────────────────────────────
 
 /**
@@ -264,6 +341,10 @@ export async function dispatchInbox(args: {
 }): Promise<DispatchResult | null> {
   const label = args.filename || args.subject;
   const att: AttachmentInput = { id: "inbox", label, dataUrl: args.dataUrl };
+  // Research kinds arrive as an object — handle them first.
+  if (typeof args.kind === "object" && args.kind.kind === "research") {
+    return await handleResearch(args.kind.source, att, label);
+  }
   switch (args.kind) {
     case "sia":          return await handleSia(att, label);
     case "boosted":      return await handleBoosted(att, label);
@@ -272,4 +353,6 @@ export async function dispatchInbox(args: {
     case "analyst-report": return null;  // existing flow handles this
     case "unknown":      return null;    // existing route returns its "couldn't determine source" error
   }
+  // TS-exhaustiveness fallback (the ResearchKind branch was handled above).
+  return null;
 }

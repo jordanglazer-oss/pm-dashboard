@@ -36,7 +36,9 @@ const client = new Anthropic();
 
 type AttachmentInput = { id: string; label: string; dataUrl: string };
 
-type SourceKey = "fundstrat-top" | "fundstrat-bottom" | "fundstrat-smid-top" | "fundstrat-smid-bottom" | "rbc-focus" | "rbc-us-focus" | "seeking-alpha-picks" | "rbccm-few";
+export type SourceKey = "fundstrat-top" | "fundstrat-bottom" | "fundstrat-smid-top" | "fundstrat-smid-bottom" | "rbc-focus" | "rbc-us-focus" | "seeking-alpha-picks" | "rbccm-few";
+
+export type ResearchAttachmentInput = AttachmentInput;
 
 const VALID_SOURCES: readonly SourceKey[] = [
   "fundstrat-top",
@@ -531,4 +533,31 @@ export async function POST(req: NextRequest) {
     console.error("research-scrape error:", e);
     return NextResponse.json({ error: "Failed to scrape research screenshot" }, { status: 500 });
   }
+}
+
+/**
+ * Server-callable wrapper around the same extraction the POST handler uses.
+ * Used by the email-inbox dispatcher (app/lib/inbox-dispatch.ts) so emailed
+ * research screenshots/PDFs go through the exact same vision + caching path
+ * as the manual UI. Honors the same per-source cache key
+ * (pm:research-scrape-cache:<source>), so re-uploading an unchanged image
+ * costs zero Anthropic tokens.
+ *
+ * Returns { entries, cached, hash, rawText? } shaped identically to the
+ * POST response, minus the `source` echo (caller already knows it).
+ */
+export async function extractResearchEntries(
+  source: SourceKey,
+  attachments: ResearchAttachmentInput[],
+  opts: { force?: boolean } = {},
+): Promise<{ entries: CachedScrape["entries"]; cached: boolean; hash: string; rawText?: string }> {
+  if (attachments.length === 0) return { entries: [], cached: false, hash: "none" };
+  const hash = hashAttachments(attachments);
+  if (!opts.force) {
+    const cached = await getCached(source, hash);
+    if (cached) return { entries: cached, cached: true, hash };
+  }
+  const { entries, rawText } = await runVision(source, attachments);
+  await saveCached(source, hash, entries);
+  return { entries, cached: false, hash, rawText };
 }

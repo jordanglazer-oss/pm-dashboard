@@ -187,13 +187,17 @@ export async function POST(request: NextRequest) {
   // "Analyst Report: <TICKER>" flow falls through to the legacy path
   // below (PDF-only, ticker/source routing).
   const kind = classifySubject(subject);
-  if (kind !== "analyst-report" && kind !== "unknown") {
+  // Anything other than the legacy "analyst-report" and the catch-all
+  // "unknown" routes through the dispatcher. Research kinds arrive as
+  // an object `{ kind: "research", source }`; per-stock/strategist
+  // kinds are plain strings.
+  const isDispatched = kind !== "analyst-report" && kind !== "unknown";
+  if (isDispatched) {
+    const kindLabel = typeof kind === "object" ? `research:${kind.source}` : kind;
     try {
       const result = await dispatchInbox({ kind, subject, filename, dataUrl });
-      // result is guaranteed non-null for these kinds (only analyst-report /
-      // unknown return null from the dispatcher).
       if (!result) {
-        await appendInboxEvent({ status: "error", subject, sender, filename, message: `Dispatcher returned no result for kind=${kind}` });
+        await appendInboxEvent({ status: "error", subject, sender, filename, message: `Dispatcher returned no result for kind=${kindLabel}` });
         return NextResponse.json({ error: "Internal dispatch error" }, { status: 500 });
       }
       await appendInboxEvent({
@@ -210,7 +214,7 @@ export async function POST(request: NextRequest) {
       );
     } catch (e) {
       const msg = e instanceof Error ? e.message : String(e);
-      await appendInboxEvent({ status: "error", subject, sender, filename, message: `${kind} handler threw: ${msg}` });
+      await appendInboxEvent({ status: "error", subject, sender, filename, message: `${kindLabel} handler threw: ${msg}` });
       return NextResponse.json({ error: msg }, { status: 500 });
     }
   }

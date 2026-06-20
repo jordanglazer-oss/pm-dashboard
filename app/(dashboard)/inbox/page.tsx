@@ -1536,11 +1536,60 @@ export default function InboxPage() {
                 <td className="py-2 pr-3">Parses the ChartScout Likes export by header (Symbol / Opinion / Score / Power Rating / Opinion Date). Updates the MarketEdge fields and the MarketEdge composite score.</td>
                 <td className="py-2 font-mono whitespace-nowrap">MarketEdge weekly</td>
               </tr>
-              <tr>
+              <tr className="border-b border-blue-100">
                 <td className="py-2 pr-3 font-mono whitespace-nowrap">Strategist</td>
                 <td className="py-2 pr-3 whitespace-nowrap">PDF or image</td>
                 <td className="py-2 pr-3">Lands in the Brief&apos;s &ldquo;Analyst / Strategist Reports&rdquo; dropbox — picked up automatically on the next Brief refresh.</td>
                 <td className="py-2 font-mono whitespace-nowrap">Strategist note from Newton</td>
+              </tr>
+              {/* ── Research lists (Fundstrat / RBC / Seeking Alpha / FEW) ── */}
+              <tr className="border-b border-blue-100">
+                <td className="py-2 pr-3 font-mono whitespace-nowrap">Fundstrat Top</td>
+                <td className="py-2 pr-3 whitespace-nowrap">Screenshot (PNG/JPG/PDF)</td>
+                <td className="py-2 pr-3">Merges into the Fundstrat Large-Cap Top Ideas list on the Research tab.</td>
+                <td className="py-2 font-mono whitespace-nowrap">Fundstrat Top</td>
+              </tr>
+              <tr className="border-b border-blue-100">
+                <td className="py-2 pr-3 font-mono whitespace-nowrap">Fundstrat Bottom</td>
+                <td className="py-2 pr-3 whitespace-nowrap">Screenshot (PNG/JPG/PDF)</td>
+                <td className="py-2 pr-3">Merges into the Fundstrat Large-Cap Bottom Ideas list.</td>
+                <td className="py-2 font-mono whitespace-nowrap">Fundstrat Bottom</td>
+              </tr>
+              <tr className="border-b border-blue-100">
+                <td className="py-2 pr-3 font-mono whitespace-nowrap">Fundstrat SMID Top</td>
+                <td className="py-2 pr-3 whitespace-nowrap">Screenshot (PNG/JPG/PDF)</td>
+                <td className="py-2 pr-3">Merges into the Fundstrat SMID-Cap Top Ideas list.</td>
+                <td className="py-2 font-mono whitespace-nowrap">Fundstrat SMID Top</td>
+              </tr>
+              <tr className="border-b border-blue-100">
+                <td className="py-2 pr-3 font-mono whitespace-nowrap">Fundstrat SMID Bottom</td>
+                <td className="py-2 pr-3 whitespace-nowrap">Screenshot (PNG/JPG/PDF)</td>
+                <td className="py-2 pr-3">Merges into the Fundstrat SMID-Cap Bottom Ideas list.</td>
+                <td className="py-2 font-mono whitespace-nowrap">Fundstrat SMID Bottom</td>
+              </tr>
+              <tr className="border-b border-blue-100">
+                <td className="py-2 pr-3 font-mono whitespace-nowrap">RBC Canadian</td>
+                <td className="py-2 pr-3 whitespace-nowrap">Screenshot (PNG/JPG/PDF)</td>
+                <td className="py-2 pr-3">Merges into the RBC Canadian Focus List. Tickers auto-canonicalize to <span className="font-mono">.TO</span>.</td>
+                <td className="py-2 font-mono whitespace-nowrap">RBC Canadian</td>
+              </tr>
+              <tr className="border-b border-blue-100">
+                <td className="py-2 pr-3 font-mono whitespace-nowrap">RBC US</td>
+                <td className="py-2 pr-3 whitespace-nowrap">Screenshot (PNG/JPG/PDF)</td>
+                <td className="py-2 pr-3">Merges into the RBC US Focus List.</td>
+                <td className="py-2 font-mono whitespace-nowrap">RBC US</td>
+              </tr>
+              <tr className="border-b border-blue-100">
+                <td className="py-2 pr-3 font-mono whitespace-nowrap">RBCCM FEW</td>
+                <td className="py-2 pr-3 whitespace-nowrap">Screenshot (PNG/JPG/PDF)</td>
+                <td className="py-2 pr-3">Merges into the RBCCM Canadian FEW Portfolio list.</td>
+                <td className="py-2 font-mono whitespace-nowrap">RBCCM FEW</td>
+              </tr>
+              <tr>
+                <td className="py-2 pr-3 font-mono whitespace-nowrap">Seeking Alpha <span className="text-blue-500">or</span> Alpha Picks</td>
+                <td className="py-2 pr-3 whitespace-nowrap">Screenshot (PNG/JPG/PDF)</td>
+                <td className="py-2 pr-3">Merges into the Seeking Alpha — Alpha Picks list. Composite ticker+date key so a name can appear on multiple dates.</td>
+                <td className="py-2 font-mono whitespace-nowrap">Alpha Picks weekly</td>
               </tr>
             </tbody>
           </table>

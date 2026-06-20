@@ -14,6 +14,10 @@ handles the rest.
 | `BoostedAI …` *or* `Boosted …` | Boosted.ai watchlist screenshot (PNG/JPG/PDF) | Each matched stock's BoostedAI rating + consensus + score |
 | `MarketEdge …` *or* `ChartScout …` | ChartScout Likes export (CSV) | Each matched stock's `marketEdge` fields + composite score |
 | `Strategist …` | Any analyst/strategist research (PDF or image) | Brief's "Analyst / Strategist Reports" dropbox |
+| `Fundstrat Top` / `Fundstrat Bottom` / `Fundstrat SMID Top` / `Fundstrat SMID Bottom` | Screenshot (PNG/JPG/PDF) | Respective Fundstrat list on the Research tab |
+| `RBC Canadian` / `RBC US` | Screenshot (PNG/JPG/PDF) | RBC Canadian / US Focus List |
+| `RBCCM FEW` | Screenshot (PNG/JPG/PDF) | RBCCM Canadian FEW Portfolio |
+| `Seeking Alpha …` *or* `Alpha Picks …` | Screenshot (PNG/JPG/PDF) | Seeking Alpha — Alpha Picks list |
 
 iPhone, Mac, and Windows screenshots all work (iOS Mail auto-converts HEIC to
 JPG when emailing). The subject match is case-insensitive.
@@ -23,6 +27,9 @@ Examples:
 - `BoostedAI watchlist`
 - `MarketEdge weekly`
 - `Strategist note from Newton`
+- `Fundstrat Top — week of Mar 5`
+- `RBC Canadian focus update`
+- `Alpha Picks weekly`
 
 ## Setup
 
@@ -58,7 +65,9 @@ function processInbox() {
     return;
   }
 
-  const SUBJECT_RE = /^(Analyst Report:|SIA\b|BoostedAI\b|Boosted\b|MarketEdge\b|ChartScout\b|Strategist\b)/i;
+  // Order matters: more-specific prefixes first ("Fundstrat SMID Top"
+  // before "Fundstrat Top") so regex alternation matches correctly.
+  const SUBJECT_RE = /^(Analyst Report:|Fundstrat SMID Top|Fundstrat SMID Bottom|Fundstrat Top|Fundstrat Bottom|RBC Canadian|RBC US|RBCCM FEW|Seeking Alpha|Alpha Picks|SIA\b|BoostedAI\b|Boosted\b|MarketEdge\b|ChartScout\b|Strategist\b)/i;
   const PROCESSED_LABEL_NAME = "Dashboard-Processed";
 
   let label = GmailApp.getUserLabelByName(PROCESSED_LABEL_NAME);
