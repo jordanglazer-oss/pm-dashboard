@@ -4,10 +4,23 @@
  * scraped entries from one research source, returning a new ResearchState
  * with the entries merged in.
  *
- * Behavior mirrors the client-side merge in app/(dashboard)/research/page.tsx
- * (scrapeResearchSource callback). The client-side path stays unchanged so
- * the manual upload UI keeps its richer name-backfill/refresh side-effects;
- * this lib is a leaner version sufficient for the email-driven path.
+ * Behavior model: REPLACE mode by default. A screenshot represents a full
+ * snapshot of the source list, so tickers no longer in the screenshot are
+ * removed automatically — the lists track the current state of the
+ * upstream service. Matched rows preserve their existing metadata
+ * (priceWhenAdded, name, sector, etc.) so manually-backfilled fields
+ * aren't lost.
+ *
+ * Safety check: if the new screenshot's row count is less than
+ * SAFETY_THRESHOLD (30%) of the existing list size, the merger falls back
+ * to ADDITIVE mode and the summary surfaces a `fallback` reason. This
+ * catches the most common mistakes: a partial / paginated screenshot, or
+ * vision missing most rows. The PM can then re-upload a complete
+ * screenshot.
+ *
+ * Alpha Picks special case: PM-flagged `manualSell` picks are preserved
+ * even in replace mode — those are the PM's explicit "I sold this" tags
+ * that must survive a fresh Seeking Alpha screenshot.
  *
  * Used by the inbox dispatcher (app/lib/inbox-dispatch.ts) so emailed
  * research lists land in pm:research the same way as manual uploads.
@@ -35,14 +48,42 @@ function normalize(t: string): string {
   return t.replace(/^\$+/, "").replace(/\//g, "-").split(/[.\s]/)[0].toUpperCase();
 }
 
+/** When a fresh screenshot has fewer than this fraction of the existing
+ *  list's rows, fall back to additive merge instead of replace. Catches
+ *  partial / paginated screenshots and vision misreads. */
+export const SAFETY_THRESHOLD = 0.3;
+
 export type ResearchMergeSummary = {
   source: SourceKey;
   rowsParsed: number;
   matched: number;
   added: number;
+  /** Tickers present in the previous list but absent from the screenshot. 0 in
+   *  additive-fallback mode (nothing was removed). */
+  removed: number;
+  /** "replace" (default) or "additive" (safety fallback when the screenshot
+   *  was suspiciously small vs the existing list). */
+  mode: "replace" | "additive";
+  /** Set when mode === "additive" to explain why. */
+  fallbackReason?: string;
 };
 
-/** Apply Fundstrat-style IdeaEntry rows (top/bottom large-cap, top/bottom SMID-cap). */
+/** Decide whether to use replace mode (default) or fall back to additive
+ *  (when the new screenshot has suspiciously few rows). */
+function decideMode(oldSize: number, newSize: number): { mode: "replace" | "additive"; reason?: string } {
+  if (oldSize === 0) return { mode: "replace" }; // first upload — nothing to lose
+  if (newSize === 0) {
+    return { mode: "additive", reason: "screenshot returned 0 rows — likely a vision failure; keeping existing list" };
+  }
+  if (newSize / oldSize < SAFETY_THRESHOLD) {
+    const pct = Math.round((newSize / oldSize) * 100);
+    return { mode: "additive", reason: `new screenshot has ${newSize} rows vs existing ${oldSize} (${pct}%) — likely a partial screenshot; falling back to additive merge` };
+  }
+  return { mode: "replace" };
+}
+
+// ── Fundstrat Idea entries ────────────────────────────────────────────
+
 function applyIdeaEntries(
   state: ResearchState,
   source: SourceKey,
@@ -54,12 +95,19 @@ function applyIdeaEntries(
   : source === "fundstrat-smid-top"    ? "fundstratSmidTop"
   : /* fundstrat-smid-bottom */         "fundstratSmidBottom";
   const existing: IdeaEntry[] = ((state[stateKey as keyof ResearchState] as IdeaEntry[]) || []);
-  const byNorm = new Map(existing.map((i) => [normalize(i.ticker), i]));
+  const existingByNorm = new Map(existing.map((i) => [normalize(i.ticker), i]));
+  const { mode, reason } = decideMode(existing.length, entries.length);
+
+  const byNorm = new Map<string, IdeaEntry>();
+  // In additive mode, seed the map with existing entries (they survive).
+  if (mode === "additive") {
+    for (const i of existing) byNorm.set(normalize(i.ticker), i);
+  }
   let matched = 0;
   let added = 0;
   for (const e of entries) {
     const norm = normalize(e.ticker);
-    const ex = byNorm.get(norm);
+    const ex = existingByNorm.get(norm);
     if (ex) {
       matched += 1;
       byNorm.set(norm, { ticker: ex.ticker, priceWhenAdded: e.priceWhenAdded ?? ex.priceWhenAdded });
@@ -68,11 +116,16 @@ function applyIdeaEntries(
       byNorm.set(norm, { ticker: norm, priceWhenAdded: e.priceWhenAdded ?? 0 });
     }
   }
+  const removed = mode === "replace" ? existing.length - matched : 0;
   const nextState = { ...state, [stateKey]: Array.from(byNorm.values()) } as ResearchState;
-  return { nextState, summary: { source, rowsParsed: entries.length, matched, added } };
+  return {
+    nextState,
+    summary: { source, rowsParsed: entries.length, matched, added, removed, mode, fallbackReason: reason },
+  };
 }
 
-/** Apply RBC Canadian or US Focus rows. */
+// ── RBC Canadian / US Focus ──────────────────────────────────────────
+
 function applyRbcEntries(
   state: ResearchState,
   source: "rbc-focus" | "rbc-us-focus",
@@ -80,18 +133,24 @@ function applyRbcEntries(
 ): { nextState: ResearchState; summary: ResearchMergeSummary } {
   const stateKey = source === "rbc-focus" ? "rbcCanadianFocus" : "rbcUsFocus";
   const existing = ((state[stateKey as keyof ResearchState] as RBCEntry[]) || []);
-  const byNorm = new Map(existing.map((r) => [normalize(r.ticker), r]));
+  const existingByNorm = new Map(existing.map((r) => [normalize(r.ticker), r]));
+  const { mode, reason } = decideMode(existing.length, entries.length);
+  const today = new Date().toLocaleDateString("en-US", { month: "numeric", day: "numeric", year: "numeric" });
+
+  const byNorm = new Map<string, RBCEntry>();
+  if (mode === "additive") {
+    for (const r of existing) byNorm.set(normalize(r.ticker), r);
+  }
   let matched = 0;
   let added = 0;
-  const today = new Date().toLocaleDateString("en-US", { month: "numeric", day: "numeric", year: "numeric" });
   for (const e of entries) {
     const norm = normalize(e.ticker);
-    const ex = byNorm.get(norm);
+    const ex = existingByNorm.get(norm);
     if (ex) {
       matched += 1;
       byNorm.set(norm, {
         ticker: e.ticker || ex.ticker,
-        name: ex.name,
+        name: ex.name, // preserve backfilled name
         sector: e.sector ?? ex.sector,
         weight: e.weight ?? ex.weight,
         dateAdded: e.dateAdded ?? ex.dateAdded,
@@ -108,15 +167,21 @@ function applyRbcEntries(
   }
   const merged = Array.from(byNorm.values());
   const finalList = source === "rbc-focus" ? dedupeRbcEntries(merged).entries : merged;
+  const removed = mode === "replace" ? existing.length - matched : 0;
   const nextState = { ...state, [stateKey]: finalList } as ResearchState;
-  return { nextState, summary: { source, rowsParsed: entries.length, matched, added } };
+  return {
+    nextState,
+    summary: { source, rowsParsed: entries.length, matched, added, removed, mode, fallbackReason: reason },
+  };
 }
 
-/** Apply Seeking Alpha Alpha Picks rows.
- *  Composite key (ticker + dateAdded) — the same name can appear twice on
- *  different dates legitimately. Server-side merge is leaner than the
- *  client's: no cross-stem name dedup. The Refresh UI in Research can
- *  reconcile if it ever matters. */
+// ── Seeking Alpha Alpha Picks ────────────────────────────────────────
+//
+// Composite key (ticker + dateAdded) — the same name legitimately appears
+// twice on different dates (sold + re-bought). PM-flagged manualSell picks
+// are PRESERVED even in replace mode: those represent the PM's explicit
+// "I sold this" tag and survive a fresh screenshot.
+
 function applyAlphaPicks(
   state: ResearchState,
   entries: ScrapedAlphaPick[],
@@ -124,15 +189,26 @@ function applyAlphaPicks(
   const existing: AlphaPickEntry[] = state.alphaPicks || [];
   const dateKey = (d: string | undefined) => (d || "").trim();
   const compositeKey = (ticker: string, date: string | undefined) => `${normalize(ticker)}|${dateKey(date)}`;
-  const byKey = new Map(existing.map((i) => [compositeKey(i.ticker, i.dateAdded), i]));
+  const existingByKey = new Map(existing.map((i) => [compositeKey(i.ticker, i.dateAdded), i]));
+  const { mode, reason } = decideMode(existing.length, entries.length);
+  const today = new Date().toLocaleDateString("en-US", { month: "numeric", day: "numeric", year: "numeric" });
+
+  const byKey = new Map<string, AlphaPickEntry>();
+  // In additive mode, ALL existing entries survive. In replace mode, only
+  // manualSell picks survive (PM-flagged "sold" — protect from auto-removal).
+  for (const ex of existing) {
+    if (mode === "additive" || ex.manualSell) {
+      byKey.set(compositeKey(ex.ticker, ex.dateAdded), ex);
+    }
+  }
+
   let matched = 0;
   let added = 0;
-  const today = new Date().toLocaleDateString("en-US", { month: "numeric", day: "numeric", year: "numeric" });
   for (const e of entries) {
     const norm = normalize(e.ticker);
     const date = dateKey(e.dateAdded);
     const key = `${norm}|${date}`;
-    const ex = byKey.get(key);
+    const ex = existingByKey.get(key);
     if (ex) {
       matched += 1;
       byKey.set(key, {
@@ -144,6 +220,7 @@ function applyAlphaPicks(
         returnSinceAdded: e.returnSinceAdded ?? ex.returnSinceAdded,
         rating: e.rating?.trim() || ex.rating,
         holdingWeight: e.holdingWeight ?? ex.holdingWeight,
+        // manualSell is preserved via the ...ex spread.
       });
     } else {
       added += 1;
@@ -160,22 +237,38 @@ function applyAlphaPicks(
       });
     }
   }
+  // In replace mode, "removed" = existing that weren't matched and
+  // weren't manualSell-preserved.
+  const preservedCount = mode === "replace"
+    ? existing.filter((p) => p.manualSell).length
+    : existing.length;
+  const removed = mode === "replace" ? existing.length - matched - preservedCount : 0;
   const nextState = { ...state, alphaPicks: Array.from(byKey.values()) };
-  return { nextState, summary: { source: "seeking-alpha-picks", rowsParsed: entries.length, matched, added } };
+  return {
+    nextState,
+    summary: { source: "seeking-alpha-picks", rowsParsed: entries.length, matched, added, removed, mode, fallbackReason: reason },
+  };
 }
 
-/** Apply RBCCM FEW rows. */
+// ── RBCCM FEW ────────────────────────────────────────────────────────
+
 function applyFewEntries(
   state: ResearchState,
   entries: ScrapedFewRow[],
 ): { nextState: ResearchState; summary: ResearchMergeSummary } {
   const existing: FewEntry[] = state.rbccmFew || [];
-  const byNorm = new Map(existing.map((r) => [normalize(r.ticker), r]));
+  const existingByNorm = new Map(existing.map((r) => [normalize(r.ticker), r]));
+  const { mode, reason } = decideMode(existing.length, entries.length);
+
+  const byNorm = new Map<string, FewEntry>();
+  if (mode === "additive") {
+    for (const r of existing) byNorm.set(normalize(r.ticker), r);
+  }
   let matched = 0;
   let added = 0;
   for (const e of entries) {
     const norm = normalize(e.ticker);
-    const ex = byNorm.get(norm);
+    const ex = existingByNorm.get(norm);
     if (ex) {
       matched += 1;
       byNorm.set(norm, {
@@ -189,8 +282,12 @@ function applyFewEntries(
       byNorm.set(norm, { ticker: e.ticker, name: e.name, industry: e.industry, price: e.price });
     }
   }
+  const removed = mode === "replace" ? existing.length - matched : 0;
   const nextState = { ...state, rbccmFew: Array.from(byNorm.values()) };
-  return { nextState, summary: { source: "rbccm-few", rowsParsed: entries.length, matched, added } };
+  return {
+    nextState,
+    summary: { source: "rbccm-few", rowsParsed: entries.length, matched, added, removed, mode, fallbackReason: reason },
+  };
 }
 
 /** Universal entry point — dispatches to the right merger based on source. */

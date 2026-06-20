@@ -4,6 +4,7 @@ import React, { useState, useEffect, useCallback, useRef } from "react";
 import type { ResearchState, UptickEntry, IdeaEntry, RBCEntry, SectorViewEntry, SectorView, LeeFocusArea, AlphaPickEntry, FewEntry } from "@/app/lib/defaults";
 import { defaultResearch, GICS_SECTORS } from "@/app/lib/defaults";
 import { dedupeRbcEntries } from "@/app/lib/rbc-canonical";
+import { applyResearchEntries } from "@/app/lib/research-merge";
 import { displayTicker } from "@/app/lib/ticker";
 import { ImageUpload, type BriefAttachment } from "@/app/components/ImageUpload";
 import { useStocks } from "@/app/lib/StockContext";
@@ -1302,283 +1303,40 @@ export default function ResearchPage() {
         return false;
       }
 
-      // Normalize tickers same way upticks does so "$BRK/B" matches "BRK-B".
-      const normalize = (t: string) =>
-        t.replace(/^\$+/, "").replace(/\//g, "-").split(/[.\s]/)[0].toUpperCase();
+      // Use the shared merge lib (also used by the email-inbox dispatcher) so
+      // both paths apply identical REPLACE-mode semantics: a screenshot
+      // becomes the new full list, names no longer present get removed,
+      // manualSell-tagged alphaPicks survive. Safety check falls back to
+      // additive merge when the new screenshot has < 30% of the existing
+      // list's rows (partial / vision miss). See app/lib/research-merge.ts.
+      const { nextState, summary } = applyResearchEntries(
+        state,
+        source,
+        entries as unknown[],
+      );
+      const cachedLabel = data.cached ? " (cached)" : "";
+      const modeLabel = summary.mode === "additive" ? " · ADDITIVE FALLBACK" : "";
+      const removedLabel = summary.mode === "replace" && summary.removed > 0 ? ` · ${summary.removed} removed` : "";
+      const reasonLabel = summary.fallbackReason ? ` ⚠ ${summary.fallbackReason}` : "";
+      setScrapeStatusMap((m) => ({
+        ...m,
+        [source]: `${entries.length} rows${cachedLabel}${modeLabel} · ${summary.matched} matched · ${summary.added} added${removedLabel}${reasonLabel}`,
+      }));
+      save(nextState);
 
-      let nextState: ResearchState = state;
-
-      if (source === "rbc-focus" || source === "rbc-us-focus") {
-        // Both RBC lists share the same RBCEntry shape and merge logic.
-        // The only difference is which state field they target.
-        const stateKey = source === "rbc-focus" ? "rbcCanadianFocus" : "rbcUsFocus";
-        const existing = (state[stateKey] as RBCEntry[] | undefined) || [];
-        const byNorm = new Map(existing.map((r) => [normalize(r.ticker), r]));
-        let matched = 0;
-        let added = 0;
-        for (const e of entries) {
-          const norm = normalize(e.ticker);
-          const ex = byNorm.get(norm);
-          if (ex) {
-            matched += 1;
-            byNorm.set(norm, {
-              ticker: e.ticker || ex.ticker, // adopt scrape's canonical ticker (e.g. .TO form for Canadian)
-              name: ex.name, // preserve any name that's already been backfilled
-              sector: e.sector ?? ex.sector,
-              weight: e.weight ?? ex.weight,
-              dateAdded: e.dateAdded ?? ex.dateAdded,
-            });
-          } else {
-            added += 1;
-            byNorm.set(norm, {
-              ticker: e.ticker, // already canonicalized by parseRbcRows (.TO for Canadian)
-              sector: e.sector ?? "—",
-              weight: e.weight ?? 0,
-              dateAdded: e.dateAdded ?? new Date().toLocaleDateString("en-US", { month: "numeric", day: "numeric", year: "numeric" }),
-            });
-          }
-        }
-        // Dedupe Canadian list after merge — the scrape can emit
-        // conflicting ticker variants for the same security
-        // (BBD-B.TO vs BBD.B-T) which the byNorm map won't catch
-        // (their normalize() output differs because normalize strips
-        // .TO but keeps -T). dedupeRbcEntries collapses by canonical
-        // form. US list doesn't need this — bare tickers don't have
-        // the multi-variant problem.
-        const merged = Array.from(byNorm.values());
-        const finalList = source === "rbc-focus"
-          ? dedupeRbcEntries(merged).entries
-          : merged;
-        nextState = { ...state, [stateKey]: finalList } as ResearchState;
-        const cachedLabel = data.cached ? " (cached)" : "";
-        setScrapeStatusMap((m) => ({ ...m, [source]: `${entries.length} rows${cachedLabel} · ${matched} matched · ${added} added` }));
-        // Save first, then backfill names + sectors for any new rows.
-        save(nextState);
-        void refreshRbcNames(stateKey, nextState);
-        return true;
+      // Source-specific follow-ups: Yahoo name backfill + live prices. Run
+      // off the freshly-merged state so they see the post-merge list.
+      if (source === "rbc-focus") {
+        void refreshRbcNames("rbcCanadianFocus", nextState);
+      } else if (source === "rbc-us-focus") {
+        void refreshRbcNames("rbcUsFocus", nextState);
       } else if (source === "seeking-alpha-picks") {
-        // Alpha Picks: rich entries (name + sector + dateAdded + price)
-        // mirroring Newton's Upticks. Server returns ticker + priceWhenAdded;
-        // we preserve existing name/sector for matched rows and stub
-        // defaults for new rows. The post-scrape refreshAlphaPickNames
-        // call backfills name/sector via /api/company-name in batch.
-        //
-        // Merge key is COMPOSITE: `${ticker}|${dateAdded}`. The same
-        // company can legitimately appear twice on different dates (sold
-        // and re-bought, or added to a position) — both entries must be
-        // preserved. Dedup passes (same-stem -T, cross-stem by name) now
-        // run within same-date scope only, so different dates of the
-        // same ticker stay as separate rows.
-        const existing: AlphaPickEntry[] = state.alphaPicks || [];
-        type ScrapedAlpha = { ticker: string; name?: string; sector?: string; dateAdded?: string; returnSinceAdded?: number; rating?: string; holdingWeight?: number };
-        const normalizeName = (n: string | undefined): string => {
-          if (!n) return "";
-          return n.toLowerCase()
-            .replace(/[.,'&]/g, "")
-            .replace(/\b(inc|incorporated|corp|corporation|company|co|ltd|limited|plc|sa|nv|ag|holdings?|group|the)\b/g, "")
-            .replace(/\s+/g, " ")
-            .trim();
-        };
-        const dateKey = (d: string | undefined) => (d || "").trim();
-        const compositeKey = (ticker: string, date: string | undefined) => `${normalize(ticker)}|${dateKey(date)}`;
-        // Build incoming name+date → composite-key index, so existing-dedup
-        // pass below can prefer the variant returned by the current scrape
-        // (within the same date scope).
-        const incomingByNameDate = new Map<string, Set<string>>();
-        for (const eRaw of entries) {
-          const e = eRaw as ScrapedAlpha;
-          const nm = normalizeName(e.name);
-          if (!nm) continue;
-          const groupKey = `${nm}|${dateKey(e.dateAdded)}`;
-          const set = incomingByNameDate.get(groupKey) || new Set<string>();
-          set.add(compositeKey(e.ticker, e.dateAdded));
-          incomingByNameDate.set(groupKey, set);
-        }
-        const rawMap = new Map(existing.map((i) => [compositeKey(i.ticker, i.dateAdded), i]));
-        // Pass 1: collapse same-stem -T variants ON SAME DATE.
-        // "CLS|1/1/2024" + "CLS-T|1/1/2024" → keep "CLS-T|1/1/2024".
-        // Different dates stay separate.
-        for (const key of Array.from(rawMap.keys())) {
-          const sepIdx = key.indexOf("|");
-          if (sepIdx < 0) continue;
-          const tickerPart = key.slice(0, sepIdx);
-          const datePart = key.slice(sepIdx + 1);
-          if (!tickerPart.endsWith("-T") && rawMap.has(`${tickerPart}-T|${datePart}`)) {
-            rawMap.delete(key);
-          }
-        }
-        // Pass 2: cross-stem name dedup WITHIN same date.
-        // "$B|1/1/2024" + "$ABX-T|1/1/2024" → collapse to one Barrick row.
-        const byNameDate = new Map<string, AlphaPickEntry[]>();
-        for (const e of rawMap.values()) {
-          const nm = normalizeName(e.name);
-          if (!nm) continue;
-          const groupKey = `${nm}|${dateKey(e.dateAdded)}`;
-          const arr = byNameDate.get(groupKey) || [];
-          arr.push(e);
-          byNameDate.set(groupKey, arr);
-        }
-        for (const [groupKey, arr] of byNameDate) {
-          if (arr.length <= 1) continue;
-          const incomingSet = incomingByNameDate.get(groupKey);
-          let keep: AlphaPickEntry | undefined;
-          if (incomingSet) {
-            keep = arr.find((e) => incomingSet.has(compositeKey(e.ticker, e.dateAdded)));
-          }
-          if (!keep) keep = arr.find((e) => normalize(e.ticker).endsWith("-T"));
-          if (!keep) keep = arr[arr.length - 1];
-          for (const e of arr) {
-            if (e !== keep) rawMap.delete(compositeKey(e.ticker, e.dateAdded));
-          }
-        }
-        const byKey = rawMap;
-        // Reverse lookup by (name, date) for cross-stem incoming matches.
-        const byNameDateForLookup = new Map<string, AlphaPickEntry>();
-        for (const e of byKey.values()) {
-          const nm = normalizeName(e.name);
-          if (!nm) continue;
-          byNameDateForLookup.set(`${nm}|${dateKey(e.dateAdded)}`, e);
-        }
-        let matched = 0;
-        let added = 0;
-        const today = new Date().toLocaleDateString("en-US", { month: "numeric", day: "numeric", year: "numeric" });
-        // Lookup by (ticker, date) with -T-variant fallback and name+date
-        // fallback. All within same-date scope so different-date picks
-        // for the same ticker don't accidentally match.
-        const findExisting = (ticker: string, date: string, name?: string): { key: string; entry: AlphaPickEntry } | undefined => {
-          const norm = normalize(ticker);
-          const direct = byKey.get(`${norm}|${date}`);
-          if (direct) return { key: `${norm}|${date}`, entry: direct };
-          const altTicker = norm.endsWith("-T") ? norm.slice(0, -2) : `${norm}-T`;
-          const fallback = byKey.get(`${altTicker}|${date}`);
-          if (fallback) return { key: `${altTicker}|${date}`, entry: fallback };
-          if (name) {
-            const nm = normalizeName(name);
-            const byNm = nm ? byNameDateForLookup.get(`${nm}|${date}`) : undefined;
-            if (byNm) return { key: compositeKey(byNm.ticker, byNm.dateAdded), entry: byNm };
-          }
-          return undefined;
-        };
-        for (const eRaw of entries) {
-          const e = eRaw as ScrapedAlpha;
-          const norm = normalize(e.ticker);
-          const date = dateKey(e.dateAdded);
-          const compKey = `${norm}|${date}`;
-          const found = findExisting(e.ticker, date, e.name);
-          if (found) {
-            const ex = found.entry;
-            if (found.key !== compKey) byKey.delete(found.key);
-            matched += 1;
-            byKey.set(compKey, {
-              ...ex,
-              ticker: norm,
-              name: e.name?.trim() || ex.name,
-              sector: e.sector?.trim() || ex.sector,
-              // dateAdded should not drift on update — it's part of the
-              // composite key. Adopt the scraped value if it differs (it
-              // shouldn't, since the key includes the date), else keep.
-              dateAdded: e.dateAdded?.trim() || ex.dateAdded,
-              returnSinceAdded: e.returnSinceAdded ?? ex.returnSinceAdded,
-              rating: e.rating?.trim() || ex.rating,
-              holdingWeight: e.holdingWeight ?? ex.holdingWeight,
-            });
-          } else {
-            added += 1;
-            byKey.set(compKey, {
-              ticker: norm,
-              name: e.name?.trim() || norm,
-              sector: e.sector?.trim() || "—",
-              price: 0,
-              priceWhenAdded: 0,
-              dateAdded: e.dateAdded?.trim() || today,
-              returnSinceAdded: e.returnSinceAdded,
-              rating: e.rating?.trim(),
-              holdingWeight: e.holdingWeight,
-            });
-          }
-        }
-        nextState = { ...state, alphaPicks: Array.from(byKey.values()) };
-        const cachedLabel = data.cached ? " (cached)" : "";
-        setScrapeStatusMap((m) => ({ ...m, [source]: `${entries.length} rows${cachedLabel} · ${matched} matched · ${added} added` }));
-        save(nextState);
-        // Backfill names/sectors via Yahoo (normalizes RBC-style
-        // sector labels to GICS form). Then refresh live prices so
-        // the table populates Current Price + derived Price Picked
-        // immediately rather than waiting for the next manual refresh.
         void refreshAlphaPickNames(nextState);
         void fetchLivePrices(nextState);
-        return true;
       } else if (source === "rbccm-few") {
-        // RBCCM Canadian FEW Portfolio — merge by normalized ticker
-        // (the scrape canonicalizes to .TO; normalize() strips the suffix
-        // so variants collapse). Capture company name, industry, and the
-        // screenshot price; preserve existing values on matched rows.
-        const existing = state.rbccmFew || [];
-        const byNorm = new Map(existing.map((r) => [normalize(r.ticker), r]));
-        let matched = 0;
-        let added = 0;
-        for (const e of entries) {
-          const norm = normalize(e.ticker);
-          const ex = byNorm.get(norm);
-          if (ex) {
-            matched += 1;
-            byNorm.set(norm, {
-              ticker: e.ticker || ex.ticker, // adopt scrape's .TO form
-              name: e.name ?? ex.name,
-              industry: e.industry ?? ex.industry,
-              price: e.price ?? ex.price,
-            });
-          } else {
-            added += 1;
-            byNorm.set(norm, {
-              ticker: e.ticker, // already canonicalized to .TO server-side
-              name: e.name,
-              industry: e.industry,
-              price: e.price,
-            });
-          }
-        }
-        nextState = { ...state, rbccmFew: Array.from(byNorm.values()) };
-        const cachedLabel = data.cached ? " (cached)" : "";
-        setScrapeStatusMap((m) => ({ ...m, [source]: `${entries.length} rows${cachedLabel} · ${matched} matched · ${added} added` }));
-        save(nextState);
         void refreshFewNames(nextState);
         void fetchLivePrices(nextState);
-        return true;
-      } else {
-        // IdeaEntry-shaped sources (Fundstrat Top/Bottom, SMID Top/Bottom)
-        const stateKey =
-          source === "fundstrat-top"         ? "fundstratTop"
-        : source === "fundstrat-bottom"      ? "fundstratBottom"
-        : source === "fundstrat-smid-top"    ? "fundstratSmidTop"
-        : /* fundstrat-smid-bottom */         "fundstratSmidBottom";
-        const existing: IdeaEntry[] = (state[stateKey as keyof ResearchState] as IdeaEntry[]) || [];
-        const byNorm = new Map(existing.map((i) => [normalize(i.ticker), i]));
-        let matched = 0;
-        let added = 0;
-        for (const e of entries) {
-          const norm = normalize(e.ticker);
-          const ex = byNorm.get(norm);
-          if (ex) {
-            matched += 1;
-            byNorm.set(norm, {
-              ticker: ex.ticker,
-              priceWhenAdded: e.priceWhenAdded ?? ex.priceWhenAdded,
-            });
-          } else {
-            added += 1;
-            byNorm.set(norm, {
-              ticker: norm,
-              priceWhenAdded: e.priceWhenAdded ?? 0,
-            });
-          }
-        }
-        nextState = { ...state, [stateKey]: Array.from(byNorm.values()) } as ResearchState;
-        const cachedLabel = data.cached ? " (cached)" : "";
-        setScrapeStatusMap((m) => ({ ...m, [source]: `${entries.length} rows${cachedLabel} · ${matched} matched · ${added} added` }));
       }
-
-      save(nextState);
       return true;
     } catch (e) {
       console.error(`research-scrape:${source} failed:`, e);

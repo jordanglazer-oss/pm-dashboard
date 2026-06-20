@@ -314,10 +314,14 @@ async function handleResearch(
   const state = await readResearch();
   const { nextState, summary } = applyResearchEntries(state, source, entries);
   await writeResearch(nextState);
+  const cachedLabel = cached ? " (cached)" : "";
+  const modeLabel = summary.mode === "additive" ? " · ADDITIVE FALLBACK" : "";
+  const removedLabel = summary.mode === "replace" && summary.removed > 0 ? ` · ${summary.removed} removed` : "";
+  const reasonLabel = summary.fallbackReason ? ` ⚠ ${summary.fallbackReason}` : "";
   return {
     ok: true,
     kind: { kind: "research", source },
-    message: `${source}${cached ? " (cached)" : ""}: ${summary.matched} matched · ${summary.added} added / ${summary.rowsParsed} rows.`,
+    message: `${source}${cachedLabel}${modeLabel}: ${summary.matched} matched · ${summary.added} added${removedLabel} / ${summary.rowsParsed} rows.${reasonLabel}`,
     detail: { label, source, cached, summary },
   };
 }
