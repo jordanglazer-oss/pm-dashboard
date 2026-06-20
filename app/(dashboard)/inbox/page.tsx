@@ -1413,27 +1413,63 @@ export default function InboxPage() {
         ))}
       </div>
 
-      <div className="mt-6 rounded-lg border border-blue-100 bg-blue-50 p-4 text-sm">
-        <p className="font-semibold text-blue-900 mb-1">How to send a report</p>
-        <p className="text-blue-800">
-          From any email account, send <span className="font-mono">dfwreports123@gmail.com</span> a message with:
+      {/* ── How to send by email ──
+          Single reference table covering every email-routed input the
+          Apps Script forwards. Subject prefix → handler is set in
+          app/lib/inbox-dispatch.ts (classifySubject); table rows must
+          stay in sync if those prefixes change. */}
+      <div className="mt-6 rounded-lg border border-blue-100 bg-blue-50 p-4">
+        <p className="font-semibold text-blue-900 mb-1">How to send by email</p>
+        <p className="text-blue-800 text-sm mb-3">
+          From any email account, send <span className="font-mono">dfwreports123@gmail.com</span> a message — the subject prefix tells the dashboard what to do with it. Case-insensitive. The Apps Script polls every 5 minutes, so entries appear in the activity log above within ~5 min.
         </p>
-        <ul className="mt-2 ml-4 list-disc text-blue-800 text-xs space-y-1">
-          <li>
-            <span className="font-semibold">Subject:</span> <span className="font-mono">Analyst Report: &lt;TICKER&gt;</span>
-            <span className="ml-1 text-blue-700">(e.g. <span className="font-mono">Analyst Report: AVGO</span>)</span>
-          </li>
-          <li>
-            <span className="font-semibold">Attach 1–2 PDFs</span> named <span className="font-mono">&lt;TICKER&gt;_JPM.pdf</span> and/or <span className="font-mono">&lt;TICKER&gt;_RBC.pdf</span>
-            <span className="ml-1 text-blue-700">(e.g. <span className="font-mono">AVGO_JPM.pdf</span>, <span className="font-mono">AVGO_RBC.pdf</span>)</span>
-            <span className="ml-1 text-blue-700">— filename determines which slot each PDF lands in</span>
-          </li>
-          <li>The Apps Script polls every 5 minutes — events show up in this log within ~5 min.</li>
-          <li>Max ~15 MB per PDF.</li>
-          <li className="text-blue-700">
-            <span className="italic">Legacy subject format also supported:</span> <span className="font-mono">Analyst Report: &lt;TICKER&gt; &lt;RBC|JPM&gt;</span> with any filename.
-          </li>
-        </ul>
+        <div className="overflow-x-auto">
+          <table className="w-full text-xs border-collapse">
+            <thead>
+              <tr className="border-b border-blue-200 text-left text-blue-900">
+                <th className="py-1.5 pr-3 font-semibold whitespace-nowrap">Subject starts with…</th>
+                <th className="py-1.5 pr-3 font-semibold whitespace-nowrap">Attach</th>
+                <th className="py-1.5 pr-3 font-semibold">What it does</th>
+                <th className="py-1.5 font-semibold whitespace-nowrap">Example</th>
+              </tr>
+            </thead>
+            <tbody className="text-blue-800 align-top">
+              <tr className="border-b border-blue-100">
+                <td className="py-2 pr-3 font-mono whitespace-nowrap">Analyst Report: &lt;TICKER&gt;</td>
+                <td className="py-2 pr-3 whitespace-nowrap">PDF</td>
+                <td className="py-2 pr-3">Stores under the ticker&apos;s analyst snapshot. Name each PDF <span className="font-mono">&lt;TICKER&gt;_JPM.pdf</span> or <span className="font-mono">&lt;TICKER&gt;_RBC.pdf</span> to route to the right slot. Max ~15 MB.</td>
+                <td className="py-2 font-mono whitespace-nowrap">Analyst Report: AVGO</td>
+              </tr>
+              <tr className="border-b border-blue-100">
+                <td className="py-2 pr-3 font-mono whitespace-nowrap">SIA</td>
+                <td className="py-2 pr-3 whitespace-nowrap">Screenshot (PNG/JPG/PDF)</td>
+                <td className="py-2 pr-3">Reads ticker + SMAX per row. Updates each matched stock&apos;s SMAX and recomputes the SIA score. Per-stock chip flags any names the screenshot didn&apos;t capture.</td>
+                <td className="py-2 font-mono whitespace-nowrap">SIA — Mar 5</td>
+              </tr>
+              <tr className="border-b border-blue-100">
+                <td className="py-2 pr-3 font-mono whitespace-nowrap">BoostedAI <span className="text-blue-500">or</span> Boosted</td>
+                <td className="py-2 pr-3 whitespace-nowrap">Screenshot (PNG/JPG/PDF)</td>
+                <td className="py-2 pr-3">Reads ticker + rating + consensus per row. Updates the BoostedAI fields and recomputes the AI Rating score.</td>
+                <td className="py-2 font-mono whitespace-nowrap">BoostedAI watchlist</td>
+              </tr>
+              <tr className="border-b border-blue-100">
+                <td className="py-2 pr-3 font-mono whitespace-nowrap">MarketEdge <span className="text-blue-500">or</span> ChartScout</td>
+                <td className="py-2 pr-3 whitespace-nowrap">CSV</td>
+                <td className="py-2 pr-3">Parses the ChartScout Likes export by header (Symbol / Opinion / Score / Power Rating / Opinion Date). Updates the MarketEdge fields and the MarketEdge composite score.</td>
+                <td className="py-2 font-mono whitespace-nowrap">MarketEdge weekly</td>
+              </tr>
+              <tr>
+                <td className="py-2 pr-3 font-mono whitespace-nowrap">Strategist</td>
+                <td className="py-2 pr-3 whitespace-nowrap">PDF or image</td>
+                <td className="py-2 pr-3">Lands in the Brief&apos;s &ldquo;Analyst / Strategist Reports&rdquo; dropbox — picked up automatically on the next Brief refresh.</td>
+                <td className="py-2 font-mono whitespace-nowrap">Strategist note from Newton</td>
+              </tr>
+            </tbody>
+          </table>
+        </div>
+        <p className="mt-3 text-[11px] text-blue-700">
+          Screenshots from iPhone, Mac, or Windows all work. <span className="italic">Legacy:</span> <span className="font-mono">Analyst Report: &lt;TICKER&gt; &lt;RBC|JPM&gt;</span> with any filename is still supported.
+        </p>
       </div>
     </div>
   );
