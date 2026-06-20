@@ -185,14 +185,18 @@ export type DispatchResult = {
 // ── Handlers ───────────────────────────────────────────────────────
 
 async function handleSia(att: AttachmentInput, label: string): Promise<DispatchResult> {
-  // Auto-detect CSV vs image. CSV is the preferred path (instant, $0, 100%
-  // reliable) — when SIA's CSV export is attached, the email subject stays
-  // the same ("SIA …") and we just parse it directly.
-  if (isCsvDataUrl(att.dataUrl)) {
+  // Routing by content, NOT by MIME label: image/PDF → vision path;
+  // ANYTHING ELSE → attempt CSV. We don't trust the MIME type because
+  // mail clients tag a .csv inconsistently (text/csv, text/plain,
+  // application/vnd.ms-excel, or — very common from Outlook —
+  // application/octet-stream). CSV is the preferred path anyway (instant,
+  // $0, 100% reliable); if the bytes genuinely aren't a SIA CSV, the
+  // parser reports a clear error.
+  if (!isImageDataUrl(att.dataUrl) && !isPdfDataUrl(att.dataUrl)) {
     const text = decodeBase64DataUrl(att.dataUrl);
     const parsed = parseSiaCsv(text);
     if (parsed.errors.length > 0) {
-      return { ok: false, kind: "sia", status: 400, message: `SIA CSV parse error: ${parsed.errors.join("; ")}` };
+      return { ok: false, kind: "sia", status: 400, message: `SIA attachment isn't a readable CSV (${parsed.errors.join("; ")}). Expecting a SIA CSV export, a screenshot (PNG/JPG), or a PDF.` };
     }
     const stocks = await readStocks();
     const expected = stocks.filter(isScoreable);
@@ -204,9 +208,6 @@ async function handleSia(att: AttachmentInput, label: string): Promise<DispatchR
       message: `SIA CSV: ${summary.matched} matched / ${summary.rowsParsed} rows · ${summary.updated} updated${summary.expectedButMissing.length ? ` · ${summary.expectedButMissing.length} expected names missing` : ""}.`,
       detail: { label, source: "csv", summary, touched },
     };
-  }
-  if (!isImageDataUrl(att.dataUrl) && !isPdfDataUrl(att.dataUrl)) {
-    return { ok: false, kind: "sia", status: 400, message: "SIA email expects a CSV export, screenshot (PNG/JPG), or PDF." };
   }
   const { entries, cached } = await extractSiaFromAttachments([att]);
   const stocks = await readStocks();
@@ -241,13 +242,17 @@ async function handleBoosted(att: AttachmentInput, label: string): Promise<Dispa
 }
 
 async function handleMarketEdge(att: AttachmentInput, label: string): Promise<DispatchResult> {
-  if (!isCsvDataUrl(att.dataUrl)) {
-    return { ok: false, kind: "marketedge", status: 400, message: "MarketEdge email expects a CSV attachment (.csv)." };
+  // MarketEdge is CSV-only. Attempt to parse regardless of MIME label —
+  // mail clients tag a .csv inconsistently (often application/octet-stream
+  // from Outlook). If it's an image or other non-CSV, the parser reports a
+  // clear "missing Symbol column" error.
+  if (isImageDataUrl(att.dataUrl) || isPdfDataUrl(att.dataUrl)) {
+    return { ok: false, kind: "marketedge", status: 400, message: "MarketEdge expects the ChartScout Likes CSV export — got an image/PDF instead." };
   }
   const text = decodeBase64DataUrl(att.dataUrl);
   const parsed = parseMarketEdgeCsv(text);
   if (parsed.errors.length > 0) {
-    return { ok: false, kind: "marketedge", status: 400, message: `MarketEdge CSV parse error: ${parsed.errors.join("; ")}` };
+    return { ok: false, kind: "marketedge", status: 400, message: `MarketEdge attachment isn't a readable CSV (${parsed.errors.join("; ")}). Expecting the ChartScout Likes CSV export.` };
   }
   const stocks = await readStocks();
   const { patches, summary } = applyMarketEdgeRows(stocks, parsed.rows);
