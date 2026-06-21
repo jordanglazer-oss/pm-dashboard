@@ -137,7 +137,67 @@ function testWebhook() {
   });
   Logger.log(response.getResponseCode() + " " + response.getContentText());
 }
+
+/** One-off re-import. Re-forwards every matching attachment from the last
+ *  `days` days of the inbox, EVEN IF the thread was already labeled
+ *  Dashboard-Processed. Use after a dashboard-side fix when you need the
+ *  last few CSVs re-applied. Does NOT touch labels and is safe to run more
+ *  than once (the dashboard's CSV imports are idempotent — same value in =
+ *  same value out). Self-contained: defines its own subject regex so it
+ *  works no matter where SUBJECT_RE lives. */
+function reprocessRecent() {
+  var DAYS = 3; // widen if your CSVs are older than this
+  var SUBJECT_RE = /^(Analyst Report:|Fundstrat SMID Top|Fundstrat SMID Bottom|Fundstrat Top|Fundstrat Bottom|RBC Canadian|RBC US|RBCCM FEW|Seeking Alpha|Alpha Picks|SIA\b|BoostedAI\b|Boosted\b|MarketEdge\b|ChartScout\b|Strategist\b)/i;
+  var props = PropertiesService.getScriptProperties();
+  var url = props.getProperty("WEBHOOK_URL");
+  var secret = props.getProperty("INBOX_SECRET");
+  if (!url || !secret) { Logger.log("WEBHOOK_URL or INBOX_SECRET missing."); return; }
+  var threads = GmailApp.search("in:inbox newer_than:" + DAYS + "d");
+  Logger.log("reprocessRecent: scanning " + threads.length + " threads from the last " + DAYS + " days.");
+  for (var t = 0; t < threads.length; t++) {
+    var messages = threads[t].getMessages();
+    for (var m = 0; m < messages.length; m++) {
+      var msg = messages[m];
+      var subject = (msg.getSubject() || "").trim();
+      if (!SUBJECT_RE.test(subject)) continue;
+      var sender = msg.getFrom();
+      var attachments = msg.getAttachments({ includeInlineImages: true, includeAttachments: true });
+      for (var a = 0; a < attachments.length; a++) {
+        var att = attachments[a];
+        try {
+          var dataUrl = "data:" + att.getContentType() + ";base64," + Utilities.base64Encode(att.getBytes());
+          var response = UrlFetchApp.fetch(url, {
+            method: "post",
+            contentType: "application/json",
+            headers: { Authorization: "Bearer " + secret },
+            payload: JSON.stringify({ subject: subject, sender: sender, filename: att.getName(), dataUrl: dataUrl }),
+            muteHttpExceptions: true,
+          });
+          Logger.log("  " + response.getResponseCode() + " " + subject + " :: " + att.getName());
+        } catch (e) {
+          Logger.log("  EX " + subject + " :: " + att.getName() + " :: " + e);
+        }
+      }
+    }
+  }
+  Logger.log("reprocessRecent done.");
+}
 ```
+
+## Re-importing the last few emails (`reprocessRecent`)
+
+The normal `processInbox` skips any thread it has already labeled
+`Dashboard-Processed`, so it will not re-send a CSV you emailed earlier. When
+a dashboard-side fix means those CSVs need to be re-applied, run
+`reprocessRecent()` from the Apps Script editor (Run ▸ reprocessRecent). It
+re-forwards every matching attachment from the last few days regardless of
+the label, without removing any labels.
+
+**Do it without losing the import:** the dashboard loads your holdings once
+when a tab opens, so an already-open tab can overwrite a fresh import with
+its older copy. Before re-importing, **close every open dashboard tab**, run
+`reprocessRecent()`, confirm the Inbox → Activity log shows the re-imports,
+then open a **fresh** dashboard tab.
 
 ## Verifying it works
 
