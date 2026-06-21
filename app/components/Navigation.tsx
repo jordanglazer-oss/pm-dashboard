@@ -9,6 +9,59 @@ import { NotificationTray } from "./NotificationTray";
 import { useStocks } from "@/app/lib/StockContext";
 import { useNotifications } from "@/app/lib/NotificationsContext";
 
+/**
+ * Backup-health indicator for the nav's secondary strip. Polls
+ * /api/admin/backup-health and renders subtle gray when the most-recent
+ * backup is fresh (< 30h), amber at 30–50h, and a prominent red ⚠ when
+ * the nightly cron has clearly stalled (> 50h or no backups). This is the
+ * fix for the silent-failure mode where backups died for 17 days unnoticed.
+ */
+type BackupHealth = {
+  ok: boolean;
+  status?: "ok" | "warning" | "critical" | "unknown";
+  ageHours?: number | null;
+  lastBackupAt?: string | null;
+};
+function BackupHealthChip() {
+  const [h, setH] = useState<BackupHealth | null>(null);
+  useEffect(() => {
+    let alive = true;
+    const load = () =>
+      fetch("/api/admin/backup-health")
+        .then((r) => r.json())
+        .then((d: BackupHealth) => { if (alive) setH(d); })
+        .catch(() => {});
+    load();
+    const id = setInterval(load, 10 * 60 * 1000); // re-check every 10 min
+    return () => { alive = false; clearInterval(id); };
+  }, []);
+
+  if (!h || h.ok === false || h.status === "unknown") return null; // couldn't check → stay quiet
+  const status = h.status ?? "ok";
+  const ageLabel =
+    h.ageHours == null ? "none"
+    : h.ageHours < 1 ? "<1h"
+    : h.ageHours < 48 ? `${Math.round(h.ageHours)}h`
+    : `${Math.round(h.ageHours / 24)}d`;
+  const textCls =
+    status === "ok" ? "text-slate-500"
+    : status === "warning" ? "text-amber-400 font-semibold"
+    : "text-red-400 font-bold";
+  const dotCls =
+    status === "ok" ? "bg-emerald-500"
+    : status === "warning" ? "bg-amber-400"
+    : "bg-red-500 animate-pulse";
+  const title = h.lastBackupAt
+    ? `Last successful backup: ${new Date(h.lastBackupAt).toLocaleString()} (${ageLabel} ago). Status: ${status}.`
+    : "No backups exist — the nightly cron may have stalled.";
+  return (
+    <span className={`flex items-center gap-1 ${textCls}`} title={title}>
+      <span className={`inline-block w-1.5 h-1.5 rounded-full ${dotCls}`} />
+      {status === "critical" ? `⚠ Backup ${ageLabel}` : `Backup ${ageLabel}`}
+    </span>
+  );
+}
+
 const tabs = [
   { label: "Brief", href: "/brief" },
   { label: "Dashboard", href: "/" },
@@ -310,9 +363,12 @@ export function Navigation() {
         {pathname.startsWith("/stock/") && (
           <span><kbd className="rounded bg-slate-700 px-1 py-px text-slate-400">⌥/Alt</kbd> + <kbd className="rounded bg-slate-700 px-1 py-px text-slate-400">←→</kbd> switch stocks</span>
         )}
-        <Link href="/admin/health" className="ml-auto text-slate-500 hover:text-slate-300 transition-colors">
-          health
-        </Link>
+        <div className="ml-auto flex items-center gap-3">
+          <BackupHealthChip />
+          <Link href="/admin/health" className="text-slate-500 hover:text-slate-300 transition-colors">
+            health
+          </Link>
+        </div>
       </div>
       <QuickAddStock open={quickAddOpen} onClose={() => setQuickAddOpen(false)} />
       <CommandPalette
