@@ -145,11 +145,16 @@ export async function GET(req: NextRequest) {
       data,
     };
 
-    // ── 3. Write this run's backup ──────────────────────────────────
-    const backupKey = `${BACKUP_PREFIX}${stamp}`;
-    await redis.set(backupKey, JSON.stringify(snapshot));
-
-    // ── 4. Prune old backups ────────────────────────────────────────
+    // ── 3. Prune old backups FIRST (before writing) ─────────────────
+    // Critical ordering: prune-then-write, NOT write-then-prune. On a
+    // memory-constrained tier the new backup's redis.set throws
+    // "OOM command not allowed" when the instance is full — and if the
+    // prune ran AFTER the write, that throw would skip the prune, leaving
+    // memory full so EVERY subsequent nightly run fails the same way (a
+    // silent death spiral — exactly what happened June 4 → June 21). By
+    // pruning expired backups first, each run reclaims space before it
+    // needs it, so the write succeeds and the cron self-heals. DEL is
+    // permitted even when OOM, so this works in the stuck state too.
     const existingBackups = await scanAll(redis, `${BACKUP_PREFIX}*`);
     const cutoffMs = Date.now() - BACKUP_RETENTION_DAYS * 24 * 60 * 60 * 1000;
     const toDelete: string[] = [];
@@ -161,6 +166,10 @@ export async function GET(req: NextRequest) {
     for (const key of toDelete) {
       await redis.del(key);
     }
+
+    // ── 4. Write this run's backup ──────────────────────────────────
+    const backupKey = `${BACKUP_PREFIX}${stamp}`;
+    await redis.set(backupKey, JSON.stringify(snapshot));
 
     // ── 5. Run invariant check inline ────────────────────────────────
     // Best-effort: a thrown invariant check must not turn a successful
