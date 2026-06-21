@@ -1015,11 +1015,12 @@ export function PimModel({ groups }: Props) {
           </div>
         </div>
 
-        {/* Profile tabs */}
-        <div className="flex gap-1 rounded-xl bg-slate-100 p-1">
+        {/* Profile tabs — horizontally scrollable so 5-6 profiles
+            (Conservative … Core) don't overflow on mobile. */}
+        <div className="flex gap-1 rounded-xl bg-slate-100 p-1 overflow-x-auto max-w-full">
           {availableProfiles.map((p) => (
             <button key={p} onClick={() => setSelectedProfile(p)}
-              className={`rounded-lg px-4 py-2 text-sm font-semibold transition-colors ${activeProfile === p ? "bg-white text-slate-800 shadow-sm" : "text-slate-500 hover:text-slate-700"}`}>
+              className={`shrink-0 rounded-lg px-3 sm:px-4 py-2 text-sm font-semibold transition-colors whitespace-nowrap ${activeProfile === p ? "bg-white text-slate-800 shadow-sm" : "text-slate-500 hover:text-slate-700"}`}>
               {PROFILE_LABELS[p]}
             </button>
           ))}

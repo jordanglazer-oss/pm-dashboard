@@ -2049,13 +2049,14 @@ export function PimPortfolio({ groups }: Props) {
       <div className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
         <h2 className="text-lg font-bold text-slate-800">PIM</h2>
 
-        {/* Profile tabs */}
-        <div className="flex gap-1 rounded-xl bg-slate-100 p-1">
+        {/* Profile tabs — horizontally scrollable so the 5-6 profiles
+            (Conservative … Core) don't overflow on mobile. */}
+        <div className="flex gap-1 rounded-xl bg-slate-100 p-1 overflow-x-auto max-w-full">
           {availableProfiles.map((p) => (
             <button
               key={p}
               onClick={() => setSelectedProfile(p)}
-              className={`rounded-lg px-4 py-2 text-sm font-semibold transition-colors whitespace-nowrap ${
+              className={`shrink-0 rounded-lg px-3 sm:px-4 py-2 text-sm font-semibold transition-colors whitespace-nowrap ${
                 activeProfile === p ? "bg-white text-slate-800 shadow-sm" : "text-slate-500 hover:text-slate-700"
               }`}
             >
