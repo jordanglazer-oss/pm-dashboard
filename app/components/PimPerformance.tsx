@@ -15,6 +15,16 @@ const PROFILE_LABELS: Record<PimProfileType, string> = {
   core: "Core",
 };
 
+// Per-profile inception overrides for the "tracking since" label. Balanced /
+// Growth / All-Equity share the PIM group's trackingStart (Jan 2, 2018), but
+// Alpha and Conservative launched later and have their own start dates. These
+// are fixed launch-date facts, so a small override map is the cleanest source
+// (the group-level trackingStart can't express per-profile inceptions).
+const PROFILE_INCEPTION_OVERRIDE: Partial<Record<PimProfileType, string>> = {
+  alpha: "2025-01-02",
+  conservative: "2026-06-22",
+};
+
 // Period buttons. `days` is the lookback window; sentinel values:
 //   0  → return full history ("All")
 //  -1  → YTD (slice from Jan 1, prepend Dec 31 prior-year baseline)
@@ -532,8 +542,13 @@ export function PimPerformance({ groupId, groupName, selectedProfile, onPerfData
 
   // Profile is controlled by the parent PimModel toggle
 
-  const trackingStartLabel = trackingStart
-    ? new Date((trackingStart as { date: string }).date + "T12:00:00").toLocaleDateString("en-US", { month: "short", day: "numeric", year: "numeric" })
+  // Prefer the per-profile launch date (Alpha / Conservative); otherwise use
+  // the group's trackingStart (Jan 2, 2018 for the legacy profiles).
+  const trackingStartDate =
+    PROFILE_INCEPTION_OVERRIDE[selectedProfile] ??
+    (trackingStart as { date: string } | undefined)?.date;
+  const trackingStartLabel = trackingStartDate
+    ? new Date(trackingStartDate + "T12:00:00").toLocaleDateString("en-US", { month: "short", day: "numeric", year: "numeric" })
     : null;
 
   // Inception to date return (from full history) — uses effectiveHistory so
