@@ -284,6 +284,29 @@ export function regimeMultiplier(
 // Legacy aliases for backward compatibility
 const OFFENSIVE_SECTORS = GROWTH_SECTORS;
 
+// MarketEdge (ChartScout) covers US-listed stocks only. The category max.
+const MARKETEDGE_MAX = 2;
+// Canadian listings of INDIVIDUAL stocks (excludes the .U USD-ETF suffix,
+// which is irrelevant here since ETFs aren't scored).
+const CANADIAN_LISTING_RE = /(\.TO|\.V|\.NE|\.CN|-T)$/i;
+
+/**
+ * Whether the MarketEdge category applies to this stock's composite.
+ * - US (and any non-Canadian) listing: always applies.
+ * - Canadian listing: applies ONLY if MarketEdge data actually flowed in —
+ *   i.e. a dual-listed name whose US listing's reading was matched onto it.
+ *   A pure-Canadian (TSX-only) name MarketEdge can't cover gets N/A.
+ * When N/A, the category is removed from BOTH the numerator and the
+ * denominator and the remaining score is normalized back to the full
+ * 0–MAX_SCORE scale, so the stock isn't penalized for a data source that
+ * structurally can't reach it.
+ */
+export function marketEdgeApplies(stock: Stock): boolean {
+  if (!CANADIAN_LISTING_RE.test(stock.ticker.trim())) return true;
+  const me = stock.marketEdge;
+  return !!(me && (me.powerRating != null || me.opinion != null || me.opinionScore != null));
+}
+
 export function computeScores(
   stock: Stock,
   marketData: MarketData
@@ -292,9 +315,17 @@ export function computeScores(
     (sum, key) => sum + (stock.scores[key] || 0),
     0
   );
+  // MarketEdge N/A handling: for an uncovered Canadian stock, drop the
+  // marketEdge points from the sum AND shrink the denominator by its max,
+  // then normalize back to the full MAX_SCORE scale so ratings stay
+  // comparable to US names on the same 0–MAX_SCORE thresholds.
+  const applies = marketEdgeApplies(stock);
+  const applicableSum = applies ? rawSum : rawSum - (stock.scores.marketEdge || 0);
+  const effectiveMax = applies ? MAX_SCORE : MAX_SCORE - MARKETEDGE_MAX;
+  const normalizedSum = effectiveMax > 0 ? applicableSum * (MAX_SCORE / effectiveMax) : applicableSum;
   // Round to 1 decimal to avoid IEEE 754 floating-point noise
   // (e.g. 21.490000000000002 → 21.5)
-  const raw = Math.round(rawSum * 10) / 10;
+  const raw = Math.round(normalizedSum * 10) / 10;
 
   const multiplier = regimeMultiplier(stock.sector, marketData.riskRegime, stock.scores);
   const adjusted = Math.round(raw * multiplier * 10) / 10;

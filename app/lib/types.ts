@@ -210,7 +210,7 @@ export const SCORE_GROUPS: ScoreGroup[] = [
   },
 ];
 
-export const MAX_SCORE = SCORE_GROUPS.reduce((sum, g) => sum + g.maxTotal, 0); // 40
+export const MAX_SCORE = SCORE_GROUPS.reduce((sum, g) => sum + g.maxTotal, 0); // 41 (40 - externalSources 1 + marketEdge 2)
 
 export type HealthData = {
   fiftyDayAvg?: number;
