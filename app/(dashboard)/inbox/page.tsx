@@ -451,13 +451,6 @@ export default function InboxPage() {
      *  (non-dual-listed) names — MarketEdge covers US listings only, so a
      *  blank there is "N/A", not a gap to chase. */
     marketEdgeApplies: boolean;
-    /** Freshness flags: TRUE when the most recent import (screenshot/CSV)
-     *  did NOT read a value for this name — i.e. lastScreenshotAt is newer
-     *  than lastReadAt. This is the "data didn't reflect" signal: an import
-     *  ran but this stock wasn't captured. Cleared by a successful read or
-     *  a manual edit (both bump *LastReadAt). */
-    boostedStale: boolean;
-    siaStale: boolean;
   };
   // Build lookup of canonical-ticker → which sources have reports.
   // Reports manifest itself is keyed by canonical form already, so we just
@@ -508,8 +501,6 @@ export default function InboxPage() {
       marketEdgePowerRating: typeof s.marketEdge?.powerRating === "number" ? s.marketEdge.powerRating : null,
       marketEdgeOpinion: s.marketEdge?.opinion ?? null,
       marketEdgeApplies: marketEdgeApplies(s),
-      boostedStale: !!s.boostedLastScreenshotAt && (!s.boostedLastReadAt || Date.parse(s.boostedLastScreenshotAt) > Date.parse(s.boostedLastReadAt)),
-      siaStale: !!s.siaLastScreenshotAt && (!s.siaLastReadAt || Date.parse(s.siaLastScreenshotAt) > Date.parse(s.siaLastReadAt)),
     };
   });
 
@@ -986,12 +977,16 @@ export default function InboxPage() {
   const missingCount = coverageRows.filter((r) => !r.hasRbc && !r.hasJpm).length;
 
   // ── Per-source data-gap counts (the "know when data doesn't reflect"
-  //    signal). A gap = a scoreable name with no value for that source,
-  //    OR a name the last import ran over but didn't capture (stale).
+  //    signal). A gap = a scoreable name with no value for that source.
   //    MarketEdge only counts names it applies to (US / dual-listed) — a
-  //    pure-Canadian blank is N/A, not a gap. ───────────────────────────
-  const boostedGap = coverageRows.filter((r) => r.boostedAi == null || r.boostedStale).length;
-  const siaGap = coverageRows.filter((r) => r.sia == null || r.siaStale).length;
+  //    pure-Canadian blank is N/A, not a gap.
+  //    NB: we deliberately use "value missing" rather than the per-stock
+  //    lastScreenshotAt/lastReadAt staleness signal. The PM sends SIA /
+  //    Boosted as SEPARATE Portfolio + Watchlist CSVs, so each import marks
+  //    the other list's names as "not captured" — a false stale. A simple
+  //    "does this name have a value?" check is the honest signal. ────────
+  const boostedGap = coverageRows.filter((r) => r.boostedAi == null).length;
+  const siaGap = coverageRows.filter((r) => r.sia == null).length;
   const marketEdgeGap = coverageRows.filter((r) => r.marketEdgeApplies && r.marketEdgePowerRating == null).length;
 
   return (
@@ -1417,7 +1412,7 @@ export default function InboxPage() {
                 {s.gap === 0 ? "✓" : "⚠"} {s.label} {s.gap === 0 ? "all current" : `${s.gap} to check`}
               </span>
             ))}
-            <span className="text-slate-400">— ⚠ in a cell = the last import ran but didn&apos;t update that name.</span>
+            <span className="text-slate-400">— ⚠ in a cell = no value for that source yet. Reload after an email import to pull the latest.</span>
           </div>
         )}
         {!coverageCollapsed && (coverageRows.length === 0 ? (
@@ -1520,8 +1515,8 @@ export default function InboxPage() {
                     </td>
                     <td className="px-3 py-2 text-right">
                       <div className="flex items-center justify-end gap-1">
-                        {r.boostedStale && (
-                          <span className="text-amber-500 text-xs leading-none" title="The most recent BoostedAI import didn't capture this name — its value may be stale. Re-send the Boosted.ai CSV or edit the value to clear.">⚠</span>
+                        {r.boostedAi == null && (
+                          <span className="text-amber-500 text-xs leading-none" title="No BoostedAI rating for this name yet. Send the Boosted.ai unified-data CSV, or edit the value here.">⚠</span>
                         )}
                         <EditableNumberCell
                           value={r.boostedAi}
@@ -1545,8 +1540,8 @@ export default function InboxPage() {
                     </td>
                     <td className="px-3 py-2 text-right">
                       <div className="flex items-center justify-end gap-1">
-                        {r.siaStale && (
-                          <span className="text-amber-500 text-xs leading-none" title="The most recent SIA import didn't capture this name — its value may be stale. Re-send the SIA CSV or edit the value to clear.">⚠</span>
+                        {r.sia == null && (
+                          <span className="text-amber-500 text-xs leading-none" title="No SIA SMAX for this name yet. Send the SIA CSV export, or edit the value here.">⚠</span>
                         )}
                         <EditableNumberCell
                           value={r.sia}

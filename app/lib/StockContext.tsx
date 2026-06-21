@@ -216,6 +216,7 @@ if (typeof window !== "undefined") {
 function useDebouncedPersist(url: string, bodyKey: string, delay = 500): [
   (data: unknown) => void,
   () => Promise<void>,
+  () => boolean,
 ] {
   const timer = useRef<ReturnType<typeof setTimeout> | null>(null);
   const latestData = useRef<unknown>(null);
@@ -267,7 +268,12 @@ function useDebouncedPersist(url: string, bodyKey: string, delay = 500): [
     [url, bodyKey, delay]
   );
 
-  return [debounced, flush];
+  // True when a write is queued but not yet flushed — i.e. there are local
+  // edits not yet in Redis. Used to gate the focus-refetch so a background
+  // refresh never clobbers unsaved local changes.
+  const isPending = useCallback(() => timer.current !== null, []);
+
+  return [debounced, flush, isPending];
 }
 
 export function StockProvider({ children }: { children: React.ReactNode }) {
@@ -287,7 +293,7 @@ export function StockProvider({ children }: { children: React.ReactNode }) {
   const [analystReports, setAnalystReportsState] = useState<AnalystReports>({});
   const [loading, setLoading] = useState(true);
 
-  const [persistStocks, flushStocks] = useDebouncedPersist("/api/kv/stocks", "stocks");
+  const [persistStocks, flushStocks, isStocksPersistPending] = useDebouncedPersist("/api/kv/stocks", "stocks");
   // Market data persists immediately (not debounced) since updates are explicit save actions
   const persistMarket = useCallback((data: unknown) => {
     fetch("/api/kv/market", {
@@ -1119,6 +1125,53 @@ export function StockProvider({ children }: { children: React.ReactNode }) {
       document.removeEventListener("visibilitychange", maybeRefresh);
     };
   }, [loading, refreshResearchMentions]);
+
+  // Re-pull pm:stocks when the user returns to the app (window focus / tab
+  // visible). The email-inbox pipeline writes pm:stocks SERVER-SIDE
+  // (applyPatchesToRedis), but the client only hydrates stocks once on
+  // mount — so an already-open dashboard kept showing pre-import values
+  // until a full reload. This closes that gap: switch away and back and the
+  // imported SIA / Boosted / MarketEdge values appear automatically.
+  //
+  // SAFETY (this is the most data-loss-prone path in the app):
+  //  - GATED on `!isStocksPersistPending()` — if there are unsaved local
+  //    edits queued, we SKIP the refetch entirely so a background refresh
+  //    can never overwrite in-flight local changes. The server copy is a
+  //    strict superset of what we last persisted, so when nothing is
+  //    pending, adopting it is purely additive (stale → fresh, no loss).
+  //  - Read-only on the server: this is a GET; it never writes. The
+  //    comparator returns `prev` unchanged when the blob is identical, so
+  //    no needless re-render and, crucially, no persist is triggered.
+  //  - Throttled to once per 15s so rapid tab-switching doesn't spam.
+  const lastStocksRefetchRef = useRef(0);
+  useEffect(() => {
+    if (loading) return;
+    const maybeRefetchStocks = () => {
+      if (document.visibilityState === "hidden") return;
+      if (isStocksPersistPending()) return; // never clobber unsaved local edits
+      const now = Date.now();
+      if (now - lastStocksRefetchRef.current < 15_000) return;
+      lastStocksRefetchRef.current = now;
+      fetch("/api/kv/stocks")
+        .then((r) => r.json())
+        .then((res) => {
+          if (isStocksPersistPending()) return; // re-check after the await
+          const fetched: Stock[] = res?.stocks || [];
+          if (fetched.length === 0) return; // never blank out on a bad read
+          const { migrated } = migrateStockScores(fetched);
+          setStocks((prev) =>
+            JSON.stringify(prev) === JSON.stringify(migrated) ? prev : migrated,
+          );
+        })
+        .catch(() => {}); // a failed refetch just leaves current state intact
+    };
+    window.addEventListener("focus", maybeRefetchStocks);
+    document.addEventListener("visibilitychange", maybeRefetchStocks);
+    return () => {
+      window.removeEventListener("focus", maybeRefetchStocks);
+      document.removeEventListener("visibilitychange", maybeRefetchStocks);
+    };
+  }, [loading, isStocksPersistPending]);
 
   const updateSector = useCallback((ticker: string, sector: string) => {
     setStocks((prev) => {
