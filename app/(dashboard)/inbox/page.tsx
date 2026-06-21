@@ -5,14 +5,16 @@ import type { InboxEvent } from "@/app/lib/inbox-log";
 import { computeAnalystConsensus, buildConsensusExplanation } from "@/app/lib/analyst-snapshots";
 import type { AnalystReports, FactSetEntry, TickerSnapshot } from "@/app/lib/analyst-snapshots";
 import { useStocks } from "@/app/lib/StockContext";
-import { isScoreable } from "@/app/lib/scoring";
+import { isScoreable, marketEdgeApplies } from "@/app/lib/scoring";
 import { canonicalTicker } from "@/app/lib/ticker";
 import {
   mapBoostedAiToAiRating,
   mapSmaxToRelativeStrength,
+  mapPowerRatingToMarketEdge,
   consensusLabel,
   consensusToneClass,
   type BoostedAiConsensus,
+  type MarketEdgeOpinion,
 } from "@/app/lib/external-scoring";
 import { applySiaEntries, applyBoostedEntries, applyMarketEdgeRows, type StockPatch } from "@/app/lib/stock-patches";
 import { parseMarketEdgeCsv } from "@/app/lib/marketedge-csv";
@@ -441,6 +443,21 @@ export default function InboxPage() {
     boostedAiConsensus: BoostedAiConsensus | null;
     /** Raw SIA score (0-10). Lives on the Stock itself. */
     sia: number | null;
+    /** MarketEdge Power Rating (−60…+100). Drives the marketEdge score. */
+    marketEdgePowerRating: number | null;
+    /** MarketEdge opinion (long / neutral / avoid). */
+    marketEdgeOpinion: MarketEdgeOpinion | null;
+    /** Whether MarketEdge applies to this name. False for pure-Canadian
+     *  (non-dual-listed) names — MarketEdge covers US listings only, so a
+     *  blank there is "N/A", not a gap to chase. */
+    marketEdgeApplies: boolean;
+    /** Freshness flags: TRUE when the most recent import (screenshot/CSV)
+     *  did NOT read a value for this name — i.e. lastScreenshotAt is newer
+     *  than lastReadAt. This is the "data didn't reflect" signal: an import
+     *  ran but this stock wasn't captured. Cleared by a successful read or
+     *  a manual edit (both bump *LastReadAt). */
+    boostedStale: boolean;
+    siaStale: boolean;
   };
   // Build lookup of canonical-ticker → which sources have reports.
   // Reports manifest itself is keyed by canonical form already, so we just
@@ -488,6 +505,11 @@ export default function InboxPage() {
       boostedAi: typeof s.boostedAi === "number" ? s.boostedAi : null,
       boostedAiConsensus: s.boostedAiConsensus ?? null,
       sia: typeof s.sia === "number" ? s.sia : null,
+      marketEdgePowerRating: typeof s.marketEdge?.powerRating === "number" ? s.marketEdge.powerRating : null,
+      marketEdgeOpinion: s.marketEdge?.opinion ?? null,
+      marketEdgeApplies: marketEdgeApplies(s),
+      boostedStale: !!s.boostedLastScreenshotAt && (!s.boostedLastReadAt || Date.parse(s.boostedLastScreenshotAt) > Date.parse(s.boostedLastReadAt)),
+      siaStale: !!s.siaLastScreenshotAt && (!s.siaLastReadAt || Date.parse(s.siaLastScreenshotAt) > Date.parse(s.siaLastReadAt)),
     };
   });
 
@@ -496,7 +518,7 @@ export default function InboxPage() {
 
   // Column sort, persisted via uiPrefs so the preference sticks across
   // refreshes and devices.
-  type CoverageSortKey = "ticker" | "name" | "bucket" | "rbc" | "jpm" | "factset" | "analysts" | "boostedAi" | "consensus" | "sia" | "status";
+  type CoverageSortKey = "ticker" | "name" | "bucket" | "rbc" | "jpm" | "factset" | "analysts" | "boostedAi" | "consensus" | "sia" | "marketEdge" | "status";
   const covSortKey = (uiPrefs["inbox.coverageSortKey"] as CoverageSortKey) || "status";
   const covSortDir = uiPrefs["inbox.coverageSortDir"] || "asc";
   const toggleCovSort = (key: CoverageSortKey) => {
@@ -555,6 +577,7 @@ export default function InboxPage() {
           break;
         }
         case "sia": cmp = cmpNum(a.sia, b.sia); break;
+        case "marketEdge": cmp = cmpNum(a.marketEdgePowerRating, b.marketEdgePowerRating); break;
         case "status":
         default: {
           // Status priority: 0 = no reports (urgent), 1-2 = partial, 3 = all
@@ -653,6 +676,35 @@ export default function InboxPage() {
     });
     const mapped = mapSmaxToRelativeStrength(smax);
     if (mapped != null) updateScore(ticker, "relativeStrength", mapped);
+  };
+
+  // Save MarketEdge Power Rating (−60…+100). Recomputes the marketEdge
+  // score (0-2) via the same mapping the stock page uses. Preserves the
+  // other marketEdge sub-fields (opinion / opinionScore / opinionDate).
+  const saveMarketEdgePowerRating = (ticker: string, powerRating: number | null) => {
+    const current = stocks.find((s) => s.ticker === ticker);
+    const me = { ...(current?.marketEdge ?? {}) };
+    if (powerRating == null) delete me.powerRating;
+    else me.powerRating = powerRating;
+    updateStockFields(ticker, { marketEdge: me });
+    if (powerRating != null) {
+      const mapped = mapPowerRatingToMarketEdge(powerRating);
+      if (mapped != null) updateScore(ticker, "marketEdge", mapped);
+    }
+  };
+
+  // Cycle the MarketEdge opinion (— → long → neutral → avoid → —), mirroring
+  // the stock-page control. Opinion drives the early-warning flag, not the
+  // score, so no score recompute here.
+  const cycleMarketEdgeOpinion = (ticker: string, current: MarketEdgeOpinion | null) => {
+    const cycle: (MarketEdgeOpinion | undefined)[] = [undefined, "long", "neutral", "avoid"];
+    const idx = current == null ? 0 : Math.max(0, cycle.indexOf(current));
+    const next = cycle[(idx + 1) % cycle.length];
+    const stock = stocks.find((s) => s.ticker === ticker);
+    const me = { ...(stock?.marketEdge ?? {}) };
+    if (next == null) delete me.opinion;
+    else me.opinion = next;
+    updateStockFields(ticker, { marketEdge: me });
   };
 
   // ── SIA + BoostedAI screenshot importer ───────────────────────────
@@ -932,6 +984,15 @@ export default function InboxPage() {
   const watchlistCovered = coverageRows.filter((r) => r.bucket === "Watchlist" && (r.hasRbc || r.hasJpm)).length;
   const watchlistTotal = coverageRows.filter((r) => r.bucket === "Watchlist").length;
   const missingCount = coverageRows.filter((r) => !r.hasRbc && !r.hasJpm).length;
+
+  // ── Per-source data-gap counts (the "know when data doesn't reflect"
+  //    signal). A gap = a scoreable name with no value for that source,
+  //    OR a name the last import ran over but didn't capture (stale).
+  //    MarketEdge only counts names it applies to (US / dual-listed) — a
+  //    pure-Canadian blank is N/A, not a gap. ───────────────────────────
+  const boostedGap = coverageRows.filter((r) => r.boostedAi == null || r.boostedStale).length;
+  const siaGap = coverageRows.filter((r) => r.sia == null || r.siaStale).length;
+  const marketEdgeGap = coverageRows.filter((r) => r.marketEdgeApplies && r.marketEdgePowerRating == null).length;
 
   return (
     <div className="p-3 sm:p-6 max-w-7xl mx-auto">
@@ -1329,6 +1390,36 @@ export default function InboxPage() {
             </div>
           }
         />
+        {!coverageCollapsed && coverageRows.length > 0 && (
+          // Per-source data-freshness strip — at a glance, how many names are
+          // missing or stale for each external feed. Green when a source is
+          // fully reflected; amber with a count when something didn't land.
+          <div className="flex flex-wrap items-center gap-2 px-4 py-2.5 border-b border-slate-100 bg-slate-50/60 text-[11px]">
+            <span className="font-semibold text-slate-500 uppercase tracking-wider">Data freshness:</span>
+            {[
+              { label: "BoostedAI", gap: boostedGap },
+              { label: "SIA", gap: siaGap },
+              { label: "MarketEdge", gap: marketEdgeGap },
+            ].map((s) => (
+              <span
+                key={s.label}
+                className={`inline-flex items-center gap-1 rounded-full border px-2 py-0.5 font-semibold ${
+                  s.gap === 0
+                    ? "bg-emerald-50 text-emerald-700 border-emerald-200"
+                    : "bg-amber-50 text-amber-700 border-amber-200"
+                }`}
+                title={
+                  s.gap === 0
+                    ? `${s.label}: every applicable name has a current value.`
+                    : `${s.label}: ${s.gap} name${s.gap === 1 ? "" : "s"} missing a value or not captured by the last import. ⚠ marks them in the table below.`
+                }
+              >
+                {s.gap === 0 ? "✓" : "⚠"} {s.label} {s.gap === 0 ? "all current" : `${s.gap} to check`}
+              </span>
+            ))}
+            <span className="text-slate-400">— ⚠ in a cell = the last import ran but didn&apos;t update that name.</span>
+          </div>
+        )}
         {!coverageCollapsed && (coverageRows.length === 0 ? (
           <p className="text-sm text-slate-400 p-4 italic">
             No scoreable stocks in your Portfolio or Watchlist yet. Add stocks on the Dashboard to start tracking analyst coverage.
@@ -1354,6 +1445,7 @@ export default function InboxPage() {
                 <th className="px-3 py-2 text-right w-20 cursor-pointer select-none hover:text-slate-700" onClick={() => toggleCovSort("boostedAi")} title="Raw BoostedAI rating (0-5, decimals OK). Combined with Consensus to auto-derive the dashboard's aiRating (0-2).">Boosted.ai{covArrow("boostedAi")}</th>
                 <th className="px-3 py-2 text-left w-28 cursor-pointer select-none hover:text-slate-700" onClick={() => toggleCovSort("consensus")} title="BoostedAI consensus recommendation. Combined with the numeric rating to auto-derive aiRating (Strong Buy / Buy → 2, Hold → 1, Sell / Strong Sell → 0).">Consensus{covArrow("consensus")}</th>
                 <th className="px-3 py-2 text-right w-20 cursor-pointer select-none hover:text-slate-700" onClick={() => toggleCovSort("sia")} title="SIA SMAX score (0-10 integer). Maps to relativeStrength: 8-10 → 2, 6-7 → 1, 0-5 → 0.">SIA SMAX{covArrow("sia")}</th>
+                <th className="px-3 py-2 text-right w-28 cursor-pointer select-none hover:text-slate-700" onClick={() => toggleCovSort("marketEdge")} title="MarketEdge Power Rating (−60…+100) and Opinion. Power Rating drives the marketEdge score: ≥0 → 2, −27…−1 → 1, < −27 → 0. Click the rating to edit; click the opinion chip to cycle. N/A for pure-Canadian names (MarketEdge covers US listings only).">MarketEdge{covArrow("marketEdge")}</th>
                 <th className="px-3 py-2 text-left w-32 cursor-pointer select-none hover:text-slate-700" onClick={() => toggleCovSort("status")} title="Sort by overall coverage status (No reports / Partial / Both). Ascending shows gaps first.">Status{covArrow("status")}</th>
               </tr>
             </thead>
@@ -1427,17 +1519,22 @@ export default function InboxPage() {
                       />
                     </td>
                     <td className="px-3 py-2 text-right">
-                      <EditableNumberCell
-                        value={r.boostedAi}
-                        step="0.1"
-                        min={0}
-                        max={5}
-                        onCommit={(next) => saveBoostedAi(r.displayTicker, next)}
-                        width="w-14"
-                        placeholder="—"
-                        ariaLabel={`BoostedAI rating for ${r.displayTicker}`}
-                        formatDisplay={(n) => n.toFixed(1)}
-                      />
+                      <div className="flex items-center justify-end gap-1">
+                        {r.boostedStale && (
+                          <span className="text-amber-500 text-xs leading-none" title="The most recent BoostedAI import didn't capture this name — its value may be stale. Re-send the Boosted.ai CSV or edit the value to clear.">⚠</span>
+                        )}
+                        <EditableNumberCell
+                          value={r.boostedAi}
+                          step="0.1"
+                          min={0}
+                          max={5}
+                          onCommit={(next) => saveBoostedAi(r.displayTicker, next)}
+                          width="w-14"
+                          placeholder="—"
+                          ariaLabel={`BoostedAI rating for ${r.displayTicker}`}
+                          formatDisplay={(n) => n.toFixed(1)}
+                        />
+                      </div>
                     </td>
                     <td className="px-3 py-2">
                       <ConsensusButton
@@ -1447,17 +1544,59 @@ export default function InboxPage() {
                       />
                     </td>
                     <td className="px-3 py-2 text-right">
-                      <EditableNumberCell
-                        value={r.sia}
-                        step="1"
-                        min={0}
-                        max={10}
-                        onCommit={(next) => saveSia(r.displayTicker, next)}
-                        width="w-14"
-                        placeholder="—"
-                        ariaLabel={`SIA SMAX for ${r.displayTicker}`}
-                        formatDisplay={(n) => String(Math.round(n))}
-                      />
+                      <div className="flex items-center justify-end gap-1">
+                        {r.siaStale && (
+                          <span className="text-amber-500 text-xs leading-none" title="The most recent SIA import didn't capture this name — its value may be stale. Re-send the SIA CSV or edit the value to clear.">⚠</span>
+                        )}
+                        <EditableNumberCell
+                          value={r.sia}
+                          step="1"
+                          min={0}
+                          max={10}
+                          onCommit={(next) => saveSia(r.displayTicker, next)}
+                          width="w-14"
+                          placeholder="—"
+                          ariaLabel={`SIA SMAX for ${r.displayTicker}`}
+                          formatDisplay={(n) => String(Math.round(n))}
+                        />
+                      </div>
+                    </td>
+                    {/* MarketEdge: Power Rating (editable) + Opinion chip
+                        (click to cycle). N/A for pure-Canadian names. */}
+                    <td className="px-3 py-2 text-right">
+                      {r.marketEdgeApplies ? (
+                        <div className="flex items-center justify-end gap-1.5">
+                          {r.marketEdgePowerRating == null && (
+                            <span className="text-amber-500 text-xs leading-none" title="No MarketEdge Power Rating for this name yet. Send the ChartScout Likes CSV, or edit the value here.">⚠</span>
+                          )}
+                          <EditableNumberCell
+                            value={r.marketEdgePowerRating}
+                            step="1"
+                            min={-60}
+                            max={100}
+                            onCommit={(next) => saveMarketEdgePowerRating(r.displayTicker, next)}
+                            width="w-14"
+                            placeholder="—"
+                            ariaLabel={`MarketEdge Power Rating for ${r.displayTicker}`}
+                            formatDisplay={(n) => String(Math.round(n))}
+                          />
+                          <button
+                            type="button"
+                            onClick={() => cycleMarketEdgeOpinion(r.displayTicker, r.marketEdgeOpinion)}
+                            title="Click to cycle MarketEdge opinion: — → Long → Neutral → Avoid"
+                            className={`rounded px-1.5 py-0.5 text-[10px] font-semibold border ${
+                              r.marketEdgeOpinion === "long" ? "bg-emerald-50 text-emerald-700 border-emerald-200"
+                              : r.marketEdgeOpinion === "avoid" ? "bg-red-50 text-red-700 border-red-200"
+                              : r.marketEdgeOpinion === "neutral" ? "bg-slate-50 text-slate-600 border-slate-300"
+                              : "bg-white text-slate-400 border-slate-200"
+                            }`}
+                          >
+                            {r.marketEdgeOpinion === "long" ? "Long" : r.marketEdgeOpinion === "avoid" ? "Avoid" : r.marketEdgeOpinion === "neutral" ? "Neutral" : "—"}
+                          </button>
+                        </div>
+                      ) : (
+                        <span className="text-[10px] text-slate-400 italic" title="MarketEdge (ChartScout) covers US-listed stocks only. This pure-Canadian name is excluded from the marketEdge category, so a blank here is expected — not a gap.">N/A</span>
+                      )}
                     </td>
                     <td className="px-3 py-2">
                       <span className={`inline-block rounded-full px-2 py-0.5 text-[10px] font-semibold ${
