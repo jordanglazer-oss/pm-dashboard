@@ -154,15 +154,22 @@ function EditableNumberCell({
       return;
     }
     let n = parseFloat(trimmed);
-    if (!isFinite(n) || n < 0) {
-      // Invalid input — snap back to prior value
+    if (!isFinite(n)) {
+      // Not a number — snap back to prior value
       setStr(initialRef.current);
       return;
     }
     // Clamp to optional bounds. Out-of-range inputs are saved as the
     // nearest legal value AND the displayed text updates so the user
-    // sees the clamp happen.
-    if (typeof min === "number" && n < min) n = min;
+    // sees the clamp happen. An explicit `min` may be NEGATIVE (MarketEdge
+    // Power Rating −60); with NO `min` the field is non-negative by default
+    // so a negative input is rejected.
+    if (typeof min === "number") {
+      if (n < min) n = min;
+    } else if (n < 0) {
+      setStr(initialRef.current);
+      return;
+    }
     if (typeof max === "number" && n > max) n = max;
     onCommit(n);
     const finalDisplay = formatDisplay ? formatDisplay(n) : String(n);

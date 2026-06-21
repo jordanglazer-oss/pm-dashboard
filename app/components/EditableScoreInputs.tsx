@@ -70,12 +70,21 @@ export function EditableNumberCell({
       return;
     }
     let n = parseFloat(trimmed);
-    if (!isFinite(n) || n < 0) {
-      // Invalid input — snap back to prior value
+    if (!isFinite(n)) {
+      // Not a number — snap back to prior value
       setStr(initialRef.current);
       return;
     }
-    if (typeof min === "number" && n < min) n = min;
+    // Lower bound: an explicit `min` (which may be NEGATIVE — e.g. MarketEdge
+    // Power Rating −60 or Opinion Score −4) is the floor; out-of-range values
+    // clamp to it. With NO `min`, the field is non-negative by default (SMAX,
+    // ratings, price targets), so a negative input is rejected.
+    if (typeof min === "number") {
+      if (n < min) n = min;
+    } else if (n < 0) {
+      setStr(initialRef.current);
+      return;
+    }
     if (typeof max === "number" && n > max) n = max;
     onCommit(n);
     const finalDisplay = formatDisplay ? formatDisplay(n) : String(n);
