@@ -1,14 +1,23 @@
 /**
- * Tab/comma-tolerant CSV row splitter that respects double-quoted fields.
- * Shared by every CSV importer in the app (MarketEdge ChartScout, SIA, etc.)
- * so they all behave identically — same separator auto-detection, same
- * handling of quoted commas/tabs and escaped double-quotes.
+ * Detect the delimiter from the HEADER line. Column headers never contain
+ * stray commas, so this is reliable even when data rows have commas inside
+ * values (e.g. "Amazon.com, Inc." in a TAB-separated export). Prefer this +
+ * the explicit `sep` arg of splitCsvRow over per-line auto-detection.
  */
-export function splitCsvRow(line: string): string[] {
-  // Auto-detect tab vs comma per file. Most CSV exports we ingest are
-  // comma-separated; copy-pasted ranges from Numbers / Excel come through
-  // as tab-separated.
-  const sep = line.includes("\t") && !line.includes(",") ? "\t" : ",";
+export function detectCsvSeparator(headerLine: string): "\t" | "," {
+  return headerLine.includes("\t") ? "\t" : ",";
+}
+
+/**
+ * Tab/comma-tolerant CSV row splitter that respects double-quoted fields.
+ * Shared by every CSV importer in the app (MarketEdge ChartScout, SIA,
+ * BoostedAI). Pass `sep` (from detectCsvSeparator on the header) to make the
+ * delimiter deterministic for the whole file; omit it to fall back to
+ * per-line auto-detection (which can misfire on TAB files whose values
+ * contain commas).
+ */
+export function splitCsvRow(line: string, sep?: string): string[] {
+  const separator = sep ?? (line.includes("\t") && !line.includes(",") ? "\t" : ",");
   const out: string[] = [];
   let cur = "";
   let inQuotes = false;
@@ -17,7 +26,7 @@ export function splitCsvRow(line: string): string[] {
     if (ch === '"') {
       if (inQuotes && line[i + 1] === '"') { cur += '"'; i++; }
       else inQuotes = !inQuotes;
-    } else if (ch === sep && !inQuotes) {
+    } else if (ch === separator && !inQuotes) {
       out.push(cur); cur = "";
     } else {
       cur += ch;

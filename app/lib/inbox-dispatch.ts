@@ -34,6 +34,7 @@ import {
 } from "./screenshot-extractors";
 import { parseMarketEdgeCsv } from "./marketedge-csv";
 import { parseSiaCsv } from "./sia-csv";
+import { parseBoostedCsv } from "./boosted-csv";
 import { applySiaEntries, applyBoostedEntries, applyMarketEdgeRows, type StockPatch } from "./stock-patches";
 import { decodeBase64DataUrl } from "./csv-utils";
 import { extractResearchEntries, type SourceKey as ResearchSourceKey } from "@/app/api/research-scrape/route";
@@ -225,8 +226,25 @@ async function handleSia(att: AttachmentInput, label: string): Promise<DispatchR
 }
 
 async function handleBoosted(att: AttachmentInput, label: string): Promise<DispatchResult> {
+  // Route by content: image/PDF → vision; anything else → CSV (preferred:
+  // the Boosted.ai unified-data export is more reliable than a screenshot).
+  // MIME is untrusted (mail clients tag a .csv inconsistently).
   if (!isImageDataUrl(att.dataUrl) && !isPdfDataUrl(att.dataUrl)) {
-    return { ok: false, kind: "boosted", status: 400, message: "BoostedAI email expects an image or PDF attachment." };
+    const text = decodeBase64DataUrl(att.dataUrl);
+    const parsed = parseBoostedCsv(text);
+    if (parsed.errors.length > 0) {
+      return { ok: false, kind: "boosted", status: 400, message: `BoostedAI attachment isn't a readable CSV (${parsed.errors.join("; ")}). Expecting the Boosted.ai unified-data CSV export, a screenshot (PNG/JPG), or a PDF.` };
+    }
+    const stocks = await readStocks();
+    const expected = stocks.filter(isScoreable);
+    const { patches, summary } = applyBoostedEntries(expected, parsed.rows, new Date().toISOString(), stocks);
+    const { touched } = await applyPatchesToRedis(patches);
+    return {
+      ok: true,
+      kind: "boosted",
+      message: `BoostedAI CSV: ${summary.matched} matched / ${summary.rowsParsed} rows · ${summary.updated} updated${summary.expectedButMissing.length ? ` · ${summary.expectedButMissing.length} expected names missing` : ""}.`,
+      detail: { label, source: "csv", summary, touched },
+    };
   }
   const { entries, cached } = await extractBoostedFromAttachments([att]);
   const stocks = await readStocks();
@@ -237,7 +255,7 @@ async function handleBoosted(att: AttachmentInput, label: string): Promise<Dispa
     ok: true,
     kind: "boosted",
     message: `BoostedAI${cached ? " (cached)" : ""}: ${summary.matched} matched · ${summary.updated} updated${summary.inScreenshotButUnreadable.length ? ` · ${summary.inScreenshotButUnreadable.length} unreadable` : ""}${summary.expectedButMissing.length ? ` · ${summary.expectedButMissing.length} expected names missing` : ""}.`,
-    detail: { label, cached, summary, touched },
+    detail: { label, source: "vision", cached, summary, touched },
   };
 }
 

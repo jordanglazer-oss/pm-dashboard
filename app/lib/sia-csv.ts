@@ -11,7 +11,7 @@
  */
 
 import type { ScrapedSia } from "./screenshot-extractors";
-import { splitCsvRow } from "./csv-utils";
+import { splitCsvRow, detectCsvSeparator } from "./csv-utils";
 
 export type SiaCsvParseResult = {
   rows: ScrapedSia[];
@@ -26,7 +26,8 @@ export function parseSiaCsv(text: string): SiaCsvParseResult {
     errors.push("CSV looks empty (no data rows found).");
     return { rows: [], errors };
   }
-  const header = splitCsvRow(lines[0]).map((h) => h.toLowerCase());
+  const sep = detectCsvSeparator(lines[0]);
+  const header = splitCsvRow(lines[0], sep).map((h) => h.toLowerCase());
   const idx = {
     symbol: header.findIndex((h) => h === "sym" || h === "symbol" || h === "ticker"),
     smax: header.findIndex((h) => h === "smax" || h === "s-max" || h === "smax score"),
@@ -41,7 +42,7 @@ export function parseSiaCsv(text: string): SiaCsvParseResult {
   }
   const rows: ScrapedSia[] = [];
   for (const raw of lines.slice(1)) {
-    const cells = splitCsvRow(raw);
+    const cells = splitCsvRow(raw, sep);
     const sym = (cells[idx.symbol] ?? "").trim().toUpperCase();
     // Skip CASH rows + any row whose ticker is "-" or empty.
     if (!sym || sym === "-" || sym === "CASH") continue;

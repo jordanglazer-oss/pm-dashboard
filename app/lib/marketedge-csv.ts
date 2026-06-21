@@ -10,7 +10,7 @@
  */
 
 import type { MarketEdgeOpinion } from "./external-scoring";
-import { splitCsvRow } from "./csv-utils";
+import { splitCsvRow, detectCsvSeparator } from "./csv-utils";
 
 export type MarketEdgeCsvRow = {
   ticker: string;
@@ -33,7 +33,8 @@ export function parseMarketEdgeCsv(text: string): MarketEdgeParseResult {
     errors.push("CSV looks empty (no data rows found).");
     return { rows: [], errors };
   }
-  const header = splitCsvRow(lines[0]).map((h) => h.toLowerCase());
+  const sep = detectCsvSeparator(lines[0]);
+  const header = splitCsvRow(lines[0], sep).map((h) => h.toLowerCase());
   const idx = {
     symbol: header.findIndex((h) => h === "symbol" || h === "ticker"),
     opinion: header.findIndex((h) => h === "opinion"),
@@ -47,7 +48,7 @@ export function parseMarketEdgeCsv(text: string): MarketEdgeParseResult {
   }
   const rows: MarketEdgeCsvRow[] = [];
   for (const raw of lines.slice(1)) {
-    const cells = splitCsvRow(raw);
+    const cells = splitCsvRow(raw, sep);
     const sym = (cells[idx.symbol] ?? "").trim().toUpperCase();
     if (!sym) continue;
     const row: MarketEdgeCsvRow = { ticker: sym };
