@@ -388,7 +388,8 @@ export type Stock = {
      *  / inflection-risk signal — feeds the early-warning flag, not the score. */
     opinionScore?: number;
     /** Power Rating (−60…+100): MarketEdge's 7-indicator technical composite.
-     *  Mapped to the marketEdge score: ≥0 → 2, −27…−1 → 1, < −27 → 0. */
+     *  Mapped to the marketEdge score (aligned to MarketEdge Opinions):
+     *  ≥ +60 → 2 (Long), −27…+59 → 1 (Neutral), < −27 → 0 (Avoid). */
     powerRating?: number;
     /** Date the opinion last changed (MarketEdge "Opinion Date"). */
     opinionDate?: string;

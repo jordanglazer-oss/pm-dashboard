@@ -2447,7 +2447,7 @@ export default function StockDetailPage() {
                                   </label>
                                 </div>
                                 <p className="text-[10px] text-slate-400">
-                                  Power Rating maps: ≥0 → 2, −27 to −1 → 1, &lt;−27 → 0. Opinion + Opinion Score drive the warning flag (Long &amp; score ≤ −3, or Avoid &amp; score ≥ +3) — NOT the composite. Updated weekly via CSV upload on the Inbox tab.
+                                  Power Rating maps to MarketEdge Opinions: ≥ +60 → 2 (Long), −27 to +59 → 1 (Neutral), &lt;−27 → 0 (Avoid). Opinion + Opinion Score drive the warning flag (Long &amp; score ≤ −3, or Avoid &amp; score ≥ +3) — NOT the composite. Updated weekly via CSV upload on the Inbox tab.
                                 </p>
                               </div>
                             );

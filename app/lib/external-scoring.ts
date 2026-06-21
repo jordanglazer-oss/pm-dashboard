@@ -120,20 +120,20 @@ export function mapSmaxToRelativeStrength(
 export type MarketEdgeOpinion = "long" | "neutral" | "avoid";
 
 /**
- * MarketEdge Power Rating (−60…+100) → the dashboard's `marketEdge` score (0-2).
- * Anchored to the PM's "positive readings are 2" rule and MarketEdge's own
- * Avoid trigger at −27:
- *   ≥ 0      → 2  (positive / bullish technical condition)
- *   −27…−1   → 1  (neutral-to-weak)
- *   < −27    → 0  (MarketEdge "Avoid" zone)
- * Returns null when no Power Rating is present, so the caller leaves the score
- * untouched rather than zeroing it.
+ * MarketEdge Power Rating (−60…+100) → the dashboard's `marketEdge` score (0-2),
+ * aligned to MarketEdge's three Opinion states (per their definition):
+ *   ≥ +60    → 2  Long Opinion  ("+60 and higher … will trigger a Long")
+ *   −27…+59  → 1  Neutral       (no action; "as the rating crosses zero, Neutral")
+ *   < −27    → 0  Avoid         ("-27 and lower will generate an Avoid")
+ * The top bucket is the +60 Long threshold, NOT zero — a Neutral 0 must not
+ * score the same as a bullish +85. Returns null when no Power Rating is present,
+ * so the caller leaves the score untouched rather than zeroing it.
  */
 export function mapPowerRatingToMarketEdge(
   powerRating: number | null | undefined,
 ): number | null {
   if (typeof powerRating !== "number" || !isFinite(powerRating)) return null;
-  if (powerRating >= 0) return 2;
+  if (powerRating >= 60) return 2;
   if (powerRating >= -27) return 1;
   return 0;
 }
