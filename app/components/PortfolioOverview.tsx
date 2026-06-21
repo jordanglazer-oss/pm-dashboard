@@ -1551,7 +1551,7 @@ function RankingTable({
   // sub-header markers. Flagging (bottom-3 review / top-3 buy) and the rank
   // number both reset per group so a CAD name is judged vs CAD, not vs US.
   type DisplayRow =
-    | { kind: "header"; key: string; label: string; count: number }
+    | { kind: "header"; key: string; currencyKey: string; label: string; count: number; collapsed: boolean }
     | { kind: "stock"; stock: ScoredStock; rank: number; flagged: boolean };
   const buildGroup = (group: ScoredStock[]): { stock: ScoredStock; rank: number; flagged: boolean }[] => {
     const flagged = new Set<string>(
@@ -1559,13 +1559,25 @@ function RankingTable({
     );
     return group.map((s, idx) => ({ stock: s, rank: idx + 1, flagged: flagged.has(s.ticker) }));
   };
+  // Per-currency sub-section collapse state, persisted in uiPrefs (Redis-backed,
+  // syncs across devices) keyed off the table's collapseKey + currency.
+  const subCollapsed = (ck: string) =>
+    !!collapseKey && uiPrefs[`${collapseKey}.${ck}`] === "1";
   let displayRows: DisplayRow[];
   if (splitByCurrency) {
     const cad = sorted.filter((s) => isCanadianTicker(s.ticker));
     const us = sorted.filter((s) => !isCanadianTicker(s.ticker));
+    const cadCollapsed = subCollapsed("cad");
+    const usCollapsed = subCollapsed("us");
     displayRows = [
-      ...(cad.length ? [{ kind: "header", key: "hdr-cad", label: "🇨🇦 Canadian (CAD)", count: cad.length } as DisplayRow, ...buildGroup(cad).map((r) => ({ kind: "stock", ...r } as DisplayRow))] : []),
-      ...(us.length ? [{ kind: "header", key: "hdr-us", label: "🇺🇸 US (USD)", count: us.length } as DisplayRow, ...buildGroup(us).map((r) => ({ kind: "stock", ...r } as DisplayRow))] : []),
+      ...(cad.length ? [
+        { kind: "header", key: "hdr-cad", currencyKey: "cad", label: "🇨🇦 Canadian (CAD)", count: cad.length, collapsed: cadCollapsed } as DisplayRow,
+        ...(cadCollapsed ? [] : buildGroup(cad).map((r) => ({ kind: "stock", ...r } as DisplayRow))),
+      ] : []),
+      ...(us.length ? [
+        { kind: "header", key: "hdr-us", currencyKey: "us", label: "🇺🇸 US (USD)", count: us.length, collapsed: usCollapsed } as DisplayRow,
+        ...(usCollapsed ? [] : buildGroup(us).map((r) => ({ kind: "stock", ...r } as DisplayRow))),
+      ] : []),
     ];
   } else {
     displayRows = buildGroup(sorted).map((r) => ({ kind: "stock", ...r } as DisplayRow));
@@ -1776,8 +1788,17 @@ function RankingTable({
               if (row.kind === "header") {
                 return (
                   <tr key={row.key} className="bg-slate-50/80">
-                    <td colSpan={40} className="py-1.5 px-2 text-[11px] font-bold uppercase tracking-wider text-slate-500 sticky left-0 bg-slate-50/80 z-10">
-                      {row.label} <span className="font-medium normal-case text-slate-400">· {row.count}</span>
+                    <td colSpan={40} className="p-0 sticky left-0 bg-slate-50/80 z-10">
+                      <button
+                        type="button"
+                        onClick={() => collapseKey && setUiPref(`${collapseKey}.${row.currencyKey}`, row.collapsed ? "0" : "1")}
+                        className="flex w-full items-center gap-1.5 py-1.5 px-2 text-[11px] font-bold uppercase tracking-wider text-slate-500 hover:bg-slate-100 transition-colors text-left"
+                        aria-expanded={!row.collapsed}
+                        title={row.collapsed ? "Expand" : "Collapse"}
+                      >
+                        <span className={`text-slate-400 transition-transform ${row.collapsed ? "-rotate-90" : ""}`}>{"▾"}</span>
+                        {row.label} <span className="font-medium normal-case text-slate-400">· {row.count}</span>
+                      </button>
                     </td>
                   </tr>
                 );
