@@ -289,12 +289,12 @@ export function PimPerformance({ groupId, groupName, selectedProfile, onPerfData
   }, [perfData, groupId]);
 
   const selectedModel = useMemo(() => {
-    const match = groupModels.find((m) => m.profile === selectedProfile);
-    if (match) return match;
-    // Don't fall back to another model — only show data for the selected profile
-    // (prevents alpha from displaying allEquity data, etc.)
-    if (selectedProfile === "alpha") return null;
-    return groupModels[0] || null;
+    // Only EVER show data for the exact selected profile. Never fall back to
+    // another profile's model — that would display e.g. All-Equity's history
+    // under Conservative (a brand-new profile with no history of its own yet).
+    // The old code fell back to groupModels[0] for every profile except
+    // alpha, which is why Conservative mirrored All-Equity.
+    return groupModels.find((m) => m.profile === selectedProfile) ?? null;
   }, [groupModels, selectedProfile]);
 
   // Effective history: if we have a live Today return and the last persisted

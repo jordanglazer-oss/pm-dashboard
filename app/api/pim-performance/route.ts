@@ -398,7 +398,14 @@ export async function POST() {
     // historical values — from being overwritten by a Yahoo-derived
     // recompute. The recompute is now safe to call any time: it only
     // ever fills in missing series (e.g. the new core-${profile} series).
-    const profiles: PimProfileType[] = ["conservative", "balanced", "growth", "allEquity", "alpha"];
+    // NOTE: "conservative" is intentionally EXCLUDED from this back-compute.
+    // It's a brand-new profile with no real history before its inception, so
+    // reconstructing a series from the group's tracking-start (PIM's
+    // inception) would fabricate months of returns it never had. Conservative
+    // is instead bootstrapped with a today-dated base point by
+    // /api/admin/seed-conservative-profile and accrues forward via
+    // /api/update-daily-value, like any model going forward.
+    const profiles: PimProfileType[] = ["balanced", "growth", "allEquity", "alpha"];
     const existingPerfRaw = await redis.get(PERF_KEY);
     const existingPerf: PimPerformanceData | null = existingPerfRaw
       ? (JSON.parse(existingPerfRaw) as PimPerformanceData) : null;
