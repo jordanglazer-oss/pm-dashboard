@@ -45,11 +45,15 @@ import { checkInvariants, persistInvariantResult } from "@/app/lib/redis-invaria
  */
 
 const BACKUP_PREFIX = "pm:backup:";
-// 60 days × 3 backups/day = up to 180 retained snapshots. Storage cost is
-// modest (each backup ~1-5 MB compressed in Redis); the recovery window
-// is the precious resource — bumped from 14d after the 2026-05-25 incident
-// where the issue was discovered post-hoc.
-const BACKUP_RETENTION_DAYS = 60;
+// Retention is capped tight because the Redis Essentials tier is only
+// 250 MB and each full-keyspace backup is ~10-12 MB. 60-day retention
+// (the old value, set after the 2026-05-25 incident) accumulated
+// >130 MB of snapshots and twice drove the instance OOM, blocking all
+// writes. 5 days of daily backups (~60 MB) is a sane recovery window for
+// this tier; risky operations also stash their own pre-image, and the
+// PM takes a manual backup-now before big changes. Bump this back up only
+// if the storage tier is upgraded.
+const BACKUP_RETENTION_DAYS = 5;
 
 // Keys we intentionally do NOT back up:
 //   - pm:backup:*         previous backups (would recursively bloat)
