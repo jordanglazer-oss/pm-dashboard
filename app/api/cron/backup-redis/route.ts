@@ -59,10 +59,32 @@ const BACKUP_RETENTION_DAYS = 5;
 //   - pm:backup:*         previous backups (would recursively bloat)
 //   - pm:ratelimit:*      ephemeral, auto-expires in 60s
 //   - pm:fund-data-cache  large, deterministically re-fetchable from Morningstar
+// MUST stay in sync with app/api/admin/backup-now/route.ts. The cron used
+// to exclude only backup/ratelimit/fund-data-cache, so it backed up the
+// ~70MB of analyst PDFs in EVERY snapshot — the June 4 cron backup was 98MB
+// (vs backup-now's 11.8MB), which is what filled the 250MB tier. Excluding
+// the bulky re-obtainable blobs + regenerable caches keeps each snapshot
+// ~12MB so 5-day retention fits comfortably. A restore brings back all the
+// core structured data (stocks/models/positions/research/scores/manifests/
+// settings); the excluded PDFs/screenshots are re-uploaded and the caches /
+// derived performance regenerate on their own.
 const EXCLUDE_PATTERNS = [
-  /^pm:backup:/,
-  /^pm:ratelimit:/,
+  /^pm:backup:/,             // never back up backups (recursive bloat)
+  /^pm:ratelimit:/,          // ephemeral, auto-expires
+  // ── Regenerable caches (CLAUDE.md: "Pure cache. Safe to nuke.") ──
   /^pm:fund-data-cache/,
+  /^pm:fund-data-negative:/,
+  /^pm:edgar-/,              // edgar-facts / -submissions / -form4 / -ticker-map (~110MB)
+  /^pm:market-regime$/,
+  /-cache$/,                 // *-analysis-cache, *-scrape-cache (hash-gated)
+  /-scrape-cache:/,
+  // ── Derived (recomputed from daily values + models) ──
+  /^pm:pim-performance/,     // includes .pre-* migration stashes
+  // ── Bulky binary uploads — separately restorable, not model/score data ──
+  /^pm:analyst-report-pdf:/, // 70MB of uploaded PDFs
+  /^pm:attachment:/,         // base64 screenshots/PDFs (the per-file keys)
+  // NOTE: pm:attachments (the lightweight manifest, no trailing colon) is
+  // intentionally KEPT — it's tiny and lists which files exist.
 ];
 
 function shouldExclude(key: string): boolean {
