@@ -9,7 +9,7 @@ handles the rest.
 
 | Prefix | What to send | Lands in |
 |---|---|---|
-| `Analyst Report: <TICKER>` (with `JPM` or `RBC` in subject or filename) | PDF | Per-ticker analyst snapshot (existing flow, unchanged) |
+| `Analyst Report: <TICKER>` — firm comes from the **PDF filename**, e.g. `AVGO_RBC.pdf` / `AVGO_JPM.pdf` | PDF (one or several per email) | Per-ticker analyst snapshot, routed to the RBC or JPM slot per filename |
 | `SIA …` | **CSV export (preferred)** or screenshot (PNG/JPG/PDF) | Each matched stock's SIA SMAX + score. CSV is auto-detected — same subject either way. |
 | `BoostedAI …` *or* `Boosted …` | **Boosted.ai unified-data CSV (preferred)** or watchlist screenshot (PNG/JPG/PDF) | Each matched stock's BoostedAI rating + consensus + score. CSV is auto-detected — same subject either way. |
 | `MarketEdge …` *or* `ChartScout …` | ChartScout Likes export (CSV) | Each matched stock's `marketEdge` fields + composite score |

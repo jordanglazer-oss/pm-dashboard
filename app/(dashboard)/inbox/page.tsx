@@ -1572,7 +1572,7 @@ export default function InboxPage() {
               <tr className="border-b border-blue-100">
                 <td className="py-2 pr-3 font-mono whitespace-nowrap">Analyst Report: &lt;TICKER&gt;</td>
                 <td className="py-2 pr-3 whitespace-nowrap">PDF</td>
-                <td className="py-2 pr-3">Stores under the ticker&apos;s analyst snapshot. Name each PDF <span className="font-mono">&lt;TICKER&gt;_JPM.pdf</span> or <span className="font-mono">&lt;TICKER&gt;_RBC.pdf</span> to route to the right slot. Max ~15 MB.</td>
+                <td className="py-2 pr-3">Subject is just <span className="font-mono">Analyst Report: &lt;TICKER&gt;</span> (no firm). The firm comes from the <span className="font-semibold">PDF filename</span>: name it <span className="font-mono">&lt;TICKER&gt;_RBC.pdf</span> or <span className="font-mono">&lt;TICKER&gt;_JPM.pdf</span> to route to the right slot. You can attach <span className="font-semibold">several PDFs in one email</span> (e.g. <span className="font-mono">AVGO_JPM.pdf</span> + <span className="font-mono">AVGO_RBC.pdf</span>) and each routes on its own. Max ~15 MB each.</td>
                 <td className="py-2 font-mono whitespace-nowrap">Analyst Report: AVGO</td>
               </tr>
               <tr className="border-b border-blue-100">
