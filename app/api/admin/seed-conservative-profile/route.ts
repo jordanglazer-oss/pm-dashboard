@@ -3,11 +3,15 @@ import { getRedis } from "@/app/lib/redis";
 import type { PimModelData, PimProfileWeights } from "@/app/lib/pim-types";
 
 /**
- * One-shot: add a `conservative` profile to every group in the live
+ * One-shot: add a `conservative` profile to the PIM group in the live
  * pm:pim-models blob so the new Conservative model appears in Positioning /
  * PIM Model and starts accruing performance. The asset-allocation split is
  * 30% equity / 64% fixed income / 6% alternatives (the PM can fine-tune it
  * afterward in the AA & Perf tab's Conservative card, which writes back here).
+ *
+ * Scoped to the PIM group ONLY — Conservative isn't offered on the other
+ * mandates (pc-usa, non-res, etc.) for now. Pass ?all=YES to seed every
+ * group instead, if that's ever wanted.
  *
  * SAFETY (per CLAUDE.md):
  *   - Requires ?confirm=YES.
@@ -46,10 +50,14 @@ export async function GET(req: NextRequest) {
     }
     const models = JSON.parse(raw) as PimModelData;
 
+    // PIM group only by default; ?all=YES seeds every group.
+    const allGroups = req.nextUrl.searchParams.get("all") === "YES";
+
     const seeded: string[] = [];
     const skipped: string[] = [];
     const nextGroups = models.groups.map((g) => {
-      if (g.profiles?.conservative) {
+      const inScope = allGroups || g.id === "pim";
+      if (!inScope || g.profiles?.conservative) {
         skipped.push(g.id);
         return g;
       }
