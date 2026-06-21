@@ -68,6 +68,7 @@ function parseSiaCsvText(text: string): { rows: ParsedRow[]; warnings: string[] 
 }
 
 const PROFILES: { key: AppendixProfileType; label: string }[] = [
+  { key: "conservative", label: "Conservative" },
   { key: "balanced", label: "Balanced" },
   { key: "growth", label: "Growth" },
   { key: "allEquity", label: "All-Equity" },
@@ -75,6 +76,7 @@ const PROFILES: { key: AppendixProfileType; label: string }[] = [
 ];
 
 const PROFILE_LABELS: Record<PimProfileType, string> = {
+  conservative: "Conservative",
   balanced: "Balanced",
   growth: "Growth",
   allEquity: "All-Equity",
@@ -355,7 +357,7 @@ export default function AppendixPage() {
       } else {
         const results: string[] = [];
         for (const key of Object.keys(data)) {
-          if (["balanced", "growth", "allEquity", "alpha"].includes(key) && Array.isArray(data[key])) {
+          if (["conservative", "balanced", "growth", "allEquity", "alpha"].includes(key) && Array.isArray(data[key])) {
             const res = await fetch("/api/kv/appendix-daily-values", {
               method: "POST",
               headers: { "Content-Type": "application/json" },

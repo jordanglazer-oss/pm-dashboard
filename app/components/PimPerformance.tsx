@@ -7,6 +7,7 @@ import { getTodayET } from "@/app/lib/market-hours";
 import { useLiveTodayReturn } from "@/app/lib/useLiveTodayReturn";
 
 const PROFILE_LABELS: Record<PimProfileType, string> = {
+  conservative: "Conservative",
   balanced: "Balanced",
   growth: "Growth",
   allEquity: "All-Equity",

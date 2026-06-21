@@ -278,7 +278,7 @@ export async function GET() {
       return { chainedFinalValue: parseFloat(cumulative.toFixed(4)), periodReturn: `${(periodReturn * 100).toFixed(2)}%` };
     };
 
-    const profiles = ["balanced", "growth", "allEquity", "alpha"] as const;
+    const profiles = ["conservative", "balanced", "growth", "allEquity", "alpha"] as const;
     const compare: Record<string, {
       perfBlob: ReturnType<typeof summarize>;
       appendix: ReturnType<typeof summarize>;

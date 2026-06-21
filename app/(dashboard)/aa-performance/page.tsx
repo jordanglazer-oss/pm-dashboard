@@ -35,6 +35,7 @@ type FundRow = {
 
 type AAPerformanceData = {
   allocations: {
+    conservative: AllocationTable;
     balanced: AllocationTable;
     growth: AllocationTable;
     allEquity: AllocationTable;
@@ -94,6 +95,12 @@ const AA_COLS: { key: keyof AllocationRow; label: string }[] = [
 /* ─── Default Data ─── */
 const defaultData: AAPerformanceData = {
   allocations: {
+    conservative: {
+      current: { fixedIncome: 64, equity: 30, alternatives: 6 },
+      target: { fixedIncome: 60, equity: 35, alternatives: 0 },
+      min: { fixedIncome: 40, equity: 20, alternatives: 0 },
+      max: { fixedIncome: 75, equity: 45, alternatives: 25 },
+    },
     balanced: {
       current: { fixedIncome: 28, equity: 66, alternatives: 6 },
       target: { fixedIncome: 40, equity: 55, alternatives: 0 },
@@ -144,6 +151,9 @@ function NumericInput({
   const [text, setText] = useState(value === null ? "" : String(value));
 
   useEffect(() => {
+    // Sync the editable text with the prop when not actively editing — an
+    // intentional controlled-input pattern.
+    // eslint-disable-next-line react-hooks/set-state-in-effect
     if (!focused) setText(value === null ? "" : String(value));
   }, [value, focused]);
 
@@ -675,6 +685,7 @@ export default function AAPerformancePage() {
   /* Live today's return for each PIM profile — uses the same shared hook
    * PimPerformance.tsx calls, so the client-side override applied below
    * matches that screen's effectiveHistory exactly. */
+  const liveConservative = useLiveTodayReturn("pim", "conservative").value;
   const liveBalanced = useLiveTodayReturn("pim", "balanced").value;
   const liveGrowth = useLiveTodayReturn("pim", "growth").value;
   const liveAllEquity = useLiveTodayReturn("pim", "allEquity").value;
@@ -714,7 +725,7 @@ export default function AAPerformancePage() {
   const fracToPct = (f: number) => Math.round(f * 10000) / 100;
   const displayedAllocations = useMemo(() => {
     const pimGroup = pimModels.groups.find((g) => g.id === "pim");
-    const profiles: ("balanced" | "growth" | "allEquity")[] = ["balanced", "growth", "allEquity"];
+    const profiles: ("conservative" | "balanced" | "growth" | "allEquity")[] = ["conservative", "balanced", "growth", "allEquity"];
     const out: AAPerformanceData["allocations"] = { ...data.allocations };
     for (const p of profiles) {
       const w = pimGroup?.profiles[p];
@@ -742,18 +753,18 @@ export default function AAPerformancePage() {
    * are policy bounds, not model weights). */
   const updateAllocation = useCallback(
     (
-      tableKey: "balanced" | "growth" | "allEquity",
+      tableKey: "conservative" | "balanced" | "growth" | "allEquity",
       rowKey: keyof AllocationTable,
       colKey: keyof AllocationRow,
       value: number
     ) => {
       if (rowKey === "current") {
         const pimGroup = pimModels.groups.find((g) => g.id === "pim");
-        if (!pimGroup || !pimGroup.profiles[tableKey]) {
-          console.warn(
-            "[AA→PIM] skipping write — no pim group or profile",
-            { tableKey, hasGroup: !!pimGroup, hasProfile: !!pimGroup?.profiles[tableKey] }
-          );
+        // Note: a profile MAY not exist yet in pm:pim-models (e.g. Conservative
+        // before it's been seeded). We still allow the edit — the write below
+        // creates the profile entry from the displayed values + this cell.
+        if (!pimGroup) {
+          console.warn("[AA→PIM] skipping write — no pim group");
           return;
         }
 
@@ -914,10 +925,11 @@ export default function AAPerformancePage() {
     };
 
     const pimProfiles: {
-      profile: "balanced" | "growth" | "allEquity" | "alpha";
+      profile: "conservative" | "balanced" | "growth" | "allEquity" | "alpha";
       label: string;
       live: number | null;
     }[] = [
+      { profile: "conservative", label: "PIM Conservative", live: liveConservative },
       { profile: "balanced", label: "PIM Balanced", live: liveBalanced },
       { profile: "growth", label: "PIM Growth", live: liveGrowth },
       { profile: "allEquity", label: "PIM All-Equity", live: liveAllEquity },
@@ -949,7 +961,7 @@ export default function AAPerformancePage() {
     }
 
     return rows;
-  }, [pimData, appendixData, indexes, liveBalanced, liveGrowth, liveAllEquity, liveAlpha]);
+  }, [pimData, appendixData, indexes, liveConservative, liveBalanced, liveGrowth, liveAllEquity, liveAlpha]);
 
   if (loading) {
     return (
@@ -977,7 +989,12 @@ export default function AAPerformancePage() {
             )}
           </p>
         </div>
-        <div className="grid grid-cols-1 lg:grid-cols-3 gap-4">
+        <div className="grid grid-cols-1 sm:grid-cols-2 xl:grid-cols-4 gap-4">
+          <AllocationTableCard
+            title="Conservative"
+            table={displayedAllocations.conservative}
+            onUpdate={(rowKey, colKey, value) => updateAllocation("conservative", rowKey, colKey, value)}
+          />
           <AllocationTableCard
             title="Balanced"
             table={displayedAllocations.balanced}

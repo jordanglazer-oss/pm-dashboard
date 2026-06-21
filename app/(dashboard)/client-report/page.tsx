@@ -360,7 +360,7 @@ function normalizePreferredTicker(ticker: string): string {
   return t;
 }
 
-const VALID_PROFILES: readonly PimProfileType[] = ["balanced", "growth", "allEquity"];
+const VALID_PROFILES: readonly PimProfileType[] = ["conservative", "balanced", "growth", "allEquity"];
 
 // RBC Dominion Securities palette. Navy is the primary brand colour;
 // gold is the accent used for rules, subtle highlights, and footer

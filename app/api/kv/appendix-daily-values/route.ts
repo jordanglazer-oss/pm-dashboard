@@ -4,7 +4,7 @@ import type { AppendixData, AppendixDailyValue, AppendixProfileType } from "@/ap
 
 const KEY = "pm:appendix-daily-values";
 
-const VALID_PROFILES: AppendixProfileType[] = ["balanced", "growth", "allEquity", "alpha"];
+const VALID_PROFILES: AppendixProfileType[] = ["conservative", "balanced", "growth", "allEquity", "alpha"];
 
 export async function GET() {
   try {

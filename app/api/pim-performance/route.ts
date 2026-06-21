@@ -398,7 +398,7 @@ export async function POST() {
     // historical values — from being overwritten by a Yahoo-derived
     // recompute. The recompute is now safe to call any time: it only
     // ever fills in missing series (e.g. the new core-${profile} series).
-    const profiles: PimProfileType[] = ["balanced", "growth", "allEquity", "alpha"];
+    const profiles: PimProfileType[] = ["conservative", "balanced", "growth", "allEquity", "alpha"];
     const existingPerfRaw = await redis.get(PERF_KEY);
     const existingPerf: PimPerformanceData | null = existingPerfRaw
       ? (JSON.parse(existingPerfRaw) as PimPerformanceData) : null;

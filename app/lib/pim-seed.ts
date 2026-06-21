@@ -5,6 +5,7 @@ export const pimModelSeed: PimModelGroup[] = [
     id: "pim",
     name: "PIM",
     profiles: {
+      conservative: { cash: 0.0, fixedIncome: 0.64, equity: 0.30, alternatives: 0.06 },
       balanced: { cash: 0.0, fixedIncome: 0.28, equity: 0.66, alternatives: 0.06 },
       growth: { cash: 0.0, fixedIncome: 0.14, equity: 0.83, alternatives: 0.03 },
       allEquity: { cash: 0.0, fixedIncome: 0.0, equity: 1.0, alternatives: 0.0 },
@@ -47,6 +48,7 @@ export const pimModelSeed: PimModelGroup[] = [
     id: "pc-usa",
     name: "PC USA",
     profiles: {
+      conservative: { cash: 0.0, fixedIncome: 0.64, equity: 0.30, alternatives: 0.06 },
       balanced: { cash: 0.0, fixedIncome: 0.28, equity: 0.66, alternatives: 0.06 },
       growth: { cash: 0.0, fixedIncome: 0.14, equity: 0.83, alternatives: 0.03 },
       allEquity: { cash: 0.0, fixedIncome: 0.0, equity: 1.0, alternatives: 0.0 },
@@ -83,6 +85,7 @@ export const pimModelSeed: PimModelGroup[] = [
     id: "non-res",
     name: "Non-Res",
     profiles: {
+      conservative: { cash: 0.0, fixedIncome: 0.64, equity: 0.30, alternatives: 0.06 },
       balanced: { cash: 0.0, fixedIncome: 0.28, equity: 0.66, alternatives: 0.06 },
       growth: { cash: 0.0, fixedIncome: 0.14, equity: 0.83, alternatives: 0.03 },
       allEquity: { cash: 0.0, fixedIncome: 0.0, equity: 1.0, alternatives: 0.0 },
@@ -125,6 +128,7 @@ export const pimModelSeed: PimModelGroup[] = [
     id: "no-us-situs",
     name: "No US Situs",
     profiles: {
+      conservative: { cash: 0.0, fixedIncome: 0.64, equity: 0.30, alternatives: 0.06 },
       balanced: { cash: 0.0, fixedIncome: 0.28, equity: 0.66, alternatives: 0.06 },
       growth: { cash: 0.0, fixedIncome: 0.14, equity: 0.83, alternatives: 0.03 },
       allEquity: { cash: 0.0, fixedIncome: 0.0, equity: 1.0, alternatives: 0.0 },
@@ -156,6 +160,7 @@ export const pimModelSeed: PimModelGroup[] = [
     id: "cgf",
     name: "CGF",
     profiles: {
+      conservative: { cash: 0.0, fixedIncome: 0.64, equity: 0.30, alternatives: 0.06 },
       balanced: { cash: 0.0, fixedIncome: 0.28, equity: 0.66, alternatives: 0.06 },
       growth: { cash: 0.0, fixedIncome: 0.2, equity: 0.77, alternatives: 0.03 },
     },
@@ -197,6 +202,7 @@ export const pimModelSeed: PimModelGroup[] = [
     id: "ey",
     name: "EY",
     profiles: {
+      conservative: { cash: 0.0, fixedIncome: 0.64, equity: 0.30, alternatives: 0.06 },
       balanced: { cash: 0.0, fixedIncome: 0.28, equity: 0.66, alternatives: 0.06 },
       growth: { cash: 0.0, fixedIncome: 0.14, equity: 0.83, alternatives: 0.03 },
       allEquity: { cash: 0.0, fixedIncome: 0.0, equity: 1.0, alternatives: 0.0 },
@@ -235,6 +241,7 @@ export const pimModelSeed: PimModelGroup[] = [
     id: "kpmg",
     name: "KPMG",
     profiles: {
+      conservative: { cash: 0.0, fixedIncome: 0.64, equity: 0.30, alternatives: 0.06 },
       balanced: { cash: 0.0, fixedIncome: 0.28, equity: 0.66, alternatives: 0.06 },
       growth: { cash: 0.0, fixedIncome: 0.14, equity: 0.83, alternatives: 0.03 },
       allEquity: { cash: 0.0, fixedIncome: 0.0, equity: 1.0, alternatives: 0.0 },
@@ -268,6 +275,7 @@ export const pimModelSeed: PimModelGroup[] = [
     id: "deloitte",
     name: "Deloitte",
     profiles: {
+      conservative: { cash: 0.0, fixedIncome: 0.64, equity: 0.30, alternatives: 0.06 },
       balanced: { cash: 0.0, fixedIncome: 0.28, equity: 0.66, alternatives: 0.06 },
       growth: { cash: 0.0, fixedIncome: 0.14, equity: 0.83, alternatives: 0.03 },
       allEquity: { cash: 0.0, fixedIncome: 0.0, equity: 1.0, alternatives: 0.0 },
@@ -310,6 +318,7 @@ export const pimModelSeed: PimModelGroup[] = [
     id: "rcgt",
     name: "RCGT",
     profiles: {
+      conservative: { cash: 0.0, fixedIncome: 0.64, equity: 0.30, alternatives: 0.06 },
       balanced: { cash: 0.0, fixedIncome: 0.28, equity: 0.66, alternatives: 0.06 },
       growth: { cash: 0.0, fixedIncome: 0.14, equity: 0.83, alternatives: 0.03 },
       allEquity: { cash: 0.0, fixedIncome: 0.0, equity: 1.0, alternatives: 0.0 },

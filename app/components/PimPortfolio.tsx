@@ -111,6 +111,7 @@ function symbolToTicker(symbol: string): string {
 }
 
 const PROFILE_LABELS: Record<PimProfileType, string> = {
+  conservative: "Conservative",
   balanced: "Balanced",
   growth: "Growth",
   allEquity: "All-Equity",
@@ -372,7 +373,7 @@ export function PimPortfolio({ groups }: Props) {
 
   const availableProfiles = useMemo<PimProfileType[]>(() => {
     if (!selectedGroup) return [];
-    const base = (["balanced", "growth", "allEquity"] as PimProfileType[]).filter(
+    const base = (["conservative", "balanced", "growth", "allEquity"] as PimProfileType[]).filter(
       (p) => selectedGroup.profiles[p]
     );
     // Alpha + Core are firm-wide standalone models — PIM group only.

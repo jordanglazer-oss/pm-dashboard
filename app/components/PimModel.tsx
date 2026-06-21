@@ -47,6 +47,7 @@ type Props = {
 };
 
 const PROFILE_LABELS: Record<PimProfileType, string> = {
+  conservative: "Conservative",
   balanced: "Balanced",
   growth: "Growth",
   allEquity: "All-Equity",
@@ -304,7 +305,7 @@ export function PimModel({ groups }: Props) {
 
   const availableProfiles = useMemo<PimProfileType[]>(() => {
     if (!selectedGroup) return [];
-    const base = (["balanced", "growth", "allEquity"] as PimProfileType[]).filter(
+    const base = (["conservative", "balanced", "growth", "allEquity"] as PimProfileType[]).filter(
       (p) => selectedGroup.profiles[p]
     );
     // Alpha and Core are firm-wide standalone models — only available

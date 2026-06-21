@@ -48,7 +48,7 @@ export async function GET() {
         try {
           const perf = JSON.parse(raw) as PimPerformanceData;
           checks.push({ name: "valid JSON", pass: true });
-          const profiles = ["balanced", "growth", "allEquity", "alpha", "core"] as PimProfileType[];
+          const profiles = ["conservative", "balanced", "growth", "allEquity", "alpha", "core"] as PimProfileType[];
           for (const p of profiles) {
             const m = perf.models.find((m) => m.groupId === "pim" && m.profile === p);
             if (!m) {
@@ -84,7 +84,7 @@ export async function GET() {
         try {
           const app = JSON.parse(raw) as AppendixData;
           checks.push({ name: "valid JSON", pass: true });
-          for (const p of ["balanced", "growth", "allEquity", "alpha"] as PimProfileType[]) {
+          for (const p of ["conservative", "balanced", "growth", "allEquity", "alpha"] as PimProfileType[]) {
             const l = app.ledgers.find((l) => l.profile === p);
             if (!l) {
               checks.push({ name: `${p} ledger present`, pass: false, note: "missing" });
@@ -119,7 +119,7 @@ export async function GET() {
         try {
           const blob = JSON.parse(raw) as { portfolios: PimPortfolioPositions[] };
           checks.push({ name: "valid JSON", pass: true });
-          for (const p of ["balanced", "growth", "allEquity", "alpha", "core"] as PimProfileType[]) {
+          for (const p of ["conservative", "balanced", "growth", "allEquity", "alpha", "core"] as PimProfileType[]) {
             const port = blob.portfolios.find((port) => port.groupId === "pim" && port.profile === p);
             if (!port) {
               const ok = p !== "core"; // pre-Core models always exist; core only after seed
