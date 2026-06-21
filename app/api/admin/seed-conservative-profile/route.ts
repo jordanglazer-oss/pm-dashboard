@@ -94,34 +94,37 @@ export async function GET(req: NextRequest) {
       { date: yesterday, value: 100, dailyReturn: 0 },
     ];
 
-    let perfStatus = "left as-is (already accruing)";
+    // SEED-IF-MISSING ONLY — NEVER overwrite an existing series. Once
+    // Conservative has accrued even one live day, this endpoint leaves it
+    // completely alone. (An earlier version reset any series whose first
+    // entry predated a sliding window, which would have wiped real accrued
+    // values on a later re-run — the classic "fixed seed clobbers live data"
+    // bug. Removed.) The base points are the bare minimum an index needs:
+    // a starting value of 100. Everything after is live-calculated by
+    // /api/update-daily-value, which only ever appends and never modifies
+    // these or any historical entry.
+    let perfStatus = "left as-is (already exists — untouched)";
     const perfRaw = await redis.get("pm:pim-performance");
     if (perfRaw) {
       const perf = JSON.parse(perfRaw) as PimPerformanceData;
-      const i = perf.models.findIndex((m) => m.groupId === "pim" && m.profile === "conservative");
-      const existing = i >= 0 ? perf.models[i] : null;
-      const backComputed = !!existing && existing.history.length > 0 && existing.history[0].date < dayBefore;
-      if (!existing || backComputed) {
+      const exists = perf.models.some((m) => m.groupId === "pim" && m.profile === "conservative");
+      if (!exists) {
         await redis.set(`pm:pre-conservative-perf-stash:${stamp}`, perfRaw); // stash pre-image
         const model = { groupId: "pim", profile: "conservative" as const, history: basePoints, lastUpdated: stamp };
-        const nextModels = i >= 0 ? perf.models.map((m, idx) => (idx === i ? model : m)) : [...perf.models, model];
-        await redis.set("pm:pim-performance", JSON.stringify({ ...perf, models: nextModels }));
-        perfStatus = backComputed ? "reset (removed back-computed history)" : "seeded inception base";
+        await redis.set("pm:pim-performance", JSON.stringify({ ...perf, models: [...perf.models, model] }));
+        perfStatus = "seeded inception base (100)";
       }
     }
 
-    let appendixStatus = "left as-is";
+    let appendixStatus = "left as-is (already exists — untouched)";
     const appRaw = await redis.get("pm:appendix-daily-values");
     if (appRaw) {
       const app = JSON.parse(appRaw) as AppendixData;
-      const i = app.ledgers.findIndex((l) => l.profile === "conservative");
-      const existing = i >= 0 ? app.ledgers[i] : null;
-      const backComputed = !!existing && existing.entries.length > 0 && existing.entries[0].date < dayBefore;
-      if (!existing || backComputed) {
+      const exists = app.ledgers.some((l) => l.profile === "conservative");
+      if (!exists) {
         const ledger = { profile: "conservative" as const, entries: basePoints.map((p) => ({ ...p, addedAt: stamp })) };
-        const nextLedgers = i >= 0 ? app.ledgers.map((l, idx) => (idx === i ? ledger : l)) : [...app.ledgers, ledger];
-        await redis.set("pm:appendix-daily-values", JSON.stringify({ ...app, ledgers: nextLedgers }));
-        appendixStatus = backComputed ? "reset" : "seeded";
+        await redis.set("pm:appendix-daily-values", JSON.stringify({ ...app, ledgers: [...app.ledgers, ledger] }));
+        appendixStatus = "seeded inception base (100)";
       }
     }
 
