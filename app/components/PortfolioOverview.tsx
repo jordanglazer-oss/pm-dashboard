@@ -1170,6 +1170,7 @@ export function PortfolioOverview() {
         aiSemiKeys={AI_SEMI_KEYS}
         onClearCharting={() => handleClearCharting("Portfolio")}
         riskScanByTicker={riskScanByTicker}
+        splitByCurrency
       />
 
 
@@ -1198,6 +1199,7 @@ export function PortfolioOverview() {
         aiSemiKeys={AI_SEMI_KEYS}
         onClearCharting={() => handleClearCharting("Watchlist")}
         riskScanByTicker={riskScanByTicker}
+        splitByCurrency
       />
 
       {/* Fund & ETF Holdings — moved below Watchlist Rankings per Dashboard
@@ -1429,10 +1431,15 @@ function RankingTable({
   aiSemiKeys,
   onClearCharting,
   riskScanByTicker,
+  splitByCurrency,
 }: {
   title: string;
   subtitle: string;
   stocks: ScoredStock[];
+  /** When true, split the rows into 🇨🇦 Canadian and 🇺🇸 US sub-sections,
+   *  each independently ranked + flagged, so CAD and USD names are compared
+   *  within their own currency rather than against each other. */
+  splitByCurrency?: boolean;
   flagType: "review" | "buy";
   uiPrefs: Record<string, string>;
   setUiPref: (key: string, value: string) => void;
@@ -1538,6 +1545,31 @@ function RankingTable({
     }
     return dir === "asc" ? cmp : -cmp;
   });
+
+  // Currency split: partition the sorted rows into Canadian + US groups,
+  // each ranked + flagged independently, then build a flat display list with
+  // sub-header markers. Flagging (bottom-3 review / top-3 buy) and the rank
+  // number both reset per group so a CAD name is judged vs CAD, not vs US.
+  type DisplayRow =
+    | { kind: "header"; key: string; label: string; count: number }
+    | { kind: "stock"; stock: ScoredStock; rank: number; flagged: boolean };
+  const buildGroup = (group: ScoredStock[]): { stock: ScoredStock; rank: number; flagged: boolean }[] => {
+    const flagged = new Set<string>(
+      (flagType === "review" ? group.slice(-3) : group.slice(0, 3)).map((s) => s.ticker),
+    );
+    return group.map((s, idx) => ({ stock: s, rank: idx + 1, flagged: flagged.has(s.ticker) }));
+  };
+  let displayRows: DisplayRow[];
+  if (splitByCurrency) {
+    const cad = sorted.filter((s) => isCanadianTicker(s.ticker));
+    const us = sorted.filter((s) => !isCanadianTicker(s.ticker));
+    displayRows = [
+      ...(cad.length ? [{ kind: "header", key: "hdr-cad", label: "🇨🇦 Canadian (CAD)", count: cad.length } as DisplayRow, ...buildGroup(cad).map((r) => ({ kind: "stock", ...r } as DisplayRow))] : []),
+      ...(us.length ? [{ kind: "header", key: "hdr-us", label: "🇺🇸 US (USD)", count: us.length } as DisplayRow, ...buildGroup(us).map((r) => ({ kind: "stock", ...r } as DisplayRow))] : []),
+    ];
+  } else {
+    displayRows = buildGroup(sorted).map((r) => ({ kind: "stock", ...r } as DisplayRow));
+  }
 
   const thClass = "pb-2 pr-3 cursor-pointer hover:text-slate-800 select-none whitespace-nowrap";
   // Sticky first column — ticker + company name stay visible while the rest of
@@ -1740,11 +1772,21 @@ function RankingTable({
             </tr>
           </thead>
           <tbody>
-            {sorted.map((s, i) => {
+            {displayRows.map((row) => {
+              if (row.kind === "header") {
+                return (
+                  <tr key={row.key} className="bg-slate-50/80">
+                    <td colSpan={40} className="py-1.5 px-2 text-[11px] font-bold uppercase tracking-wider text-slate-500 sticky left-0 bg-slate-50/80 z-10">
+                      {row.label} <span className="font-medium normal-case text-slate-400">· {row.count}</span>
+                    </td>
+                  </tr>
+                );
+              }
+              const s = row.stock;
+              const i = row.rank - 1;
               const adj = Math.round((s.adjusted - s.raw) * 10) / 10;
               const label = s.ratingLabel || s.rating;
-              const isFlagged =
-                flagType === "review" ? i >= sorted.length - 3 : i < 3;
+              const isFlagged = row.flagged;
 
               return (
                 <tr key={s.ticker} className="group border-b border-slate-50 hover:bg-slate-50/80 transition-colors [&>td]:align-top">
