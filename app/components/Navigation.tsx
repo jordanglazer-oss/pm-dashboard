@@ -62,6 +62,41 @@ function BackupHealthChip() {
   );
 }
 
+/**
+ * Anthropic credit-health indicator. Polls /api/anthropic-status and stays
+ * completely silent while healthy; renders a prominent pulsing red chip only
+ * when a real API call has been rejected for lack of credit. Substitutes for
+ * the balance readout Anthropic doesn't expose — converts a silently-broken
+ * Brief / scoring run into an obvious "credits exhausted" alert.
+ */
+type AnthropicStatus = { state: "ok" | "credit_exhausted"; at: string; detail?: string } | null;
+function AnthropicCreditChip() {
+  const [s, setS] = useState<AnthropicStatus>(null);
+  useEffect(() => {
+    let alive = true;
+    const load = () =>
+      fetch("/api/anthropic-status")
+        .then((r) => r.json())
+        .then((d: { status: AnthropicStatus }) => { if (alive) setS(d.status); })
+        .catch(() => {});
+    load();
+    const id = setInterval(load, 5 * 60 * 1000); // re-check every 5 min
+    return () => { alive = false; clearInterval(id); };
+  }, []);
+
+  if (!s || s.state !== "credit_exhausted") return null; // silent unless exhausted
+  const when = Number.isFinite(Date.parse(s.at)) ? new Date(s.at).toLocaleString() : "recently";
+  return (
+    <span
+      className="flex items-center gap-1 text-red-400 font-bold"
+      title={`Anthropic rejected an API call for low credit (last seen ${when}). AI features (Brief, scoring) are blocked until the key's org is topped up or a new key with credit is set as ANTHROPIC_API_KEY in Vercel.${s.detail ? ` [${s.detail}]` : ""}`}
+    >
+      <span className="inline-block w-1.5 h-1.5 rounded-full bg-red-500 animate-pulse" />
+      ⚠ Anthropic credits
+    </span>
+  );
+}
+
 const tabs = [
   { label: "Brief", href: "/brief" },
   { label: "Dashboard", href: "/" },
@@ -364,6 +399,7 @@ export function Navigation() {
           <span><kbd className="rounded bg-slate-700 px-1 py-px text-slate-400">⌥/Alt</kbd> + <kbd className="rounded bg-slate-700 px-1 py-px text-slate-400">←→</kbd> switch stocks</span>
         )}
         <div className="ml-auto flex items-center gap-3">
+          <AnthropicCreditChip />
           <BackupHealthChip />
           <Link href="/admin/health" className="text-slate-500 hover:text-slate-300 transition-colors">
             health

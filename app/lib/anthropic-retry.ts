@@ -30,6 +30,7 @@
  */
 
 import { createLogger } from "./logger";
+import { isCreditError, recordAnthropicCreditError } from "./anthropic-status";
 
 const log = createLogger("Anthropic-retry");
 
@@ -91,6 +92,10 @@ export async function callAnthropicWithRetry<T>(
         // Either a non-retryable error (don't waste retries) or we're
         // out of attempts. Surface the original error to the caller.
         log.error(`[${label}] giving up after ${attempt} attempt${attempt === 1 ? "" : "s"}: ${reason}`);
+        // Flag credit/billing exhaustion so the nav can surface it. Awaited
+        // so the Redis write lands before the serverless fn returns; failures
+        // here are swallowed inside recordAnthropicCreditError.
+        if (isCreditError(err)) await recordAnthropicCreditError(`${label}: ${reason}`);
         throw err;
       }
       const delayMs = BACKOFF_BASE_MS * 2 ** (attempt - 1);

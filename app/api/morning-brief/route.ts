@@ -14,6 +14,7 @@ import type { ResearchState } from "@/app/lib/defaults";
 import { defaultResearch } from "@/app/lib/defaults";
 import { buildHedgingCostsBlock } from "@/app/lib/hedging";
 import type { MarketRegimeData } from "@/app/lib/market-regime";
+import { isCreditError, recordAnthropicCreditError, markAnthropicHealthy } from "@/app/lib/anthropic-status";
 
 /**
  * Best-effort read of the deterministic market regime snapshot
@@ -1423,6 +1424,11 @@ Current Portfolio Holdings: ${holdingsSummary}`;
       }
     }
 
+    // A full brief generation succeeded → the API key has credit. Clear any
+    // prior "credits exhausted" flag (transition-only write, e.g. after the
+    // PM swapped in a fresh key).
+    void markAnthropicHealthy();
+
     const now = new Date();
     // If Claude's marketRegime came back empty/bogus, fall back to our
     // deterministic pre-classification so downstream consumers always have
@@ -1450,6 +1456,9 @@ Current Portfolio Holdings: ${holdingsSummary}`;
   } catch (error) {
     const message = error instanceof Error ? error.message : String(error);
     console.error("Morning brief API error:", message, error);
+    // Flag credit/billing exhaustion so the nav surfaces it (the Brief is a
+    // daily-run path, so this catches a depleted balance promptly).
+    if (isCreditError(error)) await recordAnthropicCreditError(`Brief: ${message}`);
     // The Anthropic SDK / Node web APIs surface malformed base64 as
     // "The string did not match the expected pattern." — translate that
     // into something actionable so the user knows to check attachments.
