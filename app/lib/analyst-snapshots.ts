@@ -94,6 +94,12 @@ export type ReportMeta = {
   /** SHA-256 of the source dataUrl — same PDF → same hash → cache hit. */
   hash: string;
   extracted: ExtractedReport;
+  /** Public Vercel Blob URL of the original PDF. The raw PDF used to live in
+   *  Redis at pm:analyst-report-pdf:<id> (multi-MB each → OOM); it now lives
+   *  in Blob. Nothing in the app reads the PDF back today, so this is an
+   *  archive pointer (a future "view original report" feature can use it).
+   *  Undefined for entries whose PDF predates the migration / was dropped. */
+  pdfUrl?: string;
 };
 
 export type TickerReports = {

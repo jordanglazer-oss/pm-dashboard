@@ -1443,7 +1443,9 @@ export function StockProvider({ children }: { children: React.ReactNode }) {
       return { ok: false, error: e instanceof Error ? e.message : "Extraction request failed" };
     }
 
-    // 2) Store the PDF dataUrl.
+    // 2) Archive the PDF to Vercel Blob (no longer Redis — multi-MB PDFs are
+    //    what kept OOMing the tier). The route returns the Blob URL.
+    let pdfUrl: string | undefined;
     try {
       const res = await fetch(`/api/kv/analyst-reports/${encodeURIComponent(reportId)}`, {
         method: "PUT",
@@ -1453,6 +1455,8 @@ export function StockProvider({ children }: { children: React.ReactNode }) {
       if (!res.ok) {
         return { ok: false, error: `Failed to store PDF (${res.status})` };
       }
+      const j = await res.json().catch(() => ({}));
+      if (typeof j?.pdfUrl === "string") pdfUrl = j.pdfUrl;
     } catch (e) {
       return { ok: false, error: e instanceof Error ? e.message : "PDF storage failed" };
     }
@@ -1465,6 +1469,7 @@ export function StockProvider({ children }: { children: React.ReactNode }) {
       extractedAt: extractRes.extractedAt,
       hash: extractRes.hash,
       extracted: extractRes.result,
+      pdfUrl,
     };
     setAnalystReportsState((prev) => {
       const current = getReportsForTicker(prev, ticker) ?? {};

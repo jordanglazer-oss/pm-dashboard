@@ -15,6 +15,7 @@ import {
   type ReportMeta,
 } from "@/app/lib/analyst-snapshots";
 import { canonicalTicker, tickersEqual } from "@/app/lib/ticker";
+import { blobConfigured, putDataUrl } from "@/app/lib/blob-store";
 import { appendInboxEvent } from "@/app/lib/inbox-log";
 import { classifySubject, dispatchInbox } from "@/app/lib/inbox-dispatch";
 
@@ -103,9 +104,18 @@ async function persistReportToRedis(args: {
 }) {
   const reportId = reportIdFor(args.ticker, args.source);
 
-  // 1) Store PDF dataUrl in its own key (split storage).
-  const redis = await getRedis();
-  await redis.set(`pm:analyst-report-pdf:${reportId}`, args.dataUrl);
+  // 1) Archive the original PDF to Vercel Blob (NOT Redis — multi-MB PDFs in
+  //    Redis are what kept OOMing the 250 MB tier). Best-effort: the useful
+  //    data is already in the snapshot, so a Blob hiccup must not fail the
+  //    ingest. pdfUrl is an archive pointer; nothing reads it back today.
+  let pdfUrl: string | undefined;
+  if (blobConfigured()) {
+    try {
+      pdfUrl = await putDataUrl(`analyst-reports/${reportId}`, args.dataUrl);
+    } catch (e) {
+      console.error("[Inbox] analyst PDF Blob upload failed (continuing):", e);
+    }
+  }
 
   // 2) Update the lightweight manifest.
   const reports = await readJson<AnalystReports>("pm:analyst-reports", {});
@@ -117,6 +127,7 @@ async function persistReportToRedis(args: {
     extractedAt: args.extractedAt,
     hash: args.hash,
     extracted: args.extracted,
+    pdfUrl,
   };
   tickerReports[args.source] = meta;
   const nextReports = setReportsForTicker(reports, args.ticker, tickerReports);
