@@ -4,6 +4,7 @@ import React, { useState } from "react";
 import { useStocks } from "@/app/lib/StockContext";
 import { PortfolioOverview } from "@/app/components/PortfolioOverview";
 import { RegimeStrip } from "@/app/components/RegimeStrip";
+import { ChangeMonitor } from "@/app/components/ChangeMonitor";
 import { regimeMultiplier, isOffensiveSector, normalizeSector } from "@/app/lib/scoring";
 import type { Stock, ScoreKey, InstrumentType } from "@/app/lib/types";
 import { INSTRUMENT_LABELS } from "@/app/lib/types";
@@ -100,6 +101,12 @@ export default function DashboardPage() {
             /api/market-regime which is cached in pm:market-regime; the
             strip silently hides on fetch failure. */}
         <RegimeStrip />
+
+        {/* Change monitor — "what materially changed" since you last looked
+            (ratings, targets, price moves, signal splits, stale data),
+            derived from score-history + live state. Collapsible; persists a
+            per-event reviewed mark. */}
+        <ChangeMonitor />
 
         {/* ── Add Stock + Regime Banner ── */}
         <div className="grid gap-4 lg:grid-cols-2">
