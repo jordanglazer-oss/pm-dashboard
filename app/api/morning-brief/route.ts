@@ -15,6 +15,7 @@ import { defaultResearch } from "@/app/lib/defaults";
 import { buildHedgingCostsBlock } from "@/app/lib/hedging";
 import type { MarketRegimeData } from "@/app/lib/market-regime";
 import { isCreditError, recordAnthropicCreditError, markAnthropicHealthy } from "@/app/lib/anthropic-status";
+import { getDataUrl } from "@/app/lib/blob-store";
 
 /**
  * Best-effort read of the deterministic market regime snapshot
@@ -715,7 +716,10 @@ export async function POST(request: NextRequest) {
         const fetched = await Promise.all(
           (body.attachmentRefs as { id: string; section: string; label: string }[]).map(async (ref) => {
             try {
-              const dataUrl = await redis.get(`pm:attachment:${ref.id}`);
+              // Blob first (attachments now live there); fall back to any
+              // legacy Redis copy until the migration runs.
+              let dataUrl = await getDataUrl(`attachments/${ref.id}`);
+              if (!dataUrl) dataUrl = await redis.get(`pm:attachment:${ref.id}`);
               if (!dataUrl || typeof dataUrl !== "string") return null;
               return { section: ref.section, label: ref.label, dataUrl } as AttachmentInput;
             } catch {
@@ -725,7 +729,7 @@ export async function POST(request: NextRequest) {
         );
         attachments = fetched.filter((x): x is AttachmentInput => x !== null);
       } catch (e) {
-        console.error("Failed to hydrate attachmentRefs from Redis:", e);
+        console.error("Failed to hydrate attachmentRefs from Blob/Redis:", e);
         // Fall through with whatever was in body.attachments (possibly empty).
       }
     }

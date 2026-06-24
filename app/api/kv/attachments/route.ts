@@ -1,5 +1,6 @@
 import { getRedis } from "@/app/lib/redis";
 import { NextRequest, NextResponse } from "next/server";
+import { putDataUrl } from "@/app/lib/blob-store";
 
 const KEY = "pm:attachments";
 
@@ -36,10 +37,10 @@ export async function GET() {
     // into per-image keys, then save the stripped manifest back.
     const needsMigration = parsed.some((e) => typeof e.dataUrl === "string" && e.dataUrl.length > 0);
     if (needsMigration) {
-      console.log(`[attachments] migrating ${parsed.filter((e) => e.dataUrl).length} legacy entries to per-image keys`);
+      console.log(`[attachments] migrating ${parsed.filter((e) => e.dataUrl).length} legacy inline entries to Blob`);
       for (const entry of parsed) {
         if (entry.dataUrl) {
-          await redis.set(`pm:attachment:${entry.id}`, entry.dataUrl);
+          await putDataUrl(`attachments/${entry.id}`, entry.dataUrl);
         }
       }
       const stripped: AttachmentManifestEntry[] = parsed.map((e) => ({

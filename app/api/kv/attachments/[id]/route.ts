@@ -1,36 +1,40 @@
 import { getRedis } from "@/app/lib/redis";
 import { NextRequest, NextResponse } from "next/server";
+import { blobConfigured, putDataUrl, getDataUrl, deleteBlob } from "@/app/lib/blob-store";
 
 /**
- * Per-image attachment storage. Each screenshot's base64 data URL is stored
- * under its own Redis key (`pm:attachment:<id>`), while the parent
- * `/api/kv/attachments` route holds only a lightweight manifest
- * (id/label/section/addedAt — no dataUrl). This keeps the manifest blob
- * tiny so it never hits Next.js/Upstash per-value size limits, while still
- * allowing the client to fetch individual images on demand.
+ * Per-image attachment storage. Each screenshot's / PDF's base64 data URL is
+ * archived in Vercel Blob at `attachments/<id>` (multi-MB base64 in Redis was
+ * an OOM source), while the parent `/api/kv/attachments` route holds only a
+ * lightweight manifest (id/label/section/addedAt — no dataUrl).
  *
- * GET    → returns `{ dataUrl }` for a single image, or 404 if missing.
- * PUT    → writes `{ dataUrl }` for this id. Body is a small JSON with just
- *          the base64 payload, so even an 11-image session is 11 separate
- *          ~300KB PUTs instead of a single ~3MB PUT that silently fails.
- * DELETE → removes the per-image key. Manifest cleanup is handled by the
- *          parent route.
+ * GET    → returns `{ dataUrl }` for a single file (Blob first, then any
+ *          legacy Redis copy during the migration window), or 404.
+ * PUT    → writes `{ dataUrl }` to Blob for this id.
+ * DELETE → removes the Blob (and any legacy Redis key). Manifest cleanup is
+ *          handled by the parent route.
  */
 
-function keyFor(id: string): string {
+function legacyKeyFor(id: string): string {
   return `pm:attachment:${id}`;
+}
+function blobPathFor(id: string): string {
+  return `attachments/${id}`;
 }
 
 export async function GET(_req: NextRequest, context: { params: Promise<{ id: string }> }) {
   const { id } = await context.params;
   if (!id) return NextResponse.json({ error: "Missing id" }, { status: 400 });
   try {
+    // Blob first; fall back to a legacy Redis copy until the migration runs.
+    const fromBlob = await getDataUrl(blobPathFor(id));
+    if (fromBlob) return NextResponse.json({ dataUrl: fromBlob });
     const redis = await getRedis();
-    const raw = await redis.get(keyFor(id));
+    const raw = await redis.get(legacyKeyFor(id));
     if (!raw) return NextResponse.json({ error: "Not found" }, { status: 404 });
     return NextResponse.json({ dataUrl: raw });
   } catch (e) {
-    console.error("Redis read error (attachment/[id]):", e);
+    console.error("Attachment read error (attachment/[id]):", e);
     return NextResponse.json({ error: "Read failed" }, { status: 500 });
   }
 }
@@ -50,11 +54,13 @@ export async function PUT(req: NextRequest, context: { params: Promise<{ id: str
     ) {
       return NextResponse.json({ error: "Invalid dataUrl" }, { status: 400 });
     }
-    const redis = await getRedis();
-    await redis.set(keyFor(id), dataUrl);
+    if (!blobConfigured()) {
+      return NextResponse.json({ error: "BLOB_READ_WRITE_TOKEN not set — cannot store attachment." }, { status: 500 });
+    }
+    await putDataUrl(blobPathFor(id), dataUrl);
     return NextResponse.json({ ok: true });
   } catch (e) {
-    console.error("Redis write error (attachment/[id]):", e);
+    console.error("Attachment write error (attachment/[id]):", e);
     return NextResponse.json({ error: "Write failed" }, { status: 500 });
   }
 }
@@ -63,11 +69,12 @@ export async function DELETE(_req: NextRequest, context: { params: Promise<{ id:
   const { id } = await context.params;
   if (!id) return NextResponse.json({ error: "Missing id" }, { status: 400 });
   try {
+    await deleteBlob(blobPathFor(id)); // best-effort Blob delete
     const redis = await getRedis();
-    await redis.del(keyFor(id));
+    await redis.del(legacyKeyFor(id)); // clear any legacy copy too
     return NextResponse.json({ ok: true });
   } catch (e) {
-    console.error("Redis delete error (attachment/[id]):", e);
+    console.error("Attachment delete error (attachment/[id]):", e);
     return NextResponse.json({ error: "Delete failed" }, { status: 500 });
   }
 }

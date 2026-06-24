@@ -11,7 +11,7 @@
  * degrade gracefully when it's absent (e.g. local dev with no token).
  */
 
-import { put, del } from "@vercel/blob";
+import { put, del, get } from "@vercel/blob";
 
 export function blobConfigured(): boolean {
   return !!process.env.BLOB_READ_WRITE_TOKEN;
@@ -56,12 +56,32 @@ export async function putDataUrl(
   return url;
 }
 
-/** Best-effort delete of a Blob by URL. Never throws (an orphaned blob is
- *  harmless and cheap; we don't want cleanup to break a delete flow). */
-export async function deleteBlob(url: string): Promise<void> {
+/**
+ * Read a private Blob back as a base64 data URL (the shape the AI vision /
+ * document blocks and the legacy attachment readers expect). Returns null if
+ * the blob doesn't exist — callers fall back to the legacy Redis copy during
+ * the migration window. `ref` may be a pathname (e.g. "attachments/<id>") or
+ * a full Blob URL.
+ */
+export async function getDataUrl(ref: string): Promise<string | null> {
+  if (!blobConfigured()) return null;
+  try {
+    const res = await get(ref, { access: "private", token: process.env.BLOB_READ_WRITE_TOKEN });
+    if (!res || res.statusCode !== 200 || !res.stream) return null;
+    const buf = Buffer.from(await new Response(res.stream).arrayBuffer());
+    const contentType = res.blob.contentType || "application/octet-stream";
+    return `data:${contentType};base64,${buf.toString("base64")}`;
+  } catch {
+    return null;
+  }
+}
+
+/** Best-effort delete of a Blob by pathname OR URL. Never throws (an orphaned
+ *  blob is harmless and cheap; we don't want cleanup to break a delete flow). */
+export async function deleteBlob(pathnameOrUrl: string): Promise<void> {
   try {
     if (!blobConfigured()) return;
-    await del(url, { token: process.env.BLOB_READ_WRITE_TOKEN });
+    await del(pathnameOrUrl, { token: process.env.BLOB_READ_WRITE_TOKEN });
   } catch {
     // ignore
   }

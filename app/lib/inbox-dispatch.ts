@@ -35,6 +35,7 @@ import {
 import { parseMarketEdgeCsv } from "./marketedge-csv";
 import { parseSiaCsv } from "./sia-csv";
 import { parseBoostedCsv } from "./boosted-csv";
+import { putDataUrl } from "./blob-store";
 import { applySiaEntries, applyBoostedEntries, applyMarketEdgeRows, type StockPatch } from "./stock-patches";
 import { decodeBase64DataUrl } from "./csv-utils";
 import { extractResearchEntries, type SourceKey as ResearchSourceKey } from "@/app/api/research-scrape/route";
@@ -149,14 +150,15 @@ type AttachmentManifestEntry = {
   addedAt: string;
 };
 
-/** Append a strategist attachment to the Brief's dropbox. Mirrors the
- *  manual UI's split storage: lightweight manifest in pm:attachments,
- *  per-file dataUrl in pm:attachment:<id>. */
+/** Append a strategist attachment to the Brief's dropbox. Lightweight
+ *  manifest in pm:attachments (Redis); the per-file dataUrl is archived in
+ *  Vercel Blob at attachments/<id> (no longer Redis — multi-MB base64 was an
+ *  OOM source). */
 async function addStrategistAttachment(dataUrl: string, label: string): Promise<{ id: string }> {
   const redis = await getRedis();
   const id = `inbox-${Date.now().toString(36)}-${Math.random().toString(36).slice(2, 8)}`;
-  // 1) per-file payload.
-  await redis.set(`pm:attachment:${id}`, dataUrl);
+  // 1) per-file payload → Blob.
+  await putDataUrl(`attachments/${id}`, dataUrl);
   // 2) manifest append.
   const raw = await redis.get("pm:attachments");
   const existing: AttachmentManifestEntry[] = raw ? JSON.parse(raw) : [];
