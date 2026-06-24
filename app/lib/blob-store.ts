@@ -19,16 +19,19 @@ export function blobConfigured(): boolean {
 
 /**
  * Upload a base64 data URL (`data:<mime>;base64,<...>`) to Blob as a real
- * file with the right content-type, and return its public URL. Throws if the
- * token is missing or the dataUrl is malformed — callers decide whether to
- * swallow.
+ * file with the right content-type, and return its URL. Throws if the token
+ * is missing or the dataUrl is malformed — callers decide whether to swallow.
+ *
+ * Uses PRIVATE access (the store is configured private — authenticated reads
+ * only, which suits sensitive analyst research / screenshots). Server-side
+ * code reads these back with `get(pathname, { access: 'private' })`.
  *
  * By default the pathname is treated as STABLE: addRandomSuffix=false +
  * allowOverwrite=true, so re-uploading the same logical file (e.g. an analyst
  * report keyed by `<ticker>-<source>`) overwrites the same Blob slot instead
  * of leaving orphaned copies — mirroring how Redis SET on a fixed key behaved.
- * Pass { addRandomSuffix: true } for content that should get a fresh
- * unguessable URL each time (e.g. distinct screenshot attachments).
+ * Pass { addRandomSuffix: true } for content that should get a fresh URL each
+ * time (e.g. distinct screenshot attachments).
  */
 export async function putDataUrl(
   pathname: string,
@@ -44,23 +47,13 @@ export async function putDataUrl(
   const bytes = Buffer.from(dataUrl.slice(comma + 1), "base64");
   const addRandomSuffix = opts?.addRandomSuffix ?? false;
   const { url } = await put(pathname, bytes, {
-    access: "public",
+    access: "private",
     contentType,
     addRandomSuffix,
     allowOverwrite: !addRandomSuffix,
     token: process.env.BLOB_READ_WRITE_TOKEN,
   });
   return url;
-}
-
-/** Fetch a Blob URL back as a base64 data URL (the shape the AI vision /
- *  document blocks and the legacy readers expect). */
-export async function fetchAsDataUrl(url: string): Promise<string> {
-  const res = await fetch(url);
-  if (!res.ok) throw new Error(`Blob fetch failed (${res.status}) for ${url}`);
-  const contentType = res.headers.get("content-type") || "application/octet-stream";
-  const buf = Buffer.from(await res.arrayBuffer());
-  return `data:${contentType};base64,${buf.toString("base64")}`;
 }
 
 /** Best-effort delete of a Blob by URL. Never throws (an orphaned blob is
