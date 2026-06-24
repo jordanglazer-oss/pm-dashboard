@@ -1,5 +1,7 @@
 import { NextRequest, NextResponse } from "next/server";
 import { getRedis } from "@/app/lib/redis";
+import { blobConfigured } from "@/app/lib/blob-store";
+import { writeBackupBlob } from "@/app/lib/backup-store";
 
 /**
  * On-demand, purely-additive Redis backup.
@@ -18,11 +20,9 @@ import { getRedis } from "@/app/lib/redis";
  *   - Requires ?confirm=YES so an accidental prefetch / link-scan can't fire
  *     it (even though it's non-destructive).
  *
- * Restore is identical to the cron backups: read pm:backup:<stamp>, then
+ * Restore is identical to the cron backups: read the backup snapshot, then
  * redis.set(key, value) for each entry in snapshot.data.
  */
-
-const BACKUP_PREFIX = "pm:backup:";
 
 // The backup is a SINGLE JSON value, so it must stay small enough to write
 // on a memory-constrained instance. We therefore exclude (a) regenerable
@@ -100,25 +100,29 @@ export async function GET(req: NextRequest) {
       }
     }
 
-    // Full-precision ISO timestamp so a manual backup never collides with
-    // the hour-truncated cron key, and stays prunable by the cron's 60-day
-    // cutoff (Date.parse handles this format).
     const stamp = new Date().toISOString();
-    const backupKey = `${BACKUP_PREFIX}${stamp}`;
     const snapshot = {
       backedUpAt: stamp,
-      trigger: "manual-admin",
       keyCount: Object.keys(data).length,
       totalBytes,
       data,
     };
 
-    // The ONLY write — additive. No prune, no invariant mutation.
-    await redis.set(backupKey, JSON.stringify(snapshot));
+    // Write to Vercel Blob (durable, off-Redis). Additive — deletes nothing.
+    if (!blobConfigured()) {
+      return NextResponse.json(
+        { ok: false, error: "BLOB_READ_WRITE_TOKEN not set — cannot write backup to Blob." },
+        { status: 500 },
+      );
+    }
+    const fileStamp = stamp.replace(/[:.]/g, "-"); // filesystem-safe
+    const info = await writeBackupBlob(snapshot, fileStamp);
 
     return NextResponse.json({
       ok: true,
-      backupKey,
+      target: "blob",
+      backupKey: info.pathname,
+      backupUrl: info.url,
       keyCount: snapshot.keyCount,
       totalBytes: snapshot.totalBytes,
       keys: backupKeys.sort(),

@@ -1,62 +1,50 @@
 /**
  * GET /api/admin/list-backups
  *
- * Lists every pm:backup:* snapshot currently in Redis, with the
- * backedUpAt timestamp, byte size, and key count for each. Used to
- * pick a known-good backup to restore from when something has
- * corrupted live blobs.
+ * Lists every backup snapshot in Vercel Blob, newest first, with size +
+ * uploaded time. Pass ?inspect=YES to also download each snapshot and report
+ * its keyCount and whether the critical blobs (pm:stocks / pm:pim-models /
+ * pm:pim-positions) are populated — useful when picking a known-good backup
+ * to restore from. Without inspect it's metadata-only (fast, no downloads).
  *
  * Read-only.
  */
 
-import { NextResponse } from "next/server";
-import { getRedis } from "@/app/lib/redis";
+import { NextRequest, NextResponse } from "next/server";
+import { listBackupBlobs, readBackupBlob } from "@/app/lib/backup-store";
 
-type BackupBlob = {
-  backedUpAt?: string;
-  keyCount?: number;
-  totalBytes?: number;
-  data?: Record<string, unknown>;
-};
-
-export async function GET() {
+export async function GET(req: NextRequest) {
+  const inspect = req.nextUrl.searchParams.get("inspect") === "YES";
   try {
-    const redis = await getRedis();
-    // Scan for all pm:backup:* keys. Upstash redis client supports
-    // .keys() — small list (≤14 entries since the backup cron prunes
-    // past 14 days), no pagination needed.
-    const keys = (await redis.keys("pm:backup:*")) as string[];
-    keys.sort(); // dates sort lexically
+    const backups = await listBackupBlobs(); // newest first
+
     const summaries = await Promise.all(
-      keys.map(async (key) => {
-        const raw = await redis.get(key);
-        if (!raw) return { key, status: "empty" };
+      backups.map(async (b) => {
+        const base = {
+          pathname: b.pathname,
+          url: b.url,
+          sizeBytes: b.sizeBytes,
+          uploadedAt: b.uploadedAt,
+        };
+        if (!inspect) return base;
         try {
-          const parsed = JSON.parse(raw) as BackupBlob;
-          // Sanity check the critical blobs we care about so the user
-          // can pick a backup that actually has them populated.
-          const hasPositions = typeof parsed.data?.["pm:pim-positions"] === "string";
-          const hasModels = typeof parsed.data?.["pm:pim-models"] === "string";
-          const hasStocks = typeof parsed.data?.["pm:stocks"] === "string";
+          const snap = await readBackupBlob(b.pathname);
           return {
-            key,
-            backedUpAt: parsed.backedUpAt,
-            keyCount: parsed.keyCount,
-            totalBytes: parsed.totalBytes,
-            blobBytes: raw.length,
-            hasPimPositions: hasPositions,
-            hasPimModels: hasModels,
-            hasStocks: hasStocks,
+            ...base,
+            backedUpAt: snap.backedUpAt,
+            keyCount: snap.keyCount,
+            totalBytes: snap.totalBytes,
+            hasStocks: typeof snap.data?.["pm:stocks"] === "string",
+            hasPimModels: typeof snap.data?.["pm:pim-models"] === "string",
+            hasPimPositions: typeof snap.data?.["pm:pim-positions"] === "string",
           };
         } catch {
-          return { key, status: "parse-failed", blobBytes: raw.length };
+          return { ...base, status: "read-failed" };
         }
       }),
     );
-    return NextResponse.json({
-      generatedAt: new Date().toISOString(),
-      backups: summaries,
-    });
+
+    return NextResponse.json({ generatedAt: new Date().toISOString(), count: summaries.length, backups: summaries });
   } catch (e) {
     return NextResponse.json(
       { error: e instanceof Error ? e.message : "Failed to list backups" },

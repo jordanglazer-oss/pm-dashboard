@@ -1,10 +1,10 @@
 /**
  * POST /api/admin/restore-from-backup
- * Body: { backupDate: "YYYY-MM-DD", keys: string[], confirm: "YES" }
+ * Body: { pathname: "backups/<stamp>.json", keys: string[], confirm: "YES" }
  *
- * Restores SPECIFIC keys from a specific pm:backup:YYYY-MM-DD snapshot.
- * Used to recover from data corruption when a more targeted patch
- * would be risky.
+ * Restores SPECIFIC keys from a specific Blob backup snapshot (get the
+ * `pathname` from /api/admin/list-backups). Used to recover from data
+ * corruption when a more targeted patch would be risky.
  *
  * Hard gates:
  *   - Body must include `confirm: "YES"` exactly.
@@ -22,26 +22,20 @@
 
 import { NextRequest, NextResponse } from "next/server";
 import { getRedis } from "@/app/lib/redis";
-
-type BackupBlob = {
-  backedUpAt?: string;
-  keyCount?: number;
-  totalBytes?: number;
-  data?: Record<string, string>;
-};
+import { readBackupBlob } from "@/app/lib/backup-store";
 
 export async function POST(req: NextRequest) {
   try {
     const body = await req.json();
-    const backupDate = typeof body?.backupDate === "string" ? body.backupDate : "";
+    const pathname = typeof body?.pathname === "string" ? body.pathname : "";
     const keys: string[] = Array.isArray(body?.keys) ? body.keys.filter((k: unknown) => typeof k === "string") : [];
     const confirm = body?.confirm;
 
     if (confirm !== "YES") {
       return NextResponse.json({ error: "Body must include confirm: 'YES'" }, { status: 400 });
     }
-    if (!/^\d{4}-\d{2}-\d{2}$/.test(backupDate)) {
-      return NextResponse.json({ error: "backupDate must be YYYY-MM-DD" }, { status: 400 });
+    if (!pathname.startsWith("backups/")) {
+      return NextResponse.json({ error: "pathname must be a Blob backup path like 'backups/<stamp>.json' (see /api/admin/list-backups)" }, { status: 400 });
     }
     if (keys.length === 0) {
       return NextResponse.json({ error: "keys array required (e.g. ['pm:pim-positions'])" }, { status: 400 });
@@ -53,16 +47,12 @@ export async function POST(req: NextRequest) {
     }
 
     const redis = await getRedis();
-    const backupKey = `pm:backup:${backupDate}`;
-    const backupRaw = await redis.get(backupKey);
-    if (!backupRaw) {
-      return NextResponse.json({ error: `Backup ${backupKey} not found` }, { status: 404 });
-    }
-    let backup: BackupBlob;
+    const backupKey = pathname;
+    let backup: { backedUpAt?: string; data?: Record<string, string> };
     try {
-      backup = JSON.parse(backupRaw);
-    } catch {
-      return NextResponse.json({ error: `Backup ${backupKey} could not be parsed` }, { status: 500 });
+      backup = await readBackupBlob(pathname);
+    } catch (e) {
+      return NextResponse.json({ error: `Backup ${pathname} not found or unreadable: ${e instanceof Error ? e.message : String(e)}` }, { status: 404 });
     }
     const data = backup.data ?? {};
 

@@ -1,6 +1,8 @@
 import { NextRequest, NextResponse } from "next/server";
 import { getRedis } from "@/app/lib/redis";
 import { checkInvariants, persistInvariantResult } from "@/app/lib/redis-invariants";
+import { blobConfigured } from "@/app/lib/blob-store";
+import { writeBackupBlob, pruneBackupBlobs } from "@/app/lib/backup-store";
 
 /**
  * Daily Redis snapshot backup + invariant check.
@@ -53,7 +55,9 @@ const BACKUP_PREFIX = "pm:backup:";
 // this tier; risky operations also stash their own pre-image, and the
 // PM takes a manual backup-now before big changes. Bump this back up only
 // if the storage tier is upgraded.
-const BACKUP_RETENTION_DAYS = 5;
+// Backups now live in Vercel Blob (durable, off-Redis, doesn't compete with
+// live data for the 250 MB tier). Blob is cheap, so retention can be generous.
+const BACKUP_RETENTION_DAYS = 30;
 
 // Keys we intentionally do NOT back up:
 //   - pm:backup:*         previous backups (would recursively bloat)
@@ -167,31 +171,28 @@ export async function GET(req: NextRequest) {
       data,
     };
 
-    // ── 3. Prune old backups FIRST (before writing) ─────────────────
-    // Critical ordering: prune-then-write, NOT write-then-prune. On a
-    // memory-constrained tier the new backup's redis.set throws
-    // "OOM command not allowed" when the instance is full — and if the
-    // prune ran AFTER the write, that throw would skip the prune, leaving
-    // memory full so EVERY subsequent nightly run fails the same way (a
-    // silent death spiral — exactly what happened June 4 → June 21). By
-    // pruning expired backups first, each run reclaims space before it
-    // needs it, so the write succeeds and the cron self-heals. DEL is
-    // permitted even when OOM, so this works in the stuck state too.
-    const existingBackups = await scanAll(redis, `${BACKUP_PREFIX}*`);
-    const cutoffMs = Date.now() - BACKUP_RETENTION_DAYS * 24 * 60 * 60 * 1000;
-    const toDelete: string[] = [];
-    for (const key of existingBackups) {
-      const dateStr = key.slice(BACKUP_PREFIX.length);
-      const t = Date.parse(dateStr);
-      if (Number.isFinite(t) && t < cutoffMs) toDelete.push(key);
+    // ── 3. Write this run's backup to Vercel Blob ───────────────────
+    // Backups live in Blob now, NOT Redis: durable if Redis is ever lost,
+    // and they can't OOM the live-data tier. Blob writes are independent of
+    // Redis memory, so a full Redis no longer blocks the backup.
+    if (!blobConfigured()) {
+      return NextResponse.json(
+        { ok: false, error: "BLOB_READ_WRITE_TOKEN not set — cannot write backup to Blob." },
+        { status: 500 },
+      );
     }
-    for (const key of toDelete) {
-      await redis.del(key);
-    }
+    const fileStamp = stamp.replace(/[:.]/g, "-"); // filesystem-safe
+    const backupInfo = await writeBackupBlob(snapshot, fileStamp);
 
-    // ── 4. Write this run's backup ──────────────────────────────────
-    const backupKey = `${BACKUP_PREFIX}${stamp}`;
-    await redis.set(backupKey, JSON.stringify(snapshot));
+    // ── 4. Prune old Blob backups (retention) + purge any LEGACY Redis
+    //       backups (pm:backup:* are now dead weight in Redis). ────────
+    const prunedBlobs = await pruneBackupBlobs(BACKUP_RETENTION_DAYS);
+    const legacyRedisBackups = await scanAll(redis, `${BACKUP_PREFIX}*`);
+    for (const key of legacyRedisBackups) {
+      try { await redis.del(key); } catch { /* DEL is OOM-safe; ignore */ }
+    }
+    const backupKey = backupInfo.pathname;
+    const toDelete = prunedBlobs;
 
     // ── 5. Run invariant check inline ────────────────────────────────
     // Best-effort: a thrown invariant check must not turn a successful
@@ -219,10 +220,13 @@ export async function GET(req: NextRequest) {
 
     return NextResponse.json({
       ok: true,
+      target: "blob",
       backupKey,
+      backupUrl: backupInfo.url,
       keyCount: snapshot.keyCount,
       totalBytes: snapshot.totalBytes,
-      pruned: toDelete,
+      prunedBlobBackups: toDelete,
+      purgedLegacyRedisBackups: legacyRedisBackups.length,
       invariantCheck: invariantSummary,
       elapsedMs: Date.now() - startedAt,
     });
