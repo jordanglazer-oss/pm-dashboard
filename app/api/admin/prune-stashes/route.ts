@@ -1,5 +1,6 @@
 import { NextRequest, NextResponse } from "next/server";
 import { getRedis } from "@/app/lib/redis";
+import { pruneStashes } from "@/app/lib/stash-prune";
 
 /**
  * Free Redis memory by deleting old pre-operation rollback stashes.
@@ -27,45 +28,6 @@ import { getRedis } from "@/app/lib/redis";
  *   - Returns deleted / kept / skipped lists + bytes freed.
  */
 
-const STASH_MATCHES = ["pm:pre-*", "pm:*.pre-*"];
-// Extra one-off diagnostic keys safe to drop with the stashes.
-const EXTRA_KEYS = ["pm:stocks-write-trace"];
-
-async function scanAll(
-  redis: Awaited<ReturnType<typeof getRedis>>,
-  match: string,
-): Promise<string[]> {
-  const keys: string[] = [];
-  for await (const key of redis.scanIterator({ MATCH: match, COUNT: 200 })) {
-    if (Array.isArray(key)) keys.push(...key);
-    else keys.push(key);
-  }
-  return keys;
-}
-
-/** Parse a timestamp out of a stash key. Returns epoch ms or null. */
-function parseKeyTimestamp(key: string): number | null {
-  // ISO form anywhere in the key, e.g. 2026-06-20T19:40:03.945Z
-  const iso = key.match(/(\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}(?:\.\d+)?Z?)/);
-  if (iso) {
-    const t = Date.parse(iso[1]);
-    if (Number.isFinite(t)) return t;
-  }
-  // Date-only ISO, e.g. 2026-06-04
-  const dateOnly = key.match(/(\d{4}-\d{2}-\d{2})(?!T)/);
-  if (dateOnly) {
-    const t = Date.parse(dateOnly[1]);
-    if (Number.isFinite(t)) return t;
-  }
-  // Trailing 13-digit epoch ms, e.g. .pre-anchor-1778615023510
-  const epoch = key.match(/-(\d{13})(?:$|[^0-9])/);
-  if (epoch) {
-    const t = Number(epoch[1]);
-    if (Number.isFinite(t)) return t;
-  }
-  return null;
-}
-
 export async function GET(req: NextRequest) {
   const params = req.nextUrl.searchParams;
   if (params.get("confirm") !== "YES") {
@@ -80,41 +42,10 @@ export async function GET(req: NextRequest) {
   const dryRun = params.get("dryRun") === "YES";
   const daysRaw = parseInt(params.get("days") ?? "14", 10);
   const days = Number.isFinite(daysRaw) && daysRaw >= 0 ? daysRaw : 14;
-  const cutoffMs = Date.now() - days * 24 * 60 * 60 * 1000;
 
   try {
     const redis = await getRedis();
-
-    // Collect candidate keys from the stash patterns + extras.
-    const found = new Set<string>();
-    for (const m of STASH_MATCHES) {
-      for (const k of await scanAll(redis, m)) found.add(k);
-    }
-    for (const k of EXTRA_KEYS) {
-      if ((await redis.exists(k)) === 1) found.add(k);
-    }
-
-    const deleted: string[] = [];
-    const keptRecent: string[] = [];
-    const skippedNoDate: string[] = [];
-    let freedBytes = 0;
-
-    for (const key of found) {
-      // Belt-and-suspenders: only act on stash-shaped or extra keys.
-      const isStash = key.startsWith("pm:pre-") || /^pm:.+\.pre-/.test(key);
-      const isExtra = EXTRA_KEYS.includes(key);
-      if (!isStash && !isExtra) continue;
-
-      // Extras have no timestamp — treat as always-eligible.
-      const ts = isExtra ? 0 : parseKeyTimestamp(key);
-      if (ts === null) { skippedNoDate.push(key); continue; }
-      if (ts >= cutoffMs && !isExtra) { keptRecent.push(key); continue; }
-
-      const len = await redis.strLen(key).catch(() => 0);
-      freedBytes += len;
-      if (!dryRun) await redis.del(key);
-      deleted.push(key);
-    }
+    const { deleted, keptRecent, skippedNoDate, freedBytes } = await pruneStashes(redis, { days, dryRun });
 
     return NextResponse.json({
       ok: true,

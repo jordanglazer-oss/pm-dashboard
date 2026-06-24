@@ -3,6 +3,11 @@ import { getRedis } from "@/app/lib/redis";
 import { checkInvariants, persistInvariantResult } from "@/app/lib/redis-invariants";
 import { blobConfigured } from "@/app/lib/blob-store";
 import { writeBackupBlob, pruneBackupBlobs } from "@/app/lib/backup-store";
+import { pruneStashes } from "@/app/lib/stash-prune";
+
+// Dead pre-operation rollback stashes older than this are auto-purged each
+// nightly run so Redis self-maintains and never creeps back toward OOM.
+const STASH_RETENTION_DAYS = 14;
 
 /**
  * Daily Redis snapshot backup + invariant check.
@@ -194,6 +199,16 @@ export async function GET(req: NextRequest) {
     const backupKey = backupInfo.pathname;
     const toDelete = prunedBlobs;
 
+    // ── 4b. Auto-hygiene: purge dead rollback stashes (DEL-only, OOM-safe)
+    //        so Redis self-maintains. Best-effort — never fail the backup. ──
+    let stashesPurged = 0;
+    try {
+      const res = await pruneStashes(redis, { days: STASH_RETENTION_DAYS });
+      stashesPurged = res.deleted.length;
+    } catch (e) {
+      console.error("[backup-redis] stash prune failed (backup still ok):", e);
+    }
+
     // ── 5. Run invariant check inline ────────────────────────────────
     // Best-effort: a thrown invariant check must not turn a successful
     // backup into a failed response. We log + carry on if it errors.
@@ -227,6 +242,7 @@ export async function GET(req: NextRequest) {
       totalBytes: snapshot.totalBytes,
       prunedBlobBackups: toDelete,
       purgedLegacyRedisBackups: legacyRedisBackups.length,
+      stashesPurged,
       invariantCheck: invariantSummary,
       elapsedMs: Date.now() - startedAt,
     });
