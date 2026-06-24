@@ -19,11 +19,22 @@ export function blobConfigured(): boolean {
 
 /**
  * Upload a base64 data URL (`data:<mime>;base64,<...>`) to Blob as a real
- * file with the right content-type, and return its public URL. The URL
- * carries a random suffix so it is unguessable. Throws if the token is
- * missing or the dataUrl is malformed — callers decide whether to swallow.
+ * file with the right content-type, and return its public URL. Throws if the
+ * token is missing or the dataUrl is malformed — callers decide whether to
+ * swallow.
+ *
+ * By default the pathname is treated as STABLE: addRandomSuffix=false +
+ * allowOverwrite=true, so re-uploading the same logical file (e.g. an analyst
+ * report keyed by `<ticker>-<source>`) overwrites the same Blob slot instead
+ * of leaving orphaned copies — mirroring how Redis SET on a fixed key behaved.
+ * Pass { addRandomSuffix: true } for content that should get a fresh
+ * unguessable URL each time (e.g. distinct screenshot attachments).
  */
-export async function putDataUrl(pathname: string, dataUrl: string): Promise<string> {
+export async function putDataUrl(
+  pathname: string,
+  dataUrl: string,
+  opts?: { addRandomSuffix?: boolean },
+): Promise<string> {
   const comma = dataUrl.indexOf(",");
   if (!dataUrl.startsWith("data:") || comma < 0) {
     throw new Error("putDataUrl: not a data URL");
@@ -31,10 +42,12 @@ export async function putDataUrl(pathname: string, dataUrl: string): Promise<str
   const header = dataUrl.slice(5, comma); // e.g. "application/pdf;base64"
   const contentType = header.split(";")[0] || "application/octet-stream";
   const bytes = Buffer.from(dataUrl.slice(comma + 1), "base64");
+  const addRandomSuffix = opts?.addRandomSuffix ?? false;
   const { url } = await put(pathname, bytes, {
     access: "public",
     contentType,
-    addRandomSuffix: true,
+    addRandomSuffix,
+    allowOverwrite: !addRandomSuffix,
     token: process.env.BLOB_READ_WRITE_TOKEN,
   });
   return url;
