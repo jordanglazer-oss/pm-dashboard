@@ -11,14 +11,7 @@
  */
 
 import { NextRequest, NextResponse } from "next/server";
-import { getRedis } from "@/app/lib/redis";
-
-type BackupBlob = {
-  backedUpAt?: string;
-  keyCount?: number;
-  totalBytes?: number;
-  data?: Record<string, unknown>;
-};
+import { findBackupsByDate, readBackupBlob, type BackupSnapshot } from "@/app/lib/backup-store";
 
 export async function GET(req: NextRequest) {
   try {
@@ -27,17 +20,18 @@ export async function GET(req: NextRequest) {
     if (!date || !/^\d{4}-\d{2}-\d{2}$/.test(date)) {
       return NextResponse.json({ error: "date query param required (YYYY-MM-DD)" }, { status: 400 });
     }
-    const redis = await getRedis();
-    const key = `pm:backup:${date}`;
-    const raw = await redis.get(key);
-    if (!raw) {
-      return NextResponse.json({ exists: false, key });
+    // Backups live in Blob now. A given UTC date may have multiple snapshots
+    // (the cron can run more than once a day) — inspect the newest that day.
+    const matches = await findBackupsByDate(date);
+    if (matches.length === 0) {
+      return NextResponse.json({ exists: false, date });
     }
-    let parsed: BackupBlob;
+    const key = matches[0].pathname;
+    let parsed: BackupSnapshot;
     try {
-      parsed = JSON.parse(raw);
-    } catch {
-      return NextResponse.json({ exists: true, key, parseFailed: true, rawBytes: raw.length });
+      parsed = await readBackupBlob(key);
+    } catch (e) {
+      return NextResponse.json({ exists: true, key, parseFailed: true, error: e instanceof Error ? e.message : String(e) });
     }
     const data = parsed.data ?? {};
     // Sanity-check each critical blob by parsing it out of the backup
@@ -80,7 +74,7 @@ export async function GET(req: NextRequest) {
       backedUpAt: parsed.backedUpAt,
       keyCount: parsed.keyCount,
       totalBytes: parsed.totalBytes,
-      blobBytes: raw.length,
+      blobBytes: matches[0].sizeBytes,
       critical: {
         pimPositions: summarize("pm:pim-positions"),
         pimModels: summarize("pm:pim-models"),

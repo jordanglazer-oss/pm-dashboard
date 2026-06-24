@@ -10,20 +10,7 @@
  */
 
 import { NextResponse } from "next/server";
-import { getRedis } from "@/app/lib/redis";
-
-type BackupBlob = {
-  backedUpAt?: string;
-  keyCount?: number;
-  totalBytes?: number;
-  data?: Record<string, string>;
-};
-
-function isoDateNDaysAgo(n: number): string {
-  const d = new Date();
-  d.setUTCDate(d.getUTCDate() - n);
-  return d.toISOString().slice(0, 10);
-}
+import { listBackupBlobs, readBackupBlob } from "@/app/lib/backup-store";
 
 function summarize(data: Record<string, string> | undefined, k: string): unknown {
   const v = data?.[k];
@@ -60,31 +47,28 @@ function summarize(data: Record<string, string> | undefined, k: string): unknown
 
 export async function GET() {
   try {
-    const redis = await getRedis();
-    const dates = Array.from({ length: 30 }, (_, i) => isoDateNDaysAgo(i));
+    // Backups live in Blob now — list them all (newest first) and summarize
+    // each, instead of probing 30 fixed dates in Redis.
+    const blobs = await listBackupBlobs();
     const found: Array<{
-      date: string;
+      pathname: string;
+      uploadedAt: string;
       backedUpAt?: string;
       blobBytes: number;
       pimPositions: unknown;
       pimModels: unknown;
       stocks: unknown;
     }> = [];
-    const missing: string[] = [];
 
-    for (const d of dates) {
-      const raw = await redis.get(`pm:backup:${d}`);
-      if (!raw) {
-        missing.push(d);
-        continue;
-      }
-      let parsed: BackupBlob | null = null;
+    for (const b of blobs) {
+      let snap: { backedUpAt?: string; data?: Record<string, string> } | null = null;
       try {
-        parsed = JSON.parse(raw);
+        snap = await readBackupBlob(b.pathname);
       } catch {
         found.push({
-          date: d,
-          blobBytes: raw.length,
+          pathname: b.pathname,
+          uploadedAt: b.uploadedAt,
+          blobBytes: b.sizeBytes,
           pimPositions: { present: false, parseFailed: true },
           pimModels: { present: false, parseFailed: true },
           stocks: { present: false, parseFailed: true },
@@ -92,22 +76,20 @@ export async function GET() {
         continue;
       }
       found.push({
-        date: d,
-        backedUpAt: parsed?.backedUpAt,
-        blobBytes: raw.length,
-        pimPositions: summarize(parsed?.data, "pm:pim-positions"),
-        pimModels: summarize(parsed?.data, "pm:pim-models"),
-        stocks: summarize(parsed?.data, "pm:stocks"),
+        pathname: b.pathname,
+        uploadedAt: b.uploadedAt,
+        backedUpAt: snap?.backedUpAt,
+        blobBytes: b.sizeBytes,
+        pimPositions: summarize(snap?.data, "pm:pim-positions"),
+        pimModels: summarize(snap?.data, "pm:pim-models"),
+        stocks: summarize(snap?.data, "pm:stocks"),
       });
     }
 
     return NextResponse.json({
       generatedAt: new Date().toISOString(),
-      datesChecked: dates,
       foundCount: found.length,
-      missingCount: missing.length,
       found,
-      missing,
     });
   } catch (e) {
     return NextResponse.json(

@@ -1,5 +1,6 @@
 import { NextResponse } from "next/server";
 import { getRedis } from "@/app/lib/redis";
+import { findBackupsByDate, readBackupBlob } from "@/app/lib/backup-store";
 import type {
   PimHolding,
   PimModelGroup,
@@ -81,15 +82,21 @@ export async function GET(req: Request) {
     const dateKey = (d: Date) => `${d.getUTCFullYear()}-${pad(d.getUTCMonth() + 1)}-${pad(d.getUTCDate())}`;
     const today = new Date();
     const yesterday = new Date(today.getTime() - 86400000);
-    const backupKeys = [`pm:backup:${dateKey(today)}`, `pm:backup:${dateKey(yesterday)}`];
+    // Backups live in Blob now — gather today's + yesterday's snapshots
+    // (newest first) and probe each for a pre-swap price.
+    const dateMatches = [
+      ...(await findBackupsByDate(dateKey(today))),
+      ...(await findBackupsByDate(dateKey(yesterday))),
+    ];
     const backupPricesByGroup: Record<string, number> = {};
     let backupSourceUsed: string | null = null;
 
-    for (const bkKey of backupKeys) {
-      const bkRaw = await redis.get(bkKey);
-      if (!bkRaw) continue;
+    for (const match of dateMatches) {
+      let bk: { data?: Record<string, string> };
       try {
-        const bk = JSON.parse(bkRaw) as { data?: Record<string, string> };
+        bk = await readBackupBlob(match.pathname);
+      } catch { continue; }
+      try {
         const snapStateRaw = bk.data?.[PIM_STATE_KEY];
         if (!snapStateRaw) continue;
         const snapState = JSON.parse(snapStateRaw) as PimPortfolioState;
@@ -104,7 +111,7 @@ export async function GET(req: Request) {
           }
         }
         if (foundAny) {
-          backupSourceUsed = bkKey;
+          backupSourceUsed = match.pathname;
           break; // prefer the first backup that has any data
         }
       } catch { /* ignore malformed backup */ }

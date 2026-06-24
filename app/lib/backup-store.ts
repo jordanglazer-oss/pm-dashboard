@@ -68,6 +68,14 @@ export async function listBackupBlobs(): Promise<BackupInfo[]> {
   return out;
 }
 
+/** Find all backups whose pathname falls on a given UTC date (YYYY-MM-DD),
+ *  newest first. The pathname is `backups/<sanitized-iso>.json`, so the date
+ *  is the leading 10 chars after the prefix. */
+export async function findBackupsByDate(dateStr: string): Promise<BackupInfo[]> {
+  const all = await listBackupBlobs();
+  return all.filter((b) => b.pathname.startsWith(`${PREFIX}${dateStr}`));
+}
+
 /** Read + parse a backup's full content from Blob. */
 export async function readBackupBlob(pathname: string): Promise<BackupSnapshot> {
   const res = await get(pathname, { access: "private", token: tok() });

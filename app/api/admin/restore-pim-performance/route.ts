@@ -1,10 +1,10 @@
 import { NextResponse } from "next/server";
 import { getRedis } from "@/app/lib/redis";
+import { listBackupBlobs, findBackupsByDate, readBackupBlob, type BackupInfo } from "@/app/lib/backup-store";
 import type { PimPerformanceData, PimModelPerformance, AppendixData, AppendixModelLedger, PimProfileType } from "@/app/lib/pim-types";
 
 const PERF_KEY = "pm:pim-performance";
 const APPENDIX_KEY = "pm:appendix-daily-values";
-const BACKUP_PREFIX = "pm:backup:";
 
 /**
  * POST /api/admin/restore-pim-performance/from-appendix
@@ -204,46 +204,28 @@ async function restoreFromAppendix(redis: Awaited<ReturnType<typeof getRedis>>) 
  * pre-restore-<timestamp> first, so a botched restore is reversible.
  */
 
-type BackupBlob = {
-  backedUpAt: string;
-  keyCount: number;
-  totalBytes: number;
-  data: Record<string, string>;
-};
-
-async function listBackupDates(redis: Awaited<ReturnType<typeof getRedis>>): Promise<string[]> {
-  // Backup retention is 14 days (see /api/cron/backup-redis), so KEYS
-  // returns at most ~14 entries — safe to use here.
-  const keys = await redis.keys(`${BACKUP_PREFIX}*`);
-  const dates: string[] = [];
-  for (const k of keys) {
-    const date = k.slice(BACKUP_PREFIX.length);
-    if (/^\d{4}-\d{2}-\d{2}$/.test(date)) dates.push(date);
-  }
-  return dates.sort().reverse(); // newest first
-}
-
 export async function GET() {
   try {
     const redis = await getRedis();
-    const dates = await listBackupDates(redis);
-    const backupSummary: Array<{ date: string; hasPerf: boolean; modelCount?: number; perfLastUpdated?: string }> = [];
-    for (const date of dates.slice(0, 10)) {
-      const raw = await redis.get(`${BACKUP_PREFIX}${date}`);
-      if (!raw) { backupSummary.push({ date, hasPerf: false }); continue; }
-      const blob = JSON.parse(raw) as BackupBlob;
+    const blobs = await listBackupBlobs(); // newest first
+    const backupSummary: Array<{ pathname: string; uploadedAt: string; hasPerf: boolean; modelCount?: number; perfLastUpdated?: string }> = [];
+    for (const b of blobs.slice(0, 10)) {
+      let blob: { data?: Record<string, string> };
+      try { blob = await readBackupBlob(b.pathname); }
+      catch { backupSummary.push({ pathname: b.pathname, uploadedAt: b.uploadedAt, hasPerf: false }); continue; }
       const perfRaw = blob.data?.[PERF_KEY];
-      if (!perfRaw) { backupSummary.push({ date, hasPerf: false }); continue; }
+      if (!perfRaw) { backupSummary.push({ pathname: b.pathname, uploadedAt: b.uploadedAt, hasPerf: false }); continue; }
       try {
         const perf = JSON.parse(perfRaw) as { models?: unknown[]; lastUpdated?: string };
         backupSummary.push({
-          date,
+          pathname: b.pathname,
+          uploadedAt: b.uploadedAt,
           hasPerf: true,
           modelCount: Array.isArray(perf.models) ? perf.models.length : undefined,
           perfLastUpdated: perf.lastUpdated,
         });
       } catch {
-        backupSummary.push({ date, hasPerf: false });
+        backupSummary.push({ pathname: b.pathname, uploadedAt: b.uploadedAt, hasPerf: false });
       }
     }
 
@@ -342,19 +324,18 @@ export async function POST(req: Request) {
       if (!/^\d{4}-\d{2}-\d{2}$/.test(requestedDate)) {
         return NextResponse.json({ error: "date must be YYYY-MM-DD" }, { status: 400 });
       }
-      const raw = await redis.get(`${BACKUP_PREFIX}${requestedDate}`);
-      if (!raw) return NextResponse.json({ error: `no backup for ${requestedDate}` }, { status: 404 });
-      const blob = JSON.parse(raw) as BackupBlob;
+      const matches = await findBackupsByDate(requestedDate);
+      if (matches.length === 0) return NextResponse.json({ error: `no backup for ${requestedDate}` }, { status: 404 });
+      const blob = await readBackupBlob(matches[0].pathname);
       perfRaw = blob.data?.[PERF_KEY] || null;
       if (!perfRaw) return NextResponse.json({ error: `${requestedDate} backup has no ${PERF_KEY}` }, { status: 404 });
-      chosenDate = requestedDate;
+      chosenDate = matches[0].pathname;
     } else {
-      const dates = await listBackupDates(redis);
-      for (const date of dates) {
-        const raw = await redis.get(`${BACKUP_PREFIX}${date}`);
-        if (!raw) continue;
-        const blob = JSON.parse(raw) as BackupBlob;
-        if (blob.data?.[PERF_KEY]) { perfRaw = blob.data[PERF_KEY]; chosenDate = date; break; }
+      const blobs: BackupInfo[] = await listBackupBlobs(); // newest first
+      for (const b of blobs) {
+        let blob: { data?: Record<string, string> };
+        try { blob = await readBackupBlob(b.pathname); } catch { continue; }
+        if (blob.data?.[PERF_KEY]) { perfRaw = blob.data[PERF_KEY]; chosenDate = b.pathname; break; }
       }
       if (!perfRaw) return NextResponse.json({ error: "no backup contains pm:pim-performance" }, { status: 404 });
     }
