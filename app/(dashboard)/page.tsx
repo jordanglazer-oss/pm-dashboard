@@ -5,6 +5,7 @@ import { useStocks } from "@/app/lib/StockContext";
 import { PortfolioOverview } from "@/app/components/PortfolioOverview";
 import { RegimeStrip } from "@/app/components/RegimeStrip";
 import { ChangeMonitor } from "@/app/components/ChangeMonitor";
+import { ScoreCalibration } from "@/app/components/ScoreCalibration";
 import { regimeMultiplier, isOffensiveSector, normalizeSector } from "@/app/lib/scoring";
 import type { Stock, ScoreKey, InstrumentType } from "@/app/lib/types";
 import { INSTRUMENT_LABELS } from "@/app/lib/types";
@@ -349,6 +350,11 @@ export default function DashboardPage() {
         </div>
           );
         })()}
+
+        {/* Score-calibration — "does the score actually predict returns?"
+            Collapsed by default; computes on open (expensive Yahoo fetch,
+            cached server-side in pm:score-calibration). */}
+        <ScoreCalibration />
       </div>
     </main>
   );
