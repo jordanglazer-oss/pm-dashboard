@@ -43,7 +43,10 @@ export async function POST(req: NextRequest) {
     });
     return NextResponse.json({
       clientToken,
-      uploadUrl: `https://blob.vercel-storage.com/${pathname}`,
+      // The Blob UPLOAD endpoint (not the storage host): a PUT to the API URL
+      // with the pathname as a query param, mirroring what @vercel/blob's
+      // put() does internally (requestApi(`/?pathname=...`)).
+      uploadUrl: `https://vercel.com/api/blob/?pathname=${encodeURIComponent(pathname)}`,
       apiVersion: 12, // Vercel Blob upload API version the script must send.
       access: "private",
     });
