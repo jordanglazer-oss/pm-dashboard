@@ -150,16 +150,30 @@ type AttachmentManifestEntry = {
   addedAt: string;
 };
 
-/** Append a strategist attachment to the Brief's dropbox. Lightweight
- *  manifest in pm:attachments (Redis); the per-file dataUrl is archived in
- *  Vercel Blob at attachments/<id> (no longer Redis — multi-MB base64 was an
- *  OOM source). */
+/** Pick the manifest id (and thus Blob path) for a strategist attachment.
+ *  Two FIXED author slots — a file naming "Newton" (Mark Newton) or "Lee"
+ *  (Tom Lee) reuses a stable id, so a fresh presentation OVERWRITES the prior
+ *  one (the dropbox holds at most one of each). Anything else gets a unique
+ *  id and appends to the general Strategist dropbox as before. */
+function strategistSlotId(label: string): string {
+  const l = label.toLowerCase();
+  if (/\bnewton\b/.test(l)) return "strategist-newton";
+  if (/\blee\b/.test(l)) return "strategist-lee";
+  return `inbox-${Date.now().toString(36)}-${Math.random().toString(36).slice(2, 8)}`;
+}
+
+/** Append (or, for an author slot, OVERWRITE) a strategist attachment in the
+ *  Brief's dropbox. Lightweight manifest in pm:attachments (Redis); the
+ *  per-file dataUrl is archived in Vercel Blob at attachments/<id> (no longer
+ *  Redis — multi-MB base64 was an OOM source). */
 async function addStrategistAttachment(dataUrl: string, label: string): Promise<{ id: string }> {
   const redis = await getRedis();
-  const id = `inbox-${Date.now().toString(36)}-${Math.random().toString(36).slice(2, 8)}`;
-  // 1) per-file payload → Blob.
+  const id = strategistSlotId(label);
+  // 1) per-file payload → Blob. A fixed author-slot id maps to a stable path
+  //    (putDataUrl defaults to allowOverwrite), so it replaces the old file.
   await putDataUrl(`attachments/${id}`, dataUrl);
-  // 2) manifest append.
+  // 2) manifest: drop any existing entry with this id (the author slot being
+  //    replaced), then append the fresh one.
   const raw = await redis.get("pm:attachments");
   const existing: AttachmentManifestEntry[] = raw ? JSON.parse(raw) : [];
   const entry: AttachmentManifestEntry = {
@@ -168,7 +182,7 @@ async function addStrategistAttachment(dataUrl: string, label: string): Promise<
     section: "strategistReports",
     addedAt: new Date().toISOString(),
   };
-  await redis.set("pm:attachments", JSON.stringify([...existing, entry]));
+  await redis.set("pm:attachments", JSON.stringify([...existing.filter((e) => e.id !== id), entry]));
   return { id };
 }
 
