@@ -49,7 +49,7 @@ export function middleware(req: NextRequest) {
   // ingest endpoint here. NOTE: only the ingest endpoint is exempted;
   // /api/inbox/status stays cookie-gated because it's called from the
   // browser (the /inbox admin page) and exposes the recent-events log.
-  if (pathname === "/api/inbox/ingest") {
+  if (pathname === "/api/inbox/ingest" || pathname === "/api/inbox/blob-token") {
     return NextResponse.next();
   }
 

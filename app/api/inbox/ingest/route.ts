@@ -15,7 +15,7 @@ import {
   type ReportMeta,
 } from "@/app/lib/analyst-snapshots";
 import { canonicalTicker, tickersEqual } from "@/app/lib/ticker";
-import { blobConfigured, putDataUrl } from "@/app/lib/blob-store";
+import { blobConfigured, putDataUrl, getDataUrl, deleteBlob } from "@/app/lib/blob-store";
 import { appendInboxEvent } from "@/app/lib/inbox-log";
 import { classifySubject, dispatchInbox } from "@/app/lib/inbox-dispatch";
 
@@ -165,7 +165,7 @@ export async function POST(request: NextRequest) {
   }
 
   // ── Parse body ──────────────────────────────────────────────────────
-  let body: { subject?: string; sender?: string; filename?: string; dataUrl?: string; ping?: boolean };
+  let body: { subject?: string; sender?: string; filename?: string; dataUrl?: string; blobPathname?: string; ping?: boolean };
   try {
     body = await request.json();
   } catch {
@@ -184,11 +184,22 @@ export async function POST(request: NextRequest) {
   const subject = (body.subject ?? "").trim();
   const sender = body.sender;
   const filename = body.filename;
-  const dataUrl = body.dataUrl ?? "";
+  let dataUrl = body.dataUrl ?? "";
+
+  // Large-attachment path: the Apps Script uploaded the file straight to Blob
+  // (bypassing the 4.5 MB function limit) and sent only its staging pathname.
+  // Hydrate the content here, then delete the staging copy — the dataUrl
+  // string now holds it, and the handlers re-store it at its final Blob path.
+  const stagingPath = typeof body.blobPathname === "string" && /^inbox-staging\/[A-Za-z0-9._-]+$/.test(body.blobPathname) ? body.blobPathname : "";
+  if (!dataUrl && stagingPath) {
+    const hydrated = await getDataUrl(stagingPath);
+    if (hydrated) dataUrl = hydrated;
+    await deleteBlob(stagingPath); // best-effort cleanup
+  }
 
   if (!subject || !dataUrl) {
-    await appendInboxEvent({ status: "error", subject, sender, filename, message: "Missing subject or dataUrl" });
-    return NextResponse.json({ error: "Missing subject or dataUrl" }, { status: 400 });
+    await appendInboxEvent({ status: "error", subject, sender, filename, message: "Missing subject or dataUrl/blob" });
+    return NextResponse.json({ error: "Missing subject or dataUrl/blobPathname" }, { status: 400 });
   }
 
   // ── New-kinds dispatcher ───────────────────────────────────────────
