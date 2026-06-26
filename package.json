@@ -13,6 +13,7 @@
     "@vercel/blob": "^2.4.1",
     "@vercel/kv": "^3.0.0",
     "cheerio": "^1.2.0",
+    "jose": "^6.2.3",
     "lightweight-charts": "^5.1.0",
     "next": "16.1.6",
     "react": "19.2.3",
