@@ -109,16 +109,33 @@ export async function GET(req: NextRequest) {
     return NextResponse.json({ ok: false, step: "token", tokenEndpoint, error: e instanceof Error ? e.message : String(e) }, { status: 502 });
   }
 
-  // 4) best-effort data probe (proves the Estimates entitlement). Never returns the token.
-  let dataStatus = 0, dataSample = "";
+  // 4a) ?endpoints=1 → fetch the API's own OpenAPI spec (authenticated with
+  //     our token) and list the real endpoint paths, so we stop guessing.
+  if (sp.get("endpoints") === "1") {
+    try {
+      const specUrl = "https://api.factset.com/content/factset-estimates/v2/spec/swagger.yaml";
+      const sr = await fetch(specUrl, { headers: { authorization: `Bearer ${accessToken}`, accept: "text/yaml, text/plain, */*" } });
+      const text = await sr.text();
+      const paths = [...new Set([...text.matchAll(/^\s{1,6}(\/[A-Za-z0-9_\-/]+):/gm)].map((m) => m[1]))];
+      return NextResponse.json({ ok: true, tokenOk: true, specStatus: sr.status, endpoints: paths, hint: paths.length ? "Pick the price-target endpoint and re-run with &path=/content/factset-estimates/v2/<that>" : "spec did not list paths — see specSample", specSample: paths.length ? undefined : text.slice(0, 600) });
+    } catch (e) {
+      return NextResponse.json({ ok: true, tokenOk: true, specError: e instanceof Error ? e.message : String(e) });
+    }
+  }
+
+  // 4b) best-effort data probe (proves the Estimates entitlement). Path is
+  //     configurable so we can try the right one without redeploying.
+  const path = sp.get("path") || "/content/factset-estimates/v2/rolling-consensus";
+  const metrics = sp.get("metrics") || "PARENT_PRICE_TGT_MEDIAN";
+  let dataStatus = 0, dataSample = "", dataUrlTried = "";
   try {
-    const url = `https://api.factset.com/content/factset-estimates/v2/consensus?ids=${encodeURIComponent(ticker)}&metrics=PRICE_TGT&periodicity=ANN`;
-    const dr = await fetch(url, { headers: { authorization: `Bearer ${accessToken}`, accept: "application/json" } });
+    dataUrlTried = `https://api.factset.com${path}?ids=${encodeURIComponent(ticker)}&metrics=${encodeURIComponent(metrics)}`;
+    const dr = await fetch(dataUrlTried, { headers: { authorization: `Bearer ${accessToken}`, accept: "application/json" } });
     dataStatus = dr.status;
-    dataSample = (await dr.text()).slice(0, 800);
+    dataSample = (await dr.text()).slice(0, 900);
   } catch (e) {
     dataSample = "data fetch threw: " + (e instanceof Error ? e.message : String(e));
   }
 
-  return NextResponse.json({ ok: true, step: "done", tokenOk: true, tokenEndpoint, audMode, dataStatus, dataSample });
+  return NextResponse.json({ ok: true, step: "done", tokenOk: true, tokenEndpoint, audMode, dataUrlTried, dataStatus, dataSample });
 }
