@@ -109,6 +109,23 @@ export async function GET(req: NextRequest) {
     return NextResponse.json({ ok: false, step: "token", tokenEndpoint, error: e instanceof Error ? e.message : String(e) }, { status: 502 });
   }
 
+  // 4) ?probe=<path[?query]> → fetch ANY FactSet API path with our token and
+  //    report status + a sample. Lets us check which products we're entitled
+  //    to (200 = yes, 403 = not entitled) without redeploying. e.g.
+  //    ?probe=/content/factset-fundamentals/v2/spec/swagger.yaml
+  const probe = sp.get("probe");
+  if (probe) {
+    try {
+      const url = "https://api.factset.com" + (probe.startsWith("/") ? probe : "/" + probe);
+      const pr = await fetch(url, { headers: { authorization: `Bearer ${accessToken}`, accept: "application/json, text/yaml, */*" } });
+      const text = await pr.text();
+      const paths = [...new Set([...text.matchAll(/^\s{1,6}(\/[A-Za-z0-9_\-/]+):/gm)].map((m) => m[1]))];
+      return NextResponse.json({ ok: true, tokenOk: true, probeUrl: url, status: pr.status, entitled: pr.status >= 200 && pr.status < 300, endpoints: paths.length ? paths : undefined, sample: text.slice(0, 1200) });
+    } catch (e) {
+      return NextResponse.json({ ok: true, tokenOk: true, probeError: e instanceof Error ? e.message : String(e) });
+    }
+  }
+
   // 4a) ?endpoints=1 → fetch the API's own OpenAPI spec (authenticated with
   //     our token) and list the real endpoint paths, so we stop guessing.
   if (sp.get("endpoints") === "1") {
