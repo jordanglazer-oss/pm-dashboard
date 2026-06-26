@@ -32,7 +32,33 @@ export async function GET(req: NextRequest) {
   const raw = process.env.FACTSET_CREDENTIALS;
   if (!raw) return NextResponse.json({ ok: false, step: "env", error: "FACTSET_CREDENTIALS not set in this environment." }, { status: 500 });
   let creds: Creds;
-  try { creds = JSON.parse(raw); } catch { return NextResponse.json({ ok: false, step: "parse", error: "FACTSET_CREDENTIALS is not valid JSON." }, { status: 500 }); }
+  try {
+    creds = JSON.parse(raw);
+  } catch {
+    // Safe structural diagnostics only — no key material. Try common repairs
+    // so we can tell whitespace/BOM/wrapping/smart-quote issues apart.
+    const trimmed = raw.trim().replace(/^﻿/, "");
+    const tryParse = (s: string) => { try { JSON.parse(s); return true; } catch { return false; } };
+    const unwrapped = (trimmed.startsWith('"') && trimmed.endsWith('"')) ? trimmed.slice(1, -1).replace(/\\"/g, '"') : trimmed;
+    const deSmart = trimmed.replace(/[“”]/g, '"').replace(/[‘’]/g, "'");
+    return NextResponse.json({
+      ok: false,
+      step: "parse",
+      error: "FACTSET_CREDENTIALS is set but is not valid JSON.",
+      diag: {
+        length: raw.length,
+        firstChar: JSON.stringify(raw.slice(0, 1)),
+        last2: JSON.stringify(raw.slice(-2)),
+        startsWithBrace: trimmed.startsWith("{"),
+        endsWithBrace: trimmed.endsWith("}"),
+        hasBOM: raw.charCodeAt(0) === 0xFEFF,
+        hasSmartQuotes: /[“”‘’]/.test(raw),
+        looksDoubleWrapped: trimmed.startsWith('"') || trimmed.startsWith("'"),
+        containsJwk: raw.includes("jwk"),
+        fixThatWorks: tryParse(trimmed) ? "trim/BOM" : tryParse(unwrapped) ? "remove-outer-quotes" : tryParse(deSmart) ? "straight-quotes" : "none-of-the-common-fixes",
+      },
+    }, { status: 500 });
+  }
   if (!creds.clientId || !creds.jwk || !creds.wellKnownUri) {
     return NextResponse.json({ ok: false, step: "shape", error: "Credential missing clientId / jwk / wellKnownUri.", has: { clientId: !!creds.clientId, jwk: !!creds.jwk, wellKnownUri: !!creds.wellKnownUri } }, { status: 500 });
   }
