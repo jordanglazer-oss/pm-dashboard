@@ -630,12 +630,21 @@ For every data point you cite, label its source:
   - "web" — value came from a web_search result (sourceDetail = source name + date, e.g. "Apple Q4 2025 press release, Oct 30 2025")
   - "model" — qualitative inference based on company description / industry (use sparingly, only for narrative claims)
 
+CRITICAL — FACTSET TAKES PRECEDENCE IN SOURCING (this overrides the labels above):
+When a figure appears in the FACTSET FUNDAMENTALS block, you MUST tag that dataPoint source: "factset". This is non-negotiable:
+  - Do NOT tag a FactSet figure "model" — FactSet numbers are REAL reported data, never your own inference. "model" is ONLY for qualitative narrative with no numeric source.
+  - Do NOT tag a FactSet figure "web" — even when a web_search result shows the SAME number, FactSet is the source of record. Use "web" ONLY for a fact that is NOT in any data block (a breaking event, a guidance change issued after the FactSet data date, a named analyst note).
+  - Do NOT tag a FactSet figure "yahoo" — prefer the FACTSET block's value and tag it "factset".
+  - The growth, relativeValuation, historicalValuation, leverageCoverage, and cashFlowQuality categories are scored FROM the FactSet block: nearly every dataPoint in them must be source: "factset". The ONLY legitimate non-factset dataPoint in these is a PEER company's multiple in relativeValuation (source: "yahoo"), or a genuinely new fact from web_search.
+  - Self-check before finalizing: if you are about to tag a revenue, EPS, margin, cash-flow, debt, EBITDA, valuation, or estimate figure as "model"/"web"/"yahoo" while that same metric sits in the FACTSET block, STOP and change it to "factset".
+
 URL ATTRIBUTION (REQUIRED for web sources):
 For every data point with source: "web", you MUST include a "url" field with the actual URL of the source you cited (the underlying press release, filing, analyst note, article, etc.). The URL should come from the web_search results you accessed during this rescore. If the underlying source has multiple URLs (e.g. you saw the press release on both the company's IR page AND on a Reuters re-print), prefer the primary source URL (company IR page > regulatory filing portal > established news outlet > aggregator).
 
 For EDGAR / EDGAR-Form4 sources, do NOT include a URL — the UI will construct the SEC filing URL automatically from the ticker.
 For Yahoo sources, do NOT include a URL — the UI will route to the appropriate Yahoo Finance subpage automatically based on the label (financials, key-statistics, analysis, etc.).
 For Model sources, do NOT include a URL (qualitative inference has no source URL).
+For FactSet sources, do NOT include a URL (sourceDetail = "FactSet" or the period, e.g. "FactSet, FY2025").
 
 Also provide:
 - name: Full company name
@@ -668,7 +677,7 @@ Keep each explanation summary to 2-3 sentences and max 4 dataPoints per category
       "summary": "2-3 sentence paragraph",
       "confidence": "high",
       "dataPoints": [
-        { "label": "Revenue (Q3 2026)", "value": "$5.62B (+12% YoY)", "source": "edgar", "sourceDetail": "10-Q filed 2026-10-30" },
+        { "label": "Revenue (FY / TTM)", "value": "$5.62B (+12% YoY)", "source": "factset", "sourceDetail": "FactSet" },
         { "label": "EPS (Q3 2026)", "value": "$2.34 vs $2.10 est", "source": "web", "sourceDetail": "Company press release, Oct 30 2026", "url": "https://investor.example.com/news/2026/q3-earnings" }
       ]
     },
