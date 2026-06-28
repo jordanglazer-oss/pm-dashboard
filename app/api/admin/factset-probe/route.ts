@@ -1,10 +1,12 @@
 import { NextRequest, NextResponse } from "next/server";
 import {
   crossSectional,
+  crossSectionalDiagnostic,
   factsetConfigured,
   relayHealthy,
   FACTSET_FORMULAS,
 } from "@/app/lib/factset";
+import { SCORING_FORMULAS } from "@/app/lib/factset-fundamentals";
 
 /**
  * GET /api/admin/factset-probe?ids=AAPL-US,SPY-US&formulas=P_PRICE,P_BETA
@@ -29,6 +31,48 @@ export async function GET(req: NextRequest) {
       configured: false,
       hint: "Set FACTSET_RELAY_URL and FACTSET_RELAY_SECRET in Vercel env once the relay is live, then retry.",
     });
+  }
+
+  // ?snapshot=<factsetId> → validate the full scoring formula set against one
+  // company, reporting which formula codes work (error 0) vs. which need
+  // correcting (error 107 "Unknown expression") vs. valid-but-no-data (null).
+  const snapshotId = sp.get("snapshot");
+  if (snapshotId) {
+    try {
+      const diag = await crossSectionalDiagnostic(
+        snapshotId,
+        SCORING_FORMULAS.map((f) => f.formula)
+      );
+      const results = SCORING_FORMULAS.map((f, i) => ({
+        key: f.key,
+        note: f.note,
+        formula: f.formula,
+        value: diag[i]?.value ?? null,
+        error: diag[i]?.error ?? -1,
+        status:
+          diag[i]?.error === 0
+            ? diag[i]?.value === null
+              ? "ok-but-null"
+              : "ok"
+            : diag[i]?.error === 107
+            ? "bad-formula-code"
+            : "error",
+        errorMessage: diag[i]?.errorMessage,
+      }));
+      const working = results.filter((r) => r.status === "ok").length;
+      const badCodes = results.filter((r) => r.status === "bad-formula-code").map((r) => r.key);
+      return NextResponse.json({
+        ok: true,
+        snapshotId,
+        summary: { working, total: results.length, badCodes },
+        results,
+      });
+    } catch (e) {
+      return NextResponse.json(
+        { ok: false, snapshotId, error: e instanceof Error ? e.message : String(e) },
+        { status: 502 }
+      );
+    }
   }
 
   const ids = (sp.get("ids") || "AAPL-US")

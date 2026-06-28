@@ -140,3 +140,36 @@ export async function getPrices(ids: string[]): Promise<Record<string, number | 
   }
   return out;
 }
+
+export type FactsetFormulaDiagnostic = {
+  formula: string;
+  value: FactsetValue;
+  error: number; // 0 = ok; 107 = unknown expression (bad formula code); other = no data / not entitled
+  errorMessage?: string;
+};
+
+/**
+ * Diagnostic single-id query that preserves each formula's error code, so we
+ * can tell a bad formula NAME (error 107 "Unknown expression") apart from a
+ * valid formula that simply returned no data. Used by the admin probe to
+ * validate the scoring formula set before wiring FactSet into the score route.
+ */
+export async function crossSectionalDiagnostic(
+  id: string,
+  formulas: string[]
+): Promise<FactsetFormulaDiagnostic[]> {
+  if (!formulas.length) return [];
+  const formulaStr = formulas.map((f) => f.replace(/,/g, "%2C")).join(",");
+  const path = `/formula-api/v1/cross-sectional?ids=${id}&formulas=${formulaStr}`;
+  const raw = (await relayGet(path)) as FactsetCrossSectional;
+  const items = (raw?.data || []).filter((d) => d.dataItemName !== "requestId");
+  return formulas.map((f, i) => {
+    const item = items[i];
+    return {
+      formula: f,
+      value: item ? item.result?.[0] ?? null : null,
+      error: item ? item.error : -1,
+      errorMessage: item?.errorMessage,
+    };
+  });
+}
