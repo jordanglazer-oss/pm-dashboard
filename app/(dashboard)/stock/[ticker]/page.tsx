@@ -96,6 +96,39 @@ function yahooUrlForLabel(ticker: string, label: string): string {
 // (third-party feed), web search (cited URL/date), or a model inference.
 // Chips render as clickable <a> tags when a URL is available so the
 // analyst can verify the underlying source in one click.
+/**
+ * The dominant structured data source across a category's data points (ignores
+ * "model" inferences, which aren't a feed). Drives the category-header source
+ * chip so the analyst sees at a glance that e.g. growth was scored from FactSet
+ * — distinct from the confidence chip, which conveys how sure the model is.
+ */
+function categoryDataSource(dps: ScoreDataPoint[]): ScoreDataPointSource | undefined {
+  const counts: Partial<Record<ScoreDataPointSource, number>> = {};
+  for (const dp of dps) {
+    if (!dp?.source || dp.source === "model") continue;
+    counts[dp.source] = (counts[dp.source] ?? 0) + 1;
+  }
+  const order: ScoreDataPointSource[] = ["factset", "edgar", "edgar-form4", "yahoo", "web"];
+  let best: ScoreDataPointSource | undefined;
+  let bestN = 0;
+  for (const s of order) {
+    const n = counts[s] ?? 0;
+    if (n > bestN) {
+      bestN = n;
+      best = s;
+    }
+  }
+  return best;
+}
+
+const CATEGORY_SOURCE_META: Partial<Record<ScoreDataPointSource, { label: string; cls: string }>> = {
+  factset: { label: "FactSet", cls: "bg-indigo-100 text-indigo-700 border-indigo-200" },
+  edgar: { label: "EDGAR", cls: "bg-emerald-100 text-emerald-700 border-emerald-200" },
+  "edgar-form4": { label: "Form 4", cls: "bg-emerald-50 text-emerald-700 border-emerald-200" },
+  yahoo: { label: "Yahoo", cls: "bg-slate-100 text-slate-600 border-slate-200" },
+  web: { label: "Web", cls: "bg-blue-100 text-blue-700 border-blue-200" },
+};
+
 function SourceChip({ source, detail, url, label, ticker }: { source: ScoreDataPointSource; detail?: string; url?: string; label: string; ticker: string }) {
   const style: Record<ScoreDataPointSource, { label: string; cls: string; clsLink: string; title: string }> = {
     factset: { label: "FactSet", cls: "bg-indigo-100 text-indigo-700 border-indigo-200", clsLink: "", title: "FactSet Formula API — primary, current, confirmed fundamentals / valuation / estimates." },
@@ -2097,6 +2130,19 @@ export default function StockDetailPage() {
                               <span className={`rounded px-1.5 py-0.5 text-[10px] font-semibold ${typeBg}`}>
                                 {cat.inputType.toUpperCase()}
                               </span>
+                              {(() => {
+                                const src = categoryDataSource(dataPoints);
+                                const meta = src ? CATEGORY_SOURCE_META[src] : undefined;
+                                if (!meta) return null;
+                                return (
+                                  <span
+                                    className={`rounded px-1.5 py-0.5 text-[9px] font-bold uppercase tracking-wider border ${meta.cls}`}
+                                    title={`Primary data source for this category: ${meta.label}`}
+                                  >
+                                    {meta.label}
+                                  </span>
+                                );
+                              })()}
                               {confidence && (
                                 <span
                                   className={`rounded px-1.5 py-0.5 text-[9px] font-bold uppercase tracking-wider ${
