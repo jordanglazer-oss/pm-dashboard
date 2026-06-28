@@ -703,6 +703,11 @@ export async function POST(request: NextRequest) {
     // opt in explicitly via the UI "Verify" toggle. Canadian / non-EDGAR
     // tickers benefit most from this since they lack the XBRL fallback.
     const verifyWithWebSearch: boolean = body?.verifyWithWebSearch === true;
+    // Strict-FactSet mode (default ON): when FactSet supplies a company's
+    // financials, withhold the competing EDGAR XBRL block (keep Form 4 insider)
+    // so the model scores fundamentals on FactSet, not EDGAR. Set false to let
+    // EDGAR/Yahoo fill holes alongside FactSet (mixed-source mode).
+    const strictFactset: boolean = body?.strictFactset !== false;
 
     if (!ticker || typeof ticker !== "string") {
       return NextResponse.json(
@@ -806,7 +811,16 @@ export async function POST(request: NextRequest) {
       // own MD&A / IR press releases / SEDAR+ filings as the
       // authoritative source.
       if (edgarBlock) {
-        financialContext += `\n\n---\n\n${edgarBlock}`;
+        if (factsetUsed && strictFactset) {
+          // FactSet supplied the financials — withhold the competing EDGAR XBRL
+          // block so the model cites FactSet (it otherwise prefers EDGAR's
+          // richer as-reported block). Keep ONLY the Form 4 insider sub-section,
+          // which FactSet doesn't provide (the agreed insider carve-out).
+          const insiderIdx = edgarBlock.indexOf("=== INSIDER ACTIVITY");
+          if (insiderIdx >= 0) financialContext += `\n\n---\n\n${edgarBlock.slice(insiderIdx)}`;
+        } else {
+          financialContext += `\n\n---\n\n${edgarBlock}`;
+        }
       } else if (isCanadianListing) {
         financialContext += `\n\n---\n\n=== NO SEC EDGAR DATA AVAILABLE ===\n${upperTicker} is a Canadian-only listing (no US dual-listing in the SEC ticker map). SEC EDGAR XBRL data is unavailable for this issuer.\n\nFor fundamental categories (growth, leverageCoverage, cashFlowQuality, relativeValuation, historicalValuation), use the Yahoo Finance data block above as the primary source and aggressively use web_search to verify against the company's MOST RECENT quarterly MD&A or earnings press release (cite the IR-page or SEDAR+ filing URL in sourceDetail). For ownershipTrends (normally driven by Form 4 in the US): no SEDI insider feed is available in this pipeline — report the most recent insider activity disclosed via the company's MD&A or news releases if web_search surfaces it, otherwise score conservatively at the midpoint and confidence: "low". Do not pretend Form 4-style data exists when it doesn't.\n`;
       }
