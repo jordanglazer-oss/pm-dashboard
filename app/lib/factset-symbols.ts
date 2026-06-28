@@ -37,6 +37,10 @@ export const FACTSET_OVERRIDES: Record<string, string> = {
   "XUS.U": "USD-unit listing — FactSet symbology does not resolve cleanly",
   FID5982: "Canadian Fidelity fund — FactSet id not yet resolved (pending ISIN)",
   "FID5982-T": "Canadian Fidelity fund — FactSet id not yet resolved (pending ISIN)",
+  // FactSet recognizes the fund (FINN-CA returns the right name) but has no
+  // P_PRICE for the NEO-exchange listing. It's an ETF (not scored), so keep it
+  // on the existing price source rather than chase the NEO identifier.
+  "FINN.NE": "NEO-listed ETF — FactSet returns no P_PRICE for this listing; keep existing source",
 };
 
 /** FUNDSERV code detector — mirrors app/api/prices/route.ts. */
