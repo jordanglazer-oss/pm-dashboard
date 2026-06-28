@@ -11,8 +11,10 @@
  *   - FUNDSERV codes:     not yet mapped  (e.g. FID5982) -> keep existing route
  *                          (pending an ISIN/CUSIP lookup before we can map them)
  *
- * Dashboard ticker conventions (see app/api/prices/route.ts):
- *   - Canadian TSX tickers carry a "-T" suffix (e.g. "ENB-T").
+ * Dashboard ticker conventions (confirmed via the ticker audit):
+ *   - Canadian listings carry an exchange suffix: ".TO" (TSX), ".V" (TSXV),
+ *     ".NE" (NEO/Cboe Canada); a legacy "-T" form also appears. Class shares
+ *     use "-B" (e.g. "TECK-B.TO").
  *   - USD-unit listings carry a ".U" suffix (e.g. "XUU.U").
  *   - FUNDSERV codes match /^[A-Z]{2,4}\d{2,5}$/ (e.g. "FID5982", "TDB900").
  *
@@ -67,11 +69,22 @@ export function resolveFactsetId(ticker: string): FactsetResolution {
     return { source: "existing", reason: "FUNDSERV code — FactSet id not yet resolved" };
   }
 
-  // 4. Canadian TSX listings: "-T" suffix -> "<TICKER>-CA".
+  // 4. Canadian exchange listings. The dashboard stores TSX as ".TO", TSX
+  //    Venture as ".V", and NEO / Cboe Canada as ".NE". FactSet uses a "-CA"
+  //    country suffix. Strip the exchange suffix, convert a trailing "-X"
+  //    share-class marker to FactSet's ".X" (e.g. TECK-B -> TECK.B), then add
+  //    "-CA". Confirmed working: XUU-CA, XUS-CA.
+  const caMatch = /\.(TO|V|NE)$/.exec(t);
+  if (caMatch) {
+    const base = t.slice(0, -caMatch[0].length).replace(/-([A-Z])$/, ".$1");
+    return { source: "factset", id: `${base}-CA` };
+  }
+
+  // 5. Legacy "-T" suffix (some entries use it instead of ".TO").
   if (t.endsWith("-T")) {
     return { source: "factset", id: t.replace(/-T$/, "") + "-CA" };
   }
 
-  // 5. Default: treat as a US listing.
+  // 6. Default: treat as a US listing.
   return { source: "factset", id: t + "-US" };
 }
