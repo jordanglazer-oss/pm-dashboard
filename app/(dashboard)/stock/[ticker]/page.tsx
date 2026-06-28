@@ -98,6 +98,7 @@ function yahooUrlForLabel(ticker: string, label: string): string {
 // analyst can verify the underlying source in one click.
 function SourceChip({ source, detail, url, label, ticker }: { source: ScoreDataPointSource; detail?: string; url?: string; label: string; ticker: string }) {
   const style: Record<ScoreDataPointSource, { label: string; cls: string; clsLink: string; title: string }> = {
+    factset: { label: "FactSet", cls: "bg-indigo-100 text-indigo-700 border-indigo-200", clsLink: "", title: "FactSet Formula API — primary, current, confirmed fundamentals / valuation / estimates." },
     edgar: { label: "EDGAR", cls: "bg-emerald-100 text-emerald-700 border-emerald-200", clsLink: "hover:bg-emerald-200", title: "SEC EDGAR XBRL — audited as-reported from 10-K/Q filings. Click to open the company's EDGAR filings page." },
     "edgar-form4": { label: "Form 4", cls: "bg-emerald-50 text-emerald-700 border-emerald-200", clsLink: "hover:bg-emerald-100", title: "SEC Form 4 — insider transactions (open-market only). Click to open the company's Form 4 filings on EDGAR." },
     yahoo: { label: "Yahoo", cls: "bg-slate-100 text-slate-600 border-slate-200", clsLink: "hover:bg-slate-200", title: "Yahoo Finance data feed. Click to open the relevant Yahoo Finance page." },

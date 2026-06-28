@@ -63,13 +63,15 @@ export type Scores = Record<ScoreKey, number>;
  * attributed source so the analyst can audit where each number came from.
  *
  * Sources:
- *   - "edgar": SEC XBRL (US filings) — most authoritative
+ *   - "factset": FactSet Formula API — primary, current, confirmed fundamentals
+ *   - "edgar": SEC XBRL (US filings) — authoritative but annual-paced/lagging
  *   - "edgar-form4": SEC insider trades (Form 4)
  *   - "yahoo": Yahoo Finance data feed
  *   - "web": Anthropic web_search result (cite source name in sourceDetail)
  *   - "model": qualitative inference by the model with no specific data source
  */
 export type ScoreDataPointSource =
+  | "factset"
   | "edgar"
   | "edgar-form4"
   | "yahoo"

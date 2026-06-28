@@ -11,6 +11,9 @@ import { computeAnalystConsensus, getSnapshotForTicker, buildConsensusExplanatio
 import type { AnalystSnapshots } from "@/app/lib/analyst-snapshots";
 import { mapBoostedAiToAiRating, mapSmaxToRelativeStrength, consensusLabel, type BoostedAiConsensus } from "@/app/lib/external-scoring";
 import { getRedis } from "@/app/lib/redis";
+import { resolveFactsetId } from "@/app/lib/factset-symbols";
+import { factsetConfigured } from "@/app/lib/factset";
+import { companySnapshot, formatSnapshotForPrompt, namesMatch, type CompanySnapshot } from "@/app/lib/factset-fundamentals";
 
 const client = new Anthropic();
 
@@ -486,15 +489,19 @@ async function fetchFinancialData(ticker: string): Promise<{ context: string; pr
   };
 }
 
-const SCORING_PROMPT = `You are an institutional equity research analyst scoring a stock for a portfolio management scoring system. You will be provided with REAL FINANCIAL DATA from two sources — you MUST use this data to produce accurate, specific explanations. Do not guess or fabricate numbers.
+const SCORING_PROMPT = `You are an institutional equity research analyst scoring a stock for a portfolio management scoring system. You will be provided with REAL FINANCIAL DATA from up to three sources (FactSet, SEC EDGAR, Yahoo Finance) — you MUST use this data to produce accurate, specific explanations. Do not guess or fabricate numbers.
 
 DATA SOURCES (in order of preference for fundamentals):
 
-1. SEC EDGAR XBRL DATA (when present) — this is the AUDITED AS-REPORTED source pulled directly from 10-K and 10-Q filings, normalized through an industry-aware concept registry. PREFER these numbers for any fundamental metric (revenue, net income, EPS, OCF, capex, debt, cash, equity, etc.). The block is clearly marked "=== SEC EDGAR XBRL FINANCIALS ===" and includes industry classification, multi-year annual history, and YoY/CAGR calculations. Each metric also names the exact XBRL concept used so you can be precise about what's measured. EDGAR is only available for US-listed issuers (Canadian -T/.TO and OTC names will not have this block — fall back to Yahoo for those).
+1. FACTSET FUNDAMENTALS (when present) — the PRIMARY, authoritative source. A block marked "=== FACTSET FUNDAMENTALS ===" carries current multi-year AND trailing-twelve-month (TTM) revenue / EPS, net income, FCF, operating cash flow, capex, margins, leverage, valuation multiples, and consensus estimates pulled live from FactSet. PREFER these numbers above all others for any fundamental, valuation, or estimate metric — they are confirmed and the most current (FactSet carries the latest fiscal year plus TTM, typically fresher than EDGAR's last annual filing). When this block is present, do NOT add "should be verified" caveats — the data is confirmed. Tag every dataPoint sourced from it with source: "factset". This is also the PRIMARY (often only) structured source for Canadian and other non-US issuers, which have no EDGAR coverage at all.
 
-2. YAHOO FINANCE DATA (always present) — use for: current price, market cap, beta, sentiment metrics (P/E ratios when EDGAR isn't present), peer comparison data, analyst recommendations, dividend yield, and anything else EDGAR doesn't carry. Yahoo Finance data uses "raw" for numeric values and "fmt" for formatted strings; always use the actual numbers.
+2. SEC EDGAR XBRL DATA (when present) — this is the AUDITED AS-REPORTED source pulled directly from 10-K and 10-Q filings, normalized through an industry-aware concept registry. PREFER these numbers for any fundamental metric (revenue, net income, EPS, OCF, capex, debt, cash, equity, etc.). The block is clearly marked "=== SEC EDGAR XBRL FINANCIALS ===" and includes industry classification, multi-year annual history, and YoY/CAGR calculations. Each metric also names the exact XBRL concept used so you can be precise about what's measured. EDGAR is only available for US-listed issuers (Canadian -T/.TO and OTC names will not have this block — fall back to Yahoo for those).
 
-If a metric appears in BOTH sources and the values differ slightly: trust EDGAR for as-reported figures. Yahoo sometimes restates silently and definitions can drift; EDGAR is point-in-time correct from the filing.
+3. YAHOO FINANCE DATA (always present) — use for: current price, market cap, beta, sentiment metrics (P/E ratios when FactSet/EDGAR aren't present), peer comparison data, analyst recommendations, dividend yield, and anything FactSet/EDGAR don't carry. Yahoo Finance data uses "raw" for numeric values and "fmt" for formatted strings; always use the actual numbers.
+
+WHEN SOURCES DISAGREE: trust FactSet first (current + confirmed), then EDGAR for as-reported audited figures, then Yahoo (which sometimes restates silently and whose definitions can drift).
+
+MISSING DATA / MANUAL FALLBACK: if NONE of the sources provide what a fundamental category needs (no FactSet block, no EDGAR, no usable Yahoo figure, and web_search — when enabled — surfaces nothing), do NOT fabricate. Score that category at its MIDPOINT, set confidence: "low", and begin its explanation summary with "INSUFFICIENT DATA — score manually:" so the PM knows to set it by hand. This should be rare now that FactSet covers most issuers.
 
 STALE DATA HANDLING: any EDGAR field marked [STALE — last filed YYYY-MM-DD] has not been reported in over 18 months. Do NOT use stale fields as a current snapshot. Either omit analysis for that metric or note that the issuer no longer reports it discretely. Common stale cases include companies that stopped breaking out a line item in their financial statements (e.g., interest expense lumped into "other income/(expense), net").
 
@@ -616,6 +623,7 @@ EDGAR XBRL data is NOT available for Canadian-only listings. Use web_search aggr
 
 DATA POINT SOURCING (for the dataPoints array in each explanation):
 For every data point you cite, label its source:
+  - "factset" — value came from the FACTSET FUNDAMENTALS block (primary, current, confirmed)
   - "edgar" — value came from the SEC EDGAR XBRL block in the data above
   - "edgar-form4" — insider transaction data from the Form 4 block
   - "yahoo" — value came from the Yahoo Finance block
@@ -716,24 +724,67 @@ export async function POST(request: NextRequest) {
     let rawModules: YahooResult | undefined;
     let technicals: TechnicalIndicators | null = null;
     let riskAlert: RiskAlert | undefined;
+    // Whether FactSet supplied the primary fundamentals block this run. Drives
+    // the input-health gate (FactSet can stand in for Yahoo) and lets us skip
+    // the "verify the data" caveats since FactSet is confirmed, current data.
+    let factsetUsed = false;
 
     try {
-      // Fetch Yahoo + price history + EDGAR XBRL in parallel.
-      // EDGAR returns null cleanly for non-US tickers so the score
-      // route still works for Canadian/.TO names — they just don't
-      // get the audited as-reported supplement.
-      const [financialResult, priceHistory, edgarBlock] = await Promise.all([
+      // Resolve this ticker to a FactSet id (or "existing" → skip FactSet).
+      // FactSet is the PRIMARY structured source: current annual + TTM
+      // financials, valuation, and estimates — fresher than EDGAR (annual-
+      // paced) and the only structured source for Canadian names, which have
+      // no EDGAR coverage at all.
+      const fsRes = factsetConfigured()
+        ? resolveFactsetId(upperTicker)
+        : ({ source: "existing", reason: "FactSet relay not configured" } as const);
+      const factsetPromise: Promise<CompanySnapshot | null> =
+        fsRes.source === "factset"
+          ? companySnapshot(fsRes.id).catch((e) => {
+              console.error(`[Score] FactSet snapshot failed for ${upperTicker} (${fsRes.id}):`, e);
+              return null;
+            })
+          : Promise.resolve(null);
+
+      // Fetch FactSet + Yahoo + price history + EDGAR XBRL in parallel.
+      // Yahoo/price/EDGAR are each wrapped so one upstream hiccup can't drop
+      // the FactSet block (EDGAR also returns null cleanly for non-US names).
+      const [factsetSnap, financialResult, priceHistory, edgarBlock] = await Promise.all([
+        factsetPromise,
         fetchFinancialData(upperTicker),
-        fetchPriceHistory(upperTicker),
+        fetchPriceHistory(upperTicker).catch(() => [] as OHLCVBar[]),
         formatEdgarSnapshotForPrompt(upperTicker).catch((e) => {
           console.error("[EDGAR] non-fatal fetch error:", e);
           return null;
         }),
       ]);
 
-      financialContext = financialResult.context;
       stockPrice = financialResult.price;
       rawModules = financialResult.rawModules ?? undefined;
+
+      // Name-guard: only trust FactSet when its company name reasonably matches
+      // Yahoo's for this ticker. A mismatch means the ticker resolved to the
+      // WRONG FactSet id — drop FactSet and fall back rather than silently
+      // score a different company. A missing name doesn't block (lenient).
+      let factsetBlock = "";
+      if (factsetSnap?.hasData) {
+        const yres = rawModules as { price?: { longName?: string; shortName?: string } } | undefined;
+        const yahooName = yres?.price?.longName ?? yres?.price?.shortName ?? null;
+        if (namesMatch(yahooName, factsetSnap.name)) {
+          factsetBlock = formatSnapshotForPrompt(factsetSnap);
+          factsetUsed = true;
+        } else {
+          console.warn(
+            `[Score] ${upperTicker} FactSet name guard rejected: FactSet="${factsetSnap.name}" vs Yahoo="${yahooName}" — falling back to EDGAR/Yahoo`
+          );
+        }
+      }
+
+      // FactSet leads as the authoritative block. Yahoo context is appended
+      // only when Yahoo actually returned modules, so its "data unavailable —
+      // verify" stub is dropped whenever FactSet already supplied the data.
+      const yahooContext = rawModules != null ? financialResult.context : "";
+      financialContext = [factsetBlock, yahooContext].filter(Boolean).join("\n\n---\n\n");
 
       // Compute technical indicators from price history
       if (priceHistory.length > 0) {
@@ -893,16 +944,20 @@ export async function POST(request: NextRequest) {
     // Returns 422 (Unprocessable Entity) + `skipped: true` so the Score
     // All loop can distinguish "we deliberately didn't run" from "the
     // run failed inside Anthropic" — different recovery paths.
+    // FactSet OR Yahoo provides the structured floor: FactSet is primary, but
+    // when it doesn't cover an issuer we still proceed on Yahoo. Only skip when
+    // NEITHER returned real data (every fundamental would be pure guessing).
     const FINANCIAL_CONTEXT_MIN_CHARS = 500;
-    const yahooOk = rawModules != null && financialContext.length >= FINANCIAL_CONTEXT_MIN_CHARS;
-    if (!yahooOk) {
-      const reason = rawModules == null
-        ? "Yahoo Finance returned no modules"
+    const haveStructuredData = factsetUsed || rawModules != null;
+    const dataOk = haveStructuredData && financialContext.length >= FINANCIAL_CONTEXT_MIN_CHARS;
+    if (!dataOk) {
+      const reason = !haveStructuredData
+        ? "no FactSet snapshot and Yahoo Finance returned no modules"
         : `financial context too short (${financialContext.length} chars; need ${FINANCIAL_CONTEXT_MIN_CHARS}+)`;
       console.warn(`[Score] ${upperTicker} skipped: ${reason}. Saved ~$0.18 in Anthropic spend.`);
       return NextResponse.json(
         {
-          error: `Skipped scoring ${upperTicker}: ${reason}. Refresh prices and retry — usually a transient Yahoo issue.`,
+          error: `Skipped scoring ${upperTicker}: ${reason}. Refresh prices and retry — usually a transient upstream issue.`,
           skipped: true,
           reason: "input-health-check-failed",
         },
@@ -912,10 +967,10 @@ export async function POST(request: NextRequest) {
     // EDGAR is scoped inside the try block above; proxy "did we get
     // EDGAR data" by looking for the labeled header in financialContext.
     const edgarPresent = financialContext.includes("=== SEC EDGAR XBRL FINANCIALS");
-    if (!isCanadianListing && !edgarPresent) {
-      // Soft warning — proceed but log so the Vercel dashboard shows
-      // which US tickers are scoring without EDGAR backing.
-      console.warn(`[Score] ${upperTicker} US-listed but EDGAR returned null — proceeding with Yahoo-only scoring (lower confidence expected)`);
+    if (!isCanadianListing && !edgarPresent && !factsetUsed) {
+      // Soft warning — proceed but log so the Vercel dashboard shows which US
+      // tickers are scoring without either FactSet or EDGAR backing.
+      console.warn(`[Score] ${upperTicker} US-listed but no FactSet and no EDGAR — Yahoo-only scoring (lower confidence expected)`);
     }
 
     // Build tool list. Anthropic's web_search_20250305 tool runs server-side
