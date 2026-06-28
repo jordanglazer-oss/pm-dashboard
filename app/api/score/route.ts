@@ -495,11 +495,11 @@ DATA SOURCES (in order of preference for fundamentals):
 
 1. FACTSET FUNDAMENTALS (when present) — the PRIMARY, authoritative source. A block marked "=== FACTSET FUNDAMENTALS ===" carries current multi-year AND trailing-twelve-month (TTM) revenue / EPS, net income, FCF, operating cash flow, capex, margins, leverage, valuation multiples, and consensus estimates pulled live from FactSet. PREFER these numbers above all others for any fundamental, valuation, or estimate metric — they are confirmed and the most current (FactSet carries the latest fiscal year plus TTM, typically fresher than EDGAR's last annual filing). When this block is present, do NOT add "should be verified" caveats — the data is confirmed. Tag every dataPoint sourced from it with source: "factset". This is also the PRIMARY (often only) structured source for Canadian and other non-US issuers, which have no EDGAR coverage at all.
 
-2. SEC EDGAR XBRL DATA (when present) — this is the AUDITED AS-REPORTED source pulled directly from 10-K and 10-Q filings, normalized through an industry-aware concept registry. PREFER these numbers for any fundamental metric (revenue, net income, EPS, OCF, capex, debt, cash, equity, etc.). The block is clearly marked "=== SEC EDGAR XBRL FINANCIALS ===" and includes industry classification, multi-year annual history, and YoY/CAGR calculations. Each metric also names the exact XBRL concept used so you can be precise about what's measured. EDGAR is only available for US-listed issuers (Canadian -T/.TO and OTC names will not have this block — fall back to Yahoo for those).
+2. SEC EDGAR XBRL DATA (when present) — audited as-reported figures from 10-K/10-Q filings. This is a CROSS-CHECK / FALLBACK that sits BEHIND FactSet: when the FACTSET FUNDAMENTALS block is present, cite FactSet (source: "factset") for fundamentals even if EDGAR lists the same figure — FactSet is more current (it carries the latest fiscal year + TTM; EDGAR lags to the last annual filing). Use EDGAR (source: "edgar") only for metrics FactSet does NOT carry (e.g. a specific segment line or exact XBRL concept), or when there is NO FactSet block. The block is marked "=== SEC EDGAR XBRL FINANCIALS ===" with industry classification, multi-year history, and the exact XBRL concept per metric. EDGAR is US-only (Canadian .TO/-T and OTC names won't have it — those rely on FactSet, then Yahoo).
 
 3. YAHOO FINANCE DATA (always present) — use for: current price, market cap, beta, sentiment metrics (P/E ratios when FactSet/EDGAR aren't present), peer comparison data, analyst recommendations, dividend yield, and anything FactSet/EDGAR don't carry. Yahoo Finance data uses "raw" for numeric values and "fmt" for formatted strings; always use the actual numbers.
 
-WHEN SOURCES DISAGREE: trust FactSet first (current + confirmed), then EDGAR for as-reported audited figures, then Yahoo (which sometimes restates silently and whose definitions can drift).
+WHEN SOURCES DISAGREE: trust FactSet first (current + confirmed), then EDGAR for as-reported audited figures, then Yahoo (which sometimes restates silently and whose definitions can drift). When the SAME figure is available in more than one block, you MUST cite it as source: "factset" — reserve source: "edgar"/"yahoo" only for figures that appear ONLY in those blocks. Whenever a FACTSET FUNDAMENTALS block is present, it is the source of record for the growth, relativeValuation, historicalValuation, leverageCoverage, and cashFlowQuality categories: their dataPoints should be source: "factset" (peer multiples may still come from Yahoo for relativeValuation).
 
 MISSING DATA / MANUAL FALLBACK: if NONE of the sources provide what a fundamental category needs (no FactSet block, no EDGAR, no usable Yahoo figure, and web_search — when enabled — surfaces nothing), do NOT fabricate. Score that category at its MIDPOINT, set confidence: "low", and begin its explanation summary with "INSUFFICIENT DATA — score manually:" so the PM knows to set it by hand. This should be rare now that FactSet covers most issuers.
 
@@ -1268,6 +1268,10 @@ export async function POST(request: NextRequest) {
       healthData,
       technicals,
       riskAlert,
+      // Whether the FactSet primary-source block actually reached the prompt
+      // this run (true = FactSet snapshot fetched + name-guard passed). Lets us
+      // tell "FactSet present but Claude cited EDGAR" from "FactSet never ran".
+      factsetUsed,
       // Verification metadata — surfaced for the score-history entry and
       // the stock-page UI ("Verified · 3 searches").
       verifiedSearch: verifyWithWebSearch,
