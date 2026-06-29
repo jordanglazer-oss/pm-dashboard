@@ -794,10 +794,24 @@ export async function POST(request: NextRequest) {
         }
       }
 
-      // FactSet leads as the authoritative block. Yahoo context is appended
-      // only when Yahoo actually returned modules, so its "data unavailable —
-      // verify" stub is dropped whenever FactSet already supplied the data.
-      const yahooContext = rawModules != null ? financialResult.context : "";
+      // FactSet leads as the authoritative block. In strict mode, when FactSet
+      // supplied the financials, we withhold Yahoo's fundamentals/valuation too
+      // (FactSet now carries P/E, fwd P/E, EV/EBITDA, etc.) and keep ONLY the
+      // peer-comparison block — the one thing FactSet doesn't yet provide. This
+      // is what makes FactSet the SOLE source for the subject company's
+      // fundamentals; Yahoo survives only as the peer feed (a genuine gap).
+      let yahooContext = "";
+      if (rawModules != null) {
+        if (factsetUsed && strictFactset) {
+          const peerIdx = financialResult.context.indexOf("PEER COMPARISONS");
+          yahooContext =
+            peerIdx >= 0
+              ? `=== PEER DATA (Yahoo — peer multiples only; FactSet peer feed pending) ===\n${financialResult.context.slice(peerIdx)}`
+              : "";
+        } else {
+          yahooContext = financialResult.context;
+        }
+      }
       financialContext = [factsetBlock, yahooContext].filter(Boolean).join("\n\n---\n\n");
 
       // Compute technical indicators from price history
@@ -942,7 +956,9 @@ export async function POST(request: NextRequest) {
     // WEB SEARCH VERIFICATION section of the system prompt (and especially
     // hard for Canadian listings, which have no EDGAR fallback).
     const verifyPreamble = verifyWithWebSearch
-      ? `\n\n=== Verified scoring ===\nWeb search verification is ENABLED for this rescore. You MUST use the web_search tool to:\n  1. Confirm the most recent reported quarterly numbers match what's in the data above (or supersede them if the company reported AFTER the data was cached).\n  2. Check for guidance revisions / pre-announcements / 8-K filings issued in the last 90 days.\n  3. Find any analyst rating or price-target changes from named firms in the last 30 days.\n  4. ${isCanadianListing
+      ? `\n\n=== Verified scoring ===\nWeb search verification is ENABLED for this rescore. You MUST use the web_search tool to:\n  1. ${factsetUsed
+            ? `Do NOT re-source fundamentals via web — the FACTSET block is current and authoritative, so cite those figures as source:"factset". Use web ONLY to surface a number the company reported AFTER the FactSet data date, or a material event; do not add web dataPoints that merely restate a figure already in the FactSet block.`
+            : `Confirm the most recent reported quarterly numbers match what's in the data above (or supersede them if the company reported AFTER the data was cached).`}\n  2. Check for guidance revisions / pre-announcements / 8-K filings issued in the last 90 days.\n  3. Find any analyst rating or price-target changes from named firms in the last 30 days.\n  4. ${isCanadianListing
             ? `THIS IS A CANADIAN LISTING (${upperTicker}) — no EDGAR data is available. Use web_search as the PRIMARY financial verification: look up the company's most recent quarterly press release / MD&A / SEDAR+ filing and use those numbers in your dataPoints. Cite each source URL or publication name in sourceDetail.`
             : `Verify the latest dividend / buyback / split changes.`}\nRespect the noise filter in the system prompt: ignore rumors, opinion blogs, and unsourced speculation. Cite source name and date in dataPoints.sourceDetail for every web-sourced fact.\nMax 2 searches — be targeted.\n=== End verified scoring ===\n`
       : "";

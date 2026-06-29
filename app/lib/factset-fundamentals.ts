@@ -58,6 +58,7 @@ const POINT_METRICS: ScoringFormula[] = [
   { key: "psales", formula: "FG_PSALES", note: "P/S" },
   { key: "divYld", formula: "FG_DIV_YLD", note: "Dividend yield" },
   { key: "mktVal", formula: "FG_MKT_VALUE", note: "Market cap" },
+  { key: "price", formula: "P_PRICE", note: "Current price (for forward P/E)" },
   { key: "epsEstFy1", formula: "FE_ESTIMATE(EPS,MEAN,ANN_ROLL,1,NOW,'')", note: "Mean EPS estimate, FY+1" },
   { key: "salesEstFy1", formula: "FE_ESTIMATE(SALES,MEAN,ANN_ROLL,1,NOW,'')", note: "Mean revenue estimate, FY+1" },
   { key: "tgtPriceMean", formula: "FE_ESTIMATE(PRICE_TGT,MEAN,ANN_ROLL,0,NOW,'')", note: "Mean target price" },
@@ -134,6 +135,10 @@ function seriesRow(values: Record<string, number | null>, base: string, n: numbe
  */
 export function formatSnapshotForPrompt(snap: CompanySnapshot): string {
   const v = snap.values;
+  // Derived valuation — inputs are all FactSet, so these count as FactSet data.
+  const fwdPe = v.price != null && v.epsEstFy1 ? v.price / v.epsEstFy1 : null;
+  const ev = v.mktVal != null && v.debtAnn0 != null && v.cashAnn0 != null ? v.mktVal + v.debtAnn0 - v.cashAnn0 : null;
+  const evEbitda = ev != null && v.ebitdaAnn0 ? ev / v.ebitdaAnn0 : null;
   return [
     `=== FACTSET FUNDAMENTALS (primary source, fetched ${snap.fetchedAt.slice(0, 10)}) ===`,
     `Series are most-recent-first: FY | FY-1 | FY-2 | FY-3 | FY-4 (annual) and Q | Q-1 | Q-2 | Q-3 (quarterly). Figures in USD millions unless a % is shown.`,
@@ -146,7 +151,7 @@ export function formatSnapshotForPrompt(snap: CompanySnapshot): string {
     `Operating margin % — FY: ${seriesRow(v, "operMgn", 5, "Ann")}`,
     `ROE % — FY: ${seriesRow(v, "roe", 3, "Ann")}`,
     `Leverage — Total debt FY: ${seriesRow(v, "debt", 3, "Ann")} | EBITDA FY: ${seriesRow(v, "ebitda", 3, "Ann")} | Cash & ST ${fmt(v.cashAnn0)} | Interest exp ${fmt(v.intExpAnn0)}`,
-    `Valuation (current): P/E ${fmt(v.pe)} | P/B ${fmt(v.pbk)} | P/S ${fmt(v.psales)} | Div yield ${fmt(v.divYld, 2)}% | Mkt cap ${fmt(v.mktVal)}`,
+    `Valuation (current): P/E ${fmt(v.pe)} | Forward P/E ${fmt(fwdPe)} | EV/EBITDA ${fmt(evEbitda)} | P/B ${fmt(v.pbk)} | P/S ${fmt(v.psales)} | Div yield ${fmt(v.divYld, 2)}% | Mkt cap ${fmt(v.mktVal)} | EV ${fmt(ev)}`,
     `Estimates: EPS FY+1 ${fmt(v.epsEstFy1, 2)} | Revenue FY+1 ${fmt(v.salesEstFy1)} | Mean target price ${fmt(v.tgtPriceMean, 2)} | # analysts ${fmt(v.numEstFy1, 0)}`,
   ].join("\n");
 }
