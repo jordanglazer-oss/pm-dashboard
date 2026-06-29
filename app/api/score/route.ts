@@ -1175,23 +1175,34 @@ export async function POST(request: NextRequest) {
         if (typeof val === "object" && !Array.isArray(val) && typeof val.summary === "string") {
           // New shape: { summary, dataPoints }
           const dpsRaw = Array.isArray(val.dataPoints) ? val.dataPoints : [];
-          const allowedSources = new Set(["edgar", "edgar-form4", "yahoo", "web", "model"]);
+          // NOTE: "factset" MUST be here — without it, a correctly tagged
+          // source:"factset" was being silently downgraded to "model", which is
+          // why FactSet provenance never surfaced even though the data was FactSet.
+          const allowedSources = new Set(["factset", "edgar", "edgar-form4", "yahoo", "web", "model"]);
           const dataPoints = (dpsRaw as unknown[])
             .filter((d: unknown): d is Record<string, unknown> => d != null && typeof d === "object")
             .map((d: Record<string, unknown>) => {
-              const source = typeof d.source === "string" && allowedSources.has(d.source) ? d.source : "model";
+              let source: ScoreDataPointSource =
+                typeof d.source === "string" && allowedSources.has(d.source) ? (d.source as ScoreDataPointSource) : "model";
+              const sourceDetail = typeof d.sourceDetail === "string" ? d.sourceDetail : undefined;
+              // Deterministic FactSet re-tag: the model often keeps the FactSet
+              // provenance in sourceDetail ("FactSet, FY2025") while mislabeling
+              // source as model/web/yahoo (it treats a computed YoY% as its own
+              // inference). Honor the stated provenance — if the detail says
+              // FactSet, the underlying number IS FactSet.
+              if (source !== "factset" && sourceDetail && /factset/i.test(sourceDetail)) {
+                source = "factset";
+              }
               // Only accept URLs that look like real http(s) addresses, to
               // defend against the model fabricating placeholder strings
-              // like "(URL not available)" or "n/a". Anything else falls
-              // back to undefined → UI either skips the link (web) or
-              // computes a default Yahoo subpage URL.
+              // like "(URL not available)" or "n/a". FactSet points carry no URL.
               const rawUrl = typeof d.url === "string" ? d.url.trim() : "";
-              const url = /^https?:\/\/\S+$/.test(rawUrl) ? rawUrl : undefined;
+              const url = source !== "factset" && /^https?:\/\/\S+$/.test(rawUrl) ? rawUrl : undefined;
               return {
                 label: typeof d.label === "string" ? d.label : "(unnamed)",
                 value: typeof d.value === "string" ? d.value : String(d.value ?? ""),
-                source: source as ScoreDataPointSource,
-                sourceDetail: typeof d.sourceDetail === "string" ? d.sourceDetail : undefined,
+                source,
+                sourceDetail,
                 ...(url ? { url } : {}),
               };
             });
