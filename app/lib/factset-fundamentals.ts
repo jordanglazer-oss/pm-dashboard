@@ -34,9 +34,9 @@ export type ScoringFormula = {
  * with a recent QUARTERLY series (rel 0..-(quarters-1)) for momentum.
  */
 const ANNUAL_METRICS: { base: string; formula: string; label: string; years: number; quarters?: number }[] = [
-  { base: "sales", formula: "FF_SALES", label: "Revenue", years: 5, quarters: 4 },
-  { base: "eps", formula: "FF_EPS", label: "EPS", years: 5, quarters: 4 },
-  { base: "netInc", formula: "FF_NET_INC", label: "Net income", years: 5 },
+  { base: "sales", formula: "FF_SALES", label: "Revenue", years: 5, quarters: 8 },
+  { base: "eps", formula: "FF_EPS", label: "EPS", years: 5, quarters: 8 },
+  { base: "netInc", formula: "FF_NET_INC", label: "Net income", years: 5, quarters: 8 },
   { base: "fcf", formula: "FF_FREE_CF", label: "Free cash flow", years: 5 },
   { base: "ocf", formula: "FF_OPER_CF", label: "Operating cash flow", years: 3 },
   { base: "capex", formula: "FF_CAPEX", label: "Capex", years: 3 },
@@ -59,6 +59,8 @@ const POINT_METRICS: ScoringFormula[] = [
   { key: "divYld", formula: "FG_DIV_YLD", note: "Dividend yield" },
   { key: "mktVal", formula: "FG_MKT_VALUE", note: "Market cap" },
   { key: "price", formula: "P_PRICE", note: "Current price (for forward P/E)" },
+  { key: "high52w", formula: "FG_PRICE_HIGH_52W", note: "52-week high (candidate code — validate)" },
+  { key: "low52w", formula: "FG_PRICE_LOW_52W", note: "52-week low (candidate code — validate)" },
   { key: "epsEstFy1", formula: "FE_ESTIMATE(EPS,MEAN,ANN_ROLL,1,NOW,'')", note: "Mean EPS estimate, FY+1" },
   { key: "salesEstFy1", formula: "FE_ESTIMATE(SALES,MEAN,ANN_ROLL,1,NOW,'')", note: "Mean revenue estimate, FY+1" },
   { key: "tgtPriceMean", formula: "FE_ESTIMATE(PRICE_TGT,MEAN,ANN_ROLL,0,NOW,'')", note: "Mean target price" },
@@ -141,10 +143,10 @@ export function formatSnapshotForPrompt(snap: CompanySnapshot): string {
   const evEbitda = ev != null && v.ebitdaAnn0 ? ev / v.ebitdaAnn0 : null;
   return [
     `=== FACTSET FUNDAMENTALS (primary source, fetched ${snap.fetchedAt.slice(0, 10)}) ===`,
-    `Series are most-recent-first: FY | FY-1 | FY-2 | FY-3 | FY-4 (annual) and Q | Q-1 | Q-2 | Q-3 (quarterly). Figures in USD millions unless a % is shown.`,
-    `Revenue — FY: ${seriesRow(v, "sales", 5, "Ann")} | TTM ${fmt(v.salesLtm)} | recent Q: ${seriesRow(v, "sales", 4, "Qtr")}`,
-    `EPS — FY: ${seriesRow(v, "eps", 5, "Ann", 2)} | TTM ${fmt(v.epsLtm, 2)} | recent Q: ${seriesRow(v, "eps", 4, "Qtr", 2)}`,
-    `Net income — FY: ${seriesRow(v, "netInc", 5, "Ann")}`,
+    `Series are most-recent-first: FY | FY-1 | FY-2 | FY-3 | FY-4 (annual) and Q | Q-1 | ... | Q-7 (last 8 quarters). Q-4 is the YEAR-AGO quarter, so Q vs Q-4 is the quarter-over-quarter YoY comparison — compute these from the series below; do NOT web-search for quarterly results, FactSet carries them here. Figures in USD millions unless a % is shown.`,
+    `Revenue — FY: ${seriesRow(v, "sales", 5, "Ann")} | TTM ${fmt(v.salesLtm)} | last 8 Q: ${seriesRow(v, "sales", 8, "Qtr")}`,
+    `EPS — FY: ${seriesRow(v, "eps", 5, "Ann", 2)} | TTM ${fmt(v.epsLtm, 2)} | last 8 Q: ${seriesRow(v, "eps", 8, "Qtr", 2)}`,
+    `Net income — FY: ${seriesRow(v, "netInc", 5, "Ann")} | last 8 Q: ${seriesRow(v, "netInc", 8, "Qtr")}`,
     `Free cash flow — FY: ${seriesRow(v, "fcf", 5, "Ann")}`,
     `Operating CF — FY: ${seriesRow(v, "ocf", 3, "Ann")} | Capex — FY: ${seriesRow(v, "capex", 3, "Ann")}`,
     `Gross margin % — FY: ${seriesRow(v, "grossMgn", 5, "Ann")}`,
@@ -152,6 +154,7 @@ export function formatSnapshotForPrompt(snap: CompanySnapshot): string {
     `ROE % — FY: ${seriesRow(v, "roe", 3, "Ann")}`,
     `Leverage — Total debt FY: ${seriesRow(v, "debt", 3, "Ann")} | EBITDA FY: ${seriesRow(v, "ebitda", 3, "Ann")} | Cash & ST ${fmt(v.cashAnn0)} | Interest exp ${fmt(v.intExpAnn0)}`,
     `Valuation (current): P/E ${fmt(v.pe)} | Forward P/E ${fmt(fwdPe)} | EV/EBITDA ${fmt(evEbitda)} | P/B ${fmt(v.pbk)} | P/S ${fmt(v.psales)} | Div yield ${fmt(v.divYld, 2)}% | Mkt cap ${fmt(v.mktVal)} | EV ${fmt(ev)}`,
+    `Price: ${fmt(v.price, 2)} | 52-week range: ${fmt(v.low52w, 2)} – ${fmt(v.high52w, 2)}`,
     `Estimates: EPS FY+1 ${fmt(v.epsEstFy1, 2)} | Revenue FY+1 ${fmt(v.salesEstFy1)} | Mean target price ${fmt(v.tgtPriceMean, 2)} | # analysts ${fmt(v.numEstFy1, 0)}`,
   ].join("\n");
 }
