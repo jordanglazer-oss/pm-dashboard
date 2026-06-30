@@ -13,7 +13,7 @@ import { mapBoostedAiToAiRating, mapSmaxToRelativeStrength, consensusLabel, type
 import { getRedis } from "@/app/lib/redis";
 import { resolveFactsetId } from "@/app/lib/factset-symbols";
 import { factsetConfigured } from "@/app/lib/factset";
-import { companySnapshot, formatSnapshotForPrompt, namesMatch, type CompanySnapshot } from "@/app/lib/factset-fundamentals";
+import { companySnapshot, formatSnapshotForPrompt, factsetPeerBlock, namesMatch, type CompanySnapshot } from "@/app/lib/factset-fundamentals";
 
 const client = new Anthropic();
 
@@ -499,7 +499,7 @@ DATA SOURCES (in order of preference for fundamentals):
 
 3. YAHOO FINANCE DATA (always present) — use for: current price, market cap, beta, sentiment metrics (P/E ratios when FactSet/EDGAR aren't present), peer comparison data, analyst recommendations, dividend yield, and anything FactSet/EDGAR don't carry. Yahoo Finance data uses "raw" for numeric values and "fmt" for formatted strings; always use the actual numbers.
 
-WHEN SOURCES DISAGREE: trust FactSet first (current + confirmed), then EDGAR for as-reported audited figures, then Yahoo (which sometimes restates silently and whose definitions can drift). When the SAME figure is available in more than one block, you MUST cite it as source: "factset" — reserve source: "edgar"/"yahoo" only for figures that appear ONLY in those blocks. Whenever a FACTSET FUNDAMENTALS block is present, it is the source of record for the growth, relativeValuation, historicalValuation, leverageCoverage, and cashFlowQuality categories: their dataPoints should be source: "factset" (peer multiples may still come from Yahoo for relativeValuation).
+WHEN SOURCES DISAGREE: trust FactSet first (current + confirmed), then EDGAR for as-reported audited figures, then Yahoo (which sometimes restates silently and whose definitions can drift). When the SAME figure is available in more than one block, you MUST cite it as source: "factset" — reserve source: "edgar"/"yahoo" only for figures that appear ONLY in those blocks. Whenever a FACTSET FUNDAMENTALS block is present, it is the source of record for the growth, relativeValuation, historicalValuation, leverageCoverage, and cashFlowQuality categories: their dataPoints should be source: "factset", INCLUDING peer multiples when the PEER COMPARISONS block is FactSet-priced (only tag a peer "yahoo" if its block is explicitly labeled "(Yahoo fallback)").
 
 MISSING DATA / MANUAL FALLBACK: if NONE of the sources provide what a fundamental category needs (no FactSet block, no EDGAR, no usable Yahoo figure, and web_search — when enabled — surfaces nothing), do NOT fabricate. Score that category at its MIDPOINT, set confidence: "low", and begin its explanation summary with "INSUFFICIENT DATA — score manually:" so the PM knows to set it by hand. This should be rare now that FactSet covers most issuers.
 
@@ -635,7 +635,7 @@ When a figure appears in the FACTSET FUNDAMENTALS block, you MUST tag that dataP
   - Do NOT tag a FactSet figure "model" — FactSet numbers are REAL reported data, never your own inference. "model" is ONLY for qualitative narrative with no numeric source.
   - Do NOT tag a FactSet figure "web" — even when a web_search result shows the SAME number, FactSet is the source of record. Use "web" ONLY for a fact that is NOT in any data block (a breaking event, a guidance change issued after the FactSet data date, a named analyst note).
   - Do NOT tag a FactSet figure "yahoo" — prefer the FACTSET block's value and tag it "factset".
-  - The growth, relativeValuation, historicalValuation, leverageCoverage, and cashFlowQuality categories are scored FROM the FactSet block: nearly every dataPoint in them must be source: "factset". The ONLY legitimate non-factset dataPoint in these is a PEER company's multiple in relativeValuation (source: "yahoo"), or a genuinely new fact from web_search.
+  - The growth, relativeValuation, historicalValuation, leverageCoverage, and cashFlowQuality categories are scored FROM FactSet data — including the PEER COMPARISONS block, which is FactSet-priced. Tag nearly every dataPoint in these source: "factset", peers INCLUDED. Only tag a peer "yahoo" if its block is explicitly labeled "(Yahoo fallback)"; otherwise the sole non-factset exception is a genuinely new fact from web_search.
   - Self-check before finalizing: if you are about to tag a revenue, EPS, margin, cash-flow, debt, EBITDA, valuation, or estimate figure as "model"/"web"/"yahoo" while that same metric sits in the FACTSET block, STOP and change it to "factset".
 
 URL ATTRIBUTION (REQUIRED for web sources):
@@ -693,6 +693,26 @@ Keep each explanation summary to 2-3 sentences and max 4 dataPoints per category
     "ownershipTrends": { "summary": "...", "confidence": "high", "dataPoints": [...] }
   }
 }`;
+
+/** Peer-ticker SELECTION via FMP (just a ticker list — not financial data).
+ *  Used in strict mode so we can re-price those peers with FactSet. */
+async function fmpPeerTickers(ticker: string): Promise<string[]> {
+  const fmpKey = process.env.FMP_API_KEY;
+  if (!fmpKey) return [];
+  try {
+    const res = await fetch(
+      `https://financialmodelingprep.com/stable/stock-peers?symbol=${encodeURIComponent(ticker)}&apikey=${fmpKey}`,
+      { cache: "no-store", headers: { "User-Agent": "Mozilla/5.0" } }
+    );
+    if (!res.ok) return [];
+    const data = await res.json();
+    return Array.isArray(data)
+      ? data.slice(0, 3).map((p: Record<string, unknown>) => p.symbol as string).filter(Boolean)
+      : [];
+  } catch {
+    return [];
+  }
+}
 
 export async function POST(request: NextRequest) {
   try {
@@ -801,18 +821,26 @@ export async function POST(request: NextRequest) {
       // is what makes FactSet the SOLE source for the subject company's
       // fundamentals; Yahoo survives only as the peer feed (a genuine gap).
       let yahooContext = "";
-      if (rawModules != null) {
-        if (factsetUsed && strictFactset) {
-          const peerIdx = financialResult.context.indexOf("PEER COMPARISONS");
-          yahooContext =
-            peerIdx >= 0
-              ? `=== PEER DATA (Yahoo — peer multiples only; FactSet peer feed pending) ===\n${financialResult.context.slice(peerIdx)}`
-              : "";
-        } else {
-          yahooContext = financialResult.context;
+      let peerBlock = "";
+      if (factsetUsed && strictFactset) {
+        // Withhold ALL Yahoo. Re-price the FMP-selected peers with FactSet so
+        // peer multiples are FactSet too. Fall back to the Yahoo peer block only
+        // if FactSet can't resolve/price the peers.
+        const peerTickers = await fmpPeerTickers(upperTicker);
+        if (peerTickers.length) {
+          peerBlock = await factsetPeerBlock(peerTickers).catch((e) => {
+            console.error(`[Score] FactSet peer block failed for ${upperTicker}:`, e);
+            return "";
+          });
         }
+        if (!peerBlock && rawModules != null) {
+          const peerIdx = financialResult.context.indexOf("PEER COMPARISONS");
+          if (peerIdx >= 0) peerBlock = `=== PEER DATA (Yahoo fallback) ===\n${financialResult.context.slice(peerIdx)}`;
+        }
+      } else if (rawModules != null) {
+        yahooContext = financialResult.context;
       }
-      financialContext = [factsetBlock, yahooContext].filter(Boolean).join("\n\n---\n\n");
+      financialContext = [factsetBlock, peerBlock, yahooContext].filter(Boolean).join("\n\n---\n\n");
 
       // Compute technical indicators from price history
       if (priceHistory.length > 0) {

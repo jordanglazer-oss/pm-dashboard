@@ -19,6 +19,7 @@
  */
 
 import { crossSectional, type FactsetValue } from "@/app/lib/factset";
+import { resolveFactsetId } from "@/app/lib/factset-symbols";
 
 export type ScoringFormula = {
   /** Stable key we map into the snapshot (e.g. salesAnn0, salesQtr1, pe). */
@@ -159,6 +160,69 @@ export function formatSnapshotForPrompt(snap: CompanySnapshot): string {
     `Price: ${fmt(v.price, 2)} | 52-week range: ${fmt(v.low52w, 2)} – ${fmt(v.high52w, 2)}`,
     `Estimates: EPS FY+1 ${fmt(v.epsEstFy1, 2)} | Revenue FY+1 ${fmt(v.salesEstFy1)} | Mean target price ${fmt(v.tgtPriceMean, 2)} | # analysts ${fmt(v.numEstFy1, 0)}`,
   ].join("\n");
+}
+
+/** Formulas pulled per peer for the relative-valuation comparison block. */
+const PEER_FORMULAS = [
+  "FG_PE",
+  "FG_PBK",
+  "FG_PSALES",
+  "FG_MKT_VALUE",
+  "P_PRICE",
+  "FF_EBITDA_OPER(ANN,0)",
+  "FF_DEBT(ANN,0)",
+  "FF_CASH_ST(ANN,0)",
+  "FF_GROSS_MGN(ANN,0)",
+  "FF_ROE(ANN,0)",
+  "FE_ESTIMATE(EPS,MEAN,ANN_ROLL,1,NOW,'')",
+  "FF_SALES(ANN,0)",
+  "FF_SALES(ANN,-1)",
+];
+
+/**
+ * Price a set of peer tickers via FactSet (one batched call) and render a
+ * comparison block for the relativeValuation / competitiveMoat categories.
+ * Peer SELECTION still comes from the caller (FMP); this replaces the Yahoo
+ * PRICING so peer multiples are FactSet too. Returns "" if no peer resolves —
+ * the caller then falls back to the Yahoo peer block.
+ */
+export async function factsetPeerBlock(tickers: string[]): Promise<string> {
+  const idToTicker = new Map<string, string>();
+  for (const t of tickers) {
+    const r = resolveFactsetId(t);
+    if (r.source === "factset" && !idToTicker.has(r.id)) idToTicker.set(r.id, t);
+  }
+  const ids = [...idToTicker.keys()];
+  if (ids.length === 0) return "";
+
+  const data = await crossSectional(ids, PEER_FORMULAS);
+  const lines: string[] = [];
+  for (const id of ids) {
+    const row = data[id] || {};
+    const num = (f: string): number | null => {
+      const v: FactsetValue = row[f];
+      return typeof v === "number" ? v : null;
+    };
+    const price = num("P_PRICE");
+    const epsEst = num("FE_ESTIMATE(EPS,MEAN,ANN_ROLL,1,NOW,'')");
+    const fwdPe = price != null && epsEst ? price / epsEst : null;
+    const mkt = num("FG_MKT_VALUE");
+    const debt = num("FF_DEBT(ANN,0)");
+    const cash = num("FF_CASH_ST(ANN,0)");
+    const ebitda = num("FF_EBITDA_OPER(ANN,0)");
+    const ev = mkt != null && debt != null && cash != null ? mkt + debt - cash : null;
+    const evEbitda = ev != null && ebitda ? ev / ebitda : null;
+    const s0 = num("FF_SALES(ANN,0)");
+    const s1 = num("FF_SALES(ANN,-1)");
+    const revGrowth = s0 != null && s1 ? ((s0 - s1) / Math.abs(s1)) * 100 : null;
+    // Skip peers FactSet doesn't actually cover (no P/E and no market cap).
+    if (num("FG_PE") == null && mkt == null) continue;
+    lines.push(
+      `PEER ${idToTicker.get(id)}: P/E ${fmt(num("FG_PE"))} | Fwd P/E ${fmt(fwdPe)} | EV/EBITDA ${fmt(evEbitda)} | P/B ${fmt(num("FG_PBK"))} | P/S ${fmt(num("FG_PSALES"))} | Gross margin ${fmt(num("FF_GROSS_MGN(ANN,0)"))}% | ROE ${fmt(num("FF_ROE(ANN,0)"))}% | Rev growth ${fmt(revGrowth)}% | Mkt cap ${fmt(mkt)}`
+    );
+  }
+  if (lines.length === 0) return "";
+  return `=== PEER COMPARISONS (FactSet — for relativeValuation/competitiveMoat; tag these source:"factset") ===\n${lines.join("\n")}`;
 }
 
 /**

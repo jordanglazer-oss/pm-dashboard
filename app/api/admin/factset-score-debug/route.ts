@@ -1,7 +1,7 @@
 import { NextRequest, NextResponse } from "next/server";
 import { factsetConfigured } from "@/app/lib/factset";
 import { resolveFactsetId } from "@/app/lib/factset-symbols";
-import { companySnapshot, formatSnapshotForPrompt } from "@/app/lib/factset-fundamentals";
+import { companySnapshot, formatSnapshotForPrompt, factsetPeerBlock } from "@/app/lib/factset-fundamentals";
 
 /**
  * GET /api/admin/factset-score-debug?ticker=MLI
@@ -43,6 +43,30 @@ export async function GET(req: NextRequest) {
   try {
     const snap = await companySnapshot(resolved.id);
     const block = snap.hasData ? formatSnapshotForPrompt(snap) : null;
+
+    // Peer preview: FMP-selected tickers, FactSet-priced — lets us confirm the
+    // peer block resolves + prices before paying for a rescore.
+    let peerTickers: string[] = [];
+    let peerBlock: string | null = null;
+    try {
+      const fmpKey = process.env.FMP_API_KEY;
+      if (fmpKey) {
+        const pr = await fetch(
+          `https://financialmodelingprep.com/stable/stock-peers?symbol=${encodeURIComponent(ticker)}&apikey=${fmpKey}`,
+          { cache: "no-store", headers: { "User-Agent": "Mozilla/5.0" } }
+        );
+        if (pr.ok) {
+          const pd = await pr.json();
+          peerTickers = Array.isArray(pd)
+            ? pd.slice(0, 3).map((p: Record<string, unknown>) => p.symbol as string).filter(Boolean)
+            : [];
+        }
+      }
+      if (peerTickers.length) peerBlock = await factsetPeerBlock(peerTickers);
+    } catch (e) {
+      peerBlock = `peer fetch error: ${e instanceof Error ? e.message : String(e)}`;
+    }
+
     return NextResponse.json({
       ticker,
       configured,
@@ -54,6 +78,8 @@ export async function GET(req: NextRequest) {
         ? "FactSet WOULD feed the prompt — block built successfully (see blockPreview). If scores still cite EDGAR/Yahoo, it's a prompt/citation issue."
         : "Snapshot returned no core revenue — FactSet would be skipped here.",
       blockPreview: block,
+      peerTickers,
+      peerBlock,
       values: snap.values,
     });
   } catch (e) {
