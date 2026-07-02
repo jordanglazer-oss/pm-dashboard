@@ -203,17 +203,22 @@ export async function timeSeriesBatch(
   const sleep = (ms: number) => new Promise((r) => setTimeout(r, ms));
   let status = String(submit?.data?.status ?? "QUEUED");
 
+  // FactSet batch retrieval: re-request the SAME endpoint with ?id=<batchId>.
+  // While processing → { data: { status, ... } } (data is an OBJECT). When done
+  // → the cross-sectional payload { data: [ {dataItemName, ...} ] } (an ARRAY).
   while (Date.now() < deadline) {
-    if (/SUCCESS|DONE|COMPLETE|EXECUTED/i.test(status)) {
-      const result = await relayGet(`/formula-api/v1/batch-result/${batchId}`);
-      return { status, batchId, result, submit };
-    }
-    if (/FAIL|ERROR|CANCEL/i.test(status)) {
-      return { status, batchId, result: null, submit };
-    }
     await sleep(pollMs);
-    const st = (await relayGet(`/formula-api/v1/batch-status/${batchId}`)) as { data?: { status?: string } };
-    status = String(st?.data?.status ?? status);
+    const poll = (await relayGet(`/formula-api/v1/cross-sectional?id=${batchId}`)) as {
+      data?: unknown;
+    };
+    if (Array.isArray(poll?.data)) {
+      return { status: "SUCCESS", batchId, result: poll, submit };
+    }
+    const st = (poll?.data as { status?: string })?.status;
+    status = String(st ?? status);
+    if (/FAIL|ERROR|CANCEL/i.test(status)) {
+      return { status, batchId, result: poll, submit };
+    }
   }
   return { status: `${status} (timed out after ${Math.round(maxWait / 1000)}s)`, batchId, result: null, submit };
 }
