@@ -4,6 +4,7 @@ import { computeChangeEvents } from "@/app/lib/change-monitor";
 import type { Stock } from "@/app/lib/types";
 import type { ScoreHistoryStore } from "@/app/api/kv/score-history/route";
 import type { AnalystSnapshots } from "@/app/lib/analyst-snapshots";
+import { RESEARCH_REMOVALS_KEY, type ResearchRemovalStore } from "@/app/lib/research-removals";
 
 /**
  * GET /api/change-monitor?window=7
@@ -34,11 +35,12 @@ export async function GET(req: NextRequest) {
   const nowMs = Date.now();
   try {
     const redis = await getRedis();
-    const [scoreHistory, stocks, snapshots, base] = await Promise.all([
+    const [scoreHistory, stocks, snapshots, base, researchRemovals] = await Promise.all([
       readJson<ScoreHistoryStore>(redis, "pm:score-history", {}),
       readJson<{ stocks?: Stock[] } | Stock[]>(redis, "pm:stocks", []),
       readJson<AnalystSnapshots>(redis, "pm:analyst-snapshots", {}),
       readJson<PriceBase | null>(redis, PRICEBASE_KEY, null),
+      readJson<ResearchRemovalStore>(redis, RESEARCH_REMOVALS_KEY, {}),
     ]);
     const stockList: Stock[] = Array.isArray(stocks) ? stocks : (stocks.stocks ?? []);
 
@@ -47,6 +49,7 @@ export async function GET(req: NextRequest) {
       stocks: stockList,
       snapshots,
       priceBaseline: base?.prices ?? {},
+      researchRemovals,
       windowDays,
       nowMs,
     });

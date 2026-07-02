@@ -5,10 +5,23 @@ import type { ResearchState, UptickEntry, IdeaEntry, RBCEntry, SectorViewEntry, 
 import { defaultResearch, GICS_SECTORS } from "@/app/lib/defaults";
 import { dedupeRbcEntries } from "@/app/lib/rbc-canonical";
 import { applyResearchEntries } from "@/app/lib/research-merge";
+import type { RemovalSource } from "@/app/lib/research-removals";
 import { displayTicker } from "@/app/lib/ticker";
 import { ImageUpload, type BriefAttachment } from "@/app/components/ImageUpload";
 import { useStocks } from "@/app/lib/StockContext";
 import type { Stock, ScoreKey } from "@/app/lib/types";
+
+/** Fire-and-forget: log tickers dropped from a research list to the
+ *  append-only pm:research-removals store so the Dashboard Change Monitor
+ *  surfaces them. Never blocks or throws into the caller. */
+function postResearchRemovals(source: RemovalSource, tickers: string[]) {
+  if (!tickers.length) return;
+  void fetch("/api/kv/research-removals", {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({ removals: tickers.map((ticker) => ({ ticker, source })) }),
+  }).catch(() => {});
+}
 
 /**
  * Canonicalize an Uptick ticker for matching across the scrape and the
@@ -1268,6 +1281,7 @@ export default function ResearchPage() {
       if (!changed) return { merged: state, changed: false };
       const nextState: ResearchState = { ...state, newtonUpticks: Array.from(merged.values()) };
       save(nextState);
+      postResearchRemovals("newton-upticks", removedEntries.map((u) => u.ticker));
       return { merged: nextState, changed: true };
     } catch (e) {
       console.error("Uptick scrape failed:", e);
@@ -1355,6 +1369,7 @@ export default function ResearchPage() {
         [source]: `${entries.length} rows${cachedLabel}${modeLabel} · ${summary.matched} matched · ${summary.added} added${removedLabel}${reasonLabel}`,
       }));
       save(nextState);
+      postResearchRemovals(source, summary.removedTickers);
 
       // Source-specific follow-ups: Yahoo name backfill + live prices. Run
       // off the freshly-merged state so they see the post-merge list.

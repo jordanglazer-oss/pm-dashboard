@@ -40,6 +40,7 @@ import { applySiaEntries, applyBoostedEntries, applyMarketEdgeRows, type StockPa
 import { decodeBase64DataUrl } from "./csv-utils";
 import { extractResearchEntries, type SourceKey as ResearchSourceKey } from "@/app/api/research-scrape/route";
 import { applyResearchEntries } from "./research-merge";
+import { logResearchRemovals } from "./research-removals";
 import type { ResearchState } from "./defaults";
 import { defaultResearch } from "./defaults";
 
@@ -354,6 +355,11 @@ async function handleResearch(
   const state = await readResearch();
   const { nextState, summary } = applyResearchEntries(state, source, entries);
   await writeResearch(nextState);
+  // Record tickers dropped by the replace merge so the Dashboard Change
+  // Monitor can surface "dropped from <list>" events. Best-effort.
+  if (summary.removedTickers.length > 0) {
+    await logResearchRemovals(await getRedis(), summary.removedTickers, source);
+  }
   const cachedLabel = cached ? " (cached)" : "";
   const modeLabel = summary.mode === "additive" ? " · ADDITIVE FALLBACK" : "";
   const removedLabel = summary.mode === "replace" && summary.removed > 0 ? ` · ${summary.removed} removed` : "";

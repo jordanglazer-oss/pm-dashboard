@@ -22,6 +22,7 @@
 import type { Stock, Scores, ScoreKey } from "./types";
 import type { ScoreHistoryEntry, ScoreHistoryStore } from "@/app/api/kv/score-history/route";
 import type { AnalystSnapshots } from "./analyst-snapshots";
+import type { ResearchRemovalStore } from "./research-removals";
 import { isScoreable, marketEdgeApplies } from "./scoring";
 
 // ── Tunable thresholds ──────────────────────────────────────────────
@@ -34,7 +35,7 @@ export const THRESHOLDS = {
   staleDays: 21,
 };
 
-export type ChangeType = "rating" | "score" | "target" | "price" | "signal" | "data";
+export type ChangeType = "rating" | "score" | "target" | "price" | "signal" | "data" | "research-removed";
 export type Severity = "up" | "down" | "warn" | "info";
 
 export type ChangeEvent = {
@@ -111,13 +112,15 @@ export type ComputeInput = {
   snapshots: AnalystSnapshots;
   /** ticker → price when the rolling baseline was taken. */
   priceBaseline: Record<string, number>;
+  /** Append-only log of tickers dropped from research lists (pm:research-removals). */
+  researchRemovals: ResearchRemovalStore;
   windowDays: number;
   /** ms "now" — passed in so the function stays pure/testable. */
   nowMs: number;
 };
 
 export function computeChangeEvents(input: ComputeInput): ChangeEvent[] {
-  const { scoreHistory, stocks, snapshots, priceBaseline, windowDays, nowMs } = input;
+  const { scoreHistory, stocks, snapshots, priceBaseline, researchRemovals, windowDays, nowMs } = input;
   const windowStartMs = nowMs - windowDays * 24 * 60 * 60 * 1000;
   const events: ChangeEvent[] = [];
   const byTicker = new Map<string, Stock>();
@@ -195,6 +198,29 @@ export function computeChangeEvents(input: ComputeInput): ChangeEvent[] {
         detail: `${e.rating ? `${e.rating} · ` : ""}as of ${(e.asOf || stampStr).slice(0, 10)}`,
         delta: undefined,
         at: (e.asOf || stampStr).slice(0, 10),
+      });
+    }
+  }
+
+  // ── 2b. Research-list removals within the window ──────────────────
+  // A name dropped from an analyst focus / research list (replace-mode
+  // screenshot or emailed list no longer containing it). Logged append-only
+  // to pm:research-removals, bucketed by date.
+  for (const [date, entries] of Object.entries(researchRemovals || {})) {
+    const dayMs = Date.parse(`${date}T00:00:00Z`);
+    if (!Number.isFinite(dayMs) || dayMs < windowStartMs) continue;
+    for (const r of entries || []) {
+      if (!r?.ticker || !r?.source) continue;
+      const T = r.ticker.toUpperCase();
+      events.push({
+        id: `${T}:research-removed:${r.source}:${date}`,
+        ticker: r.ticker, name: nameFor(T), bucket: bucketFor(T),
+        type: "research-removed",
+        severity: "warn",
+        headline: `Dropped from ${r.sourceLabel || r.source}`,
+        detail: `No longer in the ${r.sourceLabel || r.source} list — thesis check`,
+        delta: undefined,
+        at: date,
       });
     }
   }

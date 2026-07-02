@@ -61,6 +61,9 @@ export type ResearchMergeSummary = {
   /** Tickers present in the previous list but absent from the screenshot. 0 in
    *  additive-fallback mode (nothing was removed). */
   removed: number;
+  /** The actual tickers removed (for the Change Monitor). Empty in additive
+   *  mode. Excludes PM-preserved rows (e.g. Alpha Picks manualSell tags). */
+  removedTickers: string[];
   /** "replace" (default) or "additive" (safety fallback when the screenshot
    *  was suspiciously small vs the existing list). */
   mode: "replace" | "additive";
@@ -117,10 +120,14 @@ function applyIdeaEntries(
     }
   }
   const removed = mode === "replace" ? existing.length - matched : 0;
+  const entryNorms = new Set(entries.map((e) => normalize(e.ticker)));
+  const removedTickers = mode === "replace"
+    ? existing.filter((i) => !entryNorms.has(normalize(i.ticker))).map((i) => i.ticker)
+    : [];
   const nextState = { ...state, [stateKey]: Array.from(byNorm.values()) } as ResearchState;
   return {
     nextState,
-    summary: { source, rowsParsed: entries.length, matched, added, removed, mode, fallbackReason: reason },
+    summary: { source, rowsParsed: entries.length, matched, added, removed, removedTickers, mode, fallbackReason: reason },
   };
 }
 
@@ -169,10 +176,14 @@ function applyRbcEntries(
   const merged = Array.from(byNorm.values());
   const finalList = source === "rbc-focus" ? dedupeRbcEntries(merged).entries : merged;
   const removed = mode === "replace" ? existing.length - matched : 0;
+  const entryNorms = new Set(entries.map((e) => normalize(e.ticker)));
+  const removedTickers = mode === "replace"
+    ? existing.filter((r) => !entryNorms.has(normalize(r.ticker))).map((r) => r.ticker)
+    : [];
   const nextState = { ...state, [stateKey]: finalList } as ResearchState;
   return {
     nextState,
-    summary: { source, rowsParsed: entries.length, matched, added, removed, mode, fallbackReason: reason },
+    summary: { source, rowsParsed: entries.length, matched, added, removed, removedTickers, mode, fallbackReason: reason },
   };
 }
 
@@ -244,10 +255,14 @@ function applyAlphaPicks(
     ? existing.filter((p) => p.manualSell).length
     : existing.length;
   const removed = mode === "replace" ? existing.length - matched - preservedCount : 0;
+  const entryKeys = new Set(entries.map((e) => compositeKey(e.ticker, e.dateAdded)));
+  const removedTickers = mode === "replace"
+    ? existing.filter((p) => !p.manualSell && !entryKeys.has(compositeKey(p.ticker, p.dateAdded))).map((p) => p.ticker)
+    : [];
   const nextState = { ...state, alphaPicks: Array.from(byKey.values()) };
   return {
     nextState,
-    summary: { source: "seeking-alpha-picks", rowsParsed: entries.length, matched, added, removed, mode, fallbackReason: reason },
+    summary: { source: "seeking-alpha-picks", rowsParsed: entries.length, matched, added, removed, removedTickers, mode, fallbackReason: reason },
   };
 }
 
@@ -284,10 +299,14 @@ function applyFewEntries(
     }
   }
   const removed = mode === "replace" ? existing.length - matched : 0;
+  const entryNorms = new Set(entries.map((e) => normalize(e.ticker)));
+  const removedTickers = mode === "replace"
+    ? existing.filter((r) => !entryNorms.has(normalize(r.ticker))).map((r) => r.ticker)
+    : [];
   const nextState = { ...state, rbccmFew: Array.from(byNorm.values()) };
   return {
     nextState,
-    summary: { source: "rbccm-few", rowsParsed: entries.length, matched, added, removed, mode, fallbackReason: reason },
+    summary: { source: "rbccm-few", rowsParsed: entries.length, matched, added, removed, removedTickers, mode, fallbackReason: reason },
   };
 }
 
