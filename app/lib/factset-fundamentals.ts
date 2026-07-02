@@ -93,16 +93,11 @@ const POINT_METRICS: ScoringFormula[] = [
   // -12M/-36M for the 1y/3y windows.
   { key: "ret1y", formula: "P_TOTAL_RETURNC(-12M,0)", note: "Total return, 1 year %" },
   { key: "ret3y", formula: "P_TOTAL_RETURNC(-36M,0)", note: "Total return, 3 year %" },
-  // Own-history valuation band, take 2: FG_PE(ANN,-i) just echoes the CURRENT
-  // P/E (grade formula ignores the period offset), so instead capture the CLOSE
-  // PRICE ~1/2/3/4 years ago and divide by that year's EPS to build a real P/E
-  // band. CANDIDATES — validate via ?snapshot= (confirm the values DIFFER by
-  // year and look historical, not 5× today's price) before rendering. Unrendered
-  // until confirmed; null-safe.
-  { key: "priceHist1", formula: "P_PRICE(-52W)", note: "Close ~1y ago (own-history P/E)" },
-  { key: "priceHist2", formula: "P_PRICE(-104W)", note: "Close ~2y ago (own-history P/E)" },
-  { key: "priceHist3", formula: "P_PRICE(-156W)", note: "Close ~3y ago (own-history P/E)" },
-  { key: "priceHist4", formula: "P_PRICE(-208W)", note: "Close ~4y ago (own-history P/E)" },
+  // NOTE: own-history P/E band is NOT built from cross-sectional point metrics —
+  // FG_PE(ANN,-i) echoes the current P/E and price÷EPS misaligns fiscal years.
+  // It's pulled via the /time-series endpoint instead (FG_PE monthly over 5y →
+  // true point-in-time band). See timeSeriesRaw() in factset.ts + the probe's
+  // ?timeseries= mode; wired into the snapshot once the shape is confirmed.
 ];
 
 function buildScoringFormulas(): ScoringFormula[] {

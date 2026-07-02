@@ -2,6 +2,7 @@ import { NextRequest, NextResponse } from "next/server";
 import {
   crossSectional,
   crossSectionalDiagnostic,
+  timeSeriesRaw,
   factsetConfigured,
   relayHealthy,
   FACTSET_FORMULAS,
@@ -31,6 +32,31 @@ export async function GET(req: NextRequest) {
       configured: false,
       hint: "Set FACTSET_RELAY_URL and FACTSET_RELAY_SECRET in Vercel env once the relay is live, then retry.",
     });
+  }
+
+  // ?timeseries=<factsetId>[&tsFormula=FG_PE&tsFreq=M&tsYears=5] → dump the RAW
+  // time-series response so we can confirm the shape before writing a parser.
+  // This is how we'll pull a true own-history valuation band (FG_PE over time).
+  const tsId = sp.get("timeseries");
+  if (tsId) {
+    const formula = sp.get("tsFormula") || "FG_PE";
+    const frequency = sp.get("tsFreq") || "M";
+    const years = Math.max(1, Math.min(10, parseInt(sp.get("tsYears") || "5", 10) || 5));
+    const end = new Date();
+    const start = new Date(end);
+    start.setFullYear(start.getFullYear() - years);
+    const ymd = (d: Date) => d.toISOString().slice(0, 10).replace(/-/g, "");
+    const startDate = ymd(start);
+    const endDate = ymd(end);
+    try {
+      const raw = await timeSeriesRaw(tsId, formula, startDate, endDate, frequency);
+      return NextResponse.json({ ok: true, mode: "timeseries", id: tsId, formula, frequency, startDate, endDate, raw });
+    } catch (e) {
+      return NextResponse.json(
+        { ok: false, mode: "timeseries", id: tsId, formula, error: e instanceof Error ? e.message : String(e) },
+        { status: 502 }
+      );
+    }
   }
 
   // ?snapshot=<factsetId> → validate the full scoring formula set against one

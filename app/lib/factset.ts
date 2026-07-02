@@ -141,6 +141,28 @@ export async function getPrices(ids: string[]): Promise<Record<string, number | 
   return out;
 }
 
+/**
+ * Time-series query — dated history of a single formula for one id. This is the
+ * CORRECT way to get historical valuation multiples (e.g. FG_PE over 5 years):
+ * FactSet computes the point-in-time value at each date (right price + right
+ * trailing EPS), so there's no manual price÷EPS math or fiscal misalignment.
+ * Returns the RAW relay JSON so a typed parser can be layered on once the exact
+ * shape is confirmed via the probe. startDate/endDate are YYYYMMDD; frequency is
+ * a FactSet code (e.g. "M" monthly, "AY" annual-fiscal). Reachable through the
+ * relay today — its allow-list is the "/formula-api/v1/" prefix.
+ */
+export async function timeSeriesRaw(
+  id: string,
+  formula: string,
+  startDate: string,
+  endDate: string,
+  frequency: string
+): Promise<unknown> {
+  const f = formula.replace(/,/g, "%2C");
+  const path = `/formula-api/v1/time-series?ids=${id}&formulas=${f}&startDate=${startDate}&endDate=${endDate}&frequency=${frequency}`;
+  return relayGet(path);
+}
+
 export type FactsetFormulaDiagnostic = {
   formula: string;
   value: FactsetValue;
