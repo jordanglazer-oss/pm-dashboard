@@ -5,7 +5,6 @@ import type {
   TickerSnapshot,
   AnalystRating,
   AnalystEntry,
-  FactSetEntry,
   ConsensusBreakdown,
   TickerReports,
   ExtractedReport,
@@ -33,10 +32,6 @@ const RATING_OPTIONS: { value: AnalystRating; label: string }[] = [
   { value: "underperform", label: "Underperform / Underweight" },
   { value: "not-covered", label: "Not covered" },
 ];
-
-function todayIso() {
-  return new Date().toISOString().slice(0, 10);
-}
 
 export function AnalystSnapshotPanel({ ticker, stockCurrency, snapshot, breakdown, reports, onChange, onUpload, onRemoveReport, onConvertTarget }: Props) {
   const [local, setLocal] = useState<TickerSnapshot>(() => snapshot ?? {});
@@ -72,24 +67,6 @@ export function AnalystSnapshotPanel({ ticker, stockCurrency, snapshot, breakdow
     };
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
-
-  const patchFactSet = (patch: Partial<FactSetEntry>) => {
-    const existing: FactSetEntry = local.factset ?? {};
-    const merged: FactSetEntry = { ...existing, ...patch, lastUpdated: new Date().toISOString() };
-    if (!merged.asOf && (patch.averageTarget !== undefined || patch.analystCount !== undefined)) {
-      merged.asOf = todayIso();
-    }
-    const next: TickerSnapshot = { ...local, factset: merged };
-    setLocal(next);
-    scheduleSave(next);
-  };
-
-  const clearFactSet = () => {
-    const next: TickerSnapshot = { ...local };
-    delete next.factset;
-    setLocal(next);
-    scheduleSave(next);
-  };
 
   const patchAnalyst = (which: "rbc" | "jpm", patch: Partial<AnalystEntry>) => {
     const existing: AnalystEntry = local[which] ?? { rating: "not-covered" };
@@ -308,46 +285,27 @@ export function AnalystSnapshotPanel({ ticker, stockCurrency, snapshot, breakdow
       <div className="rounded-lg border border-slate-200 bg-white p-3">
         <div className="flex items-center justify-between mb-2">
           <span className="text-xs font-semibold text-slate-700">FactSet street consensus</span>
-          {factset && (
-            <button
-              type="button"
-              onClick={clearFactSet}
-              className="text-[10px] text-slate-400 hover:text-red-600"
-            >
-              Clear
-            </button>
-          )}
+          <span className="text-[9px] font-medium uppercase tracking-wider text-indigo-500" title="Auto-populated from the FactSet Formula API on every rescore. Not manually editable.">Auto · FactSet</span>
         </div>
         <div className="grid grid-cols-1 sm:grid-cols-3 gap-2 text-[11px]">
-          <label className="flex flex-col gap-0.5">
+          <div className="flex flex-col gap-0.5">
             <span className="text-slate-500">Avg target price</span>
-            <input
-              type="number"
-              step="0.01"
-              value={factset?.averageTarget ?? ""}
-              onChange={(e) => patchFactSet({ averageTarget: e.target.value === "" ? undefined : Number(e.target.value) })}
-              placeholder="$"
-              className="rounded border border-slate-200 bg-white px-1.5 py-1 outline-none focus:border-blue-400"
-            />
-          </label>
-          <label className="flex flex-col gap-0.5">
+            <span className="rounded border border-slate-100 bg-slate-50 px-1.5 py-1 font-mono text-slate-700">
+              {typeof factset?.averageTarget === "number" ? `$${factset.averageTarget.toFixed(2)}` : "—"}
+            </span>
+          </div>
+          <div className="flex flex-col gap-0.5">
             <span className="text-slate-500"># of analysts</span>
-            <input
-              type="number"
-              value={factset?.analystCount ?? ""}
-              onChange={(e) => patchFactSet({ analystCount: e.target.value === "" ? undefined : Number(e.target.value) })}
-              className="rounded border border-slate-200 bg-white px-1.5 py-1 outline-none focus:border-blue-400"
-            />
-          </label>
-          <label className="flex flex-col gap-0.5">
+            <span className="rounded border border-slate-100 bg-slate-50 px-1.5 py-1 font-mono text-slate-700">
+              {typeof factset?.analystCount === "number" ? String(factset.analystCount) : "—"}
+            </span>
+          </div>
+          <div className="flex flex-col gap-0.5">
             <span className="text-slate-500">As of</span>
-            <input
-              type="date"
-              value={factset?.asOf ?? ""}
-              onChange={(e) => patchFactSet({ asOf: e.target.value })}
-              className="rounded border border-slate-200 bg-white px-1.5 py-1 outline-none focus:border-blue-400"
-            />
-          </label>
+            <span className="rounded border border-slate-100 bg-slate-50 px-1.5 py-1 font-mono text-slate-700">
+              {factset?.asOf || "—"}
+            </span>
+          </div>
         </div>
         {breakdown.upside.target && breakdown.upside.upsidePercent !== undefined && (
           <p className="mt-2 text-[10px] text-slate-500">
@@ -364,7 +322,7 @@ export function AnalystSnapshotPanel({ ticker, stockCurrency, snapshot, breakdow
       {renderAnalyst("jpm", "JPM")}
 
       <p className="text-[10px] text-slate-400 italic">
-        Edits save automatically. The analystConsensus score auto-updates when FactSet target is changed via the Coverage Checklist.
+        RBC / JPM edits save automatically. The FactSet street consensus is auto-populated from the FactSet Formula API on every rescore and drives the analystConsensus score.
       </p>
     </div>
   );
