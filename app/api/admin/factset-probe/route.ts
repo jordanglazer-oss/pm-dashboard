@@ -3,6 +3,7 @@ import {
   crossSectional,
   crossSectionalDiagnostic,
   timeSeriesRaw,
+  timeSeriesBatch,
   factsetConfigured,
   relayHealthy,
   FACTSET_FORMULAS,
@@ -48,14 +49,21 @@ export async function GET(req: NextRequest) {
     const ymd = (d: Date) => d.toISOString().slice(0, 10).replace(/-/g, "");
     const startDate = ymd(start);
     const endDate = ymd(end);
-    const endpoint = sp.get("tsEndpoint") === "time-series" ? "time-series" : "cross-sectional";
-    const batch = sp.get("tsBatch") !== "N";
+    // ?tsRaw=Y → single raw submit (no polling), to inspect one response.
+    // Default → run the full batch flow (submit → poll → result).
+    const rawOnly = sp.get("tsRaw") === "Y";
     try {
-      const raw = await timeSeriesRaw(tsId, formula, startDate, endDate, frequency, { endpoint, batch });
-      return NextResponse.json({ ok: true, mode: "timeseries", id: tsId, formula, frequency, startDate, endDate, endpoint, batch, raw });
+      if (rawOnly) {
+        const endpoint = sp.get("tsEndpoint") === "time-series" ? "time-series" : "cross-sectional";
+        const batch = sp.get("tsBatch") !== "N";
+        const raw = await timeSeriesRaw(tsId, formula, startDate, endDate, frequency, { endpoint, batch });
+        return NextResponse.json({ ok: true, mode: "timeseries-raw", id: tsId, formula, frequency, startDate, endDate, endpoint, batch, raw });
+      }
+      const out = await timeSeriesBatch(tsId, formula, startDate, endDate, frequency);
+      return NextResponse.json({ ok: true, mode: "timeseries", id: tsId, formula, frequency, startDate, endDate, ...out });
     } catch (e) {
       return NextResponse.json(
-        { ok: false, mode: "timeseries", id: tsId, formula, endpoint, batch, error: e instanceof Error ? e.message : String(e) },
+        { ok: false, mode: "timeseries", id: tsId, formula, error: e instanceof Error ? e.message : String(e) },
         { status: 502 }
       );
     }

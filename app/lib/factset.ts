@@ -172,6 +172,52 @@ export async function timeSeriesRaw(
   return relayGet(path);
 }
 
+/**
+ * Run a FactSet batch (iterated/time-series) request end to end: submit with
+ * batch=Y, poll batch-status until it finishes, then fetch batch-result.
+ * FactSet only serves dated/time-series data this way. Bounded by maxWaitMs so
+ * it stays under the route's maxDuration. Returns the final status + raw result
+ * payload (parser layered on once the shape is confirmed via the probe).
+ *
+ * The status/result endpoint paths are best-guess FactSet Formula API v1
+ * conventions; if wrong, the relay's now-surfaced error body reveals the fix.
+ */
+export async function timeSeriesBatch(
+  id: string,
+  formula: string,
+  startDate: string,
+  endDate: string,
+  frequency: string,
+  opts?: { maxWaitMs?: number; pollMs?: number }
+): Promise<{ status: string; batchId: string; result: unknown; submit: unknown }> {
+  const submit = (await timeSeriesRaw(id, formula, startDate, endDate, frequency, {
+    endpoint: "cross-sectional",
+    batch: true,
+  })) as { data?: { id?: string; status?: string } };
+  const batchId = submit?.data?.id ?? "";
+  if (!batchId) return { status: "no-batch-id", batchId, result: null, submit };
+
+  const maxWait = opts?.maxWaitMs ?? 24_000;
+  const pollMs = opts?.pollMs ?? 1_500;
+  const deadline = Date.now() + maxWait;
+  const sleep = (ms: number) => new Promise((r) => setTimeout(r, ms));
+  let status = String(submit?.data?.status ?? "QUEUED");
+
+  while (Date.now() < deadline) {
+    if (/SUCCESS|DONE|COMPLETE|EXECUTED/i.test(status)) {
+      const result = await relayGet(`/formula-api/v1/batch-result/${batchId}`);
+      return { status, batchId, result, submit };
+    }
+    if (/FAIL|ERROR|CANCEL/i.test(status)) {
+      return { status, batchId, result: null, submit };
+    }
+    await sleep(pollMs);
+    const st = (await relayGet(`/formula-api/v1/batch-status/${batchId}`)) as { data?: { status?: string } };
+    status = String(st?.data?.status ?? status);
+  }
+  return { status: `${status} (timed out after ${Math.round(maxWait / 1000)}s)`, batchId, result: null, submit };
+}
+
 export type FactsetFormulaDiagnostic = {
   formula: string;
   value: FactsetValue;
