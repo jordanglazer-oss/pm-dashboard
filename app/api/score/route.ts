@@ -7,7 +7,7 @@ import type { OHLCVBar, TechnicalIndicators, RiskAlert } from "@/app/lib/technic
 import { computeTechnicals, computeRiskAlert, formatTechnicalsForPrompt } from "@/app/lib/technicals";
 import { formatEdgarSnapshotForPrompt } from "@/app/lib/edgar-prompt";
 import { tallyResearchMentions } from "@/app/lib/research-mentions";
-import { computeAnalystConsensus, getSnapshotForTicker, buildConsensusExplanation } from "@/app/lib/analyst-snapshots";
+import { computeAnalystConsensus, getSnapshotForTicker, setSnapshotForTicker, buildConsensusExplanation } from "@/app/lib/analyst-snapshots";
 import type { AnalystSnapshots } from "@/app/lib/analyst-snapshots";
 import { mapBoostedAiToAiRating, mapSmaxToRelativeStrength, consensusLabel, type BoostedAiConsensus } from "@/app/lib/external-scoring";
 import { getRedis } from "@/app/lib/redis";
@@ -841,6 +841,38 @@ export async function POST(request: NextRequest) {
         yahooContext = financialResult.context;
       }
       financialContext = [factsetBlock, peerBlock, yahooContext].filter(Boolean).join("\n\n---\n\n");
+
+      // Auto-populate the FactSet analyst-consensus row (mean target price +
+      // # analysts) from the snapshot — replaces the manual Coverage-Checklist
+      // entry so it refreshes on every rescore. Read-merge-write: updates ONLY
+      // the .factset sub-entry, preserving the PM's .rbc / .jpm entries and all
+      // other tickers. Gated on factsetUsed (name-guard passed) so we never
+      // write a mis-resolved company's numbers.
+      if (
+        factsetUsed &&
+        factsetSnap &&
+        (typeof factsetSnap.values.tgtPriceMean === "number" || typeof factsetSnap.values.numEstFy1 === "number")
+      ) {
+        try {
+          const redis = await getRedis();
+          const raw = await redis.get("pm:analyst-snapshots");
+          const blob = raw ? (JSON.parse(raw) as AnalystSnapshots) : {};
+          const existing = getSnapshotForTicker(blob, upperTicker) || {};
+          const today = new Date().toISOString().slice(0, 10);
+          const factset = {
+            averageTarget:
+              typeof factsetSnap.values.tgtPriceMean === "number" ? factsetSnap.values.tgtPriceMean : existing.factset?.averageTarget,
+            analystCount:
+              typeof factsetSnap.values.numEstFy1 === "number" ? factsetSnap.values.numEstFy1 : existing.factset?.analystCount,
+            asOf: today,
+            lastUpdated: today,
+          };
+          const updated = setSnapshotForTicker(blob, upperTicker, { ...existing, factset });
+          await redis.set("pm:analyst-snapshots", JSON.stringify(updated));
+        } catch (e) {
+          console.error(`[Score] failed to auto-populate FactSet analyst snapshot for ${upperTicker}:`, e);
+        }
+      }
 
       // Compute technical indicators from price history
       if (priceHistory.length > 0) {
