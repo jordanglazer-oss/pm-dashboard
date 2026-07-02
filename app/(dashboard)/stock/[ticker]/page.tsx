@@ -1402,9 +1402,20 @@ export default function StockDetailPage() {
         updateStockFields(ticker, {
           ...(data.companySummary ? { companySummary: data.companySummary } : {}),
           ...(data.investmentThesis ? { investmentThesis: data.investmentThesis } : {}),
+          // data.sector is FactSet-sourced (normalized to the app vocabulary)
+          // when the name-guard passed, else the model echo. Authoritative.
           ...(data.sector ? { sector: data.sector } : {}),
           ...(data.name && data.name !== "Unknown" ? { name: data.name } : {}),
         });
+      }
+      // Persist FactSet's beta dashboard-wide, but ONLY for individual stocks —
+      // ETFs/mutual funds keep their Morningstar BetaM36 (never overwrite a
+      // fund's beta with a Yahoo/FactSet number, per the beta-source rule).
+      if (
+        typeof data.factsetBeta === "number" &&
+        (stock.instrumentType === "stock" || stock.instrumentType == null)
+      ) {
+        updateStockFields(ticker, { beta: data.factsetBeta });
       }
       updateLastScored(ticker, new Date().toLocaleString("en-US", {
         month: "short", day: "numeric", year: "numeric",

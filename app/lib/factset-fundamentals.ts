@@ -59,6 +59,7 @@ const POINT_METRICS: ScoringFormula[] = [
   { key: "psales", formula: "FG_PSALES", note: "P/S" },
   { key: "divYld", formula: "FG_DIV_YLD", note: "Dividend yield" },
   { key: "mktVal", formula: "FG_MKT_VALUE", note: "Market cap" },
+  { key: "beta", formula: "P_BETA", note: "Beta" },
   { key: "price", formula: "P_PRICE", note: "Current price (for forward P/E)" },
   // 52-week high/low — validated: the daily-price functions need a -52W
   // relative window (-1Y / -1AY give "Invalid Daily Price Date Specification").
@@ -144,6 +145,20 @@ export type CompanySnapshot = {
  */
 const SECTOR_FORMULA = "FG_GICS_SECTOR";
 const INDUSTRY_FORMULA = "FG_GICS_INDUSTRY";
+
+/**
+ * Normalize FactSet's official GICS sector label to the app's sector vocabulary
+ * (defaults.ts GICS_SECTORS) so a FactSet-sourced sector groups identically to
+ * the existing Yahoo-sourced ones in sector breakdowns. The only divergence is
+ * "Information Technology" (GICS) → "Technology" (app); every other GICS sector
+ * name already matches the app's list. Unknown labels pass through unchanged.
+ */
+export function normalizeFactsetSector(s: string | null | undefined): string | null {
+  if (!s) return null;
+  const t = s.trim();
+  if (/^information technology$/i.test(t)) return "Technology";
+  return t;
+}
 
 export async function companySnapshot(factsetId: string): Promise<CompanySnapshot> {
   const formulas = [...SCORING_FORMULAS.map((f) => f.formula), NAME_FORMULA, SECTOR_FORMULA, INDUSTRY_FORMULA];

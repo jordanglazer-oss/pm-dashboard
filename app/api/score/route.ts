@@ -13,7 +13,7 @@ import { mapBoostedAiToAiRating, mapSmaxToRelativeStrength, consensusLabel, type
 import { getRedis } from "@/app/lib/redis";
 import { resolveFactsetId } from "@/app/lib/factset-symbols";
 import { factsetConfigured } from "@/app/lib/factset";
-import { companySnapshot, formatSnapshotForPrompt, factsetPeerBlock, namesMatch, type CompanySnapshot } from "@/app/lib/factset-fundamentals";
+import { companySnapshot, formatSnapshotForPrompt, factsetPeerBlock, namesMatch, normalizeFactsetSector, type CompanySnapshot } from "@/app/lib/factset-fundamentals";
 
 const client = new Anthropic();
 
@@ -765,6 +765,11 @@ export async function POST(request: NextRequest) {
     // The FactSet analyst-consensus row written this run — returned to the
     // client so the stock page can refresh the Coverage panel live (no reload).
     let factsetConsensusOut: { averageTarget?: number; analystCount?: number; asOf: string; lastUpdated: string } | undefined;
+    // Authoritative FactSet sector (normalized to app vocab) + beta, propagated
+    // dashboard-wide via the response. Set inside the snapshot block (where
+    // factsetSnap is in scope) once the name-guard passes.
+    let factsetSectorOut: string | null = null;
+    let factsetBetaOut: number | null = null;
 
     try {
       // Resolve this ticker to a FactSet id (or "existing" → skip FactSet).
@@ -810,6 +815,10 @@ export async function POST(request: NextRequest) {
         if (namesMatch(yahooName, factsetSnap.name)) {
           factsetBlock = formatSnapshotForPrompt(factsetSnap);
           factsetUsed = true;
+          // Capture authoritative sector + beta for dashboard-wide propagation.
+          factsetSectorOut = normalizeFactsetSector(factsetSnap.sector);
+          const b = typeof factsetSnap.values.beta === "number" ? factsetSnap.values.beta : null;
+          factsetBetaOut = b != null ? Math.max(-3, Math.min(5, b)) : null;
         } else {
           console.warn(
             `[Score] ${upperTicker} FactSet name guard rejected: FactSet="${factsetSnap.name}" vs Yahoo="${yahooName}" — falling back to EDGAR/Yahoo`
@@ -1370,8 +1379,16 @@ export async function POST(request: NextRequest) {
     return NextResponse.json({
       ticker: upperTicker,
       name: parsed.name || "Unknown",
-      sector: parsed.sector || "Technology",
+      // FactSet sector (normalized, name-guard passed) is authoritative; the
+      // client persists this response `sector`, so FactSet propagates to sector
+      // breakdowns etc. Falls back to the model echo when FactSet didn't apply.
+      sector: factsetSectorOut || parsed.sector || "Technology",
       beta: typeof parsed.beta === "number" ? parsed.beta : 1.0,
+      // FactSet-sourced fields for dashboard-wide propagation (null when the
+      // name-guard didn't pass or FactSet lacks the value). Client persists
+      // factsetBeta only for instrumentType "stock".
+      factsetSector: factsetSectorOut,
+      factsetBeta: factsetBetaOut,
       scores,
       explanations,
       notes: parsed.companySummary || parsed.notes || "",
