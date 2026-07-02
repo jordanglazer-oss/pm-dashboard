@@ -48,12 +48,14 @@ export async function GET(req: NextRequest) {
     const ymd = (d: Date) => d.toISOString().slice(0, 10).replace(/-/g, "");
     const startDate = ymd(start);
     const endDate = ymd(end);
+    const endpoint = sp.get("tsEndpoint") === "time-series" ? "time-series" : "cross-sectional";
+    const batch = sp.get("tsBatch") !== "N";
     try {
-      const raw = await timeSeriesRaw(tsId, formula, startDate, endDate, frequency);
-      return NextResponse.json({ ok: true, mode: "timeseries", id: tsId, formula, frequency, startDate, endDate, raw });
+      const raw = await timeSeriesRaw(tsId, formula, startDate, endDate, frequency, { endpoint, batch });
+      return NextResponse.json({ ok: true, mode: "timeseries", id: tsId, formula, frequency, startDate, endDate, endpoint, batch, raw });
     } catch (e) {
       return NextResponse.json(
-        { ok: false, mode: "timeseries", id: tsId, formula, error: e instanceof Error ? e.message : String(e) },
+        { ok: false, mode: "timeseries", id: tsId, formula, endpoint, batch, error: e instanceof Error ? e.message : String(e) },
         { status: 502 }
       );
     }

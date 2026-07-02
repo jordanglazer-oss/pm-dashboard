@@ -161,10 +161,14 @@ export async function timeSeriesRaw(
   formula: string,
   startDate: string,
   endDate: string,
-  frequency: string
+  frequency: string,
+  opts?: { endpoint?: "time-series" | "cross-sectional"; batch?: boolean }
 ): Promise<unknown> {
   const f = formula.replace(/,/g, "%2C");
-  const path = `/formula-api/v1/time-series?ids=${id}&formulas=${f}&startDate=${startDate}&endDate=${endDate}&frequency=${frequency}`;
+  const endpoint = opts?.endpoint ?? "cross-sectional";
+  // FactSet: iterated (dated) results require batch=Y alongside start/end/freq.
+  const batch = opts?.batch === false ? "" : "&batch=Y";
+  const path = `/formula-api/v1/${endpoint}?ids=${id}&formulas=${f}&startDate=${startDate}&endDate=${endDate}&frequency=${frequency}${batch}`;
   return relayGet(path);
 }
 
