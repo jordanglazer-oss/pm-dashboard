@@ -64,7 +64,12 @@ async function relayGet(factsetPath: string): Promise<unknown> {
     headers: { "x-relay-key": RELAY_SECRET as string },
     cache: "no-store",
   });
-  if (!res.ok) throw new Error(`FactSet relay returned ${res.status}`);
+  if (!res.ok) {
+    // Surface FactSet's error body (the relay forwards it) — a 400 explains
+    // exactly what's wrong with the query, which a bare status code hides.
+    const body = await res.text().catch(() => "");
+    throw new Error(`FactSet relay returned ${res.status}${body ? `: ${body.slice(0, 600)}` : ""}`);
+  }
   return res.json();
 }
 
