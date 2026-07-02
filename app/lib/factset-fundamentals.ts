@@ -68,6 +68,16 @@ const POINT_METRICS: ScoringFormula[] = [
   { key: "salesEstFy1", formula: "FE_ESTIMATE(SALES,MEAN,ANN_ROLL,1,NOW,'')", note: "Mean revenue estimate, FY+1" },
   { key: "tgtPriceMean", formula: "FE_ESTIMATE(PRICE_TGT,MEAN,ANN_ROLL,0,NOW,'')", note: "Mean target price" },
   { key: "numEstFy1", formula: "FE_ESTIMATE(EPS,NEST,ANN_ROLL,1,NOW,'')", note: "# analysts (estimate count)" },
+  // ── Scoring-completeness candidates (validate via probe, then collapse) ──
+  { key: "sector", formula: "FG_GICS_SECTOR", note: "GICS sector (feeds secular)" },
+  { key: "industry", formula: "FG_GICS_INDUSTRY", note: "GICS industry candidate (feeds secular)" },
+  { key: "recA", formula: "FE_ESTIMATE(REC_MARK,MEAN,ANN_ROLL,0,NOW,'')", note: "mean recommendation candidate A" },
+  { key: "recB", formula: "FG_REC", note: "mean recommendation candidate B" },
+  { key: "recC", formula: "FE_ESTIMATE(RECMEAN,MEAN,ANN_ROLL,0,NOW,'')", note: "mean recommendation candidate C" },
+  { key: "tgtHigh", formula: "FE_ESTIMATE(PRICE_TGT,HIGH,ANN_ROLL,0,NOW,'')", note: "target price high (dispersion)" },
+  { key: "tgtLow", formula: "FE_ESTIMATE(PRICE_TGT,LOW,ANN_ROLL,0,NOW,'')", note: "target price low (dispersion)" },
+  { key: "revUpA", formula: "FE_ESTIMATE(EPS,UP,ANN_ROLL,1,NOW,'')", note: "EPS up-revisions candidate A" },
+  { key: "revDownA", formula: "FE_ESTIMATE(EPS,DOWN,ANN_ROLL,1,NOW,'')", note: "EPS down-revisions candidate A" },
 ];
 
 function buildScoringFormulas(): ScoringFormula[] {
