@@ -48,6 +48,12 @@ const ANNUAL_METRICS: { base: string; formula: string; label: string; years: num
   { base: "ebitda", formula: "FF_EBITDA_OPER", label: "EBITDA", years: 3 },
   { base: "cash", formula: "FF_CASH_ST", label: "Cash & ST investments", years: 1 },
   { base: "intExp", formula: "FF_INT_EXP_DEBT", label: "Interest expense", years: 1 },
+  // Own-history valuation band — the issuer's P/E across the last 5 fiscal
+  // years, so scoring can judge whether today's multiple is cheap/rich vs its
+  // OWN history (drives historicalValuation). FG_PE(ANN,-i) is a candidate
+  // formula shape — validate via the ?snapshot= diagnostic probe; a bad code
+  // just yields null (renders "n/a"), never breaks scoring.
+  { base: "peHist", formula: "FG_PE", label: "P/E (own history)", years: 5 },
 ];
 
 /** Point-in-time metrics (current value, no series). */
@@ -66,6 +72,10 @@ const POINT_METRICS: ScoringFormula[] = [
   { key: "low52w", formula: "P_PRICE_LOW(-52W,0)", note: "52-week low" },
   { key: "epsEstFy1", formula: "FE_ESTIMATE(EPS,MEAN,ANN_ROLL,1,NOW,'')", note: "Mean EPS estimate, FY+1" },
   { key: "salesEstFy1", formula: "FE_ESTIMATE(SALES,MEAN,ANN_ROLL,1,NOW,'')", note: "Mean revenue estimate, FY+1" },
+  // FY+2 estimates — a second forward year so growth/secular reads off a
+  // 2-year trajectory rather than a single (noisy) forward year.
+  { key: "epsEstFy2", formula: "FE_ESTIMATE(EPS,MEAN,ANN_ROLL,2,NOW,'')", note: "Mean EPS estimate, FY+2" },
+  { key: "salesEstFy2", formula: "FE_ESTIMATE(SALES,MEAN,ANN_ROLL,2,NOW,'')", note: "Mean revenue estimate, FY+2" },
   { key: "tgtPriceMean", formula: "FE_ESTIMATE(PRICE_TGT,MEAN,ANN_ROLL,0,NOW,'')", note: "Mean target price" },
   { key: "numEstFy1", formula: "FE_ESTIMATE(EPS,NEST,ANN_ROLL,1,NOW,'')", note: "# analysts (estimate count)" },
   // ── Analyst signals (validated). Recommendation consensus (REC/REC_MARK)
@@ -76,6 +86,15 @@ const POINT_METRICS: ScoringFormula[] = [
   { key: "tgtLow", formula: "FE_ESTIMATE(PRICE_TGT,LOW,ANN_ROLL,0,NOW,'')", note: "Target price low (dispersion)" },
   { key: "revUp", formula: "FE_ESTIMATE(EPS,UP,ANN_ROLL,1,NOW,'')", note: "EPS FY+1 up-revisions (30d)" },
   { key: "revDown", formula: "FE_ESTIMATE(EPS,DOWN,ANN_ROLL,1,NOW,'')", note: "EPS FY+1 down-revisions (30d)" },
+  // Trailing total return (dividend + split adjusted), % — momentum / track
+  // record. Relative week windows mirror the validated 52-week price syntax
+  // (-52W). Candidate shape: validate via ?snapshot= before relying on it; a
+  // bad code renders "n/a" and is harmless.
+  { key: "ret1m", formula: "P_TOTAL_RETURNC(-4W,0)", note: "Total return, 1 month %" },
+  { key: "ret3m", formula: "P_TOTAL_RETURNC(-13W,0)", note: "Total return, 3 month %" },
+  { key: "ret6m", formula: "P_TOTAL_RETURNC(-26W,0)", note: "Total return, 6 month %" },
+  { key: "ret1y", formula: "P_TOTAL_RETURNC(-52W,0)", note: "Total return, 1 year %" },
+  { key: "ret3y", formula: "P_TOTAL_RETURNC(-156W,0)", note: "Total return, 3 year %" },
 ];
 
 function buildScoringFormulas(): ScoringFormula[] {
@@ -182,8 +201,10 @@ export function formatSnapshotForPrompt(snap: CompanySnapshot): string {
     `ROE % — FY: ${seriesRow(v, "roe", 3, "Ann")}`,
     `Leverage — Total debt FY: ${seriesRow(v, "debt", 3, "Ann")} | EBITDA FY: ${seriesRow(v, "ebitda", 3, "Ann")} | Cash & ST ${fmt(v.cashAnn0)} | Interest exp ${fmt(v.intExpAnn0)}`,
     `Valuation (current): P/E ${fmt(v.pe)} | Forward P/E ${fmt(fwdPe)} | EV/EBITDA ${fmt(evEbitda)} | P/B ${fmt(v.pbk)} | P/S ${fmt(v.psales)} | Div yield ${fmt(v.divYld, 2)}% | Mkt cap ${fmt(v.mktVal)} | EV ${fmt(ev)}`,
+    `Valuation vs own history — P/E by FY: ${seriesRow(v, "peHist", 5, "Ann")} (most-recent-first; compare the current P/E above to this 5-year band for historicalValuation — trading toward the high end = richly valued vs its own history, low end = cheap).`,
     `Price: ${fmt(v.price, 2)} | 52-week range: ${fmt(v.low52w, 2)} – ${fmt(v.high52w, 2)}`,
-    `Estimates: EPS FY+1 ${fmt(v.epsEstFy1, 2)} | Revenue FY+1 ${fmt(v.salesEstFy1)} | # analysts ${fmt(v.numEstFy1, 0)}`,
+    `Total return % (div+split adj): 1M ${fmt(v.ret1m)} | 3M ${fmt(v.ret3m)} | 6M ${fmt(v.ret6m)} | 1Y ${fmt(v.ret1y)} | 3Y ${fmt(v.ret3y)} (shareholder momentum / track record — supporting evidence for trackRecord).`,
+    `Estimates: EPS FY+1 ${fmt(v.epsEstFy1, 2)} → FY+2 ${fmt(v.epsEstFy2, 2)} | Revenue FY+1 ${fmt(v.salesEstFy1)} → FY+2 ${fmt(v.salesEstFy2)} | # analysts ${fmt(v.numEstFy1, 0)} (the FY+1→FY+2 ramp is the forward growth trajectory for growth/secular).`,
     `Analyst signals: target ${fmt(v.tgtPriceMean, 2)} (range ${fmt(v.tgtLow, 2)}–${fmt(v.tgtHigh, 2)}) | EPS FY+1 est. revisions: ${fmt(v.revUp, 0)} up / ${fmt(v.revDown, 0)} down (coverage breadth = # analysts above; revisions + target dispersion = track-record / catalysts signals).`,
   ].join("\n");
 }

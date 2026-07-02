@@ -32,11 +32,15 @@ export type FactsetResolution =
  * live testing that FactSet either can't resolve them or isn't entitled.
  * Keyed by the dashboard's stored ticker (upper-cased).
  */
+// Tested July 2026 and CONFIRMED unpriceable by FactSet (P_PRICE null): the
+// USD-denominated TSX forms XUU.USD-TSE / XUS.USD-TSE and the FactSet fund form
+// FID5982-FD0 all returned null through our entitlement. So these stay on the
+// existing (Yahoo price / Morningstar beta) source — do not retry these forms.
 export const FACTSET_OVERRIDES: Record<string, string> = {
-  "XUU.U": "USD-unit listing — FactSet symbology does not resolve cleanly",
-  "XUS.U": "USD-unit listing — FactSet symbology does not resolve cleanly",
-  FID5982: "Canadian Fidelity fund — FactSet id not yet resolved (pending ISIN)",
-  "FID5982-T": "Canadian Fidelity fund — FactSet id not yet resolved (pending ISIN)",
+  "XUU.U": "USD-denominated TSX ETF — FactSet has no P_PRICE (XUU.USD-TSE tested null Jul-2026); keep existing source",
+  "XUS.U": "USD-denominated TSX ETF — FactSet has no P_PRICE (XUS.USD-TSE tested null Jul-2026); keep existing source",
+  FID5982: "Canadian Fidelity fund — FactSet has no P_PRICE (FID5982-FD0 tested null Jul-2026); keep existing source",
+  "FID5982-T": "Canadian Fidelity fund — FactSet has no P_PRICE (FID5982-FD0 tested null Jul-2026); keep existing source",
   // FactSet recognizes the fund (FINN-CA returns the right name) but has no
   // P_PRICE for the NEO-exchange listing. It's an ETF (not scored), so keep it
   // on the existing price source rather than chase the NEO identifier.
