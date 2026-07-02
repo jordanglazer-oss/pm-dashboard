@@ -8,7 +8,6 @@ import { applyResearchEntries } from "@/app/lib/research-merge";
 import type { RemovalSource } from "@/app/lib/research-removals";
 import { displayTicker } from "@/app/lib/ticker";
 import { ImageUpload, type BriefAttachment } from "@/app/components/ImageUpload";
-import { EditableNumberCell } from "@/app/components/EditableScoreInputs";
 import { useStocks } from "@/app/lib/StockContext";
 import type { Stock, ScoreKey } from "@/app/lib/types";
 
@@ -2898,26 +2897,8 @@ export default function ResearchPage() {
                   <td className="py-2 pr-3 text-right font-mono text-slate-700 whitespace-nowrap">
                     {typeof fsPrice === "number" ? `$${fsPrice.toFixed(2)}` : <span className="text-slate-300">—</span>}
                   </td>
-                  <td className="py-2 pr-3 text-right">
-                    <div className="flex items-center justify-end gap-0.5">
-                      <span className="text-slate-400 text-[11px]">$</span>
-                      <EditableNumberCell
-                        value={item.priceTarget ?? null}
-                        step="0.01"
-                        onCommit={(next) => {
-                          const list = [...(state.jpmUsAnalystFocus || [])];
-                          const idx = list.findIndex((r) => r.ticker === item.ticker);
-                          if (idx >= 0) {
-                            list[idx] = { ...list[idx], priceTarget: next ?? undefined };
-                            save({ ...state, jpmUsAnalystFocus: list });
-                          }
-                        }}
-                        width="w-16"
-                        placeholder="—"
-                        ariaLabel={`JPM price target for ${item.ticker}`}
-                        formatDisplay={(n) => n.toFixed(2)}
-                      />
-                    </div>
+                  <td className="py-2 pr-3 text-right font-mono text-slate-700 whitespace-nowrap">
+                    {typeof item.priceTarget === "number" ? `$${item.priceTarget.toFixed(2)}` : <span className="text-slate-300">—</span>}
                   </td>
                   <td className="py-2 text-right whitespace-nowrap">
                     {scoredStocks.some((s) => s.ticker === item.ticker) ? (
