@@ -14,6 +14,7 @@
  */
 
 import { createLogger } from "@/app/lib/logger";
+import { resolveFactsetId } from "@/app/lib/factset-symbols";
 
 const log = createLogger("FactSet");
 
@@ -133,6 +134,42 @@ export async function crossSectional(
   const path = `/formula-api/v1/cross-sectional?ids=${idStr}&formulas=${formulaStr}`;
   const raw = (await relayGet(path)) as FactsetCrossSectional;
   return parseCrossSectional(raw, formulas);
+}
+
+/**
+ * Latest FactSet price keyed by the DASHBOARD ticker (resolves each ticker to a
+ * FactSet id first). Tickers we deliberately keep on the existing source
+ * (funds, USD-TSE ETFs — see FACTSET_OVERRIDES) are omitted, as are any FactSet
+ * can't price. On relay/FactSet failure returns {} so the caller falls back to
+ * its existing source. One batched cross-sectional call. Used to make FactSet
+ * the primary price source in /api/prices while Yahoo stays as fallback +
+ * metadata (previousClose, currency, name).
+ */
+export async function getFactsetPricesByTicker(tickers: string[]): Promise<Record<string, number | null>> {
+  const out: Record<string, number | null> = {};
+  if (!factsetConfigured() || tickers.length === 0) return out;
+  const idToTickers = new Map<string, string[]>();
+  for (const t of tickers) {
+    const r = resolveFactsetId(t);
+    if (r.source !== "factset") continue;
+    const list = idToTickers.get(r.id) ?? [];
+    list.push(t);
+    idToTickers.set(r.id, list);
+  }
+  const ids = [...idToTickers.keys()];
+  if (ids.length === 0) return out;
+  try {
+    const data = await crossSectional(ids, [FACTSET_FORMULAS.price]);
+    for (const id of ids) {
+      const v = data[id]?.[FACTSET_FORMULAS.price];
+      const price = typeof v === "number" && v > 0 ? v : null;
+      if (price == null) continue;
+      for (const t of idToTickers.get(id) ?? []) out[t] = price;
+    }
+  } catch (e) {
+    log.warn("getFactsetPricesByTicker failed, falling back:", e instanceof Error ? e.message : e);
+  }
+  return out;
 }
 
 /** Convenience: latest price for one or more FactSet ids ({ id: price|null }). */

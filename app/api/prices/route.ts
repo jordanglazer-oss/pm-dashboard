@@ -1,4 +1,5 @@
 import { NextRequest, NextResponse } from "next/server";
+import { getFactsetPricesByTicker } from "@/app/lib/factset";
 
 /** Convert local ticker format to Yahoo Finance symbol */
 function toYahoo(ticker: string): string {
@@ -141,12 +142,41 @@ export async function POST(request: NextRequest) {
       currencies[r.ticker] = r.currency;
     }
 
+    // FactSet is the PRIMARY price source: override the live price with FactSet's
+    // where the ticker resolves (US + Canadian listings). Yahoo still supplies
+    // previousClose / currency / name / quoteType, and remains the price for the
+    // funds / USD-TSE ETFs FactSet can't cover AND whenever FactSet/relay is
+    // down (getFactsetPricesByTicker returns {} → nothing overridden). Same
+    // native listing + currency, so the day-change vs Yahoo's prevClose holds.
+    const priceSources: Record<string, "factset" | "yahoo"> = {};
+    const factsetPrices = await getFactsetPricesByTicker(batch);
+    for (const t of batch) {
+      const fp = factsetPrices[t];
+      const yp = prices[t];
+      if (typeof fp === "number") {
+        // Sanity guard: only override with FactSet when it's within 20% of the
+        // Yahoo quote (same listing/currency should agree closely). A gross
+        // divergence signals a mis-resolved id or currency mismatch — keep
+        // Yahoo and log it rather than inject a garbage price into live values.
+        if (yp == null || yp <= 0 || Math.abs(fp - yp) / yp <= 0.2) {
+          prices[t] = fp;
+          priceSources[t] = "factset";
+        } else {
+          priceSources[t] = "yahoo";
+          console.warn(`[prices] FactSet/Yahoo divergence for ${t}: factset=${fp} yahoo=${yp} — kept Yahoo`);
+        }
+      } else if (yp != null) {
+        priceSources[t] = "yahoo";
+      }
+    }
+
     return NextResponse.json({
       prices,
       previousCloses,
       names,
       quoteTypes,
       currencies,
+      priceSources,
       fetchedAt: new Date().toISOString(),
     });
   } catch (error) {
