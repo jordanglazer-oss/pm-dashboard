@@ -74,6 +74,11 @@ const POINT_METRICS: ScoringFormula[] = [
   { key: "tgtLow", formula: "FE_ESTIMATE(PRICE_TGT,LOW,ANN_ROLL,0,NOW,'')", note: "Target price low (dispersion)" },
   { key: "revUp", formula: "FE_ESTIMATE(EPS,UP,ANN_ROLL,1,NOW,'')", note: "EPS FY+1 up-revisions (30d)" },
   { key: "revDown", formula: "FE_ESTIMATE(EPS,DOWN,ANN_ROLL,1,NOW,'')", note: "EPS FY+1 down-revisions (30d)" },
+  // ── Analyst-count candidates — find which matches the terminal's headline
+  //    count (e.g. ORCL = 45). numEstFy1 (FY+1 EPS estimates) undercounts. ──
+  { key: "numTgt", formula: "FE_ESTIMATE(PRICE_TGT,NEST,ANN_ROLL,0,NOW,'')", note: "# analysts with a price target" },
+  { key: "numRec", formula: "FE_ESTIMATE(REC_MARK,NEST,ANN_ROLL,0,NOW,'')", note: "# analysts with a recommendation" },
+  { key: "numEstCurFy", formula: "FE_ESTIMATE(EPS,NEST,ANN_ROLL,0,NOW,'')", note: "# current-FY EPS estimates" },
 ];
 
 function buildScoringFormulas(): ScoringFormula[] {
