@@ -1187,11 +1187,25 @@ export default function ResearchPage() {
       // PM deliberately deleted). Manually re-adding clears the tombstone.
       const dismissed = new Set((state.dismissedUpticks ?? []).map(normalizeUptickTicker));
 
-      const merged = new Map(state.newtonUpticks.map((u) => [u.ticker, u]));
+      // REPLACE mode: a screenshot is a full snapshot of the current Upticks
+      // list, so tickers no longer in it are removed. Safety guard (mirrors
+      // research-merge.ts SAFETY_THRESHOLD): if the new screenshot has fewer
+      // than 30% of the existing rows — a partial or failed scan — fall back
+      // to ADDITIVE so we never wipe the list. Matched rows keep their
+      // backfilled metadata; tombstoned tickers are never re-added.
+      const replaceMode =
+        state.newtonUpticks.length === 0 ||
+        entries.length / state.newtonUpticks.length >= 0.3;
+      const today = new Date().toLocaleDateString("en-US", { month: "numeric", day: "numeric", year: "numeric" });
+
+      const merged = new Map<string, UptickEntry>();
+      if (!replaceMode) {
+        for (const u of state.newtonUpticks) merged.set(normalizeUptickTicker(u.ticker), u);
+      }
       let matched = 0;
       let updatedFields = 0;
+      let added = 0;
       let skippedDismissed = 0;
-      let changed = false;
       for (const e of entries) {
         const norm = normalizeUptickTicker(e.ticker);
         const existing = existingByNorm.get(norm);
@@ -1204,16 +1218,12 @@ export default function ResearchPage() {
             priceWhenAdded: e.priceWhenAdded ?? existing.priceWhenAdded,
             dateAdded: e.dateAdded ?? existing.dateAdded,
           };
-          if (JSON.stringify(next) !== JSON.stringify(existing)) {
-            merged.set(existing.ticker, next);
-            updatedFields += 1;
-            changed = true;
-          }
+          merged.set(norm, next);
+          if (JSON.stringify(next) !== JSON.stringify(existing)) updatedFields += 1;
         } else if (dismissed.has(norm)) {
-          // Previously removed by the PM — do NOT re-add. Refresh only
-          // updates existing rows; it never resurrects a deleted one.
           skippedDismissed += 1;
         } else {
+          added += 1;
           merged.set(norm, {
             ticker: norm,
             name: norm,
@@ -1221,17 +1231,26 @@ export default function ResearchPage() {
             price: 0,
             support: e.support ?? "",
             resistance: e.resistance ?? "",
-            dateAdded: e.dateAdded ?? new Date().toLocaleDateString("en-US", { month: "numeric", day: "numeric", year: "numeric" }),
+            dateAdded: e.dateAdded ?? today,
             priceWhenAdded: e.priceWhenAdded ?? 0,
           });
-          changed = true;
         }
       }
+      // Tickers present in the old list but absent from the screenshot — only
+      // removed in replace mode. Captured for the Change Monitor (item C).
+      const newNorms = new Set(entries.map((e) => normalizeUptickTicker(e.ticker)));
+      const removedEntries = replaceMode
+        ? state.newtonUpticks.filter((u) => !newNorms.has(normalizeUptickTicker(u.ticker)))
+        : [];
+      const removed = removedEntries.length;
+      const changed = added > 0 || updatedFields > 0 || removed > 0;
 
       const cachedLabel = data.cached ? " (cached)" : "";
-      const dismissedLabel = skippedDismissed > 0 ? ` · ${skippedDismissed} skipped (removed)` : "";
+      const modeLabel = replaceMode ? "" : " · additive (partial screenshot — nothing removed)";
+      const removedLabel = removed > 0 ? ` · ${removed} removed` : "";
+      const dismissedLabel = skippedDismissed > 0 ? ` · ${skippedDismissed} skipped (tombstoned)` : "";
       setScrapeStatus(
-        `${entries.length} rows in screenshot${cachedLabel} · ${matched} matched your list · ${updatedFields} updated${dismissedLabel}`,
+        `${entries.length} rows in screenshot${cachedLabel} · ${matched} matched · ${added} added${removedLabel}${dismissedLabel}${modeLabel}`,
       );
       if (!changed) return { merged: state, changed: false };
       const nextState: ResearchState = { ...state, newtonUpticks: Array.from(merged.values()) };
