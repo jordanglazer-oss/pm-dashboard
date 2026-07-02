@@ -2,8 +2,7 @@
 
 import React, { useCallback, useEffect, useRef, useState } from "react";
 import type { InboxEvent } from "@/app/lib/inbox-log";
-import { computeAnalystConsensus, buildConsensusExplanation } from "@/app/lib/analyst-snapshots";
-import type { AnalystReports, FactSetEntry, TickerSnapshot } from "@/app/lib/analyst-snapshots";
+import type { AnalystReports } from "@/app/lib/analyst-snapshots";
 import { useStocks } from "@/app/lib/StockContext";
 import { isScoreable, marketEdgeApplies } from "@/app/lib/scoring";
 import { canonicalTicker } from "@/app/lib/ticker";
@@ -294,7 +293,7 @@ export default function InboxPage() {
   // cached events are mostly noise; the PM cares about fresh ingestions
   // and errors. State persists via uiPrefs (Redis) so the preference
   // sticks across refreshes and syncs across devices.
-  const { uiPrefs, setUiPref, stocks, analystSnapshots, getAnalystSnapshot, updateAnalystSnapshot, updateStockFields, updateScore, updateExplanations } = useStocks();
+  const { uiPrefs, setUiPref, stocks, updateStockFields, updateScore } = useStocks();
   const hideCached = uiPrefs["inbox.hideCached"] !== "0"; // default true (hidden)
   const toggleHideCached = () => setUiPref("inbox.hideCached", hideCached ? "0" : "1");
   const [error, setError] = useState<string | null>(null);
@@ -438,12 +437,6 @@ export default function InboxPage() {
     bucket: "Portfolio" | "Watchlist";
     hasRbc: boolean;
     hasJpm: boolean;
-    /** FactSet street-consensus average price target ($) — manually entered
-     *  via the AnalystSnapshotPanel on the stock page. Null when no FactSet
-     *  entry has been logged for this ticker yet. */
-    factsetTarget: number | null;
-    factsetCount: number | null;
-    factsetAsOf: string | null;
     /** Raw BoostedAI rating (0-5). Lives on the Stock itself. */
     boostedAi: number | null;
     /** BoostedAI consensus recommendation. */
@@ -470,28 +463,10 @@ export default function InboxPage() {
       reportsByCanonical.set(canon, { rbc: !!tr.rbc, jpm: !!tr.jpm });
     }
   }
-  // FactSet data lives in pm:analyst-snapshots[ticker].factset — same
-  // canonical-ticker keying. We pull from StockContext's analystSnapshots
-  // (which mirrors pm:analyst-snapshots and is the same source the stock
-  // page reads). When the user edits a FactSet cell below, the edit flows
-  // through updateAnalystSnapshot → context state updates → this map
-  // recomputes on the next render → row reflects the new value. Same
-  // path round-trips persistence to Redis.
-  const factsetByCanonical = new Map<string, { target: number | null; count: number | null; asOf: string | null }>();
-  for (const [key, snap] of Object.entries(analystSnapshots ?? {})) {
-    const canon = canonicalTicker(key);
-    if (!snap?.factset) continue;
-    factsetByCanonical.set(canon, {
-      target: typeof snap.factset.averageTarget === "number" ? snap.factset.averageTarget : null,
-      count: typeof snap.factset.analystCount === "number" ? snap.factset.analystCount : null,
-      asOf: typeof snap.factset.asOf === "string" ? snap.factset.asOf : null,
-    });
-  }
   const scoreableStocks = stocks.filter((s) => isScoreable(s) && (s.bucket === "Portfolio" || s.bucket === "Watchlist"));
   const coverageRows: Coverage[] = scoreableStocks.map((s) => {
     const canon = canonicalTicker(s.ticker);
     const has = reportsByCanonical.get(canon);
-    const fs = factsetByCanonical.get(canon);
     return {
       ticker: canon,
       displayTicker: s.ticker,
@@ -499,9 +474,6 @@ export default function InboxPage() {
       bucket: s.bucket as "Portfolio" | "Watchlist",
       hasRbc: !!has?.rbc,
       hasJpm: !!has?.jpm,
-      factsetTarget: fs?.target ?? null,
-      factsetCount: fs?.count ?? null,
-      factsetAsOf: fs?.asOf ?? null,
       boostedAi: typeof s.boostedAi === "number" ? s.boostedAi : null,
       boostedAiConsensus: s.boostedAiConsensus ?? null,
       sia: typeof s.sia === "number" ? s.sia : null,
@@ -516,7 +488,7 @@ export default function InboxPage() {
 
   // Column sort, persisted via uiPrefs so the preference sticks across
   // refreshes and devices.
-  type CoverageSortKey = "ticker" | "name" | "bucket" | "rbc" | "jpm" | "factset" | "analysts" | "boostedAi" | "consensus" | "sia" | "marketEdge" | "status";
+  type CoverageSortKey = "ticker" | "name" | "bucket" | "rbc" | "jpm" | "boostedAi" | "consensus" | "sia" | "marketEdge" | "status";
   const covSortKey = (uiPrefs["inbox.coverageSortKey"] as CoverageSortKey) || "status";
   const covSortDir = uiPrefs["inbox.coverageSortDir"] || "asc";
   const toggleCovSort = (key: CoverageSortKey) => {
@@ -534,11 +506,10 @@ export default function InboxPage() {
     covSortKey === key ? (covSortDir === "asc" ? " ▲" : " ▼") : "";
 
   // Filter THEN sort. Comparator handles missing values by floating them
-  // to the end of the sort regardless of direction, so an empty FactSet $
-  // doesn't accidentally jump to the top of an ascending sort.
+  // to the end of the sort regardless of direction.
   const filteredCoverage = coverageRows.filter((r) => {
     if (coverageFilter === "all") return true;
-    if (coverageFilter === "missing") return !r.hasRbc && !r.hasJpm && r.factsetTarget == null;
+    if (coverageFilter === "missing") return !r.hasRbc && !r.hasJpm;
     if (coverageFilter === "portfolio") return r.bucket === "Portfolio";
     if (coverageFilter === "watchlist") return r.bucket === "Watchlist";
     return true;
@@ -559,8 +530,6 @@ export default function InboxPage() {
         case "bucket": cmp = a.bucket.localeCompare(b.bucket); break;
         case "rbc": cmp = (a.hasRbc ? 1 : 0) - (b.hasRbc ? 1 : 0); break;
         case "jpm": cmp = (a.hasJpm ? 1 : 0) - (b.hasJpm ? 1 : 0); break;
-        case "factset": cmp = cmpNum(a.factsetTarget, b.factsetTarget); break;
-        case "analysts": cmp = cmpNum(a.factsetCount, b.factsetCount); break;
         case "boostedAi": cmp = cmpNum(a.boostedAi, b.boostedAi); break;
         case "consensus": {
           // Sort by bullishness: Strong Sell (0) → Sell (1) → Hold (2) → Buy (3) → Strong Buy (4)
@@ -578,10 +547,10 @@ export default function InboxPage() {
         case "marketEdge": cmp = cmpNum(a.marketEdgePowerRating, b.marketEdgePowerRating); break;
         case "status":
         default: {
-          // Status priority: 0 = no reports (urgent), 1-2 = partial, 3 = all
+          // Status priority: 0 = no reports (urgent), 1 = partial, 2 = both.
           // Ascending → urgent first. Descending → all-covered first.
           const score = (r: Coverage) =>
-            (r.hasRbc ? 1 : 0) + (r.hasJpm ? 1 : 0) + (r.factsetTarget != null ? 1 : 0);
+            (r.hasRbc ? 1 : 0) + (r.hasJpm ? 1 : 0);
           cmp = score(a) - score(b);
           // Tie-break on ticker for stability
           if (cmp === 0) cmp = a.displayTicker.localeCompare(b.displayTicker);
@@ -591,52 +560,6 @@ export default function InboxPage() {
       return dir * cmp;
     });
   })();
-
-  // Commit a FactSet edit for the given ticker. Pull the latest snapshot
-  // from context (NOT the closure-captured value, which could be stale),
-  // overwrite the factset slot with the new target/count, stamp asOf to
-  // today, and call updateAnalystSnapshot. That helper handles canonical-
-  // ticker keying and persistence to pm:analyst-snapshots so the stock
-  // page reflects the change automatically.
-  //
-  // When both target and count come back null (user cleared both fields),
-  // remove the factset slot entirely. If RBC/JPM are also absent, remove
-  // the whole snapshot entry to keep the blob clean.
-  const saveFactSet = (ticker: string, target: number | null, count: number | null) => {
-    const existing = getAnalystSnapshot(ticker) ?? {};
-    const today = new Date().toISOString().slice(0, 10);
-    const nowIso = new Date().toISOString();
-    let nextFactset: FactSetEntry | undefined;
-    if (target == null && count == null) {
-      nextFactset = undefined;
-    } else {
-      // Preserve any fields we don't touch (lastUpdated metadata, etc.)
-      // The asOf field auto-stamps to TODAY on every edit per the spec:
-      // "the date should default to the date the target price is last
-      // changed" — applying it whenever EITHER field is edited (since
-      // both are the user's manual entry).
-      nextFactset = {
-        ...(existing.factset ?? {}),
-        ...(target != null ? { averageTarget: target } : { averageTarget: undefined }),
-        ...(count != null ? { analystCount: count } : { analystCount: undefined }),
-        asOf: today,
-        lastUpdated: nowIso,
-      };
-    }
-    const nextSnapshot: TickerSnapshot = { ...existing, factset: nextFactset };
-    const anyValue = nextSnapshot.rbc || nextSnapshot.jpm || nextSnapshot.factset;
-    updateAnalystSnapshot(ticker, anyValue ? nextSnapshot : undefined);
-
-    // Auto-derive the analystConsensus score + explanation from the updated
-    // snapshot, mirroring how BoostedAI/SIA edits auto-derive aiRating
-    // and relativeStrength. Uses the stock's current price for the
-    // upside component.
-    const stock = stocks.find((s) => s.ticker === ticker);
-    const price = stock?.price ?? undefined;
-    const consensus = computeAnalystConsensus(anyValue ? nextSnapshot : undefined, price);
-    updateScore(ticker, "analystConsensus", consensus.score);
-    updateExplanations(ticker, { analystConsensus: buildConsensusExplanation(consensus) });
-  };
 
   // Save raw BoostedAI rating (0-5). Also recomputes and writes the
   // derived dashboard aiRating score (0-2) using the current consensus.
@@ -1442,8 +1365,6 @@ export default function InboxPage() {
                 <th className="px-3 py-2 text-left cursor-pointer select-none hover:text-slate-700" onClick={() => toggleCovSort("bucket")}>Bucket{covArrow("bucket")}</th>
                 <th className="px-3 py-2 text-center w-16 cursor-pointer select-none hover:text-slate-700" onClick={() => toggleCovSort("rbc")}>RBC{covArrow("rbc")}</th>
                 <th className="px-3 py-2 text-center w-16 cursor-pointer select-none hover:text-slate-700" onClick={() => toggleCovSort("jpm")}>JPM{covArrow("jpm")}</th>
-                <th className="px-3 py-2 text-right w-28 cursor-pointer select-none hover:text-slate-700" onClick={() => toggleCovSort("factset")} title="FactSet street-consensus average price target. Click the cell value to edit; click the header to sort. Persists to pm:analyst-snapshots — same field shown on the stock page.">FactSet ${covArrow("factset")}</th>
-                <th className="px-3 py-2 text-right w-20 cursor-pointer select-none hover:text-slate-700" onClick={() => toggleCovSort("analysts")} title="Number of analysts in the FactSet consensus. Click the cell value to edit; click the header to sort.">Analysts{covArrow("analysts")}</th>
                 <th className="px-3 py-2 text-right w-20 cursor-pointer select-none hover:text-slate-700" onClick={() => toggleCovSort("boostedAi")} title="Raw BoostedAI rating (0-5, decimals OK). Combined with Consensus to auto-derive the dashboard's aiRating (0-2).">Boosted.ai{covArrow("boostedAi")}</th>
                 <th className="px-3 py-2 text-left w-28 cursor-pointer select-none hover:text-slate-700" onClick={() => toggleCovSort("consensus")} title="BoostedAI consensus recommendation. Combined with the numeric rating to auto-derive aiRating (Strong Buy / Buy → 2, Hold → 1, Sell / Strong Sell → 0).">Consensus{covArrow("consensus")}</th>
                 <th className="px-3 py-2 text-right w-20 cursor-pointer select-none hover:text-slate-700" onClick={() => toggleCovSort("sia")} title="SIA SMAX score (0-10 integer). Maps to relativeStrength: 8-10 → 2, 6-7 → 1, 0-5 → 0.">SIA SMAX{covArrow("sia")}</th>
@@ -1489,36 +1410,6 @@ export default function InboxPage() {
                       ) : (
                         <span className="inline-block text-slate-300 text-base" title="No JPM report yet">—</span>
                       )}
-                    </td>
-                    <td className="px-3 py-2 text-right">
-                      <div className="flex items-center justify-end gap-1">
-                        <span className="text-slate-400 text-[10px]">$</span>
-                        <EditableNumberCell
-                          value={r.factsetTarget}
-                          step="0.01"
-                          onCommit={(next) => saveFactSet(r.displayTicker, next, r.factsetCount)}
-                          width="w-20"
-                          placeholder="—"
-                          ariaLabel={`FactSet target price for ${r.displayTicker}`}
-                          formatDisplay={(n) => n.toFixed(2)}
-                        />
-                      </div>
-                      {r.factsetAsOf && (
-                        <div className="text-[9px] text-slate-400 mt-0.5" title="Date the FactSet target was last updated. Auto-stamps to today on every edit.">
-                          as of {r.factsetAsOf}
-                        </div>
-                      )}
-                    </td>
-                    <td className="px-3 py-2 text-right">
-                      <EditableNumberCell
-                        value={r.factsetCount}
-                        step="1"
-                        onCommit={(next) => saveFactSet(r.displayTicker, r.factsetTarget, next)}
-                        width="w-14"
-                        placeholder="—"
-                        ariaLabel={`Number of analysts for ${r.displayTicker}`}
-                        formatDisplay={(n) => String(Math.round(n))}
-                      />
                     </td>
                     <td className="px-3 py-2 text-right">
                       <div className="flex items-center justify-end gap-1">
@@ -1782,6 +1673,12 @@ export default function InboxPage() {
                 <td className="py-2 pr-3 whitespace-nowrap">Screenshot (PNG/JPG/PDF)</td>
                 <td className="py-2 pr-3">Merges into the RBC US Focus List.</td>
                 <td className="py-2 font-mono whitespace-nowrap">RBC US</td>
+              </tr>
+              <tr className="border-b border-blue-100">
+                <td className="py-2 pr-3 font-mono whitespace-nowrap">JPM Focus</td>
+                <td className="py-2 pr-3 whitespace-nowrap">Screenshot (PNG/JPG/PDF)</td>
+                <td className="py-2 pr-3">Merges into the JPM US Equity Analyst Focus List. Contributes to each name&rsquo;s research-mention score.</td>
+                <td className="py-2 font-mono whitespace-nowrap">JPM Focus</td>
               </tr>
               <tr className="border-b border-blue-100">
                 <td className="py-2 pr-3 font-mono whitespace-nowrap">RBCCM FEW</td>
