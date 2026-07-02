@@ -153,6 +153,15 @@ export type RBCEntry = {
   sector: string;
   weight: number;
   dateAdded: string;
+  // ── JPM US Equity Analyst Focus List extras (optional; unused by the RBC
+  //    lists). The JPM card shows company name / ticker / industry / strategy /
+  //    live FactSet price / price target instead of sector+weight. ──
+  /** GICS industry (finer than sector) from the JPM screenshot. */
+  industry?: string;
+  /** JPM's list designation for the name (e.g. Growth / Value / Income). */
+  strategy?: string;
+  /** Analyst price target from the JPM list. */
+  priceTarget?: number;
 };
 
 /**

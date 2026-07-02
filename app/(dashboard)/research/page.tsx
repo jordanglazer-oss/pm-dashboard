@@ -379,6 +379,7 @@ function EditableCell({
 type UptickSortKey = "ticker" | "name" | "sector" | "price" | "support" | "resistance" | "dateAdded" | "priceWhenAdded";
 type IdeaSortKey = "ticker" | "priceWhenAdded" | "currentPrice";
 type RBCSortKey = "ticker" | "name" | "sector" | "weight" | "dateAdded";
+type JpmSortKey = "name" | "ticker" | "industry" | "strategy" | "currentPrice" | "priceTarget";
 type FewSortKey = "ticker" | "name" | "industry" | "price";
 type AlphaSortKey = "name" | "ticker" | "sector" | "rating" | "holdingWeight" | "currentPrice" | "priceWhenAdded" | "returnSinceAdded" | "dateAdded" | "days";
 type SortDir = "asc" | "desc";
@@ -483,8 +484,9 @@ export default function ResearchPage() {
   const setRbcSort = (next: { key: RBCSortKey; dir: SortDir }) => writeSort("research.rbcSortKey", "research.rbcSortDir", next);
   const rbcUsSort = readSort<RBCSortKey>("research.rbcUsSortKey", "research.rbcUsSortDir", RBC_SORT_KEYS, "ticker", "asc");
   const setRbcUsSort = (next: { key: RBCSortKey; dir: SortDir }) => writeSort("research.rbcUsSortKey", "research.rbcUsSortDir", next);
-  const jpmFocusSort = readSort<RBCSortKey>("research.jpmFocusSortKey", "research.jpmFocusSortDir", RBC_SORT_KEYS, "ticker", "asc");
-  const setJpmFocusSort = (next: { key: RBCSortKey; dir: SortDir }) => writeSort("research.jpmFocusSortKey", "research.jpmFocusSortDir", next);
+  const JPM_SORT_KEYS: ReadonlyArray<JpmSortKey> = ["name", "ticker", "industry", "strategy", "currentPrice", "priceTarget"];
+  const jpmFocusSort = readSort<JpmSortKey>("research.jpmFocusSortKey", "research.jpmFocusSortDir", JPM_SORT_KEYS, "ticker", "asc");
+  const setJpmFocusSort = (next: { key: JpmSortKey; dir: SortDir }) => writeSort("research.jpmFocusSortKey", "research.jpmFocusSortDir", next);
   const FEW_SORT_KEYS: ReadonlyArray<FewSortKey> = ["ticker", "name", "industry", "price"];
   const fewSort = readSort<FewSortKey>("research.fewSortKey", "research.fewSortDir", FEW_SORT_KEYS, "ticker", "asc");
   const setFewSort = (next: { key: FewSortKey; dir: SortDir }) => writeSort("research.fewSortKey", "research.fewSortDir", next);
@@ -493,6 +495,33 @@ export default function ResearchPage() {
   const [livePrices, setLivePrices] = useState<LivePrices>({});
   const [pricesLoading, setPricesLoading] = useState(false);
   const [pricesFetchedAt, setPricesFetchedAt] = useState<string | null>(null);
+
+  // Live FactSet prices for the JPM Focus List (ticker → price). The JPM card's
+  // "Current price" column shows FactSet's live value rather than the Yahoo
+  // livePrices map, per the requirement that it be FactSet-sourced.
+  const [factsetPrices, setFactsetPrices] = useState<Record<string, number | null>>({});
+  const [factsetPricesLoading, setFactsetPricesLoading] = useState(false);
+
+  const fetchFactsetPrices = useCallback(async (researchState?: ResearchState) => {
+    const s = researchState || state;
+    const tickers = [...new Set((s.jpmUsAnalystFocus ?? []).map((r) => r.ticker))];
+    if (tickers.length === 0) return;
+    setFactsetPricesLoading(true);
+    try {
+      const res = await fetch("/api/factset-prices", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ tickers }),
+      });
+      if (!res.ok) return;
+      const data = await res.json();
+      setFactsetPrices((prev) => ({ ...prev, ...(data.prices || {}) }));
+    } catch {
+      // silently fail — column shows "—"
+    } finally {
+      setFactsetPricesLoading(false);
+    }
+  }, [state]);
 
   const fetchLivePrices = useCallback(async (researchState?: ResearchState) => {
     const s = researchState || state;
@@ -603,7 +632,7 @@ export default function ResearchPage() {
   function toggleRbcUsSort(key: RBCSortKey) {
     setRbcUsSort(rbcUsSort.key === key ? { key, dir: rbcUsSort.dir === "asc" ? "desc" : "asc" } : { key, dir: "asc" });
   }
-  function toggleJpmFocusSort(key: RBCSortKey) {
+  function toggleJpmFocusSort(key: JpmSortKey) {
     setJpmFocusSort(jpmFocusSort.key === key ? { key, dir: jpmFocusSort.dir === "asc" ? "desc" : "asc" } : { key, dir: "asc" });
   }
   function toggleFewSort(key: FewSortKey) {
@@ -663,7 +692,14 @@ export default function ResearchPage() {
   function sortedJpmFocus() {
     return [...(state.jpmUsAnalystFocus || [])].sort((a, b) => {
       const { key, dir } = jpmFocusSort;
-      const cmp = compareRbc(a, b, key);
+      let cmp = 0;
+      if (key === "currentPrice") {
+        cmp = (factsetPrices[a.ticker] ?? 0) - (factsetPrices[b.ticker] ?? 0);
+      } else if (key === "priceTarget") {
+        cmp = (a.priceTarget ?? 0) - (b.priceTarget ?? 0);
+      } else {
+        cmp = String(a[key] || "").localeCompare(String(b[key] || ""));
+      }
       return dir === "asc" ? cmp : -cmp;
     });
   }
@@ -696,7 +732,7 @@ export default function ResearchPage() {
   const sbArrow = (key: IdeaSortKey) => smidBottomSort.key === key ? (smidBottomSort.dir === "asc" ? " ▲" : " ▼") : "";
   const rArrow = (key: RBCSortKey) => rbcSort.key === key ? (rbcSort.dir === "asc" ? " ▲" : " ▼") : "";
   const rUsArrow = (key: RBCSortKey) => rbcUsSort.key === key ? (rbcUsSort.dir === "asc" ? " ▲" : " ▼") : "";
-  const jArrow = (key: RBCSortKey) => jpmFocusSort.key === key ? (jpmFocusSort.dir === "asc" ? " ▲" : " ▼") : "";
+  const jArrow = (key: JpmSortKey) => jpmFocusSort.key === key ? (jpmFocusSort.dir === "asc" ? " ▲" : " ▼") : "";
   const fArrow = (key: FewSortKey) => fewSort.key === key ? (fewSort.dir === "asc" ? " ▲" : " ▼") : "";
 
   useEffect(() => {
@@ -774,6 +810,7 @@ export default function ResearchPage() {
 
           setState(research);
           fetchLivePrices(research);
+          void fetchFactsetPrices(research);
 
           // Backfill missing names/sectors for existing uptick entries
           const needsBackfill = research.newtonUpticks.filter(
@@ -1392,6 +1429,7 @@ export default function ResearchPage() {
         void refreshRbcNames("rbcUsFocus", nextState);
       } else if (source === "jpm-us-analyst-focus") {
         void refreshRbcNames("jpmUsAnalystFocus", nextState);
+        void fetchFactsetPrices(nextState);
       } else if (source === "seeking-alpha-picks") {
         void refreshAlphaPickNames(nextState);
         void fetchLivePrices(nextState);
@@ -1409,7 +1447,7 @@ export default function ResearchPage() {
       // researchMentions recompute is handled by save() (post-PUT), so it
       // reads the freshly merged list instead of racing the write.
     }
-  }, [state, save, refreshAlphaPickNames, refreshRbcNames, fetchLivePrices]);
+  }, [state, save, refreshAlphaPickNames, refreshRbcNames, fetchLivePrices, fetchFactsetPrices]);
 
   /**
    * Cross-source synthesis with strict stickiness.
@@ -2809,53 +2847,70 @@ export default function ResearchPage() {
         </section>
 
         {/* ── JPM US Equity Analyst Focus List ──
-            J.P. Morgan's US equity analyst focus picks. Same RBCEntry
-            shape / manual-add + screenshot-scan flow as the RBC lists;
-            targets state.jpmUsAnalystFocus so it stays independent and
-            auto-tallies into researchMentions via SOURCES. Amber-accented
-            to distinguish it from the RBC (blue/teal) sections. */}
+            J.P. Morgan's US equity analyst focus picks. Columns: company name,
+            ticker, industry, strategy, current price (LIVE from FactSet via
+            /api/factset-prices), price target. Stored on state.jpmUsAnalystFocus
+            (RBCEntry + optional industry/strategy/priceTarget); auto-tallies into
+            researchMentions via SOURCES. Amber-accented. */}
         <section className="rounded-[24px] border border-amber-200 bg-white p-6 shadow-sm">
           <div className="flex items-center justify-between mb-4">
             <div>
               <h3 className="text-xl font-bold text-amber-800">JPM US Equity Analyst Focus List</h3>
-              <p className="text-xs text-slate-400">J.P. Morgan US equity analyst focus picks</p>
+              <p className="text-xs text-slate-400">J.P. Morgan US equity analyst focus picks · prices live from FactSet</p>
             </div>
-            <span className="text-sm text-slate-400">{(state.jpmUsAnalystFocus || []).length} names</span>
+            <div className="flex items-center gap-3">
+              <button
+                onClick={() => void fetchFactsetPrices()}
+                disabled={factsetPricesLoading}
+                className="text-[10px] rounded-md bg-amber-50 px-2.5 py-1 font-semibold text-amber-700 hover:bg-amber-100 disabled:opacity-50 transition-colors"
+                title="Refresh current prices from FactSet"
+              >
+                {factsetPricesLoading ? "Refreshing…" : "↻ FactSet prices"}
+              </button>
+              <span className="text-sm text-slate-400">{(state.jpmUsAnalystFocus || []).length} names</span>
+            </div>
           </div>
 
           <div className="overflow-x-auto"><table className="w-full text-sm">
             <thead>
               <tr className="border-b-2 border-amber-500 text-left">
-                <th className="py-2 pr-2 text-xs font-semibold text-amber-700 w-8">#</th>
+                <th className="py-2 pr-3 text-xs font-semibold text-amber-700 cursor-pointer hover:text-amber-900 select-none" onClick={() => toggleJpmFocusSort("name")}>Company name{jArrow("name")}</th>
                 <th className="py-2 pr-3 text-xs font-semibold text-amber-700 cursor-pointer hover:text-amber-900 select-none" onClick={() => toggleJpmFocusSort("ticker")}>Ticker{jArrow("ticker")}</th>
-                <th className="py-2 pr-3 text-xs font-semibold text-amber-700 cursor-pointer hover:text-amber-900 select-none" onClick={() => toggleJpmFocusSort("name")}>Name{jArrow("name")}</th>
-                <th className="py-2 pr-3 text-xs font-semibold text-amber-700 cursor-pointer hover:text-amber-900 select-none" onClick={() => toggleJpmFocusSort("sector")}>Sector{jArrow("sector")}</th>
-                <th className="py-2 pr-3 text-xs font-semibold text-amber-700 cursor-pointer hover:text-amber-900 select-none" onClick={() => toggleJpmFocusSort("weight")}>Weight (%){jArrow("weight")}</th>
+                <th className="py-2 pr-3 text-xs font-semibold text-amber-700 cursor-pointer hover:text-amber-900 select-none" onClick={() => toggleJpmFocusSort("industry")}>Industry{jArrow("industry")}</th>
+                <th className="py-2 pr-3 text-xs font-semibold text-amber-700 cursor-pointer hover:text-amber-900 select-none" onClick={() => toggleJpmFocusSort("strategy")}>Strategy{jArrow("strategy")}</th>
+                <th className="py-2 pr-3 text-xs font-semibold text-amber-700 text-right cursor-pointer hover:text-amber-900 select-none" onClick={() => toggleJpmFocusSort("currentPrice")}>Current price{jArrow("currentPrice")}</th>
+                <th className="py-2 pr-3 text-xs font-semibold text-amber-700 text-right cursor-pointer hover:text-amber-900 select-none" onClick={() => toggleJpmFocusSort("priceTarget")}>Price target{jArrow("priceTarget")}</th>
                 <th className="py-2 w-24"></th>
               </tr>
             </thead>
             <tbody>
-              {sortedJpmFocus().map((item, i) => (
+              {sortedJpmFocus().map((item, i) => {
+                const fsPrice = factsetPrices[item.ticker];
+                return (
                 <tr key={item.ticker} className={`border-b border-slate-100 ${i % 2 === 0 ? "bg-white" : "bg-amber-50/30"} hover:bg-amber-50/60 transition-colors`}>
-                  <td className="py-2 pr-2 text-slate-400">{i + 1}</td>
+                  <td className="py-2 pr-3 text-slate-700 truncate max-w-[240px]" title={item.name || item.ticker}>{item.name || <span className="text-slate-300 italic">—</span>}</td>
                   <td className="py-2 pr-3 font-mono font-bold text-amber-700">${displayTicker(item.ticker)}</td>
-                  <td className="py-2 pr-3 text-slate-700 truncate max-w-[260px]" title={item.name || item.ticker}>{item.name || <span className="text-slate-300 italic">—</span>}</td>
-                  <td className="py-2 pr-3 text-slate-600">{item.sector}</td>
-                  <td className="py-2 pr-3 text-slate-500">
+                  <td className="py-2 pr-3 text-slate-600 truncate max-w-[180px]" title={item.industry || ""}>{item.industry || <span className="text-slate-300">—</span>}</td>
+                  <td className="py-2 pr-3 text-slate-600">{item.strategy || <span className="text-slate-300">—</span>}</td>
+                  <td className="py-2 pr-3 text-right font-mono text-slate-700 whitespace-nowrap">
+                    {typeof fsPrice === "number" ? `$${fsPrice.toFixed(2)}` : <span className="text-slate-300">—</span>}
+                  </td>
+                  <td className="py-2 pr-3 text-right">
                     <input
                       type="text"
                       inputMode="decimal"
-                      value={item.weight ?? 0}
+                      value={item.priceTarget ?? ""}
+                      placeholder="$"
                       onChange={(e) => {
                         const val = e.target.value;
                         const list = [...(state.jpmUsAnalystFocus || [])];
                         const idx = list.findIndex((r) => r.ticker === item.ticker);
                         if (idx >= 0) {
-                          list[idx] = { ...list[idx], weight: val === "" || val === "-" ? 0 : parseFloat(val) || 0 };
+                          list[idx] = { ...list[idx], priceTarget: val === "" || val === "-" ? undefined : parseFloat(val) || undefined };
                           save({ ...state, jpmUsAnalystFocus: list });
                         }
                       }}
-                      className="w-16 rounded border border-transparent px-1 py-0.5 text-sm text-center hover:border-slate-200 focus:border-amber-300 focus:outline-none bg-transparent"
+                      className="w-20 rounded border border-transparent px-1 py-0.5 text-sm text-right font-mono hover:border-slate-200 focus:border-amber-300 focus:outline-none bg-transparent"
                     />
                   </td>
                   <td className="py-2 text-right whitespace-nowrap">
@@ -2873,9 +2928,10 @@ export default function ResearchPage() {
                     <button onClick={() => removeJpmFocus(item.ticker)} className="ml-2 text-slate-300 hover:text-red-500 font-bold transition-colors">&times;</button>
                   </td>
                 </tr>
-              ))}
+                );
+              })}
               {(state.jpmUsAnalystFocus || []).length === 0 && (
-                <tr><td colSpan={6} className="py-6 text-center text-slate-400 italic">No names added yet</td></tr>
+                <tr><td colSpan={7} className="py-6 text-center text-slate-400 italic">No names added yet</td></tr>
               )}
             </tbody>
           </table></div>
@@ -2885,7 +2941,7 @@ export default function ResearchPage() {
           <ResearchScraperBlock
             source="jpm-us-analyst-focus"
             sectionLabel="JPM US Equity Analyst Focus List"
-            helperText="Upload a JPM US Equity Analyst Focus List screenshot. On Refresh, ticker + sector + weight + date are extracted and merged."
+            helperText="Upload a JPM US Equity Analyst Focus List screenshot. On Refresh, company name + ticker + industry + strategy + price target are extracted; current price comes live from FactSet."
             attachments={state.attachments || []}
             onAddAttachment={addAttachment}
             onRemoveAttachment={removeAttachment}

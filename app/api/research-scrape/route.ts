@@ -82,6 +82,12 @@ export type ScrapedRbcRow = {
   sector?: string;
   weight?: number;
   dateAdded?: string;
+  // JPM US Analyst Focus List extras (the JPM card shows these instead of
+  // sector/weight): company name, industry, strategy designation, price target.
+  name?: string;
+  industry?: string;
+  strategy?: string;
+  priceTarget?: number;
 };
 
 /** RBCCM Canadian FEW Portfolio row: ticker (canonicalized to .TO),
@@ -260,19 +266,21 @@ Example: [{"ticker":"MSFT","sector":"Technology","weight":5.0,"dateAdded":"3/12/
   }
 
   if (source === "jpm-us-analyst-focus") {
-    return `You are reading the "J.P. Morgan US Equity Analyst Focus List" screenshot — a LIST of US equities that J.P. Morgan analysts have flagged as focus (top) ideas. Extract EVERY row.
+    return `You are reading the "J.P. Morgan US Equity Analyst Focus List" screenshot — a LIST of US equities that J.P. Morgan analysts have flagged as focus ideas. Extract EVERY row.
 
 Columns to look for:
+  - Company / Name → \`name\` (string, the company name as shown)
   - Ticker / Symbol → \`ticker\` (string, required, UPPERCASE). US listings — bare tickers, NO "-T" suffix (e.g. "AAPL", "MSFT", "JPM"). Dual-class shares written with "/" (e.g. "BRK/B") → dash form ("BRK-B").
-  - Sector → \`sector\` (string, if shown)
-  - Weight / Target Weight → \`weight\` (NUMBER as a percentage, only if a weight column is present; a focus list usually has none — OMIT if absent).
-  - Date Added / Date → \`dateAdded\` (string, e.g. "4/15/2026", if shown)
+  - Industry / Sub-Industry / Sector → \`industry\` (string, the industry label as shown — pass through verbatim)
+  - Strategy / Category / Type / List → \`strategy\` (string, JPM's designation for the name, e.g. "Growth", "Value", "Income", "GARP", "Long", "Short" — whatever the strategy/category column shows)
+  - Price Target / Target / PT → \`priceTarget\` (NUMBER, strip $ and commas; the analyst target price)
 
-If a column is missing or blank, OMIT that key (do not return null or empty string).
+Do NOT extract the current/last price — that is fetched live from FactSet, not the screenshot.
+If a column is missing or blank for a row, OMIT that key (do not return null or empty string). Do NOT invent values.
 
 ${common}
 
-Example: [{"ticker":"NVDA","sector":"Technology","dateAdded":"3/12/2026"},{"ticker":"JPM","sector":"Financials"}]`;
+Example: [{"name":"NVIDIA Corp","ticker":"NVDA","industry":"Semiconductors","strategy":"Growth","priceTarget":210},{"name":"JPMorgan Chase","ticker":"JPM","industry":"Banks","strategy":"Value","priceTarget":320}]`;
   }
 
   if (source === "rbccm-few") {
@@ -443,6 +451,14 @@ function parseRbcRows(text: string, source: SourceKey): ScrapedRbcRow[] {
           if (Number.isFinite(n)) out.weight = n;
         }
         if (r.dateAdded != null && String(r.dateAdded).trim()) out.dateAdded = String(r.dateAdded).trim();
+        // JPM-specific columns (company name / industry / strategy / price target).
+        if (r.name != null && String(r.name).trim()) out.name = String(r.name).trim();
+        if (r.industry != null && String(r.industry).trim()) out.industry = String(r.industry).trim();
+        if (r.strategy != null && String(r.strategy).trim()) out.strategy = String(r.strategy).trim();
+        if (r.priceTarget != null) {
+          const n = Number(String(r.priceTarget).replace(/[$,]/g, ""));
+          if (Number.isFinite(n) && n > 0) out.priceTarget = n;
+        }
         return out;
       });
   } catch {

@@ -158,18 +158,28 @@ function applyRbcEntries(
       matched += 1;
       byNorm.set(norm, {
         ticker: e.ticker || ex.ticker,
-        name: ex.name, // preserve backfilled name
+        // RBC lists have no name in the scrape (backfilled from Yahoo → ex.name);
+        // JPM carries the company name in the screenshot → e.name wins.
+        name: e.name ?? ex.name,
         sector: e.sector ?? ex.sector,
         weight: e.weight ?? ex.weight,
         dateAdded: e.dateAdded ?? ex.dateAdded,
+        // JPM-only fields (undefined for RBC scrapes → preserve any existing).
+        industry: e.industry ?? ex.industry,
+        strategy: e.strategy ?? ex.strategy,
+        priceTarget: e.priceTarget ?? ex.priceTarget,
       });
     } else {
       added += 1;
       byNorm.set(norm, {
         ticker: e.ticker,
+        name: e.name,
         sector: e.sector ?? "—",
         weight: e.weight ?? 0,
         dateAdded: e.dateAdded ?? today,
+        industry: e.industry,
+        strategy: e.strategy,
+        priceTarget: e.priceTarget,
       });
     }
   }
