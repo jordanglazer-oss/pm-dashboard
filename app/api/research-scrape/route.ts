@@ -36,7 +36,7 @@ const client = new Anthropic();
 
 type AttachmentInput = { id: string; label: string; dataUrl: string };
 
-export type SourceKey = "fundstrat-top" | "fundstrat-bottom" | "fundstrat-smid-top" | "fundstrat-smid-bottom" | "rbc-focus" | "rbc-us-focus" | "seeking-alpha-picks" | "rbccm-few";
+export type SourceKey = "fundstrat-top" | "fundstrat-bottom" | "fundstrat-smid-top" | "fundstrat-smid-bottom" | "rbc-focus" | "rbc-us-focus" | "jpm-us-analyst-focus" | "seeking-alpha-picks" | "rbccm-few";
 
 export type ResearchAttachmentInput = AttachmentInput;
 
@@ -47,6 +47,7 @@ const VALID_SOURCES: readonly SourceKey[] = [
   "fundstrat-smid-bottom",
   "rbc-focus",
   "rbc-us-focus",
+  "jpm-us-analyst-focus",
   "seeking-alpha-picks",
   "rbccm-few",
 ] as const;
@@ -256,6 +257,22 @@ If a column is missing or blank, OMIT that key (do not return null or empty stri
 ${common}
 
 Example: [{"ticker":"MSFT","sector":"Technology","weight":5.0,"dateAdded":"3/12/2026"},{"ticker":"JPM","sector":"Financials","weight":4.0,"dateAdded":"1/8/2026"}]`;
+  }
+
+  if (source === "jpm-us-analyst-focus") {
+    return `You are reading the "J.P. Morgan US Equity Analyst Focus List" screenshot — a LIST of US equities that J.P. Morgan analysts have flagged as focus (top) ideas. Extract EVERY row.
+
+Columns to look for:
+  - Ticker / Symbol → \`ticker\` (string, required, UPPERCASE). US listings — bare tickers, NO "-T" suffix (e.g. "AAPL", "MSFT", "JPM"). Dual-class shares written with "/" (e.g. "BRK/B") → dash form ("BRK-B").
+  - Sector → \`sector\` (string, if shown)
+  - Weight / Target Weight → \`weight\` (NUMBER as a percentage, only if a weight column is present; a focus list usually has none — OMIT if absent).
+  - Date Added / Date → \`dateAdded\` (string, e.g. "4/15/2026", if shown)
+
+If a column is missing or blank, OMIT that key (do not return null or empty string).
+
+${common}
+
+Example: [{"ticker":"NVDA","sector":"Technology","dateAdded":"3/12/2026"},{"ticker":"JPM","sector":"Financials"}]`;
   }
 
   if (source === "rbccm-few") {
@@ -488,7 +505,7 @@ async function runVision(source: SourceKey, atts: AttachmentInput[]): Promise<{ 
   console.log(`[research-scrape:${source}] raw vision output:`, text.slice(0, 4000));
 
   const entries =
-    (source === "rbc-focus" || source === "rbc-us-focus") ? parseRbcRows(text, source)
+    (source === "rbc-focus" || source === "rbc-us-focus" || source === "jpm-us-analyst-focus") ? parseRbcRows(text, source)
   : source === "seeking-alpha-picks" ? parseAlphaPickRows(text)
   : source === "rbccm-few" ? parseFewRows(text)
   : parseIdeaRows(text);

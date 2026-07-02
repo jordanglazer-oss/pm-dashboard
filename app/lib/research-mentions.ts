@@ -29,6 +29,7 @@ export type MentionSource =
   | "fundstrat-smid-bottom"
   | "rbc-focus"
   | "rbc-us-focus"
+  | "jpm-us-analyst-focus"
   | "seeking-alpha-picks"
   | "rbccm-few";
 
@@ -76,6 +77,7 @@ const SOURCES: SourceConfig[] = [
   { source: "fundstrat-smid-bottom", label: "Fundstrat SMID Bottom", field: "fundstratSmidBottom", direction: "bearish" },
   { source: "rbc-focus", label: "RBC Canadian Focus", field: "rbcCanadianFocus", direction: "bullish" },
   { source: "rbc-us-focus", label: "RBC US Focus", field: "rbcUsFocus", direction: "bullish" },
+  { source: "jpm-us-analyst-focus", label: "JPM US Analyst Focus", field: "jpmUsAnalystFocus", direction: "bullish" },
   { source: "seeking-alpha-picks", label: "Seeking Alpha Picks", field: "alphaPicks", direction: "bullish" },
   { source: "rbccm-few", label: "RBCCM Canadian FEW", field: "rbccmFew", direction: "bullish" },
 ];

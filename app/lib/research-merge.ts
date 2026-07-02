@@ -128,10 +128,11 @@ function applyIdeaEntries(
 
 function applyRbcEntries(
   state: ResearchState,
-  source: "rbc-focus" | "rbc-us-focus",
+  source: "rbc-focus" | "rbc-us-focus" | "jpm-us-analyst-focus",
   entries: ScrapedRbcRow[],
 ): { nextState: ResearchState; summary: ResearchMergeSummary } {
-  const stateKey = source === "rbc-focus" ? "rbcCanadianFocus" : "rbcUsFocus";
+  const stateKey =
+    source === "rbc-focus" ? "rbcCanadianFocus" : source === "rbc-us-focus" ? "rbcUsFocus" : "jpmUsAnalystFocus";
   const existing = ((state[stateKey as keyof ResearchState] as RBCEntry[]) || []);
   const existingByNorm = new Map(existing.map((r) => [normalize(r.ticker), r]));
   const { mode, reason } = decideMode(existing.length, entries.length);
@@ -304,6 +305,7 @@ export function applyResearchEntries(
       return applyIdeaEntries(state, source, entries as ScrapedIdea[]);
     case "rbc-focus":
     case "rbc-us-focus":
+    case "jpm-us-analyst-focus":
       return applyRbcEntries(state, source, entries as ScrapedRbcRow[]);
     case "seeking-alpha-picks":
       return applyAlphaPicks(state, entries as ScrapedAlphaPick[]);

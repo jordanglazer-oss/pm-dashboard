@@ -220,6 +220,10 @@ export type ResearchState = {
   // populated separately. US tickers (no -T suffix). Optional for
   // backward compat with older pm:research blobs that predate this.
   rbcUsFocus?: RBCEntry[];
+  // JPM US Equity Analyst Focus List — same RBCEntry shape as the RBC lists,
+  // populated separately from a screenshot / email. US tickers. Optional for
+  // backward compat with older pm:research blobs that predate it.
+  jpmUsAnalystFocus?: RBCEntry[];
   // Seeking Alpha Alpha Picks — institutional buy recommendations
   // populated from the Alpha Picks dashboard screenshot. Mirrors the
   // Newton's Upticks shape (name + sector + dateAdded + live price)
@@ -325,6 +329,7 @@ export const defaultResearch: ResearchState = {
   fundstratSmidBottom: [],
   rbcCanadianFocus: [],
   rbcUsFocus: [],
+  jpmUsAnalystFocus: [],
   alphaPicks: [],
   rbccmFew: [],
   generalNotes: "",
