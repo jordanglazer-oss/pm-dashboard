@@ -23,6 +23,16 @@ function postResearchRemovals(source: RemovalSource, tickers: string[]) {
   }).catch(() => {});
 }
 
+/** Parse a stored date string ("M/D/YYYY", ISO, etc.) to a timestamp for
+ *  CHRONOLOGICAL sorting. Without this, date columns sort lexically by string
+ *  ("1/…" < "10/…" < "2/…"), i.e. effectively by month digit rather than by
+ *  actual date. Invalid/empty → 0 (sorts as oldest). */
+function dateAddedMs(s: string | undefined): number {
+  if (!s) return 0;
+  const t = Date.parse(s);
+  return Number.isFinite(t) ? t : 0;
+}
+
 /**
  * Canonicalize an Uptick ticker for matching across the scrape and the
  * stored list: strip a leading $, convert dual-class "/" to "-", drop any
@@ -608,6 +618,8 @@ export default function ResearchPage() {
         cmp = (livePrices[a.ticker] || 0) - (livePrices[b.ticker] || 0);
       } else if (key === "priceWhenAdded") {
         cmp = (a.priceWhenAdded || 0) - (b.priceWhenAdded || 0);
+      } else if (key === "dateAdded") {
+        cmp = dateAddedMs(a.dateAdded) - dateAddedMs(b.dateAdded);
       } else {
         cmp = String(a[key] || "").localeCompare(String(b[key] || ""));
       }
@@ -631,6 +643,7 @@ export default function ResearchPage() {
 
   function compareRbc(a: RBCEntry, b: RBCEntry, key: RBCSortKey): number {
     if (key === "weight") return (a.weight ?? 0) - (b.weight ?? 0);
+    if (key === "dateAdded") return dateAddedMs(a.dateAdded) - dateAddedMs(b.dateAdded);
     return String(a[key] || "").localeCompare(String(b[key] || ""));
   }
   function sortedRbc() {
