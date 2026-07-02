@@ -535,11 +535,11 @@ DO NOT SCORE these two — they are deterministic and computed server-side from 
 Omit both from the "scores" and "explanations" objects in your response. Including them is harmless but wastes tokens.
 
 LONG-TERM GROUP:
-- secular (max 2, AUTO): Secular growth trend — long-term industry tailwinds favoring the company
+- secular (max 2, AUTO): Secular growth trend — long-term industry tailwinds favoring the company. Ground this in the FACTSET "Classification:" line (GICS sector/industry) plus the multi-year revenue trend and FY+1 consensus growth in the FactSet block; cite those as source: "factset".
 
 RESEARCH GROUP:
 - researchCoverage (max 1, SEMI): Information-environment meta-signal — score is BINARY (0 or 1, no half-points; values like 0.5 will be rounded up).
-  - 1 = stock has an active sell-side following: at least ~5 analysts, recent revision activity in the last 90 days, named-firm coverage events (initiations / PT changes / rating changes) visible in Yahoo's recommendation data or the PM-logged researchCoverageNotes block.
+  - 1 = stock has an active sell-side following: use the FACTSET "# analysts" count (roughly ≥5) plus the FY+1 estimate-revision activity (up/down counts) in the FactSet "Analyst signals" line, or named-firm coverage events in the PM-logged researchCoverageNotes block. Cite the FactSet analyst count as source: "factset".
   - 0 = thinly covered, stale revisions, no named-firm activity. Default for micro-caps and most non-US tickers without sell-side support.
   This category is intentionally narrow. DIRECTIONAL analyst sentiment (bullish vs bearish) is scored separately in analystConsensus from the RBC/JPM/FactSet panel — do NOT factor rating direction into researchCoverage. Your job here is purely "is this stock well-watched?", not "do analysts like it?".
 
@@ -575,10 +575,10 @@ FUNDAMENTAL GROUP:
 
 COMPANY SPECIFIC GROUP:
 - competitiveMoat (max 2, SEMI): Competitive moat — Use the peer data provided to assess competitive positioning. Compare margins, returns on capital, and growth rates vs named peers. Identify durable advantages.
-- catalysts (max 3, SEMI): Potential catalysts — upcoming events, product launches, strategic shifts, M&A potential
+- catalysts (max 3, SEMI): Potential catalysts — upcoming events, product launches, strategic shifts, M&A potential. Use the FACTSET "Analyst signals" line as structured evidence (a cluster of upward EPS revisions and/or upside to the mean/high target price is a positive estimate-momentum catalyst — cite source: "factset"); use PM notes and web_search only for discrete events (launches, M&A, guidance) not captured in the estimates.
 
 MANAGEMENT GROUP:
-- trackRecord (max 1, SEMI): Track record — management execution history, capital allocation quality
+- trackRecord (max 1, SEMI): Track record — management execution history, capital allocation quality. Ground this in FACTSET evidence: the multi-year margin (gross/operating) and ROE trends and net-income/FCF consistency in the FactSet block, plus the estimate-revision direction in "Analyst signals" (sustained upward revisions imply management is beating/raising). Cite those as source: "factset".
 - ownershipTrends (max 2, SEMI): Ownership trends — institutional ownership quality, insider buying/selling patterns
 
 CRITICAL RULES FOR EXPLANATIONS:

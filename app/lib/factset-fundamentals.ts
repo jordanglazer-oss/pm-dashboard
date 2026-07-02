@@ -68,16 +68,12 @@ const POINT_METRICS: ScoringFormula[] = [
   { key: "salesEstFy1", formula: "FE_ESTIMATE(SALES,MEAN,ANN_ROLL,1,NOW,'')", note: "Mean revenue estimate, FY+1" },
   { key: "tgtPriceMean", formula: "FE_ESTIMATE(PRICE_TGT,MEAN,ANN_ROLL,0,NOW,'')", note: "Mean target price" },
   { key: "numEstFy1", formula: "FE_ESTIMATE(EPS,NEST,ANN_ROLL,1,NOW,'')", note: "# analysts (estimate count)" },
-  // ── Scoring-completeness candidates (validate via probe, then collapse) ──
-  { key: "sector", formula: "FG_GICS_SECTOR", note: "GICS sector (feeds secular)" },
-  { key: "industry", formula: "FG_GICS_INDUSTRY", note: "GICS industry candidate (feeds secular)" },
-  { key: "recA", formula: "FE_ESTIMATE(REC_MARK,MEAN,ANN_ROLL,0,NOW,'')", note: "mean recommendation candidate A" },
-  { key: "recB", formula: "FG_REC", note: "mean recommendation candidate B" },
-  { key: "recC", formula: "FE_ESTIMATE(RECMEAN,MEAN,ANN_ROLL,0,NOW,'')", note: "mean recommendation candidate C" },
-  { key: "tgtHigh", formula: "FE_ESTIMATE(PRICE_TGT,HIGH,ANN_ROLL,0,NOW,'')", note: "target price high (dispersion)" },
-  { key: "tgtLow", formula: "FE_ESTIMATE(PRICE_TGT,LOW,ANN_ROLL,0,NOW,'')", note: "target price low (dispersion)" },
-  { key: "revUpA", formula: "FE_ESTIMATE(EPS,UP,ANN_ROLL,1,NOW,'')", note: "EPS up-revisions candidate A" },
-  { key: "revDownA", formula: "FE_ESTIMATE(EPS,DOWN,ANN_ROLL,1,NOW,'')", note: "EPS down-revisions candidate A" },
+  // ── Analyst signals (validated; recMean null for thinly-covered names) ──
+  { key: "recMean", formula: "FE_ESTIMATE(REC_MARK,MEAN,ANN_ROLL,0,NOW,'')", note: "Mean analyst recommendation (1=buy .. 5=sell)" },
+  { key: "tgtHigh", formula: "FE_ESTIMATE(PRICE_TGT,HIGH,ANN_ROLL,0,NOW,'')", note: "Target price high (dispersion)" },
+  { key: "tgtLow", formula: "FE_ESTIMATE(PRICE_TGT,LOW,ANN_ROLL,0,NOW,'')", note: "Target price low (dispersion)" },
+  { key: "revUp", formula: "FE_ESTIMATE(EPS,UP,ANN_ROLL,1,NOW,'')", note: "EPS FY+1 up-revisions (30d)" },
+  { key: "revDown", formula: "FE_ESTIMATE(EPS,DOWN,ANN_ROLL,1,NOW,'')", note: "EPS FY+1 down-revisions (30d)" },
 ];
 
 function buildScoringFormulas(): ScoringFormula[] {
@@ -105,6 +101,9 @@ export type CompanySnapshot = {
   factsetId: string;
   /** FactSet's company name for this id (null if unavailable). */
   name: string | null;
+  /** FactSet GICS sector / industry (strings, not numeric). */
+  sector: string | null;
+  industry: string | null;
   /** Keyed by SCORING_FORMULAS key (salesAnn0, salesQtr1, pe, ...). null = no data. */
   values: Record<string, number | null>;
   /** ISO timestamp this snapshot was fetched. */
@@ -119,8 +118,11 @@ export type CompanySnapshot = {
  * recognize/cover the issuer, which the caller uses to fall back to EDGAR or
  * flag the affected categories for manual scoring.
  */
+const SECTOR_FORMULA = "FG_GICS_SECTOR";
+const INDUSTRY_FORMULA = "FG_GICS_INDUSTRY";
+
 export async function companySnapshot(factsetId: string): Promise<CompanySnapshot> {
-  const formulas = [...SCORING_FORMULAS.map((f) => f.formula), NAME_FORMULA];
+  const formulas = [...SCORING_FORMULAS.map((f) => f.formula), NAME_FORMULA, SECTOR_FORMULA, INDUSTRY_FORMULA];
   const data = await crossSectional([factsetId], formulas);
   const row = data[factsetId] || {};
   const values: Record<string, number | null> = {};
@@ -128,10 +130,20 @@ export async function companySnapshot(factsetId: string): Promise<CompanySnapsho
     const v: FactsetValue = row[f.formula];
     values[f.key] = typeof v === "number" ? v : null;
   }
-  const nameVal = row[NAME_FORMULA];
-  const name = typeof nameVal === "string" && nameVal.trim() ? nameVal.trim() : null;
+  const str = (f: string): string | null => {
+    const v = row[f];
+    return typeof v === "string" && v.trim() ? v.trim() : null;
+  };
   const hasData = values.salesAnn0 != null || values.salesLtm != null;
-  return { factsetId, name, values, fetchedAt: new Date().toISOString(), hasData };
+  return {
+    factsetId,
+    name: str(NAME_FORMULA),
+    sector: str(SECTOR_FORMULA),
+    industry: str(INDUSTRY_FORMULA),
+    values,
+    fetchedAt: new Date().toISOString(),
+    hasData,
+  };
 }
 
 const fmt = (v: number | null | undefined, digits = 1): string =>
@@ -156,6 +168,7 @@ export function formatSnapshotForPrompt(snap: CompanySnapshot): string {
   const evEbitda = ev != null && v.ebitdaAnn0 ? ev / v.ebitdaAnn0 : null;
   return [
     `=== FACTSET FUNDAMENTALS (primary source, fetched ${snap.fetchedAt.slice(0, 10)}) ===`,
+    `Classification: GICS sector ${snap.sector ?? "n/a"} | industry ${snap.industry ?? "n/a"} (use for the secular growth-trend read).`,
     `Series are most-recent-first: FY | FY-1 | FY-2 | FY-3 | FY-4 (annual) and Q | Q-1 | ... | Q-7 (last 8 quarters). Q-4 is the YEAR-AGO quarter, so Q vs Q-4 is the quarter-over-quarter YoY comparison — compute these from the series below; do NOT web-search for quarterly results, FactSet carries them here. Figures in USD millions unless a % is shown.`,
     `Revenue — FY: ${seriesRow(v, "sales", 5, "Ann")} | TTM ${fmt(v.salesLtm)} | last 8 Q: ${seriesRow(v, "sales", 8, "Qtr")}`,
     `EPS — FY: ${seriesRow(v, "eps", 5, "Ann", 2)} | TTM ${fmt(v.epsLtm, 2)} | last 8 Q: ${seriesRow(v, "eps", 8, "Qtr", 2)}`,
@@ -168,7 +181,8 @@ export function formatSnapshotForPrompt(snap: CompanySnapshot): string {
     `Leverage — Total debt FY: ${seriesRow(v, "debt", 3, "Ann")} | EBITDA FY: ${seriesRow(v, "ebitda", 3, "Ann")} | Cash & ST ${fmt(v.cashAnn0)} | Interest exp ${fmt(v.intExpAnn0)}`,
     `Valuation (current): P/E ${fmt(v.pe)} | Forward P/E ${fmt(fwdPe)} | EV/EBITDA ${fmt(evEbitda)} | P/B ${fmt(v.pbk)} | P/S ${fmt(v.psales)} | Div yield ${fmt(v.divYld, 2)}% | Mkt cap ${fmt(v.mktVal)} | EV ${fmt(ev)}`,
     `Price: ${fmt(v.price, 2)} | 52-week range: ${fmt(v.low52w, 2)} – ${fmt(v.high52w, 2)}`,
-    `Estimates: EPS FY+1 ${fmt(v.epsEstFy1, 2)} | Revenue FY+1 ${fmt(v.salesEstFy1)} | Mean target price ${fmt(v.tgtPriceMean, 2)} | # analysts ${fmt(v.numEstFy1, 0)}`,
+    `Estimates: EPS FY+1 ${fmt(v.epsEstFy1, 2)} | Revenue FY+1 ${fmt(v.salesEstFy1)} | # analysts ${fmt(v.numEstFy1, 0)}`,
+    `Analyst signals: mean recommendation ${fmt(v.recMean, 2)} (1=Buy .. 5=Sell; n/a = thin coverage) | target ${fmt(v.tgtPriceMean, 2)} (range ${fmt(v.tgtLow, 2)}–${fmt(v.tgtHigh, 2)}) | EPS FY+1 est. revisions: ${fmt(v.revUp, 0)} up / ${fmt(v.revDown, 0)} down (breadth = research coverage; revisions + recommendation = track-record / catalysts signal).`,
   ].join("\n");
 }
 
