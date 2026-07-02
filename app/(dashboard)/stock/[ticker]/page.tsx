@@ -1379,6 +1379,16 @@ export default function StockDetailPage() {
       if (data.explanations) {
         updateExplanations(ticker, data.explanations);
       }
+      // Live-refresh the FactSet analyst-consensus row: the score route wrote
+      // it to Redis; mirror it into client state so the Coverage panel + Analyst
+      // Consensus category update without a manual page reload.
+      if (
+        data.factsetConsensus &&
+        (typeof data.factsetConsensus.averageTarget === "number" || typeof data.factsetConsensus.analystCount === "number")
+      ) {
+        const cur = getAnalystSnapshot(ticker) || {};
+        updateAnalystSnapshot(ticker, { ...cur, factset: data.factsetConsensus });
+      }
       if (data.price != null) {
         updatePrice(ticker, data.price);
       }

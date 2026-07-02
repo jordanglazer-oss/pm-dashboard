@@ -762,6 +762,9 @@ export async function POST(request: NextRequest) {
     // the input-health gate (FactSet can stand in for Yahoo) and lets us skip
     // the "verify the data" caveats since FactSet is confirmed, current data.
     let factsetUsed = false;
+    // The FactSet analyst-consensus row written this run — returned to the
+    // client so the stock page can refresh the Coverage panel live (no reload).
+    let factsetConsensusOut: { averageTarget?: number; analystCount?: number; asOf: string; lastUpdated: string } | undefined;
 
     try {
       // Resolve this ticker to a FactSet id (or "existing" → skip FactSet).
@@ -859,7 +862,7 @@ export async function POST(request: NextRequest) {
           const blob = raw ? (JSON.parse(raw) as AnalystSnapshots) : {};
           const existing = getSnapshotForTicker(blob, upperTicker) || {};
           const today = new Date().toISOString().slice(0, 10);
-          const factset = {
+          factsetConsensusOut = {
             averageTarget:
               typeof factsetSnap.values.tgtPriceMean === "number" ? factsetSnap.values.tgtPriceMean : existing.factset?.averageTarget,
             analystCount:
@@ -867,7 +870,7 @@ export async function POST(request: NextRequest) {
             asOf: today,
             lastUpdated: today,
           };
-          const updated = setSnapshotForTicker(blob, upperTicker, { ...existing, factset });
+          const updated = setSnapshotForTicker(blob, upperTicker, { ...existing, factset: factsetConsensusOut });
           await redis.set("pm:analyst-snapshots", JSON.stringify(updated));
         } catch (e) {
           console.error(`[Score] failed to auto-populate FactSet analyst snapshot for ${upperTicker}:`, e);
@@ -1382,6 +1385,9 @@ export async function POST(request: NextRequest) {
       // this run (true = FactSet snapshot fetched + name-guard passed). Lets us
       // tell "FactSet present but Claude cited EDGAR" from "FactSet never ran".
       factsetUsed,
+      // The FactSet analyst-consensus row written this run (target + # analysts)
+      // so the client can refresh the Coverage panel live without a reload.
+      factsetConsensus: factsetConsensusOut,
       // Verification metadata — surfaced for the score-history entry and
       // the stock-page UI ("Verified · 3 searches").
       verifiedSearch: verifyWithWebSearch,
