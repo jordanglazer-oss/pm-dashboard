@@ -179,7 +179,7 @@ function AlphaPickAddForm({ onAdd }: { onAdd: (e: AlphaPickEntry) => void }) {
  * zero Anthropic tokens.
  */
 function ResearchScraperBlock(props: {
-  source: "fundstrat-top" | "fundstrat-bottom" | "fundstrat-smid-top" | "fundstrat-smid-bottom" | "rbc-focus" | "rbc-us-focus" | "seeking-alpha-picks" | "rbccm-few";
+  source: "fundstrat-top" | "fundstrat-bottom" | "fundstrat-smid-top" | "fundstrat-smid-bottom" | "rbc-focus" | "rbc-us-focus" | "jpm-us-analyst-focus" | "seeking-alpha-picks" | "rbccm-few";
   sectionLabel: string;
   helperText: string;
   attachments: BriefAttachment[];
@@ -460,6 +460,8 @@ export default function ResearchPage() {
   const setRbcSort = (next: { key: RBCSortKey; dir: SortDir }) => writeSort("research.rbcSortKey", "research.rbcSortDir", next);
   const rbcUsSort = readSort<RBCSortKey>("research.rbcUsSortKey", "research.rbcUsSortDir", RBC_SORT_KEYS, "ticker", "asc");
   const setRbcUsSort = (next: { key: RBCSortKey; dir: SortDir }) => writeSort("research.rbcUsSortKey", "research.rbcUsSortDir", next);
+  const jpmFocusSort = readSort<RBCSortKey>("research.jpmFocusSortKey", "research.jpmFocusSortDir", RBC_SORT_KEYS, "ticker", "asc");
+  const setJpmFocusSort = (next: { key: RBCSortKey; dir: SortDir }) => writeSort("research.jpmFocusSortKey", "research.jpmFocusSortDir", next);
   const FEW_SORT_KEYS: ReadonlyArray<FewSortKey> = ["ticker", "name", "industry", "price"];
   const fewSort = readSort<FewSortKey>("research.fewSortKey", "research.fewSortDir", FEW_SORT_KEYS, "ticker", "asc");
   const setFewSort = (next: { key: FewSortKey; dir: SortDir }) => writeSort("research.fewSortKey", "research.fewSortDir", next);
@@ -511,7 +513,7 @@ export default function ResearchPage() {
   // `scrapeStatus` because its Refresh button does more than just scrape
   // (it also refreshes prices and names). The new sources are
   // scrape-only so a per-source map keeps each section's UI independent.
-  type SourceKey = "fundstrat-top" | "fundstrat-bottom" | "fundstrat-smid-top" | "fundstrat-smid-bottom" | "rbc-focus" | "rbc-us-focus" | "seeking-alpha-picks" | "rbccm-few";
+  type SourceKey = "fundstrat-top" | "fundstrat-bottom" | "fundstrat-smid-top" | "fundstrat-smid-bottom" | "rbc-focus" | "rbc-us-focus" | "jpm-us-analyst-focus" | "seeking-alpha-picks" | "rbccm-few";
   const [scrapeLoadingMap, setScrapeLoadingMap] = useState<Partial<Record<SourceKey, boolean>>>({});
   const [scrapeStatusMap, setScrapeStatusMap] = useState<Partial<Record<SourceKey, string>>>({});
 
@@ -578,6 +580,9 @@ export default function ResearchPage() {
   function toggleRbcUsSort(key: RBCSortKey) {
     setRbcUsSort(rbcUsSort.key === key ? { key, dir: rbcUsSort.dir === "asc" ? "desc" : "asc" } : { key, dir: "asc" });
   }
+  function toggleJpmFocusSort(key: RBCSortKey) {
+    setJpmFocusSort(jpmFocusSort.key === key ? { key, dir: jpmFocusSort.dir === "asc" ? "desc" : "asc" } : { key, dir: "asc" });
+  }
   function toggleFewSort(key: FewSortKey) {
     setFewSort(fewSort.key === key ? { key, dir: fewSort.dir === "asc" ? "desc" : "asc" } : { key, dir: "asc" });
   }
@@ -629,6 +634,13 @@ export default function ResearchPage() {
       return dir === "asc" ? cmp : -cmp;
     });
   }
+  function sortedJpmFocus() {
+    return [...(state.jpmUsAnalystFocus || [])].sort((a, b) => {
+      const { key, dir } = jpmFocusSort;
+      const cmp = compareRbc(a, b, key);
+      return dir === "asc" ? cmp : -cmp;
+    });
+  }
 
   // FEW price sort/display prefers the live Yahoo price, falling back to
   // the price captured from the screenshot.
@@ -658,6 +670,7 @@ export default function ResearchPage() {
   const sbArrow = (key: IdeaSortKey) => smidBottomSort.key === key ? (smidBottomSort.dir === "asc" ? " ▲" : " ▼") : "";
   const rArrow = (key: RBCSortKey) => rbcSort.key === key ? (rbcSort.dir === "asc" ? " ▲" : " ▼") : "";
   const rUsArrow = (key: RBCSortKey) => rbcUsSort.key === key ? (rbcUsSort.dir === "asc" ? " ▲" : " ▼") : "";
+  const jArrow = (key: RBCSortKey) => jpmFocusSort.key === key ? (jpmFocusSort.dir === "asc" ? " ▲" : " ▼") : "";
   const fArrow = (key: FewSortKey) => fewSort.key === key ? (fewSort.dir === "asc" ? " ▲" : " ▼") : "";
 
   useEffect(() => {
@@ -843,8 +856,8 @@ export default function ResearchPage() {
             }
           }
 
-          // Backfill missing names for both RBC lists.
-          for (const listKey of ["rbcCanadianFocus", "rbcUsFocus"] as const) {
+          // Backfill missing names for both RBC lists + the JPM list.
+          for (const listKey of ["rbcCanadianFocus", "rbcUsFocus", "jpmUsAnalystFocus"] as const) {
             const list = (research[listKey] || []) as RBCEntry[];
             const needsFill = list.filter((r) => !r.name || r.name === r.ticker || !r.sector || r.sector === "—");
             if (needsFill.length === 0) continue;
@@ -1078,7 +1091,7 @@ export default function ResearchPage() {
    * elsewhere in the app — Yahoo returns the canonical GICS sector
    * which we want to standardize on).
    */
-  const refreshRbcNames = useCallback(async (list: "rbcCanadianFocus" | "rbcUsFocus", overrideState?: ResearchState) => {
+  const refreshRbcNames = useCallback(async (list: "rbcCanadianFocus" | "rbcUsFocus" | "jpmUsAnalystFocus", overrideState?: ResearchState) => {
     const s = overrideState || state;
     const entries = (s[list] || []) as RBCEntry[];
     if (entries.length === 0) return;
@@ -1349,6 +1362,8 @@ export default function ResearchPage() {
         void refreshRbcNames("rbcCanadianFocus", nextState);
       } else if (source === "rbc-us-focus") {
         void refreshRbcNames("rbcUsFocus", nextState);
+      } else if (source === "jpm-us-analyst-focus") {
+        void refreshRbcNames("jpmUsAnalystFocus", nextState);
       } else if (source === "seeking-alpha-picks") {
         void refreshAlphaPickNames(nextState);
         void fetchLivePrices(nextState);
@@ -1573,6 +1588,14 @@ export default function ResearchPage() {
   };
   const removeRbcUs = (ticker: string) => {
     save({ ...state, rbcUsFocus: (state.rbcUsFocus || []).filter((r) => r.ticker !== ticker) });
+  };
+  const addJpmFocus = (entry: RBCEntry) => {
+    const list = state.jpmUsAnalystFocus || [];
+    if (list.some((r) => r.ticker === entry.ticker)) return;
+    save({ ...state, jpmUsAnalystFocus: [...list, entry] });
+  };
+  const removeJpmFocus = (ticker: string) => {
+    save({ ...state, jpmUsAnalystFocus: (state.jpmUsAnalystFocus || []).filter((r) => r.ticker !== ticker) });
   };
   const addFew = (entry: FewEntry) => {
     const list = state.rbccmFew || [];
@@ -2754,6 +2777,93 @@ export default function ResearchPage() {
             onScrape={(force) => scrapeResearchSource("rbc-us-focus", force)}
             loading={!!scrapeLoadingMap["rbc-us-focus"]}
             status={scrapeStatusMap["rbc-us-focus"]}
+          />
+        </section>
+
+        {/* ── JPM US Equity Analyst Focus List ──
+            J.P. Morgan's US equity analyst focus picks. Same RBCEntry
+            shape / manual-add + screenshot-scan flow as the RBC lists;
+            targets state.jpmUsAnalystFocus so it stays independent and
+            auto-tallies into researchMentions via SOURCES. Amber-accented
+            to distinguish it from the RBC (blue/teal) sections. */}
+        <section className="rounded-[24px] border border-amber-200 bg-white p-6 shadow-sm">
+          <div className="flex items-center justify-between mb-4">
+            <div>
+              <h3 className="text-xl font-bold text-amber-800">JPM US Equity Analyst Focus List</h3>
+              <p className="text-xs text-slate-400">J.P. Morgan US equity analyst focus picks</p>
+            </div>
+            <span className="text-sm text-slate-400">{(state.jpmUsAnalystFocus || []).length} names</span>
+          </div>
+
+          <div className="overflow-x-auto"><table className="w-full text-sm">
+            <thead>
+              <tr className="border-b-2 border-amber-500 text-left">
+                <th className="py-2 pr-2 text-xs font-semibold text-amber-700 w-8">#</th>
+                <th className="py-2 pr-3 text-xs font-semibold text-amber-700 cursor-pointer hover:text-amber-900 select-none" onClick={() => toggleJpmFocusSort("ticker")}>Ticker{jArrow("ticker")}</th>
+                <th className="py-2 pr-3 text-xs font-semibold text-amber-700 cursor-pointer hover:text-amber-900 select-none" onClick={() => toggleJpmFocusSort("name")}>Name{jArrow("name")}</th>
+                <th className="py-2 pr-3 text-xs font-semibold text-amber-700 cursor-pointer hover:text-amber-900 select-none" onClick={() => toggleJpmFocusSort("sector")}>Sector{jArrow("sector")}</th>
+                <th className="py-2 pr-3 text-xs font-semibold text-amber-700 cursor-pointer hover:text-amber-900 select-none" onClick={() => toggleJpmFocusSort("weight")}>Weight (%){jArrow("weight")}</th>
+                <th className="py-2 w-24"></th>
+              </tr>
+            </thead>
+            <tbody>
+              {sortedJpmFocus().map((item, i) => (
+                <tr key={item.ticker} className={`border-b border-slate-100 ${i % 2 === 0 ? "bg-white" : "bg-amber-50/30"} hover:bg-amber-50/60 transition-colors`}>
+                  <td className="py-2 pr-2 text-slate-400">{i + 1}</td>
+                  <td className="py-2 pr-3 font-mono font-bold text-amber-700">${displayTicker(item.ticker)}</td>
+                  <td className="py-2 pr-3 text-slate-700 truncate max-w-[260px]" title={item.name || item.ticker}>{item.name || <span className="text-slate-300 italic">—</span>}</td>
+                  <td className="py-2 pr-3 text-slate-600">{item.sector}</td>
+                  <td className="py-2 pr-3 text-slate-500">
+                    <input
+                      type="text"
+                      inputMode="decimal"
+                      value={item.weight ?? 0}
+                      onChange={(e) => {
+                        const val = e.target.value;
+                        const list = [...(state.jpmUsAnalystFocus || [])];
+                        const idx = list.findIndex((r) => r.ticker === item.ticker);
+                        if (idx >= 0) {
+                          list[idx] = { ...list[idx], weight: val === "" || val === "-" ? 0 : parseFloat(val) || 0 };
+                          save({ ...state, jpmUsAnalystFocus: list });
+                        }
+                      }}
+                      className="w-16 rounded border border-transparent px-1 py-0.5 text-sm text-center hover:border-slate-200 focus:border-amber-300 focus:outline-none bg-transparent"
+                    />
+                  </td>
+                  <td className="py-2 text-right whitespace-nowrap">
+                    {scoredStocks.some((s) => s.ticker === item.ticker) ? (
+                      <span className="text-[10px] text-emerald-500 font-medium">In list</span>
+                    ) : (
+                      <button
+                        onClick={(e) => { e.stopPropagation(); addToWatchlist(item.ticker); }}
+                        className="text-[10px] text-blue-500 hover:text-blue-700 font-semibold transition-colors"
+                        title="Add to Watchlist"
+                      >
+                        + Watch
+                      </button>
+                    )}
+                    <button onClick={() => removeJpmFocus(item.ticker)} className="ml-2 text-slate-300 hover:text-red-500 font-bold transition-colors">&times;</button>
+                  </td>
+                </tr>
+              ))}
+              {(state.jpmUsAnalystFocus || []).length === 0 && (
+                <tr><td colSpan={6} className="py-6 text-center text-slate-400 italic">No names added yet</td></tr>
+              )}
+            </tbody>
+          </table></div>
+
+          <RBCAddForm onAdd={addJpmFocus} />
+
+          <ResearchScraperBlock
+            source="jpm-us-analyst-focus"
+            sectionLabel="JPM US Equity Analyst Focus List"
+            helperText="Upload a JPM US Equity Analyst Focus List screenshot. On Refresh, ticker + sector + weight + date are extracted and merged."
+            attachments={state.attachments || []}
+            onAddAttachment={addAttachment}
+            onRemoveAttachment={removeAttachment}
+            onScrape={(force) => scrapeResearchSource("jpm-us-analyst-focus", force)}
+            loading={!!scrapeLoadingMap["jpm-us-analyst-focus"]}
+            status={scrapeStatusMap["jpm-us-analyst-focus"]}
           />
         </section>
 
