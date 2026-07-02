@@ -233,6 +233,12 @@ export type HealthData = {
   roic?: number;
   revenueGrowth?: number;
   currentPrice?: number;
+  /** Market capitalization in MILLIONS (FactSet FG_MKT_VALUE when available,
+   *  else Yahoo summaryDetail.marketCap ÷ 1e6). */
+  marketCap?: number;
+  /** Dividend yield as a PERCENT (e.g. 1.40 = 1.40%). FactSet FG_DIV_YLD when
+   *  available, else Yahoo summaryDetail.dividendYield × 100. */
+  dividendYield?: number;
 };
 
 // ── Fund / ETF specific data ──

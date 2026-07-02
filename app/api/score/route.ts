@@ -770,6 +770,10 @@ export async function POST(request: NextRequest) {
     // factsetSnap is in scope) once the name-guard passes.
     let factsetSectorOut: string | null = null;
     let factsetBetaOut: number | null = null;
+    // FactSet market cap (millions) + dividend yield (%) → injected into
+    // healthData so the whole dashboard (not just scoring) reads FactSet.
+    let factsetMktValOut: number | null = null;
+    let factsetDivYldOut: number | null = null;
 
     try {
       // Resolve this ticker to a FactSet id (or "existing" → skip FactSet).
@@ -819,6 +823,8 @@ export async function POST(request: NextRequest) {
           factsetSectorOut = normalizeFactsetSector(factsetSnap.sector);
           const b = typeof factsetSnap.values.beta === "number" ? factsetSnap.values.beta : null;
           factsetBetaOut = b != null ? Math.max(-3, Math.min(5, b)) : null;
+          if (typeof factsetSnap.values.mktVal === "number") factsetMktValOut = factsetSnap.values.mktVal;
+          if (typeof factsetSnap.values.divYld === "number") factsetDivYldOut = factsetSnap.values.divYld;
         } else {
           console.warn(
             `[Score] ${upperTicker} FactSet name guard rejected: FactSet="${factsetSnap.name}" vs Yahoo="${yahooName}" — falling back to EDGAR/Yahoo`
@@ -1368,6 +1374,13 @@ export async function POST(request: NextRequest) {
 
     // Extract health monitor data from raw Yahoo modules
     const healthData = extractHealthData(rawModules, stockPrice);
+    // Prefer FactSet market cap (millions) + dividend yield (%) when the
+    // name-guard passed, so these read FactSet dashboard-wide (Yahoo remains
+    // the base for uncovered names via extractHealthData).
+    if (healthData) {
+      if (factsetMktValOut != null) healthData.marketCap = factsetMktValOut;
+      if (factsetDivYldOut != null) healthData.dividendYield = factsetDivYldOut;
+    }
 
     // Compute risk alert combining technicals with health data
     if (technicals && healthData) {
@@ -1571,6 +1584,14 @@ function extractHealthData(modules: YahooResult | undefined, currentPrice?: numb
       ? (rawVal(financial, "revenueGrowth")! * 100)
       : undefined,
     currentPrice: currentPrice ?? rawVal(financial, "currentPrice"),
+    // Yahoo base (overridden by FactSet in the caller when the name-guard
+    // passed): market cap → millions; dividend yield → percent.
+    marketCap: rawVal(summary, "marketCap") != null
+      ? (rawVal(summary, "marketCap")! / 1e6)
+      : undefined,
+    dividendYield: rawVal(summary, "dividendYield") != null
+      ? (rawVal(summary, "dividendYield")! * 100)
+      : undefined,
   };
 
   // Only return if we have at least some data

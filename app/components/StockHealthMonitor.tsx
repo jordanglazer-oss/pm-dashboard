@@ -11,6 +11,14 @@ function fmt(val: number | undefined, decimals = 1, suffix = ""): string {
   return `${val.toFixed(decimals)}${suffix}`;
 }
 
+/** Format a market cap given in MILLIONS as $X.XXT / $X.XXB / $XXXM. */
+function fmtMktCap(millions: number | undefined): string {
+  if (millions == null || !isFinite(millions)) return "\u2014";
+  if (millions >= 1_000_000) return `$${(millions / 1_000_000).toFixed(2)}T`;
+  if (millions >= 1_000) return `$${(millions / 1_000).toFixed(1)}B`;
+  return `$${millions.toFixed(0)}M`;
+}
+
 function pctDistance(price: number | undefined, avg: number | undefined): string {
   if (price == null || avg == null || avg === 0) return "\u2014";
   const pct = ((price - avg) / avg) * 100;
@@ -255,6 +263,16 @@ export default function StockHealthMonitor({
           <IndicatorRow
             label="EV/EBITDA"
             value={fmt(healthData.enterpriseToEbitda, 1, "x")}
+            signal="neutral"
+          />
+          <IndicatorRow
+            label="Market Cap"
+            value={fmtMktCap(healthData.marketCap)}
+            signal="neutral"
+          />
+          <IndicatorRow
+            label="Dividend Yield"
+            value={fmt(healthData.dividendYield, 2, "%")}
             signal="neutral"
           />
         </CategoryCard>
