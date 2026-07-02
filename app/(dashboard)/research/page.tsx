@@ -1412,7 +1412,9 @@ export default function ResearchPage() {
         entries as unknown[],
       );
       const cachedLabel = data.cached ? " (cached)" : "";
-      const modeLabel = summary.mode === "additive" ? " · ADDITIVE FALLBACK" : "";
+      const modeLabel = summary.mode === "additive"
+        ? (summary.sameDayAccumulate ? " · same-day (added to today's earlier screenshot)" : " · ADDITIVE FALLBACK")
+        : "";
       const removedLabel = summary.mode === "replace" && summary.removed > 0 ? ` · ${summary.removed} removed` : "";
       const reasonLabel = summary.fallbackReason ? ` ⚠ ${summary.fallbackReason}` : "";
       setScrapeStatusMap((m) => ({

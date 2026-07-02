@@ -261,6 +261,12 @@ export type ResearchState = {
   // Manually re-adding a ticker clears its tombstone. Optional for
   // backward compat with older pm:research blobs.
   dismissedUpticks?: string[];
+  // Last scrape date (UTC "YYYY-MM-DD") per research source. When a source is
+  // scanned AGAIN the same day, the merge accumulates (additive) instead of
+  // replacing — so multiple screenshots of one list (which don't fit in a
+  // single capture), whether uploaded manually or emailed, don't overwrite each
+  // other. The first scan of a new day still replaces (dropping delisted names).
+  scanDates?: Record<string, string>;
 };
 
 export type UptickEntry = {
@@ -346,4 +352,5 @@ export const defaultResearch: ResearchState = {
   newtonSectors: GICS_SECTORS.map((s) => ({ sector: s, view: "neutral" as SectorView })),
   leeSectors: GICS_SECTORS.map((s) => ({ sector: s, view: "neutral" as SectorView })),
   leeFocusAreas: [],
+  scanDates: {},
 };

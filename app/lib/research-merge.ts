@@ -69,6 +69,10 @@ export type ResearchMergeSummary = {
   mode: "replace" | "additive";
   /** Set when mode === "additive" to explain why. */
   fallbackReason?: string;
+  /** True when additive because this source was already scanned TODAY (a second
+   *  screenshot of the same list accumulating), as opposed to the small-screenshot
+   *  safety fallback. Lets the UI show "same-day" rather than "ADDITIVE FALLBACK". */
+  sameDayAccumulate?: boolean;
 };
 
 /** Decide whether to use replace mode (default) or fall back to additive
@@ -91,6 +95,7 @@ function applyIdeaEntries(
   state: ResearchState,
   source: SourceKey,
   entries: ScrapedIdea[],
+  forceAdditive: boolean,
 ): { nextState: ResearchState; summary: ResearchMergeSummary } {
   const stateKey =
     source === "fundstrat-top"         ? "fundstratTop"
@@ -99,7 +104,9 @@ function applyIdeaEntries(
   : /* fundstrat-smid-bottom */         "fundstratSmidBottom";
   const existing: IdeaEntry[] = ((state[stateKey as keyof ResearchState] as IdeaEntry[]) || []);
   const existingByNorm = new Map(existing.map((i) => [normalize(i.ticker), i]));
-  const { mode, reason } = decideMode(existing.length, entries.length);
+  const { mode, reason } = forceAdditive
+    ? { mode: "additive" as const, reason: undefined }
+    : decideMode(existing.length, entries.length);
 
   const byNorm = new Map<string, IdeaEntry>();
   // In additive mode, seed the map with existing entries (they survive).
@@ -127,7 +134,7 @@ function applyIdeaEntries(
   const nextState = { ...state, [stateKey]: Array.from(byNorm.values()) } as ResearchState;
   return {
     nextState,
-    summary: { source, rowsParsed: entries.length, matched, added, removed, removedTickers, mode, fallbackReason: reason },
+    summary: { source, rowsParsed: entries.length, matched, added, removed, removedTickers, mode, fallbackReason: reason, sameDayAccumulate: forceAdditive },
   };
 }
 
@@ -137,12 +144,15 @@ function applyRbcEntries(
   state: ResearchState,
   source: "rbc-focus" | "rbc-us-focus" | "jpm-us-analyst-focus",
   entries: ScrapedRbcRow[],
+  forceAdditive: boolean,
 ): { nextState: ResearchState; summary: ResearchMergeSummary } {
   const stateKey =
     source === "rbc-focus" ? "rbcCanadianFocus" : source === "rbc-us-focus" ? "rbcUsFocus" : "jpmUsAnalystFocus";
   const existing = ((state[stateKey as keyof ResearchState] as RBCEntry[]) || []);
   const existingByNorm = new Map(existing.map((r) => [normalize(r.ticker), r]));
-  const { mode, reason } = decideMode(existing.length, entries.length);
+  const { mode, reason } = forceAdditive
+    ? { mode: "additive" as const, reason: undefined }
+    : decideMode(existing.length, entries.length);
   const today = new Date().toLocaleDateString("en-US", { month: "numeric", day: "numeric", year: "numeric" });
 
   const byNorm = new Map<string, RBCEntry>();
@@ -193,7 +203,7 @@ function applyRbcEntries(
   const nextState = { ...state, [stateKey]: finalList } as ResearchState;
   return {
     nextState,
-    summary: { source, rowsParsed: entries.length, matched, added, removed, removedTickers, mode, fallbackReason: reason },
+    summary: { source, rowsParsed: entries.length, matched, added, removed, removedTickers, mode, fallbackReason: reason, sameDayAccumulate: forceAdditive },
   };
 }
 
@@ -207,12 +217,15 @@ function applyRbcEntries(
 function applyAlphaPicks(
   state: ResearchState,
   entries: ScrapedAlphaPick[],
+  forceAdditive: boolean,
 ): { nextState: ResearchState; summary: ResearchMergeSummary } {
   const existing: AlphaPickEntry[] = state.alphaPicks || [];
   const dateKey = (d: string | undefined) => (d || "").trim();
   const compositeKey = (ticker: string, date: string | undefined) => `${normalize(ticker)}|${dateKey(date)}`;
   const existingByKey = new Map(existing.map((i) => [compositeKey(i.ticker, i.dateAdded), i]));
-  const { mode, reason } = decideMode(existing.length, entries.length);
+  const { mode, reason } = forceAdditive
+    ? { mode: "additive" as const, reason: undefined }
+    : decideMode(existing.length, entries.length);
   const today = new Date().toLocaleDateString("en-US", { month: "numeric", day: "numeric", year: "numeric" });
 
   const byKey = new Map<string, AlphaPickEntry>();
@@ -272,7 +285,7 @@ function applyAlphaPicks(
   const nextState = { ...state, alphaPicks: Array.from(byKey.values()) };
   return {
     nextState,
-    summary: { source: "seeking-alpha-picks", rowsParsed: entries.length, matched, added, removed, removedTickers, mode, fallbackReason: reason },
+    summary: { source: "seeking-alpha-picks", rowsParsed: entries.length, matched, added, removed, removedTickers, mode, fallbackReason: reason, sameDayAccumulate: forceAdditive },
   };
 }
 
@@ -281,10 +294,13 @@ function applyAlphaPicks(
 function applyFewEntries(
   state: ResearchState,
   entries: ScrapedFewRow[],
+  forceAdditive: boolean,
 ): { nextState: ResearchState; summary: ResearchMergeSummary } {
   const existing: FewEntry[] = state.rbccmFew || [];
   const existingByNorm = new Map(existing.map((r) => [normalize(r.ticker), r]));
-  const { mode, reason } = decideMode(existing.length, entries.length);
+  const { mode, reason } = forceAdditive
+    ? { mode: "additive" as const, reason: undefined }
+    : decideMode(existing.length, entries.length);
 
   const byNorm = new Map<string, FewEntry>();
   if (mode === "additive") {
@@ -316,29 +332,52 @@ function applyFewEntries(
   const nextState = { ...state, rbccmFew: Array.from(byNorm.values()) };
   return {
     nextState,
-    summary: { source: "rbccm-few", rowsParsed: entries.length, matched, added, removed, removedTickers, mode, fallbackReason: reason },
+    summary: { source: "rbccm-few", rowsParsed: entries.length, matched, added, removed, removedTickers, mode, fallbackReason: reason, sameDayAccumulate: forceAdditive },
   };
 }
 
-/** Universal entry point — dispatches to the right merger based on source. */
+/**
+ * Universal entry point — dispatches to the right merger based on source.
+ *
+ * Same-day accumulation: if this source was already scanned TODAY (per
+ * state.scanDates), the merge runs ADDITIVE so a second screenshot of the same
+ * list (manual upload OR email) accumulates instead of overwriting the first.
+ * The first scan of a new day replaces as usual (dropping delisted names). The
+ * returned nextState records today's scan date for the source.
+ */
 export function applyResearchEntries(
   state: ResearchState,
   source: SourceKey,
   entries: unknown[],
 ): { nextState: ResearchState; summary: ResearchMergeSummary } {
+  const today = new Date().toISOString().slice(0, 10); // UTC — consistent client + server
+  const forceAdditive = state.scanDates?.[source] === today;
+
+  let result: { nextState: ResearchState; summary: ResearchMergeSummary };
   switch (source) {
     case "fundstrat-top":
     case "fundstrat-bottom":
     case "fundstrat-smid-top":
     case "fundstrat-smid-bottom":
-      return applyIdeaEntries(state, source, entries as ScrapedIdea[]);
+      result = applyIdeaEntries(state, source, entries as ScrapedIdea[], forceAdditive);
+      break;
     case "rbc-focus":
     case "rbc-us-focus":
     case "jpm-us-analyst-focus":
-      return applyRbcEntries(state, source, entries as ScrapedRbcRow[]);
+      result = applyRbcEntries(state, source, entries as ScrapedRbcRow[], forceAdditive);
+      break;
     case "seeking-alpha-picks":
-      return applyAlphaPicks(state, entries as ScrapedAlphaPick[]);
+      result = applyAlphaPicks(state, entries as ScrapedAlphaPick[], forceAdditive);
+      break;
     case "rbccm-few":
-      return applyFewEntries(state, entries as ScrapedFewRow[]);
+      result = applyFewEntries(state, entries as ScrapedFewRow[], forceAdditive);
+      break;
   }
+
+  // Stamp today's scan date so subsequent same-day scans accumulate.
+  result.nextState = {
+    ...result.nextState,
+    scanDates: { ...(state.scanDates ?? {}), [source]: today },
+  };
+  return result;
 }

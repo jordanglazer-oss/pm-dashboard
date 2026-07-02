@@ -361,7 +361,9 @@ async function handleResearch(
     await logResearchRemovals(await getRedis(), summary.removedTickers, source);
   }
   const cachedLabel = cached ? " (cached)" : "";
-  const modeLabel = summary.mode === "additive" ? " · ADDITIVE FALLBACK" : "";
+  const modeLabel = summary.mode === "additive"
+    ? (summary.sameDayAccumulate ? " · same-day (accumulated)" : " · ADDITIVE FALLBACK")
+    : "";
   const removedLabel = summary.mode === "replace" && summary.removed > 0 ? ` · ${summary.removed} removed` : "";
   const reasonLabel = summary.fallbackReason ? ` ⚠ ${summary.fallbackReason}` : "";
   return {
