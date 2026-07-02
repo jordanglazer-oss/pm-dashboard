@@ -68,17 +68,14 @@ const POINT_METRICS: ScoringFormula[] = [
   { key: "salesEstFy1", formula: "FE_ESTIMATE(SALES,MEAN,ANN_ROLL,1,NOW,'')", note: "Mean revenue estimate, FY+1" },
   { key: "tgtPriceMean", formula: "FE_ESTIMATE(PRICE_TGT,MEAN,ANN_ROLL,0,NOW,'')", note: "Mean target price" },
   { key: "numEstFy1", formula: "FE_ESTIMATE(EPS,NEST,ANN_ROLL,1,NOW,'')", note: "# analysts (estimate count)" },
-  // ── Analyst signals (validated; recMean null for thinly-covered names) ──
-  { key: "recMean", formula: "FE_ESTIMATE(REC_MARK,MEAN,ANN_ROLL,0,NOW,'')", note: "Mean analyst recommendation (1=buy .. 5=sell)" },
+  // ── Analyst signals (validated). Recommendation consensus (REC/REC_MARK)
+  //    returns null through our Formula API entitlement — so we rely on target
+  //    dispersion + estimate revisions. Analyst count = numEstFy1 (# with an
+  //    FY+1 estimate; == # with a price target). ──
   { key: "tgtHigh", formula: "FE_ESTIMATE(PRICE_TGT,HIGH,ANN_ROLL,0,NOW,'')", note: "Target price high (dispersion)" },
   { key: "tgtLow", formula: "FE_ESTIMATE(PRICE_TGT,LOW,ANN_ROLL,0,NOW,'')", note: "Target price low (dispersion)" },
   { key: "revUp", formula: "FE_ESTIMATE(EPS,UP,ANN_ROLL,1,NOW,'')", note: "EPS FY+1 up-revisions (30d)" },
   { key: "revDown", formula: "FE_ESTIMATE(EPS,DOWN,ANN_ROLL,1,NOW,'')", note: "EPS FY+1 down-revisions (30d)" },
-  // ── Analyst-count candidates — find which matches the terminal's headline
-  //    count (e.g. ORCL = 45). numEstFy1 (FY+1 EPS estimates) undercounts. ──
-  { key: "numTgt", formula: "FE_ESTIMATE(PRICE_TGT,NEST,ANN_ROLL,0,NOW,'')", note: "# analysts with a price target" },
-  { key: "numRec", formula: "FE_ESTIMATE(REC_MARK,NEST,ANN_ROLL,0,NOW,'')", note: "# analysts with a recommendation" },
-  { key: "numEstCurFy", formula: "FE_ESTIMATE(EPS,NEST,ANN_ROLL,0,NOW,'')", note: "# current-FY EPS estimates" },
 ];
 
 function buildScoringFormulas(): ScoringFormula[] {
@@ -187,7 +184,7 @@ export function formatSnapshotForPrompt(snap: CompanySnapshot): string {
     `Valuation (current): P/E ${fmt(v.pe)} | Forward P/E ${fmt(fwdPe)} | EV/EBITDA ${fmt(evEbitda)} | P/B ${fmt(v.pbk)} | P/S ${fmt(v.psales)} | Div yield ${fmt(v.divYld, 2)}% | Mkt cap ${fmt(v.mktVal)} | EV ${fmt(ev)}`,
     `Price: ${fmt(v.price, 2)} | 52-week range: ${fmt(v.low52w, 2)} – ${fmt(v.high52w, 2)}`,
     `Estimates: EPS FY+1 ${fmt(v.epsEstFy1, 2)} | Revenue FY+1 ${fmt(v.salesEstFy1)} | # analysts ${fmt(v.numEstFy1, 0)}`,
-    `Analyst signals: mean recommendation ${fmt(v.recMean, 2)} (1=Buy .. 5=Sell; n/a = thin coverage) | target ${fmt(v.tgtPriceMean, 2)} (range ${fmt(v.tgtLow, 2)}–${fmt(v.tgtHigh, 2)}) | EPS FY+1 est. revisions: ${fmt(v.revUp, 0)} up / ${fmt(v.revDown, 0)} down (breadth = research coverage; revisions + recommendation = track-record / catalysts signal).`,
+    `Analyst signals: target ${fmt(v.tgtPriceMean, 2)} (range ${fmt(v.tgtLow, 2)}–${fmt(v.tgtHigh, 2)}) | EPS FY+1 est. revisions: ${fmt(v.revUp, 0)} up / ${fmt(v.revDown, 0)} down (coverage breadth = # analysts above; revisions + target dispersion = track-record / catalysts signals).`,
   ].join("\n");
 }
 
