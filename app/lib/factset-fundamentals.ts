@@ -87,14 +87,15 @@ const POINT_METRICS: ScoringFormula[] = [
   { key: "revUp", formula: "FE_ESTIMATE(EPS,UP,ANN_ROLL,1,NOW,'')", note: "EPS FY+1 up-revisions (30d)" },
   { key: "revDown", formula: "FE_ESTIMATE(EPS,DOWN,ANN_ROLL,1,NOW,'')", note: "EPS FY+1 down-revisions (30d)" },
   // Trailing total return (dividend + split adjusted), % — momentum / track
-  // record. Relative week windows mirror the validated 52-week price syntax
-  // (-52W). Candidate shape: validate via ?snapshot= before relying on it; a
-  // bad code renders "n/a" and is harmless.
-  { key: "ret1m", formula: "P_TOTAL_RETURNC(-4W,0)", note: "Total return, 1 month %" },
-  { key: "ret3m", formula: "P_TOTAL_RETURNC(-13W,0)", note: "Total return, 3 month %" },
-  { key: "ret6m", formula: "P_TOTAL_RETURNC(-26W,0)", note: "Total return, 6 month %" },
-  { key: "ret1y", formula: "P_TOTAL_RETURNC(-52W,0)", note: "Total return, 1 year %" },
-  { key: "ret3y", formula: "P_TOTAL_RETURNC(-156W,0)", note: "Total return, 3 year %" },
+  // record. P_TOTAL_RETURNC takes the calendar-relative date form (-1Y is
+  // validated for this function; the -52W week form belongs to the daily-price
+  // high/low parser, a different function). Candidate shapes — validate via
+  // ?snapshot= before relying on them; a bad code renders "n/a" and is harmless.
+  { key: "ret1m", formula: "P_TOTAL_RETURNC(-1M,0)", note: "Total return, 1 month %" },
+  { key: "ret3m", formula: "P_TOTAL_RETURNC(-3M,0)", note: "Total return, 3 month %" },
+  { key: "ret6m", formula: "P_TOTAL_RETURNC(-6M,0)", note: "Total return, 6 month %" },
+  { key: "ret1y", formula: "P_TOTAL_RETURNC(-1Y,0)", note: "Total return, 1 year %" },
+  { key: "ret3y", formula: "P_TOTAL_RETURNC(-3Y,0)", note: "Total return, 3 year %" },
 ];
 
 function buildScoringFormulas(): ScoringFormula[] {
