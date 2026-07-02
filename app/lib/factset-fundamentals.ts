@@ -48,12 +48,6 @@ const ANNUAL_METRICS: { base: string; formula: string; label: string; years: num
   { base: "ebitda", formula: "FF_EBITDA_OPER", label: "EBITDA", years: 3 },
   { base: "cash", formula: "FF_CASH_ST", label: "Cash & ST investments", years: 1 },
   { base: "intExp", formula: "FF_INT_EXP_DEBT", label: "Interest expense", years: 1 },
-  // Own-history valuation band — the issuer's P/E across the last 5 fiscal
-  // years, so scoring can judge whether today's multiple is cheap/rich vs its
-  // OWN history (drives historicalValuation). FG_PE(ANN,-i) is a candidate
-  // formula shape — validate via the ?snapshot= diagnostic probe; a bad code
-  // just yields null (renders "n/a"), never breaks scoring.
-  { base: "peHist", formula: "FG_PE", label: "P/E (own history)", years: 5 },
 ];
 
 /** Point-in-time metrics (current value, no series). */
@@ -94,8 +88,21 @@ const POINT_METRICS: ScoringFormula[] = [
   { key: "ret1m", formula: "P_TOTAL_RETURNC(-1M,0)", note: "Total return, 1 month %" },
   { key: "ret3m", formula: "P_TOTAL_RETURNC(-3M,0)", note: "Total return, 3 month %" },
   { key: "ret6m", formula: "P_TOTAL_RETURNC(-6M,0)", note: "Total return, 6 month %" },
-  { key: "ret1y", formula: "P_TOTAL_RETURNC(-1Y,0)", note: "Total return, 1 year %" },
-  { key: "ret3y", formula: "P_TOTAL_RETURNC(-3Y,0)", note: "Total return, 3 year %" },
+  // Validated: P_TOTAL_RETURNC takes the MONTH form (-1M/-3M/-6M work); the
+  // year form (-1Y/-3Y) throws "Invalid Daily Price Date Specification", so use
+  // -12M/-36M for the 1y/3y windows.
+  { key: "ret1y", formula: "P_TOTAL_RETURNC(-12M,0)", note: "Total return, 1 year %" },
+  { key: "ret3y", formula: "P_TOTAL_RETURNC(-36M,0)", note: "Total return, 3 year %" },
+  // Own-history valuation band, take 2: FG_PE(ANN,-i) just echoes the CURRENT
+  // P/E (grade formula ignores the period offset), so instead capture the CLOSE
+  // PRICE ~1/2/3/4 years ago and divide by that year's EPS to build a real P/E
+  // band. CANDIDATES — validate via ?snapshot= (confirm the values DIFFER by
+  // year and look historical, not 5× today's price) before rendering. Unrendered
+  // until confirmed; null-safe.
+  { key: "priceHist1", formula: "P_PRICE(-52W)", note: "Close ~1y ago (own-history P/E)" },
+  { key: "priceHist2", formula: "P_PRICE(-104W)", note: "Close ~2y ago (own-history P/E)" },
+  { key: "priceHist3", formula: "P_PRICE(-156W)", note: "Close ~3y ago (own-history P/E)" },
+  { key: "priceHist4", formula: "P_PRICE(-208W)", note: "Close ~4y ago (own-history P/E)" },
 ];
 
 function buildScoringFormulas(): ScoringFormula[] {
@@ -202,7 +209,6 @@ export function formatSnapshotForPrompt(snap: CompanySnapshot): string {
     `ROE % — FY: ${seriesRow(v, "roe", 3, "Ann")}`,
     `Leverage — Total debt FY: ${seriesRow(v, "debt", 3, "Ann")} | EBITDA FY: ${seriesRow(v, "ebitda", 3, "Ann")} | Cash & ST ${fmt(v.cashAnn0)} | Interest exp ${fmt(v.intExpAnn0)}`,
     `Valuation (current): P/E ${fmt(v.pe)} | Forward P/E ${fmt(fwdPe)} | EV/EBITDA ${fmt(evEbitda)} | P/B ${fmt(v.pbk)} | P/S ${fmt(v.psales)} | Div yield ${fmt(v.divYld, 2)}% | Mkt cap ${fmt(v.mktVal)} | EV ${fmt(ev)}`,
-    `Valuation vs own history — P/E by FY: ${seriesRow(v, "peHist", 5, "Ann")} (most-recent-first; compare the current P/E above to this 5-year band for historicalValuation — trading toward the high end = richly valued vs its own history, low end = cheap).`,
     `Price: ${fmt(v.price, 2)} | 52-week range: ${fmt(v.low52w, 2)} – ${fmt(v.high52w, 2)}`,
     `Total return % (div+split adj): 1M ${fmt(v.ret1m)} | 3M ${fmt(v.ret3m)} | 6M ${fmt(v.ret6m)} | 1Y ${fmt(v.ret1y)} | 3Y ${fmt(v.ret3y)} (shareholder momentum / track record — supporting evidence for trackRecord).`,
     `Estimates: EPS FY+1 ${fmt(v.epsEstFy1, 2)} → FY+2 ${fmt(v.epsEstFy2, 2)} | Revenue FY+1 ${fmt(v.salesEstFy1)} → FY+2 ${fmt(v.salesEstFy2)} | # analysts ${fmt(v.numEstFy1, 0)} (the FY+1→FY+2 ramp is the forward growth trajectory for growth/secular).`,
