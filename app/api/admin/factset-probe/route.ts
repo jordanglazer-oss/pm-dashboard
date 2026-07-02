@@ -4,7 +4,6 @@ import {
   crossSectionalDiagnostic,
   timeSeriesRaw,
   timeSeriesBatch,
-  timeSeriesFetch,
   factsetConfigured,
   relayHealthy,
   FACTSET_FORMULAS,
@@ -34,22 +33,6 @@ export async function GET(req: NextRequest) {
       configured: false,
       hint: "Set FACTSET_RELAY_URL and FACTSET_RELAY_SECRET in Vercel env once the relay is live, then retry.",
     });
-  }
-
-  // ?tsFetch=<batchId> → retrieve a previously-submitted batch job by id (for
-  // jobs slower than the inline poll). Returns status while running, data when done.
-  const fetchId = sp.get("tsFetch");
-  if (fetchId) {
-    try {
-      const raw = await timeSeriesFetch(fetchId);
-      const done = Array.isArray((raw as { data?: unknown })?.data);
-      return NextResponse.json({ ok: true, mode: "tsFetch", batchId: fetchId, done, raw });
-    } catch (e) {
-      return NextResponse.json(
-        { ok: false, mode: "tsFetch", batchId: fetchId, error: e instanceof Error ? e.message : String(e) },
-        { status: 502 }
-      );
-    }
   }
 
   // ?timeseries=<factsetId>[&tsFormula=FG_PE&tsFreq=M&tsYears=5] → dump the RAW

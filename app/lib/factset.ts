@@ -173,15 +173,6 @@ export async function timeSeriesRaw(
 }
 
 /**
- * Retrieve a previously-submitted FactSet batch job by its id. The correct
- * retrieval is ?id=<batchId>&batch=Y (id alone 400s "formulas required"). While
- * running → { data: { status } }; when done → the cross-sectional data array.
- */
-export async function timeSeriesFetch(batchId: string): Promise<unknown> {
-  return relayGet(`/formula-api/v1/cross-sectional?id=${batchId}&batch=Y`);
-}
-
-/**
  * Run a FactSet batch (iterated/time-series) request end to end: submit with
  * batch=Y, poll batch-status until it finishes, then fetch batch-result.
  * FactSet only serves dated/time-series data this way. Bounded by maxWaitMs so
@@ -212,13 +203,17 @@ export async function timeSeriesBatch(
   const sleep = (ms: number) => new Promise((r) => setTimeout(r, ms));
   let status = String(submit?.data?.status ?? "QUEUED");
 
-  // FactSet batch retrieval: poll the SPECIFIC job via ?id=<batchId>&batch=Y
-  // (re-sending the full request spawns a NEW job → perpetual QUEUED). While
-  // processing it returns { data: { status } } (OBJECT); when done, the
-  // cross-sectional payload { data: [ ... ] } (ARRAY).
+  // FactSet batch retrieval: RE-SEND the identical request — FactSet dedupes by
+  // request signature and returns the SAME job (confirmed: identical id +
+  // startTime across re-sends). While processing → { data: { status } }
+  // (OBJECT); when done → the cross-sectional payload { data: [ ... ] } (ARRAY).
+  // (?id=<batchId>&batch=Y does NOT work — it still demands formulas.)
   while (Date.now() < deadline) {
     await sleep(pollMs);
-    const poll = (await timeSeriesFetch(batchId)) as { data?: unknown };
+    const poll = (await timeSeriesRaw(id, formula, startDate, endDate, frequency, {
+      endpoint: "cross-sectional",
+      batch: true,
+    })) as { data?: unknown };
     if (Array.isArray(poll?.data)) {
       return { status: "SUCCESS", batchId, result: poll, submit };
     }
