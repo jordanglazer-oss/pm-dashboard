@@ -203,14 +203,17 @@ export async function timeSeriesBatch(
   const sleep = (ms: number) => new Promise((r) => setTimeout(r, ms));
   let status = String(submit?.data?.status ?? "QUEUED");
 
-  // FactSet batch retrieval: re-request the SAME endpoint with ?id=<batchId>.
-  // While processing → { data: { status, ... } } (data is an OBJECT). When done
-  // → the cross-sectional payload { data: [ {dataItemName, ...} ] } (an ARRAY).
+  // FactSet batch retrieval: RE-SEND the identical request (same ids/formulas/
+  // dates/frequency + batch=Y). FactSet dedupes by request signature — while
+  // processing it returns { data: { status, ... } } (data is an OBJECT); when
+  // done it returns the cross-sectional payload { data: [ ... ] } (an ARRAY).
+  // The batch id is just a reference, not the retrieval key.
   while (Date.now() < deadline) {
     await sleep(pollMs);
-    const poll = (await relayGet(`/formula-api/v1/cross-sectional?id=${batchId}`)) as {
-      data?: unknown;
-    };
+    const poll = (await timeSeriesRaw(id, formula, startDate, endDate, frequency, {
+      endpoint: "cross-sectional",
+      batch: true,
+    })) as { data?: unknown };
     if (Array.isArray(poll?.data)) {
       return { status: "SUCCESS", batchId, result: poll, submit };
     }
