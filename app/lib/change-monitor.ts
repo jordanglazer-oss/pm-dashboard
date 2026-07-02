@@ -114,13 +114,17 @@ export type ComputeInput = {
   priceBaseline: Record<string, number>;
   /** Append-only log of tickers dropped from research lists (pm:research-removals). */
   researchRemovals: ResearchRemovalStore;
+  /** Current tickers per research source (upper-cased), so a "drop" that has
+   *  since been re-added (e.g. a name that was only on the 2nd screenshot of a
+   *  multi-part list) is suppressed. Keyed by RemovalSource. */
+  researchCurrentTickers?: Record<string, Set<string>>;
   windowDays: number;
   /** ms "now" — passed in so the function stays pure/testable. */
   nowMs: number;
 };
 
 export function computeChangeEvents(input: ComputeInput): ChangeEvent[] {
-  const { scoreHistory, stocks, snapshots, priceBaseline, researchRemovals, windowDays, nowMs } = input;
+  const { scoreHistory, stocks, snapshots, priceBaseline, researchRemovals, researchCurrentTickers, windowDays, nowMs } = input;
   const windowStartMs = nowMs - windowDays * 24 * 60 * 60 * 1000;
   const events: ChangeEvent[] = [];
   const byTicker = new Map<string, Stock>();
@@ -212,6 +216,11 @@ export function computeChangeEvents(input: ComputeInput): ChangeEvent[] {
     for (const r of entries || []) {
       if (!r?.ticker || !r?.source) continue;
       const T = r.ticker.toUpperCase();
+      // Suppress a "drop" if the name is CURRENTLY still in that list — it was
+      // re-added after the removal was logged (e.g. it lives on the 2nd
+      // screenshot of a multi-part list, or the PM re-added it). Only a genuine
+      // absence should surface as a List-drop event.
+      if (researchCurrentTickers?.[r.source]?.has(T)) continue;
       events.push({
         id: `${T}:research-removed:${r.source}:${date}`,
         ticker: r.ticker, name: nameFor(T), bucket: bucketFor(T),
