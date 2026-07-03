@@ -3,6 +3,7 @@
 import React from "react";
 import { useStocks } from "@/app/lib/StockContext";
 import { PimPortfolio } from "@/app/components/PimPortfolio";
+import { PortfolioXray } from "@/app/components/PortfolioXray";
 
 export default function PortfolioPage() {
   const { pimModels } = useStocks();
@@ -16,6 +17,7 @@ export default function PortfolioPage() {
             Current positions, weights, drift from target, rebalance and trade actions
           </p>
         </div>
+        <PortfolioXray />
         <PimPortfolio groups={pimModels.groups} />
       </div>
     </main>
