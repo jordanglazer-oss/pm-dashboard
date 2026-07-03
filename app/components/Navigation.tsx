@@ -105,6 +105,7 @@ const tabs = [
   { label: "Positioning", href: "/portfolio" },
   { label: "Screener", href: "/screener" },
   { label: "Research", href: "/research" },
+  { label: "Conviction", href: "/conviction" },
   { label: "AA & Perf", href: "/aa-performance" },
   { label: "Hedging", href: "/hedging" },
   { label: "Appendix", href: "/appendix" },
@@ -266,6 +267,8 @@ export function Navigation() {
     ? "Positioning"
     : pathname === "/research"
     ? "Research"
+    : pathname === "/conviction"
+    ? "Conviction"
     : pathname === "/screener"
     ? "Screener"
     : pathname === "/aa-performance"
