@@ -19,7 +19,7 @@
 import type { ScoredStock } from "./types";
 import type { ResearchState } from "./defaults";
 import type { AnalystSnapshots } from "./analyst-snapshots";
-import { marketEdgeApplies } from "./scoring";
+import { marketEdgeApplies, isScoreable } from "./scoring";
 
 /** Normalize a ticker for cross-source matching (strip $, class slash → dash,
  *  drop exchange/class suffix). Mirrors app/lib/research-merge.ts. */
@@ -112,6 +112,8 @@ export function computeConviction(input: ComputeConvictionInput): ConvictionEntr
   const entries = new Map<string, ConvictionEntry>();
   const stockByKey = new Map<string, ScoredStock>();
   for (const s of stocks) {
+    // Conviction is an equity-selection tool — exclude ETFs / mutual funds.
+    if (!isScoreable(s)) continue;
     const key = norm(s.ticker);
     stockByKey.set(key, s);
     entries.set(key, {

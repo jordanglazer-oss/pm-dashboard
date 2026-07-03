@@ -138,8 +138,9 @@ export default function ConvictionPage() {
       <div className="mb-4">
         <h1 className="text-2xl font-bold text-slate-800">Conviction Board</h1>
         <p className="text-sm text-slate-500">
-          Every name ranked by how many independent signals align — composite rating, FactSet upside,
-          SIA / BoostedAI / MarketEdge, and each research list. Higher = more sources agree.
+          Every name ranked by how many independent signals align — composite rating, upside to the FactSet mean
+          analyst target, SIA / BoostedAI / MarketEdge, estimate revisions, and each research list. Individual
+          stocks only (ETFs / funds excluded). Higher = more sources agree.
         </p>
       </div>
 
@@ -178,7 +179,7 @@ export default function ConvictionPage() {
               <th className="px-3 py-2 text-center w-20">Bucket</th>
               <th className="px-3 py-2 text-center w-24">Conviction</th>
               <th className="px-3 py-2 text-left">Signals</th>
-              <th className="px-3 py-2 text-right w-20">Upside</th>
+              <th className="px-3 py-2 text-right w-24" title="Upside to the FactSet mean analyst price target — (mean target − current price) / current price. Only shown once a name has been rescored (that's when the target is pulled).">Analyst upside</th>
               <th className="px-3 py-2 text-right w-24"></th>
             </tr>
           </thead>
