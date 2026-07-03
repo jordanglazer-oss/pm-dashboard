@@ -766,7 +766,7 @@ export async function POST(request: NextRequest) {
     let factsetUsed = false;
     // The FactSet analyst-consensus row written this run — returned to the
     // client so the stock page can refresh the Coverage panel live (no reload).
-    let factsetConsensusOut: { averageTarget?: number; analystCount?: number; asOf: string; lastUpdated: string } | undefined;
+    let factsetConsensusOut: { averageTarget?: number; analystCount?: number; revUp?: number; revDown?: number; asOf: string; lastUpdated: string } | undefined;
     // Authoritative FactSet sector (normalized to app vocab) + beta, propagated
     // dashboard-wide via the response. Set inside the snapshot block (where
     // factsetSnap is in scope) once the name-guard passes.
@@ -884,6 +884,10 @@ export async function POST(request: NextRequest) {
               typeof factsetSnap.values.tgtPriceMean === "number" ? factsetSnap.values.tgtPriceMean : existing.factset?.averageTarget,
             analystCount:
               typeof factsetSnap.values.numEstFy1 === "number" ? factsetSnap.values.numEstFy1 : existing.factset?.analystCount,
+            revUp:
+              typeof factsetSnap.values.revUp === "number" ? factsetSnap.values.revUp : existing.factset?.revUp,
+            revDown:
+              typeof factsetSnap.values.revDown === "number" ? factsetSnap.values.revDown : existing.factset?.revDown,
             asOf: today,
             lastUpdated: today,
           };

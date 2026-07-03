@@ -19,6 +19,7 @@ const TYPE_LABELS: Record<ChangeType, string> = {
   signal: "Signals",
   data: "Data",
   "research-removed": "List drops",
+  estimate: "Estimates",
 };
 
 const SEV_DOT: Record<Severity, string> = {

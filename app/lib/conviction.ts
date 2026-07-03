@@ -92,12 +92,19 @@ export function computeConviction(input: ComputeConvictionInput): ConvictionEntr
     return { ...l, keys: new Set(arr.map((e) => norm(e?.ticker || "")).filter(Boolean)) };
   });
 
-  // FactSet target keyed by normalized ticker (analyst-snapshots is canonical-
-  // ticker keyed, so normalize on read).
+  // FactSet target + estimate revisions keyed by normalized ticker
+  // (analyst-snapshots is canonical-ticker keyed, so normalize on read).
   const targetByKey = new Map<string, number>();
+  const revByKey = new Map<string, { up: number; down: number }>();
   for (const [t, snap] of Object.entries(snapshots || {})) {
+    const key = norm(t);
     const tgt = snap?.factset?.averageTarget;
-    if (typeof tgt === "number" && tgt > 0) targetByKey.set(norm(t), tgt);
+    if (typeof tgt === "number" && tgt > 0) targetByKey.set(key, tgt);
+    const up = snap?.factset?.revUp;
+    const down = snap?.factset?.revDown;
+    if (typeof up === "number" || typeof down === "number") {
+      revByKey.set(key, { up: up ?? 0, down: down ?? 0 });
+    }
   }
 
   // Build the universe: scored stocks first (richest data), then any research
@@ -172,6 +179,14 @@ export function computeConviction(input: ComputeConvictionInput): ConvictionEntr
         if (me === 2) signals.push({ label: "MarketEdge long", points: 1, kind: "external" });
         else if (me === 0) signals.push({ label: "MarketEdge avoid", points: -1, kind: "external" });
       }
+    }
+
+    // 3b. Estimate-revision momentum (FactSet EPS FY+1, last 30d).
+    const rev = revByKey.get(entry.key);
+    if (rev && (rev.up > 0 || rev.down > 0)) {
+      const net = rev.up - rev.down;
+      if (net >= 2) signals.push({ label: `Estimates ↑ (${rev.up}/${rev.down})`, points: 1, kind: "external" });
+      else if (net <= -2) signals.push({ label: `Estimates ↓ (${rev.up}/${rev.down})`, points: -1, kind: "external" });
     }
 
     // 4. Research-list membership.

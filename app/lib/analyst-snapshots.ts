@@ -45,6 +45,10 @@ export type AnalystEntry = {
 export type FactSetEntry = {
   averageTarget?: number;
   analystCount?: number;
+  /** FactSet EPS FY+1 estimate revisions over the last 30 days (up vs down count).
+   *  Drives estimate-revision momentum on the Conviction Board + Change Monitor. */
+  revUp?: number;
+  revDown?: number;
   asOf?: string;
   lastUpdated?: string;
 };

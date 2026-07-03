@@ -35,7 +35,7 @@ export const THRESHOLDS = {
   staleDays: 21,
 };
 
-export type ChangeType = "rating" | "score" | "target" | "price" | "signal" | "data" | "research-removed";
+export type ChangeType = "rating" | "score" | "target" | "price" | "signal" | "data" | "research-removed" | "estimate";
 export type Severity = "up" | "down" | "warn" | "info";
 
 export type ChangeEvent = {
@@ -204,6 +204,32 @@ export function computeChangeEvents(input: ComputeInput): ChangeEvent[] {
         at: (e.asOf || stampStr).slice(0, 10),
       });
     }
+  }
+
+  // ── 2a. FactSet estimate-revision momentum within the window ──────
+  // Net EPS FY+1 revisions (up vs down, 30d) refreshed on a recent rescore.
+  // A leading indicator: sustained raises front-run the buy, cuts the trouble.
+  for (const [ticker, snap] of Object.entries(snapshots)) {
+    const fs = snap?.factset;
+    if (!fs || (typeof fs.revUp !== "number" && typeof fs.revDown !== "number")) continue;
+    const stampStr = fs.lastUpdated || fs.asOf;
+    if (!stampStr) continue;
+    const stamp = Date.parse(stampStr.length === 10 ? `${stampStr}T00:00:00Z` : stampStr);
+    if (!Number.isFinite(stamp) || stamp < windowStartMs) continue;
+    const up = fs.revUp ?? 0;
+    const down = fs.revDown ?? 0;
+    const net = up - down;
+    if (Math.abs(net) < 2) continue;
+    events.push({
+      id: `${ticker}:estimate:${(fs.asOf || stampStr).slice(0, 10)}`,
+      ticker, name: nameFor(ticker), bucket: bucketFor(ticker),
+      type: "estimate",
+      severity: net > 0 ? "up" : "down",
+      headline: net > 0 ? `Estimates rising (${up}↑ / ${down}↓)` : `Estimates cut (${up}↑ / ${down}↓)`,
+      detail: `FactSet EPS FY+1 revisions, last 30d — ${net > 0 ? "analysts raising" : "analysts cutting"}`,
+      delta: `${net > 0 ? "+" : ""}${net}`,
+      at: (fs.asOf || stampStr).slice(0, 10),
+    });
   }
 
   // ── 2b. Research-list removals within the window ──────────────────
