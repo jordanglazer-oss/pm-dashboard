@@ -331,6 +331,9 @@ export type Stock = {
   notes: string;
   companySummary?: string;
   investmentThesis?: string;
+  /** Devil's-advocate bear case + thesis-breakers, generated on rescore
+   *  alongside investmentThesis. Discipline check shown on the stock page. */
+  bearCase?: string;
   /**
    * PM-entered notes for the "External sources" scoring category (a manual
    * category). Each entry is a single source (analyst report, article, etc)

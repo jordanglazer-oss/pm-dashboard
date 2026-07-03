@@ -652,11 +652,12 @@ Also provide:
 - beta: Use the beta from the provided data
 - companySummary: STRICT 1-2 SENTENCES explaining what the company does in plain language that a portfolio manager can relay to clients. Focus on the core business, key products/services, and what drives revenue. Keep it simple and jargon-free. When the "INGESTED ANALYST REPORTS" block is present above, you may ground the description in the analysts' framing of the business — but do NOT extend the length beyond 1-2 sentences. If you draw a fact from a specific report, name the source briefly (e.g., "RBC describes the company as ...").
 - investmentThesis: STRICT 1-2 SENTENCES on why to own this stock right now given current market conditions. Reference specific catalysts, valuation support, or thematic tailwinds. This should be a concise "elevator pitch" a PM could use with clients. When the "INGESTED ANALYST REPORTS" block is present above, USE the analysts' actual bull-case thesis bullets as your source material — do not paraphrase from your own training data when RBC/JPM have laid out the rationale. Still capped at 1-2 sentences; pick the strongest 1-2 thesis points and compress them. If the analysts disagree (e.g., one bullish, one bearish), reflect that briefly (e.g., "RBC sees X driving upside; JPM cautions about Y"). When both RBC and JPM rate the stock favorably with similar drivers, lean on their shared thesis. Never let the analyst material lengthen this field beyond 2 sentences.
+- bearCase: STRICT 1-2 SENTENCES giving the DEVIL'S-ADVOCATE case — the most credible reasons this thesis could be WRONG and the specific "thesis-breakers" the PM should watch (e.g., "Margins compress if input costs stay elevated; a miss on the FY+1 EPS estimate or a break below the 200-day would challenge the setup"). Ground it in real risks from the data (stretched valuation vs its own history, decelerating growth, rising leverage, negative estimate revisions, weak SIA/technicals, insider selling) and in the analysts' actual risk bullets when the INGESTED ANALYST REPORTS block is present. Be concrete and falsifiable — name the metric or level that would confirm the bear case, not generic "macro risk." This is a discipline check that must exist for EVERY name, even strong buys. Cap at 2 sentences.
 
 COMPLETENESS REQUIREMENT: You MUST score ALL 11 categories listed above and include an explanation for EVERY one. Do not skip, omit, or abbreviate any category. If data is sparse for a category, still provide a score (even 0) with a brief explanation noting the data gap. Incomplete responses are unusable.
 
 Respond ONLY with valid JSON (no markdown code fences, no commentary).
-IMPORTANT: companySummary and investmentThesis MUST appear BEFORE explanations in your output — they are short fields that must never be truncated.
+IMPORTANT: companySummary, investmentThesis, and bearCase MUST appear BEFORE explanations in your output — they are short fields that must never be truncated.
 Keep each explanation summary to 2-3 sentences and max 4 dataPoints per category.
 
 {
@@ -665,6 +666,7 @@ Keep each explanation summary to 2-3 sentences and max 4 dataPoints per category
   "beta": 1.0,
   "companySummary": "Plain-language summary of what the company does.",
   "investmentThesis": "Why to own this stock now given market conditions.",
+  "bearCase": "Devil's-advocate risks + concrete thesis-breakers to watch.",
   "scores": {
     "secular": 0, "researchCoverage": 0,
     "growth": 0, "relativeValuation": 0, "historicalValuation": 0,
@@ -1407,6 +1409,7 @@ export async function POST(request: NextRequest) {
       notes: parsed.companySummary || parsed.notes || "",
       companySummary: parsed.companySummary || "",
       investmentThesis: parsed.investmentThesis || "",
+      bearCase: parsed.bearCase || "",
       price: stockPrice,
       healthData,
       technicals,

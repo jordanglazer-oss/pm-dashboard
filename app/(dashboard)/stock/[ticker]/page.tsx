@@ -1398,10 +1398,11 @@ export default function StockDetailPage() {
       if (data.technicals && data.riskAlert) {
         updateTechnicals(ticker, data.technicals, data.riskAlert);
       }
-      if (data.companySummary || data.investmentThesis || data.sector || data.name) {
+      if (data.companySummary || data.investmentThesis || data.bearCase || data.sector || data.name) {
         updateStockFields(ticker, {
           ...(data.companySummary ? { companySummary: data.companySummary } : {}),
           ...(data.investmentThesis ? { investmentThesis: data.investmentThesis } : {}),
+          ...(data.bearCase ? { bearCase: data.bearCase } : {}),
           // data.sector is FactSet-sourced (normalized to the app vocabulary)
           // when the name-guard passed, else the model echo. Authoritative.
           ...(data.sector ? { sector: data.sector } : {}),
@@ -1691,6 +1692,12 @@ export default function StockDetailPage() {
                 )}
                 {stock.investmentThesis && (
                   <p className="mt-1 text-sm italic text-blue-600/70 leading-relaxed">{stock.investmentThesis}</p>
+                )}
+                {stock.bearCase && (
+                  <div className="mt-2 rounded-lg border border-amber-200 bg-amber-50/50 px-3 py-2">
+                    <div className="text-[10px] font-bold uppercase tracking-wider text-amber-700">Bear case · thesis-breakers to watch</div>
+                    <p className="mt-0.5 text-sm text-amber-900/80 leading-relaxed">{stock.bearCase}</p>
+                  </div>
                 )}
 
                 {/* Group progress bars (stocks only) */}
