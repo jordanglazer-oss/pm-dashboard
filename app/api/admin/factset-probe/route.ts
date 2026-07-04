@@ -32,14 +32,15 @@ export const maxDuration = 30;
  * URL-encodes inner commas (%2C).
  */
 const CANDIDATE_SETS: Record<string, { key: string; formula: string; note: string }[]> = {
+  // Round 2: REPORT_DATE is a valid FE_ESTIMATE item (error 0), just null at the
+  // annual roll — the NEXT earnings date lives on the QUARTERLY roll. Also probe
+  // FF_EPS_RPT_DATE quarterly (last actual quarter → next ≈ +1 quarter).
   earnings: [
-    { key: "feReportDate", formula: "FE_ESTIMATE(REPORT_DATE,MEAN,ANN_ROLL,1,NOW,'')", note: "Next report date via FE_ESTIMATE" },
-    { key: "feEpsRptDate", formula: "FE_EPS_RPT_DATE(ANN_ROLL,1)", note: "EPS report date (FE_EPS_RPT_DATE)" },
-    { key: "feNextEarn", formula: "FE_NEXT_EARN_DATE", note: "Next earnings date grade (FE_NEXT_EARN_DATE)" },
-    { key: "feExpRptDate", formula: "FE_EXP_REPORT_DATE", note: "Expected report date (FE_EXP_REPORT_DATE)" },
-    { key: "fgNextErn", formula: "FG_NEXT_ERNGS_DT", note: "Next earnings date (FG_NEXT_ERNGS_DT)" },
-    { key: "ffEpsRptDate", formula: "FF_EPS_RPT_DATE(ANN,0)", note: "Fundamental report date (FF_EPS_RPT_DATE)" },
-    { key: "feRptDateItem", formula: "FE_ITEM(REPORT_DATE,ANN_ROLL,1)", note: "Report date via FE_ITEM" },
+    { key: "feRptDateQtr1", formula: "FE_ESTIMATE(REPORT_DATE,MEAN,QTR_ROLL,1,NOW,'')", note: "Next-quarter expected report date (the 'next earnings date')" },
+    { key: "feRptDateQtr0", formula: "FE_ESTIMATE(REPORT_DATE,MEAN,QTR_ROLL,0,NOW,'')", note: "Current-quarter expected report date" },
+    { key: "feRptDateAnn0", formula: "FE_ESTIMATE(REPORT_DATE,MEAN,ANN_ROLL,0,NOW,'')", note: "Current-FY expected report date" },
+    { key: "ffRptDateQtr0", formula: "FF_EPS_RPT_DATE(QTR,0)", note: "Last QUARTERLY report date (fundamental)" },
+    { key: "ffRptDateAnn0", formula: "FF_EPS_RPT_DATE(ANN,0)", note: "Last annual report date (confirmed works — 20251030)" },
   ],
   guidance: [
     { key: "guidEpsMean", formula: "FE_GUIDANCE(EPS,MEAN,ANN_ROLL,1,NOW,'')", note: "EPS guidance mean" },
