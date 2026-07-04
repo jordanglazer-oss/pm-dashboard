@@ -81,6 +81,18 @@ const POINT_METRICS: ScoringFormula[] = [
   { key: "tgtLow", formula: "FE_ESTIMATE(PRICE_TGT,LOW,ANN_ROLL,0,NOW,'')", note: "Target price low (dispersion)" },
   { key: "revUp", formula: "FE_ESTIMATE(EPS,UP,ANN_ROLL,1,NOW,'')", note: "EPS FY+1 up-revisions (30d)" },
   { key: "revDown", formula: "FE_ESTIMATE(EPS,DOWN,ANN_ROLL,1,NOW,'')", note: "EPS FY+1 down-revisions (30d)" },
+  // Management guidance (FE_GUIDANCE — validated error 0; MSFT next-Q revenue
+  // returned $87.25B). Populates for names that issue guidance; null-safe
+  // otherwise. Company guidance vs the analyst consensus above is a catalyst
+  // signal — guiding above the street is bullish, below is a warning.
+  { key: "guidSalesQMean", formula: "FE_GUIDANCE(SALES,MEAN,QTR_ROLL,1,NOW,'')", note: "Revenue guidance mean, next Q" },
+  { key: "guidSalesQHigh", formula: "FE_GUIDANCE(SALES,HIGH,QTR_ROLL,1,NOW,'')", note: "Revenue guidance high, next Q" },
+  { key: "guidSalesQLow", formula: "FE_GUIDANCE(SALES,LOW,QTR_ROLL,1,NOW,'')", note: "Revenue guidance low, next Q" },
+  { key: "guidEpsQMean", formula: "FE_GUIDANCE(EPS,MEAN,QTR_ROLL,1,NOW,'')", note: "EPS guidance mean, next Q" },
+  { key: "guidEpsQHigh", formula: "FE_GUIDANCE(EPS,HIGH,QTR_ROLL,1,NOW,'')", note: "EPS guidance high, next Q" },
+  { key: "guidEpsQLow", formula: "FE_GUIDANCE(EPS,LOW,QTR_ROLL,1,NOW,'')", note: "EPS guidance low, next Q" },
+  { key: "guidSalesAMean", formula: "FE_GUIDANCE(SALES,MEAN,ANN_ROLL,1,NOW,'')", note: "Revenue guidance mean, FY+1" },
+  { key: "guidEpsAMean", formula: "FE_GUIDANCE(EPS,MEAN,ANN_ROLL,1,NOW,'')", note: "EPS guidance mean, FY+1" },
   // Trailing total return (dividend + split adjusted), % — momentum / track
   // record. P_TOTAL_RETURNC takes the calendar-relative date form (-1Y is
   // validated for this function; the -52W week form belongs to the daily-price
@@ -205,6 +217,16 @@ export function formatSnapshotForPrompt(snap: CompanySnapshot): string {
   const fwdPe = v.price != null && v.epsEstFy1 ? v.price / v.epsEstFy1 : null;
   const ev = v.mktVal != null && v.debtAnn0 != null && v.cashAnn0 != null ? v.mktVal + v.debtAnn0 - v.cashAnn0 : null;
   const evEbitda = ev != null && v.ebitdaAnn0 ? ev / v.ebitdaAnn0 : null;
+  // Management guidance line — only shown when the company actually issues
+  // guidance (most names won't; those render nothing rather than a row of n/a).
+  const hasGuidance = [
+    v.guidSalesQMean, v.guidSalesQHigh, v.guidSalesQLow,
+    v.guidEpsQMean, v.guidEpsQHigh, v.guidEpsQLow,
+    v.guidSalesAMean, v.guidEpsAMean,
+  ].some((x) => typeof x === "number");
+  const guidanceLine = hasGuidance
+    ? `Management guidance (FactSet, company-issued): next Q — revenue ${fmt(v.guidSalesQMean)} (${fmt(v.guidSalesQLow)}–${fmt(v.guidSalesQHigh)}), EPS ${fmt(v.guidEpsQMean, 2)} (${fmt(v.guidEpsQLow, 2)}–${fmt(v.guidEpsQHigh, 2)}) | FY+1 — revenue ${fmt(v.guidSalesAMean)}, EPS ${fmt(v.guidEpsAMean, 2)}. Compare to the consensus estimates above: guiding ABOVE the street is a positive catalyst, BELOW a warning (feeds catalysts / growth).`
+    : null;
   return [
     `=== FACTSET FUNDAMENTALS (primary source, fetched ${snap.fetchedAt.slice(0, 10)}) ===`,
     `Classification: GICS sector ${snap.sector ?? "n/a"} | industry ${snap.industry ?? "n/a"} (use for the secular growth-trend read).`,
@@ -223,7 +245,8 @@ export function formatSnapshotForPrompt(snap: CompanySnapshot): string {
     `Total return % (div+split adj): 1M ${fmt(v.ret1m)} | 3M ${fmt(v.ret3m)} | 6M ${fmt(v.ret6m)} | 1Y ${fmt(v.ret1y)} | 3Y ${fmt(v.ret3y)} (shareholder momentum / track record — supporting evidence for trackRecord).`,
     `Estimates: EPS FY+1 ${fmt(v.epsEstFy1, 2)} → FY+2 ${fmt(v.epsEstFy2, 2)} | Revenue FY+1 ${fmt(v.salesEstFy1)} → FY+2 ${fmt(v.salesEstFy2)} | # analysts ${fmt(v.numEstFy1, 0)} (the FY+1→FY+2 ramp is the forward growth trajectory for growth/secular).`,
     `Analyst signals: target ${fmt(v.tgtPriceMean, 2)} (range ${fmt(v.tgtLow, 2)}–${fmt(v.tgtHigh, 2)}) | EPS FY+1 est. revisions: ${fmt(v.revUp, 0)} up / ${fmt(v.revDown, 0)} down (coverage breadth = # analysts above; revisions + target dispersion = track-record / catalysts signals).`,
-  ].join("\n");
+    guidanceLine,
+  ].filter(Boolean).join("\n");
 }
 
 /** Formulas pulled per peer for the relative-valuation comparison block. */
