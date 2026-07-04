@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect, useMemo, useState } from "react";
+import { Fragment, useEffect, useMemo, useState } from "react";
 import Link from "next/link";
 import { useStocks } from "@/app/lib/StockContext";
 import { displayTicker } from "@/app/lib/ticker";
@@ -35,6 +35,19 @@ function SignalBadge({ sig }: { sig: ConvictionSignal }) {
   );
 }
 
+/** Regime-fit badge from the AI synthesis (how the name fits the current market regime). */
+function RegimeBadge({ fit }: { fit: string }) {
+  const map: Record<string, { cls: string; label: string }> = {
+    high: { cls: "bg-emerald-100 text-emerald-700 border-emerald-300", label: "Regime ✓" },
+    medium: { cls: "bg-slate-100 text-slate-600 border-slate-300", label: "Regime ~" },
+    low: { cls: "bg-amber-100 text-amber-700 border-amber-300", label: "Regime ✕" },
+    contrary: { cls: "bg-red-100 text-red-700 border-red-300", label: "Contrarian" },
+  };
+  const m = map[fit];
+  if (!m) return null;
+  return <span className={`inline-block rounded-full border px-1.5 py-0.5 text-[9px] font-semibold ${m.cls}`} title={`Regime fit: ${fit}`}>{m.label}</span>;
+}
+
 /** Conviction total pill — colored by magnitude. */
 function TotalPill({ total }: { total: number }) {
   const cls =
@@ -46,7 +59,7 @@ function TotalPill({ total }: { total: number }) {
   return <span className={`inline-block rounded-lg px-2.5 py-1 text-sm font-bold tabular-nums ${cls}`}>{total > 0 ? `+${total}` : total}</span>;
 }
 
-type BucketFilter = "all" | "Portfolio" | "Watchlist" | "Research";
+type BucketFilter = "ideas" | "all" | "Portfolio" | "Watchlist" | "Research";
 
 export default function ConvictionPage() {
   const { scoredStocks, analystSnapshots, addStock } = useStocks();
@@ -72,9 +85,13 @@ export default function ConvictionPage() {
   };
   const [research, setResearch] = useState<ResearchState | null>(null);
   const [prices, setPrices] = useState<Record<string, number | null>>({});
-  const [filter, setFilter] = useState<BucketFilter>("all");
+  const [filter, setFilter] = useState<BucketFilter>("ideas");
   const [query, setQuery] = useState("");
   const [loaded, setLoaded] = useState(false);
+  const [expanded, setExpanded] = useState<string | null>(null);
+  // Synthesis narrative keyed by normalized ticker (AI thesis + regime fit) —
+  // enriches the quantitative board with the "why" and regime context.
+  const [synthesisByKey, setSynthesisByKey] = useState<Map<string, { thesis?: string; regimeFit?: string; regimeFitRationale?: string }>>(new Map());
 
   // Load the research blob (all source lists).
   useEffect(() => {
@@ -83,6 +100,28 @@ export default function ConvictionPage() {
       .then((data: ResearchState) => setResearch(data))
       .catch(() => setResearch(null))
       .finally(() => setLoaded(true));
+  }, []);
+
+  // Load the persisted cross-source synthesis and index its picks by ticker so
+  // each board row can show the AI thesis + regime fit (zero Anthropic spend —
+  // read-only GET of the already-generated blob).
+  useEffect(() => {
+    fetch("/api/research-synthesis", { cache: "no-store" })
+      .then((r) => r.json())
+      .then((data) => {
+        const result = data?.result;
+        if (!result) return;
+        const m = new Map<string, { thesis?: string; regimeFit?: string; regimeFitRationale?: string }>();
+        const groups = [result.topPicks, result.regimeAlignedHighlights, result.honorableMentions];
+        for (const g of groups) {
+          for (const p of (g || []) as Array<{ ticker?: string; thesis?: string; regimeFit?: string; regimeFitRationale?: string }>) {
+            const key = String(p?.ticker || "").replace(/^\$+/, "").replace(/\//g, "-").split(/[.\s]/)[0].toUpperCase();
+            if (key && !m.has(key)) m.set(key, { thesis: p.thesis, regimeFit: p.regimeFit, regimeFitRationale: p.regimeFitRationale });
+          }
+        }
+        setSynthesisByKey(m);
+      })
+      .catch(() => {});
   }, []);
 
   // Fetch live prices for the whole universe (scored + research names) so the
@@ -121,15 +160,21 @@ export default function ConvictionPage() {
   const filtered = useMemo(() => {
     const q = query.trim().toUpperCase();
     return entries.filter((e) => {
-      if (filter !== "all" && e.bucket !== filter) return false;
+      // "Ideas" = names carried by at least one bullish research list — the
+      // research lists are the primary driver of what counts as an idea.
+      if (filter === "ideas") { if (e.listCount < 1) return false; }
+      else if (filter !== "all" && e.bucket !== filter) return false;
       if (q && !e.ticker.toUpperCase().includes(q) && !(e.name || "").toUpperCase().includes(q)) return false;
       return true;
     });
   }, [entries, filter, query]);
 
   const counts = useMemo(() => {
-    const c = { all: entries.length, Portfolio: 0, Watchlist: 0, Research: 0 };
-    for (const e of entries) c[e.bucket] += 1;
+    const c = { ideas: 0, all: entries.length, Portfolio: 0, Watchlist: 0, Research: 0 };
+    for (const e of entries) {
+      c[e.bucket] += 1;
+      if (e.listCount >= 1) c.ideas += 1;
+    }
     return c;
   }, [entries]);
 
@@ -138,23 +183,25 @@ export default function ConvictionPage() {
       <div className="mb-4">
         <h1 className="text-2xl font-bold text-slate-800">Conviction Board</h1>
         <p className="text-sm text-slate-500">
-          Every name ranked by how many independent signals align — composite rating, upside to the FactSet mean
-          analyst target, SIA / BoostedAI / MarketEdge, estimate revisions, and each research list. Individual
-          stocks only (ETFs / funds excluded). Higher = more sources agree.
+          Research-list names (the idea universe that feeds the Watchlist) ranked by how many independent signals
+          align — composite rating, upside to the FactSet mean analyst target, SIA / BoostedAI / MarketEdge,
+          estimate revisions, and each research list. Rows with a 💡 carry the AI synthesis thesis + regime fit —
+          click to expand. Individual stocks only. Higher = more sources agree.
         </p>
       </div>
 
       <div className="mb-4 flex flex-wrap items-center gap-3">
         <div className="inline-flex rounded-lg border border-slate-200 bg-white p-0.5">
-          {(["all", "Portfolio", "Watchlist", "Research"] as BucketFilter[]).map((b) => (
+          {(["ideas", "all", "Portfolio", "Watchlist", "Research"] as BucketFilter[]).map((b) => (
             <button
               key={b}
               onClick={() => setFilter(b)}
               className={`rounded-md px-3 py-1 text-xs font-semibold transition-colors ${
                 filter === b ? "bg-slate-800 text-white" : "text-slate-500 hover:bg-slate-100"
               }`}
+              title={b === "ideas" ? "Names on at least one research list — the idea universe that feeds the Watchlist" : undefined}
             >
-              {b === "all" ? "All" : b} <span className="opacity-60">{counts[b]}</span>
+              {b === "ideas" ? "💡 Ideas" : b === "all" ? "All" : b} <span className="opacity-60">{counts[b]}</span>
             </button>
           ))}
         </div>
@@ -190,13 +237,28 @@ export default function ConvictionPage() {
             {loaded && filtered.length === 0 && (
               <tr><td colSpan={8} className="px-3 py-8 text-center text-slate-400 italic">No names match.</td></tr>
             )}
-            {filtered.map((e, i) => (
-              <tr key={e.key} className={`border-t border-slate-100 ${i % 2 ? "bg-slate-50/40" : "bg-white"} hover:bg-slate-50`}>
+            {filtered.map((e, i) => {
+              const syn = synthesisByKey.get(e.key);
+              const hasThesis = !!syn?.thesis;
+              const isOpen = expanded === e.key;
+              return (
+              <Fragment key={e.key}>
+              <tr className={`border-t border-slate-100 ${i % 2 ? "bg-slate-50/40" : "bg-white"} hover:bg-slate-50`}>
                 <td className="px-3 py-2 text-slate-400 tabular-nums">{i + 1}</td>
                 <td className="px-3 py-2">
-                  <Link href={`/stock/${e.ticker.toLowerCase()}`} className="font-mono font-bold text-slate-800 hover:underline">
-                    {displayTicker(e.ticker)}
-                  </Link>
+                  <div className="flex items-center gap-1.5">
+                    {hasThesis && (
+                      <button
+                        onClick={() => setExpanded(isOpen ? null : e.key)}
+                        className="text-xs leading-none"
+                        title="Show the AI synthesis thesis + regime fit"
+                      >💡</button>
+                    )}
+                    <Link href={`/stock/${e.ticker.toLowerCase()}`} className="font-mono font-bold text-slate-800 hover:underline">
+                      {displayTicker(e.ticker)}
+                    </Link>
+                    {syn?.regimeFit && <RegimeBadge fit={syn.regimeFit} />}
+                  </div>
                 </td>
                 <td className="px-3 py-2 text-slate-600 truncate max-w-[200px]" title={e.name || e.ticker}>{e.name || <span className="text-slate-300">—</span>}</td>
                 <td className="px-3 py-2 text-center">
@@ -231,7 +293,23 @@ export default function ConvictionPage() {
                   )}
                 </td>
               </tr>
-            ))}
+              {isOpen && hasThesis && (
+                <tr className="bg-indigo-50/40">
+                  <td></td>
+                  <td colSpan={7} className="px-3 pb-3 pt-1">
+                    <div className="rounded-lg border border-indigo-100 bg-white px-3 py-2">
+                      <div className="text-[10px] font-bold uppercase tracking-wider text-indigo-500">Synthesis thesis</div>
+                      <p className="mt-0.5 text-sm text-slate-700 leading-relaxed">{syn!.thesis}</p>
+                      {syn!.regimeFitRationale && (
+                        <p className="mt-1 text-xs text-slate-500"><span className="font-semibold">Regime fit:</span> {syn!.regimeFitRationale}</p>
+                      )}
+                    </div>
+                  </td>
+                </tr>
+              )}
+              </Fragment>
+              );
+            })}
           </tbody>
         </table>
       </div>
