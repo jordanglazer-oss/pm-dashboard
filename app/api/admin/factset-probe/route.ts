@@ -24,6 +24,33 @@ import { SCORING_FORMULAS } from "@/app/lib/factset-fundamentals";
 export const dynamic = "force-dynamic";
 export const maxDuration = 30;
 
+/**
+ * Candidate formula sets to VALIDATE (free) before wiring into scoring. Each set
+ * lists several plausible FactSet codes for a concept — the probe reports which
+ * resolve (error 0) vs. which are unknown (error 107) vs. valid-but-null. We
+ * then keep the winners. Comma-bearing formulas are fine here: the diagnostic
+ * URL-encodes inner commas (%2C).
+ */
+const CANDIDATE_SETS: Record<string, { key: string; formula: string; note: string }[]> = {
+  earnings: [
+    { key: "feReportDate", formula: "FE_ESTIMATE(REPORT_DATE,MEAN,ANN_ROLL,1,NOW,'')", note: "Next report date via FE_ESTIMATE" },
+    { key: "feEpsRptDate", formula: "FE_EPS_RPT_DATE(ANN_ROLL,1)", note: "EPS report date (FE_EPS_RPT_DATE)" },
+    { key: "feNextEarn", formula: "FE_NEXT_EARN_DATE", note: "Next earnings date grade (FE_NEXT_EARN_DATE)" },
+    { key: "feExpRptDate", formula: "FE_EXP_REPORT_DATE", note: "Expected report date (FE_EXP_REPORT_DATE)" },
+    { key: "fgNextErn", formula: "FG_NEXT_ERNGS_DT", note: "Next earnings date (FG_NEXT_ERNGS_DT)" },
+    { key: "ffEpsRptDate", formula: "FF_EPS_RPT_DATE(ANN,0)", note: "Fundamental report date (FF_EPS_RPT_DATE)" },
+    { key: "feRptDateItem", formula: "FE_ITEM(REPORT_DATE,ANN_ROLL,1)", note: "Report date via FE_ITEM" },
+  ],
+  guidance: [
+    { key: "guidEpsMean", formula: "FE_GUIDANCE(EPS,MEAN,ANN_ROLL,1,NOW,'')", note: "EPS guidance mean" },
+    { key: "guidEpsHigh", formula: "FE_GUIDANCE(EPS,HIGH,ANN_ROLL,1,NOW,'')", note: "EPS guidance high" },
+    { key: "guidEpsLow", formula: "FE_GUIDANCE(EPS,LOW,ANN_ROLL,1,NOW,'')", note: "EPS guidance low" },
+    { key: "guidSalesMean", formula: "FE_GUIDANCE(SALES,MEAN,ANN_ROLL,1,NOW,'')", note: "Sales guidance mean" },
+    { key: "guidEpsMid", formula: "FE_GUIDANCE_MID(EPS,ANN_ROLL,1)", note: "EPS guidance midpoint (FE_GUIDANCE_MID)" },
+    { key: "fgGuidEps", formula: "FG_GUIDANCE_EPS", note: "EPS guidance grade (FG_GUIDANCE_EPS)" },
+  ],
+};
+
 export async function GET(req: NextRequest) {
   const sp = new URL(req.url).searchParams;
 
@@ -33,6 +60,37 @@ export async function GET(req: NextRequest) {
       configured: false,
       hint: "Set FACTSET_RELAY_URL and FACTSET_RELAY_SECRET in Vercel env once the relay is live, then retry.",
     });
+  }
+
+  // ?candidates=earnings|guidance|all[&id=AAPL-US] → validate the candidate
+  // formula codes (which resolve vs. error 107 unknown). Free — no rescore.
+  const candSet = sp.get("candidates");
+  if (candSet) {
+    const id = sp.get("id") || "AAPL-US";
+    const list =
+      candSet === "all" ? [...CANDIDATE_SETS.earnings, ...CANDIDATE_SETS.guidance] : (CANDIDATE_SETS[candSet] || []);
+    if (list.length === 0) {
+      return NextResponse.json({ ok: false, error: `Unknown set '${candSet}'. Use earnings | guidance | all.` });
+    }
+    try {
+      const diag = await crossSectionalDiagnostic(id, list.map((c) => c.formula));
+      const results = list.map((c, i) => ({
+        key: c.key,
+        note: c.note,
+        formula: c.formula,
+        value: diag[i]?.value ?? null,
+        error: diag[i]?.error ?? -1,
+        status:
+          diag[i]?.error === 0
+            ? diag[i]?.value === null ? "ok-but-null" : "ok"
+            : diag[i]?.error === 107 ? "bad-formula-code" : "error",
+        errorMessage: diag[i]?.errorMessage,
+      }));
+      const working = results.filter((r) => r.status === "ok").map((r) => r.key);
+      return NextResponse.json({ ok: true, id, set: candSet, working, results });
+    } catch (e) {
+      return NextResponse.json({ ok: false, id, set: candSet, error: e instanceof Error ? e.message : String(e) }, { status: 502 });
+    }
   }
 
   // ?timeseries=<factsetId>[&tsFormula=FG_PE&tsFreq=M&tsYears=5] → dump the RAW
