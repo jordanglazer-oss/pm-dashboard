@@ -32,23 +32,22 @@ export const maxDuration = 30;
  * URL-encodes inner commas (%2C).
  */
 const CANDIDATE_SETS: Record<string, { key: string; formula: string; note: string }[]> = {
-  // Round 2: REPORT_DATE is a valid FE_ESTIMATE item (error 0), just null at the
-  // annual roll — the NEXT earnings date lives on the QUARTERLY roll. Also probe
-  // FF_EPS_RPT_DATE quarterly (last actual quarter → next ≈ +1 quarter).
+  // Round 3: FE_ESTIMATE(REPORT_DATE,...) + FE_GUIDANCE(...) are VALID (error 0)
+  // but null for AAPL (no populated estimate report date; no formal guidance).
+  // Re-probe on a name that reports on schedule AND guides (id=MSFT-US) to see
+  // real values. Kept the confirmed FF_EPS_RPT_DATE(QTR,0) as a fallback basis.
   earnings: [
     { key: "feRptDateQtr1", formula: "FE_ESTIMATE(REPORT_DATE,MEAN,QTR_ROLL,1,NOW,'')", note: "Next-quarter expected report date (the 'next earnings date')" },
     { key: "feRptDateQtr0", formula: "FE_ESTIMATE(REPORT_DATE,MEAN,QTR_ROLL,0,NOW,'')", note: "Current-quarter expected report date" },
-    { key: "feRptDateAnn0", formula: "FE_ESTIMATE(REPORT_DATE,MEAN,ANN_ROLL,0,NOW,'')", note: "Current-FY expected report date" },
-    { key: "ffRptDateQtr0", formula: "FF_EPS_RPT_DATE(QTR,0)", note: "Last QUARTERLY report date (fundamental)" },
-    { key: "ffRptDateAnn0", formula: "FF_EPS_RPT_DATE(ANN,0)", note: "Last annual report date (confirmed works — 20251030)" },
+    { key: "ffRptDateQtr0", formula: "FF_EPS_RPT_DATE(QTR,0)", note: "Last quarterly report date (fallback basis)" },
   ],
   guidance: [
-    { key: "guidEpsMean", formula: "FE_GUIDANCE(EPS,MEAN,ANN_ROLL,1,NOW,'')", note: "EPS guidance mean" },
-    { key: "guidEpsHigh", formula: "FE_GUIDANCE(EPS,HIGH,ANN_ROLL,1,NOW,'')", note: "EPS guidance high" },
-    { key: "guidEpsLow", formula: "FE_GUIDANCE(EPS,LOW,ANN_ROLL,1,NOW,'')", note: "EPS guidance low" },
-    { key: "guidSalesMean", formula: "FE_GUIDANCE(SALES,MEAN,ANN_ROLL,1,NOW,'')", note: "Sales guidance mean" },
-    { key: "guidEpsMid", formula: "FE_GUIDANCE_MID(EPS,ANN_ROLL,1)", note: "EPS guidance midpoint (FE_GUIDANCE_MID)" },
-    { key: "fgGuidEps", formula: "FG_GUIDANCE_EPS", note: "EPS guidance grade (FG_GUIDANCE_EPS)" },
+    { key: "guidEpsMeanQ1", formula: "FE_GUIDANCE(EPS,MEAN,QTR_ROLL,1,NOW,'')", note: "EPS guidance mean, next quarter" },
+    { key: "guidEpsHighQ1", formula: "FE_GUIDANCE(EPS,HIGH,QTR_ROLL,1,NOW,'')", note: "EPS guidance high, next quarter" },
+    { key: "guidEpsLowQ1", formula: "FE_GUIDANCE(EPS,LOW,QTR_ROLL,1,NOW,'')", note: "EPS guidance low, next quarter" },
+    { key: "guidSalesMeanQ1", formula: "FE_GUIDANCE(SALES,MEAN,QTR_ROLL,1,NOW,'')", note: "Sales guidance mean, next quarter" },
+    { key: "guidEpsMeanA1", formula: "FE_GUIDANCE(EPS,MEAN,ANN_ROLL,1,NOW,'')", note: "EPS guidance mean, FY+1" },
+    { key: "guidSalesMeanA1", formula: "FE_GUIDANCE(SALES,MEAN,ANN_ROLL,1,NOW,'')", note: "Sales guidance mean, FY+1" },
   ],
 };
 
