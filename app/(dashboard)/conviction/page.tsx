@@ -4,7 +4,8 @@ import { Fragment, useEffect, useMemo, useState } from "react";
 import Link from "next/link";
 import { useStocks } from "@/app/lib/StockContext";
 import { displayTicker } from "@/app/lib/ticker";
-import { computeConviction, type ConvictionSignal } from "@/app/lib/conviction";
+import { computeConviction, type ConvictionSignal, type ConvictionEntry } from "@/app/lib/conviction";
+import { IDEA_STATUS_LABELS, type IdeaPipelineStore, type IdeaPipelineEntry, type IdeaStatus } from "@/app/lib/idea-pipeline";
 import type { ResearchState } from "@/app/lib/defaults";
 import type { Stock, ScoreKey } from "@/app/lib/types";
 
@@ -92,6 +93,25 @@ export default function ConvictionPage() {
   // Synthesis narrative keyed by normalized ticker (AI thesis + regime fit) —
   // enriches the quantitative board with the "why" and regime context.
   const [synthesisByKey, setSynthesisByKey] = useState<Map<string, { thesis?: string; regimeFit?: string; regimeFitRationale?: string }>>(new Map());
+  const [pipeline, setPipeline] = useState<IdeaPipelineStore>({});
+
+  // Load the idea-pipeline tracking store.
+  useEffect(() => {
+    fetch("/api/kv/idea-pipeline", { cache: "no-store" })
+      .then((r) => r.json())
+      .then((data: IdeaPipelineStore) => setPipeline(data || {}))
+      .catch(() => {});
+  }, []);
+
+  // Persist a status change (or a fresh surfacing) for one idea, merging server-side.
+  const savePipeline = (patch: Record<string, IdeaPipelineEntry>) => {
+    setPipeline((prev) => ({ ...prev, ...patch }));
+    fetch("/api/kv/idea-pipeline", {
+      method: "PUT",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ entries: patch }),
+    }).catch(() => {});
+  };
 
   // Load the research blob (all source lists).
   useEffect(() => {
@@ -156,6 +176,43 @@ export default function ConvictionPage() {
     () => computeConviction({ stocks: scoredStocks, research, snapshots: analystSnapshots, prices }),
     [scoredStocks, research, analystSnapshots, prices]
   );
+
+  // Auto-surface: any research-list name (an idea) not yet tracked gets added to
+  // the pipeline as "new" with today's date + the current price as its basis.
+  // Only PUTs the delta, so it converges (already-tracked names are skipped).
+  useEffect(() => {
+    if (!loaded) return;
+    const today = new Date().toISOString().slice(0, 10);
+    const toAdd: Record<string, IdeaPipelineEntry> = {};
+    for (const e of entries) {
+      if (e.listCount < 1) continue; // ideas = on a research list
+      if (pipeline[e.key]) continue; // already tracked
+      toAdd[e.key] = {
+        ticker: e.ticker,
+        firstSurfaced: today,
+        priceAtSurface: typeof prices[e.ticker] === "number" ? (prices[e.ticker] as number) : undefined,
+        status: e.bucket === "Portfolio" ? "bought" : "new",
+        sources: e.signals.filter((s) => s.kind === "list" && s.points > 0).map((s) => s.label),
+        updatedAt: new Date().toISOString(),
+      };
+    }
+    if (Object.keys(toAdd).length > 0) savePipeline(toAdd);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [loaded, entries, prices, pipeline]);
+
+  const setStatus = (e: ConvictionEntry, status: IdeaStatus) => {
+    const prev = pipeline[e.key];
+    savePipeline({
+      [e.key]: {
+        ticker: e.ticker,
+        firstSurfaced: prev?.firstSurfaced ?? new Date().toISOString().slice(0, 10),
+        priceAtSurface: prev?.priceAtSurface ?? (typeof prices[e.ticker] === "number" ? (prices[e.ticker] as number) : undefined),
+        status,
+        sources: prev?.sources ?? [],
+        updatedAt: new Date().toISOString(),
+      },
+    });
+  };
 
   const filtered = useMemo(() => {
     const q = query.trim().toUpperCase();
@@ -227,15 +284,16 @@ export default function ConvictionPage() {
               <th className="px-3 py-2 text-center w-24">Conviction</th>
               <th className="px-3 py-2 text-left">Signals</th>
               <th className="px-3 py-2 text-right w-24" title="Upside to the FactSet mean analyst price target — (mean target − current price) / current price. Only shown once a name has been rescored (that's when the target is pulled).">Analyst upside</th>
+              <th className="px-3 py-2 text-left w-40" title="Idea pipeline — status + performance since the name was first surfaced by a research list.">Pipeline</th>
               <th className="px-3 py-2 text-right w-24"></th>
             </tr>
           </thead>
           <tbody>
             {!loaded && (
-              <tr><td colSpan={8} className="px-3 py-8 text-center text-slate-400">Loading…</td></tr>
+              <tr><td colSpan={9} className="px-3 py-8 text-center text-slate-400">Loading…</td></tr>
             )}
             {loaded && filtered.length === 0 && (
-              <tr><td colSpan={8} className="px-3 py-8 text-center text-slate-400 italic">No names match.</td></tr>
+              <tr><td colSpan={9} className="px-3 py-8 text-center text-slate-400 italic">No names match.</td></tr>
             )}
             {filtered.map((e, i) => {
               const syn = synthesisByKey.get(e.key);
@@ -281,6 +339,32 @@ export default function ConvictionPage() {
                     </span>
                   ) : <span className="text-slate-300">—</span>}
                 </td>
+                <td className="px-3 py-2">
+                  {(() => {
+                    const pi = pipeline[e.key];
+                    if (!pi) return <span className="text-slate-300 text-xs">—</span>;
+                    const now = prices[e.ticker];
+                    const since = typeof now === "number" && typeof pi.priceAtSurface === "number" && pi.priceAtSurface > 0
+                      ? ((now - pi.priceAtSurface) / pi.priceAtSurface) * 100 : null;
+                    return (
+                      <div className="flex flex-col gap-0.5">
+                        <select
+                          value={pi.status}
+                          onChange={(ev) => setStatus(e, ev.target.value as IdeaStatus)}
+                          className="rounded border border-slate-200 bg-white px-1 py-0.5 text-[11px] text-slate-600 outline-none focus:border-slate-400"
+                        >
+                          {(["new", "watching", "bought", "passed"] as IdeaStatus[]).map((s) => (
+                            <option key={s} value={s}>{IDEA_STATUS_LABELS[s]}</option>
+                          ))}
+                        </select>
+                        <span className="text-[10px] text-slate-400 whitespace-nowrap">
+                          since {pi.firstSurfaced}
+                          {since != null && <span className={since >= 0 ? "text-emerald-600 font-medium" : "text-red-500 font-medium"}> · {since >= 0 ? "+" : ""}{since.toFixed(0)}%</span>}
+                        </span>
+                      </div>
+                    );
+                  })()}
+                </td>
                 <td className="px-3 py-2 text-right">
                   {e.bucket === "Research" && (
                     <button
@@ -296,7 +380,7 @@ export default function ConvictionPage() {
               {isOpen && hasThesis && (
                 <tr className="bg-indigo-50/40">
                   <td></td>
-                  <td colSpan={7} className="px-3 pb-3 pt-1">
+                  <td colSpan={8} className="px-3 pb-3 pt-1">
                     <div className="rounded-lg border border-indigo-100 bg-white px-3 py-2">
                       <div className="text-[10px] font-bold uppercase tracking-wider text-indigo-500">Synthesis thesis</div>
                       <p className="mt-0.5 text-sm text-slate-700 leading-relaxed">{syn!.thesis}</p>
