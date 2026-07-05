@@ -8,6 +8,7 @@ import { applyResearchEntries } from "@/app/lib/research-merge";
 import type { RemovalSource } from "@/app/lib/research-removals";
 import { displayTicker } from "@/app/lib/ticker";
 import { ImageUpload, type BriefAttachment } from "@/app/components/ImageUpload";
+import { CollapsibleSection } from "@/app/components/CollapsibleSection";
 import { useStocks } from "@/app/lib/StockContext";
 import type { Stock, ScoreKey } from "@/app/lib/types";
 
@@ -1978,13 +1979,13 @@ export default function ResearchPage() {
         </section>
 
         {/* ── Newton's Upticks ── */}
-        <section className="rounded-[24px] border border-slate-200 bg-white p-6 shadow-sm">
-          <div className="flex items-center justify-between mb-4">
-            <div>
-              <h3 className="text-xl font-bold">Newton&apos;s Upticks</h3>
-              <p className="text-xs text-slate-400">Fundstrat technical uptick list &mdash; click any cell to edit</p>
-            </div>
-            <div className="flex items-center gap-3">
+        <CollapsibleSection
+          prefKey="research.newton"
+          className="border-slate-200"
+          titleClass="text-xl font-bold"
+          title={<>Newton&apos;s Upticks</>}
+          subtitle={<>Fundstrat technical uptick list &mdash; click any cell to edit</>}
+          right={<>
               <button
                 onClick={async () => {
                   // Scrape first so any new tickers are in state before the
@@ -2004,8 +2005,8 @@ export default function ResearchPage() {
                 {(namesLoading || pricesLoading || scrapeLoading) ? "Updating..." : "Refresh"}
               </button>
               <span className="text-sm text-slate-400">{state.newtonUpticks.length} stocks</span>
-            </div>
-          </div>
+          </>}
+        >
 
           {pricesFetchedAt && (
             <p className="text-[10px] text-slate-400 mb-2">
@@ -2257,19 +2258,19 @@ export default function ResearchPage() {
               })}
             </div>
           </div>
-        </section>
+        </CollapsibleSection>
 
         {/* ── Fundstrat Ideas ── */}
         <div className="grid gap-5 lg:grid-cols-2">
           {/* Top Ideas */}
-          <section className="rounded-[24px] border border-emerald-200 bg-white p-6 shadow-sm min-w-0">
-            <div className="flex items-center justify-between mb-4">
-              <div>
-                <h3 className="text-xl font-bold text-emerald-800">Fundstrat Large-Cap Top Ideas</h3>
-                <p className="text-xs text-slate-400">Best long ideas — large-cap names</p>
-              </div>
-              <span className="text-sm text-slate-400">{state.fundstratTop.length} names</span>
-            </div>
+          <CollapsibleSection
+            prefKey="research.fsTop"
+            className="border-emerald-200 min-w-0"
+            titleClass="text-xl font-bold text-emerald-800"
+            title={<>Fundstrat Large-Cap Top Ideas</>}
+            subtitle={<>Best long ideas — large-cap names</>}
+            right={<><span className="text-sm text-slate-400">{state.fundstratTop.length} names</span></>}
+          >
 
             <div className="overflow-x-auto"><table className="w-full text-sm">
               <thead>
@@ -2350,17 +2351,17 @@ export default function ResearchPage() {
               loading={!!scrapeLoadingMap["fundstrat-top"]}
               status={scrapeStatusMap["fundstrat-top"]}
             />
-          </section>
+          </CollapsibleSection>
 
           {/* Bottom Ideas */}
-          <section className="rounded-[24px] border border-red-200 bg-white p-6 shadow-sm min-w-0">
-            <div className="flex items-center justify-between mb-4">
-              <div>
-                <h3 className="text-xl font-bold text-red-800">Fundstrat Large-Cap Bottom Ideas</h3>
-                <p className="text-xs text-slate-400">Names to avoid or short — large-cap</p>
-              </div>
-              <span className="text-sm text-slate-400">{state.fundstratBottom.length} names</span>
-            </div>
+          <CollapsibleSection
+            prefKey="research.fsBottom"
+            className="border-red-200 min-w-0"
+            titleClass="text-xl font-bold text-red-800"
+            title={<>Fundstrat Large-Cap Bottom Ideas</>}
+            subtitle={<>Names to avoid or short — large-cap</>}
+            right={<><span className="text-sm text-slate-400">{state.fundstratBottom.length} names</span></>}
+          >
 
             <div className="overflow-x-auto"><table className="w-full text-sm">
               <thead>
@@ -2441,7 +2442,7 @@ export default function ResearchPage() {
               loading={!!scrapeLoadingMap["fundstrat-bottom"]}
               status={scrapeStatusMap["fundstrat-bottom"]}
             />
-          </section>
+          </CollapsibleSection>
         </div>
 
         {/* ── Fundstrat SMID-Cap Core Top + Bottom (mirrors the
@@ -2450,14 +2451,14 @@ export default function ResearchPage() {
              the cross-source synthesis). */}
         <div className="grid gap-5 lg:grid-cols-2">
           {/* SMID Top Ideas */}
-          <section className="rounded-[24px] border border-emerald-200 bg-white p-6 shadow-sm min-w-0">
-            <div className="flex items-center justify-between mb-4">
-              <div>
-                <h3 className="text-xl font-bold text-emerald-800">Fundstrat Top SMID-Cap Core Ideas</h3>
-                <p className="text-xs text-slate-400">Best long ideas — small/mid-cap names</p>
-              </div>
-              <span className="text-sm text-slate-400">{(state.fundstratSmidTop ?? []).length} names</span>
-            </div>
+          <CollapsibleSection
+            prefKey="research.fsSmidTop"
+            className="border-emerald-200 min-w-0"
+            titleClass="text-xl font-bold text-emerald-800"
+            title={<>Fundstrat Top SMID-Cap Core Ideas</>}
+            subtitle={<>Best long ideas — small/mid-cap names</>}
+            right={<><span className="text-sm text-slate-400">{(state.fundstratSmidTop ?? []).length} names</span></>}
+          >
 
             <div className="overflow-x-auto"><table className="w-full text-sm">
               <thead>
@@ -2532,17 +2533,17 @@ export default function ResearchPage() {
               loading={!!scrapeLoadingMap["fundstrat-smid-top"]}
               status={scrapeStatusMap["fundstrat-smid-top"]}
             />
-          </section>
+          </CollapsibleSection>
 
           {/* SMID Bottom Ideas */}
-          <section className="rounded-[24px] border border-red-200 bg-white p-6 shadow-sm min-w-0">
-            <div className="flex items-center justify-between mb-4">
-              <div>
-                <h3 className="text-xl font-bold text-red-800">Fundstrat Bottom SMID-Cap Core Ideas</h3>
-                <p className="text-xs text-slate-400">Names to avoid or short — small/mid-cap</p>
-              </div>
-              <span className="text-sm text-slate-400">{(state.fundstratSmidBottom ?? []).length} names</span>
-            </div>
+          <CollapsibleSection
+            prefKey="research.fsSmidBottom"
+            className="border-red-200 min-w-0"
+            titleClass="text-xl font-bold text-red-800"
+            title={<>Fundstrat Bottom SMID-Cap Core Ideas</>}
+            subtitle={<>Names to avoid or short — small/mid-cap</>}
+            right={<><span className="text-sm text-slate-400">{(state.fundstratSmidBottom ?? []).length} names</span></>}
+          >
 
             <div className="overflow-x-auto"><table className="w-full text-sm">
               <thead>
@@ -2617,18 +2618,18 @@ export default function ResearchPage() {
               loading={!!scrapeLoadingMap["fundstrat-smid-bottom"]}
               status={scrapeStatusMap["fundstrat-smid-bottom"]}
             />
-          </section>
+          </CollapsibleSection>
         </div>
 
         {/* ── Tom Lee Focus Areas ── */}
-        <section className="rounded-[24px] border border-amber-200 bg-white p-6 shadow-sm">
-          <div className="flex items-center justify-between mb-3">
-            <div>
-              <h3 className="text-lg font-bold text-amber-800">Tom Lee&apos;s Focus Areas</h3>
-              <p className="text-xs text-slate-400">Key themes and areas Lee is emphasizing — type freely, these feed into the morning brief</p>
-            </div>
-            <span className="text-sm text-slate-400">{(state.leeFocusAreas ?? []).length} themes</span>
-          </div>
+        <CollapsibleSection
+          prefKey="research.leeFocus"
+          className="border-amber-200"
+          titleClass="text-lg font-bold text-amber-800"
+          title={<>Tom Lee&apos;s Focus Areas</>}
+          subtitle={<>Key themes and areas Lee is emphasizing — type freely, these feed into the morning brief</>}
+          right={<><span className="text-sm text-slate-400">{(state.leeFocusAreas ?? []).length} themes</span></>}
+        >
           <div className="flex flex-wrap gap-2 mb-3">
             {(state.leeFocusAreas ?? []).map((area, idx) => (
               <span
@@ -2678,17 +2679,17 @@ export default function ResearchPage() {
               Add
             </button>
           </form>
-        </section>
+        </CollapsibleSection>
 
         {/* ── RBC Canadian Focus List ── */}
-        <section className="rounded-[24px] border border-blue-200 bg-white p-6 shadow-sm">
-          <div className="flex items-center justify-between mb-4">
-            <div>
-              <h3 className="text-xl font-bold text-blue-800">RBC Canadian Focus List</h3>
-              <p className="text-xs text-slate-400">RBC Capital Markets Canadian equity picks</p>
-            </div>
-            <span className="text-sm text-slate-400">{(state.rbcCanadianFocus || []).length} names</span>
-          </div>
+        <CollapsibleSection
+          prefKey="research.rbcCa"
+          className="border-blue-200"
+          titleClass="text-xl font-bold text-blue-800"
+          title={<>RBC Canadian Focus List</>}
+          subtitle={<>RBC Capital Markets Canadian equity picks</>}
+          right={<><span className="text-sm text-slate-400">{(state.rbcCanadianFocus || []).length} names</span></>}
+        >
 
           <div className="overflow-x-auto"><table className="w-full text-sm">
             <thead>
@@ -2760,21 +2761,21 @@ export default function ResearchPage() {
             loading={!!scrapeLoadingMap["rbc-focus"]}
             status={scrapeStatusMap["rbc-focus"]}
           />
-        </section>
+        </CollapsibleSection>
 
         {/* ── RBC US Focus List ──
             Parallel to the Canadian list. Same RBCEntry shape, same
             manual-add + screenshot-scan flow; targets state.rbcUsFocus
             so the two stay independent. Section is teal-accented to
             visually distinguish it from the blue Canadian section. */}
-        <section className="rounded-[24px] border border-teal-200 bg-white p-6 shadow-sm">
-          <div className="flex items-center justify-between mb-4">
-            <div>
-              <h3 className="text-xl font-bold text-teal-800">RBC US Focus List</h3>
-              <p className="text-xs text-slate-400">RBC Capital Markets US equity picks</p>
-            </div>
-            <span className="text-sm text-slate-400">{(state.rbcUsFocus || []).length} names</span>
-          </div>
+        <CollapsibleSection
+          prefKey="research.rbcUs"
+          className="border-teal-200"
+          titleClass="text-xl font-bold text-teal-800"
+          title={<>RBC US Focus List</>}
+          subtitle={<>RBC Capital Markets US equity picks</>}
+          right={<><span className="text-sm text-slate-400">{(state.rbcUsFocus || []).length} names</span></>}
+        >
 
           <div className="overflow-x-auto"><table className="w-full text-sm">
             <thead>
@@ -2846,7 +2847,7 @@ export default function ResearchPage() {
             loading={!!scrapeLoadingMap["rbc-us-focus"]}
             status={scrapeStatusMap["rbc-us-focus"]}
           />
-        </section>
+        </CollapsibleSection>
 
         {/* ── JPM US Equity Analyst Focus List ──
             J.P. Morgan's US equity analyst focus picks. Columns: company name,
@@ -2854,13 +2855,13 @@ export default function ResearchPage() {
             /api/factset-prices), price target. Stored on state.jpmUsAnalystFocus
             (RBCEntry + optional industry/strategy/priceTarget); auto-tallies into
             researchMentions via SOURCES. Amber-accented. */}
-        <section className="rounded-[24px] border border-amber-200 bg-white p-6 shadow-sm">
-          <div className="flex items-center justify-between mb-4">
-            <div>
-              <h3 className="text-xl font-bold text-amber-800">JPM US Equity Analyst Focus List</h3>
-              <p className="text-xs text-slate-400">J.P. Morgan US equity analyst focus picks · prices live from FactSet</p>
-            </div>
-            <div className="flex items-center gap-3">
+        <CollapsibleSection
+          prefKey="research.jpm"
+          className="border-amber-200"
+          titleClass="text-xl font-bold text-amber-800"
+          title={<>JPM US Equity Analyst Focus List</>}
+          subtitle={<>J.P. Morgan US equity analyst focus picks · prices live from FactSet</>}
+          right={<>
               <button
                 onClick={() => void fetchFactsetPrices()}
                 disabled={factsetPricesLoading}
@@ -2870,8 +2871,8 @@ export default function ResearchPage() {
                 {factsetPricesLoading ? "Refreshing…" : "↻ FactSet prices"}
               </button>
               <span className="text-sm text-slate-400">{(state.jpmUsAnalystFocus || []).length} names</span>
-            </div>
-          </div>
+          </>}
+        >
 
           <div className="overflow-x-auto"><table className="w-full text-sm">
             <thead>
@@ -2936,21 +2937,21 @@ export default function ResearchPage() {
             loading={!!scrapeLoadingMap["jpm-us-analyst-focus"]}
             status={scrapeStatusMap["jpm-us-analyst-focus"]}
           />
-        </section>
+        </CollapsibleSection>
 
         {/* ── RBCCM Canadian Fundamental Equity Weighting (FEW) Portfolio ──
             Canadian equity list. Tickers in the screenshot omit the
             suffix, so the scrape canonicalizes to ".TO". Only the four
             columns the PM tracks are captured: ticker, company, industry,
             price. Indigo-accented to distinguish from the RBC focus lists. */}
-        <section className="rounded-[24px] border border-indigo-200 bg-white p-6 shadow-sm">
-          <div className="flex items-center justify-between mb-4">
-            <div>
-              <h3 className="text-xl font-bold text-indigo-800">RBCCM Canadian FEW Portfolio</h3>
-              <p className="text-xs text-slate-400">RBC Capital Markets Canadian Fundamental Equity Weighting portfolio</p>
-            </div>
-            <span className="text-sm text-slate-400">{(state.rbccmFew || []).length} names</span>
-          </div>
+        <CollapsibleSection
+          prefKey="research.few"
+          className="border-indigo-200"
+          titleClass="text-xl font-bold text-indigo-800"
+          title={<>RBCCM Canadian FEW Portfolio</>}
+          subtitle={<>RBC Capital Markets Canadian Fundamental Equity Weighting portfolio</>}
+          right={<><span className="text-sm text-slate-400">{(state.rbccmFew || []).length} names</span></>}
+        >
 
           <div className="overflow-x-auto"><table className="w-full text-sm">
             <thead>
@@ -3009,7 +3010,7 @@ export default function ResearchPage() {
             loading={!!scrapeLoadingMap["rbccm-few"]}
             status={scrapeStatusMap["rbccm-few"]}
           />
-        </section>
+        </CollapsibleSection>
 
         {/* ── Seeking Alpha - Alpha Picks ──
             Mirrors the Newton's Upticks layout: name + sector + price
@@ -3017,7 +3018,14 @@ export default function ResearchPage() {
             with a manual add fallback. The screenshot is the primary
             input; the manual form covers the case where you want to
             log a pick without screenshotting. */}
-        <section className="rounded-[24px] border border-slate-200 bg-white p-6 shadow-sm">
+        <CollapsibleSection
+          prefKey="research.alpha"
+          className="border-slate-200"
+          titleClass="text-xl font-bold"
+          title={<>Seeking Alpha &mdash; Alpha Picks</>}
+          subtitle={<>Institutional buy recommendations &mdash; primarily populated by uploading the Alpha Picks dashboard screenshot. Manual adds also work.</>}
+          right={<><span className="text-sm text-slate-400">{(state.alphaPicks ?? []).length} picks</span></>}
+        >
           {(() => {
             // ── Derived data for the Alpha Picks section ────────────
             const allPicks = state.alphaPicks ?? [];
@@ -3206,16 +3214,6 @@ export default function ResearchPage() {
 
             return (
               <>
-                <div className="flex items-center justify-between mb-3">
-                  <div>
-                    <h3 className="text-xl font-bold">Seeking Alpha &mdash; Alpha Picks</h3>
-                    <p className="text-xs text-slate-400">
-                      Institutional buy recommendations &mdash; primarily populated by uploading the Alpha Picks dashboard screenshot. Manual adds also work.
-                    </p>
-                  </div>
-                  <span className="text-sm text-slate-400">{allPicks.length} picks</span>
-                </div>
-
                 {/* Rating filter chips. The 'Drop sell candidates' bulk
                     action was removed in favor of the per-row 'Sell' button
                     which handles removal + weight redistribution directly. */}
@@ -3381,7 +3379,7 @@ export default function ResearchPage() {
             loading={!!scrapeLoadingMap["seeking-alpha-picks"]}
             status={scrapeStatusMap["seeking-alpha-picks"]}
           />
-        </section>
+        </CollapsibleSection>
 
         {/* General Notes section removed per user request — was unused
             in the daily workflow. The generalNotes field stays on the
@@ -3389,8 +3387,12 @@ export default function ResearchPage() {
             data; nothing renders it. */}
 
         {/* ── Quick Reference ── */}
-        <section className="rounded-[24px] border border-slate-200 bg-white p-6 shadow-sm">
-          <h3 className="text-lg font-semibold mb-4">Quick Reference</h3>
+        <CollapsibleSection
+          prefKey="research.quickRef"
+          className="border-slate-200"
+          titleClass="text-lg font-semibold"
+          title={<>Quick Reference</>}
+        >
           <div className="grid gap-5 md:grid-cols-3">
             <div className="rounded-xl bg-slate-50 p-4">
               <div className="text-xs font-bold uppercase tracking-wider text-slate-400 mb-3">PIM Score Thresholds</div>
@@ -3428,7 +3430,7 @@ export default function ResearchPage() {
               </div>
             </div>
           </div>
-        </section>
+        </CollapsibleSection>
       </div>
     </main>
   );
