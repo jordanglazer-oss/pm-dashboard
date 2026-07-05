@@ -41,6 +41,18 @@ const CANDIDATE_SETS: Record<string, { key: string; formula: string; note: strin
     { key: "feRptDateQtr0", formula: "FE_ESTIMATE(REPORT_DATE,MEAN,QTR_ROLL,0,NOW,'')", note: "Current-quarter expected report date" },
     { key: "ffRptDateQtr0", formula: "FF_EPS_RPT_DATE(QTR,0)", note: "Last quarterly report date (fallback basis)" },
   ],
+  // Earnings persistence / quality score candidates — the metric visible in the
+  // FactSet terminal. Unknown exact code; probe several. If none resolve, the
+  // OCF÷net-income cash-conversion series (already in the snapshot) is the proxy.
+  quality: [
+    { key: "fgEarnQual", formula: "FG_EARNINGS_QUALITY", note: "Earnings quality score (grade)" },
+    { key: "fgEpsPersist", formula: "FG_EPS_PERSISTENCE", note: "EPS persistence score (grade)" },
+    { key: "fgQuality", formula: "FG_QUALITY_SCORE", note: "Quality score (grade)" },
+    { key: "fgAccruals", formula: "FG_ACCRUALS", note: "Accruals ratio (grade)" },
+    { key: "ffAccruals", formula: "FF_ACCRUALS(ANN,0)", note: "Balance-sheet accruals (FF)" },
+    { key: "ffAccrualRatio", formula: "FF_ACCRUAL_RATIO(ANN,0)", note: "Accrual ratio (FF)" },
+    { key: "feEpsStdev", formula: "FE_ESTIMATE(EPS,STDDEV,ANN_ROLL,1,NOW,'')", note: "EPS estimate dispersion (persistence proxy)" },
+  ],
   guidance: [
     { key: "guidEpsMeanQ1", formula: "FE_GUIDANCE(EPS,MEAN,QTR_ROLL,1,NOW,'')", note: "EPS guidance mean, next quarter" },
     { key: "guidEpsHighQ1", formula: "FE_GUIDANCE(EPS,HIGH,QTR_ROLL,1,NOW,'')", note: "EPS guidance high, next quarter" },

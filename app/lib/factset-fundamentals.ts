@@ -236,6 +236,10 @@ export function formatSnapshotForPrompt(snap: CompanySnapshot): string {
     `Net income — FY: ${seriesRow(v, "netInc", 5, "Ann")} | last 8 Q: ${seriesRow(v, "netInc", 8, "Qtr")}`,
     `Free cash flow — FY: ${seriesRow(v, "fcf", 5, "Ann")}`,
     `Operating CF — FY: ${seriesRow(v, "ocf", 3, "Ann")} | Capex — FY: ${seriesRow(v, "capex", 3, "Ann")}`,
+    `Earnings quality / persistence — OCF ÷ net income by FY: ${[0, 1, 2].map((i) => {
+      const ni = v[`netIncAnn${i}`]; const ocf = v[`ocfAnn${i}`];
+      return typeof ni === "number" && ni !== 0 && typeof ocf === "number" ? `${(ocf / ni).toFixed(2)}x` : "n/a";
+    }).join(" | ")} (cash conversion: a ratio persistently ≥1 means earnings are backed by real operating cash = high-quality, PERSISTENT earnings; consistently <1 or volatile signals accruals-heavy, lower-persistence earnings that tend to mean-revert — weigh into cashFlowQuality).`,
     `Gross margin % — FY: ${seriesRow(v, "grossMgn", 5, "Ann")}`,
     `Operating margin % — FY: ${seriesRow(v, "operMgn", 5, "Ann")}`,
     `ROE % — FY: ${seriesRow(v, "roe", 3, "Ann")}`,
