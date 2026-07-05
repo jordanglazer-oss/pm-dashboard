@@ -3,6 +3,7 @@
 import React, { useCallback, useEffect, useMemo, useState } from "react";
 import Link from "next/link";
 import type { ChangeEvent, ChangeType, Severity } from "@/app/lib/change-monitor";
+import { useCollapsed } from "@/app/lib/useCollapsed";
 
 /**
  * Dashboard "change monitor" — surfaces what materially changed (ratings,
@@ -42,7 +43,8 @@ export function ChangeMonitor() {
   const [filter, setFilter] = useState<ChangeType | "all">("all");
   const [scope, setScope] = useState<"all" | "Portfolio" | "Watchlist">("all");
   const [showReviewed, setShowReviewed] = useState(false);
-  const [collapsed, setCollapsed] = useState(false);
+  // Persisted so a collapsed monitor stays collapsed across tab nav + refresh.
+  const [collapsed, toggleCollapsed] = useCollapsed("changeMonitor.collapsed");
 
   const load = useCallback(async (win: number) => {
     try {
@@ -99,7 +101,7 @@ export function ChangeMonitor() {
   return (
     <div className="rounded-lg border border-slate-200 bg-white overflow-hidden">
       <button
-        onClick={() => setCollapsed((c) => !c)}
+        onClick={toggleCollapsed}
         className="w-full flex items-center justify-between px-4 py-3 hover:bg-slate-50/60 transition-colors"
       >
         <div className="flex items-center gap-2">

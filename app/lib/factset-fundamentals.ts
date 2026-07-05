@@ -81,6 +81,7 @@ const POINT_METRICS: ScoringFormula[] = [
   { key: "tgtLow", formula: "FE_ESTIMATE(PRICE_TGT,LOW,ANN_ROLL,0,NOW,'')", note: "Target price low (dispersion)" },
   { key: "revUp", formula: "FE_ESTIMATE(EPS,UP,ANN_ROLL,1,NOW,'')", note: "EPS FY+1 up-revisions (30d)" },
   { key: "revDown", formula: "FE_ESTIMATE(EPS,DOWN,ANN_ROLL,1,NOW,'')", note: "EPS FY+1 down-revisions (30d)" },
+  { key: "epsDispersion", formula: "FE_ESTIMATE(EPS,STDDEV,ANN_ROLL,1,NOW,'')", note: "EPS FY+1 estimate dispersion (predictability / persistence proxy — low = analysts agree)" },
   // Management guidance (FE_GUIDANCE — validated error 0; MSFT next-Q revenue
   // returned $87.25B). Populates for names that issue guidance; null-safe
   // otherwise. Company guidance vs the analyst consensus above is a catalyst
@@ -248,7 +249,7 @@ export function formatSnapshotForPrompt(snap: CompanySnapshot): string {
     `Price: ${fmt(v.price, 2)} | 52-week range: ${fmt(v.low52w, 2)} – ${fmt(v.high52w, 2)}`,
     `Total return % (div+split adj): 1M ${fmt(v.ret1m)} | 3M ${fmt(v.ret3m)} | 6M ${fmt(v.ret6m)} | 1Y ${fmt(v.ret1y)} | 3Y ${fmt(v.ret3y)} (shareholder momentum / track record — supporting evidence for trackRecord).`,
     `Estimates: EPS FY+1 ${fmt(v.epsEstFy1, 2)} → FY+2 ${fmt(v.epsEstFy2, 2)} | Revenue FY+1 ${fmt(v.salesEstFy1)} → FY+2 ${fmt(v.salesEstFy2)} | # analysts ${fmt(v.numEstFy1, 0)} (the FY+1→FY+2 ramp is the forward growth trajectory for growth/secular).`,
-    `Analyst signals: target ${fmt(v.tgtPriceMean, 2)} (range ${fmt(v.tgtLow, 2)}–${fmt(v.tgtHigh, 2)}) | EPS FY+1 est. revisions: ${fmt(v.revUp, 0)} up / ${fmt(v.revDown, 0)} down (coverage breadth = # analysts above; revisions + target dispersion = track-record / catalysts signals).`,
+    `Analyst signals: target ${fmt(v.tgtPriceMean, 2)} (range ${fmt(v.tgtLow, 2)}–${fmt(v.tgtHigh, 2)}) | EPS FY+1 est. revisions: ${fmt(v.revUp, 0)} up / ${fmt(v.revDown, 0)} down | EPS FY+1 estimate dispersion (stddev) ${fmt(v.epsDispersion, 2)} vs mean ${fmt(v.epsEstFy1, 2)} (LOW dispersion relative to the estimate = analysts agree = predictable/persistent earnings — a positive cashFlowQuality/trackRecord signal; wide dispersion = uncertain, lower-persistence earnings). (coverage breadth = # analysts above; revisions + target dispersion = track-record / catalysts signals).`,
     guidanceLine,
   ].filter(Boolean).join("\n");
 }
