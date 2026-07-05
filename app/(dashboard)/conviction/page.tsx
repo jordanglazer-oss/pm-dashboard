@@ -117,7 +117,10 @@ export default function ConvictionPage() {
   useEffect(() => {
     fetch("/api/kv/research", { cache: "no-store" })
       .then((r) => r.json())
-      .then((data: ResearchState) => setResearch(data))
+      // The KV route wraps the blob as { research: ... } — unwrap it (fall back
+      // to the raw payload for safety). Without this the lists are all undefined
+      // and the Ideas tab comes up empty.
+      .then((data) => setResearch((data?.research ?? data) as ResearchState))
       .catch(() => setResearch(null))
       .finally(() => setLoaded(true));
   }, []);
