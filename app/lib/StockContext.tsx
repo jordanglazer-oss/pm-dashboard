@@ -168,6 +168,9 @@ type StockContextType = {
    * }
    */
   refreshAllPrices: () => Promise<{ updated: number; total: number; missing: string[] }>;
+  /** Increments each time refreshAllPrices runs — lets the Research page re-pull
+   *  its own live prices/names off the single nav "Refresh prices" button. */
+  priceRefreshNonce: number;
   /**
    * Recompute the deterministic `researchMentions` category for every
    * Portfolio + Watchlist ticker from the current research-scrape
@@ -289,6 +292,9 @@ export function StockProvider({ children }: { children: React.ReactNode }) {
   const [pimBaseline, setPimBaseline] = useState<PimModelGroup[]>(pimModelSeedFallback);
   const [pimPortfolioState, setPimPortfolioState] = useState<PimPortfolioState>({ groupStates: [], lastUpdated: "" });
   const [uiPrefs, setUiPrefsState] = useState<Record<string, string>>({});
+  // Bumped by refreshAllPrices; the Research page watches it to re-pull its own
+  // local price/name state so the nav "Refresh prices" button covers it too.
+  const [priceRefreshNonce, setPriceRefreshNonce] = useState(0);
   const [analystSnapshots, setAnalystSnapshotsState] = useState<AnalystSnapshots>({});
   const [analystReports, setAnalystReportsState] = useState<AnalystReports>({});
   const [loading, setLoading] = useState(true);
@@ -1018,6 +1024,10 @@ export function StockProvider({ children }: { children: React.ReactNode }) {
       return p == null || p <= 0;
     });
 
+    // Signal any live consumers (e.g. the Research page's local price/name
+    // state) to re-pull, so the ONE nav "Refresh prices" button also refreshes
+    // research-tab prices — no separate research refresh needed.
+    setPriceRefreshNonce((n) => n + 1);
     return { updated: applied, total: allTickers.length, missing };
   }, [stocks, persistStocks]);
 
@@ -1748,6 +1758,7 @@ export function StockProvider({ children }: { children: React.ReactNode }) {
         updateLastScored,
         updatePrice,
         refreshAllPrices,
+        priceRefreshNonce,
         refreshResearchMentions,
         updateSector,
         updateWeight,

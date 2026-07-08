@@ -402,7 +402,7 @@ export default function ResearchPage() {
   const [loaded, setLoaded] = useState(false);
   const [attachmentsSaveError, setAttachmentsSaveError] = useState<string | null>(null);
   const saveTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
-  const { scoredStocks, addStock, brief, uiPrefs, setUiPref, refreshResearchMentions } = useStocks();
+  const { scoredStocks, addStock, brief, uiPrefs, setUiPref, refreshResearchMentions, priceRefreshNonce } = useStocks();
 
   // Add a research idea to the watchlist (auto-fetches name + sector)
   const addToWatchlist = useCallback(async (ticker: string) => {
@@ -1230,6 +1230,22 @@ export default function ResearchPage() {
       }
     } catch { /* silent */ }
   }, [state, save]);
+
+  // Consolidated refresh: when the nav "Refresh prices" button runs
+  // (refreshAllPrices bumps priceRefreshNonce), re-pull the Research tab's own
+  // live prices + FactSet prices + name backfills — so ONE refresh button in the
+  // menu covers research-tab stocks too, instead of a separate research refresh.
+  const priceNonceSeen = useRef(0);
+  useEffect(() => {
+    if (priceRefreshNonce === priceNonceSeen.current) return;
+    priceNonceSeen.current = priceRefreshNonce;
+    if (priceRefreshNonce === 0) return; // initial mount, nothing to refresh
+    void fetchLivePrices();
+    void fetchFactsetPrices();
+    void refreshUptickNames();
+    (["rbcCanadianFocus", "rbcUsFocus", "jpmUsAnalystFocus", "equateCad", "equateUsd"] as const).forEach((l) => void refreshRbcNames(l));
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [priceRefreshNonce]);
 
   /** Backfill missing company names for the RBCCM FEW list. The screenshot
    *  usually supplies the company + industry; this only fills the name for
@@ -2063,10 +2079,10 @@ export default function ResearchPage() {
                 }}
                 disabled={namesLoading || pricesLoading || scrapeLoading}
                 className="flex items-center gap-1.5 rounded-lg bg-teal-600 px-3 py-1.5 text-xs font-semibold text-white hover:bg-teal-700 disabled:opacity-50 transition-colors"
-                title="Refresh prices + company names/sectors. If a screenshot is attached, re-scan it only if the image changed since last scan."
+                title="Re-scan the Newton screenshot (cached if unchanged, so $0). Prices + names for the whole Research tab refresh via the main 'Refresh prices' button in the menu."
               >
                 <svg className={`w-3.5 h-3.5 ${(namesLoading || pricesLoading || scrapeLoading) ? "animate-spin" : ""}`} fill="none" stroke="currentColor" strokeWidth="2" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" d="M16.023 9.348h4.992v-.001M2.985 19.644v-4.992m0 0h4.992m-4.993 0 3.181 3.183a8.25 8.25 0 0 0 13.803-3.7M4.031 9.865a8.25 8.25 0 0 1 13.803-3.7l3.181 3.182" /></svg>
-                {(namesLoading || pricesLoading || scrapeLoading) ? "Updating..." : "Refresh"}
+                {(namesLoading || pricesLoading || scrapeLoading) ? "Scanning..." : "Re-scan screenshot"}
               </button>
               <span className="text-sm text-slate-400">{state.newtonUpticks.length} stocks</span>
           </>}
