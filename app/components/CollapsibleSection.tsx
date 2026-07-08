@@ -1,7 +1,7 @@
 "use client";
 
 import React from "react";
-import { useCollapsed } from "@/app/lib/useCollapsed";
+import { useStocks } from "@/app/lib/StockContext";
 
 /**
  * A card section whose body collapses/expands, with the state PERSISTED via
@@ -11,6 +11,7 @@ import { useCollapsed } from "@/app/lib/useCollapsed";
  */
 export function CollapsibleSection({
   prefKey,
+  linkedKeys,
   className,
   title,
   subtitle,
@@ -19,6 +20,9 @@ export function CollapsibleSection({
   children,
 }: {
   prefKey: string;
+  /** Other prefKeys to collapse/expand in lockstep with this one (e.g. a
+      side-by-side pair that should open/close together). */
+  linkedKeys?: string[];
   /** Border/background classes for the outer <section> (e.g. "border-amber-200"). */
   className?: string;
   title: React.ReactNode;
@@ -29,7 +33,15 @@ export function CollapsibleSection({
   right?: React.ReactNode;
   children: React.ReactNode;
 }) {
-  const [collapsed, toggle] = useCollapsed(prefKey);
+  const { uiPrefs, setUiPref } = useStocks();
+  const collapsed = uiPrefs[prefKey] === "1";
+  const toggle = () => {
+    const next = collapsed ? "0" : "1";
+    setUiPref(prefKey, next);
+    // Keep any linked sections in lockstep (functional setState in setUiPref
+    // makes these successive writes safe from stale-closure clobber).
+    (linkedKeys || []).forEach((k) => setUiPref(k, next));
+  };
   return (
     <section className={`rounded-[24px] border bg-white p-6 shadow-sm ${className || "border-slate-200"}`}>
       <div className={`flex items-center justify-between ${collapsed ? "" : "mb-4"}`}>

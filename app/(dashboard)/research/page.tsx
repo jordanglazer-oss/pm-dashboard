@@ -2330,6 +2330,7 @@ export default function ResearchPage() {
           {/* Top Ideas */}
           <CollapsibleSection
             prefKey="research.fsTop"
+            linkedKeys={["research.fsBottom"]}
             className="border-emerald-200 min-w-0"
             titleClass="text-xl font-bold text-emerald-800"
             title={<>Fundstrat Large-Cap Top Ideas</>}
@@ -2421,6 +2422,7 @@ export default function ResearchPage() {
           {/* Bottom Ideas */}
           <CollapsibleSection
             prefKey="research.fsBottom"
+            linkedKeys={["research.fsTop"]}
             className="border-red-200 min-w-0"
             titleClass="text-xl font-bold text-red-800"
             title={<>Fundstrat Large-Cap Bottom Ideas</>}
@@ -2518,6 +2520,7 @@ export default function ResearchPage() {
           {/* SMID Top Ideas */}
           <CollapsibleSection
             prefKey="research.fsSmidTop"
+            linkedKeys={["research.fsSmidBottom"]}
             className="border-emerald-200 min-w-0"
             titleClass="text-xl font-bold text-emerald-800"
             title={<>Fundstrat Top SMID-Cap Core Ideas</>}
@@ -2603,6 +2606,7 @@ export default function ResearchPage() {
           {/* SMID Bottom Ideas */}
           <CollapsibleSection
             prefKey="research.fsSmidBottom"
+            linkedKeys={["research.fsSmidTop"]}
             className="border-red-200 min-w-0"
             titleClass="text-xl font-bold text-red-800"
             title={<>Fundstrat Bottom SMID-Cap Core Ideas</>}
