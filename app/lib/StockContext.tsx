@@ -1024,9 +1024,14 @@ export function StockProvider({ children }: { children: React.ReactNode }) {
       return p == null || p <= 0;
     });
 
+    // Capture today's SPY hedging snapshot server-side so the nav "Refresh
+    // prices" button builds the hedging ledger too — even on days the Hedging
+    // tab is never opened. Best-effort, non-blocking (append-only write).
+    fetch("/api/hedging/snapshot", { method: "POST" }).catch(() => { /* best-effort */ });
+
     // Signal any live consumers (e.g. the Research page's local price/name
-    // state) to re-pull, so the ONE nav "Refresh prices" button also refreshes
-    // research-tab prices — no separate research refresh needed.
+    // state, and the Hedging tab if open) to re-pull, so the ONE nav "Refresh
+    // prices" button also refreshes those views — no separate refresh needed.
     setPriceRefreshNonce((n) => n + 1);
     return { updated: applied, total: allTickers.length, missing };
   }, [stocks, persistStocks]);

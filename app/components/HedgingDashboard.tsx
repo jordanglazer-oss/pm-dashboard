@@ -1,6 +1,7 @@
 "use client";
 
-import React, { useCallback, useEffect, useMemo, useState } from "react";
+import React, { useCallback, useEffect, useMemo, useRef, useState } from "react";
+import { useStocks } from "@/app/lib/StockContext";
 import type { HedgingLiveData, HedgingQuote, CustomStrikeRow } from "@/app/api/hedging/route";
 import type { HedgingHistory, HedgingSnapshot } from "@/app/api/kv/hedging-history/route";
 import type { HedgingCustomStrikes } from "@/app/api/kv/hedging-custom-strikes/route";
@@ -90,6 +91,7 @@ export default function HedgingDashboard() {
   const [refreshing, setRefreshing] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [view, setView] = useState<ViewMode>("current");
+  const { priceRefreshNonce } = useStocks();
 
   const loadAll = useCallback(async (persist: boolean, strikes: number[]) => {
     setError(null);
@@ -200,6 +202,21 @@ export default function HedgingDashboard() {
     await loadAll(true, customStrikes);
     setRefreshing(false);
   }, [loadAll, customStrikes]);
+
+  // When the nav "Refresh prices" button runs, re-pull the visible table so an
+  // open Hedging tab updates too. That refresh already captured a fresh
+  // snapshot server-side (/api/hedging/snapshot), so reload display-only
+  // (persist=false) to avoid a duplicate same-day write.
+  const nonceSeen = useRef(0);
+  useEffect(() => {
+    if (priceRefreshNonce === nonceSeen.current) return;
+    nonceSeen.current = priceRefreshNonce;
+    if (priceRefreshNonce === 0) return;
+    // Defer off the effect tick so loadAll's internal setState isn't called
+    // synchronously within the effect (avoids cascading-render churn).
+    const id = setTimeout(() => { void loadAll(false, customStrikes); }, 0);
+    return () => clearTimeout(id);
+  }, [priceRefreshNonce, loadAll, customStrikes]);
 
   // WoW / MoM reference snapshots
   const wowSnap = useMemo(() => findSnapshotDaysAgo(history, 7, 2), [history]);
