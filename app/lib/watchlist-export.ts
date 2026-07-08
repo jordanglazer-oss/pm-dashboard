@@ -6,13 +6,19 @@
  *    exchange suffix stripped, and COUNTRY/CURRENCY (3-letter ISO) disambiguate
  *    the listing so BoostedAI picks the right security.
  *  - SIA (SIACharts): a plain comma-separated symbol list to paste. Per the PM,
- *    SIA expects the Yahoo ".TO" form for TSX names (US names stay bare) — which
- *    is exactly how tickers are already stored, so this is just the canonical
+ *    SIA expects the ".TO" form for TSX names (US names stay bare) — which is
+ *    exactly how tickers are already stored, so this is just the canonical
  *    ticker.
+ *  - MarketEdge (ChartScout): a newline-separated US symbol list. MarketEdge is
+ *    US-only, so Canadian listings are excluded entirely.
  *
- * Ticker suffix is the source of truth for the listing venue: our tickers are
- * stored Yahoo-style (".TO"/".V"/".NE"/".CN" for Canadian venues, or a legacy
- * "-T" that canonicalTicker folds into ".TO"; bare = US).
+ * Everything is derived from the canonical stored ticker — the SAME identity the
+ * scorer uses — so an exported name always maps back to the same stock (no
+ * cross-source ticker drift). The exchange suffix is the source of truth for the
+ * listing venue AND its trading currency: TSX/TSXV/CBOE (".TO"/".V"/".NE"/".CN",
+ * or a legacy "-T" that canonicalTicker folds into ".TO") ⇒ Canada/CAD; bare ⇒
+ * US/USD. No Yahoo/FactSet lookup needed — an individual equity's currency is
+ * fixed by where it lists.
  */
 
 import type { Stock } from "./types";
@@ -41,13 +47,10 @@ export function boostedCountry(ticker: string): string {
   return isCanadianListing(ticker) ? "CAN" : "USA";
 }
 
-/** BoostedAI CURRENCY column — the stored Yahoo trading currency when we have
- *  it (authoritative, handles USD-denominated TSX listings), else derived from
- *  the venue. */
-export function boostedCurrency(stock: Pick<Stock, "ticker" | "currency">): string {
-  const c = (stock.currency || "").toUpperCase().trim();
-  if (c) return c;
-  return isCanadianListing(stock.ticker) ? "CAD" : "USD";
+/** BoostedAI CURRENCY column — the trading currency implied by the listing
+ *  venue (TSX ⇒ CAD, US ⇒ USD). Deterministic from the ticker; no data feed. */
+export function boostedCurrency(ticker: string): string {
+  return isCanadianListing(ticker) ? "CAD" : "USD";
 }
 
 /**
@@ -57,19 +60,44 @@ export function boostedCurrency(stock: Pick<Stock, "ticker" | "currency">): stri
  * survive. CRLF line endings + trailing newline for maximal spreadsheet
  * compatibility.
  */
-export function buildBoostedCsv(stocks: Array<Pick<Stock, "ticker" | "currency">>): string {
+export function buildBoostedCsv(stocks: Array<Pick<Stock, "ticker">>): string {
   const header = "ISIN,SYMBOL,COUNTRY,CURRENCY";
   const seen = new Set<string>();
   const rows: string[] = [];
   for (const s of stocks) {
     const sym = boostedSymbol(s.ticker);
     if (!sym) continue;
-    const row = ["", sym, boostedCountry(s.ticker), boostedCurrency(s)].join(",");
+    const row = ["", sym, boostedCountry(s.ticker), boostedCurrency(s.ticker)].join(",");
     if (seen.has(row)) continue;
     seen.add(row);
     rows.push(row);
   }
   return [header, ...rows].join("\r\n") + "\r\n";
+}
+
+/**
+ * MarketEdge (ChartScout) is US-only — Canadian listings have no MarketEdge
+ * coverage, so they're excluded. Returns the US symbol for a US listing, or
+ * null for any Canadian-suffixed ticker.
+ */
+export function marketEdgeSymbol(ticker: string): string | null {
+  if (isCanadianListing(ticker)) return null;
+  return canonicalTicker(ticker);
+}
+
+/** Newline-separated US symbol list for MarketEdge (one per line), Canadian
+ *  listings excluded, de-duplicated, order preserved. */
+export function buildMarketEdgeList(stocks: Array<Pick<Stock, "ticker">>): string {
+  const seen = new Set<string>();
+  const out: string[] = [];
+  for (const s of stocks) {
+    const sym = marketEdgeSymbol(s.ticker);
+    if (sym && !seen.has(sym)) {
+      seen.add(sym);
+      out.push(sym);
+    }
+  }
+  return out.join("\n");
 }
 
 /** Comma-separated SIA symbol list for copy-paste (de-duplicated, order kept). */
