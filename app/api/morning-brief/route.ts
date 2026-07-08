@@ -13,6 +13,7 @@ import {
 import type { ResearchState } from "@/app/lib/defaults";
 import { defaultResearch } from "@/app/lib/defaults";
 import { buildHedgingCostsBlock } from "@/app/lib/hedging";
+import { crossSectional, factsetConfigured } from "@/app/lib/factset";
 import type { MarketRegimeData } from "@/app/lib/market-regime";
 import { isCreditError, recordAnthropicCreditError, markAnthropicHealthy } from "@/app/lib/anthropic-status";
 import { getDataUrl } from "@/app/lib/blob-store";
@@ -55,8 +56,40 @@ const SECTOR_ETFS: Record<string, string> = {
 };
 
 async function fetchSectorPerformance(): Promise<string> {
+  const entries = Object.entries(SECTOR_ETFS);
+
+  // FactSet FIRST (authoritative) — every SPDR sector ETF resolves via <ETF>-US.
+  // One batched call: current price + 1-day + 1-month total return (div/split
+  // adjusted). Null-safe: if the 1-day return form isn't valid it renders blank
+  // and we still show 1M + price. Falls through to Yahoo when FactSet/relay is
+  // down or returns nothing.
+  if (factsetConfigured()) {
+    try {
+      const ids = entries.map(([, etf]) => `${etf}-US`);
+      const data = await crossSectional(ids, ["P_PRICE", "P_TOTAL_RETURNC(-1D,0)", "P_TOTAL_RETURNC(-1M,0)"]);
+      const num = (row: Record<string, unknown> | undefined, f: string): number | null => {
+        const v = row?.[f];
+        return typeof v === "number" ? v : null;
+      };
+      const lines = entries
+        .map(([sector, etf]) => {
+          const row = data[`${etf}-US`];
+          const price = num(row, "P_PRICE");
+          if (price == null) return null;
+          const d1 = num(row, "P_TOTAL_RETURNC(-1D,0)");
+          const m1 = num(row, "P_TOTAL_RETURNC(-1M,0)");
+          const dayStr = d1 != null ? `${d1 >= 0 ? "+" : ""}${d1.toFixed(2)}% today, ` : "";
+          const monStr = m1 != null ? `${m1 >= 0 ? "+" : ""}${m1.toFixed(1)}% 1M, ` : "";
+          return `- ${sector} (${etf}): ${dayStr}${monStr}price $${price.toFixed(2)}`;
+        })
+        .filter(Boolean) as string[];
+      if (lines.length > 0) return lines.join("\n");
+    } catch (e) {
+      console.error("FactSet sector performance failed, falling back to Yahoo:", e);
+    }
+  }
+
   try {
-    const entries = Object.entries(SECTOR_ETFS);
     const results = await Promise.all(
       entries.map(async ([sector, etf]) => {
         try {
