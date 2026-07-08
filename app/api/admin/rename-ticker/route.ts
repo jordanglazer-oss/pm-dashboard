@@ -264,13 +264,16 @@ export async function GET(req: NextRequest) {
     }
   }
 
-  // ── 7. pm:pim-portfolio-state — DETECT ONLY (no auto-rewrite) ────────
-  // Transaction log + rebalance-snapshot price maps reference the symbol, but
-  // these are point-in-time trade/rebalance records (the trade genuinely
-  // executed under the OLD symbol). We surface any lingering references so the
-  // operator can decide, rather than silently rewriting history. The one place
-  // it can matter live is a trackingStart/lastRebalance `prices` map keyed by
-  // the old symbol (forward-performance baseline lookups go by current symbol).
+  // ── 7. pm:pim-portfolio-state — DETECT by default; relabel with includeState=YES
+  // Transaction log + rebalance-snapshot price maps reference the symbol. These
+  // are point-in-time trade/rebalance records, so by default we only REPORT
+  // lingering references. Pass &includeState=YES to also relabel them: the
+  // rebalance-snapshot `prices` keys (forward-performance baseline lookups go by
+  // the current symbol) and the transaction symbol/pairedWith fields. Relabeling
+  // is safe — it's the same instrument (a symbol change, not a different
+  // security) — and keeps the values verbatim, only swapping the label. Stashed
+  // + reversible like everything else.
+  const includeState = url.searchParams.get("includeState") === "YES";
   const stateRaw = await redis.get("pm:pim-portfolio-state");
   if (stateRaw) {
     try {
@@ -283,24 +286,48 @@ export async function GET(req: NextRequest) {
         }>;
       };
       const refs: string[] = [];
+      let txHits = 0;
+      let priceKeyHits = 0;
       for (const gs of state.groupStates ?? []) {
         const g = gs.groupId ?? "?";
         const txMatches = (gs.transactions ?? []).filter(
           (t) => canonicalTicker(t.symbol ?? "") === fromCanon || canonicalTicker(t.pairedWith ?? "") === fromCanon,
         ).length;
-        if (txMatches > 0) refs.push(`${g}: ${txMatches} transaction(s)`);
+        if (txMatches > 0) { refs.push(`${g}: ${txMatches} transaction(s)`); txHits += txMatches; }
         for (const snap of [gs.lastRebalance, gs.trackingStart]) {
           const priceKeys = Object.keys(snap?.prices ?? {});
-          if (priceKeys.some((k) => canonicalTicker(k) === fromCanon)) refs.push(`${g}: rebalance-snapshot price key`);
+          if (priceKeys.some((k) => canonicalTicker(k) === fromCanon)) { refs.push(`${g}: rebalance-snapshot price key`); priceKeyHits += 1; }
         }
       }
-      if (refs.length > 0) {
+
+      if (refs.length > 0 && includeState) {
+        changes.push(`pm:pim-portfolio-state: relabel ${fromCanon} → ${toDisplay} (${priceKeyHits} rebalance-snapshot price key(s), ${txHits} transaction field(s))`);
+        if (confirm) {
+          await stash("pm:pim-portfolio-state", stateRaw);
+          for (const gs of state.groupStates ?? []) {
+            for (const snap of [gs.lastRebalance, gs.trackingStart]) {
+              if (!snap?.prices) continue;
+              for (const k of Object.keys(snap.prices)) {
+                if (canonicalTicker(k) === fromCanon && k !== toDisplay) {
+                  snap.prices[toDisplay] = snap.prices[k];
+                  delete snap.prices[k];
+                }
+              }
+            }
+            for (const t of gs.transactions ?? []) {
+              if (canonicalTicker(t.symbol ?? "") === fromCanon) t.symbol = toDisplay;
+              if (canonicalTicker(t.pairedWith ?? "") === fromCanon) t.pairedWith = toDisplay;
+            }
+          }
+          await redis.set("pm:pim-portfolio-state", JSON.stringify(state));
+        }
+      } else if (refs.length > 0) {
         warnings.push(
-          `pm:pim-portfolio-state still references ${fromCanon} (${refs.join("; ")}). NOT auto-rewritten — these are historical trade/rebalance records. If forward-performance tracking looks off, ask to relabel the rebalance-snapshot price keys ${fromCanon} → ${toDisplay}.`,
+          `pm:pim-portfolio-state still references ${fromCanon} (${refs.join("; ")}). NOT rewritten by default — pass &includeState=YES to relabel the rebalance-snapshot price keys + transaction fields ${fromCanon} → ${toDisplay}.`,
         );
       }
     } catch {
-      warnings.push("pm:pim-portfolio-state: unreadable — skipped detection.");
+      warnings.push("pm:pim-portfolio-state: unreadable — skipped.");
     }
   }
 
