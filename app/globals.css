@@ -1,8 +1,76 @@
 @import "tailwindcss";
 
+/*
+ * ── "Precision Light" design tokens ─────────────────────────────────────────
+ * Registered with Tailwind v4 via @theme so each token also generates
+ * semantic utilities (e.g. bg-surface, text-ink, text-ink-2, border-line,
+ * rounded-card, font-mono). Components are migrated off hardcoded slate/blue
+ * classes onto these tokens screen-by-screen — until a screen is migrated it
+ * keeps working with its existing classes (this only ADDS utilities, it does
+ * not change any existing one).
+ *
+ * Values are the authoritative palette from the redesign handoff (§1).
+ */
+@theme {
+  /* Surfaces */
+  --color-ground: #f6f7f9;        /* page background */
+  --color-surface: #ffffff;       /* cards / panels */
+  --color-surface-2: #fafbfc;     /* subtle zebra / inset */
+  --color-surface-hover: #f4f6fb; /* row / control hover */
+
+  /* Hairlines */
+  --color-line: #e6e8ec;          /* card + strong divider */
+  --color-line-soft: #f0f1f4;     /* row divider */
+
+  /* Ink (text) */
+  --color-ink: #10151c;           /* primary */
+  --color-ink-2: #5b6472;         /* secondary */
+  --color-ink-3: #9aa3b0;         /* tertiary / placeholder */
+  --color-ink-faint: #c3c8d0;     /* faint */
+
+  /* Accent (brand) */
+  --color-accent: #2d5bd0;
+  --color-accent-ink: #2c43be;    /* accent text on tint */
+  --color-accent-soft: #eef4ff;   /* accent tint bg */
+  --color-accent-border: #cfe0ff;
+
+  /* Semantic status */
+  --color-pos: #12805c;
+  --color-pos-soft: #f0f9f4;
+  --color-pos-border: #bfe3d4;
+  --color-neg: #d1435b;
+  --color-neg-soft: #fdf2f3;
+  --color-neg-border: #f2c9cf;
+  --color-warn: #b8791f;
+  --color-warn-soft: #fbf6ea;
+  --color-warn-border: #f2e2bf;
+
+  /* Structural / alt accent */
+  --color-violet: #7c5cd0;
+  --color-violet-soft: #f3f0fb;
+
+  /* Radius — Precision Light drops the old 24px rounding */
+  --radius-card: 8px;
+  --radius-control: 8px;
+  --radius-pill: 20px;
+
+  /* Type — IBM Plex Sans (UI) / IBM Plex Mono (numbers/tickers) */
+  --font-sans: var(--font-plex-sans), -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, Helvetica, Arial, sans-serif;
+  --font-mono: var(--font-plex-mono), ui-monospace, "SF Mono", Menlo, Consolas, monospace;
+}
+
 :root {
-  --background: #f4f5f7;
-  --foreground: #0f172a;
+  /* Font stacks defined here (not only in @theme) so they resolve on the body
+     immediately — Tailwind v4 tree-shakes an unreferenced @theme font var out
+     of :root, which would leave var(--font-sans) empty until a font-* utility
+     is used somewhere. Same values as the @theme entries above. */
+  --font-sans: var(--font-plex-sans), -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, Helvetica, Arial, sans-serif;
+  --font-mono: var(--font-plex-mono), ui-monospace, "SF Mono", Menlo, Consolas, monospace;
+
+  /* Legacy aliases kept so any lingering var(--background)/var(--foreground)
+     references resolve to the new palette during the migration. */
+  --background: #f6f7f9;
+  --foreground: #10151c;
 }
 
 * {
@@ -16,9 +84,9 @@ html {
 body {
   margin: 0;
   min-height: 100vh;
-  background: var(--background);
-  color: var(--foreground);
-  font-family: Arial, Helvetica, sans-serif;
+  background: var(--color-ground);
+  color: var(--color-ink);
+  font-family: var(--font-sans);
 }
 
 a {
@@ -30,4 +98,10 @@ button,
 input,
 select {
   font: inherit;
+}
+
+/* Tabular numerals for the mono type so price/percent columns align. */
+.font-mono,
+[class*="font-mono"] {
+  font-variant-numeric: tabular-nums;
 }
