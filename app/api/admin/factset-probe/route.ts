@@ -74,6 +74,22 @@ const CANDIDATE_SETS: Record<string, { key: string; formula: string; note: strin
   ],
 };
 
+/**
+ * Candidate FactSet IDs for the Brief / market-regime data — indices, breadth
+ * indices (precomputed % above MA, so NO per-constituent computation),
+ * cross-asset, global, and the sector/factor ETFs. `?marketids=1` runs P_PRICE
+ * across all of them in ONE cheap call and reports which resolve, so we learn
+ * FactSet's symbology before wiring. Grouped by concept for readability.
+ */
+const MARKET_ID_CANDIDATES: { group: string; ids: string[] }[] = [
+  { group: "breadth-index (% S&P above MA — precomputed)", ids: ["S5TH", "S5FI", "S5TW", "S5TH-USA", "S5FI-USA", "SPXA200R", "SPXA50R", "SPXA200R-ST", "@SP500.PCTABOVE200"] },
+  { group: "sp500-index", ids: ["SP50", "SP50-USA", "SPX", "@.SPX", "SPX-INDEX", "ISPX"] },
+  { group: "vix-move", ids: ["VIX", "VIX-CBO", "VIX-INDEX", "MOVE", "MOVE-BAML", "MOVE-INDEX"] },
+  { group: "rates-fx-commodity", ids: ["TNX", "US10YT", "US10YT-TU1", "DXY", "DXY-FX", "USDX", "CL", "CL-NYM", "GC-NYM"] },
+  { group: "global-index", ids: ["SXXP", "STOXX", "SXXP-STX", "N225", "NKY", "N225-OSE"] },
+  { group: "sector-factor-etfs (expect -US works)", ids: ["SPY-US", "RSP-US", "XLK-US", "XLU-US", "XLY-US", "XLP-US", "MTUM-US", "USMV-US"] },
+];
+
 export async function GET(req: NextRequest) {
   const sp = new URL(req.url).searchParams;
 
@@ -83,6 +99,25 @@ export async function GET(req: NextRequest) {
       configured: false,
       hint: "Set FACTSET_RELAY_URL and FACTSET_RELAY_SECRET in Vercel env once the relay is live, then retry.",
     });
+  }
+
+  // ?marketids=1 → P_PRICE across all candidate index/breadth/cross-asset IDs.
+  if (sp.get("marketids")) {
+    const allIds = MARKET_ID_CANDIDATES.flatMap((g) => g.ids);
+    try {
+      const data = await crossSectional(allIds, ["P_PRICE"]);
+      const groups = MARKET_ID_CANDIDATES.map((g) => ({
+        group: g.group,
+        resolved: g.ids
+          .map((id) => ({ id, price: typeof data[id]?.["P_PRICE"] === "number" ? (data[id]["P_PRICE"] as number) : null }))
+          .filter((r) => r.price != null),
+        tried: g.ids,
+      }));
+      const working = groups.flatMap((g) => g.resolved.map((r) => `${r.id}=${r.price}`));
+      return NextResponse.json({ ok: true, mode: "marketids", working, groups });
+    } catch (e) {
+      return NextResponse.json({ ok: false, mode: "marketids", error: e instanceof Error ? e.message : String(e) }, { status: 502 });
+    }
   }
 
   // ?candidates=earnings|guidance|all[&id=AAPL-US] → validate the candidate
