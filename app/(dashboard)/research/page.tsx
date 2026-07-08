@@ -381,6 +381,7 @@ type UptickSortKey = "ticker" | "name" | "sector" | "price" | "support" | "resis
 type IdeaSortKey = "ticker" | "priceWhenAdded" | "currentPrice";
 type RBCSortKey = "ticker" | "name" | "sector" | "weight" | "dateAdded";
 type JpmSortKey = "name" | "ticker" | "industry" | "strategy" | "currentPrice" | "priceTarget";
+type EquateSortKey = "name" | "ticker" | "industry" | "currentPrice";
 type FewSortKey = "ticker" | "name" | "industry" | "price";
 type AlphaSortKey = "name" | "ticker" | "sector" | "rating" | "holdingWeight" | "currentPrice" | "priceWhenAdded" | "returnSinceAdded" | "dateAdded" | "days";
 type SortDir = "asc" | "desc";
@@ -485,10 +486,11 @@ export default function ResearchPage() {
   const setRbcSort = (next: { key: RBCSortKey; dir: SortDir }) => writeSort("research.rbcSortKey", "research.rbcSortDir", next);
   const rbcUsSort = readSort<RBCSortKey>("research.rbcUsSortKey", "research.rbcUsSortDir", RBC_SORT_KEYS, "ticker", "asc");
   const setRbcUsSort = (next: { key: RBCSortKey; dir: SortDir }) => writeSort("research.rbcUsSortKey", "research.rbcUsSortDir", next);
-  const equateCadSort = readSort<RBCSortKey>("research.equateCadSortKey", "research.equateCadSortDir", RBC_SORT_KEYS, "ticker", "asc");
-  const setEquateCadSort = (next: { key: RBCSortKey; dir: SortDir }) => writeSort("research.equateCadSortKey", "research.equateCadSortDir", next);
-  const equateUsdSort = readSort<RBCSortKey>("research.equateUsdSortKey", "research.equateUsdSortDir", RBC_SORT_KEYS, "ticker", "asc");
-  const setEquateUsdSort = (next: { key: RBCSortKey; dir: SortDir }) => writeSort("research.equateUsdSortKey", "research.equateUsdSortDir", next);
+  const EQUATE_SORT_KEYS: ReadonlyArray<EquateSortKey> = ["name", "ticker", "industry", "currentPrice"];
+  const equateCadSort = readSort<EquateSortKey>("research.equateCadSortKey", "research.equateCadSortDir", EQUATE_SORT_KEYS, "ticker", "asc");
+  const setEquateCadSort = (next: { key: EquateSortKey; dir: SortDir }) => writeSort("research.equateCadSortKey", "research.equateCadSortDir", next);
+  const equateUsdSort = readSort<EquateSortKey>("research.equateUsdSortKey", "research.equateUsdSortDir", EQUATE_SORT_KEYS, "ticker", "asc");
+  const setEquateUsdSort = (next: { key: EquateSortKey; dir: SortDir }) => writeSort("research.equateUsdSortKey", "research.equateUsdSortDir", next);
   const JPM_SORT_KEYS: ReadonlyArray<JpmSortKey> = ["name", "ticker", "industry", "strategy", "currentPrice", "priceTarget"];
   const jpmFocusSort = readSort<JpmSortKey>("research.jpmFocusSortKey", "research.jpmFocusSortDir", JPM_SORT_KEYS, "ticker", "asc");
   const setJpmFocusSort = (next: { key: JpmSortKey; dir: SortDir }) => writeSort("research.jpmFocusSortKey", "research.jpmFocusSortDir", next);
@@ -509,7 +511,12 @@ export default function ResearchPage() {
 
   const fetchFactsetPrices = useCallback(async (researchState?: ResearchState) => {
     const s = researchState || state;
-    const tickers = [...new Set((s.jpmUsAnalystFocus ?? []).map((r) => r.ticker))];
+    // JPM + both RBC Equate lists show a LIVE FactSet price column.
+    const tickers = [...new Set([
+      ...(s.jpmUsAnalystFocus ?? []).map((r) => r.ticker),
+      ...(s.equateCad ?? []).map((r) => r.ticker),
+      ...(s.equateUsd ?? []).map((r) => r.ticker),
+    ])];
     if (tickers.length === 0) return;
     setFactsetPricesLoading(true);
     try {
@@ -637,10 +644,10 @@ export default function ResearchPage() {
   function toggleRbcUsSort(key: RBCSortKey) {
     setRbcUsSort(rbcUsSort.key === key ? { key, dir: rbcUsSort.dir === "asc" ? "desc" : "asc" } : { key, dir: "asc" });
   }
-  function toggleEquateCadSort(key: RBCSortKey) {
+  function toggleEquateCadSort(key: EquateSortKey) {
     setEquateCadSort(equateCadSort.key === key ? { key, dir: equateCadSort.dir === "asc" ? "desc" : "asc" } : { key, dir: "asc" });
   }
-  function toggleEquateUsdSort(key: RBCSortKey) {
+  function toggleEquateUsdSort(key: EquateSortKey) {
     setEquateUsdSort(equateUsdSort.key === key ? { key, dir: equateUsdSort.dir === "asc" ? "desc" : "asc" } : { key, dir: "asc" });
   }
   function toggleJpmFocusSort(key: JpmSortKey) {
@@ -700,17 +707,21 @@ export default function ResearchPage() {
       return dir === "asc" ? cmp : -cmp;
     });
   }
+  function compareEquate(a: RBCEntry, b: RBCEntry, key: EquateSortKey): number {
+    if (key === "currentPrice") return (factsetPrices[a.ticker] ?? 0) - (factsetPrices[b.ticker] ?? 0);
+    return String(a[key] || "").localeCompare(String(b[key] || ""));
+  }
   function sortedEquateCad() {
     return [...(state.equateCad || [])].sort((a, b) => {
       const { key, dir } = equateCadSort;
-      const cmp = compareRbc(a, b, key);
+      const cmp = compareEquate(a, b, key);
       return dir === "asc" ? cmp : -cmp;
     });
   }
   function sortedEquateUsd() {
     return [...(state.equateUsd || [])].sort((a, b) => {
       const { key, dir } = equateUsdSort;
-      const cmp = compareRbc(a, b, key);
+      const cmp = compareEquate(a, b, key);
       return dir === "asc" ? cmp : -cmp;
     });
   }
@@ -757,8 +768,8 @@ export default function ResearchPage() {
   const sbArrow = (key: IdeaSortKey) => smidBottomSort.key === key ? (smidBottomSort.dir === "asc" ? " ▲" : " ▼") : "";
   const rArrow = (key: RBCSortKey) => rbcSort.key === key ? (rbcSort.dir === "asc" ? " ▲" : " ▼") : "";
   const rUsArrow = (key: RBCSortKey) => rbcUsSort.key === key ? (rbcUsSort.dir === "asc" ? " ▲" : " ▼") : "";
-  const ecArrow = (key: RBCSortKey) => equateCadSort.key === key ? (equateCadSort.dir === "asc" ? " ▲" : " ▼") : "";
-  const euArrow = (key: RBCSortKey) => equateUsdSort.key === key ? (equateUsdSort.dir === "asc" ? " ▲" : " ▼") : "";
+  const ecArrow = (key: EquateSortKey) => equateCadSort.key === key ? (equateCadSort.dir === "asc" ? " ▲" : " ▼") : "";
+  const euArrow = (key: EquateSortKey) => equateUsdSort.key === key ? (equateUsdSort.dir === "asc" ? " ▲" : " ▼") : "";
   const jArrow = (key: JpmSortKey) => jpmFocusSort.key === key ? (jpmFocusSort.dir === "asc" ? " ▲" : " ▼") : "";
   const fArrow = (key: FewSortKey) => fewSort.key === key ? (fewSort.dir === "asc" ? " ▲" : " ▼") : "";
 
@@ -1458,8 +1469,10 @@ export default function ResearchPage() {
         void refreshRbcNames("rbcUsFocus", nextState);
       } else if (source === "rbc-equate-cad") {
         void refreshRbcNames("equateCad", nextState);
+        void fetchFactsetPrices(nextState);
       } else if (source === "rbc-equate-usd") {
         void refreshRbcNames("equateUsd", nextState);
+        void fetchFactsetPrices(nextState);
       } else if (source === "jpm-us-analyst-focus") {
         void refreshRbcNames("jpmUsAnalystFocus", nextState);
         void fetchFactsetPrices(nextState);
@@ -3001,38 +3014,22 @@ export default function ResearchPage() {
           <div className="overflow-x-auto"><table className="w-full text-sm">
             <thead>
               <tr className="border-b-2 border-sky-500 text-left">
-                <th className="py-2 pr-2 text-xs font-semibold text-sky-700 w-8">#</th>
+                <th className="py-2 pr-3 text-xs font-semibold text-sky-700 cursor-pointer hover:text-sky-900 select-none" onClick={() => toggleEquateCadSort("name")}>Company name{ecArrow("name")}</th>
                 <th className="py-2 pr-3 text-xs font-semibold text-sky-700 cursor-pointer hover:text-sky-900 select-none" onClick={() => toggleEquateCadSort("ticker")}>Ticker{ecArrow("ticker")}</th>
-                <th className="py-2 pr-3 text-xs font-semibold text-sky-700 cursor-pointer hover:text-sky-900 select-none" onClick={() => toggleEquateCadSort("name")}>Name{ecArrow("name")}</th>
-                <th className="py-2 pr-3 text-xs font-semibold text-sky-700 cursor-pointer hover:text-sky-900 select-none" onClick={() => toggleEquateCadSort("sector")}>Sector{ecArrow("sector")}</th>
-                <th className="py-2 pr-3 text-xs font-semibold text-sky-700 cursor-pointer hover:text-sky-900 select-none" onClick={() => toggleEquateCadSort("weight")}>Weight (%){ecArrow("weight")}</th>
+                <th className="py-2 pr-3 text-xs font-semibold text-sky-700 cursor-pointer hover:text-sky-900 select-none" onClick={() => toggleEquateCadSort("industry")}>Industry{ecArrow("industry")}</th>
+                <th className="py-2 pr-3 text-xs font-semibold text-sky-700 text-right cursor-pointer hover:text-sky-900 select-none" onClick={() => toggleEquateCadSort("currentPrice")}>Current price{ecArrow("currentPrice")}</th>
                 <th className="py-2 w-24"></th>
               </tr>
             </thead>
             <tbody>
-              {sortedEquateCad().map((item, i) => (
+              {sortedEquateCad().map((item, i) => {
+                const fsPrice = factsetPrices[item.ticker];
+                return (
                 <tr key={item.ticker} className={`border-b border-slate-100 ${i % 2 === 0 ? "bg-white" : "bg-sky-50/30"} hover:bg-sky-50/60 transition-colors`}>
-                  <td className="py-2 pr-2 text-slate-400">{i + 1}</td>
+                  <td className="py-2 pr-3 text-slate-700 truncate max-w-[240px]" title={item.name || item.ticker}>{item.name || <span className="text-slate-300 italic">—</span>}</td>
                   <td className="py-2 pr-3 font-mono font-bold text-sky-700">${displayTicker(item.ticker)}</td>
-                  <td className="py-2 pr-3 text-slate-700 truncate max-w-[260px]" title={item.name || item.ticker}>{item.name || <span className="text-slate-300 italic">—</span>}</td>
-                  <td className="py-2 pr-3 text-slate-600">{item.sector}</td>
-                  <td className="py-2 pr-3 text-slate-500">
-                    <input
-                      type="text"
-                      inputMode="decimal"
-                      value={item.weight ?? 0}
-                      onChange={(e) => {
-                        const val = e.target.value;
-                        const list = [...(state.equateCad || [])];
-                        const idx = list.findIndex((r) => r.ticker === item.ticker);
-                        if (idx >= 0) {
-                          list[idx] = { ...list[idx], weight: val === "" || val === "-" ? 0 : parseFloat(val) || 0 };
-                          save({ ...state, equateCad: list });
-                        }
-                      }}
-                      className="w-16 rounded border border-transparent px-1 py-0.5 text-sm text-center hover:border-slate-200 focus:border-sky-300 focus:outline-none bg-transparent"
-                    />
-                  </td>
+                  <td className="py-2 pr-3 text-slate-600 truncate max-w-[180px]" title={item.industry || ""}>{item.industry || <span className="text-slate-300">—</span>}</td>
+                  <td className="py-2 pr-3 text-right font-mono text-slate-700 whitespace-nowrap">{typeof fsPrice === "number" ? `$${fsPrice.toFixed(2)}` : <span className="text-slate-300">—</span>}</td>
                   <td className="py-2 text-right whitespace-nowrap">
                     {scoredStocks.some((s) => s.ticker === item.ticker) ? (
                       <span className="text-[10px] text-emerald-500 font-medium">In list</span>
@@ -3048,9 +3045,10 @@ export default function ResearchPage() {
                     <button onClick={() => removeEquateCad(item.ticker)} className="ml-2 text-slate-300 hover:text-red-500 font-bold transition-colors">&times;</button>
                   </td>
                 </tr>
-              ))}
+                );
+              })}
               {(state.equateCad || []).length === 0 && (
-                <tr><td colSpan={6} className="py-6 text-center text-slate-400 italic">No names added yet</td></tr>
+                <tr><td colSpan={5} className="py-6 text-center text-slate-400 italic">No names added yet</td></tr>
               )}
             </tbody>
           </table></div>
@@ -3060,7 +3058,7 @@ export default function ResearchPage() {
           <ResearchScraperBlock
             source="rbc-equate-cad"
             sectionLabel="RBC Equate — Canada Large Cap CORE 40"
-            helperText="Upload an RBC Equate screenshot. On Refresh, the Canada Large Cap CORE 40 Model Portfolio is read from the PDF — ticker + sector + weight + date are extracted and merged."
+            helperText="Upload the RBC Equate PDF. On Refresh, ONLY the Canada Large Cap CORE 40 Model Portfolio is read (other lists ignored) — company name + ticker + industry are extracted; current price is live from FactSet."
             attachments={state.attachments || []}
             onAddAttachment={addAttachment}
             onRemoveAttachment={removeAttachment}
@@ -3086,38 +3084,22 @@ export default function ResearchPage() {
           <div className="overflow-x-auto"><table className="w-full text-sm">
             <thead>
               <tr className="border-b-2 border-sky-500 text-left">
-                <th className="py-2 pr-2 text-xs font-semibold text-sky-700 w-8">#</th>
+                <th className="py-2 pr-3 text-xs font-semibold text-sky-700 cursor-pointer hover:text-sky-900 select-none" onClick={() => toggleEquateUsdSort("name")}>Company name{euArrow("name")}</th>
                 <th className="py-2 pr-3 text-xs font-semibold text-sky-700 cursor-pointer hover:text-sky-900 select-none" onClick={() => toggleEquateUsdSort("ticker")}>Ticker{euArrow("ticker")}</th>
-                <th className="py-2 pr-3 text-xs font-semibold text-sky-700 cursor-pointer hover:text-sky-900 select-none" onClick={() => toggleEquateUsdSort("name")}>Name{euArrow("name")}</th>
-                <th className="py-2 pr-3 text-xs font-semibold text-sky-700 cursor-pointer hover:text-sky-900 select-none" onClick={() => toggleEquateUsdSort("sector")}>Sector{euArrow("sector")}</th>
-                <th className="py-2 pr-3 text-xs font-semibold text-sky-700 cursor-pointer hover:text-sky-900 select-none" onClick={() => toggleEquateUsdSort("weight")}>Weight (%){euArrow("weight")}</th>
+                <th className="py-2 pr-3 text-xs font-semibold text-sky-700 cursor-pointer hover:text-sky-900 select-none" onClick={() => toggleEquateUsdSort("industry")}>Industry{euArrow("industry")}</th>
+                <th className="py-2 pr-3 text-xs font-semibold text-sky-700 text-right cursor-pointer hover:text-sky-900 select-none" onClick={() => toggleEquateUsdSort("currentPrice")}>Current price{euArrow("currentPrice")}</th>
                 <th className="py-2 w-24"></th>
               </tr>
             </thead>
             <tbody>
-              {sortedEquateUsd().map((item, i) => (
+              {sortedEquateUsd().map((item, i) => {
+                const fsPrice = factsetPrices[item.ticker];
+                return (
                 <tr key={item.ticker} className={`border-b border-slate-100 ${i % 2 === 0 ? "bg-white" : "bg-sky-50/30"} hover:bg-sky-50/60 transition-colors`}>
-                  <td className="py-2 pr-2 text-slate-400">{i + 1}</td>
+                  <td className="py-2 pr-3 text-slate-700 truncate max-w-[240px]" title={item.name || item.ticker}>{item.name || <span className="text-slate-300 italic">—</span>}</td>
                   <td className="py-2 pr-3 font-mono font-bold text-sky-700">${displayTicker(item.ticker)}</td>
-                  <td className="py-2 pr-3 text-slate-700 truncate max-w-[260px]" title={item.name || item.ticker}>{item.name || <span className="text-slate-300 italic">—</span>}</td>
-                  <td className="py-2 pr-3 text-slate-600">{item.sector}</td>
-                  <td className="py-2 pr-3 text-slate-500">
-                    <input
-                      type="text"
-                      inputMode="decimal"
-                      value={item.weight ?? 0}
-                      onChange={(e) => {
-                        const val = e.target.value;
-                        const list = [...(state.equateUsd || [])];
-                        const idx = list.findIndex((r) => r.ticker === item.ticker);
-                        if (idx >= 0) {
-                          list[idx] = { ...list[idx], weight: val === "" || val === "-" ? 0 : parseFloat(val) || 0 };
-                          save({ ...state, equateUsd: list });
-                        }
-                      }}
-                      className="w-16 rounded border border-transparent px-1 py-0.5 text-sm text-center hover:border-slate-200 focus:border-sky-300 focus:outline-none bg-transparent"
-                    />
-                  </td>
+                  <td className="py-2 pr-3 text-slate-600 truncate max-w-[180px]" title={item.industry || ""}>{item.industry || <span className="text-slate-300">—</span>}</td>
+                  <td className="py-2 pr-3 text-right font-mono text-slate-700 whitespace-nowrap">{typeof fsPrice === "number" ? `$${fsPrice.toFixed(2)}` : <span className="text-slate-300">—</span>}</td>
                   <td className="py-2 text-right whitespace-nowrap">
                     {scoredStocks.some((s) => s.ticker === item.ticker) ? (
                       <span className="text-[10px] text-emerald-500 font-medium">In list</span>
@@ -3133,9 +3115,10 @@ export default function ResearchPage() {
                     <button onClick={() => removeEquateUsd(item.ticker)} className="ml-2 text-slate-300 hover:text-red-500 font-bold transition-colors">&times;</button>
                   </td>
                 </tr>
-              ))}
+                );
+              })}
               {(state.equateUsd || []).length === 0 && (
-                <tr><td colSpan={6} className="py-6 text-center text-slate-400 italic">No names added yet</td></tr>
+                <tr><td colSpan={5} className="py-6 text-center text-slate-400 italic">No names added yet</td></tr>
               )}
             </tbody>
           </table></div>
@@ -3145,7 +3128,7 @@ export default function ResearchPage() {
           <ResearchScraperBlock
             source="rbc-equate-usd"
             sectionLabel="RBC Equate — U.S. All Cap CORE 40"
-            helperText="Upload an RBC Equate screenshot. On Refresh, the U.S. All Cap CORE 40 Model Portfolio is read from the PDF — ticker + sector + weight + date are extracted and merged."
+            helperText="Upload the RBC Equate PDF. On Refresh, ONLY the U.S. All Cap CORE 40 Model Portfolio is read (other lists ignored) — company name + ticker + industry are extracted; current price is live from FactSet."
             attachments={state.attachments || []}
             onAddAttachment={addAttachment}
             onRemoveAttachment={removeAttachment}

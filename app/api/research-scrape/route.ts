@@ -290,15 +290,14 @@ Example: [{"name":"NVIDIA Corp","ticker":"NVDA","industry":"Semiconductors","str
 
 From the Canada Large Cap CORE 40 Model Portfolio ONLY, extract every constituent:
   - Ticker / Symbol → \`ticker\` (string, required, UPPERCASE). These are Canadian (TSX) listings. RBC may show "-T" suffixes or no suffix; CONVERT every ticker to Yahoo "${"."}TO" form (e.g. "RY-T" → "RY.TO", "CNR" → "CNR.TO"). If already ".TO", keep it. For dual-class shares written with "/" (e.g. "BBD/B"), convert the slash to a dash before adding the suffix ("BBD-B.TO").
-  - Company / Name → \`name\` (string, if shown)
-  - Sector → \`sector\` (string, if shown)
-  - Weight / Model Weight / Portfolio Weight → \`weight\` (NUMBER as a percentage; strip % and commas)
+  - Company / Name → \`name\` (string, the company name as shown)
+  - Industry / Sub-Industry / Sector → \`industry\` (string, the industry label as shown — pass through verbatim)
 
-If a column is missing or blank, OMIT that key.
+Do NOT extract weight or the current/last price — the price is fetched live from FactSet, not the document. If a column is missing or blank, OMIT that key.
 
 ${common}
 
-Example: [{"ticker":"RY.TO","name":"Royal Bank of Canada","sector":"Financials","weight":4.2},{"ticker":"CNR.TO","name":"Canadian National Railway","sector":"Industrials","weight":3.1}]`;
+Example: [{"ticker":"RY.TO","name":"Royal Bank of Canada","industry":"Banks"},{"ticker":"CNR.TO","name":"Canadian National Railway","industry":"Road & Rail"}]`;
   }
 
   if (source === "rbc-equate-usd") {
@@ -306,15 +305,14 @@ Example: [{"ticker":"RY.TO","name":"Royal Bank of Canada","sector":"Financials",
 
 From the U.S. All Cap CORE 40 Model Portfolio ONLY, extract every constituent:
   - Ticker / Symbol → \`ticker\` (string, required, UPPERCASE). US listings — bare tickers, NO "-T" or ".TO" suffix (e.g. "AAPL", "MSFT", "JPM"). Dual-class shares written with "/" (e.g. "BRK/B") → dash form ("BRK-B").
-  - Company / Name → \`name\` (string, if shown)
-  - Sector → \`sector\` (string, if shown)
-  - Weight / Model Weight / Portfolio Weight → \`weight\` (NUMBER as a percentage; strip % and commas)
+  - Company / Name → \`name\` (string, the company name as shown)
+  - Industry / Sub-Industry / Sector → \`industry\` (string, the industry label as shown — pass through verbatim)
 
-If a column is missing or blank, OMIT that key.
+Do NOT extract weight or the current/last price — the price is fetched live from FactSet, not the document. If a column is missing or blank, OMIT that key.
 
 ${common}
 
-Example: [{"ticker":"AAPL","name":"Apple Inc","sector":"Technology","weight":4.0},{"ticker":"BRK-B","name":"Berkshire Hathaway","sector":"Financials","weight":3.5}]`;
+Example: [{"ticker":"AAPL","name":"Apple Inc","industry":"Technology Hardware"},{"ticker":"BRK-B","name":"Berkshire Hathaway","industry":"Insurance"}]`;
   }
 
   if (source === "rbccm-few") {
