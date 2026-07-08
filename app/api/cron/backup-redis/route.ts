@@ -4,6 +4,7 @@ import { checkInvariants, persistInvariantResult } from "@/app/lib/redis-invaria
 import { blobConfigured } from "@/app/lib/blob-store";
 import { writeBackupBlob, pruneBackupBlobs } from "@/app/lib/backup-store";
 import { pruneStashes } from "@/app/lib/stash-prune";
+import { captureLiveHedgingSnapshot } from "@/app/lib/hedging";
 
 // Dead pre-operation rollback stashes older than this are auto-purged each
 // nightly run so Redis self-maintains and never creeps back toward OOM.
@@ -209,6 +210,21 @@ export async function GET(req: NextRequest) {
       console.error("[backup-redis] stash prune failed (backup still ok):", e);
     }
 
+    // ── 4c. Capture today's SPY hedging snapshot ─────────────────────
+    //        Piggybacks on the one daily cron slot (Hobby tier allows only
+    //        one). Building the ledger daily — not just when the user opens
+    //        the Hedging tab — is what makes week-over-week comparisons
+    //        populate. Best-effort: a CBOE hiccup must not fail the backup. ──
+    let hedgingSnapshot: { captured: true; date: string; totalSnapshots: number } | { captured: false; error: string };
+    try {
+      const res = await captureLiveHedgingSnapshot();
+      hedgingSnapshot = { captured: true, date: res.date, totalSnapshots: res.totalSnapshots };
+    } catch (e) {
+      const msg = e instanceof Error ? e.message : String(e);
+      console.error("[backup-redis] Hedging snapshot capture failed (backup still ok):", msg);
+      hedgingSnapshot = { captured: false, error: msg };
+    }
+
     // ── 5. Run invariant check inline ────────────────────────────────
     // Best-effort: a thrown invariant check must not turn a successful
     // backup into a failed response. We log + carry on if it errors.
@@ -243,6 +259,7 @@ export async function GET(req: NextRequest) {
       prunedBlobBackups: toDelete,
       purgedLegacyRedisBackups: legacyRedisBackups.length,
       stashesPurged,
+      hedgingSnapshot,
       invariantCheck: invariantSummary,
       elapsedMs: Date.now() - startedAt,
     });

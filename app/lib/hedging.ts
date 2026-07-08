@@ -240,6 +240,73 @@ export async function loadHedgingHistory(): Promise<HedgingSnapshotShape[]> {
   }
 }
 
+/**
+ * Fetch live SPY hedging costs and append them to the `pm:hedging-history`
+ * ledger as today's snapshot — the same shape the Hedging tab writes on
+ * refresh. Meant to be called from the daily cron so the ledger builds
+ * density even on days the user never opens the tab (which is why
+ * week-over-week comparisons were coming up empty). Read-modify-write:
+ * replaces today's entry if present, else appends; never touches prior days.
+ *
+ * Best-effort — throws are the caller's to swallow so the cron's primary job
+ * (the nightly backup) is never jeopardised.
+ */
+export async function captureLiveHedgingSnapshot(): Promise<{ date: string; totalSnapshots: number }> {
+  const redis = await getRedis();
+
+  // Include any custom strikes the user tracks so their WoW/MoM rows fill too.
+  let extraStrikes: number[] = [];
+  try {
+    const rawCs = await redis.get("pm:hedging-custom-strikes");
+    if (rawCs) {
+      const parsed = JSON.parse(rawCs);
+      const list = Array.isArray(parsed?.strikes) ? parsed.strikes : [];
+      extraStrikes = list.filter((n: unknown) => typeof n === "number" && Number.isFinite(n) && n > 0);
+    }
+  } catch {
+    extraStrikes = [];
+  }
+
+  const live = await fetchLiveHedgingCosts(extraStrikes);
+  if (!live.quotes.length) throw new Error("No quotes in live hedging data — refusing to write empty snapshot");
+
+  const date = new Date().toISOString().slice(0, 10);
+  const snapshot = {
+    date,
+    fetchedAt: live.fetchedAt,
+    spotPrice: live.spotPrice,
+    quotes: live.quotes.map((q) => ({
+      expiry: q.expiry,
+      atmStrike: q.atmStrike,
+      atmPremium: q.atmPremium,
+      otm5Strike: q.otm5Strike,
+      otm5Premium: q.otm5Premium,
+      otm10Strike: q.otm10Strike,
+      otm10Premium: q.otm10Premium,
+    })),
+    customRows: (live.customRows || []).map((r) => ({
+      strike: r.strike,
+      quotes: r.quotes.map((q) => ({ expiry: q.expiry, premium: q.premium })),
+    })),
+  };
+
+  // Read-modify-write: preserve every prior day; replace only today's entry.
+  const raw = await redis.get("pm:hedging-history");
+  const history = raw ? JSON.parse(raw) : { snapshots: [], lastUpdated: null };
+  const snapshots: Array<{ date: string }> = Array.isArray(history.snapshots) ? history.snapshots : [];
+  const idx = snapshots.findIndex((s) => s.date === date);
+  if (idx >= 0) {
+    snapshots[idx] = snapshot;
+  } else {
+    snapshots.push(snapshot);
+    snapshots.sort((a, b) => a.date.localeCompare(b.date));
+  }
+  const next = { ...history, snapshots, lastUpdated: new Date().toISOString() };
+  await redis.set("pm:hedging-history", JSON.stringify(next));
+
+  return { date, totalSnapshots: snapshots.length };
+}
+
 /** Closest snapshot within ±tolerance days of daysAgo, else null. */
 export function findSnapshotDaysAgo(
   history: HedgingSnapshotShape[],
