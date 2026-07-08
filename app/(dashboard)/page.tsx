@@ -93,7 +93,7 @@ export default function DashboardPage() {
   }
 
   return (
-    <main className="min-h-screen bg-[#f4f5f7] px-4 py-6 text-slate-900 md:px-8 md:py-8 overflow-x-hidden">
+    <main className="min-h-screen bg-ground px-4 py-6 text-ink md:px-8 md:py-8 overflow-x-hidden">
       <div className="mx-auto max-w-7xl space-y-6">
 
         {/* Deterministic regime pulse — sits above the manual regime
@@ -113,14 +113,14 @@ export default function DashboardPage() {
         <div className="grid gap-4 lg:grid-cols-2">
 
           {/* Add Holding Card */}
-          <div className="rounded-[24px] border border-slate-200 bg-white p-5 shadow-sm">
-            <h2 className="text-lg font-bold text-slate-800 mb-3">Add a Holding</h2>
-            <p className="text-sm text-slate-500 mb-4">
+          <div className="rounded-card border border-line bg-surface p-5 shadow-sm">
+            <h2 className="text-lg font-bold text-ink mb-3">Add a Holding</h2>
+            <p className="text-sm text-ink-2 mb-4">
               Enter a ticker (stock, ETF) or FUNDSERV code (Canadian mutual fund, e.g. TDB900) to add.
               {detectedType && detectedType !== "stock" ? (
-                <span className="text-amber-600 font-medium"> Auto-scoring is not available for {INSTRUMENT_LABELS[detectedType]}s — use the weight field to set the allocation.</span>
+                <span className="text-warn font-medium"> Auto-scoring is not available for {INSTRUMENT_LABELS[detectedType]}s — use the weight field to set the allocation.</span>
               ) : (
-                <> Use the <span className="font-semibold text-blue-600">Score</span> button on the stock page to auto-score with Claude.</>
+                <> Use the <span className="font-semibold text-accent">Score</span> button on the stock page to auto-score with Claude.</>
               )}
             </p>
             <div className="flex flex-wrap gap-3">
@@ -131,10 +131,10 @@ export default function DashboardPage() {
                   onBlur={() => newTicker.trim() && detectType(newTicker.trim().toUpperCase())}
                   onKeyDown={(e) => e.key === "Enter" && handleAdd()}
                   placeholder="e.g. AAPL, SPY, TDB900"
-                  className="w-full rounded-xl border border-slate-200 bg-white px-4 py-2.5 text-sm outline-none placeholder:text-slate-400 focus:border-blue-400 focus:ring-1 focus:ring-blue-200"
+                  className="w-full rounded-control border border-line bg-surface px-4 py-2.5 text-sm outline-none placeholder:text-ink-3 focus:border-accent focus:ring-1 focus:ring-accent-soft"
                 />
                 {detectedType && detectedType !== "stock" && (
-                  <span className={`absolute right-2 top-1/2 -translate-y-1/2 rounded-md px-2 py-0.5 text-[10px] font-bold ${detectedType === "etf" ? "bg-indigo-100 text-indigo-700" : "bg-purple-100 text-purple-700"}`}>
+                  <span className={`absolute right-2 top-1/2 -translate-y-1/2 rounded-md px-2 py-0.5 text-[10px] font-bold ${detectedType === "etf" ? "bg-accent-soft text-accent-ink" : "bg-violet-soft text-violet"}`}>
                     {INSTRUMENT_LABELS[detectedType]}
                   </span>
                 )}
@@ -142,7 +142,7 @@ export default function DashboardPage() {
               <select
                 value={newBucket}
                 onChange={(e) => setNewBucket(e.target.value as "Portfolio" | "Watchlist")}
-                className="rounded-xl border border-slate-200 bg-white px-3 py-2.5 text-sm"
+                className="rounded-control border border-line bg-surface px-3 py-2.5 text-sm"
               >
                 <option>Portfolio</option>
                 <option>Watchlist</option>
@@ -155,13 +155,13 @@ export default function DashboardPage() {
                   type="number"
                   step="0.1"
                   min="0"
-                  className="w-24 rounded-xl border border-slate-200 bg-white px-3 py-2.5 text-sm outline-none placeholder:text-slate-400 focus:border-blue-400 focus:ring-1 focus:ring-blue-200"
+                  className="w-24 rounded-control border border-line bg-surface px-3 py-2.5 text-sm outline-none placeholder:text-ink-3 focus:border-accent focus:ring-1 focus:ring-accent-soft"
                 />
               )}
               <button
                 onClick={handleAdd}
                 disabled={adding}
-                className="rounded-xl bg-blue-600 px-5 py-2.5 text-sm font-semibold text-white hover:bg-blue-700 transition-colors disabled:opacity-50"
+                className="rounded-control bg-accent px-5 py-2.5 text-sm font-semibold text-white hover:bg-accent-ink transition-colors disabled:opacity-50"
               >
                 {adding ? "Adding..." : "Add"}
               </button>
@@ -169,55 +169,55 @@ export default function DashboardPage() {
           </div>
 
           {/* Regime Info Card */}
-          <div className={`rounded-[24px] border p-5 shadow-sm ${
+          <div className={`rounded-card border p-5 shadow-sm ${
             regime === "Risk-Off"
-              ? "border-red-200 bg-red-50"
+              ? "border-neg-border bg-neg-soft"
               : regime === "Neutral"
-              ? "border-amber-200 bg-amber-50"
-              : "border-emerald-200 bg-emerald-50"
+              ? "border-warn-border bg-warn-soft"
+              : "border-pos-border bg-pos-soft"
           }`}>
             <div className="flex items-center gap-3 mb-3">
-              <h2 className="text-lg font-bold text-slate-800">Market Regime</h2>
+              <h2 className="text-lg font-bold text-ink">Market Regime</h2>
               <span className={`rounded-full px-3 py-1 text-xs font-bold ${
                 regime === "Risk-Off"
-                  ? "bg-red-200 text-red-800"
+                  ? "bg-neg-soft text-neg"
                   : regime === "Neutral"
-                  ? "bg-amber-200 text-amber-800"
-                  : "bg-emerald-200 text-emerald-800"
+                  ? "bg-warn-soft text-warn"
+                  : "bg-pos-soft text-pos"
               }`}>
                 {regime}
               </span>
             </div>
 
             {regime === "Risk-Off" && (
-              <div className="space-y-2 text-sm text-slate-700">
-                <p className="font-medium text-red-800">
+              <div className="space-y-2 text-sm text-ink">
+                <p className="font-medium text-neg">
                   Defensive posture active — scores are adjusted by sector type:
                 </p>
-                <ul className="list-disc list-inside space-y-1 text-slate-600">
+                <ul className="list-disc list-inside space-y-1 text-ink-2">
                   <li>
-                    <span className="font-semibold text-red-600">Growth sectors</span> (Tech, Comm Services, Consumer Disc) → <span className="font-bold">0.85x</span> — penalized for elevated drawdown risk.
+                    <span className="font-semibold text-neg">Growth sectors</span> (Tech, Comm Services, Consumer Disc) → <span className="font-bold">0.85x</span> — penalized for elevated drawdown risk.
                   </li>
                   <li>
-                    <span className="font-semibold text-amber-600">Cyclical sectors</span> (Financials, Industrials, Materials) → <span className="font-bold">0.90x</span> — penalized for economic sensitivity.
+                    <span className="font-semibold text-warn">Cyclical sectors</span> (Financials, Industrials, Materials) → <span className="font-bold">0.90x</span> — penalized for economic sensitivity.
                   </li>
                   <li>
-                    <span className="font-semibold text-emerald-600">Defensive sectors</span> (Utilities, Staples, Health Care) → <span className="font-bold">1.10x</span> — boosted for capital preservation.
+                    <span className="font-semibold text-pos">Defensive sectors</span> (Utilities, Staples, Health Care) → <span className="font-bold">1.10x</span> — boosted for capital preservation.
                   </li>
                   <li>
                     Elevated volatility, wider credit spreads, and weak breadth — conditions support defensive positioning. See the Morning Brief for live readings.
                   </li>
                 </ul>
-                <a href="#regime-detail" className="mt-2 inline-block text-xs font-semibold text-red-600 hover:text-red-800 transition-colors">View per-stock regime detail ↓</a>
+                <a href="#regime-detail" className="mt-2 inline-block text-xs font-semibold text-neg hover:text-neg transition-colors">View per-stock regime detail ↓</a>
               </div>
             )}
 
             {regime === "Neutral" && (
-              <div className="space-y-2 text-sm text-slate-700">
-                <p className="font-medium text-amber-800">
+              <div className="space-y-2 text-sm text-ink">
+                <p className="font-medium text-warn">
                   Mixed environment — no regime adjustment applied:
                 </p>
-                <ul className="list-disc list-inside space-y-1 text-slate-600">
+                <ul className="list-disc list-inside space-y-1 text-ink-2">
                   <li>
                     All sectors → <span className="font-bold">1.0x</span> — raw score equals adjusted score.
                   </li>
@@ -225,30 +225,30 @@ export default function DashboardPage() {
                     No strong signal — scores are driven entirely by fundamentals and quality. Cross-currents suggest balanced positioning until a clearer regime emerges. See the Morning Brief for live readings.
                   </li>
                 </ul>
-                <a href="#regime-detail" className="mt-2 inline-block text-xs font-semibold text-amber-600 hover:text-amber-800 transition-colors">View per-stock regime detail ↓</a>
+                <a href="#regime-detail" className="mt-2 inline-block text-xs font-semibold text-warn hover:text-warn transition-colors">View per-stock regime detail ↓</a>
               </div>
             )}
 
             {regime === "Risk-On" && (
-              <div className="space-y-2 text-sm text-slate-700">
-                <p className="font-medium text-emerald-800">
+              <div className="space-y-2 text-sm text-ink">
+                <p className="font-medium text-pos">
                   Growth-favoring environment — scores tilted toward growth and cyclicals:
                 </p>
-                <ul className="list-disc list-inside space-y-1 text-slate-600">
+                <ul className="list-disc list-inside space-y-1 text-ink-2">
                   <li>
-                    <span className="font-semibold text-emerald-600">Growth sectors</span> (Tech, Comm Services, Consumer Disc) → <span className="font-bold">1.10x</span> — boosted to reflect momentum and risk appetite.
+                    <span className="font-semibold text-pos">Growth sectors</span> (Tech, Comm Services, Consumer Disc) → <span className="font-bold">1.10x</span> — boosted to reflect momentum and risk appetite.
                   </li>
                   <li>
-                    <span className="font-semibold text-emerald-500">Cyclical sectors</span> (Financials, Industrials, Materials) → <span className="font-bold">1.05x</span> — boosted for economic activity tailwind.
+                    <span className="font-semibold text-pos">Cyclical sectors</span> (Financials, Industrials, Materials) → <span className="font-bold">1.05x</span> — boosted for economic activity tailwind.
                   </li>
                   <li>
-                    <span className="font-semibold text-amber-600">Defensive sectors</span> (Utilities, Staples, Health Care) → <span className="font-bold">0.92x</span> — penalized for opportunity cost in a risk-on environment.
+                    <span className="font-semibold text-warn">Defensive sectors</span> (Utilities, Staples, Health Care) → <span className="font-bold">0.92x</span> — penalized for opportunity cost in a risk-on environment.
                   </li>
                   <li>
                     Subdued volatility and healthy breadth — conditions favor full risk exposure and growth/cyclical tilt. See the Morning Brief for live readings.
                   </li>
                 </ul>
-                <a href="#regime-detail" className="mt-2 inline-block text-xs font-semibold text-emerald-600 hover:text-emerald-800 transition-colors">View per-stock regime detail ↓</a>
+                <a href="#regime-detail" className="mt-2 inline-block text-xs font-semibold text-pos hover:text-pos transition-colors">View per-stock regime detail ↓</a>
               </div>
             )}
           </div>
@@ -263,7 +263,7 @@ export default function DashboardPage() {
           const toggleRegimeCollapsed = () => setUiPref("dashboard.regimeMultiplier.collapsed", regimeCollapsed ? "0" : "1");
           return (
         <div id="regime-detail" className="scroll-mt-6">
-          <section className="rounded-[24px] border border-slate-200 bg-white p-6 shadow-sm">
+          <section className="rounded-card border border-line bg-surface p-6 shadow-sm">
             <div className={`flex items-center gap-3 ${regimeCollapsed ? "" : "mb-4"}`}>
               <button
                 onClick={toggleRegimeCollapsed}
@@ -271,32 +271,32 @@ export default function DashboardPage() {
                 aria-expanded={!regimeCollapsed}
                 aria-label={regimeCollapsed ? "Expand Regime Multiplier Detail" : "Collapse Regime Multiplier Detail"}
               >
-                <svg className={`w-4 h-4 text-slate-400 transition-transform ${regimeCollapsed ? "-rotate-90" : ""}`} fill="none" stroke="currentColor" strokeWidth="2.5" viewBox="0 0 24 24">
+                <svg className={`w-4 h-4 text-ink-3 transition-transform ${regimeCollapsed ? "-rotate-90" : ""}`} fill="none" stroke="currentColor" strokeWidth="2.5" viewBox="0 0 24 24">
                   <path strokeLinecap="round" strokeLinejoin="round" d="M19 9l-7 7-7-7" />
                 </svg>
-                <h2 className="text-lg font-bold text-slate-800">Regime Multiplier Detail</h2>
+                <h2 className="text-lg font-bold text-ink">Regime Multiplier Detail</h2>
               </button>
               <span className={`rounded-full px-2.5 py-0.5 text-xs font-bold ${
-                regime === "Risk-Off" ? "bg-red-100 text-red-700"
-                : regime === "Neutral" ? "bg-amber-100 text-amber-700"
-                : "bg-emerald-100 text-emerald-700"
+                regime === "Risk-Off" ? "bg-neg-soft text-neg"
+                : regime === "Neutral" ? "bg-warn-soft text-warn"
+                : "bg-pos-soft text-pos"
               }`}>{regime}</span>
             </div>
             {!regimeCollapsed && (<>
-            <p className="text-xs text-slate-400 mb-4">
+            <p className="text-xs text-ink-3 mb-4">
               Each stock&apos;s regime multiplier is determined by its sector tier (Growth / Cyclical / Defensive) and dampened by its quality score (growth + leverage + cash flow quality + moat, max 8). Higher quality → softer regime effect.
             </p>
             <div className="overflow-x-auto">
               <table className="w-full text-sm">
                 <thead>
-                  <tr className="border-b-2 border-slate-200 text-left">
-                    <th className="py-2 pr-3 text-xs font-semibold text-slate-500">Ticker</th>
-                    <th className="py-2 pr-3 text-xs font-semibold text-slate-500 hidden md:table-cell">Sector</th>
-                    <th className="py-2 pr-3 text-xs font-semibold text-slate-500">Tier</th>
-                    <th className="py-2 pr-3 text-xs font-semibold text-slate-500 text-right">Quality</th>
-                    <th className="py-2 pr-3 text-xs font-semibold text-slate-500 text-right hidden sm:table-cell">Base</th>
-                    <th className="py-2 pr-3 text-xs font-semibold text-slate-500 text-right">Adj.</th>
-                    <th className="py-2 text-xs font-semibold text-slate-500 text-right">Score</th>
+                  <tr className="border-b-2 border-line text-left">
+                    <th className="py-2 pr-3 text-xs font-semibold text-ink-3">Ticker</th>
+                    <th className="py-2 pr-3 text-xs font-semibold text-ink-3 hidden md:table-cell">Sector</th>
+                    <th className="py-2 pr-3 text-xs font-semibold text-ink-3">Tier</th>
+                    <th className="py-2 pr-3 text-xs font-semibold text-ink-3 text-right">Quality</th>
+                    <th className="py-2 pr-3 text-xs font-semibold text-ink-3 text-right hidden sm:table-cell">Base</th>
+                    <th className="py-2 pr-3 text-xs font-semibold text-ink-3 text-right">Adj.</th>
+                    <th className="py-2 text-xs font-semibold text-ink-3 text-right">Score</th>
                   </tr>
                 </thead>
                 <tbody>
@@ -319,25 +319,25 @@ export default function DashboardPage() {
                       const baseMultiplier = regimeMultiplier(s.sector, regime); // no scores = base
                       const adjustedMultiplier = regimeMultiplier(s.sector, regime, s.scores);
                       const tierColor =
-                        tier === "Growth" ? "text-blue-600 bg-blue-50"
-                        : tier === "Cyclical" ? "text-amber-700 bg-amber-50"
-                        : tier === "Defensive" ? "text-emerald-700 bg-emerald-50"
-                        : "text-slate-500 bg-slate-50";
+                        tier === "Growth" ? "text-accent bg-accent-soft"
+                        : tier === "Cyclical" ? "text-warn bg-warn-soft"
+                        : tier === "Defensive" ? "text-pos bg-pos-soft"
+                        : "text-ink-3 bg-surface-2";
                       const multColor = adjustedMultiplier < 1
-                        ? "text-red-600" : adjustedMultiplier > 1
-                        ? "text-emerald-600" : "text-slate-500";
+                        ? "text-neg" : adjustedMultiplier > 1
+                        ? "text-pos" : "text-ink-3";
                       return (
-                        <tr key={s.ticker} className="border-b border-slate-100 hover:bg-slate-50/50 transition-colors">
-                          <td className="py-2 pr-3 font-mono font-bold text-slate-700">{displayTicker(s.ticker)}</td>
-                          <td className="py-2 pr-3 text-slate-500 hidden md:table-cell">{normalized}</td>
+                        <tr key={s.ticker} className="border-b border-line-soft hover:bg-surface-hover transition-colors">
+                          <td className="py-2 pr-3 font-mono font-bold text-ink">{displayTicker(s.ticker)}</td>
+                          <td className="py-2 pr-3 text-ink-3 hidden md:table-cell">{normalized}</td>
                           <td className="py-2 pr-3">
                             <span className={`rounded-full px-2 py-0.5 text-[10px] font-bold ${tierColor}`}>{tier}</span>
                           </td>
-                          <td className="py-2 pr-3 text-right font-mono text-slate-600">{qualityScore}/8</td>
-                          <td className="py-2 pr-3 text-right font-mono text-slate-400 hidden sm:table-cell">{baseMultiplier.toFixed(2)}x</td>
+                          <td className="py-2 pr-3 text-right font-mono text-ink-2">{qualityScore}/8</td>
+                          <td className="py-2 pr-3 text-right font-mono text-ink-3 hidden sm:table-cell">{baseMultiplier.toFixed(2)}x</td>
                           <td className={`py-2 pr-3 text-right font-mono font-semibold ${multColor}`}>{adjustedMultiplier.toFixed(3)}x</td>
-                          <td className="py-2 text-right font-mono text-slate-500">
-                            {Number(s.raw.toFixed(1))} → <span className="font-semibold text-slate-700">{Number(s.adjusted.toFixed(1))}</span>
+                          <td className="py-2 text-right font-mono text-ink-3">
+                            {Number(s.raw.toFixed(1))} → <span className="font-semibold text-ink">{Number(s.adjusted.toFixed(1))}</span>
                           </td>
                         </tr>
                       );
