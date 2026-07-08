@@ -5,6 +5,7 @@
 // and credit); otherwise we fall back to Yahoo Finance everywhere.
 
 import { getRedis } from "./redis";
+import { crossSectional, factsetConfigured } from "./factset";
 
 // Per-point freshness so the UI can render a badge that tells the user
 // whether a number was actually just pulled ("live"), is an old cached
@@ -1613,14 +1614,37 @@ export async function fetchForwardLookingData(
     let trl: number | null = null;
     let peSourceUrl = ssgaSpyUrl;
     let peSourceLabel = "SSGA SPY";
+    // Trailing P/E can come from a DIFFERENT source (FactSet) than the forward
+    // P/E (SSGA/Yahoo), so it carries its own source labels.
+    let trlSourceUrl = ssgaSpyUrl;
+    let trlSourceLabel = "SSGA SPY";
 
-    // Try SSGA first — the issuer's own page is the most reliable source
+    // FactSet FIRST for the S&P 500 TRAILING P/E — index-level FG_PE on the
+    // SP50 index (probe-confirmed 27.8). Authoritative and stable, replacing the
+    // fragile SSGA page scrape for this value. Forward P/E and 3-5yr growth are
+    // NOT available at the index level through our entitlement (FG_PE_NTM +
+    // index LTG returned null), so those still come from SSGA/Yahoo below.
+    if (factsetConfigured()) {
+      try {
+        const fsData = await crossSectional(["SP50"], ["FG_PE"]);
+        const fsPe = fsData["SP50"]?.["FG_PE"];
+        if (typeof fsPe === "number" && fsPe > 0) {
+          trl = fsPe;
+          trlSourceUrl = "https://www.factset.com/ (Formula API — SP50 FG_PE)";
+          trlSourceLabel = "FactSet";
+        }
+      } catch {
+        // fall through to SSGA/Yahoo
+      }
+    }
+
+    // Try SSGA next — the issuer's own page is the most reliable scrape source
     // and is not blocked from Vercel/AWS IPs. Also carries the 3-5Y
     // consensus EPS growth number we surface in a separate tile below.
     const ssga = await fetchSsgaSpyData();
     if (ssga) {
       if (ssga.forwardPE != null) fwd = ssga.forwardPE;
-      if (ssga.trailingPE != null) trl = ssga.trailingPE;
+      if (ssga.trailingPE != null && trl == null) trl = ssga.trailingPE;
       if (ssga.eps35Growth != null) {
         eps35Growth = {
           value: ssga.eps35Growth,
@@ -1651,8 +1675,8 @@ export async function fetchForwardLookingData(
         }
         if (trl == null && yTrl != null) {
           trl = yTrl;
-          peSourceUrl = spyKeyStatsUrl;
-          peSourceLabel = "Yahoo Finance SPY";
+          trlSourceUrl = spyKeyStatsUrl;
+          trlSourceLabel = "Yahoo Finance SPY";
         }
       } catch {
         // leave null, tile falls back to Stale
@@ -1672,10 +1696,10 @@ export async function fetchForwardLookingData(
     if (trl != null) {
       spyTrailingPE = {
         value: parseFloat(trl.toFixed(2)),
-        source: peSourceUrl,
-        sourceLabel: peSourceLabel,
+        source: trlSourceUrl,
+        sourceLabel: trlSourceLabel,
         asOf,
-        note: `SPY trailing twelve-month P/E via ${peSourceLabel}.`,
+        note: `S&P 500 trailing twelve-month P/E via ${trlSourceLabel}${trlSourceLabel === "FactSet" ? " (index-level FG_PE on SP50)" : ""}.`,
         status: "live",
       };
     }
