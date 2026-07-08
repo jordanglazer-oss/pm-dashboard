@@ -1606,7 +1606,8 @@ function RankingTable({
   // External-tool exports (Watchlist only). Both build from this table's
   // `stocks` — scoreable equities, so funds/ETFs are already excluded.
   const [siaCopied, setSiaCopied] = useState(false);
-  const [marketEdgeCopied, setMarketEdgeCopied] = useState(false);
+  const [marketEdgeState, setMarketEdgeState] = useState<"idle" | "loading" | "done">("idle");
+  const [marketEdgeCount, setMarketEdgeCount] = useState<number | null>(null);
   const handleExportBoostedCsv = () => {
     const csv = buildBoostedCsv(stocks);
     const blob = new Blob([csv], { type: "text/csv;charset=utf-8" });
@@ -1628,23 +1629,41 @@ function RankingTable({
       /* clipboard blocked — no-op */
     }
   };
-  // MarketEdge (US-only): count how many names actually export so we can hide
-  // the button when the watchlist is all-Canadian (nothing to send).
-  const marketEdgeCount = enableExternalExports
-    ? new Set(
-        stocks
-          .map((s) => (s.ticker || "").toUpperCase())
-          .filter((t) => !/\.(TO|V|NE|CN)$/.test(t) && !t.endsWith("-T")),
-      ).size
-    : 0;
+  // MarketEdge (US-only). US names export directly; Canadian names are included
+  // only when FactSet confirms they're interlisted (same company also trades in
+  // the US) — verified + cached server-side via /api/marketedge-symbols. On any
+  // failure we fall back to the local US-only list so the button still works.
   const handleCopyMarketEdge = async () => {
+    setMarketEdgeState("loading");
+    let list = "";
+    let count = 0;
     try {
-      await navigator.clipboard.writeText(buildMarketEdgeList(stocks));
-      setMarketEdgeCopied(true);
-      setTimeout(() => setMarketEdgeCopied(false), 2000);
+      const res = await fetch("/api/marketedge-symbols", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ tickers: stocks.map((s) => s.ticker) }),
+      });
+      if (res.ok) {
+        const data = await res.json();
+        const symbols: string[] = Array.isArray(data?.symbols) ? data.symbols : [];
+        list = symbols.join("\n");
+        count = symbols.length;
+      } else {
+        list = buildMarketEdgeList(stocks);
+        count = list ? list.split("\n").length : 0;
+      }
+    } catch {
+      list = buildMarketEdgeList(stocks);
+      count = list ? list.split("\n").length : 0;
+    }
+    try {
+      await navigator.clipboard.writeText(list);
     } catch {
       /* clipboard blocked — no-op */
     }
+    setMarketEdgeCount(count);
+    setMarketEdgeState("done");
+    setTimeout(() => setMarketEdgeState("idle"), 2500);
   };
 
   return (
@@ -1707,16 +1726,23 @@ function RankingTable({
                   <svg className="w-3.5 h-3.5" fill="none" stroke="currentColor" strokeWidth="2" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" d="M15.666 3.888A2.25 2.25 0 0 0 13.5 2.25h-3c-1.03 0-1.9.693-2.166 1.638m7.332 0c.055.194.084.4.084.612v0a.75.75 0 0 1-.75.75H9a.75.75 0 0 1-.75-.75v0c0-.212.03-.418.084-.612m7.332 0c.646.049 1.288.11 1.927.184 1.1.128 1.907 1.077 1.907 2.185V19.5a2.25 2.25 0 0 1-2.25 2.25H6.75A2.25 2.25 0 0 1 4.5 19.5V6.257c0-1.108.806-2.057 1.907-2.185a48.208 48.208 0 0 1 1.927-.184" /></svg>
                   {siaCopied ? "Copied!" : "Copy SIA symbols"}
                 </button>
-                {marketEdgeCount > 0 && (
-                  <button
-                    onClick={handleCopyMarketEdge}
-                    className="flex items-center gap-1 rounded-lg px-2.5 py-1.5 text-xs font-semibold text-slate-600 bg-slate-100 hover:bg-slate-200 border border-slate-200 transition-colors"
-                    title={`Copy US watchlist symbols (${marketEdgeCount}) for MarketEdge — one per line, Canadian names excluded`}
-                  >
+                <button
+                  onClick={handleCopyMarketEdge}
+                  disabled={marketEdgeState === "loading"}
+                  className="flex items-center gap-1 rounded-lg px-2.5 py-1.5 text-xs font-semibold text-slate-600 bg-slate-100 hover:bg-slate-200 border border-slate-200 transition-colors disabled:opacity-60"
+                  title="Copy US watchlist symbols for MarketEdge — one per line. US names + Canadian names FactSet confirms are interlisted (dual-listed in the US); Canadian-only names excluded."
+                >
+                  {marketEdgeState === "loading" ? (
+                    <svg className="w-3.5 h-3.5 animate-spin" fill="none" stroke="currentColor" strokeWidth="2" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" d="M16.023 9.348h4.992v-.001M2.985 19.644v-4.992m0 0h4.992m-4.993 0 3.181 3.183a8.25 8.25 0 0 0 13.803-3.7M4.031 9.865a8.25 8.25 0 0 1 13.803-3.7l3.181 3.182" /></svg>
+                  ) : (
                     <svg className="w-3.5 h-3.5" fill="none" stroke="currentColor" strokeWidth="2" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" d="M15.666 3.888A2.25 2.25 0 0 0 13.5 2.25h-3c-1.03 0-1.9.693-2.166 1.638m7.332 0c.055.194.084.4.084.612v0a.75.75 0 0 1-.75.75H9a.75.75 0 0 1-.75-.75v0c0-.212.03-.418.084-.612m7.332 0c.646.049 1.288.11 1.927.184 1.1.128 1.907 1.077 1.907 2.185V19.5a2.25 2.25 0 0 1-2.25 2.25H6.75A2.25 2.25 0 0 1 4.5 19.5V6.257c0-1.108.806-2.057 1.907-2.185a48.208 48.208 0 0 1 1.927-.184" /></svg>
-                    {marketEdgeCopied ? "Copied!" : `Copy MarketEdge (${marketEdgeCount})`}
-                  </button>
-                )}
+                  )}
+                  {marketEdgeState === "loading"
+                    ? "Verifying…"
+                    : marketEdgeState === "done"
+                    ? `Copied (${marketEdgeCount ?? 0})`
+                    : "Copy MarketEdge"}
+                </button>
               </>
             )}
             <button
