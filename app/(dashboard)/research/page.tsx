@@ -2065,27 +2065,7 @@ export default function ResearchPage() {
           titleClass="text-xl font-bold"
           title={<>Newton&apos;s Upticks</>}
           subtitle={<>Fundstrat technical uptick list &mdash; click any cell to edit</>}
-          right={<>
-              <button
-                onClick={async () => {
-                  // Scrape first so any new tickers are in state before the
-                  // names backfill runs against them. Scrape is a no-op (and
-                  // free) when no upticks screenshot is attached, and is free
-                  // server-side when the attached image hasn't changed since
-                  // last scan — same caching pattern as JPM flows.
-                  await scrapeUpticks();
-                  void refreshUptickNames();
-                  void fetchLivePrices();
-                }}
-                disabled={namesLoading || pricesLoading || scrapeLoading}
-                className="flex items-center gap-1.5 rounded-lg bg-teal-600 px-3 py-1.5 text-xs font-semibold text-white hover:bg-teal-700 disabled:opacity-50 transition-colors"
-                title="Re-scan the Newton screenshot (cached if unchanged, so $0). Prices + names for the whole Research tab refresh via the main 'Refresh prices' button in the menu."
-              >
-                <svg className={`w-3.5 h-3.5 ${(namesLoading || pricesLoading || scrapeLoading) ? "animate-spin" : ""}`} fill="none" stroke="currentColor" strokeWidth="2" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" d="M16.023 9.348h4.992v-.001M2.985 19.644v-4.992m0 0h4.992m-4.993 0 3.181 3.183a8.25 8.25 0 0 0 13.803-3.7M4.031 9.865a8.25 8.25 0 0 1 13.803-3.7l3.181 3.182" /></svg>
-                {(namesLoading || pricesLoading || scrapeLoading) ? "Scanning..." : "Re-scan screenshot"}
-              </button>
-              <span className="text-sm text-slate-400">{state.newtonUpticks.length} stocks</span>
-          </>}
+          right={<span className="text-sm text-slate-400">{state.newtonUpticks.length} stocks</span>}
         >
 
           {pricesFetchedAt && (
@@ -2941,17 +2921,7 @@ export default function ResearchPage() {
           titleClass="text-xl font-bold text-amber-800"
           title={<>JPM US Equity Analyst Focus List</>}
           subtitle={<>J.P. Morgan US equity analyst focus picks · prices live from FactSet</>}
-          right={<>
-              <button
-                onClick={() => void fetchFactsetPrices()}
-                disabled={factsetPricesLoading}
-                className="text-[10px] rounded-md bg-amber-50 px-2.5 py-1 font-semibold text-amber-700 hover:bg-amber-100 disabled:opacity-50 transition-colors"
-                title="Refresh current prices from FactSet"
-              >
-                {factsetPricesLoading ? "Refreshing…" : "↻ FactSet prices"}
-              </button>
-              <span className="text-sm text-slate-400">{(state.jpmUsAnalystFocus || []).length} names</span>
-          </>}
+          right={<span className="text-sm text-slate-400">{(state.jpmUsAnalystFocus || []).length} names</span>}
         >
 
           <div className="overflow-x-auto"><table className="w-full text-sm">
