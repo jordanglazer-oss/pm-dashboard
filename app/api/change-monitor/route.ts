@@ -16,6 +16,8 @@ const SOURCE_TO_FIELD: Record<string, keyof ResearchState> = {
   "rbc-focus": "rbcCanadianFocus",
   "rbc-us-focus": "rbcUsFocus",
   "jpm-us-analyst-focus": "jpmUsAnalystFocus",
+  "rbc-equate-cad": "equateCad",
+  "rbc-equate-usd": "equateUsd",
   "seeking-alpha-picks": "alphaPicks",
   "rbccm-few": "rbccmFew",
   "newton-upticks": "newtonUpticks",

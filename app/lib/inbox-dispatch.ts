@@ -74,6 +74,8 @@ export function classifySubject(subject: string): InboxKind {
   if (/^rbc\s+canadian\b/i.test(s)) return { kind: "research", source: "rbc-focus" };
   if (/^rbc\s+us\b/i.test(s)) return { kind: "research", source: "rbc-us-focus" };
   if (/^jpm\s+focus\b/i.test(s)) return { kind: "research", source: "jpm-us-analyst-focus" };
+  if (/^equate\s+cad\b/i.test(s)) return { kind: "research", source: "rbc-equate-cad" };
+  if (/^equate\s+usd\b/i.test(s)) return { kind: "research", source: "rbc-equate-usd" };
   if (/^rbccm\s+few\b/i.test(s)) return { kind: "research", source: "rbccm-few" };
   if (/^(seeking\s+alpha|alpha\s+picks)\b/i.test(s)) return { kind: "research", source: "seeking-alpha-picks" };
   // ── Per-stock external-tool kinds ──

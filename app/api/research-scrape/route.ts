@@ -36,7 +36,7 @@ const client = new Anthropic();
 
 type AttachmentInput = { id: string; label: string; dataUrl: string };
 
-export type SourceKey = "fundstrat-top" | "fundstrat-bottom" | "fundstrat-smid-top" | "fundstrat-smid-bottom" | "rbc-focus" | "rbc-us-focus" | "jpm-us-analyst-focus" | "seeking-alpha-picks" | "rbccm-few";
+export type SourceKey = "fundstrat-top" | "fundstrat-bottom" | "fundstrat-smid-top" | "fundstrat-smid-bottom" | "rbc-focus" | "rbc-us-focus" | "jpm-us-analyst-focus" | "rbc-equate-cad" | "rbc-equate-usd" | "seeking-alpha-picks" | "rbccm-few";
 
 export type ResearchAttachmentInput = AttachmentInput;
 
@@ -48,6 +48,8 @@ const VALID_SOURCES: readonly SourceKey[] = [
   "rbc-focus",
   "rbc-us-focus",
   "jpm-us-analyst-focus",
+  "rbc-equate-cad",
+  "rbc-equate-usd",
   "seeking-alpha-picks",
   "rbccm-few",
 ] as const;
@@ -283,6 +285,38 @@ ${common}
 Example: [{"name":"NVIDIA Corp","ticker":"NVDA","industry":"Semiconductors","strategy":"Growth","priceTarget":210},{"name":"JPMorgan Chase","ticker":"JPM","industry":"Banks","strategy":"Value","priceTarget":320}]`;
   }
 
+  if (source === "rbc-equate-cad") {
+    return `You are reading an "RBC Equate" model-portfolio report (PDF or screenshot). This document contains MULTIPLE lists/model portfolios. Extract ONLY the holdings of the "Canada Large Cap CORE 40 Model Portfolio" — IGNORE every other list, table, or model portfolio in the document (e.g. US portfolios, income/dividend models, sector sleeves, benchmark tables). If you cannot clearly identify the "Canada Large Cap CORE 40 Model Portfolio" section, return [].
+
+From the Canada Large Cap CORE 40 Model Portfolio ONLY, extract every constituent:
+  - Ticker / Symbol → \`ticker\` (string, required, UPPERCASE). These are Canadian (TSX) listings. RBC may show "-T" suffixes or no suffix; CONVERT every ticker to Yahoo "${"."}TO" form (e.g. "RY-T" → "RY.TO", "CNR" → "CNR.TO"). If already ".TO", keep it. For dual-class shares written with "/" (e.g. "BBD/B"), convert the slash to a dash before adding the suffix ("BBD-B.TO").
+  - Company / Name → \`name\` (string, if shown)
+  - Sector → \`sector\` (string, if shown)
+  - Weight / Model Weight / Portfolio Weight → \`weight\` (NUMBER as a percentage; strip % and commas)
+
+If a column is missing or blank, OMIT that key.
+
+${common}
+
+Example: [{"ticker":"RY.TO","name":"Royal Bank of Canada","sector":"Financials","weight":4.2},{"ticker":"CNR.TO","name":"Canadian National Railway","sector":"Industrials","weight":3.1}]`;
+  }
+
+  if (source === "rbc-equate-usd") {
+    return `You are reading an "RBC Equate" model-portfolio report (PDF or screenshot). This document contains MULTIPLE lists/model portfolios. Extract ONLY the holdings of the "U.S. All Cap CORE 40 Model Portfolio" — IGNORE every other list, table, or model portfolio in the document (e.g. Canadian portfolios, income/dividend models, sector sleeves, benchmark tables). If you cannot clearly identify the "U.S. All Cap CORE 40 Model Portfolio" section, return [].
+
+From the U.S. All Cap CORE 40 Model Portfolio ONLY, extract every constituent:
+  - Ticker / Symbol → \`ticker\` (string, required, UPPERCASE). US listings — bare tickers, NO "-T" or ".TO" suffix (e.g. "AAPL", "MSFT", "JPM"). Dual-class shares written with "/" (e.g. "BRK/B") → dash form ("BRK-B").
+  - Company / Name → \`name\` (string, if shown)
+  - Sector → \`sector\` (string, if shown)
+  - Weight / Model Weight / Portfolio Weight → \`weight\` (NUMBER as a percentage; strip % and commas)
+
+If a column is missing or blank, OMIT that key.
+
+${common}
+
+Example: [{"ticker":"AAPL","name":"Apple Inc","sector":"Technology","weight":4.0},{"ticker":"BRK-B","name":"Berkshire Hathaway","sector":"Financials","weight":3.5}]`;
+  }
+
   if (source === "rbccm-few") {
     return `You are reading the "RBCCM Canadian Fundamental Equity Weighting (FEW) Portfolio" screenshot. It is a TABLE of Canadian equities. Extract EVERY row.
 
@@ -442,8 +476,8 @@ function parseRbcRows(text: string, source: SourceKey): ScrapedRbcRow[] {
       .filter((r) => r && typeof r === "object" && typeof r.ticker === "string" && r.ticker.trim())
       .map((r) => {
         let ticker = String(r.ticker).trim().toUpperCase().replace(/^\$+/, "").replace(/\//g, "-");
-        // Canonicalize Canadian list to .TO so Yahoo lookups succeed.
-        if (source === "rbc-focus") ticker = toCanadianYahooTicker(ticker);
+        // Canonicalize Canadian lists to .TO so Yahoo lookups succeed.
+        if (source === "rbc-focus" || source === "rbc-equate-cad") ticker = toCanadianYahooTicker(ticker);
         const out: ScrapedRbcRow = { ticker };
         if (r.sector != null && String(r.sector).trim()) out.sector = String(r.sector).trim();
         if (r.weight != null) {
@@ -521,7 +555,7 @@ async function runVision(source: SourceKey, atts: AttachmentInput[]): Promise<{ 
   console.log(`[research-scrape:${source}] raw vision output:`, text.slice(0, 4000));
 
   const entries =
-    (source === "rbc-focus" || source === "rbc-us-focus" || source === "jpm-us-analyst-focus") ? parseRbcRows(text, source)
+    (source === "rbc-focus" || source === "rbc-us-focus" || source === "jpm-us-analyst-focus" || source === "rbc-equate-cad" || source === "rbc-equate-usd") ? parseRbcRows(text, source)
   : source === "seeking-alpha-picks" ? parseAlphaPickRows(text)
   : source === "rbccm-few" ? parseFewRows(text)
   : parseIdeaRows(text);

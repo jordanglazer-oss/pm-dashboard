@@ -142,12 +142,16 @@ function applyIdeaEntries(
 
 function applyRbcEntries(
   state: ResearchState,
-  source: "rbc-focus" | "rbc-us-focus" | "jpm-us-analyst-focus",
+  source: "rbc-focus" | "rbc-us-focus" | "jpm-us-analyst-focus" | "rbc-equate-cad" | "rbc-equate-usd",
   entries: ScrapedRbcRow[],
   forceAdditive: boolean,
 ): { nextState: ResearchState; summary: ResearchMergeSummary } {
   const stateKey =
-    source === "rbc-focus" ? "rbcCanadianFocus" : source === "rbc-us-focus" ? "rbcUsFocus" : "jpmUsAnalystFocus";
+    source === "rbc-focus" ? "rbcCanadianFocus"
+    : source === "rbc-us-focus" ? "rbcUsFocus"
+    : source === "jpm-us-analyst-focus" ? "jpmUsAnalystFocus"
+    : source === "rbc-equate-cad" ? "equateCad"
+    : "equateUsd";
   const existing = ((state[stateKey as keyof ResearchState] as RBCEntry[]) || []);
   const existingByNorm = new Map(existing.map((r) => [normalize(r.ticker), r]));
   const { mode, reason } = forceAdditive
@@ -194,7 +198,7 @@ function applyRbcEntries(
     }
   }
   const merged = Array.from(byNorm.values());
-  const finalList = source === "rbc-focus" ? dedupeRbcEntries(merged).entries : merged;
+  const finalList = source === "rbc-focus" || source === "rbc-equate-cad" ? dedupeRbcEntries(merged).entries : merged;
   const removed = mode === "replace" ? existing.length - matched : 0;
   const entryNorms = new Set(entries.map((e) => normalize(e.ticker)));
   const removedTickers = mode === "replace"
@@ -364,6 +368,8 @@ export function applyResearchEntries(
     case "rbc-focus":
     case "rbc-us-focus":
     case "jpm-us-analyst-focus":
+    case "rbc-equate-cad":
+    case "rbc-equate-usd":
       result = applyRbcEntries(state, source, entries as ScrapedRbcRow[], forceAdditive);
       break;
     case "seeking-alpha-picks":

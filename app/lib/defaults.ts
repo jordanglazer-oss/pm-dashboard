@@ -233,6 +233,13 @@ export type ResearchState = {
   // populated separately from a screenshot / email. US tickers. Optional for
   // backward compat with older pm:research blobs that predate it.
   jpmUsAnalystFocus?: RBCEntry[];
+  // RBC Equate — Canada Large Cap CORE 40 Model Portfolio (CAD stocks, .TO).
+  // Extracted from the RBC Equate PDF (which carries several lists — only the
+  // CORE 40 model portfolio holdings are captured here). Optional for backward
+  // compat with older pm:research blobs.
+  equateCad?: RBCEntry[];
+  // RBC Equate — U.S. All Cap CORE 40 Model Portfolio (USD stocks, bare tickers).
+  equateUsd?: RBCEntry[];
   // Seeking Alpha Alpha Picks — institutional buy recommendations
   // populated from the Alpha Picks dashboard screenshot. Mirrors the
   // Newton's Upticks shape (name + sector + dateAdded + live price)
@@ -345,6 +352,8 @@ export const defaultResearch: ResearchState = {
   rbcCanadianFocus: [],
   rbcUsFocus: [],
   jpmUsAnalystFocus: [],
+  equateCad: [],
+  equateUsd: [],
   alphaPicks: [],
   rbccmFew: [],
   generalNotes: "",

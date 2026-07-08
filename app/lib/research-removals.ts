@@ -41,6 +41,8 @@ export const REMOVAL_SOURCE_LABELS: Record<RemovalSource, string> = {
   "rbc-focus": "RBC Canadian Focus",
   "rbc-us-focus": "RBC US Focus",
   "jpm-us-analyst-focus": "JPM US Analyst Focus",
+  "rbc-equate-cad": "RBC Equate CAD (CORE 40)",
+  "rbc-equate-usd": "RBC Equate USD (CORE 40)",
   "seeking-alpha-picks": "Seeking Alpha — Alpha Picks",
   "rbccm-few": "RBCCM FEW",
   "newton-upticks": "Newton Upticks",

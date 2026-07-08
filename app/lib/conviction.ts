@@ -58,6 +58,8 @@ const LISTS: { field: keyof ResearchState; label: string; dir: 1 | -1 }[] = [
   { field: "jpmUsAnalystFocus", label: "JPM Focus", dir: 1 },
   { field: "rbcUsFocus", label: "RBC US", dir: 1 },
   { field: "rbcCanadianFocus", label: "RBC Cdn", dir: 1 },
+  { field: "equateCad", label: "Equate CAD", dir: 1 },
+  { field: "equateUsd", label: "Equate USD", dir: 1 },
   { field: "fundstratTop", label: "Fundstrat Top", dir: 1 },
   { field: "fundstratSmidTop", label: "Fundstrat SMID Top", dir: 1 },
   { field: "alphaPicks", label: "Alpha Picks", dir: 1 },
