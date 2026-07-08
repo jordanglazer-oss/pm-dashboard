@@ -24,7 +24,11 @@ import type { AnalystReports, AnalystSnapshots } from "@/app/lib/analyst-snapsho
  *
  * Keys touched: pm:stocks, pm:analyst-reports (+ meta.id), pm:analyst-snapshots,
  * pm:analyst-report-pdf:<canon>-rbc/-jpm, pm:pim-models (holding.symbol),
- * pm:score-history.
+ * pm:pim-positions (position.symbol — units + cost basis), pm:score-history.
+ *
+ * DETECT-ONLY (reported, never rewritten): pm:pim-portfolio-state (historical
+ * transaction log + rebalance-snapshot price keys) and pm:pim-performance
+ * (aggregate index, not symbol-keyed).
  */
 
 type Stock = { ticker: string; name?: string; bucket?: string };
@@ -206,6 +210,39 @@ export async function GET(req: NextRequest) {
     }
   }
 
+  // ── 5b. pm:pim-positions — units + cost basis per symbol, per portfolio ─
+  // This is the store the Positioning tab reads for "units". It's keyed by the
+  // exact symbol string, so a rename that skips it (as the original did) leaves
+  // units + ACB stranded under the OLD ticker while the model shows the new one
+  // → the Positioning row renders 0 units and loses its cost basis. Renaming
+  // here restores units, ACB, gain/loss, and current weights.
+  const posRaw = await redis.get("pm:pim-positions");
+  if (posRaw) {
+    const blob = JSON.parse(posRaw) as { portfolios?: Array<{ groupId?: string; profile?: string; positions?: Array<{ symbol: string }> }> };
+    const hits: string[] = [];
+    for (const p of blob.portfolios ?? []) {
+      for (const pos of p.positions ?? []) {
+        if (canonicalTicker(pos.symbol) === fromCanon) hits.push(`${p.groupId ?? "?"}/${p.profile ?? "?"}`);
+      }
+    }
+    if (hits.length > 0) {
+      changes.push(`pm:pim-positions: rename ${fromCanon} → ${toDisplay} in ${hits.length} portfolio(s): ${hits.join(", ")}`);
+      if (confirm) {
+        await stash("pm:pim-positions", posRaw);
+        for (const p of blob.portfolios ?? []) {
+          for (const pos of p.positions ?? []) {
+            if (canonicalTicker(pos.symbol) === fromCanon) pos.symbol = toDisplay;
+          }
+        }
+        await redis.set("pm:pim-positions", JSON.stringify(blob));
+      }
+    } else {
+      warnings.push(`pm:pim-positions: no position found with ${fromCanon}.`);
+    }
+  } else {
+    warnings.push("pm:pim-positions: missing/unreadable.");
+  }
+
   // ── 6. pm:score-history — keyed by ticker ───────────────────────────
   const histRaw = await redis.get("pm:score-history");
   if (histRaw) {
@@ -226,6 +263,52 @@ export async function GET(req: NextRequest) {
       }
     }
   }
+
+  // ── 7. pm:pim-portfolio-state — DETECT ONLY (no auto-rewrite) ────────
+  // Transaction log + rebalance-snapshot price maps reference the symbol, but
+  // these are point-in-time trade/rebalance records (the trade genuinely
+  // executed under the OLD symbol). We surface any lingering references so the
+  // operator can decide, rather than silently rewriting history. The one place
+  // it can matter live is a trackingStart/lastRebalance `prices` map keyed by
+  // the old symbol (forward-performance baseline lookups go by current symbol).
+  const stateRaw = await redis.get("pm:pim-portfolio-state");
+  if (stateRaw) {
+    try {
+      const state = JSON.parse(stateRaw) as {
+        groupStates?: Array<{
+          groupId?: string;
+          lastRebalance?: { prices?: Record<string, number> } | null;
+          trackingStart?: { prices?: Record<string, number> } | null;
+          transactions?: Array<{ symbol?: string; pairedWith?: string }>;
+        }>;
+      };
+      const refs: string[] = [];
+      for (const gs of state.groupStates ?? []) {
+        const g = gs.groupId ?? "?";
+        const txMatches = (gs.transactions ?? []).filter(
+          (t) => canonicalTicker(t.symbol ?? "") === fromCanon || canonicalTicker(t.pairedWith ?? "") === fromCanon,
+        ).length;
+        if (txMatches > 0) refs.push(`${g}: ${txMatches} transaction(s)`);
+        for (const snap of [gs.lastRebalance, gs.trackingStart]) {
+          const priceKeys = Object.keys(snap?.prices ?? {});
+          if (priceKeys.some((k) => canonicalTicker(k) === fromCanon)) refs.push(`${g}: rebalance-snapshot price key`);
+        }
+      }
+      if (refs.length > 0) {
+        warnings.push(
+          `pm:pim-portfolio-state still references ${fromCanon} (${refs.join("; ")}). NOT auto-rewritten — these are historical trade/rebalance records. If forward-performance tracking looks off, ask to relabel the rebalance-snapshot price keys ${fromCanon} → ${toDisplay}.`,
+        );
+      }
+    } catch {
+      warnings.push("pm:pim-portfolio-state: unreadable — skipped detection.");
+    }
+  }
+
+  // pm:pim-performance is an aggregate per-profile index (not symbol-keyed), so
+  // a rename doesn't alter its structure. But any DAILY value computed while the
+  // position was stranded (new symbol valued at 0 units) is understated — after
+  // this rename, re-run the daily-value recompute for the affected window.
+  warnings.push("pm:pim-performance is aggregate (not symbol-keyed) — unaffected structurally, but recompute recent daily values if any were captured while units were stranded.");
 
   // Append-only history is intentionally not rewritten.
   warnings.push("pm:portfolio-snapshots left untouched (append-only point-in-time history).");
