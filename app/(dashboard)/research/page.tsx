@@ -203,7 +203,7 @@ function AlphaPickAddForm({ onAdd }: { onAdd: (e: AlphaPickEntry) => void }) {
  * zero Anthropic tokens.
  */
 function ResearchScraperBlock(props: {
-  source: "fundstrat-top" | "fundstrat-bottom" | "fundstrat-smid-top" | "fundstrat-smid-bottom" | "rbc-focus" | "rbc-us-focus" | "jpm-us-analyst-focus" | "seeking-alpha-picks" | "rbccm-few";
+  source: "fundstrat-top" | "fundstrat-bottom" | "fundstrat-smid-top" | "fundstrat-smid-bottom" | "rbc-focus" | "rbc-us-focus" | "rbc-equate-cad" | "rbc-equate-usd" | "jpm-us-analyst-focus" | "seeking-alpha-picks" | "rbccm-few";
   sectionLabel: string;
   helperText: string;
   attachments: BriefAttachment[];
@@ -485,6 +485,10 @@ export default function ResearchPage() {
   const setRbcSort = (next: { key: RBCSortKey; dir: SortDir }) => writeSort("research.rbcSortKey", "research.rbcSortDir", next);
   const rbcUsSort = readSort<RBCSortKey>("research.rbcUsSortKey", "research.rbcUsSortDir", RBC_SORT_KEYS, "ticker", "asc");
   const setRbcUsSort = (next: { key: RBCSortKey; dir: SortDir }) => writeSort("research.rbcUsSortKey", "research.rbcUsSortDir", next);
+  const equateCadSort = readSort<RBCSortKey>("research.equateCadSortKey", "research.equateCadSortDir", RBC_SORT_KEYS, "ticker", "asc");
+  const setEquateCadSort = (next: { key: RBCSortKey; dir: SortDir }) => writeSort("research.equateCadSortKey", "research.equateCadSortDir", next);
+  const equateUsdSort = readSort<RBCSortKey>("research.equateUsdSortKey", "research.equateUsdSortDir", RBC_SORT_KEYS, "ticker", "asc");
+  const setEquateUsdSort = (next: { key: RBCSortKey; dir: SortDir }) => writeSort("research.equateUsdSortKey", "research.equateUsdSortDir", next);
   const JPM_SORT_KEYS: ReadonlyArray<JpmSortKey> = ["name", "ticker", "industry", "strategy", "currentPrice", "priceTarget"];
   const jpmFocusSort = readSort<JpmSortKey>("research.jpmFocusSortKey", "research.jpmFocusSortDir", JPM_SORT_KEYS, "ticker", "asc");
   const setJpmFocusSort = (next: { key: JpmSortKey; dir: SortDir }) => writeSort("research.jpmFocusSortKey", "research.jpmFocusSortDir", next);
@@ -566,7 +570,7 @@ export default function ResearchPage() {
   // `scrapeStatus` because its Refresh button does more than just scrape
   // (it also refreshes prices and names). The new sources are
   // scrape-only so a per-source map keeps each section's UI independent.
-  type SourceKey = "fundstrat-top" | "fundstrat-bottom" | "fundstrat-smid-top" | "fundstrat-smid-bottom" | "rbc-focus" | "rbc-us-focus" | "jpm-us-analyst-focus" | "seeking-alpha-picks" | "rbccm-few";
+  type SourceKey = "fundstrat-top" | "fundstrat-bottom" | "fundstrat-smid-top" | "fundstrat-smid-bottom" | "rbc-focus" | "rbc-us-focus" | "rbc-equate-cad" | "rbc-equate-usd" | "jpm-us-analyst-focus" | "seeking-alpha-picks" | "rbccm-few";
   const [scrapeLoadingMap, setScrapeLoadingMap] = useState<Partial<Record<SourceKey, boolean>>>({});
   const [scrapeStatusMap, setScrapeStatusMap] = useState<Partial<Record<SourceKey, string>>>({});
 
@@ -633,6 +637,12 @@ export default function ResearchPage() {
   function toggleRbcUsSort(key: RBCSortKey) {
     setRbcUsSort(rbcUsSort.key === key ? { key, dir: rbcUsSort.dir === "asc" ? "desc" : "asc" } : { key, dir: "asc" });
   }
+  function toggleEquateCadSort(key: RBCSortKey) {
+    setEquateCadSort(equateCadSort.key === key ? { key, dir: equateCadSort.dir === "asc" ? "desc" : "asc" } : { key, dir: "asc" });
+  }
+  function toggleEquateUsdSort(key: RBCSortKey) {
+    setEquateUsdSort(equateUsdSort.key === key ? { key, dir: equateUsdSort.dir === "asc" ? "desc" : "asc" } : { key, dir: "asc" });
+  }
   function toggleJpmFocusSort(key: JpmSortKey) {
     setJpmFocusSort(jpmFocusSort.key === key ? { key, dir: jpmFocusSort.dir === "asc" ? "desc" : "asc" } : { key, dir: "asc" });
   }
@@ -690,6 +700,20 @@ export default function ResearchPage() {
       return dir === "asc" ? cmp : -cmp;
     });
   }
+  function sortedEquateCad() {
+    return [...(state.equateCad || [])].sort((a, b) => {
+      const { key, dir } = equateCadSort;
+      const cmp = compareRbc(a, b, key);
+      return dir === "asc" ? cmp : -cmp;
+    });
+  }
+  function sortedEquateUsd() {
+    return [...(state.equateUsd || [])].sort((a, b) => {
+      const { key, dir } = equateUsdSort;
+      const cmp = compareRbc(a, b, key);
+      return dir === "asc" ? cmp : -cmp;
+    });
+  }
   function sortedJpmFocus() {
     return [...(state.jpmUsAnalystFocus || [])].sort((a, b) => {
       const { key, dir } = jpmFocusSort;
@@ -733,6 +757,8 @@ export default function ResearchPage() {
   const sbArrow = (key: IdeaSortKey) => smidBottomSort.key === key ? (smidBottomSort.dir === "asc" ? " ▲" : " ▼") : "";
   const rArrow = (key: RBCSortKey) => rbcSort.key === key ? (rbcSort.dir === "asc" ? " ▲" : " ▼") : "";
   const rUsArrow = (key: RBCSortKey) => rbcUsSort.key === key ? (rbcUsSort.dir === "asc" ? " ▲" : " ▼") : "";
+  const ecArrow = (key: RBCSortKey) => equateCadSort.key === key ? (equateCadSort.dir === "asc" ? " ▲" : " ▼") : "";
+  const euArrow = (key: RBCSortKey) => equateUsdSort.key === key ? (equateUsdSort.dir === "asc" ? " ▲" : " ▼") : "";
   const jArrow = (key: JpmSortKey) => jpmFocusSort.key === key ? (jpmFocusSort.dir === "asc" ? " ▲" : " ▼") : "";
   const fArrow = (key: FewSortKey) => fewSort.key === key ? (fewSort.dir === "asc" ? " ▲" : " ▼") : "";
 
@@ -921,7 +947,7 @@ export default function ResearchPage() {
           }
 
           // Backfill missing names for both RBC lists + the JPM list.
-          for (const listKey of ["rbcCanadianFocus", "rbcUsFocus", "jpmUsAnalystFocus"] as const) {
+          for (const listKey of ["rbcCanadianFocus", "rbcUsFocus", "jpmUsAnalystFocus", "equateCad", "equateUsd"] as const) {
             const list = (research[listKey] || []) as RBCEntry[];
             const needsFill = list.filter((r) => !r.name || r.name === r.ticker || !r.sector || r.sector === "—");
             if (needsFill.length === 0) continue;
@@ -1155,7 +1181,7 @@ export default function ResearchPage() {
    * elsewhere in the app — Yahoo returns the canonical GICS sector
    * which we want to standardize on).
    */
-  const refreshRbcNames = useCallback(async (list: "rbcCanadianFocus" | "rbcUsFocus" | "jpmUsAnalystFocus", overrideState?: ResearchState) => {
+  const refreshRbcNames = useCallback(async (list: "rbcCanadianFocus" | "rbcUsFocus" | "jpmUsAnalystFocus" | "equateCad" | "equateUsd", overrideState?: ResearchState) => {
     const s = overrideState || state;
     const entries = (s[list] || []) as RBCEntry[];
     if (entries.length === 0) return;
@@ -1430,6 +1456,10 @@ export default function ResearchPage() {
         void refreshRbcNames("rbcCanadianFocus", nextState);
       } else if (source === "rbc-us-focus") {
         void refreshRbcNames("rbcUsFocus", nextState);
+      } else if (source === "rbc-equate-cad") {
+        void refreshRbcNames("equateCad", nextState);
+      } else if (source === "rbc-equate-usd") {
+        void refreshRbcNames("equateUsd", nextState);
       } else if (source === "jpm-us-analyst-focus") {
         void refreshRbcNames("jpmUsAnalystFocus", nextState);
         void fetchFactsetPrices(nextState);
@@ -1657,6 +1687,22 @@ export default function ResearchPage() {
   };
   const removeRbcUs = (ticker: string) => {
     save({ ...state, rbcUsFocus: (state.rbcUsFocus || []).filter((r) => r.ticker !== ticker) });
+  };
+  const addEquateCad = (entry: RBCEntry) => {
+    const list = state.equateCad || [];
+    if (list.some((r) => r.ticker === entry.ticker)) return;
+    save({ ...state, equateCad: [...list, entry] });
+  };
+  const removeEquateCad = (ticker: string) => {
+    save({ ...state, equateCad: (state.equateCad || []).filter((r) => r.ticker !== ticker) });
+  };
+  const addEquateUsd = (entry: RBCEntry) => {
+    const list = state.equateUsd || [];
+    if (list.some((r) => r.ticker === entry.ticker)) return;
+    save({ ...state, equateUsd: [...list, entry] });
+  };
+  const removeEquateUsd = (ticker: string) => {
+    save({ ...state, equateUsd: (state.equateUsd || []).filter((r) => r.ticker !== ticker) });
   };
   const addJpmFocus = (entry: RBCEntry) => {
     const list = state.jpmUsAnalystFocus || [];
@@ -2936,6 +2982,176 @@ export default function ResearchPage() {
             onScrape={(force) => scrapeResearchSource("jpm-us-analyst-focus", force)}
             loading={!!scrapeLoadingMap["jpm-us-analyst-focus"]}
             status={scrapeStatusMap["jpm-us-analyst-focus"]}
+          />
+        </CollapsibleSection>
+
+        {/* ── RBC Equate — Canada Large Cap CORE 40 ──
+            Models the RBC US Focus card exactly. Same RBCEntry shape,
+            same manual-add + screenshot-scan flow; targets state.equateCad
+            (Canadian/.TO tickers). Sky-accented as its own section. */}
+        <CollapsibleSection
+          prefKey="research.equateCad"
+          className="border-sky-200"
+          titleClass="text-xl font-bold text-sky-800"
+          title={<>RBC Equate — Canada Large Cap CORE 40</>}
+          subtitle={<>RBC Equate Canada Large Cap CORE 40 Model Portfolio</>}
+          right={<><span className="text-sm text-slate-400">{(state.equateCad || []).length} names</span></>}
+        >
+
+          <div className="overflow-x-auto"><table className="w-full text-sm">
+            <thead>
+              <tr className="border-b-2 border-sky-500 text-left">
+                <th className="py-2 pr-2 text-xs font-semibold text-sky-700 w-8">#</th>
+                <th className="py-2 pr-3 text-xs font-semibold text-sky-700 cursor-pointer hover:text-sky-900 select-none" onClick={() => toggleEquateCadSort("ticker")}>Ticker{ecArrow("ticker")}</th>
+                <th className="py-2 pr-3 text-xs font-semibold text-sky-700 cursor-pointer hover:text-sky-900 select-none" onClick={() => toggleEquateCadSort("name")}>Name{ecArrow("name")}</th>
+                <th className="py-2 pr-3 text-xs font-semibold text-sky-700 cursor-pointer hover:text-sky-900 select-none" onClick={() => toggleEquateCadSort("sector")}>Sector{ecArrow("sector")}</th>
+                <th className="py-2 pr-3 text-xs font-semibold text-sky-700 cursor-pointer hover:text-sky-900 select-none" onClick={() => toggleEquateCadSort("weight")}>Weight (%){ecArrow("weight")}</th>
+                <th className="py-2 w-24"></th>
+              </tr>
+            </thead>
+            <tbody>
+              {sortedEquateCad().map((item, i) => (
+                <tr key={item.ticker} className={`border-b border-slate-100 ${i % 2 === 0 ? "bg-white" : "bg-sky-50/30"} hover:bg-sky-50/60 transition-colors`}>
+                  <td className="py-2 pr-2 text-slate-400">{i + 1}</td>
+                  <td className="py-2 pr-3 font-mono font-bold text-sky-700">${displayTicker(item.ticker)}</td>
+                  <td className="py-2 pr-3 text-slate-700 truncate max-w-[260px]" title={item.name || item.ticker}>{item.name || <span className="text-slate-300 italic">—</span>}</td>
+                  <td className="py-2 pr-3 text-slate-600">{item.sector}</td>
+                  <td className="py-2 pr-3 text-slate-500">
+                    <input
+                      type="text"
+                      inputMode="decimal"
+                      value={item.weight ?? 0}
+                      onChange={(e) => {
+                        const val = e.target.value;
+                        const list = [...(state.equateCad || [])];
+                        const idx = list.findIndex((r) => r.ticker === item.ticker);
+                        if (idx >= 0) {
+                          list[idx] = { ...list[idx], weight: val === "" || val === "-" ? 0 : parseFloat(val) || 0 };
+                          save({ ...state, equateCad: list });
+                        }
+                      }}
+                      className="w-16 rounded border border-transparent px-1 py-0.5 text-sm text-center hover:border-slate-200 focus:border-sky-300 focus:outline-none bg-transparent"
+                    />
+                  </td>
+                  <td className="py-2 text-right whitespace-nowrap">
+                    {scoredStocks.some((s) => s.ticker === item.ticker) ? (
+                      <span className="text-[10px] text-emerald-500 font-medium">In list</span>
+                    ) : (
+                      <button
+                        onClick={(e) => { e.stopPropagation(); addToWatchlist(item.ticker); }}
+                        className="text-[10px] text-blue-500 hover:text-blue-700 font-semibold transition-colors"
+                        title="Add to Watchlist"
+                      >
+                        + Watch
+                      </button>
+                    )}
+                    <button onClick={() => removeEquateCad(item.ticker)} className="ml-2 text-slate-300 hover:text-red-500 font-bold transition-colors">&times;</button>
+                  </td>
+                </tr>
+              ))}
+              {(state.equateCad || []).length === 0 && (
+                <tr><td colSpan={6} className="py-6 text-center text-slate-400 italic">No names added yet</td></tr>
+              )}
+            </tbody>
+          </table></div>
+
+          <RBCAddForm onAdd={addEquateCad} />
+
+          <ResearchScraperBlock
+            source="rbc-equate-cad"
+            sectionLabel="RBC Equate — Canada Large Cap CORE 40"
+            helperText="Upload an RBC Equate screenshot. On Refresh, the Canada Large Cap CORE 40 Model Portfolio is read from the PDF — ticker + sector + weight + date are extracted and merged."
+            attachments={state.attachments || []}
+            onAddAttachment={addAttachment}
+            onRemoveAttachment={removeAttachment}
+            onScrape={(force) => scrapeResearchSource("rbc-equate-cad", force)}
+            loading={!!scrapeLoadingMap["rbc-equate-cad"]}
+            status={scrapeStatusMap["rbc-equate-cad"]}
+          />
+        </CollapsibleSection>
+
+        {/* ── RBC Equate — U.S. All Cap CORE 40 ──
+            Models the RBC US Focus card exactly. Same RBCEntry shape,
+            same manual-add + screenshot-scan flow; targets state.equateUsd
+            (US bare tickers). Sky-accented as its own section. */}
+        <CollapsibleSection
+          prefKey="research.equateUsd"
+          className="border-sky-200"
+          titleClass="text-xl font-bold text-sky-800"
+          title={<>RBC Equate — U.S. All Cap CORE 40</>}
+          subtitle={<>RBC Equate U.S. All Cap CORE 40 Model Portfolio</>}
+          right={<><span className="text-sm text-slate-400">{(state.equateUsd || []).length} names</span></>}
+        >
+
+          <div className="overflow-x-auto"><table className="w-full text-sm">
+            <thead>
+              <tr className="border-b-2 border-sky-500 text-left">
+                <th className="py-2 pr-2 text-xs font-semibold text-sky-700 w-8">#</th>
+                <th className="py-2 pr-3 text-xs font-semibold text-sky-700 cursor-pointer hover:text-sky-900 select-none" onClick={() => toggleEquateUsdSort("ticker")}>Ticker{euArrow("ticker")}</th>
+                <th className="py-2 pr-3 text-xs font-semibold text-sky-700 cursor-pointer hover:text-sky-900 select-none" onClick={() => toggleEquateUsdSort("name")}>Name{euArrow("name")}</th>
+                <th className="py-2 pr-3 text-xs font-semibold text-sky-700 cursor-pointer hover:text-sky-900 select-none" onClick={() => toggleEquateUsdSort("sector")}>Sector{euArrow("sector")}</th>
+                <th className="py-2 pr-3 text-xs font-semibold text-sky-700 cursor-pointer hover:text-sky-900 select-none" onClick={() => toggleEquateUsdSort("weight")}>Weight (%){euArrow("weight")}</th>
+                <th className="py-2 w-24"></th>
+              </tr>
+            </thead>
+            <tbody>
+              {sortedEquateUsd().map((item, i) => (
+                <tr key={item.ticker} className={`border-b border-slate-100 ${i % 2 === 0 ? "bg-white" : "bg-sky-50/30"} hover:bg-sky-50/60 transition-colors`}>
+                  <td className="py-2 pr-2 text-slate-400">{i + 1}</td>
+                  <td className="py-2 pr-3 font-mono font-bold text-sky-700">${displayTicker(item.ticker)}</td>
+                  <td className="py-2 pr-3 text-slate-700 truncate max-w-[260px]" title={item.name || item.ticker}>{item.name || <span className="text-slate-300 italic">—</span>}</td>
+                  <td className="py-2 pr-3 text-slate-600">{item.sector}</td>
+                  <td className="py-2 pr-3 text-slate-500">
+                    <input
+                      type="text"
+                      inputMode="decimal"
+                      value={item.weight ?? 0}
+                      onChange={(e) => {
+                        const val = e.target.value;
+                        const list = [...(state.equateUsd || [])];
+                        const idx = list.findIndex((r) => r.ticker === item.ticker);
+                        if (idx >= 0) {
+                          list[idx] = { ...list[idx], weight: val === "" || val === "-" ? 0 : parseFloat(val) || 0 };
+                          save({ ...state, equateUsd: list });
+                        }
+                      }}
+                      className="w-16 rounded border border-transparent px-1 py-0.5 text-sm text-center hover:border-slate-200 focus:border-sky-300 focus:outline-none bg-transparent"
+                    />
+                  </td>
+                  <td className="py-2 text-right whitespace-nowrap">
+                    {scoredStocks.some((s) => s.ticker === item.ticker) ? (
+                      <span className="text-[10px] text-emerald-500 font-medium">In list</span>
+                    ) : (
+                      <button
+                        onClick={(e) => { e.stopPropagation(); addToWatchlist(item.ticker); }}
+                        className="text-[10px] text-blue-500 hover:text-blue-700 font-semibold transition-colors"
+                        title="Add to Watchlist"
+                      >
+                        + Watch
+                      </button>
+                    )}
+                    <button onClick={() => removeEquateUsd(item.ticker)} className="ml-2 text-slate-300 hover:text-red-500 font-bold transition-colors">&times;</button>
+                  </td>
+                </tr>
+              ))}
+              {(state.equateUsd || []).length === 0 && (
+                <tr><td colSpan={6} className="py-6 text-center text-slate-400 italic">No names added yet</td></tr>
+              )}
+            </tbody>
+          </table></div>
+
+          <RBCAddForm onAdd={addEquateUsd} />
+
+          <ResearchScraperBlock
+            source="rbc-equate-usd"
+            sectionLabel="RBC Equate — U.S. All Cap CORE 40"
+            helperText="Upload an RBC Equate screenshot. On Refresh, the U.S. All Cap CORE 40 Model Portfolio is read from the PDF — ticker + sector + weight + date are extracted and merged."
+            attachments={state.attachments || []}
+            onAddAttachment={addAttachment}
+            onRemoveAttachment={removeAttachment}
+            onScrape={(force) => scrapeResearchSource("rbc-equate-usd", force)}
+            loading={!!scrapeLoadingMap["rbc-equate-usd"]}
+            status={scrapeStatusMap["rbc-equate-usd"]}
           />
         </CollapsibleSection>
 

@@ -1681,6 +1681,18 @@ export default function InboxPage() {
                 <td className="py-2 font-mono whitespace-nowrap">JPM Focus</td>
               </tr>
               <tr className="border-b border-blue-100">
+                <td className="py-2 pr-3 font-mono whitespace-nowrap">Equate CAD</td>
+                <td className="py-2 pr-3 whitespace-nowrap">RBC Equate PDF</td>
+                <td className="py-2 pr-3">Pulls ONLY the <span className="font-semibold">Canada Large Cap CORE 40 Model Portfolio</span> from the RBC Equate PDF (other lists in the PDF are ignored). Merges into the RBC Equate CAD list; +1 research mention per name.</td>
+                <td className="py-2 font-mono whitespace-nowrap">Equate CAD</td>
+              </tr>
+              <tr className="border-b border-blue-100">
+                <td className="py-2 pr-3 font-mono whitespace-nowrap">Equate USD</td>
+                <td className="py-2 pr-3 whitespace-nowrap">RBC Equate PDF</td>
+                <td className="py-2 pr-3">Pulls ONLY the <span className="font-semibold">U.S. All Cap CORE 40 Model Portfolio</span> from the RBC Equate PDF (other lists ignored). Merges into the RBC Equate USD list; +1 research mention per name.</td>
+                <td className="py-2 font-mono whitespace-nowrap">Equate USD</td>
+              </tr>
+              <tr className="border-b border-blue-100">
                 <td className="py-2 pr-3 font-mono whitespace-nowrap">RBCCM FEW</td>
                 <td className="py-2 pr-3 whitespace-nowrap">Screenshot (PNG/JPG/PDF)</td>
                 <td className="py-2 pr-3">Merges into the RBCCM Canadian FEW Portfolio list.</td>
