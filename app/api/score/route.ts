@@ -776,6 +776,10 @@ export async function POST(request: NextRequest) {
     // healthData so the whole dashboard (not just scoring) reads FactSet.
     let factsetMktValOut: number | null = null;
     let factsetDivYldOut: number | null = null;
+    // FactSet quarterly revenue growth YoY (latest Q vs the year-ago Q) — the
+    // FactSet-native equivalent of Yahoo's trailing revenueGrowth, for the
+    // Positioning X-ray. Injected into healthData on rescore.
+    let factsetRevGrowthOut: number | null = null;
 
     try {
       // Resolve this ticker to a FactSet id (or "existing" → skip FactSet).
@@ -827,6 +831,13 @@ export async function POST(request: NextRequest) {
           factsetBetaOut = b != null ? Math.max(-3, Math.min(5, b)) : null;
           if (typeof factsetSnap.values.mktVal === "number") factsetMktValOut = factsetSnap.values.mktVal;
           if (typeof factsetSnap.values.divYld === "number") factsetDivYldOut = factsetSnap.values.divYld;
+          // Quarterly revenue growth YoY: latest quarter (Qtr0) vs the year-ago
+          // quarter (Qtr4) — matches Yahoo's trailing revenueGrowth semantics.
+          const q0 = factsetSnap.values.salesQtr0;
+          const q4 = factsetSnap.values.salesQtr4;
+          if (typeof q0 === "number" && typeof q4 === "number" && q4 !== 0) {
+            factsetRevGrowthOut = ((q0 - q4) / Math.abs(q4)) * 100;
+          }
         } else {
           console.warn(
             `[Score] ${upperTicker} FactSet name guard rejected: FactSet="${factsetSnap.name}" vs Yahoo="${yahooName}" — falling back to EDGAR/Yahoo`
@@ -1386,6 +1397,7 @@ export async function POST(request: NextRequest) {
     if (healthData) {
       if (factsetMktValOut != null) healthData.marketCap = factsetMktValOut;
       if (factsetDivYldOut != null) healthData.dividendYield = factsetDivYldOut;
+      if (factsetRevGrowthOut != null) healthData.revenueGrowth = factsetRevGrowthOut;
     }
 
     // Compute risk alert combining technicals with health data
