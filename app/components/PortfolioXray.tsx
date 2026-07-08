@@ -1,7 +1,8 @@
 "use client";
 
-import { useMemo } from "react";
+import { useMemo, useState } from "react";
 import { useStocks } from "@/app/lib/StockContext";
+import { displayTicker } from "@/app/lib/ticker";
 
 /**
  * Portfolio X-ray — a book-level roll-up of the Portfolio bucket's FactSet
@@ -30,8 +31,11 @@ const fmt = (v: number | null, digits = 1, suffix = "") =>
 
 export function PortfolioXray() {
   const { portfolioStocks, analystSnapshots } = useStocks();
+  // Stable "now" captured once at mount (lazy state initializer) — keeps the
+  // memo pure; second-level staleness is irrelevant for an earnings calendar.
+  const [nowMs] = useState(() => Date.now());
 
-  const { tiles, basis, count } = useMemo(() => {
+  const { tiles, basis, count, upcomingEarnings } = useMemo(() => {
     const holdings = portfolioStocks || [];
     const rawWeights = holdings.map((s) => s.weights?.portfolio ?? 0);
     const totalW = rawWeights.reduce((a, b) => a + b, 0);
@@ -71,8 +75,18 @@ export function PortfolioXray() {
         accent: upside == null ? undefined : upside >= 0 ? "text-emerald-600" : "text-red-500",
       },
     ];
-    return { tiles, basis: useWeights ? "portfolio-weighted" : "equal-weighted", count: holdings.length };
-  }, [portfolioStocks, analystSnapshots]);
+    // Upcoming earnings — per-holding next report date (Yahoo-sourced; FactSet
+    // doesn't expose the next date via the Formula API). Soonest first.
+    const upcomingEarnings = holdings
+      .map((s) => ({ ticker: s.ticker, date: s.healthData?.earningsDate }))
+      .filter((h): h is { ticker: string; date: string } => !!h.date && !Number.isNaN(Date.parse(h.date)))
+      .map((h) => ({ ...h, ms: Date.parse(h.date) }))
+      .filter((h) => h.ms >= nowMs - 3 * 864e5) // keep today + last 3 days, drop stale
+      .sort((a, b) => a.ms - b.ms)
+      .slice(0, 10);
+
+    return { tiles, basis: useWeights ? "portfolio-weighted" : "equal-weighted", count: holdings.length, upcomingEarnings };
+  }, [portfolioStocks, analystSnapshots, nowMs]);
 
   if (count === 0) return null;
 
@@ -90,6 +104,19 @@ export function PortfolioXray() {
           </div>
         ))}
       </div>
+      {upcomingEarnings.length > 0 && (
+        <div className="mt-3 border-t border-slate-100 pt-3">
+          <div className="mb-1.5 text-[10px] font-semibold uppercase tracking-wider text-slate-400">Upcoming earnings</div>
+          <div className="flex flex-wrap gap-1.5">
+            {upcomingEarnings.map((e) => (
+              <span key={e.ticker} className="inline-flex items-center gap-1 rounded-full border border-slate-200 bg-slate-50 px-2 py-0.5 text-[11px]">
+                <span className="font-mono font-semibold text-slate-700">{displayTicker(e.ticker)}</span>
+                <span className="text-slate-400">{new Date(e.ms).toLocaleDateString("en-US", { month: "short", day: "numeric" })}</span>
+              </span>
+            ))}
+          </div>
+        </div>
+      )}
     </div>
   );
 }

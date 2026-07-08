@@ -205,6 +205,13 @@ function extractHealthData(modules: YahooResult | undefined, currentPrice?: numb
     revenueGrowth: rawVal(financial, "revenueGrowth") != null
       ? (rawVal(financial, "revenueGrowth")! * 100) : undefined,
     currentPrice: currentPrice ?? rawVal(financial, "currentPrice"),
+    // Market cap (→ millions) + dividend yield (→ percent) so a cheap Refresh
+    // populates them too — previously only a full rescore set these, leaving the
+    // Positioning X-ray's dividend-yield tile blank for un-rescored holdings.
+    marketCap: rawVal(summary, "marketCap") != null
+      ? (rawVal(summary, "marketCap")! / 1e6) : undefined,
+    dividendYield: rawVal(summary, "dividendYield") != null
+      ? (rawVal(summary, "dividendYield")! * 100) : undefined,
   };
 
   const hasData = Object.values(healthData).some((v) => v != null);
