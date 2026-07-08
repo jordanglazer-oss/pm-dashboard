@@ -51,6 +51,9 @@ const CANDIDATE_SETS: Record<string, { key: string; formula: string; note: strin
     { key: "ma200w", formula: "P_PRICE_AVG(-40W,0)", note: "~200-day avg via 40W (alt syntax if -200D fails)" },
     { key: "ltg", formula: "FE_ESTIMATE(LTG,MEAN,ANN_ROLL,0,NOW,'')", note: "Long-term (3-5yr) EPS growth estimate" },
     { key: "ltgAlt", formula: "FE_ESTIMATE(LTG_EPS,MEAN,ANN_ROLL,0,NOW,'')", note: "LTG EPS (alt item name)" },
+    { key: "pe", formula: "FG_PE", note: "P/E (test index-level on id=SP50)" },
+    { key: "fwdPe", formula: "FG_PE_NTM", note: "Forward/NTM P/E (test index-level on id=SP50)" },
+    { key: "epsEst1", formula: "FE_ESTIMATE(EPS,MEAN,ANN_ROLL,1,NOW,'')", note: "FY+1 EPS (index fwd P/E = price/this)" },
   ],
   // Earnings persistence / quality score candidates — the metric visible in the
   // FactSet terminal. Unknown exact code; probe several. If none resolve, the
@@ -85,8 +88,8 @@ const MARKET_ID_CANDIDATES: { group: string; ids: string[] }[] = [
   { group: "breadth-index (% S&P above MA — precomputed)", ids: ["S5TH", "S5FI", "S5TW", "S5TH-USA", "S5FI-USA", "SPXA200R", "SPXA50R", "SPXA200R-ST", "@SP500.PCTABOVE200"] },
   { group: "sp500-index", ids: ["SP50", "SP50-USA", "SPX", "@.SPX", "SPX-INDEX", "ISPX"] },
   { group: "vix-move", ids: ["VIX", "VIX-CBO", "VIX-INDEX", "MOVE", "MOVE-BAML", "MOVE-INDEX"] },
-  { group: "rates-fx-commodity", ids: ["TNX", "US10YT", "US10YT-TU1", "DXY", "DXY-FX", "USDX", "CL", "CL-NYM", "GC-NYM"] },
-  { group: "global-index", ids: ["SXXP", "STOXX", "SXXP-STX", "N225", "NKY", "N225-OSE"] },
+  { group: "rates-fx-commodity", ids: ["TNX", "DXY-ICE", "DX-Y", "DXY-FX2", "USDOLLAR", "DXY-NYB", "DX", "NYICDX", "CL"] },
+  { group: "global-index", ids: ["SXXP-STX", "N225-JP", "N225-OSE", "JP225", "NKY-JP", "NI225", "990000-TSE"] },
   { group: "sector-factor-etfs (expect -US works)", ids: ["SPY-US", "RSP-US", "XLK-US", "XLU-US", "XLY-US", "XLP-US", "MTUM-US", "USMV-US"] },
 ];
 
