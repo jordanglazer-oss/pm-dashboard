@@ -41,6 +41,17 @@ const CANDIDATE_SETS: Record<string, { key: string; formula: string; note: strin
     { key: "feRptDateQtr0", formula: "FE_ESTIMATE(REPORT_DATE,MEAN,QTR_ROLL,0,NOW,'')", note: "Current-quarter expected report date" },
     { key: "ffRptDateQtr0", formula: "FF_EPS_RPT_DATE(QTR,0)", note: "Last quarterly report date (fallback basis)" },
   ],
+  // Brief data candidates — replace flaky Finviz/SSGA scrapes with FactSet.
+  // Moving averages (for breadth: price vs 50/200-DMA per constituent, then
+  // aggregate) + long-term growth estimate (replaces SSGA 3-5yr EPS growth).
+  // Tested on a stock (AAPL-US); index-level P/E + index IDs are a separate step.
+  brief: [
+    { key: "ma200d", formula: "P_PRICE_AVG(-200D,0)", note: "200-day avg price (breadth component)" },
+    { key: "ma50d", formula: "P_PRICE_AVG(-50D,0)", note: "50-day avg price (breadth component)" },
+    { key: "ma200w", formula: "P_PRICE_AVG(-40W,0)", note: "~200-day avg via 40W (alt syntax if -200D fails)" },
+    { key: "ltg", formula: "FE_ESTIMATE(LTG,MEAN,ANN_ROLL,0,NOW,'')", note: "Long-term (3-5yr) EPS growth estimate" },
+    { key: "ltgAlt", formula: "FE_ESTIMATE(LTG_EPS,MEAN,ANN_ROLL,0,NOW,'')", note: "LTG EPS (alt item name)" },
+  ],
   // Earnings persistence / quality score candidates — the metric visible in the
   // FactSet terminal. Unknown exact code; probe several. If none resolve, the
   // OCF÷net-income cash-conversion series (already in the snapshot) is the proxy.
