@@ -44,9 +44,9 @@ function BackupHealthChip() {
     : h.ageHours < 48 ? `${Math.round(h.ageHours)}h`
     : `${Math.round(h.ageHours / 24)}d`;
   const textCls =
-    status === "ok" ? "text-slate-500"
-    : status === "warning" ? "text-amber-400 font-semibold"
-    : "text-red-400 font-bold";
+    status === "ok" ? "text-ink-3"
+    : status === "warning" ? "text-warn font-semibold"
+    : "text-neg font-bold";
   const dotCls =
     status === "ok" ? "bg-emerald-500"
     : status === "warning" ? "bg-amber-400"
@@ -88,7 +88,7 @@ function AnthropicCreditChip() {
   const when = Number.isFinite(Date.parse(s.at)) ? new Date(s.at).toLocaleString() : "recently";
   return (
     <span
-      className="flex items-center gap-1 text-red-400 font-bold"
+      className="flex items-center gap-1 text-neg font-bold"
       title={`Anthropic rejected an API call for low credit (last seen ${when}). AI features (Brief, scoring) are blocked until the key's org is topped up or a new key with credit is set as ANTHROPIC_API_KEY in Vercel.${s.detail ? ` [${s.detail}]` : ""}`}
     >
       <span className="inline-block w-1.5 h-1.5 rounded-full bg-red-500 animate-pulse" />
@@ -284,11 +284,12 @@ export function Navigation() {
     : "Dashboard";
 
   return (
-    <header className="bg-slate-900 text-white print:hidden">
-      <div className="mx-auto flex items-center justify-between px-4 py-2 md:px-6">
+    <header className="bg-surface text-ink border-b border-line print:hidden">
+      <div className="mx-auto flex items-center justify-between px-4 py-2.5 md:px-6">
         {/* Branding */}
-        <div className="flex items-center gap-3 shrink-0">
-          <h1 className="text-base font-bold tracking-tight whitespace-nowrap">PIM Dashboard</h1>
+        <div className="flex items-center gap-2.5 shrink-0">
+          <span className="grid h-6 w-6 place-items-center rounded-[7px] bg-accent text-[12px] font-bold text-white">P</span>
+          <h1 className="text-[15px] font-semibold tracking-tight text-ink whitespace-nowrap">PIM Dashboard</h1>
         </div>
 
         {/* Mobile action cluster — icon-only Bell / Refresh / Add + hamburger.
@@ -302,7 +303,7 @@ export function Navigation() {
             disabled={refreshing}
             aria-label="Refresh prices"
             title="Refresh prices"
-            className="flex items-center justify-center w-9 h-9 rounded-lg hover:bg-slate-800 transition-colors text-slate-300 hover:text-white disabled:opacity-60 disabled:cursor-not-allowed"
+            className="flex items-center justify-center w-9 h-9 rounded-control border border-line bg-surface text-ink-2 hover:bg-surface-hover hover:text-ink transition-colors disabled:opacity-60 disabled:cursor-not-allowed"
           >
             <svg className={`w-5 h-5 ${refreshing ? "animate-spin" : ""}`} fill="none" stroke="currentColor" strokeWidth="2" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" d="M16.023 9.348h4.992v-.001M2.985 19.644v-4.992m0 0h4.992m-4.993 0 3.181 3.183a8.25 8.25 0 0 0 13.803-3.7M4.031 9.865a8.25 8.25 0 0 1 13.803-3.7l3.181 3.182" /></svg>
           </button>
@@ -310,13 +311,13 @@ export function Navigation() {
             onClick={() => setQuickAddOpen(true)}
             aria-label="Add stock"
             title="Add stock"
-            className="flex items-center justify-center w-9 h-9 rounded-lg bg-emerald-600 hover:bg-emerald-700 transition-colors text-white"
+            className="flex items-center justify-center w-9 h-9 rounded-control bg-accent hover:bg-accent-ink transition-colors text-white"
           >
             <svg className="w-5 h-5" fill="none" stroke="currentColor" strokeWidth="2.5" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" d="M12 4.5v15m7.5-7.5h-15" /></svg>
           </button>
           <button
             onClick={() => setMenuOpen(!menuOpen)}
-            className="flex items-center justify-center w-9 h-9 rounded-lg hover:bg-slate-800 transition-colors"
+            className="flex items-center justify-center w-9 h-9 rounded-control border border-line bg-surface text-ink-2 hover:bg-surface-hover hover:text-ink transition-colors"
             aria-label="Toggle menu"
           >
             {menuOpen ? (
@@ -335,31 +336,40 @@ export function Navigation() {
               <Link
                 key={tab.label}
                 href={tab.href}
-                className={`rounded-md px-2.5 py-1.5 text-[13px] font-medium transition-colors whitespace-nowrap ${
+                className={`px-2.5 py-1.5 text-[13px] transition-colors whitespace-nowrap border-b-2 -mb-px ${
                   isActive
-                    ? "bg-blue-600 text-white"
-                    : "text-slate-300 hover:text-white hover:bg-slate-800"
+                    ? "text-ink font-semibold border-accent"
+                    : "text-ink-2 hover:text-ink border-transparent"
                 }`}
               >
                 {tab.label}
               </Link>
             );
           })}
-          {/* Notifications tray + Refresh + Quick-Add — visible from every page. */}
-          <div className="ml-2 flex items-center gap-1">
+          {/* Search + Notifications + Refresh + Quick-Add — visible from every page. */}
+          <div className="ml-2 flex items-center gap-1.5">
+            <button
+              onClick={() => setPaletteOpen(true)}
+              aria-label="Search"
+              title="Search (⌘K)"
+              className="flex items-center gap-1.5 rounded-control border border-line bg-surface px-2.5 py-1.5 text-[12px] text-ink-3 hover:bg-surface-hover hover:text-ink transition-colors"
+            >
+              <svg className="w-3.5 h-3.5" fill="none" stroke="currentColor" strokeWidth="2" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" d="m21 21-4.34-4.34M17 11a6 6 0 1 1-12 0 6 6 0 0 1 12 0Z" /></svg>
+              <kbd className="rounded bg-surface-2 border border-line px-1 py-px text-[10px] text-ink-3">⌘K</kbd>
+            </button>
             <NotificationTray />
             <button
               onClick={handleGlobalRefresh}
               disabled={refreshing}
-              className="flex items-center gap-1 rounded-md bg-slate-700 hover:bg-slate-600 disabled:opacity-60 disabled:cursor-not-allowed px-2.5 py-1.5 text-[13px] font-semibold text-white transition-colors whitespace-nowrap"
-              title="Refresh prices for every stock, ETF, and fund (Yahoo)"
+              className="flex items-center gap-1 rounded-control border border-line bg-surface text-ink-2 hover:bg-surface-hover hover:text-ink disabled:opacity-60 disabled:cursor-not-allowed px-2.5 py-1.5 text-[13px] font-medium transition-colors whitespace-nowrap"
+              title="Refresh prices for every stock, ETF, and fund"
             >
               <svg className={`w-3.5 h-3.5 ${refreshing ? "animate-spin" : ""}`} fill="none" stroke="currentColor" strokeWidth="2.5" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" d="M16.023 9.348h4.992v-.001M2.985 19.644v-4.992m0 0h4.992m-4.993 0 3.181 3.183a8.25 8.25 0 0 0 13.803-3.7M4.031 9.865a8.25 8.25 0 0 1 13.803-3.7l3.181 3.182" /></svg>
               {refreshing ? "Refreshing..." : "Refresh"}
             </button>
             <button
               onClick={() => setQuickAddOpen(true)}
-              className="flex items-center gap-1 rounded-md bg-emerald-600 hover:bg-emerald-700 px-2.5 py-1.5 text-[13px] font-semibold text-white transition-colors whitespace-nowrap"
+              className="flex items-center gap-1 rounded-control bg-accent hover:bg-accent-ink px-2.5 py-1.5 text-[13px] font-semibold text-white transition-colors whitespace-nowrap"
               title="Add a stock (Shift+A)"
             >
               <svg className="w-3.5 h-3.5" fill="none" stroke="currentColor" strokeWidth="2.5" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" d="M12 4.5v15m7.5-7.5h-15" /></svg>
@@ -371,7 +381,7 @@ export function Navigation() {
 
       {/* Mobile dropdown menu */}
       {menuOpen && (
-        <nav className="md:hidden border-t border-slate-700 px-4 pb-3 pt-1">
+        <nav className="md:hidden border-t border-line px-4 pb-3 pt-1">
           {tabs.map((tab) => {
             const isActive = tab.label === activeTab;
             return (
@@ -379,10 +389,10 @@ export function Navigation() {
                 key={tab.label}
                 href={tab.href}
                 onClick={() => setMenuOpen(false)}
-                className={`block rounded-lg px-4 py-2.5 text-sm font-semibold transition-colors ${
+                className={`block rounded-control px-4 py-2.5 text-sm font-semibold transition-colors ${
                   isActive
-                    ? "bg-blue-600 text-white"
-                    : "text-slate-300 hover:text-white hover:bg-slate-800"
+                    ? "bg-accent-soft text-accent-ink"
+                    : "text-ink-2 hover:text-ink hover:bg-surface-hover"
                 }`}
               >
                 {tab.label}
@@ -394,17 +404,17 @@ export function Navigation() {
         </nav>
       )}
       {/* Keyboard shortcut hint — desktop only, subtle */}
-      <div className="hidden md:flex items-center justify-center gap-4 bg-slate-800 px-4 py-0.5 text-[10px] text-slate-500">
-        <span><kbd className="rounded bg-slate-700 px-1 py-px text-slate-400">⌘/Win</kbd> + <kbd className="rounded bg-slate-700 px-1 py-px text-slate-400">←→</kbd> switch tabs</span>
-        <span><kbd className="rounded bg-slate-700 px-1 py-px text-slate-400">⌘/Ctrl</kbd> + <kbd className="rounded bg-slate-700 px-1 py-px text-slate-400">K</kbd> search</span>
-        <span><kbd className="rounded bg-slate-700 px-1 py-px text-slate-400">Shift</kbd> + <kbd className="rounded bg-slate-700 px-1 py-px text-slate-400">A</kbd> add stock</span>
+      <div className="hidden md:flex items-center justify-center gap-4 bg-surface-2 border-t border-line px-4 py-1 text-[10px] text-ink-3">
+        <span><kbd className="rounded bg-surface border border-line px-1 py-px text-ink-2">⌘/Win</kbd> + <kbd className="rounded bg-surface border border-line px-1 py-px text-ink-2">←→</kbd> switch tabs</span>
+        <span><kbd className="rounded bg-surface border border-line px-1 py-px text-ink-2">⌘/Ctrl</kbd> + <kbd className="rounded bg-surface border border-line px-1 py-px text-ink-2">K</kbd> search</span>
+        <span><kbd className="rounded bg-surface border border-line px-1 py-px text-ink-2">Shift</kbd> + <kbd className="rounded bg-surface border border-line px-1 py-px text-ink-2">A</kbd> add stock</span>
         {pathname.startsWith("/stock/") && (
-          <span><kbd className="rounded bg-slate-700 px-1 py-px text-slate-400">⌥/Alt</kbd> + <kbd className="rounded bg-slate-700 px-1 py-px text-slate-400">←→</kbd> switch stocks</span>
+          <span><kbd className="rounded bg-surface border border-line px-1 py-px text-ink-2">⌥/Alt</kbd> + <kbd className="rounded bg-surface border border-line px-1 py-px text-ink-2">←→</kbd> switch stocks</span>
         )}
         <div className="ml-auto flex items-center gap-3">
           <AnthropicCreditChip />
           <BackupHealthChip />
-          <Link href="/admin/health" className="text-slate-500 hover:text-slate-300 transition-colors">
+          <Link href="/admin/health" className="text-ink-3 hover:text-ink transition-colors">
             health
           </Link>
         </div>
