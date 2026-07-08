@@ -45,19 +45,30 @@ export async function POST(req: NextRequest) {
   }
   const ids = [...idToTickers.keys()];
   const prices: Record<string, number | null> = {};
-  for (const t of tickers) prices[t] = null;
-  if (ids.length === 0) return NextResponse.json({ prices, source: "factset" });
+  const industries: Record<string, string | null> = {};
+  const sectors: Record<string, string | null> = {};
+  const names: Record<string, string | null> = {};
+  for (const t of tickers) { prices[t] = null; industries[t] = null; sectors[t] = null; names[t] = null; }
+  if (ids.length === 0) return NextResponse.json({ prices, industries, sectors, names, source: "factset" });
 
   try {
-    const data = await crossSectional(ids, [FACTSET_FORMULAS.price]);
+    // Price + authoritative GICS industry/sector + company name in one call, so
+    // lists (e.g. RBC Equate CORE 40) don't depend on the PDF carrying those.
+    const data = await crossSectional(ids, ["P_PRICE", "FG_GICS_INDUSTRY", "FG_GICS_SECTOR", "FG_COMPANY_NAME"]);
+    const str = (v: unknown): string | null => (typeof v === "string" && v.trim() ? v.trim() : null);
     for (const id of ids) {
-      const v = data[id]?.[FACTSET_FORMULAS.price];
-      const price = typeof v === "number" ? v : null;
-      for (const t of idToTickers.get(id) ?? []) prices[t] = price;
+      const row = data[id] || {};
+      const price = typeof row["P_PRICE"] === "number" ? (row["P_PRICE"] as number) : null;
+      for (const t of idToTickers.get(id) ?? []) {
+        prices[t] = price;
+        industries[t] = str(row["FG_GICS_INDUSTRY"]);
+        sectors[t] = str(row["FG_GICS_SECTOR"]);
+        names[t] = str(row["FG_COMPANY_NAME"]);
+      }
     }
-    return NextResponse.json({ prices, source: "factset", fetchedAt: new Date().toISOString() });
+    return NextResponse.json({ prices, industries, sectors, names, source: "factset", fetchedAt: new Date().toISOString() });
   } catch (e) {
     log.error("crossSectional failed:", e instanceof Error ? e.message : e);
-    return NextResponse.json({ prices, source: "factset", error: e instanceof Error ? e.message : "failed" });
+    return NextResponse.json({ prices, industries, sectors, names, source: "factset", error: e instanceof Error ? e.message : "failed" });
   }
 }

@@ -507,6 +507,9 @@ export default function ResearchPage() {
   // "Current price" column shows FactSet's live value rather than the Yahoo
   // livePrices map, per the requirement that it be FactSet-sourced.
   const [factsetPrices, setFactsetPrices] = useState<Record<string, number | null>>({});
+  // GICS industry from FactSet, keyed by ticker — authoritative source for the
+  // Industry column (the CORE 40 model-portfolio PDFs don't carry industry).
+  const [factsetIndustries, setFactsetIndustries] = useState<Record<string, string | null>>({});
   const [factsetPricesLoading, setFactsetPricesLoading] = useState(false);
 
   const fetchFactsetPrices = useCallback(async (researchState?: ResearchState) => {
@@ -528,6 +531,7 @@ export default function ResearchPage() {
       if (!res.ok) return;
       const data = await res.json();
       setFactsetPrices((prev) => ({ ...prev, ...(data.prices || {}) }));
+      setFactsetIndustries((prev) => ({ ...prev, ...(data.industries || {}) }));
     } catch {
       // silently fail — column shows "—"
     } finally {
@@ -709,6 +713,7 @@ export default function ResearchPage() {
   }
   function compareEquate(a: RBCEntry, b: RBCEntry, key: EquateSortKey): number {
     if (key === "currentPrice") return (factsetPrices[a.ticker] ?? 0) - (factsetPrices[b.ticker] ?? 0);
+    if (key === "industry") return String(factsetIndustries[a.ticker] || a.industry || "").localeCompare(String(factsetIndustries[b.ticker] || b.industry || ""));
     return String(a[key] || "").localeCompare(String(b[key] || ""));
   }
   function sortedEquateCad() {
@@ -2952,7 +2957,7 @@ export default function ResearchPage() {
                 <tr key={item.ticker} className={`border-b border-slate-100 ${i % 2 === 0 ? "bg-white" : "bg-amber-50/30"} hover:bg-amber-50/60 transition-colors`}>
                   <td className="py-2 pr-3 text-slate-700 truncate max-w-[240px]" title={item.name || item.ticker}>{item.name || <span className="text-slate-300 italic">—</span>}</td>
                   <td className="py-2 pr-3 font-mono font-bold text-amber-700">${displayTicker(item.ticker)}</td>
-                  <td className="py-2 pr-3 text-slate-600 truncate max-w-[180px]" title={item.industry || ""}>{item.industry || <span className="text-slate-300">—</span>}</td>
+                  <td className="py-2 pr-3 text-slate-600 truncate max-w-[180px]" title={factsetIndustries[item.ticker] || item.industry || ""}>{factsetIndustries[item.ticker] || item.industry || <span className="text-slate-300">—</span>}</td>
                   <td className="py-2 pr-3 text-slate-600">{item.strategy || <span className="text-slate-300">—</span>}</td>
                   <td className="py-2 pr-3 text-right font-mono text-slate-700 whitespace-nowrap">
                     {typeof fsPrice === "number" ? `$${fsPrice.toFixed(2)}` : <span className="text-slate-300">—</span>}
@@ -3028,7 +3033,7 @@ export default function ResearchPage() {
                 <tr key={item.ticker} className={`border-b border-slate-100 ${i % 2 === 0 ? "bg-white" : "bg-sky-50/30"} hover:bg-sky-50/60 transition-colors`}>
                   <td className="py-2 pr-3 text-slate-700 truncate max-w-[240px]" title={item.name || item.ticker}>{item.name || <span className="text-slate-300 italic">—</span>}</td>
                   <td className="py-2 pr-3 font-mono font-bold text-sky-700">${displayTicker(item.ticker)}</td>
-                  <td className="py-2 pr-3 text-slate-600 truncate max-w-[180px]" title={item.industry || ""}>{item.industry || <span className="text-slate-300">—</span>}</td>
+                  <td className="py-2 pr-3 text-slate-600 truncate max-w-[180px]" title={factsetIndustries[item.ticker] || item.industry || ""}>{factsetIndustries[item.ticker] || item.industry || <span className="text-slate-300">—</span>}</td>
                   <td className="py-2 pr-3 text-right font-mono text-slate-700 whitespace-nowrap">{typeof fsPrice === "number" ? `$${fsPrice.toFixed(2)}` : <span className="text-slate-300">—</span>}</td>
                   <td className="py-2 text-right whitespace-nowrap">
                     {scoredStocks.some((s) => s.ticker === item.ticker) ? (
@@ -3098,7 +3103,7 @@ export default function ResearchPage() {
                 <tr key={item.ticker} className={`border-b border-slate-100 ${i % 2 === 0 ? "bg-white" : "bg-sky-50/30"} hover:bg-sky-50/60 transition-colors`}>
                   <td className="py-2 pr-3 text-slate-700 truncate max-w-[240px]" title={item.name || item.ticker}>{item.name || <span className="text-slate-300 italic">—</span>}</td>
                   <td className="py-2 pr-3 font-mono font-bold text-sky-700">${displayTicker(item.ticker)}</td>
-                  <td className="py-2 pr-3 text-slate-600 truncate max-w-[180px]" title={item.industry || ""}>{item.industry || <span className="text-slate-300">—</span>}</td>
+                  <td className="py-2 pr-3 text-slate-600 truncate max-w-[180px]" title={factsetIndustries[item.ticker] || item.industry || ""}>{factsetIndustries[item.ticker] || item.industry || <span className="text-slate-300">—</span>}</td>
                   <td className="py-2 pr-3 text-right font-mono text-slate-700 whitespace-nowrap">{typeof fsPrice === "number" ? `$${fsPrice.toFixed(2)}` : <span className="text-slate-300">—</span>}</td>
                   <td className="py-2 text-right whitespace-nowrap">
                     {scoredStocks.some((s) => s.ticker === item.ticker) ? (
