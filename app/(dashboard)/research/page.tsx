@@ -509,7 +509,10 @@ export default function ResearchPage() {
   const [factsetPrices, setFactsetPrices] = useState<Record<string, number | null>>({});
   // GICS industry from FactSet, keyed by ticker — authoritative source for the
   // Industry column (the CORE 40 model-portfolio PDFs don't carry industry).
-  const [factsetIndustries, setFactsetIndustries] = useState<Record<string, string | null>>({});
+  // Broad GICS sector from FactSet (FG_GICS_SECTOR), keyed by ticker — the ~11
+  // top-level sectors (Financials, Energy, …). Shown in the list "Sector" column
+  // rather than the far more granular FG_GICS_INDUSTRY.
+  const [factsetSectors, setFactsetSectors] = useState<Record<string, string | null>>({});
   const [factsetPricesLoading, setFactsetPricesLoading] = useState(false);
 
   const fetchFactsetPrices = useCallback(async (researchState?: ResearchState) => {
@@ -531,7 +534,7 @@ export default function ResearchPage() {
       if (!res.ok) return;
       const data = await res.json();
       setFactsetPrices((prev) => ({ ...prev, ...(data.prices || {}) }));
-      setFactsetIndustries((prev) => ({ ...prev, ...(data.industries || {}) }));
+      setFactsetSectors((prev) => ({ ...prev, ...(data.sectors || {}) }));
     } catch {
       // silently fail — column shows "—"
     } finally {
@@ -713,7 +716,7 @@ export default function ResearchPage() {
   }
   function compareEquate(a: RBCEntry, b: RBCEntry, key: EquateSortKey): number {
     if (key === "currentPrice") return (factsetPrices[a.ticker] ?? 0) - (factsetPrices[b.ticker] ?? 0);
-    if (key === "industry") return String(factsetIndustries[a.ticker] || a.industry || "").localeCompare(String(factsetIndustries[b.ticker] || b.industry || ""));
+    if (key === "industry") return String(factsetSectors[a.ticker] || a.industry || "").localeCompare(String(factsetSectors[b.ticker] || b.industry || ""));
     return String(a[key] || "").localeCompare(String(b[key] || ""));
   }
   function sortedEquateCad() {
@@ -738,6 +741,8 @@ export default function ResearchPage() {
         cmp = (factsetPrices[a.ticker] ?? 0) - (factsetPrices[b.ticker] ?? 0);
       } else if (key === "priceTarget") {
         cmp = (a.priceTarget ?? 0) - (b.priceTarget ?? 0);
+      } else if (key === "industry") {
+        cmp = String(factsetSectors[a.ticker] || a.industry || "").localeCompare(String(factsetSectors[b.ticker] || b.industry || ""));
       } else {
         cmp = String(a[key] || "").localeCompare(String(b[key] || ""));
       }
@@ -2929,7 +2934,7 @@ export default function ResearchPage() {
               <tr className="border-b-2 border-amber-500 text-left">
                 <th className="py-2 pr-3 text-xs font-semibold text-amber-700 cursor-pointer hover:text-amber-900 select-none" onClick={() => toggleJpmFocusSort("name")}>Company name{jArrow("name")}</th>
                 <th className="py-2 pr-3 text-xs font-semibold text-amber-700 cursor-pointer hover:text-amber-900 select-none" onClick={() => toggleJpmFocusSort("ticker")}>Ticker{jArrow("ticker")}</th>
-                <th className="py-2 pr-3 text-xs font-semibold text-amber-700 cursor-pointer hover:text-amber-900 select-none" onClick={() => toggleJpmFocusSort("industry")}>Industry{jArrow("industry")}</th>
+                <th className="py-2 pr-3 text-xs font-semibold text-amber-700 cursor-pointer hover:text-amber-900 select-none" onClick={() => toggleJpmFocusSort("industry")}>Sector{jArrow("industry")}</th>
                 <th className="py-2 pr-3 text-xs font-semibold text-amber-700 cursor-pointer hover:text-amber-900 select-none" onClick={() => toggleJpmFocusSort("strategy")}>Strategy{jArrow("strategy")}</th>
                 <th className="py-2 pr-3 text-xs font-semibold text-amber-700 text-right cursor-pointer hover:text-amber-900 select-none" onClick={() => toggleJpmFocusSort("currentPrice")}>Current price{jArrow("currentPrice")}</th>
                 <th className="py-2 pr-3 text-xs font-semibold text-amber-700 text-right cursor-pointer hover:text-amber-900 select-none" onClick={() => toggleJpmFocusSort("priceTarget")}>Price target{jArrow("priceTarget")}</th>
@@ -2943,7 +2948,7 @@ export default function ResearchPage() {
                 <tr key={item.ticker} className={`border-b border-slate-100 ${i % 2 === 0 ? "bg-white" : "bg-amber-50/30"} hover:bg-amber-50/60 transition-colors`}>
                   <td className="py-2 pr-3 text-slate-700 truncate max-w-[240px]" title={item.name || item.ticker}>{item.name || <span className="text-slate-300 italic">—</span>}</td>
                   <td className="py-2 pr-3 font-mono font-bold text-amber-700">${displayTicker(item.ticker)}</td>
-                  <td className="py-2 pr-3 text-slate-600 truncate max-w-[180px]" title={factsetIndustries[item.ticker] || item.industry || ""}>{factsetIndustries[item.ticker] || item.industry || <span className="text-slate-300">—</span>}</td>
+                  <td className="py-2 pr-3 text-slate-600 truncate max-w-[180px]" title={factsetSectors[item.ticker] || item.industry || ""}>{factsetSectors[item.ticker] || item.industry || <span className="text-slate-300">—</span>}</td>
                   <td className="py-2 pr-3 text-slate-600">{item.strategy || <span className="text-slate-300">—</span>}</td>
                   <td className="py-2 pr-3 text-right font-mono text-slate-700 whitespace-nowrap">
                     {typeof fsPrice === "number" ? `$${fsPrice.toFixed(2)}` : <span className="text-slate-300">—</span>}
@@ -3007,7 +3012,7 @@ export default function ResearchPage() {
               <tr className="border-b-2 border-sky-500 text-left">
                 <th className="py-2 pr-3 text-xs font-semibold text-sky-700 cursor-pointer hover:text-sky-900 select-none" onClick={() => toggleEquateCadSort("name")}>Company name{ecArrow("name")}</th>
                 <th className="py-2 pr-3 text-xs font-semibold text-sky-700 cursor-pointer hover:text-sky-900 select-none" onClick={() => toggleEquateCadSort("ticker")}>Ticker{ecArrow("ticker")}</th>
-                <th className="py-2 pr-3 text-xs font-semibold text-sky-700 cursor-pointer hover:text-sky-900 select-none" onClick={() => toggleEquateCadSort("industry")}>Industry{ecArrow("industry")}</th>
+                <th className="py-2 pr-3 text-xs font-semibold text-sky-700 cursor-pointer hover:text-sky-900 select-none" onClick={() => toggleEquateCadSort("industry")}>Sector{ecArrow("industry")}</th>
                 <th className="py-2 pr-3 text-xs font-semibold text-sky-700 text-right cursor-pointer hover:text-sky-900 select-none" onClick={() => toggleEquateCadSort("currentPrice")}>Current price{ecArrow("currentPrice")}</th>
                 <th className="py-2 w-24"></th>
               </tr>
@@ -3019,7 +3024,7 @@ export default function ResearchPage() {
                 <tr key={item.ticker} className={`border-b border-slate-100 ${i % 2 === 0 ? "bg-white" : "bg-sky-50/30"} hover:bg-sky-50/60 transition-colors`}>
                   <td className="py-2 pr-3 text-slate-700 truncate max-w-[240px]" title={item.name || item.ticker}>{item.name || <span className="text-slate-300 italic">—</span>}</td>
                   <td className="py-2 pr-3 font-mono font-bold text-sky-700">${displayTicker(item.ticker)}</td>
-                  <td className="py-2 pr-3 text-slate-600 truncate max-w-[180px]" title={factsetIndustries[item.ticker] || item.industry || ""}>{factsetIndustries[item.ticker] || item.industry || <span className="text-slate-300">—</span>}</td>
+                  <td className="py-2 pr-3 text-slate-600 truncate max-w-[180px]" title={factsetSectors[item.ticker] || item.industry || ""}>{factsetSectors[item.ticker] || item.industry || <span className="text-slate-300">—</span>}</td>
                   <td className="py-2 pr-3 text-right font-mono text-slate-700 whitespace-nowrap">{typeof fsPrice === "number" ? `$${fsPrice.toFixed(2)}` : <span className="text-slate-300">—</span>}</td>
                   <td className="py-2 text-right whitespace-nowrap">
                     {scoredStocks.some((s) => s.ticker === item.ticker) ? (
@@ -3077,7 +3082,7 @@ export default function ResearchPage() {
               <tr className="border-b-2 border-sky-500 text-left">
                 <th className="py-2 pr-3 text-xs font-semibold text-sky-700 cursor-pointer hover:text-sky-900 select-none" onClick={() => toggleEquateUsdSort("name")}>Company name{euArrow("name")}</th>
                 <th className="py-2 pr-3 text-xs font-semibold text-sky-700 cursor-pointer hover:text-sky-900 select-none" onClick={() => toggleEquateUsdSort("ticker")}>Ticker{euArrow("ticker")}</th>
-                <th className="py-2 pr-3 text-xs font-semibold text-sky-700 cursor-pointer hover:text-sky-900 select-none" onClick={() => toggleEquateUsdSort("industry")}>Industry{euArrow("industry")}</th>
+                <th className="py-2 pr-3 text-xs font-semibold text-sky-700 cursor-pointer hover:text-sky-900 select-none" onClick={() => toggleEquateUsdSort("industry")}>Sector{euArrow("industry")}</th>
                 <th className="py-2 pr-3 text-xs font-semibold text-sky-700 text-right cursor-pointer hover:text-sky-900 select-none" onClick={() => toggleEquateUsdSort("currentPrice")}>Current price{euArrow("currentPrice")}</th>
                 <th className="py-2 w-24"></th>
               </tr>
@@ -3089,7 +3094,7 @@ export default function ResearchPage() {
                 <tr key={item.ticker} className={`border-b border-slate-100 ${i % 2 === 0 ? "bg-white" : "bg-sky-50/30"} hover:bg-sky-50/60 transition-colors`}>
                   <td className="py-2 pr-3 text-slate-700 truncate max-w-[240px]" title={item.name || item.ticker}>{item.name || <span className="text-slate-300 italic">—</span>}</td>
                   <td className="py-2 pr-3 font-mono font-bold text-sky-700">${displayTicker(item.ticker)}</td>
-                  <td className="py-2 pr-3 text-slate-600 truncate max-w-[180px]" title={factsetIndustries[item.ticker] || item.industry || ""}>{factsetIndustries[item.ticker] || item.industry || <span className="text-slate-300">—</span>}</td>
+                  <td className="py-2 pr-3 text-slate-600 truncate max-w-[180px]" title={factsetSectors[item.ticker] || item.industry || ""}>{factsetSectors[item.ticker] || item.industry || <span className="text-slate-300">—</span>}</td>
                   <td className="py-2 pr-3 text-right font-mono text-slate-700 whitespace-nowrap">{typeof fsPrice === "number" ? `$${fsPrice.toFixed(2)}` : <span className="text-slate-300">—</span>}</td>
                   <td className="py-2 text-right whitespace-nowrap">
                     {scoredStocks.some((s) => s.ticker === item.ticker) ? (

@@ -33,10 +33,23 @@ export function CollapsibleSection({
   return (
     <section className={`rounded-[24px] border bg-white p-6 shadow-sm ${className || "border-slate-200"}`}>
       <div className={`flex items-center justify-between ${collapsed ? "" : "mb-4"}`}>
-        <button
+        {/* The whole title region (arrow + title + subtitle + the empty space up
+            to the right-side controls) toggles — not just the arrow. Uses a div
+            with role="button" rather than <button> so the `right` slot can hold
+            its own buttons without nesting. */}
+        <div
           onClick={toggle}
-          className="flex items-center gap-2 min-w-0 text-left group"
+          onKeyDown={(e) => {
+            if (e.key === "Enter" || e.key === " ") {
+              e.preventDefault();
+              toggle();
+            }
+          }}
+          role="button"
+          tabIndex={0}
+          aria-expanded={!collapsed}
           aria-label={collapsed ? "Expand section" : "Collapse section"}
+          className="flex flex-1 items-center gap-2 min-w-0 text-left cursor-pointer group"
         >
           <span className="text-slate-400 group-hover:text-slate-700 text-base leading-none shrink-0 w-4">
             {collapsed ? "▸" : "▾"}
@@ -45,8 +58,15 @@ export function CollapsibleSection({
             <span className={`block ${titleClass || "text-xl font-bold text-slate-800"}`}>{title}</span>
             {subtitle && <span className="block text-xs text-slate-400">{subtitle}</span>}
           </span>
-        </button>
-        {right && <div className="flex items-center gap-3 shrink-0">{right}</div>}
+        </div>
+        {right && (
+          <div
+            className="flex items-center gap-3 shrink-0"
+            onClick={(e) => e.stopPropagation()}
+          >
+            {right}
+          </div>
+        )}
       </div>
       {!collapsed && children}
     </section>
