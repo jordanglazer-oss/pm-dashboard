@@ -19,6 +19,18 @@
 
 import type { ScoreHistoryStore, ScoreHistoryEntry } from "@/app/api/kv/score-history/route";
 import type { ScoreKey } from "./types";
+import { SCORE_GROUPS } from "./types";
+
+/**
+ * Keys that are part of the CURRENT scoring schema. pm:score-history is an
+ * append-only ledger, so entries logged before a category was renamed/removed
+ * (e.g. the retired "externalSources") still carry the old key. We derive the
+ * valid set from SCORE_GROUPS so retired keys never surface in the calibration
+ * — the per-category signal must reflect categories the score still uses.
+ */
+const VALID_SCORE_KEYS = new Set<ScoreKey>(
+  SCORE_GROUPS.flatMap((g) => g.categories.map((c) => c.key as ScoreKey)),
+);
 
 export type PriceMap = Record<string, number>; // dateISO(YYYY-MM-DD) → close
 
@@ -145,6 +157,7 @@ export function computeCalibration(args: {
   for (const o of obs) for (const k of Object.keys(o.scores)) allKeys.add(k as ScoreKey);
   const categories: CategorySignal[] = [];
   for (const k of allKeys) {
+    if (!VALID_SCORE_KEYS.has(k)) continue; // skip retired keys (e.g. externalSources)
     const withK = obs.filter((o) => typeof o.scores[k] === "number");
     if (withK.length < 8) continue; // too thin to say anything
     const vals = withK.map((o) => o.scores[k] as number).slice().sort((a, b) => a - b);
