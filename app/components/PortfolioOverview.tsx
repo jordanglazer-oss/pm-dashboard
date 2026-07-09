@@ -249,6 +249,9 @@ export function PortfolioOverview({ sidebar }: { sidebar?: React.ReactNode } = {
   const [refreshingAll, setRefreshingAll] = useState(false);
   const [refreshProgress, setRefreshProgress] = useState("");
   const scoringAny = scoringBucket != null;
+  // Portfolio / Watchlist are one table with a segmented toggle (mockup), not
+  // two stacked tiles.
+  const [rankBucket, setRankBucket] = useState<"Portfolio" | "Watchlist">("Portfolio");
 
   // Timestamps persist across reloads via the same uiPrefs → Redis KV bridge
   // the rest of this screen already uses. Keys: scoreAll<Bucket>At, refreshAllAt.
@@ -1064,64 +1067,51 @@ export function PortfolioOverview({ sidebar }: { sidebar?: React.ReactNode } = {
       <div className="grid gap-5 lg:grid-cols-[minmax(0,1fr)_340px] items-start">
         <div className="min-w-0 space-y-6">
 
-      {/* Portfolio Rankings (scoreable stocks only) */}
+      {/* Rankings — one table with a Portfolio / Watchlist segmented toggle. */}
       <RankingTable
-        title="Portfolio Rankings"
-        subtitle="Bottom 3 flagged for review"
-        stocks={scoreablePortfolio}
+        title={rankBucket === "Portfolio" ? "Portfolio Rankings" : "Watchlist Rankings"}
+        subtitle={rankBucket === "Portfolio" ? "Bottom 3 flagged for review" : "Top 3 flagged as buy candidates"}
+        bucketTabs={
+          <div className="inline-flex items-center rounded-control border border-line bg-surface-2 p-0.5">
+            {(["Portfolio", "Watchlist"] as const).map((b) => {
+              const active = rankBucket === b;
+              const count = b === "Portfolio" ? scoreablePortfolio.length : scoreableWatchlist.length;
+              return (
+                <button
+                  key={b}
+                  onClick={() => setRankBucket(b)}
+                  className={`rounded-[6px] px-3 py-1 text-[13px] font-semibold transition-colors ${active ? "bg-surface text-ink shadow-sm" : "text-ink-2 hover:text-ink"}`}
+                >
+                  {b} <span className={`font-normal ${active ? "text-ink-3" : "text-ink-3"}`}>{count}</span>
+                </button>
+              );
+            })}
+          </div>
+        }
+        stocks={rankBucket === "Portfolio" ? scoreablePortfolio : scoreableWatchlist}
         livePreviousCloses={livePreviousCloses}
-        flagType="review"
+        flagType={rankBucket === "Portfolio" ? "review" : "buy"}
         uiPrefs={uiPrefs}
         setUiPref={setUiPref}
-        onScoreAll={() => handleScoreBucket("Portfolio")}
-        scoring={scoringBucket === "Portfolio"}
-        scoreProgress={scoringBucket === "Portfolio" ? scoreProgress : ""}
-        scoreFailures={scoringBucket !== "Watchlist" ? scoreFailures : []}
+        onScoreAll={() => handleScoreBucket(rankBucket)}
+        scoring={scoringBucket === rankBucket}
+        scoreProgress={scoringBucket === rankBucket ? scoreProgress : ""}
+        scoreFailures={scoringBucket === rankBucket || scoringBucket == null ? scoreFailures : []}
         onDismissFailures={() => { setScoreFailures([]); setScoreProgress(""); }}
         scoreAllDisabled={scoringAny || refreshingAll}
-        lastScoredAt={scoreAllPortfolioAt}
-        collapseKey="dashboard.portfolioRankings.collapsed"
-        onBackfillSummaries={() => handleBackfillSummaries("Portfolio")}
+        lastScoredAt={rankBucket === "Portfolio" ? scoreAllPortfolioAt : scoreAllWatchlistAt}
+        collapseKey={rankBucket === "Portfolio" ? "dashboard.portfolioRankings.collapsed" : "dashboard.watchlistRankings.collapsed"}
+        onBackfillSummaries={() => handleBackfillSummaries(rankBucket)}
         backfilling={backfilling}
         backfillProgress={backfillProgress}
-        onFillGaps={() => handleFillGaps("Portfolio")}
+        onFillGaps={() => handleFillGaps(rankBucket)}
         fillingGaps={fillingGaps}
         fillGapsProgress={fillGapsProgress}
         aiSemiKeys={AI_SEMI_KEYS}
-        onClearCharting={() => handleClearCharting("Portfolio")}
+        onClearCharting={() => handleClearCharting(rankBucket)}
         riskScanByTicker={riskScanByTicker}
         splitByCurrency
-      />
-
-
-      {/* Watchlist Rankings (scoreable stocks only) */}
-      <RankingTable
-        title="Watchlist Rankings"
-        subtitle="Top 3 flagged as buy candidates"
-        stocks={scoreableWatchlist}
-        livePreviousCloses={livePreviousCloses}
-        flagType="buy"
-        uiPrefs={uiPrefs}
-        setUiPref={setUiPref}
-        onScoreAll={() => handleScoreBucket("Watchlist")}
-        scoring={scoringBucket === "Watchlist"}
-        scoreProgress={scoringBucket === "Watchlist" ? scoreProgress : ""}
-        scoreFailures={scoringBucket !== "Portfolio" ? scoreFailures : []}
-        onDismissFailures={() => { setScoreFailures([]); setScoreProgress(""); }}
-        scoreAllDisabled={scoringAny || refreshingAll}
-        lastScoredAt={scoreAllWatchlistAt}
-        collapseKey="dashboard.watchlistRankings.collapsed"
-        onBackfillSummaries={() => handleBackfillSummaries("Watchlist")}
-        backfilling={backfilling}
-        backfillProgress={backfillProgress}
-        onFillGaps={() => handleFillGaps("Watchlist")}
-        fillingGaps={fillingGaps}
-        fillGapsProgress={fillGapsProgress}
-        aiSemiKeys={AI_SEMI_KEYS}
-        onClearCharting={() => handleClearCharting("Watchlist")}
-        riskScanByTicker={riskScanByTicker}
-        splitByCurrency
-        enableExternalExports
+        enableExternalExports={rankBucket === "Watchlist"}
       />
         </div>
 
@@ -1430,9 +1420,13 @@ function RankingTable({
   splitByCurrency,
   enableExternalExports,
   livePreviousCloses,
+  bucketTabs,
 }: {
   title: string;
   subtitle: string;
+  /** Optional segmented control rendered in the header in place of the title
+   *  (the Portfolio / Watchlist toggle). */
+  bucketTabs?: React.ReactNode;
   stocks: ScoredStock[];
   /** When true, split the rows into 🇨🇦 Canadian and 🇺🇸 US sub-sections,
    *  each independently ranked + flagged, so CAD and USD names are compared
@@ -1657,7 +1651,21 @@ function RankingTable({
   return (
     <section className="rounded-card border border-line bg-white p-5 shadow-sm">
       <div className={`flex items-center gap-3 flex-wrap ${collapsed ? "" : "mb-4"}`}>
-        {collapseKey ? (
+        {bucketTabs ? (
+          <>
+            {collapseKey && (
+              <button
+                onClick={toggleCollapsed}
+                className="cursor-pointer text-ink-3 hover:text-ink transition-colors"
+                aria-expanded={!collapsed}
+                aria-label={collapsed ? `Expand ${title}` : `Collapse ${title}`}
+              >
+                <svg className={`w-4 h-4 transition-transform ${collapsed ? "-rotate-90" : ""}`} fill="none" stroke="currentColor" strokeWidth="2.5" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" d="M19 9l-7 7-7-7" /></svg>
+              </button>
+            )}
+            {bucketTabs}
+          </>
+        ) : collapseKey ? (
           <button
             onClick={toggleCollapsed}
             className="flex items-center gap-2 cursor-pointer hover:opacity-80 transition-opacity"
@@ -1678,7 +1686,7 @@ function RankingTable({
         ) : (
           <h2 className="text-lg font-bold text-ink">{title}</h2>
         )}
-        <span className="text-sm text-ink-3">{subtitle}</span>
+        {!bucketTabs && <span className="text-sm text-ink-3">{subtitle}</span>}
         {onScoreAll && (
           <div className="ml-auto flex items-center gap-2">
             {lastScoredAt && !scoring && (
