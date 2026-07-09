@@ -11,10 +11,11 @@ import { usePathname } from "next/navigation";
  * content. Self-hides on any non-hub route so it only appears within the hub.
  */
 
+// X-ray was removed as a distinct segment — Portfolio X-ray already lives on the
+// Positioning page, so a separate segment was redundant. Positioning owns it.
 const SEGMENTS: { label: string; href: string }[] = [
   { label: "Rankings", href: "/" },
   { label: "Positioning", href: "/portfolio" },
-  { label: "X-ray", href: "/portfolio#xray" },
   { label: "Models", href: "/pim-model" },
   { label: "Allocation", href: "/aa-performance" },
 ];
