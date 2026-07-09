@@ -77,11 +77,19 @@ function fundReturnColor(val: number | undefined): string {
   return val >= 0 ? "text-pos" : "text-neg";
 }
 
-function ratingColor(label: string): string {
-  if (label.includes("Buy")) return "text-pos";
-  if (label.includes("Underweight")) return "text-warn";
-  if (label === "Sell") return "text-neg";
-  return "text-ink";
+/** Soft rating pill (tint bg + colored text) for the rankings table. */
+function ratingPill(label: string): React.ReactElement {
+  const cls =
+    label === "Strong Buy" ? "bg-accent text-white"
+    : label.includes("Buy") ? "bg-pos-soft text-pos"
+    : label === "Underweight" ? "bg-warn-soft text-warn"
+    : label === "Sell" ? "bg-neg-soft text-neg"
+    : "bg-surface-2 text-ink-2 border border-line"; // Hold / other
+  return (
+    <span className={`inline-block rounded-full px-2.5 py-0.5 text-[11px] font-semibold whitespace-nowrap ${cls}`}>
+      {label}
+    </span>
+  );
 }
 
 type DashboardFilter = "all" | "stocks" | "etf-usd" | "etf-cad" | "mutual-fund";
@@ -1493,15 +1501,6 @@ function RankingTable({
     setUiPref(`${prefPrefix}SortDir`, val.dir);
   };
 
-  const GROUP_HEADER_COLORS: Record<string, string> = {
-    "Long-term": "text-accent",
-    Research: "text-violet",
-    Technicals: "text-teal-600",
-    Fundamental: "text-pos",
-    "Company Specific": "text-warn",
-    Management: "text-neg",
-  };
-
   function toggleSort(key: RankingSortKey) {
     if (sort.key === key) {
       setSort({ key, dir: sort.dir === "asc" ? "desc" : "asc" });
@@ -1854,7 +1853,7 @@ function RankingTable({
       )}
       {!collapsed && sorted.length > 0 && (
       <div className="max-h-[80vh] overflow-auto">
-        <table className="w-full min-w-[1400px] text-left text-sm">
+        <table className="w-full text-left text-sm">
           <thead className="sticky top-0 z-20 bg-white shadow-[0_1px_0_0_rgb(226_232_240)]">
             <tr className="border-b border-line text-xs text-ink-3">
               <th className={stickyHeadCls} onClick={() => toggleSort("ticker")}>
@@ -1862,17 +1861,10 @@ function RankingTable({
               </th>
               <th className={thClass} onClick={() => toggleSort("sector")}>Sector{arrow("sector")}</th>
               <th className={`${thClass} text-right`} onClick={() => toggleSort("price")}>Price{arrow("price")}</th>
-              <th className={`${thClass} min-w-[220px]`}>What They Do</th>
-              <th className={`${thClass} min-w-[220px]`}>Why Own It</th>
-              <th className={thClass} onClick={() => toggleSort("raw")}>Base{arrow("raw")}</th>
-              <th className={`${thClass} font-bold`} onClick={() => toggleSort("adjusted")}>Adj{arrow("adjusted")}</th>
-              {SCORE_GROUPS.map((g) => (
-                <th key={g.name} className={`${thClass} ${GROUP_HEADER_COLORS[g.name] || ""}`} onClick={() => toggleSort(g.name)}>
-                  {g.name === "Company Specific" ? "Company" : g.name}{arrow(g.name)}
-                </th>
-              ))}
+              <th className={`${thClass} text-right`} onClick={() => toggleSort("adjusted")}>Score{arrow("adjusted")}</th>
               <th className={thClass} onClick={() => toggleSort("rating")}>Rating{arrow("rating")}</th>
               <th className="pb-2 pr-3">Signal</th>
+              <th className="pb-2 pr-2 w-8" aria-label="Detail"></th>
             </tr>
           </thead>
           <tbody>
@@ -1900,9 +1892,11 @@ function RankingTable({
               const adj = Math.round((s.adjusted - s.raw) * 10) / 10;
               const label = s.ratingLabel || s.rating;
               const isFlagged = row.flagged;
+              const expanded = expandedRows.has(s.ticker);
 
               return (
-                <tr key={s.ticker} className="group border-b border-line-soft hover:bg-surface-hover transition-colors [&>td]:align-top">
+                <React.Fragment key={s.ticker}>
+                <tr className="group border-b border-line-soft hover:bg-surface-hover transition-colors [&>td]:align-top">
                   <td className={stickyCellCls}>
                     <div className="flex items-center gap-2">
                       <span className="text-ink-3 text-xs w-5 text-right">{i + 1}</span>
@@ -1937,58 +1931,15 @@ function RankingTable({
                   <td className="py-3 pr-3 text-right text-ink-2 tabular-nums">
                     {s.price != null ? `$${s.price.toFixed(2)}` : "—"}
                   </td>
-                  {(() => {
-                    // Both "What They Do" and "Why Own It" share a single
-                    // per-row expanded flag keyed on ticker — clicking Show
-                    // more under either cell toggles both at once.
-                    const expanded = expandedRows.has(s.ticker);
-                    // Only show the toggle if at least one of the two texts
-                    // is long enough to be clipped; short summaries render
-                    // in full with no button clutter.
-                    const anyLong =
-                      (!!s.companySummary && (s.companySummary.length > 140 || s.companySummary.includes("\n"))) ||
-                      (!!s.investmentThesis && (s.investmentThesis.length > 140 || s.investmentThesis.includes("\n")));
-                    const renderCell = (text: string | undefined) => {
-                      if (!text) return <span className="text-ink-faint">—</span>;
-                      return (
-                        <div className="max-w-[320px] whitespace-normal leading-relaxed">
-                          <div className={expanded ? "" : "line-clamp-2"}>{text}</div>
-                          {anyLong && (
-                            <button
-                              type="button"
-                              onClick={() => toggleRowExpanded(s.ticker)}
-                              className="mt-1 text-[10px] font-semibold text-accent hover:text-accent hover:underline"
-                            >
-                              {expanded ? "Show less" : "Show more"}
-                            </button>
-                          )}
-                        </div>
-                      );
-                    };
-                    return (
-                      <>
-                        <td className="py-3 pr-3 text-xs text-ink-2 align-top">
-                          {renderCell(s.companySummary)}
-                        </td>
-                        <td className="py-3 pr-3 text-xs text-ink-2 align-top">
-                          {renderCell(s.investmentThesis)}
-                        </td>
-                      </>
-                    );
-                  })()}
-                  <td className="py-3 pr-3 text-ink-3">{Number(s.raw.toFixed(1))}</td>
-                  <td className="py-3 pr-3">
-                    <span className="font-bold text-ink">{Number(s.adjusted.toFixed(1))}</span>
-                    <span className={`ml-0.5 text-xs ${adj >= 0 ? "text-pos" : "text-neg"}`}>
+                  {/* Score = adjusted composite (with regime delta) */}
+                  <td className="py-3 pr-3 text-right whitespace-nowrap">
+                    <span className="font-bold text-ink tabular-nums">{Number(s.adjusted.toFixed(1))}</span>
+                    <span className="text-ink-3 text-[11px]">/41</span>
+                    <span className={`ml-1 text-[11px] ${adj >= 0 ? "text-pos" : "text-neg"}`}>
                       {adj >= 0 ? "+" : ""}{adj}
                     </span>
                   </td>
-                  {SCORE_GROUPS.map((g) => (
-                    <td key={g.name} className="py-3 pr-3 text-ink-2">
-                      {groupTotal(s, g)}/{g.maxTotal}
-                    </td>
-                  ))}
-                  <td className={`py-3 pr-3 font-medium ${ratingColor(label)}`}>{label}</td>
+                  <td className="py-3 pr-3">{ratingPill(label)}</td>
                   <td className="py-3 pr-3">
                     {isFlagged && flagType === "buy" && (
                       <span className="rounded-full border border-pos-border bg-pos-soft px-2 py-0.5 text-[10px] font-bold text-pos">
@@ -1996,7 +1947,44 @@ function RankingTable({
                       </span>
                     )}
                   </td>
+                  <td className="py-3 pr-2 text-right">
+                    <button
+                      type="button"
+                      onClick={() => toggleRowExpanded(s.ticker)}
+                      className="text-ink-3 hover:text-ink transition-colors"
+                      aria-expanded={expanded}
+                      title={expanded ? "Hide detail" : "Show What They Do / Why Own It / category scores"}
+                    >
+                      <svg className={`w-4 h-4 transition-transform ${expanded ? "rotate-180" : ""}`} fill="none" stroke="currentColor" strokeWidth="2" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" d="M19 9l-7 7-7-7" /></svg>
+                    </button>
+                  </td>
                 </tr>
+                {expanded && (
+                  <tr className="border-b border-line-soft bg-surface-2/70">
+                    <td colSpan={7} className="px-4 py-3">
+                      <div className="grid gap-4 md:grid-cols-2">
+                        <div>
+                          <div className="mb-1 text-[10px] font-semibold uppercase tracking-wide text-ink-3">What They Do</div>
+                          <p className="text-xs leading-relaxed text-ink-2">{s.companySummary || <span className="text-ink-faint">—</span>}</p>
+                        </div>
+                        <div>
+                          <div className="mb-1 text-[10px] font-semibold uppercase tracking-wide text-ink-3">Why Own It</div>
+                          <p className="text-xs leading-relaxed text-ink-2">{s.investmentThesis || <span className="text-ink-faint">—</span>}</p>
+                        </div>
+                      </div>
+                      <div className="mt-3 flex flex-wrap gap-x-4 gap-y-1 text-[11px]">
+                        <span className="text-ink-3">Base <span className="font-mono text-ink">{Number(s.raw.toFixed(1))}</span></span>
+                        {SCORE_GROUPS.map((g) => (
+                          <span key={g.name} className="text-ink-3">
+                            {g.name === "Company Specific" ? "Company" : g.name}{" "}
+                            <span className="font-mono text-ink">{groupTotal(s, g)}/{g.maxTotal}</span>
+                          </span>
+                        ))}
+                      </div>
+                    </td>
+                  </tr>
+                )}
+                </React.Fragment>
               );
             })}
           </tbody>
