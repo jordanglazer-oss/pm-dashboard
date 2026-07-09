@@ -2,7 +2,6 @@ import { NextRequest, NextResponse } from "next/server";
 import type { HealthData } from "@/app/lib/types";
 import type { OHLCVBar, TechnicalIndicators, RiskAlert } from "@/app/lib/technicals";
 import { computeTechnicals, computeRiskAlert } from "@/app/lib/technicals";
-import { getFactsetPricesByTicker } from "@/app/lib/factset";
 
 // ── Yahoo Finance helpers (shared with score route) ──
 
@@ -365,36 +364,10 @@ export async function POST(request: NextRequest) {
       results.push(result);
     }
 
-    // FactSet is the PRIMARY price source (same policy as /api/prices) — the
-    // dashboard "Refresh All Data" button must agree with the nav "Refresh"
-    // button. Override the displayed Yahoo price with FactSet's where the
-    // ticker resolves, keeping Yahoo for everything else (funds/USD-TSE ETFs
-    // FactSet can't cover, and whenever the relay is down → {} → no override).
-    // Only the price is overridden; technicals / health / beta stay Yahoo-
-    // derived (they need full price history FactSet isn't queried for here),
-    // exactly as /api/prices leaves previousClose/currency on Yahoo.
-    try {
-      const factsetPrices = await getFactsetPricesByTicker(tickerList);
-      for (const r of results) {
-        if (r.error) continue;
-        const fp = factsetPrices[r.ticker];
-        if (typeof fp !== "number") continue;
-        const yp = r.price;
-        // Sanity guard: only override when FactSet is within 20% of Yahoo (same
-        // listing/currency should agree closely). A gross divergence signals a
-        // mis-resolved id/currency mismatch — keep Yahoo rather than inject a
-        // garbage price.
-        if (yp == null || yp <= 0 || Math.abs(fp - yp) / yp <= 0.2) {
-          r.price = fp;
-        } else {
-          console.warn(`[RefreshData] FactSet/Yahoo divergence for ${r.ticker}: factset=${fp} yahoo=${yp} — kept Yahoo`);
-        }
-      }
-    } catch (e) {
-      // Non-fatal — on any FactSet/relay failure the Yahoo prices already in
-      // `results` stand, so the refresh still succeeds.
-      console.warn("[RefreshData] FactSet override skipped:", e instanceof Error ? e.message : e);
-    }
+    // NOTE: no FactSet override here. FactSet's Formula API P_PRICE is a
+    // delayed/EOD quote under this entitlement and lags the live tape, so it is
+    // NOT used for the displayed price (see /api/prices for the full rationale).
+    // Yahoo's chart price is the live source; both refresh buttons stay on it.
 
     return NextResponse.json({
       results,
