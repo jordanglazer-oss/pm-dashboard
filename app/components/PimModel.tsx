@@ -1040,59 +1040,46 @@ export function PimModel({ groups }: Props) {
         </div>
       )}
 
+      {/* ── Asset Allocation (left) + Performance Tracker (right), per mockup ── */}
+      <div className="grid gap-5 lg:grid-cols-[minmax(0,340px)_1fr] items-start">
       {/* Asset Allocation Summary */}
-      {profileWeights && (
-        <div className="rounded-card border border-line bg-white p-5 shadow-sm">
-          <h2 className="text-sm font-bold text-ink mb-3">Asset Allocation</h2>
-          <div className="flex h-10 rounded-control overflow-hidden mb-4">
-            {profileWeights.cash > 0 && (
-              <div className="bg-ink-3 flex items-center justify-center text-xs font-semibold text-white" style={{ width: `${profileWeights.cash * 100}%` }}>
-                {profileWeights.cash >= 0.05 && `${(profileWeights.cash * 100).toFixed(0)}%`}
-              </div>
-            )}
-            {profileWeights.fixedIncome > 0 && (
-              <div className="bg-accent flex items-center justify-center text-xs font-semibold text-white" style={{ width: `${profileWeights.fixedIncome * 100}%` }}>
-                {(profileWeights.fixedIncome * 100).toFixed(0)}%
-              </div>
-            )}
-            <div className="bg-pos flex items-center justify-center text-xs font-semibold text-white" style={{ width: `${profileWeights.equity * 100}%` }}>
-              {(profileWeights.equity * 100).toFixed(0)}%
-            </div>
-            {profileWeights.alternatives > 0 && (
-              <div className="bg-warn flex items-center justify-center text-xs font-semibold text-white" style={{ width: `${profileWeights.alternatives * 100}%` }}>
-                {profileWeights.alternatives >= 0.03 && `${(profileWeights.alternatives * 100).toFixed(0)}%`}
-              </div>
-            )}
+      {profileWeights ? (
+        <div className="rounded-card border border-line bg-surface p-5 shadow-sm">
+          <div className="mb-4 flex items-center justify-between">
+            <h2 className="text-sm font-bold text-ink">Asset Allocation</h2>
+            <span className="text-sm font-semibold text-accent">{PROFILE_LABELS[activeProfile]}</span>
           </div>
-          <div className="grid grid-cols-2 sm:grid-cols-4 gap-3">
-            <div className="rounded-lg bg-surface-2 p-3 text-center">
-              <div className="text-[10px] font-semibold text-ink-3 uppercase">Cash</div>
-              <div className="text-lg font-bold text-ink">{(profileWeights.cash * 100).toFixed(0)}%</div>
-            </div>
-            <div className="rounded-lg bg-accent-soft p-3 text-center">
-              <div className="text-[10px] font-semibold text-accent uppercase">Fixed Income</div>
-              <div className="text-lg font-bold text-accent">{(profileWeights.fixedIncome * 100).toFixed(0)}%</div>
-            </div>
-            <div className="rounded-lg bg-pos-soft p-3 text-center">
-              <div className="text-[10px] font-semibold text-pos uppercase">Equity</div>
-              <div className="text-lg font-bold text-pos">{(profileWeights.equity * 100).toFixed(0)}%</div>
-            </div>
-            <div className="rounded-lg bg-warn-soft p-3 text-center">
-              <div className="text-[10px] font-semibold text-warn uppercase">Alternatives</div>
-              <div className="text-lg font-bold text-warn">{(profileWeights.alternatives * 100).toFixed(0)}%</div>
-            </div>
+          <div className="mb-4 flex h-3 overflow-hidden rounded-full">
+            <div className="bg-accent" style={{ width: `${profileWeights.equity * 100}%` }} />
+            {profileWeights.fixedIncome > 0 && <div className="bg-pos" style={{ width: `${profileWeights.fixedIncome * 100}%` }} />}
+            {profileWeights.alternatives > 0 && <div className="bg-violet" style={{ width: `${profileWeights.alternatives * 100}%` }} />}
+            {profileWeights.cash > 0 && <div className="bg-ink-3" style={{ width: `${profileWeights.cash * 100}%` }} />}
           </div>
-          <div className="mt-3 flex flex-wrap items-center gap-4 text-xs text-ink-3">
-            <span>CAD Split: {(currencySplit.cad * 100).toFixed(1)}%</span>
-            <span>USD Split: {(currencySplit.usd * 100).toFixed(1)}%</span>
+          <div className="space-y-2.5 text-sm">
+            {([
+              { label: "Equities", value: profileWeights.equity, dot: "bg-accent" },
+              { label: "Fixed Income", value: profileWeights.fixedIncome, dot: "bg-pos" },
+              { label: "Alternatives", value: profileWeights.alternatives, dot: "bg-violet" },
+              { label: "Cash", value: profileWeights.cash, dot: "bg-ink-3" },
+            ] as const).filter((r) => r.value > 0).map((r) => (
+              <div key={r.label} className="flex items-center justify-between">
+                <span className="flex items-center gap-2">
+                  <span className={`h-2.5 w-2.5 rounded-sm ${r.dot}`} />
+                  <span className="text-ink-2">{r.label}</span>
+                </span>
+                <span className="font-semibold text-ink tabular-nums">{(r.value * 100).toFixed(0)}%</span>
+              </div>
+            ))}
+          </div>
+          <div className="mt-4 flex flex-wrap items-center gap-3 border-t border-line-soft pt-3 text-xs text-ink-3">
+            <span>CAD {(currencySplit.cad * 100).toFixed(0)}%</span>
+            <span>USD {(currencySplit.usd * 100).toFixed(0)}%</span>
             <span className="ml-auto">
-              Portfolio Total: <span className={`font-semibold ${Math.abs(portfolioTotal - (profileWeights.fixedIncome + profileWeights.equity + profileWeights.alternatives)) < 0.001 ? "text-pos" : "text-neg"}`}>
-                {pct(portfolioTotal)}
-              </span>
+              Total <span className={`font-semibold ${Math.abs(portfolioTotal - (profileWeights.fixedIncome + profileWeights.equity + profileWeights.alternatives)) < 0.001 ? "text-pos" : "text-neg"}`}>{pct(portfolioTotal)}</span>
             </span>
           </div>
         </div>
-      )}
+      ) : <div />}
 
       {/* Performance Tracker — only shown for the PIM group. The
           onPerfDataChanged callback keeps THIS component's perfData in
@@ -1100,14 +1087,15 @@ export function PimModel({ groups }: Props) {
           auto-update, manual Refresh, or seed) so the Sleeve Drift
           card and Dynamic Wt column reflect the same data the chart
           is showing without needing a remount. */}
-      {selectedGroup.id === "pim" && (
+      {selectedGroup.id === "pim" ? (
         <PimPerformance
           groupId={selectedGroup.id}
           groupName={selectedGroup.name}
           selectedProfile={activeProfile}
           onPerfDataChanged={handlePerfDataChanged}
         />
-      )}
+      ) : <div />}
+      </div>
 
       {/* Sleeve Drift summary — Alpha Model and per-group Core sleeve
           returns since the most recent firm-wide rebalance. These are
