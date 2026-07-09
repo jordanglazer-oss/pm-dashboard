@@ -61,7 +61,15 @@ export async function GET(request: NextRequest) {
   // Relay health + FactSet batch (whole set in one call, mirrors /api/prices).
   const configured = factsetConfigured();
   const healthStart = Date.now();
-  const relayOk = configured ? await relayHealthy().catch(() => false) : false;
+  // Bound the health check — relayHealthy()'s own fetch has no timeout, so if
+  // the relay host is unreachable it could stall the whole diagnostic. Race it
+  // against a short timer so the endpoint always returns.
+  const relayOk = configured
+    ? await Promise.race([
+        relayHealthy().catch(() => false),
+        new Promise<boolean>((resolve) => setTimeout(() => resolve(false), 5000)),
+      ])
+    : false;
   const relayMs = Date.now() - healthStart;
 
   const fsStart = Date.now();
