@@ -1,5 +1,4 @@
 import { NextRequest, NextResponse } from "next/server";
-import { getFactsetPricesByTicker } from "@/app/lib/factset";
 
 /** Convert local ticker format to Yahoo Finance symbol */
 function toYahoo(ticker: string): string {
@@ -140,62 +139,26 @@ export async function POST(request: NextRequest) {
     const names: Record<string, string | null> = {};
     const quoteTypes: Record<string, string | null> = {};
     const currencies: Record<string, string | null> = {};
-    const dayHighs: Record<string, number | null> = {};
-    const dayLows: Record<string, number | null> = {};
     for (const r of results) {
       prices[r.ticker] = r.price;
       previousCloses[r.ticker] = r.previousClose;
       names[r.ticker] = r.name;
       quoteTypes[r.ticker] = r.quoteType;
       currencies[r.ticker] = r.currency;
-      dayHighs[r.ticker] = r.dayHigh;
-      dayLows[r.ticker] = r.dayLow;
     }
 
-    // FactSet is the PREFERRED price source (cleaner, more reliable data), BUT
-    // its Formula API P_PRICE can occasionally lag the live tape by a session
-    // (observed: FactSet returned GOOGL 361.92 on a day whose intraday high was
-    // 359.65 — a price that never traded that day). So we keep FactSet PRIMARY
-    // but gate it with a FRESHNESS CHECK against Yahoo's live intraday range:
-    //   • FactSet price within today's [dayLow, dayHigh] (±0.5%) → it's current,
-    //     use FactSet.
-    //   • FactSet price OUTSIDE today's range → it's stale (prior session), use
-    //     Yahoo's live price instead.
-    //   • No Yahoo range available → fall back to the old 20% divergence guard.
-    // Self-healing: when FactSet's feed catches up, its price falls back inside
-    // the range and FactSet is used again automatically — no code change needed.
-    const priceSources: Record<string, "factset" | "yahoo"> = {};
-    const factsetPrices = await getFactsetPricesByTicker(batch);
+    // Prices are Yahoo (live/intraday) for stocks + ETFs, and Globe/Barchart NAV
+    // for FUNDSERV mutual funds. FactSet is deliberately NOT used for the live
+    // price: the Formula API entitlement does NOT include real-time pricing
+    // (P_PRICE(0) → 403 "not authorized"), and plain P_PRICE is a delayed/EOD
+    // quote that intermittently lagged the tape (it once returned a prior-
+    // session GOOGL price ABOVE that day's high). FactSet remains authoritative
+    // for fundamentals/scoring/sector/beta — just not for prices. Reverted to
+    // the pre-2026-07-02 Yahoo-primary pricing on 2026-07-09.
+    const priceSources: Record<string, "yahoo"> = {};
     for (const t of batch) {
-      const fp = factsetPrices[t];
       const yp = prices[t];
-      if (typeof fp !== "number" || fp <= 0) {
-        // No FactSet price — Yahoo stands (or nothing).
-        if (yp != null && yp > 0) priceSources[t] = "yahoo";
-        continue;
-      }
-      const hi = dayHighs[t];
-      const lo = dayLows[t];
-      let factsetIsFresh: boolean;
-      if (hi != null && lo != null && lo > 0) {
-        // Primary guard: is FactSet inside today's live trading range?
-        factsetIsFresh = fp >= lo * 0.995 && fp <= hi * 1.005;
-      } else {
-        // No range → keep the legacy 20%-divergence sanity guard vs Yahoo.
-        factsetIsFresh = yp == null || yp <= 0 || Math.abs(fp - yp) / yp <= 0.2;
-      }
-      if (factsetIsFresh) {
-        prices[t] = fp;
-        priceSources[t] = "factset";
-      } else if (yp != null && yp > 0) {
-        priceSources[t] = "yahoo";
-        console.warn(`[prices] FactSet stale for ${t}: factset=${fp} outside today's range [${lo}, ${hi}] (yahoo=${yp}) — used Yahoo live`);
-      } else {
-        // FactSet looks stale but Yahoo has nothing — better a stale FactSet
-        // price than a blank; surface it and flag the source honestly.
-        prices[t] = fp;
-        priceSources[t] = "factset";
-      }
+      if (yp != null && yp > 0) priceSources[t] = "yahoo";
     }
 
     return NextResponse.json({
