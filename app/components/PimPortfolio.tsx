@@ -2055,6 +2055,11 @@ export function PimPortfolio({ groups }: Props) {
     setExecutingTrades(false);
   }, [trades, executingTrades, executeTrade, fetchPrices]);
 
+  // Display-only aggregate for the Sleeve Drift stat tile: total overweight vs
+  // target (= sum of positive per-holding drifts). Read-only; touches no
+  // rebalance/trade logic.
+  const sleeveDrift = holdingRows.reduce((sum, r) => sum + Math.max(0, r.driftPct), 0) * 100;
+
   return (
     <div className="space-y-6">
       {/* Header bar */}
@@ -2107,12 +2112,6 @@ export function PimPortfolio({ groups }: Props) {
             </button>
           )}
           {!editMode && (
-            <button onClick={() => setShowRebalance(!showRebalance)}
-              className="rounded-lg bg-pos px-3 py-1.5 text-xs font-semibold text-white hover:bg-pos transition-colors">
-              Rebalance
-            </button>
-          )}
-          {!editMode && (
             <button onClick={() => setShowSwitch(!showSwitch)}
               className="rounded-lg bg-warn px-3 py-1.5 text-xs font-semibold text-white hover:bg-warn transition-colors">
               Buy / Sell
@@ -2146,19 +2145,37 @@ export function PimPortfolio({ groups }: Props) {
         </div>
       </div>
 
-      {/* Last rebalance — rendered as a dedicated sub-row so its
-          position doesn't shift between profiles. Previously it was
-          inside the actions flex-wrap, which left it inline when
-          Client Report was hidden (Alpha/Core) but pushed it onto a
-          second line when Client Report was visible (Balanced /
-          Growth / All-Equity). Now consistent everywhere. */}
-      {groupState.lastRebalance && (
-        <div className="flex justify-end -mt-2">
-          <span className="text-[10px] text-ink-3">
-            Last rebalance: {new Date(groupState.lastRebalance.date).toLocaleDateString()}
-          </span>
+      {/* PIM-only positioning note (mockup). */}
+      <div className="flex items-start gap-2.5 rounded-card border border-accent-border bg-accent-soft px-4 py-2.5 text-sm text-ink-2">
+        <span className="mt-0.5 shrink-0 rounded-md bg-accent px-1.5 py-0.5 text-[10px] font-bold text-white">PIM</span>
+        <span>Positioning is tracked for the <strong className="text-ink">PIM</strong> model only — the other model groups aren&apos;t position-tracked, so this view stays on PIM regardless of the header Model selector.</span>
+      </div>
+
+      {/* Stat tiles (mockup): Active Model · Sleeve Drift · Last Rebalanced · Rebalance */}
+      <div className="grid grid-cols-2 gap-3 md:grid-cols-4">
+        <div className="rounded-card border border-line bg-surface p-4 shadow-sm">
+          <div className="text-[10px] font-semibold uppercase tracking-wide text-ink-3">Active Model</div>
+          <div className="mt-1 text-xl font-bold text-ink">{PROFILE_LABELS[activeProfile]}</div>
+          <div className="text-xs text-ink-3">target sleeve</div>
         </div>
-      )}
+        <div className="rounded-card border border-line bg-surface p-4 shadow-sm">
+          <div className="text-[10px] font-semibold uppercase tracking-wide text-ink-3">Sleeve Drift</div>
+          <div className={`mt-1 text-xl font-bold ${sleeveDrift >= 2 ? "text-warn" : "text-ink"}`}>{sleeveDrift >= 0 ? "+" : ""}{sleeveDrift.toFixed(1)}%</div>
+          <div className="text-xs text-ink-3">overweight vs target</div>
+        </div>
+        <div className="rounded-card border border-line bg-surface p-4 shadow-sm">
+          <div className="text-[10px] font-semibold uppercase tracking-wide text-ink-3">Last Rebalanced</div>
+          <div className="mt-1 text-xl font-bold text-ink">{groupState.lastRebalance ? new Date(groupState.lastRebalance.date).toLocaleDateString(undefined, { month: "short", day: "numeric" }) : "—"}</div>
+          <div className="text-xs text-ink-3">{groupState.lastRebalance ? "" : "no rebalance yet"}</div>
+        </div>
+        <button
+          onClick={() => setShowRebalance(!showRebalance)}
+          className="rounded-card bg-pos p-4 text-left shadow-sm transition-opacity hover:opacity-90"
+        >
+          <div className="text-base font-bold text-white">Rebalance to {PROFILE_LABELS[activeProfile]} →</div>
+          <div className="mt-1 text-xs text-white/80">{showRebalance ? "hide preview" : "show suggested trades"}</div>
+        </button>
+      </div>
 
       {/* Live (drifted) asset-allocation pie for the active profile, with
           target + drift in the legend. Re-renders whenever prices refresh
