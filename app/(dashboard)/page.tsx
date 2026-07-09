@@ -108,11 +108,8 @@ export default function DashboardPage() {
             strip silently hides on fetch failure. */}
         <RegimeStrip />
 
-        {/* Change monitor — "what materially changed" since you last looked
-            (ratings, targets, price moves, signal splits, stale data),
-            derived from score-history + live state. Collapsible; persists a
-            per-event reviewed mark. */}
-        <ChangeMonitor />
+        {/* Change monitor moved into the Rankings cockpit's right sidebar
+            (passed to PortfolioOverview below) alongside Sector Exposure. */}
 
         {/* ── Add Stock + Regime Banner ── */}
         <div className="grid gap-4 lg:grid-cols-2">
@@ -260,7 +257,7 @@ export default function DashboardPage() {
         </div>
 
         {/* ── Portfolio Overview ── */}
-        <PortfolioOverview />
+        <PortfolioOverview sidebar={<ChangeMonitor />} />
 
         {/* ── Regime Detail — per-stock multiplier breakdown ── */}
         {(() => {

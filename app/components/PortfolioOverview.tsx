@@ -53,21 +53,6 @@ const SP500_WEIGHTS_FALLBACK: Record<string, number> = {
 // Normalize sector names — Yahoo uses different names than GICS standard
 // normalizeSector imported from scoring.ts — centralized Yahoo→GICS mapping
 
-// Distinct colors for each GICS sector — all visually distinguishable
-const sectorColors: Record<string, string> = {
-  Technology: "bg-accent",
-  Financials: "bg-teal-500",
-  Energy: "bg-neg-soft0",
-  "Consumer Staples": "bg-warn",
-  "Consumer Discretionary": "bg-orange-500",
-  "Health Care": "bg-violet",
-  Industrials: "bg-surface-20",
-  "Communication Services": "bg-accent",
-  Utilities: "bg-lime-500",
-  Materials: "bg-cyan-500",
-  "Real Estate": "bg-pink-500",
-};
-
 /** Compact "x minutes/hours/days ago" formatter for last-updated labels. */
 function formatTimeAgo(iso: string): string {
   const ts = Date.parse(iso);
@@ -162,7 +147,7 @@ function FundSortIcon({ field, sortField, sortDir }: { field: FundSortField; sor
 
 
 
-export function PortfolioOverview() {
+export function PortfolioOverview({ sidebar }: { sidebar?: React.ReactNode } = {}) {
   const {
     portfolioStocks,
     watchlistStocks,
@@ -1088,63 +1073,9 @@ export function PortfolioOverview() {
         </div>
       </div>
 
-      {/* Sector Exposure */}
-      <section className="rounded-card border border-line bg-white p-5 shadow-sm">
-        <div className="flex items-center gap-3 mb-4 flex-wrap">
-          <h2 className="text-lg font-bold text-ink">Portfolio Sector Exposure</h2>
-          {portfolioBeta != null && (
-            <span
-              className="rounded-full bg-surface-2 px-3 py-1 text-xs font-bold text-ink"
-              title="Weighted average beta across individual stocks only (excludes ETFs/mutual funds). Refreshed from Yahoo on Refresh All Data."
-            >
-              Portfolio {"\u03B2"} {portfolioBeta.toFixed(2)}
-            </span>
-          )}
-          <span className="text-sm text-ink-3">Alpha picks only · {alphaCount} stocks (equal-weighted)</span>
-          <span className="ml-auto text-xs text-ink-3">
-            S&amp;P weights:{" "}
-            {marketData.sp500SectorWeightsAt
-              ? `updated ${formatTimeAgo(marketData.sp500SectorWeightsAt)}`
-              : marketData.sp500SectorWeights
-                ? "live (timestamp pending)"
-                : "fallback (run Refresh All Data)"}
-          </span>
-        </div>
-        <div className="flex h-8 rounded-control overflow-hidden mb-3">
-          {sectorExposure.map((s) => (
-            <div
-              key={s.sector}
-              className={`${sectorColors[s.sector] || "bg-ink-3"} flex items-center justify-center text-[11px] font-semibold text-white`}
-              style={{ width: `${s.weight}%` }}
-            >
-              {s.weight >= 8 && `${s.weight}%`}
-            </div>
-          ))}
-        </div>
-        <div className="flex flex-wrap gap-x-4 gap-y-1 text-xs text-ink-3 mb-4">
-          {sectorExposure.map((s) => (
-            <span key={s.sector} className="flex items-center gap-1.5">
-              <span className={`h-2 w-2 rounded-full ${sectorColors[s.sector] || "bg-ink-3"}`} />
-              {s.sector} {s.weight}% ({s.count})
-            </span>
-          ))}
-        </div>
-        {/* Over/Underweight vs S&P */}
-        <div className="grid gap-2 md:grid-cols-2 xl:grid-cols-3">
-          {sectorExposure.map((s) => {
-            const spWeight = sp500Weights[s.sector] || 0;
-            const diff = s.weight - spWeight;
-            return (
-              <div key={s.sector} className="flex items-center justify-between rounded-lg bg-surface-2 px-3 py-1.5">
-                <span className="text-xs text-ink-2">{s.sector}</span>
-                <span className={`text-xs font-semibold ${diff > 0 ? "text-pos" : diff < 0 ? "text-neg" : "text-ink-3"}`}>
-                  {diff > 0 ? "+" : ""}{parseFloat(diff.toFixed(1))}% vs S&P
-                </span>
-              </div>
-            );
-          })}
-        </div>
-      </section>
+      {/* ── Cockpit: Rankings (left) + Change Monitor & Sector Exposure (right) ── */}
+      <div className="grid gap-5 lg:grid-cols-[minmax(0,1fr)_340px] items-start">
+        <div className="min-w-0 space-y-6">
 
       {/* Portfolio Rankings (scoreable stocks only) */}
       <RankingTable
@@ -1203,6 +1134,61 @@ export function PortfolioOverview() {
         splitByCurrency
         enableExternalExports
       />
+        </div>
+
+        {/* Right sidebar: Change Monitor (injected from the page) + a compact
+            Sector-Exposure-vs-S&P panel (moved out of the old full-width bar). */}
+        <div className="space-y-4">
+          {sidebar}
+          <section className="rounded-card border border-line bg-surface p-4 shadow-sm">
+            <div className="flex items-baseline justify-between gap-2 mb-3">
+              <h2 className="text-[13px] font-bold text-ink">
+                Sector Exposure <span className="font-normal text-ink-3">vs S&amp;P</span>
+              </h2>
+              {portfolioBeta != null && (
+                <span className="text-[11px] text-ink-3" title="Weighted average beta across individual stocks only (excludes ETFs/mutual funds).">
+                  β {portfolioBeta.toFixed(2)}
+                </span>
+              )}
+            </div>
+            <div className="space-y-2">
+              {sectorExposure.map((s) => {
+                const spWeight = sp500Weights[s.sector] || 0;
+                const diff = s.weight - spWeight;
+                const over = diff > 1.5;
+                const under = diff < -1.5;
+                return (
+                  <div key={s.sector}>
+                    <div className="flex items-baseline justify-between gap-2 text-[12px] mb-0.5">
+                      <span className="truncate text-ink-2">
+                        {s.sector}
+                        {over && <span className="ml-1 text-[9px] font-bold uppercase text-neg">Over</span>}
+                        {under && <span className="ml-1 text-[9px] font-bold uppercase text-accent">Under</span>}
+                      </span>
+                      <span className="whitespace-nowrap font-mono text-ink">
+                        <span className="font-semibold">{s.weight}%</span>{" "}
+                        <span className="text-ink-3">/ {spWeight.toFixed(0)}</span>
+                      </span>
+                    </div>
+                    <div className="h-1.5 overflow-hidden rounded-full bg-line">
+                      <div
+                        className={`h-full ${over ? "bg-neg" : under ? "bg-accent" : "bg-ink-3"}`}
+                        style={{ width: `${Math.min(100, s.weight * 2)}%` }}
+                      />
+                    </div>
+                  </div>
+                );
+              })}
+              {sectorExposure.length === 0 && (
+                <p className="text-[12px] text-ink-3">No scored holdings yet.</p>
+              )}
+            </div>
+            <p className="mt-3 text-[10px] text-ink-3">
+              Alpha picks · {alphaCount} stocks · S&amp;P {marketData.sp500SectorWeightsAt ? `updated ${formatTimeAgo(marketData.sp500SectorWeightsAt)}` : "fallback (Refresh All Data)"}
+            </p>
+          </section>
+        </div>
+      </div>
 
       {/* Fund & ETF Holdings — moved below Watchlist Rankings per Dashboard
           layout request. Collapsible via uiPrefs (cross-device via Redis). */}
