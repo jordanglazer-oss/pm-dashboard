@@ -25,7 +25,9 @@ function toYahoo(ticker: string): string {
   return t;
 }
 
-async function yahooPrice(ticker: string): Promise<{ price: number | null; ms: number; error?: string }> {
+type YahooOut = { price: number | null; dayHigh: number | null; dayLow: number | null; ms: number; error?: string };
+
+async function yahooPrice(ticker: string): Promise<YahooOut> {
   const start = Date.now();
   try {
     const sym = toYahoo(ticker);
@@ -42,13 +44,15 @@ async function yahooPrice(ticker: string): Promise<{ price: number | null; ms: n
     } finally {
       clearTimeout(timer);
     }
-    if (!res.ok) return { price: null, ms: Date.now() - start, error: `HTTP ${res.status}` };
+    if (!res.ok) return { price: null, dayHigh: null, dayLow: null, ms: Date.now() - start, error: `HTTP ${res.status}` };
     const json = await res.json();
     const meta = json?.chart?.result?.[0]?.meta;
     const price = typeof meta?.regularMarketPrice === "number" ? meta.regularMarketPrice : null;
-    return { price, ms: Date.now() - start };
+    const dayHigh = typeof meta?.regularMarketDayHigh === "number" ? meta.regularMarketDayHigh : null;
+    const dayLow = typeof meta?.regularMarketDayLow === "number" ? meta.regularMarketDayLow : null;
+    return { price, dayHigh, dayLow, ms: Date.now() - start };
   } catch (e) {
-    return { price: null, ms: Date.now() - start, error: e instanceof Error ? `${e.name}: ${e.message}` : String(e) };
+    return { price: null, dayHigh: null, dayLow: null, ms: Date.now() - start, error: e instanceof Error ? `${e.name}: ${e.message}` : String(e) };
   }
 }
 
@@ -87,11 +91,24 @@ export async function GET(request: NextRequest) {
 
   const rows = tickers.map((t, i) => {
     const resolution = resolveFactsetId(t);
+    const fp = factsetPrices[t] ?? null;
+    const hi = yahoo[i].dayHigh;
+    const lo = yahoo[i].dayLow;
+    // Mirror /api/prices' freshness guard so the diagnostic shows which source
+    // would actually be used: FactSet is "fresh" when inside today's range.
+    let factsetFresh: boolean | null = null;
+    if (typeof fp === "number" && hi != null && lo != null && lo > 0) {
+      factsetFresh = fp >= lo * 0.995 && fp <= hi * 1.005;
+    }
     return {
       ticker: t,
       factsetResolution: resolution,
-      factsetPrice: factsetPrices[t] ?? null,
+      factsetPrice: fp,
       yahooPrice: yahoo[i].price,
+      yahooDayHigh: hi,
+      yahooDayLow: lo,
+      factsetFresh, // true = FactSet current (would be used) · false = stale (Yahoo used) · null = no range
+      sourceUsed: factsetFresh === false ? "yahoo" : typeof fp === "number" ? "factset" : "yahoo",
       yahooMs: yahoo[i].ms,
       yahooError: yahoo[i].error,
     };
