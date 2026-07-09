@@ -8,6 +8,7 @@ import type {
 } from "@/app/lib/types";
 import { SignalPill } from "./SignalPill";
 import { Sparkline } from "./Sparkline";
+import { ClampText } from "./ClampText";
 
 // Render the multi-horizon delta line shown under each sentiment sparkline.
 // Uses whichever deltas are available in the bundle so a fresh oscillator
@@ -198,7 +199,7 @@ export function SentimentGauges({ marketData, aaiiBull = 30, aaiiNeutral = 17, a
   const dashOffset = circumference * (1 - pct);
 
   return (
-    <section className="rounded-2xl border border-slate-200 bg-white p-4 shadow-sm">
+    <section className="rounded-2xl border border-line bg-white p-4 shadow-sm">
       <div className="flex flex-wrap items-center justify-between gap-2 mb-3">
         <div className="flex items-center gap-2">
           <span className="text-base">🎯</span>
@@ -210,16 +211,16 @@ export function SentimentGauges({ marketData, aaiiBull = 30, aaiiNeutral = 17, a
 
       <div className="grid gap-3 lg:grid-cols-2">
         {/* CNN Fear & Greed */}
-        <div className="rounded-xl border border-slate-100 bg-slate-50 p-3">
+        <div className="rounded-xl border border-line-soft bg-surface-2 p-3">
           <div className="flex items-center justify-between mb-2">
-            <div className="text-xs font-semibold text-slate-500 flex items-center gap-2">
+            <div className="text-xs font-semibold text-ink-3 flex items-center gap-2">
               CNN Fear &amp; Greed
-              <a href="https://www.cnn.com/markets/fear-and-greed" target="_blank" rel="noopener noreferrer" className="text-blue-500 hover:text-blue-700" title="CNN Fear & Greed source">
+              <a href="https://www.cnn.com/markets/fear-and-greed" target="_blank" rel="noopener noreferrer" className="text-accent hover:text-accent" title="CNN Fear & Greed source">
                 <svg className="w-3.5 h-3.5" fill="none" stroke="currentColor" strokeWidth="2" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" d="M10 6H6a2 2 0 00-2 2v10a2 2 0 002 2h10a2 2 0 002-2v-4M14 4h6m0 0v6m0-6L10 14" /></svg>
               </a>
             </div>
             {fgIsAuto && (
-              <span className="rounded-full bg-emerald-100 px-2 py-0.5 text-[9px] font-bold uppercase text-emerald-700">live</span>
+              <span className="rounded-full bg-pos-soft px-2 py-0.5 text-[9px] font-bold uppercase text-pos">live</span>
             )}
           </div>
           <div className="flex items-center gap-4">
@@ -258,56 +259,56 @@ export function SentimentGauges({ marketData, aaiiBull = 30, aaiiNeutral = 17, a
                     yMax={100}
                     referenceY={50}
                   />
-                  <div className="text-[10px] text-slate-400 mt-0.5">trailing 1Y daily</div>
+                  <div className="text-[10px] text-ink-3 mt-0.5">trailing 1Y daily</div>
                   {trendCaption(forwardData?.fearGreed?.trend) && (
-                    <div className="text-[10px] font-medium text-slate-500 mt-0.5">
+                    <div className="text-[10px] font-medium text-ink-3 mt-0.5">
                       {trendCaption(forwardData?.fearGreed?.trend)}
                     </div>
                   )}
                 </div>
               )}
-              <p className="mt-1.5 text-xs text-slate-500 leading-relaxed">{fgData.detail}</p>
+              <p className="mt-1.5 text-xs text-ink-3 leading-relaxed">{fgData.detail}</p>
             </div>
           </div>
         </div>
 
         {/* AAII Sentiment */}
-        <div className="rounded-xl border border-slate-100 bg-slate-50 p-3">
+        <div className="rounded-xl border border-line-soft bg-surface-2 p-3">
           <div className="flex items-center justify-between mb-2">
-            <div className="text-xs font-semibold text-slate-500 flex items-center gap-2">
+            <div className="text-xs font-semibold text-ink-3 flex items-center gap-2">
               AAII Sentiment Survey
-              <a href="https://www.aaii.com/sentimentsurvey" target="_blank" rel="noopener noreferrer" className="text-blue-500 hover:text-blue-700" title="AAII source">
+              <a href="https://www.aaii.com/sentimentsurvey" target="_blank" rel="noopener noreferrer" className="text-accent hover:text-accent" title="AAII source">
                 <svg className="w-3.5 h-3.5" fill="none" stroke="currentColor" strokeWidth="2" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" d="M10 6H6a2 2 0 00-2 2v10a2 2 0 002 2h10a2 2 0 002-2v-4M14 4h6m0 0v6m0-6L10 14" /></svg>
               </a>
             </div>
             {aaiiIsAuto && (
-              <span className="rounded-full bg-emerald-100 px-2 py-0.5 text-[9px] font-bold uppercase text-emerald-700">live</span>
+              <span className="rounded-full bg-pos-soft px-2 py-0.5 text-[9px] font-bold uppercase text-pos">live</span>
             )}
           </div>
           <div className="space-y-2">
             <div className="flex items-center gap-2">
-              <span className="w-14 text-xs text-slate-500">Bullish</span>
-              <div className="flex-1 h-3 rounded-full bg-slate-200 overflow-hidden">
-                <div className="h-full rounded-full bg-emerald-500" style={{ width: `${effAaiiBull}%` }} />
+              <span className="w-14 text-xs text-ink-3">Bullish</span>
+              <div className="flex-1 h-3 rounded-full bg-line overflow-hidden">
+                <div className="h-full rounded-full bg-pos" style={{ width: `${effAaiiBull}%` }} />
               </div>
               <span className="w-12 text-right font-mono text-xs font-semibold">{effAaiiBull.toFixed(1)}%</span>
             </div>
             <div className="flex items-center gap-2">
-              <span className="w-14 text-xs text-slate-500">Neutral</span>
-              <div className="flex-1 h-3 rounded-full bg-slate-200 overflow-hidden">
-                <div className="h-full rounded-full bg-amber-400" style={{ width: `${effAaiiNeutral}%` }} />
+              <span className="w-14 text-xs text-ink-3">Neutral</span>
+              <div className="flex-1 h-3 rounded-full bg-line overflow-hidden">
+                <div className="h-full rounded-full bg-warn" style={{ width: `${effAaiiNeutral}%` }} />
               </div>
               <span className="w-12 text-right font-mono text-xs font-semibold">{effAaiiNeutral.toFixed(1)}%</span>
             </div>
             <div className="flex items-center gap-2">
-              <span className="w-14 text-xs text-slate-500">Bearish</span>
-              <div className="flex-1 h-3 rounded-full bg-slate-200 overflow-hidden">
-                <div className="h-full rounded-full bg-red-500" style={{ width: `${effAaiiBear}%` }} />
+              <span className="w-14 text-xs text-ink-3">Bearish</span>
+              <div className="flex-1 h-3 rounded-full bg-line overflow-hidden">
+                <div className="h-full rounded-full bg-neg" style={{ width: `${effAaiiBear}%` }} />
               </div>
               <span className="w-12 text-right font-mono text-xs font-semibold">{effAaiiBear.toFixed(1)}%</span>
             </div>
-            <div className="text-right text-xs text-slate-400">
-              Bull-Bear Spread: <strong className="text-slate-700">{aaiiBullBearValue > 0 ? "+" : ""}{aaiiBullBearValue.toFixed(1)}%</strong>
+            <div className="text-right text-xs text-ink-3">
+              Bull-Bear Spread: <strong className="text-ink-2">{aaiiBullBearValue > 0 ? "+" : ""}{aaiiBullBearValue.toFixed(1)}%</strong>
             </div>
           </div>
           {aaiiBullBearHistory.length >= 2 && (
@@ -320,47 +321,47 @@ export function SentimentGauges({ marketData, aaiiBull = 30, aaiiNeutral = 17, a
                 fill="rgba(99, 102, 241, 0.12)"
                 referenceY={0}
               />
-              <div className="text-[10px] text-slate-400 mt-0.5">bull-bear spread, trailing 52 weeks</div>
+              <div className="text-[10px] text-ink-3 mt-0.5">bull-bear spread, trailing 52 weeks</div>
               {trendCaption(forwardData?.aaiiBullBear?.trend) && (
-                <div className="text-[10px] font-medium text-slate-500 mt-0.5">
+                <div className="text-[10px] font-medium text-ink-3 mt-0.5">
                   {trendCaption(forwardData?.aaiiBullBear?.trend)}
                 </div>
               )}
             </div>
           )}
-          <p className="mt-2 text-xs text-slate-500 leading-relaxed">{aaiiData.detail}</p>
+          <p className="mt-2 text-xs text-ink-3 leading-relaxed">{aaiiData.detail}</p>
         </div>
 
         {/* S&P Oscillator */}
-        <div className="rounded-xl border border-slate-100 bg-slate-50 p-3">
+        <div className="rounded-xl border border-line-soft bg-surface-2 p-3">
           <div className="flex items-center justify-between mb-2">
-            <div className="text-xs font-semibold text-slate-500 flex items-center gap-2">
+            <div className="text-xs font-semibold text-ink-3 flex items-center gap-2">
               S&amp;P Oscillator
-              <a href="https://app.marketedge.com/#!/markets" target="_blank" rel="noopener noreferrer" className="text-blue-500 hover:text-blue-700" title="MarketEdge S&P Oscillator">
+              <a href="https://app.marketedge.com/#!/markets" target="_blank" rel="noopener noreferrer" className="text-accent hover:text-accent" title="MarketEdge S&P Oscillator">
                 <svg className="w-3.5 h-3.5" fill="none" stroke="currentColor" strokeWidth="2" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" d="M10 6H6a2 2 0 00-2 2v10a2 2 0 002 2h10a2 2 0 002-2v-4M14 4h6m0 0v6m0-6L10 14" /></svg>
               </a>
             </div>
             {oscHistory.length > 0 && (
-              <span className="rounded-full bg-blue-100 px-2 py-0.5 text-[9px] font-bold uppercase text-blue-700" title="Sparkline shows your saved entries from Redis (pm:oscillator-history)">logged</span>
+              <span className="rounded-full bg-accent-soft px-2 py-0.5 text-[9px] font-bold uppercase text-accent" title="Sparkline shows your saved entries from Redis (pm:oscillator-history)">logged</span>
             )}
           </div>
           <div className="flex items-center gap-4">
             <div className={`flex h-16 w-16 shrink-0 items-center justify-center rounded-xl text-xl font-bold ${
-              oscValue <= -4 ? "bg-emerald-100 text-emerald-700"
-              : oscValue <= -2 ? "bg-emerald-50 text-emerald-600"
-              : oscValue >= 4 ? "bg-red-100 text-red-700"
-              : oscValue >= 2 ? "bg-red-50 text-red-600"
-              : "bg-slate-100 text-slate-600"
+              oscValue <= -4 ? "bg-pos-soft text-pos"
+              : oscValue <= -2 ? "bg-pos-soft text-pos"
+              : oscValue >= 4 ? "bg-neg-soft text-neg"
+              : oscValue >= 2 ? "bg-neg-soft text-neg"
+              : "bg-surface-2 text-ink-2"
             }`}>
               {oscValue > 0 ? "+" : ""}{oscValue}
             </div>
             <div className="flex-1 min-w-0">
               <div className={`text-base font-semibold ${
-                oscValue <= -4 ? "text-emerald-700"
-                : oscValue <= -2 ? "text-emerald-600"
-                : oscValue >= 4 ? "text-red-700"
-                : oscValue >= 2 ? "text-red-600"
-                : "text-slate-600"
+                oscValue <= -4 ? "text-pos"
+                : oscValue <= -2 ? "text-pos"
+                : oscValue >= 4 ? "text-neg"
+                : oscValue >= 2 ? "text-neg"
+                : "text-ink-2"
               }`}>
                 {oscValue <= -4 ? "Deeply Oversold" : oscValue <= -2 ? "Oversold" : oscValue >= 4 ? "Deeply Overbought" : oscValue >= 2 ? "Overbought" : "Neutral"}
               </div>
@@ -374,15 +375,15 @@ export function SentimentGauges({ marketData, aaiiBull = 30, aaiiNeutral = 17, a
                     fill="rgba(14, 165, 233, 0.12)"
                     referenceY={0}
                   />
-                  <div className="text-[10px] text-slate-400 mt-0.5">your saved entries (last 6mo)</div>
+                  <div className="text-[10px] text-ink-3 mt-0.5">your saved entries (last 6mo)</div>
                   {trendCaption(forwardData?.spOscillator?.trend) && (
-                    <div className="text-[10px] font-medium text-slate-500 mt-0.5">
+                    <div className="text-[10px] font-medium text-ink-3 mt-0.5">
                       {trendCaption(forwardData?.spOscillator?.trend)}
                     </div>
                   )}
                 </div>
               )}
-              <p className="mt-1.5 text-xs text-slate-500 leading-relaxed">
+              <p className="mt-1.5 text-xs text-ink-3 leading-relaxed">
                 {oscValue <= -4
                   ? "Extreme oversold conditions have historically preceded sharp mean-reversion rallies. High-conviction contrarian buy signal."
                   : oscValue <= -2
@@ -398,35 +399,35 @@ export function SentimentGauges({ marketData, aaiiBull = 30, aaiiNeutral = 17, a
         </div>
 
         {/* Put/Call Ratio */}
-        <div className="rounded-xl border border-slate-100 bg-slate-50 p-3">
+        <div className="rounded-xl border border-line-soft bg-surface-2 p-3">
           <div className="flex items-center justify-between mb-2">
-            <div className="text-xs font-semibold text-slate-500 flex items-center gap-2">
+            <div className="text-xs font-semibold text-ink-3 flex items-center gap-2">
               Total Put/Call Ratio
-              <a href="https://www.cboe.com/us/options/market_statistics/daily/" target="_blank" rel="noopener noreferrer" className="text-blue-500 hover:text-blue-700" title="CBOE Total Put/Call">
+              <a href="https://www.cboe.com/us/options/market_statistics/daily/" target="_blank" rel="noopener noreferrer" className="text-accent hover:text-accent" title="CBOE Total Put/Call">
                 <svg className="w-3.5 h-3.5" fill="none" stroke="currentColor" strokeWidth="2" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" d="M10 6H6a2 2 0 00-2 2v10a2 2 0 002 2h10a2 2 0 002-2v-4M14 4h6m0 0v6m0-6L10 14" /></svg>
               </a>
             </div>
             {pcHistory.length > 0 && (
-              <span className="rounded-full bg-blue-100 px-2 py-0.5 text-[9px] font-bold uppercase text-blue-700" title="Sparkline shows your saved entries from Redis (pm:putcall-history)">logged</span>
+              <span className="rounded-full bg-accent-soft px-2 py-0.5 text-[9px] font-bold uppercase text-accent" title="Sparkline shows your saved entries from Redis (pm:putcall-history)">logged</span>
             )}
           </div>
           <div className="flex items-center gap-4">
             <div className={`flex h-16 w-16 shrink-0 items-center justify-center rounded-xl text-xl font-bold ${
-              pcValue >= 1.2 ? "bg-emerald-100 text-emerald-700"
-              : pcValue >= 1.0 ? "bg-emerald-50 text-emerald-600"
-              : pcValue <= 0.5 ? "bg-red-100 text-red-700"
-              : pcValue <= 0.7 ? "bg-red-50 text-red-600"
-              : "bg-slate-100 text-slate-600"
+              pcValue >= 1.2 ? "bg-pos-soft text-pos"
+              : pcValue >= 1.0 ? "bg-pos-soft text-pos"
+              : pcValue <= 0.5 ? "bg-neg-soft text-neg"
+              : pcValue <= 0.7 ? "bg-neg-soft text-neg"
+              : "bg-surface-2 text-ink-2"
             }`}>
               {pcValue.toFixed(2)}
             </div>
             <div className="flex-1 min-w-0">
               <div className={`text-base font-semibold ${
-                pcValue >= 1.2 ? "text-emerald-700"
-                : pcValue >= 1.0 ? "text-emerald-600"
-                : pcValue <= 0.5 ? "text-red-700"
-                : pcValue <= 0.7 ? "text-red-600"
-                : "text-slate-600"
+                pcValue >= 1.2 ? "text-pos"
+                : pcValue >= 1.0 ? "text-pos"
+                : pcValue <= 0.5 ? "text-neg"
+                : pcValue <= 0.7 ? "text-neg"
+                : "text-ink-2"
               }`}>
                 {pcValue >= 1.2 ? "Extreme Fear" : pcValue >= 1.0 ? "Elevated Fear" : pcValue <= 0.5 ? "Extreme Complacency" : pcValue <= 0.7 ? "Complacent" : "Neutral"}
               </div>
@@ -440,15 +441,15 @@ export function SentimentGauges({ marketData, aaiiBull = 30, aaiiNeutral = 17, a
                     fill="rgba(139, 92, 246, 0.12)"
                     referenceY={0.85}
                   />
-                  <div className="text-[10px] text-slate-400 mt-0.5">your saved entries (last 6mo)</div>
+                  <div className="text-[10px] text-ink-3 mt-0.5">your saved entries (last 6mo)</div>
                   {trendCaption(forwardData?.putCallRatio?.trend) && (
-                    <div className="text-[10px] font-medium text-slate-500 mt-0.5">
+                    <div className="text-[10px] font-medium text-ink-3 mt-0.5">
                       {trendCaption(forwardData?.putCallRatio?.trend)}
                     </div>
                   )}
                 </div>
               )}
-              <p className="mt-1.5 text-xs text-slate-500 leading-relaxed">
+              <p className="mt-1.5 text-xs text-ink-3 leading-relaxed">
                 {pcValue >= 1.2
                   ? "Heavy put buying signals panic. Historically a strong contrarian buy signal — protection is expensive and the crowd is hedged."
                   : pcValue >= 1.0
@@ -466,12 +467,12 @@ export function SentimentGauges({ marketData, aaiiBull = 30, aaiiNeutral = 17, a
 
       {/* Claude's contrarian analysis */}
       {contrarianAnalysis && (
-        <div className="mt-3 border-t border-slate-100 pt-3">
+        <div className="mt-3 border-t border-line-soft pt-3">
           <div className="flex items-center gap-2 mb-1.5">
-            <span className="text-xs font-bold uppercase tracking-wider text-slate-400">Contrarian Take</span>
+            <span className="text-xs font-bold uppercase tracking-wider text-ink-3">Contrarian Take</span>
             <SignalPill tone={overall.tone}>{overall.label}</SignalPill>
           </div>
-          <p className="text-sm leading-6 text-slate-700">{contrarianAnalysis}</p>
+          <ClampText text={contrarianAnalysis} />
         </div>
       )}
     </section>

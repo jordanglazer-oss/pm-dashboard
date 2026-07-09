@@ -10,6 +10,7 @@ import type {
   ForwardPointBundle,
 } from "@/app/lib/types";
 import { SignalPill } from "./SignalPill";
+import { ClampText } from "./ClampText";
 import { displayTicker } from "@/app/lib/ticker";
 import { LoadingOverlay } from "./LoadingSpinner";
 import { SentimentGauges } from "./SentimentGauges";
@@ -2103,9 +2104,7 @@ export function MorningBrief({
             </SignalPill>
           )}
         </div>
-        <p className="mt-3 text-sm leading-6 text-ink-2">
-          {compositeAnalysis}
-        </p>
+        <ClampText text={compositeAnalysis} className="mt-3" />
       </section>
 
       {/* Contrarian Sentiment — all 4 indicators + Claude analysis */}
@@ -2152,7 +2151,7 @@ export function MorningBrief({
             </div>
           </div>
           <p className="mt-2 text-xs text-ink-3">Trend: {hyVal != null && hyVal >= 300 ? "Widening modestly" : "Stable"}</p>
-          <p className="mt-1.5 text-sm leading-6 text-ink-2">{creditAnalysis}</p>
+          <ClampText text={creditAnalysis} className="mt-1.5" />
         </div>
 
         <div className="rounded-2xl border border-line bg-white p-4 shadow-sm">
@@ -2179,7 +2178,7 @@ export function MorningBrief({
               <div className="mt-1 text-xl font-bold">{fmtNum(moveVal)}</div>
             </div>
           </div>
-          <p className="mt-3 text-sm leading-6 text-ink-2">{volatilityAnalysis}</p>
+          <ClampText text={volatilityAnalysis} className="mt-3" />
         </div>
       </section>
 
@@ -2205,7 +2204,7 @@ export function MorningBrief({
               <span className="font-mono font-medium">{breadth50Val != null ? `${breadth50Val}%` : "—"}</span>
             </div>
           </div>
-          <p className="mt-3 text-sm leading-6 text-ink-2">{breadthAnalysis}</p>
+          <ClampText text={breadthAnalysis} className="mt-3" />
         </div>
 
         {/* Fund Flows & Positioning tile retired in 2026-05. Flows
@@ -2234,7 +2233,7 @@ export function MorningBrief({
             <span className="text-base">🔄</span>
             <h3 className="text-base font-semibold">Sector Rotation</h3>
           </div>
-          <p className="text-sm leading-6 text-ink-2 mb-4">{sectorRotation.summary}</p>
+          <ClampText text={sectorRotation.summary} className="mb-4" />
           <div className="grid gap-4 md:grid-cols-2">
             <div>
               <div className="text-xs font-bold uppercase tracking-wider text-pos mb-1.5">LEADING</div>
@@ -2253,7 +2252,7 @@ export function MorningBrief({
               ))}
             </div>
           </div>
-          <p className="mt-3 text-sm italic leading-6 text-ink-3">{sectorRotation.pmImplication}</p>
+          <ClampText text={sectorRotation.pmImplication} className="mt-3" textClassName="text-sm italic leading-6 text-ink-3" lines={2} />
         </section>
       )}
 

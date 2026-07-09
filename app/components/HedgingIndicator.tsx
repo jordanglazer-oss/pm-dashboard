@@ -36,6 +36,7 @@
 
 import React, { useState } from "react";
 import { SignalPill } from "./SignalPill";
+import { ClampText } from "./ClampText";
 import { HORIZONS, type Horizon, type HorizonRollup } from "@/app/lib/horizons";
 
 type Props = {
@@ -212,7 +213,7 @@ export function HedgingIndicator({ vix, termStructure, fearGreed, hedgingAnalysi
     : "amber";
 
   return (
-    <section className="rounded-2xl border border-slate-200 bg-white p-4 shadow-sm">
+    <section className="rounded-2xl border border-line bg-white p-4 shadow-sm">
       <div className="flex flex-wrap items-center justify-between gap-3">
         <h3 className="text-base font-semibold">Hedging Window (SPY Puts)</h3>
         <SignalPill tone={verdict.tone}>{verdict.label}</SignalPill>
@@ -222,8 +223,8 @@ export function HedgingIndicator({ vix, termStructure, fearGreed, hedgingAnalysi
           shows the horizon's short label plus the implied tenor band so
           the PM sees the contract maturity inline before choosing. */}
       <div className="mt-3 flex flex-wrap items-center gap-2">
-        <span className="text-[10px] font-bold uppercase tracking-wider text-slate-500">Horizon</span>
-        <div className="inline-flex rounded-full border border-slate-200 bg-slate-50 p-0.5">
+        <span className="text-[10px] font-bold uppercase tracking-wider text-ink-3">Horizon</span>
+        <div className="inline-flex rounded-full border border-line bg-surface-2 p-0.5">
           {HORIZONS.map((h) => {
             const active = h.id === selectedHorizon;
             return (
@@ -233,8 +234,8 @@ export function HedgingIndicator({ vix, termStructure, fearGreed, hedgingAnalysi
                 onClick={() => setSelectedHorizon(h.id)}
                 className={`rounded-full px-3 py-1 text-[11px] font-semibold transition-colors ${
                   active
-                    ? "bg-slate-900 text-white shadow-sm"
-                    : "text-slate-600 hover:text-slate-900"
+                    ? "bg-ink text-white shadow-sm"
+                    : "text-ink-2 hover:text-ink"
                 }`}
                 title={`${h.label} → ${TENOR_BY_HORIZON[h.id].label} SPY puts`}
               >
@@ -253,7 +254,7 @@ export function HedgingIndicator({ vix, termStructure, fearGreed, hedgingAnalysi
           </SignalPill>
         )}
         {!horizonComposite && (
-          <span className="rounded-full border border-slate-200 bg-slate-50 px-2 py-0.5 text-[10px] text-slate-400">
+          <span className="rounded-full border border-line bg-surface-2 px-2 py-0.5 text-[10px] text-ink-3">
             no horizon signals
           </span>
         )}
@@ -261,9 +262,9 @@ export function HedgingIndicator({ vix, termStructure, fearGreed, hedgingAnalysi
 
       {/* Tenor reminder strip — keeps the strike + cadence rules visible
           so the verdict text doesn't have to repeat them every render. */}
-      <div className="mt-2 text-[11px] text-slate-500">
-        Strikes: <span className="font-semibold text-slate-700">ATM to 10% OTM</span> ·{" "}
-        Tenor: <span className="font-semibold text-slate-700">{tenor.label}</span>{" "}
+      <div className="mt-2 text-[11px] text-ink-3">
+        Strikes: <span className="font-semibold text-ink-2">ATM to 10% OTM</span> ·{" "}
+        Tenor: <span className="font-semibold text-ink-2">{tenor.label}</span>{" "}
         <span className="opacity-70">({tenor.contractCadence})</span>
       </div>
 
@@ -273,22 +274,22 @@ export function HedgingIndicator({ vix, termStructure, fearGreed, hedgingAnalysi
             key={f.label}
             className={`rounded-xl border p-3 ${
               f.optimal
-                ? "border-emerald-200 bg-emerald-50/40"
-                : "border-slate-200 bg-slate-50"
+                ? "border-pos-border bg-pos-soft/40"
+                : "border-line bg-surface-2"
             }`}
           >
-            <div className="text-[10px] font-semibold uppercase tracking-wider text-slate-400">
+            <div className="text-[10px] font-semibold uppercase tracking-wider text-ink-3">
               {f.label}
             </div>
-            <div className="mt-1 text-sm font-medium text-slate-900 leading-snug">
+            <div className="mt-1 text-sm font-medium text-ink leading-snug">
               {f.value}
             </div>
           </div>
         ))}
       </div>
 
-      <div className="mt-3 rounded-xl border-l-4 border-slate-300 bg-slate-50 p-3">
-        <p className="text-sm leading-6 text-slate-700">{analysis}</p>
+      <div className="mt-3 rounded-xl border-l-4 border-line bg-surface-2 p-3">
+        <ClampText text={analysis} />
       </div>
     </section>
   );
