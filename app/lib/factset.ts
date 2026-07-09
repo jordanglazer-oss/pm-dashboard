@@ -57,21 +57,41 @@ function relayBase(): string {
   return (RELAY_URL || "").replace(/\/$/, "");
 }
 
+/** Hard cap on a single relay round-trip. Without this, a slow/unresponsive
+ *  relay makes fetch() hang forever and takes the ENTIRE calling price route
+ *  down with it (the route times out at the platform level instead of falling
+ *  back to Yahoo). Fast-failing here lets every caller degrade to its existing
+ *  source. Kept comfortably under the price routes' own maxDuration. */
+const RELAY_TIMEOUT_MS = 7000;
+
 /** Low-level: pass a raw FactSet API path+query through the relay. */
 async function relayGet(factsetPath: string): Promise<unknown> {
   if (!factsetConfigured()) throw new Error("FactSet relay not configured");
   const url = `${relayBase()}/?u=${encodeURIComponent(factsetPath)}`;
-  const res = await fetch(url, {
-    headers: { "x-relay-key": RELAY_SECRET as string },
-    cache: "no-store",
-  });
-  if (!res.ok) {
-    // Surface FactSet's error body (the relay forwards it) — a 400 explains
-    // exactly what's wrong with the query, which a bare status code hides.
-    const body = await res.text().catch(() => "");
-    throw new Error(`FactSet relay returned ${res.status}${body ? `: ${body.slice(0, 600)}` : ""}`);
+  const controller = new AbortController();
+  const timer = setTimeout(() => controller.abort(), RELAY_TIMEOUT_MS);
+  try {
+    const res = await fetch(url, {
+      headers: { "x-relay-key": RELAY_SECRET as string },
+      cache: "no-store",
+      signal: controller.signal,
+    });
+    if (!res.ok) {
+      // Surface FactSet's error body (the relay forwards it) — a 400 explains
+      // exactly what's wrong with the query, which a bare status code hides.
+      const body = await res.text().catch(() => "");
+      throw new Error(`FactSet relay returned ${res.status}${body ? `: ${body.slice(0, 600)}` : ""}`);
+    }
+    return await res.json();
+  } catch (e) {
+    // Normalize an abort into a clear, catchable error so callers fall back.
+    if (e instanceof Error && e.name === "AbortError") {
+      throw new Error(`FactSet relay timed out after ${RELAY_TIMEOUT_MS}ms`);
+    }
+    throw e;
+  } finally {
+    clearTimeout(timer);
   }
-  return res.json();
 }
 
 /** Unauthenticated relay health check. */
