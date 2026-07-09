@@ -158,33 +158,16 @@ export async function getFactsetPricesByTicker(tickers: string[]): Promise<Recor
   }
   const ids = [...idToTickers.keys()];
   if (ids.length === 0) return out;
-
-  // Chunk the ids so a large batch doesn't blow a single cross-sectional call.
-  // The nav "Refresh" button batches EVERY portfolio/watchlist + research-list
-  // ticker (100-200+ ids) into one /api/prices call; packing all of those ids
-  // into one relay GET (?u=...&ids=A-US,B-US,...) overran the request and the
-  // whole call threw → {} → no FactSet override → silent Yahoo fallback (stale
-  // prices). Chunking keeps each call small AND isolates failures: one bad
-  // chunk only drops FactSet for its own ids, not the entire refresh.
-  const CHUNK = 40;
-  const chunks: string[][] = [];
-  for (let i = 0; i < ids.length; i += CHUNK) chunks.push(ids.slice(i, i + CHUNK));
-  const merged: Record<string, Record<string, FactsetValue>> = {};
-  await Promise.all(
-    chunks.map(async (chunkIds) => {
-      try {
-        const data = await crossSectional(chunkIds, [FACTSET_FORMULAS.price]);
-        Object.assign(merged, data);
-      } catch (e) {
-        log.warn(`getFactsetPricesByTicker chunk of ${chunkIds.length} failed, those fall back to Yahoo:`, e instanceof Error ? e.message : e);
-      }
-    })
-  );
-  for (const id of ids) {
-    const v = merged[id]?.[FACTSET_FORMULAS.price];
-    const price = typeof v === "number" && v > 0 ? v : null;
-    if (price == null) continue;
-    for (const t of idToTickers.get(id) ?? []) out[t] = price;
+  try {
+    const data = await crossSectional(ids, [FACTSET_FORMULAS.price]);
+    for (const id of ids) {
+      const v = data[id]?.[FACTSET_FORMULAS.price];
+      const price = typeof v === "number" && v > 0 ? v : null;
+      if (price == null) continue;
+      for (const t of idToTickers.get(id) ?? []) out[t] = price;
+    }
+  } catch (e) {
+    log.warn("getFactsetPricesByTicker failed, falling back:", e instanceof Error ? e.message : e);
   }
   return out;
 }
