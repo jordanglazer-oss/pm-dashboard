@@ -8,7 +8,10 @@ import { SCORE_GROUPS, INSTRUMENT_LABELS } from "@/app/lib/types";
 import type { ScoredStock, ScoreKey, HealthData, FundHolding, FundSectorWeight } from "@/app/lib/types";
 import type { TechnicalIndicators, RiskAlert } from "@/app/lib/technicals";
 import { groupTotal, isScoreable, normalizeSector, computeScores } from "@/app/lib/scoring";
-import { displayTicker } from "@/app/lib/ticker";
+import { displayTicker, canonicalTicker } from "@/app/lib/ticker";
+import { useSearchParams } from "next/navigation";
+import { useLiveModelWeights } from "@/app/lib/useLiveModelWeights";
+import type { PimProfileType } from "@/app/lib/pim-types";
 import { buildBoostedCsv, buildSiaSymbolList, buildMarketEdgeList } from "@/app/lib/watchlist-export";
 
 /** Check if a stock has a non-empty explanation for a given category key.
@@ -177,6 +180,14 @@ export function PortfolioOverview({ sidebar }: { sidebar?: React.ReactNode } = {
     flushStocks,
     livePreviousCloses,
   } = useStocks();
+
+  // Live CURRENT model weight per ticker, driven by the shared header Version
+  // (URL ?version=). PIM is the only position-tracked group, so weights are
+  // always PIM-based; the Version changes the profile allocation. Matches the
+  // Positioning tab's currentPct exactly.
+  const searchParams = useSearchParams();
+  const version = (searchParams.get("version") as PimProfileType) || "allEquity";
+  const { weights: liveWeights } = useLiveModelWeights("pim", version);
 
   /* ── Brief risk-scan flag lookup ─────────────────────────────────────
    *  The morning brief lists at-risk Portfolio holdings in `riskScan`
@@ -1090,6 +1101,7 @@ export function PortfolioOverview({ sidebar }: { sidebar?: React.ReactNode } = {
         }
         stocks={rankBucket === "Portfolio" ? scoreablePortfolio : scoreableWatchlist}
         livePreviousCloses={livePreviousCloses}
+        liveWeights={liveWeights}
         flagType={rankBucket === "Portfolio" ? "review" : "buy"}
         uiPrefs={uiPrefs}
         setUiPref={setUiPref}
@@ -1420,6 +1432,7 @@ function RankingTable({
   splitByCurrency,
   enableExternalExports,
   livePreviousCloses,
+  liveWeights,
   bucketTabs,
 }: {
   title: string;
@@ -1461,6 +1474,9 @@ function RankingTable({
   enableExternalExports?: boolean;
   /** In-memory previous-close per ticker for the "Day" column (empty until a refresh). */
   livePreviousCloses: Record<string, number | null>;
+  /** Live current model weight (canonicalTicker → %) for the selected Version.
+   *  null until computed; "—" for names not in the PIM positions. */
+  liveWeights: Map<string, number> | null;
 }) {
   // Collapse state — defaults to expanded. Persisted in uiPrefs so it
   // sticks across refreshes and syncs to other devices via Redis. The
@@ -1939,7 +1955,10 @@ function RankingTable({
                   </td>
                   <td className="py-3 pr-3 text-ink-2 text-xs whitespace-nowrap">{s.sector || "—"}</td>
                   <td className="py-3 pr-3 text-right font-medium text-ink tabular-nums whitespace-nowrap">
-                    {s.weights?.portfolio ? `${s.weights.portfolio.toFixed(1)}%` : <span className="text-ink-faint">—</span>}
+                    {(() => {
+                      const w = liveWeights?.get(canonicalTicker(s.ticker));
+                      return w != null ? `${w.toFixed(1)}%` : <span className="text-ink-faint">—</span>;
+                    })()}
                   </td>
                   <td className="py-3 pr-3 text-right text-ink-2 tabular-nums">
                     {s.price != null ? `$${s.price.toFixed(2)}` : "—"}
