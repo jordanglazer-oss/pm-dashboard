@@ -34,9 +34,9 @@ function compositeBadge(label: MarketRegimeData["composite"]["label"]): string {
 }
 
 function horizonChipClasses(label: "Risk-On" | "Neutral" | "Risk-Off"): string {
-  if (label === "Risk-On") return "border-emerald-400 bg-pos-soft text-pos";
-  if (label === "Risk-Off") return "border-red-400 bg-neg-soft text-neg";
-  return "border-amber-400 bg-warn-soft text-warn";
+  if (label === "Risk-On") return "border-pos-border bg-pos-soft text-pos";
+  if (label === "Risk-Off") return "border-neg-border bg-neg-soft text-neg";
+  return "border-warn-border bg-warn-soft text-warn";
 }
 
 export function RegimeStrip() {

@@ -75,8 +75,8 @@ function SaveableNumericInput({
         title={isDirty ? "Save changes" : "Saved"}
         className={`absolute right-2 top-1/2 -translate-y-1/2 flex items-center justify-center w-5 h-5 rounded-full transition-all ${
           isDirty
-            ? "bg-blue-600 text-white hover:bg-blue-700 shadow-sm cursor-pointer"
-            : "text-emerald-400"
+            ? "bg-accent text-white hover:bg-accent shadow-sm cursor-pointer"
+            : "text-pos"
         }`}
       >
         {isDirty ? (
@@ -129,7 +129,7 @@ function SaveableSelect({
         <button
           onClick={() => onSave(value)}
           title="Save changes"
-          className="absolute right-7 top-1/2 -translate-y-1/2 flex items-center justify-center w-5 h-5 rounded-full bg-blue-600 text-white hover:bg-blue-700 shadow-sm cursor-pointer transition-all"
+          className="absolute right-7 top-1/2 -translate-y-1/2 flex items-center justify-center w-5 h-5 rounded-full bg-accent text-white hover:bg-accent shadow-sm cursor-pointer transition-all"
         >
           <svg className="w-3 h-3" fill="none" stroke="currentColor" strokeWidth="3" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" d="M4.5 12.75l6 6 9-13.5" /></svg>
         </button>
@@ -176,7 +176,7 @@ function SaveableTextarea({
     return (
       <button
         onClick={() => setOpen(true)}
-        className="w-full rounded-xl border border-dashed border-slate-200 bg-slate-50 px-3 py-2.5 text-left text-sm text-slate-400 hover:bg-white hover:border-slate-300 transition-all"
+        className="w-full rounded-xl border border-dashed border-line bg-surface-2 px-3 py-2.5 text-left text-sm text-ink-3 hover:bg-white hover:border-line transition-all"
       >
         + Paste {label} report
       </button>
@@ -194,17 +194,17 @@ function SaveableTextarea({
         onBlur={handleSave}
         placeholder={placeholder}
         rows={4}
-        className="w-full rounded-xl border border-slate-200 bg-slate-50 px-3 py-2.5 text-sm leading-relaxed focus:bg-white focus:border-blue-300 focus:ring-1 focus:ring-blue-200 transition-all outline-none resize-y min-h-[80px] max-h-[300px]"
+        className="w-full rounded-xl border border-line bg-surface-2 px-3 py-2.5 text-sm leading-relaxed focus:bg-white focus:border-accent-border focus:ring-1 focus:ring-accent-border transition-all outline-none resize-y min-h-[80px] max-h-[300px]"
       />
       <div className="flex items-center justify-between mt-1">
-        <span className="text-[10px] text-slate-400">
+        <span className="text-[10px] text-ink-3">
           {wordCount > 0 ? `${wordCount} words` : "empty"}
         </span>
         <div className="flex items-center gap-2">
           {isDirty && (
             <button
               onClick={handleSave}
-              className="rounded-full bg-blue-600 px-2 py-0.5 text-[10px] font-bold text-white hover:bg-blue-700 transition-all"
+              className="rounded-full bg-accent px-2 py-0.5 text-[10px] font-bold text-white hover:bg-accent transition-all"
             >
               Save
             </button>
@@ -216,7 +216,7 @@ function SaveableTextarea({
                 onSave("");
                 setOpen(false);
               }}
-              className="text-[10px] text-slate-400 hover:text-red-500 transition-colors"
+              className="text-[10px] text-ink-3 hover:text-neg transition-colors"
               title="Clear report"
             >
               Clear
@@ -253,10 +253,10 @@ function StrategistTimingToggle({
   const label = value === "prior-close" ? "Prior close" : value === "pre-market" ? "Pre-mkt" : "Timing?";
   const tone =
     value === "pre-market"
-      ? "bg-emerald-50 text-emerald-700 border-emerald-200"
+      ? "bg-pos-soft text-pos border-pos-border"
       : value === "prior-close"
-        ? "bg-amber-50 text-amber-700 border-amber-200"
-        : "bg-slate-50 text-slate-400 border-slate-200";
+        ? "bg-warn-soft text-warn border-warn-border"
+        : "bg-surface-2 text-ink-3 border-line";
   return (
     <button
       type="button"
@@ -281,29 +281,29 @@ function BriefSection({
   children: React.ReactNode;
 }) {
   const accentMap: Record<typeof accent, { bar: string; text: string; dot: string; panel: string }> = {
-    blue:    { bar: "bg-blue-500",    text: "text-blue-700",    dot: "bg-blue-400",    panel: "border-l-blue-500" },
-    emerald: { bar: "bg-emerald-500", text: "text-emerald-700", dot: "bg-emerald-400", panel: "border-l-emerald-500" },
-    amber:   { bar: "bg-amber-500",   text: "text-amber-700",   dot: "bg-amber-400",   panel: "border-l-amber-500" },
-    rose:    { bar: "bg-rose-500",    text: "text-rose-700",    dot: "bg-rose-400",    panel: "border-l-rose-500" },
+    blue:    { bar: "bg-accent",    text: "text-accent",    dot: "bg-accent",    panel: "border-l-blue-500" },
+    emerald: { bar: "bg-pos", text: "text-pos", dot: "bg-pos", panel: "border-l-emerald-500" },
+    amber:   { bar: "bg-warn",   text: "text-warn",   dot: "bg-warn",   panel: "border-l-amber-500" },
+    rose:    { bar: "bg-neg",    text: "text-neg",    dot: "bg-neg",    panel: "border-l-rose-500" },
   };
   const a = accentMap[accent];
   return (
-    <section className={`rounded-2xl border border-slate-200 border-l-4 ${a.panel} bg-white/60 shadow-sm overflow-hidden`}>
+    <section className={`rounded-2xl border border-line border-l-4 ${a.panel} bg-white/60 shadow-sm overflow-hidden`}>
       <header className="flex items-baseline gap-2 px-4 pt-3 pb-2">
         <span className={`inline-block h-2 w-2 rounded-full ${a.dot}`} />
         <h3 className={`text-sm font-bold tracking-tight ${a.text}`}>{title}</h3>
-        <span className="text-xs text-slate-400 truncate">· {subtitle}</span>
+        <span className="text-xs text-ink-3 truncate">· {subtitle}</span>
       </header>
-      <div className="border-t border-slate-100 px-4 py-3">{children}</div>
+      <div className="border-t border-line-soft px-4 py-3">{children}</div>
     </section>
   );
 }
 
 /** Composite pill tone helper for the Market Regime strip. */
 function regimePillClasses(direction: RegimeDirection): string {
-  if (direction === "risk-on") return "border-emerald-300 bg-emerald-50 text-emerald-700";
-  if (direction === "risk-off") return "border-red-300 bg-red-50 text-red-700";
-  return "border-slate-200 bg-slate-50 text-slate-600";
+  if (direction === "risk-on") return "border-pos-border bg-pos-soft text-pos";
+  if (direction === "risk-off") return "border-neg-border bg-neg-soft text-neg";
+  return "border-line bg-surface-2 text-ink-2";
 }
 
 /** Format a signed pct number as "+X.X%" / "-X.X%" (or "—" when null). */
@@ -333,17 +333,17 @@ function MarketRegimeStrip({ regime }: { regime: MarketRegimeData }) {
   if (global.nikkei) crossRow.push({ label: "Nikkei", body: `${global.nikkei.price.toFixed(0)} · 20d ${fmtPct(global.nikkei.change20dPct)}` });
 
   return (
-    <div className="mb-5 overflow-hidden rounded-2xl border border-slate-200 bg-white/80 p-3 sm:p-4">
+    <div className="mb-5 overflow-hidden rounded-2xl border border-line bg-white/80 p-3 sm:p-4">
       <div className="mb-3 flex flex-wrap items-start justify-between gap-2 sm:gap-3">
         <div className="flex flex-wrap items-center gap-2">
-          <span className="text-[10px] font-bold uppercase tracking-wider text-slate-500">Market Regime</span>
+          <span className="text-[10px] font-bold uppercase tracking-wider text-ink-3">Market Regime</span>
           <SignalPill tone={labelTone}>{label}</SignalPill>
-          <span className="text-xs text-slate-400">
+          <span className="text-xs text-ink-3">
             {comp.score}/{comp.total} risk-on signals
           </span>
         </div>
         <span
-          className="text-[10px] text-slate-400"
+          className="text-[10px] text-ink-3"
           title={`Computed from Yahoo Finance at ${regime.computedAt}`}
         >
           Yahoo-derived · cached 30m
@@ -369,9 +369,9 @@ function MarketRegimeStrip({ regime }: { regime: MarketRegimeData }) {
           Renders only when the cached blob has the new `horizons` field; older
           snapshots silently skip and the rest of the strip is unaffected. */}
       {regime.horizons && (
-        <div className="mb-3 border-t border-slate-100 pt-2">
+        <div className="mb-3 border-t border-line-soft pt-2">
           <div className="flex flex-wrap items-center gap-1 sm:gap-1.5">
-            <span className="mr-1 text-[10px] font-bold uppercase tracking-wider text-slate-500">By Horizon</span>
+            <span className="mr-1 text-[10px] font-bold uppercase tracking-wider text-ink-3">By Horizon</span>
             {HORIZONS.map((h) => {
               const b = regime.horizons!.byHorizon[h.id];
               const empty = b.total === 0;
@@ -382,7 +382,7 @@ function MarketRegimeStrip({ regime }: { regime: MarketRegimeData }) {
                 <span
                   key={h.id}
                   className={`inline-flex max-w-full items-center gap-1 rounded-full border px-2 py-0.5 text-[10px] sm:gap-1.5 sm:px-2.5 sm:py-1 sm:text-[11px] ${
-                    empty ? "border-slate-200 bg-slate-50 text-slate-400" : regimePillClasses(
+                    empty ? "border-line bg-surface-2 text-ink-3" : regimePillClasses(
                       tone === "green" ? "risk-on" : tone === "red" ? "risk-off" : "neutral"
                     )
                   }`}
@@ -404,8 +404,8 @@ function MarketRegimeStrip({ regime }: { regime: MarketRegimeData }) {
             })}
           </div>
           {isFinite(regime.horizons.weightedScore) && (
-            <div className="mt-2 text-[10px] text-slate-500 sm:text-right">
-              Weighted: <span className="font-semibold text-slate-700">{regime.horizons.weightedLabel}</span>{" "}
+            <div className="mt-2 text-[10px] text-ink-3 sm:text-right">
+              Weighted: <span className="font-semibold text-ink-2">{regime.horizons.weightedLabel}</span>{" "}
               <span className="font-mono opacity-70">
                 ({regime.horizons.weightedScore >= 0 ? "+" : ""}
                 {regime.horizons.weightedScore.toFixed(2)})
@@ -416,10 +416,10 @@ function MarketRegimeStrip({ regime }: { regime: MarketRegimeData }) {
       )}
 
       {crossRow.length > 0 && (
-        <div className="flex flex-wrap gap-x-4 gap-y-1 pt-2 border-t border-slate-100 text-[11px] text-slate-500">
+        <div className="flex flex-wrap gap-x-4 gap-y-1 pt-2 border-t border-line-soft text-[11px] text-ink-3">
           {crossRow.map((r, i) => (
             <span key={i}>
-              <span className="font-semibold text-slate-600">{r.label}</span>{" "}
+              <span className="font-semibold text-ink-2">{r.label}</span>{" "}
               <span className="font-mono">{r.body}</span>
             </span>
           ))}
@@ -437,9 +437,9 @@ function MarketRegimeStrip({ regime }: { regime: MarketRegimeData }) {
 // horizon cards (tactical=blue, cyclical=emerald, structural=violet) so
 // the same visual language carries across the Brief.
 const HORIZON_CHIP: Record<"tactical" | "cyclical" | "structural", { label: string; cls: string; full: string }> = {
-  tactical:  { label: "1–3M",  cls: "border-blue-200 bg-blue-50 text-blue-700",       full: "Tactical · 1–3M" },
-  cyclical:  { label: "3–6M",  cls: "border-emerald-200 bg-emerald-50 text-emerald-700", full: "Cyclical · 3–6M" },
-  structural:{ label: "6–12M", cls: "border-violet-200 bg-violet-50 text-violet-700",   full: "Structural · 6–12M" },
+  tactical:  { label: "1–3M",  cls: "border-accent-border bg-accent-soft text-accent",       full: "Tactical · 1–3M" },
+  cyclical:  { label: "3–6M",  cls: "border-pos-border bg-pos-soft text-pos", full: "Cyclical · 3–6M" },
+  structural:{ label: "6–12M", cls: "border-violet-soft bg-violet-soft text-violet",   full: "Structural · 6–12M" },
 };
 
 function ForwardTile({
@@ -491,10 +491,10 @@ function ForwardTile({
   }
   const deltaColor =
     deltaPositive == null
-      ? "text-slate-400"
+      ? "text-ink-3"
       : (invertDeltaColor ? !deltaPositive : deltaPositive)
-      ? "text-emerald-600"
-      : "text-red-600";
+      ? "text-pos"
+      : "text-neg";
 
   // Map the ForwardPoint status to a LiveStatusBadge status. "stale" also
   // renders as the amber Stale badge so the user sees at a glance that a
@@ -516,10 +516,10 @@ function ForwardTile({
     : `${point.sourceLabel} · fetched successfully${point.asOf ? " (" + point.asOf + ")" : ""}`;
 
   return (
-    <div className="rounded-2xl border border-slate-100 bg-slate-50/60 p-3 md:p-4">
+    <div className="rounded-2xl border border-line-soft bg-surface-2/60 p-3 md:p-4">
       <div className="flex items-start justify-between gap-2 mb-1">
         <div className="flex items-center gap-1.5 min-w-0 flex-wrap">
-          <span className="text-[11px] font-semibold uppercase tracking-wider text-slate-500">
+          <span className="text-[11px] font-semibold uppercase tracking-wider text-ink-3">
             {label}
           </span>
           {horizon && (
@@ -539,7 +539,7 @@ function ForwardTile({
               target="_blank"
               rel="noopener noreferrer"
               title={`${point.sourceLabel}${point.note ? " — " + point.note : ""}`}
-              className="text-blue-400 hover:text-blue-600 transition-colors"
+              className="text-accent hover:text-accent transition-colors"
             >
               <svg className="w-3.5 h-3.5" fill="none" stroke="currentColor" strokeWidth="2" viewBox="0 0 24 24">
                 <path strokeLinecap="round" strokeLinejoin="round" d="M10 6H6a2 2 0 00-2 2v10a2 2 0 002 2h10a2 2 0 002-2v-4M14 4h6m0 0v6m0-6L10 14" />
@@ -548,28 +548,28 @@ function ForwardTile({
           )}
         </div>
       </div>
-      <div className="text-2xl font-bold text-slate-800 leading-tight">
+      <div className="text-2xl font-bold text-ink leading-tight">
         {available ? (
           <>
             {point!.value}
-            {unit && <span className="text-sm font-normal text-slate-400 ml-1">{unit}</span>}
+            {unit && <span className="text-sm font-normal text-ink-3 ml-1">{unit}</span>}
           </>
         ) : (
-          <span className="text-base font-normal text-slate-400">N/A</span>
+          <span className="text-base font-normal text-ink-3">N/A</span>
         )}
       </div>
       {deltaStr ? (
         <div className={`text-xs font-semibold mt-0.5 ${deltaColor}`}>{deltaStr}</div>
       ) : available && deltaUnit && point?.previous == null ? (
         <div
-          className="text-xs font-medium mt-0.5 text-slate-400"
+          className="text-xs font-medium mt-0.5 text-ink-3"
           title="Prior snapshot not yet in history cache. Deltas will populate as subsequent refreshes accumulate."
         >
           {deltaPeriod ?? "wk/wk"} building…
         </div>
       ) : null}
       {point?.sourceLabel && (
-        <div className="text-[10px] text-slate-400 mt-1 truncate" title={point.note}>
+        <div className="text-[10px] text-ink-3 mt-1 truncate" title={point.note}>
           {point.sourceLabel}
         </div>
       )}
@@ -596,7 +596,7 @@ function LiveStatusBadge({
   if (!status) return null;
   if (status === "live") {
     return (
-      <span className="rounded-full bg-emerald-100 px-1.5 py-0.5 text-[9px] font-bold text-emerald-700 uppercase leading-none">
+      <span className="rounded-full bg-pos-soft px-1.5 py-0.5 text-[9px] font-bold text-pos uppercase leading-none">
         Live
       </span>
     );
@@ -605,7 +605,7 @@ function LiveStatusBadge({
     return (
       <span
         title={reason ?? "Source not configured — manual value shown"}
-        className="rounded-full bg-slate-100 px-1.5 py-0.5 text-[9px] font-bold text-slate-500 uppercase leading-none cursor-help"
+        className="rounded-full bg-surface-2 px-1.5 py-0.5 text-[9px] font-bold text-ink-3 uppercase leading-none cursor-help"
       >
         Manual
       </span>
@@ -614,7 +614,7 @@ function LiveStatusBadge({
   return (
     <span
       title={reason ?? "Auto-fetch failed — last saved value shown"}
-      className="rounded-full bg-amber-100 px-1.5 py-0.5 text-[9px] font-bold text-amber-700 uppercase leading-none cursor-help"
+      className="rounded-full bg-warn-soft px-1.5 py-0.5 text-[9px] font-bold text-warn uppercase leading-none cursor-help"
     >
       Stale
     </span>
@@ -1113,10 +1113,10 @@ export function MorningBrief({
   return (
     <>
       {/* Editable Market & Sentiment Inputs */}
-      <section className="rounded-2xl border border-slate-200 bg-white p-4 md:p-5 shadow-sm overflow-hidden">
+      <section className="rounded-2xl border border-line bg-white p-4 md:p-5 shadow-sm overflow-hidden">
         <div className="flex items-center gap-3 mb-4 flex-wrap">
-          <h3 className="text-base font-semibold text-slate-800">Daily Market Input</h3>
-          {liveLoading && <span className="text-xs text-blue-500 animate-pulse">Fetching live data...</span>}
+          <h3 className="text-base font-semibold text-ink">Daily Market Input</h3>
+          {liveLoading && <span className="text-xs text-accent animate-pulse">Fetching live data...</span>}
         </div>
 
         {/* Surface any fetch-level or per-field auto-fetch failure as a visible
@@ -1135,14 +1135,14 @@ export function MorningBrief({
           };
           if (marketDataError) {
             return (
-              <div className="mb-5 rounded-xl border border-amber-200 bg-amber-50 px-4 py-3 text-xs text-amber-800">
+              <div className="mb-5 rounded-xl border border-warn-border bg-warn-soft px-4 py-3 text-xs text-warn">
                 <strong className="font-semibold">Auto-fetch unavailable:</strong> {marketDataError}
               </div>
             );
           }
           if (failedKeys.length > 0 || notConfiguredKeys.length > 0) {
             return (
-              <div className="mb-5 rounded-xl border border-amber-200 bg-amber-50 px-4 py-3 text-xs text-amber-800 space-y-1">
+              <div className="mb-5 rounded-xl border border-warn-border bg-warn-soft px-4 py-3 text-xs text-warn space-y-1">
                 {failedKeys.length > 0 && (
                   <div>
                     <strong className="font-semibold">Stale values shown for:</strong>{" "}
@@ -1171,12 +1171,12 @@ export function MorningBrief({
             vertical space — the contrarian inputs (left) and the other manual
             fields (right) are independent groupings, so the 2-col split keeps
             their visual identity while reducing scroll. Stacks on mobile. */}
-        <div className="grid gap-6 lg:grid-cols-2 lg:gap-x-8 mb-6 border-t border-slate-100 pt-5">
+        <div className="grid gap-6 lg:grid-cols-2 lg:gap-x-8 mb-6 border-t border-line-soft pt-5">
 
         {/* ── Contrarian Indicators ── */}
         <div>
           <div className="flex items-center gap-3 mb-4">
-            <h4 className="text-xs font-semibold text-slate-400 uppercase tracking-widest">Contrarian Indicators</h4>
+            <h4 className="text-xs font-semibold text-ink-3 uppercase tracking-widest">Contrarian Indicators</h4>
             <SignalPill tone="green">INVERTED SIGNALS</SignalPill>
           </div>
           {/* Two text inputs in a 2-col row, then the optional chart uploader
@@ -1186,8 +1186,8 @@ export function MorningBrief({
           <div className="grid grid-cols-2 gap-x-4 gap-y-3">
             <div>
               <div className="flex items-center gap-1.5 mb-1">
-                <label className="text-xs font-semibold text-slate-400 uppercase tracking-wider">S&P Oscillator</label>
-                <a href="https://app.marketedge.com/#!/markets" target="_blank" rel="noopener noreferrer" className="text-blue-400 hover:text-blue-600 transition-colors" title="MarketEdge S&P Oscillator">
+                <label className="text-xs font-semibold text-ink-3 uppercase tracking-wider">S&P Oscillator</label>
+                <a href="https://app.marketedge.com/#!/markets" target="_blank" rel="noopener noreferrer" className="text-accent hover:text-accent transition-colors" title="MarketEdge S&P Oscillator">
                   <svg className="w-3 h-3" fill="none" stroke="currentColor" strokeWidth="2" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" d="M10 6H6a2 2 0 00-2 2v10a2 2 0 002 2h10a2 2 0 002-2v-4M14 4h6m0 0v6m0-6L10 14" /></svg>
                 </a>
               </div>
@@ -1195,29 +1195,29 @@ export function MorningBrief({
                 savedValue={marketData.spOscillator}
                 onSave={(n) => onUpdateMarketData({ spOscillator: n })}
                 allowNegative
-                inputClassName="w-full rounded-xl border border-slate-200 bg-slate-50 px-3 py-2.5 text-lg font-semibold focus:bg-white focus:border-blue-300 focus:ring-1 focus:ring-blue-200 transition-all outline-none"
+                inputClassName="w-full rounded-xl border border-line bg-surface-2 px-3 py-2.5 text-lg font-semibold focus:bg-white focus:border-accent-border focus:ring-1 focus:ring-accent-border transition-all outline-none"
               />
-              <p className="text-[10px] text-slate-400 mt-0.5">{marketData.spOscillator < 0 ? "Oversold (bullish)" : marketData.spOscillator > 0 ? "Overbought (bearish)" : "Neutral"}</p>
+              <p className="text-[10px] text-ink-3 mt-0.5">{marketData.spOscillator < 0 ? "Oversold (bullish)" : marketData.spOscillator > 0 ? "Overbought (bearish)" : "Neutral"}</p>
             </div>
             <div>
               <div className="flex items-center gap-1.5 mb-1">
-                <label className="text-xs font-semibold text-slate-400 uppercase tracking-wider">Put/Call Ratio</label>
-                <a href="https://www.cboe.com/us/options/market_statistics/daily/" target="_blank" rel="noopener noreferrer" className="text-blue-400 hover:text-blue-600 transition-colors" title="CBOE Total Put/Call">
+                <label className="text-xs font-semibold text-ink-3 uppercase tracking-wider">Put/Call Ratio</label>
+                <a href="https://www.cboe.com/us/options/market_statistics/daily/" target="_blank" rel="noopener noreferrer" className="text-accent hover:text-accent transition-colors" title="CBOE Total Put/Call">
                   <svg className="w-3 h-3" fill="none" stroke="currentColor" strokeWidth="2" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" d="M10 6H6a2 2 0 00-2 2v10a2 2 0 002 2h10a2 2 0 002-2v-4M14 4h6m0 0v6m0-6L10 14" /></svg>
                 </a>
               </div>
               <SaveableNumericInput
                 savedValue={marketData.putCall}
                 onSave={(n) => onUpdateMarketData({ putCall: n })}
-                inputClassName="w-full rounded-xl border border-slate-200 bg-slate-50 px-3 py-2.5 text-lg font-semibold focus:bg-white focus:border-blue-300 focus:ring-1 focus:ring-blue-200 transition-all outline-none"
+                inputClassName="w-full rounded-xl border border-line bg-surface-2 px-3 py-2.5 text-lg font-semibold focus:bg-white focus:border-accent-border focus:ring-1 focus:ring-accent-border transition-all outline-none"
               />
-              <p className="text-[10px] text-slate-400 mt-0.5">Total P/C ratio</p>
+              <p className="text-[10px] text-ink-3 mt-0.5">Total P/C ratio</p>
             </div>
           </div>
           <div className="mt-3 grid grid-cols-1 md:grid-cols-2 gap-4">
             <div>
               <div className="flex items-center gap-1.5 mb-1">
-                <label className="text-xs font-semibold text-slate-400 uppercase tracking-wider">Oscillator Chart (optional)</label>
+                <label className="text-xs font-semibold text-ink-3 uppercase tracking-wider">Oscillator Chart (optional)</label>
               </div>
               <ImageUpload
                 section="spOscillator"
@@ -1226,11 +1226,11 @@ export function MorningBrief({
                 onAdd={addAttachment}
                 onRemove={removeAttachment}
               />
-              <p className="text-[10px] text-slate-400 mt-1">Drop a MarketEdge chart screenshot — Claude will read the shape, levels, and recent extremes for the contrarian section.</p>
+              <p className="text-[10px] text-ink-3 mt-1">Drop a MarketEdge chart screenshot — Claude will read the shape, levels, and recent extremes for the contrarian section.</p>
             </div>
             <div>
               <div className="flex items-center gap-1.5 mb-1">
-                <label className="text-xs font-semibold text-slate-400 uppercase tracking-wider">Newton Technical Presentation (optional)</label>
+                <label className="text-xs font-semibold text-ink-3 uppercase tracking-wider">Newton Technical Presentation (optional)</label>
               </div>
               <ImageUpload
                 section="newtonTechnical"
@@ -1239,10 +1239,10 @@ export function MorningBrief({
                 onAdd={addAttachment}
                 onRemove={removeAttachment}
               />
-              <p className="text-[10px] text-slate-400 mt-1">Drop Mark Newton&apos;s monthly/quarterly technical deck (PDF). Parsed once on upload, then cached — the brief reuses the same analysis on every refresh and only re-parses when you replace the file. Relevance decays with age: fresh (&lt;14d) full weight, 14-45d directional only, &gt;45d high-level context only.</p>
+              <p className="text-[10px] text-ink-3 mt-1">Drop Mark Newton&apos;s monthly/quarterly technical deck (PDF). Parsed once on upload, then cached — the brief reuses the same analysis on every refresh and only re-parses when you replace the file. Relevance decays with age: fresh (&lt;14d) full weight, 14-45d directional only, &gt;45d high-level context only.</p>
             </div>
           </div>
-          <p className="mt-3 text-[11px] text-slate-400">
+          <p className="mt-3 text-[11px] text-ink-3">
             CNN Fear &amp; Greed and AAII Sentiment are now auto-fetched on every load
             (with full history) — see the live tiles in the Contrarian Sentiment
             section below.
@@ -1252,7 +1252,7 @@ export function MorningBrief({
         {/* ── Other Manual Inputs ── */}
         <div>
           <div className="flex items-center gap-3 mb-4">
-            <h4 className="text-xs font-semibold text-slate-400 uppercase tracking-widest">Other Manual Inputs</h4>
+            <h4 className="text-xs font-semibold text-ink-3 uppercase tracking-widest">Other Manual Inputs</h4>
           </div>
           {/* Equity Flows + JPM Flows screenshot section was retired
               in 2026-05. Flows are inherently backward-looking and
@@ -1261,8 +1261,8 @@ export function MorningBrief({
           <div className="grid grid-cols-2 gap-x-4 gap-y-3">
             <div>
               <div className="flex flex-wrap items-center gap-x-1.5 gap-y-0.5 mb-1">
-                <label className="text-xs font-semibold text-slate-400 uppercase tracking-wider">VIX Term Structure</label>
-                <a href="http://vixcentral.com" target="_blank" rel="noopener noreferrer" className="text-blue-400 hover:text-blue-600 transition-colors shrink-0" title="VIX Central">
+                <label className="text-xs font-semibold text-ink-3 uppercase tracking-wider">VIX Term Structure</label>
+                <a href="http://vixcentral.com" target="_blank" rel="noopener noreferrer" className="text-accent hover:text-accent transition-colors shrink-0" title="VIX Central">
                   <svg className="w-3 h-3" fill="none" stroke="currentColor" strokeWidth="2" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" d="M10 6H6a2 2 0 00-2 2v10a2 2 0 002 2h10a2 2 0 002-2v-4M14 4h6m0 0v6m0-6L10 14" /></svg>
                 </a>
                 <LiveStatusBadge
@@ -1278,7 +1278,7 @@ export function MorningBrief({
                   { value: "Flat", label: "Flat" },
                   { value: "Backwardation", label: "Backwardation" },
                 ]}
-                selectClassName="w-full rounded-xl border border-slate-200 bg-slate-50 px-3 py-2.5 text-lg font-semibold focus:bg-white focus:border-blue-300 focus:ring-1 focus:ring-blue-200 transition-all outline-none appearance-none"
+                selectClassName="w-full rounded-xl border border-line bg-surface-2 px-3 py-2.5 text-lg font-semibold focus:bg-white focus:border-accent-border focus:ring-1 focus:ring-accent-border transition-all outline-none appearance-none"
               />
             </div>
           </div>
@@ -1287,7 +1287,7 @@ export function MorningBrief({
               lengthening the left column. */}
           <div className="mt-4">
             <div className="flex items-center gap-1.5 mb-1">
-              <label className="text-xs font-semibold text-slate-400 uppercase tracking-wider">Analyst / Strategist Reports (optional)</label>
+              <label className="text-xs font-semibold text-ink-3 uppercase tracking-wider">Analyst / Strategist Reports (optional)</label>
             </div>
             <ImageUpload
               section="strategistReports"
@@ -1296,7 +1296,7 @@ export function MorningBrief({
               onAdd={addAttachment}
               onRemove={removeAttachment}
             />
-            <p className="text-[10px] text-slate-400 mt-1">Drop any analyst or strategist research (PDF or screenshot) — a sell-side strategy note, an economics piece, a thematic deck. Multiple files OK. Parsed once on upload, then cached — the brief reuses the same analysis on every refresh and only re-parses when you change the files. Same age decay as the Newton deck.</p>
+            <p className="text-[10px] text-ink-3 mt-1">Drop any analyst or strategist research (PDF or screenshot) — a sell-side strategy note, an economics piece, a thematic deck. Multiple files OK. Parsed once on upload, then cached — the brief reuses the same analysis on every refresh and only re-parses when you change the files. Same age decay as the Newton deck.</p>
           </div>
         </div>
 
@@ -1308,10 +1308,10 @@ export function MorningBrief({
             in marketData.breadthOverride and persisted to pm:breadth-history
             with source: "manual" so wk/wk and mo/mo comparisons compound.
             Sources: Mark Newton's note, StockCharts $SPXA200R/$SPXA50R, WSJ. */}
-        <div className="border-t border-slate-100 pt-5 mb-4">
+        <div className="border-t border-line-soft pt-5 mb-4">
           <div className="flex items-center gap-3 mb-3">
-            <h4 className="text-xs font-semibold text-slate-400 uppercase tracking-widest">Breadth (manual entry)</h4>
-            <span className="text-[10px] text-slate-400">% above 200/50 DMA + NYSE new H/L — sources: Mark Newton&apos;s note, your Claude skill, Barchart ($BCMM / $S5TH / $MAHN), StockCharts, WSJ. When date = today, used directly. Partial entry is fine.</span>
+            <h4 className="text-xs font-semibold text-ink-3 uppercase tracking-widest">Breadth (manual entry)</h4>
+            <span className="text-[10px] text-ink-3">% above 200/50 DMA + NYSE new H/L — sources: Mark Newton&apos;s note, your Claude skill, Barchart ($BCMM / $S5TH / $MAHN), StockCharts, WSJ. When date = today, used directly. Partial entry is fine.</span>
           </div>
           {/* Helper to keep the date in sync whenever the PM types a value.
               All six fields share the same date — partial entry is fine. */}
@@ -1356,8 +1356,8 @@ export function MorningBrief({
                 <span
                   className={`text-[8px] leading-none px-1 py-0.5 rounded font-semibold border ${
                     isToday
-                      ? "bg-emerald-50 text-emerald-600 border-emerald-200"
-                      : "bg-amber-50 text-amber-700 border-amber-200"
+                      ? "bg-pos-soft text-pos border-pos-border"
+                      : "bg-warn-soft text-warn border-warn-border"
                   }`}
                   title={isToday ? "Edited today" : `Last edited ${day} — may be stale`}
                 >
@@ -1378,9 +1378,9 @@ export function MorningBrief({
             };
             const LabelLink = ({ text, href, editedAt }: { text: string; href?: string; editedAt?: string }) => (
               <div className="flex items-center gap-1 mb-1">
-                <label className="text-[10px] font-semibold text-slate-400 uppercase tracking-wider">{text}</label>
+                <label className="text-[10px] font-semibold text-ink-3 uppercase tracking-wider">{text}</label>
                 {href && (
-                  <a href={href} target="_blank" rel="noopener noreferrer" className="text-blue-400 hover:text-blue-600 transition-colors" title={`Open source: ${href}`}>
+                  <a href={href} target="_blank" rel="noopener noreferrer" className="text-accent hover:text-accent transition-colors" title={`Open source: ${href}`}>
                     <svg className="w-3 h-3" fill="none" stroke="currentColor" strokeWidth="2" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" d="M10 6H6a2 2 0 00-2 2v10a2 2 0 002 2h10a2 2 0 002-2v-4M14 4h6m0 0v6m0-6L10 14" /></svg>
                   </a>
                 )}
@@ -1394,7 +1394,7 @@ export function MorningBrief({
                   <button
                     type="button"
                     onClick={clearAllBreadth}
-                    className="text-[10px] font-semibold text-slate-400 hover:text-red-600 border border-slate-200 hover:border-red-200 rounded px-2 py-0.5 transition-colors"
+                    className="text-[10px] font-semibold text-ink-3 hover:text-neg border border-line hover:border-neg-border rounded px-2 py-0.5 transition-colors"
                     title="Clear every manual breadth value and its freshness tag. Persists to pm:market, so it syncs across refreshes and devices."
                   >
                     Clear all
@@ -1415,7 +1415,7 @@ export function MorningBrief({
                           },
                         })
                       }
-                      className="w-full rounded-lg border border-slate-200 bg-slate-50 px-3 py-2 text-sm text-slate-700 outline-none focus:border-blue-300 focus:ring-1 focus:ring-blue-200 transition-all"
+                      className="w-full rounded-lg border border-line bg-surface-2 px-3 py-2 text-sm text-ink-2 outline-none focus:border-accent-border focus:ring-1 focus:ring-accent-border transition-all"
                       title="Must equal today's UTC date to be used. Earlier dates are treated as 'not entered today'."
                     />
                   </div>
@@ -1425,7 +1425,7 @@ export function MorningBrief({
                       type="number" step="0.1" min={0} max={100} placeholder="51.2"
                       value={numVal(marketData.breadthOverride?.above200)}
                       onChange={(e) => updateBreadthField("above200", e.target.value)}
-                      className="w-full rounded-lg border border-slate-200 bg-slate-50 px-3 py-2 text-sm text-slate-700 outline-none focus:border-blue-300 focus:ring-1 focus:ring-blue-200 transition-all"
+                      className="w-full rounded-lg border border-line bg-surface-2 px-3 py-2 text-sm text-ink-2 outline-none focus:border-accent-border focus:ring-1 focus:ring-accent-border transition-all"
                     />
                   </div>
                   <div>
@@ -1434,7 +1434,7 @@ export function MorningBrief({
                       type="number" step="0.1" min={0} max={100} placeholder="44.6"
                       value={numVal(marketData.breadthOverride?.above50)}
                       onChange={(e) => updateBreadthField("above50", e.target.value)}
-                      className="w-full rounded-lg border border-slate-200 bg-slate-50 px-3 py-2 text-sm text-slate-700 outline-none focus:border-blue-300 focus:ring-1 focus:ring-blue-200 transition-all"
+                      className="w-full rounded-lg border border-line bg-surface-2 px-3 py-2 text-sm text-ink-2 outline-none focus:border-accent-border focus:ring-1 focus:ring-accent-border transition-all"
                     />
                   </div>
                 </div>
@@ -1446,7 +1446,7 @@ export function MorningBrief({
                       type="number" step="0.1" min={0} max={100} placeholder="54.9"
                       value={numVal(marketData.breadthOverride?.broadAbove200)}
                       onChange={(e) => updateBreadthField("broadAbove200", e.target.value)}
-                      className="w-full rounded-lg border border-slate-200 bg-slate-50 px-3 py-2 text-sm text-slate-700 outline-none focus:border-blue-300 focus:ring-1 focus:ring-blue-200 transition-all"
+                      className="w-full rounded-lg border border-line bg-surface-2 px-3 py-2 text-sm text-ink-2 outline-none focus:border-accent-border focus:ring-1 focus:ring-accent-border transition-all"
                       title="% of broad-market universe above 200-day MA. Source: Barchart BCMM ~5,168 names, Russell 3000 ~3,000 names, or whichever broader-than-SPX measure your Claude skill returns. Materially lower than SP500 = broad-market divergence."
                     />
                   </div>
@@ -1456,7 +1456,7 @@ export function MorningBrief({
                       type="number" step="0.1" min={0} max={100} placeholder="59.4"
                       value={numVal(marketData.breadthOverride?.broadAbove50)}
                       onChange={(e) => updateBreadthField("broadAbove50", e.target.value)}
-                      className="w-full rounded-lg border border-slate-200 bg-slate-50 px-3 py-2 text-sm text-slate-700 outline-none focus:border-blue-300 focus:ring-1 focus:ring-blue-200 transition-all"
+                      className="w-full rounded-lg border border-line bg-surface-2 px-3 py-2 text-sm text-ink-2 outline-none focus:border-accent-border focus:ring-1 focus:ring-accent-border transition-all"
                       title="% of broad-market universe above 50-day MA — broader-than-SPX faster momentum gauge."
                     />
                   </div>
@@ -1470,7 +1470,7 @@ export function MorningBrief({
                       type="number" step="1" min={0} placeholder="78"
                       value={numVal(marketData.breadthOverride?.newHighs)}
                       onChange={(e) => updateBreadthField("newHighs", e.target.value)}
-                      className="w-full rounded-lg border border-slate-200 bg-slate-50 px-3 py-2 text-sm text-slate-700 outline-none focus:border-blue-300 focus:ring-1 focus:ring-blue-200 transition-all"
+                      className="w-full rounded-lg border border-line bg-surface-2 px-3 py-2 text-sm text-ink-2 outline-none focus:border-accent-border focus:ring-1 focus:ring-accent-border transition-all"
                       title="Daily count of NYSE 52-week new highs. Expansion above 100 = healthy thrust."
                     />
                   </div>
@@ -1480,7 +1480,7 @@ export function MorningBrief({
                       type="number" step="1" min={0} placeholder="142"
                       value={numVal(marketData.breadthOverride?.newLows)}
                       onChange={(e) => updateBreadthField("newLows", e.target.value)}
-                      className="w-full rounded-lg border border-slate-200 bg-slate-50 px-3 py-2 text-sm text-slate-700 outline-none focus:border-blue-300 focus:ring-1 focus:ring-blue-200 transition-all"
+                      className="w-full rounded-lg border border-line bg-surface-2 px-3 py-2 text-sm text-ink-2 outline-none focus:border-accent-border focus:ring-1 focus:ring-accent-border transition-all"
                       title="Daily count of NYSE 52-week new lows. Spike above 200 = capitulation signal."
                     />
                   </div>
@@ -1496,7 +1496,7 @@ export function MorningBrief({
                       type="number" step="0.01" min={0} placeholder="0.90"
                       value={numVal(marketData.breadthOverride?.upVolume)}
                       onChange={(e) => updateBreadthField("upVolume", e.target.value)}
-                      className="w-full rounded-lg border border-slate-200 bg-slate-50 px-3 py-2 text-sm text-slate-700 outline-none focus:border-blue-300 focus:ring-1 focus:ring-blue-200 transition-all"
+                      className="w-full rounded-lg border border-line bg-surface-2 px-3 py-2 text-sm text-ink-2 outline-none focus:border-accent-border focus:ring-1 focus:ring-accent-border transition-all"
                       title="NYSE advancing (up) share volume, in BILLIONS — e.g. 900,520,000 shares → 0.90. Only the ratio vs down-volume matters, so just keep both fields in the same unit (billions is easiest: drop the last 9 digits). Raw shares (900520000) also work if you use raw in both."
                     />
                   </div>
@@ -1506,7 +1506,7 @@ export function MorningBrief({
                       type="number" step="0.01" min={0} placeholder="3.45"
                       value={numVal(marketData.breadthOverride?.downVolume)}
                       onChange={(e) => updateBreadthField("downVolume", e.target.value)}
-                      className="w-full rounded-lg border border-slate-200 bg-slate-50 px-3 py-2 text-sm text-slate-700 outline-none focus:border-blue-300 focus:ring-1 focus:ring-blue-200 transition-all"
+                      className="w-full rounded-lg border border-line bg-surface-2 px-3 py-2 text-sm text-ink-2 outline-none focus:border-accent-border focus:ring-1 focus:ring-accent-border transition-all"
                       title="NYSE declining (down) share volume, in BILLIONS — e.g. 3,446,500,000 shares → 3.45. Must use the SAME unit as Up Volume. Up % = up / (up + down): >85% = thrust, <15% = capitulation."
                     />
                   </div>
@@ -1515,27 +1515,27 @@ export function MorningBrief({
                 {/* Consolidated source legend — each distinct page listed ONCE
                     so the PM opens it a single time rather than clicking the
                     same momentum page from four different field icons. */}
-                <div className="mt-4 pt-3 border-t border-slate-100 flex flex-wrap items-center gap-x-4 gap-y-1.5 text-[10px] text-slate-400">
+                <div className="mt-4 pt-3 border-t border-line-soft flex flex-wrap items-center gap-x-4 gap-y-1.5 text-[10px] text-ink-3">
                   <span className="font-semibold uppercase tracking-wider">Sources (open once):</span>
-                  <a href={BC.broad} target="_blank" rel="noopener noreferrer" className="inline-flex items-center gap-1 text-blue-500 hover:text-blue-700 transition-colors">
+                  <a href={BC.broad} target="_blank" rel="noopener noreferrer" className="inline-flex items-center gap-1 text-accent hover:text-accent transition-colors">
                     <svg className="w-3 h-3" fill="none" stroke="currentColor" strokeWidth="2" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" d="M10 6H6a2 2 0 00-2 2v10a2 2 0 002 2h10a2 2 0 002-2v-4M14 4h6m0 0v6m0-6L10 14" /></svg>
-                    Barchart Momentum <span className="text-slate-400 normal-case">— Broad Market 200/50 + Up/Down Volume</span>
+                    Barchart Momentum <span className="text-ink-3 normal-case">— Broad Market 200/50 + Up/Down Volume</span>
                   </a>
-                  <a href={BC.sp200} target="_blank" rel="noopener noreferrer" className="inline-flex items-center gap-1 text-blue-500 hover:text-blue-700 transition-colors">
+                  <a href={BC.sp200} target="_blank" rel="noopener noreferrer" className="inline-flex items-center gap-1 text-accent hover:text-accent transition-colors">
                     <svg className="w-3 h-3" fill="none" stroke="currentColor" strokeWidth="2" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" d="M10 6H6a2 2 0 00-2 2v10a2 2 0 002 2h10a2 2 0 002-2v-4M14 4h6m0 0v6m0-6L10 14" /></svg>
-                    $S5TH <span className="text-slate-400">— SP500 &gt;200</span>
+                    $S5TH <span className="text-ink-3">— SP500 &gt;200</span>
                   </a>
-                  <a href={BC.sp50} target="_blank" rel="noopener noreferrer" className="inline-flex items-center gap-1 text-blue-500 hover:text-blue-700 transition-colors">
+                  <a href={BC.sp50} target="_blank" rel="noopener noreferrer" className="inline-flex items-center gap-1 text-accent hover:text-accent transition-colors">
                     <svg className="w-3 h-3" fill="none" stroke="currentColor" strokeWidth="2" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" d="M10 6H6a2 2 0 00-2 2v10a2 2 0 002 2h10a2 2 0 002-2v-4M14 4h6m0 0v6m0-6L10 14" /></svg>
-                    $S5FI <span className="text-slate-400">— SP500 &gt;50</span>
+                    $S5FI <span className="text-ink-3">— SP500 &gt;50</span>
                   </a>
-                  <a href={BC.nh} target="_blank" rel="noopener noreferrer" className="inline-flex items-center gap-1 text-blue-500 hover:text-blue-700 transition-colors">
+                  <a href={BC.nh} target="_blank" rel="noopener noreferrer" className="inline-flex items-center gap-1 text-accent hover:text-accent transition-colors">
                     <svg className="w-3 h-3" fill="none" stroke="currentColor" strokeWidth="2" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" d="M10 6H6a2 2 0 00-2 2v10a2 2 0 002 2h10a2 2 0 002-2v-4M14 4h6m0 0v6m0-6L10 14" /></svg>
-                    $MAHN <span className="text-slate-400">— New Highs</span>
+                    $MAHN <span className="text-ink-3">— New Highs</span>
                   </a>
-                  <a href={BC.nl} target="_blank" rel="noopener noreferrer" className="inline-flex items-center gap-1 text-blue-500 hover:text-blue-700 transition-colors">
+                  <a href={BC.nl} target="_blank" rel="noopener noreferrer" className="inline-flex items-center gap-1 text-accent hover:text-accent transition-colors">
                     <svg className="w-3 h-3" fill="none" stroke="currentColor" strokeWidth="2" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" d="M10 6H6a2 2 0 00-2 2v10a2 2 0 002 2h10a2 2 0 002-2v-4M14 4h6m0 0v6m0-6L10 14" /></svg>
-                    $MALN <span className="text-slate-400">— New Lows</span>
+                    $MALN <span className="text-ink-3">— New Lows</span>
                   </a>
                 </div>
               </>
@@ -1544,16 +1544,16 @@ export function MorningBrief({
         </div>
 
         {/* ── Strategist Notes (Fundstrat) ── */}
-        <div className="border-t border-slate-100 pt-5 mb-4">
+        <div className="border-t border-line-soft pt-5 mb-4">
           <div className="flex items-center gap-3 mb-3">
-            <h4 className="text-xs font-semibold text-slate-400 uppercase tracking-widest">Strategist Notes</h4>
-            <span className="text-[10px] text-slate-400">Copy-paste daily reports — Claude will incorporate key takeaways into the brief</span>
+            <h4 className="text-xs font-semibold text-ink-3 uppercase tracking-widest">Strategist Notes</h4>
+            <span className="text-[10px] text-ink-3">Copy-paste daily reports — Claude will incorporate key takeaways into the brief</span>
           </div>
           <div className="grid gap-4 md:grid-cols-2">
             <div>
               <div className="flex flex-wrap items-center gap-1.5 mb-1">
-                <label className="text-xs font-semibold text-slate-400 uppercase tracking-wider">Mark Newton</label>
-                <span className="text-[10px] text-slate-400">(Technical Strategy)</span>
+                <label className="text-xs font-semibold text-ink-3 uppercase tracking-wider">Mark Newton</label>
+                <span className="text-[10px] text-ink-3">(Technical Strategy)</span>
                 <StrategistTimingToggle
                   value={marketData.strategistNotes?.newtonTiming}
                   onChange={(next) =>
@@ -1573,7 +1573,7 @@ export function MorningBrief({
                       },
                     })
                   }
-                  className="ml-auto rounded-lg border border-slate-200 bg-slate-50 px-2 py-0.5 text-[11px] text-slate-500 outline-none focus:border-blue-300 focus:ring-1 focus:ring-blue-200 transition-all"
+                  className="ml-auto rounded-lg border border-line bg-surface-2 px-2 py-0.5 text-[11px] text-ink-3 outline-none focus:border-accent-border focus:ring-1 focus:ring-accent-border transition-all"
                   title="Date this report pertains to"
                 />
               </div>
@@ -1594,8 +1594,8 @@ export function MorningBrief({
             </div>
             <div>
               <div className="flex flex-wrap items-center gap-1.5 mb-1">
-                <label className="text-xs font-semibold text-slate-400 uppercase tracking-wider">Tom Lee</label>
-                <span className="text-[10px] text-slate-400">(Head of Research)</span>
+                <label className="text-xs font-semibold text-ink-3 uppercase tracking-wider">Tom Lee</label>
+                <span className="text-[10px] text-ink-3">(Head of Research)</span>
                 <StrategistTimingToggle
                   value={marketData.strategistNotes?.leeTiming}
                   onChange={(next) =>
@@ -1615,7 +1615,7 @@ export function MorningBrief({
                       },
                     })
                   }
-                  className="ml-auto rounded-lg border border-slate-200 bg-slate-50 px-2 py-0.5 text-[11px] text-slate-500 outline-none focus:border-blue-300 focus:ring-1 focus:ring-blue-200 transition-all"
+                  className="ml-auto rounded-lg border border-line bg-surface-2 px-2 py-0.5 text-[11px] text-ink-3 outline-none focus:border-accent-border focus:ring-1 focus:ring-accent-border transition-all"
                   title="Date this report pertains to"
                 />
               </div>
@@ -1641,7 +1641,7 @@ export function MorningBrief({
           <button
             onClick={() => generateBrief(true)}
             disabled={generating}
-            className="rounded-2xl bg-blue-600 px-5 py-3 text-sm font-semibold text-white hover:bg-blue-700 disabled:opacity-50 transition-colors"
+            className="rounded-2xl bg-accent px-5 py-3 text-sm font-semibold text-white hover:bg-accent disabled:opacity-50 transition-colors"
           >
             {generating ? "Generating..." : "\u21BB Refresh Brief"}
           </button>
@@ -1649,13 +1649,13 @@ export function MorningBrief({
       </section>
 
       {error && (
-        <div className="rounded-xl border border-red-200 bg-red-50 px-4 py-3 text-sm text-red-600">
+        <div className="rounded-xl border border-neg-border bg-neg-soft px-4 py-3 text-sm text-neg">
           {error}
         </div>
       )}
 
       {attachmentsSaveError && (
-        <div className="rounded-xl border border-amber-200 bg-amber-50 px-4 py-3 text-sm text-amber-800">
+        <div className="rounded-xl border border-warn-border bg-warn-soft px-4 py-3 text-sm text-warn">
           <strong>Screenshots not saved:</strong> {attachmentsSaveError}
         </div>
       )}
@@ -1663,10 +1663,10 @@ export function MorningBrief({
       {/* Header */}
       <header>
         <h1 className="text-2xl sm:text-4xl font-semibold tracking-tight">Morning Brief</h1>
-        <p className="mt-2 text-base sm:text-xl text-slate-400 flex flex-wrap items-baseline gap-x-3">
+        <p className="mt-2 text-base sm:text-xl text-ink-3 flex flex-wrap items-baseline gap-x-3">
           <span>{brief?.date || marketData.date}</span>
           {brief?.generatedAt && (
-            <span className="text-sm sm:text-base text-slate-300">
+            <span className="text-sm sm:text-base text-ink-faint">
               Generated {new Date(brief.generatedAt).toLocaleString("en-US", { month: "short", day: "numeric", hour: "numeric", minute: "2-digit", hour12: true })}
             </span>
           )}
@@ -1674,16 +1674,16 @@ export function MorningBrief({
       </header>
 
       {/* Bottom Line */}
-      <section className="relative rounded-2xl bg-amber-50 border border-amber-200 p-5 shadow-sm">
+      <section className="relative rounded-2xl bg-warn-soft border border-warn-border p-5 shadow-sm">
         {generating && <LoadingOverlay message="Claude is analyzing markets..." />}
-        <div className="text-xs font-bold uppercase tracking-[0.22em] text-amber-700 mb-3">
+        <div className="text-xs font-bold uppercase tracking-[0.22em] text-warn mb-3">
           Bottom line
         </div>
-        <p className="max-w-6xl text-sm leading-6 text-slate-800">
+        <p className="max-w-6xl text-sm leading-6 text-ink">
           {bottomLine}
         </p>
         {regimeVerdict && (
-          <p className="mt-3 border-t border-amber-200 pt-3 max-w-6xl text-sm font-bold text-slate-900">
+          <p className="mt-3 border-t border-warn-border pt-3 max-w-6xl text-sm font-bold text-ink">
             {regimeVerdict}
           </p>
         )}
@@ -1700,14 +1700,14 @@ export function MorningBrief({
       {(topActionsToday.length > 0 || hedgingCall || cashDeploymentCall) && (
         <section className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-4">
           {topActionsToday.length > 0 && (
-            <div className="md:col-span-2 rounded-2xl border border-slate-200 bg-white p-5 shadow-sm">
-              <div className="text-xs font-bold uppercase tracking-[0.22em] text-slate-500 mb-3">
+            <div className="md:col-span-2 rounded-2xl border border-line bg-white p-5 shadow-sm">
+              <div className="text-xs font-bold uppercase tracking-[0.22em] text-ink-3 mb-3">
                 Top actions today
               </div>
               <ul className="space-y-2">
                 {topActionsToday.map((action, i) => (
-                  <li key={i} className="flex items-start gap-3 text-sm leading-6 text-slate-800">
-                    <span className="mt-[3px] inline-flex h-5 w-5 flex-none items-center justify-center rounded-full bg-slate-900 text-[10px] font-bold text-white">
+                  <li key={i} className="flex items-start gap-3 text-sm leading-6 text-ink">
+                    <span className="mt-[3px] inline-flex h-5 w-5 flex-none items-center justify-center rounded-full bg-ink text-[10px] font-bold text-white">
                       {i + 1}
                     </span>
                     <span>{action}</span>
@@ -1719,37 +1719,37 @@ export function MorningBrief({
           {hedgingCall && (
             <div className={`rounded-2xl border p-5 shadow-sm ${
               hedgingCall.action === "ADD"
-                ? "border-rose-300 bg-rose-50"
+                ? "border-neg-border bg-neg-soft"
                 : hedgingCall.action === "SKIP"
-                  ? "border-emerald-300 bg-emerald-50"
-                  : "border-slate-300 bg-slate-50"
+                  ? "border-pos-border bg-pos-soft"
+                  : "border-line bg-surface-2"
             }`}>
               <div className={`text-xs font-bold uppercase tracking-[0.22em] mb-3 ${
                 hedgingCall.action === "ADD"
-                  ? "text-rose-700"
+                  ? "text-neg"
                   : hedgingCall.action === "SKIP"
-                    ? "text-emerald-700"
-                    : "text-slate-600"
+                    ? "text-pos"
+                    : "text-ink-2"
               }`}>
                 Hedging
               </div>
               <div className="flex items-baseline gap-2 mb-2">
                 <span className={`text-2xl font-semibold tracking-tight ${
                   hedgingCall.action === "ADD"
-                    ? "text-rose-900"
+                    ? "text-neg"
                     : hedgingCall.action === "SKIP"
-                      ? "text-emerald-900"
-                      : "text-slate-900"
+                      ? "text-pos"
+                      : "text-ink"
                 }`}>
                   {hedgingCall.action}
                 </span>
                 {hedgingCall.action === "ADD" && (hedgingCall.strike || hedgingCall.tenor) && (
-                  <span className="text-sm text-slate-700">
+                  <span className="text-sm text-ink-2">
                     {[hedgingCall.tenor, hedgingCall.strike].filter(Boolean).join(" · ")}
                   </span>
                 )}
               </div>
-              <p className="text-sm leading-5 text-slate-700">
+              <p className="text-sm leading-5 text-ink-2">
                 {hedgingCall.reason}
               </p>
             </div>
@@ -1758,15 +1758,15 @@ export function MorningBrief({
             const action = cashDeploymentCall.action;
             const tone =
               action === "DEPLOY"
-                ? { border: "border-emerald-300", bg: "bg-emerald-50", label: "text-emerald-700", value: "text-emerald-900" }
+                ? { border: "border-pos-border", bg: "bg-pos-soft", label: "text-pos", value: "text-pos" }
                 : action === "WAIT"
-                  ? { border: "border-amber-300", bg: "bg-amber-50", label: "text-amber-700", value: "text-amber-900" }
-                  : { border: "border-blue-300", bg: "bg-blue-50", label: "text-blue-700", value: "text-blue-900" };
+                  ? { border: "border-warn-border", bg: "bg-warn-soft", label: "text-warn", value: "text-warn" }
+                  : { border: "border-accent-border", bg: "bg-accent-soft", label: "text-accent", value: "text-accent" };
             const windowToneClass =
-              deploymentWindowStatus.tone === "amber" ? "bg-amber-100 text-amber-800"
+              deploymentWindowStatus.tone === "amber" ? "bg-warn-soft text-warn"
               : deploymentWindowStatus.tone === "orange" ? "bg-orange-100 text-orange-800"
-              : deploymentWindowStatus.tone === "rose" ? "bg-rose-100 text-rose-800"
-              : "bg-slate-100 text-slate-600";
+              : deploymentWindowStatus.tone === "rose" ? "bg-neg-soft text-neg"
+              : "bg-surface-2 text-ink-2";
             return (
               <div className={`rounded-2xl border p-5 shadow-sm ${tone.border} ${tone.bg}`}>
                 <div className="flex items-center justify-between gap-2 mb-3">
@@ -1774,7 +1774,7 @@ export function MorningBrief({
                     Cash Deployment
                   </div>
                   {typeof cashDeploymentCall.score === "number" && (
-                    <span className="text-[10px] font-bold text-slate-500" title="Composite score 0-100">
+                    <span className="text-[10px] font-bold text-ink-3" title="Composite score 0-100">
                       {cashDeploymentCall.score}/100
                     </span>
                   )}
@@ -1783,26 +1783,26 @@ export function MorningBrief({
                   <span className={`text-2xl font-semibold tracking-tight ${tone.value}`}>
                     {action === "DEPLOY_PARTIAL" ? "PARTIAL" : action}
                   </span>
-                  <span className="text-xs text-slate-700">{cashDeploymentCall.window}</span>
+                  <span className="text-xs text-ink-2">{cashDeploymentCall.window}</span>
                 </div>
-                <p className="text-sm leading-5 text-slate-700 mb-2.5">
+                <p className="text-sm leading-5 text-ink-2 mb-2.5">
                   {cashDeploymentCall.reason}
                 </p>
                 {cashDeploymentCall.newtonPersistence && (
-                  <p className="text-xs leading-5 text-slate-600 italic mb-2.5">
+                  <p className="text-xs leading-5 text-ink-2 italic mb-2.5">
                     Newton: {cashDeploymentCall.newtonPersistence}
                   </p>
                 )}
                 {(cashDeploymentCall.triggersMet?.length || cashDeploymentCall.triggersMissing?.length) ? (
                   <div className="space-y-1 mb-2.5 text-[11px] leading-4">
                     {cashDeploymentCall.triggersMet?.slice(0, 4).map((t, i) => (
-                      <div key={`m${i}`} className="flex items-start gap-1 text-emerald-800">
+                      <div key={`m${i}`} className="flex items-start gap-1 text-pos">
                         <span className="flex-none mt-[1px]">✓</span>
                         <span>{t}</span>
                       </div>
                     ))}
                     {cashDeploymentCall.triggersMissing?.slice(0, 4).map((t, i) => (
-                      <div key={`x${i}`} className="flex items-start gap-1 text-slate-500">
+                      <div key={`x${i}`} className="flex items-start gap-1 text-ink-3">
                         <span className="flex-none mt-[1px]">·</span>
                         <span>{t}</span>
                       </div>
@@ -1819,18 +1819,18 @@ export function MorningBrief({
       )}
 
       {/* Forward View — Next 2 Weeks */}
-      <section className="rounded-2xl border border-blue-200 bg-gradient-to-br from-blue-50/60 to-white p-4 md:p-5 shadow-sm">
+      <section className="rounded-2xl border border-accent-border bg-gradient-to-br from-accent-soft/60 to-white p-4 md:p-5 shadow-sm">
         <div className="flex flex-wrap items-center justify-between gap-3 mb-3">
           <div className="flex flex-wrap items-center gap-2">
             <span className="text-base">🧭</span>
-            <h2 className="text-base font-semibold text-slate-800">Forward View — Multi-Horizon</h2>
-            {forwardLoading && <span className="text-xs text-blue-500 animate-pulse">Fetching live data...</span>}
+            <h2 className="text-base font-semibold text-ink">Forward View — Multi-Horizon</h2>
+            {forwardLoading && <span className="text-xs text-accent animate-pulse">Fetching live data...</span>}
             {activeForward && (
               <span
                 className={`rounded-full px-2 py-0.5 text-[10px] font-bold uppercase leading-none ${
                   activeForward.fredEnabled
-                    ? "bg-emerald-100 text-emerald-700"
-                    : "bg-slate-100 text-slate-500"
+                    ? "bg-pos-soft text-pos"
+                    : "bg-surface-2 text-ink-3"
                 }`}
                 title={
                   activeForward.fredEnabled
@@ -1844,12 +1844,12 @@ export function MorningBrief({
           </div>
           {brief?.marketRegime && (
             <div className="flex items-center gap-2">
-              <span className="text-[10px] font-bold uppercase tracking-wider text-slate-400">Regime</span>
+              <span className="text-[10px] font-bold uppercase tracking-wider text-ink-3">Regime</span>
               <SignalPill tone={brief.marketRegime === "Risk-Off" ? "red" : brief.marketRegime === "Risk-On" ? "green" : "amber"}>
                 {brief.marketRegime}
               </SignalPill>
               {typeof brief.regimeScore === "number" && (
-                <span className="text-xs text-slate-400">
+                <span className="text-xs text-ink-3">
                   score {brief.regimeScore >= 0 ? "+" : ""}{brief.regimeScore}
                 </span>
               )}
@@ -1864,9 +1864,9 @@ export function MorningBrief({
         {(() => {
           const horizonsData = marketRegime?.horizons;
           const cards: { id: "tactical" | "cyclical" | "structural"; label: string; weight: string; text: string; invalidator?: string; accent: string }[] = [
-            { id: "tactical", label: "Tactical · 1–3M", weight: "50%", text: tacticalView, invalidator: brief?.tacticalInvalidator, accent: "border-blue-200 bg-blue-50/40" },
-            { id: "cyclical", label: "Cyclical · 3–6M", weight: "30%", text: cyclicalView, invalidator: brief?.cyclicalInvalidator, accent: "border-emerald-200 bg-emerald-50/40" },
-            { id: "structural", label: "Structural · 6–12M", weight: "20%", text: structuralView, invalidator: brief?.structuralInvalidator, accent: "border-violet-200 bg-violet-50/40" },
+            { id: "tactical", label: "Tactical · 1–3M", weight: "50%", text: tacticalView, invalidator: brief?.tacticalInvalidator, accent: "border-accent-border bg-accent-soft/40" },
+            { id: "cyclical", label: "Cyclical · 3–6M", weight: "30%", text: cyclicalView, invalidator: brief?.cyclicalInvalidator, accent: "border-pos-border bg-pos-soft/40" },
+            { id: "structural", label: "Structural · 6–12M", weight: "20%", text: structuralView, invalidator: brief?.structuralInvalidator, accent: "border-violet-soft bg-violet-soft/40" },
           ];
           return (
             <div className="mb-5 grid gap-3 grid-cols-1 md:grid-cols-3">
@@ -1884,8 +1884,8 @@ export function MorningBrief({
                   <div key={c.id} className={`rounded-xl border p-3 ${c.accent}`}>
                     <div className="flex items-center justify-between gap-2 mb-2">
                       <div className="flex items-center gap-2">
-                        <span className="text-[10px] font-bold uppercase tracking-wider text-slate-600">{c.label}</span>
-                        <span className="text-[9px] font-semibold text-slate-400">×{c.weight}</span>
+                        <span className="text-[10px] font-bold uppercase tracking-wider text-ink-2">{c.label}</span>
+                        <span className="text-[9px] font-semibold text-ink-3">×{c.weight}</span>
                       </div>
                       {b && !empty && (
                         <SignalPill tone={tone}>
@@ -1899,18 +1899,18 @@ export function MorningBrief({
                         </SignalPill>
                       )}
                       {(!b || empty) && (
-                        <span className="rounded-full border border-slate-200 bg-slate-50 px-2 py-0.5 text-[10px] text-slate-400">
+                        <span className="rounded-full border border-line bg-surface-2 px-2 py-0.5 text-[10px] text-ink-3">
                           no signals
                         </span>
                       )}
                     </div>
-                    <p className="text-sm leading-6 text-slate-700">{c.text}</p>
+                    <p className="text-sm leading-6 text-ink-2">{c.text}</p>
                     {c.invalidator && (
-                      <div className="mt-2 pt-2 border-t border-slate-200/70 flex items-start gap-1.5">
-                        <span className="text-[9px] font-bold uppercase tracking-wider text-slate-500 mt-[1px] flex-none">
+                      <div className="mt-2 pt-2 border-t border-line/70 flex items-start gap-1.5">
+                        <span className="text-[9px] font-bold uppercase tracking-wider text-ink-3 mt-[1px] flex-none">
                           Invalidator
                         </span>
-                        <span className="text-xs leading-5 text-slate-600 italic">
+                        <span className="text-xs leading-5 text-ink-2 italic">
                           {c.invalidator}
                         </span>
                       </div>
@@ -1926,13 +1926,13 @@ export function MorningBrief({
             brief has been generated, since the per-horizon cards already
             cover the empty state. */}
         {brief?.forwardView && (
-          <div className="mb-5 rounded-xl border border-slate-200 bg-slate-50/60 p-3">
+          <div className="mb-5 rounded-xl border border-line bg-surface-2/60 p-3">
             <div className="flex items-center gap-2 mb-1">
-              <span className="text-[10px] font-bold uppercase tracking-wider text-slate-500">Synthesis</span>
+              <span className="text-[10px] font-bold uppercase tracking-wider text-ink-3">Synthesis</span>
               {marketRegime?.horizons && isFinite(marketRegime.horizons.weightedScore) && (
-                <span className="text-[10px] text-slate-400">
+                <span className="text-[10px] text-ink-3">
                   weighted{" "}
-                  <span className="font-semibold text-slate-600">
+                  <span className="font-semibold text-ink-2">
                     {marketRegime.horizons.weightedLabel}
                   </span>{" "}
                   ({marketRegime.horizons.weightedScore >= 0 ? "+" : ""}
@@ -1940,7 +1940,7 @@ export function MorningBrief({
                 </span>
               )}
             </div>
-            <p className="max-w-6xl text-sm leading-6 text-slate-700">{forwardView}</p>
+            <p className="max-w-6xl text-sm leading-6 text-ink-2">{forwardView}</p>
           </div>
         )}
 
@@ -1948,7 +1948,7 @@ export function MorningBrief({
             no tiles at all — so the user knows the panel is unavailable
             rather than silently blank. */}
         {(forwardError || (!activeForward && !forwardLoading)) && (
-          <div className="mb-5 rounded-xl border border-amber-200 bg-amber-50 px-4 py-3 text-xs text-amber-800">
+          <div className="mb-5 rounded-xl border border-warn-border bg-warn-soft px-4 py-3 text-xs text-warn">
             <strong className="font-semibold">Forward-looking data unavailable:</strong>{" "}
             {forwardError ??
               "The /api/forward-looking endpoint returned no data. Tile values will fill in on the next successful refresh."}
@@ -1964,8 +1964,8 @@ export function MorningBrief({
           <div className="space-y-6 mb-5">
             {/* Horizon legend — explains the small color chips on each
                 tile. Mirrors the Forward View horizon palette. */}
-            <div className="flex flex-wrap items-center gap-2 rounded-xl border border-slate-100 bg-slate-50/60 px-3 py-2">
-              <span className="text-[10px] font-bold uppercase tracking-wider text-slate-500">Horizon</span>
+            <div className="flex flex-wrap items-center gap-2 rounded-xl border border-line-soft bg-surface-2/60 px-3 py-2">
+              <span className="text-[10px] font-bold uppercase tracking-wider text-ink-3">Horizon</span>
               <span className={`inline-flex items-center rounded-full border px-2 py-0.5 text-[10px] font-semibold ${HORIZON_CHIP.tactical.cls}`}>
                 Tactical · 1–3M
               </span>
@@ -1975,7 +1975,7 @@ export function MorningBrief({
               <span className={`inline-flex items-center rounded-full border px-2 py-0.5 text-[10px] font-semibold ${HORIZON_CHIP.structural.cls}`}>
                 Structural · 6–12M
               </span>
-              <span className="text-[11px] text-slate-500">
+              <span className="text-[11px] text-ink-3">
                 · Each indicator is tagged with the horizon it speaks to most directly.
               </span>
             </div>
@@ -2063,15 +2063,15 @@ export function MorningBrief({
         )}
 
         {brief?.regimeSignals && brief.regimeSignals.length > 0 && (
-          <div className="rounded-2xl border border-slate-100 bg-white/70 p-4">
-            <div className="text-[10px] font-bold uppercase tracking-wider text-slate-400 mb-2">
+          <div className="rounded-2xl border border-line-soft bg-white/70 p-4">
+            <div className="text-[10px] font-bold uppercase tracking-wider text-ink-3 mb-2">
               Regime Drivers (deterministic)
             </div>
             <div className="flex flex-wrap gap-2">
               {brief.regimeSignals.map((signal, i) => (
                 <span
                   key={i}
-                  className="rounded-full bg-slate-100 px-3 py-1 text-xs font-medium text-slate-600"
+                  className="rounded-full bg-surface-2 px-3 py-1 text-xs font-medium text-ink-2"
                 >
                   {signal}
                 </span>
@@ -2081,7 +2081,7 @@ export function MorningBrief({
         )}
 
         {activeForward?.fetchedAt && (
-          <p className="text-[10px] text-slate-400 mt-3">
+          <p className="text-[10px] text-ink-3 mt-3">
             Data fetched {new Date(activeForward.fetchedAt).toLocaleString("en-US", { month: "short", day: "numeric", hour: "numeric", minute: "2-digit", hour12: true })}
             {" · "}Click any icon to verify the source.
           </p>
@@ -2089,12 +2089,12 @@ export function MorningBrief({
       </section>
 
       {/* Composite Signal */}
-      <section className="rounded-2xl border border-slate-200 bg-white p-4 shadow-sm">
+      <section className="rounded-2xl border border-line bg-white p-4 shadow-sm">
         <div className="flex flex-wrap items-center gap-2">
           <span className="text-base">🔍</span>
           <h2 className="text-base font-semibold">Composite Signal</h2>
           <SignalPill tone={compositeSignalTone}>{marketData.compositeSignal}</SignalPill>
-          <span className="text-xs text-slate-500">
+          <span className="text-xs text-ink-3">
             Conviction: {marketData.conviction}
           </span>
           {brief?.marketRegime && (
@@ -2103,7 +2103,7 @@ export function MorningBrief({
             </SignalPill>
           )}
         </div>
-        <p className="mt-3 text-sm leading-6 text-slate-700">
+        <p className="mt-3 text-sm leading-6 text-ink-2">
           {compositeAnalysis}
         </p>
       </section>
@@ -2131,7 +2131,7 @@ export function MorningBrief({
         return (
       <>
       <section className="grid gap-4 lg:grid-cols-2">
-        <div className="rounded-2xl border border-slate-200 bg-white p-4 shadow-sm">
+        <div className="rounded-2xl border border-line bg-white p-4 shadow-sm">
           <div className="flex items-center justify-between gap-3">
             <div className="flex items-center gap-2">
               <span className="text-base">📉</span>
@@ -2142,20 +2142,20 @@ export function MorningBrief({
             </SignalPill>
           </div>
           <div className="mt-3 grid grid-cols-2 gap-2">
-            <div className="rounded-xl bg-slate-50 p-2.5">
-              <div className="text-[10px] font-semibold uppercase tracking-wider text-slate-400">HY OAS</div>
-              <div className="mt-1 text-xl font-bold">{fmtNum(hyVal)} <span className="text-xs font-normal text-slate-400">bps</span></div>
+            <div className="rounded-xl bg-surface-2 p-2.5">
+              <div className="text-[10px] font-semibold uppercase tracking-wider text-ink-3">HY OAS</div>
+              <div className="mt-1 text-xl font-bold">{fmtNum(hyVal)} <span className="text-xs font-normal text-ink-3">bps</span></div>
             </div>
-            <div className="rounded-xl bg-slate-50 p-2.5">
-              <div className="text-[10px] font-semibold uppercase tracking-wider text-slate-400">IG OAS</div>
-              <div className="mt-1 text-xl font-bold">{fmtNum(igVal)} <span className="text-xs font-normal text-slate-400">bps</span></div>
+            <div className="rounded-xl bg-surface-2 p-2.5">
+              <div className="text-[10px] font-semibold uppercase tracking-wider text-ink-3">IG OAS</div>
+              <div className="mt-1 text-xl font-bold">{fmtNum(igVal)} <span className="text-xs font-normal text-ink-3">bps</span></div>
             </div>
           </div>
-          <p className="mt-2 text-xs text-slate-500">Trend: {hyVal != null && hyVal >= 300 ? "Widening modestly" : "Stable"}</p>
-          <p className="mt-1.5 text-sm leading-6 text-slate-600">{creditAnalysis}</p>
+          <p className="mt-2 text-xs text-ink-3">Trend: {hyVal != null && hyVal >= 300 ? "Widening modestly" : "Stable"}</p>
+          <p className="mt-1.5 text-sm leading-6 text-ink-2">{creditAnalysis}</p>
         </div>
 
-        <div className="rounded-2xl border border-slate-200 bg-white p-4 shadow-sm">
+        <div className="rounded-2xl border border-line bg-white p-4 shadow-sm">
           <div className="flex items-center justify-between gap-3">
             <div className="flex items-center gap-2">
               <span className="text-base">⚡</span>
@@ -2166,26 +2166,26 @@ export function MorningBrief({
             </SignalPill>
           </div>
           <div className="mt-3 grid grid-cols-3 gap-2">
-            <div className="rounded-xl bg-slate-50 p-2.5">
-              <div className="text-[10px] font-semibold uppercase tracking-wider text-slate-400">VIX</div>
+            <div className="rounded-xl bg-surface-2 p-2.5">
+              <div className="text-[10px] font-semibold uppercase tracking-wider text-ink-3">VIX</div>
               <div className="mt-1 text-xl font-bold">{fmtNum(vixVal)}</div>
             </div>
-            <div className="rounded-xl bg-slate-50 p-2.5">
-              <div className="text-[10px] font-semibold uppercase tracking-wider text-slate-400">TERM</div>
+            <div className="rounded-xl bg-surface-2 p-2.5">
+              <div className="text-[10px] font-semibold uppercase tracking-wider text-ink-3">TERM</div>
               <div className="mt-1 text-sm font-bold">{marketData.termStructure}</div>
             </div>
-            <div className="rounded-xl bg-slate-50 p-2.5">
-              <div className="text-[10px] font-semibold uppercase tracking-wider text-slate-400">MOVE</div>
+            <div className="rounded-xl bg-surface-2 p-2.5">
+              <div className="text-[10px] font-semibold uppercase tracking-wider text-ink-3">MOVE</div>
               <div className="mt-1 text-xl font-bold">{fmtNum(moveVal)}</div>
             </div>
           </div>
-          <p className="mt-3 text-sm leading-6 text-slate-600">{volatilityAnalysis}</p>
+          <p className="mt-3 text-sm leading-6 text-ink-2">{volatilityAnalysis}</p>
         </div>
       </section>
 
       {/* Breadth & Flows */}
       <section className="grid gap-4 lg:grid-cols-2">
-        <div className="rounded-2xl border border-slate-200 bg-white p-4 shadow-sm">
+        <div className="rounded-2xl border border-line bg-white p-4 shadow-sm">
           <div className="flex items-center justify-between gap-3">
             <div className="flex items-center gap-2">
               <span className="text-base">📊</span>
@@ -2196,16 +2196,16 @@ export function MorningBrief({
             </SignalPill>
           </div>
           <div className="mt-3 space-y-2 text-sm">
-            <div className="flex justify-between border-b border-slate-100 pb-2">
-              <span className="text-slate-500">S&amp;P 500 % &gt; 200 DMA</span>
+            <div className="flex justify-between border-b border-line-soft pb-2">
+              <span className="text-ink-3">S&amp;P 500 % &gt; 200 DMA</span>
               <span className="font-mono font-medium">{breadth200Val != null ? `${breadth200Val}%` : "—"}</span>
             </div>
             <div className="flex justify-between pb-1">
-              <span className="text-slate-500">S&amp;P 500 % &gt; 50 DMA</span>
+              <span className="text-ink-3">S&amp;P 500 % &gt; 50 DMA</span>
               <span className="font-mono font-medium">{breadth50Val != null ? `${breadth50Val}%` : "—"}</span>
             </div>
           </div>
-          <p className="mt-3 text-sm leading-6 text-slate-600">{breadthAnalysis}</p>
+          <p className="mt-3 text-sm leading-6 text-ink-2">{breadthAnalysis}</p>
         </div>
 
         {/* Fund Flows & Positioning tile retired in 2026-05. Flows
@@ -2229,37 +2229,37 @@ export function MorningBrief({
 
       {/* Sector Rotation */}
       {sectorRotation && (
-        <section className="rounded-2xl border border-slate-200 bg-white p-4 shadow-sm">
+        <section className="rounded-2xl border border-line bg-white p-4 shadow-sm">
           <div className="flex items-center gap-2 mb-3">
             <span className="text-base">🔄</span>
             <h3 className="text-base font-semibold">Sector Rotation</h3>
           </div>
-          <p className="text-sm leading-6 text-slate-700 mb-4">{sectorRotation.summary}</p>
+          <p className="text-sm leading-6 text-ink-2 mb-4">{sectorRotation.summary}</p>
           <div className="grid gap-4 md:grid-cols-2">
             <div>
-              <div className="text-xs font-bold uppercase tracking-wider text-emerald-600 mb-1.5">LEADING</div>
+              <div className="text-xs font-bold uppercase tracking-wider text-pos mb-1.5">LEADING</div>
               {sectorRotation.leading.map((s, i) => (
-                <div key={i} className="flex items-center gap-2 text-sm text-emerald-700 mb-1">
+                <div key={i} className="flex items-center gap-2 text-sm text-pos mb-1">
                   <span>▲</span> <span>{s}</span>
                 </div>
               ))}
             </div>
             <div>
-              <div className="text-xs font-bold uppercase tracking-wider text-red-600 mb-1.5">LAGGING</div>
+              <div className="text-xs font-bold uppercase tracking-wider text-neg mb-1.5">LAGGING</div>
               {sectorRotation.lagging.map((s, i) => (
-                <div key={i} className="flex items-center gap-2 text-sm text-red-600 mb-1">
+                <div key={i} className="flex items-center gap-2 text-sm text-neg mb-1">
                   <span>▼</span> <span>{s}</span>
                 </div>
               ))}
             </div>
           </div>
-          <p className="mt-3 text-sm italic leading-6 text-slate-500">{sectorRotation.pmImplication}</p>
+          <p className="mt-3 text-sm italic leading-6 text-ink-3">{sectorRotation.pmImplication}</p>
         </section>
       )}
 
       {/* Portfolio Risk Scan */}
       {riskScan && riskScan.length > 0 && (
-        <section className="rounded-2xl border border-slate-200 bg-white p-4 shadow-sm">
+        <section className="rounded-2xl border border-line bg-white p-4 shadow-sm">
           <div className="flex items-center gap-2 mb-3">
             <span className="text-base">🛡️</span>
             <h3 className="text-base font-semibold">Portfolio Risk Scan</h3>
@@ -2268,10 +2268,10 @@ export function MorningBrief({
             {riskScan.map((item, i) => {
               const bgClass =
                 item.priority === "High"
-                  ? "border-l-red-400 bg-red-50/30"
+                  ? "border-l-red-400 bg-neg-soft/30"
                   : item.priority === "Medium-High"
-                  ? "border-l-amber-400 bg-amber-50/30"
-                  : "border-l-slate-300 bg-slate-50/30";
+                  ? "border-l-amber-400 bg-warn-soft/30"
+                  : "border-l-slate-300 bg-surface-2/30";
               const tonePill =
                 item.priority === "High"
                   ? "red" as const
@@ -2283,9 +2283,9 @@ export function MorningBrief({
                   <div className="flex flex-wrap items-center gap-2 mb-1">
                     <span className="font-mono text-sm font-bold">{displayTicker(item.ticker)}</span>
                     <SignalPill tone={tonePill}>{item.priority}</SignalPill>
-                    <span className="text-sm text-slate-700">{item.summary}</span>
+                    <span className="text-sm text-ink-2">{item.summary}</span>
                   </div>
-                  <div className="text-sm text-blue-600 font-medium">&rarr; {item.action}</div>
+                  <div className="text-sm text-accent font-medium">&rarr; {item.action}</div>
                 </div>
               );
             })}
@@ -2295,7 +2295,7 @@ export function MorningBrief({
 
       {/* Action Items */}
       {forwardActions.length > 0 && (
-        <section className="rounded-2xl border border-amber-100 bg-amber-50/30 p-4 shadow-sm">
+        <section className="rounded-2xl border border-warn-border bg-warn-soft/30 p-4 shadow-sm">
           <div className="flex items-center gap-2 mb-3">
             <span className="text-base">⚡</span>
             <h3 className="text-base font-semibold">Action Items</h3>
@@ -2304,19 +2304,19 @@ export function MorningBrief({
             {forwardActions.map((action, i) => {
               const bgClass =
                 action.priority === "High"
-                  ? "border-red-200 bg-red-50/40"
+                  ? "border-neg-border bg-neg-soft/40"
                   : action.priority === "Medium"
-                  ? "border-amber-200 bg-amber-50/60"
-                  : "border-emerald-200 bg-emerald-50/40";
+                  ? "border-warn-border bg-warn-soft/60"
+                  : "border-pos-border bg-pos-soft/40";
               return (
                 <div key={i} className={`rounded-xl border p-3 ${bgClass}`}>
                   <div className="flex items-start gap-3">
-                    <div className="flex h-6 w-6 shrink-0 items-center justify-center rounded-full bg-amber-200 text-xs font-bold text-amber-800">
+                    <div className="flex h-6 w-6 shrink-0 items-center justify-center rounded-full bg-warn-soft text-xs font-bold text-warn">
                       {i + 1}
                     </div>
                     <div>
                       <h4 className="text-sm font-semibold">{action.title}</h4>
-                      <p className="mt-0.5 text-sm text-slate-600 leading-6">{action.detail}</p>
+                      <p className="mt-0.5 text-sm text-ink-2 leading-6">{action.detail}</p>
                     </div>
                   </div>
                 </div>
