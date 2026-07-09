@@ -108,7 +108,6 @@ const tabs = [
   { label: "Screener", href: "/screener" },
   { label: "Research", href: "/research" },
   { label: "Conviction", href: "/conviction" },
-  { label: "AA & Perf", href: "/aa-performance" },
   { label: "Hedging", href: "/hedging" },
   { label: "Appendix", href: "/appendix" },
   { label: "Inbox", href: "/inbox" },
@@ -263,6 +262,7 @@ export function Navigation() {
   // /scoring route (scoring was folded into the Dashboard/Rankings surface).
   const activeTab = pathname.startsWith("/stock/") || pathname === "/scoring"
     || pathname === "/" || pathname === "/portfolio" || pathname === "/pim-model"
+    || pathname === "/aa-performance"
     ? "Portfolio"
     : pathname === "/brief"
     ? "Brief"
@@ -272,8 +272,6 @@ export function Navigation() {
     ? "Conviction"
     : pathname === "/screener"
     ? "Screener"
-    : pathname === "/aa-performance"
-    ? "AA & Perf"
     : pathname === "/hedging"
     ? "Hedging"
     : pathname === "/appendix"

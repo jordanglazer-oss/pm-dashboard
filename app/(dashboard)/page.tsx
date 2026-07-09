@@ -115,16 +115,15 @@ export default function DashboardPage() {
         <div className="grid gap-4 lg:grid-cols-2">
 
           {/* Add Holding Card */}
-          <div className="rounded-card border border-line bg-surface p-5 shadow-sm">
-            <h2 className="text-lg font-bold text-ink mb-3">Add a Holding</h2>
-            <p className="text-sm text-ink-2 mb-4">
-              Enter a ticker (stock, ETF) or FUNDSERV code (Canadian mutual fund, e.g. TDB900) to add.
+          <div className="rounded-card border border-line bg-surface p-4 shadow-sm">
+            <div className="mb-2 flex items-baseline gap-2">
+              <h2 className="text-sm font-bold text-ink">Add a Holding</h2>
               {detectedType && detectedType !== "stock" ? (
-                <span className="text-warn font-medium"> Auto-scoring is not available for {INSTRUMENT_LABELS[detectedType]}s — use the weight field to set the allocation.</span>
+                <span className="text-[11px] font-medium text-warn">No auto-scoring for {INSTRUMENT_LABELS[detectedType]}s — set weight</span>
               ) : (
-                <> Use the <span className="font-semibold text-accent">Score</span> button on the stock page to auto-score with Claude.</>
+                <span className="text-[11px] text-ink-3">ticker · ETF · FUNDSERV code</span>
               )}
-            </p>
+            </div>
             <div className="flex flex-wrap gap-3">
               <div className="relative flex-1 min-w-[120px]">
                 <input
@@ -191,68 +190,14 @@ export default function DashboardPage() {
               </span>
             </div>
 
-            {regime === "Risk-Off" && (
-              <div className="space-y-2 text-sm text-ink">
-                <p className="font-medium text-neg">
-                  Defensive posture active — scores are adjusted by sector type:
-                </p>
-                <ul className="list-disc list-inside space-y-1 text-ink-2">
-                  <li>
-                    <span className="font-semibold text-neg">Growth sectors</span> (Tech, Comm Services, Consumer Disc) → <span className="font-bold">0.85x</span> — penalized for elevated drawdown risk.
-                  </li>
-                  <li>
-                    <span className="font-semibold text-warn">Cyclical sectors</span> (Financials, Industrials, Materials) → <span className="font-bold">0.90x</span> — penalized for economic sensitivity.
-                  </li>
-                  <li>
-                    <span className="font-semibold text-pos">Defensive sectors</span> (Utilities, Staples, Health Care) → <span className="font-bold">1.10x</span> — boosted for capital preservation.
-                  </li>
-                  <li>
-                    Elevated volatility, wider credit spreads, and weak breadth — conditions support defensive positioning. See the Morning Brief for live readings.
-                  </li>
-                </ul>
-                <a href="#regime-detail" className="mt-2 inline-block text-xs font-semibold text-neg hover:text-neg transition-colors">View per-stock regime detail ↓</a>
-              </div>
-            )}
-
-            {regime === "Neutral" && (
-              <div className="space-y-2 text-sm text-ink">
-                <p className="font-medium text-warn">
-                  Mixed environment — no regime adjustment applied:
-                </p>
-                <ul className="list-disc list-inside space-y-1 text-ink-2">
-                  <li>
-                    All sectors → <span className="font-bold">1.0x</span> — raw score equals adjusted score.
-                  </li>
-                  <li>
-                    No strong signal — scores are driven entirely by fundamentals and quality. Cross-currents suggest balanced positioning until a clearer regime emerges. See the Morning Brief for live readings.
-                  </li>
-                </ul>
-                <a href="#regime-detail" className="mt-2 inline-block text-xs font-semibold text-warn hover:text-warn transition-colors">View per-stock regime detail ↓</a>
-              </div>
-            )}
-
-            {regime === "Risk-On" && (
-              <div className="space-y-2 text-sm text-ink">
-                <p className="font-medium text-pos">
-                  Growth-favoring environment — scores tilted toward growth and cyclicals:
-                </p>
-                <ul className="list-disc list-inside space-y-1 text-ink-2">
-                  <li>
-                    <span className="font-semibold text-pos">Growth sectors</span> (Tech, Comm Services, Consumer Disc) → <span className="font-bold">1.10x</span> — boosted to reflect momentum and risk appetite.
-                  </li>
-                  <li>
-                    <span className="font-semibold text-pos">Cyclical sectors</span> (Financials, Industrials, Materials) → <span className="font-bold">1.05x</span> — boosted for economic activity tailwind.
-                  </li>
-                  <li>
-                    <span className="font-semibold text-warn">Defensive sectors</span> (Utilities, Staples, Health Care) → <span className="font-bold">0.92x</span> — penalized for opportunity cost in a risk-on environment.
-                  </li>
-                  <li>
-                    Subdued volatility and healthy breadth — conditions favor full risk exposure and growth/cyclical tilt. See the Morning Brief for live readings.
-                  </li>
-                </ul>
-                <a href="#regime-detail" className="mt-2 inline-block text-xs font-semibold text-pos hover:text-pos transition-colors">View per-stock regime detail ↓</a>
-              </div>
-            )}
+            <p className="text-sm text-ink-2">
+              {regime === "Risk-Off"
+                ? "Defensive tilt — growth & cyclical sectors penalized, defensives boosted."
+                : regime === "Neutral"
+                ? "No regime adjustment — scores driven by fundamentals & quality (all 1.0×)."
+                : "Growth-favoring — growth & cyclicals boosted, defensives trimmed."}{" "}
+              <a href="#regime-detail" className="font-semibold text-accent hover:underline whitespace-nowrap">Per-stock detail ↓</a>
+            </p>
           </div>
         </div>
 
