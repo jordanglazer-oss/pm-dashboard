@@ -187,51 +187,50 @@ function AssetAllocationPie({ live, target, profileLabel }: { live: ClassWeights
   });
 
   return (
-    <div className="rounded-card border border-line bg-white p-5 shadow-sm">
-      <h3 className="text-sm font-bold text-ink">
-        Asset Allocation
-        <span className="ml-2 text-[11px] font-normal text-ink-3">({profileLabel})</span>
-        <span className="ml-2 text-[10px] font-medium text-ink-3">{usingLive ? "Live — current market weights" : "Target (awaiting live prices)"}</span>
-      </h3>
-      <div className="mt-3 flex flex-col sm:flex-row sm:items-center gap-5">
-        <svg
-          viewBox="0 0 200 200"
-          width="150"
-          height="150"
-          style={{ transform: "rotate(-90deg)" }}
-          aria-label={`${profileLabel} live asset allocation pie chart`}
-          className="shrink-0 self-center"
-        >
-          {paths.map(({ slice, d }) => (
-            <path key={slice.key} d={d} fill={slice.color} stroke="#fff" strokeWidth={1.5} />
-          ))}
-        </svg>
-        <div className="flex-1 text-xs">
-          {/* Header row */}
-          <div className="flex items-center justify-between gap-3 pb-1 mb-1 border-b border-line-soft text-[10px] uppercase tracking-wider text-ink-3 font-semibold">
-            <span>Class</span>
-            <span className="flex gap-4">
-              <span className="w-12 text-right">Live</span>
-              <span className="w-12 text-right">Target</span>
-              <span className="w-12 text-right">Drift</span>
-            </span>
+    <div className="rounded-card border border-line bg-white px-5 py-3 shadow-sm">
+      <div className="flex items-center gap-x-5 gap-y-3 flex-wrap">
+        {/* Donut + title */}
+        <div className="flex items-center gap-3 shrink-0">
+          <svg
+            viewBox="0 0 200 200"
+            width="76"
+            height="76"
+            style={{ transform: "rotate(-90deg)" }}
+            aria-label={`${profileLabel} live asset allocation donut chart`}
+            className="shrink-0"
+          >
+            {paths.map(({ slice, d }) => (
+              <path key={slice.key} d={d} fill={slice.color} stroke="#fff" strokeWidth={1.5} />
+            ))}
+            {/* punch a hole → donut, matching the condensed Precision Light look */}
+            <circle cx={100} cy={100} r={46} fill="#fff" />
+          </svg>
+          <div className="leading-tight">
+            <div className="text-[10px] font-semibold uppercase tracking-wide text-ink-3">Asset Allocation</div>
+            <div className="text-[13px] font-bold text-ink">{profileLabel}</div>
+            <div className="text-[10px] text-ink-3">{usingLive ? "Live weights" : "Target (awaiting prices)"}</div>
           </div>
+        </div>
+
+        {/* Inline per-class stats (Live · Drift · Target) — one compact block each */}
+        <div className="flex-1 grid grid-cols-2 sm:grid-cols-4 gap-x-5 gap-y-2 min-w-[220px]">
           {rows.map((s) => {
             const drift = s.liveW - s.targetW;
-            const driftColor = Math.abs(drift) < 0.05 ? "text-ink-3" : drift > 0 ? "text-pos" : "text-neg";
+            const flat = Math.abs(drift) < 0.05;
+            const driftColor = flat ? "text-ink-3" : drift > 0 ? "text-pos" : "text-neg";
             return (
-              <div key={s.key} className="flex items-center justify-between gap-3 py-0.5">
-                <span className="flex items-center gap-2">
-                  <span className="inline-block w-3 h-3 rounded-sm" style={{ backgroundColor: s.color }} />
-                  <span className="text-ink">{s.label}</span>
-                </span>
-                <span className="flex gap-4 tabular-nums">
-                  <span className="w-12 text-right font-semibold text-ink">{s.liveW.toFixed(1)}%</span>
-                  <span className="w-12 text-right text-ink-3">{s.targetW.toFixed(1)}%</span>
-                  <span className={`w-12 text-right font-medium ${driftColor}`}>
-                    {Math.abs(drift) < 0.05 ? "—" : `${drift > 0 ? "+" : ""}${drift.toFixed(1)}`}
+              <div key={s.key} className="min-w-0">
+                <div className="flex items-center gap-1.5">
+                  <span className="inline-block w-2.5 h-2.5 rounded-sm shrink-0" style={{ backgroundColor: s.color }} />
+                  <span className="text-[11px] text-ink-2 truncate">{s.label}</span>
+                </div>
+                <div className="mt-0.5 flex items-baseline gap-1.5">
+                  <span className="text-[15px] font-bold text-ink tabular-nums">{s.liveW.toFixed(1)}%</span>
+                  <span className={`text-[11px] font-medium tabular-nums ${driftColor}`}>
+                    {flat ? "—" : `${drift > 0 ? "+" : ""}${drift.toFixed(1)}`}
                   </span>
-                </span>
+                </div>
+                <div className="text-[10px] text-ink-3 tabular-nums">tgt {s.targetW.toFixed(1)}%</div>
               </div>
             );
           })}
