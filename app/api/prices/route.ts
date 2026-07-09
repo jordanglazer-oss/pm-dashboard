@@ -49,9 +49,11 @@ type PriceResult = {
   name: string | null;
   quoteType: string | null; // "EQUITY", "ETF", "MUTUALFUND", etc.
   currency: string | null;  // "USD", "CAD", "DKK", etc. from Yahoo meta
+  dayHigh: number | null;   // today's Yahoo intraday high — freshness guard for FactSet
+  dayLow: number | null;    // today's Yahoo intraday low
 };
 
-const EMPTY_RESULT: PriceResult = { price: null, previousClose: null, name: null, quoteType: null, currency: null };
+const EMPTY_RESULT: PriceResult = { price: null, previousClose: null, name: null, quoteType: null, currency: null, dayHigh: null, dayLow: null };
 
 /** Single Yahoo v8/chart lookup for an already-resolved Yahoo symbol. */
 async function fetchYahooChart(yahooSymbol: string): Promise<PriceResult> {
@@ -74,6 +76,8 @@ async function fetchYahooChart(yahooSymbol: string): Promise<PriceResult> {
     const name = meta?.longName ?? meta?.shortName ?? null;
     const quoteType = meta?.instrumentType ?? meta?.quoteType ?? null;
     const currency = typeof meta?.currency === "string" ? meta.currency.toUpperCase() : null;
+    const dayHigh = typeof meta?.regularMarketDayHigh === "number" ? meta.regularMarketDayHigh : null;
+    const dayLow = typeof meta?.regularMarketDayLow === "number" ? meta.regularMarketDayLow : null;
     // FX pairs (e.g. USDCAD=X) need full precision; stocks use 2 decimals
     const isFx = yahooSymbol.includes("=X");
     const decimals = isFx ? 6 : 2;
@@ -83,6 +87,8 @@ async function fetchYahooChart(yahooSymbol: string): Promise<PriceResult> {
       name: name ?? null,
       quoteType: quoteType ?? null,
       currency,
+      dayHigh,
+      dayLow,
     };
   } catch {
     return EMPTY_RESULT;
@@ -94,7 +100,7 @@ async function fetchPrice(ticker: string): Promise<PriceResult> {
   // FUNDSERV codes (mutual funds) — fetch NAV from Globe and Mail / Barchart
   if (isFundservCode(ticker)) {
     const nav = await fetchFundservPrice(ticker);
-    return { price: nav, previousClose: null, name: null, quoteType: "MUTUALFUND", currency: "CAD" };
+    return { price: nav, previousClose: null, name: null, quoteType: "MUTUALFUND", currency: "CAD", dayHigh: null, dayLow: null };
   }
   const yahooSymbol = toYahoo(ticker);
   const result = await fetchYahooChart(yahooSymbol);
@@ -134,33 +140,59 @@ export async function POST(request: NextRequest) {
     const names: Record<string, string | null> = {};
     const quoteTypes: Record<string, string | null> = {};
     const currencies: Record<string, string | null> = {};
+    const dayHighs: Record<string, number | null> = {};
+    const dayLows: Record<string, number | null> = {};
     for (const r of results) {
       prices[r.ticker] = r.price;
       previousCloses[r.ticker] = r.previousClose;
       names[r.ticker] = r.name;
       quoteTypes[r.ticker] = r.quoteType;
       currencies[r.ticker] = r.currency;
+      dayHighs[r.ticker] = r.dayHigh;
+      dayLows[r.ticker] = r.dayLow;
     }
 
-    // Yahoo is the PRIMARY (live/intraday) price source. FactSet's Formula API
-    // P_PRICE is a DELAYED / end-of-day quote under this entitlement — it can
-    // lag the live tape by a session (observed: FactSet returned GOOGL 361.92
-    // on a day whose intraday high was 359.65, while Yahoo had the live ~358).
-    // Making FactSet primary therefore reverted live prices to stale ones. So
-    // Yahoo wins whenever it has a usable quote; FactSet is only a FALLBACK for
-    // tickers Yahoo can't price (some funds / dual-listings) so those aren't
-    // left blank. FactSet stays the source of truth for FUNDAMENTALS elsewhere,
-    // just not for the live price shown here.
+    // FactSet is the PREFERRED price source (cleaner, more reliable data), BUT
+    // its Formula API P_PRICE can occasionally lag the live tape by a session
+    // (observed: FactSet returned GOOGL 361.92 on a day whose intraday high was
+    // 359.65 — a price that never traded that day). So we keep FactSet PRIMARY
+    // but gate it with a FRESHNESS CHECK against Yahoo's live intraday range:
+    //   • FactSet price within today's [dayLow, dayHigh] (±0.5%) → it's current,
+    //     use FactSet.
+    //   • FactSet price OUTSIDE today's range → it's stale (prior session), use
+    //     Yahoo's live price instead.
+    //   • No Yahoo range available → fall back to the old 20% divergence guard.
+    // Self-healing: when FactSet's feed catches up, its price falls back inside
+    // the range and FactSet is used again automatically — no code change needed.
     const priceSources: Record<string, "factset" | "yahoo"> = {};
     const factsetPrices = await getFactsetPricesByTicker(batch);
     for (const t of batch) {
       const fp = factsetPrices[t];
       const yp = prices[t];
-      if (yp != null && yp > 0) {
-        // Yahoo has a live quote — keep it.
+      if (typeof fp !== "number" || fp <= 0) {
+        // No FactSet price — Yahoo stands (or nothing).
+        if (yp != null && yp > 0) priceSources[t] = "yahoo";
+        continue;
+      }
+      const hi = dayHighs[t];
+      const lo = dayLows[t];
+      let factsetIsFresh: boolean;
+      if (hi != null && lo != null && lo > 0) {
+        // Primary guard: is FactSet inside today's live trading range?
+        factsetIsFresh = fp >= lo * 0.995 && fp <= hi * 1.005;
+      } else {
+        // No range → keep the legacy 20%-divergence sanity guard vs Yahoo.
+        factsetIsFresh = yp == null || yp <= 0 || Math.abs(fp - yp) / yp <= 0.2;
+      }
+      if (factsetIsFresh) {
+        prices[t] = fp;
+        priceSources[t] = "factset";
+      } else if (yp != null && yp > 0) {
         priceSources[t] = "yahoo";
-      } else if (typeof fp === "number" && fp > 0) {
-        // Yahoo blank/failed — fall back to FactSet so the ticker isn't empty.
+        console.warn(`[prices] FactSet stale for ${t}: factset=${fp} outside today's range [${lo}, ${hi}] (yahoo=${yp}) — used Yahoo live`);
+      } else {
+        // FactSet looks stale but Yahoo has nothing — better a stale FactSet
+        // price than a blank; surface it and flag the source honestly.
         prices[t] = fp;
         priceSources[t] = "factset";
       }
