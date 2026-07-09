@@ -2680,36 +2680,36 @@ export function PimPortfolio({ groups }: Props) {
             <thead className="sticky top-0 z-10 bg-surface-2 shadow-[0_1px_0_0_rgb(226_232_240)]">
               <tr className="border-b border-line-soft bg-surface-2">
                 <th className={`text-left ${thClass}`} onClick={() => handleSort("symbol")}>
-                  Symbol<SortIcon field="symbol" sortField={sortField} sortDir={sortDir} />
+                  Ticker<SortIcon field="symbol" sortField={sortField} sortDir={sortDir} />
                 </th>
                 <th className={`text-left ${thClass}`} onClick={() => handleSort("name")}>
                   Name<SortIcon field="name" sortField={sortField} sortDir={sortDir} />
                 </th>
                 <th className={`text-right ${thClass}`} onClick={() => handleSort("units")}>
-                  Units<SortIcon field="units" sortField={sortField} sortDir={sortDir} />
+                  Shares<SortIcon field="units" sortField={sortField} sortDir={sortDir} />
                 </th>
                 <th className={`text-right ${thClass}`} onClick={() => handleSort("price")}>
                   Price<SortIcon field="price" sortField={sortField} sortDir={sortDir} />
                 </th>
                 <th className={`text-right ${thClass}`} onClick={() => handleSort("value")}>
-                  Value (CAD)<SortIcon field="value" sortField={sortField} sortDir={sortDir} />
+                  Market Value<SortIcon field="value" sortField={sortField} sortDir={sortDir} />
                 </th>
                 <th className={`text-right ${thClass}`} onClick={() => handleSort("acb")}>
                   ACB (CAD)<SortIcon field="acb" sortField={sortField} sortDir={sortDir} />
                 </th>
                 <th className={`text-right ${thClass}`} onClick={() => handleSort("modelPct")}>
-                  Model %<SortIcon field="modelPct" sortField={sortField} sortDir={sortDir} />
+                  Target<SortIcon field="modelPct" sortField={sortField} sortDir={sortDir} />
                 </th>
                 {hasPositions && (
                   <>
                     <th className={`text-right ${thClass}`} onClick={() => handleSort("currentPct")}>
-                      Current %<SortIcon field="currentPct" sortField={sortField} sortDir={sortDir} />
+                      Current<SortIcon field="currentPct" sortField={sortField} sortDir={sortDir} />
                     </th>
                     <th className={`text-center ${thClass}`} onClick={() => handleSort("drift")}>
                       Action<SortIcon field="drift" sortField={sortField} sortDir={sortDir} />
                     </th>
                     <th className={`text-right ${thClass}`} onClick={() => handleSort("gainLoss")}>
-                      Gain/Loss<SortIcon field="gainLoss" sortField={sortField} sortDir={sortDir} />
+                      Gain<SortIcon field="gainLoss" sortField={sortField} sortDir={sortDir} />
                     </th>
                   </>
                 )}

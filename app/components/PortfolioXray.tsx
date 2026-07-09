@@ -72,7 +72,7 @@ export function PortfolioXray() {
       {
         label: "Upside to target",
         value: fmt(upside, 1, "%"),
-        accent: upside == null ? undefined : upside >= 0 ? "text-emerald-600" : "text-red-500",
+        accent: upside == null ? undefined : upside >= 0 ? "text-pos" : "text-neg",
       },
     ];
     // Upcoming earnings — per-holding next report date (Yahoo-sourced; FactSet
@@ -91,27 +91,27 @@ export function PortfolioXray() {
   if (count === 0) return null;
 
   return (
-    <div className="mb-6 rounded-[20px] border border-slate-200 bg-white p-5 shadow-sm">
+    <div className="mb-6 rounded-card border border-line bg-white p-5 shadow-sm">
       <div className="mb-3 flex items-baseline justify-between">
-        <h2 className="text-sm font-bold text-slate-800">Portfolio X-ray <span className="font-normal text-slate-400">· FactSet fundamentals</span></h2>
-        <span className="text-[11px] text-slate-400">{count} holdings · {basis}</span>
+        <h2 className="text-sm font-bold text-ink">Portfolio X-ray <span className="font-normal text-ink-3">· FactSet fundamentals</span></h2>
+        <span className="text-[11px] text-ink-3">{count} holdings · {basis}</span>
       </div>
       <div className="grid grid-cols-2 gap-3 sm:grid-cols-3 lg:grid-cols-6">
         {tiles.map((t) => (
-          <div key={t.label} className="rounded-lg border border-slate-100 bg-slate-50/50 px-3 py-2.5">
-            <div className="text-[10px] font-semibold uppercase tracking-wider text-slate-400">{t.label}</div>
-            <div className={`mt-1 text-lg font-bold tabular-nums ${t.accent || "text-slate-800"}`}>{t.value}</div>
+          <div key={t.label} className="rounded-lg border border-line-soft bg-surface-hover px-3 py-2.5">
+            <div className="text-[10px] font-semibold uppercase tracking-wider text-ink-3">{t.label}</div>
+            <div className={`mt-1 text-lg font-bold tabular-nums ${t.accent || "text-ink"}`}>{t.value}</div>
           </div>
         ))}
       </div>
       {upcomingEarnings.length > 0 && (
-        <div className="mt-3 border-t border-slate-100 pt-3">
-          <div className="mb-1.5 text-[10px] font-semibold uppercase tracking-wider text-slate-400">Upcoming earnings</div>
+        <div className="mt-3 border-t border-line-soft pt-3">
+          <div className="mb-1.5 text-[10px] font-semibold uppercase tracking-wider text-ink-3">Upcoming earnings</div>
           <div className="flex flex-wrap gap-1.5">
             {upcomingEarnings.map((e) => (
-              <span key={e.ticker} className="inline-flex items-center gap-1 rounded-full border border-slate-200 bg-slate-50 px-2 py-0.5 text-[11px]">
-                <span className="font-mono font-semibold text-slate-700">{displayTicker(e.ticker)}</span>
-                <span className="text-slate-400">{new Date(e.ms).toLocaleDateString("en-US", { month: "short", day: "numeric" })}</span>
+              <span key={e.ticker} className="inline-flex items-center gap-1 rounded-full border border-line bg-surface-2 px-2 py-0.5 text-[11px]">
+                <span className="font-mono font-semibold text-ink">{displayTicker(e.ticker)}</span>
+                <span className="text-ink-3">{new Date(e.ms).toLocaleDateString("en-US", { month: "short", day: "numeric" })}</span>
               </span>
             ))}
           </div>
