@@ -1080,9 +1080,9 @@ export function PortfolioOverview({ sidebar }: { sidebar?: React.ReactNode } = {
                 <button
                   key={b}
                   onClick={() => setRankBucket(b)}
-                  className={`rounded-[6px] px-3 py-1 text-[13px] font-semibold transition-colors ${active ? "bg-surface text-ink shadow-sm" : "text-ink-2 hover:text-ink"}`}
+                  className={`rounded-[6px] px-3.5 py-1.5 text-[13px] font-semibold transition-colors ${active ? "bg-accent text-white shadow-sm" : "text-ink-2 hover:bg-surface hover:text-ink"}`}
                 >
-                  {b} <span className={`font-normal ${active ? "text-ink-3" : "text-ink-3"}`}>{count}</span>
+                  {b} <span className={`font-normal ${active ? "text-white/70" : "text-ink-3"}`}>{count}</span>
                 </button>
               );
             })}
@@ -1100,7 +1100,7 @@ export function PortfolioOverview({ sidebar }: { sidebar?: React.ReactNode } = {
         onDismissFailures={() => { setScoreFailures([]); setScoreProgress(""); }}
         scoreAllDisabled={scoringAny || refreshingAll}
         lastScoredAt={rankBucket === "Portfolio" ? scoreAllPortfolioAt : scoreAllWatchlistAt}
-        collapseKey={rankBucket === "Portfolio" ? "dashboard.portfolioRankings.collapsed" : "dashboard.watchlistRankings.collapsed"}
+        collapseKey="dashboard.rankings.collapsed"
         onBackfillSummaries={() => handleBackfillSummaries(rankBucket)}
         backfilling={backfilling}
         backfillProgress={backfillProgress}
@@ -1653,17 +1653,19 @@ function RankingTable({
       <div className={`flex items-center gap-3 flex-wrap ${collapsed ? "" : "mb-4"}`}>
         {bucketTabs ? (
           <>
+            {bucketTabs}
             {collapseKey && (
               <button
                 onClick={toggleCollapsed}
-                className="cursor-pointer text-ink-3 hover:text-ink transition-colors"
+                className="flex items-center gap-1 rounded-control border border-line px-2 py-1 text-[11px] font-semibold text-ink-3 hover:bg-surface-2 hover:text-ink transition-colors"
                 aria-expanded={!collapsed}
                 aria-label={collapsed ? `Expand ${title}` : `Collapse ${title}`}
+                title={collapsed ? "Show the rankings table" : "Hide the rankings table"}
               >
-                <svg className={`w-4 h-4 transition-transform ${collapsed ? "-rotate-90" : ""}`} fill="none" stroke="currentColor" strokeWidth="2.5" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" d="M19 9l-7 7-7-7" /></svg>
+                <svg className={`w-3.5 h-3.5 transition-transform ${collapsed ? "-rotate-90" : ""}`} fill="none" stroke="currentColor" strokeWidth="2.5" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" d="M19 9l-7 7-7-7" /></svg>
+                {collapsed ? "Show" : "Hide"}
               </button>
             )}
-            {bucketTabs}
           </>
         ) : collapseKey ? (
           <button
