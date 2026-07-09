@@ -2674,6 +2674,21 @@ export function PimPortfolio({ groups }: Props) {
 
       {/* Holdings table */}
       <div className="rounded-card border border-line bg-white shadow-sm overflow-hidden">
+        {/* Positions header (mockup): title + inline summary */}
+        <div className="flex items-center justify-between gap-3 flex-wrap border-b border-line-soft px-4 py-3">
+          <h3 className="text-sm font-bold text-ink">Positions</h3>
+          <div className="flex items-center gap-x-2.5 gap-y-1 flex-wrap text-[11px] text-ink-3">
+            <span>Total <span className="font-semibold text-ink">{fmtCurrency(totalValueCadSummary)}</span></span>
+            <span className="text-ink-faint">·</span>
+            <span>Cost <span className="font-semibold text-ink">{fmtCurrency(totalCostCad)}</span></span>
+            <span className="text-ink-faint">·</span>
+            <span className={`font-semibold ${totalValueCadSummary - totalCostCad >= 0 ? "text-pos" : "text-neg"}`}>
+              {totalCostCad > 0 ? fmtGainLoss(((totalValueCadSummary - totalCostCad) / totalCostCad) * 100) : "--"}
+            </span>
+            <span className="text-ink-faint">·</span>
+            <span>Target = <span className="font-semibold text-accent">{PROFILE_LABELS[activeProfile]}</span></span>
+          </div>
+        </div>
         <div className="overflow-x-auto">
           <table className="w-full text-xs">
             <thead className="sticky top-0 z-10 bg-surface-2 shadow-[0_1px_0_0_rgb(226_232_240)]">
@@ -2681,21 +2696,25 @@ export function PimPortfolio({ groups }: Props) {
                 <th className={`text-left ${thClass}`} onClick={() => handleSort("symbol")}>
                   Ticker<SortIcon field="symbol" sortField={sortField} sortDir={sortDir} />
                 </th>
-                <th className={`text-left ${thClass}`} onClick={() => handleSort("name")}>
-                  Name<SortIcon field="name" sortField={sortField} sortDir={sortDir} />
-                </th>
                 <th className={`text-right ${thClass}`} onClick={() => handleSort("units")}>
                   Shares<SortIcon field="units" sortField={sortField} sortDir={sortDir} />
                 </th>
                 <th className={`text-right ${thClass}`} onClick={() => handleSort("price")}>
                   Price<SortIcon field="price" sortField={sortField} sortDir={sortDir} />
                 </th>
+                {hasPositions && (
+                  <th className={`text-right ${thClass}`} onClick={() => handleSort("gainLoss")}>
+                    Gain<SortIcon field="gainLoss" sortField={sortField} sortDir={sortDir} />
+                  </th>
+                )}
                 <th className={`text-right ${thClass}`} onClick={() => handleSort("value")}>
                   Market Value<SortIcon field="value" sortField={sortField} sortDir={sortDir} />
                 </th>
-                <th className={`text-right ${thClass}`} onClick={() => handleSort("acb")}>
-                  ACB (CAD)<SortIcon field="acb" sortField={sortField} sortDir={sortDir} />
-                </th>
+                {editMode && (
+                  <th className={`text-right ${thClass}`} onClick={() => handleSort("acb")}>
+                    ACB (CAD)<SortIcon field="acb" sortField={sortField} sortDir={sortDir} />
+                  </th>
+                )}
                 <th className={`text-right ${thClass}`} onClick={() => handleSort("modelPct")}>
                   Target<SortIcon field="modelPct" sortField={sortField} sortDir={sortDir} />
                 </th>
@@ -2704,11 +2723,8 @@ export function PimPortfolio({ groups }: Props) {
                     <th className={`text-right ${thClass}`} onClick={() => handleSort("currentPct")}>
                       Current<SortIcon field="currentPct" sortField={sortField} sortDir={sortDir} />
                     </th>
-                    <th className={`text-center ${thClass}`} onClick={() => handleSort("drift")}>
-                      Action<SortIcon field="drift" sortField={sortField} sortDir={sortDir} />
-                    </th>
-                    <th className={`text-right ${thClass}`} onClick={() => handleSort("gainLoss")}>
-                      Gain<SortIcon field="gainLoss" sortField={sortField} sortDir={sortDir} />
+                    <th className={`text-right ${thClass}`} onClick={() => handleSort("drift")}>
+                      Drift<SortIcon field="drift" sortField={sortField} sortDir={sortDir} />
                     </th>
                   </>
                 )}
@@ -2727,8 +2743,12 @@ export function PimPortfolio({ groups }: Props) {
 
                 return (
                   <tr key={row.symbol} className="border-b border-line-soft hover:bg-slate-25 transition-colors">
-                    <td className="py-2.5 px-2 font-semibold text-ink">{displayTicker(row.symbol)}</td>
-                    <td className="py-2.5 px-2 text-ink-2 max-w-[200px] truncate">{row.name}</td>
+                    {/* Ticker with company name folded in as a subtitle */}
+                    <td className="py-2.5 px-2">
+                      <div className="font-semibold text-ink">{displayTicker(row.symbol)}{currBadge}</div>
+                      {row.name && <div className="text-[10px] text-ink-3 max-w-[220px] truncate">{row.name}</div>}
+                    </td>
+                    {/* Shares */}
                     <td className="py-2.5 px-2 text-right font-mono text-ink">
                       {editMode ? (
                         <input
@@ -2750,16 +2770,22 @@ export function PimPortfolio({ groups }: Props) {
                     {/* Price in instrument currency */}
                     <td className="py-2.5 px-2 text-right font-mono text-ink">
                       {row.price > 0 ? (
-                        <span>${row.price.toFixed(2)}{currBadge}</span>
+                        <span>${row.price.toFixed(2)}</span>
                       ) : "-"}
                     </td>
+                    {/* Gain */}
+                    {hasPositions && (
+                      <td className={`py-2.5 px-2 text-right font-mono font-semibold ${row.gainLoss >= 0 ? "text-pos" : "text-neg"}`}>
+                        {row.units > 0 ? fmtGainLoss(row.gainLoss) : "-"}
+                      </td>
+                    )}
                     {/* Market Value in CAD */}
                     <td className="py-2.5 px-2 text-right font-mono font-semibold text-ink">
                       {row.valueCad > 0 ? fmtCurrency(row.valueCad) : "-"}
                     </td>
-                    {/* ACB (Book Cost) in CAD */}
-                    <td className="py-2.5 px-2 text-right font-mono text-ink-2">
-                      {editMode && (
+                    {/* ACB (Book Cost) in CAD — edit mode only (cost-basis input) */}
+                    {editMode && (
+                      <td className="py-2.5 px-2 text-right font-mono text-ink-2">
                         <div className="mb-1">
                           <input
                             type="number"
@@ -2775,28 +2801,17 @@ export function PimPortfolio({ groups }: Props) {
                             placeholder={`Cost (${row.currency})`}
                           />
                         </div>
-                      )}
-                      {row.costValueCad > 0 ? fmtCurrency(row.costValueCad) : "-"}
-                    </td>
+                        {row.costValueCad > 0 ? fmtCurrency(row.costValueCad) : "-"}
+                      </td>
+                    )}
+                    {/* Target */}
                     <td className="py-2.5 px-2 text-right font-mono text-ink-2">{pct(row.modelPct)}</td>
+                    {/* Current + Drift */}
                     {hasPositions && (
                       <>
                         <td className="py-2.5 px-2 text-right font-mono text-ink">{row.units > 0 ? pct(row.currentPct) : "-"}</td>
-                        <td className="py-2.5 px-2 text-center">
-                          {row.units > 0 ? (
-                            <span className={`inline-block rounded px-2 py-0.5 text-[9px] font-bold ${
-                              row.action === "BUY" ? "bg-pos-soft text-pos" :
-                              row.action === "SELL" ? "bg-neg-soft text-neg" :
-                              "bg-surface-2 text-ink-3"
-                            }`}>
-                              {row.action}
-                            </span>
-                          ) : (
-                            <span className="inline-block rounded px-2 py-0.5 text-[9px] font-bold bg-pos-soft text-pos">BUY</span>
-                          )}
-                        </td>
-                        <td className={`py-2.5 px-2 text-right font-mono font-semibold ${row.gainLoss >= 0 ? "text-pos" : "text-neg"}`}>
-                          {row.units > 0 ? fmtGainLoss(row.gainLoss) : "-"}
+                        <td className={`py-2.5 px-2 text-right font-mono font-semibold ${row.driftPct > 0.0001 ? "text-pos" : row.driftPct < -0.0001 ? "text-neg" : "text-ink-3"}`}>
+                          {row.units > 0 ? `${row.driftPct > 0 ? "+" : ""}${(row.driftPct * 100).toFixed(1)}` : "-"}
                         </td>
                       </>
                     )}
@@ -2807,6 +2822,85 @@ export function PimPortfolio({ groups }: Props) {
           </table>
         </div>
       </div>
+
+      {/* Suggested Trades (mockup): compact chip row derived from live drift.
+          "Review & execute all" opens the full Rebalance Preview above — no
+          rebalance math or execution path is changed, this is a shortcut. */}
+      {hasPositions && !editMode && (() => {
+        const suggestions = sortedRows
+          .filter((r) => r.units > 0 && r.modelPct > 0)
+          .map((r) => ({ symbol: r.symbol, adj: -r.driftPct })) // adj>0 = add, adj<0 = trim
+          .filter((s) => Math.abs(s.adj) >= 0.0005)
+          .sort((a, b) => Math.abs(b.adj) - Math.abs(a.adj))
+          .slice(0, 6);
+        if (suggestions.length === 0) return null;
+        return (
+          <div className="rounded-card border border-line bg-white shadow-sm">
+            <div className="flex items-center justify-between gap-3 flex-wrap border-b border-line-soft px-4 py-3">
+              <h3 className="text-sm font-bold text-ink">Suggested Trades</h3>
+              <span className="text-[11px] text-ink-3">to reach {PROFILE_LABELS[activeProfile]} target</span>
+            </div>
+            <div className="flex items-center gap-2 flex-wrap px-4 py-3">
+              {suggestions.map((s) => {
+                const isTrim = s.adj < 0;
+                return (
+                  <div key={s.symbol} className="inline-flex items-center gap-2 rounded-control border border-line bg-surface px-2.5 py-1.5">
+                    <span className={`rounded px-1.5 py-0.5 text-[10px] font-bold ${isTrim ? "bg-ink-2 text-white" : "bg-pos text-white"}`}>
+                      {isTrim ? "Trim" : "Add"}
+                    </span>
+                    <span className="font-semibold text-ink text-[13px]">{displayTicker(s.symbol)}</span>
+                    <span className={`font-mono text-[12px] font-semibold ${isTrim ? "text-warn" : "text-pos"}`}>
+                      {s.adj > 0 ? "+" : ""}{(s.adj * 100).toFixed(1)}%
+                    </span>
+                  </div>
+                );
+              })}
+              <button
+                onClick={() => setShowRebalance(true)}
+                className="ml-auto inline-flex items-center gap-1 rounded-control border border-pos-border bg-pos-soft/40 px-3 py-1.5 text-[12px] font-semibold text-pos hover:bg-pos-soft transition-colors"
+              >
+                Review &amp; execute all →
+              </button>
+            </div>
+          </div>
+        );
+      })()}
+
+      {/* Recent Trades (mockup): last settled transactions from the group's
+          persisted log. Read-only — we don't store per-trade share counts,
+          so execution price is shown instead of "+N sh". */}
+      {groupState.transactions.filter((t) => t.status !== "pending").length > 0 && (() => {
+        const recent = [...groupState.transactions]
+          .filter((t) => t.status !== "pending")
+          .sort((a, b) => new Date(b.date).getTime() - new Date(a.date).getTime())
+          .slice(0, 6);
+        const lastRebDate = groupState.lastRebalance?.date;
+        return (
+          <div className="rounded-card border border-line bg-white shadow-sm">
+            <div className="flex items-center justify-between gap-3 flex-wrap border-b border-line-soft px-4 py-3">
+              <h3 className="text-sm font-bold text-ink">Recent Trades</h3>
+              {lastRebDate && (
+                <span className="text-[11px] text-ink-3">since last rebalance · {new Date(lastRebDate).toLocaleDateString(undefined, { month: "short", day: "numeric" })}</span>
+              )}
+            </div>
+            <div>
+              {recent.map((t) => (
+                <div key={t.id} className="flex items-center gap-3 border-b border-line-soft px-4 py-2.5 last:border-b-0">
+                  <span className={`w-12 shrink-0 rounded px-1.5 py-0.5 text-center text-[10px] font-bold ${t.direction === "sell" ? "bg-neg text-white" : "bg-pos text-white"}`}>
+                    {t.direction.toUpperCase()}
+                  </span>
+                  <span className="w-16 font-semibold text-ink text-[13px]">{displayTicker(t.symbol)}</span>
+                  {(t.type === "switch" || t.type === "rebalance") && (
+                    <span className="hidden sm:inline text-[11px] text-ink-3">{t.type}</span>
+                  )}
+                  <span className="ml-auto font-mono text-[12px] text-ink">{t.price > 0 ? `$${t.price.toFixed(2)}` : "—"}</span>
+                  <span className="w-16 text-right text-[11px] text-ink-3">{new Date(t.date).toLocaleDateString(undefined, { month: "short", day: "numeric" })}</span>
+                </div>
+              ))}
+            </div>
+          </div>
+        );
+      })()}
 
       {/* No positions prompt */}
       {!hasPositions && !editMode && (
