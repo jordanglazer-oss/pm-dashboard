@@ -142,31 +142,27 @@ export async function POST(request: NextRequest) {
       currencies[r.ticker] = r.currency;
     }
 
-    // FactSet is the PRIMARY price source: override the live price with FactSet's
-    // where the ticker resolves (US + Canadian listings). Yahoo still supplies
-    // previousClose / currency / name / quoteType, and remains the price for the
-    // funds / USD-TSE ETFs FactSet can't cover AND whenever FactSet/relay is
-    // down (getFactsetPricesByTicker returns {} → nothing overridden). Same
-    // native listing + currency, so the day-change vs Yahoo's prevClose holds.
+    // Yahoo is the PRIMARY (live/intraday) price source. FactSet's Formula API
+    // P_PRICE is a DELAYED / end-of-day quote under this entitlement — it can
+    // lag the live tape by a session (observed: FactSet returned GOOGL 361.92
+    // on a day whose intraday high was 359.65, while Yahoo had the live ~358).
+    // Making FactSet primary therefore reverted live prices to stale ones. So
+    // Yahoo wins whenever it has a usable quote; FactSet is only a FALLBACK for
+    // tickers Yahoo can't price (some funds / dual-listings) so those aren't
+    // left blank. FactSet stays the source of truth for FUNDAMENTALS elsewhere,
+    // just not for the live price shown here.
     const priceSources: Record<string, "factset" | "yahoo"> = {};
     const factsetPrices = await getFactsetPricesByTicker(batch);
     for (const t of batch) {
       const fp = factsetPrices[t];
       const yp = prices[t];
-      if (typeof fp === "number") {
-        // Sanity guard: only override with FactSet when it's within 20% of the
-        // Yahoo quote (same listing/currency should agree closely). A gross
-        // divergence signals a mis-resolved id or currency mismatch — keep
-        // Yahoo and log it rather than inject a garbage price into live values.
-        if (yp == null || yp <= 0 || Math.abs(fp - yp) / yp <= 0.2) {
-          prices[t] = fp;
-          priceSources[t] = "factset";
-        } else {
-          priceSources[t] = "yahoo";
-          console.warn(`[prices] FactSet/Yahoo divergence for ${t}: factset=${fp} yahoo=${yp} — kept Yahoo`);
-        }
-      } else if (yp != null) {
+      if (yp != null && yp > 0) {
+        // Yahoo has a live quote — keep it.
         priceSources[t] = "yahoo";
+      } else if (typeof fp === "number" && fp > 0) {
+        // Yahoo blank/failed — fall back to FactSet so the ticker isn't empty.
+        prices[t] = fp;
+        priceSources[t] = "factset";
       }
     }
 
