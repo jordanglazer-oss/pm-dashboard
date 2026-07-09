@@ -171,6 +171,8 @@ type StockContextType = {
   /** Increments each time refreshAllPrices runs — lets the Research page re-pull
    *  its own live prices/names off the single nav "Refresh prices" button. */
   priceRefreshNonce: number;
+  /** In-memory previous-close per ticker from the last price fetch (day-change). */
+  livePreviousCloses: Record<string, number | null>;
   /**
    * Recompute the deterministic `researchMentions` category for every
    * Portfolio + Watchlist ticker from the current research-scrape
@@ -295,6 +297,9 @@ export function StockProvider({ children }: { children: React.ReactNode }) {
   // Bumped by refreshAllPrices; the Research page watches it to re-pull its own
   // local price/name state so the nav "Refresh prices" button covers it too.
   const [priceRefreshNonce, setPriceRefreshNonce] = useState(0);
+  // In-memory (not persisted) previous-close per ticker, captured from the last
+  // /api/prices fetch. Feeds the Rankings "Day" column's live day-change.
+  const [livePreviousCloses, setLivePreviousCloses] = useState<Record<string, number | null>>({});
   const [analystSnapshots, setAnalystSnapshotsState] = useState<AnalystSnapshots>({});
   const [analystReports, setAnalystReportsState] = useState<AnalystReports>({});
   const [loading, setLoading] = useState(true);
@@ -967,6 +972,12 @@ export function StockProvider({ children }: { children: React.ReactNode }) {
       }
       const data = await res.json();
       priceMap = (data.prices ?? {}) as Record<string, number | null>;
+      // Capture previous closes (in-memory only, not persisted) so the Rankings
+      // "Day" column can show live day-change. Merge so a partial refresh keeps
+      // prior values.
+      if (data.previousCloses && typeof data.previousCloses === "object") {
+        setLivePreviousCloses((prev) => ({ ...prev, ...(data.previousCloses as Record<string, number | null>) }));
+      }
     } catch {
       return { updated: 0, total: allTickers.length, missing: allTickers };
     }
@@ -1764,6 +1775,7 @@ export function StockProvider({ children }: { children: React.ReactNode }) {
         updatePrice,
         refreshAllPrices,
         priceRefreshNonce,
+        livePreviousCloses,
         refreshResearchMentions,
         updateSector,
         updateWeight,

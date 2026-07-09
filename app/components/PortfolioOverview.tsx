@@ -102,9 +102,11 @@ type DashboardFilter = "all" | "stocks" | "etf-usd" | "etf-cad" | "mutual-fund";
  *  artifact. Lower the threshold if variance alerts feel too rare. */
 const VARIANCE_ALERT_THRESHOLD = 5;
 
-const DASH_FILTER_LABELS: Record<DashboardFilter, string> = {
+/** The instrument filter now lives inside Fund & ETF Holdings and covers funds
+ *  only — no "Stocks" option (rankings show every scoreable stock unfiltered). */
+type FundFilter = "all" | "etf-usd" | "etf-cad" | "mutual-fund";
+const FUND_FILTER_LABELS: Record<FundFilter, string> = {
   all: "All",
-  stocks: "Stocks",
   "etf-usd": "ETFs (USD)",
   "etf-cad": "ETFs (CAD)",
   "mutual-fund": "Mutual Funds",
@@ -173,6 +175,7 @@ export function PortfolioOverview({ sidebar }: { sidebar?: React.ReactNode } = {
     uiPrefs,
     setUiPref,
     flushStocks,
+    livePreviousCloses,
   } = useStocks();
 
   /* ── Brief risk-scan flag lookup ─────────────────────────────────────
@@ -986,24 +989,23 @@ export function PortfolioOverview({ sidebar }: { sidebar?: React.ReactNode } = {
     void handleRefreshAll();
   }, [refreshAllAt, refreshingAll, scoringAny, portfolioStocks.length, watchlistStocks.length, handleRefreshAll]);
 
-  // Apply instrument filter first
-  const filteredPortfolio = portfolioStocks.filter((s) => matchesDashFilter(s, dashFilter));
-  const filteredWatchlist = watchlistStocks.filter((s) => matchesDashFilter(s, dashFilter));
-
-  // Separate scoreable stocks from funds
-  const scoreablePortfolio = filteredPortfolio.filter((s) => isScoreable(s));
-  const fundPortfolio = filteredPortfolio.filter((s) => !isScoreable(s));
-  const scoreableWatchlist = filteredWatchlist.filter((s) => isScoreable(s));
+  // Rankings show ALL scoreable stocks — the instrument filter no longer touches
+  // Portfolio/Watchlist; it lives in the Fund & ETF Holdings section (funds only).
+  const scoreablePortfolio = portfolioStocks.filter((s) => isScoreable(s));
+  const scoreableWatchlist = watchlistStocks.filter((s) => isScoreable(s));
   const allScoreable = [...scoreablePortfolio, ...scoreableWatchlist].sort((a, b) => b.adjusted - a.adjusted);
 
-  // Compute counts across ALL stocks (unfiltered) for filter badges
+  // Funds/ETFs (non-scored) — the instrument filter applies HERE only.
   const allStocks = [...portfolioStocks, ...watchlistStocks];
-  const filterCounts: Record<DashboardFilter, number> = { all: allStocks.length, stocks: 0, "etf-usd": 0, "etf-cad": 0, "mutual-fund": 0 };
-  for (const s of allStocks) {
-    if (!s.instrumentType || s.instrumentType === "stock") filterCounts.stocks++;
-    else if (s.instrumentType === "etf" && !isCanadianTicker(s.ticker)) filterCounts["etf-usd"]++;
-    else if (s.instrumentType === "etf" && isCanadianTicker(s.ticker)) filterCounts["etf-cad"]++;
-    else if (s.instrumentType === "mutual-fund") filterCounts["mutual-fund"]++;
+  const allFunds = allStocks.filter((s) => !isScoreable(s));
+  const fundPortfolio = portfolioStocks.filter((s) => !isScoreable(s) && matchesDashFilter(s, dashFilter));
+
+  // Fund-only counts for the filter badges (no "stocks" option in this section).
+  const fundFilterCounts: Record<FundFilter, number> = { all: allFunds.length, "etf-usd": 0, "etf-cad": 0, "mutual-fund": 0 };
+  for (const s of allFunds) {
+    if (s.instrumentType === "etf" && !isCanadianTicker(s.ticker)) fundFilterCounts["etf-usd"]++;
+    else if (s.instrumentType === "etf" && isCanadianTicker(s.ticker)) fundFilterCounts["etf-cad"]++;
+    else if (s.instrumentType === "mutual-fund") fundFilterCounts["mutual-fund"]++;
   }
 
   // S&P 500 sector weights — use live data from marketData if available, else fallback
@@ -1028,32 +1030,9 @@ export function PortfolioOverview({ sidebar }: { sidebar?: React.ReactNode } = {
 
   return (
     <div className="space-y-6">
-      {/* Top toolbar: instrument filter + Refresh All Data (covers portfolio,
-          fund & ETF holdings, and watchlist). */}
+      {/* Top toolbar: Refresh All Data. The instrument filter moved into the
+          Fund & ETF Holdings section (it only applies to funds/ETFs now). */}
       <div className="flex items-center gap-3 flex-wrap">
-        <div className="flex items-center gap-1 flex-wrap">
-        {(Object.keys(DASH_FILTER_LABELS) as DashboardFilter[]).map((key) => {
-          const count = filterCounts[key];
-          if (key !== "all" && count === 0) return null;
-          const active = dashFilter === key;
-          return (
-            <button
-              key={key}
-              onClick={() => setDashFilter(key)}
-              className={`flex items-center gap-1.5 rounded-lg px-3 py-1.5 text-xs font-semibold transition-colors ${
-                active
-                  ? "bg-ink text-white shadow-sm"
-                  : "bg-surface-2 text-ink-3 hover:bg-line hover:text-ink"
-              }`}
-            >
-              {DASH_FILTER_LABELS[key]}
-              <span className={`rounded-full px-1.5 py-0.5 text-[10px] font-bold ${active ? "bg-white/20 text-white" : "bg-line text-ink-3"}`}>
-                {count}
-              </span>
-            </button>
-          );
-        })}
-        </div>
         <div className="ml-auto flex items-center gap-2">
           {refreshAllAt && !refreshingAll && !refreshProgress && (
             <span className="text-[11px] text-ink-3">Last refreshed {formatRelTimestamp(refreshAllAt)}</span>
@@ -1090,6 +1069,7 @@ export function PortfolioOverview({ sidebar }: { sidebar?: React.ReactNode } = {
         title="Portfolio Rankings"
         subtitle="Bottom 3 flagged for review"
         stocks={scoreablePortfolio}
+        livePreviousCloses={livePreviousCloses}
         flagType="review"
         uiPrefs={uiPrefs}
         setUiPref={setUiPref}
@@ -1119,6 +1099,7 @@ export function PortfolioOverview({ sidebar }: { sidebar?: React.ReactNode } = {
         title="Watchlist Rankings"
         subtitle="Top 3 flagged as buy candidates"
         stocks={scoreableWatchlist}
+        livePreviousCloses={livePreviousCloses}
         flagType="buy"
         uiPrefs={uiPrefs}
         setUiPref={setUiPref}
@@ -1250,6 +1231,25 @@ export function PortfolioOverview({ sidebar }: { sidebar?: React.ReactNode } = {
                 <h2 className="text-lg font-bold text-ink">Fund & ETF Holdings</h2>
               </button>
               <span className="text-sm text-ink-3">{fundPortfolio.length} holdings</span>
+              {!fundCollapsed && (
+                <div className="ml-auto flex items-center gap-1 flex-wrap">
+                  {(Object.keys(FUND_FILTER_LABELS) as FundFilter[]).map((key) => {
+                    const count = fundFilterCounts[key];
+                    if (key !== "all" && count === 0) return null;
+                    const active = dashFilter === key;
+                    return (
+                      <button
+                        key={key}
+                        onClick={() => setDashFilter(key)}
+                        className={`flex items-center gap-1 rounded-lg px-2.5 py-1 text-[11px] font-semibold transition-colors ${active ? "bg-ink text-white" : "bg-surface-2 text-ink-3 hover:bg-line hover:text-ink"}`}
+                      >
+                        {FUND_FILTER_LABELS[key]}
+                        <span className={`rounded-full px-1 py-0.5 text-[9px] font-bold ${active ? "bg-white/20 text-white" : "bg-line text-ink-3"}`}>{count}</span>
+                      </button>
+                    );
+                  })}
+                </div>
+              )}
             </div>
             {!fundCollapsed && (
             <div className="overflow-x-auto">
@@ -1429,6 +1429,7 @@ function RankingTable({
   riskScanByTicker,
   splitByCurrency,
   enableExternalExports,
+  livePreviousCloses,
 }: {
   title: string;
   subtitle: string;
@@ -1464,6 +1465,8 @@ function RankingTable({
   /** When true, show "BoostedAI CSV" + "Copy SIA symbols" export buttons in
    *  the header (built from this table's `stocks`). Used for the Watchlist. */
   enableExternalExports?: boolean;
+  /** In-memory previous-close per ticker for the "Day" column (empty until a refresh). */
+  livePreviousCloses: Record<string, number | null>;
 }) {
   // Collapse state — defaults to expanded. Persisted in uiPrefs so it
   // sticks across refreshes and syncs to other devices via Redis. The
@@ -1856,14 +1859,13 @@ function RankingTable({
         <table className="w-full text-left text-sm">
           <thead className="sticky top-0 z-20 bg-white shadow-[0_1px_0_0_rgb(226_232_240)]">
             <tr className="border-b border-line text-xs text-ink-3">
-              <th className={stickyHeadCls} onClick={() => toggleSort("ticker")}>
-                <span className="text-ink-3 mr-1">#</span>Ticker{arrow("ticker")}
-              </th>
+              <th className={stickyHeadCls} onClick={() => toggleSort("ticker")}>Ticker{arrow("ticker")}</th>
               <th className={thClass} onClick={() => toggleSort("sector")}>Sector{arrow("sector")}</th>
+              <th className={`${thClass} text-right`}>Weight</th>
               <th className={`${thClass} text-right`} onClick={() => toggleSort("price")}>Price{arrow("price")}</th>
+              <th className={`${thClass} text-right`}>Day</th>
               <th className={`${thClass} text-right`} onClick={() => toggleSort("adjusted")}>Score{arrow("adjusted")}</th>
               <th className={thClass} onClick={() => toggleSort("rating")}>Rating{arrow("rating")}</th>
-              <th className="pb-2 pr-3">Signal</th>
               <th className="pb-2 pr-2 w-8" aria-label="Detail"></th>
             </tr>
           </thead>
@@ -1888,7 +1890,6 @@ function RankingTable({
                 );
               }
               const s = row.stock;
-              const i = row.rank - 1;
               const adj = Math.round((s.adjusted - s.raw) * 10) / 10;
               const label = s.ratingLabel || s.rating;
               const isFlagged = row.flagged;
@@ -1896,10 +1897,9 @@ function RankingTable({
 
               return (
                 <React.Fragment key={s.ticker}>
-                <tr className="group border-b border-line-soft hover:bg-surface-hover transition-colors [&>td]:align-top">
+                <tr className={`group border-b border-line-soft hover:bg-surface-hover transition-colors [&>td]:align-top ${isFlagged ? (flagType === "buy" ? "border-l-2 border-l-pos" : "border-l-2 border-l-neg") : ""}`}>
                   <td className={stickyCellCls}>
                     <div className="flex items-center gap-2">
-                      <span className="text-ink-3 text-xs w-5 text-right">{i + 1}</span>
                       <Link href={`/stock/${s.ticker.toLowerCase()}`} className="hover:underline block">
                         <div className="font-bold text-ink font-mono flex items-center gap-1.5">
                           {displayTicker(s.ticker)}
@@ -1928,8 +1928,19 @@ function RankingTable({
                     </div>
                   </td>
                   <td className="py-3 pr-3 text-ink-2 text-xs whitespace-nowrap">{s.sector || "—"}</td>
+                  <td className="py-3 pr-3 text-right font-medium text-ink tabular-nums whitespace-nowrap">
+                    {s.weights?.portfolio ? `${s.weights.portfolio.toFixed(1)}%` : <span className="text-ink-faint">—</span>}
+                  </td>
                   <td className="py-3 pr-3 text-right text-ink-2 tabular-nums">
                     {s.price != null ? `$${s.price.toFixed(2)}` : "—"}
+                  </td>
+                  <td className="py-3 pr-3 text-right tabular-nums whitespace-nowrap">
+                    {(() => {
+                      const pc = livePreviousCloses[s.ticker];
+                      if (s.price == null || pc == null || pc <= 0) return <span className="text-ink-faint">—</span>;
+                      const chg = ((s.price - pc) / pc) * 100;
+                      return <span className={chg >= 0 ? "text-pos" : "text-neg"}>{chg >= 0 ? "+" : ""}{chg.toFixed(1)}%</span>;
+                    })()}
                   </td>
                   {/* Score = adjusted composite (with regime delta) */}
                   <td className="py-3 pr-3 text-right whitespace-nowrap">
@@ -1940,13 +1951,6 @@ function RankingTable({
                     </span>
                   </td>
                   <td className="py-3 pr-3">{ratingPill(label)}</td>
-                  <td className="py-3 pr-3">
-                    {isFlagged && flagType === "buy" && (
-                      <span className="rounded-full border border-pos-border bg-pos-soft px-2 py-0.5 text-[10px] font-bold text-pos">
-                        BUY CANDIDATE
-                      </span>
-                    )}
-                  </td>
                   <td className="py-3 pr-2 text-right">
                     <button
                       type="button"
@@ -1961,7 +1965,7 @@ function RankingTable({
                 </tr>
                 {expanded && (
                   <tr className="border-b border-line-soft bg-surface-2/70">
-                    <td colSpan={7} className="px-4 py-3">
+                    <td colSpan={8} className="px-4 py-3">
                       <div className="grid gap-4 md:grid-cols-2">
                         <div>
                           <div className="mb-1 text-[10px] font-semibold uppercase tracking-wide text-ink-3">What They Do</div>
