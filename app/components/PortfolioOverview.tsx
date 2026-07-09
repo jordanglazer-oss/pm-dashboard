@@ -55,14 +55,14 @@ const SP500_WEIGHTS_FALLBACK: Record<string, number> = {
 
 // Distinct colors for each GICS sector — all visually distinguishable
 const sectorColors: Record<string, string> = {
-  Technology: "bg-blue-600",
+  Technology: "bg-accent",
   Financials: "bg-teal-500",
-  Energy: "bg-red-500",
-  "Consumer Staples": "bg-amber-500",
+  Energy: "bg-neg-soft0",
+  "Consumer Staples": "bg-warn",
   "Consumer Discretionary": "bg-orange-500",
-  "Health Care": "bg-purple-500",
-  Industrials: "bg-slate-500",
-  "Communication Services": "bg-indigo-500",
+  "Health Care": "bg-violet",
+  Industrials: "bg-surface-20",
+  "Communication Services": "bg-accent",
   Utilities: "bg-lime-500",
   Materials: "bg-cyan-500",
   "Real Estate": "bg-pink-500",
@@ -88,15 +88,15 @@ function fundReturnFmt(val: number | undefined): string {
 }
 
 function fundReturnColor(val: number | undefined): string {
-  if (val == null) return "text-slate-400";
-  return val >= 0 ? "text-emerald-600" : "text-red-500";
+  if (val == null) return "text-ink-3";
+  return val >= 0 ? "text-pos" : "text-neg";
 }
 
 function ratingColor(label: string): string {
-  if (label.includes("Buy")) return "text-emerald-600";
-  if (label.includes("Underweight")) return "text-amber-600";
-  if (label === "Sell") return "text-red-600";
-  return "text-slate-700";
+  if (label.includes("Buy")) return "text-pos";
+  if (label.includes("Underweight")) return "text-warn";
+  if (label === "Sell") return "text-neg";
+  return "text-ink";
 }
 
 type DashboardFilter = "all" | "stocks" | "etf-usd" | "etf-cad" | "mutual-fund";
@@ -1049,12 +1049,12 @@ export function PortfolioOverview() {
               onClick={() => setDashFilter(key)}
               className={`flex items-center gap-1.5 rounded-lg px-3 py-1.5 text-xs font-semibold transition-colors ${
                 active
-                  ? "bg-slate-800 text-white shadow-sm"
-                  : "bg-slate-100 text-slate-500 hover:bg-slate-200 hover:text-slate-700"
+                  ? "bg-ink text-white shadow-sm"
+                  : "bg-surface-2 text-ink-3 hover:bg-line hover:text-ink"
               }`}
             >
               {DASH_FILTER_LABELS[key]}
-              <span className={`rounded-full px-1.5 py-0.5 text-[10px] font-bold ${active ? "bg-white/20 text-white" : "bg-slate-200 text-slate-500"}`}>
+              <span className={`rounded-full px-1.5 py-0.5 text-[10px] font-bold ${active ? "bg-white/20 text-white" : "bg-line text-ink-3"}`}>
                 {count}
               </span>
             </button>
@@ -1063,12 +1063,12 @@ export function PortfolioOverview() {
         </div>
         <div className="ml-auto flex items-center gap-2">
           {refreshAllAt && !refreshingAll && !refreshProgress && (
-            <span className="text-[11px] text-slate-400">Last refreshed {formatRelTimestamp(refreshAllAt)}</span>
+            <span className="text-[11px] text-ink-3">Last refreshed {formatRelTimestamp(refreshAllAt)}</span>
           )}
           <button
             onClick={handleRefreshAll}
             disabled={refreshingAll || scoringAny}
-            className="flex items-center gap-1.5 rounded-xl bg-emerald-600 px-4 py-2 text-xs font-semibold text-white hover:bg-emerald-700 disabled:opacity-50 transition-colors"
+            className="flex items-center gap-1.5 rounded-control bg-pos px-4 py-2 text-xs font-semibold text-white hover:bg-pos disabled:opacity-50 transition-colors"
             title="Refresh prices, technicals, health data, fund metadata and risk alerts for every position (no AI scoring)"
           >
             {refreshingAll ? (
@@ -1089,19 +1089,19 @@ export function PortfolioOverview() {
       </div>
 
       {/* Sector Exposure */}
-      <section className="rounded-[30px] border border-slate-200 bg-white p-5 shadow-sm">
+      <section className="rounded-card border border-line bg-white p-5 shadow-sm">
         <div className="flex items-center gap-3 mb-4 flex-wrap">
-          <h2 className="text-lg font-bold text-slate-800">Portfolio Sector Exposure</h2>
+          <h2 className="text-lg font-bold text-ink">Portfolio Sector Exposure</h2>
           {portfolioBeta != null && (
             <span
-              className="rounded-full bg-slate-100 px-3 py-1 text-xs font-bold text-slate-700"
+              className="rounded-full bg-surface-2 px-3 py-1 text-xs font-bold text-ink"
               title="Weighted average beta across individual stocks only (excludes ETFs/mutual funds). Refreshed from Yahoo on Refresh All Data."
             >
               Portfolio {"\u03B2"} {portfolioBeta.toFixed(2)}
             </span>
           )}
-          <span className="text-sm text-slate-400">Alpha picks only · {alphaCount} stocks (equal-weighted)</span>
-          <span className="ml-auto text-xs text-slate-400">
+          <span className="text-sm text-ink-3">Alpha picks only · {alphaCount} stocks (equal-weighted)</span>
+          <span className="ml-auto text-xs text-ink-3">
             S&amp;P weights:{" "}
             {marketData.sp500SectorWeightsAt
               ? `updated ${formatTimeAgo(marketData.sp500SectorWeightsAt)}`
@@ -1110,21 +1110,21 @@ export function PortfolioOverview() {
                 : "fallback (run Refresh All Data)"}
           </span>
         </div>
-        <div className="flex h-8 rounded-xl overflow-hidden mb-3">
+        <div className="flex h-8 rounded-control overflow-hidden mb-3">
           {sectorExposure.map((s) => (
             <div
               key={s.sector}
-              className={`${sectorColors[s.sector] || "bg-slate-400"} flex items-center justify-center text-[11px] font-semibold text-white`}
+              className={`${sectorColors[s.sector] || "bg-ink-3"} flex items-center justify-center text-[11px] font-semibold text-white`}
               style={{ width: `${s.weight}%` }}
             >
               {s.weight >= 8 && `${s.weight}%`}
             </div>
           ))}
         </div>
-        <div className="flex flex-wrap gap-x-4 gap-y-1 text-xs text-slate-500 mb-4">
+        <div className="flex flex-wrap gap-x-4 gap-y-1 text-xs text-ink-3 mb-4">
           {sectorExposure.map((s) => (
             <span key={s.sector} className="flex items-center gap-1.5">
-              <span className={`h-2 w-2 rounded-full ${sectorColors[s.sector] || "bg-slate-400"}`} />
+              <span className={`h-2 w-2 rounded-full ${sectorColors[s.sector] || "bg-ink-3"}`} />
               {s.sector} {s.weight}% ({s.count})
             </span>
           ))}
@@ -1135,9 +1135,9 @@ export function PortfolioOverview() {
             const spWeight = sp500Weights[s.sector] || 0;
             const diff = s.weight - spWeight;
             return (
-              <div key={s.sector} className="flex items-center justify-between rounded-lg bg-slate-50 px-3 py-1.5">
-                <span className="text-xs text-slate-600">{s.sector}</span>
-                <span className={`text-xs font-semibold ${diff > 0 ? "text-emerald-600" : diff < 0 ? "text-red-500" : "text-slate-400"}`}>
+              <div key={s.sector} className="flex items-center justify-between rounded-lg bg-surface-2 px-3 py-1.5">
+                <span className="text-xs text-ink-2">{s.sector}</span>
+                <span className={`text-xs font-semibold ${diff > 0 ? "text-pos" : diff < 0 ? "text-neg" : "text-ink-3"}`}>
                   {diff > 0 ? "+" : ""}{parseFloat(diff.toFixed(1))}% vs S&P
                 </span>
               </div>
@@ -1239,10 +1239,10 @@ export function PortfolioOverview() {
           return fundSortDir === "asc" ? cmp : -cmp;
         });
 
-        const fThClass = "pb-2 font-semibold cursor-pointer select-none hover:text-slate-800 transition-colors whitespace-nowrap";
+        const fThClass = "pb-2 font-semibold cursor-pointer select-none hover:text-ink transition-colors whitespace-nowrap";
 
         return (
-          <section className="rounded-[30px] border border-indigo-200 bg-white p-5 shadow-sm">
+          <section className="rounded-card border border-accent-border bg-white p-5 shadow-sm">
             <div className={`flex items-center gap-3 ${fundCollapsed ? "" : "mb-4"}`}>
               <button
                 onClick={toggleFundCollapsed}
@@ -1250,18 +1250,18 @@ export function PortfolioOverview() {
                 aria-expanded={!fundCollapsed}
                 aria-label={fundCollapsed ? "Expand Fund & ETF Holdings" : "Collapse Fund & ETF Holdings"}
               >
-                <svg className={`w-4 h-4 text-slate-400 transition-transform ${fundCollapsed ? "-rotate-90" : ""}`} fill="none" stroke="currentColor" strokeWidth="2.5" viewBox="0 0 24 24">
+                <svg className={`w-4 h-4 text-ink-3 transition-transform ${fundCollapsed ? "-rotate-90" : ""}`} fill="none" stroke="currentColor" strokeWidth="2.5" viewBox="0 0 24 24">
                   <path strokeLinecap="round" strokeLinejoin="round" d="M19 9l-7 7-7-7" />
                 </svg>
-                <h2 className="text-lg font-bold text-slate-800">Fund & ETF Holdings</h2>
+                <h2 className="text-lg font-bold text-ink">Fund & ETF Holdings</h2>
               </button>
-              <span className="text-sm text-slate-400">{fundPortfolio.length} holdings</span>
+              <span className="text-sm text-ink-3">{fundPortfolio.length} holdings</span>
             </div>
             {!fundCollapsed && (
             <div className="overflow-x-auto">
               <table className="w-full min-w-[800px] text-left text-sm">
                 <thead>
-                  <tr className="border-b border-slate-200 text-xs text-slate-500">
+                  <tr className="border-b border-line text-xs text-ink-3">
                     <th className={fThClass} onClick={() => handleFundSort("ticker")}>
                       Ticker<FundSortIcon field="ticker" sortField={fundSort} sortDir={fundSortDir} />
                     </th>
@@ -1310,10 +1310,10 @@ export function PortfolioOverview() {
                       typeof v === "number" && Number.isFinite(v) && v > 0;
                     const hasMer = validMer(autoMer) || validMer(manualMer);
                     return (
-                      <tr key={s.ticker} className="border-b border-slate-50 hover:bg-slate-50/50 transition-colors">
+                      <tr key={s.ticker} className="border-b border-line-soft hover:bg-surface-hover transition-colors">
                         <td className="py-3">
                           <div className="flex items-center gap-2">
-                            <Link href={`/stock/${s.ticker.toLowerCase()}`} className="font-bold text-slate-800 hover:underline font-mono">
+                            <Link href={`/stock/${s.ticker.toLowerCase()}`} className="font-bold text-ink hover:underline font-mono">
                               {displayTicker(s.ticker)}
                             </Link>
                             {(() => {
@@ -1324,7 +1324,7 @@ export function PortfolioOverview() {
                                 : risk.priority === "Medium-High"
                                   ? "bg-orange-100 text-orange-800 border-orange-300"
                                   : risk.priority === "Medium"
-                                    ? "bg-amber-100 text-amber-800 border-amber-300"
+                                    ? "bg-warn-soft text-warn border-warn-border"
                                     : "bg-yellow-100 text-yellow-800 border-yellow-300";
                               return (
                                 <span
@@ -1345,16 +1345,16 @@ export function PortfolioOverview() {
                                     ? "Auto-fetch returned 0% — almost certainly wrong for a fund/ETF. Click to enter the real MER as a manual override."
                                     : "No MER on file — click to add a manual override. Missing MERs show as 0% in the Client Report blended-fee calc."
                                 }
-                                className="rounded-md bg-amber-100 px-1.5 py-0.5 text-[9px] font-bold uppercase tracking-wider text-amber-700 hover:bg-amber-200 transition-colors"
+                                className="rounded-md bg-warn-soft px-1.5 py-0.5 text-[9px] font-bold uppercase tracking-wider text-warn hover:bg-warn-soft transition-colors"
                               >
                                 ⚠ No MER
                               </Link>
                             )}
                           </div>
                         </td>
-                        <td className="py-3 text-slate-600 max-w-[180px] truncate">{s.name}</td>
+                        <td className="py-3 text-ink-2 max-w-[180px] truncate">{s.name}</td>
                         <td className="py-3">
-                          <span className={`rounded-md px-2 py-0.5 text-[10px] font-bold ${s.instrumentType === "etf" ? "bg-indigo-100 text-indigo-700" : "bg-purple-100 text-purple-700"}`}>
+                          <span className={`rounded-md px-2 py-0.5 text-[10px] font-bold ${s.instrumentType === "etf" ? "bg-accent-soft text-accent" : "bg-violet-soft text-violet"}`}>
                             {INSTRUMENT_LABELS[s.instrumentType || "stock"]}
                           </span>
                         </td>
@@ -1365,14 +1365,14 @@ export function PortfolioOverview() {
                             const sl = (s.sector || "").toLowerCase();
                             const isBondOrAlt = sl.includes("bond") || sl.includes("fixed") || nl.includes("bond") || nl.includes("fixed income")
                               || sl.includes("alternative") || nl.includes("alternative") || nl.includes("premium yield") || nl.includes("premium incom") || nl.includes("hedge") || nl.includes("option income") || nl.includes("option writing") || nl.includes("covered call");
-                            if (isBondOrAlt) return <span className="text-[10px] text-slate-300">—</span>;
+                            if (isBondOrAlt) return <span className="text-[10px] text-ink-faint">—</span>;
                             return (
                               <button
                                 onClick={() => updateStockFields(s.ticker, { designation: (s.designation || "alpha") === "core" ? "alpha" : "core" })}
                                 className={`rounded-md px-2 py-0.5 text-[10px] font-bold transition-colors ${
                                   (s.designation || "alpha") === "core"
-                                    ? "bg-blue-100 text-blue-700 hover:bg-blue-200"
-                                    : "bg-amber-100 text-amber-700 hover:bg-amber-200"
+                                    ? "bg-accent-soft text-accent hover:bg-accent-soft"
+                                    : "bg-warn-soft text-warn hover:bg-warn-soft"
                                 }`}
                               >
                                 {(s.designation || "alpha") === "core" ? "Core" : "Alpha"}
@@ -1380,7 +1380,7 @@ export function PortfolioOverview() {
                             );
                           })()}
                         </td>
-                        <td className="py-3 text-right text-slate-600">{s.price != null ? `$${s.price.toFixed(2)}` : "—"}</td>
+                        <td className="py-3 text-right text-ink-2">{s.price != null ? `$${s.price.toFixed(2)}` : "—"}</td>
                         <td className={`py-3 text-right text-xs font-semibold ${fundReturnColor(perf?.ytd)}`}>{fundReturnFmt(perf?.ytd)}</td>
                         <td className={`py-3 text-right text-xs font-semibold ${fundReturnColor(perf?.oneYear)}`}>{fundReturnFmt(perf?.oneYear)}</td>
                         <td className={`py-3 text-right text-xs font-semibold ${fundReturnColor(perf?.threeYear)}`}>{fundReturnFmt(perf?.threeYear)}</td>
@@ -1508,12 +1508,12 @@ function RankingTable({
   };
 
   const GROUP_HEADER_COLORS: Record<string, string> = {
-    "Long-term": "text-blue-600",
-    Research: "text-purple-600",
+    "Long-term": "text-accent",
+    Research: "text-violet",
     Technicals: "text-teal-600",
-    Fundamental: "text-emerald-600",
-    "Company Specific": "text-amber-600",
-    Management: "text-red-600",
+    Fundamental: "text-pos",
+    "Company Specific": "text-warn",
+    Management: "text-neg",
   };
 
   function toggleSort(key: RankingSortKey) {
@@ -1589,16 +1589,16 @@ function RankingTable({
     displayRows = buildGroup(sorted).map((r) => ({ kind: "stock", ...r } as DisplayRow));
   }
 
-  const thClass = "pb-2 pr-3 cursor-pointer hover:text-slate-800 select-none whitespace-nowrap";
+  const thClass = "pb-2 pr-3 cursor-pointer hover:text-ink select-none whitespace-nowrap";
   // Sticky first column — ticker + company name stay visible while the rest of
   // the row scrolls horizontally. `left-0` pins it to the scroll container.
   // The explicit bg matches the row background (white, or the hover tint via
   // the `group` pattern on the parent <tr>) so the scrolled-under columns
   // don't bleed through. `z-10` on body cells, `z-20` on header to stay above.
   const stickyHeadCls =
-    "pb-2 pr-4 cursor-pointer hover:text-slate-800 select-none whitespace-nowrap sticky left-0 z-20 bg-white";
+    "pb-2 pr-4 cursor-pointer hover:text-ink select-none whitespace-nowrap sticky left-0 z-20 bg-white";
   const stickyCellCls =
-    "py-3 pr-4 sticky left-0 z-10 bg-white group-hover:bg-slate-50/80 align-top";
+    "py-3 pr-4 sticky left-0 z-10 bg-white group-hover:bg-surface-hover align-top";
 
   const scoreableCount = stocks.filter((s) => isScoreable(s)).length;
   const chartingNonZeroCount = stocks.filter((s) => isScoreable(s) && (s.scores?.charting ?? 0) > 0).length;
@@ -1667,7 +1667,7 @@ function RankingTable({
   };
 
   return (
-    <section className="rounded-[30px] border border-slate-200 bg-white p-5 shadow-sm">
+    <section className="rounded-card border border-line bg-white p-5 shadow-sm">
       <div className={`flex items-center gap-3 flex-wrap ${collapsed ? "" : "mb-4"}`}>
         {collapseKey ? (
           <button
@@ -1677,7 +1677,7 @@ function RankingTable({
             aria-label={collapsed ? `Expand ${title}` : `Collapse ${title}`}
           >
             <svg
-              className={`w-4 h-4 text-slate-400 transition-transform ${collapsed ? "-rotate-90" : ""}`}
+              className={`w-4 h-4 text-ink-3 transition-transform ${collapsed ? "-rotate-90" : ""}`}
               fill="none"
               stroke="currentColor"
               strokeWidth="2.5"
@@ -1685,23 +1685,23 @@ function RankingTable({
             >
               <path strokeLinecap="round" strokeLinejoin="round" d="M19 9l-7 7-7-7" />
             </svg>
-            <h2 className="text-lg font-bold text-slate-800">{title}</h2>
+            <h2 className="text-lg font-bold text-ink">{title}</h2>
           </button>
         ) : (
-          <h2 className="text-lg font-bold text-slate-800">{title}</h2>
+          <h2 className="text-lg font-bold text-ink">{title}</h2>
         )}
-        <span className="text-sm text-slate-400">{subtitle}</span>
+        <span className="text-sm text-ink-3">{subtitle}</span>
         {onScoreAll && (
           <div className="ml-auto flex items-center gap-2">
             {lastScoredAt && !scoring && (
-              <span className="text-[11px] text-slate-400">
+              <span className="text-[11px] text-ink-3">
                 Last scored {formatRelTimestamp(lastScoredAt)}
               </span>
             )}
             {onClearCharting && chartingNonZeroCount > 0 && (
               <button
                 onClick={onClearCharting}
-                className="flex items-center gap-1 rounded-lg px-2.5 py-1.5 text-xs font-semibold text-slate-600 bg-slate-100 hover:bg-slate-200 border border-slate-200 transition-colors"
+                className="flex items-center gap-1 rounded-lg px-2.5 py-1.5 text-xs font-semibold text-ink-2 bg-surface-2 hover:bg-line border border-line transition-colors"
                 title={`Reset charting score to 0 for ${chartingNonZeroCount} stock${chartingNonZeroCount > 1 ? "s" : ""}`}
               >
                 <svg className="w-3.5 h-3.5" fill="none" stroke="currentColor" strokeWidth="2" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" d="M16.023 9.348h4.992v-.001M2.985 19.644v-4.992m0 0h4.992m-4.993 0 3.181 3.183a8.25 8.25 0 0 0 13.803-3.7M4.031 9.865a8.25 8.25 0 0 1 13.803-3.7l3.181 3.182" /></svg>
@@ -1712,7 +1712,7 @@ function RankingTable({
               <>
                 <button
                   onClick={handleExportBoostedCsv}
-                  className="flex items-center gap-1 rounded-lg px-2.5 py-1.5 text-xs font-semibold text-slate-600 bg-slate-100 hover:bg-slate-200 border border-slate-200 transition-colors"
+                  className="flex items-center gap-1 rounded-lg px-2.5 py-1.5 text-xs font-semibold text-ink-2 bg-surface-2 hover:bg-line border border-line transition-colors"
                   title="Download a BoostedAI-ready CSV (ISIN,SYMBOL,COUNTRY,CURRENCY) for the watchlist"
                 >
                   <svg className="w-3.5 h-3.5" fill="none" stroke="currentColor" strokeWidth="2" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" d="M3 16.5v2.25A2.25 2.25 0 0 0 5.25 21h13.5A2.25 2.25 0 0 0 21 18.75V16.5M16.5 12 12 16.5m0 0L7.5 12m4.5 4.5V3" /></svg>
@@ -1720,7 +1720,7 @@ function RankingTable({
                 </button>
                 <button
                   onClick={handleCopySia}
-                  className="flex items-center gap-1 rounded-lg px-2.5 py-1.5 text-xs font-semibold text-slate-600 bg-slate-100 hover:bg-slate-200 border border-slate-200 transition-colors"
+                  className="flex items-center gap-1 rounded-lg px-2.5 py-1.5 text-xs font-semibold text-ink-2 bg-surface-2 hover:bg-line border border-line transition-colors"
                   title="Copy the watchlist symbols (SIA / SIACharts format) to paste into a matrix"
                 >
                   <svg className="w-3.5 h-3.5" fill="none" stroke="currentColor" strokeWidth="2" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" d="M15.666 3.888A2.25 2.25 0 0 0 13.5 2.25h-3c-1.03 0-1.9.693-2.166 1.638m7.332 0c.055.194.084.4.084.612v0a.75.75 0 0 1-.75.75H9a.75.75 0 0 1-.75-.75v0c0-.212.03-.418.084-.612m7.332 0c.646.049 1.288.11 1.927.184 1.1.128 1.907 1.077 1.907 2.185V19.5a2.25 2.25 0 0 1-2.25 2.25H6.75A2.25 2.25 0 0 1 4.5 19.5V6.257c0-1.108.806-2.057 1.907-2.185a48.208 48.208 0 0 1 1.927-.184" /></svg>
@@ -1729,7 +1729,7 @@ function RankingTable({
                 <button
                   onClick={handleCopyMarketEdge}
                   disabled={marketEdgeState === "loading"}
-                  className="flex items-center gap-1 rounded-lg px-2.5 py-1.5 text-xs font-semibold text-slate-600 bg-slate-100 hover:bg-slate-200 border border-slate-200 transition-colors disabled:opacity-60"
+                  className="flex items-center gap-1 rounded-lg px-2.5 py-1.5 text-xs font-semibold text-ink-2 bg-surface-2 hover:bg-line border border-line transition-colors disabled:opacity-60"
                   title="Copy US watchlist symbols for MarketEdge — one per line. US names + Canadian names FactSet confirms are interlisted (dual-listed in the US); Canadian-only names excluded."
                 >
                   {marketEdgeState === "loading" ? (
@@ -1749,7 +1749,7 @@ function RankingTable({
               onClick={onScoreAll}
               disabled={scoreAllDisabled || scoreableCount === 0}
               className={`flex items-center gap-1.5 rounded-lg px-3 py-1.5 text-xs font-semibold text-white transition-colors disabled:opacity-50 ${
-                flagType === "review" ? "bg-blue-600 hover:bg-blue-700" : "bg-slate-600 hover:bg-slate-700"
+                flagType === "review" ? "bg-accent hover:bg-accent-ink" : "bg-ink hover:bg-ink"
               }`}
               title={`Score all ${title.toLowerCase()} stocks with Claude`}
             >
@@ -1770,12 +1770,12 @@ function RankingTable({
       </div>
       {/* Score All failure banner — persists until dismissed */}
       {!scoring && scoreFailures && scoreFailures.length > 0 && (
-        <div className="mx-4 mt-2 flex items-center gap-2 rounded-lg bg-red-50 border border-red-200 px-3 py-2 text-xs text-red-700">
+        <div className="mx-4 mt-2 flex items-center gap-2 rounded-lg bg-neg-soft border border-neg-border px-3 py-2 text-xs text-neg">
           <svg className="w-4 h-4 flex-shrink-0" fill="none" stroke="currentColor" strokeWidth="2" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" d="M12 9v3.75m-9.303 3.376c-.866 1.5.217 3.374 1.948 3.374h14.71c1.73 0 2.813-1.874 1.948-3.374L13.949 3.378c-.866-1.5-3.032-1.5-3.898 0L2.697 16.126ZM12 15.75h.007v.008H12v-.008Z" /></svg>
           <span className="font-medium">{scoreFailures.length} stock{scoreFailures.length > 1 ? "s" : ""} failed to score: {scoreFailures.join(", ")}</span>
-          <span className="text-red-500">— try scoring individually from the stock page</span>
+          <span className="text-neg">— try scoring individually from the stock page</span>
           {onDismissFailures && (
-            <button onClick={onDismissFailures} className="ml-auto text-red-400 hover:text-red-600">
+            <button onClick={onDismissFailures} className="ml-auto text-neg hover:text-neg">
               <svg className="w-4 h-4" fill="none" stroke="currentColor" strokeWidth="2" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" d="M6 18 18 6M6 6l12 12" /></svg>
             </button>
           )}
@@ -1788,7 +1788,7 @@ function RankingTable({
         );
         if (missingSummaries.length === 0 && !backfilling) return null;
         return (
-          <div className="mx-4 mt-2 flex items-center gap-2 rounded-lg bg-amber-50 border border-amber-200 px-3 py-2 text-xs text-amber-700">
+          <div className="mx-4 mt-2 flex items-center gap-2 rounded-lg bg-warn-soft border border-warn-border px-3 py-2 text-xs text-warn">
             {backfilling ? (
               <>
                 <svg className="w-3.5 h-3.5 animate-spin flex-shrink-0" fill="none" stroke="currentColor" strokeWidth="2" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" d="M16.023 9.348h4.992v-.001M2.985 19.644v-4.992m0 0h4.992m-4.993 0 3.181 3.183a8.25 8.25 0 0 0 13.803-3.7M4.031 9.865a8.25 8.25 0 0 1 13.803-3.7l3.181 3.182" /></svg>
@@ -1802,7 +1802,7 @@ function RankingTable({
                   <button
                     onClick={onBackfillSummaries}
                     disabled={scoreAllDisabled}
-                    className="ml-1 rounded bg-amber-600 px-2 py-0.5 text-[11px] font-semibold text-white hover:bg-amber-700 disabled:opacity-50"
+                    className="ml-1 rounded bg-warn px-2 py-0.5 text-[11px] font-semibold text-white hover:bg-warn disabled:opacity-50"
                   >
                     Fill ({missingSummaries.length}) — ~$0.01
                   </button>
@@ -1849,19 +1849,19 @@ function RankingTable({
         );
       })()}
       {!collapsed && sorted.length === 0 && (
-        <div className="mx-4 my-6 rounded-xl border border-dashed border-slate-300 bg-slate-50 p-8 text-center">
-          <svg className="w-10 h-10 mx-auto mb-3 text-slate-300" fill="none" stroke="currentColor" strokeWidth="1.5" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" d="M3.75 6h16.5M3.75 12h16.5m-16.5 5.25h16.5" /></svg>
-          <p className="text-sm font-semibold text-slate-600 mb-1">
+        <div className="mx-4 my-6 rounded-control border border-dashed border-line bg-surface-2 p-8 text-center">
+          <svg className="w-10 h-10 mx-auto mb-3 text-ink-faint" fill="none" stroke="currentColor" strokeWidth="1.5" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" d="M3.75 6h16.5M3.75 12h16.5m-16.5 5.25h16.5" /></svg>
+          <p className="text-sm font-semibold text-ink-2 mb-1">
             {flagType === "review"
               ? "No portfolio holdings yet"
               : "Watchlist is empty"}
           </p>
-          <p className="text-xs text-slate-400 mb-3 max-w-md mx-auto">
+          <p className="text-xs text-ink-3 mb-3 max-w-md mx-auto">
             {flagType === "review"
               ? "Add a stock to start building your portfolio. Click + Add in the top nav or press Shift + A."
               : "Add candidates here when you're researching but not yet ready to own. Click + Add or press Shift + A."}
           </p>
-          <kbd className="rounded border border-slate-300 bg-white px-2 py-1 text-[11px] font-mono text-slate-500">
+          <kbd className="rounded border border-line bg-white px-2 py-1 text-[11px] font-mono text-ink-3">
             Shift + A
           </kbd>
         </div>
@@ -1870,9 +1870,9 @@ function RankingTable({
       <div className="max-h-[80vh] overflow-auto">
         <table className="w-full min-w-[1400px] text-left text-sm">
           <thead className="sticky top-0 z-20 bg-white shadow-[0_1px_0_0_rgb(226_232_240)]">
-            <tr className="border-b border-slate-200 text-xs text-slate-500">
+            <tr className="border-b border-line text-xs text-ink-3">
               <th className={stickyHeadCls} onClick={() => toggleSort("ticker")}>
-                <span className="text-slate-400 mr-1">#</span>Ticker{arrow("ticker")}
+                <span className="text-ink-3 mr-1">#</span>Ticker{arrow("ticker")}
               </th>
               <th className={thClass} onClick={() => toggleSort("sector")}>Sector{arrow("sector")}</th>
               <th className={`${thClass} text-right`} onClick={() => toggleSort("price")}>Price{arrow("price")}</th>
@@ -1893,17 +1893,17 @@ function RankingTable({
             {displayRows.map((row) => {
               if (row.kind === "header") {
                 return (
-                  <tr key={row.key} className="bg-slate-50/80">
-                    <td colSpan={40} className="p-0 sticky left-0 bg-slate-50/80 z-10">
+                  <tr key={row.key} className="bg-surface-hover">
+                    <td colSpan={40} className="p-0 sticky left-0 bg-surface-hover z-10">
                       <button
                         type="button"
                         onClick={() => collapseKey && setUiPref(`${collapseKey}.${row.currencyKey}`, row.collapsed ? "0" : "1")}
-                        className="flex w-full items-center gap-1.5 py-1.5 px-2 text-[11px] font-bold uppercase tracking-wider text-slate-500 hover:bg-slate-100 transition-colors text-left"
+                        className="flex w-full items-center gap-1.5 py-1.5 px-2 text-[11px] font-bold uppercase tracking-wider text-ink-3 hover:bg-surface-2 transition-colors text-left"
                         aria-expanded={!row.collapsed}
                         title={row.collapsed ? "Expand" : "Collapse"}
                       >
-                        <span className={`text-slate-400 transition-transform ${row.collapsed ? "-rotate-90" : ""}`}>{"▾"}</span>
-                        {row.label} <span className="font-medium normal-case text-slate-400">· {row.count}</span>
+                        <span className={`text-ink-3 transition-transform ${row.collapsed ? "-rotate-90" : ""}`}>{"▾"}</span>
+                        {row.label} <span className="font-medium normal-case text-ink-3">· {row.count}</span>
                       </button>
                     </td>
                   </tr>
@@ -1916,12 +1916,12 @@ function RankingTable({
               const isFlagged = row.flagged;
 
               return (
-                <tr key={s.ticker} className="group border-b border-slate-50 hover:bg-slate-50/80 transition-colors [&>td]:align-top">
+                <tr key={s.ticker} className="group border-b border-line-soft hover:bg-surface-hover transition-colors [&>td]:align-top">
                   <td className={stickyCellCls}>
                     <div className="flex items-center gap-2">
-                      <span className="text-slate-400 text-xs w-5 text-right">{i + 1}</span>
+                      <span className="text-ink-3 text-xs w-5 text-right">{i + 1}</span>
                       <Link href={`/stock/${s.ticker.toLowerCase()}`} className="hover:underline block">
-                        <div className="font-bold text-slate-800 font-mono flex items-center gap-1.5">
+                        <div className="font-bold text-ink font-mono flex items-center gap-1.5">
                           {displayTicker(s.ticker)}
                           {(() => {
                             const risk = riskScanByTicker?.get(normalizeRiskTicker(s.ticker));
@@ -1931,7 +1931,7 @@ function RankingTable({
                               : risk.priority === "Medium-High"
                                 ? "bg-orange-100 text-orange-800 border-orange-300"
                                 : risk.priority === "Medium"
-                                  ? "bg-amber-100 text-amber-800 border-amber-300"
+                                  ? "bg-warn-soft text-warn border-warn-border"
                                   : "bg-yellow-100 text-yellow-800 border-yellow-300";
                             return (
                               <span
@@ -1943,12 +1943,12 @@ function RankingTable({
                             );
                           })()}
                         </div>
-                        <div className="text-xs text-slate-400 max-w-[160px] truncate" title={s.name}>{s.name}</div>
+                        <div className="text-xs text-ink-3 max-w-[160px] truncate" title={s.name}>{s.name}</div>
                       </Link>
                     </div>
                   </td>
-                  <td className="py-3 pr-3 text-slate-600 text-xs whitespace-nowrap">{s.sector || "—"}</td>
-                  <td className="py-3 pr-3 text-right text-slate-600 tabular-nums">
+                  <td className="py-3 pr-3 text-ink-2 text-xs whitespace-nowrap">{s.sector || "—"}</td>
+                  <td className="py-3 pr-3 text-right text-ink-2 tabular-nums">
                     {s.price != null ? `$${s.price.toFixed(2)}` : "—"}
                   </td>
                   {(() => {
@@ -1963,7 +1963,7 @@ function RankingTable({
                       (!!s.companySummary && (s.companySummary.length > 140 || s.companySummary.includes("\n"))) ||
                       (!!s.investmentThesis && (s.investmentThesis.length > 140 || s.investmentThesis.includes("\n")));
                     const renderCell = (text: string | undefined) => {
-                      if (!text) return <span className="text-slate-300">—</span>;
+                      if (!text) return <span className="text-ink-faint">—</span>;
                       return (
                         <div className="max-w-[320px] whitespace-normal leading-relaxed">
                           <div className={expanded ? "" : "line-clamp-2"}>{text}</div>
@@ -1971,7 +1971,7 @@ function RankingTable({
                             <button
                               type="button"
                               onClick={() => toggleRowExpanded(s.ticker)}
-                              className="mt-1 text-[10px] font-semibold text-blue-600 hover:text-blue-800 hover:underline"
+                              className="mt-1 text-[10px] font-semibold text-accent hover:text-accent hover:underline"
                             >
                               {expanded ? "Show less" : "Show more"}
                             </button>
@@ -1981,31 +1981,31 @@ function RankingTable({
                     };
                     return (
                       <>
-                        <td className="py-3 pr-3 text-xs text-slate-600 align-top">
+                        <td className="py-3 pr-3 text-xs text-ink-2 align-top">
                           {renderCell(s.companySummary)}
                         </td>
-                        <td className="py-3 pr-3 text-xs text-slate-600 align-top">
+                        <td className="py-3 pr-3 text-xs text-ink-2 align-top">
                           {renderCell(s.investmentThesis)}
                         </td>
                       </>
                     );
                   })()}
-                  <td className="py-3 pr-3 text-slate-500">{Number(s.raw.toFixed(1))}</td>
+                  <td className="py-3 pr-3 text-ink-3">{Number(s.raw.toFixed(1))}</td>
                   <td className="py-3 pr-3">
-                    <span className="font-bold text-slate-900">{Number(s.adjusted.toFixed(1))}</span>
-                    <span className={`ml-0.5 text-xs ${adj >= 0 ? "text-emerald-500" : "text-red-500"}`}>
+                    <span className="font-bold text-ink">{Number(s.adjusted.toFixed(1))}</span>
+                    <span className={`ml-0.5 text-xs ${adj >= 0 ? "text-pos" : "text-neg"}`}>
                       {adj >= 0 ? "+" : ""}{adj}
                     </span>
                   </td>
                   {SCORE_GROUPS.map((g) => (
-                    <td key={g.name} className="py-3 pr-3 text-slate-600">
+                    <td key={g.name} className="py-3 pr-3 text-ink-2">
                       {groupTotal(s, g)}/{g.maxTotal}
                     </td>
                   ))}
                   <td className={`py-3 pr-3 font-medium ${ratingColor(label)}`}>{label}</td>
                   <td className="py-3 pr-3">
                     {isFlagged && flagType === "buy" && (
-                      <span className="rounded-full border border-emerald-200 bg-emerald-50 px-2 py-0.5 text-[10px] font-bold text-emerald-600">
+                      <span className="rounded-full border border-pos-border bg-pos-soft px-2 py-0.5 text-[10px] font-bold text-pos">
                         BUY CANDIDATE
                       </span>
                     )}
