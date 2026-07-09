@@ -2811,7 +2811,7 @@ export function PimPortfolio({ groups }: Props) {
                       <>
                         <td className="py-2.5 px-2 text-right font-mono text-ink">{row.units > 0 ? pct(row.currentPct) : "-"}</td>
                         <td className={`py-2.5 px-2 text-right font-mono font-semibold ${row.driftPct > 0.0001 ? "text-pos" : row.driftPct < -0.0001 ? "text-neg" : "text-ink-3"}`}>
-                          {row.units > 0 ? `${row.driftPct > 0 ? "+" : ""}${(row.driftPct * 100).toFixed(1)}` : "-"}
+                          {row.units > 0 ? `${row.driftPct > 0 ? "+" : ""}${(row.driftPct * 100).toFixed(1)}%` : "-"}
                         </td>
                       </>
                     )}
