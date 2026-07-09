@@ -1,7 +1,17 @@
 "use client";
 
 import Link from "next/link";
-import { usePathname } from "next/navigation";
+import { usePathname, useSearchParams, useRouter } from "next/navigation";
+import { useStocks } from "@/app/lib/StockContext";
+
+/** Version (profile) options for the shared header selector — the 4 named
+ *  sleeves from the handoff. Values match PimProfileType. */
+const VERSIONS: { value: string; label: string }[] = [
+  { value: "conservative", label: "Conservative" },
+  { value: "balanced", label: "Balanced" },
+  { value: "growth", label: "Growth" },
+  { value: "allEquity", label: "All-Equity" },
+];
 
 /**
  * Segmented switcher for the consolidated "Portfolio" hub. The redesign merges
@@ -22,6 +32,9 @@ const SEGMENTS: { label: string; href: string }[] = [
 
 export function PortfolioTabs() {
   const pathname = usePathname();
+  const searchParams = useSearchParams();
+  const router = useRouter();
+  const { pimModels } = useStocks();
 
   const isHub =
     pathname === "/" ||
@@ -39,6 +52,17 @@ export function PortfolioTabs() {
     : pathname === "/aa-performance" ? "/aa-performance"
     : pathname.startsWith("/portfolio") ? "/portfolio"
     : "/"; // "/", "/scoring", "/stock/*"
+
+  // Shared Model (group) + Version (profile) live in the URL so they flow
+  // across every segment and stay deep-linkable.
+  const groups = pimModels?.groups ?? [];
+  const model = searchParams.get("model") || groups[0]?.id || "pim";
+  const version = searchParams.get("version") || "allEquity"; // matches Positioning's default
+  const setParam = (key: string, val: string) => {
+    const p = new URLSearchParams(Array.from(searchParams.entries()));
+    p.set(key, val);
+    router.replace(`${pathname}?${p.toString()}`, { scroll: false });
+  };
 
   return (
     <div className="bg-surface border-b border-line print:hidden">
@@ -61,6 +85,34 @@ export function PortfolioTabs() {
               </Link>
             );
           })}
+        </div>
+
+        {/* Shared Model + Version selectors — drive the live weights + Positioning. */}
+        <div className="ml-auto flex items-center gap-3 shrink-0">
+          <label className="flex items-center gap-1.5">
+            <span className="text-[11px] font-semibold uppercase tracking-wide text-ink-3">Model</span>
+            <select
+              value={model}
+              onChange={(e) => setParam("model", e.target.value)}
+              className="rounded-control border border-line bg-surface px-2 py-1 text-[12px] text-ink outline-none focus:border-accent"
+            >
+              {groups.length === 0 ? (
+                <option value="pim">PIM</option>
+              ) : (
+                groups.map((g) => <option key={g.id} value={g.id}>{g.name}</option>)
+              )}
+            </select>
+          </label>
+          <label className="flex items-center gap-1.5">
+            <span className="text-[11px] font-semibold uppercase tracking-wide text-ink-3">Version</span>
+            <select
+              value={version}
+              onChange={(e) => setParam("version", e.target.value)}
+              className="rounded-control border border-line bg-surface px-2 py-1 text-[12px] text-ink outline-none focus:border-accent"
+            >
+              {VERSIONS.map((v) => <option key={v.value} value={v.value}>{v.label}</option>)}
+            </select>
+          </label>
         </div>
       </div>
     </div>

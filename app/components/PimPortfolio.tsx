@@ -1,6 +1,7 @@
 "use client";
 
 import React, { useState, useEffect, useMemo, useCallback, useRef } from "react";
+import { useSearchParams } from "next/navigation";
 import Link from "next/link";
 import type {
   PimModelGroup,
@@ -296,7 +297,18 @@ export function PimPortfolio({ groups }: Props) {
   const { uiPrefs, setUiPref, stocks, pimPortfolioState, updatePimPortfolioState, getGroupState, addStock, scoredStocks, pimModels, updatePimModels, moveBucket, rebalanceStockWeights, updateStockFields } = useStocks();
 
   const selectedGroupId = "pim";
-  const [selectedProfile, setSelectedProfile] = useState<PimProfileType>("allEquity");
+  // Version (profile) is shared via the URL (?version=) so the header selector
+  // in PortfolioTabs drives the Positioning tab too. Falls back to allEquity.
+  const searchParams = useSearchParams();
+  const urlVersion = searchParams.get("version");
+  const [selectedProfile, setSelectedProfile] = useState<PimProfileType>(
+    (urlVersion as PimProfileType) || "allEquity",
+  );
+  useEffect(() => {
+    if (urlVersion && urlVersion !== selectedProfile) {
+      setSelectedProfile(urlVersion as PimProfileType);
+    }
+  }, [urlVersion]); // eslint-disable-line react-hooks/exhaustive-deps
   const [positions, setPositions] = useState<PimPortfolioPositions[]>([]);
   // Refs that mirror the live state for use inside the Buy / Sell
   // multi-trade loop. React's setState is async — back-to-back trades
