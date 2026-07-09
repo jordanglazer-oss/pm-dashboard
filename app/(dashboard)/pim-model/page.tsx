@@ -8,11 +8,11 @@ export default function PimModelPage() {
   const { pimModels } = useStocks();
 
   return (
-    <main className="min-h-screen bg-[#f4f5f7] px-4 py-6 text-slate-900 md:px-8 md:py-8 overflow-x-hidden">
+    <main className="min-h-screen bg-ground px-4 py-6 text-ink md:px-8 md:py-8 overflow-x-hidden">
       <div className="mx-auto max-w-7xl">
         <div className="mb-6">
-          <h1 className="text-2xl font-bold text-slate-800">PIM Model</h1>
-          <p className="text-sm text-slate-500 mt-1">
+          <h1 className="text-2xl font-bold text-ink">PIM Model</h1>
+          <p className="text-sm text-ink-3 mt-1">
             Portfolio Investment Model — asset allocation and holdings across model groups
           </p>
         </div>

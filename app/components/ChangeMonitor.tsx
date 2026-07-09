@@ -24,16 +24,16 @@ const TYPE_LABELS: Record<ChangeType, string> = {
 };
 
 const SEV_DOT: Record<Severity, string> = {
-  down: "bg-red-500",
-  warn: "bg-amber-400",
-  info: "bg-blue-500",
-  up: "bg-emerald-500",
+  down: "bg-neg",
+  warn: "bg-warn",
+  info: "bg-accent",
+  up: "bg-pos",
 };
 const SEV_TEXT: Record<Severity, string> = {
-  down: "text-red-600",
-  warn: "text-amber-600",
-  info: "text-blue-600",
-  up: "text-emerald-600",
+  down: "text-neg",
+  warn: "text-warn",
+  info: "text-accent",
+  up: "text-pos",
 };
 
 export function ChangeMonitor() {
@@ -99,18 +99,18 @@ export function ChangeMonitor() {
   }, [scoped]);
 
   return (
-    <div className="rounded-lg border border-slate-200 bg-white overflow-hidden">
+    <div className="rounded-lg border border-line bg-white overflow-hidden">
       <button
         onClick={toggleCollapsed}
-        className="w-full flex items-center justify-between px-4 py-3 hover:bg-slate-50/60 transition-colors"
+        className="w-full flex items-center justify-between px-4 py-3 hover:bg-surface-hover transition-colors"
       >
         <div className="flex items-center gap-2">
-          <span className="text-sm font-semibold text-slate-700">Change monitor</span>
+          <span className="text-sm font-semibold text-ink">Change monitor</span>
           {events && counts.all > 0 && (
-            <span className="text-[10px] font-bold rounded-full bg-slate-800 text-white px-2 py-0.5">{counts.all}</span>
+            <span className="text-[10px] font-bold rounded-full bg-ink text-white px-2 py-0.5">{counts.all}</span>
           )}
         </div>
-        <span className="text-[11px] text-slate-400">{collapsed ? "Show" : "Hide"}</span>
+        <span className="text-[11px] text-ink-3">{collapsed ? "Show" : "Hide"}</span>
       </button>
 
       {!collapsed && (
@@ -123,26 +123,26 @@ export function ChangeMonitor() {
                   key={t}
                   onClick={() => setFilter(t)}
                   className={`text-[11.5px] rounded-full px-2.5 py-0.5 border inline-flex items-center gap-1.5 transition-colors ${
-                    filter === t ? "bg-slate-100 border-slate-300 text-slate-800 font-semibold" : "border-slate-200 text-slate-500 hover:bg-slate-50"
+                    filter === t ? "bg-surface-2 border-line text-ink font-semibold" : "border-line text-ink-3 hover:bg-surface-2"
                   }`}
                 >
                   {t === "all" ? "All" : TYPE_LABELS[t]}
-                  <span className="font-mono text-[10px] text-slate-400">{counts[t] ?? 0}</span>
+                  <span className="font-mono text-[10px] text-ink-3">{counts[t] ?? 0}</span>
                 </button>
               ))}
             </div>
             <div className="ml-auto flex items-center gap-2">
-              <select value={scope} onChange={(e) => setScope(e.target.value as "all" | "Portfolio" | "Watchlist")} className="text-[11px] rounded border border-slate-200 bg-white px-1.5 py-1 text-slate-600">
+              <select value={scope} onChange={(e) => setScope(e.target.value as "all" | "Portfolio" | "Watchlist")} className="text-[11px] rounded border border-line bg-white px-1.5 py-1 text-ink-2">
                 <option value="all">All names</option>
                 <option value="Portfolio">Portfolio</option>
                 <option value="Watchlist">Watchlist</option>
               </select>
-              <select value={windowDays} onChange={(e) => setWindowDays(Number(e.target.value))} className="text-[11px] rounded border border-slate-200 bg-white px-1.5 py-1 text-slate-600">
+              <select value={windowDays} onChange={(e) => setWindowDays(Number(e.target.value))} className="text-[11px] rounded border border-line bg-white px-1.5 py-1 text-ink-2">
                 <option value={1}>24 hours</option>
                 <option value={7}>7 days</option>
                 <option value={30}>30 days</option>
               </select>
-              <label className="flex items-center gap-1 text-[11px] text-slate-500">
+              <label className="flex items-center gap-1 text-[11px] text-ink-3">
                 <input type="checkbox" checked={showReviewed} onChange={(e) => setShowReviewed(e.target.checked)} />
                 reviewed
               </label>
@@ -151,25 +151,25 @@ export function ChangeMonitor() {
 
           {/* rows */}
           {events === null ? (
-            <p className="text-sm text-slate-400 italic py-3">Loading…</p>
+            <p className="text-sm text-ink-3 italic py-3">Loading…</p>
           ) : visible.length === 0 ? (
-            <p className="text-sm text-slate-400 italic py-3">Nothing material changed in this window. {!showReviewed && counts.all === 0 && scoped.some((e) => reviewed[e.id]) ? "(all reviewed)" : ""}</p>
+            <p className="text-sm text-ink-3 italic py-3">Nothing material changed in this window. {!showReviewed && counts.all === 0 && scoped.some((e) => reviewed[e.id]) ? "(all reviewed)" : ""}</p>
           ) : (
-            <div className="rounded-lg border border-slate-100 divide-y divide-slate-100">
+            <div className="rounded-lg border border-line-soft divide-y divide-slate-100">
               {visible.map((e) => {
                 const isReviewed = !!reviewed[e.id];
                 return (
                   <div key={e.id} className={`flex items-center gap-3 px-3 py-2.5 ${isReviewed ? "opacity-45" : ""}`}>
                     <span className={`w-2 h-2 rounded-full shrink-0 ${SEV_DOT[e.severity]}`} aria-hidden />
-                    <Link href={`/stock/${e.ticker.toLowerCase()}`} className="font-mono text-sm font-semibold text-slate-800 hover:underline min-w-[52px]">
+                    <Link href={`/stock/${e.ticker.toLowerCase()}`} className="font-mono text-sm font-semibold text-ink hover:underline min-w-[52px]">
                       {e.ticker}
                     </Link>
                     <div className="flex-1 min-w-0">
-                      <div className="text-sm text-slate-800">
-                        <span className="text-[10px] text-slate-500 bg-slate-100 rounded px-1.5 py-0.5 mr-1.5">{TYPE_LABELS[e.type]}</span>
+                      <div className="text-sm text-ink">
+                        <span className="text-[10px] text-ink-3 bg-surface-2 rounded px-1.5 py-0.5 mr-1.5">{TYPE_LABELS[e.type]}</span>
                         <span className={SEV_TEXT[e.severity]}>{e.headline}</span>
                       </div>
-                      <div className="text-[12px] text-slate-500 truncate" title={e.detail}>{e.detail}</div>
+                      <div className="text-[12px] text-ink-3 truncate" title={e.detail}>{e.detail}</div>
                     </div>
                     {e.delta && <span className={`font-mono text-[12.5px] ${SEV_TEXT[e.severity]} shrink-0`}>{e.delta}</span>}
                     <button
@@ -177,7 +177,7 @@ export function ChangeMonitor() {
                       title={isReviewed ? "Mark unreviewed" : "Mark reviewed"}
                       aria-label={isReviewed ? "Mark unreviewed" : "Mark reviewed"}
                       className={`shrink-0 w-6 h-6 rounded-full border flex items-center justify-center text-xs transition-colors ${
-                        isReviewed ? "bg-emerald-50 border-emerald-300 text-emerald-600" : "border-slate-200 text-slate-300 hover:text-slate-500 hover:border-slate-300"
+                        isReviewed ? "bg-pos-soft border-pos-border text-pos" : "border-line text-ink-faint hover:text-ink-3 hover:border-line"
                       }`}
                     >
                       ✓

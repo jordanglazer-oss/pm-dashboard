@@ -517,13 +517,13 @@ export default function AppendixPage() {
   }, [viewMode, loadStashes]);
 
   return (
-    <main className="min-h-screen bg-[#f4f5f7] px-4 py-6 text-slate-900 md:px-8 md:py-8 overflow-x-hidden">
+    <main className="min-h-screen bg-ground px-4 py-6 text-ink md:px-8 md:py-8 overflow-x-hidden">
       <div className="mx-auto max-w-7xl">
         {/* Header */}
         <div className="mb-6 flex flex-col gap-3 sm:flex-row sm:items-end sm:justify-between">
           <div>
-            <h1 className="text-2xl font-bold text-slate-800">Appendix</h1>
-            <p className="text-sm text-slate-500 mt-1">
+            <h1 className="text-2xl font-bold text-ink">Appendix</h1>
+            <p className="text-sm text-ink-3 mt-1">
               {viewMode === "daily"
                 ? "Permanent daily value ledger — immutable historical record for each model"
                 : viewMode === "transactions"
@@ -546,8 +546,8 @@ export default function AppendixPage() {
                   htmlFor="appendix-import"
                   className={`cursor-pointer rounded-lg px-4 py-2 text-sm font-semibold transition-colors ${
                     importing
-                      ? "bg-slate-200 text-slate-400 cursor-not-allowed"
-                      : "bg-blue-600 text-white hover:bg-blue-700"
+                      ? "bg-line text-ink-3 cursor-not-allowed"
+                      : "bg-accent text-white hover:bg-accent"
                   }`}
                 >
                   {importing ? "Importing..." : "Import JSON"}
@@ -557,7 +557,7 @@ export default function AppendixPage() {
             {viewMode === "transactions" && allTransactions.length > 0 && (
               <button
                 onClick={exportTransactionsCSV}
-                className="rounded-lg bg-blue-600 px-4 py-2 text-sm font-semibold text-white hover:bg-blue-700 transition-colors"
+                className="rounded-lg bg-accent px-4 py-2 text-sm font-semibold text-white hover:bg-accent transition-colors"
               >
                 Export CSV
               </button>
@@ -566,11 +566,11 @@ export default function AppendixPage() {
         </div>
 
         {/* View Toggle */}
-        <div className="flex gap-1 mb-5 bg-white rounded-xl border border-slate-200 p-1 w-fit">
+        <div className="flex gap-1 mb-5 bg-white rounded-control border border-line p-1 w-fit">
           <button
             onClick={() => setViewMode("daily")}
             className={`rounded-lg px-4 py-2 text-sm font-semibold transition-colors whitespace-nowrap ${
-              viewMode === "daily" ? "bg-slate-800 text-white" : "text-slate-500 hover:text-slate-800 hover:bg-slate-50"
+              viewMode === "daily" ? "bg-ink text-white" : "text-ink-3 hover:text-ink hover:bg-surface-2"
             }`}
           >
             Daily Values
@@ -578,12 +578,12 @@ export default function AppendixPage() {
           <button
             onClick={() => setViewMode("transactions")}
             className={`rounded-lg px-4 py-2 text-sm font-semibold transition-colors whitespace-nowrap ${
-              viewMode === "transactions" ? "bg-slate-800 text-white" : "text-slate-500 hover:text-slate-800 hover:bg-slate-50"
+              viewMode === "transactions" ? "bg-ink text-white" : "text-ink-3 hover:text-ink hover:bg-surface-2"
             }`}
           >
             Transactions
             {portfolioState && allTransactions.length > 0 && (
-              <span className={`ml-1.5 text-[10px] font-bold ${viewMode === "transactions" ? "text-slate-300" : "text-slate-400"}`}>
+              <span className={`ml-1.5 text-[10px] font-bold ${viewMode === "transactions" ? "text-ink-faint" : "text-ink-3"}`}>
                 ({allTransactions.length.toLocaleString()})
               </span>
             )}
@@ -591,7 +591,7 @@ export default function AppendixPage() {
           <button
             onClick={() => setViewMode("sia-import")}
             className={`rounded-lg px-4 py-2 text-sm font-semibold transition-colors whitespace-nowrap ${
-              viewMode === "sia-import" ? "bg-slate-800 text-white" : "text-slate-500 hover:text-slate-800 hover:bg-slate-50"
+              viewMode === "sia-import" ? "bg-ink text-white" : "text-ink-3 hover:text-ink hover:bg-surface-2"
             }`}
           >
             SIA Import
@@ -599,8 +599,8 @@ export default function AppendixPage() {
         </div>
 
         {importStatus && viewMode === "daily" && (
-          <div className={`mb-4 rounded-xl px-4 py-3 text-sm font-medium ${
-            importStatus.startsWith("Error") ? "bg-red-50 text-red-700" : "bg-emerald-50 text-emerald-700"
+          <div className={`mb-4 rounded-control px-4 py-3 text-sm font-medium ${
+            importStatus.startsWith("Error") ? "bg-neg-soft text-neg" : "bg-pos-soft text-pos"
           }`}>
             {importStatus}
             <button onClick={() => setImportStatus(null)} className="ml-3 text-xs opacity-60 hover:opacity-100">dismiss</button>
@@ -610,7 +610,7 @@ export default function AppendixPage() {
         {viewMode === "daily" && (
           <>
             {/* Profile Tabs */}
-            <div className="flex gap-1 mb-5 bg-white rounded-xl border border-slate-200 p-1 w-fit">
+            <div className="flex gap-1 mb-5 bg-white rounded-control border border-line p-1 w-fit">
               {PROFILES.map((p) => {
                 const ledger = ledgers.find((l) => l.profile === p.key);
                 const count = ledger?.entries.length || 0;
@@ -620,13 +620,13 @@ export default function AppendixPage() {
                     onClick={() => setActiveTab(p.key)}
                     className={`rounded-lg px-4 py-2 text-sm font-semibold transition-colors whitespace-nowrap ${
                       activeTab === p.key
-                        ? "bg-blue-600 text-white"
-                        : "text-slate-500 hover:text-slate-800 hover:bg-slate-50"
+                        ? "bg-accent text-white"
+                        : "text-ink-3 hover:text-ink hover:bg-surface-2"
                     }`}
                   >
                     {p.label}
                     {count > 0 && (
-                      <span className={`ml-1.5 text-[10px] font-bold ${activeTab === p.key ? "text-blue-200" : "text-slate-400"}`}>
+                      <span className={`ml-1.5 text-[10px] font-bold ${activeTab === p.key ? "text-accent" : "text-ink-3"}`}>
                         ({count.toLocaleString()})
                       </span>
                     )}
@@ -636,12 +636,12 @@ export default function AppendixPage() {
             </div>
 
             {loading ? (
-              <div className="text-center py-12 text-slate-400 text-sm">Loading...</div>
+              <div className="text-center py-12 text-ink-3 text-sm">Loading...</div>
             ) : !activeLedger || allEntries.length === 0 ? (
-              <div className="rounded-2xl border border-slate-200 bg-white shadow-sm p-8 text-center">
-                <p className="text-slate-400 text-sm mb-3">No daily values recorded for {PROFILES.find((p) => p.key === activeTab)?.label}</p>
-                <p className="text-xs text-slate-400">
-                  Import a JSON file with an array of <code className="bg-slate-100 px-1 rounded">{"{ date, value, dailyReturn }"}</code> entries
+              <div className="rounded-card border border-line bg-white shadow-sm p-8 text-center">
+                <p className="text-ink-3 text-sm mb-3">No daily values recorded for {PROFILES.find((p) => p.key === activeTab)?.label}</p>
+                <p className="text-xs text-ink-3">
+                  Import a JSON file with an array of <code className="bg-surface-2 px-1 rounded">{"{ date, value, dailyReturn }"}</code> entries
                 </p>
               </div>
             ) : (
@@ -655,12 +655,12 @@ export default function AppendixPage() {
                       { label: "Trading Days", value: stats.totalDays.toLocaleString() },
                       { label: "Start Value", value: formatValue(stats.startValue) },
                       { label: "End Value", value: formatValue(stats.endValue) },
-                      { label: "Total Return", value: `${stats.totalReturn >= 0 ? "+" : ""}${stats.totalReturn.toFixed(2)}%`, color: stats.totalReturn >= 0 ? "text-emerald-600" : "text-red-600" },
-                      { label: "CAGR", value: `${stats.cagr >= 0 ? "+" : ""}${stats.cagr.toFixed(2)}%`, color: stats.cagr >= 0 ? "text-emerald-600" : "text-red-600" },
+                      { label: "Total Return", value: `${stats.totalReturn >= 0 ? "+" : ""}${stats.totalReturn.toFixed(2)}%`, color: stats.totalReturn >= 0 ? "text-pos" : "text-neg" },
+                      { label: "CAGR", value: `${stats.cagr >= 0 ? "+" : ""}${stats.cagr.toFixed(2)}%`, color: stats.cagr >= 0 ? "text-pos" : "text-neg" },
                     ].map((s) => (
-                      <div key={s.label} className="rounded-xl border border-slate-200 bg-white px-3 py-2.5 shadow-sm">
-                        <div className="text-[10px] font-semibold text-slate-400 uppercase tracking-wider">{s.label}</div>
-                        <div className={`text-sm font-bold mt-0.5 ${"color" in s ? s.color : "text-slate-800"}`}>{s.value}</div>
+                      <div key={s.label} className="rounded-control border border-line bg-white px-3 py-2.5 shadow-sm">
+                        <div className="text-[10px] font-semibold text-ink-3 uppercase tracking-wider">{s.label}</div>
+                        <div className={`text-sm font-bold mt-0.5 ${"color" in s ? s.color : "text-ink"}`}>{s.value}</div>
                       </div>
                     ))}
                   </div>
@@ -669,13 +669,13 @@ export default function AppendixPage() {
                 {/* Best / Worst Day */}
                 {stats && (
                   <div className="flex gap-3 mb-5">
-                    <div className="rounded-xl border border-emerald-100 bg-emerald-50 px-4 py-2 text-xs">
-                      <span className="font-semibold text-emerald-700">Best Day:</span>{" "}
-                      <span className="text-emerald-600">{formatDate(stats.bestDay.date)} {formatPct(stats.bestDay.dailyReturn)}</span>
+                    <div className="rounded-control border border-emerald-100 bg-pos-soft px-4 py-2 text-xs">
+                      <span className="font-semibold text-pos">Best Day:</span>{" "}
+                      <span className="text-pos">{formatDate(stats.bestDay.date)} {formatPct(stats.bestDay.dailyReturn)}</span>
                     </div>
-                    <div className="rounded-xl border border-red-100 bg-red-50 px-4 py-2 text-xs">
-                      <span className="font-semibold text-red-700">Worst Day:</span>{" "}
-                      <span className="text-red-600">{formatDate(stats.worstDay.date)} {formatPct(stats.worstDay.dailyReturn)}</span>
+                    <div className="rounded-control border border-red-100 bg-neg-soft px-4 py-2 text-xs">
+                      <span className="font-semibold text-neg">Worst Day:</span>{" "}
+                      <span className="text-neg">{formatDate(stats.worstDay.date)} {formatPct(stats.worstDay.dailyReturn)}</span>
                     </div>
                   </div>
                 )}
@@ -687,14 +687,14 @@ export default function AppendixPage() {
                     value={search}
                     onChange={(e) => { setSearch(e.target.value); setPage(0); }}
                     placeholder="Search by date (YYYY-MM-DD)..."
-                    className="rounded-lg border border-slate-200 bg-white px-3 py-2 text-sm w-full sm:w-64 outline-none focus:border-blue-300 focus:ring-2 focus:ring-blue-100"
+                    className="rounded-lg border border-line bg-white px-3 py-2 text-sm w-full sm:w-64 outline-none focus:border-accent-border focus:ring-2 focus:ring-blue-100"
                   />
                   {totalPages > 1 && (
-                    <div className="flex items-center gap-2 text-xs text-slate-500">
+                    <div className="flex items-center gap-2 text-xs text-ink-3">
                       <button
                         onClick={() => setPage(Math.max(0, page - 1))}
                         disabled={page === 0}
-                        className="rounded px-2 py-1 bg-white border border-slate-200 hover:bg-slate-50 disabled:opacity-30"
+                        className="rounded px-2 py-1 bg-white border border-line hover:bg-surface-2 disabled:opacity-30"
                       >
                         Prev
                       </button>
@@ -702,7 +702,7 @@ export default function AppendixPage() {
                       <button
                         onClick={() => setPage(Math.min(totalPages - 1, page + 1))}
                         disabled={page >= totalPages - 1}
-                        className="rounded px-2 py-1 bg-white border border-slate-200 hover:bg-slate-50 disabled:opacity-30"
+                        className="rounded px-2 py-1 bg-white border border-line hover:bg-surface-2 disabled:opacity-30"
                       >
                         Next
                       </button>
@@ -711,42 +711,42 @@ export default function AppendixPage() {
                 </div>
 
                 {/* Data Table */}
-                <div className="rounded-2xl border border-slate-200 bg-white shadow-sm overflow-hidden">
+                <div className="rounded-card border border-line bg-white shadow-sm overflow-hidden">
                   <div className="overflow-x-auto">
                     <table className="w-full text-sm">
                       <thead>
-                        <tr className="border-b border-slate-100 bg-slate-50 text-xs text-slate-500">
+                        <tr className="border-b border-line-soft bg-surface-2 text-xs text-ink-3">
                           <th className="text-left py-2.5 pl-5 pr-2 font-semibold">#</th>
                           <th className="text-left py-2.5 px-2 font-semibold">Date</th>
                           <th className="text-right py-2.5 px-2 font-semibold">Index Value</th>
                           <th className="text-right py-2.5 px-2 font-semibold">Daily Return</th>
                           <th className="text-center py-2.5 px-2 font-semibold">Source</th>
-                          <th className="text-right py-2.5 pr-5 pl-2 font-semibold text-slate-400">Recorded</th>
+                          <th className="text-right py-2.5 pr-5 pl-2 font-semibold text-ink-3">Recorded</th>
                         </tr>
                       </thead>
                       <tbody>
                         {pageEntries.map((entry, i) => {
                           const globalIdx = allEntries.length - (page * PAGE_SIZE + i);
                           return (
-                            <tr key={entry.date} className="border-b border-slate-50 hover:bg-slate-50/50 transition-colors">
-                              <td className="py-1.5 pl-5 pr-2 text-xs text-slate-400 font-mono">{globalIdx}</td>
-                              <td className="py-1.5 px-2 font-mono text-xs font-medium text-slate-700">{entry.date}</td>
+                            <tr key={entry.date} className="border-b border-line-soft hover:bg-surface-hover transition-colors">
+                              <td className="py-1.5 pl-5 pr-2 text-xs text-ink-3 font-mono">{globalIdx}</td>
+                              <td className="py-1.5 px-2 font-mono text-xs font-medium text-ink">{entry.date}</td>
                               <td className="py-1.5 px-2 text-right font-mono text-xs font-semibold">{formatValue(entry.value)}</td>
                               <td className={`py-1.5 px-2 text-right font-mono text-xs font-semibold ${
-                                entry.dailyReturn > 0 ? "text-emerald-600" : entry.dailyReturn < 0 ? "text-red-500" : "text-slate-400"
+                                entry.dailyReturn > 0 ? "text-pos" : entry.dailyReturn < 0 ? "text-neg" : "text-ink-3"
                               }`}>
                                 {formatPct(entry.dailyReturn)}
                               </td>
                               <td className="py-1.5 px-2 text-center">
                                 <span className={`rounded px-1.5 py-0.5 text-[9px] font-bold ${
                                   entry.date < "2026-04-07"
-                                    ? "bg-purple-100 text-purple-700"
-                                    : "bg-blue-100 text-blue-700"
+                                    ? "bg-violet-soft text-violet"
+                                    : "bg-accent-soft text-accent"
                                 }`}>
                                   {entry.date < "2026-04-07" ? "SIA" : "PIM"}
                                 </span>
                               </td>
-                              <td className="py-1.5 pr-5 pl-2 text-right text-[10px] text-slate-300">
+                              <td className="py-1.5 pr-5 pl-2 text-right text-[10px] text-ink-faint">
                                 {entry.addedAt ? new Date(entry.addedAt).toLocaleDateString() : "seed"}
                               </td>
                             </tr>
@@ -756,7 +756,7 @@ export default function AppendixPage() {
                     </table>
                   </div>
                   {totalPages > 1 && (
-                    <div className="px-5 py-3 border-t border-slate-100 text-xs text-slate-400 text-center">
+                    <div className="px-5 py-3 border-t border-line-soft text-xs text-ink-3 text-center">
                       Showing {page * PAGE_SIZE + 1}–{Math.min((page + 1) * PAGE_SIZE, sortedEntries.length)} of {sortedEntries.length.toLocaleString()} entries (most recent first)
                     </div>
                   )}
@@ -769,31 +769,31 @@ export default function AppendixPage() {
           // ── Transactions View ─────────────────────────────────
           <>
             {txLoading ? (
-              <div className="text-center py-12 text-slate-400 text-sm">Loading transactions...</div>
+              <div className="text-center py-12 text-ink-3 text-sm">Loading transactions...</div>
             ) : allTransactions.length === 0 ? (
-              <div className="rounded-2xl border border-slate-200 bg-white shadow-sm p-8 text-center">
-                <p className="text-slate-400 text-sm mb-1">No transactions recorded yet</p>
-                <p className="text-xs text-slate-400">Transactions appear here after you rebalance or trade in the PIM portfolio.</p>
+              <div className="rounded-card border border-line bg-white shadow-sm p-8 text-center">
+                <p className="text-ink-3 text-sm mb-1">No transactions recorded yet</p>
+                <p className="text-xs text-ink-3">Transactions appear here after you rebalance or trade in the PIM portfolio.</p>
               </div>
             ) : (
               <>
                 {/* Summary Stats */}
                 <div className="grid grid-cols-2 sm:grid-cols-4 gap-3 mb-5">
-                  <div className="rounded-xl border border-slate-200 bg-white px-3 py-2.5 shadow-sm">
-                    <div className="text-[10px] font-semibold text-slate-400 uppercase tracking-wider">Total Transactions</div>
-                    <div className="text-sm font-bold mt-0.5 text-slate-800">{txStats.total.toLocaleString()}</div>
+                  <div className="rounded-control border border-line bg-white px-3 py-2.5 shadow-sm">
+                    <div className="text-[10px] font-semibold text-ink-3 uppercase tracking-wider">Total Transactions</div>
+                    <div className="text-sm font-bold mt-0.5 text-ink">{txStats.total.toLocaleString()}</div>
                   </div>
-                  <div className="rounded-xl border border-slate-200 bg-white px-3 py-2.5 shadow-sm">
-                    <div className="text-[10px] font-semibold text-slate-400 uppercase tracking-wider">Rebalances</div>
-                    <div className="text-sm font-bold mt-0.5 text-slate-800">{txStats.rebalances.toLocaleString()}</div>
+                  <div className="rounded-control border border-line bg-white px-3 py-2.5 shadow-sm">
+                    <div className="text-[10px] font-semibold text-ink-3 uppercase tracking-wider">Rebalances</div>
+                    <div className="text-sm font-bold mt-0.5 text-ink">{txStats.rebalances.toLocaleString()}</div>
                   </div>
-                  <div className="rounded-xl border border-slate-200 bg-white px-3 py-2.5 shadow-sm">
-                    <div className="text-[10px] font-semibold text-slate-400 uppercase tracking-wider">Settled</div>
-                    <div className="text-sm font-bold mt-0.5 text-emerald-600">{txStats.settled.toLocaleString()}</div>
+                  <div className="rounded-control border border-line bg-white px-3 py-2.5 shadow-sm">
+                    <div className="text-[10px] font-semibold text-ink-3 uppercase tracking-wider">Settled</div>
+                    <div className="text-sm font-bold mt-0.5 text-pos">{txStats.settled.toLocaleString()}</div>
                   </div>
-                  <div className="rounded-xl border border-slate-200 bg-white px-3 py-2.5 shadow-sm">
-                    <div className="text-[10px] font-semibold text-slate-400 uppercase tracking-wider">Pending</div>
-                    <div className="text-sm font-bold mt-0.5 text-violet-600">{txStats.pending.toLocaleString()}</div>
+                  <div className="rounded-control border border-line bg-white px-3 py-2.5 shadow-sm">
+                    <div className="text-[10px] font-semibold text-ink-3 uppercase tracking-wider">Pending</div>
+                    <div className="text-sm font-bold mt-0.5 text-violet">{txStats.pending.toLocaleString()}</div>
                   </div>
                 </div>
 
@@ -804,12 +804,12 @@ export default function AppendixPage() {
                     value={txSearch}
                     onChange={(e) => { setTxSearch(e.target.value); setTxPage(0); }}
                     placeholder="Search symbol, date, notes..."
-                    className="rounded-lg border border-slate-200 bg-white px-3 py-2 text-sm w-full sm:w-64 outline-none focus:border-blue-300 focus:ring-2 focus:ring-blue-100"
+                    className="rounded-lg border border-line bg-white px-3 py-2 text-sm w-full sm:w-64 outline-none focus:border-accent-border focus:ring-2 focus:ring-blue-100"
                   />
                   <select
                     value={txProfileFilter}
                     onChange={(e) => { setTxProfileFilter(e.target.value as PimProfileType | "all"); setTxPage(0); }}
-                    className="rounded-lg border border-slate-200 bg-white px-3 py-2 text-sm outline-none focus:border-blue-300"
+                    className="rounded-lg border border-line bg-white px-3 py-2 text-sm outline-none focus:border-accent-border"
                   >
                     <option value="all">All Profiles</option>
                     {PROFILES.map((p) => (
@@ -819,7 +819,7 @@ export default function AppendixPage() {
                   <select
                     value={txTypeFilter}
                     onChange={(e) => { setTxTypeFilter(e.target.value as typeof txTypeFilter); setTxPage(0); }}
-                    className="rounded-lg border border-slate-200 bg-white px-3 py-2 text-sm outline-none focus:border-blue-300"
+                    className="rounded-lg border border-line bg-white px-3 py-2 text-sm outline-none focus:border-accent-border"
                   >
                     <option value="all">All Types</option>
                     <option value="rebalance">Rebalance</option>
@@ -830,7 +830,7 @@ export default function AppendixPage() {
                   <select
                     value={txStatusFilter}
                     onChange={(e) => { setTxStatusFilter(e.target.value as typeof txStatusFilter); setTxPage(0); }}
-                    className="rounded-lg border border-slate-200 bg-white px-3 py-2 text-sm outline-none focus:border-blue-300"
+                    className="rounded-lg border border-line bg-white px-3 py-2 text-sm outline-none focus:border-accent-border"
                   >
                     <option value="all">All Status</option>
                     <option value="settled">Settled</option>
@@ -840,7 +840,7 @@ export default function AppendixPage() {
                     <select
                       value={txGroupFilter}
                       onChange={(e) => { setTxGroupFilter(e.target.value); setTxPage(0); }}
-                      className="rounded-lg border border-slate-200 bg-white px-3 py-2 text-sm outline-none focus:border-blue-300"
+                      className="rounded-lg border border-line bg-white px-3 py-2 text-sm outline-none focus:border-accent-border"
                     >
                       <option value="all">All Models</option>
                       {groups.map((g) => (
@@ -849,11 +849,11 @@ export default function AppendixPage() {
                     </select>
                   )}
                   {txTotalPages > 1 && (
-                    <div className="flex items-center gap-2 text-xs text-slate-500 ml-auto">
+                    <div className="flex items-center gap-2 text-xs text-ink-3 ml-auto">
                       <button
                         onClick={() => setTxPage(Math.max(0, txPage - 1))}
                         disabled={txPage === 0}
-                        className="rounded px-2 py-1 bg-white border border-slate-200 hover:bg-slate-50 disabled:opacity-30"
+                        className="rounded px-2 py-1 bg-white border border-line hover:bg-surface-2 disabled:opacity-30"
                       >
                         Prev
                       </button>
@@ -861,7 +861,7 @@ export default function AppendixPage() {
                       <button
                         onClick={() => setTxPage(Math.min(txTotalPages - 1, txPage + 1))}
                         disabled={txPage >= txTotalPages - 1}
-                        className="rounded px-2 py-1 bg-white border border-slate-200 hover:bg-slate-50 disabled:opacity-30"
+                        className="rounded px-2 py-1 bg-white border border-line hover:bg-surface-2 disabled:opacity-30"
                       >
                         Next
                       </button>
@@ -870,11 +870,11 @@ export default function AppendixPage() {
                 </div>
 
                 {/* Transactions Table */}
-                <div className="rounded-2xl border border-slate-200 bg-white shadow-sm overflow-hidden">
+                <div className="rounded-card border border-line bg-white shadow-sm overflow-hidden">
                   <div className="overflow-x-auto">
                     <table className="w-full text-sm">
                       <thead>
-                        <tr className="border-b border-slate-100 bg-slate-50 text-xs text-slate-500">
+                        <tr className="border-b border-line-soft bg-surface-2 text-xs text-ink-3">
                           <th className="text-left py-2.5 pl-5 pr-2 font-semibold">Date</th>
                           <th className="text-left py-2.5 px-2 font-semibold hidden md:table-cell">Model</th>
                           <th className="text-left py-2.5 px-2 font-semibold hidden sm:table-cell">Profile</th>
@@ -892,45 +892,45 @@ export default function AppendixPage() {
                           const status = t.status || "settled";
                           const groupName = groupNameById.get(t.groupId) || t.groupId;
                           return (
-                            <tr key={t.id} className="border-b border-slate-50 hover:bg-slate-50/50 transition-colors">
-                              <td className="py-2 pl-5 pr-2 text-xs text-slate-700 whitespace-nowrap">
+                            <tr key={t.id} className="border-b border-line-soft hover:bg-surface-hover transition-colors">
+                              <td className="py-2 pl-5 pr-2 text-xs text-ink whitespace-nowrap">
                                 <div className="font-medium">{formatTxDate(t.date)}</div>
-                                <div className="text-[10px] text-slate-400 hidden sm:block">{new Date(t.date).toLocaleTimeString("en-US", { hour: "2-digit", minute: "2-digit" })}</div>
+                                <div className="text-[10px] text-ink-3 hidden sm:block">{new Date(t.date).toLocaleTimeString("en-US", { hour: "2-digit", minute: "2-digit" })}</div>
                               </td>
-                              <td className="py-2 px-2 text-xs text-slate-600 hidden md:table-cell">{groupName}</td>
-                              <td className="py-2 px-2 text-xs text-slate-600 hidden sm:table-cell">
-                                {t.profile ? PROFILE_LABELS[t.profile] : <span className="text-slate-300">—</span>}
+                              <td className="py-2 px-2 text-xs text-ink-2 hidden md:table-cell">{groupName}</td>
+                              <td className="py-2 px-2 text-xs text-ink-2 hidden sm:table-cell">
+                                {t.profile ? PROFILE_LABELS[t.profile] : <span className="text-ink-faint">—</span>}
                               </td>
                               <td className="py-2 px-2">
                                 <span className={`rounded px-1.5 py-0.5 text-[9px] font-bold uppercase ${
-                                  t.type === "rebalance" ? "bg-blue-100 text-blue-700" :
-                                  t.type === "buy" ? "bg-emerald-100 text-emerald-700" :
-                                  t.type === "sell" ? "bg-red-100 text-red-700" :
-                                  "bg-amber-100 text-amber-700"
+                                  t.type === "rebalance" ? "bg-accent-soft text-accent" :
+                                  t.type === "buy" ? "bg-pos-soft text-pos" :
+                                  t.type === "sell" ? "bg-neg-soft text-neg" :
+                                  "bg-warn-soft text-warn"
                                 }`}>
                                   {t.type}
                                 </span>
                               </td>
-                              <td className="py-2 px-2 font-mono text-xs font-semibold text-slate-800">{t.symbol}</td>
+                              <td className="py-2 px-2 font-mono text-xs font-semibold text-ink">{t.symbol}</td>
                               <td className="py-2 px-2 text-center">
                                 <span className={`rounded px-1.5 py-0.5 text-[9px] font-bold ${
-                                  t.direction === "buy" ? "bg-emerald-50 text-emerald-700" : "bg-red-50 text-red-700"
+                                  t.direction === "buy" ? "bg-pos-soft text-pos" : "bg-neg-soft text-neg"
                                 }`}>
                                   {t.direction.toUpperCase()}
                                 </span>
                               </td>
                               <td className="py-2 px-2 text-right font-mono text-xs">
-                                {t.price > 0 ? t.price.toFixed(4) : <span className="text-slate-300">—</span>}
+                                {t.price > 0 ? t.price.toFixed(4) : <span className="text-ink-faint">—</span>}
                               </td>
-                              <td className="py-2 px-2 text-right font-mono text-xs text-slate-600 hidden md:table-cell">
+                              <td className="py-2 px-2 text-right font-mono text-xs text-ink-2 hidden md:table-cell">
                                 {(t.targetWeight * 100).toFixed(2)}%
                               </td>
-                              <td className="py-2 px-2 text-right font-mono text-xs text-slate-600 hidden lg:table-cell">
-                                {t.targetAmount ? `$${t.targetAmount.toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })}` : <span className="text-slate-300">—</span>}
+                              <td className="py-2 px-2 text-right font-mono text-xs text-ink-2 hidden lg:table-cell">
+                                {t.targetAmount ? `$${t.targetAmount.toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })}` : <span className="text-ink-faint">—</span>}
                               </td>
                               <td className="py-2 pr-5 pl-2 text-center">
                                 <span className={`rounded px-1.5 py-0.5 text-[9px] font-bold uppercase ${
-                                  status === "settled" ? "bg-slate-100 text-slate-600" : "bg-violet-100 text-violet-700"
+                                  status === "settled" ? "bg-surface-2 text-ink-2" : "bg-violet-soft text-violet"
                                 }`} title={status === "settled" && t.settledAt ? `Settled ${formatTxDateTime(t.settledAt)}` : ""}>
                                   {status}
                                 </span>
@@ -941,7 +941,7 @@ export default function AppendixPage() {
                       </tbody>
                     </table>
                   </div>
-                  <div className="px-5 py-3 border-t border-slate-100 text-xs text-slate-400 text-center">
+                  <div className="px-5 py-3 border-t border-line-soft text-xs text-ink-3 text-center">
                     {filteredTransactions.length === 0 ? (
                       "No transactions match your filters"
                     ) : (
@@ -960,10 +960,10 @@ export default function AppendixPage() {
           // Replaces current-year daily values with SIA Charts CSV
           // export. All imported entries anchored on the server.
           <div className="space-y-6">
-            <div className="rounded-2xl border border-slate-200 bg-white p-6 shadow-sm space-y-4">
+            <div className="rounded-card border border-line bg-white p-6 shadow-sm space-y-4">
               {/* Profile selector */}
               <div>
-                <label className="block text-xs font-semibold text-slate-600 uppercase tracking-wider mb-2">
+                <label className="block text-xs font-semibold text-ink-2 uppercase tracking-wider mb-2">
                   Profile
                 </label>
                 <div className="flex gap-2 flex-wrap">
@@ -977,8 +977,8 @@ export default function AppendixPage() {
                       }}
                       className={`rounded-lg px-3 py-1.5 text-sm font-semibold transition-colors ${
                         siaProfile === p.key
-                          ? "bg-blue-600 text-white"
-                          : "bg-slate-100 text-slate-700 hover:bg-slate-200"
+                          ? "bg-accent text-white"
+                          : "bg-surface-2 text-ink hover:bg-line"
                       }`}
                     >
                       {p.label}
@@ -989,7 +989,7 @@ export default function AppendixPage() {
 
               {/* File upload */}
               <div>
-                <label className="block text-xs font-semibold text-slate-600 uppercase tracking-wider mb-2">
+                <label className="block text-xs font-semibold text-ink-2 uppercase tracking-wider mb-2">
                   CSV file (SIA Charts export)
                 </label>
                 <input
@@ -997,29 +997,29 @@ export default function AppendixPage() {
                   type="file"
                   accept=".csv,text/csv"
                   onChange={handleSiaFile}
-                  className="block w-full text-sm text-slate-600 file:mr-4 file:py-2 file:px-4 file:rounded-lg file:border-0 file:text-sm file:font-semibold file:bg-blue-50 file:text-blue-700 hover:file:bg-blue-100"
+                  className="block w-full text-sm text-ink-2 file:mr-4 file:py-2 file:px-4 file:rounded-lg file:border-0 file:text-sm file:font-semibold file:bg-accent-soft file:text-accent hover:file:bg-accent-soft"
                 />
                 {siaFileName && (
-                  <p className="text-xs text-slate-500 mt-2">Loaded: {siaFileName}</p>
+                  <p className="text-xs text-ink-3 mt-2">Loaded: {siaFileName}</p>
                 )}
               </div>
 
               {/* Parsed preview */}
               {siaParsed && (
-                <div className="rounded-lg bg-slate-50 p-4 text-sm space-y-1">
-                  <div className="font-semibold text-slate-700">Parsed {siaParsed.length} rows</div>
+                <div className="rounded-lg bg-surface-2 p-4 text-sm space-y-1">
+                  <div className="font-semibold text-ink">Parsed {siaParsed.length} rows</div>
                   {siaParsed.length > 0 && (
                     <>
-                      <div className="text-slate-600">
+                      <div className="text-ink-2">
                         First: <span className="font-mono">{siaParsed[0].date}</span> → <span className="font-mono">${siaParsed[0].value.toLocaleString()}</span>
                       </div>
-                      <div className="text-slate-600">
+                      <div className="text-ink-2">
                         Last: <span className="font-mono">{siaParsed[siaParsed.length - 1].date}</span> → <span className="font-mono">${siaParsed[siaParsed.length - 1].value.toLocaleString()}</span>
                       </div>
                     </>
                   )}
                   {siaParseWarnings.map((w, i) => (
-                    <div key={i} className="text-amber-700 text-xs">⚠ {w}</div>
+                    <div key={i} className="text-warn text-xs">⚠ {w}</div>
                   ))}
                 </div>
               )}
@@ -1029,21 +1029,21 @@ export default function AppendixPage() {
                 <button
                   onClick={handleSiaDryRun}
                   disabled={!siaParsed || siaLoading}
-                  className="rounded-lg bg-slate-800 px-4 py-2 text-sm font-semibold text-white hover:bg-slate-900 disabled:opacity-50 disabled:cursor-not-allowed transition-colors"
+                  className="rounded-lg bg-ink px-4 py-2 text-sm font-semibold text-white hover:bg-ink disabled:opacity-50 disabled:cursor-not-allowed transition-colors"
                 >
                   {siaLoading ? "Running…" : "Dry Run (preview)"}
                 </button>
                 <button
                   onClick={handleSiaApply}
                   disabled={!siaDryRun || siaLoading}
-                  className="rounded-lg bg-red-600 px-4 py-2 text-sm font-semibold text-white hover:bg-red-700 disabled:opacity-50 disabled:cursor-not-allowed transition-colors"
+                  className="rounded-lg bg-neg px-4 py-2 text-sm font-semibold text-white hover:bg-neg disabled:opacity-50 disabled:cursor-not-allowed transition-colors"
                 >
                   {siaLoading ? "Writing…" : "Apply (Write to Redis)"}
                 </button>
               </div>
 
               {siaError && (
-                <div className="rounded-lg bg-red-50 border border-red-200 p-3 text-sm text-red-700">
+                <div className="rounded-lg bg-neg-soft border border-neg-border p-3 text-sm text-neg">
                   <strong>Error:</strong> {siaError}
                 </div>
               )}
@@ -1051,47 +1051,47 @@ export default function AppendixPage() {
 
             {/* Dry-run result */}
             {siaDryRun && (
-              <div className="rounded-2xl border border-amber-200 bg-amber-50 p-6 shadow-sm space-y-3">
-                <h2 className="text-lg font-bold text-amber-900">Dry-run preview — NOT written yet</h2>
+              <div className="rounded-card border border-warn-border bg-warn-soft p-6 shadow-sm space-y-3">
+                <h2 className="text-lg font-bold text-warn">Dry-run preview — NOT written yet</h2>
                 <div className="grid grid-cols-2 gap-3 text-sm">
                   <div>
-                    <div className="text-xs uppercase tracking-wider text-amber-800 font-semibold">Profile</div>
-                    <div className="font-semibold text-slate-900">{siaDryRun.summary.profile}</div>
+                    <div className="text-xs uppercase tracking-wider text-warn font-semibold">Profile</div>
+                    <div className="font-semibold text-ink">{siaDryRun.summary.profile}</div>
                   </div>
                   <div>
-                    <div className="text-xs uppercase tracking-wider text-amber-800 font-semibold">From date</div>
-                    <div className="font-mono text-slate-900">{siaDryRun.summary.fromDate}</div>
+                    <div className="text-xs uppercase tracking-wider text-warn font-semibold">From date</div>
+                    <div className="font-mono text-ink">{siaDryRun.summary.fromDate}</div>
                   </div>
                   <div>
-                    <div className="text-xs uppercase tracking-wider text-amber-800 font-semibold">New YTD</div>
-                    <div className="font-semibold text-slate-900">{siaDryRun.summary.newYtdPct}%</div>
+                    <div className="text-xs uppercase tracking-wider text-warn font-semibold">New YTD</div>
+                    <div className="font-semibold text-ink">{siaDryRun.summary.newYtdPct}%</div>
                   </div>
                   <div>
-                    <div className="text-xs uppercase tracking-wider text-amber-800 font-semibold">Existing YTD (replaced)</div>
-                    <div className="font-semibold text-slate-900">{siaDryRun.summary.existingYtdPct ?? "n/a"}%</div>
+                    <div className="text-xs uppercase tracking-wider text-warn font-semibold">Existing YTD (replaced)</div>
+                    <div className="font-semibold text-ink">{siaDryRun.summary.existingYtdPct ?? "n/a"}%</div>
                   </div>
                   <div>
-                    <div className="text-xs uppercase tracking-wider text-amber-800 font-semibold">Entries imported</div>
-                    <div className="font-semibold text-slate-900">{siaDryRun.summary.importedValueCount}</div>
+                    <div className="text-xs uppercase tracking-wider text-warn font-semibold">Entries imported</div>
+                    <div className="font-semibold text-ink">{siaDryRun.summary.importedValueCount}</div>
                   </div>
                   <div>
-                    <div className="text-xs uppercase tracking-wider text-amber-800 font-semibold">Range</div>
-                    <div className="font-mono text-slate-900 text-xs">{siaDryRun.summary.firstImportedDate} → {siaDryRun.summary.lastImportedDate}</div>
+                    <div className="text-xs uppercase tracking-wider text-warn font-semibold">Range</div>
+                    <div className="font-mono text-ink text-xs">{siaDryRun.summary.firstImportedDate} → {siaDryRun.summary.lastImportedDate}</div>
                   </div>
                   <div>
-                    <div className="text-xs uppercase tracking-wider text-amber-800 font-semibold">Anchor (pre-fromDate)</div>
-                    <div className="font-mono text-slate-900 text-xs">
+                    <div className="text-xs uppercase tracking-wider text-warn font-semibold">Anchor (pre-fromDate)</div>
+                    <div className="font-mono text-ink text-xs">
                       {siaDryRun.summary.anchorPreValue
                         ? `${siaDryRun.summary.anchorPreValue.date} · $${siaDryRun.summary.anchorPreValue.value.toLocaleString()}`
                         : "none — first day return collapses to 0"}
                     </div>
                   </div>
                   <div>
-                    <div className="text-xs uppercase tracking-wider text-amber-800 font-semibold">Pre-fromDate preserved</div>
-                    <div className="font-semibold text-slate-900">{siaDryRun.summary.preFromDateEntriesPreserved.appendix} appendix · {siaDryRun.summary.preFromDateEntriesPreserved.perf} perf</div>
+                    <div className="text-xs uppercase tracking-wider text-warn font-semibold">Pre-fromDate preserved</div>
+                    <div className="font-semibold text-ink">{siaDryRun.summary.preFromDateEntriesPreserved.appendix} appendix · {siaDryRun.summary.preFromDateEntriesPreserved.perf} perf</div>
                   </div>
                 </div>
-                <p className="text-xs text-amber-700 pt-1">
+                <p className="text-xs text-warn pt-1">
                   Review these numbers. If correct, click <strong>Apply</strong> to write. If anything looks off, change profile / file and re-run Dry Run.
                 </p>
               </div>
@@ -1099,19 +1099,19 @@ export default function AppendixPage() {
 
             {/* Write result */}
             {siaWriteResult && (
-              <div className="rounded-2xl border border-emerald-200 bg-emerald-50 p-6 shadow-sm space-y-3">
-                <h2 className="text-lg font-bold text-emerald-900">✓ Imported successfully</h2>
-                <div className="text-sm text-slate-800">
+              <div className="rounded-card border border-pos-border bg-pos-soft p-6 shadow-sm space-y-3">
+                <h2 className="text-lg font-bold text-pos">✓ Imported successfully</h2>
+                <div className="text-sm text-ink">
                   <strong>{siaWriteResult.summary.importedValueCount}</strong> daily values written for{" "}
                   <strong>{siaWriteResult.summary.profile}</strong> covering{" "}
                   <span className="font-mono">{siaWriteResult.summary.firstImportedDate}</span> →{" "}
                   <span className="font-mono">{siaWriteResult.summary.lastImportedDate}</span>.
                 </div>
-                <div className="text-sm text-slate-800">
+                <div className="text-sm text-ink">
                   New YTD: <strong>{siaWriteResult.summary.newYtdPct}%</strong>
                 </div>
                 {siaWriteResult.stashKeys && (
-                  <div className="text-xs text-slate-600 pt-2">
+                  <div className="text-xs text-ink-2 pt-2">
                     Rollback stash keys (if ever needed):
                     <ul className="list-disc list-inside pt-1 font-mono">
                       <li>{siaWriteResult.stashKeys.perf}</li>
@@ -1119,7 +1119,7 @@ export default function AppendixPage() {
                     </ul>
                   </div>
                 )}
-                <p className="text-xs text-emerald-700 pt-1">
+                <p className="text-xs text-pos pt-1">
                   Refresh the PIM Model / PIM Performance pages to see the updated chart.
                 </p>
               </div>
@@ -1128,42 +1128,42 @@ export default function AppendixPage() {
             {/* Rollback section — list of available stashes from prior
                 imports, each with a Rollback button. Useful when an
                 import produced unexpected numbers. */}
-            <div className="rounded-2xl border border-slate-200 bg-white p-6 shadow-sm space-y-3">
+            <div className="rounded-card border border-line bg-white p-6 shadow-sm space-y-3">
               <div className="flex items-center justify-between">
-                <h3 className="text-base font-bold text-slate-800">Rollback previous imports</h3>
+                <h3 className="text-base font-bold text-ink">Rollback previous imports</h3>
                 <button
                   onClick={() => void loadStashes()}
-                  className="text-xs rounded-md bg-slate-100 px-2 py-1 font-medium text-slate-600 hover:bg-slate-200 transition-colors"
+                  className="text-xs rounded-md bg-surface-2 px-2 py-1 font-medium text-ink-2 hover:bg-line transition-colors"
                 >
                   {stashesLoading ? "Loading…" : "Refresh"}
                 </button>
               </div>
-              <p className="text-xs text-slate-500">
+              <p className="text-xs text-ink-3">
                 Every import (and every rollback) writes a stash of the prior state.
                 Use this list to undo a recent import if the numbers look wrong.
                 Stashes are kept indefinitely in Redis — no auto-pruning yet.
               </p>
               {stashes.length === 0 && !stashesLoading && (
-                <div className="rounded-lg bg-slate-50 p-4 text-sm text-slate-500">
+                <div className="rounded-lg bg-surface-2 p-4 text-sm text-ink-3">
                   No import stashes found.
                 </div>
               )}
               {stashes.length > 0 && (
                 <div className="space-y-2">
                   {stashes.map((s, idx) => (
-                    <div key={s.timestamp} className="flex items-center justify-between rounded-lg border border-slate-200 bg-slate-50 px-3 py-2">
+                    <div key={s.timestamp} className="flex items-center justify-between rounded-lg border border-line bg-surface-2 px-3 py-2">
                       <div className="text-xs">
-                        <div className="font-mono text-slate-800">{s.date.replace("T", " ").slice(0, 19)} UTC</div>
-                        <div className="text-slate-500 mt-0.5">
-                          {idx === 0 && <span className="inline-block rounded-full bg-blue-100 text-blue-700 px-1.5 py-0.5 mr-2 font-semibold uppercase text-[9px]">Most Recent</span>}
+                        <div className="font-mono text-ink">{s.date.replace("T", " ").slice(0, 19)} UTC</div>
+                        <div className="text-ink-3 mt-0.5">
+                          {idx === 0 && <span className="inline-block rounded-full bg-accent-soft text-accent px-1.5 py-0.5 mr-2 font-semibold uppercase text-[9px]">Most Recent</span>}
                           perf: {s.perfSizeBytes ? (s.perfSizeBytes / 1024).toFixed(1) : "?"} KB · appendix: {s.appendixSizeBytes ? (s.appendixSizeBytes / 1024).toFixed(1) : "?"} KB
-                          {!s.complete && <span className="text-amber-600 ml-2">⚠ incomplete</span>}
+                          {!s.complete && <span className="text-warn ml-2">⚠ incomplete</span>}
                         </div>
                       </div>
                       <button
                         onClick={() => void handleRollback(s.timestamp)}
                         disabled={!s.complete}
-                        className="text-xs rounded-lg bg-amber-600 px-3 py-1.5 font-semibold text-white hover:bg-amber-700 disabled:opacity-50 disabled:cursor-not-allowed transition-colors"
+                        className="text-xs rounded-lg bg-warn px-3 py-1.5 font-semibold text-white hover:bg-warn disabled:opacity-50 disabled:cursor-not-allowed transition-colors"
                       >
                         Rollback to this
                       </button>
@@ -1172,12 +1172,12 @@ export default function AppendixPage() {
                 </div>
               )}
               {rollbackError && (
-                <div className="rounded-lg bg-red-50 border border-red-200 p-3 text-sm text-red-700">
+                <div className="rounded-lg bg-neg-soft border border-neg-border p-3 text-sm text-neg">
                   <strong>Error:</strong> {rollbackError}
                 </div>
               )}
               {rollbackResult?.ok && rollbackResult.wrote && (
-                <div className="rounded-lg bg-emerald-50 border border-emerald-200 p-3 text-sm text-emerald-800 space-y-1">
+                <div className="rounded-lg bg-pos-soft border border-pos-border p-3 text-sm text-pos space-y-1">
                   <div className="font-semibold">✓ Restored to {rollbackResult.restoredFrom?.date.replace("T", " ").slice(0, 19)} UTC</div>
                   <div className="text-xs">
                     Pre-rollback state stashed for re-rollback:
@@ -1191,8 +1191,8 @@ export default function AppendixPage() {
             </div>
 
             {/* Quick reference */}
-            <div className="rounded-2xl border border-slate-200 bg-white p-6 text-xs text-slate-500 space-y-1">
-              <div className="font-semibold text-slate-700 mb-2 text-sm">Tips</div>
+            <div className="rounded-card border border-line bg-white p-6 text-xs text-ink-3 space-y-1">
+              <div className="font-semibold text-ink mb-2 text-sm">Tips</div>
               <div>• Bi-weekly / monthly cadence works well. Each import overwrites the current year&apos;s entries with the freshly exported SIA data.</div>
               <div>• Pre-current-year history is permanently locked. Only this year&apos;s entries get replaced.</div>
               <div>• Include Dec 31 of the prior year in the export so the Jan 2 boundary return is preserved.</div>

@@ -212,17 +212,17 @@ function AllocationTableCard({
   onUpdate: (rowKey: keyof AllocationTable, colKey: keyof AllocationRow, value: number) => void;
 }) {
   return (
-    <div className="rounded-[30px] border border-slate-200 bg-white shadow-sm overflow-hidden">
-      <div className="px-6 py-4 border-b border-slate-100">
-        <h3 className="text-base font-bold text-slate-800">{title}</h3>
+    <div className="rounded-card border border-line bg-white shadow-sm overflow-hidden">
+      <div className="px-6 py-4 border-b border-line-soft">
+        <h3 className="text-base font-bold text-ink">{title}</h3>
       </div>
       <div className="overflow-x-auto">
         <table className="w-full text-sm">
           <thead>
-            <tr className="border-b border-slate-100">
-              <th className="px-4 py-2.5 text-left text-xs font-semibold text-slate-500 uppercase tracking-wider w-24"></th>
+            <tr className="border-b border-line-soft">
+              <th className="px-4 py-2.5 text-left text-xs font-semibold text-ink-3 uppercase tracking-wider w-24"></th>
               {AA_COLS.map((col) => (
-                <th key={col.key} className="px-4 py-2.5 text-center text-xs font-semibold text-slate-500 uppercase tracking-wider">
+                <th key={col.key} className="px-4 py-2.5 text-center text-xs font-semibold text-ink-3 uppercase tracking-wider">
                   {col.label}
                 </th>
               ))}
@@ -234,9 +234,9 @@ function AllocationTableCard({
               return (
                 <tr
                   key={row.key}
-                  className={`border-b border-slate-50 ${isCurrent ? "bg-emerald-50" : "hover:bg-slate-50"}`}
+                  className={`border-b border-line-soft ${isCurrent ? "bg-pos-soft" : "hover:bg-surface-2"}`}
                 >
-                  <td className={`px-4 py-2 text-xs font-semibold ${isCurrent ? "text-emerald-700" : "text-slate-600"}`}>
+                  <td className={`px-4 py-2 text-xs font-semibold ${isCurrent ? "text-pos" : "text-ink-2"}`}>
                     {row.label}
                   </td>
                   {AA_COLS.map((col) => (
@@ -247,11 +247,11 @@ function AllocationTableCard({
                           onChange={(n) => onUpdate(row.key, col.key, n ?? 0)}
                           className={`w-16 rounded-lg border px-2 py-1 text-sm text-center font-medium ${
                             isCurrent
-                              ? "border-emerald-200 bg-emerald-50 text-emerald-800"
-                              : "border-slate-200 bg-white text-slate-700"
-                          } focus:outline-none focus:ring-1 focus:ring-blue-200`}
+                              ? "border-pos-border bg-pos-soft text-pos"
+                              : "border-line bg-white text-ink"
+                          } focus:outline-none focus:ring-1 focus:ring-accent-soft`}
                         />
-                        <span className="text-xs text-slate-400">%</span>
+                        <span className="text-xs text-ink-3">%</span>
                       </div>
                     </td>
                   ))}
@@ -289,7 +289,7 @@ function FundsTable({
   return (
     <div className="mb-6">
       <div className="flex items-center gap-2 mb-2">
-        <span className="text-sm font-bold text-slate-700">{title} (as of </span>
+        <span className="text-sm font-bold text-ink">{title} (as of </span>
         {editingDate ? (
           <input
             autoFocus
@@ -297,27 +297,27 @@ function FundsTable({
             onChange={(e) => setTempDate(e.target.value)}
             onBlur={() => { onDateChange(tempDate); setEditingDate(false); }}
             onKeyDown={(e) => { if (e.key === "Enter") { onDateChange(tempDate); setEditingDate(false); } if (e.key === "Escape") setEditingDate(false); }}
-            className="w-28 bg-white border border-blue-300 focus:ring-1 focus:ring-blue-200 rounded-lg outline-none transition-all px-1 py-0.5 text-sm"
+            className="w-28 bg-white border border-accent-border focus:ring-1 focus:ring-accent-soft rounded-lg outline-none transition-all px-1 py-0.5 text-sm"
           />
         ) : (
           <span
             onClick={() => { setTempDate(dateValue); setEditingDate(true); }}
-            className="text-sm font-bold text-slate-700 cursor-pointer hover:bg-blue-50 rounded px-1 py-0.5"
+            className="text-sm font-bold text-ink cursor-pointer hover:bg-accent-soft rounded px-1 py-0.5"
             title="Click to edit date"
           >
             {dateValue}
           </span>
         )}
-        <span className="text-sm font-bold text-slate-700">)</span>
+        <span className="text-sm font-bold text-ink">)</span>
       </div>
       <div className="overflow-x-auto">
         <table className="w-full text-sm">
           <thead>
-            <tr className="border-b border-slate-100 bg-slate-50/50">
+            <tr className="border-b border-line-soft bg-surface-hover">
               {FUND_COLS.map((col) => (
                 <th
                   key={col.key}
-                  className={`px-3 py-2.5 text-xs font-semibold text-slate-500 uppercase tracking-wider ${
+                  className={`px-3 py-2.5 text-xs font-semibold text-ink-3 uppercase tracking-wider ${
                     col.key === "name" ? "text-left min-w-[220px]" : col.key === "ticker" ? "text-left min-w-[100px]" : "text-center"
                   }`}
                 >
@@ -329,13 +329,13 @@ function FundsTable({
           </thead>
           <tbody>
             {rows.map((row, rowIdx) => (
-              <tr key={rowIdx} className="border-b border-slate-50 hover:bg-slate-50/50">
+              <tr key={rowIdx} className="border-b border-line-soft hover:bg-surface-hover">
                 <td className="px-3 py-1.5">
                   <input
                     type="text"
                     value={row.name}
                     onChange={(e) => onUpdateRow(rowIdx, "name", e.target.value)}
-                    className="w-full rounded-lg border border-transparent px-2 py-1 text-sm font-medium text-slate-800 hover:border-slate-200 hover:bg-slate-50 focus:border-blue-300 focus:outline-none focus:ring-2 focus:ring-blue-200 bg-transparent"
+                    className="w-full rounded-lg border border-transparent px-2 py-1 text-sm font-medium text-ink hover:border-line hover:bg-surface-2 focus:border-accent-border focus:outline-none focus:ring-2 focus:ring-accent-soft bg-transparent"
                   />
                 </td>
                 <td className="px-3 py-1.5">
@@ -343,7 +343,7 @@ function FundsTable({
                     type="text"
                     value={row.ticker}
                     onChange={(e) => onUpdateRow(rowIdx, "ticker", e.target.value)}
-                    className="w-full rounded-lg border border-transparent px-2 py-1 text-sm font-mono text-slate-700 hover:border-slate-200 hover:bg-slate-50 focus:border-blue-300 focus:outline-none focus:ring-2 focus:ring-blue-200 bg-transparent"
+                    className="w-full rounded-lg border border-transparent px-2 py-1 text-sm font-mono text-ink hover:border-line hover:bg-surface-2 focus:border-accent-border focus:outline-none focus:ring-2 focus:ring-accent-soft bg-transparent"
                     placeholder="—"
                   />
                 </td>
@@ -357,16 +357,16 @@ function FundsTable({
                           onChange={(n) => onUpdateRow(rowIdx, col.key, n)}
                           placeholder="—"
                           className={`w-16 rounded-lg border border-transparent px-1 py-1 text-sm text-center font-medium ${
-                            val === null ? "text-slate-400" : val < 0 ? "text-red-600" : val > 0 ? "text-emerald-600" : "text-slate-600"
-                          } hover:border-slate-200 focus:border-blue-300 focus:outline-none focus:ring-2 focus:ring-blue-200 bg-slate-50/50 hover:bg-white`}
+                            val === null ? "text-ink-3" : val < 0 ? "text-neg" : val > 0 ? "text-pos" : "text-ink-2"
+                          } hover:border-line focus:border-accent-border focus:outline-none focus:ring-2 focus:ring-accent-soft bg-surface-hover hover:bg-white`}
                         />
-                        {val !== null && <span className="text-[10px] text-slate-400">%</span>}
+                        {val !== null && <span className="text-[10px] text-ink-3">%</span>}
                       </div>
                     </td>
                   );
                 })}
                 <td className="px-2 py-1.5 text-center">
-                  <button onClick={() => onRemoveRow(rowIdx)} className="text-slate-300 hover:text-red-500 font-bold transition-colors" title="Remove">&times;</button>
+                  <button onClick={() => onRemoveRow(rowIdx)} className="text-ink-faint hover:text-neg font-bold transition-colors" title="Remove">&times;</button>
                 </td>
               </tr>
             ))}
@@ -375,7 +375,7 @@ function FundsTable({
       </div>
       <button
         onClick={onAddRow}
-        className="mt-2 rounded-xl bg-blue-600 px-5 py-2 text-sm font-semibold text-white hover:bg-blue-700 transition-colors"
+        className="mt-2 rounded-control bg-accent px-5 py-2 text-sm font-semibold text-white hover:bg-accent transition-colors"
       >
         Add
       </button>
@@ -390,8 +390,8 @@ function formatPerf(v: number | null): string {
 }
 
 function perfColor(v: number | null): string {
-  if (v === null) return "text-slate-400";
-  return v < 0 ? "text-red-600" : v > 0 ? "text-emerald-600" : "text-slate-600";
+  if (v === null) return "text-ink-3";
+  return v < 0 ? "text-neg" : v > 0 ? "text-pos" : "text-ink-2";
 }
 
 /* ─── Auto-populated Funds / ETFs Table (from portfolio) ─── */
@@ -416,47 +416,47 @@ function AutoFundsTable({
   return (
     <div className="mb-6">
       <div className="flex items-center gap-2 mb-2">
-        <span className="text-sm font-bold text-slate-700">{title}</span>
-        {dateLabel && <span className="text-xs text-slate-400">(as of {dateLabel})</span>}
+        <span className="text-sm font-bold text-ink">{title}</span>
+        {dateLabel && <span className="text-xs text-ink-3">(as of {dateLabel})</span>}
       </div>
       <div className="overflow-x-auto">
         <table className="w-full text-sm">
           <thead>
-            <tr className="border-b border-slate-100 bg-slate-50/50">
-              <th className="px-3 py-2.5 text-left text-xs font-semibold text-slate-500 uppercase tracking-wider min-w-[220px]">Name</th>
-              <th className="px-3 py-2.5 text-left text-xs font-semibold text-slate-500 uppercase tracking-wider min-w-[100px]">Code/Ticker</th>
-              <th className="px-3 py-2.5 text-center text-xs font-semibold text-slate-500 uppercase tracking-wider">YTD</th>
-              <th className="px-3 py-2.5 text-center text-xs font-semibold text-slate-500 uppercase tracking-wider">1Y</th>
-              <th className="px-3 py-2.5 text-center text-xs font-semibold text-slate-500 uppercase tracking-wider">3Y</th>
-              <th className="px-3 py-2.5 text-center text-xs font-semibold text-slate-500 uppercase tracking-wider">5Y</th>
-              <th className="px-3 py-2.5 text-center text-xs font-semibold text-slate-500 uppercase tracking-wider">10Y</th>
+            <tr className="border-b border-line-soft bg-surface-hover">
+              <th className="px-3 py-2.5 text-left text-xs font-semibold text-ink-3 uppercase tracking-wider min-w-[220px]">Name</th>
+              <th className="px-3 py-2.5 text-left text-xs font-semibold text-ink-3 uppercase tracking-wider min-w-[100px]">Code/Ticker</th>
+              <th className="px-3 py-2.5 text-center text-xs font-semibold text-ink-3 uppercase tracking-wider">YTD</th>
+              <th className="px-3 py-2.5 text-center text-xs font-semibold text-ink-3 uppercase tracking-wider">1Y</th>
+              <th className="px-3 py-2.5 text-center text-xs font-semibold text-ink-3 uppercase tracking-wider">3Y</th>
+              <th className="px-3 py-2.5 text-center text-xs font-semibold text-ink-3 uppercase tracking-wider">5Y</th>
+              <th className="px-3 py-2.5 text-center text-xs font-semibold text-ink-3 uppercase tracking-wider">10Y</th>
             </tr>
           </thead>
           <tbody>
             {holdings.map((h) => {
               const perf = h.fundData?.performance;
               return (
-                <tr key={h.ticker} className="border-b border-slate-50 hover:bg-slate-50/50">
+                <tr key={h.ticker} className="border-b border-line-soft hover:bg-surface-hover">
                   <td className="px-3 py-2.5">
-                    <Link href={`/stock/${h.ticker.toLowerCase()}`} className="text-sm font-medium text-slate-800 hover:underline">
+                    <Link href={`/stock/${h.ticker.toLowerCase()}`} className="text-sm font-medium text-ink hover:underline">
                       {h.name || h.ticker}
                     </Link>
                   </td>
-                  <td className="px-3 py-2.5 text-sm font-mono text-slate-600">{h.ticker}</td>
+                  <td className="px-3 py-2.5 text-sm font-mono text-ink-2">{h.ticker}</td>
                   <td className={`px-3 py-2.5 text-center text-sm font-medium ${perfColor(perf?.ytd ?? null)}`}>
-                    {formatPerf(perf?.ytd ?? null)}{perf?.ytd != null && <span className="text-[10px] text-slate-400 ml-0.5">%</span>}
+                    {formatPerf(perf?.ytd ?? null)}{perf?.ytd != null && <span className="text-[10px] text-ink-3 ml-0.5">%</span>}
                   </td>
                   <td className={`px-3 py-2.5 text-center text-sm font-medium ${perfColor(perf?.oneYear ?? null)}`}>
-                    {formatPerf(perf?.oneYear ?? null)}{perf?.oneYear != null && <span className="text-[10px] text-slate-400 ml-0.5">%</span>}
+                    {formatPerf(perf?.oneYear ?? null)}{perf?.oneYear != null && <span className="text-[10px] text-ink-3 ml-0.5">%</span>}
                   </td>
                   <td className={`px-3 py-2.5 text-center text-sm font-medium ${perfColor(perf?.threeYear ?? null)}`}>
-                    {formatPerf(perf?.threeYear ?? null)}{perf?.threeYear != null && <span className="text-[10px] text-slate-400 ml-0.5">%</span>}
+                    {formatPerf(perf?.threeYear ?? null)}{perf?.threeYear != null && <span className="text-[10px] text-ink-3 ml-0.5">%</span>}
                   </td>
                   <td className={`px-3 py-2.5 text-center text-sm font-medium ${perfColor(perf?.fiveYear ?? null)}`}>
-                    {formatPerf(perf?.fiveYear ?? null)}{perf?.fiveYear != null && <span className="text-[10px] text-slate-400 ml-0.5">%</span>}
+                    {formatPerf(perf?.fiveYear ?? null)}{perf?.fiveYear != null && <span className="text-[10px] text-ink-3 ml-0.5">%</span>}
                   </td>
                   <td className={`px-3 py-2.5 text-center text-sm font-medium ${perfColor(perf?.tenYear ?? null)}`}>
-                    {formatPerf(perf?.tenYear ?? null)}{perf?.tenYear != null && <span className="text-[10px] text-slate-400 ml-0.5">%</span>}
+                    {formatPerf(perf?.tenYear ?? null)}{perf?.tenYear != null && <span className="text-[10px] text-ink-3 ml-0.5">%</span>}
                   </td>
                 </tr>
               );
@@ -966,7 +966,7 @@ export default function AAPerformancePage() {
   if (loading) {
     return (
       <div className="flex items-center justify-center min-h-[60vh]">
-        <div className="animate-pulse text-slate-400 text-lg">Loading AA & Performance...</div>
+        <div className="animate-pulse text-ink-3 text-lg">Loading AA & Performance...</div>
       </div>
     );
   }
@@ -976,9 +976,9 @@ export default function AAPerformancePage() {
       {/* ── Asset Allocation Section ── */}
       <section>
         <div className="flex items-baseline justify-between mb-4">
-          <h2 className="text-xl font-bold text-slate-800">Asset Allocation</h2>
-          <p className="text-xs text-slate-400">
-            <span className="text-emerald-700 font-semibold">Current</span> row edits the PIM Model profile weights.
+          <h2 className="text-xl font-bold text-ink">Asset Allocation</h2>
+          <p className="text-xs text-ink-3">
+            <span className="text-pos font-semibold">Current</span> row edits the PIM Model profile weights.
             {pimModels.lastUpdated && (
               <>
                 {" "}Last saved{" "}
@@ -1016,27 +1016,27 @@ export default function AAPerformancePage() {
       {/* ── Performance Section ── */}
       <section>
         <div className="flex items-center gap-2 mb-4">
-          <h2 className="text-xl font-bold text-slate-800">Performance</h2>
+          <h2 className="text-xl font-bold text-ink">Performance</h2>
           {(pimLoading || indexLoading) && (
-            <span className="text-xs text-slate-400 animate-pulse">refreshing…</span>
+            <span className="text-xs text-ink-3 animate-pulse">refreshing…</span>
           )}
         </div>
-        <div className="rounded-[30px] border border-slate-200 bg-white shadow-sm overflow-hidden">
+        <div className="rounded-card border border-line bg-white shadow-sm overflow-hidden">
           <div className="overflow-x-auto">
             <table className="w-full text-sm">
               <thead>
-                <tr className="border-b border-slate-100 bg-slate-50/50">
-                  <th className="px-3 py-2.5 text-left text-xs font-semibold text-slate-500 uppercase tracking-wider min-w-[220px]">
+                <tr className="border-b border-line-soft bg-surface-hover">
+                  <th className="px-3 py-2.5 text-left text-xs font-semibold text-ink-3 uppercase tracking-wider min-w-[220px]">
                     Name
                   </th>
                   {PERIOD_COLS.map((col) => (
                     <th
                       key={col.key}
-                      className="px-3 py-2.5 text-center text-xs font-semibold text-slate-500 uppercase tracking-wider"
+                      className="px-3 py-2.5 text-center text-xs font-semibold text-ink-3 uppercase tracking-wider"
                     >
                       {col.label}
                       {col.annualized && (
-                        <div className="text-[9px] font-normal normal-case text-slate-400 mt-0.5">
+                        <div className="text-[9px] font-normal normal-case text-ink-3 mt-0.5">
                           ann.
                         </div>
                       )}
@@ -1046,8 +1046,8 @@ export default function AAPerformancePage() {
               </thead>
               <tbody>
                 {autoPerformanceRows.map((row) => (
-                  <tr key={row.name} className="border-b border-slate-50 hover:bg-slate-50/50">
-                    <td className="px-3 py-2.5 text-sm font-medium text-slate-800">{row.name}</td>
+                  <tr key={row.name} className="border-b border-line-soft hover:bg-surface-hover">
+                    <td className="px-3 py-2.5 text-sm font-medium text-ink">{row.name}</td>
                     {PERIOD_COLS.map((col) => {
                       const val = row[col.key];
                       return (
@@ -1056,7 +1056,7 @@ export default function AAPerformancePage() {
                           className={`px-3 py-2.5 text-center text-sm font-medium ${perfColor(val)}`}
                         >
                           {formatPerf(val)}
-                          {val !== null && <span className="text-[10px] text-slate-400 ml-0.5">%</span>}
+                          {val !== null && <span className="text-[10px] text-ink-3 ml-0.5">%</span>}
                         </td>
                       );
                     })}
@@ -1070,10 +1070,10 @@ export default function AAPerformancePage() {
 
       {/* ── Active Funds / ETFs Section (auto-populated from portfolio) ── */}
       <section>
-        <h2 className="text-xl font-bold text-slate-800 mb-4">Active Funds / ETFs</h2>
-        <div className="rounded-[30px] border border-slate-200 bg-white shadow-sm p-6">
+        <h2 className="text-xl font-bold text-ink mb-4">Active Funds / ETFs</h2>
+        <div className="rounded-card border border-line bg-white shadow-sm p-6">
           {portfolioFunds.length === 0 ? (
-            <p className="text-sm text-slate-400">No funds or ETFs in your portfolio. Add them from the <Link href="/" className="text-blue-600 hover:underline">Dashboard</Link>.</p>
+            <p className="text-sm text-ink-3">No funds or ETFs in your portfolio. Add them from the <Link href="/" className="text-accent hover:underline">Dashboard</Link>.</p>
           ) : (
             <>
               {mutualFunds.length > 0 && (
@@ -1089,8 +1089,8 @@ export default function AAPerformancePage() {
 
       {/* ── Alpha Sleeve Analysis Section ── */}
       <section>
-        <h2 className="text-xl font-bold text-slate-800 mb-4">Alpha Sleeve Analysis</h2>
-        <div className="rounded-[30px] border border-slate-200 bg-white shadow-sm p-6">
+        <h2 className="text-xl font-bold text-ink mb-4">Alpha Sleeve Analysis</h2>
+        <div className="rounded-card border border-line bg-white shadow-sm p-6">
           <ImageUpload
             section="aa-performance"
             sectionLabel="Alpha Sleeve Analysis"
@@ -1104,14 +1104,14 @@ export default function AAPerformancePage() {
       {/* ── Boosted.AI ── */}
       <section>
         <div className="flex items-center gap-2 mb-4">
-          <h2 className="text-xl font-bold text-slate-800">Boosted.AI</h2>
-          <a href="https://insights.boosted.ai/dashboard/ideas/de0064ab-7a78-4103-994c-3ad9d15e8211" target="_blank" rel="noopener noreferrer" className="text-blue-500 hover:text-blue-700 text-sm font-medium flex items-center gap-1">
+          <h2 className="text-xl font-bold text-ink">Boosted.AI</h2>
+          <a href="https://insights.boosted.ai/dashboard/ideas/de0064ab-7a78-4103-994c-3ad9d15e8211" target="_blank" rel="noopener noreferrer" className="text-accent hover:text-accent text-sm font-medium flex items-center gap-1">
             Open <svg xmlns="http://www.w3.org/2000/svg" className="h-3.5 w-3.5" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}><path strokeLinecap="round" strokeLinejoin="round" d="M10 6H6a2 2 0 00-2 2v10a2 2 0 002 2h10a2 2 0 002-2v-4M14 4h6m0 0v6m0-6L10 14" /></svg>
           </a>
         </div>
         <div className="grid grid-cols-1 lg:grid-cols-2 gap-4">
-          <div className="rounded-[30px] border border-slate-200 bg-white shadow-sm p-6">
-            <h3 className="text-base font-bold text-slate-700 mb-2">Portfolio Holdings</h3>
+          <div className="rounded-card border border-line bg-white shadow-sm p-6">
+            <h3 className="text-base font-bold text-ink mb-2">Portfolio Holdings</h3>
             <ImageUpload
               section="boosted-holdings"
               sectionLabel="Portfolio Holdings"
@@ -1120,8 +1120,8 @@ export default function AAPerformancePage() {
               onRemove={removeAttachment}
             />
           </div>
-          <div className="rounded-[30px] border border-slate-200 bg-white shadow-sm p-6">
-            <h3 className="text-base font-bold text-slate-700 mb-2">Sector Performance</h3>
+          <div className="rounded-card border border-line bg-white shadow-sm p-6">
+            <h3 className="text-base font-bold text-ink mb-2">Sector Performance</h3>
             <ImageUpload
               section="boosted-sector"
               sectionLabel="Sector Performance"
@@ -1136,14 +1136,14 @@ export default function AAPerformancePage() {
       {/* ── SIA ── */}
       <section>
         <div className="flex items-center gap-2 mb-4">
-          <h2 className="text-xl font-bold text-slate-800">SIA</h2>
-          <a href="https://www2.siacharts.com" target="_blank" rel="noopener noreferrer" className="text-blue-500 hover:text-blue-700 text-sm font-medium flex items-center gap-1">
+          <h2 className="text-xl font-bold text-ink">SIA</h2>
+          <a href="https://www2.siacharts.com" target="_blank" rel="noopener noreferrer" className="text-accent hover:text-accent text-sm font-medium flex items-center gap-1">
             Open <svg xmlns="http://www.w3.org/2000/svg" className="h-3.5 w-3.5" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}><path strokeLinecap="round" strokeLinejoin="round" d="M10 6H6a2 2 0 00-2 2v10a2 2 0 002 2h10a2 2 0 002-2v-4M14 4h6m0 0v6m0-6L10 14" /></svg>
           </a>
         </div>
         <div className="grid grid-cols-1 lg:grid-cols-3 gap-4">
-          <div className="rounded-[30px] border border-slate-200 bg-white shadow-sm p-6">
-            <h3 className="text-base font-bold text-slate-700 mb-2">Portfolio Holdings</h3>
+          <div className="rounded-card border border-line bg-white shadow-sm p-6">
+            <h3 className="text-base font-bold text-ink mb-2">Portfolio Holdings</h3>
             <ImageUpload
               section="sia-holdings"
               sectionLabel="Portfolio Holdings"
@@ -1152,8 +1152,8 @@ export default function AAPerformancePage() {
               onRemove={removeAttachment}
             />
           </div>
-          <div className="rounded-[30px] border border-slate-200 bg-white shadow-sm p-6">
-            <h3 className="text-base font-bold text-slate-700 mb-2">Equity Action Call</h3>
+          <div className="rounded-card border border-line bg-white shadow-sm p-6">
+            <h3 className="text-base font-bold text-ink mb-2">Equity Action Call</h3>
             <ImageUpload
               section="sia-equity-action"
               sectionLabel="Equity Action Call"
@@ -1162,8 +1162,8 @@ export default function AAPerformancePage() {
               onRemove={removeAttachment}
             />
           </div>
-          <div className="rounded-[30px] border border-slate-200 bg-white shadow-sm p-6">
-            <h3 className="text-base font-bold text-slate-700 mb-2">Asset Class Rankings</h3>
+          <div className="rounded-card border border-line bg-white shadow-sm p-6">
+            <h3 className="text-base font-bold text-ink mb-2">Asset Class Rankings</h3>
             <ImageUpload
               section="sia-asset-class"
               sectionLabel="Asset Class Rankings"
@@ -1177,8 +1177,8 @@ export default function AAPerformancePage() {
 
       {/* ── Seeking Alpha ── */}
       <section>
-        <h2 className="text-xl font-bold text-slate-800 mb-4">Seeking Alpha</h2>
-        <div className="rounded-[30px] border border-slate-200 bg-white shadow-sm p-6">
+        <h2 className="text-xl font-bold text-ink mb-4">Seeking Alpha</h2>
+        <div className="rounded-card border border-line bg-white shadow-sm p-6">
           <ImageUpload
             section="seeking-alpha-aa"
             sectionLabel="Seeking Alpha"

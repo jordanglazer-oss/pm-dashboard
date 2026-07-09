@@ -158,9 +158,9 @@ function AssetAllocationPie({ live, target, profileLabel }: { live: ClassWeights
 
   if (!rows.length || pieTotal <= 0) {
     return (
-      <div className="rounded-2xl border border-slate-200 bg-white p-5 shadow-sm">
-        <h3 className="text-sm font-bold text-slate-800">Asset Allocation <span className="ml-2 text-[11px] font-normal text-slate-400">({profileLabel})</span></h3>
-        <div className="mt-2 text-xs text-slate-400 italic">No allocation data for this model.</div>
+      <div className="rounded-card border border-line bg-white p-5 shadow-sm">
+        <h3 className="text-sm font-bold text-ink">Asset Allocation <span className="ml-2 text-[11px] font-normal text-ink-3">({profileLabel})</span></h3>
+        <div className="mt-2 text-xs text-ink-3 italic">No allocation data for this model.</div>
       </div>
     );
   }
@@ -186,11 +186,11 @@ function AssetAllocationPie({ live, target, profileLabel }: { live: ClassWeights
   });
 
   return (
-    <div className="rounded-2xl border border-slate-200 bg-white p-5 shadow-sm">
-      <h3 className="text-sm font-bold text-slate-800">
+    <div className="rounded-card border border-line bg-white p-5 shadow-sm">
+      <h3 className="text-sm font-bold text-ink">
         Asset Allocation
-        <span className="ml-2 text-[11px] font-normal text-slate-400">({profileLabel})</span>
-        <span className="ml-2 text-[10px] font-medium text-slate-400">{usingLive ? "Live — current market weights" : "Target (awaiting live prices)"}</span>
+        <span className="ml-2 text-[11px] font-normal text-ink-3">({profileLabel})</span>
+        <span className="ml-2 text-[10px] font-medium text-ink-3">{usingLive ? "Live — current market weights" : "Target (awaiting live prices)"}</span>
       </h3>
       <div className="mt-3 flex flex-col sm:flex-row sm:items-center gap-5">
         <svg
@@ -207,7 +207,7 @@ function AssetAllocationPie({ live, target, profileLabel }: { live: ClassWeights
         </svg>
         <div className="flex-1 text-xs">
           {/* Header row */}
-          <div className="flex items-center justify-between gap-3 pb-1 mb-1 border-b border-slate-100 text-[10px] uppercase tracking-wider text-slate-400 font-semibold">
+          <div className="flex items-center justify-between gap-3 pb-1 mb-1 border-b border-line-soft text-[10px] uppercase tracking-wider text-ink-3 font-semibold">
             <span>Class</span>
             <span className="flex gap-4">
               <span className="w-12 text-right">Live</span>
@@ -217,16 +217,16 @@ function AssetAllocationPie({ live, target, profileLabel }: { live: ClassWeights
           </div>
           {rows.map((s) => {
             const drift = s.liveW - s.targetW;
-            const driftColor = Math.abs(drift) < 0.05 ? "text-slate-400" : drift > 0 ? "text-emerald-600" : "text-rose-600";
+            const driftColor = Math.abs(drift) < 0.05 ? "text-ink-3" : drift > 0 ? "text-pos" : "text-neg";
             return (
               <div key={s.key} className="flex items-center justify-between gap-3 py-0.5">
                 <span className="flex items-center gap-2">
                   <span className="inline-block w-3 h-3 rounded-sm" style={{ backgroundColor: s.color }} />
-                  <span className="text-slate-700">{s.label}</span>
+                  <span className="text-ink">{s.label}</span>
                 </span>
                 <span className="flex gap-4 tabular-nums">
-                  <span className="w-12 text-right font-semibold text-slate-800">{s.liveW.toFixed(1)}%</span>
-                  <span className="w-12 text-right text-slate-500">{s.targetW.toFixed(1)}%</span>
+                  <span className="w-12 text-right font-semibold text-ink">{s.liveW.toFixed(1)}%</span>
+                  <span className="w-12 text-right text-ink-3">{s.targetW.toFixed(1)}%</span>
                   <span className={`w-12 text-right font-medium ${driftColor}`}>
                     {Math.abs(drift) < 0.05 ? "—" : `${drift > 0 ? "+" : ""}${drift.toFixed(1)}`}
                   </span>
@@ -264,8 +264,8 @@ type SortDir = "asc" | "desc";
  *  scope (not inside the component) so it isn't re-created every render —
  *  takes the active sortField/sortDir as props. */
 function SortIcon({ field, sortField, sortDir }: { field: SortField; sortField: SortField; sortDir: SortDir }) {
-  if (sortField !== field) return <span className="ml-0.5 text-slate-300">↕</span>;
-  return <span className="ml-0.5 text-slate-600">{sortDir === "asc" ? "↑" : "↓"}</span>;
+  if (sortField !== field) return <span className="ml-0.5 text-ink-faint">↕</span>;
+  return <span className="ml-0.5 text-ink-2">{sortDir === "asc" ? "↑" : "↓"}</span>;
 }
 
 type HoldingRow = {
@@ -986,7 +986,7 @@ export function PimPortfolio({ groups }: Props) {
   };
 
   const hasPositions = holdingRows.some((r) => r.units > 0);
-  const thClass = "py-2 px-2 cursor-pointer hover:bg-slate-100 transition-colors text-[10px] font-bold uppercase tracking-wider text-slate-500 select-none whitespace-nowrap";
+  const thClass = "py-2 px-2 cursor-pointer hover:bg-surface-2 transition-colors text-[10px] font-bold uppercase tracking-wider text-ink-3 select-none whitespace-nowrap";
 
   // ── Rebalance & Buy/Sell logic ──
   const groupState = getGroupState(selectedGroupId);
@@ -2047,17 +2047,17 @@ export function PimPortfolio({ groups }: Props) {
     <div className="space-y-6">
       {/* Header bar */}
       <div className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
-        <h2 className="text-lg font-bold text-slate-800">PIM</h2>
+        <h2 className="text-lg font-bold text-ink">PIM</h2>
 
         {/* Profile tabs — horizontally scrollable so the 5-6 profiles
             (Conservative … Core) don't overflow on mobile. */}
-        <div className="flex gap-1 rounded-xl bg-slate-100 p-1 overflow-x-auto max-w-full">
+        <div className="flex gap-1 rounded-control bg-surface-2 p-1 overflow-x-auto max-w-full">
           {availableProfiles.map((p) => (
             <button
               key={p}
               onClick={() => setSelectedProfile(p)}
               className={`shrink-0 rounded-lg px-3 sm:px-4 py-2 text-sm font-semibold transition-colors whitespace-nowrap ${
-                activeProfile === p ? "bg-white text-slate-800 shadow-sm" : "text-slate-500 hover:text-slate-700"
+                activeProfile === p ? "bg-white text-ink shadow-sm" : "text-ink-3 hover:text-ink"
               }`}
             >
               {PROFILE_LABELS[p]}
@@ -2070,7 +2070,7 @@ export function PimPortfolio({ groups }: Props) {
           <button
             onClick={fetchPrices}
             disabled={pricesLoading}
-            className="flex items-center gap-1.5 rounded-lg bg-slate-100 px-3 py-1.5 text-xs font-semibold text-slate-600 hover:bg-slate-200 transition-colors disabled:opacity-50"
+            className="flex items-center gap-1.5 rounded-lg bg-surface-2 px-3 py-1.5 text-xs font-semibold text-ink-2 hover:bg-line transition-colors disabled:opacity-50"
           >
             <svg className={`w-3.5 h-3.5 ${pricesLoading ? "animate-spin" : ""}`} fill="none" stroke="currentColor" strokeWidth="2" viewBox="0 0 24 24">
               <path strokeLinecap="round" strokeLinejoin="round" d="M16.023 9.348h4.992v-.001M2.985 19.644v-4.992m0 0h4.992m-4.993 0 3.181 3.183a8.25 8.25 0 0 0 13.803-3.7M4.031 9.865a8.25 8.25 0 0 1 13.803-3.7l3.181 3.182" />
@@ -2081,7 +2081,7 @@ export function PimPortfolio({ groups }: Props) {
             onClick={editMode ? savePositions : startEdit}
             disabled={saving}
             className={`flex items-center gap-1.5 rounded-lg px-3 py-1.5 text-xs font-semibold transition-colors disabled:opacity-50 ${
-              editMode ? "bg-emerald-500 text-white hover:bg-emerald-600" : "bg-blue-500 text-white hover:bg-blue-600"
+              editMode ? "bg-pos text-white hover:bg-pos" : "bg-accent text-white hover:bg-accent"
             }`}
           >
             {editMode ? (saving ? "Saving..." : "Save Positions") : "Edit Positions"}
@@ -2089,20 +2089,20 @@ export function PimPortfolio({ groups }: Props) {
           {editMode && (
             <button
               onClick={() => setEditMode(false)}
-              className="rounded-lg bg-slate-200 px-3 py-1.5 text-xs font-semibold text-slate-600 hover:bg-slate-300 transition-colors"
+              className="rounded-lg bg-line px-3 py-1.5 text-xs font-semibold text-ink-2 hover:bg-line transition-colors"
             >
               Cancel
             </button>
           )}
           {!editMode && (
             <button onClick={() => setShowRebalance(!showRebalance)}
-              className="rounded-lg bg-emerald-600 px-3 py-1.5 text-xs font-semibold text-white hover:bg-emerald-700 transition-colors">
+              className="rounded-lg bg-pos px-3 py-1.5 text-xs font-semibold text-white hover:bg-pos transition-colors">
               Rebalance
             </button>
           )}
           {!editMode && (
             <button onClick={() => setShowSwitch(!showSwitch)}
-              className="rounded-lg bg-amber-600 px-3 py-1.5 text-xs font-semibold text-white hover:bg-amber-700 transition-colors">
+              className="rounded-lg bg-warn px-3 py-1.5 text-xs font-semibold text-white hover:bg-warn transition-colors">
               Buy / Sell
             </button>
           )}
@@ -2124,9 +2124,9 @@ export function PimPortfolio({ groups }: Props) {
           )}
           {!editMode && pendingTrades.length > 0 && (
             <button onClick={handleOpenSettlement}
-              className="rounded-lg bg-violet-600 px-3 py-1.5 text-xs font-semibold text-white hover:bg-violet-700 transition-colors relative">
+              className="rounded-lg bg-violet px-3 py-1.5 text-xs font-semibold text-white hover:bg-violet transition-colors relative">
               Settle Pending
-              <span className="absolute -top-1.5 -right-1.5 flex h-4 w-4 items-center justify-center rounded-full bg-red-500 text-[9px] font-bold text-white">
+              <span className="absolute -top-1.5 -right-1.5 flex h-4 w-4 items-center justify-center rounded-full bg-neg text-[9px] font-bold text-white">
                 {pendingTrades.length}
               </span>
             </button>
@@ -2142,7 +2142,7 @@ export function PimPortfolio({ groups }: Props) {
           Growth / All-Equity). Now consistent everywhere. */}
       {groupState.lastRebalance && (
         <div className="flex justify-end -mt-2">
-          <span className="text-[10px] text-slate-400">
+          <span className="text-[10px] text-ink-3">
             Last rebalance: {new Date(groupState.lastRebalance.date).toLocaleDateString()}
           </span>
         </div>
@@ -2161,12 +2161,12 @@ export function PimPortfolio({ groups }: Props) {
 
       {/* Rebalance Panel */}
       {showRebalance && (
-        <div className="rounded-2xl border border-emerald-200 bg-emerald-50/50 p-5 shadow-sm">
-          <h3 className="text-sm font-bold text-slate-800 mb-3">
+        <div className="rounded-card border border-pos-border bg-pos-soft/50 p-5 shadow-sm">
+          <h3 className="text-sm font-bold text-ink mb-3">
             Rebalance Preview
-            <span className="ml-2 text-[10px] font-normal text-slate-400">({PROFILE_LABELS[activeProfile]})</span>
+            <span className="ml-2 text-[10px] font-normal text-ink-3">({PROFILE_LABELS[activeProfile]})</span>
           </h3>
-          <p className="text-xs text-slate-500 mb-3">
+          <p className="text-xs text-ink-3 mb-3">
             Target units are calculated from <strong>previous close</strong> prices to match the trading desk.
             Enter the actual execution price for ACB tracking. Mutual funds are recorded as pending and settled when NAV is available.
             Prices are shared across profiles.
@@ -2174,7 +2174,7 @@ export function PimPortfolio({ groups }: Props) {
           <div className="overflow-x-auto">
             <table className="w-full text-sm">
               <thead>
-                <tr className="border-b border-emerald-200 text-xs text-slate-500">
+                <tr className="border-b border-pos-border text-xs text-ink-3">
                   <th className="text-left py-2 font-semibold">Symbol</th>
                   <th className="text-right py-2 font-semibold">Target %</th>
                   <th className="text-right py-2 font-semibold">Current %</th>
@@ -2211,19 +2211,19 @@ export function PimPortfolio({ groups }: Props) {
                     : (execPrice > 0 ? absDelta * execPrice * fxRate : 0);
 
                   return (
-                    <tr key={r.symbol} className={`border-b border-emerald-100 ${isMF ? "bg-violet-50/30" : ""}`}>
+                    <tr key={r.symbol} className={`border-b border-emerald-100 ${isMF ? "bg-violet-soft/30" : ""}`}>
                       <td className="py-2 font-mono text-xs font-semibold">
-                        <Link href={`/stock/${symbolToTicker(r.symbol).toLowerCase()}?from=positioning`} className="hover:underline hover:text-blue-600 transition-colors">
+                        <Link href={`/stock/${symbolToTicker(r.symbol).toLowerCase()}?from=positioning`} className="hover:underline hover:text-accent transition-colors">
                           {displayTicker(r.symbol)}
                         </Link>
                         {isMF && (
-                          <span className="ml-1 rounded bg-violet-100 px-1 py-0.5 text-[8px] font-bold text-violet-600">FUND</span>
+                          <span className="ml-1 rounded bg-violet-soft px-1 py-0.5 text-[8px] font-bold text-violet">FUND</span>
                         )}
                         {fundMissingMer(r.symbol) && (
                           <Link
                             href={`/stock/${symbolToTicker(r.symbol).toLowerCase()}?from=positioning`}
                             title="No MER on file for this fund/ETF — click to add a manual override. Missing MERs are treated as 0% in the blended-fee calc, understating total fees."
-                            className="ml-1 inline-block rounded bg-amber-100 px-1 py-0.5 text-[8px] font-bold uppercase tracking-wider text-amber-700 hover:bg-amber-200 transition-colors"
+                            className="ml-1 inline-block rounded bg-warn-soft px-1 py-0.5 text-[8px] font-bold uppercase tracking-wider text-warn hover:bg-warn transition-colors"
                           >
                             ⚠ No MER
                           </Link>
@@ -2236,42 +2236,42 @@ export function PimPortfolio({ groups }: Props) {
                       {(() => {
                         const pcDrift = prevCloseTotalCad > 0 ? (pcValueCad / prevCloseTotalCad) - r.modelPct : r.driftPct;
                         return (
-                          <td className={`py-2 text-right font-mono text-xs font-semibold ${pcDrift > 0 ? "text-emerald-600" : pcDrift < 0 ? "text-red-500" : "text-slate-400"}`}>
+                          <td className={`py-2 text-right font-mono text-xs font-semibold ${pcDrift > 0 ? "text-pos" : pcDrift < 0 ? "text-neg" : "text-ink-3"}`}>
                             {pcDrift > 0 ? "+" : ""}{(pcDrift * 10000).toFixed(0)}bp
                           </td>
                         );
                       })()}
                       <td className="py-2 text-center">
                         {action !== "HOLD" && (
-                          <span className={`rounded px-1.5 py-0.5 text-[10px] font-bold ${action === "SELL" ? "bg-red-100 text-red-700" : "bg-emerald-100 text-emerald-700"}`}>
+                          <span className={`rounded px-1.5 py-0.5 text-[10px] font-bold ${action === "SELL" ? "bg-neg-soft text-neg" : "bg-pos-soft text-pos"}`}>
                             {action}
                           </span>
                         )}
-                        {action === "HOLD" && <span className="text-[10px] text-slate-400">{"\u2014"}</span>}
+                        {action === "HOLD" && <span className="text-[10px] text-ink-3">{"\u2014"}</span>}
                       </td>
                       <td className="py-2 text-right font-mono text-xs">{r.units > 0 ? r.units.toFixed(2) : "\u2014"}</td>
                       <td className="py-2 text-right font-mono text-xs">
                         {isMF ? (
-                          <span className="text-violet-500" title="Units calculated at settlement">{"\u2014"}</span>
+                          <span className="text-violet" title="Units calculated at settlement">{"\u2014"}</span>
                         ) : targetUnits.toFixed(2)}
                       </td>
-                      <td className={`py-2 text-right font-mono text-xs font-semibold ${action === "BUY" ? "text-emerald-600" : action === "SELL" ? "text-red-500" : "text-slate-400"}`}>
+                      <td className={`py-2 text-right font-mono text-xs font-semibold ${action === "BUY" ? "text-pos" : action === "SELL" ? "text-neg" : "text-ink-3"}`}>
                         {action === "HOLD" ? "\u2014" : isMF ? (
                           <span title="Dollar amount — units determined at settlement">${Math.abs(deltaValueCad).toFixed(0)}</span>
                         ) : `${deltaUnits > 0 ? "+" : ""}${deltaUnits.toFixed(2)}`}
                       </td>
-                      <td className="py-2 text-right font-mono text-xs text-slate-500">{pcPrice > 0 ? `$${pcPrice.toFixed(2)}` : "\u2014"}</td>
+                      <td className="py-2 text-right font-mono text-xs text-ink-3">{pcPrice > 0 ? `$${pcPrice.toFixed(2)}` : "\u2014"}</td>
                       <td className="py-2 text-right">
                         {isMF ? (
-                          <span className="text-[10px] text-violet-500 italic">Pending</span>
+                          <span className="text-[10px] text-violet italic">Pending</span>
                         ) : action !== "HOLD" ? (
                           <input type="number" step="0.01" placeholder="Price"
                             value={rebalancePrices[r.symbol] || ""}
                             onChange={(e) => setRebalancePrices((p) => ({ ...p, [r.symbol]: e.target.value }))}
-                            className="w-20 rounded border border-slate-200 px-2 py-1 text-xs text-right outline-none focus:border-emerald-300" />
-                        ) : <span className="text-xs text-slate-400">{"\u2014"}</span>}
+                            className="w-20 rounded border border-line px-2 py-1 text-xs text-right outline-none focus:border-pos-border" />
+                        ) : <span className="text-xs text-ink-3">{"\u2014"}</span>}
                       </td>
-                      <td className="py-2 text-right font-mono text-xs text-slate-600">
+                      <td className="py-2 text-right font-mono text-xs text-ink-2">
                         {costCad > 0 ? `$${costCad.toFixed(2)}` : "\u2014"}
                       </td>
                     </tr>
@@ -2282,21 +2282,21 @@ export function PimPortfolio({ groups }: Props) {
           </div>
           <div className="flex flex-wrap items-center gap-2 mt-3">
             <button onClick={handleExecuteRebalance}
-              className="rounded-lg bg-emerald-600 px-4 py-2 text-xs font-semibold text-white hover:bg-emerald-700 transition-colors">
+              className="rounded-lg bg-pos px-4 py-2 text-xs font-semibold text-white hover:bg-pos transition-colors">
               Execute ({PROFILE_LABELS[activeProfile]})
             </button>
             {availableProfiles.length > 1 && (
               <button onClick={handleExecuteAllProfiles}
-                className="rounded-lg bg-blue-600 px-4 py-2 text-xs font-semibold text-white hover:bg-blue-700 transition-colors">
+                className="rounded-lg bg-accent px-4 py-2 text-xs font-semibold text-white hover:bg-accent transition-colors">
                 Execute All Profiles
               </button>
             )}
             <button onClick={() => { setShowRebalance(false); setRebalancePrices({}); }}
-              className="rounded-lg bg-slate-200 px-4 py-2 text-xs font-semibold text-slate-600 hover:bg-slate-300 transition-colors">
+              className="rounded-lg bg-line px-4 py-2 text-xs font-semibold text-ink-2 hover:bg-line transition-colors">
               Cancel
             </button>
             {sortedRows.some((r) => r.modelPct > 0 && isFundservCode(r.symbol)) && (
-              <span className="text-[10px] text-violet-500 ml-2">
+              <span className="text-[10px] text-violet ml-2">
                 Mutual fund trades will be recorded as pending — settle tomorrow when NAV is available.
               </span>
             )}
@@ -2306,15 +2306,15 @@ export function PimPortfolio({ groups }: Props) {
 
       {/* Settle Pending Trades Panel */}
       {showSettlement && pendingTrades.length > 0 && (
-        <div className="rounded-2xl border border-violet-200 bg-violet-50/50 p-5 shadow-sm">
-          <h3 className="text-sm font-bold text-slate-800 mb-1">Settle Pending Mutual Fund Trades</h3>
-          <p className="text-xs text-slate-500 mb-3">
+        <div className="rounded-card border border-violet bg-violet-soft/50 p-5 shadow-sm">
+          <h3 className="text-sm font-bold text-ink mb-1">Settle Pending Mutual Fund Trades</h3>
+          <p className="text-xs text-ink-3 mb-3">
             Enter the settlement NAV for each mutual fund. NAV is auto-fetched from Barchart — verify and adjust if needed.
           </p>
           <div className="overflow-x-auto">
             <table className="w-full text-sm">
               <thead>
-                <tr className="border-b border-violet-200 text-xs text-slate-500">
+                <tr className="border-b border-violet text-xs text-ink-3">
                   <th className="text-left py-2 font-semibold">Symbol</th>
                   <th className="text-left py-2 font-semibold hidden sm:table-cell">Profile</th>
                   <th className="text-center py-2 font-semibold">Direction</th>
@@ -2330,10 +2330,10 @@ export function PimPortfolio({ groups }: Props) {
                   const units = nav > 0 && t.targetAmount ? t.targetAmount / nav : 0;
                   return (
                     <tr key={t.id} className="border-b border-violet-100">
-                      <td className="py-2 font-mono text-xs font-semibold text-violet-700">{displayTicker(t.symbol)}</td>
-                      <td className="py-2 text-xs text-slate-600 hidden sm:table-cell">{PROFILE_LABELS[(t.profile || activeProfile) as PimProfileType]}</td>
+                      <td className="py-2 font-mono text-xs font-semibold text-violet">{displayTicker(t.symbol)}</td>
+                      <td className="py-2 text-xs text-ink-2 hidden sm:table-cell">{PROFILE_LABELS[(t.profile || activeProfile) as PimProfileType]}</td>
                       <td className="py-2 text-center">
-                        <span className={`rounded px-1.5 py-0.5 text-[10px] font-bold ${t.direction === "sell" ? "bg-red-100 text-red-700" : "bg-emerald-100 text-emerald-700"}`}>
+                        <span className={`rounded px-1.5 py-0.5 text-[10px] font-bold ${t.direction === "sell" ? "bg-neg-soft text-neg" : "bg-pos-soft text-pos"}`}>
                           {t.direction.toUpperCase()}
                         </span>
                       </td>
@@ -2342,12 +2342,12 @@ export function PimPortfolio({ groups }: Props) {
                         <input type="number" step="0.0001" placeholder="NAV"
                           value={settlementPrices[t.symbol] || ""}
                           onChange={(e) => setSettlementPrices((p) => ({ ...p, [t.symbol]: e.target.value }))}
-                          className="w-24 rounded border border-slate-200 px-2 py-1 text-xs text-right outline-none focus:border-violet-300" />
+                          className="w-24 rounded border border-line px-2 py-1 text-xs text-right outline-none focus:border-violet" />
                       </td>
-                      <td className="py-2 text-right font-mono text-xs font-semibold text-violet-700">
+                      <td className="py-2 text-right font-mono text-xs font-semibold text-violet">
                         {units > 0 ? units.toFixed(4) : "\u2014"}
                       </td>
-                      <td className="py-2 text-xs text-slate-400 hidden md:table-cell">
+                      <td className="py-2 text-xs text-ink-3 hidden md:table-cell">
                         {new Date(t.date).toLocaleDateString()}
                       </td>
                     </tr>
@@ -2359,16 +2359,16 @@ export function PimPortfolio({ groups }: Props) {
           <div className="flex flex-wrap items-center gap-2 mt-3">
             <button onClick={handleSettlePending}
               disabled={settling || !pendingTrades.some((t) => parseFloat(settlementPrices[t.symbol] || "0") > 0)}
-              className="rounded-lg bg-violet-600 px-4 py-2 text-xs font-semibold text-white hover:bg-violet-700 transition-colors disabled:opacity-50">
+              className="rounded-lg bg-violet px-4 py-2 text-xs font-semibold text-white hover:bg-violet transition-colors disabled:opacity-50">
               {settling ? "Settling..." : "Settle All"}
             </button>
             <button onClick={handleFetchSettlementPrices}
               disabled={settlementLoading}
-              className="rounded-lg bg-slate-100 px-4 py-2 text-xs font-semibold text-slate-600 hover:bg-slate-200 transition-colors disabled:opacity-50">
+              className="rounded-lg bg-surface-2 px-4 py-2 text-xs font-semibold text-ink-2 hover:bg-line transition-colors disabled:opacity-50">
               {settlementLoading ? "Fetching..." : "Refresh NAV"}
             </button>
             <button onClick={() => { setShowSettlement(false); setSettlementPrices({}); }}
-              className="rounded-lg bg-slate-200 px-4 py-2 text-xs font-semibold text-slate-600 hover:bg-slate-300 transition-colors">
+              className="rounded-lg bg-line px-4 py-2 text-xs font-semibold text-ink-2 hover:bg-line transition-colors">
               Cancel
             </button>
           </div>
@@ -2404,16 +2404,16 @@ export function PimPortfolio({ groups }: Props) {
           return true;
         });
         return (
-        <div className="rounded-2xl border border-amber-200 bg-amber-50/50 p-5 shadow-sm">
+        <div className="rounded-card border border-warn-border bg-warn-soft/50 p-5 shadow-sm">
           <div className="flex items-baseline justify-between gap-3 mb-3 flex-wrap">
             <div>
-              <h3 className="text-sm font-bold text-slate-800">Buy / Sell</h3>
-              <p className="text-xs text-slate-500 mt-0.5">
+              <h3 className="text-sm font-bold text-ink">Buy / Sell</h3>
+              <p className="text-xs text-ink-3 mt-0.5">
                 Queue one or more trades. Sell % defaults to 100 (full position); lower it for a partial sell \u2014 only the positions table is touched, model weights stay as designed.
               </p>
             </div>
             <button onClick={addTrade}
-              className="rounded-lg bg-white border border-amber-300 text-amber-700 hover:bg-amber-100 px-3 py-1.5 text-xs font-semibold transition-colors">
+              className="rounded-lg bg-white border border-warn-border text-warn hover:bg-warn-soft px-3 py-1.5 text-xs font-semibold transition-colors">
               + Add another trade
             </button>
           </div>
@@ -2422,14 +2422,14 @@ export function PimPortfolio({ groups }: Props) {
               const sellPctParsed = parseFloat(t.sellPercent);
               const isPartial = !!t.sellSymbol && Number.isFinite(sellPctParsed) && sellPctParsed > 0 && sellPctParsed < 100;
               return (
-                <div key={t.id} className="rounded-xl border border-slate-200 bg-white p-3">
+                <div key={t.id} className="rounded-control border border-line bg-white p-3">
                   <div className="flex items-center justify-between mb-2">
-                    <span className="text-[10px] uppercase tracking-wider font-semibold text-slate-500">
+                    <span className="text-[10px] uppercase tracking-wider font-semibold text-ink-3">
                       Trade {idx + 1}{isPartial ? " \u00b7 partial" : t.sellSymbol && t.buyTicker ? " \u00b7 switch" : t.sellSymbol ? " \u00b7 sell" : t.buyTicker ? " \u00b7 buy" : ""}
                     </span>
                     {trades.length > 1 && (
                       <button onClick={() => removeTrade(t.id)}
-                        className="text-slate-400 hover:text-red-600 text-xs"
+                        className="text-ink-3 hover:text-neg text-xs"
                         title="Remove this trade from the queue">
                         \u00d7 Remove
                       </button>
@@ -2437,10 +2437,10 @@ export function PimPortfolio({ groups }: Props) {
                   </div>
                   <div className="grid gap-3 sm:grid-cols-2">
                     <div className="space-y-1.5">
-                      <label className="text-[10px] font-semibold text-red-600 uppercase">Sell (optional)</label>
+                      <label className="text-[10px] font-semibold text-neg uppercase">Sell (optional)</label>
                       <select value={t.sellSymbol}
                         onChange={(e) => updateTrade(t.id, { sellSymbol: e.target.value, sellPrice: e.target.value ? t.sellPrice : "" })}
-                        className="w-full rounded-lg border border-slate-200 bg-white text-slate-900 px-3 py-2 text-sm outline-none focus:border-amber-300">
+                        className="w-full rounded-lg border border-line bg-white text-ink px-3 py-2 text-sm outline-none focus:border-warn-border">
                         <option value="">None \u2014 buy only</option>
                 {computedHoldingsForSwitch.filter((h) => h.weightInPortfolio > 0).map((h) => (
                           <option key={h.symbol} value={h.symbol}>{symbolToTicker(h.symbol)} — {h.name}</option>
@@ -2452,22 +2452,22 @@ export function PimPortfolio({ groups }: Props) {
                             <input type="number" step="0.01" placeholder="Sell price"
                               value={t.sellPrice}
                               onChange={(e) => updateTrade(t.id, { sellPrice: e.target.value })}
-                              className="w-full rounded-lg border border-slate-200 bg-white text-slate-900 px-3 py-2 text-sm outline-none focus:border-red-300" />
+                              className="w-full rounded-lg border border-line bg-white text-ink px-3 py-2 text-sm outline-none focus:border-neg-border" />
                             <div className="relative">
                               <input type="number" step="1" min="1" max="100"
                                 value={t.sellPercent}
                                 onChange={(e) => updateTrade(t.id, { sellPercent: e.target.value })}
                                 aria-label="Percent of position to sell"
                                 title="Percent of the position to sell. 100 = full liquidation (touches model weights); <100 = partial sell (positions only)."
-                                className="w-full rounded-lg border border-slate-200 bg-white text-slate-900 px-3 pr-6 py-2 text-sm outline-none focus:border-red-300" />
-                              <span className="absolute right-2 top-1/2 -translate-y-1/2 text-xs text-slate-400 pointer-events-none">%</span>
+                                className="w-full rounded-lg border border-line bg-white text-ink px-3 pr-6 py-2 text-sm outline-none focus:border-neg-border" />
+                              <span className="absolute right-2 top-1/2 -translate-y-1/2 text-xs text-ink-3 pointer-events-none">%</span>
                             </div>
                           </div>
                           {livePrices[t.sellSymbol] && (
-                            <p className="text-[10px] text-slate-400">Market: ${livePrices[t.sellSymbol].toFixed(2)}</p>
+                            <p className="text-[10px] text-ink-3">Market: ${livePrices[t.sellSymbol].toFixed(2)}</p>
                           )}
                           {isPartial && (
-                            <p className="text-[10px] text-amber-700">
+                            <p className="text-[10px] text-warn">
                               Partial sell — pim-models weights unchanged; only the realized position shifts.
                             </p>
                           )}
@@ -2475,10 +2475,10 @@ export function PimPortfolio({ groups }: Props) {
                       )}
                     </div>
                     <div className="space-y-1.5">
-                      <label className="text-[10px] font-semibold text-emerald-600 uppercase">Buy (from Watchlist)</label>
+                      <label className="text-[10px] font-semibold text-pos uppercase">Buy (from Watchlist)</label>
                       {watchlistStocks.length === 0 ? (
-                        <div className="rounded-lg border border-dashed border-slate-300 bg-slate-50 p-2.5 text-[11px] text-slate-500">
-                          Watchlist is empty. Press <kbd className="rounded border border-slate-300 bg-white px-1 py-px text-[10px] font-mono">Shift + A</kbd> to add a research candidate first.
+                        <div className="rounded-lg border border-dashed border-line bg-surface-2 p-2.5 text-[11px] text-ink-3">
+                          Watchlist is empty. Press <kbd className="rounded border border-line bg-white px-1 py-px text-[10px] font-mono">Shift + A</kbd> to add a research candidate first.
                         </div>
                       ) : (
                         <select value={t.buyTicker}
@@ -2499,7 +2499,7 @@ export function PimPortfolio({ groups }: Props) {
                               excludedGroupIds: autoExcluded,
                             });
                           }}
-                          className="w-full rounded-lg border border-slate-200 bg-white text-slate-900 px-3 py-2 text-sm outline-none focus:border-emerald-300 font-mono">
+                          className="w-full rounded-lg border border-line bg-white text-ink px-3 py-2 text-sm outline-none focus:border-pos-border font-mono">
                           <option value="">— None — sell only —</option>
                           {watchlistStocks.map((s) => (
                             <option key={s.ticker} value={s.ticker}>
@@ -2512,19 +2512,19 @@ export function PimPortfolio({ groups }: Props) {
                         <input type="number" step="0.01" placeholder="Buy price"
                           value={t.buyPrice}
                           onChange={(e) => updateTrade(t.id, { buyPrice: e.target.value })}
-                          className="w-full rounded-lg border border-slate-200 bg-white text-slate-900 px-3 py-2 text-sm outline-none focus:border-emerald-300" />
+                          className="w-full rounded-lg border border-line bg-white text-ink px-3 py-2 text-sm outline-none focus:border-pos-border" />
                       )}
                     </div>
                   </div>
                   {t.buyTicker && (
-                    <div className="mt-3 rounded-lg border border-slate-200 bg-slate-50 p-2.5">
+                    <div className="mt-3 rounded-lg border border-line bg-surface-2 p-2.5">
                       <div className="flex items-center justify-between gap-2 mb-1.5">
-                        <span className="text-[10px] uppercase tracking-wider font-semibold text-slate-500">
+                        <span className="text-[10px] uppercase tracking-wider font-semibold text-ink-3">
                           Eligible models for {t.buyTicker}
                         </span>
                         {t.excludedGroupIds.includes(NO_US_SITUS_GROUP_ID) &&
                           isUsSitusTicker(t.buyTicker) && (
-                          <span className="text-[10px] text-amber-700">
+                          <span className="text-[10px] text-warn">
                             No US Situs auto-excluded (US-listed)
                           </span>
                         )}
@@ -2533,7 +2533,7 @@ export function PimPortfolio({ groups }: Props) {
                         {pimModels.groups.map((g) => {
                           const eligible = !t.excludedGroupIds.includes(g.id);
                           return (
-                            <label key={g.id} className="inline-flex items-center gap-1.5 text-xs text-slate-700 cursor-pointer">
+                            <label key={g.id} className="inline-flex items-center gap-1.5 text-xs text-ink cursor-pointer">
                               <input
                                 type="checkbox"
                                 checked={eligible}
@@ -2543,7 +2543,7 @@ export function PimPortfolio({ groups }: Props) {
                                   else next.add(g.id);
                                   updateTrade(t.id, { excludedGroupIds: [...next] });
                                 }}
-                                className="h-3.5 w-3.5 rounded border-slate-300"
+                                className="h-3.5 w-3.5 rounded border-line"
                               />
                               {g.name}
                             </label>
@@ -2551,7 +2551,7 @@ export function PimPortfolio({ groups }: Props) {
                         })}
                       </div>
                       {t.sellSymbol && t.excludedGroupIds.length > 0 && (
-                        <p className="mt-1.5 text-[10px] text-slate-500">
+                        <p className="mt-1.5 text-[10px] text-ink-3">
                           For excluded models that hold {symbolToTicker(t.sellSymbol)}, the freed weight is redistributed to that model&apos;s Core ETFs (not a formal rebalance).
                         </p>
                       )}
@@ -2562,17 +2562,17 @@ export function PimPortfolio({ groups }: Props) {
             })}
           </div>
           {tradeExecProgress && (
-            <p className="mt-3 text-xs text-amber-700">{tradeExecProgress}</p>
+            <p className="mt-3 text-xs text-warn">{tradeExecProgress}</p>
           )}
           <div className="flex flex-wrap gap-2 mt-3">
             <button onClick={() => void executeAllTrades()}
               disabled={!anyValid || executingTrades}
-              className="rounded-lg bg-amber-600 px-4 py-2 text-xs font-semibold text-white hover:bg-amber-700 transition-colors disabled:opacity-50">
+              className="rounded-lg bg-warn px-4 py-2 text-xs font-semibold text-white hover:bg-warn transition-colors disabled:opacity-50">
               {executingTrades ? "Executing..." : `Execute All (${trades.length})`}
             </button>
             <button onClick={closeAndReset}
               disabled={executingTrades}
-              className="rounded-lg bg-slate-200 px-4 py-2 text-xs font-semibold text-slate-600 hover:bg-slate-300 transition-colors disabled:opacity-50">
+              className="rounded-lg bg-line px-4 py-2 text-xs font-semibold text-ink-2 hover:bg-line transition-colors disabled:opacity-50">
               Cancel
             </button>
           </div>
@@ -2582,50 +2582,50 @@ export function PimPortfolio({ groups }: Props) {
 
       {/* Portfolio summary (all CAD) */}
       {pricesFetchedAt && (
-        <div className="flex justify-end text-[11px] text-slate-400">
+        <div className="flex justify-end text-[11px] text-ink-3">
           <span title="When live prices and FX were last fetched from Yahoo. Refreshes when the page mounts or the group changes.">
             Prices updated {formatRelTimeShort(pricesFetchedAt)}
           </span>
         </div>
       )}
       <div className="grid grid-cols-2 sm:grid-cols-6 gap-3">
-        <div className="rounded-xl border border-slate-200 bg-white p-4 text-center">
-          <div className="text-[10px] font-semibold text-slate-400 uppercase">Total Value (CAD)</div>
-          <div className="text-lg font-bold text-slate-800">{fmtCurrency(totalValueCadSummary)}</div>
+        <div className="rounded-control border border-line bg-white p-4 text-center">
+          <div className="text-[10px] font-semibold text-ink-3 uppercase">Total Value (CAD)</div>
+          <div className="text-lg font-bold text-ink">{fmtCurrency(totalValueCadSummary)}</div>
         </div>
-        <div className="rounded-xl border border-slate-200 bg-white p-4 text-center">
-          <div className="text-[10px] font-semibold text-slate-400 uppercase">Total ACB (CAD)</div>
-          <div className="text-lg font-bold text-slate-700">{fmtCurrency(totalCostCad)}</div>
+        <div className="rounded-control border border-line bg-white p-4 text-center">
+          <div className="text-[10px] font-semibold text-ink-3 uppercase">Total ACB (CAD)</div>
+          <div className="text-lg font-bold text-ink">{fmtCurrency(totalCostCad)}</div>
         </div>
-        <div className="rounded-xl border border-slate-200 bg-white p-4 text-center">
-          <div className="text-[10px] font-semibold text-slate-400 uppercase">Gain/Loss</div>
-          <div className={`text-lg font-bold ${totalValueCadSummary - totalCostCad >= 0 ? "text-emerald-600" : "text-red-500"}`}>
+        <div className="rounded-control border border-line bg-white p-4 text-center">
+          <div className="text-[10px] font-semibold text-ink-3 uppercase">Gain/Loss</div>
+          <div className={`text-lg font-bold ${totalValueCadSummary - totalCostCad >= 0 ? "text-pos" : "text-neg"}`}>
             {fmtCurrency(totalValueCadSummary - totalCostCad)}
           </div>
         </div>
-        <div className="rounded-xl border border-slate-200 bg-white p-4 text-center">
-          <div className="text-[10px] font-semibold text-slate-400 uppercase">Return</div>
-          <div className={`text-lg font-bold ${totalCostCad > 0 && totalValueCadSummary - totalCostCad >= 0 ? "text-emerald-600" : "text-red-500"}`}>
+        <div className="rounded-control border border-line bg-white p-4 text-center">
+          <div className="text-[10px] font-semibold text-ink-3 uppercase">Return</div>
+          <div className={`text-lg font-bold ${totalCostCad > 0 && totalValueCadSummary - totalCostCad >= 0 ? "text-pos" : "text-neg"}`}>
             {totalCostCad > 0 ? fmtGainLoss(((totalValueCadSummary - totalCostCad) / totalCostCad) * 100) : "--"}
           </div>
         </div>
-        <div className="rounded-xl border border-slate-200 bg-white p-4 text-center">
-          <div className="text-[10px] font-semibold text-slate-400 uppercase">Today</div>
-          <div className={`text-lg font-bold ${todayReturn != null && todayReturn >= 0 ? "text-emerald-600" : "text-red-500"}`}>
+        <div className="rounded-control border border-line bg-white p-4 text-center">
+          <div className="text-[10px] font-semibold text-ink-3 uppercase">Today</div>
+          <div className={`text-lg font-bold ${todayReturn != null && todayReturn >= 0 ? "text-pos" : "text-neg"}`}>
             {todayReturn != null ? fmtGainLoss(todayReturn) : "--"}
           </div>
         </div>
         <div
-          className="rounded-xl border border-slate-200 bg-white p-4 text-center"
+          className="rounded-control border border-line bg-white p-4 text-center"
           title="Weighted-average management expense ratio across the current positions. Updates live as weights drift. Cash and direct equities contribute 0%. Funds without an MER on the Dashboard are excluded from the denominator — check the coverage % if the number looks low."
         >
-          <div className="text-[10px] font-semibold text-slate-400 uppercase">Blended MER</div>
-          <div className="text-lg font-bold text-slate-700">
+          <div className="text-[10px] font-semibold text-ink-3 uppercase">Blended MER</div>
+          <div className="text-lg font-bold text-ink">
             {blendedMerTile.blended != null
               ? `${blendedMerTile.blended.toFixed(2)}%`
               : "--"}
           </div>
-          <div className="text-[9px] text-slate-400">
+          <div className="text-[9px] text-ink-3">
             {blendedMerTile.coveragePct >= 99.5
               ? `Cash ${pct(cashPct)}`
               : `${blendedMerTile.coveragePct.toFixed(0)}% covered · Cash ${pct(cashPct)}`}
@@ -2635,8 +2635,8 @@ export function PimPortfolio({ groups }: Props) {
 
       {/* USD/CAD rate indicator */}
       {usdCadRate > 1 && (
-        <div className="flex items-center gap-2 text-[10px] text-slate-400">
-          <span className="inline-block w-2 h-2 rounded-full bg-blue-300" />
+        <div className="flex items-center gap-2 text-[10px] text-ink-3">
+          <span className="inline-block w-2 h-2 rounded-full bg-accent" />
           USD/CAD: {usdCadRate.toFixed(4)} (live)
           {prevCloseUsdCad > 1 && prevCloseUsdCad !== usdCadRate && (
             <span className="ml-1">| {prevCloseUsdCad.toFixed(4)} (prev close)</span>
@@ -2645,11 +2645,11 @@ export function PimPortfolio({ groups }: Props) {
       )}
 
       {/* Holdings table */}
-      <div className="rounded-2xl border border-slate-200 bg-white shadow-sm overflow-hidden">
+      <div className="rounded-card border border-line bg-white shadow-sm overflow-hidden">
         <div className="overflow-x-auto">
           <table className="w-full text-xs">
-            <thead className="sticky top-0 z-10 bg-slate-50 shadow-[0_1px_0_0_rgb(226_232_240)]">
-              <tr className="border-b border-slate-100 bg-slate-50">
+            <thead className="sticky top-0 z-10 bg-surface-2 shadow-[0_1px_0_0_rgb(226_232_240)]">
+              <tr className="border-b border-line-soft bg-surface-2">
                 <th className={`text-left ${thClass}`} onClick={() => handleSort("symbol")}>
                   Symbol<SortIcon field="symbol" sortField={sortField} sortDir={sortDir} />
                 </th>
@@ -2694,14 +2694,14 @@ export function PimPortfolio({ groups }: Props) {
 
               {sortedRows.map((row) => {
                 const currBadge = row.currency === "USD" ? (
-                  <span className="ml-1 inline-block rounded bg-blue-50 px-1 py-0 text-[8px] font-bold text-blue-500 align-middle">USD</span>
+                  <span className="ml-1 inline-block rounded bg-accent-soft px-1 py-0 text-[8px] font-bold text-accent align-middle">USD</span>
                 ) : null;
 
                 return (
-                  <tr key={row.symbol} className="border-b border-slate-50 hover:bg-slate-25 transition-colors">
-                    <td className="py-2.5 px-2 font-semibold text-slate-700">{displayTicker(row.symbol)}</td>
-                    <td className="py-2.5 px-2 text-slate-600 max-w-[200px] truncate">{row.name}</td>
-                    <td className="py-2.5 px-2 text-right font-mono text-slate-700">
+                  <tr key={row.symbol} className="border-b border-line-soft hover:bg-slate-25 transition-colors">
+                    <td className="py-2.5 px-2 font-semibold text-ink">{displayTicker(row.symbol)}</td>
+                    <td className="py-2.5 px-2 text-ink-2 max-w-[200px] truncate">{row.name}</td>
+                    <td className="py-2.5 px-2 text-right font-mono text-ink">
                       {editMode ? (
                         <input
                           type="number"
@@ -2712,7 +2712,7 @@ export function PimPortfolio({ groups }: Props) {
                               prev.map((p) => p.symbol === row.symbol ? { ...p, units: val } : p)
                             );
                           }}
-                          className="w-24 rounded border border-slate-200 px-2 py-1 text-right text-xs font-mono"
+                          className="w-24 rounded border border-line px-2 py-1 text-right text-xs font-mono"
                           step="0.0001"
                         />
                       ) : (
@@ -2720,17 +2720,17 @@ export function PimPortfolio({ groups }: Props) {
                       )}
                     </td>
                     {/* Price in instrument currency */}
-                    <td className="py-2.5 px-2 text-right font-mono text-slate-700">
+                    <td className="py-2.5 px-2 text-right font-mono text-ink">
                       {row.price > 0 ? (
                         <span>${row.price.toFixed(2)}{currBadge}</span>
                       ) : "-"}
                     </td>
                     {/* Market Value in CAD */}
-                    <td className="py-2.5 px-2 text-right font-mono font-semibold text-slate-700">
+                    <td className="py-2.5 px-2 text-right font-mono font-semibold text-ink">
                       {row.valueCad > 0 ? fmtCurrency(row.valueCad) : "-"}
                     </td>
                     {/* ACB (Book Cost) in CAD */}
-                    <td className="py-2.5 px-2 text-right font-mono text-slate-600">
+                    <td className="py-2.5 px-2 text-right font-mono text-ink-2">
                       {editMode && (
                         <div className="mb-1">
                           <input
@@ -2742,7 +2742,7 @@ export function PimPortfolio({ groups }: Props) {
                                 prev.map((p) => p.symbol === row.symbol ? { ...p, costBasis: val } : p)
                               );
                             }}
-                            className="w-20 rounded border border-slate-200 px-2 py-1 text-right text-xs font-mono"
+                            className="w-20 rounded border border-line px-2 py-1 text-right text-xs font-mono"
                             step="0.01"
                             placeholder={`Cost (${row.currency})`}
                           />
@@ -2750,24 +2750,24 @@ export function PimPortfolio({ groups }: Props) {
                       )}
                       {row.costValueCad > 0 ? fmtCurrency(row.costValueCad) : "-"}
                     </td>
-                    <td className="py-2.5 px-2 text-right font-mono text-slate-600">{pct(row.modelPct)}</td>
+                    <td className="py-2.5 px-2 text-right font-mono text-ink-2">{pct(row.modelPct)}</td>
                     {hasPositions && (
                       <>
-                        <td className="py-2.5 px-2 text-right font-mono text-slate-700">{row.units > 0 ? pct(row.currentPct) : "-"}</td>
+                        <td className="py-2.5 px-2 text-right font-mono text-ink">{row.units > 0 ? pct(row.currentPct) : "-"}</td>
                         <td className="py-2.5 px-2 text-center">
                           {row.units > 0 ? (
                             <span className={`inline-block rounded px-2 py-0.5 text-[9px] font-bold ${
-                              row.action === "BUY" ? "bg-emerald-50 text-emerald-600" :
-                              row.action === "SELL" ? "bg-red-50 text-red-500" :
-                              "bg-slate-100 text-slate-500"
+                              row.action === "BUY" ? "bg-pos-soft text-pos" :
+                              row.action === "SELL" ? "bg-neg-soft text-neg" :
+                              "bg-surface-2 text-ink-3"
                             }`}>
                               {row.action}
                             </span>
                           ) : (
-                            <span className="inline-block rounded px-2 py-0.5 text-[9px] font-bold bg-emerald-50 text-emerald-600">BUY</span>
+                            <span className="inline-block rounded px-2 py-0.5 text-[9px] font-bold bg-pos-soft text-pos">BUY</span>
                           )}
                         </td>
-                        <td className={`py-2.5 px-2 text-right font-mono font-semibold ${row.gainLoss >= 0 ? "text-emerald-600" : "text-red-500"}`}>
+                        <td className={`py-2.5 px-2 text-right font-mono font-semibold ${row.gainLoss >= 0 ? "text-pos" : "text-neg"}`}>
                           {row.units > 0 ? fmtGainLoss(row.gainLoss) : "-"}
                         </td>
                       </>
@@ -2782,14 +2782,14 @@ export function PimPortfolio({ groups }: Props) {
 
       {/* No positions prompt */}
       {!hasPositions && !editMode && (
-        <div className="rounded-xl border border-dashed border-slate-300 bg-slate-50 p-6 text-center">
-          <p className="text-sm text-slate-500 mb-2">No position data entered yet.</p>
-          <p className="text-xs text-slate-400 mb-4">
+        <div className="rounded-control border border-dashed border-line bg-surface-2 p-6 text-center">
+          <p className="text-sm text-ink-3 mb-2">No position data entered yet.</p>
+          <p className="text-xs text-ink-3 mb-4">
             Enter your current holdings (units and cost basis) to see current weights, drift, and rebalance actions.
           </p>
           <button
             onClick={startEdit}
-            className="rounded-lg bg-blue-500 px-4 py-2 text-xs font-semibold text-white hover:bg-blue-600 transition-colors"
+            className="rounded-lg bg-accent px-4 py-2 text-xs font-semibold text-white hover:bg-accent transition-colors"
           >
             Enter Positions
           </button>

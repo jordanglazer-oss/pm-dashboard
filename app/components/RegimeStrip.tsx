@@ -21,22 +21,22 @@ import { HORIZONS } from "@/app/lib/horizons";
 
 function pillClasses(d: RegimeDirection): string {
   switch (d) {
-    case "risk-on":  return "border-emerald-300 bg-emerald-50 text-emerald-700";
-    case "risk-off": return "border-red-300 bg-red-50 text-red-700";
-    case "neutral":  return "border-amber-300 bg-amber-50 text-amber-700";
+    case "risk-on":  return "border-pos-border bg-pos-soft text-pos";
+    case "risk-off": return "border-neg-border bg-neg-soft text-neg";
+    case "neutral":  return "border-warn-border bg-warn-soft text-warn";
   }
 }
 
 function compositeBadge(label: MarketRegimeData["composite"]["label"]): string {
-  if (label === "Risk-On") return "bg-emerald-600 text-white";
-  if (label === "Risk-Off") return "bg-red-600 text-white";
-  return "bg-amber-500 text-white";
+  if (label === "Risk-On") return "bg-pos text-white";
+  if (label === "Risk-Off") return "bg-neg text-white";
+  return "bg-warn text-white";
 }
 
 function horizonChipClasses(label: "Risk-On" | "Neutral" | "Risk-Off"): string {
-  if (label === "Risk-On") return "border-emerald-400 bg-emerald-50 text-emerald-800";
-  if (label === "Risk-Off") return "border-red-400 bg-red-50 text-red-800";
-  return "border-amber-400 bg-amber-50 text-amber-800";
+  if (label === "Risk-On") return "border-emerald-400 bg-pos-soft text-pos";
+  if (label === "Risk-Off") return "border-red-400 bg-neg-soft text-neg";
+  return "border-amber-400 bg-warn-soft text-warn";
 }
 
 export function RegimeStrip() {
@@ -66,12 +66,12 @@ export function RegimeStrip() {
   // dashboard grid doesn't shift layout on retries.
   if (loading) {
     return (
-      <div className="rounded-[24px] border border-slate-200 bg-white p-4 shadow-sm animate-pulse">
+      <div className="rounded-card border border-line bg-white p-4 shadow-sm animate-pulse">
         <div className="flex items-center gap-3">
-          <div className="h-6 w-24 rounded-full bg-slate-100" />
+          <div className="h-6 w-24 rounded-full bg-surface-2" />
           <div className="flex gap-2">
             {[0, 1, 2, 3].map((i) => (
-              <div key={i} className="h-7 w-32 rounded-full bg-slate-100" />
+              <div key={i} className="h-7 w-32 rounded-full bg-surface-2" />
             ))}
           </div>
         </div>
@@ -81,17 +81,17 @@ export function RegimeStrip() {
   if (!regime) return null;
 
   return (
-    <div className="overflow-hidden rounded-[24px] border border-slate-200 bg-white p-3 shadow-sm sm:p-4">
+    <div className="overflow-hidden rounded-card border border-line bg-white p-3 shadow-sm sm:p-4">
       {/* Top row — header chips wrap above the signal pills on mobile, sit
           inline on desktop. The "Open Brief" link drops to its own row on
           mobile so it never competes with pills for horizontal space. */}
       <div className="flex flex-col gap-2 sm:flex-row sm:flex-wrap sm:items-center sm:gap-3">
         <div className="flex flex-wrap items-center gap-2">
-          <span className="text-[10px] font-bold uppercase tracking-wider text-slate-500">Market Regime</span>
+          <span className="text-[10px] font-bold uppercase tracking-wider text-ink-3">Market Regime</span>
           <span className={`rounded-full px-3 py-1 text-xs font-bold ${compositeBadge(regime.composite.label)}`}>
             {regime.composite.label}
           </span>
-          <span className="text-xs text-slate-400">
+          <span className="text-xs text-ink-3">
             {regime.composite.score}/{regime.composite.total} risk-on
           </span>
         </div>
@@ -112,7 +112,7 @@ export function RegimeStrip() {
 
         <Link
           href="/brief"
-          className="self-start text-[11px] font-medium text-blue-600 hover:text-blue-800 sm:self-auto sm:whitespace-nowrap"
+          className="self-start text-[11px] font-medium text-accent hover:text-accent sm:self-auto sm:whitespace-nowrap"
           title="Open the Morning Brief for the full analysis"
         >
           Open Brief →
@@ -127,11 +127,11 @@ export function RegimeStrip() {
         hover shows the per-horizon signal list.
       */}
       {regime.horizons && (
-        <div className="mt-3 border-t border-slate-100 pt-3">
+        <div className="mt-3 border-t border-line-soft pt-3">
           {/* Horizon chips wrap on mobile; weighted score gets its own row
               below them on mobile, sits flush-right inline on desktop. */}
           <div className="flex flex-wrap items-center gap-1.5 sm:gap-2">
-            <span className="text-[10px] font-bold uppercase tracking-wider text-slate-500">
+            <span className="text-[10px] font-bold uppercase tracking-wider text-ink-3">
               By Horizon
             </span>
             {HORIZONS.map((h) => {
@@ -142,7 +142,7 @@ export function RegimeStrip() {
                   key={h.id}
                   className={`inline-flex max-w-full items-center gap-1 rounded-full border px-2 py-0.5 text-[11px] sm:gap-1.5 sm:px-3 sm:py-1 sm:text-xs ${
                     empty
-                      ? "border-slate-200 bg-slate-50 text-slate-400"
+                      ? "border-line bg-surface-2 text-ink-3"
                       : horizonChipClasses(b.label_)
                   }`}
                   title={
@@ -169,9 +169,9 @@ export function RegimeStrip() {
             })}
           </div>
           {isFinite(regime.horizons.weightedScore) && (
-            <div className="mt-2 text-[11px] text-slate-500 sm:text-right">
+            <div className="mt-2 text-[11px] text-ink-3 sm:text-right">
               Weighted:{" "}
-              <span className="font-semibold text-slate-700">
+              <span className="font-semibold text-ink">
                 {regime.horizons.weightedLabel}
               </span>{" "}
               <span className="font-mono opacity-70">

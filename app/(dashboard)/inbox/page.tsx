@@ -27,9 +27,9 @@ type Status = {
 };
 
 function statusChip(status: InboxEvent["status"]) {
-  if (status === "success") return "bg-emerald-50 text-emerald-700 border-emerald-200";
-  if (status === "skipped") return "bg-slate-50 text-slate-600 border-slate-200";
-  return "bg-red-50 text-red-700 border-red-200";
+  if (status === "success") return "bg-pos-soft text-pos border-pos-border";
+  if (status === "skipped") return "bg-surface-2 text-ink-2 border-line";
+  return "bg-neg-soft text-neg border-neg-border";
 }
 
 function fmtBytes(n: number | undefined): string {
@@ -72,14 +72,14 @@ function CollapsibleHeader({
   action?: React.ReactNode;
 }) {
   return (
-    <div className="border-b border-slate-100 px-4 py-2 flex items-center justify-between gap-3 flex-wrap">
+    <div className="border-b border-line-soft px-4 py-2 flex items-center justify-between gap-3 flex-wrap">
       <button
         onClick={onToggle}
         className="flex items-center gap-2 cursor-pointer hover:opacity-80 transition-opacity"
         aria-expanded={!collapsed}
       >
         <svg
-          className={`w-3.5 h-3.5 text-slate-400 transition-transform ${collapsed ? "-rotate-90" : ""}`}
+          className={`w-3.5 h-3.5 text-ink-3 transition-transform ${collapsed ? "-rotate-90" : ""}`}
           fill="none"
           stroke="currentColor"
           strokeWidth="2.5"
@@ -87,7 +87,7 @@ function CollapsibleHeader({
         >
           <path strokeLinecap="round" strokeLinejoin="round" d="M19 9l-7 7-7-7" />
         </svg>
-        <span className="text-xs font-semibold uppercase tracking-wider text-slate-500">{title}</span>
+        <span className="text-xs font-semibold uppercase tracking-wider text-ink-3">{title}</span>
         {meta}
       </button>
       {action && <div onClick={(e) => e.stopPropagation()}>{action}</div>}
@@ -195,7 +195,7 @@ function EditableNumberCell({
       }}
       placeholder={placeholder ?? "—"}
       aria-label={ariaLabel}
-      className={`${width} rounded border border-slate-200 bg-white px-1.5 py-0.5 text-xs font-mono text-right outline-none focus:border-blue-400 focus:ring-1 focus:ring-blue-200 placeholder-slate-300`}
+      className={`${width} rounded border border-line bg-white px-1.5 py-0.5 text-xs font-mono text-right outline-none focus:border-accent focus:ring-1 focus:ring-accent-soft placeholder-slate-300`}
     />
   );
 }
@@ -924,7 +924,7 @@ export default function InboxPage() {
       <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-3 mb-4">
         <div>
           <h1 className="text-xl sm:text-2xl font-bold">Email Inbox Ingestion</h1>
-          <p className="text-xs sm:text-sm text-slate-500 mt-1">
+          <p className="text-xs sm:text-sm text-ink-3 mt-1">
             Live log of analyst-report PDFs received via the dfwreports123@gmail.com Apps Script webhook.
           </p>
         </div>
@@ -933,27 +933,27 @@ export default function InboxPage() {
               just dedup confirmations — the PM cares about fresh ingestions
               and errors. Toggle off temporarily if you want to verify
               specific cache hits. State persists in pm:ui-prefs. */}
-          <label className="flex items-center gap-1.5 text-xs text-slate-600 cursor-pointer select-none">
+          <label className="flex items-center gap-1.5 text-xs text-ink-2 cursor-pointer select-none">
             <input
               type="checkbox"
               checked={hideCached}
               onChange={toggleHideCached}
-              className="w-3.5 h-3.5 rounded border-slate-300 text-blue-600 focus:ring-blue-400"
+              className="w-3.5 h-3.5 rounded border-line text-accent focus:ring-blue-400"
             />
             <span>Hide cached</span>
             {cachedCount > 0 && (
-              <span className="text-[10px] text-slate-400">({cachedCount} hidden)</span>
+              <span className="text-[10px] text-ink-3">({cachedCount} hidden)</span>
             )}
           </label>
           {lastUpdated && (
-            <span className="text-[11px] text-slate-400">
+            <span className="text-[11px] text-ink-3">
               Updated {lastUpdated.toLocaleTimeString("en-US", { hour: "numeric", minute: "2-digit", second: "2-digit", hour12: true })}
             </span>
           )}
           <button
             onClick={() => void load(true)}
             disabled={refreshing}
-            className="rounded-md border border-slate-200 px-3 py-1.5 text-sm hover:bg-slate-50 disabled:opacity-50 disabled:cursor-not-allowed flex items-center gap-1.5"
+            className="rounded-md border border-line px-3 py-1.5 text-sm hover:bg-surface-2 disabled:opacity-50 disabled:cursor-not-allowed flex items-center gap-1.5"
           >
             {refreshing && (
               <span className="inline-block w-3 h-3 border-2 border-slate-400 border-t-transparent rounded-full animate-spin" />
@@ -964,49 +964,49 @@ export default function InboxPage() {
       </div>
 
       <div className="grid grid-cols-1 sm:grid-cols-3 gap-3 mb-6">
-        <div className="rounded-lg border border-slate-200 bg-white p-3">
-          <div className="text-xs text-slate-500">Webhook secret</div>
+        <div className="rounded-lg border border-line bg-white p-3">
+          <div className="text-xs text-ink-3">Webhook secret</div>
           <div className="mt-1 text-sm font-semibold">
             {data?.configured ? (
-              <span className="text-emerald-700">Configured</span>
+              <span className="text-pos">Configured</span>
             ) : (
-              <span className="text-red-700">Missing — set INBOX_SECRET in Vercel</span>
+              <span className="text-neg">Missing — set INBOX_SECRET in Vercel</span>
             )}
           </div>
         </div>
-        <div className="rounded-lg border border-slate-200 bg-white p-3">
-          <div className="text-xs text-slate-500">Successes (last 100 events)</div>
-          <div className="mt-1 text-xl font-bold text-emerald-700">{successes}</div>
+        <div className="rounded-lg border border-line bg-white p-3">
+          <div className="text-xs text-ink-3">Successes (last 100 events)</div>
+          <div className="mt-1 text-xl font-bold text-pos">{successes}</div>
         </div>
-        <div className="rounded-lg border border-slate-200 bg-white p-3">
-          <div className="text-xs text-slate-500">Failures (last 100 events)</div>
-          <div className="mt-1 text-xl font-bold text-red-700">{failures}</div>
+        <div className="rounded-lg border border-line bg-white p-3">
+          <div className="text-xs text-ink-3">Failures (last 100 events)</div>
+          <div className="mt-1 text-xl font-bold text-neg">{failures}</div>
         </div>
       </div>
 
-      <div className="rounded-lg border border-slate-200 bg-white overflow-hidden">
+      <div className="rounded-lg border border-line bg-white overflow-hidden">
         <CollapsibleHeader
           collapsed={eventsCollapsed}
           onToggle={toggleEvents}
           title="Recent Ingestion Events"
-          meta={<span className="text-[11px] text-slate-400">{events.length} total · {visibleEvents.length} shown</span>}
+          meta={<span className="text-[11px] text-ink-3">{events.length} total · {visibleEvents.length} shown</span>}
         />
         {!eventsCollapsed && (loading && events.length === 0 ? (
-          <p className="text-sm text-slate-400 p-4">Loading…</p>
+          <p className="text-sm text-ink-3 p-4">Loading…</p>
         ) : error ? (
-          <p className="text-sm text-red-600 p-4">{error}</p>
+          <p className="text-sm text-neg p-4">{error}</p>
         ) : events.length === 0 ? (
-          <p className="text-sm text-slate-400 p-4 italic">
+          <p className="text-sm text-ink-3 p-4 italic">
             No ingestion events yet. Once the Apps Script runs and forwards an email, events will appear here.
           </p>
         ) : visibleEvents.length === 0 ? (
-          <p className="text-sm text-slate-400 p-4 italic">
+          <p className="text-sm text-ink-3 p-4 italic">
             All {cachedCount} recent event{cachedCount === 1 ? "" : "s"} {cachedCount === 1 ? "is" : "are"} cached re-ingestions (no Anthropic spend, data unchanged). Uncheck &quot;Hide cached&quot; above to see them.
           </p>
         ) : (
           <div className="overflow-x-auto">
           <table className="w-full min-w-[700px] text-sm">
-            <thead className="bg-slate-50 text-xs uppercase tracking-wider text-slate-500">
+            <thead className="bg-surface-2 text-xs uppercase tracking-wider text-ink-3">
               <tr>
                 <th className="px-3 py-2 text-left">Time</th>
                 <th className="px-3 py-2 text-left">Status</th>
@@ -1017,34 +1017,34 @@ export default function InboxPage() {
             </thead>
             <tbody>
               {visibleEvents.map((e) => (
-                <tr key={e.id} className="border-t border-slate-100 align-top">
-                  <td className="px-3 py-2 whitespace-nowrap text-slate-500 text-xs">{fmtTime(e.receivedAt)}</td>
+                <tr key={e.id} className="border-t border-line-soft align-top">
+                  <td className="px-3 py-2 whitespace-nowrap text-ink-3 text-xs">{fmtTime(e.receivedAt)}</td>
                   <td className="px-3 py-2">
                     <span className={`inline-block rounded border px-1.5 py-0.5 text-[10px] font-bold uppercase tracking-wider ${statusChip(e.status)}`}>
                       {e.status}
                     </span>
                     {e.cached && (
-                      <span className="ml-1 inline-block rounded border border-slate-200 bg-slate-50 px-1 py-0.5 text-[9px] font-bold uppercase text-slate-500" title="Hash-gated cache hit — no Anthropic spend">
+                      <span className="ml-1 inline-block rounded border border-line bg-surface-2 px-1 py-0.5 text-[9px] font-bold uppercase text-ink-3" title="Hash-gated cache hit — no Anthropic spend">
                         cached
                       </span>
                     )}
                   </td>
                   <td className="px-3 py-2 whitespace-nowrap">
                     {e.ticker ? (
-                      <span className="font-mono font-semibold text-slate-800">{e.ticker}</span>
+                      <span className="font-mono font-semibold text-ink">{e.ticker}</span>
                     ) : (
-                      <span className="text-slate-300">—</span>
+                      <span className="text-ink-faint">—</span>
                     )}
-                    {e.source && <span className="ml-1 text-[10px] uppercase text-slate-500">{e.source}</span>}
+                    {e.source && <span className="ml-1 text-[10px] uppercase text-ink-3">{e.source}</span>}
                   </td>
-                  <td className="px-3 py-2 text-xs text-slate-700">
-                    {e.subject ? <div className="truncate max-w-[260px]" title={e.subject}>{e.subject}</div> : <div className="text-slate-300">—</div>}
-                    {e.sender && <div className="text-[10px] text-slate-400 truncate max-w-[260px]" title={e.sender}>{e.sender}</div>}
+                  <td className="px-3 py-2 text-xs text-ink">
+                    {e.subject ? <div className="truncate max-w-[260px]" title={e.subject}>{e.subject}</div> : <div className="text-ink-faint">—</div>}
+                    {e.sender && <div className="text-[10px] text-ink-3 truncate max-w-[260px]" title={e.sender}>{e.sender}</div>}
                   </td>
-                  <td className="px-3 py-2 text-xs text-slate-600">
+                  <td className="px-3 py-2 text-xs text-ink-2">
                     {e.message}
                     {e.filename && (
-                      <div className="text-[10px] text-slate-400 mt-0.5">
+                      <div className="text-[10px] text-ink-3 mt-0.5">
                         {e.filename} · {fmtBytes(e.size)}
                       </div>
                     )}
@@ -1062,10 +1062,10 @@ export default function InboxPage() {
           Screenshot wins ONLY when it has a value; manual stays otherwise.
           Hash-gated cache (pm:sia-scrape-cache, pm:boosted-ai-scrape-cache)
           so re-uploading an unchanged image costs zero Anthropic tokens. */}
-      <div className="mt-6 rounded-lg border border-violet-200 bg-white overflow-hidden">
-        <div className="border-b border-violet-100 bg-violet-50/40 px-4 py-3">
-          <h2 className="text-sm font-semibold text-slate-800">SIA + BoostedAI — Screenshot upload</h2>
-          <p className="text-[11px] text-slate-500 mt-0.5">
+      <div className="mt-6 rounded-lg border border-violet bg-white overflow-hidden">
+        <div className="border-b border-violet-100 bg-violet-soft/40 px-4 py-3">
+          <h2 className="text-sm font-semibold text-ink">SIA + BoostedAI — Screenshot upload</h2>
+          <p className="text-[11px] text-ink-3 mt-0.5">
             Drop a watchlist screenshot from SIACharts or Boosted.ai. Anthropic vision reads the rows and updates every matched ticker (dual-listed names included). A value already on a stock is preserved if the vision can&apos;t read its new value — a yellow chip shows up on that stock&apos;s SIA / BoostedAI input until the next successful read.
           </p>
         </div>
@@ -1074,7 +1074,7 @@ export default function InboxPage() {
               screenshot is the fallback when CSV isn't available. */}
           <div className="p-4">
             <div className="flex flex-wrap items-center justify-between gap-2 mb-1.5">
-              <h3 className="text-xs font-semibold text-slate-700 uppercase tracking-wider">SIA watchlist</h3>
+              <h3 className="text-xs font-semibold text-ink uppercase tracking-wider">SIA watchlist</h3>
               <div className="flex items-center gap-1.5">
                 {/* CSV (preferred) */}
                 <input
@@ -1092,8 +1092,8 @@ export default function InboxPage() {
                   htmlFor="sia-csv-input"
                   className={`text-xs font-semibold px-3 py-1.5 rounded-md cursor-pointer transition-colors ${
                     siaImporting
-                      ? "bg-slate-200 text-slate-500 cursor-wait"
-                      : "bg-violet-600 text-white hover:bg-violet-700"
+                      ? "bg-line text-ink-3 cursor-wait"
+                      : "bg-violet text-white hover:bg-violet"
                   }`}
                   title="Preferred: upload the SIA CSV export. 100% reliable, no Anthropic spend, instant."
                 >
@@ -1113,8 +1113,8 @@ export default function InboxPage() {
                   htmlFor="sia-screenshot-input"
                   className={`text-xs font-semibold px-2.5 py-1.5 rounded-md cursor-pointer border transition-colors ${
                     siaImporting
-                      ? "bg-slate-100 text-slate-400 border-slate-200 cursor-wait"
-                      : "bg-white text-violet-700 border-violet-300 hover:bg-violet-50"
+                      ? "bg-surface-2 text-ink-3 border-line cursor-wait"
+                      : "bg-white text-violet border-violet hover:bg-violet-soft"
                   }`}
                   title="Fallback when CSV export isn't available. Vision-parsed; ~95% reliable; one Anthropic call per upload."
                 >
@@ -1122,14 +1122,14 @@ export default function InboxPage() {
                 </label>
               </div>
             </div>
-            <p className="text-[10px] text-slate-500">
+            <p className="text-[10px] text-ink-3">
               Reads <span className="font-mono">SYM · SMAX</span> per row (CSV) or via vision (screenshot). Updates <code>sia</code> and recomputes the relativeStrength score.
             </p>
           </div>
           {/* BoostedAI upload zone — CSV preferred; screenshot is the fallback. */}
           <div className="p-4">
             <div className="flex flex-wrap items-center justify-between gap-2 mb-1.5">
-              <h3 className="text-xs font-semibold text-slate-700 uppercase tracking-wider">BoostedAI watchlist</h3>
+              <h3 className="text-xs font-semibold text-ink uppercase tracking-wider">BoostedAI watchlist</h3>
               <div className="flex items-center gap-1.5">
                 {/* CSV (preferred) */}
                 <input
@@ -1146,7 +1146,7 @@ export default function InboxPage() {
                 <label
                   htmlFor="boosted-csv-input"
                   className={`text-xs font-semibold px-3 py-1.5 rounded-md cursor-pointer transition-colors ${
-                    boostedImporting ? "bg-slate-200 text-slate-500 cursor-wait" : "bg-violet-600 text-white hover:bg-violet-700"
+                    boostedImporting ? "bg-line text-ink-3 cursor-wait" : "bg-violet text-white hover:bg-violet"
                   }`}
                   title="Preferred: the Boosted.ai unified-data CSV export. 100% reliable, no Anthropic spend, instant."
                 >
@@ -1165,7 +1165,7 @@ export default function InboxPage() {
                 <label
                   htmlFor="boosted-screenshot-input"
                   className={`text-xs font-semibold px-2.5 py-1.5 rounded-md cursor-pointer border transition-colors ${
-                    boostedImporting ? "bg-slate-100 text-slate-400 border-slate-200 cursor-wait" : "bg-white text-violet-700 border-violet-300 hover:bg-violet-50"
+                    boostedImporting ? "bg-surface-2 text-ink-3 border-line cursor-wait" : "bg-white text-violet border-violet hover:bg-violet-soft"
                   }`}
                   title="Fallback when the CSV export isn't handy. Vision-parsed; one Anthropic call per upload."
                 >
@@ -1173,36 +1173,36 @@ export default function InboxPage() {
                 </label>
               </div>
             </div>
-            <p className="text-[10px] text-slate-500">
+            <p className="text-[10px] text-ink-3">
               Reads <span className="font-mono">TICKER · AVERAGE RATING · CONSENSUS</span> (CSV) or via vision (screenshot). Updates both BoostedAI fields and recomputes the aiRating score.
             </p>
           </div>
         </div>
         {screenshotImportSummary && (
-          <div className="px-4 py-3 text-xs space-y-1 border-t border-violet-100 bg-violet-50/20">
-            <div className="text-slate-700">
+          <div className="px-4 py-3 text-xs space-y-1 border-t border-violet-100 bg-violet-soft/20">
+            <div className="text-ink">
               <span className="font-semibold capitalize">{screenshotImportSummary.source}:</span>{" "}
               <span className="font-semibold">{screenshotImportSummary.matched}</span> matched / {screenshotImportSummary.rowsParsed} rows ·{" "}
-              <span className="font-semibold text-emerald-700">{screenshotImportSummary.updated}</span> updated
-              {screenshotImportSummary.cached && <span className="ml-1 text-slate-400">(cached, no AI spend)</span>}
+              <span className="font-semibold text-pos">{screenshotImportSummary.updated}</span> updated
+              {screenshotImportSummary.cached && <span className="ml-1 text-ink-3">(cached, no AI spend)</span>}
             </div>
             {screenshotImportSummary.inScreenshotButUnreadable.length > 0 && (
-              <div className="text-amber-700">
+              <div className="text-warn">
                 ⚠ In screenshot but value unreadable: <span className="font-mono">{screenshotImportSummary.inScreenshotButUnreadable.join(", ")}</span>
               </div>
             )}
             {screenshotImportSummary.expectedButMissing.length > 0 && (
-              <div className="text-amber-700">
+              <div className="text-warn">
                 ⚠ Expected scoreable names NOT in screenshot: <span className="font-mono">{screenshotImportSummary.expectedButMissing.join(", ")}</span>
               </div>
             )}
             {screenshotImportSummary.unmatched.length > 0 && (
-              <div className="text-slate-500">
+              <div className="text-ink-3">
                 Tickers in screenshot but not in Portfolio/Watchlist: <span className="font-mono">{screenshotImportSummary.unmatched.join(", ")}</span>
               </div>
             )}
             {screenshotImportSummary.errors.length > 0 && (
-              <div className="text-red-700">
+              <div className="text-neg">
                 {screenshotImportSummary.errors.map((err, i) => <div key={i}>{err}</div>)}
               </div>
             )}
@@ -1216,11 +1216,11 @@ export default function InboxPage() {
           recomputes the marketEdge composite score from Power Rating. The
           per-stock writes go through updateStockFields / updateScore so
           they persist via the usual debounced pm:stocks PUT (no new key). */}
-      <div className="mt-6 rounded-lg border border-indigo-200 bg-white overflow-hidden">
-        <div className="border-b border-indigo-100 bg-indigo-50/40 px-4 py-3 flex items-center justify-between flex-wrap gap-2">
+      <div className="mt-6 rounded-lg border border-accent-border bg-white overflow-hidden">
+        <div className="border-b border-indigo-100 bg-accent-soft/40 px-4 py-3 flex items-center justify-between flex-wrap gap-2">
           <div>
-            <h2 className="text-sm font-semibold text-slate-800">MarketEdge — Weekly CSV upload</h2>
-            <p className="text-[11px] text-slate-500 mt-0.5">
+            <h2 className="text-sm font-semibold text-ink">MarketEdge — Weekly CSV upload</h2>
+            <p className="text-[11px] text-ink-3 mt-0.5">
               ChartScout Likes export. Reads <span className="font-mono">Symbol · Opinion · Score · Power Rating · Opinion Date</span> by header (other columns ignored). Matches by ticker — including dual-listed names (US ↔ Canadian). Recomputes the MarketEdge composite score from Power Rating; Opinion + Opinion Score drive the warning flag, not the score.
             </p>
           </div>
@@ -1240,8 +1240,8 @@ export default function InboxPage() {
               htmlFor="marketedge-csv-input"
               className={`text-xs font-semibold px-3 py-1.5 rounded-md cursor-pointer transition-colors ${
                 marketEdgeImporting
-                  ? "bg-slate-200 text-slate-500 cursor-wait"
-                  : "bg-indigo-600 text-white hover:bg-indigo-700"
+                  ? "bg-line text-ink-3 cursor-wait"
+                  : "bg-accent text-white hover:bg-accent"
               }`}
             >
               {marketEdgeImporting ? "Importing…" : "Upload CSV"}
@@ -1250,17 +1250,17 @@ export default function InboxPage() {
         </div>
         {marketEdgeImportSummary && (
           <div className="px-4 py-3 text-xs space-y-1">
-            <div className="text-slate-700">
+            <div className="text-ink">
               <span className="font-semibold">{marketEdgeImportSummary.matched}</span> matched / {marketEdgeImportSummary.rows} rows ·{" "}
-              <span className="font-semibold text-emerald-700">{marketEdgeImportSummary.updated}</span> updated
+              <span className="font-semibold text-pos">{marketEdgeImportSummary.updated}</span> updated
             </div>
             {marketEdgeImportSummary.unmatched.length > 0 && (
-              <div className="text-amber-700">
+              <div className="text-warn">
                 Unmatched (no Portfolio/Watchlist stock): <span className="font-mono">{marketEdgeImportSummary.unmatched.join(", ")}</span>
               </div>
             )}
             {marketEdgeImportSummary.errors.length > 0 && (
-              <div className="text-red-700">
+              <div className="text-neg">
                 {marketEdgeImportSummary.errors.map((err, i) => (
                   <div key={i}>{err}</div>
                 ))}
@@ -1275,18 +1275,18 @@ export default function InboxPage() {
           gaps: scoreable Portfolio + Watchlist tickers that don't yet have
           a single analyst report ingested. Surfaces the actionable
           "what's still missing" view alongside the activity log. */}
-      <div className="mt-6 rounded-lg border border-slate-200 bg-white overflow-hidden">
+      <div className="mt-6 rounded-lg border border-line bg-white overflow-hidden">
         <CollapsibleHeader
           collapsed={coverageCollapsed}
           onToggle={toggleCoverage}
           title="Coverage Checklist"
           meta={
-            <span className="text-[11px] text-slate-500">
+            <span className="text-[11px] text-ink-3">
               {totalCovered}/{coverageRows.length} covered ·
               <span className="ml-1">Portfolio {portfolioCovered}/{portfolioTotal}</span> ·
               <span className="ml-1">Watchlist {watchlistCovered}/{watchlistTotal}</span>
               {missingCount > 0 && (
-                <span className="ml-2 inline-flex items-center rounded-full bg-red-50 text-red-700 border border-red-200 px-2 py-0.5 text-[10px] font-bold uppercase">
+                <span className="ml-2 inline-flex items-center rounded-full bg-neg-soft text-neg border border-neg-border px-2 py-0.5 text-[10px] font-bold uppercase">
                   {missingCount} missing
                 </span>
               )}
@@ -1305,8 +1305,8 @@ export default function InboxPage() {
                   onClick={() => setCoverageFilter(b.key)}
                   className={`text-[11px] font-semibold rounded-full px-2.5 py-0.5 transition-colors ${
                     coverageFilter === b.key
-                      ? "bg-slate-800 text-white"
-                      : "bg-slate-100 text-slate-600 hover:bg-slate-200"
+                      ? "bg-ink text-white"
+                      : "bg-surface-2 text-ink-2 hover:bg-line"
                   }`}
                 >
                   {b.label}
@@ -1319,8 +1319,8 @@ export default function InboxPage() {
           // Per-source data-freshness strip — at a glance, how many names are
           // missing or stale for each external feed. Green when a source is
           // fully reflected; amber with a count when something didn't land.
-          <div className="flex flex-wrap items-center gap-2 px-4 py-2.5 border-b border-slate-100 bg-slate-50/60 text-[11px]">
-            <span className="font-semibold text-slate-500 uppercase tracking-wider">Data freshness:</span>
+          <div className="flex flex-wrap items-center gap-2 px-4 py-2.5 border-b border-line-soft bg-surface-hover text-[11px]">
+            <span className="font-semibold text-ink-3 uppercase tracking-wider">Data freshness:</span>
             {[
               { label: "BoostedAI", gap: boostedGap },
               { label: "SIA", gap: siaGap },
@@ -1330,8 +1330,8 @@ export default function InboxPage() {
                 key={s.label}
                 className={`inline-flex items-center gap-1 rounded-full border px-2 py-0.5 font-semibold ${
                   s.gap === 0
-                    ? "bg-emerald-50 text-emerald-700 border-emerald-200"
-                    : "bg-amber-50 text-amber-700 border-amber-200"
+                    ? "bg-pos-soft text-pos border-pos-border"
+                    : "bg-warn-soft text-warn border-warn-border"
                 }`}
                 title={
                   s.gap === 0
@@ -1342,15 +1342,15 @@ export default function InboxPage() {
                 {s.gap === 0 ? "✓" : "⚠"} {s.label} {s.gap === 0 ? "all current" : `${s.gap} to check`}
               </span>
             ))}
-            <span className="text-slate-400">— ⚠ in a cell = no value for that source yet. Reload after an email import to pull the latest.</span>
+            <span className="text-ink-3">— ⚠ in a cell = no value for that source yet. Reload after an email import to pull the latest.</span>
           </div>
         )}
         {!coverageCollapsed && (coverageRows.length === 0 ? (
-          <p className="text-sm text-slate-400 p-4 italic">
+          <p className="text-sm text-ink-3 p-4 italic">
             No scoreable stocks in your Portfolio or Watchlist yet. Add stocks on the Dashboard to start tracking analyst coverage.
           </p>
         ) : sortedCoverage.length === 0 ? (
-          <p className="text-sm text-slate-400 p-4 italic">
+          <p className="text-sm text-ink-3 p-4 italic">
             {coverageFilter === "missing"
               ? "🎉 Every scoreable stock has at least one source. No gaps."
               : "No stocks match this filter."}
@@ -1358,18 +1358,18 @@ export default function InboxPage() {
         ) : (
           <div className="overflow-x-auto">
           <table className="w-full min-w-[1200px] text-sm">
-            <thead className="bg-slate-50 text-xs uppercase tracking-wider text-slate-500">
+            <thead className="bg-surface-2 text-xs uppercase tracking-wider text-ink-3">
               <tr>
-                <th className="px-3 py-2 text-left cursor-pointer select-none hover:text-slate-700" onClick={() => toggleCovSort("ticker")}>Ticker{covArrow("ticker")}</th>
-                <th className="px-3 py-2 text-left cursor-pointer select-none hover:text-slate-700" onClick={() => toggleCovSort("name")}>Name{covArrow("name")}</th>
-                <th className="px-3 py-2 text-left cursor-pointer select-none hover:text-slate-700" onClick={() => toggleCovSort("bucket")}>Bucket{covArrow("bucket")}</th>
-                <th className="px-3 py-2 text-center w-16 cursor-pointer select-none hover:text-slate-700" onClick={() => toggleCovSort("rbc")}>RBC{covArrow("rbc")}</th>
-                <th className="px-3 py-2 text-center w-16 cursor-pointer select-none hover:text-slate-700" onClick={() => toggleCovSort("jpm")}>JPM{covArrow("jpm")}</th>
-                <th className="px-3 py-2 text-right w-20 cursor-pointer select-none hover:text-slate-700" onClick={() => toggleCovSort("boostedAi")} title="Raw BoostedAI rating (0-5, decimals OK). Combined with Consensus to auto-derive the dashboard's aiRating (0-2).">Boosted.ai{covArrow("boostedAi")}</th>
-                <th className="px-3 py-2 text-left w-28 cursor-pointer select-none hover:text-slate-700" onClick={() => toggleCovSort("consensus")} title="BoostedAI consensus recommendation. Combined with the numeric rating to auto-derive aiRating (Strong Buy / Buy → 2, Hold → 1, Sell / Strong Sell → 0).">Consensus{covArrow("consensus")}</th>
-                <th className="px-3 py-2 text-right w-20 cursor-pointer select-none hover:text-slate-700" onClick={() => toggleCovSort("sia")} title="SIA SMAX score (0-10 integer). Maps to relativeStrength: 8-10 → 2, 6-7 → 1, 0-5 → 0.">SIA SMAX{covArrow("sia")}</th>
-                <th className="px-3 py-2 text-right w-28 cursor-pointer select-none hover:text-slate-700" onClick={() => toggleCovSort("marketEdge")} title="MarketEdge Power Rating (−60…+100) and Opinion. Power Rating drives the marketEdge score: ≥ +60 → 2 (Long), −27…+59 → 1 (Neutral), < −27 → 0 (Avoid). Click the rating to edit; click the opinion chip to cycle. N/A for pure-Canadian names (MarketEdge covers US listings only).">MarketEdge{covArrow("marketEdge")}</th>
-                <th className="px-3 py-2 text-left w-32 cursor-pointer select-none hover:text-slate-700" onClick={() => toggleCovSort("status")} title="Sort by overall coverage status (No reports / Partial / Both). Ascending shows gaps first.">Status{covArrow("status")}</th>
+                <th className="px-3 py-2 text-left cursor-pointer select-none hover:text-ink" onClick={() => toggleCovSort("ticker")}>Ticker{covArrow("ticker")}</th>
+                <th className="px-3 py-2 text-left cursor-pointer select-none hover:text-ink" onClick={() => toggleCovSort("name")}>Name{covArrow("name")}</th>
+                <th className="px-3 py-2 text-left cursor-pointer select-none hover:text-ink" onClick={() => toggleCovSort("bucket")}>Bucket{covArrow("bucket")}</th>
+                <th className="px-3 py-2 text-center w-16 cursor-pointer select-none hover:text-ink" onClick={() => toggleCovSort("rbc")}>RBC{covArrow("rbc")}</th>
+                <th className="px-3 py-2 text-center w-16 cursor-pointer select-none hover:text-ink" onClick={() => toggleCovSort("jpm")}>JPM{covArrow("jpm")}</th>
+                <th className="px-3 py-2 text-right w-20 cursor-pointer select-none hover:text-ink" onClick={() => toggleCovSort("boostedAi")} title="Raw BoostedAI rating (0-5, decimals OK). Combined with Consensus to auto-derive the dashboard's aiRating (0-2).">Boosted.ai{covArrow("boostedAi")}</th>
+                <th className="px-3 py-2 text-left w-28 cursor-pointer select-none hover:text-ink" onClick={() => toggleCovSort("consensus")} title="BoostedAI consensus recommendation. Combined with the numeric rating to auto-derive aiRating (Strong Buy / Buy → 2, Hold → 1, Sell / Strong Sell → 0).">Consensus{covArrow("consensus")}</th>
+                <th className="px-3 py-2 text-right w-20 cursor-pointer select-none hover:text-ink" onClick={() => toggleCovSort("sia")} title="SIA SMAX score (0-10 integer). Maps to relativeStrength: 8-10 → 2, 6-7 → 1, 0-5 → 0.">SIA SMAX{covArrow("sia")}</th>
+                <th className="px-3 py-2 text-right w-28 cursor-pointer select-none hover:text-ink" onClick={() => toggleCovSort("marketEdge")} title="MarketEdge Power Rating (−60…+100) and Opinion. Power Rating drives the marketEdge score: ≥ +60 → 2 (Long), −27…+59 → 1 (Neutral), < −27 → 0 (Avoid). Click the rating to edit; click the opinion chip to cycle. N/A for pure-Canadian names (MarketEdge covers US listings only).">MarketEdge{covArrow("marketEdge")}</th>
+                <th className="px-3 py-2 text-left w-32 cursor-pointer select-none hover:text-ink" onClick={() => toggleCovSort("status")} title="Sort by overall coverage status (No reports / Partial / Both). Ascending shows gaps first.">Status{covArrow("status")}</th>
               </tr>
             </thead>
             <tbody>
@@ -1380,41 +1380,41 @@ export default function InboxPage() {
                 return (
                   <tr
                     key={`${r.bucket}-${r.displayTicker}`}
-                    className={`border-t border-slate-100 transition-colors ${
-                      noCoverage ? "bg-red-50/40 hover:bg-red-50/60" : "hover:bg-slate-50/60"
+                    className={`border-t border-line-soft transition-colors ${
+                      noCoverage ? "bg-neg-soft/40 hover:bg-neg-soft/60" : "hover:bg-surface-hover"
                     }`}
                   >
                     <td className="px-3 py-2">
-                      <Link href={`/stock/${r.displayTicker.toLowerCase()}`} className="font-mono font-semibold text-slate-800 hover:underline">
+                      <Link href={`/stock/${r.displayTicker.toLowerCase()}`} className="font-mono font-semibold text-ink hover:underline">
                         {r.displayTicker}
                       </Link>
                     </td>
-                    <td className="px-3 py-2 text-xs text-slate-600 truncate max-w-[260px]" title={r.name}>{r.name}</td>
+                    <td className="px-3 py-2 text-xs text-ink-2 truncate max-w-[260px]" title={r.name}>{r.name}</td>
                     <td className="px-3 py-2">
                       <span className={`inline-block rounded px-1.5 py-0.5 text-[10px] font-semibold ${
                         r.bucket === "Portfolio"
-                          ? "bg-blue-50 text-blue-700 border border-blue-200"
-                          : "bg-slate-100 text-slate-600 border border-slate-200"
+                          ? "bg-accent-soft text-accent border border-accent-border"
+                          : "bg-surface-2 text-ink-2 border border-line"
                       }`}>{r.bucket}</span>
                     </td>
                     <td className="px-3 py-2 text-center">
                       {r.hasRbc ? (
-                        <span className="inline-block text-emerald-600 font-bold text-base" title="RBC report ingested">✓</span>
+                        <span className="inline-block text-pos font-bold text-base" title="RBC report ingested">✓</span>
                       ) : (
-                        <span className="inline-block text-slate-300 text-base" title="No RBC report yet">—</span>
+                        <span className="inline-block text-ink-faint text-base" title="No RBC report yet">—</span>
                       )}
                     </td>
                     <td className="px-3 py-2 text-center">
                       {r.hasJpm ? (
-                        <span className="inline-block text-emerald-600 font-bold text-base" title="JPM report ingested">✓</span>
+                        <span className="inline-block text-pos font-bold text-base" title="JPM report ingested">✓</span>
                       ) : (
-                        <span className="inline-block text-slate-300 text-base" title="No JPM report yet">—</span>
+                        <span className="inline-block text-ink-faint text-base" title="No JPM report yet">—</span>
                       )}
                     </td>
                     <td className="px-3 py-2 text-right">
                       <div className="flex items-center justify-end gap-1">
                         {r.boostedAi == null && (
-                          <span className="text-amber-500 text-xs leading-none" title="No BoostedAI rating for this name yet. Send the Boosted.ai unified-data CSV, or edit the value here.">⚠</span>
+                          <span className="text-warn text-xs leading-none" title="No BoostedAI rating for this name yet. Send the Boosted.ai unified-data CSV, or edit the value here.">⚠</span>
                         )}
                         <EditableNumberCell
                           value={r.boostedAi}
@@ -1439,7 +1439,7 @@ export default function InboxPage() {
                     <td className="px-3 py-2 text-right">
                       <div className="flex items-center justify-end gap-1">
                         {r.sia == null && (
-                          <span className="text-amber-500 text-xs leading-none" title="No SIA SMAX for this name yet. Send the SIA CSV export, or edit the value here.">⚠</span>
+                          <span className="text-warn text-xs leading-none" title="No SIA SMAX for this name yet. Send the SIA CSV export, or edit the value here.">⚠</span>
                         )}
                         <EditableNumberCell
                           value={r.sia}
@@ -1460,7 +1460,7 @@ export default function InboxPage() {
                       {r.marketEdgeApplies ? (
                         <div className="flex items-center justify-end gap-1.5">
                           {r.marketEdgePowerRating == null && (
-                            <span className="text-amber-500 text-xs leading-none" title="No MarketEdge Power Rating for this name yet. Send the ChartScout Likes CSV, or edit the value here.">⚠</span>
+                            <span className="text-warn text-xs leading-none" title="No MarketEdge Power Rating for this name yet. Send the ChartScout Likes CSV, or edit the value here.">⚠</span>
                           )}
                           <EditableNumberCell
                             value={r.marketEdgePowerRating}
@@ -1478,26 +1478,26 @@ export default function InboxPage() {
                             onClick={() => cycleMarketEdgeOpinion(r.displayTicker, r.marketEdgeOpinion)}
                             title="Click to cycle MarketEdge opinion: — → Long → Neutral → Avoid"
                             className={`rounded px-1.5 py-0.5 text-[10px] font-semibold border ${
-                              r.marketEdgeOpinion === "long" ? "bg-emerald-50 text-emerald-700 border-emerald-200"
-                              : r.marketEdgeOpinion === "avoid" ? "bg-red-50 text-red-700 border-red-200"
-                              : r.marketEdgeOpinion === "neutral" ? "bg-slate-50 text-slate-600 border-slate-300"
-                              : "bg-white text-slate-400 border-slate-200"
+                              r.marketEdgeOpinion === "long" ? "bg-pos-soft text-pos border-pos-border"
+                              : r.marketEdgeOpinion === "avoid" ? "bg-neg-soft text-neg border-neg-border"
+                              : r.marketEdgeOpinion === "neutral" ? "bg-surface-2 text-ink-2 border-line"
+                              : "bg-white text-ink-3 border-line"
                             }`}
                           >
                             {r.marketEdgeOpinion === "long" ? "Long" : r.marketEdgeOpinion === "avoid" ? "Avoid" : r.marketEdgeOpinion === "neutral" ? "Neutral" : "—"}
                           </button>
                         </div>
                       ) : (
-                        <span className="text-[10px] text-slate-400 italic" title="MarketEdge (ChartScout) covers US-listed stocks only. This pure-Canadian name is excluded from the marketEdge category, so a blank here is expected — not a gap.">N/A</span>
+                        <span className="text-[10px] text-ink-3 italic" title="MarketEdge (ChartScout) covers US-listed stocks only. This pure-Canadian name is excluded from the marketEdge category, so a blank here is expected — not a gap.">N/A</span>
                       )}
                     </td>
                     <td className="px-3 py-2">
                       <span className={`inline-block rounded-full px-2 py-0.5 text-[10px] font-semibold ${
                         fullyCovered
-                          ? "bg-emerald-50 text-emerald-700 border border-emerald-200"
+                          ? "bg-pos-soft text-pos border border-pos-border"
                           : partiallyCovered
-                          ? "bg-amber-50 text-amber-700 border border-amber-200"
-                          : "bg-red-100 text-red-700 border border-red-200"
+                          ? "bg-warn-soft text-warn border border-warn-border"
+                          : "bg-neg-soft text-neg border border-neg-border"
                       }`}>
                         {fullyCovered ? "Both" : partiallyCovered ? "Partial" : "No reports"}
                       </span>
@@ -1517,61 +1517,61 @@ export default function InboxPage() {
           Shows the ORIGINAL extraction date (extractedAt) rather than the
           last-retry date, so cached re-ingestions don't make stale reports
           look freshly processed. */}
-      <div className="mt-6 rounded-lg border border-slate-200 bg-white overflow-hidden">
+      <div className="mt-6 rounded-lg border border-line bg-white overflow-hidden">
         <CollapsibleHeader
           collapsed={reportsCollapsed}
           onToggle={toggleReports}
           title="All Ingested Reports"
           meta={
-            <span className="text-[11px] text-slate-400">
+            <span className="text-[11px] text-ink-3">
               {reportRows.length} report{reportRows.length === 1 ? "" : "s"} across {new Set(reportRows.map((r) => r.ticker)).size} ticker{new Set(reportRows.map((r) => r.ticker)).size === 1 ? "" : "s"}
             </span>
           }
         />
         {!reportsCollapsed && (reports === null ? (
-          <p className="text-sm text-slate-400 p-4">Loading…</p>
+          <p className="text-sm text-ink-3 p-4">Loading…</p>
         ) : reportRows.length === 0 ? (
-          <p className="text-sm text-slate-400 p-4 italic">
+          <p className="text-sm text-ink-3 p-4 italic">
             No reports stored yet. Once any PDF gets fully ingested (via inbox webhook or manual upload), it appears here permanently.
           </p>
         ) : (
           <div className="overflow-x-auto">
           <table className="w-full min-w-[700px] text-sm">
-            <thead className="bg-slate-50 text-xs uppercase tracking-wider text-slate-500">
+            <thead className="bg-surface-2 text-xs uppercase tracking-wider text-ink-3">
               <tr>
-                <th className="px-3 py-2 text-left cursor-pointer select-none hover:text-slate-700" onClick={() => toggleReportsSort("ticker")}>Ticker{reportsArrow("ticker")}</th>
-                <th className="px-3 py-2 text-left cursor-pointer select-none hover:text-slate-700" onClick={() => toggleReportsSort("source")}>Source{reportsArrow("source")}</th>
-                <th className="px-3 py-2 text-left cursor-pointer select-none hover:text-slate-700" onClick={() => toggleReportsSort("date")}>Extracted{reportsArrow("date")}</th>
-                <th className="px-3 py-2 text-left cursor-pointer select-none hover:text-slate-700" onClick={() => toggleReportsSort("rating")}>Rating{reportsArrow("rating")}</th>
-                <th className="px-3 py-2 text-right cursor-pointer select-none hover:text-slate-700" onClick={() => toggleReportsSort("target")}>Target{reportsArrow("target")}</th>
+                <th className="px-3 py-2 text-left cursor-pointer select-none hover:text-ink" onClick={() => toggleReportsSort("ticker")}>Ticker{reportsArrow("ticker")}</th>
+                <th className="px-3 py-2 text-left cursor-pointer select-none hover:text-ink" onClick={() => toggleReportsSort("source")}>Source{reportsArrow("source")}</th>
+                <th className="px-3 py-2 text-left cursor-pointer select-none hover:text-ink" onClick={() => toggleReportsSort("date")}>Extracted{reportsArrow("date")}</th>
+                <th className="px-3 py-2 text-left cursor-pointer select-none hover:text-ink" onClick={() => toggleReportsSort("rating")}>Rating{reportsArrow("rating")}</th>
+                <th className="px-3 py-2 text-right cursor-pointer select-none hover:text-ink" onClick={() => toggleReportsSort("target")}>Target{reportsArrow("target")}</th>
                 <th className="px-3 py-2 text-left">File</th>
               </tr>
             </thead>
             <tbody>
               {sortedReports.map((r) => (
-                <tr key={`${r.ticker}-${r.source}`} className="border-t border-slate-100 hover:bg-slate-50/60 transition-colors">
+                <tr key={`${r.ticker}-${r.source}`} className="border-t border-line-soft hover:bg-surface-hover transition-colors">
                   <td className="px-3 py-2">
-                    <Link href={`/stock/${r.ticker.toLowerCase()}`} className="font-mono font-semibold text-slate-800 hover:underline">
+                    <Link href={`/stock/${r.ticker.toLowerCase()}`} className="font-mono font-semibold text-ink hover:underline">
                       {r.ticker}
                     </Link>
                   </td>
-                  <td className="px-3 py-2 text-xs uppercase tracking-wider text-slate-500">{r.source}</td>
-                  <td className="px-3 py-2 text-xs text-slate-700 whitespace-nowrap">{r.date}</td>
+                  <td className="px-3 py-2 text-xs uppercase tracking-wider text-ink-3">{r.source}</td>
+                  <td className="px-3 py-2 text-xs text-ink whitespace-nowrap">{r.date}</td>
                   <td className="px-3 py-2 text-xs">
                     <span className={`inline-block rounded px-1.5 py-0.5 text-[10px] font-semibold ${
                       r.rating.toLowerCase().includes("outperform") || r.rating.toLowerCase().includes("overweight")
-                        ? "bg-emerald-50 text-emerald-700 border border-emerald-200"
+                        ? "bg-pos-soft text-pos border border-pos-border"
                         : r.rating.toLowerCase().includes("underperform") || r.rating.toLowerCase().includes("underweight")
-                        ? "bg-red-50 text-red-700 border border-red-200"
+                        ? "bg-neg-soft text-neg border border-neg-border"
                         : r.rating === "—"
-                        ? "bg-slate-50 text-slate-400 border border-slate-200"
-                        : "bg-amber-50 text-amber-700 border border-amber-200"
+                        ? "bg-surface-2 text-ink-3 border border-line"
+                        : "bg-warn-soft text-warn border border-warn-border"
                     }`}>
                       {r.rating}
                     </span>
                   </td>
-                  <td className="px-3 py-2 text-right text-xs font-mono text-slate-700">{r.target}</td>
-                  <td className="px-3 py-2 text-xs text-slate-500 truncate max-w-[260px]" title={r.fileSize}>{r.fileSize}</td>
+                  <td className="px-3 py-2 text-right text-xs font-mono text-ink">{r.target}</td>
+                  <td className="px-3 py-2 text-xs text-ink-3 truncate max-w-[260px]" title={r.fileSize}>{r.fileSize}</td>
                 </tr>
               ))}
             </tbody>
@@ -1585,22 +1585,22 @@ export default function InboxPage() {
           Apps Script forwards. Subject prefix → handler is set in
           app/lib/inbox-dispatch.ts (classifySubject); table rows must
           stay in sync if those prefixes change. */}
-      <div className="mt-6 rounded-lg border border-blue-100 bg-blue-50 p-4">
-        <p className="font-semibold text-blue-900 mb-1">How to send by email</p>
-        <p className="text-blue-800 text-sm mb-3">
+      <div className="mt-6 rounded-lg border border-blue-100 bg-accent-soft p-4">
+        <p className="font-semibold text-accent mb-1">How to send by email</p>
+        <p className="text-accent text-sm mb-3">
           From any email account, send <span className="font-mono">dfwreports123@gmail.com</span> a message — the subject prefix tells the dashboard what to do with it. Case-insensitive. The Apps Script polls every 5 minutes, so entries appear in the activity log above within ~5 min.
         </p>
         <div className="overflow-x-auto">
           <table className="w-full text-xs border-collapse">
             <thead>
-              <tr className="border-b border-blue-200 text-left text-blue-900">
+              <tr className="border-b border-accent-border text-left text-accent">
                 <th className="py-1.5 pr-3 font-semibold whitespace-nowrap">Subject starts with…</th>
                 <th className="py-1.5 pr-3 font-semibold whitespace-nowrap">Attach</th>
                 <th className="py-1.5 pr-3 font-semibold">What it does</th>
                 <th className="py-1.5 font-semibold whitespace-nowrap">Example</th>
               </tr>
             </thead>
-            <tbody className="text-blue-800 align-top">
+            <tbody className="text-accent align-top">
               <tr className="border-b border-blue-100">
                 <td className="py-2 pr-3 font-mono whitespace-nowrap">Analyst Report: &lt;TICKER&gt;</td>
                 <td className="py-2 pr-3 whitespace-nowrap">PDF</td>
@@ -1610,23 +1610,23 @@ export default function InboxPage() {
               <tr className="border-b border-blue-100">
                 <td className="py-2 pr-3 font-mono whitespace-nowrap">SIA</td>
                 <td className="py-2 pr-3 whitespace-nowrap">
-                  <span className="text-emerald-700 font-semibold">CSV (preferred)</span>
+                  <span className="text-pos font-semibold">CSV (preferred)</span>
                   <br />or screenshot (PNG/JPG/PDF)
                 </td>
                 <td className="py-2 pr-3">Reads <span className="font-mono">SYM</span> + <span className="font-mono">SMAX</span> per row. Updates each matched stock&apos;s SMAX and recomputes the SIA score. CSV is auto-detected; held ETFs/funds are skipped silently.</td>
                 <td className="py-2 font-mono whitespace-nowrap">SIA — Mar 5</td>
               </tr>
               <tr className="border-b border-blue-100">
-                <td className="py-2 pr-3 font-mono whitespace-nowrap">BoostedAI <span className="text-blue-500">or</span> Boosted</td>
+                <td className="py-2 pr-3 font-mono whitespace-nowrap">BoostedAI <span className="text-accent">or</span> Boosted</td>
                 <td className="py-2 pr-3 whitespace-nowrap">
-                  <span className="text-emerald-700 font-semibold">CSV (preferred)</span>
+                  <span className="text-pos font-semibold">CSV (preferred)</span>
                   <br />or screenshot (PNG/JPG/PDF)
                 </td>
                 <td className="py-2 pr-3">Reads <span className="font-mono">TICKER</span> + <span className="font-mono">AVERAGE RATING</span> + <span className="font-mono">CONSENSUS RECOMMENDATION</span> per row. Updates the BoostedAI fields and recomputes the AI Rating score. Send the Boosted.ai unified-data CSV export; held ETFs/funds are skipped silently.</td>
                 <td className="py-2 font-mono whitespace-nowrap">BoostedAI watchlist</td>
               </tr>
               <tr className="border-b border-blue-100">
-                <td className="py-2 pr-3 font-mono whitespace-nowrap">MarketEdge <span className="text-blue-500">or</span> ChartScout</td>
+                <td className="py-2 pr-3 font-mono whitespace-nowrap">MarketEdge <span className="text-accent">or</span> ChartScout</td>
                 <td className="py-2 pr-3 whitespace-nowrap">CSV</td>
                 <td className="py-2 pr-3">Parses the ChartScout Likes export by header (Symbol / Opinion / Score / Power Rating / Opinion Date). Updates the MarketEdge fields and the MarketEdge composite score.</td>
                 <td className="py-2 font-mono whitespace-nowrap">MarketEdge weekly</td>
@@ -1699,7 +1699,7 @@ export default function InboxPage() {
                 <td className="py-2 font-mono whitespace-nowrap">RBCCM FEW</td>
               </tr>
               <tr>
-                <td className="py-2 pr-3 font-mono whitespace-nowrap">Seeking Alpha <span className="text-blue-500">or</span> Alpha Picks</td>
+                <td className="py-2 pr-3 font-mono whitespace-nowrap">Seeking Alpha <span className="text-accent">or</span> Alpha Picks</td>
                 <td className="py-2 pr-3 whitespace-nowrap">Screenshot (PNG/JPG/PDF)</td>
                 <td className="py-2 pr-3">Merges into the Seeking Alpha — Alpha Picks list. Composite ticker+date key so a name can appear on multiple dates.</td>
                 <td className="py-2 font-mono whitespace-nowrap">Alpha Picks weekly</td>
@@ -1707,7 +1707,7 @@ export default function InboxPage() {
             </tbody>
           </table>
         </div>
-        <p className="mt-3 text-[11px] text-blue-700">
+        <p className="mt-3 text-[11px] text-accent">
           Screenshots from iPhone, Mac, or Windows all work. <span className="italic">Legacy:</span> <span className="font-mono">Analyst Report: &lt;TICKER&gt; &lt;RBC|JPM&gt;</span> with any filename is still supported.
         </p>
       </div>

@@ -19,15 +19,15 @@ const ZERO_SCORES: Record<ScoreKey, number> = {
 };
 
 const KIND_STYLE: Record<ConvictionSignal["kind"], string> = {
-  rating: "bg-indigo-50 text-indigo-700 border-indigo-200",
-  upside: "bg-emerald-50 text-emerald-700 border-emerald-200",
-  external: "bg-blue-50 text-blue-700 border-blue-200",
-  list: "bg-amber-50 text-amber-700 border-amber-200",
+  rating: "bg-accent-soft text-accent border-accent-border",
+  upside: "bg-pos-soft text-pos border-pos-border",
+  external: "bg-accent-soft text-accent border-accent-border",
+  list: "bg-warn-soft text-warn border-warn-border",
 };
 
 function SignalBadge({ sig }: { sig: ConvictionSignal }) {
   const neg = sig.points < 0;
-  const cls = neg ? "bg-red-50 text-red-600 border-red-200" : KIND_STYLE[sig.kind];
+  const cls = neg ? "bg-neg-soft text-neg border-neg-border" : KIND_STYLE[sig.kind];
   return (
     <span className={`inline-flex items-center gap-1 rounded-full border px-2 py-0.5 text-[10px] font-medium ${cls}`} title={`${sig.points >= 0 ? "+" : ""}${sig.points}`}>
       {sig.label}
@@ -39,10 +39,10 @@ function SignalBadge({ sig }: { sig: ConvictionSignal }) {
 /** Regime-fit badge from the AI synthesis (how the name fits the current market regime). */
 function RegimeBadge({ fit }: { fit: string }) {
   const map: Record<string, { cls: string; label: string }> = {
-    high: { cls: "bg-emerald-100 text-emerald-700 border-emerald-300", label: "Regime ✓" },
-    medium: { cls: "bg-slate-100 text-slate-600 border-slate-300", label: "Regime ~" },
-    low: { cls: "bg-amber-100 text-amber-700 border-amber-300", label: "Regime ✕" },
-    contrary: { cls: "bg-red-100 text-red-700 border-red-300", label: "Contrarian" },
+    high: { cls: "bg-pos-soft text-pos border-pos-border", label: "Regime ✓" },
+    medium: { cls: "bg-surface-2 text-ink-2 border-line", label: "Regime ~" },
+    low: { cls: "bg-warn-soft text-warn border-warn-border", label: "Regime ✕" },
+    contrary: { cls: "bg-neg-soft text-neg border-neg-border", label: "Contrarian" },
   };
   const m = map[fit];
   if (!m) return null;
@@ -52,11 +52,11 @@ function RegimeBadge({ fit }: { fit: string }) {
 /** Conviction total pill — colored by magnitude. */
 function TotalPill({ total }: { total: number }) {
   const cls =
-    total >= 6 ? "bg-emerald-600 text-white"
-    : total >= 3 ? "bg-emerald-100 text-emerald-800 border border-emerald-300"
-    : total >= 1 ? "bg-slate-100 text-slate-700 border border-slate-300"
-    : total <= -2 ? "bg-red-600 text-white"
-    : "bg-slate-100 text-slate-400 border border-slate-200";
+    total >= 6 ? "bg-pos text-white"
+    : total >= 3 ? "bg-pos-soft text-pos border border-pos-border"
+    : total >= 1 ? "bg-surface-2 text-ink border border-line"
+    : total <= -2 ? "bg-neg text-white"
+    : "bg-surface-2 text-ink-3 border border-line";
   return <span className={`inline-block rounded-lg px-2.5 py-1 text-sm font-bold tabular-nums ${cls}`}>{total > 0 ? `+${total}` : total}</span>;
 }
 
@@ -241,8 +241,8 @@ export default function ConvictionPage() {
   return (
     <div className="mx-auto max-w-[1400px] px-4 py-6 md:px-6">
       <div className="mb-4">
-        <h1 className="text-2xl font-bold text-slate-800">Conviction Board</h1>
-        <p className="text-sm text-slate-500">
+        <h1 className="text-2xl font-bold text-ink">Conviction Board</h1>
+        <p className="text-sm text-ink-3">
           Research-list names (the idea universe that feeds the Watchlist) ranked by how many independent signals
           align — composite rating, upside to the FactSet mean analyst target, SIA / BoostedAI / MarketEdge,
           estimate revisions, and each research list. Rows with a 💡 carry the AI synthesis thesis + regime fit —
@@ -251,13 +251,13 @@ export default function ConvictionPage() {
       </div>
 
       <div className="mb-4 flex flex-wrap items-center gap-3">
-        <div className="inline-flex rounded-lg border border-slate-200 bg-white p-0.5">
+        <div className="inline-flex rounded-lg border border-line bg-white p-0.5">
           {(["ideas", "all", "Portfolio", "Watchlist", "Research"] as BucketFilter[]).map((b) => (
             <button
               key={b}
               onClick={() => setFilter(b)}
               className={`rounded-md px-3 py-1 text-xs font-semibold transition-colors ${
-                filter === b ? "bg-slate-800 text-white" : "text-slate-500 hover:bg-slate-100"
+                filter === b ? "bg-ink text-white" : "text-ink-3 hover:bg-surface-2"
               }`}
               title={b === "ideas" ? "Names on at least one research list — the idea universe that feeds the Watchlist" : undefined}
             >
@@ -269,16 +269,16 @@ export default function ConvictionPage() {
           value={query}
           onChange={(e) => setQuery(e.target.value)}
           placeholder="Filter by ticker or name…"
-          className="w-56 rounded-lg border border-slate-200 bg-white px-3 py-1.5 text-sm outline-none focus:border-slate-400"
+          className="w-56 rounded-lg border border-line bg-white px-3 py-1.5 text-sm outline-none focus:border-slate-400"
         />
-        <span className="ml-auto text-xs text-slate-400">
+        <span className="ml-auto text-xs text-ink-3">
           {filtered.length} names · sorted by conviction
         </span>
       </div>
 
-      <div className="overflow-x-auto rounded-[20px] border border-slate-200 bg-white shadow-sm">
+      <div className="overflow-x-auto rounded-card border border-line bg-white shadow-sm">
         <table className="w-full min-w-[1000px] text-sm">
-          <thead className="bg-slate-50 text-xs uppercase tracking-wider text-slate-500">
+          <thead className="bg-surface-2 text-xs uppercase tracking-wider text-ink-3">
             <tr>
               <th className="px-3 py-2 text-left w-10">#</th>
               <th className="px-3 py-2 text-left">Ticker</th>
@@ -293,10 +293,10 @@ export default function ConvictionPage() {
           </thead>
           <tbody>
             {!loaded && (
-              <tr><td colSpan={9} className="px-3 py-8 text-center text-slate-400">Loading…</td></tr>
+              <tr><td colSpan={9} className="px-3 py-8 text-center text-ink-3">Loading…</td></tr>
             )}
             {loaded && filtered.length === 0 && (
-              <tr><td colSpan={9} className="px-3 py-8 text-center text-slate-400 italic">No names match.</td></tr>
+              <tr><td colSpan={9} className="px-3 py-8 text-center text-ink-3 italic">No names match.</td></tr>
             )}
             {filtered.map((e, i) => {
               const syn = synthesisByKey.get(e.key);
@@ -304,8 +304,8 @@ export default function ConvictionPage() {
               const isOpen = expanded === e.key;
               return (
               <Fragment key={e.key}>
-              <tr className={`border-t border-slate-100 ${i % 2 ? "bg-slate-50/40" : "bg-white"} hover:bg-slate-50`}>
-                <td className="px-3 py-2 text-slate-400 tabular-nums">{i + 1}</td>
+              <tr className={`border-t border-line-soft ${i % 2 ? "bg-surface-hover" : "bg-white"} hover:bg-surface-2`}>
+                <td className="px-3 py-2 text-ink-3 tabular-nums">{i + 1}</td>
                 <td className="px-3 py-2">
                   <div className="flex items-center gap-1.5">
                     {hasThesis && (
@@ -315,37 +315,37 @@ export default function ConvictionPage() {
                         title="Show the AI synthesis thesis + regime fit"
                       >💡</button>
                     )}
-                    <Link href={`/stock/${e.ticker.toLowerCase()}`} className="font-mono font-bold text-slate-800 hover:underline">
+                    <Link href={`/stock/${e.ticker.toLowerCase()}`} className="font-mono font-bold text-ink hover:underline">
                       {displayTicker(e.ticker)}
                     </Link>
                     {syn?.regimeFit && <RegimeBadge fit={syn.regimeFit} />}
                   </div>
                 </td>
-                <td className="px-3 py-2 text-slate-600 truncate max-w-[200px]" title={e.name || e.ticker}>{e.name || <span className="text-slate-300">—</span>}</td>
+                <td className="px-3 py-2 text-ink-2 truncate max-w-[200px]" title={e.name || e.ticker}>{e.name || <span className="text-ink-faint">—</span>}</td>
                 <td className="px-3 py-2 text-center">
                   <span className={`inline-block rounded px-1.5 py-0.5 text-[10px] font-semibold ${
-                    e.bucket === "Portfolio" ? "bg-blue-50 text-blue-700 border border-blue-200"
-                    : e.bucket === "Watchlist" ? "bg-slate-100 text-slate-600 border border-slate-200"
-                    : "bg-amber-50 text-amber-700 border border-amber-200"
+                    e.bucket === "Portfolio" ? "bg-accent-soft text-accent border border-accent-border"
+                    : e.bucket === "Watchlist" ? "bg-surface-2 text-ink-2 border border-line"
+                    : "bg-warn-soft text-warn border border-warn-border"
                   }`}>{e.bucket}</span>
                 </td>
                 <td className="px-3 py-2 text-center"><TotalPill total={e.total} /></td>
                 <td className="px-3 py-2">
                   <div className="flex flex-wrap gap-1">
-                    {e.signals.length === 0 ? <span className="text-slate-300 text-xs">—</span> : e.signals.map((sig, k) => <SignalBadge key={k} sig={sig} />)}
+                    {e.signals.length === 0 ? <span className="text-ink-faint text-xs">—</span> : e.signals.map((sig, k) => <SignalBadge key={k} sig={sig} />)}
                   </div>
                 </td>
                 <td className="px-3 py-2 text-right font-mono tabular-nums whitespace-nowrap">
                   {typeof e.upsidePct === "number" ? (
-                    <span className={e.upsidePct >= 0 ? "text-emerald-600" : "text-red-500"}>
+                    <span className={e.upsidePct >= 0 ? "text-pos" : "text-neg"}>
                       {e.upsidePct >= 0 ? "+" : ""}{e.upsidePct.toFixed(0)}%
                     </span>
-                  ) : <span className="text-slate-300">—</span>}
+                  ) : <span className="text-ink-faint">—</span>}
                 </td>
                 <td className="px-3 py-2">
                   {(() => {
                     const pi = pipeline[e.key];
-                    if (!pi) return <span className="text-slate-300 text-xs">—</span>;
+                    if (!pi) return <span className="text-ink-faint text-xs">—</span>;
                     const now = prices[e.ticker];
                     const since = typeof now === "number" && typeof pi.priceAtSurface === "number" && pi.priceAtSurface > 0
                       ? ((now - pi.priceAtSurface) / pi.priceAtSurface) * 100 : null;
@@ -354,15 +354,15 @@ export default function ConvictionPage() {
                         <select
                           value={pi.status}
                           onChange={(ev) => setStatus(e, ev.target.value as IdeaStatus)}
-                          className="rounded border border-slate-200 bg-white px-1 py-0.5 text-[11px] text-slate-600 outline-none focus:border-slate-400"
+                          className="rounded border border-line bg-white px-1 py-0.5 text-[11px] text-ink-2 outline-none focus:border-slate-400"
                         >
                           {(["new", "watching", "bought", "passed"] as IdeaStatus[]).map((s) => (
                             <option key={s} value={s}>{IDEA_STATUS_LABELS[s]}</option>
                           ))}
                         </select>
-                        <span className="text-[10px] text-slate-400 whitespace-nowrap">
+                        <span className="text-[10px] text-ink-3 whitespace-nowrap">
                           since {pi.firstSurfaced}
-                          {since != null && <span className={since >= 0 ? "text-emerald-600 font-medium" : "text-red-500 font-medium"}> · {since >= 0 ? "+" : ""}{since.toFixed(0)}%</span>}
+                          {since != null && <span className={since >= 0 ? "text-pos font-medium" : "text-neg font-medium"}> · {since >= 0 ? "+" : ""}{since.toFixed(0)}%</span>}
                         </span>
                       </div>
                     );
@@ -372,7 +372,7 @@ export default function ConvictionPage() {
                   {e.bucket === "Research" && (
                     <button
                       onClick={() => addToWatchlist(e.ticker, e.name)}
-                      className="text-[10px] font-semibold text-blue-500 hover:text-blue-700"
+                      className="text-[10px] font-semibold text-accent hover:text-accent"
                       title="Add to Watchlist"
                     >
                       + Watch
@@ -381,14 +381,14 @@ export default function ConvictionPage() {
                 </td>
               </tr>
               {isOpen && hasThesis && (
-                <tr className="bg-indigo-50/40">
+                <tr className="bg-accent-soft/40">
                   <td></td>
                   <td colSpan={8} className="px-3 pb-3 pt-1">
                     <div className="rounded-lg border border-indigo-100 bg-white px-3 py-2">
-                      <div className="text-[10px] font-bold uppercase tracking-wider text-indigo-500">Synthesis thesis</div>
-                      <p className="mt-0.5 text-sm text-slate-700 leading-relaxed">{syn!.thesis}</p>
+                      <div className="text-[10px] font-bold uppercase tracking-wider text-accent">Synthesis thesis</div>
+                      <p className="mt-0.5 text-sm text-ink leading-relaxed">{syn!.thesis}</p>
                       {syn!.regimeFitRationale && (
-                        <p className="mt-1 text-xs text-slate-500"><span className="font-semibold">Regime fit:</span> {syn!.regimeFitRationale}</p>
+                        <p className="mt-1 text-xs text-ink-3"><span className="font-semibold">Regime fit:</span> {syn!.regimeFitRationale}</p>
                       )}
                     </div>
                   </td>

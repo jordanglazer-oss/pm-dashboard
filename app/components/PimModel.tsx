@@ -62,9 +62,9 @@ const ASSET_CLASS_LABELS: Record<PimAssetClass, string> = {
 };
 
 const ASSET_CLASS_COLORS: Record<PimAssetClass, { bg: string; text: string; bar: string; header: string }> = {
-  fixedIncome: { bg: "bg-blue-50", text: "text-blue-700", bar: "bg-blue-500", header: "bg-blue-100 text-blue-800" },
-  equity: { bg: "bg-emerald-50", text: "text-emerald-700", bar: "bg-emerald-500", header: "bg-emerald-100 text-emerald-800" },
-  alternative: { bg: "bg-amber-50", text: "text-amber-700", bar: "bg-amber-500", header: "bg-amber-100 text-amber-800" },
+  fixedIncome: { bg: "bg-accent-soft", text: "text-accent", bar: "bg-accent", header: "bg-accent-soft text-accent" },
+  equity: { bg: "bg-pos-soft", text: "text-pos", bar: "bg-pos", header: "bg-pos-soft text-pos" },
+  alternative: { bg: "bg-warn-soft", text: "text-warn", bar: "bg-warn", header: "bg-warn-soft text-warn" },
 };
 
 function pct(v: number): string {
@@ -972,7 +972,7 @@ export function PimModel({ groups }: Props) {
 
   if (!selectedGroup) return null;
 
-  const thClass = "py-2.5 px-2 font-semibold cursor-pointer select-none hover:text-slate-800 transition-colors whitespace-nowrap";
+  const thClass = "py-2.5 px-2 font-semibold cursor-pointer select-none hover:text-ink transition-colors whitespace-nowrap";
   const isPimGroup = ["pim", "pc-usa", "non-res", "no-us-situs"].includes(selectedGroup.id);
 
   return (
@@ -981,34 +981,34 @@ export function PimModel({ groups }: Props) {
       <div className="flex flex-col gap-4 sm:flex-row sm:items-end sm:justify-between">
         {/* Model group dropdown */}
         <div className="flex-1 max-w-md" ref={dropdownRef}>
-          <label className="block text-xs font-semibold text-slate-500 uppercase tracking-wider mb-1.5">
+          <label className="block text-xs font-semibold text-ink-3 uppercase tracking-wider mb-1.5">
             Model Group
           </label>
           <div className="relative">
             <button
               onClick={() => { setDropdownOpen(!dropdownOpen); setDropdownSearch(""); }}
-              className="w-full flex items-center justify-between rounded-xl border border-slate-200 bg-white px-4 py-2.5 text-sm text-left outline-none hover:border-slate-300 focus:border-blue-300 focus:ring-2 focus:ring-blue-100 transition-all"
+              className="w-full flex items-center justify-between rounded-control border border-line bg-white px-4 py-2.5 text-sm text-left outline-none hover:border-line focus:border-accent-border focus:ring-2 focus:ring-blue-100 transition-all"
             >
-              <span className="font-semibold text-slate-800">{selectedGroup.name}</span>
-              <svg className={`w-4 h-4 text-slate-400 transition-transform ${dropdownOpen ? "rotate-180" : ""}`} fill="none" stroke="currentColor" strokeWidth="2" viewBox="0 0 24 24">
+              <span className="font-semibold text-ink">{selectedGroup.name}</span>
+              <svg className={`w-4 h-4 text-ink-3 transition-transform ${dropdownOpen ? "rotate-180" : ""}`} fill="none" stroke="currentColor" strokeWidth="2" viewBox="0 0 24 24">
                 <path strokeLinecap="round" strokeLinejoin="round" d="m19.5 8.25-7.5 7.5-7.5-7.5" />
               </svg>
             </button>
             {dropdownOpen && (
-              <div className="absolute z-30 mt-1 w-full rounded-xl border border-slate-200 bg-white shadow-lg overflow-hidden">
-                <div className="p-2 border-b border-slate-100">
+              <div className="absolute z-30 mt-1 w-full rounded-control border border-line bg-white shadow-lg overflow-hidden">
+                <div className="p-2 border-b border-line-soft">
                   <input ref={searchInputRef} type="text" value={dropdownSearch} onChange={(e) => setDropdownSearch(e.target.value)}
-                    placeholder="Search..." className="w-full rounded-lg border border-slate-100 bg-slate-50 px-3 py-1.5 text-sm outline-none placeholder:text-slate-400 focus:border-blue-200 focus:bg-white transition-all" />
+                    placeholder="Search..." className="w-full rounded-lg border border-line-soft bg-surface-2 px-3 py-1.5 text-sm outline-none placeholder:text-ink-3 focus:border-accent-border focus:bg-white transition-all" />
                 </div>
                 <div className="max-h-64 overflow-y-auto">
                   {filteredDropdownGroups.map((g) => (
                     <button key={g.id} onClick={() => { setSelectedGroupId(g.id); setDropdownOpen(false); setDropdownSearch(""); }}
-                      className={`w-full text-left px-4 py-2.5 text-sm hover:bg-slate-50 transition-colors flex items-center justify-between ${g.id === selectedGroupId ? "bg-blue-50 text-blue-700" : "text-slate-700"}`}>
+                      className={`w-full text-left px-4 py-2.5 text-sm hover:bg-surface-2 transition-colors flex items-center justify-between ${g.id === selectedGroupId ? "bg-accent-soft text-accent" : "text-ink"}`}>
                       <span className={g.id === selectedGroupId ? "font-semibold" : ""}>{g.name}</span>
-                      <span className="text-[10px] text-slate-400 uppercase">{Object.keys(g.profiles).map((p) => PROFILE_LABELS[p as PimProfileType]?.[0]).join(" / ")}</span>
+                      <span className="text-[10px] text-ink-3 uppercase">{Object.keys(g.profiles).map((p) => PROFILE_LABELS[p as PimProfileType]?.[0]).join(" / ")}</span>
                     </button>
                   ))}
-                  {filteredDropdownGroups.length === 0 && <div className="px-4 py-3 text-sm text-slate-400 text-center">No models found</div>}
+                  {filteredDropdownGroups.length === 0 && <div className="px-4 py-3 text-sm text-ink-3 text-center">No models found</div>}
                 </div>
               </div>
             )}
@@ -1017,10 +1017,10 @@ export function PimModel({ groups }: Props) {
 
         {/* Profile tabs — horizontally scrollable so 5-6 profiles
             (Conservative … Core) don't overflow on mobile. */}
-        <div className="flex gap-1 rounded-xl bg-slate-100 p-1 overflow-x-auto max-w-full">
+        <div className="flex gap-1 rounded-control bg-surface-2 p-1 overflow-x-auto max-w-full">
           {availableProfiles.map((p) => (
             <button key={p} onClick={() => setSelectedProfile(p)}
-              className={`shrink-0 rounded-lg px-3 sm:px-4 py-2 text-sm font-semibold transition-colors whitespace-nowrap ${activeProfile === p ? "bg-white text-slate-800 shadow-sm" : "text-slate-500 hover:text-slate-700"}`}>
+              className={`shrink-0 rounded-lg px-3 sm:px-4 py-2 text-sm font-semibold transition-colors whitespace-nowrap ${activeProfile === p ? "bg-white text-ink shadow-sm" : "text-ink-3 hover:text-ink"}`}>
               {PROFILE_LABELS[p]}
             </button>
           ))}
@@ -1031,7 +1031,7 @@ export function PimModel({ groups }: Props) {
       {isPimGroup && (
         <div className="flex flex-wrap items-center gap-2">
           <button onClick={fetchPrices} disabled={pricesLoading}
-            className="flex items-center gap-1.5 rounded-lg bg-slate-100 px-3 py-1.5 text-xs font-semibold text-slate-600 hover:bg-slate-200 transition-colors disabled:opacity-50">
+            className="flex items-center gap-1.5 rounded-lg bg-surface-2 px-3 py-1.5 text-xs font-semibold text-ink-2 hover:bg-line transition-colors disabled:opacity-50">
             <svg className={`w-3.5 h-3.5 ${pricesLoading ? "animate-spin" : ""}`} fill="none" stroke="currentColor" strokeWidth="2" viewBox="0 0 24 24">
               <path strokeLinecap="round" strokeLinejoin="round" d="M16.023 9.348h4.992v-.001M2.985 19.644v-4.992m0 0h4.992m-4.993 0 3.181 3.183a8.25 8.25 0 0 0 13.803-3.7M4.031 9.865a8.25 8.25 0 0 1 13.803-3.7l3.181 3.182" />
             </svg>
@@ -1042,51 +1042,51 @@ export function PimModel({ groups }: Props) {
 
       {/* Asset Allocation Summary */}
       {profileWeights && (
-        <div className="rounded-2xl border border-slate-200 bg-white p-5 shadow-sm">
-          <h2 className="text-sm font-bold text-slate-800 mb-3">Asset Allocation</h2>
-          <div className="flex h-10 rounded-xl overflow-hidden mb-4">
+        <div className="rounded-card border border-line bg-white p-5 shadow-sm">
+          <h2 className="text-sm font-bold text-ink mb-3">Asset Allocation</h2>
+          <div className="flex h-10 rounded-control overflow-hidden mb-4">
             {profileWeights.cash > 0 && (
-              <div className="bg-slate-400 flex items-center justify-center text-xs font-semibold text-white" style={{ width: `${profileWeights.cash * 100}%` }}>
+              <div className="bg-ink-3 flex items-center justify-center text-xs font-semibold text-white" style={{ width: `${profileWeights.cash * 100}%` }}>
                 {profileWeights.cash >= 0.05 && `${(profileWeights.cash * 100).toFixed(0)}%`}
               </div>
             )}
             {profileWeights.fixedIncome > 0 && (
-              <div className="bg-blue-500 flex items-center justify-center text-xs font-semibold text-white" style={{ width: `${profileWeights.fixedIncome * 100}%` }}>
+              <div className="bg-accent flex items-center justify-center text-xs font-semibold text-white" style={{ width: `${profileWeights.fixedIncome * 100}%` }}>
                 {(profileWeights.fixedIncome * 100).toFixed(0)}%
               </div>
             )}
-            <div className="bg-emerald-500 flex items-center justify-center text-xs font-semibold text-white" style={{ width: `${profileWeights.equity * 100}%` }}>
+            <div className="bg-pos flex items-center justify-center text-xs font-semibold text-white" style={{ width: `${profileWeights.equity * 100}%` }}>
               {(profileWeights.equity * 100).toFixed(0)}%
             </div>
             {profileWeights.alternatives > 0 && (
-              <div className="bg-amber-500 flex items-center justify-center text-xs font-semibold text-white" style={{ width: `${profileWeights.alternatives * 100}%` }}>
+              <div className="bg-warn flex items-center justify-center text-xs font-semibold text-white" style={{ width: `${profileWeights.alternatives * 100}%` }}>
                 {profileWeights.alternatives >= 0.03 && `${(profileWeights.alternatives * 100).toFixed(0)}%`}
               </div>
             )}
           </div>
           <div className="grid grid-cols-2 sm:grid-cols-4 gap-3">
-            <div className="rounded-lg bg-slate-50 p-3 text-center">
-              <div className="text-[10px] font-semibold text-slate-400 uppercase">Cash</div>
-              <div className="text-lg font-bold text-slate-700">{(profileWeights.cash * 100).toFixed(0)}%</div>
+            <div className="rounded-lg bg-surface-2 p-3 text-center">
+              <div className="text-[10px] font-semibold text-ink-3 uppercase">Cash</div>
+              <div className="text-lg font-bold text-ink">{(profileWeights.cash * 100).toFixed(0)}%</div>
             </div>
-            <div className="rounded-lg bg-blue-50 p-3 text-center">
-              <div className="text-[10px] font-semibold text-blue-500 uppercase">Fixed Income</div>
-              <div className="text-lg font-bold text-blue-700">{(profileWeights.fixedIncome * 100).toFixed(0)}%</div>
+            <div className="rounded-lg bg-accent-soft p-3 text-center">
+              <div className="text-[10px] font-semibold text-accent uppercase">Fixed Income</div>
+              <div className="text-lg font-bold text-accent">{(profileWeights.fixedIncome * 100).toFixed(0)}%</div>
             </div>
-            <div className="rounded-lg bg-emerald-50 p-3 text-center">
-              <div className="text-[10px] font-semibold text-emerald-500 uppercase">Equity</div>
-              <div className="text-lg font-bold text-emerald-700">{(profileWeights.equity * 100).toFixed(0)}%</div>
+            <div className="rounded-lg bg-pos-soft p-3 text-center">
+              <div className="text-[10px] font-semibold text-pos uppercase">Equity</div>
+              <div className="text-lg font-bold text-pos">{(profileWeights.equity * 100).toFixed(0)}%</div>
             </div>
-            <div className="rounded-lg bg-amber-50 p-3 text-center">
-              <div className="text-[10px] font-semibold text-amber-500 uppercase">Alternatives</div>
-              <div className="text-lg font-bold text-amber-700">{(profileWeights.alternatives * 100).toFixed(0)}%</div>
+            <div className="rounded-lg bg-warn-soft p-3 text-center">
+              <div className="text-[10px] font-semibold text-warn uppercase">Alternatives</div>
+              <div className="text-lg font-bold text-warn">{(profileWeights.alternatives * 100).toFixed(0)}%</div>
             </div>
           </div>
-          <div className="mt-3 flex flex-wrap items-center gap-4 text-xs text-slate-400">
+          <div className="mt-3 flex flex-wrap items-center gap-4 text-xs text-ink-3">
             <span>CAD Split: {(currencySplit.cad * 100).toFixed(1)}%</span>
             <span>USD Split: {(currencySplit.usd * 100).toFixed(1)}%</span>
             <span className="ml-auto">
-              Portfolio Total: <span className={`font-semibold ${Math.abs(portfolioTotal - (profileWeights.fixedIncome + profileWeights.equity + profileWeights.alternatives)) < 0.001 ? "text-emerald-600" : "text-red-500"}`}>
+              Portfolio Total: <span className={`font-semibold ${Math.abs(portfolioTotal - (profileWeights.fixedIncome + profileWeights.equity + profileWeights.alternatives)) < 0.001 ? "text-pos" : "text-neg"}`}>
                 {pct(portfolioTotal)}
               </span>
             </span>
@@ -1115,12 +1115,12 @@ export function PimModel({ groups }: Props) {
           profile including Alpha and Core so the SLR view in the
           performance chart has a matching summary card. */}
       {driftSummary.anchorDate && (
-        <div className="rounded-2xl border border-slate-200 bg-white p-5 shadow-sm">
+        <div className="rounded-card border border-line bg-white p-5 shadow-sm">
           <div className="flex items-baseline justify-between mb-3 gap-3 flex-wrap">
-            <h3 className="text-sm font-bold text-slate-800">Sleeve Drift</h3>
-            <div className="flex items-baseline gap-3 text-xs text-slate-400">
+            <h3 className="text-sm font-bold text-ink">Sleeve Drift</h3>
+            <div className="flex items-baseline gap-3 text-xs text-ink-3">
               {perfAutoRefreshing ? (
-                <span className="flex items-center gap-1 text-slate-500">
+                <span className="flex items-center gap-1 text-ink-3">
                   <svg className="w-3 h-3 animate-spin" fill="none" stroke="currentColor" strokeWidth="2" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" d="M16.023 9.348h4.992v-.001M2.985 19.644v-4.992m0 0h4.992m-4.993 0 3.181 3.183a8.25 8.25 0 0 0 13.803-3.7M4.031 9.865a8.25 8.25 0 0 1 13.803-3.7l3.181 3.182" /></svg>
                   Refreshing prices...
                 </span>
@@ -1133,47 +1133,47 @@ export function PimModel({ groups }: Props) {
             </div>
           </div>
           <div className="grid grid-cols-1 sm:grid-cols-3 gap-3">
-            <div className="rounded-xl bg-slate-50 px-4 py-3">
-              <div className="text-[10px] uppercase tracking-wider text-slate-500 font-semibold">Alpha Model</div>
+            <div className="rounded-control bg-surface-2 px-4 py-3">
+              <div className="text-[10px] uppercase tracking-wider text-ink-3 font-semibold">Alpha Model</div>
               <div className={`text-lg font-bold mt-1 ${
-                driftSummary.alphaReturn == null ? "text-slate-300"
-                : driftSummary.alphaReturn > 0 ? "text-emerald-700"
-                : driftSummary.alphaReturn < 0 ? "text-rose-700"
-                : "text-slate-700"
+                driftSummary.alphaReturn == null ? "text-ink-faint"
+                : driftSummary.alphaReturn > 0 ? "text-pos"
+                : driftSummary.alphaReturn < 0 ? "text-neg"
+                : "text-ink"
               }`}>
                 {driftSummary.alphaReturn == null
                   ? "—"
                   : `${driftSummary.alphaReturn > 0 ? "+" : ""}${(driftSummary.alphaReturn * 100).toFixed(2)}%`}
               </div>
-              <div className="text-[10px] text-slate-400 mt-0.5">PIM standalone alpha · firm-wide</div>
+              <div className="text-[10px] text-ink-3 mt-0.5">PIM standalone alpha · firm-wide</div>
             </div>
-            <div className="rounded-xl bg-slate-50 px-4 py-3">
-              <div className="text-[10px] uppercase tracking-wider text-slate-500 font-semibold">Core Model</div>
+            <div className="rounded-control bg-surface-2 px-4 py-3">
+              <div className="text-[10px] uppercase tracking-wider text-ink-3 font-semibold">Core Model</div>
               <div className={`text-lg font-bold mt-1 ${
-                driftSummary.coreReturn == null ? "text-slate-300"
-                : driftSummary.coreReturn > 0 ? "text-emerald-700"
-                : driftSummary.coreReturn < 0 ? "text-rose-700"
-                : "text-slate-700"
+                driftSummary.coreReturn == null ? "text-ink-faint"
+                : driftSummary.coreReturn > 0 ? "text-pos"
+                : driftSummary.coreReturn < 0 ? "text-neg"
+                : "text-ink"
               }`}>
                 {driftSummary.coreReturn == null
                   ? "—"
                   : `${driftSummary.coreReturn > 0 ? "+" : ""}${(driftSummary.coreReturn * 100).toFixed(2)}%`}
               </div>
-              <div className="text-[10px] text-slate-400 mt-0.5">PIM standalone core ETFs · firm-wide</div>
+              <div className="text-[10px] text-ink-3 mt-0.5">PIM standalone core ETFs · firm-wide</div>
             </div>
-            <div className="rounded-xl bg-slate-50 px-4 py-3">
-              <div className="text-[10px] uppercase tracking-wider text-slate-500 font-semibold">Spread (α − Core)</div>
+            <div className="rounded-control bg-surface-2 px-4 py-3">
+              <div className="text-[10px] uppercase tracking-wider text-ink-3 font-semibold">Spread (α − Core)</div>
               {driftSummary.alphaReturn != null && driftSummary.coreReturn != null ? (
                 <>
                   <div className={`text-lg font-bold mt-1 ${
-                    driftSummary.alphaReturn - driftSummary.coreReturn > 0 ? "text-emerald-700"
-                    : driftSummary.alphaReturn - driftSummary.coreReturn < 0 ? "text-rose-700"
-                    : "text-slate-700"
+                    driftSummary.alphaReturn - driftSummary.coreReturn > 0 ? "text-pos"
+                    : driftSummary.alphaReturn - driftSummary.coreReturn < 0 ? "text-neg"
+                    : "text-ink"
                   }`}>
                     {driftSummary.alphaReturn - driftSummary.coreReturn > 0 ? "+" : ""}
                     {((driftSummary.alphaReturn - driftSummary.coreReturn) * 100).toFixed(2)}%
                   </div>
-                  <div className="text-[10px] text-slate-400 mt-0.5">
+                  <div className="text-[10px] text-ink-3 mt-0.5">
                     {driftSummary.alphaReturn > driftSummary.coreReturn
                       ? "Alpha outperforming → Dynamic Wt tilts toward alpha holdings"
                       : driftSummary.alphaReturn < driftSummary.coreReturn
@@ -1182,7 +1182,7 @@ export function PimModel({ groups }: Props) {
                   </div>
                 </>
               ) : (
-                <div className="text-lg font-bold mt-1 text-slate-300">—</div>
+                <div className="text-lg font-bold mt-1 text-ink-faint">—</div>
               )}
             </div>
           </div>
@@ -1192,13 +1192,13 @@ export function PimModel({ groups }: Props) {
       {/* Holdings search */}
       <div className="flex items-center gap-3">
         <div className="relative flex-1 max-w-sm">
-          <svg className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-slate-400" fill="none" stroke="currentColor" strokeWidth="2" viewBox="0 0 24 24">
+          <svg className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-ink-3" fill="none" stroke="currentColor" strokeWidth="2" viewBox="0 0 24 24">
             <path strokeLinecap="round" strokeLinejoin="round" d="m21 21-5.197-5.197m0 0A7.5 7.5 0 1 0 5.196 5.196a7.5 7.5 0 0 0 10.607 10.607Z" />
           </svg>
           <input type="text" value={holdingSearch} onChange={(e) => setHoldingSearch(e.target.value)} placeholder="Filter holdings..."
-            className="w-full rounded-xl border border-slate-200 bg-white pl-10 pr-4 py-2 text-sm outline-none placeholder:text-slate-400 focus:border-blue-300 focus:ring-2 focus:ring-blue-100 transition-all" />
+            className="w-full rounded-control border border-line bg-white pl-10 pr-4 py-2 text-sm outline-none placeholder:text-ink-3 focus:border-accent-border focus:ring-2 focus:ring-blue-100 transition-all" />
         </div>
-        <span className="text-xs text-slate-400">{computedHoldings.length} holdings</span>
+        <span className="text-xs text-ink-3">{computedHoldings.length} holdings</span>
       </div>
 
       {/* Holdings tables by asset class */}
@@ -1213,7 +1213,7 @@ export function PimModel({ groups }: Props) {
         const classTotal = checkTotals[ac];
 
         return (
-          <div key={ac} className="rounded-2xl border border-slate-200 bg-white shadow-sm overflow-hidden">
+          <div key={ac} className="rounded-card border border-line bg-white shadow-sm overflow-hidden">
             <div className={`${colors.header} px-5 py-3 flex items-center justify-between`}>
               <h3 className="text-sm font-bold">
                 {ASSET_CLASS_LABELS[ac]}
@@ -1221,14 +1221,14 @@ export function PimModel({ groups }: Props) {
               </h3>
               <div className="flex items-center gap-4 text-xs">
                 <span>
-                  Class Weight Check: <span className={`font-semibold ${Math.abs(classTotal - 1) < 0.001 ? "opacity-70" : "text-red-600"}`}>{pct(classTotal)}</span>
+                  Class Weight Check: <span className={`font-semibold ${Math.abs(classTotal - 1) < 0.001 ? "opacity-70" : "text-neg"}`}>{pct(classTotal)}</span>
                 </span>
               </div>
             </div>
             <div className="overflow-x-auto">
               <table className="w-full text-sm">
                 <thead className="sticky top-0 z-10 bg-white shadow-[0_1px_0_0_rgb(226_232_240)]">
-                  <tr className="border-b border-slate-100 text-xs text-slate-500">
+                  <tr className="border-b border-line-soft text-xs text-ink-3">
                     <th className={`text-left pl-5 pr-2 ${thClass}`} onClick={() => handleSort("name")}>
                       Name<SortIcon field="name" sortField={sortField} sortDir={sortDir} />
                     </th>
@@ -1250,11 +1250,11 @@ export function PimModel({ groups }: Props) {
                       >
                         Dynamic Wt
                         {perfBackfilling && (
-                          <span className="ml-1 font-normal text-[10px] text-slate-400">computing…</span>
+                          <span className="ml-1 font-normal text-[10px] text-ink-3">computing…</span>
                         )}
                         {!perfBackfilling && dynamicWeightDiagnostic && (
                           <>
-                            <span className="ml-1 font-normal text-[9px] text-amber-600 normal-case" title={dynamicWeightDiagnostic}>
+                            <span className="ml-1 font-normal text-[9px] text-warn normal-case" title={dynamicWeightDiagnostic}>
                               ⓘ
                             </span>
                             <button
@@ -1268,7 +1268,7 @@ export function PimModel({ groups }: Props) {
                                   setPerfBackfilling(false);
                                 }
                               }}
-                              className="ml-1 font-normal text-[9px] text-blue-600 hover:underline normal-case"
+                              className="ml-1 font-normal text-[9px] text-accent hover:underline normal-case"
                               title="Force a full recompute of pm:pim-performance"
                             >
                               recompute
@@ -1288,20 +1288,20 @@ export function PimModel({ groups }: Props) {
                 </thead>
                 <tbody>
                   {holdings.map((h, i) => (
-                    <tr key={`${h.symbol}-${i}`} className={`border-b border-slate-50 hover:bg-slate-50/50 transition-colors ${h.weightInPortfolio === 0 ? "opacity-40" : ""}`}>
-                      <td className="py-2 pl-5 pr-2 font-medium text-slate-800 truncate max-w-[200px]">
-                        <Link href={`/stock/${symbolToTicker(h.symbol).toLowerCase()}?from=pim-model`} className="hover:underline hover:text-blue-600 transition-colors">
+                    <tr key={`${h.symbol}-${i}`} className={`border-b border-line-soft hover:bg-surface-hover transition-colors ${h.weightInPortfolio === 0 ? "opacity-40" : ""}`}>
+                      <td className="py-2 pl-5 pr-2 font-medium text-ink truncate max-w-[200px]">
+                        <Link href={`/stock/${symbolToTicker(h.symbol).toLowerCase()}?from=pim-model`} className="hover:underline hover:text-accent transition-colors">
                           {h.name}
                         </Link>
                       </td>
-                      <td className="py-2 px-2 font-mono text-xs text-slate-600">
+                      <td className="py-2 px-2 font-mono text-xs text-ink-2">
                         <span className="inline-flex items-center gap-1.5">
-                          <Link href={`/stock/${symbolToTicker(h.symbol).toLowerCase()}?from=pim-model`} className="hover:underline hover:text-blue-600 transition-colors">
+                          <Link href={`/stock/${symbolToTicker(h.symbol).toLowerCase()}?from=pim-model`} className="hover:underline hover:text-accent transition-colors">
                             {displayTicker(h.symbol)}
                           </Link>
                           {isLatestBuy(h.symbol) && (
                             <span
-                              className="inline-flex items-center rounded-full bg-emerald-100 px-1.5 py-px text-[9px] font-bold uppercase tracking-wider text-emerald-700 ring-1 ring-emerald-200"
+                              className="inline-flex items-center rounded-full bg-pos-soft px-1.5 py-px text-[9px] font-bold uppercase tracking-wider text-pos ring-1 ring-emerald-200"
                               title="Purchased on the most recent buy day (firm-wide)"
                             >
                               NEW
@@ -1310,30 +1310,30 @@ export function PimModel({ groups }: Props) {
                         </span>
                       </td>
                       <td className="py-2 px-2 text-center">
-                        <span className={`inline-block rounded px-1.5 py-0.5 text-[10px] font-bold ${h.currency === "CAD" ? "bg-red-50 text-red-600" : "bg-green-50 text-green-600"}`}>{h.currency}</span>
+                        <span className={`inline-block rounded px-1.5 py-0.5 text-[10px] font-bold ${h.currency === "CAD" ? "bg-neg-soft text-neg" : "bg-pos-soft text-pos"}`}>{h.currency}</span>
                       </td>
                       <td className="py-2 px-2 text-right font-mono text-xs font-semibold">{pctClean(h.weightInPortfolio)}</td>
                       {activeProfile !== "alpha" && activeProfile !== "core" && (
                         <td className="py-2 px-2 text-right font-mono text-xs">
                           {h.dynamicWeight != null ? (
-                            <span className={h.dynamicWeight > h.weightInPortfolio ? "text-emerald-700" : h.dynamicWeight < h.weightInPortfolio ? "text-rose-700" : "text-slate-700"}>
+                            <span className={h.dynamicWeight > h.weightInPortfolio ? "text-pos" : h.dynamicWeight < h.weightInPortfolio ? "text-neg" : "text-ink"}>
                               {pctClean(h.dynamicWeight)}
                             </span>
                           ) : (
-                            <span className="text-slate-300">&mdash;</span>
+                            <span className="text-ink-faint">&mdash;</span>
                           )}
                         </td>
                       )}
-                      <td className="py-2 px-2 text-right font-mono text-xs">{h.cadModelWeight != null ? pctClean(h.cadModelWeight) : <span className="text-slate-300">&mdash;</span>}</td>
-                      <td className="py-2 px-2 text-right font-mono text-xs">{h.usdModelWeight != null ? pctClean(h.usdModelWeight) : <span className="text-slate-300">&mdash;</span>}</td>
+                      <td className="py-2 px-2 text-right font-mono text-xs">{h.cadModelWeight != null ? pctClean(h.cadModelWeight) : <span className="text-ink-faint">&mdash;</span>}</td>
+                      <td className="py-2 px-2 text-right font-mono text-xs">{h.usdModelWeight != null ? pctClean(h.usdModelWeight) : <span className="text-ink-faint">&mdash;</span>}</td>
                       <td className="py-2 px-2 text-center">
                         {isInScoring(h.symbol) ? (
-                          <span className="text-[10px] font-semibold text-emerald-500">Added</span>
+                          <span className="text-[10px] font-semibold text-pos">Added</span>
                         ) : (
                           <button
                             onClick={() => handleAddToScoring(h)}
                             disabled={addingToScoring === h.symbol}
-                            className="rounded px-2 py-0.5 text-[10px] font-bold bg-blue-50 text-blue-600 hover:bg-blue-100 transition-colors disabled:opacity-50"
+                            className="rounded px-2 py-0.5 text-[10px] font-bold bg-accent-soft text-accent hover:bg-accent-soft transition-colors disabled:opacity-50"
                           >
                             {addingToScoring === h.symbol ? "..." : "+ Add"}
                           </button>
@@ -1342,13 +1342,13 @@ export function PimModel({ groups }: Props) {
                     </tr>
                   ))}
                   <tr className={`${colors.bg} font-semibold`}>
-                    <td className="py-2 pl-5 pr-2 text-xs text-slate-500" colSpan={3}>TOTAL</td>
+                    <td className="py-2 pl-5 pr-2 text-xs text-ink-3" colSpan={3}>TOTAL</td>
                     <td className="py-2 px-2 text-right font-mono text-xs font-bold">{pct(holdings.reduce((s, h) => s + h.weightInPortfolio, 0))}</td>
                     {activeProfile !== "alpha" && activeProfile !== "core" && (
                       <td className="py-2 px-2 text-right font-mono text-xs font-bold">
                         {holdings.some((h) => h.dynamicWeight != null)
                           ? pct(holdings.reduce((s, h) => s + (h.dynamicWeight ?? h.weightInPortfolio), 0))
-                          : <span className="text-slate-300">&mdash;</span>}
+                          : <span className="text-ink-faint">&mdash;</span>}
                       </td>
                     )}
                     <td className="py-2 px-2 text-right font-mono text-xs">{pct(holdings.filter((h) => h.cadModelWeight != null).reduce((s, h) => s + (h.cadModelWeight || 0), 0))}</td>
@@ -1364,14 +1364,14 @@ export function PimModel({ groups }: Props) {
 
       {/* Transaction History */}
       {isPimGroup && groupState.transactions.length > 0 && (
-        <details className="rounded-2xl border border-slate-200 bg-white shadow-sm overflow-hidden">
-          <summary className="px-5 py-3 text-sm font-bold text-slate-800 cursor-pointer hover:bg-slate-50 transition-colors">
+        <details className="rounded-card border border-line bg-white shadow-sm overflow-hidden">
+          <summary className="px-5 py-3 text-sm font-bold text-ink cursor-pointer hover:bg-surface-2 transition-colors">
             Transaction History ({groupState.transactions.length})
           </summary>
           <div className="overflow-x-auto px-5 pb-4">
             <table className="w-full text-sm">
               <thead>
-                <tr className="border-b border-slate-100 text-xs text-slate-500">
+                <tr className="border-b border-line-soft text-xs text-ink-3">
                   <th className="text-left py-2 font-semibold">Date</th>
                   <th className="text-left py-2 font-semibold">Type</th>
                   <th className="text-left py-2 font-semibold">Symbol</th>
@@ -1383,20 +1383,20 @@ export function PimModel({ groups }: Props) {
               </thead>
               <tbody>
                 {[...groupState.transactions].reverse().slice(0, 50).map((t) => (
-                  <tr key={t.id} className="border-b border-slate-50">
-                    <td className="py-1.5 text-xs text-slate-600">{new Date(t.date).toLocaleDateString()}</td>
+                  <tr key={t.id} className="border-b border-line-soft">
+                    <td className="py-1.5 text-xs text-ink-2">{new Date(t.date).toLocaleDateString()}</td>
                     <td className="py-1.5 text-xs">
-                      <span className="rounded px-1.5 py-0.5 text-[9px] font-bold bg-slate-100 text-slate-600">{t.type}</span>
+                      <span className="rounded px-1.5 py-0.5 text-[9px] font-bold bg-surface-2 text-ink-2">{t.type}</span>
                     </td>
                     <td className="py-1.5 text-xs font-mono font-semibold">{displayTicker(t.symbol)}</td>
                     <td className="py-1.5 text-center">
-                      <span className={`rounded px-1.5 py-0.5 text-[9px] font-bold ${t.direction === "sell" ? "bg-red-100 text-red-700" : "bg-emerald-100 text-emerald-700"}`}>
+                      <span className={`rounded px-1.5 py-0.5 text-[9px] font-bold ${t.direction === "sell" ? "bg-neg-soft text-neg" : "bg-pos-soft text-pos"}`}>
                         {t.direction.toUpperCase()}
                       </span>
                     </td>
                     <td className="py-1.5 text-xs text-right font-mono">${t.price.toFixed(2)}</td>
                     <td className="py-1.5 text-xs text-right font-mono">{pct(t.targetWeight)}</td>
-                    <td className="py-1.5 text-xs text-slate-400">{t.pairedWith || "—"}</td>
+                    <td className="py-1.5 text-xs text-ink-3">{t.pairedWith || "—"}</td>
                   </tr>
                 ))}
               </tbody>

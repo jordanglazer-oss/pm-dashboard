@@ -86,9 +86,9 @@ function renderMarkdown(text: string): React.ReactNode {
           <div key={key++} className="overflow-x-auto -mx-1 my-2">
             <table className="text-xs border-collapse w-full">
               <thead>
-                <tr className="border-b border-slate-300">
+                <tr className="border-b border-line">
                   {headerCells.map((c, ci) => (
-                    <th key={ci} className="text-left font-semibold px-2 py-1.5 text-slate-700">
+                    <th key={ci} className="text-left font-semibold px-2 py-1.5 text-ink">
                       {renderInline(c)}
                     </th>
                   ))}
@@ -96,9 +96,9 @@ function renderMarkdown(text: string): React.ReactNode {
               </thead>
               <tbody>
                 {bodyRows.map((row, ri) => (
-                  <tr key={ri} className="border-b border-slate-100 last:border-b-0">
+                  <tr key={ri} className="border-b border-line-soft last:border-b-0">
                     {row.map((c, ci) => (
-                      <td key={ci} className="px-2 py-1.5 align-top text-slate-700">
+                      <td key={ci} className="px-2 py-1.5 align-top text-ink">
                         {renderInline(c)}
                       </td>
                     ))}
@@ -118,7 +118,7 @@ function renderMarkdown(text: string): React.ReactNode {
     if (hMatch) {
       const headingText = hMatch[2].replace(/[*_`]/g, "");
       blocks.push(
-        <p key={key++} className="font-bold text-slate-900 mt-3 first:mt-0 mb-1.5">
+        <p key={key++} className="font-bold text-ink mt-3 first:mt-0 mb-1.5">
           {renderInline(headingText)}
         </p>,
       );
@@ -227,8 +227,8 @@ function renderInline(text: string): React.ReactNode {
   return tokens.map((t, idx) => {
     if (t.type === "bold") return <strong key={idx}>{t.content}</strong>;
     if (t.type === "italic") return <em key={idx}>{t.content}</em>;
-    if (t.type === "code") return <code key={idx} className="rounded bg-slate-100 px-1 py-0.5 text-[0.85em] font-mono">{t.content}</code>;
-    if (t.type === "link") return <a key={idx} href={t.url} target="_blank" rel="noopener noreferrer" className="text-blue-600 underline hover:text-blue-800">{t.content}</a>;
+    if (t.type === "code") return <code key={idx} className="rounded bg-surface-2 px-1 py-0.5 text-[0.85em] font-mono">{t.content}</code>;
+    if (t.type === "link") return <a key={idx} href={t.url} target="_blank" rel="noopener noreferrer" className="text-accent underline hover:text-accent">{t.content}</a>;
     return <span key={idx}>{t.content}</span>;
   });
 }
@@ -579,7 +579,7 @@ export default function ChatPage() {
   );
 
   return (
-    <div className="relative flex h-[calc(100vh-46px)] bg-slate-50 overflow-hidden">
+    <div className="relative flex h-[calc(100vh-46px)] bg-surface-2 overflow-hidden">
       {/* Mobile backdrop */}
       {sidebarOpen && (
         <div
@@ -590,25 +590,25 @@ export default function ChatPage() {
       {/* Sidebar — drawer on mobile, static on md+ */}
       <aside
         className={`
-          fixed md:static inset-y-0 left-0 z-40 w-64 shrink-0 border-r border-slate-200 bg-white flex flex-col
+          fixed md:static inset-y-0 left-0 z-40 w-64 shrink-0 border-r border-line bg-white flex flex-col
           transform transition-transform duration-200
           ${sidebarOpen ? "translate-x-0" : "-translate-x-full"}
           md:translate-x-0
         `}
       >
-        <div className="p-3 border-b border-slate-200 flex items-center gap-2">
+        <div className="p-3 border-b border-line flex items-center gap-2">
           <button
             onClick={() => {
               newThread();
               setSidebarOpen(false);
             }}
-            className="flex-1 rounded-lg bg-blue-600 px-3 py-2 text-sm font-semibold text-white hover:bg-blue-700 transition-colors"
+            className="flex-1 rounded-lg bg-accent px-3 py-2 text-sm font-semibold text-white hover:bg-accent transition-colors"
           >
             + New chat
           </button>
           <button
             onClick={() => setSidebarOpen(false)}
-            className="md:hidden rounded-lg p-2 text-slate-500 hover:bg-slate-100"
+            className="md:hidden rounded-lg p-2 text-ink-3 hover:bg-surface-2"
             aria-label="Close sidebar"
           >
             <svg className="w-4 h-4" fill="none" stroke="currentColor" strokeWidth="2" viewBox="0 0 24 24">
@@ -618,7 +618,7 @@ export default function ChatPage() {
         </div>
         <div className="flex-1 overflow-y-auto">
           {threads.length === 0 && (
-            <p className="px-4 py-6 text-xs text-slate-400 text-center">No conversations yet. Start a new one above.</p>
+            <p className="px-4 py-6 text-xs text-ink-3 text-center">No conversations yet. Start a new one above.</p>
           )}
           {threads.map((t) => {
             const isActive = t.id === activeThreadId;
@@ -626,9 +626,9 @@ export default function ChatPage() {
             return (
               <div
                 key={t.id}
-                className={`group flex items-start gap-1.5 px-3 py-2.5 border-b border-slate-100 ${
+                className={`group flex items-start gap-1.5 px-3 py-2.5 border-b border-line-soft ${
                   isRenaming ? "" : "cursor-pointer"
-                } ${isActive ? "bg-blue-50" : "hover:bg-slate-50"}`}
+                } ${isActive ? "bg-accent-soft" : "hover:bg-surface-2"}`}
                 onClick={() => {
                   if (isRenaming) return;
                   setActiveThreadId(t.id);
@@ -653,13 +653,13 @@ export default function ChatPage() {
                           cancelRename();
                         }
                       }}
-                      className="w-full text-sm font-semibold text-slate-900 bg-white border border-blue-400 rounded px-1.5 py-0.5 outline-none focus:ring-2 focus:ring-blue-200"
+                      className="w-full text-sm font-semibold text-ink bg-white border border-blue-400 rounded px-1.5 py-0.5 outline-none focus:ring-2 focus:ring-accent-soft"
                       maxLength={80}
                     />
                   ) : (
-                    <p className={`text-sm truncate ${isActive ? "font-semibold text-blue-900" : "text-slate-700"}`}>{t.title}</p>
+                    <p className={`text-sm truncate ${isActive ? "font-semibold text-accent" : "text-ink"}`}>{t.title}</p>
                   )}
-                  <p className="text-[10px] text-slate-400 mt-0.5">
+                  <p className="text-[10px] text-ink-3 mt-0.5">
                     {t.messageCount} msg · {formatTime(t.updatedAt)}
                   </p>
                 </div>
@@ -670,7 +670,7 @@ export default function ChatPage() {
                         e.stopPropagation();
                         beginRename(t.id, t.title);
                       }}
-                      className="text-slate-400 hover:text-blue-600 p-0.5"
+                      className="text-ink-3 hover:text-accent p-0.5"
                       title="Rename"
                     >
                       <svg className="w-3.5 h-3.5" fill="none" stroke="currentColor" strokeWidth="2" viewBox="0 0 24 24">
@@ -682,7 +682,7 @@ export default function ChatPage() {
                         e.stopPropagation();
                         deleteThread(t.id);
                       }}
-                      className="text-slate-400 hover:text-red-600 p-0.5"
+                      className="text-ink-3 hover:text-neg p-0.5"
                       title="Delete"
                     >
                       <svg className="w-3.5 h-3.5" fill="none" stroke="currentColor" strokeWidth="2" viewBox="0 0 24 24">
@@ -700,11 +700,11 @@ export default function ChatPage() {
       {/* Main */}
       <main className="flex-1 flex flex-col min-w-0">
         {/* Toolbar */}
-        <div className="px-4 md:px-6 py-3 border-b border-slate-200 bg-white flex items-center justify-between gap-3">
+        <div className="px-4 md:px-6 py-3 border-b border-line bg-white flex items-center justify-between gap-3">
           <div className="flex items-center gap-2 min-w-0">
             <button
               onClick={() => setSidebarOpen(true)}
-              className="md:hidden shrink-0 rounded-lg p-2 text-slate-600 hover:bg-slate-100"
+              className="md:hidden shrink-0 rounded-lg p-2 text-ink-2 hover:bg-surface-2"
               aria-label="Open conversations"
             >
               <svg className="w-5 h-5" fill="none" stroke="currentColor" strokeWidth="2" viewBox="0 0 24 24">
@@ -712,18 +712,18 @@ export default function ChatPage() {
               </svg>
             </button>
             <div className="min-w-0">
-              <h1 className="text-base font-semibold text-slate-900 truncate">{activeThread?.title ?? "Chat"}</h1>
-              <p className="text-[11px] text-slate-400 truncate">
+              <h1 className="text-base font-semibold text-ink truncate">{activeThread?.title ?? "Chat"}</h1>
+              <p className="text-[11px] text-ink-3 truncate">
                 Sonnet 4.6 · web search · {contextEnabled ? "context on" : "context off"}
               </p>
             </div>
           </div>
           <label className="flex items-center gap-2 cursor-pointer shrink-0">
-            <span className="text-xs font-semibold text-slate-600 hidden sm:inline">Context</span>
+            <span className="text-xs font-semibold text-ink-2 hidden sm:inline">Context</span>
             <button
               onClick={() => setContextEnabled((v) => !v)}
               className={`relative w-10 h-5 rounded-full transition-colors ${
-                contextEnabled ? "bg-blue-600" : "bg-slate-300"
+                contextEnabled ? "bg-accent" : "bg-line"
               }`}
               type="button"
             >
@@ -740,8 +740,8 @@ export default function ChatPage() {
         <div ref={scrollRef} className="flex-1 overflow-y-auto px-3 sm:px-6 py-4 sm:py-6">
           {visibleMessages.length === 0 && !isStreaming && (
             <div className="max-w-full sm:max-w-2xl mx-auto pt-12">
-              <h2 className="text-2xl font-bold text-slate-900 mb-2">Ask anything about your dashboard or the market</h2>
-              <p className="text-sm text-slate-500 mb-6">
+              <h2 className="text-2xl font-bold text-ink mb-2">Ask anything about your dashboard or the market</h2>
+              <p className="text-sm text-ink-3 mb-6">
                 I have access to your latest brief, holdings, market regime, and PIM models. I can also pull fresh data
                 from the web when needed.
               </p>
@@ -753,7 +753,7 @@ export default function ChatPage() {
                       setInput(s);
                       textareaRef.current?.focus();
                     }}
-                    className="block w-full text-left rounded-lg border border-slate-200 bg-white px-4 py-3 text-sm text-slate-700 hover:border-blue-400 hover:bg-blue-50 transition-colors"
+                    className="block w-full text-left rounded-lg border border-line bg-white px-4 py-3 text-sm text-ink hover:border-blue-400 hover:bg-accent-soft transition-colors"
                   >
                     {s}
                   </button>
@@ -770,7 +770,7 @@ export default function ChatPage() {
             {isStreaming && (
               <div className="flex flex-col items-start gap-2">
                 {streamingSearchEvents.length > 0 && (
-                  <div className="rounded-lg bg-amber-50 border border-amber-200 px-3 py-2 text-xs text-amber-800 space-y-1">
+                  <div className="rounded-lg bg-warn-soft border border-warn-border px-3 py-2 text-xs text-warn space-y-1">
                     {streamingSearchEvents.map((e, idx) =>
                       e.type === "query" ? (
                         <div key={idx} className="flex items-center gap-1.5">
@@ -782,8 +782,8 @@ export default function ChatPage() {
                         </div>
                       ) : (
                         <div key={idx} className="flex items-center gap-1.5 pl-5">
-                          <span className="text-amber-600">·</span>
-                          <a href={e.url} target="_blank" rel="noopener noreferrer" className="underline hover:text-amber-900">
+                          <span className="text-warn">·</span>
+                          <a href={e.url} target="_blank" rel="noopener noreferrer" className="underline hover:text-warn">
                             {e.text}
                           </a>
                         </div>
@@ -792,14 +792,14 @@ export default function ChatPage() {
                   </div>
                 )}
                 {streamingText && (
-                  <div className="bg-white rounded-2xl border border-slate-200 px-4 py-3 max-w-full sm:max-w-2xl text-sm break-words text-slate-900">
+                  <div className="bg-white rounded-card border border-line px-4 py-3 max-w-full sm:max-w-2xl text-sm break-words text-ink">
                     {renderMarkdown(streamingText)}
-                    <span className="inline-block w-2 h-4 bg-blue-500 ml-1 animate-pulse" />
+                    <span className="inline-block w-2 h-4 bg-accent ml-1 animate-pulse" />
                   </div>
                 )}
                 {!streamingText && streamingSearchEvents.length === 0 && (
-                  <div className="flex items-center gap-2 text-xs text-slate-400">
-                    <span className="w-2 h-2 rounded-full bg-blue-500 animate-pulse" />
+                  <div className="flex items-center gap-2 text-xs text-ink-3">
+                    <span className="w-2 h-2 rounded-full bg-accent animate-pulse" />
                     Thinking…
                   </div>
                 )}
@@ -807,7 +807,7 @@ export default function ChatPage() {
             )}
 
             {error && (
-              <div className="rounded-lg bg-red-50 border border-red-200 px-3 py-2 text-xs text-red-700">
+              <div className="rounded-lg bg-neg-soft border border-neg-border px-3 py-2 text-xs text-neg">
                 <span className="font-semibold">Error:</span> {error}
               </div>
             )}
@@ -815,9 +815,9 @@ export default function ChatPage() {
         </div>
 
         {/* Composer */}
-        <div className="border-t border-slate-200 bg-white px-3 sm:px-6 py-3">
+        <div className="border-t border-line bg-white px-3 sm:px-6 py-3">
           <div className="max-w-3xl mx-auto">
-            <div className="relative rounded-2xl border border-slate-300 bg-white focus-within:border-blue-400 focus-within:ring-2 focus-within:ring-blue-100 transition-all">
+            <div className="relative rounded-card border border-line bg-white focus-within:border-blue-400 focus-within:ring-2 focus-within:ring-blue-100 transition-all">
               <textarea
                 ref={textareaRef}
                 value={input}
@@ -826,17 +826,17 @@ export default function ChatPage() {
                 placeholder={isStreaming ? "Streaming response…" : "Ask anything (Shift+Enter for newline)…"}
                 disabled={isStreaming}
                 rows={1}
-                className="w-full resize-none rounded-2xl bg-transparent px-4 py-3 pr-14 text-sm text-slate-900 placeholder-slate-400 outline-none disabled:opacity-50"
+                className="w-full resize-none rounded-card bg-transparent px-4 py-3 pr-14 text-sm text-ink placeholder-slate-400 outline-none disabled:opacity-50"
               />
               <button
                 onClick={send}
                 disabled={isStreaming || !input.trim()}
-                className="absolute right-2 bottom-2 rounded-lg bg-blue-600 px-3 py-1.5 text-xs font-semibold text-white hover:bg-blue-700 disabled:bg-slate-300 disabled:cursor-not-allowed transition-colors"
+                className="absolute right-2 bottom-2 rounded-lg bg-accent px-3 py-1.5 text-xs font-semibold text-white hover:bg-accent disabled:bg-line disabled:cursor-not-allowed transition-colors"
               >
                 Send
               </button>
             </div>
-            <p className="text-[10px] text-slate-400 mt-1.5 text-center">
+            <p className="text-[10px] text-ink-3 mt-1.5 text-center">
               Context: brief, holdings, market regime, PIM models. Web search on demand. ⌘+Enter / Enter to send.
             </p>
           </div>
@@ -850,7 +850,7 @@ function MessageBubble({ message }: { message: ChatMessage }) {
   if (message.role === "user") {
     return (
       <div className="flex justify-end">
-        <div className="bg-blue-600 text-white rounded-2xl px-4 py-3 max-w-full sm:max-w-2xl text-sm break-words whitespace-pre-wrap">
+        <div className="bg-accent text-white rounded-card px-4 py-3 max-w-full sm:max-w-2xl text-sm break-words whitespace-pre-wrap">
           {message.content}
         </div>
       </div>
@@ -859,23 +859,23 @@ function MessageBubble({ message }: { message: ChatMessage }) {
   return (
     <div className="flex flex-col items-start gap-2">
       {message.searchQueries && message.searchQueries.length > 0 && (
-        <div className="rounded-lg bg-amber-50 border border-amber-200 px-3 py-2 text-[11px] text-amber-800 space-y-0.5 max-w-full sm:max-w-2xl">
+        <div className="rounded-lg bg-warn-soft border border-warn-border px-3 py-2 text-[11px] text-warn space-y-0.5 max-w-full sm:max-w-2xl">
           <div className="font-semibold">Web searches:</div>
           {message.searchQueries.map((q, i) => (
             <div key={i} className="pl-2">· {q}</div>
           ))}
         </div>
       )}
-      <div className="bg-white rounded-2xl border border-slate-200 px-4 py-3 max-w-full sm:max-w-2xl text-sm break-words text-slate-900">
+      <div className="bg-white rounded-card border border-line px-4 py-3 max-w-full sm:max-w-2xl text-sm break-words text-ink">
         {renderMarkdown(message.content)}
       </div>
       {message.citations && message.citations.length > 0 && (
-        <div className="rounded-lg bg-slate-50 border border-slate-200 px-3 py-2 text-[11px] text-slate-600 max-w-full sm:max-w-2xl">
+        <div className="rounded-lg bg-surface-2 border border-line px-3 py-2 text-[11px] text-ink-2 max-w-full sm:max-w-2xl">
           <div className="font-semibold mb-1">Sources:</div>
           <ul className="space-y-0.5">
             {message.citations.map((c, i) => (
               <li key={i} className="truncate">
-                <a href={c.url} target="_blank" rel="noopener noreferrer" className="text-blue-600 underline hover:text-blue-800">
+                <a href={c.url} target="_blank" rel="noopener noreferrer" className="text-accent underline hover:text-accent">
                   {c.title ?? c.url}
                 </a>
               </li>
