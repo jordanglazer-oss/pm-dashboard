@@ -97,12 +97,14 @@ function AnthropicCreditChip() {
   );
 }
 
+// Dashboard + Positioning + PIM Model are consolidated into a single
+// "Portfolio" tab (the redesign's one structural change); the PortfolioTabs
+// segment bar navigates between Rankings/Positioning/X-ray/Models/Allocation.
+// Routes are unchanged — the Portfolio tab lands on "/" (Rankings).
 const tabs = [
   { label: "Brief", href: "/brief" },
-  { label: "Dashboard", href: "/" },
+  { label: "Portfolio", href: "/" },
   { label: "Chat", href: "/chat" },
-  { label: "PIM Model", href: "/pim-model" },
-  { label: "Positioning", href: "/portfolio" },
   { label: "Screener", href: "/screener" },
   { label: "Research", href: "/research" },
   { label: "Conviction", href: "/conviction" },
@@ -244,7 +246,8 @@ export function Navigation() {
       // Find current tab index — fall back to Dashboard for /stock/* etc.
       let idx = tabs.findIndex((tab) => tab.href === pathname);
       if (idx < 0) {
-        idx = tabs.findIndex((tab) => tab.label === "Dashboard");
+        // /portfolio, /pim-model, /stock/*, /scoring all live under Portfolio.
+        idx = tabs.findIndex((tab) => tab.label === "Portfolio");
       }
       const delta = e.key === "ArrowRight" ? 1 : -1;
       const next = tabs[(idx + delta + tabs.length) % tabs.length];
@@ -255,16 +258,14 @@ export function Navigation() {
     return () => window.removeEventListener("keydown", onKey);
   }, [pathname, router]);
 
-  // /stock/[ticker] detail pages and the legacy /scoring route both live under
-  // the consolidated Dashboard tab since scoring was folded into Dashboard.
+  // The consolidated Portfolio tab owns Rankings (/), Positioning (/portfolio),
+  // Models (/pim-model), plus /stock/[ticker] detail pages and the legacy
+  // /scoring route (scoring was folded into the Dashboard/Rankings surface).
   const activeTab = pathname.startsWith("/stock/") || pathname === "/scoring"
-    ? "Dashboard"
+    || pathname === "/" || pathname === "/portfolio" || pathname === "/pim-model"
+    ? "Portfolio"
     : pathname === "/brief"
     ? "Brief"
-    : pathname === "/pim-model"
-    ? "PIM Model"
-    : pathname === "/portfolio"
-    ? "Positioning"
     : pathname === "/research"
     ? "Research"
     : pathname === "/conviction"
@@ -281,7 +282,7 @@ export function Navigation() {
     ? "Chat"
     : pathname === "/inbox"
     ? "Inbox"
-    : "Dashboard";
+    : "Portfolio";
 
   return (
     <header className="bg-surface text-ink border-b border-line print:hidden">
