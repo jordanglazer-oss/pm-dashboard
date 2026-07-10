@@ -200,7 +200,7 @@ export function SentimentGauges({ marketData, aaiiBull = 30, aaiiNeutral = 17, a
 
   return (
     <section className="rounded-2xl border border-line bg-white p-4 shadow-sm">
-      <div className="flex flex-wrap items-center justify-between gap-2 mb-3">
+      <div className="flex flex-wrap items-center justify-between gap-2 mb-1">
         <div className="flex items-center gap-2">
           <span className="text-base">🎯</span>
           <h3 className="text-base font-semibold">Contrarian Sentiment</h3>
@@ -208,6 +208,9 @@ export function SentimentGauges({ marketData, aaiiBull = 30, aaiiNeutral = 17, a
         </div>
         <SignalPill tone={overall.tone}>{overall.label}</SignalPill>
       </div>
+      <p className="text-xs text-ink-3 mb-3">
+        Sentiment extremes read <strong className="text-ink-2">inversely</strong> — crowd fear = opportunity, crowd greed = warning. A counterweight to the regime read above, not another summary of it.
+      </p>
 
       <div className="grid gap-3 lg:grid-cols-2">
         {/* CNN Fear & Greed */}

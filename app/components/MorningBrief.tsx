@@ -1038,10 +1038,6 @@ export function MorningBrief({
   // agreement (or divergence) between the tape and the synthesis isn't buried.
   const regimeVerdict = brief?.regimeVerdict || null;
 
-  const forwardView =
-    brief?.forwardView ||
-    "The Forward View synthesis will appear here after generating the brief. Automated forward-looking data below is already live and verifiable.";
-
   // Three-horizon outlook (Phase 3). Falls back to a hint string per
   // horizon when the brief hasn't been generated yet, or when an old
   // pm:brief blob predates these fields. Keeps the section useful even
@@ -1836,7 +1832,10 @@ export function MorningBrief({
             </SignalPill>
           )}
         </div>
-        <ClampText text={compositeAnalysis} className="mt-3" />
+        <p className="mt-1 text-xs text-ink-3">
+          The deterministic regime read — what the tape and macro data say the market <strong className="text-ink-2">is</strong> doing, and what to focus on.
+        </p>
+        <ClampText text={compositeAnalysis} className="mt-2" />
       </section>
 
       {/* Forward View — Next 2 Weeks */}
@@ -1943,27 +1942,12 @@ export function MorningBrief({
           );
         })()}
 
-        {/* Synthesis — single tying-it-together line. Shows only when the
-            brief has been generated, since the per-horizon cards already
-            cover the empty state. */}
-        {brief?.forwardView && (
-          <div className="mb-5 rounded-xl border border-line bg-surface-2/60 p-3">
-            <div className="flex items-center gap-2 mb-1">
-              <span className="text-[10px] font-bold uppercase tracking-wider text-ink-3">Synthesis</span>
-              {marketRegime?.horizons && isFinite(marketRegime.horizons.weightedScore) && (
-                <span className="text-[10px] text-ink-3">
-                  weighted{" "}
-                  <span className="font-semibold text-ink-2">
-                    {marketRegime.horizons.weightedLabel}
-                  </span>{" "}
-                  ({marketRegime.horizons.weightedScore >= 0 ? "+" : ""}
-                  {marketRegime.horizons.weightedScore.toFixed(2)})
-                </span>
-              )}
-            </div>
-            <p className="max-w-6xl text-sm leading-6 text-ink-2">{forwardView}</p>
-          </div>
-        )}
+        {/* Synthesis block retired (2026-07): it was the legacy "forwardView"
+            tie-together paragraph, which overlapped the Bottom Line + the three
+            horizon cards (the redundancy that watered down all three). The
+            weighted-composite readout still lives in the By-Horizon rollup row
+            above; forwardView is still generated for backward-compat but no
+            longer rendered. */}
 
         {/* Visible banner when the forward-looking fetch fails or returns
             no tiles at all — so the user knows the panel is unavailable
