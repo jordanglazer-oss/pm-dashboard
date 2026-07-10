@@ -31,9 +31,9 @@ function aboveBelow(price: number | undefined, avg: number | undefined): "above"
 }
 
 function signalColor(signal: "green" | "red" | "neutral"): string {
-  if (signal === "green") return "text-emerald-600";
-  if (signal === "red") return "text-red-600";
-  return "text-slate-500";
+  if (signal === "green") return "text-pos";
+  if (signal === "red") return "text-neg";
+  return "text-ink-3";
 }
 
 // ── Category theme configs ──
@@ -50,36 +50,36 @@ const CATEGORIES: CategoryConfig[] = [
   {
     title: "Price & Technical",
     subtitle: "Moving averages & relative strength",
-    borderColor: "border-l-blue-600",
-    headerBg: "bg-blue-600",
+    borderColor: "border-l-accent",
+    headerBg: "bg-accent",
     headerText: "text-white",
   },
   {
     title: "Fundamental Quality",
     subtitle: "Earnings revisions, FCF & returns",
-    borderColor: "border-l-teal-600",
-    headerBg: "bg-teal-600",
+    borderColor: "border-l-pos",
+    headerBg: "bg-pos",
     headerText: "text-white",
   },
   {
     title: "Valuation vs History",
     subtitle: "P/E, PEG & EV/EBITDA",
-    borderColor: "border-l-green-600",
-    headerBg: "bg-green-600",
+    borderColor: "border-l-violet",
+    headerBg: "bg-violet",
     headerText: "text-white",
   },
   {
     title: "Ownership & Positioning",
     subtitle: "Institutional, insider & short interest",
-    borderColor: "border-l-purple-600",
-    headerBg: "bg-purple-600",
+    borderColor: "border-l-warn",
+    headerBg: "bg-warn",
     headerText: "text-white",
   },
   {
     title: "Catalyst Calendar",
     subtitle: "Upcoming events & dates",
-    borderColor: "border-l-amber-700",
-    headerBg: "bg-amber-700",
+    borderColor: "border-l-ink-2",
+    headerBg: "bg-ink-2",
     headerText: "text-white",
   },
 ];
@@ -88,8 +88,8 @@ const CATEGORIES: CategoryConfig[] = [
 
 function IndicatorRow({ label, value, signal = "neutral" }: { label: string; value: string; signal?: "green" | "red" | "neutral" }) {
   return (
-    <div className="flex items-center justify-between py-1.5 border-b border-slate-100 last:border-b-0">
-      <span className="text-sm text-slate-600">{label}</span>
+    <div className="flex items-center justify-between py-1.5 border-b border-line-soft last:border-b-0">
+      <span className="text-sm text-ink-2">{label}</span>
       <span className={`text-sm font-semibold ${signalColor(signal)}`}>{value}</span>
     </div>
   );
@@ -99,7 +99,7 @@ function IndicatorRow({ label, value, signal = "neutral" }: { label: string; val
 
 function CategoryCard({ config, children }: { config: CategoryConfig; children: React.ReactNode }) {
   return (
-    <div className={`rounded-[24px] border border-slate-200 bg-white shadow-sm overflow-hidden border-l-4 ${config.borderColor}`}>
+    <div className={`rounded-card border border-line bg-white shadow-sm overflow-hidden border-l-4 ${config.borderColor}`}>
       <div className={`${config.headerBg} px-5 py-3`}>
         <h3 className={`text-sm font-bold ${config.headerText}`}>{config.title}</h3>
         <p className="text-xs text-white/70">{config.subtitle}</p>
@@ -176,8 +176,8 @@ export default function StockHealthMonitor({
   return (
     <div className="mt-6">
       <div className="flex items-center gap-3 mb-4">
-        <h2 className="text-lg font-bold text-slate-800">Stock Health Monitor</h2>
-        <span className="rounded-full bg-slate-100 px-3 py-0.5 text-xs font-medium text-slate-500">Informational Only</span>
+        <h2 className="text-lg font-bold text-ink">Stock Health Monitor</h2>
+        <span className="rounded-full bg-surface-2 px-3 py-0.5 text-xs font-medium text-ink-3">Informational Only</span>
       </div>
 
       <div className="grid gap-4 md:grid-cols-2">

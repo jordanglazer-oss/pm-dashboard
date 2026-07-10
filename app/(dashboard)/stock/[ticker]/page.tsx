@@ -41,8 +41,8 @@ function formatReturn(value: number | undefined): string {
 }
 
 function returnColor(value: number | undefined): string {
-  if (value == null) return "text-slate-400";
-  return value >= 0 ? "text-emerald-600" : "text-red-500";
+  if (value == null) return "text-ink-3";
+  return value >= 0 ? "text-pos" : "text-neg";
 }
 
 // ── Color mapping ──
@@ -50,12 +50,12 @@ const GROUP_COLORS: Record<
   string,
   { bar: string; text: string; scoreText: string; activeBg: string; activeText: string; ring: string; barBg: string }
 > = {
-  blue:   { bar: "bg-blue-500",    text: "text-blue-600",    scoreText: "text-blue-600",    activeBg: "bg-blue-500",    activeText: "text-white", ring: "#3b82f6", barBg: "bg-blue-100" },
-  purple: { bar: "bg-purple-500",  text: "text-purple-600",  scoreText: "text-purple-600",  activeBg: "bg-purple-500",  activeText: "text-white", ring: "#a855f7", barBg: "bg-purple-100" },
-  teal:   { bar: "bg-teal-500",    text: "text-teal-600",    scoreText: "text-teal-600",    activeBg: "bg-teal-500",    activeText: "text-white", ring: "#14b8a6", barBg: "bg-teal-100" },
-  green:  { bar: "bg-emerald-500", text: "text-emerald-600", scoreText: "text-emerald-600", activeBg: "bg-emerald-500", activeText: "text-white", ring: "#10b981", barBg: "bg-emerald-100" },
-  amber:  { bar: "bg-amber-500",   text: "text-amber-600",   scoreText: "text-amber-600",   activeBg: "bg-amber-500",   activeText: "text-white", ring: "#f59e0b", barBg: "bg-amber-100" },
-  red:    { bar: "bg-red-500",     text: "text-red-600",     scoreText: "text-red-600",     activeBg: "bg-red-500",     activeText: "text-white", ring: "#ef4444", barBg: "bg-red-100" },
+  blue:   { bar: "bg-accent",    text: "text-accent",    scoreText: "text-accent",    activeBg: "bg-accent",    activeText: "text-white", ring: "#3b82f6", barBg: "bg-accent-soft" },
+  purple: { bar: "bg-violet",  text: "text-violet",  scoreText: "text-violet",  activeBg: "bg-violet",  activeText: "text-white", ring: "#a855f7", barBg: "bg-violet-soft" },
+  teal:   { bar: "bg-accent",    text: "text-accent",    scoreText: "text-accent",    activeBg: "bg-accent",    activeText: "text-white", ring: "#14b8a6", barBg: "bg-accent-soft" },
+  green:  { bar: "bg-pos", text: "text-pos", scoreText: "text-pos", activeBg: "bg-pos", activeText: "text-white", ring: "#10b981", barBg: "bg-pos-soft" },
+  amber:  { bar: "bg-warn",   text: "text-warn",   scoreText: "text-warn",   activeBg: "bg-warn",   activeText: "text-white", ring: "#f59e0b", barBg: "bg-warn-soft" },
+  red:    { bar: "bg-neg",     text: "text-neg",     scoreText: "text-neg",     activeBg: "bg-neg",     activeText: "text-white", ring: "#ef4444", barBg: "bg-neg-soft" },
 };
 
 
@@ -122,21 +122,21 @@ function categoryDataSource(dps: ScoreDataPoint[]): ScoreDataPointSource | undef
 }
 
 const CATEGORY_SOURCE_META: Partial<Record<ScoreDataPointSource, { label: string; cls: string }>> = {
-  factset: { label: "FactSet", cls: "bg-indigo-100 text-indigo-700 border-indigo-200" },
-  edgar: { label: "EDGAR", cls: "bg-emerald-100 text-emerald-700 border-emerald-200" },
-  "edgar-form4": { label: "Form 4", cls: "bg-emerald-50 text-emerald-700 border-emerald-200" },
-  yahoo: { label: "Yahoo", cls: "bg-slate-100 text-slate-600 border-slate-200" },
-  web: { label: "Web", cls: "bg-blue-100 text-blue-700 border-blue-200" },
+  factset: { label: "FactSet", cls: "bg-accent-soft text-accent border-accent-border" },
+  edgar: { label: "EDGAR", cls: "bg-pos-soft text-pos border-pos-border" },
+  "edgar-form4": { label: "Form 4", cls: "bg-pos-soft text-pos border-pos-border" },
+  yahoo: { label: "Yahoo", cls: "bg-surface-2 text-ink-2 border-line" },
+  web: { label: "Web", cls: "bg-accent-soft text-accent border-accent-border" },
 };
 
 function SourceChip({ source, detail, url, label, ticker }: { source: ScoreDataPointSource; detail?: string; url?: string; label: string; ticker: string }) {
   const style: Record<ScoreDataPointSource, { label: string; cls: string; clsLink: string; title: string }> = {
-    factset: { label: "FactSet", cls: "bg-indigo-100 text-indigo-700 border-indigo-200", clsLink: "", title: "FactSet Formula API — primary, current, confirmed fundamentals / valuation / estimates." },
-    edgar: { label: "EDGAR", cls: "bg-emerald-100 text-emerald-700 border-emerald-200", clsLink: "hover:bg-emerald-200", title: "SEC EDGAR XBRL — audited as-reported from 10-K/Q filings. Click to open the company's EDGAR filings page." },
-    "edgar-form4": { label: "Form 4", cls: "bg-emerald-50 text-emerald-700 border-emerald-200", clsLink: "hover:bg-emerald-100", title: "SEC Form 4 — insider transactions (open-market only). Click to open the company's Form 4 filings on EDGAR." },
-    yahoo: { label: "Yahoo", cls: "bg-slate-100 text-slate-600 border-slate-200", clsLink: "hover:bg-slate-200", title: "Yahoo Finance data feed. Click to open the relevant Yahoo Finance page." },
-    web: { label: "Web", cls: "bg-blue-100 text-blue-700 border-blue-200", clsLink: "hover:bg-blue-200", title: "Anthropic web_search result (verified during this rescore). Click to open the cited source." },
-    model: { label: "Model", cls: "bg-amber-50 text-amber-700 border-amber-200", clsLink: "", title: "Qualitative inference by the model — no specific data source." },
+    factset: { label: "FactSet", cls: "bg-accent-soft text-accent border-accent-border", clsLink: "", title: "FactSet Formula API — primary, current, confirmed fundamentals / valuation / estimates." },
+    edgar: { label: "EDGAR", cls: "bg-pos-soft text-pos border-pos-border", clsLink: "hover:bg-pos-soft", title: "SEC EDGAR XBRL — audited as-reported from 10-K/Q filings. Click to open the company's EDGAR filings page." },
+    "edgar-form4": { label: "Form 4", cls: "bg-pos-soft text-pos border-pos-border", clsLink: "hover:bg-pos-soft", title: "SEC Form 4 — insider transactions (open-market only). Click to open the company's Form 4 filings on EDGAR." },
+    yahoo: { label: "Yahoo", cls: "bg-surface-2 text-ink-2 border-line", clsLink: "hover:bg-line", title: "Yahoo Finance data feed. Click to open the relevant Yahoo Finance page." },
+    web: { label: "Web", cls: "bg-accent-soft text-accent border-accent-border", clsLink: "hover:bg-accent-soft", title: "Anthropic web_search result (verified during this rescore). Click to open the cited source." },
+    model: { label: "Model", cls: "bg-warn-soft text-warn border-warn-border", clsLink: "", title: "Qualitative inference by the model — no specific data source." },
   };
   const s = style[source] ?? style.model;
 
@@ -279,9 +279,9 @@ function ExternalSourcesEditor({ notes, onChange, headerLabel = "External Source
 
   return (
     <div className="ml-1 space-y-2 mb-1">
-      <p className="text-[10px] font-semibold uppercase tracking-wider text-slate-400">{headerLabel}</p>
+      <p className="text-[10px] font-semibold uppercase tracking-wider text-ink-3">{headerLabel}</p>
       {local.length === 0 && (
-        <p className="text-[11px] text-slate-400 italic">{emptyHint ?? "No sources logged. Click “+ Add source” to track analyst reports, news, podcasts, or other external research feeding this score."}</p>
+        <p className="text-[11px] text-ink-3 italic">{emptyHint ?? "No sources logged. Click “+ Add source” to track analyst reports, news, podcasts, or other external research feeding this score."}</p>
       )}
       <div className="space-y-1.5">
         {local.map((note) => (
@@ -290,7 +290,7 @@ function ExternalSourcesEditor({ notes, onChange, headerLabel = "External Source
               type="date"
               value={note.date}
               onChange={(e) => updateRow(note.id, { date: e.target.value })}
-              className="shrink-0 rounded border border-slate-200 bg-white px-1.5 py-1 text-[11px] text-slate-700 outline-none focus:border-blue-400 focus:ring-1 focus:ring-blue-200"
+              className="shrink-0 rounded border border-line bg-white px-1.5 py-1 text-[11px] text-ink-2 outline-none focus:border-accent-border focus:ring-1 focus:ring-accent-border"
               title="Date of the source (publication or read date)"
             />
             <input
@@ -298,12 +298,12 @@ function ExternalSourcesEditor({ notes, onChange, headerLabel = "External Source
               value={note.text}
               onChange={(e) => updateRow(note.id, { text: e.target.value })}
               placeholder={placeholder}
-              className="flex-1 min-w-0 rounded border border-slate-200 bg-white px-2 py-1 text-xs text-slate-700 outline-none focus:border-blue-400 focus:ring-1 focus:ring-blue-200"
+              className="flex-1 min-w-0 rounded border border-line bg-white px-2 py-1 text-xs text-ink-2 outline-none focus:border-accent-border focus:ring-1 focus:ring-accent-border"
             />
             <button
               type="button"
               onClick={() => removeRow(note.id)}
-              className="shrink-0 rounded p-1 text-slate-400 hover:bg-red-50 hover:text-red-600 transition-colors"
+              className="shrink-0 rounded p-1 text-ink-3 hover:bg-neg-soft hover:text-neg transition-colors"
               title="Remove this source"
               aria-label="Remove source"
             >
@@ -317,11 +317,11 @@ function ExternalSourcesEditor({ notes, onChange, headerLabel = "External Source
       <button
         type="button"
         onClick={addRow}
-        className="rounded-lg border border-dashed border-slate-300 bg-slate-50 px-2.5 py-1 text-[11px] font-semibold text-slate-600 hover:border-slate-400 hover:bg-slate-100 transition-colors"
+        className="rounded-lg border border-dashed border-line bg-surface-2 px-2.5 py-1 text-[11px] font-semibold text-ink-2 hover:border-line hover:bg-surface-2 transition-colors"
       >
         + Add source
       </button>
-      <p className="text-[10px] text-slate-400 italic">Auto-saves 0.5s after you stop typing. Persists in Redis — syncs across refreshes and devices.</p>
+      <p className="text-[10px] text-ink-3 italic">Auto-saves 0.5s after you stop typing. Persists in Redis — syncs across refreshes and devices.</p>
     </div>
   );
 }
@@ -360,11 +360,11 @@ function ModelWeightInput({ groupId, modelWeight, isOverride, onCommit }: {
         onChange={(e) => setText(e.target.value)}
         onBlur={(e) => { commit(e.target.value); setFocused(false); }}
         onKeyDown={(e) => { if (e.key === "Enter") { commit(text); (e.target as HTMLInputElement).blur(); } }}
-        className="w-16 rounded-md border border-emerald-200 bg-white px-2 py-1 text-sm text-slate-700 outline-none focus:border-emerald-400"
+        className="w-16 rounded-md border border-pos-border bg-white px-2 py-1 text-sm text-ink-2 outline-none focus:border-pos-border"
       />
-      <span className="text-xs text-emerald-500">%</span>
+      <span className="text-xs text-pos">%</span>
       {isOverride && (
-        <span className="text-[10px] text-amber-500 ml-1" title="Overrides default weight">override</span>
+        <span className="text-[10px] text-warn ml-1" title="Overrides default weight">override</span>
       )}
     </div>
   );
@@ -438,10 +438,10 @@ function ScoreDonut({ score, max, groups, stock }: { score: number; max: number;
             />
           );
         })}
-        <text x={center} y={center - 4} textAnchor="middle" style={{ fontSize: "32px", fontWeight: 700 }} className="fill-slate-900">
+        <text x={center} y={center - 4} textAnchor="middle" style={{ fontSize: "32px", fontWeight: 700 }} className="fill-ink">
           {Number.isInteger(score) ? score : score.toFixed(1)}
         </text>
-        <text x={center} y={center + 16} textAnchor="middle" style={{ fontSize: "13px" }} className="fill-slate-400">
+        <text x={center} y={center + 16} textAnchor="middle" style={{ fontSize: "13px" }} className="fill-ink-3">
           / {max}
         </text>
       </svg>
@@ -677,16 +677,16 @@ function FundDataPanels({ fundData, ticker, onHoldingsUpdate }: { fundData: Fund
     }
   };
   const sectorColors: Record<string, string> = {
-    Technology: "bg-blue-500",
-    Financials: "bg-teal-500",
-    "Health Care": "bg-purple-500",
+    Technology: "bg-accent",
+    Financials: "bg-accent",
+    "Health Care": "bg-violet",
     "Consumer Discretionary": "bg-orange-500",
-    "Consumer Staples": "bg-amber-500",
-    "Communication Services": "bg-indigo-500",
-    Industrials: "bg-slate-500",
-    Energy: "bg-red-500",
+    "Consumer Staples": "bg-warn",
+    "Communication Services": "bg-accent",
+    Industrials: "bg-ink-3",
+    Energy: "bg-neg",
     Utilities: "bg-lime-500",
-    Materials: "bg-cyan-500",
+    Materials: "bg-accent",
     "Real Estate": "bg-pink-500",
   };
 
@@ -696,8 +696,8 @@ function FundDataPanels({ fundData, ticker, onHoldingsUpdate }: { fundData: Fund
       <div className="grid gap-4 md:grid-cols-2">
         {/* Performance */}
         {fundData.performance && (
-          <div className="rounded-[24px] border border-slate-200 bg-white p-5 shadow-sm">
-            <h2 className="text-base font-bold text-slate-800 mb-4">Performance</h2>
+          <div className="rounded-card border border-line bg-white p-5 shadow-sm">
+            <h2 className="text-base font-bold text-ink mb-4">Performance</h2>
             <div className="grid grid-cols-4 gap-2 text-center">
               {[
                 { label: "1M", val: fundData.performance.oneMonth },
@@ -710,8 +710,8 @@ function FundDataPanels({ fundData, ticker, onHoldingsUpdate }: { fundData: Fund
               ]
                 .filter((r) => r.val != null)
                 .map((r) => (
-                  <div key={r.label} className="rounded-xl bg-slate-50 p-2.5">
-                    <div className="text-[10px] font-semibold text-slate-400 uppercase">{r.label}</div>
+                  <div key={r.label} className="rounded-card bg-surface-2 p-2.5">
+                    <div className="text-[10px] font-semibold text-ink-3 uppercase">{r.label}</div>
                     <div className={`mt-1 text-sm font-bold ${returnColor(r.val)}`}>
                       {formatReturn(r.val)}
                     </div>
@@ -722,57 +722,57 @@ function FundDataPanels({ fundData, ticker, onHoldingsUpdate }: { fundData: Fund
         )}
 
         {/* Risk & Key Stats */}
-        <div className="rounded-[24px] border border-slate-200 bg-white p-5 shadow-sm">
-          <h2 className="text-base font-bold text-slate-800 mb-4">Key Statistics</h2>
+        <div className="rounded-card border border-line bg-white p-5 shadow-sm">
+          <h2 className="text-base font-bold text-ink mb-4">Key Statistics</h2>
           <div className="grid grid-cols-2 gap-3">
             {fundData.fundFamily && (
-              <div className="rounded-xl bg-slate-50 p-2.5">
-                <div className="text-[10px] font-semibold text-slate-400 uppercase">Fund Family</div>
-                <div className="mt-1 text-sm font-semibold text-slate-700 truncate">{fundData.fundFamily}</div>
+              <div className="rounded-card bg-surface-2 p-2.5">
+                <div className="text-[10px] font-semibold text-ink-3 uppercase">Fund Family</div>
+                <div className="mt-1 text-sm font-semibold text-ink-2 truncate">{fundData.fundFamily}</div>
               </div>
             )}
             {fundData.inceptionDate && (
-              <div className="rounded-xl bg-slate-50 p-2.5">
-                <div className="text-[10px] font-semibold text-slate-400 uppercase">Inception</div>
-                <div className="mt-1 text-sm font-semibold text-slate-700">{fundData.inceptionDate}</div>
+              <div className="rounded-card bg-surface-2 p-2.5">
+                <div className="text-[10px] font-semibold text-ink-3 uppercase">Inception</div>
+                <div className="mt-1 text-sm font-semibold text-ink-2">{fundData.inceptionDate}</div>
               </div>
             )}
             {fundData.turnover != null && (
-              <div className="rounded-xl bg-slate-50 p-2.5">
-                <div className="text-[10px] font-semibold text-slate-400 uppercase">Turnover</div>
-                <div className="mt-1 text-sm font-semibold text-slate-700">{fundData.turnover.toFixed(0)}%</div>
+              <div className="rounded-card bg-surface-2 p-2.5">
+                <div className="text-[10px] font-semibold text-ink-3 uppercase">Turnover</div>
+                <div className="mt-1 text-sm font-semibold text-ink-2">{fundData.turnover.toFixed(0)}%</div>
               </div>
             )}
             {fundData.riskStats?.beta != null && (
-              <div className="rounded-xl bg-slate-50 p-2.5">
-                <div className="text-[10px] font-semibold text-slate-400 uppercase">Beta (3Y)</div>
-                <div className="mt-1 text-sm font-semibold text-slate-700">{fundData.riskStats.beta.toFixed(2)}</div>
+              <div className="rounded-card bg-surface-2 p-2.5">
+                <div className="text-[10px] font-semibold text-ink-3 uppercase">Beta (3Y)</div>
+                <div className="mt-1 text-sm font-semibold text-ink-2">{fundData.riskStats.beta.toFixed(2)}</div>
               </div>
             )}
             {fundData.riskStats?.sharpeRatio != null && (
-              <div className="rounded-xl bg-slate-50 p-2.5">
-                <div className="text-[10px] font-semibold text-slate-400 uppercase">Sharpe (3Y)</div>
-                <div className="mt-1 text-sm font-semibold text-slate-700">{fundData.riskStats.sharpeRatio.toFixed(2)}</div>
+              <div className="rounded-card bg-surface-2 p-2.5">
+                <div className="text-[10px] font-semibold text-ink-3 uppercase">Sharpe (3Y)</div>
+                <div className="mt-1 text-sm font-semibold text-ink-2">{fundData.riskStats.sharpeRatio.toFixed(2)}</div>
               </div>
             )}
             {fundData.riskStats?.stdDev != null && (
-              <div className="rounded-xl bg-slate-50 p-2.5">
-                <div className="text-[10px] font-semibold text-slate-400 uppercase">Std Dev (3Y)</div>
-                <div className="mt-1 text-sm font-semibold text-slate-700">{fundData.riskStats.stdDev.toFixed(2)}%</div>
+              <div className="rounded-card bg-surface-2 p-2.5">
+                <div className="text-[10px] font-semibold text-ink-3 uppercase">Std Dev (3Y)</div>
+                <div className="mt-1 text-sm font-semibold text-ink-2">{fundData.riskStats.stdDev.toFixed(2)}%</div>
               </div>
             )}
             {fundData.riskStats?.alpha != null && (
-              <div className="rounded-xl bg-slate-50 p-2.5">
-                <div className="text-[10px] font-semibold text-slate-400 uppercase">Alpha (3Y)</div>
-                <div className={`mt-1 text-sm font-semibold ${fundData.riskStats.alpha >= 0 ? "text-emerald-600" : "text-red-500"}`}>
+              <div className="rounded-card bg-surface-2 p-2.5">
+                <div className="text-[10px] font-semibold text-ink-3 uppercase">Alpha (3Y)</div>
+                <div className={`mt-1 text-sm font-semibold ${fundData.riskStats.alpha >= 0 ? "text-pos" : "text-neg"}`}>
                   {fundData.riskStats.alpha >= 0 ? "+" : ""}{fundData.riskStats.alpha.toFixed(2)}
                 </div>
               </div>
             )}
             {fundData.riskStats?.rSquared != null && (
-              <div className="rounded-xl bg-slate-50 p-2.5">
-                <div className="text-[10px] font-semibold text-slate-400 uppercase">R-Squared</div>
-                <div className="mt-1 text-sm font-semibold text-slate-700">{fundData.riskStats.rSquared.toFixed(2)}</div>
+              <div className="rounded-card bg-surface-2 p-2.5">
+                <div className="text-[10px] font-semibold text-ink-3 uppercase">R-Squared</div>
+                <div className="mt-1 text-sm font-semibold text-ink-2">{fundData.riskStats.rSquared.toFixed(2)}</div>
               </div>
             )}
           </div>
@@ -782,21 +782,21 @@ function FundDataPanels({ fundData, ticker, onHoldingsUpdate }: { fundData: Fund
       {/* Row 2: Top Holdings + Sector Breakdown */}
       <div className="grid gap-4 md:grid-cols-2">
         {/* Top Holdings */}
-        <div className="rounded-[24px] border border-slate-200 bg-white p-4 sm:p-5 shadow-sm overflow-hidden">
+        <div className="rounded-card border border-line bg-white p-4 sm:p-5 shadow-sm overflow-hidden">
           <div className="flex items-center justify-between gap-2 mb-3">
-            <h2 className="text-base font-bold text-slate-800">Top Holdings</h2>
+            <h2 className="text-base font-bold text-ink">Top Holdings</h2>
             {fundData.topHoldings && fundData.topHoldings.length > 0 && (
-              <div className="flex items-center gap-1 rounded-full bg-slate-100 p-0.5 text-[10px] font-semibold">
+              <div className="flex items-center gap-1 rounded-full bg-surface-2 p-0.5 text-[10px] font-semibold">
                 <button
                   onClick={() => setLookThroughEnabled(true)}
-                  className={`px-2 py-0.5 rounded-full transition-colors ${lookThroughEnabled ? "bg-white text-slate-800 shadow-sm" : "text-slate-500 hover:text-slate-700"}`}
+                  className={`px-2 py-0.5 rounded-full transition-colors ${lookThroughEnabled ? "bg-white text-ink shadow-sm" : "text-ink-3 hover:text-ink-2"}`}
                   title="Expand ETF / fund holdings to their underlying positions, scaled proportionally"
                 >
                   Look-through
                 </button>
                 <button
                   onClick={() => setLookThroughEnabled(false)}
-                  className={`px-2 py-0.5 rounded-full transition-colors ${!lookThroughEnabled ? "bg-white text-slate-800 shadow-sm" : "text-slate-500 hover:text-slate-700"}`}
+                  className={`px-2 py-0.5 rounded-full transition-colors ${!lookThroughEnabled ? "bg-white text-ink shadow-sm" : "text-ink-3 hover:text-ink-2"}`}
                   title="Show holdings exactly as the fund reports them"
                 >
                   As reported
@@ -805,9 +805,9 @@ function FundDataPanels({ fundData, ticker, onHoldingsUpdate }: { fundData: Fund
             )}
           </div>
           {lookThroughEnabled && lookedThroughSymbols.size > 0 && (
-            <p className="text-[10px] text-slate-500 mb-2">
+            <p className="text-[10px] text-ink-3 mb-2">
               Looked through{" "}
-              <span className="font-semibold text-slate-700">
+              <span className="font-semibold text-ink-2">
                 {Array.from(lookedThroughSymbols).join(", ")}
               </span>{" "}
               to show underlying positions. Switch to <em>As reported</em> to see the raw holdings.
@@ -817,33 +817,33 @@ function FundDataPanels({ fundData, ticker, onHoldingsUpdate }: { fundData: Fund
             <div className="space-y-1.5">
               {displayedHoldings.map((h, i) => (
                 <div key={i} className="flex items-center gap-2 sm:gap-3">
-                  <span className="w-4 sm:w-5 text-xs text-slate-400 text-right shrink-0">{i + 1}</span>
+                  <span className="w-4 sm:w-5 text-xs text-ink-3 text-right shrink-0">{i + 1}</span>
                   <div className="flex-1 min-w-0">
                     <div className="flex items-center gap-1 sm:gap-2">
-                      {h.symbol && <span className="text-xs font-bold font-mono text-slate-700 shrink-0">{displayTicker(h.symbol)}</span>}
-                      <span className="text-xs text-slate-500 truncate">{h.name}</span>
+                      {h.symbol && <span className="text-xs font-bold font-mono text-ink-2 shrink-0">{displayTicker(h.symbol)}</span>}
+                      <span className="text-xs text-ink-3 truncate">{h.name}</span>
                     </div>
                   </div>
                   <div className="flex items-center gap-1.5 sm:gap-2 shrink-0">
-                    <div className="w-12 sm:w-20 h-2 rounded-full bg-slate-100 overflow-hidden">
+                    <div className="w-12 sm:w-20 h-2 rounded-full bg-surface-2 overflow-hidden">
                       <div
-                        className="h-full rounded-full bg-blue-500"
+                        className="h-full rounded-full bg-accent"
                         style={{ width: `${Math.min(h.weight * 3, 100)}%` }}
                       />
                     </div>
-                    <span className="w-11 sm:w-12 text-right text-xs font-semibold text-slate-700">{h.weight.toFixed(1)}%</span>
+                    <span className="w-11 sm:w-12 text-right text-xs font-semibold text-ink-2">{h.weight.toFixed(1)}%</span>
                   </div>
                 </div>
               ))}
             </div>
           ) : (
             /* Missing holdings alert */
-            <div className="rounded-xl border border-amber-200 bg-amber-50 p-3 mb-3">
+            <div className="rounded-card border border-warn-border bg-warn-soft p-3 mb-3">
               <div className="flex items-start gap-2">
-                <svg className="w-4 h-4 text-amber-500 mt-0.5 shrink-0" fill="currentColor" viewBox="0 0 20 20"><path fillRule="evenodd" d="M8.485 2.495c.673-1.167 2.357-1.167 3.03 0l6.28 10.875c.673 1.167-.17 2.625-1.516 2.625H3.72c-1.347 0-2.189-1.458-1.515-2.625L8.485 2.495zM10 6a.75.75 0 01.75.75v3.5a.75.75 0 01-1.5 0v-3.5A.75.75 0 0110 6zm0 9a1 1 0 100-2 1 1 0 000 2z" clipRule="evenodd" /></svg>
+                <svg className="w-4 h-4 text-warn mt-0.5 shrink-0" fill="currentColor" viewBox="0 0 20 20"><path fillRule="evenodd" d="M8.485 2.495c.673-1.167 2.357-1.167 3.03 0l6.28 10.875c.673 1.167-.17 2.625-1.516 2.625H3.72c-1.347 0-2.189-1.458-1.515-2.625L8.485 2.495zM10 6a.75.75 0 01.75.75v3.5a.75.75 0 01-1.5 0v-3.5A.75.75 0 0110 6zm0 9a1 1 0 100-2 1 1 0 000 2z" clipRule="evenodd" /></svg>
                 <div>
-                  <p className="text-xs font-semibold text-amber-800">Holdings data not available</p>
-                  <p className="text-[11px] text-amber-700 mt-0.5">
+                  <p className="text-xs font-semibold text-warn">Holdings data not available</p>
+                  <p className="text-[11px] text-warn mt-0.5">
                     Automatic sources could not find holdings for this fund. Paste a link to the fund&apos;s holdings page below.
                   </p>
                 </div>
@@ -853,7 +853,7 @@ function FundDataPanels({ fundData, ticker, onHoldingsUpdate }: { fundData: Fund
 
           {/* Holdings source info + URL input */}
           {onHoldingsUpdate && (
-            <div className="mt-3 pt-3 border-t border-slate-100">
+            <div className="mt-3 pt-3 border-t border-line-soft">
               {(() => {
                 const hasHoldings = Boolean(fundData.topHoldings?.length);
                 const fromUrl = Boolean(fundData.holdingsUrl);
@@ -863,28 +863,28 @@ function FundDataPanels({ fundData, ticker, onHoldingsUpdate }: { fundData: Fund
                   : null;
                 if (!hasHoldings) {
                   return (
-                    <div className="mb-2 inline-flex items-center gap-1.5 rounded-full bg-amber-50 px-2 py-0.5 text-[10px] font-semibold text-amber-700 border border-amber-200">
-                      <span className="h-1.5 w-1.5 rounded-full bg-amber-500" />
+                    <div className="mb-2 inline-flex items-center gap-1.5 rounded-full bg-warn-soft px-2 py-0.5 text-[10px] font-semibold text-warn border border-warn-border">
+                      <span className="h-1.5 w-1.5 rounded-full bg-warn" />
                       No holdings found — paste a URL below
                     </div>
                   );
                 }
                 return (
                   <div className="mb-2 flex flex-wrap items-center gap-x-2 gap-y-1">
-                    <span className={`inline-flex items-center gap-1.5 rounded-full px-2 py-0.5 text-[10px] font-semibold border ${fromUrl ? "bg-indigo-50 text-indigo-700 border-indigo-200" : "bg-emerald-50 text-emerald-700 border-emerald-200"}`}>
-                      <span className={`h-1.5 w-1.5 rounded-full ${fromUrl ? "bg-indigo-500" : "bg-emerald-500"}`} />
+                    <span className={`inline-flex items-center gap-1.5 rounded-full px-2 py-0.5 text-[10px] font-semibold border ${fromUrl ? "bg-accent-soft text-accent border-accent-border" : "bg-pos-soft text-pos border-pos-border"}`}>
+                      <span className={`h-1.5 w-1.5 rounded-full ${fromUrl ? "bg-accent" : "bg-pos"}`} />
                       {fromUrl ? "Fetched from your URL" : "Auto-found by embedded scraper"}
                     </span>
-                    <span className="text-[10px] text-slate-500">
-                      Source: <span className="font-semibold text-slate-700">{sourceLabel}</span>
+                    <span className="text-[10px] text-ink-3">
+                      Source: <span className="font-semibold text-ink-2">{sourceLabel}</span>
                     </span>
                     {whenStr && (
-                      <span className="text-[10px] text-slate-400">· {whenStr}</span>
+                      <span className="text-[10px] text-ink-3">· {whenStr}</span>
                     )}
                   </div>
                 );
               })()}
-              <label className="text-[10px] font-semibold text-slate-400 uppercase tracking-wider">
+              <label className="text-[10px] font-semibold text-ink-3 uppercase tracking-wider">
                 Holdings source URL
               </label>
               <div className="flex gap-2 mt-1">
@@ -893,21 +893,21 @@ function FundDataPanels({ fundData, ticker, onHoldingsUpdate }: { fundData: Fund
                   value={holdingsUrl}
                   onChange={(e) => { setHoldingsUrl(e.target.value); setScrapeError(""); }}
                   placeholder="https://provider.com/etf/holdings"
-                  className="flex-1 min-w-0 rounded-lg border border-slate-200 bg-slate-50 px-2 sm:px-3 py-1.5 text-xs outline-none placeholder:text-slate-400 focus:bg-white focus:border-blue-300 focus:ring-1 focus:ring-blue-200 transition-all"
+                  className="flex-1 min-w-0 rounded-lg border border-line bg-surface-2 px-2 sm:px-3 py-1.5 text-xs outline-none placeholder:text-ink-3 focus:bg-white focus:border-accent-border focus:ring-1 focus:ring-accent-border transition-all"
                 />
                 <button
                   onClick={handleScrapeHoldings}
                   disabled={scrapingHoldings || !holdingsUrl.trim()}
-                  className="rounded-lg bg-indigo-600 px-3 py-1.5 text-xs font-semibold text-white hover:bg-indigo-700 disabled:opacity-50 transition-colors whitespace-nowrap"
+                  className="rounded-lg bg-accent px-3 py-1.5 text-xs font-semibold text-white hover:bg-accent disabled:opacity-50 transition-colors whitespace-nowrap"
                 >
                   {scrapingHoldings ? "Loading..." : "Fetch"}
                 </button>
               </div>
               {scrapeError && (
-                <p className="text-[11px] text-red-500 mt-1">{scrapeError}</p>
+                <p className="text-[11px] text-neg mt-1">{scrapeError}</p>
               )}
               {scrapeSuccess && (
-                <p className="text-[11px] text-emerald-600 mt-1">Holdings updated successfully!</p>
+                <p className="text-[11px] text-pos mt-1">Holdings updated successfully!</p>
               )}
             </div>
           )}
@@ -928,14 +928,14 @@ function FundDataPanels({ fundData, ticker, onHoldingsUpdate }: { fundData: Fund
             .map(([sector, weight]) => ({ sector, weight }))
             .sort((a, b) => b.weight - a.weight);
           return (
-          <div className="rounded-[24px] border border-slate-200 bg-white p-4 sm:p-5 shadow-sm overflow-hidden">
-            <h2 className="text-base font-bold text-slate-800 mb-3">Sector Breakdown</h2>
+          <div className="rounded-card border border-line bg-white p-4 sm:p-5 shadow-sm overflow-hidden">
+            <h2 className="text-base font-bold text-ink mb-3">Sector Breakdown</h2>
             {/* Stacked bar */}
-            <div className="flex h-7 sm:h-8 rounded-xl overflow-hidden mb-3">
+            <div className="flex h-7 sm:h-8 rounded-card overflow-hidden mb-3">
               {normalizedSectors.map((s) => (
                 <div
                   key={s.sector}
-                  className={`${sectorColors[s.sector] || "bg-slate-400"} flex items-center justify-center text-[9px] sm:text-[10px] font-semibold text-white`}
+                  className={`${sectorColors[s.sector] || "bg-ink-3"} flex items-center justify-center text-[9px] sm:text-[10px] font-semibold text-white`}
                   style={{ width: `${s.weight}%` }}
                 >
                   {s.weight >= 8 && `${s.weight.toFixed(0)}%`}
@@ -945,40 +945,40 @@ function FundDataPanels({ fundData, ticker, onHoldingsUpdate }: { fundData: Fund
             <div className="space-y-1.5">
               {normalizedSectors.map((s) => (
                 <div key={s.sector} className="flex items-center gap-2 min-w-0">
-                  <span className={`h-2.5 w-2.5 rounded-full shrink-0 ${sectorColors[s.sector] || "bg-slate-400"}`} />
-                  <span className="flex-1 text-xs text-slate-600 truncate">{s.sector}</span>
-                  <span className="text-xs font-semibold text-slate-700 shrink-0">{s.weight.toFixed(1)}%</span>
+                  <span className={`h-2.5 w-2.5 rounded-full shrink-0 ${sectorColors[s.sector] || "bg-ink-3"}`} />
+                  <span className="flex-1 text-xs text-ink-2 truncate">{s.sector}</span>
+                  <span className="text-xs font-semibold text-ink-2 shrink-0">{s.weight.toFixed(1)}%</span>
                 </div>
               ))}
             </div>
 
             {/* Asset Allocation */}
             {fundData.assetAllocation && (
-              <div className="mt-4 pt-3 border-t border-slate-100">
-                <div className="text-[10px] font-semibold uppercase tracking-wider text-slate-400 mb-2">Asset Allocation</div>
+              <div className="mt-4 pt-3 border-t border-line-soft">
+                <div className="text-[10px] font-semibold uppercase tracking-wider text-ink-3 mb-2">Asset Allocation</div>
                 <div className="grid grid-cols-2 sm:grid-cols-4 gap-2 text-center">
                   {fundData.assetAllocation.stock != null && (
-                    <div className="rounded-lg bg-blue-50 p-2">
-                      <div className="text-[10px] text-blue-500">Stocks</div>
-                      <div className="text-sm font-bold text-blue-700">{fundData.assetAllocation.stock.toFixed(1)}%</div>
+                    <div className="rounded-lg bg-accent-soft p-2">
+                      <div className="text-[10px] text-accent">Stocks</div>
+                      <div className="text-sm font-bold text-accent">{fundData.assetAllocation.stock.toFixed(1)}%</div>
                     </div>
                   )}
                   {fundData.assetAllocation.bond != null && (
-                    <div className="rounded-lg bg-amber-50 p-2">
-                      <div className="text-[10px] text-amber-500">Bonds</div>
-                      <div className="text-sm font-bold text-amber-700">{fundData.assetAllocation.bond.toFixed(1)}%</div>
+                    <div className="rounded-lg bg-warn-soft p-2">
+                      <div className="text-[10px] text-warn">Bonds</div>
+                      <div className="text-sm font-bold text-warn">{fundData.assetAllocation.bond.toFixed(1)}%</div>
                     </div>
                   )}
                   {fundData.assetAllocation.cash != null && (
-                    <div className="rounded-lg bg-emerald-50 p-2">
-                      <div className="text-[10px] text-emerald-500">Cash</div>
-                      <div className="text-sm font-bold text-emerald-700">{fundData.assetAllocation.cash.toFixed(1)}%</div>
+                    <div className="rounded-lg bg-pos-soft p-2">
+                      <div className="text-[10px] text-pos">Cash</div>
+                      <div className="text-sm font-bold text-pos">{fundData.assetAllocation.cash.toFixed(1)}%</div>
                     </div>
                   )}
                   {fundData.assetAllocation.other != null && (
-                    <div className="rounded-lg bg-slate-50 p-2">
-                      <div className="text-[10px] text-slate-500">Other</div>
-                      <div className="text-sm font-bold text-slate-700">{fundData.assetAllocation.other.toFixed(1)}%</div>
+                    <div className="rounded-lg bg-surface-2 p-2">
+                      <div className="text-[10px] text-ink-3">Other</div>
+                      <div className="text-sm font-bold text-ink-2">{fundData.assetAllocation.other.toFixed(1)}%</div>
                     </div>
                   )}
                 </div>
@@ -991,31 +991,31 @@ function FundDataPanels({ fundData, ticker, onHoldingsUpdate }: { fundData: Fund
 
       {/* Row 3: Equity Metrics (P/E, P/B, etc.) */}
       {fundData.equityMetrics && (
-        <div className="rounded-[24px] border border-slate-200 bg-white p-5 shadow-sm">
-          <h2 className="text-base font-bold text-slate-800 mb-3">Underlying Equity Metrics</h2>
+        <div className="rounded-card border border-line bg-white p-5 shadow-sm">
+          <h2 className="text-base font-bold text-ink mb-3">Underlying Equity Metrics</h2>
           <div className="grid grid-cols-2 sm:grid-cols-4 gap-3">
             {fundData.equityMetrics.priceToEarnings != null && (
-              <div className="rounded-xl bg-slate-50 p-3 text-center">
-                <div className="text-[10px] font-semibold text-slate-400 uppercase">P/E Ratio</div>
-                <div className="mt-1 text-xl font-bold text-slate-800">{fundData.equityMetrics.priceToEarnings.toFixed(1)}</div>
+              <div className="rounded-card bg-surface-2 p-3 text-center">
+                <div className="text-[10px] font-semibold text-ink-3 uppercase">P/E Ratio</div>
+                <div className="mt-1 text-xl font-bold text-ink">{fundData.equityMetrics.priceToEarnings.toFixed(1)}</div>
               </div>
             )}
             {fundData.equityMetrics.priceToBook != null && (
-              <div className="rounded-xl bg-slate-50 p-3 text-center">
-                <div className="text-[10px] font-semibold text-slate-400 uppercase">P/B Ratio</div>
-                <div className="mt-1 text-xl font-bold text-slate-800">{fundData.equityMetrics.priceToBook.toFixed(2)}</div>
+              <div className="rounded-card bg-surface-2 p-3 text-center">
+                <div className="text-[10px] font-semibold text-ink-3 uppercase">P/B Ratio</div>
+                <div className="mt-1 text-xl font-bold text-ink">{fundData.equityMetrics.priceToBook.toFixed(2)}</div>
               </div>
             )}
             {fundData.equityMetrics.priceToSales != null && (
-              <div className="rounded-xl bg-slate-50 p-3 text-center">
-                <div className="text-[10px] font-semibold text-slate-400 uppercase">P/S Ratio</div>
-                <div className="mt-1 text-xl font-bold text-slate-800">{fundData.equityMetrics.priceToSales.toFixed(2)}</div>
+              <div className="rounded-card bg-surface-2 p-3 text-center">
+                <div className="text-[10px] font-semibold text-ink-3 uppercase">P/S Ratio</div>
+                <div className="mt-1 text-xl font-bold text-ink">{fundData.equityMetrics.priceToSales.toFixed(2)}</div>
               </div>
             )}
             {fundData.equityMetrics.priceToCashflow != null && (
-              <div className="rounded-xl bg-slate-50 p-3 text-center">
-                <div className="text-[10px] font-semibold text-slate-400 uppercase">P/CF Ratio</div>
-                <div className="mt-1 text-xl font-bold text-slate-800">{fundData.equityMetrics.priceToCashflow.toFixed(2)}</div>
+              <div className="rounded-card bg-surface-2 p-3 text-center">
+                <div className="text-[10px] font-semibold text-ink-3 uppercase">P/CF Ratio</div>
+                <div className="mt-1 text-xl font-bold text-ink">{fundData.equityMetrics.priceToCashflow.toFixed(2)}</div>
               </div>
             )}
           </div>
@@ -1316,12 +1316,12 @@ export default function StockDetailPage() {
 
   if (!stock) {
     return (
-      <main className="min-h-screen bg-[#f4f5f7] px-4 py-6 text-slate-900 md:px-8 md:py-8">
+      <main className="min-h-screen bg-[#f4f5f7] px-4 py-6 text-ink md:px-8 md:py-8">
         <div className="mx-auto max-w-5xl">
-          <div className="rounded-[30px] border border-slate-200 bg-white p-8 text-center shadow-sm">
-            <h1 className="text-2xl font-semibold text-slate-900">{ticker} not found</h1>
-            <p className="mt-2 text-slate-500">This ticker is not in your portfolio or watchlist.</p>
-            <Link href={backHref} className="mt-4 inline-block text-blue-600 hover:underline text-sm">Back to {backLabel}</Link>
+          <div className="rounded-card border border-line bg-white p-8 text-center shadow-sm">
+            <h1 className="text-2xl font-semibold text-ink">{ticker} not found</h1>
+            <p className="mt-2 text-ink-3">This ticker is not in your portfolio or watchlist.</p>
+            <Link href={backHref} className="mt-4 inline-block text-accent hover:underline text-sm">Back to {backLabel}</Link>
           </div>
         </div>
       </main>
@@ -1477,28 +1477,28 @@ export default function StockDetailPage() {
   };
 
   return (
-    <main className="min-h-screen bg-[#f4f5f7] text-slate-900 overflow-x-hidden">
+    <main className="min-h-screen bg-[#f4f5f7] text-ink overflow-x-hidden">
       {/* Ticker navigation bar */}
-      <div ref={tickerBarRef} className="border-b border-slate-200 bg-white px-4 py-2.5 md:px-8 overflow-x-auto">
+      <div ref={tickerBarRef} className="border-b border-line bg-white px-4 py-2.5 md:px-8 overflow-x-auto">
         <div className="flex items-center gap-2 w-max">
           <Link
             href={backHref}
-            className="shrink-0 rounded-lg border border-slate-200 px-3 py-1.5 text-xs font-semibold text-slate-500 hover:bg-slate-50 transition-colors"
+            className="shrink-0 rounded-lg border border-line px-3 py-1.5 text-xs font-semibold text-ink-3 hover:bg-surface-2 transition-colors"
           >
             &larr; {backLabel}
           </Link>
           {portfolioStockTickers.length > 0 && (
             <>
-              <div className="h-5 w-px bg-slate-200 shrink-0" />
-              <span className="shrink-0 text-[10px] font-semibold uppercase tracking-wider text-slate-400">Portfolio</span>
+              <div className="h-5 w-px bg-line shrink-0" />
+              <span className="shrink-0 text-[10px] font-semibold uppercase tracking-wider text-ink-3">Portfolio</span>
               {portfolioStockTickers.map((t) => (
                 <Link
                   key={t}
                   href={`/stock/${t.toLowerCase()}${fromSuffix}`}
                   className={`shrink-0 rounded-lg px-3 py-1.5 text-xs font-bold font-mono transition-colors ${
                     t === ticker
-                      ? "bg-blue-600 text-white"
-                      : "border border-blue-200 text-blue-700 hover:bg-blue-50"
+                      ? "bg-accent text-white"
+                      : "border border-accent-border text-accent hover:bg-accent-soft"
                   }`}
                 >
                   {t}
@@ -1508,16 +1508,16 @@ export default function StockDetailPage() {
           )}
           {portfolioFundTickers.length > 0 && (
             <>
-              <div className="h-5 w-px bg-slate-200 shrink-0" />
-              <span className="shrink-0 text-[10px] font-semibold uppercase tracking-wider text-indigo-400">Funds & ETFs</span>
+              <div className="h-5 w-px bg-line shrink-0" />
+              <span className="shrink-0 text-[10px] font-semibold uppercase tracking-wider text-accent">Funds & ETFs</span>
               {portfolioFundTickers.map((t) => (
                 <Link
                   key={t}
                   href={`/stock/${t.toLowerCase()}${fromSuffix}`}
                   className={`shrink-0 rounded-lg px-3 py-1.5 text-xs font-bold font-mono transition-colors ${
                     t === ticker
-                      ? "bg-indigo-600 text-white"
-                      : "border border-indigo-200 text-indigo-700 hover:bg-indigo-50"
+                      ? "bg-accent text-white"
+                      : "border border-accent-border text-accent hover:bg-accent-soft"
                   }`}
                 >
                   {t}
@@ -1527,16 +1527,16 @@ export default function StockDetailPage() {
           )}
           {watchlistStockTickers.length > 0 && (
             <>
-              <div className="h-5 w-px bg-slate-200 shrink-0" />
-              <span className="shrink-0 text-[10px] font-semibold uppercase tracking-wider text-slate-400">Watchlist</span>
+              <div className="h-5 w-px bg-line shrink-0" />
+              <span className="shrink-0 text-[10px] font-semibold uppercase tracking-wider text-ink-3">Watchlist</span>
               {watchlistStockTickers.map((t) => (
                 <Link
                   key={t}
                   href={`/stock/${t.toLowerCase()}${fromSuffix}`}
                   className={`shrink-0 rounded-lg px-3 py-1.5 text-xs font-bold font-mono transition-colors ${
                     t === ticker
-                      ? "bg-blue-600 text-white"
-                      : "border border-slate-200 text-slate-600 hover:bg-slate-50"
+                      ? "bg-accent text-white"
+                      : "border border-line text-ink-2 hover:bg-surface-2"
                   }`}
                 >
                   {t}
@@ -1546,16 +1546,16 @@ export default function StockDetailPage() {
           )}
           {watchlistFundTickers.length > 0 && (
             <>
-              <div className="h-5 w-px bg-slate-200 shrink-0" />
-              <span className="shrink-0 text-[10px] font-semibold uppercase tracking-wider text-slate-400">WL Funds & ETFs</span>
+              <div className="h-5 w-px bg-line shrink-0" />
+              <span className="shrink-0 text-[10px] font-semibold uppercase tracking-wider text-ink-3">WL Funds & ETFs</span>
               {watchlistFundTickers.map((t) => (
                 <Link
                   key={t}
                   href={`/stock/${t.toLowerCase()}${fromSuffix}`}
                   className={`shrink-0 rounded-lg px-3 py-1.5 text-xs font-bold font-mono transition-colors ${
                     t === ticker
-                      ? "bg-indigo-600 text-white"
-                      : "border border-slate-200 text-slate-500 hover:bg-slate-50"
+                      ? "bg-accent text-white"
+                      : "border border-line text-ink-3 hover:bg-surface-2"
                   }`}
                 >
                   {t}
@@ -1569,7 +1569,7 @@ export default function StockDetailPage() {
       <div className="px-4 py-6 md:px-8 md:py-8">
         <div className="mx-auto max-w-7xl">
           {/* Stock header card */}
-          <div className="rounded-[30px] border border-slate-200 bg-white p-6 shadow-sm">
+          <div className="rounded-card border border-line bg-white p-6 shadow-sm">
             <div className="grid grid-cols-1 lg:grid-cols-[1fr_200px] gap-6 items-start">
               {/* Left: stock info */}
               <div className="min-w-0">
@@ -1577,13 +1577,13 @@ export default function StockDetailPage() {
                 <div className="flex items-baseline gap-2 sm:gap-3 flex-wrap mb-1">
                   <h1 className="text-2xl sm:text-3xl font-bold font-mono tracking-tight">{displayTicker(stock.ticker)}</h1>
                   {stock.price != null && (
-                    <span className="text-xl sm:text-2xl font-semibold text-slate-600">${stock.price.toFixed(2)}</span>
+                    <span className="text-xl sm:text-2xl font-semibold text-ink-2">${stock.price.toFixed(2)}</span>
                   )}
                   <SignalPill tone={stock.bucket === "Portfolio" ? "blue" : "gray"}>
                     {stock.bucket}
                   </SignalPill>
                   {stock.instrumentType && stock.instrumentType !== "stock" && (
-                    <span className={`rounded-md px-2 py-0.5 text-xs font-bold ${stock.instrumentType === "etf" ? "bg-indigo-100 text-indigo-700" : "bg-purple-100 text-purple-700"}`}>
+                    <span className={`rounded-md px-2 py-0.5 text-xs font-bold ${stock.instrumentType === "etf" ? "bg-accent-soft text-accent" : "bg-violet-soft text-violet"}`}>
                       {INSTRUMENT_LABELS[stock.instrumentType]}
                     </span>
                   )}
@@ -1595,7 +1595,7 @@ export default function StockDetailPage() {
                     <button
                       onClick={handleRescore}
                       disabled={scoring}
-                      className="rounded-lg bg-blue-600 px-3 sm:px-4 py-1.5 text-xs sm:text-sm font-semibold text-white hover:bg-blue-700 transition-colors disabled:opacity-50"
+                      className="rounded-lg bg-accent px-3 sm:px-4 py-1.5 text-xs sm:text-sm font-semibold text-white hover:bg-accent transition-colors disabled:opacity-50"
                       title="Score with web-search verification: model cross-checks cached fundamentals against the company's latest filings, press releases, and named-firm analyst notes (~5-10s, ~$0.03-0.05/stock)"
                     >
                       {scoring ? "Verifying…" : "Score"}
@@ -1604,7 +1604,7 @@ export default function StockDetailPage() {
                   <button
                     onClick={handleRefreshData}
                     disabled={refreshing}
-                    className="rounded-lg bg-emerald-600 px-3 sm:px-4 py-1.5 text-xs sm:text-sm font-semibold text-white hover:bg-emerald-700 transition-colors disabled:opacity-50"
+                    className="rounded-lg bg-pos px-3 sm:px-4 py-1.5 text-xs sm:text-sm font-semibold text-white hover:bg-pos transition-colors disabled:opacity-50"
                   >
                     {refreshing ? "Refreshing..." : "Refresh Data"}
                   </button>
@@ -1617,34 +1617,34 @@ export default function StockDetailPage() {
                   {stock.bucket === "Portfolio" && (
                     <button
                       onClick={() => moveBucket(ticker)}
-                      className="rounded-lg border border-slate-300 px-3 sm:px-4 py-1.5 text-xs sm:text-sm font-medium text-slate-600 hover:bg-slate-50 transition-colors"
+                      className="rounded-lg border border-line px-3 sm:px-4 py-1.5 text-xs sm:text-sm font-medium text-ink-2 hover:bg-surface-2 transition-colors"
                     >
                       Move to Watchlist
                     </button>
                   )}
                   <button
                     onClick={handleDelete}
-                    className="rounded-lg border border-red-200 px-3 sm:px-4 py-1.5 text-xs sm:text-sm font-semibold text-red-600 hover:bg-red-50 transition-colors"
+                    className="rounded-lg border border-neg-border px-3 sm:px-4 py-1.5 text-xs sm:text-sm font-semibold text-neg hover:bg-neg-soft transition-colors"
                   >
                     Delete
                   </button>
                   {stock.lastScored && (
-                    <span className="text-xs text-slate-400 ml-1">
+                    <span className="text-xs text-ink-3 ml-1">
                       Last scored: {stock.lastScored}
                     </span>
                   )}
-                  {scoreError && <span className="text-xs text-red-500 ml-1">{scoreError}</span>}
-                  {refreshError && <span className="text-xs text-red-500 ml-1">{refreshError}</span>}
+                  {scoreError && <span className="text-xs text-neg ml-1">{scoreError}</span>}
+                  {refreshError && <span className="text-xs text-neg ml-1">{refreshError}</span>}
                 </div>
 
                 {/* Sector (stocks only) + Weight (funds only) */}
                 <div className="flex items-center gap-2 mb-2">
                   {scoreable && stock.sector && (
-                    <span className="rounded-lg bg-slate-100 px-3 py-1.5 text-sm font-medium text-slate-700">{stock.sector}</span>
+                    <span className="rounded-lg bg-surface-2 px-3 py-1.5 text-sm font-medium text-ink-2">{stock.sector}</span>
                   )}
                   {!scoreable && (
                     <div className="flex items-center gap-1.5">
-                      <span className="text-xs text-slate-400">Default Weight:</span>
+                      <span className="text-xs text-ink-3">Default Weight:</span>
                       {editingWeight ? (
                         <form
                           onSubmit={(e) => {
@@ -1664,16 +1664,16 @@ export default function StockDetailPage() {
                             step="0.01"
                             min="0"
                             autoFocus
-                            className="w-16 rounded-md border border-slate-300 px-2 py-1 text-sm outline-none focus:border-blue-400"
+                            className="w-16 rounded-md border border-line px-2 py-1 text-sm outline-none focus:border-accent-border"
                           />
-                          <span className="text-xs text-slate-400">%</span>
-                          <button type="submit" className="rounded-md bg-blue-600 px-2 py-1 text-xs font-semibold text-white hover:bg-blue-700">Save</button>
-                          <button type="button" onClick={() => setEditingWeight(false)} className="text-xs text-slate-400 hover:text-slate-600">Cancel</button>
+                          <span className="text-xs text-ink-3">%</span>
+                          <button type="submit" className="rounded-md bg-accent px-2 py-1 text-xs font-semibold text-white hover:bg-accent">Save</button>
+                          <button type="button" onClick={() => setEditingWeight(false)} className="text-xs text-ink-3 hover:text-ink-2">Cancel</button>
                         </form>
                       ) : (
                         <button
                           onClick={() => { setWeightInput(String(stock.weights.portfolio)); setEditingWeight(true); }}
-                          className="rounded-md bg-slate-100 px-2 py-1 text-sm font-semibold text-slate-700 hover:bg-slate-200 transition-colors"
+                          className="rounded-md bg-surface-2 px-2 py-1 text-sm font-semibold text-ink-2 hover:bg-line transition-colors"
                           title="Fallback weight used when no per-model override is set"
                         >
                           {stock.weights.portfolio}%
@@ -1684,19 +1684,19 @@ export default function StockDetailPage() {
                 </div>
 
                 {/* Company name */}
-                <p className="text-base text-slate-600">{stock.name}</p>
+                <p className="text-base text-ink-2">{stock.name}</p>
 
                 {/* Company summary & investment thesis */}
                 {stock.companySummary && (
-                  <p className="mt-2 text-sm text-slate-500 leading-relaxed">{stock.companySummary}</p>
+                  <p className="mt-2 text-sm text-ink-3 leading-relaxed">{stock.companySummary}</p>
                 )}
                 {stock.investmentThesis && (
-                  <p className="mt-1 text-sm italic text-blue-600/70 leading-relaxed">{stock.investmentThesis}</p>
+                  <p className="mt-1 text-sm italic text-accent/70 leading-relaxed">{stock.investmentThesis}</p>
                 )}
                 {stock.bearCase && (
-                  <div className="mt-2 rounded-lg border border-amber-200 bg-amber-50/50 px-3 py-2">
-                    <div className="text-[10px] font-bold uppercase tracking-wider text-amber-700">Bear case · thesis-breakers to watch</div>
-                    <p className="mt-0.5 text-sm text-amber-900/80 leading-relaxed">{stock.bearCase}</p>
+                  <div className="mt-2 rounded-lg border border-warn-border bg-warn-soft/50 px-3 py-2">
+                    <div className="text-[10px] font-bold uppercase tracking-wider text-warn">Bear case · thesis-breakers to watch</div>
+                    <p className="mt-0.5 text-sm text-warn/80 leading-relaxed">{stock.bearCase}</p>
                   </div>
                 )}
 
@@ -1710,10 +1710,10 @@ export default function StockDetailPage() {
 
                       return (
                         <div key={group.name} className="flex items-center gap-3">
-                          <span className="w-20 text-right text-xs text-slate-500 shrink-0 leading-tight">
+                          <span className="w-20 text-right text-xs text-ink-3 shrink-0 leading-tight">
                             {group.name === "Company Specific" ? "Company Specific" : group.name}
                           </span>
-                          <div className="flex-1 h-3.5 rounded-full bg-slate-100 overflow-hidden">
+                          <div className="flex-1 h-3.5 rounded-full bg-surface-2 overflow-hidden">
                             <div
                               className={`h-full rounded-full ${colors.bar} transition-all duration-500`}
                               style={{ width: `${pct}%` }}
@@ -1759,8 +1759,8 @@ export default function StockDetailPage() {
                   return (
                   <div className="mt-6 max-w-xl">
                     {loadingFundData && !stock.fundData && (
-                      <div className="rounded-xl bg-slate-50 p-4">
-                        <p className="text-sm text-slate-400 animate-pulse">Loading fund data...</p>
+                      <div className="rounded-card bg-surface-2 p-4">
+                        <p className="text-sm text-ink-3 animate-pulse">Loading fund data...</p>
                       </div>
                     )}
                     {/* Suspect-zero warning — auto-fetch returned 0 and
@@ -1770,7 +1770,7 @@ export default function StockDetailPage() {
                         Rendered above the fund-data grid so the PM sees
                         it without scrolling. */}
                     {autoIsZero && !merIsManual && (
-                      <div className="mb-3 rounded-lg border border-amber-200 bg-amber-50 px-3 py-2 text-[11px] text-amber-800">
+                      <div className="mb-3 rounded-lg border border-warn-border bg-warn-soft px-3 py-2 text-[11px] text-warn">
                         <span className="font-semibold">⚠ Auto-fetched {merLabel} is 0%.</span>{" "}
                         This is almost certainly a scrape miss — funds and ETFs essentially never have a 0% MER. Enter the real value in the Manual MER field below so the Client Report blended-fee calc uses it.
                       </div>
@@ -1780,16 +1780,16 @@ export default function StockDetailPage() {
                         tickers with only a manual override (no fundData
                         block) had no visible MER at all. */}
                     {effectiveMer != null && !stock.fundData && (
-                      <div className="rounded-xl bg-slate-50 p-3 w-40">
-                        <div className="text-[10px] font-semibold uppercase tracking-wider text-slate-400 flex items-center gap-1.5">
+                      <div className="rounded-card bg-surface-2 p-3 w-40">
+                        <div className="text-[10px] font-semibold uppercase tracking-wider text-ink-3 flex items-center gap-1.5">
                           {merLabel}
                           {merIsManual && (
-                            <span className="rounded bg-indigo-100 px-1.5 py-0.5 text-[8px] font-bold tracking-wider text-indigo-700">
+                            <span className="rounded bg-accent-soft px-1.5 py-0.5 text-[8px] font-bold tracking-wider text-accent">
                               MANUAL
                             </span>
                           )}
                         </div>
-                        <div className="mt-1 text-lg font-bold text-slate-800">
+                        <div className="mt-1 text-lg font-bold text-ink">
                           {effectiveMer.toFixed(2)}%
                         </div>
                       </div>
@@ -1797,44 +1797,44 @@ export default function StockDetailPage() {
                     {stock.fundData && (
                       <div className="grid grid-cols-2 sm:grid-cols-4 gap-3">
                         {effectiveMer != null && (
-                          <div className="rounded-xl bg-slate-50 p-3">
-                            <div className="text-[10px] font-semibold uppercase tracking-wider text-slate-400 flex items-center gap-1.5">
+                          <div className="rounded-card bg-surface-2 p-3">
+                            <div className="text-[10px] font-semibold uppercase tracking-wider text-ink-3 flex items-center gap-1.5">
                               {merLabel}
                               {merIsManual && (
-                                <span className="rounded bg-indigo-100 px-1.5 py-0.5 text-[8px] font-bold tracking-wider text-indigo-700">
+                                <span className="rounded bg-accent-soft px-1.5 py-0.5 text-[8px] font-bold tracking-wider text-accent">
                                   MANUAL
                                 </span>
                               )}
                             </div>
-                            <div className="mt-1 text-lg font-bold text-slate-800">
+                            <div className="mt-1 text-lg font-bold text-ink">
                               {effectiveMer.toFixed(2)}%
                             </div>
                           </div>
                         )}
                         {stock.fundData.totalAssets != null && (
-                          <div className="rounded-xl bg-slate-50 p-3">
-                            <div className="text-[10px] font-semibold uppercase tracking-wider text-slate-400">AUM</div>
-                            <div className="mt-1 text-lg font-bold text-slate-800">{formatAUM(stock.fundData.totalAssets)}</div>
+                          <div className="rounded-card bg-surface-2 p-3">
+                            <div className="text-[10px] font-semibold uppercase tracking-wider text-ink-3">AUM</div>
+                            <div className="mt-1 text-lg font-bold text-ink">{formatAUM(stock.fundData.totalAssets)}</div>
                           </div>
                         )}
                         {stock.fundData.yield != null && (
-                          <div className="rounded-xl bg-slate-50 p-3">
-                            <div className="text-[10px] font-semibold uppercase tracking-wider text-slate-400">Yield</div>
-                            <div className="mt-1 text-lg font-bold text-slate-800">{stock.fundData.yield.toFixed(2)}%</div>
+                          <div className="rounded-card bg-surface-2 p-3">
+                            <div className="text-[10px] font-semibold uppercase tracking-wider text-ink-3">Yield</div>
+                            <div className="mt-1 text-lg font-bold text-ink">{stock.fundData.yield.toFixed(2)}%</div>
                           </div>
                         )}
                         {stock.fundData.starRating != null && (
-                          <div className="rounded-xl bg-slate-50 p-3">
-                            <div className="text-[10px] font-semibold uppercase tracking-wider text-slate-400">Morningstar</div>
-                            <div className="mt-1 text-lg font-bold text-amber-500">
+                          <div className="rounded-card bg-surface-2 p-3">
+                            <div className="text-[10px] font-semibold uppercase tracking-wider text-ink-3">Morningstar</div>
+                            <div className="mt-1 text-lg font-bold text-warn">
                               {"★".repeat(stock.fundData.starRating)}{"☆".repeat(5 - stock.fundData.starRating)}
                             </div>
                           </div>
                         )}
                         {stock.fundData.category && (
-                          <div className="rounded-xl bg-slate-50 p-3">
-                            <div className="text-[10px] font-semibold uppercase tracking-wider text-slate-400">Category</div>
-                            <div className="mt-1 text-sm font-bold text-slate-800 leading-tight">{stock.fundData.category}</div>
+                          <div className="rounded-card bg-surface-2 p-3">
+                            <div className="text-[10px] font-semibold uppercase tracking-wider text-ink-3">Category</div>
+                            <div className="mt-1 text-sm font-bold text-ink leading-tight">{stock.fundData.category}</div>
                           </div>
                         )}
                       </div>
@@ -1842,7 +1842,7 @@ export default function StockDetailPage() {
                     {!stock.fundData && !loadingFundData && (
                       <button
                         onClick={fetchFundData}
-                        className="rounded-lg bg-indigo-600 px-4 py-2 text-sm font-semibold text-white hover:bg-indigo-700 transition-colors"
+                        className="rounded-lg bg-accent px-4 py-2 text-sm font-semibold text-white hover:bg-accent transition-colors"
                       >
                         Load Fund Data
                       </button>
@@ -1858,8 +1858,8 @@ export default function StockDetailPage() {
                         so a value typed here overrides whatever the
                         scraper found (or didn't). Stored directly on the
                         Stock record in Redis. */}
-                    <div className="mt-4 rounded-xl bg-slate-50 p-3 max-w-sm">
-                      <label className="block text-[10px] font-semibold uppercase tracking-wider text-slate-400 mb-1">
+                    <div className="mt-4 rounded-card bg-surface-2 p-3 max-w-sm">
+                      <label className="block text-[10px] font-semibold uppercase tracking-wider text-ink-3 mb-1">
                         Manual MER override (%)
                       </label>
                       <div className="flex items-center gap-2">
@@ -1891,9 +1891,9 @@ export default function StockDetailPage() {
                               updateStockFields(ticker, { manualExpenseRatio: n });
                             }
                           }}
-                          className="w-28 rounded border border-slate-300 px-2 py-1 text-sm"
+                          className="w-28 rounded border border-line px-2 py-1 text-sm"
                         />
-                        <span className="text-[10px] text-slate-500">
+                        <span className="text-[10px] text-ink-3">
                           Used by the Client Report when auto-fetch is missing or wrong.
                         </span>
                       </div>
@@ -1917,10 +1917,10 @@ export default function StockDetailPage() {
                     const absDelta = Math.abs(delta);
                     if (absDelta < 0.05) {
                       return (
-                        <div className="mt-2 flex items-center gap-1.5 rounded-full bg-slate-50 border border-slate-200 px-3 py-1 text-[11px]">
-                          <span className="text-slate-500">Regime: neutral</span>
-                          <span className="text-slate-400">•</span>
-                          <span className="text-slate-500">Raw {stock.raw.toFixed(1)}</span>
+                        <div className="mt-2 flex items-center gap-1.5 rounded-full bg-surface-2 border border-line px-3 py-1 text-[11px]">
+                          <span className="text-ink-3">Regime: neutral</span>
+                          <span className="text-ink-3">•</span>
+                          <span className="text-ink-3">Raw {stock.raw.toFixed(1)}</span>
                         </div>
                       );
                     }
@@ -1928,8 +1928,8 @@ export default function StockDetailPage() {
                     return (
                       <div className={`mt-2 flex items-center gap-1.5 rounded-full border px-3 py-1 text-[11px] ${
                         positive
-                          ? "bg-emerald-50 border-emerald-200 text-emerald-700"
-                          : "bg-red-50 border-red-200 text-red-700"
+                          ? "bg-pos-soft border-pos-border text-pos"
+                          : "bg-neg-soft border-neg-border text-neg"
                       }`}>
                         <span className="font-semibold">
                           Regime: {positive ? "+" : ""}{delta.toFixed(1)} pt{absDelta === 1 ? "" : "s"}
@@ -1986,16 +1986,16 @@ export default function StockDetailPage() {
               || sectorLower.includes("alternative") || nameLower.includes("alternative") || nameLower.includes("premium yield") || nameLower.includes("premium incom") || nameLower.includes("hedge") || nameLower.includes("option income") || nameLower.includes("option writing") || nameLower.includes("covered call");
             if (isBondOrAlt) return null;
             return (
-              <div className="rounded-[24px] border border-slate-200 bg-white p-5 shadow-sm mt-6">
-                <h2 className="text-sm font-bold text-slate-800 mb-2">Portfolio Role</h2>
-                <p className="text-xs text-slate-400 mb-3">Core = indexed/passive. Alpha = active picks. Sector exposure is based on Alpha picks only.</p>
+              <div className="rounded-card border border-line bg-white p-5 shadow-sm mt-6">
+                <h2 className="text-sm font-bold text-ink mb-2">Portfolio Role</h2>
+                <p className="text-xs text-ink-3 mb-3">Core = indexed/passive. Alpha = active picks. Sector exposure is based on Alpha picks only.</p>
                 <div className="flex gap-2">
                   <button
                     onClick={() => updateStockFields(ticker, { designation: "core" })}
                     className={`rounded-lg px-4 py-2 text-sm font-semibold transition-all border ${
                       stock.designation === "core"
-                        ? "bg-blue-100 border-blue-300 text-blue-700"
-                        : "bg-slate-50 border-slate-200 text-slate-400 hover:bg-slate-100"
+                        ? "bg-accent-soft border-accent-border text-accent"
+                        : "bg-surface-2 border-line text-ink-3 hover:bg-surface-2"
                     }`}
                   >
                     Core
@@ -2004,8 +2004,8 @@ export default function StockDetailPage() {
                     onClick={() => updateStockFields(ticker, { designation: "alpha" })}
                     className={`rounded-lg px-4 py-2 text-sm font-semibold transition-all border ${
                       (stock.designation || "alpha") === "alpha"
-                        ? "bg-amber-100 border-amber-300 text-amber-700"
-                        : "bg-slate-50 border-slate-200 text-slate-400 hover:bg-slate-100"
+                        ? "bg-warn-soft border-warn-border text-warn"
+                        : "bg-surface-2 border-line text-ink-3 hover:bg-surface-2"
                     }`}
                   >
                     Alpha
@@ -2016,9 +2016,9 @@ export default function StockDetailPage() {
           })()}
 
           {/* Model Eligibility & Per-Model Weights */}
-          <div className="rounded-[24px] border border-slate-200 bg-white p-5 shadow-sm mt-6">
-            <h2 className="text-sm font-bold text-slate-800 mb-3">Model Eligibility</h2>
-            <p className="text-xs text-slate-400 mb-3">
+          <div className="rounded-card border border-line bg-white p-5 shadow-sm mt-6">
+            <h2 className="text-sm font-bold text-ink mb-3">Model Eligibility</h2>
+            <p className="text-xs text-ink-3 mb-3">
               Toggle which PIM model groups this position is eligible for.
               {!scoreable && " Set the weight (%) for each model's Balanced profile."}
             </p>
@@ -2031,18 +2031,18 @@ export default function StockDetailPage() {
                     key={group.id}
                     className={`rounded-lg border transition-all ${
                       eligible
-                        ? "bg-emerald-50 border-emerald-200"
-                        : "bg-slate-50 border-slate-200"
+                        ? "bg-pos-soft border-pos-border"
+                        : "bg-surface-2 border-line"
                     }`}
                   >
                     <button
                       onClick={() => toggleModelEligibility(ticker, group.id, !eligible)}
                       className={`flex items-center gap-2 w-full px-3 py-2 text-sm font-medium transition-all ${
-                        eligible ? "text-emerald-700" : "text-slate-400 hover:text-slate-500"
+                        eligible ? "text-pos" : "text-ink-3 hover:text-ink-3"
                       }`}
                     >
                       <span className={`flex items-center justify-center w-4 h-4 rounded border transition-colors ${
-                        eligible ? "bg-emerald-500 border-emerald-500" : "border-slate-300 bg-white"
+                        eligible ? "bg-pos border-pos-border" : "border-line bg-white"
                       }`}>
                         {eligible && (
                           <svg className="w-3 h-3 text-white" fill="none" stroke="currentColor" strokeWidth="3" viewBox="0 0 24 24">
@@ -2075,19 +2075,19 @@ export default function StockDetailPage() {
               const pct = (total / group.maxTotal) * 100;
 
               return (
-                <div key={group.name} className="rounded-[24px] border border-slate-200 bg-white p-5 shadow-sm">
+                <div key={group.name} className="rounded-card border border-line bg-white p-5 shadow-sm">
                   <div className="flex items-center justify-between mb-2">
                     <div className="flex items-center gap-2">
                       <span className={`text-base ${colors.text}`}>{group.icon}</span>
-                      <h2 className="text-base font-bold text-slate-800">{group.name}</h2>
+                      <h2 className="text-base font-bold text-ink">{group.name}</h2>
                     </div>
                     <div className="flex items-baseline gap-0.5">
                       <span className={`text-2xl font-bold ${colors.scoreText}`}>{Number.isInteger(total) ? total : total.toFixed(1)}</span>
-                      <span className="text-sm text-slate-400">/{group.maxTotal}</span>
+                      <span className="text-sm text-ink-3">/{group.maxTotal}</span>
                     </div>
                   </div>
 
-                  <div className="h-1.5 rounded-full bg-slate-100 mb-5 overflow-hidden">
+                  <div className="h-1.5 rounded-full bg-surface-2 mb-5 overflow-hidden">
                     <div className={`h-full rounded-full ${colors.bar} transition-all`} style={{ width: `${pct}%` }} />
                   </div>
 
@@ -2118,12 +2118,12 @@ export default function StockDetailPage() {
                       }
                       const typeBg =
                         cat.inputType === "auto"
-                          ? "bg-emerald-100 text-emerald-700"
+                          ? "bg-pos-soft text-pos"
                           : cat.inputType === "semi"
-                          ? "bg-blue-100 text-blue-700"
+                          ? "bg-accent-soft text-accent"
                           : cat.inputType === "computed"
-                          ? "bg-purple-100 text-purple-700"
-                          : "bg-slate-100 text-slate-600";
+                          ? "bg-violet-soft text-violet"
+                          : "bg-surface-2 text-ink-2";
                       const isComputed = cat.inputType === "computed";
 
                       const hasContent = summary.length > 0 || dataPoints.length > 0;
@@ -2153,8 +2153,8 @@ export default function StockDetailPage() {
                         <div key={cat.key}>
                           <div className="flex items-center justify-between mb-2">
                             <div className="flex items-center gap-2">
-                              <span className="text-sm text-slate-700">{cat.label}</span>
-                              <span className="text-xs text-slate-400">/{cat.max}</span>
+                              <span className="text-sm text-ink-2">{cat.label}</span>
+                              <span className="text-xs text-ink-3">/{cat.max}</span>
                               <span className={`rounded px-1.5 py-0.5 text-[10px] font-semibold ${typeBg}`}>
                                 {cat.inputType.toUpperCase()}
                               </span>
@@ -2175,10 +2175,10 @@ export default function StockDetailPage() {
                                 <span
                                   className={`rounded px-1.5 py-0.5 text-[9px] font-bold uppercase tracking-wider ${
                                     confidence === "high"
-                                      ? "bg-emerald-50 text-emerald-700 border border-emerald-200"
+                                      ? "bg-pos-soft text-pos border border-pos-border"
                                       : confidence === "medium"
-                                      ? "bg-amber-50 text-amber-700 border border-amber-200"
-                                      : "bg-red-50 text-red-700 border border-red-200"
+                                      ? "bg-warn-soft text-warn border border-warn-border"
+                                      : "bg-neg-soft text-neg border border-neg-border"
                                   }`}
                                   title={
                                     confidence === "high"
@@ -2194,13 +2194,13 @@ export default function StockDetailPage() {
                               {showToggle && (
                                 <button
                                   onClick={() => toggleCategory(cat.key)}
-                                  className="flex items-center gap-0.5 rounded px-1.5 py-0.5 text-[10px] font-medium text-slate-500 hover:bg-slate-100 transition-colors"
+                                  className="flex items-center gap-0.5 rounded px-1.5 py-0.5 text-[10px] font-medium text-ink-3 hover:bg-surface-2 transition-colors"
                                   aria-expanded={isExpanded}
                                   aria-label={isExpanded ? "Hide explanation" : "Show explanation"}
                                 >
                                   <span>{isExpanded ? "Hide" : "Show"}</span>
                                   {hasNotesEditor && notesForThis.length > 0 && (
-                                    <span className="ml-0.5 rounded-full bg-slate-200 px-1 text-[9px] font-bold text-slate-600">{notesForThis.length}</span>
+                                    <span className="ml-0.5 rounded-full bg-line px-1 text-[9px] font-bold text-ink-2">{notesForThis.length}</span>
                                   )}
                                   <span className={`transition-transform ${isExpanded ? "rotate-180" : ""}`}>{"\u25BE"}</span>
                                 </button>
@@ -2214,7 +2214,7 @@ export default function StockDetailPage() {
                                    scale in computeScores) — show N/A so it doesn't read as
                                    a real 0. */
                                 <span
-                                  className="flex h-7 items-center justify-center rounded-md bg-slate-100 px-2 text-[11px] font-semibold text-slate-400"
+                                  className="flex h-7 items-center justify-center rounded-md bg-surface-2 px-2 text-[11px] font-semibold text-ink-3"
                                   title="MarketEdge covers US-listed stocks only. This Canadian name isn't dual-listed, so the category is N/A and excluded from the composite (the score is normalized so the stock isn't penalized)."
                                 >
                                   N/A
@@ -2226,7 +2226,7 @@ export default function StockDetailPage() {
                                    feeds are the only input path. */
                                 <span
                                   className={`flex h-7 min-w-[28px] px-1.5 items-center justify-center rounded-md text-xs font-semibold ${
-                                    val < 0 ? "bg-red-100 text-red-700" : `${colors.activeBg} ${colors.activeText}`
+                                    val < 0 ? "bg-neg-soft text-neg" : `${colors.activeBg} ${colors.activeText}`
                                   }`}
                                   title={`Auto-derived: ${val}/${cat.max}`}
                                 >
@@ -2241,7 +2241,7 @@ export default function StockDetailPage() {
                                     className={`flex h-7 w-7 items-center justify-center rounded-md text-xs font-semibold transition-colors cursor-pointer hover:opacity-80 ${
                                       i === val
                                         ? `${colors.activeBg} ${colors.activeText}`
-                                        : "bg-slate-100 text-slate-400 hover:bg-slate-200"
+                                        : "bg-surface-2 text-ink-3 hover:bg-line"
                                     }`}
                                   >
                                     {i}
@@ -2266,18 +2266,18 @@ export default function StockDetailPage() {
                           {isExpanded && !isExternalSources && hasContent && (
                             <div className="ml-1 space-y-3 mb-1 mt-3">
                               {summary && (
-                                <p className="text-xs leading-relaxed text-slate-600">{summary}</p>
+                                <p className="text-xs leading-relaxed text-ink-2">{summary}</p>
                               )}
                               {dataPoints.length > 0 && (
                                 <div>
-                                  <p className="text-[10px] font-semibold uppercase tracking-wider text-slate-400 mb-1.5">Data points</p>
+                                  <p className="text-[10px] font-semibold uppercase tracking-wider text-ink-3 mb-1.5">Data points</p>
                                   <ul className="space-y-1">
                                     {dataPoints.map((dp, i) => (
                                       <li key={i} className="flex flex-wrap items-baseline gap-x-2 gap-y-0.5 text-xs leading-relaxed">
                                         <span className="flex items-baseline gap-2">
-                                          <span className="mt-1.5 h-1 w-1 shrink-0 rounded-full bg-slate-300" />
-                                          <span className="text-slate-500">{dp.label}:</span>
-                                          <span className="font-medium text-slate-700">{dp.value}</span>
+                                          <span className="mt-1.5 h-1 w-1 shrink-0 rounded-full bg-line" />
+                                          <span className="text-ink-3">{dp.label}:</span>
+                                          <span className="font-medium text-ink-2">{dp.value}</span>
                                         </span>
                                         <SourceChip source={dp.source} detail={dp.sourceDetail} url={dp.url} label={dp.label} ticker={ticker} />
                                       </li>
@@ -2324,12 +2324,12 @@ export default function StockDetailPage() {
                               (!lastRead || Date.parse(lastShot) > Date.parse(lastRead));
                             const nowIso = () => new Date().toISOString();
                             return (
-                              <div className="rounded-lg border border-slate-200 bg-slate-50 p-3 space-y-2">
+                              <div className="rounded-lg border border-line bg-surface-2 p-3 space-y-2">
                                 <div className="flex items-center gap-2">
-                                  <div className="text-[10px] uppercase tracking-wider font-semibold text-slate-500">BoostedAI inputs</div>
+                                  <div className="text-[10px] uppercase tracking-wider font-semibold text-ink-3">BoostedAI inputs</div>
                                   {showChip && (
                                     <span
-                                      className="text-[10px] font-semibold rounded-full border border-amber-300 bg-amber-50 text-amber-700 px-2 py-0.5"
+                                      className="text-[10px] font-semibold rounded-full border border-warn-border bg-warn-soft text-warn px-2 py-0.5"
                                       title={`Last BoostedAI screenshot didn't read a value for ${ticker} (uploaded ${lastShot?.slice(0, 10)}). Re-screenshot or edit a value below to clear.`}
                                     >
                                       ⚠ Last screenshot didn&apos;t capture this name
@@ -2338,7 +2338,7 @@ export default function StockDetailPage() {
                                 </div>
                                 <div className="flex flex-wrap items-center gap-3">
                                   <label className="flex items-center gap-2 text-xs">
-                                    <span className="text-slate-600">Rating (0-5):</span>
+                                    <span className="text-ink-2">Rating (0-5):</span>
                                     <EditableNumberCell
                                       value={stock.boostedAi ?? null}
                                       step="0.1"
@@ -2357,7 +2357,7 @@ export default function StockDetailPage() {
                                     />
                                   </label>
                                   <label className="flex items-center gap-2 text-xs">
-                                    <span className="text-slate-600">Consensus:</span>
+                                    <span className="text-ink-2">Consensus:</span>
                                     <ConsensusButton
                                       value={stock.boostedAiConsensus ?? null}
                                       ariaLabel={`BoostedAI consensus for ${ticker}`}
@@ -2369,7 +2369,7 @@ export default function StockDetailPage() {
                                     />
                                   </label>
                                 </div>
-                                <p className="text-[10px] text-slate-400">
+                                <p className="text-[10px] text-ink-3">
                                   Score maps: rating 4.5+ &amp; bullish consensus → 2, 3.5+ &amp; any non-bearish → 1, else 0. Same logic as the Inbox tab.
                                 </p>
                               </div>
@@ -2385,12 +2385,12 @@ export default function StockDetailPage() {
                               (!lastRead || Date.parse(lastShot) > Date.parse(lastRead));
                             const nowIso = () => new Date().toISOString();
                             return (
-                              <div className="rounded-lg border border-slate-200 bg-slate-50 p-3 space-y-2">
+                              <div className="rounded-lg border border-line bg-surface-2 p-3 space-y-2">
                                 <div className="flex items-center gap-2">
-                                  <div className="text-[10px] uppercase tracking-wider font-semibold text-slate-500">SIA SMAX input</div>
+                                  <div className="text-[10px] uppercase tracking-wider font-semibold text-ink-3">SIA SMAX input</div>
                                   {showChip && (
                                     <span
-                                      className="text-[10px] font-semibold rounded-full border border-amber-300 bg-amber-50 text-amber-700 px-2 py-0.5"
+                                      className="text-[10px] font-semibold rounded-full border border-warn-border bg-warn-soft text-warn px-2 py-0.5"
                                       title={`Last SIA screenshot didn't read a value for ${ticker} (uploaded ${lastShot?.slice(0, 10)}). Re-screenshot or edit a value below to clear.`}
                                     >
                                       ⚠ Last screenshot didn&apos;t capture this name
@@ -2399,7 +2399,7 @@ export default function StockDetailPage() {
                                 </div>
                                 <div className="flex flex-wrap items-center gap-3">
                                   <label className="flex items-center gap-2 text-xs">
-                                    <span className="text-slate-600">SMAX (0-10):</span>
+                                    <span className="text-ink-2">SMAX (0-10):</span>
                                     <EditableNumberCell
                                       value={(stock as { sia?: number | null }).sia ?? null}
                                       step="1"
@@ -2417,7 +2417,7 @@ export default function StockDetailPage() {
                                     />
                                   </label>
                                 </div>
-                                <p className="text-[10px] text-slate-400">
+                                <p className="text-[10px] text-ink-3">
                                   Score maps: 8-10 → 2, 6-7 → 1, 0-5 → 0. Same logic as the Inbox tab.
                                 </p>
                               </div>
@@ -2431,10 +2431,10 @@ export default function StockDetailPage() {
                             const me = stock.marketEdge ?? {};
                             const warning = marketEdgeWarning(me.opinion, me.opinionScore);
                             const opinionTone =
-                              me.opinion === "long" ? "bg-emerald-50 text-emerald-700 border-emerald-200"
-                              : me.opinion === "avoid" ? "bg-red-50 text-red-700 border-red-200"
-                              : me.opinion === "neutral" ? "bg-slate-50 text-slate-600 border-slate-300"
-                              : "bg-white text-slate-400 border-slate-200";
+                              me.opinion === "long" ? "bg-pos-soft text-pos border-pos-border"
+                              : me.opinion === "avoid" ? "bg-neg-soft text-neg border-neg-border"
+                              : me.opinion === "neutral" ? "bg-surface-2 text-ink-2 border-line"
+                              : "bg-white text-ink-3 border-line";
                             const cycleOpinion = () => {
                               const cycle: (MarketEdgeOpinion | undefined)[] = [undefined, "long", "neutral", "avoid"];
                               const idx = me.opinion == null ? 0 : Math.max(0, cycle.indexOf(me.opinion));
@@ -2442,15 +2442,15 @@ export default function StockDetailPage() {
                               updateStockFields(ticker, { marketEdge: { ...me, opinion: next } });
                             };
                             return (
-                              <div className="rounded-lg border border-slate-200 bg-slate-50 p-3 space-y-2">
+                              <div className="rounded-lg border border-line bg-surface-2 p-3 space-y-2">
                                 <div className="flex items-center gap-2">
-                                  <div className="text-[10px] uppercase tracking-wider font-semibold text-slate-500">MarketEdge inputs</div>
+                                  <div className="text-[10px] uppercase tracking-wider font-semibold text-ink-3">MarketEdge inputs</div>
                                   {warning && (
                                     <span
                                       className={`text-[10px] font-semibold rounded-full border px-2 py-0.5 ${
                                         warning.kind === "deteriorating"
-                                          ? "bg-amber-50 text-amber-700 border-amber-300"
-                                          : "bg-blue-50 text-blue-700 border-blue-300"
+                                          ? "bg-warn-soft text-warn border-warn-border"
+                                          : "bg-accent-soft text-accent border-accent-border"
                                       }`}
                                       title={
                                         warning.kind === "deteriorating"
@@ -2464,7 +2464,7 @@ export default function StockDetailPage() {
                                 </div>
                                 <div className="flex flex-wrap items-center gap-3">
                                   <label className="flex items-center gap-2 text-xs">
-                                    <span className="text-slate-600">Power Rating:</span>
+                                    <span className="text-ink-2">Power Rating:</span>
                                     <EditableNumberCell
                                       value={me.powerRating ?? null}
                                       step="1"
@@ -2483,7 +2483,7 @@ export default function StockDetailPage() {
                                     />
                                   </label>
                                   <label className="flex items-center gap-2 text-xs">
-                                    <span className="text-slate-600">Opinion:</span>
+                                    <span className="text-ink-2">Opinion:</span>
                                     <button
                                       type="button"
                                       onClick={cycleOpinion}
@@ -2494,7 +2494,7 @@ export default function StockDetailPage() {
                                     </button>
                                   </label>
                                   <label className="flex items-center gap-2 text-xs">
-                                    <span className="text-slate-600">Opinion Score:</span>
+                                    <span className="text-ink-2">Opinion Score:</span>
                                     <EditableNumberCell
                                       value={me.opinionScore ?? null}
                                       step="1"
@@ -2511,24 +2511,24 @@ export default function StockDetailPage() {
                                     />
                                   </label>
                                   <label className="flex items-center gap-2 text-xs">
-                                    <span className="text-slate-600">Opinion Date:</span>
+                                    <span className="text-ink-2">Opinion Date:</span>
                                     <input
                                       type="date"
                                       value={me.opinionDate ?? ""}
                                       onChange={(e) => updateStockFields(ticker, { marketEdge: { ...me, opinionDate: e.target.value || undefined } })}
-                                      className="rounded border border-slate-200 bg-white px-1.5 py-0.5 text-xs text-slate-700 outline-none focus:border-blue-400 focus:ring-1 focus:ring-blue-200"
+                                      className="rounded border border-line bg-white px-1.5 py-0.5 text-xs text-ink-2 outline-none focus:border-accent-border focus:ring-1 focus:ring-accent-border"
                                       aria-label={`MarketEdge Opinion Date for ${ticker}`}
                                     />
                                   </label>
                                 </div>
-                                <p className="text-[10px] text-slate-400">
+                                <p className="text-[10px] text-ink-3">
                                   Power Rating maps to MarketEdge Opinions: ≥ +60 → 2 (Long), −27 to +59 → 1 (Neutral), &lt;−27 → 0 (Avoid). Opinion + Opinion Score drive the warning flag (Long &amp; score ≤ −3, or Avoid &amp; score ≥ +3) — NOT the composite. Updated weekly via CSV upload on the Inbox tab.
                                 </p>
                               </div>
                             );
                           })()}
                           {!hasNotesEditor && !isAnalystConsensus && !hasContent && cat.inputType !== "manual" && cat.inputType !== "computed" && (
-                            <p className="text-[11px] text-slate-400 italic ml-1">Re-score via Claude to generate explanation</p>
+                            <p className="text-[11px] text-ink-3 italic ml-1">Re-score via Claude to generate explanation</p>
                           )}
                         </div>
                       );
@@ -2540,15 +2540,15 @@ export default function StockDetailPage() {
           </div>}
 
           {/* Regime context (stocks only) */}
-          {scoreable && <div className="rounded-[24px] border border-slate-200 bg-white p-5 shadow-sm mt-6">
-            <h2 className="text-base font-bold text-slate-800 mb-3">Regime Context</h2>
+          {scoreable && <div className="rounded-card border border-line bg-white p-5 shadow-sm mt-6">
+            <h2 className="text-base font-bold text-ink mb-3">Regime Context</h2>
             <div className="grid gap-4 md:grid-cols-4">
-              <div className="rounded-2xl bg-slate-50 p-3">
-                <div className="text-xs text-slate-400">Current Regime</div>
+              <div className="rounded-card bg-surface-2 p-3">
+                <div className="text-xs text-ink-3">Current Regime</div>
                 <div className="mt-1 text-lg font-semibold">{marketData.riskRegime}</div>
               </div>
-              <div className="rounded-2xl bg-slate-50 p-3">
-                <div className="text-xs text-slate-400">Sector Classification</div>
+              <div className="rounded-card bg-surface-2 p-3">
+                <div className="text-xs text-ink-3">Sector Classification</div>
                 <div className="mt-1 text-lg font-semibold">
                   {["Technology", "Communication Services", "Consumer Discretionary"].includes(stock.sector)
                     ? "Offensive"
@@ -2557,14 +2557,14 @@ export default function StockDetailPage() {
                     : "Neutral"}
                 </div>
               </div>
-              <div className="rounded-2xl bg-slate-50 p-3">
-                <div className="text-xs text-slate-400">Regime Effect</div>
-                <div className={`mt-1 text-lg font-semibold ${stock.adjusted - stock.raw >= 0 ? "text-emerald-600" : "text-red-600"}`}>
+              <div className="rounded-card bg-surface-2 p-3">
+                <div className="text-xs text-ink-3">Regime Effect</div>
+                <div className={`mt-1 text-lg font-semibold ${stock.adjusted - stock.raw >= 0 ? "text-pos" : "text-neg"}`}>
                   {stock.adjusted - stock.raw >= 0 ? "+" : ""}{(stock.adjusted - stock.raw).toFixed(1)} pts
                 </div>
               </div>
-              <div className="rounded-2xl bg-slate-50 p-3">
-                <div className="text-xs text-slate-400">Composite Signal</div>
+              <div className="rounded-card bg-surface-2 p-3">
+                <div className="text-xs text-ink-3">Composite Signal</div>
                 <div className="mt-1 text-lg font-semibold">{marketData.compositeSignal}</div>
               </div>
             </div>

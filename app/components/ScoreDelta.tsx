@@ -80,10 +80,10 @@ export function ScoreDelta({ ticker, className = "" }: Props) {
   const neutral = absDelta < 0.05;
 
   const palette = neutral
-    ? "bg-slate-50 border-slate-200 text-slate-600"
+    ? "bg-surface-2 border-line text-ink-2"
     : positive
-    ? "bg-emerald-50 border-emerald-200 text-emerald-700"
-    : "bg-red-50 border-red-200 text-red-700";
+    ? "bg-pos-soft border-pos-border text-pos"
+    : "bg-neg-soft border-neg-border text-neg";
 
   const sign = positive ? "+" : "";
 

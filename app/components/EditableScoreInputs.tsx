@@ -111,7 +111,7 @@ export function EditableNumberCell({
       }}
       placeholder={placeholder ?? "—"}
       aria-label={ariaLabel}
-      className={`${width} rounded border border-slate-200 bg-white text-slate-900 px-1.5 py-0.5 text-xs font-mono text-right outline-none focus:border-blue-400 focus:ring-1 focus:ring-blue-200 placeholder-slate-300`}
+      className={`${width} rounded border border-line bg-white text-ink px-1.5 py-0.5 text-xs font-mono text-right outline-none focus:border-accent-border focus:ring-1 focus:ring-accent-border placeholder-ink-faint`}
     />
   );
 }

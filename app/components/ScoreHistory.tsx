@@ -115,50 +115,50 @@ export default function ScoreHistory({ ticker, currentTotal, currentRaw, classNa
   }, [entries]);
 
   return (
-    <div className={`rounded-[24px] border border-slate-200 bg-white p-5 shadow-sm ${className}`}>
+    <div className={`rounded-card border border-line bg-white p-5 shadow-sm ${className}`}>
       <div className="flex items-center justify-between mb-3">
         <div>
-          <h3 className="text-sm font-bold text-slate-700">Score History</h3>
-          <p className="text-[11px] text-slate-400">Append-only log of composite score changes over time.</p>
+          <h3 className="text-sm font-bold text-ink-2">Score History</h3>
+          <p className="text-[11px] text-ink-3">Append-only log of composite score changes over time.</p>
         </div>
         <div className="text-right">
-          <div className="text-[11px] text-slate-400 uppercase tracking-wide">Current</div>
-          <div className="text-lg font-bold text-slate-800">{currentTotal.toFixed(1)}</div>
-          <div className="text-[10px] text-slate-400">Raw {currentRaw.toFixed(1)}</div>
+          <div className="text-[11px] text-ink-3 uppercase tracking-wide">Current</div>
+          <div className="text-lg font-bold text-ink">{currentTotal.toFixed(1)}</div>
+          <div className="text-[10px] text-ink-3">Raw {currentRaw.toFixed(1)}</div>
         </div>
       </div>
 
       {loading ? (
-        <div className="text-xs text-slate-400">Loading&hellip;</div>
+        <div className="text-xs text-ink-3">Loading&hellip;</div>
       ) : error ? (
-        <div className="text-xs text-slate-400">{error}</div>
+        <div className="text-xs text-ink-3">{error}</div>
       ) : rows.length === 0 ? (
-        <div className="rounded-lg border border-dashed border-slate-200 bg-slate-50 p-3 text-xs text-slate-500">
+        <div className="rounded-lg border border-dashed border-line bg-surface-2 p-3 text-xs text-ink-3">
           No prior scores logged. The next time you click <span className="font-semibold">Rescore</span>, the new score will be appended here and every change going forward will be tracked.
         </div>
       ) : (
-        <div className="divide-y divide-slate-100">
+        <div className="divide-y divide-line-soft">
           {rows.map(({ entry, totalDelta, categoryChanges }, idx) => {
             const isLatest = idx === 0;
             const deltaColor =
               totalDelta == null
-                ? "text-slate-400"
+                ? "text-ink-3"
                 : totalDelta > 0
-                ? "text-emerald-600"
+                ? "text-pos"
                 : totalDelta < 0
-                ? "text-red-600"
-                : "text-slate-500";
+                ? "text-neg"
+                : "text-ink-3";
             return (
               <div key={`${entry.timestamp}-${idx}`} className="py-2.5">
                 <div className="flex items-center justify-between">
                   <div className="flex items-center gap-2">
-                    <span className="text-sm font-semibold text-slate-700">{fmtDate(entry.timestamp || entry.date)}</span>
+                    <span className="text-sm font-semibold text-ink-2">{fmtDate(entry.timestamp || entry.date)}</span>
                     {isLatest && (
-                      <span className="rounded-full bg-slate-100 px-2 py-0.5 text-[10px] font-medium text-slate-500">Latest</span>
+                      <span className="rounded-full bg-surface-2 px-2 py-0.5 text-[10px] font-medium text-ink-3">Latest</span>
                     )}
                   </div>
                   <div className="flex items-center gap-3">
-                    <span className="text-sm font-bold text-slate-800">{entry.total.toFixed(1)}</span>
+                    <span className="text-sm font-bold text-ink">{entry.total.toFixed(1)}</span>
                     {totalDelta != null && (
                       <span className={`text-xs font-mono ${deltaColor}`}>
                         {totalDelta > 0 ? "+" : ""}{totalDelta.toFixed(1)}
@@ -172,8 +172,8 @@ export default function ScoreHistory({ ticker, currentTotal, currentRaw, classNa
                       const diff = c.to - c.from;
                       const cls =
                         diff > 0
-                          ? "bg-emerald-50 text-emerald-700 border-emerald-200"
-                          : "bg-red-50 text-red-700 border-red-200";
+                          ? "bg-pos-soft text-pos border-pos-border"
+                          : "bg-neg-soft text-neg border-neg-border";
                       return (
                         <span key={c.key} className={`rounded-full border px-2 py-0.5 text-[10px] ${cls}`}>
                           {c.label}: {c.from} → {c.to}
@@ -183,7 +183,7 @@ export default function ScoreHistory({ ticker, currentTotal, currentRaw, classNa
                   </div>
                 )}
                 {categoryChanges.length === 0 && totalDelta != null && totalDelta !== 0 && (
-                  <div className="mt-1 text-[10px] text-slate-400">Regime-adjusted change only (no category edits)</div>
+                  <div className="mt-1 text-[10px] text-ink-3">Regime-adjusted change only (no category edits)</div>
                 )}
                 {/* Sources audit: web_search queries + citation URLs.
                     Collapsed by default to keep the panel compact;
@@ -205,21 +205,21 @@ export default function ScoreHistory({ ticker, currentTotal, currentRaw, classNa
                             return next;
                           });
                         }}
-                        className="inline-flex items-center gap-1 text-[10px] text-slate-400 hover:text-slate-600 transition-colors"
+                        className="inline-flex items-center gap-1 text-[10px] text-ink-3 hover:text-ink-2 transition-colors"
                       >
                         <svg className={`w-2.5 h-2.5 transition-transform ${expanded ? "rotate-90" : ""}`} fill="none" stroke="currentColor" strokeWidth="2.5" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" d="m8.25 4.5 7.5 7.5-7.5 7.5" /></svg>
                         Sources · {queries.length} {queries.length === 1 ? "search" : "searches"}
                         {citations.length > 0 && ` · ${citations.length} ${citations.length === 1 ? "citation" : "citations"}`}
                       </button>
                       {expanded && (
-                        <div className="mt-1.5 rounded-lg bg-slate-50 border border-slate-200 p-2.5 space-y-2">
+                        <div className="mt-1.5 rounded-lg bg-surface-2 border border-line p-2.5 space-y-2">
                           {queries.length > 0 && (
                             <div>
-                              <div className="text-[10px] uppercase tracking-wider font-semibold text-slate-500 mb-1">Search queries Claude issued</div>
+                              <div className="text-[10px] uppercase tracking-wider font-semibold text-ink-3 mb-1">Search queries Claude issued</div>
                               <ul className="space-y-0.5">
                                 {queries.map((q, i) => (
-                                  <li key={i} className="text-[11px] text-slate-700 break-words">
-                                    <span className="text-slate-400">{i + 1}.</span> {q}
+                                  <li key={i} className="text-[11px] text-ink-2 break-words">
+                                    <span className="text-ink-3">{i + 1}.</span> {q}
                                   </li>
                                 ))}
                               </ul>
@@ -227,7 +227,7 @@ export default function ScoreHistory({ ticker, currentTotal, currentRaw, classNa
                           )}
                           {citations.length > 0 && (
                             <div>
-                              <div className="text-[10px] uppercase tracking-wider font-semibold text-slate-500 mb-1">Citation URLs</div>
+                              <div className="text-[10px] uppercase tracking-wider font-semibold text-ink-3 mb-1">Citation URLs</div>
                               <ul className="space-y-0.5">
                                 {citations.map((c, i) => (
                                   <li key={i} className="text-[11px] break-all">
@@ -235,7 +235,7 @@ export default function ScoreHistory({ ticker, currentTotal, currentRaw, classNa
                                       href={c.url}
                                       target="_blank"
                                       rel="noreferrer noopener"
-                                      className="text-blue-600 hover:underline"
+                                      className="text-accent hover:underline"
                                       title={c.title ?? c.url}
                                     >
                                       {c.title ? `${c.title} ↗` : `${c.url} ↗`}

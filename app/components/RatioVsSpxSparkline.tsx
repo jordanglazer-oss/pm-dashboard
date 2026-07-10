@@ -85,17 +85,17 @@ export default function RatioVsSpxSparkline({ ticker, windowDays = 252, classNam
   // ── Render ──
   if (loading) {
     return (
-      <div className={`rounded-[24px] border border-slate-200 bg-white p-5 shadow-sm ${className}`}>
-        <div className="text-sm font-bold text-slate-700 mb-2">Relative Strength vs S&amp;P 500 (SPY)</div>
-        <div className="text-xs text-slate-400">{"Loading\u2026"}</div>
+      <div className={`rounded-card border border-line bg-white p-5 shadow-sm ${className}`}>
+        <div className="text-sm font-bold text-ink-2 mb-2">Relative Strength vs S&amp;P 500 (SPY)</div>
+        <div className="text-xs text-ink-3">{"Loading\u2026"}</div>
       </div>
     );
   }
   if (error || series.length < 2) {
     return (
-      <div className={`rounded-[24px] border border-slate-200 bg-white p-5 shadow-sm ${className}`}>
-        <div className="text-sm font-bold text-slate-700 mb-2">Relative Strength vs S&amp;P 500 (SPY)</div>
-        <div className="text-xs text-slate-400">{error ?? "Not enough overlapping data to plot"}</div>
+      <div className={`rounded-card border border-line bg-white p-5 shadow-sm ${className}`}>
+        <div className="text-sm font-bold text-ink-2 mb-2">Relative Strength vs S&amp;P 500 (SPY)</div>
+        <div className="text-xs text-ink-3">{error ?? "Not enough overlapping data to plot"}</div>
       </div>
     );
   }
@@ -126,20 +126,20 @@ export default function RatioVsSpxSparkline({ ticker, windowDays = 252, classNam
   const windowLabel = approxMonths >= 12 ? `${Math.round(approxMonths / 12)}Y` : `${approxMonths}M`;
 
   return (
-    <div className={`rounded-[24px] border border-slate-200 bg-white p-5 shadow-sm ${className}`}>
+    <div className={`rounded-card border border-line bg-white p-5 shadow-sm ${className}`}>
       <div className="flex items-start justify-between mb-2">
         <div>
-          <div className="text-sm font-bold text-slate-700">Relative Strength vs S&amp;P 500 (SPY)</div>
-          <div className="text-[11px] text-slate-400">
+          <div className="text-sm font-bold text-ink-2">Relative Strength vs S&amp;P 500 (SPY)</div>
+          <div className="text-[11px] text-ink-3">
             Rising = stock beating the index; falling = lagging it. Neutralizes market moves so you see the stock&apos;s own alpha.
           </div>
-          <div className="text-[11px] text-slate-400 mt-0.5">Ratio normalized to 1.00 at start of {windowLabel} window</div>
+          <div className="text-[11px] text-ink-3 mt-0.5">Ratio normalized to 1.00 at start of {windowLabel} window</div>
         </div>
         <div className="text-right">
-          <div className={`text-sm font-bold ${isOutperforming ? "text-emerald-600" : "text-red-600"}`}>
+          <div className={`text-sm font-bold ${isOutperforming ? "text-pos" : "text-neg"}`}>
             {isOutperforming ? "Outperforming" : "Underperforming"}
           </div>
-          <div className={`text-xs font-mono ${pctChange >= 0 ? "text-emerald-600" : "text-red-600"}`}>
+          <div className={`text-xs font-mono ${pctChange >= 0 ? "text-pos" : "text-neg"}`}>
             {pctChange >= 0 ? "+" : ""}{pctChange.toFixed(1)}% vs SPY
           </div>
         </div>
@@ -158,7 +158,7 @@ export default function RatioVsSpxSparkline({ ticker, windowDays = 252, classNam
         <path d={areaPath} fill={fillColor} />
         <path d={d} fill="none" stroke={lineColor} strokeWidth={1.75} />
       </svg>
-      <div className="flex items-center justify-between mt-1 text-[10px] text-slate-400">
+      <div className="flex items-center justify-between mt-1 text-[10px] text-ink-3">
         <span>{series[0].date}</span>
         <span>{series[series.length - 1].date}</span>
       </div>

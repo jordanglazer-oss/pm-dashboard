@@ -317,37 +317,37 @@ export default function StockChart({ ticker, technicals, className = "" }: Props
 
   return (
     <div className={className}>
-      <div className="rounded-[24px] border border-slate-200 bg-white p-5 shadow-sm">
+      <div className="rounded-card border border-line bg-white p-5 shadow-sm">
         {/* Header row */}
         <div className="flex flex-col gap-2 mb-4">
           <div className="flex items-center justify-between">
             <div className="flex items-center gap-2">
-              <h2 className="text-lg font-bold text-slate-800">Price Chart</h2>
-              <div className="hidden sm:flex items-center gap-3 text-xs text-slate-400">
+              <h2 className="text-lg font-bold text-ink">Price Chart</h2>
+              <div className="hidden sm:flex items-center gap-3 text-xs text-ink-3">
                 <span className="flex items-center gap-1">
-                  <span className="inline-block w-3 h-0.5 bg-blue-500 rounded" /> SMA 50
+                  <span className="inline-block w-3 h-0.5 bg-accent rounded" /> SMA 50
                 </span>
                 <span className="flex items-center gap-1">
-                  <span className="inline-block w-3 h-0.5 bg-red-500 rounded" /> SMA 200
+                  <span className="inline-block w-3 h-0.5 bg-neg rounded" /> SMA 200
                 </span>
               </div>
             </div>
             {totalBars > 0 && (
-              <span className="text-[10px] text-slate-400">{yearsOfData}+ yrs &middot; scroll to explore</span>
+              <span className="text-[10px] text-ink-3">{yearsOfData}+ yrs &middot; scroll to explore</span>
             )}
           </div>
 
           <div className="flex items-center gap-2 flex-wrap">
             {/* Timeframe selector — zoom only, no re-fetch */}
-            <div className="flex rounded-xl border border-slate-200 overflow-hidden">
+            <div className="flex rounded-card border border-line overflow-hidden">
               {RANGES.map((r) => (
                 <button
                   key={r.key}
                   onClick={() => setViewRange(r.key)}
                   className={`px-2 py-1.5 text-[11px] font-semibold transition-colors ${
                     viewRange === r.key
-                      ? "bg-slate-900 text-white"
-                      : "text-slate-500 hover:bg-slate-50"
+                      ? "bg-ink text-white"
+                      : "text-ink-3 hover:bg-surface-2"
                   }`}
                 >
                   {r.label}
@@ -359,7 +359,7 @@ export default function StockChart({ ticker, technicals, className = "" }: Props
             <button
               onClick={handleAnalyze}
               disabled={analyzing || loading || !chartData}
-              className="rounded-xl bg-violet-600 px-3 py-1.5 text-[11px] font-semibold text-white hover:bg-violet-700 transition-colors disabled:opacity-50 flex items-center gap-1.5"
+              className="rounded-card bg-violet px-3 py-1.5 text-[11px] font-semibold text-white hover:bg-violet transition-colors disabled:opacity-50 flex items-center gap-1.5"
             >
               {analyzing && (
                 <span className="inline-block w-3 h-3 border-2 border-white border-t-transparent rounded-full animate-spin" />
@@ -368,12 +368,12 @@ export default function StockChart({ ticker, technicals, className = "" }: Props
             </button>
 
             {/* SMA legend on mobile */}
-            <div className="flex sm:hidden items-center gap-2 text-[10px] text-slate-400 ml-auto">
+            <div className="flex sm:hidden items-center gap-2 text-[10px] text-ink-3 ml-auto">
               <span className="flex items-center gap-1">
-                <span className="inline-block w-2 h-0.5 bg-blue-500 rounded" /> 50
+                <span className="inline-block w-2 h-0.5 bg-accent rounded" /> 50
               </span>
               <span className="flex items-center gap-1">
-                <span className="inline-block w-2 h-0.5 bg-red-500 rounded" /> 200
+                <span className="inline-block w-2 h-0.5 bg-neg rounded" /> 200
               </span>
             </div>
           </div>
@@ -381,13 +381,13 @@ export default function StockChart({ ticker, technicals, className = "" }: Props
 
         {/* Chart container */}
         {loading && (
-          <div className="flex items-center justify-center h-[420px] text-slate-400">
-            <span className="inline-block w-5 h-5 border-2 border-slate-300 border-t-transparent rounded-full animate-spin mr-2" />
+          <div className="flex items-center justify-center h-[420px] text-ink-3">
+            <span className="inline-block w-5 h-5 border-2 border-line border-t-transparent rounded-full animate-spin mr-2" />
             Loading chart data...
           </div>
         )}
         {error && (
-          <div className="flex items-center justify-center h-[420px] text-red-500 text-sm">
+          <div className="flex items-center justify-center h-[420px] text-neg text-sm">
             {error}
           </div>
         )}
@@ -400,18 +400,18 @@ export default function StockChart({ ticker, technicals, className = "" }: Props
 
       {/* Analysis result */}
       {analysisError && (
-        <div className="mt-4 rounded-[24px] border border-red-200 bg-red-50 p-5 shadow-sm">
-          <p className="text-sm text-red-600">{analysisError}</p>
+        <div className="mt-4 rounded-card border border-neg-border bg-neg-soft p-5 shadow-sm">
+          <p className="text-sm text-neg">{analysisError}</p>
         </div>
       )}
       {analysis && (
-        <div className="mt-4 rounded-[24px] border border-violet-200 bg-white p-5 shadow-sm">
+        <div className="mt-4 rounded-card border border-violet-border bg-white p-5 shadow-sm">
           <div className="flex items-center gap-2 mb-3">
-            <h3 className="text-base font-bold text-slate-800">Chart Analysis</h3>
-            <span className="rounded-full bg-violet-100 text-violet-700 px-2 py-0.5 text-[10px] font-semibold">
+            <h3 className="text-base font-bold text-ink">Chart Analysis</h3>
+            <span className="rounded-full bg-violet-soft text-violet px-2 py-0.5 text-[10px] font-semibold">
               AI Generated
             </span>
-            <span className="text-xs text-slate-400 ml-auto">
+            <span className="text-xs text-ink-3 ml-auto">
               {ticker} &middot; {savedAnalysis?.range ? RANGES.find((r) => r.key === savedAnalysis.range)?.label || savedAnalysis.range : RANGES.find((r) => r.key === viewRange)?.label} chart
               {savedAnalysis?.analyzedAt && (
                 <> &middot; {new Date(savedAnalysis.analyzedAt).toLocaleString("en-US", { month: "short", day: "numeric", hour: "numeric", minute: "2-digit", hour12: true })}</>
@@ -422,7 +422,7 @@ export default function StockChart({ ticker, technicals, className = "" }: Props
                 if (!confirm("Clear this saved chart analysis? You can always regenerate it with the Analyze Chart button.")) return;
                 clearChartAnalysis(ticker);
               }}
-              className="rounded-md border border-slate-200 bg-white px-2 py-1 text-[11px] font-semibold text-slate-500 hover:bg-red-50 hover:text-red-600 hover:border-red-200 transition-colors"
+              className="rounded-md border border-line bg-white px-2 py-1 text-[11px] font-semibold text-ink-3 hover:bg-neg-soft hover:text-neg hover:border-neg-border transition-colors"
               title="Delete this saved AI chart analysis (Redis-backed, syncs across devices)"
             >
               Clear
@@ -432,43 +432,43 @@ export default function StockChart({ ticker, technicals, className = "" }: Props
           {/* Structured summary — renders only when the saved analysis has
               the new fields. Old analyses fall through to the prose block. */}
           {savedAnalysis?.outlook && (
-            <div className="mb-4 rounded-xl border border-slate-200 bg-slate-50 p-4">
+            <div className="mb-4 rounded-card border border-line bg-surface-2 p-4">
               <div className="flex flex-wrap items-baseline gap-3 mb-3">
                 <span className={`text-lg font-semibold tracking-tight ${
                   savedAnalysis.outlook === "Bullish"
-                    ? "text-emerald-700"
+                    ? "text-pos"
                     : savedAnalysis.outlook === "Bearish"
-                      ? "text-rose-700"
-                      : "text-slate-700"
+                      ? "text-neg"
+                      : "text-ink-2"
                 }`}>
                   {savedAnalysis.outlook}
                 </span>
                 {typeof savedAnalysis.confidence === "number" && (
-                  <span className="text-xs font-medium text-slate-500">
+                  <span className="text-xs font-medium text-ink-3">
                     Confidence {Math.round(savedAnalysis.confidence * 100)}%
                   </span>
                 )}
                 {savedAnalysis.nextAction && (
-                  <span className="ml-auto text-sm text-slate-700 italic">
+                  <span className="ml-auto text-sm text-ink-2 italic">
                     {savedAnalysis.nextAction}
                   </span>
                 )}
               </div>
               <div className="grid grid-cols-1 md:grid-cols-2 gap-3 mb-3">
                 {savedAnalysis.bullCase && (
-                  <div className="rounded-md bg-emerald-50 border border-emerald-200 p-3">
-                    <div className="text-[10px] font-bold uppercase tracking-wider text-emerald-700 mb-1">
+                  <div className="rounded-md bg-pos-soft border border-pos-border p-3">
+                    <div className="text-[10px] font-bold uppercase tracking-wider text-pos mb-1">
                       Bull Case
                     </div>
-                    <p className="text-xs leading-5 text-slate-700">{savedAnalysis.bullCase}</p>
+                    <p className="text-xs leading-5 text-ink-2">{savedAnalysis.bullCase}</p>
                   </div>
                 )}
                 {savedAnalysis.bearCase && (
-                  <div className="rounded-md bg-rose-50 border border-rose-200 p-3">
-                    <div className="text-[10px] font-bold uppercase tracking-wider text-rose-700 mb-1">
+                  <div className="rounded-md bg-neg-soft border border-neg-border p-3">
+                    <div className="text-[10px] font-bold uppercase tracking-wider text-neg mb-1">
                       Bear Case
                     </div>
-                    <p className="text-xs leading-5 text-slate-700">{savedAnalysis.bearCase}</p>
+                    <p className="text-xs leading-5 text-ink-2">{savedAnalysis.bearCase}</p>
                   </div>
                 )}
               </div>
@@ -478,24 +478,24 @@ export default function StockChart({ ticker, technicals, className = "" }: Props
                 <div className="flex flex-wrap gap-x-6 gap-y-1 text-xs">
                   {savedAnalysis.support && savedAnalysis.support.length > 0 && (
                     <span>
-                      <span className="font-semibold text-emerald-700">Support:</span>{" "}
-                      <span className="font-mono text-slate-700">
+                      <span className="font-semibold text-pos">Support:</span>{" "}
+                      <span className="font-mono text-ink-2">
                         {savedAnalysis.support.map((s) => s.toFixed(2)).join(", ")}
                       </span>
                     </span>
                   )}
                   {savedAnalysis.resistance && savedAnalysis.resistance.length > 0 && (
                     <span>
-                      <span className="font-semibold text-rose-700">Resistance:</span>{" "}
-                      <span className="font-mono text-slate-700">
+                      <span className="font-semibold text-neg">Resistance:</span>{" "}
+                      <span className="font-mono text-ink-2">
                         {savedAnalysis.resistance.map((r) => r.toFixed(2)).join(", ")}
                       </span>
                     </span>
                   )}
                   {typeof savedAnalysis.stopBelow === "number" && (
                     <span>
-                      <span className="font-semibold text-slate-600">Stop below:</span>{" "}
-                      <span className="font-mono text-slate-700">{savedAnalysis.stopBelow.toFixed(2)}</span>
+                      <span className="font-semibold text-ink-2">Stop below:</span>{" "}
+                      <span className="font-mono text-ink-2">{savedAnalysis.stopBelow.toFixed(2)}</span>
                     </span>
                   )}
                 </div>
@@ -503,22 +503,22 @@ export default function StockChart({ ticker, technicals, className = "" }: Props
             </div>
           )}
 
-          <div className="text-sm leading-relaxed text-slate-600 space-y-0.5">
+          <div className="text-sm leading-relaxed text-ink-2 space-y-0.5">
             {analysis.split("\n").map((line, i) => {
               // Skip horizontal rules and empty decorative lines
               if (line.trim() === "---" || line.trim() === "***") return null;
               // Section headers: **Bold Header** on its own line or ## / ###
               if (/^#{1,3}\s/.test(line)) {
                 const text = line.replace(/^#{1,3}\s/, "").replace(/\*\*/g, "");
-                return <p key={i} className="font-semibold text-slate-800 mt-3 mb-0.5 text-sm">{text}</p>;
+                return <p key={i} className="font-semibold text-ink mt-3 mb-0.5 text-sm">{text}</p>;
               }
               if (/^\*\*[^*]+\*\*\s*$/.test(line.trim())) {
-                return <p key={i} className="font-semibold text-slate-800 mt-3 mb-0.5 text-sm">{line.replace(/\*\*/g, "")}</p>;
+                return <p key={i} className="font-semibold text-ink mt-3 mb-0.5 text-sm">{line.replace(/\*\*/g, "")}</p>;
               }
               // Bullet points
               if (line.startsWith("- ") || line.startsWith("* ")) {
                 const content = line.slice(2).replace(/\*\*(.*?)\*\*/g, "$1");
-                return <p key={i} className="ml-3 text-slate-600 pl-2 border-l-2 border-slate-200">{content}</p>;
+                return <p key={i} className="ml-3 text-ink-2 pl-2 border-l-2 border-line">{content}</p>;
               }
               // Table rows
               if (line.includes("|") && line.trim().startsWith("|")) {
@@ -529,7 +529,7 @@ export default function StockChart({ ticker, technicals, className = "" }: Props
                 return (
                   <div key={i} className="grid grid-cols-3 gap-2 text-xs py-0.5 font-mono">
                     {cells.map((cell, j) => (
-                      <span key={j} className={j === 0 ? "text-slate-700 font-medium" : "text-slate-500"}>{cell}</span>
+                      <span key={j} className={j === 0 ? "text-ink-2 font-medium" : "text-ink-3"}>{cell}</span>
                     ))}
                   </div>
                 );
@@ -539,10 +539,10 @@ export default function StockChart({ ticker, technicals, className = "" }: Props
               // Regular text — inline bold handling
               const parts = line.split(/(\*\*.*?\*\*)/g);
               return (
-                <p key={i} className="text-slate-600">
+                <p key={i} className="text-ink-2">
                   {parts.map((part, j) =>
                     part.startsWith("**") && part.endsWith("**")
-                      ? <span key={j} className="font-medium text-slate-800">{part.slice(2, -2)}</span>
+                      ? <span key={j} className="font-medium text-ink">{part.slice(2, -2)}</span>
                       : part
                   )}
                 </p>
