@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect, useRef, useState } from "react";
+import { useCallback, useEffect, useRef, useState } from "react";
 import { useNotifications, type NotificationLevel } from "@/app/lib/NotificationsContext";
 
 /**
@@ -11,7 +11,7 @@ import { useNotifications, type NotificationLevel } from "@/app/lib/Notification
  * present at mount are NOT toasted; only new ones after mount. Auto-dismiss.
  */
 
-type Toast = { id: string; level: NotificationLevel; title: string; message?: string };
+type Toast = { id: string; level: NotificationLevel; title: string; message?: string; leaving?: boolean };
 
 const TONE: Record<NotificationLevel, { box: string; dot: string }> = {
   success: { box: "border-pos-border bg-pos-soft text-ink", dot: "bg-pos" },
@@ -25,6 +25,13 @@ export function ToastHost() {
   const [toasts, setToasts] = useState<Toast[]>([]);
   const seen = useRef<Set<string>>(new Set());
   const primed = useRef(false);
+
+  // Two-step remove so the exit animation can play: flag as leaving, then drop
+  // the node once the slide-out finishes. Stable so the effect can depend on it.
+  const dismiss = useCallback((id: string) => {
+    setToasts((prev) => prev.map((t) => (t.id === id ? { ...t, leaving: true } : t)));
+    setTimeout(() => setToasts((prev) => prev.filter((t) => t.id !== id)), 200);
+  }, []);
 
   useEffect(() => {
     if (!primed.current) {
@@ -40,11 +47,9 @@ export function ToastHost() {
       [...fresh.map((e) => ({ id: e.id, level: e.level, title: e.title, message: e.message })), ...prev].slice(0, 4),
     );
     fresh.forEach((e) => {
-      setTimeout(() => setToasts((prev) => prev.filter((t) => t.id !== e.id)), 4200);
+      setTimeout(() => dismiss(e.id), 4200);
     });
-  }, [events]);
-
-  const dismiss = (id: string) => setToasts((prev) => prev.filter((t) => t.id !== id));
+  }, [events, dismiss]);
 
   if (toasts.length === 0) return null;
 
@@ -56,7 +61,7 @@ export function ToastHost() {
           <div
             key={t.id}
             role="status"
-            className={`animate-toast-in flex max-w-xs items-start gap-2.5 rounded-lg border px-3 py-2 shadow-md ${tone.box}`}
+            className={`${t.leaving ? "animate-toast-out" : "animate-toast-in"} flex max-w-xs items-start gap-2.5 rounded-lg border px-3 py-2 shadow-md ${tone.box}`}
           >
             <span className={`mt-1 h-2 w-2 shrink-0 rounded-full ${tone.dot}`} />
             <div className="min-w-0 flex-1">

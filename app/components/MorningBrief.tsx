@@ -2379,7 +2379,7 @@ export function MorningBrief({
                 .map((s) => {
                   const pos = (s.dayPct ?? 0) >= 0;
                   return (
-                    <div key={s.etf} className="rounded-xl border border-line-soft bg-surface-2/50 p-3">
+                    <div key={s.etf} className="hover-lift rounded-xl border border-line-soft bg-surface-2/50 p-3">
                       <div className="flex items-baseline justify-between gap-2">
                         <span className="font-mono text-sm font-bold text-ink">{s.etf}</span>
                         <span className={`font-mono text-sm font-semibold ${s.dayPct == null ? "text-ink-3" : pos ? "text-pos" : "text-neg"}`}>

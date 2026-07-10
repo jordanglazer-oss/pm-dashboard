@@ -99,7 +99,7 @@ export function PortfolioXray() {
       </div>
       <div className="grid grid-cols-2 gap-3 sm:grid-cols-3 lg:grid-cols-6">
         {tiles.map((t) => (
-          <div key={t.label} className="rounded-lg border border-line-soft bg-surface-hover px-3 py-2.5">
+          <div key={t.label} className="hover-lift rounded-lg border border-line-soft bg-surface-hover px-3 py-2.5">
             <div className="text-[10px] font-semibold uppercase tracking-wider text-ink-3">{t.label}</div>
             <div className={`mt-1 text-lg font-bold tabular-nums ${t.accent || "text-ink"}`}>{t.value}</div>
           </div>
