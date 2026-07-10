@@ -63,6 +63,59 @@ function BackupHealthChip() {
 }
 
 /**
+ * Daily FactSet estimates-refresh indicator. Mirrors BackupHealthChip: polls
+ * /api/admin/estimates-health and shows when the analyst-estimate refresh
+ * (mean target + EPS FY+1 revisions) last ran, so a stalled refresh is visible.
+ */
+type EstimatesHealth = {
+  ok: boolean;
+  status?: "ok" | "warning" | "critical" | "unknown";
+  ageHours?: number | null;
+  lastRunAt?: string | null;
+  resolvedCount?: number;
+  updatedCount?: number;
+};
+function EstimatesHealthChip() {
+  const [h, setH] = useState<EstimatesHealth | null>(null);
+  useEffect(() => {
+    let alive = true;
+    const load = () =>
+      fetch("/api/admin/estimates-health")
+        .then((r) => r.json())
+        .then((d: EstimatesHealth) => { if (alive) setH(d); })
+        .catch(() => {});
+    load();
+    const id = setInterval(load, 10 * 60 * 1000); // re-check every 10 min
+    return () => { alive = false; clearInterval(id); };
+  }, []);
+
+  if (!h || h.ok === false || h.status === "unknown") return null; // couldn't check → stay quiet
+  const status = h.status ?? "ok";
+  const ageLabel =
+    h.ageHours == null ? "none"
+    : h.ageHours < 1 ? "<1h"
+    : h.ageHours < 48 ? `${Math.round(h.ageHours)}h`
+    : `${Math.round(h.ageHours / 24)}d`;
+  const textCls =
+    status === "ok" ? "text-ink-3"
+    : status === "warning" ? "text-warn font-semibold"
+    : "text-neg font-bold";
+  const dotCls =
+    status === "ok" ? "bg-pos"
+    : status === "warning" ? "bg-warn"
+    : "bg-neg animate-pulse";
+  const title = h.lastRunAt
+    ? `FactSet estimates last refreshed: ${new Date(h.lastRunAt).toLocaleString()} (${ageLabel} ago). ${h.resolvedCount ?? 0} tickers, ${h.updatedCount ?? 0} updated. Status: ${status}.`
+    : "FactSet estimates have never been refreshed — the daily job may not have run yet.";
+  return (
+    <span className={`flex items-center gap-1 ${textCls}`} title={title}>
+      <span className={`inline-block w-1.5 h-1.5 rounded-full ${dotCls}`} />
+      {status === "critical" ? `⚠ Estimates ${ageLabel}` : `Estimates ${ageLabel}`}
+    </span>
+  );
+}
+
+/**
  * Anthropic credit-health indicator. Polls /api/anthropic-status and stays
  * completely silent while healthy; renders a prominent pulsing red chip only
  * when a real API call has been rejected for lack of credit. Substitutes for
@@ -413,6 +466,7 @@ export function Navigation() {
         <div className="ml-auto flex items-center gap-3">
           <AnthropicCreditChip />
           <BackupHealthChip />
+          <EstimatesHealthChip />
           <Link href="/admin/health" className="text-ink-3 hover:text-ink transition-colors">
             health
           </Link>

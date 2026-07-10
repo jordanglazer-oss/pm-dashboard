@@ -5,6 +5,7 @@ import { blobConfigured } from "@/app/lib/blob-store";
 import { writeBackupBlob, pruneBackupBlobs } from "@/app/lib/backup-store";
 import { pruneStashes } from "@/app/lib/stash-prune";
 import { captureLiveHedgingSnapshot } from "@/app/lib/hedging";
+import { refreshFactsetEstimates } from "@/app/lib/estimates-refresh";
 
 // Dead pre-operation rollback stashes older than this are auto-purged each
 // nightly run so Redis self-maintains and never creeps back toward OOM.
@@ -225,6 +226,24 @@ export async function GET(req: NextRequest) {
       hedgingSnapshot = { captured: false, error: msg };
     }
 
+    // ── 4c. Refresh lightweight FactSet analyst estimates ────────────
+    //        Mean target price + analyst count + EPS FY+1 up/down revisions
+    //        for every Portfolio/Watchlist holding, WITHOUT a rescore (~1-2
+    //        batched FactSet calls). Keeps the Change Monitor revisions +
+    //        analyst-consensus category fresh daily. Best-effort: a FactSet
+    //        hiccup must not fail the backup. ──
+    let estimatesRefresh:
+      | { ran: true; tickerCount: number; resolvedCount: number; updatedCount: number; error?: string }
+      | { ran: false; error: string };
+    try {
+      const res = await refreshFactsetEstimates();
+      estimatesRefresh = { ran: true, tickerCount: res.tickerCount, resolvedCount: res.resolvedCount, updatedCount: res.updatedCount, error: res.error };
+    } catch (e) {
+      const msg = e instanceof Error ? e.message : String(e);
+      console.error("[backup-redis] FactSet estimates refresh failed (backup still ok):", msg);
+      estimatesRefresh = { ran: false, error: msg };
+    }
+
     // ── 5. Run invariant check inline ────────────────────────────────
     // Best-effort: a thrown invariant check must not turn a successful
     // backup into a failed response. We log + carry on if it errors.
@@ -260,6 +279,7 @@ export async function GET(req: NextRequest) {
       purgedLegacyRedisBackups: legacyRedisBackups.length,
       stashesPurged,
       hedgingSnapshot,
+      estimatesRefresh,
       invariantCheck: invariantSummary,
       elapsedMs: Date.now() - startedAt,
     });
