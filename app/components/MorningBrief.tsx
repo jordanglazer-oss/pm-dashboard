@@ -641,6 +641,8 @@ export function MorningBrief({
   onUpdateMarketData,
 }: Props) {
   const [generating, setGenerating] = useState(false);
+  // Which view is showing: the generated "brief" (default) or the "input" form.
+  const [briefMode, setBriefMode] = useState<"brief" | "input">("brief");
   const [error, setError] = useState("");
   const [liveLoading, setLiveLoading] = useState(false);
   const [liveFields, setLiveFields] = useState<Record<string, LiveStatus>>({});
@@ -1107,6 +1109,45 @@ export function MorningBrief({
 
   return (
     <>
+      {/* Header — always visible; the Brief / Daily Input toggle switches the content below. */}
+      <header className="flex items-start justify-between gap-3 flex-wrap">
+        <div>
+          <p className="text-xs font-bold uppercase tracking-[0.18em] text-ink-3">{brief?.date || marketData.date}</p>
+          <h1 className="mt-1 text-2xl sm:text-4xl font-semibold tracking-tight">Morning Brief</h1>
+        </div>
+        <div className="flex items-center gap-3 mt-2">
+          {brief?.generatedAt && (
+            <span className="text-sm text-ink-faint">
+              Generated {new Date(brief.generatedAt).toLocaleString("en-US", { month: "short", day: "numeric", hour: "numeric", minute: "2-digit", hour12: true })}
+            </span>
+          )}
+          <button
+            onClick={() => generateBrief(true)}
+            disabled={generating}
+            className="inline-flex items-center gap-1.5 rounded-control border border-line bg-surface px-3 py-1.5 text-sm font-semibold text-ink-2 hover:bg-surface-2 disabled:opacity-50 transition-colors"
+            title="Regenerate the brief from the current inputs"
+          >
+            <svg className={`w-3.5 h-3.5 ${generating ? "animate-spin" : ""}`} fill="none" stroke="currentColor" strokeWidth="2" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" d="M4 4v5h.582m15.356 2A8.001 8.001 0 004.582 9m0 0H9m11 11v-5h-.581m0 0a8.003 8.003 0 01-15.357-2m15.357 2H15" /></svg>
+            {generating ? "Generating…" : "Regenerate"}
+          </button>
+        </div>
+      </header>
+
+      {/* Brief / Daily Input toggle */}
+      <div className="inline-flex items-center gap-0.5 rounded-control border border-line bg-surface-2 p-0.5 w-fit">
+        {(["brief", "input"] as const).map((m) => (
+          <button
+            key={m}
+            onClick={() => setBriefMode(m)}
+            className={`rounded-[6px] px-3.5 py-1.5 text-sm font-semibold transition-colors ${briefMode === m ? "bg-ink text-white shadow-sm" : "text-ink-2 hover:text-ink"}`}
+          >
+            {m === "brief" ? "Brief" : "Daily Input"}
+          </button>
+        ))}
+      </div>
+
+      {briefMode === "input" && (
+      <>
       {/* Editable Market & Sentiment Inputs */}
       <section className="rounded-2xl border border-line bg-white p-4 md:p-5 shadow-sm overflow-hidden">
         <div className="flex items-center gap-3 mb-4 flex-wrap">
@@ -1642,6 +1683,8 @@ export function MorningBrief({
           </button>
         </div>
       </section>
+      </>
+      )}
 
       {error && (
         <div className="rounded-xl border border-neg-border bg-neg-soft px-4 py-3 text-sm text-neg">
@@ -1655,19 +1698,8 @@ export function MorningBrief({
         </div>
       )}
 
-      {/* Header */}
-      <header>
-        <h1 className="text-2xl sm:text-4xl font-semibold tracking-tight">Morning Brief</h1>
-        <p className="mt-2 text-base sm:text-xl text-ink-3 flex flex-wrap items-baseline gap-x-3">
-          <span>{brief?.date || marketData.date}</span>
-          {brief?.generatedAt && (
-            <span className="text-sm sm:text-base text-ink-faint">
-              Generated {new Date(brief.generatedAt).toLocaleString("en-US", { month: "short", day: "numeric", hour: "numeric", minute: "2-digit", hour12: true })}
-            </span>
-          )}
-        </p>
-      </header>
-
+      {briefMode === "brief" && (
+      <>
       {/* Bottom Line */}
       <section className="relative rounded-2xl bg-warn-soft border border-warn-border p-5 shadow-sm">
         {generating && <LoadingOverlay message="Claude is analyzing markets..." />}
@@ -2334,6 +2366,8 @@ export function MorningBrief({
           Top Actions Today one-liners near the top of the brief. forwardActions
           is still generated (and still feeds topActionsToday) — just no longer
           rendered as a separate lengthy panel. */}
+      </>
+      )}
     </>
   );
 }
