@@ -686,7 +686,7 @@ function FundDataPanels({ fundData, ticker, onHoldingsUpdate }: { fundData: Fund
         {fundData.performance && (
           <div className="rounded-card border border-line bg-white p-5 shadow-sm">
             <h2 className="text-base font-bold text-ink mb-4">Performance</h2>
-            <div className="grid grid-cols-4 gap-2 text-center">
+            <div className="grid grid-cols-2 sm:grid-cols-4 gap-2 text-center">
               {[
                 { label: "1M", val: fundData.performance.oneMonth },
                 { label: "3M", val: fundData.performance.threeMonth },

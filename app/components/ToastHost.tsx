@@ -61,7 +61,7 @@ export function ToastHost() {
           <div
             key={t.id}
             role="status"
-            className={`${t.leaving ? "animate-toast-out" : "animate-toast-in"} flex max-w-xs items-start gap-2.5 rounded-lg border px-3 py-2 shadow-md ${tone.box}`}
+            className={`${t.leaving ? "animate-toast-out" : "animate-toast-in"} flex max-w-[calc(100vw-2rem)] items-start gap-2.5 rounded-lg border px-3 py-2 shadow-md sm:max-w-xs ${tone.box}`}
           >
             <span className={`mt-1 h-2 w-2 shrink-0 rounded-full ${tone.dot}`} />
             <div className="min-w-0 flex-1">
