@@ -2388,79 +2388,92 @@ export default function ResearchPage() {
             )}
           </div>
 
-          {/* Newton sector views — compact inline toggles */}
-          <div className="mt-5 border-t border-line-soft pt-4">
-            <div className="flex items-center gap-3 mb-3">
-              <h4 className="text-sm font-bold text-accent">Newton&apos;s Sector Views</h4>
-              <span className="text-[10px] text-ink-3">Click to toggle OW / N / UW</span>
-            </div>
-            <div className="flex flex-wrap gap-2">
-              {(state.newtonSectors ?? GICS_SECTORS.map((s) => ({ sector: s, view: "neutral" as SectorView }))).map((sv) => {
-                const cycle = () => {
-                  const next: SectorView =
-                    sv.view === "neutral" ? "overweight" : sv.view === "overweight" ? "underweight" : "neutral";
-                  const updated = (state.newtonSectors ?? GICS_SECTORS.map((s) => ({ sector: s, view: "neutral" as SectorView }))).map((e) =>
-                    e.sector === sv.sector ? { ...e, view: next } : e
-                  );
-                  save({ ...state, newtonSectors: updated });
-                };
-                const bg =
-                  sv.view === "overweight"
-                    ? "bg-pos-soft text-pos border-pos-border"
-                    : sv.view === "underweight"
-                    ? "bg-neg-soft text-neg border-neg-border"
-                    : "bg-surface-2 text-ink-3 border-line";
-                const badge =
-                  sv.view === "overweight" ? "OW" : sv.view === "underweight" ? "UW" : "N";
-                return (
-                  <button
-                    key={sv.sector}
-                    onClick={cycle}
-                    className={`rounded-full border px-3 py-1 text-xs font-semibold transition-all hover:shadow-sm select-none ${bg}`}
-                    title={`${sv.sector}: ${sv.view} — click to cycle`}
-                  >
-                    {sv.sector} <span className="font-bold ml-0.5">{badge}</span>
-                  </button>
-                );
-              })}
-            </div>
-          </div>
+        </CollapsibleSection>
 
-          {/* Lee sector views — same toggle pattern as Newton */}
-          <div className="mt-4 border-t border-line-soft pt-4">
-            <div className="flex items-center gap-3 mb-3">
-              <h4 className="text-sm font-bold text-warn">Lee&apos;s Sector Views</h4>
-              <span className="text-[10px] text-ink-3">Click to toggle OW / N / UW</span>
-            </div>
-            <div className="flex flex-wrap gap-2">
-              {(state.leeSectors ?? GICS_SECTORS.map((s) => ({ sector: s, view: "neutral" as SectorView }))).map((sv) => {
-                const cycle = () => {
-                  const next: SectorView =
-                    sv.view === "neutral" ? "overweight" : sv.view === "overweight" ? "underweight" : "neutral";
-                  const updated = (state.leeSectors ?? GICS_SECTORS.map((s) => ({ sector: s, view: "neutral" as SectorView }))).map((e) =>
-                    e.sector === sv.sector ? { ...e, view: next } : e
+        {/* ── Sector Views (Newton + Lee) — joint tile ── */}
+        <CollapsibleSection
+          prefKey="research.sectorViews"
+          className="border-line"
+          titleClass="text-xl font-bold"
+          title={<>Sector Views</>}
+          subtitle={<>Newton&apos;s &amp; Lee&apos;s sector tilts — click any chip to cycle OW / N / UW. These feed the morning brief.</>}
+          right={<span className="text-sm text-ink-3">2 sources</span>}
+        >
+          <div className="grid gap-5 lg:grid-cols-2">
+            {/* Newton sector views */}
+            <div>
+              <div className="flex items-center gap-3 mb-3">
+                <h4 className="text-sm font-bold text-accent">Newton&apos;s Sector Views</h4>
+                <span className="text-[10px] text-ink-3">Click to toggle OW / N / UW</span>
+              </div>
+              <div className="flex flex-wrap gap-2">
+                {(state.newtonSectors ?? GICS_SECTORS.map((s) => ({ sector: s, view: "neutral" as SectorView }))).map((sv) => {
+                  const cycle = () => {
+                    const next: SectorView =
+                      sv.view === "neutral" ? "overweight" : sv.view === "overweight" ? "underweight" : "neutral";
+                    const updated = (state.newtonSectors ?? GICS_SECTORS.map((s) => ({ sector: s, view: "neutral" as SectorView }))).map((e) =>
+                      e.sector === sv.sector ? { ...e, view: next } : e
+                    );
+                    save({ ...state, newtonSectors: updated });
+                  };
+                  const bg =
+                    sv.view === "overweight"
+                      ? "bg-pos-soft text-pos border-pos-border"
+                      : sv.view === "underweight"
+                      ? "bg-neg-soft text-neg border-neg-border"
+                      : "bg-surface-2 text-ink-3 border-line";
+                  const badge =
+                    sv.view === "overweight" ? "OW" : sv.view === "underweight" ? "UW" : "N";
+                  return (
+                    <button
+                      key={sv.sector}
+                      onClick={cycle}
+                      className={`rounded-full border px-3 py-1 text-xs font-semibold transition-all hover:shadow-sm select-none ${bg}`}
+                      title={`${sv.sector}: ${sv.view} — click to cycle`}
+                    >
+                      {sv.sector} <span className="font-bold ml-0.5">{badge}</span>
+                    </button>
                   );
-                  save({ ...state, leeSectors: updated });
-                };
-                const bg =
-                  sv.view === "overweight"
-                    ? "bg-pos-soft text-pos border-pos-border"
-                    : sv.view === "underweight"
-                    ? "bg-neg-soft text-neg border-neg-border"
-                    : "bg-surface-2 text-ink-3 border-line";
-                const badge =
-                  sv.view === "overweight" ? "OW" : sv.view === "underweight" ? "UW" : "N";
-                return (
-                  <button
-                    key={sv.sector}
-                    onClick={cycle}
-                    className={`rounded-full border px-3 py-1 text-xs font-semibold transition-all hover:shadow-sm select-none ${bg}`}
-                    title={`${sv.sector}: ${sv.view} — click to cycle`}
-                  >
-                    {sv.sector} <span className="font-bold ml-0.5">{badge}</span>
-                  </button>
-                );
-              })}
+                })}
+              </div>
+            </div>
+
+            {/* Lee sector views */}
+            <div>
+              <div className="flex items-center gap-3 mb-3">
+                <h4 className="text-sm font-bold text-warn">Lee&apos;s Sector Views</h4>
+                <span className="text-[10px] text-ink-3">Click to toggle OW / N / UW</span>
+              </div>
+              <div className="flex flex-wrap gap-2">
+                {(state.leeSectors ?? GICS_SECTORS.map((s) => ({ sector: s, view: "neutral" as SectorView }))).map((sv) => {
+                  const cycle = () => {
+                    const next: SectorView =
+                      sv.view === "neutral" ? "overweight" : sv.view === "overweight" ? "underweight" : "neutral";
+                    const updated = (state.leeSectors ?? GICS_SECTORS.map((s) => ({ sector: s, view: "neutral" as SectorView }))).map((e) =>
+                      e.sector === sv.sector ? { ...e, view: next } : e
+                    );
+                    save({ ...state, leeSectors: updated });
+                  };
+                  const bg =
+                    sv.view === "overweight"
+                      ? "bg-pos-soft text-pos border-pos-border"
+                      : sv.view === "underweight"
+                      ? "bg-neg-soft text-neg border-neg-border"
+                      : "bg-surface-2 text-ink-3 border-line";
+                  const badge =
+                    sv.view === "overweight" ? "OW" : sv.view === "underweight" ? "UW" : "N";
+                  return (
+                    <button
+                      key={sv.sector}
+                      onClick={cycle}
+                      className={`rounded-full border px-3 py-1 text-xs font-semibold transition-all hover:shadow-sm select-none ${bg}`}
+                      title={`${sv.sector}: ${sv.view} — click to cycle`}
+                    >
+                      {sv.sector} <span className="font-bold ml-0.5">{badge}</span>
+                    </button>
+                  );
+                })}
+              </div>
             </div>
           </div>
         </CollapsibleSection>
