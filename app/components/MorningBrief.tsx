@@ -2139,7 +2139,7 @@ export function MorningBrief({
         const breadth50Val = activeForward?.breadth50Wk?.value ?? null;
         return (
       <>
-      <section className="grid gap-4 lg:grid-cols-2">
+      <section className="grid gap-4 lg:grid-cols-3">
         <div className="rounded-2xl border border-line bg-white p-4 shadow-sm">
           <div className="flex items-center justify-between gap-3">
             <div className="flex items-center gap-2">
@@ -2190,15 +2190,13 @@ export function MorningBrief({
           </div>
           <ClampText text={volatilityAnalysis} className="mt-3" />
         </div>
-      </section>
 
-      {/* Breadth & Flows */}
-      <section className="grid gap-4 lg:grid-cols-2">
+        {/* Breadth & Structure — third card in the row (mockup). */}
         <div className="rounded-2xl border border-line bg-white p-4 shadow-sm">
           <div className="flex items-center justify-between gap-3">
             <div className="flex items-center gap-2">
               <span className="text-base">📊</span>
-              <h3 className="text-base font-semibold">Breadth & Market Structure</h3>
+              <h3 className="text-base font-semibold">Breadth &amp; Structure</h3>
             </div>
             <SignalPill tone={breadth200Val != null && breadth200Val <= 50 ? "red" : breadth200Val != null && breadth200Val >= 65 ? "green" : "amber"}>
               {breadth200Val != null && breadth200Val <= 50 ? "Weak" : breadth200Val != null && breadth200Val >= 65 ? "Healthy" : "Mixed"}
@@ -2227,14 +2225,59 @@ export function MorningBrief({
         );
       })()}
 
-      {/* Hedging Window */}
-      <HedgingIndicator
-        vix={activeForward?.vixWeek?.value ?? 20}
-        termStructure={marketData.termStructure}
-        fearGreed={activeForward?.fearGreed?.value ?? marketData.fearGreed}
-        hedgingAnalysis={hedgingAnalysis}
-        horizons={marketRegime?.horizons}
-      />
+      {/* Portfolio Risk Scan (left, wider) + Hedging Window (right) — 2-col
+          row matching the mockup. Risk Scan hides when empty; the Hedging
+          Window always renders. */}
+      <section className="grid gap-4 lg:grid-cols-5 items-start">
+        {riskScan && riskScan.length > 0 ? (
+          <div className="lg:col-span-3 rounded-2xl border border-line bg-white p-4 shadow-sm">
+            <div className="flex items-center gap-2 mb-3">
+              <span className="text-base">🛡️</span>
+              <h3 className="text-base font-semibold">Portfolio Risk Scan</h3>
+              <SignalPill tone="red">{riskScan.length} flagged</SignalPill>
+            </div>
+            <div className="space-y-2">
+              {riskScan.map((item, i) => {
+                const bgClass =
+                  item.priority === "High"
+                    ? "border-l-neg bg-neg-soft/30"
+                    : item.priority === "Medium-High"
+                    ? "border-l-warn bg-warn-soft/30"
+                    : "border-l-line bg-surface-2/30";
+                const tonePill =
+                  item.priority === "High"
+                    ? "red" as const
+                    : item.priority === "Medium-High"
+                    ? "amber" as const
+                    : "gray" as const;
+                return (
+                  <div key={i} className={`rounded-xl border-l-4 p-3 ${bgClass}`}>
+                    <div className="flex flex-wrap items-center gap-2 mb-1">
+                      <span className="font-mono text-sm font-bold">{displayTicker(item.ticker)}</span>
+                      <SignalPill tone={tonePill}>{item.priority}</SignalPill>
+                      <span className="text-sm text-ink-2">{item.summary}</span>
+                    </div>
+                    <div className="text-sm text-accent font-medium">&rarr; {item.action}</div>
+                  </div>
+                );
+              })}
+            </div>
+          </div>
+        ) : (
+          <div className="lg:col-span-3" />
+        )}
+
+        {/* Hedging Window */}
+        <div className="lg:col-span-2">
+          <HedgingIndicator
+            vix={activeForward?.vixWeek?.value ?? 20}
+            termStructure={marketData.termStructure}
+            fearGreed={activeForward?.fearGreed?.value ?? marketData.fearGreed}
+            hedgingAnalysis={hedgingAnalysis}
+            horizons={marketRegime?.horizons}
+          />
+        </div>
+      </section>
 
       {/* Sector Rotation */}
       {sectorRotation && (
@@ -2263,42 +2306,6 @@ export function MorningBrief({
             </div>
           </div>
           <ClampText text={sectorRotation.pmImplication} className="mt-3" textClassName="text-sm italic leading-6 text-ink-3" lines={2} />
-        </section>
-      )}
-
-      {/* Portfolio Risk Scan */}
-      {riskScan && riskScan.length > 0 && (
-        <section className="rounded-2xl border border-line bg-white p-4 shadow-sm">
-          <div className="flex items-center gap-2 mb-3">
-            <span className="text-base">🛡️</span>
-            <h3 className="text-base font-semibold">Portfolio Risk Scan</h3>
-          </div>
-          <div className="space-y-2">
-            {riskScan.map((item, i) => {
-              const bgClass =
-                item.priority === "High"
-                  ? "border-l-red-400 bg-neg-soft/30"
-                  : item.priority === "Medium-High"
-                  ? "border-l-amber-400 bg-warn-soft/30"
-                  : "border-l-slate-300 bg-surface-2/30";
-              const tonePill =
-                item.priority === "High"
-                  ? "red" as const
-                  : item.priority === "Medium-High"
-                  ? "amber" as const
-                  : "gray" as const;
-              return (
-                <div key={i} className={`rounded-xl border-l-4 p-3 ${bgClass}`}>
-                  <div className="flex flex-wrap items-center gap-2 mb-1">
-                    <span className="font-mono text-sm font-bold">{displayTicker(item.ticker)}</span>
-                    <SignalPill tone={tonePill}>{item.priority}</SignalPill>
-                    <span className="text-sm text-ink-2">{item.summary}</span>
-                  </div>
-                  <div className="text-sm text-accent font-medium">&rarr; {item.action}</div>
-                </div>
-              );
-            })}
-          </div>
         </section>
       )}
 
