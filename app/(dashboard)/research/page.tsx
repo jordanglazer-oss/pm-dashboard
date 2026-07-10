@@ -716,6 +716,15 @@ export default function ResearchPage() {
   const fewView = uiPrefs["research.few.view"] || "rows";
   const alphaView = uiPrefs["research.alpha.view"] || "rows";
   const isInList = (t: string) => scoredStocks.some((s) => s.ticker === t);
+  // Which synthesis picks / cautions are expanded (keyed by ticker, or
+  // "caution:<i>"). Collapsed by default so the synthesis stays compact.
+  const [expandedPicks, setExpandedPicks] = useState<Set<string>>(() => new Set());
+  const isPickExpanded = (k: string) => expandedPicks.has(k);
+  const togglePickExpand = (k: string) => setExpandedPicks((prev) => {
+    const n = new Set(prev);
+    if (n.has(k)) n.delete(k); else n.add(k);
+    return n;
+  });
 
   // Toggle handlers — read the current sort object directly (no functional
   // setState since these sorts are now derived from uiPrefs rather than
@@ -2017,6 +2026,37 @@ export default function ResearchPage() {
                 </div>
               );
             };
+            // Compact pick row: ticker · N lists + a one-line thesis; click to
+            // expand the references (source pills), conviction, and regime fit.
+            const PickRow = ({ p, accent }: { p: SynthesisPick; accent: "violet" | "accent" | "ink" }) => {
+              const expanded = isPickExpanded(p.ticker);
+              const tickerCls = accent === "violet" ? "text-violet" : accent === "accent" ? "text-accent" : "text-ink";
+              return (
+                <li className="rounded-lg border border-line-soft bg-white">
+                  <button onClick={() => togglePickExpand(p.ticker)} className="w-full text-left px-3 py-2 flex items-start gap-2 hover:bg-surface-2/40 transition-colors rounded-lg">
+                    <div className="min-w-0 flex-1">
+                      <div className="flex items-baseline gap-1.5">
+                        <span className={`font-mono font-bold ${tickerCls}`}>{displayTicker(p.ticker)}</span>
+                        <span className="text-xs text-ink-3">· {p.sourceCount} {p.sourceCount === 1 ? "list" : "lists"}</span>
+                      </div>
+                      <p className={`text-sm leading-6 text-ink-2 ${expanded ? "" : "line-clamp-2"}`}>{p.thesis}</p>
+                    </div>
+                    <svg className={`w-4 h-4 mt-0.5 shrink-0 text-ink-faint transition-transform ${expanded ? "rotate-180" : ""}`} fill="none" stroke="currentColor" strokeWidth="2" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" d="M19 9l-7 7-7-7" /></svg>
+                  </button>
+                  {expanded && (
+                    <div className="px-3 pb-3 space-y-2">
+                      <div className="flex items-center gap-1.5 flex-wrap">
+                        <ConvictionBadge p={p} />
+                        {p.sources.map((s) => (
+                          <span key={s} className="text-[10px] rounded-full bg-surface-2 text-ink-2 px-2 py-0.5">{s}</span>
+                        ))}
+                      </div>
+                      <RegimeFitBlock p={p} />
+                    </div>
+                  )}
+                </li>
+              );
+            };
             return (
               <div className="space-y-4">
                 {/* Summary line + regime tag */}
@@ -2054,28 +2094,9 @@ export default function ResearchPage() {
                     spot multi-source picks the regime doesn't favor. */}
                 {synthesis.topPicks.length > 0 && (
                   <div>
-                    <h4 className="text-xs font-bold uppercase tracking-wider text-violet mb-2">
-                      Top Picks <span className="text-ink-3 font-normal">· cross-source overlap (research-driven)</span>
-                    </h4>
-                    <ul className="space-y-3">
-                      {synthesis.topPicks.map((p) => (
-                        <li key={p.ticker} className="rounded-xl border border-violet-soft bg-white p-3 shadow-sm">
-                          <div className="flex items-center gap-2 flex-wrap mb-1.5">
-                            <span className="font-mono font-bold text-base text-violet">${displayTicker(p.ticker)}</span>
-                            <span className="text-[10px] font-bold rounded-full bg-violet text-white px-2 py-0.5">
-                              {p.sourceCount} sources
-                            </span>
-                            <ConvictionBadge p={p} />
-                            {p.sources.map((s) => (
-                              <span key={s} className="text-[10px] rounded-full bg-surface-2 text-ink-2 px-2 py-0.5">
-                                {s}
-                              </span>
-                            ))}
-                          </div>
-                          <p className="text-sm leading-6 text-ink-2">{p.thesis}</p>
-                          <RegimeFitBlock p={p} />
-                        </li>
-                      ))}
+                    <h4 className="text-xs font-bold uppercase tracking-wider text-violet mb-2">Top Picks</h4>
+                    <ul className="space-y-2">
+                      {synthesis.topPicks.map((p) => <PickRow key={p.ticker} p={p} accent="violet" />)}
                     </ul>
                   </div>
                 )}
@@ -2087,25 +2108,9 @@ export default function ResearchPage() {
                     picks above. */}
                 {synthesis.regimeAlignedHighlights && synthesis.regimeAlignedHighlights.length > 0 && (
                   <div>
-                    <h4 className="text-xs font-bold uppercase tracking-wider text-accent mb-2">
-                      Regime-Aligned Highlights <span className="text-ink-3 font-normal">· single-source, opinion-driven by current environment</span>
-                    </h4>
-                    <ul className="space-y-2.5">
-                      {synthesis.regimeAlignedHighlights.map((p) => (
-                        <li key={p.ticker} className="rounded-xl border border-accent-border bg-white p-3 shadow-sm">
-                          <div className="flex items-center gap-2 flex-wrap mb-1.5">
-                            <span className="font-mono font-bold text-base text-accent">${displayTicker(p.ticker)}</span>
-                            <ConvictionBadge p={p} />
-                            {p.sources.map((s) => (
-                              <span key={s} className="text-[10px] rounded-full bg-surface-2 text-ink-2 px-2 py-0.5">
-                                {s}
-                              </span>
-                            ))}
-                          </div>
-                          <p className="text-sm leading-6 text-ink-2">{p.thesis}</p>
-                          <RegimeFitBlock p={p} />
-                        </li>
-                      ))}
+                    <h4 className="text-xs font-bold uppercase tracking-wider text-accent mb-2">Regime-Aligned</h4>
+                    <ul className="space-y-2">
+                      {synthesis.regimeAlignedHighlights.map((p) => <PickRow key={p.ticker} p={p} accent="accent" />)}
                     </ul>
                   </div>
                 )}
@@ -2113,38 +2118,58 @@ export default function ResearchPage() {
                 {/* Honorable mentions — single source, weaker regime fit. */}
                 {synthesis.honorableMentions.length > 0 && (
                   <div>
-                    <h4 className="text-xs font-bold uppercase tracking-wider text-ink-2 mb-2">
-                      Honorable Mentions <span className="text-ink-3 font-normal">· single-source, regime-neutral</span>
-                    </h4>
-                    <ul className="space-y-2">
-                      {synthesis.honorableMentions.map((p) => (
-                        <li key={p.ticker} className="rounded-lg border border-line-soft bg-white/70 p-2.5">
-                          <div className="flex items-center gap-2 flex-wrap mb-1">
-                            <span className="font-mono font-bold text-sm">${displayTicker(p.ticker)}</span>
-                            <ConvictionBadge p={p} />
-                            {p.sources.map((s) => (
-                              <span key={s} className="text-[10px] rounded-full bg-surface-2 text-ink-2 px-2 py-0.5">
-                                {s}
-                              </span>
-                            ))}
-                          </div>
-                          <p className="text-xs leading-5 text-ink-2">{p.thesis}</p>
-                          <RegimeFitBlock p={p} />
-                        </li>
-                      ))}
-                    </ul>
+                    <h4 className="text-xs font-bold uppercase tracking-wider text-warn mb-2">Honorable Mentions</h4>
+                    <div className="flex flex-wrap gap-1.5">
+                      {synthesis.honorableMentions.map((p) => {
+                        const open = isPickExpanded(p.ticker);
+                        return (
+                          <button key={p.ticker} onClick={() => togglePickExpand(p.ticker)} className={`font-mono text-xs font-bold rounded-md border px-2 py-1 transition-colors ${open ? "bg-ink text-white border-ink" : "bg-white text-ink border-line hover:bg-surface-2"}`} title="Click to expand references + fit">
+                            {displayTicker(p.ticker)}
+                          </button>
+                        );
+                      })}
+                    </div>
+                    {synthesis.honorableMentions.map((p) => isPickExpanded(p.ticker) ? (
+                      <div key={p.ticker} className="mt-2 rounded-lg border border-line-soft bg-white p-3">
+                        <div className="flex items-center gap-1.5 flex-wrap mb-1">
+                          <span className="font-mono font-bold text-ink">{displayTicker(p.ticker)}</span>
+                          <span className="text-xs text-ink-3">· {p.sourceCount} {p.sourceCount === 1 ? "list" : "lists"}</span>
+                          <ConvictionBadge p={p} />
+                          {p.sources.map((s) => (
+                            <span key={s} className="text-[10px] rounded-full bg-surface-2 text-ink-2 px-2 py-0.5">{s}</span>
+                          ))}
+                        </div>
+                        <p className="text-sm leading-6 text-ink-2">{p.thesis}</p>
+                        <RegimeFitBlock p={p} />
+                      </div>
+                    ) : null)}
                   </div>
                 )}
 
                 </div>{/* /pick columns */}
 
-                {/* Cautions */}
+                {/* Cautions — compact: a ticker chip per caution; click to reveal its note. */}
                 {synthesis.cautions && synthesis.cautions.length > 0 && (
-                  <div className="rounded-lg border border-warn-border bg-warn-soft p-3">
-                    <h4 className="text-xs font-bold uppercase tracking-wider text-warn mb-1">Cautions</h4>
-                    <ul className="text-xs leading-5 text-warn list-disc list-inside space-y-0.5">
-                      {synthesis.cautions.map((c, i) => <li key={i}>{c}</li>)}
-                    </ul>
+                  <div className="rounded-lg border border-warn-border bg-warn-soft/60 p-3">
+                    <h4 className="text-xs font-bold uppercase tracking-wider text-warn mb-2">
+                      Cautions <span className="font-normal normal-case text-warn/70">· {synthesis.cautions.length}</span>
+                    </h4>
+                    <div className="flex flex-wrap gap-1.5">
+                      {synthesis.cautions.map((c, i) => {
+                        const m = c.match(/^\$?([A-Z][A-Z.]{0,5})\b/);
+                        const label = m ? m[1] : `Note ${i + 1}`;
+                        const key = `caution:${i}`;
+                        const open = isPickExpanded(key);
+                        return (
+                          <button key={i} onClick={() => togglePickExpand(key)} className={`text-[11px] font-semibold rounded-full border px-2 py-0.5 transition-colors ${open ? "bg-warn text-white border-warn" : "bg-white text-warn border-warn-border hover:bg-warn-soft"}`} title="Click to show this caution">
+                            {label}
+                          </button>
+                        );
+                      })}
+                    </div>
+                    {synthesis.cautions.map((c, i) => isPickExpanded(`caution:${i}`) ? (
+                      <p key={i} className="mt-2 text-xs leading-5 text-warn">{c}</p>
+                    ) : null)}
                   </div>
                 )}
               </div>
