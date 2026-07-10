@@ -3,6 +3,7 @@ import { Navigation } from "../components/Navigation";
 import { PortfolioTabs } from "../components/PortfolioTabs";
 import { ResearchTabs } from "../components/ResearchTabs";
 import { ScrollToTop } from "../components/ScrollToTop";
+import { ToastHost } from "../components/ToastHost";
 import { AuthGate } from "../components/AuthGate";
 
 export default function DashboardLayout({
@@ -18,6 +19,7 @@ export default function DashboardLayout({
         <ResearchTabs />
         {children}
         <ScrollToTop />
+        <ToastHost />
       </Providers>
     </AuthGate>
   );

@@ -126,3 +126,35 @@ table {
 @media (prefers-reduced-motion: reduce) {
   .animate-section-reveal { animation: none; }
 }
+
+/* Transient toast slide-in (bottom-right). */
+@keyframes toast-in {
+  from { opacity: 0; transform: translateY(8px) scale(0.98); }
+  to   { opacity: 1; transform: translateY(0) scale(1); }
+}
+.animate-toast-in {
+  animation: toast-in 0.2s ease-out;
+}
+
+/* Unified keyboard focus ring — a calm accent outline on any interactive
+   element reached by keyboard (mouse clicks don't trigger :focus-visible), so
+   tabbing through the app is legible without cluttering pointer users. */
+:where(a, button, [role="button"], input, select, textarea, [tabindex]):focus-visible {
+  outline: 2px solid var(--color-accent-border);
+  outline-offset: 2px;
+  border-radius: 4px;
+}
+
+/* Opt-in subtle lift for genuinely-clickable cards/tiles. */
+.hover-lift {
+  transition: box-shadow 0.15s ease, transform 0.15s ease;
+}
+.hover-lift:hover {
+  box-shadow: 0 4px 14px -6px rgb(16 21 28 / 0.14);
+  transform: translateY(-1px);
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .animate-toast-in { animation: none; }
+  .hover-lift:hover { transform: none; }
+}
