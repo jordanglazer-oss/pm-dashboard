@@ -693,6 +693,10 @@ export type MorningBrief = {
     lagging: string[];
     pmImplication: string;
   };
+  /** Live per-sector ETF day performance for the Sector Rotation tile grid
+   *  (server-computed, not AI-generated). Absent on old briefs → UI falls back
+   *  to the leading/lagging lists. */
+  sectorPerformance?: { sector: string; etf: string; dayPct: number | null }[];
   riskScan?: {
     ticker: string;
     priority: "High" | "Medium-High" | "Medium" | "Low-Medium";

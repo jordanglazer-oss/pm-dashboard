@@ -55,14 +55,18 @@ const SECTOR_ETFS: Record<string, string> = {
   "Real Estate": "XLRE",
 };
 
-async function fetchSectorPerformance(): Promise<string> {
+type SectorPerf = { sector: string; etf: string; dayPct: number | null };
+
+async function fetchSectorPerformance(): Promise<{ text: string; sectors: SectorPerf[] }> {
   const entries = Object.entries(SECTOR_ETFS);
+  const empty = { text: "Sector data unavailable", sectors: [] as SectorPerf[] };
 
   // FactSet FIRST (authoritative) — every SPDR sector ETF resolves via <ETF>-US.
   // One batched call: current price + 1-day + 1-month total return (div/split
   // adjusted). Null-safe: if the 1-day return form isn't valid it renders blank
   // and we still show 1M + price. Falls through to Yahoo when FactSet/relay is
-  // down or returns nothing.
+  // down or returns nothing. Returns BOTH the prompt text and structured
+  // per-sector day % (for the brief UI's Sector Rotation tile grid).
   if (factsetConfigured()) {
     try {
       const ids = entries.map(([, etf]) => `${etf}-US`);
@@ -71,19 +75,20 @@ async function fetchSectorPerformance(): Promise<string> {
         const v = row?.[f];
         return typeof v === "number" ? v : null;
       };
-      const lines = entries
-        .map(([sector, etf]) => {
-          const row = data[`${etf}-US`];
-          const price = num(row, "P_PRICE");
-          if (price == null) return null;
-          const d1 = num(row, "P_TOTAL_RETURNC(-1D,0)");
-          const m1 = num(row, "P_TOTAL_RETURNC(-1M,0)");
-          const dayStr = d1 != null ? `${d1 >= 0 ? "+" : ""}${d1.toFixed(2)}% today, ` : "";
-          const monStr = m1 != null ? `${m1 >= 0 ? "+" : ""}${m1.toFixed(1)}% 1M, ` : "";
-          return `- ${sector} (${etf}): ${dayStr}${monStr}price $${price.toFixed(2)}`;
-        })
-        .filter(Boolean) as string[];
-      if (lines.length > 0) return lines.join("\n");
+      const sectors: SectorPerf[] = [];
+      const lines: string[] = [];
+      for (const [sector, etf] of entries) {
+        const row = data[`${etf}-US`];
+        const price = num(row, "P_PRICE");
+        if (price == null) continue;
+        const d1 = num(row, "P_TOTAL_RETURNC(-1D,0)");
+        const m1 = num(row, "P_TOTAL_RETURNC(-1M,0)");
+        sectors.push({ sector, etf, dayPct: d1 });
+        const dayStr = d1 != null ? `${d1 >= 0 ? "+" : ""}${d1.toFixed(2)}% today, ` : "";
+        const monStr = m1 != null ? `${m1 >= 0 ? "+" : ""}${m1.toFixed(1)}% 1M, ` : "";
+        lines.push(`- ${sector} (${etf}): ${dayStr}${monStr}price $${price.toFixed(2)}`);
+      }
+      if (lines.length > 0) return { text: lines.join("\n"), sectors };
     } catch (e) {
       console.error("FactSet sector performance failed, falling back to Yahoo:", e);
     }
@@ -108,18 +113,23 @@ async function fetchSectorPerformance(): Promise<string> {
           if (!meta) return null;
           const price = meta.regularMarketPrice;
           const prevClose = meta.chartPreviousClose ?? meta.previousClose;
-          const pct = prevClose ? (((price - prevClose) / prevClose) * 100).toFixed(2) : "N/A";
-          return `- ${sector} (${etf}): ${pct}% today, price $${price?.toFixed(2) ?? "N/A"}`;
+          const dayPct = prevClose && price != null ? ((price - prevClose) / prevClose) * 100 : null;
+          return { sector, etf, dayPct, price: price as number | null };
         } catch {
           return null;
         }
       })
     );
-    const lines = results.filter(Boolean) as string[];
-    return lines.length > 0 ? lines.join("\n") : "Sector data unavailable";
+    const valid = results.filter(Boolean) as { sector: string; etf: string; dayPct: number | null; price: number | null }[];
+    if (valid.length === 0) return empty;
+    const sectors: SectorPerf[] = valid.map(({ sector, etf, dayPct }) => ({ sector, etf, dayPct }));
+    const lines = valid.map(({ sector, etf, dayPct, price }) =>
+      `- ${sector} (${etf}): ${dayPct != null ? `${dayPct >= 0 ? "+" : ""}${dayPct.toFixed(2)}% today, ` : ""}price $${price != null ? price.toFixed(2) : "N/A"}`
+    );
+    return { text: lines.join("\n"), sectors };
   } catch (e) {
     console.error("Sector ETF fetch error:", e);
-    return "Sector data unavailable";
+    return empty;
   }
 }
 
@@ -882,7 +892,7 @@ ${rows.join("\n")}`;
     const manualBreadth = (marketData as { breadthOverride?: { date?: string; above200?: number; above50?: number } })
       ?.breadthOverride;
 
-    const [sectorPerformance, forwardData, strategistHistory, research, hedgingCostsBlock, marketRegime] =
+    const [sectorPerf, forwardData, strategistHistory, research, hedgingCostsBlock, marketRegime] =
       await Promise.all([
         fetchSectorPerformance(),
         fetchForwardLookingData(manualBreadth).catch((e) => {
@@ -1204,7 +1214,7 @@ Hedge Timing Score: ${computeHedgeScore(fwdVix ?? 20, marketData.termStructure ?
 ${hedgingCostsBlock ? `\n${hedgingCostsBlock}\n\nWhen writing hedgingAnalysis, cite at least one specific 5–10% OTM premium from the table above (e.g. "the 3-month 7% OTM SPY put costs X% of spot") and reference the week-over-week or month-over-month direction of OTM premiums when available. Anchor claims like "tail puts are cheap" or "protection is expensive" to these actual dollar/percent figures at the OTM strikes rather than generalizing from VIX alone. Default strike framing is 5–10% OTM; only quote ATM premiums when explicitly recommending an ATM hedge (rare exception case).` : ""}
 
 Live Sector ETF Performance (from Yahoo Finance — use this for sector rotation analysis):
-${sectorPerformance}
+${sectorPerf.text}
 ${(() => {
   // Build strategist notes block from the rolling 30-day Redis history.
   // Today's full note is labeled "TODAY"; prior days are labeled by date
@@ -1547,6 +1557,8 @@ Current Portfolio Holdings: ${holdingsSummary}${portfolioPositioning}`;
       forwardLooking: forwardData,
       ...parsed,
       marketRegime: finalRegime,
+      // Structured live sector performance for the UI tile grid (not AI-generated).
+      sectorPerformance: sectorPerf.sectors,
     });
   } catch (error) {
     const message = error instanceof Error ? error.message : String(error);

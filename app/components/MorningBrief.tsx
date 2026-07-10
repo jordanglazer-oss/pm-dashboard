@@ -2287,24 +2287,46 @@ export function MorningBrief({
             <h3 className="text-base font-semibold">Sector Rotation</h3>
           </div>
           <ClampText text={sectorRotation.summary} className="mb-4" />
-          <div className="grid gap-4 md:grid-cols-2">
-            <div>
-              <div className="text-xs font-bold uppercase tracking-wider text-pos mb-1.5">LEADING</div>
-              {sectorRotation.leading.map((s, i) => (
-                <div key={i} className="flex items-center gap-2 text-sm text-pos mb-1">
-                  <span>▲</span> <span>{s}</span>
-                </div>
-              ))}
+          {brief?.sectorPerformance && brief.sectorPerformance.length > 0 ? (
+            /* Live per-sector heatmap tiles, sorted best→worst (mockup). */
+            <div className="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-6 gap-3">
+              {[...brief.sectorPerformance]
+                .sort((a, b) => (b.dayPct ?? -Infinity) - (a.dayPct ?? -Infinity))
+                .map((s) => {
+                  const pos = (s.dayPct ?? 0) >= 0;
+                  return (
+                    <div key={s.etf} className="rounded-xl border border-line-soft bg-surface-2/50 p-3">
+                      <div className="flex items-baseline justify-between gap-2">
+                        <span className="font-mono text-sm font-bold text-ink">{s.etf}</span>
+                        <span className={`font-mono text-sm font-semibold ${s.dayPct == null ? "text-ink-3" : pos ? "text-pos" : "text-neg"}`}>
+                          {s.dayPct == null ? "—" : `${pos ? "+" : ""}${s.dayPct.toFixed(2)}%`}
+                        </span>
+                      </div>
+                      <div className="mt-0.5 text-[11px] text-ink-3 truncate">{s.sector}</div>
+                    </div>
+                  );
+                })}
             </div>
-            <div>
-              <div className="text-xs font-bold uppercase tracking-wider text-neg mb-1.5">LAGGING</div>
-              {sectorRotation.lagging.map((s, i) => (
-                <div key={i} className="flex items-center gap-2 text-sm text-neg mb-1">
-                  <span>▼</span> <span>{s}</span>
-                </div>
-              ))}
+          ) : (
+            <div className="grid gap-4 md:grid-cols-2">
+              <div>
+                <div className="text-xs font-bold uppercase tracking-wider text-pos mb-1.5">LEADING</div>
+                {sectorRotation.leading.map((s, i) => (
+                  <div key={i} className="flex items-center gap-2 text-sm text-pos mb-1">
+                    <span>▲</span> <span>{s}</span>
+                  </div>
+                ))}
+              </div>
+              <div>
+                <div className="text-xs font-bold uppercase tracking-wider text-neg mb-1.5">LAGGING</div>
+                {sectorRotation.lagging.map((s, i) => (
+                  <div key={i} className="flex items-center gap-2 text-sm text-neg mb-1">
+                    <span>▼</span> <span>{s}</span>
+                  </div>
+                ))}
+              </div>
             </div>
-          </div>
+          )}
           <ClampText text={sectorRotation.pmImplication} className="mt-3" textClassName="text-sm italic leading-6 text-ink-3" lines={2} />
         </section>
       )}
