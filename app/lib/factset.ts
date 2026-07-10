@@ -192,6 +192,71 @@ export async function getFactsetPricesByTicker(tickers: string[]): Promise<Recor
   return out;
 }
 
+/** Lightweight per-ticker analyst-estimate fields (mean target, # analysts,
+ *  EPS FY+1 up/down revisions) — the small, cheap slice we can refresh DAILY
+ *  without a full rescore. Resolves each ticker to a FactSet id, then fetches
+ *  all four formulas for every id in chunked batched cross-sectional calls
+ *  (N ids × 4 formulas per call — a handful of calls covers the whole book).
+ *  Keyed by the dashboard ticker. Unresolvable tickers (funds/dual-listings)
+ *  are simply absent. Returns {} on total failure so callers no-op safely. */
+export type FactsetEstimates = {
+  tgtPriceMean: number | null;
+  numEstFy1: number | null;
+  revUp: number | null;
+  revDown: number | null;
+};
+const ESTIMATE_FORMULAS = {
+  tgtPriceMean: "FE_ESTIMATE(PRICE_TGT,MEAN,ANN_ROLL,0,NOW,'')",
+  numEstFy1: "FE_ESTIMATE(EPS,NEST,ANN_ROLL,1,NOW,'')",
+  revUp: "FE_ESTIMATE(EPS,UP,ANN_ROLL,1,NOW,'')",
+  revDown: "FE_ESTIMATE(EPS,DOWN,ANN_ROLL,1,NOW,'')",
+} as const;
+
+export async function getFactsetEstimatesByTicker(tickers: string[]): Promise<Record<string, FactsetEstimates>> {
+  const out: Record<string, FactsetEstimates> = {};
+  if (!factsetConfigured() || tickers.length === 0) return out;
+  const idToTickers = new Map<string, string[]>();
+  for (const t of tickers) {
+    const r = resolveFactsetId(t);
+    if (r.source !== "factset") continue;
+    const list = idToTickers.get(r.id) ?? [];
+    list.push(t);
+    idToTickers.set(r.id, list);
+  }
+  const ids = [...idToTickers.keys()];
+  if (ids.length === 0) return out;
+  const formulaList = Object.values(ESTIMATE_FORMULAS);
+  const CHUNK = 40;
+  const chunks: string[][] = [];
+  for (let i = 0; i < ids.length; i += CHUNK) chunks.push(ids.slice(i, i + CHUNK));
+  const merged: Record<string, Record<string, FactsetValue>> = {};
+  await Promise.all(
+    chunks.map(async (chunkIds) => {
+      try {
+        const data = await crossSectional(chunkIds, formulaList);
+        Object.assign(merged, data);
+      } catch (e) {
+        log.warn(`getFactsetEstimatesByTicker chunk of ${chunkIds.length} failed:`, e instanceof Error ? e.message : e);
+      }
+    })
+  );
+  const num = (v: FactsetValue | undefined): number | null => (typeof v === "number" && isFinite(v) ? v : null);
+  for (const id of ids) {
+    const row = merged[id];
+    if (!row) continue;
+    const est: FactsetEstimates = {
+      tgtPriceMean: num(row[ESTIMATE_FORMULAS.tgtPriceMean]),
+      numEstFy1: num(row[ESTIMATE_FORMULAS.numEstFy1]),
+      revUp: num(row[ESTIMATE_FORMULAS.revUp]),
+      revDown: num(row[ESTIMATE_FORMULAS.revDown]),
+    };
+    // Skip ids where FactSet returned nothing usable at all.
+    if (est.tgtPriceMean == null && est.numEstFy1 == null && est.revUp == null && est.revDown == null) continue;
+    for (const t of idToTickers.get(id) ?? []) out[t] = est;
+  }
+  return out;
+}
+
 /** Convenience: latest price for one or more FactSet ids ({ id: price|null }). */
 export async function getPrices(ids: string[]): Promise<Record<string, number | null>> {
   const data = await crossSectional(ids, [FACTSET_FORMULAS.price]);
