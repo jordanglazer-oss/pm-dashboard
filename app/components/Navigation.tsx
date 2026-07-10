@@ -163,7 +163,7 @@ const tabs = [
   { label: "Conviction", href: "/conviction" },
   { label: "Hedging", href: "/hedging" },
   { label: "Appendix", href: "/appendix" },
-  { label: "Inbox", href: "/inbox" },
+  // Inbox is now a SUB-tab of Research (see ResearchTabs) — not a top-level tab.
 ];
 
 export function Navigation() {
@@ -319,7 +319,7 @@ export function Navigation() {
     ? "Portfolio"
     : pathname === "/brief"
     ? "Brief"
-    : pathname === "/research"
+    : pathname === "/research" || pathname === "/inbox"
     ? "Research"
     : pathname === "/conviction"
     ? "Conviction"
@@ -331,8 +331,6 @@ export function Navigation() {
     ? "Appendix"
     : pathname === "/chat"
     ? "Chat"
-    : pathname === "/inbox"
-    ? "Inbox"
     : "Portfolio";
 
   return (
