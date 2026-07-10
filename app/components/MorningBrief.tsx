@@ -1819,6 +1819,26 @@ export function MorningBrief({
         </section>
       )}
 
+      {/* Composite Signal — the weighted regime read that DETERMINES the regime,
+          surfaced high on the page (right under the at-a-glance actions) rather
+          than buried below the Forward View. */}
+      <section className="rounded-2xl border border-line bg-white p-4 shadow-sm">
+        <div className="flex flex-wrap items-center gap-2">
+          <span className="text-base">🔍</span>
+          <h2 className="text-base font-semibold">Composite Signal</h2>
+          <SignalPill tone={compositeSignalTone}>{marketData.compositeSignal}</SignalPill>
+          <span className="text-xs text-ink-3">
+            Conviction: {marketData.conviction}
+          </span>
+          {brief?.marketRegime && (
+            <SignalPill tone={brief.marketRegime === "Risk-Off" ? "red" : brief.marketRegime === "Risk-On" ? "green" : "amber"}>
+              {brief.marketRegime}
+            </SignalPill>
+          )}
+        </div>
+        <ClampText text={compositeAnalysis} className="mt-3" />
+      </section>
+
       {/* Forward View — Next 2 Weeks */}
       <section className="rounded-2xl border border-accent-border bg-gradient-to-br from-accent-soft/60 to-white p-4 md:p-5 shadow-sm">
         <div className="flex flex-wrap items-center justify-between gap-3 mb-3">
@@ -2087,24 +2107,6 @@ export function MorningBrief({
             {" · "}Click any icon to verify the source.
           </p>
         )}
-      </section>
-
-      {/* Composite Signal */}
-      <section className="rounded-2xl border border-line bg-white p-4 shadow-sm">
-        <div className="flex flex-wrap items-center gap-2">
-          <span className="text-base">🔍</span>
-          <h2 className="text-base font-semibold">Composite Signal</h2>
-          <SignalPill tone={compositeSignalTone}>{marketData.compositeSignal}</SignalPill>
-          <span className="text-xs text-ink-3">
-            Conviction: {marketData.conviction}
-          </span>
-          {brief?.marketRegime && (
-            <SignalPill tone={brief.marketRegime === "Risk-Off" ? "red" : brief.marketRegime === "Risk-On" ? "green" : "amber"}>
-              {brief.marketRegime}
-            </SignalPill>
-          )}
-        </div>
-        <ClampText text={compositeAnalysis} className="mt-3" />
       </section>
 
       {/* Contrarian Sentiment — all 4 indicators + Claude analysis */}
