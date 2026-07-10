@@ -17,6 +17,7 @@ import RatioVsSpxSparkline from "@/app/components/RatioVsSpxSparkline";
 import ScoreHistory from "@/app/components/ScoreHistory";
 import { ScoreDelta } from "@/app/components/ScoreDelta";
 import { CollapsibleSection } from "@/app/components/CollapsibleSection";
+import { colorForSector } from "@/app/lib/sectorColors";
 import { useNotifications } from "@/app/lib/NotificationsContext";
 import { EditableNumberCell, ConsensusButton } from "@/app/components/EditableScoreInputs";
 import { mapBoostedAiToAiRating, mapSmaxToRelativeStrength, mapPowerRatingToMarketEdge, marketEdgeWarning, type MarketEdgeOpinion } from "@/app/lib/external-scoring";
@@ -677,20 +678,6 @@ function FundDataPanels({ fundData, ticker, onHoldingsUpdate }: { fundData: Fund
       setScrapingHoldings(false);
     }
   };
-  const sectorColors: Record<string, string> = {
-    Technology: "bg-accent",
-    Financials: "bg-accent",
-    "Health Care": "bg-violet",
-    "Consumer Discretionary": "bg-orange-500",
-    "Consumer Staples": "bg-warn",
-    "Communication Services": "bg-accent",
-    Industrials: "bg-ink-3",
-    Energy: "bg-neg",
-    Utilities: "bg-lime-500",
-    Materials: "bg-accent",
-    "Real Estate": "bg-pink-500",
-  };
-
   return (
     <div className="space-y-4 mt-6">
       {/* Row 1: Performance + Risk */}
@@ -936,8 +923,8 @@ function FundDataPanels({ fundData, ticker, onHoldingsUpdate }: { fundData: Fund
               {normalizedSectors.map((s) => (
                 <div
                   key={s.sector}
-                  className={`${sectorColors[s.sector] || "bg-ink-3"} flex items-center justify-center text-[9px] sm:text-[10px] font-semibold text-white`}
-                  style={{ width: `${s.weight}%` }}
+                  className="flex items-center justify-center text-[9px] sm:text-[10px] font-semibold text-white"
+                  style={{ width: `${s.weight}%`, backgroundColor: colorForSector(s.sector) }}
                 >
                   {s.weight >= 8 && `${s.weight.toFixed(0)}%`}
                 </div>
@@ -946,7 +933,7 @@ function FundDataPanels({ fundData, ticker, onHoldingsUpdate }: { fundData: Fund
             <div className="space-y-1.5">
               {normalizedSectors.map((s) => (
                 <div key={s.sector} className="flex items-center gap-2 min-w-0">
-                  <span className={`h-2.5 w-2.5 rounded-full shrink-0 ${sectorColors[s.sector] || "bg-ink-3"}`} />
+                  <span className="h-2.5 w-2.5 rounded-full shrink-0" style={{ backgroundColor: colorForSector(s.sector) }} />
                   <span className="flex-1 text-xs text-ink-2 truncate">{s.sector}</span>
                   <span className="text-xs font-semibold text-ink-2 shrink-0">{s.weight.toFixed(1)}%</span>
                 </div>
