@@ -199,7 +199,7 @@ export function SentimentGauges({ marketData, aaiiBull = 30, aaiiNeutral = 17, a
   const dashOffset = circumference * (1 - pct);
 
   return (
-    <section className="rounded-2xl border border-line bg-white p-4 shadow-sm">
+    <section className="rounded-card border border-line bg-white p-4 shadow-sm">
       <div className="flex flex-wrap items-center justify-between gap-2 mb-1">
         <div className="flex items-center gap-2">
           <span className="text-base">🎯</span>

@@ -289,7 +289,7 @@ function BriefSection({
     rose: "bg-neg",
   };
   return (
-    <section className="rounded-2xl border border-line bg-white shadow-sm overflow-hidden">
+    <section className="rounded-card border border-line bg-white shadow-sm overflow-hidden">
       <header className="flex items-baseline gap-2 px-4 pt-3 pb-2">
         <span className={`inline-block h-2 w-2 rounded-full ${dotMap[accent]}`} />
         <h3 className="text-sm font-bold tracking-tight text-ink">{title}</h3>
@@ -334,7 +334,7 @@ function MarketRegimeStrip({ regime }: { regime: MarketRegimeData }) {
   if (global.nikkei) crossRow.push({ label: "Nikkei", body: `${global.nikkei.price.toFixed(0)} · 20d ${fmtPct(global.nikkei.change20dPct)}` });
 
   return (
-    <div className="mb-5 overflow-hidden rounded-2xl border border-line bg-white/80 p-3 sm:p-4">
+    <div className="mb-5 overflow-hidden rounded-card border border-line bg-white/80 p-3 sm:p-4">
       <div className="mb-3 flex flex-wrap items-start justify-between gap-2 sm:gap-3">
         <div className="flex flex-wrap items-center gap-2">
           <span className="text-[10px] font-bold uppercase tracking-wider text-ink-3">Market Regime</span>
@@ -517,7 +517,7 @@ function ForwardTile({
     : `${point.sourceLabel} · fetched successfully${point.asOf ? " (" + point.asOf + ")" : ""}`;
 
   return (
-    <div className="rounded-2xl border border-line-soft bg-surface-2/60 p-3 md:p-4">
+    <div className="rounded-card border border-line-soft bg-surface-2/60 p-3 md:p-4">
       <div className="flex items-start justify-between gap-2 mb-1">
         <div className="flex items-center gap-1.5 min-w-0 flex-wrap">
           <span className="text-[11px] font-semibold uppercase tracking-wider text-ink-3">
@@ -1169,7 +1169,7 @@ export function MorningBrief({
       {briefMode === "input" && (
       <>
       {/* Editable Market & Sentiment Inputs */}
-      <section className="rounded-2xl border border-line bg-white p-4 md:p-5 shadow-sm overflow-hidden">
+      <section className="rounded-card border border-line bg-white p-4 md:p-5 shadow-sm overflow-hidden">
         <div className="flex items-center gap-3 mb-4 flex-wrap">
           <h3 className="text-base font-semibold text-ink">Daily Market Input</h3>
           {liveLoading && <span className="text-xs text-accent animate-pulse">Fetching live data...</span>}
@@ -1697,7 +1697,7 @@ export function MorningBrief({
           <button
             onClick={() => generateBrief(true)}
             disabled={generating}
-            className="rounded-2xl bg-accent px-5 py-3 text-sm font-semibold text-white hover:bg-accent disabled:opacity-50 transition-colors"
+            className="rounded-card bg-accent px-5 py-3 text-sm font-semibold text-white hover:bg-accent disabled:opacity-50 transition-colors"
           >
             {generating ? "Generating..." : "\u21BB Refresh Brief"}
           </button>
@@ -1741,7 +1741,7 @@ export function MorningBrief({
       )}
 
       {/* Bottom Line */}
-      <section className="relative rounded-2xl bg-warn-soft border border-warn-border p-5 shadow-sm">
+      <section className="relative rounded-card bg-warn-soft border border-warn-border p-5 shadow-sm">
         {generating && <LoadingOverlay message="Claude is analyzing markets..." />}
         <div className="text-xs font-bold uppercase tracking-[0.22em] text-warn mb-3">
           Bottom line
@@ -1776,7 +1776,7 @@ export function MorningBrief({
       {(topActionsToday.length > 0 || hedgingCall) && (
         <section className="grid grid-cols-1 lg:grid-cols-3 gap-4">
           {topActionsToday.length > 0 && (
-            <div className="lg:col-span-2 rounded-2xl border border-line bg-white p-5 shadow-sm">
+            <div className="lg:col-span-2 rounded-card border border-line bg-white p-5 shadow-sm">
               <div className="text-xs font-bold uppercase tracking-[0.22em] text-ink-3 mb-3">
                 Top actions today
               </div>
@@ -1793,7 +1793,7 @@ export function MorningBrief({
             </div>
           )}
           {hedgingCall && (
-            <div className={`rounded-2xl border p-5 shadow-sm ${
+            <div className={`rounded-card border p-5 shadow-sm ${
               hedgingCall.action === "ADD"
                 ? "border-neg-border bg-neg-soft"
                 : hedgingCall.action === "SKIP"
@@ -1849,7 +1849,7 @@ export function MorningBrief({
               : deploymentWindowStatus.tone === "rose" ? "bg-neg-soft text-neg"
               : "bg-surface-2 text-ink-2";
             return (
-              <div className={`rounded-2xl border p-5 shadow-sm ${tone.border} ${tone.bg}`}>
+              <div className={`rounded-card border p-5 shadow-sm ${tone.border} ${tone.bg}`}>
                 <div className="flex items-center justify-between gap-2 mb-3">
                   <div className={`text-xs font-bold uppercase tracking-[0.22em] ${tone.label}`}>
                     Cash Deployment
@@ -1904,7 +1904,7 @@ export function MorningBrief({
       {/* Composite Signal — the weighted regime read that DETERMINES the regime,
           surfaced high on the page (right under the at-a-glance actions) rather
           than buried below the Forward View. */}
-      <section className="rounded-2xl border border-line bg-white p-4 shadow-sm">
+      <section className="rounded-card border border-line bg-white p-4 shadow-sm">
         <div className="flex flex-wrap items-center gap-2">
           <span className="text-base">🔍</span>
           <h2 className="text-base font-semibold">Composite Signal</h2>
@@ -1927,7 +1927,7 @@ export function MorningBrief({
       {/* Non-consensus edge — what the tape may be under-pricing. Distilled
           across all integrated sources; hidden when the model returns blank. */}
       {brief?.underpriced && brief.underpriced.trim() && (
-        <section className="rounded-2xl border border-violet-soft bg-violet-soft/40 p-4 shadow-sm">
+        <section className="rounded-card border border-violet-soft bg-violet-soft/40 p-4 shadow-sm">
           <div className="flex flex-wrap items-center gap-2 mb-1">
             <span className="text-base">💡</span>
             <h2 className="text-base font-semibold">What the tape may be under-pricing</h2>
@@ -1938,7 +1938,7 @@ export function MorningBrief({
       )}
 
       {/* Forward View — Next 2 Weeks */}
-      <section className="rounded-2xl border border-accent-border bg-gradient-to-br from-accent-soft/60 to-white p-4 md:p-5 shadow-sm">
+      <section className="rounded-card border border-accent-border bg-gradient-to-br from-accent-soft/60 to-white p-4 md:p-5 shadow-sm">
         <div className="flex flex-wrap items-center justify-between gap-3 mb-3">
           <div className="flex flex-wrap items-center gap-2">
             <span className="text-base">🧭</span>
@@ -2170,7 +2170,7 @@ export function MorningBrief({
         )}
 
         {brief?.regimeSignals && brief.regimeSignals.length > 0 && (
-          <div className="rounded-2xl border border-line-soft bg-white/70 p-4">
+          <div className="rounded-card border border-line-soft bg-white/70 p-4">
             <div className="text-[10px] font-bold uppercase tracking-wider text-ink-3 mb-2">
               Regime Drivers (deterministic)
             </div>
@@ -2218,7 +2218,7 @@ export function MorningBrief({
         return (
       <>
       <section className="grid gap-4 lg:grid-cols-3">
-        <div className="rounded-2xl border border-line bg-white p-4 shadow-sm">
+        <div className="rounded-card border border-line bg-white p-4 shadow-sm">
           <div className="flex items-center justify-between gap-3">
             <div className="flex items-center gap-2">
               <span className="text-base">📉</span>
@@ -2242,7 +2242,7 @@ export function MorningBrief({
           <ClampText text={creditAnalysis} className="mt-1.5" />
         </div>
 
-        <div className="rounded-2xl border border-line bg-white p-4 shadow-sm">
+        <div className="rounded-card border border-line bg-white p-4 shadow-sm">
           <div className="flex items-center justify-between gap-3">
             <div className="flex items-center gap-2">
               <span className="text-base">⚡</span>
@@ -2270,7 +2270,7 @@ export function MorningBrief({
         </div>
 
         {/* Breadth & Structure — third card in the row (mockup). */}
-        <div className="rounded-2xl border border-line bg-white p-4 shadow-sm">
+        <div className="rounded-card border border-line bg-white p-4 shadow-sm">
           <div className="flex items-center justify-between gap-3">
             <div className="flex items-center gap-2">
               <span className="text-base">📊</span>
@@ -2308,7 +2308,7 @@ export function MorningBrief({
           Window always renders. */}
       <section className="grid gap-4 lg:grid-cols-5 items-start">
         {riskScan && riskScan.length > 0 ? (
-          <div className="lg:col-span-3 rounded-2xl border border-line bg-white p-4 shadow-sm">
+          <div className="lg:col-span-3 rounded-card border border-line bg-white p-4 shadow-sm">
             <div className="flex items-center gap-2 mb-1">
               <h3 className="text-base font-semibold">Portfolio Risk Scan</h3>
               <span className="text-xs font-semibold text-neg">{riskScan.length} flagged</span>
@@ -2365,7 +2365,7 @@ export function MorningBrief({
 
       {/* Sector Rotation */}
       {sectorRotation && (
-        <section className="rounded-2xl border border-line bg-white p-4 shadow-sm">
+        <section className="rounded-card border border-line bg-white p-4 shadow-sm">
           <div className="flex items-center gap-2 mb-3">
             <span className="text-base">🔄</span>
             <h3 className="text-base font-semibold">Sector Rotation</h3>

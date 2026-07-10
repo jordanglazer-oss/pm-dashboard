@@ -234,7 +234,7 @@ export function HedgingIndicator({ vix, termStructure, fearGreed, hedgingAnalysi
       { label: "Sentiment", value: factors[2]?.sublabel ?? "—", optimal: factors[2]?.optimal },
     ];
     return (
-      <section className="rounded-2xl border border-line bg-white p-4 shadow-sm">
+      <section className="rounded-card border border-line bg-white p-4 shadow-sm">
         <div className="flex items-baseline gap-2">
           <h3 className="text-base font-semibold">Hedging Window</h3>
           <span className="text-xs text-ink-3">· SPY Puts</span>
@@ -259,7 +259,7 @@ export function HedgingIndicator({ vix, termStructure, fearGreed, hedgingAnalysi
   }
 
   return (
-    <section className="rounded-2xl border border-line bg-white p-4 shadow-sm">
+    <section className="rounded-card border border-line bg-white p-4 shadow-sm">
       <div className="flex flex-wrap items-center justify-between gap-3">
         <h3 className="text-base font-semibold">Hedging Window (SPY Puts)</h3>
         <SignalPill tone={verdict.tone}>{verdict.label}</SignalPill>

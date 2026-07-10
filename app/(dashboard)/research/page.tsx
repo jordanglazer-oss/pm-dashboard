@@ -2067,7 +2067,7 @@ export default function ResearchPage() {
             overlap (a ticker mentioned by 2+ sources) is weighted
             higher. Cached server-side: refreshes with unchanged
             research + brief return instantly with no Anthropic cost. */}
-        <section className="rounded-2xl border border-line bg-white p-6 shadow-sm">
+        <section className="rounded-card border border-line bg-white p-6 shadow-sm">
           <div className="flex items-start justify-between gap-3 mb-3 flex-wrap">
             <div className="flex items-center gap-2">
               <span className="inline-block h-2 w-2 rounded-full bg-violet" />
