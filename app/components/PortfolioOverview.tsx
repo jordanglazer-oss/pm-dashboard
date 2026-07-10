@@ -4,6 +4,7 @@ import React, { useState, useCallback, useMemo, useEffect, useRef } from "react"
 import Link from "next/link";
 import { useStocks } from "@/app/lib/StockContext";
 import { useNotifications } from "@/app/lib/NotificationsContext";
+import { FlashValue } from "@/app/components/FlashValue";
 import { SCORE_GROUPS, INSTRUMENT_LABELS } from "@/app/lib/types";
 import type { ScoredStock, ScoreKey, HealthData, FundHolding, FundSectorWeight } from "@/app/lib/types";
 import type { TechnicalIndicators, RiskAlert } from "@/app/lib/technicals";
@@ -1963,7 +1964,7 @@ function RankingTable({
                     })()}
                   </td>
                   <td className="py-3 pr-3 text-right text-ink-2 tabular-nums">
-                    {s.price != null ? `$${s.price.toFixed(2)}` : "—"}
+                    <FlashValue value={s.price ?? null}>{s.price != null ? `$${s.price.toFixed(2)}` : "—"}</FlashValue>
                   </td>
                   <td className="py-3 pr-3 text-right tabular-nums whitespace-nowrap">
                     {(() => {

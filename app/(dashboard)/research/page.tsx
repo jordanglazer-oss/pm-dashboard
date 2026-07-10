@@ -9,6 +9,7 @@ import type { RemovalSource } from "@/app/lib/research-removals";
 import { displayTicker } from "@/app/lib/ticker";
 import { ImageUpload, type BriefAttachment } from "@/app/components/ImageUpload";
 import { CollapsibleSection } from "@/app/components/CollapsibleSection";
+import { FlashValue } from "@/app/components/FlashValue";
 import { useStocks } from "@/app/lib/StockContext";
 import type { Stock, ScoreKey } from "@/app/lib/types";
 
@@ -418,7 +419,7 @@ function SourceRowsList({ rows, livePrices, isInList, onAdd, onRemove, emptyLabe
               {r.meta != null && r.meta !== "" && <div className="text-[11px] text-ink-3 truncate">{r.meta}</div>}
             </div>
             <div className="shrink-0 text-right">
-              <div className="font-mono text-sm text-ink">{livePrice != null ? `$${livePrice.toFixed(2)}` : "—"}</div>
+              <div className="font-mono text-sm text-ink"><FlashValue value={livePrice}>{livePrice != null ? `$${livePrice.toFixed(2)}` : "—"}</FlashValue></div>
               <div className={`font-mono text-xs ${changePct == null ? "text-ink-faint" : changePct >= 0 ? "text-pos" : "text-neg"}`}>
                 {changePct == null ? "" : `${changePct >= 0 ? "+" : ""}${changePct.toFixed(1)}%`}
               </div>
