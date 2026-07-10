@@ -16,6 +16,7 @@ import RiskAlertPanel from "@/app/components/RiskAlertPanel";
 import RatioVsSpxSparkline from "@/app/components/RatioVsSpxSparkline";
 import ScoreHistory from "@/app/components/ScoreHistory";
 import { ScoreDelta } from "@/app/components/ScoreDelta";
+import { CollapsibleSection } from "@/app/components/CollapsibleSection";
 import { useNotifications } from "@/app/lib/NotificationsContext";
 import { EditableNumberCell, ConsensusButton } from "@/app/components/EditableScoreInputs";
 import { mapBoostedAiToAiRating, mapSmaxToRelativeStrength, mapPowerRatingToMarketEdge, marketEdgeWarning, type MarketEdgeOpinion } from "@/app/lib/external-scoring";
@@ -1986,8 +1987,13 @@ export default function StockDetailPage() {
               || sectorLower.includes("alternative") || nameLower.includes("alternative") || nameLower.includes("premium yield") || nameLower.includes("premium incom") || nameLower.includes("hedge") || nameLower.includes("option income") || nameLower.includes("option writing") || nameLower.includes("covered call");
             if (isBondOrAlt) return null;
             return (
-              <div className="rounded-card border border-line bg-white p-5 shadow-sm mt-6">
-                <h2 className="text-sm font-bold text-ink mb-2">Portfolio Role</h2>
+              <CollapsibleSection
+                prefKey="stock.portfolioRole"
+                defaultCollapsed
+                className="border-line mt-6"
+                titleClass="text-sm font-bold text-ink"
+                title="Portfolio Role"
+              >
                 <p className="text-xs text-ink-3 mb-3">Core = indexed/passive. Alpha = active picks. Sector exposure is based on Alpha picks only.</p>
                 <div className="flex gap-2">
                   <button
@@ -2011,13 +2017,18 @@ export default function StockDetailPage() {
                     Alpha
                   </button>
                 </div>
-              </div>
+              </CollapsibleSection>
             );
           })()}
 
-          {/* Model Eligibility & Per-Model Weights */}
-          <div className="rounded-card border border-line bg-white p-5 shadow-sm mt-6">
-            <h2 className="text-sm font-bold text-ink mb-3">Model Eligibility</h2>
+          {/* Model Eligibility & Per-Model Weights — secondary config, collapsed by default */}
+          <CollapsibleSection
+            prefKey="stock.modelEligibility"
+            defaultCollapsed
+            className="border-line mt-6"
+            titleClass="text-sm font-bold text-ink"
+            title="Model Eligibility"
+          >
             <p className="text-xs text-ink-3 mb-3">
               Toggle which PIM model groups this position is eligible for.
               {!scoreable && " Set the weight (%) for each model's Balanced profile."}
@@ -2065,7 +2076,7 @@ export default function StockDetailPage() {
                 );
               })}
             </div>
-          </div>
+          </CollapsibleSection>
 
           {/* Score breakdown - 2 column grid (stocks only) */}
           {scoreable && <div className="grid gap-4 md:grid-cols-2 mt-6">
@@ -2539,9 +2550,14 @@ export default function StockDetailPage() {
             })}
           </div>}
 
-          {/* Regime context (stocks only) */}
-          {scoreable && <div className="rounded-card border border-line bg-white p-5 shadow-sm mt-6">
-            <h2 className="text-base font-bold text-ink mb-3">Regime Context</h2>
+          {/* Regime context (stocks only) — secondary, collapsed by default */}
+          {scoreable && <CollapsibleSection
+            prefKey="stock.regimeContext"
+            defaultCollapsed
+            className="border-line mt-6"
+            titleClass="text-base font-bold text-ink"
+            title="Regime Context"
+          >
             <div className="grid gap-4 md:grid-cols-4">
               <div className="rounded-card bg-surface-2 p-3">
                 <div className="text-xs text-ink-3">Current Regime</div>
@@ -2568,7 +2584,7 @@ export default function StockDetailPage() {
                 <div className="mt-1 text-lg font-semibold">{marketData.compositeSignal}</div>
               </div>
             </div>
-          </div>}
+          </CollapsibleSection>}
 
           {/* Relative strength vs SPY — informational sparkline */}
           <RatioVsSpxSparkline ticker={stock.ticker} className="mt-6" />

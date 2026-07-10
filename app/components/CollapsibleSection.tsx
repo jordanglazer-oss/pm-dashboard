@@ -17,6 +17,7 @@ export function CollapsibleSection({
   subtitle,
   titleClass,
   right,
+  defaultCollapsed = false,
   children,
 }: {
   prefKey: string;
@@ -31,10 +32,17 @@ export function CollapsibleSection({
   titleClass?: string;
   /** Right-aligned header content (counts, refresh buttons, etc.). */
   right?: React.ReactNode;
+  /** Start collapsed the FIRST time this section is seen (before the user has
+   *  toggled it). Once toggled, the persisted pref wins. Used for secondary
+   *  reference sections that should be tucked away until opened. */
+  defaultCollapsed?: boolean;
   children: React.ReactNode;
 }) {
   const { uiPrefs, setUiPref } = useStocks();
-  const collapsed = uiPrefs[prefKey] === "1";
+  // Persisted pref wins once set; until then fall back to defaultCollapsed.
+  // Note: reading an unset pref never writes, so nothing persists until the
+  // user actually toggles — the default stays purely presentational.
+  const collapsed = prefKey in uiPrefs ? uiPrefs[prefKey] === "1" : defaultCollapsed;
   const toggle = () => {
     const next = collapsed ? "0" : "1";
     setUiPref(prefKey, next);
