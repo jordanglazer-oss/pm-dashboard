@@ -166,6 +166,7 @@ Each horizon view must be 2-3 sentences, reference at least one of its driving s
 CRITICAL — SYNTHESIS QUALITY (this is what makes the brief worth reading for a desk running $1.5B):
 - RECONCILE, DON'T AVERAGE. You are synthesizing multiple sources (the deterministic regime, Newton's notes, strategist reports, live macro/forward data, sentiment, the portfolio's own positioning). When they DISAGREE, that disagreement is the most important thing in the brief — name it explicitly, weigh the sources, and take a reasoned side with a concrete posture. Never blend conflicting signals into non-committal mush. The value you add is resolving tension the raw data can't.
 - ONE JOB PER FIELD; EVERY LINE EARNS ITS PLACE. Each field should primarily do its own job, and every analytical sentence must carry a so-what — a number or signal tied to a concrete action or implication, not just a description of the data. Some overlap is fine where it aids readability (don't strip a genuinely useful point purely to avoid repetition), but never say the same thing twice in different words.
+- TIE IT TO THIS BOOK. When a PORTFOLIO POSITIONING block is present, translate the macro / regime / sector-rotation read into what it means for THIS specific portfolio — cite its actual sector concentration (e.g. 'you're heaviest in Tech at 22% of names and XLK/XLU is rolling — direct exposure to the rotation'). Flag when a LEADING sector has little/no exposure (a gap) or when a LAGGING/at-risk sector is a top concentration. This belongs primarily in bottomLine and cyclicalView. Remember the book is equal-weight: recommend own/don't-own/rebalance/hedge, NEVER trim-vs-overweight specific names.
 
 Respond ONLY with valid JSON matching this exact structure (fields are intentionally ordered so Bottom Line → Tactical/Cyclical/Structural Views → Composite → Risk Scan flows naturally in the UI):
 {
@@ -835,6 +836,31 @@ export async function POST(request: NextRequest) {
           .join("\n")
       : "No holdings provided";
 
+    // ── Portfolio positioning (sector exposure of the equal-weight book) ───
+    // The book is equal-weight ("own or don't own"), so its sector TILT = how
+    // many Portfolio names sit in each sector. Aggregate it so the brief can
+    // tie the macro / rotation read to the book's ACTUAL concentration rather
+    // than talk about markets in the abstract (e.g. "XLK/XLU rolling and you're
+    // heaviest in Tech", or "a leading sector you have zero exposure to").
+    const portfolioPositioning = (() => {
+      if (!holdings) return "";
+      const port = (holdings as HoldingInput[]).filter((h) => h.bucket === "Portfolio");
+      if (port.length === 0) return "";
+      const bySector = new Map<string, number>();
+      for (const h of port) {
+        const s = (h.sector || "").trim() || "Unclassified";
+        bySector.set(s, (bySector.get(s) ?? 0) + 1);
+      }
+      const total = port.length;
+      const rows = [...bySector.entries()]
+        .sort((a, b) => b[1] - a[1])
+        .map(([sector, n]) => `- ${sector}: ${n} name${n === 1 ? "" : "s"} (${Math.round((n / total) * 100)}% of the book)`);
+      return `
+
+PORTFOLIO POSITIONING (equal-weight book — sector tilt = share of the ${total} owned names; we think "own or don't own", never position sizing):
+${rows.join("\n")}`;
+    })();
+
     // Fetch live sector ETF data, forward-looking data, strategist history,
     // and research state in parallel. Each is wrapped in try/catch so a
     // single failure never blocks the whole brief — we just degrade.
@@ -1328,7 +1354,7 @@ FUNDSTRAT RESEARCH CONTEXT (from the PM's Research tab — these persist across 
 ${blocks.join("\n\n")}`;
 })()}
 
-Current Portfolio Holdings: ${holdingsSummary}`;
+Current Portfolio Holdings: ${holdingsSummary}${portfolioPositioning}`;
 
     // JPM Flows section was retired in 2026-05 — flows are inherently
     // backward-looking and contrarianAnalysis already covers
