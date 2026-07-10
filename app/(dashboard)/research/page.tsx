@@ -655,17 +655,54 @@ export default function ResearchPage() {
     const unique = [...new Set(allTickers)];
     if (unique.length === 0) return;
 
+    // Progressive retry: /api/prices fans out one Yahoo request per ticker, so a
+    // large batch (every research list combined) can get partially rate-limited
+    // — some tickers come back "—". Rather than make the PM press Refresh again,
+    // ONE press starts a self-healing loop: after each round we keep only the
+    // tickers that still have no price and re-fetch JUST those (a smaller batch,
+    // which usually succeeds), merging results in as they arrive. It stops when
+    // every ticker has a price, or after a couple of rounds make zero new
+    // progress (those remaining are genuinely priceless — delisted / untradeable
+    // — not rate-limited), or a hard round cap (~13s) as a backstop.
     setPricesLoading(true);
     try {
-      const res = await fetch("/api/prices", {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ tickers: unique }),
-      });
-      if (!res.ok) return;
-      const data = await res.json();
-      setLivePrices(data.prices || {});
-      setPricesFetchedAt(data.fetchedAt || new Date().toISOString());
+      const resolved: Record<string, number | null> = {};
+      let pending = unique;
+      let noProgress = 0;
+      let lastFetchedAt = "";
+      const MAX_ROUNDS = 10;
+      const DELAY_MS = 1200;
+      for (let round = 0; round < MAX_ROUNDS && pending.length > 0; round++) {
+        let gained = 0;
+        try {
+          const res = await fetch("/api/prices", {
+            method: "POST",
+            headers: { "Content-Type": "application/json" },
+            body: JSON.stringify({ tickers: pending }),
+          });
+          if (res.ok) {
+            const data = await res.json();
+            lastFetchedAt = data.fetchedAt || lastFetchedAt;
+            const prices = data.prices || {};
+            for (const t of pending) {
+              const p = prices[t];
+              if (typeof p === "number" && p > 0) { resolved[t] = p; gained += 1; }
+            }
+            if (gained > 0) {
+              // Merge (not replace) so prices resolved in earlier rounds persist.
+              setLivePrices((prev) => ({ ...prev, ...resolved }));
+              setPricesFetchedAt(lastFetchedAt || new Date().toISOString());
+            }
+          }
+        } catch {
+          // transient network error — treat as a no-progress round, retry.
+        }
+        pending = pending.filter((t) => resolved[t] == null);
+        noProgress = gained > 0 ? 0 : noProgress + 1;
+        if (noProgress >= 2) break; // remaining tickers are truly priceless
+        if (pending.length > 0) await new Promise((r) => setTimeout(r, DELAY_MS));
+      }
+      if (lastFetchedAt) setPricesFetchedAt(lastFetchedAt);
     } catch {
       // silently fail
     } finally {
