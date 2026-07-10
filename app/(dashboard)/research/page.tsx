@@ -86,22 +86,22 @@ function UptickAddForm({ onAdd }: { onAdd: (e: UptickEntry) => void }) {
       }}
     >
       <div>
-        <label className="text-xs text-slate-400 block">Ticker*</label>
-        <input value={ticker} onChange={(e) => setTicker(e.target.value.toUpperCase())} placeholder="AMZN" className="w-20 rounded-xl border border-slate-200 bg-slate-50 px-3 py-2 text-sm font-mono outline-none placeholder:text-slate-400 focus:bg-white focus:border-blue-300 focus:ring-1 focus:ring-blue-200 transition-all" />
+        <label className="text-xs text-ink-3 block">Ticker*</label>
+        <input value={ticker} onChange={(e) => setTicker(e.target.value.toUpperCase())} placeholder="AMZN" className="w-20 rounded-xl border border-line bg-surface-2 px-3 py-2 text-sm font-mono outline-none placeholder:text-ink-3 focus:bg-white focus:border-accent-border focus:ring-1 focus:ring-accent-border transition-all" />
       </div>
       <div>
-        <label className="text-xs text-slate-400 block">Support</label>
-        <input value={support} onChange={(e) => setSupport(e.target.value)} placeholder="196, 161" className="w-24 rounded-xl border border-slate-200 bg-slate-50 px-3 py-2 text-sm outline-none placeholder:text-slate-400 focus:bg-white focus:border-blue-300 focus:ring-1 focus:ring-blue-200 transition-all" />
+        <label className="text-xs text-ink-3 block">Support</label>
+        <input value={support} onChange={(e) => setSupport(e.target.value)} placeholder="196, 161" className="w-24 rounded-xl border border-line bg-surface-2 px-3 py-2 text-sm outline-none placeholder:text-ink-3 focus:bg-white focus:border-accent-border focus:ring-1 focus:ring-accent-border transition-all" />
       </div>
       <div>
-        <label className="text-xs text-slate-400 block">Resistance</label>
-        <input value={resistance} onChange={(e) => setResistance(e.target.value)} placeholder="220, 249" className="w-24 rounded-xl border border-slate-200 bg-slate-50 px-3 py-2 text-sm outline-none placeholder:text-slate-400 focus:bg-white focus:border-blue-300 focus:ring-1 focus:ring-blue-200 transition-all" />
+        <label className="text-xs text-ink-3 block">Resistance</label>
+        <input value={resistance} onChange={(e) => setResistance(e.target.value)} placeholder="220, 249" className="w-24 rounded-xl border border-line bg-surface-2 px-3 py-2 text-sm outline-none placeholder:text-ink-3 focus:bg-white focus:border-accent-border focus:ring-1 focus:ring-accent-border transition-all" />
       </div>
       <div>
-        <label className="text-xs text-slate-400 block">Price Added</label>
-        <input value={priceWhenAdded} onChange={(e) => setPriceWhenAdded(e.target.value)} placeholder="161.26" type="number" step="0.01" className="w-24 rounded-xl border border-slate-200 bg-slate-50 px-3 py-2 text-sm outline-none placeholder:text-slate-400 focus:bg-white focus:border-blue-300 focus:ring-1 focus:ring-blue-200 transition-all" />
+        <label className="text-xs text-ink-3 block">Price Added</label>
+        <input value={priceWhenAdded} onChange={(e) => setPriceWhenAdded(e.target.value)} placeholder="161.26" type="number" step="0.01" className="w-24 rounded-xl border border-line bg-surface-2 px-3 py-2 text-sm outline-none placeholder:text-ink-3 focus:bg-white focus:border-accent-border focus:ring-1 focus:ring-accent-border transition-all" />
       </div>
-      <button type="submit" disabled={adding} className="rounded-xl bg-blue-600 px-5 py-2 text-sm font-semibold text-white hover:bg-blue-700 transition-colors disabled:opacity-50">
+      <button type="submit" disabled={adding} className="rounded-xl bg-accent px-5 py-2 text-sm font-semibold text-white hover:bg-accent transition-colors disabled:opacity-50">
         {adding ? "Adding..." : "Add"}
       </button>
     </form>
@@ -124,14 +124,14 @@ function IdeaAddForm({ onAdd }: { onAdd: (e: IdeaEntry) => void }) {
       }}
     >
       <div>
-        <label className="text-xs text-slate-400 block">Ticker*</label>
-        <input value={ticker} onChange={(e) => setTicker(e.target.value.toUpperCase())} placeholder="AAPL" className="w-24 rounded-xl border border-slate-200 bg-slate-50 px-3 py-2 text-sm font-mono outline-none placeholder:text-slate-400 focus:bg-white focus:border-blue-300 focus:ring-1 focus:ring-blue-200 transition-all" />
+        <label className="text-xs text-ink-3 block">Ticker*</label>
+        <input value={ticker} onChange={(e) => setTicker(e.target.value.toUpperCase())} placeholder="AAPL" className="w-24 rounded-xl border border-line bg-surface-2 px-3 py-2 text-sm font-mono outline-none placeholder:text-ink-3 focus:bg-white focus:border-accent-border focus:ring-1 focus:ring-accent-border transition-all" />
       </div>
       <div>
-        <label className="text-xs text-slate-400 block">Price Added</label>
-        <input value={price} onChange={(e) => setPrice(e.target.value)} placeholder="175.00" type="number" step="0.01" className="w-24 rounded-xl border border-slate-200 bg-slate-50 px-3 py-2 text-sm outline-none placeholder:text-slate-400 focus:bg-white focus:border-blue-300 focus:ring-1 focus:ring-blue-200 transition-all" />
+        <label className="text-xs text-ink-3 block">Price Added</label>
+        <input value={price} onChange={(e) => setPrice(e.target.value)} placeholder="175.00" type="number" step="0.01" className="w-24 rounded-xl border border-line bg-surface-2 px-3 py-2 text-sm outline-none placeholder:text-ink-3 focus:bg-white focus:border-accent-border focus:ring-1 focus:ring-accent-border transition-all" />
       </div>
-      <button type="submit" className="rounded-xl bg-blue-600 px-5 py-2 text-sm font-semibold text-white hover:bg-blue-700 transition-colors">
+      <button type="submit" className="rounded-xl bg-accent px-5 py-2 text-sm font-semibold text-white hover:bg-accent transition-colors">
         Add
       </button>
     </form>
@@ -180,14 +180,14 @@ function AlphaPickAddForm({ onAdd }: { onAdd: (e: AlphaPickEntry) => void }) {
       }}
     >
       <div>
-        <label className="text-xs text-slate-400 block">Ticker*</label>
-        <input value={ticker} onChange={(e) => setTicker(e.target.value.toUpperCase())} placeholder="AMZN" className="w-24 rounded-xl border border-slate-200 bg-slate-50 px-3 py-2 text-sm font-mono outline-none placeholder:text-slate-400 focus:bg-white focus:border-blue-300 focus:ring-1 focus:ring-blue-200 transition-all" />
+        <label className="text-xs text-ink-3 block">Ticker*</label>
+        <input value={ticker} onChange={(e) => setTicker(e.target.value.toUpperCase())} placeholder="AMZN" className="w-24 rounded-xl border border-line bg-surface-2 px-3 py-2 text-sm font-mono outline-none placeholder:text-ink-3 focus:bg-white focus:border-accent-border focus:ring-1 focus:ring-accent-border transition-all" />
       </div>
       <div>
-        <label className="text-xs text-slate-400 block">Price Picked</label>
-        <input value={priceWhenAdded} onChange={(e) => setPriceWhenAdded(e.target.value)} placeholder="215.40" type="number" step="0.01" className="w-28 rounded-xl border border-slate-200 bg-slate-50 px-3 py-2 text-sm outline-none placeholder:text-slate-400 focus:bg-white focus:border-blue-300 focus:ring-1 focus:ring-blue-200 transition-all" />
+        <label className="text-xs text-ink-3 block">Price Picked</label>
+        <input value={priceWhenAdded} onChange={(e) => setPriceWhenAdded(e.target.value)} placeholder="215.40" type="number" step="0.01" className="w-28 rounded-xl border border-line bg-surface-2 px-3 py-2 text-sm outline-none placeholder:text-ink-3 focus:bg-white focus:border-accent-border focus:ring-1 focus:ring-accent-border transition-all" />
       </div>
-      <button type="submit" disabled={adding} className="rounded-xl bg-blue-600 px-5 py-2 text-sm font-semibold text-white hover:bg-blue-700 transition-colors disabled:opacity-50">
+      <button type="submit" disabled={adding} className="rounded-xl bg-accent px-5 py-2 text-sm font-semibold text-white hover:bg-accent transition-colors disabled:opacity-50">
         {adding ? "Adding..." : "Add"}
       </button>
     </form>
@@ -215,10 +215,10 @@ function ResearchScraperBlock(props: {
 }) {
   const hasAttachments = props.attachments.filter((a) => a.section === props.source).length > 0;
   return (
-    <div className="mt-4 border-t border-slate-100 pt-4">
+    <div className="mt-4 border-t border-line-soft pt-4">
       <div className="flex items-center gap-3 mb-2">
-        <h4 className="text-sm font-bold text-slate-700">Screenshot Scanner</h4>
-        <span className="text-[10px] text-slate-400">{props.helperText}</span>
+        <h4 className="text-sm font-bold text-ink-2">Screenshot Scanner</h4>
+        <span className="text-[10px] text-ink-3">{props.helperText}</span>
       </div>
       <ImageUpload
         section={props.source}
@@ -229,13 +229,13 @@ function ResearchScraperBlock(props: {
       />
       <div className="flex items-center gap-3 mt-2">
         {props.status && (
-          <p className="text-[10px] text-slate-500">{props.status}</p>
+          <p className="text-[10px] text-ink-3">{props.status}</p>
         )}
         <div className="ml-auto flex items-center gap-2">
           <button
             onClick={() => { void props.onScrape(false); }}
             disabled={props.loading || !hasAttachments}
-            className="text-[10px] rounded-md bg-blue-50 px-2.5 py-1 font-semibold text-blue-700 hover:bg-blue-100 disabled:opacity-50 transition-colors"
+            className="text-[10px] rounded-md bg-accent-soft px-2.5 py-1 font-semibold text-accent hover:bg-accent-soft disabled:opacity-50 transition-colors"
             title="Re-run vision against the current screenshot. Cached if the image hasn't changed since last scan (no Anthropic cost)."
           >
             {props.loading ? "Scanning..." : "Refresh"}
@@ -243,7 +243,7 @@ function ResearchScraperBlock(props: {
           <button
             onClick={() => { void props.onScrape(true); }}
             disabled={props.loading || !hasAttachments}
-            className="text-[10px] rounded-md border border-slate-300 bg-white px-2 py-1 font-medium text-slate-600 hover:bg-slate-100 disabled:opacity-50 transition-colors"
+            className="text-[10px] rounded-md border border-line bg-white px-2 py-1 font-medium text-ink-2 hover:bg-surface-2 disabled:opacity-50 transition-colors"
             title="Bypass the cache and re-run Anthropic vision. Use when the previous parse was incomplete."
           >
             Force re-scan
@@ -286,10 +286,10 @@ function RBCAddForm({ onAdd }: { onAdd: (e: RBCEntry) => void }) {
       }}
     >
       <div>
-        <label className="text-xs text-slate-400 block">Ticker*</label>
-        <input value={ticker} onChange={(e) => setTicker(e.target.value.toUpperCase())} placeholder="RY" className="w-24 rounded-xl border border-slate-200 bg-slate-50 px-3 py-2 text-sm font-mono outline-none placeholder:text-slate-400 focus:bg-white focus:border-blue-300 focus:ring-1 focus:ring-blue-200 transition-all" />
+        <label className="text-xs text-ink-3 block">Ticker*</label>
+        <input value={ticker} onChange={(e) => setTicker(e.target.value.toUpperCase())} placeholder="RY" className="w-24 rounded-xl border border-line bg-surface-2 px-3 py-2 text-sm font-mono outline-none placeholder:text-ink-3 focus:bg-white focus:border-accent-border focus:ring-1 focus:ring-accent-border transition-all" />
       </div>
-      <button type="submit" disabled={adding} className="rounded-xl bg-blue-600 px-5 py-2 text-sm font-semibold text-white hover:bg-blue-700 transition-colors disabled:opacity-50">
+      <button type="submit" disabled={adding} className="rounded-xl bg-accent px-5 py-2 text-sm font-semibold text-white hover:bg-accent transition-colors disabled:opacity-50">
         {adding ? "Adding..." : "Add"}
       </button>
     </form>
@@ -326,10 +326,10 @@ function FewAddForm({ onAdd }: { onAdd: (e: FewEntry) => void }) {
       }}
     >
       <div>
-        <label className="text-xs text-slate-400 block">Ticker*</label>
-        <input value={ticker} onChange={(e) => setTicker(e.target.value.toUpperCase())} placeholder="RY" className="w-24 rounded-xl border border-slate-200 bg-slate-50 px-3 py-2 text-sm font-mono outline-none placeholder:text-slate-400 focus:bg-white focus:border-indigo-300 focus:ring-1 focus:ring-indigo-200 transition-all" />
+        <label className="text-xs text-ink-3 block">Ticker*</label>
+        <input value={ticker} onChange={(e) => setTicker(e.target.value.toUpperCase())} placeholder="RY" className="w-24 rounded-xl border border-line bg-surface-2 px-3 py-2 text-sm font-mono outline-none placeholder:text-ink-3 focus:bg-white focus:border-violet-soft focus:ring-1 focus:ring-violet-soft transition-all" />
       </div>
-      <button type="submit" disabled={adding} className="rounded-xl bg-indigo-600 px-5 py-2 text-sm font-semibold text-white hover:bg-indigo-700 transition-colors disabled:opacity-50">
+      <button type="submit" disabled={adding} className="rounded-xl bg-violet px-5 py-2 text-sm font-semibold text-white hover:bg-violet transition-colors disabled:opacity-50">
         {adding ? "Adding..." : "Add"}
       </button>
     </form>
@@ -361,7 +361,7 @@ function EditableCell({
         onChange={(e) => setTemp(e.target.value)}
         onBlur={() => { onChange(temp); setEditing(false); }}
         onKeyDown={(e) => { if (e.key === "Enter") { onChange(temp); setEditing(false); } if (e.key === "Escape") setEditing(false); }}
-        className={`w-full bg-white border border-blue-300 rounded-lg px-1 py-0.5 text-sm outline-none focus:ring-1 focus:ring-blue-200 transition-all ${className}`}
+        className={`w-full bg-white border border-accent-border rounded-lg px-1 py-0.5 text-sm outline-none focus:ring-1 focus:ring-accent-border transition-all ${className}`}
       />
     );
   }
@@ -369,7 +369,7 @@ function EditableCell({
   return (
     <span
       onClick={() => { setTemp(String(value)); setEditing(true); }}
-      className={`cursor-pointer hover:bg-blue-50 rounded px-1 py-0.5 transition-colors ${className}`}
+      className={`cursor-pointer hover:bg-accent-soft rounded px-1 py-0.5 transition-colors ${className}`}
       title="Click to edit"
     >
       {value || "—"}
@@ -1800,15 +1800,15 @@ export default function ResearchPage() {
   if (!loaded) return null;
 
   return (
-    <main className="min-h-screen bg-[#f4f5f7] px-4 py-6 text-slate-900 md:px-8 md:py-8 overflow-x-hidden">
+    <main className="min-h-screen bg-[#f4f5f7] px-4 py-6 text-ink md:px-8 md:py-8 overflow-x-hidden">
       <div className="mx-auto max-w-7xl space-y-6">
         <div>
           <h1 className="text-3xl font-semibold tracking-tight">Research Notes</h1>
-          <p className="text-slate-500 mt-1">Track external research sources, ideas, and notes. All changes are saved and shared across the team.</p>
+          <p className="text-ink-3 mt-1">Track external research sources, ideas, and notes. All changes are saved and shared across the team.</p>
         </div>
 
         {attachmentsSaveError && (
-          <div className="rounded-xl border border-amber-200 bg-amber-50 px-4 py-3 text-sm text-amber-800">
+          <div className="rounded-xl border border-warn-border bg-warn-soft px-4 py-3 text-sm text-warn">
             <strong>Screenshots not saved:</strong> {attachmentsSaveError}
           </div>
         )}
@@ -1819,22 +1819,22 @@ export default function ResearchPage() {
             overlap (a ticker mentioned by 2+ sources) is weighted
             higher. Cached server-side: refreshes with unchanged
             research + brief return instantly with no Anthropic cost. */}
-        <section className="rounded-[24px] border border-indigo-200 bg-gradient-to-br from-indigo-50/60 to-white p-6 shadow-sm">
+        <section className="rounded-[24px] border border-violet-soft bg-gradient-to-br from-violet-soft/60 to-white p-6 shadow-sm">
           <div className="flex items-start justify-between gap-3 mb-3 flex-wrap">
             <div>
-              <h3 className="text-xl font-bold text-indigo-900 flex items-center gap-2">
+              <h3 className="text-xl font-bold text-violet flex items-center gap-2">
                 <span>✦</span> Cross-Source Synthesis
               </h3>
-              <p className="text-xs text-slate-500 mt-1">
+              <p className="text-xs text-ink-3 mt-1">
                 Best buy targets across all research sources, weighted by cross-source overlap and the morning brief. Names mentioned by 2+ sources rank as Top Picks.
               </p>
             </div>
             <div className="flex items-center gap-2 flex-wrap">
               {synthesisStatus && (
-                <span className="text-[11px] text-slate-500 mr-1">{synthesisStatus}</span>
+                <span className="text-[11px] text-ink-3 mr-1">{synthesisStatus}</span>
               )}
               {synthesisGeneratedAt && (
-                <span className="text-[10px] text-slate-400 mr-1" title={`Generated ${new Date(synthesisGeneratedAt).toLocaleString()}`}>
+                <span className="text-[10px] text-ink-3 mr-1" title={`Generated ${new Date(synthesisGeneratedAt).toLocaleString()}`}>
                   {new Date(synthesisGeneratedAt).toLocaleTimeString([], { hour: "numeric", minute: "2-digit" })}
                 </span>
               )}
@@ -1842,7 +1842,7 @@ export default function ResearchPage() {
                 <button
                   onClick={() => { void generateSynthesis(false); }}
                   disabled={synthesisLoading}
-                  className="text-[11px] rounded-md bg-indigo-600 px-3 py-1.5 font-semibold text-white hover:bg-indigo-700 disabled:opacity-50 transition-colors"
+                  className="text-[11px] rounded-md bg-violet px-3 py-1.5 font-semibold text-white hover:bg-violet disabled:opacity-50 transition-colors"
                   title="Generate the cross-source synthesis from current research + brief. Persists across refreshes."
                 >
                   {synthesisLoading ? "Generating..." : "Generate"}
@@ -1854,14 +1854,14 @@ export default function ResearchPage() {
                   void generateSynthesis(true);
                 }}
                 disabled={synthesisLoading}
-                className="text-[11px] rounded-md border border-slate-300 bg-white px-2.5 py-1.5 font-medium text-slate-600 hover:bg-slate-100 disabled:opacity-50 transition-colors"
+                className="text-[11px] rounded-md border border-line bg-white px-2.5 py-1.5 font-medium text-ink-2 hover:bg-surface-2 disabled:opacity-50 transition-colors"
                 title="Overwrite the persisted synthesis with a fresh one using the current brief. The new synthesis becomes the new sticky version."
               >
                 Force re-generate
               </button>
               <button
                 onClick={() => setUiPref("research.synthesisCollapsed", synthesisCollapsed ? "0" : "1")}
-                className="text-[11px] rounded-md border border-slate-300 bg-white px-2 py-1.5 font-medium text-slate-600 hover:bg-slate-100 transition-colors inline-flex items-center gap-1"
+                className="text-[11px] rounded-md border border-line bg-white px-2 py-1.5 font-medium text-ink-2 hover:bg-surface-2 transition-colors inline-flex items-center gap-1"
                 title={synthesisCollapsed ? "Expand the synthesis" : "Collapse the synthesis"}
                 aria-expanded={!synthesisCollapsed}
               >
@@ -1874,7 +1874,7 @@ export default function ResearchPage() {
           </div>
 
           {!synthesisCollapsed && !synthesis && !synthesisLoading && (
-            <div className="rounded-lg border border-dashed border-slate-300 bg-white/70 p-4 text-sm text-slate-500">
+            <div className="rounded-lg border border-dashed border-line bg-white/70 p-4 text-sm text-ink-3">
               {synthesisStatus
                 ? <>{synthesisStatus}</>
                 : <>No synthesis generated yet. Add some research picks across the sources below, then click <strong>Generate</strong>.</>}
@@ -1886,10 +1886,10 @@ export default function ResearchPage() {
             // colors visually separate the model's OPINION on regime
             // alignment from the source-derived thesis text below.
             const fitColor: Record<RegimeFitRating, string> = {
-              high: "bg-emerald-100 text-emerald-800 ring-1 ring-emerald-200",
-              medium: "bg-slate-100 text-slate-700 ring-1 ring-slate-200",
-              low: "bg-amber-100 text-amber-800 ring-1 ring-amber-200",
-              contrary: "bg-red-100 text-red-800 ring-1 ring-red-200",
+              high: "bg-pos-soft text-pos ring-1 ring-pos-border",
+              medium: "bg-surface-2 text-ink-2 ring-1 ring-line",
+              low: "bg-warn-soft text-warn ring-1 ring-warn-border",
+              contrary: "bg-neg-soft text-neg ring-1 ring-neg-border",
             };
             const fitLabel: Record<RegimeFitRating, string> = {
               high: "Regime: HIGH fit",
@@ -1905,9 +1905,9 @@ export default function ResearchPage() {
               if (typeof p.conviction !== "number") return null;
               const c = p.conviction;
               const tone =
-                c >= 75 ? "bg-emerald-100 text-emerald-800 border-emerald-300"
-                : c >= 60 ? "bg-amber-100 text-amber-800 border-amber-300"
-                : "bg-slate-100 text-slate-700 border-slate-300";
+                c >= 75 ? "bg-pos-soft text-pos border-pos-border"
+                : c >= 60 ? "bg-warn-soft text-warn border-warn-border"
+                : "bg-surface-2 text-ink-2 border-line";
               return (
                 <span
                   className={`text-[10px] font-bold rounded-full px-2 py-0.5 border ${tone}`}
@@ -1920,12 +1920,12 @@ export default function ResearchPage() {
             const RegimeFitBlock = ({ p }: { p: SynthesisPick }) => {
               if (!p.regimeFit) return null;
               return (
-                <div className="mt-2 flex items-start gap-2 rounded-md bg-slate-50 px-2 py-1.5">
+                <div className="mt-2 flex items-start gap-2 rounded-md bg-surface-2 px-2 py-1.5">
                   <span className={`text-[10px] font-bold uppercase tracking-wider rounded-full px-2 py-0.5 whitespace-nowrap ${fitColor[p.regimeFit]}`}>
                     {fitLabel[p.regimeFit]}
                   </span>
                   {p.regimeFitRationale && (
-                    <span className="text-[11px] leading-5 text-slate-600 italic">
+                    <span className="text-[11px] leading-5 text-ink-2 italic">
                       {p.regimeFitRationale}
                     </span>
                   )}
@@ -1938,25 +1938,25 @@ export default function ResearchPage() {
                 <div className="flex items-start gap-2 flex-wrap">
                   {synthesis.regimeContext && (
                     <span className={`text-[10px] font-bold uppercase tracking-wider rounded-full px-2 py-0.5 mt-0.5 ${
-                      synthesis.regimeContext === "Risk-On"  ? "bg-emerald-100 text-emerald-700"
-                      : synthesis.regimeContext === "Risk-Off" ? "bg-red-100 text-red-700"
-                      : "bg-amber-100 text-amber-700"
+                      synthesis.regimeContext === "Risk-On"  ? "bg-pos-soft text-pos"
+                      : synthesis.regimeContext === "Risk-Off" ? "bg-neg-soft text-neg"
+                      : "bg-warn-soft text-warn"
                     }`}>
                       {synthesis.regimeContext}
                     </span>
                   )}
-                  <p className="text-sm leading-6 text-slate-700 flex-1 min-w-[260px]">{synthesis.summary}</p>
+                  <p className="text-sm leading-6 text-ink-2 flex-1 min-w-[260px]">{synthesis.summary}</p>
                 </div>
 
                 {/* Regime tilts — the model's distilled view of what the
                     current environment favors. These drove the regimeFit
                     ratings on each pick below. */}
                 {synthesis.regimeTilts && synthesis.regimeTilts.length > 0 && (
-                  <div className="rounded-lg border border-blue-100 bg-blue-50/60 p-3">
-                    <h4 className="text-[10px] font-bold uppercase tracking-wider text-blue-800 mb-1.5">
-                      Regime Tilts <span className="text-blue-500 font-normal normal-case">· model&apos;s read of what this market favors</span>
+                  <div className="rounded-lg border border-accent-border bg-accent-soft/60 p-3">
+                    <h4 className="text-[10px] font-bold uppercase tracking-wider text-accent mb-1.5">
+                      Regime Tilts <span className="text-accent font-normal normal-case">· model&apos;s read of what this market favors</span>
                     </h4>
-                    <ul className="text-xs leading-5 text-blue-900 space-y-0.5 list-disc list-inside">
+                    <ul className="text-xs leading-5 text-accent space-y-0.5 list-disc list-inside">
                       {synthesis.regimeTilts.map((t, i) => <li key={i}>{t}</li>)}
                     </ul>
                   </div>
@@ -1967,25 +1967,25 @@ export default function ResearchPage() {
                     spot multi-source picks the regime doesn't favor. */}
                 {synthesis.topPicks.length > 0 && (
                   <div>
-                    <h4 className="text-xs font-bold uppercase tracking-wider text-indigo-700 mb-2">
-                      Top Picks <span className="text-slate-400 font-normal">· cross-source overlap (research-driven)</span>
+                    <h4 className="text-xs font-bold uppercase tracking-wider text-violet mb-2">
+                      Top Picks <span className="text-ink-3 font-normal">· cross-source overlap (research-driven)</span>
                     </h4>
                     <ul className="space-y-3">
                       {synthesis.topPicks.map((p) => (
-                        <li key={p.ticker} className="rounded-xl border border-indigo-100 bg-white p-3 shadow-sm">
+                        <li key={p.ticker} className="rounded-xl border border-violet-soft bg-white p-3 shadow-sm">
                           <div className="flex items-center gap-2 flex-wrap mb-1.5">
-                            <span className="font-mono font-bold text-base text-indigo-900">${displayTicker(p.ticker)}</span>
-                            <span className="text-[10px] font-bold rounded-full bg-indigo-600 text-white px-2 py-0.5">
+                            <span className="font-mono font-bold text-base text-violet">${displayTicker(p.ticker)}</span>
+                            <span className="text-[10px] font-bold rounded-full bg-violet text-white px-2 py-0.5">
                               {p.sourceCount} sources
                             </span>
                             <ConvictionBadge p={p} />
                             {p.sources.map((s) => (
-                              <span key={s} className="text-[10px] rounded-full bg-slate-100 text-slate-600 px-2 py-0.5">
+                              <span key={s} className="text-[10px] rounded-full bg-surface-2 text-ink-2 px-2 py-0.5">
                                 {s}
                               </span>
                             ))}
                           </div>
-                          <p className="text-sm leading-6 text-slate-700">{p.thesis}</p>
+                          <p className="text-sm leading-6 text-ink-2">{p.thesis}</p>
                           <RegimeFitBlock p={p} />
                         </li>
                       ))}
@@ -2001,7 +2001,7 @@ export default function ResearchPage() {
                 {synthesis.regimeAlignedHighlights && synthesis.regimeAlignedHighlights.length > 0 && (
                   <div>
                     <h4 className="text-xs font-bold uppercase tracking-wider text-teal-700 mb-2">
-                      Regime-Aligned Highlights <span className="text-slate-400 font-normal">· single-source, opinion-driven by current environment</span>
+                      Regime-Aligned Highlights <span className="text-ink-3 font-normal">· single-source, opinion-driven by current environment</span>
                     </h4>
                     <ul className="space-y-2.5">
                       {synthesis.regimeAlignedHighlights.map((p) => (
@@ -2010,12 +2010,12 @@ export default function ResearchPage() {
                             <span className="font-mono font-bold text-base text-teal-900">${displayTicker(p.ticker)}</span>
                             <ConvictionBadge p={p} />
                             {p.sources.map((s) => (
-                              <span key={s} className="text-[10px] rounded-full bg-slate-100 text-slate-600 px-2 py-0.5">
+                              <span key={s} className="text-[10px] rounded-full bg-surface-2 text-ink-2 px-2 py-0.5">
                                 {s}
                               </span>
                             ))}
                           </div>
-                          <p className="text-sm leading-6 text-slate-700">{p.thesis}</p>
+                          <p className="text-sm leading-6 text-ink-2">{p.thesis}</p>
                           <RegimeFitBlock p={p} />
                         </li>
                       ))}
@@ -2026,22 +2026,22 @@ export default function ResearchPage() {
                 {/* Honorable mentions — single source, weaker regime fit. */}
                 {synthesis.honorableMentions.length > 0 && (
                   <div>
-                    <h4 className="text-xs font-bold uppercase tracking-wider text-slate-600 mb-2">
-                      Honorable Mentions <span className="text-slate-400 font-normal">· single-source, regime-neutral</span>
+                    <h4 className="text-xs font-bold uppercase tracking-wider text-ink-2 mb-2">
+                      Honorable Mentions <span className="text-ink-3 font-normal">· single-source, regime-neutral</span>
                     </h4>
                     <ul className="space-y-2">
                       {synthesis.honorableMentions.map((p) => (
-                        <li key={p.ticker} className="rounded-lg border border-slate-100 bg-white/70 p-2.5">
+                        <li key={p.ticker} className="rounded-lg border border-line-soft bg-white/70 p-2.5">
                           <div className="flex items-center gap-2 flex-wrap mb-1">
                             <span className="font-mono font-bold text-sm">${displayTicker(p.ticker)}</span>
                             <ConvictionBadge p={p} />
                             {p.sources.map((s) => (
-                              <span key={s} className="text-[10px] rounded-full bg-slate-100 text-slate-600 px-2 py-0.5">
+                              <span key={s} className="text-[10px] rounded-full bg-surface-2 text-ink-2 px-2 py-0.5">
                                 {s}
                               </span>
                             ))}
                           </div>
-                          <p className="text-xs leading-5 text-slate-600">{p.thesis}</p>
+                          <p className="text-xs leading-5 text-ink-2">{p.thesis}</p>
                           <RegimeFitBlock p={p} />
                         </li>
                       ))}
@@ -2051,9 +2051,9 @@ export default function ResearchPage() {
 
                 {/* Cautions */}
                 {synthesis.cautions && synthesis.cautions.length > 0 && (
-                  <div className="rounded-lg border border-amber-200 bg-amber-50 p-3">
-                    <h4 className="text-xs font-bold uppercase tracking-wider text-amber-800 mb-1">Cautions</h4>
-                    <ul className="text-xs leading-5 text-amber-900 list-disc list-inside space-y-0.5">
+                  <div className="rounded-lg border border-warn-border bg-warn-soft p-3">
+                    <h4 className="text-xs font-bold uppercase tracking-wider text-warn mb-1">Cautions</h4>
+                    <ul className="text-xs leading-5 text-warn list-disc list-inside space-y-0.5">
                       {synthesis.cautions.map((c, i) => <li key={i}>{c}</li>)}
                     </ul>
                   </div>
@@ -2066,15 +2066,15 @@ export default function ResearchPage() {
         {/* ── Newton's Upticks ── */}
         <CollapsibleSection
           prefKey="research.newton"
-          className="border-slate-200"
+          className="border-line"
           titleClass="text-xl font-bold"
           title={<>Newton&apos;s Upticks</>}
           subtitle={<>Fundstrat technical uptick list &mdash; click any cell to edit</>}
-          right={<span className="text-sm text-slate-400">{state.newtonUpticks.length} stocks</span>}
+          right={<span className="text-sm text-ink-3">{state.newtonUpticks.length} stocks</span>}
         >
 
           {pricesFetchedAt && (
-            <p className="text-[10px] text-slate-400 mb-2">
+            <p className="text-[10px] text-ink-3 mb-2">
               Prices updated {new Date(pricesFetchedAt).toLocaleString("en-US", { month: "short", day: "numeric", hour: "numeric", minute: "2-digit", hour12: true })}
             </p>
           )}
@@ -2099,42 +2099,42 @@ export default function ResearchPage() {
               <tbody>
                 {sortedUpticks().map((u, i) => {
                   const isNew = u.dateAdded === new Date().toLocaleDateString("en-US", { month: "numeric", day: "numeric", year: "numeric" });
-                  const rowBg = isNew ? "bg-amber-50 font-semibold" : i % 2 === 0 ? "bg-white" : "bg-slate-50/50";
+                  const rowBg = isNew ? "bg-warn-soft font-semibold" : i % 2 === 0 ? "bg-white" : "bg-surface-2/50";
                   const livePrice = livePrices[u.ticker];
                   const pctChange = livePrice && u.priceWhenAdded ? ((livePrice - u.priceWhenAdded) / u.priceWhenAdded * 100) : null;
                   return (
-                    <tr key={u.ticker} className={`border-b border-slate-100 ${rowBg} hover:bg-blue-50/40 transition-colors`}>
-                      <td className="py-2 pr-2 text-slate-400">{i + 1}</td>
+                    <tr key={u.ticker} className={`border-b border-line-soft ${rowBg} hover:bg-accent-soft/40 transition-colors`}>
+                      <td className="py-2 pr-2 text-ink-3">{i + 1}</td>
                       <td className="py-2 pr-3 font-mono font-bold text-teal-700">${displayTicker(u.ticker)}</td>
-                      <td className="py-2 pr-3 text-slate-700 truncate max-w-[160px]">
-                        {u.name && u.name !== u.ticker ? u.name : <span className="text-slate-300 italic text-xs">loading...</span>}
+                      <td className="py-2 pr-3 text-ink-2 truncate max-w-[160px]">
+                        {u.name && u.name !== u.ticker ? u.name : <span className="text-ink-faint italic text-xs">loading...</span>}
                       </td>
-                      <td className="py-2 pr-3 text-slate-600 truncate max-w-[140px]">
-                        {u.sector && u.sector !== "—" ? u.sector : <span className="text-slate-300 italic text-xs">loading...</span>}
+                      <td className="py-2 pr-3 text-ink-2 truncate max-w-[140px]">
+                        {u.sector && u.sector !== "—" ? u.sector : <span className="text-ink-faint italic text-xs">loading...</span>}
                       </td>
                       <td className="py-2 pr-3 text-right font-mono">
                         {pricesLoading ? (
-                          <span className="text-slate-300 animate-pulse">...</span>
+                          <span className="text-ink-faint animate-pulse">...</span>
                         ) : livePrice != null ? (
                           <span className="font-semibold">${livePrice.toFixed(2)}</span>
                         ) : (
-                          <span className="text-slate-300">—</span>
+                          <span className="text-ink-faint">—</span>
                         )}
                       </td>
                       <td className="py-2 pr-3 text-right font-mono">
                         {u.priceWhenAdded ? (
                           <EditableCell value={`$${u.priceWhenAdded.toFixed(2)}`} onChange={(v) => updateUptick(u.ticker, "priceWhenAdded", v.replace("$", ""))} />
                         ) : (
-                          <span className="text-emerald-600 font-semibold">NEW</span>
+                          <span className="text-pos font-semibold">NEW</span>
                         )}
                       </td>
                       <td className="py-2 pr-3 text-right font-mono text-xs">
                         {pctChange != null ? (
-                          <span className={pctChange >= 0 ? "text-emerald-600" : "text-red-500"}>
+                          <span className={pctChange >= 0 ? "text-pos" : "text-neg"}>
                             {pctChange >= 0 ? "+" : ""}{pctChange.toFixed(1)}%
                           </span>
                         ) : (
-                          <span className="text-slate-300">—</span>
+                          <span className="text-ink-faint">—</span>
                         )}
                       </td>
                       <td className="py-2 pr-3 text-right font-mono">
@@ -2143,22 +2143,22 @@ export default function ResearchPage() {
                       <td className="py-2 pr-3 text-right font-mono">
                         <EditableCell value={u.resistance} onChange={(v) => updateUptick(u.ticker, "resistance", v)} />
                       </td>
-                      <td className="py-2 pr-3 text-slate-500">
+                      <td className="py-2 pr-3 text-ink-3">
                         <EditableCell value={u.dateAdded} onChange={(v) => updateUptick(u.ticker, "dateAdded", v)} />
                       </td>
                       <td className="py-2 text-right whitespace-nowrap">
                         {scoredStocks.some((s) => s.ticker === u.ticker) ? (
-                          <span className="text-[10px] text-emerald-500 font-medium">In list</span>
+                          <span className="text-[10px] text-pos font-medium">In list</span>
                         ) : (
                           <button
                             onClick={(e) => { e.stopPropagation(); addToWatchlist(u.ticker); }}
-                            className="text-[10px] text-blue-500 hover:text-blue-700 font-semibold transition-colors"
+                            className="text-[10px] text-accent hover:text-accent font-semibold transition-colors"
                             title="Add to Watchlist"
                           >
                             + Watch
                           </button>
                         )}
-                        <button onClick={() => removeUptick(u.ticker)} className="ml-2 text-slate-300 hover:text-red-500 font-bold transition-colors" title="Remove">
+                        <button onClick={() => removeUptick(u.ticker)} className="ml-2 text-ink-faint hover:text-neg font-bold transition-colors" title="Remove">
                           &times;
                         </button>
                       </td>
@@ -2167,7 +2167,7 @@ export default function ResearchPage() {
                 })}
                 {state.newtonUpticks.length === 0 && (
                   <tr>
-                    <td colSpan={11} className="py-8 text-center text-slate-400 italic">No upticks added yet</td>
+                    <td colSpan={11} className="py-8 text-center text-ink-3 italic">No upticks added yet</td>
                   </tr>
                 )}
               </tbody>
@@ -2184,10 +2184,10 @@ export default function ResearchPage() {
             if the image fingerprint changed (same caching pattern as JPM
             flows). Unchanged images = zero tokens spent.
           */}
-          <div className="mt-5 border-t border-slate-100 pt-4">
+          <div className="mt-5 border-t border-line-soft pt-4">
             <div className="flex items-center gap-3 mb-2">
               <h4 className="text-sm font-bold text-teal-700">Screenshot Scanner</h4>
-              <span className="text-[10px] text-slate-400">
+              <span className="text-[10px] text-ink-3">
                 Upload a Newton&apos;s Upticks screenshot. On Refresh, support/resistance/price/date fields are auto-populated from the image. Re-scans only if the image changes.
               </span>
             </div>
@@ -2200,12 +2200,12 @@ export default function ResearchPage() {
             />
             <div className="flex items-center gap-3 mt-2">
               {scrapeStatus && (
-                <p className="text-[10px] text-slate-500">{scrapeStatus}</p>
+                <p className="text-[10px] text-ink-3">{scrapeStatus}</p>
               )}
               <button
                 onClick={() => { void scrapeUpticks(true); }}
                 disabled={scrapeLoading || (state.attachments || []).filter((a) => a.section === "upticks").length === 0}
-                className="ml-auto text-[10px] rounded-md border border-slate-300 bg-white px-2 py-1 font-medium text-slate-600 hover:bg-slate-100 disabled:opacity-50 transition-colors"
+                className="ml-auto text-[10px] rounded-md border border-line bg-white px-2 py-1 font-medium text-ink-2 hover:bg-surface-2 disabled:opacity-50 transition-colors"
                 title="Ignore the cached parse and re-run Anthropic vision against the current screenshot. Use this if the last scan missed support/resistance or other fields."
               >
                 Force re-scan
@@ -2216,14 +2216,14 @@ export default function ResearchPage() {
                 the screenshot. If rows show here with empty support/resistance,
                 the prompt needs improvement — not the merge logic. */}
             {lastScrape.length > 0 && (
-              <details className="mt-2 text-[10px] text-slate-500">
-                <summary className="cursor-pointer hover:text-slate-700">
+              <details className="mt-2 text-[10px] text-ink-3">
+                <summary className="cursor-pointer hover:text-ink-2">
                   View parsed rows from screenshot ({lastScrape.length})
                 </summary>
                 <div className="mt-1 overflow-x-auto">
                   <div className="overflow-x-auto"><table className="w-full text-[10px]">
                     <thead>
-                      <tr className="text-slate-400 border-b border-slate-200">
+                      <tr className="text-ink-3 border-b border-line">
                         <th className="py-1 pr-2 text-left">Ticker</th>
                         <th className="py-1 pr-2 text-left">Support</th>
                         <th className="py-1 pr-2 text-left">Resistance</th>
@@ -2233,12 +2233,12 @@ export default function ResearchPage() {
                     </thead>
                     <tbody>
                       {lastScrape.map((r, i) => (
-                        <tr key={`${r.ticker}-${i}`} className="border-b border-slate-100">
+                        <tr key={`${r.ticker}-${i}`} className="border-b border-line-soft">
                           <td className="py-0.5 pr-2 font-mono font-semibold">{displayTicker(r.ticker)}</td>
-                          <td className="py-0.5 pr-2">{r.support ?? <span className="text-slate-300">—</span>}</td>
-                          <td className="py-0.5 pr-2">{r.resistance ?? <span className="text-slate-300">—</span>}</td>
-                          <td className="py-0.5 pr-2 text-right">{r.priceWhenAdded != null ? `$${r.priceWhenAdded}` : <span className="text-slate-300">—</span>}</td>
-                          <td className="py-0.5">{r.dateAdded ?? <span className="text-slate-300">—</span>}</td>
+                          <td className="py-0.5 pr-2">{r.support ?? <span className="text-ink-faint">—</span>}</td>
+                          <td className="py-0.5 pr-2">{r.resistance ?? <span className="text-ink-faint">—</span>}</td>
+                          <td className="py-0.5 pr-2 text-right">{r.priceWhenAdded != null ? `$${r.priceWhenAdded}` : <span className="text-ink-faint">—</span>}</td>
+                          <td className="py-0.5">{r.dateAdded ?? <span className="text-ink-faint">—</span>}</td>
                         </tr>
                       ))}
                     </tbody>
@@ -2249,10 +2249,10 @@ export default function ResearchPage() {
           </div>
 
           {/* Newton sector views — compact inline toggles */}
-          <div className="mt-5 border-t border-slate-100 pt-4">
+          <div className="mt-5 border-t border-line-soft pt-4">
             <div className="flex items-center gap-3 mb-3">
               <h4 className="text-sm font-bold text-teal-700">Newton&apos;s Sector Views</h4>
-              <span className="text-[10px] text-slate-400">Click to toggle OW / N / UW</span>
+              <span className="text-[10px] text-ink-3">Click to toggle OW / N / UW</span>
             </div>
             <div className="flex flex-wrap gap-2">
               {(state.newtonSectors ?? GICS_SECTORS.map((s) => ({ sector: s, view: "neutral" as SectorView }))).map((sv) => {
@@ -2266,10 +2266,10 @@ export default function ResearchPage() {
                 };
                 const bg =
                   sv.view === "overweight"
-                    ? "bg-emerald-100 text-emerald-800 border-emerald-300"
+                    ? "bg-pos-soft text-pos border-pos-border"
                     : sv.view === "underweight"
-                    ? "bg-red-100 text-red-800 border-red-300"
-                    : "bg-slate-100 text-slate-500 border-slate-200";
+                    ? "bg-neg-soft text-neg border-neg-border"
+                    : "bg-surface-2 text-ink-3 border-line";
                 const badge =
                   sv.view === "overweight" ? "OW" : sv.view === "underweight" ? "UW" : "N";
                 return (
@@ -2287,10 +2287,10 @@ export default function ResearchPage() {
           </div>
 
           {/* Lee sector views — same toggle pattern as Newton */}
-          <div className="mt-4 border-t border-slate-100 pt-4">
+          <div className="mt-4 border-t border-line-soft pt-4">
             <div className="flex items-center gap-3 mb-3">
-              <h4 className="text-sm font-bold text-amber-700">Lee&apos;s Sector Views</h4>
-              <span className="text-[10px] text-slate-400">Click to toggle OW / N / UW</span>
+              <h4 className="text-sm font-bold text-warn">Lee&apos;s Sector Views</h4>
+              <span className="text-[10px] text-ink-3">Click to toggle OW / N / UW</span>
             </div>
             <div className="flex flex-wrap gap-2">
               {(state.leeSectors ?? GICS_SECTORS.map((s) => ({ sector: s, view: "neutral" as SectorView }))).map((sv) => {
@@ -2304,10 +2304,10 @@ export default function ResearchPage() {
                 };
                 const bg =
                   sv.view === "overweight"
-                    ? "bg-emerald-100 text-emerald-800 border-emerald-300"
+                    ? "bg-pos-soft text-pos border-pos-border"
                     : sv.view === "underweight"
-                    ? "bg-red-100 text-red-800 border-red-300"
-                    : "bg-slate-100 text-slate-500 border-slate-200";
+                    ? "bg-neg-soft text-neg border-neg-border"
+                    : "bg-surface-2 text-ink-3 border-line";
                 const badge =
                   sv.view === "overweight" ? "OW" : sv.view === "underweight" ? "UW" : "N";
                 return (
@@ -2331,21 +2331,21 @@ export default function ResearchPage() {
           <CollapsibleSection
             prefKey="research.fsTop"
             linkedKeys={["research.fsBottom"]}
-            className="border-emerald-200 min-w-0"
-            titleClass="text-xl font-bold text-emerald-800"
+            className="border-pos-border min-w-0"
+            titleClass="text-xl font-bold text-pos"
             title={<>Fundstrat Large-Cap Top Ideas</>}
             subtitle={<>Best long ideas — large-cap names</>}
-            right={<><span className="text-sm text-slate-400">{state.fundstratTop.length} names</span></>}
+            right={<><span className="text-sm text-ink-3">{state.fundstratTop.length} names</span></>}
           >
 
             <div className="overflow-x-auto"><table className="w-full text-sm">
               <thead>
-                <tr className="border-b-2 border-emerald-500 text-left">
-                  <th className="py-2 pr-2 text-xs font-semibold text-emerald-700 w-8">#</th>
-                  <th className="py-2 pr-3 text-xs font-semibold text-emerald-700 cursor-pointer hover:text-emerald-900 select-none" onClick={() => toggleTopSort("ticker")}>Ticker{tArrow("ticker")}</th>
-                  <th className="py-2 pr-3 text-xs font-semibold text-emerald-700 text-right cursor-pointer hover:text-emerald-900 select-none" onClick={() => toggleTopSort("currentPrice")}>Current Price{tArrow("currentPrice")}</th>
-                  <th className="py-2 pr-3 text-xs font-semibold text-emerald-700 text-right cursor-pointer hover:text-emerald-900 select-none" onClick={() => toggleTopSort("priceWhenAdded")}>Price Added{tArrow("priceWhenAdded")}</th>
-                  <th className="py-2 pr-2 text-xs font-semibold text-emerald-700 text-right">Chg</th>
+                <tr className="border-b-2 border-pos-border text-left">
+                  <th className="py-2 pr-2 text-xs font-semibold text-pos w-8">#</th>
+                  <th className="py-2 pr-3 text-xs font-semibold text-pos cursor-pointer hover:text-pos select-none" onClick={() => toggleTopSort("ticker")}>Ticker{tArrow("ticker")}</th>
+                  <th className="py-2 pr-3 text-xs font-semibold text-pos text-right cursor-pointer hover:text-pos select-none" onClick={() => toggleTopSort("currentPrice")}>Current Price{tArrow("currentPrice")}</th>
+                  <th className="py-2 pr-3 text-xs font-semibold text-pos text-right cursor-pointer hover:text-pos select-none" onClick={() => toggleTopSort("priceWhenAdded")}>Price Added{tArrow("priceWhenAdded")}</th>
+                  <th className="py-2 pr-2 text-xs font-semibold text-pos text-right">Chg</th>
                   <th className="py-2 w-8"></th>
                 </tr>
               </thead>
@@ -2354,16 +2354,16 @@ export default function ResearchPage() {
                   const livePrice = livePrices[item.ticker];
                   const pctChange = livePrice && item.priceWhenAdded ? ((livePrice - item.priceWhenAdded) / item.priceWhenAdded * 100) : null;
                   return (
-                    <tr key={item.ticker} className={`border-b border-slate-100 ${i % 2 === 0 ? "bg-white" : "bg-emerald-50/30"} hover:bg-emerald-50/60 transition-colors`}>
-                      <td className="py-2 pr-2 text-slate-400">{i + 1}</td>
-                      <td className="py-2 pr-3 font-mono font-bold text-emerald-700">${displayTicker(item.ticker)}</td>
+                    <tr key={item.ticker} className={`border-b border-line-soft ${i % 2 === 0 ? "bg-white" : "bg-pos-soft/30"} hover:bg-pos-soft/60 transition-colors`}>
+                      <td className="py-2 pr-2 text-ink-3">{i + 1}</td>
+                      <td className="py-2 pr-3 font-mono font-bold text-pos">${displayTicker(item.ticker)}</td>
                       <td className="py-2 pr-3 text-right font-mono">
                         {pricesLoading ? (
-                          <span className="text-slate-300 animate-pulse">...</span>
+                          <span className="text-ink-faint animate-pulse">...</span>
                         ) : livePrice != null ? (
                           <span className="font-semibold">${livePrice.toFixed(2)}</span>
                         ) : (
-                          <span className="text-slate-300">—</span>
+                          <span className="text-ink-faint">—</span>
                         )}
                       </td>
                       <td className="py-2 pr-3 text-right font-mono">
@@ -2374,32 +2374,32 @@ export default function ResearchPage() {
                       </td>
                       <td className="py-2 pr-2 text-right font-mono text-xs">
                         {pctChange != null ? (
-                          <span className={pctChange >= 0 ? "text-emerald-600" : "text-red-500"}>
+                          <span className={pctChange >= 0 ? "text-pos" : "text-neg"}>
                             {pctChange >= 0 ? "+" : ""}{pctChange.toFixed(1)}%
                           </span>
                         ) : (
-                          <span className="text-slate-300">—</span>
+                          <span className="text-ink-faint">—</span>
                         )}
                       </td>
                       <td className="py-2 text-right whitespace-nowrap">
                         {scoredStocks.some((s) => s.ticker === item.ticker) ? (
-                          <span className="text-[10px] text-emerald-500 font-medium">In list</span>
+                          <span className="text-[10px] text-pos font-medium">In list</span>
                         ) : (
                           <button
                             onClick={(e) => { e.stopPropagation(); addToWatchlist(item.ticker); }}
-                            className="text-[10px] text-blue-500 hover:text-blue-700 font-semibold transition-colors"
+                            className="text-[10px] text-accent hover:text-accent font-semibold transition-colors"
                             title="Add to Watchlist"
                           >
                             + Watch
                           </button>
                         )}
-                        <button onClick={() => removeIdea("fundstratTop", item.ticker)} className="ml-2 text-slate-300 hover:text-red-500 font-bold transition-colors">&times;</button>
+                        <button onClick={() => removeIdea("fundstratTop", item.ticker)} className="ml-2 text-ink-faint hover:text-neg font-bold transition-colors">&times;</button>
                       </td>
                     </tr>
                   );
                 })}
                 {state.fundstratTop.length === 0 && (
-                  <tr><td colSpan={6} className="py-6 text-center text-slate-400 italic">No top ideas added yet</td></tr>
+                  <tr><td colSpan={6} className="py-6 text-center text-ink-3 italic">No top ideas added yet</td></tr>
                 )}
               </tbody>
             </table></div>
@@ -2423,21 +2423,21 @@ export default function ResearchPage() {
           <CollapsibleSection
             prefKey="research.fsBottom"
             linkedKeys={["research.fsTop"]}
-            className="border-red-200 min-w-0"
-            titleClass="text-xl font-bold text-red-800"
+            className="border-neg-border min-w-0"
+            titleClass="text-xl font-bold text-neg"
             title={<>Fundstrat Large-Cap Bottom Ideas</>}
             subtitle={<>Names to avoid or short — large-cap</>}
-            right={<><span className="text-sm text-slate-400">{state.fundstratBottom.length} names</span></>}
+            right={<><span className="text-sm text-ink-3">{state.fundstratBottom.length} names</span></>}
           >
 
             <div className="overflow-x-auto"><table className="w-full text-sm">
               <thead>
-                <tr className="border-b-2 border-red-400 text-left">
-                  <th className="py-2 pr-2 text-xs font-semibold text-red-700 w-8">#</th>
-                  <th className="py-2 pr-3 text-xs font-semibold text-red-700 cursor-pointer hover:text-red-900 select-none" onClick={() => toggleBottomSort("ticker")}>Ticker{bArrow("ticker")}</th>
-                  <th className="py-2 pr-3 text-xs font-semibold text-red-700 text-right cursor-pointer hover:text-red-900 select-none" onClick={() => toggleBottomSort("currentPrice")}>Current Price{bArrow("currentPrice")}</th>
-                  <th className="py-2 pr-3 text-xs font-semibold text-red-700 text-right cursor-pointer hover:text-red-900 select-none" onClick={() => toggleBottomSort("priceWhenAdded")}>Price Added{bArrow("priceWhenAdded")}</th>
-                  <th className="py-2 pr-2 text-xs font-semibold text-red-700 text-right">Chg</th>
+                <tr className="border-b-2 border-neg-border text-left">
+                  <th className="py-2 pr-2 text-xs font-semibold text-neg w-8">#</th>
+                  <th className="py-2 pr-3 text-xs font-semibold text-neg cursor-pointer hover:text-neg select-none" onClick={() => toggleBottomSort("ticker")}>Ticker{bArrow("ticker")}</th>
+                  <th className="py-2 pr-3 text-xs font-semibold text-neg text-right cursor-pointer hover:text-neg select-none" onClick={() => toggleBottomSort("currentPrice")}>Current Price{bArrow("currentPrice")}</th>
+                  <th className="py-2 pr-3 text-xs font-semibold text-neg text-right cursor-pointer hover:text-neg select-none" onClick={() => toggleBottomSort("priceWhenAdded")}>Price Added{bArrow("priceWhenAdded")}</th>
+                  <th className="py-2 pr-2 text-xs font-semibold text-neg text-right">Chg</th>
                   <th className="py-2 w-8"></th>
                 </tr>
               </thead>
@@ -2446,16 +2446,16 @@ export default function ResearchPage() {
                   const livePrice = livePrices[item.ticker];
                   const pctChange = livePrice && item.priceWhenAdded ? ((livePrice - item.priceWhenAdded) / item.priceWhenAdded * 100) : null;
                   return (
-                    <tr key={item.ticker} className={`border-b border-slate-100 ${i % 2 === 0 ? "bg-white" : "bg-red-50/30"} hover:bg-red-50/60 transition-colors`}>
-                      <td className="py-2 pr-2 text-slate-400">{i + 1}</td>
-                      <td className="py-2 pr-3 font-mono font-bold text-red-700">${displayTicker(item.ticker)}</td>
+                    <tr key={item.ticker} className={`border-b border-line-soft ${i % 2 === 0 ? "bg-white" : "bg-neg-soft/30"} hover:bg-neg-soft/60 transition-colors`}>
+                      <td className="py-2 pr-2 text-ink-3">{i + 1}</td>
+                      <td className="py-2 pr-3 font-mono font-bold text-neg">${displayTicker(item.ticker)}</td>
                       <td className="py-2 pr-3 text-right font-mono">
                         {pricesLoading ? (
-                          <span className="text-slate-300 animate-pulse">...</span>
+                          <span className="text-ink-faint animate-pulse">...</span>
                         ) : livePrice != null ? (
                           <span className="font-semibold">${livePrice.toFixed(2)}</span>
                         ) : (
-                          <span className="text-slate-300">—</span>
+                          <span className="text-ink-faint">—</span>
                         )}
                       </td>
                       <td className="py-2 pr-3 text-right font-mono">
@@ -2466,32 +2466,32 @@ export default function ResearchPage() {
                       </td>
                       <td className="py-2 pr-2 text-right font-mono text-xs">
                         {pctChange != null ? (
-                          <span className={pctChange >= 0 ? "text-emerald-600" : "text-red-500"}>
+                          <span className={pctChange >= 0 ? "text-pos" : "text-neg"}>
                             {pctChange >= 0 ? "+" : ""}{pctChange.toFixed(1)}%
                           </span>
                         ) : (
-                          <span className="text-slate-300">—</span>
+                          <span className="text-ink-faint">—</span>
                         )}
                       </td>
                       <td className="py-2 text-right whitespace-nowrap">
                         {scoredStocks.some((s) => s.ticker === item.ticker) ? (
-                          <span className="text-[10px] text-emerald-500 font-medium">In list</span>
+                          <span className="text-[10px] text-pos font-medium">In list</span>
                         ) : (
                           <button
                             onClick={(e) => { e.stopPropagation(); addToWatchlist(item.ticker); }}
-                            className="text-[10px] text-blue-500 hover:text-blue-700 font-semibold transition-colors"
+                            className="text-[10px] text-accent hover:text-accent font-semibold transition-colors"
                             title="Add to Watchlist"
                           >
                             + Watch
                           </button>
                         )}
-                        <button onClick={() => removeIdea("fundstratBottom", item.ticker)} className="ml-2 text-slate-300 hover:text-red-500 font-bold transition-colors">&times;</button>
+                        <button onClick={() => removeIdea("fundstratBottom", item.ticker)} className="ml-2 text-ink-faint hover:text-neg font-bold transition-colors">&times;</button>
                       </td>
                     </tr>
                   );
                 })}
                 {state.fundstratBottom.length === 0 && (
-                  <tr><td colSpan={6} className="py-6 text-center text-slate-400 italic">No bottom ideas added yet</td></tr>
+                  <tr><td colSpan={6} className="py-6 text-center text-ink-3 italic">No bottom ideas added yet</td></tr>
                 )}
               </tbody>
             </table></div>
@@ -2521,21 +2521,21 @@ export default function ResearchPage() {
           <CollapsibleSection
             prefKey="research.fsSmidTop"
             linkedKeys={["research.fsSmidBottom"]}
-            className="border-emerald-200 min-w-0"
-            titleClass="text-xl font-bold text-emerald-800"
+            className="border-pos-border min-w-0"
+            titleClass="text-xl font-bold text-pos"
             title={<>Fundstrat Top SMID-Cap Core Ideas</>}
             subtitle={<>Best long ideas — small/mid-cap names</>}
-            right={<><span className="text-sm text-slate-400">{(state.fundstratSmidTop ?? []).length} names</span></>}
+            right={<><span className="text-sm text-ink-3">{(state.fundstratSmidTop ?? []).length} names</span></>}
           >
 
             <div className="overflow-x-auto"><table className="w-full text-sm">
               <thead>
-                <tr className="border-b-2 border-emerald-500 text-left">
-                  <th className="py-2 pr-2 text-xs font-semibold text-emerald-700 w-8">#</th>
-                  <th className="py-2 pr-3 text-xs font-semibold text-emerald-700 cursor-pointer hover:text-emerald-900 select-none" onClick={() => toggleSmidTopSort("ticker")}>Ticker{stArrow("ticker")}</th>
-                  <th className="py-2 pr-3 text-xs font-semibold text-emerald-700 text-right cursor-pointer hover:text-emerald-900 select-none" onClick={() => toggleSmidTopSort("currentPrice")}>Current Price{stArrow("currentPrice")}</th>
-                  <th className="py-2 pr-3 text-xs font-semibold text-emerald-700 text-right cursor-pointer hover:text-emerald-900 select-none" onClick={() => toggleSmidTopSort("priceWhenAdded")}>Price Added{stArrow("priceWhenAdded")}</th>
-                  <th className="py-2 pr-2 text-xs font-semibold text-emerald-700 text-right">Chg</th>
+                <tr className="border-b-2 border-pos-border text-left">
+                  <th className="py-2 pr-2 text-xs font-semibold text-pos w-8">#</th>
+                  <th className="py-2 pr-3 text-xs font-semibold text-pos cursor-pointer hover:text-pos select-none" onClick={() => toggleSmidTopSort("ticker")}>Ticker{stArrow("ticker")}</th>
+                  <th className="py-2 pr-3 text-xs font-semibold text-pos text-right cursor-pointer hover:text-pos select-none" onClick={() => toggleSmidTopSort("currentPrice")}>Current Price{stArrow("currentPrice")}</th>
+                  <th className="py-2 pr-3 text-xs font-semibold text-pos text-right cursor-pointer hover:text-pos select-none" onClick={() => toggleSmidTopSort("priceWhenAdded")}>Price Added{stArrow("priceWhenAdded")}</th>
+                  <th className="py-2 pr-2 text-xs font-semibold text-pos text-right">Chg</th>
                   <th className="py-2 w-8"></th>
                 </tr>
               </thead>
@@ -2544,13 +2544,13 @@ export default function ResearchPage() {
                   const livePrice = livePrices[item.ticker];
                   const pctChange = livePrice && item.priceWhenAdded ? ((livePrice - item.priceWhenAdded) / item.priceWhenAdded * 100) : null;
                   return (
-                    <tr key={item.ticker} className={`border-b border-slate-100 ${i % 2 === 0 ? "bg-white" : "bg-emerald-50/30"} hover:bg-emerald-50/60 transition-colors`}>
-                      <td className="py-2 pr-2 text-slate-400">{i + 1}</td>
-                      <td className="py-2 pr-3 font-mono font-bold text-emerald-700">${displayTicker(item.ticker)}</td>
+                    <tr key={item.ticker} className={`border-b border-line-soft ${i % 2 === 0 ? "bg-white" : "bg-pos-soft/30"} hover:bg-pos-soft/60 transition-colors`}>
+                      <td className="py-2 pr-2 text-ink-3">{i + 1}</td>
+                      <td className="py-2 pr-3 font-mono font-bold text-pos">${displayTicker(item.ticker)}</td>
                       <td className="py-2 pr-3 text-right font-mono">
-                        {pricesLoading ? <span className="text-slate-300 animate-pulse">...</span>
+                        {pricesLoading ? <span className="text-ink-faint animate-pulse">...</span>
                           : livePrice != null ? <span className="font-semibold">${livePrice.toFixed(2)}</span>
-                          : <span className="text-slate-300">—</span>}
+                          : <span className="text-ink-faint">—</span>}
                       </td>
                       <td className="py-2 pr-3 text-right font-mono">
                         <EditableCell
@@ -2560,30 +2560,30 @@ export default function ResearchPage() {
                       </td>
                       <td className="py-2 pr-2 text-right font-mono text-xs">
                         {pctChange != null ? (
-                          <span className={pctChange >= 0 ? "text-emerald-600" : "text-red-500"}>
+                          <span className={pctChange >= 0 ? "text-pos" : "text-neg"}>
                             {pctChange >= 0 ? "+" : ""}{pctChange.toFixed(1)}%
                           </span>
-                        ) : <span className="text-slate-300">—</span>}
+                        ) : <span className="text-ink-faint">—</span>}
                       </td>
                       <td className="py-2 text-right whitespace-nowrap">
                         {scoredStocks.some((s) => s.ticker === item.ticker) ? (
-                          <span className="text-[10px] text-emerald-500 font-medium">In list</span>
+                          <span className="text-[10px] text-pos font-medium">In list</span>
                         ) : (
                           <button
                             onClick={(e) => { e.stopPropagation(); addToWatchlist(item.ticker); }}
-                            className="text-[10px] text-blue-500 hover:text-blue-700 font-semibold transition-colors"
+                            className="text-[10px] text-accent hover:text-accent font-semibold transition-colors"
                             title="Add to Watchlist"
                           >
                             + Watch
                           </button>
                         )}
-                        <button onClick={() => removeIdea("fundstratSmidTop", item.ticker)} className="ml-2 text-slate-300 hover:text-red-500 font-bold transition-colors">&times;</button>
+                        <button onClick={() => removeIdea("fundstratSmidTop", item.ticker)} className="ml-2 text-ink-faint hover:text-neg font-bold transition-colors">&times;</button>
                       </td>
                     </tr>
                   );
                 })}
                 {(state.fundstratSmidTop ?? []).length === 0 && (
-                  <tr><td colSpan={6} className="py-6 text-center text-slate-400 italic">No top SMID ideas added yet</td></tr>
+                  <tr><td colSpan={6} className="py-6 text-center text-ink-3 italic">No top SMID ideas added yet</td></tr>
                 )}
               </tbody>
             </table></div>
@@ -2607,21 +2607,21 @@ export default function ResearchPage() {
           <CollapsibleSection
             prefKey="research.fsSmidBottom"
             linkedKeys={["research.fsSmidTop"]}
-            className="border-red-200 min-w-0"
-            titleClass="text-xl font-bold text-red-800"
+            className="border-neg-border min-w-0"
+            titleClass="text-xl font-bold text-neg"
             title={<>Fundstrat Bottom SMID-Cap Core Ideas</>}
             subtitle={<>Names to avoid or short — small/mid-cap</>}
-            right={<><span className="text-sm text-slate-400">{(state.fundstratSmidBottom ?? []).length} names</span></>}
+            right={<><span className="text-sm text-ink-3">{(state.fundstratSmidBottom ?? []).length} names</span></>}
           >
 
             <div className="overflow-x-auto"><table className="w-full text-sm">
               <thead>
-                <tr className="border-b-2 border-red-400 text-left">
-                  <th className="py-2 pr-2 text-xs font-semibold text-red-700 w-8">#</th>
-                  <th className="py-2 pr-3 text-xs font-semibold text-red-700 cursor-pointer hover:text-red-900 select-none" onClick={() => toggleSmidBottomSort("ticker")}>Ticker{sbArrow("ticker")}</th>
-                  <th className="py-2 pr-3 text-xs font-semibold text-red-700 text-right cursor-pointer hover:text-red-900 select-none" onClick={() => toggleSmidBottomSort("currentPrice")}>Current Price{sbArrow("currentPrice")}</th>
-                  <th className="py-2 pr-3 text-xs font-semibold text-red-700 text-right cursor-pointer hover:text-red-900 select-none" onClick={() => toggleSmidBottomSort("priceWhenAdded")}>Price Added{sbArrow("priceWhenAdded")}</th>
-                  <th className="py-2 pr-2 text-xs font-semibold text-red-700 text-right">Chg</th>
+                <tr className="border-b-2 border-neg-border text-left">
+                  <th className="py-2 pr-2 text-xs font-semibold text-neg w-8">#</th>
+                  <th className="py-2 pr-3 text-xs font-semibold text-neg cursor-pointer hover:text-neg select-none" onClick={() => toggleSmidBottomSort("ticker")}>Ticker{sbArrow("ticker")}</th>
+                  <th className="py-2 pr-3 text-xs font-semibold text-neg text-right cursor-pointer hover:text-neg select-none" onClick={() => toggleSmidBottomSort("currentPrice")}>Current Price{sbArrow("currentPrice")}</th>
+                  <th className="py-2 pr-3 text-xs font-semibold text-neg text-right cursor-pointer hover:text-neg select-none" onClick={() => toggleSmidBottomSort("priceWhenAdded")}>Price Added{sbArrow("priceWhenAdded")}</th>
+                  <th className="py-2 pr-2 text-xs font-semibold text-neg text-right">Chg</th>
                   <th className="py-2 w-8"></th>
                 </tr>
               </thead>
@@ -2630,13 +2630,13 @@ export default function ResearchPage() {
                   const livePrice = livePrices[item.ticker];
                   const pctChange = livePrice && item.priceWhenAdded ? ((livePrice - item.priceWhenAdded) / item.priceWhenAdded * 100) : null;
                   return (
-                    <tr key={item.ticker} className={`border-b border-slate-100 ${i % 2 === 0 ? "bg-white" : "bg-red-50/30"} hover:bg-red-50/60 transition-colors`}>
-                      <td className="py-2 pr-2 text-slate-400">{i + 1}</td>
-                      <td className="py-2 pr-3 font-mono font-bold text-red-700">${displayTicker(item.ticker)}</td>
+                    <tr key={item.ticker} className={`border-b border-line-soft ${i % 2 === 0 ? "bg-white" : "bg-neg-soft/30"} hover:bg-neg-soft/60 transition-colors`}>
+                      <td className="py-2 pr-2 text-ink-3">{i + 1}</td>
+                      <td className="py-2 pr-3 font-mono font-bold text-neg">${displayTicker(item.ticker)}</td>
                       <td className="py-2 pr-3 text-right font-mono">
-                        {pricesLoading ? <span className="text-slate-300 animate-pulse">...</span>
+                        {pricesLoading ? <span className="text-ink-faint animate-pulse">...</span>
                           : livePrice != null ? <span className="font-semibold">${livePrice.toFixed(2)}</span>
-                          : <span className="text-slate-300">—</span>}
+                          : <span className="text-ink-faint">—</span>}
                       </td>
                       <td className="py-2 pr-3 text-right font-mono">
                         <EditableCell
@@ -2646,30 +2646,30 @@ export default function ResearchPage() {
                       </td>
                       <td className="py-2 pr-2 text-right font-mono text-xs">
                         {pctChange != null ? (
-                          <span className={pctChange >= 0 ? "text-emerald-600" : "text-red-500"}>
+                          <span className={pctChange >= 0 ? "text-pos" : "text-neg"}>
                             {pctChange >= 0 ? "+" : ""}{pctChange.toFixed(1)}%
                           </span>
-                        ) : <span className="text-slate-300">—</span>}
+                        ) : <span className="text-ink-faint">—</span>}
                       </td>
                       <td className="py-2 text-right whitespace-nowrap">
                         {scoredStocks.some((s) => s.ticker === item.ticker) ? (
-                          <span className="text-[10px] text-emerald-500 font-medium">In list</span>
+                          <span className="text-[10px] text-pos font-medium">In list</span>
                         ) : (
                           <button
                             onClick={(e) => { e.stopPropagation(); addToWatchlist(item.ticker); }}
-                            className="text-[10px] text-blue-500 hover:text-blue-700 font-semibold transition-colors"
+                            className="text-[10px] text-accent hover:text-accent font-semibold transition-colors"
                             title="Add to Watchlist"
                           >
                             + Watch
                           </button>
                         )}
-                        <button onClick={() => removeIdea("fundstratSmidBottom", item.ticker)} className="ml-2 text-slate-300 hover:text-red-500 font-bold transition-colors">&times;</button>
+                        <button onClick={() => removeIdea("fundstratSmidBottom", item.ticker)} className="ml-2 text-ink-faint hover:text-neg font-bold transition-colors">&times;</button>
                       </td>
                     </tr>
                   );
                 })}
                 {(state.fundstratSmidBottom ?? []).length === 0 && (
-                  <tr><td colSpan={6} className="py-6 text-center text-slate-400 italic">No bottom SMID ideas added yet</td></tr>
+                  <tr><td colSpan={6} className="py-6 text-center text-ink-3 italic">No bottom SMID ideas added yet</td></tr>
                 )}
               </tbody>
             </table></div>
@@ -2693,17 +2693,17 @@ export default function ResearchPage() {
         {/* ── Tom Lee Focus Areas ── */}
         <CollapsibleSection
           prefKey="research.leeFocus"
-          className="border-amber-200"
-          titleClass="text-lg font-bold text-amber-800"
+          className="border-warn-border"
+          titleClass="text-lg font-bold text-warn"
           title={<>Tom Lee&apos;s Focus Areas</>}
           subtitle={<>Key themes and areas Lee is emphasizing — type freely, these feed into the morning brief</>}
-          right={<><span className="text-sm text-slate-400">{(state.leeFocusAreas ?? []).length} themes</span></>}
+          right={<><span className="text-sm text-ink-3">{(state.leeFocusAreas ?? []).length} themes</span></>}
         >
           <div className="flex flex-wrap gap-2 mb-3">
             {(state.leeFocusAreas ?? []).map((area, idx) => (
               <span
                 key={idx}
-                className="inline-flex items-center gap-1 rounded-full border border-amber-200 bg-amber-50 px-3 py-1 text-sm font-medium text-amber-800"
+                className="inline-flex items-center gap-1 rounded-full border border-warn-border bg-warn-soft px-3 py-1 text-sm font-medium text-warn"
               >
                 {area.label}
                 <button
@@ -2711,7 +2711,7 @@ export default function ResearchPage() {
                     const updated = (state.leeFocusAreas ?? []).filter((_, i) => i !== idx);
                     save({ ...state, leeFocusAreas: updated });
                   }}
-                  className="ml-0.5 text-amber-400 hover:text-red-500 font-bold transition-colors text-xs"
+                  className="ml-0.5 text-warn hover:text-neg font-bold transition-colors text-xs"
                   title="Remove"
                 >
                   &times;
@@ -2719,7 +2719,7 @@ export default function ResearchPage() {
               </span>
             ))}
             {(state.leeFocusAreas ?? []).length === 0 && (
-              <span className="text-sm text-slate-400 italic">No focus areas added yet</span>
+              <span className="text-sm text-ink-3 italic">No focus areas added yet</span>
             )}
           </div>
           <form
@@ -2739,11 +2739,11 @@ export default function ResearchPage() {
             <input
               name="leeArea"
               placeholder="e.g. AI infrastructure, GARP names, epicenter stocks…"
-              className="flex-1 rounded-xl border border-slate-200 bg-slate-50 px-3 py-2 text-sm outline-none placeholder:text-slate-400 focus:bg-white focus:border-amber-300 focus:ring-1 focus:ring-amber-200 transition-all"
+              className="flex-1 rounded-xl border border-line bg-surface-2 px-3 py-2 text-sm outline-none placeholder:text-ink-3 focus:bg-white focus:border-warn-border focus:ring-1 focus:ring-warn-border transition-all"
             />
             <button
               type="submit"
-              className="rounded-xl bg-amber-600 px-4 py-2 text-sm font-semibold text-white hover:bg-amber-700 transition-colors"
+              className="rounded-xl bg-warn px-4 py-2 text-sm font-semibold text-white hover:bg-warn transition-colors"
             >
               Add
             </button>
@@ -2753,32 +2753,32 @@ export default function ResearchPage() {
         {/* ── RBC Canadian Focus List ── */}
         <CollapsibleSection
           prefKey="research.rbcCa"
-          className="border-blue-200"
-          titleClass="text-xl font-bold text-blue-800"
+          className="border-accent-border"
+          titleClass="text-xl font-bold text-accent"
           title={<>RBC Canadian Focus List</>}
           subtitle={<>RBC Capital Markets Canadian equity picks</>}
-          right={<><span className="text-sm text-slate-400">{(state.rbcCanadianFocus || []).length} names</span></>}
+          right={<><span className="text-sm text-ink-3">{(state.rbcCanadianFocus || []).length} names</span></>}
         >
 
           <div className="overflow-x-auto"><table className="w-full text-sm">
             <thead>
-              <tr className="border-b-2 border-blue-500 text-left">
-                <th className="py-2 pr-2 text-xs font-semibold text-blue-700 w-8">#</th>
-                <th className="py-2 pr-3 text-xs font-semibold text-blue-700 cursor-pointer hover:text-blue-900 select-none" onClick={() => toggleRbcSort("ticker")}>Ticker{rArrow("ticker")}</th>
-                <th className="py-2 pr-3 text-xs font-semibold text-blue-700 cursor-pointer hover:text-blue-900 select-none" onClick={() => toggleRbcSort("name")}>Name{rArrow("name")}</th>
-                <th className="py-2 pr-3 text-xs font-semibold text-blue-700 cursor-pointer hover:text-blue-900 select-none" onClick={() => toggleRbcSort("sector")}>Sector{rArrow("sector")}</th>
-                <th className="py-2 pr-3 text-xs font-semibold text-blue-700 cursor-pointer hover:text-blue-900 select-none" onClick={() => toggleRbcSort("weight")}>Weight (%){rArrow("weight")}</th>
+              <tr className="border-b-2 border-accent-border text-left">
+                <th className="py-2 pr-2 text-xs font-semibold text-accent w-8">#</th>
+                <th className="py-2 pr-3 text-xs font-semibold text-accent cursor-pointer hover:text-accent select-none" onClick={() => toggleRbcSort("ticker")}>Ticker{rArrow("ticker")}</th>
+                <th className="py-2 pr-3 text-xs font-semibold text-accent cursor-pointer hover:text-accent select-none" onClick={() => toggleRbcSort("name")}>Name{rArrow("name")}</th>
+                <th className="py-2 pr-3 text-xs font-semibold text-accent cursor-pointer hover:text-accent select-none" onClick={() => toggleRbcSort("sector")}>Sector{rArrow("sector")}</th>
+                <th className="py-2 pr-3 text-xs font-semibold text-accent cursor-pointer hover:text-accent select-none" onClick={() => toggleRbcSort("weight")}>Weight (%){rArrow("weight")}</th>
                 <th className="py-2 w-24"></th>
               </tr>
             </thead>
             <tbody>
               {sortedRbc().map((item, i) => (
-                <tr key={item.ticker} className={`border-b border-slate-100 ${i % 2 === 0 ? "bg-white" : "bg-blue-50/30"} hover:bg-blue-50/60 transition-colors`}>
-                  <td className="py-2 pr-2 text-slate-400">{i + 1}</td>
-                  <td className="py-2 pr-3 font-mono font-bold text-blue-700">${displayTicker(item.ticker)}</td>
-                  <td className="py-2 pr-3 text-slate-700 truncate max-w-[260px]" title={item.name || item.ticker}>{item.name || <span className="text-slate-300 italic">—</span>}</td>
-                  <td className="py-2 pr-3 text-slate-600">{item.sector}</td>
-                  <td className="py-2 pr-3 text-slate-500">
+                <tr key={item.ticker} className={`border-b border-line-soft ${i % 2 === 0 ? "bg-white" : "bg-accent-soft/30"} hover:bg-accent-soft/60 transition-colors`}>
+                  <td className="py-2 pr-2 text-ink-3">{i + 1}</td>
+                  <td className="py-2 pr-3 font-mono font-bold text-accent">${displayTicker(item.ticker)}</td>
+                  <td className="py-2 pr-3 text-ink-2 truncate max-w-[260px]" title={item.name || item.ticker}>{item.name || <span className="text-ink-faint italic">—</span>}</td>
+                  <td className="py-2 pr-3 text-ink-2">{item.sector}</td>
+                  <td className="py-2 pr-3 text-ink-3">
                     <input
                       type="text"
                       inputMode="decimal"
@@ -2792,27 +2792,27 @@ export default function ResearchPage() {
                           save({ ...state, rbcCanadianFocus: list });
                         }
                       }}
-                      className="w-16 rounded border border-transparent px-1 py-0.5 text-sm text-center hover:border-slate-200 focus:border-blue-300 focus:outline-none bg-transparent"
+                      className="w-16 rounded border border-transparent px-1 py-0.5 text-sm text-center hover:border-line focus:border-accent-border focus:outline-none bg-transparent"
                     />
                   </td>
                   <td className="py-2 text-right whitespace-nowrap">
                     {scoredStocks.some((s) => s.ticker === item.ticker) ? (
-                      <span className="text-[10px] text-emerald-500 font-medium">In list</span>
+                      <span className="text-[10px] text-pos font-medium">In list</span>
                     ) : (
                       <button
                         onClick={(e) => { e.stopPropagation(); addToWatchlist(item.ticker); }}
-                        className="text-[10px] text-blue-500 hover:text-blue-700 font-semibold transition-colors"
+                        className="text-[10px] text-accent hover:text-accent font-semibold transition-colors"
                         title="Add to Watchlist"
                       >
                         + Watch
                       </button>
                     )}
-                    <button onClick={() => removeRbc(item.ticker)} className="ml-2 text-slate-300 hover:text-red-500 font-bold transition-colors">&times;</button>
+                    <button onClick={() => removeRbc(item.ticker)} className="ml-2 text-ink-faint hover:text-neg font-bold transition-colors">&times;</button>
                   </td>
                 </tr>
               ))}
               {(state.rbcCanadianFocus || []).length === 0 && (
-                <tr><td colSpan={6} className="py-6 text-center text-slate-400 italic">No names added yet</td></tr>
+                <tr><td colSpan={6} className="py-6 text-center text-ink-3 italic">No names added yet</td></tr>
               )}
             </tbody>
           </table></div>
@@ -2843,7 +2843,7 @@ export default function ResearchPage() {
           titleClass="text-xl font-bold text-teal-800"
           title={<>RBC US Focus List</>}
           subtitle={<>RBC Capital Markets US equity picks</>}
-          right={<><span className="text-sm text-slate-400">{(state.rbcUsFocus || []).length} names</span></>}
+          right={<><span className="text-sm text-ink-3">{(state.rbcUsFocus || []).length} names</span></>}
         >
 
           <div className="overflow-x-auto"><table className="w-full text-sm">
@@ -2859,12 +2859,12 @@ export default function ResearchPage() {
             </thead>
             <tbody>
               {sortedRbcUs().map((item, i) => (
-                <tr key={item.ticker} className={`border-b border-slate-100 ${i % 2 === 0 ? "bg-white" : "bg-teal-50/30"} hover:bg-teal-50/60 transition-colors`}>
-                  <td className="py-2 pr-2 text-slate-400">{i + 1}</td>
+                <tr key={item.ticker} className={`border-b border-line-soft ${i % 2 === 0 ? "bg-white" : "bg-teal-50/30"} hover:bg-teal-50/60 transition-colors`}>
+                  <td className="py-2 pr-2 text-ink-3">{i + 1}</td>
                   <td className="py-2 pr-3 font-mono font-bold text-teal-700">${displayTicker(item.ticker)}</td>
-                  <td className="py-2 pr-3 text-slate-700 truncate max-w-[260px]" title={item.name || item.ticker}>{item.name || <span className="text-slate-300 italic">—</span>}</td>
-                  <td className="py-2 pr-3 text-slate-600">{item.sector}</td>
-                  <td className="py-2 pr-3 text-slate-500">
+                  <td className="py-2 pr-3 text-ink-2 truncate max-w-[260px]" title={item.name || item.ticker}>{item.name || <span className="text-ink-faint italic">—</span>}</td>
+                  <td className="py-2 pr-3 text-ink-2">{item.sector}</td>
+                  <td className="py-2 pr-3 text-ink-3">
                     <input
                       type="text"
                       inputMode="decimal"
@@ -2878,27 +2878,27 @@ export default function ResearchPage() {
                           save({ ...state, rbcUsFocus: list });
                         }
                       }}
-                      className="w-16 rounded border border-transparent px-1 py-0.5 text-sm text-center hover:border-slate-200 focus:border-teal-300 focus:outline-none bg-transparent"
+                      className="w-16 rounded border border-transparent px-1 py-0.5 text-sm text-center hover:border-line focus:border-teal-300 focus:outline-none bg-transparent"
                     />
                   </td>
                   <td className="py-2 text-right whitespace-nowrap">
                     {scoredStocks.some((s) => s.ticker === item.ticker) ? (
-                      <span className="text-[10px] text-emerald-500 font-medium">In list</span>
+                      <span className="text-[10px] text-pos font-medium">In list</span>
                     ) : (
                       <button
                         onClick={(e) => { e.stopPropagation(); addToWatchlist(item.ticker); }}
-                        className="text-[10px] text-blue-500 hover:text-blue-700 font-semibold transition-colors"
+                        className="text-[10px] text-accent hover:text-accent font-semibold transition-colors"
                         title="Add to Watchlist"
                       >
                         + Watch
                       </button>
                     )}
-                    <button onClick={() => removeRbcUs(item.ticker)} className="ml-2 text-slate-300 hover:text-red-500 font-bold transition-colors">&times;</button>
+                    <button onClick={() => removeRbcUs(item.ticker)} className="ml-2 text-ink-faint hover:text-neg font-bold transition-colors">&times;</button>
                   </td>
                 </tr>
               ))}
               {(state.rbcUsFocus || []).length === 0 && (
-                <tr><td colSpan={6} className="py-6 text-center text-slate-400 italic">No names added yet</td></tr>
+                <tr><td colSpan={6} className="py-6 text-center text-ink-3 italic">No names added yet</td></tr>
               )}
             </tbody>
           </table></div>
@@ -2926,22 +2926,22 @@ export default function ResearchPage() {
             researchMentions via SOURCES. Amber-accented. */}
         <CollapsibleSection
           prefKey="research.jpm"
-          className="border-amber-200"
-          titleClass="text-xl font-bold text-amber-800"
+          className="border-warn-border"
+          titleClass="text-xl font-bold text-warn"
           title={<>JPM US Equity Analyst Focus List</>}
           subtitle={<>J.P. Morgan US equity analyst focus picks · prices live from FactSet</>}
-          right={<span className="text-sm text-slate-400">{(state.jpmUsAnalystFocus || []).length} names</span>}
+          right={<span className="text-sm text-ink-3">{(state.jpmUsAnalystFocus || []).length} names</span>}
         >
 
           <div className="overflow-x-auto"><table className="w-full text-sm">
             <thead>
-              <tr className="border-b-2 border-amber-500 text-left">
-                <th className="py-2 pr-3 text-xs font-semibold text-amber-700 cursor-pointer hover:text-amber-900 select-none" onClick={() => toggleJpmFocusSort("name")}>Company name{jArrow("name")}</th>
-                <th className="py-2 pr-3 text-xs font-semibold text-amber-700 cursor-pointer hover:text-amber-900 select-none" onClick={() => toggleJpmFocusSort("ticker")}>Ticker{jArrow("ticker")}</th>
-                <th className="py-2 pr-3 text-xs font-semibold text-amber-700 cursor-pointer hover:text-amber-900 select-none" onClick={() => toggleJpmFocusSort("industry")}>Sector{jArrow("industry")}</th>
-                <th className="py-2 pr-3 text-xs font-semibold text-amber-700 cursor-pointer hover:text-amber-900 select-none" onClick={() => toggleJpmFocusSort("strategy")}>Strategy{jArrow("strategy")}</th>
-                <th className="py-2 pr-3 text-xs font-semibold text-amber-700 text-right cursor-pointer hover:text-amber-900 select-none" onClick={() => toggleJpmFocusSort("currentPrice")}>Current price{jArrow("currentPrice")}</th>
-                <th className="py-2 pr-3 text-xs font-semibold text-amber-700 text-right cursor-pointer hover:text-amber-900 select-none" onClick={() => toggleJpmFocusSort("priceTarget")}>Price target{jArrow("priceTarget")}</th>
+              <tr className="border-b-2 border-warn-border text-left">
+                <th className="py-2 pr-3 text-xs font-semibold text-warn cursor-pointer hover:text-warn select-none" onClick={() => toggleJpmFocusSort("name")}>Company name{jArrow("name")}</th>
+                <th className="py-2 pr-3 text-xs font-semibold text-warn cursor-pointer hover:text-warn select-none" onClick={() => toggleJpmFocusSort("ticker")}>Ticker{jArrow("ticker")}</th>
+                <th className="py-2 pr-3 text-xs font-semibold text-warn cursor-pointer hover:text-warn select-none" onClick={() => toggleJpmFocusSort("industry")}>Sector{jArrow("industry")}</th>
+                <th className="py-2 pr-3 text-xs font-semibold text-warn cursor-pointer hover:text-warn select-none" onClick={() => toggleJpmFocusSort("strategy")}>Strategy{jArrow("strategy")}</th>
+                <th className="py-2 pr-3 text-xs font-semibold text-warn text-right cursor-pointer hover:text-warn select-none" onClick={() => toggleJpmFocusSort("currentPrice")}>Current price{jArrow("currentPrice")}</th>
+                <th className="py-2 pr-3 text-xs font-semibold text-warn text-right cursor-pointer hover:text-warn select-none" onClick={() => toggleJpmFocusSort("priceTarget")}>Price target{jArrow("priceTarget")}</th>
                 <th className="py-2 w-24"></th>
               </tr>
             </thead>
@@ -2949,36 +2949,36 @@ export default function ResearchPage() {
               {sortedJpmFocus().map((item, i) => {
                 const fsPrice = factsetPrices[item.ticker];
                 return (
-                <tr key={item.ticker} className={`border-b border-slate-100 ${i % 2 === 0 ? "bg-white" : "bg-amber-50/30"} hover:bg-amber-50/60 transition-colors`}>
-                  <td className="py-2 pr-3 text-slate-700 truncate max-w-[240px]" title={item.name || item.ticker}>{item.name || <span className="text-slate-300 italic">—</span>}</td>
-                  <td className="py-2 pr-3 font-mono font-bold text-amber-700">${displayTicker(item.ticker)}</td>
-                  <td className="py-2 pr-3 text-slate-600 truncate max-w-[180px]" title={factsetSectors[item.ticker] || item.industry || ""}>{factsetSectors[item.ticker] || item.industry || <span className="text-slate-300">—</span>}</td>
-                  <td className="py-2 pr-3 text-slate-600">{item.strategy || <span className="text-slate-300">—</span>}</td>
-                  <td className="py-2 pr-3 text-right font-mono text-slate-700 whitespace-nowrap">
-                    {typeof fsPrice === "number" ? `$${fsPrice.toFixed(2)}` : <span className="text-slate-300">—</span>}
+                <tr key={item.ticker} className={`border-b border-line-soft ${i % 2 === 0 ? "bg-white" : "bg-warn-soft/30"} hover:bg-warn-soft/60 transition-colors`}>
+                  <td className="py-2 pr-3 text-ink-2 truncate max-w-[240px]" title={item.name || item.ticker}>{item.name || <span className="text-ink-faint italic">—</span>}</td>
+                  <td className="py-2 pr-3 font-mono font-bold text-warn">${displayTicker(item.ticker)}</td>
+                  <td className="py-2 pr-3 text-ink-2 truncate max-w-[180px]" title={factsetSectors[item.ticker] || item.industry || ""}>{factsetSectors[item.ticker] || item.industry || <span className="text-ink-faint">—</span>}</td>
+                  <td className="py-2 pr-3 text-ink-2">{item.strategy || <span className="text-ink-faint">—</span>}</td>
+                  <td className="py-2 pr-3 text-right font-mono text-ink-2 whitespace-nowrap">
+                    {typeof fsPrice === "number" ? `$${fsPrice.toFixed(2)}` : <span className="text-ink-faint">—</span>}
                   </td>
-                  <td className="py-2 pr-3 text-right font-mono text-slate-700 whitespace-nowrap">
-                    {typeof item.priceTarget === "number" ? `$${item.priceTarget.toFixed(2)}` : <span className="text-slate-300">—</span>}
+                  <td className="py-2 pr-3 text-right font-mono text-ink-2 whitespace-nowrap">
+                    {typeof item.priceTarget === "number" ? `$${item.priceTarget.toFixed(2)}` : <span className="text-ink-faint">—</span>}
                   </td>
                   <td className="py-2 text-right whitespace-nowrap">
                     {scoredStocks.some((s) => s.ticker === item.ticker) ? (
-                      <span className="text-[10px] text-emerald-500 font-medium">In list</span>
+                      <span className="text-[10px] text-pos font-medium">In list</span>
                     ) : (
                       <button
                         onClick={(e) => { e.stopPropagation(); addToWatchlist(item.ticker); }}
-                        className="text-[10px] text-blue-500 hover:text-blue-700 font-semibold transition-colors"
+                        className="text-[10px] text-accent hover:text-accent font-semibold transition-colors"
                         title="Add to Watchlist"
                       >
                         + Watch
                       </button>
                     )}
-                    <button onClick={() => removeJpmFocus(item.ticker)} className="ml-2 text-slate-300 hover:text-red-500 font-bold transition-colors">&times;</button>
+                    <button onClick={() => removeJpmFocus(item.ticker)} className="ml-2 text-ink-faint hover:text-neg font-bold transition-colors">&times;</button>
                   </td>
                 </tr>
                 );
               })}
               {(state.jpmUsAnalystFocus || []).length === 0 && (
-                <tr><td colSpan={7} className="py-6 text-center text-slate-400 italic">No names added yet</td></tr>
+                <tr><td colSpan={7} className="py-6 text-center text-ink-3 italic">No names added yet</td></tr>
               )}
             </tbody>
           </table></div>
@@ -3004,20 +3004,20 @@ export default function ResearchPage() {
             (Canadian/.TO tickers). Sky-accented as its own section. */}
         <CollapsibleSection
           prefKey="research.equateCad"
-          className="border-sky-200"
-          titleClass="text-xl font-bold text-sky-800"
+          className="border-accent-border"
+          titleClass="text-xl font-bold text-accent"
           title={<>RBC Equate — Canada Large Cap CORE 40</>}
           subtitle={<>RBC Equate Canada Large Cap CORE 40 Model Portfolio</>}
-          right={<><span className="text-sm text-slate-400">{(state.equateCad || []).length} names</span></>}
+          right={<><span className="text-sm text-ink-3">{(state.equateCad || []).length} names</span></>}
         >
 
           <div className="overflow-x-auto"><table className="w-full text-sm">
             <thead>
-              <tr className="border-b-2 border-sky-500 text-left">
-                <th className="py-2 pr-3 text-xs font-semibold text-sky-700 cursor-pointer hover:text-sky-900 select-none" onClick={() => toggleEquateCadSort("name")}>Company name{ecArrow("name")}</th>
-                <th className="py-2 pr-3 text-xs font-semibold text-sky-700 cursor-pointer hover:text-sky-900 select-none" onClick={() => toggleEquateCadSort("ticker")}>Ticker{ecArrow("ticker")}</th>
-                <th className="py-2 pr-3 text-xs font-semibold text-sky-700 cursor-pointer hover:text-sky-900 select-none" onClick={() => toggleEquateCadSort("industry")}>Sector{ecArrow("industry")}</th>
-                <th className="py-2 pr-3 text-xs font-semibold text-sky-700 text-right cursor-pointer hover:text-sky-900 select-none" onClick={() => toggleEquateCadSort("currentPrice")}>Current price{ecArrow("currentPrice")}</th>
+              <tr className="border-b-2 border-accent-border text-left">
+                <th className="py-2 pr-3 text-xs font-semibold text-accent cursor-pointer hover:text-accent select-none" onClick={() => toggleEquateCadSort("name")}>Company name{ecArrow("name")}</th>
+                <th className="py-2 pr-3 text-xs font-semibold text-accent cursor-pointer hover:text-accent select-none" onClick={() => toggleEquateCadSort("ticker")}>Ticker{ecArrow("ticker")}</th>
+                <th className="py-2 pr-3 text-xs font-semibold text-accent cursor-pointer hover:text-accent select-none" onClick={() => toggleEquateCadSort("industry")}>Sector{ecArrow("industry")}</th>
+                <th className="py-2 pr-3 text-xs font-semibold text-accent text-right cursor-pointer hover:text-accent select-none" onClick={() => toggleEquateCadSort("currentPrice")}>Current price{ecArrow("currentPrice")}</th>
                 <th className="py-2 w-24"></th>
               </tr>
             </thead>
@@ -3025,30 +3025,30 @@ export default function ResearchPage() {
               {sortedEquateCad().map((item, i) => {
                 const fsPrice = factsetPrices[item.ticker];
                 return (
-                <tr key={item.ticker} className={`border-b border-slate-100 ${i % 2 === 0 ? "bg-white" : "bg-sky-50/30"} hover:bg-sky-50/60 transition-colors`}>
-                  <td className="py-2 pr-3 text-slate-700 truncate max-w-[240px]" title={item.name || item.ticker}>{item.name || <span className="text-slate-300 italic">—</span>}</td>
-                  <td className="py-2 pr-3 font-mono font-bold text-sky-700">${displayTicker(item.ticker)}</td>
-                  <td className="py-2 pr-3 text-slate-600 truncate max-w-[180px]" title={factsetSectors[item.ticker] || item.industry || ""}>{factsetSectors[item.ticker] || item.industry || <span className="text-slate-300">—</span>}</td>
-                  <td className="py-2 pr-3 text-right font-mono text-slate-700 whitespace-nowrap">{typeof fsPrice === "number" ? `$${fsPrice.toFixed(2)}` : <span className="text-slate-300">—</span>}</td>
+                <tr key={item.ticker} className={`border-b border-line-soft ${i % 2 === 0 ? "bg-white" : "bg-accent-soft/30"} hover:bg-accent-soft/60 transition-colors`}>
+                  <td className="py-2 pr-3 text-ink-2 truncate max-w-[240px]" title={item.name || item.ticker}>{item.name || <span className="text-ink-faint italic">—</span>}</td>
+                  <td className="py-2 pr-3 font-mono font-bold text-accent">${displayTicker(item.ticker)}</td>
+                  <td className="py-2 pr-3 text-ink-2 truncate max-w-[180px]" title={factsetSectors[item.ticker] || item.industry || ""}>{factsetSectors[item.ticker] || item.industry || <span className="text-ink-faint">—</span>}</td>
+                  <td className="py-2 pr-3 text-right font-mono text-ink-2 whitespace-nowrap">{typeof fsPrice === "number" ? `$${fsPrice.toFixed(2)}` : <span className="text-ink-faint">—</span>}</td>
                   <td className="py-2 text-right whitespace-nowrap">
                     {scoredStocks.some((s) => s.ticker === item.ticker) ? (
-                      <span className="text-[10px] text-emerald-500 font-medium">In list</span>
+                      <span className="text-[10px] text-pos font-medium">In list</span>
                     ) : (
                       <button
                         onClick={(e) => { e.stopPropagation(); addToWatchlist(item.ticker); }}
-                        className="text-[10px] text-blue-500 hover:text-blue-700 font-semibold transition-colors"
+                        className="text-[10px] text-accent hover:text-accent font-semibold transition-colors"
                         title="Add to Watchlist"
                       >
                         + Watch
                       </button>
                     )}
-                    <button onClick={() => removeEquateCad(item.ticker)} className="ml-2 text-slate-300 hover:text-red-500 font-bold transition-colors">&times;</button>
+                    <button onClick={() => removeEquateCad(item.ticker)} className="ml-2 text-ink-faint hover:text-neg font-bold transition-colors">&times;</button>
                   </td>
                 </tr>
                 );
               })}
               {(state.equateCad || []).length === 0 && (
-                <tr><td colSpan={5} className="py-6 text-center text-slate-400 italic">No names added yet</td></tr>
+                <tr><td colSpan={5} className="py-6 text-center text-ink-3 italic">No names added yet</td></tr>
               )}
             </tbody>
           </table></div>
@@ -3074,20 +3074,20 @@ export default function ResearchPage() {
             (US bare tickers). Sky-accented as its own section. */}
         <CollapsibleSection
           prefKey="research.equateUsd"
-          className="border-sky-200"
-          titleClass="text-xl font-bold text-sky-800"
+          className="border-accent-border"
+          titleClass="text-xl font-bold text-accent"
           title={<>RBC Equate — U.S. All Cap CORE 40</>}
           subtitle={<>RBC Equate U.S. All Cap CORE 40 Model Portfolio</>}
-          right={<><span className="text-sm text-slate-400">{(state.equateUsd || []).length} names</span></>}
+          right={<><span className="text-sm text-ink-3">{(state.equateUsd || []).length} names</span></>}
         >
 
           <div className="overflow-x-auto"><table className="w-full text-sm">
             <thead>
-              <tr className="border-b-2 border-sky-500 text-left">
-                <th className="py-2 pr-3 text-xs font-semibold text-sky-700 cursor-pointer hover:text-sky-900 select-none" onClick={() => toggleEquateUsdSort("name")}>Company name{euArrow("name")}</th>
-                <th className="py-2 pr-3 text-xs font-semibold text-sky-700 cursor-pointer hover:text-sky-900 select-none" onClick={() => toggleEquateUsdSort("ticker")}>Ticker{euArrow("ticker")}</th>
-                <th className="py-2 pr-3 text-xs font-semibold text-sky-700 cursor-pointer hover:text-sky-900 select-none" onClick={() => toggleEquateUsdSort("industry")}>Sector{euArrow("industry")}</th>
-                <th className="py-2 pr-3 text-xs font-semibold text-sky-700 text-right cursor-pointer hover:text-sky-900 select-none" onClick={() => toggleEquateUsdSort("currentPrice")}>Current price{euArrow("currentPrice")}</th>
+              <tr className="border-b-2 border-accent-border text-left">
+                <th className="py-2 pr-3 text-xs font-semibold text-accent cursor-pointer hover:text-accent select-none" onClick={() => toggleEquateUsdSort("name")}>Company name{euArrow("name")}</th>
+                <th className="py-2 pr-3 text-xs font-semibold text-accent cursor-pointer hover:text-accent select-none" onClick={() => toggleEquateUsdSort("ticker")}>Ticker{euArrow("ticker")}</th>
+                <th className="py-2 pr-3 text-xs font-semibold text-accent cursor-pointer hover:text-accent select-none" onClick={() => toggleEquateUsdSort("industry")}>Sector{euArrow("industry")}</th>
+                <th className="py-2 pr-3 text-xs font-semibold text-accent text-right cursor-pointer hover:text-accent select-none" onClick={() => toggleEquateUsdSort("currentPrice")}>Current price{euArrow("currentPrice")}</th>
                 <th className="py-2 w-24"></th>
               </tr>
             </thead>
@@ -3095,30 +3095,30 @@ export default function ResearchPage() {
               {sortedEquateUsd().map((item, i) => {
                 const fsPrice = factsetPrices[item.ticker];
                 return (
-                <tr key={item.ticker} className={`border-b border-slate-100 ${i % 2 === 0 ? "bg-white" : "bg-sky-50/30"} hover:bg-sky-50/60 transition-colors`}>
-                  <td className="py-2 pr-3 text-slate-700 truncate max-w-[240px]" title={item.name || item.ticker}>{item.name || <span className="text-slate-300 italic">—</span>}</td>
-                  <td className="py-2 pr-3 font-mono font-bold text-sky-700">${displayTicker(item.ticker)}</td>
-                  <td className="py-2 pr-3 text-slate-600 truncate max-w-[180px]" title={factsetSectors[item.ticker] || item.industry || ""}>{factsetSectors[item.ticker] || item.industry || <span className="text-slate-300">—</span>}</td>
-                  <td className="py-2 pr-3 text-right font-mono text-slate-700 whitespace-nowrap">{typeof fsPrice === "number" ? `$${fsPrice.toFixed(2)}` : <span className="text-slate-300">—</span>}</td>
+                <tr key={item.ticker} className={`border-b border-line-soft ${i % 2 === 0 ? "bg-white" : "bg-accent-soft/30"} hover:bg-accent-soft/60 transition-colors`}>
+                  <td className="py-2 pr-3 text-ink-2 truncate max-w-[240px]" title={item.name || item.ticker}>{item.name || <span className="text-ink-faint italic">—</span>}</td>
+                  <td className="py-2 pr-3 font-mono font-bold text-accent">${displayTicker(item.ticker)}</td>
+                  <td className="py-2 pr-3 text-ink-2 truncate max-w-[180px]" title={factsetSectors[item.ticker] || item.industry || ""}>{factsetSectors[item.ticker] || item.industry || <span className="text-ink-faint">—</span>}</td>
+                  <td className="py-2 pr-3 text-right font-mono text-ink-2 whitespace-nowrap">{typeof fsPrice === "number" ? `$${fsPrice.toFixed(2)}` : <span className="text-ink-faint">—</span>}</td>
                   <td className="py-2 text-right whitespace-nowrap">
                     {scoredStocks.some((s) => s.ticker === item.ticker) ? (
-                      <span className="text-[10px] text-emerald-500 font-medium">In list</span>
+                      <span className="text-[10px] text-pos font-medium">In list</span>
                     ) : (
                       <button
                         onClick={(e) => { e.stopPropagation(); addToWatchlist(item.ticker); }}
-                        className="text-[10px] text-blue-500 hover:text-blue-700 font-semibold transition-colors"
+                        className="text-[10px] text-accent hover:text-accent font-semibold transition-colors"
                         title="Add to Watchlist"
                       >
                         + Watch
                       </button>
                     )}
-                    <button onClick={() => removeEquateUsd(item.ticker)} className="ml-2 text-slate-300 hover:text-red-500 font-bold transition-colors">&times;</button>
+                    <button onClick={() => removeEquateUsd(item.ticker)} className="ml-2 text-ink-faint hover:text-neg font-bold transition-colors">&times;</button>
                   </td>
                 </tr>
                 );
               })}
               {(state.equateUsd || []).length === 0 && (
-                <tr><td colSpan={5} className="py-6 text-center text-slate-400 italic">No names added yet</td></tr>
+                <tr><td colSpan={5} className="py-6 text-center text-ink-3 italic">No names added yet</td></tr>
               )}
             </tbody>
           </table></div>
@@ -3145,21 +3145,21 @@ export default function ResearchPage() {
             price. Indigo-accented to distinguish from the RBC focus lists. */}
         <CollapsibleSection
           prefKey="research.few"
-          className="border-indigo-200"
-          titleClass="text-xl font-bold text-indigo-800"
+          className="border-violet-soft"
+          titleClass="text-xl font-bold text-violet"
           title={<>RBCCM Canadian FEW Portfolio</>}
           subtitle={<>RBC Capital Markets Canadian Fundamental Equity Weighting portfolio</>}
-          right={<><span className="text-sm text-slate-400">{(state.rbccmFew || []).length} names</span></>}
+          right={<><span className="text-sm text-ink-3">{(state.rbccmFew || []).length} names</span></>}
         >
 
           <div className="overflow-x-auto"><table className="w-full text-sm">
             <thead>
-              <tr className="border-b-2 border-indigo-500 text-left">
-                <th className="py-2 pr-2 text-xs font-semibold text-indigo-700 w-8">#</th>
-                <th className="py-2 pr-3 text-xs font-semibold text-indigo-700 cursor-pointer hover:text-indigo-900 select-none" onClick={() => toggleFewSort("ticker")}>Ticker{fArrow("ticker")}</th>
-                <th className="py-2 pr-3 text-xs font-semibold text-indigo-700 cursor-pointer hover:text-indigo-900 select-none" onClick={() => toggleFewSort("name")}>Company{fArrow("name")}</th>
-                <th className="py-2 pr-3 text-xs font-semibold text-indigo-700 cursor-pointer hover:text-indigo-900 select-none" onClick={() => toggleFewSort("industry")}>Industry{fArrow("industry")}</th>
-                <th className="py-2 pr-3 text-xs font-semibold text-indigo-700 cursor-pointer hover:text-indigo-900 select-none text-right" onClick={() => toggleFewSort("price")}>Price{fArrow("price")}</th>
+              <tr className="border-b-2 border-violet-soft text-left">
+                <th className="py-2 pr-2 text-xs font-semibold text-violet w-8">#</th>
+                <th className="py-2 pr-3 text-xs font-semibold text-violet cursor-pointer hover:text-violet select-none" onClick={() => toggleFewSort("ticker")}>Ticker{fArrow("ticker")}</th>
+                <th className="py-2 pr-3 text-xs font-semibold text-violet cursor-pointer hover:text-violet select-none" onClick={() => toggleFewSort("name")}>Company{fArrow("name")}</th>
+                <th className="py-2 pr-3 text-xs font-semibold text-violet cursor-pointer hover:text-violet select-none" onClick={() => toggleFewSort("industry")}>Industry{fArrow("industry")}</th>
+                <th className="py-2 pr-3 text-xs font-semibold text-violet cursor-pointer hover:text-violet select-none text-right" onClick={() => toggleFewSort("price")}>Price{fArrow("price")}</th>
                 <th className="py-2 w-24"></th>
               </tr>
             </thead>
@@ -3167,31 +3167,31 @@ export default function ResearchPage() {
               {sortedFew().map((item, i) => {
                 const px = fewPrice(item);
                 return (
-                <tr key={item.ticker} className={`border-b border-slate-100 ${i % 2 === 0 ? "bg-white" : "bg-indigo-50/30"} hover:bg-indigo-50/60 transition-colors`}>
-                  <td className="py-2 pr-2 text-slate-400">{i + 1}</td>
-                  <td className="py-2 pr-3 font-mono font-bold text-indigo-700">${displayTicker(item.ticker)}</td>
-                  <td className="py-2 pr-3 text-slate-700 truncate max-w-[260px]" title={item.name || item.ticker}>{item.name || <span className="text-slate-300 italic">—</span>}</td>
-                  <td className="py-2 pr-3 text-slate-600">{item.industry || <span className="text-slate-300 italic">—</span>}</td>
-                  <td className="py-2 pr-3 text-slate-600 text-right font-mono">{px > 0 ? `$${px.toFixed(2)}` : <span className="text-slate-300">—</span>}</td>
+                <tr key={item.ticker} className={`border-b border-line-soft ${i % 2 === 0 ? "bg-white" : "bg-violet-soft/30"} hover:bg-violet-soft/60 transition-colors`}>
+                  <td className="py-2 pr-2 text-ink-3">{i + 1}</td>
+                  <td className="py-2 pr-3 font-mono font-bold text-violet">${displayTicker(item.ticker)}</td>
+                  <td className="py-2 pr-3 text-ink-2 truncate max-w-[260px]" title={item.name || item.ticker}>{item.name || <span className="text-ink-faint italic">—</span>}</td>
+                  <td className="py-2 pr-3 text-ink-2">{item.industry || <span className="text-ink-faint italic">—</span>}</td>
+                  <td className="py-2 pr-3 text-ink-2 text-right font-mono">{px > 0 ? `$${px.toFixed(2)}` : <span className="text-ink-faint">—</span>}</td>
                   <td className="py-2 text-right whitespace-nowrap">
                     {scoredStocks.some((s) => s.ticker === item.ticker) ? (
-                      <span className="text-[10px] text-emerald-500 font-medium">In list</span>
+                      <span className="text-[10px] text-pos font-medium">In list</span>
                     ) : (
                       <button
                         onClick={(e) => { e.stopPropagation(); addToWatchlist(item.ticker); }}
-                        className="text-[10px] text-indigo-500 hover:text-indigo-700 font-semibold transition-colors"
+                        className="text-[10px] text-violet hover:text-violet font-semibold transition-colors"
                         title="Add to Watchlist"
                       >
                         + Watch
                       </button>
                     )}
-                    <button onClick={() => removeFew(item.ticker)} className="ml-2 text-slate-300 hover:text-red-500 font-bold transition-colors">&times;</button>
+                    <button onClick={() => removeFew(item.ticker)} className="ml-2 text-ink-faint hover:text-neg font-bold transition-colors">&times;</button>
                   </td>
                 </tr>
                 );
               })}
               {(state.rbccmFew || []).length === 0 && (
-                <tr><td colSpan={6} className="py-6 text-center text-slate-400 italic">No names added yet</td></tr>
+                <tr><td colSpan={6} className="py-6 text-center text-ink-3 italic">No names added yet</td></tr>
               )}
             </tbody>
           </table></div>
@@ -3219,11 +3219,11 @@ export default function ResearchPage() {
             log a pick without screenshotting. */}
         <CollapsibleSection
           prefKey="research.alpha"
-          className="border-slate-200"
+          className="border-line"
           titleClass="text-xl font-bold"
           title={<>Seeking Alpha &mdash; Alpha Picks</>}
           subtitle={<>Institutional buy recommendations &mdash; primarily populated by uploading the Alpha Picks dashboard screenshot. Manual adds also work.</>}
-          right={<><span className="text-sm text-slate-400">{(state.alphaPicks ?? []).length} picks</span></>}
+          right={<><span className="text-sm text-ink-3">{(state.alphaPicks ?? []).length} picks</span></>}
         >
           {(() => {
             // ── Derived data for the Alpha Picks section ────────────
@@ -3253,14 +3253,14 @@ export default function ResearchPage() {
             };
             const ratingTone = (r: string | undefined): string => {
               const c = canonicalRating(r);
-              if (c === "Strong Buy") return "bg-emerald-600 text-white";
-              if (c === "Buy") return "bg-emerald-100 text-emerald-700 ring-1 ring-emerald-200";
-              if (c === "Hold") return "bg-amber-100 text-amber-800 ring-1 ring-amber-200";
-              if (c === "Sell") return "bg-red-100 text-red-700 ring-1 ring-red-200";
-              if (c === "Strong Sell") return "bg-red-600 text-white";
-              return "bg-slate-100 text-slate-500";
+              if (c === "Strong Buy") return "bg-pos text-white";
+              if (c === "Buy") return "bg-pos-soft text-pos ring-1 ring-pos-border";
+              if (c === "Hold") return "bg-warn-soft text-warn ring-1 ring-warn-border";
+              if (c === "Sell") return "bg-neg-soft text-neg ring-1 ring-neg-border";
+              if (c === "Strong Sell") return "bg-neg text-white";
+              return "bg-surface-2 text-ink-3";
             };
-            const manualSellTone = "bg-red-700 text-white";
+            const manualSellTone = "bg-neg text-white";
 
             // Sell candidates per SA's rules + the PM's manual flag:
             //   - Rating is Sell or Strong Sell → SA sells.
@@ -3428,8 +3428,8 @@ export default function ResearchPage() {
                           onClick={() => setAlphaRatingFilter(b.key)}
                           className={`text-[11px] font-semibold rounded-full px-2.5 py-1 transition-colors ${
                             active
-                              ? "bg-slate-800 text-white"
-                              : "bg-slate-100 text-slate-600 hover:bg-slate-200"
+                              ? "bg-ink text-white"
+                              : "bg-surface-2 text-ink-2 hover:bg-line"
                           }`}
                         >
                           {b.label} <span className="opacity-70">({c})</span>
@@ -3442,18 +3442,18 @@ export default function ResearchPage() {
                 <div className="overflow-x-auto">
                   <div className="overflow-x-auto"><table className="w-full text-sm">
                     <thead>
-                      <tr className="border-b-2 border-slate-300 text-left">
-                        <th className="py-2 pr-2 text-xs font-semibold text-slate-600 w-8">#</th>
-                        <th className="py-2 pr-3 text-xs font-semibold text-slate-600 cursor-pointer select-none hover:text-slate-900" onClick={() => toggleAlphaSort("name")}>Name{alphaArrow("name")}</th>
-                        <th className="py-2 pr-3 text-xs font-semibold text-slate-600 cursor-pointer select-none hover:text-slate-900" onClick={() => toggleAlphaSort("ticker")}>Ticker{alphaArrow("ticker")}</th>
-                        <th className="py-2 pr-3 text-xs font-semibold text-slate-600 cursor-pointer select-none hover:text-slate-900" onClick={() => toggleAlphaSort("sector")}>Sector{alphaArrow("sector")}</th>
-                        <th className="py-2 pr-2 text-xs font-semibold text-slate-600 cursor-pointer select-none hover:text-slate-900" onClick={() => toggleAlphaSort("rating")}>Rating{alphaArrow("rating")}</th>
-                        <th className="py-2 pr-2 text-xs font-semibold text-slate-600 text-right cursor-pointer select-none hover:text-slate-900" onClick={() => toggleAlphaSort("holdingWeight")}>Holding %{alphaArrow("holdingWeight")}</th>
-                        <th className="py-2 pr-3 text-xs font-semibold text-slate-600 text-right cursor-pointer select-none hover:text-slate-900" onClick={() => toggleAlphaSort("currentPrice")}>Current Price{alphaArrow("currentPrice")}</th>
-                        <th className="py-2 pr-3 text-xs font-semibold text-slate-600 text-right cursor-pointer select-none hover:text-slate-900" onClick={() => toggleAlphaSort("priceWhenAdded")}>Price Picked{alphaArrow("priceWhenAdded")}</th>
-                        <th className="py-2 pr-2 text-xs font-semibold text-slate-600 text-right cursor-pointer select-none hover:text-slate-900" onClick={() => toggleAlphaSort("returnSinceAdded")}>SA Return{alphaArrow("returnSinceAdded")}</th>
-                        <th className="py-2 pr-3 text-xs font-semibold text-slate-600 cursor-pointer select-none hover:text-slate-900" onClick={() => toggleAlphaSort("dateAdded")}>Date Added{alphaArrow("dateAdded")}</th>
-                        <th className="py-2 pr-2 text-xs font-semibold text-slate-600 text-right cursor-pointer select-none hover:text-slate-900" onClick={() => toggleAlphaSort("days")}>Days{alphaArrow("days")}</th>
+                      <tr className="border-b-2 border-line text-left">
+                        <th className="py-2 pr-2 text-xs font-semibold text-ink-2 w-8">#</th>
+                        <th className="py-2 pr-3 text-xs font-semibold text-ink-2 cursor-pointer select-none hover:text-ink" onClick={() => toggleAlphaSort("name")}>Name{alphaArrow("name")}</th>
+                        <th className="py-2 pr-3 text-xs font-semibold text-ink-2 cursor-pointer select-none hover:text-ink" onClick={() => toggleAlphaSort("ticker")}>Ticker{alphaArrow("ticker")}</th>
+                        <th className="py-2 pr-3 text-xs font-semibold text-ink-2 cursor-pointer select-none hover:text-ink" onClick={() => toggleAlphaSort("sector")}>Sector{alphaArrow("sector")}</th>
+                        <th className="py-2 pr-2 text-xs font-semibold text-ink-2 cursor-pointer select-none hover:text-ink" onClick={() => toggleAlphaSort("rating")}>Rating{alphaArrow("rating")}</th>
+                        <th className="py-2 pr-2 text-xs font-semibold text-ink-2 text-right cursor-pointer select-none hover:text-ink" onClick={() => toggleAlphaSort("holdingWeight")}>Holding %{alphaArrow("holdingWeight")}</th>
+                        <th className="py-2 pr-3 text-xs font-semibold text-ink-2 text-right cursor-pointer select-none hover:text-ink" onClick={() => toggleAlphaSort("currentPrice")}>Current Price{alphaArrow("currentPrice")}</th>
+                        <th className="py-2 pr-3 text-xs font-semibold text-ink-2 text-right cursor-pointer select-none hover:text-ink" onClick={() => toggleAlphaSort("priceWhenAdded")}>Price Picked{alphaArrow("priceWhenAdded")}</th>
+                        <th className="py-2 pr-2 text-xs font-semibold text-ink-2 text-right cursor-pointer select-none hover:text-ink" onClick={() => toggleAlphaSort("returnSinceAdded")}>SA Return{alphaArrow("returnSinceAdded")}</th>
+                        <th className="py-2 pr-3 text-xs font-semibold text-ink-2 cursor-pointer select-none hover:text-ink" onClick={() => toggleAlphaSort("dateAdded")}>Date Added{alphaArrow("dateAdded")}</th>
+                        <th className="py-2 pr-2 text-xs font-semibold text-ink-2 text-right cursor-pointer select-none hover:text-ink" onClick={() => toggleAlphaSort("days")}>Days{alphaArrow("days")}</th>
                         <th className="py-2 w-16"></th>
                       </tr>
                     </thead>
@@ -3467,18 +3467,18 @@ export default function ResearchPage() {
                         const days = daysSince(pick.dateAdded);
                         const flagged = isSellCandidate(pick);
                         return (
-                          <tr key={`${pick.ticker}|${pick.dateAdded || ""}|${i}`} className={`border-b border-slate-100 ${flagged ? "bg-red-50/40" : i % 2 === 0 ? "bg-white" : "bg-slate-50/40"} hover:bg-slate-50 transition-colors`}>
-                            <td className="py-2 pr-2 text-slate-400">{i + 1}</td>
-                            <td className="py-2 pr-3 text-slate-700 truncate max-w-[200px]" title={pick.name}>{pick.name}</td>
+                          <tr key={`${pick.ticker}|${pick.dateAdded || ""}|${i}`} className={`border-b border-line-soft ${flagged ? "bg-neg-soft/40" : i % 2 === 0 ? "bg-white" : "bg-surface-2/40"} hover:bg-surface-2 transition-colors`}>
+                            <td className="py-2 pr-2 text-ink-3">{i + 1}</td>
+                            <td className="py-2 pr-3 text-ink-2 truncate max-w-[200px]" title={pick.name}>{pick.name}</td>
                             <td className="py-2 pr-3 font-mono font-bold">${displayTicker(pick.ticker)}</td>
-                            <td className="py-2 pr-3 text-xs text-slate-500">{pick.sector || "—"}</td>
+                            <td className="py-2 pr-3 text-xs text-ink-3">{pick.sector || "—"}</td>
                             <td className="py-2 pr-2">
                               <div className="flex items-center gap-1 flex-wrap">
                                 {pick.rating ? (
                                   <span className={`inline-flex items-center rounded-full px-2 py-0.5 text-[10px] font-bold uppercase tracking-wider ${ratingTone(pick.rating)}`}>
                                     {canonicalRating(pick.rating) ?? pick.rating}
                                   </span>
-                                ) : <span className="text-slate-300 text-[10px]">—</span>}
+                                ) : <span className="text-ink-faint text-[10px]">—</span>}
                                 {pick.manualSell && (
                                   <span className={`inline-flex items-center rounded-full px-2 py-0.5 text-[10px] font-bold uppercase tracking-wider ${manualSellTone}`} title="Manually flagged as sold by the PM (overrides SA rating for sell-candidate logic)">
                                     Manual Sell
@@ -3488,41 +3488,41 @@ export default function ResearchPage() {
                             </td>
                             <td className="py-2 pr-2 text-right font-mono text-xs">
                               {pick.holdingWeight != null
-                                ? <span className="text-slate-700">{pick.holdingWeight.toFixed(2)}%</span>
-                                : <span className="text-slate-300">—</span>}
+                                ? <span className="text-ink-2">{pick.holdingWeight.toFixed(2)}%</span>
+                                : <span className="text-ink-faint">—</span>}
                             </td>
                             <td className="py-2 pr-3 text-right font-mono">
-                              {pricesLoading ? <span className="text-slate-300 animate-pulse">...</span>
+                              {pricesLoading ? <span className="text-ink-faint animate-pulse">...</span>
                                 : livePrice != null ? <span className="font-semibold">${livePrice.toFixed(2)}</span>
-                                : <span className="text-slate-300">—</span>}
+                                : <span className="text-ink-faint">—</span>}
                             </td>
                             <td className="py-2 pr-3 text-right font-mono">
                               {pick.priceWhenAdded > 0
                                 ? `$${pick.priceWhenAdded.toFixed(2)}`
-                                : <span className="text-slate-300">—</span>}
+                                : <span className="text-ink-faint">—</span>}
                             </td>
                             <td className="py-2 pr-2 text-right font-mono text-xs">
                               {pick.returnSinceAdded != null ? (
-                                <span className={pick.returnSinceAdded >= 0 ? "text-emerald-600" : "text-red-500"}>
+                                <span className={pick.returnSinceAdded >= 0 ? "text-pos" : "text-neg"}>
                                   {pick.returnSinceAdded >= 0 ? "+" : ""}{pick.returnSinceAdded.toFixed(1)}%
                                 </span>
-                              ) : <span className="text-slate-300">—</span>}
+                              ) : <span className="text-ink-faint">—</span>}
                             </td>
-                            <td className="py-2 pr-3 text-xs text-slate-500">{pick.dateAdded || "—"}</td>
+                            <td className="py-2 pr-3 text-xs text-ink-3">{pick.dateAdded || "—"}</td>
                             <td className="py-2 pr-2 text-right text-xs">
                               {days != null ? (
-                                <span className={canonicalRating(pick.rating) === "Hold" && days >= 150 ? "text-red-600 font-semibold" : "text-slate-500"} title={canonicalRating(pick.rating) === "Hold" && days >= 180 ? "Hold ≥ 180 days — SA would sell" : canonicalRating(pick.rating) === "Hold" && days >= 150 ? "Approaching SA's 180-day Hold sell rule" : ""}>
+                                <span className={canonicalRating(pick.rating) === "Hold" && days >= 150 ? "text-neg font-semibold" : "text-ink-3"} title={canonicalRating(pick.rating) === "Hold" && days >= 180 ? "Hold ≥ 180 days — SA would sell" : canonicalRating(pick.rating) === "Hold" && days >= 150 ? "Approaching SA's 180-day Hold sell rule" : ""}>
                                   {days}d
                                 </span>
-                              ) : <span className="text-slate-300">—</span>}
+                              ) : <span className="text-ink-faint">—</span>}
                             </td>
                             <td className="py-2 text-right whitespace-nowrap">
                               {scoredStocks.some((s) => s.ticker === pick.ticker) ? (
-                                <span className="text-[10px] text-emerald-500 font-medium">In list</span>
+                                <span className="text-[10px] text-pos font-medium">In list</span>
                               ) : (
                                 <button
                                   onClick={(e) => { e.stopPropagation(); addToWatchlist(pick.ticker); }}
-                                  className="text-[10px] text-blue-500 hover:text-blue-700 font-semibold transition-colors"
+                                  className="text-[10px] text-accent hover:text-accent font-semibold transition-colors"
                                   title="Add to Watchlist"
                                 >
                                   + Watch
@@ -3530,7 +3530,7 @@ export default function ResearchPage() {
                               )}
                               <button
                                 onClick={() => sellPick(pick.ticker, pick.dateAdded)}
-                                className="ml-2 text-[10px] font-semibold text-red-600 hover:text-red-800 transition-colors"
+                                className="ml-2 text-[10px] font-semibold text-neg hover:text-neg transition-colors"
                                 title="Sell this pick — removes it from the list AND redistributes its weight equally across the remaining picks (per SA's documented rule)."
                               >
                                 Sell
@@ -3540,7 +3540,7 @@ export default function ResearchPage() {
                                   if (!confirm(`Remove ${pick.name || pick.ticker} from the list WITHOUT redistributing weight?\n\n(Use the "Sell" button if you want weight redistribution.)`)) return;
                                   save({ ...state, alphaPicks: allPicks.filter((p) => !(p.ticker === pick.ticker && (p.dateAdded || "") === (pick.dateAdded || ""))) });
                                 }}
-                                className="ml-2 text-slate-300 hover:text-red-500 font-bold transition-colors"
+                                className="ml-2 text-ink-faint hover:text-neg font-bold transition-colors"
                                 title="Remove this specific pick with NO weight redistribution. Use this for duplicates or wrong tickers. Other picks with the same ticker on different dates stay."
                               >
                                 &times;
@@ -3550,7 +3550,7 @@ export default function ResearchPage() {
                         );
                       })}
                       {visiblePicks.length === 0 && (
-                        <tr><td colSpan={12} className="py-8 text-center text-slate-400 italic">
+                        <tr><td colSpan={12} className="py-8 text-center text-ink-3 italic">
                           {allPicks.length === 0 ? "No picks yet — upload a screenshot below or add manually" : "No picks match this rating filter"}
                         </td></tr>
                       )}
@@ -3588,44 +3588,44 @@ export default function ResearchPage() {
         {/* ── Quick Reference ── */}
         <CollapsibleSection
           prefKey="research.quickRef"
-          className="border-slate-200"
+          className="border-line"
           titleClass="text-lg font-semibold"
           title={<>Quick Reference</>}
         >
           <div className="grid gap-5 md:grid-cols-3">
-            <div className="rounded-xl bg-slate-50 p-4">
-              <div className="text-xs font-bold uppercase tracking-wider text-slate-400 mb-3">PIM Score Thresholds</div>
+            <div className="rounded-xl bg-surface-2 p-4">
+              <div className="text-xs font-bold uppercase tracking-wider text-ink-3 mb-3">PIM Score Thresholds</div>
               <div className="space-y-1.5 text-sm">
-                <div className="flex justify-between"><span className="text-emerald-700 font-medium">Strong Buy</span><span>&ge; 30/40</span></div>
-                <div className="flex justify-between"><span className="text-emerald-600 font-medium">Moderate Buy</span><span>&ge; 26/40</span></div>
-                <div className="flex justify-between"><span className="text-amber-600 font-medium">Hold</span><span>&ge; 22/40</span></div>
-                <div className="flex justify-between"><span className="text-red-500 font-medium">Underweight</span><span>&ge; 18/40</span></div>
-                <div className="flex justify-between"><span className="text-red-700 font-medium">Sell</span><span>&lt; 18/40</span></div>
+                <div className="flex justify-between"><span className="text-pos font-medium">Strong Buy</span><span>&ge; 30/40</span></div>
+                <div className="flex justify-between"><span className="text-pos font-medium">Moderate Buy</span><span>&ge; 26/40</span></div>
+                <div className="flex justify-between"><span className="text-warn font-medium">Hold</span><span>&ge; 22/40</span></div>
+                <div className="flex justify-between"><span className="text-neg font-medium">Underweight</span><span>&ge; 18/40</span></div>
+                <div className="flex justify-between"><span className="text-neg font-medium">Sell</span><span>&lt; 18/40</span></div>
               </div>
             </div>
-            <div className="rounded-xl bg-slate-50 p-4">
-              <div className="text-xs font-bold uppercase tracking-wider text-slate-400 mb-3">Regime Multipliers</div>
+            <div className="rounded-xl bg-surface-2 p-4">
+              <div className="text-xs font-bold uppercase tracking-wider text-ink-3 mb-3">Regime Multipliers</div>
               <div className="space-y-1.5 text-sm">
-                <div className="text-xs font-bold text-red-700 mt-1">Risk-Off</div>
-                <div className="flex justify-between"><span>Growth</span><span className="text-red-600 font-medium">0.85x</span></div>
-                <div className="flex justify-between"><span>Cyclical</span><span className="text-amber-600 font-medium">0.90x</span></div>
-                <div className="flex justify-between"><span>Defensive</span><span className="text-emerald-600 font-medium">1.10x</span></div>
-                <div className="text-xs font-bold text-amber-700 mt-2">Neutral</div>
-                <div className="flex justify-between"><span>All sectors</span><span className="text-slate-500 font-medium">1.0x</span></div>
-                <div className="text-xs font-bold text-emerald-700 mt-2">Risk-On</div>
-                <div className="flex justify-between"><span>Growth</span><span className="text-emerald-600 font-medium">1.10x</span></div>
-                <div className="flex justify-between"><span>Cyclical</span><span className="text-emerald-600 font-medium">1.05x</span></div>
-                <div className="flex justify-between"><span>Defensive</span><span className="text-amber-600 font-medium">0.92x</span></div>
+                <div className="text-xs font-bold text-neg mt-1">Risk-Off</div>
+                <div className="flex justify-between"><span>Growth</span><span className="text-neg font-medium">0.85x</span></div>
+                <div className="flex justify-between"><span>Cyclical</span><span className="text-warn font-medium">0.90x</span></div>
+                <div className="flex justify-between"><span>Defensive</span><span className="text-pos font-medium">1.10x</span></div>
+                <div className="text-xs font-bold text-warn mt-2">Neutral</div>
+                <div className="flex justify-between"><span>All sectors</span><span className="text-ink-3 font-medium">1.0x</span></div>
+                <div className="text-xs font-bold text-pos mt-2">Risk-On</div>
+                <div className="flex justify-between"><span>Growth</span><span className="text-pos font-medium">1.10x</span></div>
+                <div className="flex justify-between"><span>Cyclical</span><span className="text-pos font-medium">1.05x</span></div>
+                <div className="flex justify-between"><span>Defensive</span><span className="text-warn font-medium">0.92x</span></div>
               </div>
-              <p className="mt-3 text-xs text-slate-400">Growth: Tech, Comm Svc, Consumer Disc · Cyclical: Fin, Ind, Mat · Neutral: Energy, Real Estate · Quality dampening ±35%</p>
+              <p className="mt-3 text-xs text-ink-3">Growth: Tech, Comm Svc, Consumer Disc · Cyclical: Fin, Ind, Mat · Neutral: Energy, Real Estate · Quality dampening ±35%</p>
             </div>
-            <div className="rounded-xl bg-slate-50 p-4">
-              <div className="text-xs font-bold uppercase tracking-wider text-slate-400 mb-3">Contrarian Thresholds</div>
+            <div className="rounded-xl bg-surface-2 p-4">
+              <div className="text-xs font-bold uppercase tracking-wider text-ink-3 mb-3">Contrarian Thresholds</div>
               <div className="space-y-1.5 text-sm">
-                <div className="flex justify-between"><span>F&G &le; 15</span><span className="text-emerald-600 font-medium">Contrarian Buy</span></div>
-                <div className="flex justify-between"><span>F&G &ge; 75</span><span className="text-red-600 font-medium">Contrarian Sell</span></div>
-                <div className="flex justify-between"><span>AAII &le; -20</span><span className="text-emerald-600 font-medium">Contrarian Buy</span></div>
-                <div className="flex justify-between"><span>AAII &ge; +30</span><span className="text-red-600 font-medium">Contrarian Sell</span></div>
+                <div className="flex justify-between"><span>F&G &le; 15</span><span className="text-pos font-medium">Contrarian Buy</span></div>
+                <div className="flex justify-between"><span>F&G &ge; 75</span><span className="text-neg font-medium">Contrarian Sell</span></div>
+                <div className="flex justify-between"><span>AAII &le; -20</span><span className="text-pos font-medium">Contrarian Buy</span></div>
+                <div className="flex justify-between"><span>AAII &ge; +30</span><span className="text-neg font-medium">Contrarian Sell</span></div>
               </div>
             </div>
           </div>
