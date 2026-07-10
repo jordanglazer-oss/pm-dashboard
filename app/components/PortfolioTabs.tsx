@@ -1,7 +1,7 @@
 "use client";
 
 import Link from "next/link";
-import { useRef, type KeyboardEvent } from "react";
+import { useEffect } from "react";
 import { usePathname, useRouter } from "next/navigation";
 import { useStocks } from "@/app/lib/StockContext";
 
@@ -32,12 +32,6 @@ export function PortfolioTabs() {
   const pathname = usePathname();
   const router = useRouter();
   const { stocks } = useStocks();
-  // Roving-tabindex refs so ← / → move focus + navigate between segments when
-  // the tab bar is focused (standard ARIA tablist keyboard pattern). Scoped to
-  // the tab bar via role="tablist" so it doesn't clash with the ← / → profile
-  // toggles on Positioning / Models (those handlers skip when a tablist is
-  // focused — see PimPortfolio / PimModel).
-  const tabRefs = useRef<(HTMLAnchorElement | null)[]>([]);
 
   const isHub =
     pathname === "/" ||
@@ -46,7 +40,6 @@ export function PortfolioTabs() {
     pathname.startsWith("/portfolio") ||
     pathname === "/pim-model" ||
     pathname === "/aa-performance";
-  if (!isHub) return null;
 
   // Which segment "owns" the current route (X-ray shares /portfolio with
   // Positioning; it's an in-page anchor, so Positioning is the active one there).
@@ -56,20 +49,30 @@ export function PortfolioTabs() {
     : pathname.startsWith("/portfolio") ? "/portfolio"
     : "/"; // "/", "/scoring", "/stock/*"
 
-  const holdingsCount = (stocks ?? []).filter((s) => s.bucket === "Portfolio").length;
+  // Global Shift + ← / → jumps between Portfolio segments — no focus dance, and
+  // Shift keeps it clear of the PLAIN ← / → profile toggles on Positioning /
+  // Models (those handlers now ignore Shift). No-ops off the hub or while typing.
+  useEffect(() => {
+    if (!isHub) return;
+    function onKey(e: globalThis.KeyboardEvent) {
+      if (!e.shiftKey || (e.key !== "ArrowLeft" && e.key !== "ArrowRight")) return;
+      const t = e.target as HTMLElement | null;
+      const tag = t?.tagName?.toLowerCase();
+      if (tag === "input" || tag === "textarea" || tag === "select" || t?.isContentEditable) return;
+      const idx = Math.max(0, SEGMENTS.findIndex((s) => s.href === activeHref));
+      const next = e.key === "ArrowRight"
+        ? (idx + 1) % SEGMENTS.length
+        : (idx - 1 + SEGMENTS.length) % SEGMENTS.length;
+      e.preventDefault();
+      router.push(SEGMENTS[next].href);
+    }
+    window.addEventListener("keydown", onKey);
+    return () => window.removeEventListener("keydown", onKey);
+  }, [isHub, activeHref, router]);
 
-  const activeIdx = Math.max(0, SEGMENTS.findIndex((s) => s.href === activeHref));
-  const onTabKeyDown = (e: KeyboardEvent<HTMLDivElement>) => {
-    let next = -1;
-    if (e.key === "ArrowRight" || e.key === "ArrowDown") next = (activeIdx + 1) % SEGMENTS.length;
-    else if (e.key === "ArrowLeft" || e.key === "ArrowUp") next = (activeIdx - 1 + SEGMENTS.length) % SEGMENTS.length;
-    else if (e.key === "Home") next = 0;
-    else if (e.key === "End") next = SEGMENTS.length - 1;
-    else return;
-    e.preventDefault();
-    tabRefs.current[next]?.focus();
-    router.push(SEGMENTS[next].href);
-  };
+  if (!isHub) return null;
+
+  const holdingsCount = (stocks ?? []).filter((s) => s.bucket === "Portfolio").length;
 
   return (
     <div className="bg-surface border-b border-line print:hidden">
@@ -83,25 +86,20 @@ export function PortfolioTabs() {
           </div>
         </div>
 
-        {/* Segment row — an ARIA tablist so ← / → (and Home / End) move between
-            segments once the bar is focused (Tab into it, then arrow). */}
+        {/* Segment row. Click to switch, or press Shift + ← / → anywhere on the
+            page to move between segments. */}
         <div className="mt-3 flex items-center gap-2 overflow-x-auto pb-2">
           <div
-            role="tablist"
-            aria-label="Portfolio sections"
-            onKeyDown={onTabKeyDown}
             className="flex items-center gap-0.5 rounded-control border border-line bg-surface-2 p-0.5 shrink-0"
+            title="Tip: Shift + ← / → switches between Portfolio sections"
           >
-            {SEGMENTS.map((seg, i) => {
+            {SEGMENTS.map((seg) => {
               const isActive = seg.href === activeHref;
               return (
                 <Link
                   key={seg.label}
                   href={seg.href}
-                  ref={(el) => { tabRefs.current[i] = el; }}
-                  role="tab"
-                  aria-selected={isActive}
-                  tabIndex={isActive ? 0 : -1}
+                  aria-current={isActive ? "page" : undefined}
                   className={`rounded-[6px] px-3 py-1 text-[13px] whitespace-nowrap transition-colors outline-none focus-visible:ring-2 focus-visible:ring-accent-border ${
                     isActive
                       ? "bg-surface text-ink font-semibold shadow-sm"

@@ -413,9 +413,9 @@ export function PimPortfolio({ groups }: Props) {
       const target = e.target as HTMLElement | null;
       const tag = target?.tagName?.toLowerCase();
       if (tag === "input" || tag === "textarea" || tag === "select" || target?.isContentEditable) return;
-      // When the Portfolio segment tab bar is focused, ← / → navigate segments
-      // (handled in PortfolioTabs) — don't also toggle the profile here.
-      if (target?.closest?.('[role="tablist"]')) return;
+      // Shift + ← / → is reserved for switching Portfolio segments (PortfolioTabs);
+      // plain ← / → toggle the profile here.
+      if (e.shiftKey) return;
       if (availableProfiles.length <= 1) return;
       const idx = availableProfiles.indexOf(activeProfile);
       const nextIdx = e.key === "ArrowRight"
