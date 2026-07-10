@@ -195,7 +195,7 @@ function EditableNumberCell({
       }}
       placeholder={placeholder ?? "—"}
       aria-label={ariaLabel}
-      className={`${width} rounded border border-line bg-white px-1.5 py-0.5 text-xs font-mono text-right outline-none focus:border-accent focus:ring-1 focus:ring-accent-soft placeholder-slate-300`}
+      className={`${width} rounded border border-line bg-white px-1.5 py-0.5 text-xs font-mono text-right outline-none focus:border-accent focus:ring-1 focus:ring-accent-soft placeholder-ink-faint`}
     />
   );
 }
@@ -418,6 +418,7 @@ export default function InboxPage() {
   const eventsCollapsed = uiPrefs["inbox.section.events.collapsed"] === "1";
   const coverageCollapsed = uiPrefs["inbox.section.coverage.collapsed"] === "1";
   const reportsCollapsed = uiPrefs["inbox.section.reports.collapsed"] === "1";
+  const emailHelpCollapsed = uiPrefs["inbox.section.emailHelp.collapsed"] !== "0"; // default collapsed
   const toggleEvents = () => setUiPref("inbox.section.events.collapsed", eventsCollapsed ? "0" : "1");
   const toggleCoverage = () => setUiPref("inbox.section.coverage.collapsed", coverageCollapsed ? "0" : "1");
   const toggleReports = () => setUiPref("inbox.section.reports.collapsed", reportsCollapsed ? "0" : "1");
@@ -938,7 +939,7 @@ export default function InboxPage() {
               type="checkbox"
               checked={hideCached}
               onChange={toggleHideCached}
-              className="w-3.5 h-3.5 rounded border-line text-accent focus:ring-blue-400"
+              className="w-3.5 h-3.5 rounded border-line text-accent focus:ring-accent-border"
             />
             <span>Hide cached</span>
             {cachedCount > 0 && (
@@ -956,7 +957,7 @@ export default function InboxPage() {
             className="rounded-md border border-line px-3 py-1.5 text-sm hover:bg-surface-2 disabled:opacity-50 disabled:cursor-not-allowed flex items-center gap-1.5"
           >
             {refreshing && (
-              <span className="inline-block w-3 h-3 border-2 border-slate-400 border-t-transparent rounded-full animate-spin" />
+              <span className="inline-block w-3 h-3 border-2 border-line border-t-transparent rounded-full animate-spin" />
             )}
             {refreshing ? "Refreshing…" : "Refresh"}
           </button>
@@ -1063,13 +1064,13 @@ export default function InboxPage() {
           Hash-gated cache (pm:sia-scrape-cache, pm:boosted-ai-scrape-cache)
           so re-uploading an unchanged image costs zero Anthropic tokens. */}
       <div className="mt-6 rounded-lg border border-violet bg-white overflow-hidden">
-        <div className="border-b border-violet-100 bg-violet-soft/40 px-4 py-3">
+        <div className="border-b border-violet-soft bg-violet-soft/40 px-4 py-3">
           <h2 className="text-sm font-semibold text-ink">SIA + BoostedAI — Screenshot upload</h2>
           <p className="text-[11px] text-ink-3 mt-0.5">
             Drop a watchlist screenshot from SIACharts or Boosted.ai. Anthropic vision reads the rows and updates every matched ticker (dual-listed names included). A value already on a stock is preserved if the vision can&apos;t read its new value — a yellow chip shows up on that stock&apos;s SIA / BoostedAI input until the next successful read.
           </p>
         </div>
-        <div className="grid sm:grid-cols-2 divide-y sm:divide-y-0 sm:divide-x divide-violet-100">
+        <div className="grid sm:grid-cols-2 divide-y sm:divide-y-0 sm:divide-x divide-violet-soft">
           {/* SIA upload zone — CSV preferred (instant, $0, 100% reliable);
               screenshot is the fallback when CSV isn't available. */}
           <div className="p-4">
@@ -1179,7 +1180,7 @@ export default function InboxPage() {
           </div>
         </div>
         {screenshotImportSummary && (
-          <div className="px-4 py-3 text-xs space-y-1 border-t border-violet-100 bg-violet-soft/20">
+          <div className="px-4 py-3 text-xs space-y-1 border-t border-violet-soft bg-violet-soft/20">
             <div className="text-ink">
               <span className="font-semibold capitalize">{screenshotImportSummary.source}:</span>{" "}
               <span className="font-semibold">{screenshotImportSummary.matched}</span> matched / {screenshotImportSummary.rowsParsed} rows ·{" "}
@@ -1217,7 +1218,7 @@ export default function InboxPage() {
           per-stock writes go through updateStockFields / updateScore so
           they persist via the usual debounced pm:stocks PUT (no new key). */}
       <div className="mt-6 rounded-lg border border-accent-border bg-white overflow-hidden">
-        <div className="border-b border-indigo-100 bg-accent-soft/40 px-4 py-3 flex items-center justify-between flex-wrap gap-2">
+        <div className="border-b border-violet-soft bg-accent-soft/40 px-4 py-3 flex items-center justify-between flex-wrap gap-2">
           <div>
             <h2 className="text-sm font-semibold text-ink">MarketEdge — Weekly CSV upload</h2>
             <p className="text-[11px] text-ink-3 mt-0.5">
@@ -1585,8 +1586,17 @@ export default function InboxPage() {
           Apps Script forwards. Subject prefix → handler is set in
           app/lib/inbox-dispatch.ts (classifySubject); table rows must
           stay in sync if those prefixes change. */}
-      <div className="mt-6 rounded-lg border border-blue-100 bg-accent-soft p-4">
-        <p className="font-semibold text-accent mb-1">How to send by email</p>
+      <div className="mt-6 rounded-lg border border-accent-border bg-accent-soft/60">
+        <button
+          onClick={() => setUiPref("inbox.section.emailHelp.collapsed", emailHelpCollapsed ? "0" : "1")}
+          className="w-full flex items-center gap-2 px-4 py-3 text-left"
+          aria-expanded={!emailHelpCollapsed}
+        >
+          <svg className={`w-4 h-4 shrink-0 text-accent transition-transform ${emailHelpCollapsed ? "" : "rotate-90"}`} fill="none" stroke="currentColor" strokeWidth="2" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" d="M9 5l7 7-7 7" /></svg>
+          <span className="font-semibold text-accent">How to send by email — subject-prefix routing</span>
+        </button>
+        {!emailHelpCollapsed && (
+        <div className="px-4 pb-4">
         <p className="text-accent text-sm mb-3">
           From any email account, send <span className="font-mono">dfwreports123@gmail.com</span> a message — the subject prefix tells the dashboard what to do with it. Case-insensitive. The Apps Script polls every 5 minutes, so entries appear in the activity log above within ~5 min.
         </p>
@@ -1601,13 +1611,13 @@ export default function InboxPage() {
               </tr>
             </thead>
             <tbody className="text-accent align-top">
-              <tr className="border-b border-blue-100">
+              <tr className="border-b border-accent-border">
                 <td className="py-2 pr-3 font-mono whitespace-nowrap">Analyst Report: &lt;TICKER&gt;</td>
                 <td className="py-2 pr-3 whitespace-nowrap">PDF</td>
                 <td className="py-2 pr-3">Subject is just <span className="font-mono">Analyst Report: &lt;TICKER&gt;</span> (no firm). The firm comes from the <span className="font-semibold">PDF filename</span>: name it <span className="font-mono">&lt;TICKER&gt;_RBC.pdf</span> or <span className="font-mono">&lt;TICKER&gt;_JPM.pdf</span> to route to the right slot. You can attach <span className="font-semibold">several PDFs in one email</span> (e.g. <span className="font-mono">AVGO_JPM.pdf</span> + <span className="font-mono">AVGO_RBC.pdf</span>) and each routes on its own. Max ~15 MB each.</td>
                 <td className="py-2 font-mono whitespace-nowrap">Analyst Report: AVGO</td>
               </tr>
-              <tr className="border-b border-blue-100">
+              <tr className="border-b border-accent-border">
                 <td className="py-2 pr-3 font-mono whitespace-nowrap">SIA</td>
                 <td className="py-2 pr-3 whitespace-nowrap">
                   <span className="text-pos font-semibold">CSV (preferred)</span>
@@ -1616,7 +1626,7 @@ export default function InboxPage() {
                 <td className="py-2 pr-3">Reads <span className="font-mono">SYM</span> + <span className="font-mono">SMAX</span> per row. Updates each matched stock&apos;s SMAX and recomputes the SIA score. CSV is auto-detected; held ETFs/funds are skipped silently.</td>
                 <td className="py-2 font-mono whitespace-nowrap">SIA — Mar 5</td>
               </tr>
-              <tr className="border-b border-blue-100">
+              <tr className="border-b border-accent-border">
                 <td className="py-2 pr-3 font-mono whitespace-nowrap">BoostedAI <span className="text-accent">or</span> Boosted</td>
                 <td className="py-2 pr-3 whitespace-nowrap">
                   <span className="text-pos font-semibold">CSV (preferred)</span>
@@ -1625,74 +1635,74 @@ export default function InboxPage() {
                 <td className="py-2 pr-3">Reads <span className="font-mono">TICKER</span> + <span className="font-mono">AVERAGE RATING</span> + <span className="font-mono">CONSENSUS RECOMMENDATION</span> per row. Updates the BoostedAI fields and recomputes the AI Rating score. Send the Boosted.ai unified-data CSV export; held ETFs/funds are skipped silently.</td>
                 <td className="py-2 font-mono whitespace-nowrap">BoostedAI watchlist</td>
               </tr>
-              <tr className="border-b border-blue-100">
+              <tr className="border-b border-accent-border">
                 <td className="py-2 pr-3 font-mono whitespace-nowrap">MarketEdge <span className="text-accent">or</span> ChartScout</td>
                 <td className="py-2 pr-3 whitespace-nowrap">CSV</td>
                 <td className="py-2 pr-3">Parses the ChartScout Likes export by header (Symbol / Opinion / Score / Power Rating / Opinion Date). Updates the MarketEdge fields and the MarketEdge composite score.</td>
                 <td className="py-2 font-mono whitespace-nowrap">MarketEdge weekly</td>
               </tr>
-              <tr className="border-b border-blue-100">
+              <tr className="border-b border-accent-border">
                 <td className="py-2 pr-3 font-mono whitespace-nowrap">Strategist</td>
                 <td className="py-2 pr-3 whitespace-nowrap">PDF or image</td>
                 <td className="py-2 pr-3">Lands in the Brief&apos;s &ldquo;Analyst / Strategist Reports&rdquo; dropbox — picked up automatically on the next Brief refresh.</td>
                 <td className="py-2 font-mono whitespace-nowrap">Strategist note from Newton</td>
               </tr>
               {/* ── Research lists (Fundstrat / RBC / Seeking Alpha / FEW) ── */}
-              <tr className="border-b border-blue-100">
+              <tr className="border-b border-accent-border">
                 <td className="py-2 pr-3 font-mono whitespace-nowrap">Fundstrat Top</td>
                 <td className="py-2 pr-3 whitespace-nowrap">Screenshot (PNG/JPG/PDF)</td>
                 <td className="py-2 pr-3">Merges into the Fundstrat Large-Cap Top Ideas list on the Research tab.</td>
                 <td className="py-2 font-mono whitespace-nowrap">Fundstrat Top</td>
               </tr>
-              <tr className="border-b border-blue-100">
+              <tr className="border-b border-accent-border">
                 <td className="py-2 pr-3 font-mono whitespace-nowrap">Fundstrat Bottom</td>
                 <td className="py-2 pr-3 whitespace-nowrap">Screenshot (PNG/JPG/PDF)</td>
                 <td className="py-2 pr-3">Merges into the Fundstrat Large-Cap Bottom Ideas list.</td>
                 <td className="py-2 font-mono whitespace-nowrap">Fundstrat Bottom</td>
               </tr>
-              <tr className="border-b border-blue-100">
+              <tr className="border-b border-accent-border">
                 <td className="py-2 pr-3 font-mono whitespace-nowrap">Fundstrat SMID Top</td>
                 <td className="py-2 pr-3 whitespace-nowrap">Screenshot (PNG/JPG/PDF)</td>
                 <td className="py-2 pr-3">Merges into the Fundstrat SMID-Cap Top Ideas list.</td>
                 <td className="py-2 font-mono whitespace-nowrap">Fundstrat SMID Top</td>
               </tr>
-              <tr className="border-b border-blue-100">
+              <tr className="border-b border-accent-border">
                 <td className="py-2 pr-3 font-mono whitespace-nowrap">Fundstrat SMID Bottom</td>
                 <td className="py-2 pr-3 whitespace-nowrap">Screenshot (PNG/JPG/PDF)</td>
                 <td className="py-2 pr-3">Merges into the Fundstrat SMID-Cap Bottom Ideas list.</td>
                 <td className="py-2 font-mono whitespace-nowrap">Fundstrat SMID Bottom</td>
               </tr>
-              <tr className="border-b border-blue-100">
+              <tr className="border-b border-accent-border">
                 <td className="py-2 pr-3 font-mono whitespace-nowrap">RBC Canadian</td>
                 <td className="py-2 pr-3 whitespace-nowrap">Screenshot (PNG/JPG/PDF)</td>
                 <td className="py-2 pr-3">Merges into the RBC Canadian Focus List. Tickers auto-canonicalize to <span className="font-mono">.TO</span>.</td>
                 <td className="py-2 font-mono whitespace-nowrap">RBC Canadian</td>
               </tr>
-              <tr className="border-b border-blue-100">
+              <tr className="border-b border-accent-border">
                 <td className="py-2 pr-3 font-mono whitespace-nowrap">RBC US</td>
                 <td className="py-2 pr-3 whitespace-nowrap">Screenshot (PNG/JPG/PDF)</td>
                 <td className="py-2 pr-3">Merges into the RBC US Focus List.</td>
                 <td className="py-2 font-mono whitespace-nowrap">RBC US</td>
               </tr>
-              <tr className="border-b border-blue-100">
+              <tr className="border-b border-accent-border">
                 <td className="py-2 pr-3 font-mono whitespace-nowrap">JPM Focus</td>
                 <td className="py-2 pr-3 whitespace-nowrap">Screenshot (PNG/JPG/PDF)</td>
                 <td className="py-2 pr-3">Merges into the JPM US Equity Analyst Focus List. Contributes to each name&rsquo;s research-mention score.</td>
                 <td className="py-2 font-mono whitespace-nowrap">JPM Focus</td>
               </tr>
-              <tr className="border-b border-blue-100">
+              <tr className="border-b border-accent-border">
                 <td className="py-2 pr-3 font-mono whitespace-nowrap">Equate CAD</td>
                 <td className="py-2 pr-3 whitespace-nowrap">RBC Equate PDF</td>
                 <td className="py-2 pr-3">Pulls ONLY the <span className="font-semibold">Canada Large Cap CORE 40 Model Portfolio</span> from the RBC Equate PDF (other lists in the PDF are ignored). Merges into the RBC Equate CAD list; +1 research mention per name.</td>
                 <td className="py-2 font-mono whitespace-nowrap">Equate CAD</td>
               </tr>
-              <tr className="border-b border-blue-100">
+              <tr className="border-b border-accent-border">
                 <td className="py-2 pr-3 font-mono whitespace-nowrap">Equate USD</td>
                 <td className="py-2 pr-3 whitespace-nowrap">RBC Equate PDF</td>
                 <td className="py-2 pr-3">Pulls ONLY the <span className="font-semibold">U.S. All Cap CORE 40 Model Portfolio</span> from the RBC Equate PDF (other lists ignored). Merges into the RBC Equate USD list; +1 research mention per name.</td>
                 <td className="py-2 font-mono whitespace-nowrap">Equate USD</td>
               </tr>
-              <tr className="border-b border-blue-100">
+              <tr className="border-b border-accent-border">
                 <td className="py-2 pr-3 font-mono whitespace-nowrap">RBCCM FEW</td>
                 <td className="py-2 pr-3 whitespace-nowrap">Screenshot (PNG/JPG/PDF)</td>
                 <td className="py-2 pr-3">Merges into the RBCCM Canadian FEW Portfolio list.</td>
@@ -1710,6 +1720,8 @@ export default function InboxPage() {
         <p className="mt-3 text-[11px] text-accent">
           Screenshots from iPhone, Mac, or Windows all work. <span className="italic">Legacy:</span> <span className="font-mono">Analyst Report: &lt;TICKER&gt; &lt;RBC|JPM&gt;</span> with any filename is still supported.
         </p>
+        </div>
+        )}
       </div>
     </div>
   );
