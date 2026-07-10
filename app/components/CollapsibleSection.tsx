@@ -71,8 +71,8 @@ export function CollapsibleSection({
           aria-label={collapsed ? "Expand section" : "Collapse section"}
           className="flex flex-1 items-center gap-2 min-w-0 text-left cursor-pointer group"
         >
-          <span className="text-ink-3 group-hover:text-ink-2 text-base leading-none shrink-0 w-4">
-            {collapsed ? "▸" : "▾"}
+          <span className={`text-ink-3 group-hover:text-ink-2 text-base leading-none shrink-0 w-4 transition-transform duration-200 ${collapsed ? "-rotate-90" : ""}`}>
+            ▾
           </span>
           <span className="min-w-0">
             <span className={`block ${titleClass || "text-xl font-bold text-ink"}`}>{title}</span>
@@ -88,7 +88,7 @@ export function CollapsibleSection({
           </div>
         )}
       </div>
-      {!collapsed && children}
+      {!collapsed && <div className="animate-section-reveal">{children}</div>}
     </section>
   );
 }

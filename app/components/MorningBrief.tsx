@@ -12,6 +12,7 @@ import type {
 import { SignalPill } from "./SignalPill";
 import { ClampText } from "./ClampText";
 import { displayTicker } from "@/app/lib/ticker";
+import { formatYmd, daysUntilYmd } from "@/app/lib/date-format";
 import { LoadingOverlay } from "./LoadingSpinner";
 import { SentimentGauges } from "./SentimentGauges";
 import { HedgingIndicator } from "./HedgingIndicator";
@@ -649,6 +650,17 @@ export function MorningBrief({
     if (next.has(i)) next.delete(i); else next.add(i);
     return next;
   });
+  // Portfolio holdings reporting earnings within the next 7 days (today .. +7),
+  // soonest first — drives the slim can't-miss banner at the top of the brief.
+  const earningsSoon = useMemo(() => {
+    return (stocks || [])
+      .filter((s) => s.bucket === "Portfolio")
+      .map((s) => ({ ticker: s.ticker, date: s.healthData?.earningsDate, days: daysUntilYmd(s.healthData?.earningsDate) }))
+      .filter((s): s is { ticker: string; date: string; days: number } =>
+        !!s.date && s.days != null && s.days >= 0 && s.days <= 7)
+      .sort((a, b) => a.days - b.days);
+  }, [stocks]);
+
   // Which view is showing: the generated "brief" (default) or the "input" form.
   const [briefMode, setBriefMode] = useState<"brief" | "input">("brief");
   const [error, setError] = useState("");
@@ -1708,6 +1720,26 @@ export function MorningBrief({
 
       {briefMode === "brief" && (
       <>
+      {/* Slim can't-miss earnings strip — portfolio holdings reporting within 7
+          days. Amber so it reads instantly; horizontally scrollable if many.
+          Hidden when nothing is upcoming. */}
+      {earningsSoon.length > 0 && (
+        <section className="flex items-center gap-2 rounded-lg border border-warn-border bg-warn-soft px-3 py-1.5">
+          <span className="flex shrink-0 items-center gap-1 text-[11px] font-bold uppercase tracking-wider text-warn">
+            <svg className="h-3.5 w-3.5" fill="none" stroke="currentColor" strokeWidth="2" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" d="M6.75 3v2.25M17.25 3v2.25M3 18.75V7.5a2.25 2.25 0 012.25-2.25h13.5A2.25 2.25 0 0121 7.5v11.25m-18 0A2.25 2.25 0 005.25 21h13.5A2.25 2.25 0 0021 18.75m-18 0v-7.5A2.25 2.25 0 015.25 9h13.5A2.25 2.25 0 0121 11.25v7.5" /></svg>
+            Earnings ≤7d
+          </span>
+          <div className="flex items-center gap-1.5 overflow-x-auto">
+            {earningsSoon.map((e) => (
+              <span key={e.ticker} className="inline-flex shrink-0 items-center gap-1 whitespace-nowrap rounded-full border border-warn-border bg-white px-2 py-0.5 text-[11px]">
+                <span className="font-mono font-bold text-ink">{displayTicker(e.ticker)}</span>
+                <span className="font-semibold text-warn">{e.days === 0 ? "today" : e.days === 1 ? "tmrw" : formatYmd(e.date)}</span>
+              </span>
+            ))}
+          </div>
+        </section>
+      )}
+
       {/* Bottom Line */}
       <section className="relative rounded-2xl bg-warn-soft border border-warn-border p-5 shadow-sm">
         {generating && <LoadingOverlay message="Claude is analyzing markets..." />}

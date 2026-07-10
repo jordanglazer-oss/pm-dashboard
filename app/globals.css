@@ -113,3 +113,16 @@ select {
 table {
   font-variant-numeric: tabular-nums;
 }
+
+/* Smooth reveal for collapsible section bodies (a soft fade + slide). Applied
+   by CollapsibleSection when a section opens. Respects reduced-motion. */
+@keyframes section-reveal {
+  from { opacity: 0; transform: translateY(-4px); }
+  to   { opacity: 1; transform: translateY(0); }
+}
+.animate-section-reveal {
+  animation: section-reveal 0.18s ease-out;
+}
+@media (prefers-reduced-motion: reduce) {
+  .animate-section-reveal { animation: none; }
+}

@@ -3,6 +3,7 @@
 import { useMemo, useState } from "react";
 import { useStocks } from "@/app/lib/StockContext";
 import { displayTicker } from "@/app/lib/ticker";
+import { formatYmd } from "@/app/lib/date-format";
 
 /**
  * Portfolio X-ray — a book-level roll-up of the Portfolio bucket's FactSet
@@ -111,7 +112,7 @@ export function PortfolioXray() {
             {upcomingEarnings.map((e) => (
               <span key={e.ticker} className="inline-flex items-center gap-1 rounded-full border border-line bg-surface-2 px-2 py-0.5 text-[11px]">
                 <span className="font-mono font-semibold text-ink">{displayTicker(e.ticker)}</span>
-                <span className="text-ink-3">{new Date(e.ms).toLocaleDateString("en-US", { month: "short", day: "numeric" })}</span>
+                <span className="text-ink-3">{formatYmd(e.date)}</span>
               </span>
             ))}
           </div>

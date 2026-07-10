@@ -26,6 +26,7 @@ const ZERO_SCORES: Record<ScoreKey, number> = {
   trackRecord: 0, ownershipTrends: 0,
 };
 import { useStocks } from "@/app/lib/StockContext";
+import { CollapsibleSection } from "@/app/components/CollapsibleSection";
 import { isMarketOpenOrAfterET } from "@/app/lib/market-hours";
 
 function generateId(): string {
@@ -2879,16 +2880,19 @@ export function PimPortfolio({ groups }: Props) {
           .slice(0, 6);
         const lastRebDate = groupState.lastRebalance?.date;
         return (
-          <div className="rounded-card border border-line bg-white shadow-sm">
-            <div className="flex items-center justify-between gap-3 flex-wrap border-b border-line-soft px-4 py-3">
-              <h3 className="text-sm font-bold text-ink">Recent Trades</h3>
-              {lastRebDate && (
-                <span className="text-[11px] text-ink-3">since last rebalance · {new Date(lastRebDate).toLocaleDateString(undefined, { month: "short", day: "numeric" })}</span>
-              )}
-            </div>
-            <div>
+          <CollapsibleSection
+            prefKey="positioning.recentTrades"
+            defaultCollapsed
+            className="border-line"
+            titleClass="text-sm font-bold text-ink"
+            title="Recent Trades"
+            right={lastRebDate ? (
+              <span className="text-[11px] text-ink-3">since last rebalance · {new Date(lastRebDate).toLocaleDateString(undefined, { month: "short", day: "numeric" })}</span>
+            ) : undefined}
+          >
+            <div className="-mx-6 -mb-6 border-t border-line-soft">
               {recent.map((t) => (
-                <div key={t.id} className="flex items-center gap-3 border-b border-line-soft px-4 py-2.5 last:border-b-0">
+                <div key={t.id} className="flex items-center gap-3 border-b border-line-soft px-6 py-2.5 last:border-b-0">
                   <span className={`w-12 shrink-0 rounded px-1.5 py-0.5 text-center text-[10px] font-bold ${t.direction === "sell" ? "bg-neg text-white" : "bg-pos text-white"}`}>
                     {t.direction.toUpperCase()}
                   </span>
@@ -2901,7 +2905,7 @@ export function PimPortfolio({ groups }: Props) {
                 </div>
               ))}
             </div>
-          </div>
+          </CollapsibleSection>
         );
       })()}
 
