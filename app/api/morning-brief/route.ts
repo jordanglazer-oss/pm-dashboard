@@ -61,39 +61,12 @@ async function fetchSectorPerformance(): Promise<{ text: string; sectors: Sector
   const entries = Object.entries(SECTOR_ETFS);
   const empty = { text: "Sector data unavailable", sectors: [] as SectorPerf[] };
 
-  // FactSet FIRST (authoritative) — every SPDR sector ETF resolves via <ETF>-US.
-  // One batched call: current price + 1-day + 1-month total return (div/split
-  // adjusted). Null-safe: if the 1-day return form isn't valid it renders blank
-  // and we still show 1M + price. Falls through to Yahoo when FactSet/relay is
-  // down or returns nothing. Returns BOTH the prompt text and structured
+  // Yahoo FIRST for the sector heatmap: it carries a LIVE intraday day %
+  // (regularMarketPrice vs previous close). FactSet's Formula API total-return
+  // is delayed/EOD and its -1D form returns null intraday, which left the tiles
+  // blank. FactSet stays as a fallback (and adds 1M context to the prompt text)
+  // only when Yahoo is unavailable. Returns BOTH the prompt text and structured
   // per-sector day % (for the brief UI's Sector Rotation tile grid).
-  if (factsetConfigured()) {
-    try {
-      const ids = entries.map(([, etf]) => `${etf}-US`);
-      const data = await crossSectional(ids, ["P_PRICE", "P_TOTAL_RETURNC(-1D,0)", "P_TOTAL_RETURNC(-1M,0)"]);
-      const num = (row: Record<string, unknown> | undefined, f: string): number | null => {
-        const v = row?.[f];
-        return typeof v === "number" ? v : null;
-      };
-      const sectors: SectorPerf[] = [];
-      const lines: string[] = [];
-      for (const [sector, etf] of entries) {
-        const row = data[`${etf}-US`];
-        const price = num(row, "P_PRICE");
-        if (price == null) continue;
-        const d1 = num(row, "P_TOTAL_RETURNC(-1D,0)");
-        const m1 = num(row, "P_TOTAL_RETURNC(-1M,0)");
-        sectors.push({ sector, etf, dayPct: d1 });
-        const dayStr = d1 != null ? `${d1 >= 0 ? "+" : ""}${d1.toFixed(2)}% today, ` : "";
-        const monStr = m1 != null ? `${m1 >= 0 ? "+" : ""}${m1.toFixed(1)}% 1M, ` : "";
-        lines.push(`- ${sector} (${etf}): ${dayStr}${monStr}price $${price.toFixed(2)}`);
-      }
-      if (lines.length > 0) return { text: lines.join("\n"), sectors };
-    } catch (e) {
-      console.error("FactSet sector performance failed, falling back to Yahoo:", e);
-    }
-  }
-
   try {
     const results = await Promise.all(
       entries.map(async ([sector, etf]) => {
@@ -121,16 +94,46 @@ async function fetchSectorPerformance(): Promise<{ text: string; sectors: Sector
       })
     );
     const valid = results.filter(Boolean) as { sector: string; etf: string; dayPct: number | null; price: number | null }[];
-    if (valid.length === 0) return empty;
-    const sectors: SectorPerf[] = valid.map(({ sector, etf, dayPct }) => ({ sector, etf, dayPct }));
-    const lines = valid.map(({ sector, etf, dayPct, price }) =>
-      `- ${sector} (${etf}): ${dayPct != null ? `${dayPct >= 0 ? "+" : ""}${dayPct.toFixed(2)}% today, ` : ""}price $${price != null ? price.toFixed(2) : "N/A"}`
-    );
-    return { text: lines.join("\n"), sectors };
+    if (valid.length > 0) {
+      const sectors: SectorPerf[] = valid.map(({ sector, etf, dayPct }) => ({ sector, etf, dayPct }));
+      const lines = valid.map(({ sector, etf, dayPct, price }) =>
+        `- ${sector} (${etf}): ${dayPct != null ? `${dayPct >= 0 ? "+" : ""}${dayPct.toFixed(2)}% today, ` : ""}price $${price != null ? price.toFixed(2) : "N/A"}`
+      );
+      return { text: lines.join("\n"), sectors };
+    }
   } catch (e) {
-    console.error("Sector ETF fetch error:", e);
-    return empty;
+    console.error("Yahoo sector performance failed, trying FactSet:", e);
   }
+
+  // FactSet fallback — only when Yahoo returned nothing.
+  if (factsetConfigured()) {
+    try {
+      const ids = entries.map(([, etf]) => `${etf}-US`);
+      const data = await crossSectional(ids, ["P_PRICE", "P_TOTAL_RETURNC(-1D,0)", "P_TOTAL_RETURNC(-1M,0)"]);
+      const num = (row: Record<string, unknown> | undefined, f: string): number | null => {
+        const v = row?.[f];
+        return typeof v === "number" ? v : null;
+      };
+      const sectors: SectorPerf[] = [];
+      const lines: string[] = [];
+      for (const [sector, etf] of entries) {
+        const row = data[`${etf}-US`];
+        const price = num(row, "P_PRICE");
+        if (price == null) continue;
+        const d1 = num(row, "P_TOTAL_RETURNC(-1D,0)");
+        const m1 = num(row, "P_TOTAL_RETURNC(-1M,0)");
+        sectors.push({ sector, etf, dayPct: d1 });
+        const dayStr = d1 != null ? `${d1 >= 0 ? "+" : ""}${d1.toFixed(2)}% today, ` : "";
+        const monStr = m1 != null ? `${m1 >= 0 ? "+" : ""}${m1.toFixed(1)}% 1M, ` : "";
+        lines.push(`- ${sector} (${etf}): ${dayStr}${monStr}price $${price.toFixed(2)}`);
+      }
+      if (lines.length > 0) return { text: lines.join("\n"), sectors };
+    } catch (e) {
+      console.error("FactSet sector performance fallback failed:", e);
+    }
+  }
+
+  return empty;
 }
 
 const ATTACHMENT_CACHE_KEY = "pm:attachment-analysis";
