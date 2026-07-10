@@ -3020,7 +3020,7 @@ export default function ResearchPage() {
         <div className="grid gap-5 lg:grid-cols-2">
           {([
             {
-              key: "lc", source: "fundstrat-largecap-core" as const, prefKey: "research.lcCore",
+              key: "lc", source: "fundstrat-largecap-core" as const, prefKey: "research.lcCore", linked: "research.smidCore",
               title: "Fundstrat Large-Cap Core Ideas", subtitle: "Fundstrat DQM quant screen · 1M / YTD relative to the S&P 500",
               helper: "Upload a Fundstrat Large-Cap Core Ideas screenshot. On Refresh, ticker + company + sector + DQM rank + momentum + relative perf are extracted and merged.",
               list: sortedLcCore(), rawLen: (state.fundstratLargeCapCore || []).length, view: lcCoreView,
@@ -3029,7 +3029,7 @@ export default function ResearchPage() {
               th: "text-violet", ticker: "text-violet", rowAlt: "bg-violet-soft/30", rowHover: "hover:bg-violet-soft/60",
             },
             {
-              key: "smid", source: "fundstrat-smid-core" as const, prefKey: "research.smidCore",
+              key: "smid", source: "fundstrat-smid-core" as const, prefKey: "research.smidCore", linked: "research.lcCore",
               title: "Fundstrat SMID Core Ideas", subtitle: "Fundstrat DQM quant screen · 1M / YTD relative to the Russell 2500",
               helper: "Upload a Fundstrat SMID Core Ideas screenshot. On Refresh, ticker + company + sector + DQM rank + momentum + relative perf are extracted and merged.",
               list: sortedSmidCore(), rawLen: (state.fundstratSmidCore || []).length, view: smidCoreView,
@@ -3041,6 +3041,7 @@ export default function ResearchPage() {
             <CollapsibleSection
               key={cfg.key}
               prefKey={cfg.prefKey}
+              linkedKeys={[cfg.linked]}
               className={cfg.border}
               titleClass={cfg.titleClass}
               title={<>{cfg.title}</>}
@@ -3195,10 +3196,12 @@ export default function ResearchPage() {
           </form>
         </CollapsibleSection>
 
+        <div className="grid gap-5 lg:grid-cols-2 items-start">
         {/* ── RBC Canadian Focus List ── */}
         <CollapsibleSection
           prefKey="research.rbcCa"
-          className="border-accent-border"
+          linkedKeys={["research.rbcUs"]}
+          className="border-accent-border min-w-0"
           titleClass="text-xl font-bold text-accent"
           title={<>RBC Canadian Focus List</>}
           subtitle={<>RBC Capital Markets Canadian equity picks</>}
@@ -3288,7 +3291,6 @@ export default function ResearchPage() {
             status={scrapeStatusMap["rbc-focus"]}
           />
         </CollapsibleSection>
-
         {/* ── RBC US Focus List ──
             Parallel to the Canadian list. Same RBCEntry shape, same
             manual-add + screenshot-scan flow; targets state.rbcUsFocus
@@ -3296,7 +3298,8 @@ export default function ResearchPage() {
             visually distinguish it from the blue Canadian section. */}
         <CollapsibleSection
           prefKey="research.rbcUs"
-          className="border-accent-border"
+          linkedKeys={["research.rbcCa"]}
+          className="border-accent-border min-w-0"
           titleClass="text-xl font-bold text-accent"
           title={<>RBC US Focus List</>}
           subtitle={<>RBC Capital Markets US equity picks</>}
@@ -3386,7 +3389,176 @@ export default function ResearchPage() {
             status={scrapeStatusMap["rbc-us-focus"]}
           />
         </CollapsibleSection>
+        </div>
 
+        <div className="grid gap-5 lg:grid-cols-2 items-start">
+        {/* ── RBC Equate — Canada Large Cap CORE 40 ──
+            Models the RBC US Focus card exactly. Same RBCEntry shape,
+            same manual-add + screenshot-scan flow; targets state.equateCad
+            (Canadian/.TO tickers). Sky-accented as its own section. */}
+        <CollapsibleSection
+          prefKey="research.equateCad"
+          linkedKeys={["research.equateUsd"]}
+          className="border-accent-border min-w-0"
+          titleClass="text-xl font-bold text-accent"
+          title={<>RBC Equate — Canada Large Cap CORE 40</>}
+          subtitle={<>RBC Equate Canada Large Cap CORE 40 Model Portfolio</>}
+          right={<><span className="text-sm text-ink-3">{(state.equateCad || []).length} names</span></>}
+        >
+
+          <ViewToggle view={equateCadView} onToggle={() => setUiPref("research.equateCad.view", equateCadView === "rows" ? "table" : "rows")} />
+          {equateCadView === "rows" ? (
+            <SourceRowsList
+              rows={sortedEquateCad().map((item) => { return { ticker: item.ticker, name: item.name, meta: factsetSectors[item.ticker] || item.industry || "", priceOverride: livePrices[item.ticker] ?? null }; })}
+              livePrices={livePrices}
+              isInList={isInList}
+              onAdd={addToWatchlist}
+              onRemove={removeEquateCad}
+              emptyLabel="No names added yet"
+            />
+          ) : (
+          <div className="overflow-x-auto"><table className="w-full text-sm">
+            <thead>
+              <tr className="border-b-2 border-accent-border text-left">
+                <th className="py-2 pr-3 text-xs font-semibold text-accent cursor-pointer hover:text-accent select-none" onClick={() => toggleEquateCadSort("name")}>Company name{ecArrow("name")}</th>
+                <th className="py-2 pr-3 text-xs font-semibold text-accent cursor-pointer hover:text-accent select-none" onClick={() => toggleEquateCadSort("ticker")}>Ticker{ecArrow("ticker")}</th>
+                <th className="py-2 pr-3 text-xs font-semibold text-accent cursor-pointer hover:text-accent select-none" onClick={() => toggleEquateCadSort("industry")}>Sector{ecArrow("industry")}</th>
+                <th className="py-2 pr-3 text-xs font-semibold text-accent text-right cursor-pointer hover:text-accent select-none" onClick={() => toggleEquateCadSort("currentPrice")}>Current price{ecArrow("currentPrice")}</th>
+                <th className="py-2 w-24"></th>
+              </tr>
+            </thead>
+            <tbody>
+              {sortedEquateCad().map((item, i) => {
+                const fsPrice = livePrices[item.ticker] ?? null;
+                return (
+                <tr key={item.ticker} className={`border-b border-line-soft ${i % 2 === 0 ? "bg-white" : "bg-accent-soft/30"} hover:bg-accent-soft/60 transition-colors`}>
+                  <td className="py-2 pr-3 text-ink-2 truncate max-w-[240px]" title={item.name || item.ticker}>{item.name || <span className="text-ink-faint italic">—</span>}</td>
+                  <td className="py-2 pr-3 font-mono font-bold text-accent">${displayTicker(item.ticker)}</td>
+                  <td className="py-2 pr-3 text-ink-2 truncate max-w-[180px]" title={factsetSectors[item.ticker] || item.industry || ""}>{factsetSectors[item.ticker] || item.industry || <span className="text-ink-faint">—</span>}</td>
+                  <td className="py-2 pr-3 text-right font-mono text-ink-2 whitespace-nowrap">{typeof fsPrice === "number" ? `$${fsPrice.toFixed(2)}` : <span className="text-ink-faint">—</span>}</td>
+                  <td className="py-2 text-right whitespace-nowrap">
+                    {scoredStocks.some((s) => s.ticker === item.ticker) ? (
+                      <span className="text-[10px] text-pos font-medium">In list</span>
+                    ) : (
+                      <button
+                        onClick={(e) => { e.stopPropagation(); addToWatchlist(item.ticker); }}
+                        className="text-[10px] text-accent hover:text-accent font-semibold transition-colors"
+                        title="Add to Watchlist"
+                      >
+                        + Watch
+                      </button>
+                    )}
+                    <button onClick={() => removeEquateCad(item.ticker)} className="ml-2 text-ink-faint hover:text-neg font-bold transition-colors">&times;</button>
+                  </td>
+                </tr>
+                );
+              })}
+              {(state.equateCad || []).length === 0 && (
+                <tr><td colSpan={5} className="py-6 text-center text-ink-3 italic">No names added yet</td></tr>
+              )}
+            </tbody>
+          </table></div>
+          )}
+
+          <RBCAddForm onAdd={addEquateCad} />
+
+          <ResearchScraperBlock
+            source="rbc-equate-cad"
+            sectionLabel="RBC Equate — Canada Large Cap CORE 40"
+            helperText="Upload the RBC Equate PDF. On Refresh, ONLY the Canada Large Cap CORE 40 Model Portfolio is read (other lists ignored) — company name + ticker + industry are extracted; current price is live from FactSet."
+            attachments={state.attachments || []}
+            onAddAttachment={addAttachment}
+            onRemoveAttachment={removeAttachment}
+            onScrape={(force) => scrapeResearchSource("rbc-equate-cad", force)}
+            loading={!!scrapeLoadingMap["rbc-equate-cad"]}
+            status={scrapeStatusMap["rbc-equate-cad"]}
+          />
+        </CollapsibleSection>
+        {/* ── RBC Equate — U.S. All Cap CORE 40 ──
+            Models the RBC US Focus card exactly. Same RBCEntry shape,
+            same manual-add + screenshot-scan flow; targets state.equateUsd
+            (US bare tickers). Sky-accented as its own section. */}
+        <CollapsibleSection
+          prefKey="research.equateUsd"
+          linkedKeys={["research.equateCad"]}
+          className="border-accent-border min-w-0"
+          titleClass="text-xl font-bold text-accent"
+          title={<>RBC Equate — U.S. All Cap CORE 40</>}
+          subtitle={<>RBC Equate U.S. All Cap CORE 40 Model Portfolio</>}
+          right={<><span className="text-sm text-ink-3">{(state.equateUsd || []).length} names</span></>}
+        >
+
+          <ViewToggle view={equateUsdView} onToggle={() => setUiPref("research.equateUsd.view", equateUsdView === "rows" ? "table" : "rows")} />
+          {equateUsdView === "rows" ? (
+            <SourceRowsList
+              rows={sortedEquateUsd().map((item) => { return { ticker: item.ticker, name: item.name, meta: factsetSectors[item.ticker] || item.industry || "", priceOverride: livePrices[item.ticker] ?? null }; })}
+              livePrices={livePrices}
+              isInList={isInList}
+              onAdd={addToWatchlist}
+              onRemove={removeEquateUsd}
+              emptyLabel="No names added yet"
+            />
+          ) : (
+          <div className="overflow-x-auto"><table className="w-full text-sm">
+            <thead>
+              <tr className="border-b-2 border-accent-border text-left">
+                <th className="py-2 pr-3 text-xs font-semibold text-accent cursor-pointer hover:text-accent select-none" onClick={() => toggleEquateUsdSort("name")}>Company name{euArrow("name")}</th>
+                <th className="py-2 pr-3 text-xs font-semibold text-accent cursor-pointer hover:text-accent select-none" onClick={() => toggleEquateUsdSort("ticker")}>Ticker{euArrow("ticker")}</th>
+                <th className="py-2 pr-3 text-xs font-semibold text-accent cursor-pointer hover:text-accent select-none" onClick={() => toggleEquateUsdSort("industry")}>Sector{euArrow("industry")}</th>
+                <th className="py-2 pr-3 text-xs font-semibold text-accent text-right cursor-pointer hover:text-accent select-none" onClick={() => toggleEquateUsdSort("currentPrice")}>Current price{euArrow("currentPrice")}</th>
+                <th className="py-2 w-24"></th>
+              </tr>
+            </thead>
+            <tbody>
+              {sortedEquateUsd().map((item, i) => {
+                const fsPrice = livePrices[item.ticker] ?? null;
+                return (
+                <tr key={item.ticker} className={`border-b border-line-soft ${i % 2 === 0 ? "bg-white" : "bg-accent-soft/30"} hover:bg-accent-soft/60 transition-colors`}>
+                  <td className="py-2 pr-3 text-ink-2 truncate max-w-[240px]" title={item.name || item.ticker}>{item.name || <span className="text-ink-faint italic">—</span>}</td>
+                  <td className="py-2 pr-3 font-mono font-bold text-accent">${displayTicker(item.ticker)}</td>
+                  <td className="py-2 pr-3 text-ink-2 truncate max-w-[180px]" title={factsetSectors[item.ticker] || item.industry || ""}>{factsetSectors[item.ticker] || item.industry || <span className="text-ink-faint">—</span>}</td>
+                  <td className="py-2 pr-3 text-right font-mono text-ink-2 whitespace-nowrap">{typeof fsPrice === "number" ? `$${fsPrice.toFixed(2)}` : <span className="text-ink-faint">—</span>}</td>
+                  <td className="py-2 text-right whitespace-nowrap">
+                    {scoredStocks.some((s) => s.ticker === item.ticker) ? (
+                      <span className="text-[10px] text-pos font-medium">In list</span>
+                    ) : (
+                      <button
+                        onClick={(e) => { e.stopPropagation(); addToWatchlist(item.ticker); }}
+                        className="text-[10px] text-accent hover:text-accent font-semibold transition-colors"
+                        title="Add to Watchlist"
+                      >
+                        + Watch
+                      </button>
+                    )}
+                    <button onClick={() => removeEquateUsd(item.ticker)} className="ml-2 text-ink-faint hover:text-neg font-bold transition-colors">&times;</button>
+                  </td>
+                </tr>
+                );
+              })}
+              {(state.equateUsd || []).length === 0 && (
+                <tr><td colSpan={5} className="py-6 text-center text-ink-3 italic">No names added yet</td></tr>
+              )}
+            </tbody>
+          </table></div>
+          )}
+
+          <RBCAddForm onAdd={addEquateUsd} />
+
+          <ResearchScraperBlock
+            source="rbc-equate-usd"
+            sectionLabel="RBC Equate — U.S. All Cap CORE 40"
+            helperText="Upload the RBC Equate PDF. On Refresh, ONLY the U.S. All Cap CORE 40 Model Portfolio is read (other lists ignored) — company name + ticker + industry are extracted; current price is live from FactSet."
+            attachments={state.attachments || []}
+            onAddAttachment={addAttachment}
+            onRemoveAttachment={removeAttachment}
+            onScrape={(force) => scrapeResearchSource("rbc-equate-usd", force)}
+            loading={!!scrapeLoadingMap["rbc-equate-usd"]}
+            status={scrapeStatusMap["rbc-equate-usd"]}
+          />
+        </CollapsibleSection>
+        </div>
+
+        <div className="grid gap-5 lg:grid-cols-2 items-start">
         {/* ── JPM US Equity Analyst Focus List ──
             J.P. Morgan's US equity analyst focus picks. Columns: company name,
             ticker, industry, strategy, current price (LIVE from FactSet via
@@ -3395,7 +3567,8 @@ export default function ResearchPage() {
             researchMentions via SOURCES. Amber-accented. */}
         <CollapsibleSection
           prefKey="research.jpm"
-          className="border-warn-border"
+          linkedKeys={["research.few"]}
+          className="border-warn-border min-w-0"
           titleClass="text-xl font-bold text-warn"
           title={<>JPM US Equity Analyst Focus List</>}
           subtitle={<>J.P. Morgan US equity analyst focus picks · prices live from FactSet</>}
@@ -3488,171 +3661,6 @@ export default function ResearchPage() {
             status={scrapeStatusMap["jpm-us-analyst-focus"]}
           />
         </CollapsibleSection>
-
-        {/* ── RBC Equate — Canada Large Cap CORE 40 ──
-            Models the RBC US Focus card exactly. Same RBCEntry shape,
-            same manual-add + screenshot-scan flow; targets state.equateCad
-            (Canadian/.TO tickers). Sky-accented as its own section. */}
-        <CollapsibleSection
-          prefKey="research.equateCad"
-          className="border-accent-border"
-          titleClass="text-xl font-bold text-accent"
-          title={<>RBC Equate — Canada Large Cap CORE 40</>}
-          subtitle={<>RBC Equate Canada Large Cap CORE 40 Model Portfolio</>}
-          right={<><span className="text-sm text-ink-3">{(state.equateCad || []).length} names</span></>}
-        >
-
-          <ViewToggle view={equateCadView} onToggle={() => setUiPref("research.equateCad.view", equateCadView === "rows" ? "table" : "rows")} />
-          {equateCadView === "rows" ? (
-            <SourceRowsList
-              rows={sortedEquateCad().map((item) => { return { ticker: item.ticker, name: item.name, meta: factsetSectors[item.ticker] || item.industry || "", priceOverride: livePrices[item.ticker] ?? null }; })}
-              livePrices={livePrices}
-              isInList={isInList}
-              onAdd={addToWatchlist}
-              onRemove={removeEquateCad}
-              emptyLabel="No names added yet"
-            />
-          ) : (
-          <div className="overflow-x-auto"><table className="w-full text-sm">
-            <thead>
-              <tr className="border-b-2 border-accent-border text-left">
-                <th className="py-2 pr-3 text-xs font-semibold text-accent cursor-pointer hover:text-accent select-none" onClick={() => toggleEquateCadSort("name")}>Company name{ecArrow("name")}</th>
-                <th className="py-2 pr-3 text-xs font-semibold text-accent cursor-pointer hover:text-accent select-none" onClick={() => toggleEquateCadSort("ticker")}>Ticker{ecArrow("ticker")}</th>
-                <th className="py-2 pr-3 text-xs font-semibold text-accent cursor-pointer hover:text-accent select-none" onClick={() => toggleEquateCadSort("industry")}>Sector{ecArrow("industry")}</th>
-                <th className="py-2 pr-3 text-xs font-semibold text-accent text-right cursor-pointer hover:text-accent select-none" onClick={() => toggleEquateCadSort("currentPrice")}>Current price{ecArrow("currentPrice")}</th>
-                <th className="py-2 w-24"></th>
-              </tr>
-            </thead>
-            <tbody>
-              {sortedEquateCad().map((item, i) => {
-                const fsPrice = livePrices[item.ticker] ?? null;
-                return (
-                <tr key={item.ticker} className={`border-b border-line-soft ${i % 2 === 0 ? "bg-white" : "bg-accent-soft/30"} hover:bg-accent-soft/60 transition-colors`}>
-                  <td className="py-2 pr-3 text-ink-2 truncate max-w-[240px]" title={item.name || item.ticker}>{item.name || <span className="text-ink-faint italic">—</span>}</td>
-                  <td className="py-2 pr-3 font-mono font-bold text-accent">${displayTicker(item.ticker)}</td>
-                  <td className="py-2 pr-3 text-ink-2 truncate max-w-[180px]" title={factsetSectors[item.ticker] || item.industry || ""}>{factsetSectors[item.ticker] || item.industry || <span className="text-ink-faint">—</span>}</td>
-                  <td className="py-2 pr-3 text-right font-mono text-ink-2 whitespace-nowrap">{typeof fsPrice === "number" ? `$${fsPrice.toFixed(2)}` : <span className="text-ink-faint">—</span>}</td>
-                  <td className="py-2 text-right whitespace-nowrap">
-                    {scoredStocks.some((s) => s.ticker === item.ticker) ? (
-                      <span className="text-[10px] text-pos font-medium">In list</span>
-                    ) : (
-                      <button
-                        onClick={(e) => { e.stopPropagation(); addToWatchlist(item.ticker); }}
-                        className="text-[10px] text-accent hover:text-accent font-semibold transition-colors"
-                        title="Add to Watchlist"
-                      >
-                        + Watch
-                      </button>
-                    )}
-                    <button onClick={() => removeEquateCad(item.ticker)} className="ml-2 text-ink-faint hover:text-neg font-bold transition-colors">&times;</button>
-                  </td>
-                </tr>
-                );
-              })}
-              {(state.equateCad || []).length === 0 && (
-                <tr><td colSpan={5} className="py-6 text-center text-ink-3 italic">No names added yet</td></tr>
-              )}
-            </tbody>
-          </table></div>
-          )}
-
-          <RBCAddForm onAdd={addEquateCad} />
-
-          <ResearchScraperBlock
-            source="rbc-equate-cad"
-            sectionLabel="RBC Equate — Canada Large Cap CORE 40"
-            helperText="Upload the RBC Equate PDF. On Refresh, ONLY the Canada Large Cap CORE 40 Model Portfolio is read (other lists ignored) — company name + ticker + industry are extracted; current price is live from FactSet."
-            attachments={state.attachments || []}
-            onAddAttachment={addAttachment}
-            onRemoveAttachment={removeAttachment}
-            onScrape={(force) => scrapeResearchSource("rbc-equate-cad", force)}
-            loading={!!scrapeLoadingMap["rbc-equate-cad"]}
-            status={scrapeStatusMap["rbc-equate-cad"]}
-          />
-        </CollapsibleSection>
-
-        {/* ── RBC Equate — U.S. All Cap CORE 40 ──
-            Models the RBC US Focus card exactly. Same RBCEntry shape,
-            same manual-add + screenshot-scan flow; targets state.equateUsd
-            (US bare tickers). Sky-accented as its own section. */}
-        <CollapsibleSection
-          prefKey="research.equateUsd"
-          className="border-accent-border"
-          titleClass="text-xl font-bold text-accent"
-          title={<>RBC Equate — U.S. All Cap CORE 40</>}
-          subtitle={<>RBC Equate U.S. All Cap CORE 40 Model Portfolio</>}
-          right={<><span className="text-sm text-ink-3">{(state.equateUsd || []).length} names</span></>}
-        >
-
-          <ViewToggle view={equateUsdView} onToggle={() => setUiPref("research.equateUsd.view", equateUsdView === "rows" ? "table" : "rows")} />
-          {equateUsdView === "rows" ? (
-            <SourceRowsList
-              rows={sortedEquateUsd().map((item) => { return { ticker: item.ticker, name: item.name, meta: factsetSectors[item.ticker] || item.industry || "", priceOverride: livePrices[item.ticker] ?? null }; })}
-              livePrices={livePrices}
-              isInList={isInList}
-              onAdd={addToWatchlist}
-              onRemove={removeEquateUsd}
-              emptyLabel="No names added yet"
-            />
-          ) : (
-          <div className="overflow-x-auto"><table className="w-full text-sm">
-            <thead>
-              <tr className="border-b-2 border-accent-border text-left">
-                <th className="py-2 pr-3 text-xs font-semibold text-accent cursor-pointer hover:text-accent select-none" onClick={() => toggleEquateUsdSort("name")}>Company name{euArrow("name")}</th>
-                <th className="py-2 pr-3 text-xs font-semibold text-accent cursor-pointer hover:text-accent select-none" onClick={() => toggleEquateUsdSort("ticker")}>Ticker{euArrow("ticker")}</th>
-                <th className="py-2 pr-3 text-xs font-semibold text-accent cursor-pointer hover:text-accent select-none" onClick={() => toggleEquateUsdSort("industry")}>Sector{euArrow("industry")}</th>
-                <th className="py-2 pr-3 text-xs font-semibold text-accent text-right cursor-pointer hover:text-accent select-none" onClick={() => toggleEquateUsdSort("currentPrice")}>Current price{euArrow("currentPrice")}</th>
-                <th className="py-2 w-24"></th>
-              </tr>
-            </thead>
-            <tbody>
-              {sortedEquateUsd().map((item, i) => {
-                const fsPrice = livePrices[item.ticker] ?? null;
-                return (
-                <tr key={item.ticker} className={`border-b border-line-soft ${i % 2 === 0 ? "bg-white" : "bg-accent-soft/30"} hover:bg-accent-soft/60 transition-colors`}>
-                  <td className="py-2 pr-3 text-ink-2 truncate max-w-[240px]" title={item.name || item.ticker}>{item.name || <span className="text-ink-faint italic">—</span>}</td>
-                  <td className="py-2 pr-3 font-mono font-bold text-accent">${displayTicker(item.ticker)}</td>
-                  <td className="py-2 pr-3 text-ink-2 truncate max-w-[180px]" title={factsetSectors[item.ticker] || item.industry || ""}>{factsetSectors[item.ticker] || item.industry || <span className="text-ink-faint">—</span>}</td>
-                  <td className="py-2 pr-3 text-right font-mono text-ink-2 whitespace-nowrap">{typeof fsPrice === "number" ? `$${fsPrice.toFixed(2)}` : <span className="text-ink-faint">—</span>}</td>
-                  <td className="py-2 text-right whitespace-nowrap">
-                    {scoredStocks.some((s) => s.ticker === item.ticker) ? (
-                      <span className="text-[10px] text-pos font-medium">In list</span>
-                    ) : (
-                      <button
-                        onClick={(e) => { e.stopPropagation(); addToWatchlist(item.ticker); }}
-                        className="text-[10px] text-accent hover:text-accent font-semibold transition-colors"
-                        title="Add to Watchlist"
-                      >
-                        + Watch
-                      </button>
-                    )}
-                    <button onClick={() => removeEquateUsd(item.ticker)} className="ml-2 text-ink-faint hover:text-neg font-bold transition-colors">&times;</button>
-                  </td>
-                </tr>
-                );
-              })}
-              {(state.equateUsd || []).length === 0 && (
-                <tr><td colSpan={5} className="py-6 text-center text-ink-3 italic">No names added yet</td></tr>
-              )}
-            </tbody>
-          </table></div>
-          )}
-
-          <RBCAddForm onAdd={addEquateUsd} />
-
-          <ResearchScraperBlock
-            source="rbc-equate-usd"
-            sectionLabel="RBC Equate — U.S. All Cap CORE 40"
-            helperText="Upload the RBC Equate PDF. On Refresh, ONLY the U.S. All Cap CORE 40 Model Portfolio is read (other lists ignored) — company name + ticker + industry are extracted; current price is live from FactSet."
-            attachments={state.attachments || []}
-            onAddAttachment={addAttachment}
-            onRemoveAttachment={removeAttachment}
-            onScrape={(force) => scrapeResearchSource("rbc-equate-usd", force)}
-            loading={!!scrapeLoadingMap["rbc-equate-usd"]}
-            status={scrapeStatusMap["rbc-equate-usd"]}
-          />
-        </CollapsibleSection>
-
         {/* ── RBCCM Canadian Fundamental Equity Weighting (FEW) Portfolio ──
             Canadian equity list. Tickers in the screenshot omit the
             suffix, so the scrape canonicalizes to ".TO". Only the four
@@ -3660,7 +3668,8 @@ export default function ResearchPage() {
             price. Indigo-accented to distinguish from the RBC focus lists. */}
         <CollapsibleSection
           prefKey="research.few"
-          className="border-violet-soft"
+          linkedKeys={["research.jpm"]}
+          className="border-violet-soft min-w-0"
           titleClass="text-xl font-bold text-violet"
           title={<>RBCCM Canadian FEW Portfolio</>}
           subtitle={<>RBC Capital Markets Canadian Fundamental Equity Weighting portfolio</>}
@@ -3737,6 +3746,7 @@ export default function ResearchPage() {
             status={scrapeStatusMap["rbccm-few"]}
           />
         </CollapsibleSection>
+        </div>
 
         {/* ── Seeking Alpha - Alpha Picks ──
             Mirrors the Newton's Upticks layout: name + sector + price

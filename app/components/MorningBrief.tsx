@@ -641,6 +641,14 @@ export function MorningBrief({
   onUpdateMarketData,
 }: Props) {
   const [generating, setGenerating] = useState(false);
+  // Which Portfolio Risk Scan rows are expanded (by index). Summaries clamp to
+  // 2 lines by default to keep the Brief short; a click reveals the full text.
+  const [expandedRisk, setExpandedRisk] = useState<Set<number>>(() => new Set());
+  const toggleRisk = (i: number) => setExpandedRisk((prev) => {
+    const next = new Set(prev);
+    if (next.has(i)) next.delete(i); else next.add(i);
+    return next;
+  });
   // Which view is showing: the generated "brief" (default) or the "input" form.
   const [briefMode, setBriefMode] = useState<"brief" | "input">("brief");
   const [error, setError] = useState("");
@@ -2283,17 +2291,23 @@ export function MorningBrief({
                     : item.priority === "Medium"
                     ? { label: "MED", cls: "bg-warn text-white" }
                     : { label: "LOW", cls: "bg-ink-3 text-white" };
+                const expanded = expandedRisk.has(i);
                 return (
-                  <div key={i} className="flex items-start gap-3 py-3 first:pt-2">
-                    <span className={`mt-0.5 shrink-0 rounded-md px-2 py-0.5 text-[10px] font-bold tracking-wide ${badge.cls}`}>
+                  <div
+                    key={i}
+                    className="flex items-start gap-2.5 py-1.5 first:pt-1 cursor-pointer group"
+                    onClick={() => toggleRisk(i)}
+                    title={expanded ? "Click to collapse" : "Click to expand"}
+                  >
+                    <span className={`mt-px shrink-0 rounded px-1.5 py-0.5 text-[10px] font-bold tracking-wide ${badge.cls}`}>
                       {badge.label}
                     </span>
-                    <div className="min-w-0">
-                      <div className="text-sm">
+                    <div className="min-w-0 flex-1">
+                      <div className="text-[13px]">
                         <span className="font-mono font-bold text-ink">{displayTicker(item.ticker)}</span>
                         {item.action && <span className="text-ink-2"> · {item.action}</span>}
                       </div>
-                      <p className="mt-0.5 text-sm leading-6 text-ink-3">{item.summary}</p>
+                      <p className={`mt-0.5 text-[13px] leading-snug text-ink-3 ${expanded ? "" : "line-clamp-2"}`}>{item.summary}</p>
                     </div>
                   </div>
                 );
