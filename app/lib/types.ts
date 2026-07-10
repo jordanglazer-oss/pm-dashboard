@@ -667,6 +667,11 @@ export type MorningBrief = {
   forwardLooking?: ForwardLookingBundle; // Automated data powering Forward View
   bottomLine: string;
   compositeAnalysis: string;
+  /** The single most important thing the tape/consensus appears to be
+   *  under-pricing today — the non-consensus edge, distilled across all
+   *  integrated sources. Optional/back-compat; empty string when nothing
+   *  genuinely stands out (the UI hides the callout when blank). */
+  underpriced?: string;
   creditAnalysis: string;
   volatilityAnalysis: string;
   breadthAnalysis: string;

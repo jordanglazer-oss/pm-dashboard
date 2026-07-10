@@ -1838,6 +1838,19 @@ export function MorningBrief({
         <ClampText text={compositeAnalysis} className="mt-2" />
       </section>
 
+      {/* Non-consensus edge — what the tape may be under-pricing. Distilled
+          across all integrated sources; hidden when the model returns blank. */}
+      {brief?.underpriced && brief.underpriced.trim() && (
+        <section className="rounded-2xl border border-violet-soft bg-violet-soft/40 p-4 shadow-sm">
+          <div className="flex flex-wrap items-center gap-2 mb-1">
+            <span className="text-base">💡</span>
+            <h2 className="text-base font-semibold">What the tape may be under-pricing</h2>
+            <span className="text-[10px] font-bold uppercase tracking-wider text-violet">Non-consensus</span>
+          </div>
+          <p className="text-sm leading-6 text-ink-2">{brief.underpriced}</p>
+        </section>
+      )}
+
       {/* Forward View — Next 2 Weeks */}
       <section className="rounded-2xl border border-accent-border bg-gradient-to-br from-accent-soft/60 to-white p-4 md:p-5 shadow-sm">
         <div className="flex flex-wrap items-center justify-between gap-3 mb-3">
