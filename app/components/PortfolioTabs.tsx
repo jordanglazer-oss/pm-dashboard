@@ -1,17 +1,8 @@
 "use client";
 
 import Link from "next/link";
-import { usePathname, useSearchParams, useRouter } from "next/navigation";
+import { usePathname } from "next/navigation";
 import { useStocks } from "@/app/lib/StockContext";
-
-/** Version (profile) options for the shared header selector — the 4 named
- *  sleeves from the handoff. Values match PimProfileType. */
-const VERSIONS: { value: string; label: string }[] = [
-  { value: "conservative", label: "Conservative" },
-  { value: "balanced", label: "Balanced" },
-  { value: "growth", label: "Growth" },
-  { value: "allEquity", label: "All-Equity" },
-];
 
 /**
  * Segmented switcher for the consolidated "Portfolio" hub. The redesign merges
@@ -19,6 +10,12 @@ const VERSIONS: { value: string; label: string }[] = [
  * bar navigates between the segments. Routes are UNCHANGED (deep-linking
  * preserved) — each segment just links to the page that already renders that
  * content. Self-hides on any non-hub route so it only appears within the hub.
+ *
+ * No header-level Model/Version selector: every segment that needs one already
+ * has its own page-level control (Positioning + Models each own a working
+ * profile toggle; Rankings/Allocation read the profile from the URL with an
+ * All-Equity default and don't need to switch it). A second selector up here
+ * was redundant and could drift out of sync, so it was removed.
  */
 
 // X-ray was removed as a distinct segment — Portfolio X-ray already lives on the
@@ -32,9 +29,7 @@ const SEGMENTS: { label: string; href: string }[] = [
 
 export function PortfolioTabs() {
   const pathname = usePathname();
-  const searchParams = useSearchParams();
-  const router = useRouter();
-  const { pimModels, stocks } = useStocks();
+  const { stocks } = useStocks();
 
   const isHub =
     pathname === "/" ||
@@ -53,60 +48,18 @@ export function PortfolioTabs() {
     : pathname.startsWith("/portfolio") ? "/portfolio"
     : "/"; // "/", "/scoring", "/stock/*"
 
-  // Shared Model (group) + Version (profile) live in the URL so they flow
-  // across every segment and stay deep-linkable.
-  const groups = pimModels?.groups ?? [];
-  const model = searchParams.get("model") || groups[0]?.id || "pim";
-  const version = searchParams.get("version") || "allEquity"; // matches Positioning's default
-  const setParam = (key: string, val: string) => {
-    const p = new URLSearchParams(Array.from(searchParams.entries()));
-    p.set(key, val);
-    router.replace(`${pathname}?${p.toString()}`, { scroll: false });
-  };
-
   const holdingsCount = (stocks ?? []).filter((s) => s.bucket === "Portfolio").length;
 
   return (
     <div className="bg-surface border-b border-line print:hidden">
       <div className="mx-auto max-w-7xl px-4 md:px-8 pt-3">
-        {/* Title row: obvious page title + shared Model/Version selectors */}
+        {/* Title row: page title + holdings count. The Model/Version selectors
+            were removed — each segment owns its own control (see file header). */}
         <div className="flex items-end justify-between gap-3 flex-wrap">
           <div>
             <h1 className="text-2xl font-bold tracking-tight text-ink leading-none">Portfolio</h1>
             <p className="mt-1 text-xs text-ink-3">{holdingsCount} holdings</p>
           </div>
-          {/* The Models page (PimModel) owns its own richer Model Group + profile
-              selectors (Alpha/Core + keyboard arrows), so hide these header ones
-              there to avoid two competing model selectors. They still show on
-              Rankings / Positioning / Allocation, which have no page-level one. */}
-          {pathname !== "/pim-model" && (
-          <div className="flex items-center gap-3 shrink-0">
-            <label className="flex items-center gap-1.5">
-              <span className="text-[11px] font-semibold uppercase tracking-wide text-ink-3">Model</span>
-              <select
-                value={model}
-                onChange={(e) => setParam("model", e.target.value)}
-                className="rounded-control border border-line bg-surface px-2 py-1 text-[12px] text-ink outline-none focus:border-accent"
-              >
-                {groups.length === 0 ? (
-                  <option value="pim">PIM</option>
-                ) : (
-                  groups.map((g) => <option key={g.id} value={g.id}>{g.name}</option>)
-                )}
-              </select>
-            </label>
-            <label className="flex items-center gap-1.5">
-              <span className="text-[11px] font-semibold uppercase tracking-wide text-ink-3">Version</span>
-              <select
-                value={version}
-                onChange={(e) => setParam("version", e.target.value)}
-                className="rounded-control border border-line bg-surface px-2 py-1 text-[12px] text-ink outline-none focus:border-accent"
-              >
-                {VERSIONS.map((v) => <option key={v.value} value={v.value}>{v.label}</option>)}
-              </select>
-            </label>
-          </div>
-          )}
         </div>
 
         {/* Segment row */}
