@@ -23,11 +23,11 @@ export function CollapsibleSection({
   /** Other prefKeys to collapse/expand in lockstep with this one (e.g. a
       side-by-side pair that should open/close together). */
   linkedKeys?: string[];
-  /** Border/background classes for the outer <section> (e.g. "border-amber-200"). */
+  /** Border/background classes for the outer <section> (e.g. "border-warn-border"). */
   className?: string;
   title: React.ReactNode;
   subtitle?: React.ReactNode;
-  /** Classes for the <h3> (e.g. "text-xl font-bold text-amber-800"). */
+  /** Classes for the <h3> (e.g. "text-xl font-bold text-warn"). */
   titleClass?: string;
   /** Right-aligned header content (counts, refresh buttons, etc.). */
   right?: React.ReactNode;
@@ -43,7 +43,7 @@ export function CollapsibleSection({
     (linkedKeys || []).forEach((k) => setUiPref(k, next));
   };
   return (
-    <section className={`rounded-[24px] border bg-white p-6 shadow-sm ${className || "border-slate-200"}`}>
+    <section className={`rounded-card border bg-white p-6 shadow-sm ${className || "border-line"}`}>
       <div className={`flex items-center justify-between ${collapsed ? "" : "mb-4"}`}>
         {/* The whole title region (arrow + title + subtitle + the empty space up
             to the right-side controls) toggles — not just the arrow. Uses a div
@@ -63,12 +63,12 @@ export function CollapsibleSection({
           aria-label={collapsed ? "Expand section" : "Collapse section"}
           className="flex flex-1 items-center gap-2 min-w-0 text-left cursor-pointer group"
         >
-          <span className="text-slate-400 group-hover:text-slate-700 text-base leading-none shrink-0 w-4">
+          <span className="text-ink-3 group-hover:text-ink-2 text-base leading-none shrink-0 w-4">
             {collapsed ? "▸" : "▾"}
           </span>
           <span className="min-w-0">
-            <span className={`block ${titleClass || "text-xl font-bold text-slate-800"}`}>{title}</span>
-            {subtitle && <span className="block text-xs text-slate-400">{subtitle}</span>}
+            <span className={`block ${titleClass || "text-xl font-bold text-ink"}`}>{title}</span>
+            {subtitle && <span className="block text-xs text-ink-3">{subtitle}</span>}
           </span>
         </div>
         {right && (

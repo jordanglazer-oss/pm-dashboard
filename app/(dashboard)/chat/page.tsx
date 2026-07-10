@@ -653,7 +653,7 @@ export default function ChatPage() {
                           cancelRename();
                         }
                       }}
-                      className="w-full text-sm font-semibold text-ink bg-white border border-blue-400 rounded px-1.5 py-0.5 outline-none focus:ring-2 focus:ring-accent-soft"
+                      className="w-full text-sm font-semibold text-ink bg-white border border-accent-border rounded px-1.5 py-0.5 outline-none focus:ring-2 focus:ring-accent-soft"
                       maxLength={80}
                     />
                   ) : (
@@ -753,7 +753,7 @@ export default function ChatPage() {
                       setInput(s);
                       textareaRef.current?.focus();
                     }}
-                    className="block w-full text-left rounded-lg border border-line bg-white px-4 py-3 text-sm text-ink hover:border-blue-400 hover:bg-accent-soft transition-colors"
+                    className="block w-full text-left rounded-lg border border-line bg-white px-4 py-3 text-sm text-ink hover:border-accent-border hover:bg-accent-soft transition-colors"
                   >
                     {s}
                   </button>
@@ -817,7 +817,7 @@ export default function ChatPage() {
         {/* Composer */}
         <div className="border-t border-line bg-white px-3 sm:px-6 py-3">
           <div className="max-w-3xl mx-auto">
-            <div className="relative rounded-card border border-line bg-white focus-within:border-blue-400 focus-within:ring-2 focus-within:ring-blue-100 transition-all">
+            <div className="relative rounded-card border border-line bg-white focus-within:border-accent-border focus-within:ring-2 focus-within:ring-accent-border transition-all">
               <textarea
                 ref={textareaRef}
                 value={input}
@@ -826,7 +826,7 @@ export default function ChatPage() {
                 placeholder={isStreaming ? "Streaming response…" : "Ask anything (Shift+Enter for newline)…"}
                 disabled={isStreaming}
                 rows={1}
-                className="w-full resize-none rounded-card bg-transparent px-4 py-3 pr-14 text-sm text-ink placeholder-slate-400 outline-none disabled:opacity-50"
+                className="w-full resize-none rounded-card bg-transparent px-4 py-3 pr-14 text-sm text-ink placeholder-ink-3 outline-none disabled:opacity-50"
               />
               <button
                 onClick={send}

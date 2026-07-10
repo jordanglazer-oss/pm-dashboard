@@ -669,11 +669,11 @@ export default function AppendixPage() {
                 {/* Best / Worst Day */}
                 {stats && (
                   <div className="flex gap-3 mb-5">
-                    <div className="rounded-control border border-emerald-100 bg-pos-soft px-4 py-2 text-xs">
+                    <div className="rounded-control border border-pos-border bg-pos-soft px-4 py-2 text-xs">
                       <span className="font-semibold text-pos">Best Day:</span>{" "}
                       <span className="text-pos">{formatDate(stats.bestDay.date)} {formatPct(stats.bestDay.dailyReturn)}</span>
                     </div>
-                    <div className="rounded-control border border-red-100 bg-neg-soft px-4 py-2 text-xs">
+                    <div className="rounded-control border border-neg-border bg-neg-soft px-4 py-2 text-xs">
                       <span className="font-semibold text-neg">Worst Day:</span>{" "}
                       <span className="text-neg">{formatDate(stats.worstDay.date)} {formatPct(stats.worstDay.dailyReturn)}</span>
                     </div>
@@ -687,7 +687,7 @@ export default function AppendixPage() {
                     value={search}
                     onChange={(e) => { setSearch(e.target.value); setPage(0); }}
                     placeholder="Search by date (YYYY-MM-DD)..."
-                    className="rounded-lg border border-line bg-white px-3 py-2 text-sm w-full sm:w-64 outline-none focus:border-accent-border focus:ring-2 focus:ring-blue-100"
+                    className="rounded-lg border border-line bg-white px-3 py-2 text-sm w-full sm:w-64 outline-none focus:border-accent-border focus:ring-2 focus:ring-accent-border"
                   />
                   {totalPages > 1 && (
                     <div className="flex items-center gap-2 text-xs text-ink-3">
@@ -804,7 +804,7 @@ export default function AppendixPage() {
                     value={txSearch}
                     onChange={(e) => { setTxSearch(e.target.value); setTxPage(0); }}
                     placeholder="Search symbol, date, notes..."
-                    className="rounded-lg border border-line bg-white px-3 py-2 text-sm w-full sm:w-64 outline-none focus:border-accent-border focus:ring-2 focus:ring-blue-100"
+                    className="rounded-lg border border-line bg-white px-3 py-2 text-sm w-full sm:w-64 outline-none focus:border-accent-border focus:ring-2 focus:ring-accent-border"
                   />
                   <select
                     value={txProfileFilter}

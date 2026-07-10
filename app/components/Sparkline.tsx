@@ -39,7 +39,7 @@ export function Sparkline({
   if (!points || points.length < 2) {
     return (
       <div
-        className={`flex items-center justify-center text-[10px] text-slate-300 ${
+        className={`flex items-center justify-center text-[10px] text-ink-faint ${
           className ?? ""
         }`}
         style={{ width: "100%", maxWidth: width, height }}

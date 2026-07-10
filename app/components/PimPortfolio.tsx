@@ -2239,7 +2239,7 @@ export function PimPortfolio({ groups }: Props) {
                     : (execPrice > 0 ? absDelta * execPrice * fxRate : 0);
 
                   return (
-                    <tr key={r.symbol} className={`border-b border-emerald-100 ${isMF ? "bg-violet-soft/30" : ""}`}>
+                    <tr key={r.symbol} className={`border-b border-pos-border ${isMF ? "bg-violet-soft/30" : ""}`}>
                       <td className="py-2 font-mono text-xs font-semibold">
                         <Link href={`/stock/${symbolToTicker(r.symbol).toLowerCase()}?from=positioning`} className="hover:underline hover:text-accent transition-colors">
                           {displayTicker(r.symbol)}
@@ -2742,7 +2742,7 @@ export function PimPortfolio({ groups }: Props) {
                 ) : null;
 
                 return (
-                  <tr key={row.symbol} className="border-b border-line-soft hover:bg-slate-25 transition-colors">
+                  <tr key={row.symbol} className="border-b border-line-soft hover:bg-surface-2 transition-colors">
                     {/* Ticker with company name folded in as a subtitle */}
                     <td className="py-2.5 px-2">
                       <div className="font-semibold text-ink">{displayTicker(row.symbol)}{currBadge}</div>

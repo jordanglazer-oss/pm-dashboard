@@ -1316,12 +1316,12 @@ export function PortfolioOverview({ sidebar }: { sidebar?: React.ReactNode } = {
                               const risk = riskScanByTicker.get(normalizeRiskTicker(s.ticker));
                               if (!risk) return null;
                               const tone = risk.priority === "High"
-                                ? "bg-rose-100 text-rose-800 border-rose-300"
+                                ? "bg-neg-soft text-neg border-neg-border"
                                 : risk.priority === "Medium-High"
                                   ? "bg-orange-100 text-orange-800 border-orange-300"
                                   : risk.priority === "Medium"
                                     ? "bg-warn-soft text-warn border-warn-border"
-                                    : "bg-yellow-100 text-yellow-800 border-yellow-300";
+                                    : "bg-warn-soft text-warn border-warn-border";
                               return (
                                 <span
                                   className={`rounded-md border px-1.5 py-0.5 text-[9px] font-bold uppercase tracking-wider ${tone}`}
@@ -1838,7 +1838,7 @@ function RankingTable({
         );
         if (stocksWithGaps.length === 0 && !fillingGaps) return null;
         return (
-          <div className="mx-4 mt-2 flex items-center gap-2 rounded-lg bg-violet-50 border border-violet-200 px-3 py-2 text-xs text-violet-700">
+          <div className="mx-4 mt-2 flex items-center gap-2 rounded-lg bg-violet-50 border border-violet-border px-3 py-2 text-xs text-violet">
             {fillingGaps ? (
               <>
                 <svg className="w-3.5 h-3.5 animate-spin flex-shrink-0" fill="none" stroke="currentColor" strokeWidth="2" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" d="M16.023 9.348h4.992v-.001M2.985 19.644v-4.992m0 0h4.992m-4.993 0 3.181 3.183a8.25 8.25 0 0 0 13.803-3.7M4.031 9.865a8.25 8.25 0 0 1 13.803-3.7l3.181 3.182" /></svg>
@@ -1852,7 +1852,7 @@ function RankingTable({
                   <button
                     onClick={onFillGaps}
                     disabled={scoreAllDisabled}
-                    className="ml-1 rounded bg-violet-600 px-2 py-0.5 text-[11px] font-semibold text-white hover:bg-violet-700 disabled:opacity-50"
+                    className="ml-1 rounded bg-violet px-2 py-0.5 text-[11px] font-semibold text-white hover:bg-violet disabled:opacity-50"
                   >
                     Fill gaps ({stocksWithGaps.length} stocks) — ~${(stocksWithGaps.length * 0.01).toFixed(2)}
                   </button>
@@ -1933,12 +1933,12 @@ function RankingTable({
                             const risk = riskScanByTicker?.get(normalizeRiskTicker(s.ticker));
                             if (!risk) return null;
                             const tone = risk.priority === "High"
-                              ? "bg-rose-100 text-rose-800 border-rose-300"
+                              ? "bg-neg-soft text-neg border-neg-border"
                               : risk.priority === "Medium-High"
                                 ? "bg-orange-100 text-orange-800 border-orange-300"
                                 : risk.priority === "Medium"
                                   ? "bg-warn-soft text-warn border-warn-border"
-                                  : "bg-yellow-100 text-yellow-800 border-yellow-300";
+                                  : "bg-warn-soft text-warn border-warn-border";
                             return (
                               <span
                                 className={`rounded-md border px-1 py-0 text-[8px] font-bold uppercase tracking-wider ${tone}`}

@@ -80,7 +80,7 @@ export default function ScoringPage() {
   }, [stocks, updatePrice, updateHealthData, updateTechnicals, updateStockFields]);
 
   return (
-    <main className="min-h-screen bg-[#f4f5f7] px-4 py-6 text-slate-900 md:px-8 md:py-8 overflow-x-hidden">
+    <main className="min-h-screen bg-[#f4f5f7] px-4 py-6 text-ink md:px-8 md:py-8 overflow-x-hidden">
       <div className="mx-auto max-w-7xl">
         <StockScoring stocks={scoredStocks} onScoreStock={handleScoreStock} onUpdateCostBasis={handleUpdateCostBasis} onRefreshData={handleRefreshData} onUpdateFundData={updateFundData} onUpdateMarketData={updateMarketData} />
       </div>

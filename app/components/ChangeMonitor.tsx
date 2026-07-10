@@ -155,7 +155,7 @@ export function ChangeMonitor() {
           ) : visible.length === 0 ? (
             <p className="text-sm text-ink-3 italic py-3">Nothing material changed in this window. {!showReviewed && counts.all === 0 && scoped.some((e) => reviewed[e.id]) ? "(all reviewed)" : ""}</p>
           ) : (
-            <div className="rounded-lg border border-line-soft divide-y divide-slate-100">
+            <div className="rounded-lg border border-line-soft divide-y divide-line-soft">
               {visible.map((e) => {
                 const isReviewed = !!reviewed[e.id];
                 return (

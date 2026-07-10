@@ -269,7 +269,7 @@ export default function ConvictionPage() {
           value={query}
           onChange={(e) => setQuery(e.target.value)}
           placeholder="Filter by ticker or name…"
-          className="w-56 rounded-lg border border-line bg-white px-3 py-1.5 text-sm outline-none focus:border-slate-400"
+          className="w-56 rounded-lg border border-line bg-white px-3 py-1.5 text-sm outline-none focus:border-line"
         />
         <span className="ml-auto text-xs text-ink-3">
           {filtered.length} names · sorted by conviction
@@ -354,7 +354,7 @@ export default function ConvictionPage() {
                         <select
                           value={pi.status}
                           onChange={(ev) => setStatus(e, ev.target.value as IdeaStatus)}
-                          className="rounded border border-line bg-white px-1 py-0.5 text-[11px] text-ink-2 outline-none focus:border-slate-400"
+                          className="rounded border border-line bg-white px-1 py-0.5 text-[11px] text-ink-2 outline-none focus:border-line"
                         >
                           {(["new", "watching", "bought", "passed"] as IdeaStatus[]).map((s) => (
                             <option key={s} value={s}>{IDEA_STATUS_LABELS[s]}</option>
@@ -384,7 +384,7 @@ export default function ConvictionPage() {
                 <tr className="bg-accent-soft/40">
                   <td></td>
                   <td colSpan={8} className="px-3 pb-3 pt-1">
-                    <div className="rounded-lg border border-indigo-100 bg-white px-3 py-2">
+                    <div className="rounded-lg border border-accent-border bg-white px-3 py-2">
                       <div className="text-[10px] font-bold uppercase tracking-wider text-accent">Synthesis thesis</div>
                       <p className="mt-0.5 text-sm text-ink leading-relaxed">{syn!.thesis}</p>
                       {syn!.regimeFitRationale && (

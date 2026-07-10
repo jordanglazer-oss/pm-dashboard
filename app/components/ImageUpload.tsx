@@ -155,10 +155,10 @@ export function ImageUpload({ section, sectionLabel, attachments, onAdd, onRemov
   return (
     <div className="mt-3">
       <div className="flex items-center gap-2 mb-2">
-        <span className="text-xs font-semibold text-slate-500 uppercase tracking-wider">
+        <span className="text-xs font-semibold text-ink-3 uppercase tracking-wider">
           {sectionLabel} Screenshots / PDFs
         </span>
-        <span className="text-xs text-slate-400">
+        <span className="text-xs text-ink-3">
           ({sectionAttachments.length} file{sectionAttachments.length !== 1 ? "s" : ""})
         </span>
         {/* Toggle only renders when collapsibleThumbs is on AND there are
@@ -167,7 +167,7 @@ export function ImageUpload({ section, sectionLabel, attachments, onAdd, onRemov
           <button
             type="button"
             onClick={() => setThumbsExpanded((v) => !v)}
-            className="ml-auto text-[11px] font-semibold text-blue-600 hover:text-blue-700 focus:outline-none focus:underline"
+            className="ml-auto text-[11px] font-semibold text-accent hover:text-accent focus:outline-none focus:underline"
             title={thumbsExpanded ? "Hide thumbnails" : "Show thumbnails"}
           >
             {thumbsExpanded ? "Hide ▲" : `Show ${sectionAttachments.length} ▼`}
@@ -190,11 +190,11 @@ export function ImageUpload({ section, sectionLabel, attachments, onAdd, onRemov
                 <button
                   type="button"
                   onClick={() => setPreviewId(att.id)}
-                  className="block h-12 w-12 rounded-md border border-slate-200 overflow-hidden hover:border-blue-400 focus:border-blue-400 focus:outline-none transition-colors"
+                  className="block h-12 w-12 rounded-md border border-line overflow-hidden hover:border-accent-border focus:border-accent-border focus:outline-none transition-colors"
                   title={`View ${att.label}${isPdf ? " (PDF)" : ""}`}
                 >
                   {isPdf ? (
-                    <span className="flex h-full w-full items-center justify-center bg-rose-50 text-rose-600 text-[10px] font-bold tracking-wider">
+                    <span className="flex h-full w-full items-center justify-center bg-neg-soft text-neg text-[10px] font-bold tracking-wider">
                       PDF
                     </span>
                   ) : (
@@ -206,7 +206,7 @@ export function ImageUpload({ section, sectionLabel, attachments, onAdd, onRemov
                     e.stopPropagation();
                     onRemove(att.id);
                   }}
-                  className="absolute -top-1.5 -right-1.5 flex h-5 w-5 items-center justify-center rounded-full bg-red-500 text-white text-xs font-bold shadow opacity-90 md:opacity-0 md:group-hover:opacity-100 md:focus:opacity-100 transition-opacity"
+                  className="absolute -top-1.5 -right-1.5 flex h-5 w-5 items-center justify-center rounded-full bg-neg text-white text-xs font-bold shadow opacity-90 md:opacity-0 md:group-hover:opacity-100 md:focus:opacity-100 transition-opacity"
                   title="Remove"
                 >
                   &times;
@@ -238,10 +238,10 @@ export function ImageUpload({ section, sectionLabel, attachments, onAdd, onRemov
         }}
         onDragLeave={() => setDragActive(false)}
         onDrop={handleDrop}
-        className={`flex items-center justify-center gap-3 rounded-xl border-2 border-dashed px-4 py-3 text-sm transition-colors ${
+        className={`flex items-center justify-center gap-3 rounded-card border-2 border-dashed px-4 py-3 text-sm transition-colors ${
           dragActive
-            ? "border-blue-400 bg-blue-50 text-blue-600"
-            : "border-slate-200 bg-slate-50/50 text-slate-400 hover:border-slate-300 hover:text-slate-500"
+            ? "border-accent-border bg-accent-soft text-accent"
+            : "border-line bg-surface-2/50 text-ink-3 hover:border-line hover:text-ink-3"
         }`}
       >
         <span className="flex-1 text-center">
@@ -253,7 +253,7 @@ export function ImageUpload({ section, sectionLabel, attachments, onAdd, onRemov
             e.stopPropagation();
             inputRef.current?.click();
           }}
-          className="rounded-lg bg-white border border-slate-300 px-3 py-1.5 text-xs font-semibold text-slate-700 hover:bg-slate-50 hover:border-slate-400 transition-colors shrink-0"
+          className="rounded-lg bg-white border border-line px-3 py-1.5 text-xs font-semibold text-ink-2 hover:bg-surface-2 hover:border-line transition-colors shrink-0"
         >
           Browse files…
         </button>
@@ -334,7 +334,7 @@ export function LightboxModal({
       {/* Close button — top-right of viewport so it's always findable */}
       <button
         onClick={(e) => { e.stopPropagation(); onClose(); }}
-        className="absolute top-4 right-4 flex h-10 w-10 items-center justify-center rounded-full bg-white/90 text-slate-700 shadow-lg hover:bg-white hover:text-slate-900 transition-colors"
+        className="absolute top-4 right-4 flex h-10 w-10 items-center justify-center rounded-full bg-white/90 text-ink-2 shadow-lg hover:bg-white hover:text-ink transition-colors"
         title="Close (Esc)"
         aria-label="Close"
       >
@@ -348,7 +348,7 @@ export function LightboxModal({
         <>
           <button
             onClick={(e) => { e.stopPropagation(); prev(); }}
-            className="absolute left-4 top-1/2 -translate-y-1/2 flex h-10 w-10 items-center justify-center rounded-full bg-white/90 text-slate-700 shadow-lg hover:bg-white hover:text-slate-900 transition-colors"
+            className="absolute left-4 top-1/2 -translate-y-1/2 flex h-10 w-10 items-center justify-center rounded-full bg-white/90 text-ink-2 shadow-lg hover:bg-white hover:text-ink transition-colors"
             title="Previous (←)"
             aria-label="Previous image"
           >
@@ -358,7 +358,7 @@ export function LightboxModal({
           </button>
           <button
             onClick={(e) => { e.stopPropagation(); next(); }}
-            className="absolute right-4 top-1/2 -translate-y-1/2 flex h-10 w-10 items-center justify-center rounded-full bg-white/90 text-slate-700 shadow-lg hover:bg-white hover:text-slate-900 transition-colors"
+            className="absolute right-4 top-1/2 -translate-y-1/2 flex h-10 w-10 items-center justify-center rounded-full bg-white/90 text-ink-2 shadow-lg hover:bg-white hover:text-ink transition-colors"
             title="Next (→)"
             aria-label="Next image"
           >

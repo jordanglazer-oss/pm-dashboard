@@ -14,10 +14,10 @@ import React, { useEffect, useRef, useState } from "react";
 import { useNotifications, type NotificationLevel } from "@/app/lib/NotificationsContext";
 
 const LEVEL_STYLES: Record<NotificationLevel, { dot: string; text: string }> = {
-  info:    { dot: "bg-slate-400",    text: "text-slate-600" },
-  success: { dot: "bg-emerald-500",  text: "text-emerald-700" },
-  warn:    { dot: "bg-amber-500",    text: "text-amber-700" },
-  error:   { dot: "bg-red-500",      text: "text-red-700" },
+  info:    { dot: "bg-ink-3",    text: "text-ink-2" },
+  success: { dot: "bg-pos",  text: "text-pos" },
+  warn:    { dot: "bg-warn",    text: "text-warn" },
+  error:   { dot: "bg-neg",      text: "text-neg" },
 };
 
 function fmtRel(iso: string): string {
@@ -72,25 +72,25 @@ export function NotificationTray() {
         onClick={() => setOpen((v) => !v)}
         aria-label={`Notifications${unreadCount > 0 ? ` (${unreadCount} unread)` : ""}`}
         title="Notifications"
-        className="relative flex items-center justify-center w-9 h-9 rounded-lg hover:bg-slate-800 transition-colors text-slate-300 hover:text-white"
+        className="relative flex items-center justify-center w-9 h-9 rounded-lg hover:bg-ink transition-colors text-ink-faint hover:text-white"
       >
         <svg className="w-5 h-5" fill="none" stroke="currentColor" strokeWidth="2" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" d="M14.857 17.082a23.848 23.848 0 0 0 5.454-1.31A8.967 8.967 0 0 1 18 9.75V9A6 6 0 0 0 6 9v.75a8.967 8.967 0 0 1-2.312 6.022c1.733.64 3.56 1.085 5.455 1.31m5.714 0a24.255 24.255 0 0 1-5.714 0m5.714 0a3 3 0 1 1-5.714 0" /></svg>
         {unreadCount > 0 && (
-          <span className="absolute -top-0.5 -right-0.5 flex items-center justify-center min-w-[16px] h-4 px-1 rounded-full bg-red-500 text-white text-[10px] font-bold leading-none">
+          <span className="absolute -top-0.5 -right-0.5 flex items-center justify-center min-w-[16px] h-4 px-1 rounded-full bg-neg text-white text-[10px] font-bold leading-none">
             {unreadCount > 99 ? "99+" : unreadCount}
           </span>
         )}
       </button>
 
       {open && (
-        <div className="absolute right-0 mt-2 w-[calc(100vw-1rem)] sm:w-96 max-w-md rounded-xl bg-white shadow-2xl border border-slate-200 z-[120] overflow-hidden">
-          <div className="flex items-center justify-between px-4 py-2.5 border-b border-slate-100">
-            <h3 className="text-sm font-bold text-slate-800">Notifications</h3>
+        <div className="absolute right-0 mt-2 w-[calc(100vw-1rem)] sm:w-96 max-w-md rounded-card bg-white shadow-2xl border border-line z-[120] overflow-hidden">
+          <div className="flex items-center justify-between px-4 py-2.5 border-b border-line-soft">
+            <h3 className="text-sm font-bold text-ink">Notifications</h3>
             <div className="flex items-center gap-2 text-[11px]">
               {events.length > 0 && (
                 <button
                   onClick={() => { clear(); setOpen(false); }}
-                  className="text-slate-500 hover:text-red-600 transition-colors"
+                  className="text-ink-3 hover:text-neg transition-colors"
                 >
                   Clear all
                 </button>
@@ -100,11 +100,11 @@ export function NotificationTray() {
 
           <div className="max-h-96 overflow-y-auto">
             {events.length === 0 ? (
-              <div className="px-4 py-8 text-center text-sm text-slate-400">
+              <div className="px-4 py-8 text-center text-sm text-ink-3">
                 Nothing to report.
               </div>
             ) : (
-              <ul className="divide-y divide-slate-100">
+              <ul className="divide-y divide-line-soft">
                 {events.map((e) => {
                   const styles = LEVEL_STYLES[e.level];
                   return (
@@ -114,15 +114,15 @@ export function NotificationTray() {
                         <div className="flex items-baseline gap-2 flex-wrap">
                           <span className={`text-sm font-semibold ${styles.text}`}>{e.title}</span>
                           {e.source && (
-                            <span className="text-[10px] text-slate-400 uppercase tracking-wider">
+                            <span className="text-[10px] text-ink-3 uppercase tracking-wider">
                               {e.source}
                             </span>
                           )}
                         </div>
                         {e.message && (
-                          <p className="text-xs text-slate-600 mt-0.5 break-words">{e.message}</p>
+                          <p className="text-xs text-ink-2 mt-0.5 break-words">{e.message}</p>
                         )}
-                        <p className="text-[10px] text-slate-400 mt-0.5" suppressHydrationWarning>
+                        <p className="text-[10px] text-ink-3 mt-0.5" suppressHydrationWarning>
                           {fmtRel(e.at)}
                         </p>
                       </div>

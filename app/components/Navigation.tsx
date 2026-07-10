@@ -48,9 +48,9 @@ function BackupHealthChip() {
     : status === "warning" ? "text-warn font-semibold"
     : "text-neg font-bold";
   const dotCls =
-    status === "ok" ? "bg-emerald-500"
-    : status === "warning" ? "bg-amber-400"
-    : "bg-red-500 animate-pulse";
+    status === "ok" ? "bg-pos"
+    : status === "warning" ? "bg-warn"
+    : "bg-neg animate-pulse";
   const title = h.lastBackupAt
     ? `Last successful backup: ${new Date(h.lastBackupAt).toLocaleString()} (${ageLabel} ago). Status: ${status}.`
     : "No backups exist — the nightly cron may have stalled.";
@@ -144,7 +144,7 @@ function AnthropicCreditChip() {
       className="flex items-center gap-1 text-neg font-bold"
       title={`Anthropic rejected an API call for low credit (last seen ${when}). AI features (Brief, scoring) are blocked until the key's org is topped up or a new key with credit is set as ANTHROPIC_API_KEY in Vercel.${s.detail ? ` [${s.detail}]` : ""}`}
     >
-      <span className="inline-block w-1.5 h-1.5 rounded-full bg-red-500 animate-pulse" />
+      <span className="inline-block w-1.5 h-1.5 rounded-full bg-neg animate-pulse" />
       ⚠ Anthropic credits
     </span>
   );

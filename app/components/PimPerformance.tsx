@@ -580,7 +580,7 @@ export function PimPerformance({ groupId, groupName, selectedProfile, onPerfData
     return (
       <div className="rounded-card border border-line bg-white p-6 shadow-sm">
         <div className="flex items-center gap-3">
-          <div className="h-5 w-5 animate-spin rounded-full border-2 border-line border-t-blue-500" />
+          <div className="h-5 w-5 animate-spin rounded-full border-2 border-line border-t-accent" />
           <span className="text-sm text-ink-3">Loading performance data...</span>
         </div>
       </div>
@@ -607,7 +607,7 @@ export function PimPerformance({ groupId, groupName, selectedProfile, onPerfData
         <div className="flex items-center gap-2">
           {autoUpdating && (
             <span className="flex items-center gap-1 text-[10px] text-accent font-medium">
-              <div className="h-3 w-3 animate-spin rounded-full border border-accent-border border-t-blue-500" />
+              <div className="h-3 w-3 animate-spin rounded-full border border-accent-border border-t-accent" />
               Updating...
             </span>
           )}
@@ -715,7 +715,7 @@ export function PimPerformance({ groupId, groupName, selectedProfile, onPerfData
             {chartData.yLabels.map((yl, i) => (
               <g key={i}>
                 <line x1={chartPadding.left} x2={chartWidth - chartPadding.right} y1={yl.y} y2={yl.y} stroke="#e2e8f0" strokeWidth="0.5" />
-                <text x={chartPadding.left - 5} y={yl.y + 3} textAnchor="end" className="text-[8px] fill-slate-400">{yl.label}</text>
+                <text x={chartPadding.left - 5} y={yl.y + 3} textAnchor="end" className="text-[8px] fill-ink-3">{yl.label}</text>
               </g>
             ))}
             {chartData.xLabels.map((xl, i) => (
@@ -728,7 +728,7 @@ export function PimPerformance({ groupId, groupName, selectedProfile, onPerfData
                   stroke="#f1f5f9"
                   strokeWidth="0.5"
                 />
-                <text x={xl.x} y={chartHeight - 5} textAnchor="middle" className="text-[7px] fill-slate-400">{xl.label}</text>
+                <text x={xl.x} y={chartHeight - 5} textAnchor="middle" className="text-[7px] fill-ink-3">{xl.label}</text>
               </g>
             ))}
             <path d={chartData.areaPath} fill={chartData.isPositive ? "rgba(16,185,129,0.08)" : "rgba(239,68,68,0.08)"} />
