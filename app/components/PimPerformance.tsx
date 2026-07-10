@@ -3,6 +3,7 @@
 import React, { useState, useEffect, useMemo, useCallback, useRef } from "react";
 import type { PimPerformanceData, PimModelPerformance, PimProfileType, AppendixModelLedger } from "@/app/lib/pim-types";
 import { useStocks } from "@/app/lib/StockContext";
+import { Skeleton, SkeletonTable } from "@/app/components/Skeleton";
 import { getTodayET } from "@/app/lib/market-hours";
 import { useLiveTodayReturn } from "@/app/lib/useLiveTodayReturn";
 
@@ -578,11 +579,12 @@ export function PimPerformance({ groupId, groupName, selectedProfile, onPerfData
 
   if (loading) {
     return (
-      <div className="rounded-card border border-line bg-white p-6 shadow-sm">
-        <div className="flex items-center gap-3">
-          <div className="h-5 w-5 animate-spin rounded-full border-2 border-line border-t-accent" />
-          <span className="text-sm text-ink-3">Loading performance data...</span>
+      <div className="rounded-card border border-line bg-white p-5 shadow-sm space-y-4">
+        <div className="flex items-center justify-between">
+          <Skeleton className="h-4 w-40" />
+          <Skeleton className="h-3 w-24 bg-line-soft" />
         </div>
+        <SkeletonTable rows={7} cols={7} />
       </div>
     );
   }
