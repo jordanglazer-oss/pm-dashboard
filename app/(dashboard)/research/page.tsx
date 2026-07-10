@@ -377,6 +377,82 @@ function EditableCell({
   );
 }
 
+type SourceRowItem = {
+  ticker: string;
+  name?: string;
+  meta?: React.ReactNode;            // sector · industry, or other per-source context
+  priceWhenAdded?: number | null;    // used to compute change-since-added vs live price
+  priceOverride?: number | null;     // when the source carries its own price (not livePrices)
+  changePctOverride?: number | null; // when the source carries its own return-since-added
+};
+
+/** Compact mockup-style row list shared by every research source. Keeps the key
+ *  data (ticker, name, per-source context, live price, change-since-added) plus
+ *  the +Watch / remove actions; the full sortable + inline-editable table stays
+ *  behind the per-source "Table view" toggle so no functionality is lost. */
+function SourceRowsList({ rows, livePrices, isInList, onAdd, onRemove, emptyLabel = "No names yet" }: {
+  rows: SourceRowItem[];
+  livePrices: LivePrices;
+  isInList: (t: string) => boolean;
+  onAdd: (t: string) => void;
+  onRemove: (t: string) => void;
+  emptyLabel?: string;
+}) {
+  if (rows.length === 0) {
+    return <div className="rounded-xl border border-line-soft px-3 py-8 text-center text-ink-3 italic">{emptyLabel}</div>;
+  }
+  return (
+    <div className="rounded-xl border border-line-soft overflow-hidden">
+      {rows.map((r) => {
+        const livePrice = r.priceOverride ?? livePrices[r.ticker] ?? null;
+        const changePct = r.changePctOverride ?? (livePrice != null && r.priceWhenAdded ? ((livePrice - r.priceWhenAdded) / r.priceWhenAdded) * 100 : null);
+        const inList = isInList(r.ticker);
+        return (
+          <div key={r.ticker} className="group flex items-center gap-3 border-b border-line-soft px-3 py-2.5 last:border-b-0 hover:bg-surface-2/50">
+            <span className="shrink-0 text-ink-faint select-none" title="Use + Watch to add to the Watchlist">⋮⋮</span>
+            <div className="min-w-0 flex-1">
+              <div className="flex items-baseline gap-2">
+                <span className="font-mono font-bold text-ink">{displayTicker(r.ticker)}</span>
+                {r.name && r.name !== r.ticker && <span className="truncate text-sm text-ink-2">{r.name}</span>}
+              </div>
+              {r.meta != null && r.meta !== "" && <div className="text-[11px] text-ink-3 truncate">{r.meta}</div>}
+            </div>
+            <div className="shrink-0 text-right">
+              <div className="font-mono text-sm text-ink">{livePrice != null ? `$${livePrice.toFixed(2)}` : "—"}</div>
+              <div className={`font-mono text-xs ${changePct == null ? "text-ink-faint" : changePct >= 0 ? "text-pos" : "text-neg"}`}>
+                {changePct == null ? "" : `${changePct >= 0 ? "+" : ""}${changePct.toFixed(1)}%`}
+              </div>
+            </div>
+            <div className="shrink-0 w-[68px] text-right opacity-0 group-hover:opacity-100 transition-opacity">
+              {inList ? (
+                <span className="text-[10px] text-pos font-medium">In list</span>
+              ) : (
+                <button onClick={(e) => { e.stopPropagation(); onAdd(r.ticker); }} className="text-[10px] text-accent font-semibold" title="Add to Watchlist">+ Watch</button>
+              )}
+              <button onClick={() => onRemove(r.ticker)} className="ml-1.5 text-ink-faint hover:text-neg font-bold" title="Remove">×</button>
+            </div>
+          </div>
+        );
+      })}
+    </div>
+  );
+}
+
+/** The small "Rows view / Table view" toggle shown above each source list. */
+function ViewToggle({ view, onToggle }: { view: string; onToggle: () => void }) {
+  return (
+    <div className="flex items-center justify-end mb-2">
+      <button
+        onClick={onToggle}
+        className="text-[11px] rounded-md border border-line bg-white px-2 py-1 font-medium text-ink-2 hover:bg-surface-2 transition-colors"
+        title={view === "rows" ? "Switch to the full sortable, inline-editable table" : "Switch to the compact rows view"}
+      >
+        {view === "rows" ? "Table view" : "Rows view"}
+      </button>
+    </div>
+  );
+}
+
 type UptickSortKey = "ticker" | "name" | "sector" | "price" | "support" | "resistance" | "dateAdded" | "priceWhenAdded";
 type IdeaSortKey = "ticker" | "priceWhenAdded" | "currentPrice";
 type RBCSortKey = "ticker" | "name" | "sector" | "weight" | "dateAdded";
@@ -628,6 +704,18 @@ export default function ResearchPage() {
   // Per-source view: "rows" (compact mockup list, default) or "table" (the full
   // sortable + inline-editable table). Persisted in uiPrefs like the collapse keys.
   const newtonView = uiPrefs["research.newton.view"] || "rows";
+  const rbcCaView = uiPrefs["research.rbcCa.view"] || "rows";
+  const rbcUsView = uiPrefs["research.rbcUs.view"] || "rows";
+  const jpmView = uiPrefs["research.jpm.view"] || "rows";
+  const fsTopView = uiPrefs["research.fsTop.view"] || "rows";
+  const fsBottomView = uiPrefs["research.fsBottom.view"] || "rows";
+  const fsSmidTopView = uiPrefs["research.fsSmidTop.view"] || "rows";
+  const fsSmidBottomView = uiPrefs["research.fsSmidBottom.view"] || "rows";
+  const equateCadView = uiPrefs["research.equateCad.view"] || "rows";
+  const equateUsdView = uiPrefs["research.equateUsd.view"] || "rows";
+  const fewView = uiPrefs["research.few.view"] || "rows";
+  const alphaView = uiPrefs["research.alpha.view"] || "rows";
+  const isInList = (t: string) => scoredStocks.some((s) => s.ticker === t);
 
   // Toggle handlers — read the current sort object directly (no functional
   // setState since these sorts are now derived from uiPrefs rather than
@@ -2390,6 +2478,17 @@ export default function ResearchPage() {
             right={<><span className="text-sm text-ink-3">{state.fundstratTop.length} names</span></>}
           >
 
+            <ViewToggle view={fsTopView} onToggle={() => setUiPref("research.fsTop.view", fsTopView === "rows" ? "table" : "rows")} />
+            {fsTopView === "rows" ? (
+              <SourceRowsList
+                rows={sortedIdeas(state.fundstratTop, topSort).map((item) => { const s = scoredStocks.find((x) => x.ticker === item.ticker); return { ticker: item.ticker, name: s?.name, meta: s?.sector || "", priceWhenAdded: item.priceWhenAdded }; })}
+                livePrices={livePrices}
+                isInList={isInList}
+                onAdd={addToWatchlist}
+                onRemove={(t) => removeIdea("fundstratTop", t)}
+                emptyLabel="No names added yet"
+              />
+            ) : (
             <div className="overflow-x-auto"><table className="w-full text-sm">
               <thead>
                 <tr className="border-b-2 border-pos-border text-left">
@@ -2456,6 +2555,8 @@ export default function ResearchPage() {
               </tbody>
             </table></div>
 
+            )}
+
             <IdeaAddForm onAdd={(e) => addIdea("fundstratTop", e)} />
 
             <ResearchScraperBlock
@@ -2482,6 +2583,17 @@ export default function ResearchPage() {
             right={<><span className="text-sm text-ink-3">{state.fundstratBottom.length} names</span></>}
           >
 
+            <ViewToggle view={fsBottomView} onToggle={() => setUiPref("research.fsBottom.view", fsBottomView === "rows" ? "table" : "rows")} />
+            {fsBottomView === "rows" ? (
+              <SourceRowsList
+                rows={sortedIdeas(state.fundstratBottom, bottomSort).map((item) => { const s = scoredStocks.find((x) => x.ticker === item.ticker); return { ticker: item.ticker, name: s?.name, meta: s?.sector || "", priceWhenAdded: item.priceWhenAdded }; })}
+                livePrices={livePrices}
+                isInList={isInList}
+                onAdd={addToWatchlist}
+                onRemove={(t) => removeIdea("fundstratBottom", t)}
+                emptyLabel="No names added yet"
+              />
+            ) : (
             <div className="overflow-x-auto"><table className="w-full text-sm">
               <thead>
                 <tr className="border-b-2 border-neg-border text-left">
@@ -2548,6 +2660,8 @@ export default function ResearchPage() {
               </tbody>
             </table></div>
 
+            )}
+
             <IdeaAddForm onAdd={(e) => addIdea("fundstratBottom", e)} />
 
             <ResearchScraperBlock
@@ -2580,6 +2694,17 @@ export default function ResearchPage() {
             right={<><span className="text-sm text-ink-3">{(state.fundstratSmidTop ?? []).length} names</span></>}
           >
 
+            <ViewToggle view={fsSmidTopView} onToggle={() => setUiPref("research.fsSmidTop.view", fsSmidTopView === "rows" ? "table" : "rows")} />
+            {fsSmidTopView === "rows" ? (
+              <SourceRowsList
+                rows={sortedIdeas(state.fundstratSmidTop ?? [], smidTopSort).map((item) => { const s = scoredStocks.find((x) => x.ticker === item.ticker); return { ticker: item.ticker, name: s?.name, meta: s?.sector || "", priceWhenAdded: item.priceWhenAdded }; })}
+                livePrices={livePrices}
+                isInList={isInList}
+                onAdd={addToWatchlist}
+                onRemove={(t) => removeIdea("fundstratSmidTop", t)}
+                emptyLabel="No names added yet"
+              />
+            ) : (
             <div className="overflow-x-auto"><table className="w-full text-sm">
               <thead>
                 <tr className="border-b-2 border-pos-border text-left">
@@ -2640,6 +2765,8 @@ export default function ResearchPage() {
               </tbody>
             </table></div>
 
+            )}
+
             <IdeaAddForm onAdd={(e) => addIdea("fundstratSmidTop", e)} />
 
             <ResearchScraperBlock
@@ -2666,6 +2793,17 @@ export default function ResearchPage() {
             right={<><span className="text-sm text-ink-3">{(state.fundstratSmidBottom ?? []).length} names</span></>}
           >
 
+            <ViewToggle view={fsSmidBottomView} onToggle={() => setUiPref("research.fsSmidBottom.view", fsSmidBottomView === "rows" ? "table" : "rows")} />
+            {fsSmidBottomView === "rows" ? (
+              <SourceRowsList
+                rows={sortedIdeas(state.fundstratSmidBottom ?? [], smidBottomSort).map((item) => { const s = scoredStocks.find((x) => x.ticker === item.ticker); return { ticker: item.ticker, name: s?.name, meta: s?.sector || "", priceWhenAdded: item.priceWhenAdded }; })}
+                livePrices={livePrices}
+                isInList={isInList}
+                onAdd={addToWatchlist}
+                onRemove={(t) => removeIdea("fundstratSmidBottom", t)}
+                emptyLabel="No names added yet"
+              />
+            ) : (
             <div className="overflow-x-auto"><table className="w-full text-sm">
               <thead>
                 <tr className="border-b-2 border-neg-border text-left">
@@ -2725,6 +2863,8 @@ export default function ResearchPage() {
                 )}
               </tbody>
             </table></div>
+
+            )}
 
             <IdeaAddForm onAdd={(e) => addIdea("fundstratSmidBottom", e)} />
 
@@ -2812,6 +2952,17 @@ export default function ResearchPage() {
           right={<><span className="text-sm text-ink-3">{(state.rbcCanadianFocus || []).length} names</span></>}
         >
 
+          <ViewToggle view={rbcCaView} onToggle={() => setUiPref("research.rbcCa.view", rbcCaView === "rows" ? "table" : "rows")} />
+          {rbcCaView === "rows" ? (
+            <SourceRowsList
+              rows={sortedRbc().map((item) => ({ ticker: item.ticker, name: item.name, meta: [item.sector, item.weight ? `${item.weight}% wt` : null].filter(Boolean).join(" · ") }))}
+              livePrices={livePrices}
+              isInList={isInList}
+              onAdd={addToWatchlist}
+              onRemove={removeRbc}
+              emptyLabel="No names added yet"
+            />
+          ) : (
           <div className="overflow-x-auto"><table className="w-full text-sm">
             <thead>
               <tr className="border-b-2 border-accent-border text-left">
@@ -2868,6 +3019,7 @@ export default function ResearchPage() {
               )}
             </tbody>
           </table></div>
+          )}
 
           <RBCAddForm onAdd={addRbc} />
 
@@ -2898,6 +3050,17 @@ export default function ResearchPage() {
           right={<><span className="text-sm text-ink-3">{(state.rbcUsFocus || []).length} names</span></>}
         >
 
+          <ViewToggle view={rbcUsView} onToggle={() => setUiPref("research.rbcUs.view", rbcUsView === "rows" ? "table" : "rows")} />
+          {rbcUsView === "rows" ? (
+            <SourceRowsList
+              rows={sortedRbcUs().map((item) => ({ ticker: item.ticker, name: item.name, meta: [item.sector, item.weight ? `${item.weight}% wt` : null].filter(Boolean).join(" · ") }))}
+              livePrices={livePrices}
+              isInList={isInList}
+              onAdd={addToWatchlist}
+              onRemove={removeRbcUs}
+              emptyLabel="No names added yet"
+            />
+          ) : (
           <div className="overflow-x-auto"><table className="w-full text-sm">
             <thead>
               <tr className="border-b-2 border-accent-border text-left">
@@ -2954,6 +3117,7 @@ export default function ResearchPage() {
               )}
             </tbody>
           </table></div>
+          )}
 
           <RBCAddForm onAdd={addRbcUs} />
 
@@ -2985,6 +3149,28 @@ export default function ResearchPage() {
           right={<span className="text-sm text-ink-3">{(state.jpmUsAnalystFocus || []).length} names</span>}
         >
 
+          <ViewToggle view={jpmView} onToggle={() => setUiPref("research.jpm.view", jpmView === "rows" ? "table" : "rows")} />
+          {jpmView === "rows" ? (
+            <SourceRowsList
+              rows={sortedJpmFocus().map((item) => {
+                const raw = factsetPrices[item.ticker];
+                const price = typeof raw === "number" ? raw : null;
+                const upside = price != null && price > 0 && typeof item.priceTarget === "number" ? ((item.priceTarget - price) / price) * 100 : null;
+                return {
+                  ticker: item.ticker,
+                  name: item.name,
+                  meta: [factsetSectors[item.ticker] || item.industry, item.strategy].filter(Boolean).join(" · "),
+                  priceOverride: price,
+                  changePctOverride: upside,
+                };
+              })}
+              livePrices={livePrices}
+              isInList={isInList}
+              onAdd={addToWatchlist}
+              onRemove={removeJpmFocus}
+              emptyLabel="No names added yet"
+            />
+          ) : (
           <div className="overflow-x-auto"><table className="w-full text-sm">
             <thead>
               <tr className="border-b-2 border-warn-border text-left">
@@ -3034,6 +3220,7 @@ export default function ResearchPage() {
               )}
             </tbody>
           </table></div>
+          )}
 
           <RBCAddForm onAdd={addJpmFocus} />
 
@@ -3063,6 +3250,17 @@ export default function ResearchPage() {
           right={<><span className="text-sm text-ink-3">{(state.equateCad || []).length} names</span></>}
         >
 
+          <ViewToggle view={equateCadView} onToggle={() => setUiPref("research.equateCad.view", equateCadView === "rows" ? "table" : "rows")} />
+          {equateCadView === "rows" ? (
+            <SourceRowsList
+              rows={sortedEquateCad().map((item) => { const raw = factsetPrices[item.ticker]; return { ticker: item.ticker, name: item.name, meta: factsetSectors[item.ticker] || item.industry || "", priceOverride: typeof raw === "number" ? raw : null }; })}
+              livePrices={livePrices}
+              isInList={isInList}
+              onAdd={addToWatchlist}
+              onRemove={removeEquateCad}
+              emptyLabel="No names added yet"
+            />
+          ) : (
           <div className="overflow-x-auto"><table className="w-full text-sm">
             <thead>
               <tr className="border-b-2 border-accent-border text-left">
@@ -3104,6 +3302,7 @@ export default function ResearchPage() {
               )}
             </tbody>
           </table></div>
+          )}
 
           <RBCAddForm onAdd={addEquateCad} />
 
@@ -3133,6 +3332,17 @@ export default function ResearchPage() {
           right={<><span className="text-sm text-ink-3">{(state.equateUsd || []).length} names</span></>}
         >
 
+          <ViewToggle view={equateUsdView} onToggle={() => setUiPref("research.equateUsd.view", equateUsdView === "rows" ? "table" : "rows")} />
+          {equateUsdView === "rows" ? (
+            <SourceRowsList
+              rows={sortedEquateUsd().map((item) => { const raw = factsetPrices[item.ticker]; return { ticker: item.ticker, name: item.name, meta: factsetSectors[item.ticker] || item.industry || "", priceOverride: typeof raw === "number" ? raw : null }; })}
+              livePrices={livePrices}
+              isInList={isInList}
+              onAdd={addToWatchlist}
+              onRemove={removeEquateUsd}
+              emptyLabel="No names added yet"
+            />
+          ) : (
           <div className="overflow-x-auto"><table className="w-full text-sm">
             <thead>
               <tr className="border-b-2 border-accent-border text-left">
@@ -3174,6 +3384,7 @@ export default function ResearchPage() {
               )}
             </tbody>
           </table></div>
+          )}
 
           <RBCAddForm onAdd={addEquateUsd} />
 
@@ -3204,6 +3415,17 @@ export default function ResearchPage() {
           right={<><span className="text-sm text-ink-3">{(state.rbccmFew || []).length} names</span></>}
         >
 
+          <ViewToggle view={fewView} onToggle={() => setUiPref("research.few.view", fewView === "rows" ? "table" : "rows")} />
+          {fewView === "rows" ? (
+            <SourceRowsList
+              rows={sortedFew().map((item) => ({ ticker: item.ticker, name: item.name, meta: item.industry || "", priceOverride: livePrices[item.ticker] ?? item.price ?? null }))}
+              livePrices={livePrices}
+              isInList={isInList}
+              onAdd={addToWatchlist}
+              onRemove={removeFew}
+              emptyLabel="No names added yet"
+            />
+          ) : (
           <div className="overflow-x-auto"><table className="w-full text-sm">
             <thead>
               <tr className="border-b-2 border-violet-soft text-left">
@@ -3247,6 +3469,7 @@ export default function ResearchPage() {
               )}
             </tbody>
           </table></div>
+          )}
 
           <FewAddForm onAdd={addFew} />
 
@@ -3491,6 +3714,23 @@ export default function ResearchPage() {
                   </div>
                 </div>
 
+                <ViewToggle view={alphaView} onToggle={() => setUiPref("research.alpha.view", alphaView === "rows" ? "table" : "rows")} />
+                {alphaView === "rows" ? (
+                  <SourceRowsList
+                    rows={visiblePicks.map((pick) => ({
+                      ticker: pick.ticker,
+                      name: pick.name,
+                      meta: [pick.sector, pick.rating, pick.holdingWeight ? `${pick.holdingWeight}% wt` : null].filter(Boolean).join(" · "),
+                      priceOverride: livePrices[pick.ticker] ?? pick.price ?? null,
+                      changePctOverride: pick.returnSinceAdded ?? null,
+                    }))}
+                    livePrices={livePrices}
+                    isInList={isInList}
+                    onAdd={addToWatchlist}
+                    onRemove={(t) => { const list = state.alphaPicks ?? []; save({ ...state, alphaPicks: list.filter((p) => p.ticker !== t) }); }}
+                    emptyLabel="No picks added yet"
+                  />
+                ) : (
                 <div className="overflow-x-auto">
                   <div className="overflow-x-auto"><table className="w-full text-sm">
                     <thead>
@@ -3609,6 +3849,7 @@ export default function ResearchPage() {
                     </tbody>
                   </table></div>
                 </div>
+                )}
               </>
             );
           })()}
