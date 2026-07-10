@@ -625,6 +625,9 @@ export default function ResearchPage() {
   // uiPrefs (Redis-backed) so it sticks across refreshes and devices —
   // same pattern as the ranking-table collapse keys.
   const synthesisCollapsed = uiPrefs["research.synthesisCollapsed"] === "1";
+  // Per-source view: "rows" (compact mockup list, default) or "table" (the full
+  // sortable + inline-editable table). Persisted in uiPrefs like the collapse keys.
+  const newtonView = uiPrefs["research.newton.view"] || "rows";
 
   // Toggle handlers — read the current sort object directly (no functional
   // setState since these sorts are now derived from uiPrefs rather than
@@ -2077,6 +2080,56 @@ export default function ResearchPage() {
             </p>
           )}
 
+          {/* View toggle: compact mockup rows (default) vs the full sortable + inline-editable table. */}
+          <div className="flex items-center justify-end mb-2">
+            <button
+              onClick={() => setUiPref("research.newton.view", newtonView === "rows" ? "table" : "rows")}
+              className="text-[11px] rounded-md border border-line bg-white px-2 py-1 font-medium text-ink-2 hover:bg-surface-2 transition-colors"
+              title={newtonView === "rows" ? "Switch to the full sortable, inline-editable table" : "Switch to the compact rows view"}
+            >
+              {newtonView === "rows" ? "Table view" : "Rows view"}
+            </button>
+          </div>
+
+          {newtonView === "rows" ? (
+            <div className="rounded-xl border border-line-soft overflow-hidden">
+              {sortedUpticks().map((u) => {
+                const livePrice = livePrices[u.ticker];
+                const pctChange = livePrice && u.priceWhenAdded ? ((livePrice - u.priceWhenAdded) / u.priceWhenAdded * 100) : null;
+                const inList = scoredStocks.some((s) => s.ticker === u.ticker);
+                return (
+                  <div key={u.ticker} className="group flex items-center gap-3 border-b border-line-soft px-3 py-2.5 last:border-b-0 hover:bg-surface-2/50">
+                    <span className="shrink-0 text-ink-faint select-none" title="Use + Watch to add to the Watchlist">⋮⋮</span>
+                    <div className="min-w-0 flex-1">
+                      <div className="flex items-baseline gap-2">
+                        <span className="font-mono font-bold text-ink">{displayTicker(u.ticker)}</span>
+                        {u.name && u.name !== u.ticker && <span className="truncate text-sm text-ink-2">{u.name}</span>}
+                      </div>
+                      <div className="text-[11px] text-ink-3 truncate">
+                        {u.sector && u.sector !== "—" ? u.sector : "—"}
+                        {(u.support || u.resistance) && <span className="ml-2 text-ink-faint">S {u.support || "—"} · R {u.resistance || "—"}</span>}
+                      </div>
+                    </div>
+                    <div className="shrink-0 text-right">
+                      <div className="font-mono text-sm text-ink">{livePrice != null ? `$${livePrice.toFixed(2)}` : "—"}</div>
+                      <div className={`font-mono text-xs ${pctChange == null ? "text-ink-faint" : pctChange >= 0 ? "text-pos" : "text-neg"}`}>
+                        {pctChange == null ? "" : `${pctChange >= 0 ? "+" : ""}${pctChange.toFixed(1)}%`}
+                      </div>
+                    </div>
+                    <div className="shrink-0 w-[68px] text-right opacity-0 group-hover:opacity-100 transition-opacity">
+                      {inList ? (
+                        <span className="text-[10px] text-pos font-medium">In list</span>
+                      ) : (
+                        <button onClick={(e) => { e.stopPropagation(); addToWatchlist(u.ticker); }} className="text-[10px] text-accent font-semibold" title="Add to Watchlist">+ Watch</button>
+                      )}
+                      <button onClick={() => removeUptick(u.ticker)} className="ml-1.5 text-ink-faint hover:text-neg font-bold" title="Remove">×</button>
+                    </div>
+                  </div>
+                );
+              })}
+              {state.newtonUpticks.length === 0 && <div className="px-3 py-8 text-center text-ink-3 italic">No upticks added yet</div>}
+            </div>
+          ) : (
           <div className="overflow-x-auto">
             <div className="overflow-x-auto"><table className="w-full text-sm">
               <thead>
@@ -2171,6 +2224,7 @@ export default function ResearchPage() {
               </tbody>
             </table></div>
           </div>
+          )}
 
           <UptickAddForm onAdd={addUptick} />
 
