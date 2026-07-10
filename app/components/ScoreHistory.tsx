@@ -18,6 +18,7 @@
 import React, { useCallback, useEffect, useMemo, useState } from "react";
 import type { Scores, ScoreKey } from "@/app/lib/types";
 import { SCORE_GROUPS } from "@/app/lib/types";
+import { CollapsibleSection } from "@/app/components/CollapsibleSection";
 
 type Entry = {
   date: string;
@@ -115,19 +116,21 @@ export default function ScoreHistory({ ticker, currentTotal, currentRaw, classNa
   }, [entries]);
 
   return (
-    <div className={`rounded-card border border-line bg-white p-5 shadow-sm ${className}`}>
-      <div className="flex items-center justify-between mb-3">
-        <div>
-          <h3 className="text-sm font-bold text-ink-2">Score History</h3>
-          <p className="text-[11px] text-ink-3">Append-only log of composite score changes over time.</p>
-        </div>
+    <CollapsibleSection
+      prefKey="stock.scoreHistory"
+      defaultCollapsed
+      className={`border-line ${className}`}
+      titleClass="text-sm font-bold text-ink-2"
+      title="Score History"
+      subtitle="Append-only log of composite score changes over time."
+      right={
         <div className="text-right">
           <div className="text-[11px] text-ink-3 uppercase tracking-wide">Current</div>
           <div className="text-lg font-bold text-ink">{currentTotal.toFixed(1)}</div>
           <div className="text-[10px] text-ink-3">Raw {currentRaw.toFixed(1)}</div>
         </div>
-      </div>
-
+      }
+    >
       {loading ? (
         <div className="text-xs text-ink-3">Loading&hellip;</div>
       ) : error ? (
@@ -255,6 +258,6 @@ export default function ScoreHistory({ ticker, currentTotal, currentRaw, classNa
           })}
         </div>
       )}
-    </div>
+    </CollapsibleSection>
   );
 }

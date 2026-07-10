@@ -3,6 +3,7 @@
 import React from "react";
 import type { HealthData } from "@/app/lib/types";
 import type { TechnicalIndicators } from "@/app/lib/technicals";
+import { CollapsibleSection } from "@/app/components/CollapsibleSection";
 
 // ── Helpers ──
 
@@ -174,12 +175,14 @@ export default function StockHealthMonitor({
   }
 
   return (
-    <div className="mt-6">
-      <div className="flex items-center gap-3 mb-4">
-        <h2 className="text-lg font-bold text-ink">Stock Health Monitor</h2>
-        <span className="rounded-full bg-surface-2 px-3 py-0.5 text-xs font-medium text-ink-3">Informational Only</span>
-      </div>
-
+    <CollapsibleSection
+      prefKey="stock.healthMonitor"
+      defaultCollapsed
+      className="border-line mt-6"
+      titleClass="text-lg font-bold text-ink"
+      title="Stock Health Monitor"
+      right={<span className="rounded-full bg-surface-2 px-3 py-0.5 text-xs font-medium text-ink-3">Informational Only</span>}
+    >
       <div className="grid gap-4 md:grid-cols-2">
         {/* Price & Technical */}
         <CategoryCard config={CATEGORIES[0]}>
@@ -310,6 +313,6 @@ export default function StockHealthMonitor({
           />
         </CategoryCard>
       </div>
-    </div>
+    </CollapsibleSection>
   );
 }
