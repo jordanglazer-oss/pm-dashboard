@@ -635,6 +635,14 @@ export default function ResearchPage() {
       ...(s.fundstratSmidBottom ?? []).map((i) => i.ticker),
       ...(s.alphaPicks ?? []).map((i) => i.ticker),
       ...(s.rbccmFew ?? []).map((i) => i.ticker),
+      // RBC + JPM + Equate lists get their live price from Yahoo too (FactSet's
+      // Formula API is delayed/blank for live prices — same reason we use Yahoo
+      // for holdings). /api/prices handles the Yahoo symbol conversion (.TO/-T).
+      ...(s.rbcCanadianFocus ?? []).map((i) => i.ticker),
+      ...(s.rbcUsFocus ?? []).map((i) => i.ticker),
+      ...(s.jpmUsAnalystFocus ?? []).map((i) => i.ticker),
+      ...(s.equateCad ?? []).map((i) => i.ticker),
+      ...(s.equateUsd ?? []).map((i) => i.ticker),
     ];
     const unique = [...new Set(allTickers)];
     if (unique.length === 0) return;
@@ -3200,8 +3208,7 @@ export default function ResearchPage() {
           {jpmView === "rows" ? (
             <SourceRowsList
               rows={sortedJpmFocus().map((item) => {
-                const raw = factsetPrices[item.ticker];
-                const price = typeof raw === "number" ? raw : null;
+                const price = livePrices[item.ticker] ?? null;
                 const upside = price != null && price > 0 && typeof item.priceTarget === "number" ? ((item.priceTarget - price) / price) * 100 : null;
                 return {
                   ticker: item.ticker,
@@ -3232,7 +3239,7 @@ export default function ResearchPage() {
             </thead>
             <tbody>
               {sortedJpmFocus().map((item, i) => {
-                const fsPrice = factsetPrices[item.ticker];
+                const fsPrice = livePrices[item.ticker] ?? null;
                 return (
                 <tr key={item.ticker} className={`border-b border-line-soft ${i % 2 === 0 ? "bg-white" : "bg-warn-soft/30"} hover:bg-warn-soft/60 transition-colors`}>
                   <td className="py-2 pr-3 text-ink-2 truncate max-w-[240px]" title={item.name || item.ticker}>{item.name || <span className="text-ink-faint italic">—</span>}</td>
@@ -3300,7 +3307,7 @@ export default function ResearchPage() {
           <ViewToggle view={equateCadView} onToggle={() => setUiPref("research.equateCad.view", equateCadView === "rows" ? "table" : "rows")} />
           {equateCadView === "rows" ? (
             <SourceRowsList
-              rows={sortedEquateCad().map((item) => { const raw = factsetPrices[item.ticker]; return { ticker: item.ticker, name: item.name, meta: factsetSectors[item.ticker] || item.industry || "", priceOverride: typeof raw === "number" ? raw : null }; })}
+              rows={sortedEquateCad().map((item) => { return { ticker: item.ticker, name: item.name, meta: factsetSectors[item.ticker] || item.industry || "", priceOverride: livePrices[item.ticker] ?? null }; })}
               livePrices={livePrices}
               isInList={isInList}
               onAdd={addToWatchlist}
@@ -3320,7 +3327,7 @@ export default function ResearchPage() {
             </thead>
             <tbody>
               {sortedEquateCad().map((item, i) => {
-                const fsPrice = factsetPrices[item.ticker];
+                const fsPrice = livePrices[item.ticker] ?? null;
                 return (
                 <tr key={item.ticker} className={`border-b border-line-soft ${i % 2 === 0 ? "bg-white" : "bg-accent-soft/30"} hover:bg-accent-soft/60 transition-colors`}>
                   <td className="py-2 pr-3 text-ink-2 truncate max-w-[240px]" title={item.name || item.ticker}>{item.name || <span className="text-ink-faint italic">—</span>}</td>
@@ -3382,7 +3389,7 @@ export default function ResearchPage() {
           <ViewToggle view={equateUsdView} onToggle={() => setUiPref("research.equateUsd.view", equateUsdView === "rows" ? "table" : "rows")} />
           {equateUsdView === "rows" ? (
             <SourceRowsList
-              rows={sortedEquateUsd().map((item) => { const raw = factsetPrices[item.ticker]; return { ticker: item.ticker, name: item.name, meta: factsetSectors[item.ticker] || item.industry || "", priceOverride: typeof raw === "number" ? raw : null }; })}
+              rows={sortedEquateUsd().map((item) => { return { ticker: item.ticker, name: item.name, meta: factsetSectors[item.ticker] || item.industry || "", priceOverride: livePrices[item.ticker] ?? null }; })}
               livePrices={livePrices}
               isInList={isInList}
               onAdd={addToWatchlist}
@@ -3402,7 +3409,7 @@ export default function ResearchPage() {
             </thead>
             <tbody>
               {sortedEquateUsd().map((item, i) => {
-                const fsPrice = factsetPrices[item.ticker];
+                const fsPrice = livePrices[item.ticker] ?? null;
                 return (
                 <tr key={item.ticker} className={`border-b border-line-soft ${i % 2 === 0 ? "bg-white" : "bg-accent-soft/30"} hover:bg-accent-soft/60 transition-colors`}>
                   <td className="py-2 pr-3 text-ink-2 truncate max-w-[240px]" title={item.name || item.ticker}>{item.name || <span className="text-ink-faint italic">—</span>}</td>

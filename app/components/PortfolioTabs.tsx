@@ -75,6 +75,11 @@ export function PortfolioTabs() {
             <h1 className="text-2xl font-bold tracking-tight text-ink leading-none">Portfolio</h1>
             <p className="mt-1 text-xs text-ink-3">{holdingsCount} holdings</p>
           </div>
+          {/* The Models page (PimModel) owns its own richer Model Group + profile
+              selectors (Alpha/Core + keyboard arrows), so hide these header ones
+              there to avoid two competing model selectors. They still show on
+              Rankings / Positioning / Allocation, which have no page-level one. */}
+          {pathname !== "/pim-model" && (
           <div className="flex items-center gap-3 shrink-0">
             <label className="flex items-center gap-1.5">
               <span className="text-[11px] font-semibold uppercase tracking-wide text-ink-3">Model</span>
@@ -101,6 +106,7 @@ export function PortfolioTabs() {
               </select>
             </label>
           </div>
+          )}
         </div>
 
         {/* Segment row */}
