@@ -101,6 +101,8 @@ export function Sparkline({
       <path d={areaPath} fill={fill} stroke="none" />
       <path
         d={linePath}
+        pathLength={1}
+        className="spark-draw"
         fill="none"
         stroke={stroke}
         strokeWidth={1.6}

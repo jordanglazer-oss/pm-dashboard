@@ -2156,17 +2156,17 @@ export function PimPortfolio({ groups }: Props) {
 
       {/* Stat tiles (mockup): Active Model · Sleeve Drift · Last Rebalanced · Rebalance */}
       <div className="grid grid-cols-2 gap-3 md:grid-cols-4">
-        <div className="rounded-card border border-line bg-surface p-4 shadow-sm">
+        <div className="hover-lift rounded-card border border-line bg-surface p-4 shadow-sm">
           <div className="text-[10px] font-semibold uppercase tracking-wide text-ink-3">Active Model</div>
           <div className="mt-1 text-xl font-bold text-ink">{PROFILE_LABELS[activeProfile]}</div>
           <div className="text-xs text-ink-3">target sleeve</div>
         </div>
-        <div className="rounded-card border border-line bg-surface p-4 shadow-sm">
+        <div className="hover-lift rounded-card border border-line bg-surface p-4 shadow-sm">
           <div className="text-[10px] font-semibold uppercase tracking-wide text-ink-3">Sleeve Drift</div>
           <div className={`mt-1 text-xl font-bold ${sleeveDrift >= 2 ? "text-warn" : "text-ink"}`}>{sleeveDrift >= 0 ? "+" : ""}{sleeveDrift.toFixed(1)}%</div>
           <div className="text-xs text-ink-3">overweight vs target</div>
         </div>
-        <div className="rounded-card border border-line bg-surface p-4 shadow-sm">
+        <div className="hover-lift rounded-card border border-line bg-surface p-4 shadow-sm">
           <div className="text-[10px] font-semibold uppercase tracking-wide text-ink-3">Last Rebalanced</div>
           <div className="mt-1 text-xl font-bold text-ink">{groupState.lastRebalance ? new Date(groupState.lastRebalance.date).toLocaleDateString(undefined, { month: "short", day: "numeric" }) : "—"}</div>
           <div className="text-xs text-ink-3">{groupState.lastRebalance ? "" : "no rebalance yet"}</div>

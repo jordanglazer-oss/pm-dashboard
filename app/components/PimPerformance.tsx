@@ -651,33 +651,33 @@ export function PimPerformance({ groupId, groupName, selectedProfile, onPerfData
       {/* Stats row */}
       {stats && (
         <div className="grid grid-cols-2 sm:grid-cols-4 md:grid-cols-7 gap-2">
-          <div className="rounded-lg bg-surface-2 p-2.5 text-center">
+          <div className="hover-lift rounded-lg bg-surface-2 p-2.5 text-center">
             <div className="text-[9px] font-semibold text-ink-3 uppercase">Period Return</div>
             <div className={`text-base font-bold ${stats.totalReturn >= 0 ? "text-pos" : "text-neg"}`}>{fmtPct(stats.totalReturn)}</div>
           </div>
           {stats.annualizedReturn != null && (
-            <div className="rounded-lg bg-surface-2 p-2.5 text-center">
+            <div className="hover-lift rounded-lg bg-surface-2 p-2.5 text-center">
               <div className="text-[9px] font-semibold text-ink-3 uppercase">Annualized</div>
               <div className={`text-base font-bold ${stats.annualizedReturn >= 0 ? "text-pos" : "text-neg"}`}>{fmtPct(stats.annualizedReturn)}</div>
             </div>
           )}
-          <div className="rounded-lg bg-surface-2 p-2.5 text-center">
+          <div className="hover-lift rounded-lg bg-surface-2 p-2.5 text-center">
             <div className="text-[9px] font-semibold text-ink-3 uppercase">Today</div>
             <div className={`text-base font-bold ${stats.lastDailyReturn >= 0 ? "text-pos" : "text-neg"}`}>{fmtPct(stats.lastDailyReturn)}</div>
           </div>
-          <div className="rounded-lg bg-surface-2 p-2.5 text-center">
+          <div className="hover-lift rounded-lg bg-surface-2 p-2.5 text-center">
             <div className="text-[9px] font-semibold text-ink-3 uppercase">Index</div>
             <div className="text-base font-bold text-ink">{stats.lastValue.toFixed(2)}</div>
           </div>
-          <div className="rounded-lg bg-surface-2 p-2.5 text-center">
+          <div className="hover-lift rounded-lg bg-surface-2 p-2.5 text-center">
             <div className="text-[9px] font-semibold text-ink-3 uppercase">Best Day</div>
             <div className="text-base font-bold text-pos">{fmtPct(stats.maxDay)}</div>
           </div>
-          <div className="rounded-lg bg-surface-2 p-2.5 text-center">
+          <div className="hover-lift rounded-lg bg-surface-2 p-2.5 text-center">
             <div className="text-[9px] font-semibold text-ink-3 uppercase">Worst Day</div>
             <div className="text-base font-bold text-neg">{fmtPct(stats.minDay)}</div>
           </div>
-          <div className="rounded-lg bg-surface-2 p-2.5 text-center">
+          <div className="hover-lift rounded-lg bg-surface-2 p-2.5 text-center">
             <div className="text-[9px] font-semibold text-ink-3 uppercase">Ann. Vol</div>
             <div className="text-base font-bold text-ink">{stats.annualizedVol.toFixed(1)}%</div>
           </div>

@@ -156,7 +156,7 @@ export default function RatioVsSpxSparkline({ ticker, windowDays = 252, classNam
           strokeDasharray="3,3"
         />
         <path d={areaPath} fill={fillColor} />
-        <path d={d} fill="none" stroke={lineColor} strokeWidth={1.75} />
+        <path d={d} pathLength={1} className="spark-draw" fill="none" stroke={lineColor} strokeWidth={1.75} />
       </svg>
       <div className="flex items-center justify-between mt-1 text-[10px] text-ink-3">
         <span>{series[0].date}</span>

@@ -151,6 +151,39 @@ table {
 .animate-page-in {
   animation: page-in 0.22s ease-out;
 }
+
+/* Sparkline / trend-line draw-in. The path must carry pathLength="1" so the
+   dash math is in normalized units (1 = full length). */
+@keyframes spark-draw {
+  from { stroke-dashoffset: 1; }
+  to   { stroke-dashoffset: 0; }
+}
+.spark-draw {
+  stroke-dasharray: 1;
+  stroke-dashoffset: 1;
+  animation: spark-draw 0.7s ease-out forwards;
+}
+
+/* Row stagger fade-in for list/table rows (delay capped by the caller). */
+@keyframes row-in {
+  from { opacity: 0; transform: translateY(3px); }
+  to   { opacity: 1; transform: translateY(0); }
+}
+.animate-row-in {
+  animation: row-in 0.28s ease-out both;
+}
+
+/* Live value flash — a brief tint when a number changes on refresh. */
+@keyframes flash-pos { from { background-color: color-mix(in srgb, var(--color-pos) 22%, transparent); } to { background-color: transparent; } }
+@keyframes flash-neg { from { background-color: color-mix(in srgb, var(--color-neg) 22%, transparent); } to { background-color: transparent; } }
+.flash-pos { animation: flash-pos 0.9s ease-out; border-radius: 4px; }
+.flash-neg { animation: flash-neg 0.9s ease-out; border-radius: 4px; }
+
+@media (prefers-reduced-motion: reduce) {
+  .spark-draw { stroke-dasharray: none; animation: none; }
+  .animate-row-in { animation: none; }
+  .flash-pos, .flash-neg { animation: none; }
+}
 @media (prefers-reduced-motion: reduce) {
   .animate-page-in { animation: none; }
   .animate-toast-out { animation: none; }
