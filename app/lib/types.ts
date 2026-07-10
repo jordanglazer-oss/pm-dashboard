@@ -666,6 +666,10 @@ export type MorningBrief = {
   structuralInvalidator?: string;
   forwardLooking?: ForwardLookingBundle; // Automated data powering Forward View
   bottomLine: string;
+  /** What materially changed since the prior brief (regime flip, call change,
+   *  a signal crossing a threshold, new risk). Empty when no prior brief
+   *  existed. Optional/back-compat; UI hides the strip when blank. */
+  whatChanged?: string;
   compositeAnalysis: string;
   /** The single most important thing the tape/consensus appears to be
    *  under-pricing today — the non-consensus edge, distilled across all

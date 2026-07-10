@@ -172,6 +172,7 @@ Respond ONLY with valid JSON matching this exact structure (fields are intention
   "marketRegime": "Risk-On or Neutral or Risk-Off — match the Pre-classified Regime unless clearly contradicted.",
   "regimeVerdict": "ONE punchy line (≤30 words) for the BOTTOM of the brief that fuses the OBJECTIVE quant regime with YOUR synthesized judgment (notes + reports + data). Exact format: 'Regime: <Risk-On|Neutral|Risk-Off> (quant) — Brief <concurs|cautions|diverges>: <terse actionable so-what>'. Use 'concurs' when your read aligns with the quant regime; 'cautions' when you broadly agree but flag a real caveat (narrowing breadth, Newton flipping, rich sentiment); 'diverges' when the notes+data lead you to position AGAINST the tape. The so-what must be a concrete posture (e.g. 'deploy on dips', 'trim into strength + add tail hedge', 'wait for breadth to confirm'). The <quant> label MUST equal marketRegime. Example: 'Regime: Risk-On (quant) — Brief cautions: tape constructive but breadth narrowing and Newton flipped; deploy partial, keep dry powder.'",
   "bottomLine": "2-4 sentences: THE single decisive takeaway + positioning posture across the three horizons — the one thing to know today. State the call and the so-what plainly; reference the weighted composite. Keep the driver MECHANICS light here (which signals and why lives in compositeAnalysis) so the two don't echo each other. Be bold and direct.",
+  "whatChanged": "ONE-TWO sentences on what has MATERIALLY CHANGED since the Prior Brief (provided above, if any): a regime flip, a hedging or cash-deployment call change, a signal crossing a key threshold, a new/escalated portfolio risk, or Newton flipping direction. Be specific and cite the delta (e.g. 'Regime held Risk-On but cash-deploy dropped 72→58 as breadth narrowed'). If little changed, say so in one line. Return an EMPTY STRING only when no Prior Brief was provided.",
   "tacticalView": "2-3 sentences for the 1-3M tactical horizon. What the PM should DO this month. Cite at least one tactical-bucket signal by name (VIX Level, Breadth (RSP/SPY), MTUM/USMV). Concrete posture call: lean in, take chips, add OTM tail protection, or hold. Reference live SPY hedging premiums if attached. This pairs with hedgingAnalysis.",
   "tacticalInvalidator": "ONE sentence (≤25 words) naming the specific data point(s) that, if seen, would invalidate the tactical view. Be CONCRETE — cite the signal and the threshold. Example: 'VIX above 25 with breadth ratio inverting' or 'MTUM/USMV breaks below 1.05'. NEVER 'unknown' or 'various factors'.",
   "cyclicalView": "2-3 sentences for the 3-6M cyclical horizon. Sector rotation + business cycle. Cite at least one cyclical-bucket signal by name (XLY/XLP, XLK/XLU, ISM PMI 50-line). Concrete: which sectors are accelerating, which to rotate into, whether the cycle is mid or late. Call out an ISM PMI 50-line CROSSOVER explicitly if one is flagged.",
@@ -1111,10 +1112,39 @@ Use this as additional confirmation for your marketRegime call, your breadthAnal
     });
     const todayIso = today.toISOString().slice(0, 10);
 
+    // ── Prior brief (continuity / "what changed") ──────────────────────────
+    // pm:brief holds the LAST generated brief (the client persists the new one
+    // only AFTER this route returns), so at generation time it's the previous
+    // brief. Feed a compact digest so the model can lead with what has CHANGED
+    // day-to-day (regime flip, hedging/deploy call change, a new risk) instead
+    // of resetting from scratch. Read-only; best-effort (first-ever run has none).
+    let priorBriefContext = "";
+    try {
+      const priorRedis = await getRedis();
+      const priorRaw = await priorRedis.get("pm:brief");
+      if (priorRaw) {
+        const prior = JSON.parse(priorRaw) as {
+          marketRegime?: string; regimeVerdict?: string; bottomLine?: string;
+          hedgingCall?: { action?: string }; cashDeploymentCall?: { action?: string; score?: number };
+          date?: string; generatedAt?: string;
+        };
+        if (prior.bottomLine || prior.marketRegime) {
+          const priorDate = prior.date || (prior.generatedAt ? prior.generatedAt.slice(0, 10) : "");
+          priorBriefContext = `
+
+PRIOR BRIEF (the last one generated${priorDate ? ` — ${priorDate}` : ""}) — for CONTINUITY ONLY. Use it to identify what has CHANGED since; do NOT repeat it:
+- Prior regime: ${prior.marketRegime ?? "n/a"}${prior.regimeVerdict ? ` — "${prior.regimeVerdict}"` : ""}
+- Prior bottom line: ${prior.bottomLine ?? "n/a"}
+- Prior hedging call: ${prior.hedgingCall?.action ?? "n/a"}
+- Prior cash-deployment call: ${prior.cashDeploymentCall?.action ?? "n/a"}${typeof prior.cashDeploymentCall?.score === "number" ? ` (${prior.cashDeploymentCall.score}/100)` : ""}`;
+        }
+      }
+    } catch { /* no readable prior brief — whatChanged just leads qualitatively */ }
+
     // Build content blocks: text prompt + any image attachments
     const textContent = `Generate the morning brief for today.
 
-TODAY'S DATE: ${todayLong} (${todayIso}). This is the authoritative date for this brief. Do NOT reference macro events older than 30 days before this date — including "Liberation Day" (April 2025), older FOMC meetings, or past CPI prints — even if they appear in attached screenshots or you remember them from training data. Every "recent move" you cite must come from the numerical data below.
+TODAY'S DATE: ${todayLong} (${todayIso}). This is the authoritative date for this brief. Do NOT reference macro events older than 30 days before this date — including "Liberation Day" (April 2025), older FOMC meetings, or past CPI prints — even if they appear in attached screenshots or you remember them from training data. Every "recent move" you cite must come from the numerical data below.${priorBriefContext}
 
 Here are the current market indicators:
 

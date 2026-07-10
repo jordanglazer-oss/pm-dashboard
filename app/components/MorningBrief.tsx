@@ -1686,6 +1686,15 @@ export function MorningBrief({
         )}
       </section>
 
+      {/* What changed since the prior brief — running-narrative continuity.
+          Hidden when blank (first-ever brief, or nothing material changed). */}
+      {brief?.whatChanged && brief.whatChanged.trim() && (
+        <section className="flex items-start gap-2.5 rounded-xl border border-accent-border bg-accent-soft/50 px-4 py-3">
+          <span className="mt-0.5 shrink-0 rounded-md bg-accent px-1.5 py-0.5 text-[10px] font-bold uppercase tracking-wider text-white">Since last brief</span>
+          <p className="text-sm leading-6 text-ink-2">{brief.whatChanged}</p>
+        </section>
+      )}
+
       {/* Top Actions Today + Hedging Call + Cash Deployment — at-a-glance
           executive summary. Renders only when the brief has the new fields
           populated (old briefs in pm:brief pre-date these and fall through
