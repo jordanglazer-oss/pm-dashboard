@@ -423,13 +423,20 @@ function SourceRowsList({ rows, livePrices, isInList, onAdd, onRemove, emptyLabe
                 {changePct == null ? "" : `${changePct >= 0 ? "+" : ""}${changePct.toFixed(1)}%`}
               </div>
             </div>
-            <div className="shrink-0 w-[68px] text-right opacity-0 group-hover:opacity-100 transition-opacity">
+            <div className="shrink-0 flex items-center gap-1">
               {inList ? (
-                <span className="text-[10px] text-pos font-medium">In list</span>
+                <span className="text-[10px] text-pos font-medium px-1">In list</span>
               ) : (
-                <button onClick={(e) => { e.stopPropagation(); onAdd(r.ticker); }} className="text-[10px] text-accent font-semibold" title="Add to Watchlist">+ Watch</button>
+                <button
+                  onClick={(e) => { e.stopPropagation(); onAdd(r.ticker); }}
+                  className="flex items-center justify-center w-6 h-6 rounded-md border border-accent-border bg-accent-soft text-accent hover:bg-accent hover:text-white transition-colors"
+                  title="Add to Watchlist"
+                  aria-label={`Add ${r.ticker} to Watchlist`}
+                >
+                  <svg className="w-3.5 h-3.5" fill="none" stroke="currentColor" strokeWidth="2.5" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" d="M12 4.5v15m7.5-7.5h-15" /></svg>
+                </button>
               )}
-              <button onClick={() => onRemove(r.ticker)} className="ml-1.5 text-ink-faint hover:text-neg font-bold" title="Remove">×</button>
+              <button onClick={() => onRemove(r.ticker)} className="px-1 text-ink-faint hover:text-neg font-bold opacity-0 group-hover:opacity-100 transition-opacity" title="Remove">×</button>
             </div>
           </div>
         );
@@ -2229,13 +2236,15 @@ export default function ResearchPage() {
                         {pctChange == null ? "" : `${pctChange >= 0 ? "+" : ""}${pctChange.toFixed(1)}%`}
                       </div>
                     </div>
-                    <div className="shrink-0 w-[68px] text-right opacity-0 group-hover:opacity-100 transition-opacity">
+                    <div className="shrink-0 flex items-center gap-1">
                       {inList ? (
-                        <span className="text-[10px] text-pos font-medium">In list</span>
+                        <span className="text-[10px] text-pos font-medium px-1">In list</span>
                       ) : (
-                        <button onClick={(e) => { e.stopPropagation(); addToWatchlist(u.ticker); }} className="text-[10px] text-accent font-semibold" title="Add to Watchlist">+ Watch</button>
+                        <button onClick={(e) => { e.stopPropagation(); addToWatchlist(u.ticker); }} className="flex items-center justify-center w-6 h-6 rounded-md border border-accent-border bg-accent-soft text-accent hover:bg-accent hover:text-white transition-colors" title="Add to Watchlist" aria-label={`Add ${u.ticker} to Watchlist`}>
+                          <svg className="w-3.5 h-3.5" fill="none" stroke="currentColor" strokeWidth="2.5" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" d="M12 4.5v15m7.5-7.5h-15" /></svg>
+                        </button>
                       )}
-                      <button onClick={() => removeUptick(u.ticker)} className="ml-1.5 text-ink-faint hover:text-neg font-bold" title="Remove">×</button>
+                      <button onClick={() => removeUptick(u.ticker)} className="px-1 text-ink-faint hover:text-neg font-bold opacity-0 group-hover:opacity-100 transition-opacity" title="Remove">×</button>
                     </div>
                   </div>
                 );
