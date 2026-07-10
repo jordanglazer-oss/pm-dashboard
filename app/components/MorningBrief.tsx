@@ -1733,10 +1733,10 @@ export function MorningBrief({
           Layout: Top Actions spans 2 cols on wide screens; Hedging and Cash
           Deployment each take 1 col. On narrow screens everything stacks
           single-column. */}
-      {(topActionsToday.length > 0 || hedgingCall || cashDeploymentCall) && (
-        <section className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-4">
+      {(topActionsToday.length > 0 || hedgingCall) && (
+        <section className="grid grid-cols-1 lg:grid-cols-3 gap-4">
           {topActionsToday.length > 0 && (
-            <div className="md:col-span-2 rounded-2xl border border-line bg-white p-5 shadow-sm">
+            <div className="lg:col-span-2 rounded-2xl border border-line bg-white p-5 shadow-sm">
               <div className="text-xs font-bold uppercase tracking-[0.22em] text-ink-3 mb-3">
                 Top actions today
               </div>
@@ -1790,7 +1790,12 @@ export function MorningBrief({
               </p>
             </div>
           )}
-          {cashDeploymentCall && (() => {
+        </section>
+      )}
+
+      {/* Cash Deployment — full-width row below (it carries the most text, so
+          stretching it across the page instead of a narrow column cuts scroll). */}
+      {cashDeploymentCall && (() => {
             const action = cashDeploymentCall.action;
             const tone =
               action === "DEPLOY"
@@ -1800,7 +1805,7 @@ export function MorningBrief({
                   : { border: "border-accent-border", bg: "bg-accent-soft", label: "text-accent", value: "text-accent" };
             const windowToneClass =
               deploymentWindowStatus.tone === "amber" ? "bg-warn-soft text-warn"
-              : deploymentWindowStatus.tone === "orange" ? "bg-orange-100 text-orange-800"
+              : deploymentWindowStatus.tone === "orange" ? "bg-warn-soft text-warn"
               : deploymentWindowStatus.tone === "rose" ? "bg-neg-soft text-neg"
               : "bg-surface-2 text-ink-2";
             return (
@@ -1830,29 +1835,31 @@ export function MorningBrief({
                   </p>
                 )}
                 {(cashDeploymentCall.triggersMet?.length || cashDeploymentCall.triggersMissing?.length) ? (
-                  <div className="space-y-1 mb-2.5 text-[11px] leading-4">
-                    {cashDeploymentCall.triggersMet?.slice(0, 4).map((t, i) => (
-                      <div key={`m${i}`} className="flex items-start gap-1 text-pos">
-                        <span className="flex-none mt-[1px]">✓</span>
-                        <span>{t}</span>
-                      </div>
-                    ))}
-                    {cashDeploymentCall.triggersMissing?.slice(0, 4).map((t, i) => (
-                      <div key={`x${i}`} className="flex items-start gap-1 text-ink-3">
-                        <span className="flex-none mt-[1px]">·</span>
-                        <span>{t}</span>
-                      </div>
-                    ))}
+                  <div className="grid sm:grid-cols-2 gap-x-8 gap-y-1 mb-2.5 text-[11px] leading-4">
+                    <div className="space-y-1">
+                      {cashDeploymentCall.triggersMet?.slice(0, 4).map((t, i) => (
+                        <div key={`m${i}`} className="flex items-start gap-1 text-pos">
+                          <span className="flex-none mt-[1px]">✓</span>
+                          <span>{t}</span>
+                        </div>
+                      ))}
+                    </div>
+                    <div className="space-y-1">
+                      {cashDeploymentCall.triggersMissing?.slice(0, 4).map((t, i) => (
+                        <div key={`x${i}`} className="flex items-start gap-1 text-ink-3">
+                          <span className="flex-none mt-[1px]">·</span>
+                          <span>{t}</span>
+                        </div>
+                      ))}
+                    </div>
                   </div>
                 ) : null}
-                <div className={`mt-2 -mx-2 -mb-1 px-2 py-1 rounded-md text-[10px] font-semibold ${windowToneClass}`}>
+                <div className={`mt-2 px-2 py-1 rounded-md text-[10px] font-semibold ${windowToneClass}`}>
                   {deploymentWindowStatus.label}
                 </div>
               </div>
             );
           })()}
-        </section>
-      )}
 
       {/* Composite Signal — the weighted regime read that DETERMINES the regime,
           surfaced high on the page (right under the at-a-glance actions) rather
