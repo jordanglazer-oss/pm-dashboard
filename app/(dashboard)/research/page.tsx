@@ -1800,7 +1800,7 @@ export default function ResearchPage() {
   if (!loaded) return null;
 
   return (
-    <main className="min-h-screen bg-[#f4f5f7] px-4 py-6 text-ink md:px-8 md:py-8 overflow-x-hidden">
+    <main className="min-h-screen bg-ground px-4 py-6 text-ink md:px-8 md:py-8 overflow-x-hidden">
       <div className="mx-auto max-w-7xl space-y-6">
         <div>
           <h1 className="text-3xl font-semibold tracking-tight">Research Notes</h1>
