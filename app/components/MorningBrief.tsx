@@ -281,18 +281,17 @@ function BriefSection({
   accent: "blue" | "emerald" | "amber" | "rose";
   children: React.ReactNode;
 }) {
-  const accentMap: Record<typeof accent, { bar: string; text: string; dot: string; panel: string }> = {
-    blue:    { bar: "bg-accent",    text: "text-accent",    dot: "bg-accent",    panel: "border-l-blue-500" },
-    emerald: { bar: "bg-pos", text: "text-pos", dot: "bg-pos", panel: "border-l-emerald-500" },
-    amber:   { bar: "bg-warn",   text: "text-warn",   dot: "bg-warn",   panel: "border-l-amber-500" },
-    rose:    { bar: "bg-neg",    text: "text-neg",    dot: "bg-neg",    panel: "border-l-rose-500" },
+  const dotMap: Record<typeof accent, string> = {
+    blue: "bg-accent",
+    emerald: "bg-pos",
+    amber: "bg-warn",
+    rose: "bg-neg",
   };
-  const a = accentMap[accent];
   return (
-    <section className={`rounded-2xl border border-line border-l-4 ${a.panel} bg-white/60 shadow-sm overflow-hidden`}>
+    <section className="rounded-2xl border border-line bg-white shadow-sm overflow-hidden">
       <header className="flex items-baseline gap-2 px-4 pt-3 pb-2">
-        <span className={`inline-block h-2 w-2 rounded-full ${a.dot}`} />
-        <h3 className={`text-sm font-bold tracking-tight ${a.text}`}>{title}</h3>
+        <span className={`inline-block h-2 w-2 rounded-full ${dotMap[accent]}`} />
+        <h3 className="text-sm font-bold tracking-tight text-ink">{title}</h3>
         <span className="text-xs text-ink-3 truncate">· {subtitle}</span>
       </header>
       <div className="border-t border-line-soft px-4 py-3">{children}</div>
@@ -2007,14 +2006,16 @@ export function MorningBrief({
               </span>
             </div>
 
-            {/* Momentum & Breadth — SPX trajectory plus % of index above
+            {/* Macro tile-grid cards in a 2×2 layout (matches the mockup). */}
+            <div className="grid gap-5 md:grid-cols-2 items-start">
+            {/* Breadth & Trend — SPX trajectory plus % of index above
                 key DMAs. Tells you whether a move is broad or narrow. */}
             <BriefSection
-              title="Momentum & Breadth"
+              title="Breadth & Trend"
               subtitle="SPX trajectory and how broadly the move is participating."
               accent="blue"
             >
-              <div className="grid gap-3 grid-cols-2 md:grid-cols-3 lg:grid-cols-5">
+              <div className="grid gap-3 grid-cols-2 md:grid-cols-3">
                 <ForwardTile label="S&P 500 YTD" point={activeForward.spxYtd} unit="%" horizon="cyclical" />
                 <ForwardTile label="S&P 500 Week" point={activeForward.spxWeek} unit="%" horizon="tactical" />
                 <ForwardTile label="S&P >200DMA (wk)" point={activeForward.breadth200Wk} unit="%" deltaUnit="pp" deltaPeriod="wk/wk" horizon="cyclical" />
@@ -2044,11 +2045,11 @@ export function MorningBrief({
             {/* Valuation — SPY multiples and implied growth. Where
                 the tape is priced relative to earnings. */}
             <BriefSection
-              title="Valuation"
+              title="Valuation & Growth"
               subtitle="SPY multiples and the growth priced in at today's level."
               accent="emerald"
             >
-              <div className="grid gap-3 grid-cols-2 md:grid-cols-3 lg:grid-cols-4">
+              <div className="grid gap-3 grid-cols-2">
                 <ForwardTile label="SPY Forward P/E" point={activeForward.spyForwardPE} horizon="structural" />
                 <ForwardTile label="SPY Trailing P/E" point={activeForward.spyTrailingPE} horizon="structural" />
                 <ForwardTile label="Implied 1Y EPS Growth (P/E)" point={activeForward.impliedEpsGrowth} unit="%" horizon="cyclical" />
@@ -2063,7 +2064,7 @@ export function MorningBrief({
               subtitle="Treasury yields and curve shape — the discount rate backdrop."
               accent="amber"
             >
-              <div className="grid gap-3 grid-cols-2 md:grid-cols-3 lg:grid-cols-5">
+              <div className="grid gap-3 grid-cols-2 md:grid-cols-3">
                 <ForwardTile label="10Y Treasury" point={activeForward.yield10y} unit="%" deltaUnit="raw" horizon="structural" />
                 <ForwardTile label="2Y Treasury" point={activeForward.yield2y} unit="%" deltaUnit="raw" horizon="cyclical" />
                 <ForwardTile label="3M T-Bill" point={activeForward.yield3m} unit="%" deltaUnit="raw" horizon="tactical" />
@@ -2075,17 +2076,18 @@ export function MorningBrief({
             {/* Risk & Volatility — credit spreads + vol surface.
                 First place stress shows up before it hits price. */}
             <BriefSection
-              title="Risk & Volatility"
+              title="Credit & Volatility"
               subtitle="Credit spreads and vol surface — where stress shows up first."
               accent="rose"
             >
-              <div className="grid gap-3 grid-cols-2 md:grid-cols-3 lg:grid-cols-4">
+              <div className="grid gap-3 grid-cols-2">
                 <ForwardTile label="HY OAS Trend" point={activeForward.hyOasTrend} unit="bps" deltaUnit="bps" invertDeltaColor horizon="cyclical" />
                 <ForwardTile label="IG OAS Trend" point={activeForward.igOasTrend} unit="bps" deltaUnit="bps" invertDeltaColor horizon="cyclical" />
                 <ForwardTile label="VIX (wk/wk)" point={activeForward.vixWeek} deltaUnit="pct" invertDeltaColor horizon="tactical" />
                 <ForwardTile label="MOVE (wk/wk)" point={activeForward.moveWeek} deltaUnit="pct" invertDeltaColor horizon="tactical" />
               </div>
             </BriefSection>
+            </div>{/* /2×2 tile-grid */}
           </div>
         )}
 
