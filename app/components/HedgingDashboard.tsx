@@ -244,26 +244,26 @@ export default function HedgingDashboard() {
   );
 
   return (
-    <main className="min-h-screen bg-[#f4f5f7] px-4 py-6 text-slate-900 md:px-8 md:py-8 overflow-x-hidden">
+    <main className="min-h-screen bg-[#f4f5f7] px-4 py-6 text-ink md:px-8 md:py-8 overflow-x-hidden">
       <div className="mx-auto max-w-7xl">
         {/* Header */}
         <div className="mb-5 flex flex-col gap-3 sm:flex-row sm:items-end sm:justify-between">
           <div>
-            <h1 className="text-2xl font-bold text-slate-800">Hedging</h1>
-            <p className="text-sm text-slate-500 mt-1">
+            <h1 className="text-2xl font-bold text-ink">Hedging</h1>
+            <p className="text-sm text-ink-3 mt-1">
               SPY protective put premiums · ATM / ~5% OTM / ~10% OTM · strikes rounded to nearest $5
             </p>
           </div>
           <div className="flex items-center gap-2">
             {data && (
-              <span className="text-xs text-slate-400 hidden sm:inline">
+              <span className="text-xs text-ink-3 hidden sm:inline">
                 Updated {fmtFetchedAt(data.fetchedAt)}
               </span>
             )}
             <button
               onClick={handleRefresh}
               disabled={refreshing || loading}
-              className="flex items-center gap-1.5 rounded-lg bg-blue-600 px-4 py-2 text-sm font-semibold text-white hover:bg-blue-700 transition-colors disabled:opacity-50"
+              className="flex items-center gap-1.5 rounded-lg bg-accent px-4 py-2 text-sm font-semibold text-white hover:bg-accent transition-colors disabled:opacity-50"
             >
               <svg className={`w-3.5 h-3.5 ${refreshing ? "animate-spin" : ""}`} fill="none" stroke="currentColor" strokeWidth="2" viewBox="0 0 24 24">
                 <path strokeLinecap="round" strokeLinejoin="round" d="M16.023 9.348h4.992v-.001M2.985 19.644v-4.992m0 0h4.992m-4.993 0 3.181 3.183a8.25 8.25 0 0 0 13.803-3.7M4.031 9.865a8.25 8.25 0 0 1 13.803-3.7l3.181 3.182" />
@@ -276,25 +276,25 @@ export default function HedgingDashboard() {
         {/* Spot + summary */}
         {data && (
           <div className="grid grid-cols-2 sm:grid-cols-4 gap-3 mb-5">
-            <div className="rounded-xl border border-slate-200 bg-white px-3 py-2.5 shadow-sm">
-              <div className="text-[10px] font-semibold text-slate-400 uppercase tracking-wider">SPY Spot</div>
-              <div className="text-sm font-bold mt-0.5 text-slate-800">${data.spotPrice.toFixed(2)}</div>
+            <div className="rounded-card border border-line bg-white px-3 py-2.5 shadow-sm">
+              <div className="text-[10px] font-semibold text-ink-3 uppercase tracking-wider">SPY Spot</div>
+              <div className="text-sm font-bold mt-0.5 text-ink">${data.spotPrice.toFixed(2)}</div>
             </div>
-            <div className="rounded-xl border border-slate-200 bg-white px-3 py-2.5 shadow-sm">
-              <div className="text-[10px] font-semibold text-slate-400 uppercase tracking-wider">ATM Strike</div>
-              <div className="text-sm font-bold mt-0.5 text-slate-800">
+            <div className="rounded-card border border-line bg-white px-3 py-2.5 shadow-sm">
+              <div className="text-[10px] font-semibold text-ink-3 uppercase tracking-wider">ATM Strike</div>
+              <div className="text-sm font-bold mt-0.5 text-ink">
                 ${data.quotes[0] ? data.quotes[0].atmStrike : "—"}
               </div>
             </div>
-            <div className="rounded-xl border border-slate-200 bg-white px-3 py-2.5 shadow-sm">
-              <div className="text-[10px] font-semibold text-slate-400 uppercase tracking-wider">~5% OTM Strike</div>
-              <div className="text-sm font-bold mt-0.5 text-slate-800">
+            <div className="rounded-card border border-line bg-white px-3 py-2.5 shadow-sm">
+              <div className="text-[10px] font-semibold text-ink-3 uppercase tracking-wider">~5% OTM Strike</div>
+              <div className="text-sm font-bold mt-0.5 text-ink">
                 ${data.quotes[0] ? data.quotes[0].otm5Strike : "—"}
               </div>
             </div>
-            <div className="rounded-xl border border-slate-200 bg-white px-3 py-2.5 shadow-sm">
-              <div className="text-[10px] font-semibold text-slate-400 uppercase tracking-wider">~10% OTM Strike</div>
-              <div className="text-sm font-bold mt-0.5 text-slate-800">
+            <div className="rounded-card border border-line bg-white px-3 py-2.5 shadow-sm">
+              <div className="text-[10px] font-semibold text-ink-3 uppercase tracking-wider">~10% OTM Strike</div>
+              <div className="text-sm font-bold mt-0.5 text-ink">
                 ${data.quotes[0] ? data.quotes[0].otm10Strike : "—"}
               </div>
             </div>
@@ -302,7 +302,7 @@ export default function HedgingDashboard() {
         )}
 
         {/* View toggle */}
-        <div className="flex gap-1 mb-4 bg-white rounded-xl border border-slate-200 p-1 w-fit">
+        <div className="flex gap-1 mb-4 bg-white rounded-card border border-line p-1 w-fit">
           {[
             { key: "current" as ViewMode, label: "Current" },
             { key: "wow" as ViewMode, label: "Week over Week" },
@@ -312,7 +312,7 @@ export default function HedgingDashboard() {
               key={v.key}
               onClick={() => setView(v.key)}
               className={`rounded-lg px-4 py-2 text-sm font-semibold transition-colors whitespace-nowrap ${
-                view === v.key ? "bg-slate-800 text-white" : "text-slate-500 hover:text-slate-800 hover:bg-slate-50"
+                view === v.key ? "bg-ink text-white" : "text-ink-3 hover:text-ink hover:bg-surface-2"
               }`}
             >
               {v.label}
@@ -321,40 +321,40 @@ export default function HedgingDashboard() {
         </div>
 
         {error && (
-          <div className="mb-4 rounded-xl bg-red-50 px-4 py-3 text-sm font-medium text-red-700">
+          <div className="mb-4 rounded-card bg-neg-soft px-4 py-3 text-sm font-medium text-neg">
             {error}
           </div>
         )}
 
         {loading ? (
-          <div className="text-center py-12 text-slate-400 text-sm">Loading SPY option chain...</div>
+          <div className="text-center py-12 text-ink-3 text-sm">Loading SPY option chain...</div>
         ) : !data || data.quotes.length === 0 ? (
-          <div className="rounded-2xl border border-slate-200 bg-white shadow-sm p-8 text-center">
-            <p className="text-slate-400 text-sm">No hedging data available.</p>
+          <div className="rounded-card border border-line bg-white shadow-sm p-8 text-center">
+            <p className="text-ink-3 text-sm">No hedging data available.</p>
           </div>
         ) : (
           <>
             {/* Main table */}
-            <div className="rounded-2xl border border-slate-200 bg-white shadow-sm overflow-hidden">
+            <div className="rounded-card border border-line bg-white shadow-sm overflow-hidden">
               <div className="overflow-x-auto">
                 <table className="w-full text-sm">
                   <thead>
-                    <tr className="border-b border-slate-100 bg-slate-50 text-xs text-slate-500">
+                    <tr className="border-b border-line-soft bg-surface-2 text-xs text-ink-3">
                       <th className="text-left py-2.5 pl-5 pr-2 font-semibold">Strike</th>
                       <th className="text-right py-2.5 px-2 font-semibold">$</th>
                       {data.quotes.map((q) => (
                         <th key={q.expiry} className="text-right py-2.5 px-2 font-semibold">
                           <div>{q.expiryLabel}</div>
-                          <div className="text-[9px] font-normal text-slate-400">{q.daysToExpiry}d</div>
+                          <div className="text-[9px] font-normal text-ink-3">{q.daysToExpiry}d</div>
                         </th>
                       ))}
                     </tr>
                   </thead>
                   <tbody>
                     {STRIKE_ROWS.map((row) => (
-                      <tr key={row.key} className="border-b border-slate-50 hover:bg-slate-50/50 transition-colors">
-                        <td className="py-2.5 pl-5 pr-2 font-semibold text-slate-700 text-xs">{row.label}</td>
-                        <td className="py-2.5 px-2 text-right font-mono text-xs font-semibold text-slate-600">
+                      <tr key={row.key} className="border-b border-line-soft hover:bg-surface-2/50 transition-colors">
+                        <td className="py-2.5 pl-5 pr-2 font-semibold text-ink-2 text-xs">{row.label}</td>
+                        <td className="py-2.5 px-2 text-right font-mono text-xs font-semibold text-ink-2">
                           ${strikeOf(data.quotes[0], row.key)}
                         </td>
                         {data.quotes.map((q) => {
@@ -363,10 +363,10 @@ export default function HedgingDashboard() {
                             const pct = pctOf(q, row.key);
                             return (
                               <td key={q.expiry} className="py-2.5 px-2 text-right">
-                                <div className="font-mono text-xs font-semibold text-slate-800">
+                                <div className="font-mono text-xs font-semibold text-ink">
                                   {fmtDollar(prem)}
                                 </div>
-                                <div className="font-mono text-[10px] text-slate-400">
+                                <div className="font-mono text-[10px] text-ink-3">
                                   {fmtPct(pct)}
                                 </div>
                               </td>
@@ -379,13 +379,13 @@ export default function HedgingDashboard() {
                           return (
                             <td key={q.expiry} className="py-2.5 px-2 text-right">
                               <div className={`font-mono text-xs font-semibold ${
-                                delta == null ? "text-slate-400" :
-                                delta > 0 ? "text-red-600" :
-                                delta < 0 ? "text-emerald-600" : "text-slate-500"
+                                delta == null ? "text-ink-3" :
+                                delta > 0 ? "text-neg" :
+                                delta < 0 ? "text-pos" : "text-ink-3"
                               }`}>
                                 {fmtDelta(delta)}
                               </div>
-                              <div className="font-mono text-[10px] text-slate-400">
+                              <div className="font-mono text-[10px] text-ink-3">
                                 {prior != null && curr != null ? `${fmtDollar(prior)} → ${fmtDollar(curr)}` : "—"}
                               </div>
                             </td>
@@ -396,14 +396,14 @@ export default function HedgingDashboard() {
 
                     {/* Custom user-added strike rows */}
                     {(data.customRows || []).map((row) => (
-                      <tr key={`custom-${row.strike}`} className="border-b border-slate-50 hover:bg-slate-50/50 transition-colors">
-                        <td className="py-2.5 pl-5 pr-2 font-semibold text-slate-700 text-xs">
+                      <tr key={`custom-${row.strike}`} className="border-b border-line-soft hover:bg-surface-2/50 transition-colors">
+                        <td className="py-2.5 pl-5 pr-2 font-semibold text-ink-2 text-xs">
                           <div className="flex items-center gap-1.5">
                             <span>Custom</span>
                             <button
                               type="button"
                               onClick={() => handleRemoveStrike(row.strike)}
-                              className="text-slate-300 hover:text-red-500 transition-colors text-[11px]"
+                              className="text-ink-faint hover:text-neg transition-colors text-[11px]"
                               aria-label={`Remove ${row.strike}`}
                               title="Remove row"
                             >
@@ -413,7 +413,7 @@ export default function HedgingDashboard() {
                             </button>
                           </div>
                         </td>
-                        <td className="py-2.5 px-2 text-right font-mono text-xs font-semibold text-slate-600">
+                        <td className="py-2.5 px-2 text-right font-mono text-xs font-semibold text-ink-2">
                           ${row.strike}
                         </td>
                         {data.quotes.map((q) => {
@@ -421,10 +421,10 @@ export default function HedgingDashboard() {
                           if (view === "current") {
                             return (
                               <td key={q.expiry} className="py-2.5 px-2 text-right">
-                                <div className="font-mono text-xs font-semibold text-slate-800">
+                                <div className="font-mono text-xs font-semibold text-ink">
                                   {fmtDollar(cq?.premium ?? null)}
                                 </div>
-                                <div className="font-mono text-[10px] text-slate-400">
+                                <div className="font-mono text-[10px] text-ink-3">
                                   {fmtPct(cq?.pctOfSpot ?? null)}
                                 </div>
                               </td>
@@ -437,13 +437,13 @@ export default function HedgingDashboard() {
                           return (
                             <td key={q.expiry} className="py-2.5 px-2 text-right">
                               <div className={`font-mono text-xs font-semibold ${
-                                delta == null ? "text-slate-400" :
-                                delta > 0 ? "text-red-600" :
-                                delta < 0 ? "text-emerald-600" : "text-slate-500"
+                                delta == null ? "text-ink-3" :
+                                delta > 0 ? "text-neg" :
+                                delta < 0 ? "text-pos" : "text-ink-3"
                               }`}>
                                 {fmtDelta(delta)}
                               </div>
-                              <div className="font-mono text-[10px] text-slate-400">
+                              <div className="font-mono text-[10px] text-ink-3">
                                 {prior != null && curr != null ? `${fmtDollar(prior)} → ${fmtDollar(curr)}` : "—"}
                               </div>
                             </td>
@@ -453,12 +453,12 @@ export default function HedgingDashboard() {
                     ))}
 
                     {/* Add-custom-strike input row */}
-                    <tr className="bg-slate-50/30">
-                      <td className="py-2 pl-5 pr-2 text-xs text-slate-500 font-medium">Add strike</td>
+                    <tr className="bg-surface-2/30">
+                      <td className="py-2 pl-5 pr-2 text-xs text-ink-3 font-medium">Add strike</td>
                       <td className="py-2 px-2 text-right" colSpan={1 + data.quotes.length}>
                         <div className="flex items-center justify-end gap-2">
-                          <div className="flex items-center rounded-md border border-slate-200 bg-white px-2 py-1 focus-within:border-blue-400 focus-within:ring-1 focus-within:ring-blue-200">
-                            <span className="text-xs text-slate-400 mr-1">$</span>
+                          <div className="flex items-center rounded-md border border-line bg-white px-2 py-1 focus-within:border-accent-border focus-within:ring-1 focus-within:ring-accent-border">
+                            <span className="text-xs text-ink-3 mr-1">$</span>
                             <input
                               type="number"
                               inputMode="decimal"
@@ -473,14 +473,14 @@ export default function HedgingDashboard() {
                                   handleAddStrike();
                                 }
                               }}
-                              className="w-20 text-xs font-mono text-slate-700 outline-none bg-transparent"
+                              className="w-20 text-xs font-mono text-ink-2 outline-none bg-transparent"
                             />
                           </div>
                           <button
                             type="button"
                             onClick={handleAddStrike}
                             disabled={!newStrikeInput.trim()}
-                            className="rounded-md bg-slate-800 px-3 py-1 text-xs font-semibold text-white hover:bg-slate-700 transition-colors disabled:opacity-40 disabled:cursor-not-allowed"
+                            className="rounded-md bg-ink px-3 py-1 text-xs font-semibold text-white hover:bg-ink-2 transition-colors disabled:opacity-40 disabled:cursor-not-allowed"
                           >
                             Add
                           </button>
@@ -491,7 +491,7 @@ export default function HedgingDashboard() {
                 </table>
               </div>
               {(view === "wow" || view === "mom") && (
-                <div className="px-5 py-2.5 border-t border-slate-100 text-[11px] text-slate-400">
+                <div className="px-5 py-2.5 border-t border-line-soft text-[11px] text-ink-3">
                   {view === "wow" ? (
                     wowSnap ? (
                       <>Comparing to snapshot from {wowSnap.date} (SPY ${wowSnap.spotPrice.toFixed(2)})</>
@@ -504,14 +504,14 @@ export default function HedgingDashboard() {
                     <>No snapshot ~30 days ago yet — keep refreshing to build history.</>
                   )}
                   {view === "wow" || view === "mom" ? (
-                    <span className="ml-2 text-slate-400">· Red = more expensive · Green = cheaper</span>
+                    <span className="ml-2 text-ink-3">· Red = more expensive · Green = cheaper</span>
                   ) : null}
                 </div>
               )}
             </div>
 
             {/* Footnote */}
-            <p className="mt-3 text-[11px] text-slate-400">
+            <p className="mt-3 text-[11px] text-ink-3">
               Premiums are mid-prices (bid+ask)/2 where available, else last traded price. Strikes round to
               nearest $5 from the live SPY spot. One expiry per calendar month (3rd-Friday preferred).
               Custom strikes are priced only if that exact strike is listed on CBOE; otherwise the cell shows &quot;—&quot;.
