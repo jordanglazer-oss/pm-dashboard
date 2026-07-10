@@ -2,6 +2,7 @@
 
 import React, { useState, useMemo, useRef, useEffect, useCallback } from "react";
 import Link from "next/link";
+import { useSearchParams, useRouter, usePathname } from "next/navigation";
 import type { PimModelGroup, PimProfileType, PimComputedHolding, PimAssetClass, PimPerformanceData, PimHolding } from "@/app/lib/pim-types";
 import type { Stock, InstrumentType, ScoreKey } from "@/app/lib/types";
 import { displayTicker } from "@/app/lib/ticker";
@@ -104,6 +105,43 @@ export function PimModel({ groups }: Props) {
   const [selectedGroupId, setSelectedGroupId] = useState(groups[0]?.id || "");
   const [selectedProfile, setSelectedProfile] = useState<PimProfileType>("balanced");
   const [dropdownOpen, setDropdownOpen] = useState(false);
+
+  // Keep the model-group + profile IN SYNC with the shared header selectors
+  // (PortfolioTabs writes ?model=&version=). The URL is the shared source of
+  // truth, so the two selector sets on the Models page never disagree. URL →
+  // state below; state → URL is written by the selectors' onClick (syncUrl).
+  const searchParams = useSearchParams();
+  const router = useRouter();
+  const pathname = usePathname();
+  const urlModel = searchParams.get("model");
+  const urlVersion = searchParams.get("version");
+  useEffect(() => {
+    if (urlModel && urlModel !== selectedGroupId && groups.some((g) => g.id === urlModel)) {
+      setSelectedGroupId(urlModel);
+    }
+  }, [urlModel]); // eslint-disable-line react-hooks/exhaustive-deps
+  useEffect(() => {
+    if (urlVersion && urlVersion !== selectedProfile) {
+      setSelectedProfile(urlVersion as PimProfileType);
+    }
+  }, [urlVersion]); // eslint-disable-line react-hooks/exhaustive-deps
+  const syncUrl = (next: { model?: string; version?: string }) => {
+    const p = new URLSearchParams(Array.from(searchParams.entries()));
+    if (next.model) p.set("model", next.model);
+    if (next.version) p.set("version", next.version);
+    router.replace(`${pathname}?${p.toString()}`, { scroll: false });
+  };
+  // On first mount, seed the shared URL params from the local selection when
+  // absent, so the header selectors match the Models page on initial load
+  // (not just after the user changes one). Runs once.
+  useEffect(() => {
+    const p = new URLSearchParams(Array.from(searchParams.entries()));
+    let changed = false;
+    if (!p.get("model") && selectedGroupId) { p.set("model", selectedGroupId); changed = true; }
+    if (!p.get("version")) { p.set("version", selectedProfile); changed = true; }
+    if (changed) router.replace(`${pathname}?${p.toString()}`, { scroll: false });
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []);
   const [dropdownSearch, setDropdownSearch] = useState("");
   const [addingToScoring, setAddingToScoring] = useState<string | null>(null);
   const [holdingSearch, setHoldingSearch] = useState("");
@@ -1002,7 +1040,7 @@ export function PimModel({ groups }: Props) {
                 </div>
                 <div className="max-h-64 overflow-y-auto">
                   {filteredDropdownGroups.map((g) => (
-                    <button key={g.id} onClick={() => { setSelectedGroupId(g.id); setDropdownOpen(false); setDropdownSearch(""); }}
+                    <button key={g.id} onClick={() => { setSelectedGroupId(g.id); syncUrl({ model: g.id }); setDropdownOpen(false); setDropdownSearch(""); }}
                       className={`w-full text-left px-4 py-2.5 text-sm hover:bg-surface-2 transition-colors flex items-center justify-between ${g.id === selectedGroupId ? "bg-accent-soft text-accent" : "text-ink"}`}>
                       <span className={g.id === selectedGroupId ? "font-semibold" : ""}>{g.name}</span>
                       <span className="text-[10px] text-ink-3 uppercase">{Object.keys(g.profiles).map((p) => PROFILE_LABELS[p as PimProfileType]?.[0]).join(" / ")}</span>
@@ -1019,7 +1057,7 @@ export function PimModel({ groups }: Props) {
             (Conservative … Core) don't overflow on mobile. */}
         <div className="flex gap-1 rounded-control bg-surface-2 p-1 overflow-x-auto max-w-full">
           {availableProfiles.map((p) => (
-            <button key={p} onClick={() => setSelectedProfile(p)}
+            <button key={p} onClick={() => { setSelectedProfile(p); syncUrl({ version: p }); }}
               className={`shrink-0 rounded-lg px-3 sm:px-4 py-2 text-sm font-semibold transition-colors whitespace-nowrap ${activeProfile === p ? "bg-white text-ink shadow-sm" : "text-ink-3 hover:text-ink"}`}>
               {PROFILE_LABELS[p]}
             </button>
