@@ -106,3 +106,10 @@ select {
 [class*="font-mono"] {
   font-variant-numeric: tabular-nums;
 }
+
+/* Also inside every table, so sans-font numeric columns (scores, percentages,
+   weights, performance) line up digit-for-digit. tabular-nums only equalizes
+   digit width — it has no effect on letters, so names/sectors are untouched. */
+table {
+  font-variant-numeric: tabular-nums;
+}
