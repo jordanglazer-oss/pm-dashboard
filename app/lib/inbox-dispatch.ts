@@ -67,6 +67,10 @@ export function classifySubject(subject: string): InboxKind {
   const s = subject.trim();
   if (/^analyst report:/i.test(s)) return "analyst-report";
   // ── Research lists (RBC / Fundstrat / Seeking Alpha / RBCCM FEW) ──
+  // Fundstrat "Core Ideas" DQM screens first — the "… Core" suffix keeps them
+  // distinct from the "… Top/Bottom" idea lists below.
+  if (/^fundstrat\s+large[-\s]?cap\s+core\b/i.test(s)) return { kind: "research", source: "fundstrat-largecap-core" };
+  if (/^fundstrat\s+smid\s+core\b/i.test(s)) return { kind: "research", source: "fundstrat-smid-core" };
   if (/^fundstrat\s+smid\s+top\b/i.test(s)) return { kind: "research", source: "fundstrat-smid-top" };
   if (/^fundstrat\s+smid\s+bottom\b/i.test(s)) return { kind: "research", source: "fundstrat-smid-bottom" };
   if (/^fundstrat\s+top\b/i.test(s)) return { kind: "research", source: "fundstrat-top" };

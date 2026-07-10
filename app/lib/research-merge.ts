@@ -142,7 +142,7 @@ function applyIdeaEntries(
 
 function applyRbcEntries(
   state: ResearchState,
-  source: "rbc-focus" | "rbc-us-focus" | "jpm-us-analyst-focus" | "rbc-equate-cad" | "rbc-equate-usd",
+  source: "rbc-focus" | "rbc-us-focus" | "jpm-us-analyst-focus" | "rbc-equate-cad" | "rbc-equate-usd" | "fundstrat-largecap-core" | "fundstrat-smid-core",
   entries: ScrapedRbcRow[],
   forceAdditive: boolean,
 ): { nextState: ResearchState; summary: ResearchMergeSummary } {
@@ -151,7 +151,9 @@ function applyRbcEntries(
     : source === "rbc-us-focus" ? "rbcUsFocus"
     : source === "jpm-us-analyst-focus" ? "jpmUsAnalystFocus"
     : source === "rbc-equate-cad" ? "equateCad"
-    : "equateUsd";
+    : source === "rbc-equate-usd" ? "equateUsd"
+    : source === "fundstrat-largecap-core" ? "fundstratLargeCapCore"
+    : "fundstratSmidCore";
   const existing = ((state[stateKey as keyof ResearchState] as RBCEntry[]) || []);
   const existingByNorm = new Map(existing.map((r) => [normalize(r.ticker), r]));
   const { mode, reason } = forceAdditive
@@ -182,6 +184,16 @@ function applyRbcEntries(
         industry: e.industry ?? ex.industry,
         strategy: e.strategy ?? ex.strategy,
         priceTarget: e.priceTarget ?? ex.priceTarget,
+        // Fundstrat Core-Ideas quant fields (undefined elsewhere → preserved).
+        mktCap: e.mktCap ?? ex.mktCap,
+        perf1M: e.perf1M ?? ex.perf1M,
+        perfYTD: e.perfYTD ?? ex.perfYTD,
+        pe: e.pe ?? ex.pe,
+        dqmRank: e.dqmRank ?? ex.dqmRank,
+        momentumRating: e.momentumRating ?? ex.momentumRating,
+        priceVs20d: e.priceVs20d ?? ex.priceVs20d,
+        ma20vs200: e.ma20vs200 ?? ex.ma20vs200,
+        trendAligned: e.trendAligned ?? ex.trendAligned,
       });
     } else {
       added += 1;
@@ -194,6 +206,15 @@ function applyRbcEntries(
         industry: e.industry,
         strategy: e.strategy,
         priceTarget: e.priceTarget,
+        mktCap: e.mktCap,
+        perf1M: e.perf1M,
+        perfYTD: e.perfYTD,
+        pe: e.pe,
+        dqmRank: e.dqmRank,
+        momentumRating: e.momentumRating,
+        priceVs20d: e.priceVs20d,
+        ma20vs200: e.ma20vs200,
+        trendAligned: e.trendAligned,
       });
     }
   }
@@ -370,6 +391,8 @@ export function applyResearchEntries(
     case "jpm-us-analyst-focus":
     case "rbc-equate-cad":
     case "rbc-equate-usd":
+    case "fundstrat-largecap-core":
+    case "fundstrat-smid-core":
       result = applyRbcEntries(state, source, entries as ScrapedRbcRow[], forceAdditive);
       break;
     case "seeking-alpha-picks":

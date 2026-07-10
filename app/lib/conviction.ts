@@ -62,6 +62,8 @@ const LISTS: { field: keyof ResearchState; label: string; dir: 1 | -1 }[] = [
   { field: "equateUsd", label: "Equate USD", dir: 1 },
   { field: "fundstratTop", label: "Fundstrat Top", dir: 1 },
   { field: "fundstratSmidTop", label: "Fundstrat SMID Top", dir: 1 },
+  { field: "fundstratLargeCapCore", label: "Fundstrat Large-Cap Core", dir: 1 },
+  { field: "fundstratSmidCore", label: "Fundstrat SMID Core", dir: 1 },
   { field: "alphaPicks", label: "Alpha Picks", dir: 1 },
   { field: "newtonUpticks", label: "Newton Upticks", dir: 1 },
   { field: "rbccmFew", label: "RBCCM FEW", dir: 1 },

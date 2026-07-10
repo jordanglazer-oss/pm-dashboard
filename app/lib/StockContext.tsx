@@ -928,6 +928,8 @@ export function StockProvider({ children }: { children: React.ReactNode }) {
       fundstratBottom?: ResearchEntry[];
       fundstratSmidTop?: ResearchEntry[];
       fundstratSmidBottom?: ResearchEntry[];
+      fundstratLargeCapCore?: ResearchEntry[];
+      fundstratSmidCore?: ResearchEntry[];
       rbcCanadianFocus?: ResearchEntry[];
       rbcUsFocus?: ResearchEntry[];
       alphaPicks?: ResearchEntry[];
@@ -947,6 +949,8 @@ export function StockProvider({ children }: { children: React.ReactNode }) {
           ...collect(blob.fundstratBottom),
           ...collect(blob.fundstratSmidTop),
           ...collect(blob.fundstratSmidBottom),
+          ...collect(blob.fundstratLargeCapCore),
+          ...collect(blob.fundstratSmidCore),
           ...collect(blob.rbcCanadianFocus),
           ...collect(blob.rbcUsFocus),
           ...collect(blob.alphaPicks),

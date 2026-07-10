@@ -162,6 +162,29 @@ export type RBCEntry = {
   strategy?: string;
   /** Analyst price target from the JPM list. */
   priceTarget?: number;
+  // ── Fundstrat "Core Ideas" DQM-screen extras (optional; unused by the RBC /
+  //    JPM / Equate lists). The Fundstrat Large-Cap + SMID Core Ideas cards
+  //    surface these quant columns from the screenshot. All optional so they
+  //    never affect the other RBCEntry-backed lists. ──
+  /** Market cap in $ millions, as shown in the screen. */
+  mktCap?: number;
+  /** 1-month performance RELATIVE to the benchmark (S&P 500 for large-cap,
+   *  R2500 for SMID), signed percent. */
+  perf1M?: number;
+  /** Year-to-date performance RELATIVE to the benchmark, signed percent. */
+  perfYTD?: number;
+  /** Forward P/E on next-year ('26E) estimates. */
+  pe?: number;
+  /** Fundstrat DQM rank (1 = best). */
+  dqmRank?: number;
+  /** Fundstrat momentum rating (1 = best). */
+  momentumRating?: number;
+  /** Price vs its 20-day moving average, percent (e.g. 104 = 4% above). */
+  priceVs20d?: number;
+  /** 20-day MA vs 200-day MA, percent. */
+  ma20vs200?: number;
+  /** Trend-aligned flag: is Price > 20DMA > 200DMA (the "Y/N" column)? */
+  trendAligned?: boolean;
 };
 
 /**
@@ -224,6 +247,14 @@ export type ResearchState = {
   // backward compat with older blobs.
   fundstratSmidTop?: IdeaEntry[];
   fundstratSmidBottom?: IdeaEntry[];
+  // Fundstrat "Core Ideas" DQM quant screens — richer than the Top/Bottom
+  // idea lists (they carry sector/industry, relative perf, P/E, DQM rank,
+  // momentum rating, trend flags). Large-Cap is relative to the S&P 500;
+  // SMID is relative to the Russell 2500. Stored as RBCEntry[] (the extra
+  // quant columns are optional fields on RBCEntry). Optional for backward
+  // compat with older pm:research blobs that predate these lists.
+  fundstratLargeCapCore?: RBCEntry[];
+  fundstratSmidCore?: RBCEntry[];
   rbcCanadianFocus: RBCEntry[];
   // RBC US Focus List — same RBCEntry shape as the Canadian list,
   // populated separately. US tickers (no -T suffix). Optional for
@@ -349,6 +380,8 @@ export const defaultResearch: ResearchState = {
   fundstratBottom: [],
   fundstratSmidTop: [],
   fundstratSmidBottom: [],
+  fundstratLargeCapCore: [],
+  fundstratSmidCore: [],
   rbcCanadianFocus: [],
   rbcUsFocus: [],
   jpmUsAnalystFocus: [],

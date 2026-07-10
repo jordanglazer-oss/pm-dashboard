@@ -1673,6 +1673,18 @@ export default function InboxPage() {
                 <td className="py-2 font-mono whitespace-nowrap">Fundstrat SMID Bottom</td>
               </tr>
               <tr className="border-b border-accent-border">
+                <td className="py-2 pr-3 font-mono whitespace-nowrap">Fundstrat Large-Cap Core</td>
+                <td className="py-2 pr-3 whitespace-nowrap">Screenshot (PNG/JPG/PDF)</td>
+                <td className="py-2 pr-3">Merges into the Fundstrat Large-Cap Core Ideas DQM screen (ticker, company, sector, industry, mkt cap, 1M/YTD relative perf, P/E, DQM rank, momentum rating, trend flags). Perf is relative to the S&amp;P 500.</td>
+                <td className="py-2 font-mono whitespace-nowrap">Fundstrat Large-Cap Core</td>
+              </tr>
+              <tr className="border-b border-accent-border">
+                <td className="py-2 pr-3 font-mono whitespace-nowrap">Fundstrat SMID Core</td>
+                <td className="py-2 pr-3 whitespace-nowrap">Screenshot (PNG/JPG/PDF)</td>
+                <td className="py-2 pr-3">Merges into the Fundstrat SMID Core Ideas DQM screen (same columns as Large-Cap Core). Perf is relative to the Russell 2500.</td>
+                <td className="py-2 font-mono whitespace-nowrap">Fundstrat SMID Core</td>
+              </tr>
+              <tr className="border-b border-accent-border">
                 <td className="py-2 pr-3 font-mono whitespace-nowrap">RBC Canadian</td>
                 <td className="py-2 pr-3 whitespace-nowrap">Screenshot (PNG/JPG/PDF)</td>
                 <td className="py-2 pr-3">Merges into the RBC Canadian Focus List. Tickers auto-canonicalize to <span className="font-mono">.TO</span>.</td>

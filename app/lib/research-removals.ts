@@ -38,6 +38,8 @@ export const REMOVAL_SOURCE_LABELS: Record<RemovalSource, string> = {
   "fundstrat-bottom": "Fundstrat Bottom",
   "fundstrat-smid-top": "Fundstrat SMID Top",
   "fundstrat-smid-bottom": "Fundstrat SMID Bottom",
+  "fundstrat-largecap-core": "Fundstrat Large-Cap Core",
+  "fundstrat-smid-core": "Fundstrat SMID Core",
   "rbc-focus": "RBC Canadian Focus",
   "rbc-us-focus": "RBC US Focus",
   "jpm-us-analyst-focus": "JPM US Analyst Focus",

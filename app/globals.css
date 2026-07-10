@@ -48,6 +48,7 @@
   /* Structural / alt accent */
   --color-violet: #7c5cd0;
   --color-violet-soft: #f3f0fb;
+  --color-violet-border: #ddd3f2;
 
   /* Radius — Precision Light drops the old 24px rounding */
   --radius-card: 8px;

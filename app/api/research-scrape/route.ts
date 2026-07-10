@@ -36,7 +36,7 @@ const client = new Anthropic();
 
 type AttachmentInput = { id: string; label: string; dataUrl: string };
 
-export type SourceKey = "fundstrat-top" | "fundstrat-bottom" | "fundstrat-smid-top" | "fundstrat-smid-bottom" | "rbc-focus" | "rbc-us-focus" | "jpm-us-analyst-focus" | "rbc-equate-cad" | "rbc-equate-usd" | "seeking-alpha-picks" | "rbccm-few";
+export type SourceKey = "fundstrat-top" | "fundstrat-bottom" | "fundstrat-smid-top" | "fundstrat-smid-bottom" | "fundstrat-largecap-core" | "fundstrat-smid-core" | "rbc-focus" | "rbc-us-focus" | "jpm-us-analyst-focus" | "rbc-equate-cad" | "rbc-equate-usd" | "seeking-alpha-picks" | "rbccm-few";
 
 export type ResearchAttachmentInput = AttachmentInput;
 
@@ -45,6 +45,8 @@ const VALID_SOURCES: readonly SourceKey[] = [
   "fundstrat-bottom",
   "fundstrat-smid-top",
   "fundstrat-smid-bottom",
+  "fundstrat-largecap-core",
+  "fundstrat-smid-core",
   "rbc-focus",
   "rbc-us-focus",
   "jpm-us-analyst-focus",
@@ -90,6 +92,17 @@ export type ScrapedRbcRow = {
   industry?: string;
   strategy?: string;
   priceTarget?: number;
+  // Fundstrat Core-Ideas DQM-screen extras (large-cap + SMID). Optional; the
+  // RBC / JPM / Equate scrapes never emit these.
+  mktCap?: number;
+  perf1M?: number;
+  perfYTD?: number;
+  pe?: number;
+  dqmRank?: number;
+  momentumRating?: number;
+  priceVs20d?: number;
+  ma20vs200?: number;
+  trendAligned?: boolean;
 };
 
 /** RBCCM Canadian FEW Portfolio row: ticker (canonicalized to .TO),
@@ -233,6 +246,32 @@ If the price column isn't present, omit \`priceWhenAdded\`.
 ${common}
 
 Example: [{"ticker":"GME","priceWhenAdded":18.40},{"ticker":"AMC","priceWhenAdded":4.85}]`;
+  }
+
+  if (source === "fundstrat-largecap-core" || source === "fundstrat-smid-core") {
+    const universe = source === "fundstrat-largecap-core"
+      ? `Fundstrat "Large-Cap Core Ideas" DQM screen (large-cap US names; performance columns are RELATIVE TO THE S&P 500)`
+      : `Fundstrat "SMID Core Ideas" DQM screen (small/mid-cap US names; performance columns are RELATIVE TO THE Russell 2500 / R2500)`;
+    return `You are reading a ${universe} screenshot. It is a ranked TABLE (one row per stock, usually numbered 1..N on the left). Extract EVERY row.
+
+Columns to look for (a column may be missing — OMIT the key if so, never invent a value):
+  - Ticker / Symbol → \`ticker\` (string, required, UPPERCASE). US listings — bare tickers, NO "-T" suffix. Dual-class shares written with "/" (e.g. "BRK/B") → dash form ("BRK-B").
+  - Company / Name → \`name\` (string)
+  - Sector → \`sector\` (string, the GICS sector label)
+  - Industry → \`industry\` (string, the finer industry label — pass through verbatim)
+  - Mkt Cap ($M) / Market Cap → \`mktCap\` (NUMBER in $ millions; strip $ and commas. If shown in billions like "$1.4B", convert to millions → 1400.)
+  - 1M perf (relative) → \`perf1M\` (NUMBER, signed percent; strip % and +. "-5.3%" → -5.3)
+  - YTD perf (relative) → \`perfYTD\` (NUMBER, signed percent; strip % and +)
+  - P/E ('26E) / Forward P/E → \`pe\` (NUMBER; strip "x". "36.1x" → 36.1)
+  - DQM Rank / DQM → \`dqmRank\` (NUMBER, integer)
+  - Momentum Rating / Momentum → \`momentumRating\` (NUMBER, integer)
+  - Price / 20D (price vs 20-day MA) → \`priceVs20d\` (NUMBER percent; "104%" → 104)
+  - 20D / 200D (20-day MA vs 200-day MA) → \`ma20vs200\` (NUMBER percent; "118%" → 118)
+  - Price > 20D > 200D (the trend-alignment Y/N column) → \`trendAligned\` (BOOLEAN; "Y"/"Yes"/green → true, "N"/"No"/red → false)
+
+${common}
+
+Example: [{"ticker":"MNST","name":"Monster Beverage Corp","sector":"Consumer Staples","industry":"Beverages","mktCap":91537,"perf1M":9.3,"perfYTD":14.5,"pe":36.1,"dqmRank":5,"momentumRating":9,"priceVs20d":104,"ma20vs200":118,"trendAligned":true}]`;
   }
 
   if (source === "rbc-focus") {
@@ -491,6 +530,28 @@ function parseRbcRows(text: string, source: SourceKey): ScrapedRbcRow[] {
           const n = Number(String(r.priceTarget).replace(/[$,]/g, ""));
           if (Number.isFinite(n) && n > 0) out.priceTarget = n;
         }
+        // Fundstrat Core-Ideas quant columns (large-cap + SMID). Only present
+        // on those screens; all optional. Numbers strip $/%/x/commas; the
+        // trend flag is a boolean.
+        const num = (v: unknown): number | undefined => {
+          if (v == null) return undefined;
+          const n = Number(String(v).replace(/[$,%x+]/gi, "").trim());
+          return Number.isFinite(n) ? n : undefined;
+        };
+        const mktCap = num(r.mktCap); if (mktCap != null) out.mktCap = mktCap;
+        const perf1M = num(r.perf1M); if (perf1M != null) out.perf1M = perf1M;
+        const perfYTD = num(r.perfYTD); if (perfYTD != null) out.perfYTD = perfYTD;
+        const pe = num(r.pe); if (pe != null) out.pe = pe;
+        const dqmRank = num(r.dqmRank); if (dqmRank != null) out.dqmRank = dqmRank;
+        const momentumRating = num(r.momentumRating); if (momentumRating != null) out.momentumRating = momentumRating;
+        const priceVs20d = num(r.priceVs20d); if (priceVs20d != null) out.priceVs20d = priceVs20d;
+        const ma20vs200 = num(r.ma20vs200); if (ma20vs200 != null) out.ma20vs200 = ma20vs200;
+        if (typeof r.trendAligned === "boolean") out.trendAligned = r.trendAligned;
+        else if (typeof r.trendAligned === "string") {
+          const t = r.trendAligned.trim().toLowerCase();
+          if (t === "y" || t === "yes" || t === "true") out.trendAligned = true;
+          else if (t === "n" || t === "no" || t === "false") out.trendAligned = false;
+        }
         return out;
       });
   } catch {
@@ -553,7 +614,7 @@ async function runVision(source: SourceKey, atts: AttachmentInput[]): Promise<{ 
   console.log(`[research-scrape:${source}] raw vision output:`, text.slice(0, 4000));
 
   const entries =
-    (source === "rbc-focus" || source === "rbc-us-focus" || source === "jpm-us-analyst-focus" || source === "rbc-equate-cad" || source === "rbc-equate-usd") ? parseRbcRows(text, source)
+    (source === "rbc-focus" || source === "rbc-us-focus" || source === "jpm-us-analyst-focus" || source === "rbc-equate-cad" || source === "rbc-equate-usd" || source === "fundstrat-largecap-core" || source === "fundstrat-smid-core") ? parseRbcRows(text, source)
   : source === "seeking-alpha-picks" ? parseAlphaPickRows(text)
   : source === "rbccm-few" ? parseFewRows(text)
   : parseIdeaRows(text);
