@@ -86,10 +86,13 @@ const AA_ROWS: { key: keyof AllocationTable; label: string }[] = [
   { key: "max", label: "Max" },
 ];
 
+// Short column labels keep the four profile cards narrow enough to sit
+// side-by-side without spilling off the page. "Fixed Inc." / "Alts" are
+// unambiguous in an asset-allocation context.
 const AA_COLS: { key: keyof AllocationRow; label: string }[] = [
-  { key: "fixedIncome", label: "Fixed Income" },
+  { key: "fixedIncome", label: "Fixed Inc." },
   { key: "equity", label: "Equity" },
-  { key: "alternatives", label: "Alternatives" },
+  { key: "alternatives", label: "Alts" },
 ];
 
 /* ─── Default Data ─── */
@@ -212,17 +215,17 @@ function AllocationTableCard({
   onUpdate: (rowKey: keyof AllocationTable, colKey: keyof AllocationRow, value: number) => void;
 }) {
   return (
-    <div className="rounded-card border border-line bg-white shadow-sm overflow-hidden">
-      <div className="px-6 py-4 border-b border-line-soft">
-        <h3 className="text-base font-bold text-ink">{title}</h3>
+    <div className="rounded-card border border-line bg-white shadow-sm overflow-hidden min-w-0">
+      <div className="px-3 py-2.5 border-b border-line-soft">
+        <h3 className="text-sm font-bold text-ink">{title}</h3>
       </div>
       <div className="overflow-x-auto">
         <table className="w-full text-sm">
           <thead>
             <tr className="border-b border-line-soft">
-              <th className="px-4 py-2.5 text-left text-xs font-semibold text-ink-3 uppercase tracking-wider w-24"></th>
+              <th className="px-1.5 py-2 text-left text-[10px] font-semibold text-ink-3 uppercase tracking-wide w-12"></th>
               {AA_COLS.map((col) => (
-                <th key={col.key} className="px-4 py-2.5 text-center text-xs font-semibold text-ink-3 uppercase tracking-wider">
+                <th key={col.key} className="px-1 py-2 text-center text-[10px] font-semibold text-ink-3 uppercase tracking-wide">
                   {col.label}
                 </th>
               ))}
@@ -236,22 +239,22 @@ function AllocationTableCard({
                   key={row.key}
                   className={`border-b border-line-soft ${isCurrent ? "bg-pos-soft" : "hover:bg-surface-2"}`}
                 >
-                  <td className={`px-4 py-2 text-xs font-semibold ${isCurrent ? "text-pos" : "text-ink-2"}`}>
+                  <td className={`px-1.5 py-1 text-[11px] font-semibold ${isCurrent ? "text-pos" : "text-ink-2"}`}>
                     {row.label}
                   </td>
                   {AA_COLS.map((col) => (
-                    <td key={col.key} className="px-2 py-1.5 text-center">
-                      <div className="flex items-center justify-center gap-0.5">
+                    <td key={col.key} className="px-1 py-1 text-center">
+                      <div className="flex items-center justify-center gap-px">
                         <NumericInput
                           value={table[row.key][col.key]}
                           onChange={(n) => onUpdate(row.key, col.key, n ?? 0)}
-                          className={`w-16 rounded-lg border px-2 py-1 text-sm text-center font-medium ${
+                          className={`w-11 rounded-md border px-1 py-0.5 text-[13px] text-center font-medium tabular-nums ${
                             isCurrent
                               ? "border-pos-border bg-pos-soft text-pos"
                               : "border-line bg-white text-ink"
                           } focus:outline-none focus:ring-1 focus:ring-accent-soft`}
                         />
-                        <span className="text-xs text-ink-3">%</span>
+                        <span className="text-[10px] text-ink-3">%</span>
                       </div>
                     </td>
                   ))}

@@ -375,6 +375,9 @@ export function PimModel({ groups }: Props) {
       const target = e.target as HTMLElement | null;
       const tag = target?.tagName?.toLowerCase();
       if (tag === "input" || tag === "textarea" || tag === "select" || target?.isContentEditable) return;
+      // When the Portfolio segment tab bar is focused, arrow keys navigate
+      // segments (handled in PortfolioTabs) — don't also drive model/profile.
+      if (target?.closest?.('[role="tablist"]')) return;
 
       if (e.key === "ArrowLeft" || e.key === "ArrowRight") {
         if (availableProfiles.length <= 1) return;

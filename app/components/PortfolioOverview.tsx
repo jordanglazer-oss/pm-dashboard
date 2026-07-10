@@ -1918,12 +1918,14 @@ function RankingTable({
               const s = row.stock;
               const adj = Math.round((s.adjusted - s.raw) * 10) / 10;
               const label = s.ratingLabel || s.rating;
-              const isFlagged = row.flagged;
               const expanded = expandedRows.has(s.ticker);
 
               return (
                 <React.Fragment key={s.ticker}>
-                <tr className={`group border-b border-line-soft hover:bg-surface-hover transition-colors [&>td]:align-top ${isFlagged ? (flagType === "buy" ? "border-l-2 border-l-pos" : "border-l-2 border-l-neg") : ""}`}>
+                {/* The faint top-3/bottom-3 left-border accent was removed — it
+                    read as visual noise and added little (the ranking order and
+                    Score column already convey best/worst). */}
+                <tr className="group border-b border-line-soft hover:bg-surface-hover transition-colors [&>td]:align-top">
                   <td className={stickyCellCls}>
                     <div className="flex items-center gap-2">
                       <Link href={`/stock/${s.ticker.toLowerCase()}`} className="hover:underline block">

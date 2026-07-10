@@ -1,7 +1,8 @@
 "use client";
 
 import Link from "next/link";
-import { usePathname } from "next/navigation";
+import { useRef, type KeyboardEvent } from "react";
+import { usePathname, useRouter } from "next/navigation";
 import { useStocks } from "@/app/lib/StockContext";
 
 /**
@@ -29,7 +30,14 @@ const SEGMENTS: { label: string; href: string }[] = [
 
 export function PortfolioTabs() {
   const pathname = usePathname();
+  const router = useRouter();
   const { stocks } = useStocks();
+  // Roving-tabindex refs so ← / → move focus + navigate between segments when
+  // the tab bar is focused (standard ARIA tablist keyboard pattern). Scoped to
+  // the tab bar via role="tablist" so it doesn't clash with the ← / → profile
+  // toggles on Positioning / Models (those handlers skip when a tablist is
+  // focused — see PimPortfolio / PimModel).
+  const tabRefs = useRef<(HTMLAnchorElement | null)[]>([]);
 
   const isHub =
     pathname === "/" ||
@@ -50,6 +58,19 @@ export function PortfolioTabs() {
 
   const holdingsCount = (stocks ?? []).filter((s) => s.bucket === "Portfolio").length;
 
+  const activeIdx = Math.max(0, SEGMENTS.findIndex((s) => s.href === activeHref));
+  const onTabKeyDown = (e: KeyboardEvent<HTMLDivElement>) => {
+    let next = -1;
+    if (e.key === "ArrowRight" || e.key === "ArrowDown") next = (activeIdx + 1) % SEGMENTS.length;
+    else if (e.key === "ArrowLeft" || e.key === "ArrowUp") next = (activeIdx - 1 + SEGMENTS.length) % SEGMENTS.length;
+    else if (e.key === "Home") next = 0;
+    else if (e.key === "End") next = SEGMENTS.length - 1;
+    else return;
+    e.preventDefault();
+    tabRefs.current[next]?.focus();
+    router.push(SEGMENTS[next].href);
+  };
+
   return (
     <div className="bg-surface border-b border-line print:hidden">
       <div className="mx-auto max-w-7xl px-4 md:px-8 pt-3">
@@ -62,16 +83,26 @@ export function PortfolioTabs() {
           </div>
         </div>
 
-        {/* Segment row */}
+        {/* Segment row — an ARIA tablist so ← / → (and Home / End) move between
+            segments once the bar is focused (Tab into it, then arrow). */}
         <div className="mt-3 flex items-center gap-2 overflow-x-auto pb-2">
-          <div className="flex items-center gap-0.5 rounded-control border border-line bg-surface-2 p-0.5 shrink-0">
-            {SEGMENTS.map((seg) => {
+          <div
+            role="tablist"
+            aria-label="Portfolio sections"
+            onKeyDown={onTabKeyDown}
+            className="flex items-center gap-0.5 rounded-control border border-line bg-surface-2 p-0.5 shrink-0"
+          >
+            {SEGMENTS.map((seg, i) => {
               const isActive = seg.href === activeHref;
               return (
                 <Link
                   key={seg.label}
                   href={seg.href}
-                  className={`rounded-[6px] px-3 py-1 text-[13px] whitespace-nowrap transition-colors ${
+                  ref={(el) => { tabRefs.current[i] = el; }}
+                  role="tab"
+                  aria-selected={isActive}
+                  tabIndex={isActive ? 0 : -1}
+                  className={`rounded-[6px] px-3 py-1 text-[13px] whitespace-nowrap transition-colors outline-none focus-visible:ring-2 focus-visible:ring-accent-border ${
                     isActive
                       ? "bg-surface text-ink font-semibold shadow-sm"
                       : "text-ink-2 hover:text-ink"
