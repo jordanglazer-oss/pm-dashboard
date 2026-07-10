@@ -27,6 +27,7 @@ const ZERO_SCORES: Record<ScoreKey, number> = {
 };
 import { useStocks } from "@/app/lib/StockContext";
 import { CollapsibleSection } from "@/app/components/CollapsibleSection";
+import { SkeletonTable } from "@/app/components/Skeleton";
 import { isMarketOpenOrAfterET } from "@/app/lib/market-hours";
 
 function generateId(): string {
@@ -294,7 +295,7 @@ type Props = {
 };
 
 export function PimPortfolio({ groups }: Props) {
-  const { uiPrefs, setUiPref, stocks, pimPortfolioState, updatePimPortfolioState, getGroupState, addStock, scoredStocks, pimModels, updatePimModels, moveBucket, rebalanceStockWeights, updateStockFields } = useStocks();
+  const { uiPrefs, setUiPref, stocks, pimPortfolioState, updatePimPortfolioState, getGroupState, addStock, scoredStocks, pimModels, updatePimModels, moveBucket, rebalanceStockWeights, updateStockFields, loading } = useStocks();
 
   const selectedGroupId = "pim";
   // Version (profile) is shared via the URL (?version=) so the header selector
@@ -2693,6 +2694,9 @@ export function PimPortfolio({ groups }: Props) {
             <span>Target = <span className="font-semibold text-accent">{PROFILE_LABELS[activeProfile]}</span></span>
           </div>
         </div>
+        {loading && holdingRows.length === 0 ? (
+          <div className="p-4"><SkeletonTable rows={8} cols={6} /></div>
+        ) : (
         <div className="overflow-x-auto">
           <table className="w-full text-xs">
             <thead className="sticky top-0 z-10 bg-surface-2 shadow-[0_1px_0_0_rgb(226_232_240)]">
@@ -2825,6 +2829,7 @@ export function PimPortfolio({ groups }: Props) {
             </tbody>
           </table>
         </div>
+        )}
       </div>
 
       {/* Suggested Trades (mockup): compact chip row derived from live drift.

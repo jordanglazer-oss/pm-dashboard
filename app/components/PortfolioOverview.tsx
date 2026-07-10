@@ -5,6 +5,7 @@ import Link from "next/link";
 import { useStocks } from "@/app/lib/StockContext";
 import { useNotifications } from "@/app/lib/NotificationsContext";
 import { FlashValue } from "@/app/components/FlashValue";
+import { SkeletonTable } from "@/app/components/Skeleton";
 import { SCORE_GROUPS, INSTRUMENT_LABELS } from "@/app/lib/types";
 import type { ScoredStock, ScoreKey, HealthData, FundHolding, FundSectorWeight } from "@/app/lib/types";
 import type { TechnicalIndicators, RiskAlert } from "@/app/lib/technicals";
@@ -180,6 +181,7 @@ export function PortfolioOverview({ sidebar }: { sidebar?: React.ReactNode } = {
     setUiPref,
     flushStocks,
     livePreviousCloses,
+    loading,
   } = useStocks();
 
   // Live CURRENT model weight per ticker, driven by the shared header Version
@@ -1101,6 +1103,7 @@ export function PortfolioOverview({ sidebar }: { sidebar?: React.ReactNode } = {
           </div>
         }
         stocks={rankBucket === "Portfolio" ? scoreablePortfolio : scoreableWatchlist}
+        loading={loading}
         livePreviousCloses={livePreviousCloses}
         liveWeights={liveWeights}
         flagType={rankBucket === "Portfolio" ? "review" : "buy"}
@@ -1435,9 +1438,12 @@ function RankingTable({
   livePreviousCloses,
   liveWeights,
   bucketTabs,
+  loading,
 }: {
   title: string;
   subtitle: string;
+  /** True while the app is still hydrating from KV — drives the skeleton. */
+  loading?: boolean;
   /** Optional segmented control rendered in the header in place of the title
    *  (the Portfolio / Watchlist toggle). */
   bucketTabs?: React.ReactNode;
@@ -1880,6 +1886,9 @@ function RankingTable({
             Shift + A
           </kbd>
         </div>
+      )}
+      {!collapsed && loading && sorted.length === 0 && (
+        <div className="px-4 py-3"><SkeletonTable rows={10} cols={7} /></div>
       )}
       {!collapsed && sorted.length > 0 && (
       <div className="max-h-[80vh] overflow-auto">
