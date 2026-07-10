@@ -206,7 +206,7 @@ function ImprovingBar({ score }: { score: number }) {
   return (
     <div className="flex h-2 rounded-full overflow-hidden bg-surface-2 w-16">
       {Array.from({ length: 6 }, (_, i) => (
-        <div key={i} className={`flex-1 ${i < score ? "bg-teal-500" : ""} ${i > 0 ? "ml-px" : ""}`} />
+        <div key={i} className={`flex-1 ${i < score ? "bg-accent" : ""} ${i > 0 ? "ml-px" : ""}`} />
       ))}
     </div>
   );
@@ -476,7 +476,7 @@ export function TechnicalScreener({ stocks, onAddToWatchlist }: Props) {
         <button
           onClick={() => setTab("scan")}
           className={`flex-1 px-6 py-3 text-sm font-semibold transition-colors ${
-            tab === "scan" ? "bg-teal-700 text-white" : "text-ink-2 hover:bg-surface-2"
+            tab === "scan" ? "bg-accent text-white" : "text-ink-2 hover:bg-surface-2"
           }`}
         >
           Universe Scanner
@@ -526,7 +526,7 @@ export function TechnicalScreener({ stocks, onAddToWatchlist }: Props) {
               {(Object.keys(FILTER_LABELS) as FilterKey[]).map((key) => (
                 <select key={key} value={filters[key]} onChange={(e) => setFilter(key, e.target.value as FilterOption)}
                   className={`rounded-control border px-3 py-1.5 text-sm outline-none transition-colors ${
-                    filters[key] !== "all" ? "border-blue-400 bg-accent-soft text-accent font-semibold" : "border-line bg-white text-ink-2"
+                    filters[key] !== "all" ? "border-accent-border bg-accent-soft text-accent font-semibold" : "border-line bg-white text-ink-2"
                   }`}>
                   <option value="all">{FILTER_LABELS[key]}: All</option>
                   <option value="bullish">Bullish</option>
@@ -598,13 +598,13 @@ export function TechnicalScreener({ stocks, onAddToWatchlist }: Props) {
       {tab === "scan" && (
         <>
           {/* Scanner controls */}
-          <div className="rounded-card border border-teal-200 bg-white p-6 shadow-sm">
+          <div className="rounded-card border border-accent-border bg-white p-6 shadow-sm">
             <div className="flex flex-col gap-4 xl:flex-row xl:items-start xl:justify-between">
               <div>
                 <h3 className="text-2xl font-semibold">Universe Scanner</h3>
                 <p className="text-sm text-ink-3 mt-1">
                   Scan an index universe for stocks showing improving technical signals.
-                  Identifies stocks trending <span className="font-semibold text-teal-700">toward</span> positive territory — not already there.
+                  Identifies stocks trending <span className="font-semibold text-accent">toward</span> positive territory — not already there.
                 </p>
                 {scanMeta && (
                   <p className="text-xs text-ink-3 mt-1">
@@ -640,14 +640,14 @@ export function TechnicalScreener({ stocks, onAddToWatchlist }: Props) {
 
               {/* Scan button */}
               <button onClick={handleScan} disabled={scanning}
-                className="rounded-control bg-teal-700 px-6 py-2.5 text-sm font-semibold text-white hover:bg-teal-800 disabled:opacity-50 transition-colors">
+                className="rounded-control bg-accent px-6 py-2.5 text-sm font-semibold text-white hover:bg-accent disabled:opacity-50 transition-colors">
                 {scanning ? "Scanning..." : `Scan ${UNIVERSE_LABELS[scanUniverse]}`}
               </button>
 
               {scanProgress && (
-                <span className={`text-sm ${scanning ? "text-teal-600" : "text-neg"}`}>
+                <span className={`text-sm ${scanning ? "text-accent" : "text-neg"}`}>
                   {scanning && (
-                    <span className="inline-block w-3 h-3 border-2 border-teal-600 border-t-transparent rounded-full animate-spin mr-2 align-middle" />
+                    <span className="inline-block w-3 h-3 border-2 border-accent-border border-t-transparent rounded-full animate-spin mr-2 align-middle" />
                   )}
                   {scanProgress}
                 </span>
@@ -660,7 +660,7 @@ export function TechnicalScreener({ stocks, onAddToWatchlist }: Props) {
                 {(Object.keys(FILTER_LABELS) as FilterKey[]).map((key) => (
                   <select key={key} value={scanFilters[key]} onChange={(e) => setScanFilter(key, e.target.value as FilterOption)}
                     className={`rounded-control border px-3 py-1.5 text-sm outline-none transition-colors ${
-                      scanFilters[key] !== "all" ? "border-teal-400 bg-teal-50 text-teal-700 font-semibold" : "border-line bg-white text-ink-2"
+                      scanFilters[key] !== "all" ? "border-accent-border bg-accent-soft text-accent font-semibold" : "border-line bg-white text-ink-2"
                     }`}>
                     <option value="all">{FILTER_LABELS[key]}: All</option>
                     <option value="bullish">Bullish</option>
@@ -678,9 +678,9 @@ export function TechnicalScreener({ stocks, onAddToWatchlist }: Props) {
             )}
 
             {/* Improving signals legend */}
-            <div className="mt-4 rounded-card bg-teal-50 border border-teal-200 p-4">
-              <div className="text-xs font-semibold text-teal-800 mb-2">Improving signals detected (6 factors):</div>
-              <div className="grid grid-cols-2 md:grid-cols-3 gap-2 text-xs text-teal-700">
+            <div className="mt-4 rounded-card bg-accent-soft border border-accent-border p-4">
+              <div className="text-xs font-semibold text-accent mb-2">Improving signals detected (6 factors):</div>
+              <div className="grid grid-cols-2 md:grid-cols-3 gap-2 text-xs text-accent">
                 <div>RSI Recovery — rising from oversold</div>
                 <div>MACD Improving — histogram turning up</div>
                 <div>DMA Approach — price nearing 50 DMA from below</div>
@@ -739,7 +739,7 @@ export function TechnicalScreener({ stocks, onAddToWatchlist }: Props) {
                     const isAdded = addedTickers.has(r.ticker) || existingTickers.includes(r.ticker.replace(".TO", ""));
                     const composite = compositeTechnicalScore(t);
                     const compositeColor = composite.net >= 3 ? "text-pos bg-pos-soft" : composite.net >= 1 ? "text-pos" : composite.net <= -3 ? "text-neg bg-neg-soft" : composite.net <= -1 ? "text-neg" : "text-ink-3";
-                    const improvingColor = r.improving.score >= 4 ? "text-teal-700 bg-teal-50" : r.improving.score >= 2 ? "text-teal-600" : "text-ink-3";
+                    const improvingColor = r.improving.score >= 4 ? "text-accent bg-accent-soft" : r.improving.score >= 2 ? "text-accent" : "text-ink-3";
 
                     return (
                       <tr key={r.ticker} className="border-b border-line-soft align-middle cursor-pointer hover:bg-surface-hover transition-colors"
@@ -791,7 +791,7 @@ export function TechnicalScreener({ stocks, onAddToWatchlist }: Props) {
                             <span className="rounded-lg bg-surface-2 px-3 py-1.5 text-xs font-medium text-ink-3">Added</span>
                           ) : (
                             <button onClick={() => handleAddToWatchlist(r)}
-                              className="rounded-lg bg-teal-600 px-3 py-1.5 text-xs font-semibold text-white hover:bg-teal-700 transition-colors">
+                              className="rounded-lg bg-accent px-3 py-1.5 text-xs font-semibold text-white hover:bg-accent transition-colors">
                               + Watchlist
                             </button>
                           )}
