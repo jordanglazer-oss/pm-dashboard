@@ -1080,7 +1080,6 @@ export function MorningBrief({
 
   const riskScan = brief?.riskScan || null;
 
-  const forwardActions = brief?.forwardActions || [];
   const topActionsToday = brief?.topActionsToday || [];
   const hedgingCall = brief?.hedgingCall || null;
   const cashDeploymentCall = brief?.cashDeploymentCall || null;
@@ -2231,33 +2230,32 @@ export function MorningBrief({
       <section className="grid gap-4 lg:grid-cols-5 items-start">
         {riskScan && riskScan.length > 0 ? (
           <div className="lg:col-span-3 rounded-2xl border border-line bg-white p-4 shadow-sm">
-            <div className="flex items-center gap-2 mb-3">
-              <span className="text-base">🛡️</span>
+            <div className="flex items-center gap-2 mb-1">
               <h3 className="text-base font-semibold">Portfolio Risk Scan</h3>
-              <SignalPill tone="red">{riskScan.length} flagged</SignalPill>
+              <span className="text-xs font-semibold text-neg">{riskScan.length} flagged</span>
             </div>
-            <div className="space-y-2">
+            <div className="divide-y divide-line-soft">
               {riskScan.map((item, i) => {
-                const bgClass =
+                const badge =
                   item.priority === "High"
-                    ? "border-l-neg bg-neg-soft/30"
+                    ? { label: "HIGH", cls: "bg-neg text-white" }
                     : item.priority === "Medium-High"
-                    ? "border-l-warn bg-warn-soft/30"
-                    : "border-l-line bg-surface-2/30";
-                const tonePill =
-                  item.priority === "High"
-                    ? "red" as const
-                    : item.priority === "Medium-High"
-                    ? "amber" as const
-                    : "gray" as const;
+                    ? { label: "MED", cls: "bg-warn text-white" }
+                    : item.priority === "Medium"
+                    ? { label: "MED", cls: "bg-warn text-white" }
+                    : { label: "LOW", cls: "bg-ink-3 text-white" };
                 return (
-                  <div key={i} className={`rounded-xl border-l-4 p-3 ${bgClass}`}>
-                    <div className="flex flex-wrap items-center gap-2 mb-1">
-                      <span className="font-mono text-sm font-bold">{displayTicker(item.ticker)}</span>
-                      <SignalPill tone={tonePill}>{item.priority}</SignalPill>
-                      <span className="text-sm text-ink-2">{item.summary}</span>
+                  <div key={i} className="flex items-start gap-3 py-3 first:pt-2">
+                    <span className={`mt-0.5 shrink-0 rounded-md px-2 py-0.5 text-[10px] font-bold tracking-wide ${badge.cls}`}>
+                      {badge.label}
+                    </span>
+                    <div className="min-w-0">
+                      <div className="text-sm">
+                        <span className="font-mono font-bold text-ink">{displayTicker(item.ticker)}</span>
+                        {item.action && <span className="text-ink-2"> · {item.action}</span>}
+                      </div>
+                      <p className="mt-0.5 text-sm leading-6 text-ink-3">{item.summary}</p>
                     </div>
-                    <div className="text-sm text-accent font-medium">&rarr; {item.action}</div>
                   </div>
                 );
               })}
@@ -2275,6 +2273,7 @@ export function MorningBrief({
             fearGreed={activeForward?.fearGreed?.value ?? marketData.fearGreed}
             hedgingAnalysis={hedgingAnalysis}
             horizons={marketRegime?.horizons}
+            compact
           />
         </div>
       </section>
@@ -2331,38 +2330,10 @@ export function MorningBrief({
         </section>
       )}
 
-      {/* Action Items */}
-      {forwardActions.length > 0 && (
-        <section className="rounded-2xl border border-warn-border bg-warn-soft/30 p-4 shadow-sm">
-          <div className="flex items-center gap-2 mb-3">
-            <span className="text-base">⚡</span>
-            <h3 className="text-base font-semibold">Action Items</h3>
-          </div>
-          <div className="space-y-2">
-            {forwardActions.map((action, i) => {
-              const bgClass =
-                action.priority === "High"
-                  ? "border-neg-border bg-neg-soft/40"
-                  : action.priority === "Medium"
-                  ? "border-warn-border bg-warn-soft/60"
-                  : "border-pos-border bg-pos-soft/40";
-              return (
-                <div key={i} className={`rounded-xl border p-3 ${bgClass}`}>
-                  <div className="flex items-start gap-3">
-                    <div className="flex h-6 w-6 shrink-0 items-center justify-center rounded-full bg-warn-soft text-xs font-bold text-warn">
-                      {i + 1}
-                    </div>
-                    <div>
-                      <h4 className="text-sm font-semibold">{action.title}</h4>
-                      <p className="mt-0.5 text-sm text-ink-2 leading-6">{action.detail}</p>
-                    </div>
-                  </div>
-                </div>
-              );
-            })}
-          </div>
-        </section>
-      )}
+      {/* Action Items section retired (2026-07): it duplicated the
+          Top Actions Today one-liners near the top of the brief. forwardActions
+          is still generated (and still feeds topActionsToday) — just no longer
+          rendered as a separate lengthy panel. */}
     </>
   );
 }

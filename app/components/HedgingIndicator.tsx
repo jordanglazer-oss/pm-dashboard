@@ -47,6 +47,11 @@ type Props = {
   /** Optional — when present, drives the horizon selector and modulates the
    *  verdict. Sourced from pm:market-regime via the parent component. */
   horizons?: HorizonRollup;
+  /** Compact single-column layout for the Morning Brief (matches the mockup):
+   *  window pill + Put cost / VIX context / Sentiment rows + analysis. Drops
+   *  the horizon selector + tenor strip + factor tiles, which stay in the full
+   *  version used on the Hedging page. */
+  compact?: boolean;
 };
 
 type HedgeFactor = {
@@ -182,7 +187,7 @@ function getHedgingVerdict(
   };
 }
 
-export function HedgingIndicator({ vix, termStructure, fearGreed, hedgingAnalysis, horizons }: Props) {
+export function HedgingIndicator({ vix, termStructure, fearGreed, hedgingAnalysis, horizons, compact }: Props) {
   // Cyclical (3–6M) is the default because it sits squarely in the middle
   // of the allowed 2–9M tenor band and matches the typical hedge cadence.
   // The user can flip to tactical (2–3M) or structural (6–9M) without
@@ -211,6 +216,47 @@ export function HedgingIndicator({ vix, termStructure, fearGreed, hedgingAnalysi
     : horizonComposite === "Risk-Off"
     ? "red"
     : "amber";
+
+  // Compact layout for the Morning Brief (matches the mockup). Same verdict +
+  // factors, presented as a window pill + three key/value rows + analysis.
+  if (compact) {
+    const windowPhrase =
+      verdict.tone === "green" ? "Window open — add protection"
+      : verdict.tone === "red" ? "Window closed — skip protection"
+      : "Window mixed — stay selective";
+    const pillCls =
+      verdict.tone === "green" ? "border-pos-border bg-pos-soft text-pos"
+      : verdict.tone === "red" ? "border-neg-border bg-neg-soft text-neg"
+      : "border-warn-border bg-warn-soft text-warn";
+    const rows = [
+      { label: "Put cost", value: factors[0]?.sublabel ?? "—", optimal: factors[0]?.optimal },
+      { label: "VIX context", value: `${factors[1]?.sublabel ?? "—"} (${vix})`, optimal: factors[1]?.optimal },
+      { label: "Sentiment", value: factors[2]?.sublabel ?? "—", optimal: factors[2]?.optimal },
+    ];
+    return (
+      <section className="rounded-2xl border border-line bg-white p-4 shadow-sm">
+        <div className="flex items-baseline gap-2">
+          <h3 className="text-base font-semibold">Hedging Window</h3>
+          <span className="text-xs text-ink-3">· SPY Puts</span>
+        </div>
+        <div className={`mt-3 flex w-full items-center justify-center gap-2 rounded-xl border px-3 py-2 text-sm font-bold ${pillCls}`}>
+          <span className="inline-block h-1.5 w-1.5 rounded-full bg-current" />
+          {windowPhrase}
+        </div>
+        <div className="mt-3 text-sm">
+          {rows.map((r) => (
+            <div key={r.label} className="flex items-center justify-between gap-2 border-b border-line-soft py-2 last:border-b-0">
+              <span className="text-ink-3">{r.label}</span>
+              <span className={`font-semibold ${r.optimal ? "text-pos" : "text-ink"}`}>{r.value}</span>
+            </div>
+          ))}
+        </div>
+        <div className="mt-3 border-t border-line-soft pt-3">
+          <ClampText text={analysis} />
+        </div>
+      </section>
+    );
+  }
 
   return (
     <section className="rounded-2xl border border-line bg-white p-4 shadow-sm">
