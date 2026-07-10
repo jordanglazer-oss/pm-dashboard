@@ -1802,9 +1802,27 @@ export default function ResearchPage() {
   return (
     <main className="min-h-screen bg-ground px-4 py-6 text-ink md:px-8 md:py-8 overflow-x-hidden">
       <div className="mx-auto max-w-7xl space-y-6">
-        <div>
-          <h1 className="text-3xl font-semibold tracking-tight">Research Notes</h1>
-          <p className="text-ink-3 mt-1">Track external research sources, ideas, and notes. All changes are saved and shared across the team.</p>
+        <div className="flex items-start justify-between gap-3 flex-wrap">
+          <div className="max-w-3xl">
+            <h1 className="text-3xl font-semibold tracking-tight">Research Notes</h1>
+            <p className="text-ink-3 mt-1">Every sell-side &amp; quant source list — each with a screenshot scanner and paste-to-add. Drag any ticker onto the Watchlist. The cross-source synthesis ranks names appearing across multiple lists.</p>
+          </div>
+          <button
+            onClick={() => {
+              if (synthesis) {
+                if (!confirm("Re-synthesize will overwrite the existing synthesis using the CURRENT brief. The previous synthesis (and its brief context) will be replaced. Continue?")) return;
+                void generateSynthesis(true);
+              } else {
+                void generateSynthesis(false);
+              }
+            }}
+            disabled={synthesisLoading}
+            className="shrink-0 inline-flex items-center gap-1.5 rounded-control border border-line bg-surface px-3 py-1.5 text-sm font-semibold text-ink-2 hover:bg-surface-2 disabled:opacity-50 transition-colors"
+            title="Regenerate the cross-source synthesis from the current research + brief."
+          >
+            <svg className={`w-3.5 h-3.5 ${synthesisLoading ? "animate-spin" : ""}`} fill="none" stroke="currentColor" strokeWidth="2" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" d="M4 4v5h.582m15.356 2A8.001 8.001 0 004.582 9m0 0H9m11 11v-5h-.581m0 0a8.003 8.003 0 01-15.357-2m15.357 2H15" /></svg>
+            {synthesisLoading ? "Synthesizing…" : synthesis ? "Re-synthesize" : "Generate"}
+          </button>
         </div>
 
         {attachmentsSaveError && (
@@ -1819,15 +1837,12 @@ export default function ResearchPage() {
             overlap (a ticker mentioned by 2+ sources) is weighted
             higher. Cached server-side: refreshes with unchanged
             research + brief return instantly with no Anthropic cost. */}
-        <section className="rounded-[24px] border border-violet-soft bg-gradient-to-br from-violet-soft/60 to-white p-6 shadow-sm">
+        <section className="rounded-2xl border border-line bg-white p-6 shadow-sm">
           <div className="flex items-start justify-between gap-3 mb-3 flex-wrap">
-            <div>
-              <h3 className="text-xl font-bold text-violet flex items-center gap-2">
-                <span>✦</span> Cross-Source Synthesis
-              </h3>
-              <p className="text-xs text-ink-3 mt-1">
-                Best buy targets across all research sources, weighted by cross-source overlap and the morning brief. Names mentioned by 2+ sources rank as Top Picks.
-              </p>
+            <div className="flex items-center gap-2">
+              <span className="inline-block h-2 w-2 rounded-full bg-violet" />
+              <h3 className="text-xs font-bold uppercase tracking-wider text-violet">Cross-Source Synthesis</h3>
+              <span className="text-xs text-ink-3">Claude · regime-aware</span>
             </div>
             <div className="flex items-center gap-2 flex-wrap">
               {synthesisStatus && (
@@ -1838,27 +1853,6 @@ export default function ResearchPage() {
                   {new Date(synthesisGeneratedAt).toLocaleTimeString([], { hour: "numeric", minute: "2-digit" })}
                 </span>
               )}
-              {!synthesis && (
-                <button
-                  onClick={() => { void generateSynthesis(false); }}
-                  disabled={synthesisLoading}
-                  className="text-[11px] rounded-md bg-violet px-3 py-1.5 font-semibold text-white hover:bg-violet disabled:opacity-50 transition-colors"
-                  title="Generate the cross-source synthesis from current research + brief. Persists across refreshes."
-                >
-                  {synthesisLoading ? "Generating..." : "Generate"}
-                </button>
-              )}
-              <button
-                onClick={() => {
-                  if (!confirm("Force re-generate will overwrite the existing synthesis using the CURRENT brief. The previous synthesis (and its brief context) will be replaced. Continue?")) return;
-                  void generateSynthesis(true);
-                }}
-                disabled={synthesisLoading}
-                className="text-[11px] rounded-md border border-line bg-white px-2.5 py-1.5 font-medium text-ink-2 hover:bg-surface-2 disabled:opacity-50 transition-colors"
-                title="Overwrite the persisted synthesis with a fresh one using the current brief. The new synthesis becomes the new sticky version."
-              >
-                Force re-generate
-              </button>
               <button
                 onClick={() => setUiPref("research.synthesisCollapsed", synthesisCollapsed ? "0" : "1")}
                 className="text-[11px] rounded-md border border-line bg-white px-2 py-1.5 font-medium text-ink-2 hover:bg-surface-2 transition-colors inline-flex items-center gap-1"
@@ -1962,6 +1956,8 @@ export default function ResearchPage() {
                   </div>
                 )}
 
+                {/* Pick columns — mockup's 3-across layout. */}
+                <div className="grid gap-5 md:grid-cols-3 items-start">
                 {/* Top picks — multi-source. Always primary, regardless
                     of regime fit. The fit pill on each card lets the PM
                     spot multi-source picks the regime doesn't favor. */}
@@ -2000,14 +1996,14 @@ export default function ResearchPage() {
                     picks above. */}
                 {synthesis.regimeAlignedHighlights && synthesis.regimeAlignedHighlights.length > 0 && (
                   <div>
-                    <h4 className="text-xs font-bold uppercase tracking-wider text-teal-700 mb-2">
+                    <h4 className="text-xs font-bold uppercase tracking-wider text-accent mb-2">
                       Regime-Aligned Highlights <span className="text-ink-3 font-normal">· single-source, opinion-driven by current environment</span>
                     </h4>
                     <ul className="space-y-2.5">
                       {synthesis.regimeAlignedHighlights.map((p) => (
-                        <li key={p.ticker} className="rounded-xl border border-teal-100 bg-white p-3 shadow-sm">
+                        <li key={p.ticker} className="rounded-xl border border-accent-border bg-white p-3 shadow-sm">
                           <div className="flex items-center gap-2 flex-wrap mb-1.5">
-                            <span className="font-mono font-bold text-base text-teal-900">${displayTicker(p.ticker)}</span>
+                            <span className="font-mono font-bold text-base text-accent">${displayTicker(p.ticker)}</span>
                             <ConvictionBadge p={p} />
                             {p.sources.map((s) => (
                               <span key={s} className="text-[10px] rounded-full bg-surface-2 text-ink-2 px-2 py-0.5">
@@ -2049,6 +2045,8 @@ export default function ResearchPage() {
                   </div>
                 )}
 
+                </div>{/* /pick columns */}
+
                 {/* Cautions */}
                 {synthesis.cautions && synthesis.cautions.length > 0 && (
                   <div className="rounded-lg border border-warn-border bg-warn-soft p-3">
@@ -2082,18 +2080,18 @@ export default function ResearchPage() {
           <div className="overflow-x-auto">
             <div className="overflow-x-auto"><table className="w-full text-sm">
               <thead>
-                <tr className="border-b-2 border-teal-600 text-left">
-                  <th className="py-2 pr-2 text-xs font-semibold text-teal-700 w-8">#</th>
-                  <th className="py-2 pr-3 text-xs font-semibold text-teal-700 cursor-pointer hover:text-teal-900 select-none" onClick={() => toggleUptickSort("ticker")}>Ticker{uArrow("ticker")}</th>
-                  <th className="py-2 pr-3 text-xs font-semibold text-teal-700 cursor-pointer hover:text-teal-900 select-none" onClick={() => toggleUptickSort("name")}>Name{uArrow("name")}</th>
-                  <th className="py-2 pr-3 text-xs font-semibold text-teal-700 cursor-pointer hover:text-teal-900 select-none" onClick={() => toggleUptickSort("sector")}>Sector{uArrow("sector")}</th>
-                  <th className="py-2 pr-3 text-xs font-semibold text-teal-700 text-right cursor-pointer hover:text-teal-900 select-none" onClick={() => toggleUptickSort("price")}>Price{uArrow("price")}</th>
-                  <th className="py-2 pr-3 text-xs font-semibold text-teal-700 text-right cursor-pointer hover:text-teal-900 select-none" onClick={() => toggleUptickSort("priceWhenAdded")}>Price Added{uArrow("priceWhenAdded")}</th>
-                  <th className="py-2 pr-3 text-xs font-semibold text-teal-700 text-right">Chg</th>
-                  <th className="py-2 pr-3 text-xs font-semibold text-teal-700 text-right">Support</th>
-                  <th className="py-2 pr-3 text-xs font-semibold text-teal-700 text-right">Resistance</th>
-                  <th className="py-2 pr-3 text-xs font-semibold text-teal-700 cursor-pointer hover:text-teal-900 select-none" onClick={() => toggleUptickSort("dateAdded")}>Date Added{uArrow("dateAdded")}</th>
-                  <th className="py-2 text-xs font-semibold text-teal-700 w-8"></th>
+                <tr className="border-b-2 border-accent-border text-left">
+                  <th className="py-2 pr-2 text-xs font-semibold text-accent w-8">#</th>
+                  <th className="py-2 pr-3 text-xs font-semibold text-accent cursor-pointer hover:text-accent select-none" onClick={() => toggleUptickSort("ticker")}>Ticker{uArrow("ticker")}</th>
+                  <th className="py-2 pr-3 text-xs font-semibold text-accent cursor-pointer hover:text-accent select-none" onClick={() => toggleUptickSort("name")}>Name{uArrow("name")}</th>
+                  <th className="py-2 pr-3 text-xs font-semibold text-accent cursor-pointer hover:text-accent select-none" onClick={() => toggleUptickSort("sector")}>Sector{uArrow("sector")}</th>
+                  <th className="py-2 pr-3 text-xs font-semibold text-accent text-right cursor-pointer hover:text-accent select-none" onClick={() => toggleUptickSort("price")}>Price{uArrow("price")}</th>
+                  <th className="py-2 pr-3 text-xs font-semibold text-accent text-right cursor-pointer hover:text-accent select-none" onClick={() => toggleUptickSort("priceWhenAdded")}>Price Added{uArrow("priceWhenAdded")}</th>
+                  <th className="py-2 pr-3 text-xs font-semibold text-accent text-right">Chg</th>
+                  <th className="py-2 pr-3 text-xs font-semibold text-accent text-right">Support</th>
+                  <th className="py-2 pr-3 text-xs font-semibold text-accent text-right">Resistance</th>
+                  <th className="py-2 pr-3 text-xs font-semibold text-accent cursor-pointer hover:text-accent select-none" onClick={() => toggleUptickSort("dateAdded")}>Date Added{uArrow("dateAdded")}</th>
+                  <th className="py-2 text-xs font-semibold text-accent w-8"></th>
                 </tr>
               </thead>
               <tbody>
@@ -2105,7 +2103,7 @@ export default function ResearchPage() {
                   return (
                     <tr key={u.ticker} className={`border-b border-line-soft ${rowBg} hover:bg-accent-soft/40 transition-colors`}>
                       <td className="py-2 pr-2 text-ink-3">{i + 1}</td>
-                      <td className="py-2 pr-3 font-mono font-bold text-teal-700">${displayTicker(u.ticker)}</td>
+                      <td className="py-2 pr-3 font-mono font-bold text-accent">${displayTicker(u.ticker)}</td>
                       <td className="py-2 pr-3 text-ink-2 truncate max-w-[160px]">
                         {u.name && u.name !== u.ticker ? u.name : <span className="text-ink-faint italic text-xs">loading...</span>}
                       </td>
@@ -2186,7 +2184,7 @@ export default function ResearchPage() {
           */}
           <div className="mt-5 border-t border-line-soft pt-4">
             <div className="flex items-center gap-3 mb-2">
-              <h4 className="text-sm font-bold text-teal-700">Screenshot Scanner</h4>
+              <h4 className="text-sm font-bold text-accent">Screenshot Scanner</h4>
               <span className="text-[10px] text-ink-3">
                 Upload a Newton&apos;s Upticks screenshot. On Refresh, support/resistance/price/date fields are auto-populated from the image. Re-scans only if the image changes.
               </span>
@@ -2251,7 +2249,7 @@ export default function ResearchPage() {
           {/* Newton sector views — compact inline toggles */}
           <div className="mt-5 border-t border-line-soft pt-4">
             <div className="flex items-center gap-3 mb-3">
-              <h4 className="text-sm font-bold text-teal-700">Newton&apos;s Sector Views</h4>
+              <h4 className="text-sm font-bold text-accent">Newton&apos;s Sector Views</h4>
               <span className="text-[10px] text-ink-3">Click to toggle OW / N / UW</span>
             </div>
             <div className="flex flex-wrap gap-2">
@@ -2839,8 +2837,8 @@ export default function ResearchPage() {
             visually distinguish it from the blue Canadian section. */}
         <CollapsibleSection
           prefKey="research.rbcUs"
-          className="border-teal-200"
-          titleClass="text-xl font-bold text-teal-800"
+          className="border-accent-border"
+          titleClass="text-xl font-bold text-accent"
           title={<>RBC US Focus List</>}
           subtitle={<>RBC Capital Markets US equity picks</>}
           right={<><span className="text-sm text-ink-3">{(state.rbcUsFocus || []).length} names</span></>}
@@ -2848,20 +2846,20 @@ export default function ResearchPage() {
 
           <div className="overflow-x-auto"><table className="w-full text-sm">
             <thead>
-              <tr className="border-b-2 border-teal-500 text-left">
-                <th className="py-2 pr-2 text-xs font-semibold text-teal-700 w-8">#</th>
-                <th className="py-2 pr-3 text-xs font-semibold text-teal-700 cursor-pointer hover:text-teal-900 select-none" onClick={() => toggleRbcUsSort("ticker")}>Ticker{rUsArrow("ticker")}</th>
-                <th className="py-2 pr-3 text-xs font-semibold text-teal-700 cursor-pointer hover:text-teal-900 select-none" onClick={() => toggleRbcUsSort("name")}>Name{rUsArrow("name")}</th>
-                <th className="py-2 pr-3 text-xs font-semibold text-teal-700 cursor-pointer hover:text-teal-900 select-none" onClick={() => toggleRbcUsSort("sector")}>Sector{rUsArrow("sector")}</th>
-                <th className="py-2 pr-3 text-xs font-semibold text-teal-700 cursor-pointer hover:text-teal-900 select-none" onClick={() => toggleRbcUsSort("weight")}>Weight (%){rUsArrow("weight")}</th>
+              <tr className="border-b-2 border-accent-border text-left">
+                <th className="py-2 pr-2 text-xs font-semibold text-accent w-8">#</th>
+                <th className="py-2 pr-3 text-xs font-semibold text-accent cursor-pointer hover:text-accent select-none" onClick={() => toggleRbcUsSort("ticker")}>Ticker{rUsArrow("ticker")}</th>
+                <th className="py-2 pr-3 text-xs font-semibold text-accent cursor-pointer hover:text-accent select-none" onClick={() => toggleRbcUsSort("name")}>Name{rUsArrow("name")}</th>
+                <th className="py-2 pr-3 text-xs font-semibold text-accent cursor-pointer hover:text-accent select-none" onClick={() => toggleRbcUsSort("sector")}>Sector{rUsArrow("sector")}</th>
+                <th className="py-2 pr-3 text-xs font-semibold text-accent cursor-pointer hover:text-accent select-none" onClick={() => toggleRbcUsSort("weight")}>Weight (%){rUsArrow("weight")}</th>
                 <th className="py-2 w-24"></th>
               </tr>
             </thead>
             <tbody>
               {sortedRbcUs().map((item, i) => (
-                <tr key={item.ticker} className={`border-b border-line-soft ${i % 2 === 0 ? "bg-white" : "bg-teal-50/30"} hover:bg-teal-50/60 transition-colors`}>
+                <tr key={item.ticker} className={`border-b border-line-soft ${i % 2 === 0 ? "bg-white" : "bg-accent-soft/30"} hover:bg-accent-soft/60 transition-colors`}>
                   <td className="py-2 pr-2 text-ink-3">{i + 1}</td>
-                  <td className="py-2 pr-3 font-mono font-bold text-teal-700">${displayTicker(item.ticker)}</td>
+                  <td className="py-2 pr-3 font-mono font-bold text-accent">${displayTicker(item.ticker)}</td>
                   <td className="py-2 pr-3 text-ink-2 truncate max-w-[260px]" title={item.name || item.ticker}>{item.name || <span className="text-ink-faint italic">—</span>}</td>
                   <td className="py-2 pr-3 text-ink-2">{item.sector}</td>
                   <td className="py-2 pr-3 text-ink-3">
@@ -2878,7 +2876,7 @@ export default function ResearchPage() {
                           save({ ...state, rbcUsFocus: list });
                         }
                       }}
-                      className="w-16 rounded border border-transparent px-1 py-0.5 text-sm text-center hover:border-line focus:border-teal-300 focus:outline-none bg-transparent"
+                      className="w-16 rounded border border-transparent px-1 py-0.5 text-sm text-center hover:border-line focus:border-accent-border focus:outline-none bg-transparent"
                     />
                   </td>
                   <td className="py-2 text-right whitespace-nowrap">
