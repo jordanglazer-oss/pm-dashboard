@@ -404,12 +404,16 @@ function SourceRowsList({ rows, livePrices, isInList, onAdd, onRemove, emptyLabe
   }
   return (
     <div className="rounded-xl border border-line-soft overflow-hidden">
-      {rows.map((r) => {
+      {rows.map((r, i) => {
         const livePrice = r.priceOverride ?? livePrices[r.ticker] ?? null;
         const changePct = r.changePctOverride ?? (livePrice != null && r.priceWhenAdded ? ((livePrice - r.priceWhenAdded) / r.priceWhenAdded) * 100 : null);
         const inList = isInList(r.ticker);
         return (
-          <div key={r.ticker} className="group flex items-center gap-3 border-b border-line-soft px-3 py-2.5 last:border-b-0 hover:bg-surface-2/50">
+          <div
+            key={r.ticker}
+            className="animate-row-in group flex items-center gap-3 border-b border-line-soft px-3 py-2.5 last:border-b-0 hover:bg-surface-2/50"
+            style={{ animationDelay: `${Math.min(i, 12) * 25}ms` }}
+          >
             <span className="shrink-0 text-ink-faint select-none" title="Use + Watch to add to the Watchlist">⋮⋮</span>
             <div className="min-w-0 flex-1">
               <div className="flex items-baseline gap-2">

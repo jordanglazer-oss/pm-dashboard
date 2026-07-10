@@ -1029,7 +1029,7 @@ export default function AAPerformancePage() {
             <table className="w-full text-sm">
               <thead>
                 <tr className="border-b border-line-soft bg-surface-hover">
-                  <th className="px-3 py-2.5 text-left text-xs font-semibold text-ink-3 uppercase tracking-wider min-w-[220px]">
+                  <th className="sticky left-0 z-10 border-r border-line-soft bg-surface-hover px-3 py-2.5 text-left text-xs font-semibold text-ink-3 uppercase tracking-wider min-w-[220px]">
                     Name
                   </th>
                   {PERIOD_COLS.map((col) => (
@@ -1049,8 +1049,8 @@ export default function AAPerformancePage() {
               </thead>
               <tbody>
                 {autoPerformanceRows.map((row) => (
-                  <tr key={row.name} className="border-b border-line-soft hover:bg-surface-hover">
-                    <td className="px-3 py-2.5 text-sm font-medium text-ink">{row.name}</td>
+                  <tr key={row.name} className="group border-b border-line-soft hover:bg-surface-hover">
+                    <td className="sticky left-0 z-10 border-r border-line-soft bg-white px-3 py-2.5 text-sm font-medium text-ink group-hover:bg-surface-hover">{row.name}</td>
                     {PERIOD_COLS.map((col) => {
                       const val = row[col.key];
                       return (
