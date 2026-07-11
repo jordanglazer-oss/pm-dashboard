@@ -39,7 +39,7 @@ function horizonChipClasses(label: "Risk-On" | "Neutral" | "Risk-Off"): string {
   return "border-warn-border bg-warn-soft text-warn";
 }
 
-export function RegimeStrip() {
+export function RegimeStrip({ bare = false }: { bare?: boolean } = {}) {
   const [regime, setRegime] = useState<MarketRegimeData | null>(null);
   const [loading, setLoading] = useState(true);
 
@@ -66,7 +66,7 @@ export function RegimeStrip() {
   // dashboard grid doesn't shift layout on retries.
   if (loading) {
     return (
-      <div className="rounded-card border border-line bg-white p-4 shadow-sm animate-pulse">
+      <div className={`${bare ? "" : "rounded-card border border-line bg-white p-4 shadow-sm "}animate-pulse`}>
         <div className="flex items-center gap-3">
           <div className="h-6 w-24 rounded-full bg-surface-2" />
           <div className="flex gap-2">
@@ -81,7 +81,7 @@ export function RegimeStrip() {
   if (!regime) return null;
 
   return (
-    <div className="overflow-hidden rounded-card border border-line bg-white p-3 shadow-sm sm:p-4">
+    <div className={bare ? "overflow-hidden" : "overflow-hidden rounded-card border border-line bg-white p-3 shadow-sm sm:p-4"}>
       {/* Top row — header chips wrap above the signal pills on mobile, sit
           inline on desktop. The "Open Brief" link drops to its own row on
           mobile so it never competes with pills for horizontal space. */}

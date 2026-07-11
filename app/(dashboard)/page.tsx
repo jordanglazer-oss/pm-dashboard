@@ -3,10 +3,9 @@
 import React, { useState } from "react";
 import { useStocks } from "@/app/lib/StockContext";
 import { PortfolioOverview } from "@/app/components/PortfolioOverview";
-import { RegimeStrip } from "@/app/components/RegimeStrip";
+import { CockpitBand } from "@/app/components/CockpitBand";
 import { ChangeMonitor } from "@/app/components/ChangeMonitor";
 import { ScoreCalibration } from "@/app/components/ScoreCalibration";
-import { ModelReturnsStrip } from "@/app/components/ModelReturnsStrip";
 import { regimeMultiplier, isOffensiveSector, normalizeSector } from "@/app/lib/scoring";
 import type { Stock, ScoreKey, InstrumentType } from "@/app/lib/types";
 import { INSTRUMENT_LABELS } from "@/app/lib/types";
@@ -97,16 +96,12 @@ export default function DashboardPage() {
     <main className="min-h-screen bg-ground px-4 py-6 text-ink md:px-8 md:py-8 overflow-x-hidden">
       <div className="mx-auto max-w-7xl space-y-6">
 
-        {/* Per-PIM-model day return strip (Balanced/Growth/All-Equity/Alpha/Core).
-            Replaces the old value/holdings/cash tiles per the redesign. */}
-        <ModelReturnsStrip />
-
-        {/* Deterministic regime pulse — sits above the manual regime
-            card so the PM gets the Yahoo-derived cross-asset read at a
-            glance before scanning the fundamentals below. Reads
-            /api/market-regime which is cached in pm:market-regime; the
-            strip silently hides on fetch failure. */}
-        <RegimeStrip />
+        {/* Cockpit band (#11): the per-PIM-model day returns + the full
+            deterministic market-regime read, merged into one at-a-glance card.
+            Every regime signal/horizon is preserved (RegimeStrip renders bare
+            inside it); reads /api/market-regime (cached in pm:market-regime) and
+            silently hides the regime row on fetch failure. */}
+        <CockpitBand />
 
         {/* Change monitor moved into the Rankings cockpit's right sidebar
             (passed to PortfolioOverview below) alongside Sector Exposure. */}
