@@ -203,11 +203,27 @@ table {
 @keyframes chip-in { from { opacity: 0; transform: translateY(3px) scale(0.9); } to { opacity: 1; transform: none; } }
 .animate-chip-in { animation: chip-in 0.3s ease-out; }
 
+/* Conviction ring fill (#04) — element sets --c to the circumference. */
+@keyframes ring-fill { from { stroke-dashoffset: var(--c); } }
+.animate-ring-fill { animation: ring-fill 1s cubic-bezier(0.22, 1, 0.36, 1); }
+
+/* Sector-exposure bar grow (#05) — scaleX from left, GPU-cheap. */
+@keyframes bar-grow { from { transform: scaleX(0); } to { transform: scaleX(1); } }
+.animate-bar-grow { transform-origin: left; animation: bar-grow 0.7s cubic-bezier(0.22, 1, 0.36, 1) both; }
+
+/* Empty-state / scale-in entrances (#08 / #11). */
+@keyframes fade-up { from { opacity: 0; transform: translateY(8px); } to { opacity: 1; transform: none; } }
+@keyframes scale-in { from { opacity: 0; transform: translateY(8px) scale(0.975); } to { opacity: 1; transform: none; } }
+.animate-fade-up { animation: fade-up 0.45s ease-out; }
+.animate-scale-in { animation: scale-in 0.5s cubic-bezier(0.22, 1, 0.36, 1); }
+
 @media (prefers-reduced-motion: reduce) {
   .spark-draw { stroke-dasharray: none; animation: none; }
   .animate-row-in { animation: none; }
   .flash-pos, .flash-neg { animation: none; }
   .shimmer-sweep { animation: none; }
+  .animate-ring-fill, .animate-bar-grow, .animate-fade-up, .animate-scale-in { animation: none; }
+  .animate-bar-grow { transform: none; }
   .spark-dot { animation: none; opacity: 1; }
   .animate-chip-in { animation: none; }
 }

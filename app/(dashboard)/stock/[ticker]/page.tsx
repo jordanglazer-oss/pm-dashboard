@@ -413,9 +413,9 @@ function ScoreDonut({ score, max, groups, stock }: { score: number; max: number;
   const ratingColor = score >= 26 ? "#10b981" : score >= 22 ? "#f59e0b" : score >= 18 ? "#f97316" : "#ef4444";
 
   return (
-    <div className="flex flex-col items-center">
+    <div className="animate-scale-in flex flex-col items-center">
       <svg viewBox="0 0 200 200" className="w-40 h-40">
-        <circle cx={center} cy={center} r={radius} fill="none" stroke="#e2e8f0" strokeWidth={strokeWidth} />
+        <circle cx={center} cy={center} r={radius} fill="none" style={{ stroke: "var(--color-line-soft)" }} strokeWidth={strokeWidth} />
         {segments.map((seg, i) => {
           const segPct = seg.value / max;
           const segLen = segPct * circumference;

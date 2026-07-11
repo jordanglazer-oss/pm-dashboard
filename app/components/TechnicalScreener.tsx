@@ -2,6 +2,7 @@
 
 import React, { useState, useMemo, useEffect } from "react";
 import { useRouter } from "next/navigation";
+import { EmptyState } from "@/app/components/EmptyState";
 import { useStocks } from "@/app/lib/StockContext";
 import type { ScoredStock, Stock, ScoreKey } from "@/app/lib/types";
 import type { TechnicalIndicators, ImprovingScore } from "@/app/lib/technicals";
@@ -587,9 +588,13 @@ export function TechnicalScreener({ stocks, onAddToWatchlist }: Props) {
               </tbody>
             </table>
             {filtered.length === 0 && (
-              <div className="text-center py-12 text-ink-3">
-                {stocksWithTechnicals.length === 0 ? "No stocks have technical data yet. Score stocks to generate technicals." : "No stocks match the current filters."}
-              </div>
+              <EmptyState
+                glyph={
+                  <svg className="h-5 w-5" fill="none" stroke="currentColor" strokeWidth="2" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" d="M21 21l-5.197-5.197m0 0A7.5 7.5 0 105.196 5.196a7.5 7.5 0 0010.607 10.607z" /></svg>
+                }
+                title={stocksWithTechnicals.length === 0 ? "No technical data yet" : "No matches"}
+                body={stocksWithTechnicals.length === 0 ? "Score stocks to generate technicals, then they'll show up here." : "No stocks match the current filters — try loosening them."}
+              />
             )}
           </div>
         </>

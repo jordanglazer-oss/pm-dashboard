@@ -1147,11 +1147,15 @@ export function PortfolioOverview({ sidebar }: { sidebar?: React.ReactNode } = {
               )}
             </div>
             <div className="space-y-2">
-              {sectorExposure.map((s) => {
+              {sectorExposure.map((s, i) => {
                 const spWeight = sp500Weights[s.sector] || 0;
                 const diff = s.weight - spWeight;
                 const over = diff > 1.5;
                 const under = diff < -1.5;
+                // Bar color by magnitude (#05): >25% concentration flag → warn,
+                // else largest sector → accent, rest → faint. The over/under-vs-
+                // S&P signal is preserved in the text badges below.
+                const barColor = s.weight > 25 ? "bg-warn" : i === 0 ? "bg-accent" : "bg-ink-faint";
                 return (
                   <div key={s.sector}>
                     <div className="flex items-baseline justify-between gap-2 text-[12px] mb-0.5">
@@ -1162,13 +1166,13 @@ export function PortfolioOverview({ sidebar }: { sidebar?: React.ReactNode } = {
                       </span>
                       <span className="whitespace-nowrap font-mono text-ink">
                         <span className="font-semibold">{s.weight}%</span>{" "}
-                        <span className="text-ink-3">/ {spWeight.toFixed(0)}</span>
+                        <span className="text-ink-faint">/ {spWeight.toFixed(0)}</span>
                       </span>
                     </div>
-                    <div className="h-1.5 overflow-hidden rounded-full bg-line">
+                    <div className="h-1.5 overflow-hidden rounded-full bg-line-soft">
                       <div
-                        className={`h-full ${over ? "bg-neg" : under ? "bg-accent" : "bg-ink-3"}`}
-                        style={{ width: `${Math.min(100, s.weight * 2)}%` }}
+                        className={`animate-bar-grow h-full ${barColor}`}
+                        style={{ width: `${Math.min(100, s.weight * 2)}%`, animationDelay: `${i * 70}ms` }}
                       />
                     </div>
                   </div>
