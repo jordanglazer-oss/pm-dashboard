@@ -162,8 +162,13 @@ export async function GET(req: NextRequest) {
     const positionsByProfile = new Map<string, StoredPosition[]>();
     try {
       const raw = await redis.get("pm:pim-positions");
-      const parsed = raw ? JSON.parse(raw) : [];
-      const arr = Array.isArray(parsed) ? (parsed as PositionLedger[]) : [];
+      const parsed = raw ? JSON.parse(raw) : null;
+      // pm:pim-positions is stored as { portfolios: PimPortfolioPositions[] },
+      // NOT a bare array — read the inner array.
+      const arr: PositionLedger[] =
+        parsed && Array.isArray((parsed as { portfolios?: unknown }).portfolios)
+          ? ((parsed as { portfolios: PositionLedger[] }).portfolios)
+          : [];
       for (const pl of arr) {
         if (!pl.profile || !Array.isArray(pl.positions)) continue;
         const list = positionsByProfile.get(pl.profile) ?? [];
