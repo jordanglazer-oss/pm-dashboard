@@ -140,9 +140,27 @@ export function Attribution() {
   const rows = useMemo(() => {
     if (!decomp || !bench) return [];
     return [
-      { key: "Market (beta)", value: bench.marketContributionPct, bar: "bg-accent", note: `${decomp.portfolioBeta.toFixed(2)}β × ${fmtPct(bench.benchmarkReturnPct)} ${bench.label}` },
-      { key: "Currency (USD/CAD)", value: decomp.currencyContributionPct, bar: "bg-violet", note: `${decomp.usdSleeveWeightPct.toFixed(0)}% USD sleeve × ${fmtPct(decomp.usdcadReturnPct)}` },
-      { key: "Selection (alpha)", value: bench.selectionPct, bar: "bg-ink", note: "the rest — your name picking" },
+      {
+        key: "Market (beta)",
+        value: bench.marketContributionPct,
+        bar: "bg-accent",
+        desc: "What you'd have earned just by being in the market — not from which stocks you picked.",
+        note: `your beta ${decomp.portfolioBeta.toFixed(2)} × the ${bench.label}'s ${fmtPct(bench.benchmarkReturnPct)}`,
+      },
+      {
+        key: "Currency (USD/CAD)",
+        value: decomp.currencyContributionPct,
+        bar: "bg-violet",
+        desc: "The part of your return that's purely the US dollar moving against the loonie.",
+        note: `${decomp.usdSleeveWeightPct.toFixed(0)}% of the book is USD × the ${fmtPct(decomp.usdcadReturnPct)} USD/CAD move`,
+      },
+      {
+        key: "Selection (alpha)",
+        value: bench.selectionPct,
+        bar: "bg-ink",
+        desc: "What your stock-picking added or lost beyond market + currency — your actual edge.",
+        note: "total return minus market minus currency",
+      },
     ];
   }, [decomp, bench]);
 
@@ -223,27 +241,32 @@ export function Attribution() {
           </div>
 
           {/* total */}
-          <div className="flex items-baseline gap-2">
-            <span className="text-[11px] font-semibold uppercase tracking-wider text-ink-3">Total return</span>
-            <span className={`font-mono text-2xl font-bold tabular-nums ${toneClass(decomp.portfolioReturnPct)}`}>
-              {fmtPct(decomp.portfolioReturnPct)}
-            </span>
-            {decomp.benchmarks.length > 1 && (
-              <div className="ml-auto flex gap-1">
-                {decomp.benchmarks.map((b, i) => (
-                  <button
-                    key={b.label}
-                    onClick={() => setBenchIdx(i)}
-                    className={`rounded-full px-2 py-0.5 text-[10px] font-semibold transition-colors ${
-                      i === benchIdx ? "bg-accent-soft text-accent" : "text-ink-3 hover:bg-surface-2"
-                    }`}
-                    title={`Split vs ${b.label}`}
-                  >
-                    {b.label === "S&P 500" ? "vs S&P 500" : "vs TSX"}
-                  </button>
-                ))}
-              </div>
-            )}
+          <div className="flex flex-col gap-1">
+            <div className="flex items-baseline gap-2">
+              <span className="text-[11px] font-semibold uppercase tracking-wider text-ink-3">Total return</span>
+              <span className={`font-mono text-2xl font-bold tabular-nums ${toneClass(decomp.portfolioReturnPct)}`}>
+                {fmtPct(decomp.portfolioReturnPct)}
+              </span>
+              {decomp.benchmarks.length > 1 && (
+                <div className="ml-auto flex gap-1">
+                  {decomp.benchmarks.map((b, i) => (
+                    <button
+                      key={b.label}
+                      onClick={() => setBenchIdx(i)}
+                      className={`rounded-full px-2 py-0.5 text-[10px] font-semibold transition-colors ${
+                        i === benchIdx ? "bg-accent-soft text-accent" : "text-ink-3 hover:bg-surface-2"
+                      }`}
+                      title={`Split your return vs ${b.label}`}
+                    >
+                      {b.label === "S&P 500" ? "vs S&P 500" : "vs TSX"}
+                    </button>
+                  ))}
+                </div>
+              )}
+            </div>
+            <p className="text-[11.5px] text-ink-3">
+              Your {data.profiles[profileIdx]?.label} model&apos;s actual {period} return (in CAD), split below into the three things that drove it. Toggle the benchmark on the right.
+            </p>
           </div>
 
           {/* decomposition rows */}
@@ -264,13 +287,16 @@ export function Attribution() {
             ))}
           </div>
 
-          {/* per-row explanation, condensed */}
-          <div className="flex flex-col gap-1 rounded-control bg-surface-2/60 px-3 py-2">
+          {/* per-row explanation — plain-English description + the math */}
+          <div className="flex flex-col gap-2 rounded-control bg-surface-2/60 px-3 py-2.5">
             {rows.map((r) => (
-              <div key={r.key} className="flex items-center gap-2 text-[11px] text-ink-3">
-                <span className={`h-1.5 w-1.5 rounded-full ${r.bar} shrink-0`} aria-hidden />
-                <span className="font-semibold text-ink-2">{r.key.split(" ")[0]}</span>
-                <span>{r.note}</span>
+              <div key={r.key} className="flex items-start gap-2 text-[11.5px]">
+                <span className={`mt-1 h-1.5 w-1.5 rounded-full ${r.bar} shrink-0`} aria-hidden />
+                <span>
+                  <span className="font-semibold text-ink">{r.key}</span>
+                  <span className="text-ink-2"> — {r.desc}</span>
+                  <span className="text-ink-faint"> ({r.note})</span>
+                </span>
               </div>
             ))}
           </div>
@@ -283,14 +309,19 @@ export function Attribution() {
           {/* View 2 — cost-basis contribution breakdown (since purchase) */}
           {contrib && contrib.holdings.length > 0 && (
             <div className="mt-1 flex flex-col gap-3 border-t border-line-soft pt-4">
-              <div className="flex items-baseline gap-2">
-                <h3 className="text-[11px] font-bold uppercase tracking-wider text-ink-3">Contribution to return</h3>
-                <span className="text-[11px] text-ink-faint">since purchase</span>
-                {(profileData?.contributionsExcluded ?? 0) > 0 && (
-                  <span className="ml-auto text-[10.5px] text-ink-faint">
-                    {profileData!.contributionsExcluded} position{profileData!.contributionsExcluded === 1 ? "" : "s"} without a price match excluded
-                  </span>
-                )}
+              <div className="flex flex-col gap-1">
+                <div className="flex items-baseline gap-2">
+                  <h3 className="text-[11px] font-bold uppercase tracking-wider text-ink-3">Contribution to return</h3>
+                  <span className="text-[11px] text-ink-faint">since purchase</span>
+                  {(profileData?.contributionsExcluded ?? 0) > 0 && (
+                    <span className="ml-auto text-[10.5px] text-ink-faint">
+                      {profileData!.contributionsExcluded} position{profileData!.contributionsExcluded === 1 ? "" : "s"} without a price match excluded
+                    </span>
+                  )}
+                </div>
+                <p className="text-[11.5px] text-ink-3">
+                  Which holdings actually moved the needle — each name&apos;s weight × its gain/loss since you bought it. Contributors added return, detractors subtracted it.
+                </p>
               </div>
 
               {/* winners + detractors, side by side */}
