@@ -45,6 +45,7 @@ type Props = {
 export default function StockChart({ ticker, technicals, className = "" }: Props) {
   const { chartAnalyses, setChartAnalysis, clearChartAnalysis } = useStocks();
   const containerRef = useRef<HTMLDivElement>(null);
+  const tooltipRef = useRef<HTMLDivElement>(null);
   // eslint-disable-next-line @typescript-eslint/no-explicit-any
   const chartRef = useRef<any>(null);
   const [viewRange, setViewRange] = useState<ViewRange>("1y");
@@ -220,6 +221,37 @@ export default function StockChart({ ticker, technicals, className = "" }: Props
         );
       }
 
+      // Scrubbing tooltip (#14). Reuses the library's own crosshair; a floating
+      // date + close/change readout follows it. pointer-events:none on the
+      // tooltip keeps the crosshair firing. The subscription is disposed with
+      // the chart on cleanup, so no explicit unsubscribe is needed.
+      chart.subscribeCrosshairMove((param) => {
+        const el = tooltipRef.current;
+        if (!el) return;
+        const w = containerRef.current?.clientWidth ?? 0;
+        if (!param.time || !param.point || param.point.x < 0 || param.point.x > w || param.point.y < 0) {
+          el.style.display = "none";
+          return;
+        }
+        const bar = param.seriesData.get(candleSeries) as
+          | { open: number; high: number; low: number; close: number }
+          | undefined;
+        if (!bar) { el.style.display = "none"; return; }
+        const chg = bar.close - bar.open;
+        const chgPct = bar.open ? (chg / bar.open) * 100 : 0;
+        const col = chg >= 0 ? "var(--color-pos)" : "var(--color-neg)";
+        el.innerHTML =
+          `<div style="font-weight:600;color:var(--color-ink)">${String(param.time)}</div>` +
+          `<div style="font-family:var(--font-mono);color:var(--color-ink-2)">$${bar.close.toFixed(2)} ` +
+          `<span style="color:${col}">${chg >= 0 ? "+" : ""}${chgPct.toFixed(1)}%</span></div>`;
+        el.style.display = "block";
+        const tw = el.offsetWidth;
+        let left = param.point.x + 14;
+        if (left + tw > w) left = param.point.x - tw - 14;
+        el.style.left = `${Math.max(0, left)}px`;
+        el.style.top = `${Math.max(0, param.point.y - 8)}px`;
+      });
+
       // Apply initial zoom
       const months = rangeToMonths(viewRange);
       if (months === null) {
@@ -391,11 +423,14 @@ export default function StockChart({ ticker, technicals, className = "" }: Props
             {error}
           </div>
         )}
-        <div
-          ref={containerRef}
-          className={`w-full ${loading || error ? "hidden" : ""}`}
-          style={{ minHeight: 420 }}
-        />
+        <div className={`relative w-full ${loading || error ? "hidden" : ""}`}>
+          <div ref={containerRef} className="w-full" style={{ minHeight: 420 }} />
+          <div
+            ref={tooltipRef}
+            style={{ display: "none" }}
+            className="pointer-events-none absolute z-20 rounded-md border border-line bg-white/95 px-2 py-1 text-[11px] leading-tight shadow-card"
+          />
+        </div>
       </div>
 
       {/* Analysis result */}
