@@ -1106,6 +1106,21 @@ export function MorningBrief({
   const hedgingCall = brief?.hedgingCall || null;
   const cashDeploymentCall = brief?.cashDeploymentCall || null;
 
+  // Catalyst Calendar (Phase 01) — forward event strip + prose.
+  const catalystEvents = brief?.catalystCalendar?.events ?? [];
+  const catalystWatch = brief?.catalystWatch?.trim() || "";
+  // Parse a YYYY-MM-DD as a LOCAL date (avoid the UTC-midnight day-shift) and
+  // format it compactly, e.g. "Wed Jul 15".
+  const fmtCatalystDate = (iso: string): string => {
+    const [y, m, d] = iso.split("-").map(Number);
+    if (!y || !m || !d) return iso;
+    return new Date(y, m - 1, d).toLocaleDateString("en-US", {
+      weekday: "short",
+      month: "short",
+      day: "numeric",
+    });
+  };
+
   // Days-left-in-window calendar logic for the Cash Deployment tile.
   // Normal monthly deployment window is the 1st-20th of each month. After
   // the 15th we surface a soft-urgency cue; after the 20th the window is
@@ -1762,6 +1777,41 @@ export function MorningBrief({
         <section className="flex items-start gap-2.5 rounded-xl border border-accent-border bg-accent-soft/50 px-4 py-3">
           <span className="mt-0.5 shrink-0 rounded-md bg-accent px-1.5 py-0.5 text-[10px] font-bold uppercase tracking-wider text-white">Since last brief</span>
           <p className="text-sm leading-6 text-ink-2">{brief.whatChanged}</p>
+        </section>
+      )}
+
+      {/* Catalyst watch — the next ~2 weeks (Phase 01). Deterministic dated
+          event strip (earnings for the book + econ + FOMC) plus the model's
+          exposure read. Hidden when there's neither prose nor events (old
+          briefs pre-date this and fall through gracefully). */}
+      {(catalystWatch || catalystEvents.length > 0) && (
+        <section className="rounded-xl border border-line bg-white px-4 py-3.5 shadow-sm">
+          <div className="mb-2.5 flex items-center gap-2">
+            <span className="rounded-md bg-ink px-1.5 py-0.5 text-[10px] font-bold uppercase tracking-wider text-white">Next 2 weeks</span>
+            <span className="text-xs font-semibold text-ink-3">Catalyst watch</span>
+          </div>
+          {catalystWatch && (
+            <p className="mb-3 text-sm leading-6 text-ink-2">{catalystWatch}</p>
+          )}
+          {catalystEvents.length > 0 && (
+            <ul className="flex flex-col gap-1.5">
+              {catalystEvents.map((e, i) => (
+                <li key={`${e.date}-${e.title}-${i}`} className="flex items-center gap-2.5 text-[13px]">
+                  <span className="w-[92px] shrink-0 whitespace-nowrap font-mono text-[11px] tabular-nums text-ink-3">
+                    {fmtCatalystDate(e.date)}
+                  </span>
+                  <span
+                    className={`h-1.5 w-1.5 shrink-0 rounded-full ${e.importance === "high" ? "bg-warn" : "bg-ink-faint"}`}
+                    aria-hidden
+                  />
+                  <span className="text-ink">{e.title}</span>
+                  {e.kind === "earnings" && e.bucket === "Portfolio" && (
+                    <span className="rounded-full bg-accent-soft px-1.5 py-px text-[10px] font-semibold text-accent">held</span>
+                  )}
+                </li>
+              ))}
+            </ul>
+          )}
         </section>
       )}
 

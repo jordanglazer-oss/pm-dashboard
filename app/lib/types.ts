@@ -1,4 +1,5 @@
 import type { TechnicalIndicators, RiskAlert } from "./technicals";
+import type { CatalystCalendar } from "./catalyst-calendar";
 
 // Re-export for convenience
 export type { TechnicalIndicators, RiskAlert };
@@ -697,6 +698,19 @@ export type MorningBrief = {
    *  (server-computed, not AI-generated). Absent on old briefs → UI falls back
    *  to the leading/lagging lists. */
   sectorPerformance?: { sector: string; etf: string; dayPct: number | null }[];
+  /**
+   * Forward-looking narrative for the next ~2 weeks — the model's reading of
+   * the Catalyst Calendar (Phase 01), tying scheduled events (earnings, CPI,
+   * FOMC, …) to this book's exposure. Optional so older briefs still render.
+   */
+  catalystWatch?: string;
+  /**
+   * Structured forward event calendar the brief was generated against
+   * (server-computed, not AI). The UI renders the event strip from this;
+   * `catalystWatch` is the prose interpretation. Null when the build failed;
+   * absent on briefs generated before Phase 01.
+   */
+  catalystCalendar?: CatalystCalendar | null;
   riskScan?: {
     ticker: string;
     priority: "High" | "Medium-High" | "Medium" | "Low-Medium";

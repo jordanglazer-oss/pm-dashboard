@@ -14,6 +14,7 @@ import type { ResearchState } from "@/app/lib/defaults";
 import { defaultResearch } from "@/app/lib/defaults";
 import { buildHedgingCostsBlock } from "@/app/lib/hedging";
 import { crossSectional, factsetConfigured } from "@/app/lib/factset";
+import { buildCatalystCalendar, type CatalystCalendar } from "@/app/lib/catalyst-calendar";
 import type { MarketRegimeData } from "@/app/lib/market-regime";
 import { isCreditError, recordAnthropicCreditError, markAnthropicHealthy } from "@/app/lib/anthropic-status";
 import { getDataUrl } from "@/app/lib/blob-store";
@@ -187,6 +188,7 @@ Respond ONLY with valid JSON matching this exact structure (fields are intention
   "regimeVerdict": "ONE punchy line (≤30 words) for the BOTTOM of the brief that fuses the OBJECTIVE quant regime with YOUR synthesized judgment (notes + reports + data). Exact format: 'Regime: <Risk-On|Neutral|Risk-Off> (quant) — Brief <concurs|cautions|diverges>: <terse actionable so-what>'. Use 'concurs' when your read aligns with the quant regime; 'cautions' when you broadly agree but flag a real caveat (narrowing breadth, Newton flipping, rich sentiment); 'diverges' when the notes+data lead you to position AGAINST the tape. The so-what must be a concrete posture (e.g. 'deploy on dips', 'trim into strength + add tail hedge', 'wait for breadth to confirm'). The <quant> label MUST equal marketRegime. Example: 'Regime: Risk-On (quant) — Brief cautions: tape constructive but breadth narrowing and Newton flipped; deploy partial, keep dry powder.'",
   "bottomLine": "2-4 sentences: THE single decisive takeaway + positioning posture across the three horizons — the one thing to know today. State the call and the so-what plainly; reference the weighted composite. Keep the driver MECHANICS light here (which signals and why lives in compositeAnalysis) so the two don't echo each other. Be bold and direct.",
   "whatChanged": "ONE-TWO sentences on what has MATERIALLY CHANGED since the Prior Brief (provided above, if any): a regime flip, a hedging or cash-deployment call change, a signal crossing a key threshold, a new/escalated portfolio risk, or Newton flipping direction. Be specific and cite the delta (e.g. 'Regime held Risk-On but cash-deploy dropped 72→58 as breadth narrowed'). If little changed, say so in one line. Return an EMPTY STRING only when no Prior Brief was provided.",
+  "catalystWatch": "2-4 sentences on the NEXT ~2 WEEKS, grounded STRICTLY in the CATALYST CALENDAR block below. Name the specific dated events on deck (earnings for owned names, CPI / jobs / GDP / PCE / FOMC) and translate each into how THIS book is exposed — which sector concentration or single name is most in the line of fire. Lead with the single biggest event risk. Do NOT invent events that aren't in the calendar block. Return an EMPTY STRING if the calendar block lists no events.",
   "tacticalView": "2-3 sentences for the 1-3M tactical horizon. What the PM should DO this month. Cite at least one tactical-bucket signal by name (VIX Level, Breadth (RSP/SPY), MTUM/USMV). Concrete posture call: lean in, take chips, add OTM tail protection, or hold. Reference live SPY hedging premiums if attached. This pairs with hedgingAnalysis.",
   "tacticalInvalidator": "ONE sentence (≤25 words) naming the specific data point(s) that, if seen, would invalidate the tactical view. Be CONCRETE — cite the signal and the threshold. Example: 'VIX above 25 with breadth ratio inverting' or 'MTUM/USMV breaks below 1.05'. NEVER 'unknown' or 'various factors'.",
   "cyclicalView": "2-3 sentences for the 3-6M cyclical horizon. Sector rotation + business cycle. Cite at least one cyclical-bucket signal by name (XLY/XLP, XLK/XLU, ISM PMI 50-line). Concrete: which sectors are accelerating, which to rotate into, whether the cycle is mid or late. Call out an ISM PMI 50-line CROSSOVER explicitly if one is flagged.",
@@ -247,6 +249,7 @@ Notes:
 - sectorRotation.leading and .lagging should each have 2-3 entries with sector name, approximate MTD performance, and a brief reason.
 - riskScan MUST ONLY include holdings tagged "(Portfolio, ...)" — NEVER include Watchlist names (those are candidates, not owned positions). Order from highest risk to lowest, with priority: "High", "Medium-High", "Medium", or "Low-Medium". Focus on the weakest/most at-risk Portfolio names. Include 4-7 entries drawn exclusively from the Portfolio bucket. USE the [RISK: ...] annotations on each holding — holdings tagged CRITICAL or WARNING should be prioritized highest. Incorporate specific risk signals (trend, momentum, MACD, volume, Ichimoku, valuation) into your summaries and actions. Do NOT reference short interest as a risk driver — it is informational only.
 - MARKETEDGE DETERIORATION RULE: Any Portfolio holding tagged "[MARKETEDGE: deteriorating Long, …]" MUST appear in riskScan with priority at least "Medium" — this is a deliberate flag from MarketEdge that a winning position's technicals are significantly breaking down (Long opinion with Score ≤ −3). Cite the Opinion Score and Power Rating in the summary. If the broader environment corroborates (Risk-Off regime, weakening breadth, deteriorating tactical view, or matching CRITICAL/WARNING riskAlert on the same name), ELEVATE to "High" and add a forwardActions item proposing a concrete next step (review/trim/tighten thesis). Do NOT silently downgrade or omit a MARKETEDGE deteriorating-Long flag.
+- catalystWatch MUST be grounded ONLY in the CATALYST CALENDAR block — cite the actual dated events (never invent dates or events not listed). Tie each to the book's exposure (e.g. 'CPI on the 15th pressures your Tech concentration'; 'NVDA earnings on the 21st is your biggest single-name event risk'). Lead with the single highest-impact event. If the block lists no events, return an empty string.
 - forwardActions should contain 4-6 specific, actionable recommendations ordered by priority. Use "High", "Medium", or "Low" for priority. Actions should be forward-looking (what to do THIS week or next), not reactive to yesterday.
 - topActionsToday is the PM's at-a-glance executive summary — 3 to 5 imperative one-liners that distill the most important decisions for today. Each entry must (a) start with a verb (Add / Trim / Hedge / Rotate / Watch / Skip / Hold), (b) be ≤ 12 words, (c) be specific enough that the PM could execute on it without further interpretation ("Add 2% SPY 3M 7%-OTM puts" not "Consider hedging"), and (d) be a subset/restatement of the most important forwardActions and hedgingCall items so the executive summary is consistent with the detail panels below it. Do NOT include "review", "monitor", "consider" — those are too vague. If a forwardAction is High priority it should usually have a corresponding topActionsToday entry.
 - hedgingCall MUST mirror the recommendation in hedgingAnalysis. If hedgingAnalysis says "SKIP", hedgingCall.action is "SKIP" and strike/tenor are omitted (null/missing). If it says "ADD", populate strike + tenor with the specific values referenced in the prose (e.g. "5% OTM" / "3 months"). reason must be one short sentence that captures the WHY (cheap insurance + late-cycle warning, classic Risk-Off, etc.) so the PM can decide in one read whether to act.
@@ -917,6 +920,34 @@ ${rows.join("\n")}`;
         readMarketRegime(),
       ]);
 
+    // ── Catalyst Calendar (Phase 01) ──────────────────────────────────────
+    // Forward event calendar: earnings dates off pm:stocks (refresh-data
+    // already stores them) + FRED econ releases + FOMC. Best-effort — any
+    // failure just omits the block, never blocks the brief. The structured
+    // result is also returned to the client so the UI can render the event
+    // strip deterministically alongside the model's catalystWatch prose.
+    let catalystCalendar: CatalystCalendar | null = null;
+    try {
+      const calRedis = await getRedis();
+      const rawStocks = await calRedis.get("pm:stocks");
+      const parsedStocks = rawStocks ? JSON.parse(rawStocks) : [];
+      const calStocks = Array.isArray(parsedStocks)
+        ? (parsedStocks as Array<{ ticker?: string; bucket?: string; earningsDate?: string }>)
+        : [];
+      catalystCalendar = await buildCatalystCalendar(calStocks, 14);
+    } catch (e) {
+      console.error("Catalyst calendar build failed:", e);
+    }
+    const catalystBlock =
+      catalystCalendar && catalystCalendar.events.length > 0
+        ? `\n\nCATALYST CALENDAR (scheduled events in the next ${catalystCalendar.windowDays} days — the SOURCE for catalystWatch; also make the three horizon views forward-referencing where relevant):\n${catalystCalendar.events
+            .map(
+              (e) =>
+                `- ${e.date} · ${e.title}${e.kind === "earnings" && e.bucket ? ` (${e.bucket})` : ""}${e.importance === "high" ? " [HIGH]" : ""}`,
+            )
+            .join("\n")}`
+        : "\n\nCATALYST CALENDAR: no scheduled earnings/econ/FOMC events in the look-ahead window (or the calendar was unavailable this run) — return an empty string for catalystWatch.";
+
     const fmt = (p: ForwardPoint | undefined, unit = ""): string => {
       if (!p || p.value == null) {
         return p?.note ? `N/A (${p.note})` : "N/A";
@@ -1192,7 +1223,7 @@ Conviction: ${marketData.conviction}
 
 Pre-classified Regime: ${classification.regime} (score ${classification.score})
 Regime drivers: ${classification.signals.length > 0 ? classification.signals.join("; ") : "mixed / no dominant signal"}
-IMPORTANT: Your marketRegime output MUST equal "${classification.regime}" unless the data below clearly contradicts it (in which case briefly note the contradiction in bottomLine).${forwardBlock}${regimeBlock}
+IMPORTANT: Your marketRegime output MUST equal "${classification.regime}" unless the data below clearly contradicts it (in which case briefly note the contradiction in bottomLine).${forwardBlock}${regimeBlock}${catalystBlock}
 
 Volatility Structure:
 - VIX Term Structure: ${marketData.termStructure}
@@ -1562,6 +1593,10 @@ Current Portfolio Holdings: ${holdingsSummary}${portfolioPositioning}`;
       marketRegime: finalRegime,
       // Structured live sector performance for the UI tile grid (not AI-generated).
       sectorPerformance: sectorPerf.sectors,
+      // Structured forward event calendar (Phase 01) — the UI renders the
+      // event strip from this deterministically; catalystWatch (in ...parsed)
+      // is the model's interpretation of it. Null when the build failed.
+      catalystCalendar,
     });
   } catch (error) {
     const message = error instanceof Error ? error.message : String(error);
