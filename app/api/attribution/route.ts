@@ -4,8 +4,10 @@ import { createLogger } from "@/app/lib/logger";
 import {
   decompose,
   returnOverPeriod,
+  computeContributions,
   PERIODS,
   type ReturnDecomposition,
+  type ContributionBreakdown,
   type ValuePoint,
   type PeriodKey,
 } from "@/app/lib/attribution";
@@ -48,11 +50,30 @@ const PROFILE_LABEL: Record<string, string> = {
 };
 
 type Ledger = { profile?: string; entries?: Array<{ date?: string; value?: number }> };
-type StoredStock = { ticker?: string; bucket?: string; beta?: number; currency?: string };
+type StoredStock = {
+  ticker?: string;
+  bucket?: string;
+  beta?: number;
+  currency?: string;
+  sector?: string;
+  price?: number;
+  currentPrice?: number;
+};
+type StoredPosition = { symbol?: string; units?: number; costBasis?: number };
+type PositionLedger = { profile?: string; positions?: StoredPosition[] };
 
 function isCad(ticker: string, currency?: string): boolean {
   if (currency) return currency.toUpperCase() === "CAD";
   return /(\.(TO|V|NE|CN))$/i.test(ticker) || /-T$/i.test(ticker);
+}
+
+/** Normalise a ticker/symbol so PIM positions match pm:stocks across the
+ *  -T / .TO / .V / .NE / .U suffix variants. */
+function normTicker(t: string): string {
+  return t
+    .toUpperCase()
+    .replace(/\.(TO|V|NE|CN|U)$/i, "")
+    .replace(/-T$/i, "");
 }
 
 /** Fetch a Yahoo daily close history as an ascending ValuePoint[] series. */
@@ -105,15 +126,28 @@ export async function GET(req: NextRequest) {
       log.warn("appendix read failed:", e instanceof Error ? e.message : e);
     }
 
-    // ── Equity book beta + USD sleeve from pm:stocks (Portfolio bucket) ──
+    // ── Equity book beta + USD sleeve + price/sector lookup from pm:stocks ──
     let equityBeta = 1;
     let usdEquityFraction = 0;
+    const stockLookup = new Map<
+      string,
+      { ticker: string; sector: string; currency: "CAD" | "USD"; price: number | null }
+    >();
     try {
       const raw = await redis.get("pm:stocks");
       const parsed = raw ? JSON.parse(raw) : [];
-      const port = (Array.isArray(parsed) ? (parsed as StoredStock[]) : []).filter(
-        (s) => s.bucket === "Portfolio" && s.ticker,
-      );
+      const all = Array.isArray(parsed) ? (parsed as StoredStock[]) : [];
+      for (const s of all) {
+        if (!s.ticker) continue;
+        const price = typeof s.price === "number" ? s.price : typeof s.currentPrice === "number" ? s.currentPrice : null;
+        stockLookup.set(normTicker(s.ticker), {
+          ticker: s.ticker,
+          sector: s.sector || "Unclassified",
+          currency: isCad(s.ticker, s.currency) ? "CAD" : "USD",
+          price,
+        });
+      }
+      const port = all.filter((s) => s.bucket === "Portfolio" && s.ticker);
       if (port.length > 0) {
         const betas = port.map((s) => (typeof s.beta === "number" && s.beta > 0 ? s.beta : 1));
         equityBeta = betas.reduce((a, b) => a + b, 0) / betas.length;
@@ -122,6 +156,22 @@ export async function GET(req: NextRequest) {
       }
     } catch (e) {
       log.warn("stocks read failed:", e instanceof Error ? e.message : e);
+    }
+
+    // ── PIM positions (for cost-basis contributions, view 2) ──
+    const positionsByProfile = new Map<string, StoredPosition[]>();
+    try {
+      const raw = await redis.get("pm:pim-positions");
+      const parsed = raw ? JSON.parse(raw) : [];
+      const arr = Array.isArray(parsed) ? (parsed as PositionLedger[]) : [];
+      for (const pl of arr) {
+        if (!pl.profile || !Array.isArray(pl.positions)) continue;
+        const list = positionsByProfile.get(pl.profile) ?? [];
+        list.push(...pl.positions);
+        positionsByProfile.set(pl.profile, list);
+      }
+    } catch (e) {
+      log.warn("positions read failed:", e instanceof Error ? e.message : e);
     }
 
     // ── Benchmarks + FX (Yahoo) ──
@@ -137,7 +187,16 @@ export async function GET(req: NextRequest) {
       { label: "S&P/TSX Composite", returnPct: returnOverPeriod(tsx, period, ref) },
     ];
 
-    const profiles: Array<{ profile: string; label: string; periods: ReturnDecomposition[] }> = [];
+    // Latest USD/CAD rate for converting USD position values to CAD (weighting).
+    const usdcadRate = usdcad.length > 0 ? usdcad[usdcad.length - 1].value : null;
+
+    const profiles: Array<{
+      profile: string;
+      label: string;
+      periods: ReturnDecomposition[];
+      contributions: ContributionBreakdown | null;
+      contributionsExcluded: number;
+    }> = [];
     for (const led of ledgers) {
       const profile = led.profile;
       if (!profile || !Array.isArray(led.entries) || led.entries.length < 2) continue;
@@ -159,7 +218,45 @@ export async function GET(req: NextRequest) {
           benchmarks: benchmarkReturns(period),
         }),
       );
-      profiles.push({ profile, label: PROFILE_LABEL[profile] ?? profile, periods });
+
+      // View 2 — cost-basis contributions. Match each PIM position to a stock
+      // for its live price + sector + currency; positions with no price match
+      // (funds/ETFs not in pm:stocks) are excluded and counted.
+      let contributions: ContributionBreakdown | null = null;
+      let contributionsExcluded = 0;
+      const positions = positionsByProfile.get(profile) ?? [];
+      if (positions.length > 0) {
+        const rows = [];
+        for (const p of positions) {
+          if (!p.symbol || typeof p.units !== "number" || typeof p.costBasis !== "number") {
+            contributionsExcluded++;
+            continue;
+          }
+          const stock = stockLookup.get(normTicker(p.symbol));
+          if (!stock || stock.price == null) {
+            contributionsExcluded++;
+            continue;
+          }
+          const fx = stock.currency === "USD" ? (usdcadRate ?? 1) : 1;
+          rows.push({
+            ticker: stock.ticker,
+            sector: stock.sector,
+            currency: stock.currency,
+            marketValueCad: p.units * stock.price * fx,
+            costBasisNative: p.costBasis,
+            priceNative: stock.price,
+          });
+        }
+        if (rows.length > 0) contributions = computeContributions(rows);
+      }
+
+      profiles.push({
+        profile,
+        label: PROFILE_LABEL[profile] ?? profile,
+        periods,
+        contributions,
+        contributionsExcluded,
+      });
     }
 
     const attribution = {

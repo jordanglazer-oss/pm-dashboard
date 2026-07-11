@@ -2,7 +2,7 @@
 
 import React, { useEffect, useMemo, useState } from "react";
 import { useSearchParams } from "next/navigation";
-import type { PeriodKey, ReturnDecomposition } from "@/app/lib/attribution";
+import type { PeriodKey, ReturnDecomposition, ContributionBreakdown } from "@/app/lib/attribution";
 
 /**
  * Performance Attribution (Phase 04, view 1) — its own tab in the Portfolio
@@ -12,7 +12,13 @@ import type { PeriodKey, ReturnDecomposition } from "@/app/lib/attribution";
  * reserved for switching Portfolio tabs).
  */
 
-type ProfileAttribution = { profile: string; label: string; periods: ReturnDecomposition[] };
+type ProfileAttribution = {
+  profile: string;
+  label: string;
+  periods: ReturnDecomposition[];
+  contributions: ContributionBreakdown | null;
+  contributionsExcluded: number;
+};
 type AttributionData = {
   builtAt: string;
   equityBeta: number;
@@ -92,6 +98,10 @@ export function Attribution() {
   }, [data, profileIdx, period]);
 
   const bench = decomp?.benchmarks[benchIdx] ?? null;
+
+  const profileData = data?.profiles[profileIdx] ?? null;
+  const contrib = profileData?.contributions ?? null;
+  const [showAllHoldings, setShowAllHoldings] = useState(false);
 
   // Rows for the current selection. Market + Selection follow the chosen
   // benchmark; Currency is benchmark-independent.
@@ -226,6 +236,77 @@ export function Attribution() {
             Estimates. Market = portfolio beta × benchmark return; Currency = USD-sleeve weight × USD/CAD move;
             Selection = total minus those. Full sector allocation/selection attribution arrives once we store per-holding price history.
           </p>
+
+          {/* View 2 — cost-basis contribution breakdown (since purchase) */}
+          {contrib && contrib.holdings.length > 0 && (
+            <div className="mt-1 flex flex-col gap-3 border-t border-line-soft pt-4">
+              <div className="flex items-baseline gap-2">
+                <h3 className="text-[11px] font-bold uppercase tracking-wider text-ink-3">Contribution to return</h3>
+                <span className="text-[11px] text-ink-faint">since purchase</span>
+                {(profileData?.contributionsExcluded ?? 0) > 0 && (
+                  <span className="ml-auto text-[10.5px] text-ink-faint">
+                    {profileData!.contributionsExcluded} position{profileData!.contributionsExcluded === 1 ? "" : "s"} without a price match excluded
+                  </span>
+                )}
+              </div>
+
+              {/* winners + detractors, side by side */}
+              <div className="grid grid-cols-1 gap-4 sm:grid-cols-2">
+                {[
+                  { title: "Top contributors", rows: contrib.holdings.filter((h) => h.contributionPct > 0).slice(0, 5) },
+                  { title: "Top detractors", rows: [...contrib.holdings].filter((h) => h.contributionPct < 0).sort((a, b) => a.contributionPct - b.contributionPct).slice(0, 5) },
+                ].map((col) => (
+                  <div key={col.title} className="flex flex-col gap-1.5">
+                    <span className="text-[11px] font-semibold text-ink-3">{col.title}</span>
+                    {col.rows.length === 0 ? (
+                      <span className="text-[12px] text-ink-faint">—</span>
+                    ) : (
+                      col.rows.map((h) => (
+                        <div key={h.ticker} className="flex items-center gap-2 text-[13px]">
+                          <span className="font-mono font-semibold text-ink w-[64px] shrink-0 truncate">{h.ticker}</span>
+                          <span className="text-[11px] text-ink-faint truncate flex-1">{h.sector}</span>
+                          <span className={`font-mono text-[12.5px] tabular-nums shrink-0 ${toneClass(h.contributionPct)}`}>{fmtPct(h.contributionPct)}</span>
+                        </div>
+                      ))
+                    )}
+                  </div>
+                ))}
+              </div>
+
+              {/* by currency + by sector */}
+              <div className="grid grid-cols-1 gap-4 rounded-control bg-surface-2/60 px-3 py-2.5 sm:grid-cols-2">
+                <div className="flex flex-col gap-1">
+                  <span className="text-[10.5px] font-semibold uppercase tracking-wider text-ink-faint">By currency</span>
+                  {contrib.byCurrency.map((c) => (
+                    <div key={c.key} className="flex items-center gap-2 text-[12.5px]">
+                      <span className="text-ink-2 w-[40px]">{c.key}</span>
+                      <span className={`font-mono tabular-nums ${toneClass(c.contributionPct)}`}>{fmtPct(c.contributionPct)}</span>
+                    </div>
+                  ))}
+                </div>
+                <div className="flex flex-col gap-1">
+                  <span className="text-[10.5px] font-semibold uppercase tracking-wider text-ink-faint">By sector</span>
+                  {(showAllHoldings ? contrib.bySector : contrib.bySector.slice(0, 4)).map((s) => (
+                    <div key={s.key} className="flex items-center gap-2 text-[12.5px]">
+                      <span className="text-ink-2 flex-1 truncate">{s.key}</span>
+                      <span className={`font-mono tabular-nums shrink-0 ${toneClass(s.contributionPct)}`}>{fmtPct(s.contributionPct)}</span>
+                    </div>
+                  ))}
+                  {contrib.bySector.length > 4 && (
+                    <button
+                      onClick={() => setShowAllHoldings((v) => !v)}
+                      className="mt-0.5 self-start text-[11px] font-semibold text-accent hover:text-accent-ink transition-colors"
+                    >
+                      {showAllHoldings ? "Show less" : `Show ${contrib.bySector.length - 4} more`}
+                    </button>
+                  )}
+                </div>
+              </div>
+              <p className="text-[10.5px] leading-4 text-ink-faint">
+                Contribution = each holding&apos;s weight × its return since you bought it (price vs cost basis). Since-purchase, not period-bounded.
+              </p>
+            </div>
+          )}
         </div>
       )}
     </div>
