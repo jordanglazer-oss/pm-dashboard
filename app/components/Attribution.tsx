@@ -1,13 +1,15 @@
 "use client";
 
 import React, { useEffect, useMemo, useState } from "react";
-import { CollapsibleSection } from "@/app/components/CollapsibleSection";
+import { useSearchParams } from "next/navigation";
 import type { PeriodKey, ReturnDecomposition } from "@/app/lib/attribution";
 
 /**
- * Performance Attribution card (Phase 04, view 1) — Portfolio tab.
- * Decomposes each profile's return into Market (beta) + Currency + Selection.
- * Reads the read-only /api/attribution cache. Every estimate is labelled.
+ * Performance Attribution (Phase 04, view 1) — its own tab in the Portfolio
+ * hub. Decomposes each model's return into Market (beta) + Currency +
+ * Selection. Reads the read-only /api/attribution cache. Every estimate is
+ * labelled. Plain ← / → switch models (mirrors Positioning; Shift+arrows stay
+ * reserved for switching Portfolio tabs).
  */
 
 type ProfileAttribution = { profile: string; label: string; periods: ReturnDecomposition[] };
@@ -31,6 +33,8 @@ function toneClass(v: number | null | undefined): string {
 }
 
 export function Attribution() {
+  const searchParams = useSearchParams();
+  const urlVersion = searchParams.get("version");
   const [data, setData] = useState<AttributionData | null>(null);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState(false);
@@ -45,12 +49,12 @@ export function Attribution() {
       .then((j) => {
         if (!alive) return;
         if (j?.attribution?.profiles?.length) {
+          const profs = j.attribution.profiles as ProfileAttribution[];
           setData(j.attribution as AttributionData);
-          // Default to Balanced if present, else the first profile.
-          const bal = (j.attribution.profiles as ProfileAttribution[]).findIndex(
-            (p) => p.profile === "balanced",
-          );
-          setProfileIdx(bal >= 0 ? bal : 0);
+          // Prefer the ?version model, else Balanced, else the first.
+          const byUrl = urlVersion ? profs.findIndex((p) => p.profile === urlVersion) : -1;
+          const bal = profs.findIndex((p) => p.profile === "balanced");
+          setProfileIdx(byUrl >= 0 ? byUrl : bal >= 0 ? bal : 0);
         } else {
           setError(true);
         }
@@ -60,7 +64,27 @@ export function Attribution() {
     return () => {
       alive = false;
     };
-  }, []);
+  }, [urlVersion]);
+
+  // Plain ← / → cycle models (mirrors Positioning). Shift+arrows are reserved
+  // for switching Portfolio tabs; ignore while typing in a field.
+  const profileCount = data?.profiles.length ?? 0;
+  useEffect(() => {
+    if (profileCount <= 1) return;
+    function onKey(e: KeyboardEvent) {
+      if (e.key !== "ArrowLeft" && e.key !== "ArrowRight") return;
+      if (e.shiftKey) return;
+      const t = e.target as HTMLElement | null;
+      const tag = t?.tagName?.toLowerCase();
+      if (tag === "input" || tag === "textarea" || tag === "select" || t?.isContentEditable) return;
+      setProfileIdx((idx) =>
+        e.key === "ArrowRight" ? (idx + 1) % profileCount : (idx - 1 + profileCount) % profileCount,
+      );
+      e.preventDefault();
+    }
+    window.addEventListener("keydown", onKey);
+    return () => window.removeEventListener("keydown", onKey);
+  }, [profileCount]);
 
   const decomp = useMemo<ReturnDecomposition | null>(() => {
     const prof = data?.profiles[profileIdx];
@@ -87,19 +111,26 @@ export function Attribution() {
   }, [rows, decomp]);
 
   return (
-    <CollapsibleSection
-      prefKey="portfolio.attributionCollapsed"
-      className="border-line"
-      title="Return attribution"
-      subtitle="Where your return came from · estimates"
-      right={
-        loading ? (
-          <span className="text-[11px] text-ink-3">Loading…</span>
-        ) : data ? (
-          <span className="text-[11px] text-ink-3">since {new Date(data.builtAt).toLocaleDateString("en-US", { month: "short", day: "numeric" })}</span>
-        ) : null
-      }
-    >
+    <div className="flex flex-col gap-4 rounded-card border border-line bg-white p-5 shadow-sm">
+      <div className="flex items-center gap-3">
+        <div>
+          <h2 className="text-sm font-bold uppercase tracking-wider text-ink">Return attribution</h2>
+          <p className="text-[12px] text-ink-3">Where your return came from · estimates</p>
+        </div>
+        <div className="ml-auto flex items-center gap-3">
+          {data && data.profiles.length > 1 && (
+            <span className="hidden text-[11px] text-ink-faint sm:inline">← → switch model</span>
+          )}
+          {loading ? (
+            <span className="text-[11px] text-ink-3">Loading…</span>
+          ) : data ? (
+            <span className="text-[11px] text-ink-3">
+              since {new Date(data.builtAt).toLocaleDateString("en-US", { month: "short", day: "numeric" })}
+            </span>
+          ) : null}
+        </div>
+      </div>
+
       {error && !loading && (
         <p className="text-sm text-ink-3 py-2">
           Attribution needs daily portfolio values and price data — nothing to decompose yet.
@@ -197,6 +228,6 @@ export function Attribution() {
           </p>
         </div>
       )}
-    </CollapsibleSection>
+    </div>
   );
 }
