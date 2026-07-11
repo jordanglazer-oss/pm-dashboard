@@ -51,7 +51,7 @@ export function CollapsibleSection({
     (linkedKeys || []).forEach((k) => setUiPref(k, next));
   };
   return (
-    <section className={`rounded-card border bg-white p-6 shadow-sm ${className || "border-line"}`}>
+    <section className={`rounded-card border bg-white p-6 shadow-card ${className || "border-line"}`}>
       <div className={`flex items-center justify-between ${collapsed ? "" : "mb-4"}`}>
         {/* The whole title region (arrow + title + subtitle + the empty space up
             to the right-side controls) toggles — not just the arrow. Uses a div

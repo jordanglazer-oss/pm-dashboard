@@ -55,6 +55,12 @@
   --radius-control: 8px;
   --radius-pill: 20px;
 
+  /* Elevation ladder — static cards use shadow-sm, sectioned containers use
+     shadow-card. Tinted (16 21 28) rather than pure black so shadows sit calmly
+     in the light system. (#09) */
+  --shadow-sm: 0 1px 2px rgb(16 21 28 / 0.05);
+  --shadow-card: 0 1px 2px rgb(16 21 28 / 0.05), 0 4px 12px -4px rgb(16 21 28 / 0.08);
+
   /* Type — IBM Plex Sans (UI) / IBM Plex Mono (numbers/tickers) */
   --font-sans: var(--font-plex-sans), -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, Helvetica, Arial, sans-serif;
   --font-mono: var(--font-plex-mono), ui-monospace, "SF Mono", Menlo, Consolas, monospace;
@@ -198,13 +204,14 @@ table {
   border-radius: 4px;
 }
 
-/* Opt-in subtle lift for genuinely-clickable cards/tiles. */
+/* Opt-in lift for genuinely-clickable cards/tiles — raised two-layer shadow
+   + translateY(-2px) (#09). */
 .hover-lift {
-  transition: box-shadow 0.15s ease, transform 0.15s ease;
+  transition: box-shadow 0.16s ease, transform 0.16s ease;
 }
 .hover-lift:hover {
-  box-shadow: 0 4px 14px -6px rgb(16 21 28 / 0.14);
-  transform: translateY(-1px);
+  box-shadow: 0 2px 4px rgb(16 21 28 / 0.06), 0 10px 24px -8px rgb(16 21 28 / 0.16);
+  transform: translateY(-2px);
 }
 
 @media (prefers-reduced-motion: reduce) {

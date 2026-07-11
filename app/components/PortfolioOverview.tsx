@@ -1986,7 +1986,7 @@ function RankingTable({
                   {/* Score = adjusted composite (with regime delta) */}
                   <td className="py-3 pr-3 text-right whitespace-nowrap">
                     <span className="font-bold text-ink tabular-nums">{Number(s.adjusted.toFixed(1))}</span>
-                    <span className="text-ink-3 text-[11px]">/41</span>
+                    <span className="text-ink-faint text-[11px]">/41</span>
                     <span className={`ml-1 text-[11px] ${adj >= 0 ? "text-pos" : "text-neg"}`}>
                       {adj >= 0 ? "+" : ""}{adj}
                     </span>
