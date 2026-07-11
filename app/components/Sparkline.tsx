@@ -1,6 +1,6 @@
 "use client";
 
-import React from "react";
+import React, { useId } from "react";
 
 type SparkPoint = { date: string; value: number };
 
@@ -28,8 +28,11 @@ export function Sparkline({
   points,
   width = 140,
   height = 40,
-  stroke = "#3b82f6",
-  fill = "rgba(59, 130, 246, 0.12)",
+  // Default onto the accent token (via CSS property so var() resolves inside
+  // SVG). Callers can still pass a specific color. (#03)
+  stroke = "var(--color-accent)",
+  // When unset, the area is filled with a vertical accent gradient (#03).
+  fill,
   yMin,
   yMax,
   referenceY,
@@ -75,6 +78,8 @@ export function Sparkline({
   const refLineY = referenceY != null ? toY(referenceY) : null;
 
   const last = points[points.length - 1];
+  // Sanitize useId (drops the ":" chars that break url(#…) references in SVG).
+  const gradId = "spark-" + useId().replace(/:/g, "");
 
   return (
     <svg
@@ -98,14 +103,20 @@ export function Sparkline({
           strokeDasharray="2 2"
         />
       )}
-      <path d={areaPath} fill={fill} stroke="none" />
+      <defs>
+        <linearGradient id={gradId} x1="0" y1="0" x2="0" y2="1">
+          <stop offset="0%" style={{ stopColor: stroke, stopOpacity: 0.2 }} />
+          <stop offset="100%" style={{ stopColor: stroke, stopOpacity: 0 }} />
+        </linearGradient>
+      </defs>
+      <path d={areaPath} fill={fill ?? `url(#${gradId})`} stroke="none" />
       <path
         d={linePath}
         pathLength={1}
         className="spark-draw"
         fill="none"
-        stroke={stroke}
-        strokeWidth={1.6}
+        style={{ stroke }}
+        strokeWidth={1.8}
         strokeLinecap="round"
         strokeLinejoin="round"
       />
@@ -114,7 +125,8 @@ export function Sparkline({
           cx={toX(points.length - 1)}
           cy={toY(last.value)}
           r={2.2}
-          fill={stroke}
+          className="spark-dot"
+          style={{ fill: stroke }}
         />
       )}
     </svg>

@@ -1906,7 +1906,7 @@ function RankingTable({
             </tr>
           </thead>
           <tbody>
-            {displayRows.map((row) => {
+            {displayRows.map((row, rowIdx) => {
               if (row.kind === "header") {
                 return (
                   <tr key={row.key} className="bg-surface-hover">
@@ -1935,7 +1935,10 @@ function RankingTable({
                 {/* The faint top-3/bottom-3 left-border accent was removed — it
                     read as visual noise and added little (the ranking order and
                     Score column already convey best/worst). */}
-                <tr className="group border-b border-line-soft hover:bg-surface-hover transition-colors [&>td]:align-top">
+                <tr
+                  className="animate-row-in group border-b border-l-2 border-l-transparent border-line-soft transition-colors hover:bg-surface-hover hover:border-l-accent [&>td]:align-top"
+                  style={{ animationDelay: `${Math.min(rowIdx, 12) * 28}ms` }}
+                >
                   <td className={stickyCellCls}>
                     <div className="flex items-center gap-2">
                       <Link href={`/stock/${s.ticker.toLowerCase()}`} className="hover:underline block">

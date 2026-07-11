@@ -5,7 +5,11 @@
  */
 
 export function Skeleton({ className = "" }: { className?: string }) {
-  return <div className={`animate-pulse rounded bg-line ${className}`} aria-hidden />;
+  return (
+    <div className={`relative overflow-hidden rounded bg-line ${className}`} aria-hidden>
+      <span className="shimmer-sweep" />
+    </div>
+  );
 }
 
 /** A table-shaped placeholder: a lighter header strip + `rows` of cells. The

@@ -185,10 +185,31 @@ table {
 .flash-pos { animation: flash-pos 0.9s ease-out; border-radius: 4px; }
 .flash-neg { animation: flash-neg 0.9s ease-out; border-radius: 4px; }
 
+/* Shimmer sweep for skeletons (#07). */
+.shimmer-sweep {
+  position: absolute;
+  inset: 0;
+  transform: translateX(-100%);
+  background: linear-gradient(90deg, transparent, rgb(255 255 255 / 0.85), transparent);
+  animation: shimmer 1.5s ease-in-out infinite;
+}
+@keyframes shimmer { 100% { transform: translateX(220%); } }
+
+/* Sparkline end-dot pulse (#03) — starts after the .spark-draw completes. */
+@keyframes dot-pulse { 0% { transform: scale(0.4); opacity: 0; } 55% { transform: scale(1.25); opacity: 1; } 100% { transform: scale(1); opacity: 1; } }
+.spark-dot { transform-box: fill-box; transform-origin: center; animation: dot-pulse 0.5s ease-out 0.7s both; }
+
+/* Count-up delta chip pop (#01). */
+@keyframes chip-in { from { opacity: 0; transform: translateY(3px) scale(0.9); } to { opacity: 1; transform: none; } }
+.animate-chip-in { animation: chip-in 0.3s ease-out; }
+
 @media (prefers-reduced-motion: reduce) {
   .spark-draw { stroke-dasharray: none; animation: none; }
   .animate-row-in { animation: none; }
   .flash-pos, .flash-neg { animation: none; }
+  .shimmer-sweep { animation: none; }
+  .spark-dot { animation: none; opacity: 1; }
+  .animate-chip-in { animation: none; }
 }
 @media (prefers-reduced-motion: reduce) {
   .animate-page-in { animation: none; }

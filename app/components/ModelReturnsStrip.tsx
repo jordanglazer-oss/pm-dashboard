@@ -1,6 +1,7 @@
 "use client";
 
 import { useLiveTodayReturn } from "@/app/lib/useLiveTodayReturn";
+import { CountUp } from "@/app/components/CountUp";
 import type { PimProfileType } from "@/app/lib/pim-types";
 
 /**
@@ -19,11 +20,6 @@ const MODELS: { label: string; profile: PimProfileType }[] = [
   { label: "Alpha", profile: "alpha" },
   { label: "Core", profile: "core" },
 ];
-
-function fmtPct(v: number | null): string {
-  if (v == null) return "—";
-  return `${v >= 0 ? "+" : ""}${v.toFixed(2)}%`;
-}
 
 export function ModelReturnsStrip() {
   // Fixed number of hook calls in a stable order (Rules of Hooks).
@@ -52,7 +48,15 @@ export function ModelReturnsStrip() {
           return (
             <div key={m.profile} className="flex items-baseline gap-1.5">
               <span className="text-[13px] text-ink-2">{m.label}</span>
-              <span className={`font-mono text-[14px] font-semibold ${cls}`}>{fmtPct(v)}</span>
+              {v == null ? (
+                <span className="font-mono text-[14px] font-semibold text-ink-3">—</span>
+              ) : (
+                <CountUp
+                  value={v}
+                  format={(n) => `${n >= 0 ? "+" : ""}${n.toFixed(2)}%`}
+                  className={`font-mono text-[14px] font-semibold ${cls}`}
+                />
+              )}
             </div>
           );
         })}
