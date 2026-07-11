@@ -302,7 +302,7 @@ export default function HedgingDashboard() {
         )}
 
         {/* View toggle */}
-        <div className="flex gap-1 mb-4 bg-white rounded-card border border-line p-1 w-fit">
+        <div className="flex gap-1 mb-4 bg-white rounded-card border border-line p-1 w-fit max-w-full overflow-x-auto">
           {[
             { key: "current" as ViewMode, label: "Current" },
             { key: "wow" as ViewMode, label: "Week over Week" },

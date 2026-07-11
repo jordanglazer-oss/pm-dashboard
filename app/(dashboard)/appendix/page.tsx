@@ -566,7 +566,7 @@ export default function AppendixPage() {
         </div>
 
         {/* View Toggle */}
-        <div className="flex gap-1 mb-5 bg-white rounded-control border border-line p-1 w-fit">
+        <div className="flex gap-1 mb-5 bg-white rounded-control border border-line p-1 w-fit max-w-full overflow-x-auto">
           <button
             onClick={() => setViewMode("daily")}
             className={`rounded-lg px-4 py-2 text-sm font-semibold transition-colors whitespace-nowrap ${
@@ -610,7 +610,7 @@ export default function AppendixPage() {
         {viewMode === "daily" && (
           <>
             {/* Profile Tabs */}
-            <div className="flex gap-1 mb-5 bg-white rounded-control border border-line p-1 w-fit">
+            <div className="flex gap-1 mb-5 bg-white rounded-control border border-line p-1 w-fit max-w-full overflow-x-auto">
               {PROFILES.map((p) => {
                 const ledger = ledgers.find((l) => l.profile === p.key);
                 const count = ledger?.entries.length || 0;

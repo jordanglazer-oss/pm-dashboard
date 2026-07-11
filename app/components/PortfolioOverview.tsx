@@ -1753,7 +1753,7 @@ function RankingTable({
         )}
         {!bucketTabs && <span className="text-sm text-ink-3">{subtitle}</span>}
         {onScoreAll && (
-          <div className="ml-auto flex items-center gap-2">
+          <div className="ml-auto flex flex-wrap items-center gap-2">
             {lastScoredAt && !scoring && (
               <span className="text-[11px] text-ink-3">
                 Last scored {formatRelTimestamp(lastScoredAt)}

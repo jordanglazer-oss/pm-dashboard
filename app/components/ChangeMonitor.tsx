@@ -117,7 +117,7 @@ export function ChangeMonitor() {
         <div className="px-4 pb-4">
           {/* controls */}
           <div className="flex flex-wrap items-center gap-2 mb-3">
-            <div className="flex flex-wrap gap-1.5">
+            <div className="flex flex-1 flex-wrap gap-1.5 min-w-0">
               {(["all", ...typesPresent] as (ChangeType | "all")[]).map((t) => (
                 <button
                   key={t}
