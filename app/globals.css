@@ -241,6 +241,17 @@ table {
   border-radius: 4px;
 }
 
+/* Tactile press — a quick scale on active for buttons/links (#15). */
+button:not(:disabled):active,
+[role="button"]:not([aria-disabled="true"]):active {
+  transform: scale(0.95);
+  transition: transform 0.1s ease;
+}
+@media (prefers-reduced-motion: reduce) {
+  button:not(:disabled):active,
+  [role="button"]:not([aria-disabled="true"]):active { transform: none; }
+}
+
 /* Opt-in lift for genuinely-clickable cards/tiles — raised two-layer shadow
    + translateY(-2px) (#09). */
 .hover-lift {
