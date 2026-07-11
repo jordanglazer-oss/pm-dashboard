@@ -4,6 +4,7 @@ import React from "react";
 import { useStocks } from "@/app/lib/StockContext";
 import { PimPortfolio } from "@/app/components/PimPortfolio";
 import { PortfolioXray } from "@/app/components/PortfolioXray";
+import { Attribution } from "@/app/components/Attribution";
 
 export default function PortfolioPage() {
   const { pimModels } = useStocks();
@@ -19,6 +20,9 @@ export default function PortfolioPage() {
         </div>
         <div id="xray" className="scroll-mt-24">
           <PortfolioXray />
+        </div>
+        <div className="mt-6">
+          <Attribution />
         </div>
         <PimPortfolio groups={pimModels.groups} />
       </div>

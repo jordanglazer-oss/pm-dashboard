@@ -1,0 +1,202 @@
+"use client";
+
+import React, { useEffect, useMemo, useState } from "react";
+import { CollapsibleSection } from "@/app/components/CollapsibleSection";
+import type { PeriodKey, ReturnDecomposition } from "@/app/lib/attribution";
+
+/**
+ * Performance Attribution card (Phase 04, view 1) — Portfolio tab.
+ * Decomposes each profile's return into Market (beta) + Currency + Selection.
+ * Reads the read-only /api/attribution cache. Every estimate is labelled.
+ */
+
+type ProfileAttribution = { profile: string; label: string; periods: ReturnDecomposition[] };
+type AttributionData = {
+  builtAt: string;
+  equityBeta: number;
+  usdEquityFractionPct: number;
+  fxAvailable: boolean;
+  profiles: ProfileAttribution[];
+};
+
+const PERIODS: PeriodKey[] = ["MTD", "QTD", "YTD", "1Y"];
+
+function fmtPct(v: number | null | undefined): string {
+  if (v == null || !isFinite(v)) return "—";
+  return `${v >= 0 ? "+" : "−"}${Math.abs(v).toFixed(2)}%`;
+}
+function toneClass(v: number | null | undefined): string {
+  if (v == null || !isFinite(v)) return "text-ink-3";
+  return v > 0 ? "text-pos" : v < 0 ? "text-neg" : "text-ink-2";
+}
+
+export function Attribution() {
+  const [data, setData] = useState<AttributionData | null>(null);
+  const [loading, setLoading] = useState(true);
+  const [error, setError] = useState(false);
+  const [profileIdx, setProfileIdx] = useState(0);
+  const [period, setPeriod] = useState<PeriodKey>("YTD");
+  const [benchIdx, setBenchIdx] = useState(0);
+
+  useEffect(() => {
+    let alive = true;
+    fetch("/api/attribution", { cache: "no-store" })
+      .then((r) => r.json())
+      .then((j) => {
+        if (!alive) return;
+        if (j?.attribution?.profiles?.length) {
+          setData(j.attribution as AttributionData);
+          // Default to Balanced if present, else the first profile.
+          const bal = (j.attribution.profiles as ProfileAttribution[]).findIndex(
+            (p) => p.profile === "balanced",
+          );
+          setProfileIdx(bal >= 0 ? bal : 0);
+        } else {
+          setError(true);
+        }
+      })
+      .catch(() => alive && setError(true))
+      .finally(() => alive && setLoading(false));
+    return () => {
+      alive = false;
+    };
+  }, []);
+
+  const decomp = useMemo<ReturnDecomposition | null>(() => {
+    const prof = data?.profiles[profileIdx];
+    return prof?.periods.find((p) => p.period === period) ?? null;
+  }, [data, profileIdx, period]);
+
+  const bench = decomp?.benchmarks[benchIdx] ?? null;
+
+  // Rows for the current selection. Market + Selection follow the chosen
+  // benchmark; Currency is benchmark-independent.
+  const rows = useMemo(() => {
+    if (!decomp || !bench) return [];
+    return [
+      { key: "Market (beta)", value: bench.marketContributionPct, bar: "bg-accent", note: `${decomp.portfolioBeta.toFixed(2)}β × ${fmtPct(bench.benchmarkReturnPct)} ${bench.label}` },
+      { key: "Currency (USD/CAD)", value: decomp.currencyContributionPct, bar: "bg-violet", note: `${decomp.usdSleeveWeightPct.toFixed(0)}% USD sleeve × ${fmtPct(decomp.usdcadReturnPct)}` },
+      { key: "Selection (alpha)", value: bench.selectionPct, bar: "bg-ink", note: "the rest — your name picking" },
+    ];
+  }, [decomp, bench]);
+
+  const maxAbs = useMemo(() => {
+    const vals = rows.map((r) => (r.value == null ? 0 : Math.abs(r.value)));
+    const t = decomp?.portfolioReturnPct == null ? 0 : Math.abs(decomp.portfolioReturnPct);
+    return Math.max(0.01, ...vals, t);
+  }, [rows, decomp]);
+
+  return (
+    <CollapsibleSection
+      prefKey="portfolio.attributionCollapsed"
+      className="border-line"
+      title="Return attribution"
+      subtitle="Where your return came from · estimates"
+      right={
+        loading ? (
+          <span className="text-[11px] text-ink-3">Loading…</span>
+        ) : data ? (
+          <span className="text-[11px] text-ink-3">since {new Date(data.builtAt).toLocaleDateString("en-US", { month: "short", day: "numeric" })}</span>
+        ) : null
+      }
+    >
+      {error && !loading && (
+        <p className="text-sm text-ink-3 py-2">
+          Attribution needs daily portfolio values and price data — nothing to decompose yet.
+        </p>
+      )}
+
+      {data && decomp && (
+        <div className="flex flex-col gap-4">
+          {/* selectors */}
+          <div className="flex flex-wrap items-center gap-2">
+            <div className="flex flex-wrap gap-1 max-w-full overflow-x-auto">
+              {data.profiles.map((p, i) => (
+                <button
+                  key={p.profile}
+                  onClick={() => setProfileIdx(i)}
+                  className={`whitespace-nowrap rounded-full px-2.5 py-0.5 text-[11.5px] font-semibold transition-colors ${
+                    i === profileIdx ? "bg-ink text-white" : "border border-line text-ink-3 hover:bg-surface-2"
+                  }`}
+                >
+                  {p.label}
+                </button>
+              ))}
+            </div>
+            <div className="ml-auto flex gap-1">
+              {PERIODS.map((p) => (
+                <button
+                  key={p}
+                  onClick={() => setPeriod(p)}
+                  className={`rounded-full px-2 py-0.5 text-[11px] font-semibold transition-colors ${
+                    p === period ? "bg-surface-2 text-ink" : "text-ink-3 hover:bg-surface-2"
+                  }`}
+                >
+                  {p}
+                </button>
+              ))}
+            </div>
+          </div>
+
+          {/* total */}
+          <div className="flex items-baseline gap-2">
+            <span className="text-[11px] font-semibold uppercase tracking-wider text-ink-3">Total return</span>
+            <span className={`font-mono text-2xl font-bold tabular-nums ${toneClass(decomp.portfolioReturnPct)}`}>
+              {fmtPct(decomp.portfolioReturnPct)}
+            </span>
+            {decomp.benchmarks.length > 1 && (
+              <div className="ml-auto flex gap-1">
+                {decomp.benchmarks.map((b, i) => (
+                  <button
+                    key={b.label}
+                    onClick={() => setBenchIdx(i)}
+                    className={`rounded-full px-2 py-0.5 text-[10px] font-semibold transition-colors ${
+                      i === benchIdx ? "bg-accent-soft text-accent" : "text-ink-3 hover:bg-surface-2"
+                    }`}
+                    title={`Split vs ${b.label}`}
+                  >
+                    {b.label === "S&P 500" ? "vs S&P 500" : "vs TSX"}
+                  </button>
+                ))}
+              </div>
+            )}
+          </div>
+
+          {/* decomposition rows */}
+          <div className="flex flex-col gap-2.5">
+            {rows.map((r) => (
+              <div key={r.key} className="flex items-center gap-3">
+                <span className="w-[128px] shrink-0 text-[13px] text-ink-2">{r.key}</span>
+                <div className="flex-1 h-2 rounded-full bg-surface-2 overflow-hidden">
+                  <div
+                    className={`h-full rounded-full ${r.bar}`}
+                    style={{ width: `${r.value == null ? 0 : (Math.abs(r.value) / maxAbs) * 100}%` }}
+                  />
+                </div>
+                <span className={`w-[64px] shrink-0 text-right font-mono text-[13px] tabular-nums ${toneClass(r.value)}`}>
+                  {fmtPct(r.value)}
+                </span>
+              </div>
+            ))}
+          </div>
+
+          {/* per-row explanation, condensed */}
+          <div className="flex flex-col gap-1 rounded-control bg-surface-2/60 px-3 py-2">
+            {rows.map((r) => (
+              <div key={r.key} className="flex items-center gap-2 text-[11px] text-ink-3">
+                <span className={`h-1.5 w-1.5 rounded-full ${r.bar} shrink-0`} aria-hidden />
+                <span className="font-semibold text-ink-2">{r.key.split(" ")[0]}</span>
+                <span>{r.note}</span>
+              </div>
+            ))}
+          </div>
+
+          <p className="text-[10.5px] leading-4 text-ink-faint">
+            Estimates. Market = portfolio beta × benchmark return; Currency = USD-sleeve weight × USD/CAD move;
+            Selection = total minus those. Full sector allocation/selection attribution arrives once we store per-holding price history.
+          </p>
+        </div>
+      )}
+    </CollapsibleSection>
+  );
+}
