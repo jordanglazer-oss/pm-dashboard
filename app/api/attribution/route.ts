@@ -196,6 +196,7 @@ export async function GET(req: NextRequest) {
       periods: ReturnDecomposition[];
       contributions: ContributionBreakdown | null;
       contributionsExcluded: number;
+      contribDebug: { positions: number; noSymbol: number; noMatch: number; noPrice: number; noCost: number; rows: number };
     }> = [];
     for (const led of ledgers) {
       const profile = led.profile;
@@ -225,15 +226,28 @@ export async function GET(req: NextRequest) {
       let contributions: ContributionBreakdown | null = null;
       let contributionsExcluded = 0;
       const positions = positionsByProfile.get(profile) ?? [];
+      const dbg = { positions: positions.length, noSymbol: 0, noMatch: 0, noPrice: 0, noCost: 0, rows: 0 };
       if (positions.length > 0) {
         const rows = [];
         for (const p of positions) {
-          if (!p.symbol || typeof p.units !== "number" || typeof p.costBasis !== "number") {
+          if (!p.symbol || typeof p.units !== "number") {
+            dbg.noSymbol++;
             contributionsExcluded++;
             continue;
           }
           const stock = stockLookup.get(normTicker(p.symbol));
-          if (!stock || stock.price == null) {
+          if (!stock) {
+            dbg.noMatch++;
+            contributionsExcluded++;
+            continue;
+          }
+          if (stock.price == null) {
+            dbg.noPrice++;
+            contributionsExcluded++;
+            continue;
+          }
+          if (typeof p.costBasis !== "number" || p.costBasis <= 0) {
+            dbg.noCost++;
             contributionsExcluded++;
             continue;
           }
@@ -247,6 +261,7 @@ export async function GET(req: NextRequest) {
             priceNative: stock.price,
           });
         }
+        dbg.rows = rows.length;
         if (rows.length > 0) contributions = computeContributions(rows);
       }
 
@@ -256,6 +271,7 @@ export async function GET(req: NextRequest) {
         periods,
         contributions,
         contributionsExcluded,
+        contribDebug: dbg,
       });
     }
 

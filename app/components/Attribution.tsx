@@ -12,12 +12,14 @@ import type { PeriodKey, ReturnDecomposition, ContributionBreakdown } from "@/ap
  * reserved for switching Portfolio tabs).
  */
 
+type ContribDebug = { positions: number; noSymbol: number; noMatch: number; noPrice: number; noCost: number; rows: number };
 type ProfileAttribution = {
   profile: string;
   label: string;
   periods: ReturnDecomposition[];
   contributions: ContributionBreakdown | null;
   contributionsExcluded: number;
+  contribDebug?: ContribDebug;
 };
 type AttributionData = {
   builtAt: string;
@@ -305,6 +307,24 @@ export function Attribution() {
               <p className="text-[10.5px] leading-4 text-ink-faint">
                 Contribution = each holding&apos;s weight × its return since you bought it (price vs cost basis). Since-purchase, not period-bounded.
               </p>
+            </div>
+          )}
+
+          {/* Empty-state: explain WHY the contribution breakdown is absent. */}
+          {(!contrib || contrib.holdings.length === 0) && profileData && (
+            <div className="mt-1 flex flex-col gap-1 border-t border-line-soft pt-4">
+              <h3 className="text-[11px] font-bold uppercase tracking-wider text-ink-3">Contribution to return</h3>
+              <p className="text-[12.5px] text-ink-3">
+                {(profileData.contribDebug?.positions ?? 0) === 0
+                  ? `No saved account positions for the ${profileData.label} model — this breakdown reads position cost basis. Try another model with ← / →.`
+                  : `Couldn't match this model's positions to priced holdings.`}
+              </p>
+              {profileData.contribDebug && profileData.contribDebug.positions > 0 && (
+                <p className="text-[11px] text-ink-faint">
+                  {profileData.contribDebug.positions} positions · {profileData.contribDebug.noMatch} not matched to a tracked stock ·{" "}
+                  {profileData.contribDebug.noPrice} no live price · {profileData.contribDebug.noCost} no cost basis · {profileData.contribDebug.rows} usable
+                </p>
+              )}
             </div>
           )}
         </div>
