@@ -1,8 +1,15 @@
 "use client";
 
-import React, { useEffect, useMemo, useState } from "react";
+import React, { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { useSearchParams } from "next/navigation";
 import type { PeriodKey, ReturnDecomposition, ContributionBreakdown } from "@/app/lib/attribution";
+
+// Canonical model order, matching Positioning / Models tabs.
+const MODEL_ORDER = ["conservative", "balanced", "growth", "allEquity", "alpha", "core"];
+const orderRank = (p: string) => {
+  const i = MODEL_ORDER.indexOf(p);
+  return i < 0 ? MODEL_ORDER.length : i;
+};
 
 /**
  * Performance Attribution (Phase 04, view 1) — its own tab in the Portfolio
@@ -46,33 +53,56 @@ export function Attribution() {
   const [data, setData] = useState<AttributionData | null>(null);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState(false);
+  const [refreshing, setRefreshing] = useState(false);
   const [profileIdx, setProfileIdx] = useState(0);
   const [period, setPeriod] = useState<PeriodKey>("YTD");
   const [benchIdx, setBenchIdx] = useState(0);
+  const didInit = useRef(false);
+
+  const applyResponse = useCallback(
+    (j: { attribution?: AttributionData }) => {
+      if (j?.attribution?.profiles?.length) {
+        // Canonical model order (matches the other tabs).
+        const profs = j.attribution.profiles
+          .slice()
+          .sort((a, b) => orderRank(a.profile) - orderRank(b.profile));
+        setData({ ...j.attribution, profiles: profs });
+        setError(false);
+        if (!didInit.current) {
+          didInit.current = true;
+          const byUrl = urlVersion ? profs.findIndex((p) => p.profile === urlVersion) : -1;
+          const bal = profs.findIndex((p) => p.profile === "balanced");
+          setProfileIdx(byUrl >= 0 ? byUrl : bal >= 0 ? bal : 0);
+        } else {
+          setProfileIdx((idx) => Math.min(idx, profs.length - 1));
+        }
+      } else {
+        setError(true);
+      }
+    },
+    [urlVersion],
+  );
 
   useEffect(() => {
     let alive = true;
     fetch("/api/attribution", { cache: "no-store" })
       .then((r) => r.json())
-      .then((j) => {
-        if (!alive) return;
-        if (j?.attribution?.profiles?.length) {
-          const profs = j.attribution.profiles as ProfileAttribution[];
-          setData(j.attribution as AttributionData);
-          // Prefer the ?version model, else Balanced, else the first.
-          const byUrl = urlVersion ? profs.findIndex((p) => p.profile === urlVersion) : -1;
-          const bal = profs.findIndex((p) => p.profile === "balanced");
-          setProfileIdx(byUrl >= 0 ? byUrl : bal >= 0 ? bal : 0);
-        } else {
-          setError(true);
-        }
-      })
+      .then((j) => alive && applyResponse(j))
       .catch(() => alive && setError(true))
       .finally(() => alive && setLoading(false));
     return () => {
       alive = false;
     };
-  }, [urlVersion]);
+  }, [applyResponse]);
+
+  const refresh = () => {
+    setRefreshing(true);
+    fetch("/api/attribution?refresh=1", { cache: "no-store" })
+      .then((r) => r.json())
+      .then(applyResponse)
+      .catch(() => setError(true))
+      .finally(() => setRefreshing(false));
+  };
 
   // Plain ← / → cycle models (mirrors Positioning). Shift+arrows are reserved
   // for switching Portfolio tabs; ignore while typing in a field.
@@ -137,9 +167,20 @@ export function Attribution() {
             <span className="text-[11px] text-ink-3">Loading…</span>
           ) : data ? (
             <span className="text-[11px] text-ink-3">
-              since {new Date(data.builtAt).toLocaleDateString("en-US", { month: "short", day: "numeric" })}
+              as of {new Date(data.builtAt).toLocaleDateString("en-US", { month: "short", day: "numeric" })}
             </span>
           ) : null}
+          <button
+            onClick={refresh}
+            disabled={refreshing || loading}
+            className="flex items-center gap-1 rounded-control border border-line px-2 py-1 text-[11px] font-semibold text-ink-3 transition-colors hover:bg-surface-2 hover:text-ink disabled:opacity-50"
+            title="Recompute with the latest prices, positions and FX"
+          >
+            <svg className={`h-3 w-3 ${refreshing ? "animate-spin" : ""}`} fill="none" stroke="currentColor" strokeWidth="2" viewBox="0 0 24 24">
+              <path strokeLinecap="round" strokeLinejoin="round" d="M16.023 9.348h4.992v-.001M2.985 19.644v-4.992m0 0h4.992m-4.993 0 3.181 3.183a8.25 8.25 0 0 0 13.803-3.7M4.031 9.865a8.25 8.25 0 0 1 13.803-3.7l3.181 3.182" />
+            </svg>
+            {refreshing ? "Refreshing…" : "Refresh"}
+          </button>
         </div>
       </div>
 
