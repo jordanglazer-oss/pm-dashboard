@@ -38,8 +38,16 @@ type Entry = {
   subtitle?: string;
   href?: string;
   action?: () => void;
+  // Last known price for holding rows (shown on the right). (#12)
+  price?: number;
   // Lowercased search target — match anything containing this string.
   searchTarget: string;
+};
+
+const CATEGORY_LABEL: Record<Entry["category"], string> = {
+  page: "Pages",
+  stock: "Holdings",
+  action: "Actions",
 };
 
 const PAGE_ENTRIES: Omit<Entry, "id" | "searchTarget">[] = [
@@ -115,6 +123,7 @@ export function CommandPalette({ open, onClose, onTriggerQuickAdd }: Props) {
       category: "stock",
       label: s.ticker,
       subtitle: `${s.name}${s.bucket ? ` · ${s.bucket}` : ""}${s.sector ? ` · ${s.sector}` : ""}`,
+      price: typeof s.price === "number" ? s.price : undefined,
       href: `/stock/${encodeURIComponent(s.ticker)}`,
       searchTarget: `${s.ticker} ${s.name} ${s.sector ?? ""} ${s.bucket ?? ""}`.toLowerCase(),
     }));
@@ -149,10 +158,13 @@ export function CommandPalette({ open, onClose, onTriggerQuickAdd }: Props) {
       ? allEntries.filter((e) => e.searchTarget.includes(q))
       : [...allEntries];
 
-    // Score: recent index gives early-position boost; ticker prefix
-    // match outranks substring match for stocks (so "AA" surfaces AAPL
-    // ahead of "Brand A" type entries).
+    // Grouped display (#12): sort by category first (Pages → Holdings →
+    // Actions) so each section is contiguous; then WITHIN a category by recency
+    // boost, then query-prefix match (so "AA" surfaces AAPL first), then alpha.
+    const order = { page: 0, stock: 1, action: 2 } as const;
     matches.sort((a, b) => {
+      if (a.category !== b.category) return order[a.category] - order[b.category];
+
       const ai = recent.indexOf(a.id);
       const bi = recent.indexOf(b.id);
       const aRecent = ai === -1 ? Infinity : ai;
@@ -164,10 +176,6 @@ export function CommandPalette({ open, onClose, onTriggerQuickAdd }: Props) {
         const bPrefix = b.label.toLowerCase().startsWith(q) ? 0 : 1;
         if (aPrefix !== bPrefix) return aPrefix - bPrefix;
       }
-      // Category sort order: page, action, stock — so navigation outranks
-      // stock detail unless the user typed a clear ticker match.
-      const order = { page: 0, action: 1, stock: 2 } as const;
-      if (a.category !== b.category) return order[a.category] - order[b.category];
       return a.label.localeCompare(b.label);
     });
     return matches.slice(0, 30);
@@ -227,7 +235,7 @@ export function CommandPalette({ open, onClose, onTriggerQuickAdd }: Props) {
     >
       <div
         onClick={(e) => e.stopPropagation()}
-        className="w-full max-w-xl rounded-card bg-white shadow-2xl border border-line overflow-hidden"
+        className="animate-scale-in w-full max-w-xl rounded-card bg-white shadow-2xl border border-line overflow-hidden"
       >
         <div className="flex items-center gap-2 border-b border-line-soft px-4 py-3">
           <svg className="w-4 h-4 text-ink-3" fill="none" stroke="currentColor" strokeWidth="2" viewBox="0 0 24 24">
@@ -249,29 +257,40 @@ export function CommandPalette({ open, onClose, onTriggerQuickAdd }: Props) {
           ) : (
             filtered.map((e, idx) => {
               const active = idx === highlight;
+              // Section header when the category changes (grouped display, #12).
+              const showHeader = idx === 0 || filtered[idx - 1].category !== e.category;
               return (
-                <li
-                  key={e.id}
-                  data-idx={idx}
-                  onMouseEnter={() => setHighlight(idx)}
-                  onClick={() => activate(e)}
-                  className={`flex items-center gap-3 px-4 py-2 cursor-pointer ${
-                    active ? "bg-accent-soft" : ""
-                  }`}
-                >
-                  <CategoryGlyph category={e.category} />
-                  <div className="flex-1 min-w-0">
-                    <div className="text-sm font-medium text-ink truncate">
-                      {e.label}
+                <React.Fragment key={e.id}>
+                  {showHeader && (
+                    <li className="px-4 pt-2.5 pb-1 font-mono text-[10px] font-semibold uppercase tracking-wider text-ink-3">
+                      {CATEGORY_LABEL[e.category]}
+                    </li>
+                  )}
+                  <li
+                    data-idx={idx}
+                    onMouseEnter={() => setHighlight(idx)}
+                    onClick={() => activate(e)}
+                    className={`flex items-center gap-3 px-4 py-2 cursor-pointer ${
+                      active ? "bg-accent-soft" : ""
+                    }`}
+                  >
+                    <CategoryGlyph category={e.category} />
+                    <div className="flex-1 min-w-0">
+                      <div className={`truncate text-sm ${e.category === "stock" ? "font-mono font-semibold" : "font-medium"} text-ink`}>
+                        {e.label}
+                      </div>
+                      {e.subtitle && (
+                        <div className="text-[11px] text-ink-3 truncate">{e.subtitle}</div>
+                      )}
                     </div>
-                    {e.subtitle && (
-                      <div className="text-[11px] text-ink-3 truncate">{e.subtitle}</div>
+                    {e.price != null && (
+                      <span className="shrink-0 font-mono text-[12px] text-ink-2 tabular-nums">${e.price.toFixed(2)}</span>
                     )}
-                  </div>
-                  <span className="text-[10px] uppercase tracking-wider text-ink-3 font-semibold shrink-0">
-                    {e.category}
-                  </span>
-                </li>
+                    {active && (
+                      <kbd className="shrink-0 rounded border border-line px-1 py-px text-[10px] text-ink-3">↵</kbd>
+                    )}
+                  </li>
+                </React.Fragment>
               );
             })
           )}
