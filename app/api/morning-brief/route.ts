@@ -15,6 +15,7 @@ import { defaultResearch } from "@/app/lib/defaults";
 import { buildHedgingCostsBlock } from "@/app/lib/hedging";
 import { crossSectional, factsetConfigured } from "@/app/lib/factset";
 import { buildCatalystCalendar, type CatalystCalendar } from "@/app/lib/catalyst-calendar";
+import { computeRegimeTransition, type RegimeTransition } from "@/app/lib/regime-transition";
 import type { MarketRegimeData } from "@/app/lib/market-regime";
 import { isCreditError, recordAnthropicCreditError, markAnthropicHealthy } from "@/app/lib/anthropic-status";
 import { getDataUrl } from "@/app/lib/blob-store";
@@ -249,6 +250,7 @@ Notes:
 - sectorRotation.leading and .lagging should each have 2-3 entries with sector name, approximate MTD performance, and a brief reason.
 - riskScan MUST ONLY include holdings tagged "(Portfolio, ...)" — NEVER include Watchlist names (those are candidates, not owned positions). Order from highest risk to lowest, with priority: "High", "Medium-High", "Medium", or "Low-Medium". Focus on the weakest/most at-risk Portfolio names. Include 4-7 entries drawn exclusively from the Portfolio bucket. USE the [RISK: ...] annotations on each holding — holdings tagged CRITICAL or WARNING should be prioritized highest. Incorporate specific risk signals (trend, momentum, MACD, volume, Ichimoku, valuation) into your summaries and actions. Do NOT reference short interest as a risk driver — it is informational only.
 - MARKETEDGE DETERIORATION RULE: Any Portfolio holding tagged "[MARKETEDGE: deteriorating Long, …]" MUST appear in riskScan with priority at least "Medium" — this is a deliberate flag from MarketEdge that a winning position's technicals are significantly breaking down (Long opinion with Score ≤ −3). Cite the Opinion Score and Power Rating in the summary. If the broader environment corroborates (Risk-Off regime, weakening breadth, deteriorating tactical view, or matching CRITICAL/WARNING riskAlert on the same name), ELEVATE to "High" and add a forwardActions item proposing a concrete next step (review/trim/tighten thesis). Do NOT silently downgrade or omit a MARKETEDGE deteriorating-Long flag.
+- When the REGIME-TRANSITION GAUGE block is present and shows a lean (toward Risk-Off or Risk-On) with Elevated/High transition risk, work it into tacticalView and bottomLine: position AHEAD of the flip and name the early tells driving it (e.g. 'regime Risk-On but leaning Risk-Off as breadth and XLK/XLU roll — start taking chips before it confirms'). Do NOT overreact to a Low/Watch reading or a 'stable' lean.
 - catalystWatch MUST be grounded ONLY in the CATALYST CALENDAR block — cite the actual dated events (never invent dates or events not listed). Tie each to the book's exposure (e.g. 'CPI on the 15th pressures your Tech concentration'; 'NVDA earnings on the 21st is your biggest single-name event risk'). Lead with the single highest-impact event. If the block lists no events, return an empty string.
 - forwardActions should contain 4-6 specific, actionable recommendations ordered by priority. Use "High", "Medium", or "Low" for priority. Actions should be forward-looking (what to do THIS week or next), not reactive to yesterday.
 - topActionsToday is the PM's at-a-glance executive summary — 3 to 5 imperative one-liners that distill the most important decisions for today. Each entry must (a) start with a verb (Add / Trim / Hedge / Rotate / Watch / Skip / Hold), (b) be ≤ 12 words, (c) be specific enough that the PM could execute on it without further interpretation ("Add 2% SPY 3M 7%-OTM puts" not "Consider hedging"), and (d) be a subset/restatement of the most important forwardActions and hedgingCall items so the executive summary is consistent with the detail panels below it. Do NOT include "review", "monitor", "consider" — those are too vague. If a forwardAction is High priority it should usually have a corresponding topActionsToday entry.
@@ -948,6 +950,22 @@ ${rows.join("\n")}`;
             .join("\n")}`
         : "\n\nCATALYST CALENDAR: no scheduled earnings/econ/FOMC events in the look-ahead window (or the calendar was unavailable this run) — return an empty string for catalystWatch.";
 
+    // ── Regime-Transition gauge (Phase 02) ────────────────────────────────
+    // Pure derivation of the market-regime snapshot: how close the regime is
+    // to flipping + which signals are the early tells. Returned to the client
+    // for the chip; also fed to the prompt so the horizon views can position
+    // AHEAD of a flip rather than react to it. Null when no regime snapshot.
+    const regimeTransition: RegimeTransition | null = marketRegime
+      ? computeRegimeTransition(marketRegime)
+      : null;
+    const transitionBlock = regimeTransition
+      ? `\n\nREGIME-TRANSITION GAUGE (forward — how close the CURRENT regime is to flipping; use in tacticalView / cyclicalView and bottomLine to position AHEAD of a flip, not after it):\n- ${regimeTransition.basedOnRegime}, leaning ${regimeTransition.leaning}; transition risk ${regimeTransition.likelihood} (heuristic ${regimeTransition.score}/90); ${regimeTransition.boundaryGap} signal(s) from a label change.${
+          regimeTransition.tells.length
+            ? `\n- Early tells: ${regimeTransition.tells.map((t) => `${t.name} ${t.momentum} (${t.detail})`).join("; ")}`
+            : ""
+        }`
+      : "";
+
     const fmt = (p: ForwardPoint | undefined, unit = ""): string => {
       if (!p || p.value == null) {
         return p?.note ? `N/A (${p.note})` : "N/A";
@@ -1223,7 +1241,7 @@ Conviction: ${marketData.conviction}
 
 Pre-classified Regime: ${classification.regime} (score ${classification.score})
 Regime drivers: ${classification.signals.length > 0 ? classification.signals.join("; ") : "mixed / no dominant signal"}
-IMPORTANT: Your marketRegime output MUST equal "${classification.regime}" unless the data below clearly contradicts it (in which case briefly note the contradiction in bottomLine).${forwardBlock}${regimeBlock}${catalystBlock}
+IMPORTANT: Your marketRegime output MUST equal "${classification.regime}" unless the data below clearly contradicts it (in which case briefly note the contradiction in bottomLine).${forwardBlock}${regimeBlock}${transitionBlock}${catalystBlock}
 
 Volatility Structure:
 - VIX Term Structure: ${marketData.termStructure}
@@ -1597,6 +1615,9 @@ Current Portfolio Holdings: ${holdingsSummary}${portfolioPositioning}`;
       // event strip from this deterministically; catalystWatch (in ...parsed)
       // is the model's interpretation of it. Null when the build failed.
       catalystCalendar,
+      // Regime-transition gauge (Phase 02) — leaning + tells for the chip.
+      // Null when no regime snapshot was cached.
+      regimeTransition,
     });
   } catch (error) {
     const message = error instanceof Error ? error.message : String(error);

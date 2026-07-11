@@ -1,5 +1,6 @@
 import type { TechnicalIndicators, RiskAlert } from "./technicals";
 import type { CatalystCalendar } from "./catalyst-calendar";
+import type { RegimeTransition } from "./regime-transition";
 
 // Re-export for convenience
 export type { TechnicalIndicators, RiskAlert };
@@ -711,6 +712,12 @@ export type MorningBrief = {
    * absent on briefs generated before Phase 01.
    */
   catalystCalendar?: CatalystCalendar | null;
+  /**
+   * Forward regime-transition gauge (Phase 02) — how close the current regime
+   * is to flipping + the early tells. Server-computed (heuristic) from the
+   * market-regime snapshot. Null when no snapshot; absent on pre-Phase-02 briefs.
+   */
+  regimeTransition?: RegimeTransition | null;
   riskScan?: {
     ticker: string;
     priority: "High" | "Medium-High" | "Medium" | "Low-Medium";

@@ -1116,6 +1116,23 @@ export function MorningBrief({
     ? catalystEvents
     : catalystEvents.slice(0, CATALYST_COLLAPSED);
   const catalystHiddenCount = catalystEvents.length - visibleCatalystEvents.length;
+
+  // Regime-transition gauge (Phase 02) — forward "how close to a flip" chip.
+  const regimeTransition = brief?.regimeTransition ?? null;
+  const transitionLeanClass =
+    regimeTransition?.leaning === "toward Risk-Off"
+      ? "text-neg"
+      : regimeTransition?.leaning === "toward Risk-On"
+      ? "text-pos"
+      : "text-ink-3";
+  const transitionRiskClass =
+    regimeTransition?.likelihood === "High"
+      ? "bg-neg-soft text-neg"
+      : regimeTransition?.likelihood === "Elevated"
+      ? "bg-warn-soft text-warn"
+      : regimeTransition?.likelihood === "Watch"
+      ? "bg-surface-2 text-ink-2"
+      : "bg-pos-soft text-pos";
   // Parse a YYYY-MM-DD as a LOCAL date (avoid the UTC-midnight day-shift) and
   // format it compactly, e.g. "Wed Jul 15".
   const fmtCatalystDate = (iso: string): string => {
@@ -1784,6 +1801,40 @@ export function MorningBrief({
         <section className="flex items-start gap-2.5 rounded-xl border border-accent-border bg-accent-soft/50 px-4 py-3">
           <span className="mt-0.5 shrink-0 rounded-md bg-accent px-1.5 py-0.5 text-[10px] font-bold uppercase tracking-wider text-white">Since last brief</span>
           <p className="text-sm leading-6 text-ink-2">{brief.whatChanged}</p>
+        </section>
+      )}
+
+      {/* Regime-transition gauge (Phase 02) — how close the current regime is
+          to flipping + the early tells. A compact one-liner; the tells sit
+          below as small pills. Hidden on briefs generated before Phase 02. */}
+      {regimeTransition && (
+        <section className="rounded-xl border border-line bg-white px-4 py-3 shadow-sm">
+          <div className="flex flex-wrap items-center gap-x-2.5 gap-y-1 text-[13px]">
+            <span className="rounded-md bg-ink px-1.5 py-0.5 text-[10px] font-bold uppercase tracking-wider text-white">Regime shift</span>
+            <span className="font-semibold text-ink">{regimeTransition.basedOnRegime}</span>
+            <span className="text-ink-faint">·</span>
+            <span className={`font-semibold ${transitionLeanClass}`}>{regimeTransition.leaning}</span>
+            <span className={`rounded-full px-2 py-0.5 text-[10px] font-bold uppercase tracking-wide ${transitionRiskClass}`}>
+              {regimeTransition.likelihood} transition risk
+            </span>
+            <span className="text-[11px] text-ink-3">
+              {regimeTransition.boundaryGap} signal{regimeTransition.boundaryGap === 1 ? "" : "s"} from a flip
+            </span>
+          </div>
+          {regimeTransition.tells.length > 0 && (
+            <div className="mt-2 flex flex-wrap gap-1.5">
+              {regimeTransition.tells.map((t, i) => (
+                <span
+                  key={`${t.name}-${i}`}
+                  className="inline-flex items-center gap-1.5 rounded-full border border-line-soft px-2 py-0.5 text-[11px] text-ink-2"
+                  title={t.detail}
+                >
+                  <span className={`h-1.5 w-1.5 rounded-full ${t.momentum === "deteriorating" ? "bg-neg" : "bg-pos"}`} aria-hidden />
+                  {t.name}
+                </span>
+              ))}
+            </div>
+          )}
         </section>
       )}
 
