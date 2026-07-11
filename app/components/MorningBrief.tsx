@@ -663,6 +663,8 @@ export function MorningBrief({
 
   // Which view is showing: the generated "brief" (default) or the "input" form.
   const [briefMode, setBriefMode] = useState<"brief" | "input">("brief");
+  // Catalyst watch — collapse a long event list to keep the brief uncluttered.
+  const [catalystExpanded, setCatalystExpanded] = useState(false);
   const [error, setError] = useState("");
   const [liveLoading, setLiveLoading] = useState(false);
   const [liveFields, setLiveFields] = useState<Record<string, LiveStatus>>({});
@@ -1109,6 +1111,11 @@ export function MorningBrief({
   // Catalyst Calendar (Phase 01) — forward event strip + prose.
   const catalystEvents = brief?.catalystCalendar?.events ?? [];
   const catalystWatch = brief?.catalystWatch?.trim() || "";
+  const CATALYST_COLLAPSED = 6;
+  const visibleCatalystEvents = catalystExpanded
+    ? catalystEvents
+    : catalystEvents.slice(0, CATALYST_COLLAPSED);
+  const catalystHiddenCount = catalystEvents.length - visibleCatalystEvents.length;
   // Parse a YYYY-MM-DD as a LOCAL date (avoid the UTC-midnight day-shift) and
   // format it compactly, e.g. "Wed Jul 15".
   const fmtCatalystDate = (iso: string): string => {
@@ -1794,23 +1801,33 @@ export function MorningBrief({
             <p className="mb-3 text-sm leading-6 text-ink-2">{catalystWatch}</p>
           )}
           {catalystEvents.length > 0 && (
-            <ul className="flex flex-col gap-1.5">
-              {catalystEvents.map((e, i) => (
-                <li key={`${e.date}-${e.title}-${i}`} className="flex items-center gap-2.5 text-[13px]">
-                  <span className="w-[92px] shrink-0 whitespace-nowrap font-mono text-[11px] tabular-nums text-ink-3">
-                    {fmtCatalystDate(e.date)}
-                  </span>
-                  <span
-                    className={`h-1.5 w-1.5 shrink-0 rounded-full ${e.importance === "high" ? "bg-warn" : "bg-ink-faint"}`}
-                    aria-hidden
-                  />
-                  <span className="text-ink">{e.title}</span>
-                  {e.kind === "earnings" && e.bucket === "Portfolio" && (
-                    <span className="rounded-full bg-accent-soft px-1.5 py-px text-[10px] font-semibold text-accent">held</span>
-                  )}
-                </li>
-              ))}
-            </ul>
+            <>
+              <ul className="flex flex-col gap-1.5">
+                {visibleCatalystEvents.map((e, i) => (
+                  <li key={`${e.date}-${e.title}-${i}`} className="flex items-center gap-2.5 text-[13px]">
+                    <span className="w-[92px] shrink-0 whitespace-nowrap font-mono text-[11px] tabular-nums text-ink-3">
+                      {fmtCatalystDate(e.date)}
+                    </span>
+                    <span
+                      className={`h-1.5 w-1.5 shrink-0 rounded-full ${e.importance === "high" ? "bg-warn" : "bg-ink-faint"}`}
+                      aria-hidden
+                    />
+                    <span className="text-ink">{e.title}</span>
+                    {e.kind === "earnings" && e.bucket === "Portfolio" && (
+                      <span className="rounded-full bg-accent-soft px-1.5 py-px text-[10px] font-semibold text-accent">held</span>
+                    )}
+                  </li>
+                ))}
+              </ul>
+              {(catalystHiddenCount > 0 || catalystExpanded) && catalystEvents.length > CATALYST_COLLAPSED && (
+                <button
+                  onClick={() => setCatalystExpanded((v) => !v)}
+                  className="mt-2 text-[11px] font-semibold text-accent hover:text-accent-ink transition-colors"
+                >
+                  {catalystExpanded ? "Show less" : `Show ${catalystHiddenCount} more`}
+                </button>
+              )}
+            </>
           )}
         </section>
       )}
