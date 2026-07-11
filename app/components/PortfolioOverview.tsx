@@ -1,6 +1,10 @@
 "use client";
 
-import React, { useState, useCallback, useMemo, useEffect, useRef } from "react";
+import React, { useState, useCallback, useMemo, useEffect, useLayoutEffect, useRef } from "react";
+
+// useLayoutEffect on the client (measure before paint for the FLIP), useEffect
+// on the server to avoid the SSR warning.
+const useIsoLayoutEffect = typeof window !== "undefined" ? useLayoutEffect : useEffect;
 import Link from "next/link";
 import { useStocks } from "@/app/lib/StockContext";
 import { useNotifications } from "@/app/lib/NotificationsContext";
@@ -1598,6 +1602,38 @@ function RankingTable({
     displayRows = buildGroup(sorted).map((r) => ({ kind: "stock", ...r } as DisplayRow));
   }
 
+  // FLIP re-sort (#13): when the row ORDER changes, glide each row from its old
+  // position to its new one. Self-contained + graceful — transforms always
+  // settle to none, so this can never leave a row mispositioned (worst case: no
+  // animation). Uses offsetTop (scroll-independent). Skipped under reduced-motion.
+  const rowElRefs = useRef<Map<string, HTMLTableRowElement>>(new Map());
+  const prevTops = useRef<Map<string, number>>(new Map());
+  const orderKey = displayRows.filter((r) => r.kind === "stock").map((r) => (r as { stock: ScoredStock }).stock.ticker).join(",");
+  useIsoLayoutEffect(() => {
+    const reduce = typeof window !== "undefined" && window.matchMedia?.("(prefers-reduced-motion: reduce)").matches;
+    const nextTops = new Map<string, number>();
+    const toAnimate: { el: HTMLTableRowElement; delta: number }[] = [];
+    rowElRefs.current.forEach((el, ticker) => {
+      const top = el.offsetTop;
+      nextTops.set(ticker, top);
+      const prev = prevTops.current.get(ticker);
+      if (!reduce && prev != null && prev !== top) toAnimate.push({ el, delta: prev - top });
+    });
+    if (toAnimate.length > 0) {
+      for (const { el, delta } of toAnimate) {
+        el.style.transition = "none";
+        el.style.transform = `translateY(${delta}px)`;
+      }
+      requestAnimationFrame(() => {
+        for (const { el } of toAnimate) {
+          el.style.transition = "transform 0.5s cubic-bezier(0.22, 1, 0.36, 1)";
+          el.style.transform = "";
+        }
+      });
+    }
+    prevTops.current = nextTops;
+  }, [orderKey]);
+
   const thClass = "pb-2 pr-3 cursor-pointer hover:text-ink select-none whitespace-nowrap";
   // Sticky first column — ticker + company name stay visible while the rest of
   // the row scrolls horizontally. `left-0` pins it to the scroll container.
@@ -1940,6 +1976,7 @@ function RankingTable({
                     read as visual noise and added little (the ranking order and
                     Score column already convey best/worst). */}
                 <tr
+                  ref={(el) => { const m = rowElRefs.current; if (el) m.set(s.ticker, el); else m.delete(s.ticker); }}
                   className="animate-row-in group border-b border-l-2 border-l-transparent border-line-soft transition-colors hover:bg-surface-hover hover:border-l-accent [&>td]:align-top"
                   style={{ animationDelay: `${Math.min(rowIdx, 12) * 28}ms` }}
                 >
