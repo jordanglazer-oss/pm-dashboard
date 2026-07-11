@@ -762,10 +762,9 @@ export default function ResearchPage() {
   const [synthesisLoading, setSynthesisLoading] = useState(false);
   const [synthesisStatus, setSynthesisStatus] = useState<string | null>(null);
   const [synthesisCached, setSynthesisCached] = useState(false);
-  // Collapse state for the Cross-Source Synthesis section, persisted via
-  // uiPrefs (Redis-backed) so it sticks across refreshes and devices —
-  // same pattern as the ranking-table collapse keys.
-  const synthesisCollapsed = uiPrefs["research.synthesisCollapsed"] === "1";
+  // The Cross-Source Synthesis section now uses CollapsibleSection (same as
+  // every other research tile); its collapse state persists via the
+  // "research.synthesisCollapsed" ui-pref that CollapsibleSection reads directly.
   // Per-source view: "rows" (compact mockup list, default) or "table" (the full
   // sortable + inline-editable table). Persisted in uiPrefs like the collapse keys.
   const newtonView = uiPrefs["research.newton.view"] || "rows";
@@ -2067,37 +2066,32 @@ export default function ResearchPage() {
             overlap (a ticker mentioned by 2+ sources) is weighted
             higher. Cached server-side: refreshes with unchanged
             research + brief return instantly with no Anthropic cost. */}
-        <section className="rounded-card border border-line bg-white p-6 shadow-sm">
-          <div className="flex items-start justify-between gap-3 mb-3 flex-wrap">
-            <div className="flex items-center gap-2">
+        <CollapsibleSection
+          prefKey="research.synthesisCollapsed"
+          className="border-line"
+          titleClass="text-xs font-bold uppercase tracking-wider text-violet"
+          title={
+            <span className="inline-flex items-center gap-2">
               <span className="inline-block h-2 w-2 rounded-full bg-violet" />
-              <h3 className="text-xs font-bold uppercase tracking-wider text-violet">Cross-Source Synthesis</h3>
-              <span className="text-xs text-ink-3">Claude · regime-aware</span>
-            </div>
-            <div className="flex items-center gap-2 flex-wrap">
+              Cross-Source Synthesis
+              <span className="text-xs font-normal normal-case tracking-normal text-ink-3">Claude · regime-aware</span>
+            </span>
+          }
+          right={
+            <>
               {synthesisStatus && (
-                <span className="text-[11px] text-ink-3 mr-1">{synthesisStatus}</span>
+                <span className="text-[11px] text-ink-3">{synthesisStatus}</span>
               )}
               {synthesisGeneratedAt && (
-                <span className="text-[10px] text-ink-3 mr-1" title={`Generated ${new Date(synthesisGeneratedAt).toLocaleString()}`}>
+                <span className="text-[10px] text-ink-3" title={`Generated ${new Date(synthesisGeneratedAt).toLocaleString()}`}>
                   {new Date(synthesisGeneratedAt).toLocaleTimeString([], { hour: "numeric", minute: "2-digit" })}
                 </span>
               )}
-              <button
-                onClick={() => setUiPref("research.synthesisCollapsed", synthesisCollapsed ? "0" : "1")}
-                className="text-[11px] rounded-md border border-line bg-white px-2 py-1.5 font-medium text-ink-2 hover:bg-surface-2 transition-colors inline-flex items-center gap-1"
-                title={synthesisCollapsed ? "Expand the synthesis" : "Collapse the synthesis"}
-                aria-expanded={!synthesisCollapsed}
-              >
-                <svg className={`w-3.5 h-3.5 transition-transform ${synthesisCollapsed ? "" : "rotate-180"}`} fill="none" stroke="currentColor" strokeWidth="2" viewBox="0 0 24 24">
-                  <path strokeLinecap="round" strokeLinejoin="round" d="M19 9l-7 7-7-7" />
-                </svg>
-                {synthesisCollapsed ? "Expand" : "Collapse"}
-              </button>
-            </div>
-          </div>
+            </>
+          }
+        >
 
-          {!synthesisCollapsed && !synthesis && !synthesisLoading && (
+          {!synthesis && !synthesisLoading && (
             <div className="rounded-lg border border-dashed border-line bg-white/70 p-4 text-sm text-ink-3">
               {synthesisStatus
                 ? <>{synthesisStatus}</>
@@ -2105,7 +2099,7 @@ export default function ResearchPage() {
             </div>
           )}
 
-          {!synthesisCollapsed && synthesis && (() => {
+          {synthesis && (() => {
             // Render helper for the regime-fit pill on a pick. The
             // colors visually separate the model's OPINION on regime
             // alignment from the source-derived thesis text below.
@@ -2305,7 +2299,7 @@ export default function ResearchPage() {
               </div>
             );
           })()}
-        </section>
+        </CollapsibleSection>
 
         {/* ── Newton's Upticks ── */}
         <CollapsibleSection
