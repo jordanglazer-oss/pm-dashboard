@@ -50,6 +50,16 @@ const PMI_DEADBAND_ABS = 0.3;
 const CREDIT_DEADBAND_BPS = 15;
 const NFCI_DEADBAND = 0.05;
 
+/**
+ * Horizon weighting — a position held for months shouldn't be re-rated on
+ * tactical (day-to-day) noise. Tactical signals count less toward the
+ * transition score; cyclical / structural / leading signals count full.
+ */
+const TACTICAL_SIGNALS = new Set(["VIX Level", "Breadth (RSP/SPY)", "MTUM/USMV (Momentum/LowVol)"]);
+function horizonWeight(name: string): number {
+  return TACTICAL_SIGNALS.has(name) ? 0.6 : 1.0;
+}
+
 type SignalMomentum = {
   name: string;
   currentDirection: "risk-on" | "neutral" | "risk-off";
@@ -212,7 +222,11 @@ export function computeRegimeTransition(r: MarketRegimeData): RegimeTransition {
   let score: number;
   if (leaningToFlip) {
     const base = boundaryGap === 1 ? 36 : boundaryGap === 2 ? 20 : boundaryGap === 3 ? 10 : 5;
-    const corroboration = Math.min(30, tells.length * 12); // 1 tell → +12; High needs 2+
+    // Horizon-weighted corroboration: cyclical/structural/leading tells count
+    // full, tactical tells count 0.6, so a flip driven by credit/breadth/ISM
+    // scores higher than one driven by a VIX wiggle. High still needs ~2 tells.
+    const weightedTells = tells.reduce((sum, t) => sum + horizonWeight(t.name), 0);
+    const corroboration = Math.min(30, weightedTells * 12);
     score = base + corroboration + (r.spx10m && Math.abs(r.spx10m.distancePct) < 2 ? 6 : 0);
   } else {
     // Strengthening / calm — low transition risk (only mild fragility if the
