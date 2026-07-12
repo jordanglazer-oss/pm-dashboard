@@ -38,6 +38,8 @@ const EXCLUDE_PATTERNS = [
   /^pm:fund-data-negative:/,
   /^pm:edgar-/,              // edgar-facts / -submissions / -form4 / -ticker-map (~110MB)
   /^pm:market-regime$/,
+  /^pm:catalyst-calendar$/,  // Phase 01 cache (rebuilds from pm:stocks + FRED)
+  /^pm:thesis-health$/,      // Phase 03 cache (rebuilds from score-history + snapshots)
   /-cache$/,                 // *-analysis-cache, *-scrape-cache (hash-gated)
   /-scrape-cache:/,
   // ── Derived (recomputed from daily values + models) ──
