@@ -118,62 +118,83 @@ export function computeRegimeTransition(r: MarketRegimeData): RegimeTransition {
   const threshold = total > 0 ? Math.ceil(total * 0.66) : 0;
 
   const momentum = evaluateSignals(r);
-  // Deterioration = pressure toward risk-off; improvement = toward risk-on.
-  const deteriorating = momentum.filter((m) => m.sign < 0);
-  const improving = momentum.filter((m) => m.sign > 0);
+  const deteriorating = momentum.filter((m) => m.sign < 0); // pushing toward risk-off
+  const improving = momentum.filter((m) => m.sign > 0); //     pushing toward risk-on
 
-  // Net leaning. From Risk-Off, "improving" is the recovery direction.
+  // A transition is only meaningful when momentum pushes TOWARD LOSING the
+  // current label (a flip) — not deeper into it. Define, per regime, which
+  // momentum counts as "toward the flip" vs "strengthening the current regime":
+  //   Risk-On  → flip is DOWN: deteriorating = toward flip, improving = strengthening.
+  //   Risk-Off → flip is UP:   improving = toward flip, deteriorating = strengthening.
+  //   Neutral  → whichever side dominates is the direction of travel.
+  let towardFlip: SignalMomentum[];
+  let strengthening: SignalMomentum[];
+  let anticipated: RegimeTransition["basedOnRegime"];
+  if (label === "Risk-On") {
+    towardFlip = deteriorating;
+    strengthening = improving;
+    anticipated = "Risk-Off";
+  } else if (label === "Risk-Off") {
+    towardFlip = improving;
+    strengthening = deteriorating;
+    anticipated = "Risk-On";
+  } else if (deteriorating.length > improving.length) {
+    towardFlip = deteriorating;
+    strengthening = improving;
+    anticipated = "Risk-Off";
+  } else if (improving.length > deteriorating.length) {
+    towardFlip = improving;
+    strengthening = deteriorating;
+    anticipated = "Risk-On";
+  } else {
+    towardFlip = [];
+    strengthening = deteriorating.concat(improving);
+    anticipated = "Neutral";
+  }
+
+  // Are we genuinely leaning toward a flip, or just strengthening / calm?
+  const leaningToFlip = towardFlip.length > strengthening.length && towardFlip.length > 0;
   let leaning: RegimeTransition["leaning"];
-  if (deteriorating.length > improving.length) leaning = "toward Risk-Off";
-  else if (improving.length > deteriorating.length) leaning = "toward Risk-On";
-  else leaning = "stable";
+  if (!leaningToFlip) {
+    leaning = "stable";
+    anticipated = label; // strengthening/calm → no meaningful transition, no tilt
+  } else {
+    leaning = anticipated === "Risk-Off" ? "toward Risk-Off" : "toward Risk-On";
+  }
 
-  // Boundary gap — how many signals must flip to change the label.
+  // Boundary gap — how many signals from losing the current label.
   let boundaryGap: number;
   if (label === "Risk-On") boundaryGap = Math.max(1, riskOn - threshold + 1);
   else if (label === "Risk-Off") boundaryGap = Math.max(1, riskOff - threshold + 1);
-  else {
-    // Neutral — distance to whichever side we're leaning.
-    const gapToOff = Math.max(1, threshold - riskOff);
-    const gapToOn = Math.max(1, threshold - riskOn);
-    boundaryGap = leaning === "toward Risk-On" ? gapToOn : gapToOff;
+  else boundaryGap = anticipated === "Risk-On" ? Math.max(1, threshold - riskOn) : Math.max(1, threshold - riskOff);
+
+  // Tells = only the signals pushing toward a flip (empty when strengthening).
+  const tells: TransitionTell[] = (leaningToFlip ? towardFlip : []).map((m) => ({
+    name: m.name,
+    momentum: m.sign < 0 ? "deteriorating" : "improving",
+    detail: m.detail,
+  }));
+
+  // Heuristic score. Only elevates when momentum pushes toward a flip, and
+  // REQUIRES corroboration — a single signal tops out at Elevated, not High.
+  let score: number;
+  if (leaningToFlip) {
+    const base = boundaryGap === 1 ? 36 : boundaryGap === 2 ? 20 : boundaryGap === 3 ? 10 : 5;
+    const corroboration = Math.min(30, tells.length * 12); // 1 tell → +12; High needs 2+
+    score = base + corroboration + (r.spx10m && Math.abs(r.spx10m.distancePct) < 2 ? 6 : 0);
+  } else {
+    // Strengthening / calm — low transition risk (only mild fragility if the
+    // current label itself is barely holding).
+    score = boundaryGap === 1 ? 12 : 5;
   }
-
-  // The tells that matter are the ones pushing in the leaning direction and
-  // able to flip (a risk-on/neutral signal deteriorating; a risk-off/neutral
-  // signal improving). Stable regimes surface the stronger side for context.
-  const leaningSign = leaning === "toward Risk-Off" ? -1 : leaning === "toward Risk-On" ? 1 : 0;
-  const tellSource =
-    leaningSign < 0 ? deteriorating : leaningSign > 0 ? improving : deteriorating.concat(improving);
-  const tells: TransitionTell[] = tellSource
-    .filter((m) =>
-      leaningSign < 0
-        ? m.currentDirection !== "risk-off"
-        : leaningSign > 0
-        ? m.currentDirection !== "risk-on"
-        : true,
-    )
-    .map((m) => ({
-      name: m.name,
-      momentum: m.sign < 0 ? "deteriorating" : "improving",
-      detail: m.detail,
-    }));
-
-  // Heuristic score. Boundary proximity is the backbone; momentum adds
-  // pressure; a near-the-line SPX trend adds fragility. Capped at 90.
-  let score = boundaryGap === 1 ? 55 : boundaryGap === 2 ? 30 : boundaryGap === 3 ? 12 : 5;
-  score += Math.min(36, tells.length * 9);
-  if (r.spx10m && Math.abs(r.spx10m.distancePct) < 2) score += 8;
-  if (leaning === "stable") score = Math.round(score * 0.5); // no directional pressure
   score = Math.max(0, Math.min(90, Math.round(score)));
 
   const likelihood: RegimeTransition["likelihood"] =
     score >= 60 ? "High" : score >= 40 ? "Elevated" : score >= 20 ? "Watch" : "Low";
 
-  const summary =
-    leaning === "stable"
-      ? `${label} looks stable — no clear directional pressure in the underlying signals (transition risk ${likelihood.toLowerCase()}).`
-      : `${label} is leaning ${leaning} — ${tells.length} signal${tells.length === 1 ? "" : "s"} ${leaningSign < 0 ? "deteriorating" : "improving"}, ${boundaryGap} signal${boundaryGap === 1 ? "" : "s"} from a label change (transition risk ${likelihood.toLowerCase()}).`;
+  const summary = leaningToFlip
+    ? `${label} but leaning ${leaning} — ${tells.length} signal${tells.length === 1 ? "" : "s"} pushing toward a flip, ${boundaryGap} from a label change (transition risk ${likelihood.toLowerCase()}).`
+    : `${label} looks stable/strengthening — momentum isn't pushing toward a flip (transition risk ${likelihood.toLowerCase()}).`;
 
   return {
     basedOnRegime: label,
