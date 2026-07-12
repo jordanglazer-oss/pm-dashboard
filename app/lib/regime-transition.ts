@@ -48,7 +48,6 @@ const MOMENTUM_DEADBAND_PCT = 0.3;
 const VIX_DEADBAND_PCT = 2;
 const PMI_DEADBAND_ABS = 0.3;
 const CREDIT_DEADBAND_BPS = 15;
-const NFCI_DEADBAND = 0.05;
 
 /**
  * Horizon weighting — a position held for months shouldn't be re-rated on
@@ -136,16 +135,6 @@ function evaluateSignals(r: MarketRegimeData): SignalMomentum[] {
       currentDirection: bd.direction,
       sign: bd.direction === "risk-off" ? -1 : 1,
       detail: `price ${bd.priceDistancePct >= 0 ? "+" : ""}${bd.priceDistancePct.toFixed(1)}% vs 10M, breadth ${bd.breadthChange20dPct >= 0 ? "+" : ""}${bd.breadthChange20dPct.toFixed(1)}% 20d`,
-    });
-  }
-  if (r.nfci && typeof r.nfci.change13wk === "number") {
-    // Rising NFCI (tightening conditions) is deteriorating (toward risk-off).
-    const raw = signOf(r.nfci.change13wk, NFCI_DEADBAND);
-    out.push({
-      name: "Financial Conditions (NFCI)",
-      currentDirection: r.nfci.direction,
-      sign: raw === 0 ? 0 : (-raw as -1 | 1),
-      detail: `${r.nfci.value.toFixed(2)}, 13wk ${r.nfci.change13wk >= 0 ? "+" : ""}${r.nfci.change13wk.toFixed(2)}`,
     });
   }
   return out;
