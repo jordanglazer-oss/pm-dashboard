@@ -1,7 +1,7 @@
 import { getRedis } from "@/app/lib/redis";
 import { NextResponse } from "next/server";
 import { createLogger } from "@/app/lib/logger";
-import { computeAlerts, alertCounts, computeOpportunities } from "@/app/lib/alerts";
+import { computeAlerts, alertCounts, computeOpportunities, computeRegimeTailwind } from "@/app/lib/alerts";
 import { computeRegimeTransition } from "@/app/lib/regime-transition";
 import type { MarketRegimeData } from "@/app/lib/market-regime";
 
@@ -67,6 +67,8 @@ export async function GET() {
     })();
 
     const alerts = computeAlerts({ thesis, transition, risk });
+    // A toward-Risk-On lean is a tailwind, not an alert — surfaced green.
+    const regimeTailwind = computeRegimeTailwind(transition);
 
     // ── Opportunities: watchlist (non-held) names with improving signals ──
     const snaps: Record<string, { factset?: { revUp?: number; revDown?: number } }> = (() => {
@@ -107,9 +109,9 @@ export async function GET() {
       });
     const opportunities = computeOpportunities({ watchlist });
 
-    return NextResponse.json({ alerts, opportunities, counts: alertCounts(alerts), generatedAt: new Date().toISOString() });
+    return NextResponse.json({ alerts, opportunities, regimeTailwind, counts: alertCounts(alerts), generatedAt: new Date().toISOString() });
   } catch (e) {
     log.error("failed:", e);
-    return NextResponse.json({ alerts: [], opportunities: [], counts: { high: 0, medium: 0, total: 0 } });
+    return NextResponse.json({ alerts: [], opportunities: [], regimeTailwind: null, counts: { high: 0, medium: 0, total: 0 } });
   }
 }

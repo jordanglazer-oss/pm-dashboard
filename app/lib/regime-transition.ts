@@ -227,8 +227,12 @@ export function computeRegimeTransition(r: MarketRegimeData): RegimeTransition {
   const likelihood: RegimeTransition["likelihood"] =
     score >= 60 ? "High" : score >= 40 ? "Elevated" : score >= 20 ? "Watch" : "Low";
 
+  // Direction-aware prose: a lean toward Risk-On is a tailwind ("conviction"),
+  // a lean toward Risk-Off is a genuine "transition risk." "Stable" is neutral.
   const summary = leaningToFlip
-    ? `${label} but leaning ${leaning} — ${tells.length} signal${tells.length === 1 ? "" : "s"} pushing toward a flip, ${boundaryGap} from a label change (transition risk ${likelihood.toLowerCase()}).`
+    ? anticipated === "Risk-On"
+      ? `${label} and building ${leaning} — ${tells.length} signal${tells.length === 1 ? "" : "s"} pushing toward a flip, ${boundaryGap} from a label change (risk-on conviction ${likelihood.toLowerCase()}).`
+      : `${label} but leaning ${leaning} — ${tells.length} signal${tells.length === 1 ? "" : "s"} pushing toward a flip, ${boundaryGap} from a label change (transition risk ${likelihood.toLowerCase()}).`
     : `${label} looks stable/strengthening — momentum isn't pushing toward a flip (transition risk ${likelihood.toLowerCase()}).`;
 
   return {

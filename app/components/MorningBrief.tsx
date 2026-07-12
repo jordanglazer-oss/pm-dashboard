@@ -1125,14 +1125,21 @@ export function MorningBrief({
       : regimeTransition?.leaning === "toward Risk-On"
       ? "text-pos"
       : "text-ink-3";
-  const transitionRiskClass =
-    regimeTransition?.likelihood === "High"
-      ? "bg-neg-soft text-neg"
-      : regimeTransition?.likelihood === "Elevated"
-      ? "bg-warn-soft text-warn"
-      : regimeTransition?.likelihood === "Watch"
-      ? "bg-surface-2 text-ink-2"
-      : "bg-pos-soft text-pos";
+  // The badge is direction-aware: a shift TOWARD Risk-On is a tailwind (green),
+  // not a "risk." Only a shift toward Risk-Off wears the red/amber risk scale.
+  const towardRiskOn = regimeTransition?.leaning === "toward Risk-On";
+  const transitionRiskClass = towardRiskOn
+    ? "bg-pos-soft text-pos"
+    : regimeTransition?.likelihood === "High"
+    ? "bg-neg-soft text-neg"
+    : regimeTransition?.likelihood === "Elevated"
+    ? "bg-warn-soft text-warn"
+    : regimeTransition?.likelihood === "Watch"
+    ? "bg-surface-2 text-ink-2"
+    : "bg-pos-soft text-pos";
+  const transitionBadgeText = towardRiskOn
+    ? `${regimeTransition?.likelihood} risk-on shift`
+    : `${regimeTransition?.likelihood} transition risk`;
   // Parse a YYYY-MM-DD as a LOCAL date (avoid the UTC-midnight day-shift) and
   // format it compactly, e.g. "Wed Jul 15".
   const fmtCatalystDate = (iso: string): string => {
@@ -1815,7 +1822,7 @@ export function MorningBrief({
             <span className="text-ink-faint">·</span>
             <span className={`font-semibold ${transitionLeanClass}`}>{regimeTransition.leaning}</span>
             <span className={`rounded-full px-2 py-0.5 text-[10px] font-bold uppercase tracking-wide ${transitionRiskClass}`}>
-              {regimeTransition.likelihood} transition risk
+              {transitionBadgeText}
             </span>
             <span className="text-[11px] text-ink-3">
               {regimeTransition.boundaryGap} signal{regimeTransition.boundaryGap === 1 ? "" : "s"} from a flip

@@ -71,15 +71,18 @@ export function computeAlerts(input: {
     });
   }
 
-  // ── Regime transition — name the SPECIFIC signals + their readings ──
+  // ── Regime transition — a "risk" ONLY when heading toward Risk-Off ──
+  // A shift toward Risk-On is a tailwind, not something that "needs attention";
+  // it's surfaced separately as a positive via computeRegimeTailwind(). Only the
+  // defensive direction (toward Risk-Off) belongs in the red alert list.
   const t = input.transition;
-  if (t && (t.likelihood === "High" || t.likelihood === "Elevated")) {
+  if (t && t.leaning === "toward Risk-Off" && (t.likelihood === "High" || t.likelihood === "Elevated")) {
     const tellStrs = (t.tells ?? []).map((x) => (x.detail ? `${x.name} (${x.detail})` : x.name)).filter(Boolean);
     alerts.push({
       id: "regime-transition",
       priority: t.likelihood === "High" ? "high" : "medium",
       category: "regime",
-      title: `Regime ${t.leaning ?? "shift"} — ${(t.likelihood ?? "").toLowerCase()} transition risk`,
+      title: `Regime ${t.leaning} — ${(t.likelihood ?? "").toLowerCase()} transition risk`,
       detail: tellStrs.length ? `Driven by: ${tellStrs.join(" · ")}` : `From ${t.basedOnRegime ?? "current"}.`,
     });
   }
@@ -107,6 +110,32 @@ export function computeAlerts(input: {
     return a.category.localeCompare(b.category) || (a.ticker ?? "").localeCompare(b.ticker ?? "");
   });
   return alerts;
+}
+
+/**
+ * Regime tailwind — the POSITIVE counterpart to the toward-Risk-Off alert.
+ * When the transition gauge leans toward Risk-On with real conviction, that's a
+ * market-level tailwind for a long book, not a "risk." Surfaced green alongside
+ * the (ticker-level) Opportunities rather than as a red attention alert.
+ */
+export type RegimeTailwind = {
+  leaning: string; // "toward Risk-On"
+  likelihood: string; // "Elevated" | "High"
+  basedOnRegime?: string;
+  detail: string; // "Driven by: XLY/XLP (...) · ..."
+};
+
+export function computeRegimeTailwind(input: TransitionInput): RegimeTailwind | null {
+  const t = input;
+  if (!t || t.leaning !== "toward Risk-On") return null;
+  if (t.likelihood !== "High" && t.likelihood !== "Elevated") return null;
+  const tellStrs = (t.tells ?? []).map((x) => (x.detail ? `${x.name} (${x.detail})` : x.name)).filter(Boolean);
+  return {
+    leaning: t.leaning,
+    likelihood: t.likelihood,
+    basedOnRegime: t.basedOnRegime,
+    detail: tellStrs.length ? `Driven by: ${tellStrs.join(" · ")}` : `From ${t.basedOnRegime ?? "current"}.`,
+  };
 }
 
 /**
