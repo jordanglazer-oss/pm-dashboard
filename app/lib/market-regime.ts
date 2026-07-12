@@ -110,6 +110,36 @@ export function computeCreditSignal(
 }
 
 /**
+ * Breadth divergence — the classic leading warning: price making new ground
+ * while participation *narrows* underneath it (or the reverse). Computed from
+ * data the engine already has: SPX trend (price) vs RSP/SPY breadth momentum.
+ *   Negative divergence (risk-off): price above its 10M MA BUT RSP/SPY breadth
+ *     falling → a narrowing rally, which front-runs tops.
+ *   Positive divergence (risk-on): price weak BUT breadth improving → broadening.
+ * Neutral when price and breadth agree (no divergence).
+ */
+export type BreadthDivergenceReadout = {
+  priceDistancePct: number; // SPX vs 10M MA
+  breadthChange20dPct: number; // RSP/SPY 20d change
+  direction: RegimeDirection;
+};
+
+const BREADTH_DIVERGENCE_DEADBAND = 0.5;
+
+export function computeBreadthDivergence(
+  spx10m: TrendReadout | null,
+  breadth: RatioReadout | null
+): BreadthDivergenceReadout | null {
+  if (!spx10m || !breadth) return null;
+  const priceUp = spx10m.distancePct > 0;
+  const bChg = breadth.change20dPct;
+  let direction: RegimeDirection = "neutral";
+  if (priceUp && bChg < -BREADTH_DIVERGENCE_DEADBAND) direction = "risk-off";
+  else if (!priceUp && bChg > BREADTH_DIVERGENCE_DEADBAND) direction = "risk-on";
+  return { priceDistancePct: spx10m.distancePct, breadthChange20dPct: bChg, direction };
+}
+
+/**
  * ISM Manufacturing PMI — sourced from FRED series `NAPM` (monthly,
  * diffusion index). The 50-line is the canonical expansion/contraction
  * threshold: > 50 = expansion, < 50 = contraction. Newton specifically
@@ -154,6 +184,9 @@ export type MarketRegimeData = {
   /** Credit spreads (HY OAS) — leading risk-regime signal. Optional so older
    *  cached blobs (pre-credit) still parse; UI/transition tolerate null. */
   credit?: CreditReadout | null;
+  /** Breadth divergence (price vs RSP/SPY participation) — leading warning.
+   *  Optional for backward-compat; neutral when price & breadth agree. */
+  breadthDivergence?: BreadthDivergenceReadout | null;
   global: {
     stoxx: CrossAssetReadout | null;
     nikkei: CrossAssetReadout | null;
@@ -394,6 +427,19 @@ export function composeRegime(
           ? ` (${parts.credit.change20dBps >= 0 ? "+" : ""}${parts.credit.change20dBps}bps 20d)`
           : ""
       }`,
+    });
+  }
+  // Breadth divergence votes only when there IS a divergence (non-neutral),
+  // so it doesn't dilute the composite when price and breadth agree.
+  if (parts.breadthDivergence && parts.breadthDivergence.direction !== "neutral") {
+    const bd = parts.breadthDivergence;
+    signals.push({
+      name: "Breadth Divergence",
+      direction: bd.direction,
+      detail:
+        bd.direction === "risk-off"
+          ? `price +${bd.priceDistancePct.toFixed(1)}% vs 10M but breadth ${bd.breadthChange20dPct.toFixed(1)}% 20d (narrowing)`
+          : `price soft but breadth +${bd.breadthChange20dPct.toFixed(1)}% 20d (broadening)`,
     });
   }
 

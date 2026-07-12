@@ -118,6 +118,15 @@ function evaluateSignals(r: MarketRegimeData): SignalMomentum[] {
       detail: `${r.credit.oasBps}bps, 20d ${r.credit.change20dBps >= 0 ? "+" : ""}${r.credit.change20dBps}bps`,
     });
   }
+  if (r.breadthDivergence && r.breadthDivergence.direction !== "neutral") {
+    const bd = r.breadthDivergence;
+    out.push({
+      name: "Breadth Divergence",
+      currentDirection: bd.direction,
+      sign: bd.direction === "risk-off" ? -1 : 1,
+      detail: `price ${bd.priceDistancePct >= 0 ? "+" : ""}${bd.priceDistancePct.toFixed(1)}% vs 10M, breadth ${bd.breadthChange20dPct >= 0 ? "+" : ""}${bd.breadthChange20dPct.toFixed(1)}% 20d`,
+    });
+  }
   return out;
 }
 
