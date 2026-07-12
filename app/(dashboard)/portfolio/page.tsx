@@ -5,6 +5,7 @@ import { useStocks } from "@/app/lib/StockContext";
 import { PimPortfolio } from "@/app/components/PimPortfolio";
 import { PortfolioXray } from "@/app/components/PortfolioXray";
 import { ThesisWatch } from "@/app/components/ThesisWatch";
+import { DecisionJournal } from "@/app/components/DecisionJournal";
 
 export default function PortfolioPage() {
   const { pimModels } = useStocks();
@@ -23,6 +24,9 @@ export default function PortfolioPage() {
         </div>
         <div className="mt-6">
           <ThesisWatch />
+        </div>
+        <div className="mt-6">
+          <DecisionJournal />
         </div>
         <PimPortfolio groups={pimModels.groups} />
       </div>
