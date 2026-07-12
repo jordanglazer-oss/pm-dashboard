@@ -140,6 +140,45 @@ export function computeBreadthDivergence(
 }
 
 /**
+ * Financial Conditions — Chicago Fed National Financial Conditions Index
+ * (FRED `NFCI`, weekly). A ~105-indicator composite of money-market, debt,
+ * equity, and shadow-banking conditions. 0 = average; positive = TIGHTER than
+ * average (risk-off); negative = looser (risk-on). Rising = tightening.
+ */
+export type NfciReadout = {
+  value: number; // 0 = average, + = tight, − = loose
+  change13wk: number | null;
+  direction: RegimeDirection;
+};
+
+export function computeNfciSignal(
+  observations: readonly { date: string; value: number }[] | null
+): NfciReadout | null {
+  if (!observations || observations.length < 2) return null;
+  const valid = observations
+    .filter((o) => o && typeof o.value === "number" && isFinite(o.value))
+    .slice()
+    .sort((a, b) => (a.date < b.date ? 1 : a.date > b.date ? -1 : 0)); // newest first
+  if (valid.length < 2) return null;
+  const value = valid[0].value;
+  const prior = valid[Math.min(valid.length - 1, 13)];
+  const change13wk = prior ? value - prior.value : null;
+
+  let direction: RegimeDirection = "neutral";
+  if (change13wk != null) {
+    if (value >= 0 || change13wk >= 0.1) direction = "risk-off";
+    else if (value < -0.5 && change13wk <= 0) direction = "risk-on";
+  } else if (value >= 0) direction = "risk-off";
+  else if (value < -0.5) direction = "risk-on";
+
+  return {
+    value: Math.round(value * 100) / 100,
+    change13wk: change13wk == null ? null : Math.round(change13wk * 100) / 100,
+    direction,
+  };
+}
+
+/**
  * ISM Manufacturing PMI — sourced from FRED series `NAPM` (monthly,
  * diffusion index). The 50-line is the canonical expansion/contraction
  * threshold: > 50 = expansion, < 50 = contraction. Newton specifically
@@ -187,6 +226,9 @@ export type MarketRegimeData = {
   /** Breadth divergence (price vs RSP/SPY participation) — leading warning.
    *  Optional for backward-compat; neutral when price & breadth agree. */
   breadthDivergence?: BreadthDivergenceReadout | null;
+  /** Financial Conditions (Chicago Fed NFCI) — broad leading composite.
+   *  Optional for backward-compat. */
+  nfci?: NfciReadout | null;
   global: {
     stoxx: CrossAssetReadout | null;
     nikkei: CrossAssetReadout | null;
@@ -440,6 +482,17 @@ export function composeRegime(
         bd.direction === "risk-off"
           ? `price +${bd.priceDistancePct.toFixed(1)}% vs 10M but breadth ${bd.breadthChange20dPct.toFixed(1)}% 20d (narrowing)`
           : `price soft but breadth +${bd.breadthChange20dPct.toFixed(1)}% 20d (broadening)`,
+    });
+  }
+  if (parts.nfci) {
+    signals.push({
+      name: "Financial Conditions (NFCI)",
+      direction: parts.nfci.direction,
+      detail: `${parts.nfci.value >= 0 ? "+" : ""}${parts.nfci.value.toFixed(2)}${
+        parts.nfci.change13wk != null
+          ? ` (${parts.nfci.change13wk >= 0 ? "+" : ""}${parts.nfci.change13wk.toFixed(2)} 13wk)`
+          : ""
+      } · 0=avg, + tight`,
     });
   }
 
