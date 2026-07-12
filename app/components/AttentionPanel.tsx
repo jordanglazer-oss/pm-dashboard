@@ -2,6 +2,7 @@
 
 import React, { useEffect, useState } from "react";
 import Link from "next/link";
+import { CollapsibleSection } from "@/app/components/CollapsibleSection";
 import type { Alert, Opportunity } from "@/app/lib/alerts";
 
 /**
@@ -38,19 +39,23 @@ export function AttentionPanel() {
   const medium = alerts.length - high;
 
   return (
-    <section className="rounded-card border border-line bg-white p-4 shadow-sm">
-      {alerts.length > 0 && (
-        <div className="mb-3 flex flex-wrap items-center gap-2">
-          <span className="rounded-md bg-warn px-1.5 py-0.5 text-[10px] font-bold uppercase tracking-wider text-white">
-            Needs your attention
-          </span>
-          <span className="text-[12px] font-semibold text-ink-2">
+    <CollapsibleSection
+      prefKey="dashboard.attentionCollapsed"
+      className="border-line"
+      title={alerts.length > 0 ? "Needs your attention" : "Opportunities"}
+      right={
+        alerts.length > 0 ? (
+          <span className="text-[12px] font-semibold">
             {high > 0 && <span className="text-neg">{high} high</span>}
             {high > 0 && medium > 0 && <span className="text-ink-faint"> · </span>}
             {medium > 0 && <span className="text-warn">{medium} to watch</span>}
           </span>
-        </div>
-      )}
+        ) : (
+          <span className="text-[11px] font-semibold text-pos">{opps.length} improving</span>
+        )
+      }
+    >
+      {alerts.length > 0 && (
       <ul className="flex flex-col gap-1.5">
         {alerts.map((a) => (
           <li key={a.id} className="flex items-start gap-2.5 text-[13px]">
@@ -74,6 +79,7 @@ export function AttentionPanel() {
           </li>
         ))}
       </ul>
+      )}
 
       {/* Opportunities — the offensive twin: watchlist names improving. */}
       {opps.length > 0 && (
@@ -100,6 +106,6 @@ export function AttentionPanel() {
           </ul>
         </div>
       )}
-    </section>
+    </CollapsibleSection>
   );
 }
