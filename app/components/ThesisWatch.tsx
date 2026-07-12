@@ -180,9 +180,16 @@ export function ThesisWatch() {
               </div>
             );
           })}
-          <p className="text-[10.5px] leading-4 text-ink-faint">
-            Verdict is automated from the composite score trend (~45d), FactSet FY+1 estimate revisions, and technical risk alerts. Your &ldquo;why&rdquo; is saved to your profile and shown here as context — the verdict does not change it.
-          </p>
+          <div className="flex flex-col gap-1.5 rounded-control bg-surface-2/50 px-3 py-2.5 text-[10.5px] leading-4 text-ink-3">
+            <div className="flex flex-wrap gap-x-4 gap-y-1">
+              <span><span className="font-semibold text-pos">Intact</span> — no fundamental deterioration.</span>
+              <span><span className="font-semibold text-warn">Eroding</span> — one signal weakening; worth a look.</span>
+              <span><span className="font-semibold text-neg">Broken</span> — multiple / strong fundamental signals deteriorating.</span>
+            </div>
+            <p>
+              Driven mainly by <span className="font-semibold text-ink-2">forward fundamentals</span> — FactSet FY+1 estimate revisions (analysts raising/cutting) and the composite score trend (~45d). A <span className="font-semibold">CRITICAL</span> technical alert only <em>nudges</em> the verdict — it&apos;s a timing signal and can&apos;t break a thesis on its own; a <span className="font-semibold">WARNING</span> is treated as technical risk, not a thesis driver. Your &ldquo;why&rdquo; is context only — it never changes the verdict.
+            </p>
+          </div>
         </div>
       )}
     </CollapsibleSection>

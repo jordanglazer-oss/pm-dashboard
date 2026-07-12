@@ -37,6 +37,7 @@ export type ThesisHealth = {
 const LOOKBACK_DAYS = 45;
 const SCORE_MILD = -3; // composite points
 const SCORE_STRONG = -8;
+const REVISION_STRONG = -3; // net FY+1 EPS revisions (analysts cutting hard)
 
 /** YYYY-MM-DD `days` before an ISO date string. */
 function daysBefore(isoDate: string, days: number): string {
@@ -79,10 +80,15 @@ export function computeThesisHealth(input: {
     }
   }
 
-  // ── Estimate revisions ──
+  // ── Estimate revisions (the cleanest FORWARD-FUNDAMENTAL thesis signal) ──
+  // Analysts cutting future earnings is a direct thesis threat, so it's the
+  // most heavily weighted input: a strong net cut can reach "eroding" on its own.
   const net = typeof input.netRevisions === "number" ? input.netRevisions : null;
   if (net != null) {
-    if (net < 0) {
+    if (net <= REVISION_STRONG) {
+      points += 2;
+      drivers.push({ signal: "estimates", direction: "negative", detail: `net FY+1 EPS revisions ${net} (analysts cutting)` });
+    } else if (net < 0) {
       points += 1;
       drivers.push({ signal: "estimates", direction: "negative", detail: `net FY+1 EPS revisions ${net}` });
     } else if (net > 0) {
@@ -90,14 +96,15 @@ export function computeThesisHealth(input: {
     }
   }
 
-  // ── Risk alert ──
+  // ── Technical risk (a TIMING signal, deliberately de-weighted) ──
+  // Weak technicals are not a broken thesis — often the opposite (a buying
+  // opportunity in a fundamentally-good name). So a CRITICAL alert only NUDGES
+  // (1 pt, can't break a thesis alone), and a WARNING is context-only (0 pts,
+  // shown elsewhere as the technical risk flag, not a thesis driver here).
   const risk = input.riskLevel ?? null;
   if (risk === "critical") {
-    points += 2;
-    drivers.push({ signal: "risk", direction: "negative", detail: "CRITICAL risk alert" });
-  } else if (risk === "warning") {
     points += 1;
-    drivers.push({ signal: "risk", direction: "negative", detail: "WARNING risk alert" });
+    drivers.push({ signal: "risk", direction: "negative", detail: "CRITICAL technical risk (timing signal)" });
   }
 
   const verdict: ThesisVerdict = points >= 3 ? "broken" : points >= 1 ? "eroding" : "intact";
