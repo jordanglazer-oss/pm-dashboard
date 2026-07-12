@@ -58,9 +58,27 @@ type StoredStock = {
   sector?: string;
   price?: number;
   currentPrice?: number;
+  instrumentType?: string;
 };
 type StoredPosition = { symbol?: string; units?: number; costBasis?: number };
 type PositionLedger = { profile?: string; positions?: StoredPosition[] };
+type ModelHolding = { symbol?: string; assetClass?: string };
+type ModelGroup = { holdings?: ModelHolding[] };
+
+/** Classify a holding for the sector breakdown. Individual stocks keep their
+ *  GICS sector; ETFs / mutual funds (which have no single GICS sector) are
+ *  labelled by the PIM model's asset class so they don't all collapse into
+ *  "Unclassified". */
+function classifyHolding(sector: string, instrumentType?: string, assetClass?: string): string {
+  const s = (sector || "").trim();
+  const hasGics = s.length > 0 && s !== "Unclassified";
+  const isFund = instrumentType === "etf" || instrumentType === "mutual-fund";
+  if (hasGics && !isFund) return s; // individual stock with a real sector
+  if (assetClass === "fixedIncome") return "Fixed Income";
+  if (assetClass === "alternative") return "Alternatives";
+  if (assetClass === "equity" || isFund) return "Equity ETFs & Funds";
+  return hasGics ? s : "Unclassified";
+}
 
 function isCad(ticker: string, currency?: string): boolean {
   if (currency) return currency.toUpperCase() === "CAD";
@@ -131,7 +149,7 @@ export async function GET(req: NextRequest) {
     let usdEquityFraction = 0;
     const stockLookup = new Map<
       string,
-      { ticker: string; sector: string; currency: "CAD" | "USD"; price: number | null }
+      { ticker: string; sector: string; currency: "CAD" | "USD"; price: number | null; instrumentType?: string }
     >();
     try {
       const raw = await redis.get("pm:stocks");
@@ -142,6 +160,7 @@ export async function GET(req: NextRequest) {
         const price = typeof s.price === "number" ? s.price : typeof s.currentPrice === "number" ? s.currentPrice : null;
         stockLookup.set(normTicker(s.ticker), {
           ticker: s.ticker,
+          instrumentType: s.instrumentType,
           sector: s.sector || "Unclassified",
           currency: isCad(s.ticker, s.currency) ? "CAD" : "USD",
           price,
@@ -177,6 +196,23 @@ export async function GET(req: NextRequest) {
       }
     } catch (e) {
       log.warn("positions read failed:", e instanceof Error ? e.message : e);
+    }
+
+    // ── PIM model asset classes (to classify ETFs/funds by asset class) ──
+    const assetClassByTicker = new Map<string, string>();
+    try {
+      const raw = await redis.get("pm:pim-models");
+      const parsed = raw ? JSON.parse(raw) : null;
+      const groups: ModelGroup[] = parsed && Array.isArray(parsed.groups) ? parsed.groups : [];
+      for (const g of groups) {
+        for (const h of g.holdings ?? []) {
+          if (h.symbol && h.assetClass && !assetClassByTicker.has(normTicker(h.symbol))) {
+            assetClassByTicker.set(normTicker(h.symbol), h.assetClass);
+          }
+        }
+      }
+    } catch (e) {
+      log.warn("pim-models read failed:", e instanceof Error ? e.message : e);
     }
 
     // ── Benchmarks + FX (Yahoo) ──
@@ -263,7 +299,7 @@ export async function GET(req: NextRequest) {
           const priceCad = stock.price * fx;
           rows.push({
             ticker: stock.ticker,
-            sector: stock.sector,
+            sector: classifyHolding(stock.sector, stock.instrumentType, assetClassByTicker.get(normTicker(stock.ticker))),
             currency: stock.currency,
             marketValueCad: p.units * priceCad,
             costBasisCad: p.costBasis,
