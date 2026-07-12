@@ -6,6 +6,7 @@ import { PortfolioOverview } from "@/app/components/PortfolioOverview";
 import { CockpitBand } from "@/app/components/CockpitBand";
 import { ChangeMonitor } from "@/app/components/ChangeMonitor";
 import { ScoreCalibration } from "@/app/components/ScoreCalibration";
+import { ForwardScorePanel } from "@/app/components/ForwardScorePanel";
 import { regimeMultiplier, isOffensiveSector, normalizeSector } from "@/app/lib/scoring";
 import type { Stock, ScoreKey, InstrumentType } from "@/app/lib/types";
 import { INSTRUMENT_LABELS } from "@/app/lib/types";
@@ -198,6 +199,10 @@ export default function DashboardPage() {
 
         {/* ── Portfolio Overview ── */}
         <PortfolioOverview sidebar={<ChangeMonitor />} />
+
+        {/* ── Forward regime score (Phase 05) — parallel forward-tilted score.
+            Sits with the score/regime detail; off by default, toggle to reveal. */}
+        <ForwardScorePanel />
 
         {/* ── Regime Detail — per-stock multiplier breakdown ── */}
         {(() => {
