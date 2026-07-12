@@ -4,6 +4,7 @@ import React, { useEffect, useState } from "react";
 import { useStocks } from "@/app/lib/StockContext";
 import { PortfolioOverview } from "@/app/components/PortfolioOverview";
 import { CockpitBand } from "@/app/components/CockpitBand";
+import { AttentionPanel } from "@/app/components/AttentionPanel";
 import { ChangeMonitor } from "@/app/components/ChangeMonitor";
 import { ScoreCalibration } from "@/app/components/ScoreCalibration";
 import { ForwardScorePanel } from "@/app/components/ForwardScorePanel";
@@ -117,6 +118,10 @@ export default function DashboardPage() {
   return (
     <main className="min-h-screen bg-ground px-4 py-6 text-ink md:px-8 md:py-8 overflow-x-hidden">
       <div className="mx-auto max-w-7xl space-y-6">
+
+        {/* Proactive "needs your attention" digest (Phase 07) — renders only
+            when there's something actionable, so calm days stay clean. */}
+        <AttentionPanel />
 
         {/* Cockpit band (#11): the per-PIM-model day returns + the full
             deterministic market-regime read, merged into one at-a-glance card.
