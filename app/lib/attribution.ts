@@ -163,17 +163,20 @@ export function computeContributions(
     sector: string;
     currency: "CAD" | "USD";
     marketValueCad: number; // current value in CAD (for weighting)
-    costBasisNative: number; // avg cost/unit, native currency
-    priceNative: number; // current price, native currency
+    // Cost basis is stored in CAD (the app enters ACB in CAD regardless of the
+    // holding's listing currency), so the price MUST also be in CAD — otherwise
+    // a USD name's return is corrupted by the FX gap. Both in CAD here.
+    costBasisCad: number; // avg cost/unit, CAD
+    priceCad: number; // current price/unit, CAD
   }>,
 ): ContributionBreakdown {
   const totalMv = rows.reduce((s, r) => s + (isFinite(r.marketValueCad) ? r.marketValueCad : 0), 0);
   const holdings: HoldingContribution[] = [];
   for (const r of rows) {
-    if (!isFinite(r.costBasisNative) || r.costBasisNative <= 0 || !isFinite(r.priceNative)) continue;
+    if (!isFinite(r.costBasisCad) || r.costBasisCad <= 0 || !isFinite(r.priceCad)) continue;
     if (totalMv <= 0) continue;
     const weightPct = (r.marketValueCad / totalMv) * 100;
-    const returnPct = (r.priceNative / r.costBasisNative - 1) * 100;
+    const returnPct = (r.priceCad / r.costBasisCad - 1) * 100;
     holdings.push({
       ticker: r.ticker,
       sector: r.sector || "Unclassified",

@@ -256,14 +256,18 @@ export async function GET(req: NextRequest) {
             contributionsExcluded++;
             continue;
           }
+          // costBasis is stored in CAD, so convert the (native) price to CAD
+          // before computing the return — otherwise a USD name's return is
+          // wrong by the whole USD/CAD gap (this made GRNJ read as a detractor).
           const fx = stock.currency === "USD" ? (usdcadRate ?? 1) : 1;
+          const priceCad = stock.price * fx;
           rows.push({
             ticker: stock.ticker,
             sector: stock.sector,
             currency: stock.currency,
-            marketValueCad: p.units * stock.price * fx,
-            costBasisNative: p.costBasis,
-            priceNative: stock.price,
+            marketValueCad: p.units * priceCad,
+            costBasisCad: p.costBasis,
+            priceCad,
           });
         }
         dbg.rows = rows.length;
