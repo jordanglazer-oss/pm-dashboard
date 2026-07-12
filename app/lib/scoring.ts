@@ -281,6 +281,56 @@ export function regimeMultiplier(
   return Math.round((base - deviation * dampening) * 1000) / 1000;
 }
 
+/**
+ * Forward-looking regime blend (Phase 05).
+ *
+ * A PARALLEL score — never replaces `adjusted`. It blends the current-regime
+ * multiplier with the multiplier for the regime we're LEANING TOWARD, weighted
+ * by a transition-probability `p`, so a name held for months is scored partly
+ * against the regime it's heading into. When p=0 (calm markets / Low transition
+ * risk) or the lean is "stable", the forward multiplier equals the current one
+ * and the forward score is identical to `adjusted`.
+ */
+
+/** Blend weight `p` from the regime-transition likelihood. Deliberately
+ *  conservative: Low = 0 (forward score = today), capped at 0.5 so the
+ *  anticipated regime never fully overrides the current one. */
+export function transitionWeight(likelihood: string | undefined): number {
+  switch (likelihood) {
+    case "High":
+      return 0.5;
+    case "Elevated":
+      return 0.35;
+    case "Watch":
+      return 0.15;
+    default:
+      return 0; // Low / undefined
+  }
+}
+
+/** A name's "fit" for a regime, from its multiplier: >1 favored, <1 headwind. */
+export function regimeFit(mult: number): "favored" | "neutral" | "headwind" {
+  if (mult > 1.001) return "favored";
+  if (mult < 0.999) return "headwind";
+  return "neutral";
+}
+
+/** Forward (blended) multiplier: current blended with anticipated, weighted by
+ *  p. No-op (returns the current multiplier) when there is no anticipated
+ *  regime, it equals the current regime, or p ≤ 0. */
+export function forwardMultiplier(
+  sector: string,
+  currentRegime: string,
+  anticipatedRegime: string | undefined,
+  p: number,
+  scores?: Record<string, number>
+): number {
+  const cur = regimeMultiplier(sector, currentRegime, scores);
+  if (!anticipatedRegime || anticipatedRegime === currentRegime || !(p > 0)) return cur;
+  const ant = regimeMultiplier(sector, anticipatedRegime, scores);
+  return Math.round((cur * (1 - p) + ant * p) * 1000) / 1000;
+}
+
 // Legacy aliases for backward compatibility
 const OFFENSIVE_SECTORS = GROWTH_SECTORS;
 
@@ -309,7 +359,11 @@ export function marketEdgeApplies(stock: Stock): boolean {
 
 export function computeScores(
   stock: Stock,
-  marketData: MarketData
+  marketData: MarketData,
+  /** Optional forward-looking regime context (Phase 05). When present, a
+   *  PARALLEL `forwardAdjusted` score is computed alongside `adjusted` —
+   *  `adjusted` is never changed by this. Absent → forward === current. */
+  forward?: { anticipatedRegime?: string; transitionWeight?: number }
 ): ScoredStock {
   const rawSum = (Object.keys(stock.scores) as ScoreKey[]).reduce(
     (sum, key) => sum + (stock.scores[key] || 0),
@@ -346,7 +400,30 @@ export function computeScores(
     risk = "High";
   if (DEFENSIVE_SECTORS.includes(normalizeSector(stock.sector))) risk = "Low";
 
-  return { ...stock, raw, adjusted, rating, ratingLabel, risk };
+  // ── Forward (blended) score — PARALLEL to `adjusted`, never replaces it ──
+  const p = forward?.transitionWeight ?? 0;
+  const anticipated = forward?.anticipatedRegime;
+  const fwdMult = forwardMultiplier(stock.sector, marketData.riskRegime, anticipated, p, stock.scores);
+  const forwardAdjusted = Math.round(raw * fwdMult * 10) / 10;
+  const regimeFitNow = regimeFit(regimeMultiplier(stock.sector, marketData.riskRegime, stock.scores));
+  const regimeFitNext = anticipated
+    ? regimeFit(regimeMultiplier(stock.sector, anticipated, stock.scores))
+    : regimeFitNow;
+
+  return {
+    ...stock,
+    raw,
+    adjusted,
+    rating,
+    ratingLabel,
+    risk,
+    forwardAdjusted,
+    forwardMult: fwdMult,
+    regimeFitNow,
+    regimeFitNext,
+    anticipatedRegime: anticipated,
+    transitionWeight: p,
+  };
 }
 
 export function isOffensiveSector(sector: string): boolean {

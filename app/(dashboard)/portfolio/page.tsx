@@ -5,6 +5,7 @@ import { useStocks } from "@/app/lib/StockContext";
 import { PimPortfolio } from "@/app/components/PimPortfolio";
 import { PortfolioXray } from "@/app/components/PortfolioXray";
 import { ThesisWatch } from "@/app/components/ThesisWatch";
+import { ForwardScorePanel } from "@/app/components/ForwardScorePanel";
 
 export default function PortfolioPage() {
   const { pimModels } = useStocks();
@@ -23,6 +24,9 @@ export default function PortfolioPage() {
         </div>
         <div className="mt-6">
           <ThesisWatch />
+        </div>
+        <div className="mt-6">
+          <ForwardScorePanel />
         </div>
         <PimPortfolio groups={pimModels.groups} />
       </div>

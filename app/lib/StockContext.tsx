@@ -3,7 +3,7 @@
 import React, { createContext, useContext, useState, useMemo, useCallback, useEffect, useRef } from "react";
 import type { Stock, MarketData, ScoredStock, MorningBrief, ScoreKey, ScoreExplanations, HealthData, TechnicalIndicators, RiskAlert, FundData } from "./types";
 import type { PimHolding, PimModelData, PimModelGroup, PimPortfolioState, PimModelGroupState } from "./pim-types";
-import { computeScores, isOffensiveSector, isScoreable } from "./scoring";
+import { computeScores, isOffensiveSector, isScoreable, transitionWeight } from "./scoring";
 import { defaultMarketData } from "./defaults";
 // pim-seed is now a LAST-RESORT FALLBACK only. The authoritative baseline
 // lives in Redis under `pm:pim-model-baseline` and is fetched on mount into
@@ -284,6 +284,26 @@ function useDebouncedPersist(url: string, bodyKey: string, delay = 500): [
 export function StockProvider({ children }: { children: React.ReactNode }) {
   const [stocks, setStocks] = useState<Stock[]>([]);
   const [marketData, setMarketData] = useState<MarketData>(defaultMarketData);
+  // Forward-looking regime context (Phase 05) — the regime we're LEANING toward
+  // + a blend weight, from /api/regime-transition (read-only). Drives the
+  // parallel `forwardAdjusted` score. Empty until fetched → forward === current.
+  const [forwardCtx, setForwardCtx] = useState<{ anticipatedRegime?: string; transitionWeight?: number }>({});
+  useEffect(() => {
+    let alive = true;
+    fetch("/api/regime-transition", { cache: "no-store" })
+      .then((r) => r.json())
+      .then((j) => {
+        if (!alive || !j?.transition) return;
+        const t = j.transition as { leaning?: string; likelihood?: string };
+        const anticipatedRegime =
+          t.leaning === "toward Risk-Off" ? "Risk-Off" : t.leaning === "toward Risk-On" ? "Risk-On" : undefined;
+        setForwardCtx({ anticipatedRegime, transitionWeight: transitionWeight(t.likelihood) });
+      })
+      .catch(() => {});
+    return () => {
+      alive = false;
+    };
+  }, []);
   const [brief, setBriefState] = useState<MorningBrief | null>(null);
   const [chartAnalyses, setChartAnalysesState] = useState<Record<string, ChartAnalysisEntry>>({});
   const [scannerData, setScannerDataState] = useState<ScannerData | null>(null);
@@ -512,9 +532,9 @@ export function StockProvider({ children }: { children: React.ReactNode }) {
       if (rs != null) overrides.relativeStrength = rs;
 
       const patched = { ...s, scores: { ...s.scores, ...overrides } };
-      return computeScores(patched, marketData);
+      return computeScores(patched, marketData, forwardCtx);
     }),
-    [stocks, marketData, analystSnapshots]
+    [stocks, marketData, analystSnapshots, forwardCtx]
   );
 
   const portfolioStocks = useMemo(

@@ -434,6 +434,20 @@ export type ScoredStock = Stock & {
   ratingLabel?: string;
   risk: "High" | "Medium" | "Low";
   sensitivity?: "High" | "Moderate" | "Low";
+  /**
+   * Forward-looking regime score (Phase 05) — PARALLEL to `adjusted`, computed
+   * against a blend of the current regime and the one we're leaning toward.
+   * Equals `adjusted` when there's no transition context / Low transition risk.
+   * Never affects rating/ranking — it's a lens, shown only when the user opts in.
+   */
+  forwardAdjusted?: number;
+  forwardMult?: number;
+  /** Regime fit for the CURRENT regime: favored / neutral / headwind. */
+  regimeFitNow?: "favored" | "neutral" | "headwind";
+  /** Regime fit for the ANTICIPATED (leaning-toward) regime. */
+  regimeFitNext?: "favored" | "neutral" | "headwind";
+  anticipatedRegime?: string;
+  transitionWeight?: number;
 };
 
 export type MarketData = {
