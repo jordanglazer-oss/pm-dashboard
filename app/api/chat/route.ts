@@ -8,6 +8,7 @@ import type {
   PimModelData,
 } from "@/app/lib/pim-types";
 import type { MarketRegimeData } from "@/app/lib/market-regime";
+import { computeRegimeTransition } from "@/app/lib/regime-transition";
 
 /**
  * POST /api/chat
@@ -53,14 +54,19 @@ function fmtNum(n: number | null | undefined, digits = 2): string {
  * dashboard. */
 async function buildContextBlock(): Promise<string> {
   const redis = await getRedis();
-  const [briefRaw, regimeRaw, stocksRaw, pimModelsRaw, pimPositionsRaw, pimPerfRaw] = await Promise.all([
-    redis.get("pm:brief"),
-    redis.get("pm:market-regime"),
-    redis.get("pm:stocks"),
-    redis.get("pm:pim-models"),
-    redis.get("pm:pim-positions"),
-    redis.get("pm:pim-performance"),
-  ]);
+  const [briefRaw, regimeRaw, stocksRaw, pimModelsRaw, pimPositionsRaw, pimPerfRaw, thesisRaw, calendarRaw, attributionRaw] =
+    await Promise.all([
+      redis.get("pm:brief"),
+      redis.get("pm:market-regime"),
+      redis.get("pm:stocks"),
+      redis.get("pm:pim-models"),
+      redis.get("pm:pim-positions"),
+      redis.get("pm:pim-performance"),
+      // Forward-looking layers (Phases 01-04) — read-only.
+      redis.get("pm:thesis-health"),
+      redis.get("pm:catalyst-calendar"),
+      redis.get("pm:attribution-cache"),
+    ]);
 
   const sections: string[] = [];
   sections.push(`DASHBOARD CONTEXT (generated ${new Date().toISOString()})`);
@@ -215,6 +221,93 @@ CRITICAL — PORTFOLIO AWARENESS:
       sections.push(`[PIM PERFORMANCE — cumulative-index series]\n${lines.join("\n")}`);
     } catch {
       sections.push(`[PIM PERFORMANCE: failed to parse]`);
+    }
+  }
+
+  // ── Regime-transition gauge (Phase 02) — how close the regime is to flipping ──
+  if (regimeRaw) {
+    try {
+      const regime = JSON.parse(regimeRaw) as MarketRegimeData;
+      if (regime?.composite) {
+        const t = computeRegimeTransition(regime);
+        sections.push(
+          `[REGIME-TRANSITION GAUGE — forward]\n` +
+            `${t.basedOnRegime}, leaning ${t.leaning}; transition risk ${t.likelihood} (heuristic ${t.score}/90); ${t.boundaryGap} signal(s) from a label change.` +
+            (t.tells.length ? `\nEarly tells: ${t.tells.map((x) => `${x.name} ${x.momentum}`).join("; ")}` : ""),
+        );
+      }
+    } catch {
+      /* skip */
+    }
+  }
+
+  // ── Catalyst calendar (Phase 01) — scheduled events ahead ──
+  if (calendarRaw) {
+    try {
+      const cal = JSON.parse(calendarRaw) as {
+        windowDays?: number;
+        events?: Array<{ date: string; title: string; kind: string; bucket?: string; importance: string }>;
+      };
+      const events = cal.events ?? [];
+      if (events.length > 0) {
+        sections.push(
+          `[CATALYST CALENDAR — next ${cal.windowDays ?? 14} days]\n` +
+            events
+              .slice(0, 20)
+              .map((e) => `- ${e.date}: ${e.title}${e.kind === "earnings" && e.bucket ? ` (${e.bucket})` : ""}${e.importance === "high" ? " [HIGH]" : ""}`)
+              .join("\n"),
+        );
+      }
+    } catch {
+      /* skip */
+    }
+  }
+
+  // ── Thesis health (Phase 03) — per-holding intact/eroding/broken ──
+  if (thesisRaw) {
+    try {
+      const th = JSON.parse(thesisRaw) as {
+        counts?: { broken: number; eroding: number; intact: number };
+        holdings?: Array<{ ticker: string; verdict: string; summary: string }>;
+      };
+      const flagged = (th.holdings ?? []).filter((h) => h.verdict !== "intact");
+      sections.push(
+        `[THESIS HEALTH — ${th.counts?.broken ?? 0} broken, ${th.counts?.eroding ?? 0} eroding, ${th.counts?.intact ?? 0} intact]\n` +
+          (flagged.length
+            ? flagged.map((h) => `- ${h.ticker}: ${h.verdict.toUpperCase()} — ${h.summary}`).join("\n")
+            : "All holdings' theses intact."),
+      );
+    } catch {
+      /* skip */
+    }
+  }
+
+  // ── Performance attribution (Phase 04) — where returns came from ──
+  if (attributionRaw) {
+    try {
+      const attr = JSON.parse(attributionRaw) as {
+        profiles?: Array<{
+          label: string;
+          periods?: Array<{
+            period: string;
+            portfolioReturnPct: number | null;
+            currencyContributionPct: number | null;
+            benchmarks?: Array<{ label: string; marketContributionPct: number | null; selectionPct: number | null }>;
+          }>;
+        }>;
+      };
+      const lines: string[] = [];
+      for (const p of attr.profiles ?? []) {
+        const ytd = p.periods?.find((x) => x.period === "YTD");
+        if (!ytd || ytd.portfolioReturnPct == null) continue;
+        const sp = ytd.benchmarks?.find((b) => b.label === "S&P 500");
+        lines.push(
+          `- ${p.label} YTD ${ytd.portfolioReturnPct.toFixed(2)}% = market ${fmtNum(sp?.marketContributionPct, 2)}% + currency ${fmtNum(ytd.currencyContributionPct, 2)}% + selection ${fmtNum(sp?.selectionPct, 2)}% (vs S&P 500)`,
+        );
+      }
+      if (lines.length) sections.push(`[PERFORMANCE ATTRIBUTION — YTD return decomposition]\n${lines.join("\n")}`);
+    } catch {
+      /* skip */
     }
   }
 
