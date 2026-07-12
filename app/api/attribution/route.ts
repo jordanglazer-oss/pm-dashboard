@@ -5,6 +5,8 @@ import {
   decompose,
   returnOverPeriod,
   computeContributions,
+  periodStartDate,
+  valueOnOrBefore,
   PERIODS,
   type ReturnDecomposition,
   type ContributionBreakdown,
@@ -230,14 +232,34 @@ export async function GET(req: NextRequest) {
 
     // Latest USD/CAD rate for converting USD position values to CAD (weighting).
     const usdcadRate = usdcad.length > 0 ? usdcad[usdcad.length - 1].value : null;
+    const usdcadSorted = [...usdcad].sort((a, b) => (a.date < b.date ? -1 : a.date > b.date ? 1 : 0));
+
+    // ── Per-holding daily history (for PERIOD-based contribution) ──
+    // Fetch each matched holding's Yahoo history ONCE (deduped across profiles),
+    // so we can price each name at each period's start. ~35 holdings.
+    const historyTickers = new Set<string>();
+    for (const [, poss] of positionsByProfile) {
+      for (const p of poss) {
+        if (!p.symbol) continue;
+        const st = stockLookup.get(normTicker(p.symbol));
+        if (st?.ticker) historyTickers.add(st.ticker);
+      }
+    }
+    const histMap = new Map<string, ValuePoint[]>();
+    await Promise.all(
+      [...historyTickers].map(async (tk) => {
+        const h = await fetchYahooHistory(tk).catch(() => [] as ValuePoint[]);
+        histMap.set(tk, h.slice().sort((a, b) => (a.date < b.date ? -1 : a.date > b.date ? 1 : 0)));
+      }),
+    );
 
     const profiles: Array<{
       profile: string;
       label: string;
       periods: ReturnDecomposition[];
-      contributions: ContributionBreakdown | null;
+      contributionsByPeriod: Partial<Record<PeriodKey, ContributionBreakdown>>;
       contributionsExcluded: number;
-      contribDebug: { positions: number; noSymbol: number; noMatch: number; noPrice: number; noCost: number; rows: number };
+      contribDebug: { positions: number; noSymbol: number; noMatch: number; noPrice: number; noHistory: number; rows: number };
     }> = [];
     for (const led of ledgers) {
       const profile = led.profile;
@@ -261,60 +283,61 @@ export async function GET(req: NextRequest) {
         }),
       );
 
-      // View 2 — cost-basis contributions. Match each PIM position to a stock
-      // for its live price + sector + currency; positions with no price match
-      // (funds/ETFs not in pm:stocks) are excluded and counted.
-      let contributions: ContributionBreakdown | null = null;
-      let contributionsExcluded = 0;
+      // View 2 — PERIOD-based contribution (MTD/QTD/YTD/1Y), so it reconciles
+      // with the return you're auditing. Each holding's contribution =
+      // current CAD weight × its return over the period (current price vs the
+      // price at the period's start). computeContributions reused by feeding it
+      // the period-start CAD price as "cost" and the current CAD price as "price".
       const positions = positionsByProfile.get(profile) ?? [];
-      const dbg = { positions: positions.length, noSymbol: 0, noMatch: 0, noPrice: 0, noCost: 0, rows: 0 };
-      if (positions.length > 0) {
+      const dbg = { positions: positions.length, noSymbol: 0, noMatch: 0, noPrice: 0, noHistory: 0, rows: 0 };
+      const contributionsByPeriod: Partial<Record<PeriodKey, ContributionBreakdown>> = {};
+      const usdcadNow = usdcadRate ?? 1;
+      for (const period of PERIODS) {
+        const start = periodStartDate(period, ref);
+        const usdcadStart = valueOnOrBefore(usdcadSorted, start) ?? usdcadNow;
         const rows = [];
         for (const p of positions) {
           if (!p.symbol || typeof p.units !== "number") {
-            dbg.noSymbol++;
-            contributionsExcluded++;
+            if (period === "YTD") dbg.noSymbol++;
             continue;
           }
           const stock = stockLookup.get(normTicker(p.symbol));
           if (!stock) {
-            dbg.noMatch++;
-            contributionsExcluded++;
+            if (period === "YTD") dbg.noMatch++;
             continue;
           }
           if (stock.price == null) {
-            dbg.noPrice++;
-            contributionsExcluded++;
+            if (period === "YTD") dbg.noPrice++;
             continue;
           }
-          if (typeof p.costBasis !== "number" || p.costBasis <= 0) {
-            dbg.noCost++;
-            contributionsExcluded++;
-            continue;
+          const hist = histMap.get(stock.ticker) ?? [];
+          const startPriceNative = valueOnOrBefore(hist, start);
+          if (startPriceNative == null || startPriceNative <= 0) {
+            if (period === "YTD") dbg.noHistory++;
+            continue; // history doesn't reach back to the period start
           }
-          // costBasis is stored in CAD, so convert the (native) price to CAD
-          // before computing the return — otherwise a USD name's return is
-          // wrong by the whole USD/CAD gap (this made GRNJ read as a detractor).
-          const fx = stock.currency === "USD" ? (usdcadRate ?? 1) : 1;
-          const priceCad = stock.price * fx;
+          const isUsd = stock.currency === "USD";
+          const startPriceCad = startPriceNative * (isUsd ? usdcadStart : 1);
+          const currentPriceCad = stock.price * (isUsd ? usdcadNow : 1);
           rows.push({
             ticker: stock.ticker,
             sector: classifyHolding(stock.sector, stock.instrumentType, assetClassByTicker.get(normTicker(stock.ticker))),
             currency: stock.currency,
-            marketValueCad: p.units * priceCad,
-            costBasisCad: p.costBasis,
-            priceCad,
+            marketValueCad: p.units * currentPriceCad,
+            costBasisCad: startPriceCad, // period-start CAD price → return = period return
+            priceCad: currentPriceCad,
           });
         }
-        dbg.rows = rows.length;
-        if (rows.length > 0) contributions = computeContributions(rows);
+        if (period === "YTD") dbg.rows = rows.length;
+        if (rows.length > 0) contributionsByPeriod[period] = computeContributions(rows);
       }
+      const contributionsExcluded = dbg.noSymbol + dbg.noMatch + dbg.noPrice + dbg.noHistory;
 
       profiles.push({
         profile,
         label: PROFILE_LABEL[profile] ?? profile,
         periods,
-        contributions,
+        contributionsByPeriod,
         contributionsExcluded,
         contribDebug: dbg,
       });

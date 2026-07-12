@@ -19,12 +19,12 @@ const orderRank = (p: string) => {
  * reserved for switching Portfolio tabs).
  */
 
-type ContribDebug = { positions: number; noSymbol: number; noMatch: number; noPrice: number; noCost: number; rows: number };
+type ContribDebug = { positions: number; noSymbol: number; noMatch: number; noPrice: number; noHistory: number; rows: number };
 type ProfileAttribution = {
   profile: string;
   label: string;
   periods: ReturnDecomposition[];
-  contributions: ContributionBreakdown | null;
+  contributionsByPeriod: Partial<Record<PeriodKey, ContributionBreakdown>>;
   contributionsExcluded: number;
   contribDebug?: ContribDebug;
 };
@@ -132,7 +132,7 @@ export function Attribution() {
   const bench = decomp?.benchmarks[benchIdx] ?? null;
 
   const profileData = data?.profiles[profileIdx] ?? null;
-  const contrib = profileData?.contributions ?? null;
+  const contrib = profileData?.contributionsByPeriod?.[period] ?? null;
   const [showAllHoldings, setShowAllHoldings] = useState(false);
 
   // Rows for the current selection. Market + Selection follow the chosen
@@ -306,13 +306,13 @@ export function Attribution() {
             Selection = total minus those. Full sector allocation/selection attribution arrives once we store per-holding price history.
           </p>
 
-          {/* View 2 — cost-basis contribution breakdown (since purchase) */}
+          {/* View 2 — PERIOD-based contribution breakdown (matches the selected period) */}
           {contrib && contrib.holdings.length > 0 && (
             <div className="mt-1 flex flex-col gap-3 border-t border-line-soft pt-4">
               <div className="flex flex-col gap-1">
                 <div className="flex items-baseline gap-2">
                   <h3 className="text-[11px] font-bold uppercase tracking-wider text-ink-3">Contribution to return</h3>
-                  <span className="text-[11px] text-ink-faint">since purchase</span>
+                  <span className="text-[11px] text-ink-faint">{period}</span>
                   <span className="ml-auto flex items-baseline gap-1.5">
                     <span className="text-[10.5px] uppercase tracking-wide text-ink-faint">total</span>
                     <span className={`font-mono text-sm font-bold tabular-nums ${toneClass(contrib.totalContributionPct)}`}>
@@ -321,9 +321,9 @@ export function Attribution() {
                   </span>
                 </div>
                 <p className="text-[11.5px] text-ink-3">
-                  Percentage points each name added to your model&apos;s return over your <span className="font-semibold text-ink-2">full holding period</span> (since purchase) — weight × its own gain/loss. This is a longer window than the {period} figure up top, so these sum to your <span className="font-semibold text-ink-2">total since-purchase return ({fmtPct(contrib.totalContributionPct)})</span>, not the {period} number.
+                  Percentage points each name added to (or subtracted from) your model&apos;s <span className="font-semibold text-ink-2">{period}</span> return — its weight × its own {period} price move (in CAD). These sum to <span className="font-semibold text-ink-2">{fmtPct(contrib.totalContributionPct)}</span>, reconciling with the {period} figure up top.
                   {(profileData?.contributionsExcluded ?? 0) > 0
-                    ? ` ${profileData!.contributionsExcluded} position${profileData!.contributionsExcluded === 1 ? "" : "s"} without a price match excluded.`
+                    ? ` ${profileData!.contributionsExcluded} position${profileData!.contributionsExcluded === 1 ? "" : "s"} without price history for this period excluded.`
                     : ""}
                 </p>
               </div>
@@ -381,7 +381,7 @@ export function Attribution() {
                 </div>
               </div>
               <p className="text-[10.5px] leading-4 text-ink-faint">
-                Contribution = each holding&apos;s weight × its return since you bought it (price vs cost basis). Since-purchase, not period-bounded.
+                Contribution = each holding&apos;s current weight × its {period} price move (in CAD). Period-based, so it reconciles with the {period} return above.
               </p>
             </div>
           )}
@@ -398,7 +398,7 @@ export function Attribution() {
               {profileData.contribDebug && profileData.contribDebug.positions > 0 && (
                 <p className="text-[11px] text-ink-faint">
                   {profileData.contribDebug.positions} positions · {profileData.contribDebug.noMatch} not matched to a tracked stock ·{" "}
-                  {profileData.contribDebug.noPrice} no live price · {profileData.contribDebug.noCost} no cost basis · {profileData.contribDebug.rows} usable
+                  {profileData.contribDebug.noPrice} no live price · {profileData.contribDebug.noHistory} no price history · {profileData.contribDebug.rows} usable
                 </p>
               )}
             </div>
