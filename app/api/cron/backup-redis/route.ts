@@ -6,6 +6,7 @@ import { writeBackupBlob, pruneBackupBlobs } from "@/app/lib/backup-store";
 import { pruneStashes } from "@/app/lib/stash-prune";
 import { captureLiveHedgingSnapshot } from "@/app/lib/hedging";
 import { refreshFactsetEstimates } from "@/app/lib/estimates-refresh";
+import { runAlertDigest } from "@/app/lib/alert-digest";
 
 // Dead pre-operation rollback stashes older than this are auto-purged each
 // nightly run so Redis self-maintains and never creeps back toward OOM.
@@ -246,6 +247,21 @@ export async function GET(req: NextRequest) {
       estimatesRefresh = { ran: false, error: msg };
     }
 
+    // ── 4d. Proactive alert digest (Phase 07) ────────────────────────
+    //        Compute today's "needs your attention" digest from cached
+    //        signals, append a snapshot to the append-only pm:alert-log, and
+    //        email it IF email is configured AND there are high-priority
+    //        alerts. Best-effort: must not fail the backup. Email is a no-op
+    //        until RESEND_API_KEY + ALERT_EMAIL_TO/FROM are set. ──
+    let alertDigest: { ran: boolean; total: number; emailed: boolean; error?: string };
+    try {
+      alertDigest = await runAlertDigest();
+    } catch (e) {
+      const msg = e instanceof Error ? e.message : String(e);
+      console.error("[backup-redis] Alert digest failed (backup still ok):", msg);
+      alertDigest = { ran: false, total: 0, emailed: false, error: msg };
+    }
+
     // ── 5. Run invariant check inline ────────────────────────────────
     // Best-effort: a thrown invariant check must not turn a successful
     // backup into a failed response. We log + carry on if it errors.
@@ -282,6 +298,7 @@ export async function GET(req: NextRequest) {
       stashesPurged,
       hedgingSnapshot,
       estimatesRefresh,
+      alertDigest,
       invariantCheck: invariantSummary,
       elapsedMs: Date.now() - startedAt,
     });
