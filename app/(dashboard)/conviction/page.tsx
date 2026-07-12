@@ -86,6 +86,9 @@ export default function ConvictionPage() {
   };
   const [research, setResearch] = useState<ResearchState | null>(null);
   const [prices, setPrices] = useState<Record<string, number | null>>({});
+  const [high52, setHigh52] = useState<Record<string, number | null>>({});
+  const [pipelineEstimates, setPipelineEstimates] = useState<Record<string, { revUp?: number; revDown?: number }>>({});
+  const [improvingOnly, setImprovingOnly] = useState(false);
   const [filter, setFilter] = useState<BucketFilter>("ideas");
   const [query, setQuery] = useState("");
   const [loaded, setLoaded] = useState(false);
@@ -171,9 +174,43 @@ export default function ConvictionPage() {
       body: JSON.stringify({ tickers: list }),
     })
       .then((r) => r.json())
-      .then((data) => setPrices(data.prices || {}))
+      .then((data) => {
+        setPrices(data.prices || {});
+        setHigh52(data.fiftyTwoWeekHighs || {}); // lightweight technical (52wk-high proximity)
+      })
+      .catch(() => {});
+    // Batched FactSet estimate revisions for the whole universe (Improving signal).
+    fetch("/api/factset-estimates", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ tickers: list }),
+    })
+      .then((r) => r.json())
+      .then((data) => setPipelineEstimates(data.estimates || {}))
       .catch(() => {});
   }, [scoredStocks, research]);
+
+  // "Improving" = the forward/momentum lens for the funnel: rising FY+1 estimate
+  // revisions and/or breaking out near the 52-week high. Kept SEPARATE from the
+  // conviction score (which is a level). Lightweight by design — full technicals
+  // arrive once a name graduates to the Watchlist.
+  const improvingFor = (ticker: string): { strength: "strong" | "building" | null; signals: string[] } => {
+    const signals: string[] = [];
+    let strong = false;
+    const est = pipelineEstimates[ticker.toUpperCase()] ?? pipelineEstimates[ticker];
+    const net = est ? (est.revUp ?? 0) - (est.revDown ?? 0) : null;
+    if (net != null && net > 0) {
+      signals.push(`estimates ↑ (+${net} net)`);
+      if (net >= 3) strong = true;
+    }
+    const px = prices[ticker] ?? null;
+    const hi = high52[ticker] ?? null;
+    if (px != null && hi != null && hi > 0 && px / hi - 1 >= -0.03) {
+      signals.push("near 52wk high");
+      if (net != null && net > 0) strong = true; // estimates up AND breaking out
+    }
+    return { strength: signals.length ? (strong || signals.length >= 2 ? "strong" : "building") : null, signals };
+  };
 
   const entries = useMemo(
     () => computeConviction({ stocks: scoredStocks, research, snapshots: analystSnapshots, prices }),
@@ -225,9 +262,11 @@ export default function ConvictionPage() {
       if (filter === "ideas") { if (e.listCount < 1) return false; }
       else if (filter !== "all" && e.bucket !== filter) return false;
       if (q && !e.ticker.toUpperCase().includes(q) && !(e.name || "").toUpperCase().includes(q)) return false;
+      if (improvingOnly && !improvingFor(e.ticker).strength) return false;
       return true;
     });
-  }, [entries, filter, query]);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [entries, filter, query, improvingOnly, prices, high52, pipelineEstimates]);
 
   const counts = useMemo(() => {
     const c = { ideas: 0, all: entries.length, Portfolio: 0, Watchlist: 0, Research: 0 };
@@ -248,6 +287,20 @@ export default function ConvictionPage() {
           estimate revisions, and each research list. Rows with a 💡 carry the AI synthesis thesis + regime fit —
           click to expand. Individual stocks only. Higher = more sources agree.
         </p>
+        <details className="mt-2 text-[12.5px] text-ink-3">
+          <summary className="cursor-pointer font-semibold text-accent hover:text-accent-ink">How the conviction score is computed</summary>
+          <div className="mt-2 flex flex-col gap-1 rounded-control bg-surface-2/50 px-3 py-2.5">
+            <p className="text-ink-2">It&apos;s the <span className="font-semibold">sum of points</span> from independent signals — the more that agree (and the stronger), the higher the score:</p>
+            <ul className="ml-1 flex flex-col gap-0.5">
+              <li>• <span className="font-semibold">Composite rating:</span> Strong Buy +3 · Buy +2 · Hold 0 · Underweight −1 · Sell −2</li>
+              <li>• <span className="font-semibold">Analyst upside</span> (to FactSet mean target): ≥ +25% → +2 · ≥ +10% → +1 · ≤ −10% → −1</li>
+              <li>• <span className="font-semibold">SIA · BoostedAI · MarketEdge:</span> bullish +1 / bearish −1 (each)</li>
+              <li>• <span className="font-semibold">Estimate revisions</span> (FactSet FY+1): net ≥ +2 up → +1 · net ≤ −2 down → −1</li>
+              <li>• <span className="font-semibold">Each research list</span> it appears on: bullish list +1 · bearish list −1</li>
+            </ul>
+            <p className="text-ink-faint">Total = sum of all of the above. It measures how good a name looks <em>right now</em> (a level) — the &ldquo;Improving&rdquo; flag below is the separate momentum/forward view.</p>
+          </div>
+        </details>
       </div>
 
       <div className="mb-4 flex flex-wrap items-center gap-3">
@@ -271,6 +324,15 @@ export default function ConvictionPage() {
           placeholder="Filter by ticker or name…"
           className="w-56 rounded-lg border border-line bg-white px-3 py-1.5 text-sm outline-none focus:border-line"
         />
+        <button
+          onClick={() => setImprovingOnly((v) => !v)}
+          title="Only names with a positive momentum signal — rising FY+1 estimate revisions and/or breaking out near their 52-week high. Narrows the funnel to what's getting better."
+          className={`rounded-lg px-3 py-1.5 text-xs font-semibold transition-colors ${
+            improvingOnly ? "bg-pos text-white" : "border border-line text-ink-3 hover:bg-surface-2"
+          }`}
+        >
+          ⬆ Improving only
+        </button>
         <span className="ml-auto text-xs text-ink-3">
           {filtered.length} names · sorted by conviction
         </span>
@@ -319,6 +381,17 @@ export default function ConvictionPage() {
                       {displayTicker(e.ticker)}
                     </Link>
                     {syn?.regimeFit && <RegimeBadge fit={syn.regimeFit} />}
+                    {(() => {
+                      const imp = improvingFor(e.ticker);
+                      return imp.strength ? (
+                        <span
+                          className={`inline-flex items-center rounded px-1 py-0.5 text-[9px] font-bold uppercase tracking-wide ${imp.strength === "strong" ? "bg-pos text-white" : "bg-pos-soft text-pos"}`}
+                          title={`Improving — ${imp.signals.join(" · ")}`}
+                        >
+                          ⬆ {imp.strength}
+                        </span>
+                      ) : null;
+                    })()}
                   </div>
                 </td>
                 <td className="px-3 py-2 text-ink-2 truncate max-w-[200px]" title={e.name || e.ticker}>{e.name || <span className="text-ink-faint">—</span>}</td>

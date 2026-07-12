@@ -50,9 +50,10 @@ type PriceResult = {
   currency: string | null;  // "USD", "CAD", "DKK", etc. from Yahoo meta
   dayHigh: number | null;   // today's Yahoo intraday high — freshness guard for FactSet
   dayLow: number | null;    // today's Yahoo intraday low
+  fiftyTwoWeekHigh: number | null; // lightweight technical (52wk-high proximity)
 };
 
-const EMPTY_RESULT: PriceResult = { price: null, previousClose: null, name: null, quoteType: null, currency: null, dayHigh: null, dayLow: null };
+const EMPTY_RESULT: PriceResult = { price: null, previousClose: null, name: null, quoteType: null, currency: null, dayHigh: null, dayLow: null, fiftyTwoWeekHigh: null };
 
 /** Single Yahoo v8/chart lookup for an already-resolved Yahoo symbol. */
 async function fetchYahooChart(yahooSymbol: string): Promise<PriceResult> {
@@ -77,6 +78,7 @@ async function fetchYahooChart(yahooSymbol: string): Promise<PriceResult> {
     const currency = typeof meta?.currency === "string" ? meta.currency.toUpperCase() : null;
     const dayHigh = typeof meta?.regularMarketDayHigh === "number" ? meta.regularMarketDayHigh : null;
     const dayLow = typeof meta?.regularMarketDayLow === "number" ? meta.regularMarketDayLow : null;
+    const fiftyTwoWeekHigh = typeof meta?.fiftyTwoWeekHigh === "number" ? meta.fiftyTwoWeekHigh : null;
     // FX pairs (e.g. USDCAD=X) need full precision; stocks use 2 decimals
     const isFx = yahooSymbol.includes("=X");
     const decimals = isFx ? 6 : 2;
@@ -88,6 +90,7 @@ async function fetchYahooChart(yahooSymbol: string): Promise<PriceResult> {
       currency,
       dayHigh,
       dayLow,
+      fiftyTwoWeekHigh,
     };
   } catch {
     return EMPTY_RESULT;
@@ -99,7 +102,7 @@ async function fetchPrice(ticker: string): Promise<PriceResult> {
   // FUNDSERV codes (mutual funds) — fetch NAV from Globe and Mail / Barchart
   if (isFundservCode(ticker)) {
     const nav = await fetchFundservPrice(ticker);
-    return { price: nav, previousClose: null, name: null, quoteType: "MUTUALFUND", currency: "CAD", dayHigh: null, dayLow: null };
+    return { price: nav, previousClose: null, name: null, quoteType: "MUTUALFUND", currency: "CAD", dayHigh: null, dayLow: null, fiftyTwoWeekHigh: null };
   }
   const yahooSymbol = toYahoo(ticker);
   const result = await fetchYahooChart(yahooSymbol);
@@ -139,12 +142,14 @@ export async function POST(request: NextRequest) {
     const names: Record<string, string | null> = {};
     const quoteTypes: Record<string, string | null> = {};
     const currencies: Record<string, string | null> = {};
+    const fiftyTwoWeekHighs: Record<string, number | null> = {};
     for (const r of results) {
       prices[r.ticker] = r.price;
       previousCloses[r.ticker] = r.previousClose;
       names[r.ticker] = r.name;
       quoteTypes[r.ticker] = r.quoteType;
       currencies[r.ticker] = r.currency;
+      fiftyTwoWeekHighs[r.ticker] = r.fiftyTwoWeekHigh;
     }
 
     // Prices are Yahoo (live/intraday) for stocks + ETFs, and Globe/Barchart NAV
@@ -167,6 +172,7 @@ export async function POST(request: NextRequest) {
       names,
       quoteTypes,
       currencies,
+      fiftyTwoWeekHighs,
       priceSources,
       fetchedAt: new Date().toISOString(),
     });
