@@ -1,6 +1,6 @@
 "use client";
 
-import React, { useState } from "react";
+import React, { useEffect, useState } from "react";
 import { useStocks } from "@/app/lib/StockContext";
 import { PortfolioOverview } from "@/app/components/PortfolioOverview";
 import { CockpitBand } from "@/app/components/CockpitBand";
@@ -28,6 +28,27 @@ export default function DashboardPage() {
   const [detectedType, setDetectedType] = useState<InstrumentType | null>(null);
   const [newWeight, setNewWeight] = useState("");
   const [adding, setAdding] = useState(false);
+
+  // Thesis-health verdicts (Phase 03) keyed by ticker — surfaced on the score
+  // row so a name scoring well whose THESIS is eroding/broken reads differently.
+  const [thesisVerdicts, setThesisVerdicts] = useState<Record<string, "eroding" | "broken">>({});
+  useEffect(() => {
+    let alive = true;
+    fetch("/api/thesis-health", { cache: "no-store" })
+      .then((r) => r.json())
+      .then((j) => {
+        if (!alive || !j?.thesisHealth?.holdings) return;
+        const map: Record<string, "eroding" | "broken"> = {};
+        for (const h of j.thesisHealth.holdings as Array<{ ticker: string; verdict: string }>) {
+          if (h.verdict === "eroding" || h.verdict === "broken") map[h.ticker.toUpperCase()] = h.verdict;
+        }
+        setThesisVerdicts(map);
+      })
+      .catch(() => {});
+    return () => {
+      alive = false;
+    };
+  }, []);
 
   const regime = marketData.riskRegime;
 
@@ -275,7 +296,21 @@ export default function DashboardPage() {
                         ? "text-pos" : "text-ink-3";
                       return (
                         <tr key={s.ticker} className="border-b border-line-soft hover:bg-surface-hover transition-colors">
-                          <td className="py-2 pr-3 font-mono font-bold text-ink">{displayTicker(s.ticker)}</td>
+                          <td className="py-2 pr-3 font-mono font-bold text-ink">
+                            <span className="inline-flex items-center gap-1.5">
+                              {displayTicker(s.ticker)}
+                              {thesisVerdicts[s.ticker.toUpperCase()] && (
+                                <span
+                                  className={`rounded px-1 py-0.5 text-[9px] font-bold uppercase tracking-wide ${
+                                    thesisVerdicts[s.ticker.toUpperCase()] === "broken" ? "bg-neg-soft text-neg" : "bg-warn-soft text-warn"
+                                  }`}
+                                  title={`Thesis ${thesisVerdicts[s.ticker.toUpperCase()]} — see Thesis Watch`}
+                                >
+                                  {thesisVerdicts[s.ticker.toUpperCase()]}
+                                </span>
+                              )}
+                            </span>
+                          </td>
                           <td className="py-2 pr-3 text-ink-3 hidden md:table-cell">{normalized}</td>
                           <td className="py-2 pr-3">
                             <span className={`rounded-full px-2 py-0.5 text-[10px] font-bold ${tierColor}`}>{tier}</span>
