@@ -109,6 +109,45 @@ export function computeAlerts(input: {
   return alerts;
 }
 
+/**
+ * Opportunities — the OFFENSIVE twin: watchlist (non-held) names where positive
+ * signals are developing, for idea generation. Same data we track for the book
+ * (FactSet estimate revisions cover Portfolio + Watchlist; watchlist names are
+ * scored, with technicals). Kept SEPARATE from the risk alerts.
+ */
+export type Opportunity = {
+  id: string;
+  ticker: string;
+  strength: "strong" | "building";
+  signals: string[];
+};
+
+export function computeOpportunities(input: {
+  watchlist?: Array<{ ticker: string; netRevisions?: number | null; scoreDelta?: number | null; riskLevel?: string }>;
+}): Opportunity[] {
+  const out: Opportunity[] = [];
+  for (const w of input.watchlist ?? []) {
+    const tk = (w.ticker || "").toUpperCase();
+    if (!tk) continue;
+    const signals: string[] = [];
+    let strong = false;
+    if (typeof w.netRevisions === "number" && w.netRevisions > 0) {
+      signals.push(`estimates rising (+${w.netRevisions} net FY+1 revisions)`);
+      if (w.netRevisions >= 3) strong = true;
+    }
+    if (typeof w.scoreDelta === "number" && w.scoreDelta >= 3) {
+      signals.push(`score improving (+${w.scoreDelta.toFixed(1)} over ~45d)`);
+      if (w.scoreDelta >= 6) strong = true;
+    }
+    if (signals.length && w.riskLevel === "clear") signals.push("technically clear");
+    if (signals.length) {
+      out.push({ id: `opp-${tk}`, ticker: tk, strength: strong || signals.length >= 2 ? "strong" : "building", signals });
+    }
+  }
+  out.sort((a, b) => (a.strength === b.strength ? a.ticker.localeCompare(b.ticker) : a.strength === "strong" ? -1 : 1));
+  return out;
+}
+
 export function alertCounts(alerts: Alert[]): { high: number; medium: number; total: number } {
   return {
     high: alerts.filter((a) => a.priority === "high").length,
