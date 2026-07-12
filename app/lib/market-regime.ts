@@ -68,6 +68,48 @@ export type VixReadout = CrossAssetReadout & {
 };
 
 /**
+ * Credit spreads — ICE BofA US High-Yield OAS (FRED `BAMLH0A0HYM2`, in %).
+ * The premier LEADING risk-regime indicator: HY spreads widen before equity
+ * risk-off shows up. We read both level and 20-trading-day momentum (bps).
+ *   direction: widening ≥ +20bps/20d OR level ≥ 550bps → risk-off;
+ *              tightening ≤ −20bps/20d AND level < 450bps → risk-on; else neutral.
+ */
+export type CreditReadout = {
+  oasBps: number; // current HY OAS in basis points
+  change20dBps: number | null; // 20-trading-day change in bps
+  direction: RegimeDirection;
+};
+
+/** Compute the credit-spread signal from FRED HY-OAS observations (newest-first
+ *  or any order; values in PERCENT, e.g. 3.50 = 350bps). Null when insufficient. */
+export function computeCreditSignal(
+  observations: readonly { date: string; value: number }[] | null
+): CreditReadout | null {
+  if (!observations || observations.length < 2) return null;
+  const valid = observations
+    .filter((o) => o && typeof o.value === "number" && isFinite(o.value))
+    .slice()
+    .sort((a, b) => (a.date < b.date ? 1 : a.date > b.date ? -1 : 0)); // newest first
+  if (valid.length < 2) return null;
+  const oasBps = valid[0].value * 100;
+  const prior = valid[Math.min(valid.length - 1, 20)];
+  const change20dBps = prior ? (valid[0].value - prior.value) * 100 : null;
+
+  let direction: RegimeDirection = "neutral";
+  if (change20dBps != null) {
+    if (change20dBps >= 20 || oasBps >= 550) direction = "risk-off";
+    else if (change20dBps <= -20 && oasBps < 450) direction = "risk-on";
+  } else if (oasBps >= 550) direction = "risk-off";
+  else if (oasBps < 350) direction = "risk-on";
+
+  return {
+    oasBps: Math.round(oasBps),
+    change20dBps: change20dBps == null ? null : Math.round(change20dBps),
+    direction,
+  };
+}
+
+/**
  * ISM Manufacturing PMI — sourced from FRED series `NAPM` (monthly,
  * diffusion index). The 50-line is the canonical expansion/contraction
  * threshold: > 50 = expansion, < 50 = contraction. Newton specifically
@@ -109,6 +151,9 @@ export type MarketRegimeData = {
     tnx: CrossAssetReadout | null; // 10-year yield (^TNX, in %)
     oil: CrossAssetReadout | null; // WTI front-month (CL=F)
   };
+  /** Credit spreads (HY OAS) — leading risk-regime signal. Optional so older
+   *  cached blobs (pre-credit) still parse; UI/transition tolerate null. */
+  credit?: CreditReadout | null;
   global: {
     stoxx: CrossAssetReadout | null;
     nikkei: CrossAssetReadout | null;
@@ -338,6 +383,17 @@ export function composeRegime(
       name: "VIX Level",
       direction: parts.crossAsset.vix.direction,
       detail: `${parts.crossAsset.vix.price.toFixed(1)} (<20 on, >25 off)`,
+    });
+  }
+  if (parts.credit) {
+    signals.push({
+      name: "Credit Spreads (HY OAS)",
+      direction: parts.credit.direction,
+      detail: `${parts.credit.oasBps}bps${
+        parts.credit.change20dBps != null
+          ? ` (${parts.credit.change20dBps >= 0 ? "+" : ""}${parts.credit.change20dBps}bps 20d)`
+          : ""
+      }`,
     });
   }
 

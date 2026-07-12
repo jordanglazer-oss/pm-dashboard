@@ -47,6 +47,7 @@ export type RegimeTransition = {
 const MOMENTUM_DEADBAND_PCT = 0.3;
 const VIX_DEADBAND_PCT = 2;
 const PMI_DEADBAND_ABS = 0.3;
+const CREDIT_DEADBAND_BPS = 15;
 
 type SignalMomentum = {
   name: string;
@@ -104,6 +105,17 @@ function evaluateSignals(r: MarketRegimeData): SignalMomentum[] {
       currentDirection: r.ismPmi.trend_direction,
       sign: signOf(r.ismPmi.change3mAbs, PMI_DEADBAND_ABS),
       detail: `${r.ismPmi.level.toFixed(1)}, ${r.ismPmi.change3mAbs >= 0 ? "+" : ""}${r.ismPmi.change3mAbs.toFixed(1)}pt 3M`,
+    });
+  }
+  if (r.credit && typeof r.credit.change20dBps === "number") {
+    // Widening HY spreads (positive change) is deteriorating (toward risk-off),
+    // so invert the raw sign. 15bps deadband keeps noise out.
+    const raw = signOf(r.credit.change20dBps, CREDIT_DEADBAND_BPS);
+    out.push({
+      name: "Credit Spreads (HY OAS)",
+      currentDirection: r.credit.direction,
+      sign: raw === 0 ? 0 : (-raw as -1 | 1),
+      detail: `${r.credit.oasBps}bps, 20d ${r.credit.change20dBps >= 0 ? "+" : ""}${r.credit.change20dBps}bps`,
     });
   }
   return out;
