@@ -12,7 +12,7 @@
  */
 
 export type AlertPriority = "high" | "medium";
-export type AlertCategory = "thesis" | "regime" | "risk";
+export type AlertCategory = "thesis" | "regime" | "technical";
 
 export type Alert = {
   id: string;
@@ -39,7 +39,13 @@ type TransitionInput = {
   tells?: Array<{ name: string; detail?: string }>;
 } | null;
 
-type RiskInput = Array<{ ticker: string; riskLevel?: string; bucket?: string }> | null;
+type RiskInput = Array<{
+  ticker: string;
+  riskLevel?: string;
+  bucket?: string;
+  dangerSignals?: string[]; // names of the technical signals in "danger"
+  riskSummary?: string;
+}> | null;
 
 export function computeAlerts(input: {
   thesis?: ThesisInput;
@@ -78,22 +84,21 @@ export function computeAlerts(input: {
     });
   }
 
-  // ── Critical technical risk (Portfolio names only) ──
+  // ── Technical breakdown (Portfolio names) — a SEPARATE dimension from the
+  // fundamental thesis, deliberately labelled as such. "in the midst of"
+  // breaking down = critical (high); "about to" = warning (medium). A name can
+  // legitimately appear as BOTH a thesis alert and a technical one. ──
   for (const r of input.risk ?? []) {
     if (r.bucket !== "Portfolio") continue;
-    if (r.riskLevel !== "critical") continue;
     const tk = (r.ticker || "").toUpperCase();
     if (!tk) continue;
-    // Avoid a duplicate line if the thesis already flagged this name as broken.
-    if (alerts.some((a) => a.ticker === tk && a.priority === "high")) continue;
-    alerts.push({
-      id: `risk-${tk}`,
-      priority: "high",
-      category: "risk",
-      ticker: tk,
-      title: `${tk} — critical risk alert`,
-      detail: "Technical risk engine flagged this holding CRITICAL.",
-    });
+    const specifics = (r.dangerSignals ?? []).filter(Boolean);
+    const detail = specifics.length ? `Breaking down: ${specifics.join(", ")}.` : r.riskSummary || "Technical risk engine flagged this holding.";
+    if (r.riskLevel === "critical") {
+      alerts.push({ id: `tech-${tk}`, priority: "high", category: "technical", ticker: tk, title: `${tk} — breaking down technically`, detail });
+    } else if (r.riskLevel === "warning") {
+      alerts.push({ id: `tech-${tk}`, priority: "medium", category: "technical", ticker: tk, title: `${tk} — technical warning (early)`, detail });
+    }
   }
 
   // High priority first, then by category for stable ordering.

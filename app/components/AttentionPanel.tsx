@@ -11,7 +11,7 @@ import type { Alert } from "@/app/lib/alerts";
  * dashboard, so the PM doesn't have to go looking. Renders nothing when calm.
  */
 
-const CAT_LABEL: Record<string, string> = { thesis: "Thesis", regime: "Regime", risk: "Risk" };
+const CAT_LABEL: Record<string, string> = { thesis: "Thesis", regime: "Regime", technical: "Technical" };
 
 export function AttentionPanel() {
   const [alerts, setAlerts] = useState<Alert[] | null>(null);

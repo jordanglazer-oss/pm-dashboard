@@ -46,10 +46,18 @@ export async function GET() {
       try {
         const parsed = stocksRaw ? JSON.parse(stocksRaw) : [];
         if (!Array.isArray(parsed)) return null;
-        return (parsed as Array<{ ticker?: string; bucket?: string; riskAlert?: { level?: string } }>).map((s) => ({
+        return (
+          parsed as Array<{
+            ticker?: string;
+            bucket?: string;
+            riskAlert?: { level?: string; summary?: string; signals?: Array<{ name: string; status: string }> };
+          }>
+        ).map((s) => ({
           ticker: s.ticker ?? "",
           bucket: s.bucket,
           riskLevel: s.riskAlert?.level,
+          riskSummary: s.riskAlert?.summary,
+          dangerSignals: (s.riskAlert?.signals ?? []).filter((sig) => sig.status === "danger").map((sig) => sig.name),
         }));
       } catch {
         return null;
