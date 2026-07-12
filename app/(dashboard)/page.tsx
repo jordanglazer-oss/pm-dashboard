@@ -119,16 +119,17 @@ export default function DashboardPage() {
     <main className="min-h-screen bg-ground px-4 py-6 text-ink md:px-8 md:py-8 overflow-x-hidden">
       <div className="mx-auto max-w-7xl space-y-6">
 
-        {/* Proactive "needs your attention" digest (Phase 07) — renders only
-            when there's something actionable, so calm days stay clean. */}
-        <AttentionPanel />
-
         {/* Cockpit band (#11): the per-PIM-model day returns + the full
             deterministic market-regime read, merged into one at-a-glance card.
             Every regime signal/horizon is preserved (RegimeStrip renders bare
             inside it); reads /api/market-regime (cached in pm:market-regime) and
             silently hides the regime row on fetch failure. */}
         <CockpitBand />
+
+        {/* Proactive "needs your attention" digest (Phase 07) — sits right
+            under the cockpit; renders only when there's something actionable,
+            so calm days stay clean. */}
+        <AttentionPanel />
 
         {/* Change monitor moved into the Rankings cockpit's right sidebar
             (passed to PortfolioOverview below) alongside Sector Exposure. */}

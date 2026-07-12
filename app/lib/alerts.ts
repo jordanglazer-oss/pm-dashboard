@@ -24,14 +24,19 @@ export type Alert = {
 };
 
 type ThesisInput = {
-  holdings?: Array<{ ticker: string; verdict: string; summary?: string }>;
+  holdings?: Array<{
+    ticker: string;
+    verdict: string;
+    summary?: string;
+    drivers?: Array<{ signal: string; direction: string; detail: string }>;
+  }>;
 } | null;
 
 type TransitionInput = {
   basedOnRegime?: string;
   leaning?: string;
   likelihood?: string;
-  tells?: Array<{ name: string }>;
+  tells?: Array<{ name: string; detail?: string }>;
 } | null;
 
 type RiskInput = Array<{ ticker: string; riskLevel?: string; bucket?: string }> | null;
@@ -43,41 +48,33 @@ export function computeAlerts(input: {
 }): Alert[] {
   const alerts: Alert[] = [];
 
-  // ── Thesis health ──
+  // ── Thesis health — name the SPECIFIC deteriorating signals ──
   for (const h of input.thesis?.holdings ?? []) {
     const tk = (h.ticker || "").toUpperCase();
-    if (!tk) continue;
-    if (h.verdict === "broken") {
-      alerts.push({
-        id: `thesis-${tk}`,
-        priority: "high",
-        category: "thesis",
-        ticker: tk,
-        title: `${tk} — thesis broken`,
-        detail: h.summary || "Multiple signals deteriorating.",
-      });
-    } else if (h.verdict === "eroding") {
-      alerts.push({
-        id: `thesis-${tk}`,
-        priority: "medium",
-        category: "thesis",
-        ticker: tk,
-        title: `${tk} — thesis eroding`,
-        detail: h.summary || "A tracked signal is deteriorating.",
-      });
-    }
+    if (!tk || (h.verdict !== "broken" && h.verdict !== "eroding")) continue;
+    const negDrivers = (h.drivers ?? []).filter((d) => d.direction === "negative");
+    // e.g. "composite −8.2 over ~45d · net FY+1 EPS revisions −3 · WARNING risk alert"
+    const detail = negDrivers.length ? negDrivers.map((d) => d.detail).join(" · ") : h.summary || "A tracked signal is deteriorating.";
+    alerts.push({
+      id: `thesis-${tk}`,
+      priority: h.verdict === "broken" ? "high" : "medium",
+      category: "thesis",
+      ticker: tk,
+      title: `${tk} — thesis ${h.verdict}`,
+      detail,
+    });
   }
 
-  // ── Regime transition ──
+  // ── Regime transition — name the SPECIFIC signals + their readings ──
   const t = input.transition;
   if (t && (t.likelihood === "High" || t.likelihood === "Elevated")) {
-    const tellNames = (t.tells ?? []).map((x) => x.name).filter(Boolean);
+    const tellStrs = (t.tells ?? []).map((x) => (x.detail ? `${x.name} (${x.detail})` : x.name)).filter(Boolean);
     alerts.push({
       id: "regime-transition",
       priority: t.likelihood === "High" ? "high" : "medium",
       category: "regime",
       title: `Regime ${t.leaning ?? "shift"} — ${(t.likelihood ?? "").toLowerCase()} transition risk`,
-      detail: tellNames.length ? `Driven by: ${tellNames.join(", ")}.` : `From ${t.basedOnRegime ?? "current"}.`,
+      detail: tellStrs.length ? `Driven by: ${tellStrs.join(" · ")}` : `From ${t.basedOnRegime ?? "current"}.`,
     });
   }
 
