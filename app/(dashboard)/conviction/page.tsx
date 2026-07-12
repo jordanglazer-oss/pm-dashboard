@@ -259,7 +259,10 @@ export default function ConvictionPage() {
     return entries.filter((e) => {
       // "Ideas" = names carried by at least one bullish research list — the
       // research lists are the primary driver of what counts as an idea.
-      if (filter === "ideas") { if (e.listCount < 1) return false; }
+      // "Ideas" = research-list CANDIDATES you don't already own — exclude
+      // Portfolio holdings (they're not add candidates; their composite score
+      // lives on the Rankings page). The "Portfolio"/"All" filters still show them.
+      if (filter === "ideas") { if (e.listCount < 1 || e.bucket === "Portfolio") return false; }
       else if (filter !== "all" && e.bucket !== filter) return false;
       if (q && !e.ticker.toUpperCase().includes(q) && !(e.name || "").toUpperCase().includes(q)) return false;
       if (improvingOnly && !improvingFor(e.ticker).strength) return false;
@@ -349,16 +352,15 @@ export default function ConvictionPage() {
               <th className="px-3 py-2 text-center w-24">Conviction</th>
               <th className="px-3 py-2 text-left">Signals</th>
               <th className="px-3 py-2 text-right w-24" title="Upside to the FactSet mean analyst price target — (mean target − current price) / current price. Only shown once a name has been rescored (that's when the target is pulled).">Analyst upside</th>
-              <th className="px-3 py-2 text-left w-40" title="Idea pipeline — status + performance since the name was first surfaced by a research list.">Pipeline</th>
-              <th className="px-3 py-2 text-right w-24"></th>
+              <th className="px-3 py-2 text-right w-28">Watchlist</th>
             </tr>
           </thead>
           <tbody>
             {!loaded && (
-              <tr><td colSpan={9} className="px-3 py-8 text-center text-ink-3">Loading…</td></tr>
+              <tr><td colSpan={8} className="px-3 py-8 text-center text-ink-3">Loading…</td></tr>
             )}
             {loaded && filtered.length === 0 && (
-              <tr><td colSpan={9} className="px-3 py-8 text-center text-ink-3 italic">No names match.</td></tr>
+              <tr><td colSpan={8} className="px-3 py-8 text-center text-ink-3 italic">No names match.</td></tr>
             )}
             {filtered.map((e, i) => {
               const syn = synthesisByKey.get(e.key);
@@ -415,48 +417,26 @@ export default function ConvictionPage() {
                     </span>
                   ) : <span className="text-ink-faint">—</span>}
                 </td>
-                <td className="px-3 py-2">
-                  {(() => {
-                    const pi = pipeline[e.key];
-                    if (!pi) return <span className="text-ink-faint text-xs">—</span>;
-                    const now = prices[e.ticker];
-                    const since = typeof now === "number" && typeof pi.priceAtSurface === "number" && pi.priceAtSurface > 0
-                      ? ((now - pi.priceAtSurface) / pi.priceAtSurface) * 100 : null;
-                    return (
-                      <div className="flex flex-col gap-0.5">
-                        <select
-                          value={pi.status}
-                          onChange={(ev) => setStatus(e, ev.target.value as IdeaStatus)}
-                          className="rounded border border-line bg-white px-1 py-0.5 text-[11px] text-ink-2 outline-none focus:border-line"
-                        >
-                          {(["new", "watching", "bought", "passed"] as IdeaStatus[]).map((s) => (
-                            <option key={s} value={s}>{IDEA_STATUS_LABELS[s]}</option>
-                          ))}
-                        </select>
-                        <span className="text-[10px] text-ink-3 whitespace-nowrap">
-                          since {pi.firstSurfaced}
-                          {since != null && <span className={since >= 0 ? "text-pos font-medium" : "text-neg font-medium"}> · {since >= 0 ? "+" : ""}{since.toFixed(0)}%</span>}
-                        </span>
-                      </div>
-                    );
-                  })()}
-                </td>
                 <td className="px-3 py-2 text-right">
-                  {e.bucket === "Research" && (
+                  {e.bucket === "Research" ? (
                     <button
                       onClick={() => addToWatchlist(e.ticker, e.name)}
-                      className="text-[10px] font-semibold text-accent hover:text-accent"
-                      title="Add to Watchlist"
+                      className="rounded-control border border-line px-2 py-1 text-[11px] font-semibold text-accent hover:bg-accent-soft transition-colors"
+                      title={`Add ${e.ticker} to the Watchlist`}
                     >
-                      + Watch
+                      + Watchlist
                     </button>
+                  ) : e.bucket === "Watchlist" ? (
+                    <span className="text-[11px] text-ink-3">On watchlist</span>
+                  ) : (
+                    <span className="text-[11px] text-ink-faint">Held</span>
                   )}
                 </td>
               </tr>
               {isOpen && hasThesis && (
                 <tr className="bg-accent-soft/40">
                   <td></td>
-                  <td colSpan={8} className="px-3 pb-3 pt-1">
+                  <td colSpan={7} className="px-3 pb-3 pt-1">
                     <div className="rounded-lg border border-accent-border bg-white px-3 py-2">
                       <div className="text-[10px] font-bold uppercase tracking-wider text-accent">Synthesis thesis</div>
                       <p className="mt-0.5 text-sm text-ink leading-relaxed">{syn!.thesis}</p>
