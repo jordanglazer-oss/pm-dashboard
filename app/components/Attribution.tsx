@@ -320,7 +320,7 @@ export function Attribution() {
                   )}
                 </div>
                 <p className="text-[11.5px] text-ink-3">
-                  Which holdings actually moved the needle — each name&apos;s weight × its gain/loss since you bought it. Contributors added return, detractors subtracted it.
+                  Percentage points each name added to (or subtracted from) your whole model&apos;s return — its weight in the book × its own gain/loss since purchase. A holding-level view — not a slice of the Selection figure above.
                 </p>
               </div>
 
