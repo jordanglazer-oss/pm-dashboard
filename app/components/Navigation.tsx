@@ -160,7 +160,7 @@ const tabs = [
   { label: "Chat", href: "/chat" },
   { label: "Screener", href: "/screener" },
   { label: "Research", href: "/research" },
-  { label: "Conviction", href: "/conviction" },
+  { label: "Pipeline", href: "/conviction" },
   { label: "Hedging", href: "/hedging" },
   { label: "Appendix", href: "/appendix" },
   // Inbox is now a SUB-tab of Research (see ResearchTabs) — not a top-level tab.
@@ -322,7 +322,7 @@ export function Navigation() {
     : pathname === "/research" || pathname === "/inbox"
     ? "Research"
     : pathname === "/conviction"
-    ? "Conviction"
+    ? "Pipeline"
     : pathname === "/screener"
     ? "Screener"
     : pathname === "/hedging"

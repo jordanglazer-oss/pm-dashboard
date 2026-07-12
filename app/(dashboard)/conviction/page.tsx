@@ -241,7 +241,7 @@ export default function ConvictionPage() {
   return (
     <div className="mx-auto max-w-[1400px] px-4 py-6 md:px-6">
       <div className="mb-4">
-        <h1 className="text-2xl font-bold text-ink">Conviction Board</h1>
+        <h1 className="text-2xl font-bold text-ink">Pipeline</h1>
         <p className="text-sm text-ink-3">
           Research-list names (the idea universe that feeds the Watchlist) ranked by how many independent signals
           align — composite rating, upside to the FactSet mean analyst target, SIA / BoostedAI / MarketEdge,
