@@ -313,14 +313,18 @@ export function Attribution() {
                 <div className="flex items-baseline gap-2">
                   <h3 className="text-[11px] font-bold uppercase tracking-wider text-ink-3">Contribution to return</h3>
                   <span className="text-[11px] text-ink-faint">since purchase</span>
-                  {(profileData?.contributionsExcluded ?? 0) > 0 && (
-                    <span className="ml-auto text-[10.5px] text-ink-faint">
-                      {profileData!.contributionsExcluded} position{profileData!.contributionsExcluded === 1 ? "" : "s"} without a price match excluded
+                  <span className="ml-auto flex items-baseline gap-1.5">
+                    <span className="text-[10.5px] uppercase tracking-wide text-ink-faint">total</span>
+                    <span className={`font-mono text-sm font-bold tabular-nums ${toneClass(contrib.totalContributionPct)}`}>
+                      {fmtPct(contrib.totalContributionPct)}
                     </span>
-                  )}
+                  </span>
                 </div>
                 <p className="text-[11.5px] text-ink-3">
-                  Percentage points each name added to (or subtracted from) your whole model&apos;s return — its weight in the book × its own gain/loss since purchase. A holding-level view — not a slice of the Selection figure above.
+                  Percentage points each name added to your model&apos;s return over your <span className="font-semibold text-ink-2">full holding period</span> (since purchase) — weight × its own gain/loss. This is a longer window than the {period} figure up top, so these sum to your <span className="font-semibold text-ink-2">total since-purchase return ({fmtPct(contrib.totalContributionPct)})</span>, not the {period} number.
+                  {(profileData?.contributionsExcluded ?? 0) > 0
+                    ? ` ${profileData!.contributionsExcluded} position${profileData!.contributionsExcluded === 1 ? "" : "s"} without a price match excluded.`
+                    : ""}
                 </p>
               </div>
 
