@@ -2178,19 +2178,6 @@ export default function StockDetailPage() {
                                   Value-trap ×0.5
                                 </span>
                               )}
-                              {/* Delivery modifier on growth — never applied silently. */}
-                              {cat.key === "growth" && stock.delivery && (
-                                <span
-                                  className={`rounded px-1.5 py-0.5 text-[9px] font-bold uppercase tracking-wider border ${
-                                    stock.delivery.adj > 0
-                                      ? "bg-pos-soft text-pos border-pos-border"
-                                      : "bg-warn-soft text-warn border-warn-border"
-                                  }`}
-                                  title={`EPS delivery vs consensus, last ${stock.delivery.quarters} reported quarters: ${stock.delivery.beats} beat${stock.delivery.beats === 1 ? "" : "s"} / ${stock.delivery.misses} miss${stock.delivery.misses === 1 ? "" : "es"} → growth ${stock.delivery.adj > 0 ? "+1 (consistent beats)" : "−1 (repeated misses)"}. FactSet actual vs final pre-report mean.`}
-                                >
-                                  Delivery {stock.delivery.adj > 0 ? "+1" : "−1"}
-                                </span>
-                              )}
                               {confidence && (
                                 <span
                                   className={`rounded px-1.5 py-0.5 text-[9px] font-bold uppercase tracking-wider ${

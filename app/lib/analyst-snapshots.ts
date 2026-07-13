@@ -49,9 +49,6 @@ export type FactSetEntry = {
    *  Drives estimate-revision momentum on the Conviction Board + Change Monitor. */
   revUp?: number;
   revDown?: number;
-  /** EPS delivery over the last 4 reported quarters (actual vs final consensus).
-   *  Drives the growth "delivery" modifier. Absent = not imported ≠ bearish. */
-  epsBeats?: { beats: number; misses: number; quarters: number };
   asOf?: string;
   lastUpdated?: string;
 };

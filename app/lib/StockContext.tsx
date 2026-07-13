@@ -566,28 +566,9 @@ export function StockProvider({ children }: { children: React.ReactNode }) {
         }
       }
 
-      // Delivery modifier: growth is quality-weighted by EPS delivery vs
-      // consensus over the last 4 REPORTED quarters. Consistent beats promote
-      // (a modest grower that keeps beating earns the top of the range);
-      // repeated misses demote (a max-growth story that keeps missing loses a
-      // point). Trailing growth keeps its full 0–3 range — this only moves
-      // WITHIN it. No surprise history (fresh adds, thin coverage) → no effect.
-      let delivery: { beats: number; misses: number; quarters: number; adj: 1 | -1 } | undefined;
-      const eb = snap?.factset?.epsBeats;
-      if (eb && eb.quarters >= 3) {
-        const g = overrides.growth ?? s.scores.growth ?? 0;
-        if (eb.beats >= 3 && g < 3) {
-          overrides.growth = Math.min(3, g + 1);
-          delivery = { ...eb, adj: 1 };
-        } else if (eb.misses >= 2 && g > 0) {
-          overrides.growth = Math.max(0, g - 1);
-          delivery = { ...eb, adj: -1 };
-        }
-      }
-
       const patched = { ...s, scores: { ...s.scores, ...overrides } };
       const scored = computeScores(patched, marketData, forwardCtx);
-      return valueTrap || delivery ? { ...scored, valueTrap, delivery } : scored;
+      return valueTrap ? { ...scored, valueTrap } : scored;
     }),
     [stocks, marketData, analystSnapshots, forwardCtx]
   );

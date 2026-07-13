@@ -454,11 +454,6 @@ export type ScoredStock = Stock & {
    *  net revision count + the points removed so the UI can badge it —
    *  the haircut is NEVER applied silently. */
   valueTrap?: { net: number; pointsRemoved: number };
-  /** Delivery modifier: growth promoted/demoted ±1 by EPS delivery vs
-   *  consensus over the last 4 reported quarters (≥3 beats → +1, ≥2 misses
-   *  → −1, clamped to growth's 0–3 range). Set only when applied, so the UI
-   *  can badge it — never silent. Absent surprise data → no adjustment. */
-  delivery?: { beats: number; misses: number; quarters: number; adj: 1 | -1 };
 };
 
 export type MarketData = {
