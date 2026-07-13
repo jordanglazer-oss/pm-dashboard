@@ -545,6 +545,18 @@ RESEARCH GROUP:
 
 FUNDAMENTAL GROUP:
 - growth (max 3, AUTO): Growth (rev / earnings / FCF) — USE THE PROVIDED DATA. Cite actual revenue figures, YoY growth rates, EPS, net income changes, FCF trends. Compare sequential quarters and year-over-year. Include guidance if available from analyst estimates.
+  SECTOR CALIBRATION (MANDATORY): score growth against the sector's achievable ceiling, NOT one absolute scale — a REIT compounding FFO at 6% is delivering like a tech name compounding revenue at 18%, and both earn 3/3. Use the primary growth metric AND thresholds for the stock's sector (3 pts / 2 pts / 1 pt; below the 1-pt bar → 0):
+  * Technology / high-growth: revenue YoY — 3: >15% · 2: 8–15% · 1: 3–8%
+  * Communication Services: revenue YoY — 3: >10% · 2: 5–10% · 1: 2–5%
+  * Consumer Discretionary: revenue YoY (weigh same-store sales) — 3: >10% · 2: 5–10% · 1: 2–5%
+  * Consumer Staples: organic revenue YoY — 3: >6% · 2: 3–6% · 1: 1–3%
+  * Financials (banks/insurers): EPS or book-value growth — 3: >10% · 2: 5–10% · 1: 2–5%
+  * Health Care: revenue YoY — 3: >12% · 2: 6–12% · 1: 2–6%
+  * Industrials: revenue YoY (weigh backlog/organic) — 3: >8% · 2: 4–8% · 1: 1–4%
+  * Materials / Energy (cyclicals): judge volume/production + FCF growth through the cycle, not one hot YoY print off a trough — 3: structural volume growth + FCF growing · 2: solid mid-cycle growth · 1: flat; treat a peak-cycle spike with skepticism.
+  * Utilities: rate-base / EPS growth — 3: >6% · 2: 4–6% · 1: 2–4%
+  * Real Estate / REITs: FFO or AFFO per-share growth (NOT revenue, NOT EPS) — 3: >7% · 2: 4–7% · 1: 1–4%
+  When trailing and forward (FY+1 consensus) growth disagree, weight forward more — the score should reflect where growth is GOING. Name the sector scale you applied in the explanation (e.g. "scored on the REIT FFO scale").
 - relativeValuation (max 3, AUTO): Relative valuation — You are provided with REAL PEER COMPANY DATA. Use it to make direct comparisons. USE INDUSTRY-SPECIFIC METRICS FIRST:
   * Banks/Financials: P/B, P/TBV, ROE, ROA, efficiency ratio vs peers
   * REITs: P/FFO, P/AFFO, cap rate, dividend yield vs peers
@@ -556,7 +568,7 @@ FUNDAMENTAL GROUP:
   * Utilities: P/E, dividend yield, rate base growth vs peers
   * Consumer: P/E, EV/EBITDA, same-store sales growth vs peers
   IMPORTANT: Name specific peer companies and cite their actual multiples from the peer data provided. Example: "META trades at 15.3x EV/EBITDA vs GOOGL at 23.5x and SNAP at 18.2x." Do not use vague "sector average" — name the peers.
-- historicalValuation (max 2, AUTO): Historical valuation — Compare CURRENT multiples to the company's OWN history using the provided financial data across multiple years. Cite specific numbers.
+- historicalValuation (max 2, AUTO): Historical valuation — Compare CURRENT multiples to the company's OWN history using the provided financial data across multiple years. Cite specific numbers. Use the sector-appropriate multiple from the relativeValuation list (P/FFO for REITs, P/B for banks, EV/EBITDA for industrials/energy — NOT P/E for everything), and for cyclicals (Materials/Energy) remember a LOW P/E on peak earnings is often expensive, not cheap — say so when it applies.
 - leverageCoverage (max 2, AUTO): Leverage & coverage — USE INDUSTRY-SPECIFIC METRICS (the generic "debt/EBITDA" framework is wrong for several industries):
   * Banks: CET1 / Tier 1 capital ratio (vs Basel III minimums + buffer), LCR, NSFR, loan/deposit ratio, NPL ratio. "Debt" is not the right framing — banks ARE leveraged by design; what matters is regulatory capital and liquidity.
   * Insurance: combined ratio (<100 healthy), debt/total capital, RBC ratio, financial leverage ratio. Look at reserve adequacy if disclosed.

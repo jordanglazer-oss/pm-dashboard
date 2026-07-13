@@ -2169,6 +2169,28 @@ export default function StockDetailPage() {
                                   </span>
                                 );
                               })()}
+                              {/* Value-trap haircut — never applied silently. */}
+                              {(cat.key === "relativeValuation" || cat.key === "historicalValuation") && stock.valueTrap && (
+                                <span
+                                  className="rounded px-1.5 py-0.5 text-[9px] font-bold uppercase tracking-wider border bg-warn-soft text-warn border-warn-border"
+                                  title={`Value-trap haircut ×0.5: FY+1 estimates are being cut (net revisions ${stock.valueTrap.net}). Cheap + falling estimates reads as a trap, not an entry — ${stock.valueTrap.pointsRemoved} pts removed across the two valuation categories. Lifts automatically when revisions recover.`}
+                                >
+                                  Value-trap ×0.5
+                                </span>
+                              )}
+                              {/* Delivery modifier on growth — never applied silently. */}
+                              {cat.key === "growth" && stock.delivery && (
+                                <span
+                                  className={`rounded px-1.5 py-0.5 text-[9px] font-bold uppercase tracking-wider border ${
+                                    stock.delivery.adj > 0
+                                      ? "bg-pos-soft text-pos border-pos-border"
+                                      : "bg-warn-soft text-warn border-warn-border"
+                                  }`}
+                                  title={`EPS delivery vs consensus, last ${stock.delivery.quarters} reported quarters: ${stock.delivery.beats} beat${stock.delivery.beats === 1 ? "" : "s"} / ${stock.delivery.misses} miss${stock.delivery.misses === 1 ? "" : "es"} → growth ${stock.delivery.adj > 0 ? "+1 (consistent beats)" : "−1 (repeated misses)"}. FactSet actual vs final pre-report mean.`}
+                                >
+                                  Delivery {stock.delivery.adj > 0 ? "+1" : "−1"}
+                                </span>
+                              )}
                               {confidence && (
                                 <span
                                   className={`rounded px-1.5 py-0.5 text-[9px] font-bold uppercase tracking-wider ${

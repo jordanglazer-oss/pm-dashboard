@@ -221,6 +221,10 @@ export type FactsetEstimates = {
   numEstFy1: number | null;
   revUp: number | null;
   revDown: number | null;
+  /** EPS delivery over the last 4 REPORTED quarters: actual vs final consensus.
+   *  Drives the growth "delivery" modifier. Null when the surprise formulas
+   *  resolved nothing (e.g. thin coverage) — absent ≠ bearish. */
+  epsBeats: { beats: number; misses: number; quarters: number } | null;
 };
 const ESTIMATE_FORMULAS = {
   tgtPriceMean: "FE_ESTIMATE(PRICE_TGT,MEAN,ANN_ROLL,0,NOW,'')",
@@ -228,6 +232,19 @@ const ESTIMATE_FORMULAS = {
   revUp: "FE_ESTIMATE(EPS,UP,ANN_ROLL,1,NOW,'')",
   revDown: "FE_ESTIMATE(EPS,DOWN,ANN_ROLL,1,NOW,'')",
 } as const;
+
+// Last-4-reported-quarter EPS surprise: actual vs the mean estimate for that
+// (reported) quarter. QTR_R with a negative relative period = reported
+// quarters; FE_ACTUAL mirrors FE_ESTIMATE's signature minus the stat arg.
+// Validated via /api/admin/factset-probe like the other FE_ codes; a wrong
+// signature degrades gracefully (per-formula error → null → no modifier).
+const SURPRISE_QUARTERS = [-1, -2, -3, -4] as const;
+const surpriseActualFormula = (rel: number) => `FE_ACTUAL(EPS,QTR_R,${rel},NOW,'')`;
+const surpriseEstimateFormula = (rel: number) => `FE_ESTIMATE(EPS,MEAN,QTR_R,${rel},NOW,'')`;
+const SURPRISE_FORMULAS = SURPRISE_QUARTERS.flatMap((rel) => [
+  surpriseActualFormula(rel),
+  surpriseEstimateFormula(rel),
+]);
 
 export async function getFactsetEstimatesByTicker(tickers: string[]): Promise<Record<string, FactsetEstimates>> {
   const out: Record<string, FactsetEstimates> = {};
@@ -242,7 +259,7 @@ export async function getFactsetEstimatesByTicker(tickers: string[]): Promise<Re
   }
   const ids = [...idToTickers.keys()];
   if (ids.length === 0) return out;
-  const formulaList = Object.values(ESTIMATE_FORMULAS);
+  const formulaList = [...Object.values(ESTIMATE_FORMULAS), ...SURPRISE_FORMULAS];
   const CHUNK = 40;
   const chunks: string[][] = [];
   for (let i = 0; i < ids.length; i += CHUNK) chunks.push(ids.slice(i, i + CHUNK));
@@ -261,14 +278,26 @@ export async function getFactsetEstimatesByTicker(tickers: string[]): Promise<Re
   for (const id of ids) {
     const row = merged[id];
     if (!row) continue;
+    // Delivery: count beats/misses across the reported quarters where BOTH
+    // actual and final consensus resolved. Ties count as neither.
+    let beats = 0, misses = 0, quarters = 0;
+    for (const rel of SURPRISE_QUARTERS) {
+      const actual = num(row[surpriseActualFormula(rel)]);
+      const estMean = num(row[surpriseEstimateFormula(rel)]);
+      if (actual == null || estMean == null) continue;
+      quarters++;
+      if (actual > estMean) beats++;
+      else if (actual < estMean) misses++;
+    }
     const est: FactsetEstimates = {
       tgtPriceMean: num(row[ESTIMATE_FORMULAS.tgtPriceMean]),
       numEstFy1: num(row[ESTIMATE_FORMULAS.numEstFy1]),
       revUp: num(row[ESTIMATE_FORMULAS.revUp]),
       revDown: num(row[ESTIMATE_FORMULAS.revDown]),
+      epsBeats: quarters > 0 ? { beats, misses, quarters } : null,
     };
     // Skip ids where FactSet returned nothing usable at all.
-    if (est.tgtPriceMean == null && est.numEstFy1 == null && est.revUp == null && est.revDown == null) continue;
+    if (est.tgtPriceMean == null && est.numEstFy1 == null && est.revUp == null && est.revDown == null && est.epsBeats == null) continue;
     for (const t of idToTickers.get(id) ?? []) out[t] = est;
   }
   return out;

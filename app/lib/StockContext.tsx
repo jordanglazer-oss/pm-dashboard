@@ -541,8 +541,53 @@ export function StockProvider({ children }: { children: React.ReactNode }) {
       const rs = mapSmaxToRelativeStrength(s.sia ?? null);
       if (rs != null) overrides.relativeStrength = rs;
 
+      // Value-trap interaction: cheapness is only a virtue when estimates
+      // aren't being cut. When FY+1 net revisions ≤ −3 (strong downgrade
+      // cycle, same threshold thesis-health uses), the valuation points are
+      // haircut ×0.5 — "cheap + falling estimates" is a trap, not an entry.
+      // Applied live (lifts automatically when revisions recover) and badged
+      // on the UI via `valueTrap` — never silent. Absent revisions → no effect.
+      let valueTrap: { net: number; pointsRemoved: number } | undefined;
+      const fsRev = snap?.factset;
+      if (fsRev && (typeof fsRev.revUp === "number" || typeof fsRev.revDown === "number")) {
+        const net = (fsRev.revUp ?? 0) - (fsRev.revDown ?? 0);
+        if (net <= -3) {
+          const relVal = s.scores.relativeValuation || 0;
+          const histVal = s.scores.historicalValuation || 0;
+          if (relVal > 0 || histVal > 0) {
+            overrides.relativeValuation = Math.round(relVal * 0.5 * 10) / 10;
+            overrides.historicalValuation = Math.round(histVal * 0.5 * 10) / 10;
+            valueTrap = {
+              net,
+              pointsRemoved:
+                Math.round((relVal - overrides.relativeValuation + histVal - overrides.historicalValuation) * 10) / 10,
+            };
+          }
+        }
+      }
+
+      // Delivery modifier: growth is quality-weighted by EPS delivery vs
+      // consensus over the last 4 REPORTED quarters. Consistent beats promote
+      // (a modest grower that keeps beating earns the top of the range);
+      // repeated misses demote (a max-growth story that keeps missing loses a
+      // point). Trailing growth keeps its full 0–3 range — this only moves
+      // WITHIN it. No surprise history (fresh adds, thin coverage) → no effect.
+      let delivery: { beats: number; misses: number; quarters: number; adj: 1 | -1 } | undefined;
+      const eb = snap?.factset?.epsBeats;
+      if (eb && eb.quarters >= 3) {
+        const g = overrides.growth ?? s.scores.growth ?? 0;
+        if (eb.beats >= 3 && g < 3) {
+          overrides.growth = Math.min(3, g + 1);
+          delivery = { ...eb, adj: 1 };
+        } else if (eb.misses >= 2 && g > 0) {
+          overrides.growth = Math.max(0, g - 1);
+          delivery = { ...eb, adj: -1 };
+        }
+      }
+
       const patched = { ...s, scores: { ...s.scores, ...overrides } };
-      return computeScores(patched, marketData, forwardCtx);
+      const scored = computeScores(patched, marketData, forwardCtx);
+      return valueTrap || delivery ? { ...scored, valueTrap, delivery } : scored;
     }),
     [stocks, marketData, analystSnapshots, forwardCtx]
   );

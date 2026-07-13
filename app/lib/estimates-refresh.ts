@@ -89,6 +89,7 @@ export async function refreshFactsetEstimates(): Promise<EstimatesRefreshStatus>
         analystCount: est.numEstFy1 ?? prevFs.analystCount,
         revUp: est.revUp ?? prevFs.revUp,
         revDown: est.revDown ?? prevFs.revDown,
+        epsBeats: est.epsBeats ?? prevFs.epsBeats,
         asOf: today,
         lastUpdated: today,
       };
@@ -99,6 +100,7 @@ export async function refreshFactsetEstimates(): Promise<EstimatesRefreshStatus>
         nextFs.analystCount !== prevFs.analystCount ||
         nextFs.revUp !== prevFs.revUp ||
         nextFs.revDown !== prevFs.revDown ||
+        JSON.stringify(nextFs.epsBeats ?? null) !== JSON.stringify(prevFs.epsBeats ?? null) ||
         prevFs.asOf !== today;
       if (!changed) continue;
       blob = setSnapshotForTicker(blob, ticker, { ...existing, factset: nextFs });

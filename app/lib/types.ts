@@ -448,6 +448,17 @@ export type ScoredStock = Stock & {
   regimeFitNext?: "favored" | "neutral" | "headwind";
   anticipatedRegime?: string;
   transitionWeight?: number;
+  /** Value-trap interaction: set when the valuation categories were haircut
+   *  (×0.5) because FY+1 estimates are being cut (net revisions ≤ −3).
+   *  "Cheap + falling estimates" is a trap, not an opportunity. Carries the
+   *  net revision count + the points removed so the UI can badge it —
+   *  the haircut is NEVER applied silently. */
+  valueTrap?: { net: number; pointsRemoved: number };
+  /** Delivery modifier: growth promoted/demoted ±1 by EPS delivery vs
+   *  consensus over the last 4 reported quarters (≥3 beats → +1, ≥2 misses
+   *  → −1, clamped to growth's 0–3 range). Set only when applied, so the UI
+   *  can badge it — never silent. Absent surprise data → no adjustment. */
+  delivery?: { beats: number; misses: number; quarters: number; adj: 1 | -1 };
 };
 
 export type MarketData = {

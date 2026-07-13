@@ -49,6 +49,9 @@ export type FactSetEntry = {
    *  Drives estimate-revision momentum on the Conviction Board + Change Monitor. */
   revUp?: number;
   revDown?: number;
+  /** EPS delivery over the last 4 reported quarters (actual vs final consensus).
+   *  Drives the growth "delivery" modifier. Absent = not imported ≠ bearish. */
+  epsBeats?: { beats: number; misses: number; quarters: number };
   asOf?: string;
   lastUpdated?: string;
 };
@@ -186,6 +189,14 @@ export type UpsideContribution = {
   contribution: number;
 };
 
+export type RevisionContribution = {
+  up: number;
+  down: number;
+  net: number;
+  /** ±1 max — the forward "direction of travel" modifier. */
+  contribution: number;
+};
+
 export type ConsensusBreakdown = {
   /** Final score, clamped to [0, 3], kept at full precision (2 decimals). */
   score: number;
@@ -194,8 +205,28 @@ export type ConsensusBreakdown = {
   rbc: AnalystContribution | null;
   jpm: AnalystContribution | null;
   upside: UpsideContribution;
+  /** Estimate-revision momentum (FY+1 EPS, last 30d). Null when FactSet
+   *  revisions haven't been imported for this name — absent ≠ bearish. */
+  revisions: RevisionContribution | null;
   confidence: "high" | "medium" | "low";
 };
+
+/** Revision-momentum modifier: net analyst FY+1 revisions → ±1 max.
+ *  |net| ≥ 4 is a strong, corroborated move (full point); |net| ≥ 2 is a
+ *  building move (half point); ±1 is noise (no effect). Thresholds match the
+ *  conventions used by thesis-health / alerts (strong = 3-4 net). */
+function revisionContribution(entry: FactSetEntry | undefined): RevisionContribution | null {
+  if (!entry || (typeof entry.revUp !== "number" && typeof entry.revDown !== "number")) return null;
+  const up = entry.revUp ?? 0;
+  const down = entry.revDown ?? 0;
+  const net = up - down;
+  let contribution = 0;
+  if (net >= 4) contribution = 1;
+  else if (net >= 2) contribution = 0.5;
+  else if (net <= -4) contribution = -1;
+  else if (net <= -2) contribution = -0.5;
+  return { up, down, net, contribution };
+}
 
 function analystContribution(entry: AnalystEntry | undefined, currentPrice?: number): AnalystContribution | null {
   if (!entry || entry.rating === "not-covered") return null;
@@ -239,7 +270,18 @@ export function computeAnalystConsensus(
         }
       : { target, targetSource, contribution: 0 };
 
-  const rawScore = (rbc?.contribution ?? 0) + (jpm?.contribution ?? 0) + upsideContribution.contribution;
+  // Revision momentum — the forward component. Acts as a promoter/demoter on
+  // the level-based sum (ratings + upside), so the level signal keeps its full
+  // range while direction of travel moves the final number: a maxed consensus
+  // with estimates being cut drops; a middling one with strong up-revisions
+  // rises. Null (not imported) contributes nothing — absent ≠ bearish.
+  const revisions = revisionContribution(snapshot?.factset);
+
+  const rawScore =
+    (rbc?.contribution ?? 0) +
+    (jpm?.contribution ?? 0) +
+    upsideContribution.contribution +
+    (revisions?.contribution ?? 0);
   // Keep full precision (e.g. 2.75) — clamped to [0, 3] but NOT rounded.
   // The UI displays the exact fractional value; rounding was masking real
   // signal (e.g. 2.75 → 3 hid the missing 0.25).
@@ -259,7 +301,7 @@ export function computeAnalystConsensus(
   else if ((rbc || jpm) && target) confidence = "medium";
   else confidence = "medium";
 
-  return { score, rawScore, rbc, jpm, upside: upsideContribution, confidence };
+  return { score, rawScore, rbc, jpm, upside: upsideContribution, revisions, confidence };
 }
 
 // ── Explanation builder ──────────────────────────────────────────────
@@ -308,11 +350,20 @@ export function buildConsensusExplanation(
       source: "model",
     });
   }
+  if (breakdown.revisions) {
+    const r = breakdown.revisions;
+    dataPoints.push({
+      label: "Revisions",
+      value: `FY+1 EPS ${r.up}↑/${r.down}↓ (net ${r.net >= 0 ? "+" : ""}${r.net}) → ${r.contribution >= 0 ? "+" : ""}${r.contribution.toFixed(1)} pts`,
+      source: "model",
+      sourceDetail: "FactSet 30d estimate revisions",
+    });
+  }
 
   const summary =
     dataPoints.length === 0
       ? "No analyst snapshot data available. Enter RBC/JPM reports and a FactSet target via the Coverage Checklist."
-      : `Auto-derived from RBC + JPM ratings + FactSet street-avg upside. Score: ${breakdown.score}/3.`;
+      : `Auto-derived from RBC + JPM ratings + FactSet street-avg upside, tilted ±1 by FY+1 estimate-revision momentum. Score: ${breakdown.score}/3.`;
 
   return { summary, dataPoints, confidence: breakdown.confidence };
 }

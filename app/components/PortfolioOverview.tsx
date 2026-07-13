@@ -2039,6 +2039,16 @@ function RankingTable({
                               </span>
                             );
                           })()}
+                          {/* Value-trap haircut badge — the ×0.5 valuation cut
+                              is never applied silently. */}
+                          {s.valueTrap && (
+                            <span
+                              className="rounded-md border px-1 py-0 text-[8px] font-bold uppercase tracking-wider bg-warn-soft text-warn border-warn-border"
+                              title={`Value-trap haircut: FY+1 estimates being cut (net revisions ${s.valueTrap.net}) — valuation categories ×0.5 (${s.valueTrap.pointsRemoved} pts removed). Lifts automatically when revisions recover.`}
+                            >
+                              VT
+                            </span>
+                          )}
                         </div>
                         <div className="text-xs text-ink-3 max-w-[160px] truncate" title={s.name}>{s.name}</div>
                       </Link>
