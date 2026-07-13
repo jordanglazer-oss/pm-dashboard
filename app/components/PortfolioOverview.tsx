@@ -18,7 +18,7 @@ import { displayTicker, canonicalTicker } from "@/app/lib/ticker";
 import { useSearchParams, useRouter, usePathname } from "next/navigation";
 import { useLiveModelWeights } from "@/app/lib/useLiveModelWeights";
 import type { PimProfileType } from "@/app/lib/pim-types";
-import { buildBoostedCsv, buildSiaSymbolList, buildMarketEdgeList } from "@/app/lib/watchlist-export";
+import { buildBoostedCsv, buildSiaSymbolList, buildMarketEdgeList, boostedSymbol, siaSymbol } from "@/app/lib/watchlist-export";
 
 /** Check if a stock has a non-empty explanation for a given category key.
  *  Handles both legacy string[] and new ScoreCategoryExplanation shapes. */
@@ -1677,6 +1677,16 @@ function RankingTable({
   const [siaCopied, setSiaCopied] = useState(false);
   const [marketEdgeState, setMarketEdgeState] = useState<"idle" | "loading" | "done">("idle");
   const [marketEdgeCount, setMarketEdgeCount] = useState<number | null>(null);
+  // After an export, queue a reply-shell email from the inbox Gmail so the PM
+  // can reply with the provider's data instead of drafting a fresh email.
+  // Fire-and-forget; no-ops gracefully until the Gmail outbox poller is set up.
+  const requestProviderData = (provider: "boostedai" | "sia" | "marketedge", symbols: string[]) => {
+    fetch("/api/provider-request", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ provider, symbols }),
+    }).catch(() => {});
+  };
   const handleExportBoostedCsv = () => {
     const csv = buildBoostedCsv(stocks);
     const blob = new Blob([csv], { type: "text/csv;charset=utf-8" });
@@ -1688,6 +1698,7 @@ function RankingTable({
     a.click();
     a.remove();
     URL.revokeObjectURL(url);
+    requestProviderData("boostedai", stocks.map((s) => boostedSymbol(s.ticker)).filter(Boolean));
   };
   const handleCopySia = async () => {
     try {
@@ -1697,6 +1708,7 @@ function RankingTable({
     } catch {
       /* clipboard blocked — no-op */
     }
+    requestProviderData("sia", stocks.map((s) => siaSymbol(s.ticker)).filter(Boolean));
   };
   // MarketEdge (US-only). US names export directly; Canadian names are included
   // only when FactSet confirms they're interlisted (same company also trades in
@@ -1733,6 +1745,7 @@ function RankingTable({
     setMarketEdgeCount(count);
     setMarketEdgeState("done");
     setTimeout(() => setMarketEdgeState("idle"), 2500);
+    requestProviderData("marketedge", list ? list.split("\n").filter(Boolean) : []);
   };
 
   return (
