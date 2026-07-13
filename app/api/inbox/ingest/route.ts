@@ -181,7 +181,13 @@ export async function POST(request: NextRequest) {
     return NextResponse.json({ ok: true, ping: true, message: "Webhook reachable and authorized." });
   }
 
-  const subject = (body.subject ?? "").trim();
+  // Strip any leading reply/forward prefixes ("Re:", "Fwd:", "Fw:", possibly
+  // stacked) so a REPLY to an auto-sent "Analyst Report: TICKER" email — which
+  // arrives as "Re: Analyst Report: TICKER" — still routes to the report
+  // handler and matches SUBJECT_RE. Enables the watchlist reply-to-feed flow
+  // and fixes ordinary replies to any report email.
+  const rawSubject = (body.subject ?? "").trim();
+  const subject = rawSubject.replace(/^(?:\s*(?:re|fwd?|fw)\s*:\s*)+/i, "").trim();
   const sender = body.sender;
   const filename = body.filename;
   let dataUrl = body.dataUrl ?? "";
