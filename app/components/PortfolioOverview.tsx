@@ -304,7 +304,14 @@ export function PortfolioOverview({ sidebar }: { sidebar?: React.ReactNode } = {
    *  Tracks failures so the user sees exactly which tickers errored out.
    *  After scoring, auto-backfills companySummary + investmentThesis for any
    *  stock that's still missing them (cheap ~$0.002/stock call). */
-  const handleScoreBucket = useCallback(async (bucket: "Portfolio" | "Watchlist") => {
+  const handleScoreBucket = useCallback(async (
+    bucket: "Portfolio" | "Watchlist",
+    /** Partial rescore: only these LLM categories are re-scored (server
+     *  filters output to them; everything else carries forward). Saves the
+     *  bulk of output tokens + skips web search — use after a methodology
+     *  change that touches a subset of categories. */
+    partialCategories?: ScoreKey[]
+  ) => {
     if (scoringAny || refreshingAll) return;
     const source = bucket === "Portfolio" ? portfolioStocks : watchlistStocks;
     const bucketStocks = source.filter((s) => isScoreable(s));
@@ -344,9 +351,12 @@ export function PortfolioOverview({ sidebar }: { sidebar?: React.ReactNode } = {
           headers: { "Content-Type": "application/json" },
           body: JSON.stringify({
             ticker: s.ticker,
-            verifyWithWebSearch: true,
+            // Partial passes skip web search (the targeted categories are
+            // FactSet-grounded; search is for narrative/catalyst verification).
+            verifyWithWebSearch: !partialCategories,
             externalSourceNotes: s.externalSourceNotes ?? [],
             researchCoverageNotes: s.researchCoverageNotes ?? [],
+            ...(partialCategories ? { categories: partialCategories } : {}),
           }),
         });
         if (!res.ok) {
@@ -419,7 +429,10 @@ export function PortfolioOverview({ sidebar }: { sidebar?: React.ReactNode } = {
     // Auto-backfill companySummary + investmentThesis for stocks the API
     // flagged as truncated or that didn't return these fields. Uses the
     // scoreResults map (not stale closure state) to decide.
-    const needBackfill = bucketStocks.filter((s) => {
+    // SKIPPED on partial rescores: those deliberately return empty narrative
+    // fields (preserved from the last full pass), so "missing" is expected —
+    // backfilling would re-spend credits rewriting summaries that exist.
+    const needBackfill = partialCategories ? [] : bucketStocks.filter((s) => {
       if (failed.includes(s.ticker)) return false;
       const result = scoreResults.get(s.ticker);
       return !result?.companySummary || !result?.investmentThesis;
@@ -592,10 +605,14 @@ export function PortfolioOverview({ sidebar }: { sidebar?: React.ReactNode } = {
       });
     }
     setScoringBucket(null);
-    setUiPref(
-      bucket === "Portfolio" ? "scoreAllPortfolioAt" : "scoreAllWatchlistAt",
-      new Date().toISOString()
-    );
+    // Only a FULL pass stamps the Score All timestamp — a partial rescore
+    // shouldn't make the full-methodology pass look fresher than it is.
+    if (!partialCategories) {
+      setUiPref(
+        bucket === "Portfolio" ? "scoreAllPortfolioAt" : "scoreAllWatchlistAt",
+        new Date().toISOString()
+      );
+    }
     // Guarantee all state changes are persisted to Redis before we're done
     await flushStocks();
   }, [scoringAny, refreshingAll, portfolioStocks, watchlistStocks, setUiPref, updateStockFields, updateScore, updateExplanations, updatePrice, updateHealthData, updateTechnicals, updateLastScored, flushStocks, notify]);
@@ -1135,6 +1152,7 @@ export function PortfolioOverview({ sidebar }: { sidebar?: React.ReactNode } = {
         uiPrefs={uiPrefs}
         setUiPref={setUiPref}
         onScoreAll={() => handleScoreBucket(rankBucket)}
+        onScoreFundamentals={() => handleScoreBucket(rankBucket, ["growth", "relativeValuation", "historicalValuation"])}
         scoring={scoringBucket === rankBucket}
         scoreProgress={scoringBucket === rankBucket ? scoreProgress : ""}
         scoreFailures={scoringBucket === rankBucket || scoringBucket == null ? scoreFailures : []}
@@ -1449,6 +1467,7 @@ function RankingTable({
   uiPrefs,
   setUiPref,
   onScoreAll,
+  onScoreFundamentals,
   scoring,
   scoreProgress,
   scoreFailures,
@@ -1488,6 +1507,9 @@ function RankingTable({
   uiPrefs: Record<string, string>;
   setUiPref: (key: string, value: string) => void;
   onScoreAll?: () => void;
+  /** Partial rescore of the fundamental categories only (growth + the two
+   *  valuation cats) — the cheap pass after a methodology change. */
+  onScoreFundamentals?: () => void;
   scoring?: boolean;
   scoreProgress?: string;
   scoreFailures?: string[];
@@ -1861,6 +1883,20 @@ function RankingTable({
                 </>
               )}
             </button>
+            {/* Partial rescore — fundamentals only. The credit-saver after a
+                methodology change touching growth/valuation: ~3 categories of
+                output instead of 19, no web search, no narrative rewrite. */}
+            {onScoreFundamentals && !scoring && (
+              <button
+                onClick={onScoreFundamentals}
+                disabled={scoreAllDisabled || scoreableCount === 0}
+                className="flex items-center gap-1.5 rounded-lg px-3 py-1.5 text-xs font-semibold text-ink-2 bg-surface-2 hover:bg-line border border-line transition-colors disabled:opacity-50"
+                title="Re-score ONLY growth + relative/historical valuation (the categories the sector-scale methodology touches). Every other category, the thesis, and summaries carry forward unchanged — a fraction of the credits of a full Score All."
+              >
+                <svg className="w-3.5 h-3.5" fill="none" stroke="currentColor" strokeWidth="2" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" d="M3 13.125C3 12.504 3.504 12 4.125 12h2.25c.621 0 1.125.504 1.125 1.125v6.75C7.5 20.496 6.996 21 6.375 21h-2.25A1.125 1.125 0 0 1 3 19.875v-6.75ZM9.75 8.625c0-.621.504-1.125 1.125-1.125h2.25c.621 0 1.125.504 1.125 1.125v11.25c0 .621-.504 1.125-1.125 1.125h-2.25a1.125 1.125 0 0 1-1.125-1.125V8.625ZM16.5 4.125c0-.621.504-1.125 1.125-1.125h2.25C20.496 3 21 3.504 21 4.125v15.75c0 .621-.504 1.125-1.125 1.125h-2.25a1.125 1.125 0 0 1-1.125-1.125V4.125Z" /></svg>
+                Rescore fundamentals
+              </button>
+            )}
           </div>
         )}
       </div>

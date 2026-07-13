@@ -751,6 +751,20 @@ export async function POST(request: NextRequest) {
     // so the model scores fundamentals on FactSet, not EDGAR. Set false to let
     // EDGAR/Yahoo fill holes alongside FactSet (mixed-source mode).
     const strictFactset: boolean = body?.strictFactset !== false;
+    // Partial rescore — score ONLY the requested LLM categories. The credit
+    // saver for methodology changes that touch a subset (e.g. the sector-scale
+    // prompt update affects growth/relativeValuation/historicalValuation): the
+    // model is told to skip every other category AND the narrative fields, and
+    // the server filters its output to the requested keys, so unrequested
+    // categories provably cannot move. Deterministic categories (consensus,
+    // mentions, SIA/BoostedAI maps) recompute free either way. Unknown keys are
+    // ignored; empty/absent → full rescore (backward compatible).
+    const requestedCats: string[] = Array.isArray(body?.categories)
+      ? (body.categories as unknown[]).filter((c): c is string => typeof c === "string")
+      : [];
+    const partialKeys: string[] | null = requestedCats.length
+      ? AI_KEYS.filter((k) => requestedCats.includes(k))
+      : null;
 
     if (!ticker || typeof ticker !== "string") {
       return NextResponse.json(
@@ -1152,7 +1166,11 @@ export async function POST(request: NextRequest) {
         messages: [
           {
             role: "user",
-            content: `Score the following stock: ${upperTicker}\n\nHere is the real financial data for this company — USE THIS DATA for your scoring and explanations:\n\n${financialContext}${verifyPreamble}`,
+            content: `Score the following stock: ${upperTicker}\n\nHere is the real financial data for this company — USE THIS DATA for your scoring and explanations:\n\n${financialContext}${verifyPreamble}${
+              partialKeys
+                ? `\n\n=== PARTIAL RESCORE MODE ===\nScore ONLY these categories: ${partialKeys.join(", ")}.\nIn the "scores" and "explanations" JSON objects include ONLY those keys — every other category is carried forward unchanged server-side, so do NOT include them.\nSkip the narrative fields entirely: return empty strings for companySummary, investmentThesis, and bearCase (they are preserved from the last full rescore and must not be rewritten by a partial pass).\nStill return name, sector, and beta as usual.`
+                : ""
+            }`,
           },
         ],
         system: [
@@ -1223,8 +1241,12 @@ export async function POST(request: NextRequest) {
     // Detect truncated JSON that parsed successfully but is missing critical
     // fields. This catches the exact class of bugs that caused missing
     // companySummary, investmentThesis, and explanation categories.
+    // In partial mode only the requested categories are expected/applied —
+    // filtering here guarantees an unrequested category cannot move even if
+    // the model returns it anyway.
+    const activeAiKeys = partialKeys ?? AI_KEYS;
     const missingCategories: string[] = [];
-    for (const key of AI_KEYS) {
+    for (const key of activeAiKeys) {
       if (parsed.scores?.[key] === undefined && parsed.explanations?.[key] === undefined) {
         missingCategories.push(key);
       }
@@ -1236,7 +1258,7 @@ export async function POST(request: NextRequest) {
 
     // Clamp each AI-scored category to its max
     const scores: Partial<Record<ScoreKey, number>> = {};
-    for (const key of AI_KEYS) {
+    for (const key of activeAiKeys) {
       const raw = parsed.scores?.[key];
       const max = maxLookup[key] || 3;
       scores[key as ScoreKey] = clamp(raw, max);
@@ -1292,7 +1314,7 @@ export async function POST(request: NextRequest) {
     // regressions don't 500 the endpoint).
     const explanations: ScoreExplanations = {};
     if (parsed.explanations && typeof parsed.explanations === "object") {
-      for (const key of AI_KEYS) {
+      for (const key of activeAiKeys) {
         const val = parsed.explanations[key];
         if (!val) continue;
         if (typeof val === "object" && !Array.isArray(val) && typeof val.summary === "string") {
@@ -1434,10 +1456,15 @@ export async function POST(request: NextRequest) {
       factsetBeta: factsetBetaOut,
       scores,
       explanations,
-      notes: parsed.companySummary || parsed.notes || "",
-      companySummary: parsed.companySummary || "",
-      investmentThesis: parsed.investmentThesis || "",
-      bearCase: parsed.bearCase || "",
+      // Partial mode returns empty narrative fields (falsy → the client's
+      // conditional apply skips them, preserving the last full rescore's
+      // thesis/summary/bear case).
+      notes: partialKeys ? "" : parsed.companySummary || parsed.notes || "",
+      companySummary: partialKeys ? "" : parsed.companySummary || "",
+      investmentThesis: partialKeys ? "" : parsed.investmentThesis || "",
+      bearCase: partialKeys ? "" : parsed.bearCase || "",
+      /** Which LLM categories this run scored (null = full rescore). */
+      partialCategories: partialKeys,
       price: stockPrice,
       healthData,
       technicals,

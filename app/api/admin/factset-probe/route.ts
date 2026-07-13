@@ -234,11 +234,12 @@ export async function GET(req: NextRequest) {
     .split(",")
     .map((s) => s.trim())
     .filter(Boolean);
-  // Note: this simple probe splits formulas on commas, so pass formulas without
-  // inner commas (P_PRICE, P_BETA, FG_PE, ...). For comma-bearing formulas use
-  // the lib directly.
-  const formulas = (sp.get("formulas") || FACTSET_FORMULAS.price)
-    .split(",")
+  // Formulas are "|"-separated when a pipe is present — that makes
+  // comma-bearing formulas probe-able (e.g. ?formulas=FE_ACTUAL(EPS,QTR_R,-1,NOW,'')|FG_PE).
+  // Plain comma-splitting is kept for the simple codes (P_PRICE, P_BETA, ...).
+  const formulasRaw = sp.get("formulas") || FACTSET_FORMULAS.price;
+  const formulas = formulasRaw
+    .split(formulasRaw.includes("|") ? "|" : ",")
     .map((s) => s.trim())
     .filter(Boolean);
 
