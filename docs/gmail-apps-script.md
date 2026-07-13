@@ -40,12 +40,13 @@ Examples:
 4. Set the two script properties (Project Settings → Script properties):
    - `WEBHOOK_URL` = `https://pm-dashboard-7rr9.vercel.app/api/inbox/ingest`
    - `INBOX_SECRET` = the same value as the Vercel `INBOX_SECRET` env var
-5. Add a time-driven trigger that runs `processInbox` every 5 minutes.
-6. Add a second time-driven trigger that runs `processOutbox` every 5 minutes
-   (this drains the dashboard's outbound queue — watchlist coverage requests +
-   alert digests — sending them FROM this Gmail). `WEBHOOK_URL` stays pointed at
-   `/api/inbox/ingest`; the script derives the `/api/inbox/outbox` URL from it.
-7. Authorize the script when prompted.
+5. Add ONE time-driven trigger that runs **`processAll`** every 5 minutes — it
+   runs both directions (inbound ingest + outbound send) so nothing needs to be
+   run by hand. `WEBHOOK_URL` stays pointed at `/api/inbox/ingest`; the script
+   derives the `/api/inbox/outbox` URL from it.
+   (Equivalent alternative: two separate triggers, one on `processInbox` and one
+   on `processOutbox` — but a single `processAll` trigger is simpler.)
+6. Authorize the script when prompted.
 
 ## Outbound: watchlist coverage requests (two-way loop)
 
@@ -64,6 +65,18 @@ Recipient defaults to `jordan.glazer@rbc.com` (override with the Vercel env var
 ## Script
 
 ```javascript
+/**
+ * Convenience wrapper — run BOTH directions on one trigger. Point a single
+ * 5-minute time-driven trigger at `processAll` and you get automatic inbound
+ * (incoming reports/CSVs → dashboard) AND outbound (queued emails sent from
+ * this Gmail) without running anything by hand. Each half is independent, so a
+ * failure in one still lets the other run.
+ */
+function processAll() {
+  try { processInbox(); } catch (e) { Logger.log("processInbox EX " + e); }
+  try { processOutbox(); } catch (e) { Logger.log("processOutbox EX " + e); }
+}
+
 /**
  * Gmail → pm-dashboard webhook.
  *
