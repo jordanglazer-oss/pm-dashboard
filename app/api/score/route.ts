@@ -545,7 +545,7 @@ RESEARCH GROUP:
 
 FUNDAMENTAL GROUP:
 - growth (max 3, AUTO): Growth (rev / earnings / FCF) — USE THE PROVIDED DATA. Cite actual revenue figures, YoY growth rates, EPS, net income changes, FCF trends. Compare sequential quarters and year-over-year. Include guidance if available from analyst estimates.
-  SECTOR CALIBRATION (MANDATORY): score growth against the sector's achievable ceiling, NOT one absolute scale — a REIT compounding FFO at 6% is delivering like a tech name compounding revenue at 18%, and both earn 3/3. Use the primary growth metric AND thresholds for the stock's sector (3 pts / 2 pts / 1 pt; below the 1-pt bar → 0):
+  SECTOR CALIBRATION (MANDATORY): score growth against the sector's achievable ceiling, NOT one absolute scale — a REIT compounding FFO at 6% is delivering like a tech name compounding revenue at 18%, and both earn 3/3. The sector's PRIMARY metric below ANCHORS the score band (3 pts / 2 pts / 1 pt; below the 1-pt bar → 0), but growth stays a MULTI-METRIC judgment: EPS, net income, FCF, and margin trajectory CORROBORATE or CONTRADICT the anchor and may move the score within ±1 of it. Examples: revenue at the 3-pt bar but EPS/FCF shrinking (unprofitable growth) → 2; revenue at the 2-pt bar with EPS and FCF compounding faster than revenue (operating leverage) → 3. Cite the anchor metric AND the corroborating metrics in the explanation.
   * Technology / high-growth: revenue YoY — 3: >15% · 2: 8–15% · 1: 3–8%
   * Communication Services: revenue YoY — 3: >10% · 2: 5–10% · 1: 2–5%
   * Consumer Discretionary: revenue YoY (weigh same-store sales) — 3: >10% · 2: 5–10% · 1: 2–5%
