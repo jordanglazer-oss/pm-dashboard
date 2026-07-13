@@ -99,7 +99,9 @@ export function AttentionPanel() {
               </span>
               <span className="min-w-0">
                 <span className="font-semibold text-ink">
-                  Shifting {tailwind.leaning} — {tailwind.likelihood.toLowerCase()} conviction
+                  {tailwind.leaning === "toward Risk-On"
+                    ? `Shifting ${tailwind.leaning} — ${tailwind.likelihood.toLowerCase()} conviction`
+                    : `Thawing ${tailwind.leaning} from ${tailwind.basedOnRegime} — ${tailwind.likelihood.toLowerCase()}`}
                 </span>
                 <span className="text-ink-3"> — {tailwind.detail}</span>
               </span>

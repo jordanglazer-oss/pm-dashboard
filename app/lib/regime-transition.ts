@@ -33,7 +33,7 @@ export type TransitionTell = {
 export type RegimeTransition = {
   basedOnRegime: "Risk-On" | "Neutral" | "Risk-Off";
   regimeComputedAt: string; // computedAt of the source snapshot
-  leaning: "toward Risk-Off" | "toward Risk-On" | "stable";
+  leaning: "toward Risk-Off" | "toward Neutral" | "toward Risk-On" | "stable";
   /** Heuristic transition-risk score, 0..90. Higher = closer to a flip. */
   score: number;
   likelihood: "Low" | "Watch" | "Elevated" | "High";
@@ -42,6 +42,33 @@ export type RegimeTransition = {
   tells: TransitionTell[];
   summary: string;
 };
+
+/**
+ * Valence of a transition — decouples "which way + how big" from the raw lean,
+ * so every surface (brief chip, attention panel, alerts) colors and routes it
+ * the same way. The direction depends on BOTH the base regime and the lean:
+ *   - cooling-hard: heading toward Risk-Off (a genuine risk to a long book).
+ *   - cooling-soft: Risk-On easing toward Neutral (a mild de-risk — notable,
+ *     not alarming).
+ *   - warming-hard: heading toward Risk-On (a tailwind).
+ *   - warming-soft: Risk-Off thawing toward Neutral (improving, not yet a flip).
+ *   - none: stable / strengthening the current regime.
+ * Derives purely from (basedOnRegime, leaning) so it also works on older stored
+ * transitions that predate any explicit field.
+ */
+export type RegimeValence =
+  | "cooling-hard"
+  | "cooling-soft"
+  | "warming-hard"
+  | "warming-soft"
+  | "none";
+
+export function regimeValence(basedOnRegime: string, leaning: string): RegimeValence {
+  if (leaning === "toward Risk-Off") return "cooling-hard";
+  if (leaning === "toward Risk-On") return "warming-hard";
+  if (leaning === "toward Neutral") return basedOnRegime === "Risk-On" ? "cooling-soft" : "warming-soft";
+  return "none";
+}
 
 /** Deadband so tiny wiggles in a ratio don't register as momentum. */
 const MOMENTUM_DEADBAND_PCT = 0.3;
@@ -158,17 +185,21 @@ export function computeRegimeTransition(r: MarketRegimeData): RegimeTransition {
   //   Risk-On  → flip is DOWN: deteriorating = toward flip, improving = strengthening.
   //   Risk-Off → flip is UP:   improving = toward flip, deteriorating = strengthening.
   //   Neutral  → whichever side dominates is the direction of travel.
+  // The NEXT label off a non-neutral base is NEUTRAL, not the far pole — the
+  // composite steps Risk-On → Neutral → Risk-Off, so a deteriorating Risk-On
+  // regime is heading toward Neutral first (a de-risk), never straight to
+  // Risk-Off. Only from Neutral does the anticipated pole become Risk-On/Off.
   let towardFlip: SignalMomentum[];
   let strengthening: SignalMomentum[];
   let anticipated: RegimeTransition["basedOnRegime"];
   if (label === "Risk-On") {
     towardFlip = deteriorating;
     strengthening = improving;
-    anticipated = "Risk-Off";
+    anticipated = "Neutral";
   } else if (label === "Risk-Off") {
     towardFlip = improving;
     strengthening = deteriorating;
-    anticipated = "Risk-On";
+    anticipated = "Neutral";
   } else if (deteriorating.length > improving.length) {
     towardFlip = deteriorating;
     strengthening = improving;
@@ -190,7 +221,12 @@ export function computeRegimeTransition(r: MarketRegimeData): RegimeTransition {
     leaning = "stable";
     anticipated = label; // strengthening/calm → no meaningful transition, no tilt
   } else {
-    leaning = anticipated === "Risk-Off" ? "toward Risk-Off" : "toward Risk-On";
+    leaning =
+      anticipated === "Risk-Off"
+        ? "toward Risk-Off"
+        : anticipated === "Risk-On"
+        ? "toward Risk-On"
+        : "toward Neutral";
   }
 
   // Boundary gap — how many signals from losing the current label.
@@ -227,13 +263,24 @@ export function computeRegimeTransition(r: MarketRegimeData): RegimeTransition {
   const likelihood: RegimeTransition["likelihood"] =
     score >= 60 ? "High" : score >= 40 ? "Elevated" : score >= 20 ? "Watch" : "Low";
 
-  // Direction-aware prose: a lean toward Risk-On is a tailwind ("conviction"),
-  // a lean toward Risk-Off is a genuine "transition risk." "Stable" is neutral.
-  const summary = leaningToFlip
-    ? anticipated === "Risk-On"
-      ? `${label} and building ${leaning} — ${tells.length} signal${tells.length === 1 ? "" : "s"} pushing toward a flip, ${boundaryGap} from a label change (risk-on conviction ${likelihood.toLowerCase()}).`
-      : `${label} but leaning ${leaning} — ${tells.length} signal${tells.length === 1 ? "" : "s"} pushing toward a flip, ${boundaryGap} from a label change (transition risk ${likelihood.toLowerCase()}).`
-    : `${label} looks stable/strengthening — momentum isn't pushing toward a flip (transition risk ${likelihood.toLowerCase()}).`;
+  // Direction-aware prose keyed off valence: warming = tailwind, cooling =
+  // caution, the soft variants are moves toward Neutral (partial, not a full
+  // flip). "Stable" is neutral.
+  const valence = regimeValence(label, leaning);
+  const sig = `${tells.length} signal${tells.length === 1 ? "" : "s"}`;
+  const lk = likelihood.toLowerCase();
+  let summary: string;
+  if (!leaningToFlip) {
+    summary = `${label} looks stable/strengthening — momentum isn't pushing toward a flip (transition risk ${lk}).`;
+  } else if (valence === "warming-hard") {
+    summary = `${label} and building ${leaning} — ${sig} pushing toward a flip, ${boundaryGap} from a label change (risk-on conviction ${lk}).`;
+  } else if (valence === "warming-soft") {
+    summary = `${label} but warming ${leaning} — ${sig} improving, ${boundaryGap} from shedding the ${label} label (${lk}).`;
+  } else if (valence === "cooling-soft") {
+    summary = `${label} but cooling ${leaning} — ${sig} easing, ${boundaryGap} from losing the ${label} label (de-risking ${lk}).`;
+  } else {
+    summary = `${label} but leaning ${leaning} — ${sig} pushing toward a flip, ${boundaryGap} from a label change (transition risk ${lk}).`;
+  }
 
   return {
     basedOnRegime: label,

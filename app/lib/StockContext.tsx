@@ -295,8 +295,18 @@ export function StockProvider({ children }: { children: React.ReactNode }) {
       .then((j) => {
         if (!alive || !j?.transition) return;
         const t = j.transition as { leaning?: string; likelihood?: string };
+        // Map the lean to the regime we're heading INTO. "toward Neutral" (a
+        // Risk-On de-risk or a Risk-Off thaw) blends the forward score toward
+        // Neutral's flat 1.0× tilt — so a cooling Risk-On book de-emphasizes its
+        // risk-on tilt ahead of the move, not only on a full flip.
         const anticipatedRegime =
-          t.leaning === "toward Risk-Off" ? "Risk-Off" : t.leaning === "toward Risk-On" ? "Risk-On" : undefined;
+          t.leaning === "toward Risk-Off"
+            ? "Risk-Off"
+            : t.leaning === "toward Risk-On"
+            ? "Risk-On"
+            : t.leaning === "toward Neutral"
+            ? "Neutral"
+            : undefined;
         setForwardCtx({ anticipatedRegime, transitionWeight: transitionWeight(t.likelihood) });
       })
       .catch(() => {});

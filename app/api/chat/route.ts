@@ -232,7 +232,7 @@ CRITICAL — PORTFOLIO AWARENESS:
         const t = computeRegimeTransition(regime);
         sections.push(
           `[REGIME-TRANSITION GAUGE — forward]\n` +
-            `${t.basedOnRegime}, leaning ${t.leaning}; transition risk ${t.likelihood} (heuristic ${t.score}/90); ${t.boundaryGap} signal(s) from a label change.` +
+            `${t.basedOnRegime}, leaning ${t.leaning}; transition likelihood ${t.likelihood} (heuristic ${t.score}/90); ${t.boundaryGap} signal(s) from a label change.` +
             (t.tells.length ? `\nEarly tells: ${t.tells.map((x) => `${x.name} ${x.momentum}`).join("; ")}` : ""),
         );
       }

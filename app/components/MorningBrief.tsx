@@ -18,6 +18,7 @@ import { SentimentGauges } from "./SentimentGauges";
 import { HedgingIndicator } from "./HedgingIndicator";
 import { ImageUpload, LightboxModal, type BriefAttachment } from "./ImageUpload";
 import type { MarketRegimeData, RegimeDirection } from "@/app/lib/market-regime";
+import { regimeValence } from "@/app/lib/regime-transition";
 import { HORIZONS } from "@/app/lib/horizons";
 
 /** Numeric input with an inline save indicator.
@@ -1118,28 +1119,42 @@ export function MorningBrief({
   const catalystHiddenCount = catalystEvents.length - visibleCatalystEvents.length;
 
   // Regime-transition gauge (Phase 02) — forward "how close to a flip" chip.
+  // Tone + wording are keyed off the shared valence so a de-risk toward Neutral
+  // reads amber (not red), a thaw toward Neutral reads soft-green, a full Risk-On
+  // shift reads green, and only a slide toward Risk-Off wears the red risk scale.
   const regimeTransition = brief?.regimeTransition ?? null;
+  const transitionValence = regimeTransition
+    ? regimeValence(regimeTransition.basedOnRegime, regimeTransition.leaning)
+    : "none";
   const transitionLeanClass =
-    regimeTransition?.leaning === "toward Risk-Off"
+    transitionValence === "cooling-hard"
       ? "text-neg"
-      : regimeTransition?.leaning === "toward Risk-On"
+      : transitionValence === "cooling-soft"
+      ? "text-warn"
+      : transitionValence === "warming-hard" || transitionValence === "warming-soft"
       ? "text-pos"
       : "text-ink-3";
-  // The badge is direction-aware: a shift TOWARD Risk-On is a tailwind (green),
-  // not a "risk." Only a shift toward Risk-Off wears the red/amber risk scale.
-  const towardRiskOn = regimeTransition?.leaning === "toward Risk-On";
-  const transitionRiskClass = towardRiskOn
-    ? "bg-pos-soft text-pos"
-    : regimeTransition?.likelihood === "High"
-    ? "bg-neg-soft text-neg"
-    : regimeTransition?.likelihood === "Elevated"
-    ? "bg-warn-soft text-warn"
-    : regimeTransition?.likelihood === "Watch"
-    ? "bg-surface-2 text-ink-2"
-    : "bg-pos-soft text-pos";
-  const transitionBadgeText = towardRiskOn
-    ? `${regimeTransition?.likelihood} risk-on shift`
-    : `${regimeTransition?.likelihood} transition risk`;
+  const lk = regimeTransition?.likelihood;
+  const transitionRiskClass =
+    transitionValence === "warming-hard" || transitionValence === "warming-soft"
+      ? "bg-pos-soft text-pos"
+      : transitionValence === "cooling-soft"
+      ? "bg-warn-soft text-warn"
+      : transitionValence === "cooling-hard"
+      ? lk === "High"
+        ? "bg-neg-soft text-neg"
+        : lk === "Elevated"
+        ? "bg-warn-soft text-warn"
+        : "bg-surface-2 text-ink-2"
+      : "bg-surface-2 text-ink-2";
+  const transitionBadgeText =
+    transitionValence === "warming-hard"
+      ? `${lk} risk-on shift`
+      : transitionValence === "warming-soft"
+      ? `${lk} warming`
+      : transitionValence === "cooling-soft"
+      ? `${lk} de-risking`
+      : `${lk} transition risk`;
   // Parse a YYYY-MM-DD as a LOCAL date (avoid the UTC-midnight day-shift) and
   // format it compactly, e.g. "Wed Jul 15".
   const fmtCatalystDate = (iso: string): string => {

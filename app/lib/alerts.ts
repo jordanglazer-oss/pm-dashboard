@@ -11,6 +11,8 @@
  * signal-to-noise: only genuinely actionable items become alerts.
  */
 
+import { regimeValence } from "@/app/lib/regime-transition";
+
 export type AlertPriority = "high" | "medium";
 export type AlertCategory = "thesis" | "regime" | "technical";
 
@@ -71,20 +73,33 @@ export function computeAlerts(input: {
     });
   }
 
-  // ── Regime transition — a "risk" ONLY when heading toward Risk-Off ──
-  // A shift toward Risk-On is a tailwind, not something that "needs attention";
-  // it's surfaced separately as a positive via computeRegimeTailwind(). Only the
-  // defensive direction (toward Risk-Off) belongs in the red alert list.
+  // ── Regime transition — the DEFENSIVE directions belong in "needs attention" ──
+  // A slide toward Risk-Off is a genuine risk (high/medium by likelihood). A
+  // Risk-On regime easing toward Neutral is a de-risk worth noting — surfaced as
+  // a medium caution, never high. The warming directions (toward Risk-On, or a
+  // Risk-Off thaw toward Neutral) are positives, routed via computeRegimeTailwind.
   const t = input.transition;
-  if (t && t.leaning === "toward Risk-Off" && (t.likelihood === "High" || t.likelihood === "Elevated")) {
+  if (t && (t.likelihood === "High" || t.likelihood === "Elevated")) {
+    const val = regimeValence(t.basedOnRegime ?? "", t.leaning ?? "");
     const tellStrs = (t.tells ?? []).map((x) => (x.detail ? `${x.name} (${x.detail})` : x.name)).filter(Boolean);
-    alerts.push({
-      id: "regime-transition",
-      priority: t.likelihood === "High" ? "high" : "medium",
-      category: "regime",
-      title: `Regime ${t.leaning} — ${(t.likelihood ?? "").toLowerCase()} transition risk`,
-      detail: tellStrs.length ? `Driven by: ${tellStrs.join(" · ")}` : `From ${t.basedOnRegime ?? "current"}.`,
-    });
+    const detail = tellStrs.length ? `Driven by: ${tellStrs.join(" · ")}` : `From ${t.basedOnRegime ?? "current"}.`;
+    if (val === "cooling-hard") {
+      alerts.push({
+        id: "regime-transition",
+        priority: t.likelihood === "High" ? "high" : "medium",
+        category: "regime",
+        title: `Regime ${t.leaning} — ${(t.likelihood ?? "").toLowerCase()} transition risk`,
+        detail,
+      });
+    } else if (val === "cooling-soft") {
+      alerts.push({
+        id: "regime-transition",
+        priority: "medium",
+        category: "regime",
+        title: `Regime cooling from ${t.basedOnRegime} toward Neutral — ${(t.likelihood ?? "").toLowerCase()} de-risk`,
+        detail,
+      });
+    }
   }
 
   // ── Technical breakdown (Portfolio names) — a SEPARATE dimension from the
@@ -127,11 +142,15 @@ export type RegimeTailwind = {
 
 export function computeRegimeTailwind(input: TransitionInput): RegimeTailwind | null {
   const t = input;
-  if (!t || t.leaning !== "toward Risk-On") return null;
+  if (!t) return null;
   if (t.likelihood !== "High" && t.likelihood !== "Elevated") return null;
+  // Both warming directions count: a full lean toward Risk-On, or a Risk-Off
+  // regime thawing toward Neutral (improving, even if not yet a flip).
+  const val = regimeValence(t.basedOnRegime ?? "", t.leaning ?? "");
+  if (val !== "warming-hard" && val !== "warming-soft") return null;
   const tellStrs = (t.tells ?? []).map((x) => (x.detail ? `${x.name} (${x.detail})` : x.name)).filter(Boolean);
   return {
-    leaning: t.leaning,
+    leaning: t.leaning ?? "",
     likelihood: t.likelihood,
     basedOnRegime: t.basedOnRegime,
     detail: tellStrs.length ? `Driven by: ${tellStrs.join(" · ")}` : `From ${t.basedOnRegime ?? "current"}.`,
