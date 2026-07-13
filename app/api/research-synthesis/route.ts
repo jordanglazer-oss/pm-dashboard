@@ -709,27 +709,46 @@ async function runSynthesis(
 
   const todayISO = new Date().toISOString().slice(0, 10);
   const context = buildContext(research, brief, portfolioTickers, snapshots);
+  const system = buildSystemPrompt(todayISO);
 
-  const msg = await client.messages.create({
-    model: "claude-sonnet-4-6",
-    temperature: 0,
-    // 8192 (was 4096): adding the per-pick `conviction` field + the
-    // conviction rubric pushed a research set with many picks past the
-    // 4096 ceiling, truncating the JSON mid-object and breaking the parse.
-    // Headroom prevents that; parseSynthesis also repairs truncation now.
-    max_tokens: 8192,
-    system: buildSystemPrompt(todayISO),
-    messages: [{ role: "user", content: context }],
-  });
+  // One generate+parse attempt. Reads text from ALL content blocks (not just
+  // [0]) so a leading non-text block can't blank the output. `extraSystem`
+  // lets the retry nudge the model toward clean/complete JSON.
+  const attempt = async (extraSystem?: string): Promise<SynthesisResult | null> => {
+    const msg = await client.messages.create({
+      model: "claude-sonnet-4-6",
+      temperature: 0,
+      // Generous ceiling: a research set with many picks (ticker + sources +
+      // thesis + rationale + conviction each) can exceed 8192 and truncate the
+      // JSON mid-object, which was the classic parse failure. 16000 gives ample
+      // headroom; parseSynthesis still repairs truncation as a backstop.
+      max_tokens: 16000,
+      system: extraSystem ? `${system}\n\n${extraSystem}` : system,
+      messages: [{ role: "user", content: context }],
+    });
+    const text = msg.content
+      .map((b) => (b.type === "text" ? b.text : ""))
+      .join("")
+      .trim();
+    console.log(
+      `[research-synthesis] stop_reason=${msg.stop_reason} output_len=${text.length}; head:`,
+      text.slice(0, 500),
+    );
+    return parseSynthesis(text);
+  };
 
-  const text = msg.content[0]?.type === "text" ? msg.content[0].text : "";
-  console.log(
-    `[research-synthesis] stop_reason=${msg.stop_reason} output_len=${text.length}; head:`,
-    text.slice(0, 2000),
-  );
-  const parsed = parseSynthesis(text);
+  let parsed = await attempt();
+  // Temperature is 0, so a bare retry would reproduce the same bad output —
+  // the corrective instruction is what makes the second attempt differ. It
+  // targets the two failure modes: stray prose/fences, and truncation.
   if (!parsed) {
-    console.error("[research-synthesis] parse failed. Full output:", text);
+    console.warn("[research-synthesis] first attempt did not parse — retrying with a stricter instruction");
+    parsed = await attempt(
+      "CRITICAL OUTPUT REQUIREMENT: your previous response could not be parsed. Respond with ONLY the raw JSON object — start at the opening { and end at the closing }, with NO prose, NO markdown code fences, and NO text before or after. Keep every string field concise (theses one sentence) and include only your highest-conviction picks so the JSON is complete and not truncated.",
+    );
+  }
+  if (!parsed) {
+    console.error("[research-synthesis] parse failed after retry");
     return null;
   }
   return filterPortfolioOut(parsed, portfolioTickers);
