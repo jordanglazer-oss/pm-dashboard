@@ -154,8 +154,11 @@ export function computeConviction(input: ComputeConvictionInput): ConvictionEntr
     const s = stockByKey.get(entry.key);
     const signals: ConvictionSignal[] = [];
 
-    // 1. Composite rating (scored names only).
-    if (s && typeof s.adjusted === "number") {
+    // 1. Composite rating — only for names that have ACTUALLY been scored.
+    //    A freshly-added watchlist name has raw 0 (no categories filled yet);
+    //    tagging it "Composite: Sell −2" for being un-scored is the bug — an
+    //    absent score must read neutral, not bearish.
+    if (s && typeof s.adjusted === "number" && (s.raw ?? 0) > 0) {
       const r = ratingFor(s.adjusted);
       entry.ratingLabel = r.label;
       if (r.points !== 0) signals.push({ label: `Composite: ${r.label}`, points: r.points, kind: "rating" });
@@ -172,15 +175,26 @@ export function computeConviction(input: ComputeConvictionInput): ConvictionEntr
       else if (up <= -10) signals.push({ label: `Below target ${up.toFixed(0)}%`, points: -1, kind: "upside" });
     }
 
-    // 3. External category scores (SIA / BoostedAI / MarketEdge).
+    // 3. External category scores (SIA / BoostedAI / MarketEdge) — each ONLY
+    //    counts when its RAW source was actually imported. A score of 0 means
+    //    "weak/sell/avoid" ONLY if the data exists; for a not-yet-imported name
+    //    the 0 is just a default, and must read neutral (no signal) rather than
+    //    dragging the name to the bottom for data it hasn't received yet.
     if (s) {
-      const sia = s.scores?.relativeStrength;
-      if (sia === 2) signals.push({ label: "SIA strong", points: 1, kind: "external" });
-      else if (sia === 0) signals.push({ label: "SIA weak", points: -1, kind: "external" });
-      const ai = s.scores?.aiRating;
-      if (ai === 2) signals.push({ label: "BoostedAI buy", points: 1, kind: "external" });
-      else if (ai === 0) signals.push({ label: "BoostedAI sell", points: -1, kind: "external" });
-      if (marketEdgeApplies(s)) {
+      if (typeof s.sia === "number") {
+        const sia = s.scores?.relativeStrength;
+        if (sia === 2) signals.push({ label: "SIA strong", points: 1, kind: "external" });
+        else if (sia === 0) signals.push({ label: "SIA weak", points: -1, kind: "external" });
+      }
+      if (typeof s.boostedAi === "number" || s.boostedAiConsensus != null) {
+        const ai = s.scores?.aiRating;
+        if (ai === 2) signals.push({ label: "BoostedAI buy", points: 1, kind: "external" });
+        else if (ai === 0) signals.push({ label: "BoostedAI sell", points: -1, kind: "external" });
+      }
+      // marketEdgeApplies already excludes pure-Canadian names MarketEdge can't
+      // cover; also require the raw reading to be present so an un-imported US
+      // name isn't tagged "avoid".
+      if (marketEdgeApplies(s) && (s.marketEdge?.powerRating != null || s.marketEdge?.opinion != null)) {
         const me = s.scores?.marketEdge;
         if (me === 2) signals.push({ label: "MarketEdge long", points: 1, kind: "external" });
         else if (me === 0) signals.push({ label: "MarketEdge avoid", points: -1, kind: "external" });
