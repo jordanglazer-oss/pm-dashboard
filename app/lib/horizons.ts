@@ -103,6 +103,7 @@ export const SIGNAL_HORIZON: Record<string, Horizon> = {
   // ── Structural (6–12M) ──
   "SPX 10-Month Trend": "structural",
   "ISM PMI Trend": "structural",
+  "Yield Curve (10Y-2Y)": "structural",
 };
 
 export type HorizonComposite = {

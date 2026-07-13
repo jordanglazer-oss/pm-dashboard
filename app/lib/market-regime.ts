@@ -110,6 +110,37 @@ export function computeCreditSignal(
 }
 
 /**
+ * Yield curve (10Y-2Y) — the macro/rates dimension the cross-asset composite
+ * otherwise lacks. Folded in so the SINGLE consolidated regime label reflects
+ * rates, not just equities/credit/vol. Thresholds mirror the brief's forward
+ * classifier (classifyRegime): deeply inverted (< −25bps) votes risk-off, a
+ * clearly positive slope (> +50bps) votes risk-on, in-between is neutral (no
+ * vote). Sourced from FRED T10Y2Y (already a spread series, in percent).
+ */
+export type YieldCurveReadout = {
+  spreadBps: number; // 10Y minus 2Y, in basis points
+  direction: RegimeDirection;
+};
+
+export function computeYieldCurveSignal(
+  observations: readonly { date: string; value: number }[] | null
+): YieldCurveReadout | null {
+  if (!observations || observations.length === 0) return null;
+  const valid = observations
+    .filter((o) => o && typeof o.value === "number" && isFinite(o.value))
+    .slice()
+    .sort((a, b) => (a.date < b.date ? 1 : a.date > b.date ? -1 : 0)); // newest first
+  if (valid.length === 0) return null;
+  const spreadBps = valid[0].value * 100; // percent → bps
+
+  let direction: RegimeDirection = "neutral";
+  if (spreadBps < -25) direction = "risk-off";
+  else if (spreadBps > 50) direction = "risk-on";
+
+  return { spreadBps: Math.round(spreadBps), direction };
+}
+
+/**
  * Breadth divergence — the classic leading warning: price making new ground
  * while participation *narrows* underneath it (or the reverse). Computed from
  * data the engine already has: SPX trend (price) vs RSP/SPY breadth momentum.
@@ -187,6 +218,9 @@ export type MarketRegimeData = {
   /** Breadth divergence (price vs RSP/SPY participation) — leading warning.
    *  Optional for backward-compat; neutral when price & breadth agree. */
   breadthDivergence?: BreadthDivergenceReadout | null;
+  /** Yield curve (10Y-2Y) — the rates/macro dimension folded into the single
+   *  consolidated regime. Optional so older cached blobs still parse. */
+  curve?: YieldCurveReadout | null;
   global: {
     stoxx: CrossAssetReadout | null;
     nikkei: CrossAssetReadout | null;
@@ -426,6 +460,18 @@ export function composeRegime(
         parts.credit.change20dBps != null
           ? ` (${parts.credit.change20dBps >= 0 ? "+" : ""}${parts.credit.change20dBps}bps 20d)`
           : ""
+      }`,
+    });
+  }
+  // Yield curve (10Y-2Y) votes only when it's a directional signal (deeply
+  // inverted → risk-off, clearly positive slope → risk-on); a flat/near-zero
+  // curve stays out so it doesn't raise the supermajority bar for no reason.
+  if (parts.curve && parts.curve.direction !== "neutral") {
+    signals.push({
+      name: "Yield Curve (10Y-2Y)",
+      direction: parts.curve.direction,
+      detail: `${parts.curve.spreadBps >= 0 ? "+" : ""}${parts.curve.spreadBps}bps${
+        parts.curve.direction === "risk-off" ? " (inverted)" : " (positive slope)"
       }`,
     });
   }

@@ -6,6 +6,7 @@ import {
   composeRegime,
   computeCrossAssetReadout,
   computeCreditSignal,
+  computeYieldCurveSignal,
   computeBreadthDivergence,
   computeIsmPmi,
   computeRatioSignal,
@@ -94,6 +95,7 @@ async function computeFromYahoo(): Promise<MarketRegimeData> {
     stoxx, nikkei,
     napmObs,
     hyOasObs,
+    curveObs,
   ] = await Promise.all([
     safeBars("^GSPC", "5y", "1d"),
     safeBars("RSP", "1y", "1d"),
@@ -112,6 +114,7 @@ async function computeFromYahoo(): Promise<MarketRegimeData> {
     safeBars("^N225", "3mo", "1d"),
     fredSeries("NAPM", 12).catch(() => null),
     fredSeries("BAMLH0A0HYM2", 40).catch(() => null), // HY OAS (credit spreads)
+    fredSeries("T10Y2Y", 5).catch(() => null), // 10Y-2Y curve (rates dimension)
   ]);
 
   const spx10m = computeSpx10mTrend(spxDaily);
@@ -129,6 +132,7 @@ async function computeFromYahoo(): Promise<MarketRegimeData> {
 
   const ismPmi = napmObs ? computeIsmPmi(napmObs) : null;
   const credit = computeCreditSignal(hyOasObs);
+  const curve = computeYieldCurveSignal(curveObs);
   const breadthDivergence = computeBreadthDivergence(spx10m, breadth);
 
   const parts = {
@@ -139,6 +143,7 @@ async function computeFromYahoo(): Promise<MarketRegimeData> {
     global: { stoxx: stoxxR, nikkei: nikkeiR },
     ismPmi,
     credit,
+    curve,
     breadthDivergence,
   };
   const composite = composeRegime(parts);
