@@ -163,7 +163,7 @@ The user payload contains an explicit "Today's Date" line. That is the authorita
 5. Absolutely NO phrases like "coming off the Liberation Day spike", "post-Liberation Day unwind", "following the April tariff shock" unless Today's Date is within 30 days of April 2025.
 
 CRITICAL — TONE ADAPTATION:
-The user input contains a deterministic "Pre-classified Regime" line. Your marketRegime output MUST match it unless a data point in the payload contradicts it clearly (if so, explain briefly in bottomLine). Adapt tone accordingly:
+The user input contains a "CONSOLIDATED REGIME" line — the single authoritative regime label the whole app uses. It is GIVEN to you, not chosen: your marketRegime output is overridden server-side to equal it, so do NOT return a different label. Any disagreement you have goes in regimeVerdict (concurs / cautions / diverges), never by relabeling. Adapt tone to the consolidated regime:
 - Risk-On → Lean constructive. Highlight what's working, where to add exposure, which defensive names to rotate out of. Do NOT manufacture bearish warnings when breadth, credit, and trend are healthy.
 - Neutral → Balanced. Identify the swing variable and what would tip it either direction.
 - Risk-Off → Defensive. Emphasize protection, quality, what to avoid.
@@ -185,7 +185,7 @@ CRITICAL — SYNTHESIS QUALITY (this is what makes the brief worth reading for a
 
 Respond ONLY with valid JSON matching this exact structure (fields are intentionally ordered so Bottom Line → Tactical/Cyclical/Structural Views → Composite → Risk Scan flows naturally in the UI):
 {
-  "marketRegime": "Risk-On or Neutral or Risk-Off — match the Pre-classified Regime unless clearly contradicted.",
+  "marketRegime": "PROVIDED, not chosen: set this to the exact CONSOLIDATED REGIME label from the payload (Risk-On | Neutral | Risk-Off). It is overridden server-side to match, so returning anything else is discarded. Express any disagreement only in regimeVerdict.",
   "regimeVerdict": "ONE punchy line (≤30 words) for the BOTTOM of the brief that fuses the OBJECTIVE quant regime with YOUR synthesized judgment (notes + reports + data). Exact format: 'Regime: <Risk-On|Neutral|Risk-Off> (quant) — Brief <concurs|cautions|diverges>: <terse actionable so-what>'. Use 'concurs' when your read aligns with the quant regime; 'cautions' when you broadly agree but flag a real caveat (narrowing breadth, Newton flipping, rich sentiment); 'diverges' when the notes+data lead you to position AGAINST the tape. The so-what must be a concrete posture (e.g. 'deploy on dips', 'trim into strength + add tail hedge', 'wait for breadth to confirm'). The <quant> label MUST equal marketRegime. Example: 'Regime: Risk-On (quant) — Brief cautions: tape constructive but breadth narrowing and Newton flipped; deploy partial, keep dry powder.'",
   "bottomLine": "2-4 sentences: THE single decisive takeaway + positioning posture across the three horizons — the one thing to know today. State the call and the so-what plainly; reference the weighted composite. Keep the driver MECHANICS light here (which signals and why lives in compositeAnalysis) so the two don't echo each other. Be bold and direct.",
   "whatChanged": "ONE-TWO sentences on what has MATERIALLY CHANGED since the Prior Brief (provided above, if any): a regime flip, a hedging or cash-deployment call change, a signal crossing a key threshold, a new/escalated portfolio risk, or Newton flipping direction. Be specific and cite the delta (e.g. 'Regime held Risk-On but cash-deploy dropped 72→58 as breadth narrowed'). If little changed, say so in one line. Return an EMPTY STRING only when no Prior Brief was provided.",
@@ -1081,6 +1081,16 @@ ${rows.join("\n")}`;
           : null,
     });
 
+    // ── Consolidated regime (single source of truth) ────────────────────────
+    // The cross-asset composite (pm:market-regime, now curve-aware) is THE
+    // canonical regime label the whole app defers to. The brief no longer
+    // classifies independently: it receives this label as authoritative and
+    // its only regime judgment is the concurs/cautions/diverges verdict.
+    // The forward classifier above stays as fallback (cold cache) + as the
+    // regimeScore/regimeSignals drivers surfaced to the UI.
+    const consolidatedRegime: "Risk-On" | "Neutral" | "Risk-Off" =
+      marketRegime?.composite?.label ?? classification.regime;
+
     const forwardBlock = forwardData
       ? `\n\nForward-Looking Data (use for Forward View and tone calibration):
 - S&P 500 YTD: ${fmt(forwardData.spxYtd, "%")}
@@ -1108,11 +1118,11 @@ ${rows.join("\n")}`;
         )}`
       : "\n\nForward-looking data unavailable for this run — fall back to the current snapshot indicators below.";
 
-    // Deterministic cross-asset / breadth regime from pm:market-regime.
-    // This is strictly context — Claude should treat it as additional
-    // confirmation signal for marketRegime, NOT as an override of the
-    // pre-classified regime above (which is computed from the macro
-    // inputs Claude is asked to cite).
+    // Deterministic cross-asset / breadth regime from pm:market-regime — this
+    // composite IS the consolidated regime (its label is authoritative and is
+    // surfaced to Claude as the CONSOLIDATED REGIME). The signal breakdown here
+    // is the evidence behind that label; Claude uses it to reconcile, not to
+    // relabel.
     const regimeBlock = marketRegime
       ? (() => {
           const r = marketRegime;
@@ -1180,11 +1190,11 @@ ${hLine("structural", "Structural (6-12M)")}
 
 Use this rollup as the SCAFFOLDING for tacticalView, cyclicalView, and structuralView. Each horizon view should be 2-3 sentences and reference at least one of its driving signals by name. The horizons are intentionally interlocking: tactical sets the immediate posture, cyclical confirms or contests the rotation, structural is the "don't-fight-the-tape" overlay. If two horizons disagree, name the disagreement explicitly — the PM trades on the tactical lens but should know when the longer windows are pulling the other way.`;
           }
-          return `\n\nDeterministic Regime Snapshot (from pm:market-regime, computed ${r.computedAt}):
+          return `\n\nConsolidated Regime Evidence (from pm:market-regime, computed ${r.computedAt}) — this composite IS the CONSOLIDATED REGIME:
 Composite: ${r.composite.label} (${r.composite.score}/${r.composite.total} risk-on signals)
 ${lines.join("\n")}${horizonsBlock}
 
-Use this as additional confirmation for your marketRegime call, your breadthAnalysis (sector leadership rotation), and your three horizon views. If the deterministic label conflicts with the pre-classified macro regime above, briefly reconcile in bottomLine — do not ignore either.`;
+These signals are the evidence behind the consolidated label. Use them for your breadthAnalysis (sector leadership rotation), your three horizon views, and — most importantly — to decide your regimeVerdict stance (concurs / cautions / diverges). If your synthesized read (notes + reports + forward data) pulls against this label, that tension is the headline: name it in bottomLine and take the 'cautions' or 'diverges' stance. Do NOT change marketRegime to resolve it.`;
         })()
       : "";
 
@@ -1239,9 +1249,9 @@ Here are the current market indicators:
 Composite Signal: ${marketData.compositeSignal}
 Conviction: ${marketData.conviction}
 
-Pre-classified Regime: ${classification.regime} (score ${classification.score})
-Regime drivers: ${classification.signals.length > 0 ? classification.signals.join("; ") : "mixed / no dominant signal"}
-IMPORTANT: Your marketRegime output MUST equal "${classification.regime}" unless the data below clearly contradicts it (in which case briefly note the contradiction in bottomLine).${forwardBlock}${regimeBlock}${transitionBlock}${catalystBlock}
+CONSOLIDATED REGIME (authoritative — the single label the whole app uses): ${consolidatedRegime}
+Forward-macro drivers (evidence, not a competing label): ${classification.signals.length > 0 ? classification.signals.join("; ") : "mixed / no dominant signal"}
+IMPORTANT: Set marketRegime to "${consolidatedRegime}" exactly — it is overridden server-side to this value regardless. Put any disagreement in regimeVerdict (concurs / cautions / diverges) and bottomLine, NOT in the label.${forwardBlock}${regimeBlock}${transitionBlock}${catalystBlock}
 
 Volatility Structure:
 - VIX Term Structure: ${marketData.termStructure}
@@ -1587,14 +1597,27 @@ Current Portfolio Holdings: ${holdingsSummary}${portfolioPositioning}`;
     void markAnthropicHealthy();
 
     const now = new Date();
-    // If Claude's marketRegime came back empty/bogus, fall back to our
-    // deterministic pre-classification so downstream consumers always have
-    // a consistent regime string.
-    const finalRegime =
-      parsed.marketRegime &&
-      ["Risk-On", "Neutral", "Risk-Off"].includes(parsed.marketRegime)
-        ? parsed.marketRegime
-        : classification.regime;
+    // The regime label is AUTHORITATIVE from the consolidated composite — the
+    // brief never sets its own. We ignore whatever Claude returned for
+    // marketRegime (its disagreement lives in regimeVerdict) and stamp the one
+    // consolidated label, so the brief always matches the chip and dashboard.
+    const finalRegime = consolidatedRegime;
+
+    // Score + drivers shown next to the regime pill must match the SAME source
+    // as the label. When the consolidated composite is available, derive a
+    // signed net (risk-on minus risk-off votes) and its signal breakdown from
+    // it; only fall back to the forward classifier when the composite is cold.
+    let regimeScore = classification.score;
+    let regimeSignals = classification.signals;
+    if (marketRegime?.composite?.signals?.length) {
+      const sig = marketRegime.composite.signals;
+      const on = sig.filter((s) => s.direction === "risk-on").length;
+      const off = sig.filter((s) => s.direction === "risk-off").length;
+      regimeScore = on - off;
+      regimeSignals = sig
+        .filter((s) => s.direction !== "neutral")
+        .map((s) => `${s.name} (${s.detail})`);
+    }
 
     return NextResponse.json({
       date: now.toLocaleDateString("en-US", {
@@ -1604,8 +1627,8 @@ Current Portfolio Holdings: ${holdingsSummary}${portfolioPositioning}`;
       }),
       generatedAt: now.toISOString(),
       marketData,
-      regimeScore: classification.score,
-      regimeSignals: classification.signals,
+      regimeScore,
+      regimeSignals,
       forwardLooking: forwardData,
       ...parsed,
       marketRegime: finalRegime,
