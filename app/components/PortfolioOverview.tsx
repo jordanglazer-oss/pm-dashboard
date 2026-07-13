@@ -1693,7 +1693,9 @@ function RankingTable({
     const url = URL.createObjectURL(blob);
     const a = document.createElement("a");
     a.href = url;
-    a.download = `boostedai-${title.toLowerCase().replace(/\s+/g, "-")}-${new Date().toISOString().slice(0, 10)}.csv`;
+    // Plain filename — no table "title" (e.g. "watchlist-rankings") baked in,
+    // so the uploaded file is just the data under a clean name.
+    a.download = `boostedai-${new Date().toISOString().slice(0, 10)}.csv`;
     document.body.appendChild(a);
     a.click();
     a.remove();

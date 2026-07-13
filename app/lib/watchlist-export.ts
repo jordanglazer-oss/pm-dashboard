@@ -1,11 +1,11 @@
 /**
  * Export helpers for pushing the watchlist into external research tools.
  *
- *  - BoostedAI: upload a CSV with headers SYMBOL,COUNTRY,CURRENCY. SYMBOL is the
- *    local root with the exchange suffix stripped, and COUNTRY/CURRENCY (3-letter
- *    ISO) disambiguate the listing so BoostedAI picks the right security. (ISIN
- *    is an optional BoostedAI column but we don't store it, so it's omitted —
- *    SYMBOL alone is a valid required key.)
+ *  - BoostedAI: upload a CSV whose first row is the header `SYMBOL,COUNTRY,CURRENCY`,
+ *    then one name per row. SYMBOL is the local root with the exchange suffix
+ *    stripped, and COUNTRY/CURRENCY (3-letter ISO) disambiguate the listing so
+ *    BoostedAI picks the right security. (ISIN is an optional BoostedAI column but
+ *    we don't store it, so it's omitted — SYMBOL alone is a valid required key.)
  *  - SIA (SIACharts): a plain comma-separated symbol list to paste. Per the PM,
  *    SIA expects the ".TO" form for TSX names (US names stay bare) — which is
  *    exactly how tickers are already stored, so this is just the canonical
@@ -55,11 +55,12 @@ export function boostedCurrency(ticker: string): string {
 }
 
 /**
- * Build the BoostedAI upload CSV. Columns: SYMBOL,COUNTRY,CURRENCY — just the
- * information that's needed, no blank ISIN column and no title row. Rows are
- * de-duplicated on the full tuple so a US listing and its Canadian interlisting
- * (same SYMBOL, different COUNTRY/CURRENCY) both survive. CRLF line endings +
- * trailing newline for maximal spreadsheet compatibility.
+ * Build the BoostedAI upload CSV. First row is the column header
+ * `SYMBOL,COUNTRY,CURRENCY`; every following row is one name. No blank ISIN
+ * column and no title/label row above the header. Rows are de-duplicated on the
+ * full tuple so a US listing and its Canadian interlisting (same SYMBOL,
+ * different COUNTRY/CURRENCY) both survive. CRLF line endings + trailing newline
+ * for maximal spreadsheet compatibility.
  */
 export function buildBoostedCsv(stocks: Array<Pick<Stock, "ticker">>): string {
   const header = "SYMBOL,COUNTRY,CURRENCY";
