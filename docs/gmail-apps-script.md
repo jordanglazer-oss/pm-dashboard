@@ -41,7 +41,25 @@ Examples:
    - `WEBHOOK_URL` = `https://pm-dashboard-7rr9.vercel.app/api/inbox/ingest`
    - `INBOX_SECRET` = the same value as the Vercel `INBOX_SECRET` env var
 5. Add a time-driven trigger that runs `processInbox` every 5 minutes.
-6. Authorize the script when prompted.
+6. Add a second time-driven trigger that runs `processOutbox` every 5 minutes
+   (this drains the dashboard's outbound queue — watchlist coverage requests +
+   alert digests — sending them FROM this Gmail). `WEBHOOK_URL` stays pointed at
+   `/api/inbox/ingest`; the script derives the `/api/inbox/outbox` URL from it.
+7. Authorize the script when prompted.
+
+## Outbound: watchlist coverage requests (two-way loop)
+
+When a name is added to the Watchlist, the dashboard queues an email (drained by
+`processOutbox`) to the analyst desk with subject **`Analyst Report: <TICKER>`**
+asking for RBC/JPM coverage. Because it's sent from this Gmail, a **reply** with
+the report PDFs attached lands right back in this inbox; `processInbox` forwards
+it to `/api/inbox/ingest` and the reports file to that ticker — same pipeline as
+a manually-sent report email. The subject regex now tolerates a leading `Re:`,
+so the reply's `Re: Analyst Report: <TICKER>` subject still routes. Name the
+files so the firm is clear, e.g. `AVGO-RBC.pdf` / `AVGO_JPM.pdf`.
+
+Recipient defaults to `jordan.glazer@rbc.com` (override with the Vercel env var
+`WATCHLIST_NOTIFY_TO`). Alert digests go to `ALERT_EMAIL_TO` when set.
 
 ## Script
 
@@ -68,7 +86,7 @@ function processInbox() {
 
   // Order matters: more-specific prefixes first ("Fundstrat SMID Top"
   // before "Fundstrat Top") so regex alternation matches correctly.
-  const SUBJECT_RE = /^(Analyst Report:|Fundstrat Large-Cap Core|Fundstrat SMID Core|Fundstrat SMID Top|Fundstrat SMID Bottom|Fundstrat Top|Fundstrat Bottom|RBC Canadian|RBC US|RBCCM FEW|Seeking Alpha|Alpha Picks|SIA\b|BoostedAI\b|Boosted\b|MarketEdge\b|ChartScout\b|Strategist\b)/i;
+  const SUBJECT_RE = /^(?:(?:re|fwd?|fw):\s*)*(Analyst Report:|Fundstrat Large-Cap Core|Fundstrat SMID Core|Fundstrat SMID Top|Fundstrat SMID Bottom|Fundstrat Top|Fundstrat Bottom|RBC Canadian|RBC US|RBCCM FEW|Seeking Alpha|Alpha Picks|SIA\b|BoostedAI\b|Boosted\b|MarketEdge\b|ChartScout\b|Strategist\b)/i;
   const PROCESSED_LABEL_NAME = "Dashboard-Processed";
 
   let label = GmailApp.getUserLabelByName(PROCESSED_LABEL_NAME);
@@ -124,6 +142,50 @@ function processInbox() {
   }
 }
 
+/**
+ * Outbound drain — sends mail the dashboard queued (watchlist coverage
+ * requests, alert digests) FROM this Gmail, so replies thread back into this
+ * inbox and processInbox() forwards them to the ingest webhook. Add this to
+ * the same 5-minute trigger as processInbox (or its own).
+ */
+function processOutbox() {
+  const props = PropertiesService.getScriptProperties();
+  const base = props.getProperty("WEBHOOK_URL");     // .../api/inbox/ingest
+  const secret = props.getProperty("INBOX_SECRET");
+  if (!base || !secret) { Logger.log("WEBHOOK_URL or INBOX_SECRET not set."); return; }
+  // The outbox lives next to ingest: swap the trailing path segment.
+  const outboxUrl = base.replace(/\/ingest\/?$/, "/outbox");
+
+  const res = UrlFetchApp.fetch(outboxUrl, {
+    method: "get",
+    headers: { Authorization: "Bearer " + secret },
+    muteHttpExceptions: true,
+  });
+  if (res.getResponseCode() !== 200) { Logger.log("outbox GET " + res.getResponseCode()); return; }
+  const mails = (JSON.parse(res.getContentText()).mails) || [];
+  if (!mails.length) return;
+
+  const sentIds = [];
+  for (const m of mails) {
+    try {
+      GmailApp.sendEmail(m.to, m.subject, m.text);
+      sentIds.push(m.id);
+      Logger.log("SENT " + m.subject + " -> " + m.to);
+    } catch (e) {
+      Logger.log("SEND EX " + m.subject + " :: " + e);
+    }
+  }
+  if (sentIds.length) {
+    UrlFetchApp.fetch(outboxUrl, {
+      method: "post",
+      contentType: "application/json",
+      headers: { Authorization: "Bearer " + secret },
+      payload: JSON.stringify({ sentIds: sentIds }),
+      muteHttpExceptions: true,
+    });
+  }
+}
+
 /** Health-check the webhook without sending data — call from the IDE during setup. */
 function testWebhook() {
   const props = PropertiesService.getScriptProperties();
@@ -148,7 +210,7 @@ function testWebhook() {
  *  works no matter where SUBJECT_RE lives. */
 function reprocessRecent() {
   var DAYS = 3; // widen if your CSVs are older than this
-  var SUBJECT_RE = /^(Analyst Report:|Fundstrat Large-Cap Core|Fundstrat SMID Core|Fundstrat SMID Top|Fundstrat SMID Bottom|Fundstrat Top|Fundstrat Bottom|RBC Canadian|RBC US|RBCCM FEW|Seeking Alpha|Alpha Picks|SIA\b|BoostedAI\b|Boosted\b|MarketEdge\b|ChartScout\b|Strategist\b)/i;
+  var SUBJECT_RE = /^(?:(?:re|fwd?|fw):\s*)*(Analyst Report:|Fundstrat Large-Cap Core|Fundstrat SMID Core|Fundstrat SMID Top|Fundstrat SMID Bottom|Fundstrat Top|Fundstrat Bottom|RBC Canadian|RBC US|RBCCM FEW|Seeking Alpha|Alpha Picks|SIA\b|BoostedAI\b|Boosted\b|MarketEdge\b|ChartScout\b|Strategist\b)/i;
   var props = PropertiesService.getScriptProperties();
   var url = props.getProperty("WEBHOOK_URL");
   var secret = props.getProperty("INBOX_SECRET");

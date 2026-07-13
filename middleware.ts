@@ -46,10 +46,16 @@ export function middleware(req: NextRequest) {
   // `Authorization: Bearer $INBOX_SECRET` instead of the auth cookie —
   // it's running on Google's servers and can't send the cookie. The
   // route handler validates the bearer token itself, so we exempt the
-  // ingest endpoint here. NOTE: only the ingest endpoint is exempted;
+  // ingest + outbox endpoints here. NOTE: only these are exempted;
   // /api/inbox/status stays cookie-gated because it's called from the
   // browser (the /inbox admin page) and exposes the recent-events log.
-  if (pathname === "/api/inbox/ingest" || pathname === "/api/inbox/blob-token") {
+  // /api/inbox/outbox is the outbound-mail drain the same Apps Script polls
+  // with the same Bearer secret (which its handler validates).
+  if (
+    pathname === "/api/inbox/ingest" ||
+    pathname === "/api/inbox/blob-token" ||
+    pathname === "/api/inbox/outbox"
+  ) {
     return NextResponse.next();
   }
 

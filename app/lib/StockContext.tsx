@@ -859,6 +859,16 @@ export function StockProvider({ children }: { children: React.ReactNode }) {
     if (stock.bucket === "Portfolio") {
       addToPimModels(stock);
     }
+    // Watchlist add → queue a one-time "request RBC/JPM coverage" email
+    // (fire-and-forget; the route is idempotent per ticker, and no-ops
+    // gracefully until the Gmail outbox poller is configured).
+    if (stock.bucket === "Watchlist" && stock.ticker) {
+      fetch("/api/watchlist-notify", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ ticker: stock.ticker }),
+      }).catch(() => {});
+    }
   }, [persistStocks, addToPimModels]);
 
   const removeStock = useCallback((ticker: string) => {

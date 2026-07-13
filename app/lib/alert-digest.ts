@@ -3,7 +3,7 @@ import { createLogger } from "@/app/lib/logger";
 import { computeAlerts, alertCounts, type Alert } from "@/app/lib/alerts";
 import { computeRegimeTransition } from "@/app/lib/regime-transition";
 import type { MarketRegimeData } from "@/app/lib/market-regime";
-import { sendAlertEmail, emailConfigured } from "@/app/lib/notify-email";
+import { enqueueMail } from "@/app/lib/mail-outbox";
 
 /**
  * Daily alert digest (Phase 07) — the "when you're not looking" half. Run from
@@ -18,14 +18,10 @@ const LOG_KEY = "pm:alert-log";
 
 type LoggedDigest = { generatedAt: string; counts: ReturnType<typeof alertCounts>; alerts: Alert[] };
 
-function renderEmail(alerts: Alert[], counts: ReturnType<typeof alertCounts>, date: string): string {
-  const items = alerts
-    .map(
-      (a) =>
-        `<li style="margin:6px 0"><b>[${a.priority.toUpperCase()}] ${a.title}</b> — ${a.detail}</li>`
-    )
-    .join("");
-  return `<div style="font-family:system-ui,sans-serif"><h2 style="margin:0 0 4px">Needs your attention — ${date}</h2><p style="color:#555;margin:0 0 12px">${counts.high} high · ${counts.medium} to watch</p><ul style="padding-left:18px">${items}</ul></div>`;
+// Plain-text digest — the Gmail outbox sends text bodies via GmailApp.sendEmail.
+function renderDigestText(alerts: Alert[], counts: ReturnType<typeof alertCounts>, date: string): string {
+  const items = alerts.map((a) => `- [${a.priority.toUpperCase()}] ${a.title} — ${a.detail}`).join("\n");
+  return `Needs your attention — ${date}\n${counts.high} high · ${counts.medium} to watch\n\n${items}`;
 }
 
 export async function runAlertDigest(): Promise<{ ran: boolean; total: number; emailed: boolean; error?: string }> {
@@ -97,11 +93,19 @@ export async function runAlertDigest(): Promise<{ ran: boolean; total: number; e
       await redis.set(LOG_KEY, JSON.stringify(store));
     }
 
-    // Email only when there's something HIGH (and email is configured).
+    // Email only when there's something HIGH and a recipient is configured.
+    // Queued to the Gmail outbox (drained by the inbox Apps Script); id is
+    // per-date so a day's digest is enqueued at most once.
     let emailed = false;
-    if (counts.high > 0 && emailConfigured()) {
-      const r = await sendAlertEmail(`PM alerts — ${counts.high} need attention (${today})`, renderEmail(alerts, counts, today));
-      emailed = r.sent;
+    const alertTo = process.env.ALERT_EMAIL_TO;
+    if (counts.high > 0 && alertTo) {
+      emailed = await enqueueMail({
+        id: `digest-${today}`,
+        to: alertTo,
+        subject: `PM alerts — ${counts.high} need attention (${today})`,
+        text: renderDigestText(alerts, counts, today),
+        queuedAt: new Date().toISOString(),
+      });
     }
     return { ran: true, total: counts.total, emailed };
   } catch (e) {
