@@ -15,7 +15,7 @@ import type { ScoredStock, ScoreKey, HealthData, FundHolding, FundSectorWeight }
 import type { TechnicalIndicators, RiskAlert } from "@/app/lib/technicals";
 import { groupTotal, isScoreable, normalizeSector, computeScores } from "@/app/lib/scoring";
 import { displayTicker, canonicalTicker } from "@/app/lib/ticker";
-import { useSearchParams } from "next/navigation";
+import { useSearchParams, useRouter, usePathname } from "next/navigation";
 import { useLiveModelWeights } from "@/app/lib/useLiveModelWeights";
 import type { PimProfileType } from "@/app/lib/pim-types";
 import { buildBoostedCsv, buildSiaSymbolList, buildMarketEdgeList } from "@/app/lib/watchlist-export";
@@ -268,8 +268,29 @@ export function PortfolioOverview({ sidebar }: { sidebar?: React.ReactNode } = {
   const [refreshProgress, setRefreshProgress] = useState("");
   const scoringAny = scoringBucket != null;
   // Portfolio / Watchlist are one table with a segmented toggle (mockup), not
-  // two stacked tiles.
-  const [rankBucket, setRankBucket] = useState<"Portfolio" | "Watchlist">("Portfolio");
+  // two stacked tiles. The active bucket lives in the URL (?bucket=) so that
+  // clicking a stock and pressing Back restores the tab the PM was on instead
+  // of snapping to Portfolio.
+  const router = useRouter();
+  const pathname = usePathname();
+  const urlBucket: "Portfolio" | "Watchlist" =
+    searchParams.get("bucket") === "Watchlist" ? "Watchlist" : "Portfolio";
+  const [rankBucket, setRankBucket] = useState<"Portfolio" | "Watchlist">(urlBucket);
+  // Re-sync when the URL changes underneath us (Back/Forward navigation).
+  useEffect(() => {
+    setRankBucket(urlBucket);
+  }, [urlBucket]);
+  const selectRankBucket = useCallback(
+    (b: "Portfolio" | "Watchlist") => {
+      setRankBucket(b);
+      const params = new URLSearchParams(searchParams.toString());
+      params.set("bucket", b);
+      // replace (not push) so toggling isn't a Back step; the URL still carries
+      // the choice into the stock page's history entry for restore-on-Back.
+      router.replace(`${pathname}?${params.toString()}`, { scroll: false });
+    },
+    [router, pathname, searchParams]
+  );
 
   // Timestamps persist across reloads via the same uiPrefs → Redis KV bridge
   // the rest of this screen already uses. Keys: scoreAll<Bucket>At, refreshAllAt.
@@ -1097,7 +1118,7 @@ export function PortfolioOverview({ sidebar }: { sidebar?: React.ReactNode } = {
               return (
                 <button
                   key={b}
-                  onClick={() => setRankBucket(b)}
+                  onClick={() => selectRankBucket(b)}
                   className={`rounded-[6px] px-3.5 py-1.5 text-[13px] font-semibold transition-colors ${active ? "bg-accent text-white shadow-sm" : "text-ink-2 hover:bg-surface hover:text-ink"}`}
                 >
                   {b} <span className={`font-normal ${active ? "text-white/70" : "text-ink-3"}`}>{count}</span>
@@ -1165,8 +1186,11 @@ export function PortfolioOverview({ sidebar }: { sidebar?: React.ReactNode } = {
                     <div className="flex items-baseline justify-between gap-2 text-[12px] mb-0.5">
                       <span className="truncate text-ink-2">
                         {s.sector}
-                        {over && <span className="ml-1 text-[9px] font-bold uppercase text-neg">Over</span>}
-                        {under && <span className="ml-1 text-[9px] font-bold uppercase text-accent">Under</span>}
+                        {/* Active tilt vs S&P: overweight green (you own more),
+                            underweight red (you own less), in-line grey. */}
+                        {over && <span className="ml-1 text-[9px] font-bold uppercase text-pos">Over</span>}
+                        {under && <span className="ml-1 text-[9px] font-bold uppercase text-neg">Under</span>}
+                        {!over && !under && <span className="ml-1 text-[9px] font-bold uppercase text-ink-3">In-line</span>}
                       </span>
                       <span className="whitespace-nowrap font-mono text-ink">
                         <span className="font-semibold">{s.weight}%</span>{" "}

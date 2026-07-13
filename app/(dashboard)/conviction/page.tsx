@@ -2,6 +2,7 @@
 
 import { Fragment, useEffect, useMemo, useState } from "react";
 import Link from "next/link";
+import { useSearchParams, useRouter, usePathname } from "next/navigation";
 import { useStocks } from "@/app/lib/StockContext";
 import { displayTicker } from "@/app/lib/ticker";
 import { computeConviction, type ConvictionSignal, type ConvictionEntry } from "@/app/lib/conviction";
@@ -88,8 +89,43 @@ export default function ConvictionPage() {
   const [prices, setPrices] = useState<Record<string, number | null>>({});
   const [high52, setHigh52] = useState<Record<string, number | null>>({});
   const [pipelineEstimates, setPipelineEstimates] = useState<Record<string, { revUp?: number; revDown?: number }>>({});
-  const [improvingOnly, setImprovingOnly] = useState(false);
-  const [filter, setFilter] = useState<BucketFilter>("ideas");
+  // Tab (filter) + Improving toggle live in the URL (?filter=, ?improving=1) so
+  // clicking a name and pressing Back restores the Pipeline view the PM was on
+  // instead of snapping back to the default Ideas tab.
+  const searchParams = useSearchParams();
+  const router = useRouter();
+  const pathname = usePathname();
+  const FILTERS: BucketFilter[] = ["ideas", "all", "Portfolio", "Watchlist", "Research"];
+  const urlFilter = (FILTERS as string[]).includes(searchParams.get("filter") ?? "")
+    ? (searchParams.get("filter") as BucketFilter)
+    : "ideas";
+  const urlImproving = searchParams.get("improving") === "1";
+  const [improvingOnly, setImprovingOnly] = useState(urlImproving);
+  const [filter, setFilter] = useState<BucketFilter>(urlFilter);
+  // Re-sync when the URL changes underneath us (Back/Forward navigation).
+  useEffect(() => {
+    setFilter(urlFilter);
+  }, [urlFilter]);
+  useEffect(() => {
+    setImprovingOnly(urlImproving);
+  }, [urlImproving]);
+  const syncUrl = (nextFilter: BucketFilter, nextImproving: boolean) => {
+    const params = new URLSearchParams(searchParams.toString());
+    params.set("filter", nextFilter);
+    if (nextImproving) params.set("improving", "1");
+    else params.delete("improving");
+    // replace (not push) so a tab change isn't its own Back step.
+    router.replace(`${pathname}?${params.toString()}`, { scroll: false });
+  };
+  const selectFilter = (b: BucketFilter) => {
+    setFilter(b);
+    syncUrl(b, improvingOnly);
+  };
+  const toggleImproving = () => {
+    const v = !improvingOnly;
+    setImprovingOnly(v);
+    syncUrl(filter, v);
+  };
   const [query, setQuery] = useState("");
   const [loaded, setLoaded] = useState(false);
   const [expanded, setExpanded] = useState<string | null>(null);
@@ -308,10 +344,10 @@ export default function ConvictionPage() {
 
       <div className="mb-4 flex flex-wrap items-center gap-3">
         <div className="inline-flex rounded-lg border border-line bg-white p-0.5">
-          {(["ideas", "all", "Portfolio", "Watchlist", "Research"] as BucketFilter[]).map((b) => (
+          {FILTERS.map((b) => (
             <button
               key={b}
-              onClick={() => setFilter(b)}
+              onClick={() => selectFilter(b)}
               className={`rounded-md px-3 py-1 text-xs font-semibold transition-colors ${
                 filter === b ? "bg-ink text-white" : "text-ink-3 hover:bg-surface-2"
               }`}
@@ -328,7 +364,7 @@ export default function ConvictionPage() {
           className="w-56 rounded-lg border border-line bg-white px-3 py-1.5 text-sm outline-none focus:border-line"
         />
         <button
-          onClick={() => setImprovingOnly((v) => !v)}
+          onClick={toggleImproving}
           title="Only names with a positive momentum signal — rising FY+1 estimate revisions and/or breaking out near their 52-week high. Narrows the funnel to what's getting better."
           className={`rounded-lg px-3 py-1.5 text-xs font-semibold transition-colors ${
             improvingOnly ? "bg-pos text-white" : "border border-line text-ink-3 hover:bg-surface-2"
