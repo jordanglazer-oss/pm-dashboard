@@ -76,6 +76,11 @@ export type CategorySignal = {
   /** avg forward return of above-median category scores minus below-median.
    *  Positive ⇒ a higher score in this category predicts higher return. */
   spread: number;
+  /** Rank information coefficient: Spearman correlation between the category
+   *  score and forward EXCESS return across observations. The standard factor
+   *  measure of predictive power — |IC| ≥ 0.05 is meaningful, ≥ 0.10 strong.
+   *  Null when too few observations (< 10) to be worth reading. */
+  ic: number | null;
 };
 
 export type CalibrationResult = {
@@ -106,6 +111,41 @@ function catLabel(k: ScoreKey): string {
 
 function mean(xs: number[]): number {
   return xs.length ? xs.reduce((a, b) => a + b, 0) / xs.length : 0;
+}
+
+/** Average ranks (1-based), ties get the mean of their positions. */
+function avgRanks(xs: number[]): number[] {
+  const idx = xs.map((v, i) => [v, i] as const).sort((a, b) => a[0] - b[0]);
+  const out = new Array<number>(xs.length);
+  let i = 0;
+  while (i < idx.length) {
+    let j = i;
+    while (j + 1 < idx.length && idx[j + 1][0] === idx[i][0]) j++;
+    const rank = (i + j) / 2 + 1; // average of 1-based positions i+1..j+1
+    for (let k = i; k <= j; k++) out[idx[k][1]] = rank;
+    i = j + 1;
+  }
+  return out;
+}
+
+/** Spearman rank correlation (Pearson on average ranks). Null when degenerate
+ *  (constant series — e.g. every observation has the same category score). */
+function spearman(a: number[], b: number[]): number | null {
+  if (a.length !== b.length || a.length < 3) return null;
+  const ra = avgRanks(a);
+  const rb = avgRanks(b);
+  const ma = mean(ra);
+  const mb = mean(rb);
+  let num = 0, da = 0, db = 0;
+  for (let i = 0; i < ra.length; i++) {
+    const xa = ra[i] - ma;
+    const xb = rb[i] - mb;
+    num += xa * xb;
+    da += xa * xa;
+    db += xb * xb;
+  }
+  if (da === 0 || db === 0) return null;
+  return num / Math.sqrt(da * db);
 }
 
 export function computeCalibration(args: {
@@ -165,9 +205,21 @@ export function computeCalibration(args: {
     const hi = withK.filter((o) => (o.scores[k] as number) > median).map((o) => o.ret);
     const lo = withK.filter((o) => (o.scores[k] as number) <= median).map((o) => o.ret);
     if (hi.length < 3 || lo.length < 3) continue;
-    categories.push({ key: k, label: catLabel(k), n: withK.length, spread: Number((mean(hi) - mean(lo)).toFixed(2)) });
+    // Rank IC vs EXCESS return (benchmark-adjusted, so a bull tape doesn't
+    // make every category look predictive). Null under 10 obs — too noisy.
+    const icRaw =
+      withK.length >= 10
+        ? spearman(withK.map((o) => o.scores[k] as number), withK.map((o) => o.excess))
+        : null;
+    categories.push({
+      key: k,
+      label: catLabel(k),
+      n: withK.length,
+      spread: Number((mean(hi) - mean(lo)).toFixed(2)),
+      ic: icRaw == null ? null : Number(icRaw.toFixed(2)),
+    });
   }
-  categories.sort((a, b) => b.spread - a.spread);
+  categories.sort((a, b) => (b.ic ?? -1) - (a.ic ?? -1) || b.spread - a.spread);
 
   // Headline.
   const buyObs = obs.filter((o) => o.bucket === "Strong Buy" || o.bucket === "Moderate Buy");

@@ -133,13 +133,28 @@ export function ScoreCalibration() {
 
               {res.categories.length > 0 && (
                 <>
-                  <div className="text-[11px] text-ink-3 mb-1.5">Which categories carry signal <span className="text-ink-3">(return when above-median vs below-median)</span></div>
+                  <div className="text-[11px] text-ink-3 mb-1.5">
+                    Which categories carry signal{" "}
+                    <span className="text-ink-3">(spread = above- vs below-median return · IC = rank correlation with excess return; |IC| ≥ 0.05 meaningful, ≥ 0.10 strong)</span>
+                  </div>
                   <div className="space-y-1.5">
                     {res.categories.slice(0, 7).map((c) => (
                       <div key={c.key} className="flex items-center gap-2 text-[12.5px]">
                         <span className="w-28 text-ink-2 shrink-0 truncate" title={c.label}>{c.label}</span>
                         <Bar value={c.spread} maxAbs={catMax} />
                         <span className={`w-12 text-right font-mono shrink-0 ${c.spread >= 0 ? "text-pos" : "text-neg"}`}>{pct(c.spread)}</span>
+                        <span
+                          className={`w-16 text-right font-mono shrink-0 text-[11px] ${
+                            c.ic == null ? "text-ink-faint" : Math.abs(c.ic) >= 0.1 ? (c.ic > 0 ? "text-pos" : "text-neg") : Math.abs(c.ic) >= 0.05 ? (c.ic > 0 ? "text-pos/80" : "text-neg/80") : "text-ink-3"
+                          }`}
+                          title={
+                            c.ic == null
+                              ? "Too few observations for a rank IC (needs ≥10)"
+                              : `Rank IC ${c.ic >= 0 ? "+" : ""}${c.ic.toFixed(2)}: Spearman correlation between this category's score and forward excess return over ${c.n} observations. Higher |IC| = more predictive; sign shows direction.`
+                          }
+                        >
+                          IC {c.ic == null ? "—" : `${c.ic >= 0 ? "+" : ""}${c.ic.toFixed(2)}`}
+                        </span>
                         <span className="w-10 text-right text-ink-3 font-mono shrink-0 text-[11px]">n={c.n}</span>
                       </div>
                     ))}
