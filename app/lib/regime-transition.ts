@@ -70,6 +70,77 @@ export function regimeValence(basedOnRegime: string, leaning: string): RegimeVal
   return "none";
 }
 
+// ── Hysteresis (Phase 05) ────────────────────────────────────────────────
+// The transition WEIGHT that blends the forward score is derived from the
+// likelihood tier. Near a tier boundary a tiny score wiggle flips the tier,
+// which flips the weight, which jitters the forward score. Hysteresis fixes
+// that with a ratchet: an UPGRADE (toward a flip) commits immediately, but a
+// DOWNGRADE only commits after `confirm` DISTINCT regime snapshots (by
+// computedAt) have read weaker. A recovery mid-hold cancels the pending drop.
+
+export type TransitionTier = RegimeTransition["likelihood"];
+
+export type TransitionHysteresisState = {
+  committedTier: TransitionTier;
+  basedOnComputedAt: string; // computedAt of the snapshot this state reflects
+  weakerStreak: number; // consecutive distinct snapshots reading below committed
+};
+
+const TIER_RANK: Record<TransitionTier, number> = { Low: 0, Watch: 1, Elevated: 2, High: 3 };
+
+/** Rebuild a transition with a different committed tier (keeps summary in sync). */
+function withTier(raw: RegimeTransition, tier: TransitionTier): RegimeTransition {
+  if (tier === raw.likelihood) return raw;
+  return {
+    ...raw,
+    likelihood: tier,
+    // The likelihood word appears once in the summary; keep it consistent.
+    summary: raw.summary.replace(raw.likelihood.toLowerCase(), tier.toLowerCase()),
+  };
+}
+
+/**
+ * Apply the ratchet. Pure — the caller persists the returned `state`.
+ * Returns the smoothed transition (with the committed tier + matching summary),
+ * the next state to persist, and whether anything changed (so the caller can
+ * skip a redundant write).
+ */
+export function applyTransitionHysteresis(
+  raw: RegimeTransition,
+  prior: TransitionHysteresisState | null,
+  confirm = 2
+): { transition: RegimeTransition; state: TransitionHysteresisState; changed: boolean } {
+  // Same snapshot we already committed on → hold the committed tier verbatim,
+  // no state change (avoids advancing the streak on repeat page loads).
+  if (prior && prior.basedOnComputedAt === raw.regimeComputedAt) {
+    return { transition: withTier(raw, prior.committedTier), state: prior, changed: false };
+  }
+
+  let committed = raw.likelihood;
+  let weakerStreak = 0;
+  if (prior) {
+    if (TIER_RANK[raw.likelihood] >= TIER_RANK[prior.committedTier]) {
+      committed = raw.likelihood; // upgrade or equal — prompt
+      weakerStreak = 0;
+    } else {
+      weakerStreak = prior.weakerStreak + 1;
+      if (weakerStreak >= confirm) {
+        committed = raw.likelihood; // downgrade confirmed
+        weakerStreak = 0;
+      } else {
+        committed = prior.committedTier; // hold the higher tier a bit longer
+      }
+    }
+  }
+
+  const state: TransitionHysteresisState = {
+    committedTier: committed,
+    basedOnComputedAt: raw.regimeComputedAt,
+    weakerStreak,
+  };
+  return { transition: withTier(raw, committed), state, changed: true };
+}
+
 /** Deadband so tiny wiggles in a ratio don't register as momentum. */
 const MOMENTUM_DEADBAND_PCT = 0.3;
 const VIX_DEADBAND_PCT = 2;
