@@ -63,18 +63,31 @@ export function boostedCurrency(ticker: string): string {
  * for maximal spreadsheet compatibility.
  */
 export function buildBoostedCsv(stocks: Array<Pick<Stock, "ticker">>): string {
-  const header = "SYMBOL,COUNTRY,CURRENCY";
+  return buildBoostedRows(stocks)
+    .map((r) => r.join(","))
+    .join("\r\n") + "\r\n";
+}
+
+/**
+ * BoostedAI upload as an array-of-arrays: row 0 is the header
+ * `[SYMBOL, COUNTRY, CURRENCY]`, each following row is one name. Shared by the
+ * CSV and the .xlsx export so both stay identical. De-duplicated on the full
+ * tuple. No title row, no ISIN column.
+ */
+export function buildBoostedRows(stocks: Array<Pick<Stock, "ticker">>): string[][] {
   const seen = new Set<string>();
-  const rows: string[] = [];
+  const rows: string[][] = [];
   for (const s of stocks) {
     const sym = boostedSymbol(s.ticker);
     if (!sym) continue;
-    const row = [sym, boostedCountry(s.ticker), boostedCurrency(s.ticker)].join(",");
-    if (seen.has(row)) continue;
-    seen.add(row);
-    rows.push(row);
+    const country = boostedCountry(s.ticker);
+    const currency = boostedCurrency(s.ticker);
+    const key = `${sym},${country},${currency}`;
+    if (seen.has(key)) continue;
+    seen.add(key);
+    rows.push([sym, country, currency]);
   }
-  return [header, ...rows].join("\r\n") + "\r\n";
+  return [["SYMBOL", "COUNTRY", "CURRENCY"], ...rows];
 }
 
 /**

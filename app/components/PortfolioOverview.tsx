@@ -18,7 +18,7 @@ import { displayTicker, canonicalTicker } from "@/app/lib/ticker";
 import { useSearchParams, useRouter, usePathname } from "next/navigation";
 import { useLiveModelWeights } from "@/app/lib/useLiveModelWeights";
 import type { PimProfileType } from "@/app/lib/pim-types";
-import { buildBoostedCsv, buildSiaSymbolList, buildMarketEdgeList, boostedSymbol, siaSymbol } from "@/app/lib/watchlist-export";
+import { buildBoostedRows, buildSiaSymbolList, buildMarketEdgeList, boostedSymbol, siaSymbol } from "@/app/lib/watchlist-export";
 
 /** Check if a stock has a non-empty explanation for a given category key.
  *  Handles both legacy string[] and new ScoreCategoryExplanation shapes. */
@@ -1687,19 +1687,15 @@ function RankingTable({
       body: JSON.stringify({ provider, symbols }),
     }).catch(() => {});
   };
-  const handleExportBoostedCsv = () => {
-    const csv = buildBoostedCsv(stocks);
-    const blob = new Blob([csv], { type: "text/csv;charset=utf-8" });
-    const url = URL.createObjectURL(blob);
-    const a = document.createElement("a");
-    a.href = url;
-    // Plain filename — no table "title" (e.g. "watchlist-rankings") baked in,
-    // so the uploaded file is just the data under a clean name.
-    a.download = `boostedai-${new Date().toISOString().slice(0, 10)}.csv`;
-    document.body.appendChild(a);
-    a.click();
-    a.remove();
-    URL.revokeObjectURL(url);
+  // BoostedAI export as a real .xlsx (single sheet, header row + data, nothing
+  // else). xlsx is dynamically imported so its ~1MB only loads on click.
+  const handleExportBoostedXlsx = async () => {
+    const rows = buildBoostedRows(stocks);
+    const XLSX = await import("xlsx");
+    const ws = XLSX.utils.aoa_to_sheet(rows);
+    const wb = XLSX.utils.book_new();
+    XLSX.utils.book_append_sheet(wb, ws, "BoostedAI");
+    XLSX.writeFile(wb, `boostedai-${new Date().toISOString().slice(0, 10)}.xlsx`);
     requestProviderData("boostedai", stocks.map((s) => boostedSymbol(s.ticker)).filter(Boolean));
   };
   const handleCopySia = async () => {
@@ -1811,12 +1807,12 @@ function RankingTable({
             {enableExternalExports && scoreableCount > 0 && (
               <>
                 <button
-                  onClick={handleExportBoostedCsv}
+                  onClick={handleExportBoostedXlsx}
                   className="flex items-center gap-1 rounded-lg px-2.5 py-1.5 text-xs font-semibold text-ink-2 bg-surface-2 hover:bg-line border border-line transition-colors"
-                  title="Download a BoostedAI-ready CSV (SYMBOL,COUNTRY,CURRENCY) for the watchlist"
+                  title="Download a BoostedAI-ready Excel file (SYMBOL,COUNTRY,CURRENCY) for the watchlist"
                 >
                   <svg className="w-3.5 h-3.5" fill="none" stroke="currentColor" strokeWidth="2" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" d="M3 16.5v2.25A2.25 2.25 0 0 0 5.25 21h13.5A2.25 2.25 0 0 0 21 18.75V16.5M16.5 12 12 16.5m0 0L7.5 12m4.5 4.5V3" /></svg>
-                  BoostedAI CSV
+                  BoostedAI Excel
                 </button>
                 <button
                   onClick={handleCopySia}
