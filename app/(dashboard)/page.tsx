@@ -23,7 +23,7 @@ const ZERO_SCORES: Record<ScoreKey, number> = {
 };
 
 export default function DashboardPage() {
-  const { scoredStocks, marketData, addStock, uiPrefs, setUiPref } = useStocks();
+  const { scoredStocks, marketData, addStock, updateMarketData, uiPrefs, setUiPref } = useStocks();
   const [newTicker, setNewTicker] = useState("");
   const [newBucket, setNewBucket] = useState<"Portfolio" | "Watchlist">("Watchlist");
   const [detectedType, setDetectedType] = useState<InstrumentType | null>(null);
@@ -51,7 +51,29 @@ export default function DashboardPage() {
     };
   }, []);
 
+  // Consolidated regime — the single canonical label (pm:market-regime
+  // composite, curve-aware). The scoring posture (marketData.riskRegime, which
+  // actually drives score math) auto-suggests from this but stays PM-overridable.
+  const [consolidatedRegime, setConsolidatedRegime] = useState<string | null>(null);
+  useEffect(() => {
+    let alive = true;
+    fetch("/api/market-regime", { cache: "no-store" })
+      .then((r) => r.json())
+      .then((j) => {
+        if (!alive) return;
+        const label = j?.composite?.label;
+        if (label === "Risk-On" || label === "Neutral" || label === "Risk-Off") setConsolidatedRegime(label);
+      })
+      .catch(() => {});
+    return () => {
+      alive = false;
+    };
+  }, []);
+
+  // The scoring posture that drives the multiplier math. Distinct from the
+  // consolidated label above only when the PM has overridden the suggestion.
   const regime = marketData.riskRegime;
+  const regimeMismatch = consolidatedRegime != null && consolidatedRegime !== regime;
 
   // Portfolio β is now rendered inside PortfolioOverview next to the
   // Sector Exposure header — kept alongside other portfolio-level risk
@@ -192,36 +214,59 @@ export default function DashboardPage() {
             </div>
           </div>
 
-          {/* Regime Info Card */}
-          <div className={`rounded-card border p-5 shadow-sm ${
-            regime === "Risk-Off"
-              ? "border-neg-border bg-neg-soft"
-              : regime === "Neutral"
-              ? "border-warn-border bg-warn-soft"
-              : "border-pos-border bg-pos-soft"
-          }`}>
-            <div className="flex items-center gap-3 mb-3">
-              <h2 className="text-lg font-bold text-ink">Market Regime</h2>
-              <span className={`rounded-full px-3 py-1 text-xs font-bold ${
-                regime === "Risk-Off"
-                  ? "bg-neg-soft text-neg"
-                  : regime === "Neutral"
-                  ? "bg-warn-soft text-warn"
-                  : "bg-pos-soft text-pos"
-              }`}>
-                {regime}
-              </span>
-            </div>
-
-            <p className="text-sm text-ink-2">
-              {regime === "Risk-Off"
+          {/* Regime Info Card — the HEADLINE is the consolidated regime (the one
+              canonical label, matching the cockpit). The scoring posture below
+              is the multiplier knob that drives score math; it auto-suggests
+              from the consolidated label but the PM can override it. */}
+          {(() => {
+            const headline = consolidatedRegime ?? regime;
+            const tone = (r: string) =>
+              r === "Risk-Off"
+                ? { card: "border-neg-border bg-neg-soft", pill: "bg-neg-soft text-neg" }
+                : r === "Neutral"
+                ? { card: "border-warn-border bg-warn-soft", pill: "bg-warn-soft text-warn" }
+                : { card: "border-pos-border bg-pos-soft", pill: "bg-pos-soft text-pos" };
+            const postureNote =
+              regime === "Risk-Off"
                 ? "Defensive tilt — growth & cyclical sectors penalized, defensives boosted."
                 : regime === "Neutral"
                 ? "No regime adjustment — scores driven by fundamentals & quality (all 1.0×)."
-                : "Growth-favoring — growth & cyclicals boosted, defensives trimmed."}{" "}
-              <a href="#regime-detail" className="font-semibold text-accent hover:underline whitespace-nowrap">Per-stock detail ↓</a>
-            </p>
+                : "Growth-favoring — growth & cyclicals boosted, defensives trimmed.";
+            return (
+          <div className={`rounded-card border p-5 shadow-sm ${tone(headline).card}`}>
+            <div className="flex items-center gap-3 mb-3">
+              <h2 className="text-lg font-bold text-ink">Market Regime</h2>
+              <span className={`rounded-full px-3 py-1 text-xs font-bold ${tone(headline).pill}`}>
+                {headline}
+              </span>
+              {consolidatedRegime && <span className="text-[10px] font-medium uppercase tracking-wider text-ink-3">regime engine</span>}
+            </div>
+
+            {/* Scoring posture — what actually drives the multipliers. */}
+            <div className="rounded-control border border-line-soft bg-surface/60 px-3 py-2.5">
+              <div className="flex flex-wrap items-center gap-2">
+                <span className="text-[11px] font-semibold uppercase tracking-wide text-ink-3">Scoring posture</span>
+                <span className={`rounded-full px-2 py-0.5 text-[11px] font-bold ${tone(regime).pill}`}>{regime}</span>
+                {regimeMismatch ? (
+                  <button
+                    onClick={() => consolidatedRegime && updateMarketData({ riskRegime: consolidatedRegime })}
+                    className="rounded-pill bg-accent px-2.5 py-0.5 text-[11px] font-semibold text-white hover:bg-accent-ink transition-colors"
+                    title={`Set the scoring posture to ${consolidatedRegime} to match the regime engine. This changes the multipliers applied to every stock score.`}
+                  >
+                    Engine suggests {consolidatedRegime} — Apply
+                  </button>
+                ) : (
+                  consolidatedRegime && <span className="text-[11px] text-ink-3">in sync with the engine</span>
+                )}
+              </div>
+              <p className="mt-1.5 text-sm text-ink-2">
+                {postureNote}{" "}
+                <a href="#regime-detail" className="font-semibold text-accent hover:underline whitespace-nowrap">Per-stock detail ↓</a>
+              </p>
+            </div>
           </div>
+            );
+          })()}
         </div>
 
         {/* ── Portfolio Overview ── */}
