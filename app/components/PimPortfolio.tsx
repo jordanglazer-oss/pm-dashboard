@@ -2149,10 +2149,10 @@ export function PimPortfolio({ groups }: Props) {
         </div>
       </div>
 
-      {/* PIM-only positioning note (mockup). */}
-      <div className="flex items-start gap-2.5 rounded-card border border-accent-border bg-accent-soft px-4 py-2.5 text-sm text-ink-2">
-        <span className="mt-0.5 shrink-0 rounded-md bg-accent px-1.5 py-0.5 text-[10px] font-bold text-white">PIM</span>
-        <span>Positioning is tracked for the <strong className="text-ink">PIM</strong> model only — the other model groups aren&apos;t position-tracked, so this view stays on PIM regardless of the header Model selector.</span>
+      {/* PIM-only positioning note — kept as a quiet one-liner, not a loud banner. */}
+      <div className="flex items-center gap-2 rounded-lg border border-line bg-surface-2 px-3 py-1.5 text-[12px] text-ink-3">
+        <span className="shrink-0 rounded bg-accent px-1.5 py-0.5 text-[10px] font-bold text-white">PIM</span>
+        <span>Positioning tracks the <strong className="text-ink-2">PIM</strong> model only — other groups aren&apos;t position-tracked.</span>
       </div>
 
       {/* Stat tiles (mockup): Active Model · Sleeve Drift · Last Rebalanced · Rebalance */}

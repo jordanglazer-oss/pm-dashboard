@@ -22,10 +22,11 @@ export default function PortfolioPage() {
         <div id="xray" className="scroll-mt-24">
           <PortfolioXray />
         </div>
-        <div className="mt-6">
+        {/* Thesis watch + Decision journal sit side-by-side — both are compact
+            collapsibles, so one row instead of two keeps the page from feeling
+            stacked/cluttered above the positioning tables. */}
+        <div className="mt-6 grid items-start gap-4 lg:grid-cols-2">
           <ThesisWatch />
-        </div>
-        <div className="mt-6">
           <DecisionJournal />
         </div>
         <PimPortfolio groups={pimModels.groups} />
