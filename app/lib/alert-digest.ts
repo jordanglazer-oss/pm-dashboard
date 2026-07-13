@@ -97,7 +97,13 @@ export async function runAlertDigest(): Promise<{ ran: boolean; total: number; e
     // Queued to the Gmail outbox (drained by the inbox Apps Script); id is
     // per-date so a day's digest is enqueued at most once.
     let emailed = false;
-    const alertTo = process.env.ALERT_EMAIL_TO;
+    // ALERT_EMAIL_TO may be a comma-separated list — GmailApp.sendEmail sends to
+    // all of them. Normalize spacing/empties so "a@x.com, b@y.com" works.
+    const alertTo = (process.env.ALERT_EMAIL_TO || "")
+      .split(",")
+      .map((s) => s.trim())
+      .filter(Boolean)
+      .join(",");
     if (counts.high > 0 && alertTo) {
       emailed = await enqueueMail({
         id: `digest-${today}`,

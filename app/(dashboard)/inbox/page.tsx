@@ -50,6 +50,32 @@ function fmtTime(iso: string): string {
   }
 }
 
+/** Whole days since an ISO timestamp; null when missing/unparseable. */
+function daysSince(iso: string | null | undefined): number | null {
+  if (!iso) return null;
+  const t = Date.parse(iso);
+  if (isNaN(t)) return null;
+  return Math.floor((Date.now() - t) / 86_400_000);
+}
+
+/** Compact upload date — "Jul 12" within this year, else "Jul '25". */
+function fmtReportDate(iso: string | null | undefined): string {
+  if (!iso) return "—";
+  const d = new Date(iso);
+  if (isNaN(d.getTime())) return "—";
+  const sameYear = d.getFullYear() === new Date().getFullYear();
+  return d.toLocaleDateString("en-US", sameYear ? { month: "short", day: "numeric" } : { month: "short", year: "2-digit" });
+}
+
+/** Staleness tint — analyst reports refresh ~quarterly, so >90d = worth a
+ *  check (amber), >180d = clearly stale (red). Missing = faint. */
+function staleClass(days: number | null): string {
+  if (days == null) return "text-ink-faint";
+  if (days > 180) return "text-neg";
+  if (days > 90) return "text-warn";
+  return "text-ink-2";
+}
+
 /**
  * Reusable collapsible-section header for the Inbox page. The whole header
  * row (including any side content like filter chips) becomes clickable to
@@ -439,6 +465,9 @@ export default function InboxPage() {
     bucket: "Portfolio" | "Watchlist";
     hasRbc: boolean;
     hasJpm: boolean;
+    /** When each source's PDF was last uploaded (ISO), null if none. */
+    rbcDate: string | null;
+    jpmDate: string | null;
     /** Raw BoostedAI rating (0-5). Lives on the Stock itself. */
     boostedAi: number | null;
     /** BoostedAI consensus recommendation. */
@@ -457,12 +486,17 @@ export default function InboxPage() {
   // Build lookup of canonical-ticker → which sources have reports.
   // Reports manifest itself is keyed by canonical form already, so we just
   // need to canonicalize the stock ticker before lookup.
-  const reportsByCanonical = new Map<string, { rbc: boolean; jpm: boolean }>();
+  // Store the last-uploaded timestamp per source (null when absent) so the
+  // coverage table can show recency, not just presence.
+  const reportsByCanonical = new Map<string, { rbc: string | null; jpm: string | null }>();
   if (reports) {
     for (const [key, tr] of Object.entries(reports)) {
-      const canon = canonicalTicker(key);
       if (!tr) continue;
-      reportsByCanonical.set(canon, { rbc: !!tr.rbc, jpm: !!tr.jpm });
+      const canon = canonicalTicker(key);
+      reportsByCanonical.set(canon, {
+        rbc: tr.rbc?.uploadedAt ?? null,
+        jpm: tr.jpm?.uploadedAt ?? null,
+      });
     }
   }
   const scoreableStocks = stocks.filter((s) => isScoreable(s) && (s.bucket === "Portfolio" || s.bucket === "Watchlist"));
@@ -476,6 +510,8 @@ export default function InboxPage() {
       bucket: s.bucket as "Portfolio" | "Watchlist",
       hasRbc: !!has?.rbc,
       hasJpm: !!has?.jpm,
+      rbcDate: has?.rbc ?? null,
+      jpmDate: has?.jpm ?? null,
       boostedAi: typeof s.boostedAi === "number" ? s.boostedAi : null,
       boostedAiConsensus: s.boostedAiConsensus ?? null,
       sia: typeof s.sia === "number" ? s.sia : null,
@@ -524,14 +560,20 @@ export default function InboxPage() {
       if (b == null) return -1;
       return a - b;
     };
+    // Compare upload dates ascending (oldest first), missing floats to the end.
+    const cmpDate = (a: string | null, b: string | null): number => {
+      const ta = a ? Date.parse(a) : NaN;
+      const tb = b ? Date.parse(b) : NaN;
+      return cmpNum(isNaN(ta) ? null : ta, isNaN(tb) ? null : tb);
+    };
     return [...filteredCoverage].sort((a, b) => {
       let cmp = 0;
       switch (covSortKey) {
         case "ticker": cmp = a.displayTicker.localeCompare(b.displayTicker); break;
         case "name": cmp = a.name.localeCompare(b.name); break;
         case "bucket": cmp = a.bucket.localeCompare(b.bucket); break;
-        case "rbc": cmp = (a.hasRbc ? 1 : 0) - (b.hasRbc ? 1 : 0); break;
-        case "jpm": cmp = (a.hasJpm ? 1 : 0) - (b.hasJpm ? 1 : 0); break;
+        case "rbc": cmp = cmpDate(a.rbcDate, b.rbcDate); break;
+        case "jpm": cmp = cmpDate(a.jpmDate, b.jpmDate); break;
         case "boostedAi": cmp = cmpNum(a.boostedAi, b.boostedAi); break;
         case "consensus": {
           // Sort by bullishness: Strong Sell (0) → Sell (1) → Hold (2) → Buy (3) → Strong Buy (4)
@@ -1367,8 +1409,8 @@ export default function InboxPage() {
                 <th className="px-3 py-2 text-left cursor-pointer select-none hover:text-ink" onClick={() => toggleCovSort("ticker")}>Ticker{covArrow("ticker")}</th>
                 <th className="px-3 py-2 text-left cursor-pointer select-none hover:text-ink" onClick={() => toggleCovSort("name")}>Name{covArrow("name")}</th>
                 <th className="px-3 py-2 text-left cursor-pointer select-none hover:text-ink" onClick={() => toggleCovSort("bucket")}>Bucket{covArrow("bucket")}</th>
-                <th className="px-3 py-2 text-center w-16 cursor-pointer select-none hover:text-ink" onClick={() => toggleCovSort("rbc")}>RBC{covArrow("rbc")}</th>
-                <th className="px-3 py-2 text-center w-16 cursor-pointer select-none hover:text-ink" onClick={() => toggleCovSort("jpm")}>JPM{covArrow("jpm")}</th>
+                <th className="px-3 py-2 text-center w-20 cursor-pointer select-none hover:text-ink" onClick={() => toggleCovSort("rbc")} title="Date the RBC PDF was last uploaded. Amber &gt;90d, red &gt;180d — a cue to fetch a newer report. Click to sort by recency (oldest first).">RBC{covArrow("rbc")}</th>
+                <th className="px-3 py-2 text-center w-20 cursor-pointer select-none hover:text-ink" onClick={() => toggleCovSort("jpm")} title="Date the JPM PDF was last uploaded. Amber &gt;90d, red &gt;180d — a cue to fetch a newer report. Click to sort by recency (oldest first).">JPM{covArrow("jpm")}</th>
                 <th className="px-3 py-2 text-right w-20 cursor-pointer select-none hover:text-ink" onClick={() => toggleCovSort("boostedAi")} title="Raw BoostedAI rating (0-5, decimals OK). Combined with Consensus to auto-derive the dashboard's aiRating (0-2).">Boosted.ai{covArrow("boostedAi")}</th>
                 <th className="px-3 py-2 text-left w-28 cursor-pointer select-none hover:text-ink" onClick={() => toggleCovSort("consensus")} title="BoostedAI consensus recommendation. Combined with the numeric rating to auto-derive aiRating (Strong Buy / Buy → 2, Hold → 1, Sell / Strong Sell → 0).">Consensus{covArrow("consensus")}</th>
                 <th className="px-3 py-2 text-right w-20 cursor-pointer select-none hover:text-ink" onClick={() => toggleCovSort("sia")} title="SIA SMAX score (0-10 integer). Maps to relativeStrength: 8-10 → 2, 6-7 → 1, 0-5 → 0.">SIA SMAX{covArrow("sia")}</th>
@@ -1402,15 +1444,19 @@ export default function InboxPage() {
                       }`}>{r.bucket}</span>
                     </td>
                     <td className="px-3 py-2 text-center">
-                      {r.hasRbc ? (
-                        <span className="inline-block text-pos font-bold text-base" title="RBC report ingested">✓</span>
+                      {r.rbcDate ? (
+                        <span className={`inline-block text-xs font-semibold ${staleClass(daysSince(r.rbcDate))}`} title={`RBC report last uploaded ${fmtTime(r.rbcDate)}${(daysSince(r.rbcDate) ?? 0) > 90 ? " — worth checking for a newer one" : ""}`}>
+                          {fmtReportDate(r.rbcDate)}
+                        </span>
                       ) : (
                         <span className="inline-block text-ink-faint text-base" title="No RBC report yet">—</span>
                       )}
                     </td>
                     <td className="px-3 py-2 text-center">
-                      {r.hasJpm ? (
-                        <span className="inline-block text-pos font-bold text-base" title="JPM report ingested">✓</span>
+                      {r.jpmDate ? (
+                        <span className={`inline-block text-xs font-semibold ${staleClass(daysSince(r.jpmDate))}`} title={`JPM report last uploaded ${fmtTime(r.jpmDate)}${(daysSince(r.jpmDate) ?? 0) > 90 ? " — worth checking for a newer one" : ""}`}>
+                          {fmtReportDate(r.jpmDate)}
+                        </span>
                       ) : (
                         <span className="inline-block text-ink-faint text-base" title="No JPM report yet">—</span>
                       )}
