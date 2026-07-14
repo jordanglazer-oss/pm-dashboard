@@ -3,6 +3,7 @@ import { createLogger } from "@/app/lib/logger";
 import { computeAlerts, alertCounts, type Alert } from "@/app/lib/alerts";
 import { loadAlertInputs } from "@/app/lib/alert-inputs";
 import { enqueueMail } from "@/app/lib/mail-outbox";
+import type { DataHealthReport } from "@/app/lib/data-health";
 
 /**
  * Daily alert digest (Phase 07) — the "when you're not looking" half. Run from
@@ -29,7 +30,12 @@ const CAT_LABEL: Record<string, string> = { thesis: "THESIS", regime: "REGIME", 
  * supporting numbers, and the concrete next step — so the email stands on its
  * own without opening the dashboard.
  */
-function renderDigestText(alerts: Alert[], counts: ReturnType<typeof alertCounts>, date: string): string {
+function renderDigestText(
+  alerts: Alert[],
+  counts: ReturnType<typeof alertCounts>,
+  date: string,
+  dataHealth?: DataHealthReport
+): string {
   const lines: string[] = [
     `NEEDS YOUR ATTENTION — ${date}`,
     `${counts.high} high · ${counts.medium} to watch`,
@@ -52,13 +58,23 @@ function renderDigestText(alerts: Alert[], counts: ReturnType<typeof alertCounts
   section("HIGH PRIORITY", alerts.filter((a) => a.priority === "high"));
   section("TO WATCH", alerts.filter((a) => a.priority === "medium"));
 
+  // Data health — one line when everything is fresh, problems-first when not.
+  // This is what makes the numbers above trustworthy without checking them.
+  if (dataHealth) {
+    lines.push("DATA HEALTH", "─".repeat(52));
+    for (const l of dataHealth.lines) lines.push(`  ${l}`);
+    lines.push("");
+  }
+
   lines.push("─".repeat(52));
   lines.push("Full detail (and the Opportunities half) in the dashboard:");
   lines.push("https://pm-dashboard-7rr9.vercel.app/");
   return lines.join("\n");
 }
 
-export async function runAlertDigest(): Promise<{ ran: boolean; total: number; emailed: boolean; error?: string }> {
+export async function runAlertDigest(opts?: {
+  dataHealth?: DataHealthReport;
+}): Promise<{ ran: boolean; total: number; emailed: boolean; error?: string }> {
   try {
     const redis = await getRedis();
     const { thesis, transition, risk, context } = await loadAlertInputs();
@@ -85,22 +101,28 @@ export async function runAlertDigest(): Promise<{ ran: boolean; total: number; e
       await redis.set(LOG_KEY, JSON.stringify(store));
     }
 
-    // Email only when there's something HIGH and a recipient is configured.
-    // ALERT_EMAIL_TO may be a comma-separated list — GmailApp sends to all.
-    // Queued to the Gmail outbox; id is per-date so a day's digest is enqueued
-    // at most once.
+    // Email when there's something HIGH — or when the data-health sentinel
+    // found a problem (a broken feed must surface even on an otherwise calm
+    // day, or it stays silently broken). ALERT_EMAIL_TO may be a
+    // comma-separated list — GmailApp sends to all. Queued to the Gmail
+    // outbox; id is per-date so a day's digest is enqueued at most once.
     let emailed = false;
+    const healthProblems = opts?.dataHealth ? opts.dataHealth.problemCount : 0;
     const alertTo = (process.env.ALERT_EMAIL_TO || "")
       .split(",")
       .map((s) => s.trim())
       .filter(Boolean)
       .join(",");
-    if (counts.high > 0 && alertTo) {
+    if ((counts.high > 0 || healthProblems > 0) && alertTo) {
+      const subject =
+        counts.high > 0
+          ? `PM alerts — ${counts.high} need attention (${today})`
+          : `PM data health — ${healthProblems} feed issue${healthProblems === 1 ? "" : "s"} (${today})`;
       emailed = await enqueueMail({
         id: `digest-${today}`,
         to: alertTo,
-        subject: `PM alerts — ${counts.high} need attention (${today})`,
-        text: renderDigestText(alerts, counts, today),
+        subject,
+        text: renderDigestText(alerts, counts, today, opts?.dataHealth),
         queuedAt: new Date().toISOString(),
       });
     }

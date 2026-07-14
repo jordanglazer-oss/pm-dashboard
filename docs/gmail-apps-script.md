@@ -75,6 +75,29 @@ Recipient defaults to `jordan.glazer@rbc.com` (override with the Vercel env var
 function processAll() {
   try { processInbox(); } catch (e) { Logger.log("processInbox EX " + e); }
   try { processOutbox(); } catch (e) { Logger.log("processOutbox EX " + e); }
+  try { pingIntradayMonitor(); } catch (e) { Logger.log("pingIntradayMonitor EX " + e); }
+}
+
+/**
+ * Intraday monitor ping — the 5-minute trigger doubles as a free hourly cron.
+ * Only actually calls the dashboard in the first ~5 minutes of each hour (so
+ * ~once/hour); the endpoint itself gates to US market hours and returns fast
+ * otherwise. Trips (200-DMA breaks, big drops, VIX spikes) are emailed via the
+ * same outbox this script already drains.
+ */
+function pingIntradayMonitor() {
+  if (new Date().getMinutes() >= 5) return; // hourly gate on the 5-min trigger
+  const props = PropertiesService.getScriptProperties();
+  const base = props.getProperty("WEBHOOK_URL"); // .../api/inbox/ingest
+  const secret = props.getProperty("INBOX_SECRET");
+  if (!base || !secret) return;
+  const url = base.replace(/\/api\/inbox\/ingest\/?$/, "/api/cron/intraday-monitor");
+  const res = UrlFetchApp.fetch(url, {
+    method: "get",
+    headers: { Authorization: "Bearer " + secret },
+    muteHttpExceptions: true,
+  });
+  Logger.log("intraday-monitor " + res.getResponseCode() + " " + res.getContentText().slice(0, 200));
 }
 
 /**

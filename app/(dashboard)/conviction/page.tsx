@@ -430,6 +430,17 @@ export default function ConvictionPage() {
                         </span>
                       ) : null;
                     })()}
+                    {/* Anti-crowding sourcing flag: rising estimates + almost no
+                        research attention. Zero score impact — a place to look
+                        BEFORE the consensus points fill in. */}
+                    {e.unloved && (
+                      <span
+                        className="inline-flex items-center rounded px-1 py-0.5 text-[9px] font-bold uppercase tracking-wide bg-violet-soft text-violet border border-violet/30"
+                        title="Unloved improvement — FY+1 estimates being revised UP but the name sits on ≤1 research list and isn't held. Improvement without attention: worth a look before the crowd arrives."
+                      >
+                        🔎 Unloved
+                      </span>
+                    )}
                   </div>
                 </td>
                 <td className="px-3 py-2 text-ink-2 truncate max-w-[200px]" title={e.name || e.ticker}>{e.name || <span className="text-ink-faint">—</span>}</td>

@@ -35,6 +35,10 @@ import type { TechnicalIndicators, RiskAlert } from "@/app/lib/types";
 
 const log = createLogger("TechnicalsRefresh");
 
+/** Tiny derived freshness marker (like pm:estimates-refresh-status) so the
+ *  data-health sentinel can verify this ran. Safe to nuke. */
+export const TECHNICALS_STATUS_KEY = "pm:technicals-refresh-status";
+
 const YAHOO_BASE = "https://query2.finance.yahoo.com";
 const CONCURRENCY = 8;
 
@@ -126,6 +130,18 @@ async function inChunksUntil<T>(
  */
 export async function refreshTechnicals(opts?: { budgetMs?: number }): Promise<TechnicalsRefreshStatus> {
   const deadline = Date.now() + (opts?.budgetMs ?? DEFAULT_BUDGET_MS);
+  const status = await refreshTechnicalsInner(deadline);
+  // Freshness marker for the data-health sentinel — best-effort.
+  try {
+    const redis = await getRedis();
+    await redis.set(TECHNICALS_STATUS_KEY, JSON.stringify({ lastRunAt: new Date().toISOString(), ...status }));
+  } catch {
+    /* marker only */
+  }
+  return status;
+}
+
+async function refreshTechnicalsInner(deadline: number): Promise<TechnicalsRefreshStatus> {
   try {
     const redis = await getRedis();
 

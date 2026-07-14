@@ -47,12 +47,36 @@ export type StockContext = {
   revUp?: number | null;
   revDown?: number | null;
   riskLevel?: string | null;
+  /** Next earnings date (YYYY-MM-DD) when known. */
+  earningsDate?: string | null;
 };
+
+/** Days until the given YYYY-MM-DD (0 = today); null when absent/past/unparseable
+ *  or beyond the window we care about. */
+export function daysToEarnings(earningsDate: string | null | undefined, windowDays = 7): number | null {
+  if (!earningsDate) return null;
+  const t = Date.parse(`${earningsDate}T00:00:00Z`);
+  if (isNaN(t)) return null;
+  const today = new Date();
+  const todayUtc = Date.UTC(today.getUTCFullYear(), today.getUTCMonth(), today.getUTCDate());
+  const days = Math.round((t - todayUtc) / 86_400_000);
+  return days >= 0 && days <= windowDays ? days : null;
+}
+
+function fmtEarnings(earningsDate: string, days: number): string {
+  const d = new Date(`${earningsDate}T00:00:00Z`);
+  const label = d.toLocaleDateString("en-US", { month: "short", day: "numeric", timeZone: "UTC" });
+  return days === 0 ? `Reports TODAY (${label})` : days === 1 ? `Reports TOMORROW (${label})` : `Reports ${label} (in ${days}d)`;
+}
 
 /** Build the supporting-metric lines for a ticker. Only includes what we have. */
 function metricsFor(ctx: StockContext | undefined): string[] {
   if (!ctx) return [];
   const out: string[] = [];
+  // Imminent earnings lead the metrics — it's the item that changes what you
+  // do about the alert this week.
+  const dte = daysToEarnings(ctx.earningsDate);
+  if (dte != null && ctx.earningsDate) out.unshift(fmtEarnings(ctx.earningsDate, dte));
   if (typeof ctx.composite === "number") {
     const d = ctx.scoreDelta;
     out.push(
@@ -116,19 +140,27 @@ export function computeAlerts(input: {
     const negDrivers = (h.drivers ?? []).filter((d) => d.direction === "negative");
     // e.g. "composite −8.2 over ~45d · net FY+1 EPS revisions −3 · WARNING risk alert"
     const detail = negDrivers.length ? negDrivers.map((d) => d.detail).join(" · ") : h.summary || "A tracked signal is deteriorating.";
+    // Catalyst escalation: a deteriorating name REPORTING within 5 days is a
+    // this-week decision, not a watch item — an eroding thesis into a print is
+    // exactly when you want to have already decided.
+    const dte = daysToEarnings(ctx?.earningsDate, 5);
+    const baseAction =
+      h.verdict === "broken"
+        ? "Review the position — the reason you own it is no longer supported by the tracked signals. Decide: re-underwrite, trim, or exit."
+        : "Watch closely. If another driver turns (estimates, technicals, score), this becomes a broken thesis — pre-decide your trim level now.";
     alerts.push({
       id: `thesis-${tk}`,
-      priority: h.verdict === "broken" ? "high" : "medium",
+      priority: h.verdict === "broken" || dte != null ? "high" : "medium",
       category: "thesis",
       ticker: tk,
       name: ctx?.name,
-      title: `${tk} — thesis ${h.verdict}`,
+      title: `${tk} — thesis ${h.verdict}${dte != null ? ` · reports in ${dte}d` : ""}`,
       detail,
       metrics: metricsFor(ctx),
       action:
-        h.verdict === "broken"
-          ? "Review the position — the reason you own it is no longer supported by the tracked signals. Decide: re-underwrite, trim, or exit."
-          : "Watch closely. If another driver turns (estimates, technicals, score), this becomes a broken thesis — pre-decide your trim level now.",
+        dte != null
+          ? `Earnings in ${dte} day${dte === 1 ? "" : "s"} with a ${h.verdict} thesis — decide BEFORE the print (hold through, trim into it, or hedge), not after. ${baseAction}`
+          : baseAction,
     });
   }
 
@@ -194,6 +226,9 @@ export function computeAlerts(input: {
       ...(specifics.length ? [`Signals in danger: ${specifics.length}`] : []),
       ...metricsFor(ctx),
     ];
+    // Catalyst escalation mirrors the thesis lane: a technical warning INTO a
+    // print is a this-week decision (weak chart + event risk compound).
+    const dteT = daysToEarnings(ctx?.earningsDate, 5);
     if (r.riskLevel === "critical") {
       alerts.push({
         id: `tech-${tk}`,
@@ -201,23 +236,27 @@ export function computeAlerts(input: {
         category: "technical",
         ticker: tk,
         name: ctx?.name,
-        title: `${tk} — breaking down technically`,
+        title: `${tk} — breaking down technically${dteT != null ? ` · reports in ${dteT}d` : ""}`,
         detail,
         metrics: techMetrics,
         action:
+          (dteT != null ? `Earnings in ${dteT} day${dteT === 1 ? "" : "s"} on a broken chart — size the event risk before the print. ` : "") +
           "This is a TECHNICAL break, not a thesis call — check the chart and your stop. If the fundamentals are still intact, decide whether you ride it out or reduce; if the thesis is also eroding, treat it as a sell signal.",
       });
     } else if (r.riskLevel === "warning") {
       alerts.push({
         id: `tech-${tk}`,
-        priority: "medium",
+        priority: dteT != null ? "high" : "medium",
         category: "technical",
         ticker: tk,
         name: ctx?.name,
-        title: `${tk} — technical warning (early)`,
+        title: `${tk} — technical warning (early)${dteT != null ? ` · reports in ${dteT}d` : ""}`,
         detail,
         metrics: techMetrics,
-        action: "Early warning only — no action required yet. Monitor; it becomes actionable if it escalates to critical or the thesis turns.",
+        action:
+          dteT != null
+            ? `Earnings in ${dteT} day${dteT === 1 ? "" : "s"} on a weakening chart — decide your exposure to the print now (hold, trim, or hedge); the warning alone wouldn't be actionable, the date makes it so.`
+            : "Early warning only — no action required yet. Monitor; it becomes actionable if it escalates to critical or the thesis turns.",
       });
     }
   }

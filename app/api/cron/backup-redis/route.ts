@@ -9,6 +9,7 @@ import { refreshFactsetEstimates } from "@/app/lib/estimates-refresh";
 import { refreshMarketRegime } from "@/app/lib/market-regime-refresh";
 import { refreshTechnicals } from "@/app/lib/technicals-refresh";
 import { rebuildThesisHealth } from "@/app/lib/thesis-health-refresh";
+import { computeDataHealth, type DataHealthReport } from "@/app/lib/data-health";
 import { runAlertDigest } from "@/app/lib/alert-digest";
 
 // This one nightly slot runs, IN ORDER:
@@ -106,6 +107,9 @@ const EXCLUDE_PATTERNS = [
   /^pm:market-regime$/,
   /^pm:catalyst-calendar$/,  // Phase 01 cache (rebuilds from pm:stocks + FRED)
   /^pm:thesis-health$/,      // Phase 03 cache (rebuilds from score-history + snapshots)
+  /^pm:technicals-refresh-status$/, // nightly freshness marker (rewritten each run)
+  /^pm:data-health$/,        // sentinel report (recomputed nightly)
+  /^pm:intraday-monitor$/,   // per-day dedupe marker (resets daily)
   /-cache$/,                 // *-analysis-cache, *-scrape-cache (hash-gated)
   /-scrape-cache:/,
   // ── Derived (recomputed from daily values + models) ──
@@ -316,9 +320,20 @@ export async function GET(req: NextRequest) {
     //        just refreshed above, append a snapshot to the append-only
     //        pm:alert-log, and email it IF a recipient is configured AND there
     //        are high-priority alerts. Best-effort: must not fail the backup. ──
+    // Data-health sentinel — verifies the whole refresh chain above actually
+    // landed (fresh markers, sane coverage, outbox draining) and rides along in
+    // the digest email. A feed problem forces an email even on a calm day.
+    let dataHealth: DataHealthReport | undefined;
+    try {
+      dataHealth = await computeDataHealth();
+    } catch (e) {
+      console.error("[backup-redis] data-health check failed (digest still runs):", e);
+      dataHealth = undefined;
+    }
+
     let alertDigest: { ran: boolean; total: number; emailed: boolean; error?: string };
     try {
-      alertDigest = await runAlertDigest();
+      alertDigest = await runAlertDigest({ dataHealth });
     } catch (e) {
       const msg = e instanceof Error ? e.message : String(e);
       console.error("[backup-redis] Alert digest failed (backup still ok):", msg);
@@ -364,6 +379,7 @@ export async function GET(req: NextRequest) {
       regimeRefresh,
       technicalsRefresh,
       thesisRefresh,
+      dataHealth: dataHealth ? { ok: dataHealth.ok, problems: dataHealth.problemCount } : null,
       alertDigest,
       invariantCheck: invariantSummary,
       elapsedMs: Date.now() - startedAt,
