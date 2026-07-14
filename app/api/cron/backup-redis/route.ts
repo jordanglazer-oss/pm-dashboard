@@ -6,7 +6,16 @@ import { writeBackupBlob, pruneBackupBlobs } from "@/app/lib/backup-store";
 import { pruneStashes } from "@/app/lib/stash-prune";
 import { captureLiveHedgingSnapshot } from "@/app/lib/hedging";
 import { refreshFactsetEstimates } from "@/app/lib/estimates-refresh";
+import { refreshMarketRegime } from "@/app/lib/market-regime-refresh";
+import { rebuildThesisHealth } from "@/app/lib/thesis-health-refresh";
 import { runAlertDigest } from "@/app/lib/alert-digest";
+
+// This one nightly slot now does: backup → prune → hedging snapshot → FactSet
+// estimates → market-regime rebuild → thesis-health rebuild → alert digest.
+// The two rebuilds add Yahoo/FRED round-trips, so give the function headroom
+// (Vercel default is 10s). Every added step is best-effort and independently
+// caught, so a timeout in one never loses the backup.
+export const maxDuration = 60;
 
 // Dead pre-operation rollback stashes older than this are auto-purged each
 // nightly run so Redis self-maintains and never creeps back toward OOM.
@@ -247,12 +256,43 @@ export async function GET(req: NextRequest) {
       estimatesRefresh = { ran: false, error: msg };
     }
 
-    // ── 4d. Proactive alert digest (Phase 07) ────────────────────────
-    //        Compute today's "needs your attention" digest from cached
-    //        signals, append a snapshot to the append-only pm:alert-log, and
-    //        email it IF email is configured AND there are high-priority
-    //        alerts. Best-effort: must not fail the backup. Email is a no-op
-    //        until RESEND_API_KEY + ALERT_EMAIL_TO/FROM are set. ──
+    // ── 4d. Rebuild the alert digest's INPUTS before computing it ────
+    //        pm:market-regime (30-min cache) and pm:thesis-health (6h cache)
+    //        only ever refreshed on a page load — at 06:00 UTC nobody is on the
+    //        dashboard, so the digest was emailing alerts derived from a
+    //        snapshot that could be a day old. Rebuild both here, in order,
+    //        AFTER the FactSet estimates refresh (4c) — thesis-health consumes
+    //        those revisions, so estimates → regime → thesis → digest.
+    //        Both write ONLY regenerable cache keys. Best-effort: a Yahoo/FRED
+    //        hiccup must not fail the backup OR block the digest (which then
+    //        just runs on the previous snapshot, as it did before). ──
+    let regimeRefresh: { ran: true; label: string; computedAt: string } | { ran: false; error: string };
+    try {
+      const r = await refreshMarketRegime();
+      regimeRefresh = { ran: true, label: r.composite.label, computedAt: r.computedAt };
+    } catch (e) {
+      const msg = e instanceof Error ? e.message : String(e);
+      console.error("[backup-redis] market-regime refresh failed (digest will use the cached snapshot):", msg);
+      regimeRefresh = { ran: false, error: msg };
+    }
+
+    let thesisRefresh:
+      | { ran: true; broken: number; eroding: number; intact: number }
+      | { ran: false; error: string };
+    try {
+      const t = await rebuildThesisHealth();
+      thesisRefresh = { ran: true, ...t.counts };
+    } catch (e) {
+      const msg = e instanceof Error ? e.message : String(e);
+      console.error("[backup-redis] thesis-health rebuild failed (digest will use the cached verdicts):", msg);
+      thesisRefresh = { ran: false, error: msg };
+    }
+
+    // ── 4e. Proactive alert digest (Phase 07) ────────────────────────
+    //        Compute today's "needs your attention" digest from the signals
+    //        just refreshed above, append a snapshot to the append-only
+    //        pm:alert-log, and email it IF a recipient is configured AND there
+    //        are high-priority alerts. Best-effort: must not fail the backup. ──
     let alertDigest: { ran: boolean; total: number; emailed: boolean; error?: string };
     try {
       alertDigest = await runAlertDigest();
@@ -298,6 +338,8 @@ export async function GET(req: NextRequest) {
       stashesPurged,
       hedgingSnapshot,
       estimatesRefresh,
+      regimeRefresh,
+      thesisRefresh,
       alertDigest,
       invariantCheck: invariantSummary,
       elapsedMs: Date.now() - startedAt,

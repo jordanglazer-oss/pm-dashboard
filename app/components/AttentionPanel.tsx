@@ -62,7 +62,7 @@ export function AttentionPanel() {
       }
     >
       {alerts.length > 0 && (
-      <ul className="flex flex-col gap-1.5">
+      <ul className="flex flex-col gap-3">
         {alerts.map((a) => (
           <li key={a.id} className="flex items-start gap-2.5 text-[13px]">
             <span
@@ -72,15 +72,38 @@ export function AttentionPanel() {
             <span className="shrink-0 rounded bg-surface-2 px-1.5 py-0.5 text-[10px] font-semibold uppercase tracking-wide text-ink-3">
               {CAT_LABEL[a.category] ?? a.category}
             </span>
-            <span className="min-w-0">
-              {a.ticker ? (
-                <Link href={`/stock/${a.ticker.toLowerCase()}`} className="font-semibold text-ink hover:underline">
-                  {a.title}
-                </Link>
-              ) : (
-                <span className="font-semibold text-ink">{a.title}</span>
+            <span className="min-w-0 flex-1">
+              <span>
+                {a.ticker ? (
+                  <Link href={`/stock/${a.ticker.toLowerCase()}`} className="font-semibold text-ink hover:underline">
+                    {a.title}
+                  </Link>
+                ) : (
+                  <span className="font-semibold text-ink">{a.title}</span>
+                )}
+                {a.name && <span className="text-ink-3"> · {a.name}</span>}
+                <span className="text-ink-3"> — {a.detail}</span>
+              </span>
+              {/* Supporting numbers behind the call — so it isn't a black box. */}
+              {a.metrics && a.metrics.length > 0 && (
+                <span className="mt-1 flex flex-wrap gap-1.5">
+                  {a.metrics.map((m, i) => (
+                    <span
+                      key={i}
+                      className="rounded border border-line-soft bg-surface-2 px-1.5 py-0.5 text-[11px] text-ink-2"
+                    >
+                      {m}
+                    </span>
+                  ))}
+                </span>
               )}
-              <span className="text-ink-3"> — {a.detail}</span>
+              {/* The so-what. */}
+              {a.action && (
+                <span className="mt-1 block text-[12px] leading-5 text-ink-2">
+                  <span className="font-semibold text-ink-3">→ </span>
+                  {a.action}
+                </span>
+              )}
             </span>
           </li>
         ))}
@@ -124,6 +147,11 @@ export function AttentionPanel() {
                   <Link href={`/stock/${o.ticker.toLowerCase()}`} className="font-semibold text-ink hover:underline">
                     {o.ticker}
                   </Link>
+                  {o.name && <span className="text-ink-3"> · {o.name}</span>}
+                  {typeof o.composite === "number" && (
+                    <span className="text-ink-3"> · composite {o.composite.toFixed(1)}</span>
+                  )}
+                  {o.sector && <span className="text-ink-3"> · {o.sector}</span>}
                   <span className="text-ink-3"> — {o.signals.join(" · ")}</span>
                 </span>
               </li>
