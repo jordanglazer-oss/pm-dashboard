@@ -110,6 +110,7 @@ const EXCLUDE_PATTERNS = [
   /^pm:technicals-refresh-status$/, // nightly freshness marker (rewritten each run)
   /^pm:data-health$/,        // sentinel report (recomputed nightly)
   /^pm:intraday-monitor$/,   // per-day dedupe marker (resets daily)
+  /^pm:rescore-state$/,      // auto-rescore baselines/log (re-seeds safely; no rescore burst on loss)
   /-cache$/,                 // *-analysis-cache, *-scrape-cache (hash-gated)
   /-scrape-cache:/,
   // ── Derived (recomputed from daily values + models) ──

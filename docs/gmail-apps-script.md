@@ -76,6 +76,28 @@ function processAll() {
   try { processInbox(); } catch (e) { Logger.log("processInbox EX " + e); }
   try { processOutbox(); } catch (e) { Logger.log("processOutbox EX " + e); }
   try { pingIntradayMonitor(); } catch (e) { Logger.log("pingIntradayMonitor EX " + e); }
+  try { pingAutoRescore(); } catch (e) { Logger.log("pingAutoRescore EX " + e); }
+}
+
+/**
+ * Event-driven auto-rescore pacer. Pings on EVERY 5-minute run — the endpoint
+ * itself gates to the 19:00–23:00 ET window, processes at most ONE rescore per
+ * ping (earnings +48h → full; revision swing ≥3 since last rescore → partial
+ * fundamentals), and enforces a 5/day cap + 7-day per-name cooldown. Outside
+ * the window or with nothing queued it returns instantly.
+ */
+function pingAutoRescore() {
+  const props = PropertiesService.getScriptProperties();
+  const base = props.getProperty("WEBHOOK_URL"); // .../api/inbox/ingest
+  const secret = props.getProperty("INBOX_SECRET");
+  if (!base || !secret) return;
+  const url = base.replace(/\/api\/inbox\/ingest\/?$/, "/api/cron/auto-rescore");
+  const res = UrlFetchApp.fetch(url, {
+    method: "get",
+    headers: { Authorization: "Bearer " + secret },
+    muteHttpExceptions: true,
+  });
+  Logger.log("auto-rescore " + res.getResponseCode() + " " + res.getContentText().slice(0, 200));
 }
 
 /**

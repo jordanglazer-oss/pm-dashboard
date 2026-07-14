@@ -18,6 +18,7 @@ import { canonicalTicker, tickersEqual } from "@/app/lib/ticker";
 import { blobConfigured, putDataUrl, getDataUrl, deleteBlob } from "@/app/lib/blob-store";
 import { appendInboxEvent } from "@/app/lib/inbox-log";
 import { classifySubject, dispatchInbox } from "@/app/lib/inbox-dispatch";
+import { markReportsIngested } from "@/app/lib/auto-rescore";
 
 /**
  * Webhook target for the Gmail Apps Script. The script POSTs one PDF per
@@ -321,6 +322,12 @@ export async function POST(request: NextRequest) {
     await appendInboxEvent({ status: "error", subject, sender, ticker, source, filename, size: dataUrl.length, hash: extractRes.hash, message: `Persist failed: ${msg}` });
     return NextResponse.json({ error: msg }, { status: 500 });
   }
+
+  // Reports landing IS the post-earnings signal: mark the ticker so the
+  // evening auto-rescore engine runs a FULL rescore with the fresh reports in
+  // context (15-min settle covers the sibling attachment on the same email).
+  // Best-effort — a marker failure must not fail the ingest.
+  await markReportsIngested(ticker);
 
   await appendInboxEvent({
     status: "success",

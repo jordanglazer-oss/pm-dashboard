@@ -30,11 +30,14 @@ const CAT_LABEL: Record<string, string> = { thesis: "THESIS", regime: "REGIME", 
  * supporting numbers, and the concrete next step — so the email stands on its
  * own without opening the dashboard.
  */
+type RecentRescore = { at: string; ticker: string; trigger: string; mode: "full" | "partial"; before: number | null; after: number | null };
+
 function renderDigestText(
   alerts: Alert[],
   counts: ReturnType<typeof alertCounts>,
   date: string,
-  dataHealth?: DataHealthReport
+  dataHealth?: DataHealthReport,
+  rescores: RecentRescore[] = []
 ): string {
   const lines: string[] = [
     `NEEDS YOUR ATTENTION — ${date}`,
@@ -57,6 +60,20 @@ function renderDigestText(
 
   section("HIGH PRIORITY", alerts.filter((a) => a.priority === "high"));
   section("TO WATCH", alerts.filter((a) => a.priority === "medium"));
+
+  // Overnight auto-rescores — every score the event engine moved since the
+  // last digest, with the trigger, so a changed ranking is never a mystery.
+  if (rescores.length > 0) {
+    lines.push("OVERNIGHT RESCORES", "─".repeat(52));
+    for (const r of rescores) {
+      const delta =
+        r.before != null && r.after != null
+          ? ` ${r.before.toFixed(1)} → ${r.after.toFixed(1)}`
+          : "";
+      lines.push(`  ${r.ticker} (${r.mode}):${delta} — ${r.trigger}`);
+    }
+    lines.push("");
+  }
 
   // Data health — one line when everything is fresh, problems-first when not.
   // This is what makes the numbers above trustworthy without checking them.
@@ -113,16 +130,29 @@ export async function runAlertDigest(opts?: {
       .map((s) => s.trim())
       .filter(Boolean)
       .join(",");
-    if ((counts.high > 0 || healthProblems > 0) && alertTo) {
+    // Overnight auto-rescores (last 36h) ride along in the email.
+    let rescores: RecentRescore[] = [];
+    try {
+      const rsRaw = await redis.get("pm:rescore-state");
+      const rs = rsRaw ? (JSON.parse(rsRaw) as { recent?: RecentRescore[] }) : null;
+      const cutoff = Date.now() - 36 * 3_600_000;
+      rescores = (rs?.recent ?? []).filter((r) => Date.parse(r.at) > cutoff);
+    } catch {
+      rescores = [];
+    }
+
+    if ((counts.high > 0 || healthProblems > 0 || rescores.length > 0) && alertTo) {
       const subject =
         counts.high > 0
           ? `PM alerts — ${counts.high} need attention (${today})`
+          : rescores.length > 0
+          ? `PM digest — ${rescores.length} auto-rescore${rescores.length === 1 ? "" : "s"} overnight (${today})`
           : `PM data health — ${healthProblems} feed issue${healthProblems === 1 ? "" : "s"} (${today})`;
       emailed = await enqueueMail({
         id: `digest-${today}`,
         to: alertTo,
         subject,
-        text: renderDigestText(alerts, counts, today, opts?.dataHealth),
+        text: renderDigestText(alerts, counts, today, opts?.dataHealth, rescores),
         queuedAt: new Date().toISOString(),
       });
     }
