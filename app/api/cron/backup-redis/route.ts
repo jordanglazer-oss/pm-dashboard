@@ -7,14 +7,21 @@ import { pruneStashes } from "@/app/lib/stash-prune";
 import { captureLiveHedgingSnapshot } from "@/app/lib/hedging";
 import { refreshFactsetEstimates } from "@/app/lib/estimates-refresh";
 import { refreshMarketRegime } from "@/app/lib/market-regime-refresh";
+import { refreshTechnicals } from "@/app/lib/technicals-refresh";
 import { rebuildThesisHealth } from "@/app/lib/thesis-health-refresh";
 import { runAlertDigest } from "@/app/lib/alert-digest";
 
-// This one nightly slot now does: backup → prune → hedging snapshot → FactSet
-// estimates → market-regime rebuild → thesis-health rebuild → alert digest.
-// The two rebuilds add Yahoo/FRED round-trips, so give the function headroom
-// (Vercel default is 10s). Every added step is best-effort and independently
-// caught, so a timeout in one never loses the backup.
+// This one nightly slot runs, IN ORDER:
+//   backup → prune → hedging snapshot → FactSet estimates → market regime →
+//   technicals/riskAlert → thesis health → alert digest → invariants
+// The order is a dependency chain, not a preference: thesis health consumes
+// both the fresh estimate revisions AND the fresh riskAlert, and the digest
+// consumes all of it. Refreshing them in any other order would email alerts
+// derived from a prior day's inputs.
+//
+// Every added step is best-effort and independently caught, and ALL of them run
+// AFTER the backup is already written to Blob — so a Yahoo/FRED hiccup or a
+// timeout can degrade a refresh but can never cost the backup.
 export const maxDuration = 60;
 
 // Dead pre-operation rollback stashes older than this are auto-purged each
@@ -276,6 +283,22 @@ export async function GET(req: NextRequest) {
       regimeRefresh = { ran: false, error: msg };
     }
 
+    // Technicals + riskAlert from fresh price history. Must run BEFORE
+    // thesis-health (which consumes riskAlert) and before the digest (whose
+    // TECHNICAL alerts key off riskAlert). This is the only step that writes
+    // pm:stocks — see app/lib/technicals-refresh.ts for the safety design
+    // (targeted-field merge into a RE-READ of the array, abort-on-degraded,
+    // per-ticker skip on failure). The nightly Blob backup above is already a
+    // fresh recovery point for pm:stocks, minutes old.
+    let technicalsRefresh: Awaited<ReturnType<typeof refreshTechnicals>>;
+    try {
+      technicalsRefresh = await refreshTechnicals();
+    } catch (e) {
+      const msg = e instanceof Error ? e.message : String(e);
+      console.error("[backup-redis] technicals refresh failed (digest will use the cached riskAlerts):", msg);
+      technicalsRefresh = { ran: false, considered: 0, updated: 0, failed: 0, error: msg };
+    }
+
     let thesisRefresh:
       | { ran: true; broken: number; eroding: number; intact: number }
       | { ran: false; error: string };
@@ -339,6 +362,7 @@ export async function GET(req: NextRequest) {
       hedgingSnapshot,
       estimatesRefresh,
       regimeRefresh,
+      technicalsRefresh,
       thesisRefresh,
       alertDigest,
       invariantCheck: invariantSummary,
