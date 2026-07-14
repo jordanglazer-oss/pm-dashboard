@@ -141,9 +141,11 @@ export async function autoRescoreStep(): Promise<{
   state.tickers ??= {};
   const marketData = { ...defaultMarketData, ...parse<Partial<MarketData>>(marketRaw, {}) } as MarketData;
 
-  // Daily budget.
+  // Daily budget — reset on date change. NOTE: the cap is checked AFTER the
+  // earnings-email pass below, deliberately: a report REQUEST is an email, not
+  // a rescore, and must never be starved by the rescore budget (that would
+  // silently break the loop closer on a busy night).
   if (!state.day || state.day.date !== today) state.day = { date: today, count: 0 };
-  if (state.day.count >= DAILY_CAP) return { status: "cap-reached" };
 
   const netFor = (tk: string): number | null => {
     const fs = snaps[tk]?.factset;
@@ -188,6 +190,12 @@ export async function autoRescoreStep(): Promise<{
     state.earningsEmailed[tk] = ed;
     stateDirty = true;
     if (queued) log.info("earnings report-request queued:", tk, ed);
+  }
+
+  // Rescore budget — checked HERE, after the earnings emails are out.
+  if (state.day.count >= DAILY_CAP) {
+    if (stateDirty) await redis.set(RESCORE_STATE_KEY, JSON.stringify(state));
+    return { status: "cap-reached" };
   }
 
   // ── Build rescore candidates + seed baselines for first-seen tickers ──
