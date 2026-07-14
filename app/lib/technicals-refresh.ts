@@ -63,6 +63,9 @@ export type TechnicalsRefreshStatus = {
   /** How many tickers we actually got to before the time budget ran out. */
   attempted?: number;
   updated: number;
+  /** How many earnings dates Yahoo returned (0 with no crumb — existing dates
+   *  are preserved, never blanked). Surfaced to the data-health sentinel. */
+  earningsUpdated?: number;
   failed: number;
   /** True when the budget cut the run short — the rest keep yesterday's values
    *  and get picked up on the next run (or a manual Refresh). */
@@ -74,6 +77,49 @@ export type TechnicalsRefreshStatus = {
  *  that follow. Technicals must NEVER be the reason the morning email doesn't
  *  go out — a partial technicals refresh is strictly better than no email. */
 const DEFAULT_BUDGET_MS = 20_000;
+
+/** One crumb+cookie for the whole run (Yahoo's quoteSummary needs auth). */
+async function getYahooCrumb(): Promise<{ cookie: string; crumb: string } | null> {
+  try {
+    const cookieRes = await fetch("https://fc.yahoo.com", { cache: "no-store", headers: { "User-Agent": "Mozilla/5.0" } });
+    const cookie = cookieRes.headers.get("set-cookie") || "";
+    const crumbRes = await fetch(`${YAHOO_BASE}/v1/test/getcrumb`, {
+      cache: "no-store",
+      headers: { "User-Agent": "Mozilla/5.0", Cookie: cookie },
+    });
+    const crumb = await crumbRes.text();
+    if (!crumb || crumb.includes("error")) return null;
+    return { cookie, crumb };
+  } catch {
+    return null;
+  }
+}
+
+/**
+ * Next earnings date (YYYY-MM-DD) from Yahoo calendarEvents. Keeping this fresh
+ * nightly is what lets the catalyst-aware alerts and the earnings report-request
+ * email fire without depending on the PM remembering to hit Refresh All Data.
+ * Returns null on any failure — the caller then PRESERVES the existing value.
+ */
+async function fetchEarningsDate(
+  yahooSymbol: string,
+  auth: { cookie: string; crumb: string }
+): Promise<string | null> {
+  try {
+    const url = `${YAHOO_BASE}/v10/finance/quoteSummary/${encodeURIComponent(yahooSymbol)}?modules=calendarEvents&crumb=${encodeURIComponent(auth.crumb)}`;
+    const res = await fetch(url, { cache: "no-store", headers: { "User-Agent": "Mozilla/5.0", Cookie: auth.cookie } });
+    if (!res.ok) return null;
+    const data = await res.json();
+    const dates = data?.quoteSummary?.result?.[0]?.calendarEvents?.earnings?.earningsDate;
+    if (!Array.isArray(dates) || dates.length === 0) return null;
+    const d0 = dates[0];
+    if (typeof d0?.fmt === "string" && d0.fmt) return d0.fmt.slice(0, 10);
+    if (typeof d0?.raw === "number") return new Date(d0.raw * 1000).toISOString().slice(0, 10);
+    return null;
+  } catch {
+    return null;
+  }
+}
 
 async function fetchPriceHistory(yahooSymbol: string): Promise<OHLCVBar[]> {
   try {
@@ -171,10 +217,24 @@ async function refreshTechnicalsInner(deadline: number): Promise<TechnicalsRefre
     }
 
     // ── Slow part: fetch + compute (no Redis held across this) ──
-    const computed = new Map<string, { technicals: TechnicalIndicators; riskAlert: RiskAlert }>();
+    // One crumb for the whole run. If it fails we simply skip the earnings-date
+    // half — technicals still refresh, and existing earningsDates are preserved.
+    const auth = await getYahooCrumb();
+    if (!auth) log.warn("no Yahoo crumb — refreshing technicals only, earnings dates preserved");
+
+    const computed = new Map<
+      string,
+      { technicals: TechnicalIndicators; riskAlert: RiskAlert; earningsDate: string | null }
+    >();
     let failed = 0;
     const attempted = await inChunksUntil(targets, CONCURRENCY, deadline, async (ticker) => {
-      const bars = await fetchPriceHistory(toYahoo(ticker));
+      const yh = toYahoo(ticker);
+      // Both calls in parallel per ticker — the earnings date is independent of
+      // the technicals, so a calendarEvents miss must not lose the technicals.
+      const [bars, earningsDate] = await Promise.all([
+        fetchPriceHistory(yh),
+        auth ? fetchEarningsDate(yh, auth) : Promise.resolve(null),
+      ]);
       if (bars.length === 0) {
         failed++;
         return;
@@ -185,10 +245,9 @@ async function refreshTechnicalsInner(deadline: number): Promise<TechnicalsRefre
         return;
       }
       // healthData is optional for computeRiskAlert — price-derived signals are
-      // what the technical alerts key off, and skipping the Yahoo modules call
-      // halves the request count.
+      // what the technical alerts key off.
       const riskAlert = computeRiskAlert(technicals);
-      computed.set(ticker, { technicals, riskAlert });
+      computed.set(ticker, { technicals, riskAlert, earningsDate });
     });
     const budgetExhausted = attempted < targets.length;
     if (budgetExhausted) {
@@ -219,13 +278,23 @@ async function refreshTechnicalsInner(deadline: number): Promise<TechnicalsRefre
     }
 
     let updated = 0;
+    let earningsUpdated = 0;
     const merged = snapshotB.map((s) => {
       const t = (s.ticker || "").trim();
       const c = t ? computed.get(t) : undefined;
       if (!c) return s; // untouched — including anything added during the fetch
       updated++;
-      // Spread preserves every other field verbatim.
-      return { ...s, technicals: c.technicals, riskAlert: c.riskAlert };
+      // Spread preserves every other field verbatim. earningsDate is only
+      // OVERWRITTEN when Yahoo actually returned one — a calendarEvents miss
+      // (or a missing crumb) leaves the existing date intact rather than
+      // blanking a catalyst the alert engine depends on.
+      if (c.earningsDate) earningsUpdated++;
+      return {
+        ...s,
+        technicals: c.technicals,
+        riskAlert: c.riskAlert,
+        ...(c.earningsDate ? { earningsDate: c.earningsDate } : {}),
+      };
     });
 
     if (updated === 0) {
@@ -233,8 +302,8 @@ async function refreshTechnicalsInner(deadline: number): Promise<TechnicalsRefre
     }
 
     await redis.set("pm:stocks", JSON.stringify(merged));
-    log.info(`updated ${updated}/${targets.length} (${failed} failed)`);
-    return { ran: true, considered: targets.length, attempted, updated, failed, budgetExhausted };
+    log.info(`updated ${updated}/${targets.length} (${failed} failed, ${earningsUpdated} earnings dates)`);
+    return { ran: true, considered: targets.length, attempted, updated, failed, earningsUpdated, budgetExhausted };
   } catch (e) {
     const msg = e instanceof Error ? e.message : String(e);
     log.error("failed:", msg);

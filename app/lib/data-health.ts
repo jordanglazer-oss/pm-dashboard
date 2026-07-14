@@ -78,7 +78,7 @@ export async function computeDataHealth(): Promise<DataHealthReport> {
     });
 
     // 2. Technicals — ran recently and updated most of what it attempted.
-    const tech = parse<{ lastRunAt?: string; considered?: number; updated?: number; failed?: number; budgetExhausted?: boolean; error?: string }>(techRaw);
+    const tech = parse<{ lastRunAt?: string; considered?: number; updated?: number; earningsUpdated?: number; failed?: number; budgetExhausted?: boolean; error?: string }>(techRaw);
     const techAge = hoursAgo(tech?.lastRunAt);
     checks.push({
       label: "Technicals",
@@ -87,6 +87,18 @@ export async function computeDataHealth(): Promise<DataHealthReport> {
         ? `${tech.updated ?? 0}/${tech.considered ?? 0} updated${tech.budgetExhausted ? " (budget cut it short)" : ""}, ${fmtAge(techAge)}${tech.error ? ` — ${tech.error}` : ""}`
         : "no status marker (runs nightly as of this deploy)",
     });
+
+    // 2b. Earnings calendar — the catalyst alerts + the post-earnings
+    //     report-request email both key off earningsDate. If Yahoo's crumb dies
+    //     this silently returns 0 forever, so check it explicitly.
+    if (tech) {
+      const eu = tech.earningsUpdated ?? 0;
+      checks.push({
+        label: "Earnings dates",
+        ok: eu > 0,
+        detail: eu > 0 ? `${eu} refreshed` : "0 refreshed — Yahoo calendarEvents/crumb may be failing (existing dates preserved)",
+      });
+    }
 
     // 3. Market regime — computed within the last day.
     const regime = parse<{ computedAt?: string; composite?: { label?: string } }>(regimeRaw);
