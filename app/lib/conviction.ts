@@ -51,12 +51,6 @@ export type ConvictionEntry = {
   upsidePct?: number | null;
   /** How many bullish research lists carry this name (for a quick badge). */
   listCount: number;
-  /** Unloved improvement — the anti-crowding sourcing flag: estimates are being
-   *  revised UP but almost nobody is talking about the name yet (≤1 research
-   *  list, not held). Rising numbers + low attention is where mispricing lives;
-   *  by the time the consensus/list points fill in, the easy alpha is gone.
-   *  Zero score impact — a badge, not points. */
-  unloved?: boolean;
 };
 
 /** Research lists that feed conviction, with display label + direction. */
@@ -224,14 +218,6 @@ export function computeConviction(input: ComputeConvictionInput): ConvictionEntr
       }
     }
     entry.listCount = listCount;
-
-    // Unloved improvement: FY+1 estimates rising (net ≥ +2) on a name that is
-    // NOT held and sits on ≤1 research list. Improvement without attention —
-    // flagged for sourcing before the crowd (and the consensus points) arrive.
-    if (entry.bucket !== "Portfolio") {
-      const revNet = rev ? rev.up - rev.down : null;
-      if (revNet != null && revNet >= 2 && listCount <= 1) entry.unloved = true;
-    }
 
     entry.signals = signals;
     entry.total = signals.reduce((sum, sig) => sum + sig.points, 0);
