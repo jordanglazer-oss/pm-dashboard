@@ -195,11 +195,19 @@ export async function autoRescoreStep(): Promise<{
     if (queued) log.info("earnings report-request queued:", tk, ed);
   }
 
-  // Rescore budget — checked HERE, after the earnings emails are out.
-  if (state.day.count >= DAILY_CAP) {
-    if (stateDirty) await redis.set(RESCORE_STATE_KEY, JSON.stringify(state));
-    return { status: "cap-reached" };
+  // Persist the earningsEmailed marks IMMEDIATELY — the rescore below can run
+  // 30–90s (or hit the function's 60s ceiling and die), and the next ping is
+  // only 5 minutes away with the outbox draining in between. When these marks
+  // only landed at the end, a stale re-read re-enqueued the same emails
+  // (observed: duplicate JPM + GS report requests). Persisting here closes
+  // that window to ~a second.
+  if (stateDirty) {
+    await redis.set(RESCORE_STATE_KEY, JSON.stringify(state));
+    stateDirty = false;
   }
+
+  // Rescore budget — checked after the earnings emails are out.
+  if (state.day.count >= DAILY_CAP) return { status: "cap-reached" };
 
   // ── Build rescore candidates + seed baselines for first-seen tickers ──
   type Candidate = { ticker: string; mode: "full" | "partial"; trigger: string; rank: number };
@@ -275,6 +283,19 @@ export async function autoRescoreStep(): Promise<{
   const pick = candidates[0];
   const stockBefore = stocks.find((s) => (s.ticker || "").trim().toUpperCase() === pick.ticker);
 
+  // ── Charge the budget UPFRONT, before the slow model call ──
+  // A full rescore can exceed the function's 60s ceiling; if the invocation is
+  // killed mid-call, nothing after this point runs. Recording the attempt
+  // FIRST guarantees a timeout can never cause uncapped retries every ping
+  // (each burning Anthropic tokens): the attempt is counted, the cooldown
+  // starts, and the pending-reports mark is consumed exactly once. Worst case
+  // a timed-out rescore is lost (visible in the digest by its absence) —
+  // strictly better than blindly repeating it all evening.
+  state.day.count += 1;
+  state.tickers[pick.ticker] = { ...(state.tickers[pick.ticker] ?? {}), lastAt: new Date().toISOString() };
+  if (state.pendingReports) delete state.pendingReports[pick.ticker];
+  await redis.set(RESCORE_STATE_KEY, JSON.stringify(state));
+
   // ── The slow part: same code path as the Score button ──
   log.info(`rescoring ${pick.ticker} (${pick.mode}) — ${pick.trigger}`);
   const body = {
@@ -287,13 +308,7 @@ export async function autoRescoreStep(): Promise<{
   );
   if (!res.ok) {
     const err = await res.json().catch(() => ({}));
-    // Record the attempt (cooldown applies) so a chronically failing name
-    // can't eat the budget every night. Clear its pending mark too — one
-    // failed full attempt shouldn't retry every ping all evening.
-    state.tickers[pick.ticker] = { ...(state.tickers[pick.ticker] ?? {}), lastAt: new Date().toISOString() };
-    if (state.pendingReports) delete state.pendingReports[pick.ticker];
-    state.day.count += 1;
-    await redis.set(RESCORE_STATE_KEY, JSON.stringify(state));
+    // Attempt already recorded upfront — nothing to charge here.
     return { status: "aborted", ticker: pick.ticker, trigger: pick.trigger, detail: `score ${res.status}: ${err?.error ?? ""}` };
   }
   const data = (await res.json()) as {
@@ -366,10 +381,9 @@ export async function autoRescoreStep(): Promise<{
     log.warn("score-history append failed (rescore itself applied):", e instanceof Error ? e.message : e);
   }
 
-  // ── State: baseline reset + clear pending + budget + recent log ──
+  // ── State: baseline reset + recent log (budget + pending-mark consumption
+  //    already charged upfront, before the model call) ──
   state.tickers[pick.ticker] = { lastAt: nowIso, netAtLast: netFor(pick.ticker) };
-  if (state.pendingReports) delete state.pendingReports[pick.ticker];
-  state.day.count += 1;
   state.recent = [
     { at: nowIso, ticker: pick.ticker, trigger: pick.trigger, mode: pick.mode, before, after },
     ...(state.recent ?? []),
