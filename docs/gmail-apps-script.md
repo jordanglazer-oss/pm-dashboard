@@ -82,9 +82,10 @@ function processAll() {
 /**
  * Event-driven auto-rescore pacer. Pings on EVERY 5-minute run — the endpoint
  * itself gates to the 19:00–23:00 ET window, processes at most ONE rescore per
- * ping (earnings +48h → full; revision swing ≥3 since last rescore → partial
- * fundamentals), and enforces a 5/day cap + 7-day per-name cooldown. Outside
- * the window or with nothing queued it returns instantly.
+ * ping, and enforces a 5/day cap. The only live trigger is analyst-reports
+ * INGESTED → full rescore (the revision-swing partial trigger is currently
+ * disabled dashboard-side). Also sends the earnings-day report-request email.
+ * Outside the window or with nothing queued it returns instantly.
  */
 function pingAutoRescore() {
   const props = PropertiesService.getScriptProperties();

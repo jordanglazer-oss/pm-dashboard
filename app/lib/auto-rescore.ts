@@ -13,16 +13,19 @@ import type { ScoreHistoryStore, ScoreHistoryEntry } from "@/app/api/kv/score-hi
  * changed, so composites stay current without a manual Score All and without
  * re-spending credits on names where nothing happened.
  *
- * TRIGGERS (user-approved set, 2026-07-14):
+ * TRIGGERS (user-approved set, 2026-07-14; revised 2026-07-16):
  *   1. ANALYST REPORTS INGESTED → FULL rescore. NOT time-based: the inbox
  *      ingest marks the ticker when its report PDFs land (both PDFs arrive on
  *      ONE email, so one ingestion pass = reports complete; a 15-min settle
  *      guards the multi-attachment window). This IS the post-earnings trigger —
  *      the rescore waits for exactly the data it needs, however long the
  *      reports take. Bypasses the cooldown (fresh reports = re-underwrite now).
- *   2. REVISION SWING → PARTIAL (fundamentals) rescore. Net FY+1 revisions
- *      moved by ≥3 SINCE THE LAST RESCORE (change-based, NOT level-based — the
- *      rolling 30d net can sit at +5 for weeks; only fresh movement fires).
+ *      THIS IS CURRENTLY THE ONLY LIVE RESCORE TRIGGER.
+ *   2. REVISION SWING → PARTIAL (fundamentals) rescore — DISABLED for now
+ *      (user call 2026-07-16: expected to fire more often than the insight
+ *      justifies). The change-based logic (net FY+1 revisions moved ≥3 since
+ *      last rescore) is kept behind REVISION_TRIGGER_ENABLED below; baselines
+ *      still seed/reset so re-enabling is a one-line flip.
  *   No thesis-verdict trigger, no staleness backstop (explicitly declined).
  *
  * LOOP CLOSER: on earnings day (earningsDate today/yesterday) the engine also
@@ -225,6 +228,12 @@ export async function autoRescoreStep(): Promise<{
   }
 
   // 2. Revision swing since last rescore (change-based, cooldown applies).
+  //    DISABLED for now (user call, 2026-07-16): estimate moves were judged
+  //    likely to fire more often than the insight justifies. Reports-ingested
+  //    remains the ONLY live rescore trigger. Baselines still seed + reset (on
+  //    any rescore) so flipping this back on is a one-line change; the 5/day
+  //    cap + 7-day cooldown contain any catch-up burst at re-enable.
+  const REVISION_TRIGGER_ENABLED = false;
   for (const s of stocks) {
     const tk = (s.ticker || "").trim().toUpperCase();
     if (!tk || !universe.has(tk)) continue;
@@ -238,6 +247,7 @@ export async function autoRescoreStep(): Promise<{
       seeded++;
       continue;
     }
+    if (!REVISION_TRIGGER_ENABLED) continue;
     if (candidates.some((c) => c.ticker === tk)) continue; // already queued as full
 
     const sinceLast = ts.lastAt ? daysSinceUtc(ts.lastAt) : null;
