@@ -310,11 +310,15 @@ export function PortfolioOverview({ sidebar }: { sidebar?: React.ReactNode } = {
      *  filters output to them; everything else carries forward). Saves the
      *  bulk of output tokens + skips web search — use after a methodology
      *  change that touches a subset of categories. */
-    partialCategories?: ScoreKey[]
+    partialCategories?: ScoreKey[],
+    /** Targeted rescore: only these tickers (from the table's row checkboxes).
+     *  Undefined = the whole bucket. */
+    onlyTickers?: string[]
   ) => {
     if (scoringAny || refreshingAll) return;
     const source = bucket === "Portfolio" ? portfolioStocks : watchlistStocks;
-    const bucketStocks = source.filter((s) => isScoreable(s));
+    const onlySet = onlyTickers && onlyTickers.length > 0 ? new Set(onlyTickers) : null;
+    const bucketStocks = source.filter((s) => isScoreable(s) && (!onlySet || onlySet.has(s.ticker)));
     if (bucketStocks.length === 0) return;
     setScoringBucket(bucket);
     setScoreFailures([]);
@@ -605,9 +609,10 @@ export function PortfolioOverview({ sidebar }: { sidebar?: React.ReactNode } = {
       });
     }
     setScoringBucket(null);
-    // Only a FULL pass stamps the Score All timestamp — a partial rescore
-    // shouldn't make the full-methodology pass look fresher than it is.
-    if (!partialCategories) {
+    // Only a FULL, whole-bucket pass stamps the Score All timestamp — a
+    // partial-category or checkbox-scoped run shouldn't make the bucket-wide
+    // pass look fresher than it is.
+    if (!partialCategories && !onlySet) {
       setUiPref(
         bucket === "Portfolio" ? "scoreAllPortfolioAt" : "scoreAllWatchlistAt",
         new Date().toISOString()
@@ -1151,8 +1156,8 @@ export function PortfolioOverview({ sidebar }: { sidebar?: React.ReactNode } = {
         flagType={rankBucket === "Portfolio" ? "review" : "buy"}
         uiPrefs={uiPrefs}
         setUiPref={setUiPref}
-        onScoreAll={() => handleScoreBucket(rankBucket)}
-        onScoreFundamentals={() => handleScoreBucket(rankBucket, ["growth", "relativeValuation", "historicalValuation"])}
+        onScoreAll={(tickers) => handleScoreBucket(rankBucket, undefined, tickers)}
+        onScoreFundamentals={(tickers) => handleScoreBucket(rankBucket, ["growth", "relativeValuation", "historicalValuation"], tickers)}
         scoring={scoringBucket === rankBucket}
         scoreProgress={scoringBucket === rankBucket ? scoreProgress : ""}
         scoreFailures={scoringBucket === rankBucket || scoringBucket == null ? scoreFailures : []}
@@ -1506,10 +1511,13 @@ function RankingTable({
   flagType: "review" | "buy";
   uiPrefs: Record<string, string>;
   setUiPref: (key: string, value: string) => void;
-  onScoreAll?: () => void;
+  /** Full rescore. Called with a ticker list when rows are checked (targeted
+   *  rescore of just those names); undefined = the whole bucket. */
+  onScoreAll?: (tickers?: string[]) => void;
   /** Partial rescore of the fundamental categories only (growth + the two
-   *  valuation cats) — the cheap pass after a methodology change. */
-  onScoreFundamentals?: () => void;
+   *  valuation cats) — the cheap pass after a methodology change. Same
+   *  optional ticker-scoping as onScoreAll. */
+  onScoreFundamentals?: (tickers?: string[]) => void;
   scoring?: boolean;
   scoreProgress?: string;
   scoreFailures?: string[];
@@ -1563,6 +1571,28 @@ function RankingTable({
       else next.add(ticker);
       return next;
     });
+  };
+
+  // ── Row selection for targeted rescores ─────────────────────────────
+  // Check specific names and the Score All / Rescore fundamentals buttons
+  // operate on ONLY those (labels flip to "Score selected (n)"). Transient
+  // by design — cleared rather than persisted, since it's a one-off action
+  // scope, and intersected with the CURRENT stocks at click time so a stale
+  // tick from the other bucket can never rescore an off-screen name.
+  const [selectedTickers, setSelectedTickers] = useState<Set<string>>(new Set());
+  const toggleSelected = (ticker: string) => {
+    setSelectedTickers((prev) => {
+      const next = new Set(prev);
+      if (next.has(ticker)) next.delete(ticker);
+      else next.add(ticker);
+      return next;
+    });
+  };
+  const visibleTickers = stocks.map((s) => s.ticker);
+  const selectedInView = visibleTickers.filter((t) => selectedTickers.has(t));
+  const allVisibleSelected = visibleTickers.length > 0 && selectedInView.length === visibleTickers.length;
+  const toggleSelectAll = () => {
+    setSelectedTickers(allVisibleSelected ? new Set() : new Set(visibleTickers));
   };
 
   const prefPrefix = flagType === "review" ? "rankPort" : "rankWatch";
@@ -1864,12 +1894,16 @@ function RankingTable({
               </>
             )}
             <button
-              onClick={onScoreAll}
+              onClick={() => onScoreAll?.(selectedInView.length > 0 ? selectedInView : undefined)}
               disabled={scoreAllDisabled || scoreableCount === 0}
               className={`flex items-center gap-1.5 rounded-lg px-3 py-1.5 text-xs font-semibold text-white transition-colors disabled:opacity-50 ${
                 flagType === "review" ? "bg-accent hover:bg-accent-ink" : "bg-ink hover:bg-ink"
               }`}
-              title={`Score all ${title.toLowerCase()} stocks with Claude`}
+              title={
+                selectedInView.length > 0
+                  ? `Full rescore of ONLY the ${selectedInView.length} checked name${selectedInView.length === 1 ? "" : "s"} (uncheck all to score the whole list)`
+                  : `Score all ${title.toLowerCase()} stocks with Claude`
+              }
             >
               {scoring ? (
                 <>
@@ -1879,7 +1913,7 @@ function RankingTable({
               ) : (
                 <>
                   <svg className="w-3.5 h-3.5" fill="none" stroke="currentColor" strokeWidth="2" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" d="M9.813 15.904 9 18.75l-.813-2.846a4.5 4.5 0 0 0-3.09-3.09L2.25 12l2.846-.813a4.5 4.5 0 0 0 3.09-3.09L9 5.25l.813 2.846a4.5 4.5 0 0 0 3.09 3.09L15.75 12l-2.846.813a4.5 4.5 0 0 0-3.09 3.09ZM18.259 8.715 18 9.75l-.259-1.035a3.375 3.375 0 0 0-2.455-2.456L14.25 6l1.036-.259a3.375 3.375 0 0 0 2.455-2.456L18 2.25l.259 1.035a3.375 3.375 0 0 0 2.456 2.456L21.75 6l-1.035.259a3.375 3.375 0 0 0-2.456 2.456Z" /></svg>
-                  Score All ({scoreableCount})
+                  {selectedInView.length > 0 ? `Score selected (${selectedInView.length})` : `Score All (${scoreableCount})`}
                 </>
               )}
             </button>
@@ -1888,13 +1922,13 @@ function RankingTable({
                 output instead of 19, no web search, no narrative rewrite. */}
             {onScoreFundamentals && !scoring && (
               <button
-                onClick={onScoreFundamentals}
+                onClick={() => onScoreFundamentals?.(selectedInView.length > 0 ? selectedInView : undefined)}
                 disabled={scoreAllDisabled || scoreableCount === 0}
                 className="flex items-center gap-1.5 rounded-lg px-3 py-1.5 text-xs font-semibold text-ink-2 bg-surface-2 hover:bg-line border border-line transition-colors disabled:opacity-50"
-                title="Re-score ONLY growth + relative/historical valuation (the categories the sector-scale methodology touches). Every other category, the thesis, and summaries carry forward unchanged — a fraction of the credits of a full Score All."
+                title={`Re-score ONLY growth + relative/historical valuation${selectedInView.length > 0 ? ` for the ${selectedInView.length} checked name${selectedInView.length === 1 ? "" : "s"}` : ""}. Every other category, the thesis, and summaries carry forward unchanged — a fraction of the credits of a full Score All.`}
               >
                 <svg className="w-3.5 h-3.5" fill="none" stroke="currentColor" strokeWidth="2" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" d="M3 13.125C3 12.504 3.504 12 4.125 12h2.25c.621 0 1.125.504 1.125 1.125v6.75C7.5 20.496 6.996 21 6.375 21h-2.25A1.125 1.125 0 0 1 3 19.875v-6.75ZM9.75 8.625c0-.621.504-1.125 1.125-1.125h2.25c.621 0 1.125.504 1.125 1.125v11.25c0 .621-.504 1.125-1.125 1.125h-2.25a1.125 1.125 0 0 1-1.125-1.125V8.625ZM16.5 4.125c0-.621.504-1.125 1.125-1.125h2.25C20.496 3 21 3.504 21 4.125v15.75c0 .621-.504 1.125-1.125 1.125h-2.25a1.125 1.125 0 0 1-1.125-1.125V4.125Z" /></svg>
-                Rescore fundamentals
+                {selectedInView.length > 0 ? `Rescore fundamentals (${selectedInView.length})` : "Rescore fundamentals"}
               </button>
             )}
           </div>
@@ -2006,7 +2040,17 @@ function RankingTable({
         <table className="w-full text-left text-sm">
           <thead className="sticky top-0 z-20 bg-white shadow-[0_1px_0_0_rgb(226_232_240)]">
             <tr className="border-b border-line text-xs text-ink-3">
-              <th className={stickyHeadCls} onClick={() => toggleSort("ticker")}>Ticker{arrow("ticker")}</th>
+              <th className={stickyHeadCls} onClick={() => toggleSort("ticker")}>
+                <input
+                  type="checkbox"
+                  checked={allVisibleSelected}
+                  onChange={toggleSelectAll}
+                  onClick={(e) => e.stopPropagation()}
+                  className="mr-2 h-3.5 w-3.5 cursor-pointer accent-accent align-middle"
+                  title="Select all / none — checked names scope the Score all & Rescore fundamentals buttons to just those stocks"
+                />
+                Ticker{arrow("ticker")}
+              </th>
               <th className={thClass} onClick={() => toggleSort("sector")}>Sector{arrow("sector")}</th>
               <th className={`${thClass} text-right`}>Weight</th>
               <th className={`${thClass} text-right`} onClick={() => toggleSort("price")}>Price{arrow("price")}</th>
@@ -2053,6 +2097,14 @@ function RankingTable({
                 >
                   <td className={stickyCellCls}>
                     <div className="flex items-center gap-2">
+                      <input
+                        type="checkbox"
+                        checked={selectedTickers.has(s.ticker)}
+                        onChange={() => toggleSelected(s.ticker)}
+                        onClick={(e) => e.stopPropagation()}
+                        className="h-3.5 w-3.5 shrink-0 cursor-pointer accent-accent"
+                        title={`Include ${displayTicker(s.ticker)} in a targeted rescore (scopes the Score all / Rescore fundamentals buttons)`}
+                      />
                       <Link href={`/stock/${s.ticker.toLowerCase()}`} className="hover:underline block">
                         <div className="font-bold text-ink font-mono flex items-center gap-1.5">
                           {displayTicker(s.ticker)}
