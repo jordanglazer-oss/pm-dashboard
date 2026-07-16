@@ -357,6 +357,41 @@ export function marketEdgeApplies(stock: Stock): boolean {
   return !!(me && (me.powerRating != null || me.opinion != null || me.opinionScore != null));
 }
 
+// ── Absent ≠ bearish: external categories N/A until their data is imported ──
+// A freshly-added name has NO BoostedAI / SIA / MarketEdge data yet — its
+// seeded 0 in those categories is "not imported", not "rated poorly". Counting
+// the 0 against the composite penalized every new watchlist add for data that
+// simply hadn't arrived. Each category is N/A (dropped from numerator AND
+// denominator, composite normalized back to the 0–MAX_SCORE scale) when its
+// RAW source is absent — unless a nonzero score exists (legacy manual entry),
+// which still counts. Once the weekly import lands, the category snaps in
+// automatically.
+const AIRATING_MAX = 2;
+const RELSTRENGTH_MAX = 2;
+
+/** BoostedAI (aiRating) counts only once a rating/consensus was imported. */
+export function boostedAiApplies(stock: Stock): boolean {
+  if (typeof stock.boostedAi === "number" || stock.boostedAiConsensus != null) return true;
+  return (stock.scores.aiRating || 0) !== 0;
+}
+
+/** SIA (relativeStrength) counts only once an SMAX was imported. */
+export function siaApplies(stock: Stock): boolean {
+  if (typeof stock.sia === "number") return true;
+  return (stock.scores.relativeStrength || 0) !== 0;
+}
+
+/** MarketEdge in the COMPOSITE: the structural Canadian rule above, plus the
+ *  same not-yet-imported rule for US names. Deliberately separate from
+ *  marketEdgeApplies — the coverage UI keeps using that, because for a US name
+ *  missing MarketEdge data is a gap to chase, not an N/A. */
+function marketEdgeCountsInComposite(stock: Stock): boolean {
+  if (!marketEdgeApplies(stock)) return false;
+  const me = stock.marketEdge;
+  if (me && (me.powerRating != null || me.opinion != null || me.opinionScore != null)) return true;
+  return (stock.scores.marketEdge || 0) !== 0;
+}
+
 export function computeScores(
   stock: Stock,
   marketData: MarketData,
@@ -369,13 +404,26 @@ export function computeScores(
     (sum, key) => sum + (stock.scores[key] || 0),
     0
   );
-  // MarketEdge N/A handling: for an uncovered Canadian stock, drop the
-  // marketEdge points from the sum AND shrink the denominator by its max,
-  // then normalize back to the full MAX_SCORE scale so ratings stay
-  // comparable to US names on the same 0–MAX_SCORE thresholds.
-  const applies = marketEdgeApplies(stock);
-  const applicableSum = applies ? rawSum : rawSum - (stock.scores.marketEdge || 0);
-  const effectiveMax = applies ? MAX_SCORE : MAX_SCORE - MARKETEDGE_MAX;
+  // External-category N/A handling: each of MarketEdge / BoostedAI / SIA drops
+  // out of BOTH the numerator and the denominator when it doesn't apply
+  // (structurally uncovered, or its data simply hasn't been imported yet), and
+  // the remaining score is normalized back to the full 0–MAX_SCORE scale so
+  // ratings stay comparable on the same thresholds. A fresh watchlist add is
+  // judged only on the categories that actually have data.
+  let applicableSum = rawSum;
+  let effectiveMax = MAX_SCORE;
+  if (!marketEdgeCountsInComposite(stock)) {
+    applicableSum -= stock.scores.marketEdge || 0;
+    effectiveMax -= MARKETEDGE_MAX;
+  }
+  if (!boostedAiApplies(stock)) {
+    applicableSum -= stock.scores.aiRating || 0;
+    effectiveMax -= AIRATING_MAX;
+  }
+  if (!siaApplies(stock)) {
+    applicableSum -= stock.scores.relativeStrength || 0;
+    effectiveMax -= RELSTRENGTH_MAX;
+  }
   const normalizedSum = effectiveMax > 0 ? applicableSum * (MAX_SCORE / effectiveMax) : applicableSum;
   // Round to 1 decimal to avoid IEEE 754 floating-point noise
   // (e.g. 21.490000000000002 → 21.5)

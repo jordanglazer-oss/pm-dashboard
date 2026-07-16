@@ -6,7 +6,7 @@ import Link from "next/link";
 import { useStocks } from "@/app/lib/StockContext";
 import { SCORE_GROUPS, MAX_SCORE, INSTRUMENT_LABELS } from "@/app/lib/types";
 import type { ScoreKey, Scores, FundData, ScoreDataPoint, ScoreDataPointSource, ExternalSourceNote } from "@/app/lib/types";
-import { groupTotal, isScoreable, normalizeSector, marketEdgeApplies } from "@/app/lib/scoring";
+import { groupTotal, isScoreable, normalizeSector, marketEdgeApplies, boostedAiApplies, siaApplies } from "@/app/lib/scoring";
 import { computeAnalystConsensus, buildConsensusExplanation } from "@/app/lib/analyst-snapshots";
 import { displayTicker } from "@/app/lib/ticker";
 import { AnalystSnapshotPanel } from "@/app/components/AnalystSnapshotPanel";
@@ -2223,6 +2223,23 @@ export default function StockDetailPage() {
                                 <span
                                   className="flex h-7 items-center justify-center rounded-md bg-surface-2 px-2 text-[11px] font-semibold text-ink-3"
                                   title="MarketEdge covers US-listed stocks only. This Canadian name isn't dual-listed, so the category is N/A and excluded from the composite (the score is normalized so the stock isn't penalized)."
+                                >
+                                  N/A
+                                </span>
+                              ) : !boostedAiApplies(stock) && cat.key === "aiRating" ? (
+                                /* Absent ≠ bearish: no BoostedAI rating/consensus imported
+                                   yet (fresh add). N/A + excluded from the composite until
+                                   the next BoostedAI import lands, then it snaps in. */
+                                <span
+                                  className="flex h-7 items-center justify-center rounded-md bg-surface-2 px-2 text-[11px] font-semibold text-ink-3"
+                                  title="No BoostedAI data imported for this name yet. The category is N/A and excluded from the composite (score normalized so the stock isn't penalized for missing data). It activates automatically on the next BoostedAI import."
+                                >
+                                  N/A
+                                </span>
+                              ) : !siaApplies(stock) && cat.key === "relativeStrength" ? (
+                                <span
+                                  className="flex h-7 items-center justify-center rounded-md bg-surface-2 px-2 text-[11px] font-semibold text-ink-3"
+                                  title="No SIA SMAX imported for this name yet. The category is N/A and excluded from the composite (score normalized so the stock isn't penalized for missing data). It activates automatically on the next SIA import."
                                 >
                                   N/A
                                 </span>
