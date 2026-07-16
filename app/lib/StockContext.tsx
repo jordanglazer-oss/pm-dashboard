@@ -547,9 +547,13 @@ export function StockProvider({ children }: { children: React.ReactNode }) {
       // haircut ×0.5 — "cheap + falling estimates" is a trap, not an entry.
       // Applied live (lifts automatically when revisions recover) and badged
       // on the UI via `valueTrap` — never silent. Absent revisions → no effect.
+      // DISABLED for now (user call, 2026-07-16). Flip the constant to
+      // re-enable — the VT badges (stock page + rankings) key off `valueTrap`
+      // being set, so they disappear/reappear with it automatically.
+      const VALUE_TRAP_ENABLED = false;
       let valueTrap: { net: number; pointsRemoved: number } | undefined;
       const fsRev = snap?.factset;
-      if (fsRev && (typeof fsRev.revUp === "number" || typeof fsRev.revDown === "number")) {
+      if (VALUE_TRAP_ENABLED && fsRev && (typeof fsRev.revUp === "number" || typeof fsRev.revDown === "number")) {
         const net = (fsRev.revUp ?? 0) - (fsRev.revDown ?? 0);
         if (net <= -3) {
           const relVal = s.scores.relativeValuation || 0;
