@@ -46,6 +46,12 @@ export const RAW_FORMULAS = {
   cash: "FF_CASH_ST(ANN,0)",
   intExp: "FF_INT_EXP_DEBT(ANN,0)",
   assets: "FF_ASSETS(ANN,0)",
+  // Balance-sheet items for the distress/red-flag layer (probe-confirmed
+  // 2026-07-17: FF_COM_EQ_RETAIN_EARN is the entitled retained-earnings code).
+  // Fetched from day one so the data exists when the veto factor lands.
+  shsOut: "FF_COM_SHS_OUT(ANN,0)",
+  wkcap: "FF_WKCAP(ANN,0)",
+  retainEarn: "FF_COM_EQ_RETAIN_EARN(ANN,0)",
   ret12m: "P_TOTAL_RETURNC(-12M,0)",
   ret1m: "P_TOTAL_RETURNC(-1M,0)",
 } as const;
