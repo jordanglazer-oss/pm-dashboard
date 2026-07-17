@@ -9,6 +9,7 @@ import { refreshFactsetEstimates } from "@/app/lib/estimates-refresh";
 import { refreshMarketRegime } from "@/app/lib/market-regime-refresh";
 import { refreshTechnicals } from "@/app/lib/technicals-refresh";
 import { rebuildThesisHealth } from "@/app/lib/thesis-health-refresh";
+import { computeBookFactorScores } from "@/app/lib/factor-scores";
 import { computeDataHealth, type DataHealthReport } from "@/app/lib/data-health";
 import { runAlertDigest } from "@/app/lib/alert-digest";
 
@@ -112,6 +113,9 @@ const EXCLUDE_PATTERNS = [
   /^pm:intraday-monitor$/,   // per-day dedupe marker (resets daily)
   /^pm:rescore-state$/,      // auto-rescore baselines/log (re-seeds safely; no rescore burst on loss)
   /^pm:factor-universe/,     // factor universe + its build progress (weekly rebuild; safe to nuke)
+  /^pm:factor-scores$/,      // latest factor read-out (recomputed nightly; safe to nuke)
+  // NOTE: pm:factor-history is deliberately NOT excluded — it's append-only
+  // point-in-time data (Phase C validation source) and must be backed up.
   /-cache$/,                 // *-analysis-cache, *-scrape-cache (hash-gated)
   /-scrape-cache:/,
   // ── Derived (recomputed from daily values + models) ──
@@ -322,6 +326,20 @@ export async function GET(req: NextRequest) {
     //        just refreshed above, append a snapshot to the append-only
     //        pm:alert-log, and email it IF a recipient is configured AND there
     //        are high-priority alerts. Best-effort: must not fail the backup. ──
+    // Factor shadow scoring (Phase A4) — quant percentile + judgment overlay +
+    // blends for the book, appended to pm:factor-history for Phase C. Strictly
+    // additive: reads pm:stocks read-only, writes only its own factor caches +
+    // append-only history. Best-effort; never affects the 41-pt score or the
+    // digest. Needs the weekly universe to exist (no-ops until it does).
+    let factorScores: Awaited<ReturnType<typeof computeBookFactorScores>>;
+    try {
+      factorScores = await computeBookFactorScores();
+    } catch (e) {
+      const msg = e instanceof Error ? e.message : String(e);
+      console.error("[backup-redis] factor scoring failed (shadow only; no live impact):", msg);
+      factorScores = { ran: false, scored: 0, quantScored: 0, error: msg };
+    }
+
     // Data-health sentinel — verifies the whole refresh chain above actually
     // landed (fresh markers, sane coverage, outbox draining) and rides along in
     // the digest email. A feed problem forces an email even on a calm day.
@@ -381,6 +399,7 @@ export async function GET(req: NextRequest) {
       regimeRefresh,
       technicalsRefresh,
       thesisRefresh,
+      factorScores,
       dataHealth: dataHealth ? { ok: dataHealth.ok, problems: dataHealth.problemCount } : null,
       alertDigest,
       invariantCheck: invariantSummary,

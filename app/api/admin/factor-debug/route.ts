@@ -3,6 +3,8 @@ import { crossSectional, factsetConfigured, type FactsetValue } from "@/app/lib/
 import { resolveFactsetId } from "@/app/lib/factset-symbols";
 import { readUniverse, deriveMetrics, RAW_FORMULAS } from "@/app/lib/factor-universe";
 import { computeFactorScore } from "@/app/lib/factors";
+import { computeBookFactorScores, FACTOR_SCORES_KEY } from "@/app/lib/factor-scores";
+import { getRedis } from "@/app/lib/redis";
 
 /**
  * Read-only factor-layer inspector (Phase A verification). Cookie-gated like
@@ -28,7 +30,22 @@ export async function GET(req: NextRequest) {
     });
   }
 
-  const ticker = new URL(req.url).searchParams.get("ticker");
+  const sp = new URL(req.url).searchParams;
+  const ticker = sp.get("ticker");
+
+  // ── Book mode: the A4 read-outs (quant + overlay + blends) for the book ──
+  //    ?book=1 shows the stored snapshot; ?book=1&run=1 recomputes it first.
+  if (sp.get("book")) {
+    const redis = await getRedis();
+    let ran: unknown = null;
+    if (sp.get("run")) ran = await computeBookFactorScores();
+    const snap = await redis.get(FACTOR_SCORES_KEY);
+    return NextResponse.json({
+      ok: true,
+      ran,
+      snapshot: snap ? JSON.parse(snap) : "(not computed yet — add &run=1)",
+    });
+  }
 
   // ── Summary mode: prove the universe is populated ──
   if (!ticker) {
