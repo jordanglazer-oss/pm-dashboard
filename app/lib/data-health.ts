@@ -118,6 +118,22 @@ export async function computeDataHealth(): Promise<DataHealthReport> {
       detail: thesis ? `${Array.isArray(thesis.holdings) ? thesis.holdings.length : 0} holdings, built ${fmtAge(thesisAge)}` : "no cache",
     });
 
+    // 4b. Factor universe (shadow system) — weekly snapshot should be <8d old.
+    //     Informational until the first build exists; only flags staleness
+    //     AFTER a universe has been built at least once.
+    try {
+      const uniRaw = await redis.get("pm:factor-universe");
+      if (uniRaw) {
+        const uni = JSON.parse(uniRaw) as { builtAt?: string; tickerCount?: number };
+        const age = hoursAgo(uni?.builtAt);
+        checks.push({
+          label: "Factor universe",
+          ok: age != null && age < 8 * 24,
+          detail: `${uni.tickerCount ?? 0} names, built ${fmtAge(age)}`,
+        });
+      }
+    } catch { /* shadow-system check only */ }
+
     // 5. Mail outbox — shouldn't be piling up (Apps Script drains every ~5min;
     //    a deep queue means the drain trigger is broken and emails are silently
     //    not going out).

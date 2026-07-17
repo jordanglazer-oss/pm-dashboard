@@ -77,6 +77,27 @@ function processAll() {
   try { processOutbox(); } catch (e) { Logger.log("processOutbox EX " + e); }
   try { pingIntradayMonitor(); } catch (e) { Logger.log("pingIntradayMonitor EX " + e); }
   try { pingAutoRescore(); } catch (e) { Logger.log("pingAutoRescore EX " + e); }
+  try { pingFactorUniverse(); } catch (e) { Logger.log("pingFactorUniverse EX " + e); }
+}
+
+/**
+ * Factor-universe build pacer. Pings every run; the endpoint self-gates (only
+ * builds when never-built / stale >6.5d / Sunday) and processes one 40s
+ * resumable chunk per ping, so a full ~560-name weekly rebuild completes
+ * across a handful of pings and costs nothing the rest of the week.
+ */
+function pingFactorUniverse() {
+  const props = PropertiesService.getScriptProperties();
+  const base = props.getProperty("WEBHOOK_URL"); // .../api/inbox/ingest
+  const secret = props.getProperty("INBOX_SECRET");
+  if (!base || !secret) return;
+  const url = base.replace(/\/api\/inbox\/ingest\/?$/, "/api/cron/factor-universe");
+  const res = UrlFetchApp.fetch(url, {
+    method: "get",
+    headers: { Authorization: "Bearer " + secret },
+    muteHttpExceptions: true,
+  });
+  Logger.log("factor-universe " + res.getResponseCode() + " " + res.getContentText().slice(0, 200));
 }
 
 /**
