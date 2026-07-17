@@ -161,6 +161,7 @@ const tabs = [
   { label: "Screener", href: "/screener" },
   { label: "Research", href: "/research" },
   { label: "Pipeline", href: "/conviction" },
+  { label: "Factor Lab", href: "/factor-lab" },
   { label: "Hedging", href: "/hedging" },
   { label: "Appendix", href: "/appendix" },
   // Inbox is now a SUB-tab of Research (see ResearchTabs) — not a top-level tab.
