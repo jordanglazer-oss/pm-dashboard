@@ -15,6 +15,7 @@ import StockHealthMonitor from "@/app/components/StockHealthMonitor";
 import RiskAlertPanel from "@/app/components/RiskAlertPanel";
 import RatioVsSpxSparkline from "@/app/components/RatioVsSpxSparkline";
 import ScoreHistory from "@/app/components/ScoreHistory";
+import FactorLensTile from "@/app/components/FactorLensTile";
 import { ScoreDelta } from "@/app/components/ScoreDelta";
 import { CollapsibleSection } from "@/app/components/CollapsibleSection";
 import { colorForSector } from "@/app/lib/sectorColors";
@@ -2620,6 +2621,11 @@ export default function StockDetailPage() {
               currentRaw={stock.raw}
               className="mt-6"
             />
+          )}
+
+          {/* Factor Lens (shadow) — quant read-out beside the 41-pt score */}
+          {scoreable && (
+            <FactorLensTile ticker={stock.ticker} adjusted={stock.adjusted} className="mt-6" />
           )}
         </div>
       </div>
