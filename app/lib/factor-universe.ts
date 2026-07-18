@@ -53,6 +53,7 @@ export const RAW_FORMULAS = {
   wkcap: "FF_WKCAP(ANN,0)",
   retainEarn: "FF_COM_EQ_RETAIN_EARN(ANN,0)",
   ret12m: "P_TOTAL_RETURNC(-12M,0)",
+  ret6m: "P_TOTAL_RETURNC(-6M,0)",
   ret1m: "P_TOTAL_RETURNC(-1M,0)",
 } as const;
 
@@ -75,6 +76,7 @@ export const FACTOR_METRICS = [
   "evEbitda",       // LOWER is better
   "fcfYield",       // FCF / market cap
   "mom12_1",        // 12m total return minus last 1m
+  "mom6_1",         // 6m total return minus last 1m (intermediate-horizon momentum)
 ] as const;
 export type FactorMetric = (typeof FACTOR_METRICS)[number];
 
@@ -116,8 +118,9 @@ export function deriveMetrics(r: RawRow): Partial<Record<FactorMetric, number>> 
     out.evEbitda = (mktVal + debt - cash) / ebitda;
   }
   if (fcf != null && mktVal != null && mktVal > 0) out.fcfYield = (fcf / mktVal) * 100;
-  const r12 = n(r.ret12m), r1 = n(r.ret1m);
+  const r12 = n(r.ret12m), r6 = n(r.ret6m), r1 = n(r.ret1m);
   if (r12 != null && r1 != null) out.mom12_1 = r12 - r1;
+  if (r6 != null && r1 != null) out.mom6_1 = r6 - r1;
   return out;
 }
 

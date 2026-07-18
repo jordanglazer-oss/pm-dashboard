@@ -17,7 +17,9 @@
  * record which vintage produced its stats.
  */
 
-export const LIST_VERSION = "2026-07-a";
+// "-b": formula set gained ret6m (mom6_1 momentum broadening) — bumped so any
+// in-flight universe progress refetches rather than finalizing without it.
+export const LIST_VERSION = "2026-07-b";
 
 /** S&P 500 membership (approximate as of mid-2026 — see header). */
 export const SP500: string[] = [
