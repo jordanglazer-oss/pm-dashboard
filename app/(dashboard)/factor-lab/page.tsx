@@ -47,6 +47,26 @@ type Row = {
 
 type SortKey = "disagreement" | "adjusted" | "quant" | "overlay" | "blend70";
 
+type LensStats = { meanIC: number; icStd: number; nDates: number; avgNames: number; tStat: number | null };
+type Validation = {
+  ok: boolean;
+  firstDate: string | null;
+  lastDate: string | null;
+  dataDays: number;
+  tickers: number;
+  horizons: { horizon: string; lenses: Partial<Record<string, LensStats>> }[];
+  note: string;
+};
+
+const LENS_ORDER = ["s41", "quant", "overlay", "blend70", "blendMod"] as const;
+const LENS_LABEL: Record<string, string> = {
+  s41: "41-pt score",
+  quant: "Quant %ile",
+  overlay: "Judgment overlay",
+  blend70: "Blend 70/30",
+  blendMod: "Blend ±15 mod",
+};
+
 const GROUP_ORDER = ["quality", "growth", "valuation", "momentum"] as const;
 const GROUP_LABEL: Record<string, string> = {
   quality: "Qual", growth: "Grow", valuation: "Val", momentum: "Mom",
@@ -83,6 +103,7 @@ export default function FactorLabPage() {
   const [loading, setLoading] = useState(true);
   const [sortKey, setSortKey] = useState<SortKey>("disagreement");
   const [showMethod, setShowMethod] = useState(false);
+  const [validation, setValidation] = useState<Validation | null>(null);
 
   useEffect(() => {
     let alive = true;
@@ -97,6 +118,15 @@ export default function FactorLabPage() {
         /* leave empty */
       } finally {
         if (alive) setLoading(false);
+      }
+    })();
+    (async () => {
+      try {
+        const r = await fetch("/api/factor-validation");
+        const j = await r.json();
+        if (alive && j?.ok) setValidation(j as Validation);
+      } catch {
+        /* panel simply doesn't render */
       }
     })();
     return () => { alive = false; };
@@ -310,6 +340,70 @@ export default function FactorLabPage() {
           </table>
         </div>
       )}
+
+      {/* ── Phase C: four-way IC validation ── */}
+      <div className="mt-8 rounded-lg border border-line bg-surface p-4">
+        <div className="flex flex-wrap items-baseline justify-between gap-2">
+          <h2 className="text-sm font-semibold text-ink">Validation — which lens predicts forward returns?</h2>
+          {validation && validation.dataDays > 0 && (
+            <span className="text-[11px] text-ink-3">
+              {validation.dataDays} day{validation.dataDays === 1 ? "" : "s"} of history · {validation.tickers} names · since {validation.firstDate}
+            </span>
+          )}
+        </div>
+        <p className="mt-1 max-w-3xl text-xs text-ink-2">
+          Mean Spearman rank IC of each lens vs realized forward returns, from the nightly point-in-time log.
+          Positive = higher-ranked names outperformed. This table is what earns the blend weights — no
+          integration happens until it says so.
+        </p>
+
+        {!validation ? (
+          <div className="mt-3 text-xs text-ink-3">Loading validation…</div>
+        ) : (
+          <>
+            <div className="mt-2 text-xs text-ink-2">{validation.note}</div>
+            {validation.horizons.some((h) => Object.keys(h.lenses).length > 0) && (
+              <div className="mt-3 overflow-x-auto">
+                <table className="w-full max-w-2xl border-collapse text-sm">
+                  <thead>
+                    <tr className="border-b border-line text-left text-xs text-ink-3">
+                      <th className="py-2 pr-3">Lens</th>
+                      {validation.horizons.map((h) => (
+                        <th key={h.horizon} className="py-2 pr-3 text-right">{h.horizon} IC</th>
+                      ))}
+                      <th className="py-2 text-right">obs</th>
+                    </tr>
+                  </thead>
+                  <tbody>
+                    {LENS_ORDER.map((lens) => {
+                      const cells = validation.horizons.map((h) => h.lenses[lens]);
+                      if (cells.every((c) => !c)) return null;
+                      const maxObs = Math.max(...cells.map((c) => c?.nDates ?? 0));
+                      return (
+                        <tr key={lens} className="border-b border-line/60">
+                          <td className="py-2 pr-3 text-ink">{LENS_LABEL[lens]}</td>
+                          {cells.map((c, i) => (
+                            <td key={i} className="py-2 pr-3 text-right font-mono">
+                              {c ? (
+                                <span className={c.meanIC > 0.02 ? "text-pos" : c.meanIC < -0.02 ? "text-neg" : "text-ink-2"} title={`std ${c.icStd} · t ${c.tStat ?? "—"} · avg ${c.avgNames} names`}>
+                                  {c.meanIC > 0 ? "+" : ""}{c.meanIC.toFixed(3)}
+                                </span>
+                              ) : (
+                                <span className="text-ink-3">—</span>
+                              )}
+                            </td>
+                          ))}
+                          <td className="py-2 text-right text-xs text-ink-3">{maxObs || "—"}</td>
+                        </tr>
+                      );
+                    })}
+                  </tbody>
+                </table>
+              </div>
+            )}
+          </>
+        )}
+      </div>
     </div>
   );
 }
