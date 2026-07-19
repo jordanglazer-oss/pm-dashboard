@@ -21,6 +21,7 @@ import { universeTickers, LIST_VERSION } from "./factor-constituents";
 const log = createLogger("FactorUniverse");
 
 export const UNIVERSE_KEY = "pm:factor-universe";
+export const UNIVERSE_NAMES_KEY = "pm:factor-universe-names";
 const PROGRESS_KEY = "pm:factor-universe-progress";
 const CHUNK = 40;
 
@@ -122,6 +123,57 @@ export function deriveMetrics(r: RawRow): Partial<Record<FactorMetric, number>> 
   if (r12 != null && r1 != null) out.mom12_1 = r12 - r1;
   if (r6 != null && r1 != null) out.mom6_1 = r6 - r1;
   return out;
+}
+
+/** One universe constituent's finished read-out — the idea-generation layer.
+ *  Stored in pm:factor-universe-names at finalize (regenerable cache). */
+export type UniverseName = {
+  ticker: string;
+  sector: string;
+  quant: number;              // 0–100 percentile vs sector peers
+  confidence: number;
+  groups: Record<string, number>;
+  /** Altman-style Z (EBITDA proxies EBIT, total debt proxies total
+   *  liabilities) — present only when the flag fires. */
+  altmanZ?: number;
+  distress?: "distress" | "grey";
+};
+
+export type UniverseNames = {
+  builtAt: string;
+  listVersion: string;
+  names: UniverseName[];
+};
+
+/**
+ * Altman-style distress flag. Deliberately a VETO-SHAPED signal, not a score:
+ * it never feeds the composite — it only warns that the balance sheet says a
+ * high quant percentile may be a trap. Approximations vs classic Altman
+ * (both flagged in comments so nobody mistakes this for the textbook Z):
+ *   EBIT  → FF_EBITDA_OPER  (overstates Z slightly)
+ *   Total liabilities → FF_DEBT (understates liabilities → overstates Z)
+ * Both biases point the SAME way (toward not flagging), so a fired flag is
+ * high-conviction. Not meaningful for Financials / Real Estate — skipped.
+ */
+export function altmanFlag(r: RawRow): { z: number; zone: "distress" | "grey" } | null {
+  if (/financ|real estate|bank|insur/i.test(r.sector ?? "")) return null;
+  const n = (v: unknown): number | null => (typeof v === "number" && isFinite(v) ? v : null);
+  const assets = n(r.assets);
+  const wkcap = n(r.wkcap), re = n(r.retainEarn), ebitda = n(r.ebitda);
+  const mv = n(r.mktVal), debt = n(r.debt), sales = n(r.sales0);
+  if (assets == null || assets <= 0) return null;
+  // Require the three core terms — absent data must not fabricate a flag.
+  if (wkcap == null || re == null || ebitda == null) return null;
+  // No/negligible debt → leverage term saturates (safe); cap avoids blowups.
+  const lev = debt != null && debt > 0 && mv != null ? Math.min(10, mv / debt) : 10;
+  const z =
+    1.2 * (wkcap / assets) +
+    1.4 * (re / assets) +
+    3.3 * (ebitda / assets) +
+    0.6 * lev +
+    (sales != null ? sales / assets : 0);
+  if (z >= 3) return null; // safe zone — no flag stored
+  return { z: Math.round(z * 100) / 100, zone: z < 1.8 ? "distress" : "grey" };
 }
 
 type Progress = {
@@ -242,9 +294,36 @@ export async function buildUniverseStep(budgetMs = 40_000): Promise<{
     sectors,
   };
   await redis.set(UNIVERSE_KEY, JSON.stringify(universe));
+
+  // ── Per-name read-outs for the WHOLE universe (idea-generation layer) ──
+  // Pure computation on rows already fetched — zero extra FactSet spend.
+  // Dynamic import: factors.ts statically imports this module, so a static
+  // import here would create a cycle.
+  const { computeFactorScore } = await import("./factors");
+  const names: UniverseName[] = [];
+  for (const [id, row] of Object.entries(prog.rows)) {
+    const ticker = idToTicker.get(id);
+    const sector = row.sector;
+    if (!ticker || !sector) continue;
+    const score = computeFactorScore(deriveMetrics(row), sector, universe);
+    if (!score) continue;
+    const veto = altmanFlag(row);
+    names.push({
+      ticker,
+      sector,
+      quant: score.percentile,
+      confidence: score.confidence,
+      groups: score.groups,
+      ...(veto ? { altmanZ: veto.z, distress: veto.zone } : {}),
+    });
+  }
+  names.sort((a, b) => b.quant - a.quant);
+  const universeNames: UniverseNames = { builtAt: universe.builtAt, listVersion: LIST_VERSION, names };
+  await redis.set(UNIVERSE_NAMES_KEY, JSON.stringify(universeNames));
+
   await redis.set(PROGRESS_KEY, JSON.stringify({ listVersion: LIST_VERSION, startedAt: prog.startedAt, doneIds: [], rows: {} }));
-  log.info(`universe built: ${usable} names, ${Object.keys(sectors).length} sectors`);
-  return { status: "done", detail: `${usable} names, ${Object.keys(sectors).length} sectors` };
+  log.info(`universe built: ${usable} names, ${Object.keys(sectors).length} sectors, ${names.length} scored`);
+  return { status: "done", detail: `${usable} names, ${Object.keys(sectors).length} sectors, ${names.length} scored` };
 }
 
 export async function readUniverse(): Promise<FactorUniverse | null> {

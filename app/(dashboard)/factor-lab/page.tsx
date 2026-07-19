@@ -33,6 +33,7 @@ type Row = {
   name: string;
   sector: string;
   bucket: string;
+  rating: string;         // current Buy/Hold/Sell from the 41-pt system
   adjusted: number;       // 41-pt adjusted
   quant: number | null;   // factor percentile
   overlay: number | null;
@@ -57,6 +58,26 @@ type Validation = {
   horizons: { horizon: string; lenses: Partial<Record<string, LensStats>> }[];
   note: string;
 };
+
+type ScreenName = {
+  ticker: string;
+  sector: string;
+  quant: number;
+  confidence: number;
+  groups: Record<string, number>;
+  altmanZ?: number;
+  distress?: "distress" | "grey";
+};
+
+/** Map a 0–100 blend to the 41-pt system's Buy/Hold/Sell bands: the same
+ *  FRACTIONAL thresholds (30/41 ≈ 73%, 18/41 ≈ 44%) so the what-if is an
+ *  apples-to-apples rating comparison, not a new opinion scale. */
+function impliedRating(p: number | null): "Buy" | "Hold" | "Sell" | null {
+  if (p == null) return null;
+  if (p >= 73) return "Buy";
+  if (p <= 44) return "Sell";
+  return "Hold";
+}
 
 const LENS_ORDER = ["s41", "quant", "overlay", "blend70", "blendMod"] as const;
 const LENS_LABEL: Record<string, string> = {
@@ -104,6 +125,10 @@ export default function FactorLabPage() {
   const [sortKey, setSortKey] = useState<SortKey>("disagreement");
   const [showMethod, setShowMethod] = useState(false);
   const [validation, setValidation] = useState<Validation | null>(null);
+  const [screen, setScreen] = useState<ScreenName[] | null>(null);
+  const [screenBuiltAt, setScreenBuiltAt] = useState<string | null>(null);
+  const [screenSector, setScreenSector] = useState<string>("All");
+  const [screenShowAll, setScreenShowAll] = useState(false);
 
   useEffect(() => {
     let alive = true;
@@ -129,6 +154,18 @@ export default function FactorLabPage() {
         /* panel simply doesn't render */
       }
     })();
+    (async () => {
+      try {
+        const r = await fetch("/api/factor-screen");
+        const j = await r.json();
+        if (alive && j?.ok) {
+          setScreen((j.names as ScreenName[]) ?? []);
+          setScreenBuiltAt(j.builtAt ?? null);
+        }
+      } catch {
+        if (alive) setScreen([]);
+      }
+    })();
     return () => { alive = false; };
   }, []);
 
@@ -143,6 +180,7 @@ export default function FactorLabPage() {
         name: s.name,
         sector: s.sector,
         bucket: s.bucket,
+        rating: s.rating,
         adjusted: s.adjusted,
         quant: e?.quant ?? null,
         overlay: e?.overlay ?? null,
@@ -196,6 +234,58 @@ export default function FactorLabPage() {
   }, [rows]);
 
   const built = builtAt ? new Date(builtAt).toLocaleString() : null;
+
+  // ── Universe Screen: top quant names NOT already in the book ──
+  const ownedTickers = useMemo(
+    () => new Set(scoredStocks.map((s) => s.ticker.toUpperCase())),
+    [scoredStocks],
+  );
+  const screenSectors = useMemo(() => {
+    if (!screen) return [];
+    return [...new Set(screen.map((n) => n.sector))].sort();
+  }, [screen]);
+  const screenRows = useMemo(() => {
+    if (!screen) return [];
+    return screen
+      .filter((n) => !ownedTickers.has(n.ticker.toUpperCase()))
+      .filter((n) => screenSector === "All" || n.sector === screenSector);
+    // already sorted by quant desc at write time
+  }, [screen, ownedTickers, screenSector]);
+  const screenVisible = screenShowAll ? screenRows.slice(0, 100) : screenRows.slice(0, 25);
+
+  // ── Consolidation Preview: what the blends would do to the book TODAY ──
+  const consolidation = useMemo(() => {
+    const covered = rows.filter((r) => r.quant != null && r.rank41 != null);
+    if (covered.length < 5) return null;
+    const byBlend = [...covered].sort((a, b) => (b.blend70 ?? 0) - (a.blend70 ?? 0));
+    const blendRank = new Map(byBlend.map((r, i) => [r.ticker, i + 1]));
+    const items = covered.map((r) => {
+      const now = r.rating;
+      const b70 = impliedRating(r.blend70);
+      const bMod = impliedRating(r.blendMod);
+      return {
+        ...r,
+        blendRank: blendRank.get(r.ticker) ?? null,
+        rankMove: (r.rank41 ?? 0) - (blendRank.get(r.ticker) ?? 0), // + = blend ranks it higher
+        b70,
+        bMod,
+        changed70: b70 != null && b70 !== now,
+        changedMod: bMod != null && bMod !== now,
+      };
+    });
+    const up70 = items.filter((i) => i.changed70 && i.b70 === "Buy").length
+      + items.filter((i) => i.changed70 && i.rating === "Sell" && i.b70 === "Hold").length;
+    const down70 = items.filter((i) => i.changed70 && i.b70 === "Sell").length
+      + items.filter((i) => i.changed70 && i.rating === "Buy" && i.b70 === "Hold").length;
+    return {
+      items: items.sort((a, b) => Math.abs(b.rankMove) - Math.abs(a.rankMove)),
+      changes70: items.filter((i) => i.changed70).length,
+      changesMod: items.filter((i) => i.changedMod).length,
+      up70,
+      down70,
+      n: items.length,
+    };
+  }, [rows]);
 
   return (
     <div className="mx-auto max-w-[1200px] px-4 py-6">
@@ -340,6 +430,164 @@ export default function FactorLabPage() {
           </table>
         </div>
       )}
+
+      {/* ── Universe Screen: idea generation from the full ~540-name universe ── */}
+      <div className="mt-8 rounded-lg border border-line bg-surface p-4">
+        <div className="flex flex-wrap items-baseline justify-between gap-2">
+          <h2 className="text-sm font-semibold text-ink">Universe Screen — top quant names you don&rsquo;t own</h2>
+          {screenBuiltAt && (
+            <span className="text-[11px] text-ink-3">built {new Date(screenBuiltAt).toLocaleDateString()}</span>
+          )}
+        </div>
+        <p className="mt-1 max-w-3xl text-xs text-ink-2">
+          Every S&amp;P 500 + TSX 60 constituent scored by the same factor model, Portfolio and Watchlist names
+          excluded — what the machine says you&rsquo;re missing. A <span className="font-semibold text-neg">distress</span> or{" "}
+          <span className="font-semibold text-warn">grey</span> badge is an Altman-style balance-sheet veto: the name
+          screens well but the balance sheet disagrees — treat the percentile with suspicion.
+        </p>
+
+        {!screen ? (
+          <div className="mt-3 text-xs text-ink-3">Loading screen…</div>
+        ) : screen.length === 0 ? (
+          <div className="mt-3 text-xs text-ink-2">
+            Not built yet — the per-name universe read-outs are written by the weekly universe rebuild (Sunday).
+            After the next rebuild this section populates automatically.
+          </div>
+        ) : (
+          <>
+            <div className="mt-3 flex flex-wrap items-center gap-2 text-xs">
+              <span className="text-ink-3">Sector:</span>
+              <select
+                value={screenSector}
+                onChange={(e) => setScreenSector(e.target.value)}
+                className="rounded border border-line bg-white px-2 py-1 text-xs text-ink-2 outline-none focus:border-accent-border"
+              >
+                <option value="All">All ({screenRows.length})</option>
+                {screenSectors.map((s) => (
+                  <option key={s} value={s}>{s}</option>
+                ))}
+              </select>
+            </div>
+            <div className="mt-3 overflow-x-auto">
+              <table className="w-full border-collapse text-sm">
+                <thead>
+                  <tr className="border-b border-line text-left text-xs text-ink-3">
+                    <th className="py-2 pr-3">#</th>
+                    <th className="py-2 pr-3">Ticker</th>
+                    <th className="py-2 pr-3">Sector</th>
+                    <th className="py-2 pr-3 text-right">Quant %ile</th>
+                    {GROUP_ORDER.map((g) => (
+                      <th key={g} className="px-2 py-2 text-center">{GROUP_LABEL[g]}</th>
+                    ))}
+                    <th className="py-2 pr-3 text-right">Conf</th>
+                    <th className="py-2">Veto</th>
+                  </tr>
+                </thead>
+                <tbody>
+                  {screenVisible.map((n, i) => (
+                    <tr key={n.ticker} className="border-b border-line/60">
+                      <td className="py-2 pr-3 text-xs text-ink-3">{i + 1}</td>
+                      <td className="py-2 pr-3 font-mono font-semibold text-ink">{displayTicker(n.ticker)}</td>
+                      <td className="py-2 pr-3 text-xs text-ink-3">{n.sector}</td>
+                      <td className={`py-2 pr-3 text-right font-mono font-semibold ${pctColor(n.quant)}`}>{n.quant}</td>
+                      {GROUP_ORDER.map((g) => (
+                        <td key={g} className="px-2 py-2 text-center"><ZBar z={n.groups?.[g]} /></td>
+                      ))}
+                      <td className="py-2 pr-3 text-right text-xs text-ink-3">{n.confidence}</td>
+                      <td className="py-2">
+                        {n.distress === "distress" ? (
+                          <span className="rounded bg-neg-soft px-1.5 py-0.5 text-[10px] font-semibold text-neg border border-neg-border" title={`Altman-style Z ${n.altmanZ}`}>distress</span>
+                        ) : n.distress === "grey" ? (
+                          <span className="rounded bg-warn-soft px-1.5 py-0.5 text-[10px] font-semibold text-warn border border-warn-border" title={`Altman-style Z ${n.altmanZ}`}>grey</span>
+                        ) : (
+                          <span className="text-[10px] text-ink-3">—</span>
+                        )}
+                      </td>
+                    </tr>
+                  ))}
+                </tbody>
+              </table>
+            </div>
+            {screenRows.length > 25 && (
+              <button onClick={() => setScreenShowAll((v) => !v)} className="mt-2 text-xs text-accent hover:underline">
+                {screenShowAll ? "show top 25" : `show top 100 (of ${screenRows.length})`}
+              </button>
+            )}
+          </>
+        )}
+      </div>
+
+      {/* ── Consolidation Preview: WHAT-IF only — nothing here is live ── */}
+      <div className="mt-8 rounded-lg border border-dashed border-accent-border bg-accent-soft/40 p-4">
+        <div className="flex flex-wrap items-baseline justify-between gap-2">
+          <h2 className="text-sm font-semibold text-ink">
+            Consolidation Preview
+            <span className="ml-2 rounded bg-white px-2 py-0.5 text-[10px] font-medium text-ink-3 border border-line align-middle">what-if · not live · Phase D decision pending</span>
+          </h2>
+        </div>
+        <p className="mt-1 max-w-3xl text-xs text-ink-2">
+          If the book were rated on <strong>Blend 70/30</strong> (0.7·quant + 0.3·judgment) today, using the same
+          fractional Buy/Sell thresholds as the 41-pt system (Buy ≥ 73%, Sell ≤ 44%) — here&rsquo;s exactly what would
+          change. This is a preview of the integration decision, not the decision: blend weights are earned in the
+          Validation table below, and nothing switches over until the evidence and an explicit sign-off say so.
+        </p>
+
+        {!consolidation ? (
+          <div className="mt-3 text-xs text-ink-3">Needs at least 5 factor-scored book names.</div>
+        ) : (
+          <>
+            <div className="mt-3 flex flex-wrap gap-4 text-xs">
+              <span className="text-ink"><strong>{consolidation.changes70}</strong> of {consolidation.n} ratings would change</span>
+              <span className="text-pos">▲ {consolidation.up70} upgrades</span>
+              <span className="text-neg">▼ {consolidation.down70} downgrades</span>
+              <span className="text-ink-3">(±15-mod variant: {consolidation.changesMod} changes)</span>
+            </div>
+            <div className="mt-3 overflow-x-auto">
+              <table className="w-full max-w-3xl border-collapse text-sm">
+                <thead>
+                  <tr className="border-b border-line text-left text-xs text-ink-3">
+                    <th className="py-2 pr-3">Ticker</th>
+                    <th className="py-2 pr-3 text-right">41-pt</th>
+                    <th className="py-2 pr-3">Rating now</th>
+                    <th className="py-2 pr-3 text-right">Blend 70/30</th>
+                    <th className="py-2 pr-3">Implied rating</th>
+                    <th className="py-2 pr-3 text-right">Rank move</th>
+                  </tr>
+                </thead>
+                <tbody>
+                  {consolidation.items.slice(0, 15).map((r) => (
+                    <tr key={r.ticker} className={`border-b border-line/60 ${r.changed70 ? "bg-white/70" : ""}`}>
+                      <td className="py-2 pr-3">
+                        <Link href={`/stock/${encodeURIComponent(r.ticker)}`} className="font-mono font-semibold text-ink hover:text-accent">
+                          {displayTicker(r.ticker)}
+                        </Link>
+                      </td>
+                      <td className="py-2 pr-3 text-right font-mono text-ink-2">{Number(r.adjusted.toFixed(1))}</td>
+                      <td className="py-2 pr-3 text-xs">{r.rating}</td>
+                      <td className="py-2 pr-3 text-right font-mono text-ink">{r.blend70}</td>
+                      <td className="py-2 pr-3 text-xs">
+                        {r.changed70 ? (
+                          <span className={`font-semibold ${r.b70 === "Buy" ? "text-pos" : r.b70 === "Sell" ? "text-neg" : "text-ink"}`}>
+                            {r.rating} → {r.b70}
+                          </span>
+                        ) : (
+                          <span className="text-ink-3">{r.b70 ?? "—"}</span>
+                        )}
+                      </td>
+                      <td className="py-2 pr-3 text-right font-mono text-xs">
+                        <span className={r.rankMove > 0 ? "text-pos" : r.rankMove < 0 ? "text-neg" : "text-ink-3"}>
+                          {r.rankMove > 0 ? "+" : ""}{r.rankMove}
+                        </span>
+                      </td>
+                    </tr>
+                  ))}
+                </tbody>
+              </table>
+            </div>
+            <div className="mt-2 text-[11px] text-ink-3">Top 15 by rank move, over the {consolidation.n} factor-scored book names. Highlighted rows = rating would change.</div>
+          </>
+        )}
+      </div>
 
       {/* ── Phase C: four-way IC validation ── */}
       <div className="mt-8 rounded-lg border border-line bg-surface p-4">
