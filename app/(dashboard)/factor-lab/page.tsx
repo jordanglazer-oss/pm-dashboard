@@ -47,6 +47,7 @@ type Row = {
 };
 
 type SortKey = "disagreement" | "adjusted" | "quant" | "overlay" | "blend70";
+type ConsolSortKey = "ticker" | "adjusted" | "rating" | "quant" | "overlay" | "blend70" | "changed" | "rankMove";
 
 type LensStats = { meanIC: number; icStd: number; nDates: number; avgNames: number; tStat: number | null };
 type Validation = {
@@ -129,6 +130,8 @@ export default function FactorLabPage() {
   const [screenBuiltAt, setScreenBuiltAt] = useState<string | null>(null);
   const [screenSector, setScreenSector] = useState<string>("All");
   const [screenShowAll, setScreenShowAll] = useState(false);
+  const [consolSort, setConsolSort] = useState<ConsolSortKey>("rankMove");
+  const [consolDir, setConsolDir] = useState<"asc" | "desc">("desc");
 
   useEffect(() => {
     let alive = true;
@@ -286,6 +289,34 @@ export default function FactorLabPage() {
       n: items.length,
     };
   }, [rows]);
+
+  // Sortable view over the full consolidation table.
+  const consolItems = useMemo(() => {
+    if (!consolidation) return [];
+    const ratingOrd = (r: string | null | undefined) => (r === "Buy" ? 2 : r === "Hold" ? 1 : r === "Sell" ? 0 : -1);
+    const items = [...consolidation.items].sort((a, b) => {
+      let cmp = 0;
+      switch (consolSort) {
+        case "ticker": cmp = a.ticker.localeCompare(b.ticker); break;
+        case "adjusted": cmp = a.adjusted - b.adjusted; break;
+        case "rating": cmp = ratingOrd(a.rating) - ratingOrd(b.rating); break;
+        case "quant": cmp = (a.quant ?? 0) - (b.quant ?? 0); break;
+        case "overlay": cmp = (a.overlay ?? -1) - (b.overlay ?? -1); break;
+        case "blend70": cmp = (a.blend70 ?? 0) - (b.blend70 ?? 0); break;
+        case "changed": cmp = Number(a.changed70) - Number(b.changed70) || ratingOrd(a.b70) - ratingOrd(b.b70); break;
+        case "rankMove": default: cmp = Math.abs(a.rankMove) - Math.abs(b.rankMove); break;
+      }
+      return consolDir === "asc" ? cmp : -cmp;
+    });
+    return items;
+  }, [consolidation, consolSort, consolDir]);
+
+  const toggleConsolSort = (key: ConsolSortKey) => {
+    if (consolSort === key) setConsolDir(consolDir === "asc" ? "desc" : "asc");
+    else { setConsolSort(key); setConsolDir(key === "ticker" ? "asc" : "desc"); }
+  };
+  const consolArrow = (key: ConsolSortKey) =>
+    consolSort === key ? (consolDir === "asc" ? " ▲" : " ▼") : "";
 
   return (
     <div className="mx-auto max-w-[1200px] px-4 py-6">
@@ -543,39 +574,44 @@ export default function FactorLabPage() {
               <span className="text-ink-3">(±15-mod variant: {consolidation.changesMod} changes)</span>
             </div>
             <div className="mt-3 overflow-x-auto">
-              <table className="w-full max-w-3xl border-collapse text-sm">
+              <table className="w-full border-collapse text-sm">
                 <thead>
                   <tr className="border-b border-line text-left text-xs text-ink-3">
-                    <th className="py-2 pr-3">Ticker</th>
-                    <th className="py-2 pr-3 text-right">41-pt</th>
-                    <th className="py-2 pr-3">Rating now</th>
-                    <th className="py-2 pr-3 text-right">Blend 70/30</th>
-                    <th className="py-2 pr-3">Implied rating</th>
-                    <th className="py-2 pr-3 text-right">Rank move</th>
+                    <th className="cursor-pointer select-none py-2 pr-3 hover:text-ink" onClick={() => toggleConsolSort("ticker")}>Ticker{consolArrow("ticker")}</th>
+                    <th className="cursor-pointer select-none py-2 pr-3 text-right hover:text-ink" onClick={() => toggleConsolSort("adjusted")}>41-pt{consolArrow("adjusted")}</th>
+                    <th className="cursor-pointer select-none py-2 pr-3 hover:text-ink" onClick={() => toggleConsolSort("rating")}>Rating now{consolArrow("rating")}</th>
+                    <th className="cursor-pointer select-none py-2 pr-3 text-right hover:text-ink" onClick={() => toggleConsolSort("quant")}>Quant{consolArrow("quant")}</th>
+                    <th className="cursor-pointer select-none py-2 pr-3 text-right hover:text-ink" onClick={() => toggleConsolSort("overlay")}>Overlay{consolArrow("overlay")}</th>
+                    <th className="cursor-pointer select-none py-2 pr-3 text-right hover:text-ink" onClick={() => toggleConsolSort("blend70")}>Blend 70/30{consolArrow("blend70")}</th>
+                    <th className="cursor-pointer select-none py-2 pr-3 hover:text-ink" onClick={() => toggleConsolSort("changed")}>Implied rating{consolArrow("changed")}</th>
+                    <th className="cursor-pointer select-none py-2 pr-3 text-right hover:text-ink" onClick={() => toggleConsolSort("rankMove")}>Rank move{consolArrow("rankMove")}</th>
                   </tr>
                 </thead>
                 <tbody>
-                  {consolidation.items.slice(0, 15).map((r) => (
+                  {consolItems.map((r) => (
                     <tr key={r.ticker} className={`border-b border-line/60 ${r.changed70 ? "bg-white/70" : ""}`}>
                       <td className="py-2 pr-3">
                         <Link href={`/stock/${encodeURIComponent(r.ticker)}`} className="font-mono font-semibold text-ink hover:text-accent">
                           {displayTicker(r.ticker)}
                         </Link>
+                        <span className="ml-1 text-[10px] text-ink-3">{r.bucket === "Portfolio" ? "P" : "W"}</span>
                       </td>
                       <td className="py-2 pr-3 text-right font-mono text-ink-2">{Number(r.adjusted.toFixed(1))}</td>
                       <td className="py-2 pr-3 text-xs">{r.rating}</td>
-                      <td className="py-2 pr-3 text-right font-mono text-ink">{r.blend70}</td>
+                      <td className={`py-2 pr-3 text-right font-mono ${pctColor(r.quant)}`}>{r.quant}</td>
+                      <td className="py-2 pr-3 text-right font-mono text-ink-2">{r.overlay ?? "—"}</td>
+                      <td className="py-2 pr-3 text-right font-mono font-semibold text-ink">{r.blend70}</td>
                       <td className="py-2 pr-3 text-xs">
                         {r.changed70 ? (
                           <span className={`font-semibold ${r.b70 === "Buy" ? "text-pos" : r.b70 === "Sell" ? "text-neg" : "text-ink"}`}>
                             {r.rating} → {r.b70}
                           </span>
                         ) : (
-                          <span className="text-ink-3">{r.b70 ?? "—"}</span>
+                          <span className="text-ink-3">{r.b70 ?? "—"} (no change)</span>
                         )}
                       </td>
                       <td className="py-2 pr-3 text-right font-mono text-xs">
-                        <span className={r.rankMove > 0 ? "text-pos" : r.rankMove < 0 ? "text-neg" : "text-ink-3"}>
+                        <span className={r.rankMove > 0 ? "text-pos" : r.rankMove < 0 ? "text-neg" : "text-ink-3"} title={`41-pt rank ${r.rank41} → blend rank ${r.blendRank}`}>
                           {r.rankMove > 0 ? "+" : ""}{r.rankMove}
                         </span>
                       </td>
@@ -584,7 +620,12 @@ export default function FactorLabPage() {
                 </tbody>
               </table>
             </div>
-            <div className="mt-2 text-[11px] text-ink-3">Top 15 by rank move, over the {consolidation.n} factor-scored book names. Highlighted rows = rating would change.</div>
+            <div className="mt-2 text-[11px] text-ink-3">
+              All {consolidation.n} factor-scored book names (P = Portfolio, W = Watchlist). Click any header to sort.
+              Highlighted rows = rating would change under Blend 70/30. Rank move = 41-pt rank minus blend rank
+              (positive = the blend ranks it higher); hover for the exact ranks. Names without an overlay are
+              blended as quant-only (unassessed ≠ weak).
+            </div>
           </>
         )}
       </div>
