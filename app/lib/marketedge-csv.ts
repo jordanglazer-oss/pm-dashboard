@@ -54,9 +54,14 @@ export function parseMarketEdgeCsv(text: string): MarketEdgeParseResult {
     const row: MarketEdgeCsvRow = { ticker: sym };
     if (idx.opinion >= 0) {
       const v = (cells[idx.opinion] ?? "").trim().toLowerCase();
-      if (v === "long") row.opinion = "long";
-      else if (v === "avoid") row.opinion = "avoid";
-      else if (v === "neutral") row.opinion = "neutral";
+      // MarketEdge reports hybrid labels at the deteriorated/improved end of
+      // the Opinion Score range: "Long/Neutral" (Long at score −3/−4) and
+      // "Avoid/Neutral" (Avoid at score +3/+4). These are still Long/Avoid
+      // opinions — and they're exactly the rows the early-warning flag exists
+      // for, so prefix-match rather than exact-match.
+      if (v.startsWith("long")) row.opinion = "long";
+      else if (v.startsWith("avoid")) row.opinion = "avoid";
+      else if (v.startsWith("neutral")) row.opinion = "neutral";
     }
     if (idx.score >= 0) {
       const n = parseFloat((cells[idx.score] ?? "").trim());
