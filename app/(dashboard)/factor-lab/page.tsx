@@ -579,6 +579,7 @@ export default function FactorLabPage() {
                   <tr className="border-b border-line text-left text-xs text-ink-3">
                     <th className="cursor-pointer select-none py-2 pr-3 hover:text-ink" onClick={() => toggleConsolSort("ticker")}>Ticker{consolArrow("ticker")}</th>
                     <th className="cursor-pointer select-none py-2 pr-3 text-right hover:text-ink" onClick={() => toggleConsolSort("adjusted")}>41-pt{consolArrow("adjusted")}</th>
+                    <th className="cursor-pointer select-none py-2 pr-3 text-right hover:text-ink" onClick={() => toggleConsolSort("adjusted")} title="The 41-pt adjusted score rescaled to /100 for visual comparability. NOTE: an absolute grade, not a percentile — same axis, different meaning than Quant.">/100{consolArrow("adjusted")}</th>
                     <th className="cursor-pointer select-none py-2 pr-3 hover:text-ink" onClick={() => toggleConsolSort("rating")}>Rating now{consolArrow("rating")}</th>
                     <th className="cursor-pointer select-none py-2 pr-3 text-right hover:text-ink" onClick={() => toggleConsolSort("quant")}>Quant{consolArrow("quant")}</th>
                     <th className="cursor-pointer select-none py-2 pr-3 text-right hover:text-ink" onClick={() => toggleConsolSort("overlay")}>Overlay{consolArrow("overlay")}</th>
@@ -597,6 +598,7 @@ export default function FactorLabPage() {
                         <span className="ml-1 text-[10px] text-ink-3">{r.bucket === "Portfolio" ? "P" : "W"}</span>
                       </td>
                       <td className="py-2 pr-3 text-right font-mono text-ink-2">{Number(r.adjusted.toFixed(1))}</td>
+                      <td className="py-2 pr-3 text-right font-mono text-ink-3">{Math.round((r.adjusted / MAX_SCORE) * 100)}</td>
                       <td className="py-2 pr-3 text-xs">{r.rating}</td>
                       <td className={`py-2 pr-3 text-right font-mono ${pctColor(r.quant)}`}>{r.quant}</td>
                       <td className="py-2 pr-3 text-right font-mono text-ink-2">{r.overlay ?? "—"}</td>

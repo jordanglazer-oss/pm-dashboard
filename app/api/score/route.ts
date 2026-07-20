@@ -14,6 +14,7 @@ import { getRedis } from "@/app/lib/redis";
 import { resolveFactsetId } from "@/app/lib/factset-symbols";
 import { factsetConfigured } from "@/app/lib/factset";
 import { companySnapshot, formatSnapshotForPrompt, factsetPeerBlock, namesMatch, normalizeFactsetSector, type CompanySnapshot } from "@/app/lib/factset-fundamentals";
+import { factorContextBlock } from "@/app/lib/factor-context";
 
 const client = new Anthropic();
 
@@ -499,6 +500,8 @@ DATA SOURCES (in order of preference for fundamentals):
 
 3. YAHOO FINANCE DATA (always present) — use for: current price, market cap, beta, sentiment metrics (P/E ratios when FactSet/EDGAR aren't present), peer comparison data, analyst recommendations, dividend yield, and anything FactSet/EDGAR don't carry. Yahoo Finance data uses "raw" for numeric values and "fmt" for formatted strings; always use the actual numbers.
 
+SECTOR-RELATIVE FACTOR CONTEXT (when present): a block marked "=== SECTOR-RELATIVE FACTOR CONTEXT ===" carries COMPUTED z-scores placing this company inside its FULL GICS sector distribution (typically 60–500 index constituents) on margins, growth, leverage, valuation multiples, and price momentum. All z-scores are sign-normalized (positive ALWAYS = favorable; lower-is-better metrics like P/E are pre-flipped). This answers the question the 3-5 named peers cannot: where the company sits versus the ENTIRE sector. Treat it as TIER-1 supporting evidence for relativeValuation, historicalValuation, growth, leverageCoverage, and cashFlowQuality — alongside, not replacing, the named-peer block and absolute financials. A |z| > 1 gap is meaningful and should be reflected in the category grade and cited (source: "factset", sourceDetail: "sector z-score"); if it contradicts the named-peer comparison, say which you weighted and why (the full distribution usually wins over 3 hand-picked comps). Category definitions and scales are UNCHANGED — this block sharpens evidence, it does not add or resize any category.
+
 WHEN SOURCES DISAGREE: trust FactSet first (current + confirmed), then EDGAR for as-reported audited figures, then Yahoo (which sometimes restates silently and whose definitions can drift). When the SAME figure is available in more than one block, you MUST cite it as source: "factset" — reserve source: "edgar"/"yahoo" only for figures that appear ONLY in those blocks. Whenever a FACTSET FUNDAMENTALS block is present, it is the source of record for the growth, relativeValuation, historicalValuation, leverageCoverage, and cashFlowQuality categories: their dataPoints should be source: "factset", INCLUDING peer multiples when the PEER COMPARISONS block is FactSet-priced (only tag a peer "yahoo" if its block is explicitly labeled "(Yahoo fallback)").
 
 MISSING DATA / MANUAL FALLBACK: if NONE of the sources provide what a fundamental category needs (no FactSet block, no EDGAR, no usable Yahoo figure, and web_search — when enabled — surfaces nothing), do NOT fabricate. Score that category at its MIDPOINT, set confidence: "low", and begin its explanation summary with "INSUFFICIENT DATA — score manually:" so the PM knows to set it by hand. This should be rare now that FactSet covers most issuers.
@@ -897,7 +900,12 @@ export async function POST(request: NextRequest) {
       } else if (rawModules != null) {
         yahooContext = financialResult.context;
       }
-      financialContext = [factsetBlock, peerBlock, yahooContext].filter(Boolean).join("\n\n---\n\n");
+      // Sector-relative factor context (#4 injection, 2026-07-18): computed
+      // z-scores vs the full GICS sector distribution. Best-effort — null on
+      // any failure and the rescore proceeds exactly as before. Category
+      // scales/definitions unchanged; this only sharpens the evidence.
+      const factorBlock = await factorContextBlock(upperTicker);
+      financialContext = [factsetBlock, peerBlock, factorBlock, yahooContext].filter(Boolean).join("\n\n---\n\n");
 
       // Auto-populate the FactSet analyst-consensus row (mean target price +
       // # analysts) from the snapshot — replaces the manual Coverage-Checklist
