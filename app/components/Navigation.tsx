@@ -316,7 +316,7 @@ export function Navigation() {
   // /scoring route (scoring was folded into the Dashboard/Rankings surface).
   const activeTab = pathname.startsWith("/stock/") || pathname === "/scoring"
     || pathname === "/" || pathname === "/portfolio" || pathname === "/pim-model"
-    || pathname === "/aa-performance"
+    || pathname === "/aa-performance" || pathname === "/risk"
     ? "Portfolio"
     : pathname === "/brief"
     ? "Brief"
