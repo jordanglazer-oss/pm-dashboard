@@ -13,6 +13,7 @@ import { mapBoostedAiToAiRating, mapSmaxToRelativeStrength, consensusLabel, type
 import { getRedis } from "@/app/lib/redis";
 import { resolveFactsetId } from "@/app/lib/factset-symbols";
 import { factsetConfigured, relayRetry } from "@/app/lib/factset";
+import { sectorPlaybookBlock } from "@/app/lib/sector-playbook";
 import { companySnapshot, formatSnapshotForPrompt, factsetPeerBlock, namesMatch, normalizeFactsetSector, type CompanySnapshot } from "@/app/lib/factset-fundamentals";
 
 const client = new Anthropic();
@@ -499,6 +500,8 @@ DATA SOURCES (in order of preference for fundamentals):
 
 3. YAHOO FINANCE DATA (always present) — use for: current price, market cap, beta, sentiment metrics (P/E ratios when FactSet/EDGAR aren't present), peer comparison data, analyst recommendations, dividend yield, and anything FactSet/EDGAR don't carry. Yahoo Finance data uses "raw" for numeric values and "fmt" for formatted strings; always use the actual numbers.
 
+SECTOR PLAYBOOK (when present): a block marked "=== SECTOR PLAYBOOK: ... ===" — selected DETERMINISTICALLY server-side from the company's GICS sector and industry — prescribes which metrics the five fundamental categories (growth, relativeValuation, historicalValuation, leverageCoverage, cashFlowQuality) must be graded on for this business model, and which metrics are NOT meaningful for it. The playbook OVERRIDES generic metric guidance: grade each category on its listed metrics, never cite a metric the playbook marks as not meaningful (e.g. Debt/EBITDA for a bank, GAAP P/E for a REIT, FCF for an insurer), and keep category scales/definitions exactly as specified in the category list. If a SECTOR CORRECTION or SOURCE HEALTH block is present, follow its instructions as well.
+
 WHEN SOURCES DISAGREE: trust FactSet first (current + confirmed), then EDGAR for as-reported audited figures, then Yahoo (which sometimes restates silently and whose definitions can drift). When the SAME figure is available in more than one block, you MUST cite it as source: "factset" — reserve source: "edgar"/"yahoo" only for figures that appear ONLY in those blocks. Whenever a FACTSET FUNDAMENTALS block is present, it is the source of record for the growth, relativeValuation, historicalValuation, leverageCoverage, and cashFlowQuality categories: their dataPoints should be source: "factset", INCLUDING peer multiples when the PEER COMPARISONS block is FactSet-priced (only tag a peer "yahoo" if its block is explicitly labeled "(Yahoo fallback)").
 
 MISSING DATA / MANUAL FALLBACK: if NONE of the sources provide what a fundamental category needs (no FactSet block, no EDGAR, no usable Yahoo figure, and web_search — when enabled — surfaces nothing), do NOT fabricate. Score that category at its MIDPOINT, set confidence: "low", and begin its explanation summary with "INSUFFICIENT DATA — score manually:" so the PM knows to set it by hand. This should be rare now that FactSet covers most issuers.
@@ -798,6 +801,13 @@ export async function POST(request: NextRequest) {
     // factsetSnap is in scope) once the name-guard passes.
     let factsetSectorOut: string | null = null;
     let factsetBetaOut: number | null = null;
+    // Sector self-heal audit trail: when FactSet's GICS sector differs from
+    // the sector stored on pm:stocks, the response's `sector` already corrects
+    // it — this field makes the correction VISIBLE to the client + prompt.
+    let sectorCorrectedOut: { from: string; to: string } | null = null;
+    // Which source actually graded the fundamentals this run. "degraded" =
+    // FactSet was expected but unavailable after retries → Yahoo fallback.
+    let sourceHealthOut: "factset" | "degraded-yahoo-fallback" | "yahoo" = "yahoo";
     // FactSet market cap (millions) + dividend yield (%) → injected into
     // healthData so the whole dashboard (not just scoring) reads FactSet.
     let factsetMktValOut: number | null = null;
@@ -885,7 +895,11 @@ export async function POST(request: NextRequest) {
         // if FactSet can't resolve/price the peers.
         const peerTickers = await fmpPeerTickers(upperTicker);
         if (peerTickers.length) {
-          peerBlock = await relayRetry(() => factsetPeerBlock(peerTickers)).catch((e) => {
+          // Subject GICS classification enables the peer-quality gate: auto-
+          // picked peers from the wrong industry are dropped before they can
+          // distort relative valuation.
+          const subject = { sector: factsetSnap?.sector ?? null, industry: factsetSnap?.industry ?? null };
+          peerBlock = await relayRetry(() => factsetPeerBlock(peerTickers, subject)).catch((e) => {
             console.error(`[Score] FactSet peer block failed for ${upperTicker} after retries:`, e);
             return "";
           });
@@ -898,6 +912,40 @@ export async function POST(request: NextRequest) {
         yahooContext = financialResult.context;
       }
       financialContext = [factsetBlock, peerBlock, yahooContext].filter(Boolean).join("\n\n---\n\n");
+
+      // ── Sector playbook: deterministic metric selection by GICS class ──
+      // Chosen server-side from FactSet sector+industry (falls back to the
+      // stored sector when FactSet is unavailable) so "which metrics matter
+      // for what this company does" is computed, not model discretion.
+      let storedSector: string | null = null;
+      try {
+        const redis = await getRedis();
+        const stocksRaw = await redis.get("pm:stocks");
+        if (stocksRaw) {
+          const stocks = JSON.parse(stocksRaw) as Array<{ ticker?: string; sector?: string }>;
+          storedSector = stocks.find((s) => (s.ticker || "").toUpperCase() === upperTicker)?.sector ?? null;
+        }
+      } catch { /* stored sector stays null */ }
+      const playbook = sectorPlaybookBlock(
+        factsetUsed ? (factsetSnap?.sector ?? null) : storedSector,
+        factsetUsed ? (factsetSnap?.industry ?? null) : null,
+      );
+      if (playbook) financialContext += `\n\n---\n\n${playbook}`;
+
+      // ── Sector mismatch: FactSet GICS vs the sector stored on pm:stocks ──
+      // The response's `sector` self-heals the stored value; this makes the
+      // correction visible (response field + prompt note) instead of silent.
+      if (factsetUsed && factsetSectorOut && storedSector && factsetSectorOut !== storedSector) {
+        sectorCorrectedOut = { from: storedSector, to: factsetSectorOut };
+        financialContext += `\n\n---\n\n=== SECTOR CORRECTION ===\nThe dashboard had this name stored as sector "${storedSector}", but FactSet's GICS classification is "${factsetSectorOut}" (authoritative — this response updates the stored value). Grade using the ${factsetSectorOut} lens and the sector playbook above; briefly note the reclassification in the companySummary.`;
+        console.log(`[Score] ${upperTicker} sector corrected: "${storedSector}" → "${factsetSectorOut}"`);
+      }
+
+      // ── Source health: make a FactSet-outage run visible, not silent ──
+      sourceHealthOut = factsetUsed ? "factset" : fsRes.source === "factset" ? "degraded-yahoo-fallback" : "yahoo";
+      if (sourceHealthOut === "degraded-yahoo-fallback") {
+        financialContext += `\n\n---\n\n=== SOURCE HEALTH: DEGRADED RUN ===\nFactSet was expected for this name but was unavailable after retries — the fundamental categories below are graded from Yahoo fallback data. Cap confidence at "medium" for growth, relativeValuation, historicalValuation, leverageCoverage, and cashFlowQuality, and begin each of those explanation summaries with "YAHOO-FALLBACK RUN:" so the PM knows a FactSet-backed rescore may read differently.`;
+      }
 
       // Auto-populate the FactSet analyst-consensus row (mean target price +
       // # analysts) from the snapshot — replaces the manual Coverage-Checklist
@@ -1473,6 +1521,13 @@ export async function POST(request: NextRequest) {
       // this run (true = FactSet snapshot fetched + name-guard passed). Lets us
       // tell "FactSet present but Claude cited EDGAR" from "FactSet never ran".
       factsetUsed,
+      // Which source actually graded fundamentals: "factset" | "yahoo" |
+      // "degraded-yahoo-fallback" (FactSet expected but down after retries —
+      // the explanations carry a YAHOO-FALLBACK RUN prefix on affected cats).
+      sourceHealth: sourceHealthOut,
+      // Non-null when FactSet's GICS sector differed from the stored sector
+      // (the `sector` field above already carries the correction).
+      sectorCorrected: sectorCorrectedOut,
       // The FactSet analyst-consensus row written this run (target + # analysts)
       // so the client can refresh the Coverage panel live without a reload.
       factsetConsensus: factsetConsensusOut,

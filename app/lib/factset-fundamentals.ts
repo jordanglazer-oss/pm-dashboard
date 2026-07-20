@@ -277,17 +277,59 @@ const PEER_FORMULAS = [
  * Peer SELECTION still comes from the caller (FMP); this replaces the Yahoo
  * PRICING so peer multiples are FactSet too. Returns "" if no peer resolves —
  * the caller then falls back to the Yahoo peer block.
+ *
+ * When `subject` (the scored company's GICS classification) is provided, the
+ * auto-picked peers are VALIDATED against it: a peer whose GICS industry (or,
+ * when industries are unavailable, sector) doesn't match is dropped before it
+ * can distort relative valuation — the FMP picker occasionally returns
+ * headline-adjacent names rather than true comps (observed: AAPL as an NVDA
+ * "peer"). Unknown-classification peers get the benefit of the doubt; if
+ * fewer than 2 peers survive, the original set is kept (bad comps beat an
+ * empty comparison, and the block labels each peer's industry either way).
  */
-export async function factsetPeerBlock(tickers: string[]): Promise<string> {
+export async function factsetPeerBlock(
+  tickers: string[],
+  subject?: { sector?: string | null; industry?: string | null },
+): Promise<string> {
   const idToTicker = new Map<string, string>();
   for (const t of tickers) {
     const r = resolveFactsetId(t);
     if (r.source === "factset" && !idToTicker.has(r.id)) idToTicker.set(r.id, t);
   }
-  const ids = [...idToTicker.keys()];
+  let ids = [...idToTicker.keys()];
   if (ids.length === 0) return "";
 
-  const data = await crossSectional(ids, PEER_FORMULAS);
+  const data = await crossSectional(ids, [...PEER_FORMULAS, SECTOR_FORMULA, INDUSTRY_FORMULA]);
+
+  // ── Peer-quality gate (GICS industry first, sector fallback) ──
+  const cls = (id: string, f: string): string | null => {
+    const v = data[id]?.[f];
+    return typeof v === "string" && v.trim() ? v.trim() : null;
+  };
+  if (subject?.industry || subject?.sector) {
+    const kept: string[] = [];
+    const dropped: string[] = [];
+    for (const id of ids) {
+      const pInd = cls(id, INDUSTRY_FORMULA);
+      const pSec = cls(id, SECTOR_FORMULA);
+      let ok = true;
+      if (subject.industry && pInd) ok = pInd === subject.industry;
+      else if (subject.sector && pSec) ok = pSec === subject.sector;
+      (ok ? kept : dropped).push(id);
+    }
+    if (dropped.length && kept.length >= 2) {
+      console.log(
+        `[FactSet] peer-quality gate dropped ${dropped.map((id) => idToTicker.get(id)).join(", ")} ` +
+          `(GICS mismatch vs subject ${subject.industry || subject.sector}); kept ${kept.map((id) => idToTicker.get(id)).join(", ")}`,
+      );
+      ids = kept;
+    } else if (dropped.length) {
+      console.warn(
+        `[FactSet] peer-quality gate would leave <2 peers — keeping original set (${[...idToTicker.values()].join(", ")})`,
+      );
+    }
+  }
+
   const lines: string[] = [];
   for (const id of ids) {
     const row = data[id] || {};
@@ -309,8 +351,9 @@ export async function factsetPeerBlock(tickers: string[]): Promise<string> {
     const revGrowth = s0 != null && s1 ? ((s0 - s1) / Math.abs(s1)) * 100 : null;
     // Skip peers FactSet doesn't actually cover (no P/E and no market cap).
     if (num("FG_PE") == null && mkt == null) continue;
+    const pInd = cls(id, INDUSTRY_FORMULA);
     lines.push(
-      `PEER ${idToTicker.get(id)}: P/E ${fmt(num("FG_PE"))} | Fwd P/E ${fmt(fwdPe)} | EV/EBITDA ${fmt(evEbitda)} | P/B ${fmt(num("FG_PBK"))} | P/S ${fmt(num("FG_PSALES"))} | Gross margin ${fmt(num("FF_GROSS_MGN(ANN,0)"))}% | ROE ${fmt(num("FF_ROE(ANN,0)"))}% | Rev growth ${fmt(revGrowth)}% | Mkt cap ${fmt(mkt)}`
+      `PEER ${idToTicker.get(id)}${pInd ? ` [${pInd}]` : ""}: P/E ${fmt(num("FG_PE"))} | Fwd P/E ${fmt(fwdPe)} | EV/EBITDA ${fmt(evEbitda)} | P/B ${fmt(num("FG_PBK"))} | P/S ${fmt(num("FG_PSALES"))} | Gross margin ${fmt(num("FF_GROSS_MGN(ANN,0)"))}% | ROE ${fmt(num("FF_ROE(ANN,0)"))}% | Rev growth ${fmt(revGrowth)}% | Mkt cap ${fmt(mkt)}`
     );
   }
   if (lines.length === 0) return "";
