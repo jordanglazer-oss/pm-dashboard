@@ -1,4 +1,4 @@
-import { crossSectional, factsetConfigured, type FactsetValue } from "./factset";
+import { crossSectional, factsetConfigured, relayRetry, type FactsetValue } from "./factset";
 import { resolveFactsetId } from "./factset-symbols";
 import { readUniverse, deriveMetrics, RAW_FORMULAS, LOWER_IS_BETTER, type FactorMetric } from "./factor-universe";
 import { computeFactorScore, FACTOR_GROUPS } from "./factors";
@@ -58,7 +58,9 @@ export async function factorContextBlock(ticker: string): Promise<string | null>
     const resolved = resolveFactsetId(ticker.trim().toUpperCase());
     if (resolved.source !== "factset") return null;
 
-    const data = await crossSectional([resolved.id], Object.values(RAW_FORMULAS) as unknown as string[]);
+    const data = await relayRetry(() =>
+      crossSectional([resolved.id], Object.values(RAW_FORMULAS) as unknown as string[]),
+    );
     const row = data[resolved.id];
     if (!row) return null;
 

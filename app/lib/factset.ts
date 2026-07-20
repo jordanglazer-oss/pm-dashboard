@@ -94,6 +94,29 @@ async function relayGet(factsetPath: string): Promise<unknown> {
   }
 }
 
+/**
+ * Retry wrapper for SCORING-path relay calls. The 7s single-shot timeout above
+ * is right for latency-sensitive price routes (fast fallback to Yahoo), but on
+ * the rescore path FactSet is the PRIMARY source and the route has minutes of
+ * budget — one transient relay hiccup silently downgrading a whole rescore to
+ * Yahoo is the wrong trade (observed: NVDA rescore 2026-07-20). Retries on
+ * timeouts / 5xx / network errors; does NOT retry 4xx (a bad query won't heal).
+ */
+export async function relayRetry<T>(fn: () => Promise<T>, attempts = 3, delayMs = 800): Promise<T> {
+  let lastErr: unknown;
+  for (let i = 0; i < attempts; i++) {
+    try {
+      return await fn();
+    } catch (e) {
+      lastErr = e;
+      const msg = e instanceof Error ? e.message : String(e);
+      if (/returned 4\d\d/.test(msg)) throw e; // permanent — don't retry
+      if (i < attempts - 1) await new Promise((r) => setTimeout(r, delayMs * (i + 1)));
+    }
+  }
+  throw lastErr;
+}
+
 /** Unauthenticated relay health check. */
 export async function relayHealthy(): Promise<boolean> {
   try {

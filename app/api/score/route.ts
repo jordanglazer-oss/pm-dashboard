@@ -12,7 +12,7 @@ import type { AnalystSnapshots } from "@/app/lib/analyst-snapshots";
 import { mapBoostedAiToAiRating, mapSmaxToRelativeStrength, consensusLabel, type BoostedAiConsensus } from "@/app/lib/external-scoring";
 import { getRedis } from "@/app/lib/redis";
 import { resolveFactsetId } from "@/app/lib/factset-symbols";
-import { factsetConfigured } from "@/app/lib/factset";
+import { factsetConfigured, relayRetry } from "@/app/lib/factset";
 import { companySnapshot, formatSnapshotForPrompt, factsetPeerBlock, namesMatch, normalizeFactsetSector, type CompanySnapshot } from "@/app/lib/factset-fundamentals";
 import { factorContextBlock } from "@/app/lib/factor-context";
 
@@ -821,8 +821,8 @@ export async function POST(request: NextRequest) {
         : ({ source: "existing", reason: "FactSet relay not configured" } as const);
       const factsetPromise: Promise<CompanySnapshot | null> =
         fsRes.source === "factset"
-          ? companySnapshot(fsRes.id).catch((e) => {
-              console.error(`[Score] FactSet snapshot failed for ${upperTicker} (${fsRes.id}):`, e);
+          ? relayRetry(() => companySnapshot(fsRes.id)).catch((e) => {
+              console.error(`[Score] FactSet snapshot failed for ${upperTicker} (${fsRes.id}) after retries:`, e);
               return null;
             })
           : Promise.resolve(null);
@@ -888,8 +888,8 @@ export async function POST(request: NextRequest) {
         // if FactSet can't resolve/price the peers.
         const peerTickers = await fmpPeerTickers(upperTicker);
         if (peerTickers.length) {
-          peerBlock = await factsetPeerBlock(peerTickers).catch((e) => {
-            console.error(`[Score] FactSet peer block failed for ${upperTicker}:`, e);
+          peerBlock = await relayRetry(() => factsetPeerBlock(peerTickers)).catch((e) => {
+            console.error(`[Score] FactSet peer block failed for ${upperTicker} after retries:`, e);
             return "";
           });
         }
