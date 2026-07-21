@@ -12,7 +12,7 @@ import {
 } from "@/app/lib/forward-looking";
 import type { ResearchState } from "@/app/lib/defaults";
 import { defaultResearch } from "@/app/lib/defaults";
-import { buildHedgingCostsBlock } from "@/app/lib/hedging";
+import { buildHedgingCostsBlock, buildHedgeChecklistBlock } from "@/app/lib/hedging";
 import { crossSectional, factsetConfigured } from "@/app/lib/factset";
 import { buildCatalystCalendar, type CatalystCalendar } from "@/app/lib/catalyst-calendar";
 import { easternToday, easternLongDate, relativeDayLabel } from "@/app/lib/date-eastern";
@@ -1225,85 +1225,81 @@ These signals are the evidence behind the consolidated label. Use them for your 
     const todayIso = easternToday();
 
     // ── Prior brief (continuity / "what changed") ──────────────────────────
-    // pm:brief holds the LAST generated brief (the client persists the new one
-    // only AFTER this route returns), so at generation time it's the previous
-    // brief. Feed a compact digest so the model can lead with what has CHANGED
-    // day-to-day (regime flip, hedging/deploy call change, a new risk) instead
-    // of resetting from scratch. Read-only; best-effort (first-ever run has none).
+    // The "since last brief" comparison must be against the PREVIOUS DAY's
+    // brief, not an earlier generation from the same day — otherwise a mid-day
+    // regenerate (e.g. after a methodology change) makes whatChanged report
+    // "nothing changed" against a brief from two hours ago. Mechanics:
+    //   - pm:brief holds the last generated brief (client persists after return)
+    //   - when that brief is from a PRIOR Eastern day, it IS the right prior —
+    //     use it and archive a compact digest to pm:brief-prevday
+    //   - when it's from TODAY (a regeneration), use the pm:brief-prevday
+    //     archive instead, so the comparison stays anchored to yesterday
+    // Read-only vs pm:brief; writes only the pm:brief-prevday digest (cache).
     let priorBriefContext = "";
     try {
       const priorRedis = await getRedis();
-      const priorRaw = await priorRedis.get("pm:brief");
-      if (priorRaw) {
-        const prior = JSON.parse(priorRaw) as {
-          marketRegime?: string; regimeVerdict?: string; bottomLine?: string;
-          hedgingCall?: { action?: string }; cashDeploymentCall?: { action?: string; score?: number };
-          date?: string; generatedAt?: string;
+      type PriorShape = {
+        marketRegime?: string; regimeVerdict?: string; bottomLine?: string;
+        hedgingCall?: { action?: string }; cashDeploymentCall?: { action?: string; score?: number };
+        date?: string; dateISO?: string; generatedAt?: string;
+      };
+      const briefDay = (b: PriorShape | null): string =>
+        b?.dateISO?.slice(0, 10) || b?.generatedAt?.slice(0, 10) || b?.date?.slice(0, 10) || "";
+      const storedRaw = await priorRedis.get("pm:brief");
+      const stored: PriorShape | null = storedRaw ? (JSON.parse(storedRaw) as PriorShape) : null;
+      let prior: PriorShape | null = null;
+      if (stored && briefDay(stored) && briefDay(stored) < todayIso) {
+        // Yesterday's (or older) brief — the correct prior. Archive a compact
+        // digest so same-day regenerations keep comparing against it.
+        prior = stored;
+        const digest: PriorShape = {
+          marketRegime: stored.marketRegime,
+          regimeVerdict: stored.regimeVerdict,
+          bottomLine: stored.bottomLine,
+          hedgingCall: stored.hedgingCall,
+          cashDeploymentCall: stored.cashDeploymentCall,
+          date: stored.date,
+          dateISO: stored.dateISO,
+          generatedAt: stored.generatedAt,
         };
-        if (prior.bottomLine || prior.marketRegime) {
-          const priorDate = prior.date || (prior.generatedAt ? prior.generatedAt.slice(0, 10) : "");
-          priorBriefContext = `
+        try { await priorRedis.set("pm:brief-prevday", JSON.stringify(digest)); } catch { /* archive is best-effort */ }
+      } else {
+        // Same-day regeneration (or no stored brief) — compare against the
+        // archived previous-day digest. Falls back to the same-day brief only
+        // when no archive exists yet (first run after this feature shipped).
+        const prevRaw = await priorRedis.get("pm:brief-prevday");
+        prior = prevRaw ? (JSON.parse(prevRaw) as PriorShape) : stored;
+      }
+      if (prior && (prior.bottomLine || prior.marketRegime)) {
+        const priorDate = briefDay(prior) || prior.date || "";
+        const sameDayNote = priorDate === todayIso
+          ? " — NOTE: this prior is from EARLIER TODAY (no previous-day brief archived yet); frame whatChanged accordingly"
+          : "";
+        priorBriefContext = `
 
-PRIOR BRIEF (the last one generated${priorDate ? ` — ${priorDate}` : ""}) — for CONTINUITY ONLY. Use it to identify what has CHANGED since; do NOT repeat it:
+PRIOR BRIEF (previous trading day's brief${priorDate ? ` — ${priorDate}` : ""}${sameDayNote}) — for CONTINUITY ONLY. Use it to identify what has CHANGED since; do NOT repeat it:
 - Prior regime: ${prior.marketRegime ?? "n/a"}${prior.regimeVerdict ? ` — "${prior.regimeVerdict}"` : ""}
 - Prior bottom line: ${prior.bottomLine ?? "n/a"}
 - Prior hedging call: ${prior.hedgingCall?.action ?? "n/a"}
 - Prior cash-deployment call: ${prior.cashDeploymentCall?.action ?? "n/a"}${typeof prior.cashDeploymentCall?.score === "number" ? ` (${prior.cashDeploymentCall.score}/100)` : ""}`;
-        }
       }
     } catch { /* no readable prior brief — whatChanged just leads qualitatively */ }
 
     // Build content blocks: text prompt + any image attachments
-    // ── Hedge-entry checklist (deterministic) ─────────────────────────────
-    // Scores each condition of the two ADD paths from computed data so the
-    // hedging call is grounded and consistent day-to-day. EVIDENCE, not the
-    // verdict — the model judges, and may override with stated reasons.
-    const hedgeChecklistBlock = (() => {
-      const ctx = hedgingCosts.ctx;
-      const check = (ok: boolean | null, label: string): string =>
-        `  ${ok == null ? "?" : ok ? "✓" : "✗"} ${label}`;
-      const fg = forwardData?.fearGreed?.value ?? marketData.fearGreed ?? null;
-      const osc = typeof marketData.spOscillator === "number" ? marketData.spOscillator : null;
-      const vixNow = fwdVix ?? null;
-      const ts: string = marketData.termStructure ?? "";
-      // Prefer the mid (2-4M) bucket — the default tenor the prompt recommends.
-      const midB = ctx?.buckets.find((b) => b.bucket === "2-4M") ?? ctx?.buckets[0] ?? null;
-      const offSignals = marketRegime?.composite?.signals?.filter((s) => s.direction === "risk-off").length ?? null;
-
-      const p1a = consolidatedRegime === "Risk-Off";
-      const p1b = regimeTransition
-        ? regimeTransition.leaning === "toward Risk-Off" && (regimeTransition.likelihood === "Elevated" || regimeTransition.likelihood === "High")
-        : null;
-      const p1c = offSignals != null ? offSignals >= 3 : null;
-
-      const cheap5 = midB?.otm5Percentile != null ? midB.otm5Percentile <= 35 : null;
-      const cheap10 = midB?.otm10Percentile != null ? midB.otm10Percentile <= 35 : null;
-      const vvixOk = ctx?.vvix != null ? ctx.vvix <= 100 : null;
-      const skewOk = midB?.skewPercentile != null ? midB.skewPercentile <= 50 : null;
-      const lateFg = fg != null ? fg >= 60 : null;
-      const lateOsc = osc != null ? osc >= 2.5 : null;
-      const lateVix = vixNow != null ? vixNow <= 16 : null;
-
-      const lines = [
-        "",
-        "",
-        "HEDGE-ENTRY CHECKLIST (computed from live data — evidence for hedgingAnalysis/hedgingCall, NOT the verdict; you may override any line with an explicitly stated reason):",
-        "Path 1 · Classic Risk-Off:",
-        check(p1a, `Consolidated regime is Risk-Off (currently: ${consolidatedRegime})`),
-        check(p1b, `Transition gauge leaning Risk-Off at Elevated/High likelihood${regimeTransition ? ` (currently: ${regimeTransition.leaning}, ${regimeTransition.likelihood})` : " (gauge unavailable)"}`),
-        check(p1c, `≥3 composite signals Risk-Off${offSignals != null ? ` (currently: ${offSignals})` : " (composite unavailable)"}`),
-        "Path 2 · Cheap insurance (premium conditions) + late-cycle warning (need ≥1):",
-        check(cheap5, `2-4M 5%OTM premium ≤35th percentile${midB?.otm5Percentile != null ? ` (currently: ${midB.otm5Percentile}th)` : " (unranked)"}`),
-        check(cheap10, `2-4M 10%OTM premium ≤35th percentile${midB?.otm10Percentile != null ? ` (currently: ${midB.otm10Percentile}th)` : " (unranked)"}`),
-        check(vvixOk, `VVIX ≤100${ctx?.vvix != null ? ` (currently: ${ctx.vvix})` : " (unavailable)"}`),
-        check(skewOk, `Skew ≤50th percentile — tails not already bid${midB?.skewPercentile != null ? ` (currently: ${midB.skewPercentile}th)` : " (unranked)"}`),
-        check(lateFg, `Late-cycle: F&G ≥60${fg != null ? ` (currently: ${fg})` : ""}`),
-        check(lateOsc, `Late-cycle: S&P Oscillator ≥ +2.5%${osc != null ? ` (currently: ${osc >= 0 ? "+" : ""}${osc}%)` : ""}`),
-        check(lateVix, `Late-cycle: VIX ≤16 complacency${vixNow != null ? ` (currently: ${vixNow})` : ""}${ts ? ` — term structure ${ts}` : ""}`),
-        "Reading it: Path 1 substantially met (≥2 of 3) OR Path 2 with at least one premium condition ✓, VVIX/skew not contradicting, and ≥1 late-cycle sign → ADD is defensible. Otherwise the default is SKIP (or HOLD if protection is already on). Cite the specific ✓/✗ lines that drove your call — especially the premium percentile — and name any line you're overriding and why.",
-      ];
-      return lines.join("\n");
-    })();
+    // ── Hedge-entry checklist (deterministic; shared with /api/hedging-refresh
+    // so both endpoints always score identically) ──────────────────────────
+    const hedgeChecklistBlock = buildHedgeChecklistBlock({
+      consolidatedRegime,
+      transitionLeaning: regimeTransition?.leaning ?? null,
+      transitionLikelihood: regimeTransition?.likelihood ?? null,
+      riskOffSignalCount:
+        marketRegime?.composite?.signals?.filter((s) => s.direction === "risk-off").length ?? null,
+      ctx: hedgingCosts.ctx,
+      fearGreed: forwardData?.fearGreed?.value ?? marketData.fearGreed ?? null,
+      oscillator: typeof marketData.spOscillator === "number" ? marketData.spOscillator : null,
+      vix: fwdVix ?? null,
+      termStructure: marketData.termStructure ?? "",
+    });
 
     const textContent = `Generate the morning brief for today.
 

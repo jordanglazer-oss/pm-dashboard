@@ -643,6 +643,32 @@ export function MorningBrief({
   onUpdateMarketData,
 }: Props) {
   const [generating, setGenerating] = useState(false);
+  // Standalone hedging refresh — re-runs ONLY the hedging read (live premiums
+  // + one small model call) and merges the result into the existing brief via
+  // the normal context persist path. No full-brief regeneration.
+  const [hedgeRefreshing, setHedgeRefreshing] = useState(false);
+  const refreshHedging = async () => {
+    if (!brief || hedgeRefreshing) return;
+    setHedgeRefreshing(true);
+    try {
+      const r = await fetch("/api/hedging-refresh", { method: "POST" });
+      const j = await r.json();
+      if (j?.ok && j.hedgingAnalysis && j.hedgingCall?.action) {
+        onBriefGenerated({
+          ...brief,
+          hedgingAnalysis: j.hedgingAnalysis,
+          hedgingCall: j.hedgingCall,
+          hedgingRefreshedAt: j.hedgingRefreshedAt,
+        });
+      } else {
+        setError(j?.error || "Hedging refresh failed");
+      }
+    } catch (e) {
+      setError(e instanceof Error ? e.message : "Hedging refresh failed");
+    } finally {
+      setHedgeRefreshing(false);
+    }
+  };
   // Which Portfolio Risk Scan rows are expanded (by index). Summaries clamp to
   // 2 lines by default to keep the Brief short; a click reveals the full text.
   const [expandedRisk, setExpandedRisk] = useState<Set<number>>(() => new Set());
@@ -1940,14 +1966,24 @@ export function MorningBrief({
                   ? "border-pos-border bg-pos-soft"
                   : "border-line bg-surface-2"
             }`}>
-              <div className={`text-xs font-bold uppercase tracking-[0.22em] mb-3 ${
-                hedgingCall.action === "ADD"
-                  ? "text-neg"
-                  : hedgingCall.action === "SKIP"
-                    ? "text-pos"
-                    : "text-ink-2"
-              }`}>
-                Hedging
+              <div className="mb-3 flex items-center justify-between gap-2">
+                <span className={`text-xs font-bold uppercase tracking-[0.22em] ${
+                  hedgingCall.action === "ADD"
+                    ? "text-neg"
+                    : hedgingCall.action === "SKIP"
+                      ? "text-pos"
+                      : "text-ink-2"
+                }`}>
+                  Hedging
+                </span>
+                <button
+                  onClick={refreshHedging}
+                  disabled={hedgeRefreshing}
+                  title="Re-run only the hedging read from live premiums — does not regenerate the brief"
+                  className="rounded-full bg-white/70 px-2.5 py-0.5 text-[11px] font-medium text-ink-2 border border-line hover:text-ink disabled:opacity-50"
+                >
+                  {hedgeRefreshing ? "Refreshing…" : "↻ Refresh"}
+                </button>
               </div>
               <div className="flex items-baseline gap-2 mb-2">
                 <span className={`text-2xl font-semibold tracking-tight ${
@@ -1968,6 +2004,11 @@ export function MorningBrief({
               <p className="text-sm leading-5 text-ink-2">
                 {hedgingCall.reason}
               </p>
+              {brief?.hedgingRefreshedAt && (
+                <p className="mt-2 text-[10px] text-ink-3">
+                  hedging refreshed {new Date(brief.hedgingRefreshedAt).toLocaleTimeString("en-US", { hour: "numeric", minute: "2-digit" })} · rest of brief unchanged
+                </p>
+              )}
             </div>
           )}
         </section>
