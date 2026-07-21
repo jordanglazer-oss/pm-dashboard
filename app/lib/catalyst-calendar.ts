@@ -14,6 +14,7 @@
  */
 
 import { createLogger } from "@/app/lib/logger";
+import { easternToday } from "@/app/lib/date-eastern";
 
 const log = createLogger("Catalyst");
 
@@ -167,9 +168,11 @@ export async function buildCatalystCalendar(
   windowDays = 14,
 ): Promise<CatalystCalendar> {
   const now = new Date();
-  const todayStr = isoDate(now);
-  const end = new Date(now.getTime() + windowDays * 24 * 60 * 60 * 1000);
-  const endStr = isoDate(end);
+  // Window anchored to the US-Eastern trading day, NOT UTC — a brief generated
+  // in the evening (UTC already tomorrow) must still start the window at the
+  // correct Eastern "today" so same-day events aren't dropped.
+  const todayStr = easternToday(now);
+  const endStr = isoDate(new Date(Date.parse(`${todayStr}T00:00:00Z`) + windowDays * 24 * 60 * 60 * 1000));
 
   const earnings = earningsEvents(stocks, todayStr, endStr);
   const fomc = fomcEvents(todayStr, endStr);

@@ -15,6 +15,7 @@ import { defaultResearch } from "@/app/lib/defaults";
 import { buildHedgingCostsBlock } from "@/app/lib/hedging";
 import { crossSectional, factsetConfigured } from "@/app/lib/factset";
 import { buildCatalystCalendar, type CatalystCalendar } from "@/app/lib/catalyst-calendar";
+import { easternToday, easternLongDate, relativeDayLabel } from "@/app/lib/date-eastern";
 import { computeRegimeTransition, type RegimeTransition } from "@/app/lib/regime-transition";
 import type { MarketRegimeData } from "@/app/lib/market-regime";
 import { isCreditError, recordAnthropicCreditError, markAnthropicHealthy } from "@/app/lib/anthropic-status";
@@ -736,16 +737,21 @@ export async function POST(request: NextRequest) {
         const redis = await getRedis();
         const cachedRaw = await redis.get("pm:brief");
         if (cachedRaw) {
-          const cached = JSON.parse(cachedRaw) as { generatedAt?: string; date?: string };
-          const todayUTC = new Date().toISOString().slice(0, 10);
-          // Match on generatedAt date-prefix (covers ISO timestamps written
-          // by either the frontend persist path or this route's prior runs).
-          const cachedDay = cached?.generatedAt
-            ? cached.generatedAt.slice(0, 10)
-            : cached?.date
-              ? cached.date.slice(0, 10)
-              : null;
-          if (cachedDay === todayUTC) {
+          const cached = JSON.parse(cachedRaw) as { generatedAt?: string; date?: string; dateISO?: string };
+          const todayET = easternToday();
+          // Prefer the Eastern calendar date stamped on the brief (dateISO);
+          // fall back to the generatedAt/date prefix for briefs written before
+          // that field existed. Anchoring the day-cache to the SAME Eastern
+          // date used for generation keeps regeneration honest across the
+          // UTC-vs-Eastern midnight window.
+          const cachedDay = cached?.dateISO
+            ? cached.dateISO.slice(0, 10)
+            : cached?.generatedAt
+              ? cached.generatedAt.slice(0, 10)
+              : cached?.date
+                ? cached.date.slice(0, 10)
+                : null;
+          if (cachedDay === todayET) {
             console.log("[Brief] day-cache hit — returning today's pm:brief without Anthropic call");
             return NextResponse.json({ ...cached, cached: true });
           }
@@ -940,12 +946,13 @@ ${rows.join("\n")}`;
     } catch (e) {
       console.error("Catalyst calendar build failed:", e);
     }
+    const briefTodayIso = easternToday();
     const catalystBlock =
       catalystCalendar && catalystCalendar.events.length > 0
-        ? `\n\nCATALYST CALENDAR (scheduled events in the next ${catalystCalendar.windowDays} days — the SOURCE for catalystWatch; also make the three horizon views forward-referencing where relevant):\n${catalystCalendar.events
+        ? `\n\nCATALYST CALENDAR (scheduled events in the next ${catalystCalendar.windowDays} days — the SOURCE for catalystWatch; also make the three horizon views forward-referencing where relevant).\nToday is ${briefTodayIso} (US Eastern). Each event is tagged with its day RELATIVE TO TODAY — USE THAT RELATIVE WORD VERBATIM (today / tomorrow / in N days). Do NOT compute your own "tonight/tomorrow" from the raw date, and NEVER call a future-dated event "tonight": only an event tagged TODAY may be described as today/tonight. Earnings timing (before-open vs after-close) is NOT provided — say "reports <relative day>", not a specific time of day:\n${catalystCalendar.events
             .map(
               (e) =>
-                `- ${e.date} · ${e.title}${e.kind === "earnings" && e.bucket ? ` (${e.bucket})` : ""}${e.importance === "high" ? " [HIGH]" : ""}`,
+                `- [${relativeDayLabel(e.date, briefTodayIso)}] ${e.date} · ${e.title}${e.kind === "earnings" && e.bucket ? ` (${e.bucket})` : ""}${e.importance === "high" ? " [HIGH]" : ""}`,
             )
             .join("\n")}`
         : "\n\nCATALYST CALENDAR: no scheduled earnings/econ/FOMC events in the look-ahead window (or the calendar was unavailable this run) — return an empty string for catalystWatch.";
@@ -1200,15 +1207,10 @@ These signals are the evidence behind the consolidated label. Use them for your 
 
     // Inject today's date explicitly so Claude cannot drift to training-data
     // anchored events. This is enforced by the DATE ANCHORING section of the
-    // system prompt.
-    const today = new Date();
-    const todayLong = today.toLocaleDateString("en-US", {
-      weekday: "long",
-      year: "numeric",
-      month: "long",
-      day: "numeric",
-    });
-    const todayIso = today.toISOString().slice(0, 10);
+    // system prompt. US-Eastern (the trading day) — NOT UTC, which would read
+    // as tomorrow for any brief generated after ~8 PM ET.
+    const todayLong = easternLongDate();
+    const todayIso = easternToday();
 
     // ── Prior brief (continuity / "what changed") ──────────────────────────
     // pm:brief holds the LAST generated brief (the client persists the new one
@@ -1292,7 +1294,7 @@ ${(() => {
     todayTiming?: string
   ): string | null => {
     if (entries.length === 0) return null;
-    const today = new Date().toISOString().slice(0, 10);
+    const today = easternToday();
     const lines = entries.map((e) => {
       const label = e.date === today ? (todayTiming ? `TODAY · ${todayTiming}` : "TODAY") : e.date;
       return `[${label}] ${e.text}`;
@@ -1318,7 +1320,7 @@ ${(() => {
   // the brief even if the async history append (fired by /api/kv/market on
   // save) hasn't landed yet — the Redis history still supplies prior days.
   // The body text always wins for its own date (it's the freshest copy).
-  const todayIso2 = new Date().toISOString().slice(0, 10);
+  const todayIso2 = easternToday();
   const withTodayNote = (
     hist: { date: string; text: string }[],
     todayText?: string,
@@ -1620,11 +1622,10 @@ Current Portfolio Holdings: ${holdingsSummary}${portfolioPositioning}`;
     }
 
     return NextResponse.json({
-      date: now.toLocaleDateString("en-US", {
-        year: "numeric",
-        month: "long",
-        day: "numeric",
-      }),
+      // Header date + cache key both in US-Eastern (the trading day), so an
+      // evening regeneration never shows or caches under tomorrow's date.
+      date: easternLongDate(now),
+      dateISO: easternToday(now),
       generatedAt: now.toISOString(),
       marketData,
       regimeScore,
