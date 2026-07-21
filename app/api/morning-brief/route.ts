@@ -203,7 +203,7 @@ Respond ONLY with valid JSON matching this exact structure (fields are intention
   "volatilityAnalysis": "2-3 sentences on the volatility regime. LEAD with what CHANGED (VIX/MOVE week-over-week, term-structure shift) and what it means for hedging and position sizing, then cite the specific levels (VIX, term structure, MOVE) so the summary is self-contained.",
   "breadthAnalysis": "2-3 sentences on breadth and participation. LEAD with what CHANGED (DMA participation, NYSE A/D, new highs vs lows) and the market-structure implication — is the move broad or narrow? — then cite the specific figures (S&P/broad % above 50/200 DMA, new H/L) so the summary stands alone.",
   "contrarianAnalysis": "2-3 sentences providing the contrarian take. ALWAYS state WHERE each of the four indicators sits (S&P Oscillator, Put/Call, Fear & Greed, AAII survey) and its trajectory — the reader relies on this to know current positioning. All four are interpreted INVERSELY: oversold/fearful = BULLISH opportunity, overbought/greedy = BEARISH warning. Calibrate the signal HONESTLY: a genuine multi-decade extreme is a strong signal; a mid-range reading is a neutral one and must be described as neutral rather than forced into a directional verdict. Close with the overall contrarian read and what it means for positioning.",
-  "hedgingAnalysis": "3-4 sentences on whether current conditions favor adding SPY put protection. OSCILLATOR ANCHOR (CRITICAL): when referencing the S&P Oscillator in hedging context, cite the actual current reading and treat the -1.5% to +2.5% range as the normal monthly band where most hedging decisions happen. Do NOT anchor on -5% as the threshold — that's a panic-capitulation extreme seen 1-3x per year, not a typical signal. Hedging decisions rely far more on VIX level + term structure, breadth quality, and late-cycle warnings than on oscillator extremes. HEDGING PHILOSOPHY: this is tail-risk INSURANCE, not a directional bet — we own equities and want to cap left-tail drawdowns, not speculate on near-term direction. Hedging is NOT a default — it's something we implement only when the cost is reasonable AND the broader picture warrants it (overheated/extended market, deteriorating breadth, rich sentiment, weakening leadership, etc.). Many briefs should land on 'skip' even when premiums are cheap, if the macro/breadth backdrop doesn't justify the spend. Restricted to PROTECTIVE PUTS only — no speculative positions, no weeklies, no LEAPS. STRIKES ARE 5–10% OTM (this is where genuine tail protection lives — ATM puts behave more like directional shorts and carry rich extrinsic premium). ATM strikes are reserved for the rare case where tail risk is acutely elevated within ~30 days (confirmed Risk-Off across all three horizons, VIX above 25 and rising, OR a hard-dated event risk like an FOMC decision priced into front-month vol) — call out the trigger explicitly when recommending ATM, otherwise default to 5–10% OTM. Tenor band is strictly 2–9 months: tactical (Risk-Off in the 1-3M bucket) → 2–3 month monthly contracts; cyclical (Risk-Off in the 3-6M bucket) → 3–6 month quarterly contracts; structural (Risk-Off in the 6-12M bucket while tactical holds up) → 6–9 month contracts as a strategic overlay (capped at 9M — never recommend LEAPS). When a 'Live SPY Hedging Costs' block is present, cite at least one specific 5–10% OTM premium (e.g. '3-month 7% OTM SPY put is X% of spot at $Y') and reference the week-over-week or month-over-month direction of those OTM premiums when provided. Integrate VIX, term structure, and sentiment as the qualitative lens on top of the actual option prices. Give a clear directional recommendation — ADD, HOLD, or SKIP. ADD has TWO entry paths: (1) classic Risk-Off — at least one horizon flagged Risk-Off and breadth/momentum confirming, OR (2) cheap-insurance — premiums depressed (OTM premiums in the lower decile, VVIX low, skew flat) AND the market shows late-cycle warning signs: extended runup over the last 6-12M, overbought oscillator readings, narrowing breadth (waning DMA participation, NYSE A/D fading), or leadership thinning. Insurance is most valuable when it's cheap AND a setup is forming, not when one or the other is true alone. SKIP IS A FIRST-CLASS RECOMMENDATION: if neither ADD path is clearly engaged, the right call is 'skip — protection here would be premium spent without a thesis'. Do not hedge for the sake of hedging; an explicit skip is more valuable than a wishy-washy 'hold and reassess'.",
+  "hedgingAnalysis": "3-4 sentences on whether current conditions favor adding SPY put protection. OSCILLATOR ANCHOR (CRITICAL): when referencing the S&P Oscillator in hedging context, cite the actual current reading and treat the -1.5% to +2.5% range as the normal monthly band where most hedging decisions happen. Do NOT anchor on -5% as the threshold — that's a panic-capitulation extreme seen 1-3x per year, not a typical signal. Hedging decisions rely far more on VIX level + term structure, breadth quality, and late-cycle warnings than on oscillator extremes. HEDGING PHILOSOPHY: this is tail-risk INSURANCE, not a directional bet — we own equities and want to cap left-tail drawdowns, not speculate on near-term direction. Hedging is NOT a default — it's something we implement only when the cost is reasonable AND the broader picture warrants it (overheated/extended market, deteriorating breadth, rich sentiment, weakening leadership, etc.). Many briefs should land on 'skip' even when premiums are cheap, if the macro/breadth backdrop doesn't justify the spend. Restricted to PROTECTIVE PUTS only — no speculative positions, no weeklies, no LEAPS. STRIKES ARE 5–10% OTM (this is where genuine tail protection lives — ATM puts behave more like directional shorts and carry rich extrinsic premium). ATM strikes are reserved for the rare case where tail risk is acutely elevated within ~30 days (confirmed Risk-Off across all three horizons, VIX above 25 and rising, OR a hard-dated event risk like an FOMC decision priced into front-month vol) — call out the trigger explicitly when recommending ATM, otherwise default to 5–10% OTM. Tenor band is strictly 2–9 months: tactical (Risk-Off in the 1-3M bucket) → 2–3 month monthly contracts; cyclical (Risk-Off in the 3-6M bucket) → 3–6 month quarterly contracts; structural (Risk-Off in the 6-12M bucket while tactical holds up) → 6–9 month contracts as a strategic overlay (capped at 9M — never recommend LEAPS). When a 'Live SPY Hedging Costs' block is present, cite at least one specific 5–10% OTM premium (e.g. '3-month 7% OTM SPY put is X% of spot at $Y') and reference the week-over-week or month-over-month direction of those OTM premiums when provided. Integrate VIX, term structure, and sentiment as the qualitative lens on top of the actual option prices. Give a clear directional recommendation — ADD, HOLD, or SKIP. ADD has TWO entry paths — a HEDGE-ENTRY CHECKLIST block below scores every condition of both paths from computed data; ground your call in its ✓/✗ lines: (1) classic Risk-Off — at least one horizon flagged Risk-Off and breadth/momentum confirming, OR (2) cheap-insurance — premiums MEASURABLY depressed per the premium-percentile context lines (percentile ≤~35th of the trailing 6 months; VVIX and skew percentile not contradicting) AND the market shows late-cycle warning signs: extended runup over the last 6-12M, overbought oscillator readings, narrowing breadth (waning DMA participation, NYSE A/D fading), or leadership thinning. 'Cheap' and 'rich' are DEFINED by the computed percentiles — never assert them from VIX or intuition, and when the ledger is too thin to rank, say so and lean on the trend lines instead. Insurance is most valuable when it's cheap AND a setup is forming, not when one or the other is true alone. SKIP IS A FIRST-CLASS RECOMMENDATION: if neither ADD path is clearly engaged, the right call is 'skip — protection here would be premium spent without a thesis'. Do not hedge for the sake of hedging; an explicit skip is more valuable than a wishy-washy 'hold and reassess'. You may override the checklist's arithmetic with judgment, but name the line you're overriding and why.",
   "sectorRotation": {
     "summary": "1-2 sentence overview of which sectors are leading vs lagging based on the LIVE sector ETF performance data provided.",
     "leading": ["Sector (+X.XX% today, reason)", "Sector (+X.XX% today, reason)"],
@@ -688,7 +688,15 @@ async function saveCachedStrategistReports(hash: string, summary: string) {
 }
 
 // Compute dynamic hedge timing score from market data (mirrors HedgingIndicator logic)
-function computeHedgeScore(vix: number, termStructure: string, fearGreed: number): number {
+// `premiumPercentile`: today's 2-4M 5% OTM premium ranked in its own trailing
+// ledger — the DIRECT measure of put cost. When available it becomes a fourth
+// check, so "premiums are reasonable" is measured rather than proxied by VIX.
+function computeHedgeScore(
+  vix: number,
+  termStructure: string,
+  fearGreed: number,
+  premiumPercentile: number | null = null,
+): number {
   let optimalCount = 0;
 
   // Put cost: VIX <= 18 → cheap/moderate → optimal
@@ -701,8 +709,12 @@ function computeHedgeScore(vix: number, termStructure: string, fearGreed: number
   // Sentiment: fearGreed >= 45 → neutral/greedy → complacency → optimal
   if (fearGreed >= 45) optimalCount++;
 
-  // Score: 0 optimal = ~15, 1 = ~40, 2 = ~65, 3 = ~90
-  return Math.round((optimalCount / 3) * 80 + 10);
+  // Measured put cost: premium in the cheaper ~40% of its own history.
+  const checks = premiumPercentile != null ? 4 : 3;
+  if (premiumPercentile != null && premiumPercentile <= 40) optimalCount++;
+
+  // Scaled 10-90 regardless of how many checks were available.
+  return Math.round((optimalCount / checks) * 80 + 10);
 }
 
 export async function POST(request: NextRequest) {
@@ -906,7 +918,7 @@ ${rows.join("\n")}`;
     const manualBreadth = (marketData as { breadthOverride?: { date?: string; above200?: number; above50?: number } })
       ?.breadthOverride;
 
-    const [sectorPerf, forwardData, strategistHistory, research, hedgingCostsBlock, marketRegime] =
+    const [sectorPerf, forwardData, strategistHistory, research, hedgingCosts, marketRegime] =
       await Promise.all([
         fetchSectorPerformance(),
         fetchForwardLookingData(manualBreadth).catch((e) => {
@@ -920,7 +932,7 @@ ${rows.join("\n")}`;
         loadResearch(),
         buildHedgingCostsBlock().catch((e) => {
           console.error("Hedging costs block failed:", e);
-          return "";
+          return { text: "", ctx: null };
         }),
         // pm:market-regime is a best-effort cached snapshot. Missing →
         // regime block is simply omitted from the prompt; brief still
@@ -1242,6 +1254,57 @@ PRIOR BRIEF (the last one generated${priorDate ? ` — ${priorDate}` : ""}) — 
     } catch { /* no readable prior brief — whatChanged just leads qualitatively */ }
 
     // Build content blocks: text prompt + any image attachments
+    // ── Hedge-entry checklist (deterministic) ─────────────────────────────
+    // Scores each condition of the two ADD paths from computed data so the
+    // hedging call is grounded and consistent day-to-day. EVIDENCE, not the
+    // verdict — the model judges, and may override with stated reasons.
+    const hedgeChecklistBlock = (() => {
+      const ctx = hedgingCosts.ctx;
+      const check = (ok: boolean | null, label: string): string =>
+        `  ${ok == null ? "?" : ok ? "✓" : "✗"} ${label}`;
+      const fg = forwardData?.fearGreed?.value ?? marketData.fearGreed ?? null;
+      const osc = typeof marketData.spOscillator === "number" ? marketData.spOscillator : null;
+      const vixNow = fwdVix ?? null;
+      const ts: string = marketData.termStructure ?? "";
+      // Prefer the mid (2-4M) bucket — the default tenor the prompt recommends.
+      const midB = ctx?.buckets.find((b) => b.bucket === "2-4M") ?? ctx?.buckets[0] ?? null;
+      const offSignals = marketRegime?.composite?.signals?.filter((s) => s.direction === "risk-off").length ?? null;
+
+      const p1a = consolidatedRegime === "Risk-Off";
+      const p1b = regimeTransition
+        ? regimeTransition.leaning === "toward Risk-Off" && (regimeTransition.likelihood === "Elevated" || regimeTransition.likelihood === "High")
+        : null;
+      const p1c = offSignals != null ? offSignals >= 3 : null;
+
+      const cheap5 = midB?.otm5Percentile != null ? midB.otm5Percentile <= 35 : null;
+      const cheap10 = midB?.otm10Percentile != null ? midB.otm10Percentile <= 35 : null;
+      const vvixOk = ctx?.vvix != null ? ctx.vvix <= 100 : null;
+      const skewOk = midB?.skewPercentile != null ? midB.skewPercentile <= 50 : null;
+      const lateFg = fg != null ? fg >= 60 : null;
+      const lateOsc = osc != null ? osc >= 2.5 : null;
+      const lateVix = vixNow != null ? vixNow <= 16 : null;
+
+      const lines = [
+        "",
+        "",
+        "HEDGE-ENTRY CHECKLIST (computed from live data — evidence for hedgingAnalysis/hedgingCall, NOT the verdict; you may override any line with an explicitly stated reason):",
+        "Path 1 · Classic Risk-Off:",
+        check(p1a, `Consolidated regime is Risk-Off (currently: ${consolidatedRegime})`),
+        check(p1b, `Transition gauge leaning Risk-Off at Elevated/High likelihood${regimeTransition ? ` (currently: ${regimeTransition.leaning}, ${regimeTransition.likelihood})` : " (gauge unavailable)"}`),
+        check(p1c, `≥3 composite signals Risk-Off${offSignals != null ? ` (currently: ${offSignals})` : " (composite unavailable)"}`),
+        "Path 2 · Cheap insurance (premium conditions) + late-cycle warning (need ≥1):",
+        check(cheap5, `2-4M 5%OTM premium ≤35th percentile${midB?.otm5Percentile != null ? ` (currently: ${midB.otm5Percentile}th)` : " (unranked)"}`),
+        check(cheap10, `2-4M 10%OTM premium ≤35th percentile${midB?.otm10Percentile != null ? ` (currently: ${midB.otm10Percentile}th)` : " (unranked)"}`),
+        check(vvixOk, `VVIX ≤100${ctx?.vvix != null ? ` (currently: ${ctx.vvix})` : " (unavailable)"}`),
+        check(skewOk, `Skew ≤50th percentile — tails not already bid${midB?.skewPercentile != null ? ` (currently: ${midB.skewPercentile}th)` : " (unranked)"}`),
+        check(lateFg, `Late-cycle: F&G ≥60${fg != null ? ` (currently: ${fg})` : ""}`),
+        check(lateOsc, `Late-cycle: S&P Oscillator ≥ +2.5%${osc != null ? ` (currently: ${osc >= 0 ? "+" : ""}${osc}%)` : ""}`),
+        check(lateVix, `Late-cycle: VIX ≤16 complacency${vixNow != null ? ` (currently: ${vixNow})` : ""}${ts ? ` — term structure ${ts}` : ""}`),
+        "Reading it: Path 1 substantially met (≥2 of 3) OR Path 2 with at least one premium condition ✓, VVIX/skew not contradicting, and ≥1 late-cycle sign → ADD is defensible. Otherwise the default is SKIP (or HOLD if protection is already on). Cite the specific ✓/✗ lines that drove your call — especially the premium percentile — and name any line you're overriding and why.",
+      ];
+      return lines.join("\n");
+    })();
+
     const textContent = `Generate the morning brief for today.
 
 TODAY'S DATE: ${todayLong} (${todayIso}). This is the authoritative date for this brief. Do NOT reference macro events older than 30 days before this date — including "Liberation Day" (April 2025), older FOMC meetings, or past CPI prints — even if they appear in attached screenshots or you remember them from training data. Every "recent move" you cite must come from the numerical data below.${priorBriefContext}
@@ -1274,8 +1337,8 @@ Contrarian Indicators (ALL interpreted INVERSELY — oversold/fearful = BULLISH,
 
 IMPORTANT — interpret trajectory: a value at an extreme that is REVERSING (e.g. F&G at 22 but rising) is much weaker as a contrarian signal than the same value still moving deeper into the extreme. Use the trajectory descriptors above plus your own knowledge of each indicator's true multi-decade historical range (NOT any short rolling window) when forming the contrarianAnalysis — e.g. VIX typically sits 12-20 in quiet markets and spikes to 30+ in stress, AAII Bull-Bear spreads beyond ±25 are historically extreme, CBOE put/call typically oscillates 0.7-1.2 with >1.2 marking fear washouts, CNN F&G treats <25 as extreme fear and >75 as extreme greed. Characterize the level as elevated / subdued / extreme against THAT long-run backdrop, not against the few months of local data we happen to have cached.
 
-Hedge Timing Score: ${computeHedgeScore(fwdVix ?? 20, marketData.termStructure ?? "Contango", forwardData?.fearGreed?.value ?? marketData.fearGreed ?? 50)}/100 (dynamically computed from VIX, term structure, and sentiment)
-${hedgingCostsBlock ? `\n${hedgingCostsBlock}\n\nWhen writing hedgingAnalysis, cite at least one specific 5–10% OTM premium from the table above (e.g. "the 3-month 7% OTM SPY put costs X% of spot") and reference the week-over-week or month-over-month direction of OTM premiums when available. Anchor claims like "tail puts are cheap" or "protection is expensive" to these actual dollar/percent figures at the OTM strikes rather than generalizing from VIX alone. Default strike framing is 5–10% OTM; only quote ATM premiums when explicitly recommending an ATM hedge (rare exception case).` : ""}
+Hedge Timing Score: ${computeHedgeScore(fwdVix ?? 20, marketData.termStructure ?? "Contango", forwardData?.fearGreed?.value ?? marketData.fearGreed ?? 50, hedgingCosts.ctx?.buckets.find((b) => b.bucket === "2-4M")?.otm5Percentile ?? null)}/100 (dynamically computed from VIX, term structure, sentiment, and the 2-4M premium percentile)
+${hedgingCosts.text ? `\n${hedgingCosts.text}\n\nWhen writing hedgingAnalysis, cite at least one specific 5–10% OTM premium from the table above (e.g. "the 3-month 7% OTM SPY put costs X% of spot") AND its premium percentile from the percentile-context lines (e.g. "18th percentile of the trailing 6 months — historically cheap"). The percentile is the authoritative cheap/rich measure; the WoW/MoM trend is its direction. Anchor every "tail puts are cheap/expensive" claim to those computed figures — never generalize from VIX alone, and never assert a decile the data doesn't show. Default strike framing is 5–10% OTM; only quote ATM premiums when explicitly recommending an ATM hedge (rare exception case).${hedgeChecklistBlock}` : ""}
 
 Live Sector ETF Performance (from Yahoo Finance — use this for sector rotation analysis):
 ${sectorPerf.text}

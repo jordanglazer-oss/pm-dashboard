@@ -327,17 +327,157 @@ export function findSnapshotDaysAgo(
   return best;
 }
 
+// ---- Premium context: percentiles vs the ledger's own history ----------------
+
+/** Tenor buckets used to compare like-for-like across snapshots (a "3M" put
+ *  today must be ranked against ~3M puts historically, not the whole surface). */
+const TENOR_BUCKETS = [
+  { key: "near", label: "≤45d", min: 0, max: 45 },
+  { key: "mid", label: "2-4M", min: 46, max: 135 },
+  { key: "far", label: "5-9M", min: 136, max: 400 },
+] as const;
+
+export type PremiumBucketContext = {
+  bucket: string;          // label
+  daysToExpiry: number;    // today's anchor tenor
+  otm5Pct: number | null;      // % of spot today
+  otm5Percentile: number | null;   // 0-100 within trailing history
+  otm10Pct: number | null;
+  otm10Percentile: number | null;
+  skewRatio: number | null;        // 10% OTM premium ÷ ATM premium (steepness proxy)
+  skewPercentile: number | null;
+};
+
+export type PremiumContext = {
+  sessions: number; // distinct history dates contributing
+  windowDays: number;
+  buckets: PremiumBucketContext[];
+  vvix: number | null;
+};
+
+/** Percentile (0-100) of `value` within `dist` (share of observations ≤ value). */
+function percentileOf(value: number, dist: number[]): number | null {
+  if (dist.length < 20) return null; // too thin to rank honestly
+  const below = dist.filter((x) => x <= value).length;
+  return Math.round((below / dist.length) * 100);
+}
+
+/** Latest ^VVIX close from Yahoo (vol-of-vol — cheapness context for options).
+ *  Null on any failure; never throws. */
+export async function fetchVvix(): Promise<number | null> {
+  try {
+    const res = await fetch(
+      "https://query2.finance.yahoo.com/v8/finance/chart/%5EVVIX?range=5d&interval=1d",
+      { cache: "no-store", headers: { "User-Agent": "Mozilla/5.0" }, signal: AbortSignal.timeout(6000) },
+    );
+    if (!res.ok) return null;
+    const j = (await res.json()) as { chart?: { result?: Array<{ indicators?: { quote?: Array<{ close?: Array<number | null> }> } }> } };
+    const closes = (j?.chart?.result?.[0]?.indicators?.quote?.[0]?.close || []).filter(
+      (c): c is number => typeof c === "number" && isFinite(c),
+    );
+    return closes.length ? Math.round(closes[closes.length - 1] * 10) / 10 : null;
+  } catch {
+    return null;
+  }
+}
+
 /**
- * Render a compact text block summarizing live SPY put costs + WoW trend,
- * suitable for injection into a Claude prompt. Returns empty string on error
- * so the brief still generates.
+ * Rank today's anchor premiums (and skew) against the ledger's trailing
+ * ~6 months, per tenor bucket. Pure math over data we already collect —
+ * this is what turns "premiums are reasonable" from a vibe into a measured
+ * percentile. Null percentiles when the ledger is too thin (<20 sessions).
  */
-export async function buildHedgingCostsBlock(): Promise<string> {
+export function computePremiumContext(
+  live: HedgingLiveData,
+  history: HedgingSnapshotShape[],
+  windowDays = 185,
+): Omit<PremiumContext, "vvix"> {
+  const cutoff = new Date(Date.now() - windowDays * 86400000).toISOString().slice(0, 10);
+  const recent = history.filter((s) => s.date >= cutoff && s.spotPrice > 0);
+
+  // Distributions per bucket: pct-of-spot for 5%/10% OTM + skew ratio. One
+  // observation per (snapshot, bucket): the quote closest to the bucket's
+  // tenor midpoint.
+  const dist: Record<string, { otm5: number[]; otm10: number[]; skew: number[] }> = {};
+  for (const b of TENOR_BUCKETS) dist[b.key] = { otm5: [], otm10: [], skew: [] };
+  for (const snap of recent) {
+    for (const b of TENOR_BUCKETS) {
+      const mid = (b.min + b.max) / 2;
+      let best: SnapshotQuote | null = null;
+      let bestDist = Infinity;
+      for (const qt of snap.quotes) {
+        const tenor = dayDiff(qt.expiry, snap.date);
+        if (tenor < b.min || tenor > b.max) continue;
+        const d = Math.abs(tenor - mid);
+        if (d < bestDist) { bestDist = d; best = qt; }
+      }
+      if (!best) continue;
+      if (best.otm5Premium != null) dist[b.key].otm5.push((best.otm5Premium / snap.spotPrice) * 100);
+      if (best.otm10Premium != null) dist[b.key].otm10.push((best.otm10Premium / snap.spotPrice) * 100);
+      if (best.otm10Premium != null && best.atmPremium != null && best.atmPremium > 0) {
+        dist[b.key].skew.push(best.otm10Premium / best.atmPremium);
+      }
+    }
+  }
+
+  const buckets: PremiumBucketContext[] = [];
+  for (const b of TENOR_BUCKETS) {
+    // Today's anchor for this bucket: quote closest to the bucket midpoint.
+    const mid = (b.min + b.max) / 2;
+    let anchor: HedgingQuote | null = null;
+    let bestDist = Infinity;
+    for (const qt of live.quotes) {
+      if (qt.daysToExpiry < b.min || qt.daysToExpiry > b.max) continue;
+      const d = Math.abs(qt.daysToExpiry - mid);
+      if (d < bestDist) { bestDist = d; anchor = qt; }
+    }
+    if (!anchor) continue;
+    const skewRatio =
+      anchor.otm10Premium != null && anchor.atmPremium != null && anchor.atmPremium > 0
+        ? Math.round((anchor.otm10Premium / anchor.atmPremium) * 1000) / 1000
+        : null;
+    buckets.push({
+      bucket: b.label,
+      daysToExpiry: anchor.daysToExpiry,
+      otm5Pct: anchor.otm5PctOfSpot,
+      otm5Percentile: anchor.otm5PctOfSpot != null ? percentileOf(anchor.otm5PctOfSpot, dist[b.key].otm5) : null,
+      otm10Pct: anchor.otm10PctOfSpot,
+      otm10Percentile: anchor.otm10PctOfSpot != null ? percentileOf(anchor.otm10PctOfSpot, dist[b.key].otm10) : null,
+      skewRatio,
+      skewPercentile: skewRatio != null ? percentileOf(skewRatio, dist[b.key].skew) : null,
+    });
+  }
+
+  return { sessions: recent.length, windowDays, buckets };
+}
+
+/** Plain-English cheapness label for a premium percentile. */
+export function percentileLabel(p: number | null): string {
+  if (p == null) return "no rank (ledger too thin)";
+  if (p <= 25) return "CHEAP";
+  if (p <= 45) return "below average";
+  if (p <= 60) return "average";
+  if (p <= 80) return "above average";
+  return "RICH";
+}
+
+/**
+ * Render a compact text block summarizing live SPY put costs + WoW trend +
+ * percentile context, suitable for injection into a Claude prompt. Returns
+ * { text: "", ctx: null } on error so the brief still generates. `ctx` is the
+ * structured premium context, shared with the hedge-entry checklist and the
+ * hedge-timing score so every consumer ranks cheapness identically.
+ */
+export async function buildHedgingCostsBlock(): Promise<{ text: string; ctx: PremiumContext | null }> {
   try {
     const live = await fetchLiveHedgingCosts();
     const history = await loadHedgingHistory();
     const wow = findSnapshotDaysAgo(history, 7, 2);
     const mom = findSnapshotDaysAgo(history, 30, 5);
+    const [premiumCtx, vvix] = await Promise.all([
+      Promise.resolve(computePremiumContext(live, history)),
+      fetchVvix(),
+    ]);
 
     // Pick 3 anchor expiries: nearest ≤45d, mid 60–120d, and longest-dated
     const q = live.quotes;
@@ -390,9 +530,34 @@ export async function buildHedgingCostsBlock(): Promise<string> {
     lines.push("");
     lines.push(...trendBlock("Month-over-month", mom, "30 days"));
 
-    return lines.join("\n");
+    // ── Percentile context: is "reasonable premium" actually true today? ──
+    lines.push("");
+    if (premiumCtx.buckets.length > 0 && premiumCtx.sessions >= 20) {
+      lines.push(
+        `Premium percentile context (each tenor ranked against its own trailing ${premiumCtx.windowDays}-day ledger, ${premiumCtx.sessions} sessions — LOW percentile = historically cheap):`,
+      );
+      for (const b of premiumCtx.buckets) {
+        const p5 = b.otm5Percentile != null ? `${b.otm5Percentile}th pct (${percentileLabel(b.otm5Percentile)})` : "unranked";
+        const p10 = b.otm10Percentile != null ? `${b.otm10Percentile}th pct (${percentileLabel(b.otm10Percentile)})` : "unranked";
+        const sk = b.skewRatio != null
+          ? `skew (10%OTM/ATM) ${b.skewRatio.toFixed(2)}${b.skewPercentile != null ? ` = ${b.skewPercentile}th pct` : ""}`
+          : "skew —";
+        lines.push(`- ${b.bucket} (${b.daysToExpiry}d): 5%OTM ${b.otm5Pct?.toFixed(2) ?? "—"}% of spot → ${p5} | 10%OTM ${b.otm10Pct?.toFixed(2) ?? "—"}% → ${p10} | ${sk}`);
+      }
+    } else {
+      lines.push(
+        `Premium percentile context: ledger too thin to rank (${premiumCtx.sessions} sessions in window) — judge cheapness from the WoW/MoM trend and VIX/VVIX levels instead, and say you are doing so.`,
+      );
+    }
+    lines.push(
+      vvix != null
+        ? `VVIX (vol-of-vol): ${vvix} — <90 low (options cheap to gamma), 90-110 normal, >110 elevated (protection demand bid).`
+        : "VVIX: unavailable this run.",
+    );
+
+    return { text: lines.join("\n"), ctx: { ...premiumCtx, vvix } };
   } catch (e) {
     console.error("buildHedgingCostsBlock failed:", e);
-    return "";
+    return { text: "", ctx: null };
   }
 }
