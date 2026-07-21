@@ -774,6 +774,10 @@ export type MorningBrief = {
     tenor?: string;  // e.g. "3 months"             — omitted on SKIP
     reason: string;  // 1 sentence ≤ 25 words
   };
+  /** Set when the standalone hedging refresh (/api/hedging-refresh) last
+   *  replaced hedgingAnalysis + hedgingCall mid-day, without regenerating
+   *  the rest of the brief. Absent on a fresh full generation. */
+  hedgingRefreshedAt?: string;
   /**
    * Cash Deployment Indicator — answers "is today a good day to deploy
    * monthly-installment new client cash, or should we wait a few days?"

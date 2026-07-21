@@ -451,6 +451,67 @@ export function computePremiumContext(
   return { sessions: recent.length, windowDays, buckets };
 }
 
+/** Inputs for the deterministic hedge-entry checklist. All nullable — a null
+ *  renders as "?" (data unavailable) rather than a fabricated verdict. */
+export type HedgeChecklistInputs = {
+  consolidatedRegime: string;
+  transitionLeaning: string | null;    // e.g. "toward Risk-Off"
+  transitionLikelihood: string | null; // "Low" | "Watch" | "Elevated" | "High"
+  riskOffSignalCount: number | null;
+  ctx: PremiumContext | null;
+  fearGreed: number | null;
+  oscillator: number | null;
+  vix: number | null;
+  termStructure: string;
+};
+
+/**
+ * Deterministic hedge-entry checklist — scores each condition of the two ADD
+ * paths from computed data so the hedging call is grounded and consistent.
+ * EVIDENCE, not the verdict: the model judges and may override with stated
+ * reasons. Shared by the morning brief AND the standalone hedging-refresh
+ * endpoint so both always score identically.
+ */
+export function buildHedgeChecklistBlock(p: HedgeChecklistInputs): string {
+  const check = (ok: boolean | null, label: string): string =>
+    `  ${ok == null ? "?" : ok ? "✓" : "✗"} ${label}`;
+  const midB = p.ctx?.buckets.find((b) => b.bucket === "2-4M") ?? p.ctx?.buckets[0] ?? null;
+
+  const p1a = p.consolidatedRegime === "Risk-Off";
+  const p1b =
+    p.transitionLeaning != null && p.transitionLikelihood != null
+      ? p.transitionLeaning === "toward Risk-Off" && (p.transitionLikelihood === "Elevated" || p.transitionLikelihood === "High")
+      : null;
+  const p1c = p.riskOffSignalCount != null ? p.riskOffSignalCount >= 3 : null;
+
+  const cheap5 = midB?.otm5Percentile != null ? midB.otm5Percentile <= 35 : null;
+  const cheap10 = midB?.otm10Percentile != null ? midB.otm10Percentile <= 35 : null;
+  const vvixOk = p.ctx?.vvix != null ? p.ctx.vvix <= 100 : null;
+  const skewOk = midB?.skewPercentile != null ? midB.skewPercentile <= 50 : null;
+  const lateFg = p.fearGreed != null ? p.fearGreed >= 60 : null;
+  const lateOsc = p.oscillator != null ? p.oscillator >= 2.5 : null;
+  const lateVix = p.vix != null ? p.vix <= 16 : null;
+
+  return [
+    "",
+    "",
+    "HEDGE-ENTRY CHECKLIST (computed from live data — evidence for hedgingAnalysis/hedgingCall, NOT the verdict; you may override any line with an explicitly stated reason):",
+    "Path 1 · Classic Risk-Off:",
+    check(p1a, `Consolidated regime is Risk-Off (currently: ${p.consolidatedRegime})`),
+    check(p1b, `Transition gauge leaning Risk-Off at Elevated/High likelihood${p.transitionLeaning ? ` (currently: ${p.transitionLeaning}, ${p.transitionLikelihood})` : " (gauge unavailable)"}`),
+    check(p1c, `≥3 composite signals Risk-Off${p.riskOffSignalCount != null ? ` (currently: ${p.riskOffSignalCount})` : " (composite unavailable)"}`),
+    "Path 2 · Cheap insurance (premium conditions) + late-cycle warning (need ≥1):",
+    check(cheap5, `2-4M 5%OTM premium ≤35th percentile${midB?.otm5Percentile != null ? ` (currently: ${midB.otm5Percentile}th)` : " (unranked)"}`),
+    check(cheap10, `2-4M 10%OTM premium ≤35th percentile${midB?.otm10Percentile != null ? ` (currently: ${midB.otm10Percentile}th)` : " (unranked)"}`),
+    check(vvixOk, `VVIX ≤100${p.ctx?.vvix != null ? ` (currently: ${p.ctx.vvix})` : " (unavailable)"}`),
+    check(skewOk, `Skew ≤50th percentile — tails not already bid${midB?.skewPercentile != null ? ` (currently: ${midB.skewPercentile}th)` : " (unranked)"}`),
+    check(lateFg, `Late-cycle: F&G ≥60${p.fearGreed != null ? ` (currently: ${p.fearGreed})` : ""}`),
+    check(lateOsc, `Late-cycle: S&P Oscillator ≥ +2.5%${p.oscillator != null ? ` (currently: ${p.oscillator >= 0 ? "+" : ""}${p.oscillator}%)` : ""}`),
+    check(lateVix, `Late-cycle: VIX ≤16 complacency${p.vix != null ? ` (currently: ${p.vix})` : ""}${p.termStructure ? ` — term structure ${p.termStructure}` : ""}`),
+    "Reading it: Path 1 substantially met (≥2 of 3) OR Path 2 with at least one premium condition ✓, VVIX/skew not contradicting, and ≥1 late-cycle sign → ADD is defensible. Otherwise the default is SKIP (or HOLD if protection is already on). Cite the specific ✓/✗ lines that drove your call — especially the premium percentile — and name any line you're overriding and why.",
+  ].join("\n");
+}
+
 /** Plain-English cheapness label for a premium percentile. */
 export function percentileLabel(p: number | null): string {
   if (p == null) return "no rank (ledger too thin)";
