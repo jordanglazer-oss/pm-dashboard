@@ -4,6 +4,7 @@ import { createLogger } from "@/app/lib/logger";
 import { computeScores } from "@/app/lib/scoring";
 import { defaultMarketData } from "@/app/lib/defaults";
 import { enqueueMail } from "@/app/lib/mail-outbox";
+import { daysSinceEastern, easternHour } from "@/app/lib/date-eastern";
 import { POST as scorePOST } from "@/app/api/score/route";
 import type { MarketData, ScoreKey, ScoreExplanations, Stock } from "@/app/lib/types";
 import type { ScoreHistoryStore, ScoreHistoryEntry } from "@/app/api/kv/score-history/route";
@@ -168,8 +169,17 @@ export async function autoRescoreStep(): Promise<{
     if (s.bucket !== "Portfolio" && s.bucket !== "Watchlist") continue;
     if (s.instrumentType != null && s.instrumentType !== "stock") continue;
     const ed = typeof s.earningsDate === "string" ? s.earningsDate.slice(0, 10) : "";
-    const dse = ed ? daysSinceUtc(ed) : null;
-    if (dse == null || dse < 0 || dse > 1) continue; // reported today/yesterday
+    // Days since the earnings date in US-EASTERN (the trading day), NOT UTC.
+    // The UTC version fired the night BEFORE: an evening ping after ~8pm ET is
+    // already "tomorrow" in UTC, so a next-day earnings date read as dse=0 and
+    // the report-request email went out a full day early (observed GOOGL/TSLA).
+    const dse = ed ? daysSinceEastern(ed) : null;
+    if (dse == null || dse < 0 || dse > 1) continue; // reported today/yesterday (Eastern)
+    // "Night of": on the report DATE itself, only fire AFTER the close (≥16:00
+    // ET) — dse turns 0 at Eastern-midnight, still hours before an after-close
+    // reporter reports. dse===1 stays an all-day catch-up for a missed evening
+    // (or a before-open reporter the engine didn't see the night before).
+    if (dse === 0 && easternHour() < 16) continue;
     if (state.earningsEmailed[tk] === ed) continue;
     const queued = await enqueueMail({
       id: `earnings-${tk}-${ed}`,

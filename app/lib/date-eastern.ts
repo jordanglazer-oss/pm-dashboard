@@ -46,6 +46,23 @@ export function daysFromToday(dateStr: string, todayStr: string = easternToday()
   return Math.round((b - a) / 86_400_000);
 }
 
+/** Whole calendar days SINCE a YYYY-MM-DD date, in US Eastern (positive = past,
+ *  0 = today, negative = future). Null on malformed input — mirrors the
+ *  null-on-NaN contract callers rely on for gating. */
+export function daysSinceEastern(dateStr: string, todayStr: string = easternToday()): number | null {
+  const n = daysFromToday(dateStr, todayStr);
+  return isNaN(n) ? null : -n;
+}
+
+/** Current hour (0-23) in US Eastern, regardless of server timezone. Used to
+ *  gate evening-only actions (e.g. fire an earnings email AFTER the close). */
+export function easternHour(now: Date = new Date()): number {
+  const h = new Intl.DateTimeFormat("en-US", { timeZone: TZ, hour: "2-digit", hour12: false }).format(now);
+  const n = parseInt(h, 10);
+  if (isNaN(n)) return now.getUTCHours();
+  return n === 24 ? 0 : n; // some ICU builds emit "24" at midnight
+}
+
 /** Weekday + month/day for a bare YYYY-MM-DD, formatted without shifting the
  *  calendar day (parse at UTC midnight, format in UTC). E.g. "Wed, Jul 22". */
 export function weekdayLabel(dateStr: string): string {
