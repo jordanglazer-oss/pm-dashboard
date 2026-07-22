@@ -778,6 +778,18 @@ export type MorningBrief = {
    *  replaced hedgingAnalysis + hedgingCall mid-day, without regenerating
    *  the rest of the brief. Absent on a fresh full generation. */
   hedgingRefreshedAt?: string;
+  /** Structured hedge-entry checklist — the exact computed evidence shown to
+   *  the model when it made the hedging call (see computeHedgeChecklist in
+   *  app/lib/hedging.ts). Rendered on the Hedging tile as the receipts behind
+   *  ADD/HOLD/SKIP. Optional for backward compat with stored briefs. */
+  hedgeChecklist?: {
+    items: { path: "risk-off" | "cheap"; label: string; ok: boolean | null }[];
+    midOtm5Percentile: number | null;
+    midOtm10Percentile: number | null;
+    midSkewPercentile: number | null;
+    vvix: number | null;
+    sessions: number | null;
+  };
   /**
    * Cash Deployment Indicator — answers "is today a good day to deploy
    * monthly-installment new client cash, or should we wait a few days?"
