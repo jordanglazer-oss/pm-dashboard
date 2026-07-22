@@ -472,6 +472,49 @@ export type HedgeChecklistItem = {
   ok: boolean | null;
 };
 
+/** One anchor expiry's full quote row — surfaced to the UI so the tile can
+ *  show the exact premiums the call was priced against. */
+export type HedgingAnchorDetail = {
+  expiryLabel: string;
+  daysToExpiry: number;
+  atmStrike: number;
+  atmPremium: number | null;
+  atmPctOfSpot: number | null;
+  otm5Strike: number;
+  otm5Premium: number | null;
+  otm5PctOfSpot: number | null;
+  otm10Strike: number;
+  otm10Premium: number | null;
+  otm10PctOfSpot: number | null;
+};
+
+/** One WoW/MoM trend comparison row per anchor expiry. */
+export type HedgingTrendRow = {
+  expiryLabel: string;
+  otm5Prior: number | null;
+  otm5Curr: number | null;
+  otm5DeltaPct: number | null;
+  otm10Prior: number | null;
+  otm10Curr: number | null;
+  otm10DeltaPct: number | null;
+};
+
+/** The COMPLETE data basis behind the hedging call — everything quantitative
+ *  the model is shown, in structured form, so the Hedging tile can render it
+ *  and the decision is never a black box. */
+export type HedgingDetail = {
+  fetchedAt: string;
+  spotPrice: number;
+  anchors: HedgingAnchorDetail[];
+  wow: { vsDate: string; rows: HedgingTrendRow[] } | null;
+  mom: { vsDate: string; rows: HedgingTrendRow[] } | null;
+  /** Percentile context per tenor bucket (same object the checklist ranks on). */
+  buckets: PremiumBucketContext[];
+  sessions: number;
+  windowDays: number;
+  vvix: number | null;
+};
+
 /** Structured checklist + the headline numbers the UI surfaces beside it. */
 export type HedgeChecklist = {
   items: HedgeChecklistItem[];
@@ -481,6 +524,19 @@ export type HedgeChecklist = {
   midSkewPercentile: number | null;
   vvix: number | null;
   sessions: number | null; // ledger depth behind the percentiles
+  /** Echo of the scalar inputs the checklist was scored from — surfaced on
+   *  the tile's data-basis panel so the regime/vol/sentiment side of the
+   *  decision is as inspectable as the premium side. */
+  inputs: {
+    consolidatedRegime: string;
+    transitionLeaning: string | null;
+    transitionLikelihood: string | null;
+    riskOffSignalCount: number | null;
+    fearGreed: number | null;
+    oscillator: number | null;
+    vix: number | null;
+    termStructure: string;
+  };
 };
 
 /**
@@ -557,6 +613,16 @@ export function computeHedgeChecklist(p: HedgeChecklistInputs): HedgeChecklist {
     midSkewPercentile: midB?.skewPercentile ?? null,
     vvix: p.ctx?.vvix ?? null,
     sessions: p.ctx?.sessions ?? null,
+    inputs: {
+      consolidatedRegime: p.consolidatedRegime,
+      transitionLeaning: p.transitionLeaning,
+      transitionLikelihood: p.transitionLikelihood,
+      riskOffSignalCount: p.riskOffSignalCount,
+      fearGreed: p.fearGreed,
+      oscillator: p.oscillator,
+      vix: p.vix,
+      termStructure: p.termStructure,
+    },
   };
 }
 
@@ -590,11 +656,18 @@ export function percentileLabel(p: number | null): string {
 /**
  * Render a compact text block summarizing live SPY put costs + WoW trend +
  * percentile context, suitable for injection into a Claude prompt. Returns
- * { text: "", ctx: null } on error so the brief still generates. `ctx` is the
- * structured premium context, shared with the hedge-entry checklist and the
- * hedge-timing score so every consumer ranks cheapness identically.
+ * { text: "", ctx: null, detail: null } on error so the brief still generates.
+ * `ctx` is the structured premium context shared with the hedge-entry
+ * checklist and the hedge-timing score; `detail` is the SAME data in full
+ * structured form for the Hedging tile's expandable data-basis panel — the
+ * text (model) and detail (UI) are built from the same values in the same
+ * pass, so they can never diverge.
  */
-export async function buildHedgingCostsBlock(): Promise<{ text: string; ctx: PremiumContext | null }> {
+export async function buildHedgingCostsBlock(): Promise<{
+  text: string;
+  ctx: PremiumContext | null;
+  detail: HedgingDetail | null;
+}> {
   try {
     const live = await fetchLiveHedgingCosts();
     const history = await loadHedgingHistory();
@@ -633,6 +706,25 @@ export async function buildHedgingCostsBlock(): Promise<{ text: string; ctx: Pre
     // signal needs to follow the same strikes — tracking ATM here would
     // force the model to extrapolate from a different point on the
     // skew curve. ATM is omitted entirely.
+    const structuredTrend = (snap: HedgingSnapshotShape | null): { vsDate: string; rows: HedgingTrendRow[] } | null => {
+      if (!snap) return null;
+      const rows: HedgingTrendRow[] = anchors.map((a) => {
+        const priorRow = snap.quotes.find((s) => s.expiry === a.expiry);
+        const delta = (prior: number | null | undefined, curr: number | null): number | null =>
+          prior != null && curr != null && prior !== 0 ? Math.round(((curr - prior) / prior) * 1000) / 10 : null;
+        return {
+          expiryLabel: a.expiryLabel,
+          otm5Prior: priorRow?.otm5Premium ?? null,
+          otm5Curr: a.otm5Premium,
+          otm5DeltaPct: delta(priorRow?.otm5Premium, a.otm5Premium),
+          otm10Prior: priorRow?.otm10Premium ?? null,
+          otm10Curr: a.otm10Premium,
+          otm10DeltaPct: delta(priorRow?.otm10Premium, a.otm10Premium),
+        };
+      });
+      return { vsDate: snap.date, rows };
+    };
+
     const trendBlock = (label: string, snap: HedgingSnapshotShape | null, daysAgoLabel: string): string[] => {
       if (!snap) return [`${label}: no snapshot ~${daysAgoLabel} ago in ledger yet`];
       const rows: string[] = [`${label} (vs ${snap.date}, SPY $${snap.spotPrice.toFixed(2)}):`];
@@ -681,9 +773,33 @@ export async function buildHedgingCostsBlock(): Promise<{ text: string; ctx: Pre
         : "VVIX: unavailable this run.",
     );
 
-    return { text: lines.join("\n"), ctx: { ...premiumCtx, vvix } };
+    const detail: HedgingDetail = {
+      fetchedAt: live.fetchedAt,
+      spotPrice: live.spotPrice,
+      anchors: anchors.map((a) => ({
+        expiryLabel: a.expiryLabel,
+        daysToExpiry: a.daysToExpiry,
+        atmStrike: a.atmStrike,
+        atmPremium: a.atmPremium,
+        atmPctOfSpot: a.atmPctOfSpot,
+        otm5Strike: a.otm5Strike,
+        otm5Premium: a.otm5Premium,
+        otm5PctOfSpot: a.otm5PctOfSpot,
+        otm10Strike: a.otm10Strike,
+        otm10Premium: a.otm10Premium,
+        otm10PctOfSpot: a.otm10PctOfSpot,
+      })),
+      wow: structuredTrend(wow),
+      mom: structuredTrend(mom),
+      buckets: premiumCtx.buckets,
+      sessions: premiumCtx.sessions,
+      windowDays: premiumCtx.windowDays,
+      vvix,
+    };
+
+    return { text: lines.join("\n"), ctx: { ...premiumCtx, vvix }, detail };
   } catch (e) {
     console.error("buildHedgingCostsBlock failed:", e);
-    return { text: "", ctx: null };
+    return { text: "", ctx: null, detail: null };
   }
 }

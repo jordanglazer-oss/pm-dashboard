@@ -119,6 +119,7 @@ Return ONLY this JSON (no markdown fences):
       // Same structured evidence the model saw — the tile re-renders its
       // receipts from this so a refresh updates the checklist too.
       hedgeChecklist,
+      hedgingDetail: hedgingCosts.detail,
     });
   } catch (e) {
     return NextResponse.json({ ok: false, error: e instanceof Error ? e.message : String(e) });

@@ -932,7 +932,7 @@ ${rows.join("\n")}`;
         loadResearch(),
         buildHedgingCostsBlock().catch((e) => {
           console.error("Hedging costs block failed:", e);
-          return { text: "", ctx: null };
+          return { text: "", ctx: null, detail: null };
         }),
         // pm:market-regime is a best-effort cached snapshot. Missing →
         // regime block is simply omitted from the prompt; brief still
@@ -1710,6 +1710,10 @@ Current Portfolio Holdings: ${holdingsSummary}${portfolioPositioning}`;
       // shown (single source in computeHedgeChecklist), so the Hedging tile
       // can render the receipts behind the ADD/HOLD/SKIP call.
       hedgeChecklist,
+      // Full structured data basis (live premium table, WoW/MoM trend,
+      // percentile buckets, VVIX) — the tile's expandable no-black-box panel.
+      // Null when the CBOE fetch failed this run.
+      hedgingDetail: hedgingCosts.detail,
     });
   } catch (error) {
     const message = error instanceof Error ? error.message : String(error);

@@ -789,7 +789,46 @@ export type MorningBrief = {
     midSkewPercentile: number | null;
     vvix: number | null;
     sessions: number | null;
+    /** Scalar inputs the checklist was scored from (regime / vol / sentiment
+     *  side of the decision) — optional for briefs stored before this shipped. */
+    inputs?: {
+      consolidatedRegime: string;
+      transitionLeaning: string | null;
+      transitionLikelihood: string | null;
+      riskOffSignalCount: number | null;
+      fearGreed: number | null;
+      oscillator: number | null;
+      vix: number | null;
+      termStructure: string;
+    };
   };
+  /** Full structured data basis behind the hedging call (live premium table,
+   *  WoW/MoM trend, percentile buckets, VVIX) — mirrors HedgingDetail in
+   *  app/lib/hedging.ts. Renders as the tile's expandable no-black-box panel.
+   *  Null/absent when the CBOE fetch failed that run or on older briefs. */
+  hedgingDetail?: {
+    fetchedAt: string;
+    spotPrice: number;
+    anchors: {
+      expiryLabel: string;
+      daysToExpiry: number;
+      atmStrike: number;
+      atmPremium: number | null;
+      atmPctOfSpot: number | null;
+      otm5Strike: number;
+      otm5Premium: number | null;
+      otm5PctOfSpot: number | null;
+      otm10Strike: number;
+      otm10Premium: number | null;
+      otm10PctOfSpot: number | null;
+    }[];
+    wow: { vsDate: string; rows: { expiryLabel: string; otm5Prior: number | null; otm5Curr: number | null; otm5DeltaPct: number | null; otm10Prior: number | null; otm10Curr: number | null; otm10DeltaPct: number | null }[] } | null;
+    mom: { vsDate: string; rows: { expiryLabel: string; otm5Prior: number | null; otm5Curr: number | null; otm5DeltaPct: number | null; otm10Prior: number | null; otm10Curr: number | null; otm10DeltaPct: number | null }[] } | null;
+    buckets: { bucket: string; daysToExpiry: number; otm5Pct: number | null; otm5Percentile: number | null; otm10Pct: number | null; otm10Percentile: number | null; skewRatio: number | null; skewPercentile: number | null }[];
+    sessions: number;
+    windowDays: number;
+    vvix: number | null;
+  } | null;
   /**
    * Cash Deployment Indicator — answers "is today a good day to deploy
    * monthly-installment new client cash, or should we wait a few days?"
