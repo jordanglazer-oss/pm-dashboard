@@ -2102,13 +2102,28 @@ export function MorningBrief({
                       {brief.hedgingDetail && (
                         <div>
                           <div className="font-semibold text-ink-2">
-                            Premium history · {brief.hedgingDetail.sessions} sessions / trailing {brief.hedgingDetail.windowDays}d (low percentile = historically cheap)
+                            Premium history · {brief.hedgingDetail.sessions} sessions{brief.hedgingDetail.firstDate ? ` since ${brief.hedgingDetail.firstDate}` : ""} (low percentile = cheap WITHIN this window)
                           </div>
                           {brief.hedgingDetail.buckets.map((b) => (
                             <div key={b.bucket} className="text-ink-2">
                               {b.bucket}: 5%OTM {b.otm5Percentile != null ? `${b.otm5Percentile}th pct` : "unranked"} · 10%OTM {b.otm10Percentile != null ? `${b.otm10Percentile}th pct` : "unranked"} · skew {b.skewRatio != null ? b.skewRatio.toFixed(2) : "—"}{b.skewPercentile != null ? ` (${b.skewPercentile}th)` : ""}
                             </div>
                           ))}
+                          {brief.hedgingDetail.volAnchor && (brief.hedgingDetail.volAnchor.vix || brief.hedgingDetail.volAnchor.vix3m) && (
+                            <div className="mt-0.5 text-ink-2">
+                              Long-horizon anchor:{" "}
+                              {brief.hedgingDetail.volAnchor.vix3m && (
+                                <span className={brief.hedgingDetail.volAnchor.vix3m.percentile <= 40 ? "text-pos" : brief.hedgingDetail.volAnchor.vix3m.percentile >= 75 ? "text-neg" : ""}>
+                                  VIX3M {brief.hedgingDetail.volAnchor.vix3m.level} = {brief.hedgingDetail.volAnchor.vix3m.percentile}th pct of ~{brief.hedgingDetail.volAnchor.vix3m.years}y
+                                </span>
+                              )}
+                              {brief.hedgingDetail.volAnchor.vix3m && brief.hedgingDetail.volAnchor.vix && " · "}
+                              {brief.hedgingDetail.volAnchor.vix && (
+                                <span>VIX {brief.hedgingDetail.volAnchor.vix.level} = {brief.hedgingDetail.volAnchor.vix.percentile}th of ~{brief.hedgingDetail.volAnchor.vix.years}y</span>
+                              )}
+                              <span className="text-ink-3"> — whether the whole window above is itself a cheap or expensive vol regime</span>
+                            </div>
+                          )}
                           {(brief.hedgingDetail.wow || brief.hedgingDetail.mom) && (
                             <div className="mt-0.5 text-ink-3">
                               {brief.hedgingDetail.wow && (

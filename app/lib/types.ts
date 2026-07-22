@@ -827,6 +827,14 @@ export type MorningBrief = {
     buckets: { bucket: string; daysToExpiry: number; otm5Pct: number | null; otm5Percentile: number | null; otm10Pct: number | null; otm10Percentile: number | null; skewRatio: number | null; skewPercentile: number | null }[];
     sessions: number;
     windowDays: number;
+    /** Earliest ledger date — the honest span behind the percentiles. */
+    firstDate?: string | null;
+    /** Multi-regime VIX/VIX3M anchor guarding against short-window bias. */
+    volAnchor?: {
+      computedAt: string;
+      vix: { level: number; percentile: number; years: number } | null;
+      vix3m: { level: number; percentile: number; years: number } | null;
+    } | null;
     vvix: number | null;
   } | null;
   /**

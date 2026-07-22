@@ -351,6 +351,12 @@ export type PremiumBucketContext = {
 export type PremiumContext = {
   sessions: number; // distinct history dates contributing
   windowDays: number;
+  /** Earliest ledger date contributing — surfaced so "percentile" claims are
+   *  always labeled with the span they actually rank within. */
+  firstDate: string | null;
+  /** Long-horizon VIX/VIX3M anchor — the multi-regime guard against the
+   *  ledger's short collection window. Null when unavailable. */
+  volAnchor: VolAnchor | null;
   buckets: PremiumBucketContext[];
   vvix: number | null;
 };
@@ -360,6 +366,79 @@ function percentileOf(value: number, dist: number[]): number | null {
   if (dist.length < 20) return null; // too thin to rank honestly
   const below = dist.filter((x) => x <= value).length;
   return Math.round((below / dist.length) * 100);
+}
+
+// ---- Long-horizon vol anchor: the guard against short-window bias -----------
+//
+// The ledger percentiles rank today's premiums ONLY within our own collection
+// window — if that window spans a single vol regime, "cheap" merely means
+// "cheapest corner of that regime". VIX (1990+) and VIX3M (2009+) have decades
+// of free daily history and a 2-4M put premium tracks VIX3M tightly, so their
+// full-history percentile tells us whether the WHOLE window is itself a cheap
+// or expensive vol regime. The two rulers are always read together.
+
+export type VolAnchor = {
+  computedAt: string;
+  vix: { level: number; percentile: number; years: number } | null;
+  vix3m: { level: number; percentile: number; years: number } | null;
+};
+
+const VOL_ANCHOR_KEY = "pm:vol-anchor";
+const VOL_ANCHOR_TTL_MS = 24 * 60 * 60 * 1000;
+
+/** Full daily close history for an index symbol from Yahoo. Explicit epoch
+ *  bounds (period1=0) — `range=max` silently truncates for ^VIX/^VIX3M
+ *  (verified: 439 bars vs 9200+ with epoch bounds). */
+async function fetchIndexHistory(symbol: string): Promise<number[] | null> {
+  try {
+    const res = await fetch(
+      `https://query2.finance.yahoo.com/v8/finance/chart/${encodeURIComponent(symbol)}?period1=0&period2=${Math.floor(Date.now() / 1000)}&interval=1d`,
+      { cache: "no-store", headers: { "User-Agent": "Mozilla/5.0" }, signal: AbortSignal.timeout(10000) },
+    );
+    if (!res.ok) return null;
+    const j = (await res.json()) as { chart?: { result?: Array<{ indicators?: { quote?: Array<{ close?: Array<number | null> }> } }> } };
+    const closes = (j?.chart?.result?.[0]?.indicators?.quote?.[0]?.close || []).filter(
+      (c): c is number => typeof c === "number" && isFinite(c) && c > 0,
+    );
+    return closes.length >= 500 ? closes : null; // need real multi-year history
+  } catch {
+    return null;
+  }
+}
+
+/**
+ * Current VIX / VIX3M level ranked against their FULL available history.
+ * Cached 24h in pm:vol-anchor (regenerable — safe to nuke); vol regimes don't
+ * move enough intraday to justify re-downloading ~9000 bars per brief.
+ */
+export async function getVolAnchor(): Promise<VolAnchor | null> {
+  try {
+    const redis = await getRedis();
+    const cachedRaw = await redis.get(VOL_ANCHOR_KEY);
+    if (cachedRaw) {
+      try {
+        const cached = JSON.parse(cachedRaw) as VolAnchor;
+        if (Date.now() - new Date(cached.computedAt).getTime() < VOL_ANCHOR_TTL_MS) return cached;
+      } catch { /* recompute */ }
+    }
+    const [vixHist, vix3mHist] = await Promise.all([fetchIndexHistory("^VIX"), fetchIndexHistory("^VIX3M")]);
+    const rank = (hist: number[] | null): VolAnchor["vix"] => {
+      if (!hist || hist.length < 500) return null;
+      const level = hist[hist.length - 1];
+      const below = hist.filter((x) => x <= level).length;
+      return {
+        level: Math.round(level * 10) / 10,
+        percentile: Math.round((below / hist.length) * 100),
+        years: Math.round(hist.length / 252),
+      };
+    };
+    const anchor: VolAnchor = { computedAt: new Date().toISOString(), vix: rank(vixHist), vix3m: rank(vix3mHist) };
+    if (!anchor.vix && !anchor.vix3m) return null;
+    await redis.set(VOL_ANCHOR_KEY, JSON.stringify(anchor));
+    return anchor;
+  } catch {
+    return null;
+  }
 }
 
 /** Latest ^VVIX close from Yahoo (vol-of-vol — cheapness context for options).
@@ -391,7 +470,7 @@ export function computePremiumContext(
   live: HedgingLiveData,
   history: HedgingSnapshotShape[],
   windowDays = 185,
-): Omit<PremiumContext, "vvix"> {
+): Omit<PremiumContext, "vvix" | "volAnchor"> {
   const cutoff = new Date(Date.now() - windowDays * 86400000).toISOString().slice(0, 10);
   const recent = history.filter((s) => s.date >= cutoff && s.spotPrice > 0);
 
@@ -448,7 +527,12 @@ export function computePremiumContext(
     });
   }
 
-  return { sessions: recent.length, windowDays, buckets };
+  return {
+    sessions: recent.length,
+    windowDays,
+    firstDate: recent.length ? recent.reduce((a, s) => (s.date < a ? s.date : a), recent[0].date) : null,
+    buckets,
+  };
 }
 
 /** Inputs for the deterministic hedge-entry checklist. All nullable — a null
@@ -512,6 +596,8 @@ export type HedgingDetail = {
   buckets: PremiumBucketContext[];
   sessions: number;
   windowDays: number;
+  firstDate: string | null;
+  volAnchor: VolAnchor | null;
   vvix: number | null;
 };
 
@@ -583,6 +669,23 @@ export function computeHedgeChecklist(p: HedgeChecklistInputs): HedgeChecklist {
       path: "cheap",
       ok: p.ctx?.vvix != null ? p.ctx.vvix <= 100 : null,
       label: `VVIX ≤100${p.ctx?.vvix != null ? ` (currently: ${p.ctx.vvix})` : " (unavailable)"}`,
+    },
+    {
+      // The guard against short-window bias: the ledger percentile only ranks
+      // within our own collection span; this line asks whether the WHOLE
+      // window sits in a cheap-vol regime by multi-decade standards.
+      path: "cheap",
+      ok: (() => {
+        const a = p.ctx?.volAnchor;
+        const anchor = a?.vix3m ?? a?.vix ?? null;
+        return anchor ? anchor.percentile <= 60 : null;
+      })(),
+      label: (() => {
+        const a = p.ctx?.volAnchor;
+        const anchor = a?.vix3m ?? a?.vix ?? null;
+        const name = a?.vix3m ? "VIX3M" : "VIX";
+        return `Long-horizon vol not elevated: ${name} ≤60th percentile of full history${anchor ? ` (currently: ${anchor.level} = ${anchor.percentile}th of ~${anchor.years}y)` : " (anchor unavailable)"}`;
+      })(),
     },
     {
       path: "cheap",
@@ -673,9 +776,10 @@ export async function buildHedgingCostsBlock(): Promise<{
     const history = await loadHedgingHistory();
     const wow = findSnapshotDaysAgo(history, 7, 2);
     const mom = findSnapshotDaysAgo(history, 30, 5);
-    const [premiumCtx, vvix] = await Promise.all([
+    const [premiumCtx, vvix, volAnchor] = await Promise.all([
       Promise.resolve(computePremiumContext(live, history)),
       fetchVvix(),
+      getVolAnchor(),
     ]);
 
     // Pick 3 anchor expiries: nearest ≤45d, mid 60–120d, and longest-dated
@@ -773,6 +877,25 @@ export async function buildHedgingCostsBlock(): Promise<{
         : "VVIX: unavailable this run.",
     );
 
+    // ── Long-horizon anchor: guard against the ledger's short window ──
+    lines.push("");
+    if (premiumCtx.firstDate) {
+      lines.push(
+        `LEDGER SPAN HONESTY: the percentiles above rank ONLY within our own collection window (since ${premiumCtx.firstDate}, ${premiumCtx.sessions} sessions) — they cannot see vol regimes outside it.`,
+      );
+    }
+    if (volAnchor && (volAnchor.vix || volAnchor.vix3m)) {
+      const parts: string[] = [];
+      if (volAnchor.vix) parts.push(`VIX ${volAnchor.vix.level} = ${volAnchor.vix.percentile}th percentile of ~${volAnchor.vix.years}y of history`);
+      if (volAnchor.vix3m) parts.push(`VIX3M ${volAnchor.vix3m.level} = ${volAnchor.vix3m.percentile}th percentile of ~${volAnchor.vix3m.years}y (the closest proxy for 2-4M put pricing)`);
+      lines.push(`Long-horizon vol anchor (multi-regime): ${parts.join("; ")}.`);
+      lines.push(
+        `READ THE TWO RULERS TOGETHER: ledger percentile LOW + anchor percentile LOW → genuinely cheap insurance in absolute regime terms. Ledger LOW but anchor HIGH → only locally cheap within an elevated-vol window — protection is still expensive by multi-year standards; say which case applies whenever you call premiums cheap or rich.`,
+      );
+    } else {
+      lines.push("Long-horizon vol anchor: unavailable this run — treat ledger percentiles as window-relative only and say so.");
+    }
+
     const detail: HedgingDetail = {
       fetchedAt: live.fetchedAt,
       spotPrice: live.spotPrice,
@@ -794,10 +917,12 @@ export async function buildHedgingCostsBlock(): Promise<{
       buckets: premiumCtx.buckets,
       sessions: premiumCtx.sessions,
       windowDays: premiumCtx.windowDays,
+      firstDate: premiumCtx.firstDate,
+      volAnchor,
       vvix,
     };
 
-    return { text: lines.join("\n"), ctx: { ...premiumCtx, vvix }, detail };
+    return { text: lines.join("\n"), ctx: { ...premiumCtx, vvix, volAnchor }, detail };
   } catch (e) {
     console.error("buildHedgingCostsBlock failed:", e);
     return { text: "", ctx: null, detail: null };
