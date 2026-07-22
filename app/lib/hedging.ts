@@ -465,49 +465,114 @@ export type HedgeChecklistInputs = {
   termStructure: string;
 };
 
+/** One scored checklist condition. `ok: null` = data unavailable ("?"). */
+export type HedgeChecklistItem = {
+  path: "risk-off" | "cheap";
+  label: string;
+  ok: boolean | null;
+};
+
+/** Structured checklist + the headline numbers the UI surfaces beside it. */
+export type HedgeChecklist = {
+  items: HedgeChecklistItem[];
+  /** Mid (2-4M) bucket headline stats — the default tenor the prompt cites. */
+  midOtm5Percentile: number | null;
+  midOtm10Percentile: number | null;
+  midSkewPercentile: number | null;
+  vvix: number | null;
+  sessions: number | null; // ledger depth behind the percentiles
+};
+
 /**
  * Deterministic hedge-entry checklist — scores each condition of the two ADD
  * paths from computed data so the hedging call is grounded and consistent.
  * EVIDENCE, not the verdict: the model judges and may override with stated
  * reasons. Shared by the morning brief AND the standalone hedging-refresh
- * endpoint so both always score identically.
+ * endpoint so both always score identically; the STRUCTURED form is returned
+ * to the client so the Hedging tile can show the receipts behind the call.
  */
-export function buildHedgeChecklistBlock(p: HedgeChecklistInputs): string {
-  const check = (ok: boolean | null, label: string): string =>
-    `  ${ok == null ? "?" : ok ? "✓" : "✗"} ${label}`;
+export function computeHedgeChecklist(p: HedgeChecklistInputs): HedgeChecklist {
   const midB = p.ctx?.buckets.find((b) => b.bucket === "2-4M") ?? p.ctx?.buckets[0] ?? null;
 
-  const p1a = p.consolidatedRegime === "Risk-Off";
-  const p1b =
-    p.transitionLeaning != null && p.transitionLikelihood != null
-      ? p.transitionLeaning === "toward Risk-Off" && (p.transitionLikelihood === "Elevated" || p.transitionLikelihood === "High")
-      : null;
-  const p1c = p.riskOffSignalCount != null ? p.riskOffSignalCount >= 3 : null;
+  const items: HedgeChecklistItem[] = [
+    {
+      path: "risk-off",
+      ok: p.consolidatedRegime === "Risk-Off",
+      label: `Consolidated regime is Risk-Off (currently: ${p.consolidatedRegime})`,
+    },
+    {
+      path: "risk-off",
+      ok:
+        p.transitionLeaning != null && p.transitionLikelihood != null
+          ? p.transitionLeaning === "toward Risk-Off" && (p.transitionLikelihood === "Elevated" || p.transitionLikelihood === "High")
+          : null,
+      label: `Transition gauge leaning Risk-Off at Elevated/High likelihood${p.transitionLeaning ? ` (currently: ${p.transitionLeaning}, ${p.transitionLikelihood})` : " (gauge unavailable)"}`,
+    },
+    {
+      path: "risk-off",
+      ok: p.riskOffSignalCount != null ? p.riskOffSignalCount >= 3 : null,
+      label: `≥3 composite signals Risk-Off${p.riskOffSignalCount != null ? ` (currently: ${p.riskOffSignalCount})` : " (composite unavailable)"}`,
+    },
+    {
+      path: "cheap",
+      ok: midB?.otm5Percentile != null ? midB.otm5Percentile <= 35 : null,
+      label: `2-4M 5%OTM premium ≤35th percentile${midB?.otm5Percentile != null ? ` (currently: ${midB.otm5Percentile}th)` : " (unranked)"}`,
+    },
+    {
+      path: "cheap",
+      ok: midB?.otm10Percentile != null ? midB.otm10Percentile <= 35 : null,
+      label: `2-4M 10%OTM premium ≤35th percentile${midB?.otm10Percentile != null ? ` (currently: ${midB.otm10Percentile}th)` : " (unranked)"}`,
+    },
+    {
+      path: "cheap",
+      ok: p.ctx?.vvix != null ? p.ctx.vvix <= 100 : null,
+      label: `VVIX ≤100${p.ctx?.vvix != null ? ` (currently: ${p.ctx.vvix})` : " (unavailable)"}`,
+    },
+    {
+      path: "cheap",
+      ok: midB?.skewPercentile != null ? midB.skewPercentile <= 50 : null,
+      label: `Skew ≤50th percentile — tails not already bid${midB?.skewPercentile != null ? ` (currently: ${midB.skewPercentile}th)` : " (unranked)"}`,
+    },
+    {
+      path: "cheap",
+      ok: p.fearGreed != null ? p.fearGreed >= 60 : null,
+      label: `Late-cycle: F&G ≥60${p.fearGreed != null ? ` (currently: ${p.fearGreed})` : ""}`,
+    },
+    {
+      path: "cheap",
+      ok: p.oscillator != null ? p.oscillator >= 2.5 : null,
+      label: `Late-cycle: S&P Oscillator ≥ +2.5%${p.oscillator != null ? ` (currently: ${p.oscillator >= 0 ? "+" : ""}${p.oscillator}%)` : ""}`,
+    },
+    {
+      path: "cheap",
+      ok: p.vix != null ? p.vix <= 16 : null,
+      label: `Late-cycle: VIX ≤16 complacency${p.vix != null ? ` (currently: ${p.vix})` : ""}${p.termStructure ? ` — term structure ${p.termStructure}` : ""}`,
+    },
+  ];
 
-  const cheap5 = midB?.otm5Percentile != null ? midB.otm5Percentile <= 35 : null;
-  const cheap10 = midB?.otm10Percentile != null ? midB.otm10Percentile <= 35 : null;
-  const vvixOk = p.ctx?.vvix != null ? p.ctx.vvix <= 100 : null;
-  const skewOk = midB?.skewPercentile != null ? midB.skewPercentile <= 50 : null;
-  const lateFg = p.fearGreed != null ? p.fearGreed >= 60 : null;
-  const lateOsc = p.oscillator != null ? p.oscillator >= 2.5 : null;
-  const lateVix = p.vix != null ? p.vix <= 16 : null;
+  return {
+    items,
+    midOtm5Percentile: midB?.otm5Percentile ?? null,
+    midOtm10Percentile: midB?.otm10Percentile ?? null,
+    midSkewPercentile: midB?.skewPercentile ?? null,
+    vvix: p.ctx?.vvix ?? null,
+    sessions: p.ctx?.sessions ?? null,
+  };
+}
 
+/** Prompt rendering of the same checklist (delegates to computeHedgeChecklist
+ *  so prompt and UI can never disagree). */
+export function buildHedgeChecklistBlock(p: HedgeChecklistInputs): string {
+  const cl = computeHedgeChecklist(p);
+  const line = (i: HedgeChecklistItem): string => `  ${i.ok == null ? "?" : i.ok ? "✓" : "✗"} ${i.label}`;
   return [
     "",
     "",
     "HEDGE-ENTRY CHECKLIST (computed from live data — evidence for hedgingAnalysis/hedgingCall, NOT the verdict; you may override any line with an explicitly stated reason):",
     "Path 1 · Classic Risk-Off:",
-    check(p1a, `Consolidated regime is Risk-Off (currently: ${p.consolidatedRegime})`),
-    check(p1b, `Transition gauge leaning Risk-Off at Elevated/High likelihood${p.transitionLeaning ? ` (currently: ${p.transitionLeaning}, ${p.transitionLikelihood})` : " (gauge unavailable)"}`),
-    check(p1c, `≥3 composite signals Risk-Off${p.riskOffSignalCount != null ? ` (currently: ${p.riskOffSignalCount})` : " (composite unavailable)"}`),
+    ...cl.items.filter((i) => i.path === "risk-off").map(line),
     "Path 2 · Cheap insurance (premium conditions) + late-cycle warning (need ≥1):",
-    check(cheap5, `2-4M 5%OTM premium ≤35th percentile${midB?.otm5Percentile != null ? ` (currently: ${midB.otm5Percentile}th)` : " (unranked)"}`),
-    check(cheap10, `2-4M 10%OTM premium ≤35th percentile${midB?.otm10Percentile != null ? ` (currently: ${midB.otm10Percentile}th)` : " (unranked)"}`),
-    check(vvixOk, `VVIX ≤100${p.ctx?.vvix != null ? ` (currently: ${p.ctx.vvix})` : " (unavailable)"}`),
-    check(skewOk, `Skew ≤50th percentile — tails not already bid${midB?.skewPercentile != null ? ` (currently: ${midB.skewPercentile}th)` : " (unranked)"}`),
-    check(lateFg, `Late-cycle: F&G ≥60${p.fearGreed != null ? ` (currently: ${p.fearGreed})` : ""}`),
-    check(lateOsc, `Late-cycle: S&P Oscillator ≥ +2.5%${p.oscillator != null ? ` (currently: ${p.oscillator >= 0 ? "+" : ""}${p.oscillator}%)` : ""}`),
-    check(lateVix, `Late-cycle: VIX ≤16 complacency${p.vix != null ? ` (currently: ${p.vix})` : ""}${p.termStructure ? ` — term structure ${p.termStructure}` : ""}`),
+    ...cl.items.filter((i) => i.path === "cheap").map(line),
     "Reading it: Path 1 substantially met (≥2 of 3) OR Path 2 with at least one premium condition ✓, VVIX/skew not contradicting, and ≥1 late-cycle sign → ADD is defensible. Otherwise the default is SKIP (or HOLD if protection is already on). Cite the specific ✓/✗ lines that drove your call — especially the premium percentile — and name any line you're overriding and why.",
   ].join("\n");
 }

@@ -1,7 +1,7 @@
 import { NextResponse } from "next/server";
 import Anthropic from "@anthropic-ai/sdk";
 import { getRedis } from "@/app/lib/redis";
-import { buildHedgingCostsBlock, buildHedgeChecklistBlock } from "@/app/lib/hedging";
+import { buildHedgingCostsBlock, buildHedgeChecklistBlock, computeHedgeChecklist } from "@/app/lib/hedging";
 import { computeRegimeTransition } from "@/app/lib/regime-transition";
 import type { MarketRegimeData } from "@/app/lib/market-regime";
 
@@ -54,7 +54,7 @@ export async function POST() {
     const regimeTransition = marketRegime ? computeRegimeTransition(marketRegime) : null;
     const vix = marketRegime?.crossAsset?.vix?.price ?? null;
 
-    const checklist = buildHedgeChecklistBlock({
+    const checklistInputs = {
       consolidatedRegime,
       transitionLeaning: regimeTransition?.leaning ?? null,
       transitionLikelihood: regimeTransition?.likelihood ?? null,
@@ -65,7 +65,9 @@ export async function POST() {
       oscillator: typeof market.spOscillator === "number" ? market.spOscillator : null,
       vix,
       termStructure: market.termStructure ?? "",
-    });
+    };
+    const checklist = buildHedgeChecklistBlock(checklistInputs);
+    const hedgeChecklist = computeHedgeChecklist(checklistInputs);
 
     const horizonContext = brief
       ? `\nCONTEXT FROM TODAY'S BRIEF (for tenor selection — do NOT re-litigate these views, just hedge against them):\n- Regime label: ${brief.marketRegime ?? consolidatedRegime}\n- Tactical (1-3M): ${brief.tacticalView ?? "n/a"}\n- Cyclical (3-6M): ${brief.cyclicalView ?? "n/a"}\n- Structural (6-12M): ${brief.structuralView ?? "n/a"}\n- Current hedging call on the books: ${brief.hedgingCall?.action ?? "none"}${brief.hedgingCall?.strike ? ` (${brief.hedgingCall.tenor ?? ""} ${brief.hedgingCall.strike})` : ""}`
@@ -114,6 +116,9 @@ Return ONLY this JSON (no markdown fences):
       hedgingAnalysis: parsed.hedgingAnalysis,
       hedgingCall: parsed.hedgingCall,
       hedgingRefreshedAt: new Date().toISOString(),
+      // Same structured evidence the model saw — the tile re-renders its
+      // receipts from this so a refresh updates the checklist too.
+      hedgeChecklist,
     });
   } catch (e) {
     return NextResponse.json({ ok: false, error: e instanceof Error ? e.message : String(e) });

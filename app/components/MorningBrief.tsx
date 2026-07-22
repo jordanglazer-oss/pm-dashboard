@@ -647,6 +647,9 @@ export function MorningBrief({
   // + one small model call) and merges the result into the existing brief via
   // the normal context persist path. No full-brief regeneration.
   const [hedgeRefreshing, setHedgeRefreshing] = useState(false);
+  // Collapsible ✓/✗ evidence list on the Hedging tile (the checklist the
+  // model was shown when it made the call).
+  const [hedgeEvidenceOpen, setHedgeEvidenceOpen] = useState(false);
   const refreshHedging = async () => {
     if (!brief || hedgeRefreshing) return;
     setHedgeRefreshing(true);
@@ -659,6 +662,7 @@ export function MorningBrief({
           hedgingAnalysis: j.hedgingAnalysis,
           hedgingCall: j.hedgingCall,
           hedgingRefreshedAt: j.hedgingRefreshedAt,
+          ...(j.hedgeChecklist ? { hedgeChecklist: j.hedgeChecklist } : {}),
         });
       } else {
         setError(j?.error || "Hedging refresh failed");
@@ -2004,6 +2008,60 @@ export function MorningBrief({
               <p className="text-sm leading-5 text-ink-2">
                 {hedgingCall.reason}
               </p>
+              {brief?.hedgeChecklist && (
+                <>
+                  {/* The two numbers that define "reasonable premium" — always visible. */}
+                  <div className="mt-2.5 flex flex-wrap gap-1.5">
+                    {brief.hedgeChecklist.midOtm5Percentile != null && (
+                      <span className={`rounded-full border px-2 py-0.5 text-[10px] font-semibold ${
+                        brief.hedgeChecklist.midOtm5Percentile <= 35
+                          ? "border-pos-border bg-white/70 text-pos"
+                          : brief.hedgeChecklist.midOtm5Percentile >= 80
+                            ? "border-neg-border bg-white/70 text-neg"
+                            : "border-line bg-white/70 text-ink-2"
+                      }`}>
+                        5% OTM: {brief.hedgeChecklist.midOtm5Percentile}th pct
+                      </span>
+                    )}
+                    {brief.hedgeChecklist.vvix != null && (
+                      <span className="rounded-full border border-line bg-white/70 px-2 py-0.5 text-[10px] font-semibold text-ink-2">
+                        VVIX {brief.hedgeChecklist.vvix}
+                      </span>
+                    )}
+                    {brief.hedgeChecklist.midOtm5Percentile == null && (
+                      <span className="rounded-full border border-line bg-white/70 px-2 py-0.5 text-[10px] text-ink-3" title="Premium ledger too thin to rank yet">
+                        premiums unranked{typeof brief.hedgeChecklist.sessions === "number" ? ` (${brief.hedgeChecklist.sessions} sessions)` : ""}
+                      </span>
+                    )}
+                  </div>
+                  {/* The receipts: the exact ✓/✗ evidence the model was shown. */}
+                  <button
+                    onClick={() => setHedgeEvidenceOpen((v) => !v)}
+                    className="mt-2 text-[11px] font-medium text-ink-2 hover:text-ink"
+                  >
+                    {hedgeEvidenceOpen ? "▾ Hide evidence" : "▸ Show evidence"} ({brief.hedgeChecklist.items.filter((i) => i.ok === true).length}✓ / {brief.hedgeChecklist.items.filter((i) => i.ok === false).length}✗)
+                  </button>
+                  {hedgeEvidenceOpen && (
+                    <div className="mt-1.5 space-y-1 text-[11px] leading-4">
+                      {(["risk-off", "cheap"] as const).map((path) => (
+                        <div key={path}>
+                          <div className="font-semibold text-ink-2">
+                            {path === "risk-off" ? "Path 1 · Classic Risk-Off" : "Path 2 · Cheap insurance + late-cycle"}
+                          </div>
+                          {brief.hedgeChecklist!.items.filter((i) => i.path === path).map((i, idx) => (
+                            <div key={idx} className="flex gap-1.5 text-ink-2">
+                              <span className={i.ok === true ? "text-pos font-bold" : i.ok === false ? "text-ink-3" : "text-ink-3"}>
+                                {i.ok == null ? "?" : i.ok ? "✓" : "✗"}
+                              </span>
+                              <span className={i.ok === true ? "text-ink" : "text-ink-3"}>{i.label}</span>
+                            </div>
+                          ))}
+                        </div>
+                      ))}
+                    </div>
+                  )}
+                </>
+              )}
               {brief?.hedgingRefreshedAt && (
                 <p className="mt-2 text-[10px] text-ink-3">
                   hedging refreshed {new Date(brief.hedgingRefreshedAt).toLocaleTimeString("en-US", { hour: "numeric", minute: "2-digit" })} · rest of brief unchanged

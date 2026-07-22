@@ -12,7 +12,7 @@ import {
 } from "@/app/lib/forward-looking";
 import type { ResearchState } from "@/app/lib/defaults";
 import { defaultResearch } from "@/app/lib/defaults";
-import { buildHedgingCostsBlock, buildHedgeChecklistBlock } from "@/app/lib/hedging";
+import { buildHedgingCostsBlock, buildHedgeChecklistBlock, computeHedgeChecklist } from "@/app/lib/hedging";
 import { crossSectional, factsetConfigured } from "@/app/lib/factset";
 import { buildCatalystCalendar, type CatalystCalendar } from "@/app/lib/catalyst-calendar";
 import { easternToday, easternLongDate, relativeDayLabel } from "@/app/lib/date-eastern";
@@ -1287,8 +1287,11 @@ PRIOR BRIEF (previous trading day's brief${priorDate ? ` — ${priorDate}` : ""}
 
     // Build content blocks: text prompt + any image attachments
     // ── Hedge-entry checklist (deterministic; shared with /api/hedging-refresh
-    // so both endpoints always score identically) ──────────────────────────
-    const hedgeChecklistBlock = buildHedgeChecklistBlock({
+    // so both endpoints always score identically). Built ONCE from a single
+    // inputs object: the prompt block and the structured form the UI renders
+    // both derive from it, so the model's evidence and the tile's receipts
+    // can never diverge. ──────────────────────────────────────────────────
+    const hedgeChecklistInputs = {
       consolidatedRegime,
       transitionLeaning: regimeTransition?.leaning ?? null,
       transitionLikelihood: regimeTransition?.likelihood ?? null,
@@ -1299,7 +1302,9 @@ PRIOR BRIEF (previous trading day's brief${priorDate ? ` — ${priorDate}` : ""}
       oscillator: typeof marketData.spOscillator === "number" ? marketData.spOscillator : null,
       vix: fwdVix ?? null,
       termStructure: marketData.termStructure ?? "",
-    });
+    };
+    const hedgeChecklistBlock = buildHedgeChecklistBlock(hedgeChecklistInputs);
+    const hedgeChecklist = computeHedgeChecklist(hedgeChecklistInputs);
 
     const textContent = `Generate the morning brief for today.
 
@@ -1334,7 +1339,7 @@ Contrarian Indicators (ALL interpreted INVERSELY — oversold/fearful = BULLISH,
 IMPORTANT — interpret trajectory: a value at an extreme that is REVERSING (e.g. F&G at 22 but rising) is much weaker as a contrarian signal than the same value still moving deeper into the extreme. Use the trajectory descriptors above plus your own knowledge of each indicator's true multi-decade historical range (NOT any short rolling window) when forming the contrarianAnalysis — e.g. VIX typically sits 12-20 in quiet markets and spikes to 30+ in stress, AAII Bull-Bear spreads beyond ±25 are historically extreme, CBOE put/call typically oscillates 0.7-1.2 with >1.2 marking fear washouts, CNN F&G treats <25 as extreme fear and >75 as extreme greed. Characterize the level as elevated / subdued / extreme against THAT long-run backdrop, not against the few months of local data we happen to have cached.
 
 Hedge Timing Score: ${computeHedgeScore(fwdVix ?? 20, marketData.termStructure ?? "Contango", forwardData?.fearGreed?.value ?? marketData.fearGreed ?? 50, hedgingCosts.ctx?.buckets.find((b) => b.bucket === "2-4M")?.otm5Percentile ?? null)}/100 (dynamically computed from VIX, term structure, sentiment, and the 2-4M premium percentile)
-${hedgingCosts.text ? `\n${hedgingCosts.text}\n\nWhen writing hedgingAnalysis, cite at least one specific 5–10% OTM premium from the table above (e.g. "the 3-month 7% OTM SPY put costs X% of spot") AND its premium percentile from the percentile-context lines (e.g. "18th percentile of the trailing 6 months — historically cheap"). The percentile is the authoritative cheap/rich measure; the WoW/MoM trend is its direction. Anchor every "tail puts are cheap/expensive" claim to those computed figures — never generalize from VIX alone, and never assert a decile the data doesn't show. Default strike framing is 5–10% OTM; only quote ATM premiums when explicitly recommending an ATM hedge (rare exception case).${hedgeChecklistBlock}` : ""}
+${hedgingCosts.text ? `\n${hedgingCosts.text}\n\nWhen writing hedgingAnalysis, cite at least one specific 5–10% OTM premium from the table above (e.g. "the 3-month 7% OTM SPY put costs X% of spot") AND its premium percentile from the percentile-context lines (e.g. "18th percentile of the trailing 6 months — historically cheap"). The percentile is the authoritative cheap/rich measure; the WoW/MoM trend is its direction. Anchor every "tail puts are cheap/expensive" claim to those computed figures — never generalize from VIX alone, and never assert a decile the data doesn't show. Default strike framing is 5–10% OTM; only quote ATM premiums when explicitly recommending an ATM hedge (rare exception case).${hedgeChecklistBlock}` : `\nLIVE SPY HEDGING COSTS: UNAVAILABLE THIS RUN (CBOE fetch failed). For hedgingAnalysis: state plainly that live premium data was unavailable, do NOT fabricate or estimate any premium figure, percentile, or "cheap/expensive" claim, and do NOT recommend ADD on cost grounds — without prices the cheap-insurance path cannot be evaluated. Restrict the read to the regime/VIX/breadth picture, default the call to HOLD (protection already on) or SKIP with "re-check when premium data returns", and set hedgingCall accordingly.${hedgeChecklistBlock}`}
 
 Live Sector ETF Performance (from Yahoo Finance — use this for sector rotation analysis):
 ${sectorPerf.text}
@@ -1701,6 +1706,10 @@ Current Portfolio Holdings: ${holdingsSummary}${portfolioPositioning}`;
       // Regime-transition gauge (Phase 02) — leaning + tells for the chip.
       // Null when no regime snapshot was cached.
       regimeTransition,
+      // Structured hedge-entry checklist — the SAME evidence the model was
+      // shown (single source in computeHedgeChecklist), so the Hedging tile
+      // can render the receipts behind the ADD/HOLD/SKIP call.
+      hedgeChecklist,
     });
   } catch (error) {
     const message = error instanceof Error ? error.message : String(error);
