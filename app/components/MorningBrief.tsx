@@ -674,6 +674,80 @@ export function MorningBrief({
       setHedgeRefreshing(false);
     }
   };
+  // ── Hedge-position ledger (ground truth for whether protection is on) ──
+  // Fetched independently of the brief so logging a hedge reflects instantly,
+  // and so the tile's status is live rather than the generation-time snapshot.
+  type HedgePos = {
+    id: string; status: "active" | "closed"; implementedAt: string;
+    expiry?: string; tenorLabel?: string; strikePctOtm?: number; strikePrice?: number;
+    spotAtEntry?: number; premiumPctOfSpot?: number; premiumUsd?: number; contracts?: number; notes?: string;
+  };
+  const [hedges, setHedges] = useState<HedgePos[]>([]);
+  const [showHedgeForm, setShowHedgeForm] = useState(false);
+  const [hedgeForm, setHedgeForm] = useState<Partial<HedgePos>>({});
+  const [savingHedge, setSavingHedge] = useState(false);
+  const todayIsoLocal = new Date().toLocaleDateString("en-CA", { timeZone: "America/New_York" });
+  const activeHedgesLive = hedges.filter(
+    (h) => h.status === "active" && (!h.expiry || !/^\d{4}-\d{2}-\d{2}$/.test(h.expiry) || h.expiry >= todayIsoLocal),
+  );
+  useEffect(() => {
+    let alive = true;
+    fetch("/api/kv/hedges").then((r) => r.json()).then((j) => {
+      if (alive && Array.isArray(j?.hedges)) setHedges(j.hedges as HedgePos[]);
+    }).catch(() => {});
+    return () => { alive = false; };
+  }, []);
+  const persistHedges = async (next: HedgePos[]) => {
+    setHedges(next);
+    try {
+      await fetch("/api/kv/hedges", {
+        method: "POST", headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ hedges: next }),
+      });
+    } catch { /* local state already updated; next load reconciles */ }
+  };
+  const openHedgeForm = () => {
+    // Prefill from the current recommendation + live spot so confirming an
+    // implemented hedge is a couple of fields, not a blank slate.
+    const pctFromStrike = hedgingCall?.strike ? parseFloat(hedgingCall.strike) : undefined;
+    const spot = brief?.hedgingDetail?.spotPrice;
+    const pct = pctFromStrike != null && isFinite(pctFromStrike) ? pctFromStrike : undefined;
+    setHedgeForm({
+      implementedAt: todayIsoLocal,
+      tenorLabel: hedgingCall?.tenor || "",
+      strikePctOtm: pct,
+      strikePrice: spot != null && pct != null ? Math.round(spot * (1 - pct / 100)) : undefined,
+      spotAtEntry: spot,
+    });
+    setShowHedgeForm(true);
+  };
+  const saveHedge = async () => {
+    if (savingHedge) return;
+    setSavingHedge(true);
+    const num = (v: unknown) => { const n = typeof v === "number" ? v : parseFloat(String(v)); return isFinite(n) ? n : undefined; };
+    const pos: HedgePos = {
+      id: `hedge-${Date.now()}`,
+      status: "active",
+      implementedAt: hedgeForm.implementedAt || todayIsoLocal,
+      tenorLabel: hedgeForm.tenorLabel || undefined,
+      expiry: hedgeForm.expiry || undefined,
+      strikePctOtm: num(hedgeForm.strikePctOtm),
+      strikePrice: num(hedgeForm.strikePrice),
+      spotAtEntry: num(hedgeForm.spotAtEntry),
+      premiumUsd: num(hedgeForm.premiumUsd),
+      premiumPctOfSpot: num(hedgeForm.premiumPctOfSpot) ??
+        (num(hedgeForm.premiumUsd) != null && num(hedgeForm.spotAtEntry) ? Math.round((num(hedgeForm.premiumUsd)! / num(hedgeForm.spotAtEntry)!) * 10000) / 100 : undefined),
+      contracts: num(hedgeForm.contracts),
+      notes: hedgeForm.notes || undefined,
+    };
+    await persistHedges([...hedges, pos]);
+    setShowHedgeForm(false);
+    setSavingHedge(false);
+  };
+  const closeHedge = async (id: string) => {
+    await persistHedges(hedges.map((h) => (h.id === id ? { ...h, status: "closed" as const } : h)));
+  };
+
   // Which Portfolio Risk Scan rows are expanded (by index). Summaries clamp to
   // 2 lines by default to keep the Brief short; a click reveals the full text.
   const [expandedRisk, setExpandedRisk] = useState<Set<number>>(() => new Set());
@@ -2168,6 +2242,85 @@ export function MorningBrief({
                   )}
                 </>
               )}
+
+              {/* ── Position status: ground truth for HOLD, and the logger ── */}
+              <div className="mt-3 border-t border-line/60 pt-2.5">
+                {activeHedgesLive.length > 0 ? (
+                  <div className="space-y-1">
+                    {activeHedgesLive.map((h) => {
+                      const dte = h.expiry && /^\d{4}-\d{2}-\d{2}$/.test(h.expiry)
+                        ? Math.round((Date.parse(`${h.expiry}T00:00:00Z`) - Date.parse(`${todayIsoLocal}T00:00:00Z`)) / 86400000)
+                        : null;
+                      return (
+                        <div key={h.id} className="flex items-start justify-between gap-2 text-[11px]">
+                          <span className="text-ink">
+                            <span className="text-pos font-semibold">🛡 On:</span>{" "}
+                            {[h.tenorLabel, h.strikePctOtm != null ? `${h.strikePctOtm}% OTM` : null].filter(Boolean).join(" ")} SPY put
+                            {h.premiumUsd != null ? ` · $${h.premiumUsd.toFixed(2)}` : ""}
+                            {h.premiumPctOfSpot != null ? ` (${h.premiumPctOfSpot.toFixed(2)}% of spot)` : ""}
+                            {h.implementedAt ? ` · since ${h.implementedAt.slice(0, 10)}` : ""}
+                            {dte != null ? <span className={dte <= 14 ? "text-neg" : "text-ink-3"}> · {dte}d to expiry</span> : ""}
+                          </span>
+                          <button onClick={() => closeHedge(h.id)} className="shrink-0 text-[10px] text-ink-3 hover:text-neg" title="Mark this hedge closed">close</button>
+                        </div>
+                      );
+                    })}
+                    <button onClick={openHedgeForm} className="text-[11px] font-medium text-accent hover:underline">＋ Log another</button>
+                  </div>
+                ) : (
+                  <div className="flex items-center justify-between gap-2">
+                    <span className="text-[11px] text-ink-3">No hedge on record — book is <span className="font-semibold text-ink-2">unhedged</span>.</span>
+                    <button onClick={openHedgeForm} className="rounded-full border border-line bg-white/70 px-2.5 py-0.5 text-[11px] font-medium text-ink-2 hover:text-ink">
+                      ＋ Confirm / log hedge
+                    </button>
+                  </div>
+                )}
+
+                {showHedgeForm && (
+                  <div className="mt-2 rounded-lg border border-line bg-white/80 p-2.5">
+                    <div className="mb-1.5 text-[11px] font-semibold text-ink">Log an implemented hedge</div>
+                    <div className="grid grid-cols-2 gap-1.5 text-[11px]">
+                      {([
+                        ["implementedAt", "Date implemented", "date"],
+                        ["tenorLabel", "Tenor (e.g. 3 months)", "text"],
+                        ["strikePctOtm", "Strike % OTM", "number"],
+                        ["strikePrice", "Strike price $", "number"],
+                        ["premiumUsd", "Premium $ / contract", "number"],
+                        ["premiumPctOfSpot", "Premium % of spot", "number"],
+                        ["contracts", "# Contracts", "number"],
+                        ["expiry", "Expiry (YYYY-MM-DD)", "date"],
+                      ] as [keyof HedgePos, string, string][]).map(([key, label, type]) => (
+                        <label key={key} className="flex flex-col gap-0.5">
+                          <span className="text-ink-3">{label}</span>
+                          <input
+                            type={type}
+                            value={(hedgeForm[key] as string | number | undefined) ?? ""}
+                            onChange={(e) => setHedgeForm((f) => ({ ...f, [key]: e.target.value }))}
+                            className="rounded border border-line bg-white px-1.5 py-1 text-ink outline-none focus:border-accent-border"
+                          />
+                        </label>
+                      ))}
+                      <label className="col-span-2 flex flex-col gap-0.5">
+                        <span className="text-ink-3">Notes</span>
+                        <input
+                          type="text"
+                          value={hedgeForm.notes ?? ""}
+                          onChange={(e) => setHedgeForm((f) => ({ ...f, notes: e.target.value }))}
+                          className="rounded border border-line bg-white px-1.5 py-1 text-ink outline-none focus:border-accent-border"
+                        />
+                      </label>
+                    </div>
+                    <div className="mt-2 flex gap-2">
+                      <button onClick={saveHedge} disabled={savingHedge} className="rounded-full bg-ink px-3 py-1 text-[11px] font-semibold text-white disabled:opacity-50">
+                        {savingHedge ? "Saving…" : "Save hedge"}
+                      </button>
+                      <button onClick={() => setShowHedgeForm(false)} className="rounded-full border border-line px-3 py-1 text-[11px] text-ink-2 hover:text-ink">Cancel</button>
+                    </div>
+                    <p className="mt-1.5 text-[10px] leading-4 text-ink-3">Confirming a hedge here is what tells the brief protection is on — it will only say HOLD while an active position exists.</p>
+                  </div>
+                )}
+              </div>
+
               {brief?.hedgingRefreshedAt && (
                 <p className="mt-2 text-[10px] text-ink-3">
                   hedging refreshed {new Date(brief.hedgingRefreshedAt).toLocaleTimeString("en-US", { hour: "numeric", minute: "2-digit" })} · rest of brief unchanged
