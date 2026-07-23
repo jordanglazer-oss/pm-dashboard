@@ -4,6 +4,8 @@ import { getRedis } from "@/app/lib/redis";
 import { buildHedgingCostsBlock, buildHedgeChecklistBlock, computeHedgeChecklist } from "@/app/lib/hedging";
 import { computeRegimeTransition } from "@/app/lib/regime-transition";
 import type { MarketRegimeData } from "@/app/lib/market-regime";
+import { loadHedges, isActiveHedge, describeHedge } from "@/app/lib/hedges";
+import { easternToday } from "@/app/lib/date-eastern";
 
 /**
  * Standalone hedging refresh — re-runs ONLY the hedging read (live CBOE
@@ -32,11 +34,12 @@ function parse<T>(raw: string | null): T | null {
 export async function POST() {
   try {
     const redis = await getRedis();
-    const [hedgingCosts, marketRegimeRaw, marketRaw, briefRaw] = await Promise.all([
+    const [hedgingCosts, marketRegimeRaw, marketRaw, briefRaw, allHedges] = await Promise.all([
       buildHedgingCostsBlock(),
       redis.get("pm:market-regime"),
       redis.get("pm:market"),
       redis.get("pm:brief"),
+      loadHedges().catch(() => []),
     ]);
     if (!hedgingCosts.text) {
       return NextResponse.json({ ok: false, error: "Live hedging costs unavailable (CBOE fetch failed) — try again in a minute." });
@@ -69,8 +72,16 @@ export async function POST() {
     const checklist = buildHedgeChecklistBlock(checklistInputs);
     const hedgeChecklist = computeHedgeChecklist(checklistInputs);
 
+    // Ground truth for whether protection is on — from pm:hedges, NOT the
+    // prior call (which is only a RECOMMENDATION, not evidence it was acted on).
+    const todayIso = easternToday();
+    const activeHedges = allHedges.filter((h) => isActiveHedge(h, todayIso));
+    const hedgeStateBlock = activeHedges.length
+      ? `\n\nACTIVE HEDGE POSITIONS (${activeHedges.length} on the books — protection IS on):\n${activeHedges.map((h) => `- ${describeHedge(h)}`).join("\n")}\nHOLD is valid: keep as-is (HOLD), add/roll (ADD), or flag any expiring soon.`
+      : `\n\nACTIVE HEDGE POSITIONS: NONE on the books — the portfolio is currently UNHEDGED. hedgingCall.action MUST be ADD or SKIP, never HOLD (there is nothing to hold). Do NOT assume a prior recommendation was implemented; a prior "HOLD" call is not evidence a hedge exists.`;
+
     const horizonContext = brief
-      ? `\nCONTEXT FROM TODAY'S BRIEF (for tenor selection — do NOT re-litigate these views, just hedge against them):\n- Regime label: ${brief.marketRegime ?? consolidatedRegime}\n- Tactical (1-3M): ${brief.tacticalView ?? "n/a"}\n- Cyclical (3-6M): ${brief.cyclicalView ?? "n/a"}\n- Structural (6-12M): ${brief.structuralView ?? "n/a"}\n- Current hedging call on the books: ${brief.hedgingCall?.action ?? "none"}${brief.hedgingCall?.strike ? ` (${brief.hedgingCall.tenor ?? ""} ${brief.hedgingCall.strike})` : ""}`
+      ? `\nCONTEXT FROM TODAY'S BRIEF (for tenor selection — do NOT re-litigate these views, just hedge against them):\n- Regime label: ${brief.marketRegime ?? consolidatedRegime}\n- Tactical (1-3M): ${brief.tacticalView ?? "n/a"}\n- Cyclical (3-6M): ${brief.cyclicalView ?? "n/a"}\n- Structural (6-12M): ${brief.structuralView ?? "n/a"}`
       : "";
 
     const prompt = `You are the hedging analyst for a PM dashboard. Produce ONLY a refreshed hedging read from the live data below — the rest of the day's brief stays as-is.
@@ -79,7 +90,9 @@ HEDGING PHILOSOPHY: tail-risk INSURANCE, not a directional bet. Hedging is NOT a
 
 'Cheap' and 'rich' are DEFINED by the computed premium percentiles below — never assert them from VIX or intuition; if the ledger is too thin to rank, say so. Cite at least one specific 5–10% OTM premium AND its percentile. Ground the call in the checklist's ✓/✗ lines; you may override a line with judgment but name it and why.
 
-${hedgingCosts.text}${checklist}
+HOLD is ONLY permitted when the ACTIVE HEDGE POSITIONS block lists ≥1 real position. If the book is UNHEDGED, use ADD (establish protection) or SKIP (stay unhedged) — never HOLD, and do NOT claim "existing puts provide cover" when none are on the books.
+
+${hedgingCosts.text}${checklist}${hedgeStateBlock}
 ${vix != null ? `\nVIX: ${vix}` : ""}${market.termStructure ? ` | Term structure: ${market.termStructure}` : ""}${typeof market.fearGreed === "number" ? ` | Fear & Greed: ${market.fearGreed}` : ""}${typeof market.spOscillator === "number" ? ` | S&P Oscillator: ${market.spOscillator}%` : ""}
 ${horizonContext}
 
@@ -109,6 +122,19 @@ Return ONLY this JSON (no markdown fences):
     };
     if (!parsed.hedgingAnalysis || !parsed.hedgingCall?.action) {
       return NextResponse.json({ ok: false, error: "Model response missing hedgingAnalysis/hedgingCall." });
+    }
+
+    // Backstop (mirrors the morning-brief route): HOLD with no active hedge on
+    // the books has nothing to hold — relabel to SKIP.
+    if (parsed.hedgingCall.action === "HOLD" && activeHedges.length === 0) {
+      const orig = parsed.hedgingCall.reason ? ` (was: ${parsed.hedgingCall.reason})` : "";
+      parsed.hedgingCall = {
+        ...parsed.hedgingCall,
+        action: "SKIP",
+        strike: undefined,
+        tenor: undefined,
+        reason: `No hedge on the books to hold — staying unhedged this session.${orig}`,
+      };
     }
 
     return NextResponse.json({
