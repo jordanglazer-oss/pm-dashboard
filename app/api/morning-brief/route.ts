@@ -16,6 +16,7 @@ import { buildHedgingCostsBlock, buildHedgeChecklistBlock, computeHedgeChecklist
 import { crossSectional, factsetConfigured } from "@/app/lib/factset";
 import { buildCatalystCalendar, type CatalystCalendar } from "@/app/lib/catalyst-calendar";
 import { easternToday, easternLongDate, relativeDayLabel } from "@/app/lib/date-eastern";
+import { loadHedges, isActiveHedge, describeHedge } from "@/app/lib/hedges";
 import { computeRegimeTransition, type RegimeTransition } from "@/app/lib/regime-transition";
 import type { MarketRegimeData } from "@/app/lib/market-regime";
 import { isCreditError, recordAnthropicCreditError, markAnthropicHealthy } from "@/app/lib/anthropic-status";
@@ -231,7 +232,7 @@ Respond ONLY with valid JSON matching this exact structure (fields are intention
     "Imperative one-liner action #3."
   ],
   "hedgingCall": {
-    "action": "ADD or HOLD or SKIP — must match the directional recommendation in hedgingAnalysis.",
+    "action": "ADD or HOLD or SKIP — must match the directional recommendation in hedgingAnalysis. HOLD is ONLY permitted when the ACTIVE HEDGE POSITIONS block lists ≥1 real position (HOLD = keep existing protection). If the book is UNHEDGED (no active positions), you MUST use ADD (establish protection) or SKIP (stay unhedged) — never HOLD.",
     "strike": "5% OTM or 7% OTM etc. — required when action=ADD, omit otherwise.",
     "tenor": "3 months / 6 months etc. — required when action=ADD, omit otherwise.",
     "reason": "ONE sentence, ≤ 25 words, plain English. Why this call is right today."
@@ -1306,6 +1307,16 @@ PRIOR BRIEF (previous trading day's brief${priorDate ? ` — ${priorDate}` : ""}
     const hedgeChecklistBlock = buildHedgeChecklistBlock(hedgeChecklistInputs);
     const hedgeChecklist = computeHedgeChecklist(hedgeChecklistInputs);
 
+    // ── Active hedge positions (ground truth) ─────────────────────────────
+    // Whether the book ACTUALLY has protection on — read from pm:hedges, not
+    // inferred from the prior HOLD. HOLD is only a valid call when a real
+    // position exists; with none on the books it must be ADD or SKIP.
+    const allHedges = await loadHedges().catch(() => [] as Awaited<ReturnType<typeof loadHedges>>);
+    const activeHedges = allHedges.filter((h) => isActiveHedge(h, todayIso));
+    const hedgeStateBlock = activeHedges.length
+      ? `\n\nACTIVE HEDGE POSITIONS (${activeHedges.length} on the books — protection IS currently on):\n${activeHedges.map((h) => `- ${describeHedge(h)}`).join("\n")}\nHOLD is valid: assess whether to keep these as-is (HOLD), add/roll (ADD), or note any expiring within ~2 weeks. Factor the existing protection into the tail-risk read.`
+      : `\n\nACTIVE HEDGE POSITIONS: NONE on the books — the portfolio is currently UNHEDGED. Therefore hedgingCall.action MUST be ADD or SKIP, never HOLD (there is nothing to hold). If conditions warrant protection, say ADD with a strike + tenor; if not, say SKIP. Do NOT assume a prior recommendation was acted upon.`;
+
     const textContent = `Generate the morning brief for today.
 
 TODAY'S DATE: ${todayLong} (${todayIso}). This is the authoritative date for this brief. Do NOT reference macro events older than 30 days before this date — including "Liberation Day" (April 2025), older FOMC meetings, or past CPI prints — even if they appear in attached screenshots or you remember them from training data. Every "recent move" you cite must come from the numerical data below.${priorBriefContext}
@@ -1339,7 +1350,8 @@ Contrarian Indicators (ALL interpreted INVERSELY — oversold/fearful = BULLISH,
 IMPORTANT — interpret trajectory: a value at an extreme that is REVERSING (e.g. F&G at 22 but rising) is much weaker as a contrarian signal than the same value still moving deeper into the extreme. Use the trajectory descriptors above plus your own knowledge of each indicator's true multi-decade historical range (NOT any short rolling window) when forming the contrarianAnalysis — e.g. VIX typically sits 12-20 in quiet markets and spikes to 30+ in stress, AAII Bull-Bear spreads beyond ±25 are historically extreme, CBOE put/call typically oscillates 0.7-1.2 with >1.2 marking fear washouts, CNN F&G treats <25 as extreme fear and >75 as extreme greed. Characterize the level as elevated / subdued / extreme against THAT long-run backdrop, not against the few months of local data we happen to have cached.
 
 Hedge Timing Score: ${computeHedgeScore(fwdVix ?? 20, marketData.termStructure ?? "Contango", forwardData?.fearGreed?.value ?? marketData.fearGreed ?? 50, hedgingCosts.ctx?.buckets.find((b) => b.bucket === "2-4M")?.otm5Percentile ?? null)}/100 (dynamically computed from VIX, term structure, sentiment, and the 2-4M premium percentile)
-${hedgingCosts.text ? `\n${hedgingCosts.text}\n\nWhen writing hedgingAnalysis, cite at least one specific 5–10% OTM premium from the table above (e.g. "the 3-month 7% OTM SPY put costs X% of spot") AND its premium percentile from the percentile-context lines (e.g. "18th percentile of the trailing 6 months — historically cheap"). The percentile is the authoritative cheap/rich measure; the WoW/MoM trend is its direction. Anchor every "tail puts are cheap/expensive" claim to those computed figures — never generalize from VIX alone, and never assert a decile the data doesn't show. Default strike framing is 5–10% OTM; only quote ATM premiums when explicitly recommending an ATM hedge (rare exception case).${hedgeChecklistBlock}` : `\nLIVE SPY HEDGING COSTS: UNAVAILABLE THIS RUN (CBOE fetch failed). For hedgingAnalysis: state plainly that live premium data was unavailable, do NOT fabricate or estimate any premium figure, percentile, or "cheap/expensive" claim, and do NOT recommend ADD on cost grounds — without prices the cheap-insurance path cannot be evaluated. Restrict the read to the regime/VIX/breadth picture, default the call to HOLD (protection already on) or SKIP with "re-check when premium data returns", and set hedgingCall accordingly.${hedgeChecklistBlock}`}
+${hedgingCosts.text ? `\n${hedgingCosts.text}\n\nWhen writing hedgingAnalysis, cite at least one specific 5–10% OTM premium from the table above (e.g. "the 3-month 7% OTM SPY put costs X% of spot") AND its premium percentile from the percentile-context lines (e.g. "18th percentile of the trailing 6 months — historically cheap"). The percentile is the authoritative cheap/rich measure; the WoW/MoM trend is its direction. Anchor every "tail puts are cheap/expensive" claim to those computed figures — never generalize from VIX alone, and never assert a decile the data doesn't show. Default strike framing is 5–10% OTM; only quote ATM premiums when explicitly recommending an ATM hedge (rare exception case).${hedgeChecklistBlock}` : `\nLIVE SPY HEDGING COSTS: UNAVAILABLE THIS RUN (CBOE fetch failed). For hedgingAnalysis: state plainly that live premium data was unavailable, do NOT fabricate or estimate any premium figure, percentile, or "cheap/expensive" claim, and do NOT recommend ADD on cost grounds — without prices the cheap-insurance path cannot be evaluated. Restrict the read to the regime/VIX/breadth picture, and set hedgingCall per the ACTIVE HEDGE POSITIONS rule below (HOLD only if a real position exists, otherwise SKIP with "re-check when premium data returns").${hedgeChecklistBlock}`}
+${hedgeStateBlock}
 
 Live Sector ETF Performance (from Yahoo Finance — use this for sector rotation analysis):
 ${sectorPerf.text}
@@ -1662,6 +1674,23 @@ Current Portfolio Holdings: ${holdingsSummary}${portfolioPositioning}`;
     // PM swapped in a fresh key).
     void markAnthropicHealthy();
 
+    // Deterministic backstop for the HOLD guardrail: HOLD means "keep the
+    // existing protection unchanged" — with NO active hedge on the books there
+    // is nothing to hold, so relabel to SKIP (both mean "don't change hedge
+    // exposure this brief"; if the model wanted protection it would have said
+    // ADD). Primary enforcement is the prompt; this catches the rare miss.
+    if (parsed?.hedgingCall?.action === "HOLD" && activeHedges.length === 0) {
+      const orig = parsed.hedgingCall.reason ? ` (was: ${parsed.hedgingCall.reason})` : "";
+      parsed.hedgingCall = {
+        ...parsed.hedgingCall,
+        action: "SKIP",
+        strike: undefined,
+        tenor: undefined,
+        reason: `No hedge on the books to hold — staying unhedged this session.${orig}`,
+      };
+      console.log("[Brief] hedgingCall HOLD→SKIP: no active hedge position on record");
+    }
+
     const now = new Date();
     // The regime label is AUTHORITATIVE from the consolidated composite — the
     // brief never sets its own. We ignore whatever Claude returned for
@@ -1714,6 +1743,9 @@ Current Portfolio Holdings: ${holdingsSummary}${portfolioPositioning}`;
       // percentile buckets, VVIX) — the tile's expandable no-black-box panel.
       // Null when the CBOE fetch failed this run.
       hedgingDetail: hedgingCosts.detail,
+      // Active hedge positions at generation time — lets the tile show the
+      // ground-truth protection status the HOLD/ADD/SKIP call was based on.
+      activeHedges,
     });
   } catch (error) {
     const message = error instanceof Error ? error.message : String(error);
