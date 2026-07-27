@@ -124,13 +124,22 @@ export async function appendStreetTakeaway(
   return { added: true, count: next.length };
 }
 
-/** Map FactSet's identifier convention (IBM-US, SHOP-CA) to a dashboard
- *  ticker. Canadian names carry the .TO/-T convention in pm:stocks, so a
- *  "-CA" suffix resolves against the book rather than being taken literally. */
+/** Map FactSet's identifier convention (IBM-US, CNR-CA, TECK.B-CA) to a
+ *  dashboard ticker. Two conventions differ and both must be bridged:
+ *    - region suffix: FactSet "-CA"; the book uses ".TO" (or "-T")
+ *    - class shares:  FactSet dots ("TECK.B", "BIP.UN"); the book uses
+ *                     dashes ("TECK-B.TO", "BIP-UN.TO")
+ *  Resolution is always against the PM's own book, so an unmatched id means
+ *  "not a name we follow" and the caller skips it rather than guessing. */
 export function factsetIdToTicker(id: string, bookTickers: string[]): string | null {
   const m = /^([A-Z0-9.\-]+?)-(US|CA|CN|GB|JP|DE|FR|AU|HK)$/i.exec(id.trim());
-  const bare = (m ? m[1] : id.trim()).toUpperCase();
+  const rawBare = (m ? m[1] : id.trim()).toUpperCase();
   const region = m ? m[2].toUpperCase() : "";
+  // Normalize a trailing class designator from FactSet's dot form to the
+  // dash form canonicalTicker produces ("TECK.B" → "TECK-B").
+  const bare = rawBare.replace(/\.([A-Z]+)$/, (full, cls: string) =>
+    /^(TO|V)$/i.test(cls) ? full : `-${cls}`,
+  );
   const canon = (t: string) => canonicalTicker(t).toUpperCase();
   // Exact match against the book first (handles .TO / -T variants).
   for (const t of bookTickers) {
