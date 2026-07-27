@@ -6,6 +6,8 @@ import { useStocks } from "@/app/lib/StockContext";
 import { isScoreable } from "@/app/lib/scoring";
 import { MAX_SCORE } from "@/app/lib/types";
 import { displayTicker } from "@/app/lib/ticker";
+import { SkeletonTable } from "@/app/components/Skeleton";
+import { EmptyState } from "@/app/components/EmptyState";
 
 /**
  * /factor-lab — the shadow factor model's read-out surface (Phase B3).
@@ -340,7 +342,7 @@ export default function FactorLabPage() {
       </div>
 
       {showMethod && (
-        <div className="mb-5 rounded-lg border border-line bg-surface p-4 text-xs leading-relaxed text-ink-2">
+        <div className="mb-5 rounded-card border border-line bg-surface p-4 text-xs leading-relaxed text-ink-2">
           <div className="mb-2 font-semibold text-ink">Reading the columns</div>
           <ul className="ml-4 list-disc space-y-1">
             <li><strong>41-pt</strong> — the current committee score (adjusted, out of {MAX_SCORE}). Unchanged.</li>
@@ -358,7 +360,7 @@ export default function FactorLabPage() {
           {topDisagree.map((r) => {
             const factorHigher = (r.deltaRank ?? 0) > 0;
             return (
-              <div key={r.ticker} className="rounded-lg border border-line bg-surface p-3">
+              <div key={r.ticker} className="rounded-card border border-line bg-surface p-3">
                 <div className="flex items-center justify-between">
                   <span className="font-mono text-sm font-semibold text-ink">{displayTicker(r.ticker)}</span>
                   <span className={`text-xs font-semibold ${factorHigher ? "text-pos" : "text-neg"}`}>
@@ -399,14 +401,24 @@ export default function FactorLabPage() {
       </div>
 
       {loading ? (
-        <div className="py-16 text-center text-sm text-ink-3">Loading factor read-outs…</div>
+        <div className="rounded-card border border-line bg-surface p-4">
+          <SkeletonTable rows={10} cols={9} />
+        </div>
       ) : coveredCount === 0 ? (
-        <div className="rounded-lg border border-line bg-surface p-6 text-sm text-ink-2">
-          No factor scores yet. They&rsquo;re written nightly by the shadow job; you can force a run any time via{" "}
-          <code className="rounded bg-surface-2 px-1">/api/admin/factor-debug?book=1&amp;run=1</code>.
+        <div className="rounded-card border border-line bg-surface">
+          <EmptyState
+            glyph={<span className="text-lg">◷</span>}
+            title="No factor scores yet"
+            body={
+              <>
+                They&rsquo;re written nightly by the shadow job. To force a run now, open{" "}
+                <code className="rounded bg-surface-2 px-1 font-mono">/api/admin/factor-debug?book=1&amp;run=1</code>.
+              </>
+            }
+          />
         </div>
       ) : (
-        <div className="overflow-x-auto rounded-lg border border-line">
+        <div className="overflow-x-auto rounded-card border border-line">
           <table className="w-full border-collapse text-sm">
             <thead>
               <tr className="border-b border-line bg-surface text-left text-xs text-ink-3">
@@ -463,7 +475,7 @@ export default function FactorLabPage() {
       )}
 
       {/* ── Universe Screen: idea generation from the full ~540-name universe ── */}
-      <div className="mt-8 rounded-lg border border-line bg-surface p-4">
+      <div className="mt-8 rounded-card border border-line bg-surface p-4">
         <div className="flex flex-wrap items-baseline justify-between gap-2">
           <h2 className="text-sm font-semibold text-ink">Universe Screen — top quant names you don&rsquo;t own</h2>
           {screenBuiltAt && (
@@ -478,12 +490,14 @@ export default function FactorLabPage() {
         </p>
 
         {!screen ? (
-          <div className="mt-3 text-xs text-ink-3">Loading screen…</div>
+          <div className="mt-3"><SkeletonTable rows={6} cols={9} /></div>
         ) : screen.length === 0 ? (
-          <div className="mt-3 text-xs text-ink-2">
-            Not built yet — the per-name universe read-outs are written by the weekly universe rebuild (Sunday).
-            After the next rebuild this section populates automatically.
-          </div>
+          <EmptyState
+            className="!py-8"
+            glyph={<span className="text-lg">🛰</span>}
+            title="Universe screen not built yet"
+            body="The per-name read-outs are written by the weekly universe rebuild (Sunday). This section populates automatically after the next rebuild."
+          />
         ) : (
           <>
             <div className="mt-3 flex flex-wrap items-center gap-2 text-xs">
@@ -549,7 +563,7 @@ export default function FactorLabPage() {
       </div>
 
       {/* ── Consolidation Preview: WHAT-IF only — nothing here is live ── */}
-      <div className="mt-8 rounded-lg border border-dashed border-accent-border bg-accent-soft/40 p-4">
+      <div className="mt-8 rounded-card border border-dashed border-accent-border bg-accent-soft/40 p-4">
         <div className="flex flex-wrap items-baseline justify-between gap-2">
           <h2 className="text-sm font-semibold text-ink">
             Consolidation Preview
@@ -633,7 +647,7 @@ export default function FactorLabPage() {
       </div>
 
       {/* ── Phase C: four-way IC validation ── */}
-      <div className="mt-8 rounded-lg border border-line bg-surface p-4">
+      <div className="mt-8 rounded-card border border-line bg-surface p-4">
         <div className="flex flex-wrap items-baseline justify-between gap-2">
           <h2 className="text-sm font-semibold text-ink">Validation — which lens predicts forward returns?</h2>
           {validation && validation.dataDays > 0 && (
@@ -649,7 +663,7 @@ export default function FactorLabPage() {
         </p>
 
         {!validation ? (
-          <div className="mt-3 text-xs text-ink-3">Loading validation…</div>
+          <div className="mt-3"><SkeletonTable rows={5} cols={5} /></div>
         ) : (
           <>
             <div className="mt-2 text-xs text-ink-2">{validation.note}</div>

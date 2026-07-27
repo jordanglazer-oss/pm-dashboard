@@ -3,6 +3,8 @@
 import React, { useEffect, useMemo, useState } from "react";
 import Link from "next/link";
 import { displayTicker } from "@/app/lib/ticker";
+import { Skeleton, SkeletonTable } from "@/app/components/Skeleton";
+import { EmptyState } from "@/app/components/EmptyState";
 
 /**
  * /risk — the book-level risk lens (read-only). Renders /api/risk-analytics:
@@ -41,7 +43,7 @@ const pct = (x: number) => `${(x * 100).toFixed(1)}%`;
 
 function StatTile({ label, value, sub }: { label: string; value: string; sub?: string }) {
   return (
-    <div className="rounded-card border border-line bg-white p-4 shadow-sm">
+    <div className="hover-lift rounded-card border border-line bg-white p-4 shadow-sm">
       <div className="text-[11px] uppercase tracking-wide text-ink-3">{label}</div>
       <div className="mt-1 text-2xl font-semibold tabular-nums text-ink">{value}</div>
       {sub && <div className="mt-0.5 text-[11px] text-ink-3">{sub}</div>}
@@ -109,9 +111,42 @@ export default function RiskPage() {
       </p>
 
       {loading ? (
-        <div className="py-16 text-center text-sm text-ink-3">Computing risk analytics… (first run fetches a year of history per holding)</div>
+        // The first run fetches a year of history per holding (15-30s), so the
+        // shape of what's coming beats a bare "Loading…" string.
+        <div className="space-y-6">
+          <div className="grid grid-cols-2 gap-3 sm:grid-cols-3 lg:grid-cols-5">
+            {Array.from({ length: 5 }).map((_, i) => (
+              <div key={i} className="rounded-card border border-line bg-white p-4 shadow-sm">
+                <Skeleton className="h-2.5 w-24 bg-line-soft" />
+                <Skeleton className="mt-2 h-7 w-16" />
+                <Skeleton className="mt-2 h-2.5 w-28 bg-line-soft" />
+              </div>
+            ))}
+          </div>
+          <div className="rounded-card border border-line bg-white p-4 shadow-sm">
+            <Skeleton className="h-3 w-72 bg-line-soft" />
+            <div className="mt-4"><SkeletonTable rows={8} cols={8} /></div>
+          </div>
+          <p className="text-center text-xs text-ink-3">
+            Computing risk analytics — the first run fetches a year of daily history per holding.
+          </p>
+        </div>
       ) : error && !data ? (
-        <div className="rounded-card border border-line bg-white p-6 text-sm text-ink-2">Couldn&rsquo;t compute: {error}</div>
+        <div className="rounded-card border border-line bg-white shadow-sm">
+          <EmptyState
+            glyph={<span className="text-lg">⚠</span>}
+            title="Couldn't compute risk analytics"
+            body={error}
+            action={
+              <button
+                onClick={() => void load(true)}
+                className="rounded-full bg-ink px-3 py-1.5 text-xs font-semibold text-white"
+              >
+                Try again
+              </button>
+            }
+          />
+        </div>
       ) : data ? (
         <>
           {staleNote && (
@@ -138,7 +173,7 @@ export default function RiskPage() {
             ) : (
               <div className="mt-3 grid grid-cols-1 gap-3 md:grid-cols-2">
                 {data.clusters.map((c, i) => (
-                  <div key={i} className={`rounded-lg border p-3 ${c.totalWeight >= 0.2 ? "border-neg-border bg-neg-soft" : "border-line bg-surface-2"}`}>
+                  <div key={i} className={`rounded-card border p-3 ${c.totalWeight >= 0.2 ? "border-neg-border bg-neg-soft" : "border-line bg-surface-2"}`}>
                     <div className="flex items-center justify-between">
                       <span className="text-xs font-semibold text-ink">{c.totalWeight >= 0.2 ? "⚠ " : ""}Cluster {i + 1} · {pct(c.totalWeight)} of book</span>
                       <span className="text-[11px] text-ink-3">avg corr {c.avgCorr.toFixed(2)}</span>
@@ -207,7 +242,7 @@ export default function RiskPage() {
             <p className="mt-1 text-xs text-ink-2">Sector-level shocks from each episode × current look-through weights. Approximations for orientation, not predictions.</p>
             <div className="mt-3 grid grid-cols-1 gap-3 md:grid-cols-2">
               {data.scenarios.map((sc) => (
-                <div key={sc.key} className="rounded-lg border border-line bg-surface-2 p-3">
+                <div key={sc.key} className="rounded-card border border-line bg-surface-2 p-3">
                   <div className="flex items-baseline justify-between">
                     <span className="text-xs font-semibold text-ink">{sc.label}</span>
                     <span className={`font-mono text-lg font-semibold ${sc.portfolioImpact < 0 ? "text-neg" : "text-pos"}`}>

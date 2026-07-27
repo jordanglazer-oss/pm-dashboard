@@ -60,7 +60,7 @@ export default function StreetTakeawaysTile({ ticker, className = "" }: { ticker
           const gRaised = (e.guidanceLines ?? []).filter((g) => g.direction === "raised").length;
           const gLowered = (e.guidanceLines ?? []).filter((g) => g.direction === "lowered").length;
           return (
-            <div key={e.id} className="rounded-lg border border-line bg-surface-2 p-3">
+            <div key={e.id} className="rounded-card border border-line bg-surface-2 p-3">
               <div className="flex flex-wrap items-baseline justify-between gap-2">
                 <span className="text-xs font-semibold text-ink">
                   {e.date}{e.event ? ` · ${e.event}` : ""}
