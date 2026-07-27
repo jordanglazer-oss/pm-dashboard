@@ -171,7 +171,7 @@ function processInbox() {
   // FactSet alerts are BODY-TEXT emails (no attachment) — matched by sender so
   // a plain forward works with its original subject untouched.
   const BODY_TEXT_SENDER_RE = /factset[_.]?alerts?@factset\.com/i;
-  const BODY_TEXT_SUBJECT_RE = /^(?:(?:re|fwd?|fw):\s*)*(?:SA:\s*)?Street Takeaways/i;
+  const BODY_TEXT_SUBJECT_RE = /^(?:(?:re|fwd?|fw):\s*)*(?:SA:\s*)?(?:Street Takeaways|StreetAccount|Transcript Intelligence)/i;
   const PROCESSED_LABEL_NAME = "Dashboard-Processed";
 
   let label = GmailApp.getUserLabelByName(PROCESSED_LABEL_NAME);
