@@ -17,7 +17,7 @@ import {
 import { canonicalTicker, tickersEqual } from "@/app/lib/ticker";
 import { blobConfigured, putDataUrl, getDataUrl, deleteBlob } from "@/app/lib/blob-store";
 import { appendInboxEvent } from "@/app/lib/inbox-log";
-import { classifySubject, dispatchInbox } from "@/app/lib/inbox-dispatch";
+import { classifySubject, dispatchInbox, isFactsetAlertSender } from "@/app/lib/inbox-dispatch";
 import { markReportsIngested } from "@/app/lib/auto-rescore";
 
 /**
@@ -166,7 +166,7 @@ export async function POST(request: NextRequest) {
   }
 
   // ── Parse body ──────────────────────────────────────────────────────
-  let body: { subject?: string; sender?: string; filename?: string; dataUrl?: string; blobPathname?: string; ping?: boolean };
+  let body: { subject?: string; sender?: string; filename?: string; dataUrl?: string; blobPathname?: string; ping?: boolean; bodyText?: string };
   try {
     body = await request.json();
   } catch {
@@ -204,7 +204,14 @@ export async function POST(request: NextRequest) {
     await deleteBlob(stagingPath); // best-effort cleanup
   }
 
-  if (!subject || !dataUrl) {
+  // FactSet Street Takeaways alerts are BODY-TEXT emails with no attachment,
+  // so they're recognised by sender (or subject) and exempt from the
+  // attachment requirement below. Every other kind stays attachment-driven.
+  const bodyText = typeof body.bodyText === "string" ? body.bodyText : "";
+  const isBodyTextKind =
+    classifySubject(subject) === "street-takeaways" || isFactsetAlertSender(sender);
+
+  if (!subject || (!dataUrl && !isBodyTextKind)) {
     await appendInboxEvent({ status: "error", subject, sender, filename, message: "Missing subject or dataUrl/blob" });
     return NextResponse.json({ error: "Missing subject or dataUrl/blobPathname" }, { status: 400 });
   }
@@ -215,7 +222,9 @@ export async function POST(request: NextRequest) {
   // parsing + matching code as the manual Inbox UI. The classic
   // "Analyst Report: <TICKER>" flow falls through to the legacy path
   // below (PDF-only, ticker/source routing).
-  const kind = classifySubject(subject);
+  // Sender-based fallback: a plain forward of a FactSet alert keeps its own
+  // subject, so recognise the sender even if the subject prefix drifts.
+  const kind = isBodyTextKind ? "street-takeaways" : classifySubject(subject);
   // Anything other than the legacy "analyst-report" and the catch-all
   // "unknown" routes through the dispatcher. Research kinds arrive as
   // an object `{ kind: "research", source }`; per-stock/strategist
@@ -224,7 +233,7 @@ export async function POST(request: NextRequest) {
   if (isDispatched) {
     const kindLabel = typeof kind === "object" ? `research:${kind.source}` : kind;
     try {
-      const result = await dispatchInbox({ kind, subject, filename, dataUrl });
+      const result = await dispatchInbox({ kind, subject, filename, dataUrl, bodyText });
       if (!result) {
         await appendInboxEvent({ status: "error", subject, sender, filename, message: `Dispatcher returned no result for kind=${kindLabel}` });
         return NextResponse.json({ error: "Internal dispatch error" }, { status: 500 });

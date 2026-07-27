@@ -43,6 +43,13 @@ import { applyResearchEntries } from "./research-merge";
 import { logResearchRemovals } from "./research-removals";
 import type { ResearchState } from "./defaults";
 import { defaultResearch } from "./defaults";
+import {
+  appendStreetTakeaway,
+  describeTakeaway,
+  factsetIdToTicker,
+  type StreetTakeaway,
+} from "./street-takeaways";
+import { parseStreetTakeaway, extractPrimaryIdentifier } from "./street-takeaways-parse";
 
 // ── Subject → kind ──────────────────────────────────────────────────
 
@@ -57,6 +64,7 @@ export type InboxKind =
   | "marketedge"
   | "strategist"
   | "analyst-report"
+  | "street-takeaways"
   | "unknown"
   | ResearchKind;
 
@@ -87,7 +95,16 @@ export function classifySubject(subject: string): InboxKind {
   if (/^(boostedai|boosted)\b/i.test(s)) return "boosted";
   if (/^(marketedge|chartscout)\b/i.test(s)) return "marketedge";
   if (/^strategist\b/i.test(s)) return "strategist";
+  // FactSet "SA: Street Takeaways - IBM Q2 Earnings ($207.33, +1.55)".
+  // Body-text email (no attachment) — see handleStreetTakeaways.
+  if (/^(?:sa:\s*)?street\s+takeaways\b/i.test(s)) return "street-takeaways";
   return "unknown";
+}
+
+/** FactSet alert emails are recognised by SENDER as well as subject, so a
+ *  plain forward works without the user retyping a subject convention. */
+export function isFactsetAlertSender(sender: string | undefined): boolean {
+  return /factset[_.]?alerts?@factset\.com/i.test(sender ?? "");
 }
 
 // ── Shared MIME helpers ────────────────────────────────────────────
@@ -192,6 +209,62 @@ async function addStrategistAttachment(dataUrl: string, label: string): Promise<
   };
   await redis.set("pm:attachments", JSON.stringify([...existing.filter((e) => e.id !== id), entry]));
   return { id };
+}
+
+// ── Street Takeaways (FactSet body-text email) ─────────────────────
+
+/**
+ * Parse a FactSet "Street Takeaways" alert and file it against the ticker.
+ * Body-text only (these emails carry no attachment). Scoped to the book:
+ * a name we don't own or watch is skipped cleanly rather than stored.
+ */
+async function handleStreetTakeaways(bodyText: string, subject: string): Promise<DispatchResult> {
+  if (!bodyText || bodyText.trim().length < 200) {
+    return {
+      ok: false,
+      kind: "street-takeaways",
+      status: 400,
+      message: "Street Takeaways email had no readable body text (the Apps Script must forward the body, not just attachments).",
+    };
+  }
+  const identifier = extractPrimaryIdentifier(bodyText);
+  if (!identifier) {
+    return { ok: false, kind: "street-takeaways", status: 400, message: "Couldn't find a FactSet identifier (e.g. 'Primary Identifiers: IBM-US') in the email body." };
+  }
+  const stocks = await readStocks();
+  const bookTickers = stocks
+    .filter((s) => s.bucket === "Portfolio" || s.bucket === "Watchlist")
+    .map((s) => s.ticker)
+    .filter(Boolean);
+  const ticker = factsetIdToTicker(identifier, bookTickers);
+  if (!ticker) {
+    return {
+      ok: true,
+      kind: "street-takeaways",
+      status: 200,
+      message: `Skipped ${identifier} — not in the Portfolio or Watchlist.`,
+      detail: { identifier, skipped: true },
+    };
+  }
+
+  const parsed = await parseStreetTakeaway(bodyText);
+  const entry: StreetTakeaway = {
+    ...parsed,
+    id: `st-${ticker.toUpperCase()}-${parsed.date}-${Date.now()}`,
+    ticker: ticker.toUpperCase(),
+    ingestedAt: new Date().toISOString(),
+    subject,
+  };
+  const { added, count } = await appendStreetTakeaway(entry);
+  return {
+    ok: true,
+    kind: "street-takeaways",
+    status: 200,
+    message: added
+      ? `Street Takeaways filed: ${describeTakeaway(entry)}`
+      : `Street Takeaways for ${entry.ticker} (${entry.date}) already on file — skipped duplicate.`,
+    detail: { ticker: entry.ticker, added, count, firms: entry.firms.length },
+  };
 }
 
 // ── Public dispatch result ─────────────────────────────────────────
@@ -396,6 +469,9 @@ export async function dispatchInbox(args: {
   subject: string;
   filename?: string;
   dataUrl: string;
+  /** Plain-text email body. Only body-text kinds (street-takeaways) use it;
+   *  every other kind is attachment-driven and ignores it. */
+  bodyText?: string;
 }): Promise<DispatchResult | null> {
   const label = args.filename || args.subject;
   const att: AttachmentInput = { id: "inbox", label, dataUrl: args.dataUrl };
@@ -408,6 +484,7 @@ export async function dispatchInbox(args: {
     case "boosted":      return await handleBoosted(att, label);
     case "marketedge":   return await handleMarketEdge(att, label);
     case "strategist":   return await handleStrategist(att, label);
+    case "street-takeaways": return await handleStreetTakeaways(args.bodyText ?? "", args.subject);
     case "analyst-report": return null;  // existing flow handles this
     case "unknown":      return null;    // existing route returns its "couldn't determine source" error
   }

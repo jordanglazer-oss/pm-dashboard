@@ -14,6 +14,7 @@ handles the rest.
 | `BoostedAI …` *or* `Boosted …` | **Boosted.ai unified-data CSV (preferred)** or watchlist screenshot (PNG/JPG/PDF) | Each matched stock's BoostedAI rating + consensus + score. CSV is auto-detected — same subject either way. |
 | `MarketEdge …` *or* `ChartScout …` | ChartScout Likes export (CSV) | Each matched stock's `marketEdge` fields + composite score |
 | `Strategist …` | Any analyst/strategist research (PDF or image) | Brief's "Analyst / Strategist Reports" dropbox |
+| `SA: Street Takeaways …` — **or just forward any email from `FactSet_Alerts@factset.com`** (sender is matched too, so the original subject works unchanged) | **The email BODY — no attachment needed** | Per-ticker Street Takeaways: per-firm PT changes, full-panel rating mix, avg target, valuation vs own history. Feeds catalysts / researchCoverage / historicalValuation on the next rescore, and the stock page's Street Takeaways tile. Names outside the Portfolio/Watchlist are skipped. |
 | `Fundstrat Top` / `Fundstrat Bottom` / `Fundstrat SMID Top` / `Fundstrat SMID Bottom` | Screenshot (PNG/JPG/PDF) | Respective Fundstrat list on the Research tab |
 | `Fundstrat Large-Cap Core` / `Fundstrat SMID Core` | Screenshot (PNG/JPG/PDF) of the DQM quant screen (Ticker, Company, Sector, Industry, Mkt Cap, 1M/YTD relative perf, P/E, DQM Rank, Momentum Rating, trend columns) | Respective Fundstrat "Core Ideas" list on the Research tab |
 | `RBC Canadian` / `RBC US` | Screenshot (PNG/JPG/PDF) | RBC Canadian / US Focus List |
@@ -166,7 +167,11 @@ function processInbox() {
 
   // Order matters: more-specific prefixes first ("Fundstrat SMID Top"
   // before "Fundstrat Top") so regex alternation matches correctly.
-  const SUBJECT_RE = /^(?:(?:re|fwd?|fw):\s*)*(Analyst Report:|Fundstrat Large-Cap Core|Fundstrat SMID Core|Fundstrat SMID Top|Fundstrat SMID Bottom|Fundstrat Top|Fundstrat Bottom|RBC Canadian|RBC US|RBCCM FEW|Seeking Alpha|Alpha Picks|SIA\b|BoostedAI\b|Boosted\b|MarketEdge\b|ChartScout\b|Strategist\b)/i;
+  const SUBJECT_RE = /^(?:(?:re|fwd?|fw):\s*)*(Analyst Report:|Fundstrat Large-Cap Core|Fundstrat SMID Core|Fundstrat SMID Top|Fundstrat SMID Bottom|Fundstrat Top|Fundstrat Bottom|RBC Canadian|RBC US|RBCCM FEW|Seeking Alpha|Alpha Picks|SIA\b|BoostedAI\b|Boosted\b|MarketEdge\b|ChartScout\b|Strategist\b|SA:\s*Street Takeaways|Street Takeaways)/i;
+  // FactSet alerts are BODY-TEXT emails (no attachment) — matched by sender so
+  // a plain forward works with its original subject untouched.
+  const BODY_TEXT_SENDER_RE = /factset[_.]?alerts?@factset\.com/i;
+  const BODY_TEXT_SUBJECT_RE = /^(?:(?:re|fwd?|fw):\s*)*(?:SA:\s*)?Street Takeaways/i;
   const PROCESSED_LABEL_NAME = "Dashboard-Processed";
 
   let label = GmailApp.getUserLabelByName(PROCESSED_LABEL_NAME);
@@ -179,8 +184,35 @@ function processInbox() {
     let anySuccess = false;
     for (const msg of messages) {
       const subject = (msg.getSubject() || "").trim();
-      if (!SUBJECT_RE.test(subject)) continue;
       const sender = msg.getFrom();
+
+      // ── Body-text kinds (FactSet Street Takeaways) ──
+      // These carry no attachment: POST the plain-text body instead. Handled
+      // before the attachment loop so a forwarded alert isn't skipped.
+      if (BODY_TEXT_SENDER_RE.test(sender) || BODY_TEXT_SUBJECT_RE.test(subject)) {
+        try {
+          const bodyText = msg.getPlainBody() || "";
+          const response = UrlFetchApp.fetch(url, {
+            method: "post",
+            contentType: "application/json",
+            headers: { Authorization: "Bearer " + secret },
+            payload: JSON.stringify({ subject, sender, bodyText }),
+            muteHttpExceptions: true,
+          });
+          const code = response.getResponseCode();
+          if (code >= 200 && code < 300) {
+            anySuccess = true;
+            Logger.log("OK " + code + " [body] " + subject);
+          } else {
+            Logger.log("ERR " + code + " [body] " + subject + " :: " + response.getContentText().slice(0, 300));
+          }
+        } catch (e) {
+          Logger.log("EX [body] " + subject + " :: " + e);
+        }
+        continue; // body-text kinds never have attachments to forward
+      }
+
+      if (!SUBJECT_RE.test(subject)) continue;
       // includeInlineImages: true picks up pasted/embedded screenshots
       // (Outlook generates these as image001.png inline parts), which is
       // a common way people email screenshots. The route's MIME validation
