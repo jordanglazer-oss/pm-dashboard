@@ -208,8 +208,14 @@ export async function POST(request: NextRequest) {
   // so they're recognised by sender (or subject) and exempt from the
   // attachment requirement below. Every other kind stays attachment-driven.
   const bodyText = typeof body.bodyText === "string" ? body.bodyText : "";
+  // Three match paths — a FORWARD from the PM's own address makes `sender`
+  // the PM, not FactSet, so the subject (which survives FW:/Fwd:) is the
+  // primary signal, with FactSet's address in the forwarded header block as
+  // the fallback for a forward whose subject was edited.
   const isBodyTextKind =
-    classifySubject(subject) === "street-takeaways" || isFactsetAlertSender(sender);
+    classifySubject(subject) === "street-takeaways" ||
+    isFactsetAlertSender(sender) ||
+    (bodyText.length > 0 && isFactsetAlertSender(bodyText.slice(0, 3000)));
 
   if (!subject || (!dataUrl && !isBodyTextKind)) {
     await appendInboxEvent({ status: "error", subject, sender, filename, message: "Missing subject or dataUrl/blob" });

@@ -189,9 +189,21 @@ function processInbox() {
       // ── Body-text kinds (FactSet Street Takeaways) ──
       // These carry no attachment: POST the plain-text body instead. Handled
       // before the attachment loop so a forwarded alert isn't skipped.
-      if (BODY_TEXT_SENDER_RE.test(sender) || BODY_TEXT_SUBJECT_RE.test(subject)) {
+      // Three ways to match, because a FORWARD from your own address makes
+      // getFrom() = you, not FactSet:
+      //   1. sender is FactSet (alert delivered straight to this inbox)
+      //   2. subject still says "Street Takeaways" (survives FW:/Fwd:)
+      //   3. fallback — FactSet's address in the forwarded header block,
+      //      which covers a forward whose subject you edited.
+      let plainBody = "";
+      let isBodyTextKind = BODY_TEXT_SENDER_RE.test(sender) || BODY_TEXT_SUBJECT_RE.test(subject);
+      if (!isBodyTextKind && !SUBJECT_RE.test(subject)) {
+        plainBody = msg.getPlainBody() || "";
+        isBodyTextKind = BODY_TEXT_SENDER_RE.test(plainBody.slice(0, 3000));
+      }
+      if (isBodyTextKind) {
         try {
-          const bodyText = msg.getPlainBody() || "";
+          const bodyText = plainBody || msg.getPlainBody() || "";
           const response = UrlFetchApp.fetch(url, {
             method: "post",
             contentType: "application/json",
