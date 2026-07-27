@@ -15,6 +15,7 @@ import StockHealthMonitor from "@/app/components/StockHealthMonitor";
 import RiskAlertPanel from "@/app/components/RiskAlertPanel";
 import RatioVsSpxSparkline from "@/app/components/RatioVsSpxSparkline";
 import ScoreHistory from "@/app/components/ScoreHistory";
+import StreetTakeawaysTile from "@/app/components/StreetTakeawaysTile";
 import { ScoreDelta } from "@/app/components/ScoreDelta";
 import { CollapsibleSection } from "@/app/components/CollapsibleSection";
 import { colorForSector } from "@/app/lib/sectorColors";
@@ -2621,6 +2622,9 @@ export default function StockDetailPage() {
               className="mt-6"
             />
           )}
+
+          {/* Street Takeaways — FactSet analyst roundup (renders only when ingested) */}
+          {scoreable && <StreetTakeawaysTile ticker={stock.ticker} className="mt-6" />}
         </div>
       </div>
     </main>
