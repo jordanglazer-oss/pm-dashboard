@@ -95,9 +95,16 @@ export function classifySubject(subject: string): InboxKind {
   if (/^(boostedai|boosted)\b/i.test(s)) return "boosted";
   if (/^(marketedge|chartscout)\b/i.test(s)) return "marketedge";
   if (/^strategist\b/i.test(s)) return "strategist";
-  // FactSet "SA: Street Takeaways - IBM Q2 Earnings ($207.33, +1.55)".
-  // Body-text email (no attachment) — see handleStreetTakeaways.
-  if (/^(?:sa:\s*)?street\s+takeaways\b/i.test(s)) return "street-takeaways";
+  // FactSet earnings alerts — body-text emails, no attachment (see
+  // handleStreetTakeaways). Several report formats share one pipeline:
+  //   "SA: Street Takeaways - IBM Q2 Earnings"            → analyst reaction
+  //   "SA: StreetAccount Metrics Recap - Celestica Q2 …"  → results + guidance
+  //   "SA: Transcript Intelligence: … Q&A"                → call Q&A summary
+  //   "Celestica reports Q2 EPS $2.54 ex-items vs …"      → plain results
+  if (/^(?:sa:\s*)?(?:street\s+takeaways|streetaccount|transcript\s+intelligence)\b/i.test(s)) {
+    return "street-takeaways";
+  }
+  if (/\breports\s+Q[1-4]\b.*\bvs\b/i.test(s)) return "street-takeaways";
   return "unknown";
 }
 
@@ -247,7 +254,7 @@ async function handleStreetTakeaways(bodyText: string, subject: string): Promise
     };
   }
 
-  const parsed = await parseStreetTakeaway(bodyText);
+  const parsed = await parseStreetTakeaway(bodyText, subject);
   const entry: StreetTakeaway = {
     ...parsed,
     id: `st-${ticker.toUpperCase()}-${parsed.date}-${Date.now()}`,
