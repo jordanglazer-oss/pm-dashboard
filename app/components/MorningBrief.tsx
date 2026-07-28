@@ -19,7 +19,6 @@ import { HedgingIndicator } from "./HedgingIndicator";
 import { ImageUpload, LightboxModal, type BriefAttachment } from "./ImageUpload";
 import { BriefCommandBar } from "./BriefCommandBar";
 import { CollapsibleSection } from "./CollapsibleSection";
-import { MacroBoard } from "./MacroBoard";
 import { BriefGenerationModal } from "./BriefGenerationModal";
 import type { MarketRegimeData, RegimeDirection } from "@/app/lib/market-regime";
 import { regimeValence } from "@/app/lib/regime-transition";
@@ -2315,16 +2314,6 @@ export function MorningBrief({
       </div>
       <div className="space-y-6 ">
 
-      {/* Macro board (redesign): four labelled bands of dense tiles with
-          group filter pills, replacing the three loosely-packed cards that
-          showed a handful of these same numbers. Tiles with no value are
-          dropped rather than rendered blank. */}
-      <MacroBoard
-        fwd={(activeForward ?? null) as never}
-        termStructure={marketData.termStructure}
-        vvix={brief?.hedgeChecklist?.vvix ?? null}
-        asOf={activeForward?.vixWeek?.asOf as string | undefined}
-      />
       {/* Contrarian sentiment + Catalyst watch side by side, as the mock
           pairs them: the sentiment read on the left, the dated calendar it
           has to survive on the right. */}
