@@ -2357,7 +2357,6 @@ export function MorningBrief({
             </div>
           </div>
           <p className="mt-2 text-xs text-ink-3">Trend: {hyVal != null && hyVal >= 300 ? "Widening modestly" : "Stable"}</p>
-          <ClampText text={creditAnalysis} className="mt-1.5" />
         </div>
 
         <div className="rounded-card border border-line bg-white p-4 shadow-sm">
@@ -2384,7 +2383,6 @@ export function MorningBrief({
               <div className="mt-1 text-xl font-bold">{fmtNum(moveVal)}</div>
             </div>
           </div>
-          <ClampText text={volatilityAnalysis} className="mt-3" />
         </div>
 
         {/* Breadth & Structure — third card in the row (mockup). */}
@@ -2408,7 +2406,6 @@ export function MorningBrief({
               <span className="font-mono font-medium">{breadth50Val != null ? `${breadth50Val}%` : "—"}</span>
             </div>
           </div>
-          <ClampText text={breadthAnalysis} className="mt-3" />
         </div>
 
         {/* Fund Flows & Positioning tile retired in 2026-05. Flows
@@ -2689,6 +2686,37 @@ export function MorningBrief({
       {/* Hedging data basis — the full ✓/✗ checklist, live premium table,
           percentile history and regime inputs. Moved out of the Decide
           tile so that tile stays a 4-line summary; nothing was dropped. */}
+      {breadthAnalysis && (
+        <CollapsibleSection
+          prefKey="briefNarrativeBreadth"
+          defaultCollapsed
+          title={
+            <span className="flex items-center gap-2">
+              <span className="text-base">📊</span>
+              <span className="text-base font-semibold">Breadth & internals</span>
+            </span>
+          }
+          subtitle={<span className="text-xs text-ink-3">participation behind the index move</span>}
+        >
+          <ClampText text={breadthAnalysis} />
+        </CollapsibleSection>
+      )}
+      {volatilityAnalysis && (
+        <CollapsibleSection
+          prefKey="briefNarrativeCredit"
+          defaultCollapsed
+          title={
+            <span className="flex items-center gap-2">
+              <span className="text-base">💳</span>
+              <span className="text-base font-semibold">Credit & volatility</span>
+            </span>
+          }
+          subtitle={<span className="text-xs text-ink-3">where stress shows up before it hits price</span>}
+        >
+          <ClampText text={volatilityAnalysis} />
+          {creditAnalysis && <ClampText text={creditAnalysis} className="mt-3" />}
+        </CollapsibleSection>
+      )}
       {brief?.hedgeChecklist && (
         <CollapsibleSection
           prefKey="briefNarrativeHedgeBasis"
