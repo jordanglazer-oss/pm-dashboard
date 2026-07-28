@@ -182,7 +182,6 @@ export function MacroBoard({
     return t.filter((x) => x.point && x.point.value != null);
   }, [fwd]);
 
-  if (!fwd || tiles.length === 0) return null;
   // Headline chips. Each is sourced from a value already on the board (or the
   // regime blob) — nothing here is a separate fetch or a restatement dressed up
   // as new information. Missing inputs drop their chip.
@@ -227,6 +226,7 @@ export function MacroBoard({
     return out;
   }, [tiles, termStructure, vvix, regime]);
 
+  if (!fwd || tiles.length === 0) return null;
   const bands: Band[] = ["breadth", "valuation", "rates", "credit"];
   // Horizon filter, as the design shows beside the provenance. Tiles with no
   // horizon tag are kept under "all" only — filtering to a horizon should show
