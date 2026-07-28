@@ -19,6 +19,7 @@ import { HedgingIndicator } from "./HedgingIndicator";
 import { ImageUpload, LightboxModal, type BriefAttachment } from "./ImageUpload";
 import { BriefCommandBar } from "./BriefCommandBar";
 import { CollapsibleSection } from "./CollapsibleSection";
+import { MacroBoard } from "./MacroBoard";
 import type { MarketRegimeData, RegimeDirection } from "@/app/lib/market-regime";
 import { regimeValence } from "@/app/lib/regime-transition";
 import { HORIZONS } from "@/app/lib/horizons";
@@ -2356,100 +2357,16 @@ export function MorningBrief({
         forwardData={activeForward}
       />
 
-      {/* Credit & Volatility — values pulled from auto-fetched ForwardLookingData */}
-      {(() => {
-        const fmtNum = (v: number | null | undefined): string =>
-          v == null ? "—" : String(v);
-        const hyVal = activeForward?.hyOasTrend?.value ?? null;
-        const igVal = activeForward?.igOasTrend?.value ?? null;
-        const vixVal = activeForward?.vixWeek?.value ?? null;
-        const moveVal = activeForward?.moveWeek?.value ?? null;
-        const breadth200Val = activeForward?.breadth200Wk?.value ?? null;
-        const breadth50Val = activeForward?.breadth50Wk?.value ?? null;
-        return (
-      <>
-      <section className="grid gap-4 lg:grid-cols-3">
-        <div className="rounded-card border border-line bg-white p-4 shadow-sm">
-          <div className="flex items-center justify-between gap-3">
-            <div className="flex items-center gap-2">
-              <span className="text-base">📉</span>
-              <h3 className="text-base font-semibold">Credit Spreads</h3>
-            </div>
-            <SignalPill tone={hyVal != null && hyVal >= 300 ? "red" : hyVal != null && hyVal >= 200 ? "amber" : "green"}>
-              {hyVal != null && hyVal >= 300 ? "Widening" : hyVal != null && hyVal >= 200 ? "Neutral" : "Tight"}
-            </SignalPill>
-          </div>
-          <div className="mt-3 grid grid-cols-2 gap-2">
-            <div className="rounded-xl bg-surface-2 p-2.5">
-              <div className="text-[10px] font-semibold uppercase tracking-wider text-ink-3">HY OAS</div>
-              <div className="mt-1 text-xl font-bold">{fmtNum(hyVal)} <span className="text-xs font-normal text-ink-3">bps</span></div>
-            </div>
-            <div className="rounded-xl bg-surface-2 p-2.5">
-              <div className="text-[10px] font-semibold uppercase tracking-wider text-ink-3">IG OAS</div>
-              <div className="mt-1 text-xl font-bold">{fmtNum(igVal)} <span className="text-xs font-normal text-ink-3">bps</span></div>
-            </div>
-          </div>
-          <p className="mt-2 text-xs text-ink-3">Trend: {hyVal != null && hyVal >= 300 ? "Widening modestly" : "Stable"}</p>
-        </div>
-
-        <div className="rounded-card border border-line bg-white p-4 shadow-sm">
-          <div className="flex items-center justify-between gap-3">
-            <div className="flex items-center gap-2">
-              <span className="text-base">⚡</span>
-              <h3 className="text-base font-semibold">Volatility Regime</h3>
-            </div>
-            <SignalPill tone={vixVal != null && vixVal >= 22 ? "red" : vixVal != null && vixVal >= 16 ? "amber" : "green"}>
-              {vixVal != null && vixVal >= 22 ? "Elevated" : vixVal != null && vixVal >= 16 ? "Moderate" : "Low"}
-            </SignalPill>
-          </div>
-          <div className="mt-3 grid grid-cols-3 gap-2">
-            <div className="rounded-xl bg-surface-2 p-2.5">
-              <div className="text-[10px] font-semibold uppercase tracking-wider text-ink-3">VIX</div>
-              <div className="mt-1 text-xl font-bold">{fmtNum(vixVal)}</div>
-            </div>
-            <div className="rounded-xl bg-surface-2 p-2.5">
-              <div className="text-[10px] font-semibold uppercase tracking-wider text-ink-3">TERM</div>
-              <div className="mt-1 text-sm font-bold">{marketData.termStructure}</div>
-            </div>
-            <div className="rounded-xl bg-surface-2 p-2.5">
-              <div className="text-[10px] font-semibold uppercase tracking-wider text-ink-3">MOVE</div>
-              <div className="mt-1 text-xl font-bold">{fmtNum(moveVal)}</div>
-            </div>
-          </div>
-        </div>
-
-        {/* Breadth & Structure — third card in the row (mockup). */}
-        <div className="rounded-card border border-line bg-white p-4 shadow-sm">
-          <div className="flex items-center justify-between gap-3">
-            <div className="flex items-center gap-2">
-              <span className="text-base">📊</span>
-              <h3 className="text-base font-semibold">Breadth &amp; Structure</h3>
-            </div>
-            <SignalPill tone={breadth200Val != null && breadth200Val <= 50 ? "red" : breadth200Val != null && breadth200Val >= 65 ? "green" : "amber"}>
-              {breadth200Val != null && breadth200Val <= 50 ? "Weak" : breadth200Val != null && breadth200Val >= 65 ? "Healthy" : "Mixed"}
-            </SignalPill>
-          </div>
-          <div className="mt-3 space-y-2 text-sm">
-            <div className="flex justify-between border-b border-line-soft pb-2">
-              <span className="text-ink-3">S&amp;P 500 % &gt; 200 DMA</span>
-              <span className="font-mono font-medium">{breadth200Val != null ? `${breadth200Val}%` : "—"}</span>
-            </div>
-            <div className="flex justify-between pb-1">
-              <span className="text-ink-3">S&amp;P 500 % &gt; 50 DMA</span>
-              <span className="font-mono font-medium">{breadth50Val != null ? `${breadth50Val}%` : "—"}</span>
-            </div>
-          </div>
-        </div>
-
-        {/* Fund Flows & Positioning tile retired in 2026-05. Flows
-            are inherently backward-looking and contrarianAnalysis
-            already covers sentiment / positioning extremes. The
-            attached JPM screenshots upload section was also removed
-            with this change. */}
-      </section>
-      </>
-        );
-      })()}
+      {/* Macro board (redesign): four labelled bands of dense tiles with
+          group filter pills, replacing the three loosely-packed cards that
+          showed a handful of these same numbers. Tiles with no value are
+          dropped rather than rendered blank. */}
+      <MacroBoard
+        fwd={(activeForward ?? null) as never}
+        termStructure={marketData.termStructure}
+        vvix={brief?.hedgeChecklist?.vvix ?? null}
+        asOf={activeForward?.vixWeek?.asOf as string | undefined}
+      />
       </div>
       {/* ── Horizons: tactical / cyclical / structural ── */}
       <div style={{ scrollMarginTop: "var(--brief-scroll-mt, 132px)" }} className="mb-2 mt-2 flex items-baseline gap-2.5" id="s-horizon">
