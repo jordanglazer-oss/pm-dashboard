@@ -18,6 +18,7 @@ import { SentimentGauges } from "./SentimentGauges";
 import { HedgingIndicator } from "./HedgingIndicator";
 import { ImageUpload, LightboxModal, type BriefAttachment } from "./ImageUpload";
 import { BriefCommandBar } from "./BriefCommandBar";
+import { CollapsibleSection } from "./CollapsibleSection";
 import type { MarketRegimeData, RegimeDirection } from "@/app/lib/market-regime";
 import { regimeValence } from "@/app/lib/regime-transition";
 import { HORIZONS } from "@/app/lib/horizons";
@@ -2818,45 +2819,73 @@ export function MorningBrief({
       {/* Composite Signal — the weighted regime read that DETERMINES the regime,
           surfaced high on the page (right under the at-a-glance actions) rather
           than buried below the Forward View. */}
-      <section className="rounded-card border border-line bg-white p-4 shadow-sm">
-        <div className="flex flex-wrap items-center gap-2">
-          <span className="text-base">🔍</span>
-          <h2 className="text-base font-semibold">Composite Signal</h2>
-          <SignalPill tone={compositeSignalTone}>{marketData.compositeSignal}</SignalPill>
-          <span className="text-xs text-ink-3">
-            Conviction: {marketData.conviction}
+      {/* Accordion rows (redesign): the long-form prose is reference reading,
+          so each row collapses to a title + one-line summary and opens on
+          click. Collapsed by DEFAULT — this is what stops the narrative from
+          dominating the page. State persists via pm:ui-prefs, so a row the PM
+          keeps open stays open across reloads. */}
+      <CollapsibleSection
+        prefKey="briefNarrativeComposite"
+        defaultCollapsed
+        title={
+          <span className="flex flex-wrap items-center gap-2">
+            <span className="text-base">🔍</span>
+            <span className="text-base font-semibold">Composite Signal</span>
           </span>
-          {brief?.marketRegime && (
-            <SignalPill tone={brief.marketRegime === "Risk-Off" ? "red" : brief.marketRegime === "Risk-On" ? "green" : "amber"}>
-              {brief.marketRegime}
-            </SignalPill>
-          )}
-        </div>
-        <p className="mt-1 text-xs text-ink-3">
+        }
+        subtitle={
+          <span className="flex flex-wrap items-center gap-2 text-xs text-ink-3">
+            <SignalPill tone={compositeSignalTone}>{marketData.compositeSignal}</SignalPill>
+            <span>Conviction: {marketData.conviction}</span>
+            {brief?.marketRegime && (
+              <SignalPill tone={brief.marketRegime === "Risk-Off" ? "red" : brief.marketRegime === "Risk-On" ? "green" : "amber"}>
+                {brief.marketRegime}
+              </SignalPill>
+            )}
+          </span>
+        }
+      >
+        <p className="text-xs text-ink-3">
           The deterministic regime read — what the tape and macro data say the market <strong className="text-ink-2">is</strong> doing, and what to focus on.
         </p>
         <ClampText text={compositeAnalysis} className="mt-2" />
-      </section>
+      </CollapsibleSection>
 
       {/* Non-consensus edge — what the tape may be under-pricing. Distilled
           across all integrated sources; hidden when the model returns blank. */}
       {brief?.underpriced && brief.underpriced.trim() && (
-        <section className="rounded-card border border-violet-soft bg-violet-soft/40 p-4 shadow-sm">
-          <div className="flex flex-wrap items-center gap-2 mb-1">
-            <span className="text-base">💡</span>
-            <h2 className="text-base font-semibold">What the tape may be under-pricing</h2>
-            <span className="text-[10px] font-bold uppercase tracking-wider text-violet">Non-consensus</span>
-          </div>
+        <CollapsibleSection
+          prefKey="briefNarrativeUnderpriced"
+          defaultCollapsed
+          className="border-violet-soft bg-violet-soft/40"
+          title={
+            <span className="flex flex-wrap items-center gap-2">
+              <span className="text-base">💡</span>
+              <span className="text-base font-semibold">What the tape may be under-pricing</span>
+            </span>
+          }
+          subtitle={<span className="text-[10px] font-bold uppercase tracking-wider text-violet">Non-consensus</span>}
+        >
           <p className="text-sm leading-6 text-ink-2">{brief.underpriced}</p>
-        </section>
+        </CollapsibleSection>
       )}
-      {/* Sector Rotation */}
+      {/* Sector Rotation — narrative + the live per-sector heatmap. */}
       {sectorRotation && (
-        <section className="rounded-card border border-line bg-white p-4 shadow-sm">
-          <div className="flex items-center gap-2 mb-3">
-            <span className="text-base">🔄</span>
-            <h3 className="text-base font-semibold">Sector Rotation</h3>
-          </div>
+        <CollapsibleSection
+          prefKey="briefNarrativeSectorRotation"
+          defaultCollapsed
+          title={
+            <span className="flex items-center gap-2">
+              <span className="text-base">🔄</span>
+              <span className="text-base font-semibold">Sector Rotation</span>
+            </span>
+          }
+          subtitle={
+            brief?.sectorPerformance && brief.sectorPerformance.length > 0
+              ? <span className="text-xs text-ink-3">{brief.sectorPerformance.length} sectors · leaders & laggards</span>
+              : undefined
+          }
+        >
           <ClampText text={sectorRotation.summary} className="mb-4" />
           {brief?.sectorPerformance && brief.sectorPerformance.length > 0 ? (
             /* Live per-sector heatmap tiles, sorted best→worst (mockup). */
@@ -2899,7 +2928,7 @@ export function MorningBrief({
             </div>
           )}
           <ClampText text={sectorRotation.pmImplication} className="mt-3" textClassName="text-sm italic leading-6 text-ink-3" lines={2} />
-        </section>
+        </CollapsibleSection>
       )}
       </div>
 
