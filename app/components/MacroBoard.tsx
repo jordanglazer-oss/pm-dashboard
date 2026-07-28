@@ -135,13 +135,17 @@ export function MacroBoard({
   termStructure,
   vvix,
   asOf,
+  regime,
 }: {
   fwd: PointBag | null;
   termStructure?: string;
   vvix?: number | null;
   asOf?: string;
+  /** Live regime blob, for the cross-asset chips in the summary strip. */
+  regime?: { crossAsset?: { dxy?: unknown; oil?: unknown }; global?: { stoxx?: unknown; nikkei?: unknown } } | null;
 }) {
   const [band, setBand] = useState<Band | "all">("all");
+  const [horizon, setHorizon] = useState<"all" | "1–3M" | "3–6M" | "6–12M">("all");
 
   const tiles: TileSpec[] = useMemo(() => {
     if (!fwd) return [];
@@ -179,9 +183,56 @@ export function MacroBoard({
   }, [fwd]);
 
   if (!fwd || tiles.length === 0) return null;
+  // Headline chips. Each is sourced from a value already on the board (or the
+  // regime blob) — nothing here is a separate fetch or a restatement dressed up
+  // as new information. Missing inputs drop their chip.
+  const summaryChips = useMemo(() => {
+    const out: { label: string; value: string; note?: string; tone: "pos" | "neg" | "flat" }[] = [];
+    const pick = (label: string) => tiles.find((t) => t.label === label)?.point;
+    const num = (v: unknown): number | null => (typeof v === "number" && isFinite(v) ? v : null);
+
+    const hy = pick("HY OAS");
+    if (hy && num(hy.value) != null) {
+      const hprev = num(hy.previous ?? null); const d = hprev == null ? null : num(hy.value)! - hprev;
+      out.push({ label: "Credit", value: `${Math.round(num(hy.value)!)}bps`, note: d == null ? undefined : d < 0 ? "tightening" : "widening", tone: d == null ? "flat" : d < 0 ? "pos" : "neg" });
+    }
+    const vix = pick("VIX");
+    if (vix && num(vix.value) != null) {
+      out.push({ label: "Vol", value: `VIX ${num(vix.value)!.toFixed(1)}`, note: termStructure || undefined, tone: num(vix.value)! >= 25 ? "neg" : num(vix.value)! <= 18 ? "pos" : "flat" });
+    }
+    const br = pick(">50DMA wk");
+    if (br && num(br.value) != null) {
+      const bprev = num(br.previous ?? null); const d = bprev == null ? null : num(br.value)! - bprev;
+      out.push({ label: "Breadth", value: `${num(br.value)!.toFixed(0)}% >50DMA`, note: d == null ? undefined : `${d > 0 ? "+" : ""}${d.toFixed(1)}pp`, tone: d == null ? "flat" : d < 0 ? "neg" : "pos" });
+    }
+    if (vvix != null) out.push({ label: "VVIX", value: String(vvix), tone: "flat" });
+
+    // Cross-asset, straight off the regime blob.
+    const ca = (regime?.crossAsset ?? {}) as Record<string, { price?: number; change20dPct?: number | null } | null>;
+    const gl = (regime?.global ?? {}) as Record<string, { price?: number; change20dPct?: number | null } | null>;
+    const xa: [string, { price?: number; change20dPct?: number | null } | null | undefined, number][] = [
+      ["DXY", ca.dxy, 2], ["WTI", ca.oil, 2], ["STOXX", gl.stoxx, 0], ["Nikkei", gl.nikkei, 0],
+    ];
+    for (const [label, r, dp] of xa) {
+      const px = num(r?.price);
+      if (px == null) continue;
+      const ch = num(r?.change20dPct ?? null);
+      out.push({
+        label,
+        value: px.toLocaleString("en-US", { minimumFractionDigits: dp, maximumFractionDigits: dp }),
+        note: ch == null ? "flat" : `${ch > 0 ? "+" : ""}${ch.toFixed(1)}% 20d`,
+        tone: ch == null ? "flat" : ch > 0 ? "pos" : "neg",
+      });
+    }
+    return out;
+  }, [tiles, termStructure, vvix, regime]);
 
   const bands: Band[] = ["breadth", "valuation", "rates", "credit"];
-  const visible = bands.filter((b) => (band === "all" || band === b) && tiles.some((t) => t.band === b));
+  // Horizon filter, as the design shows beside the provenance. Tiles with no
+  // horizon tag are kept under "all" only — filtering to a horizon should show
+  // what informs THAT horizon, not everything plus untagged noise.
+  const shown = horizon === "all" ? tiles : tiles.filter((t) => t.horizon === horizon);
+  const visible = bands.filter((b) => (band === "all" || band === b) && shown.some((t) => t.band === b));
   const time = asOf ? new Date(asOf).toLocaleTimeString("en-US", { hour: "numeric", minute: "2-digit" }) : null;
 
   return (
@@ -204,13 +255,56 @@ export function MacroBoard({
               </button>
             ))}
         </div>
-        <span className="ml-auto text-[10px] text-ink-faint">
-          FRED + Yahoo{time ? ` · ${time}` : ""}
-        </span>
+        <div className="ml-auto flex items-center gap-1.5">
+          <span className="text-[10px] text-ink-faint">horizon</span>
+          {(["1–3M", "3–6M", "6–12M"] as const)
+            .filter((h) => tiles.some((t) => t.horizon === h))
+            .map((h) => (
+              <button
+                key={h}
+                onClick={() => setHorizon(horizon === h ? "all" : h)}
+                className={`rounded-pill px-1.5 py-0.5 text-[10px] font-semibold transition-colors ${
+                  horizon === h
+                    ? h === "1–3M" ? "bg-accent-soft text-accent"
+                      : h === "3–6M" ? "bg-pos-soft text-pos"
+                      : "bg-violet-soft text-violet"
+                    : "text-ink-3 hover:text-ink"
+                }`}
+              >
+                {h}
+              </button>
+            ))}
+          <span className="ml-1.5 text-[10px] text-ink-faint">
+            FRED + Yahoo{time ? ` · ${time}` : ""}
+          </span>
+        </div>
       </div>
 
+      {/* Summary strip — the headline read above the detail, as the design
+          shows. Every chip is a real value already on the board or in the
+          regime blob; chips whose data is missing are dropped rather than
+          rendered blank. */}
+      {summaryChips.length > 0 && (
+        <div className="flex flex-wrap items-center gap-1.5 border-b border-line bg-white px-3 py-2">
+          {summaryChips.map((c) => (
+            <span
+              key={c.label}
+              className={`rounded-pill border px-2 py-0.5 text-[11px] ${
+                c.tone === "pos" ? "border-pos-border bg-pos-soft text-pos"
+                : c.tone === "neg" ? "border-neg-border bg-neg-soft text-neg"
+                : "border-line bg-surface-2 text-ink-2"
+              }`}
+            >
+              <span className="font-semibold">{c.label}</span>{" "}
+              <span className="font-mono">{c.value}</span>
+              {c.note ? <span className="ml-1 opacity-80">{c.note}</span> : null}
+            </span>
+          ))}
+        </div>
+      )}
+
       {visible.map((b) => {
-        const rows = tiles.filter((t) => t.band === b);
+        const rows = shown.filter((t) => t.band === b);
         return (
           <div key={b}>
             <div className="flex items-baseline gap-2 border-b border-line bg-white px-3 py-1.5">

@@ -2448,6 +2448,7 @@ export function MorningBrief({
         termStructure={marketData.termStructure}
         vvix={brief?.hedgeChecklist?.vvix ?? null}
         asOf={activeForward?.fetchedAt as string | undefined}
+        regime={marketRegime}
       />
 
       {/* Sector Rotation — promoted out of the collapsed Narrative accordion to
