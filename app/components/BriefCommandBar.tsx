@@ -98,7 +98,13 @@ export function BriefCommandBar({
   const total = regimeSignals?.length;
 
   return (
-    <div className="sticky top-0 z-30 -mx-4 mb-4 border-b border-line bg-surface/95 px-4 backdrop-blur supports-[backdrop-filter]:bg-surface/80">
+    // Freeze-pane layering: the primary nav is sticky at top-0 (z-40, 46px
+    // tall — the same constant the chat page uses in its 100vh-46px math), so
+    // this bar pins directly beneath it at top-[46px] with a lower z so the
+    // nav always wins. NOTE: this only works because the Brief's <main> uses
+    // overflow-x-clip rather than -hidden; `hidden` would make it a scroll
+    // container and kill sticky on every descendant.
+    <div className="sticky top-[46px] z-30 -mx-4 mb-4 border-b border-line bg-surface/95 px-4 backdrop-blur supports-[backdrop-filter]:bg-surface/80">
       <div className="flex flex-wrap items-center gap-x-4 gap-y-2 py-2">
         {/* Title + date */}
         <div className="flex shrink-0 items-baseline gap-2.5">

@@ -335,7 +335,10 @@ export function Navigation() {
     : "Portfolio";
 
   return (
-    <header className="bg-surface text-ink border-b border-line print:hidden">
+    // Sticky so the primary nav stays put as a page scrolls (Excel freeze-pane
+    // behaviour). z-40 keeps it above page content AND above the Brief's own
+    // sticky command bar (z-30), which pins directly beneath it.
+    <header className="sticky top-0 z-40 bg-surface text-ink border-b border-line print:hidden">
       <div className="mx-auto flex items-center justify-between px-4 py-2.5 md:px-6">
         {/* Branding */}
         <div className="flex items-center gap-2.5 shrink-0">
