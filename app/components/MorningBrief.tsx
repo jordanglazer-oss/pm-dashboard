@@ -23,6 +23,7 @@ import { MacroBoard } from "./MacroBoard";
 import type { MarketRegimeData, RegimeDirection } from "@/app/lib/market-regime";
 import { regimeValence } from "@/app/lib/regime-transition";
 import { HORIZONS } from "@/app/lib/horizons";
+import { useStocks } from "@/app/lib/StockContext";
 
 /** Numeric input with an inline save indicator.
  *  Value only persists when the user clicks the save icon (or presses Enter).
@@ -1243,6 +1244,28 @@ export function MorningBrief({
   const sectorRotation = brief?.sectorRotation || null;
 
   const riskScan = brief?.riskScan || null;
+
+  // Every collapsible row in the Narrative section, so "Expand all" can drive
+  // them together. Kept beside the rows it controls — if a row is added here
+  // and not to this list, the button silently stops covering it.
+  const NARRATIVE_KEYS = React.useMemo(() => [
+    "briefNarrativeComposite",
+    "briefNarrativeUnderpriced",
+    "briefNarrativeBreadth",
+    "briefNarrativeCredit",
+    "briefNarrativeHedgeBasis",
+    "briefNarrativeCash",
+    "briefNarrativeRegimeTells",
+  ], []);
+  const { uiPrefs, setUiPref } = useStocks();
+  // "1" means collapsed. Rows default to collapsed, so an unset pref counts as
+  // collapsed too — otherwise the button would read "Collapse all" on a fresh
+  // load when nothing is actually open.
+  const allNarrativeOpen = NARRATIVE_KEYS.every((k) => uiPrefs[k] === "0");
+  const toggleAllNarrative = () => {
+    const next = allNarrativeOpen ? "1" : "0";
+    NARRATIVE_KEYS.forEach((k) => setUiPref(k, next));
+  };
 
   const topActionsToday = brief?.topActionsToday || [];
   const hedgingCall = brief?.hedgingCall || null;
@@ -2728,6 +2751,12 @@ export function MorningBrief({
       <div style={{ scrollMarginTop: "var(--brief-scroll-mt, 132px)" }} className="mb-2 mt-2 flex items-baseline gap-2.5" id="s-narrative">
         <h2 className="text-xs font-bold uppercase tracking-[0.22em] text-ink-3">Narrative</h2>
         <span className="text-[11px] text-ink-faint">the long-form model prose — open what you need</span>
+        <button
+          onClick={toggleAllNarrative}
+          className="ml-auto rounded-control border border-warn-border bg-white px-2.5 py-1 text-xs font-semibold text-warn hover:bg-warn-soft"
+        >
+          {allNarrativeOpen ? "Collapse all" : "Expand all"}
+        </button>
       </div>
       <div className="space-y-6 ">
       {/* Composite Signal — the weighted regime read that DETERMINES the regime,
@@ -2745,7 +2774,7 @@ export function MorningBrief({
           defaultCollapsed
           title={
             <span className="flex items-center gap-2">
-              <span className="text-base">🔀</span>
+              <span className="h-2 w-2 rounded-full bg-ink-3" aria-hidden />
               <span className="text-base font-semibold">Regime tells</span>
             </span>
           }
@@ -2773,7 +2802,7 @@ export function MorningBrief({
           defaultCollapsed
           title={
             <span className="flex items-center gap-2">
-              <span className="text-base">📊</span>
+              <span className="h-2 w-2 rounded-full bg-neg" aria-hidden />
               <span className="text-base font-semibold">Breadth & internals</span>
             </span>
           }
@@ -2788,7 +2817,7 @@ export function MorningBrief({
           defaultCollapsed
           title={
             <span className="flex items-center gap-2">
-              <span className="text-base">💳</span>
+              <span className="h-2 w-2 rounded-full bg-pos" aria-hidden />
               <span className="text-base font-semibold">Credit & volatility</span>
             </span>
           }
@@ -2804,7 +2833,7 @@ export function MorningBrief({
           defaultCollapsed
           title={
             <span className="flex items-center gap-2">
-              <span className="text-base">🛡</span>
+              <span className="h-2 w-2 rounded-full bg-accent" aria-hidden />
               <span className="text-base font-semibold">Hedging data basis</span>
             </span>
           }
@@ -2946,7 +2975,7 @@ export function MorningBrief({
         <CollapsibleSection
           prefKey="briefNarrativeCash"
           defaultCollapsed
-          title={<span className="flex items-center gap-2"><span className="text-base">💵</span><span className="text-base font-semibold">Cash deployment</span></span>}
+          title={<span className="flex items-center gap-2"><span className="h-2 w-2 rounded-full bg-warn" aria-hidden /><span className="text-base font-semibold">Cash deployment</span></span>}
           subtitle={<span className="text-xs text-ink-3">{cashDeploymentCall.action}{typeof cashDeploymentCall.score === "number" ? ` · ${cashDeploymentCall.score}/100` : ""}</span>}
         >
         {/* Clamped: this tile now sits in the Decide column, and the
@@ -3000,7 +3029,7 @@ export function MorningBrief({
         defaultCollapsed
         title={
           <span className="flex flex-wrap items-center gap-2">
-            <span className="text-base">🔍</span>
+            <span className="h-2 w-2 rounded-full bg-warn" aria-hidden />
             <span className="text-base font-semibold">Composite Signal</span>
           </span>
         }
@@ -3031,7 +3060,7 @@ export function MorningBrief({
           className="border-violet-soft bg-violet-soft/40"
           title={
             <span className="flex flex-wrap items-center gap-2">
-              <span className="text-base">💡</span>
+              <span className="h-2 w-2 rounded-full bg-violet" aria-hidden />
               <span className="text-base font-semibold">What the tape may be under-pricing</span>
             </span>
           }
