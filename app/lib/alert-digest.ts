@@ -94,9 +94,9 @@ export async function runAlertDigest(opts?: {
 }): Promise<{ ran: boolean; total: number; emailed: boolean; error?: string }> {
   try {
     const redis = await getRedis();
-    const { thesis, transition, risk, context } = await loadAlertInputs();
+    const { thesis, transition, risk, context, killWatch } = await loadAlertInputs();
 
-    const alerts = computeAlerts({ thesis, transition, risk, context });
+    const alerts = computeAlerts({ thesis, transition, risk, context, killWatch });
     const counts = alertCounts(alerts);
     const today = new Date().toISOString().slice(0, 10);
 

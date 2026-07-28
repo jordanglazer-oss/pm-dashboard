@@ -2,6 +2,7 @@ import { getRedis } from "@/app/lib/redis";
 import { computeRegimeTransition, type RegimeTransition } from "@/app/lib/regime-transition";
 import type { MarketRegimeData } from "@/app/lib/market-regime";
 import type { StockContext } from "@/app/lib/alerts";
+import { checkAll, trippedCount, type KillCondition, type KillCheck } from "@/app/lib/kill-conditions";
 
 /**
  * ONE loader for every input the alert engine needs, so the in-app
@@ -39,6 +40,19 @@ export type AlertInputs = {
   context: Record<string, StockContext>;
   /** Watchlist rows for the Opportunities half. */
   watchlist: Array<{ ticker: string; netRevisions?: number | null; scoreDelta?: number | null; riskLevel?: string }>;
+  /** Kill-condition evaluation per underwritten holding (thesis discipline).
+   *  Deterministic — same evaluator as the stock-page tile, run fleet-wide. */
+  killWatch: KillWatchRow[];
+};
+
+export type KillWatchRow = {
+  ticker: string;
+  why?: string;
+  checks: KillCheck[];
+  tripped: number;
+  auto: number;
+  underwrittenAt?: string;
+  reUnderwriteBy?: string;
 };
 
 type StoredStock = {
@@ -50,6 +64,7 @@ type StoredStock = {
   /** YYYY-MM-DD (Yahoo calendarEvents) — feeds the catalyst-aware escalation. */
   earningsDate?: string;
   riskAlert?: { level?: string; summary?: string; signals?: Array<{ name: string; status: string }> };
+  healthData?: { twoHundredDayAvg?: number; currentPrice?: number };
 };
 
 function parse<T>(raw: string | null, fallback: T): T {
@@ -63,12 +78,13 @@ function parse<T>(raw: string | null, fallback: T): T {
 
 export async function loadAlertInputs(): Promise<AlertInputs> {
   const redis = await getRedis();
-  const [thesisRaw, regimeRaw, stocksRaw, snapsRaw, scoreRaw] = await Promise.all([
+  const [thesisRaw, regimeRaw, stocksRaw, snapsRaw, scoreRaw, posThesesRaw] = await Promise.all([
     redis.get("pm:thesis-health"),
     redis.get("pm:market-regime"),
     redis.get("pm:stocks"),
     redis.get("pm:analyst-snapshots"),
     redis.get("pm:score-history"),
+    redis.get("pm:position-theses"),
   ]);
 
   const thesis = parse<ThesisHoldings>(thesisRaw, null);
@@ -155,5 +171,32 @@ export async function loadAlertInputs(): Promise<AlertInputs> {
       return { ticker: tk, netRevisions: netRevFor(tk), scoreDelta: scoreDeltaFor(tk), riskLevel: r.riskLevel };
     });
 
-  return { thesis, transition, risk, context, watchlist };
+  // ── Kill-condition sweep: every underwritten name, evaluated with the SAME
+  //    pure checker the stock-page tile uses, from the signals loaded above. ──
+  const posTheses = parse<Record<string, { why?: string; killConditions?: KillCondition[]; underwrittenAt?: string; reUnderwriteBy?: string }>>(posThesesRaw, {});
+  const stockByTicker = new Map<string, StoredStock>();
+  for (const s of stocks) if (s.ticker) stockByTicker.set(s.ticker.toUpperCase(), s);
+  const killWatch: KillWatchRow[] = [];
+  for (const [rawTk, t] of Object.entries(posTheses)) {
+    const conds = Array.isArray(t?.killConditions) ? t.killConditions : [];
+    if (!conds.length) continue;
+    const tk = rawTk.toUpperCase();
+    const st = stockByTicker.get(tk);
+    const fs = snaps[tk]?.factset;
+    const checks = checkAll(conds, {
+      score: compositeFor(tk),
+      scoreDelta45d: scoreDeltaFor(tk),
+      netRevisions: netRevFor(tk),
+      revUp: typeof fs?.revUp === "number" ? fs.revUp : null,
+      revDown: typeof fs?.revDown === "number" ? fs.revDown : null,
+      riskLevel: st?.riskAlert ? st.riskAlert.level ?? null : st ? null : undefined,
+      price: typeof st?.price === "number" ? st.price : st?.healthData?.currentPrice ?? null,
+      ma200: st?.healthData?.twoHundredDayAvg ?? null,
+    });
+    const { tripped, auto } = trippedCount(checks);
+    killWatch.push({ ticker: tk, why: t?.why, checks, tripped, auto, underwrittenAt: t?.underwrittenAt, reUnderwriteBy: t?.reUnderwriteBy });
+  }
+  killWatch.sort((a, b) => b.tripped - a.tripped || a.ticker.localeCompare(b.ticker));
+
+  return { thesis, transition, risk, context, watchlist, killWatch };
 }

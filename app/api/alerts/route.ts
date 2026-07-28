@@ -18,9 +18,9 @@ const log = createLogger("Alerts");
 
 export async function GET() {
   try {
-    const { thesis, transition, risk, context, watchlist } = await loadAlertInputs();
+    const { thesis, transition, risk, context, watchlist, killWatch } = await loadAlertInputs();
 
-    const alerts = computeAlerts({ thesis, transition, risk, context });
+    const alerts = computeAlerts({ thesis, transition, risk, context, killWatch });
     // A toward-Risk-On lean is a tailwind, not an alert — surfaced green.
     const regimeTailwind = computeRegimeTailwind(transition);
     const opportunities = computeOpportunities({ watchlist, context });

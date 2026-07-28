@@ -128,9 +128,44 @@ export function computeAlerts(input: {
   risk?: RiskInput;
   /** Per-ticker supporting context, keyed by UPPER ticker. */
   context?: Record<string, StockContext>;
+  /** Kill-condition sweep from alert-inputs — YOUR pre-registered exit
+   *  criteria, so a trip outranks generic signal deterioration. */
+  killWatch?: Array<{
+    ticker: string;
+    tripped: number;
+    auto: number;
+    checks: Array<{ status: string; reading: string; condition: { kind: string; note?: string; threshold?: number; trippedAt?: string | null } }>;
+  }>;
 }): Alert[] {
   const alerts: Alert[] = [];
   const ctxFor = (tk: string) => input.context?.[tk];
+
+  // ── Kill conditions — pre-registered exits, checked deterministically ──
+  // These lead the list: unlike thesis-health (generic deterioration), a trip
+  // here violates a rule YOU wrote when you underwrote the position.
+  for (const kw of input.killWatch ?? []) {
+    if (kw.tripped === 0) continue;
+    const trippedChecks = kw.checks.filter((c) => c.status === "tripped");
+    const ctx = ctxFor(kw.ticker);
+    alerts.push({
+      id: `kill-${kw.ticker}`,
+      priority: "high",
+      category: "thesis",
+      ticker: kw.ticker,
+      name: ctx?.name,
+      title: `${kw.ticker} — ${kw.tripped} of ${kw.auto} kill condition${kw.auto === 1 ? "" : "s"} tripped`,
+      detail: trippedChecks
+        .map((c) => `${c.condition.kind.replace(/_/g, " ")}: ${c.reading}${c.condition.trippedAt ? ` (since ${c.condition.trippedAt})` : ""}`)
+        .join(" · "),
+      metrics: [
+        ctx?.composite != null ? `composite ${ctx.composite}` : null,
+        ctx?.netRevisions != null ? `revisions net ${ctx.netRevisions >= 0 ? "+" : ""}${ctx.netRevisions}` : null,
+        ctx?.price != null ? `price ${ctx.price}` : null,
+      ].filter((m): m is string => m != null),
+      action:
+        "This is a condition you pre-registered as 'I am wrong if…'. Open the stock page and respond — Acknowledge-hold or Flag trim/exit; either way it's logged to the journal.",
+    });
+  }
 
   // ── Thesis health — name the SPECIFIC deteriorating signals ──
   for (const h of input.thesis?.holdings ?? []) {
