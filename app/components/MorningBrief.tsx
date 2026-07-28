@@ -1865,28 +1865,9 @@ export function MorningBrief({
 
       {briefMode === "brief" && (
       <>
-      {/* ── Decide: the day's verdict + the four decision tiles ── */}
-      <div id="s-decide" className="space-y-6 scroll-mt-[132px]">
-      {/* Slim can't-miss earnings strip — portfolio holdings reporting within 7
-          days. Amber so it reads instantly; horizontally scrollable if many.
-          Hidden when nothing is upcoming. */}
-      {earningsSoon.length > 0 && (
-        <section className="flex items-center gap-2 rounded-lg border border-warn-border bg-warn-soft px-3 py-1.5">
-          <span className="flex shrink-0 items-center gap-1 text-[11px] font-bold uppercase tracking-wider text-warn">
-            <svg className="h-3.5 w-3.5" fill="none" stroke="currentColor" strokeWidth="2" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" d="M6.75 3v2.25M17.25 3v2.25M3 18.75V7.5a2.25 2.25 0 012.25-2.25h13.5A2.25 2.25 0 0121 7.5v11.25m-18 0A2.25 2.25 0 005.25 21h13.5A2.25 2.25 0 0021 18.75m-18 0v-7.5A2.25 2.25 0 015.25 9h13.5A2.25 2.25 0 0121 11.25v7.5" /></svg>
-            Earnings ≤7d
-          </span>
-          <div className="flex items-center gap-1.5 overflow-x-auto">
-            {earningsSoon.map((e) => (
-              <span key={e.ticker} className="inline-flex shrink-0 items-center gap-1 whitespace-nowrap rounded-full border border-warn-border bg-white px-2 py-0.5 text-[11px]">
-                <span className="font-mono font-bold text-ink">{displayTicker(e.ticker)}</span>
-                <span className="font-semibold text-warn">{e.days === 0 ? "today" : e.days === 1 ? "tmrw" : formatYmd(e.date)}</span>
-              </span>
-            ))}
-          </div>
-        </section>
-      )}
-
+      {/* ── Decide: the verdict on the left, four compact decision tiles on the right ── */}
+      <div id="s-decide" className="grid grid-cols-1 gap-4 lg:grid-cols-[1.55fr_1fr] scroll-mt-[132px]">
+        <div className="space-y-4 min-w-0">
       {/* Bottom Line */}
       <section className="relative rounded-card bg-warn-soft border border-warn-border p-5 shadow-sm">
         {generating && <LoadingOverlay message="Claude is analyzing markets..." />}
@@ -1912,6 +1893,8 @@ export function MorningBrief({
         </section>
       )}
 
+        </div>
+        <div className="grid grid-cols-1 gap-4 sm:grid-cols-2 content-start min-w-0">
       {/* Regime-transition gauge (Phase 02) — how close the current regime is
           to flipping + the early tells. A compact one-liner; the tells sit
           below as small pills. Hidden on briefs generated before Phase 02. */}
@@ -1946,80 +1929,6 @@ export function MorningBrief({
         </section>
       )}
 
-      {/* Catalyst watch — the next ~2 weeks (Phase 01). Deterministic dated
-          event strip (earnings for the book + econ + FOMC) plus the model's
-          exposure read. Hidden when there's neither prose nor events (old
-          briefs pre-date this and fall through gracefully). */}
-      {(catalystWatch || catalystEvents.length > 0) && (
-        <section className="rounded-xl border border-line bg-white px-4 py-3.5 shadow-sm">
-          <div className="mb-2.5 flex items-center gap-2">
-            <span className="rounded-md bg-ink px-1.5 py-0.5 text-[10px] font-bold uppercase tracking-wider text-white">Next 2 weeks</span>
-            <span className="text-xs font-semibold text-ink-3">Catalyst watch</span>
-          </div>
-          {catalystWatch && (
-            <p className="mb-3 text-sm leading-6 text-ink-2">{catalystWatch}</p>
-          )}
-          {catalystEvents.length > 0 && (
-            <>
-              <ul className="flex flex-col gap-1.5">
-                {visibleCatalystEvents.map((e, i) => (
-                  <li key={`${e.date}-${e.title}-${i}`} className="flex items-center gap-2.5 text-[13px]">
-                    <span className="w-[92px] shrink-0 whitespace-nowrap font-mono text-[11px] tabular-nums text-ink-3">
-                      {fmtCatalystDate(e.date)}
-                    </span>
-                    <span
-                      className={`h-1.5 w-1.5 shrink-0 rounded-full ${e.importance === "high" ? "bg-warn" : "bg-ink-faint"}`}
-                      aria-hidden
-                    />
-                    <span className="text-ink">{e.title}</span>
-                    {e.kind === "earnings" && e.bucket === "Portfolio" && (
-                      <span className="rounded-full bg-accent-soft px-1.5 py-px text-[10px] font-semibold text-accent">held</span>
-                    )}
-                  </li>
-                ))}
-              </ul>
-              {(catalystHiddenCount > 0 || catalystExpanded) && catalystEvents.length > CATALYST_COLLAPSED && (
-                <button
-                  onClick={() => setCatalystExpanded((v) => !v)}
-                  className="mt-2 text-[11px] font-semibold text-accent hover:text-accent-ink transition-colors"
-                >
-                  {catalystExpanded ? "Show less" : `Show ${catalystHiddenCount} more`}
-                </button>
-              )}
-            </>
-          )}
-        </section>
-      )}
-      </div>
-      {/* ── Act: what to do today + the risk flags behind it ── */}
-      <div id="s-act" className="space-y-6 scroll-mt-[132px]">
-      {/* Top Actions Today + Hedging Call + Cash Deployment — at-a-glance
-          executive summary. Renders only when the brief has the new fields
-          populated (old briefs in pm:brief pre-date these and fall through
-          gracefully).
-
-          Layout: Top Actions spans 2 cols on wide screens; Hedging and Cash
-          Deployment each take 1 col. On narrow screens everything stacks
-          single-column. */}
-      {(topActionsToday.length > 0 || hedgingCall) && (
-        <section className="grid grid-cols-1 lg:grid-cols-3 gap-4">
-          {topActionsToday.length > 0 && (
-            <div className="lg:col-span-2 rounded-card border border-line bg-white p-5 shadow-sm">
-              <div className="text-xs font-bold uppercase tracking-[0.22em] text-ink-3 mb-3">
-                Top actions today
-              </div>
-              <ul className="space-y-2">
-                {topActionsToday.map((action, i) => (
-                  <li key={i} className="flex items-start gap-3 text-sm leading-6 text-ink">
-                    <span className="mt-[3px] inline-flex h-5 w-5 flex-none items-center justify-center rounded-full bg-ink text-[10px] font-bold text-white">
-                      {i + 1}
-                    </span>
-                    <span>{action}</span>
-                  </li>
-                ))}
-              </ul>
-            </div>
-          )}
           {hedgingCall && (
             <div className={`rounded-card border p-5 shadow-sm ${
               hedgingCall.action === "ADD"
@@ -2186,9 +2095,6 @@ export function MorningBrief({
               )}
             </div>
           )}
-        </section>
-      )}
-
       {/* Cash Deployment — full-width row below (it carries the most text, so
           stretching it across the page instead of a narrow column cuts scroll). */}
       {cashDeploymentCall && (() => {
@@ -2256,6 +2162,50 @@ export function MorningBrief({
               </div>
             );
           })()}
+      {/* Slim can't-miss earnings strip — portfolio holdings reporting within 7
+          days. Amber so it reads instantly; horizontally scrollable if many.
+          Hidden when nothing is upcoming. */}
+      {earningsSoon.length > 0 && (
+        <section className="flex items-center gap-2 rounded-lg border border-warn-border bg-warn-soft px-3 py-1.5">
+          <span className="flex shrink-0 items-center gap-1 text-[11px] font-bold uppercase tracking-wider text-warn">
+            <svg className="h-3.5 w-3.5" fill="none" stroke="currentColor" strokeWidth="2" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" d="M6.75 3v2.25M17.25 3v2.25M3 18.75V7.5a2.25 2.25 0 012.25-2.25h13.5A2.25 2.25 0 0121 7.5v11.25m-18 0A2.25 2.25 0 005.25 21h13.5A2.25 2.25 0 0021 18.75m-18 0v-7.5A2.25 2.25 0 015.25 9h13.5A2.25 2.25 0 0121 11.25v7.5" /></svg>
+            Earnings ≤7d
+          </span>
+          <div className="flex items-center gap-1.5 overflow-x-auto">
+            {earningsSoon.map((e) => (
+              <span key={e.ticker} className="inline-flex shrink-0 items-center gap-1 whitespace-nowrap rounded-full border border-warn-border bg-white px-2 py-0.5 text-[11px]">
+                <span className="font-mono font-bold text-ink">{displayTicker(e.ticker)}</span>
+                <span className="font-semibold text-warn">{e.days === 0 ? "today" : e.days === 1 ? "tmrw" : formatYmd(e.date)}</span>
+              </span>
+            ))}
+          </div>
+        </section>
+      )}
+
+        </div>
+      </div>
+      {/* ── Act: what to do today, with the risk flags that justify it ── */}
+      <div id="s-act" className="grid grid-cols-1 gap-4 lg:grid-cols-[1.55fr_1fr] scroll-mt-[132px]">
+        <div className="min-w-0">
+          {topActionsToday.length > 0 && (
+            <div className="lg:col-span-2 rounded-card border border-line bg-white p-5 shadow-sm">
+              <div className="text-xs font-bold uppercase tracking-[0.22em] text-ink-3 mb-3">
+                Top actions today
+              </div>
+              <ul className="space-y-2">
+                {topActionsToday.map((action, i) => (
+                  <li key={i} className="flex items-start gap-3 text-sm leading-6 text-ink">
+                    <span className="mt-[3px] inline-flex h-5 w-5 flex-none items-center justify-center rounded-full bg-ink text-[10px] font-bold text-white">
+                      {i + 1}
+                    </span>
+                    <span>{action}</span>
+                  </li>
+                ))}
+              </ul>
+            </div>
+          )}
+        </div>
+        <div className="min-w-0">
       {/* Portfolio Risk Scan (left, wider) + Hedging Window (right) — 2-col
           row matching the mockup. Risk Scan hides when empty; the Hedging
           Window always renders. */}
@@ -2315,7 +2265,52 @@ export function MorningBrief({
           />
         </div>
       </section>
+        </div>
       </div>
+      {/* Catalyst watch — the next ~2 weeks (Phase 01). Deterministic dated
+          event strip (earnings for the book + econ + FOMC) plus the model's
+          exposure read. Hidden when there's neither prose nor events (old
+          briefs pre-date this and fall through gracefully). */}
+      {(catalystWatch || catalystEvents.length > 0) && (
+        <section className="rounded-xl border border-line bg-white px-4 py-3.5 shadow-sm">
+          <div className="mb-2.5 flex items-center gap-2">
+            <span className="rounded-md bg-ink px-1.5 py-0.5 text-[10px] font-bold uppercase tracking-wider text-white">Next 2 weeks</span>
+            <span className="text-xs font-semibold text-ink-3">Catalyst watch</span>
+          </div>
+          {catalystWatch && (
+            <p className="mb-3 text-sm leading-6 text-ink-2">{catalystWatch}</p>
+          )}
+          {catalystEvents.length > 0 && (
+            <>
+              <ul className="flex flex-col gap-1.5">
+                {visibleCatalystEvents.map((e, i) => (
+                  <li key={`${e.date}-${e.title}-${i}`} className="flex items-center gap-2.5 text-[13px]">
+                    <span className="w-[92px] shrink-0 whitespace-nowrap font-mono text-[11px] tabular-nums text-ink-3">
+                      {fmtCatalystDate(e.date)}
+                    </span>
+                    <span
+                      className={`h-1.5 w-1.5 shrink-0 rounded-full ${e.importance === "high" ? "bg-warn" : "bg-ink-faint"}`}
+                      aria-hidden
+                    />
+                    <span className="text-ink">{e.title}</span>
+                    {e.kind === "earnings" && e.bucket === "Portfolio" && (
+                      <span className="rounded-full bg-accent-soft px-1.5 py-px text-[10px] font-semibold text-accent">held</span>
+                    )}
+                  </li>
+                ))}
+              </ul>
+              {(catalystHiddenCount > 0 || catalystExpanded) && catalystEvents.length > CATALYST_COLLAPSED && (
+                <button
+                  onClick={() => setCatalystExpanded((v) => !v)}
+                  className="mt-2 text-[11px] font-semibold text-accent hover:text-accent-ink transition-colors"
+                >
+                  {catalystExpanded ? "Show less" : `Show ${catalystHiddenCount} more`}
+                </button>
+              )}
+            </>
+          )}
+        </section>
+      )}
       {/* ── Board: contrarian gauges + macro tiles ── */}
       <div id="s-board" className="space-y-6 scroll-mt-[132px]">
       {/* Contrarian Sentiment — all 4 indicators + Claude analysis */}
