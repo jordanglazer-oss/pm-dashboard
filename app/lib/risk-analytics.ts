@@ -77,6 +77,10 @@ export type RiskCluster = {
   members: string[];
   avgCorr: number;
   totalWeight: number; // 0..1
+  /** "fund" clusters are broad ETFs/funds that correlate by construction —
+   *  the UI presents them as the core allocation, not a concentration risk.
+   *  Absent on results computed before this field existed (treated as stock). */
+  kind?: "stock" | "fund";
 };
 
 export type SectorExposure = {
@@ -241,10 +245,17 @@ export async function computeRiskAnalytics(): Promise<RiskAnalytics | { error: s
   });
 
   // ── Correlation clusters (union-find over pairs ≥ threshold) ──
+  // Funds and single names cluster SEPARATELY: broad ETFs correlate ~0.8+
+  // with each other by construction, so mixing them lumped the entire core
+  // allocation plus adjacent names into one giant "risk" cluster and buried
+  // the real signal (single names secretly trading as one position).
+  // instrumentType unset means stock (same convention as the beta writer).
+  const isFund = included.map((s) => s.instrumentType != null && s.instrumentType !== "stock");
   const parent = Array.from({ length: n }, (_, i) => i);
   const find = (x: number): number => (parent[x] === x ? x : (parent[x] = find(parent[x])));
   for (let i = 0; i < n; i++) {
     for (let j = i + 1; j < n; j++) {
+      if (isFund[i] !== isFund[j]) continue;
       if (corr(i, j) >= CLUSTER_THRESHOLD) parent[find(i)] = find(j);
     }
   }
@@ -265,6 +276,7 @@ export async function computeRiskAnalytics(): Promise<RiskAnalytics | { error: s
       members: idxs.map((i) => included[i].ticker),
       avgCorr: Math.round((cSum / pairs) * 100) / 100,
       totalWeight: Math.round(idxs.reduce((a, i) => a + w[i], 0) * 1000) / 1000,
+      kind: isFund[idxs[0]] ? "fund" : "stock",
     });
   }
   clusters.sort((a, b) => b.totalWeight - a.totalWeight);

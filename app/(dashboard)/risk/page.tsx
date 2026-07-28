@@ -17,7 +17,7 @@ type RiskName = {
   weight: number; rawWeight: number; beta: number;
   annVol: number | null; maxDrawdown: number | null; ctrPct: number | null; bars: number;
 };
-type RiskCluster = { members: string[]; avgCorr: number; totalWeight: number };
+type RiskCluster = { members: string[]; avgCorr: number; totalWeight: number; kind?: "stock" | "fund" };
 type SectorExposure = { sector: string; weight: number; betaWeighted: number; spWeight: number | null };
 type ScenarioResult = {
   key: string; label: string; note: string;
@@ -172,12 +172,27 @@ export default function RiskPage() {
               <div className="mt-3 text-xs text-ink-3">No clusters at the 0.70 threshold — the book&rsquo;s names are trading independently.</div>
             ) : (
               <div className="mt-3 grid grid-cols-1 gap-3 md:grid-cols-2">
-                {data.clusters.map((c, i) => (
-                  <div key={i} className={`rounded-card border p-3 ${c.totalWeight >= 0.2 ? "border-neg-border bg-neg-soft" : "border-line bg-surface-2"}`}>
+                {/* Fund clusters are the CORE ALLOCATION — broad ETFs correlate
+                    with each other by construction, so their cluster is
+                    expected structure, never flagged as concentration risk.
+                    The ⚠ treatment is reserved for single-name clusters. */}
+                {data.clusters.map((c, i) => {
+                  const isFund = c.kind === "fund";
+                  const hot = !isFund && c.totalWeight >= 0.2;
+                  return (
+                  <div key={i} className={`rounded-card border p-3 ${hot ? "border-neg-border bg-neg-soft" : "border-line bg-surface-2"}`}>
                     <div className="flex items-center justify-between">
-                      <span className="text-xs font-semibold text-ink">{c.totalWeight >= 0.2 ? "⚠ " : ""}Cluster {i + 1} · {pct(c.totalWeight)} of book</span>
+                      <span className="text-xs font-semibold text-ink">
+                        {hot ? "⚠ " : ""}
+                        {isFund ? "Core funds" : `Cluster ${i + 1}`} · {pct(c.totalWeight)} of book
+                      </span>
                       <span className="text-[11px] text-ink-3">avg corr {c.avgCorr.toFixed(2)}</span>
                     </div>
+                    {isFund && (
+                      <p className="mt-1 text-[11px] text-ink-3">
+                        Broad funds — correlated by construction. Expected structure, not a concentration signal.
+                      </p>
+                    )}
                     <div className="mt-1.5 flex flex-wrap gap-1.5">
                       {c.members.map((t) => (
                         <Link key={t} href={`/stock/${encodeURIComponent(t)}`} className="rounded bg-white px-1.5 py-0.5 font-mono text-[11px] font-semibold text-ink border border-line hover:text-accent">
@@ -186,7 +201,8 @@ export default function RiskPage() {
                       ))}
                     </div>
                   </div>
-                ))}
+                  );
+                })}
               </div>
             )}
           </div>
