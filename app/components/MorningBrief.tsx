@@ -15,7 +15,6 @@ import { displayTicker } from "@/app/lib/ticker";
 import { formatYmd, daysUntilYmd } from "@/app/lib/date-format";
 import { LoadingOverlay } from "./LoadingSpinner";
 import { SentimentGauges } from "./SentimentGauges";
-import { HedgingIndicator } from "./HedgingIndicator";
 import { ImageUpload, LightboxModal, type BriefAttachment } from "./ImageUpload";
 import { BriefCommandBar } from "./BriefCommandBar";
 import { CollapsibleSection } from "./CollapsibleSection";
@@ -1234,6 +1233,22 @@ export function MorningBrief({
   // reads amber (not red), a thaw toward Neutral reads soft-green, a full Risk-On
   // shift reads green, and only a slide toward Risk-Off wears the red risk scale.
   const regimeTransition = brief?.regimeTransition ?? null;
+
+  // Signal split behind the composite label, for the Decide regime tile's bar.
+  // Counts come from the live regime blob (not the brief snapshot) so the bar
+  // matches the Board; null when the blob hasn't loaded and the bar is skipped.
+  const regimeComposite = React.useMemo(() => {
+    const c = marketRegime?.composite;
+    if (!c || !Array.isArray(c.signals) || c.signals.length === 0) return null;
+    const count = (d: string) => c.signals.filter((s) => s.direction === d).length;
+    return {
+      score: c.score,
+      total: c.total || c.signals.length,
+      on: count("risk-on"),
+      neutral: count("neutral"),
+      off: count("risk-off"),
+    };
+  }, [marketRegime]);
   const transitionValence = regimeTransition
     ? regimeValence(regimeTransition.basedOnRegime, regimeTransition.leaning)
     : "none";
@@ -1919,27 +1934,55 @@ export function MorningBrief({
           below as small pills. Hidden on briefs generated before Phase 02. */}
       {regimeTransition && (
         <section className="rounded-xl border border-line bg-white px-4 py-3 shadow-sm">
-          <div className="flex flex-wrap items-center gap-x-2.5 gap-y-1 text-[13px]">
-            <span className="rounded-md bg-ink px-1.5 py-0.5 text-[10px] font-bold uppercase tracking-wider text-white">Regime shift</span>
-            <span className="font-semibold text-ink">{regimeTransition.basedOnRegime}</span>
-            <span className="text-ink-faint">·</span>
-            <span className={`font-semibold ${transitionLeanClass}`}>{regimeTransition.leaning}</span>
-            <span className={`rounded-full px-2 py-0.5 text-[10px] font-bold uppercase tracking-wide ${transitionRiskClass}`}>
-              {transitionBadgeText}
-            </span>
-            <span className="text-[11px] text-ink-3">
-              {regimeTransition.boundaryGap} signal{regimeTransition.boundaryGap === 1 ? "" : "s"} from a flip
+          {/* Mock form: label pill + distance-to-flip on one row, the composite
+              read big, a proportional 3-segment bar, then the signal counts.
+              Replaces the old 5-element wrapping header, which cost 3 lines at
+              this column width. The transition tells are kept below — they are
+              the early warning and are not shown anywhere else. */}
+          <div className="flex items-center justify-between gap-2">
+            <span className="rounded-md bg-ink px-1.5 py-0.5 text-[10px] font-bold uppercase tracking-wider text-white">Regime</span>
+            <span className="text-[10px] text-ink-3">
+              {regimeTransition.boundaryGap} from a flip
             </span>
           </div>
+          <div className="mt-1.5 flex items-baseline gap-1.5">
+            <span className="text-xl font-semibold tracking-tight text-ink">{regimeTransition.basedOnRegime}</span>
+            {regimeComposite && (
+              <span className="font-mono text-sm text-ink-2">
+                {regimeComposite.score}/{regimeComposite.total}
+              </span>
+            )}
+            <span className={`ml-auto text-[10px] font-bold uppercase tracking-wide ${transitionLeanClass}`}>
+              {regimeTransition.leaning}
+            </span>
+          </div>
+          {regimeComposite && regimeComposite.total > 0 && (
+            <>
+              {/* Proportional split of the signals actually evaluated. */}
+              <div className="mt-2 flex h-1.5 overflow-hidden rounded-pill bg-line">
+                {([["on","bg-pos"],["neutral","bg-warn"],["off","bg-neg"]] as const).map(([k, tone]) => {
+                  const n = k === "on" ? regimeComposite.on : k === "neutral" ? regimeComposite.neutral : regimeComposite.off;
+                  if (!n) return null;
+                  return <div key={k} className={tone} style={{ width: `${(n / regimeComposite.total) * 100}%` }} />;
+                })}
+              </div>
+              <div className="mt-1.5 font-mono text-[10px] text-ink-3">
+                {regimeComposite.on} risk-on · {regimeComposite.neutral} neutral · {regimeComposite.off} risk-off
+              </div>
+            </>
+          )}
+          <div className={`mt-2 text-[10px] font-bold uppercase tracking-wide ${transitionRiskClass} inline-block rounded-full px-2 py-0.5`}>
+            {transitionBadgeText}
+          </div>
           {regimeTransition.tells.length > 0 && (
-            <div className="mt-2 flex flex-wrap gap-1.5">
+            <div className="mt-2 flex flex-wrap gap-1">
               {regimeTransition.tells.map((t, i) => (
                 <span
                   key={`${t.name}-${i}`}
-                  className="inline-flex items-center gap-1.5 rounded-full border border-line-soft px-2 py-0.5 text-[11px] text-ink-2"
+                  className="inline-flex items-center gap-1 rounded-full border border-line-soft px-1.5 py-0.5 text-[10px] text-ink-2"
                   title={t.detail}
                 >
-                  <span className={`h-1.5 w-1.5 rounded-full ${t.momentum === "deteriorating" ? "bg-neg" : "bg-pos"}`} aria-hidden />
+                  <span className={`h-1 w-1 rounded-full ${t.momentum === "deteriorating" ? "bg-neg" : "bg-pos"}`} aria-hidden />
                   {t.name}
                 </span>
               ))}
@@ -2207,12 +2250,10 @@ export function MorningBrief({
           )}
         </div>
         <div className="min-w-0">
-      {/* Portfolio Risk Scan (left, wider) + Hedging Window (right) — 2-col
-          row matching the mockup. Risk Scan hides when empty; the Hedging
-          Window always renders. */}
-      {/* Single column: this section now lives INSIDE Act's narrow right
-          column, so the old 5-col split squeezed Risk Scan into a tall thin
-          strip. Risk Scan and the Hedging Window stack instead. */}
+      {/* Portfolio Risk Scan — full width. The Hedging Window card that
+          used to sit beside it was a duplicate of the Decide hedging tile;
+          its full detail (strike ladder, checklist, premium percentiles)
+          lives in the Narrative "Hedging data basis" row. */}
       <section className="grid gap-4 grid-cols-1 items-start">
         {riskScan && riskScan.length > 0 ? (
           <div className="rounded-card border border-line bg-white p-4 shadow-sm">
@@ -2262,17 +2303,6 @@ export function MorningBrief({
           <div className="hidden" />
         )}
 
-        {/* Hedging Window */}
-        <div className="">
-          <HedgingIndicator
-            vix={activeForward?.vixWeek?.value ?? 20}
-            termStructure={marketData.termStructure}
-            fearGreed={activeForward?.fearGreed?.value ?? marketData.fearGreed}
-            hedgingAnalysis={hedgingAnalysis}
-            horizons={marketRegime?.horizons}
-            compact
-          />
-        </div>
       </section>
         </div>
       </div>
