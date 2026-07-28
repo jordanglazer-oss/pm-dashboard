@@ -52,6 +52,11 @@ type TileSpec = {
   inverse?: boolean;
   /** Render the delta as absolute bps/pts rather than a percentage. */
   deltaAbs?: boolean;
+  /** Suppress the delta entirely. Needed where `previous` is NOT a prior
+   *  reading of `value` but a baseline of a different kind — e.g. spxYtd's
+   *  value is a percent while its previous is the index close it is measured
+   *  from, so any arithmetic between the two is meaningless. */
+  noDelta?: boolean;
 };
 
 const fmtNum = (v: number, dp: number) =>
@@ -62,7 +67,7 @@ function Tile({ spec }: { spec: TileSpec }) {
   if (!p || p.value == null) return null; // no blank tiles
   const dp = spec.dp ?? 1;
   const prev = p.previous;
-  const delta = prev != null && isFinite(prev) ? p.value - prev : null;
+  const delta = spec.noDelta || prev == null || !isFinite(prev) ? null : p.value - prev;
   const deltaPct = delta != null && prev ? (delta / Math.abs(prev)) * 100 : null;
   const good = delta == null ? null : spec.inverse ? delta < 0 : delta > 0;
   const stale = p.status === "stale";
@@ -151,8 +156,8 @@ export function MacroBoard({
     if (!fwd) return [];
     const t: TileSpec[] = [
       // ── Breadth & Trend ──
-      { band: "breadth", label: "S&P 500 YTD", point: fwd.spxYtd, unit: "%", horizon: "3–6M" },
-      { band: "breadth", label: "S&P Week", point: fwd.spxWeek, unit: "%", horizon: "1–3M" },
+      { band: "breadth", label: "S&P 500 YTD", point: fwd.spxYtd, unit: "%", noDelta: true, horizon: "3–6M" },
+      { band: "breadth", label: "S&P Week", point: fwd.spxWeek, unit: "%", noDelta: true, horizon: "1–3M" },
       { band: "breadth", label: ">200DMA wk", point: fwd.breadth200Wk, deltaAbs: true, horizon: "3–6M" },
       { band: "breadth", label: ">200DMA mo", point: fwd.breadth200Mo, deltaAbs: true, horizon: "3–6M" },
       { band: "breadth", label: ">50DMA wk", point: fwd.breadth50Wk, deltaAbs: true, horizon: "1–3M" },
@@ -161,7 +166,7 @@ export function MacroBoard({
       { band: "breadth", label: "Broad >50 wk", point: fwd.breadthBroad_50Wk, deltaAbs: true },
       { band: "breadth", label: "NYSE new highs", point: fwd.newHighsWk, dp: 0, deltaAbs: true },
       { band: "breadth", label: "NYSE new lows", point: fwd.newLowsWk, dp: 0, deltaAbs: true, inverse: true },
-      { band: "breadth", label: "NYSE up vol", point: fwd.upVolumePct, unit: "%" },
+      { band: "breadth", label: "NYSE up vol", point: fwd.upVolumePct, unit: "%", deltaAbs: true },
       // ── Valuation & Growth ──
       { band: "valuation", label: "SPY fwd P/E", point: fwd.spyForwardPE, inverse: true, horizon: "6–12M" },
       { band: "valuation", label: "SPY trail P/E", point: fwd.spyTrailingPE, inverse: true, horizon: "6–12M" },
