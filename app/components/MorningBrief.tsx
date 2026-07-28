@@ -1970,9 +1970,9 @@ export function MorningBrief({
                   onClick={refreshHedging}
                   disabled={hedgeRefreshing}
                   title="Re-run only the hedging read from live premiums — does not regenerate the brief"
-                  className="rounded-full bg-white/70 px-2.5 py-0.5 text-[11px] font-medium text-ink-2 border border-line hover:text-ink disabled:opacity-50"
+                  className="rounded-full border border-line bg-white/70 px-1.5 py-0.5 text-[11px] text-ink-3 hover:text-ink disabled:opacity-50"
                 >
-                  {hedgeRefreshing ? "Refreshing…" : "↻ Refresh"}
+                  {hedgeRefreshing ? "…" : "↻"}
                 </button>
               </div>
               <div className="flex items-baseline gap-2 mb-2">
@@ -1991,7 +1991,7 @@ export function MorningBrief({
                   </span>
                 )}
               </div>
-              <p className="text-sm leading-5 text-ink-2">
+              <p className="line-clamp-2 text-sm leading-5 text-ink-2" title={hedgingCall.reason}>
                 {hedgingCall.reason}
               </p>
               {brief?.hedgeChecklist && (
