@@ -1894,7 +1894,10 @@ export function MorningBrief({
       )}
 
         </div>
-        <div className="grid grid-cols-1 gap-4 sm:grid-cols-2 content-start min-w-0">
+        {/* items-start is load-bearing: without it every tile stretches to the
+            tallest in its row, so a verbose Cash tile left the calendar tile as
+            a tall empty box. Each tile is now only as tall as its content. */}
+        <div className="grid grid-cols-1 gap-4 sm:grid-cols-2 content-start items-start min-w-0">
       {/* Regime-transition gauge (Phase 02) — how close the current regime is
           to flipping + the early tells. A compact one-liner; the tells sit
           below as small pills. Hidden on briefs generated before Phase 02. */}
@@ -2128,13 +2131,23 @@ export function MorningBrief({
                   </span>
                   <span className="text-xs text-ink-2">{cashDeploymentCall.window}</span>
                 </div>
-                <p className="text-sm leading-5 text-ink-2 mb-2.5">
-                  {cashDeploymentCall.reason}
-                </p>
+                {/* Clamped: this tile now sits in the Decide column, and the
+                    full reasoning + Newton note ran long enough to dwarf the
+                    other three tiles. Nothing is lost — ClampText keeps the
+                    whole text one click away. */}
+                <ClampText
+                  text={cashDeploymentCall.reason}
+                  className="mb-2.5"
+                  textClassName="text-sm leading-5 text-ink-2"
+                  lines={4}
+                />
                 {cashDeploymentCall.newtonPersistence && (
-                  <p className="text-xs leading-5 text-ink-2 italic mb-2.5">
-                    Newton: {cashDeploymentCall.newtonPersistence}
-                  </p>
+                  <ClampText
+                    text={`Newton: ${cashDeploymentCall.newtonPersistence}`}
+                    className="mb-2.5"
+                    textClassName="text-xs leading-5 text-ink-2 italic"
+                    lines={3}
+                  />
                 )}
                 {(cashDeploymentCall.triggersMet?.length || cashDeploymentCall.triggersMissing?.length) ? (
                   <div className="grid sm:grid-cols-2 gap-x-8 gap-y-1 mb-2.5 text-[11px] leading-4">
@@ -2209,9 +2222,12 @@ export function MorningBrief({
       {/* Portfolio Risk Scan (left, wider) + Hedging Window (right) — 2-col
           row matching the mockup. Risk Scan hides when empty; the Hedging
           Window always renders. */}
-      <section className="grid gap-4 lg:grid-cols-5 items-start">
+      {/* Single column: this section now lives INSIDE Act's narrow right
+          column, so the old 5-col split squeezed Risk Scan into a tall thin
+          strip. Risk Scan and the Hedging Window stack instead. */}
+      <section className="grid gap-4 grid-cols-1 items-start">
         {riskScan && riskScan.length > 0 ? (
-          <div className="lg:col-span-3 rounded-card border border-line bg-white p-4 shadow-sm">
+          <div className="rounded-card border border-line bg-white p-4 shadow-sm">
             <div className="flex items-center gap-2 mb-1">
               <h3 className="text-base font-semibold">Portfolio Risk Scan</h3>
               <span className="text-xs font-semibold text-neg">{riskScan.length} flagged</span>
@@ -2250,11 +2266,11 @@ export function MorningBrief({
             </div>
           </div>
         ) : (
-          <div className="lg:col-span-3" />
+          <div className="hidden" />
         )}
 
         {/* Hedging Window */}
-        <div className="lg:col-span-2">
+        <div className="">
           <HedgingIndicator
             vix={activeForward?.vixWeek?.value ?? 20}
             termStructure={marketData.termStructure}
