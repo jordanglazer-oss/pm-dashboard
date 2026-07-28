@@ -1867,6 +1867,8 @@ export function MorningBrief({
 
       {briefMode === "brief" && (
       <>
+      {/* ── Decide: the day's verdict + the four decision tiles ── */}
+      <div id="s-decide" className="space-y-6 scroll-mt-[132px]">
       {/* Slim can't-miss earnings strip — portfolio holdings reporting within 7
           days. Amber so it reads instantly; horizontally scrollable if many.
           Hidden when nothing is upcoming. */}
@@ -1990,7 +1992,9 @@ export function MorningBrief({
           )}
         </section>
       )}
-
+      </div>
+      {/* ── Act: what to do today + the risk flags behind it ── */}
+      <div id="s-act" className="space-y-6 scroll-mt-[132px]">
       {/* Top Actions Today + Hedging Call + Cash Deployment — at-a-glance
           executive summary. Renders only when the brief has the new fields
           populated (old briefs in pm:brief pre-date these and fall through
@@ -2379,43 +2383,178 @@ export function MorningBrief({
               </div>
             );
           })()}
-
-      {/* Composite Signal — the weighted regime read that DETERMINES the regime,
-          surfaced high on the page (right under the at-a-glance actions) rather
-          than buried below the Forward View. */}
-      <section className="rounded-card border border-line bg-white p-4 shadow-sm">
-        <div className="flex flex-wrap items-center gap-2">
-          <span className="text-base">🔍</span>
-          <h2 className="text-base font-semibold">Composite Signal</h2>
-          <SignalPill tone={compositeSignalTone}>{marketData.compositeSignal}</SignalPill>
-          <span className="text-xs text-ink-3">
-            Conviction: {marketData.conviction}
-          </span>
-          {brief?.marketRegime && (
-            <SignalPill tone={brief.marketRegime === "Risk-Off" ? "red" : brief.marketRegime === "Risk-On" ? "green" : "amber"}>
-              {brief.marketRegime}
-            </SignalPill>
-          )}
-        </div>
-        <p className="mt-1 text-xs text-ink-3">
-          The deterministic regime read — what the tape and macro data say the market <strong className="text-ink-2">is</strong> doing, and what to focus on.
-        </p>
-        <ClampText text={compositeAnalysis} className="mt-2" />
-      </section>
-
-      {/* Non-consensus edge — what the tape may be under-pricing. Distilled
-          across all integrated sources; hidden when the model returns blank. */}
-      {brief?.underpriced && brief.underpriced.trim() && (
-        <section className="rounded-card border border-violet-soft bg-violet-soft/40 p-4 shadow-sm">
-          <div className="flex flex-wrap items-center gap-2 mb-1">
-            <span className="text-base">💡</span>
-            <h2 className="text-base font-semibold">What the tape may be under-pricing</h2>
-            <span className="text-[10px] font-bold uppercase tracking-wider text-violet">Non-consensus</span>
+      {/* Portfolio Risk Scan (left, wider) + Hedging Window (right) — 2-col
+          row matching the mockup. Risk Scan hides when empty; the Hedging
+          Window always renders. */}
+      <section className="grid gap-4 lg:grid-cols-5 items-start">
+        {riskScan && riskScan.length > 0 ? (
+          <div className="lg:col-span-3 rounded-card border border-line bg-white p-4 shadow-sm">
+            <div className="flex items-center gap-2 mb-1">
+              <h3 className="text-base font-semibold">Portfolio Risk Scan</h3>
+              <span className="text-xs font-semibold text-neg">{riskScan.length} flagged</span>
+            </div>
+            <div className="divide-y divide-line-soft">
+              {riskScan.map((item, i) => {
+                const badge =
+                  item.priority === "High"
+                    ? { label: "HIGH", cls: "bg-neg text-white" }
+                    : item.priority === "Medium-High"
+                    ? { label: "MED", cls: "bg-warn text-white" }
+                    : item.priority === "Medium"
+                    ? { label: "MED", cls: "bg-warn text-white" }
+                    : { label: "LOW", cls: "bg-ink-3 text-white" };
+                const expanded = expandedRisk.has(i);
+                return (
+                  <div
+                    key={i}
+                    className="flex items-start gap-2.5 py-1.5 first:pt-1 cursor-pointer group"
+                    onClick={() => toggleRisk(i)}
+                    title={expanded ? "Click to collapse" : "Click to expand"}
+                  >
+                    <span className={`mt-px shrink-0 rounded px-1.5 py-0.5 text-[10px] font-bold tracking-wide ${badge.cls}`}>
+                      {badge.label}
+                    </span>
+                    <div className="min-w-0 flex-1">
+                      <div className="text-[13px]">
+                        <span className="font-mono font-bold text-ink">{displayTicker(item.ticker)}</span>
+                        {item.action && <span className="text-ink-2"> · {item.action}</span>}
+                      </div>
+                      <p className={`mt-0.5 text-[13px] leading-snug text-ink-3 ${expanded ? "" : "line-clamp-2"}`}>{item.summary}</p>
+                    </div>
+                  </div>
+                );
+              })}
+            </div>
           </div>
-          <p className="text-sm leading-6 text-ink-2">{brief.underpriced}</p>
-        </section>
-      )}
+        ) : (
+          <div className="lg:col-span-3" />
+        )}
 
+        {/* Hedging Window */}
+        <div className="lg:col-span-2">
+          <HedgingIndicator
+            vix={activeForward?.vixWeek?.value ?? 20}
+            termStructure={marketData.termStructure}
+            fearGreed={activeForward?.fearGreed?.value ?? marketData.fearGreed}
+            hedgingAnalysis={hedgingAnalysis}
+            horizons={marketRegime?.horizons}
+            compact
+          />
+        </div>
+      </section>
+      </div>
+      {/* ── Board: contrarian gauges + macro tiles ── */}
+      <div id="s-board" className="space-y-6 scroll-mt-[132px]">
+      {/* Contrarian Sentiment — all 4 indicators + Claude analysis */}
+      <SentimentGauges
+        marketData={marketData}
+        aaiiBull={marketData.aaiiBull ?? 30}
+        aaiiNeutral={marketData.aaiiNeutral ?? 17}
+        aaiiBear={marketData.aaiiBear ?? 52}
+        contrarianAnalysis={contrarianAnalysis}
+        forwardData={activeForward}
+      />
+
+      {/* Credit & Volatility — values pulled from auto-fetched ForwardLookingData */}
+      {(() => {
+        const fmtNum = (v: number | null | undefined): string =>
+          v == null ? "—" : String(v);
+        const hyVal = activeForward?.hyOasTrend?.value ?? null;
+        const igVal = activeForward?.igOasTrend?.value ?? null;
+        const vixVal = activeForward?.vixWeek?.value ?? null;
+        const moveVal = activeForward?.moveWeek?.value ?? null;
+        const breadth200Val = activeForward?.breadth200Wk?.value ?? null;
+        const breadth50Val = activeForward?.breadth50Wk?.value ?? null;
+        return (
+      <>
+      <section className="grid gap-4 lg:grid-cols-3">
+        <div className="rounded-card border border-line bg-white p-4 shadow-sm">
+          <div className="flex items-center justify-between gap-3">
+            <div className="flex items-center gap-2">
+              <span className="text-base">📉</span>
+              <h3 className="text-base font-semibold">Credit Spreads</h3>
+            </div>
+            <SignalPill tone={hyVal != null && hyVal >= 300 ? "red" : hyVal != null && hyVal >= 200 ? "amber" : "green"}>
+              {hyVal != null && hyVal >= 300 ? "Widening" : hyVal != null && hyVal >= 200 ? "Neutral" : "Tight"}
+            </SignalPill>
+          </div>
+          <div className="mt-3 grid grid-cols-2 gap-2">
+            <div className="rounded-xl bg-surface-2 p-2.5">
+              <div className="text-[10px] font-semibold uppercase tracking-wider text-ink-3">HY OAS</div>
+              <div className="mt-1 text-xl font-bold">{fmtNum(hyVal)} <span className="text-xs font-normal text-ink-3">bps</span></div>
+            </div>
+            <div className="rounded-xl bg-surface-2 p-2.5">
+              <div className="text-[10px] font-semibold uppercase tracking-wider text-ink-3">IG OAS</div>
+              <div className="mt-1 text-xl font-bold">{fmtNum(igVal)} <span className="text-xs font-normal text-ink-3">bps</span></div>
+            </div>
+          </div>
+          <p className="mt-2 text-xs text-ink-3">Trend: {hyVal != null && hyVal >= 300 ? "Widening modestly" : "Stable"}</p>
+          <ClampText text={creditAnalysis} className="mt-1.5" />
+        </div>
+
+        <div className="rounded-card border border-line bg-white p-4 shadow-sm">
+          <div className="flex items-center justify-between gap-3">
+            <div className="flex items-center gap-2">
+              <span className="text-base">⚡</span>
+              <h3 className="text-base font-semibold">Volatility Regime</h3>
+            </div>
+            <SignalPill tone={vixVal != null && vixVal >= 22 ? "red" : vixVal != null && vixVal >= 16 ? "amber" : "green"}>
+              {vixVal != null && vixVal >= 22 ? "Elevated" : vixVal != null && vixVal >= 16 ? "Moderate" : "Low"}
+            </SignalPill>
+          </div>
+          <div className="mt-3 grid grid-cols-3 gap-2">
+            <div className="rounded-xl bg-surface-2 p-2.5">
+              <div className="text-[10px] font-semibold uppercase tracking-wider text-ink-3">VIX</div>
+              <div className="mt-1 text-xl font-bold">{fmtNum(vixVal)}</div>
+            </div>
+            <div className="rounded-xl bg-surface-2 p-2.5">
+              <div className="text-[10px] font-semibold uppercase tracking-wider text-ink-3">TERM</div>
+              <div className="mt-1 text-sm font-bold">{marketData.termStructure}</div>
+            </div>
+            <div className="rounded-xl bg-surface-2 p-2.5">
+              <div className="text-[10px] font-semibold uppercase tracking-wider text-ink-3">MOVE</div>
+              <div className="mt-1 text-xl font-bold">{fmtNum(moveVal)}</div>
+            </div>
+          </div>
+          <ClampText text={volatilityAnalysis} className="mt-3" />
+        </div>
+
+        {/* Breadth & Structure — third card in the row (mockup). */}
+        <div className="rounded-card border border-line bg-white p-4 shadow-sm">
+          <div className="flex items-center justify-between gap-3">
+            <div className="flex items-center gap-2">
+              <span className="text-base">📊</span>
+              <h3 className="text-base font-semibold">Breadth &amp; Structure</h3>
+            </div>
+            <SignalPill tone={breadth200Val != null && breadth200Val <= 50 ? "red" : breadth200Val != null && breadth200Val >= 65 ? "green" : "amber"}>
+              {breadth200Val != null && breadth200Val <= 50 ? "Weak" : breadth200Val != null && breadth200Val >= 65 ? "Healthy" : "Mixed"}
+            </SignalPill>
+          </div>
+          <div className="mt-3 space-y-2 text-sm">
+            <div className="flex justify-between border-b border-line-soft pb-2">
+              <span className="text-ink-3">S&amp;P 500 % &gt; 200 DMA</span>
+              <span className="font-mono font-medium">{breadth200Val != null ? `${breadth200Val}%` : "—"}</span>
+            </div>
+            <div className="flex justify-between pb-1">
+              <span className="text-ink-3">S&amp;P 500 % &gt; 50 DMA</span>
+              <span className="font-mono font-medium">{breadth50Val != null ? `${breadth50Val}%` : "—"}</span>
+            </div>
+          </div>
+          <ClampText text={breadthAnalysis} className="mt-3" />
+        </div>
+
+        {/* Fund Flows & Positioning tile retired in 2026-05. Flows
+            are inherently backward-looking and contrarianAnalysis
+            already covers sentiment / positioning extremes. The
+            attached JPM screenshots upload section was also removed
+            with this change. */}
+      </section>
+      </>
+        );
+      })()}
+      </div>
+      {/* ── Horizons: tactical / cyclical / structural ── */}
+      <div id="s-horizon" className="space-y-6 scroll-mt-[132px]">
       {/* Forward View — Next 2 Weeks */}
       <section className="rounded-card border border-accent-border bg-gradient-to-br from-accent-soft/60 to-white p-4 md:p-5 shadow-sm">
         <div className="flex flex-wrap items-center justify-between gap-3 mb-3">
@@ -2673,175 +2812,44 @@ export function MorningBrief({
           </p>
         )}
       </section>
-
-      {/* Contrarian Sentiment — all 4 indicators + Claude analysis */}
-      <SentimentGauges
-        marketData={marketData}
-        aaiiBull={marketData.aaiiBull ?? 30}
-        aaiiNeutral={marketData.aaiiNeutral ?? 17}
-        aaiiBear={marketData.aaiiBear ?? 52}
-        contrarianAnalysis={contrarianAnalysis}
-        forwardData={activeForward}
-      />
-
-      {/* Credit & Volatility — values pulled from auto-fetched ForwardLookingData */}
-      {(() => {
-        const fmtNum = (v: number | null | undefined): string =>
-          v == null ? "—" : String(v);
-        const hyVal = activeForward?.hyOasTrend?.value ?? null;
-        const igVal = activeForward?.igOasTrend?.value ?? null;
-        const vixVal = activeForward?.vixWeek?.value ?? null;
-        const moveVal = activeForward?.moveWeek?.value ?? null;
-        const breadth200Val = activeForward?.breadth200Wk?.value ?? null;
-        const breadth50Val = activeForward?.breadth50Wk?.value ?? null;
-        return (
-      <>
-      <section className="grid gap-4 lg:grid-cols-3">
-        <div className="rounded-card border border-line bg-white p-4 shadow-sm">
-          <div className="flex items-center justify-between gap-3">
-            <div className="flex items-center gap-2">
-              <span className="text-base">📉</span>
-              <h3 className="text-base font-semibold">Credit Spreads</h3>
-            </div>
-            <SignalPill tone={hyVal != null && hyVal >= 300 ? "red" : hyVal != null && hyVal >= 200 ? "amber" : "green"}>
-              {hyVal != null && hyVal >= 300 ? "Widening" : hyVal != null && hyVal >= 200 ? "Neutral" : "Tight"}
+      </div>
+      {/* ── Narrative: the long-form model prose ── */}
+      <div id="s-narrative" className="space-y-6 scroll-mt-[132px]">
+      {/* Composite Signal — the weighted regime read that DETERMINES the regime,
+          surfaced high on the page (right under the at-a-glance actions) rather
+          than buried below the Forward View. */}
+      <section className="rounded-card border border-line bg-white p-4 shadow-sm">
+        <div className="flex flex-wrap items-center gap-2">
+          <span className="text-base">🔍</span>
+          <h2 className="text-base font-semibold">Composite Signal</h2>
+          <SignalPill tone={compositeSignalTone}>{marketData.compositeSignal}</SignalPill>
+          <span className="text-xs text-ink-3">
+            Conviction: {marketData.conviction}
+          </span>
+          {brief?.marketRegime && (
+            <SignalPill tone={brief.marketRegime === "Risk-Off" ? "red" : brief.marketRegime === "Risk-On" ? "green" : "amber"}>
+              {brief.marketRegime}
             </SignalPill>
-          </div>
-          <div className="mt-3 grid grid-cols-2 gap-2">
-            <div className="rounded-xl bg-surface-2 p-2.5">
-              <div className="text-[10px] font-semibold uppercase tracking-wider text-ink-3">HY OAS</div>
-              <div className="mt-1 text-xl font-bold">{fmtNum(hyVal)} <span className="text-xs font-normal text-ink-3">bps</span></div>
-            </div>
-            <div className="rounded-xl bg-surface-2 p-2.5">
-              <div className="text-[10px] font-semibold uppercase tracking-wider text-ink-3">IG OAS</div>
-              <div className="mt-1 text-xl font-bold">{fmtNum(igVal)} <span className="text-xs font-normal text-ink-3">bps</span></div>
-            </div>
-          </div>
-          <p className="mt-2 text-xs text-ink-3">Trend: {hyVal != null && hyVal >= 300 ? "Widening modestly" : "Stable"}</p>
-          <ClampText text={creditAnalysis} className="mt-1.5" />
+          )}
         </div>
-
-        <div className="rounded-card border border-line bg-white p-4 shadow-sm">
-          <div className="flex items-center justify-between gap-3">
-            <div className="flex items-center gap-2">
-              <span className="text-base">⚡</span>
-              <h3 className="text-base font-semibold">Volatility Regime</h3>
-            </div>
-            <SignalPill tone={vixVal != null && vixVal >= 22 ? "red" : vixVal != null && vixVal >= 16 ? "amber" : "green"}>
-              {vixVal != null && vixVal >= 22 ? "Elevated" : vixVal != null && vixVal >= 16 ? "Moderate" : "Low"}
-            </SignalPill>
-          </div>
-          <div className="mt-3 grid grid-cols-3 gap-2">
-            <div className="rounded-xl bg-surface-2 p-2.5">
-              <div className="text-[10px] font-semibold uppercase tracking-wider text-ink-3">VIX</div>
-              <div className="mt-1 text-xl font-bold">{fmtNum(vixVal)}</div>
-            </div>
-            <div className="rounded-xl bg-surface-2 p-2.5">
-              <div className="text-[10px] font-semibold uppercase tracking-wider text-ink-3">TERM</div>
-              <div className="mt-1 text-sm font-bold">{marketData.termStructure}</div>
-            </div>
-            <div className="rounded-xl bg-surface-2 p-2.5">
-              <div className="text-[10px] font-semibold uppercase tracking-wider text-ink-3">MOVE</div>
-              <div className="mt-1 text-xl font-bold">{fmtNum(moveVal)}</div>
-            </div>
-          </div>
-          <ClampText text={volatilityAnalysis} className="mt-3" />
-        </div>
-
-        {/* Breadth & Structure — third card in the row (mockup). */}
-        <div className="rounded-card border border-line bg-white p-4 shadow-sm">
-          <div className="flex items-center justify-between gap-3">
-            <div className="flex items-center gap-2">
-              <span className="text-base">📊</span>
-              <h3 className="text-base font-semibold">Breadth &amp; Structure</h3>
-            </div>
-            <SignalPill tone={breadth200Val != null && breadth200Val <= 50 ? "red" : breadth200Val != null && breadth200Val >= 65 ? "green" : "amber"}>
-              {breadth200Val != null && breadth200Val <= 50 ? "Weak" : breadth200Val != null && breadth200Val >= 65 ? "Healthy" : "Mixed"}
-            </SignalPill>
-          </div>
-          <div className="mt-3 space-y-2 text-sm">
-            <div className="flex justify-between border-b border-line-soft pb-2">
-              <span className="text-ink-3">S&amp;P 500 % &gt; 200 DMA</span>
-              <span className="font-mono font-medium">{breadth200Val != null ? `${breadth200Val}%` : "—"}</span>
-            </div>
-            <div className="flex justify-between pb-1">
-              <span className="text-ink-3">S&amp;P 500 % &gt; 50 DMA</span>
-              <span className="font-mono font-medium">{breadth50Val != null ? `${breadth50Val}%` : "—"}</span>
-            </div>
-          </div>
-          <ClampText text={breadthAnalysis} className="mt-3" />
-        </div>
-
-        {/* Fund Flows & Positioning tile retired in 2026-05. Flows
-            are inherently backward-looking and contrarianAnalysis
-            already covers sentiment / positioning extremes. The
-            attached JPM screenshots upload section was also removed
-            with this change. */}
-      </section>
-      </>
-        );
-      })()}
-
-      {/* Portfolio Risk Scan (left, wider) + Hedging Window (right) — 2-col
-          row matching the mockup. Risk Scan hides when empty; the Hedging
-          Window always renders. */}
-      <section className="grid gap-4 lg:grid-cols-5 items-start">
-        {riskScan && riskScan.length > 0 ? (
-          <div className="lg:col-span-3 rounded-card border border-line bg-white p-4 shadow-sm">
-            <div className="flex items-center gap-2 mb-1">
-              <h3 className="text-base font-semibold">Portfolio Risk Scan</h3>
-              <span className="text-xs font-semibold text-neg">{riskScan.length} flagged</span>
-            </div>
-            <div className="divide-y divide-line-soft">
-              {riskScan.map((item, i) => {
-                const badge =
-                  item.priority === "High"
-                    ? { label: "HIGH", cls: "bg-neg text-white" }
-                    : item.priority === "Medium-High"
-                    ? { label: "MED", cls: "bg-warn text-white" }
-                    : item.priority === "Medium"
-                    ? { label: "MED", cls: "bg-warn text-white" }
-                    : { label: "LOW", cls: "bg-ink-3 text-white" };
-                const expanded = expandedRisk.has(i);
-                return (
-                  <div
-                    key={i}
-                    className="flex items-start gap-2.5 py-1.5 first:pt-1 cursor-pointer group"
-                    onClick={() => toggleRisk(i)}
-                    title={expanded ? "Click to collapse" : "Click to expand"}
-                  >
-                    <span className={`mt-px shrink-0 rounded px-1.5 py-0.5 text-[10px] font-bold tracking-wide ${badge.cls}`}>
-                      {badge.label}
-                    </span>
-                    <div className="min-w-0 flex-1">
-                      <div className="text-[13px]">
-                        <span className="font-mono font-bold text-ink">{displayTicker(item.ticker)}</span>
-                        {item.action && <span className="text-ink-2"> · {item.action}</span>}
-                      </div>
-                      <p className={`mt-0.5 text-[13px] leading-snug text-ink-3 ${expanded ? "" : "line-clamp-2"}`}>{item.summary}</p>
-                    </div>
-                  </div>
-                );
-              })}
-            </div>
-          </div>
-        ) : (
-          <div className="lg:col-span-3" />
-        )}
-
-        {/* Hedging Window */}
-        <div className="lg:col-span-2">
-          <HedgingIndicator
-            vix={activeForward?.vixWeek?.value ?? 20}
-            termStructure={marketData.termStructure}
-            fearGreed={activeForward?.fearGreed?.value ?? marketData.fearGreed}
-            hedgingAnalysis={hedgingAnalysis}
-            horizons={marketRegime?.horizons}
-            compact
-          />
-        </div>
+        <p className="mt-1 text-xs text-ink-3">
+          The deterministic regime read — what the tape and macro data say the market <strong className="text-ink-2">is</strong> doing, and what to focus on.
+        </p>
+        <ClampText text={compositeAnalysis} className="mt-2" />
       </section>
 
+      {/* Non-consensus edge — what the tape may be under-pricing. Distilled
+          across all integrated sources; hidden when the model returns blank. */}
+      {brief?.underpriced && brief.underpriced.trim() && (
+        <section className="rounded-card border border-violet-soft bg-violet-soft/40 p-4 shadow-sm">
+          <div className="flex flex-wrap items-center gap-2 mb-1">
+            <span className="text-base">💡</span>
+            <h2 className="text-base font-semibold">What the tape may be under-pricing</h2>
+            <span className="text-[10px] font-bold uppercase tracking-wider text-violet">Non-consensus</span>
+          </div>
+          <p className="text-sm leading-6 text-ink-2">{brief.underpriced}</p>
+        </section>
+      )}
       {/* Sector Rotation */}
       {sectorRotation && (
         <section className="rounded-card border border-line bg-white p-4 shadow-sm">
@@ -2893,6 +2901,7 @@ export function MorningBrief({
           <ClampText text={sectorRotation.pmImplication} className="mt-3" textClassName="text-sm italic leading-6 text-ink-3" lines={2} />
         </section>
       )}
+      </div>
 
       {/* Action Items section retired (2026-07): it duplicated the
           Top Actions Today one-liners near the top of the brief. forwardActions
