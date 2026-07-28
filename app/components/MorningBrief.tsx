@@ -1866,7 +1866,11 @@ export function MorningBrief({
       {briefMode === "brief" && (
       <>
       {/* ── Decide: the verdict on the left, four compact decision tiles on the right ── */}
-      <div id="s-decide" className="grid grid-cols-1 gap-4 lg:grid-cols-[1.55fr_1fr] scroll-mt-[132px]">
+      <div className="mb-2 mt-2 flex items-baseline gap-2.5 scroll-mt-[132px]" id="s-decide">
+        <h2 className="text-xs font-bold uppercase tracking-[0.22em] text-ink-3">Decide</h2>
+        <span className="text-[11px] text-ink-faint">the day's call, and the four reads behind it</span>
+      </div>
+      <div className="grid grid-cols-1 gap-4 lg:grid-cols-[1.55fr_1fr] ">
         <div className="space-y-4 min-w-0">
       {/* Bottom Line */}
       <section className="relative rounded-card bg-warn-soft border border-warn-border p-5 shadow-sm">
@@ -2150,7 +2154,7 @@ export function MorningBrief({
                   />
                 )}
                 {(cashDeploymentCall.triggersMet?.length || cashDeploymentCall.triggersMissing?.length) ? (
-                  <div className="grid sm:grid-cols-2 gap-x-8 gap-y-1 mb-2.5 text-[11px] leading-4">
+                  <div className="grid grid-cols-1 gap-y-1 mb-2.5 text-[11px] leading-4">
                     <div className="space-y-1">
                       {cashDeploymentCall.triggersMet?.slice(0, 4).map((t, i) => (
                         <div key={`m${i}`} className="flex items-start gap-1 text-pos">
@@ -2198,7 +2202,11 @@ export function MorningBrief({
         </div>
       </div>
       {/* ── Act: what to do today, with the risk flags that justify it ── */}
-      <div id="s-act" className="grid grid-cols-1 gap-4 lg:grid-cols-[1.55fr_1fr] scroll-mt-[132px]">
+      <div className="mb-2 mt-2 flex items-baseline gap-2.5 scroll-mt-[132px]" id="s-act">
+        <h2 className="text-xs font-bold uppercase tracking-[0.22em] text-ink-3">Act</h2>
+        <span className="text-[11px] text-ink-faint">what to do today, and the risks that justify it</span>
+      </div>
+      <div className="grid grid-cols-1 gap-4 lg:grid-cols-[1.55fr_1fr] ">
         <div className="min-w-0">
           {topActionsToday.length > 0 && (
             <div className="lg:col-span-2 rounded-card border border-line bg-white p-5 shadow-sm">
@@ -2254,7 +2262,12 @@ export function MorningBrief({
                       {badge.label}
                     </span>
                     <div className="min-w-0 flex-1">
-                      <div className="text-[13px]">
+                      {/* item.action is a full thesis paragraph, and it was the
+                          real reason this column ran tall — item.summary was
+                          already clamped but the action above it wasn't. Clamps
+                          to 2 lines collapsed, full text on expand (same click
+                          target as the rest of the row). */}
+                      <div className={`text-[13px] ${expanded ? "" : "line-clamp-2"}`}>
                         <span className="font-mono font-bold text-ink">{displayTicker(item.ticker)}</span>
                         {item.action && <span className="text-ink-2"> · {item.action}</span>}
                       </div>
@@ -2328,7 +2341,11 @@ export function MorningBrief({
         </section>
       )}
       {/* ── Board: contrarian gauges + macro tiles ── */}
-      <div id="s-board" className="space-y-6 scroll-mt-[132px]">
+      <div className="mb-2 mt-2 flex items-baseline gap-2.5 scroll-mt-[132px]" id="s-board">
+        <h2 className="text-xs font-bold uppercase tracking-[0.22em] text-ink-3">Board</h2>
+        <span className="text-[11px] text-ink-faint">the macro read, in numbers</span>
+      </div>
+      <div className="space-y-6 ">
       {/* Contrarian Sentiment — all 4 indicators + Claude analysis */}
       <SentimentGauges
         marketData={marketData}
@@ -2435,7 +2452,11 @@ export function MorningBrief({
       })()}
       </div>
       {/* ── Horizons: tactical / cyclical / structural ── */}
-      <div id="s-horizon" className="space-y-6 scroll-mt-[132px]">
+      <div className="mb-2 mt-2 flex items-baseline gap-2.5 scroll-mt-[132px]" id="s-horizon">
+        <h2 className="text-xs font-bold uppercase tracking-[0.22em] text-ink-3">Horizons</h2>
+        <span className="text-[11px] text-ink-faint">tactical · cyclical · structural</span>
+      </div>
+      <div className="space-y-6 ">
       {/* Forward View — Next 2 Weeks */}
       <section className="rounded-card border border-accent-border bg-gradient-to-br from-accent-soft/60 to-white p-4 md:p-5 shadow-sm">
         <div className="flex flex-wrap items-center justify-between gap-3 mb-3">
@@ -2695,7 +2716,11 @@ export function MorningBrief({
       </section>
       </div>
       {/* ── Narrative: the long-form model prose ── */}
-      <div id="s-narrative" className="space-y-6 scroll-mt-[132px]">
+      <div className="mb-2 mt-2 flex items-baseline gap-2.5 scroll-mt-[132px]" id="s-narrative">
+        <h2 className="text-xs font-bold uppercase tracking-[0.22em] text-ink-3">Narrative</h2>
+        <span className="text-[11px] text-ink-faint">the long-form model prose — open what you need</span>
+      </div>
+      <div className="space-y-6 ">
       {/* Composite Signal — the weighted regime read that DETERMINES the regime,
           surfaced high on the page (right under the at-a-glance actions) rather
           than buried below the Forward View. */}
