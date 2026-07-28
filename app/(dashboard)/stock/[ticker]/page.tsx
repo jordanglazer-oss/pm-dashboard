@@ -15,6 +15,7 @@ import StockHealthMonitor from "@/app/components/StockHealthMonitor";
 import RiskAlertPanel from "@/app/components/RiskAlertPanel";
 import RatioVsSpxSparkline from "@/app/components/RatioVsSpxSparkline";
 import ScoreHistory from "@/app/components/ScoreHistory";
+import ThesisTile from "@/app/components/ThesisTile";
 import FactorLensTile from "@/app/components/FactorLensTile";
 import StreetTakeawaysTile from "@/app/components/StreetTakeawaysTile";
 import { ScoreDelta } from "@/app/components/ScoreDelta";
@@ -2623,6 +2624,29 @@ export default function StockDetailPage() {
               className="mt-6"
             />
           )}
+
+          {/* Thesis & kill conditions — pre-registered exit criteria, checked
+              deterministically from data already on this page (preview build). */}
+          {scoreable && (() => {
+            const snap = getAnalystSnapshot(stock.ticker)?.factset;
+            const revUp = typeof snap?.revUp === "number" ? snap.revUp : null;
+            const revDown = typeof snap?.revDown === "number" ? snap.revDown : null;
+            return (
+              <ThesisTile
+                ticker={stock.ticker}
+                className="mt-6"
+                signals={{
+                  score: typeof stock.adjusted === "number" ? stock.adjusted : null,
+                  netRevisions: revUp != null || revDown != null ? (revUp ?? 0) - (revDown ?? 0) : null,
+                  revUp,
+                  revDown,
+                  riskLevel: stock.riskAlert ? stock.riskAlert.level : stock.technicals ? null : undefined,
+                  price: typeof stock.price === "number" ? stock.price : stock.healthData?.currentPrice ?? null,
+                  ma200: stock.healthData?.twoHundredDayAvg ?? null,
+                }}
+              />
+            );
+          })()}
 
           {/* Street Takeaways — FactSet analyst roundup (renders only when ingested) */}
           {scoreable && <StreetTakeawaysTile ticker={stock.ticker} className="mt-6" />}
