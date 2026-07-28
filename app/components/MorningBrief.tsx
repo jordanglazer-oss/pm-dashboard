@@ -649,9 +649,6 @@ export function MorningBrief({
   // + one small model call) and merges the result into the existing brief via
   // the normal context persist path. No full-brief regeneration.
   const [hedgeRefreshing, setHedgeRefreshing] = useState(false);
-  // Collapsible ✓/✗ evidence list on the Hedging tile (the checklist the
-  // model was shown when it made the call).
-  const [hedgeEvidenceOpen, setHedgeEvidenceOpen] = useState(false);
   const refreshHedging = async () => {
     if (!brief || hedgeRefreshing) return;
     setHedgeRefreshing(true);
@@ -2095,137 +2092,12 @@ export function MorningBrief({
                       </span>
                     )}
                   </div>
-                  {/* The full data basis: EVERYTHING the call relies on. */}
-                  <button
-                    onClick={() => setHedgeEvidenceOpen((v) => !v)}
-                    className="mt-2 text-[11px] font-medium text-ink-2 hover:text-ink"
-                  >
-                    {hedgeEvidenceOpen ? "▾ Hide data basis" : "▸ Show data basis"} ({brief.hedgeChecklist.items.filter((i) => i.ok === true).length}✓ / {brief.hedgeChecklist.items.filter((i) => i.ok === false).length}✗)
-                  </button>
-                  {hedgeEvidenceOpen && (
-                    <div className="mt-1.5 space-y-3 text-[11px] leading-4">
-                      {/* 1 · Entry checklist */}
-                      <div className="space-y-1">
-                        {(["risk-off", "cheap"] as const).map((path) => (
-                          <div key={path}>
-                            <div className="font-semibold text-ink-2">
-                              {path === "risk-off" ? "Path 1 · Classic Risk-Off" : "Path 2 · Cheap insurance + late-cycle"}
-                            </div>
-                            {brief.hedgeChecklist!.items.filter((i) => i.path === path).map((i, idx) => (
-                              <div key={idx} className="flex gap-1.5 text-ink-2">
-                                <span className={i.ok === true ? "text-pos font-bold" : "text-ink-3"}>
-                                  {i.ok == null ? "?" : i.ok ? "✓" : "✗"}
-                                </span>
-                                <span className={i.ok === true ? "text-ink" : "text-ink-3"}>{i.label}</span>
-                              </div>
-                            ))}
-                          </div>
-                        ))}
-                      </div>
-
-                      {/* 2 · Live premiums the call was priced against */}
-                      {brief.hedgingDetail && (
-                        <div>
-                          <div className="font-semibold text-ink-2">
-                            Live SPY put premiums · spot ${brief.hedgingDetail.spotPrice.toFixed(2)} · CBOE {new Date(brief.hedgingDetail.fetchedAt).toLocaleTimeString("en-US", { hour: "numeric", minute: "2-digit" })} (15-min delay)
-                          </div>
-                          <div className="mt-1 overflow-x-auto">
-                            <table className="w-full border-collapse font-mono text-[10px]">
-                              <thead>
-                                <tr className="text-left text-ink-3">
-                                  <th className="pr-2 font-medium">Expiry</th>
-                                  <th className="pr-2 text-right font-medium">ATM</th>
-                                  <th className="pr-2 text-right font-medium">5% OTM</th>
-                                  <th className="text-right font-medium">10% OTM</th>
-                                </tr>
-                              </thead>
-                              <tbody>
-                                {brief.hedgingDetail.anchors.map((a) => {
-                                  const f = (p: number | null, pct: number | null) =>
-                                    p != null ? `$${p.toFixed(2)}${pct != null ? ` (${pct.toFixed(2)}%)` : ""}` : "—";
-                                  return (
-                                    <tr key={a.expiryLabel} className="text-ink-2">
-                                      <td className="pr-2">{a.expiryLabel} · {a.daysToExpiry}d</td>
-                                      <td className="pr-2 text-right">{f(a.atmPremium, a.atmPctOfSpot)}</td>
-                                      <td className="pr-2 text-right">{f(a.otm5Premium, a.otm5PctOfSpot)}</td>
-                                      <td className="text-right">{f(a.otm10Premium, a.otm10PctOfSpot)}</td>
-                                    </tr>
-                                  );
-                                })}
-                              </tbody>
-                            </table>
-                          </div>
-                        </div>
-                      )}
-
-                      {/* 3 · Premium history: percentile rank + trend */}
-                      {brief.hedgingDetail && (
-                        <div>
-                          <div className="font-semibold text-ink-2">
-                            Premium history · {brief.hedgingDetail.sessions} sessions{brief.hedgingDetail.firstDate ? ` since ${brief.hedgingDetail.firstDate}` : ""} (low percentile = cheap WITHIN this window)
-                          </div>
-                          {brief.hedgingDetail.buckets.map((b) => (
-                            <div key={b.bucket} className="text-ink-2">
-                              {b.bucket}: 5%OTM {b.otm5Percentile != null ? `${b.otm5Percentile}th pct` : "unranked"} · 10%OTM {b.otm10Percentile != null ? `${b.otm10Percentile}th pct` : "unranked"} · skew {b.skewRatio != null ? b.skewRatio.toFixed(2) : "—"}{b.skewPercentile != null ? ` (${b.skewPercentile}th)` : ""}
-                            </div>
-                          ))}
-                          {brief.hedgingDetail.volAnchor && (brief.hedgingDetail.volAnchor.vix || brief.hedgingDetail.volAnchor.vix3m) && (
-                            <div className="mt-0.5 text-ink-2">
-                              Long-horizon anchor:{" "}
-                              {brief.hedgingDetail.volAnchor.vix3m && (
-                                <span className={brief.hedgingDetail.volAnchor.vix3m.percentile <= 40 ? "text-pos" : brief.hedgingDetail.volAnchor.vix3m.percentile >= 75 ? "text-neg" : ""}>
-                                  VIX3M {brief.hedgingDetail.volAnchor.vix3m.level} = {brief.hedgingDetail.volAnchor.vix3m.percentile}th pct of ~{brief.hedgingDetail.volAnchor.vix3m.years}y
-                                </span>
-                              )}
-                              {brief.hedgingDetail.volAnchor.vix3m && brief.hedgingDetail.volAnchor.vix && " · "}
-                              {brief.hedgingDetail.volAnchor.vix && (
-                                <span>VIX {brief.hedgingDetail.volAnchor.vix.level} = {brief.hedgingDetail.volAnchor.vix.percentile}th of ~{brief.hedgingDetail.volAnchor.vix.years}y</span>
-                              )}
-                              <span className="text-ink-3"> — whether the whole window above is itself a cheap or expensive vol regime</span>
-                            </div>
-                          )}
-                          {(brief.hedgingDetail.wow || brief.hedgingDetail.mom) && (
-                            <div className="mt-0.5 text-ink-3">
-                              {brief.hedgingDetail.wow && (
-                                <div>
-                                  WoW (vs {brief.hedgingDetail.wow.vsDate}): {brief.hedgingDetail.wow.rows.map((r) => `${r.expiryLabel} 5%OTM ${r.otm5DeltaPct != null ? `${r.otm5DeltaPct > 0 ? "+" : ""}${r.otm5DeltaPct}%` : "—"}`).join(" · ")}
-                                </div>
-                              )}
-                              {brief.hedgingDetail.mom && (
-                                <div>
-                                  MoM (vs {brief.hedgingDetail.mom.vsDate}): {brief.hedgingDetail.mom.rows.map((r) => `${r.expiryLabel} 5%OTM ${r.otm5DeltaPct != null ? `${r.otm5DeltaPct > 0 ? "+" : ""}${r.otm5DeltaPct}%` : "—"}`).join(" · ")}
-                                </div>
-                              )}
-                            </div>
-                          )}
-                        </div>
-                      )}
-
-                      {/* 4 · Regime / vol / sentiment inputs */}
-                      {brief.hedgeChecklist.inputs && (
-                        <div>
-                          <div className="font-semibold text-ink-2">Regime, vol & sentiment inputs</div>
-                          <div className="text-ink-2">
-                            Regime {brief.hedgeChecklist.inputs.consolidatedRegime}
-                            {brief.hedgeChecklist.inputs.transitionLeaning ? ` · transition ${brief.hedgeChecklist.inputs.transitionLeaning} (${brief.hedgeChecklist.inputs.transitionLikelihood})` : ""}
-                            {brief.hedgeChecklist.inputs.riskOffSignalCount != null ? ` · ${brief.hedgeChecklist.inputs.riskOffSignalCount} risk-off signals` : ""}
-                          </div>
-                          <div className="text-ink-2">
-                            {brief.hedgeChecklist.inputs.vix != null ? `VIX ${brief.hedgeChecklist.inputs.vix}` : "VIX —"}
-                            {brief.hedgeChecklist.inputs.termStructure ? ` (${brief.hedgeChecklist.inputs.termStructure})` : ""}
-                            {brief.hedgeChecklist.vvix != null ? ` · VVIX ${brief.hedgeChecklist.vvix}` : ""}
-                            {brief.hedgeChecklist.inputs.fearGreed != null ? ` · F&G ${brief.hedgeChecklist.inputs.fearGreed}` : ""}
-                            {brief.hedgeChecklist.inputs.oscillator != null ? ` · Oscillator ${brief.hedgeChecklist.inputs.oscillator >= 0 ? "+" : ""}${brief.hedgeChecklist.inputs.oscillator}%` : ""}
-                          </div>
-                        </div>
-                      )}
-
-                      {/* 5 · Method note — the rules the model operates under */}
-                      <div className="border-t border-line/60 pt-1.5 text-[10px] leading-4 text-ink-3">
-                        Method: protective SPY puts only · strikes 5–10% OTM (ATM only for acute ≤30d tail risk) · tenor 2–9M mapped to whichever horizon is Risk-Off · ADD needs Path 1 (≥2/3) or Path 2 (premium ✓ + ≥1 late-cycle sign) · skip-first philosophy — the model may override any checklist line but must name it. Percentiles rank each tenor against its own trailing ledger.
-                      </div>
-                    </div>
-                  )}
+                  {/* Full data basis now lives in the Narrative section (see the
+                      "Hedging data basis" accordion row) so this tile stays a
+                      4-line summary, per the redesign. */}
+                  <a href="#s-narrative" className="mt-2 inline-block text-[11px] font-medium text-accent hover:underline">
+                    Full data basis ↓
+                  </a>
                 </>
               )}
 
@@ -2819,6 +2691,151 @@ export function MorningBrief({
       {/* Composite Signal — the weighted regime read that DETERMINES the regime,
           surfaced high on the page (right under the at-a-glance actions) rather
           than buried below the Forward View. */}
+      {/* Hedging data basis — the full ✓/✗ checklist, live premium table,
+          percentile history and regime inputs. Moved out of the Decide
+          tile so that tile stays a 4-line summary; nothing was dropped. */}
+      {brief?.hedgeChecklist && (
+        <CollapsibleSection
+          prefKey="briefNarrativeHedgeBasis"
+          defaultCollapsed
+          title={
+            <span className="flex items-center gap-2">
+              <span className="text-base">🛡</span>
+              <span className="text-base font-semibold">Hedging data basis</span>
+            </span>
+          }
+          subtitle={
+            <span className="text-xs text-ink-3">
+              {brief.hedgeChecklist.items.filter((i) => i.ok === true).length}✓ /{" "}
+              {brief.hedgeChecklist.items.filter((i) => i.ok === false).length}✗ · live SPY premiums
+            </span>
+          }
+        >
+          <div className="mt-1.5 space-y-3 text-[11px] leading-4">
+            {/* 1 · Entry checklist */}
+            <div className="space-y-1">
+              {(["risk-off", "cheap"] as const).map((path) => (
+                <div key={path}>
+                  <div className="font-semibold text-ink-2">
+                    {path === "risk-off" ? "Path 1 · Classic Risk-Off" : "Path 2 · Cheap insurance + late-cycle"}
+                  </div>
+                  {brief.hedgeChecklist!.items.filter((i) => i.path === path).map((i, idx) => (
+                    <div key={idx} className="flex gap-1.5 text-ink-2">
+                      <span className={i.ok === true ? "text-pos font-bold" : "text-ink-3"}>
+                        {i.ok == null ? "?" : i.ok ? "✓" : "✗"}
+                      </span>
+                      <span className={i.ok === true ? "text-ink" : "text-ink-3"}>{i.label}</span>
+                    </div>
+                  ))}
+                </div>
+              ))}
+            </div>
+
+            {/* 2 · Live premiums the call was priced against */}
+            {brief.hedgingDetail && (
+              <div>
+                <div className="font-semibold text-ink-2">
+                  Live SPY put premiums · spot ${brief.hedgingDetail.spotPrice.toFixed(2)} · CBOE {new Date(brief.hedgingDetail.fetchedAt).toLocaleTimeString("en-US", { hour: "numeric", minute: "2-digit" })} (15-min delay)
+                </div>
+                <div className="mt-1 overflow-x-auto">
+                  <table className="w-full border-collapse font-mono text-[10px]">
+                    <thead>
+                      <tr className="text-left text-ink-3">
+                        <th className="pr-2 font-medium">Expiry</th>
+                        <th className="pr-2 text-right font-medium">ATM</th>
+                        <th className="pr-2 text-right font-medium">5% OTM</th>
+                        <th className="text-right font-medium">10% OTM</th>
+                      </tr>
+                    </thead>
+                    <tbody>
+                      {brief.hedgingDetail.anchors.map((a) => {
+                        const f = (p: number | null, pct: number | null) =>
+                          p != null ? `$${p.toFixed(2)}${pct != null ? ` (${pct.toFixed(2)}%)` : ""}` : "—";
+                        return (
+                          <tr key={a.expiryLabel} className="text-ink-2">
+                            <td className="pr-2">{a.expiryLabel} · {a.daysToExpiry}d</td>
+                            <td className="pr-2 text-right">{f(a.atmPremium, a.atmPctOfSpot)}</td>
+                            <td className="pr-2 text-right">{f(a.otm5Premium, a.otm5PctOfSpot)}</td>
+                            <td className="text-right">{f(a.otm10Premium, a.otm10PctOfSpot)}</td>
+                          </tr>
+                        );
+                      })}
+                    </tbody>
+                  </table>
+                </div>
+              </div>
+            )}
+
+            {/* 3 · Premium history: percentile rank + trend */}
+            {brief.hedgingDetail && (
+              <div>
+                <div className="font-semibold text-ink-2">
+                  Premium history · {brief.hedgingDetail.sessions} sessions{brief.hedgingDetail.firstDate ? ` since ${brief.hedgingDetail.firstDate}` : ""} (low percentile = cheap WITHIN this window)
+                </div>
+                {brief.hedgingDetail.buckets.map((b) => (
+                  <div key={b.bucket} className="text-ink-2">
+                    {b.bucket}: 5%OTM {b.otm5Percentile != null ? `${b.otm5Percentile}th pct` : "unranked"} · 10%OTM {b.otm10Percentile != null ? `${b.otm10Percentile}th pct` : "unranked"} · skew {b.skewRatio != null ? b.skewRatio.toFixed(2) : "—"}{b.skewPercentile != null ? ` (${b.skewPercentile}th)` : ""}
+                  </div>
+                ))}
+                {brief.hedgingDetail.volAnchor && (brief.hedgingDetail.volAnchor.vix || brief.hedgingDetail.volAnchor.vix3m) && (
+                  <div className="mt-0.5 text-ink-2">
+                    Long-horizon anchor:{" "}
+                    {brief.hedgingDetail.volAnchor.vix3m && (
+                      <span className={brief.hedgingDetail.volAnchor.vix3m.percentile <= 40 ? "text-pos" : brief.hedgingDetail.volAnchor.vix3m.percentile >= 75 ? "text-neg" : ""}>
+                        VIX3M {brief.hedgingDetail.volAnchor.vix3m.level} = {brief.hedgingDetail.volAnchor.vix3m.percentile}th pct of ~{brief.hedgingDetail.volAnchor.vix3m.years}y
+                      </span>
+                    )}
+                    {brief.hedgingDetail.volAnchor.vix3m && brief.hedgingDetail.volAnchor.vix && " · "}
+                    {brief.hedgingDetail.volAnchor.vix && (
+                      <span>VIX {brief.hedgingDetail.volAnchor.vix.level} = {brief.hedgingDetail.volAnchor.vix.percentile}th of ~{brief.hedgingDetail.volAnchor.vix.years}y</span>
+                    )}
+                    <span className="text-ink-3"> — whether the whole window above is itself a cheap or expensive vol regime</span>
+                  </div>
+                )}
+                {(brief.hedgingDetail.wow || brief.hedgingDetail.mom) && (
+                  <div className="mt-0.5 text-ink-3">
+                    {brief.hedgingDetail.wow && (
+                      <div>
+                        WoW (vs {brief.hedgingDetail.wow.vsDate}): {brief.hedgingDetail.wow.rows.map((r) => `${r.expiryLabel} 5%OTM ${r.otm5DeltaPct != null ? `${r.otm5DeltaPct > 0 ? "+" : ""}${r.otm5DeltaPct}%` : "—"}`).join(" · ")}
+                      </div>
+                    )}
+                    {brief.hedgingDetail.mom && (
+                      <div>
+                        MoM (vs {brief.hedgingDetail.mom.vsDate}): {brief.hedgingDetail.mom.rows.map((r) => `${r.expiryLabel} 5%OTM ${r.otm5DeltaPct != null ? `${r.otm5DeltaPct > 0 ? "+" : ""}${r.otm5DeltaPct}%` : "—"}`).join(" · ")}
+                      </div>
+                    )}
+                  </div>
+                )}
+              </div>
+            )}
+
+            {/* 4 · Regime / vol / sentiment inputs */}
+            {brief.hedgeChecklist.inputs && (
+              <div>
+                <div className="font-semibold text-ink-2">Regime, vol & sentiment inputs</div>
+                <div className="text-ink-2">
+                  Regime {brief.hedgeChecklist.inputs.consolidatedRegime}
+                  {brief.hedgeChecklist.inputs.transitionLeaning ? ` · transition ${brief.hedgeChecklist.inputs.transitionLeaning} (${brief.hedgeChecklist.inputs.transitionLikelihood})` : ""}
+                  {brief.hedgeChecklist.inputs.riskOffSignalCount != null ? ` · ${brief.hedgeChecklist.inputs.riskOffSignalCount} risk-off signals` : ""}
+                </div>
+                <div className="text-ink-2">
+                  {brief.hedgeChecklist.inputs.vix != null ? `VIX ${brief.hedgeChecklist.inputs.vix}` : "VIX —"}
+                  {brief.hedgeChecklist.inputs.termStructure ? ` (${brief.hedgeChecklist.inputs.termStructure})` : ""}
+                  {brief.hedgeChecklist.vvix != null ? ` · VVIX ${brief.hedgeChecklist.vvix}` : ""}
+                  {brief.hedgeChecklist.inputs.fearGreed != null ? ` · F&G ${brief.hedgeChecklist.inputs.fearGreed}` : ""}
+                  {brief.hedgeChecklist.inputs.oscillator != null ? ` · Oscillator ${brief.hedgeChecklist.inputs.oscillator >= 0 ? "+" : ""}${brief.hedgeChecklist.inputs.oscillator}%` : ""}
+                </div>
+              </div>
+            )}
+
+            {/* 5 · Method note — the rules the model operates under */}
+            <div className="border-t border-line/60 pt-1.5 text-[10px] leading-4 text-ink-3">
+              Method: protective SPY puts only · strikes 5–10% OTM (ATM only for acute ≤30d tail risk) · tenor 2–9M mapped to whichever horizon is Risk-Off · ADD needs Path 1 (≥2/3) or Path 2 (premium ✓ + ≥1 late-cycle sign) · skip-first philosophy — the model may override any checklist line but must name it. Percentiles rank each tenor against its own trailing ledger.
+            </div>
+          </div>
+        </CollapsibleSection>
+      )}
+
       {/* Accordion rows (redesign): the long-form prose is reference reading,
           so each row collapses to a title + one-line summary and opens on
           click. Collapsed by DEFAULT — this is what stops the narrative from
