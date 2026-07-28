@@ -200,19 +200,19 @@ export function SentimentGauges({ marketData, aaiiBull = 30, aaiiNeutral = 17, a
 
   return (
     <section className="rounded-card border border-line bg-white p-4 shadow-sm">
-      <div className="flex flex-wrap items-center justify-between gap-2 mb-1">
-        <div className="flex items-center gap-2">
-          <span className="text-base">🎯</span>
-          <h3 className="text-base font-semibold">Contrarian Sentiment</h3>
-          <SignalPill tone="amber">COUNTER-SIGNAL</SignalPill>
-        </div>
+      {/* Design header: tracked uppercase label + the overall read as a pill,
+          with the inverse-reading explainer demoted to the right rather than
+          taking its own full-width line. */}
+      <div className="mb-3 flex flex-wrap items-center gap-2">
+        <h3 className="text-xs font-bold uppercase tracking-[0.22em] text-ink-3">Contrarian sentiment</h3>
         <SignalPill tone={overall.tone}>{overall.label}</SignalPill>
+        <span className="ml-auto text-[11px] text-ink-faint">counter-signal · read extremes inversely</span>
       </div>
-      <p className="text-xs text-ink-3 mb-3">
+      <p className="sr-only">
         Sentiment extremes read <strong className="text-ink-2">inversely</strong> — crowd fear = opportunity, crowd greed = warning. A counterweight to the regime read above, not another summary of it.
       </p>
 
-      <div className="grid gap-3 lg:grid-cols-2">
+      <div className="grid gap-3 sm:grid-cols-2 xl:grid-cols-4">
         {/* CNN Fear & Greed */}
         <div className="rounded-xl border border-line-soft bg-surface-2 p-3">
           <div className="flex items-center justify-between mb-2">
