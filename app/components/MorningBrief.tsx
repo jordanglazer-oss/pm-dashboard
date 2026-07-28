@@ -1267,6 +1267,15 @@ export function MorningBrief({
     NARRATIVE_KEYS.forEach((k) => setUiPref(k, next));
   };
 
+  // Generation time for the Bottom Line byline, formatted once. Null on briefs
+  // with no timestamp so the byline is dropped rather than showing "Invalid Date".
+  const generatedTime = React.useMemo(() => {
+    const raw = brief?.generatedAt;
+    if (!raw) return null;
+    const d = new Date(raw);
+    return isNaN(d.getTime()) ? null : d.toLocaleTimeString("en-US", { hour: "numeric", minute: "2-digit" });
+  }, [brief]);
+
   const topActionsToday = brief?.topActionsToday || [];
   const hedgingCall = brief?.hedgingCall || null;
   const cashDeploymentCall = brief?.cashDeploymentCall || null;
@@ -1951,30 +1960,36 @@ export function MorningBrief({
       </div>
       <div className="grid grid-cols-1 gap-4 lg:grid-cols-[1.55fr_1fr] ">
         <div className="space-y-4 min-w-0">
-      {/* Bottom Line */}
-      <section className="relative rounded-card bg-warn-soft border border-warn-border p-5 shadow-sm">
+      {/* Bottom Line — the design's white card: label with the model + time
+          right-aligned, the call in full, the posture line as an inset cream
+          callout, and "since last brief" folded INSIDE the card rather than
+          floating below it as a separate blue panel. */}
+      <section className="relative rounded-card border border-line bg-white p-5 shadow-card">
         {generating && <LoadingOverlay message="Claude is analyzing markets..." />}
-        <div className="text-xs font-bold uppercase tracking-[0.22em] text-warn mb-3">
-          Bottom line
+        <div className="mb-3 flex items-baseline justify-between gap-3">
+          <span className="text-xs font-bold uppercase tracking-[0.22em] text-ink-3">Bottom line</span>
+          {generatedTime && (
+            <span className="shrink-0 font-mono text-[11px] text-ink-faint">claude · {generatedTime}</span>
+          )}
         </div>
         <p className="max-w-6xl text-sm leading-6 text-ink">
           {bottomLine}
         </p>
         {regimeVerdict && (
-          <p className="mt-3 border-t border-warn-border pt-3 max-w-6xl text-sm font-bold text-ink">
+          <p className="mt-3 rounded-lg border border-warn-border bg-warn-soft px-3 py-2 text-sm font-semibold leading-6 text-ink">
             {regimeVerdict}
           </p>
         )}
+        {brief?.whatChanged && brief.whatChanged.trim() && (
+          <div className="mt-3 border-t border-line pt-3">
+            <div className="mb-1 text-[10px] font-bold uppercase tracking-[0.14em] text-ink-3">
+              Since last brief
+            </div>
+            <p className="text-[13px] leading-5 text-ink-2">{brief.whatChanged}</p>
+          </div>
+        )}
       </section>
 
-      {/* What changed since the prior brief — running-narrative continuity.
-          Hidden when blank (first-ever brief, or nothing material changed). */}
-      {brief?.whatChanged && brief.whatChanged.trim() && (
-        <section className="flex items-start gap-2.5 rounded-xl border border-accent-border bg-accent-soft/50 px-4 py-3">
-          <span className="mt-0.5 shrink-0 rounded-md bg-accent px-1.5 py-0.5 text-[10px] font-bold uppercase tracking-wider text-white">Since last brief</span>
-          <p className="text-sm leading-6 text-ink-2">{brief.whatChanged}</p>
-        </section>
-      )}
 
         </div>
         {/* items-start is load-bearing: without it every tile stretches to the
