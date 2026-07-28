@@ -765,7 +765,11 @@ export function MorningBrief({
   // Word-boundary match on the bare symbol against the book — never a guess
   // from the prose, so rows that name no holding simply get no button.
   const actionTicker = React.useCallback((text: string): string | null => {
-    const t = (text || "").toUpperCase();
+    // CASE-SENSITIVE on purpose. Upper-casing the prose first made the English
+    // word "all" in "Hold all positions" match the ticker ALL (Allstate) and
+    // offer an "Open ALL" button. Tickers are written upper-case in the model's
+    // prose, so matching the raw text is both correct and sufficient.
+    const t = text || "";
     for (const s of stocks || []) {
       const bare = (s.ticker || "").replace(/[-.](TO|T|V)$/i, "").toUpperCase();
       if (bare.length < 2) continue;
@@ -2427,6 +2431,61 @@ export function MorningBrief({
         asOf={activeForward?.fetchedAt as string | undefined}
       />
 
+      {/* Sector Rotation — promoted out of the collapsed Narrative accordion to
+          an always-open, full-width tile on the Board, where the rest of the
+          macro read lives. Same content as before (summary, live per-sector
+          heatmap or the leading/lagging fallback, PM implication); it simply no
+          longer needs a click to see. */}
+      {sectorRotation && (
+        <section className="rounded-card border border-line bg-white shadow-sm">
+          <div className="flex items-center gap-2 border-b border-line px-5 py-3">
+            <span className="text-xs font-bold uppercase tracking-[0.22em] text-ink-3">Sector rotation</span>
+            {brief?.sectorPerformance && brief.sectorPerformance.length > 0 && (
+              <span className="text-[11px] text-ink-3">{brief.sectorPerformance.length} sectors · best → worst</span>
+            )}
+          </div>
+          <div className="px-5 py-4">
+            <ClampText text={sectorRotation.summary} className="mb-4" />
+            {brief?.sectorPerformance && brief.sectorPerformance.length > 0 ? (
+              <div className="grid grid-cols-3 gap-2 sm:grid-cols-6 lg:grid-cols-11">
+                {[...brief.sectorPerformance]
+                  .sort((a, b) => (b.dayPct ?? -Infinity) - (a.dayPct ?? -Infinity))
+                  .map((s) => {
+                    const pos = (s.dayPct ?? 0) >= 0;
+                    return (
+                      <div key={s.etf} className="rounded-lg border border-line-soft bg-surface-2/50 p-2">
+                        <div className="flex items-baseline justify-between gap-1">
+                          <span className="font-mono text-xs font-bold text-ink">{s.etf}</span>
+                          <span className={`font-mono text-xs font-semibold ${s.dayPct == null ? "text-ink-3" : pos ? "text-pos" : "text-neg"}`}>
+                            {s.dayPct == null ? "—" : `${pos ? "+" : ""}${s.dayPct.toFixed(1)}`}
+                          </span>
+                        </div>
+                        <div className="mt-0.5 truncate text-[10px] text-ink-3" title={s.sector}>{s.sector}</div>
+                      </div>
+                    );
+                  })}
+              </div>
+            ) : (
+              <div className="grid gap-4 md:grid-cols-2">
+                <div>
+                  <div className="mb-1.5 text-xs font-bold uppercase tracking-wider text-pos">Leading</div>
+                  {sectorRotation.leading.map((s, i) => (
+                    <div key={i} className="mb-1 flex items-center gap-2 text-sm text-pos"><span>▲</span> <span>{s}</span></div>
+                  ))}
+                </div>
+                <div>
+                  <div className="mb-1.5 text-xs font-bold uppercase tracking-wider text-neg">Lagging</div>
+                  {sectorRotation.lagging.map((s, i) => (
+                    <div key={i} className="mb-1 flex items-center gap-2 text-sm text-neg"><span>▼</span> <span>{s}</span></div>
+                  ))}
+                </div>
+              </div>
+            )}
+            <ClampText text={sectorRotation.pmImplication} className="mt-3" textClassName="text-sm italic leading-6 text-ink-2" />
+          </div>
+        </section>
+      )}
+
       {/* Contrarian sentiment + Catalyst watch side by side, as the mock
           pairs them: the sentiment read on the left, the dated calendar it
           has to survive on the right. */}
@@ -2957,67 +3016,6 @@ export function MorningBrief({
           subtitle={<span className="text-[10px] font-bold uppercase tracking-wider text-violet">Non-consensus</span>}
         >
           <p className="text-sm leading-6 text-ink-2">{brief.underpriced}</p>
-        </CollapsibleSection>
-      )}
-      {/* Sector Rotation — narrative + the live per-sector heatmap. */}
-      {sectorRotation && (
-        <CollapsibleSection
-          prefKey="briefNarrativeSectorRotation"
-          defaultCollapsed
-          title={
-            <span className="flex items-center gap-2">
-              <span className="text-base">🔄</span>
-              <span className="text-base font-semibold">Sector Rotation</span>
-            </span>
-          }
-          subtitle={
-            brief?.sectorPerformance && brief.sectorPerformance.length > 0
-              ? <span className="text-xs text-ink-3">{brief.sectorPerformance.length} sectors · leaders & laggards</span>
-              : undefined
-          }
-        >
-          <ClampText text={sectorRotation.summary} className="mb-4" />
-          {brief?.sectorPerformance && brief.sectorPerformance.length > 0 ? (
-            /* Live per-sector heatmap tiles, sorted best→worst (mockup). */
-            <div className="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-6 gap-3">
-              {[...brief.sectorPerformance]
-                .sort((a, b) => (b.dayPct ?? -Infinity) - (a.dayPct ?? -Infinity))
-                .map((s) => {
-                  const pos = (s.dayPct ?? 0) >= 0;
-                  return (
-                    <div key={s.etf} className="hover-lift rounded-xl border border-line-soft bg-surface-2/50 p-3">
-                      <div className="flex items-baseline justify-between gap-2">
-                        <span className="font-mono text-sm font-bold text-ink">{s.etf}</span>
-                        <span className={`font-mono text-sm font-semibold ${s.dayPct == null ? "text-ink-3" : pos ? "text-pos" : "text-neg"}`}>
-                          {s.dayPct == null ? "—" : `${pos ? "+" : ""}${s.dayPct.toFixed(2)}%`}
-                        </span>
-                      </div>
-                      <div className="mt-0.5 text-[11px] text-ink-3 truncate">{s.sector}</div>
-                    </div>
-                  );
-                })}
-            </div>
-          ) : (
-            <div className="grid gap-4 md:grid-cols-2">
-              <div>
-                <div className="text-xs font-bold uppercase tracking-wider text-pos mb-1.5">LEADING</div>
-                {sectorRotation.leading.map((s, i) => (
-                  <div key={i} className="flex items-center gap-2 text-sm text-pos mb-1">
-                    <span>▲</span> <span>{s}</span>
-                  </div>
-                ))}
-              </div>
-              <div>
-                <div className="text-xs font-bold uppercase tracking-wider text-neg mb-1.5">LAGGING</div>
-                {sectorRotation.lagging.map((s, i) => (
-                  <div key={i} className="flex items-center gap-2 text-sm text-neg mb-1">
-                    <span>▼</span> <span>{s}</span>
-                  </div>
-                ))}
-              </div>
-            </div>
-          )}
-          <ClampText text={sectorRotation.pmImplication} className="mt-3" textClassName="text-sm italic leading-6 text-ink-3" lines={2} />
         </CollapsibleSection>
       )}
       </div>
