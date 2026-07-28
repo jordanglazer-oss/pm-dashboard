@@ -1941,8 +1941,8 @@ export function MorningBrief({
               the early warning and are not shown anywhere else. */}
           <div className="flex items-center justify-between gap-2">
             <span className="rounded-md bg-ink px-1.5 py-0.5 text-[10px] font-bold uppercase tracking-wider text-white">Regime</span>
-            <span className="text-[10px] text-ink-3">
-              {regimeTransition.boundaryGap} from a flip
+            <span className={`rounded-full px-2 py-0.5 text-[10px] font-bold uppercase tracking-wide ${transitionRiskClass}`}>
+              {transitionBadgeText}
             </span>
           </div>
           <div className="mt-1.5 flex items-baseline gap-1.5">
@@ -1971,22 +1971,10 @@ export function MorningBrief({
               </div>
             </>
           )}
-          <div className={`mt-2 text-[10px] font-bold uppercase tracking-wide ${transitionRiskClass} inline-block rounded-full px-2 py-0.5`}>
-            {transitionBadgeText}
-          </div>
           {regimeTransition.tells.length > 0 && (
-            <div className="mt-2 flex flex-wrap gap-1">
-              {regimeTransition.tells.map((t, i) => (
-                <span
-                  key={`${t.name}-${i}`}
-                  className="inline-flex items-center gap-1 rounded-full border border-line-soft px-1.5 py-0.5 text-[10px] text-ink-2"
-                  title={t.detail}
-                >
-                  <span className={`h-1 w-1 rounded-full ${t.momentum === "deteriorating" ? "bg-neg" : "bg-pos"}`} aria-hidden />
-                  {t.name}
-                </span>
-              ))}
-            </div>
+            <a href="#s-narrative" className="mt-2 inline-block text-[11px] font-medium text-accent hover:underline">
+              {regimeTransition.tells.length} tell{regimeTransition.tells.length === 1 ? "" : "s"} ↓
+            </a>
           )}
         </section>
       )}
@@ -2033,43 +2021,32 @@ export function MorningBrief({
                     {[hedgingCall.tenor, hedgingCall.strike].filter(Boolean).join(" · ")}
                   </span>
                 )}
+                {/* The number that defines "reasonable premium" sits on the
+                    action row rather than in its own chip strip below — same
+                    figure, one row instead of two. */}
+                {brief?.hedgeChecklist?.midOtm5Percentile != null && (
+                  <span
+                    className={`ml-auto font-mono text-xs font-semibold ${
+                      brief.hedgeChecklist.midOtm5Percentile <= 35
+                        ? "text-pos"
+                        : brief.hedgeChecklist.midOtm5Percentile >= 80
+                          ? "text-neg"
+                          : "text-ink-2"
+                    }`}
+                    title={`5% OTM premium percentile${brief.hedgeChecklist.vvix != null ? ` · VVIX ${brief.hedgeChecklist.vvix}` : ""}`}
+                  >
+                    {brief.hedgeChecklist.midOtm5Percentile}th pct
+                  </span>
+                )}
               </div>
               <p className="line-clamp-2 text-sm leading-5 text-ink-2" title={hedgingCall.reason}>
                 {hedgingCall.reason}
               </p>
-              {brief?.hedgeChecklist && (
-                <>
-                  {/* The two numbers that define "reasonable premium" — always visible. */}
-                  <div className="mt-2.5 flex flex-wrap gap-1.5">
-                    {brief.hedgeChecklist.midOtm5Percentile != null && (
-                      <span className={`rounded-full border px-2 py-0.5 text-[10px] font-semibold ${
-                        brief.hedgeChecklist.midOtm5Percentile <= 35
-                          ? "border-pos-border bg-white/70 text-pos"
-                          : brief.hedgeChecklist.midOtm5Percentile >= 80
-                            ? "border-neg-border bg-white/70 text-neg"
-                            : "border-line bg-white/70 text-ink-2"
-                      }`}>
-                        5% OTM: {brief.hedgeChecklist.midOtm5Percentile}th pct
-                      </span>
-                    )}
-                    {brief.hedgeChecklist.vvix != null && (
-                      <span className="rounded-full border border-line bg-white/70 px-2 py-0.5 text-[10px] font-semibold text-ink-2">
-                        VVIX {brief.hedgeChecklist.vvix}
-                      </span>
-                    )}
-                    {brief.hedgeChecklist.midOtm5Percentile == null && (
-                      <span className="rounded-full border border-line bg-white/70 px-2 py-0.5 text-[10px] text-ink-3" title="Premium ledger too thin to rank yet">
-                        premiums unranked{typeof brief.hedgeChecklist.sessions === "number" ? ` (${brief.hedgeChecklist.sessions} sessions)` : ""}
-                      </span>
-                    )}
-                  </div>
-                  {/* Full data basis now lives in the Narrative section (see the
-                      "Hedging data basis" accordion row) so this tile stays a
-                      4-line summary, per the redesign. */}
-                  <a href="#s-narrative" className="mt-2 inline-block text-[11px] font-medium text-accent hover:underline">
-                    Full data basis ↓
-                  </a>
-                </>
+              {brief?.hedgeChecklist && brief.hedgeChecklist.midOtm5Percentile == null && (
+                <p className="mt-2 text-[11px] text-ink-3">
+                  premiums unranked
+                  {typeof brief.hedgeChecklist.sessions === "number" ? ` (${brief.hedgeChecklist.sessions} sessions)` : ""}
+                </p>
               )}
 
               {/* ── Position status: ground truth for HOLD, and the logger ── */}
@@ -2095,6 +2072,7 @@ export function MorningBrief({
                       );
                     })}
                     <button onClick={openHedgeForm} className="text-[11px] font-medium text-accent hover:underline">＋ Log another</button>
+                    <a href="#s-narrative" className="ml-2 text-[11px] font-medium text-accent hover:underline">basis ↓</a>
                   </div>
                 ) : (
                   <div className="text-[11px] text-ink-3">
@@ -2103,6 +2081,10 @@ export function MorningBrief({
                     <button onClick={openHedgeForm} className="font-medium text-accent hover:underline">
                       log a hedge
                     </button>
+                    {" · "}
+                    {/* The tile no longer carries its own "Full data basis" row;
+                        the link rides here so the evidence stays one click away. */}
+                    <a href="#s-narrative" className="font-medium text-accent hover:underline">basis ↓</a>
                   </div>
                 )}
 
@@ -2329,11 +2311,18 @@ export function MorningBrief({
                           already clamped but the action above it wasn't. Clamps
                           to 2 lines collapsed, full text on expand (same click
                           target as the rest of the row). */}
-                      <div className={`text-[13px] ${expanded ? "" : "line-clamp-2"}`}>
+                      {/* Collapsed rows are ONE line, not four. The action was
+                          clamped to 2 and the summary to another 2, so every
+                          flagged name cost four lines and the card ran far
+                          taller than the mock's list. Both open in full on the
+                          same click target. */}
+                      <div className={`text-[13px] ${expanded ? "" : "truncate"}`}>
                         <span className="font-mono font-bold text-ink">{displayTicker(item.ticker)}</span>
                         {item.action && <span className="text-ink-2"> · {item.action}</span>}
                       </div>
-                      <p className={`mt-0.5 text-[13px] leading-snug text-ink-3 ${expanded ? "" : "line-clamp-2"}`}>{item.summary}</p>
+                      {expanded && (
+                        <p className="mt-0.5 text-[13px] leading-snug text-ink-3">{item.summary}</p>
+                      )}
                     </div>
                   </div>
                 );
@@ -2591,6 +2580,37 @@ export function MorningBrief({
       {/* Hedging data basis — the full ✓/✗ checklist, live premium table,
           percentile history and regime inputs. Moved out of the Decide
           tile so that tile stays a 4-line summary; nothing was dropped. */}
+      {/* Regime tells — the early-warning signals behind the Decide regime
+          tile. They live here, not on the tile, so the tile stays a four-line
+          read; the tile's "N tells" link jumps to this row. */}
+      {regimeTransition && regimeTransition.tells.length > 0 && (
+        <CollapsibleSection
+          prefKey="briefNarrativeRegimeTells"
+          defaultCollapsed
+          title={
+            <span className="flex items-center gap-2">
+              <span className="text-base">🔀</span>
+              <span className="text-base font-semibold">Regime tells</span>
+            </span>
+          }
+          subtitle={
+            <span className="text-xs text-ink-3">
+              {regimeTransition.tells.filter((t) => t.momentum === "deteriorating").length} deteriorating ·{" "}
+              {regimeTransition.boundaryGap} signal{regimeTransition.boundaryGap === 1 ? "" : "s"} from a flip
+            </span>
+          }
+        >
+          <div className="mt-1.5 space-y-1.5">
+            {regimeTransition.tells.map((t, i) => (
+              <div key={`${t.name}-${i}`} className="flex gap-2 text-[11px] leading-4">
+                <span className={`mt-1 h-1.5 w-1.5 shrink-0 rounded-full ${t.momentum === "deteriorating" ? "bg-neg" : "bg-pos"}`} aria-hidden />
+                <span className="font-semibold text-ink">{t.name}</span>
+                <span className="text-ink-2">{t.detail}</span>
+              </div>
+            ))}
+          </div>
+        </CollapsibleSection>
+      )}
       {breadthAnalysis && (
         <CollapsibleSection
           prefKey="briefNarrativeBreadth"
