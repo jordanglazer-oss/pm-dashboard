@@ -1928,12 +1928,12 @@ export function MorningBrief({
         {/* items-start is load-bearing: without it every tile stretches to the
             tallest in its row, so a verbose Cash tile left the calendar tile as
             a tall empty box. Each tile is now only as tall as its content. */}
-        <div className="grid grid-cols-1 gap-4 sm:grid-cols-2 content-start items-start min-w-0">
+        <div className="grid grid-cols-1 gap-4 sm:grid-cols-2 content-start items-stretch min-w-0">
       {/* Regime-transition gauge (Phase 02) — how close the current regime is
           to flipping + the early tells. A compact one-liner; the tells sit
           below as small pills. Hidden on briefs generated before Phase 02. */}
       {regimeTransition && (
-        <section className="rounded-xl border border-line bg-white px-4 py-3 shadow-sm">
+        <section className="flex h-full flex-col rounded-xl border border-line bg-white px-4 py-3 shadow-sm">
           {/* Mock form: label pill + distance-to-flip on one row, the composite
               read big, a proportional 3-segment bar, then the signal counts.
               Replaces the old 5-element wrapping header, which cost 3 lines at
@@ -1980,7 +1980,7 @@ export function MorningBrief({
       )}
 
           {hedgingCall && (
-            <div className={`rounded-card border p-5 shadow-sm ${
+            <div className={`flex h-full flex-col rounded-card border p-5 shadow-sm ${
               hedgingCall.action === "ADD"
                 ? "border-neg-border bg-neg-soft"
                 : hedgingCall.action === "SKIP"
@@ -2156,7 +2156,7 @@ export function MorningBrief({
               : deploymentWindowStatus.tone === "rose" ? "bg-neg-soft text-neg"
               : "bg-surface-2 text-ink-2";
             return (
-              <div className={`rounded-card border p-5 shadow-sm ${tone.border} ${tone.bg}`}>
+              <div className={`flex h-full flex-col rounded-card border p-5 shadow-sm ${tone.border} ${tone.bg}`}>
                 <div className="flex items-center justify-between gap-2 mb-3">
                   <div className={`text-xs font-bold uppercase tracking-[0.22em] ${tone.label}`}>
                     Cash Deployment
@@ -2209,7 +2209,7 @@ export function MorningBrief({
           holdings reporting within 7 days), given the count-first form the
           other Decide tiles use, with the dated macro events as a footer. */}
       {earningsSoon.length > 0 && (
-        <div className="rounded-card border border-warn-border bg-warn-soft p-5 shadow-sm">
+        <div className="flex h-full flex-col rounded-card border border-warn-border bg-warn-soft p-5 shadow-sm">
           <div className="mb-3 flex items-center justify-between gap-2">
             <span className="text-xs font-bold uppercase tracking-[0.22em] text-warn">Earnings</span>
             <span className="text-[10px] font-bold text-ink-3">next 7 sessions</span>
@@ -2231,14 +2231,27 @@ export function MorningBrief({
           {/* Macro footer: the dated non-earnings catalysts inside the same
               window, so the tile answers "what else lands this week". */}
           {(() => {
-            const macro = catalystEvents
-              .filter((e) => e.kind !== "earnings")
-              .slice(0, 3)
-              .map((e) => `${e.title} ${fmtCatalystDate(e.date)}`);
+            const macro = catalystEvents.filter((e) => e.kind !== "earnings").slice(0, 3);
             if (!macro.length) return null;
             return (
-              <div className="mt-2 truncate border-t border-warn-border pt-1.5 font-mono text-[10px] text-ink-3" title={macro.join(" · ")}>
-                {macro.join(" · ")}
+              <div className="mt-2.5 border-t border-warn-border pt-2">
+                <div className="mb-1 text-[10px] font-bold uppercase tracking-wider text-ink-3">
+                  Also this week
+                </div>
+                <ul className="space-y-1">
+                  {macro.map((e, i) => (
+                    <li key={`${e.date}-${e.title}-${i}`} className="flex items-start gap-1.5 text-xs leading-4">
+                      <span
+                        className={`mt-1 h-1.5 w-1.5 shrink-0 rounded-full ${e.importance === "high" ? "bg-warn" : "bg-ink-faint"}`}
+                        aria-hidden
+                      />
+                      <span className="text-ink-2">{e.title}</span>
+                      <span className="ml-auto shrink-0 font-mono text-[11px] text-ink-3">
+                        {fmtCatalystDate(e.date)}
+                      </span>
+                    </li>
+                  ))}
+                </ul>
               </div>
             );
           })()}
