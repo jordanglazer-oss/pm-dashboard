@@ -2445,8 +2445,16 @@ export function MorningBrief({
                   : b!.label_ === "Risk-Off"
                   ? "red"
                   : "amber";
+                // Coloured top rule per horizon, as the mock shows: accent for
+                // tactical, positive-green for cyclical, violet for structural.
+                // Purely a visual key so the three cards are distinguishable at
+                // a glance; it carries no signal of its own.
+                const topRule =
+                  c.id === "tactical" ? "border-t-accent"
+                  : c.id === "cyclical" ? "border-t-pos"
+                  : "border-t-violet";
                 return (
-                  <div key={c.id} className={`rounded-xl border p-3 ${c.accent}`}>
+                  <div key={c.id} className={`rounded-card border border-t-[3px] p-3 ${topRule} ${c.accent}`}>
                     <div className="flex items-center justify-between gap-2 mb-2">
                       <div className="flex items-center gap-2">
                         <span className="text-[10px] font-bold uppercase tracking-wider text-ink-2">{c.label}</span>
