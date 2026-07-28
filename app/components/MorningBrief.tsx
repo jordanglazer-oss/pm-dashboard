@@ -2191,35 +2191,76 @@ export function MorningBrief({
                   </span>
                   <span className="text-xs text-ink-2">{cashDeploymentCall.window}</span>
                 </div>
-                {/* Detail moved to the Narrative row so this tile stays a
-                    4-line read; the link jumps to it. */}
+                {/* Mock form: a segment per trigger the call evaluates, filled
+                    for the ones met. Replaces the free-text window banner, which
+                    wrapped to two lines and repeated the window already shown
+                    above. Full reasoning stays in the Narrative row. */}
+                {(() => {
+                  const met = cashDeploymentCall.triggersMet?.length ?? 0;
+                  const total = met + (cashDeploymentCall.triggersMissing?.length ?? 0);
+                  if (total === 0) return null;
+                  return (
+                    <>
+                      <div className="mt-2 flex gap-1">
+                        {Array.from({ length: total }, (_, i) => (
+                          <div
+                            key={i}
+                            className={`h-1.5 flex-1 rounded-pill ${i < met ? "bg-pos" : "bg-line"}`}
+                          />
+                        ))}
+                      </div>
+                      <div className="mt-1.5 font-mono text-[10px] text-ink-3">
+                        {met} of {total} triggers · {deploymentWindowStatus.label}
+                      </div>
+                    </>
+                  );
+                })()}
                 <a href="#s-narrative" className="mt-1.5 inline-block text-[11px] font-medium text-accent hover:underline">
                   Why · triggers ↓
                 </a>
-                <div className={`mt-2 px-2 py-1 rounded-md text-[10px] font-semibold ${windowToneClass}`}>
-                  {deploymentWindowStatus.label}
-                </div>
               </div>
             );
           })()}
-      {/* Slim can't-miss earnings strip — portfolio holdings reporting within 7
-          days. Amber so it reads instantly; horizontally scrollable if many.
-          Hidden when nothing is upcoming. */}
+      {/* Earnings tile — the mock's "next sessions" card rather than the old
+          one-line strip, which rendered 37px tall and read as a rule between
+          tiles instead of a peer of Hedging/Regime/Cash. Same data (portfolio
+          holdings reporting within 7 days), given the count-first form the
+          other Decide tiles use, with the dated macro events as a footer. */}
       {earningsSoon.length > 0 && (
-        <section className="flex items-center gap-2 rounded-lg border border-warn-border bg-warn-soft px-3 py-1.5">
-          <span className="flex shrink-0 items-center gap-1 text-[11px] font-bold uppercase tracking-wider text-warn">
-            <svg className="h-3.5 w-3.5" fill="none" stroke="currentColor" strokeWidth="2" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" d="M6.75 3v2.25M17.25 3v2.25M3 18.75V7.5a2.25 2.25 0 012.25-2.25h13.5A2.25 2.25 0 0121 7.5v11.25m-18 0A2.25 2.25 0 005.25 21h13.5A2.25 2.25 0 0021 18.75m-18 0v-7.5A2.25 2.25 0 015.25 9h13.5A2.25 2.25 0 0121 11.25v7.5" /></svg>
-            Earnings ≤7d
-          </span>
-          <div className="flex items-center gap-1.5 overflow-x-auto">
+        <div className="rounded-card border border-warn-border bg-warn-soft p-5 shadow-sm">
+          <div className="mb-3 flex items-center justify-between gap-2">
+            <span className="text-xs font-bold uppercase tracking-[0.22em] text-warn">Earnings</span>
+            <span className="text-[10px] font-bold text-ink-3">next 7 sessions</span>
+          </div>
+          <div className="mb-2 flex items-baseline gap-2">
+            <span className="text-2xl font-semibold tracking-tight text-warn">{earningsSoon.length}</span>
+            <span className="text-xs text-ink-2">
+              held name{earningsSoon.length === 1 ? "" : "s"} report
+            </span>
+          </div>
+          <div className="flex flex-wrap gap-1">
             {earningsSoon.map((e) => (
-              <span key={e.ticker} className="inline-flex shrink-0 items-center gap-1 whitespace-nowrap rounded-full border border-warn-border bg-white px-2 py-0.5 text-[11px]">
+              <span key={e.ticker} className="inline-flex shrink-0 items-center gap-1 whitespace-nowrap rounded-full border border-warn-border bg-white/70 px-1.5 py-0.5 text-[10px]">
                 <span className="font-mono font-bold text-ink">{displayTicker(e.ticker)}</span>
                 <span className="font-semibold text-warn">{e.days === 0 ? "today" : e.days === 1 ? "tmrw" : formatYmd(e.date)}</span>
               </span>
             ))}
           </div>
-        </section>
+          {/* Macro footer: the dated non-earnings catalysts inside the same
+              window, so the tile answers "what else lands this week". */}
+          {(() => {
+            const macro = catalystEvents
+              .filter((e) => e.kind !== "earnings")
+              .slice(0, 3)
+              .map((e) => `${e.title} ${fmtCatalystDate(e.date)}`);
+            if (!macro.length) return null;
+            return (
+              <div className="mt-2 truncate border-t border-warn-border pt-1.5 font-mono text-[10px] text-ink-3" title={macro.join(" · ")}>
+                {macro.join(" · ")}
+              </div>
+            );
+          })()}
+        </div>
       )}
 
         </div>
