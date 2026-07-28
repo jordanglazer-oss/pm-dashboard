@@ -215,6 +215,7 @@ Respond ONLY with valid JSON matching this exact structure (fields are intention
     {
       "ticker": "TICKER",
       "priority": "High",
+      "metric": "+1.3pp",
       "summary": "Brief explanation of why this holding is flagged.",
       "action": "Specific recommended action."
     }
@@ -230,6 +231,12 @@ Respond ONLY with valid JSON matching this exact structure (fields are intention
     "Imperative one-liner action #1 (≤ 12 words, starts with a verb, specific enough that the PM could execute today).",
     "Imperative one-liner action #2.",
     "Imperative one-liner action #3."
+  ],
+  "topActionsDetail": [
+    {
+      "text": "Same text as the matching topActionsToday entry, verbatim.",
+      "tags": ["+130bps over target", "largest single-name risk"]
+    }
   ],
   "hedgingCall": {
     "action": "ADD or HOLD or SKIP — must match the directional recommendation in hedgingAnalysis. HOLD is ONLY permitted when the ACTIVE HEDGE POSITIONS block lists ≥1 real position (HOLD = keep existing protection). If the book is UNHEDGED (no active positions), you MUST use ADD (establish protection) or SKIP (stay unhedged) — never HOLD.",
@@ -255,6 +262,8 @@ Notes:
 - When the REGIME-TRANSITION GAUGE block is present and shows a lean with Elevated/High transition risk, work it into tacticalView and bottomLine: position AHEAD of the move and name the early tells driving it. The lean is directional and the NEXT label off a non-neutral regime is Neutral, so read it accordingly: 'toward Risk-Off' = defensive, take chips before it confirms; 'toward Neutral' FROM Risk-On = a de-risk, tighten/stop adding aggressively even though it's not yet defensive; 'toward Neutral' FROM Risk-Off = a thaw, the worst may be passing — start rebuilding a shopping list; 'toward Risk-On' = a tailwind building, lean in early. Example: 'regime Risk-On but cooling toward Neutral as breadth and XLK/XLU roll — stop adding beta, let winners run with tighter stops'. Do NOT overreact to a Low/Watch reading or a 'stable' lean.
 - catalystWatch MUST be grounded ONLY in the CATALYST CALENDAR block — cite the actual dated events (never invent dates or events not listed). Tie each to the book's exposure (e.g. 'CPI on the 15th pressures your Tech concentration'; 'NVDA earnings on the 21st is your biggest single-name event risk'). Lead with the single highest-impact event. If the block lists no events, return an empty string.
 - forwardActions should contain 4-6 specific, actionable recommendations ordered by priority. Use "High", "Medium", or "Low" for priority. Actions should be forward-looking (what to do THIS week or next), not reactive to yesterday.
+- riskScan[].metric is a SHORT quantified tag (≤ 14 chars) naming the single number that drives the flag — e.g. "+1.3pp" (weight drift vs target), "-7 in 21d" (composite score decay), "RSI 71", "-4.6% 20d". Use a real figure from the data provided; if no single number captures it, use a two-word state like "diverging" or "thesis drift". NEVER invent a figure that is not supported by the inputs — omit the field instead.
+- topActionsDetail MUST mirror topActionsToday one-for-one and in the SAME ORDER, repeating each line verbatim in "text". "tags" is 0-2 short evidence chips (≤ 22 chars each) naming the concrete fact behind the action — e.g. "+130bps over target", "score -7 in 21d", "flips to PARTIAL on a 3-4% pullback". Tags are evidence, not restatements of the action; drop the field rather than padding it.
 - topActionsToday is the PM's at-a-glance executive summary — 3 to 5 imperative one-liners that distill the most important decisions for today. Each entry must (a) start with a verb (Add / Trim / Hedge / Rotate / Watch / Skip / Hold), (b) be ≤ 12 words, (c) be specific enough that the PM could execute on it without further interpretation ("Add 2% SPY 3M 7%-OTM puts" not "Consider hedging"), and (d) be a subset/restatement of the most important forwardActions and hedgingCall items so the executive summary is consistent with the detail panels below it. Do NOT include "review", "monitor", "consider" — those are too vague. If a forwardAction is High priority it should usually have a corresponding topActionsToday entry.
 - hedgingCall MUST mirror the recommendation in hedgingAnalysis. If hedgingAnalysis says "SKIP", hedgingCall.action is "SKIP" and strike/tenor are omitted (null/missing). If it says "ADD", populate strike + tenor with the specific values referenced in the prose (e.g. "5% OTM" / "3 months"). reason must be one short sentence that captures the WHY (cheap insurance + late-cycle warning, classic Risk-Off, etc.) so the PM can decide in one read whether to act.
 

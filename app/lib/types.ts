@@ -741,6 +741,10 @@ export type MorningBrief = {
   riskScan?: {
     ticker: string;
     priority: "High" | "Medium-High" | "Medium" | "Low-Medium";
+    /** Short quantified driver (≤ ~14 chars) shown right-aligned on the Risk
+     *  Flags row — e.g. "+1.3pp", "-7 in 21d", "diverging". Optional: briefs
+     *  generated before 2026-07 lack it and the row falls back to priority. */
+    metric?: string;
     summary: string;
     action: string;
   }[];
@@ -760,6 +764,10 @@ export type MorningBrief = {
    * hides the panel when the array is empty/undefined.
    */
   topActionsToday?: string[];
+  /** Same lines as topActionsToday, in the same order, each with 0-2 short
+   *  evidence chips. Optional and additive: when absent (older briefs) the UI
+   *  renders topActionsToday exactly as before, with no chips. */
+  topActionsDetail?: { text: string; tags?: string[] }[];
   /**
    * Structured hedging recommendation extracted from hedgingAnalysis.
    * The prose still lives in hedgingAnalysis for context; this object

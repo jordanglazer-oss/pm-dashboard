@@ -2316,7 +2316,26 @@ export function MorningBrief({
                       <span className="mt-[3px] inline-flex h-5 w-5 flex-none items-center justify-center rounded-full bg-surface-2 text-[11px] font-bold text-ink-3">
                         {i + 1}
                       </span>
-                      <span className="min-w-0 flex-1 text-sm leading-6 text-ink">{action}</span>
+                      <div className="min-w-0 flex-1">
+                        <span className="text-sm leading-6 text-ink">{action}</span>
+                        {/* Evidence chips, matched by position then verified by
+                            text so a mis-ordered model response can't attach
+                            one action's evidence to another. */}
+                        {(() => {
+                          const d = brief?.topActionsDetail?.[i];
+                          const tags = d && d.text === action ? d.tags : undefined;
+                          if (!tags || tags.length === 0) return null;
+                          return (
+                            <div className="mt-1 flex flex-wrap gap-1">
+                              {tags.map((t, k) => (
+                                <span key={k} className="rounded border border-line bg-surface-2 px-1.5 py-0.5 text-[10px] text-ink-3">
+                                  {t}
+                                </span>
+                              ))}
+                            </div>
+                          );
+                        })()}
+                      </div>
                       {hit && (
                         <a
                           href={`/stock/${encodeURIComponent(hit)}`}
@@ -2369,13 +2388,13 @@ export function MorningBrief({
                       <span className={`min-w-0 flex-1 text-[13px] text-ink-2 ${expanded ? "" : "truncate"}`}>
                         {item.summary}
                       </span>
-                      {/* The design shows a numeric delta here. The scan
-                          carries no number — only a priority — so this states
-                          the priority rather than inventing a figure. */}
-                      <span className={`shrink-0 text-[11px] font-semibold ${
+                      {/* The quantified driver, as the design shows. Briefs
+                          generated before this field existed fall back to the
+                          priority so nothing renders blank. */}
+                      <span className={`shrink-0 font-mono text-[11px] font-semibold ${
                         item.priority === "High" ? "text-neg" : item.priority === "Low-Medium" ? "text-ink-3" : "text-warn"
-                      }`}>
-                        {item.priority}
+                      }`} title={item.metric ? item.priority : undefined}>
+                        {item.metric || item.priority}
                       </span>
                     </div>
                     {expanded && item.action && (
@@ -2652,10 +2671,12 @@ export function MorningBrief({
                     <p className="text-sm leading-6 text-ink-2">{c.text}</p>
                     {c.invalidator && (
                       <div className="mt-2 pt-2 border-t border-line/70 flex items-start gap-1.5">
-                        <span className="text-[9px] font-bold uppercase tracking-wider text-ink-3 mt-[1px] flex-none">
-                          Invalidator
+                        {/* Labelled KILL per the design — same field, the name
+                            the PM actually uses for "this thesis is broken". */}
+                        <span className="mt-[1px] flex-none text-[9px] font-bold uppercase tracking-[0.14em] text-ink-3">
+                          Kill
                         </span>
-                        <span className="text-xs leading-5 text-ink-2 italic">
+                        <span className="text-xs leading-5 text-ink-2">
                           {c.invalidator}
                         </span>
                       </div>
