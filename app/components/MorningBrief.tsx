@@ -20,6 +20,7 @@ import { ImageUpload, LightboxModal, type BriefAttachment } from "./ImageUpload"
 import { BriefCommandBar } from "./BriefCommandBar";
 import { CollapsibleSection } from "./CollapsibleSection";
 import { BriefGenerationModal } from "./BriefGenerationModal";
+import { MacroBoard } from "./MacroBoard";
 import type { MarketRegimeData, RegimeDirection } from "@/app/lib/market-regime";
 import { regimeValence } from "@/app/lib/regime-transition";
 import { HORIZONS } from "@/app/lib/horizons";
@@ -2313,6 +2314,15 @@ export function MorningBrief({
         <span className="text-[11px] text-ink-faint">the macro read, in numbers</span>
       </div>
       <div className="space-y-6 ">
+      {/* Macro board: the condensed band/tile grid, now carrying the
+          auditability the old bulky panel had — LIVE/stale status, a verify
+          link to the source, horizon chip and source attribution per tile. */}
+      <MacroBoard
+        fwd={(activeForward ?? null) as never}
+        termStructure={marketData.termStructure}
+        vvix={brief?.hedgeChecklist?.vvix ?? null}
+        asOf={activeForward?.fetchedAt as string | undefined}
+      />
 
       {/* Contrarian sentiment + Catalyst watch side by side, as the mock
           pairs them: the sentiment read on the left, the dated calendar it
@@ -2518,128 +2528,9 @@ export function MorningBrief({
             read before scanning individual indicators. */}
         {marketRegime && <MarketRegimeStrip regime={marketRegime} />}
 
-        {activeForward && (
-          <div className="space-y-6 mb-5">
-            {/* Horizon legend — explains the small color chips on each
-                tile. Mirrors the Forward View horizon palette. */}
-            <div className="flex flex-wrap items-center gap-2 rounded-xl border border-line-soft bg-surface-2/60 px-3 py-2">
-              <span className="text-[10px] font-bold uppercase tracking-wider text-ink-3">Horizon</span>
-              <span className={`inline-flex items-center rounded-full border px-2 py-0.5 text-[10px] font-semibold ${HORIZON_CHIP.tactical.cls}`}>
-                Tactical · 1–3M
-              </span>
-              <span className={`inline-flex items-center rounded-full border px-2 py-0.5 text-[10px] font-semibold ${HORIZON_CHIP.cyclical.cls}`}>
-                Cyclical · 3–6M
-              </span>
-              <span className={`inline-flex items-center rounded-full border px-2 py-0.5 text-[10px] font-semibold ${HORIZON_CHIP.structural.cls}`}>
-                Structural · 6–12M
-              </span>
-              <span className="text-[11px] text-ink-3">
-                · Each indicator is tagged with the horizon it speaks to most directly.
-              </span>
-            </div>
-
-            {/* Macro tile-grid cards in a 2×2 layout (matches the mockup). */}
-            <div className="grid gap-5 md:grid-cols-2 items-start">
-            {/* Breadth & Trend — SPX trajectory plus % of index above
-                key DMAs. Tells you whether a move is broad or narrow. */}
-            <BriefSection
-              title="Breadth & Trend"
-              subtitle="SPX trajectory and how broadly the move is participating."
-              accent="blue"
-            >
-              <div className="grid gap-3 grid-cols-2 md:grid-cols-3">
-                <ForwardTile label="S&P 500 YTD" point={activeForward.spxYtd} unit="%" horizon="cyclical" />
-                <ForwardTile label="S&P 500 Week" point={activeForward.spxWeek} unit="%" horizon="tactical" />
-                <ForwardTile label="S&P >200DMA (wk)" point={activeForward.breadth200Wk} unit="%" deltaUnit="pp" deltaPeriod="wk/wk" horizon="cyclical" />
-                <ForwardTile label="S&P >200DMA (mo)" point={activeForward.breadth200Mo} unit="%" deltaUnit="pp" deltaPeriod="mo/mo" horizon="cyclical" />
-                <ForwardTile label="S&P >50DMA (wk)" point={activeForward.breadth50Wk} unit="%" deltaUnit="pp" deltaPeriod="wk/wk" horizon="tactical" />
-                {activeForward.breadthBroad_200Wk && (
-                  <ForwardTile label="Broad >200DMA (wk)" point={activeForward.breadthBroad_200Wk} unit="%" deltaUnit="pp" deltaPeriod="wk/wk" horizon="cyclical" />
-                )}
-                {activeForward.breadthBroad_200Mo && (
-                  <ForwardTile label="Broad >200DMA (mo)" point={activeForward.breadthBroad_200Mo} unit="%" deltaUnit="pp" deltaPeriod="mo/mo" horizon="cyclical" />
-                )}
-                {activeForward.breadthBroad_50Wk && (
-                  <ForwardTile label="Broad >50DMA (wk)" point={activeForward.breadthBroad_50Wk} unit="%" deltaUnit="pp" deltaPeriod="wk/wk" horizon="tactical" />
-                )}
-                {activeForward.newHighsWk && (
-                  <ForwardTile label="NYSE New Highs" point={activeForward.newHighsWk} unit="" deltaPeriod="wk/wk" horizon="tactical" />
-                )}
-                {activeForward.newLowsWk && (
-                  <ForwardTile label="NYSE New Lows" point={activeForward.newLowsWk} unit="" deltaPeriod="wk/wk" horizon="tactical" />
-                )}
-                {activeForward.upVolumePct && (
-                  <ForwardTile label="NYSE Up Volume" point={activeForward.upVolumePct} unit="%" deltaUnit="pp" deltaPeriod="wk/wk" horizon="tactical" />
-                )}
-              </div>
-            </BriefSection>
-
-            {/* Valuation — SPY multiples and implied growth. Where
-                the tape is priced relative to earnings. */}
-            <BriefSection
-              title="Valuation & Growth"
-              subtitle="SPY multiples and the growth priced in at today's level."
-              accent="emerald"
-            >
-              <div className="grid gap-3 grid-cols-2">
-                <ForwardTile label="SPY Forward P/E" point={activeForward.spyForwardPE} horizon="structural" />
-                <ForwardTile label="SPY Trailing P/E" point={activeForward.spyTrailingPE} horizon="structural" />
-                <ForwardTile label="Implied 1Y EPS Growth (P/E)" point={activeForward.impliedEpsGrowth} unit="%" horizon="cyclical" />
-                <ForwardTile label="Est 3-5Y EPS Growth" point={activeForward.eps35Growth} unit="%" horizon="structural" />
-              </div>
-            </BriefSection>
-
-            {/* Rates & Curve — Treasury yields and two curve measures.
-                Drives discount-rate + growth expectations. */}
-            <BriefSection
-              title="Rates & Curve"
-              subtitle="Treasury yields and curve shape — the discount rate backdrop."
-              accent="amber"
-            >
-              <div className="grid gap-3 grid-cols-2 md:grid-cols-3">
-                <ForwardTile label="10Y Treasury" point={activeForward.yield10y} unit="%" deltaUnit="raw" horizon="structural" />
-                <ForwardTile label="2Y Treasury" point={activeForward.yield2y} unit="%" deltaUnit="raw" horizon="cyclical" />
-                <ForwardTile label="3M T-Bill" point={activeForward.yield3m} unit="%" deltaUnit="raw" horizon="tactical" />
-                <ForwardTile label="10Y-2Y Curve" point={activeForward.curve10y2y} unit="bps" horizon="structural" />
-                <ForwardTile label="10Y-3M Curve" point={activeForward.curve10y3m} unit="bps" horizon="structural" />
-              </div>
-            </BriefSection>
-
-            {/* Risk & Volatility — credit spreads + vol surface.
-                First place stress shows up before it hits price. */}
-            <BriefSection
-              title="Credit & Volatility"
-              subtitle="Credit spreads and vol surface — where stress shows up first."
-              accent="rose"
-            >
-              <div className="grid gap-3 grid-cols-2">
-                <ForwardTile label="HY OAS Trend" point={activeForward.hyOasTrend} unit="bps" deltaUnit="bps" invertDeltaColor horizon="cyclical" />
-                <ForwardTile label="IG OAS Trend" point={activeForward.igOasTrend} unit="bps" deltaUnit="bps" invertDeltaColor horizon="cyclical" />
-                <ForwardTile label="VIX (wk/wk)" point={activeForward.vixWeek} deltaUnit="pct" invertDeltaColor horizon="tactical" />
-                <ForwardTile label="MOVE (wk/wk)" point={activeForward.moveWeek} deltaUnit="pct" invertDeltaColor horizon="tactical" />
-              </div>
-            </BriefSection>
-            </div>{/* /2×2 tile-grid */}
-          </div>
-        )}
-
-        {brief?.regimeSignals && brief.regimeSignals.length > 0 && (
-          <div className="rounded-card border border-line-soft bg-white/70 p-4">
-            <div className="text-[10px] font-bold uppercase tracking-wider text-ink-3 mb-2">
-              Regime Drivers (deterministic)
-            </div>
-            <div className="flex flex-wrap gap-2">
-              {brief.regimeSignals.map((signal, i) => (
-                <span
-                  key={i}
-                  className="rounded-full bg-surface-2 px-3 py-1 text-xs font-medium text-ink-2"
-                >
-                  {signal}
-                </span>
-              ))}
-            </div>
-          </div>
-        )}
+        {/* The old full-size ForwardTile panel lived here; its metrics now
+            render in the condensed Macro Board at the top of this section,
+            which carries the same status/source/verify affordances. */}
 
         {activeForward?.fetchedAt && (
           <p className="text-[10px] text-ink-3 mt-3">
