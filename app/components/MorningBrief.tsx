@@ -761,6 +761,31 @@ export function MorningBrief({
   });
   // Portfolio holdings reporting earnings within the next 7 days (today .. +7),
   // soonest first — drives the slim can't-miss banner at the top of the brief.
+  // Match an action line to a holding so the row can offer a jump button.
+  // Word-boundary match on the bare symbol against the book — never a guess
+  // from the prose, so rows that name no holding simply get no button.
+  const actionTicker = React.useCallback((text: string): string | null => {
+    const t = (text || "").toUpperCase();
+    for (const s of stocks || []) {
+      const bare = (s.ticker || "").replace(/[-.](TO|T|V)$/i, "").toUpperCase();
+      if (bare.length < 2) continue;
+      if (new RegExp(`\\b${bare.replace(/[.*+?^${}()|[\]\\]/g, "\\$&")}\\b`).test(t)) return s.ticker;
+    }
+    return null;
+  }, [stocks]);
+
+
+  // Two strongest and two weakest sectors today, for the Risk Flags footer.
+  const sectorTilt = useMemo(() => {
+    const rows = (brief?.sectorPerformance || [])
+      .filter((r): r is { sector: string; etf: string; dayPct: number } => typeof r.dayPct === "number")
+      .sort((a, b) => b.dayPct - a.dayPct);
+    if (rows.length < 2) return [];
+    return [...rows.slice(0, 2), ...rows.slice(-2)].filter(
+      (r, i, arr) => arr.findIndex((x) => x.sector === r.sector) === i,
+    );
+  }, [brief]);
+
   const earningsSoon = useMemo(() => {
     return (stocks || [])
       .filter((s) => s.bucket === "Portfolio")
@@ -2268,19 +2293,37 @@ export function MorningBrief({
       <div className="grid grid-cols-1 gap-4 lg:grid-cols-[1.55fr_1fr] ">
         <div className="min-w-0">
           {topActionsToday.length > 0 && (
-            <div className="lg:col-span-2 rounded-card border border-line bg-white p-5 shadow-sm">
-              <div className="text-xs font-bold uppercase tracking-[0.22em] text-ink-3 mb-3">
-                Top actions today
+            <div className="rounded-card border border-line bg-white shadow-sm">
+              <div className="flex items-center gap-2 border-b border-line px-5 py-3">
+                <span className="text-xs font-bold uppercase tracking-[0.22em] text-ink-3">Do today</span>
+                <span className="inline-flex h-5 min-w-5 items-center justify-center rounded-full bg-ink px-1.5 text-[11px] font-bold text-white">
+                  {topActionsToday.length}
+                </span>
               </div>
-              <ul className="space-y-2">
-                {topActionsToday.map((action, i) => (
-                  <li key={i} className="flex items-start gap-3 text-sm leading-6 text-ink">
-                    <span className="mt-[3px] inline-flex h-5 w-5 flex-none items-center justify-center rounded-full bg-ink text-[10px] font-bold text-white">
-                      {i + 1}
-                    </span>
-                    <span>{action}</span>
-                  </li>
-                ))}
+              <ul className="divide-y divide-line-soft">
+                {topActionsToday.map((action, i) => {
+                  // Per-row jump button, as the design shows. The ticker is
+                  // matched against the book rather than guessed from the
+                  // prose, so a row only gets a button when it genuinely
+                  // names a holding; otherwise it renders without one.
+                  const hit = actionTicker(action);
+                  return (
+                    <li key={i} className="flex items-start gap-3 px-5 py-3">
+                      <span className="mt-[3px] inline-flex h-5 w-5 flex-none items-center justify-center rounded-full bg-surface-2 text-[11px] font-bold text-ink-3">
+                        {i + 1}
+                      </span>
+                      <span className="min-w-0 flex-1 text-sm leading-6 text-ink">{action}</span>
+                      {hit && (
+                        <a
+                          href={`/stock/${encodeURIComponent(hit)}`}
+                          className="shrink-0 rounded-control border border-line bg-white px-2.5 py-1 text-xs font-semibold text-ink-2 hover:text-ink"
+                        >
+                          Open {displayTicker(hit)}
+                        </a>
+                      )}
+                    </li>
+                  );
+                })}
               </ul>
             </div>
           )}
@@ -2292,55 +2335,74 @@ export function MorningBrief({
           lives in the Narrative "Hedging data basis" row. */}
       <section className="grid gap-4 grid-cols-1 items-start">
         {riskScan && riskScan.length > 0 ? (
-          <div className="rounded-card border border-line bg-white p-4 shadow-sm">
-            <div className="flex items-center gap-2 mb-1">
-              <h3 className="text-base font-semibold">Portfolio Risk Scan</h3>
-              <span className="text-xs font-semibold text-neg">{riskScan.length} flagged</span>
+          <div className="rounded-card border border-line bg-white shadow-sm">
+            <div className="flex items-center gap-2 border-b border-line px-4 py-3">
+              <h3 className="text-xs font-bold uppercase tracking-[0.22em] text-ink-3">Risk flags</h3>
+              <span className="inline-flex h-5 min-w-5 items-center justify-center rounded-full bg-neg px-1.5 text-[11px] font-bold text-white">
+                {riskScan.length}
+              </span>
+              <a href="/risk" className="ml-auto text-xs font-medium text-ink-3 hover:text-ink">X-ray ↗</a>
             </div>
             <div className="divide-y divide-line-soft">
               {riskScan.map((item, i) => {
-                const badge =
-                  item.priority === "High"
-                    ? { label: "HIGH", cls: "bg-neg text-white" }
-                    : item.priority === "Medium-High"
-                    ? { label: "MED", cls: "bg-warn text-white" }
-                    : item.priority === "Medium"
-                    ? { label: "MED", cls: "bg-warn text-white" }
-                    : { label: "LOW", cls: "bg-ink-3 text-white" };
+                const dot =
+                  item.priority === "High" ? "bg-neg"
+                  : item.priority === "Low-Medium" ? "bg-ink-faint"
+                  : "bg-warn";
                 const expanded = expandedRisk.has(i);
                 return (
                   <div
                     key={i}
-                    className="flex items-start gap-2.5 py-1.5 first:pt-1 cursor-pointer group"
+                    className="cursor-pointer px-4 py-2.5"
                     onClick={() => toggleRisk(i)}
                     title={expanded ? "Click to collapse" : "Click to expand"}
                   >
-                    <span className={`mt-px shrink-0 rounded px-1.5 py-0.5 text-[10px] font-bold tracking-wide ${badge.cls}`}>
-                      {badge.label}
-                    </span>
-                    <div className="min-w-0 flex-1">
-                      {/* item.action is a full thesis paragraph, and it was the
-                          real reason this column ran tall — item.summary was
-                          already clamped but the action above it wasn't. Clamps
-                          to 2 lines collapsed, full text on expand (same click
-                          target as the rest of the row). */}
-                      {/* Collapsed rows are ONE line, not four. The action was
-                          clamped to 2 and the summary to another 2, so every
-                          flagged name cost four lines and the card ran far
-                          taller than the mock's list. Both open in full on the
-                          same click target. */}
-                      <div className={`text-[13px] ${expanded ? "" : "truncate"}`}>
-                        <span className="font-mono font-bold text-ink">{displayTicker(item.ticker)}</span>
-                        {item.action && <span className="text-ink-2"> · {item.action}</span>}
-                      </div>
-                      {expanded && (
-                        <p className="mt-0.5 text-[13px] leading-snug text-ink-3">{item.summary}</p>
-                      )}
+                    <div className="flex items-center gap-2.5">
+                      <span className={`h-1.5 w-1.5 shrink-0 rounded-full ${dot}`} aria-hidden />
+                      <span className="w-[52px] shrink-0 font-mono text-[13px] font-bold text-ink">
+                        {displayTicker(item.ticker)}
+                      </span>
+                      <span className={`min-w-0 flex-1 text-[13px] text-ink-2 ${expanded ? "" : "truncate"}`}>
+                        {item.summary}
+                      </span>
+                      {/* The design shows a numeric delta here. The scan
+                          carries no number — only a priority — so this states
+                          the priority rather than inventing a figure. */}
+                      <span className={`shrink-0 text-[11px] font-semibold ${
+                        item.priority === "High" ? "text-neg" : item.priority === "Low-Medium" ? "text-ink-3" : "text-warn"
+                      }`}>
+                        {item.priority}
+                      </span>
                     </div>
+                    {expanded && item.action && (
+                      <p className="mt-1 pl-[68px] text-[13px] leading-snug text-ink-3">{item.action}</p>
+                    )}
                   </div>
                 );
               })}
             </div>
+            {/* Sector tilt — real per-sector day moves from sectorPerformance,
+                the two strongest and two weakest. Omitted when the brief
+                predates that field rather than shown empty. */}
+            {sectorTilt.length > 0 && (
+              <div className="flex items-center gap-2 border-t border-line bg-surface-2/50 px-4 py-2">
+                <span className="text-[11px] text-ink-3">Sector tilt</span>
+                <div className="ml-auto flex flex-wrap justify-end gap-1">
+                  {sectorTilt.map((t) => (
+                    <span
+                      key={t.sector}
+                      className={`rounded-full border px-1.5 py-0.5 text-[10px] font-semibold ${
+                        t.dayPct >= 0
+                          ? "border-pos-border bg-pos-soft text-pos"
+                          : "border-neg-border bg-neg-soft text-neg"
+                      }`}
+                    >
+                      {t.sector} {t.dayPct >= 0 ? "+" : ""}{t.dayPct.toFixed(1)}
+                    </span>
+                  ))}
+                </div>
+              </div>
+            )}
           </div>
         ) : (
           <div className="hidden" />
