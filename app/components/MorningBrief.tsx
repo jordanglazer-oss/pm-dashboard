@@ -20,6 +20,7 @@ import { ImageUpload, LightboxModal, type BriefAttachment } from "./ImageUpload"
 import { BriefCommandBar } from "./BriefCommandBar";
 import { CollapsibleSection } from "./CollapsibleSection";
 import { MacroBoard } from "./MacroBoard";
+import { BriefGenerationModal } from "./BriefGenerationModal";
 import type { MarketRegimeData, RegimeDirection } from "@/app/lib/market-regime";
 import { regimeValence } from "@/app/lib/regime-transition";
 import { HORIZONS } from "@/app/lib/horizons";
@@ -646,6 +647,9 @@ export function MorningBrief({
   onUpdateMarketData,
 }: Props) {
   const [generating, setGenerating] = useState(false);
+  // Modal visibility is separate from `generating` so "Run in background"
+  // hides the dialog without cancelling the in-flight request.
+  const [genModalOpen, setGenModalOpen] = useState(false);
   // Standalone hedging refresh — re-runs ONLY the hedging read (live premiums
   // + one small model call) and merges the result into the existing brief via
   // the normal context persist path. No full-brief regeneration.
@@ -1109,6 +1113,7 @@ export function MorningBrief({
 
   async function generateBrief(force = true) {
     setGenerating(true);
+    setGenModalOpen(true);
     setError("");
 
     try {
@@ -1156,6 +1161,7 @@ export function MorningBrief({
       setError(err instanceof Error ? err.message : "Failed to generate brief");
     } finally {
       setGenerating(false);
+      setGenModalOpen(false);
     }
   }
 
@@ -1299,6 +1305,11 @@ export function MorningBrief({
           regime verdict, the section rail, the Brief/Daily Input toggle, the
           Regenerate action and the generated-at time. Replaces the three
           stacked header rows; every control they held lives here. */}
+      <BriefGenerationModal
+        open={genModalOpen && generating}
+        onRunInBackground={() => setGenModalOpen(false)}
+        hasPreviousBrief={Boolean(brief?.bottomLine)}
+      />
       <BriefCommandBar
         date={brief?.date || marketData.date}
         generatedAt={brief?.generatedAt}
