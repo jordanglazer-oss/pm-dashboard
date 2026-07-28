@@ -18,6 +18,7 @@ export function CollapsibleSection({
   titleClass,
   right,
   defaultCollapsed = false,
+  flush = false,
   children,
 }: {
   prefKey: string;
@@ -36,6 +37,11 @@ export function CollapsibleSection({
    *  toggled it). Once toggled, the persisted pref wins. Used for secondary
    *  reference sections that should be tucked away until opened. */
   defaultCollapsed?: boolean;
+  /** Render as a ROW inside a shared card rather than as its own card: no
+   *  border, radius, shadow or card padding, and a tighter title. Used by the
+   *  Brief's Narrative list, which the design shows as one card of thin
+   *  divided rows rather than a stack of separate panels. */
+  flush?: boolean;
   children: React.ReactNode;
 }) {
   const { uiPrefs, setUiPref } = useStocks();
@@ -51,8 +57,14 @@ export function CollapsibleSection({
     (linkedKeys || []).forEach((k) => setUiPref(k, next));
   };
   return (
-    <section className={`rounded-card border bg-white p-6 shadow-card ${className || "border-line"}`}>
-      <div className={`flex items-center justify-between ${collapsed ? "" : "mb-4"}`}>
+    <section
+      className={
+        flush
+          ? `bg-white px-5 py-2.5 ${className || ""}`
+          : `rounded-card border bg-white p-6 shadow-card ${className || "border-line"}`
+      }
+    >
+      <div className={`flex items-center justify-between ${collapsed || flush ? "" : "mb-4"}`}>
         {/* The whole title region (arrow + title + subtitle + the empty space up
             to the right-side controls) toggles — not just the arrow. Uses a div
             with role="button" rather than <button> so the `right` slot can hold
@@ -75,8 +87,8 @@ export function CollapsibleSection({
             ▾
           </span>
           <span className="min-w-0">
-            <span className={`block ${titleClass || "text-xl font-bold text-ink"}`}>{title}</span>
-            {subtitle && <span className="block text-xs text-ink-3">{subtitle}</span>}
+            <span className={`block ${titleClass || (flush ? "text-sm font-semibold text-ink" : "text-xl font-bold text-ink")}`}>{title}</span>
+            {subtitle && <span className={`block text-xs text-ink-3 ${flush ? "sr-only sm:not-sr-only sm:inline sm:ml-2" : ""}`}>{subtitle}</span>}
           </span>
         </div>
         {right && (
@@ -88,7 +100,7 @@ export function CollapsibleSection({
           </div>
         )}
       </div>
-      {!collapsed && <div className="animate-section-reveal">{children}</div>}
+      {!collapsed && <div className={`animate-section-reveal ${flush ? "mt-2.5 pl-6" : ""}`}>{children}</div>}
     </section>
   );
 }

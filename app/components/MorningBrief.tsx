@@ -2758,7 +2758,7 @@ export function MorningBrief({
           {allNarrativeOpen ? "Collapse all" : "Expand all"}
         </button>
       </div>
-      <div className="space-y-6 ">
+      <div className="overflow-hidden rounded-card border border-line bg-white shadow-card divide-y divide-line-soft">
       {/* Composite Signal — the weighted regime read that DETERMINES the regime,
           surfaced high on the page (right under the at-a-glance actions) rather
           than buried below the Forward View. */}
@@ -2771,6 +2771,7 @@ export function MorningBrief({
       {regimeTransition && regimeTransition.tells.length > 0 && (
         <CollapsibleSection
           prefKey="briefNarrativeRegimeTells"
+          flush
           defaultCollapsed
           title={
             <span className="flex items-center gap-2">
@@ -2799,6 +2800,7 @@ export function MorningBrief({
       {breadthAnalysis && (
         <CollapsibleSection
           prefKey="briefNarrativeBreadth"
+          flush
           defaultCollapsed
           title={
             <span className="flex items-center gap-2">
@@ -2814,6 +2816,7 @@ export function MorningBrief({
       {volatilityAnalysis && (
         <CollapsibleSection
           prefKey="briefNarrativeCredit"
+          flush
           defaultCollapsed
           title={
             <span className="flex items-center gap-2">
@@ -2830,6 +2833,7 @@ export function MorningBrief({
       {brief?.hedgeChecklist && (
         <CollapsibleSection
           prefKey="briefNarrativeHedgeBasis"
+          flush
           defaultCollapsed
           title={
             <span className="flex items-center gap-2">
@@ -2974,6 +2978,7 @@ export function MorningBrief({
       {cashDeploymentCall && (
         <CollapsibleSection
           prefKey="briefNarrativeCash"
+          flush
           defaultCollapsed
           title={<span className="flex items-center gap-2"><span className="h-2 w-2 rounded-full bg-warn" aria-hidden /><span className="text-base font-semibold">Cash deployment</span></span>}
           subtitle={<span className="text-xs text-ink-3">{cashDeploymentCall.action}{typeof cashDeploymentCall.score === "number" ? ` · ${cashDeploymentCall.score}/100` : ""}</span>}
@@ -3026,6 +3031,7 @@ export function MorningBrief({
           keeps open stays open across reloads. */}
       <CollapsibleSection
         prefKey="briefNarrativeComposite"
+          flush
         defaultCollapsed
         title={
           <span className="flex flex-wrap items-center gap-2">
@@ -3056,6 +3062,7 @@ export function MorningBrief({
       {brief?.underpriced && brief.underpriced.trim() && (
         <CollapsibleSection
           prefKey="briefNarrativeUnderpriced"
+          flush
           defaultCollapsed
           className="border-violet-soft bg-violet-soft/40"
           title={
