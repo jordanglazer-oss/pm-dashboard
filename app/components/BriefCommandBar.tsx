@@ -1,6 +1,6 @@
 "use client";
 
-import React, { useEffect, useState } from "react";
+import React, { useEffect, useRef, useState } from "react";
 
 /**
  * Brief command bar — the sticky header from the "sticky command bar" redesign.
@@ -31,9 +31,6 @@ export const BRIEF_SECTIONS: BriefSection[] = [
   { id: "s-narrative", label: "Narrative" },
 ];
 
-/** Height the sections must clear when scrolled to (matches the design's
- *  scroll-margin-top). Exported so the sections stay in sync with the bar. */
-export const BRIEF_SCROLL_MARGIN = "scroll-mt-[132px]";
 
 function regimeTone(regime: string | undefined): string {
   if (regime === "Risk-Off") return "border-neg-border bg-neg-soft text-neg";
@@ -64,6 +61,31 @@ export function BriefCommandBar({
   onRegenerate: () => void;
   generating: boolean;
 }) {
+  // The nav's height is MEASURED, not assumed. It was hardcoded at 46px, but
+  // the real header is taller (py-2.5 + button height + border), so the bar
+  // tucked underneath it and the rail disappeared. A ResizeObserver keeps both
+  // the bar's offset and the sections' scroll-margin correct even if the nav
+  // wraps (narrow screens) or gains a row.
+  const barRef = useRef<HTMLDivElement | null>(null);
+  const [navH, setNavH] = useState(53);
+  useEffect(() => {
+    const nav = document.querySelector("header.sticky") as HTMLElement | null;
+    if (!nav) return;
+    const sync = () => {
+      const h = Math.round(nav.getBoundingClientRect().height);
+      setNavH(h);
+      // Sections scroll-margin = both sticky bars, so a rail jump never lands
+      // a heading underneath them.
+      const barH = barRef.current ? Math.round(barRef.current.getBoundingClientRect().height) : 44;
+      document.documentElement.style.setProperty("--brief-scroll-mt", `${h + barH + 12}px`);
+    };
+    sync();
+    const ro = new ResizeObserver(sync);
+    ro.observe(nav);
+    if (barRef.current) ro.observe(barRef.current);
+    return () => ro.disconnect();
+  }, []);
+
   // Highlight the section currently in view. Uses IntersectionObserver so the
   // rail reflects scroll position without a scroll listener on every frame.
   const [active, setActive] = useState<string>(BRIEF_SECTIONS[0].id);
@@ -98,13 +120,16 @@ export function BriefCommandBar({
   const total = regimeSignals?.length;
 
   return (
-    // Freeze-pane layering: the primary nav is sticky at top-0 (z-40, 46px
-    // tall — the same constant the chat page uses in its 100vh-46px math), so
-    // this bar pins directly beneath it at top-[46px] with a lower z so the
+    // Freeze-pane layering: the primary nav is sticky at top-0 (z-40); this bar
+    // pins directly beneath it at the MEASURED nav height with a lower z so the
     // nav always wins. NOTE: this only works because the Brief's <main> uses
     // overflow-x-clip rather than -hidden; `hidden` would make it a scroll
     // container and kill sticky on every descendant.
-    <div className="sticky top-[46px] z-30 -mx-4 mb-4 border-b border-line bg-surface/95 px-4 backdrop-blur supports-[backdrop-filter]:bg-surface/80">
+    <div
+      ref={barRef}
+      style={{ top: navH }}
+      className="sticky z-30 -mx-4 mb-4 border-b border-line bg-surface/95 px-4 backdrop-blur supports-[backdrop-filter]:bg-surface/80"
+    >
       <div className="flex flex-wrap items-center gap-x-4 gap-y-2 py-2">
         {/* Title + date */}
         <div className="flex shrink-0 items-baseline gap-2.5">

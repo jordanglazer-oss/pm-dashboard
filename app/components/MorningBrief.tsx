@@ -1866,7 +1866,7 @@ export function MorningBrief({
       {briefMode === "brief" && (
       <>
       {/* ── Decide: the verdict on the left, four compact decision tiles on the right ── */}
-      <div className="mb-2 mt-2 flex items-baseline gap-2.5 scroll-mt-[132px]" id="s-decide">
+      <div style={{ scrollMarginTop: "var(--brief-scroll-mt, 132px)" }} className="mb-2 mt-2 flex items-baseline gap-2.5" id="s-decide">
         <h2 className="text-xs font-bold uppercase tracking-[0.22em] text-ink-3">Decide</h2>
         <span className="text-[11px] text-ink-faint">the day's call, and the four reads behind it</span>
       </div>
@@ -2202,7 +2202,7 @@ export function MorningBrief({
         </div>
       </div>
       {/* ── Act: what to do today, with the risk flags that justify it ── */}
-      <div className="mb-2 mt-2 flex items-baseline gap-2.5 scroll-mt-[132px]" id="s-act">
+      <div style={{ scrollMarginTop: "var(--brief-scroll-mt, 132px)" }} className="mb-2 mt-2 flex items-baseline gap-2.5" id="s-act">
         <h2 className="text-xs font-bold uppercase tracking-[0.22em] text-ink-3">Act</h2>
         <span className="text-[11px] text-ink-faint">what to do today, and the risks that justify it</span>
       </div>
@@ -2341,7 +2341,7 @@ export function MorningBrief({
         </section>
       )}
       {/* ── Board: contrarian gauges + macro tiles ── */}
-      <div className="mb-2 mt-2 flex items-baseline gap-2.5 scroll-mt-[132px]" id="s-board">
+      <div style={{ scrollMarginTop: "var(--brief-scroll-mt, 132px)" }} className="mb-2 mt-2 flex items-baseline gap-2.5" id="s-board">
         <h2 className="text-xs font-bold uppercase tracking-[0.22em] text-ink-3">Board</h2>
         <span className="text-[11px] text-ink-faint">the macro read, in numbers</span>
       </div>
@@ -2452,7 +2452,7 @@ export function MorningBrief({
       })()}
       </div>
       {/* ── Horizons: tactical / cyclical / structural ── */}
-      <div className="mb-2 mt-2 flex items-baseline gap-2.5 scroll-mt-[132px]" id="s-horizon">
+      <div style={{ scrollMarginTop: "var(--brief-scroll-mt, 132px)" }} className="mb-2 mt-2 flex items-baseline gap-2.5" id="s-horizon">
         <h2 className="text-xs font-bold uppercase tracking-[0.22em] text-ink-3">Horizons</h2>
         <span className="text-[11px] text-ink-faint">tactical · cyclical · structural</span>
       </div>
@@ -2716,7 +2716,7 @@ export function MorningBrief({
       </section>
       </div>
       {/* ── Narrative: the long-form model prose ── */}
-      <div className="mb-2 mt-2 flex items-baseline gap-2.5 scroll-mt-[132px]" id="s-narrative">
+      <div style={{ scrollMarginTop: "var(--brief-scroll-mt, 132px)" }} className="mb-2 mt-2 flex items-baseline gap-2.5" id="s-narrative">
         <h2 className="text-xs font-bold uppercase tracking-[0.22em] text-ink-3">Narrative</h2>
         <span className="text-[11px] text-ink-faint">the long-form model prose — open what you need</span>
       </div>
