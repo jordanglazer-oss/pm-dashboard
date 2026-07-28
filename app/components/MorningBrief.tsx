@@ -2297,6 +2297,39 @@ export function MorningBrief({
       </section>
         </div>
       </div>
+      {/* ── Board: contrarian gauges + macro tiles ── */}
+      <div style={{ scrollMarginTop: "var(--brief-scroll-mt, 132px)" }} className="mb-2 mt-2 flex items-baseline gap-2.5" id="s-board">
+        <h2 className="text-xs font-bold uppercase tracking-[0.22em] text-ink-3">Board</h2>
+        <span className="text-[11px] text-ink-faint">the macro read, in numbers</span>
+      </div>
+      <div className="space-y-6 ">
+
+      {/* Macro board (redesign): four labelled bands of dense tiles with
+          group filter pills, replacing the three loosely-packed cards that
+          showed a handful of these same numbers. Tiles with no value are
+          dropped rather than rendered blank. */}
+      <MacroBoard
+        fwd={(activeForward ?? null) as never}
+        termStructure={marketData.termStructure}
+        vvix={brief?.hedgeChecklist?.vvix ?? null}
+        asOf={activeForward?.vixWeek?.asOf as string | undefined}
+      />
+      {/* Contrarian sentiment + Catalyst watch side by side, as the mock
+          pairs them: the sentiment read on the left, the dated calendar it
+          has to survive on the right. */}
+      <div className="grid grid-cols-1 gap-4 lg:grid-cols-[1.35fr_1fr] items-start">
+        <div className="min-w-0">
+      {/* Contrarian Sentiment — all 4 indicators + Claude analysis */}
+      <SentimentGauges
+        marketData={marketData}
+        aaiiBull={marketData.aaiiBull ?? 30}
+        aaiiNeutral={marketData.aaiiNeutral ?? 17}
+        aaiiBear={marketData.aaiiBear ?? 52}
+        contrarianAnalysis={contrarianAnalysis}
+        forwardData={activeForward}
+      />
+        </div>
+        <div className="min-w-0">
       {/* Catalyst watch — the next ~2 weeks (Phase 01). Deterministic dated
           event strip (earnings for the book + econ + FOMC) plus the model's
           exposure read. Hidden when there's neither prose nor events (old
@@ -2341,32 +2374,8 @@ export function MorningBrief({
           )}
         </section>
       )}
-      {/* ── Board: contrarian gauges + macro tiles ── */}
-      <div style={{ scrollMarginTop: "var(--brief-scroll-mt, 132px)" }} className="mb-2 mt-2 flex items-baseline gap-2.5" id="s-board">
-        <h2 className="text-xs font-bold uppercase tracking-[0.22em] text-ink-3">Board</h2>
-        <span className="text-[11px] text-ink-faint">the macro read, in numbers</span>
+        </div>
       </div>
-      <div className="space-y-6 ">
-      {/* Contrarian Sentiment — all 4 indicators + Claude analysis */}
-      <SentimentGauges
-        marketData={marketData}
-        aaiiBull={marketData.aaiiBull ?? 30}
-        aaiiNeutral={marketData.aaiiNeutral ?? 17}
-        aaiiBear={marketData.aaiiBear ?? 52}
-        contrarianAnalysis={contrarianAnalysis}
-        forwardData={activeForward}
-      />
-
-      {/* Macro board (redesign): four labelled bands of dense tiles with
-          group filter pills, replacing the three loosely-packed cards that
-          showed a handful of these same numbers. Tiles with no value are
-          dropped rather than rendered blank. */}
-      <MacroBoard
-        fwd={(activeForward ?? null) as never}
-        termStructure={marketData.termStructure}
-        vvix={brief?.hedgeChecklist?.vvix ?? null}
-        asOf={activeForward?.vixWeek?.asOf as string | undefined}
-      />
       </div>
       {/* ── Horizons: tactical / cyclical / structural ── */}
       <div style={{ scrollMarginTop: "var(--brief-scroll-mt, 132px)" }} className="mb-2 mt-2 flex items-baseline gap-2.5" id="s-horizon">
