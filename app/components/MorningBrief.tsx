@@ -2054,10 +2054,11 @@ export function MorningBrief({
                     <button onClick={openHedgeForm} className="text-[11px] font-medium text-accent hover:underline">＋ Log another</button>
                   </div>
                 ) : (
-                  <div className="flex items-center justify-between gap-2">
-                    <span className="text-[11px] text-ink-3">No hedge on record — book is <span className="font-semibold text-ink-2">unhedged</span>.</span>
-                    <button onClick={openHedgeForm} className="rounded-full border border-line bg-white/70 px-2.5 py-0.5 text-[11px] font-medium text-ink-2 hover:text-ink">
-                      ＋ Confirm / log hedge
+                  <div className="text-[11px] text-ink-3">
+                    Book <span className="font-semibold text-ink-2">unhedged</span>
+                    {" · "}
+                    <button onClick={openHedgeForm} className="font-medium text-accent hover:underline">
+                      log a hedge
                     </button>
                   </div>
                 )}
@@ -2147,44 +2148,11 @@ export function MorningBrief({
                   </span>
                   <span className="text-xs text-ink-2">{cashDeploymentCall.window}</span>
                 </div>
-                {/* Clamped: this tile now sits in the Decide column, and the
-                    full reasoning + Newton note ran long enough to dwarf the
-                    other three tiles. Nothing is lost — ClampText keeps the
-                    whole text one click away. */}
-                <ClampText
-                  text={cashDeploymentCall.reason}
-                  className="mb-2.5"
-                  textClassName="text-sm leading-5 text-ink-2"
-                  lines={4}
-                />
-                {cashDeploymentCall.newtonPersistence && (
-                  <ClampText
-                    text={`Newton: ${cashDeploymentCall.newtonPersistence}`}
-                    className="mb-2.5"
-                    textClassName="text-xs leading-5 text-ink-2 italic"
-                    lines={3}
-                  />
-                )}
-                {(cashDeploymentCall.triggersMet?.length || cashDeploymentCall.triggersMissing?.length) ? (
-                  <div className="grid grid-cols-1 gap-y-1 mb-2.5 text-[11px] leading-4">
-                    <div className="space-y-1">
-                      {cashDeploymentCall.triggersMet?.slice(0, 4).map((t, i) => (
-                        <div key={`m${i}`} className="flex items-start gap-1 text-pos">
-                          <span className="flex-none mt-[1px]">✓</span>
-                          <span>{t}</span>
-                        </div>
-                      ))}
-                    </div>
-                    <div className="space-y-1">
-                      {cashDeploymentCall.triggersMissing?.slice(0, 4).map((t, i) => (
-                        <div key={`x${i}`} className="flex items-start gap-1 text-ink-3">
-                          <span className="flex-none mt-[1px]">·</span>
-                          <span>{t}</span>
-                        </div>
-                      ))}
-                    </div>
-                  </div>
-                ) : null}
+                {/* Detail moved to the Narrative row so this tile stays a
+                    4-line read; the link jumps to it. */}
+                <a href="#s-narrative" className="mt-1.5 inline-block text-[11px] font-medium text-accent hover:underline">
+                  Why · triggers ↓
+                </a>
                 <div className={`mt-2 px-2 py-1 rounded-md text-[10px] font-semibold ${windowToneClass}`}>
                   {deploymentWindowStatus.label}
                 </div>
@@ -2722,6 +2690,56 @@ export function MorningBrief({
               Method: protective SPY puts only · strikes 5–10% OTM (ATM only for acute ≤30d tail risk) · tenor 2–9M mapped to whichever horizon is Risk-Off · ADD needs Path 1 (≥2/3) or Path 2 (premium ✓ + ≥1 late-cycle sign) · skip-first philosophy — the model may override any checklist line but must name it. Percentiles rank each tenor against its own trailing ledger.
             </div>
           </div>
+        </CollapsibleSection>
+      )}
+
+      {/* Cash deployment reasoning — the tile up in Decide shows the call;
+          the why and the trigger checklist live here. */}
+      {cashDeploymentCall && (
+        <CollapsibleSection
+          prefKey="briefNarrativeCash"
+          defaultCollapsed
+          title={<span className="flex items-center gap-2"><span className="text-base">💵</span><span className="text-base font-semibold">Cash deployment</span></span>}
+          subtitle={<span className="text-xs text-ink-3">{cashDeploymentCall.action}{typeof cashDeploymentCall.score === "number" ? ` · ${cashDeploymentCall.score}/100` : ""}</span>}
+        >
+        {/* Clamped: this tile now sits in the Decide column, and the
+            full reasoning + Newton note ran long enough to dwarf the
+            other three tiles. Nothing is lost — ClampText keeps the
+            whole text one click away. */}
+        <ClampText
+          text={cashDeploymentCall.reason}
+          className="mb-2.5"
+          textClassName="text-sm leading-5 text-ink-2"
+          lines={4}
+        />
+        {cashDeploymentCall.newtonPersistence && (
+          <ClampText
+            text={`Newton: ${cashDeploymentCall.newtonPersistence}`}
+            className="mb-2.5"
+            textClassName="text-xs leading-5 text-ink-2 italic"
+            lines={3}
+          />
+        )}
+        {(cashDeploymentCall.triggersMet?.length || cashDeploymentCall.triggersMissing?.length) ? (
+          <div className="grid grid-cols-1 gap-y-1 mb-2.5 text-[11px] leading-4">
+            <div className="space-y-1">
+              {cashDeploymentCall.triggersMet?.slice(0, 4).map((t, i) => (
+                <div key={`m${i}`} className="flex items-start gap-1 text-pos">
+                  <span className="flex-none mt-[1px]">✓</span>
+                  <span>{t}</span>
+                </div>
+              ))}
+            </div>
+            <div className="space-y-1">
+              {cashDeploymentCall.triggersMissing?.slice(0, 4).map((t, i) => (
+                <div key={`x${i}`} className="flex items-start gap-1 text-ink-3">
+                  <span className="flex-none mt-[1px]">·</span>
+                  <span>{t}</span>
+                </div>
+              ))}
+            </div>
+          </div>
+        ) : null}
         </CollapsibleSection>
       )}
 
