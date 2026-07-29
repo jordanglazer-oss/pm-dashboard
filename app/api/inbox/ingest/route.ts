@@ -37,7 +37,7 @@ import { markReportsIngested } from "@/app/lib/auto-rescore";
  *   1. Filename-driven (preferred — enables batching multiple PDFs per email):
  *      - Subject: "Analyst Report: <TICKER>"  (or anything starting with that —
  *        the subject's source is OPTIONAL when filenames carry it)
- *      - PDFs:    "<TICKER>_JPM.pdf", "<TICKER>_RBC.pdf", "AVGO-RBC.pdf",
+ *      - PDFs:    "<TICKER>_JPM.pdf", "<TICKER>_RBC.pdf", "<TICKER>_MORN.pdf",
  *                 "AVGO_RBC_2026Q3.pdf", "BRK.B_JPM.pdf"
  *      The webhook reads ticker + source from the filename per attachment.
  *      One email → many slots, each routed independently.
@@ -62,7 +62,7 @@ import { markReportsIngested } from "@/app/lib/auto-rescore";
 // and the legacy long form ("Analyst Report: AVGO RBC"). The source group is
 // optional; when omitted the source comes from the filename. Subject-derived
 // ticker is used as a fallback when the filename doesn't carry one.
-const SUBJECT_RE = /^analyst report:\s*([a-z0-9.\-]+)(?:\s+(rbc|jpm)\b)?/i;
+const SUBJECT_RE = /^analyst report:\s*([a-z0-9.\-]+)(?:\s+(rbc|jpm|morn|morningstar)\b)?/i;
 
 // Filename regex — extracts ticker + source from PDFs named like
 // "AVGO_JPM.pdf", "AVGO-RBC.pdf", "AVGO_RBC_2026Q3.pdf", "BRK.B_JPM.pdf".
@@ -70,7 +70,7 @@ const SUBJECT_RE = /^analyst report:\s*([a-z0-9.\-]+)(?:\s+(rbc|jpm)\b)?/i;
 // (e.g. AVGO_JPM.pdf + AVGO_RBC.pdf) and each gets routed correctly. The
 // underscore/hyphen/space separator covers however the user's email client
 // formats names.
-const FILENAME_RE = /([a-z0-9.\-]+)[_\s\-]+(rbc|jpm)(?:[._\s\-].*)?\.pdf$/i;
+const FILENAME_RE = /([a-z0-9.\-]+)[_\s\-]+(rbc|jpm|morn|morningstar)(?:[._\s\-].*)?\.pdf$/i;
 
 type Stock = { ticker: string; price?: number };
 
@@ -140,15 +140,35 @@ async function persistReportToRedis(args: {
   const currentSnapshot = getSnapshotForTicker(snapshots, args.ticker) ?? {};
   const stocks = await readJson<Stock[]>("pm:stocks", []);
   const priceAtUpload = stocks.find((s) => tickersEqual(s.ticker, args.ticker))?.price;
-  const entry: AnalystEntry = {
-    rating: args.extracted.rating ?? "not-covered",
-    target: args.extracted.target,
-    asOf: args.extracted.asOf,
-    priceAtReport: priceAtUpload,
-    reportId,
-    lastUpdated: new Date().toISOString(),
-  };
-  const nextSnapshot: TickerSnapshot = { ...currentSnapshot, [args.source]: entry };
+  let nextSnapshot: TickerSnapshot;
+  if (args.source === "morningstar") {
+    // Morningstar carries structured ratings, not a rating/target pair —
+    // same routing as the manual upload path: stars → consensus modifier,
+    // moat/capital-allocation → scoring evidence, FVE → display only.
+    nextSnapshot = {
+      ...currentSnapshot,
+      morningstar: {
+        stars: args.extracted.stars,
+        fairValue: args.extracted.fairValue,
+        moat: args.extracted.moat,
+        moatTrend: args.extracted.moatTrend,
+        capitalAllocation: args.extracted.capitalAllocation,
+        uncertainty: args.extracted.uncertainty,
+        asOf: args.extracted.asOf,
+        lastUpdated: new Date().toISOString(),
+      },
+    };
+  } else {
+    const entry: AnalystEntry = {
+      rating: args.extracted.rating ?? "not-covered",
+      target: args.extracted.target,
+      asOf: args.extracted.asOf,
+      priceAtReport: priceAtUpload,
+      reportId,
+      lastUpdated: new Date().toISOString(),
+    };
+    nextSnapshot = { ...currentSnapshot, [args.source]: entry };
+  }
   const nextSnapshots = setSnapshotForTicker(snapshots, args.ticker, nextSnapshot);
   await writeJson("pm:analyst-snapshots", nextSnapshots);
 }
@@ -288,13 +308,19 @@ export async function POST(request: NextRequest) {
   let rawTicker: string | null = null;
   let source: AnalystSource | null = null;
 
+  // "MORN" (the filename-friendly short form, e.g. AVGO_MORN.pdf) and
+  // "MORNINGSTAR" both normalize to the canonical source id.
+  const normalizeSource = (raw: string): AnalystSource => {
+    const v = raw.toLowerCase();
+    return (v === "morn" || v === "morningstar" ? "morningstar" : v) as AnalystSource;
+  };
   if (fnMatch) {
     rawTicker = fnMatch[1].toUpperCase();
-    source = fnMatch[2].toLowerCase() as AnalystSource;
+    source = normalizeSource(fnMatch[2]);
   } else if (subjMatch && subjMatch[2]) {
     // Legacy full-subject form: "Analyst Report: AVGO RBC"
     rawTicker = subjMatch[1].toUpperCase();
-    source = subjMatch[2].toLowerCase() as AnalystSource;
+    source = normalizeSource(subjMatch[2]);
   }
   // If filename gave us source but no ticker (unusual — filename regex
   // requires both), or vice versa, prefer the subject's ticker as a
@@ -303,7 +329,7 @@ export async function POST(request: NextRequest) {
 
   if (!rawTicker || !source) {
     const reason = !source
-      ? `Couldn't determine source (RBC/JPM). Name the PDF "<TICKER>_RBC.pdf" or "<TICKER>_JPM.pdf", or use legacy subject "Analyst Report: <TICKER> <RBC|JPM>". Got subject="${subject}", filename="${filename ?? "(none)"}"`
+      ? `Couldn't determine source (RBC/JPM/MORN). Name the PDF "<TICKER>_RBC.pdf", "<TICKER>_JPM.pdf" or "<TICKER>_MORN.pdf", or use legacy subject "Analyst Report: <TICKER> <RBC|JPM|MORN>". Got subject="${subject}", filename="${filename ?? "(none)"}"`
       : `Couldn't determine ticker. Subject should start with "Analyst Report: <TICKER>", or PDF should be named "<TICKER>_<RBC|JPM>.pdf". Got subject="${subject}", filename="${filename ?? "(none)"}"`;
     await appendInboxEvent({ status: "error", subject, sender, filename, message: reason });
     return NextResponse.json({ error: reason }, { status: 400 });

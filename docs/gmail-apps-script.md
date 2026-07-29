@@ -9,7 +9,7 @@ handles the rest.
 
 | Prefix | What to send | Lands in |
 |---|---|---|
-| `Analyst Report: <TICKER>` — firm comes from the **PDF filename**, e.g. `AVGO_RBC.pdf` / `AVGO_JPM.pdf` | PDF (one or several per email) | Per-ticker analyst snapshot, routed to the RBC or JPM slot per filename |
+| `Analyst Report: <TICKER>` — firm comes from the **PDF filename**, e.g. `AVGO_RBC.pdf` / `AVGO_JPM.pdf` / `AVGO_MORN.pdf` | PDF (one or several per email) | Per-ticker analyst snapshot, routed to the RBC / JPM / Morningstar slot per filename. Morningstar extraction pulls stars, fair value, economic moat, capital allocation and uncertainty — stars tilt analystConsensus ±0.5; moat + capital allocation feed the next rescore as evidence. NO Apps Script change needed: the existing `Analyst Report:` subject match already forwards these. |
 | `SIA …` | **CSV export (preferred)** or screenshot (PNG/JPG/PDF) | Each matched stock's SIA SMAX + score. CSV is auto-detected — same subject either way. |
 | `BoostedAI …` *or* `Boosted …` | **Boosted.ai unified-data CSV (preferred)** or watchlist screenshot (PNG/JPG/PDF) | Each matched stock's BoostedAI rating + consensus + score. CSV is auto-detected — same subject either way. |
 | `MarketEdge …` *or* `ChartScout …` | ChartScout Likes export (CSV) | Each matched stock's `marketEdge` fields + composite score |
@@ -58,7 +58,7 @@ the report PDFs attached lands right back in this inbox; `processInbox` forwards
 it to `/api/inbox/ingest` and the reports file to that ticker — same pipeline as
 a manually-sent report email. The subject regex now tolerates a leading `Re:`,
 so the reply's `Re: Analyst Report: <TICKER>` subject still routes. Name the
-files so the firm is clear, e.g. `AVGO-RBC.pdf` / `AVGO_JPM.pdf`.
+files so the firm is clear, e.g. `AVGO-RBC.pdf` / `AVGO_JPM.pdf` / `AVGO_MORN.pdf` (Morningstar).
 
 Recipient defaults to `jordan.glazer@rbc.com` (override with the Vercel env var
 `WATCHLIST_NOTIFY_TO`). Alert digests go to `ALERT_EMAIL_TO` when set.
