@@ -133,7 +133,8 @@ export async function parseStreetTakeaway(body: string, subject = ""): Promise<P
   const cleaned = stripEmailBoilerplate(body);
   const kind = detectTakeawayKind(subject, cleaned);
   const msg = await client.messages.create({
-    model: "claude-sonnet-4-6",
+    model: "claude-sonnet-5",
+    thinking: { type: "disabled" },
     max_tokens: 3000,
     messages: [
       {

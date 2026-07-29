@@ -457,8 +457,8 @@ async function runAnalysis(
 ): Promise<ClientReportAnalysis | null> {
   const prompt = buildPrompt(body, mer, feeSavings);
   const msg = await client.messages.create({
-    model: "claude-sonnet-4-6",
-    temperature: 0,
+    model: "claude-sonnet-5",
+    thinking: { type: "disabled" },
     max_tokens: 2048,
     messages: [{ role: "user", content: prompt }],
   });

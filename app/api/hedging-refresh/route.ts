@@ -103,7 +103,8 @@ Return ONLY this JSON (no markdown fences):
 }`;
 
     const resp = await client.messages.create({
-      model: "claude-sonnet-4-6",
+      model: "claude-sonnet-5",
+      thinking: { type: "disabled" },
       max_tokens: 1024,
       messages: [{ role: "user", content: prompt }],
     });

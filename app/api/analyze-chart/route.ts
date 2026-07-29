@@ -43,8 +43,8 @@ export async function POST(request: NextRequest) {
     const technicalsText = technicals ? `\n\n${formatTechnicalsForPrompt(technicals)}` : "";
 
     const message = await client.messages.create({
-      model: "claude-sonnet-4-6",
-      temperature: 0,
+      model: "claude-sonnet-5",
+      thinking: { type: "disabled" },
       max_tokens: 2000,
       messages: [
         {

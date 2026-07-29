@@ -38,7 +38,7 @@ import { computeRegimeTransition } from "@/app/lib/regime-transition";
 const client = new Anthropic();
 
 const MAX_MESSAGES_IN_HISTORY = 40; // hard cap to keep context manageable
-const MODEL = "claude-sonnet-4-6";
+const MODEL = "claude-sonnet-5";
 
 type IncomingMessage = { role: "user" | "assistant"; content: string };
 
@@ -374,6 +374,7 @@ export async function POST(req: NextRequest) {
         // including server_tool_use and web_search_tool_result blocks.
         const messageStream = client.messages.stream({
           model: MODEL,
+          thinking: { type: "disabled" },
           max_tokens: 4096,
           system: systemBlocks,
           tools: tools as unknown as Anthropic.Messages.Tool[],

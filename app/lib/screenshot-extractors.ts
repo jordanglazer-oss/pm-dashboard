@@ -146,8 +146,8 @@ export async function extractSiaFromAttachments(
   const imageBlocks = buildImageBlocks(attachments);
   if (imageBlocks.length === 0) return { entries: [], cached: false, hash };
   const msg = await client.messages.create({
-    model: "claude-sonnet-4-6",
-    temperature: 0,
+    model: "claude-sonnet-5",
+    thinking: { type: "disabled" },
     max_tokens: 4096,
     messages: [{ role: "user", content: [{ type: "text", text: SIA_PROMPT }, ...imageBlocks] }],
   });
@@ -249,8 +249,8 @@ export async function extractBoostedFromAttachments(
   const imageBlocks = buildImageBlocks(attachments);
   if (imageBlocks.length === 0) return { entries: [], cached: false, hash };
   const msg = await client.messages.create({
-    model: "claude-sonnet-4-6",
-    temperature: 0,
+    model: "claude-sonnet-5",
+    thinking: { type: "disabled" },
     max_tokens: 4096,
     messages: [{ role: "user", content: [{ type: "text", text: BOOSTED_PROMPT }, ...imageBlocks] }],
   });

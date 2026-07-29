@@ -313,7 +313,7 @@ Notes:
     - window must be specific: "Deploy now", "Next 1-2 sessions", "Wait 3-5 trading days" — never vague like "soon" or "this week."
     - triggersMet and triggersMissing should each be 2-4 short bullets (≤ 8 words each). Cite specific signals/levels, not generalities. "Oscillator -2.3" not "Oscillator weak."
     - reason is the SINGLE most important factor tipping today's call. If the call is DEPLOY because Newton flipped constructive after 3 weeks cautious, the reason is THAT — not a summary of all signals.
-    - The same inputs MUST produce the same score (temperature=0). Anchor to the rubric; resist drifting to round numbers.
+    - The same inputs MUST produce the same score. Anchor to the rubric; resist drifting to round numbers.
 - IMPORTANT: All portfolio positions are equally weighted and we only rebalance (restore equal weights), never trim individual positions relative to others. Do NOT recommend trimming, reducing, or overweighting specific names. Instead, recommend actions like: adding new names, removing names entirely if the thesis is broken, rebalancing back to equal weight, hedging, or adjusting overall portfolio exposure. Think in terms of "own or don't own" rather than position sizing.`;
 
 type AttachmentInput = {
@@ -463,8 +463,8 @@ async function saveCachedAnalysis(hash: string, summary: string, equityFlowsSign
 async function analyzeAttachments(attachments: AttachmentInput[]): Promise<string> {
   const imageBlocks = buildImageBlocks(attachments);
   const message = await client.messages.create({
-    model: "claude-sonnet-4-6",
-    temperature: 0,
+    model: "claude-sonnet-5",
+    thinking: { type: "disabled" },
     max_tokens: 1024,
     messages: [
       {
@@ -498,8 +498,8 @@ async function analyzeOscillatorScreenshot(
 ): Promise<string> {
   const imageBlocks = buildImageBlocks(attachments);
   const message = await client.messages.create({
-    model: "claude-sonnet-4-6",
-    temperature: 0,
+    model: "claude-sonnet-5",
+    thinking: { type: "disabled" },
     max_tokens: 600,
     messages: [
       {
@@ -566,8 +566,8 @@ async function analyzeNewtonTechnical(
   const docBlocks = buildImageBlocks(attachments);
   if (docBlocks.length === 0) return "";
   const message = await client.messages.create({
-    model: "claude-sonnet-4-6",
-    temperature: 0,
+    model: "claude-sonnet-5",
+    thinking: { type: "disabled" },
     max_tokens: 1500,
     messages: [
       {
@@ -638,8 +638,8 @@ async function analyzeStrategistReports(
   const docBlocks = buildImageBlocks(attachments);
   if (docBlocks.length === 0) return "";
   const message = await client.messages.create({
-    model: "claude-sonnet-4-6",
-    temperature: 0,
+    model: "claude-sonnet-5",
+    thinking: { type: "disabled" },
     max_tokens: 1800,
     messages: [
       {
@@ -1642,8 +1642,8 @@ Current Portfolio Holdings: ${holdingsSummary}${portfolioPositioning}`;
     ];
 
     const message = await client.messages.create({
-      model: "claude-sonnet-4-6",
-      temperature: 0,
+      model: "claude-sonnet-5",
+      thinking: { type: "disabled" },
       max_tokens: 8192,
       messages: [
         {

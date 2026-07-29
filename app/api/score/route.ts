@@ -1231,9 +1231,9 @@ export async function POST(request: NextRequest) {
     // attempt so we don't waste retries on a real bug.
     const message = await callAnthropicWithRetry(`Score ${upperTicker}`, () =>
       client.messages.create({
-        model: "claude-sonnet-4-6",
+        model: "claude-sonnet-5",
+        thinking: { type: "disabled" },
         max_tokens: 8192,
-        temperature: 0,
         messages: [
           {
             role: "user",

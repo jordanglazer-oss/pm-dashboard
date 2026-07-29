@@ -114,7 +114,8 @@ Answer in JSON only:
 Rules: use ONLY the facts above — do not invent numbers or events. If the tripped condition is unrelated to the written thesis, say "no" and explain the mismatch; do not manufacture a connection.`;
 
     const resp = await client.messages.create({
-      model: "claude-sonnet-4-6",
+      model: "claude-sonnet-5",
+      thinking: { type: "disabled" },
       max_tokens: 700,
       messages: [{ role: "user", content: prompt }],
     });

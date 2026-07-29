@@ -528,7 +528,7 @@ STEP 3 — SEPARATE RESEARCH FROM OPINION IN THE OUTPUT:
       60-74:  Multi-source with mixed regime fit, OR single-source with regimeFit "high" but less specific setup, OR multi-source where regimeFit is "low" (sources clearly disagree with the regime).
       45-59:  Worth watching but signals are mixed (analyst disagreement on direction OR contrary regime fit OR single source with regimeFit "medium"). Default for honorableMentions.
       Below 45: Edge case — only include if there's a specific reason (e.g., contrarian pick the PM should know exists). Should rarely appear in topPicks.
-    The same inputs MUST produce the same number (temperature=0). Two picks with identical sourceCount and regimeFit should get the same conviction unless dissents differ.
+    The same inputs MUST produce the same number. Two picks with identical sourceCount and regimeFit should get the same conviction unless dissents differ — derive it from the rubric, not from impression.
 
 CRITICAL RULES:
 1. topPicks = every ticker in 2+ sources, sorted by sourceCount desc, ties broken by regimeFit (high → medium → low → contrary), then alphabetically. Multi-source picks ALWAYS appear here — never demote a multi-source pick to a lower tier just because regime fit is poor; instead mark regimeFit accordingly.
@@ -716,8 +716,8 @@ async function runSynthesis(
   // lets the retry nudge the model toward clean/complete JSON.
   const attempt = async (extraSystem?: string): Promise<SynthesisResult | null> => {
     const msg = await client.messages.create({
-      model: "claude-sonnet-4-6",
-      temperature: 0,
+      model: "claude-sonnet-5",
+      thinking: { type: "disabled" },
       // Generous ceiling: a research set with many picks (ticker + sources +
       // thesis + rationale + conviction each) can exceed 8192 and truncate the
       // JSON mid-object, which was the classic parse failure. 16000 gives ample
