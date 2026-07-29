@@ -2625,11 +2625,8 @@ export default function StockDetailPage() {
             />
           )}
 
-          {/* Street Takeaways — FactSet analyst roundup (renders only when ingested) */}
-          {scoreable && <StreetTakeawaysTile ticker={stock.ticker} className="mt-6" />}
-
           {/* Thesis & kill conditions — pre-registered exit criteria, checked
-              deterministically from data already on this page. */}
+              deterministically from data already on this page (preview build). */}
           {scoreable && (() => {
             const snap = getAnalystSnapshot(stock.ticker)?.factset;
             const revUp = typeof snap?.revUp === "number" ? snap.revUp : null;
@@ -2650,6 +2647,9 @@ export default function StockDetailPage() {
               />
             );
           })()}
+
+          {/* Street Takeaways — FactSet analyst roundup (renders only when ingested) */}
+          {scoreable && <StreetTakeawaysTile ticker={stock.ticker} className="mt-6" />}
 
           {/* Factor Lens (shadow) — quant read-out beside the 41-pt score */}
           {scoreable && (
