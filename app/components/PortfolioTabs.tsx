@@ -60,6 +60,8 @@ export function PortfolioTabs() {
     : pathname === "/aa-performance" ? "/aa-performance"
     : pathname === "/attribution" ? "/attribution"
     : pathname === "/risk" ? "/risk"
+    : pathname === "/journal" ? "/journal"
+    : pathname === "/methodology" ? "/methodology"
     : pathname.startsWith("/portfolio") ? "/portfolio"
     : "/"; // "/", "/scoring", "/stock/*"
 

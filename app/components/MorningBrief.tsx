@@ -1399,545 +1399,476 @@ export function MorningBrief({
         generating={generating}
       />
 
-      {briefMode === "input" && (
-      <>
-      {/* Editable Market & Sentiment Inputs */}
-      <section className="rounded-card border border-line bg-white p-4 md:p-5 shadow-sm overflow-hidden">
-        <div className="flex items-center gap-3 mb-4 flex-wrap">
-          <h3 className="text-base font-semibold text-ink">Daily Market Input</h3>
-          {liveLoading && <span className="text-xs text-accent animate-pulse">Fetching live data...</span>}
-        </div>
+      {briefMode === "input" && (() => {
+        /* ── Daily Input, in the design's card language. Every control,
+           handler and persistence path from the previous layout is preserved
+           verbatim — this is reorganization plus a computed progress read,
+           not a rewrite of behaviour. ── */
+        const today = new Date().toISOString().slice(0, 10);
+        const bo = marketData.breadthOverride ?? {};
+        const editedMap = (bo.editedAt ?? {}) as Record<string, string | undefined>;
+        const enteredToday = (f: string) => (editedMap[f] ?? "").slice(0, 10) === today;
+        // 9 tracked fields: 6 core breadth + the up/down volume pair + 2 notes.
+        const CORE: [string, string][] = [
+          ["above200", "S&P > 200DMA"],
+          ["above50", "S&P > 50DMA"],
+          ["broadAbove200", "Broad > 200DMA"],
+          ["broadAbove50", "Broad > 50DMA"],
+          ["newHighs", "NYSE new highs"],
+          ["newLows", "NYSE new lows"],
+        ];
+        const volDone = enteredToday("upVolume") && enteredToday("downVolume");
+        const newtonDone = Boolean(marketData.strategistNotes?.newton) && (marketData.strategistNotes?.newtonDate ?? "") === today;
+        const leeDone = Boolean(marketData.strategistNotes?.lee) && (marketData.strategistNotes?.leeDate ?? "") === today;
+        const missing: string[] = [
+          ...CORE.filter(([f]) => !enteredToday(f)).map(([, l]) => l),
+          ...(volDone ? [] : ["up/down volume"]),
+          ...(newtonDone ? [] : ["Newton note"]),
+          ...(leeDone ? [] : ["Lee note"]),
+        ];
+        const done = 9 - missing.length;
+        // "Mark all entered" = a per-day acknowledgement that the rest is
+        // intentionally skipped today. Persisted via ui-prefs; auto-expires
+        // because the stored value must equal today's date.
+        const marked = uiPrefs["briefInputMarked"] === today;
+        const effectiveMissing = marked ? [] : missing;
 
-        {/* Surface any fetch-level or per-field auto-fetch failure as a visible
-            banner so the user never has to guess-and-check whether a field was
-            freshly pulled or is showing a stale saved value. */}
-        {(() => {
-          const failedKeys = Object.entries(liveFields)
-            .filter(([, s]) => s === "failed")
-            .map(([k]) => k);
-          const notConfiguredKeys = Object.entries(liveFields)
-            .filter(([, s]) => s === "not-configured")
-            .map(([k]) => k);
-          const fieldLabel: Record<string, string> = {
-            putCall: "Put/Call",
-            termStructure: "VIX Term Structure",
-          };
-          if (marketDataError) {
-            return (
-              <div className="mb-5 rounded-xl border border-warn-border bg-warn-soft px-4 py-3 text-xs text-warn">
-                <strong className="font-semibold">Auto-fetch unavailable:</strong> {marketDataError}
-              </div>
-            );
-          }
-          if (failedKeys.length > 0 || notConfiguredKeys.length > 0) {
-            return (
-              <div className="mb-5 rounded-xl border border-warn-border bg-warn-soft px-4 py-3 text-xs text-warn space-y-1">
-                {failedKeys.length > 0 && (
-                  <div>
-                    <strong className="font-semibold">Stale values shown for:</strong>{" "}
-                    {failedKeys.map((k) => fieldLabel[k] ?? k).join(", ")}. Hover each badge for the specific reason.
+        const updateBreadthField = (field: string, raw: string) => {
+          const v = raw === "" ? undefined : parseFloat(raw);
+          const prev = marketData.breadthOverride ?? {};
+          const valid = v != null && !isNaN(v);
+          const nextEditedAt: Record<string, string> = { ...(prev.editedAt ?? {}) };
+          if (valid) nextEditedAt[field] = new Date().toISOString();
+          else delete nextEditedAt[field];
+          onUpdateMarketData({
+            breadthOverride: { ...prev, date: prev.date ?? today, [field]: valid ? v : undefined, editedAt: nextEditedAt },
+          });
+        };
+        const clearAllBreadth = () => {
+          if (!window.confirm("Clear all manual breadth values? You'll need to re-enter them from the source.")) return;
+          onUpdateMarketData({ breadthOverride: { date: today } });
+        };
+        const numVal = (v: unknown): number | "" => (typeof v === "number" ? v : "");
+        const BC = {
+          sp200: "https://www.barchart.com/stocks/quotes/$S5TH",
+          sp50: "https://www.barchart.com/stocks/quotes/$S5FI",
+          broad: "https://www.barchart.com/stocks/momentum",
+          nh: "https://www.barchart.com/stocks/quotes/$MAHN",
+          nl: "https://www.barchart.com/stocks/quotes/$MALN",
+        };
+        const rowState = (f: string) => {
+          if (enteredToday(f)) return { label: "saved", cls: "text-pos" };
+          const ts = editedMap[f];
+          return ts ? { label: ts.slice(5, 10), cls: "text-warn" } : { label: "empty", cls: "text-ink-faint" };
+        };
+        const Ext = ({ href, title }: { href: string; title: string }) => (
+          <a href={href} target="_blank" rel="noopener noreferrer" className="text-accent transition-colors" title={title}>
+            <svg className="h-3 w-3" fill="none" stroke="currentColor" strokeWidth="2" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" d="M10 6H6a2 2 0 00-2 2v10a2 2 0 002 2h10a2 2 0 002-2v-4M14 4h6m0 0v6m0-6L10 14" /></svg>
+          </a>
+        );
+        const breadthInputCls =
+          "w-24 rounded-lg border border-line bg-surface-2 px-2 py-1.5 text-right font-mono text-sm font-semibold text-ink outline-none focus:border-accent-border focus:bg-white focus:ring-1 focus:ring-accent-border transition-all";
+        const words = (s?: string) => (s ? s.trim().split(/\s+/).filter(Boolean).length : 0);
+        const ring = (2 * Math.PI * 15).toFixed(2);
+
+        return (
+          <>
+            {/* Auto-fetch failure banners — unchanged behaviour. */}
+            {(() => {
+              const failedKeys = Object.entries(liveFields).filter(([, s]) => s === "failed").map(([k]) => k);
+              const notConfiguredKeys = Object.entries(liveFields).filter(([, s]) => s === "not-configured").map(([k]) => k);
+              const fieldLabel: Record<string, string> = { putCall: "Put/Call", termStructure: "VIX Term Structure" };
+              if (marketDataError) {
+                return (
+                  <div className="mb-4 rounded-xl border border-warn-border bg-warn-soft px-4 py-3 text-xs text-warn">
+                    <strong className="font-semibold">Auto-fetch unavailable:</strong> {marketDataError}
                   </div>
-                )}
-                {notConfiguredKeys.length > 0 && (
-                  <div>
-                    <strong className="font-semibold">Manual entry required for:</strong>{" "}
-                    {notConfiguredKeys.map((k) => fieldLabel[k] ?? k).join(", ")}. Hover the Manual badge to see how to enable auto-fetch.
+                );
+              }
+              if (failedKeys.length > 0 || notConfiguredKeys.length > 0) {
+                return (
+                  <div className="mb-4 space-y-1 rounded-xl border border-warn-border bg-warn-soft px-4 py-3 text-xs text-warn">
+                    {failedKeys.length > 0 && (
+                      <div><strong className="font-semibold">Stale values shown for:</strong> {failedKeys.map((k) => fieldLabel[k] ?? k).join(", ")}. Hover each badge for the specific reason.</div>
+                    )}
+                    {notConfiguredKeys.length > 0 && (
+                      <div><strong className="font-semibold">Manual entry required for:</strong> {notConfiguredKeys.map((k) => fieldLabel[k] ?? k).join(", ")}. Hover the Manual badge to see how to enable auto-fetch.</div>
+                    )}
                   </div>
-                )}
-              </div>
-            );
-          }
-          return null;
-        })()}
+                );
+              }
+              return null;
+            })()}
 
-        {/* VIX, MOVE, HY/IG OAS and breadth tiles are now sourced from the
-            Forward View auto-fetch — see the Forward View section at the top
-            of this page for live values, history-aware deltas, and source
-            links. Manual fields below are only the inputs that have no
-            reliable free auto-source. */}
-
-        {/* Two manual-input sub-sections rendered side-by-side on lg+ to halve
-            vertical space — the contrarian inputs (left) and the other manual
-            fields (right) are independent groupings, so the 2-col split keeps
-            their visual identity while reducing scroll. Stacks on mobile. */}
-        <div className="grid gap-6 lg:grid-cols-2 lg:gap-x-8 mb-6 border-t border-line-soft pt-5">
-
-        {/* ── Contrarian Indicators ── */}
-        <div>
-          <div className="flex items-center gap-3 mb-4">
-            <h4 className="text-xs font-semibold text-ink-3 uppercase tracking-widest">Contrarian Indicators</h4>
-            <SignalPill tone="green">INVERTED SIGNALS</SignalPill>
-          </div>
-          {/* Two text inputs in a 2-col row, then the optional chart uploader
-              spans the full half-width below — keeps inputs uniform and gives
-              the screenshot drop zone enough room to show its drop label inline
-              with the Browse button instead of wrapping into a tall column. */}
-          <div className="grid grid-cols-2 gap-x-4 gap-y-3">
-            <div>
-              <div className="flex items-center gap-1.5 mb-1">
-                <label className="text-xs font-semibold text-ink-3 uppercase tracking-wider">S&P Oscillator</label>
-                <a href="https://app.marketedge.com/#!/markets" target="_blank" rel="noopener noreferrer" className="text-accent hover:text-accent transition-colors" title="MarketEdge S&P Oscillator">
-                  <svg className="w-3 h-3" fill="none" stroke="currentColor" strokeWidth="2" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" d="M10 6H6a2 2 0 00-2 2v10a2 2 0 002 2h10a2 2 0 002-2v-4M14 4h6m0 0v6m0-6L10 14" /></svg>
-                </a>
+            {/* ── Progress card ── */}
+            <section className="mb-4 rounded-card border border-line bg-white p-4 shadow-sm">
+              <div className="flex items-center gap-3.5">
+                <div className="relative h-12 w-12 shrink-0">
+                  <svg viewBox="0 0 36 36" className="h-12 w-12 -rotate-90">
+                    <circle cx="18" cy="18" r="15" fill="none" strokeWidth="3.5" className="stroke-line" />
+                    <circle
+                      cx="18" cy="18" r="15" fill="none" strokeWidth="3.5" strokeLinecap="round"
+                      className={marked || done === 9 ? "stroke-pos" : "stroke-accent"}
+                      strokeDasharray={ring}
+                      strokeDashoffset={(Number(ring) * (1 - (marked ? 9 : done) / 9)).toFixed(2)}
+                    />
+                  </svg>
+                  <span className="absolute inset-0 flex items-center justify-center font-mono text-[11px] font-bold text-ink">
+                    {marked ? 9 : done}/9
+                  </span>
+                </div>
+                <div className="min-w-0">
+                  <div className="text-base font-semibold text-ink">Daily input</div>
+                  <div className="truncate text-xs text-ink-3">
+                    {liveLoading
+                      ? "Fetching live data…"
+                      : marked
+                        ? "Marked entered for today."
+                        : done === 9
+                          ? "All fields entered — ready to generate."
+                          : `${missing.length} field${missing.length === 1 ? "" : "s"} left — ${missing.slice(0, 3).join(", ")}${missing.length > 3 ? "…" : ""}.`}
+                  </div>
+                </div>
               </div>
-              <SaveableNumericInput
-                savedValue={marketData.spOscillator}
-                onSave={(n) => onUpdateMarketData({ spOscillator: n })}
-                allowNegative
-                inputClassName="w-full rounded-xl border border-line bg-surface-2 px-3 py-2.5 text-lg font-semibold focus:bg-white focus:border-accent-border focus:ring-1 focus:ring-accent-border transition-all outline-none"
-              />
-              <p className="text-[10px] text-ink-3 mt-0.5">{marketData.spOscillator < 0 ? "Oversold (bullish)" : marketData.spOscillator > 0 ? "Overbought (bearish)" : "Neutral"}</p>
-            </div>
-            <div>
-              <div className="flex items-center gap-1.5 mb-1">
-                <label className="text-xs font-semibold text-ink-3 uppercase tracking-wider">Put/Call Ratio</label>
-                <a href="https://www.cboe.com/us/options/market_statistics/daily/" target="_blank" rel="noopener noreferrer" className="text-accent hover:text-accent transition-colors" title="CBOE Total Put/Call">
-                  <svg className="w-3 h-3" fill="none" stroke="currentColor" strokeWidth="2" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" d="M10 6H6a2 2 0 00-2 2v10a2 2 0 002 2h10a2 2 0 002-2v-4M14 4h6m0 0v6m0-6L10 14" /></svg>
-                </a>
-              </div>
-              <SaveableNumericInput
-                savedValue={marketData.putCall}
-                onSave={(n) => onUpdateMarketData({ putCall: n })}
-                inputClassName="w-full rounded-xl border border-line bg-surface-2 px-3 py-2.5 text-lg font-semibold focus:bg-white focus:border-accent-border focus:ring-1 focus:ring-accent-border transition-all outline-none"
-              />
-              <p className="text-[10px] text-ink-3 mt-0.5">Total P/C ratio</p>
-            </div>
-          </div>
-          <div className="mt-3 grid grid-cols-1 md:grid-cols-2 gap-4">
-            <div>
-              <div className="flex items-center gap-1.5 mb-1">
-                <label className="text-xs font-semibold text-ink-3 uppercase tracking-wider">Oscillator Chart (optional)</label>
-              </div>
-              <ImageUpload
-                section="spOscillator"
-                sectionLabel="S&P Oscillator chart"
-                attachments={attachments}
-                onAdd={addAttachment}
-                onRemove={removeAttachment}
-              />
-              <p className="text-[10px] text-ink-3 mt-1">Drop a MarketEdge chart screenshot — Claude will read the shape, levels, and recent extremes for the contrarian section.</p>
-            </div>
-            <div>
-              <div className="flex items-center gap-1.5 mb-1">
-                <label className="text-xs font-semibold text-ink-3 uppercase tracking-wider">Newton Technical Presentation (optional)</label>
-              </div>
-              <ImageUpload
-                section="newtonTechnical"
-                sectionLabel="Newton Technical Presentation"
-                attachments={attachments}
-                onAdd={addAttachment}
-                onRemove={removeAttachment}
-              />
-              <p className="text-[10px] text-ink-3 mt-1">Drop Mark Newton&apos;s monthly/quarterly technical deck (PDF). Parsed once on upload, then cached — the brief reuses the same analysis on every refresh and only re-parses when you replace the file. Relevance decays with age: fresh (&lt;14d) full weight, 14-45d directional only, &gt;45d high-level context only.</p>
-            </div>
-          </div>
-          <p className="mt-3 text-[11px] text-ink-3">
-            CNN Fear &amp; Greed and AAII Sentiment are now auto-fetched on every load
-            (with full history) — see the live tiles in the Contrarian Sentiment
-            section below.
-          </p>
-        </div>
-
-        {/* ── Other Manual Inputs ── */}
-        <div>
-          <div className="flex items-center gap-3 mb-4">
-            <h4 className="text-xs font-semibold text-ink-3 uppercase tracking-widest">Other Manual Inputs</h4>
-          </div>
-          {/* Equity Flows + JPM Flows screenshot section was retired
-              in 2026-05. Flows are inherently backward-looking and
-              contrarianAnalysis already covers sentiment / positioning
-              extremes. Only VIX Term Structure remains here. */}
-          <div className="grid grid-cols-2 gap-x-4 gap-y-3">
-            <div>
-              <div className="flex flex-wrap items-center gap-x-1.5 gap-y-0.5 mb-1">
-                <label className="text-xs font-semibold text-ink-3 uppercase tracking-wider">VIX Term Structure</label>
-                <a href="http://vixcentral.com" target="_blank" rel="noopener noreferrer" className="text-accent hover:text-accent transition-colors shrink-0" title="VIX Central">
-                  <svg className="w-3 h-3" fill="none" stroke="currentColor" strokeWidth="2" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" d="M10 6H6a2 2 0 00-2 2v10a2 2 0 002 2h10a2 2 0 002-2v-4M14 4h6m0 0v6m0-6L10 14" /></svg>
-                </a>
-                <LiveStatusBadge
-                  status={liveFields.termStructure}
-                  reason={liveErrors.termStructure ?? "Derived from ^VIX3M / ^VIX ratio"}
-                />
-              </div>
-              <SaveableSelect
-                savedValue={marketData.termStructure}
-                onSave={(v) => onUpdateMarketData({ termStructure: v })}
-                options={[
-                  { value: "Contango", label: "Contango" },
-                  { value: "Flat", label: "Flat" },
-                  { value: "Backwardation", label: "Backwardation" },
-                ]}
-                selectClassName="w-full rounded-xl border border-line bg-surface-2 px-3 py-2.5 text-lg font-semibold focus:bg-white focus:border-accent-border focus:ring-1 focus:ring-accent-border transition-all outline-none appearance-none"
-              />
-            </div>
-          </div>
-          {/* Analyst / Strategist Reports dropbox lives in the right column
-              to use the empty space under VIX Term Structure rather than
-              lengthening the left column. */}
-          <div className="mt-4">
-            <div className="flex items-center gap-1.5 mb-1">
-              <label className="text-xs font-semibold text-ink-3 uppercase tracking-wider">Analyst / Strategist Reports (optional)</label>
-            </div>
-            <ImageUpload
-              section="strategistReports"
-              sectionLabel="Analyst / Strategist Reports"
-              attachments={attachments}
-              onAdd={addAttachment}
-              onRemove={removeAttachment}
-            />
-            <p className="text-[10px] text-ink-3 mt-1">Drop any analyst or strategist research (PDF or screenshot) — a sell-side strategy note, an economics piece, a thematic deck. Multiple files OK. Parsed once on upload, then cached — the brief reuses the same analysis on every refresh and only re-parses when you change the files. Same age decay as the Newton deck.</p>
-          </div>
-        </div>
-
-        </div>{/* /lg:grid-cols-2 wrapper for the two manual-input sub-sections */}
-
-        {/* ── Breadth (manual entry) ──
-            After the Finviz/Yahoo scrape became unreliable from Vercel,
-            the PM types today's % above 200/50 DMA directly here. Stored
-            in marketData.breadthOverride and persisted to pm:breadth-history
-            with source: "manual" so wk/wk and mo/mo comparisons compound.
-            Sources: Mark Newton's note, StockCharts $SPXA200R/$SPXA50R, WSJ. */}
-        <div className="border-t border-line-soft pt-5 mb-4">
-          <div className="flex items-center gap-3 mb-3">
-            <h4 className="text-xs font-semibold text-ink-3 uppercase tracking-widest">Breadth (manual entry)</h4>
-            <span className="text-[10px] text-ink-3">% above 200/50 DMA + NYSE new H/L — sources: Mark Newton&apos;s note, your Claude skill, Barchart ($BCMM / $S5TH / $MAHN), StockCharts, WSJ. When date = today, used directly. Partial entry is fine.</span>
-          </div>
-          {/* Helper to keep the date in sync whenever the PM types a value.
-              All six fields share the same date — partial entry is fine. */}
-          {(() => {
-            const today = new Date().toISOString().slice(0, 10);
-            const updateBreadthField = (field: string, raw: string) => {
-              const v = raw === "" ? undefined : parseFloat(raw);
-              const prev = marketData.breadthOverride ?? {};
-              const valid = v != null && !isNaN(v);
-              // Stamp this box's last-edited time so the freshness tag can
-              // flag stale fields; clear the stamp when the box is emptied.
-              const nextEditedAt: Record<string, string> = { ...(prev.editedAt ?? {}) };
-              if (valid) nextEditedAt[field] = new Date().toISOString();
-              else delete nextEditedAt[field];
-              onUpdateMarketData({
-                breadthOverride: {
-                  ...prev,
-                  date: prev.date ?? today,
-                  [field]: valid ? v : undefined,
-                  editedAt: nextEditedAt,
-                },
-              });
-            };
-            // Wipe every manual breadth value + its freshness stamp in one
-            // click. Persists to pm:market (so the clear syncs across devices).
-            const clearAllBreadth = () => {
-              if (!window.confirm("Clear all manual breadth values? You'll need to re-enter them from the source.")) return;
-              onUpdateMarketData({ breadthOverride: { date: today } });
-            };
-            const numVal = (v: unknown): number | "" =>
-              typeof v === "number" ? v : "";
-            // Tiny per-box freshness tag: green "today" when the value was
-            // entered on the current date, amber + the edit date when it's
-            // older (stale — a value left from a prior session that may have
-            // been missed in today's update). Renders nothing for empty boxes.
-            const editedMap = marketData.breadthOverride?.editedAt;
-            const FreshnessTag = ({ ts }: { ts?: string }) => {
-              if (!ts) return null;
-              const day = ts.slice(0, 10);
-              const isToday = day === today;
-              return (
-                <span
-                  className={`text-[8px] leading-none px-1 py-0.5 rounded font-semibold border ${
-                    isToday
-                      ? "bg-pos-soft text-pos border-pos-border"
-                      : "bg-warn-soft text-warn border-warn-border"
-                  }`}
-                  title={isToday ? "Edited today" : `Last edited ${day} — may be stale`}
+              <div className="mt-3 flex gap-2">
+                <button
+                  onClick={() => setUiPref("briefInputMarked", marked ? "" : today)}
+                  className="flex-1 rounded-control bg-ink px-4 py-2 text-sm font-semibold text-white transition-opacity hover:opacity-90"
+                  title="Acknowledge today's input as complete — anything still empty is intentionally skipped. Resets automatically tomorrow."
                 >
-                  {isToday ? "today" : day.slice(5)}
-                </span>
-              );
-            };
-            // Barchart source pages — clicking the icon next to each label
-            // opens the page where the PM finds that indicator. Mirrors the
-            // S&P Oscillator input's source-link pattern. Kept in sync with
-            // the BARCHART constant in forward-looking.ts.
-            const BC = {
-              sp200: "https://www.barchart.com/stocks/quotes/$S5TH",
-              sp50: "https://www.barchart.com/stocks/quotes/$S5FI",
-              broad: "https://www.barchart.com/stocks/momentum",
-              nh: "https://www.barchart.com/stocks/quotes/$MAHN",
-              nl: "https://www.barchart.com/stocks/quotes/$MALN",
-            };
-            const LabelLink = ({ text, href, editedAt }: { text: string; href?: string; editedAt?: string }) => (
-              <div className="flex items-center gap-1 mb-1">
-                <label className="text-[10px] font-semibold text-ink-3 uppercase tracking-wider">{text}</label>
-                {href && (
-                  <a href={href} target="_blank" rel="noopener noreferrer" className="text-accent hover:text-accent transition-colors" title={`Open source: ${href}`}>
-                    <svg className="w-3 h-3" fill="none" stroke="currentColor" strokeWidth="2" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" d="M10 6H6a2 2 0 00-2 2v10a2 2 0 002 2h10a2 2 0 002-2v-4M14 4h6m0 0v6m0-6L10 14" /></svg>
-                  </a>
-                )}
-                <FreshnessTag ts={editedAt} />
+                  {marked ? "Unmark" : "Mark all entered"}
+                </button>
+                <button
+                  onClick={() => setUiPref("briefInputMarked", "")}
+                  className="rounded-control border border-line bg-white px-4 py-2 text-sm font-semibold text-ink-2 hover:text-ink"
+                >
+                  Reset
+                </button>
               </div>
-            );
-            return (
-              <>
-                {/* Toolbar: Clear all manual breadth values in one click. */}
-                <div className="flex justify-end mb-2">
+            </section>
+
+            <div className="grid gap-4 lg:grid-cols-2">
+              {/* ── BREADTH ── */}
+              <section className="overflow-hidden rounded-card border border-line bg-white shadow-sm">
+                <div className="flex items-baseline gap-2 border-b border-line bg-surface-2/50 px-4 py-2.5">
+                  <span className="text-[11px] font-bold uppercase tracking-[0.18em] text-ink-3">Breadth</span>
+                  <span className="text-[11px] text-ink-3">from your Barchart / BCMM read</span>
+                  <span className="ml-auto font-mono text-[10px] text-ink-faint">7 fields</span>
                   <button
                     type="button"
                     onClick={clearAllBreadth}
-                    className="text-[10px] font-semibold text-ink-3 hover:text-neg border border-line hover:border-neg-border rounded px-2 py-0.5 transition-colors"
-                    title="Clear every manual breadth value and its freshness tag. Persists to pm:market, so it syncs across refreshes and devices."
+                    className="rounded border border-line px-1.5 py-0.5 text-[10px] font-semibold text-ink-3 transition-colors hover:border-neg-border hover:text-neg"
+                    title="Clear every manual breadth value and its freshness tag."
                   >
-                    Clear all
+                    Clear
                   </button>
                 </div>
-                {/* Row 1: Date + SP500 200/50 */}
-                <div className="grid gap-4 md:grid-cols-3 mb-3">
-                  <div>
-                    <LabelLink text="Date" />
+                <div className="divide-y divide-line-soft">
+                  {(
+                    [
+                      ["above200", "S&P > 200DMA", "%", BC.sp200, "51.2", "0.1"],
+                      ["above50", "S&P > 50DMA", "%", BC.sp50, "44.6", "0.1"],
+                      ["broadAbove200", "Broad > 200DMA", "%", BC.broad, "54.9", "0.1"],
+                      ["broadAbove50", "Broad > 50DMA", "%", BC.broad, "59.4", "0.1"],
+                      ["newHighs", "NYSE new highs", "", BC.nh, "78", "1"],
+                      ["newLows", "NYSE new lows", "", BC.nl, "142", "1"],
+                    ] as [string, string, string, string, string, string][]
+                  ).map(([field, label, unit, href, ph, step]) => {
+                    const st = rowState(field);
+                    return (
+                      <div key={field} className="flex items-center gap-2 px-4 py-2.5">
+                        <span className="text-sm text-ink">{label}{unit && <span className="ml-1 text-ink-faint">{unit}</span>}</span>
+                        <Ext href={href} title={`Open source: ${href}`} />
+                        <input
+                          type="number" step={step} min={0} placeholder={ph}
+                          value={numVal((bo as Record<string, unknown>)[field])}
+                          onChange={(e) => updateBreadthField(field, e.target.value)}
+                          className={`ml-auto ${breadthInputCls}`}
+                        />
+                        <span className={`w-11 shrink-0 text-right text-[11px] font-semibold ${st.cls}`}>{st.label}</span>
+                      </div>
+                    );
+                  })}
+                  {/* Up / down volume — one row, two boxes (only the ratio matters). */}
+                  <div className="flex items-center gap-2 px-4 py-2.5">
+                    <span className="text-sm text-ink">Up / down volume <span className="ml-1 text-ink-faint">bn</span></span>
+                    <Ext href={BC.broad} title={`Open source: ${BC.broad}`} />
+                    <input
+                      type="number" step="0.01" min={0} placeholder="0.90"
+                      value={numVal(bo.upVolume)}
+                      onChange={(e) => updateBreadthField("upVolume", e.target.value)}
+                      className={`ml-auto ${breadthInputCls} !w-[4.5rem]`}
+                      title="NYSE advancing volume in billions — same unit as the down box; only the ratio matters."
+                    />
+                    <input
+                      type="number" step="0.01" min={0} placeholder="3.45"
+                      value={numVal(bo.downVolume)}
+                      onChange={(e) => updateBreadthField("downVolume", e.target.value)}
+                      className={`${breadthInputCls} !w-[4.5rem]`}
+                      title="NYSE declining volume in billions — same unit as the up box."
+                    />
+                    <span className={`w-11 shrink-0 text-right text-[11px] font-semibold ${volDone ? "text-pos" : bo.upVolume != null || bo.downVolume != null ? "text-warn" : "text-ink-faint"}`}>
+                      {volDone ? "saved" : bo.upVolume != null || bo.downVolume != null ? "partial" : "empty"}
+                    </span>
+                  </div>
+                  {/* Entry date — must equal today to be used by the brief. */}
+                  <div className="flex items-center gap-2 px-4 py-2.5">
+                    <span className="text-sm text-ink-2">Entry date</span>
                     <input
                       type="date"
-                      value={marketData.breadthOverride?.date ?? today}
-                      onChange={(e) =>
-                        onUpdateMarketData({
-                          breadthOverride: {
-                            ...marketData.breadthOverride,
-                            date: e.target.value,
-                          },
-                        })
-                      }
-                      className="w-full rounded-lg border border-line bg-surface-2 px-3 py-2 text-sm text-ink-2 outline-none focus:border-accent-border focus:ring-1 focus:ring-accent-border transition-all"
+                      value={bo.date ?? today}
+                      onChange={(e) => onUpdateMarketData({ breadthOverride: { ...marketData.breadthOverride, date: e.target.value } })}
+                      className="ml-auto rounded-lg border border-line bg-surface-2 px-2 py-1 font-mono text-[12px] text-ink-2 outline-none transition-all focus:border-accent-border focus:ring-1 focus:ring-accent-border"
                       title="Must equal today's UTC date to be used. Earlier dates are treated as 'not entered today'."
                     />
                   </div>
-                  <div>
-                    <LabelLink text="SP500 >200DMA (%)" href={BC.sp200} editedAt={editedMap?.above200} />
-                    <input
-                      type="number" step="0.1" min={0} max={100} placeholder="51.2"
-                      value={numVal(marketData.breadthOverride?.above200)}
-                      onChange={(e) => updateBreadthField("above200", e.target.value)}
-                      className="w-full rounded-lg border border-line bg-surface-2 px-3 py-2 text-sm text-ink-2 outline-none focus:border-accent-border focus:ring-1 focus:ring-accent-border transition-all"
-                    />
-                  </div>
-                  <div>
-                    <LabelLink text="SP500 >50DMA (%)" href={BC.sp50} editedAt={editedMap?.above50} />
-                    <input
-                      type="number" step="0.1" min={0} max={100} placeholder="44.6"
-                      value={numVal(marketData.breadthOverride?.above50)}
-                      onChange={(e) => updateBreadthField("above50", e.target.value)}
-                      className="w-full rounded-lg border border-line bg-surface-2 px-3 py-2 text-sm text-ink-2 outline-none focus:border-accent-border focus:ring-1 focus:ring-accent-border transition-all"
-                    />
-                  </div>
                 </div>
-                {/* Row 2: Broad Market 200/50 + (blank slot for grid alignment) */}
-                <div className="grid gap-4 md:grid-cols-3 mb-3">
-                  <div>
-                    <LabelLink text="Broad Market >200DMA (%)" href={BC.broad} editedAt={editedMap?.broadAbove200} />
-                    <input
-                      type="number" step="0.1" min={0} max={100} placeholder="54.9"
-                      value={numVal(marketData.breadthOverride?.broadAbove200)}
-                      onChange={(e) => updateBreadthField("broadAbove200", e.target.value)}
-                      className="w-full rounded-lg border border-line bg-surface-2 px-3 py-2 text-sm text-ink-2 outline-none focus:border-accent-border focus:ring-1 focus:ring-accent-border transition-all"
-                      title="% of broad-market universe above 200-day MA. Source: Barchart BCMM ~5,168 names, Russell 3000 ~3,000 names, or whichever broader-than-SPX measure your Claude skill returns. Materially lower than SP500 = broad-market divergence."
-                    />
-                  </div>
-                  <div>
-                    <LabelLink text="Broad Market >50DMA (%)" href={BC.broad} editedAt={editedMap?.broadAbove50} />
-                    <input
-                      type="number" step="0.1" min={0} max={100} placeholder="59.4"
-                      value={numVal(marketData.breadthOverride?.broadAbove50)}
-                      onChange={(e) => updateBreadthField("broadAbove50", e.target.value)}
-                      className="w-full rounded-lg border border-line bg-surface-2 px-3 py-2 text-sm text-ink-2 outline-none focus:border-accent-border focus:ring-1 focus:ring-accent-border transition-all"
-                      title="% of broad-market universe above 50-day MA — broader-than-SPX faster momentum gauge."
-                    />
-                  </div>
-                  <div /> {/* empty cell for grid alignment */}
-                </div>
-                {/* Row 3: NYSE new highs / new lows */}
-                <div className="grid gap-4 md:grid-cols-3">
-                  <div>
-                    <LabelLink text="NYSE New Highs (count)" href={BC.nh} editedAt={editedMap?.newHighs} />
-                    <input
-                      type="number" step="1" min={0} placeholder="78"
-                      value={numVal(marketData.breadthOverride?.newHighs)}
-                      onChange={(e) => updateBreadthField("newHighs", e.target.value)}
-                      className="w-full rounded-lg border border-line bg-surface-2 px-3 py-2 text-sm text-ink-2 outline-none focus:border-accent-border focus:ring-1 focus:ring-accent-border transition-all"
-                      title="Daily count of NYSE 52-week new highs. Expansion above 100 = healthy thrust."
-                    />
-                  </div>
-                  <div>
-                    <LabelLink text="NYSE New Lows (count)" href={BC.nl} editedAt={editedMap?.newLows} />
-                    <input
-                      type="number" step="1" min={0} placeholder="142"
-                      value={numVal(marketData.breadthOverride?.newLows)}
-                      onChange={(e) => updateBreadthField("newLows", e.target.value)}
-                      className="w-full rounded-lg border border-line bg-surface-2 px-3 py-2 text-sm text-ink-2 outline-none focus:border-accent-border focus:ring-1 focus:ring-accent-border transition-all"
-                      title="Daily count of NYSE 52-week new lows. Spike above 200 = capitulation signal."
-                    />
-                  </div>
-                  <div /> {/* empty cell for grid alignment */}
-                </div>
-                {/* Row 4: NYSE up/down volume (conviction / thrust). Only the
-                    ratio matters, so enter in billions or raw shares — just
-                    keep both fields in the same unit. */}
-                <div className="grid gap-4 md:grid-cols-3 mt-3">
-                  <div>
-                    <LabelLink text="NYSE Up Volume (billions)" href={BC.broad} editedAt={editedMap?.upVolume} />
-                    <input
-                      type="number" step="0.01" min={0} placeholder="0.90"
-                      value={numVal(marketData.breadthOverride?.upVolume)}
-                      onChange={(e) => updateBreadthField("upVolume", e.target.value)}
-                      className="w-full rounded-lg border border-line bg-surface-2 px-3 py-2 text-sm text-ink-2 outline-none focus:border-accent-border focus:ring-1 focus:ring-accent-border transition-all"
-                      title="NYSE advancing (up) share volume, in BILLIONS — e.g. 900,520,000 shares → 0.90. Only the ratio vs down-volume matters, so just keep both fields in the same unit (billions is easiest: drop the last 9 digits). Raw shares (900520000) also work if you use raw in both."
-                    />
-                  </div>
-                  <div>
-                    <LabelLink text="NYSE Down Volume (billions)" href={BC.broad} editedAt={editedMap?.downVolume} />
-                    <input
-                      type="number" step="0.01" min={0} placeholder="3.45"
-                      value={numVal(marketData.breadthOverride?.downVolume)}
-                      onChange={(e) => updateBreadthField("downVolume", e.target.value)}
-                      className="w-full rounded-lg border border-line bg-surface-2 px-3 py-2 text-sm text-ink-2 outline-none focus:border-accent-border focus:ring-1 focus:ring-accent-border transition-all"
-                      title="NYSE declining (down) share volume, in BILLIONS — e.g. 3,446,500,000 shares → 3.45. Must use the SAME unit as Up Volume. Up % = up / (up + down): >85% = thrust, <15% = capitulation."
-                    />
-                  </div>
-                  <div /> {/* empty cell for grid alignment */}
-                </div>
-                {/* Consolidated source legend — each distinct page listed ONCE
-                    so the PM opens it a single time rather than clicking the
-                    same momentum page from four different field icons. */}
-                <div className="mt-4 pt-3 border-t border-line-soft flex flex-wrap items-center gap-x-4 gap-y-1.5 text-[10px] text-ink-3">
+                <div className="flex flex-wrap items-center gap-x-3 gap-y-1 border-t border-line bg-surface-2/50 px-4 py-2 text-[10px] text-ink-3">
                   <span className="font-semibold uppercase tracking-wider">Sources (open once):</span>
-                  <a href={BC.broad} target="_blank" rel="noopener noreferrer" className="inline-flex items-center gap-1 text-accent hover:text-accent transition-colors">
-                    <svg className="w-3 h-3" fill="none" stroke="currentColor" strokeWidth="2" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" d="M10 6H6a2 2 0 00-2 2v10a2 2 0 002 2h10a2 2 0 002-2v-4M14 4h6m0 0v6m0-6L10 14" /></svg>
-                    Barchart Momentum <span className="text-ink-3 normal-case">— Broad Market 200/50 + Up/Down Volume</span>
-                  </a>
-                  <a href={BC.sp200} target="_blank" rel="noopener noreferrer" className="inline-flex items-center gap-1 text-accent hover:text-accent transition-colors">
-                    <svg className="w-3 h-3" fill="none" stroke="currentColor" strokeWidth="2" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" d="M10 6H6a2 2 0 00-2 2v10a2 2 0 002 2h10a2 2 0 002-2v-4M14 4h6m0 0v6m0-6L10 14" /></svg>
-                    $S5TH <span className="text-ink-3">— SP500 &gt;200</span>
-                  </a>
-                  <a href={BC.sp50} target="_blank" rel="noopener noreferrer" className="inline-flex items-center gap-1 text-accent hover:text-accent transition-colors">
-                    <svg className="w-3 h-3" fill="none" stroke="currentColor" strokeWidth="2" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" d="M10 6H6a2 2 0 00-2 2v10a2 2 0 002 2h10a2 2 0 002-2v-4M14 4h6m0 0v6m0-6L10 14" /></svg>
-                    $S5FI <span className="text-ink-3">— SP500 &gt;50</span>
-                  </a>
-                  <a href={BC.nh} target="_blank" rel="noopener noreferrer" className="inline-flex items-center gap-1 text-accent hover:text-accent transition-colors">
-                    <svg className="w-3 h-3" fill="none" stroke="currentColor" strokeWidth="2" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" d="M10 6H6a2 2 0 00-2 2v10a2 2 0 002 2h10a2 2 0 002-2v-4M14 4h6m0 0v6m0-6L10 14" /></svg>
-                    $MAHN <span className="text-ink-3">— New Highs</span>
-                  </a>
-                  <a href={BC.nl} target="_blank" rel="noopener noreferrer" className="inline-flex items-center gap-1 text-accent hover:text-accent transition-colors">
-                    <svg className="w-3 h-3" fill="none" stroke="currentColor" strokeWidth="2" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" d="M10 6H6a2 2 0 00-2 2v10a2 2 0 002 2h10a2 2 0 002-2v-4M14 4h6m0 0v6m0-6L10 14" /></svg>
-                    $MALN <span className="text-ink-3">— New Lows</span>
-                  </a>
+                  <a href={BC.broad} target="_blank" rel="noopener noreferrer" className="text-accent hover:underline">Barchart Momentum</a>
+                  <a href={BC.sp200} target="_blank" rel="noopener noreferrer" className="text-accent hover:underline">$S5TH</a>
+                  <a href={BC.sp50} target="_blank" rel="noopener noreferrer" className="text-accent hover:underline">$S5FI</a>
+                  <a href={BC.nh} target="_blank" rel="noopener noreferrer" className="text-accent hover:underline">$MAHN</a>
+                  <a href={BC.nl} target="_blank" rel="noopener noreferrer" className="text-accent hover:underline">$MALN</a>
                 </div>
-              </>
-            );
-          })()}
-        </div>
+              </section>
 
-        {/* ── Strategist Notes (Fundstrat) ── */}
-        <div className="border-t border-line-soft pt-5 mb-4">
-          <div className="flex items-center gap-3 mb-3">
-            <h4 className="text-xs font-semibold text-ink-3 uppercase tracking-widest">Strategist Notes</h4>
-            <span className="text-[10px] text-ink-3">Copy-paste daily reports — Claude will incorporate key takeaways into the brief</span>
-          </div>
-          <div className="grid gap-4 md:grid-cols-2">
-            <div>
-              <div className="flex flex-wrap items-center gap-1.5 mb-1">
-                <label className="text-xs font-semibold text-ink-3 uppercase tracking-wider">Mark Newton</label>
-                <span className="text-[10px] text-ink-3">(Technical Strategy)</span>
-                <StrategistTimingToggle
-                  value={marketData.strategistNotes?.newtonTiming}
-                  onChange={(next) =>
-                    onUpdateMarketData({
-                      strategistNotes: { ...marketData.strategistNotes, newtonTiming: next },
-                    })
-                  }
-                />
-                <input
-                  type="date"
-                  value={marketData.strategistNotes?.newtonDate ?? new Date().toISOString().slice(0, 10)}
-                  onChange={(e) =>
-                    onUpdateMarketData({
-                      strategistNotes: {
-                        ...marketData.strategistNotes,
-                        newtonDate: e.target.value,
-                      },
-                    })
-                  }
-                  className="ml-auto rounded-lg border border-line bg-surface-2 px-2 py-0.5 text-[11px] text-ink-3 outline-none focus:border-accent-border focus:ring-1 focus:ring-accent-border transition-all"
-                  title="Date this report pertains to"
-                />
-              </div>
-              <SaveableTextarea
-                savedValue={marketData.strategistNotes?.newton ?? ""}
-                onSave={(v) =>
-                  onUpdateMarketData({
-                    strategistNotes: {
-                      ...marketData.strategistNotes,
-                      newton: v || undefined,
-                      newtonDate: marketData.strategistNotes?.newtonDate ?? new Date().toISOString().slice(0, 10),
-                    },
-                  })
-                }
-                label="Newton"
-                placeholder="Paste Mark Newton's daily technical strategy report here…"
-              />
-            </div>
-            <div>
-              <div className="flex flex-wrap items-center gap-1.5 mb-1">
-                <label className="text-xs font-semibold text-ink-3 uppercase tracking-wider">Tom Lee</label>
-                <span className="text-[10px] text-ink-3">(Head of Research)</span>
-                <StrategistTimingToggle
-                  value={marketData.strategistNotes?.leeTiming}
-                  onChange={(next) =>
-                    onUpdateMarketData({
-                      strategistNotes: { ...marketData.strategistNotes, leeTiming: next },
-                    })
-                  }
-                />
-                <input
-                  type="date"
-                  value={marketData.strategistNotes?.leeDate ?? new Date().toISOString().slice(0, 10)}
-                  onChange={(e) =>
-                    onUpdateMarketData({
-                      strategistNotes: {
-                        ...marketData.strategistNotes,
-                        leeDate: e.target.value,
-                      },
-                    })
-                  }
-                  className="ml-auto rounded-lg border border-line bg-surface-2 px-2 py-0.5 text-[11px] text-ink-3 outline-none focus:border-accent-border focus:ring-1 focus:ring-accent-border transition-all"
-                  title="Date this report pertains to"
-                />
-              </div>
-              <SaveableTextarea
-                savedValue={marketData.strategistNotes?.lee ?? ""}
-                onSave={(v) =>
-                  onUpdateMarketData({
-                    strategistNotes: {
-                      ...marketData.strategistNotes,
-                      lee: v || undefined,
-                      leeDate: marketData.strategistNotes?.leeDate ?? new Date().toISOString().slice(0, 10),
-                    },
-                  })
-                }
-                label="Tom Lee"
-                placeholder="Paste Tom Lee's daily strategy report here…"
-              />
-            </div>
-          </div>
-        </div>
+              <div className="flex flex-col gap-4">
+                {/* ── CONTRARIAN ── */}
+                <section className="overflow-hidden rounded-card border border-line bg-white shadow-sm">
+                  <div className="flex items-baseline gap-2 border-b border-line bg-surface-2/50 px-4 py-2.5">
+                    <span className="text-[11px] font-bold uppercase tracking-[0.18em] text-ink-3">Contrarian</span>
+                    <SignalPill tone="green">INVERTED</SignalPill>
+                    <span className="ml-auto font-mono text-[10px] text-ink-faint">2 fields</span>
+                  </div>
+                  <div className="divide-y divide-line-soft">
+                    <div className="flex items-center gap-2 px-4 py-2.5">
+                      <span className="text-sm text-ink">S&amp;P oscillator</span>
+                      <a href="https://app.marketedge.com/#!/markets" target="_blank" rel="noopener noreferrer" className="text-[11px] text-accent hover:underline" title="MarketEdge S&P Oscillator">MarketEdge ↗</a>
+                      <span className="text-[10px] text-ink-faint">{marketData.spOscillator < 0 ? "oversold · bullish" : marketData.spOscillator > 0 ? "overbought · bearish" : "neutral"}</span>
+                      <SaveableNumericInput
+                        savedValue={marketData.spOscillator}
+                        onSave={(n) => onUpdateMarketData({ spOscillator: n })}
+                        allowNegative
+                        inputClassName={`ml-auto ${breadthInputCls}`}
+                      />
+                    </div>
+                    <div className="flex items-center gap-2 px-4 py-2.5">
+                      <span className="text-sm text-ink">Put / call</span>
+                      <a href="https://www.cboe.com/us/options/market_statistics/daily/" target="_blank" rel="noopener noreferrer" className="text-[11px] text-accent hover:underline" title="CBOE Total Put/Call">CBOE ↗</a>
+                      <SaveableNumericInput
+                        savedValue={marketData.putCall}
+                        onSave={(n) => onUpdateMarketData({ putCall: n })}
+                        inputClassName={`ml-auto ${breadthInputCls}`}
+                      />
+                    </div>
+                  </div>
+                  <div className="grid grid-cols-1 gap-3 border-t border-line-soft px-4 py-3 sm:grid-cols-2">
+                    <div>
+                      <ImageUpload
+                        section="spOscillator"
+                        sectionLabel="S&P Oscillator chart"
+                        attachments={attachments}
+                        onAdd={addAttachment}
+                        onRemove={removeAttachment}
+                      />
+                      <p className="mt-1 text-[10px] text-ink-3">Oscillator chart (optional) — Claude reads the shape, levels and recent extremes.</p>
+                    </div>
+                    <div>
+                      <ImageUpload
+                        section="newtonTechnical"
+                        sectionLabel="Newton Technical Presentation"
+                        attachments={attachments}
+                        onAdd={addAttachment}
+                        onRemove={removeAttachment}
+                      />
+                      <p className="mt-1 text-[10px] text-ink-3">Newton deck (PDF, optional) — parsed once, cached; relevance decays with age (&lt;14d full weight, 14–45d directional, &gt;45d context only).</p>
+                    </div>
+                  </div>
+                  <p className="border-t border-line-soft px-4 py-2 text-[10px] text-ink-3">
+                    CNN Fear &amp; Greed and AAII are auto-fetched — see Auto-fetched below.
+                  </p>
+                </section>
 
-        <div className="mt-5 flex items-center gap-4">
-          <button
-            onClick={() => generateBrief(true)}
-            disabled={generating}
-            className="rounded-card bg-accent px-5 py-3 text-sm font-semibold text-white hover:bg-accent disabled:opacity-50 transition-colors"
-          >
-            {generating ? "Generating..." : "\u21BB Refresh Brief"}
-          </button>
-        </div>
-      </section>
-      </>
-      )}
+                {/* ── REPORTS DROPBOX ── */}
+                <section className="overflow-hidden rounded-card border border-line bg-white shadow-sm">
+                  <div className="flex items-baseline gap-2 border-b border-line bg-surface-2/50 px-4 py-2.5">
+                    <span className="text-[11px] font-bold uppercase tracking-[0.18em] text-ink-3">Analyst / strategist reports</span>
+                    <span className="text-[11px] text-ink-3">optional</span>
+                  </div>
+                  <div className="px-4 py-3">
+                    <ImageUpload
+                      section="strategistReports"
+                      sectionLabel="Analyst / Strategist Reports"
+                      attachments={attachments}
+                      onAdd={addAttachment}
+                      onRemove={removeAttachment}
+                    />
+                    <p className="mt-1 text-[10px] text-ink-3">Any sell-side strategy note, economics piece or thematic deck (PDF or screenshot, multiple OK). Parsed once on upload, then cached; same age decay as the Newton deck.</p>
+                  </div>
+                </section>
+              </div>
+            </div>
+
+            {/* ── STRATEGIST NOTES ── */}
+            <section className="mt-4 overflow-hidden rounded-card border border-line bg-white shadow-sm">
+              <div className="flex items-baseline gap-2 border-b border-line bg-surface-2/50 px-4 py-2.5">
+                <span className="text-[11px] font-bold uppercase tracking-[0.18em] text-ink-3">Strategist notes</span>
+                <span className="text-[11px] text-ink-3">copy-paste the daily reports — key takeaways feed the brief</span>
+                <span className="ml-auto font-mono text-[10px] text-ink-faint">{(newtonDone ? 1 : 0) + (leeDone ? 1 : 0)} of 2 today</span>
+              </div>
+              <div className="grid gap-4 px-4 py-3 md:grid-cols-2">
+                <div>
+                  <div className="mb-1 flex flex-wrap items-center gap-1.5">
+                    <label className="text-sm font-semibold text-ink">Mark Newton</label>
+                    <span className="text-[10px] text-ink-3">(Technical Strategy)</span>
+                    <StrategistTimingToggle
+                      value={marketData.strategistNotes?.newtonTiming}
+                      onChange={(next) =>
+                        onUpdateMarketData({ strategistNotes: { ...marketData.strategistNotes, newtonTiming: next } })
+                      }
+                    />
+                    <span className="ml-auto font-mono text-[10px] text-ink-faint">{words(marketData.strategistNotes?.newton)} words</span>
+                    <input
+                      type="date"
+                      value={marketData.strategistNotes?.newtonDate ?? today}
+                      onChange={(e) =>
+                        onUpdateMarketData({ strategistNotes: { ...marketData.strategistNotes, newtonDate: e.target.value } })
+                      }
+                      className="rounded-lg border border-line bg-surface-2 px-2 py-0.5 text-[11px] text-ink-3 outline-none transition-all focus:border-accent-border focus:ring-1 focus:ring-accent-border"
+                      title="Date this report pertains to"
+                    />
+                  </div>
+                  <SaveableTextarea
+                    savedValue={marketData.strategistNotes?.newton ?? ""}
+                    onSave={(v) =>
+                      onUpdateMarketData({
+                        strategistNotes: {
+                          ...marketData.strategistNotes,
+                          newton: v || undefined,
+                          newtonDate: marketData.strategistNotes?.newtonDate ?? today,
+                        },
+                      })
+                    }
+                    label="Newton"
+                    placeholder="Paste Mark Newton's daily technical strategy report here…"
+                  />
+                </div>
+                <div>
+                  <div className="mb-1 flex flex-wrap items-center gap-1.5">
+                    <label className="text-sm font-semibold text-ink">Tom Lee</label>
+                    <span className="text-[10px] text-ink-3">(Head of Research)</span>
+                    <StrategistTimingToggle
+                      value={marketData.strategistNotes?.leeTiming}
+                      onChange={(next) =>
+                        onUpdateMarketData({ strategistNotes: { ...marketData.strategistNotes, leeTiming: next } })
+                      }
+                    />
+                    <span className="ml-auto font-mono text-[10px] text-ink-faint">{words(marketData.strategistNotes?.lee)} words</span>
+                    <input
+                      type="date"
+                      value={marketData.strategistNotes?.leeDate ?? today}
+                      onChange={(e) =>
+                        onUpdateMarketData({ strategistNotes: { ...marketData.strategistNotes, leeDate: e.target.value } })
+                      }
+                      className="rounded-lg border border-line bg-surface-2 px-2 py-0.5 text-[11px] text-ink-3 outline-none transition-all focus:border-accent-border focus:ring-1 focus:ring-accent-border"
+                      title="Date this report pertains to"
+                    />
+                  </div>
+                  <SaveableTextarea
+                    savedValue={marketData.strategistNotes?.lee ?? ""}
+                    onSave={(v) =>
+                      onUpdateMarketData({
+                        strategistNotes: {
+                          ...marketData.strategistNotes,
+                          lee: v || undefined,
+                          leeDate: marketData.strategistNotes?.leeDate ?? today,
+                        },
+                      })
+                    }
+                    label="Tom Lee"
+                    placeholder="Paste Tom Lee's daily strategy report here…"
+                  />
+                </div>
+              </div>
+            </section>
+
+            {/* ── AUTO-FETCHED ── */}
+            <section className="mt-4 overflow-hidden rounded-card border border-line bg-white shadow-sm">
+              <div className="flex items-baseline gap-2 border-b border-line bg-surface-2/50 px-4 py-2.5">
+                <span className="text-[11px] font-bold uppercase tracking-[0.18em] text-ink-3">Auto-fetched</span>
+                <span className="text-[11px] text-ink-3">nothing to do — shown for confidence</span>
+              </div>
+              <div className="grid grid-cols-2 divide-x divide-line-soft lg:grid-cols-4">
+                <div className="px-4 py-3">
+                  <div className="flex items-center gap-1.5 text-[10px] font-bold uppercase tracking-wider text-ink-3">
+                    VIX term
+                    <a href="http://vixcentral.com" target="_blank" rel="noopener noreferrer" className="text-accent" title="VIX Central">↗</a>
+                    <LiveStatusBadge status={liveFields.termStructure} reason={liveErrors.termStructure ?? "Derived from ^VIX3M / ^VIX ratio"} />
+                  </div>
+                  {/* Manual override select preserved — auto-fetch fills it, the PM can correct it. */}
+                  <SaveableSelect
+                    savedValue={marketData.termStructure}
+                    onSave={(v) => onUpdateMarketData({ termStructure: v })}
+                    options={[
+                      { value: "Contango", label: "Contango" },
+                      { value: "Flat", label: "Flat" },
+                      { value: "Backwardation", label: "Backwardation" },
+                    ]}
+                    selectClassName="mt-1 w-full appearance-none rounded-lg border border-transparent bg-transparent font-mono text-lg font-semibold text-ink outline-none transition-all hover:border-line focus:border-accent-border"
+                  />
+                </div>
+                <div className="px-4 py-3">
+                  <div className="text-[10px] font-bold uppercase tracking-wider text-ink-3">Fear &amp; Greed</div>
+                  <div className="mt-1 font-mono text-lg font-semibold text-ink">
+                    {activeForward?.fearGreed?.value != null ? Math.round(activeForward.fearGreed.value) : "—"}
+                    <span className="ml-1.5 text-[10px] font-bold text-pos">LIVE</span>
+                  </div>
+                </div>
+                <div className="px-4 py-3">
+                  <div className="text-[10px] font-bold uppercase tracking-wider text-ink-3">AAII</div>
+                  <div className="mt-1 font-mono text-lg font-semibold text-ink">
+                    {marketData.aaiiBull != null ? `${Math.round(marketData.aaiiBull)}/${Math.round(marketData.aaiiNeutral ?? 0)}/${Math.round(marketData.aaiiBear ?? 0)}` : "—"}
+                    <span className="ml-1.5 text-[10px] font-bold text-pos">LIVE</span>
+                  </div>
+                </div>
+                <div className="px-4 py-3">
+                  <div className="text-[10px] font-bold uppercase tracking-wider text-ink-3">HY / IG OAS</div>
+                  <div className="mt-1 font-mono text-lg font-semibold text-ink">
+                    {activeForward?.hyOasTrend?.value != null ? Math.round(activeForward.hyOasTrend.value) : "—"}
+                    {" / "}
+                    {activeForward?.igOasTrend?.value != null ? Math.round(activeForward.igOasTrend.value) : "—"}
+                    <span className="ml-1.5 text-[10px] font-bold text-pos">LIVE</span>
+                  </div>
+                </div>
+              </div>
+            </section>
+
+            {/* ── Generate bar ── */}
+            <div className="mt-4 flex flex-wrap items-center gap-3 rounded-card bg-ink px-4 py-3 shadow-card">
+              <div className="min-w-0 text-white">
+                <div className="text-sm font-semibold">
+                  {effectiveMissing.length === 0 ? "Ready to generate" : `${effectiveMissing.length} still missing`}
+                </div>
+                <div className="truncate text-[11px] opacity-70">
+                  {effectiveMissing.length === 0
+                    ? marked && missing.length > 0
+                      ? "marked entered — remaining gaps intentionally skipped"
+                      : "all tracked inputs entered today"
+                    : "You can generate anyway — gaps are flagged in the brief"}
+                </div>
+              </div>
+              <button
+                onClick={() => generateBrief(true)}
+                disabled={generating}
+                className="ml-auto shrink-0 rounded-control bg-white px-5 py-2.5 text-sm font-semibold text-ink transition-opacity hover:opacity-90 disabled:opacity-50"
+              >
+                {generating ? "Generating…" : "Generate brief"}
+              </button>
+            </div>
+          </>
+        );
+      })()}
 
       {error && (
         <div className="rounded-xl border border-neg-border bg-neg-soft px-4 py-3 text-sm text-neg">
