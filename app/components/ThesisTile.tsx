@@ -71,6 +71,18 @@ export default function ThesisTile({
   const [addNote, setAddNote] = useState("");
   const [journalNote, setJournalNote] = useState<string | null>(null);
 
+  // On-trip Claude thesis check (phase ④). GET reads the cache only — zero
+  // spend; the POST behind the button is hash-gated server-side, so a
+  // re-click on unchanged facts is also free.
+  type ThesisCheck = {
+    hash: string;
+    analyzedAt: string;
+    result: { breaksThesis: "direct" | "partial" | "no"; assessment: string; bearCase: string; restore: string; suggestedAction: string };
+  };
+  const [check, setCheck] = useState<ThesisCheck | null>(null);
+  const [checking, setChecking] = useState(false);
+  const [checkErr, setCheckErr] = useState<string | null>(null);
+
   // 45d composite delta for the score_decay condition, from pm:score-history.
   const [scoreDelta45d, setScoreDelta45d] = useState<number | null | undefined>(undefined);
   useEffect(() => {
@@ -112,6 +124,12 @@ export default function ThesisTile({
         const t = (d?.theses ?? {})[ticker.toUpperCase()] ?? (d?.theses ?? {})[ticker];
         setEntry(t ?? null);
         setLoaded(true);
+        if (t?.killConditions?.length) {
+          fetch(`/api/thesis-check?ticker=${encodeURIComponent(ticker)}`)
+            .then((r) => r.json())
+            .then((c) => c?.check && setCheck(c.check))
+            .catch(() => {});
+        }
       })
       .catch(() => alive && setLoaded(true));
     return () => {
@@ -211,6 +229,25 @@ export default function ThesisTile({
       setSaving(false);
     }
   }, [ticker, draftWhy, draftConds, entry, signals.price]);
+
+  const runCheck = useCallback(async () => {
+    setChecking(true);
+    setCheckErr(null);
+    try {
+      const r = await fetch("/api/thesis-check", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ ticker }),
+      });
+      const d = await r.json();
+      if (d?.check) setCheck(d.check);
+      else setCheckErr(d?.error || "check failed");
+    } catch {
+      setCheckErr("check failed");
+    } finally {
+      setChecking(false);
+    }
+  }, [ticker]);
 
   /** Log the response to a trip in the decision journal, with the score
    *  snapshot embedded so attribution can reconstruct decision-time state. */
@@ -327,12 +364,49 @@ export default function ThesisTile({
             </div>
           )}
 
+          {tripped > 0 && check && (
+            <div className="border-t border-line px-4 py-3">
+              <div className="mb-1.5 flex items-center gap-2">
+                <span className="text-[10px] font-bold uppercase tracking-[0.14em] text-ink-3">Thesis check</span>
+                <span className={`rounded-full border px-2 py-0.5 text-[10px] font-bold uppercase ${
+                  check.result.breaksThesis === "direct"
+                    ? "border-neg-border bg-neg-soft text-neg"
+                    : check.result.breaksThesis === "partial"
+                      ? "border-warn-border bg-warn-soft text-warn"
+                      : "border-pos-border bg-pos-soft text-pos"
+                }`}>
+                  {check.result.breaksThesis === "direct" ? "hits the thesis" : check.result.breaksThesis === "partial" ? "partial hit" : "noise vs thesis"}
+                </span>
+                <span className="ml-auto font-mono text-[10px] text-ink-faint">
+                  claude · {check.analyzedAt.slice(0, 10)}
+                </span>
+              </div>
+              <p className="text-[13px] leading-5 text-ink-2">{check.result.assessment}</p>
+              <p className="mt-1.5 text-[12px] leading-5 text-ink-3">
+                <span className="font-semibold text-ink-2">Bear case:</span> {check.result.bearCase}{" "}
+                <span className="font-semibold text-ink-2">Restores it:</span> {check.result.restore}
+              </p>
+              <p className="mt-1.5 rounded-lg border border-warn-border bg-warn-soft px-2.5 py-1.5 text-[12px] font-medium leading-5 text-ink">
+                {check.result.suggestedAction}
+              </p>
+            </div>
+          )}
           {tripped > 0 && (
             <div className="flex flex-wrap items-center gap-2 border-t border-line bg-neg-soft/40 px-4 py-2.5">
               <span className="text-[12px] font-semibold text-neg">
                 A pre-registered exit condition is tripped — respond and it&apos;s logged.
               </span>
               <div className="ml-auto flex gap-2">
+                {!check && (
+                  <button
+                    onClick={runCheck}
+                    disabled={checking}
+                    title="One hash-gated model call (~$0.03) — re-runs only when the facts change"
+                    className="rounded-control border border-line bg-white px-2.5 py-1 text-xs font-semibold text-accent disabled:opacity-50"
+                  >
+                    {checking ? "Writing…" : "Run thesis check"}
+                  </button>
+                )}
                 <button
                   onClick={() => logDecision("hold")}
                   className="rounded-control border border-line bg-white px-2.5 py-1 text-xs font-semibold text-ink-2 hover:text-ink"
@@ -347,6 +421,7 @@ export default function ThesisTile({
                 </button>
               </div>
               {journalNote && <span className="w-full text-right text-[11px] text-ink-3">{journalNote}</span>}
+              {checkErr && <span className="w-full text-right text-[11px] text-neg">{checkErr}</span>}
             </div>
           )}
         </>
