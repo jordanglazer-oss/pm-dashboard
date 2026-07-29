@@ -336,7 +336,8 @@ export default function ThesisTile({
             <p className="border-b border-line-soft px-4 py-3 text-[13px] text-ink-3">
               No thesis registered. Write why you own {ticker} and pre-register the conditions
               that would make you wrong — they are checked automatically from data already
-              tracked here.
+              tracked here.{" "}
+              <a href="/methodology" className="text-accent hover:underline">How this works</a>
             </p>
           )}
 

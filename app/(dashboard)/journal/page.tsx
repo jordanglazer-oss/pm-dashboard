@@ -90,7 +90,8 @@ export default function JournalPage() {
           <div>
             <h1 className="text-[17px] font-semibold tracking-[-0.02em]">Decision Journal — Attribution</h1>
             <p className="text-xs text-ink-3">
-              every logged decision vs its sector · hit rates count completed windows only
+              every logged decision vs its sector · hit rates count completed windows only ·{" "}
+              <Link href="/methodology" className="text-accent hover:underline">how this works</Link>
             </p>
           </div>
           <div className="ml-auto flex items-center gap-2">
