@@ -22,7 +22,18 @@ import { NextRequest, NextResponse } from "next/server";
 
 const KEY = "pm:position-theses";
 
-type PositionThesis = { why: string; updatedAt: string };
+/** Extended (2026-07, preview thesis-discipline build) with optional
+ *  structured fields. All additive; entries written by the old UI parse
+ *  unchanged, and read-merge-write below preserves fields it doesn't know. */
+type PositionThesis = {
+  why: string;
+  updatedAt: string;
+  /** Pre-registered machine-checkable exit criteria (app/lib/kill-conditions). */
+  killConditions?: unknown[];
+  underwrittenAt?: string; // YYYY-MM-DD the thesis was (re)underwritten
+  underwritePrice?: number | null;
+  reUnderwriteBy?: string; // YYYY-MM-DD the quarterly re-check is due
+};
 type PositionTheses = Record<string, PositionThesis>;
 
 export async function GET() {
@@ -48,13 +59,30 @@ export async function POST(req: NextRequest) {
     const raw = await redis.get(KEY);
     // Read-modify-write: preserve every other ticker's note.
     const current: PositionTheses = raw ? (JSON.parse(raw) as PositionTheses) : {};
-    if (why) {
-      current[ticker] = { why, updatedAt: new Date().toISOString() };
+    const prev = current[ticker];
+
+    // Structured fields arrive on the same POST; each is applied only when
+    // present so a why-only save (old UI) can never clobber conditions and a
+    // conditions-only save can never clobber the note.
+    const hasConditions = Array.isArray(body?.killConditions);
+    const next: PositionThesis = {
+      ...prev,
+      why: body?.why !== undefined ? why : (prev?.why ?? ""),
+      updatedAt: new Date().toISOString(),
+    };
+    if (hasConditions) next.killConditions = body.killConditions as unknown[];
+    if (typeof body?.underwrittenAt === "string") next.underwrittenAt = body.underwrittenAt;
+    if (typeof body?.underwritePrice === "number") next.underwritePrice = body.underwritePrice;
+    if (typeof body?.reUnderwriteBy === "string") next.reUnderwriteBy = body.reUnderwriteBy;
+
+    const empty = !next.why && !(next.killConditions && next.killConditions.length);
+    if (empty) {
+      delete current[ticker]; // clearing both halves removes the entry
     } else {
-      delete current[ticker]; // empty note clears just this entry
+      current[ticker] = next;
     }
     await redis.set(KEY, JSON.stringify(current));
-    return NextResponse.json({ ok: true, ticker, cleared: !why });
+    return NextResponse.json({ ok: true, ticker, cleared: empty });
   } catch (e) {
     console.error("Redis write error (position-theses):", e);
     return NextResponse.json({ error: "write failed" }, { status: 500 });

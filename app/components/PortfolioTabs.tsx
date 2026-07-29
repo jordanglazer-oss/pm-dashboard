@@ -31,6 +31,9 @@ const SEGMENTS: { label: string; href: string }[] = [
   { label: "Models", href: "/pim-model" },
   { label: "Allocation", href: "/aa-performance" },
   { label: "Attribution", href: "/attribution" },
+  { label: "Risk", href: "/risk" },
+  { label: "Journal", href: "/journal" },
+  { label: "Methodology", href: "/methodology" },
 ];
 
 export function PortfolioTabs() {
@@ -45,7 +48,10 @@ export function PortfolioTabs() {
     pathname.startsWith("/portfolio") ||
     pathname === "/pim-model" ||
     pathname === "/aa-performance" ||
-    pathname === "/attribution";
+    pathname === "/attribution" ||
+    pathname === "/risk" ||
+    pathname === "/journal" ||
+    pathname === "/methodology";
 
   // Which segment "owns" the current route (X-ray shares /portfolio with
   // Positioning; it's an in-page anchor, so Positioning is the active one there).
@@ -53,6 +59,7 @@ export function PortfolioTabs() {
     pathname === "/pim-model" ? "/pim-model"
     : pathname === "/aa-performance" ? "/aa-performance"
     : pathname === "/attribution" ? "/attribution"
+    : pathname === "/risk" ? "/risk"
     : pathname.startsWith("/portfolio") ? "/portfolio"
     : "/"; // "/", "/scoring", "/stock/*"
 

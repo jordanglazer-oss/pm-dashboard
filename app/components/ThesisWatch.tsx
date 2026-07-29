@@ -21,6 +21,7 @@ type ThesisData = {
   holdings: Holding[];
 };
 type Theses = Record<string, { why: string; updatedAt: string }>;
+type KillRow = { ticker: string; tripped: number; auto: number; reUnderwriteBy?: string };
 
 const VERDICT_BADGE: Record<ThesisVerdict, string> = {
   broken: "bg-neg-soft text-neg",
@@ -31,6 +32,9 @@ const VERDICT_BADGE: Record<ThesisVerdict, string> = {
 export function ThesisWatch() {
   const [data, setData] = useState<ThesisData | null>(null);
   const [theses, setTheses] = useState<Theses>({});
+  // Kill-condition sweep (/api/thesis-watch) — the pre-registered exits,
+  // joined per-ticker under the same rows as the automated verdicts.
+  const [killRows, setKillRows] = useState<Record<string, KillRow>>({});
   const [loading, setLoading] = useState(true);
   const [editing, setEditing] = useState<string | null>(null);
   const [draft, setDraft] = useState("");
@@ -38,6 +42,15 @@ export function ThesisWatch() {
 
   useEffect(() => {
     let alive = true;
+    fetch("/api/thesis-watch")
+      .then((r) => r.json())
+      .then((d) => {
+        if (!alive) return;
+        const map: Record<string, KillRow> = {};
+        for (const h of d?.holdings ?? []) if (h?.ticker) map[String(h.ticker).toUpperCase()] = h;
+        setKillRows(map);
+      })
+      .catch(() => {});
     Promise.all([
       fetch("/api/thesis-health", { cache: "no-store" }).then((r) => r.json()).catch(() => ({})),
       fetch("/api/kv/position-theses", { cache: "no-store" }).then((r) => r.json()).catch(() => ({})),
@@ -125,6 +138,20 @@ export function ThesisWatch() {
                 <span className={`shrink-0 rounded-full px-2 py-0.5 text-[10px] font-bold uppercase tracking-wide ${VERDICT_BADGE[h.verdict]}`}>
                   {h.verdict}
                 </span>
+                {(() => {
+                  const kr = killRows[h.ticker.toUpperCase()];
+                  if (!kr || kr.auto === 0) return null;
+                  return (
+                    <span
+                      className={`shrink-0 rounded-full border px-2 py-0.5 text-[10px] font-bold uppercase tracking-wide ${
+                        kr.tripped > 0 ? "border-neg-border bg-neg-soft text-neg" : "border-pos-border bg-pos-soft text-pos"
+                      }`}
+                      title="Pre-registered kill conditions (see the stock page's Thesis tile)"
+                    >
+                      {kr.tripped > 0 ? `kill ${kr.tripped}/${kr.auto}` : `kill 0/${kr.auto}`}
+                    </span>
+                  );
+                })()}
                 <div className="flex flex-1 flex-col gap-2">
                   <div className="flex flex-wrap gap-1.5">
                     {h.drivers

@@ -22,7 +22,7 @@ export const FACTOR_GROUPS: Record<string, FactorMetric[]> = {
   quality: ["fcfMargin", "operMgn", "operMgnTrend", "roe", "accruals", "intCoverage", "debtEbitda"],
   growth: ["revGrowth", "epsGrowth"],
   valuation: ["pe", "pbk", "psales", "evEbitda", "fcfYield"],
-  momentum: ["mom12_1"],
+  momentum: ["mom12_1", "mom6_1"],
 };
 
 /** v1 fixed weights (placeholders pending Phase C IC calibration). */

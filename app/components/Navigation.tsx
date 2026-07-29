@@ -161,6 +161,7 @@ const tabs = [
   { label: "Screener", href: "/screener" },
   { label: "Research", href: "/research" },
   { label: "Pipeline", href: "/conviction" },
+  { label: "Factor Lab", href: "/factor-lab" },
   { label: "Hedging", href: "/hedging" },
   { label: "Appendix", href: "/appendix" },
   // Inbox is now a SUB-tab of Research (see ResearchTabs) — not a top-level tab.
@@ -315,7 +316,8 @@ export function Navigation() {
   // /scoring route (scoring was folded into the Dashboard/Rankings surface).
   const activeTab = pathname.startsWith("/stock/") || pathname === "/scoring"
     || pathname === "/" || pathname === "/portfolio" || pathname === "/pim-model"
-    || pathname === "/aa-performance"
+    || pathname === "/aa-performance" || pathname === "/risk"
+    || pathname === "/journal" || pathname === "/methodology"
     ? "Portfolio"
     : pathname === "/brief"
     ? "Brief"

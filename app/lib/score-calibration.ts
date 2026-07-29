@@ -88,6 +88,10 @@ export type CalibrationResult = {
   totalObservations: number;
   buckets: BucketStat[];
   categories: CategorySignal[];
+  /** Pearson correlation between category sub-scores across observations —
+   *  the redundancy test for the reviewer's "one factor wearing four hats"
+   *  claim. Optional so cached results computed before this field parse. */
+  categoryCorr?: { keys: ScoreKey[]; labels: string[]; matrix: (number | null)[][] };
   headline: {
     buyHitRate: number | null;   // % of Buy-tier obs that beat the index
     strongBuyAvg: number | null;
@@ -233,5 +237,32 @@ export function computeCalibration(args: {
     buyMinusSell: buyObs.length && sellObs.length ? Number((mean(buyObs.map((o) => o.excess)) - mean(sellObs.map((o) => o.excess))).toFixed(2)) : null,
   };
 
-  return { horizonDays, totalObservations: obs.length, buckets, categories, headline };
+  // ── Inter-category correlation (the redundancy test) ──
+  // If the price-derived categories correlate highly, they are one signal
+  // counted several times — a name with strong price action earns an unearned
+  // multiple boost. Cells with fewer than 10 paired observations are null.
+  const corrKeys = Array.from(allKeys).filter((k) => VALID_SCORE_KEYS.has(k)).sort();
+  const pearson = (a: number[], b: number[]): number | null => {
+    const n = a.length;
+    if (n < 10) return null;
+    const ma = a.reduce((x, y) => x + y, 0) / n;
+    const mb = b.reduce((x, y) => x + y, 0) / n;
+    let num = 0, da = 0, db = 0;
+    for (let i = 0; i < n; i++) {
+      num += (a[i] - ma) * (b[i] - mb);
+      da += (a[i] - ma) ** 2;
+      db += (b[i] - mb) ** 2;
+    }
+    return da === 0 || db === 0 ? null : Math.round((num / Math.sqrt(da * db)) * 100) / 100;
+  };
+  const matrix: (number | null)[][] = corrKeys.map((a) =>
+    corrKeys.map((b) => {
+      if (a === b) return 1;
+      const pairs = obs.filter((o) => typeof o.scores[a] === "number" && typeof o.scores[b] === "number");
+      return pearson(pairs.map((o) => o.scores[a] as number), pairs.map((o) => o.scores[b] as number));
+    }),
+  );
+  const categoryCorr = { keys: corrKeys, labels: corrKeys.map(catLabel), matrix };
+
+  return { horizonDays, totalObservations: obs.length, buckets, categories, headline, categoryCorr };
 }

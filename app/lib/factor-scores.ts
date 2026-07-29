@@ -4,8 +4,8 @@ import { crossSectional, factsetConfigured, type FactsetValue } from "./factset"
 import { resolveFactsetId } from "./factset-symbols";
 import { readUniverse, deriveMetrics, RAW_FORMULAS } from "./factor-universe";
 import { computeFactorScore } from "./factors";
-import { isScoreable } from "./scoring";
-import type { ScoreKey, Stock } from "./types";
+import { isScoreable, computeScores } from "./scoring";
+import type { MarketData, ScoreKey, Stock } from "./types";
 
 /**
  * Nightly shadow scoring (Phase A4). For every Portfolio + Watchlist name,
@@ -63,7 +63,20 @@ export type FactorScoreEntry = {
   blend70: number | null;     // 0.7·quant + 0.3·overlay
   blendMod: number | null;    // quant shifted ±15 by overlay
   groups: Record<string, number>;
+  /** Per-metric sector-neutral z (sign-normalized, higher = better) — the
+   *  math trail behind `quant`, for the Factor Lab drill-down. Optional:
+   *  entries cached before 2026-07 lack it until the next nightly run. */
+  perMetric?: Record<string, number>;
+  /** The derived metric values the z-scores were computed from. */
+  metrics?: Record<string, number>;
 };
+
+/** One pm:factor-history row — the point-in-time record Phase C validates
+ *  against. `price` and `s41` (41-pt adjusted at write time) make the log
+ *  self-contained: forward returns and every lens come straight out of it. */
+export type FactorHistoryRow = { date: string; price?: number; s41?: number } & Partial<
+  Omit<FactorScoreEntry, "ticker" | "confidence">
+>;
 
 type StoredStock = Stock & { scores?: Partial<Record<ScoreKey, number>> };
 
@@ -121,6 +134,8 @@ export async function computeBookFactorScores(): Promise<FactorScoreStatus> {
       let quant: number | null = null;
       let confidence: number | null = null;
       let groups: Record<string, number> = {};
+      let perMetric: Record<string, number> = {};
+      let metrics: Record<string, number> = {};
       let sector = "";
       if (row) {
         const rawRow: Record<string, number | string> = {};
@@ -131,11 +146,20 @@ export async function computeBookFactorScores(): Promise<FactorScoreStatus> {
         }
         sector = typeof rawRow.sector === "string" ? rawRow.sector : "";
         if (sector) {
-          const fs = computeFactorScore(deriveMetrics(rawRow as never), sector, universe);
+          const derived = deriveMetrics(rawRow as never);
+          const fs = computeFactorScore(derived, sector, universe);
           if (fs) {
             quant = fs.percentile;
             confidence = fs.confidence;
             groups = fs.groups;
+            // Full math trail for the Factor Lab drill-down — no black box:
+            // the derived metric values and each metric's sector-neutral z.
+            perMetric = Object.fromEntries(
+              Object.entries(fs.perMetric).filter(([, v]) => typeof v === "number"),
+            ) as Record<string, number>;
+            metrics = Object.fromEntries(
+              Object.entries(derived).filter(([, v]) => typeof v === "number" && isFinite(v as number)),
+            ) as Record<string, number>;
             quantScored++;
           }
         }
@@ -146,26 +170,40 @@ export async function computeBookFactorScores(): Promise<FactorScoreStatus> {
       const blend70 = quant == null ? null : overlay == null ? quant : clamp01(0.7 * quant + 0.3 * overlay);
       const blendMod = quant == null ? null : overlay == null ? quant : clamp01(quant + (overlay - 50) * 0.3);
 
-      entries[tk] = { ticker: tk, sector, quant, confidence, overlay, blend70, blendMod, groups };
+      entries[tk] = { ticker: tk, sector, quant, confidence, overlay, blend70, blendMod, groups, perMetric, metrics };
     }
 
     // Latest snapshot (cache).
     await redis.set(FACTOR_SCORES_KEY, JSON.stringify({ builtAt: new Date().toISOString(), entries }));
 
+    // Point-in-time context for the history rows, so Phase C validation is
+    // fully self-contained: last-known price (forward returns) and the 41-pt
+    // adjusted score (the incumbent lens in the four-way IC race). Both are
+    // read-only derivations — pm:market and pm:stocks are never written.
+    const market = parse<MarketData>(await redis.get("pm:market"), { riskRegime: "Neutral" } as MarketData);
+    const byTicker = new Map(book.map((s) => [s.ticker.toUpperCase(), s]));
+    const pointInTime = (tk: string): { price?: number; s41?: number } => {
+      const s = byTicker.get(tk);
+      if (!s) return {};
+      const out: { price?: number; s41?: number } = {};
+      if (typeof s.price === "number" && isFinite(s.price) && s.price > 0) out.price = s.price;
+      try {
+        if (s.scores) out.s41 = computeScores(s, market).adjusted;
+      } catch { /* leave s41 absent */ }
+      return out;
+    };
+
     // Append-only history — one entry per ticker per DAY, today only (mirrors
     // pm:score-history / pm:portfolio-snapshots date-guard). Never overwrites a
     // prior day; skips a ticker already logged today.
     const today = new Date().toISOString().slice(0, 10);
-    const hist = parse<Record<string, Array<{ date: string } & Partial<FactorScoreEntry>>>>(
-      await redis.get(FACTOR_HISTORY_KEY),
-      {},
-    );
+    const hist = parse<Record<string, FactorHistoryRow[]>>(await redis.get(FACTOR_HISTORY_KEY), {});
     let appended = 0;
     for (const [tk, e] of Object.entries(entries)) {
       if (e.quant == null) continue; // only log real quant readings
       const arr = (hist[tk] ??= []);
       if (arr.some((x) => x.date === today)) continue;
-      arr.push({ date: today, quant: e.quant, overlay: e.overlay, blend70: e.blend70, blendMod: e.blendMod, sector: e.sector, groups: e.groups });
+      arr.push({ date: today, quant: e.quant, overlay: e.overlay, blend70: e.blend70, blendMod: e.blendMod, sector: e.sector, groups: e.groups, ...pointInTime(tk) });
       appended++;
     }
     if (appended > 0) await redis.set(FACTOR_HISTORY_KEY, JSON.stringify(hist));
