@@ -63,6 +63,12 @@ export type FactorScoreEntry = {
   blend70: number | null;     // 0.7·quant + 0.3·overlay
   blendMod: number | null;    // quant shifted ±15 by overlay
   groups: Record<string, number>;
+  /** Per-metric sector-neutral z (sign-normalized, higher = better) — the
+   *  math trail behind `quant`, for the Factor Lab drill-down. Optional:
+   *  entries cached before 2026-07 lack it until the next nightly run. */
+  perMetric?: Record<string, number>;
+  /** The derived metric values the z-scores were computed from. */
+  metrics?: Record<string, number>;
 };
 
 /** One pm:factor-history row — the point-in-time record Phase C validates
@@ -128,6 +134,8 @@ export async function computeBookFactorScores(): Promise<FactorScoreStatus> {
       let quant: number | null = null;
       let confidence: number | null = null;
       let groups: Record<string, number> = {};
+      let perMetric: Record<string, number> = {};
+      let metrics: Record<string, number> = {};
       let sector = "";
       if (row) {
         const rawRow: Record<string, number | string> = {};
@@ -138,11 +146,20 @@ export async function computeBookFactorScores(): Promise<FactorScoreStatus> {
         }
         sector = typeof rawRow.sector === "string" ? rawRow.sector : "";
         if (sector) {
-          const fs = computeFactorScore(deriveMetrics(rawRow as never), sector, universe);
+          const derived = deriveMetrics(rawRow as never);
+          const fs = computeFactorScore(derived, sector, universe);
           if (fs) {
             quant = fs.percentile;
             confidence = fs.confidence;
             groups = fs.groups;
+            // Full math trail for the Factor Lab drill-down — no black box:
+            // the derived metric values and each metric's sector-neutral z.
+            perMetric = Object.fromEntries(
+              Object.entries(fs.perMetric).filter(([, v]) => typeof v === "number"),
+            ) as Record<string, number>;
+            metrics = Object.fromEntries(
+              Object.entries(derived).filter(([, v]) => typeof v === "number" && isFinite(v as number)),
+            ) as Record<string, number>;
             quantScored++;
           }
         }
@@ -153,7 +170,7 @@ export async function computeBookFactorScores(): Promise<FactorScoreStatus> {
       const blend70 = quant == null ? null : overlay == null ? quant : clamp01(0.7 * quant + 0.3 * overlay);
       const blendMod = quant == null ? null : overlay == null ? quant : clamp01(quant + (overlay - 50) * 0.3);
 
-      entries[tk] = { ticker: tk, sector, quant, confidence, overlay, blend70, blendMod, groups };
+      entries[tk] = { ticker: tk, sector, quant, confidence, overlay, blend70, blendMod, groups, perMetric, metrics };
     }
 
     // Latest snapshot (cache).

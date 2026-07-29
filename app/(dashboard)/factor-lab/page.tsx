@@ -22,6 +22,8 @@ import { EmptyState } from "@/app/components/EmptyState";
 type FactorEntry = {
   ticker: string;
   sector: string;
+  perMetric?: Record<string, number>;
+  metrics?: Record<string, number>;
   quant: number | null;
   confidence: number | null;
   overlay: number | null;
@@ -92,6 +94,35 @@ const LENS_LABEL: Record<string, string> = {
 };
 
 const GROUP_ORDER = ["quality", "growth", "valuation", "momentum"] as const;
+
+/** Metric → (group, label, format) for the per-stock math trail. Mirrors
+ *  FACTOR_GROUPS in app/lib/factors.ts — keep in sync when adding metrics. */
+const METRIC_META: Record<string, { group: (typeof GROUP_ORDER)[number]; label: string; pct?: boolean; x?: boolean }> = {
+  fcfMargin: { group: "quality", label: "FCF margin", pct: true },
+  operMgn: { group: "quality", label: "Operating margin", pct: true },
+  operMgnTrend: { group: "quality", label: "Op-margin trend", pct: true },
+  roe: { group: "quality", label: "Return on equity", pct: true },
+  accruals: { group: "quality", label: "Accruals ratio", pct: true },
+  intCoverage: { group: "quality", label: "Interest coverage", x: true },
+  debtEbitda: { group: "quality", label: "Net debt / EBITDA", x: true },
+  revGrowth: { group: "growth", label: "Revenue growth (1y)", pct: true },
+  epsGrowth: { group: "growth", label: "EPS growth (1y)", pct: true },
+  pe: { group: "valuation", label: "P/E", x: true },
+  pbk: { group: "valuation", label: "P/Book", x: true },
+  psales: { group: "valuation", label: "P/Sales", x: true },
+  evEbitda: { group: "valuation", label: "EV/EBITDA", x: true },
+  fcfYield: { group: "valuation", label: "FCF yield", pct: true },
+  mom12_1: { group: "momentum", label: "12-1M momentum", pct: true },
+  mom6_1: { group: "momentum", label: "6-1M momentum", pct: true },
+};
+const GROUP_WEIGHTS: Record<string, number> = { quality: 0.3, growth: 0.2, valuation: 0.2, momentum: 0.3 };
+
+function fmtMetric(key: string, v: number): string {
+  const m = METRIC_META[key];
+  if (m?.pct) return `${(v * 100).toFixed(1)}%`;
+  if (m?.x) return `${v.toFixed(1)}×`;
+  return v.toFixed(2);
+}
 const GROUP_LABEL: Record<string, string> = {
   quality: "Qual", growth: "Grow", valuation: "Val", momentum: "Mom",
 };
@@ -127,6 +158,8 @@ export default function FactorLabPage() {
   const [loading, setLoading] = useState(true);
   const [sortKey, setSortKey] = useState<SortKey>("disagreement");
   const [showMethod, setShowMethod] = useState(false);
+  // Which book row's math trail is open (click the ticker row to toggle).
+  const [openMath, setOpenMath] = useState<string | null>(null);
   const [validation, setValidation] = useState<Validation | null>(null);
   const [screen, setScreen] = useState<ScreenName[] | null>(null);
   const [screenBuiltAt, setScreenBuiltAt] = useState<string | null>(null);
@@ -439,13 +472,22 @@ export default function FactorLabPage() {
             <tbody>
               {sorted.map((r) => {
                 const hasQuant = r.quant != null;
+                const entry = entries[r.ticker.toUpperCase()];
+                const mathOpen = openMath === r.ticker;
+                const hasTrail = Boolean(entry?.perMetric && Object.keys(entry.perMetric).length);
                 return (
-                  <tr key={r.ticker} className={`border-b border-line/60 ${hasQuant ? "" : "opacity-50"}`}>
+                  <React.Fragment key={r.ticker}>
+                  <tr
+                    className={`border-b border-line/60 ${hasQuant ? "" : "opacity-50"} ${hasTrail ? "cursor-pointer hover:bg-surface-2/50" : ""}`}
+                    onClick={() => hasTrail && setOpenMath(mathOpen ? null : r.ticker)}
+                    title={hasTrail ? "Click to see the math behind this percentile" : undefined}
+                  >
                     <td className="px-3 py-2">
-                      <Link href={`/stock/${encodeURIComponent(r.ticker)}`} className="font-mono font-semibold text-ink hover:text-accent">
+                      <Link href={`/stock/${encodeURIComponent(r.ticker)}`} onClick={(e) => e.stopPropagation()} className="font-mono font-semibold text-ink hover:text-accent">
                         {displayTicker(r.ticker)}
                       </Link>
                       <span className="ml-1 text-[10px] text-ink-3">{r.bucket === "Portfolio" ? "P" : "W"}</span>
+                      {hasTrail && <span className="ml-1.5 text-[10px] text-ink-faint">{mathOpen ? "▾" : "▸"}</span>}
                     </td>
                     <td className="px-3 py-2 text-xs text-ink-3">{r.sector || "—"}</td>
                     <td className="px-3 py-2 text-right font-mono text-ink-2">{Number(r.adjusted.toFixed(1))}</td>
@@ -467,6 +509,54 @@ export default function FactorLabPage() {
                     ))}
                     <td className="px-2 py-2 text-right text-xs text-ink-3">{r.confidence ?? "—"}</td>
                   </tr>
+                  {/* ── Math trail: raw value → sector-neutral z → group → composite ── */}
+                  {mathOpen && entry?.perMetric && (
+                    <tr className="border-b border-line/60 bg-surface-2/40">
+                      <td colSpan={9 + GROUP_ORDER.length} className="px-4 py-3">
+                        <div className="mb-2 text-[11px] text-ink-3">
+                          Each metric is compared against every <b>{r.sector || "sector"}</b> name in the
+                          ~560-name universe (winsorized, z clamped to ±3, sign-normalized so higher = better;
+                          missing metrics are dropped from both sides, never counted as bearish). Group z = mean
+                          of its metrics; composite = Σ group z × weight → percentile via the normal CDF.
+                        </div>
+                        <div className="grid grid-cols-1 gap-x-6 gap-y-2 sm:grid-cols-2 lg:grid-cols-4">
+                          {GROUP_ORDER.map((g) => {
+                            const rows = Object.entries(entry.perMetric!).filter(([k]) => METRIC_META[k]?.group === g);
+                            if (!rows.length) return (
+                              <div key={g}>
+                                <div className="mb-1 text-[10px] font-bold uppercase tracking-wider text-ink-3">{g} · ×{GROUP_WEIGHTS[g]}</div>
+                                <div className="text-[11px] text-ink-faint">no metrics available</div>
+                              </div>
+                            );
+                            return (
+                              <div key={g}>
+                                <div className="mb-1 text-[10px] font-bold uppercase tracking-wider text-ink-3">
+                                  {g} · ×{GROUP_WEIGHTS[g]}
+                                  {typeof r.groups[g] === "number" && (
+                                    <span className={`ml-1.5 font-mono normal-case ${r.groups[g] >= 0 ? "text-pos" : "text-neg"}`}>
+                                      z {r.groups[g] >= 0 ? "+" : ""}{r.groups[g].toFixed(2)}
+                                    </span>
+                                  )}
+                                </div>
+                                {rows.map(([k, z]) => (
+                                  <div key={k} className="flex items-baseline gap-2 text-[11px] leading-5">
+                                    <span className="text-ink-2">{METRIC_META[k]?.label ?? k}</span>
+                                    <span className="ml-auto font-mono text-ink-3">
+                                      {entry.metrics?.[k] != null ? fmtMetric(k, entry.metrics[k]) : "—"}
+                                    </span>
+                                    <span className={`w-12 text-right font-mono ${z >= 0 ? "text-pos" : "text-neg"}`}>
+                                      {z >= 0 ? "+" : ""}{z.toFixed(2)}
+                                    </span>
+                                  </div>
+                                ))}
+                              </div>
+                            );
+                          })}
+                        </div>
+                      </td>
+                    </tr>
+                  )}
+                  </React.Fragment>
                 );
               })}
             </tbody>
