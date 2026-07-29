@@ -1,50 +1,39 @@
 "use client";
 
-import React, { useEffect, useState } from "react";
+import React, { useEffect, useRef, useState } from "react";
+import { BRIEF_STEPS, type BriefProgress } from "@/app/lib/brief-progress-shared";
 
 /**
- * Generation progress modal.
+ * Generation progress modal — now with REAL per-step ticks.
  *
- * HONESTY NOTE — why there are no animated per-step checkmarks like the mock:
- * /api/morning-brief returns a SINGLE JSON response, and most of its work runs
- * inside one Promise.all (sector perf, forward-looking macro, strategist
- * history, research, hedging costs, market regime all resolve concurrently).
- * The client therefore cannot observe when any individual step finishes, and
- * the steps aren't even sequential. Ticking them off on a timer would invent a
- * progress signal that doesn't exist.
+ * History: this modal originally refused to animate steps, because the route
+ * returned a single JSON response and ticking on a timer would have invented
+ * a progress signal that didn't exist. The route now reports actual phase
+ * completions (each phase marks pm:brief-progress the moment its promise
+ * settles — see app/lib/brief-progress.ts), and this modal polls that blob
+ * while open. Steps complete in whatever order the upstreams genuinely
+ * answer, because the phases run concurrently — an honest, slightly
+ * out-of-order tick beats a fabricated sequence.
  *
- * So this shows what the run actually does (accurate — these are the real
- * inputs it gathers), a real elapsed timer, and an indeterminate bar. If we
- * later convert the route to a streamed response emitting per-phase events,
- * this component can light the steps up for real with no UI change.
+ * The elapsed timer derives from a start timestamp inside the interval (no
+ * synchronous setState in the effect body — react-hooks lint).
  */
-
-/** The work the route genuinely performs, for orientation while waiting. */
-const STEPS = [
-  "Refresh prices & FX",
-  "Fetch forward-looking macro",
-  "Recompute market regime",
-  "Read manual breadth entry",
-  "Price the SPY put ladder",
-  "Scan the portfolio for risk flags",
-  "Compose the narrative",
-];
 
 export function BriefGenerationModal({
   open,
+  runId,
   onRunInBackground,
   hasPreviousBrief,
 }: {
   open: boolean;
+  /** The generation run to watch — must match what the client POSTed. */
+  runId: string | null;
   onRunInBackground: () => void;
   hasPreviousBrief: boolean;
 }) {
   const [elapsed, setElapsed] = useState(0);
   useEffect(() => {
     if (!open) return;
-    // No synchronous setState in the effect body (react-hooks lint): elapsed
-    // is derived from a start timestamp inside the interval, and reset in the
-    // cleanup so the next open starts from 0.
     const t0 = Date.now();
     const t = setInterval(() => setElapsed(Math.floor((Date.now() - t0) / 1000)), 1000);
     return () => {
@@ -53,53 +42,95 @@ export function BriefGenerationModal({
     };
   }, [open]);
 
+  // Poll the progress blob while the modal is open. Guarded by runId so a
+  // stale blob from a previous generation can never render as live progress.
+  const [progress, setProgress] = useState<BriefProgress | null>(null);
+  const pollRef = useRef<ReturnType<typeof setInterval> | null>(null);
+  useEffect(() => {
+    if (!open || !runId) return;
+    let alive = true;
+    const poll = () =>
+      fetch(`/api/brief-progress?runId=${encodeURIComponent(runId)}`)
+        .then((r) => r.json())
+        .then((d) => {
+          if (alive && d?.progress) setProgress(d.progress as BriefProgress);
+        })
+        .catch(() => {});
+    poll();
+    pollRef.current = setInterval(poll, 1200);
+    return () => {
+      alive = false;
+      if (pollRef.current) clearInterval(pollRef.current);
+      setProgress(null);
+    };
+  }, [open, runId]);
+
   if (!open) return null;
   const mins = Math.floor(elapsed / 60);
   const secs = elapsed % 60;
+  const doneSet = new Set(progress?.done ?? []);
+  const pct = Math.round((doneSet.size / BRIEF_STEPS.length) * 100);
 
   return (
     <div className="fixed inset-0 z-50 flex items-center justify-center bg-ink/20 p-4 backdrop-blur-sm">
-      <div className="animate-fade-up w-full max-w-md rounded-card border border-line bg-white p-5 shadow-card">
-        <div className="flex items-baseline justify-between gap-3">
+      <div className="animate-fade-up w-full max-w-md overflow-hidden rounded-card border border-line bg-white shadow-card">
+        <div className="flex items-baseline justify-between gap-3 px-5 pt-5">
           <div className="flex items-center gap-2">
             <span className="h-2 w-2 animate-pulse rounded-full bg-accent" />
             <h2 className="text-base font-semibold text-ink">Generating the brief</h2>
           </div>
           <span className="font-mono text-xs text-ink-3">
-            {mins}:{String(secs).padStart(2, "0")}
+            {progress ? `${pct}%` : `${mins}:${String(secs).padStart(2, "0")}`}
           </span>
         </div>
 
-        {/* Indeterminate — the route reports no intermediate progress. */}
-        <div className="mt-3 h-1 overflow-hidden rounded-pill bg-line">
-          <div className="shimmer-sweep h-full w-1/3 rounded-pill bg-accent" />
+        {/* Determinate once real progress arrives; shimmer until the first poll. */}
+        <div className="mt-3 h-1 overflow-hidden bg-line">
+          {progress ? (
+            <div className="h-full bg-accent transition-all duration-500" style={{ width: `${Math.max(4, pct)}%` }} />
+          ) : (
+            <div className="shimmer-sweep h-full w-1/3 rounded-pill bg-accent" />
+          )}
         </div>
 
-        <ul className="mt-4 space-y-1.5">
-          {STEPS.map((s) => (
-            <li key={s} className="flex items-center gap-2.5 text-[13px] text-ink-2">
-              <span className="h-1.5 w-1.5 rounded-full bg-ink-faint" />
-              {s}
-            </li>
-          ))}
+        <ul className="px-5 pt-2.5">
+          {BRIEF_STEPS.map((s) => {
+            const done = doneSet.has(s.key);
+            return (
+              <li
+                key={s.key}
+                className="flex items-center gap-2.5 border-b border-line-soft py-2.5 text-[13px] last:border-b-0"
+              >
+                {done ? (
+                  <span
+                    className="flex h-4 w-4 shrink-0 items-center justify-center rounded-full border-2 border-pos"
+                    aria-hidden
+                  >
+                    <span className="h-1.5 w-1.5 rounded-full bg-pos" />
+                  </span>
+                ) : (
+                  <span className="h-4 w-4 shrink-0 animate-pulse rounded-full border-2 border-line" aria-hidden />
+                )}
+                <span className={done ? "text-ink" : "text-ink-2"}>{s.label}</span>
+                <span className={`ml-auto text-[11px] ${done ? "text-ink-3" : "text-ink-faint"}`}>
+                  {done ? "done" : progress ? "running" : "…"}
+                </span>
+              </li>
+            );
+          })}
         </ul>
 
-        <p className="mt-3 text-[11px] leading-4 text-ink-3">
-          These run mostly in parallel and finish server-side, so there is no
-          per-step tick to show — the timer above is the real signal.
-        </p>
-
-        <div className="mt-4 flex items-center justify-between gap-3">
+        <div className="mt-2 flex items-center justify-between gap-3 border-t border-line bg-surface-2/50 px-5 py-3.5">
           <span className="text-[11px] text-ink-3">
             {hasPreviousBrief
-              ? "You can keep reading the current brief while this runs."
+              ? "You can keep reading yesterday's brief while this runs."
               : "This usually takes under a minute."}
           </span>
           <button
             onClick={onRunInBackground}
             className="shrink-0 rounded-control border border-line bg-white px-3 py-1.5 text-xs font-semibold text-ink-2 hover:text-ink"
           >
-            Run in background
+            {hasPreviousBrief ? "View brief" : "Run in background"}
           </button>
         </div>
       </div>

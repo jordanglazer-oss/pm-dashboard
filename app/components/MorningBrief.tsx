@@ -650,6 +650,9 @@ export function MorningBrief({
   // Modal visibility is separate from `generating` so "Run in background"
   // hides the dialog without cancelling the in-flight request.
   const [genModalOpen, setGenModalOpen] = useState(false);
+  // Identifies THIS generation run to the progress poller — a stale
+  // pm:brief-progress blob from a prior run can never match it.
+  const [genRunId, setGenRunId] = useState<string | null>(null);
   // Standalone hedging refresh — re-runs ONLY the hedging read (live premiums
   // + one small model call) and merges the result into the existing brief via
   // the normal context persist path. No full-brief regeneration.
@@ -1141,6 +1144,8 @@ export function MorningBrief({
   }, [brief?.forwardLooking, forwardData]);
 
   async function generateBrief(force = true) {
+    const runId = (typeof crypto !== "undefined" && "randomUUID" in crypto ? crypto.randomUUID() : `run-${Date.now()}`);
+    setGenRunId(runId);
     setGenerating(true);
     setGenModalOpen(true);
     setError("");
@@ -1168,6 +1173,7 @@ export function MorningBrief({
           holdings: stocks,
           attachmentRefs,
           force,
+          runId,
         }),
       });
 
@@ -1383,6 +1389,7 @@ export function MorningBrief({
           stacked header rows; every control they held lives here. */}
       <BriefGenerationModal
         open={genModalOpen && generating}
+        runId={genRunId}
         onRunInBackground={() => setGenModalOpen(false)}
         hasPreviousBrief={Boolean(brief?.bottomLine)}
       />

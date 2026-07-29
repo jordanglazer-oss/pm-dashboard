@@ -1,5 +1,6 @@
 import Anthropic from "@anthropic-ai/sdk";
 import { NextRequest, NextResponse } from "next/server";
+import { createProgressWriter } from "@/app/lib/brief-progress";
 import { createHash } from "crypto";
 import { getRedis } from "@/app/lib/redis";
 import {
@@ -732,6 +733,10 @@ export async function POST(request: NextRequest) {
   try {
     const body = await request.json();
     const { marketData, holdings } = body;
+    // Real phase progress for the generation modal — marks fire when each
+    // promise actually settles. runId comes from the client; old clients
+    // without one leave the writer inert. Cosmetic: never throws, never awaited.
+    const progress = createProgressWriter(typeof body?.runId === "string" ? body.runId : undefined);
 
     if (!marketData) {
       return NextResponse.json(
@@ -931,24 +936,30 @@ ${rows.join("\n")}`;
 
     const [sectorPerf, forwardData, strategistHistory, research, hedgingCosts, marketRegime] =
       await Promise.all([
-        fetchSectorPerformance(),
-        fetchForwardLookingData(manualBreadth).catch((e) => {
-          console.error("Forward-looking fetch failed:", e);
-          return null as ForwardLookingData | null;
-        }),
+        progress.track("prices", fetchSectorPerformance()),
+        progress.track(
+          "macro",
+          fetchForwardLookingData(manualBreadth).catch((e) => {
+            console.error("Forward-looking fetch failed:", e);
+            return null as ForwardLookingData | null;
+          }),
+        ),
         loadStrategistHistory().catch((e) => {
           console.error("Strategist history load failed:", e);
           return { newton: [], lee: [] } as StrategistHistory;
         }),
-        loadResearch(),
-        buildHedgingCostsBlock().catch((e) => {
-          console.error("Hedging costs block failed:", e);
-          return { text: "", ctx: null, detail: null };
-        }),
+        progress.track("research", loadResearch()),
+        progress.track(
+          "hedging",
+          buildHedgingCostsBlock().catch((e) => {
+            console.error("Hedging costs block failed:", e);
+            return { text: "", ctx: null, detail: null };
+          }),
+        ),
         // pm:market-regime is a best-effort cached snapshot. Missing →
         // regime block is simply omitted from the prompt; brief still
         // generates from the forward-looking signals.
-        readMarketRegime(),
+        progress.track("regime", readMarketRegime()),
       ]);
 
     // ── Catalyst Calendar (Phase 01) ──────────────────────────────────────
@@ -969,6 +980,7 @@ ${rows.join("\n")}`;
     } catch (e) {
       console.error("Catalyst calendar build failed:", e);
     }
+    progress.mark("catalyst");
     const briefTodayIso = easternToday();
     const catalystBlock =
       catalystCalendar && catalystCalendar.events.length > 0
@@ -1641,6 +1653,8 @@ Current Portfolio Holdings: ${holdingsSummary}${portfolioPositioning}`;
       ],
       system: BRIEF_PROMPT,
     });
+    progress.mark("narrative");
+    progress.finish();
 
     const text =
       message.content[0].type === "text" ? message.content[0].text : "";
