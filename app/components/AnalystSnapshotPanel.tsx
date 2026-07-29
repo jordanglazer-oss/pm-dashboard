@@ -19,8 +19,8 @@ type Props = {
   breakdown: ConsensusBreakdown;
   reports: TickerReports | undefined;
   onChange: (next: TickerSnapshot | undefined) => void;
-  onUpload: (source: "rbc" | "jpm", dataUrl: string, label: string) => Promise<{ ok: true; extracted: ExtractedReport } | { ok: false; error: string }>;
-  onRemoveReport: (source: "rbc" | "jpm") => Promise<void>;
+  onUpload: (source: "rbc" | "jpm" | "morningstar", dataUrl: string, label: string) => Promise<{ ok: true; extracted: ExtractedReport } | { ok: false; error: string }>;
+  onRemoveReport: (source: "rbc" | "jpm" | "morningstar") => Promise<void>;
   /** Convert an analyst target from one currency to the stock's trading currency.
    *  Returns the converted target and FX rate, or null on failure. */
   onConvertTarget: (source: "rbc" | "jpm", fromCurrency: string) => Promise<void>;
@@ -35,8 +35,8 @@ const RATING_OPTIONS: { value: AnalystRating; label: string }[] = [
 
 export function AnalystSnapshotPanel({ ticker, stockCurrency, snapshot, breakdown, reports, onChange, onUpload, onRemoveReport, onConvertTarget }: Props) {
   const [local, setLocal] = useState<TickerSnapshot>(() => snapshot ?? {});
-  const [uploading, setUploading] = useState<{ source: "rbc" | "jpm" } | null>(null);
-  const [uploadError, setUploadError] = useState<{ source: "rbc" | "jpm"; message: string } | null>(null);
+  const [uploading, setUploading] = useState<{ source: "rbc" | "jpm" | "morningstar" } | null>(null);
+  const [uploadError, setUploadError] = useState<{ source: "rbc" | "jpm" | "morningstar"; message: string } | null>(null);
   const [converting, setConverting] = useState<"rbc" | "jpm" | null>(null);
   const onChangeRef = useRef(onChange);
   onChangeRef.current = onChange;
@@ -51,7 +51,7 @@ export function AnalystSnapshotPanel({ ticker, stockCurrency, snapshot, breakdow
   const scheduleSave = useCallback((next: TickerSnapshot) => {
     if (saveTimerRef.current) clearTimeout(saveTimerRef.current);
     saveTimerRef.current = setTimeout(() => {
-      const hasAny = Boolean(next.rbc || next.jpm || next.factset);
+      const hasAny = Boolean(next.rbc || next.jpm || next.factset || next.morningstar);
       onChangeRef.current(hasAny ? next : undefined);
       saveTimerRef.current = null;
     }, 500);
@@ -61,7 +61,7 @@ export function AnalystSnapshotPanel({ ticker, stockCurrency, snapshot, breakdow
     return () => {
       if (saveTimerRef.current) {
         clearTimeout(saveTimerRef.current);
-        const hasAny = Boolean(local.rbc || local.jpm || local.factset);
+        const hasAny = Boolean(local.rbc || local.jpm || local.factset || local.morningstar);
         onChangeRef.current(hasAny ? local : undefined);
       }
     };
@@ -83,7 +83,7 @@ export function AnalystSnapshotPanel({ ticker, stockCurrency, snapshot, breakdow
     scheduleSave(next);
   };
 
-  const handleFile = async (which: "rbc" | "jpm", file: File) => {
+  const handleFile = async (which: "rbc" | "jpm" | "morningstar", file: File) => {
     if (!file) return;
     if (file.size > 15 * 1024 * 1024) {
       setUploadError({ source: which, message: `PDF too large (${(file.size / 1024 / 1024).toFixed(1)} MB). Max 15 MB.` });
@@ -320,6 +320,70 @@ export function AnalystSnapshotPanel({ ticker, stockCurrency, snapshot, breakdow
 
       {renderAnalyst("rbc", "RBC")}
       {renderAnalyst("jpm", "JPM")}
+      {/* Morningstar — structured ratings, not a rating/target pair. Stars
+          enter the consensus as a ±0.5 modifier; moat + capital allocation
+          feed the scoring prompt as evidence; FVE is display-only. */}
+      {(() => {
+        const ms = local.morningstar;
+        const report = reports?.morningstar;
+        const isUploading = uploading?.source === "morningstar";
+        const errMsg = uploadError?.source === "morningstar" ? uploadError.message : null;
+        return (
+          <div className="rounded-lg border border-line bg-white p-3">
+            <div className="mb-2 flex items-center justify-between">
+              <div className="flex items-center gap-2">
+                <span className="text-xs font-semibold text-ink-2">Morningstar</span>
+                {breakdown.morningstar && (
+                  <span className="text-[10px] text-ink-3">
+                    {breakdown.morningstar.stars}★ → {breakdown.morningstar.contribution >= 0 ? "+" : ""}{breakdown.morningstar.contribution.toFixed(2)} pts
+                  </span>
+                )}
+                {report && (
+                  <span className="text-[10px] text-ink-3" title={`Uploaded ${report.uploadedAt.slice(0, 10)} · ${report.label}`}>
+                    · PDF: {report.label.length > 30 ? report.label.slice(0, 27) + "..." : report.label}
+                  </span>
+                )}
+              </div>
+              <div className="flex items-center gap-2">
+                <label className={`cursor-pointer text-[10px] ${isUploading ? "text-ink-faint" : "text-accent"}`}>
+                  <input
+                    type="file"
+                    accept="application/pdf"
+                    className="hidden"
+                    disabled={isUploading}
+                    onChange={(e) => {
+                      const f = e.target.files?.[0];
+                      if (f) void handleFile("morningstar", f);
+                      e.target.value = "";
+                    }}
+                  />
+                  {isUploading ? "Extracting…" : report ? "Replace PDF" : "Upload PDF"}
+                </label>
+                {report && (
+                  <button onClick={() => void onRemoveReport("morningstar")} className="text-[10px] text-ink-3 hover:text-neg">
+                    Remove
+                  </button>
+                )}
+              </div>
+            </div>
+            {errMsg && <p className="mb-1 text-[10px] text-neg">{errMsg}</p>}
+            {ms ? (
+              <div className="flex flex-wrap gap-x-4 gap-y-1 text-[11px] text-ink-2">
+                {ms.stars != null && <span>Stars: <span className="font-semibold text-ink">{ms.stars}★</span></span>}
+                {ms.moat && <span>Moat: <span className="font-semibold text-ink">{ms.moat}</span>{ms.moatTrend ? ` (${ms.moatTrend})` : ""}</span>}
+                {ms.capitalAllocation && <span>Capital allocation: <span className="font-semibold text-ink">{ms.capitalAllocation}</span></span>}
+                {ms.fairValue != null && <span>FVE: <span className="font-mono font-semibold text-ink">{ms.fairValue}</span> <span className="text-ink-faint">(cross-check only)</span></span>}
+                {ms.uncertainty && <span>Uncertainty: {ms.uncertainty}</span>}
+                {ms.asOf && <span className="text-ink-3">as of {ms.asOf}</span>}
+              </div>
+            ) : (
+              <p className="text-[11px] text-ink-3">
+                No Morningstar report. Upload the PDF — stars, moat, capital allocation, FVE and uncertainty are extracted automatically. Stars tilt analystConsensus ±0.5; moat and capital allocation become scoring evidence.
+              </p>
+            )}
+          </div>
+        );
+      })()}
 
       <p className="text-[10px] text-ink-3 italic">
         RBC / JPM edits save automatically. The FactSet street consensus is auto-populated from the FactSet Formula API on every rescore and drives the analystConsensus score.

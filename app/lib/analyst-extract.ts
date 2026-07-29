@@ -18,8 +18,8 @@ import type { ExtractedReport, AnalystRating } from "./analyst-snapshots";
 const CACHE_KEY = "pm:analyst-report-extract-cache";
 const client = new Anthropic();
 
-export type AnalystSource = "rbc" | "jpm";
-export const VALID_SOURCES: readonly AnalystSource[] = ["rbc", "jpm"] as const;
+export type AnalystSource = "rbc" | "jpm" | "morningstar";
+export const VALID_SOURCES: readonly AnalystSource[] = ["rbc", "jpm", "morningstar"] as const;
 
 type CacheBlob = Record<string, { result: ExtractedReport; extractedAt: string }>;
 
@@ -51,7 +51,7 @@ const PROMPT_TEMPLATE = (ticker: string, source: AnalystSource) => `You are extr
 
 Schema:
 {
-  "rating": "outperform" | "neutral" | "underperform",     // map bank-specific terms: RBC (Outperform/Sector Perform/Underperform), JPM (Overweight/Neutral/Underweight). Omit if not stated.
+  "rating": "outperform" | "neutral" | "underperform",     // map bank-specific terms: RBC (Outperform/Sector Perform/Underperform), JPM (Overweight/Neutral/Underweight). For Morningstar OMIT this field — stars are extracted separately below. Omit if not stated.
   "target": <number>,                                       // 12-month price target, numeric, no currency symbol. Omit if not stated.
   "targetCurrency": "USD" | "CAD" | "<ISO 4217 code>",       // ISO 4217 currency of the price target. Look for currency symbols (C$, CA$, US$, $, kr, €, £, ¥), disclaimers, or the exchange the report references. Use "USD" for US-listed stocks, "CAD" for TSX-listed, "DKK" for Copenhagen, "SEK" for Stockholm, "GBP"/"GBp" for London, etc. Always emit the standard ISO code (e.g. DKK not "Danish Krone"). Omit only if target is omitted.
   "asOf": "YYYY-MM-DD",                                     // publication date of THIS report. Omit if not clearly stated.
@@ -59,6 +59,12 @@ Schema:
   "risks": ["risk 1", "risk 2", ...],                       // 2-4 bullets capturing key downside risks the report flags. ≤ 25 words each.
   "sectorView": "one sentence",                             // the analyst's sector / industry outlook if it's mentioned in this report. Omit if absent.
   "keyMetrics": [{"label": "...", "value": "..."}, ...]     // 3-6 named numeric data points the analyst uses to support their thesis (e.g. {"label": "FY27 EPS estimate", "value": "$12.40"}). Omit if none.
+${source === "morningstar" ? `  ,"stars": <1-5>,                                          // the Morningstar star rating. Omit if not stated.
+  "fairValue": <number>,                                    // the Fair Value Estimate, numeric. Omit if not stated.
+  "moat": "wide" | "narrow" | "none",                       // the Economic Moat rating. Omit if not stated.
+  "moatTrend": "positive" | "stable" | "negative",          // the Moat Trend. Omit if not stated.
+  "capitalAllocation": "exemplary" | "standard" | "poor",   // the Capital Allocation rating. Omit if not stated.
+  "uncertainty": "low" | "medium" | "high" | "very-high" | "extreme"  // the Uncertainty rating. Omit if not stated.` : ""}
 }
 
 Rules:

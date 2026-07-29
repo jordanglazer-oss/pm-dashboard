@@ -548,8 +548,16 @@ DO NOT SCORE these two — they are deterministic and computed server-side from 
   - researchMentions (COMPUTED): tallied from cached research-screen scrapes.
 Omit both from the "scores" and "explanations" objects in your response. Including them is harmless but wastes tokens.
 
+SCORING DISCIPLINE (applies to every category below):
+- WHOLE POINTS ONLY. Every category score is an integer — no 0.5s. If torn between adjacent scores, evidence decides: corroborated by a second metric → the higher score; contradicted or unverified → the lower.
+- MISSING DATA ≠ BAD DATA. Never score a category low because inputs are unavailable. When material inputs are absent, apply the DATA GAP default — 1 for 2-pt and 3-pt categories, 0 for 1-pt categories — set confidence "low", and open the summary with "DATA GAP:". A coverage gap must never be disguised as a fundamental judgment.
+- INGESTED REPORT EVIDENCE. FACTS from the INGESTED ANALYST REPORTS block (segment figures, dated catalysts, guidance quotes, capital-allocation record, moat analysis) MAY be cited as evidence in catalysts, competitiveMoat, trackRecord, and secular — cite the source (e.g. "RBC report", "Morningstar"). OPINIONS — ratings, price targets, star ratings, "we like" — must NOT move any category score: directional analyst view is already counted once, deterministically, in analystConsensus. Reports older than ~90 days are background context, not primary evidence.
+
 LONG-TERM GROUP:
-- secular (max 2, AUTO): Secular growth trend — long-term industry tailwinds favoring the company. Ground this in the FACTSET "Classification:" line (GICS sector/industry) plus the multi-year revenue trend and FY+1 consensus growth in the FactSet block; cite those as source: "factset".
+- secular (max 2, AUTO): Secular growth trend. Ground this in the FACTSET "Classification:" line (GICS sector/industry) plus the multi-year revenue trend and FY+1 consensus growth in the FactSet block; cite those as source: "factset".
+  * 2 = squarely in a durable multi-year trend with quantifiable evidence (industry volume/TAM growth, multi-year revenue CAGR at/above the sector 2-pt growth bar, FY+1 consensus confirming continuation) — a trend that persists through a recession
+  * 1 = neutral or mixed: GDP-like end-markets, or a real tailwind offset by a structural headwind (e.g. a declining legacy segment)
+  * 0 = structurally challenged end-market — secular volume decline or substitution risk — even if currently profitable
 
 RESEARCH GROUP:
 - researchCoverage (max 1, SEMI): Information-environment meta-signal — score is BINARY (0 or 1, no half-points; values like 0.5 will be rounded up).
@@ -582,7 +590,17 @@ FUNDAMENTAL GROUP:
   * Utilities: P/E, dividend yield, rate base growth vs peers
   * Consumer: P/E, EV/EBITDA, same-store sales growth vs peers
   IMPORTANT: Name specific peer companies and cite their actual multiples from the peer data provided. Example: "META trades at 15.3x EV/EBITDA vs GOOGL at 23.5x and SNAP at 18.2x." Do not use vague "sector average" — name the peers.
+  SCORE MAP (on the playbook's primary multiple, vs the NAMED peers provided):
+  * 3 = clearly the cheap end of the peer set — bottom third of the peers provided (or ≥ ~20% below the peer median when fewer than 4 peers are given) — WITHOUT inferior fundamentals justifying it (growth/margins/returns comparable or better)
+  * 2 = modest discount, or in-line multiple with clearly superior fundamentals (better growth/ROIC at the same price)
+  * 1 = in-line multiple and in-line fundamentals; or a discount fully explained by weaker fundamentals
+  * 0 = unjustified premium to peers; or cheapest-in-group because the business is deteriorating — a value trap, and say so
+  Cheapness alone is not the signal; cheapness relative to quality is.
 - historicalValuation (max 2, AUTO): Historical valuation — Compare CURRENT multiples to the company's OWN history using the provided financial data across multiple years. Cite specific numbers. Use the sector-appropriate multiple from the relativeValuation list (P/FFO for REITs, P/B for banks, EV/EBITDA for industrials/energy — NOT P/E for everything), and for cyclicals (Materials/Energy) remember a LOW P/E on peak earnings is often expensive, not cheap — say so when it applies.
+  * 2 = meaningfully below its own 5-yr average — ≥ ~15% for stable sectors (staples, utilities, healthcare), ≥ ~25% for high-volatility multiples (semis, energy, materials) — with fundamentals broadly intact
+  * 1 = within the normal band of its own history; or below history but with diminished growth/margins vs that history (a deserved de-rating — say which)
+  * 0 = well above own history with no acceleration justifying the re-rating; or a cyclical at a trough multiple on peak earnings
+  * DATA GAP if under ~3 years of usable history, or a transformative acquisition/mix shift broke comparability with the past.
 - leverageCoverage (max 2, AUTO): Leverage & coverage — USE INDUSTRY-SPECIFIC METRICS (the generic "debt/EBITDA" framework is wrong for several industries):
   * Banks: CET1 / Tier 1 capital ratio (vs Basel III minimums + buffer), LCR, NSFR, loan/deposit ratio, NPL ratio. "Debt" is not the right framing — banks ARE leveraged by design; what matters is regulatory capital and liquidity.
   * Insurance: combined ratio (<100 healthy), debt/total capital, RBC ratio, financial leverage ratio. Look at reserve adequacy if disclosed.
@@ -591,6 +609,10 @@ FUNDAMENTAL GROUP:
   * Energy E&P: net debt/EBITDAX, reserves coverage of debt, debt/PDP reserves, hedging coverage of next-12M production.
   * SaaS / high-growth tech: cash runway in years vs current burn (cash on hand / annualized FCF burn), debt at all (most should be ~zero), convertible notes due in next 24 months.
   * Industrials / Consumer / Healthcare / Materials: standard framework — net debt/EBITDA (target <3x), interest coverage (>5x healthy), debt maturity ladder.
+  SCORE MAP (on the playbook's framework above):
+  * 2 = the balance sheet is a strength: leverage clearly below the industry-healthy bar (e.g. net debt/EBITDA < 1.5x standard framework; CET1 comfortably above requirement + buffer; net cash for SaaS), ample coverage, no near-term maturity wall
+  * 1 = manageable: within the normal industry range, adequate coverage (~3-5x interest, standard framework), laddered maturities
+  * 0 = a live risk factor: above the industry red line (> ~4x standard framework), coverage < 2x, CET1 near minimum, or a near-term maturity wall / covenant pressure — name it explicitly
 - cashFlowQuality (max 1, AUTO): Cash flow quality — USE INDUSTRY-SPECIFIC METRICS:
   * Banks: cash flow quality is not really meaningful (CFFO is dominated by deposit flows). Instead look at: dividend payout from earnings (not borrowings), buyback consistency, % of CET1 generated organically.
   * Insurance: operating cash flow vs net income, dividends from operating subs upstreamed (not borrowed at holdco), book value growth.
@@ -598,14 +620,33 @@ FUNDAMENTAL GROUP:
   * Energy: FCF after sustaining capex, hedging realized vs unrealized, dividend coverage by FCF (not by borrowings).
   * SaaS: FCF margin trend, deferred revenue growth vs revenue growth (DR growing faster = forward-loaded bookings, good), stock-based comp as % of revenue (SBC > 25% is dilutive).
   * Industrials/Consumer/etc: FCF conversion (FCF/Net Income, target >0.8), operating cash flow trend, capex intensity (capex/sales), working capital efficiency.
+  SCORE MAP (binary, on the playbook's metric above):
+  * 1 = earnings are cash-backed: FCF conversion >= ~0.8 (or the industry equivalent — AFFO conversion, organic CET1 generation, DR growth >= revenue growth), stable or improving trend, SBC not consuming it
+  * 0 = persistent earnings-to-cash gap: conversion < ~0.7, negative FCF outside a defined investment cycle, rising accruals, or a dividend funded by borrowings
 
 COMPANY SPECIFIC GROUP:
-- competitiveMoat (max 2, SEMI): Competitive moat — Use the peer data provided to assess competitive positioning. Compare margins, returns on capital, and growth rates vs named peers. Identify durable advantages.
+- competitiveMoat (max 2, SEMI): Competitive moat — Use the peer data provided to assess competitive positioning. Compare margins, returns on capital, and growth rates vs named peers. When a Morningstar report is ingested, its Economic Moat rating and moat-trend commentary are admissible evidence — weigh them, cite them, but form your own view.
+  * 2 = a durable advantage QUANTIFIED vs named peers: sustained margin/ROIC premium across multiple years, visible pricing power, switching costs or scale showing up in the numbers
+  * 1 = real but contested differentiation: peer-level margins with a defensible niche, or an advantage not yet (or no longer) visible in returns
+  * 0 = commodity economics: no pricing power, margins at/below peers, share losses
+  The moat must show up in the numbers — a story without a margin premium is at best a 1.
 - catalysts (max 3, SEMI): Potential catalysts — upcoming events, product launches, strategic shifts, M&A potential. Use the FACTSET "Analyst signals" line as structured evidence (a cluster of upward EPS revisions and/or upside to the mean/high target price is a positive estimate-momentum catalyst — cite source: "factset"); use PM notes and web_search only for discrete events (launches, M&A, guidance) not captured in the estimates.
+  * 3 = at least one DATED, company-specific catalyst inside ~6 months with quantifiable impact (guidance raise vs prior guide, launch with revenue attached, announced buyback/spin/restructuring), plus supportive estimate momentum
+  * 2 = a credible company-specific catalyst without a firm date or size; or strong estimate momentum (clustered upward FY+1 revisions, targets above spot) as the primary driver
+  * 1 = only sector-level tailwinds or routine events — the next earnings print alone is NOT a catalyst unless there is a specific setup into it
+  * 0 = nothing identifiable, or the nearest dated events skew negative
 
 MANAGEMENT GROUP:
 - trackRecord (max 1, SEMI): Track record — management execution history, capital allocation quality. Ground this in FACTSET evidence: the multi-year margin (gross/operating) and ROE trends and net-income/FCF consistency in the FactSet block, plus the estimate-revision direction in "Analyst signals" (sustained upward revisions imply management is beating/raising). Cite those as source: "factset".
-- ownershipTrends (max 2, SEMI): Ownership trends — institutional ownership quality, insider buying/selling patterns
+  When a Morningstar report is ingested, its Capital Allocation rating (Exemplary/Standard/Poor) is admissible evidence here — weigh it alongside the FactSet record.
+  * 1 = multi-year execution: consistent or rising margins and ROE, net-income/FCF consistency, sustained upward revisions or an intact beat streak, value-adding capital allocation
+  * 0 = missed guidance or a newly broken beat streak, erratic margins, dilutive or empire-building deployment, restatements or credibility issues
+- ownershipTrends (max 2, SEMI): Ownership trends.
+  Evidence: for US listings, the INSIDER ACTIVITY block (SEC Form 4, last 90d, open-market buys/sells only — grants, vests, 10b5-1 and tax sales are excluded from it). For Canadian and other non-US listings this feed DOES NOT EXIST (SEDI is not integrated) — unless PM notes or web_search surface specific insider/ownership facts, apply the DATA GAP default: score 1, confidence "low", and state "insider filings not integrated for this listing".
+  * 2 = clustered open-market BUYING (>=2 distinct officers/directors, or one large purchase) in the last 90d, or a credible strategic holder adding meaningfully, with no offsetting selling
+  * 1 = quiet or mixed: routine small sales, no cluster either way (also the DATA GAP default)
+  * 0 = clustered open-market SELLING by multiple insiders or a large holder exiting, especially near highs or ahead of known events
+  Never infer direction from ownership LEVEL alone — high institutional ownership is not a signal; the trend is.
 
 CRITICAL RULES FOR EXPLANATIONS:
 1. Every claim in the summary MUST be backed by a corresponding entry in the dataPoints array — NEVER make up numbers
@@ -1070,13 +1111,14 @@ export async function POST(request: NextRequest) {
         const redis = await getRedis();
         const rawReports = await redis.get("pm:analyst-reports");
         if (rawReports) {
-          const reportsBlob = JSON.parse(rawReports) as Record<string, { rbc?: { extracted?: import("@/app/lib/analyst-snapshots").ExtractedReport; uploadedAt?: string }; jpm?: { extracted?: import("@/app/lib/analyst-snapshots").ExtractedReport; uploadedAt?: string } }>;
+          type StoredReport = { extracted?: import("@/app/lib/analyst-snapshots").ExtractedReport; uploadedAt?: string };
+          const reportsBlob = JSON.parse(rawReports) as Record<string, { rbc?: StoredReport; jpm?: StoredReport; morningstar?: StoredReport }>;
           const canonical = upperTicker.toUpperCase();
           const tickerReports = reportsBlob[canonical];
-          if (tickerReports?.rbc?.extracted || tickerReports?.jpm?.extracted) {
-            const lines: string[] = ["=== INGESTED ANALYST REPORTS (RBC / JPM) ==="];
-            lines.push("PDF-extracted thesis, risks, and sector view from the most recent reports stored in pm:analyst-reports. Use these to ground the companySummary and investmentThesis fields in the analysts' actual rationale (not your paraphrase). DO NOT extend the length of those fields beyond 1-2 sentences each — the rule still applies.");
-            for (const src of ["rbc", "jpm"] as const) {
+          if (tickerReports?.rbc?.extracted || tickerReports?.jpm?.extracted || tickerReports?.morningstar?.extracted) {
+            const lines: string[] = ["=== INGESTED ANALYST REPORTS (RBC / JPM / MORNINGSTAR) ==="];
+            lines.push("PDF-extracted thesis, risks, and sector view from the most recent reports stored in pm:analyst-reports. Use these to ground the companySummary and investmentThesis fields in the analysts' actual rationale (not your paraphrase). DO NOT extend the length of those fields beyond 1-2 sentences each — the rule still applies. Per the SCORING DISCIPLINE rules: FACTS from these reports are admissible evidence in catalysts, competitiveMoat, trackRecord, and secular; OPINIONS (ratings, targets, stars) never move a category score.");
+            for (const src of ["rbc", "jpm", "morningstar"] as const) {
               const r = tickerReports[src]?.extracted;
               if (!r) continue;
               const headerBits: string[] = [src.toUpperCase()];
@@ -1096,6 +1138,15 @@ export async function POST(request: NextRequest) {
               if (Array.isArray(r.keyMetrics) && r.keyMetrics.length > 0) {
                 lines.push("Key metrics cited:");
                 for (const m of r.keyMetrics.slice(0, 6)) lines.push(`  - ${m.label}: ${m.value}`);
+              }
+              if (src === "morningstar") {
+                const msBits: string[] = [];
+                if (r.moat) msBits.push(`Economic moat: ${r.moat}${r.moatTrend ? ` (trend ${r.moatTrend})` : ""}`);
+                if (r.capitalAllocation) msBits.push(`Capital allocation: ${r.capitalAllocation}`);
+                if (r.fairValue != null) msBits.push(`Fair value estimate: ${r.fairValue} (cross-check only — do NOT score valuation off this)`);
+                if (r.uncertainty) msBits.push(`Uncertainty: ${r.uncertainty}`);
+                if (r.stars != null) msBits.push(`Stars: ${r.stars} (already counted in analystConsensus — do NOT reuse)`);
+                for (const b of msBits) lines.push(`  - ${b}`);
               }
             }
             financialContext += `\n\n---\n\n${lines.join("\n")}`;

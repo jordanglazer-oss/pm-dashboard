@@ -133,10 +133,10 @@ type StockContextType = {
    *  On success: stores the PDF dataUrl at pm:analyst-report-pdf:<id>, updates
    *  pm:analyst-reports with the extracted metadata, and merges the extracted
    *  rating/target/asOf into pm:analyst-snapshots[ticker][source]. */
-  uploadAnalystReport: (ticker: string, source: "rbc" | "jpm", dataUrl: string, label: string) => Promise<{ ok: true; extracted: ExtractedReport } | { ok: false; error: string }>;
+  uploadAnalystReport: (ticker: string, source: "rbc" | "jpm" | "morningstar", dataUrl: string, label: string) => Promise<{ ok: true; extracted: ExtractedReport } | { ok: false; error: string }>;
   /** Remove the stored report and the PDF dataUrl. Leaves the snapshot
    *  fields alone — the user can still edit the values manually. */
-  removeAnalystReport: (ticker: string, source: "rbc" | "jpm") => Promise<void>;
+  removeAnalystReport: (ticker: string, source: "rbc" | "jpm" | "morningstar") => Promise<void>;
   /** Convert an existing analyst target from a given currency to the stock's
    *  trading currency. Uses live FX from Yahoo. No re-extraction needed. */
   convertAnalystTarget: (ticker: string, source: "rbc" | "jpm", fromCurrency: string) => Promise<void>;
@@ -1508,7 +1508,7 @@ export function StockProvider({ children }: { children: React.ReactNode }) {
 
   const uploadAnalystReport = useCallback(async (
     ticker: string,
-    source: "rbc" | "jpm",
+    source: "rbc" | "jpm" | "morningstar",
     dataUrl: string,
     label: string
   ): Promise<{ ok: true; extracted: ExtractedReport } | { ok: false; error: string }> => {
@@ -1621,16 +1621,38 @@ export function StockProvider({ children }: { children: React.ReactNode }) {
     let derivedSnapshot: TickerSnapshot | undefined;
     setAnalystSnapshotsState((prev) => {
       const currentSnapshot = getSnapshotForTicker(prev, ticker) ?? {};
-      const merged: AnalystEntry = {
-        rating: extractRes!.result.rating ?? "not-covered",
-        target: convertedTarget,
-        ...(targetOriginal != null ? { targetOriginal, targetCurrency: targetCurrencyField, fxRate: fxRateField } : {}),
-        asOf: extractRes!.result.asOf,
-        priceAtReport: priceAtUpload,
-        reportId,
-        lastUpdated: new Date().toISOString(),
-      };
-      const nextSnapshot: TickerSnapshot = { ...currentSnapshot, [source]: merged };
+      let nextSnapshot: TickerSnapshot;
+      if (source === "morningstar") {
+        // Morningstar carries structured ratings, not a rating/target pair.
+        // Stars enter analystConsensus as the ±0.5 modifier; moat and
+        // capital-allocation ride into the scoring prompt as evidence; the
+        // FVE is display/cross-check only (stars already encode price-vs-FVE).
+        const ex = extractRes!.result;
+        nextSnapshot = {
+          ...currentSnapshot,
+          morningstar: {
+            stars: ex.stars,
+            fairValue: ex.fairValue,
+            moat: ex.moat,
+            moatTrend: ex.moatTrend,
+            capitalAllocation: ex.capitalAllocation,
+            uncertainty: ex.uncertainty,
+            asOf: ex.asOf,
+            lastUpdated: new Date().toISOString(),
+          },
+        };
+      } else {
+        const merged: AnalystEntry = {
+          rating: extractRes!.result.rating ?? "not-covered",
+          target: convertedTarget,
+          ...(targetOriginal != null ? { targetOriginal, targetCurrency: targetCurrencyField, fxRate: fxRateField } : {}),
+          asOf: extractRes!.result.asOf,
+          priceAtReport: priceAtUpload,
+          reportId,
+          lastUpdated: new Date().toISOString(),
+        };
+        nextSnapshot = { ...currentSnapshot, [source]: merged };
+      }
       derivedSnapshot = nextSnapshot;
       const updated = setSnapshotForTicker(prev, ticker, nextSnapshot);
       persistAnalystSnapshots(updated);
@@ -1649,7 +1671,7 @@ export function StockProvider({ children }: { children: React.ReactNode }) {
     return { ok: true, extracted: extractRes.result };
   }, [persistAnalystReports, persistAnalystSnapshots, stocks, updateScore, updateExplanations, tickerCurrency]);
 
-  const removeAnalystReport = useCallback(async (ticker: string, source: "rbc" | "jpm") => {
+  const removeAnalystReport = useCallback(async (ticker: string, source: "rbc" | "jpm" | "morningstar") => {
     const reportId = reportIdFor(ticker, source);
     try {
       await fetch(`/api/kv/analyst-reports/${encodeURIComponent(reportId)}`, { method: "DELETE" });
@@ -1681,7 +1703,7 @@ export function StockProvider({ children }: { children: React.ReactNode }) {
 
     // Re-derive analystConsensus score + explanation with the removed entry gone.
     const stockPrice = stocks.find((s) => s.ticker === ticker || s.ticker.toUpperCase() === ticker.toUpperCase())?.price;
-    const hasAny = derivedSnapshot && (derivedSnapshot.rbc || derivedSnapshot.jpm || derivedSnapshot.factset);
+    const hasAny = derivedSnapshot && (derivedSnapshot.rbc || derivedSnapshot.jpm || derivedSnapshot.factset || derivedSnapshot.morningstar);
     const consensus = computeAnalystConsensus(hasAny ? derivedSnapshot : undefined, stockPrice);
     updateScore(ticker, "analystConsensus", consensus.score);
     updateExplanations(ticker, { analystConsensus: buildConsensusExplanation(consensus) });

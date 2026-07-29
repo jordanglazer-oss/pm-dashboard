@@ -46,6 +46,9 @@ import type { Scores } from "@/app/lib/types";
 
 const KEY = "pm:score-history";
 
+/** Current scoring-rubric regime — bump when the SCORING_PROMPT rubric changes materially. */
+const RUBRIC_REV = 2;
+
 /**
  * How long a rescore entry stays "open" for revision via patch-recent.
  * 72 hours covers the normal weekly rescore cadence — the PM reviews
@@ -69,6 +72,14 @@ export type ScoreHistoryEntry = {
    * before the verify feature don't have it.
    */
   verifiedSearch?: boolean;
+  /**
+   * Scoring-rubric regime, stamped SERVER-SIDE on append so the calibration
+   * study can segment eras instead of averaging different scoring systems
+   * together. Absent = the pre-band era. 2 = the 2026-07 release: explicit
+   * per-category score bands, DATA GAP defaults, whole-point rule, report
+   * evidence admitted, Morningstar panel voice, Sonnet 5.
+   */
+  rubricRev?: number;
   /** Web search queries the model issued during a verified rescore. */
   searchQueries?: string[];
   /** Web search citation URLs surfaced during a verified rescore (titles optional). */
@@ -212,6 +223,9 @@ export async function POST(req: NextRequest) {
     arr.push({
       ...entry,
       timestamp: entry.timestamp || new Date().toISOString(),
+      // Server-stamped, never client-supplied: the rubric era is a property
+      // of the deployed prompt, not of whoever posted the entry.
+      rubricRev: RUBRIC_REV,
     });
     current[ticker] = arr;
     await redis.set(KEY, JSON.stringify(current));

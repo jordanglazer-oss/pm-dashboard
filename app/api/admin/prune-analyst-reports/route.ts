@@ -108,7 +108,7 @@ export async function GET(req: NextRequest) {
             delete ns[source];
           }
         }
-        if (ns.rbc || ns.jpm || ns.factset) nextSnaps[ticker] = ns;
+        if (ns.rbc || ns.jpm || ns.factset || ns.morningstar) nextSnaps[ticker] = ns;
       }
       await redis.set("pm:analyst-snapshots", JSON.stringify(nextSnaps));
     }

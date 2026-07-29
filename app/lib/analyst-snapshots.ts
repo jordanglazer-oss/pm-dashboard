@@ -53,10 +53,31 @@ export type FactSetEntry = {
   lastUpdated?: string;
 };
 
+/** Morningstar's structured ratings — populated automatically when a
+ *  Morningstar report PDF is uploaded (analyst-extract), or entered by hand.
+ *  Stars enter analystConsensus as a symmetric MODIFIER (±0.5) — the
+ *  independent, price-disciplined voice against a sell-side panel. The FVE
+ *  itself is deliberately NOT an upside input (stars already encode
+ *  price-vs-FVE; using both would double-count inside one category). */
+export type MorningstarEntry = {
+  /** Star rating 1-5. */
+  stars?: number;
+  /** Fair Value Estimate (report currency). Cross-check display only. */
+  fairValue?: number;
+  moat?: "wide" | "narrow" | "none";
+  moatTrend?: "positive" | "stable" | "negative";
+  capitalAllocation?: "exemplary" | "standard" | "poor";
+  uncertainty?: "low" | "medium" | "high" | "very-high" | "extreme";
+  /** YYYY-MM-DD — report date. */
+  asOf?: string;
+  lastUpdated?: string;
+};
+
 export type TickerSnapshot = {
   rbc?: AnalystEntry;
   jpm?: AnalystEntry;
   factset?: FactSetEntry;
+  morningstar?: MorningstarEntry;
 };
 
 export type AnalystSnapshots = Record<string, TickerSnapshot>;
@@ -75,6 +96,13 @@ export type ExtractedReport = {
   risks?: string[];
   sectorView?: string;
   keyMetrics?: { label: string; value: string }[];
+  /** Morningstar-only structured ratings — populated when source === "morningstar". */
+  stars?: number;
+  fairValue?: number;
+  moat?: "wide" | "narrow" | "none";
+  moatTrend?: "positive" | "stable" | "negative";
+  capitalAllocation?: "exemplary" | "standard" | "poor";
+  uncertainty?: "low" | "medium" | "high" | "very-high" | "extreme";
 };
 
 export type ReportMeta = {
@@ -109,11 +137,12 @@ export type ReportMeta = {
 export type TickerReports = {
   rbc?: ReportMeta;
   jpm?: ReportMeta;
+  morningstar?: ReportMeta;
 };
 
 export type AnalystReports = Record<string, TickerReports>;
 
-export function reportIdFor(ticker: string, source: "rbc" | "jpm"): string {
+export function reportIdFor(ticker: string, source: "rbc" | "jpm" | "morningstar"): string {
   return `${canonicalTicker(ticker)}-${source}`;
 }
 
@@ -205,6 +234,8 @@ export type ConsensusBreakdown = {
   /** Estimate-revision momentum (FY+1 EPS, last 30d). Null when FactSet
    *  revisions haven't been imported for this name — absent ≠ bearish. */
   revisions: RevisionContribution | null;
+  /** Morningstar star-rating modifier (±0.5). Null when no report uploaded. */
+  morningstar: MorningstarContribution | null;
   confidence: "high" | "medium" | "low";
 };
 
@@ -236,6 +267,20 @@ function analystContribution(entry: AnalystEntry | undefined, currentPrice?: num
     freshnessReason: fr.reason,
     contribution: rs * fr.weight,
   };
+}
+
+/** Morningstar star-rating modifier: a symmetric promoter/demoter (±0.5),
+ *  NOT another additive rating stack — the components can already sum past
+ *  the 3-pt clamp, and a fourth positive voice would pin more names at the
+ *  ceiling and destroy discrimination. Stars are price/FVE-driven and thus
+ *  contrarian vs the sell-side-momentum panel; a symmetric ± is the right
+ *  shape for an independent check. Null when not uploaded — absent ≠ bearish. */
+export type MorningstarContribution = { stars: number; contribution: number };
+function morningstarContribution(entry: MorningstarEntry | undefined): MorningstarContribution | null {
+  const stars = entry?.stars;
+  if (typeof stars !== "number" || stars < 1 || stars > 5) return null;
+  const contribution = stars >= 5 ? 0.5 : stars >= 4 ? 0.25 : stars <= 1 ? -0.5 : stars <= 2 ? -0.25 : 0;
+  return { stars, contribution };
 }
 
 export function computeAnalystConsensus(
@@ -273,12 +318,14 @@ export function computeAnalystConsensus(
   // with estimates being cut drops; a middling one with strong up-revisions
   // rises. Null (not imported) contributes nothing — absent ≠ bearish.
   const revisions = revisionContribution(snapshot?.factset);
+  const morningstar = morningstarContribution(snapshot?.morningstar);
 
   const rawScore =
     (rbc?.contribution ?? 0) +
     (jpm?.contribution ?? 0) +
     upsideContribution.contribution +
-    (revisions?.contribution ?? 0);
+    (revisions?.contribution ?? 0) +
+    (morningstar?.contribution ?? 0);
   // Keep full precision (e.g. 2.75) — clamped to [0, 3] but NOT rounded.
   // The UI displays the exact fractional value; rounding was masking real
   // signal (e.g. 2.75 → 3 hid the missing 0.25).
@@ -298,7 +345,7 @@ export function computeAnalystConsensus(
   else if ((rbc || jpm) && target) confidence = "medium";
   else confidence = "medium";
 
-  return { score, rawScore, rbc, jpm, upside: upsideContribution, revisions, confidence };
+  return { score, rawScore, rbc, jpm, upside: upsideContribution, revisions, morningstar, confidence };
 }
 
 // ── Explanation builder ──────────────────────────────────────────────
@@ -356,11 +403,20 @@ export function buildConsensusExplanation(
       sourceDetail: "FactSet 30d estimate revisions",
     });
   }
+  if (breakdown.morningstar) {
+    const m = breakdown.morningstar;
+    dataPoints.push({
+      label: "Morningstar",
+      value: `${m.stars}★ → ${m.contribution >= 0 ? "+" : ""}${m.contribution.toFixed(2)} pts`,
+      source: "model",
+      sourceDetail: "Morningstar star rating (independent modifier)",
+    });
+  }
 
   const summary =
     dataPoints.length === 0
       ? "No analyst snapshot data available. Enter RBC/JPM reports and a FactSet target via the Coverage Checklist."
-      : `Auto-derived from RBC + JPM ratings + FactSet street-avg upside, tilted ±1 by FY+1 estimate-revision momentum. Score: ${breakdown.score}/3.`;
+      : `Auto-derived from RBC + JPM ratings + FactSet street-avg upside, tilted ±1 by FY+1 estimate-revision momentum${breakdown.morningstar ? " and ±0.5 by the Morningstar star rating" : ""}. Score: ${breakdown.score}/3.`;
 
   return { summary, dataPoints, confidence: breakdown.confidence };
 }

@@ -25,7 +25,7 @@ export type InboxEvent = {
   /** Parsed ticker (canonical form) if subject parsed successfully. */
   ticker?: string;
   /** Parsed source if subject parsed successfully. */
-  source?: "rbc" | "jpm";
+  source?: "rbc" | "jpm" | "morningstar";
   /** Attached PDF filename, if any. */
   filename?: string;
   /** PDF size in bytes, if available. */
