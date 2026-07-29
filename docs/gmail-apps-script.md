@@ -65,6 +65,21 @@ Recipient defaults to `jordan.glazer@rbc.com` (override with the Vercel env var
 
 ## Script
 
+> ⚠️ **The project must be on the V8 runtime.** `processInbox` and the ping
+> helpers use ES6 syntax — `const` / `let`, arrow functions, template literals,
+> `for...of` (55 occurrences). On the deprecated **Rhino** runtime every one of
+> those is a parse error, so the file shows red squiggles, refuses to save, and
+> the function dropdown stays empty — which reads as "the script won't load."
+>
+> Check it in the Apps Script editor: **Project Settings** (gear icon) →
+> *"Enable Chrome V8 runtime"* must be **ticked**. Projects created before 2020,
+> or copied from an old project, can still be on Rhino. Equivalent in
+> `appsscript.json`: `"runtimeVersion": "V8"` (not `"DEPRECATED_ES5"`).
+>
+> `reprocessRecent` is deliberately written in ES5 (`var`, index loops) so it
+> keeps working either way — if that one function runs but the others don't,
+> the runtime is the cause.
+
 ```javascript
 /**
  * Convenience wrapper — run BOTH directions on one trigger. Point a single
