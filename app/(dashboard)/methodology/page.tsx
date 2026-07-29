@@ -136,6 +136,43 @@ export default function MethodologyPage() {
           </p>
         </Sect>
 
+        <Sect title="Data sources &amp; refresh cadence">
+          <p>
+            <b>41-point score:</b> FactSet is the primary source for fundamentals, estimates and sector
+            classification (via a dedicated relay); figures are verified against public filings during each
+            scoring run, with the source of every data point stored in an audit trail. Prices and technicals
+            come from Yahoo Finance; insider activity from SEC filings (US listings). Scores refresh on
+            material events — earnings, guidance, rating changes — not on a fixed clock.
+          </p>
+          <p>
+            <b>Factor screen:</b> two moving parts, both fully deterministic code.
+          </p>
+          <ul className="list-disc space-y-1 pl-5">
+            <li>
+              <b>The measuring stick (universe):</b> roughly the S&amp;P 500 plus the S&amp;P/TSX 60 —
+              ~560 names — with raw fundamentals pulled from the FactSet Formula API. Rebuilt <b>weekly</b>
+              (Sundays, in resumable chunks), because the distributions it provides shift slowly.
+            </li>
+            <li>
+              <b>The book&rsquo;s scores:</b> every Portfolio and Watchlist name is re-scored{" "}
+              <b>nightly</b> in the overnight batch (~2 batched FactSet calls for the whole book). Each
+              metric is compared against its GICS sector&rsquo;s distribution within the universe —
+              winsorized, sign-normalized so higher is always better, missing metrics dropped from both
+              sides rather than counted as bearish — then rolled into four groups (quality 30%, momentum
+              30%, growth 20%, valuation 20%) and mapped to the 0&ndash;100 percentile shown in Factor
+              Lab, with a confidence figure reflecting data coverage. Each night&rsquo;s result is also
+              appended to an immutable history, which is what the validation work measures against.
+            </li>
+          </ul>
+          <p>
+            <b>Calibration:</b> the Rankings page&rsquo;s calibration panel joins the score history to
+            realized forward returns (benchmark-relative) and reports, per rating tier and per category,
+            whether higher scores actually preceded higher returns — including a category-overlap matrix
+            that flags when two categories are effectively the same signal counted twice. Sample sizes are
+            shown everywhere; thin cells are marked rather than smoothed over.
+          </p>
+        </Sect>
+
         <Sect title="Data integrity">
           <p>
             Theses, kill conditions, and the decision journal are stored server-side in Redis with

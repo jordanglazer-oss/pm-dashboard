@@ -33,6 +33,7 @@ const SEGMENTS: { label: string; href: string }[] = [
   { label: "Attribution", href: "/attribution" },
   { label: "Risk", href: "/risk" },
   { label: "Journal", href: "/journal" },
+  { label: "Methodology", href: "/methodology" },
 ];
 
 export function PortfolioTabs() {
@@ -49,7 +50,8 @@ export function PortfolioTabs() {
     pathname === "/aa-performance" ||
     pathname === "/attribution" ||
     pathname === "/risk" ||
-    pathname === "/journal";
+    pathname === "/journal" ||
+    pathname === "/methodology";
 
   // Which segment "owns" the current route (X-ray shares /portfolio with
   // Positioning; it's an in-page anchor, so Positioning is the active one there).

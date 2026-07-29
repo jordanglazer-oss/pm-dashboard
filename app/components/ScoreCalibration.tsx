@@ -162,6 +162,56 @@ export function ScoreCalibration() {
                 </>
               )}
 
+              {/* ── Redundancy matrix: are the categories independent signals? ── */}
+              {res.categoryCorr && res.categoryCorr.keys.length >= 2 && (
+                <>
+                  <div className="mt-4 mb-1 flex items-baseline gap-2">
+                    <h4 className="text-xs font-semibold text-ink">Category overlap</h4>
+                    <span className="text-[10px] text-ink-3">
+                      correlation between sub-scores · ≥ 0.6 means two lines are largely one signal counted twice
+                    </span>
+                  </div>
+                  <div className="overflow-x-auto">
+                    <table className="text-[10px] font-mono">
+                      <thead>
+                        <tr>
+                          <th />
+                          {res.categoryCorr.labels.map((l) => (
+                            <th key={l} className="px-1 py-0.5 text-right font-semibold text-ink-3" title={l}>
+                              {l.slice(0, 6)}
+                            </th>
+                          ))}
+                        </tr>
+                      </thead>
+                      <tbody>
+                        {res.categoryCorr.keys.map((rk, i) => (
+                          <tr key={rk}>
+                            <td className="pr-1.5 py-0.5 font-semibold text-ink-3">{res.categoryCorr!.labels[i]}</td>
+                            {res.categoryCorr!.matrix[i].map((v, j) => (
+                              <td
+                                key={j}
+                                className={`px-1 py-0.5 text-right ${
+                                  i === j || v == null
+                                    ? "text-ink-faint"
+                                    : Math.abs(v) >= 0.6
+                                      ? "font-bold text-neg"
+                                      : Math.abs(v) >= 0.4
+                                        ? "text-warn"
+                                        : "text-ink-2"
+                                }`}
+                                title={v == null ? "under 10 paired observations" : undefined}
+                              >
+                                {i === j ? "·" : v == null ? "—" : v.toFixed(2)}
+                              </td>
+                            ))}
+                          </tr>
+                        ))}
+                      </tbody>
+                    </table>
+                  </div>
+                </>
+              )}
+
               {data?.generatedAt && (
                 <div className="text-[10px] text-ink-3 mt-3">
                   Computed {new Date(data.generatedAt).toLocaleString()}{data.cached ? " (cached)" : ""} · benchmark SPY · {res.totalObservations} observations
