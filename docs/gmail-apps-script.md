@@ -65,6 +65,20 @@ Recipient defaults to `jordan.glazer@rbc.com` (override with the Vercel env var
 
 ## Script
 
+> **Why `processInbox` has execution guards.** Between 2026-07-27 and 07-28 the
+> trigger failed six times: three `Exceeded maximum execution time` (each
+> exactly ~6 min, including runs at 12:41 AM and 4:41 AM when no mail arrives)
+> and three `JavaScript engine reported an unexpected error. Error code
+> INTERNAL`. One root cause: the thread label was applied only on a 2xx, so an
+> email that could never be ingested was re-fetched, re-base64'd and re-POSTed
+> every 5 minutes for 14 days — thousands of pointless calls that eventually
+> filled a whole run, while holding several multi-MB base64 strings in memory
+> crashed V8. Four guards now prevent it: a script lock (no overlapping runs),
+> a 3.5-minute time budget with natural resume, labeling on *attempt* with 4xx
+> treated as permanent and 5xx as retryable, and size filters that drop
+> signature logos (inline parts under 30KB) without touching genuine
+> attachments.
+
 > ⚠️ **The project must be on the V8 runtime.** `processInbox` and the ping
 > helpers use ES6 syntax — `const` / `let`, arrow functions, template literals,
 > `for...of` (55 occurrences). On the deprecated **Rhino** runtime every one of
@@ -172,112 +186,163 @@ function pingIntradayMonitor() {
  */
 
 function processInbox() {
-  const props = PropertiesService.getScriptProperties();
-  const url = props.getProperty("WEBHOOK_URL");
-  const secret = props.getProperty("INBOX_SECRET");
-  if (!url || !secret) {
-    Logger.log("WEBHOOK_URL or INBOX_SECRET not set in script properties.");
+  // ── Guard 1: never let two runs overlap ────────────────────────────
+  // The trigger fires every 5 min but a run may take up to 6, so overlap is
+  // guaranteed once there's any backlog. Two concurrent runs re-send the same
+  // attachments and double the memory pressure. tryLock(0) = skip, don't wait.
+  const lock = LockService.getScriptLock();
+  if (!lock.tryLock(0)) {
+    Logger.log("processInbox: previous run still active — skipping this tick.");
     return;
   }
+  try {
+    const props = PropertiesService.getScriptProperties();
+    const url = props.getProperty("WEBHOOK_URL");
+    const secret = props.getProperty("INBOX_SECRET");
+    if (!url || !secret) {
+      Logger.log("WEBHOOK_URL or INBOX_SECRET not set in script properties.");
+      return;
+    }
 
-  // Order matters: more-specific prefixes first ("Fundstrat SMID Top"
-  // before "Fundstrat Top") so regex alternation matches correctly.
-  const SUBJECT_RE = /^(?:(?:re|fwd?|fw):\s*)*(Analyst Report:|Fundstrat Large-Cap Core|Fundstrat SMID Core|Fundstrat SMID Top|Fundstrat SMID Bottom|Fundstrat Top|Fundstrat Bottom|RBC Canadian|RBC US|RBCCM FEW|Seeking Alpha|Alpha Picks|SIA\b|BoostedAI\b|Boosted\b|MarketEdge\b|ChartScout\b|Strategist\b|SA:\s*Street Takeaways|Street Takeaways)/i;
-  // FactSet alerts are BODY-TEXT emails (no attachment) — matched by sender so
-  // a plain forward works with its original subject untouched.
-  const BODY_TEXT_SENDER_RE = /factset[_.]?alerts?@factset\.com/i;
-  const BODY_TEXT_SUBJECT_RE = /^(?:(?:re|fwd?|fw):\s*)*(?:SA:\s*)?(?:Street Takeaways|StreetAccount|Transcript Intelligence)/i;
-  const PROCESSED_LABEL_NAME = "Dashboard-Processed";
+    // ── Guard 2: finish before the platform kills the run ─────────────
+    // Apps Script hard-stops at ~6 min. Budget 3.5 min for inbound so
+    // processOutbox still gets its turn inside processAll. Anything not
+    // reached stays unlabeled and is picked up on the next tick.
+    const startedAt = Date.now();
+    const BUDGET_MS = 3.5 * 60 * 1000;
+    // Inline images under this are signature logos, not content. Real
+    // screenshots are 100KB+. Applied ONLY to inline parts — never to genuine
+    // attachments, so small CSV exports are always sent.
+    const MIN_INLINE_BYTES = 30 * 1024;
+    // Bigger than the webhook will accept anyway; skip rather than OOM on it.
+    const MAX_BYTES = 30 * 1024 * 1024;
 
-  let label = GmailApp.getUserLabelByName(PROCESSED_LABEL_NAME);
-  if (!label) label = GmailApp.createLabel(PROCESSED_LABEL_NAME);
+    // Order matters: more-specific prefixes first ("Fundstrat SMID Top"
+    // before "Fundstrat Top") so regex alternation matches correctly.
+    const SUBJECT_RE = /^(?:(?:re|fwd?|fw):\s*)*(Analyst Report:|Fundstrat Large-Cap Core|Fundstrat SMID Core|Fundstrat SMID Top|Fundstrat SMID Bottom|Fundstrat Top|Fundstrat Bottom|RBC Canadian|RBC US|RBCCM FEW|Seeking Alpha|Alpha Picks|SIA\b|BoostedAI\b|Boosted\b|MarketEdge\b|ChartScout\b|Strategist\b|SA:\s*Street Takeaways|Street Takeaways)/i;
+    // FactSet alerts are BODY-TEXT emails (no attachment) — matched by sender so
+    // a plain forward works with its original subject untouched.
+    const BODY_TEXT_SENDER_RE = /factset[_.]?alerts?@factset\.com/i;
+    const BODY_TEXT_SUBJECT_RE = /^(?:(?:re|fwd?|fw):\s*)*(?:SA:\s*)?(?:Street Takeaways|StreetAccount|Transcript Intelligence)/i;
+    const PROCESSED_LABEL_NAME = "Dashboard-Processed";
 
-  // -label:Dashboard-Processed → skip what we've already sent.
-  const threads = GmailApp.search(`in:inbox -label:${PROCESSED_LABEL_NAME} newer_than:14d`);
-  for (const thread of threads) {
-    const messages = thread.getMessages();
-    let anySuccess = false;
-    for (const msg of messages) {
-      const subject = (msg.getSubject() || "").trim();
-      const sender = msg.getFrom();
+    let label = GmailApp.getUserLabelByName(PROCESSED_LABEL_NAME);
+    if (!label) label = GmailApp.createLabel(PROCESSED_LABEL_NAME);
 
-      // ── Body-text kinds (FactSet Street Takeaways) ──
-      // These carry no attachment: POST the plain-text body instead. Handled
-      // before the attachment loop so a forwarded alert isn't skipped.
-      // Three ways to match, because a FORWARD from your own address makes
-      // getFrom() = you, not FactSet:
-      //   1. sender is FactSet (alert delivered straight to this inbox)
-      //   2. subject still says "Street Takeaways" (survives FW:/Fwd:)
-      //   3. fallback — FactSet's address in the forwarded header block,
-      //      which covers a forward whose subject you edited.
-      let plainBody = "";
-      let isBodyTextKind = BODY_TEXT_SENDER_RE.test(sender) || BODY_TEXT_SUBJECT_RE.test(subject);
-      if (!isBodyTextKind && !SUBJECT_RE.test(subject)) {
-        plainBody = msg.getPlainBody() || "";
-        isBodyTextKind = BODY_TEXT_SENDER_RE.test(plainBody.slice(0, 3000));
-      }
-      if (isBodyTextKind) {
-        try {
-          const bodyText = plainBody || msg.getPlainBody() || "";
-          const response = UrlFetchApp.fetch(url, {
-            method: "post",
-            contentType: "application/json",
-            headers: { Authorization: "Bearer " + secret },
-            payload: JSON.stringify({ subject, sender, bodyText }),
-            muteHttpExceptions: true,
-          });
-          const code = response.getResponseCode();
-          if (code >= 200 && code < 300) {
-            anySuccess = true;
-            Logger.log("OK " + code + " [body] " + subject);
-          } else {
-            Logger.log("ERR " + code + " [body] " + subject + " :: " + response.getContentText().slice(0, 300));
-          }
-        } catch (e) {
-          Logger.log("EX [body] " + subject + " :: " + e);
+    // Cap threads per run (3rd arg) so a backlog can't produce an unbounded run.
+    const threads = GmailApp.search(`in:inbox -label:${PROCESSED_LABEL_NAME} newer_than:14d`, 0, 40);
+    let budgetHit = false;
+
+    outer:
+    for (const thread of threads) {
+      if (Date.now() - startedAt > BUDGET_MS) { budgetHit = true; break; }
+      const messages = thread.getMessages();
+      // ── Guard 3: label on ATTEMPT, not only on success ───────────────
+      // Previously the label was applied only when something returned 2xx, so
+      // an email that can never be ingested (e.g. matching subject but no
+      // usable attachment) was re-fetched, re-encoded and re-POSTed every 5
+      // minutes for 14 days — ~4,000 pointless runs per stuck thread, which is
+      // what produced 6-minute executions at 4am. A 4xx is a PERMANENT verdict
+      // (bad filename, wrong MIME, unparseable) so the thread is done. A 5xx or
+      // an exception is TRANSIENT (dashboard deploying, Anthropic hiccup) so the
+      // thread stays unlabeled and is retried.
+      let anySuccess = false;
+      let anyTransientFailure = false;
+      for (const msg of messages) {
+        const subject = (msg.getSubject() || "").trim();
+        const sender = msg.getFrom();
+
+        // ── Body-text kinds (FactSet Street Takeaways) ──
+        let plainBody = "";
+        let isBodyTextKind = BODY_TEXT_SENDER_RE.test(sender) || BODY_TEXT_SUBJECT_RE.test(subject);
+        if (!isBodyTextKind && !SUBJECT_RE.test(subject)) {
+          plainBody = msg.getPlainBody() || "";
+          isBodyTextKind = BODY_TEXT_SENDER_RE.test(plainBody.slice(0, 3000));
         }
-        continue; // body-text kinds never have attachments to forward
-      }
-
-      if (!SUBJECT_RE.test(subject)) continue;
-      // includeInlineImages: true picks up pasted/embedded screenshots
-      // (Outlook generates these as image001.png inline parts), which is
-      // a common way people email screenshots. The route's MIME validation
-      // rejects anything that doesn't match the kind, so inline logos in
-      // analyst-report email signatures fail harmlessly with a logged
-      // 400 — they don't corrupt anything.
-      const attachments = msg.getAttachments({ includeInlineImages: true, includeAttachments: true });
-      for (const att of attachments) {
-        try {
-          const dataUrl = "data:" + att.getContentType() + ";base64," + Utilities.base64Encode(att.getBytes());
-          const payload = {
-            subject,
-            sender,
-            filename: att.getName(),
-            dataUrl,
-          };
-          const response = UrlFetchApp.fetch(url, {
-            method: "post",
-            contentType: "application/json",
-            headers: { Authorization: "Bearer " + secret },
-            payload: JSON.stringify(payload),
-            muteHttpExceptions: true,
-          });
-          const code = response.getResponseCode();
-          if (code >= 200 && code < 300) {
-            anySuccess = true;
-            Logger.log("OK " + code + " " + subject + " :: " + att.getName());
-          } else {
-            Logger.log("ERR " + code + " " + subject + " :: " + att.getName() + " :: " + response.getContentText().slice(0, 300));
+        if (isBodyTextKind) {
+          try {
+            const bodyText = plainBody || msg.getPlainBody() || "";
+            const response = UrlFetchApp.fetch(url, {
+              method: "post",
+              contentType: "application/json",
+              headers: { Authorization: "Bearer " + secret },
+              payload: JSON.stringify({ subject, sender, bodyText }),
+              muteHttpExceptions: true,
+            });
+            const code = response.getResponseCode();
+            if (code >= 200 && code < 300) {
+              anySuccess = true;
+              Logger.log("OK " + code + " [body] " + subject);
+            } else {
+              if (code >= 500) anyTransientFailure = true;
+              Logger.log("ERR " + code + " [body] " + subject + " :: " + response.getContentText().slice(0, 300));
+            }
+          } catch (e) {
+            anyTransientFailure = true;
+            Logger.log("EX [body] " + subject + " :: " + e);
           }
-        } catch (e) {
-          Logger.log("EX " + subject + " :: " + att.getName() + " :: " + e);
+          continue; // body-text kinds never have attachments to forward
         }
+
+        if (!SUBJECT_RE.test(subject)) continue;
+
+        // Fetch real attachments and inline images SEPARATELY so the
+        // small-file filter applies only to inline parts (signature logos)
+        // and never drops a genuine small CSV export.
+        const real = msg.getAttachments({ includeInlineImages: false, includeAttachments: true });
+        const inline = msg.getAttachments({ includeInlineImages: true, includeAttachments: false })
+          .filter((a) => a.getSize() >= MIN_INLINE_BYTES);
+        const attachments = real.concat(inline);
+
+        for (const att of attachments) {
+          if (Date.now() - startedAt > BUDGET_MS) { budgetHit = true; break outer; }
+          const size = att.getSize();
+          if (size > MAX_BYTES) {
+            Logger.log("SKIP (too large, " + Math.round(size / 1048576) + "MB) " + subject + " :: " + att.getName());
+            continue;
+          }
+          try {
+            // Build, POST, then drop the reference. Holding base64 strings for
+            // several multi-MB PDFs at once is what triggers the V8
+            // "Error code INTERNAL" crash.
+            let payload = JSON.stringify({
+              subject,
+              sender,
+              filename: att.getName(),
+              dataUrl: "data:" + att.getContentType() + ";base64," + Utilities.base64Encode(att.getBytes()),
+            });
+            const response = UrlFetchApp.fetch(url, {
+              method: "post",
+              contentType: "application/json",
+              headers: { Authorization: "Bearer " + secret },
+              payload: payload,
+              muteHttpExceptions: true,
+            });
+            payload = null; // release before the next attachment
+            const code = response.getResponseCode();
+            if (code >= 200 && code < 300) {
+              anySuccess = true;
+              Logger.log("OK " + code + " " + subject + " :: " + att.getName());
+            } else {
+              if (code >= 500) anyTransientFailure = true; // retry next tick
+              Logger.log("ERR " + code + " " + subject + " :: " + att.getName() + " :: " + response.getContentText().slice(0, 300));
+            }
+          } catch (e) {
+            anyTransientFailure = true;
+            Logger.log("EX " + subject + " :: " + att.getName() + " :: " + e);
+          }
+        }
+      }
+      // Label unless something failed in a way that retrying could fix.
+      if (anySuccess || !anyTransientFailure) {
+        thread.addLabel(label);
       }
     }
-    if (anySuccess) {
-      thread.addLabel(label);
+    if (budgetHit) {
+      Logger.log("processInbox: time budget reached — remaining threads resume on the next tick.");
     }
+  } finally {
+    lock.releaseLock();
   }
 }
 
