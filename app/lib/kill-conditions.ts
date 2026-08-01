@@ -11,8 +11,10 @@
  *     pm:position-theses), never here.
  *   - A condition the data can't currently answer reports "unknown", never a
  *     silent OK — an unwatchable kill condition is a false sense of safety.
- *   - `custom` conditions are prose-only and always "manual": they render in
- *     the tile as a reminder but are excluded from automated trip counts.
+ *   - `custom` conditions are prose; once an AI web-search verification has
+ *     run (app/lib/custom-condition-check — post-earnings / weekly / on
+ *     demand) they report that persisted verdict and join the automated trip
+ *     counts. Unverified customs remain "manual" reminders.
  *
  * Related stores (all pre-existing):
  *   pm:position-theses  — extended with { killConditions, underwrittenAt, ... }
@@ -44,6 +46,19 @@ export type KillCondition = {
   /** Set by the caller when a check transitions OK → TRIPPED; cleared when it
    *  recovers. Persisted so "TRIPPED Jul 24" survives reloads. */
   trippedAt?: string | null;
+  /** Latest AI verification of a CUSTOM condition (web-search-backed Sonnet
+   *  call — app/lib/custom-condition-check). Written by the nightly chain
+   *  (post-earnings / weekly staleness) and the tile's "verify now" button.
+   *  When present, the custom condition reports this verdict instead of
+   *  "manual", so trips flow into alerts/digest like any template kind. */
+  aiCheck?: {
+    status: "ok" | "tripped" | "unclear";
+    /** Short current-fact reading, e.g. "Q2 RPO $470B, up QoQ (reported Jul 29)". */
+    reading: string;
+    checkedAt: string; // ISO timestamp
+    /** One-line source note, e.g. "Alphabet Q2 2026 10-Q". */
+    evidence?: string;
+  };
 };
 
 export type KillStatus = "ok" | "tripped" | "unknown" | "manual";
@@ -86,7 +101,7 @@ export const KILL_TEMPLATES: {
   { kind: "revisions", label: "Estimate revisions", defaultThreshold: 0, describe: (t) => `Net FY+1 revisions stay ${(t ?? 0) === 0 ? "non-negative" : `> ${t}`}` },
   { kind: "risk_alert", label: "Risk alert", describe: () => "No CRITICAL technical alert" },
   { kind: "ma200", label: "200-day average", describe: () => "Price holds above the 200DMA" },
-  { kind: "custom", label: "Custom (manual)", describe: () => "Judged by you — not auto-checked" },
+  { kind: "custom", label: "Custom (AI-checked)", describe: () => "Verified by AI web check after each earnings report" },
 ];
 
 export function describeCondition(c: KillCondition): string {
@@ -148,8 +163,19 @@ export function checkCondition(c: KillCondition, s: KillSignals): KillCheck {
         reading: `${pct >= 0 ? "+" : ""}${fmt(pct, 1)}% vs 200DMA`,
       };
     }
-    case "custom":
+    case "custom": {
+      // AI-verified custom: report the persisted verdict (unclear → unknown so
+      // it can never silently pass as OK). Falls back to manual when unchecked.
+      if (c.aiCheck) {
+        const when = c.aiCheck.checkedAt.slice(0, 10);
+        return {
+          condition: c,
+          status: c.aiCheck.status === "unclear" ? "unknown" : c.aiCheck.status,
+          reading: `${c.aiCheck.reading} · AI-checked ${when}`,
+        };
+      }
       return { condition: c, status: "manual", reading: "manual check" };
+    }
   }
 }
 

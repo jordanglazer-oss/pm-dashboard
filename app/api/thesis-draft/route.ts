@@ -98,7 +98,7 @@ export async function POST(req: NextRequest) {
       .filter(Boolean)
       .join(" · ");
 
-    const prompt = `You are drafting a portfolio manager's pre-registered investment thesis for a holding. The PM will edit and sign it — write in the PM's first-person voice, and make it FALSIFIABLE: the point of the exercise is that a future version of the PM cannot rationalize past their own exit criteria.
+    const prompt = `You are drafting a portfolio manager's pre-registered investment thesis for a holding. The PM will edit and sign it — write it as tight bullet points (not narrative prose), and make it FALSIFIABLE: the point of the exercise is that a future version of the PM cannot rationalize past their own exit criteria.
 
 TICKER: ${tk} — ${ctx.name || ""}${ctx.sector ? ` (${ctx.sector})` : ""}
 
@@ -116,11 +116,11 @@ AVAILABLE KILL-CONDITION TEMPLATES (all except "custom" are checked automaticall
 - revisions: net FY+1 estimate revisions (upgrades minus downgrades) must stay >= threshold (typical 0, or a floor like -3)
 - risk_alert: no CRITICAL technical alert (no threshold)
 - ma200: price holds above the 200-day average (no threshold)
-- custom: prose-only, checked manually by the PM — use for the ONE thesis-specific breaker the templates can't measure (e.g. "two consecutive NIM guidance cuts")
+- custom: prose, verified by an AI web-search check after each earnings report — use for the ONE thesis-specific breaker the templates can't measure. Write it as an objectively verifiable claim about REPORTED figures (name the metric and the comparison, e.g. "quarterly cloud backlog declines sequentially"), never a judgment call.
 
 Answer in JSON only:
 {
-  "why": "2-4 sentences, first person: why I own it, what I expect, and what would make me wrong. Ground it in the generated thesis/bear case above — do not invent facts, numbers, or events that are not present.",
+  "why": "3-5 bullet lines separated by \\n, each starting with '• '. No preamble like 'I own X because' — lead each bullet with the claim itself. First bullets: the core economic drivers WITH the specific figures from the material above. One bullet on what is expected to happen next (catalyst/trajectory). Final bullet starts '• Wrong if: ' and names the observable breakers. Ground every bullet in the generated thesis/bear case above — do not invent facts, numbers, or events that are not present.",
   "conditions": [ { "kind": "...", "threshold": number-if-applicable, "note": "custom prose OR short annotation" } ]
 }
 

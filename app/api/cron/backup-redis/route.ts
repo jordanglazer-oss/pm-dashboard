@@ -9,6 +9,7 @@ import { refreshFactsetEstimates } from "@/app/lib/estimates-refresh";
 import { refreshMarketRegime } from "@/app/lib/market-regime-refresh";
 import { refreshTechnicals } from "@/app/lib/technicals-refresh";
 import { rebuildThesisHealth } from "@/app/lib/thesis-health-refresh";
+import { runCustomConditionChecks } from "@/app/lib/custom-condition-check";
 import { computeBookFactorScores } from "@/app/lib/factor-scores";
 import { computeDataHealth, type DataHealthReport } from "@/app/lib/data-health";
 import { runAlertDigest } from "@/app/lib/alert-digest";
@@ -321,6 +322,21 @@ export async function GET(req: NextRequest) {
       thesisRefresh = { ran: false, error: msg };
     }
 
+    // Custom kill-condition AI verification — re-checks "custom" conditions
+    // whose answer could have changed (post-earnings / >7d stale / never
+    // checked) via one web-search Sonnet call each, writing aiCheck verdicts
+    // onto pm:position-theses. MUST run before the digest so a freshly tripped
+    // custom condition emails this morning, not tomorrow. Best-effort.
+    let customChecks: { checked: number; skipped: number } | { ran: false; error: string };
+    try {
+      const r = await runCustomConditionChecks({});
+      customChecks = { checked: r.checked.length, skipped: r.skipped };
+    } catch (e) {
+      const msg = e instanceof Error ? e.message : String(e);
+      console.error("[backup-redis] custom-condition checks failed (digest will use prior verdicts):", msg);
+      customChecks = { ran: false, error: msg };
+    }
+
     // ── 4e. Proactive alert digest (Phase 07) ────────────────────────
     //        Compute today's "needs your attention" digest from the signals
     //        just refreshed above, append a snapshot to the append-only
@@ -399,6 +415,7 @@ export async function GET(req: NextRequest) {
       regimeRefresh,
       technicalsRefresh,
       thesisRefresh,
+      customChecks,
       factorScores,
       dataHealth: dataHealth ? { ok: dataHealth.ok, problems: dataHealth.problemCount } : null,
       alertDigest,

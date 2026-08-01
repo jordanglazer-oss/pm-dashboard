@@ -327,6 +327,27 @@ export default function ThesisTile({
     [ticker, signals, checks],
   );
 
+  // On-demand AI verification of custom conditions (web-search Sonnet call;
+  // the nightly chain does the same automatically post-earnings / weekly).
+  const [verifying, setVerifying] = useState(false);
+  const verifyCustoms = useCallback(async () => {
+    setVerifying(true);
+    try {
+      await fetch("/api/custom-condition-check", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ ticker, force: true }),
+      });
+      const d = await fetch("/api/kv/position-theses").then((r) => r.json());
+      const t = (d?.theses ?? {})[ticker.toUpperCase()] ?? (d?.theses ?? {})[ticker];
+      if (t) setEntry(t);
+    } catch {
+      // verdict simply stays as-is; the row keeps its prior state
+    } finally {
+      setVerifying(false);
+    }
+  }, [ticker]);
+
   if (!loaded) return null;
 
   const reDue = entry?.reUnderwriteBy;
@@ -388,7 +409,7 @@ export default function ThesisTile({
       {!editing && (
         <>
           {entry?.why ? (
-            <p className="border-b border-line-soft px-4 py-3 text-[13.5px] leading-6 text-ink">
+            <p className="whitespace-pre-line border-b border-line-soft px-4 py-3 text-[13.5px] leading-6 text-ink">
               {entry.why}
             </p>
           ) : (
@@ -411,7 +432,19 @@ export default function ThesisTile({
                       <div className="text-[13px] font-medium text-ink">
                         {describeCondition(k.condition)}
                       </div>
-                      <div className="text-[11px] text-ink-3">{k.reading}</div>
+                      <div className="text-[11px] text-ink-3">
+                        {k.reading}
+                        {k.condition.kind === "custom" && (
+                          <button
+                            onClick={verifyCustoms}
+                            disabled={verifying}
+                            title="One web-search model call — checks this condition against the latest reported figures. Also runs automatically after each earnings report."
+                            className="ml-2 font-semibold text-accent hover:underline disabled:opacity-50"
+                          >
+                            {verifying ? "verifying…" : "verify now"}
+                          </button>
+                        )}
+                      </div>
                     </div>
                     <span className={`shrink-0 rounded-full border px-2 py-0.5 text-[10px] font-bold ${st.pill}`}>
                       {k.status === "tripped" && k.condition.trippedAt
@@ -492,7 +525,7 @@ export default function ThesisTile({
           <textarea
             value={draftWhy}
             onChange={(e) => setDraftWhy(e.target.value)}
-            rows={3}
+            rows={5}
             placeholder={`Why do you own ${ticker}? State it falsifiably: "buying because X, expecting Y, wrong if K."`}
             className="w-full rounded-lg border border-line bg-white px-3 py-2 text-[13px] leading-5 text-ink placeholder:text-ink-faint focus:outline-none focus:ring-1 focus:ring-accent"
           />
