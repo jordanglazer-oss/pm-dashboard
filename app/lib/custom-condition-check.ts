@@ -1,6 +1,7 @@
 import Anthropic from "@anthropic-ai/sdk";
 import { getRedis } from "./redis";
 import type { KillCondition } from "./kill-conditions";
+import { buildTickerEvidence } from "./thesis-evidence";
 
 /**
  * AI verification of CUSTOM kill conditions — the automation for the one
@@ -62,19 +63,20 @@ async function verifyOne(
   name: string,
   why: string,
   c: KillCondition,
+  evidence: string,
 ): Promise<KillCondition["aiCheck"] | null> {
-  const prompt = `You are verifying a portfolio manager's pre-registered exit condition ("kill condition") for a holding, using web search to find the CURRENT facts. Today is ${new Date().toISOString().slice(0, 10)}.
+  const prompt = `You are verifying a portfolio manager's pre-registered exit condition ("kill condition") for a holding against the CURRENT reported facts. Today is ${new Date().toISOString().slice(0, 10)}.
 
 TICKER: ${ticker}${name ? ` — ${name}` : ""}
 THESIS (context only): ${why || "(none)"}
 CONDITION TO VERIFY: ${c.note || "(no prose)"}
 ${c.trippedAt ? `Previously marked tripped ${c.trippedAt}.` : ""}
-
-Search for the most recent reported figures relevant to this condition (latest quarterly filing, earnings release, or company disclosure). Then answer in JSON only:
+${evidence ? `\nINGESTED EVIDENCE (the PM's own analyst reports + FactSet earnings alerts, with dates — check these FIRST; they are trusted, attributable sources):\n${evidence}\n` : ""}
+Procedure: if the ingested evidence above already answers the condition with a dated reported figure, use it and cite that source. Use web search only to fill gaps — when the evidence is silent, older than the latest expected report, or ambiguous. Then answer in JSON only:
 {
   "status": "ok" | "tripped" | "unclear",
   "reading": "one short line with the CURRENT figure(s) and their as-of date, e.g. 'Q2 RPO $470B, +8% QoQ (reported Jul 29)'",
-  "evidence": "one short line naming the source, e.g. 'Alphabet Q2 2026 earnings release'"
+  "evidence": "one short line naming the actual source used, e.g. 'FactSet Q2 Metrics Recap 2026-07-29' or 'Alphabet Q2 2026 earnings release (web)'"
 }
 
 Rules:
@@ -129,6 +131,14 @@ export async function runCustomConditionChecks(opts: {
   const checked: CustomCheckResult["checked"] = [];
   let skipped = 0;
 
+  // Ingested report/FactSet evidence, memoized per ticker — built lazily so
+  // a sweep where every condition is skipped costs zero extra reads.
+  const evidenceCache = new Map<string, string>();
+  const evidenceFor = async (tk: string): Promise<string> => {
+    if (!evidenceCache.has(tk)) evidenceCache.set(tk, await buildTickerEvidence(tk).catch(() => ""));
+    return evidenceCache.get(tk) ?? "";
+  };
+
   for (const [rawTk, entry] of Object.entries(theses)) {
     const tk = rawTk.toUpperCase();
     if (only && tk !== only) continue;
@@ -148,7 +158,7 @@ export async function runCustomConditionChecks(opts: {
         skipped++;
         continue;
       }
-      const verdict = await verifyOne(tk, st?.name || "", entry?.why || "", c);
+      const verdict = await verifyOne(tk, st?.name || "", entry?.why || "", c, await evidenceFor(tk));
       if (!verdict) continue; // model gave nothing usable — leave prior state
       c.aiCheck = verdict;
       // Trip stamping, same semantics the tile uses for template conditions.

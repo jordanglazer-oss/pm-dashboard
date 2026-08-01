@@ -3,6 +3,7 @@ import { NextRequest, NextResponse } from "next/server";
 import { getRedis } from "@/app/lib/redis";
 import { loadAlertInputs } from "@/app/lib/alert-inputs";
 import { KILL_TEMPLATES, type KillConditionKind } from "@/app/lib/kill-conditions";
+import { buildTickerEvidence } from "@/app/lib/thesis-evidence";
 
 /**
  * POST /api/thesis-draft { ticker } — AI-drafted thesis + kill conditions.
@@ -65,10 +66,12 @@ export async function POST(req: NextRequest) {
     const tk = typeof body?.ticker === "string" ? body.ticker.trim().toUpperCase() : "";
     if (!tk) return NextResponse.json({ error: "ticker required" }, { status: 400 });
 
-    // Read-only gathers: live signal context + the stock's own generated prose.
-    const [{ context }, stocksRaw] = await Promise.all([
+    // Read-only gathers: live signal context, the stock's own generated prose,
+    // and the ingested report/FactSet evidence (dated, attributable sourcing).
+    const [{ context }, stocksRaw, evidence] = await Promise.all([
       loadAlertInputs(),
       getRedis().then((r) => r.get("pm:stocks")),
+      buildTickerEvidence(tk),
     ]);
     const ctx = context[tk];
     if (!ctx) return NextResponse.json({ error: "unknown ticker" }, { status: 404 });
@@ -109,7 +112,7 @@ GENERATED BEAR CASE / THESIS-BREAKERS (from the same run):
 ${stock?.bearCase || "(none on file)"}
 
 CURRENT STATE: ${stateLine}
-
+${evidence ? `\nINGESTED ANALYST & FACTSET EVIDENCE (dated and attributable — prefer these figures over the generated prose when they conflict):\n${evidence}\n` : ""}
 AVAILABLE KILL-CONDITION TEMPLATES (all except "custom" are checked automatically every day):
 - score_floor: composite score must stay >= threshold (scale is 0–41; this name is currently ${ctx.composite ?? "unknown"})
 - score_decay: composite must not drop >= threshold points over ~45 days (typical threshold 5)
@@ -120,7 +123,7 @@ AVAILABLE KILL-CONDITION TEMPLATES (all except "custom" are checked automaticall
 
 Answer in JSON only:
 {
-  "why": "3-5 bullet lines separated by \\n, each starting with '• '. No preamble like 'I own X because' — lead each bullet with the claim itself. First bullets: the core economic drivers WITH the specific figures from the material above. One bullet on what is expected to happen next (catalyst/trajectory). Final bullet starts '• Wrong if: ' and names the observable breakers. Ground every bullet in the generated thesis/bear case above — do not invent facts, numbers, or events that are not present.",
+  "why": "3-5 bullet lines separated by \\n, each starting with '• '. No preamble like 'I own X because' — lead each bullet with the claim itself. First bullets: the core economic drivers WITH the specific figures from the material above. One bullet on what is expected to happen next (catalyst/trajectory). Final bullet starts '• Wrong if: ' and names the observable breakers. Ground every bullet in the material above — do not invent facts, numbers, or events that are not present. When a figure comes from an ingested report or FactSet alert, attribute it inline in parentheses, e.g. '(RBC 2026-07-28)' or '(FactSet Q2 recap)'.",
   "conditions": [ { "kind": "...", "threshold": number-if-applicable, "note": "custom prose OR short annotation" } ]
 }
 
@@ -129,7 +132,7 @@ Rules for conditions:
 - Set score_floor relative to the CURRENT composite (typically current minus 3-4, rounded), never above it — a floor already tripped at underwrite is useless.
 - Only include ma200 if the price is currently above it.
 - Set the revisions threshold at or below the current net so it is not tripped on day one.
-- Derive the custom condition from the bear case's most concrete, observable breaker. If the bear case names a metric and level, use it verbatim.
+- Derive the custom condition from the most concrete, observable breaker in the material — the bear case, a report's named risk, or a FactSet guidance line. If a metric and level are named, use them verbatim.
 - Every condition must connect to the "why" — a breaker for a claim the thesis doesn't make is noise.`;
 
     const resp = await client.messages.create({
