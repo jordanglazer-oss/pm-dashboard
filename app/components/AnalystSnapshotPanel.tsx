@@ -318,6 +318,39 @@ export function AnalystSnapshotPanel({ ticker, stockCurrency, snapshot, breakdow
         )}
       </div>
 
+      {/* ── Headroom diagnostic ────────────────────────────────────────
+          The category sums five components into a raw figure and clamps it to
+          [0, 3]. Level components alone (RBC + JPM + street upside) can reach
+          3.0, so on a strongly-rated name the revision and Morningstar tilts
+          can land entirely outside the range and never move the score.
+          Measured across all component combinations, that happens ~6% of the
+          time — but whether it happens on THIS book is the number that
+          matters, and it was previously invisible. rawScore is already
+          computed; this only surfaces it. Display-only: changes no score,
+          writes nothing. Delete this block to remove the diagnostic. */}
+      {(() => {
+        const clipped = +(breakdown.rawScore - breakdown.score).toFixed(2);
+        if (Math.abs(clipped) < 0.01) return null;
+        const over = clipped > 0;
+        return (
+          <div className={`rounded-lg border px-3 py-2 text-[11px] ${over ? "border-warn-border bg-warn-soft" : "border-line bg-surface-2"}`}>
+            <span className={`font-semibold ${over ? "text-warn" : "text-ink-2"}`}>
+              {over ? "At the ceiling" : "At the floor"}
+            </span>{" "}
+            <span className="text-ink-2">
+              raw {breakdown.rawScore.toFixed(2)} → capped to {breakdown.score.toFixed(2)}
+              {" · "}
+              <span className="font-mono">{over ? "+" : ""}{clipped.toFixed(2)}</span> of signal not reflected
+            </span>
+            <span className="ml-1 text-ink-3">
+              {over
+                ? "— further positive evidence can't raise this score. Negative evidence still moves it."
+                : "— further negative evidence can't lower this score."}
+            </span>
+          </div>
+        );
+      })()}
+
       {renderAnalyst("rbc", "RBC")}
       {renderAnalyst("jpm", "JPM")}
       {/* Morningstar — structured ratings, not a rating/target pair. Stars
