@@ -33,6 +33,8 @@ type PositionThesis = {
   underwrittenAt?: string; // YYYY-MM-DD the thesis was (re)underwritten
   underwritePrice?: number | null;
   reUnderwriteBy?: string; // YYYY-MM-DD the quarterly re-check is due
+  /** Provenance: thesis started from an AI draft (the PM still edited/signed). */
+  aiDrafted?: boolean;
 };
 type PositionTheses = Record<string, PositionThesis>;
 
@@ -74,6 +76,7 @@ export async function POST(req: NextRequest) {
     if (typeof body?.underwrittenAt === "string") next.underwrittenAt = body.underwrittenAt;
     if (typeof body?.underwritePrice === "number") next.underwritePrice = body.underwritePrice;
     if (typeof body?.reUnderwriteBy === "string") next.reUnderwriteBy = body.reUnderwriteBy;
+    if (typeof body?.aiDrafted === "boolean") next.aiDrafted = body.aiDrafted;
 
     const empty = !next.why && !(next.killConditions && next.killConditions.length);
     if (empty) {

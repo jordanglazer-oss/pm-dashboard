@@ -37,6 +37,8 @@ type ThesisEntry = {
   underwrittenAt?: string;
   underwritePrice?: number | null;
   reUnderwriteBy?: string;
+  /** True when the saved thesis started from an AI draft (PM still signed it). */
+  aiDrafted?: boolean;
 };
 
 const STATUS_STYLE: Record<KillStatus, { dot: string; pill: string; label: string }> = {
@@ -70,6 +72,46 @@ export default function ThesisTile({
   const [addThreshold, setAddThreshold] = useState<string>("");
   const [addNote, setAddNote] = useState("");
   const [journalNote, setJournalNote] = useState<string | null>(null);
+
+  // AI draft (Alfa-style generation). The route PROPOSES a thesis + conditions
+  // from the rescore-generated investmentThesis/bearCase and live signals; it
+  // persists nothing. The draft lands in this editor and the PM signs by
+  // saving — pre-registration stays a human commitment.
+  const [drafting, setDrafting] = useState(false);
+  const [draftErr, setDraftErr] = useState<string | null>(null);
+  const [aiDrafted, setAiDrafted] = useState(false);
+  const draftWithAi = useCallback(async () => {
+    setDrafting(true);
+    setDraftErr(null);
+    try {
+      const r = await fetch("/api/thesis-draft", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ ticker }),
+      });
+      const d = await r.json();
+      if (!d?.draft?.why) {
+        setDraftErr(d?.error || "draft failed");
+        return;
+      }
+      setDraftWhy(d.draft.why);
+      setDraftConds(
+        (d.draft.conditions as { kind: KillCondition["kind"]; threshold?: number; note?: string }[]).map((c, i) => ({
+          id: `${c.kind}-${Date.now()}-${i}`,
+          kind: c.kind,
+          threshold: c.threshold,
+          note: c.note,
+          addedAt: todayIso(),
+        })),
+      );
+      setAiDrafted(true);
+      setEditing(true);
+    } catch {
+      setDraftErr("draft failed");
+    } finally {
+      setDrafting(false);
+    }
+  }, [ticker]);
 
   // On-trip Claude thesis check (phase ④). GET reads the cache only — zero
   // spend; the POST behind the button is hash-gated server-side, so a
@@ -173,6 +215,7 @@ export default function ThesisTile({
   const startEdit = () => {
     setDraftWhy(entry?.why ?? "");
     setDraftConds(conditions.map((c) => ({ ...c })));
+    setAiDrafted(false);
     setEditing(true);
   };
 
@@ -202,6 +245,7 @@ export default function ThesisTile({
         ticker,
         why: draftWhy.trim(),
         killConditions: draftConds,
+        aiDrafted, // provenance: started from an AI draft (PM edited + signed)
       };
       if (!entry?.underwrittenAt) {
         // First underwrite: stamp date + price, and set the quarterly clock.
@@ -223,12 +267,13 @@ export default function ThesisTile({
         underwrittenAt: e?.underwrittenAt ?? (body.underwrittenAt as string | undefined),
         underwritePrice: e?.underwritePrice ?? (body.underwritePrice as number | undefined) ?? null,
         reUnderwriteBy: e?.reUnderwriteBy ?? (body.reUnderwriteBy as string | undefined),
+        aiDrafted,
       }));
       setEditing(false);
     } finally {
       setSaving(false);
     }
-  }, [ticker, draftWhy, draftConds, entry, signals.price]);
+  }, [ticker, draftWhy, draftConds, entry, signals.price, aiDrafted]);
 
   const runCheck = useCallback(async () => {
     setChecking(true);
@@ -304,6 +349,7 @@ export default function ThesisTile({
           {entry?.underwrittenAt ? (
             <>
               underwritten {entry.underwrittenAt}
+              {entry.aiDrafted ? " · AI-assisted" : ""}
               {entry.underwritePrice != null ? ` · $${entry.underwritePrice.toFixed(2)}` : ""}
               {reDue ? (
                 <span className={overdue ? "text-neg font-semibold" : ""}>
@@ -317,14 +363,27 @@ export default function ThesisTile({
           )}
         </span>
         {!editing && (
-          <button
-            onClick={startEdit}
-            className="rounded-control border border-line bg-white px-2.5 py-1 text-xs font-semibold text-ink-2 hover:text-ink"
-          >
-            {entry ? "Edit" : "Underwrite"}
-          </button>
+          <>
+            <button
+              onClick={draftWithAi}
+              disabled={drafting}
+              title="One model call — proposes a thesis + kill conditions from this name's generated thesis, bear case, and live signals. Nothing is saved until you sign it."
+              className="rounded-control border border-line bg-white px-2.5 py-1 text-xs font-semibold text-accent disabled:opacity-50"
+            >
+              {drafting ? "Drafting…" : "✦ Draft with AI"}
+            </button>
+            <button
+              onClick={startEdit}
+              className="rounded-control border border-line bg-white px-2.5 py-1 text-xs font-semibold text-ink-2 hover:text-ink"
+            >
+              {entry ? "Edit" : "Underwrite"}
+            </button>
+          </>
         )}
       </div>
+      {draftErr && !editing && (
+        <p className="border-b border-line-soft px-4 py-2 text-[11px] text-neg">{draftErr}</p>
+      )}
 
       {!editing && (
         <>
@@ -486,6 +545,19 @@ export default function ThesisTile({
             </div>
           </div>
           <div className="flex items-center justify-end gap-2 border-t border-line-soft pt-2.5">
+            {aiDrafted && (
+              <span className="mr-auto text-[11px] text-ink-3">
+                AI draft — review, edit, and sign it; nothing is saved until you underwrite.
+              </span>
+            )}
+            <button
+              onClick={draftWithAi}
+              disabled={drafting}
+              className="rounded-control px-2.5 py-1 text-xs font-semibold text-accent disabled:opacity-50"
+            >
+              {drafting ? "Drafting…" : aiDrafted ? "Redraft" : "✦ Draft with AI"}
+            </button>
+            {draftErr && <span className="text-[11px] text-neg">{draftErr}</span>}
             <button
               onClick={() => setEditing(false)}
               className="rounded-control px-2.5 py-1 text-xs font-semibold text-ink-3 hover:text-ink"
