@@ -17,6 +17,12 @@ import { loadAlertInputs } from "@/app/lib/alert-inputs";
  * deliberately excluded: kill conditions are EXIT criteria, so the coverage
  * denominator is what you actually own.
  *
+ * ETFs and mutual funds are excluded too (same `isScoreable` rule the stock
+ * page uses to decide whether to render the Thesis tile at all). A fund has no
+ * company thesis to underwrite and no Thesis tile on its page, so counting one
+ * would both understate coverage and produce an "Underwrite →" link that leads
+ * nowhere.
+ *
  * Deterministic; zero Anthropic spend. No Redis writes.
  */
 
@@ -42,6 +48,8 @@ export async function GET() {
     let portfolioCount = 0;
     for (const [tk, c] of Object.entries(context)) {
       if (c.bucket !== "Portfolio") continue;
+      // Mirrors isScoreable(): undefined instrumentType means a stock.
+      if (c.instrumentType && c.instrumentType !== "stock") continue;
       portfolioCount++;
       const t = thesisFor(tk);
       const conds = Array.isArray(t?.killConditions) ? t.killConditions : [];

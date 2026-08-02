@@ -106,7 +106,7 @@ export default function ThesisDeskPage() {
         {!loading && (
           <div className="mb-5 flex flex-wrap items-center gap-2 text-[12px]">
             <span className="rounded-full border border-line bg-white px-2.5 py-1 font-semibold text-ink-2">
-              {cov ? `${cov.underwritten} of ${cov.portfolioCount} holdings underwritten` : `${rows.length} underwritten`}
+              {cov ? `${cov.underwritten} of ${cov.portfolioCount} stocks underwritten` : `${rows.length} underwritten`}
             </span>
             {totals.trippedNames > 0 && (
               <span className="rounded-full border border-neg-border bg-neg-soft px-2.5 py-1 font-semibold text-neg">
@@ -227,7 +227,7 @@ export default function ThesisDeskPage() {
                 {cov.missing.length}
               </span>
               <span className="ml-auto text-[11px] text-ink-3">
-                Holdings with no pre-registered exit conditions — nothing is watching these.
+                Stocks with no pre-registered exit conditions — nothing is watching these.
               </span>
             </div>
             <div className="divide-y divide-line-soft">
@@ -261,8 +261,9 @@ export default function ThesisDeskPage() {
         )}
 
         <p className="mt-6 text-[11px] leading-5 text-ink-faint">
-          Portfolio holdings only. Kill conditions are exit criteria, so the coverage count is what
-          you own — watchlist names are tracked on{" "}
+          Individual stocks you own. Kill conditions are exit criteria, so the coverage count is
+          what you hold; ETFs and funds are excluded (no company thesis to underwrite), and
+          watchlist names are tracked on{" "}
           <Link href="/conviction" className="text-accent hover:underline">
             Pipeline
           </Link>{" "}

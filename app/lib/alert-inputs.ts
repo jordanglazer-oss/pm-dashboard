@@ -61,6 +61,7 @@ type StoredStock = {
   sector?: string;
   bucket?: string;
   price?: number;
+  instrumentType?: string;
   /** YYYY-MM-DD (Yahoo calendarEvents) — feeds the catalyst-aware escalation. */
   earningsDate?: string;
   riskAlert?: { level?: string; summary?: string; signals?: Array<{ name: string; status: string }> };
@@ -160,6 +161,7 @@ export async function loadAlertInputs(): Promise<AlertInputs> {
       revUp: typeof fs?.revUp === "number" ? fs.revUp : null,
       revDown: typeof fs?.revDown === "number" ? fs.revDown : null,
       riskLevel: s.riskAlert?.level ?? null,
+      instrumentType: s.instrumentType ?? null,
       earningsDate: typeof s.earningsDate === "string" ? s.earningsDate.slice(0, 10) : null,
     };
   }

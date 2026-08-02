@@ -49,6 +49,10 @@ export type StockContext = {
   riskLevel?: string | null;
   /** Next earnings date (YYYY-MM-DD) when known. */
   earningsDate?: string | null;
+  /** "stock" | "etf" | "mutual-fund"; undefined means stock (see isScoreable).
+   *  Consumed by the /thesis coverage count — funds and ETFs are not
+   *  underwritable, so they must not pad the "not underwritten" list. */
+  instrumentType?: string | null;
 };
 
 /** Days until the given YYYY-MM-DD (0 = today); null when absent/past/unparseable
