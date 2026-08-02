@@ -135,6 +135,8 @@ export function computeAlerts(input: {
     tripped: number;
     auto: number;
     checks: Array<{ status: string; reading: string; condition: { kind: string; note?: string; threshold?: number; trippedAt?: string | null } }>;
+    /** YYYY-MM-DD the quarterly re-underwrite is due (90d from underwrite). */
+    reUnderwriteBy?: string;
   }>;
 }): Alert[] {
   const alerts: Alert[] = [];
@@ -164,6 +166,39 @@ export function computeAlerts(input: {
       ].filter((m): m is string => m != null),
       action:
         "This is a condition you pre-registered as 'I am wrong if…'. Open the stock page and respond — Acknowledge-hold or Flag trim/exit; either way it's logged to the journal.",
+    });
+  }
+
+  // ── Re-underwrite overdue — the discipline half of the thesis system ──
+  // A thesis that is never re-examined quietly becomes a position you hold
+  // out of habit, so the 90-day clock gets its own alert. Deliberately
+  // MEDIUM while it's freshly due: the email only fires on HIGH, so a
+  // just-overdue review rides along in other emails instead of generating a
+  // daily nag. Past ~30 days overdue it escalates to HIGH — at that point
+  // the reminder has been ignored long enough that interrupting is correct,
+  // and one re-underwrite silences it.
+  const OVERDUE_ESCALATE_DAYS = 30;
+  for (const kw of input.killWatch ?? []) {
+    if (!kw.reUnderwriteBy) continue;
+    const dueMs = Date.parse(`${kw.reUnderwriteBy}T00:00:00Z`);
+    if (!isFinite(dueMs)) continue;
+    const daysOver = Math.floor((Date.now() - dueMs) / 86400_000);
+    if (daysOver < 0) continue; // not due yet
+    const ctx = ctxFor(kw.ticker);
+    alerts.push({
+      id: `reunderwrite-${kw.ticker}`,
+      priority: daysOver >= OVERDUE_ESCALATE_DAYS ? "high" : "medium",
+      category: "thesis",
+      ticker: kw.ticker,
+      name: ctx?.name,
+      title: `${kw.ticker} — re-underwrite ${daysOver === 0 ? "due today" : `${daysOver}d overdue`}`,
+      detail: `The thesis was last signed for a 90-day window that ended ${kw.reUnderwriteBy}. Its ${kw.auto} condition${kw.auto === 1 ? "" : "s"} ${kw.tripped > 0 ? `include ${kw.tripped} tripped` : "are all holding"}, but the thesis itself has not been re-examined.`,
+      metrics: [
+        ctx?.composite != null ? `composite ${ctx.composite}` : null,
+        ctx?.scoreDelta != null ? `Δ45d ${ctx.scoreDelta >= 0 ? "+" : ""}${ctx.scoreDelta}` : null,
+      ].filter((m): m is string => m != null),
+      action:
+        "Open the stock page and re-underwrite: redraft the thesis against today's facts and confirm the exit conditions still describe being wrong. Comparing it to what you signed a quarter ago is the point.",
     });
   }
 

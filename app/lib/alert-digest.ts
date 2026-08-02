@@ -3,6 +3,7 @@ import { createLogger } from "@/app/lib/logger";
 import { computeAlerts, alertCounts, type Alert } from "@/app/lib/alerts";
 import { loadAlertInputs } from "@/app/lib/alert-inputs";
 import { enqueueMail } from "@/app/lib/mail-outbox";
+import { isTradingWeekdayET } from "@/app/lib/market-calendar";
 import type { DataHealthReport } from "@/app/lib/data-health";
 
 /**
@@ -91,7 +92,16 @@ function renderDigestText(
 
 export async function runAlertDigest(opts?: {
   dataHealth?: DataHealthReport;
-}): Promise<{ ran: boolean; total: number; emailed: boolean; error?: string }> {
+  /** Send even on a weekend — for a manual/admin trigger that wants the mail
+   *  regardless of the calendar. The scheduled cron never passes this. */
+  force?: boolean;
+}): Promise<{
+  ran: boolean;
+  total: number;
+  emailed: boolean;
+  skipped?: "weekend";
+  error?: string;
+}> {
   try {
     const redis = await getRedis();
     const { thesis, transition, risk, context, killWatch } = await loadAlertInputs();
@@ -139,6 +149,15 @@ export async function runAlertDigest(opts?: {
       rescores = (rs?.recent ?? []).filter((r) => Date.parse(r.at) > cutoff);
     } catch {
       rescores = [];
+    }
+
+    // Weekend suppression — the alert LOG above is always written (history
+    // stays complete and the in-app tile is unaffected); only the email is
+    // held. A Saturday send would carry Friday's close and Sunday's would
+    // repeat it; Monday's email carries Friday's close instead, so nothing is
+    // lost. See app/lib/market-calendar for why this is not holiday-aware.
+    if (!opts?.force && !isTradingWeekdayET()) {
+      return { ran: true, total: counts.total, emailed: false, skipped: "weekend" };
     }
 
     if ((counts.high > 0 || healthProblems > 0 || rescores.length > 0) && alertTo) {
