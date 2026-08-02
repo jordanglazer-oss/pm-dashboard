@@ -157,6 +157,7 @@ function AnthropicCreditChip() {
 const tabs = [
   { label: "Brief", href: "/brief" },
   { label: "Portfolio", href: "/" },
+  { label: "Thesis", href: "/thesis" },
   { label: "Chat", href: "/chat" },
   { label: "Screener", href: "/screener" },
   { label: "Research", href: "/research" },
