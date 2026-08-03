@@ -24,6 +24,7 @@ import type { ScoreKey, ScoreExplanations, ScoreDataPointSource } from "@/app/li
 import { SCORE_GROUPS } from "@/app/lib/types";
 import { createLogger } from "@/app/lib/logger";
 import { callAnthropicWithRetry } from "@/app/lib/anthropic-retry";
+import { parseModelJson } from "@/app/lib/json-repair";
 
 const client = new Anthropic();
 const log = createLogger("Score-gaps");
@@ -132,31 +133,27 @@ Respond ONLY with valid JSON:
       .map((b) => b.text)
       .join("");
 
-    const jsonMatch = text.match(/\{[\s\S]*\}/);
-    if (!jsonMatch) {
-      return NextResponse.json({ error: "No JSON in response" }, { status: 500 });
+    // Same three accepted explanation shapes as /api/score (object, legacy
+    // string[], legacy string) — typed as the union the branches narrow.
+    type ExplanationVal =
+      | { summary?: string; dataPoints?: unknown; confidence?: string }
+      | unknown[]
+      | string;
+    type GapJson = {
+      scores?: Record<string, unknown>;
+      explanations?: Record<string, ExplanationVal>;
+      [key: string]: unknown;
+    };
+    const parseResult = parseModelJson<GapJson>(text);
+    if (!parseResult.ok) {
+      log.error(`JSON parse failed for ${ticker}:`, parseResult.error, parseResult.excerpt ?? "");
+      return NextResponse.json(
+        { error: `Failed to parse gap-fill response: ${parseResult.error}` },
+        { status: 500 }
+      );
     }
-
-    let parsed;
-    try {
-      parsed = JSON.parse(jsonMatch[0]);
-    } catch {
-      // Try to repair truncated JSON
-      let repaired = jsonMatch[0];
-      repaired = repaired.replace(/,\s*"[^"]*":\s*"[^"]*$/, "");
-      repaired = repaired.replace(/,\s*"[^"]*$/, "");
-      const openBraces = (repaired.match(/\{/g) || []).length - (repaired.match(/\}/g) || []).length;
-      const openBrackets = (repaired.match(/\[/g) || []).length - (repaired.match(/\]/g) || []).length;
-      repaired += "]".repeat(Math.max(0, openBrackets));
-      repaired += "}".repeat(Math.max(0, openBraces));
-      try {
-        parsed = JSON.parse(repaired);
-        log.info(`Repaired truncated JSON for ${ticker}`);
-      } catch (e2) {
-        const msg = e2 instanceof Error ? e2.message : String(e2);
-        return NextResponse.json({ error: `Failed to parse gap-fill response: ${msg}` }, { status: 500 });
-      }
-    }
+    if (parseResult.repaired) log.info(`Repaired malformed JSON for ${ticker}`);
+    const parsed = parseResult.value;
 
     // Extract scores with clamping
     const scores: Partial<Record<string, number>> = {};

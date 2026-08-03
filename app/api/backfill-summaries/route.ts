@@ -14,6 +14,7 @@ import Anthropic from "@anthropic-ai/sdk";
 import { NextRequest, NextResponse } from "next/server";
 import { createLogger } from "@/app/lib/logger";
 import { callAnthropicWithRetry } from "@/app/lib/anthropic-retry";
+import { parseModelJson } from "@/app/lib/json-repair";
 
 const client = new Anthropic();
 const log = createLogger("Backfill-summaries");
@@ -79,18 +80,12 @@ Respond with ONLY valid JSON (no markdown):
       .map((b) => b.text)
       .join("");
 
-    const jsonMatch = text.match(/\{[\s\S]*\}/);
-    if (!jsonMatch) {
-      return NextResponse.json({ error: "No JSON in response" }, { status: 500 });
+    const parseResult = parseModelJson<{ companySummary?: string; investmentThesis?: string }>(text);
+    if (!parseResult.ok) {
+      log.error("JSON parse error:", parseResult.error, parseResult.excerpt ?? "");
+      return NextResponse.json({ error: `Malformed JSON in response: ${parseResult.error}` }, { status: 500 });
     }
-
-    let parsed;
-    try {
-      parsed = JSON.parse(jsonMatch[0]);
-    } catch (parseErr) {
-      log.error("JSON parse error:", parseErr);
-      return NextResponse.json({ error: "Malformed JSON in response" }, { status: 500 });
-    }
+    const parsed = parseResult.value;
     return NextResponse.json({
       companySummary: parsed.companySummary || "",
       investmentThesis: parsed.investmentThesis || "",

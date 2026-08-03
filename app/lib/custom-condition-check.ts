@@ -2,6 +2,7 @@ import Anthropic from "@anthropic-ai/sdk";
 import { getRedis } from "./redis";
 import type { KillCondition } from "./kill-conditions";
 import { buildTickerEvidence } from "./thesis-evidence";
+import { parseModelJson } from "./json-repair";
 
 /**
  * AI verification of CUSTOM kill conditions — the automation for the one
@@ -44,6 +45,10 @@ type ThesisEntry = {
 export type CustomCheckResult = {
   checked: { ticker: string; conditionId: string; status: string }[];
   skipped: number;
+  /** Conditions whose verification ran but produced nothing usable. Surfaced
+   *  so a failed "verify now" click reports something instead of appearing to
+   *  do nothing at all. */
+  failed: number;
 };
 
 function needsCheck(c: KillCondition, earningsDate: string | null, force: boolean): boolean {
@@ -95,10 +100,17 @@ Rules:
     .filter((b): b is Anthropic.TextBlock => b.type === "text")
     .map((b) => b.text)
     .join("");
-  const match = text.match(/\{[\s\S]*\}/);
-  if (!match) return null;
+  const res = parseModelJson<{ status?: string; reading?: string; evidence?: string }>(text);
+  if (!res.ok) {
+    console.error(
+      `[custom-condition-check] ${ticker} JSON parse failed:`,
+      res.error,
+      res.excerpt ? `\n…${res.excerpt}…` : ""
+    );
+    return null;
+  }
   try {
-    const o = JSON.parse(match[0]) as { status?: string; reading?: string; evidence?: string };
+    const o = res.value;
     if (o.status !== "ok" && o.status !== "tripped" && o.status !== "unclear") return null;
     if (typeof o.reading !== "string" || !o.reading.trim()) return null;
     return {
@@ -130,6 +142,7 @@ export async function runCustomConditionChecks(opts: {
   const only = opts.ticker?.trim().toUpperCase();
   const checked: CustomCheckResult["checked"] = [];
   let skipped = 0;
+  let failed = 0;
 
   // Ingested report/FactSet evidence, memoized per ticker — built lazily so
   // a sweep where every condition is skipped costs zero extra reads.
@@ -159,7 +172,10 @@ export async function runCustomConditionChecks(opts: {
         continue;
       }
       const verdict = await verifyOne(tk, st?.name || "", entry?.why || "", c, await evidenceFor(tk));
-      if (!verdict) continue; // model gave nothing usable — leave prior state
+      if (!verdict) {
+        failed++; // model gave nothing usable — leave the prior state intact
+        continue;
+      }
       c.aiCheck = verdict;
       // Trip stamping, same semantics the tile uses for template conditions.
       if (verdict.status === "tripped" && !c.trippedAt) c.trippedAt = new Date().toISOString().slice(0, 10);
@@ -189,5 +205,5 @@ export async function runCustomConditionChecks(opts: {
     }
   }
 
-  return { checked, skipped };
+  return { checked, skipped, failed };
 }

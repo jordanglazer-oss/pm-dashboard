@@ -14,6 +14,7 @@ import Anthropic from "@anthropic-ai/sdk";
 import { createHash } from "crypto";
 import { getRedis } from "./redis";
 import type { ExtractedReport, AnalystRating } from "./analyst-snapshots";
+import { parseModelJson } from "./json-repair";
 
 const CACHE_KEY = "pm:analyst-report-extract-cache";
 const client = new Anthropic();
@@ -85,15 +86,19 @@ function buildPdfBlocks(dataUrl: string): Anthropic.Messages.ContentBlockParam[]
   ];
 }
 
-function parseExtraction(text: string): ExtractedReport {
-  const jsonMatch = text.match(/\{[\s\S]*\}/);
-  if (!jsonMatch) return {};
-  let parsed: Record<string, unknown>;
-  try {
-    parsed = JSON.parse(jsonMatch[0]) as Record<string, unknown>;
-  } catch {
-    return {};
+/** Returns null when the response could not be parsed AT ALL — distinct from a
+ *  successful parse that happens to be empty. The caller must not cache a
+ *  null: an unparseable response used to become a permanently empty report
+ *  for that PDF (the result was cached unconditionally), silently stripping
+ *  the rating, target, thesis and risks that feed scoring and the thesis
+ *  evidence block. */
+function parseExtraction(text: string): ExtractedReport | null {
+  const res = parseModelJson<Record<string, unknown>>(text);
+  if (!res.ok) {
+    console.error("[analyst-extract] JSON parse failed:", res.error, res.excerpt ? `\n…${res.excerpt}…` : "");
+    return null;
   }
+  const parsed = res.value;
 
   const out: ExtractedReport = {};
   if (typeof parsed.rating === "string") {
@@ -185,6 +190,14 @@ export async function extractAnalystReport(opts: {
   }
 
   const result = parseExtraction(text);
+  if (result === null) {
+    // Do NOT cache: caching an unparseable response made the empty result
+    // permanent for this PDF (same hash → cache hit → same empty report).
+    // Throwing instead surfaces it — the ingest route logs an inbox event and
+    // returns 500, which the Apps Script retries, and model output varies
+    // enough that a retry usually parses.
+    throw new Error("Could not parse the extraction response — report not stored; retry to re-extract");
+  }
   const extractedAt = new Date().toISOString();
 
   const cache = await readCache();

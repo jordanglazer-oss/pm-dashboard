@@ -3,6 +3,7 @@ import { NextRequest, NextResponse } from "next/server";
 import { getRedis } from "@/app/lib/redis";
 import { loadAlertInputs } from "@/app/lib/alert-inputs";
 import { createHash } from "crypto";
+import { parseModelJson } from "@/app/lib/json-repair";
 
 /**
  * POST /api/thesis-check { ticker } — the on-trip written thesis check
@@ -123,9 +124,12 @@ Rules: use ONLY the facts above — do not invent numbers or events. If the trip
       .filter((b): b is Anthropic.TextBlock => b.type === "text")
       .map((b) => b.text)
       .join("");
-    const m = text.match(/\{[\s\S]*\}/);
-    if (!m) return NextResponse.json({ error: "model returned no JSON" }, { status: 502 });
-    const result = JSON.parse(m[0]) as CheckResult;
+    const parseResult = parseModelJson<CheckResult>(text);
+    if (!parseResult.ok) {
+      console.error(`[thesis-check] ${tk} JSON parse failed:`, parseResult.error, parseResult.excerpt ?? "");
+      return NextResponse.json({ error: `model returned unparseable JSON: ${parseResult.error}` }, { status: 502 });
+    }
+    const result = parseResult.value;
     if (!result.assessment || !["direct", "partial", "no"].includes(result.breaksThesis))
       return NextResponse.json({ error: "model returned malformed check" }, { status: 502 });
 

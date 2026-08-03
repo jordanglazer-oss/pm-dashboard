@@ -4,6 +4,7 @@ import { getRedis } from "@/app/lib/redis";
 import { loadAlertInputs } from "@/app/lib/alert-inputs";
 import { KILL_TEMPLATES, type KillConditionKind } from "@/app/lib/kill-conditions";
 import { buildTickerEvidence } from "@/app/lib/thesis-evidence";
+import { parseModelJson } from "@/app/lib/json-repair";
 
 /**
  * POST /api/thesis-draft { ticker } — AI-drafted thesis + kill conditions.
@@ -145,8 +146,12 @@ Rules for conditions:
       .filter((b): b is Anthropic.TextBlock => b.type === "text")
       .map((b) => b.text)
       .join("");
-    const match = text.match(/\{[\s\S]*\}/);
-    const draft = match ? sanitize(JSON.parse(match[0])) : null;
+    const parseResult = parseModelJson(text);
+    if (!parseResult.ok) {
+      console.error(`[thesis-draft] ${tk} JSON parse failed:`, parseResult.error, parseResult.excerpt ?? "");
+      return NextResponse.json({ error: `draft failed — unparseable response: ${parseResult.error}` }, { status: 502 });
+    }
+    const draft = sanitize(parseResult.value);
     if (!draft) return NextResponse.json({ error: "draft failed — model returned no usable proposal" }, { status: 502 });
 
     return NextResponse.json({ draft });

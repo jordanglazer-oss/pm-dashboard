@@ -330,19 +330,26 @@ export default function ThesisTile({
   // On-demand AI verification of custom conditions (web-search Sonnet call;
   // the nightly chain does the same automatically post-earnings / weekly).
   const [verifying, setVerifying] = useState(false);
+  const [verifyErr, setVerifyErr] = useState<string | null>(null);
   const verifyCustoms = useCallback(async () => {
     setVerifying(true);
+    setVerifyErr(null);
     try {
-      await fetch("/api/custom-condition-check", {
+      const res = await fetch("/api/custom-condition-check", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({ ticker, force: true }),
-      });
+      }).then((r) => r.json());
+      // A verification that produced nothing usable used to look identical to
+      // success — the row simply didn't change. Say so instead.
+      if (res?.error || (res?.failed > 0 && !res?.checked?.length)) {
+        setVerifyErr(res?.error || "couldn't verify — try again");
+      }
       const d = await fetch("/api/kv/position-theses").then((r) => r.json());
       const t = (d?.theses ?? {})[ticker.toUpperCase()] ?? (d?.theses ?? {})[ticker];
       if (t) setEntry(t);
     } catch {
-      // verdict simply stays as-is; the row keeps its prior state
+      setVerifyErr("couldn't verify — try again");
     } finally {
       setVerifying(false);
     }
@@ -443,6 +450,9 @@ export default function ThesisTile({
                           >
                             {verifying ? "verifying…" : "verify now"}
                           </button>
+                        )}
+                        {k.condition.kind === "custom" && verifyErr && (
+                          <span className="ml-2 text-neg">{verifyErr}</span>
                         )}
                       </div>
                     </div>
