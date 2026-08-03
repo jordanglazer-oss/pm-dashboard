@@ -19,6 +19,7 @@ import {
 import { applySiaEntries, applyBoostedEntries, applyMarketEdgeRows, type StockPatch } from "@/app/lib/stock-patches";
 import { parseMarketEdgeCsv } from "@/app/lib/marketedge-csv";
 import { parseSiaCsv } from "@/app/lib/sia-csv";
+import { UNIVERSE_MIN_ROWS } from "@/app/lib/sia-universe-shared";
 import { parseBoostedCsv } from "@/app/lib/boosted-csv";
 // Value from the client-safe half; the type is erased so it can come from the
 // redis-importing module without pulling it into the browser bundle.
@@ -832,13 +833,34 @@ export default function InboxPage() {
       }
       const expected = stocks.filter(isScoreable);
       const now = new Date().toISOString();
-      const { patches, summary } = applySiaEntries(expected, parsed.rows, now, stocks);
+      // Full-index export → also persist the universe snapshot, the only place
+      // the ~96% of rows you don't hold survive (applySiaEntries drops them by
+      // design). Held names patch exactly as before either way.
+      const isUniverse = parsed.rows.length >= UNIVERSE_MIN_ROWS;
+      const { patches, summary } = applySiaEntries(expected, parsed.rows, now, stocks, isUniverse);
       dispatchPatches(patches);
+      let snapshotError: string[] = [];
+      if (isUniverse) {
+        const rows: Record<string, number> = {};
+        for (const r of parsed.rows) if (typeof r.smax === "number") rows[r.ticker.toUpperCase()] = r.smax;
+        try {
+          const res = await fetch("/api/sia-universe", {
+            method: "POST",
+            headers: { "Content-Type": "application/json" },
+            body: JSON.stringify({ rows }),
+          }).then((r) => r.json());
+          if (!res?.written && res?.reason !== "already-exists") {
+            snapshotError = [`Universe snapshot not stored (${res?.reason ?? "error"}).`];
+          }
+        } catch {
+          snapshotError = ["Universe snapshot not stored (request failed)."];
+        }
+      }
       setScreenshotImportSummary({
         source: "sia",
         cached: false,
         ...summary,
-        errors: [],
+        errors: snapshotError,
       });
     } catch (e) {
       setScreenshotImportSummary({

@@ -64,6 +64,14 @@ export function applySiaEntries(
    *  rather than clutter the actionable warning. Pass `expected` (or omit)
    *  if you want the legacy behavior. */
   allHeld?: Stock[],
+  /** Universe mode: the upload is a full-index export (S&P 500 / TSX), not a
+   *  watchlist. Rows that don't match a held name are EXPECTED — the whole
+   *  index is in the file — so they aren't collected into `unmatched`, which
+   *  is meant as an actionable "this should be in your book" nudge and would
+   *  otherwise be ~960 tickers of noise. The full row set is persisted
+   *  separately by app/lib/sia-universe; matching behaviour for names you DO
+   *  hold is unchanged. */
+  universeMode?: boolean,
 ): { patches: StockPatch[]; summary: IngestSummary } {
   const patches: StockPatch[] = [];
   const summary = emptySummary();
@@ -78,7 +86,7 @@ export function applySiaEntries(
       // SMAX scores to ETFs too but our scoring system only applies to
       // individual stocks. Putting them in "unmatched" was misleading noise.
       const heldNotScoreable = held.find((s) => sameCompanyLoose(s.ticker, e.ticker));
-      if (!heldNotScoreable) summary.unmatched.push(e.ticker);
+      if (!heldNotScoreable && !universeMode) summary.unmatched.push(e.ticker);
       continue;
     }
     summary.matched += 1;

@@ -34,6 +34,7 @@ import {
 } from "./screenshot-extractors";
 import { parseMarketEdgeCsv } from "./marketedge-csv";
 import { parseSiaCsv } from "./sia-csv";
+import { writeSiaSnapshot, UNIVERSE_MIN_ROWS } from "./sia-universe";
 import { parseBoostedCsv } from "./boosted-csv";
 import { putDataUrl } from "./blob-store";
 import { applySiaEntries, applyBoostedEntries, applyMarketEdgeRows, type StockPatch } from "./stock-patches";
@@ -305,12 +306,25 @@ async function handleSia(att: AttachmentInput, label: string): Promise<DispatchR
     }
     const stocks = await readStocks();
     const expected = stocks.filter(isScoreable);
-    const { patches, summary } = applySiaEntries(expected, parsed.rows, new Date().toISOString(), stocks);
+    // A full-index export (S&P 500 / TSX) also feeds the universe snapshot
+    // store, which is the ONLY place the non-held rows survive — applySiaEntries
+    // drops them by design. Held names keep patching exactly as before.
+    const isUniverse = parsed.rows.length >= UNIVERSE_MIN_ROWS;
+    const { patches, summary } = applySiaEntries(expected, parsed.rows, new Date().toISOString(), stocks, isUniverse);
     const { touched } = await applyPatchesToRedis(patches);
+    let snapshotNote = "";
+    if (isUniverse) {
+      const rows: Record<string, number> = {};
+      for (const r of parsed.rows) if (typeof r.smax === "number") rows[r.ticker.toUpperCase()] = r.smax;
+      const snap = await writeSiaSnapshot(rows);
+      snapshotNote = snap.written
+        ? ` · universe snapshot ${snap.date} (${snap.tickers} tickers)`
+        : ` · snapshot skipped (${snap.reason})`;
+    }
     return {
       ok: true,
       kind: "sia",
-      message: `SIA CSV: ${summary.matched} matched / ${summary.rowsParsed} rows · ${summary.updated} updated${summary.expectedButMissing.length ? ` · ${summary.expectedButMissing.length} expected names missing` : ""}.`,
+      message: `SIA CSV: ${summary.matched} matched / ${summary.rowsParsed} rows · ${summary.updated} updated${summary.expectedButMissing.length ? ` · ${summary.expectedButMissing.length} expected names missing` : ""}${snapshotNote}.`,
       detail: { label, source: "csv", summary, touched },
     };
   }
