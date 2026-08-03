@@ -849,7 +849,7 @@ export default function InboxPage() {
             headers: { "Content-Type": "application/json" },
             body: JSON.stringify({ rows }),
           }).then((r) => r.json());
-          if (!res?.written && res?.reason !== "already-exists") {
+          if (!res?.written) {
             snapshotError = [`Universe snapshot not stored (${res?.reason ?? "error"}).`];
           }
         } catch {

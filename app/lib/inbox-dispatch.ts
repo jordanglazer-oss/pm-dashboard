@@ -318,7 +318,7 @@ async function handleSia(att: AttachmentInput, label: string): Promise<DispatchR
       for (const r of parsed.rows) if (typeof r.smax === "number") rows[r.ticker.toUpperCase()] = r.smax;
       const snap = await writeSiaSnapshot(rows);
       snapshotNote = snap.written
-        ? ` · universe snapshot ${snap.date} (${snap.tickers} tickers)`
+        ? ` · universe snapshot ${snap.date} (${snap.tickers} tickers${snap.merged ? ", merged" : ""})`
         : ` · snapshot skipped (${snap.reason})`;
     }
     return {

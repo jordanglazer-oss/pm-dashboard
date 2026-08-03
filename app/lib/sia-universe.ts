@@ -67,12 +67,23 @@ export async function readSiaSnapshot(date: string): Promise<SiaSnapshot | null>
 }
 
 export type WriteResult =
-  | { written: true; date: string; tickers: number }
-  | { written: false; reason: "too-few-rows" | "already-exists" | "error"; date: string };
+  | { written: true; date: string; tickers: number; merged: boolean }
+  | { written: false; reason: "too-few-rows" | "error"; date: string };
 
 /**
- * Persist today's universe snapshot. Refuses to overwrite an existing date
- * (append-only) and refuses sub-universe uploads (see UNIVERSE_MIN_ROWS).
+ * Persist today's universe snapshot, MERGING into an existing one for the
+ * same date.
+ *
+ * Merging is required, not a nicety: the S&P 500 and TSX arrive as separate
+ * files (separate emails or separate attachments — the ingest route POSTs one
+ * attachment per request), so the second universe file of the day must add to
+ * the first rather than be rejected. Rejecting it silently dropped an entire
+ * index.
+ *
+ * Still append-only in the sense that matters: writes only ever target TODAY,
+ * so a past date can never be rewritten. Within today, merging is idempotent
+ * for a re-sent file (same tickers, same values) and corrective for a
+ * re-exported one.
  */
 export async function writeSiaSnapshot(rows: Record<string, number>): Promise<WriteResult> {
   const date = todayUtc();
@@ -81,9 +92,23 @@ export async function writeSiaSnapshot(rows: Record<string, number>): Promise<Wr
   try {
     const redis = await getRedis();
     const key = `${SNAP_PREFIX}${date}`;
-    if (await redis.get(key)) return { written: false, reason: "already-exists", date };
 
-    const snap: SiaSnapshot = { date, capturedAt: new Date().toISOString(), rows };
+    const existingRaw = await redis.get(key);
+    let merged = false;
+    let combined = rows;
+    if (existingRaw) {
+      try {
+        const prior = JSON.parse(existingRaw) as SiaSnapshot;
+        if (prior?.rows && typeof prior.rows === "object") {
+          combined = { ...prior.rows, ...rows }; // newer file wins per ticker
+          merged = true;
+        }
+      } catch {
+        // Unparseable existing value — replace it rather than lose today's upload.
+      }
+    }
+
+    const snap: SiaSnapshot = { date, capturedAt: new Date().toISOString(), rows: combined };
     await redis.set(key, JSON.stringify(snap));
 
     const index = await readIndex();
@@ -96,7 +121,7 @@ export async function writeSiaSnapshot(rows: Record<string, number>): Promise<Wr
       if (drop) await redis.del(`${SNAP_PREFIX}${drop}`).catch(() => {});
     }
     await redis.set(INDEX_KEY, JSON.stringify(index));
-    return { written: true, date, tickers: count };
+    return { written: true, date, tickers: Object.keys(combined).length, merged };
   } catch (e) {
     console.error("[sia-universe] snapshot write failed:", e);
     return { written: false, reason: "error", date };
