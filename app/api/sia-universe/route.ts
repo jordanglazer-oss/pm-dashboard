@@ -1,5 +1,5 @@
 import { NextRequest, NextResponse } from "next/server";
-import { computeSiaMovement, listSiaSnapshots, writeSiaSnapshot } from "@/app/lib/sia-universe";
+import { latestSiaMovers, listSiaSnapshots, writeSiaSnapshot, type SiaRow } from "@/app/lib/sia-universe";
 
 /**
  * SIA universe snapshots.
@@ -17,17 +17,17 @@ export const dynamic = "force-dynamic";
 
 export async function GET(req: NextRequest) {
   try {
-    const raw = Number(new URL(req.url).searchParams.get("minDelta"));
-    const minDelta = Number.isFinite(raw) && raw > 0 ? raw : 2;
-    const [movement, snapshots] = await Promise.all([computeSiaMovement(minDelta), listSiaSnapshots()]);
-    return NextResponse.json({ movement, snapshots });
+    const sp = new URL(req.url).searchParams;
+    const n = (k: string, d: number) => { const v = Number(sp.get(k)); return Number.isFinite(v) ? v : d; };
+    const [movers, snapshots] = await Promise.all([
+      latestSiaMovers({ minWChg: n("minWChg", 20), minSmax: n("minSmax", 7) }),
+      listSiaSnapshots(),
+    ]);
+    return NextResponse.json({ ...movers, snapshots });
   } catch (e) {
     console.error("sia-universe GET failed:", e);
     // Read-only surface: degrade to empty rather than erroring the page.
-    return NextResponse.json({
-      movement: { from: null, to: null, risers: [], fallers: [], added: [] },
-      snapshots: [],
-    });
+    return NextResponse.json({ date: null, movers: [], universeSize: 0, snapshots: [] });
   }
 }
 
@@ -38,10 +38,9 @@ export async function POST(req: NextRequest) {
     if (!raw || typeof raw !== "object" || Array.isArray(raw)) {
       return NextResponse.json({ error: "rows object required" }, { status: 400 });
     }
-    const rows: Record<string, number> = {};
+    const rows: Record<string, SiaRow> = {};
     for (const [t, v] of Object.entries(raw as Record<string, unknown>)) {
-      const smax = typeof v === "number" ? v : Number(v);
-      if (t && Number.isFinite(smax)) rows[t.toUpperCase()] = smax;
+      if (t && v && typeof v === "object") rows[t.toUpperCase()] = v as SiaRow;
     }
     return NextResponse.json(await writeSiaSnapshot(rows));
   } catch (e) {

@@ -1,37 +1,37 @@
 import { getRedis } from "./redis";
-import { UNIVERSE_MIN_ROWS, type SiaMovement, type SiaMover, type SiaSnapshot } from "./sia-universe-shared";
+import {
+  UNIVERSE_MIN_ROWS,
+  type SiaMover,
+  type SiaMoverResult,
+  type SiaRow,
+  type SiaSnapshot,
+} from "./sia-universe-shared";
 
 // Re-exported so server-side callers keep a single import site.
 export { UNIVERSE_MIN_ROWS };
-export type { SiaMovement, SiaMover, SiaSnapshot };
+export type { SiaMover, SiaMoverResult, SiaRow, SiaSnapshot };
 
 /**
- * SIA universe snapshots — weekly SMAX readings for the FULL S&P 500 + TSX
- * export, and the week-over-week movement derived from them.
+ * SIA universe snapshots — the weekly S&P 500 / TSX ranked export.
  *
  * Why this exists separately from applySiaEntries: that helper MATCHES rows
- * against pm:stocks and discards everything else (a ticker not already in the
- * book is pushed to `unmatched` and dropped). That is correct for keeping
- * held names' relativeStrength current, but it means a 1,000-row universe
- * export loses ~96% of its rows and stores no history — so no delta can ever
- * be computed. This module is the second destination: it keeps EVERY row,
- * dated, so movement becomes visible.
+ * against pm:stocks and discards everything else, which is right for keeping
+ * held names' relativeStrength current but loses ~96% of a universe export.
+ * This module keeps EVERY row, so a name you don't own can be surfaced.
  *
- * The movement is the point. A high SMAX level mostly identifies names that
- * are already strong, already covered and already on everyone's list; a SMAX
- * that JUMPED this week is an early, uncrowded trigger — and because SIA
- * covers the whole index rather than a curated list, it is the only source
- * here that can nominate a name no research list mentions.
+ * MOMENTUM COMES FROM THE FILE, NOT FROM DIFFING. The export carries RANK plus
+ * its D/W/M/Q change, so the weekly mover list is readable from a SINGLE
+ * upload — no two-week baseline. Snapshots are still stored because they are
+ * the only way to study whether rank momentum predicted returns later, and
+ * because SIA's own change columns only reach back one quarter.
  *
  * STORAGE — one key per week (pm:sia-snapshot:YYYY-MM-DD) plus a small index
- * (pm:sia-snapshot-index). Deliberately NOT one growing blob: ~1,000 tickers
- * per week would make a single value grow without bound and risk the silent
- * oversized-write failure that pm:attachments was split to avoid. Each weekly
- * write is bounded and independent.
+ * (pm:sia-snapshot-index). Deliberately NOT one growing blob: ~750 tickers a
+ * week would make a single value grow without bound and risk the silent
+ * oversized-write failure that pm:attachments was split to avoid.
  *
- * APPEND-ONLY, per the CLAUDE.md rule for timeseries data: a snapshot may only
- * be written for TODAY (server UTC date), and an existing date is never
- * overwritten — re-uploading the same week is a no-op, not a clobber.
+ * Writes only ever target TODAY, so no past week can be rewritten; within
+ * today they MERGE, because the S&P and TSX arrive as separate files.
  */
 
 const SNAP_PREFIX = "pm:sia-snapshot:";
@@ -48,7 +48,7 @@ async function readIndex(): Promise<string[]> {
     const arr = raw ? (JSON.parse(raw) as unknown) : [];
     return Array.isArray(arr) ? arr.filter((d): d is string => typeof d === "string").sort() : [];
   } catch {
-    return []; // read errors degrade to "no history", never to a wrong diff
+    return []; // read errors degrade to "no history", never to a wrong answer
   }
 }
 
@@ -72,20 +72,12 @@ export type WriteResult =
 
 /**
  * Persist today's universe snapshot, MERGING into an existing one for the
- * same date.
- *
- * Merging is required, not a nicety: the S&P 500 and TSX arrive as separate
- * files (separate emails or separate attachments — the ingest route POSTs one
- * attachment per request), so the second universe file of the day must add to
- * the first rather than be rejected. Rejecting it silently dropped an entire
- * index.
- *
- * Still append-only in the sense that matters: writes only ever target TODAY,
- * so a past date can never be rewritten. Within today, merging is idempotent
- * for a re-sent file (same tickers, same values) and corrective for a
- * re-exported one.
+ * same date. Merging is required, not a nicety: the S&P 500 and TSX arrive as
+ * separate files and the ingest route POSTs one attachment per request, so
+ * the second universe file of the day must add to the first rather than be
+ * rejected — rejecting it silently dropped an entire index.
  */
-export async function writeSiaSnapshot(rows: Record<string, number>): Promise<WriteResult> {
+export async function writeSiaSnapshot(rows: Record<string, SiaRow>): Promise<WriteResult> {
   const date = todayUtc();
   const count = Object.keys(rows).length;
   if (count < UNIVERSE_MIN_ROWS) return { written: false, reason: "too-few-rows", date };
@@ -104,7 +96,7 @@ export async function writeSiaSnapshot(rows: Record<string, number>): Promise<Wr
           merged = true;
         }
       } catch {
-        // Unparseable existing value — replace it rather than lose today's upload.
+        // Unparseable existing value — replace rather than lose today's upload.
       }
     }
 
@@ -129,37 +121,40 @@ export async function writeSiaSnapshot(rows: Record<string, number>): Promise<Wr
 }
 
 /**
- * Week-over-week movement between the two most recent snapshots.
- * `minDelta` is the SMAX change that counts as a move (SMAX is 0-10).
- * Only tickers present in BOTH snapshots produce a delta — a name missing
- * from one side is reported under `added`, never as a fabricated swing.
+ * Names whose SIA rank IMPROVED over the past week, read straight from the
+ * newest snapshot's own W CHG column.
+ *
+ * `minSmax` is a quality gate, and it earns its place: rank momentum alone
+ * would be dominated by names climbing out of the bottom of the ranking, which
+ * is noise for an idea funnel. Requiring a decent SMAX turns the list into
+ * "already-strong names still improving".
  */
-export async function computeSiaMovement(minDelta = 2): Promise<SiaMovement> {
+export async function latestSiaMovers(opts?: {
+  minWChg?: number;
+  minSmax?: number;
+}): Promise<SiaMoverResult> {
+  const minWChg = opts?.minWChg ?? 20;
+  const minSmax = opts?.minSmax ?? 7;
   const index = await readIndex();
-  if (index.length < 2) {
-    const to = index[index.length - 1] ?? null;
-    return { from: null, to, risers: [], fallers: [], added: [] };
-  }
-  const toDate = index[index.length - 1];
-  const fromDate = index[index.length - 2];
-  const [curr, prev] = await Promise.all([readSiaSnapshot(toDate), readSiaSnapshot(fromDate)]);
-  if (!curr || !prev) return { from: fromDate, to: toDate, risers: [], fallers: [], added: [] };
+  const date = index[index.length - 1] ?? null;
+  if (!date) return { date: null, movers: [], universeSize: 0 };
+  const snap = await readSiaSnapshot(date);
+  if (!snap?.rows) return { date, movers: [], universeSize: 0 };
 
-  const risers: SiaMover[] = [];
-  const fallers: SiaMover[] = [];
-  const added: string[] = [];
-  for (const [ticker, smax] of Object.entries(curr.rows)) {
-    const prior = prev.rows[ticker];
-    if (typeof prior !== "number") {
-      added.push(ticker);
-      continue;
-    }
-    const delta = smax - prior;
-    if (delta >= minDelta) risers.push({ ticker, smax, prior, delta });
-    else if (delta <= -minDelta) fallers.push({ ticker, smax, prior, delta });
+  const movers: SiaMover[] = [];
+  for (const [ticker, row] of Object.entries(snap.rows)) {
+    if (typeof row?.wChg !== "number" || row.wChg < minWChg) continue;
+    if (typeof row.rank !== "number") continue;
+    if (typeof row.smax === "number" && row.smax < minSmax) continue;
+    movers.push({
+      ticker,
+      rank: row.rank,
+      wChg: row.wChg,
+      smax: typeof row.smax === "number" ? row.smax : null,
+      sector: row.sector ?? null,
+    });
   }
-  risers.sort((a, b) => b.delta - a.delta || b.smax - a.smax || a.ticker.localeCompare(b.ticker));
-  fallers.sort((a, b) => a.delta - b.delta || a.smax - b.smax || a.ticker.localeCompare(b.ticker));
-  added.sort();
-  return { from: fromDate, to: toDate, risers, fallers, added };
+  // Biggest climb first; ties resolved by the better (lower) rank reached.
+  movers.sort((a, b) => b.wChg - a.wChg || a.rank - b.rank || a.ticker.localeCompare(b.ticker));
+  return { date, movers, universeSize: Object.keys(snap.rows).length };
 }

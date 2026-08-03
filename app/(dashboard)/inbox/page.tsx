@@ -841,8 +841,11 @@ export default function InboxPage() {
       dispatchPatches(patches);
       let snapshotError: string[] = [];
       if (isUniverse) {
-        const rows: Record<string, number> = {};
-        for (const r of parsed.rows) if (typeof r.smax === "number") rows[r.ticker.toUpperCase()] = r.smax;
+        const rows: Record<string, Record<string, unknown>> = {};
+        for (const r of parsed.ranked) {
+          const { ticker, ...rest } = r;
+          rows[ticker.toUpperCase()] = rest;
+        }
         try {
           const res = await fetch("/api/sia-universe", {
             method: "POST",

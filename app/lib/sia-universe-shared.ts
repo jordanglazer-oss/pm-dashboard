@@ -15,28 +15,51 @@
  */
 export const UNIVERSE_MIN_ROWS = 200;
 
+/**
+ * One name's reading in a weekly universe export.
+ *
+ * `rank` and the CHG fields are the load-bearing ones. SMAX is a 0-10 integer,
+ * so across ~750 names hundreds tie at 8/9/10 — too coarse to rank a universe
+ * or to detect movement inside the top tier. Rank is continuous, and SIA
+ * publishes its change directly, so momentum is readable from a single upload.
+ *
+ * SIGN CONVENTION: a POSITIVE change is an IMPROVEMENT (the name climbed that
+ * many places). Confirmed by the data — a name sitting at rank 1 with a
+ * quarterly change of +96 came FROM rank 97; a name at rank 5 with a weekly
+ * change of -2 slipped from rank 3.
+ */
+export type SiaRow = {
+  smax?: number;
+  rank?: number;
+  /** Places climbed over each window; negative = slipped. */
+  dChg?: number;
+  wChg?: number;
+  mChg?: number;
+  qChg?: number;
+  sector?: string;
+};
+
 export type SiaSnapshot = {
   /** YYYY-MM-DD the snapshot was captured (server UTC). */
   date: string;
   capturedAt: string;
-  /** TICKER → SMAX (0-10). Uppercased, slash/$-normalized by the parser. */
-  rows: Record<string, number>;
+  /** TICKER → reading. Uppercased, slash/$-normalized by the parser. */
+  rows: Record<string, SiaRow>;
 };
 
+/** A name whose rank improved, carrying the level it improved to. */
 export type SiaMover = {
   ticker: string;
-  smax: number;
-  prior: number;
-  delta: number;
+  rank: number;
+  wChg: number;
+  smax: number | null;
+  sector: string | null;
 };
 
-export type SiaMovement = {
-  /** Dates compared, newest first. Null when there aren't two snapshots yet. */
-  from: string | null;
-  to: string | null;
-  risers: SiaMover[];
-  fallers: SiaMover[];
-  /** Tickers present in the new snapshot but absent from the prior one —
-   *  reported separately because a brand-new listing is not a "riser". */
-  added: string[];
+export type SiaMoverResult = {
+  /** Snapshot the movers were read from; null when none exists yet. */
+  date: string | null;
+  movers: SiaMover[];
+  /** Names in the snapshot at all — context for "N of M". */
+  universeSize: number;
 };

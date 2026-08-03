@@ -34,7 +34,7 @@ import {
 } from "./screenshot-extractors";
 import { parseMarketEdgeCsv } from "./marketedge-csv";
 import { parseSiaCsv } from "./sia-csv";
-import { writeSiaSnapshot, UNIVERSE_MIN_ROWS } from "./sia-universe";
+import { writeSiaSnapshot, UNIVERSE_MIN_ROWS, type SiaRow } from "./sia-universe";
 import { parseBoostedCsv } from "./boosted-csv";
 import { putDataUrl } from "./blob-store";
 import { applySiaEntries, applyBoostedEntries, applyMarketEdgeRows, type StockPatch } from "./stock-patches";
@@ -314,8 +314,11 @@ async function handleSia(att: AttachmentInput, label: string): Promise<DispatchR
     const { touched } = await applyPatchesToRedis(patches);
     let snapshotNote = "";
     if (isUniverse) {
-      const rows: Record<string, number> = {};
-      for (const r of parsed.rows) if (typeof r.smax === "number") rows[r.ticker.toUpperCase()] = r.smax;
+      const rows: Record<string, SiaRow> = {};
+      for (const r of parsed.ranked) {
+        const { ticker, ...rest } = r;
+        rows[ticker.toUpperCase()] = rest;
+      }
       const snap = await writeSiaSnapshot(rows);
       snapshotNote = snap.written
         ? ` · universe snapshot ${snap.date} (${snap.tickers} tickers${snap.merged ? ", merged" : ""})`
