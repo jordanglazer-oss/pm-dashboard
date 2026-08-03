@@ -92,7 +92,12 @@ export function classifySubject(subject: string): InboxKind {
   if (/^rbccm\s+few\b/i.test(s)) return { kind: "research", source: "rbccm-few" };
   if (/^(seeking\s+alpha|alpha\s+picks)\b/i.test(s)) return { kind: "research", source: "seeking-alpha-picks" };
   // ── Per-stock external-tool kinds ──
-  if (/^sia\b/i.test(s)) return "sia";
+  // Accepts "SIA …" and "SIACharts …" (the vendor's own name), and tolerates
+  // any non-alphanumeric separator — \b alone rejected both "SIACharts weekly"
+  // and "SIA_SP500" (underscore is a word character), which are exactly what
+  // an unedited download or a hand-typed subject looks like. The negative
+  // lookahead still refuses genuine words like "Siam".
+  if (/^sia(?:charts)?(?![a-z0-9])/i.test(s)) return "sia";
   if (/^(boostedai|boosted)\b/i.test(s)) return "boosted";
   if (/^(marketedge|chartscout)\b/i.test(s)) return "marketedge";
   if (/^strategist\b/i.test(s)) return "strategist";
