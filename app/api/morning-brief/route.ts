@@ -18,6 +18,7 @@ import { crossSectional, factsetConfigured } from "@/app/lib/factset";
 import { buildCatalystCalendar, type CatalystCalendar } from "@/app/lib/catalyst-calendar";
 import { easternToday, easternLongDate, relativeDayLabel } from "@/app/lib/date-eastern";
 import { loadHedges, isActiveHedge, describeHedge } from "@/app/lib/hedges";
+import { parseModelJson } from "@/app/lib/json-repair";
 import { computeRegimeTransition, type RegimeTransition } from "@/app/lib/regime-transition";
 import type { MarketRegimeData } from "@/app/lib/market-regime";
 import { isCreditError, recordAnthropicCreditError, markAnthropicHealthy } from "@/app/lib/anthropic-status";
@@ -1659,39 +1660,32 @@ Current Portfolio Holdings: ${holdingsSummary}${portfolioPositioning}`;
     const text =
       message.content[0].type === "text" ? message.content[0].text : "";
 
-    const jsonMatch = text.match(/\{[\s\S]*\}/);
-    if (!jsonMatch) {
+    // Tolerant parse (app/lib/json-repair). The previous repair only closed
+    // unbalanced brackets, which fixes a TRUNCATED response but re-threw on
+    // the more common failure: an unescaped quote inside prose ("the "higher
+    // for longer" stance"), reported as `Expected ',' or '}' after property
+    // value`. parseModelJson tries a plain JSON.parse first, so a well-formed
+    // response takes exactly the path it always did.
+    type BriefJson = {
+      hedgingCall?: { action?: string; reason?: string; strike?: unknown; tenor?: unknown };
+      [key: string]: unknown;
+    };
+    const parseResult = parseModelJson<BriefJson>(text);
+    if (!parseResult.ok) {
+      // Log the failing region — the raw response is otherwise lost, and this
+      // error is only reproducible by regenerating.
+      console.error(
+        "[Brief] JSON parse failed:",
+        parseResult.error,
+        parseResult.excerpt ? `\n…${parseResult.excerpt}…` : ""
+      );
       return NextResponse.json(
-        { error: "Failed to parse brief response" },
+        { error: `Failed to parse brief response: ${parseResult.error}` },
         { status: 500 }
       );
     }
-
-    let parsed;
-    try {
-      parsed = JSON.parse(jsonMatch[0]);
-    } catch {
-      // Attempt to repair truncated JSON by closing open brackets/braces
-      let repaired = jsonMatch[0];
-      // Remove trailing incomplete string value (e.g., truncated mid-sentence)
-      repaired = repaired.replace(/,\s*"[^"]*":\s*"[^"]*$/, "");
-      repaired = repaired.replace(/,\s*"[^"]*$/, "");
-      // Count and close open brackets/braces
-      const openBraces = (repaired.match(/\{/g) || []).length - (repaired.match(/\}/g) || []).length;
-      const openBrackets = (repaired.match(/\[/g) || []).length - (repaired.match(/\]/g) || []).length;
-      repaired += "]".repeat(Math.max(0, openBrackets));
-      repaired += "}".repeat(Math.max(0, openBraces));
-      try {
-        parsed = JSON.parse(repaired);
-        console.log("Repaired truncated JSON response");
-      } catch (e2) {
-        const msg = e2 instanceof Error ? e2.message : String(e2);
-        return NextResponse.json(
-          { error: `Failed to parse brief response: ${msg}` },
-          { status: 500 }
-        );
-      }
-    }
+    if (parseResult.repaired) console.log("[Brief] repaired malformed JSON from the model");
+    const parsed = parseResult.value;
 
     // A full brief generation succeeded → the API key has credit. Clear any
     // prior "credits exhausted" flag (transition-only write, e.g. after the

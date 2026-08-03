@@ -16,6 +16,7 @@ import { factsetConfigured, relayRetry } from "@/app/lib/factset";
 import { sectorPlaybookBlock } from "@/app/lib/sector-playbook";
 import { loadStreetTakeawaysFor, formatStreetTakeawaysForPrompt } from "@/app/lib/street-takeaways";
 import { companySnapshot, formatSnapshotForPrompt, factsetPeerBlock, namesMatch, normalizeFactsetSector, type CompanySnapshot } from "@/app/lib/factset-fundamentals";
+import { parseModelJson } from "@/app/lib/json-repair";
 
 const client = new Anthropic();
 
@@ -1327,37 +1328,43 @@ export async function POST(request: NextRequest) {
       }
     }
 
-    const jsonMatch = text.match(/\{[\s\S]*\}/);
-    if (!jsonMatch) {
+    // Tolerant parse — same failure mode the brief hit: the scoring response
+    // is the most prose-heavy of all (summary, thesis, bear case), so an
+    // unescaped quote inside that prose would fail here identically. The old
+    // repair only closed brackets (truncation) and could not fix it.
+    // The explanation value has three accepted shapes (current object form,
+    // legacy string[], legacy string) — typed as the union the branches below
+    // actually narrow, so no `any` is reintroduced.
+    type ExplanationVal =
+      | { summary?: string; dataPoints?: unknown; confidence?: string }
+      | unknown[]
+      | string;
+    type ScoreJson = {
+      scores?: Record<string, unknown>;
+      explanations?: Record<string, ExplanationVal>;
+      name?: string;
+      sector?: string;
+      beta?: number;
+      companySummary?: string;
+      notes?: string;
+      investmentThesis?: string;
+      bearCase?: string;
+      [key: string]: unknown;
+    };
+    const parseResult = parseModelJson<ScoreJson>(text);
+    if (!parseResult.ok) {
+      console.error(
+        `[Score] JSON parse failed for ${upperTicker}:`,
+        parseResult.error,
+        parseResult.excerpt ? `\n…${parseResult.excerpt}…` : ""
+      );
       return NextResponse.json(
-        { error: "Failed to parse scoring response — no JSON found" },
+        { error: `Failed to parse scoring response: ${parseResult.error}` },
         { status: 500 }
       );
     }
-
-    let parsed;
-    try {
-      parsed = JSON.parse(jsonMatch[0]);
-    } catch {
-      // Attempt to repair truncated JSON
-      let repaired = jsonMatch[0];
-      repaired = repaired.replace(/,\s*"[^"]*":\s*"[^"]*$/, "");
-      repaired = repaired.replace(/,\s*"[^"]*$/, "");
-      const openBraces = (repaired.match(/\{/g) || []).length - (repaired.match(/\}/g) || []).length;
-      const openBrackets = (repaired.match(/\[/g) || []).length - (repaired.match(/\]/g) || []).length;
-      repaired += "]".repeat(Math.max(0, openBrackets));
-      repaired += "}".repeat(Math.max(0, openBraces));
-      try {
-        parsed = JSON.parse(repaired);
-        console.log(`[Score] Repaired truncated JSON for ${upperTicker}`);
-      } catch (e2) {
-        const msg = e2 instanceof Error ? e2.message : String(e2);
-        return NextResponse.json(
-          { error: `Failed to parse scoring response: ${msg}` },
-          { status: 500 }
-        );
-      }
-    }
+    if (parseResult.repaired) console.log(`[Score] Repaired malformed JSON for ${upperTicker}`);
+    const parsed = parseResult.value;
 
     // ── Post-parse completeness check ──────────────────────────────────
     // Detect truncated JSON that parsed successfully but is missing critical
