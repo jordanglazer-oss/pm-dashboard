@@ -6,6 +6,7 @@ import { useSearchParams, useRouter, usePathname } from "next/navigation";
 import { useStocks } from "@/app/lib/StockContext";
 import { displayTicker } from "@/app/lib/ticker";
 import { computeConviction, type ConvictionSignal, type ConvictionEntry } from "@/app/lib/conviction";
+import { NewThisWeek } from "@/app/components/NewThisWeek";
 import { IDEA_STATUS_LABELS, type IdeaPipelineStore, type IdeaPipelineEntry, type IdeaStatus } from "@/app/lib/idea-pipeline";
 import type { ResearchState } from "@/app/lib/defaults";
 import type { Stock, ScoreKey } from "@/app/lib/types";
@@ -307,6 +308,21 @@ export default function ConvictionPage() {
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [entries, filter, query, improvingOnly, prices, high52, pipelineEstimates]);
 
+  // Ticker sets for the nomination lane: exclude what's held, and mark what
+  // the desk already knows about via a list or the watchlist.
+  const laneTickers = useMemo(() => {
+    const portfolio = new Set<string>();
+    const watchlist = new Set<string>();
+    const lists = new Set<string>();
+    for (const e of entries) {
+      const tk = e.ticker.toUpperCase();
+      if (e.bucket === "Portfolio") portfolio.add(tk);
+      else if (e.bucket === "Watchlist") watchlist.add(tk);
+      if (e.listCount >= 1) lists.add(tk);
+    }
+    return { portfolio, watchlist, lists };
+  }, [entries]);
+
   const counts = useMemo(() => {
     const c = { ideas: 0, all: entries.length, Portfolio: 0, Watchlist: 0, Research: 0 };
     for (const e of entries) {
@@ -341,6 +357,14 @@ export default function ConvictionPage() {
           </div>
         </details>
       </div>
+
+      {/* Nomination lane — the only path into the funnel that does NOT
+          require a research list to have named the stock first. */}
+      <NewThisWeek
+        portfolioTickers={laneTickers.portfolio}
+        watchlistTickers={laneTickers.watchlist}
+        listTickers={laneTickers.lists}
+      />
 
       <div className="mb-4 flex flex-wrap items-center gap-3">
         <div className="inline-flex rounded-lg border border-line bg-white p-0.5">
