@@ -168,6 +168,19 @@ const tabs = [
   // Inbox is now a SUB-tab of Research (see ResearchTabs) — not a top-level tab.
 ];
 
+/** Routes that belong under a tab but aren't that tab's own href. Tabs
+ *  themselves are matched from `tabs` above, so only these need listing. */
+const TAB_ALIASES: Record<string, string> = {
+  "/scoring": "Portfolio",
+  "/portfolio": "Portfolio",
+  "/pim-model": "Portfolio",
+  "/aa-performance": "Portfolio",
+  "/risk": "Portfolio",
+  "/journal": "Portfolio",
+  "/methodology": "Portfolio",
+  "/inbox": "Research",
+};
+
 export function Navigation() {
   const pathname = usePathname();
   const router = useRouter();
@@ -315,26 +328,19 @@ export function Navigation() {
   // The consolidated Portfolio tab owns Rankings (/), Positioning (/portfolio),
   // Models (/pim-model), plus /stock/[ticker] detail pages and the legacy
   // /scoring route (scoring was folded into the Dashboard/Rankings surface).
-  const activeTab = pathname.startsWith("/stock/") || pathname === "/scoring"
-    || pathname === "/" || pathname === "/portfolio" || pathname === "/pim-model"
-    || pathname === "/aa-performance" || pathname === "/risk"
-    || pathname === "/journal" || pathname === "/methodology"
-    ? "Portfolio"
-    : pathname === "/brief"
-    ? "Brief"
-    : pathname === "/research" || pathname === "/inbox"
-    ? "Research"
-    : pathname === "/conviction"
-    ? "Pipeline"
-    : pathname === "/screener"
-    ? "Screener"
-    : pathname === "/hedging"
-    ? "Hedging"
-    : pathname === "/appendix"
-    ? "Appendix"
-    : pathname === "/chat"
-    ? "Chat"
-    : "Portfolio";
+  // Which tab to underline. Derived from `tabs` rather than hand-listed:
+  // the previous chain enumerated every route explicitly and fell through to
+  // "Portfolio", so adding a tab without also editing the chain silently
+  // highlighted the WRONG tab — which is exactly what happened to /thesis and
+  // /factor-lab. Matching the tab list first means a new tab is covered the
+  // moment it's added, and only the SECONDARY routes (pages that belong to a
+  // tab but aren't its href) need listing.
+  const activeTab =
+    pathname.startsWith("/stock/")
+      ? "Portfolio"
+      : TAB_ALIASES[pathname] ??
+        tabs.find((t) => t.href === pathname)?.label ??
+        "Portfolio";
 
   return (
     // Sticky so the primary nav stays put as a page scrolls (Excel freeze-pane
