@@ -21,10 +21,7 @@ import { parseMarketEdgeCsv } from "@/app/lib/marketedge-csv";
 import { parseSiaCsv } from "@/app/lib/sia-csv";
 import { UNIVERSE_MIN_ROWS } from "@/app/lib/sia-universe-shared";
 import { parseBoostedCsv } from "@/app/lib/boosted-csv";
-// Value from the client-safe half; the type is erased so it can come from the
-// redis-importing module without pulling it into the browser bundle.
-import { factsetKindLabel } from "@/app/lib/street-takeaways-shared";
-import type { StreetTakeawaysStore } from "@/app/lib/street-takeaways";
+type FactsetSummary = Record<string, { date: string; label: string; event: string | null }>;
 import Link from "next/link";
 
 type Status = {
@@ -309,10 +306,10 @@ export default function InboxPage() {
   // (ticker, source) slot in the system regardless of how many cached
   // retries have rolled off the event log.
   const [reports, setReports] = useState<AnalystReports | null>(null);
-  /** Ingested FactSet alerts keyed by ticker (read-only; drives the FactSet
-   *  column). Empty object until loaded so the column renders "—" rather
-   *  than blocking the table. */
-  const [factset, setFactset] = useState<StreetTakeawaysStore>({});
+  /** Newest FactSet alert per ticker (read-only; drives the FactSet column).
+   *  A SUMMARY endpoint, not the full store — the table needs three strings
+   *  per name and the store carries every firm view and result line. */
+  const [factset, setFactset] = useState<FactsetSummary>({});
   // pm:analyst-snapshots (which holds FactSet entries) is sourced from
   // StockContext rather than fetched separately here — that way edits to
   // the FactSet target / analyst count below round-trip through the same
@@ -348,7 +345,7 @@ export default function InboxPage() {
       const [statusRes, reportsRes, factsetRes] = await Promise.all([
         fetch(`/api/inbox/status?t=${Date.now()}`, { cache: "no-store" }),
         fetch(`/api/kv/analyst-reports?t=${Date.now()}`, { cache: "no-store" }),
-        fetch(`/api/street-takeaways?t=${Date.now()}`, { cache: "no-store" }).catch(() => null),
+        fetch(`/api/street-takeaways/summary?t=${Date.now()}`, { cache: "no-store" }).catch(() => null),
       ]);
       if (!statusRes.ok) {
         setError(`Failed to load (${statusRes.status})`);
@@ -364,8 +361,8 @@ export default function InboxPage() {
       // the whole page if the store can't be read.
       if (factsetRes?.ok) {
         const fsBody = await factsetRes.json();
-        const store = fsBody?.store;
-        setFactset(store && typeof store === "object" ? (store as StreetTakeawaysStore) : {});
+        const sum = fsBody?.summary;
+        setFactset(sum && typeof sum === "object" ? (sum as FactsetSummary) : {});
       }
       setLastUpdated(new Date());
     } catch (e) {
@@ -526,15 +523,8 @@ export default function InboxPage() {
   // Most recent FactSet alert per canonical ticker. The store keeps entries
   // newest-first, but sort defensively rather than trusting insertion order.
   const factsetByCanonical = new Map<string, { date: string; label: string; event: string | null }>();
-  for (const [key, entries] of Object.entries(factset)) {
-    if (!Array.isArray(entries) || entries.length === 0) continue;
-    const latest = [...entries].sort((a, b) => (a.date < b.date ? 1 : a.date > b.date ? -1 : 0))[0];
-    if (!latest?.date) continue;
-    factsetByCanonical.set(canonicalTicker(key), {
-      date: latest.date,
-      label: factsetKindLabel(latest),
-      event: latest.event ?? null,
-    });
+  for (const [key, v] of Object.entries(factset)) {
+    if (v?.date) factsetByCanonical.set(canonicalTicker(key), v);
   }
   const scoreableStocks = stocks.filter((s) => isScoreable(s) && (s.bucket === "Portfolio" || s.bucket === "Watchlist"));
   const coverageRows: Coverage[] = scoreableStocks.map((s) => {

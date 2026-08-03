@@ -20,46 +20,30 @@ export type { SiaMover, SiaMoverResult, SiaRow, SiaSnapshot };
  * This module keeps EVERY row, so a name you don't own can be surfaced.
  *
  * MOMENTUM COMES FROM THE FILE, NOT FROM DIFFING. The export carries RANK plus
- * its D/W/M/Q change, so the weekly mover list is readable from a SINGLE
- * upload — no two-week baseline. Snapshots are still stored because they are
- * the only way to study whether rank momentum predicted returns later, and
- * because SIA's own change columns only reach back one quarter.
- *
- * STORAGE — one key per week (pm:sia-snapshot:YYYY-MM-DD) plus a small index
- * (pm:sia-snapshot-index). Deliberately NOT one growing blob: ~750 tickers a
- * week would make a single value grow without bound and risk the silent
- * oversized-write failure that pm:attachments was split to avoid.
- *
- * Writes only ever target TODAY, so no past week can be rewritten; within
- * today they MERGE, because the S&P and TSX arrive as separate files.
+ * its D/W/M/Q change, so the mover list is readable from a SINGLE upload with
+ * no baseline week — which is why only the newest export needs storing.
  */
 
-const SNAP_PREFIX = "pm:sia-snapshot:";
-const INDEX_KEY = "pm:sia-snapshot-index";
-
-/** Keep ~1 year of weekly snapshots. */
-const MAX_SNAPSHOTS = 60;
+/**
+ * ONE key, always the newest export. Deliberately not a weekly archive: the
+ * nightly cron serializes all of Redis into a Vercel Blob, so every key kept
+ * here is re-written to Blob every night and counts against Blob storage and
+ * transfer — a year of weekly snapshots would be copied ~14 times over at any
+ * moment. The lane only ever reads the newest export anyway, because SIA
+ * publishes the rank change in the file itself.
+ *
+ * Cost of the choice: no history to test later whether rank momentum
+ * predicted returns. If that becomes wanted, store the derived MOVER LIST
+ * weekly (a few hundred bytes) rather than the full ~750-row universe.
+ */
+const SNAP_KEY = "pm:sia-universe";
 
 const todayUtc = () => new Date().toISOString().slice(0, 10);
 
-async function readIndex(): Promise<string[]> {
+/** The stored export, or null when none has landed yet. */
+export async function readSiaSnapshot(): Promise<SiaSnapshot | null> {
   try {
-    const raw = await (await getRedis()).get(INDEX_KEY);
-    const arr = raw ? (JSON.parse(raw) as unknown) : [];
-    return Array.isArray(arr) ? arr.filter((d): d is string => typeof d === "string").sort() : [];
-  } catch {
-    return []; // read errors degrade to "no history", never to a wrong answer
-  }
-}
-
-/** Snapshot dates, oldest first. */
-export async function listSiaSnapshots(): Promise<string[]> {
-  return readIndex();
-}
-
-export async function readSiaSnapshot(date: string): Promise<SiaSnapshot | null> {
-  try {
-    const raw = await (await getRedis()).get(`${SNAP_PREFIX}${date}`);
+    const raw = await (await getRedis()).get(SNAP_KEY);
     return raw ? (JSON.parse(raw) as SiaSnapshot) : null;
   } catch {
     return null;
@@ -83,15 +67,18 @@ export async function writeSiaSnapshot(rows: Record<string, SiaRow>): Promise<Wr
   if (count < UNIVERSE_MIN_ROWS) return { written: false, reason: "too-few-rows", date };
   try {
     const redis = await getRedis();
-    const key = `${SNAP_PREFIX}${date}`;
 
-    const existingRaw = await redis.get(key);
+    // Same day → MERGE (the S&P and TSX arrive as separate files, and the
+    // ingest route POSTs one attachment per request, so the second file must
+    // add to the first). A later date → REPLACE, so only the newest export is
+    // ever stored.
     let merged = false;
     let combined = rows;
+    const existingRaw = await redis.get(SNAP_KEY);
     if (existingRaw) {
       try {
         const prior = JSON.parse(existingRaw) as SiaSnapshot;
-        if (prior?.rows && typeof prior.rows === "object") {
+        if (prior?.date === date && prior.rows && typeof prior.rows === "object") {
           combined = { ...prior.rows, ...rows }; // newer file wins per ticker
           merged = true;
         }
@@ -101,18 +88,7 @@ export async function writeSiaSnapshot(rows: Record<string, SiaRow>): Promise<Wr
     }
 
     const snap: SiaSnapshot = { date, capturedAt: new Date().toISOString(), rows: combined };
-    await redis.set(key, JSON.stringify(snap));
-
-    const index = await readIndex();
-    if (!index.includes(date)) index.push(date);
-    index.sort();
-    // Prune oldest beyond the retention window (delete the value, then the
-    // index entry — an orphaned key is harmless, a dangling index entry isn't).
-    while (index.length > MAX_SNAPSHOTS) {
-      const drop = index.shift();
-      if (drop) await redis.del(`${SNAP_PREFIX}${drop}`).catch(() => {});
-    }
-    await redis.set(INDEX_KEY, JSON.stringify(index));
+    await redis.set(SNAP_KEY, JSON.stringify(snap));
     return { written: true, date, tickers: Object.keys(combined).length, merged };
   } catch (e) {
     console.error("[sia-universe] snapshot write failed:", e);
@@ -135,11 +111,9 @@ export async function latestSiaMovers(opts?: {
 }): Promise<SiaMoverResult> {
   const minWChg = opts?.minWChg ?? 20;
   const minSmax = opts?.minSmax ?? 7;
-  const index = await readIndex();
-  const date = index[index.length - 1] ?? null;
-  if (!date) return { date: null, movers: [], universeSize: 0 };
-  const snap = await readSiaSnapshot(date);
-  if (!snap?.rows) return { date, movers: [], universeSize: 0 };
+  const snap = await readSiaSnapshot();
+  if (!snap?.rows) return { date: snap?.date ?? null, movers: [], universeSize: 0 };
+  const date = snap.date;
 
   const movers: SiaMover[] = [];
   for (const [ticker, row] of Object.entries(snap.rows)) {

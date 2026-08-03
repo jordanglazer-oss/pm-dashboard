@@ -1,16 +1,15 @@
 import { NextRequest, NextResponse } from "next/server";
-import { latestSiaMovers, listSiaSnapshots, writeSiaSnapshot, type SiaRow } from "@/app/lib/sia-universe";
+import { latestSiaMovers, writeSiaSnapshot, type SiaRow } from "@/app/lib/sia-universe";
 
 /**
  * SIA universe snapshots.
  *
- *   GET  /api/sia-universe?minDelta=2  → week-over-week SMAX movement
- *   POST /api/sia-universe { rows }    → store today's universe snapshot
+ *   GET  /api/sia-universe?minWChg=&minSmax=  → this week's rank climbers
+ *   POST /api/sia-universe { rows }            → store the newest export
  *
  * POST is used by the Inbox page's CSV upload (which parses client-side); the
  * emailed-CSV path calls the lib directly from inbox-dispatch. Both land in
- * the same append-only store, which refuses to overwrite an existing date and
- * refuses sub-universe row counts — see app/lib/sia-universe.
+ * the same single latest-only key — see app/lib/sia-universe.
  */
 
 export const dynamic = "force-dynamic";
@@ -19,15 +18,12 @@ export async function GET(req: NextRequest) {
   try {
     const sp = new URL(req.url).searchParams;
     const n = (k: string, d: number) => { const v = Number(sp.get(k)); return Number.isFinite(v) ? v : d; };
-    const [movers, snapshots] = await Promise.all([
-      latestSiaMovers({ minWChg: n("minWChg", 20), minSmax: n("minSmax", 7) }),
-      listSiaSnapshots(),
-    ]);
-    return NextResponse.json({ ...movers, snapshots });
+    const movers = await latestSiaMovers({ minWChg: n("minWChg", 20), minSmax: n("minSmax", 7) });
+    return NextResponse.json(movers);
   } catch (e) {
     console.error("sia-universe GET failed:", e);
     // Read-only surface: degrade to empty rather than erroring the page.
-    return NextResponse.json({ date: null, movers: [], universeSize: 0, snapshots: [] });
+    return NextResponse.json({ date: null, movers: [], universeSize: 0 });
   }
 }
 
