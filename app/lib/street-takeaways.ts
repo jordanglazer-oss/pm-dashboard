@@ -146,6 +146,11 @@ function parse(raw: string | null): StreetTakeawaysStore {
   }
 }
 
+/** Pure helpers live in the client-safe half (this module imports redis, so a
+ *  "use client" component cannot import a value from it). Re-exported so
+ *  server-side callers keep one import site. */
+export { factsetKindLabel } from "./street-takeaways-shared";
+
 /** Read the whole store (read-only). */
 export async function loadStreetTakeaways(): Promise<StreetTakeawaysStore> {
   const redis = await getRedis();
