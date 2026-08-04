@@ -33,6 +33,12 @@ type Draft = { why: string; conditions: DraftCondition[] };
 
 const VALID_KINDS = new Set<KillConditionKind>(KILL_TEMPLATES.map((t) => t.kind));
 
+/** Total conditions kept, and how many of them may be company-specific
+ *  customs. Customs are kept in preference to the automatic kinds — they are
+ *  the part of a thesis that is actually about THIS business. */
+const MAX_CONDITIONS = 6;
+const MAX_CUSTOM = 3;
+
 /** Validate + normalize the model's proposal. Invalid rows are dropped, not
  *  guessed at — the PM reviews whatever survives. */
 function sanitize(raw: unknown): Draft | null {
@@ -41,7 +47,7 @@ function sanitize(raw: unknown): Draft | null {
   const why = typeof o.why === "string" ? o.why.trim() : "";
   if (!why) return null;
   const seen = new Set<string>();
-  const conditions: DraftCondition[] = [];
+  const parsed: DraftCondition[] = [];
   for (const c of Array.isArray(o.conditions) ? o.conditions : []) {
     if (!c || typeof c !== "object") continue;
     const kind = (c as { kind?: unknown }).kind as KillConditionKind;
@@ -54,10 +60,21 @@ function sanitize(raw: unknown): Draft | null {
     const note = typeof noteRaw === "string" ? noteRaw.trim().slice(0, 200) : undefined;
     if (kind === "custom" && !note) continue;
     seen.add(kind);
-    conditions.push({ kind, threshold, note: note || undefined });
-    if (conditions.length >= 5) break;
+    parsed.push({ kind, threshold, note: note || undefined });
   }
-  if (!conditions.length) return null;
+  if (!parsed.length) return null;
+
+  // Trim to MAX_CONDITIONS by dropping AUTOMATIC kinds first. The company-
+  // specific customs are the point of the exercise, so a verbose response must
+  // never cost them — the old code capped in arrival order and could drop a
+  // custom the model listed last.
+  const customs = parsed.filter((c) => c.kind === "custom");
+  const autos = parsed.filter((c) => c.kind !== "custom");
+  const keptCustoms = customs.slice(0, MAX_CUSTOM);
+  const conditions = [
+    ...keptCustoms,
+    ...autos.slice(0, Math.max(0, MAX_CONDITIONS - keptCustoms.length)),
+  ];
   return { why, conditions };
 }
 
@@ -120,7 +137,7 @@ AVAILABLE KILL-CONDITION TEMPLATES (all except "custom" are checked automaticall
 - revisions: net FY+1 estimate revisions (upgrades minus downgrades) must stay >= threshold (typical 0, or a floor like -3)
 - risk_alert: no CRITICAL technical alert (no threshold)
 - ma200: price holds above the 200-day average (no threshold)
-- custom: prose, verified by an AI web-search check after each earnings report — use for the ONE thesis-specific breaker the templates can't measure. Write it as an objectively verifiable claim about REPORTED figures (name the metric and the comparison, e.g. "quarterly cloud backlog declines sequentially"), never a judgment call.
+- custom: prose, verified automatically against reported figures after each earnings report. This is where the REAL underwriting happens — the thesis-specific breakers the templates cannot measure. Write each as an objectively verifiable claim about REPORTED figures, naming the metric and the comparison (e.g. "quarterly cloud backlog declines sequentially"), never a judgment call. AT LEAST TWO are required (see the rules below).
 
 Answer in JSON only:
 {
@@ -129,11 +146,14 @@ Answer in JSON only:
 }
 
 Rules for conditions:
-- Propose 3 to 5, at most ONE custom; the rest must be automatic kinds.
+- Propose 4 to 6 conditions, and AT LEAST TWO of them MUST be "custom". This is the most important rule. The automatic kinds (score_floor, score_decay, revisions, risk_alert, ma200) are generic portfolio hygiene — they would read almost identically for any holding and none of them tests why THIS business specifically works. A draft whose only breakers are a score floor, a moving average and a revisions count has not underwritten anything.
+- Each custom condition must name a COMPANY-SPECIFIC observable: a named segment, product line, contract, backlog, customer concentration, margin line, unit metric or guidance figure that appears in the material above. Use the metric and level verbatim when the material states them.
+- The two customs must test DIFFERENT legs of the thesis — not the same claim reworded. If the thesis rests on growth in one segment AND on margin expansion, that is one custom each.
+- A custom must be objectively checkable from REPORTED figures (it is verified against filings and earnings releases after each report), never a judgment call. "Cloud backlog declines sequentially" works; "management loses credibility" does not.
+- Do NOT write a custom that restates an automatic kind (e.g. "the stock falls below its 200-day average") — those are already covered.
 - Set score_floor relative to the CURRENT composite (typically current minus 3-4, rounded), never above it — a floor already tripped at underwrite is useless.
 - Only include ma200 if the price is currently above it.
 - Set the revisions threshold at or below the current net so it is not tripped on day one.
-- Derive the custom condition from the most concrete, observable breaker in the material — the bear case, a report's named risk, or a FactSet guidance line. If a metric and level are named, use them verbatim.
 - Every condition must connect to the "why" — a breaker for a claim the thesis doesn't make is noise.`;
 
     const resp = await client.messages.create({

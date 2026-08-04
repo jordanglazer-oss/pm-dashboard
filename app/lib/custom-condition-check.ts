@@ -32,9 +32,19 @@ import { parseModelJson } from "./json-repair";
 const client = new Anthropic();
 
 const KEY = "pm:position-theses";
-const STALE_DAYS = 7;
-/** Bound the nightly sweep — customs are few; this is a runaway guard. */
-const MAX_CHECKS_PER_RUN = 6;
+/**
+ * Re-verify an unchanged condition this often. 30 rather than 7 because these
+ * assert things about REPORTED figures, which only move when a company
+ * reports — the post-earnings trigger below is the one that matters, and a
+ * weekly re-check mostly re-bought the same answer. At two customs per name
+ * across the book, 7 days saturated the nightly cap with no headroom for
+ * earnings bursts or the initial never-checked backlog.
+ */
+const STALE_DAYS = 30;
+/** Bound the nightly sweep. Raised alongside the two-customs-per-thesis
+ *  requirement so a batch of fresh underwrites clears in a couple of nights
+ *  instead of trickling; still a runaway guard, not a budget. */
+const MAX_CHECKS_PER_RUN = 10;
 
 type ThesisEntry = {
   why?: string;
