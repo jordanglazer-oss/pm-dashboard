@@ -9,11 +9,19 @@ import type { TechnicalIndicators } from "@/app/lib/types";
  * during US market hours by the Gmail Apps Script (which already runs every
  * 5 minutes and holds the INBOX_SECRET), so it costs nothing extra to run.
  *
- * Checks (deliberately few, risk-focused, level-based):
+ * Checks (deliberately few, level-based, both directions):
  *   - A Portfolio stock BREAKING BELOW its 200-DMA intraday (was above at the
  *     last close; level from the nightly technicals refresh).
- *   - A Portfolio stock down ≥ 4% on the day.
+ *   - A Portfolio stock RECLAIMING its 200-DMA from below — the mirror, and
+ *     the inverse of the ma200 kill condition, so it says a tripped thesis
+ *     condition may have recovered.
+ *   - A Portfolio stock down ≥ 4%, or up ≥ 5%, on the day.
  *   - VIX spiking ≥ 15% on the day, or crossing above 25 from below.
+ *
+ * The up/down thresholds are ASYMMETRIC on purpose: a drop is a risk event
+ * wanting same-day attention, a rise is information. The higher bar on the
+ * upside keeps the inbox honest while still catching the moves that matter
+ * (a beat, a takeout, a guidance raise).
  *
  * Each trip fires ONCE per day (deduped in pm:intraday-monitor, an operational
  * marker — safe to nuke; worst case one repeat email). New trips are queued to
@@ -32,6 +40,7 @@ const MARKER_KEY = "pm:intraday-monitor";
 const YAHOO_BASE = "https://query2.finance.yahoo.com";
 const CONCURRENCY = 8;
 const DROP_PCT = -4; // daily move that warrants an intraday ping
+const RISE_PCT = 5; // see the asymmetry note in the header
 const VIX_SPIKE_PCT = 15;
 const VIX_LEVEL = 25;
 
@@ -149,7 +158,7 @@ export async function GET(req: NextRequest) {
       }
     }
 
-    // ── Holdings: 200-DMA breaks + big drops ──
+    // ── Holdings: 200-DMA breaks/reclaims + big moves either way ──
     const queue = [...holdings];
     const workers = Array.from({ length: Math.min(CONCURRENCY, queue.length) }, async () => {
       for (;;) {
@@ -166,10 +175,22 @@ export async function GET(req: NextRequest) {
             `${tk}${s.name ? ` (${s.name})` : ""} broke BELOW its 200-DMA intraday: $${q.price.toFixed(2)} vs 200-DMA $${sma200.toFixed(2)} (${chg >= 0 ? "+" : ""}${chg.toFixed(1)}% today). Major trend level — check the chart before the close.`
           );
         }
+        if (typeof sma200 === "number" && sma200 > 0 && q.prevClose < sma200 && q.price >= sma200) {
+          consider(
+            `${tk}-200dma-reclaim`,
+            `${tk}${s.name ? ` (${s.name})` : ""} RECLAIMED its 200-DMA intraday: $${q.price.toFixed(2)} vs 200-DMA $${sma200.toFixed(2)} (${chg >= 0 ? "+" : ""}${chg.toFixed(1)}% today). If a 200DMA kill condition was tripped on this name, it may now clear.`
+          );
+        }
         if (chg <= DROP_PCT) {
           consider(
             `${tk}-drop`,
             `${tk}${s.name ? ` (${s.name})` : ""} down ${chg.toFixed(1)}% today ($${q.prevClose.toFixed(2)} → $${q.price.toFixed(2)}). Check for news/print before reacting.`
+          );
+        }
+        if (chg >= RISE_PCT) {
+          consider(
+            `${tk}-rise`,
+            `${tk}${s.name ? ` (${s.name})` : ""} UP ${chg.toFixed(1)}% today ($${q.prevClose.toFixed(2)} → $${q.price.toFixed(2)}). Check for the print/news — and whether the move takes it through a level you underwrote.`
           );
         }
       }

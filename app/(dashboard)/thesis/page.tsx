@@ -181,6 +181,41 @@ export default function ThesisDeskPage() {
    * batching them server-side would blow the function time limit. Sequential
    * also keeps it under any concurrency limit and makes progress meaningful.
    */
+  /**
+   * Names carrying a custom condition that has never been verified (status
+   * "manual"). These DO verify themselves — the nightly sweep treats a
+   * never-checked custom as due — but it processes at most 10 a night, so a
+   * fresh bulk draft takes a few nights to clear. This button does it now.
+   */
+  const unverified = useMemo(
+    () => rows.filter((r) => r.checks.some((k) => k.status === "manual")).map((r) => r.ticker),
+    [rows],
+  );
+  const [verifying, setVerifying] = useState<{ done: number; total: number } | null>(null);
+  const verifyAll = async () => {
+    if (unverified.length === 0 || verifying) return;
+    setVerifying({ done: 0, total: unverified.length });
+    for (let i = 0; i < unverified.length; i++) {
+      try {
+        await fetch("/api/custom-condition-check", {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ ticker: unverified[i] }),
+        });
+      } catch {
+        /* one name failing must not stop the rest */
+      }
+      setVerifying({ done: i + 1, total: unverified.length });
+    }
+    try {
+      const fresh = await fetch("/api/thesis-watch", { cache: "no-store" }).then((r) => r.json());
+      setData(fresh as Payload);
+    } catch {
+      /* a refresh picks it up */
+    }
+    setVerifying(null);
+  };
+
   const [bulk, setBulk] = useState<{ done: number; total: number; failed: string[] } | null>(null);
   /**
    * mode "missing" → only names with no conditions yet (safe, additive).
@@ -293,6 +328,18 @@ export default function ThesisDeskPage() {
               >
                 {totals.unreviewed} AI-drafted, unreviewed
               </span>
+            )}
+            {unverified.length > 0 && !bulk && (
+              <button
+                onClick={verifyAll}
+                disabled={!!verifying}
+                title={`Runs the AI web check now on every unverified custom condition across ${unverified.length} name${unverified.length === 1 ? "" : "s"}. They would verify themselves within a few nights anyway — this skips the wait.`}
+                className="rounded-control border border-line bg-white px-2.5 py-1 text-[11px] font-semibold text-accent disabled:opacity-50"
+              >
+                {verifying
+                  ? `Verifying ${verifying.done + 1} of ${verifying.total}…`
+                  : `Verify ${unverified.length} unverified`}
+              </button>
             )}
             {bulk ? (
               <span className="rounded-control border border-line bg-white px-2.5 py-1 text-[11px] font-semibold text-accent">
