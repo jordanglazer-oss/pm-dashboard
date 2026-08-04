@@ -80,6 +80,39 @@ export default function ThesisDeskPage() {
     return list;
   }, [data]);
 
+  /**
+   * Collapse state. Cards default to COLLAPSED except those that need
+   * attention (a tripped condition or an overdue re-underwrite) — the page is
+   * a monitor, so the calm names should be a compact index and the ones asking
+   * for a decision should already be open.
+   *
+   * Deliberately component state rather than a persisted pref (CollapsibleSection
+   * writes pm:ui-prefs): it costs no Redis write and no backup bytes, and a
+   * remembered "collapsed" would outlive the reason for it — every reload
+   * re-derives the attention rule instead.
+   *
+   * Collapsing can never hide a problem: the tripped/OK badge and the red card
+   * border live in the HEADER, which stays visible when collapsed. Only the
+   * thesis prose and the per-condition readings are hidden. (Worth stating
+   * because a manual override does survive a later trip within a session — it
+   * is the always-visible header, not the open/closed rule, that makes that
+   * safe.)
+   */
+  const needsAttention = (r: Row) =>
+    r.tripped > 0 || (r.reUnderwriteBy ? r.reUnderwriteBy < todayIso() : false);
+  /** Per-ticker overrides of the default; absent = follow the default. */
+  const [overrides, setOverrides] = useState<Record<string, boolean>>({});
+  const isOpen = (r: Row) => overrides[r.ticker] ?? needsAttention(r);
+  const toggle = (ticker: string) =>
+    setOverrides((o) => {
+      const row = rows.find((x) => x.ticker === ticker);
+      const current = o[ticker] ?? (row ? needsAttention(row) : false);
+      return { ...o, [ticker]: !current };
+    });
+  const setAll = (open: boolean) =>
+    setOverrides(Object.fromEntries(rows.map((r) => [r.ticker, open])));
+  const anyOpen = rows.some(isOpen);
+
   const totals = useMemo(() => {
     const trippedNames = rows.filter((r) => r.tripped > 0).length;
     const dueNames = rows.filter((r) => r.reUnderwriteBy && r.reUnderwriteBy < todayIso()).length;
@@ -118,6 +151,14 @@ export default function ThesisDeskPage() {
                 {totals.dueNames} re-underwrite overdue
               </span>
             )}
+            {rows.length > 0 && (
+              <button
+                onClick={() => setAll(!anyOpen)}
+                className="ml-auto rounded-control border border-line bg-white px-2.5 py-1 text-[11px] font-semibold text-ink-2 hover:text-ink"
+              >
+                {anyOpen ? "Collapse all" : "Expand all"}
+              </button>
+            )}
           </div>
         )}
 
@@ -143,6 +184,7 @@ export default function ThesisDeskPage() {
         <div className="space-y-4">
           {rows.map((r) => {
             const overdue = r.reUnderwriteBy ? r.reUnderwriteBy < todayIso() : false;
+            const open = isOpen(r);
             return (
               <section
                 key={r.ticker}
@@ -150,7 +192,18 @@ export default function ThesisDeskPage() {
                   r.tripped > 0 ? "border-neg-border" : "border-line"
                 }`}
               >
-                <div className="flex flex-wrap items-center gap-2 border-b border-line px-4 py-3">
+                <div className={`flex flex-wrap items-center gap-2 px-4 py-3 ${open ? "border-b border-line" : ""}`}>
+                  <button
+                    onClick={() => toggle(r.ticker)}
+                    aria-expanded={open}
+                    aria-label={`${open ? "Collapse" : "Expand"} ${displayTicker(r.ticker)}`}
+                    title={open ? "Collapse" : "Expand"}
+                    className="shrink-0 text-ink-3 transition-colors hover:text-ink"
+                  >
+                    <span className={`inline-block text-[11px] transition-transform ${open ? "rotate-90" : ""}`} aria-hidden>
+                      ▶
+                    </span>
+                  </button>
                   <Link href={`/stock/${encodeURIComponent(r.ticker)}`} className="font-mono text-sm font-bold text-ink hover:text-accent">
                     {displayTicker(r.ticker)}
                   </Link>
@@ -174,13 +227,13 @@ export default function ThesisDeskPage() {
                   </span>
                 </div>
 
-                {r.why && (
+                {open && r.why && (
                   <p className="whitespace-pre-line border-b border-line-soft px-4 py-3 text-[13px] leading-6 text-ink-2">
                     {r.why}
                   </p>
                 )}
 
-                <div className="divide-y divide-line-soft">
+                {open && <div className="divide-y divide-line-soft">
                   {r.checks.map((k, i) => {
                     const st = STATUS_STYLE[k.status];
                     return (
@@ -198,9 +251,9 @@ export default function ThesisDeskPage() {
                       </div>
                     );
                   })}
-                </div>
+                </div>}
 
-                {r.tripped > 0 && (
+                {open && r.tripped > 0 && (
                   <div className="flex items-center gap-2 border-t border-line bg-neg-soft/40 px-4 py-2.5">
                     <span className="text-[12px] font-semibold text-neg">
                       A pre-registered exit condition is tripped.
