@@ -32,8 +32,9 @@ type Row = {
   auto: number;
   underwrittenAt?: string;
   reUnderwriteBy?: string;
+  aiDrafted?: boolean;
 };
-type CoverageRow = { ticker: string; name?: string; sector?: string; hasProse: boolean };
+type CoverageRow = { ticker: string; name?: string; sector?: string; hasProse: boolean; price?: number | null };
 type Payload = {
   holdings: Row[];
   coverage?: { portfolioCount: number; underwritten: number; missing: CoverageRow[] };
@@ -156,10 +157,83 @@ export default function ThesisDeskPage() {
   const totals = useMemo(() => {
     const trippedNames = rows.filter((r) => r.tripped > 0).length;
     const dueNames = rows.filter((r) => r.reUnderwriteBy && r.reUnderwriteBy < todayIso()).length;
-    return { trippedNames, dueNames };
+    // AI drafts you have not edited yet. Editing a name on its stock page
+    // clears the flag, so this doubles as a review queue that empties itself.
+    const unreviewed = rows.filter((r) => r.aiDrafted).length;
+    return { trippedNames, dueNames, unreviewed };
   }, [rows]);
 
   const cov = data?.coverage;
+
+  /**
+   * Bulk draft — generate AND SAVE a thesis for every not-yet-underwritten
+   * name in one pass.
+   *
+   * This is the ONE place the "AI proposes, PM signs" rule is relaxed, at
+   * Jordan's request, to bootstrap a book that would otherwise need ~16
+   * separate stock-page visits. Mitigations: it only ever touches names with
+   * NO conditions (a signed thesis is never overwritten), and every entry it
+   * writes carries `aiDrafted: true`, which the card shows as "AI-assisted"
+   * and the summary counts as awaiting review. Editing a name on its stock
+   * page clears that flag, so the tag doubles as a review queue.
+   *
+   * Sequential, one request per name: a single draft is a full Sonnet call, so
+   * batching them server-side would blow the function time limit. Sequential
+   * also keeps it under any concurrency limit and makes progress meaningful.
+   */
+  const [bulk, setBulk] = useState<{ done: number; total: number; failed: string[] } | null>(null);
+  const draftAll = async () => {
+    const targets = cov?.missing ?? [];
+    if (targets.length === 0 || bulk) return;
+    setBulk({ done: 0, total: targets.length, failed: [] });
+    const failed: string[] = [];
+    for (let i = 0; i < targets.length; i++) {
+      const t = targets[i];
+      try {
+        const d = await fetch("/api/thesis-draft", {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ ticker: t.ticker }),
+        }).then((r) => r.json());
+        if (!d?.draft?.why) throw new Error(d?.error || "no draft");
+        const due = new Date();
+        due.setDate(due.getDate() + 90);
+        const res = await fetch("/api/kv/position-theses", {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({
+            ticker: t.ticker,
+            why: d.draft.why,
+            killConditions: (d.draft.conditions as { kind: string; threshold?: number; note?: string }[]).map(
+              (c, n) => ({
+                id: `${c.kind}-${Date.now()}-${n}`,
+                kind: c.kind,
+                threshold: c.threshold,
+                note: c.note,
+                addedAt: todayIso(),
+              }),
+            ),
+            underwrittenAt: todayIso(),
+            ...(typeof t.price === "number" ? { underwritePrice: t.price } : {}),
+            reUnderwriteBy: due.toISOString().slice(0, 10),
+            aiDrafted: true,
+          }),
+        });
+        if (!res.ok) throw new Error("save failed");
+      } catch {
+        failed.push(t.ticker);
+      }
+      setBulk({ done: i + 1, total: targets.length, failed: [...failed] });
+    }
+    // Reload so the new cards appear with their live condition readings.
+    try {
+      const fresh = await fetch("/api/thesis-watch", { cache: "no-store" }).then((r) => r.json());
+      setData(fresh as Payload);
+    } catch {
+      /* the page still shows the pre-run state; a refresh picks it up */
+    }
+    setBulk((b) => (b ? { ...b, done: b.total } : b));
+  };
 
   return (
     <main className="min-h-screen bg-ground px-4 py-6 text-ink md:px-8 md:py-8">
@@ -192,6 +266,14 @@ export default function ThesisDeskPage() {
             {totals.dueNames > 0 && (
               <span className="rounded-full border border-warn-border bg-warn-soft px-2.5 py-1 font-semibold text-warn">
                 {totals.dueNames} re-underwrite overdue
+              </span>
+            )}
+            {totals.unreviewed > 0 && (
+              <span
+                className="rounded-full border border-accent-border bg-accent-soft px-2.5 py-1 font-semibold text-accent"
+                title="Written by the AI bulk draft and not edited since. Open a name and save it on its stock page to mark it reviewed."
+              >
+                {totals.unreviewed} AI-drafted, unreviewed
               </span>
             )}
             {rows.length > 0 && (
@@ -265,6 +347,11 @@ export default function ThesisDeskPage() {
                       {r.tripped > 0 ? `${r.tripped} of ${r.auto} tripped` : `${r.auto} conditions OK`}
                     </span>
                   )}
+                  {r.aiDrafted && (
+                    <span className="rounded-full border border-accent-border bg-accent-soft px-2 py-0.5 text-[10px] font-semibold text-accent">
+                      AI draft
+                    </span>
+                  )}
                   <span className="ml-auto font-mono text-[11px] text-ink-faint">
                     {r.underwrittenAt ? `underwritten ${r.underwrittenAt}` : ""}
                     {r.reUnderwriteBy ? (
@@ -331,7 +418,24 @@ export default function ThesisDeskPage() {
               <span className="ml-auto text-[11px] text-ink-3">
                 Stocks with no pre-registered exit conditions — nothing is watching these.
               </span>
+              <button
+                onClick={draftAll}
+                disabled={!!bulk}
+                title={`Generates and SAVES an AI thesis for all ${cov.missing.length} — about one model call each. Existing theses are never touched; each is tagged AI-assisted for review.`}
+                className="shrink-0 rounded-control border border-line bg-white px-2.5 py-1 text-xs font-semibold text-accent disabled:opacity-50"
+              >
+                {bulk
+                  ? bulk.done < bulk.total
+                    ? `Drafting ${bulk.done + 1} of ${bulk.total}…`
+                    : `Done — ${bulk.total - bulk.failed.length} drafted`
+                  : `✦ Draft all ${cov.missing.length} with AI`}
+              </button>
             </div>
+            {bulk && bulk.failed.length > 0 && (
+              <p className="border-b border-line-soft px-4 py-2 text-[11px] text-neg">
+                Could not draft: {bulk.failed.join(", ")} — open those names individually.
+              </p>
+            )}
             {/* Multi-column: at 1600px a single list of tickers is mostly dead
                 space, and this is the checklist the PM works down. */}
             <div className="grid md:grid-cols-2 2xl:grid-cols-3">

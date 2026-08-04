@@ -53,6 +53,9 @@ export type KillWatchRow = {
   auto: number;
   underwrittenAt?: string;
   reUnderwriteBy?: string;
+  /** Thesis came from the AI bulk draft and has not been edited since —
+   *  the Thesis Desk counts these as awaiting review. */
+  aiDrafted?: boolean;
 };
 
 type StoredStock = {
@@ -175,7 +178,7 @@ export async function loadAlertInputs(): Promise<AlertInputs> {
 
   // ── Kill-condition sweep: every underwritten name, evaluated with the SAME
   //    pure checker the stock-page tile uses, from the signals loaded above. ──
-  const posTheses = parse<Record<string, { why?: string; killConditions?: KillCondition[]; underwrittenAt?: string; reUnderwriteBy?: string }>>(posThesesRaw, {});
+  const posTheses = parse<Record<string, { why?: string; killConditions?: KillCondition[]; underwrittenAt?: string; reUnderwriteBy?: string; aiDrafted?: boolean }>>(posThesesRaw, {});
   const stockByTicker = new Map<string, StoredStock>();
   for (const s of stocks) if (s.ticker) stockByTicker.set(s.ticker.toUpperCase(), s);
   const killWatch: KillWatchRow[] = [];
@@ -196,7 +199,7 @@ export async function loadAlertInputs(): Promise<AlertInputs> {
       ma200: st?.healthData?.twoHundredDayAvg ?? null,
     });
     const { tripped, auto } = trippedCount(checks);
-    killWatch.push({ ticker: tk, why: t?.why, checks, tripped, auto, underwrittenAt: t?.underwrittenAt, reUnderwriteBy: t?.reUnderwriteBy });
+    killWatch.push({ ticker: tk, why: t?.why, checks, tripped, auto, underwrittenAt: t?.underwrittenAt, reUnderwriteBy: t?.reUnderwriteBy, aiDrafted: t?.aiDrafted });
   }
   killWatch.sort((a, b) => b.tripped - a.tripped || a.ticker.localeCompare(b.ticker));
 

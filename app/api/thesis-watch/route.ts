@@ -28,7 +28,14 @@ import { loadAlertInputs } from "@/app/lib/alert-inputs";
 
 export const dynamic = "force-dynamic";
 
-type CoverageRow = { ticker: string; name?: string; sector?: string; hasProse: boolean };
+type CoverageRow = {
+  ticker: string;
+  name?: string;
+  sector?: string;
+  hasProse: boolean;
+  /** Entry price to stamp if this name is underwritten from the desk. */
+  price?: number | null;
+};
 
 export async function GET() {
   try {
@@ -54,7 +61,13 @@ export async function GET() {
       const t = thesisFor(tk);
       const conds = Array.isArray(t?.killConditions) ? t.killConditions : [];
       if (conds.length) continue; // covered by the sweep
-      missing.push({ ticker: tk, name: c.name, sector: c.sector, hasProse: Boolean(t?.why?.trim()) });
+      missing.push({
+        ticker: tk,
+        name: c.name,
+        sector: c.sector,
+        hasProse: Boolean(t?.why?.trim()),
+        price: typeof c.price === "number" ? c.price : null,
+      });
     }
     missing.sort((a, b) => a.ticker.localeCompare(b.ticker));
 
