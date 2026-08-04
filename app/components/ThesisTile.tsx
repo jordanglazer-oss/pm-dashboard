@@ -96,11 +96,14 @@ export default function ThesisTile({
       }
       setDraftWhy(d.draft.why);
       setDraftConds(
-        (d.draft.conditions as { kind: KillCondition["kind"]; threshold?: number; note?: string }[]).map((c, i) => ({
+        (
+          d.draft.conditions as { kind: KillCondition["kind"]; threshold?: number; note?: string; theme?: string }[]
+        ).map((c, i) => ({
           id: `${c.kind}-${Date.now()}-${i}`,
           kind: c.kind,
           threshold: c.threshold,
           note: c.note,
+          theme: c.theme,
           addedAt: todayIso(),
         })),
       );
@@ -542,7 +545,10 @@ export default function ThesisTile({
           <div className="space-y-1.5">
             {draftConds.map((c) => (
               <div key={c.id} className="flex items-center gap-2 text-[13px]">
-                <span className="flex-1 text-ink">{describeCondition(c)}</span>
+                <span className="flex-1 text-ink">
+                  {c.theme && <span className="mr-2 text-[10px] font-bold uppercase tracking-[0.14em] text-accent">{c.theme}</span>}
+                  {describeCondition(c)}
+                </span>
                 <button
                   onClick={() => setDraftConds((cs) => cs.filter((x) => x.id !== c.id))}
                   className="text-[11px] text-ink-3 hover:text-neg"

@@ -182,9 +182,26 @@ export default function ThesisDeskPage() {
    * also keeps it under any concurrency limit and makes progress meaningful.
    */
   const [bulk, setBulk] = useState<{ done: number; total: number; failed: string[] } | null>(null);
-  const draftAll = async () => {
-    const targets = cov?.missing ?? [];
+  /**
+   * mode "missing" → only names with no conditions yet (safe, additive).
+   * mode "all"     → also REDRAFTS every existing thesis, overwriting the
+   *                  prose and conditions currently saved. That destroys hand
+   *                  edits, so it is confirmed explicitly first — the same bar
+   *                  CLAUDE.md sets for anything that overwrites user data.
+   */
+  const draftBulk = async (mode: "missing" | "all") => {
+    const missing = cov?.missing ?? [];
+    const targets =
+      mode === "missing"
+        ? missing
+        : [...rows.map((r) => ({ ticker: r.ticker, price: null as number | null })), ...missing];
     if (targets.length === 0 || bulk) return;
+    if (mode === "all" && rows.length > 0) {
+      const ok = window.confirm(
+        `Redraft ALL ${targets.length} theses?\n\nThis OVERWRITES the ${rows.length} thesis${rows.length === 1 ? "" : "es"} already saved, including any wording or conditions you edited by hand. Trip history and re-underwrite dates are rewritten too. This cannot be undone.`,
+      );
+      if (!ok) return;
+    }
     setBulk({ done: 0, total: targets.length, failed: [] });
     const failed: string[] = [];
     for (let i = 0; i < targets.length; i++) {
@@ -204,15 +221,16 @@ export default function ThesisDeskPage() {
           body: JSON.stringify({
             ticker: t.ticker,
             why: d.draft.why,
-            killConditions: (d.draft.conditions as { kind: string; threshold?: number; note?: string }[]).map(
-              (c, n) => ({
-                id: `${c.kind}-${Date.now()}-${n}`,
-                kind: c.kind,
-                threshold: c.threshold,
-                note: c.note,
-                addedAt: todayIso(),
-              }),
-            ),
+            killConditions: (
+              d.draft.conditions as { kind: string; threshold?: number; note?: string; theme?: string }[]
+            ).map((c, n) => ({
+              id: `${c.kind}-${Date.now()}-${n}`,
+              kind: c.kind,
+              threshold: c.threshold,
+              note: c.note,
+              theme: c.theme,
+              addedAt: todayIso(),
+            })),
             underwrittenAt: todayIso(),
             ...(typeof t.price === "number" ? { underwritePrice: t.price } : {}),
             reUnderwriteBy: due.toISOString().slice(0, 10),
@@ -276,6 +294,34 @@ export default function ThesisDeskPage() {
                 {totals.unreviewed} AI-drafted, unreviewed
               </span>
             )}
+            {bulk ? (
+              <span className="rounded-control border border-line bg-white px-2.5 py-1 text-[11px] font-semibold text-accent">
+                {bulk.done < bulk.total
+                  ? `Drafting ${bulk.done + 1} of ${bulk.total}…`
+                  : `Done — ${bulk.total - bulk.failed.length} drafted`}
+              </span>
+            ) : (
+              <>
+                {cov && cov.missing.length > 0 && (
+                  <button
+                    onClick={() => draftBulk("missing")}
+                    title={`Generates and SAVES an AI thesis for the ${cov.missing.length} name${cov.missing.length === 1 ? "" : "s"} with no conditions yet. Existing theses are NOT touched.`}
+                    className="rounded-control border border-line bg-white px-2.5 py-1 text-[11px] font-semibold text-accent"
+                  >
+                    ✦ Draft {cov.missing.length} missing
+                  </button>
+                )}
+                {rows.length > 0 && (
+                  <button
+                    onClick={() => draftBulk("all")}
+                    title={`Redrafts ALL ${rows.length + (cov?.missing.length ?? 0)}, OVERWRITING the ${rows.length} already saved — including hand edits. Asks for confirmation first.`}
+                    className="rounded-control border border-warn-border bg-white px-2.5 py-1 text-[11px] font-semibold text-warn"
+                  >
+                    ↻ Redraft all {rows.length + (cov?.missing.length ?? 0)}
+                  </button>
+                )}
+              </>
+            )}
             {rows.length > 0 && (
               <button
                 onClick={() => setAll(!anyOpen)}
@@ -285,6 +331,12 @@ export default function ThesisDeskPage() {
               </button>
             )}
           </div>
+        )}
+
+        {bulk && bulk.failed.length > 0 && (
+          <p className="mb-4 text-[11px] text-neg">
+            Could not draft: {bulk.failed.join(", ")} — open those names individually.
+          </p>
         )}
 
         {loading && (
@@ -376,6 +428,11 @@ export default function ThesisDeskPage() {
                       <div key={`${r.ticker}-${i}`} className="flex items-start gap-2.5 px-4 py-2">
                         <span className={`mt-1.5 h-2 w-2 shrink-0 rounded-full ${st.dot}`} aria-hidden />
                         <div className="min-w-0 flex-1">
+                          {k.condition.theme && (
+                            <div className="text-[10px] font-bold uppercase tracking-[0.14em] text-accent">
+                              {k.condition.theme}
+                            </div>
+                          )}
                           <div className="text-[13px] font-medium text-ink">{describeCondition(k.condition)}</div>
                           <div className="text-[11px] text-ink-3">{k.reading}</div>
                         </div>
@@ -418,24 +475,7 @@ export default function ThesisDeskPage() {
               <span className="ml-auto text-[11px] text-ink-3">
                 Stocks with no pre-registered exit conditions — nothing is watching these.
               </span>
-              <button
-                onClick={draftAll}
-                disabled={!!bulk}
-                title={`Generates and SAVES an AI thesis for all ${cov.missing.length} — about one model call each. Existing theses are never touched; each is tagged AI-assisted for review.`}
-                className="shrink-0 rounded-control border border-line bg-white px-2.5 py-1 text-xs font-semibold text-accent disabled:opacity-50"
-              >
-                {bulk
-                  ? bulk.done < bulk.total
-                    ? `Drafting ${bulk.done + 1} of ${bulk.total}…`
-                    : `Done — ${bulk.total - bulk.failed.length} drafted`
-                  : `✦ Draft all ${cov.missing.length} with AI`}
-              </button>
             </div>
-            {bulk && bulk.failed.length > 0 && (
-              <p className="border-b border-line-soft px-4 py-2 text-[11px] text-neg">
-                Could not draft: {bulk.failed.join(", ")} — open those names individually.
-              </p>
-            )}
             {/* Multi-column: at 1600px a single list of tickers is mostly dead
                 space, and this is the checklist the PM works down. */}
             <div className="grid md:grid-cols-2 2xl:grid-cols-3">

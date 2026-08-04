@@ -41,6 +41,11 @@ export type KillCondition = {
   threshold?: number;
   /** Prose for custom conditions; optional annotation on the others. */
   note?: string;
+  /** Which leg of the thesis this condition guards, in 2-4 words (e.g.
+   *  "Cloud growth", "Search resilience", "Capex → profit"). Set on custom
+   *  conditions so a card shows WHAT each breaker is protecting, not just the
+   *  metric — a list of raw metrics reads as trivia detached from the thesis. */
+  theme?: string;
   /** ISO date this condition was registered — pre-registration timestamp. */
   addedAt: string;
   /** Set by the caller when a check transitions OK → TRIPPED; cleared when it

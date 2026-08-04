@@ -28,7 +28,7 @@ import { parseModelJson } from "@/app/lib/json-repair";
 
 const client = new Anthropic();
 
-type DraftCondition = { kind: KillConditionKind; threshold?: number; note?: string };
+type DraftCondition = { kind: KillConditionKind; threshold?: number; note?: string; theme?: string };
 type Draft = { why: string; conditions: DraftCondition[] };
 
 const VALID_KINDS = new Set<KillConditionKind>(KILL_TEMPLATES.map((t) => t.kind));
@@ -72,8 +72,10 @@ function sanitize(raw: unknown, composite: number | null): Draft | null {
     const noteRaw = (c as { note?: unknown }).note;
     const note = typeof noteRaw === "string" ? clipNote(noteRaw.trim()) : undefined;
     if (kind === "custom" && !note) continue;
+    const themeRaw = (c as { theme?: unknown }).theme;
+    const theme = typeof themeRaw === "string" ? themeRaw.trim().slice(0, 40) : undefined;
     seen.add(kind);
-    parsed.push({ kind, threshold, note: note || undefined });
+    parsed.push({ kind, threshold, note: note || undefined, theme: theme || undefined });
   }
   if (!parsed.length) return null;
 
@@ -169,7 +171,7 @@ AVAILABLE KILL-CONDITION TEMPLATES (all except "custom" are checked automaticall
 Answer in JSON only:
 {
   "why": "3-5 bullet lines separated by \\n, each starting with '• '. No preamble like 'I own X because' — lead each bullet with the claim itself. First bullets: the core economic drivers WITH the specific figures from the material above. One bullet on what is expected to happen next (catalyst/trajectory). Final bullet starts '• Wrong if: ' and names the observable breakers. Ground every bullet in the material above — do not invent facts, numbers, or events that are not present. When a figure comes from an ingested report or FactSet alert, attribute it inline in parentheses, e.g. '(RBC 2026-07-28)' or '(FactSet Q2 recap)'.",
-  "conditions": [ { "kind": "...", "threshold": number-if-applicable, "note": "custom prose OR short annotation" } ]
+  "conditions": [ { "kind": "...", "threshold": number-if-applicable, "note": "custom prose OR short annotation", "theme": "REQUIRED on every custom: the thesis leg this guards, 2-4 words" } ]
 }
 
 Rules for conditions:
@@ -180,6 +182,7 @@ Rules for conditions:
   RIGHT (two entries): "GCP quarterly revenue growth must not fall below 60% Y/Y (82% reported Q2 2026)" AND SEPARATELY "Google Cloud backlog must not decline sequentially from $514B (Q2 2026)"
 - The customs must test DIFFERENT legs of the thesis — not the same claim reworded. If the thesis rests on growth in one segment AND on margin expansion, that is one custom each.
 - Keep each condition under 250 characters. State the metric, the comparison and the reference figure; drop the commentary.
+- Every custom MUST carry a "theme": 2-4 words naming the leg of the thesis it guards, drawn from the "why" bullets — e.g. "Cloud growth", "Search resilience", "Capex to profit", "Backlog conversion". The theme is what the metric is FOR; without it a condition reads as a detached number. Two customs must not share a theme — if they do, they are testing the same leg and one should be replaced.
 - A custom must be objectively checkable from REPORTED figures (it is verified against filings and earnings releases after each report), never a judgment call. "Cloud backlog declines sequentially" works; "management loses credibility" does not.
 - Do NOT write a custom that restates an automatic kind (e.g. "the stock falls below its 200-day average") — those are already covered.
 - Set score_floor relative to the CURRENT composite (typically current minus 3-4, rounded), never above it — a floor already tripped at underwrite is useless.
