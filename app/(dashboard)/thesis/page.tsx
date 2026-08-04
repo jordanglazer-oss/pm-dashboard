@@ -48,6 +48,17 @@ const STATUS_STYLE: Record<KillStatus, { dot: string; pill: string; label: strin
 
 const todayIso = () => new Date().toISOString().slice(0, 10);
 
+/** localStorage, NOT pm:ui-prefs: persisting here costs no Redis write, no
+ *  bytes in the nightly backup blob and no origin transfer. Trade-off is that
+ *  the preference is per-device rather than synced. */
+const STORAGE_KEY = "pm.thesis.collapse";
+
+/** A card that needs a decision: a tripped condition or an overdue
+ *  re-underwrite. Drives both the default open state and the stale-collapse
+ *  guard in isOpen. */
+const needsAttention = (r: Row) =>
+  r.tripped > 0 || (r.reUnderwriteBy ? r.reUnderwriteBy < todayIso() : false);
+
 export default function ThesisDeskPage() {
   const [data, setData] = useState<Payload | null>(null);
   const [loading, setLoading] = useState(true);
@@ -86,31 +97,74 @@ export default function ThesisDeskPage() {
    * a monitor, so the calm names should be a compact index and the ones asking
    * for a decision should already be open.
    *
-   * Deliberately component state rather than a persisted pref (CollapsibleSection
-   * writes pm:ui-prefs): it costs no Redis write and no backup bytes, and a
-   * remembered "collapsed" would outlive the reason for it — every reload
-   * re-derives the attention rule instead.
+   * Persisted to localStorage (see STORAGE_KEY) so choices survive a refresh
+   * without costing a Redis write or backup bytes.
    *
-   * Collapsing can never hide a problem: the tripped/OK badge and the red card
-   * border live in the HEADER, which stays visible when collapsed. Only the
-   * thesis prose and the per-condition readings are hidden. (Worth stating
-   * because a manual override does survive a later trip within a session — it
-   * is the always-visible header, not the open/closed rule, that makes that
-   * safe.)
+   * STALE-COLLAPSE GUARD: a "collapsed" remembered from a previous visit is
+   * IGNORED for any name that now needs attention. Without it a preference set
+   * weeks ago would keep a freshly-tripped name closed — the exact failure a
+   * remembered preference invites once it outlives its reason. Your choice
+   * still sticks for every calm name, and for a name you collapse yourself in
+   * the current session.
+   *
+   * Collapsing never hides a problem regardless: the tripped/OK badge and the
+   * red card border live in the HEADER, which stays visible when collapsed.
+   * Only the thesis prose and per-condition readings are hidden.
    */
-  const needsAttention = (r: Row) =>
-    r.tripped > 0 || (r.reUnderwriteBy ? r.reUnderwriteBy < todayIso() : false);
-  /** Per-ticker overrides of the default; absent = follow the default. */
-  const [overrides, setOverrides] = useState<Record<string, boolean>>({});
-  const isOpen = (r: Row) => overrides[r.ticker] ?? needsAttention(r);
-  const toggle = (ticker: string) =>
-    setOverrides((o) => {
-      const row = rows.find((x) => x.ticker === ticker);
-      const current = o[ticker] ?? (row ? needsAttention(row) : false);
-      return { ...o, [ticker]: !current };
-    });
-  const setAll = (open: boolean) =>
-    setOverrides(Object.fromEntries(rows.map((r) => [r.ticker, open])));
+  /** Per-ticker overrides of the default; absent = follow the default.
+   *
+   *  Read from storage in a LAZY INITIALIZER rather than an effect. That is
+   *  safe here specifically because this page renders no cards during SSR —
+   *  it is still `loading` until the client fetch returns — so there is no
+   *  server/client markup to mismatch. It also avoids setState-inside-effect,
+   *  which cascades renders. */
+  const [overrides, setOverrides] = useState<Record<string, boolean>>(() => {
+    if (typeof window === "undefined") return {};
+    try {
+      const raw = window.localStorage.getItem(STORAGE_KEY);
+      const parsed = raw ? (JSON.parse(raw) as unknown) : null;
+      return parsed && typeof parsed === "object" && !Array.isArray(parsed)
+        ? (parsed as Record<string, boolean>)
+        : {};
+    } catch {
+      return {}; // private mode / disabled storage → defaults
+    }
+  });
+  /** Tickers toggled in THIS session — see the stale-collapse guard in isOpen. */
+  const [touched, setTouched] = useState<Set<string>>(() => new Set());
+
+  const persist = (next: Record<string, boolean>) => {
+    try {
+      window.localStorage.setItem(STORAGE_KEY, JSON.stringify(next));
+    } catch {
+      /* quota or disabled — collapse still works for this session */
+    }
+  };
+
+  const isOpen = (r: Row) => {
+    // Stale-collapse guard: a collapse remembered from a previous visit must
+    // not keep a name closed that has SINCE started asking for a decision.
+    // An explicit collapse made this session is still honoured.
+    if (needsAttention(r) && !touched.has(r.ticker)) return true;
+    return overrides[r.ticker] ?? needsAttention(r);
+  };
+
+  const toggle = (ticker: string) => {
+    const row = rows.find((x) => x.ticker === ticker);
+    const current = row ? isOpen(row) : false;
+    const next = { ...overrides, [ticker]: !current };
+    setOverrides(next);
+    setTouched((t) => new Set(t).add(ticker));
+    persist(next);
+  };
+
+  const setAll = (open: boolean) => {
+    const next = Object.fromEntries(rows.map((r) => [r.ticker, open]));
+    setOverrides(next);
+    setTouched(new Set(rows.map((r) => r.ticker)));
+    persist(next);
+  };
+
   const anyOpen = rows.some(isOpen);
 
   const totals = useMemo(() => {
