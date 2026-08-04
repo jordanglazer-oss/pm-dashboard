@@ -36,8 +36,21 @@ const VALID_KINDS = new Set<KillConditionKind>(KILL_TEMPLATES.map((t) => t.kind)
 /** Total conditions kept, and how many of them may be company-specific
  *  customs. Customs are kept in preference to the automatic kinds — they are
  *  the part of a thesis that is actually about THIS business. */
-const MAX_CONDITIONS = 6;
+const MAX_CONDITIONS = 7; // 2-3 customs alongside the full automatic set
 const MAX_CUSTOM = 3;
+/** Prose cap for a custom condition. 200 truncated a real GOOGL condition
+ *  mid-sentence, leaving a dangling "(" — and that mangled text is what the
+ *  verifier later reads as the rule. Clipped at a word boundary with an
+ *  ellipsis so a cut is visible rather than silent. */
+const MAX_NOTE = 300;
+
+function clipNote(t: string): string {
+  if (t.length <= MAX_NOTE) return t;
+  const cut = t.slice(0, MAX_NOTE);
+  const lastSpace = cut.lastIndexOf(" ");
+  const body = lastSpace > MAX_NOTE * 0.6 ? cut.slice(0, lastSpace) : cut;
+  return body.replace(/[\s(\[,;:—-]+$/, "") + "…";
+}
 
 /** Validate + normalize the model's proposal. Invalid rows are dropped, not
  *  guessed at — the PM reviews whatever survives. */
@@ -57,7 +70,7 @@ function sanitize(raw: unknown): Draft | null {
     const thRaw = (c as { threshold?: unknown }).threshold;
     const threshold = typeof thRaw === "number" && isFinite(thRaw) ? Math.round(thRaw * 10) / 10 : undefined;
     const noteRaw = (c as { note?: unknown }).note;
-    const note = typeof noteRaw === "string" ? noteRaw.trim().slice(0, 200) : undefined;
+    const note = typeof noteRaw === "string" ? clipNote(noteRaw.trim()) : undefined;
     if (kind === "custom" && !note) continue;
     seen.add(kind);
     parsed.push({ kind, threshold, note: note || undefined });
@@ -146,9 +159,13 @@ Answer in JSON only:
 }
 
 Rules for conditions:
-- Propose 4 to 6 conditions, and AT LEAST TWO of them MUST be "custom". This is the most important rule. The automatic kinds (score_floor, score_decay, revisions, risk_alert, ma200) are generic portfolio hygiene — they would read almost identically for any holding and none of them tests why THIS business specifically works. A draft whose only breakers are a score floor, a moving average and a revisions count has not underwritten anything.
+- Propose 5 to 7 conditions, and AT LEAST TWO of them MUST be "custom". This is the most important rule. The automatic kinds (score_floor, score_decay, revisions, risk_alert, ma200) are generic portfolio hygiene — they would read almost identically for any holding and none of them tests why THIS business specifically works. A draft whose only breakers are a score floor, a moving average and a revisions count has not underwritten anything.
 - Each custom condition must name a COMPANY-SPECIFIC observable: a named segment, product line, contract, backlog, customer concentration, margin line, unit metric or guidance figure that appears in the material above. Use the metric and level verbatim when the material states them.
-- The two customs must test DIFFERENT legs of the thesis — not the same claim reworded. If the thesis rests on growth in one segment AND on margin expansion, that is one custom each.
+- ONE TEST PER CONDITION. Never join two tests with "and" inside a single custom — split them into separate entries. Each condition must be independently true or false, because each is checked and trips on its own; a compound rule cannot report which half broke.
+  WRONG (one entry): "GCP revenue growth must not fall below 60% Y/Y, and cloud backlog must not decline sequentially from $514B"
+  RIGHT (two entries): "GCP quarterly revenue growth must not fall below 60% Y/Y (82% reported Q2 2026)" AND SEPARATELY "Google Cloud backlog must not decline sequentially from $514B (Q2 2026)"
+- The customs must test DIFFERENT legs of the thesis — not the same claim reworded. If the thesis rests on growth in one segment AND on margin expansion, that is one custom each.
+- Keep each condition under 250 characters. State the metric, the comparison and the reference figure; drop the commentary.
 - A custom must be objectively checkable from REPORTED figures (it is verified against filings and earnings releases after each report), never a judgment call. "Cloud backlog declines sequentially" works; "management loses credibility" does not.
 - Do NOT write a custom that restates an automatic kind (e.g. "the stock falls below its 200-day average") — those are already covered.
 - Set score_floor relative to the CURRENT composite (typically current minus 3-4, rounded), never above it — a floor already tripped at underwrite is useless.
