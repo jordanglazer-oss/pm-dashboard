@@ -19,8 +19,8 @@ import { describeCondition, type KillCheck, type KillStatus } from "@/app/lib/ki
  * deterministic checker the stock tile and the morning digest use — so a
  * status here can never disagree with the one on the stock page.
  *
- * Ordering is by what needs attention: tripped conditions first, then overdue
- * re-underwrites, then unwatchable (NO DATA) conditions, then alphabetical.
+ * Ordered alphabetically so each name keeps a stable position; urgency is
+ * carried by the card's red border and TRIPPED badge rather than by position.
  * Watchlist names are absent on purpose — see the coverage note below.
  */
 
@@ -54,8 +54,8 @@ const todayIso = () => new Date().toISOString().slice(0, 10);
 const STORAGE_KEY = "pm.thesis.collapse";
 
 /** A card that needs a decision: a tripped condition or an overdue
- *  re-underwrite. Drives both the default open state and the stale-collapse
- *  guard in isOpen. */
+ *  re-underwrite. Supplies the DEFAULT open state for a name you have never
+ *  toggled; a stored choice overrides it. */
 const needsAttention = (r: Row) =>
   r.tripped > 0 || (r.reUnderwriteBy ? r.reUnderwriteBy < todayIso() : false);
 
@@ -77,19 +77,14 @@ export default function ThesisDeskPage() {
     };
   }, []);
 
-  const rows = useMemo(() => {
-    const list = [...(data?.holdings ?? [])];
-    const overdue = (r: Row) => (r.reUnderwriteBy ? (r.reUnderwriteBy < todayIso() ? 1 : 0) : 0);
-    const noData = (r: Row) => r.checks.filter((c) => c.status === "unknown").length;
-    list.sort(
-      (a, b) =>
-        b.tripped - a.tripped ||
-        overdue(b) - overdue(a) ||
-        noData(b) - noData(a) ||
-        a.ticker.localeCompare(b.ticker),
-    );
-    return list;
-  }, [data]);
+  // Alphabetical: a monitor you scan for a SPECIFIC name, so a stable
+  // position beats a ranking that reshuffles whenever a condition trips.
+  // Urgency is still unmissable — tripped cards carry a red border and a
+  // TRIPPED badge, and the summary strip counts them.
+  const rows = useMemo(
+    () => [...(data?.holdings ?? [])].sort((a, b) => a.ticker.localeCompare(b.ticker)),
+    [data],
+  );
 
   /**
    * Collapse state. Cards default to COLLAPSED except those that need
@@ -100,16 +95,12 @@ export default function ThesisDeskPage() {
    * Persisted to localStorage (see STORAGE_KEY) so choices survive a refresh
    * without costing a Redis write or backup bytes.
    *
-   * STALE-COLLAPSE GUARD: a "collapsed" remembered from a previous visit is
-   * IGNORED for any name that now needs attention. Without it a preference set
-   * weeks ago would keep a freshly-tripped name closed — the exact failure a
-   * remembered preference invites once it outlives its reason. Your choice
-   * still sticks for every calm name, and for a name you collapse yourself in
-   * the current session.
+   * Once you toggle a card the stored choice wins permanently, including for
+   * tripped names — attention only sets the default for names never toggled.
    *
-   * Collapsing never hides a problem regardless: the tripped/OK badge and the
-   * red card border live in the HEADER, which stays visible when collapsed.
-   * Only the thesis prose and per-condition readings are hidden.
+   * Collapsing never hides a problem: the tripped/OK badge and the red card
+   * border live in the HEADER, which stays visible when collapsed. Only the
+   * thesis prose and per-condition readings are hidden.
    */
   /** Per-ticker overrides of the default; absent = follow the default.
    *
@@ -130,9 +121,6 @@ export default function ThesisDeskPage() {
       return {}; // private mode / disabled storage → defaults
     }
   });
-  /** Tickers toggled in THIS session — see the stale-collapse guard in isOpen. */
-  const [touched, setTouched] = useState<Set<string>>(() => new Set());
-
   const persist = (next: Record<string, boolean>) => {
     try {
       window.localStorage.setItem(STORAGE_KEY, JSON.stringify(next));
@@ -141,27 +129,25 @@ export default function ThesisDeskPage() {
     }
   };
 
-  const isOpen = (r: Row) => {
-    // Stale-collapse guard: a collapse remembered from a previous visit must
-    // not keep a name closed that has SINCE started asking for a decision.
-    // An explicit collapse made this session is still honoured.
-    if (needsAttention(r) && !touched.has(r.ticker)) return true;
-    return overrides[r.ticker] ?? needsAttention(r);
-  };
+  // A stored choice ALWAYS wins; needsAttention only supplies the default for
+  // a name you have never toggled. Deliberate: an earlier version force-opened
+  // anything tripped on every load, which meant a tripped name could not be
+  // collapsed at all — it reopened on the next refresh. Safe because the
+  // TRIPPED badge and red border sit in the header, which stays visible when
+  // collapsed; only the prose and per-condition readings are hidden.
+  const isOpen = (r: Row) => overrides[r.ticker] ?? needsAttention(r);
 
   const toggle = (ticker: string) => {
     const row = rows.find((x) => x.ticker === ticker);
     const current = row ? isOpen(row) : false;
     const next = { ...overrides, [ticker]: !current };
     setOverrides(next);
-    setTouched((t) => new Set(t).add(ticker));
     persist(next);
   };
 
   const setAll = (open: boolean) => {
     const next = Object.fromEntries(rows.map((r) => [r.ticker, open]));
     setOverrides(next);
-    setTouched(new Set(rows.map((r) => r.ticker)));
     persist(next);
   };
 
@@ -239,11 +225,10 @@ export default function ThesisDeskPage() {
 
         {/* One card per underwritten name.
             Grid rather than a stack so expanding two or three names no longer
-            pushes the others off-screen. ROW-MAJOR on purpose: the rows are
-            sorted by urgency (tripped → overdue → no-data → alphabetical), and
-            a grid preserves that in reading order left-to-right. CSS columns
-            would pack denser but reorder priority down each column instead.
-            items-start keeps a tall expanded card from stretching its
+            pushes the others off-screen. ROW-MAJOR on purpose: cards read
+            left-to-right in alphabetical order, so a name is where you expect
+            it. CSS columns would pack denser but scatter that order down each
+            column. items-start keeps a tall expanded card from stretching its
             neighbours to match. */}
         <div className="grid items-start gap-4 lg:grid-cols-2 2xl:grid-cols-3">
           {rows.map((r) => {
