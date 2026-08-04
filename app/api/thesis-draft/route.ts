@@ -54,7 +54,7 @@ function clipNote(t: string): string {
 
 /** Validate + normalize the model's proposal. Invalid rows are dropped, not
  *  guessed at — the PM reviews whatever survives. */
-function sanitize(raw: unknown): Draft | null {
+function sanitize(raw: unknown, composite: number | null): Draft | null {
   if (!raw || typeof raw !== "object") return null;
   const o = raw as { why?: unknown; conditions?: unknown };
   const why = typeof o.why === "string" ? o.why.trim() : "";
@@ -81,8 +81,22 @@ function sanitize(raw: unknown): Draft | null {
   // specific customs are the point of the exercise, so a verbose response must
   // never cost them — the old code capped in arrival order and could drop a
   // custom the model listed last.
-  const customs = parsed.filter((c) => c.kind === "custom");
-  const autos = parsed.filter((c) => c.kind !== "custom");
+  // Drop a score_decay that the score_floor already dominates. Both measure
+  // the SAME variable, so decay only adds early warning when a drop of its
+  // size still lands ABOVE the floor. On GOOGL (composite 30.7, floor 27) a
+  // 5-pt drop lands at 25.7 — already through the floor — so the floor always
+  // trips first and the decay row is dead weight on the card. Proven from the
+  // numbers rather than assumed, and kept whenever it genuinely fires first.
+  const floorC = parsed.find((c) => c.kind === "score_floor");
+  const decayC = parsed.find((c) => c.kind === "score_decay");
+  let kept = parsed;
+  if (floorC && decayC && typeof composite === "number") {
+    const room = composite - (floorC.threshold ?? 22);
+    if (room <= (decayC.threshold ?? 5)) kept = parsed.filter((c) => c !== decayC);
+  }
+
+  const customs = kept.filter((c) => c.kind === "custom");
+  const autos = kept.filter((c) => c.kind !== "custom");
   const keptCustoms = customs.slice(0, MAX_CUSTOM);
   const conditions = [
     ...keptCustoms,
@@ -169,6 +183,7 @@ Rules for conditions:
 - A custom must be objectively checkable from REPORTED figures (it is verified against filings and earnings releases after each report), never a judgment call. "Cloud backlog declines sequentially" works; "management loses credibility" does not.
 - Do NOT write a custom that restates an automatic kind (e.g. "the stock falls below its 200-day average") — those are already covered.
 - Set score_floor relative to the CURRENT composite (typically current minus 3-4, rounded), never above it — a floor already tripped at underwrite is useless.
+- Use score_floor OR score_decay, not both, unless the decay threshold is SMALLER than the gap to the floor. They measure the same variable, so if a drop the size of the decay threshold would already breach the floor, the decay rule can never trip first and is just a duplicate row. Prefer score_floor.
 - Only include ma200 if the price is currently above it.
 - Set the revisions threshold at or below the current net so it is not tripped on day one.
 - Every condition must connect to the "why" — a breaker for a claim the thesis doesn't make is noise.`;
@@ -188,7 +203,7 @@ Rules for conditions:
       console.error(`[thesis-draft] ${tk} JSON parse failed:`, parseResult.error, parseResult.excerpt ?? "");
       return NextResponse.json({ error: `draft failed — unparseable response: ${parseResult.error}` }, { status: 502 });
     }
-    const draft = sanitize(parseResult.value);
+    const draft = sanitize(parseResult.value, typeof ctx.composite === "number" ? ctx.composite : null);
     if (!draft) return NextResponse.json({ error: "draft failed — model returned no usable proposal" }, { status: 502 });
 
     return NextResponse.json({ draft });
