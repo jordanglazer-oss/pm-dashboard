@@ -123,10 +123,13 @@ export default function ThesisDeskPage() {
 
   return (
     <main className="min-h-screen bg-ground px-4 py-6 text-ink md:px-8 md:py-8">
-      <div className="mx-auto max-w-5xl">
+      {/* Wide container: this is a monitor, not a reading page. At max-w-5xl
+          two expanded cards already pushed the rest below the fold. */}
+      <div className="mx-auto max-w-[1600px]">
         <div className="mb-6">
           <h1 className="text-2xl font-bold text-ink">Thesis Desk</h1>
-          <p className="mt-1 text-sm text-ink-3">
+          {/* Capped to a readable measure — the GRID uses the full width, prose shouldn't. */}
+          <p className="mt-1 max-w-3xl text-sm text-ink-3">
             Every underwritten position, its thesis as signed, and the pre-registered conditions
             that would make you wrong — checked automatically.{" "}
             <Link href="/methodology" className="text-accent hover:underline">
@@ -180,8 +183,15 @@ export default function ThesisDeskPage() {
           </section>
         )}
 
-        {/* One card per underwritten name */}
-        <div className="space-y-4">
+        {/* One card per underwritten name.
+            Grid rather than a stack so expanding two or three names no longer
+            pushes the others off-screen. ROW-MAJOR on purpose: the rows are
+            sorted by urgency (tripped → overdue → no-data → alphabetical), and
+            a grid preserves that in reading order left-to-right. CSS columns
+            would pack denser but reorder priority down each column instead.
+            items-start keeps a tall expanded card from stretching its
+            neighbours to match. */}
+        <div className="grid items-start gap-4 lg:grid-cols-2 2xl:grid-cols-3">
           {rows.map((r) => {
             const overdue = r.reUnderwriteBy ? r.reUnderwriteBy < todayIso() : false;
             const open = isOpen(r);
@@ -283,9 +293,11 @@ export default function ThesisDeskPage() {
                 Stocks with no pre-registered exit conditions — nothing is watching these.
               </span>
             </div>
-            <div className="divide-y divide-line-soft">
+            {/* Multi-column: at 1600px a single list of tickers is mostly dead
+                space, and this is the checklist the PM works down. */}
+            <div className="grid md:grid-cols-2 2xl:grid-cols-3">
               {cov.missing.map((m) => (
-                <div key={m.ticker} className="flex items-center gap-3 px-4 py-2">
+                <div key={m.ticker} className="flex items-center gap-3 border-b border-line-soft px-4 py-2">
                   <Link
                     href={`/stock/${encodeURIComponent(m.ticker)}`}
                     className="font-mono text-[13px] font-semibold text-ink hover:text-accent"
