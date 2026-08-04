@@ -1,7 +1,7 @@
 import Anthropic from "@anthropic-ai/sdk";
 import { getRedis } from "./redis";
 import type { KillCondition } from "./kill-conditions";
-import { buildTickerEvidence } from "./thesis-evidence";
+import { buildTickerEvidence, latestEvidenceAt } from "./thesis-evidence";
 import { parseModelJson } from "./json-repair";
 
 /**
@@ -12,9 +12,16 @@ import { parseModelJson } from "./json-repair";
  * Token philosophy preserved: the model is NOT a watcher on a timer. A custom
  * condition is re-verified only when something could have changed its answer:
  *   - it has never been verified, or
- *   - the name reported earnings since the last verification, or
- *   - the last verification is older than STALE_DAYS (facts drift), or
+ *   - NEW EVIDENCE has been ingested for the name since the last verification
+ *     (an analyst report or a FactSet alert), or
+ *   - the last verification is older than STALE_DAYS, as a backstop, or
  *   - the PM explicitly asks (force — the tile's "verify now" button).
+ *
+ * The evidence trigger replaced an earnings-DATE trigger. A date passing only
+ * means the company was scheduled to report; the figures a condition asserts
+ * against are not in the app until the report or alert is forwarded, so the
+ * old trigger fired early and burned a web-search call that usually came back
+ * "unclear". Ingest is the event that can actually change the answer.
  *
  * Each verification is one Sonnet call WITH the web-search tool (max 3
  * searches), so the model checks the condition against the actual world —
@@ -61,14 +68,12 @@ export type CustomCheckResult = {
   failed: number;
 };
 
-function needsCheck(c: KillCondition, earningsDate: string | null, force: boolean): boolean {
+function needsCheck(c: KillCondition, evidenceAt: string | null, force: boolean): boolean {
   if (c.kind !== "custom") return false;
   if (force) return true;
   if (!c.aiCheck) return true;
-  const checkedDay = c.aiCheck.checkedAt.slice(0, 10);
-  const today = new Date().toISOString().slice(0, 10);
-  // Earnings landed between the last check and today → the answer may have changed.
-  if (earningsDate && earningsDate > checkedDay && earningsDate <= today) return true;
+  // Fresh evidence ingested since the last verification → re-check.
+  if (evidenceAt && evidenceAt > c.aiCheck.checkedAt) return true;
   const ageMs = Date.now() - Date.parse(c.aiCheck.checkedAt);
   return isFinite(ageMs) && ageMs > STALE_DAYS * 86400_000;
 }
@@ -168,12 +173,12 @@ export async function runCustomConditionChecks(opts: {
     const conds = Array.isArray(entry?.killConditions) ? entry.killConditions : [];
     if (!conds.some((c) => c.kind === "custom")) continue;
     const st = stockFor(tk);
-    const earnings = typeof st?.earningsDate === "string" ? st.earningsDate.slice(0, 10) : null;
+    const evidenceAt = await latestEvidenceAt(tk).catch(() => null);
 
     let mutated = false;
     for (const c of conds) {
       if (c.kind !== "custom") continue;
-      if (!needsCheck(c, earnings, opts.force === true)) {
+      if (!needsCheck(c, evidenceAt, opts.force === true)) {
         skipped++;
         continue;
       }

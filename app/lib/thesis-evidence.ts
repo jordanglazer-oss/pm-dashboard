@@ -58,6 +58,41 @@ function takeawayLines(t: StreetTakeaway): string[] {
   return out;
 }
 
+/**
+ * Newest ingest timestamp across a ticker's analyst reports and FactSet
+ * alerts, or null when nothing has been ingested.
+ *
+ * This is the honest trigger for re-verifying a custom kill condition. The
+ * earnings DATE only says a company was scheduled to report — the figures the
+ * condition asserts against are not in the app until the report or the FactSet
+ * alert is actually forwarded, so checking on the calendar date burns a
+ * web-search call that usually returns "unclear". Evidence arriving is the
+ * event that can actually change the answer.
+ */
+export async function latestEvidenceAt(ticker: string): Promise<string | null> {
+  const tk = ticker.toUpperCase();
+  const [reportsRaw, takeaways] = await Promise.all([
+    getRedis()
+      .then((r) => r.get("pm:analyst-reports"))
+      .catch(() => null),
+    loadStreetTakeawaysFor(tk).catch(() => [] as StreetTakeaway[]),
+  ]);
+  const stamps: string[] = [];
+  try {
+    const reports: AnalystReports = reportsRaw ? JSON.parse(reportsRaw) : {};
+    const tr = getReportsForTicker(reports, tk);
+    for (const meta of [tr?.rbc, tr?.jpm, tr?.morningstar]) {
+      const at = meta?.extractedAt || meta?.uploadedAt;
+      if (at) stamps.push(at);
+    }
+  } catch {
+    /* unreadable manifest — fall through to takeaways */
+  }
+  for (const t of takeaways || []) if (t?.ingestedAt) stamps.push(t.ingestedAt);
+  if (!stamps.length) return null;
+  return stamps.sort().slice(-1)[0];
+}
+
 /** Formatted evidence block for a ticker, or "" when nothing is ingested.
  *  Every line carries its source and date so downstream prompts can require
  *  inline attribution. */

@@ -22,6 +22,14 @@ export const STREET_TAKEAWAYS_KEY = "pm:street-takeaways";
 /** How many entries we keep per ticker (newest first). A quarter can produce
  *  TWO entries (a Metrics Recap and a Street Takeaways), so 6 ≈ 3 quarters. */
 export const MAX_PER_TICKER = 6;
+/**
+ * Also drop entries older than this. The count cap alone already holds only
+ * ~6-9 months for a normally-covered name (2-3 alerts per quarter), so this
+ * bites only on the TAIL: a thinly-covered name receiving one alert a year
+ * would otherwise keep entries for six years. Bounds that without touching
+ * the normal case.
+ */
+export const MAX_AGE_DAYS = 365;
 
 export type StreetFirmView = {
   firm: string;
@@ -184,7 +192,10 @@ export async function appendStreetTakeaway(
       (e.kind ?? "takeaways") === entry.kind,
   );
   if (dupe) return { added: false, count: list.length };
-  const next = [entry, ...list].slice(0, MAX_PER_TICKER);
+  const cutoff = new Date(Date.now() - MAX_AGE_DAYS * 86400_000).toISOString().slice(0, 10);
+  const next = [entry, ...list]
+    .filter((e) => !e?.date || e.date >= cutoff)
+    .slice(0, MAX_PER_TICKER);
   store[key] = next;
   await redis.set(STREET_TAKEAWAYS_KEY, JSON.stringify(store));
   return { added: true, count: next.length };
