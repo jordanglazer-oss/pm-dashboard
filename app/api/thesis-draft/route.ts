@@ -123,6 +123,27 @@ export async function POST(req: NextRequest) {
     const ctx = context[tk];
     if (!ctx) return NextResponse.json({ error: "unknown ticker" }, { status: 404 });
 
+    // Metrics already PROVEN unverifiable for this name: ones rewritten away,
+    // plus any condition currently flagged structural by the verifier. Without
+    // this a redraft happily proposes the same dead end again, which is what
+    // made the same NO DATA rows keep coming back.
+    let blocked: string[] = [];
+    try {
+      const rawTheses = await (await getRedis()).get("pm:position-theses");
+      const theses = rawTheses ? (JSON.parse(rawTheses) as Record<string, {
+        unverifiableNotes?: string[];
+        killConditions?: { note?: string; aiCheck?: { undisclosed?: boolean } }[];
+      }>) : {};
+      const t = theses[tk] ?? theses[tk.toUpperCase()];
+      const fromStore = t?.unverifiableNotes ?? [];
+      const fromLive = (t?.killConditions ?? [])
+        .filter((c) => c?.aiCheck?.undisclosed && c.note)
+        .map((c) => c.note as string);
+      blocked = [...new Set([...fromStore, ...fromLive])].slice(-12);
+    } catch {
+      /* no blocklist available — draft normally */
+    }
+
     type StoredStock = {
       ticker?: string;
       investmentThesis?: string;
@@ -160,7 +181,7 @@ ${stock?.bearCase || "(none on file)"}
 
 CURRENT STATE: ${stateLine}
 ${evidence ? `\nINGESTED ANALYST & FACTSET EVIDENCE (dated and attributable — prefer these figures over the generated prose when they conflict):\n${evidence}\n` : ""}
-AVAILABLE KILL-CONDITION TEMPLATES (all except "custom" are checked automatically every day):
+${blocked.length ? `ALREADY PROVEN UNVERIFIABLE FOR THIS NAME — DO NOT PROPOSE THESE OR ANY CLOSE VARIANT:\n${blocked.map((b) => `- ${b}`).join("\n")}\nEach was checked against filings and could not be resolved, because the metric is not disclosed or not reported quarterly. Proposing the same idea in different words recreates a condition that permanently reads NO DATA. Pick a DIFFERENT observable, or test the same thesis leg through a line item that IS reported every quarter.\n\n` : ""}AVAILABLE KILL-CONDITION TEMPLATES (all except "custom" are checked automatically every day):
 - score_floor: composite score must stay >= threshold (scale is 0–41; this name is currently ${ctx.composite ?? "unknown"})
 - score_decay: composite must not drop >= threshold points over ~45 days (typical threshold 5)
 - revisions: net FY+1 estimate revisions (upgrades minus downgrades) must stay >= threshold (typical 0, or a floor like -3)

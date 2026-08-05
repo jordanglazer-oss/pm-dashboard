@@ -35,6 +35,11 @@ type PositionThesis = {
   reUnderwriteBy?: string; // YYYY-MM-DD the quarterly re-check is due
   /** Provenance: thesis started from an AI draft (the PM still edited/signed). */
   aiDrafted?: boolean;
+  /** Conditions that proved STRUCTURALLY unverifiable for this name (the
+   *  metric isn't disclosed, or isn't on a quarterly cadence) and were
+   *  rewritten away. Fed back into the draft prompt as a do-not-propose list
+   *  so a redraft cannot reintroduce the same dead end. Append-only, capped. */
+  unverifiableNotes?: string[];
 };
 type PositionTheses = Record<string, PositionThesis>;
 
@@ -77,6 +82,14 @@ export async function POST(req: NextRequest) {
     if (typeof body?.underwritePrice === "number") next.underwritePrice = body.underwritePrice;
     if (typeof body?.reUnderwriteBy === "string") next.reUnderwriteBy = body.reUnderwriteBy;
     if (typeof body?.aiDrafted === "boolean") next.aiDrafted = body.aiDrafted;
+    // Append-only, de-duplicated, capped — a learned blocklist, not user prose.
+    if (Array.isArray(body?.unverifiableNotes)) {
+      const incoming = (body.unverifiableNotes as unknown[])
+        .filter((x): x is string => typeof x === "string" && x.trim().length > 0)
+        .map((x) => x.trim());
+      const merged = [...(prev?.unverifiableNotes ?? []), ...incoming];
+      next.unverifiableNotes = [...new Set(merged)].slice(-20);
+    }
 
     const empty = !next.why && !(next.killConditions && next.killConditions.length);
     if (empty) {

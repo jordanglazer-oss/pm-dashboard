@@ -158,6 +158,12 @@ export type StreetTakeaway = {
     revenueChangePct?: number;
     epsChangePct?: number;
   };
+  /** Kinds of sibling alert (same ticker + same event) that already carried
+   *  some of the same figures. The overlapping rows are stripped from THIS
+   *  entry at append time so each email stores what is unique to it, and this
+   *  records where the rest came from — so the stock page can still say the
+   *  quarter was covered by both. */
+  overlapsWith?: TakeawayKind[];
 };
 
 export type StreetTakeawaysStore = Record<string, StreetTakeaway[]>;
@@ -210,10 +216,40 @@ export async function appendStreetTakeaway(
       (e.kind ?? "takeaways") === entry.kind,
   );
   if (dupe) return { added: false, count: list.length };
+
+  // ── Cross-format de-duplication ────────────────────────────────────────
+  // The formats overlap: a Metrics Recap and a Street Takeaways for the same
+  // quarter often repeat the same EPS/revenue lines. Storing both copies wastes
+  // space AND feeds the same fact twice into every prompt built from this
+  // store. Keep what is UNIQUE to this email, and record which sibling formats
+  // already carried the rest.
+  const siblings = list.filter(
+    (e) => e.kind !== entry.kind && e.date === entry.date && (e.event ?? "") === (entry.event ?? ""),
+  );
+  let stored = entry;
+  if (siblings.length) {
+    const resultKey = (r: StreetResultLine) => `${r.label}|${r.actual ?? ""}|${r.consensus ?? ""}`;
+    const guideKey = (g: StreetGuidanceLine) => `${g.period}|${g.metric}|${g.value}`;
+    const seenResults = new Set(siblings.flatMap((e) => (e.results ?? []).map(resultKey)));
+    const seenGuides = new Set(siblings.flatMap((e) => (e.guidanceLines ?? []).map(guideKey)));
+    const results = (entry.results ?? []).filter((r) => !seenResults.has(resultKey(r)));
+    const guidanceLines = (entry.guidanceLines ?? []).filter((g) => !seenGuides.has(guideKey(g)));
+    const droppedAny =
+      results.length !== (entry.results ?? []).length ||
+      guidanceLines.length !== (entry.guidanceLines ?? []).length;
+    if (droppedAny) {
+      stored = {
+        ...entry,
+        ...(entry.results ? { results } : {}),
+        ...(entry.guidanceLines ? { guidanceLines } : {}),
+        overlapsWith: [...new Set(siblings.map((e) => e.kind))],
+      };
+    }
+  }
   // Age cap first, then cap EACH KIND independently so the formats never
   // evict one another (see MAX_PER_KIND).
   const cutoff = new Date(Date.now() - MAX_AGE_DAYS * 86400_000).toISOString().slice(0, 10);
-  const fresh = [entry, ...list].filter((e) => !e?.date || e.date >= cutoff);
+  const fresh = [stored, ...list].filter((e) => !e?.date || e.date >= cutoff);
   const perKind = new Map<string, number>();
   const next = fresh.filter((e) => {
     const k = e.kind ?? "takeaways";

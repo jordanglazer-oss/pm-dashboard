@@ -258,7 +258,12 @@ export default function ThesisDeskPage() {
       await fetch("/api/kv/position-theses", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ ticker: row.ticker, killConditions: next }),
+        body: JSON.stringify({
+          ticker: row.ticker,
+          killConditions: next,
+          // Remember the dead end so a future draft cannot propose it again.
+          unverifiableNotes: [row.checks.find((k) => k.condition.id === conditionId)?.condition.note].filter(Boolean),
+        }),
       });
       // Verify the new wording immediately, then reload.
       await fetch("/api/custom-condition-check", {
@@ -317,7 +322,14 @@ export default function ThesisDeskPage() {
           await fetch("/api/kv/position-theses", {
             method: "POST",
             headers: { "Content-Type": "application/json" },
-            body: JSON.stringify({ ticker: tk, killConditions: next }),
+            body: JSON.stringify({
+              ticker: tk,
+              killConditions: next,
+              unverifiableNotes: row.checks
+                .filter((k) => ids.has(k.condition.id))
+                .map((k) => k.condition.note)
+                .filter(Boolean),
+            }),
           });
           await fetch("/api/custom-condition-check", {
             method: "POST",
