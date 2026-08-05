@@ -63,7 +63,20 @@ export type KillCondition = {
     checkedAt: string; // ISO timestamp
     /** One-line source note, e.g. "Alphabet Q2 2026 10-Q". */
     evidence?: string;
+    /** True when "unclear" is because the company does NOT DISCLOSE the metric
+     *  at that granularity — a permanently unverifiable condition, as opposed
+     *  to a quarter that simply has not been reported yet. */
+    undisclosed?: boolean;
+    /** A checkable replacement written against a metric the company DOES
+     *  report. Proposed only — applying it is a deliberate click, because a
+     *  silently rewritten condition is no longer the one the PM signed. */
+    suggestedNote?: string;
   };
+  /** Set when a suggestion was applied: the wording this condition replaced.
+   *  Keeps the pre-registration audit trail honest about what changed. */
+  rewrittenFrom?: string;
+  /** ISO date the rewrite was accepted. */
+  rewrittenAt?: string;
 };
 
 export type KillStatus = "ok" | "tripped" | "unknown" | "manual";

@@ -96,7 +96,9 @@ Procedure: if the ingested evidence above already answers the condition with a d
 {
   "status": "ok" | "tripped" | "unclear",
   "reading": "one short line. For ok/tripped: the CURRENT figure(s) and their as-of date, e.g. 'Q2 RPO $470B, +8% QoQ (reported Jul 29)'. For unclear: state WHAT IS NOT DISCLOSED and name the closest metric the company DOES report, e.g. 'Alphabet does not break out GCP backlog; it reports total RPO ($514B Q2) — rewrite the condition against RPO'",
-  "evidence": "one short line naming the actual source used, e.g. 'FactSet Q2 Metrics Recap 2026-07-29' or 'Alphabet Q2 2026 earnings release (web)'"
+  "evidence": "one short line naming the actual source used, e.g. 'FactSet Q2 Metrics Recap 2026-07-29' or 'Alphabet Q2 2026 earnings release (web)'",
+  "undisclosed": true ONLY when status is "unclear" BECAUSE the company does not report the metric at that granularity (omit otherwise),
+  "suggestedRewrite": "REQUIRED when undisclosed is true: the same intent rewritten against a metric the company DOES report, in the same style as the original — name the metric, the comparison and the current reference figure. e.g. 'Google Cloud RPO must not decline sequentially from $514B (Q2 2026)'. Omit unless undisclosed."
 }
 
 Rules:
@@ -116,7 +118,13 @@ Rules:
     .filter((b): b is Anthropic.TextBlock => b.type === "text")
     .map((b) => b.text)
     .join("");
-  const res = parseModelJson<{ status?: string; reading?: string; evidence?: string }>(text);
+  const res = parseModelJson<{
+    status?: string;
+    reading?: string;
+    evidence?: string;
+    undisclosed?: boolean;
+    suggestedRewrite?: string;
+  }>(text);
   if (!res.ok) {
     console.error(
       `[custom-condition-check] ${ticker} JSON parse failed:`,
@@ -129,11 +137,20 @@ Rules:
     const o = res.value;
     if (o.status !== "ok" && o.status !== "tripped" && o.status !== "unclear") return null;
     if (typeof o.reading !== "string" || !o.reading.trim()) return null;
+    // A rewrite is only meaningful for the not-disclosed case; ignore one
+    // offered for a quarter that simply has not been reported yet.
+    const undisclosed = o.status === "unclear" && o.undisclosed === true;
+    const suggestedNote =
+      undisclosed && typeof o.suggestedRewrite === "string" && o.suggestedRewrite.trim()
+        ? o.suggestedRewrite.trim().slice(0, 300)
+        : undefined;
     return {
       status: o.status,
       reading: o.reading.trim().slice(0, 200),
       checkedAt: new Date().toISOString(),
       evidence: typeof o.evidence === "string" ? o.evidence.trim().slice(0, 160) : undefined,
+      ...(undisclosed ? { undisclosed: true } : {}),
+      ...(suggestedNote ? { suggestedNote } : {}),
     };
   } catch {
     return null;

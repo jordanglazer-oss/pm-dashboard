@@ -216,6 +216,52 @@ export default function ThesisDeskPage() {
     setVerifying(null);
   };
 
+  /**
+   * Accept a proposed rewrite for a condition the company does not disclose.
+   *
+   * PROPOSED, never automatic: silently rewriting a pre-registered condition
+   * would mean a later TRIPPED fires against a rule the PM never signed, and
+   * the audit trail would show a criterion nobody chose. One click instead —
+   * and the wording it replaced is kept on the condition (rewrittenFrom).
+   */
+  const [applying, setApplying] = useState<string | null>(null);
+  const applyRewrite = async (row: Row, conditionId: string, suggestion: string) => {
+    if (applying) return;
+    setApplying(conditionId);
+    try {
+      const next = row.checks.map((k) => {
+        const c = k.condition;
+        if (c.id !== conditionId) return c;
+        return {
+          ...c,
+          note: suggestion,
+          rewrittenFrom: c.note,
+          rewrittenAt: todayIso(),
+          // Drop the stale verdict so the rewritten rule is checked fresh.
+          aiCheck: undefined,
+          trippedAt: null,
+        };
+      });
+      await fetch("/api/kv/position-theses", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ ticker: row.ticker, killConditions: next }),
+      });
+      // Verify the new wording immediately, then reload.
+      await fetch("/api/custom-condition-check", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ ticker: row.ticker, force: true }),
+      }).catch(() => {});
+      const fresh = await fetch("/api/thesis-watch", { cache: "no-store" }).then((r) => r.json());
+      setData(fresh as Payload);
+    } catch {
+      /* leave the suggestion in place so it can be retried */
+    } finally {
+      setApplying(null);
+    }
+  };
+
   const [bulk, setBulk] = useState<{ done: number; total: number; failed: string[] } | null>(null);
   /**
    * mode "missing" → only names with no conditions yet (safe, additive).
@@ -482,6 +528,28 @@ export default function ThesisDeskPage() {
                           )}
                           <div className="text-[13px] font-medium text-ink">{describeCondition(k.condition)}</div>
                           <div className="text-[11px] text-ink-3">{k.reading}</div>
+                          {k.condition.aiCheck?.undisclosed && k.condition.aiCheck.suggestedNote && (
+                            <div className="mt-1.5 rounded-lg border border-warn-border bg-warn-soft px-2.5 py-1.5">
+                              <div className="text-[10px] font-bold uppercase tracking-[0.14em] text-warn">
+                                Not disclosed — can never verify
+                              </div>
+                              <div className="mt-0.5 text-[12px] leading-5 text-ink-2">
+                                Suggested: {k.condition.aiCheck.suggestedNote}
+                              </div>
+                              <button
+                                onClick={() => applyRewrite(r, k.condition.id, k.condition.aiCheck!.suggestedNote!)}
+                                disabled={applying === k.condition.id}
+                                className="mt-1 text-[11px] font-semibold text-accent hover:underline disabled:opacity-50"
+                              >
+                                {applying === k.condition.id ? "Applying…" : "Apply rewrite →"}
+                              </button>
+                            </div>
+                          )}
+                          {k.condition.rewrittenFrom && (
+                            <div className="mt-0.5 text-[10px] text-ink-faint">
+                              rewritten {k.condition.rewrittenAt} · was: {k.condition.rewrittenFrom}
+                            </div>
+                          )}
                         </div>
                         <span className={`shrink-0 rounded-full border px-2 py-0.5 text-[10px] font-bold ${st.pill}`}>
                           {k.status === "tripped" && k.condition.trippedAt
