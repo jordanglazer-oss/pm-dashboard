@@ -49,6 +49,19 @@ const STATUS_STYLE: Record<KillStatus, { dot: string; pill: string; label: strin
 
 const todayIso = () => new Date().toISOString().slice(0, 10);
 
+/**
+ * "unclear" covers two situations the card must NOT show identically:
+ *   PENDING    — the quarter simply has not been reported yet. The condition
+ *                is fine; it resolves on the next print. Neutral styling.
+ *   NO DATA    — structural: the metric is not disclosed, or not on a
+ *                quarterly cadence. The condition can never resolve and needs
+ *                a rewrite (which the verifier proposes).
+ * Showing both as NO DATA made a healthy condition look broken and hid which
+ * ones actually needed action.
+ */
+const unclearKind = (c: KillCheck["condition"]): "pending" | "structural" | null =>
+  c.aiCheck?.status === "unclear" ? (c.aiCheck.undisclosed ? "structural" : "pending") : null;
+
 /** localStorage, NOT pm:ui-prefs: persisting here costs no Redis write, no
  *  bytes in the nightly backup blob and no origin transfer. Trade-off is that
  *  the preference is per-device rather than synced. */
@@ -262,6 +275,70 @@ export default function ThesisDeskPage() {
     }
   };
 
+  /** Every condition carrying a proposed rewrite, across all names. */
+  const pendingRewrites = useMemo(
+    () =>
+      rows.flatMap((r) =>
+        r.checks
+          .filter((k) => k.condition.aiCheck?.undisclosed && k.condition.aiCheck.suggestedNote)
+          .map((k) => ({ ticker: r.ticker, conditionId: k.condition.id })),
+      ),
+    [rows],
+  );
+  const [bulkRewriting, setBulkRewriting] = useState<{ done: number; total: number } | null>(null);
+  const applyAllRewrites = async () => {
+    if (pendingRewrites.length === 0 || bulkRewriting) return;
+    // Group by ticker: one read-merge-write per name rather than per condition.
+    const byTicker = new Map<string, Set<string>>();
+    for (const p of pendingRewrites) {
+      if (!byTicker.has(p.ticker)) byTicker.set(p.ticker, new Set());
+      byTicker.get(p.ticker)!.add(p.conditionId);
+    }
+    const tickers = [...byTicker.keys()];
+    setBulkRewriting({ done: 0, total: tickers.length });
+    for (let i = 0; i < tickers.length; i++) {
+      const tk = tickers[i];
+      const row = rows.find((r) => r.ticker === tk);
+      const ids = byTicker.get(tk)!;
+      if (row) {
+        try {
+          const next = row.checks.map((k) => {
+            const c = k.condition;
+            if (!ids.has(c.id) || !c.aiCheck?.suggestedNote) return c;
+            return {
+              ...c,
+              note: c.aiCheck.suggestedNote,
+              rewrittenFrom: c.note,
+              rewrittenAt: todayIso(),
+              aiCheck: undefined,
+              trippedAt: null,
+            };
+          });
+          await fetch("/api/kv/position-theses", {
+            method: "POST",
+            headers: { "Content-Type": "application/json" },
+            body: JSON.stringify({ ticker: tk, killConditions: next }),
+          });
+          await fetch("/api/custom-condition-check", {
+            method: "POST",
+            headers: { "Content-Type": "application/json" },
+            body: JSON.stringify({ ticker: tk, force: true }),
+          }).catch(() => {});
+        } catch {
+          /* one name failing must not stop the rest */
+        }
+      }
+      setBulkRewriting({ done: i + 1, total: tickers.length });
+    }
+    try {
+      const fresh = await fetch("/api/thesis-watch", { cache: "no-store" }).then((r) => r.json());
+      setData(fresh as Payload);
+    } catch {
+      /* a refresh picks it up */
+    }
+    setBulkRewriting(null);
+  };
+
   const [bulk, setBulk] = useState<{ done: number; total: number; failed: string[] } | null>(null);
   /**
    * mode "missing" → only names with no conditions yet (safe, additive).
@@ -374,6 +451,18 @@ export default function ThesisDeskPage() {
               >
                 {totals.unreviewed} AI-drafted, unreviewed
               </span>
+            )}
+            {pendingRewrites.length > 0 && !bulk && (
+              <button
+                onClick={applyAllRewrites}
+                disabled={!!bulkRewriting}
+                title={`Applies every proposed rewrite (${pendingRewrites.length}) — only conditions the company does NOT disclose. Each keeps the wording it replaced, and is re-verified immediately.`}
+                className="rounded-control border border-warn-border bg-white px-2.5 py-1 text-[11px] font-semibold text-warn disabled:opacity-50"
+              >
+                {bulkRewriting
+                  ? `Rewriting ${bulkRewriting.done + 1} of ${bulkRewriting.total}…`
+                  : `Apply ${pendingRewrites.length} rewrite${pendingRewrites.length === 1 ? "" : "s"}`}
+              </button>
             )}
             {unverified.length > 0 && !bulk && (
               <button
@@ -551,11 +640,26 @@ export default function ThesisDeskPage() {
                             </div>
                           )}
                         </div>
-                        <span className={`shrink-0 rounded-full border px-2 py-0.5 text-[10px] font-bold ${st.pill}`}>
-                          {k.status === "tripped" && k.condition.trippedAt
-                            ? `TRIPPED ${k.condition.trippedAt.slice(5)}`
-                            : st.label}
-                        </span>
+                        {(() => {
+                          const uk = unclearKind(k.condition);
+                          const pending = uk === "pending";
+                          const label =
+                            k.status === "tripped" && k.condition.trippedAt
+                              ? `TRIPPED ${k.condition.trippedAt.slice(5)}`
+                              : pending
+                                ? "PENDING"
+                                : st.label;
+                          return (
+                            <span
+                              className={`shrink-0 rounded-full border px-2 py-0.5 text-[10px] font-bold ${
+                                pending ? "border-line bg-surface-2 text-ink-2" : st.pill
+                              }`}
+                              title={pending ? "Waiting on the next report — the condition is fine, the figure just isn't out yet." : undefined}
+                            >
+                              {label}
+                            </span>
+                          );
+                        })()}
                       </div>
                     );
                   })}
