@@ -21,17 +21,20 @@ export const dynamic = "force-dynamic";
 export async function GET() {
   try {
     const store = await loadStreetTakeaways();
-    const out: Record<string, { date: string; label: string; event: string | null }> = {};
+    // Newest entry PER KIND. The formats carry different information —
+    // per-firm reaction vs reported results vs the call/guidance summary — so
+    // the Inbox shows a column each rather than collapsing to "most recent".
+    const out: Record<string, Record<string, { date: string; label: string; event: string | null }>> = {};
     for (const [ticker, entries] of Object.entries(store)) {
       if (!Array.isArray(entries) || entries.length === 0) continue;
-      // Stored newest-first, but sort defensively rather than trust order.
-      const latest = [...entries].sort((a, b) => (a.date < b.date ? 1 : a.date > b.date ? -1 : 0))[0];
-      if (!latest?.date) continue;
-      out[ticker.toUpperCase()] = {
-        date: latest.date,
-        label: factsetKindLabel(latest),
-        event: latest.event ?? null,
-      };
+      const byKind: Record<string, { date: string; label: string; event: string | null }> = {};
+      for (const e of [...entries].sort((a, b) => (a.date < b.date ? 1 : a.date > b.date ? -1 : 0))) {
+        if (!e?.date) continue;
+        const k = e.kind ?? "takeaways";
+        if (byKind[k]) continue; // first seen is newest
+        byKind[k] = { date: e.date, label: factsetKindLabel(e), event: e.event ?? null };
+      }
+      if (Object.keys(byKind).length) out[ticker.toUpperCase()] = byKind;
     }
     return NextResponse.json({ summary: out });
   } catch (e) {

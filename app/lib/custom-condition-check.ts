@@ -95,13 +95,14 @@ ${evidence ? `\nINGESTED EVIDENCE (the PM's own analyst reports + FactSet earnin
 Procedure: if the ingested evidence above already answers the condition with a dated reported figure, use it and cite that source. Use web search only to fill gaps — when the evidence is silent, older than the latest expected report, or ambiguous. Then answer in JSON only:
 {
   "status": "ok" | "tripped" | "unclear",
-  "reading": "one short line with the CURRENT figure(s) and their as-of date, e.g. 'Q2 RPO $470B, +8% QoQ (reported Jul 29)'",
+  "reading": "one short line. For ok/tripped: the CURRENT figure(s) and their as-of date, e.g. 'Q2 RPO $470B, +8% QoQ (reported Jul 29)'. For unclear: state WHAT IS NOT DISCLOSED and name the closest metric the company DOES report, e.g. 'Alphabet does not break out GCP backlog; it reports total RPO ($514B Q2) — rewrite the condition against RPO'",
   "evidence": "one short line naming the actual source used, e.g. 'FactSet Q2 Metrics Recap 2026-07-29' or 'Alphabet Q2 2026 earnings release (web)'"
 }
 
 Rules:
 - "tripped" only when a reported fact violates the condition as written.
 - "unclear" when the data needed is not yet reported or you cannot find a reliable figure — NEVER guess "ok" without a found fact.
+- An "unclear" caused by the company NOT DISCLOSING the metric is a broken condition, not a temporary gap. Say so plainly and name the nearest reported substitute, so the PM can rewrite it into something checkable. Distinguish that from "the quarter simply is not reported yet", which needs no rewrite.
 - The reading must contain a real figure/date you found, not a restatement of the condition.`;
 
   const resp = await client.messages.create({

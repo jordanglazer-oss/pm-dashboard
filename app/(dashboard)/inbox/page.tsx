@@ -21,7 +21,17 @@ import { parseMarketEdgeCsv } from "@/app/lib/marketedge-csv";
 import { parseSiaCsv } from "@/app/lib/sia-csv";
 import { UNIVERSE_MIN_ROWS } from "@/app/lib/sia-universe-shared";
 import { parseBoostedCsv } from "@/app/lib/boosted-csv";
-type FactsetSummary = Record<string, { date: string; label: string; event: string | null }>;
+type FactsetEntry = { date: string; label: string; event: string | null };
+/** ticker → kind → newest entry of that kind. */
+type FactsetSummary = Record<string, Record<string, FactsetEntry>>;
+/** The FactSet formats get their own columns: they carry different
+ *  information (analyst reaction / reported results / call + guidance), so
+ *  collapsing to "most recent" hid whichever arrived second. */
+const FACTSET_COLS: { kind: string; head: string; title: string }[] = [
+  { kind: "takeaways", head: "Takeaways", title: "FactSet Street Takeaways — per-firm analyst reaction, price-target changes and rating mix. Date of the newest one held." },
+  { kind: "metrics", head: "Metrics", title: "FactSet StreetAccount Metrics Recap — reported results vs consensus and guidance vs prior guide. Date of the newest one held." },
+  { kind: "transcript", head: "Transcript", title: "FactSet Transcript Intelligence — the earnings-call and guidance summary. Date of the newest one held." },
+];
 import Link from "next/link";
 
 type Status = {
@@ -485,9 +495,8 @@ export default function InboxPage() {
     mornDate: string | null;
     /** Most recent ingested FactSet alert for this name (date + which report
      *  it was), null when none has arrived. */
-    factsetDate: string | null;
-    factsetLabel: string | null;
-    factsetEvent: string | null;
+    /** kind → newest entry of that kind (one table column each). */
+    factset: Record<string, FactsetEntry>;
     /** Raw BoostedAI rating (0-5). Lives on the Stock itself. */
     boostedAi: number | null;
     /** BoostedAI consensus recommendation. */
@@ -522,9 +531,9 @@ export default function InboxPage() {
   }
   // Most recent FactSet alert per canonical ticker. The store keeps entries
   // newest-first, but sort defensively rather than trusting insertion order.
-  const factsetByCanonical = new Map<string, { date: string; label: string; event: string | null }>();
-  for (const [key, v] of Object.entries(factset)) {
-    if (v?.date) factsetByCanonical.set(canonicalTicker(key), v);
+  const factsetByCanonical = new Map<string, Record<string, FactsetEntry>>();
+  for (const [key, byKind] of Object.entries(factset)) {
+    if (byKind && typeof byKind === "object") factsetByCanonical.set(canonicalTicker(key), byKind);
   }
   const scoreableStocks = stocks.filter((s) => isScoreable(s) && (s.bucket === "Portfolio" || s.bucket === "Watchlist"));
   const coverageRows: Coverage[] = scoreableStocks.map((s) => {
@@ -541,9 +550,7 @@ export default function InboxPage() {
       rbcDate: has?.rbc ?? null,
       jpmDate: has?.jpm ?? null,
       mornDate: has?.morningstar ?? null,
-      factsetDate: fs?.date ?? null,
-      factsetLabel: fs?.label ?? null,
-      factsetEvent: fs?.event ?? null,
+      factset: fs ?? {},
       boostedAi: typeof s.boostedAi === "number" ? s.boostedAi : null,
       boostedAiConsensus: s.boostedAiConsensus ?? null,
       sia: typeof s.sia === "number" ? s.sia : null,
@@ -607,7 +614,12 @@ export default function InboxPage() {
         case "rbc": cmp = cmpDate(a.rbcDate, b.rbcDate); break;
         case "jpm": cmp = cmpDate(a.jpmDate, b.jpmDate); break;
         case "morn": cmp = cmpDate(a.mornDate, b.mornDate); break;
-        case "factset": cmp = cmpDate(a.factsetDate, b.factsetDate); break;
+        case "factset": {
+          const newest = (r: Coverage) =>
+            Object.values(r.factset).map((v) => v.date).sort().slice(-1)[0] ?? null;
+          cmp = cmpDate(newest(a), newest(b));
+          break;
+        }
         case "boostedAi": cmp = cmpNum(a.boostedAi, b.boostedAi); break;
         case "consensus": {
           // Sort by bullishness: Strong Sell (0) → Sell (1) → Hold (2) → Buy (3) → Strong Buy (4)
@@ -1461,7 +1473,7 @@ export default function InboxPage() {
           </p>
         ) : (
           <div className="overflow-x-auto">
-          <table className="w-full min-w-[1400px] text-sm">
+          <table className="w-full min-w-[1560px] text-sm">
             <thead className="bg-surface-2 text-xs uppercase tracking-wider text-ink-3">
               <tr>
                 <th className="px-3 py-2 text-left cursor-pointer select-none hover:text-ink" onClick={() => toggleCovSort("ticker")}>Ticker{covArrow("ticker")}</th>
@@ -1470,7 +1482,17 @@ export default function InboxPage() {
                 <th className="px-3 py-2 text-center w-20 cursor-pointer select-none hover:text-ink" onClick={() => toggleCovSort("rbc")} title="Date the RBC PDF was last uploaded. Amber &gt;90d, red &gt;180d — a cue to fetch a newer report. Click to sort by recency (oldest first).">RBC{covArrow("rbc")}</th>
                 <th className="px-3 py-2 text-center w-20 cursor-pointer select-none hover:text-ink" onClick={() => toggleCovSort("jpm")} title="Date the JPM PDF was last uploaded. Amber &gt;90d, red &gt;180d — a cue to fetch a newer report. Click to sort by recency (oldest first).">JPM{covArrow("jpm")}</th>
                 <th className="px-3 py-2 text-center w-20 cursor-pointer select-none hover:text-ink" onClick={() => toggleCovSort("morn")} title="Date the Morningstar PDF was last uploaded. Amber &gt;90d, red &gt;180d. Morningstar is optional — a blank is not counted as a coverage gap in Status. Click to sort by recency (oldest first).">Morningstar{covArrow("morn")}</th>
-                <th className="px-3 py-2 text-left w-40 cursor-pointer select-none hover:text-ink" onClick={() => toggleCovSort("factset")} title="Most recent ingested FactSet alert for this name — its publication date and which report it was (Street Takeaways / Metrics Recap / Transcript Intelligence). Click to sort by recency (oldest first).">FactSet{covArrow("factset")}</th>
+                {FACTSET_COLS.map((c, i) => (
+                  <th
+                    key={c.kind}
+                    className="px-2 py-2 text-center w-20 cursor-pointer select-none hover:text-ink"
+                    onClick={() => toggleCovSort("factset")}
+                    title={c.title}
+                  >
+                    {c.head}
+                    {i === 0 ? covArrow("factset") : null}
+                  </th>
+                ))}
                 <th className="px-3 py-2 text-right w-20 cursor-pointer select-none hover:text-ink" onClick={() => toggleCovSort("boostedAi")} title="Raw BoostedAI rating (0-5, decimals OK). Combined with Consensus to auto-derive the dashboard's aiRating (0-2).">Boosted.ai{covArrow("boostedAi")}</th>
                 <th className="px-3 py-2 text-left w-28 cursor-pointer select-none hover:text-ink" onClick={() => toggleCovSort("consensus")} title="BoostedAI consensus recommendation. Combined with the numeric rating to auto-derive aiRating (Strong Buy / Buy → 2, Hold → 1, Sell / Strong Sell → 0).">Consensus{covArrow("consensus")}</th>
                 <th className="px-3 py-2 text-right w-20 cursor-pointer select-none hover:text-ink" onClick={() => toggleCovSort("sia")} title="SIA SMAX score (0-10 integer). Maps to relativeStrength: 8-10 → 2, 6-7 → 1, 0-5 → 0.">SIA SMAX{covArrow("sia")}</th>
@@ -1530,21 +1552,23 @@ export default function InboxPage() {
                         <span className="inline-block text-ink-faint text-base" title="No Morningstar report yet (optional source)">—</span>
                       )}
                     </td>
-                    <td className="px-3 py-2 text-left">
-                      {r.factsetDate ? (
-                        <span
-                          className="inline-flex flex-col leading-tight"
-                          title={`Most recent FactSet alert: ${r.factsetLabel}${r.factsetEvent ? ` — ${r.factsetEvent}` : ""} (${r.factsetDate})`}
-                        >
-                          <span className={`text-xs font-semibold ${staleClass(daysSince(r.factsetDate))}`}>
-                            {fmtReportDate(r.factsetDate)}
-                          </span>
-                          <span className="truncate text-[10px] text-ink-3">{r.factsetLabel}</span>
-                        </span>
-                      ) : (
-                        <span className="inline-block text-ink-faint text-base" title="No FactSet alert ingested for this name yet">—</span>
-                      )}
-                    </td>
+                    {FACTSET_COLS.map((c) => {
+                      const e = r.factset[c.kind];
+                      return (
+                        <td key={c.kind} className="px-2 py-2 text-center">
+                          {e ? (
+                            <span
+                              className={`inline-block text-xs font-semibold ${staleClass(daysSince(e.date))}`}
+                              title={`${e.label}${e.event ? ` — ${e.event}` : ""} (${e.date})`}
+                            >
+                              {fmtReportDate(e.date)}
+                            </span>
+                          ) : (
+                            <span className="inline-block text-ink-faint text-base" title={`No ${c.head} alert ingested for this name yet`}>—</span>
+                          )}
+                        </td>
+                      );
+                    })}
                     <td className="px-3 py-2 text-right">
                       <div className="flex items-center justify-end gap-1">
                         {r.boostedAi == null && (

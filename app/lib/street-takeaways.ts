@@ -19,9 +19,27 @@ import { canonicalTicker } from "./ticker";
 
 export const STREET_TAKEAWAYS_KEY = "pm:street-takeaways";
 
-/** How many entries we keep per ticker (newest first). A quarter can produce
- *  TWO entries (a Metrics Recap and a Street Takeaways), so 6 ≈ 3 quarters. */
-export const MAX_PER_TICKER = 6;
+/**
+ * The FactSet alert formats, each carrying DIFFERENT information:
+ *   takeaways  — per-firm analyst reaction, PT changes, rating mix
+ *   metrics    — the reported results vs consensus, guidance vs prior guide
+ *   transcript — the earnings-call and guidance summary
+ *   other      — any future FactSet format we do not recognise yet, kept
+ *                rather than dropped so a new alert type is never lost
+ */
+export type TakeawayKind = "takeaways" | "metrics" | "transcript" | "other";
+
+/**
+ * Retention is PER KIND, not per ticker. A single shared cap meant the formats
+ * competed: a quarter that produced several Metrics Recaps could evict the
+ * Transcript Intelligence entries entirely, silently losing a source that
+ * carries information the others don't. Each format now keeps its own rolling
+ * window, so both are always held.
+ */
+export const MAX_PER_KIND = 4;
+/** Kept for callers that still import it; the effective per-ticker ceiling is
+ *  MAX_PER_KIND × the number of formats. */
+export const MAX_PER_TICKER = MAX_PER_KIND * 4;
 /**
  * Also drop entries older than this. The count cap alone already holds only
  * ~6-9 months for a normally-covered name (2-3 alerts per quarter), so this
@@ -96,7 +114,7 @@ export type StreetTakeaway = {
    *     outlook, beat track record)
    *  A name typically gets both for the same quarter; they're complementary
    *  and stored side by side so scoring sees the full picture. */
-  kind: "takeaways" | "metrics";
+  kind: TakeawayKind;
   /** ISO date the alert was published (from the email header line). */
   date: string;
   /** ISO timestamp we ingested it. */
@@ -192,10 +210,17 @@ export async function appendStreetTakeaway(
       (e.kind ?? "takeaways") === entry.kind,
   );
   if (dupe) return { added: false, count: list.length };
+  // Age cap first, then cap EACH KIND independently so the formats never
+  // evict one another (see MAX_PER_KIND).
   const cutoff = new Date(Date.now() - MAX_AGE_DAYS * 86400_000).toISOString().slice(0, 10);
-  const next = [entry, ...list]
-    .filter((e) => !e?.date || e.date >= cutoff)
-    .slice(0, MAX_PER_TICKER);
+  const fresh = [entry, ...list].filter((e) => !e?.date || e.date >= cutoff);
+  const perKind = new Map<string, number>();
+  const next = fresh.filter((e) => {
+    const k = e.kind ?? "takeaways";
+    const n = (perKind.get(k) ?? 0) + 1;
+    perKind.set(k, n);
+    return n <= MAX_PER_KIND;
+  });
   store[key] = next;
   await redis.set(STREET_TAKEAWAYS_KEY, JSON.stringify(store));
   return { added: true, count: next.length };

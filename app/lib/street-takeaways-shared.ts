@@ -27,5 +27,16 @@ export function factsetKindLabel(entry: Pick<StreetTakeaway, "subject" | "kind">
   if (/transcript\s+intelligence/i.test(s)) return "Transcript Intelligence";
   if (/metrics\s+recap/i.test(s)) return "Metrics Recap";
   if (/street\s+takeaways/i.test(s)) return "Street Takeaways";
-  return entry.kind === "metrics" ? "Metrics Recap" : "Street Takeaways";
+  return KIND_LABEL[entry.kind] ?? "FactSet alert";
 }
+
+/** Stable short labels per stored kind, used for the Inbox columns. */
+export const KIND_LABEL: Record<string, string> = {
+  takeaways: "Street Takeaways",
+  metrics: "Metrics Recap",
+  transcript: "Transcript Intelligence",
+  other: "FactSet alert",
+};
+
+/** Column order for the Inbox — the two Jordan reads most, then the rest. */
+export const FACTSET_KINDS = ["takeaways", "metrics", "transcript"] as const;

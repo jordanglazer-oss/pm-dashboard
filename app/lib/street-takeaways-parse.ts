@@ -1,5 +1,5 @@
 import Anthropic from "@anthropic-ai/sdk";
-import type { StreetTakeaway, StreetFirmView, StreetGuidanceLine } from "./street-takeaways";
+import type { TakeawayKind, StreetTakeaway, StreetFirmView, StreetGuidanceLine } from "./street-takeaways";
 
 /**
  * Parse a FactSet "SA: Street Takeaways" alert email body into the structured
@@ -49,8 +49,12 @@ export function extractPrimaryIdentifier(body: string): string | null {
  * EPS …" variant) carries the RESULTS + GUIDANCE. Detected from the subject
  * first, then the body's own header line, since a forward can carry either.
  */
-export function detectTakeawayKind(subject: string, body: string): "takeaways" | "metrics" {
+export function detectTakeawayKind(subject: string, body: string): TakeawayKind {
   const hay = `${subject}\n${body.slice(0, 1200)}`;
+  // Transcript Intelligence FIRST: it is the call + guidance summary and was
+  // previously folded into one of the other two, which both mislabelled it and
+  // made it compete for their retention slots.
+  if (/transcript\s+intelligence/i.test(hay)) return "transcript";
   if (/street\s+takeaways/i.test(hay)) return "takeaways";
   if (/metrics\s+recap|reports\s+Q\d|consensus\s+metrics/i.test(hay)) return "metrics";
   // Content fallback: per-firm commentary is unique to the takeaways format.
@@ -132,6 +136,10 @@ export type ParsedTakeaway = Omit<StreetTakeaway, "id" | "ticker" | "ingestedAt"
 export async function parseStreetTakeaway(body: string, subject = ""): Promise<ParsedTakeaway> {
   const cleaned = stripEmailBoilerplate(body);
   const kind = detectTakeawayKind(subject, cleaned);
+  // Transcript Intelligence carries guidance + management commentary, so it
+  // extracts against the metrics schema; only the per-firm reaction format
+  // needs the takeaways schema.
+  const useMetricsSchema = kind === "metrics" || kind === "transcript";
   const msg = await client.messages.create({
     model: "claude-sonnet-5",
     thinking: { type: "disabled" },
@@ -139,7 +147,7 @@ export async function parseStreetTakeaway(body: string, subject = ""): Promise<P
     messages: [
       {
         role: "user",
-        content: `${kind === "metrics" ? METRICS_SCHEMA_PROMPT : SCHEMA_PROMPT}\n\n--- EMAIL BODY ---\n${cleaned}`,
+        content: `${useMetricsSchema ? METRICS_SCHEMA_PROMPT : SCHEMA_PROMPT}\n\n--- EMAIL BODY ---\n${cleaned}`,
       },
     ],
   });
