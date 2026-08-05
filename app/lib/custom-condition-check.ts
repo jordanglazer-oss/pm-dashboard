@@ -52,6 +52,17 @@ const STALE_DAYS = 30;
  *  requirement so a batch of fresh underwrites clears in a couple of nights
  *  instead of trickling; still a runaway guard, not a budget. */
 const MAX_CHECKS_PER_RUN = 10;
+/** Clip a reading at a WORD boundary. A hard slice cut real Uber readings
+ *  mid-number ("as of Q1 2026 (May 6, 2"), which reads like corrupted data on
+ *  the card and hides the very fact the reading exists to convey. */
+const MAX_READING = 260;
+function clipReading(t: string): string {
+  if (t.length <= MAX_READING) return t;
+  const cut = t.slice(0, MAX_READING);
+  const lastSpace = cut.lastIndexOf(" ");
+  const body = lastSpace > MAX_READING * 0.6 ? cut.slice(0, lastSpace) : cut;
+  return body.replace(/[\s(\[,;:—-]+$/, "") + "…";
+}
 
 type ThesisEntry = {
   why?: string;
@@ -97,14 +108,18 @@ Procedure: if the ingested evidence above already answers the condition with a d
   "status": "ok" | "tripped" | "unclear",
   "reading": "one short line. For ok/tripped: the CURRENT figure(s) and their as-of date, e.g. 'Q2 RPO $470B, +8% QoQ (reported Jul 29)'. For unclear: state WHAT IS NOT DISCLOSED and name the closest metric the company DOES report, e.g. 'Alphabet does not break out GCP backlog; it reports total RPO ($514B Q2) — rewrite the condition against RPO'",
   "evidence": "one short line naming the actual source used, e.g. 'FactSet Q2 Metrics Recap 2026-07-29' or 'Alphabet Q2 2026 earnings release (web)'",
-  "undisclosed": true ONLY when status is "unclear" BECAUSE the company does not report the metric at that granularity (omit otherwise),
+  "undisclosed": true when status is "unclear" for a STRUCTURAL reason — the metric is not broken out at that granularity, OR is disclosed only occasionally (a milestone, an investor day, an annual figure) rather than every quarter, OR exists only outside standard reporting. Omit it ONLY when the sole reason is that the current quarter has not been reported yet,
   "suggestedRewrite": "REQUIRED when undisclosed is true: the same intent rewritten against a metric the company DOES report, in the same style as the original — name the metric, the comparison and the current reference figure. e.g. 'Google Cloud RPO must not decline sequentially from $514B (Q2 2026)'. Omit unless undisclosed."
 }
 
 Rules:
 - "tripped" only when a reported fact violates the condition as written.
 - "unclear" when the data needed is not yet reported or you cannot find a reliable figure — NEVER guess "ok" without a found fact.
-- An "unclear" caused by the company NOT DISCLOSING the metric is a broken condition, not a temporary gap. Say so plainly and name the nearest reported substitute, so the PM can rewrite it into something checkable. Distinguish that from "the quarter simply is not reported yet", which needs no rewrite.
+- Classify an "unclear" into exactly ONE of three cases, and say which in the reading:
+  (a) NOT BROKEN OUT — the company never reports it at that granularity. Structural. undisclosed=true, suggest a rewrite.
+  (b) NOT ON A QUARTERLY CADENCE — it exists but only appears at milestones, investor days or annually, so most quarters cannot answer the condition. THIS IS ALSO STRUCTURAL: a condition that can only be checked when the company feels like announcing it is not a watchable condition. undisclosed=true, suggest a rewrite against a line item reported EVERY quarter. (Example: a subscription MEMBER COUNT is usually a milestone disclosure; the revenue or bookings line it drives is quarterly.)
+  (c) QUARTER NOT REPORTED YET — the figure is a normal quarterly line and this period simply has not been published. Temporary. Omit undisclosed and suggest nothing; the next report answers it.
+- The distinction that matters is CADENCE, not existence: if the metric was last disclosed one or more quarters ago and the latest report did not repeat it, that is case (b), not (c).
 - The reading must contain a real figure/date you found, not a restatement of the condition.`;
 
   const resp = await client.messages.create({
@@ -146,7 +161,7 @@ Rules:
         : undefined;
     return {
       status: o.status,
-      reading: o.reading.trim().slice(0, 200),
+      reading: clipReading(o.reading.trim()),
       checkedAt: new Date().toISOString(),
       evidence: typeof o.evidence === "string" ? o.evidence.trim().slice(0, 160) : undefined,
       ...(undisclosed ? { undisclosed: true } : {}),
