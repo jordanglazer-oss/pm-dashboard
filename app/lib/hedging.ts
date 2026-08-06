@@ -331,11 +331,32 @@ export function findSnapshotDaysAgo(
 
 /** Tenor buckets used to compare like-for-like across snapshots (a "3M" put
  *  today must be ranked against ~3M puts historically, not the whole surface). */
-const TENOR_BUCKETS = [
-  { key: "near", label: "≤45d", min: 0, max: 45 },
-  { key: "mid", label: "2-4M", min: 46, max: 135 },
-  { key: "far", label: "5-9M", min: 136, max: 400 },
-] as const;
+/**
+ * MONTHLY ORDINAL buckets: M1 = the nearest monthly expiry, M2 the next, and
+ * so on out to M9. The snapshot ledger already stores one quote per calendar
+ * month, so this is computable retroactively over the whole history.
+ *
+ * Replaces three wide DTE bands. The old "2-4M" band spanned 46-135 days — a
+ * 2.9x range in time — and premium scales with sqrt(t), so identical
+ * volatility produced premiums differing by 1.71x WITHIN one bucket. The
+ * percentile was therefore ranking tenor as much as vol, which is how a
+ * contract down 30% MoM still read 60th percentile while its neighbours read
+ * 0th and 15th. An ordinal drifts only ~30 days (1.22x), and the sqrt(t)
+ * normalisation below removes what remains.
+ */
+const MONTH_BUCKETS = Array.from({ length: 9 }, (_, i) => ({
+  key: `m${i + 1}`,
+  label: `M${i + 1}`,
+  ordinal: i,
+}));
+
+/**
+ * Rank a VOL-LIKE quantity, not a raw premium: premium-as-%-of-spot divided by
+ * sqrt(years). Two observations of the same bucket taken at 60 and 90 DTE are
+ * otherwise ~22% apart for no volatility reason at all.
+ */
+const volNormalize = (pctOfSpot: number, dte: number): number | null =>
+  dte > 0 ? pctOfSpot / Math.sqrt(dte / 365) : null;
 
 export type PremiumBucketContext = {
   bucket: string;          // label
@@ -478,38 +499,38 @@ export function computePremiumContext(
   // observation per (snapshot, bucket): the quote closest to the bucket's
   // tenor midpoint.
   const dist: Record<string, { otm5: number[]; otm10: number[]; skew: number[] }> = {};
-  for (const b of TENOR_BUCKETS) dist[b.key] = { otm5: [], otm10: [], skew: [] };
+  for (const b of MONTH_BUCKETS) dist[b.key] = { otm5: [], otm10: [], skew: [] };
   for (const snap of recent) {
-    for (const b of TENOR_BUCKETS) {
-      const mid = (b.min + b.max) / 2;
-      let best: SnapshotQuote | null = null;
-      let bestDist = Infinity;
-      for (const qt of snap.quotes) {
-        const tenor = dayDiff(qt.expiry, snap.date);
-        if (tenor < b.min || tenor > b.max) continue;
-        const d = Math.abs(tenor - mid);
-        if (d < bestDist) { bestDist = d; best = qt; }
+    // The Nth-nearest monthly expiry on that day — constant maturity by
+    // construction, so today's M3 is compared against past M3s.
+    const dated = snap.quotes
+      .map((qt) => ({ qt, dte: dayDiff(qt.expiry, snap.date) }))
+      .filter((x) => x.dte > 0)
+      .sort((a, b) => a.dte - b.dte);
+    for (const b of MONTH_BUCKETS) {
+      const hit = dated[b.ordinal];
+      if (!hit) continue;
+      const { qt, dte } = hit;
+      if (qt.otm5Premium != null) {
+        const v = volNormalize((qt.otm5Premium / snap.spotPrice) * 100, dte);
+        if (v != null) dist[b.key].otm5.push(v);
       }
-      if (!best) continue;
-      if (best.otm5Premium != null) dist[b.key].otm5.push((best.otm5Premium / snap.spotPrice) * 100);
-      if (best.otm10Premium != null) dist[b.key].otm10.push((best.otm10Premium / snap.spotPrice) * 100);
-      if (best.otm10Premium != null && best.atmPremium != null && best.atmPremium > 0) {
-        dist[b.key].skew.push(best.otm10Premium / best.atmPremium);
+      if (qt.otm10Premium != null) {
+        const v = volNormalize((qt.otm10Premium / snap.spotPrice) * 100, dte);
+        if (v != null) dist[b.key].otm10.push(v);
+      }
+      // Skew is already a RATIO of two premiums at the same tenor, so it needs
+      // no normalisation — the tenor cancels.
+      if (qt.otm10Premium != null && qt.atmPremium != null && qt.atmPremium > 0) {
+        dist[b.key].skew.push(qt.otm10Premium / qt.atmPremium);
       }
     }
   }
 
   const buckets: PremiumBucketContext[] = [];
-  for (const b of TENOR_BUCKETS) {
-    // Today's anchor for this bucket: quote closest to the bucket midpoint.
-    const mid = (b.min + b.max) / 2;
-    let anchor: HedgingQuote | null = null;
-    let bestDist = Infinity;
-    for (const qt of live.quotes) {
-      if (qt.daysToExpiry < b.min || qt.daysToExpiry > b.max) continue;
-      const d = Math.abs(qt.daysToExpiry - mid);
-      if (d < bestDist) { bestDist = d; anchor = qt; }
-    }
+  const liveSorted = [...live.quotes].filter((q) => q.daysToExpiry > 0).sort((a, b) => a.daysToExpiry - b.daysToExpiry);
+  for (const b of MONTH_BUCKETS) {
+    const anchor: HedgingQuote | null = liveSorted[b.ordinal] ?? null;
     if (!anchor) continue;
     const skewRatio =
       anchor.otm10Premium != null && anchor.atmPremium != null && anchor.atmPremium > 0
@@ -519,9 +540,15 @@ export function computePremiumContext(
       bucket: b.label,
       daysToExpiry: anchor.daysToExpiry,
       otm5Pct: anchor.otm5PctOfSpot,
-      otm5Percentile: anchor.otm5PctOfSpot != null ? percentileOf(anchor.otm5PctOfSpot, dist[b.key].otm5) : null,
+      otm5Percentile: (() => {
+        const v = anchor.otm5PctOfSpot != null ? volNormalize(anchor.otm5PctOfSpot, anchor.daysToExpiry) : null;
+        return v != null ? percentileOf(v, dist[b.key].otm5) : null;
+      })(),
       otm10Pct: anchor.otm10PctOfSpot,
-      otm10Percentile: anchor.otm10PctOfSpot != null ? percentileOf(anchor.otm10PctOfSpot, dist[b.key].otm10) : null,
+      otm10Percentile: (() => {
+        const v = anchor.otm10PctOfSpot != null ? volNormalize(anchor.otm10PctOfSpot, anchor.daysToExpiry) : null;
+        return v != null ? percentileOf(v, dist[b.key].otm10) : null;
+      })(),
       skewRatio,
       skewPercentile: skewRatio != null ? percentileOf(skewRatio, dist[b.key].skew) : null,
     });
@@ -634,7 +661,13 @@ export type HedgeChecklist = {
  * to the client so the Hedging tile can show the receipts behind the call.
  */
 export function computeHedgeChecklist(p: HedgeChecklistInputs): HedgeChecklist {
-  const midB = p.ctx?.buckets.find((b) => b.bucket === "2-4M") ?? p.ctx?.buckets[0] ?? null;
+  // The checklist gates on M3 — the 3rd monthly expiry, ~2.5-3 months out.
+  // That is what the old "2-4M" anchor actually resolved to, so the intent is
+  // unchanged; it is now a clean constant-maturity point instead of a 46-135d
+  // smear. One line to move to M4 if protection is usually bought further out.
+  const GATE = "M3";
+  const midB = p.ctx?.buckets.find((b) => b.bucket === GATE) ?? p.ctx?.buckets[0] ?? null;
+  const gateLabel = midB ? `${midB.bucket} (~${midB.daysToExpiry}d)` : GATE;
 
   const items: HedgeChecklistItem[] = [
     {
@@ -658,12 +691,12 @@ export function computeHedgeChecklist(p: HedgeChecklistInputs): HedgeChecklist {
     {
       path: "cheap",
       ok: midB?.otm5Percentile != null ? midB.otm5Percentile <= 35 : null,
-      label: `2-4M 5%OTM premium ≤35th percentile${midB?.otm5Percentile != null ? ` (currently: ${midB.otm5Percentile}th)` : " (unranked)"}`,
+      label: `${gateLabel} 5%OTM premium ≤35th percentile${midB?.otm5Percentile != null ? ` (currently: ${midB.otm5Percentile}th)` : " (unranked)"}`,
     },
     {
       path: "cheap",
       ok: midB?.otm10Percentile != null ? midB.otm10Percentile <= 35 : null,
-      label: `2-4M 10%OTM premium ≤35th percentile${midB?.otm10Percentile != null ? ` (currently: ${midB.otm10Percentile}th)` : " (unranked)"}`,
+      label: `${gateLabel} 10%OTM premium ≤35th percentile${midB?.otm10Percentile != null ? ` (currently: ${midB.otm10Percentile}th)` : " (unranked)"}`,
     },
     {
       path: "cheap",
@@ -810,10 +843,32 @@ export async function buildHedgingCostsBlock(): Promise<{
     // signal needs to follow the same strikes — tracking ATM here would
     // force the model to extrapolate from a different point on the
     // skew curve. ATM is omitted entirely.
+    /**
+     * CONSTANT-MATURITY lookup: the prior snapshot's quote at the SAME MONTHLY
+     * ORDINAL, not the same expiry.
+     *
+     * Matching on expiry compared one contract to itself a week older, so the
+     * delta was dominated by theta: the 21-Aug put went 22 DTE -> 16 DTE and
+     * printed "-69.5% WoW", which read as premiums collapsing when it mostly
+     * meant a week had passed. Comparing the Nth-nearest monthly then vs now
+     * holds maturity roughly fixed, so what is left is an actual move in the
+     * cost of protection.
+     */
+    const liveByDte = [...live.quotes].filter((x) => x.daysToExpiry > 0).sort((a, b) => a.daysToExpiry - b.daysToExpiry);
+    const priorAtSameOrdinal = (snap: HedgingSnapshotShape, a: HedgingQuote) => {
+      const ordinal = liveByDte.findIndex((x) => x.expiry === a.expiry);
+      if (ordinal < 0) return undefined;
+      const dated = snap.quotes
+        .map((qt) => ({ qt, dte: dayDiff(qt.expiry, snap.date) }))
+        .filter((x) => x.dte > 0)
+        .sort((x, y) => x.dte - y.dte);
+      return dated[ordinal]?.qt;
+    };
+
     const structuredTrend = (snap: HedgingSnapshotShape | null): { vsDate: string; rows: HedgingTrendRow[] } | null => {
       if (!snap) return null;
       const rows: HedgingTrendRow[] = anchors.map((a) => {
-        const priorRow = snap.quotes.find((s) => s.expiry === a.expiry);
+        const priorRow = priorAtSameOrdinal(snap, a);
         const delta = (prior: number | null | undefined, curr: number | null): number | null =>
           prior != null && curr != null && prior !== 0 ? Math.round(((curr - prior) / prior) * 1000) / 10 : null;
         return {
@@ -831,9 +886,11 @@ export async function buildHedgingCostsBlock(): Promise<{
 
     const trendBlock = (label: string, snap: HedgingSnapshotShape | null, daysAgoLabel: string): string[] => {
       if (!snap) return [`${label}: no snapshot ~${daysAgoLabel} ago in ledger yet`];
-      const rows: string[] = [`${label} (vs ${snap.date}, SPY $${snap.spotPrice.toFixed(2)}):`];
+      const rows: string[] = [
+        `${label} (vs ${snap.date}, SPY $${snap.spotPrice.toFixed(2)}) — constant maturity: same Nth monthly, not the same contract, so theta is excluded:`,
+      ];
       for (const a of anchors) {
-        const priorRow = snap.quotes.find((s) => s.expiry === a.expiry);
+        const priorRow = priorAtSameOrdinal(snap, a);
         const fmtDelta = (label: string, prior: number | null | undefined, curr: number | null) => {
           if (prior == null || curr == null || prior === 0) return `${label} —`;
           const dPct = ((curr - prior) / prior) * 100;
