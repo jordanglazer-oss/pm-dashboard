@@ -1,5 +1,6 @@
 import { NextResponse } from "next/server";
 import Anthropic from "@anthropic-ai/sdk";
+import { parseModelJson } from "@/app/lib/json-repair";
 import { getRedis } from "@/app/lib/redis";
 import { buildHedgingCostsBlock, buildHedgeChecklistBlock, computeHedgeChecklist } from "@/app/lib/hedging";
 import { computeRegimeTransition } from "@/app/lib/regime-transition";
@@ -112,15 +113,18 @@ Return ONLY this JSON (no markdown fences):
       .filter((b): b is Anthropic.TextBlock => b.type === "text")
       .map((b) => b.text)
       .join("");
-    const jsonStart = text.indexOf("{");
-    const jsonEnd = text.lastIndexOf("}");
-    if (jsonStart < 0 || jsonEnd <= jsonStart) {
-      return NextResponse.json({ ok: false, error: "Model returned no parseable JSON." });
-    }
-    const parsed = JSON.parse(text.slice(jsonStart, jsonEnd + 1)) as {
+    // Tolerant parse — hedgingAnalysis is long prose about levels and vol, so
+    // an unescaped quote inside it ("higher for longer", a 5%OTM "cheap" call)
+    // is the likeliest failure and a raw JSON.parse dies on it.
+    const parseResult = parseModelJson<{
       hedgingAnalysis?: string;
       hedgingCall?: { action?: string; strike?: string; tenor?: string; reason?: string };
-    };
+    }>(text);
+    if (!parseResult.ok) {
+      console.error("[hedging-refresh] JSON parse failed:", parseResult.error, parseResult.excerpt ?? "");
+      return NextResponse.json({ ok: false, error: `Model returned unparseable JSON: ${parseResult.error}` });
+    }
+    const parsed = parseResult.value;
     if (!parsed.hedgingAnalysis || !parsed.hedgingCall?.action) {
       return NextResponse.json({ ok: false, error: "Model response missing hedgingAnalysis/hedgingCall." });
     }

@@ -1,4 +1,5 @@
 import Anthropic from "@anthropic-ai/sdk";
+import { parseModelJson } from "./json-repair";
 import type { TakeawayKind, StreetTakeaway, StreetFirmView, StreetGuidanceLine } from "./street-takeaways";
 
 /**
@@ -155,10 +156,15 @@ export async function parseStreetTakeaway(body: string, subject = ""): Promise<P
     .filter((b): b is Anthropic.TextBlock => b.type === "text")
     .map((b) => b.text)
     .join("");
-  const start = text.indexOf("{");
-  const end = text.lastIndexOf("}");
-  if (start < 0 || end <= start) throw new Error("Parser returned no JSON object");
-  const raw = JSON.parse(text.slice(start, end + 1)) as Record<string, unknown>;
+  // Tolerant parse: these emails are full of quoted management commentary, so
+  // an unescaped inner quote is the likeliest failure — and a throw here means
+  // the whole FactSet alert is lost rather than stored.
+  const res = parseModelJson<Record<string, unknown>>(text);
+  if (!res.ok) {
+    console.error("[street-takeaways] JSON parse failed:", res.error, res.excerpt ?? "");
+    throw new Error(`Parser returned unparseable JSON: ${res.error}`);
+  }
+  const raw = res.value;
 
   const num = (v: unknown): number | undefined => {
     if (typeof v === "number" && isFinite(v)) return v;

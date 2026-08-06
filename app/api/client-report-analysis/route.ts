@@ -1,4 +1,5 @@
 import Anthropic from "@anthropic-ai/sdk";
+import { parseModelJson } from "@/app/lib/json-repair";
 import { NextRequest, NextResponse } from "next/server";
 import { createHash } from "crypto";
 import { getRedis } from "@/app/lib/redis";
@@ -415,12 +416,19 @@ If a data point is missing, omit the bullet rather than inventing numbers. Alway
 
 function tryParseJson(text: string): ClientReportAnalysis | null {
   const cleaned = text.trim().replace(/^```(?:json)?\s*/i, "").replace(/```$/, "").trim();
-  const start = cleaned.indexOf("{");
-  const end = cleaned.lastIndexOf("}");
-  if (start < 0 || end <= start) return null;
-  const slice = cleaned.slice(start, end + 1);
+  // Typed as the branches below actually narrow, so no `any` is reintroduced.
+  type RawAnalysis = {
+    currentPosition?: { pros?: unknown; cons?: unknown };
+    recommendations?: unknown;
+    summary?: unknown;
+  };
+  const res = parseModelJson<RawAnalysis>(cleaned);
+  if (!res.ok) {
+    console.error("[client-report-analysis] JSON parse failed:", res.error, res.excerpt ?? "");
+    return null;
+  }
   try {
-    const parsed = JSON.parse(slice);
+    const parsed = res.value;
     if (
       !parsed ||
       typeof parsed !== "object" ||
@@ -437,11 +445,11 @@ function tryParseJson(text: string): ClientReportAnalysis | null {
       typeof s === "string" ? s.replace(/^[-•*]\s*/, "").replace(/\*\*/g, "").trim() : "";
     return {
       currentPosition: {
-        pros: parsed.currentPosition.pros.map(clean).filter(Boolean),
-        cons: parsed.currentPosition.cons.map(clean).filter(Boolean),
+        pros: (parsed.currentPosition.pros as unknown[]).map(clean).filter(Boolean),
+        cons: (parsed.currentPosition.cons as unknown[]).map(clean).filter(Boolean),
       },
-      recommendations: parsed.recommendations.map(clean).filter(Boolean),
-      summary: parsed.summary.map(clean).filter(Boolean),
+      recommendations: (parsed.recommendations as unknown[]).map(clean).filter(Boolean),
+      summary: (parsed.summary as unknown[]).map(clean).filter(Boolean),
       blendedMer: { client: undefined, model: undefined },
       generatedAt: new Date().toISOString(),
     };

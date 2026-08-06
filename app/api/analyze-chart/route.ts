@@ -1,4 +1,5 @@
 import { NextRequest, NextResponse } from "next/server";
+import { parseModelJson } from "@/app/lib/json-repair";
 import Anthropic from "@anthropic-ai/sdk";
 import type { TechnicalIndicators } from "@/app/lib/technicals";
 import { formatTechnicalsForPrompt } from "@/app/lib/technicals";
@@ -93,13 +94,12 @@ Rules:
     // but occasional ```json fences or trailing commentary slip through.
     // Strip fences first, then locate the outermost { ... } object.
     const stripped = rawText.replace(/^```(?:json)?\s*|\s*```$/g, "").trim();
-    const firstBrace = stripped.indexOf("{");
-    const lastBrace = stripped.lastIndexOf("}");
     let parsed: StructuredAnalysis | null = null;
-    if (firstBrace !== -1 && lastBrace > firstBrace) {
-      try {
-        parsed = JSON.parse(stripped.slice(firstBrace, lastBrace + 1)) as StructuredAnalysis;
-      } catch {
+    {
+      const res = parseModelJson<StructuredAnalysis>(stripped);
+      if (res.ok) parsed = res.value;
+      else {
+        console.error("[analyze-chart] JSON parse failed:", res.error, res.excerpt ?? "");
         parsed = null;
       }
     }

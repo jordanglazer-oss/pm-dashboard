@@ -1,4 +1,5 @@
 import Anthropic from "@anthropic-ai/sdk";
+import { parseModelJson } from "@/app/lib/json-repair";
 import { NextRequest, NextResponse } from "next/server";
 import { getRedis } from "@/app/lib/redis";
 import type { ResearchState } from "@/app/lib/defaults";
@@ -560,51 +561,20 @@ Respond ONLY with valid JSON matching this schema:
 Be concrete and actionable. The PM reads this and acts on it the same day.`;
 }
 
-/**
- * Attempt to repair a truncated JSON object (model hit max_tokens mid-output):
- * drop a trailing incomplete key/value, then close any unbalanced brackets
- * and braces. Mirrors the repair logic in the morning-brief route. Returns
- * null if even the repair can't parse.
- */
-function repairTruncatedJson(raw: string): unknown | null {
-  let repaired = raw;
-  // Remove a trailing incomplete `"key": "value...` (string cut mid-value).
-  repaired = repaired.replace(/,\s*"[^"]*":\s*"[^"]*$/, "");
-  // Remove a trailing incomplete `"key"...` (cut mid-key).
-  repaired = repaired.replace(/,\s*"[^"]*$/, "");
-  // Remove a dangling trailing comma.
-  repaired = repaired.replace(/,\s*$/, "");
-  const openBraces = (repaired.match(/\{/g) || []).length - (repaired.match(/\}/g) || []).length;
-  const openBrackets = (repaired.match(/\[/g) || []).length - (repaired.match(/\]/g) || []).length;
-  repaired += "]".repeat(Math.max(0, openBrackets));
-  repaired += "}".repeat(Math.max(0, openBraces));
-  try {
-    return JSON.parse(repaired);
-  } catch {
-    return null;
-  }
-}
 
 function parseSynthesis(text: string): SynthesisResult | null {
   const cleaned = text.replace(/```json\s*|```/g, "").trim();
-  const start = cleaned.indexOf("{");
-  const end = cleaned.lastIndexOf("}");
-  if (start < 0) return null;
-  // Prefer the clean slice (first { → last }); if that fails to parse
-  // (e.g. the output was truncated and has no closing brace, or an
-  // unbalanced one), fall back to repairing from the first { to end.
-  const sliceEnd = end > start ? end + 1 : cleaned.length;
-  const candidate = cleaned.slice(start, sliceEnd);
+  // parseModelJson handles BOTH failure modes; the previous repair only closed
+  // brackets (truncation) and re-threw on the commoner one — an unescaped
+  // quote inside the synthesis prose.
+  const res = parseModelJson<Partial<SynthesisResult>>(cleaned);
+  if (!res.ok) {
+    console.error("[research-synthesis] JSON parse failed:", res.error, res.excerpt ?? "");
+    return null;
+  }
+  if (res.repaired) console.warn("[research-synthesis] recovered malformed JSON via repair");
   try {
-    let parsedRaw: unknown;
-    try {
-      parsedRaw = JSON.parse(candidate);
-    } catch {
-      parsedRaw = repairTruncatedJson(cleaned.slice(start));
-      if (parsedRaw == null) return null;
-      console.warn("[research-synthesis] recovered from truncated JSON via repair");
-    }
-    const parsed = parsedRaw as Partial<SynthesisResult>;
+    const parsed = res.value;
     if (typeof parsed.summary !== "string") return null;
 
     const validRatings: ReadonlySet<string> = new Set(["high", "medium", "low", "contrary"]);
