@@ -1589,7 +1589,16 @@ export function StockProvider({ children }: { children: React.ReactNode }) {
     // 4a) Currency conversion: if the PDF target is in a different currency
     //     than the stock's trading currency, convert it using live USDCAD.
     const stockCcy = tickerCurrency(ticker);
-    const pdfCcy = extractRes!.result.targetCurrency?.toUpperCase();
+    // A currency the PM corrected before for this (ticker, provider) OVERRIDES
+    // the extractor. The extractor infers from the listing exchange, which is
+    // wrong every time for a dual-listed name whose research is published in
+    // the other currency — so without this the same correction is needed on
+    // every upload.
+    const rememberedCcy =
+      source !== "morningstar"
+        ? getSnapshotForTicker(analystSnapshots, ticker)?.[source]?.preferredCurrency?.toUpperCase()
+        : undefined;
+    const pdfCcy = rememberedCcy ?? extractRes!.result.targetCurrency?.toUpperCase();
     let convertedTarget = extractRes!.result.target;
     let targetOriginal: number | undefined;
     let targetCurrencyField: string | undefined;
@@ -1646,6 +1655,9 @@ export function StockProvider({ children }: { children: React.ReactNode }) {
           rating: extractRes!.result.rating ?? "not-covered",
           target: convertedTarget,
           ...(targetOriginal != null ? { targetOriginal, targetCurrency: targetCurrencyField, fxRate: fxRateField } : {}),
+          // Carry the remembered currency forward — a new report must not
+          // silently reset the correction back to the extractor's guess.
+          ...(rememberedCcy ? { preferredCurrency: rememberedCcy } : {}),
           asOf: extractRes!.result.asOf,
           priceAtReport: priceAtUpload,
           reportId,
@@ -1669,7 +1681,10 @@ export function StockProvider({ children }: { children: React.ReactNode }) {
     }
 
     return { ok: true, extracted: extractRes.result };
-  }, [persistAnalystReports, persistAnalystSnapshots, stocks, updateScore, updateExplanations, tickerCurrency]);
+    // analystSnapshots is a REAL dependency: the upload reads the remembered
+    // currency from it. Omitting it would let a correction made moments
+    // earlier be missed by a stale closure on the very next upload.
+  }, [analystSnapshots, persistAnalystReports, persistAnalystSnapshots, stocks, updateScore, updateExplanations, tickerCurrency]);
 
   const removeAnalystReport = useCallback(async (ticker: string, source: "rbc" | "jpm" | "morningstar") => {
     const reportId = reportIdFor(ticker, source);
@@ -1747,6 +1762,9 @@ export function StockProvider({ children }: { children: React.ReactNode }) {
           targetOriginal: originalTarget,
           targetCurrency: fromCurrency,
           fxRate: rate,
+          // Remember the correction: the next report from this provider for
+          // this ticker uses it instead of the extractor's guess.
+          preferredCurrency: fromCurrency,
           lastUpdated: new Date().toISOString(),
         };
         const nextSnapshot: TickerSnapshot = { ...currentSnapshot, [source]: updatedEntry };

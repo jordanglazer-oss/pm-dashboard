@@ -74,6 +74,10 @@ export function AnalystSnapshotPanel({ ticker, stockCurrency, snapshot, breakdow
     // When the user manually edits the target, clear any prior FX conversion
     // fields so the new value is treated as already in the stock's currency.
     if ("target" in patch) {
+      // A hand-typed target is already in the stock's currency, so the FX
+      // trail for THAT number is void — but preferredCurrency is a standing
+      // preference about future uploads, not a property of this value, so it
+      // deliberately survives.
       delete merged.targetOriginal;
       delete merged.targetCurrency;
       delete merged.fxRate;
@@ -216,6 +220,14 @@ export function AnalystSnapshotPanel({ ticker, stockCurrency, snapshot, breakdow
                   </select>
                 )}
                 {converting === which && <span className="text-[9px] text-ink-3">…</span>}
+                {entry?.preferredCurrency && converting !== which && (
+                  <span
+                    className="whitespace-nowrap text-[9px] font-semibold text-accent"
+                    title={`Future ${which.toUpperCase()} reports for this name will assume ${entry.preferredCurrency} targets instead of guessing from the listing exchange. Pick another currency to change it.`}
+                  >
+                    {entry.preferredCurrency} default
+                  </span>
+                )}
               </div>
             </div>
             <label className="flex flex-col gap-0.5">

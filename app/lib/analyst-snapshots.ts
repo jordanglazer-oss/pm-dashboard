@@ -31,6 +31,20 @@ export type AnalystEntry = {
   targetCurrency?: string;
   /** FX rate used for conversion (e.g. USDCAD rate). Audit trail. */
   fxRate?: number;
+  /**
+   * The currency THIS provider quotes THIS name in, as corrected by the PM.
+   *
+   * Set whenever the currency is chosen by hand, and applied to every later
+   * report from the same provider for the same ticker — overriding whatever
+   * the extractor guesses. Dual-listed names are the case that needs it: a
+   * TSX-listed ticker looks like CAD, but RBC and JPM publish Shopify targets
+   * in USD, so the extractor's exchange-based guess is wrong every single
+   * time and had to be re-corrected on every upload.
+   *
+   * Still only a DEFAULT — picking a different currency overwrites it, so a
+   * genuine change of quoting basis is one click, same as before.
+   */
+  preferredCurrency?: string;
   /** YYYY-MM-DD — date of the report or the rating-as-of date. */
   asOf?: string;
   /** Underlying price at the time of the report. Auto-filled from current
