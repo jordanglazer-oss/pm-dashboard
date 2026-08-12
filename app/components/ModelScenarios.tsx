@@ -5,6 +5,7 @@ import Link from "next/link";
 import { useSearchParams } from "next/navigation";
 import { useStocks } from "@/app/lib/StockContext";
 import { displayTicker } from "@/app/lib/ticker";
+import { apportionColumn, fmtPct2, sameAtDisplay } from "@/app/lib/display-weights";
 import {
   applyScenario,
   diffHoldings,
@@ -81,7 +82,8 @@ type ScenarioRow = {
   changed: boolean;
 };
 
-const pct = (v: number) => `${(v * 100).toFixed(2)}%`;
+/** Same 2dp contract as the model tables — these numbers are model inputs. */
+const pct = (v: number) => fmtPct2(v);
 const yahooSymbol = (s: string) =>
   s.endsWith("-T") ? s.replace("-T", ".TO") : s.endsWith(".U") ? s.replace(".U", "-U.TO") : s;
 
@@ -755,8 +757,12 @@ export function ModelScenarios({ groups }: Props) {
                 if (!rows.length) return null;
                 const colors = ASSET_CLASS_COLORS[ac];
                 const alloc = profileAlloc(ac);
-                const fromTotal = rows.reduce((t, r) => t + (r.from ?? 0), 0);
-                const toTotal = rows.reduce((t, r) => t + (r.to ?? 0), 0);
+                // Both sides are apportioned to 100.00% of the class so the
+                // scenario column is as directly usable as the model's own.
+                const dFrom = apportionColumn(rows.map((r) => r.from), 1);
+                const dTo = apportionColumn(rows.map((r) => r.to), 1);
+                const fromTotal = dFrom.total;
+                const toTotal = dTo.total;
                 const changed = rows.filter((r) => r.changed).length;
 
                 return (
@@ -794,7 +800,7 @@ export function ModelScenarios({ groups }: Props) {
                           </tr>
                         </thead>
                         <tbody>
-                          {rows.map((r) => (
+                          {rows.map((r, i) => (
                             <tr
                               key={r.symbol}
                               className={`border-b border-line-soft transition-colors hover:bg-surface-hover ${
@@ -834,23 +840,34 @@ export function ModelScenarios({ groups }: Props) {
                                 </span>
                               </td>
                               <td className="py-2 px-2 text-right font-mono text-xs text-ink-2">
-                                {r.from == null ? <span className="text-ink-faint">&mdash;</span> : pct(r.from)}
+                                {dFrom.values[i] == null ? <span className="text-ink-faint">&mdash;</span> : pct(dFrom.values[i] as number)}
                               </td>
                               <td className="py-2 px-2 text-right font-mono text-xs font-semibold">
-                                {r.to == null ? <span className="text-ink-faint">&mdash;</span> : pct(r.to)}
+                                {dTo.values[i] == null ? <span className="text-ink-faint">&mdash;</span> : pct(dTo.values[i] as number)}
                               </td>
                               <td
-                                className={`py-2 px-2 text-right font-mono text-xs ${
-                                  !r.changed ? "text-ink-faint" : r.delta >= 0 ? "text-pos" : "text-neg"
-                                }`}
+                                className={(() => {
+                                  // Delta and its colour both come from the
+                                  // DISPLAYED pair, so a row can never show two
+                                  // identical weights next to a non-zero move.
+                                  const d = (dTo.values[i] ?? 0) - (dFrom.values[i] ?? 0);
+                                  const flat = !r.changed || sameAtDisplay(dFrom.values[i], dTo.values[i]);
+                                  return `py-2 px-2 text-right font-mono text-xs ${
+                                    flat ? "text-ink-faint" : d >= 0 ? "text-pos" : "text-neg"
+                                  }`;
+                                })()}
                               >
-                                {!r.changed ? "—" : `${r.delta >= 0 ? "+" : ""}${pct(r.delta)}`}
+                                {(() => {
+                                  const d = (dTo.values[i] ?? 0) - (dFrom.values[i] ?? 0);
+                                  if (!r.changed || sameAtDisplay(dFrom.values[i], dTo.values[i])) return "—";
+                                  return `${d >= 0 ? "+" : ""}${pct(d)}`;
+                                })()}
                               </td>
                               <td className="py-2 px-2 pr-5 text-right font-mono text-xs text-ink-2">
-                                {r.to == null || alloc == null ? (
+                                {dTo.values[i] == null || alloc == null ? (
                                   <span className="text-ink-faint">&mdash;</span>
                                 ) : (
-                                  pct(r.to * alloc)
+                                  pct((dTo.values[i] as number) * alloc)
                                 )}
                               </td>
                             </tr>

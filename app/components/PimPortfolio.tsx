@@ -29,6 +29,7 @@ import { useStocks } from "@/app/lib/StockContext";
 import { CollapsibleSection } from "@/app/components/CollapsibleSection";
 import { SkeletonTable } from "@/app/components/Skeleton";
 import { isMarketOpenOrAfterET } from "@/app/lib/market-hours";
+import { apportionColumn, fmtPct2, sameAtDisplay } from "@/app/lib/display-weights";
 
 function generateId(): string {
   return Date.now().toString(36) + Math.random().toString(36).slice(2, 8);
@@ -215,35 +216,47 @@ function AssetAllocationPie({ live, target, profileLabel }: { live: ClassWeights
         </div>
 
         {/* Inline per-class stats (Live · Drift · Target) — one compact block each */}
-        <div className="flex-1 grid grid-cols-2 sm:grid-cols-4 gap-x-5 gap-y-2 min-w-[220px]">
-          {rows.map((s) => {
-            const drift = s.liveW - s.targetW;
-            const flat = Math.abs(drift) < 0.05;
-            const driftColor = flat ? "text-ink-3" : drift > 0 ? "text-pos" : "text-neg";
-            return (
-              <div key={s.key} className="min-w-0">
-                <div className="flex items-center gap-1.5">
-                  <span className="inline-block w-2.5 h-2.5 rounded-sm shrink-0" style={{ backgroundColor: s.color }} />
-                  <span className="text-[11px] text-ink-2 truncate">{s.label}</span>
-                </div>
-                <div className="mt-0.5 flex items-baseline gap-1.5">
-                  <span className="text-[15px] font-bold text-ink tabular-nums">{s.liveW.toFixed(1)}%</span>
-                  <span className={`text-[11px] font-medium tabular-nums ${driftColor}`}>
-                    {flat ? "—" : `${drift > 0 ? "+" : ""}${drift.toFixed(1)}`}
-                  </span>
-                </div>
-                <div className="text-[10px] text-ink-3 tabular-nums">tgt {s.targetW.toFixed(1)}%</div>
-              </div>
-            );
-          })}
-        </div>
+        {/* Class live/target weights carry the same 2dp contract as the tables
+            and are apportioned to 100.00%, so the four class figures here agree
+            with the per-holding columns below instead of being rounded apart
+            from them. liveW/targetW arrive as PERCENT here, not fractions. */}
+        {(() => {
+          const dLive = apportionColumn(rows.map((r) => r.liveW / 100), 1);
+          const dTgt = apportionColumn(rows.map((r) => r.targetW / 100), 1);
+          return (
+            <div className="flex-1 grid grid-cols-2 sm:grid-cols-4 gap-x-5 gap-y-2 min-w-[220px]">
+              {rows.map((s, i) => {
+                const live = dLive.values[i] ?? 0;
+                const tgt = dTgt.values[i] ?? 0;
+                const drift = live - tgt;
+                const flat = sameAtDisplay(live, tgt);
+                const driftColor = flat ? "text-ink-3" : drift > 0 ? "text-pos" : "text-neg";
+                return (
+                  <div key={s.key} className="min-w-0">
+                    <div className="flex items-center gap-1.5">
+                      <span className="inline-block w-2.5 h-2.5 rounded-sm shrink-0" style={{ backgroundColor: s.color }} />
+                      <span className="text-[11px] text-ink-2 truncate">{s.label}</span>
+                    </div>
+                    <div className="mt-0.5 flex items-baseline gap-1.5">
+                      <span className="text-[15px] font-bold text-ink tabular-nums">{fmtPct2(live)}</span>
+                      <span className={`text-[11px] font-medium tabular-nums ${driftColor}`}>
+                        {flat ? "—" : `${drift > 0 ? "+" : ""}${fmtPct2(drift)}`}
+                      </span>
+                    </div>
+                    <div className="text-[10px] text-ink-3 tabular-nums">tgt {fmtPct2(tgt)}</div>
+                  </div>
+                );
+              })}
+            </div>
+          );
+        })()}
       </div>
     </div>
   );
 }
 
 function pct(v: number): string {
-  return `${(v * 100).toFixed(2)}%`;
+  return fmtPct2(v);
 }
 
 function fmtCurrency(v: number): string {
@@ -741,6 +754,23 @@ export function PimPortfolio({ groups }: Props) {
       return sortDir === "asc" ? cmp : -cmp;
     });
   }, [holdingRows, sortField, sortDir]);
+
+  /**
+   * 2dp display weights for the positions table.
+   *
+   * These get typed into the modelling software, so each column is apportioned
+   * rather than rounded cell-by-cell: every figure is exactly two decimals and
+   * the column still sums to its own rounded total, instead of drifting a few
+   * hundredths away from it across thirty-odd rows.
+   *
+   * No forced total here (unlike the model tables, which tie to a known class
+   * allocation): this table is sortable and its rows are whatever is on screen,
+   * so each column ties to the rounded sum of exactly those rows.
+   */
+  const dPos = useMemo(() => ({
+    target: apportionColumn(sortedRows.map((r) => r.modelPct)),
+    current: apportionColumn(sortedRows.map((r) => (r.units > 0 ? r.currentPct : null))),
+  }), [sortedRows]);
 
   // Summary (all in CAD)
   const totalValueCadSummary = useMemo(() => {
@@ -2164,7 +2194,7 @@ export function PimPortfolio({ groups }: Props) {
         </div>
         <div className="hover-lift rounded-card border border-line bg-surface p-4 shadow-sm">
           <div className="text-[10px] font-semibold uppercase tracking-wide text-ink-3">Sleeve Drift</div>
-          <div className={`mt-1 text-xl font-bold ${sleeveDrift >= 2 ? "text-warn" : "text-ink"}`}>{sleeveDrift >= 0 ? "+" : ""}{sleeveDrift.toFixed(1)}%</div>
+          <div className={`mt-1 text-xl font-bold ${sleeveDrift >= 2 ? "text-warn" : "text-ink"}`}>{sleeveDrift >= 0 ? "+" : ""}{sleeveDrift.toFixed(2)}%</div>
           <div className="text-xs text-ink-3">overweight vs target</div>
         </div>
         <div className="hover-lift rounded-card border border-line bg-surface p-4 shadow-sm">
@@ -2744,7 +2774,14 @@ export function PimPortfolio({ groups }: Props) {
                   expose an edit affordance for cash again, re-add this row
                   or surface an inline input elsewhere. */}
 
-              {sortedRows.map((row) => {
+              {sortedRows.map((row, rowIdx) => {
+                const dTargetV = dPos.target.values[rowIdx];
+                const dCurrentV = dPos.current.values[rowIdx];
+                // Drift is the difference between the two numbers ON SCREEN,
+                // not a separately-rounded float — otherwise the row can show
+                // 1.82% / 1.85% next to a drift of +0.02%.
+                const dDriftV =
+                  row.units > 0 && dCurrentV != null && dTargetV != null ? dCurrentV - dTargetV : null;
                 const currBadge = row.currency === "USD" ? (
                   <span className="ml-1 inline-block rounded bg-accent-soft px-1 py-0 text-[8px] font-bold text-accent align-middle">USD</span>
                 ) : null;
@@ -2813,13 +2850,23 @@ export function PimPortfolio({ groups }: Props) {
                       </td>
                     )}
                     {/* Target */}
-                    <td className="py-2.5 px-2 text-right font-mono text-ink-2">{pct(row.modelPct)}</td>
+                    <td className="py-2.5 px-2 text-right font-mono text-ink-2">{fmtPct2(dTargetV)}</td>
                     {/* Current + Drift */}
                     {hasPositions && (
                       <>
-                        <td className="py-2.5 px-2 text-right font-mono text-ink">{row.units > 0 ? pct(row.currentPct) : "-"}</td>
-                        <td className={`py-2.5 px-2 text-right font-mono font-semibold ${row.driftPct > 0.0001 ? "text-pos" : row.driftPct < -0.0001 ? "text-neg" : "text-ink-3"}`}>
-                          {row.units > 0 ? `${row.driftPct > 0 ? "+" : ""}${(row.driftPct * 100).toFixed(1)}%` : "-"}
+                        <td className="py-2.5 px-2 text-right font-mono text-ink">
+                          {row.units > 0 ? fmtPct2(dCurrentV) : "-"}
+                        </td>
+                        <td
+                          className={`py-2.5 px-2 text-right font-mono font-semibold ${
+                            dDriftV == null || sameAtDisplay(dCurrentV, dTargetV)
+                              ? "text-ink-3"
+                              : dDriftV > 0
+                                ? "text-pos"
+                                : "text-neg"
+                          }`}
+                        >
+                          {dDriftV == null ? "-" : `${dDriftV > 0 ? "+" : ""}${fmtPct2(dDriftV)}`}
                         </td>
                       </>
                     )}

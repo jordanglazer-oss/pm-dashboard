@@ -10,6 +10,7 @@ import { useStocks } from "@/app/lib/StockContext";
 import { useLiveTodayReturn } from "@/app/lib/useLiveTodayReturn";
 import { getTodayET } from "@/app/lib/market-hours";
 import { PimPerformance } from "./PimPerformance";
+import { apportionColumn, fmtPct2, sameAtDisplay } from "@/app/lib/display-weights";
 
 const ZERO_SCORES: Record<ScoreKey, number> = {
   brand: 0, secular: 0, researchCoverage: 0, marketEdge: 0,
@@ -67,16 +68,6 @@ const ASSET_CLASS_COLORS: Record<PimAssetClass, { bg: string; text: string; bar:
   equity: { bg: "bg-pos-soft", text: "text-pos", bar: "bg-pos", header: "bg-pos-soft text-pos" },
   alternative: { bg: "bg-warn-soft", text: "text-warn", bar: "bg-warn", header: "bg-warn-soft text-warn" },
 };
-
-function pct(v: number): string {
-  return (v * 100).toFixed(2) + "%";
-}
-
-function pctClean(v: number): string {
-  const p = v * 100;
-  if (p === 0) return "0.00%";
-  return p.toFixed(2) + "%";
-}
 
 type SortField = "name" | "symbol" | "currency" | "weightInClass" | "weightInPortfolio" | "cadModelWeight" | "usdModelWeight";
 type SortDir = "asc" | "desc";
@@ -1096,29 +1087,46 @@ export function PimModel({ groups }: Props) {
             {profileWeights.alternatives > 0 && <div className="bg-violet" style={{ width: `${profileWeights.alternatives * 100}%` }} />}
             {profileWeights.cash > 0 && <div className="bg-ink-3" style={{ width: `${profileWeights.cash * 100}%` }} />}
           </div>
-          <div className="space-y-2.5 text-sm">
-            {([
+          {/* Allocations are model inputs too, so they carry the same 2dp
+              contract as the holdings tables: apportioned to sum to exactly
+              100.00% (cash included), and the invested Total below is the sum
+              of the three displayed class rows — so it always agrees with the
+              three TOTAL rows in the tables rather than being rounded apart
+              from them. */}
+          {(() => {
+            const allocRows = [
               { label: "Equities", value: profileWeights.equity, dot: "bg-accent" },
               { label: "Fixed Income", value: profileWeights.fixedIncome, dot: "bg-pos" },
               { label: "Alternatives", value: profileWeights.alternatives, dot: "bg-violet" },
               { label: "Cash", value: profileWeights.cash, dot: "bg-ink-3" },
-            ] as const).filter((r) => r.value > 0).map((r) => (
-              <div key={r.label} className="flex items-center justify-between">
-                <span className="flex items-center gap-2">
-                  <span className={`h-2.5 w-2.5 rounded-sm ${r.dot}`} />
-                  <span className="text-ink-2">{r.label}</span>
-                </span>
-                <span className="font-semibold text-ink tabular-nums">{(r.value * 100).toFixed(0)}%</span>
-              </div>
-            ))}
-          </div>
-          <div className="mt-4 flex flex-wrap items-center gap-3 border-t border-line-soft pt-3 text-xs text-ink-3">
-            <span>CAD {(currencySplit.cad * 100).toFixed(0)}%</span>
-            <span>USD {(currencySplit.usd * 100).toFixed(0)}%</span>
-            <span className="ml-auto">
-              Total <span className={`font-semibold ${Math.abs(portfolioTotal - (profileWeights.fixedIncome + profileWeights.equity + profileWeights.alternatives)) < 0.001 ? "text-pos" : "text-neg"}`}>{pct(portfolioTotal)}</span>
-            </span>
-          </div>
+            ];
+            const dAlloc = apportionColumn(allocRows.map((r) => r.value), 1);
+            const invested = (dAlloc.values[0] ?? 0) + (dAlloc.values[1] ?? 0) + (dAlloc.values[2] ?? 0);
+            const dCcy = apportionColumn([currencySplit.cad, currencySplit.usd], 1);
+            const ties = Math.abs(portfolioTotal - (profileWeights.fixedIncome + profileWeights.equity + profileWeights.alternatives)) < 0.001;
+            return (
+              <>
+                <div className="space-y-2.5 text-sm">
+                  {allocRows.map((r, i) => (r.value > 0 ? (
+                    <div key={r.label} className="flex items-center justify-between">
+                      <span className="flex items-center gap-2">
+                        <span className={`h-2.5 w-2.5 rounded-sm ${r.dot}`} />
+                        <span className="text-ink-2">{r.label}</span>
+                      </span>
+                      <span className="font-semibold text-ink tabular-nums">{fmtPct2(dAlloc.values[i])}</span>
+                    </div>
+                  ) : null))}
+                </div>
+                <div className="mt-4 flex flex-wrap items-center gap-3 border-t border-line-soft pt-3 text-xs text-ink-3">
+                  <span>CAD {fmtPct2(dCcy.values[0])}</span>
+                  <span>USD {fmtPct2(dCcy.values[1])}</span>
+                  <span className="ml-auto">
+                    Total <span className={`font-semibold ${ties ? "text-pos" : "text-neg"}`}>{fmtPct2(invested)}</span>
+                  </span>
+                </div>
+              </>
+            );
+          })()}
         </div>
       ) : <div />}
 
@@ -1241,6 +1249,36 @@ export function PimModel({ groups }: Props) {
         const colors = ASSET_CLASS_COLORS[ac];
         const classTotal = checkTotals[ac];
 
+        // ── 2dp display weights ────────────────────────────────────────────
+        // These numbers get typed into the modelling software, which takes two
+        // decimals. Rounding each cell on its own makes the column miss its
+        // total by a few hundredths (32 holdings at 1.82% round to 100.05%),
+        // so each column is APPORTIONED instead: 2dp everywhere, and the
+        // column still ties to its category total exactly.
+        //
+        // The tie-to-allocation only holds when the whole class is on screen —
+        // with the holdings filter active the visible rows are a subset, so the
+        // column ties to its own rounded sum instead of a total it isn't.
+        const filterActive = holdingSearch.trim().length > 0;
+        const classAlloc = profileWeights
+          ? ac === "equity"
+            ? profileWeights.equity
+            : ac === "fixedIncome"
+              ? profileWeights.fixedIncome
+              : profileWeights.alternatives
+          : undefined;
+        const tieTo = filterActive ? undefined : classAlloc;
+        const hasDynamic = holdings.some((h) => h.dynamicWeight != null);
+
+        const dTarget = apportionColumn(holdings.map((h) => h.weightInPortfolio), tieTo);
+        const dDynamic = apportionColumn(
+          holdings.map((h) => h.dynamicWeight ?? null),
+          hasDynamic ? tieTo : undefined,
+        );
+        const dCad = apportionColumn(holdings.map((h) => h.cadModelWeight));
+        const dUsd = apportionColumn(holdings.map((h) => h.usdModelWeight));
+        const dCheck = apportionColumn(holdings.map((h) => h.weightInClass), filterActive ? undefined : 1);
+
         return (
           <div key={ac} className="rounded-card border border-line bg-white shadow-sm overflow-hidden">
             <div className={`${colors.header} px-5 py-3 flex items-center justify-between`}>
@@ -1250,7 +1288,7 @@ export function PimModel({ groups }: Props) {
               </h3>
               <div className="flex items-center gap-4 text-xs">
                 <span>
-                  Class Weight Check: <span className={`font-semibold ${Math.abs(classTotal - 1) < 0.001 ? "opacity-70" : "text-neg"}`}>{pct(classTotal)}</span>
+                  Class Weight Check: <span className={`font-semibold ${Math.abs(classTotal - 1) < 0.001 ? "opacity-70" : "text-neg"}`}>{fmtPct2(dCheck.total)}</span>
                 </span>
               </div>
             </div>
@@ -1341,20 +1379,28 @@ export function PimModel({ groups }: Props) {
                       <td className="py-2 px-2 text-center">
                         <span className={`inline-block rounded px-1.5 py-0.5 text-[10px] font-bold ${h.currency === "CAD" ? "bg-neg-soft text-neg" : "bg-pos-soft text-pos"}`}>{h.currency}</span>
                       </td>
-                      <td className="py-2 px-2 text-right font-mono text-xs font-semibold">{pctClean(h.weightInPortfolio)}</td>
+                      <td className="py-2 px-2 text-right font-mono text-xs font-semibold">{fmtPct2(dTarget.values[i])}</td>
                       {activeProfile !== "alpha" && activeProfile !== "core" && (
                         <td className="py-2 px-2 text-right font-mono text-xs">
-                          {h.dynamicWeight != null ? (
-                            <span className={h.dynamicWeight > h.weightInPortfolio ? "text-pos" : h.dynamicWeight < h.weightInPortfolio ? "text-neg" : "text-ink"}>
-                              {pctClean(h.dynamicWeight)}
+                          {dDynamic.values[i] != null ? (
+                            <span
+                              className={
+                                sameAtDisplay(dDynamic.values[i], dTarget.values[i])
+                                  ? "text-ink"
+                                  : (dDynamic.values[i] as number) > (dTarget.values[i] as number)
+                                    ? "text-pos"
+                                    : "text-neg"
+                              }
+                            >
+                              {fmtPct2(dDynamic.values[i])}
                             </span>
                           ) : (
                             <span className="text-ink-faint">&mdash;</span>
                           )}
                         </td>
                       )}
-                      <td className="py-2 px-2 text-right font-mono text-xs">{h.cadModelWeight != null ? pctClean(h.cadModelWeight) : <span className="text-ink-faint">&mdash;</span>}</td>
-                      <td className="py-2 px-2 text-right font-mono text-xs">{h.usdModelWeight != null ? pctClean(h.usdModelWeight) : <span className="text-ink-faint">&mdash;</span>}</td>
+                      <td className="py-2 px-2 text-right font-mono text-xs">{dCad.values[i] != null ? fmtPct2(dCad.values[i]) : <span className="text-ink-faint">&mdash;</span>}</td>
+                      <td className="py-2 px-2 text-right font-mono text-xs">{dUsd.values[i] != null ? fmtPct2(dUsd.values[i]) : <span className="text-ink-faint">&mdash;</span>}</td>
                       <td className="py-2 px-2 text-center">
                         {isInScoring(h.symbol) ? (
                           <span className="text-[10px] font-semibold text-pos">Added</span>
@@ -1372,16 +1418,14 @@ export function PimModel({ groups }: Props) {
                   ))}
                   <tr className={`${colors.bg} font-semibold`}>
                     <td className="py-2 pl-5 pr-2 text-xs text-ink-3" colSpan={3}>TOTAL</td>
-                    <td className="py-2 px-2 text-right font-mono text-xs font-bold">{pct(holdings.reduce((s, h) => s + h.weightInPortfolio, 0))}</td>
+                    <td className="py-2 px-2 text-right font-mono text-xs font-bold">{fmtPct2(dTarget.total)}</td>
                     {activeProfile !== "alpha" && activeProfile !== "core" && (
                       <td className="py-2 px-2 text-right font-mono text-xs font-bold">
-                        {holdings.some((h) => h.dynamicWeight != null)
-                          ? pct(holdings.reduce((s, h) => s + (h.dynamicWeight ?? h.weightInPortfolio), 0))
-                          : <span className="text-ink-faint">&mdash;</span>}
+                        {hasDynamic ? fmtPct2(dDynamic.total) : <span className="text-ink-faint">&mdash;</span>}
                       </td>
                     )}
-                    <td className="py-2 px-2 text-right font-mono text-xs">{pct(holdings.filter((h) => h.cadModelWeight != null).reduce((s, h) => s + (h.cadModelWeight || 0), 0))}</td>
-                    <td className="py-2 px-2 text-right font-mono text-xs">{pct(holdings.filter((h) => h.usdModelWeight != null).reduce((s, h) => s + (h.usdModelWeight || 0), 0))}</td>
+                    <td className="py-2 px-2 text-right font-mono text-xs">{fmtPct2(dCad.total)}</td>
+                    <td className="py-2 px-2 text-right font-mono text-xs">{fmtPct2(dUsd.total)}</td>
                     <td></td>
                   </tr>
                 </tbody>
@@ -1424,7 +1468,7 @@ export function PimModel({ groups }: Props) {
                       </span>
                     </td>
                     <td className="py-1.5 text-xs text-right font-mono">${t.price.toFixed(2)}</td>
-                    <td className="py-1.5 text-xs text-right font-mono">{pct(t.targetWeight)}</td>
+                    <td className="py-1.5 text-xs text-right font-mono">{fmtPct2(t.targetWeight)}</td>
                     <td className="py-1.5 text-xs text-ink-3">{t.pairedWith || "—"}</td>
                   </tr>
                 ))}
