@@ -90,6 +90,13 @@ export type ScenarioOptions = {
   residualTargets?: string[];
   /** Per-stock reference weight used when an `add` omits one. */
   refPerStock?: number;
+  /**
+   * Asset-class allocations (fractions of the whole portfolio). Supplying
+   * these lets a cross-class `fund` do the thing it obviously means: move
+   * money BETWEEN sleeves. Without them a cross-class move can only warn,
+   * because each class normalises to 100% of its own allocation.
+   */
+  allocations?: Partial<Record<PimAssetClass, number>>;
 };
 
 export type ScenarioDiagnostic = {
@@ -105,6 +112,9 @@ export type ScenarioDiagnostic = {
 export type ScenarioResult = {
   holdings: PimHolding[];
   diagnostics: ScenarioDiagnostic[];
+  /** Allocations after any cross-class funding. Echoes the input unchanged
+   *  when nothing crossed classes; undefined when none were supplied. */
+  allocations?: Partial<Record<PimAssetClass, number>>;
 };
 
 const DEFAULT_REF_PER_STOCK = 0.018182;
@@ -132,6 +142,9 @@ export function applyScenario(
 ): ScenarioResult {
   const refPerStock = opts.refPerStock ?? DEFAULT_REF_PER_STOCK;
   const residual: ResidualPolicy = opts.residual ?? "core";
+  const allocations: Partial<Record<PimAssetClass, number>> | undefined = opts.allocations
+    ? { ...opts.allocations }
+    : undefined;
 
   // 1. Seed weights from the chosen basis.
   const holdings: PimHolding[] = base.map((h) => {
@@ -161,47 +174,91 @@ export function applyScenario(
         }
         const f = Math.min(Math.max(a.fraction, 0), 1);
         const freed = holdings[src].weightInClass * f;
-        const cls = a.toAssetClass ?? holdings[src].assetClass;
-        if (cls !== holdings[src].assetClass) {
-          // Moving between classes does NOT move money between sleeves. Each
-          // class normalises to 100% of itself, so the source class refills the
-          // gap from its own holdings and the destination dilutes its own — the
-          // sleeve totals are set by the asset-class allocation, not by this.
-          // Shifting money between sleeves is an allocation change.
-          warn(
-            cls,
-            `${a.from} → ${a.to} crosses asset classes, which does not change how much is IN each sleeve — each class still normalises to 100% of its own allocation. To actually move money from ${holdings[src].assetClass} into ${cls}, set Class splits → Hypothetical and change the allocation.`,
-          );
+        const srcClass = holdings[src].assetClass;
+        const cls: PimAssetClass = a.toAssetClass ?? srcClass;
+        const crossClass = cls !== srcClass;
+
+        if (!crossClass) {
+          // Same sleeve: an exact internal transfer. Whatever leaves the
+          // source arrives at the destination, the class total never moves,
+          // and nothing else is disturbed.
+          if (f >= 1) holdings.splice(src, 1);
+          else holdings[src] = { ...holdings[src], weightInClass: holdings[src].weightInClass - freed };
+          touched.add(norm(a.from));
+
+          const dst = holdings.findIndex((h) => sameSymbol(h.symbol, a.to));
+          if (dst >= 0) holdings[dst] = { ...holdings[dst], weightInClass: holdings[dst].weightInClass + freed };
+          else
+            holdings.push({
+              name: a.toName ?? a.to,
+              symbol: a.to,
+              currency: a.toCurrency ?? (/-T$|\.TO$/i.test(a.to) ? "CAD" : "USD"),
+              assetClass: cls,
+              weightInClass: freed,
+            });
+          touched.add(norm(a.to));
+          break;
         }
 
-        // Take from the source first, so a same-symbol round trip is a no-op
-        // rather than a doubling.
+        // ── Cross-class: this is an ALLOCATION move ──────────────────────
+        // Selling bonds to buy an alt takes money out of the bond sleeve and
+        // puts it in the alt sleeve. Class weights alone cannot express that
+        // (each class is 100% of itself), so the class ALLOCATIONS move by the
+        // portfolio-level amount, and both classes are renormalised here so
+        // every other holding keeps its portfolio weight exactly.
+        if (!allocations) {
+          warn(
+            cls,
+            `${a.from} → ${a.to} crosses asset classes, which needs the asset-class allocations to model — the sleeves were left unchanged`,
+          );
+          break;
+        }
+        const aSrc = allocations[srcClass] ?? 0;
+        const moved = freed * aSrc; // portfolio-level money leaving the sleeve
+        if (moved <= EPSILON) break;
+
+        const aSrcNext = aSrc - moved;
+        const aDstNext = (allocations[cls] ?? 0) + moved;
+        allocations[srcClass] = Math.max(0, aSrcNext);
+        allocations[cls] = aDstNext;
+
+        // Source sleeve: drop the freed weight, then rescale the whole class
+        // (the trimmed position included) so it is 100% of its SMALLER
+        // allocation. Every survivor's portfolio weight is unchanged.
         if (f >= 1) holdings.splice(src, 1);
         else holdings[src] = { ...holdings[src], weightInClass: holdings[src].weightInClass - freed };
-        touched.add(norm(a.from));
+        const srcScale = 1 - freed;
+        if (srcScale > EPSILON) {
+          for (let i = 0; i < holdings.length; i++) {
+            if (holdings[i].assetClass === srcClass)
+              holdings[i] = { ...holdings[i], weightInClass: holdings[i].weightInClass / srcScale };
+          }
+        }
 
+        // Destination sleeve: existing holdings keep their portfolio weight
+        // (scaled by old/new allocation), and the buy enters at exactly the
+        // money that moved.
+        const dstScale = aDstNext > EPSILON ? (aDstNext - moved) / aDstNext : 0;
+        for (let i = 0; i < holdings.length; i++) {
+          if (holdings[i].assetClass === cls)
+            holdings[i] = { ...holdings[i], weightInClass: holdings[i].weightInClass * dstScale };
+        }
+        const newWeight = aDstNext > EPSILON ? moved / aDstNext : 0;
         const dst = holdings.findIndex((h) => sameSymbol(h.symbol, a.to));
-        if (dst >= 0) {
-          holdings[dst] = { ...holdings[dst], weightInClass: holdings[dst].weightInClass + freed };
-        } else {
+        if (dst >= 0) holdings[dst] = { ...holdings[dst], weightInClass: holdings[dst].weightInClass + newWeight };
+        else
           holdings.push({
             name: a.toName ?? a.to,
             symbol: a.to,
             currency: a.toCurrency ?? (/-T$|\.TO$/i.test(a.to) ? "CAD" : "USD"),
             assetClass: cls,
-            weightInClass: freed,
+            weightInClass: newWeight,
           });
+        // Both sleeves already sum to 1 — mark everything touched so the
+        // residual pass cannot "correct" a correct answer.
+        for (const h of holdings) {
+          if (h.assetClass === srcClass || h.assetClass === cls) touched.add(norm(h.symbol));
         }
-        touched.add(norm(a.to));
-        break;
-      }
-      case "drop": {
-        if (idx < 0) {
-          warn("equity", `drop ${a.symbol}: not in the model — ignored`);
-          break;
-        }
-        touched.add(norm(holdings[idx].symbol));
-        holdings.splice(idx, 1);
         break;
       }
       case "add": {
@@ -267,7 +324,16 @@ export function applyScenario(
       // Candidates: never the holdings the scenario explicitly set, or the
       // adjustment would silently undo the instruction.
       let pool = inClass.filter((h) => !touched.has(norm(h.symbol)));
-      if (residual === "core" && opts.isCore) pool = pool.filter((h) => opts.isCore!(h.symbol));
+      if (residual === "core" && opts.isCore) {
+        const coreOnly = pool.filter((h) => opts.isCore!(h.symbol));
+        // Fixed income and alternatives have no Core-tagged ETFs — that tag
+        // only exists on the equity sleeve. Giving up there left the class
+        // unnormalised and the table unusable, so fall back to spreading it
+        // across the sleeve and say which rule actually applied.
+        if (coreOnly.length > 0) pool = coreOnly;
+        else if (pool.length > 0)
+          warnings.push(`${cls}: no Core holding to absorb — spread across the sleeve instead`);
+      }
       else if (residual === "named") {
         const targets = opts.residualTargets ?? [];
         pool = inClass.filter((h) => targets.some((t) => sameSymbol(t, h.symbol)));
@@ -312,7 +378,7 @@ export function applyScenario(
     });
   }
 
-  return { holdings, diagnostics };
+  return { holdings, diagnostics, allocations };
 }
 
 export type WeightDelta = {

@@ -247,6 +247,9 @@ export function ModelScenarios({ groups }: Props) {
   /** Symbols that absorb under the "named" policy, split evenly. */
   const [residualTargets, setResidualTargets] = useState<string[]>([]);
   const [saving, setSaving] = useState(false);
+  /** The residual rule matters only for standalone weight edits now, so it
+   *  starts hidden — one less control in the way of the common flow. */
+  const [showAdvanced, setShowAdvanced] = useState(false);
 
   /** Starting weights under the chosen basis — used to show, before you
    *  commit the change, how much weight a trim would actually move. */
@@ -283,6 +286,16 @@ export function ModelScenarios({ groups }: Props) {
     if (open) loadSaved();
   }, [open, loadSaved]);
 
+  /** The class splits the scenario STARTS from (before any cross-class move). */
+  const startAlloc = useMemo(() => {
+    if (allocBasis === "custom" && customAlloc)
+      return { equity: customAlloc.equity, fixedIncome: customAlloc.fixedIncome, alternative: customAlloc.alternative };
+    if (allocBasis === "actual" && actualClassAlloc)
+      return { equity: actualClassAlloc.equity, fixedIncome: actualClassAlloc.fixedIncome, alternative: actualClassAlloc.alternative };
+    const w = group?.profiles?.[profile];
+    return { equity: w?.equity ?? 0, fixedIncome: w?.fixedIncome ?? 0, alternative: w?.alternatives ?? 0 };
+  }, [allocBasis, customAlloc, actualClassAlloc, group, profile]);
+
   const result = useMemo(
     () =>
       applyScenario(baseHoldings, actions, {
@@ -291,8 +304,9 @@ export function ModelScenarios({ groups }: Props) {
         isCore,
         residual,
         residualTargets,
+        allocations: startAlloc,
       }),
-    [baseHoldings, actions, basis, hasActuals, actualWeights, isCore, residual, residualTargets],
+    [baseHoldings, actions, basis, hasActuals, actualWeights, isCore, residual, residualTargets, startAlloc],
   );
 
   // The left-hand side of the comparison: today's model, or another scenario
@@ -390,27 +404,12 @@ export function ModelScenarios({ groups }: Props) {
         ? "Model"
         : (saved.find((s) => s.id === compareId)?.name ?? "Current");
 
+  /** Allocations AFTER the scenario — a cross-class buy moves them, so the
+   *  "% of portfolio" column reflects the sleeve shift without the PM having
+   *  to go and edit the split by hand. */
   const profileAlloc = useCallback(
-    (cls: PimAssetClass) => {
-      if (allocBasis === "custom" && customAlloc) {
-        return cls === "equity"
-          ? customAlloc.equity
-          : cls === "fixedIncome"
-            ? customAlloc.fixedIncome
-            : customAlloc.alternative;
-      }
-      if (allocBasis === "actual" && actualClassAlloc) {
-        return cls === "equity"
-          ? actualClassAlloc.equity
-          : cls === "fixedIncome"
-            ? actualClassAlloc.fixedIncome
-            : actualClassAlloc.alternative;
-      }
-      const w = group?.profiles?.[profile];
-      if (!w) return null;
-      return cls === "equity" ? w.equity : cls === "fixedIncome" ? w.fixedIncome : w.alternatives;
-    },
-    [group, profile, allocBasis, actualClassAlloc, customAlloc],
+    (cls: PimAssetClass) => (result.allocations?.[cls] ?? startAlloc[cls]) ?? null,
+    [result.allocations, startAlloc],
   );
 
   // ── Action builder ───────────────────────────────────────────────────────
@@ -428,6 +427,9 @@ export function ModelScenarios({ groups }: Props) {
    *  Explicit because inheriting silently misfiles a fund — an alt bought with
    *  bond proceeds is not a bond. */
   const [fundToClass, setFundToClass] = useState<PimAssetClass | "">("");
+  /** Currency of the bought position. The symbol heuristic (.TO/-T → CAD)
+   *  can't read a Fundserv code like LDM301, so it is asked for, not guessed. */
+  const [fundToCcy, setFundToCcy] = useState<"CAD" | "USD">("CAD");
 
   const [newKind, setNewKind] = useState<ScenarioAction["kind"]>("setWeight");
   const [newSymbol, setNewSymbol] = useState("");
@@ -449,6 +451,7 @@ export function ModelScenarios({ groups }: Props) {
         to,
         fraction: fundAll ? 1 : num / 100,
         toAssetClass: (fundToClass || srcClass || "equity") as PimAssetClass,
+        toCurrency: fundToCcy,
       },
     ]);
     setFundFrom("");
@@ -456,6 +459,7 @@ export function ModelScenarios({ groups }: Props) {
     setFundAmount("");
     setFundAll(false);
     setFundToClass("");
+    setFundToCcy("CAD");
   };
 
   const addAction = () => {
@@ -665,7 +669,9 @@ export function ModelScenarios({ groups }: Props) {
                 <option value="custom">Hypothetical…</option>
               </select>
             </div>
-            <div className="flex items-center gap-2">
+            {/* Hidden by default, but never hidden while a NON-default rule is
+                in force — a rule you can't see is a rule you'll forget. */}
+            <div className={`flex items-center gap-2 ${showAdvanced || residual !== "core" ? "" : "hidden"}`}>
               <span className="text-ink-3">Freed weight goes to</span>
               <select
                 value={residual}
@@ -724,7 +730,13 @@ export function ModelScenarios({ groups }: Props) {
               onClick={() => setActions([])}
               className="rounded border border-line px-2 py-1 text-ink-3 hover:text-ink"
             >
-              Rebalance to model (clear changes)
+              Clear changes
+            </button>
+            <button
+              onClick={() => setShowAdvanced((v) => !v)}
+              className="text-ink-faint hover:text-ink"
+            >
+              {showAdvanced ? "Fewer options" : "More options"}
             </button>
           </div>
 
@@ -805,6 +817,14 @@ export function ModelScenarios({ groups }: Props) {
                 <option value="equity">Equities</option>
                 <option value="fixedIncome">Fixed Income</option>
                 <option value="alternative">Alternatives</option>
+              </select>
+              <select
+                value={fundToCcy}
+                onChange={(e) => setFundToCcy(e.target.value as "CAD" | "USD")}
+                className="rounded border border-line bg-surface-2 px-2 py-1 text-ink"
+              >
+                <option value="CAD">CAD</option>
+                <option value="USD">USD</option>
               </select>
               <button
                 onClick={addFund}
@@ -893,7 +913,7 @@ export function ModelScenarios({ groups }: Props) {
                   {a.kind === "add" && `Add ${a.symbol}${a.weight != null ? ` at ${pct(a.weight)}` : ""}`}
                   {a.kind === "fund" &&
                     `${a.fraction >= 1 ? `Sell all ${a.from}` : `Trim ${a.from} by ${pct(a.fraction)}`} → buy ${a.to}${
-                      a.toAssetClass ? ` (${ASSET_CLASS_LABELS[a.toAssetClass]})` : ""
+                      a.toAssetClass ? ` (${ASSET_CLASS_LABELS[a.toAssetClass]}${a.toCurrency ? `, ${a.toCurrency}` : ""})` : ""
                     }`}
                   {a.kind === "retag" && `Retag ${a.symbol} → ${a.designation}`}
                   <button
@@ -987,12 +1007,17 @@ export function ModelScenarios({ groups }: Props) {
                 if (!rows.length) return null;
                 const colors = ASSET_CLASS_COLORS[ac];
                 const alloc = profileAlloc(ac);
-                // Both sides are apportioned to 100.00% of the class so the
-                // scenario column is as directly usable as the model's own.
-                const dFrom = apportionColumn(rows.map((r) => r.from), 1);
-                const dTo = apportionColumn(rows.map((r) => r.to), 1);
+                // Apportion to the column's OWN total, never to a forced 100%.
+                // Forcing it scaled an unnormalised sleeve up to look correct —
+                // the engine reported "left unnormalised at 92.96%" while the
+                // table showed 100.00% and per-holding weights that were pure
+                // fabrication. If a sleeve doesn't add up, that has to be
+                // visible, because these numbers get typed into the model.
+                const dFrom = apportionColumn(rows.map((r) => r.from));
+                const dTo = apportionColumn(rows.map((r) => r.to));
                 const fromTotal = dFrom.total;
                 const toTotal = dTo.total;
+                const balanced = sameAtDisplay(toTotal, 1);
                 const changed = rows.filter((r) => r.changed).length;
 
                 return (
@@ -1007,9 +1032,10 @@ export function ModelScenarios({ groups }: Props) {
                       </h3>
                       <span className="text-xs">
                         Class Weight Check:{" "}
-                        <span className={`font-semibold ${Math.abs(toTotal - 1) < 0.001 ? "opacity-70" : "text-neg"}`}>
+                        <span className={`font-semibold ${balanced ? "opacity-70" : "text-neg"}`}>
                           {pct(toTotal)}
                         </span>
+                        {!balanced && <span className="ml-1 font-semibold text-neg">— does not add up</span>}
                       </span>
                     </div>
                     <div className="overflow-x-auto">
