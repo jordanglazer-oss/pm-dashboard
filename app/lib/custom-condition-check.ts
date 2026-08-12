@@ -179,6 +179,11 @@ Rules:
 export async function runCustomConditionChecks(opts: {
   ticker?: string;
   force?: boolean;
+  /** Epoch ms after which no NEW check is started. The nightly cron runs on a
+   *  60s function budget shared with the backup and the email; without a wall
+   *  clock this sweep could consume all of it and the digest — which sits
+   *  after it — would never run. Stopping cleanly beats being killed. */
+  deadlineAt?: number;
 }): Promise<CustomCheckResult> {
   const redis = await getRedis();
   const [thesesRaw, stocksRaw] = await Promise.all([redis.get(KEY), redis.get("pm:stocks")]);
@@ -216,6 +221,11 @@ export async function runCustomConditionChecks(opts: {
         continue;
       }
       if (checked.length >= MAX_CHECKS_PER_RUN) {
+        skipped++;
+        continue;
+      }
+      if (opts.deadlineAt != null && Date.now() >= opts.deadlineAt) {
+        // Out of budget — the rest stay due and are picked up next run.
         skipped++;
         continue;
       }

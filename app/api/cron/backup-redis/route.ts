@@ -27,6 +27,13 @@ import { runAlertDigest } from "@/app/lib/alert-digest";
 // timeout can degrade a refresh but can never cost the backup.
 export const maxDuration = 60;
 
+/**
+ * Wall-clock cut-off for the custom-condition sweep, measured from the start
+ * of the run. Leaves headroom for the work that MUST happen — the backup, the
+ * digest inputs and the email — so the sweep yields instead of starving them.
+ */
+const CUSTOM_CHECK_DEADLINE_MS = 45_000;
+
 // Dead pre-operation rollback stashes older than this are auto-purged each
 // nightly run so Redis self-maintains and never creeps back toward OOM.
 const STASH_RETENTION_DAYS = 14;
@@ -322,21 +329,6 @@ export async function GET(req: NextRequest) {
       thesisRefresh = { ran: false, error: msg };
     }
 
-    // Custom kill-condition AI verification — re-checks "custom" conditions
-    // whose answer could have changed (post-earnings / >7d stale / never
-    // checked) via one web-search Sonnet call each, writing aiCheck verdicts
-    // onto pm:position-theses. MUST run before the digest so a freshly tripped
-    // custom condition emails this morning, not tomorrow. Best-effort.
-    let customChecks: { checked: number; skipped: number } | { ran: false; error: string };
-    try {
-      const r = await runCustomConditionChecks({});
-      customChecks = { checked: r.checked.length, skipped: r.skipped };
-    } catch (e) {
-      const msg = e instanceof Error ? e.message : String(e);
-      console.error("[backup-redis] custom-condition checks failed (digest will use prior verdicts):", msg);
-      customChecks = { ran: false, error: msg };
-    }
-
     // ── 4e. Proactive alert digest (Phase 07) ────────────────────────
     //        Compute today's "needs your attention" digest from the signals
     //        just refreshed above, append a snapshot to the append-only
@@ -374,6 +366,33 @@ export async function GET(req: NextRequest) {
       const msg = e instanceof Error ? e.message : String(e);
       console.error("[backup-redis] Alert digest failed (backup still ok):", msg);
       alertDigest = { ran: false, total: 0, emailed: false, error: msg };
+    }
+
+    // Custom kill-condition AI verification — DELIBERATELY AFTER THE DIGEST.
+    //
+    // This used to sit BEFORE it and was silently eating the email. This
+    // route's maxDuration is 60s and each check is a Sonnet call WITH web
+    // search (~15s), so once a handful of conditions came due the function was
+    // killed before ever reaching runAlertDigest. That is exactly the "nightly
+    // email doesn't always send" symptom, and why it looked intermittent: a
+    // night with nothing due sent fine, a night with several due did not.
+    //
+    // The email is the payload; slow optional work must never sit in front of
+    // it. Cost of the reorder: a condition that trips tonight shows up in
+    // TOMORROW's digest. These assert quarterly-cadence facts, so a one-day
+    // lag is nothing beside losing the email outright.
+    //
+    // Bounded by WALL CLOCK as well as count. Being cut off mid-sweep is safe
+    // (each ticker is its own read-merge-write), but stopping deliberately
+    // means the run reports what it actually did.
+    let customChecks: { checked: number; skipped: number } | { ran: false; error: string };
+    try {
+      const r = await runCustomConditionChecks({ deadlineAt: startedAt + CUSTOM_CHECK_DEADLINE_MS });
+      customChecks = { checked: r.checked.length, skipped: r.skipped };
+    } catch (e) {
+      const msg = e instanceof Error ? e.message : String(e);
+      console.error("[backup-redis] custom-condition checks failed:", msg);
+      customChecks = { ran: false, error: msg };
     }
 
     // ── 5. Run invariant check inline ────────────────────────────────
