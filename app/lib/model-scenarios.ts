@@ -1,0 +1,271 @@
+import type { PimAssetClass, PimHolding } from "./pim-types";
+
+/**
+ * Model scenarios — "what if we made these changes?" previews for the Models
+ * tab, computed against the live model but NEVER written into it.
+ *
+ * DESIGN — actions, not materialised weights. A scenario stores the CHANGES
+ * ("drop ARX-T", "add TD-T at 2.5%") rather than a full weight table. The base
+ * model moves underneath it — a rescore, a rebalance, a new holding — and a
+ * stored weight table would silently go stale and start comparing against a
+ * model that no longer exists. Replaying actions against whatever the model is
+ * TODAY keeps a week-old scenario honest.
+ *
+ * WEIGHT BASIS. Individual stocks are pinned at ~1.82% in the model's own
+ * rebalance, but the actual book drifts away from that with price movement.
+ * A scenario therefore starts from one of two bases:
+ *   - "actual" (default) — where the position ACTUALLY sits today, per the
+ *     Positioning tab. This is what you are really trading away from.
+ *   - "model" — the target weights the standard rebalance would produce.
+ * "Rebalance to model" is just re-running with basis "model", which is why it
+ * is a basis and not a separate action.
+ *
+ * RESIDUAL. Weights within an asset class must sum to 1. Anything freed or
+ * consumed has to land somewhere, and pretending otherwise is how a preview
+ * starts lying. The policy is explicit and reported in the diagnostics.
+ *
+ * Nothing here touches pm:pim-models. Applying a scenario is a separate,
+ * confirmed action that goes through the normal write path.
+ */
+
+export type ScenarioAction =
+  | { kind: "drop"; symbol: string }
+  | {
+      kind: "add";
+      symbol: string;
+      name?: string;
+      currency?: "CAD" | "USD";
+      assetClass?: PimAssetClass;
+      /** Target weightInClass. Omitted → the model's per-stock reference. */
+      weight?: number;
+    }
+  /** Set an absolute weightInClass — the per-stock override. */
+  | { kind: "setWeight"; symbol: string; weight: number }
+  /** Reduce a position by a RELATIVE fraction (0.25 = trim a quarter away). */
+  | { kind: "trim"; symbol: string; fraction: number }
+  | { kind: "retag"; symbol: string; designation: "alpha" | "core" };
+
+export type WeightBasis = "actual" | "model";
+
+/**
+ * Where freed (or borrowed) weight goes.
+ *   core         — Core-tagged ETFs absorb it, mirroring the live rebalance.
+ *   proportional — every untouched holding in the class scales together.
+ *   named        — specific symbols absorb it, split by `residualTargets`.
+ */
+export type ResidualPolicy = "core" | "proportional" | "named";
+
+export type ScenarioOptions = {
+  basis: WeightBasis;
+  /** symbol → actual weightInClass today (Positioning tab). Required for
+   *  basis "actual"; a symbol missing here falls back to the model weight. */
+  actualWeights?: Record<string, number>;
+  /** symbol → true when the holding is Core-tagged (residual absorbing). */
+  isCore?: (symbol: string) => boolean;
+  residual?: ResidualPolicy;
+  /** For residual "named": the symbols that absorb, split evenly. */
+  residualTargets?: string[];
+  /** Per-stock reference weight used when an `add` omits one. */
+  refPerStock?: number;
+};
+
+export type ScenarioDiagnostic = {
+  assetClass: PimAssetClass;
+  /** Class total BEFORE normalisation — how far the actions left it from 1. */
+  rawTotal: number;
+  /** Weight the residual policy had to move to bring the class back to 1. */
+  residualApplied: number;
+  absorbedBy: string[];
+  warnings: string[];
+};
+
+export type ScenarioResult = {
+  holdings: PimHolding[];
+  diagnostics: ScenarioDiagnostic[];
+};
+
+const DEFAULT_REF_PER_STOCK = 0.018182;
+const EPSILON = 1e-9;
+
+const norm = (s: string) => s.trim().toUpperCase();
+/** -T and .TO name the same listing; scenarios must match either form. */
+const sameSymbol = (a: string, b: string) => {
+  const x = norm(a).replace(/\.TO$/, "-T");
+  const y = norm(b).replace(/\.TO$/, "-T");
+  return x === y;
+};
+
+/**
+ * Replay a scenario's actions against the CURRENT model.
+ *
+ * Pure: no Redis, no fetch, no mutation of the input. Every asset class is
+ * renormalised to 1 and the adjustment reported, so a preview can never
+ * silently present weights that do not add up.
+ */
+export function applyScenario(
+  base: PimHolding[],
+  actions: ScenarioAction[],
+  opts: ScenarioOptions,
+): ScenarioResult {
+  const refPerStock = opts.refPerStock ?? DEFAULT_REF_PER_STOCK;
+  const residual: ResidualPolicy = opts.residual ?? "core";
+
+  // 1. Seed weights from the chosen basis.
+  const holdings: PimHolding[] = base.map((h) => {
+    if (opts.basis === "actual" && opts.actualWeights) {
+      const hit = Object.entries(opts.actualWeights).find(([sym]) => sameSymbol(sym, h.symbol));
+      if (hit && Number.isFinite(hit[1])) return { ...h, weightInClass: hit[1] };
+    }
+    return { ...h };
+  });
+
+  const warningsByClass: Record<string, string[]> = {};
+  const warn = (cls: PimAssetClass, msg: string) => {
+    (warningsByClass[cls] ??= []).push(msg);
+  };
+  // Symbols an action touched — they are held fixed while the residual moves.
+  const touched = new Set<string>();
+
+  // 2. Apply actions in order; later actions on the same symbol win.
+  for (const a of actions) {
+    const idx = holdings.findIndex((h) => sameSymbol(h.symbol, a.symbol));
+    switch (a.kind) {
+      case "drop": {
+        if (idx < 0) {
+          warn("equity", `drop ${a.symbol}: not in the model — ignored`);
+          break;
+        }
+        touched.add(norm(holdings[idx].symbol));
+        holdings.splice(idx, 1);
+        break;
+      }
+      case "add": {
+        if (idx >= 0) {
+          warn(holdings[idx].assetClass, `add ${a.symbol}: already held — treated as a weight change`);
+          holdings[idx] = { ...holdings[idx], weightInClass: a.weight ?? refPerStock };
+          touched.add(norm(holdings[idx].symbol));
+          break;
+        }
+        const cls: PimAssetClass = a.assetClass ?? "equity";
+        holdings.push({
+          name: a.name ?? a.symbol,
+          symbol: a.symbol,
+          currency: a.currency ?? (/-T$|\.TO$/i.test(a.symbol) ? "CAD" : "USD"),
+          assetClass: cls,
+          weightInClass: a.weight ?? refPerStock,
+        });
+        touched.add(norm(a.symbol));
+        break;
+      }
+      case "setWeight": {
+        if (idx < 0) {
+          warn("equity", `setWeight ${a.symbol}: not in the model — ignored`);
+          break;
+        }
+        if (a.weight < 0) {
+          warn(holdings[idx].assetClass, `setWeight ${a.symbol}: negative weight rejected`);
+          break;
+        }
+        holdings[idx] = { ...holdings[idx], weightInClass: a.weight };
+        touched.add(norm(holdings[idx].symbol));
+        break;
+      }
+      case "trim": {
+        if (idx < 0) {
+          warn("equity", `trim ${a.symbol}: not in the model — ignored`);
+          break;
+        }
+        const f = Math.min(Math.max(a.fraction, 0), 1);
+        holdings[idx] = { ...holdings[idx], weightInClass: holdings[idx].weightInClass * (1 - f) };
+        touched.add(norm(holdings[idx].symbol));
+        break;
+      }
+      case "retag":
+        // Designation lives on pm:stocks, not the holding; recorded so the
+        // caller can apply it and so the residual pool reflects the intent.
+        touched.add(norm(a.symbol));
+        break;
+    }
+  }
+
+  // 3. Renormalise each asset class back to 1 under the residual policy.
+  const diagnostics: ScenarioDiagnostic[] = [];
+  const classes = [...new Set(holdings.map((h) => h.assetClass))];
+  for (const cls of classes) {
+    const inClass = holdings.filter((h) => h.assetClass === cls);
+    const rawTotal = inClass.reduce((s, h) => s + h.weightInClass, 0);
+    const gap = 1 - rawTotal;
+    const warnings = [...(warningsByClass[cls] ?? [])];
+    let absorbedBy: string[] = [];
+
+    if (Math.abs(gap) > EPSILON) {
+      // Candidates: never the holdings the scenario explicitly set, or the
+      // adjustment would silently undo the instruction.
+      let pool = inClass.filter((h) => !touched.has(norm(h.symbol)));
+      if (residual === "core" && opts.isCore) pool = pool.filter((h) => opts.isCore!(h.symbol));
+      else if (residual === "named") {
+        const targets = opts.residualTargets ?? [];
+        pool = inClass.filter((h) => targets.some((t) => sameSymbol(t, h.symbol)));
+      }
+
+      const poolTotal = pool.reduce((s, h) => s + h.weightInClass, 0);
+      if (pool.length === 0 || poolTotal <= EPSILON) {
+        // Nothing can absorb it — say so rather than fabricating a spread.
+        warnings.push(
+          `${cls}: no holding available to absorb ${(gap * 100).toFixed(2)}% under the "${residual}" policy — weights left unnormalised at ${(rawTotal * 100).toFixed(2)}%`,
+        );
+      } else {
+        for (const h of pool) {
+          const share = h.weightInClass / poolTotal;
+          const target = holdings.find((x) => x.symbol === h.symbol && x.assetClass === cls);
+          if (target) target.weightInClass = Math.max(0, target.weightInClass + gap * share);
+        }
+        absorbedBy = pool.map((h) => h.symbol);
+      }
+    }
+
+    diagnostics.push({
+      assetClass: cls,
+      rawTotal,
+      residualApplied: absorbedBy.length ? gap : 0,
+      absorbedBy,
+      warnings,
+    });
+  }
+
+  return { holdings, diagnostics };
+}
+
+export type WeightDelta = {
+  symbol: string;
+  name: string;
+  assetClass: PimAssetClass;
+  from: number | null; // null = not present on that side
+  to: number | null;
+  delta: number;
+};
+
+/** Compare two holding sets — scenario vs current, or scenario vs scenario. */
+export function diffHoldings(a: PimHolding[], b: PimHolding[]): WeightDelta[] {
+  const keys = new Set([...a, ...b].map((h) => norm(h.symbol).replace(/\.TO$/, "-T")));
+  const find = (set: PimHolding[], key: string) => set.find((h) => sameSymbol(h.symbol, key));
+  const out: WeightDelta[] = [];
+  for (const key of keys) {
+    const ha = find(a, key);
+    const hb = find(b, key);
+    const from = ha ? ha.weightInClass : null;
+    const to = hb ? hb.weightInClass : null;
+    const delta = (to ?? 0) - (from ?? 0);
+    if (Math.abs(delta) <= EPSILON && from != null && to != null) continue; // unchanged
+    out.push({
+      symbol: (hb ?? ha)!.symbol,
+      name: (hb ?? ha)!.name,
+      assetClass: (hb ?? ha)!.assetClass,
+      from,
+      to,
+      delta,
+    });
+  }
+  // Biggest moves first; additions and removals surface at the top.
+  return out.sort((x, y) => Math.abs(y.delta) - Math.abs(x.delta));
+}
