@@ -39,6 +39,8 @@ export type ModelScenario = {
   basis: WeightBasis;
   residual?: ResidualPolicy;
   residualTargets?: string[];
+  /** Whether class allocations come from the profile or the live book. */
+  allocBasis?: "target" | "actual";
   notes?: string;
   createdAt: string;
   updatedAt: string;
@@ -94,6 +96,7 @@ export async function POST(req: NextRequest) {
       basis: body?.basis === "model" ? "model" : "actual",
       residual: ["core", "proportional", "named"].includes(body?.residual) ? body.residual : "core",
       residualTargets: Array.isArray(body?.residualTargets) ? body.residualTargets : undefined,
+      allocBasis: body?.allocBasis === "actual" ? "actual" : "target",
       notes: typeof body?.notes === "string" ? body.notes : existing?.notes,
       createdAt: existing?.createdAt ?? now,
       updatedAt: now, // touching a scenario renews its expiry

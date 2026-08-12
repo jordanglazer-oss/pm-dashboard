@@ -64,6 +64,7 @@ type SavedScenario = {
   basis: WeightBasis;
   residual?: ResidualPolicy;
   residualTargets?: string[];
+  allocBasis?: "target" | "actual";
   notes?: string;
   createdAt: string;
   updatedAt: string;
@@ -189,6 +190,34 @@ export function ModelScenarios({ groups }: Props) {
 
   const hasActuals = Object.keys(actualWeights).length > 0;
 
+  /**
+   * The live asset-class split, from the same priced positions.
+   *
+   * Rebasing holdings to actual weights but still scaling them by the
+   * PROFILE's class allocation would be half a rebase: the book's equity share
+   * has drifted away from 66% too, so the "% of portfolio" column would be a
+   * blend of today's holdings and yesterday's allocation. Cash is included in
+   * the denominator so these are comparable to the profile weights.
+   */
+  const actualClassAlloc = useMemo(() => {
+    const entry = positions.find((p) => p.groupId === groupId && p.profile === profile);
+    const byClass: Record<string, number> = { equity: 0, fixedIncome: 0, alternative: 0 };
+    for (const h of baseHoldings) {
+      const units = positionMap.get(h.symbol) ?? 0;
+      const price = livePrices[h.symbol] ?? 0;
+      byClass[h.assetClass] += units * price * (h.currency === "USD" ? usdCadRate : 1);
+    }
+    const cash = entry?.cashBalance ?? 0;
+    const total = byClass.equity + byClass.fixedIncome + byClass.alternative + cash;
+    if (total <= 0) return null;
+    return {
+      equity: byClass.equity / total,
+      fixedIncome: byClass.fixedIncome / total,
+      alternative: byClass.alternative / total,
+      cash: cash / total,
+    };
+  }, [positions, groupId, profile, baseHoldings, positionMap, livePrices, usdCadRate]);
+
   // Core-tagged holdings absorb the residual, mirroring the live rebalance
   // (designation lives on pm:stocks; default-undefined means alpha).
   const isCore = useCallback(
@@ -205,6 +234,8 @@ export function ModelScenarios({ groups }: Props) {
   const [name, setName] = useState("");
   const [actions, setActions] = useState<ScenarioAction[]>([]);
   const [basis, setBasis] = useState<WeightBasis>("actual");
+  /** Whether the class allocations come from the profile or the live book. */
+  const [allocBasis, setAllocBasis] = useState<"target" | "actual">("target");
   const [residual, setResidual] = useState<ResidualPolicy>("core");
   /** Symbols that absorb under the "named" policy, split evenly. */
   const [residualTargets, setResidualTargets] = useState<string[]>([]);
@@ -261,12 +292,20 @@ export function ModelScenarios({ groups }: Props) {
   // replayed against the same base so two proposals are judged like-for-like.
   const comparisonBase = useMemo(() => {
     if (compareId === "current") {
+      // Same starting point as the draft, no actions — isolates what YOUR
+      // changes did.
       return applyScenario(baseHoldings, [], {
         basis: basis === "actual" && hasActuals ? "actual" : "model",
         actualWeights,
         isCore,
         residual,
       }).holdings;
+    }
+    if (compareId === "model") {
+      // The model as written. Against an actual-basis draft this shows the
+      // rebase ITSELF plus your changes — the full impact of adopting today's
+      // book as the new model.
+      return applyScenario(baseHoldings, [], { basis: "model", isCore, residual }).holdings;
     }
     const other = saved.find((s) => s.id === compareId);
     if (!other) return baseHoldings;
@@ -336,15 +375,28 @@ export function ModelScenarios({ groups }: Props) {
   }, [comparisonBase, result.holdings]);
 
   const compareLabel =
-    compareId === "current" ? "Current" : (saved.find((s) => s.id === compareId)?.name ?? "Current");
+    compareId === "current"
+      ? basis === "actual" && hasActuals
+        ? "Actual"
+        : "Current"
+      : compareId === "model"
+        ? "Model"
+        : (saved.find((s) => s.id === compareId)?.name ?? "Current");
 
   const profileAlloc = useCallback(
     (cls: PimAssetClass) => {
+      if (allocBasis === "actual" && actualClassAlloc) {
+        return cls === "equity"
+          ? actualClassAlloc.equity
+          : cls === "fixedIncome"
+            ? actualClassAlloc.fixedIncome
+            : actualClassAlloc.alternative;
+      }
       const w = group?.profiles?.[profile];
       if (!w) return null;
       return cls === "equity" ? w.equity : cls === "fixedIncome" ? w.fixedIncome : w.alternatives;
     },
-    [group, profile],
+    [group, profile, allocBasis, actualClassAlloc],
   );
 
   // ── Action builder ───────────────────────────────────────────────────────
@@ -403,6 +455,7 @@ export function ModelScenarios({ groups }: Props) {
     setBasis("actual");
     setResidual("core");
     setResidualTargets([]);
+    setAllocBasis("target");
     setFundFrom("");
     setFundTo("");
     setFundAmount("");
@@ -425,6 +478,7 @@ export function ModelScenarios({ groups }: Props) {
           basis,
           residual,
           residualTargets,
+          allocBasis,
         }),
       });
       if (res.ok) {
@@ -451,6 +505,7 @@ export function ModelScenarios({ groups }: Props) {
     setBasis(s.basis ?? "actual");
     setResidual(s.residual ?? "core");
     setResidualTargets(s.residualTargets ?? []);
+    setAllocBasis(s.allocBasis ?? "target");
   };
 
   const groupScenarios = saved.filter((s) => s.groupId === group?.id);
@@ -493,6 +548,21 @@ export function ModelScenarios({ groups }: Props) {
                   {pricesLoading ? "loading prices…" : "no positions priced — using model weights"}
                 </span>
               )}
+            </div>
+            {/* Rebasing holdings to actual but keeping the profile's class
+                split would be half a rebase — the book's equity share has
+                drifted too. This makes that second half explicit. */}
+            <div className="flex items-center gap-2">
+              <span className="text-ink-3">Class splits</span>
+              <select
+                value={allocBasis}
+                onChange={(e) => setAllocBasis(e.target.value as "target" | "actual")}
+                disabled={!actualClassAlloc}
+                className="rounded border border-line bg-surface-2 px-2 py-1 text-ink disabled:opacity-40"
+              >
+                <option value="target">Profile targets</option>
+                <option value="actual">Current actual</option>
+              </select>
             </div>
             <div className="flex items-center gap-2">
               <span className="text-ink-3">Freed weight goes to</span>
@@ -727,6 +797,43 @@ export function ModelScenarios({ groups }: Props) {
             </div>
           )}
 
+          {/* Where the book actually sits vs the profile, so adopting today's
+              weights is a decision made with the drift visible rather than an
+              invisible side effect of a dropdown. */}
+          {actualClassAlloc && group?.profiles?.[profile] && (
+            <div className="mb-3 flex flex-wrap items-center gap-x-5 gap-y-1 rounded border border-line bg-surface-2 px-3 py-2 text-xs">
+              <span className="font-medium text-ink-3">Asset class split</span>
+              {(["equity", "fixedIncome", "alternative"] as PimAssetClass[]).map((cls) => {
+                const w = group.profiles[profile]!;
+                const tgt = cls === "equity" ? w.equity : cls === "fixedIncome" ? w.fixedIncome : w.alternatives;
+                const act =
+                  cls === "equity"
+                    ? actualClassAlloc.equity
+                    : cls === "fixedIncome"
+                      ? actualClassAlloc.fixedIncome
+                      : actualClassAlloc.alternative;
+                if (tgt === 0 && act === 0) return null;
+                const drift = act - tgt;
+                return (
+                  <span key={cls} className="inline-flex items-center gap-1.5">
+                    <span className="text-ink-3">{ASSET_CLASS_LABELS[cls]}</span>
+                    <span className="font-mono text-ink">{fmtPct2(act)}</span>
+                    <span className="text-ink-faint">vs {fmtPct2(tgt)} tgt</span>
+                    {!sameAtDisplay(act, tgt) && (
+                      <span className={`font-mono ${drift > 0 ? "text-pos" : "text-neg"}`}>
+                        {drift > 0 ? "+" : ""}
+                        {fmtPct2(drift)}
+                      </span>
+                    )}
+                  </span>
+                );
+              })}
+              <span className="text-ink-faint">
+                {allocBasis === "actual" ? "using actual splits" : "using profile targets"}
+              </span>
+            </div>
+          )}
+
           {/* Comparison */}
           <div className="mb-2 flex items-center gap-2 text-xs">
             <span className="text-ink-3">Compare against</span>
@@ -735,7 +842,8 @@ export function ModelScenarios({ groups }: Props) {
               onChange={(e) => setCompareId(e.target.value)}
               className="rounded border border-line bg-surface-2 px-2 py-1 text-ink"
             >
-              <option value="current">Current model</option>
+              <option value="current">Starting point (no changes)</option>
+              <option value="model">Model targets — shows the rebase too</option>
               {groupScenarios
                 .filter((s) => s.id !== draftId)
                 .map((s) => (
