@@ -206,17 +206,31 @@ export function applyScenario(
       else if (residual === "named") {
         const targets = opts.residualTargets ?? [];
         pool = inClass.filter((h) => targets.some((t) => sameSymbol(t, h.symbol)));
+        // A target that isn't in the model at all is almost certainly a typo,
+        // and silently absorbing into the remaining names would hide it.
+        for (const t of targets) {
+          if (!holdings.some((h) => sameSymbol(h.symbol, t))) {
+            warnings.push(`${t} is not in the model — it cannot absorb anything`);
+          }
+        }
       }
 
+      // Named targets split the freed weight EVENLY — "sell TOU, split the
+      // proceeds between CLS and CSU" means half each, not in proportion to
+      // whatever those two already happened to weigh. The other policies stay
+      // proportional, which is what "spread it back over the sleeve" means.
+      const evenSplit = residual === "named";
       const poolTotal = pool.reduce((s, h) => s + h.weightInClass, 0);
-      if (pool.length === 0 || poolTotal <= EPSILON) {
+      if (pool.length === 0 || (!evenSplit && poolTotal <= EPSILON)) {
         // Nothing can absorb it — say so rather than fabricating a spread.
         warnings.push(
           `${cls}: no holding available to absorb ${(gap * 100).toFixed(2)}% under the "${residual}" policy — weights left unnormalised at ${(rawTotal * 100).toFixed(2)}%`,
         );
       } else {
         for (const h of pool) {
-          const share = h.weightInClass / poolTotal;
+          // An even split also lets a zero-weight target absorb, which a
+          // proportional share cannot.
+          const share = evenSplit ? 1 / pool.length : h.weightInClass / poolTotal;
           const target = holdings.find((x) => x.symbol === h.symbol && x.assetClass === cls);
           if (target) target.weightInClass = Math.max(0, target.weightInClass + gap * share);
         }

@@ -47,6 +47,7 @@ type SavedScenario = {
   actions: ScenarioAction[];
   basis: WeightBasis;
   residual?: ResidualPolicy;
+  residualTargets?: string[];
   notes?: string;
   createdAt: string;
   updatedAt: string;
@@ -175,6 +176,8 @@ export function ModelScenarios({ groups }: Props) {
   const [actions, setActions] = useState<ScenarioAction[]>([]);
   const [basis, setBasis] = useState<WeightBasis>("actual");
   const [residual, setResidual] = useState<ResidualPolicy>("core");
+  /** Symbols that absorb under the "named" policy, split evenly. */
+  const [residualTargets, setResidualTargets] = useState<string[]>([]);
   const [saving, setSaving] = useState(false);
 
   // ── Saved scenarios ──────────────────────────────────────────────────────
@@ -204,8 +207,9 @@ export function ModelScenarios({ groups }: Props) {
         actualWeights,
         isCore,
         residual,
+        residualTargets,
       }),
-    [baseHoldings, actions, basis, hasActuals, actualWeights, isCore, residual],
+    [baseHoldings, actions, basis, hasActuals, actualWeights, isCore, residual, residualTargets],
   );
 
   // The left-hand side of the comparison: today's model, or another scenario
@@ -226,6 +230,7 @@ export function ModelScenarios({ groups }: Props) {
       actualWeights,
       isCore,
       residual: other.residual ?? "core",
+      residualTargets: other.residualTargets,
     }).holdings;
   }, [compareId, saved, baseHoldings, basis, hasActuals, actualWeights, isCore, residual]);
 
@@ -271,6 +276,7 @@ export function ModelScenarios({ groups }: Props) {
     setActions([]);
     setBasis("actual");
     setResidual("core");
+    setResidualTargets([]);
   };
 
   const save = async () => {
@@ -288,6 +294,7 @@ export function ModelScenarios({ groups }: Props) {
           actions,
           basis,
           residual,
+          residualTargets,
         }),
       });
       if (res.ok) {
@@ -313,6 +320,7 @@ export function ModelScenarios({ groups }: Props) {
     setActions(s.actions ?? []);
     setBasis(s.basis ?? "actual");
     setResidual(s.residual ?? "core");
+    setResidualTargets(s.residualTargets ?? []);
   };
 
   const groupScenarios = saved.filter((s) => s.groupId === group?.id);
@@ -365,8 +373,52 @@ export function ModelScenarios({ groups }: Props) {
               >
                 <option value="core">Core ETFs</option>
                 <option value="proportional">All untouched holdings</option>
+                <option value="named">Specific holdings (split evenly)</option>
               </select>
             </div>
+            {residual === "named" && (
+              <div className="flex items-center gap-2">
+                <select
+                  value=""
+                  onChange={(e) => {
+                    const v = e.target.value;
+                    if (v && !residualTargets.includes(v)) setResidualTargets((p) => [...p, v]);
+                  }}
+                  className="rounded border border-line bg-surface-2 px-2 py-1 text-ink"
+                >
+                  <option value="">Add a holding…</option>
+                  {baseHoldings
+                    .filter((h) => !residualTargets.includes(h.symbol))
+                    .map((h) => (
+                      <option key={h.symbol} value={h.symbol}>
+                        {h.symbol} — {h.name}
+                      </option>
+                    ))}
+                </select>
+                {residualTargets.map((t) => (
+                  <span
+                    key={t}
+                    className="inline-flex items-center gap-1 rounded border border-accent-border bg-accent-soft px-2 py-1 text-ink"
+                  >
+                    {t}
+                    <button
+                      onClick={() => setResidualTargets((p) => p.filter((x) => x !== t))}
+                      className="text-ink-faint hover:text-ink"
+                    >
+                      ×
+                    </button>
+                  </span>
+                ))}
+                {residualTargets.length > 1 && (
+                  <span className="text-ink-faint">
+                    {(100 / residualTargets.length).toFixed(0)}% each
+                  </span>
+                )}
+                {residualTargets.length === 0 && (
+                  <span className="text-warn">pick at least one holding to absorb</span>
+                )}
+              </div>
+            )}
             <button
               onClick={() => setActions([])}
               className="rounded border border-line px-2 py-1 text-ink-3 hover:text-ink"
