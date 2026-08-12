@@ -64,7 +64,8 @@ type SavedScenario = {
   basis: WeightBasis;
   residual?: ResidualPolicy;
   residualTargets?: string[];
-  allocBasis?: "target" | "actual";
+  allocBasis?: "target" | "actual" | "custom";
+  customAlloc?: { equity: number; fixedIncome: number; alternative: number; cash: number };
   notes?: string;
   createdAt: string;
   updatedAt: string;
@@ -234,8 +235,14 @@ export function ModelScenarios({ groups }: Props) {
   const [name, setName] = useState("");
   const [actions, setActions] = useState<ScenarioAction[]>([]);
   const [basis, setBasis] = useState<WeightBasis>("actual");
-  /** Whether the class allocations come from the profile or the live book. */
-  const [allocBasis, setAllocBasis] = useState<"target" | "actual">("target");
+  /**
+   * Where the asset-class splits come from. "custom" is the hypothetical:
+   * selling bonds to fund alts is an ALLOCATION decision, not a holdings one —
+   * within-class weights always renormalise to 100% of their own class, so the
+   * only way to model moving money between sleeves is to move the splits.
+   */
+  const [allocBasis, setAllocBasis] = useState<"target" | "actual" | "custom">("target");
+  const [customAlloc, setCustomAlloc] = useState<{ equity: number; fixedIncome: number; alternative: number; cash: number } | null>(null);
   const [residual, setResidual] = useState<ResidualPolicy>("core");
   /** Symbols that absorb under the "named" policy, split evenly. */
   const [residualTargets, setResidualTargets] = useState<string[]>([]);
@@ -385,6 +392,13 @@ export function ModelScenarios({ groups }: Props) {
 
   const profileAlloc = useCallback(
     (cls: PimAssetClass) => {
+      if (allocBasis === "custom" && customAlloc) {
+        return cls === "equity"
+          ? customAlloc.equity
+          : cls === "fixedIncome"
+            ? customAlloc.fixedIncome
+            : customAlloc.alternative;
+      }
       if (allocBasis === "actual" && actualClassAlloc) {
         return cls === "equity"
           ? actualClassAlloc.equity
@@ -396,7 +410,7 @@ export function ModelScenarios({ groups }: Props) {
       if (!w) return null;
       return cls === "equity" ? w.equity : cls === "fixedIncome" ? w.fixedIncome : w.alternatives;
     },
-    [group, profile, allocBasis, actualClassAlloc],
+    [group, profile, allocBasis, actualClassAlloc, customAlloc],
   );
 
   // ── Action builder ───────────────────────────────────────────────────────
@@ -410,6 +424,10 @@ export function ModelScenarios({ groups }: Props) {
   const [fundTo, setFundTo] = useState("");
   const [fundAmount, setFundAmount] = useState("");
   const [fundAll, setFundAll] = useState(false);
+  /** Asset class for the bought position. "" = inherit the source's class.
+   *  Explicit because inheriting silently misfiles a fund — an alt bought with
+   *  bond proceeds is not a bond. */
+  const [fundToClass, setFundToClass] = useState<PimAssetClass | "">("");
 
   const [newKind, setNewKind] = useState<ScenarioAction["kind"]>("setWeight");
   const [newSymbol, setNewSymbol] = useState("");
@@ -422,14 +440,22 @@ export function ModelScenarios({ groups }: Props) {
     const num = parseFloat(fundAmount);
     if (!from || !to) return;
     if (!fundAll && !isFinite(num)) return;
+    const srcClass = baseHoldings.find((h) => h.symbol.toUpperCase() === from)?.assetClass;
     setActions((prev) => [
       ...prev,
-      { kind: "fund", from, to, fraction: fundAll ? 1 : num / 100 },
+      {
+        kind: "fund",
+        from,
+        to,
+        fraction: fundAll ? 1 : num / 100,
+        toAssetClass: (fundToClass || srcClass || "equity") as PimAssetClass,
+      },
     ]);
     setFundFrom("");
     setFundTo("");
     setFundAmount("");
     setFundAll(false);
+    setFundToClass("");
   };
 
   const addAction = () => {
@@ -456,6 +482,7 @@ export function ModelScenarios({ groups }: Props) {
     setResidual("core");
     setResidualTargets([]);
     setAllocBasis("target");
+    setCustomAlloc(null);
     setFundFrom("");
     setFundTo("");
     setFundAmount("");
@@ -479,6 +506,7 @@ export function ModelScenarios({ groups }: Props) {
           residual,
           residualTargets,
           allocBasis,
+          customAlloc,
         }),
       });
       if (res.ok) {
@@ -506,6 +534,7 @@ export function ModelScenarios({ groups }: Props) {
     setResidual(s.residual ?? "core");
     setResidualTargets(s.residualTargets ?? []);
     setAllocBasis(s.allocBasis ?? "target");
+    setCustomAlloc(s.customAlloc ?? null);
   };
 
   const groupScenarios = saved.filter((s) => s.groupId === group?.id);
@@ -549,19 +578,91 @@ export function ModelScenarios({ groups }: Props) {
                 </span>
               )}
             </div>
-            {/* Rebasing holdings to actual but keeping the profile's class
+            {allocBasis === "custom" && customAlloc && (() => {
+            const total = customAlloc.equity + customAlloc.fixedIncome + customAlloc.alternative + customAlloc.cash;
+            const off = !sameAtDisplay(total, 1);
+            const w = group?.profiles?.[profile];
+            const targetOf = (k: keyof typeof customAlloc) =>
+              k === "equity" ? w?.equity : k === "fixedIncome" ? w?.fixedIncome : k === "alternative" ? w?.alternatives : w?.cash;
+            return (
+              <div className="mb-3 flex flex-wrap items-center gap-3 rounded border border-accent-border bg-accent-soft px-3 py-2 text-xs">
+                <span className="font-medium text-ink">Hypothetical splits</span>
+                {(["equity", "fixedIncome", "alternative", "cash"] as const).map((k) => {
+                  const tgt = targetOf(k) ?? 0;
+                  const cur = customAlloc[k];
+                  const moved = !sameAtDisplay(cur, tgt);
+                  return (
+                    <label key={k} className="inline-flex items-center gap-1.5">
+                      <span className="text-ink-3">
+                        {k === "cash" ? "Cash" : ASSET_CLASS_LABELS[k as PimAssetClass]}
+                      </span>
+                      <input
+                        value={(cur * 100).toFixed(2)}
+                        onChange={(e) => {
+                          const v = parseFloat(e.target.value);
+                          if (!isFinite(v)) return;
+                          setCustomAlloc({ ...customAlloc, [k]: v / 100 });
+                        }}
+                        className="w-16 rounded border border-line bg-white px-1.5 py-0.5 text-right font-mono text-ink"
+                      />
+                      <span className="text-ink-3">%</span>
+                      {moved && (
+                        <span className={`font-mono ${cur > tgt ? "text-pos" : "text-neg"}`}>
+                          {cur > tgt ? "+" : ""}
+                          {fmtPct2(cur - tgt)}
+                        </span>
+                      )}
+                    </label>
+                  );
+                })}
+                <span className={off ? "font-semibold text-neg" : "text-ink-3"}>
+                  Total {fmtPct2(total)}
+                  {off && " — must be 100.00%"}
+                </span>
+                <button
+                  onClick={() => {
+                    const src = { equity: w?.equity ?? 0, fixedIncome: w?.fixedIncome ?? 0, alternative: w?.alternatives ?? 0, cash: w?.cash ?? 0 };
+                    setCustomAlloc(src);
+                  }}
+                  className="rounded border border-line bg-white px-2 py-0.5 text-ink-3 hover:text-ink"
+                >
+                  Reset to profile
+                </button>
+              </div>
+            );
+          })()}
+
+          {/* Rebasing holdings to actual but keeping the profile's class
                 split would be half a rebase — the book's equity share has
                 drifted too. This makes that second half explicit. */}
             <div className="flex items-center gap-2">
               <span className="text-ink-3">Class splits</span>
               <select
                 value={allocBasis}
-                onChange={(e) => setAllocBasis(e.target.value as "target" | "actual")}
-                disabled={!actualClassAlloc}
-                className="rounded border border-line bg-surface-2 px-2 py-1 text-ink disabled:opacity-40"
+                onChange={(e) => {
+                  const next = e.target.value as "target" | "actual" | "custom";
+                  if (next === "custom" && !customAlloc) {
+                    // Seed from whatever is on screen right now, so "custom"
+                    // starts as a copy of the current split rather than blank.
+                    const w = group?.profiles?.[profile];
+                    const src =
+                      allocBasis === "actual" && actualClassAlloc
+                        ? actualClassAlloc
+                        : {
+                            equity: w?.equity ?? 0,
+                            fixedIncome: w?.fixedIncome ?? 0,
+                            alternative: w?.alternatives ?? 0,
+                            cash: w?.cash ?? 0,
+                          };
+                    setCustomAlloc({ ...src });
+                  }
+                  setAllocBasis(next);
+                }}
+                className="rounded border border-line bg-surface-2 px-2 py-1 text-ink"
               >
                 <option value="target">Profile targets</option>
-                <option value="actual">Current actual</option>
+                <option value="actual" disabled={!actualClassAlloc}>Current actual</option>
+                <option value="custom">Hypothetical…</option>
               </select>
             </div>
             <div className="flex items-center gap-2">
@@ -689,7 +790,22 @@ export function ModelScenarios({ groups }: Props) {
                 placeholder="Symbol"
                 className="w-32 rounded border border-line bg-surface-2 px-2 py-1 text-ink"
               />
-              <span className="text-ink-3">with the proceeds</span>
+              <span className="text-ink-3">as</span>
+              <select
+                value={fundToClass}
+                onChange={(e) => setFundToClass(e.target.value as PimAssetClass | "")}
+                className="rounded border border-line bg-surface-2 px-2 py-1 text-ink"
+              >
+                <option value="">
+                  same class as source
+                  {fundFrom
+                    ? ` (${ASSET_CLASS_LABELS[baseHoldings.find((h) => h.symbol === fundFrom)?.assetClass ?? "equity"]})`
+                    : ""}
+                </option>
+                <option value="equity">Equities</option>
+                <option value="fixedIncome">Fixed Income</option>
+                <option value="alternative">Alternatives</option>
+              </select>
               <button
                 onClick={addFund}
                 disabled={!fundFrom || !fundTo || (!fundAll && !fundAmount)}
@@ -776,7 +892,9 @@ export function ModelScenarios({ groups }: Props) {
                   {a.kind === "trim" && `Trim ${a.symbol} by ${pct(a.fraction)}`}
                   {a.kind === "add" && `Add ${a.symbol}${a.weight != null ? ` at ${pct(a.weight)}` : ""}`}
                   {a.kind === "fund" &&
-                    `${a.fraction >= 1 ? `Sell all ${a.from}` : `Trim ${a.from} by ${pct(a.fraction)}`} → buy ${a.to}`}
+                    `${a.fraction >= 1 ? `Sell all ${a.from}` : `Trim ${a.from} by ${pct(a.fraction)}`} → buy ${a.to}${
+                      a.toAssetClass ? ` (${ASSET_CLASS_LABELS[a.toAssetClass]})` : ""
+                    }`}
                   {a.kind === "retag" && `Retag ${a.symbol} → ${a.designation}`}
                   <button
                     onClick={() => setActions((prev) => prev.filter((_, j) => j !== i))}
@@ -829,7 +947,11 @@ export function ModelScenarios({ groups }: Props) {
                 );
               })}
               <span className="text-ink-faint">
-                {allocBasis === "actual" ? "using actual splits" : "using profile targets"}
+                {allocBasis === "custom"
+                  ? "using hypothetical splits"
+                  : allocBasis === "actual"
+                    ? "using actual splits"
+                    : "using profile targets"}
               </span>
             </div>
           )}

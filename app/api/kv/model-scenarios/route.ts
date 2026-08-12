@@ -39,8 +39,11 @@ export type ModelScenario = {
   basis: WeightBasis;
   residual?: ResidualPolicy;
   residualTargets?: string[];
-  /** Whether class allocations come from the profile or the live book. */
-  allocBasis?: "target" | "actual";
+  /** Where class allocations come from: the profile, the live book, or a
+   *  hypothetical the PM typed in (the only way to model moving money BETWEEN
+   *  sleeves, e.g. selling bonds to fund alts). */
+  allocBasis?: "target" | "actual" | "custom";
+  customAlloc?: { equity: number; fixedIncome: number; alternative: number; cash: number };
   notes?: string;
   createdAt: string;
   updatedAt: string;
@@ -96,7 +99,16 @@ export async function POST(req: NextRequest) {
       basis: body?.basis === "model" ? "model" : "actual",
       residual: ["core", "proportional", "named"].includes(body?.residual) ? body.residual : "core",
       residualTargets: Array.isArray(body?.residualTargets) ? body.residualTargets : undefined,
-      allocBasis: body?.allocBasis === "actual" ? "actual" : "target",
+      allocBasis: ["actual", "custom"].includes(body?.allocBasis) ? body.allocBasis : "target",
+      customAlloc:
+        body?.customAlloc && typeof body.customAlloc === "object"
+          ? {
+              equity: Number(body.customAlloc.equity) || 0,
+              fixedIncome: Number(body.customAlloc.fixedIncome) || 0,
+              alternative: Number(body.customAlloc.alternative) || 0,
+              cash: Number(body.customAlloc.cash) || 0,
+            }
+          : existing?.customAlloc,
       notes: typeof body?.notes === "string" ? body.notes : existing?.notes,
       createdAt: existing?.createdAt ?? now,
       updatedAt: now, // touching a scenario renews its expiry

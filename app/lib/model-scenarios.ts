@@ -163,13 +163,14 @@ export function applyScenario(
         const freed = holdings[src].weightInClass * f;
         const cls = a.toAssetClass ?? holdings[src].assetClass;
         if (cls !== holdings[src].assetClass) {
-          // Moving between classes breaks the "exact by construction" property:
-          // each class normalises to 1 on its own, so the source class ends
-          // short and the destination class long, and both get made up by the
-          // residual policy. Legitimate, but the PM should know it happened.
+          // Moving between classes does NOT move money between sleeves. Each
+          // class normalises to 100% of itself, so the source class refills the
+          // gap from its own holdings and the destination dilutes its own — the
+          // sleeve totals are set by the asset-class allocation, not by this.
+          // Shifting money between sleeves is an allocation change.
           warn(
             cls,
-            `${a.from} → ${a.to} moves weight between asset classes; both classes are renormalised by the residual policy`,
+            `${a.from} → ${a.to} crosses asset classes, which does not change how much is IN each sleeve — each class still normalises to 100% of its own allocation. To actually move money from ${holdings[src].assetClass} into ${cls}, set Class splits → Hypothetical and change the allocation.`,
           );
         }
 
