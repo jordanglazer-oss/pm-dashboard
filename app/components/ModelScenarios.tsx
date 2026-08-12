@@ -1,8 +1,10 @@
 "use client";
 
 import React, { useState, useMemo, useEffect, useCallback } from "react";
+import Link from "next/link";
 import { useSearchParams } from "next/navigation";
 import { useStocks } from "@/app/lib/StockContext";
+import { displayTicker } from "@/app/lib/ticker";
 import {
   applyScenario,
   diffHoldings,
@@ -33,11 +35,24 @@ import type {
 
 type Props = { groups: PimModelGroup[] };
 
-const CLASS_LABELS: Record<PimAssetClass, string> = {
+// Mirrors PimModel's own labels/colors on purpose: the scenario result is
+// meant to be read side-by-side with the model table, so it uses the same
+// asset-class cards, the same header colors and the same column rhythm.
+const ASSET_CLASS_LABELS: Record<PimAssetClass, string> = {
   fixedIncome: "Fixed Income",
-  equity: "Equity",
+  equity: "Equities",
   alternative: "Alternatives",
 };
+
+const ASSET_CLASS_COLORS: Record<PimAssetClass, { bg: string; header: string }> = {
+  fixedIncome: { bg: "bg-accent-soft", header: "bg-accent-soft text-accent" },
+  equity: { bg: "bg-pos-soft", header: "bg-pos-soft text-pos" },
+  alternative: { bg: "bg-warn-soft", header: "bg-warn-soft text-warn" },
+};
+
+function symbolToTicker(symbol: string): string {
+  return symbol.endsWith("-T") ? symbol.replace(/-T$/, ".TO") : symbol;
+}
 
 type SavedScenario = {
   id: string;
@@ -51,6 +66,19 @@ type SavedScenario = {
   notes?: string;
   createdAt: string;
   updatedAt: string;
+};
+
+type ScenarioRow = {
+  symbol: string;
+  name: string;
+  currency: "CAD" | "USD";
+  assetClass: PimAssetClass;
+  /** Weight on the comparison side; null = not held there (a new position). */
+  from: number | null;
+  /** Weight under the scenario; null = sold out of the model. */
+  to: number | null;
+  delta: number;
+  changed: boolean;
 };
 
 const pct = (v: number) => `${(v * 100).toFixed(2)}%`;
@@ -238,6 +266,60 @@ export function ModelScenarios({ groups }: Props) {
     () => diffHoldings(comparisonBase, result.holdings),
     [comparisonBase, result.holdings],
   );
+
+  /** Every holding on EITHER side, so the result reads like the model table
+   *  (full book, changed rows highlighted) rather than a list of edits. */
+  const rowsByClass = useMemo(() => {
+    const key = (sym: string) => sym.replace(/\.TO$/, "-T").toUpperCase();
+    const out: Record<PimAssetClass, ScenarioRow[]> = {
+      fixedIncome: [],
+      equity: [],
+      alternative: [],
+    };
+    const seen = new Map<string, ScenarioRow>();
+    for (const h of comparisonBase) {
+      seen.set(key(h.symbol), {
+        symbol: h.symbol,
+        name: h.name,
+        currency: h.currency,
+        assetClass: h.assetClass,
+        from: h.weightInClass,
+        to: null,
+        delta: 0,
+        changed: false,
+      });
+    }
+    for (const h of result.holdings) {
+      const k = key(h.symbol);
+      const prev = seen.get(k);
+      if (prev) prev.to = h.weightInClass;
+      else
+        seen.set(k, {
+          symbol: h.symbol,
+          name: h.name,
+          currency: h.currency,
+          assetClass: h.assetClass,
+          from: null,
+          to: h.weightInClass,
+          delta: 0,
+          changed: false,
+        });
+    }
+    for (const r of seen.values()) {
+      r.delta = (r.to ?? 0) - (r.from ?? 0);
+      // A row counts as changed if it was added, removed, or actually moved —
+      // not merely because floating-point renormalisation grazed it.
+      r.changed = r.from == null || r.to == null || Math.abs(r.delta) > 1e-9;
+      out[r.assetClass].push(r);
+    }
+    for (const cls of Object.keys(out) as PimAssetClass[]) {
+      out[cls].sort((a, b) => a.name.localeCompare(b.name));
+    }
+    return out;
+  }, [comparisonBase, result.holdings]);
+
+  const compareLabel =
+    compareId === "current" ? "Current" : (saved.find((s) => s.id === compareId)?.name ?? "Current");
 
   const profileAlloc = useCallback(
     (cls: PimAssetClass) => {
@@ -536,38 +618,130 @@ export function ModelScenarios({ groups }: Props) {
               No changes yet — add a change above to preview it.
             </div>
           ) : (
-            <table className="w-full text-xs">
-              <thead>
-                <tr className="border-b border-line text-ink-3">
-                  <th className="py-1 text-left font-medium">Symbol</th>
-                  <th className="py-1 text-left font-medium">Class</th>
-                  <th className="py-1 text-right font-medium">From</th>
-                  <th className="py-1 text-right font-medium">To</th>
-                  <th className="py-1 text-right font-medium">Δ class</th>
-                  <th className="py-1 text-right font-medium">Δ portfolio</th>
-                </tr>
-              </thead>
-              <tbody>
-                {deltas.map((d) => {
-                  const alloc = profileAlloc(d.assetClass);
-                  return (
-                    <tr key={d.symbol} className="border-b border-line-soft">
-                      <td className="py-1 font-medium text-ink">{d.symbol}</td>
-                      <td className="py-1 text-ink-3">{CLASS_LABELS[d.assetClass]}</td>
-                      <td className="py-1 text-right text-ink-2">{d.from == null ? "—" : pct(d.from)}</td>
-                      <td className="py-1 text-right text-ink-2">{d.to == null ? "—" : pct(d.to)}</td>
-                      <td className={`py-1 text-right ${d.delta >= 0 ? "text-pos" : "text-neg"}`}>
-                        {d.delta >= 0 ? "+" : ""}
-                        {pct(d.delta)}
-                      </td>
-                      <td className={`py-1 text-right ${d.delta >= 0 ? "text-pos" : "text-neg"}`}>
-                        {alloc == null ? "—" : `${d.delta >= 0 ? "+" : ""}${pct(d.delta * alloc)}`}
-                      </td>
-                    </tr>
-                  );
-                })}
-              </tbody>
-            </table>
+            <div className="flex flex-col gap-4">
+              {(["fixedIncome", "equity", "alternative"] as PimAssetClass[]).map((ac) => {
+                const rows = rowsByClass[ac];
+                if (!rows.length) return null;
+                const colors = ASSET_CLASS_COLORS[ac];
+                const alloc = profileAlloc(ac);
+                const fromTotal = rows.reduce((t, r) => t + (r.from ?? 0), 0);
+                const toTotal = rows.reduce((t, r) => t + (r.to ?? 0), 0);
+                const changed = rows.filter((r) => r.changed).length;
+
+                return (
+                  <div key={ac} className="overflow-hidden rounded-card border border-line bg-white shadow-sm">
+                    <div className={`${colors.header} flex items-center justify-between px-5 py-3`}>
+                      <h3 className="text-sm font-bold">
+                        {ASSET_CLASS_LABELS[ac]}
+                        <span className="ml-2 text-xs font-normal opacity-70">
+                          ({rows.filter((r) => r.to != null).length} holdings
+                          {changed > 0 && `, ${changed} changed`})
+                        </span>
+                      </h3>
+                      <span className="text-xs">
+                        Class Weight Check:{" "}
+                        <span className={`font-semibold ${Math.abs(toTotal - 1) < 0.001 ? "opacity-70" : "text-neg"}`}>
+                          {pct(toTotal)}
+                        </span>
+                      </span>
+                    </div>
+                    <div className="overflow-x-auto">
+                      <table className="w-full text-sm">
+                        <thead className="bg-white shadow-[0_1px_0_0_rgb(226_232_240)]">
+                          <tr className="border-b border-line-soft text-xs text-ink-3">
+                            <th className="py-2.5 pl-5 pr-2 text-left font-semibold">Name</th>
+                            <th className="py-2.5 px-2 text-left font-semibold">Symbol</th>
+                            <th className="py-2.5 px-2 text-center font-semibold">Ccy</th>
+                            <th className="py-2.5 px-2 text-right font-semibold whitespace-nowrap">
+                              {compareLabel} Wt
+                            </th>
+                            <th className="py-2.5 px-2 text-right font-semibold whitespace-nowrap">Scenario Wt</th>
+                            <th className="py-2.5 px-2 text-right font-semibold whitespace-nowrap">Δ</th>
+                            <th className="py-2.5 px-2 pr-5 text-right font-semibold whitespace-nowrap">
+                              Scenario % of portfolio
+                            </th>
+                          </tr>
+                        </thead>
+                        <tbody>
+                          {rows.map((r) => (
+                            <tr
+                              key={r.symbol}
+                              className={`border-b border-line-soft transition-colors hover:bg-surface-hover ${
+                                r.to == null ? "opacity-40" : ""
+                              } ${r.changed ? "bg-accent-soft/40" : ""}`}
+                            >
+                              <td className="max-w-[200px] truncate py-2 pl-5 pr-2 font-medium text-ink">
+                                <Link
+                                  href={`/stock/${symbolToTicker(r.symbol).toLowerCase()}?from=pim-model`}
+                                  className="transition-colors hover:text-accent hover:underline"
+                                >
+                                  {r.name}
+                                </Link>
+                              </td>
+                              <td className="py-2 px-2 font-mono text-xs text-ink-2">
+                                <span className="inline-flex items-center gap-1.5">
+                                  {displayTicker(r.symbol)}
+                                  {r.from == null && (
+                                    <span className="inline-flex items-center rounded-full bg-pos-soft px-1.5 py-px text-[9px] font-bold uppercase tracking-wider text-pos ring-1 ring-pos-border">
+                                      New
+                                    </span>
+                                  )}
+                                  {r.to == null && (
+                                    <span className="inline-flex items-center rounded-full bg-neg-soft px-1.5 py-px text-[9px] font-bold uppercase tracking-wider text-neg ring-1 ring-neg-border">
+                                      Sold
+                                    </span>
+                                  )}
+                                </span>
+                              </td>
+                              <td className="py-2 px-2 text-center">
+                                <span
+                                  className={`inline-block rounded px-1.5 py-0.5 text-[10px] font-bold ${
+                                    r.currency === "CAD" ? "bg-neg-soft text-neg" : "bg-pos-soft text-pos"
+                                  }`}
+                                >
+                                  {r.currency}
+                                </span>
+                              </td>
+                              <td className="py-2 px-2 text-right font-mono text-xs text-ink-2">
+                                {r.from == null ? <span className="text-ink-faint">&mdash;</span> : pct(r.from)}
+                              </td>
+                              <td className="py-2 px-2 text-right font-mono text-xs font-semibold">
+                                {r.to == null ? <span className="text-ink-faint">&mdash;</span> : pct(r.to)}
+                              </td>
+                              <td
+                                className={`py-2 px-2 text-right font-mono text-xs ${
+                                  !r.changed ? "text-ink-faint" : r.delta >= 0 ? "text-pos" : "text-neg"
+                                }`}
+                              >
+                                {!r.changed ? "—" : `${r.delta >= 0 ? "+" : ""}${pct(r.delta)}`}
+                              </td>
+                              <td className="py-2 px-2 pr-5 text-right font-mono text-xs text-ink-2">
+                                {r.to == null || alloc == null ? (
+                                  <span className="text-ink-faint">&mdash;</span>
+                                ) : (
+                                  pct(r.to * alloc)
+                                )}
+                              </td>
+                            </tr>
+                          ))}
+                          <tr className={`${colors.bg} font-semibold`}>
+                            <td className="py-2 pl-5 pr-2 text-xs text-ink-3" colSpan={3}>
+                              TOTAL
+                            </td>
+                            <td className="py-2 px-2 text-right font-mono text-xs font-bold">{pct(fromTotal)}</td>
+                            <td className="py-2 px-2 text-right font-mono text-xs font-bold">{pct(toTotal)}</td>
+                            <td className="py-2 px-2 text-right font-mono text-xs text-ink-faint">—</td>
+                            <td className="py-2 px-2 pr-5 text-right font-mono text-xs font-bold">
+                              {alloc == null ? <span className="text-ink-faint">&mdash;</span> : pct(toTotal * alloc)}
+                            </td>
+                          </tr>
+                        </tbody>
+                      </table>
+                    </div>
+                  </div>
+                );
+              })}
+            </div>
           )}
 
           {/* Keep / discard */}
