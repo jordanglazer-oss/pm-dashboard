@@ -43,6 +43,29 @@ export type ScenarioAction =
   | { kind: "setWeight"; symbol: string; weight: number }
   /** Reduce a position by a RELATIVE fraction (0.25 = trim a quarter away). */
   | { kind: "trim"; symbol: string; fraction: number }
+  /**
+   * "Trim X and buy Y with the proceeds" — the single most common change, and
+   * one intent rather than two. Expressed as a pair of edits it is easy to get
+   * wrong: you have to work out the freed weight by hand, and any mismatch is
+   * silently absorbed by the residual policy, so the rest of the sleeve moves
+   * for no reason you asked for.
+   *
+   * As one action the arithmetic is exact by construction — whatever leaves
+   * `from` is exactly what arrives at `to`, so the class total never changes
+   * and nothing else in the model is disturbed. `fraction` is a share of the
+   * SOURCE position (1 = sell it all), resolved at replay time against
+   * whatever the source weighs today.
+   */
+  | {
+      kind: "fund";
+      from: string;
+      to: string;
+      fraction: number;
+      toName?: string;
+      toCurrency?: "CAD" | "USD";
+      /** Defaults to the source's class — proceeds stay in the same sleeve. */
+      toAssetClass?: PimAssetClass;
+    }
   | { kind: "retag"; symbol: string; designation: "alpha" | "core" };
 
 export type WeightBasis = "actual" | "model";
@@ -128,8 +151,49 @@ export function applyScenario(
 
   // 2. Apply actions in order; later actions on the same symbol win.
   for (const a of actions) {
-    const idx = holdings.findIndex((h) => sameSymbol(h.symbol, a.symbol));
+    const idx = "symbol" in a ? holdings.findIndex((h) => sameSymbol(h.symbol, a.symbol)) : -1;
     switch (a.kind) {
+      case "fund": {
+        const src = holdings.findIndex((h) => sameSymbol(h.symbol, a.from));
+        if (src < 0) {
+          warn("equity", `fund from ${a.from}: not in the model — ignored`);
+          break;
+        }
+        const f = Math.min(Math.max(a.fraction, 0), 1);
+        const freed = holdings[src].weightInClass * f;
+        const cls = a.toAssetClass ?? holdings[src].assetClass;
+        if (cls !== holdings[src].assetClass) {
+          // Moving between classes breaks the "exact by construction" property:
+          // each class normalises to 1 on its own, so the source class ends
+          // short and the destination class long, and both get made up by the
+          // residual policy. Legitimate, but the PM should know it happened.
+          warn(
+            cls,
+            `${a.from} → ${a.to} moves weight between asset classes; both classes are renormalised by the residual policy`,
+          );
+        }
+
+        // Take from the source first, so a same-symbol round trip is a no-op
+        // rather than a doubling.
+        if (f >= 1) holdings.splice(src, 1);
+        else holdings[src] = { ...holdings[src], weightInClass: holdings[src].weightInClass - freed };
+        touched.add(norm(a.from));
+
+        const dst = holdings.findIndex((h) => sameSymbol(h.symbol, a.to));
+        if (dst >= 0) {
+          holdings[dst] = { ...holdings[dst], weightInClass: holdings[dst].weightInClass + freed };
+        } else {
+          holdings.push({
+            name: a.toName ?? a.to,
+            symbol: a.to,
+            currency: a.toCurrency ?? (/-T$|\.TO$/i.test(a.to) ? "CAD" : "USD"),
+            assetClass: cls,
+            weightInClass: freed,
+          });
+        }
+        touched.add(norm(a.to));
+        break;
+      }
       case "drop": {
         if (idx < 0) {
           warn("equity", `drop ${a.symbol}: not in the model — ignored`);

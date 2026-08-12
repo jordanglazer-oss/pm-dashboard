@@ -208,6 +208,21 @@ export function ModelScenarios({ groups }: Props) {
   const [residualTargets, setResidualTargets] = useState<string[]>([]);
   const [saving, setSaving] = useState(false);
 
+  /** Starting weights under the chosen basis — used to show, before you
+   *  commit the change, how much weight a trim would actually move. */
+  const seededWeights = useMemo(() => {
+    const out: Record<string, number> = {};
+    for (const h of baseHoldings) {
+      const hit = Object.entries(actualWeights).find(
+        ([sym]) => sym.replace(/\.TO$/, "-T").toUpperCase() === h.symbol.replace(/\.TO$/, "-T").toUpperCase(),
+      );
+      out[h.symbol.toUpperCase()] =
+        basis === "actual" && hasActuals && hit ? hit[1] : h.weightInClass;
+    }
+    return out;
+  }, [baseHoldings, actualWeights, hasActuals, basis]);
+
+
   // ── Saved scenarios ──────────────────────────────────────────────────────
   const [saved, setSaved] = useState<SavedScenario[]>([]);
   const [compareId, setCompareId] = useState<string>("current");
@@ -331,10 +346,37 @@ export function ModelScenarios({ groups }: Props) {
   );
 
   // ── Action builder ───────────────────────────────────────────────────────
+  // Two modes. "Fund" is first and default because it is the change actually
+  // being made most of the time — trim one position, buy another with the
+  // proceeds — and expressing that as two separate edits is what made the
+  // panel confusing: you had to work out the freed weight yourself and hope
+  // the residual policy didn't move the rest of the sleeve behind your back.
+  const [mode, setMode] = useState<"fund" | "single">("fund");
+  const [fundFrom, setFundFrom] = useState("");
+  const [fundTo, setFundTo] = useState("");
+  const [fundAmount, setFundAmount] = useState("");
+  const [fundAll, setFundAll] = useState(false);
+
   const [newKind, setNewKind] = useState<ScenarioAction["kind"]>("setWeight");
   const [newSymbol, setNewSymbol] = useState("");
   const [newValue, setNewValue] = useState("");
   const [newClass, setNewClass] = useState<PimAssetClass>("equity");
+
+  const addFund = () => {
+    const from = fundFrom.trim().toUpperCase();
+    const to = fundTo.trim().toUpperCase();
+    const num = parseFloat(fundAmount);
+    if (!from || !to) return;
+    if (!fundAll && !isFinite(num)) return;
+    setActions((prev) => [
+      ...prev,
+      { kind: "fund", from, to, fraction: fundAll ? 1 : num / 100 },
+    ]);
+    setFundFrom("");
+    setFundTo("");
+    setFundAmount("");
+    setFundAll(false);
+  };
 
   const addAction = () => {
     const sym = newSymbol.trim().toUpperCase();
@@ -359,6 +401,10 @@ export function ModelScenarios({ groups }: Props) {
     setBasis("actual");
     setResidual("core");
     setResidualTargets([]);
+    setFundFrom("");
+    setFundTo("");
+    setFundAmount("");
+    setFundAll(false);
   };
 
   const save = async () => {
@@ -510,57 +556,140 @@ export function ModelScenarios({ groups }: Props) {
           </div>
 
           {/* Action builder */}
-          <div className="mb-3 flex flex-wrap items-end gap-2 text-xs">
-            <select
-              value={newKind}
-              onChange={(e) => setNewKind(e.target.value as ScenarioAction["kind"])}
-              className="rounded border border-line bg-surface-2 px-2 py-1 text-ink"
-            >
-              <option value="setWeight">Set weight</option>
-              <option value="trim">Trim by</option>
-              <option value="drop">Sell all of</option>
-              <option value="add">Add new</option>
-            </select>
-            <input
-              list="scenario-symbols"
-              value={newSymbol}
-              onChange={(e) => setNewSymbol(e.target.value)}
-              placeholder="Symbol"
-              className="w-28 rounded border border-line bg-surface-2 px-2 py-1 text-ink"
-            />
-            <datalist id="scenario-symbols">
-              {baseHoldings.map((h) => (
-                <option key={h.symbol} value={h.symbol}>
-                  {h.name}
-                </option>
-              ))}
-            </datalist>
-            {newKind !== "drop" && (
-              <input
-                value={newValue}
-                onChange={(e) => setNewValue(e.target.value)}
-                placeholder={newKind === "trim" ? "% of position" : "% of class"}
-                className="w-28 rounded border border-line bg-surface-2 px-2 py-1 text-ink"
-              />
-            )}
-            {newKind === "add" && (
-              <select
-                value={newClass}
-                onChange={(e) => setNewClass(e.target.value as PimAssetClass)}
-                className="rounded border border-line bg-surface-2 px-2 py-1 text-ink"
-              >
-                <option value="equity">Equity</option>
-                <option value="fixedIncome">Fixed Income</option>
-                <option value="alternative">Alternatives</option>
-              </select>
-            )}
+          <div className="mb-3 flex gap-1 text-xs">
             <button
-              onClick={addAction}
-              className="rounded bg-accent px-3 py-1 font-medium !text-white"
+              onClick={() => setMode("fund")}
+              className={`rounded px-3 py-1 font-medium ${
+                mode === "fund" ? "bg-accent !text-white" : "border border-line text-ink-3 hover:text-ink"
+              }`}
             >
-              Add change
+              Trim one to fund another
+            </button>
+            <button
+              onClick={() => setMode("single")}
+              className={`rounded px-3 py-1 font-medium ${
+                mode === "single" ? "bg-accent !text-white" : "border border-line text-ink-3 hover:text-ink"
+              }`}
+            >
+              Single change
             </button>
           </div>
+
+          {mode === "fund" ? (
+            <div className="mb-3 flex flex-wrap items-center gap-2 text-xs">
+              <span className="text-ink-3">Sell</span>
+              <select
+                value={fundAll ? "all" : "some"}
+                onChange={(e) => setFundAll(e.target.value === "all")}
+                className="rounded border border-line bg-surface-2 px-2 py-1 text-ink"
+              >
+                <option value="some">some of</option>
+                <option value="all">all of</option>
+              </select>
+              {!fundAll && (
+                <>
+                  <input
+                    value={fundAmount}
+                    onChange={(e) => setFundAmount(e.target.value)}
+                    placeholder="25"
+                    className="w-16 rounded border border-line bg-surface-2 px-2 py-1 text-ink"
+                  />
+                  <span className="text-ink-3">% of</span>
+                </>
+              )}
+              <select
+                value={fundFrom}
+                onChange={(e) => setFundFrom(e.target.value)}
+                className="rounded border border-line bg-surface-2 px-2 py-1 text-ink"
+              >
+                <option value="">Choose a holding…</option>
+                {baseHoldings.map((h) => (
+                  <option key={h.symbol} value={h.symbol}>
+                    {h.symbol} — {h.name}
+                  </option>
+                ))}
+              </select>
+              <span className="text-ink-3">and buy</span>
+              <input
+                list="scenario-symbols"
+                value={fundTo}
+                onChange={(e) => setFundTo(e.target.value)}
+                placeholder="Symbol"
+                className="w-32 rounded border border-line bg-surface-2 px-2 py-1 text-ink"
+              />
+              <span className="text-ink-3">with the proceeds</span>
+              <button
+                onClick={addFund}
+                disabled={!fundFrom || !fundTo || (!fundAll && !fundAmount)}
+                className="rounded bg-accent px-3 py-1 font-medium !text-white disabled:opacity-40"
+              >
+                Add change
+              </button>
+              {fundFrom && fundTo && (fundAll || fundAmount) && (
+                <span className="text-ink-faint">
+                  {(() => {
+                    const src = seededWeights[fundFrom.toUpperCase()];
+                    if (src == null) return null;
+                    const f = fundAll ? 1 : parseFloat(fundAmount) / 100;
+                    if (!isFinite(f)) return null;
+                    return `moves ${pct(src * Math.min(Math.max(f, 0), 1))} of the class`;
+                  })()}
+                </span>
+              )}
+            </div>
+          ) : (
+            <div className="mb-3 flex flex-wrap items-end gap-2 text-xs">
+              <select
+                value={newKind}
+                onChange={(e) => setNewKind(e.target.value as ScenarioAction["kind"])}
+                className="rounded border border-line bg-surface-2 px-2 py-1 text-ink"
+              >
+                <option value="setWeight">Set weight</option>
+                <option value="trim">Trim by</option>
+                <option value="drop">Sell all of</option>
+                <option value="add">Add new</option>
+              </select>
+              <input
+                list="scenario-symbols"
+                value={newSymbol}
+                onChange={(e) => setNewSymbol(e.target.value)}
+                placeholder="Symbol"
+                className="w-28 rounded border border-line bg-surface-2 px-2 py-1 text-ink"
+              />
+              {newKind !== "drop" && (
+                <input
+                  value={newValue}
+                  onChange={(e) => setNewValue(e.target.value)}
+                  placeholder={newKind === "trim" ? "% of position" : "% of class"}
+                  className="w-28 rounded border border-line bg-surface-2 px-2 py-1 text-ink"
+                />
+              )}
+              {newKind === "add" && (
+                <select
+                  value={newClass}
+                  onChange={(e) => setNewClass(e.target.value as PimAssetClass)}
+                  className="rounded border border-line bg-surface-2 px-2 py-1 text-ink"
+                >
+                  <option value="equity">Equity</option>
+                  <option value="fixedIncome">Fixed Income</option>
+                  <option value="alternative">Alternatives</option>
+                </select>
+              )}
+              <button onClick={addAction} className="rounded bg-accent px-3 py-1 font-medium !text-white">
+                Add change
+              </button>
+              <span className="text-ink-faint">
+                Freed weight lands per the &ldquo;{residual === "core" ? "Core ETFs" : residual === "named" ? "Specific holdings" : "All untouched holdings"}&rdquo; rule above.
+              </span>
+            </div>
+          )}
+          <datalist id="scenario-symbols">
+            {baseHoldings.map((h) => (
+              <option key={h.symbol} value={h.symbol}>
+                {h.name}
+              </option>
+            ))}
+          </datalist>
 
           {/* Pending actions */}
           {actions.length > 0 && (
@@ -574,6 +703,8 @@ export function ModelScenarios({ groups }: Props) {
                   {a.kind === "setWeight" && `${a.symbol} → ${pct(a.weight)}`}
                   {a.kind === "trim" && `Trim ${a.symbol} by ${pct(a.fraction)}`}
                   {a.kind === "add" && `Add ${a.symbol}${a.weight != null ? ` at ${pct(a.weight)}` : ""}`}
+                  {a.kind === "fund" &&
+                    `${a.fraction >= 1 ? `Sell all ${a.from}` : `Trim ${a.from} by ${pct(a.fraction)}`} → buy ${a.to}`}
                   {a.kind === "retag" && `Retag ${a.symbol} → ${a.designation}`}
                   <button
                     onClick={() => setActions((prev) => prev.filter((_, j) => j !== i))}
