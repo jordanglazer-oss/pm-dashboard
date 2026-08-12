@@ -3,6 +3,7 @@
 import React from "react";
 import { useStocks } from "@/app/lib/StockContext";
 import { PimModel } from "@/app/components/PimModel";
+import { ModelScenarios } from "@/app/components/ModelScenarios";
 
 export default function PimModelPage() {
   const { pimModels } = useStocks();
@@ -17,6 +18,7 @@ export default function PimModelPage() {
           </p>
         </div>
         <PimModel groups={pimModels.groups} />
+        <ModelScenarios groups={pimModels.groups} />
       </div>
     </main>
   );
