@@ -19,17 +19,23 @@ export default function PortfolioPage() {
             Current positions, weights, drift from target, rebalance and trade actions
           </p>
         </div>
-        <div id="xray" className="scroll-mt-24">
+        {/* Positioning itself comes FIRST. The X-ray, thesis watch and journal
+            are all portfolio-level context rather than positioning, and stacked
+            above the model they pushed the actual weights and the positions
+            table off the first screen — which is the one thing this page exists
+            to show. They keep their content and their anchors; they just sit
+            below the model now. */}
+        <PimPortfolio groups={pimModels.groups} />
+        <div id="xray" className="mt-6 scroll-mt-24">
           <PortfolioXray />
         </div>
         {/* Thesis watch + Decision journal sit side-by-side — both are compact
             collapsibles, so one row instead of two keeps the page from feeling
-            stacked/cluttered above the positioning tables. */}
+            stacked. */}
         <div className="mt-6 grid items-start gap-4 lg:grid-cols-2">
           <ThesisWatch />
           <DecisionJournal />
         </div>
-        <PimPortfolio groups={pimModels.groups} />
       </div>
     </main>
   );

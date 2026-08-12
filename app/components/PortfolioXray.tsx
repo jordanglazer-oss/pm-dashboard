@@ -4,6 +4,7 @@ import { useMemo, useState } from "react";
 import { useStocks } from "@/app/lib/StockContext";
 import { displayTicker } from "@/app/lib/ticker";
 import { formatYmd } from "@/app/lib/date-format";
+import { CollapsibleSection } from "@/app/components/CollapsibleSection";
 
 /**
  * Portfolio X-ray — a book-level roll-up of the Portfolio bucket's FactSet
@@ -92,11 +93,20 @@ export function PortfolioXray() {
   if (count === 0) return null;
 
   return (
-    <div className="mb-6 rounded-card border border-line bg-white p-5 shadow-sm">
-      <div className="mb-3 flex items-baseline justify-between">
-        <h2 className="text-sm font-bold text-ink">Portfolio X-ray <span className="font-normal text-ink-3">· FactSet fundamentals</span></h2>
-        <span className="text-[11px] text-ink-3">{count} holdings · {basis}</span>
-      </div>
+    // Collapsed by default: six aggregate metrics and an earnings calendar are
+    // reference, not something to re-read on every visit, and at full height
+    // they pushed the positions table off the first screen. The header keeps
+    // the holding count visible so it's obvious what's tucked away.
+    <CollapsibleSection
+      prefKey="portfolio.xrayCollapsed"
+      defaultCollapsed
+      title={
+        <span className="text-sm font-bold text-ink">
+          Portfolio X-ray <span className="font-normal text-ink-3">· FactSet fundamentals</span>
+        </span>
+      }
+      right={<span className="text-[11px] text-ink-3">{count} holdings · {basis}</span>}
+    >
       <div className="grid grid-cols-2 gap-3 sm:grid-cols-3 lg:grid-cols-6">
         {tiles.map((t) => (
           <div key={t.label} className="hover-lift rounded-lg border border-line-soft bg-surface-hover px-3 py-2.5">
@@ -118,6 +128,6 @@ export function PortfolioXray() {
           </div>
         </div>
       )}
-    </div>
+    </CollapsibleSection>
   );
 }
