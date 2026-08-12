@@ -2727,8 +2727,8 @@ export function PimPortfolio({ groups }: Props) {
         {loading && holdingRows.length === 0 ? (
           <div className="p-4"><SkeletonTable rows={8} cols={6} /></div>
         ) : (
-        <div className="overflow-x-auto">
-          <table className="w-full text-xs">
+        <div className="max-w-full overflow-x-auto">
+          <table className="w-full min-w-[760px] text-xs">
             <thead className="sticky top-0 z-10 bg-surface-2 shadow-[0_1px_0_0_rgb(226_232_240)]">
               <tr className="border-b border-line-soft bg-surface-2">
                 <th className={`text-left ${thClass}`} onClick={() => handleSort("symbol")}>

@@ -565,13 +565,16 @@ export function ModelScenarios({ groups }: Props) {
       {open && (
         <div className="border-t border-line-soft px-4 py-4">
           {/* Basis + residual */}
-          <div className="mb-4 flex flex-wrap items-center gap-4 text-xs">
-            <div className="flex items-center gap-2">
-              <span className="text-ink-3">Start from</span>
+          {/* Each label + control stays glued together while the ROW wraps, so
+              on a phone the settings read as a stacked list rather than a
+              jumble of half-sentences. */}
+          <div className="mb-4 flex flex-col gap-3 text-xs sm:flex-row sm:flex-wrap sm:items-center sm:gap-4">
+            <div className="flex items-center gap-2 min-w-0">
+              <span className="shrink-0 text-ink-3">Start from</span>
               <select
                 value={basis}
                 onChange={(e) => setBasis(e.target.value as WeightBasis)}
-                className="rounded border border-line bg-surface-2 px-2 py-1 text-ink"
+                className="w-full rounded border border-line bg-surface-2 px-2 py-1 text-ink sm:w-auto"
               >
                 <option value="actual">Current actual %</option>
                 <option value="model">Model target % (rebalance to model)</option>
@@ -589,14 +592,14 @@ export function ModelScenarios({ groups }: Props) {
             const targetOf = (k: keyof typeof customAlloc) =>
               k === "equity" ? w?.equity : k === "fixedIncome" ? w?.fixedIncome : k === "alternative" ? w?.alternatives : w?.cash;
             return (
-              <div className="mb-3 flex flex-wrap items-center gap-3 rounded border border-accent-border bg-accent-soft px-3 py-2 text-xs">
+              <div className="mb-3 grid grid-cols-1 gap-2 rounded border border-accent-border bg-accent-soft px-3 py-2 text-xs sm:flex sm:flex-wrap sm:items-center sm:gap-3">
                 <span className="font-medium text-ink">Hypothetical splits</span>
                 {(["equity", "fixedIncome", "alternative", "cash"] as const).map((k) => {
                   const tgt = targetOf(k) ?? 0;
                   const cur = customAlloc[k];
                   const moved = !sameAtDisplay(cur, tgt);
                   return (
-                    <label key={k} className="inline-flex items-center gap-1.5">
+                    <label key={k} className="flex items-center gap-1.5">
                       <span className="text-ink-3">
                         {k === "cash" ? "Cash" : ASSET_CLASS_LABELS[k as PimAssetClass]}
                       </span>
@@ -639,8 +642,8 @@ export function ModelScenarios({ groups }: Props) {
           {/* Rebasing holdings to actual but keeping the profile's class
                 split would be half a rebase — the book's equity share has
                 drifted too. This makes that second half explicit. */}
-            <div className="flex items-center gap-2">
-              <span className="text-ink-3">Class splits</span>
+            <div className="flex items-center gap-2 min-w-0">
+              <span className="shrink-0 text-ink-3">Class splits</span>
               <select
                 value={allocBasis}
                 onChange={(e) => {
@@ -662,7 +665,7 @@ export function ModelScenarios({ groups }: Props) {
                   }
                   setAllocBasis(next);
                 }}
-                className="rounded border border-line bg-surface-2 px-2 py-1 text-ink"
+                className="w-full rounded border border-line bg-surface-2 px-2 py-1 text-ink sm:w-auto"
               >
                 <option value="target">Profile targets</option>
                 <option value="actual" disabled={!actualClassAlloc}>Current actual</option>
@@ -676,7 +679,7 @@ export function ModelScenarios({ groups }: Props) {
               <select
                 value={residual}
                 onChange={(e) => setResidual(e.target.value as ResidualPolicy)}
-                className="rounded border border-line bg-surface-2 px-2 py-1 text-ink"
+                className="w-full rounded border border-line bg-surface-2 px-2 py-1 text-ink sm:w-auto"
               >
                 <option value="core">Core ETFs</option>
                 <option value="proportional">All untouched holdings</option>
@@ -691,7 +694,7 @@ export function ModelScenarios({ groups }: Props) {
                     const v = e.target.value;
                     if (v && !residualTargets.includes(v)) setResidualTargets((p) => [...p, v]);
                   }}
-                  className="rounded border border-line bg-surface-2 px-2 py-1 text-ink"
+                  className="w-full rounded border border-line bg-surface-2 px-2 py-1 text-ink sm:w-auto"
                 >
                   <option value="">Add a holding…</option>
                   {baseHoldings
@@ -761,12 +764,12 @@ export function ModelScenarios({ groups }: Props) {
           </div>
 
           {mode === "fund" ? (
-            <div className="mb-3 flex flex-wrap items-center gap-2 text-xs">
+            <div className="mb-3 flex flex-col gap-2 text-xs sm:flex-row sm:flex-wrap sm:items-center">
               <span className="text-ink-3">Sell</span>
               <select
                 value={fundAll ? "all" : "some"}
                 onChange={(e) => setFundAll(e.target.value === "all")}
-                className="rounded border border-line bg-surface-2 px-2 py-1 text-ink"
+                className="w-full rounded border border-line bg-surface-2 px-2 py-1 text-ink sm:w-auto"
               >
                 <option value="some">some of</option>
                 <option value="all">all of</option>
@@ -777,7 +780,7 @@ export function ModelScenarios({ groups }: Props) {
                     value={fundAmount}
                     onChange={(e) => setFundAmount(e.target.value)}
                     placeholder="25"
-                    className="w-16 rounded border border-line bg-surface-2 px-2 py-1 text-ink"
+                    className="w-full rounded border border-line bg-surface-2 px-2 py-1 text-ink sm:w-16"
                   />
                   <span className="text-ink-3">% of</span>
                 </>
@@ -785,7 +788,7 @@ export function ModelScenarios({ groups }: Props) {
               <select
                 value={fundFrom}
                 onChange={(e) => setFundFrom(e.target.value)}
-                className="rounded border border-line bg-surface-2 px-2 py-1 text-ink"
+                className="w-full rounded border border-line bg-surface-2 px-2 py-1 text-ink sm:w-auto"
               >
                 <option value="">Choose a holding…</option>
                 {baseHoldings.map((h) => (
@@ -800,13 +803,13 @@ export function ModelScenarios({ groups }: Props) {
                 value={fundTo}
                 onChange={(e) => setFundTo(e.target.value)}
                 placeholder="Symbol"
-                className="w-32 rounded border border-line bg-surface-2 px-2 py-1 text-ink"
+                className="w-full rounded border border-line bg-surface-2 px-2 py-1 text-ink sm:w-32"
               />
               <span className="text-ink-3">as</span>
               <select
                 value={fundToClass}
                 onChange={(e) => setFundToClass(e.target.value as PimAssetClass | "")}
-                className="rounded border border-line bg-surface-2 px-2 py-1 text-ink"
+                className="w-full rounded border border-line bg-surface-2 px-2 py-1 text-ink sm:w-auto"
               >
                 <option value="">
                   same class as source
@@ -821,7 +824,7 @@ export function ModelScenarios({ groups }: Props) {
               <select
                 value={fundToCcy}
                 onChange={(e) => setFundToCcy(e.target.value as "CAD" | "USD")}
-                className="rounded border border-line bg-surface-2 px-2 py-1 text-ink"
+                className="w-full rounded border border-line bg-surface-2 px-2 py-1 text-ink sm:w-auto"
               >
                 <option value="CAD">CAD</option>
                 <option value="USD">USD</option>
@@ -846,11 +849,11 @@ export function ModelScenarios({ groups }: Props) {
               )}
             </div>
           ) : (
-            <div className="mb-3 flex flex-wrap items-end gap-2 text-xs">
+            <div className="mb-3 flex flex-col gap-2 text-xs sm:flex-row sm:flex-wrap sm:items-end">
               <select
                 value={newKind}
                 onChange={(e) => setNewKind(e.target.value as ScenarioAction["kind"])}
-                className="rounded border border-line bg-surface-2 px-2 py-1 text-ink"
+                className="w-full rounded border border-line bg-surface-2 px-2 py-1 text-ink sm:w-auto"
               >
                 <option value="setWeight">Set weight</option>
                 <option value="trim">Trim by</option>
@@ -862,21 +865,21 @@ export function ModelScenarios({ groups }: Props) {
                 value={newSymbol}
                 onChange={(e) => setNewSymbol(e.target.value)}
                 placeholder="Symbol"
-                className="w-28 rounded border border-line bg-surface-2 px-2 py-1 text-ink"
+                className="w-full rounded border border-line bg-surface-2 px-2 py-1 text-ink sm:w-28"
               />
               {newKind !== "drop" && (
                 <input
                   value={newValue}
                   onChange={(e) => setNewValue(e.target.value)}
                   placeholder={newKind === "trim" ? "% of position" : "% of class"}
-                  className="w-28 rounded border border-line bg-surface-2 px-2 py-1 text-ink"
+                  className="w-full rounded border border-line bg-surface-2 px-2 py-1 text-ink sm:w-28"
                 />
               )}
               {newKind === "add" && (
                 <select
                   value={newClass}
                   onChange={(e) => setNewClass(e.target.value as PimAssetClass)}
-                  className="rounded border border-line bg-surface-2 px-2 py-1 text-ink"
+                  className="w-full rounded border border-line bg-surface-2 px-2 py-1 text-ink sm:w-auto"
                 >
                   <option value="equity">Equity</option>
                   <option value="fixedIncome">Fixed Income</option>
@@ -939,7 +942,7 @@ export function ModelScenarios({ groups }: Props) {
               weights is a decision made with the drift visible rather than an
               invisible side effect of a dropdown. */}
           {actualClassAlloc && group?.profiles?.[profile] && (
-            <div className="mb-3 flex flex-wrap items-center gap-x-5 gap-y-1 rounded border border-line bg-surface-2 px-3 py-2 text-xs">
+            <div className="mb-3 flex flex-col gap-1 rounded border border-line bg-surface-2 px-3 py-2 text-xs sm:flex-row sm:flex-wrap sm:items-center sm:gap-x-5">
               <span className="font-medium text-ink-3">Asset class split</span>
               {(["equity", "fixedIncome", "alternative"] as PimAssetClass[]).map((cls) => {
                 const w = group.profiles[profile]!;
@@ -977,12 +980,12 @@ export function ModelScenarios({ groups }: Props) {
           )}
 
           {/* Comparison */}
-          <div className="mb-2 flex items-center gap-2 text-xs">
-            <span className="text-ink-3">Compare against</span>
+          <div className="mb-2 flex flex-col gap-2 text-xs sm:flex-row sm:items-center">
+            <span className="shrink-0 text-ink-3">Compare against</span>
             <select
               value={compareId}
               onChange={(e) => setCompareId(e.target.value)}
-              className="rounded border border-line bg-surface-2 px-2 py-1 text-ink"
+              className="w-full rounded border border-line bg-surface-2 px-2 py-1 text-ink sm:w-auto"
             >
               <option value="current">Starting point (no changes)</option>
               <option value="model">Model targets — shows the rebase too</option>
@@ -1038,8 +1041,11 @@ export function ModelScenarios({ groups }: Props) {
                         {!balanced && <span className="ml-1 font-semibold text-neg">— does not add up</span>}
                       </span>
                     </div>
-                    <div className="overflow-x-auto">
-                      <table className="w-full text-sm">
+                    {/* Scrolls sideways rather than compressing seven columns
+                        into an unreadable width; the page itself never scrolls
+                        horizontally because the overflow is owned here. */}
+                    <div className="max-w-full overflow-x-auto">
+                      <table className="w-full min-w-[720px] text-sm">
                         <thead className="bg-white shadow-[0_1px_0_0_rgb(226_232_240)]">
                           <tr className="border-b border-line-soft text-xs text-ink-3">
                             <th className="py-2.5 pl-5 pr-2 text-left font-semibold">Name</th>
@@ -1149,12 +1155,12 @@ export function ModelScenarios({ groups }: Props) {
           )}
 
           {/* Keep / discard */}
-          <div className="mt-4 flex flex-wrap items-center gap-2 text-xs">
+          <div className="mt-4 flex flex-col gap-2 text-xs sm:flex-row sm:flex-wrap sm:items-center">
             <input
               value={name}
               onChange={(e) => setName(e.target.value)}
               placeholder="Scenario name"
-              className="w-56 rounded border border-line bg-surface-2 px-2 py-1 text-ink"
+              className="w-full rounded border border-line bg-surface-2 px-2 py-1 text-ink sm:w-56"
             />
             <button
               onClick={save}
@@ -1175,7 +1181,7 @@ export function ModelScenarios({ groups }: Props) {
               <div className="mb-2 text-xs font-medium text-ink-3">Saved scenarios</div>
               <div className="flex flex-col gap-1">
                 {groupScenarios.map((s) => (
-                  <div key={s.id} className="flex items-center gap-3 text-xs">
+                  <div key={s.id} className="flex flex-wrap items-center gap-x-3 gap-y-1 text-xs">
                     <span className="font-medium text-ink">{s.name}</span>
                     <span className="text-ink-faint">
                       {s.actions.length} change{s.actions.length === 1 ? "" : "s"} ·{" "}

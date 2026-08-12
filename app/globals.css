@@ -107,6 +107,18 @@ select {
   font: inherit;
 }
 
+/* iOS zooms the whole page when a focused form control renders below 16px, and
+   the dense dashboard type is well under that — tapping any filter or weight
+   input threw the layout off. Bump the controls themselves to 16px on small
+   touch screens only; desktop keeps the compact type. */
+@media (max-width: 767px) {
+  input,
+  select,
+  textarea {
+    font-size: 16px;
+  }
+}
+
 /* Tabular numerals for the mono type so price/percent columns align. */
 .font-mono,
 [class*="font-mono"] {

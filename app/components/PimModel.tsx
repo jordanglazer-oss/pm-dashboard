@@ -1292,8 +1292,11 @@ export function PimModel({ groups }: Props) {
                 </span>
               </div>
             </div>
-            <div className="overflow-x-auto">
-              <table className="w-full text-sm">
+            {/* min-w so the eight weight columns scroll sideways on a phone
+                instead of compressing into unreadable slivers; the container
+                owns the overflow so the page never scrolls horizontally. */}
+            <div className="max-w-full overflow-x-auto">
+              <table className="w-full min-w-[760px] text-sm">
                 <thead className="sticky top-0 z-10 bg-white shadow-[0_1px_0_0_rgb(226_232_240)]">
                   <tr className="border-b border-line-soft text-xs text-ink-3">
                     <th className={`text-left pl-5 pr-2 ${thClass}`} onClick={() => handleSort("name")}>
