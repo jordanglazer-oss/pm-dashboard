@@ -1638,13 +1638,13 @@ export function PimPortfolio({ groups }: Props) {
     };
     const swapPlan: SwapPlan[] = [];
     const skippedDueToBoughtPresent: string[] = [];
-    const excludedForPlan = new Set(trade.excludedGroupIds || []);
     if (trade.sellSymbol) {
       for (const g of originalPim.groups) {
-        // Respect the per-model checkboxes. The swap ignored them entirely,
-        // so unticking a model excluded it from the eligibility map written to
-        // pm:stocks but not from the trade itself.
-        if (excludedForPlan.has(g.id)) continue;
+        // Excluded groups STAY in the plan on purpose. Unticking a model means
+        // "cannot BUY here", not "leave this model alone" — a name being sold
+        // is sold everywhere it is held. The updatedGroups mapping below gives
+        // those groups the sell-only treatment: remove the holding and hand
+        // its weight to the Core ETFs.
         const sold = g.holdings.find((h) => tickerEq(h.symbol, trade.sellSymbol));
         if (!sold) continue;
         const boughtAlreadyPresent = g.holdings.some((h) => tickerEq(h.symbol, buyTicker));
@@ -1792,13 +1792,15 @@ export function PimPortfolio({ groups }: Props) {
             // redistribution so the class still sums to 100%.
             return { ...g, holdings: rebalanceStockWeights(remaining, undefined, g.id) };
           }
-          const coreTotal = sameCcyCore.reduce((s, h) => s + h.weightInClass, 0);
+          // Split EVENLY across the same-currency Core ETFs. Proportional
+          // distribution quietly widened whichever Core holding was already
+          // largest every time a name was excluded; an even split leaves the
+          // Core sleeve's internal balance where it was set.
           const freed = sold.weightInClass;
-          const redistributed = remaining.map((h) => {
-            if (!sameCcyCore.includes(h)) return h;
-            const share = coreTotal > 0 ? h.weightInClass / coreTotal : 1 / sameCcyCore.length;
-            return { ...h, weightInClass: h.weightInClass + freed * share };
-          });
+          const perCore = freed / sameCcyCore.length;
+          const redistributed = remaining.map((h) =>
+            sameCcyCore.includes(h) ? { ...h, weightInClass: h.weightInClass + perCore } : h,
+          );
           return { ...g, holdings: redistributed };
         }
         return {
