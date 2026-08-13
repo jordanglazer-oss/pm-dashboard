@@ -64,7 +64,7 @@ type SavedScenario = {
   basis: WeightBasis;
   residual?: ResidualPolicy;
   residualTargets?: string[];
-  allocBasis?: "target" | "actual" | "custom";
+  allocOverride?: boolean;
   customAlloc?: { equity: number; fixedIncome: number; alternative: number; cash: number };
   notes?: string;
   createdAt: string;
@@ -236,12 +236,17 @@ export function ModelScenarios({ groups }: Props) {
   const [actions, setActions] = useState<ScenarioAction[]>([]);
   const [basis, setBasis] = useState<WeightBasis>("actual");
   /**
-   * Where the asset-class splits come from. "custom" is the hypothetical:
-   * selling bonds to fund alts is an ALLOCATION decision, not a holdings one —
-   * within-class weights always renormalise to 100% of their own class, so the
-   * only way to model moving money between sleeves is to move the splits.
+   * Whether a hypothetical asset mix is in force.
+   *
+   * There used to be a separate "Class splits" basis, which let you start from
+   * today's HOLDINGS while scaling them by the model's allocation — an
+   * incoherent pairing that made every weight on screen a blend of two
+   * different worlds, and the direct cause of a position held at 12.58%
+   * displaying as 12.33%. "Start from" now decides both halves together:
+   * today's book means today's weights AND today's splits. The AA editor is a
+   * deliberate override on top of that, not a third basis.
    */
-  const [allocBasis, setAllocBasis] = useState<"target" | "actual" | "custom">("target");
+  const [allocOverride, setAllocOverride] = useState(false);
   const [customAlloc, setCustomAlloc] = useState<{ equity: number; fixedIncome: number; alternative: number; cash: number } | null>(null);
   /**
    * What the allocation boxes literally contain while being typed.
@@ -296,15 +301,21 @@ export function ModelScenarios({ groups }: Props) {
     if (open) loadSaved();
   }, [open, loadSaved]);
 
-  /** The class splits the scenario STARTS from (before any cross-class move). */
-  const startAlloc = useMemo(() => {
-    if (allocBasis === "custom" && customAlloc)
-      return { equity: customAlloc.equity, fixedIncome: customAlloc.fixedIncome, alternative: customAlloc.alternative };
-    if (allocBasis === "actual" && actualClassAlloc)
+  /** The splits implied by "Start from" — holdings and allocation always come
+   *  from the same world, so nothing on screen is a blend of two. */
+  const basisAlloc = useMemo(() => {
+    if (basis === "actual" && actualClassAlloc)
       return { equity: actualClassAlloc.equity, fixedIncome: actualClassAlloc.fixedIncome, alternative: actualClassAlloc.alternative };
     const w = group?.profiles?.[profile];
     return { equity: w?.equity ?? 0, fixedIncome: w?.fixedIncome ?? 0, alternative: w?.alternatives ?? 0 };
-  }, [allocBasis, customAlloc, actualClassAlloc, group, profile]);
+  }, [basis, actualClassAlloc, group, profile]);
+
+  /** What the scenario actually runs on: the basis, or the override if set. */
+  const startAlloc = useMemo(() => {
+    if (allocOverride && customAlloc)
+      return { equity: customAlloc.equity, fixedIncome: customAlloc.fixedIncome, alternative: customAlloc.alternative };
+    return basisAlloc;
+  }, [allocOverride, customAlloc, basisAlloc]);
 
   const result = useMemo(
     () =>
@@ -422,6 +433,21 @@ export function ModelScenarios({ groups }: Props) {
     [result.allocations, startAlloc],
   );
 
+  /** How much of the portfolio this scenario actually trades — the quickest
+   *  read on whether a proposal is a tweak or a rebuild. */
+  const turnover = useMemo(() => {
+    let bought = 0;
+    for (const cls of ["equity", "fixedIncome", "alternative"] as PimAssetClass[]) {
+      const aTo = profileAlloc(cls) ?? 0;
+      const aFrom = startAlloc[cls] ?? 0;
+      for (const r of rowsByClass[cls]) {
+        const d = (r.to ?? 0) * aTo - (r.from ?? 0) * aFrom;
+        if (d > 0) bought += d;
+      }
+    }
+    return bought;
+  }, [rowsByClass, profileAlloc, startAlloc]);
+
   // ── Action builder ───────────────────────────────────────────────────────
   // Two modes. "Fund" is first and default because it is the change actually
   // being made most of the time — trim one position, buy another with the
@@ -515,9 +541,17 @@ export function ModelScenarios({ groups }: Props) {
       // builder collects — a "% of class" field here was the last place the
       // panel asked for a number in different units from the ones it prints.
       a = { kind: "setWeight", symbol: sym, weight: num / 100, ofPortfolio: true };
-    else if (newKind === "trim" && isFinite(num)) a = { kind: "trim", symbol: sym, fraction: num / 100 };
-    else if (newKind === "add")
-      a = { kind: "add", symbol: sym, assetClass: newClass, weight: isFinite(num) ? num / 100 : undefined };
+    else if (newKind === "add") {
+      // Portfolio weight, converted against the class it is going into, so
+      // every field in the panel now speaks the same units.
+      const alloc = startAlloc[newClass] ?? 0;
+      a = {
+        kind: "add",
+        symbol: sym,
+        assetClass: newClass,
+        weight: isFinite(num) && alloc > 0 ? num / 100 / alloc : undefined,
+      };
+    }
     if (!a) return;
     setActions((prev) => [...prev, a!]);
     setNewSymbol("");
@@ -531,7 +565,7 @@ export function ModelScenarios({ groups }: Props) {
     setBasis("actual");
     setResidual("core");
     setResidualTargets([]);
-    setAllocBasis("target");
+    setAllocOverride(false);
     setCustomAlloc(null);
     setAllocDraft({});
     setFundFrom("");
@@ -556,7 +590,7 @@ export function ModelScenarios({ groups }: Props) {
           basis,
           residual,
           residualTargets,
-          allocBasis,
+          allocOverride,
           customAlloc,
         }),
       });
@@ -584,7 +618,7 @@ export function ModelScenarios({ groups }: Props) {
     setBasis(s.basis ?? "actual");
     setResidual(s.residual ?? "core");
     setResidualTargets(s.residualTargets ?? []);
-    setAllocBasis(s.allocBasis ?? "target");
+    setAllocOverride(s.allocOverride ?? false);
     setCustomAlloc(s.customAlloc ?? null);
   };
 
@@ -623,8 +657,8 @@ export function ModelScenarios({ groups }: Props) {
                 onChange={(e) => setBasis(e.target.value as WeightBasis)}
                 className="w-full rounded border border-line bg-surface-2 px-2 py-1 text-ink sm:w-auto"
               >
-                <option value="actual">Current actual %</option>
-                <option value="model">Model target % (rebalance to model)</option>
+                <option value="actual">Today&apos;s book — actual weights and splits</option>
+                <option value="model">The model as written — target weights and splits</option>
               </select>
               {basis === "actual" && !hasActuals && (
                 <span className="text-warn">
@@ -632,12 +666,20 @@ export function ModelScenarios({ groups }: Props) {
                 </span>
               )}
             </div>
-            {allocBasis === "custom" && customAlloc && (() => {
+            {allocOverride && customAlloc && (() => {
             const total = customAlloc.equity + customAlloc.fixedIncome + customAlloc.alternative + customAlloc.cash;
             const off = !sameAtDisplay(total, 1);
-            const w = group?.profiles?.[profile];
+            // Compared against where the mix STARTS, so each delta reads as
+            // "this is the shift I am proposing", not "vs the profile".
+            const startCash = Math.max(0, 1 - basisAlloc.equity - basisAlloc.fixedIncome - basisAlloc.alternative);
             const targetOf = (k: keyof typeof customAlloc) =>
-              k === "equity" ? w?.equity : k === "fixedIncome" ? w?.fixedIncome : k === "alternative" ? w?.alternatives : w?.cash;
+              k === "equity"
+                ? basisAlloc.equity
+                : k === "fixedIncome"
+                  ? basisAlloc.fixedIncome
+                  : k === "alternative"
+                    ? basisAlloc.alternative
+                    : startCash;
             return (
               <div className="mb-3 grid grid-cols-1 gap-2 rounded border border-accent-border bg-accent-soft px-3 py-2 text-xs sm:flex sm:flex-wrap sm:items-center sm:gap-3">
                 <span className="font-medium text-ink">Hypothetical splits</span>
@@ -684,7 +726,10 @@ export function ModelScenarios({ groups }: Props) {
                 </span>
                 <button
                   onClick={() => {
-                    const src = { equity: w?.equity ?? 0, fixedIncome: w?.fixedIncome ?? 0, alternative: w?.alternatives ?? 0, cash: w?.cash ?? 0 };
+                    const src = {
+                      ...basisAlloc,
+                      cash: Math.max(0, 1 - basisAlloc.equity - basisAlloc.fixedIncome - basisAlloc.alternative),
+                    };
                     setCustomAlloc(src);
                     setAllocDraft({
                       equity: (src.equity * 100).toFixed(2),
@@ -695,51 +740,41 @@ export function ModelScenarios({ groups }: Props) {
                   }}
                   className="rounded border border-line bg-white px-2 py-0.5 text-ink-3 hover:text-ink"
                 >
-                  Reset to profile
+                  Reset
                 </button>
               </div>
             );
           })()}
 
-          {/* Rebasing holdings to actual but keeping the profile's class
-                split would be half a rebase — the book's equity share has
-                drifted too. This makes that second half explicit. */}
+          {/* One control, not two: "Start from" already fixed the splits, so
+              this is purely "and move the asset mix to something else". */}
             <div className="flex items-center gap-2 min-w-0">
-              <span className="shrink-0 text-ink-3">Class splits</span>
-              <select
-                value={allocBasis}
-                onChange={(e) => {
-                  const next = e.target.value as "target" | "actual" | "custom";
-                  if (next === "custom" && !customAlloc) {
-                    // Seed from whatever is on screen right now, so "custom"
-                    // starts as a copy of the current split rather than blank.
-                    const w = group?.profiles?.[profile];
-                    const src =
-                      allocBasis === "actual" && actualClassAlloc
-                        ? actualClassAlloc
-                        : {
-                            equity: w?.equity ?? 0,
-                            fixedIncome: w?.fixedIncome ?? 0,
-                            alternative: w?.alternatives ?? 0,
-                            cash: w?.cash ?? 0,
-                          };
-                    setCustomAlloc({ ...src });
-                    setAllocDraft({
-                      equity: (src.equity * 100).toFixed(2),
-                      fixedIncome: (src.fixedIncome * 100).toFixed(2),
-                      alternative: (src.alternative * 100).toFixed(2),
-                      cash: (src.cash * 100).toFixed(2),
-                    });
-                  }
-                  setAllocBasis(next);
-                }}
-                className="w-full rounded border border-line bg-surface-2 px-2 py-1 text-ink sm:w-auto"
-              >
-                <option value="target">Profile targets</option>
-                <option value="actual" disabled={!actualClassAlloc}>Current actual</option>
-                <option value="custom">Hypothetical…</option>
-              </select>
+              <label className="inline-flex items-center gap-1.5 text-ink-3">
+                <input
+                  type="checkbox"
+                  checked={allocOverride}
+                  onChange={(e) => {
+                    const on = e.target.checked;
+                    if (on && !customAlloc) {
+                      const seed = {
+                        ...basisAlloc,
+                        cash: Math.max(0, 1 - basisAlloc.equity - basisAlloc.fixedIncome - basisAlloc.alternative),
+                      };
+                      setCustomAlloc(seed);
+                      setAllocDraft({
+                        equity: (seed.equity * 100).toFixed(2),
+                        fixedIncome: (seed.fixedIncome * 100).toFixed(2),
+                        alternative: (seed.alternative * 100).toFixed(2),
+                        cash: (seed.cash * 100).toFixed(2),
+                      });
+                    }
+                    setAllocOverride(on);
+                  }}
+                />
+                Shift the asset mix
+              </label>
             </div>
+
             {/* Hidden by default, but never hidden while a NON-default rule is
                 in force — a rule you can't see is a rule you'll forget. */}
             <div className={`flex items-center gap-2 ${showAdvanced || residual !== "core" ? "" : "hidden"}`}>
@@ -859,6 +894,9 @@ export function ModelScenarios({ groups }: Props) {
                 inputMode="decimal"
                 value={fundAll ? "0.00" : fundAmount}
                 onFocus={(e) => e.currentTarget.select()}
+                onKeyDown={(e) => {
+                  if (e.key === "Enter") addFund();
+                }}
                 onChange={(e) => {
                   setFundAmount(e.target.value);
                   setFundAll(false);
@@ -881,6 +919,9 @@ export function ModelScenarios({ groups }: Props) {
                 list="scenario-symbols"
                 value={fundTo}
                 onChange={(e) => setFundTo(e.target.value)}
+                onKeyDown={(e) => {
+                  if (e.key === "Enter") addFund();
+                }}
                 placeholder="Symbol"
                 className="w-full rounded border border-line bg-surface-2 px-2 py-1 text-ink sm:w-32"
               />
@@ -941,10 +982,9 @@ export function ModelScenarios({ groups }: Props) {
                 onChange={(e) => setNewKind(e.target.value as ScenarioAction["kind"])}
                 className="w-full rounded border border-line bg-surface-2 px-2 py-1 text-ink sm:w-auto"
               >
-                <option value="setWeight">Set weight</option>
-                <option value="trim">Trim by</option>
+                <option value="setWeight">Set weight to</option>
                 <option value="drop">Sell all of</option>
-                <option value="add">Add new</option>
+                <option value="add">Add new at</option>
               </select>
               <input
                 list="scenario-symbols"
@@ -957,13 +997,7 @@ export function ModelScenarios({ groups }: Props) {
                 <input
                   value={newValue}
                   onChange={(e) => setNewValue(e.target.value)}
-                  placeholder={
-                    newKind === "trim"
-                      ? "% of position"
-                      : newKind === "setWeight"
-                        ? "new % of portfolio"
-                        : "% of class"
-                  }
+                  placeholder="% of portfolio"
                   className="w-full rounded border border-line bg-surface-2 px-2 py-1 text-ink sm:w-28"
                 />
               )}
@@ -1070,10 +1104,10 @@ export function ModelScenarios({ groups }: Props) {
                 );
               })}
               <span className="text-ink-faint">
-                {allocBasis === "custom"
-                  ? "using hypothetical splits"
-                  : allocBasis === "actual"
-                    ? "using actual splits"
+                {allocOverride
+                  ? "using the shifted mix"
+                  : basis === "actual"
+                    ? "using today's splits"
                     : "using profile targets"}
               </span>
             </div>
@@ -1098,6 +1132,14 @@ export function ModelScenarios({ groups }: Props) {
                 ))}
             </select>
           </div>
+
+          {actions.length > 0 && (
+            <div className="mb-2 text-xs text-ink-3">
+              {actions.length} change{actions.length === 1 ? "" : "s"} ·{" "}
+              <span className="font-mono font-semibold text-ink">{pct(turnover)}</span> of the
+              portfolio traded
+            </div>
+          )}
 
           {deltas.length === 0 ? (
             <div className="py-6 text-center text-xs text-ink-3">

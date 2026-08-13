@@ -39,10 +39,9 @@ export type ModelScenario = {
   basis: WeightBasis;
   residual?: ResidualPolicy;
   residualTargets?: string[];
-  /** Where class allocations come from: the profile, the live book, or a
-   *  hypothetical the PM typed in (the only way to model moving money BETWEEN
-   *  sleeves, e.g. selling bonds to fund alts). */
-  allocBasis?: "target" | "actual" | "custom";
+  /** Whether a hypothetical asset mix overrides the basis's own splits — the
+   *  only way to model moving money BETWEEN sleeves without a trade. */
+  allocOverride?: boolean;
   customAlloc?: { equity: number; fixedIncome: number; alternative: number; cash: number };
   notes?: string;
   createdAt: string;
@@ -99,7 +98,12 @@ export async function POST(req: NextRequest) {
       basis: body?.basis === "model" ? "model" : "actual",
       residual: ["core", "proportional", "named"].includes(body?.residual) ? body.residual : "core",
       residualTargets: Array.isArray(body?.residualTargets) ? body.residualTargets : undefined,
-      allocBasis: ["actual", "custom"].includes(body?.allocBasis) ? body.allocBasis : "target",
+      // Accepts the old allocBasis:"custom" shape so drafts saved before the
+      // two controls were merged still load with their mix intact.
+      allocOverride:
+        typeof body?.allocOverride === "boolean"
+          ? body.allocOverride
+          : body?.allocBasis === "custom" || existing?.allocOverride || false,
       customAlloc:
         body?.customAlloc && typeof body.customAlloc === "object"
           ? {
