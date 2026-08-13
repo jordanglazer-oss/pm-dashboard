@@ -84,6 +84,12 @@ export function sameAtDisplay(a: number | null | undefined, b: number | null | u
 export function apportion2(
   values: (number | null | undefined)[],
   total?: number,
+  opts?: {
+    /** Entries that should absorb the odd hundredths first. Use it to mark the
+     *  rows a change actually touched, so an UNTOUCHED holding never picks up
+     *  a phantom ±0.01% just because the column had to tie. */
+    prefer?: boolean[];
+  },
 ): (number | null)[] {
   const exact = values.map((v) => (v != null && Number.isFinite(v) ? v * UNITS_PER_WHOLE : null));
   const rounded = exact.map((u) => (u == null ? null : Math.round(u)));
@@ -168,6 +174,14 @@ export function apportion2(
     };
 
     const unique = adjustable.filter((c) => (groups.get(keyOf(c.u as number))?.length ?? 0) === 1);
+    // Preferred absorbers first — a row the scenario changed is expected to
+    // move, so it can carry the rounding without misleading anyone; a row that
+    // did not change should read as flat.
+    const prefer = opts?.prefer;
+    if (prefer) {
+      distribute(unique.filter((c) => prefer[c.i]));
+      if (diff !== 0) distribute(adjustable.filter((c) => prefer[c.i]));
+    }
     distribute(unique);
     // If the unique absorbers could not take it all — or there were none —
     // fall back to the full set. Keeping tied positions identical matters, but
@@ -188,7 +202,8 @@ export function apportion2(
 export function apportionColumn(
   values: (number | null | undefined)[],
   total?: number,
+  opts?: { prefer?: boolean[] },
 ): { values: (number | null)[]; total: number } {
-  const out = apportion2(values, total);
+  const out = apportion2(values, total, opts);
   return { values: out, total: out.reduce<number>((s, v) => s + (v ?? 0), 0) };
 }

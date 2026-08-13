@@ -1009,18 +1009,45 @@ export function ModelScenarios({ groups }: Props) {
                 const rows = rowsByClass[ac];
                 if (!rows.length) return null;
                 const colors = ASSET_CLASS_COLORS[ac];
-                const alloc = profileAlloc(ac);
+                // The sleeve's share of the portfolio BEFORE and AFTER. A
+                // cross-class buy shrinks one and grows the other, so the two
+                // sides of the table are scaled by different allocations.
+                const allocTo = profileAlloc(ac) ?? 0;
+                const allocFrom = startAlloc[ac] ?? allocTo;
                 // Apportion to the column's OWN total, never to a forced 100%.
                 // Forcing it scaled an unnormalised sleeve up to look correct —
                 // the engine reported "left unnormalised at 92.96%" while the
                 // table showed 100.00% and per-holding weights that were pure
                 // fabrication. If a sleeve doesn't add up, that has to be
                 // visible, because these numbers get typed into the model.
-                const dFrom = apportionColumn(rows.map((r) => r.from));
-                const dTo = apportionColumn(rows.map((r) => r.to));
-                const fromTotal = dFrom.total;
-                const toTotal = dTo.total;
-                const balanced = sameAtDisplay(toTotal, 1);
+                // PRIMARY COLUMNS ARE % OF PORTFOLIO — the same number the
+                // model's Target Wt column shows, so the two tables can be read
+                // against each other. Leading with % of class was actively
+                // misleading: when a sleeve shrinks, every survivor's share OF
+                // THAT SLEEVE rises, so an untouched holding appeared to have
+                // been bought (JBND "+3.85%") when its portfolio weight had not
+                // moved at all.
+                const rawFrom = rows.reduce((t, r) => t + (r.from ?? 0), 0);
+                const rawTo = rows.reduce((t, r) => t + (r.to ?? 0), 0);
+                // The odd hundredth goes to a row the scenario actually
+                // changed, so an untouched holding never shows a phantom
+                // ±0.01% purely because the column had to tie.
+                const preferChanged = rows.map((r) => r.changed);
+                const dFromP = apportionColumn(
+                  rows.map((r) => (r.from == null ? null : r.from * allocFrom)),
+                  rawFrom * allocFrom,
+                  { prefer: preferChanged },
+                );
+                const dToP = apportionColumn(
+                  rows.map((r) => (r.to == null ? null : r.to * allocTo)),
+                  rawTo * allocTo,
+                  { prefer: preferChanged },
+                );
+                // Class-space figures are kept as a secondary column and as the
+                // internal check that the sleeve still adds to 100% of itself.
+                const dToClass = apportionColumn(rows.map((r) => r.to));
+                const balanced = sameAtDisplay(dToClass.total, 1);
+                const allocMoved = !sameAtDisplay(allocFrom, allocTo);
                 const changed = rows.filter((r) => r.changed).length;
 
                 return (
@@ -1034,11 +1061,17 @@ export function ModelScenarios({ groups }: Props) {
                         </span>
                       </h3>
                       <span className="text-xs">
-                        Class Weight Check:{" "}
-                        <span className={`font-semibold ${balanced ? "opacity-70" : "text-neg"}`}>
-                          {pct(toTotal)}
-                        </span>
-                        {!balanced && <span className="ml-1 font-semibold text-neg">— does not add up</span>}
+                        {/* The sleeve's share of the portfolio is the headline;
+                            the 100%-of-class check is the fine print. */}
+                        <span className="font-semibold">{pct(dToP.total)}</span> of portfolio
+                        {allocMoved && (
+                          <span className="ml-1 opacity-70">(was {pct(dFromP.total)})</span>
+                        )}
+                        {!balanced && (
+                          <span className="ml-2 font-semibold text-neg">
+                            class sums to {pct(dToClass.total)} — does not add up
+                          </span>
+                        )}
                       </span>
                     </div>
                     {/* Scrolls sideways rather than compressing seven columns
@@ -1056,8 +1089,8 @@ export function ModelScenarios({ groups }: Props) {
                             </th>
                             <th className="py-2.5 px-2 text-right font-semibold whitespace-nowrap">Scenario Wt</th>
                             <th className="py-2.5 px-2 text-right font-semibold whitespace-nowrap">Δ</th>
-                            <th className="py-2.5 px-2 pr-5 text-right font-semibold whitespace-nowrap">
-                              Scenario % of portfolio
+                            <th className="py-2.5 px-2 pr-5 text-right font-normal whitespace-nowrap opacity-70">
+                              % of sleeve
                             </th>
                           </tr>
                         </thead>
@@ -1102,34 +1135,36 @@ export function ModelScenarios({ groups }: Props) {
                                 </span>
                               </td>
                               <td className="py-2 px-2 text-right font-mono text-xs text-ink-2">
-                                {dFrom.values[i] == null ? <span className="text-ink-faint">&mdash;</span> : pct(dFrom.values[i] as number)}
+                                {dFromP.values[i] == null ? <span className="text-ink-faint">&mdash;</span> : pct(dFromP.values[i] as number)}
                               </td>
                               <td className="py-2 px-2 text-right font-mono text-xs font-semibold">
-                                {dTo.values[i] == null ? <span className="text-ink-faint">&mdash;</span> : pct(dTo.values[i] as number)}
+                                {dToP.values[i] == null ? <span className="text-ink-faint">&mdash;</span> : pct(dToP.values[i] as number)}
                               </td>
                               <td
                                 className={(() => {
-                                  // Delta and its colour both come from the
-                                  // DISPLAYED pair, so a row can never show two
-                                  // identical weights next to a non-zero move.
-                                  const d = (dTo.values[i] ?? 0) - (dFrom.values[i] ?? 0);
-                                  const flat = !r.changed || sameAtDisplay(dFrom.values[i], dTo.values[i]);
+                                  // Delta is the change in PORTFOLIO weight —
+                                  // what the position is actually worth in the
+                                  // book — and both it and its colour come from
+                                  // the two displayed numbers, so a row can
+                                  // never show a move it doesn't show.
+                                  const d = (dToP.values[i] ?? 0) - (dFromP.values[i] ?? 0);
+                                  const flat = sameAtDisplay(dFromP.values[i], dToP.values[i]);
                                   return `py-2 px-2 text-right font-mono text-xs ${
                                     flat ? "text-ink-faint" : d >= 0 ? "text-pos" : "text-neg"
                                   }`;
                                 })()}
                               >
                                 {(() => {
-                                  const d = (dTo.values[i] ?? 0) - (dFrom.values[i] ?? 0);
-                                  if (!r.changed || sameAtDisplay(dFrom.values[i], dTo.values[i])) return "—";
+                                  const d = (dToP.values[i] ?? 0) - (dFromP.values[i] ?? 0);
+                                  if (sameAtDisplay(dFromP.values[i], dToP.values[i])) return "—";
                                   return `${d >= 0 ? "+" : ""}${pct(d)}`;
                                 })()}
                               </td>
-                              <td className="py-2 px-2 pr-5 text-right font-mono text-xs text-ink-2">
-                                {dTo.values[i] == null || alloc == null ? (
+                              <td className="py-2 px-2 pr-5 text-right font-mono text-xs text-ink-faint">
+                                {dToClass.values[i] == null ? (
                                   <span className="text-ink-faint">&mdash;</span>
                                 ) : (
-                                  pct((dTo.values[i] as number) * alloc)
+                                  pct(dToClass.values[i] as number)
                                 )}
                               </td>
                             </tr>
@@ -1138,11 +1173,23 @@ export function ModelScenarios({ groups }: Props) {
                             <td className="py-2 pl-5 pr-2 text-xs text-ink-3" colSpan={3}>
                               TOTAL
                             </td>
-                            <td className="py-2 px-2 text-right font-mono text-xs font-bold">{pct(fromTotal)}</td>
-                            <td className="py-2 px-2 text-right font-mono text-xs font-bold">{pct(toTotal)}</td>
-                            <td className="py-2 px-2 text-right font-mono text-xs text-ink-faint">—</td>
-                            <td className="py-2 px-2 pr-5 text-right font-mono text-xs font-bold">
-                              {alloc == null ? <span className="text-ink-faint">&mdash;</span> : pct(toTotal * alloc)}
+                            <td className="py-2 px-2 text-right font-mono text-xs font-bold">{pct(dFromP.total)}</td>
+                            <td className="py-2 px-2 text-right font-mono text-xs font-bold">{pct(dToP.total)}</td>
+                            <td
+                              className={`py-2 px-2 text-right font-mono text-xs font-bold ${
+                                sameAtDisplay(dFromP.total, dToP.total)
+                                  ? "text-ink-faint"
+                                  : dToP.total > dFromP.total
+                                    ? "text-pos"
+                                    : "text-neg"
+                              }`}
+                            >
+                              {sameAtDisplay(dFromP.total, dToP.total)
+                                ? "—"
+                                : `${dToP.total > dFromP.total ? "+" : ""}${pct(dToP.total - dFromP.total)}`}
+                            </td>
+                            <td className="py-2 px-2 pr-5 text-right font-mono text-xs text-ink-faint">
+                              {pct(dToClass.total)}
                             </td>
                           </tr>
                         </tbody>
