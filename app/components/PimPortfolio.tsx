@@ -31,6 +31,7 @@ import { CollapsibleSection } from "@/app/components/CollapsibleSection";
 import { SkeletonTable } from "@/app/components/Skeleton";
 import { isMarketOpenOrAfterET } from "@/app/lib/market-hours";
 import { apportionColumn, fmtPct2, sameAtDisplay } from "@/app/lib/display-weights";
+import { planTrade } from "@/app/lib/trade-plan";
 
 function generateId(): string {
   return Date.now().toString(36) + Math.random().toString(36).slice(2, 8);
@@ -2706,6 +2707,86 @@ export function PimPortfolio({ groups }: Props) {
                       )}
                     </div>
                   )}
+
+                  {/* ── Unit plan ──────────────────────────────────────────
+                      What this trade will actually do to the BOOK, per group
+                      and profile, before it is executed. The model swap and
+                      the unit math are separate steps inside the executor, and
+                      when the unit step silently did nothing the result was a
+                      holding in the model with no shares against it — worth
+                      nothing to performance, and visible only if you went
+                      looking. This makes it checkable up front. */}
+                  {(t.sellSymbol || t.buyTicker) && (() => {
+                    const plan = planTrade({
+                      sellSymbol: t.sellSymbol,
+                      buySymbol: t.buyTicker.trim().toUpperCase(),
+                      sellPrice: parseFloat(t.sellPrice) || 0,
+                      buyPrice: parseFloat(t.buyPrice) || 0,
+                      sellPercent: parseFloat(t.sellPercent) || 100,
+                      usdCadRate,
+                      positions,
+                      models: pimModels,
+                      affectedGroupIds: pimModels.groups
+                        .map((g) => g.id)
+                        .filter((id) => !t.excludedGroupIds.includes(id)),
+                    });
+                    const active = plan.rows.filter((r) => r.heldUnits > 0 || r.unitsToBuy > 0);
+                    return (
+                      <div className="mt-3 rounded-lg border border-line bg-white p-3">
+                        <div className="mb-1.5 text-[10px] font-semibold uppercase tracking-wider text-ink-3">
+                          Units this trade will book
+                        </div>
+                        {active.length === 0 ? (
+                          <p className="text-[11px] font-semibold text-neg">
+                            No units will be recorded anywhere — the model would change but the book
+                            would not.
+                          </p>
+                        ) : (
+                          <div className="max-w-full overflow-x-auto">
+                            <table className="w-full min-w-[420px] text-[11px]">
+                              <thead>
+                                <tr className="border-b border-line-soft text-ink-3">
+                                  <th className="py-1 pr-2 text-left font-semibold">Model · Profile</th>
+                                  <th className="py-1 px-2 text-right font-semibold">Sell units</th>
+                                  <th className="py-1 px-2 text-right font-semibold">Proceeds</th>
+                                  <th className="py-1 pl-2 text-right font-semibold">Buy units</th>
+                                </tr>
+                              </thead>
+                              <tbody>
+                                {active.map((r) => (
+                                  <tr key={`${r.groupId}-${r.profile}`} className="border-b border-line-soft">
+                                    <td className="py-1 pr-2 text-ink">
+                                      {r.groupName} · {r.profile}
+                                      {r.note && (
+                                        <span className="ml-1 text-neg">{r.note}</span>
+                                      )}
+                                    </td>
+                                    <td className="py-1 px-2 text-right font-mono text-ink-2">
+                                      {r.unitsToSell > 0 ? fmtUnits(+r.unitsToSell.toFixed(4)) : "—"}
+                                    </td>
+                                    <td className="py-1 px-2 text-right font-mono text-ink-2">
+                                      {r.proceedsCad > 0 ? fmtCurrency(r.proceedsCad) : "—"}
+                                    </td>
+                                    <td className="py-1 pl-2 text-right font-mono font-semibold text-ink">
+                                      {r.unitsToBuy > 0 ? fmtUnits(+r.unitsToBuy.toFixed(4)) : "—"}
+                                    </td>
+                                  </tr>
+                                ))}
+                              </tbody>
+                            </table>
+                          </div>
+                        )}
+                        {plan.modelOnlyGroups.length > 0 && (
+                          <p className="mt-1.5 text-[10px] text-ink-3">
+                            Model-only (no position record, so no units): {plan.modelOnlyGroups.join(", ")}.
+                          </p>
+                        )}
+                        {plan.warnings.map((w, i) => (
+                          <p key={i} className="mt-1.5 text-[10px] font-semibold text-neg">{w}</p>
+                        ))}
+                      </div>
+                    );
+                  })()}
                 </div>
               );
             })}
