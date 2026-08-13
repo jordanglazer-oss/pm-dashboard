@@ -590,20 +590,43 @@ export function ModelScenarios({ groups }: Props) {
       });
   }, [group, actions, baseHoldings, basis, hasActuals, actualWeights, isCore, residual, residualTargets, startAlloc, pinned]);
 
+  /**
+   * The allocation the LEFT-HAND column is scaled by — a fixed reference point.
+   *
+   * It must not follow the scenario's own asset mix. Otherwise editing a sleeve
+   * moves the "Actual Wt" column too, and the delta collapses toward zero: you
+   * change the model and the thing you are measuring against changes with it.
+   * The reference is whatever you chose to compare against — today's book, the
+   * model as written, or another saved scenario — and it stays put while you
+   * edit.
+   */
+  const compareAlloc = useCallback(
+    (cls: PimAssetClass) => {
+      const w = group?.profiles?.[profile];
+      const modelAlloc =
+        cls === "equity" ? w?.equity : cls === "fixedIncome" ? w?.fixedIncome : w?.alternatives;
+      if (compareId === "model") return modelAlloc ?? 0;
+      // "Starting point" and scenario-vs-scenario both reference the basis's
+      // own splits, never the override being edited.
+      return basisAlloc[cls] ?? modelAlloc ?? 0;
+    },
+    [compareId, basisAlloc, group, profile],
+  );
+
   /** How much of the portfolio this scenario actually trades — the quickest
    *  read on whether a proposal is a tweak or a rebuild. */
   const turnover = useMemo(() => {
     let bought = 0;
     for (const cls of ["equity", "fixedIncome", "alternative"] as PimAssetClass[]) {
       const aTo = profileAlloc(cls) ?? 0;
-      const aFrom = startAlloc[cls] ?? 0;
+      const aFrom = compareAlloc(cls);
       for (const r of rowsByClass[cls]) {
         const d = (r.to ?? 0) * aTo - (r.from ?? 0) * aFrom;
         if (d > 0) bought += d;
       }
     }
     return bought;
-  }, [rowsByClass, profileAlloc, startAlloc]);
+  }, [rowsByClass, profileAlloc, compareAlloc]);
 
   // ── Action builder ───────────────────────────────────────────────────────
   // Two modes. "Fund" is first and default because it is the change actually
@@ -1316,7 +1339,8 @@ export function ModelScenarios({ groups }: Props) {
                 // cross-class buy shrinks one and grows the other, so the two
                 // sides of the table are scaled by different allocations.
                 const allocTo = profileAlloc(ac) ?? 0;
-                const allocFrom = startAlloc[ac] ?? allocTo;
+                // Fixed reference — see compareAlloc. Never the edited mix.
+                const allocFrom = compareAlloc(ac);
                 // Apportion to the column's OWN total, never to a forced 100%.
                 // Forcing it scaled an unnormalised sleeve up to look correct —
                 // the engine reported "left unnormalised at 92.96%" while the
@@ -1410,7 +1434,9 @@ export function ModelScenarios({ groups }: Props) {
                         )}
                         {!balanced && (
                           <span className="ml-2 font-semibold text-neg">
-                            class sums to {pct(dToClass.total)} — does not add up
+                            {dToClass.total < 1
+                              ? `${pct(1 - dToClass.total)} of this sleeve still to allocate`
+                              : `${pct(dToClass.total - 1)} over-allocated in this sleeve`}
                           </span>
                         )}
                       </span>
@@ -1671,6 +1697,37 @@ export function ModelScenarios({ groups }: Props) {
                 );
               })}
           </div>
+
+          {/* What is still unplaced across the whole portfolio. The sleeve
+              headers say it per class; this says it once, for the book. */}
+          {(() => {
+            const allocTotal =
+              (profileAlloc("equity") ?? 0) +
+              (profileAlloc("fixedIncome") ?? 0) +
+              (profileAlloc("alternative") ?? 0);
+            const cash = 1 - allocTotal;
+            if (sameAtDisplay(cash, 0)) return null;
+            return (
+              <div
+                className={`mt-3 rounded border px-3 py-2 text-xs ${
+                  cash > 0 ? "border-line bg-surface-2 text-ink-3" : "border-neg-border bg-neg-soft text-neg"
+                }`}
+              >
+                {cash > 0 ? (
+                  <>
+                    <span className="font-mono font-semibold text-ink">{pct(cash)}</span> of the
+                    portfolio is unallocated — cash, or still to be placed.
+                  </>
+                ) : (
+                  <>
+                    Over-allocated by{" "}
+                    <span className="font-mono font-semibold">{pct(-cash)}</span> — the asset-class
+                    weights add to more than 100%.
+                  </>
+                )}
+              </div>
+            );
+          })()}
 
           {/* Across the other mandates */}
           {acrossProfiles.length > 1 && actions.length > 0 && (
