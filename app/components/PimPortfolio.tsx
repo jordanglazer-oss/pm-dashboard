@@ -1801,20 +1801,56 @@ export function PimPortfolio({ groups }: Props) {
       // ever did, persisting would corrupt model weights. Abort instead
       // and persist NOTHING from the swap. (The pre-trade snapshot taken
       // by Execute All covers rollback of the earlier addStock/moveBucket.)
+      // Compared against the PRE-trade sums, not against 100% in the absolute.
+      //
+      // The absolute check turned a pre-existing problem into a permanent
+      // block on all trading: an equity switch was aborted because an
+      // untouched fixed-income sleeve in another group already summed to 150%,
+      // which this trade neither caused nor could fix. The guard exists to
+      // stop a trade CORRUPTING weights, so it now asks whether this trade
+      // made things worse — a sleeve that was already broken and is no worse
+      // for the trade is reported, not blocked.
       const ASSET_CLASSES: PimHolding["assetClass"][] = ["equity", "fixedIncome", "alternative"];
+      const TOL = 0.005;
+      const classSum = (holdings: PimHolding[], ac: PimHolding["assetClass"]) => {
+        const inClass = holdings.filter((h) => h.assetClass === ac);
+        return inClass.length === 0 ? null : inClass.reduce((s, h) => s + h.weightInClass, 0);
+      };
+      const preExisting: string[] = [];
       for (const g of updatedGroups) {
         if (!affectedGroupIds.has(g.id)) continue;
+        const before = originalPim.groups.find((x) => x.id === g.id);
         for (const ac of ASSET_CLASSES) {
-          const inClass = g.holdings.filter((h) => h.assetClass === ac);
-          if (inClass.length === 0) continue;
-          const sum = inClass.reduce((s, h) => s + h.weightInClass, 0);
-          if (Math.abs(sum - 1.0) > 0.005) {
+          const after = classSum(g.holdings, ac);
+          if (after == null) continue;
+          const wasOff = before ? Math.abs((classSum(before.holdings, ac) ?? 1) - 1) > TOL : false;
+          const isOff = Math.abs(after - 1) > TOL;
+          if (!isOff) continue;
+          if (!wasOff) {
+            // This trade broke a sleeve that was fine. Persist nothing.
             return {
               ok: false,
-              error: `Aborted: ${g.name} ${ac} weights sum to ${(sum * 100).toFixed(2)}% (expected 100%). No model changes persisted.`,
+              error: `Aborted: this trade would leave ${g.name} ${ac} at ${(after * 100).toFixed(2)}% (expected 100%). No model changes persisted.`,
             };
           }
+          const beforeSum = classSum(before!.holdings, ac) ?? 1;
+          if (Math.abs(after - 1) > Math.abs(beforeSum - 1) + 1e-9) {
+            // Already broken, and this trade made it worse. Still refuse.
+            return {
+              ok: false,
+              error: `Aborted: ${g.name} ${ac} was already at ${(beforeSum * 100).toFixed(2)}% and this trade would push it to ${(after * 100).toFixed(2)}%. No model changes persisted.`,
+            };
+          }
+          preExisting.push(`${g.name} ${ac} ${(after * 100).toFixed(2)}%`);
         }
+      }
+      if (preExisting.length > 0) {
+        // Not fatal to this trade, but it must not pass unnoticed — the sleeve
+        // is genuinely wrong and needs repairing.
+        console.warn(
+          "[buy/sell] pre-existing model weight problems, untouched by this trade:",
+          preExisting.join("; "),
+        );
       }
 
       const nextPim = { ...originalPim, groups: updatedGroups, lastUpdated: nowIso };
