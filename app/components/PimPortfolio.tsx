@@ -798,6 +798,96 @@ export function PimPortfolio({ groups }: Props) {
     return out;
   }, [sortedRows]);
 
+  // ── Seed a profile's positions from another profile's market value ──────
+  // A newly-created profile (Conservative) has target weights but no units, so
+  // it books no return at all. Its book is not a different portfolio, just a
+  // different asset mix over the same money — so the sibling profile's total
+  // market value is the right size to build it at.
+  const [seedFrom, setSeedFrom] = useState<PimProfileType>("balanced");
+  const [seeding, setSeeding] = useState(false);
+
+  /** Total CAD market value of a profile's book, cash included. */
+  const profileMarketValue = useCallback(
+    (prof: PimProfileType) => {
+      const entry = positions.find((p) => p.groupId === selectedGroupId && p.profile === prof);
+      if (!entry) return 0;
+      let total = entry.cashBalance || 0;
+      for (const pos of entry.positions) {
+        const h = effectiveGroup?.holdings.find(
+          (x) => symbolToTicker(x.symbol) === symbolToTicker(pos.symbol),
+        );
+        const px = livePrices[pos.symbol] || 0;
+        total += pos.units * px * (h?.currency === "USD" ? usdCadRate : 1);
+      }
+      return total;
+    },
+    [positions, selectedGroupId, effectiveGroup, livePrices, usdCadRate],
+  );
+
+  /**
+   * Units the ACTIVE profile would hold if built at `totalValue`.
+   * units = (totalValue x targetWeight) / priceCad, where targetWeight is
+   * weightInClass x this profile's own allocation for that asset class.
+   * Cost basis is seeded at today's price, so the profile starts flat rather
+   * than inheriting a gain it never earned.
+   */
+  const seedPlan = useMemo(() => {
+    if (!effectiveGroup || !profileWeights) return { rows: [], totalValue: 0, cash: 0, missingPrices: [] as string[] };
+    const totalValue = profileMarketValue(seedFrom);
+    const missingPrices: string[] = [];
+    const rows = effectiveGroup.holdings
+      .map((h) => {
+        const alloc =
+          h.assetClass === "equity" ? profileWeights.equity
+          : h.assetClass === "fixedIncome" ? profileWeights.fixedIncome
+          : profileWeights.alternatives;
+        const targetWeight = h.weightInClass * alloc;
+        if (targetWeight <= 0) return null;
+        const px = livePrices[h.symbol] || 0;
+        const priceCad = px * (h.currency === "USD" ? usdCadRate : 1);
+        if (priceCad <= 0) { missingPrices.push(h.symbol); return null; }
+        const targetValueCad = totalValue * targetWeight;
+        return {
+          symbol: h.symbol, name: h.name, currency: h.currency,
+          targetWeight, targetValueCad, priceCad,
+          units: targetValueCad / priceCad,
+        };
+      })
+      .filter(Boolean) as { symbol: string; name: string; currency: "CAD" | "USD"; targetWeight: number; targetValueCad: number; priceCad: number; units: number }[];
+    return { rows, totalValue, cash: totalValue * (profileWeights.cash || 0), missingPrices };
+  }, [effectiveGroup, profileWeights, seedFrom, profileMarketValue, livePrices, usdCadRate]);
+
+  const applySeed = useCallback(async () => {
+    if (seedPlan.rows.length === 0) return;
+    setSeeding(true);
+    try {
+      const others = positions.filter((p) => !(p.groupId === selectedGroupId && p.profile === activeProfile));
+      const next = [
+        ...others,
+        {
+          groupId: selectedGroupId,
+          profile: activeProfile,
+          positions: seedPlan.rows.map((r) => ({
+            symbol: r.symbol,
+            units: parseFloat(r.units.toFixed(4)),
+            costBasis: parseFloat(r.priceCad.toFixed(4)),
+          })),
+          cashBalance: parseFloat(seedPlan.cash.toFixed(2)),
+          lastUpdated: new Date().toISOString(),
+        },
+      ];
+      setPositions(next);
+      positionsRef.current = next;
+      await fetch("/api/kv/pim-positions", {
+        method: "PUT",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ portfolios: next }),
+      });
+    } finally {
+      setSeeding(false);
+    }
+  }, [seedPlan, positions, selectedGroupId, activeProfile]);
+
   /** Positions grouped the way the Models tab groups them, so the two pages
    *  read as one system rather than two different views of the same book. */
   const positionsByClass = useMemo(() => {
@@ -3189,17 +3279,101 @@ export function PimPortfolio({ groups }: Props) {
 
       {/* No positions prompt */}
       {!hasPositions && !editMode && (
-        <div className="rounded-control border border-dashed border-line bg-surface-2 p-6 text-center">
-          <p className="text-sm text-ink-3 mb-2">No position data entered yet.</p>
-          <p className="text-xs text-ink-3 mb-4">
+        <div className="rounded-control border border-dashed border-line bg-surface-2 p-6">
+          <p className="text-sm text-ink-3 mb-2 text-center">No position data entered yet.</p>
+          <p className="text-xs text-ink-3 mb-4 text-center">
             Enter your current holdings (units and cost basis) to see current weights, drift, and rebalance actions.
           </p>
-          <button
-            onClick={startEdit}
-            className="rounded-lg bg-accent px-4 py-2 text-xs font-semibold text-white hover:bg-accent transition-colors"
-          >
-            Enter Positions
-          </button>
+          <div className="mb-5 text-center">
+            <button
+              onClick={startEdit}
+              className="rounded-lg bg-accent px-4 py-2 text-xs font-semibold text-white hover:bg-accent transition-colors"
+            >
+              Enter Positions
+            </button>
+          </div>
+
+          {/* ── Build from a sibling profile ────────────────────────────────
+              A profile with target weights but no units books no return at
+              all. Its book is not a different portfolio, only a different
+              asset mix over the same money, so a sibling's market value is
+              the right size to build it at. Shown as a plan first — this
+              writes real positions. */}
+          {seedPlan.rows.length > 0 && (
+            <div className="rounded-lg border border-line bg-white p-4">
+              <div className="mb-2 flex flex-wrap items-center gap-2 text-xs">
+                <span className="font-semibold text-ink">Build {PROFILE_LABELS[activeProfile]} from</span>
+                <select
+                  value={seedFrom}
+                  onChange={(e) => setSeedFrom(e.target.value as PimProfileType)}
+                  className="rounded border border-line bg-surface-2 px-2 py-1 text-ink"
+                >
+                  {(["balanced", "growth", "allEquity"] as PimProfileType[])
+                    .filter((p) => p !== activeProfile && profileMarketValue(p) > 0)
+                    .map((p) => (
+                      <option key={p} value={p}>
+                        {PROFILE_LABELS[p]} — {fmtCurrency(profileMarketValue(p))}
+                      </option>
+                    ))}
+                </select>
+                <span className="text-ink-3">
+                  at this profile&apos;s own target weights
+                </span>
+              </div>
+
+              <div className="max-w-full overflow-x-auto">
+                <table className="w-full min-w-[520px] text-[11px]">
+                  <thead>
+                    <tr className="border-b border-line-soft text-ink-3">
+                      <th className="py-1 pr-2 text-left font-semibold">Holding</th>
+                      <th className="py-1 px-2 text-right font-semibold">Target wt</th>
+                      <th className="py-1 px-2 text-right font-semibold">Value</th>
+                      <th className="py-1 px-2 text-right font-semibold">Price</th>
+                      <th className="py-1 pl-2 text-right font-semibold">Units</th>
+                    </tr>
+                  </thead>
+                  <tbody>
+                    {seedPlan.rows.map((r) => (
+                      <tr key={r.symbol} className="border-b border-line-soft">
+                        <td className="py-1 pr-2 text-ink">{displayTicker(r.symbol)}</td>
+                        <td className="py-1 px-2 text-right font-mono text-ink-2">{fmtPct2(r.targetWeight)}</td>
+                        <td className="py-1 px-2 text-right font-mono text-ink-2">{fmtCurrency(r.targetValueCad)}</td>
+                        <td className="py-1 px-2 text-right font-mono text-ink-2">{fmtCurrency(r.priceCad)}</td>
+                        <td className="py-1 pl-2 text-right font-mono font-semibold text-ink">{fmtUnits(+r.units.toFixed(4))}</td>
+                      </tr>
+                    ))}
+                    <tr className="bg-surface-2 font-semibold">
+                      <td className="py-1 pr-2 text-ink-3" colSpan={2}>TOTAL invested</td>
+                      <td className="py-1 px-2 text-right font-mono">
+                        {fmtCurrency(seedPlan.rows.reduce((t, r) => t + r.targetValueCad, 0))}
+                      </td>
+                      <td colSpan={2} className="py-1 pl-2 text-right font-normal text-ink-3">
+                        + {fmtCurrency(seedPlan.cash)} cash = {fmtCurrency(seedPlan.totalValue)}
+                      </td>
+                    </tr>
+                  </tbody>
+                </table>
+              </div>
+
+              {seedPlan.missingPrices.length > 0 && (
+                <p className="mt-2 text-[10px] font-semibold text-warn">
+                  No live price for {seedPlan.missingPrices.join(", ")} — these are left out. Refresh
+                  Prices first, or enter them by hand afterwards.
+                </p>
+              )}
+              <p className="mt-2 text-[10px] text-ink-3">
+                Cost basis is set to today&apos;s price, so the profile starts flat rather than
+                inheriting a gain it never earned.
+              </p>
+              <button
+                onClick={applySeed}
+                disabled={seeding}
+                className="mt-3 rounded-lg bg-accent px-4 py-2 text-xs font-semibold !text-white disabled:opacity-50"
+              >
+                {seeding ? "Creating…" : `Create ${seedPlan.rows.length} positions`}
+              </button>
+            </div>
+          )}
         </div>
       )}
     </div>

@@ -53,7 +53,6 @@ export function QuickAddStock({ open, onClose }: Props) {
       // Intentional setState in effect — reset on modal open is the design.
       // eslint-disable-next-line react-hooks/set-state-in-effect
       setError(null);
-      // eslint-disable-next-line react-hooks/set-state-in-effect
       setTicker("");
       // setTimeout so the input exists in the DOM before .focus() runs.
       setTimeout(() => inputRef.current?.focus(), 50);
