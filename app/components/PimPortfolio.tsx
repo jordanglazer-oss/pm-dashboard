@@ -13,6 +13,7 @@ import type {
   PimPortfolioState,
   PimHolding,
   PimModelGroupState,
+  PimAssetClass,
 } from "@/app/lib/pim-types";
 import type { Stock, InstrumentType, ScoreKey } from "@/app/lib/types";
 import { displayTicker } from "@/app/lib/ticker";
@@ -283,10 +284,24 @@ function SortIcon({ field, sortField, sortDir }: { field: SortField; sortField: 
   return <span className="ml-0.5 text-ink-2">{sortDir === "asc" ? "↑" : "↓"}</span>;
 }
 
+const POS_CLASS_LABELS: Record<PimAssetClass, string> = {
+  fixedIncome: "Fixed Income",
+  equity: "Equities",
+  alternative: "Alternatives",
+};
+
+/** Same header colours as the Models tab so the two pages read as one system. */
+const POS_CLASS_COLORS: Record<PimAssetClass, { header: string }> = {
+  fixedIncome: { header: "bg-accent-soft text-accent" },
+  equity: { header: "bg-pos-soft text-pos" },
+  alternative: { header: "bg-warn-soft text-warn" },
+};
+
 type HoldingRow = {
   symbol: string;
   name: string;
   currency: "CAD" | "USD";
+  assetClass: PimAssetClass;
   units: number;
   price: number;        // market price in instrument currency
   priceCad: number;     // market price converted to CAD
@@ -724,6 +739,7 @@ export function PimPortfolio({ groups }: Props) {
         valueCad: r.valueCad,
         costValue: r.costValue,
         costValueCad: r.costValueCad,
+        assetClass: r.h.assetClass,
         modelPct: r.modelPct,
         currentPct,
         driftPct,
@@ -767,10 +783,27 @@ export function PimPortfolio({ groups }: Props) {
    * allocation): this table is sortable and its rows are whatever is on screen,
    * so each column ties to the rounded sum of exactly those rows.
    */
-  const dPos = useMemo(() => ({
-    target: apportionColumn(sortedRows.map((r) => r.modelPct)),
-    current: apportionColumn(sortedRows.map((r) => (r.units > 0 ? r.currentPct : null))),
-  }), [sortedRows]);
+  const dPos = useMemo(() => {
+    const out: Record<string, { target: Map<string, number | null>; current: Map<string, number | null> }> = {};
+    for (const cls of ["fixedIncome", "equity", "alternative"] as PimAssetClass[]) {
+      const rows = sortedRows.filter((r) => r.assetClass === cls);
+      const t = apportionColumn(rows.map((r) => r.modelPct));
+      const c = apportionColumn(rows.map((r) => (r.units > 0 ? r.currentPct : null)));
+      out[cls] = {
+        target: new Map(rows.map((r, i) => [r.symbol, t.values[i]])),
+        current: new Map(rows.map((r, i) => [r.symbol, c.values[i]])),
+      };
+    }
+    return out;
+  }, [sortedRows]);
+
+  /** Positions grouped the way the Models tab groups them, so the two pages
+   *  read as one system rather than two different views of the same book. */
+  const positionsByClass = useMemo(() => {
+    const out: Record<PimAssetClass, HoldingRow[]> = { fixedIncome: [], equity: [], alternative: [] };
+    for (const r of sortedRows) out[r.assetClass].push(r);
+    return out;
+  }, [sortedRows]);
 
   // Summary (all in CAD)
   const totalValueCadSummary = useMemo(() => {
@@ -2727,6 +2760,31 @@ export function PimPortfolio({ groups }: Props) {
         {loading && holdingRows.length === 0 ? (
           <div className="p-4"><SkeletonTable rows={8} cols={6} /></div>
         ) : (
+        <div className="flex flex-col gap-4 p-4">
+        {(["fixedIncome", "equity", "alternative"] as PimAssetClass[]).map((ac) => {
+          const classRows = positionsByClass[ac];
+          if (!classRows.length) return null;
+          const colors = POS_CLASS_COLORS[ac];
+          const classValue = classRows.reduce((t, r) => t + r.valueCad, 0);
+          const classPct = totalValueCadSummary > 0 ? classValue / totalValueCadSummary : 0;
+          const classTarget = classRows.reduce((t, r) => t + r.modelPct, 0);
+          return (
+          <div key={ac} className="overflow-hidden rounded-card border border-line bg-white shadow-sm">
+            <div className={`${colors.header} flex items-center justify-between px-5 py-3`}>
+              <h3 className="text-sm font-bold">
+                {POS_CLASS_LABELS[ac]}
+                <span className="ml-2 text-xs font-normal opacity-70">
+                  ({classRows.length} holding{classRows.length === 1 ? "" : "s"})
+                </span>
+              </h3>
+              <span className="flex items-center gap-3 text-xs">
+                <span className="font-semibold">{fmtCurrency(classValue)}</span>
+                <span>
+                  <span className="font-semibold">{fmtPct2(classPct)}</span>
+                  <span className="opacity-70"> vs {fmtPct2(classTarget)} tgt</span>
+                </span>
+              </span>
+            </div>
         <div className="max-w-full overflow-x-auto">
           <table className="w-full min-w-[760px] text-xs">
             <thead className="sticky top-0 z-10 bg-surface-2 shadow-[0_1px_0_0_rgb(226_232_240)]">
@@ -2774,9 +2832,9 @@ export function PimPortfolio({ groups }: Props) {
                   expose an edit affordance for cash again, re-add this row
                   or surface an inline input elsewhere. */}
 
-              {sortedRows.map((row, rowIdx) => {
-                const dTargetV = dPos.target.values[rowIdx];
-                const dCurrentV = dPos.current.values[rowIdx];
+              {classRows.map((row) => {
+                const dTargetV = dPos[row.assetClass]?.target.get(row.symbol) ?? null;
+                const dCurrentV = dPos[row.assetClass]?.current.get(row.symbol) ?? null;
                 // Drift is the difference between the two numbers ON SCREEN,
                 // not a separately-rounded float — otherwise the row can show
                 // 1.82% / 1.85% next to a drift of +0.02%.
@@ -2875,6 +2933,10 @@ export function PimPortfolio({ groups }: Props) {
               })}
             </tbody>
           </table>
+        </div>
+          </div>
+          );
+        })}
         </div>
         )}
       </div>
