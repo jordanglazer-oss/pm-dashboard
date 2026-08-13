@@ -2062,8 +2062,18 @@ export function PimPortfolio({ groups }: Props) {
         if (!positionGroupsToTouch.has(pp.groupId)) return pp;
         const soldPos = pp.positions.find((p) => tickerEq(p.symbol, trade.sellSymbol));
         if (!soldPos || soldPos.units <= 0) {
-          const gName = pimModelsRef.current.groups.find((g) => g.id === pp.groupId)?.name ?? pp.groupId;
-          unitlessBuyGroups.push(`${gName}/${pp.profile}`);
+          // The "alpha" and "core" sleeves are single-designation by
+          // construction: core holds only Core ETFs, alpha only the active
+          // picks. A name of the other designation was never going to be in
+          // there, so its absence is expected and not worth warning about —
+          // only a sleeve that COULD have held the sold name is a real miss.
+          const soldIsCore = coreSymbols.has(symbolToTicker(trade.sellSymbol));
+          const expectedHere =
+            (pp.profile !== "core" || soldIsCore) && (pp.profile !== "alpha" || !soldIsCore);
+          if (expectedHere) {
+            const gName = pimModelsRef.current.groups.find((g) => g.id === pp.groupId)?.name ?? pp.groupId;
+            unitlessBuyGroups.push(`${gName}/${pp.profile}`);
+          }
           return pp;
         }
 
@@ -2579,7 +2589,7 @@ export function PimPortfolio({ groups }: Props) {
             <div>
               <h3 className="text-sm font-bold text-ink">Buy / Sell</h3>
               <p className="text-xs text-ink-3 mt-0.5">
-                Queue one or more trades. Sell % defaults to 100 (full position); lower it for a partial sell \u2014 only the positions table is touched, model weights stay as designed.
+                Queue one or more trades. Sell % defaults to 100 (full position); lower it for a partial sell — only the positions table is touched, model weights stay as designed.
               </p>
             </div>
             <button onClick={addTrade}
@@ -2611,7 +2621,7 @@ export function PimPortfolio({ groups }: Props) {
                       <select value={t.sellSymbol}
                         onChange={(e) => updateTrade(t.id, { sellSymbol: e.target.value, sellPrice: e.target.value ? t.sellPrice : "" })}
                         className="w-full rounded-lg border border-line bg-white text-ink px-3 py-2 text-sm outline-none focus:border-warn-border">
-                        <option value="">None \u2014 buy only</option>
+                        <option value="">None — buy only</option>
                 {computedHoldingsForSwitch.filter((h) => h.weightInPortfolio > 0).map((h) => (
                           <option key={h.symbol} value={h.symbol}>{symbolToTicker(h.symbol)} — {h.name}</option>
                         ))}
