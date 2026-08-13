@@ -21,8 +21,17 @@ const CLASSES: PimHolding["assetClass"][] = ["equity", "fixedIncome", "alternati
  *
  * Writes nothing. Repair stays a separate, explicit action.
  */
-export async function GET() {
+export async function GET(req: Request) {
   try {
+    const url = new URL(req.url);
+    // Optional: dump the actual holdings for specific symbols across every
+    // group, so a repair can be decided from the real weights rather than
+    // inferred from class sums. e.g. ?symbols=TOU.TO,CCO.TO,JBND,JBND-T
+    const symbolsParam = (url.searchParams.get("symbols") || "").trim();
+    const wanted = symbolsParam
+      ? symbolsParam.split(",").map((x) => x.trim().toUpperCase()).filter(Boolean)
+      : [];
+    const norm = (x: string) => x.toUpperCase().replace("-T", ".TO");
     const redis = await getRedis();
     const raw = await redis.get(PIM_KEY);
     if (!raw) return NextResponse.json({ ok: true, groups: [], note: "pm:pim-models is empty" });
@@ -64,10 +73,38 @@ export async function GET() {
       }
     }
 
+    // Per-symbol view: what each requested symbol weighs in each group, and
+    // what the rest of its sleeve looks like around it.
+    const symbolView = wanted.length
+      ? (pim.groups ?? []).map((g) => {
+          const hits = (g.holdings ?? []).filter((h) => wanted.some((w) => norm(w) === norm(h.symbol)));
+          if (hits.length === 0) return null;
+          const classes = [...new Set(hits.map((h) => h.assetClass))];
+          return {
+            group: g.name,
+            groupId: g.id,
+            matched: hits.map((h) => ({
+              symbol: h.symbol,
+              assetClass: h.assetClass,
+              weightInClassPct: +((h.weightInClass || 0) * 100).toFixed(4),
+            })),
+            sleeves: classes.map((ac) => {
+              const inClass = (g.holdings ?? []).filter((h) => h.assetClass === ac);
+              return {
+                assetClass: ac,
+                sumPct: +(inClass.reduce((s, h) => s + (h.weightInClass || 0), 0) * 100).toFixed(4),
+                count: inClass.length,
+              };
+            }),
+          };
+        }).filter(Boolean)
+      : undefined;
+
     return NextResponse.json({
       ok: problems.length === 0,
       problemCount: problems.length,
       problems,
+      symbolView,
       summary,
     });
   } catch (e) {
