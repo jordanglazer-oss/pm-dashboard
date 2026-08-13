@@ -243,6 +243,16 @@ export function ModelScenarios({ groups }: Props) {
    */
   const [allocBasis, setAllocBasis] = useState<"target" | "actual" | "custom">("target");
   const [customAlloc, setCustomAlloc] = useState<{ equity: number; fixedIncome: number; alternative: number; cash: number } | null>(null);
+  /**
+   * What the allocation boxes literally contain while being typed.
+   *
+   * They used to render `value={(cur * 100).toFixed(2)}`, so every keystroke
+   * was reformatted and the caret thrown to the end: typing "25" produced
+   * "2.00" then "20.00", a decimal point could not be entered at all, and
+   * clearing a box snapped it back to "0.00". The field now holds exactly what
+   * was typed and only formats on blur.
+   */
+  const [allocDraft, setAllocDraft] = useState<Record<string, string>>({});
   const [residual, setResidual] = useState<ResidualPolicy>("core");
   /** Symbols that absorb under the "named" policy, split evenly. */
   const [residualTargets, setResidualTargets] = useState<string[]>([]);
@@ -436,18 +446,33 @@ export function ModelScenarios({ groups }: Props) {
   const [newValue, setNewValue] = useState("");
   const [newClass, setNewClass] = useState<PimAssetClass>("equity");
 
-  /** What a holding weighs in the portfolio right now, under the chosen
-   *  basis — the number shown in the table, and the number the builder
-   *  prefills so a target is edited rather than invented. */
-  const currentPortfolioWeight = useCallback(
+  /**
+   * What the holding is ACTUALLY worth in the book today — live class weight
+   * scaled by the LIVE class allocation.
+   *
+   * Deliberately not scaled by the scenario's allocation. A trim is a real
+   * trade against a real position: if the sleeve is sitting at 25.51% but the
+   * scenario is exploring a hypothetical 25.00%, the amount you can sell is
+   * still governed by what you own, not by the hypothesis. Prefilling the
+   * hypothetical figure made the builder open on a number that matched no
+   * holding statement anywhere.
+   */
+  const ownedPortfolioWeight = useCallback(
     (symbol: string) => {
       const h = baseHoldings.find((x) => x.symbol === symbol);
       if (!h) return null;
-      const wClass = seededWeights[symbol.toUpperCase()] ?? h.weightInClass;
-      const alloc = startAlloc[h.assetClass] ?? 0;
+      const wClass = actualWeights[symbol] ?? seededWeights[symbol.toUpperCase()] ?? h.weightInClass;
+      const alloc =
+        (actualClassAlloc
+          ? h.assetClass === "equity"
+            ? actualClassAlloc.equity
+            : h.assetClass === "fixedIncome"
+              ? actualClassAlloc.fixedIncome
+              : actualClassAlloc.alternative
+          : startAlloc[h.assetClass]) ?? 0;
       return wClass * alloc;
     },
-    [baseHoldings, seededWeights, startAlloc],
+    [baseHoldings, actualWeights, seededWeights, actualClassAlloc, startAlloc],
   );
 
   const addFund = () => {
@@ -508,6 +533,7 @@ export function ModelScenarios({ groups }: Props) {
     setResidualTargets([]);
     setAllocBasis("target");
     setCustomAlloc(null);
+    setAllocDraft({});
     setFundFrom("");
     setFundTo("");
     setFundAmount("");
@@ -625,12 +651,21 @@ export function ModelScenarios({ groups }: Props) {
                         {k === "cash" ? "Cash" : ASSET_CLASS_LABELS[k as PimAssetClass]}
                       </span>
                       <input
-                        value={(cur * 100).toFixed(2)}
+                        inputMode="decimal"
+                        value={allocDraft[k] ?? (cur * 100).toFixed(2)}
+                        onFocus={(e) => e.currentTarget.select()}
                         onChange={(e) => {
-                          const v = parseFloat(e.target.value);
-                          if (!isFinite(v)) return;
-                          setCustomAlloc({ ...customAlloc, [k]: v / 100 });
+                          const raw = e.target.value;
+                          setAllocDraft((d) => ({ ...d, [k]: raw }));
+                          // An empty or half-typed box ("", "2.", "-") holds
+                          // its last committed value rather than snapping the
+                          // model to 0 mid-keystroke.
+                          const v = parseFloat(raw);
+                          if (Number.isFinite(v)) setCustomAlloc({ ...customAlloc, [k]: v / 100 });
                         }}
+                        onBlur={() =>
+                          setAllocDraft((d) => ({ ...d, [k]: (customAlloc[k] * 100).toFixed(2) }))
+                        }
                         className="w-16 rounded border border-line bg-white px-1.5 py-0.5 text-right font-mono text-ink"
                       />
                       <span className="text-ink-3">%</span>
@@ -651,6 +686,12 @@ export function ModelScenarios({ groups }: Props) {
                   onClick={() => {
                     const src = { equity: w?.equity ?? 0, fixedIncome: w?.fixedIncome ?? 0, alternative: w?.alternatives ?? 0, cash: w?.cash ?? 0 };
                     setCustomAlloc(src);
+                    setAllocDraft({
+                      equity: (src.equity * 100).toFixed(2),
+                      fixedIncome: (src.fixedIncome * 100).toFixed(2),
+                      alternative: (src.alternative * 100).toFixed(2),
+                      cash: (src.cash * 100).toFixed(2),
+                    });
                   }}
                   className="rounded border border-line bg-white px-2 py-0.5 text-ink-3 hover:text-ink"
                 >
@@ -683,6 +724,12 @@ export function ModelScenarios({ groups }: Props) {
                             cash: w?.cash ?? 0,
                           };
                     setCustomAlloc({ ...src });
+                    setAllocDraft({
+                      equity: (src.equity * 100).toFixed(2),
+                      fixedIncome: (src.fixedIncome * 100).toFixed(2),
+                      alternative: (src.alternative * 100).toFixed(2),
+                      cash: (src.cash * 100).toFixed(2),
+                    });
                   }
                   setAllocBasis(next);
                 }}
@@ -794,7 +841,7 @@ export function ModelScenarios({ groups }: Props) {
                   setFundFrom(sym);
                   // Prefill with today's weight so the PM edits a real number
                   // instead of working out what to type from scratch.
-                  const cur = currentPortfolioWeight(sym);
+                  const cur = ownedPortfolioWeight(sym);
                   setFundAmount(cur != null ? (cur * 100).toFixed(2) : "");
                   setFundAll(false);
                 }}
@@ -809,7 +856,9 @@ export function ModelScenarios({ groups }: Props) {
               </select>
               <span className="text-ink-3">down to</span>
               <input
+                inputMode="decimal"
                 value={fundAll ? "0.00" : fundAmount}
+                onFocus={(e) => e.currentTarget.select()}
                 onChange={(e) => {
                   setFundAmount(e.target.value);
                   setFundAll(false);
@@ -867,20 +916,20 @@ export function ModelScenarios({ groups }: Props) {
                 Add change
               </button>
               {fundFrom && (() => {
-                const cur = currentPortfolioWeight(fundFrom);
+                const cur = ownedPortfolioWeight(fundFrom);
                 if (cur == null) return null;
                 const tgt = fundAll ? 0 : parseFloat(fundAmount) / 100;
-                if (!isFinite(tgt)) return <span className="text-ink-faint">now {pct(cur)}</span>;
+                if (!isFinite(tgt)) return <span className="text-ink-faint">own {pct(cur)} today</span>;
                 const freed = cur - tgt;
                 if (freed < -1e-9)
                   return (
                     <span className="text-warn">
-                      now {pct(cur)} — a target above that would be a BUY, not a trim
+                      own {pct(cur)} today — a target above that is a BUY, not a trim
                     </span>
                   );
                 return (
                   <span className="text-ink-faint">
-                    now {pct(cur)} — frees {pct(freed)}
+                    own {pct(cur)} today — frees {pct(freed)}
                   </span>
                 );
               })()}
