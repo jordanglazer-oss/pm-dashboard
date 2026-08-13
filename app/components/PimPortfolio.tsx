@@ -1611,6 +1611,10 @@ export function PimPortfolio({ groups }: Props) {
     const tickerEq = (a: string, b: string) =>
       a === b || a.replace("-T", ".TO") === b.replace("-T", ".TO");
 
+    /** Groups where the model got the bought holding but the book got no
+     *  shares, because there was no sold position there to fund it. */
+    const unitlessBuyGroups: string[] = [];
+
     // ── Capture PRE-mutation pim-models snapshot for the atomic swap.
     // A single Execute Switch action is treated as ONE firm-wide position
     // change: the bought ticker replaces the sold ticker in EVERY group
@@ -2028,10 +2032,19 @@ export function PimPortfolio({ groups }: Props) {
           )
         : affectedGroupIds;
 
+      // Bought units are derived from the SOLD position's units, so a group
+      // whose positions don't hold the sold ticker silently produces no
+      // position for the bought one. The model gets the holding, the book
+      // gets no shares, and the name contributes nothing to performance —
+      // with no error anywhere. Collect those groups and report them.
       const updatedPositions = currentPositions.map((pp) => {
         if (!positionGroupsToTouch.has(pp.groupId)) return pp;
         const soldPos = pp.positions.find((p) => tickerEq(p.symbol, trade.sellSymbol));
-        if (!soldPos || soldPos.units <= 0) return pp;
+        if (!soldPos || soldPos.units <= 0) {
+          const gName = pimModelsRef.current.groups.find((g) => g.id === pp.groupId)?.name ?? pp.groupId;
+          unitlessBuyGroups.push(`${gName}/${pp.profile}`);
+          return pp;
+        }
 
         const soldUnitsToTrade = soldPos.units * sellFraction;
         const remainingSoldUnits = soldPos.units - soldUnitsToTrade;
@@ -2083,9 +2096,13 @@ export function PimPortfolio({ groups }: Props) {
     // alert() — the multi-trade caller aggregates them into the
     // tradeExecProgress label so one alert popup per queue execution
     // is shown at the end (not per trade).
-    const warning = skippedDueToBoughtPresent.length > 0
+    let warning = skippedDueToBoughtPresent.length > 0
       ? `${buyTicker} was already held in these models — swap was NOT applied there: ${skippedDueToBoughtPresent.join(", ")}.`
       : undefined;
+    if (unitlessBuyGroups.length > 0) {
+      const note = `${buyTicker} was added to the model but NO SHARES were recorded in ${unitlessBuyGroups.join(", ")} — ${trade.sellSymbol} had no position there to fund the buy. Enter the units via Edit Positions, or the holding will not contribute to performance.`;
+      warning = warning ? `${warning} ${note}` : note;
+    }
     return { ok: true, warning };
   }, [pimPortfolioState, selectedGroupId, updatePimPortfolioState, scoredStocks, addStock, pimModels, updatePimModels, moveBucket, stocks, positions, usdCadRate, rebalanceStockWeights, updateStockFields, coreSymbols]);
 

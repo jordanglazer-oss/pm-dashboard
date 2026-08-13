@@ -831,12 +831,6 @@ export function PimModel({ groups }: Props) {
     return groups.filter((g) => g.name.toLowerCase().includes(q));
   }, [groups, dropdownSearch]);
 
-  const checkTotals = useMemo(() => {
-    const totals: Record<PimAssetClass, number> = { fixedIncome: 0, equity: 0, alternative: 0 };
-    computedHoldings.forEach((h) => { totals[h.assetClass] += h.weightInClass; });
-    return totals;
-  }, [computedHoldings]);
-
   // Drift summary: surfaces the same alpha-vs-core returns that drive
   // the Dynamic Wt column so they can be displayed standalone above
   // the holdings table. Mirrors the computation in computedHoldings —
@@ -1247,7 +1241,6 @@ export function PimModel({ groups }: Props) {
         )) return null;
 
         const colors = ASSET_CLASS_COLORS[ac];
-        const classTotal = checkTotals[ac];
 
         // ── 2dp display weights ────────────────────────────────────────────
         // These numbers get typed into the modelling software, which takes two
@@ -1267,7 +1260,15 @@ export function PimModel({ groups }: Props) {
               ? profileWeights.fixedIncome
               : profileWeights.alternatives
           : undefined;
-        const tieTo = filterActive ? undefined : classAlloc;
+        // Tie each column to the class's REAL total, never to a forced 100%.
+        //
+        // Forcing it meant a sleeve that genuinely summed to 150% was rescaled
+        // until it printed 100.00%, while the colour — computed from the true
+        // sum — turned red. The number and its colour disagreed, and the
+        // holding weights shown were rescaled fiction. A broken sleeve now
+        // reads as broken.
+        const rawClassSum = holdings.reduce((t, h) => t + h.weightInClass, 0);
+        const tieTo = filterActive || classAlloc == null ? undefined : rawClassSum * classAlloc;
         const hasDynamic = holdings.some((h) => h.dynamicWeight != null);
 
         const dTarget = apportionColumn(holdings.map((h) => h.weightInPortfolio), tieTo);
@@ -1277,7 +1278,7 @@ export function PimModel({ groups }: Props) {
         );
         const dCad = apportionColumn(holdings.map((h) => h.cadModelWeight));
         const dUsd = apportionColumn(holdings.map((h) => h.usdModelWeight));
-        const dCheck = apportionColumn(holdings.map((h) => h.weightInClass), filterActive ? undefined : 1);
+        const dCheck = apportionColumn(holdings.map((h) => h.weightInClass), filterActive ? undefined : rawClassSum);
 
         return (
           <div key={ac} className="rounded-card border border-line bg-white shadow-sm overflow-hidden">
@@ -1288,7 +1289,12 @@ export function PimModel({ groups }: Props) {
               </h3>
               <div className="flex items-center gap-4 text-xs">
                 <span>
-                  Class Weight Check: <span className={`font-semibold ${Math.abs(classTotal - 1) < 0.001 ? "opacity-70" : "text-neg"}`}>{fmtPct2(dCheck.total)}</span>
+                  Class Weight Check:{" "}
+                  {/* Colour is driven by the number actually shown, so the two
+                      can never contradict each other. */}
+                  <span className={`font-semibold ${sameAtDisplay(dCheck.total, 1) ? "opacity-70" : "text-neg"}`}>
+                    {fmtPct2(dCheck.total)}
+                  </span>
                 </span>
               </div>
             </div>
