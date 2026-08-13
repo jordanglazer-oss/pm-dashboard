@@ -74,6 +74,7 @@ type SavedScenario = {
   residual?: ResidualPolicy;
   residualTargets?: string[];
   allocOverride?: boolean;
+  pinnedSymbols?: string[];
   customAlloc?: { equity: number; fixedIncome: number; alternative: number; cash: number };
   notes?: string;
   createdAt: string;
@@ -267,6 +268,73 @@ export function ModelScenarios({ groups }: Props) {
    * was typed and only formats on blur.
    */
   const [allocDraft, setAllocDraft] = useState<Record<string, string>>({});
+
+  /** Symbols pinned against the residual — see the engine's pinnedSymbols. */
+  const [pinned, setPinned] = useState<string[]>([]);
+  /** In-flight text for the inline weight cells (same reason as allocDraft:
+   *  a controlled cell that reformats mid-keystroke cannot be typed into). */
+  const [rowDraft, setRowDraft] = useState<Record<string, string>>({});
+  /** Which class currently has its "add a holding" row open. */
+  const [addingTo, setAddingTo] = useState<PimAssetClass | null>(null);
+  const [newHoldingSym, setNewHoldingSym] = useState("");
+  const [newHoldingWt, setNewHoldingWt] = useState("");
+  const [newHoldingCcy, setNewHoldingCcy] = useState<"CAD" | "USD">("CAD");
+
+  const isPinned = useCallback(
+    (sym: string) => pinned.some((p) => p.toUpperCase() === sym.toUpperCase()),
+    [pinned],
+  );
+  const togglePin = useCallback((sym: string) => {
+    setPinned((prev) =>
+      prev.some((p) => p.toUpperCase() === sym.toUpperCase())
+        ? prev.filter((p) => p.toUpperCase() !== sym.toUpperCase())
+        : [...prev, sym],
+    );
+  }, []);
+
+  /** Upsert a weight override for one row, replacing any earlier one for the
+   *  same symbol so repeated edits don't pile up as a stack of actions. */
+  const setRowWeight = useCallback((symbol: string, portfolioWeight: number) => {
+    setActions((prev) => [
+      ...prev.filter((a) => !(a.kind === "setWeight" && a.symbol.toUpperCase() === symbol.toUpperCase())),
+      { kind: "setWeight", symbol, weight: portfolioWeight, ofPortfolio: true },
+    ]);
+  }, []);
+
+  /** Remove a holding. If it only exists because this scenario added it, the
+   *  add is withdrawn rather than a drop being stacked on top of it. */
+  const removeRow = useCallback((symbol: string) => {
+    setActions((prev) => {
+      const up = symbol.toUpperCase();
+      const wasAdded = prev.some((a) => a.kind === "add" && a.symbol.toUpperCase() === up);
+      const wasBought = prev.some((a) => a.kind === "fund" && a.to.toUpperCase() === up);
+      const kept = prev.filter((a) => {
+        if (a.kind === "add" && a.symbol.toUpperCase() === up) return false;
+        if (a.kind === "fund" && a.to.toUpperCase() === up) return false;
+        if (a.kind === "setWeight" && a.symbol.toUpperCase() === up) return false;
+        return true;
+      });
+      return wasAdded || wasBought ? kept : [...kept, { kind: "drop", symbol }];
+    });
+    setRowDraft((d) => {
+      const { [symbol]: _drop, ...rest } = d;
+      void _drop;
+      return rest;
+    });
+  }, []);
+
+  const restoreRow = useCallback((symbol: string) => {
+    setActions((prev) =>
+      prev.filter((a) => !(a.kind === "drop" && a.symbol.toUpperCase() === symbol.toUpperCase())),
+    );
+  }, []);
+
+  const isDropped = useCallback(
+    (symbol: string) =>
+      actions.some((a) => a.kind === "drop" && a.symbol.toUpperCase() === symbol.toUpperCase()),
+    [actions],
+  );
+
   const [residual, setResidual] = useState<ResidualPolicy>("core");
   /** Symbols that absorb under the "named" policy, split evenly. */
   const [residualTargets, setResidualTargets] = useState<string[]>([]);
@@ -326,6 +394,32 @@ export function ModelScenarios({ groups }: Props) {
     return basisAlloc;
   }, [allocOverride, customAlloc, basisAlloc]);
 
+  const addHolding = useCallback(
+    (cls: PimAssetClass) => {
+      const sym = newHoldingSym.trim().toUpperCase();
+      if (!sym) return;
+      const num = parseFloat(newHoldingWt);
+      const alloc = startAlloc[cls] ?? 0;
+      setActions((prev) => [
+        ...prev,
+        {
+          kind: "add",
+          symbol: sym,
+          assetClass: cls,
+          currency: newHoldingCcy,
+          // Typed as a portfolio weight like everything else; converted into
+          // the sleeve's own space here.
+          weight: isFinite(num) && alloc > 0 ? num / 100 / alloc : undefined,
+        },
+      ]);
+      setNewHoldingSym("");
+      setNewHoldingWt("");
+      setAddingTo(null);
+    },
+    [newHoldingSym, newHoldingWt, newHoldingCcy, startAlloc],
+  );
+
+
   const result = useMemo(
     () =>
       applyScenario(baseHoldings, actions, {
@@ -335,8 +429,9 @@ export function ModelScenarios({ groups }: Props) {
         residual,
         residualTargets,
         allocations: startAlloc,
+        pinnedSymbols: pinned,
       }),
-    [baseHoldings, actions, basis, hasActuals, actualWeights, isCore, residual, residualTargets, startAlloc],
+    [baseHoldings, actions, basis, hasActuals, actualWeights, isCore, residual, residualTargets, startAlloc, pinned],
   );
 
   // The left-hand side of the comparison: today's model, or another scenario
@@ -466,12 +561,12 @@ export function ModelScenarios({ groups }: Props) {
         const alloc = { equity: w.equity, fixedIncome: w.fixedIncome, alternative: w.alternatives };
         const before = applyScenario(baseHoldings, [], {
           basis: basis === "actual" && hasActuals ? "actual" : "model",
-          actualWeights, isCore, residual, residualTargets,
+          actualWeights, isCore, residual, residualTargets, pinnedSymbols: pinned,
           allocations: alloc, targetAllocations: startAlloc,
         });
         const after = applyScenario(baseHoldings, actions, {
           basis: basis === "actual" && hasActuals ? "actual" : "model",
-          actualWeights, isCore, residual, residualTargets,
+          actualWeights, isCore, residual, residualTargets, pinnedSymbols: pinned,
           allocations: alloc, targetAllocations: startAlloc,
         });
         const wt = (r: typeof after, sym: string) => {
@@ -493,7 +588,7 @@ export function ModelScenarios({ groups }: Props) {
         const applies = touchedClasses.some((c) => (alloc[c] ?? 0) > 0);
         return { profile: p, alloc, moves, applies, touchedClasses };
       });
-  }, [group, actions, baseHoldings, basis, hasActuals, actualWeights, isCore, residual, residualTargets, startAlloc]);
+  }, [group, actions, baseHoldings, basis, hasActuals, actualWeights, isCore, residual, residualTargets, startAlloc, pinned]);
 
   /** How much of the portfolio this scenario actually trades — the quickest
    *  read on whether a proposal is a tweak or a rebuild. */
@@ -628,6 +723,8 @@ export function ModelScenarios({ groups }: Props) {
     setResidual("core");
     setResidualTargets([]);
     setAllocOverride(false);
+    setPinned([]);
+    setRowDraft({});
     setCustomAlloc(null);
     setAllocDraft({});
     setFundFrom("");
@@ -654,6 +751,7 @@ export function ModelScenarios({ groups }: Props) {
           residualTargets,
           allocOverride,
           customAlloc,
+          pinnedSymbols: pinned,
         }),
       });
       if (res.ok) {
@@ -681,6 +779,7 @@ export function ModelScenarios({ groups }: Props) {
     setResidual(s.residual ?? "core");
     setResidualTargets(s.residualTargets ?? []);
     setAllocOverride(s.allocOverride ?? false);
+    setPinned(s.pinnedSymbols ?? []);
     setCustomAlloc(s.customAlloc ?? null);
   };
 
@@ -1285,7 +1384,13 @@ export function ModelScenarios({ groups }: Props) {
                       <table className="w-full min-w-[720px] text-sm">
                         <thead className="bg-white shadow-[0_1px_0_0_rgb(226_232_240)]">
                           <tr className="border-b border-line-soft text-xs text-ink-3">
-                            <th className="py-2.5 pl-5 pr-2 text-left font-semibold">Name</th>
+                            <th
+                              className="py-2.5 pl-4 pr-1 text-center font-semibold"
+                              title="Pin a weight so the residual cannot move it"
+                            >
+                              📌
+                            </th>
+                            <th className="py-2.5 pr-2 text-left font-semibold">Name</th>
                             <th className="py-2.5 px-2 text-left font-semibold">Symbol</th>
                             <th className="py-2.5 px-2 text-center font-semibold">Ccy</th>
                             <th className="py-2.5 px-2 text-right font-semibold whitespace-nowrap">
@@ -1293,9 +1398,10 @@ export function ModelScenarios({ groups }: Props) {
                             </th>
                             <th className="py-2.5 px-2 text-right font-semibold whitespace-nowrap">Scenario Wt</th>
                             <th className="py-2.5 px-2 text-right font-semibold whitespace-nowrap">Δ</th>
-                            <th className="py-2.5 px-2 pr-5 text-right font-normal whitespace-nowrap opacity-70">
+                            <th className="py-2.5 px-2 text-right font-normal whitespace-nowrap opacity-70">
                               % of sleeve
                             </th>
+                            <th className="py-2.5 pr-4 pl-1 text-center font-semibold"></th>
                           </tr>
                         </thead>
                         <tbody>
@@ -1306,7 +1412,20 @@ export function ModelScenarios({ groups }: Props) {
                                 r.to == null ? "opacity-40" : ""
                               } ${r.changed ? "bg-accent-soft/40" : ""}`}
                             >
-                              <td className="max-w-[200px] truncate py-2 pl-5 pr-2 font-medium text-ink">
+                              <td className="py-2 pl-4 pr-1 text-center">
+                                <input
+                                  type="checkbox"
+                                  checked={isPinned(r.symbol)}
+                                  onChange={() => togglePin(r.symbol)}
+                                  title={
+                                    isPinned(r.symbol)
+                                      ? "Pinned — the residual cannot move this weight"
+                                      : "Pin this weight"
+                                  }
+                                  className="cursor-pointer"
+                                />
+                              </td>
+                              <td className="max-w-[200px] truncate py-2 pr-2 font-medium text-ink">
                                 <Link
                                   href={`/stock/${symbolToTicker(r.symbol).toLowerCase()}?from=pim-model`}
                                   className="transition-colors hover:text-accent hover:underline"
@@ -1342,7 +1461,35 @@ export function ModelScenarios({ groups }: Props) {
                                 {dFromP.values[i] == null ? <span className="text-ink-faint">&mdash;</span> : pct(dFromP.values[i] as number)}
                               </td>
                               <td className="py-2 px-2 text-right font-mono text-xs font-semibold">
-                                {dToP.values[i] == null ? <span className="text-ink-faint">&mdash;</span> : pct(dToP.values[i] as number)}
+                                {dToP.values[i] == null ? (
+                                  <span className="text-ink-faint">&mdash;</span>
+                                ) : (
+                                  // Editable in place: type the weight you want
+                                  // this holding to carry. Blank/garbled input
+                                  // leaves the last committed value alone.
+                                  <input
+                                    inputMode="decimal"
+                                    value={rowDraft[r.symbol] ?? ((dToP.values[i] as number) * 100).toFixed(2)}
+                                    onFocus={(e) => e.currentTarget.select()}
+                                    onChange={(e) => {
+                                      const raw = e.target.value;
+                                      setRowDraft((d) => ({ ...d, [r.symbol]: raw }));
+                                      const v = parseFloat(raw);
+                                      if (Number.isFinite(v) && v >= 0) setRowWeight(r.symbol, v / 100);
+                                    }}
+                                    onBlur={() =>
+                                      setRowDraft((d) => {
+                                        const { [r.symbol]: _drop, ...rest } = d;
+                                        void _drop;
+                                        return rest;
+                                      })
+                                    }
+                                    onKeyDown={(e) => {
+                                      if (e.key === "Enter") e.currentTarget.blur();
+                                    }}
+                                    className="w-20 rounded border border-transparent bg-transparent px-1 py-0.5 text-right font-mono font-semibold text-ink hover:border-line focus:border-accent-border focus:bg-white"
+                                  />
+                                )}
                               </td>
                               <td
                                 className={(() => {
@@ -1364,17 +1511,36 @@ export function ModelScenarios({ groups }: Props) {
                                   return `${d >= 0 ? "+" : ""}${pct(d)}`;
                                 })()}
                               </td>
-                              <td className="py-2 px-2 pr-5 text-right font-mono text-xs text-ink-faint">
+                              <td className="py-2 px-2 text-right font-mono text-xs text-ink-faint">
                                 {dToClass.values[i] == null ? (
                                   <span className="text-ink-faint">&mdash;</span>
                                 ) : (
                                   pct(dToClass.values[i] as number)
                                 )}
                               </td>
+                              <td className="py-2 pr-4 pl-1 text-center">
+                                {isDropped(r.symbol) ? (
+                                  <button
+                                    onClick={() => restoreRow(r.symbol)}
+                                    title="Put this holding back"
+                                    className="text-xs text-accent hover:underline"
+                                  >
+                                    undo
+                                  </button>
+                                ) : (
+                                  <button
+                                    onClick={() => removeRow(r.symbol)}
+                                    title="Remove this holding from the scenario"
+                                    className="text-ink-faint hover:text-neg"
+                                  >
+                                    ×
+                                  </button>
+                                )}
+                              </td>
                             </tr>
                           ))}
                           <tr className={`${colors.bg} font-semibold`}>
-                            <td className="py-2 pl-5 pr-2 text-xs text-ink-3" colSpan={3}>
+                            <td className="py-2 pl-4 pr-2 text-xs text-ink-3" colSpan={4}>
                               TOTAL
                             </td>
                             <td className="py-2 px-2 text-right font-mono text-xs font-bold">{pct(dFromP.total)}</td>
@@ -1392,8 +1558,72 @@ export function ModelScenarios({ groups }: Props) {
                                 ? "—"
                                 : `${dToP.total > dFromP.total ? "+" : ""}${pct(dToP.total - dFromP.total)}`}
                             </td>
-                            <td className="py-2 px-2 pr-5 text-right font-mono text-xs text-ink-faint">
+                            <td className="py-2 px-2 text-right font-mono text-xs text-ink-faint">
                               {pct(dToClass.total)}
+                            </td>
+                            <td />
+                          </tr>
+                          {/* Add straight into the sleeve you're looking at —
+                              the class is implied by where the row sits. */}
+                          <tr>
+                            <td colSpan={8} className="py-2 pl-4 pr-4">
+                              {addingTo === ac ? (
+                                <span className="flex flex-col gap-2 text-xs sm:flex-row sm:flex-wrap sm:items-center">
+                                  <input
+                                    autoFocus
+                                    value={newHoldingSym}
+                                    onChange={(e) => setNewHoldingSym(e.target.value)}
+                                    onKeyDown={(e) => {
+                                      if (e.key === "Enter") addHolding(ac);
+                                      if (e.key === "Escape") setAddingTo(null);
+                                    }}
+                                    placeholder="Symbol"
+                                    className="w-full rounded border border-line bg-surface-2 px-2 py-1 text-ink sm:w-32"
+                                  />
+                                  <input
+                                    inputMode="decimal"
+                                    value={newHoldingWt}
+                                    onChange={(e) => setNewHoldingWt(e.target.value)}
+                                    onKeyDown={(e) => {
+                                      if (e.key === "Enter") addHolding(ac);
+                                      if (e.key === "Escape") setAddingTo(null);
+                                    }}
+                                    placeholder="% of portfolio"
+                                    className="w-full rounded border border-line bg-surface-2 px-2 py-1 text-right font-mono text-ink sm:w-28"
+                                  />
+                                  <select
+                                    value={newHoldingCcy}
+                                    onChange={(e) => setNewHoldingCcy(e.target.value as "CAD" | "USD")}
+                                    className="w-full rounded border border-line bg-surface-2 px-2 py-1 text-ink sm:w-auto"
+                                  >
+                                    <option value="CAD">CAD</option>
+                                    <option value="USD">USD</option>
+                                  </select>
+                                  <button
+                                    onClick={() => addHolding(ac)}
+                                    className="rounded bg-accent px-3 py-1 font-medium !text-white"
+                                  >
+                                    Add
+                                  </button>
+                                  <button
+                                    onClick={() => setAddingTo(null)}
+                                    className="rounded border border-line px-2 py-1 text-ink-3 hover:text-ink"
+                                  >
+                                    Cancel
+                                  </button>
+                                </span>
+                              ) : (
+                                <button
+                                  onClick={() => {
+                                    setAddingTo(ac);
+                                    setNewHoldingSym("");
+                                    setNewHoldingWt("");
+                                  }}
+                                  className="text-xs font-medium text-accent hover:underline"
+                                >
+                                  + Add a holding to {ASSET_CLASS_LABELS[ac]}
+                                </button>
+                              )}
                             </td>
                           </tr>
                         </tbody>

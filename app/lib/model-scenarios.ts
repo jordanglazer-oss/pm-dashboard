@@ -125,6 +125,13 @@ export type ScenarioOptions = {
    * "translates across models" has to mean.
    */
   targetAllocations?: Partial<Record<PimAssetClass, number>>;
+  /**
+   * Symbols the PM has pinned. A pin is not a change — it is a CONSTRAINT: the
+   * weight stays where it is and the residual has to be found somewhere else.
+   * Without it, setting one weight silently drags every other holding in the
+   * sleeve, which is rarely what is meant when only one line is being adjusted.
+   */
+  pinnedSymbols?: string[];
 };
 
 export type ScenarioDiagnostic = {
@@ -143,21 +150,8 @@ export type ScenarioResult = {
   /** Allocations after any cross-class funding. Echoes the input unchanged
    *  when nothing crossed classes; undefined when none were supplied. */
   allocations?: Partial<Record<PimAssetClass, number>>;
-  /**
-   * Allocations used to INTERPRET portfolio-weight targets (`sourceTarget`,
-   * `setWeight` with `ofPortfolio`). Defaults to `allocations`.
-   *
-   * Profiles inside a group share one holdings list — `weightInClass` is
-   * profile-invariant and only the class allocation differs — so a change made
-   * once already applies to every profile. But a target typed as a share of
-   * the PORTFOLIO is profile-specific: "take JBND to 12%" means a different
-   * share of the bond sleeve under Balanced (28% bonds) than under Growth
-   * (14%). Anchoring the target to the profile it was authored against makes
-   * the same class-space change land in every profile, which is what
-   * "translates across models" has to mean.
-   */
-  targetAllocations?: Partial<Record<PimAssetClass, number>>;
 };
+
 
 const DEFAULT_REF_PER_STOCK = 0.018182;
 const EPSILON = 1e-9;
@@ -202,8 +196,13 @@ export function applyScenario(
   const warn = (cls: PimAssetClass, msg: string) => {
     (warningsByClass[cls] ??= []).push(msg);
   };
-  // Symbols an action touched — they are held fixed while the residual moves.
+  // Symbols held fixed while the residual moves: everything an action touched,
+  // plus anything explicitly pinned.
   const touched = new Set<string>();
+  for (const p of opts.pinnedSymbols ?? []) {
+    const hit = holdings.find((h) => sameSymbol(h.symbol, p));
+    if (hit) touched.add(norm(hit.symbol));
+  }
 
   // 2. Apply actions in order; later actions on the same symbol win.
   for (const a of actions) {
@@ -427,7 +426,7 @@ export function applyScenario(
       if (pool.length === 0 || (!evenSplit && poolTotal <= EPSILON)) {
         // Nothing can absorb it — say so rather than fabricating a spread.
         warnings.push(
-          `${cls}: no holding available to absorb ${(gap * 100).toFixed(2)}% under the "${residual}" policy — weights left unnormalised at ${(rawTotal * 100).toFixed(2)}%`,
+          `${cls}: nothing left to absorb ${(gap * 100).toFixed(2)}% — every holding is either pinned or explicitly set, so the sleeve is left at ${(rawTotal * 100).toFixed(2)}%. Unpin one to let it take up the slack.`,
         );
       } else {
         for (const h of pool) {
