@@ -93,9 +93,9 @@ type StockContextType = {
   scannerData: ScannerData | null;
   offensiveExposure: number;
   loading: boolean;
-  addStock: (stock: Stock) => void;
+  addStock: (stock: Stock, opts?: { skipPimModels?: boolean }) => void;
   removeStock: (ticker: string) => void;
-  moveBucket: (ticker: string) => void;
+  moveBucket: (ticker: string, opts?: { skipPimModels?: boolean; eligibility?: Record<string, boolean> }) => void;
   updateScore: (ticker: string, key: ScoreKey, value: number) => void;
   updateExplanations: (ticker: string, explanations: ScoreExplanations) => void;
   updateLastScored: (ticker: string, timestamp: string) => void;
@@ -876,7 +876,16 @@ export function StockProvider({ children }: { children: React.ReactNode }) {
   }, [persistPim, tickerMatch, rebalanceStockWeights]);
 
   /* ─── Stock mutations (optimistic + persist) ─── */
-  const addStock = useCallback((stock: Stock) => {
+  /**
+   * @param opts.skipPimModels  Do NOT touch pm:pim-models here.
+   *   Used by the Buy/Sell switch, which computes the final model state
+   *   itself and must be the ONLY writer. Previously this helper persisted
+   *   its own version of pm:pim-models first — adding the bought ticker to
+   *   every group and re-dividing the stock pool — and the switch's own
+   *   write then aborted on a validation guard, leaving the model diluted
+   *   with the sold holding still in it. Two writers, one key, no ordering.
+   */
+  const addStock = useCallback((stock: Stock, opts?: { skipPimModels?: boolean }) => {
     setStocks((prev) => {
       const next = [stock, ...prev];
       persistStocks(next);
@@ -887,7 +896,7 @@ export function StockProvider({ children }: { children: React.ReactNode }) {
     // performance calculations. They are research candidates, not
     // actual holdings.
     if (stock.bucket === "Portfolio") {
-      addToPimModels(stock);
+      if (!opts?.skipPimModels) addToPimModels(stock);
     }
     // Watchlist add → queue a one-time "request RBC/JPM coverage" email
     // (fire-and-forget; the route is idempotent per ticker, and no-ops
@@ -911,7 +920,15 @@ export function StockProvider({ children }: { children: React.ReactNode }) {
     removeFromPimModels(ticker);
   }, [persistStocks, removeFromPimModels]);
 
-  const moveBucket = useCallback((ticker: string) => {
+  /**
+   * @param opts.skipPimModels  As addStock — let the caller own the model write.
+   * @param opts.eligibility    Model eligibility to apply NOW rather than
+   *   relying on a `stocks` entry that a just-issued updateStockFields has not
+   *   landed in yet. Without it this read a stale closure, saw no eligibility,
+   *   and added the holding to every group including the ones the PM had
+   *   explicitly unticked.
+   */
+  const moveBucket = useCallback((ticker: string, opts?: { skipPimModels?: boolean; eligibility?: Record<string, boolean> }) => {
     const stock = stocks.find((s) => s.ticker === ticker);
     const wasPortfolio = stock?.bucket === "Portfolio";
     setStocks((prev) => {
@@ -925,11 +942,19 @@ export function StockProvider({ children }: { children: React.ReactNode }) {
     });
 
     // Sync with PIM models: remove when moving to Watchlist, add when moving to Portfolio
-    if (wasPortfolio) {
+    if (opts?.skipPimModels) {
+      // Caller owns pm:pim-models for this operation.
+    } else if (wasPortfolio) {
       removeFromPimModels(ticker);
     } else if (stock) {
-      // Pass the post-flip stock so downstream logic sees bucket="Portfolio"
-      addToPimModels({ ...stock, bucket: "Portfolio" });
+      // Pass the post-flip stock so downstream logic sees bucket="Portfolio",
+      // and the caller's eligibility so an unticked model is respected even
+      // though the pm:stocks write carrying it has not landed yet.
+      addToPimModels({
+        ...stock,
+        bucket: "Portfolio",
+        ...(opts?.eligibility ? { modelEligibility: opts.eligibility } : {}),
+      });
     }
   }, [stocks, persistStocks, removeFromPimModels, addToPimModels]);
 

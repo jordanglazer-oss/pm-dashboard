@@ -1594,6 +1594,8 @@ export function PimPortfolio({ groups }: Props) {
       ? Math.max(1, Math.min(100, sellPercentRaw))
       : 100;
     const isPartialSell = !!trade.sellSymbol && sellPercent < 100;
+    /** A switch owns its own pm:pim-models write; helpers must not race it. */
+    const isSwitch = !!trade.sellSymbol && !!buyTicker;
     const sellOnly = !!trade.sellSymbol && !buyTicker;
     const buyOnly = !trade.sellSymbol && !!buyTicker;
 
@@ -1636,8 +1638,13 @@ export function PimPortfolio({ groups }: Props) {
     };
     const swapPlan: SwapPlan[] = [];
     const skippedDueToBoughtPresent: string[] = [];
+    const excludedForPlan = new Set(trade.excludedGroupIds || []);
     if (trade.sellSymbol) {
       for (const g of originalPim.groups) {
+        // Respect the per-model checkboxes. The swap ignored them entirely,
+        // so unticking a model excluded it from the eligibility map written to
+        // pm:stocks but not from the trade itself.
+        if (excludedForPlan.has(g.id)) continue;
         const sold = g.holdings.find((h) => tickerEq(h.symbol, trade.sellSymbol));
         if (!sold) continue;
         const boughtAlreadyPresent = g.holdings.some((h) => tickerEq(h.symbol, buyTicker));
@@ -1704,7 +1711,10 @@ export function PimPortfolio({ groups }: Props) {
           notes: "",
           ...(excludedSet.size > 0 ? { modelEligibility: eligibilityMap } : {}),
         };
-        addStock(stock);
+        // isSwitch: the atomic swap below computes and writes the final
+        // model state. Letting addStock persist its own version first is what
+        // diluted every stock and left the sold holding in place.
+        addStock(stock, { skipPimModels: isSwitch });
       } else {
         // Persist any user-set eligibility BEFORE the bucket flip so the
         // addToPimModels triggered by moveBucket (Watchlist → Portfolio)
@@ -1720,7 +1730,10 @@ export function PimPortfolio({ groups }: Props) {
         // safe: the atomic swap runs last and `updatePimModels(nextPim)`
         // is built from pimModelsRef.current, so it wins.
         if (isOnWatchlist) {
-          moveBucket(existingStock.ticker);
+          moveBucket(existingStock.ticker, {
+            skipPimModels: isSwitch,
+            eligibility: excludedSet.size > 0 ? eligibilityMap : undefined,
+          });
         }
       }
     }
@@ -1735,7 +1748,12 @@ export function PimPortfolio({ groups }: Props) {
     if (trade.sellSymbol && !isPartialSell) {
       const soldStock = stocks.find((s) => tickerEq(s.ticker, trade.sellSymbol));
       if (soldStock?.bucket === "Portfolio") {
-        moveBucket(soldStock.ticker);
+        // Same reason as the buy side: this fires removeFromPimModels, which
+        // persists its OWN rebalanced pm:pim-models. During a switch that is a
+        // third writer racing the atomic swap for the same key. The bucket
+        // flip on pm:stocks still happens; only the model write is deferred to
+        // the swap, which removes the sold holding as part of one write.
+        moveBucket(soldStock.ticker, { skipPimModels: isSwitch });
       }
     }
 
