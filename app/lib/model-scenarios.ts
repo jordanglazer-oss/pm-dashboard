@@ -111,6 +111,20 @@ export type ScenarioOptions = {
    * because each class normalises to 100% of its own allocation.
    */
   allocations?: Partial<Record<PimAssetClass, number>>;
+  /**
+   * Allocations used to INTERPRET portfolio-weight targets (`sourceTarget`,
+   * `setWeight` with `ofPortfolio`). Defaults to `allocations`.
+   *
+   * Profiles inside a group share one holdings list — `weightInClass` is
+   * profile-invariant and only the class allocation differs — so a change made
+   * once already applies to every profile. But a target typed as a share of
+   * the PORTFOLIO is profile-specific: "take JBND to 12%" means a different
+   * share of the bond sleeve under Balanced (28% bonds) than under Growth
+   * (14%). Anchoring the target to the profile it was authored against makes
+   * the same class-space change land in every profile, which is what
+   * "translates across models" has to mean.
+   */
+  targetAllocations?: Partial<Record<PimAssetClass, number>>;
 };
 
 export type ScenarioDiagnostic = {
@@ -129,6 +143,20 @@ export type ScenarioResult = {
   /** Allocations after any cross-class funding. Echoes the input unchanged
    *  when nothing crossed classes; undefined when none were supplied. */
   allocations?: Partial<Record<PimAssetClass, number>>;
+  /**
+   * Allocations used to INTERPRET portfolio-weight targets (`sourceTarget`,
+   * `setWeight` with `ofPortfolio`). Defaults to `allocations`.
+   *
+   * Profiles inside a group share one holdings list — `weightInClass` is
+   * profile-invariant and only the class allocation differs — so a change made
+   * once already applies to every profile. But a target typed as a share of
+   * the PORTFOLIO is profile-specific: "take JBND to 12%" means a different
+   * share of the bond sleeve under Balanced (28% bonds) than under Growth
+   * (14%). Anchoring the target to the profile it was authored against makes
+   * the same class-space change land in every profile, which is what
+   * "translates across models" has to mean.
+   */
+  targetAllocations?: Partial<Record<PimAssetClass, number>>;
 };
 
 const DEFAULT_REF_PER_STOCK = 0.018182;
@@ -159,6 +187,7 @@ export function applyScenario(
   const allocations: Partial<Record<PimAssetClass, number>> | undefined = opts.allocations
     ? { ...opts.allocations }
     : undefined;
+  const targetAllocations = opts.targetAllocations ?? opts.allocations;
 
   // 1. Seed weights from the chosen basis.
   const holdings: PimHolding[] = base.map((h) => {
@@ -191,9 +220,9 @@ export function applyScenario(
         let freed: number;
         if (a.sourceTarget != null) {
           // A portfolio-weight target: convert into this class's own space.
-          const aSrc = allocations?.[srcClass];
+          const aSrc = targetAllocations?.[srcClass];
           if (!aSrc || aSrc <= EPSILON) {
-            warn(srcClass, `${a.from}: no allocation for ${srcClass}, cannot resolve a target weight`);
+            warn(srcClass, `${a.from}: ${srcClass} has no allocation in this profile, so the target cannot be resolved`);
             break;
           }
           freed = wNow - a.sourceTarget / aSrc;
@@ -324,7 +353,7 @@ export function applyScenario(
         }
         let w = a.weight;
         if (a.ofPortfolio) {
-          const aCls = allocations?.[holdings[idx].assetClass];
+          const aCls = targetAllocations?.[holdings[idx].assetClass];
           if (!aCls || aCls <= EPSILON) {
             warn(holdings[idx].assetClass, `setWeight ${a.symbol}: no allocation to resolve a portfolio weight against`);
             break;

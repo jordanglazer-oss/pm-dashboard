@@ -45,6 +45,15 @@ const ASSET_CLASS_LABELS: Record<PimAssetClass, string> = {
   alternative: "Alternatives",
 };
 
+const PROFILE_LABELS: Record<string, string> = {
+  conservative: "Conservative",
+  balanced: "Balanced",
+  growth: "Growth",
+  allEquity: "All-Equity",
+  alpha: "Alpha",
+  core: "Core",
+};
+
 const ASSET_CLASS_COLORS: Record<PimAssetClass, { bg: string; header: string }> = {
   fixedIncome: { bg: "bg-accent-soft", header: "bg-accent-soft text-accent" },
   equity: { bg: "bg-pos-soft", header: "bg-pos-soft text-pos" },
@@ -432,6 +441,59 @@ export function ModelScenarios({ groups }: Props) {
     (cls: PimAssetClass) => (result.allocations?.[cls] ?? startAlloc[cls]) ?? null,
     [result.allocations, startAlloc],
   );
+
+  /**
+   * The same scenario replayed against every profile in the group.
+   *
+   * Profiles share one holdings list, so a change made here is ALREADY a
+   * change to all of them — `weightInClass` is profile-invariant and only the
+   * class allocation differs. What varies is what that change is worth: 2% of
+   * the portfolio out of Balanced's 28% bond sleeve is the same slice of the
+   * sleeve as 0.79% out of Growth's 11%. Targets are anchored to the profile
+   * the scenario was written against so every profile lands on the same class
+   * weights rather than each re-interpreting "12%" in its own terms.
+   *
+   * A profile with no allocation to the class simply isn't affected — an
+   * all-equity mandate has no bond sleeve for a bond trade to land in.
+   */
+  const acrossProfiles = useMemo(() => {
+    if (!group || actions.length === 0) return [];
+    const order: PimProfileType[] = ["conservative", "balanced", "growth", "allEquity"];
+    return order
+      .filter((p) => group.profiles[p])
+      .map((p) => {
+        const w = group.profiles[p]!;
+        const alloc = { equity: w.equity, fixedIncome: w.fixedIncome, alternative: w.alternatives };
+        const before = applyScenario(baseHoldings, [], {
+          basis: basis === "actual" && hasActuals ? "actual" : "model",
+          actualWeights, isCore, residual, residualTargets,
+          allocations: alloc, targetAllocations: startAlloc,
+        });
+        const after = applyScenario(baseHoldings, actions, {
+          basis: basis === "actual" && hasActuals ? "actual" : "model",
+          actualWeights, isCore, residual, residualTargets,
+          allocations: alloc, targetAllocations: startAlloc,
+        });
+        const wt = (r: typeof after, sym: string) => {
+          const x = r.holdings.find((y) => y.symbol === sym);
+          return x ? x.weightInClass * ((r.allocations?.[x.assetClass] ?? 0)) : null;
+        };
+        const symbols = [...new Set([...before.holdings, ...after.holdings].map((x) => x.symbol))];
+        const moves = symbols
+          .map((sym) => {
+            const cls =
+              (after.holdings.find((x) => x.symbol === sym) ?? before.holdings.find((x) => x.symbol === sym))!
+                .assetClass;
+            return { sym, cls, from: wt(before, sym), to: wt(after, sym) };
+          })
+          .filter((m) => !sameAtDisplay(m.from ?? 0, m.to ?? 0));
+        // Which classes this scenario touches, and whether this profile holds
+        // any of them at all.
+        const touchedClasses = [...new Set(moves.map((m) => m.cls))];
+        const applies = touchedClasses.some((c) => (alloc[c] ?? 0) > 0);
+        return { profile: p, alloc, moves, applies, touchedClasses };
+      });
+  }, [group, actions, baseHoldings, basis, hasActuals, actualWeights, isCore, residual, residualTargets, startAlloc]);
 
   /** How much of the portfolio this scenario actually trades — the quickest
    *  read on whether a proposal is a tweak or a rebuild. */
@@ -1340,6 +1402,60 @@ export function ModelScenarios({ groups }: Props) {
                   </div>
                 );
               })}
+            </div>
+          )}
+
+          {/* Across the other mandates */}
+          {acrossProfiles.length > 1 && actions.length > 0 && (
+            <div className="mt-4 overflow-hidden rounded-card border border-line bg-white">
+              <div className="flex items-center justify-between border-b border-line-soft px-4 py-2.5">
+                <h3 className="text-sm font-bold text-ink">Across the other mandates</h3>
+                <span className="text-xs text-ink-3">
+                  one holdings list, scaled by each profile&apos;s asset mix
+                </span>
+              </div>
+              <div className="max-w-full overflow-x-auto">
+                <table className="w-full min-w-[560px] text-sm">
+                  <thead>
+                    <tr className="border-b border-line-soft text-xs text-ink-3">
+                      <th className="py-2 pl-4 pr-2 text-left font-semibold">Profile</th>
+                      <th className="py-2 px-2 text-left font-semibold">Effect</th>
+                    </tr>
+                  </thead>
+                  <tbody>
+                    {acrossProfiles.map((p) => (
+                      <tr key={p.profile} className="border-b border-line-soft align-top">
+                        <td className="py-2 pl-4 pr-2 font-medium text-ink whitespace-nowrap">
+                          {PROFILE_LABELS[p.profile]}
+                          {p.profile === profile && (
+                            <span className="ml-1.5 text-[10px] font-normal text-ink-3">(editing)</span>
+                          )}
+                        </td>
+                        <td className="py-2 px-2">
+                          {!p.applies ? (
+                            <span className="text-xs text-ink-faint">
+                              No {p.touchedClasses.map((c) => ASSET_CLASS_LABELS[c].toLowerCase()).join(" or ")} in
+                              this mandate — unaffected
+                            </span>
+                          ) : (
+                            <span className="flex flex-wrap gap-x-3 gap-y-1 font-mono text-xs">
+                              {p.moves.map((m) => (
+                                <span key={m.sym} className="whitespace-nowrap">
+                                  <span className="font-sans text-ink-3">{displayTicker(m.sym)}</span>{" "}
+                                  {m.from == null ? "—" : pct(m.from)} →{" "}
+                                  <span className="font-semibold text-ink">
+                                    {m.to == null ? "—" : pct(m.to)}
+                                  </span>
+                                </span>
+                              ))}
+                            </span>
+                          )}
+                        </td>
+                      </tr>
+                    ))}
+                  </tbody>
+                </table>
+              </div>
             </div>
           )}
 
