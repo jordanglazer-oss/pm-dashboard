@@ -1302,12 +1302,12 @@ export function ModelScenarios({ groups }: Props) {
             </div>
           )}
 
-          {deltas.length === 0 ? (
-            <div className="py-6 text-center text-xs text-ink-3">
-              No changes yet — add a change above to preview it.
+          {deltas.length === 0 && actions.length === 0 && !allocOverride && (
+            <div className="mb-2 text-center text-xs text-ink-3">
+              This is the model as it stands — edit a weight, pin a row, or add a holding below.
             </div>
-          ) : (
-            <div className="flex flex-col gap-4">
+          )}
+          <div className="flex flex-col gap-4">
               {(["fixedIncome", "equity", "alternative"] as PimAssetClass[]).map((ac) => {
                 const rows = rowsByClass[ac];
                 if (!rows.length) return null;
@@ -1363,10 +1363,48 @@ export function ModelScenarios({ groups }: Props) {
                           {changed > 0 && `, ${changed} changed`})
                         </span>
                       </h3>
-                      <span className="text-xs">
-                        {/* The sleeve's share of the portfolio is the headline;
-                            the 100%-of-class check is the fine print. */}
-                        <span className="font-semibold">{pct(dToP.total)}</span> of portfolio
+                      <span className="flex items-center gap-1 text-xs">
+                        {/* EDITABLE: type a sleeve's share of the portfolio to
+                            move money between asset classes. Editing weights
+                            inside a sleeve can never do this — each class
+                            normalises to 100% of itself, so the only way to
+                            take money out of bonds and put it into alts is to
+                            change what each sleeve is worth. */}
+                        <input
+                          inputMode="decimal"
+                          value={
+                            allocDraft[`cls:${ac}`] ??
+                            ((profileAlloc(ac) ?? 0) * 100).toFixed(2)
+                          }
+                          onFocus={(e) => e.currentTarget.select()}
+                          onChange={(e) => {
+                            const raw = e.target.value;
+                            setAllocDraft((d) => ({ ...d, [`cls:${ac}`]: raw }));
+                            const v = parseFloat(raw);
+                            if (!Number.isFinite(v) || v < 0) return;
+                            const seed =
+                              customAlloc ?? {
+                                ...basisAlloc,
+                                cash: Math.max(0, 1 - basisAlloc.equity - basisAlloc.fixedIncome - basisAlloc.alternative),
+                              };
+                            const key = ac === "alternative" ? "alternative" : ac;
+                            setCustomAlloc({ ...seed, [key]: v / 100 });
+                            setAllocOverride(true);
+                          }}
+                          onBlur={() =>
+                            setAllocDraft((d) => {
+                              const { [`cls:${ac}`]: _drop, ...rest } = d;
+                              void _drop;
+                              return rest;
+                            })
+                          }
+                          onKeyDown={(e) => {
+                            if (e.key === "Enter") e.currentTarget.blur();
+                          }}
+                          title="The sleeve's share of the portfolio — edit to move money between asset classes"
+                          className="w-16 rounded border border-transparent bg-transparent px-1 py-0.5 text-right font-mono font-semibold hover:border-current/30 focus:border-current/60 focus:bg-white/70"
+                        />
+                        <span>% of portfolio</span>
                         {allocMoved && (
                           <span className="ml-1 opacity-70">(was {pct(dFromP.total)})</span>
                         )}
@@ -1632,8 +1670,7 @@ export function ModelScenarios({ groups }: Props) {
                   </div>
                 );
               })}
-            </div>
-          )}
+          </div>
 
           {/* Across the other mandates */}
           {acrossProfiles.length > 1 && actions.length > 0 && (
