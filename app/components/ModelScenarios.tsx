@@ -323,6 +323,23 @@ export function ModelScenarios({ groups }: Props) {
     });
   }, []);
 
+  /** Where a sleeve's unallocated weight goes — its own holdings (default) or
+   *  another sleeve. One spill per source class; picking a new target replaces
+   *  the old one rather than chaining moves. */
+  const spillTarget = useCallback(
+    (from: PimAssetClass) =>
+      (actions.find((a) => a.kind === "spill" && a.from === from) as
+        | { kind: "spill"; from: PimAssetClass; to: PimAssetClass }
+        | undefined)?.to ?? "",
+    [actions],
+  );
+  const setSpill = useCallback((from: PimAssetClass, to: PimAssetClass | "") => {
+    setActions((prev) => {
+      const kept = prev.filter((a) => !(a.kind === "spill" && a.from === from));
+      return to ? [...kept, { kind: "spill", from, to }] : kept;
+    });
+  }, []);
+
   const restoreRow = useCallback((symbol: string) => {
     setActions((prev) =>
       prev.filter((a) => !(a.kind === "drop" && a.symbol.toUpperCase() === symbol.toUpperCase())),
@@ -1433,10 +1450,40 @@ export function ModelScenarios({ groups }: Props) {
                           <span className="ml-1 opacity-70">(was {pct(dFromP.total)})</span>
                         )}
                         {!balanced && (
-                          <span className="ml-2 font-semibold text-neg">
+                          <span className="ml-2 inline-flex flex-wrap items-center gap-1 font-semibold text-neg">
                             {dToClass.total < 1
-                              ? `${pct(1 - dToClass.total)} of this sleeve still to allocate`
-                              : `${pct(dToClass.total - 1)} over-allocated in this sleeve`}
+                              ? `${pct(1 - dToClass.total)} still to allocate`
+                              : `${pct(dToClass.total - 1)} over-allocated`}
+                            {/* The shortfall does not have to stay in the
+                                sleeve it came from — freeing bonds in order to
+                                hold more alternatives is an ordinary decision,
+                                and since class weights are always 100% of their
+                                own class, it is an allocation move. */}
+                            <select
+                              value={spillTarget(ac)}
+                              onChange={(e) => setSpill(ac, e.target.value as PimAssetClass | "")}
+                              className="rounded border border-current/40 bg-white/80 px-1 py-0.5 text-xs font-normal text-ink"
+                            >
+                              <option value="">— keep in this sleeve</option>
+                              {(["equity", "fixedIncome", "alternative"] as PimAssetClass[])
+                                .filter((c) => c !== ac)
+                                .map((c) => (
+                                  <option key={c} value={c}>
+                                    → move to {ASSET_CLASS_LABELS[c]}
+                                  </option>
+                                ))}
+                            </select>
+                          </span>
+                        )}
+                        {balanced && spillTarget(ac) && (
+                          <span className="ml-2 font-normal opacity-70">
+                            spilling to {ASSET_CLASS_LABELS[spillTarget(ac) as PimAssetClass]}
+                            <button
+                              onClick={() => setSpill(ac, "")}
+                              className="ml-1 underline"
+                            >
+                              undo
+                            </button>
                           </span>
                         )}
                       </span>

@@ -80,6 +80,20 @@ export type ScenarioAction =
       /** Defaults to the source's class — proceeds stay in the same sleeve. */
       toAssetClass?: PimAssetClass;
     }
+  /**
+   * Send whatever a sleeve has NOT allocated to a different sleeve.
+   *
+   * Trimming inside a class leaves a hole, and by default the class's own
+   * holdings have to fill it — the money is stuck in the sleeve it came from.
+   * That is often not the intent: freeing 2% of the bond sleeve in order to
+   * hold more alternatives is a perfectly ordinary decision, and it is an
+   * allocation move, since class weights are always 100% of their own class.
+   *
+   * Resolved at replay time against whatever the shortfall turns out to be, so
+   * it keeps tracking as the weights above it are edited. Works in both
+   * directions: an OVER-allocated sleeve pulls the excess from the target.
+   */
+  | { kind: "spill"; from: PimAssetClass; to: PimAssetClass }
   | { kind: "retag"; symbol: string; designation: "alpha" | "core" };
 
 export type WeightBasis = "actual" | "model";
@@ -378,6 +392,40 @@ export function applyScenario(
         // caller can apply it and so the residual pool reflects the intent.
         touched.add(norm(a.symbol));
         break;
+    }
+  }
+
+  // 2b. Spillovers — after every other action, so the shortfall being moved is
+  // the one the finished edits actually leave behind.
+  for (const a of actions) {
+    if (a.kind !== "spill") continue;
+    if (!allocations) {
+      warn(a.from, `spill ${a.from} → ${a.to}: needs asset-class allocations`);
+      continue;
+    }
+    const inClass = holdings.filter((h) => h.assetClass === a.from);
+    const rawTotal = inClass.reduce((t, h) => t + h.weightInClass, 0);
+    const gap = 1 - rawTotal; // > 0 = under-allocated, money to send away
+    if (Math.abs(gap) <= EPSILON || rawTotal <= EPSILON) continue;
+
+    const aFrom = allocations[a.from] ?? 0;
+    const moved = gap * aFrom; // portfolio-level money changing sleeve
+    const aToNext = (allocations[a.to] ?? 0) + moved;
+    if (aToNext < 0) {
+      warn(a.to, `spill ${a.from} → ${a.to}: ${a.to} cannot give up ${(-moved * 100).toFixed(2)}%`);
+      continue;
+    }
+    allocations[a.from] = Math.max(0, aFrom - moved);
+    allocations[a.to] = aToNext;
+
+    // The source sleeve becomes 100% of its now-smaller allocation, which
+    // leaves every holding in it at exactly the portfolio weight it already
+    // had. The destination's holdings are untouched, so its residual policy
+    // spreads the arriving money across them — or reports it as still to
+    // place if the sleeve is empty.
+    for (let i = 0; i < holdings.length; i++) {
+      if (holdings[i].assetClass === a.from)
+        holdings[i] = { ...holdings[i], weightInClass: holdings[i].weightInClass / rawTotal };
     }
   }
 
