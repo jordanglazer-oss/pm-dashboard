@@ -39,8 +39,12 @@ export type ScenarioAction =
       /** Target weightInClass. Omitted → the model's per-stock reference. */
       weight?: number;
     }
-  /** Set an absolute weightInClass — the per-stock override. */
-  | { kind: "setWeight"; symbol: string; weight: number }
+  /** Set an absolute weight — the per-stock override.
+   *  `ofPortfolio` means `weight` is a share of the WHOLE portfolio (what the
+   *  tables display and what goes into the modelling software); it is resolved
+   *  against the class allocation at replay time. Without it, `weight` is a
+   *  share of the holding's own asset class. */
+  | { kind: "setWeight"; symbol: string; weight: number; ofPortfolio?: boolean }
   /** Reduce a position by a RELATIVE fraction (0.25 = trim a quarter away). */
   | { kind: "trim"; symbol: string; fraction: number }
   /**
@@ -60,7 +64,17 @@ export type ScenarioAction =
       kind: "fund";
       from: string;
       to: string;
+      /** Share of the SOURCE position to sell (1 = all of it). Used only when
+       *  `sourceTarget` is absent. */
       fraction: number;
+      /**
+       * The source's NEW portfolio weight — "take JBND down to 12.00%" rather
+       * than "sell 14.29% of JBND". This is how the trade is actually decided,
+       * and it is what the tables show, so it is what the builder collects.
+       * Stored as the TARGET rather than a computed fraction so that a saved
+       * scenario still means the same thing after the base model moves.
+       */
+      sourceTarget?: number;
       toName?: string;
       toCurrency?: "CAD" | "USD";
       /** Defaults to the source's class — proceeds stay in the same sleeve. */
@@ -172,9 +186,29 @@ export function applyScenario(
           warn("equity", `fund from ${a.from}: not in the model — ignored`);
           break;
         }
-        const f = Math.min(Math.max(a.fraction, 0), 1);
-        const freed = holdings[src].weightInClass * f;
         const srcClass = holdings[src].assetClass;
+        const wNow = holdings[src].weightInClass;
+        let freed: number;
+        if (a.sourceTarget != null) {
+          // A portfolio-weight target: convert into this class's own space.
+          const aSrc = allocations?.[srcClass];
+          if (!aSrc || aSrc <= EPSILON) {
+            warn(srcClass, `${a.from}: no allocation for ${srcClass}, cannot resolve a target weight`);
+            break;
+          }
+          freed = wNow - a.sourceTarget / aSrc;
+          if (freed < -EPSILON) {
+            warn(
+              srcClass,
+              `${a.from}: target ${(a.sourceTarget * 100).toFixed(2)}% is ABOVE its current weight — this action only trims, so it was ignored`,
+            );
+            break;
+          }
+          freed = Math.min(Math.max(freed, 0), wNow);
+        } else {
+          freed = wNow * Math.min(Math.max(a.fraction, 0), 1);
+        }
+        const f = wNow > EPSILON ? freed / wNow : 0;
         const cls: PimAssetClass = a.toAssetClass ?? srcClass;
         const crossClass = cls !== srcClass;
 
@@ -288,7 +322,16 @@ export function applyScenario(
           warn(holdings[idx].assetClass, `setWeight ${a.symbol}: negative weight rejected`);
           break;
         }
-        holdings[idx] = { ...holdings[idx], weightInClass: a.weight };
+        let w = a.weight;
+        if (a.ofPortfolio) {
+          const aCls = allocations?.[holdings[idx].assetClass];
+          if (!aCls || aCls <= EPSILON) {
+            warn(holdings[idx].assetClass, `setWeight ${a.symbol}: no allocation to resolve a portfolio weight against`);
+            break;
+          }
+          w = a.weight / aCls;
+        }
+        holdings[idx] = { ...holdings[idx], weightInClass: w };
         touched.add(norm(holdings[idx].symbol));
         break;
       }

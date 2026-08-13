@@ -436,6 +436,20 @@ export function ModelScenarios({ groups }: Props) {
   const [newValue, setNewValue] = useState("");
   const [newClass, setNewClass] = useState<PimAssetClass>("equity");
 
+  /** What a holding weighs in the portfolio right now, under the chosen
+   *  basis — the number shown in the table, and the number the builder
+   *  prefills so a target is edited rather than invented. */
+  const currentPortfolioWeight = useCallback(
+    (symbol: string) => {
+      const h = baseHoldings.find((x) => x.symbol === symbol);
+      if (!h) return null;
+      const wClass = seededWeights[symbol.toUpperCase()] ?? h.weightInClass;
+      const alloc = startAlloc[h.assetClass] ?? 0;
+      return wClass * alloc;
+    },
+    [baseHoldings, seededWeights, startAlloc],
+  );
+
   const addFund = () => {
     const from = fundFrom.trim().toUpperCase();
     const to = fundTo.trim().toUpperCase();
@@ -449,7 +463,10 @@ export function ModelScenarios({ groups }: Props) {
         kind: "fund",
         from,
         to,
-        fraction: fundAll ? 1 : num / 100,
+        // fraction stays as the fallback shape; the TARGET is what the PM
+        // actually typed, and what a saved scenario replays from.
+        fraction: fundAll ? 1 : 0,
+        sourceTarget: fundAll ? 0 : num / 100,
         toAssetClass: (fundToClass || srcClass || "equity") as PimAssetClass,
         toCurrency: fundToCcy,
       },
@@ -468,7 +485,11 @@ export function ModelScenarios({ groups }: Props) {
     const num = parseFloat(newValue);
     let a: ScenarioAction | null = null;
     if (newKind === "drop") a = { kind: "drop", symbol: sym };
-    else if (newKind === "setWeight" && isFinite(num)) a = { kind: "setWeight", symbol: sym, weight: num / 100 };
+    else if (newKind === "setWeight" && isFinite(num))
+      // Portfolio weight, matching what the tables show and what the fund
+      // builder collects — a "% of class" field here was the last place the
+      // panel asked for a number in different units from the ones it prints.
+      a = { kind: "setWeight", symbol: sym, weight: num / 100, ofPortfolio: true };
     else if (newKind === "trim" && isFinite(num)) a = { kind: "trim", symbol: sym, fraction: num / 100 };
     else if (newKind === "add")
       a = { kind: "add", symbol: sym, assetClass: newClass, weight: isFinite(num) ? num / 100 : undefined };
@@ -765,29 +786,18 @@ export function ModelScenarios({ groups }: Props) {
 
           {mode === "fund" ? (
             <div className="mb-3 flex flex-col gap-2 text-xs sm:flex-row sm:flex-wrap sm:items-center">
-              <span className="text-ink-3">Sell</span>
-              <select
-                value={fundAll ? "all" : "some"}
-                onChange={(e) => setFundAll(e.target.value === "all")}
-                className="w-full rounded border border-line bg-surface-2 px-2 py-1 text-ink sm:w-auto"
-              >
-                <option value="some">some of</option>
-                <option value="all">all of</option>
-              </select>
-              {!fundAll && (
-                <>
-                  <input
-                    value={fundAmount}
-                    onChange={(e) => setFundAmount(e.target.value)}
-                    placeholder="25"
-                    className="w-full rounded border border-line bg-surface-2 px-2 py-1 text-ink sm:w-16"
-                  />
-                  <span className="text-ink-3">% of</span>
-                </>
-              )}
+              <span className="text-ink-3">Take</span>
               <select
                 value={fundFrom}
-                onChange={(e) => setFundFrom(e.target.value)}
+                onChange={(e) => {
+                  const sym = e.target.value;
+                  setFundFrom(sym);
+                  // Prefill with today's weight so the PM edits a real number
+                  // instead of working out what to type from scratch.
+                  const cur = currentPortfolioWeight(sym);
+                  setFundAmount(cur != null ? (cur * 100).toFixed(2) : "");
+                  setFundAll(false);
+                }}
                 className="w-full rounded border border-line bg-surface-2 px-2 py-1 text-ink sm:w-auto"
               >
                 <option value="">Choose a holding…</option>
@@ -797,6 +807,26 @@ export function ModelScenarios({ groups }: Props) {
                   </option>
                 ))}
               </select>
+              <span className="text-ink-3">down to</span>
+              <input
+                value={fundAll ? "0.00" : fundAmount}
+                onChange={(e) => {
+                  setFundAmount(e.target.value);
+                  setFundAll(false);
+                }}
+                placeholder="0.00"
+                className="w-full rounded border border-line bg-surface-2 px-2 py-1 text-right font-mono text-ink sm:w-20"
+              />
+              <span className="text-ink-3">% of portfolio</span>
+              <button
+                onClick={() => {
+                  setFundAll(true);
+                  setFundAmount("0.00");
+                }}
+                className="rounded border border-line px-2 py-1 text-ink-3 hover:text-ink"
+              >
+                Sell all
+              </button>
               <span className="text-ink-3">and buy</span>
               <input
                 list="scenario-symbols"
@@ -836,17 +866,24 @@ export function ModelScenarios({ groups }: Props) {
               >
                 Add change
               </button>
-              {fundFrom && fundTo && (fundAll || fundAmount) && (
-                <span className="text-ink-faint">
-                  {(() => {
-                    const src = seededWeights[fundFrom.toUpperCase()];
-                    if (src == null) return null;
-                    const f = fundAll ? 1 : parseFloat(fundAmount) / 100;
-                    if (!isFinite(f)) return null;
-                    return `moves ${pct(src * Math.min(Math.max(f, 0), 1))} of the class`;
-                  })()}
-                </span>
-              )}
+              {fundFrom && (() => {
+                const cur = currentPortfolioWeight(fundFrom);
+                if (cur == null) return null;
+                const tgt = fundAll ? 0 : parseFloat(fundAmount) / 100;
+                if (!isFinite(tgt)) return <span className="text-ink-faint">now {pct(cur)}</span>;
+                const freed = cur - tgt;
+                if (freed < -1e-9)
+                  return (
+                    <span className="text-warn">
+                      now {pct(cur)} — a target above that would be a BUY, not a trim
+                    </span>
+                  );
+                return (
+                  <span className="text-ink-faint">
+                    now {pct(cur)} — frees {pct(freed)}
+                  </span>
+                );
+              })()}
             </div>
           ) : (
             <div className="mb-3 flex flex-col gap-2 text-xs sm:flex-row sm:flex-wrap sm:items-end">
@@ -871,7 +908,13 @@ export function ModelScenarios({ groups }: Props) {
                 <input
                   value={newValue}
                   onChange={(e) => setNewValue(e.target.value)}
-                  placeholder={newKind === "trim" ? "% of position" : "% of class"}
+                  placeholder={
+                    newKind === "trim"
+                      ? "% of position"
+                      : newKind === "setWeight"
+                        ? "new % of portfolio"
+                        : "% of class"
+                  }
                   className="w-full rounded border border-line bg-surface-2 px-2 py-1 text-ink sm:w-28"
                 />
               )}
@@ -911,11 +954,19 @@ export function ModelScenarios({ groups }: Props) {
                   className="inline-flex items-center gap-2 rounded border border-accent-border bg-accent-soft px-2 py-1 text-xs text-ink"
                 >
                   {a.kind === "drop" && `Sell all ${a.symbol}`}
-                  {a.kind === "setWeight" && `${a.symbol} → ${pct(a.weight)}`}
+                  {a.kind === "setWeight" && `${a.symbol} → ${pct(a.weight)}${a.ofPortfolio ? "" : " of class"}`}
                   {a.kind === "trim" && `Trim ${a.symbol} by ${pct(a.fraction)}`}
                   {a.kind === "add" && `Add ${a.symbol}${a.weight != null ? ` at ${pct(a.weight)}` : ""}`}
                   {a.kind === "fund" &&
-                    `${a.fraction >= 1 ? `Sell all ${a.from}` : `Trim ${a.from} by ${pct(a.fraction)}`} → buy ${a.to}${
+                    `${
+                      a.sourceTarget != null
+                        ? a.sourceTarget <= 0
+                          ? `Sell all ${a.from}`
+                          : `${a.from} → ${pct(a.sourceTarget)}`
+                        : a.fraction >= 1
+                          ? `Sell all ${a.from}`
+                          : `Trim ${a.from} by ${pct(a.fraction)}`
+                    }, buy ${a.to}${
                       a.toAssetClass ? ` (${ASSET_CLASS_LABELS[a.toAssetClass]}${a.toCurrency ? `, ${a.toCurrency}` : ""})` : ""
                     }`}
                   {a.kind === "retag" && `Retag ${a.symbol} → ${a.designation}`}
