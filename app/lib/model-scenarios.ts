@@ -254,19 +254,19 @@ export function applyScenario(
         const cls: PimAssetClass = a.toAssetClass ?? srcClass;
         const crossClass = cls !== srcClass;
 
-        // Proceeds are denominated. Selling a CAD position raises Canadian
-        // dollars, and putting them into a USD name is an FX transaction with
-        // a rate, a cost and a currency-exposure change — not the clean
-        // like-for-like transfer the arithmetic here assumes. Flagged rather
-        // than blocked: it is a legitimate trade, but it should be a decision
-        // rather than a side effect of picking a ticker.
+        // Proceeds are denominated: selling a CAD position raises Canadian
+        // dollars and they can only buy a CAD position. Crossing currencies is
+        // an FX transaction with a rate and a cost, and the weight arithmetic
+        // here has neither — it would silently present a straight transfer
+        // that cannot actually be executed that way. REFUSED, not warned.
         {
           const toCcy = a.toCurrency ?? (/-T$|\.TO$/i.test(a.to) ? "CAD" : "USD");
           if (toCcy !== holdings[src].currency) {
             warn(
               cls,
-              `${a.from} is ${holdings[src].currency} and ${a.to} is ${toCcy} — the proceeds change currency, so this is an FX trade. The weights below assume a straight transfer at today's rate.`,
+              `${a.from} is ${holdings[src].currency} and ${a.to} is ${toCcy}. ${holdings[src].currency} proceeds can only fund a ${holdings[src].currency} position — this change was not applied. Convert the currency as a separate decision, or pick a ${holdings[src].currency} name.`,
             );
+            break;
           }
         }
 

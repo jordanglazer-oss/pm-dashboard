@@ -1390,6 +1390,39 @@ export function ModelScenarios({ groups }: Props) {
                 // Class-space figures are kept as a secondary column and as the
                 // internal check that the sleeve still adds to 100% of itself.
                 const dToClass = apportionColumn(rows.map((r) => r.to));
+
+                // ── CAD / USD model weights ──────────────────────────────
+                // What the sleeve looks like to a CAD-only book and a USD-only
+                // book once the scenario is applied. Each currency is
+                // normalised to its OWN share of the class and scaled by the
+                // class allocation — the same symmetric formula the Models tab
+                // uses for fixed income, alternatives, and equity under the
+                // Alpha/Core profiles.
+                //
+                // NOT the 2x-Core rule the Models tab applies to equity under
+                // the standard profiles: that one is a property of the live
+                // rebalance, and reproducing it here from a scenario's
+                // hypothetical weights would be a second implementation of
+                // load-bearing math that could drift from the first. Read
+                // these as "share of this currency's sleeve", which is what
+                // they are.
+                const ccyTotal = (ccy: "CAD" | "USD") =>
+                  rows.reduce((t, r) => t + (r.currency === ccy ? r.to ?? 0 : 0), 0);
+                const cadTotal = ccyTotal("CAD");
+                const usdTotal = ccyTotal("USD");
+                const ccyWeight = (r: (typeof rows)[number], ccy: "CAD" | "USD") => {
+                  if (r.currency !== ccy || r.to == null) return null;
+                  const t = ccy === "CAD" ? cadTotal : usdTotal;
+                  return t > 0 ? (r.to / t) * allocTo : null;
+                };
+                const dCad = apportionColumn(
+                  rows.map((r) => ccyWeight(r, "CAD")),
+                  cadTotal > 0 ? allocTo : 0,
+                );
+                const dUsd = apportionColumn(
+                  rows.map((r) => ccyWeight(r, "USD")),
+                  usdTotal > 0 ? allocTo : 0,
+                );
                 const balanced = sameAtDisplay(dToClass.total, 1);
                 const allocMoved = !sameAtDisplay(allocFrom, allocTo);
                 const changed = rows.filter((r) => r.changed).length;
@@ -1492,7 +1525,7 @@ export function ModelScenarios({ groups }: Props) {
                         into an unreadable width; the page itself never scrolls
                         horizontally because the overflow is owned here. */}
                     <div className="max-w-full overflow-x-auto">
-                      <table className="w-full min-w-[720px] text-sm">
+                      <table className="w-full min-w-[860px] text-sm">
                         <thead className="bg-white shadow-[0_1px_0_0_rgb(226_232_240)]">
                           <tr className="border-b border-line-soft text-xs text-ink-3">
                             <th
@@ -1509,6 +1542,8 @@ export function ModelScenarios({ groups }: Props) {
                             </th>
                             <th className="py-2.5 px-2 text-right font-semibold whitespace-nowrap">Scenario Wt</th>
                             <th className="py-2.5 px-2 text-right font-semibold whitespace-nowrap">Δ</th>
+                            <th className="py-2.5 px-2 text-right font-semibold whitespace-nowrap">CAD Model</th>
+                            <th className="py-2.5 px-2 text-right font-semibold whitespace-nowrap">USD Model</th>
                             <th className="py-2.5 px-2 text-right font-normal whitespace-nowrap opacity-70">
                               % of sleeve
                             </th>
@@ -1622,6 +1657,12 @@ export function ModelScenarios({ groups }: Props) {
                                   return `${d >= 0 ? "+" : ""}${pct(d)}`;
                                 })()}
                               </td>
+                              <td className="py-2 px-2 text-right font-mono text-xs text-ink-2">
+                                {dCad.values[i] == null ? <span className="text-ink-faint">&mdash;</span> : pct(dCad.values[i] as number)}
+                              </td>
+                              <td className="py-2 px-2 text-right font-mono text-xs text-ink-2">
+                                {dUsd.values[i] == null ? <span className="text-ink-faint">&mdash;</span> : pct(dUsd.values[i] as number)}
+                              </td>
                               <td className="py-2 px-2 text-right font-mono text-xs text-ink-faint">
                                 {dToClass.values[i] == null ? (
                                   <span className="text-ink-faint">&mdash;</span>
@@ -1669,6 +1710,8 @@ export function ModelScenarios({ groups }: Props) {
                                 ? "—"
                                 : `${dToP.total > dFromP.total ? "+" : ""}${pct(dToP.total - dFromP.total)}`}
                             </td>
+                            <td className="py-2 px-2 text-right font-mono text-xs font-bold">{pct(dCad.total)}</td>
+                            <td className="py-2 px-2 text-right font-mono text-xs font-bold">{pct(dUsd.total)}</td>
                             <td className="py-2 px-2 text-right font-mono text-xs text-ink-faint">
                               {pct(dToClass.total)}
                             </td>
@@ -1677,7 +1720,7 @@ export function ModelScenarios({ groups }: Props) {
                           {/* Add straight into the sleeve you're looking at —
                               the class is implied by where the row sits. */}
                           <tr>
-                            <td colSpan={8} className="py-2 pl-4 pr-4">
+                            <td colSpan={10} className="py-2 pl-4 pr-4">
                               {addingTo === ac ? (
                                 <span className="flex flex-col gap-2 text-xs sm:flex-row sm:flex-wrap sm:items-center">
                                   <input
