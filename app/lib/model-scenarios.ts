@@ -254,6 +254,22 @@ export function applyScenario(
         const cls: PimAssetClass = a.toAssetClass ?? srcClass;
         const crossClass = cls !== srcClass;
 
+        // Proceeds are denominated. Selling a CAD position raises Canadian
+        // dollars, and putting them into a USD name is an FX transaction with
+        // a rate, a cost and a currency-exposure change — not the clean
+        // like-for-like transfer the arithmetic here assumes. Flagged rather
+        // than blocked: it is a legitimate trade, but it should be a decision
+        // rather than a side effect of picking a ticker.
+        {
+          const toCcy = a.toCurrency ?? (/-T$|\.TO$/i.test(a.to) ? "CAD" : "USD");
+          if (toCcy !== holdings[src].currency) {
+            warn(
+              cls,
+              `${a.from} is ${holdings[src].currency} and ${a.to} is ${toCcy} — the proceeds change currency, so this is an FX trade. The weights below assume a straight transfer at today's rate.`,
+            );
+          }
+        }
+
         if (!crossClass) {
           // Same sleeve: an exact internal transfer. Whatever leaves the
           // source arrives at the destination, the class total never moves,
@@ -443,6 +459,25 @@ export function applyScenario(
       // Candidates: never the holdings the scenario explicitly set, or the
       // adjustment would silently undo the instruction.
       let pool = inClass.filter((h) => !touched.has(norm(h.symbol)));
+
+      // Freed CAD should land in CAD names and freed USD in USD names —
+      // otherwise a trim quietly shifts the sleeve's currency mix, which is a
+      // separate decision from the one being made. Same rule the live
+      // Buy/Sell redistribution already follows. Falls back to the full pool
+      // when the sleeve has no same-currency absorber, since a class that
+      // cannot balance is worse than one whose mix moved.
+      const touchedCcy = new Set(
+        inClass.filter((h) => touched.has(norm(h.symbol))).map((h) => h.currency),
+      );
+      if (touchedCcy.size === 1) {
+        const [ccy] = [...touchedCcy];
+        const sameCcy = pool.filter((h) => h.currency === ccy);
+        if (sameCcy.length > 0) pool = sameCcy;
+        else if (pool.length > 0)
+          warnings.push(
+            `${cls}: no ${ccy} holding available to absorb the freed weight — it went to the other currency, so the sleeve's CAD/USD mix has moved.`,
+          );
+      }
       if (residual === "core" && opts.isCore) {
         const coreOnly = pool.filter((h) => opts.isCore!(h.symbol));
         // Fixed income and alternatives have no Core-tagged ETFs — that tag
