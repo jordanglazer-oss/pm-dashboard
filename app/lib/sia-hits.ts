@@ -54,6 +54,10 @@ export function siaHits(snapshot: SiaSnapshot | null, opts?: SiaHitOptions): Sou
       // A big climb INTO the top of the universe is a conviction reading, not
       // just presence on a list.
       signal: r.rank <= 25 && climb >= minImprove * 2 ? "strong-buy" : "buy",
+      // How FAR it climbed, graduated rather than binary: 100+ places is a
+      // full-strength reading, and the engine caps its contribution so a
+      // dramatic mover cannot outrank genuine multi-source confluence.
+      magnitude: Math.min(1, climb / 100),
     });
   }
   // Best rank first, so the cutoff below is applied to the strongest names.

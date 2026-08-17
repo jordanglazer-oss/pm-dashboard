@@ -54,6 +54,16 @@ export type SourceHit = {
   /** The source's own verdict, when it has one. NEGATIVE hits never add to a
    *  candidate's score — a "strong sell" is not a reason to look at a name. */
   signal?: "buy" | "strong-buy" | "sell" | "strong-sell" | "neutral";
+  /**
+   * How STRONG this nomination is beyond mere presence on the list, 0..1.
+   *
+   * Presence and conviction are different things, and a binary strong-buy flag
+   * collapsed them: a name climbing 30 places scored exactly the same as one
+   * climbing 300. Normalised per source so no single list can dominate by
+   * publishing a bigger number — SIA maps places-climbed onto it, a quant rank
+   * sheet maps position within the universe.
+   */
+  magnitude?: number;
 };
 
 export type Candidate = {
@@ -61,7 +71,7 @@ export type Candidate = {
   name: string;
   sector?: string;
   /** source → what that source said, most recent wins. */
-  sources: Record<string, { rank?: number; signal?: string; seenAt: string }>;
+  sources: Record<string, { rank?: number; signal?: string; magnitude?: number; seenAt: string }>;
   score: number;
   /** Score at the previous refresh, so movement is visible. */
   previousScore?: number;
@@ -93,7 +103,10 @@ function hitScore(h: SourceHit): number {
   const base = (SOURCE_WEIGHTS as Record<string, number>)[h.source] ?? 1;
   const conviction = h.signal === "strong-buy" ? 2 : 1;
   const rankBonus = h.rank != null && h.rank > 0 ? (h.rank <= 5 ? 2 : h.rank <= 15 ? 1 : 0) : 0;
-  return base * conviction + rankBonus;
+  // Graduated, and capped at 3 so a source with a dramatic number cannot
+  // outweigh genuine confluence across several independent lists.
+  const mag = h.magnitude == null ? 0 : Math.round(Math.min(Math.max(h.magnitude, 0), 1) * 3);
+  return base * conviction + rankBonus + mag;
 }
 
 /**
@@ -121,7 +134,7 @@ export function mergeCandidates(
     if (!key) continue;
     hitTickers.add(key);
     const existing = byTicker.get(key);
-    const entry = { rank: h.rank, signal: h.signal, seenAt: asOf };
+    const entry = { rank: h.rank, signal: h.signal, magnitude: h.magnitude, seenAt: asOf };
     if (existing) {
       existing.sources[h.source] = entry;
       if (h.name) existing.name = h.name;
@@ -163,7 +176,15 @@ export function mergeCandidates(
   for (const c of byTicker.values()) {
     const prevScore = prev.candidates?.find((p) => norm(p.ticker) === norm(c.ticker))?.score;
     const score = Object.entries(c.sources).reduce(
-      (s, [src, v]) => s + hitScore({ ticker: c.ticker, source: src, rank: v.rank, signal: v.signal as SourceHit["signal"] }),
+      (s, [src, v]) =>
+        s +
+        hitScore({
+          ticker: c.ticker,
+          source: src,
+          rank: v.rank,
+          signal: v.signal as SourceHit["signal"],
+          magnitude: v.magnitude,
+        }),
       0,
     );
     // Retire a fallen name once it has been gone long enough to stop being news.
