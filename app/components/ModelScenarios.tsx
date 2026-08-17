@@ -1423,6 +1423,14 @@ export function ModelScenarios({ groups }: Props) {
                   rows.map((r) => ccyWeight(r, "USD")),
                   usdTotal > 0 ? allocTo : 0,
                 );
+                // Each currency column is normalised WITHIN its own currency,
+                // so both always total the allocation and neither can ever
+                // reveal a shortfall. The gap lives in CLASS space — what the
+                // two currencies actually add up to before normalisation — so
+                // the indicator is computed there and shown separately.
+                const cadOfClass = cadTotal;
+                const usdOfClass = usdTotal;
+                const classGap = 1 - (cadOfClass + usdOfClass);
                 const balanced = sameAtDisplay(dToClass.total, 1);
                 const allocMoved = !sameAtDisplay(allocFrom, allocTo);
                 const changed = rows.filter((r) => r.changed).length;
@@ -1521,6 +1529,34 @@ export function ModelScenarios({ groups }: Props) {
                         )}
                       </span>
                     </div>
+                    {/* Live currency split. Not derived from the CAD/USD
+                        columns above — those normalise within a currency and
+                        would always read 100%. This is the raw class-space
+                        split, which is where an unallocated or over-allocated
+                        sleeve is actually visible. */}
+                    <div className="flex flex-wrap items-center gap-x-4 gap-y-1 border-b border-line-soft bg-surface-2 px-5 py-2 text-xs">
+                      <span className="text-ink-3">Currency split</span>
+                      <span>
+                        <span className="font-mono font-semibold text-ink">{pct(cadOfClass)}</span>
+                        <span className="text-ink-3"> CAD</span>
+                      </span>
+                      <span>
+                        <span className="font-mono font-semibold text-ink">{pct(usdOfClass)}</span>
+                        <span className="text-ink-3"> USD</span>
+                      </span>
+                      {sameAtDisplay(classGap, 0) ? (
+                        <span className="text-ink-faint">fully allocated</span>
+                      ) : classGap > 0 ? (
+                        <span className="font-semibold text-warn">
+                          {pct(classGap)} unallocated
+                        </span>
+                      ) : (
+                        <span className="font-semibold text-neg">
+                          {pct(-classGap)} over-allocated
+                        </span>
+                      )}
+                    </div>
+
                     {/* Scrolls sideways rather than compressing seven columns
                         into an unreadable width; the page itself never scrolls
                         horizontally because the overflow is owned here. */}
