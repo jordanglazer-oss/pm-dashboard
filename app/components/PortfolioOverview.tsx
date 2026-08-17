@@ -1163,7 +1163,7 @@ export function PortfolioOverview({ sidebar }: { sidebar?: React.ReactNode } = {
               );
             })}
           </div>
-          <SuggestedWatchlist />
+          <SuggestedWatchlist onCountChange={setSuggestedCount} />
         </div>
       ) : (
       <RankingTable

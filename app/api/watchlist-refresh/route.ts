@@ -79,6 +79,39 @@ export async function POST(req: NextRequest) {
   const prev: CandidateStore = prevRaw ? (JSON.parse(prevRaw) as CandidateStore) : { candidates: [] };
   const next = mergeCandidates(prev, hits, asOf, sourcesSeen);
 
+  // ── Fill in company names ──────────────────────────────────────────────
+  // The Equate sheets carry NAME, but the SIA universe stores only ticker,
+  // rank and sector — so a SIA-only candidate rendered its ticker twice. Look
+  // up whatever is still nameless, once per refresh rather than per render.
+  //
+  // Canadian symbols already carry .TO from the parsers, which is the form the
+  // lookup (and Yahoo behind it) expects; without the suffix a TSX name
+  // resolves to whatever US ticker shares the letters, or to nothing.
+  const nameless = next.candidates.filter((c) => !c.name || c.name === c.ticker).map((c) => c.ticker);
+  if (nameless.length > 0) {
+    try {
+      const origin = new URL(req.url).origin;
+      // Chunked: a few hundred tickers in one query string is a 414 waiting
+      // to happen, and one failed chunk should not cost every name.
+      for (let i = 0; i < nameless.length; i += 50) {
+        const chunk = nameless.slice(i, i + 50);
+        const r = await fetch(`${origin}/api/company-name?tickers=${encodeURIComponent(chunk.join(","))}`, {
+          headers: { cookie: req.headers.get("cookie") ?? "" },
+        });
+        if (!r.ok) continue;
+        const data = (await r.json()) as { names?: Record<string, string>; sectors?: Record<string, string> };
+        for (const c of next.candidates) {
+          const n = data.names?.[c.ticker];
+          if (n && n.trim()) c.name = n.trim();
+          if (!c.sector && data.sectors?.[c.ticker]) c.sector = data.sectors[c.ticker];
+        }
+      }
+      report.namesResolved = next.candidates.filter((c) => c.name && c.name !== c.ticker).length;
+    } catch (e) {
+      report.namesResolved = `lookup failed: ${String(e)}`;
+    }
+  }
+
   const summary = {
     ok: true,
     dryRun,

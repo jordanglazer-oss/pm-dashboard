@@ -31,7 +31,13 @@ const ZERO_SCORES: Record<ScoreKey, number> = {
  * carries signal when four sources light up on it, and a list that deleted its
  * own recommendation the moment you acted on it would hide exactly that.
  */
-export function SuggestedWatchlist() {
+/** Most candidates shown at once. The store keeps every one — fall-off has to
+ *  be assessed against the full set or a name pushed past the cap would read as
+ *  having dropped off a source it is still on — but 89 rows is not a review
+ *  list, it is a spreadsheet. Only the display is capped. */
+const MAX_SHOWN = 50;
+
+export function SuggestedWatchlist({ onCountChange }: { onCountChange?: (n: number) => void }) {
   const { stocks, addStock } = useStocks();
   const [store, setStore] = useState<CandidateStore>({ candidates: [] });
   const [loading, setLoading] = useState(true);
@@ -42,11 +48,17 @@ export function SuggestedWatchlist() {
   const load = useCallback(async () => {
     try {
       const r = await fetch("/api/kv/watchlist-candidates", { cache: "no-store" });
-      if (r.ok) setStore(await r.json());
+      if (r.ok) {
+        const data: CandidateStore = await r.json();
+        setStore(data);
+        // Tell the tile so the tab chip stops reading 0 after a refresh — it
+        // was fetched once on mount and never told the count had changed.
+        onCountChange?.(data.candidates.filter((c) => !c.fallenOffAt).length);
+      }
     } finally {
       setLoading(false);
     }
-  }, []);
+  }, [onCountChange]);
 
   useEffect(() => { load(); }, [load]);
 
@@ -86,7 +98,9 @@ export function SuggestedWatchlist() {
 
   const live = store.candidates.filter((c) => !c.fallenOffAt);
   const fallen = store.candidates.filter((c) => c.fallenOffAt);
-  const rows = showFallen ? fallen : live;
+  const all = showFallen ? fallen : live;
+  const rows = all.slice(0, MAX_SHOWN);
+  const hidden = all.length - rows.length;
 
   const th = "pb-2 pr-3 text-left text-[11px] font-semibold uppercase tracking-wide text-ink-3";
 
@@ -97,7 +111,7 @@ export function SuggestedWatchlist() {
           <h2 className="text-base font-bold text-ink">Suggested Watchlist</h2>
           <p className="text-xs text-ink-3">
             {store.generatedAt
-              ? `${live.length} live · ${fallen.length} fallen off · updated ${new Date(store.generatedAt).toLocaleDateString()}`
+              ? `${live.length} live${live.length > MAX_SHOWN ? ` (top ${MAX_SHOWN} shown)` : ""} · ${fallen.length} fallen off · updated ${new Date(store.generatedAt).toLocaleDateString()}`
               : "No refresh yet — run one to assemble candidates from the ingested sources."}
           </p>
         </div>
@@ -197,6 +211,11 @@ export function SuggestedWatchlist() {
               })}
             </tbody>
           </table>
+          {hidden > 0 && (
+            <p className="pt-2 text-center text-[11px] text-ink-3">
+              {hidden} more below the top {MAX_SHOWN} — tighten the source cutoffs to bring the list down rather than just hiding them.
+            </p>
+          )}
         </div>
       )}
     </div>
