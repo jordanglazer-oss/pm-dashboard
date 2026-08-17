@@ -8,18 +8,17 @@ import type { SourceHit } from "./watchlist-candidates";
  * four factor deciles (VALUE / MOMENTUM / GROWTH / QUALITY), the individual
  * factor deciles, SECTOR, GICS, and a size column.
  *
- WHICH SHEETS COUNT. US Large Cap and Canada All Cap are the sources; US All
- * Cap is IGNORED by default. Its decile-1 cut is ~136 rows dominated by names
- * far below the size the book will ever hold, so it is a weekly review burden
- * that surfaces almost nothing actionable. A name from it can still be looked
- * up by hand when one genuinely comes up.
+ WHICH SHEETS COUNT. US All Cap and Canada All Cap are the sources. US Large
+ * Cap is IGNORED: every one of its names already sits in All Cap at the
+ * IDENTICAL composite rank (measured 500/500 on the 2026-08-14 files), so it
+ * is a filtered view of the same opinion and adds nothing but a second reading
+ * of names already covered.
  *
- * The three sheets overlap heavily — every US Large Cap name also sits in US
- * All Cap at the IDENTICAL composite rank (measured: 500/500 on the 2026-08-14
- * files). They are one source filtered differently, not independent opinions,
- * which is why loading both would be wrong even if All Cap were wanted. Both US
- * sheets emit the same `rbc-equate-usd` source key, so the candidate engine
- * cannot double-count them regardless of what gets ingested.
+ * Investability is handled by SIZE, not by choosing a smaller file. Filtering
+ * on market cap keeps the full 1,360-name universe in play while excluding the
+ * micro caps the book will not buy — strictly better than dropping All Cap,
+ * which would have discarded 860 names to avoid a few hundred unwanted ones.
+ * `minMarketCap` is off by default; set it to trade coverage for relevance.
  *
  * LOW NUMBERS ARE GOOD. Composite rank 1 is the best name in the universe and
  * decile 1 is the best decile, for every factor column too. Inverting that
@@ -42,6 +41,8 @@ export type EquateRow = {
   growth?: number;
   quality?: number;
   sector?: string;
+  /** MKT CAP (US) / M FLOAT (Canada), in millions of local currency. */
+  marketCapM?: number;
 };
 
 export type EquateSheet = {
@@ -79,6 +80,8 @@ export function parseEquateRows(rows: unknown[][], label: string): EquateSheet {
   const iSym = at("SYM"), iName = at("NAME"), iRank = at("COMPOSITE RANK");
   const iDecile = at("COMPOSITE DECILE SCORE"), iSector = at("SECTOR"), iPrice = at("PRICE");
   const iValue = at("VALUE"), iMom = at("MOMENTUM"), iGrowth = at("GROWTH"), iQual = at("QUALITY");
+  // US sheets carry MKT CAP; the Canadian sheet carries M FLOAT instead.
+  const iCap = at("MKT CAP") >= 0 ? at("MKT CAP") : at("M FLOAT");
 
   if (iSym < 0) errors.push("missing SYM column");
   if (iRank < 0) errors.push("missing COMPOSITE RANK column");
@@ -100,6 +103,7 @@ export function parseEquateRows(rows: unknown[][], label: string): EquateSheet {
       growth: iGrowth >= 0 ? num(r[iGrowth]) : undefined,
       quality: iQual >= 0 ? num(r[iQual]) : undefined,
       sector: iSector >= 0 ? String(r[iSector] ?? "").trim() || undefined : undefined,
+      marketCapM: iCap >= 0 ? num(r[iCap]) : undefined,
     });
   }
   return { region, largeCapOnly, rows: out, errors };
@@ -108,21 +112,25 @@ export function parseEquateRows(rows: unknown[][], label: string): EquateSheet {
 /**
  * Turn a parsed sheet into candidate hits.
  *
- * US Large Cap and Canada All Cap produce hits. US All Cap produces none
- * unless explicitly asked for: its extra names are below the size the book
- * buys, and everything it shares with Large Cap is already covered at the same
- * rank.
+ * US All Cap and Canada All Cap produce hits. US Large Cap produces none: All
+ * Cap already holds every one of its names at the same rank.
+ *
+ * `minMarketCap` (millions) drops names below a size floor — the investable
+ * filter, applied to the full universe rather than by picking a smaller file.
+ * Rows with no size figure are KEPT: a missing column should not silently
+ * delete a name, and the Canadian sheet reports float rather than cap.
  */
 export function equateHits(
   sheet: EquateSheet,
-  opts?: { maxDecile?: number; includeUsAllCap?: boolean },
+  opts?: { maxDecile?: number; minMarketCap?: number; includeLargeCapSheet?: boolean },
 ): SourceHit[] {
-  const isUsAllCap = sheet.region === "us" && !sheet.largeCapOnly;
-  if (isUsAllCap && !opts?.includeUsAllCap) return [];
+  if (sheet.largeCapOnly && !opts?.includeLargeCapSheet) return [];
   const maxDecile = opts?.maxDecile ?? 1;
+  const minCap = opts?.minMarketCap ?? 0;
   const source = sheet.region === "canada" ? "rbc-equate-cad" : "rbc-equate-usd";
   return sheet.rows
     .filter((r) => r.decile <= maxDecile)
+    .filter((r) => minCap <= 0 || r.marketCapM == null || r.marketCapM >= minCap)
     .map((r) => ({
       ticker: sheet.region === "canada" ? `${r.symbol}.TO` : r.symbol,
       name: r.name,
