@@ -8,23 +8,25 @@ import type { SourceHit } from "./watchlist-candidates";
  * four factor deciles (VALUE / MOMENTUM / GROWTH / QUALITY), the individual
  * factor deciles, SECTOR, GICS, and a size column.
  *
- * TWO THINGS THAT WOULD SILENTLY CORRUPT THE RANKING IF MISSED:
+ WHICH SHEETS COUNT. US Large Cap and Canada All Cap are the sources; US All
+ * Cap is IGNORED by default. Its decile-1 cut is ~136 rows dominated by names
+ * far below the size the book will ever hold, so it is a weekly review burden
+ * that surfaces almost nothing actionable. A name from it can still be looked
+ * up by hand when one genuinely comes up.
  *
- * 1. US LARGE CAP IS A SUBSET OF US ALL CAP. Measured on the 2026-08-14 files:
- *    all 500 Large Cap names appear in All Cap with the IDENTICAL composite
- *    rank. They are one source filtered two ways, not two opinions. Scoring
- *    both would double every large-cap name for appearing in a redundant file
- *    and tilt the whole suggested watchlist toward mega-caps — the opposite of
- *    surfacing new ideas. Large Cap is therefore folded into the same source
- *    and used only to TAG membership.
+ * The three sheets overlap heavily — every US Large Cap name also sits in US
+ * All Cap at the IDENTICAL composite rank (measured: 500/500 on the 2026-08-14
+ * files). They are one source filtered differently, not independent opinions,
+ * which is why loading both would be wrong even if All Cap were wanted. Both US
+ * sheets emit the same `rbc-equate-usd` source key, so the candidate engine
+ * cannot double-count them regardless of what gets ingested.
  *
- * 2. LOW NUMBERS ARE GOOD. Composite rank 1 is the best name in the universe
- *    and decile 1 is the best decile, for every factor column too. Inverting
- *    that would recommend the worst-ranked names while looking entirely
- *    plausible.
+ * LOW NUMBERS ARE GOOD. Composite rank 1 is the best name in the universe and
+ * decile 1 is the best decile, for every factor column too. Inverting that
+ * would recommend the worst-ranked names while looking entirely plausible.
  *
- * US All Cap is ~1,360 rows, so a cutoff is mandatory — every name cannot be a
- * candidate. The default takes the top decile only.
+ * Parsing is deterministic (the xlsx library), so it costs no model tokens —
+ * unlike the screenshot sources, sheet size is not a cost consideration.
  */
 
 export type EquateRow = {
@@ -106,15 +108,17 @@ export function parseEquateRows(rows: unknown[][], label: string): EquateSheet {
 /**
  * Turn a parsed sheet into candidate hits.
  *
- * A Large Cap sheet yields NOTHING on its own — All Cap already contains every
- * one of its names at the same rank, so emitting hits here would double-count.
- * Load it only if All Cap is unavailable.
+ * US Large Cap and Canada All Cap produce hits. US All Cap produces none
+ * unless explicitly asked for: its extra names are below the size the book
+ * buys, and everything it shares with Large Cap is already covered at the same
+ * rank.
  */
 export function equateHits(
   sheet: EquateSheet,
-  opts?: { maxDecile?: number; allowLargeCapAsSource?: boolean },
+  opts?: { maxDecile?: number; includeUsAllCap?: boolean },
 ): SourceHit[] {
-  if (sheet.largeCapOnly && !opts?.allowLargeCapAsSource) return [];
+  const isUsAllCap = sheet.region === "us" && !sheet.largeCapOnly;
+  if (isUsAllCap && !opts?.includeUsAllCap) return [];
   const maxDecile = opts?.maxDecile ?? 1;
   const source = sheet.region === "canada" ? "rbc-equate-cad" : "rbc-equate-usd";
   return sheet.rows
