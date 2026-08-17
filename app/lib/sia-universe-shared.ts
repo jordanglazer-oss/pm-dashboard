@@ -16,6 +16,34 @@
 export const UNIVERSE_MIN_ROWS = 200;
 
 /**
+ * Recognise a NAMED index export from the subject or filename.
+ *
+ * The row-count gate alone excludes the TSX 60 — 60 rows, far under the
+ * threshold — even though it is exactly the kind of broad universe the
+ * suggested watchlist wants: improving relative strength across an index the
+ * PM does not already own. Lowering the threshold is not the fix; it would
+ * reopen the bug the threshold exists for (a 40-row watchlist export landing
+ * as the newest snapshot, making the next diff report ~960 phantom drops).
+ *
+ * So size stops being the only evidence: a file that NAMES its index is
+ * treated as a universe at any size. "Watchlist" and "portfolio" exports are
+ * refused outright regardless of what else the name contains, since those are
+ * holdings reports and must never become a snapshot.
+ */
+export function isNamedUniverseExport(label: string | undefined): boolean {
+  // Strip every separator before matching. Word boundaries do not work here:
+  // underscore IS a word character and "TSX60" has no boundary inside it, so
+  // \b-based patterns miss exactly what an unedited download is called
+  // (SIA_TSX60.csv, SIA_SP500.csv). Same trap the SIA subject matcher hit.
+  const flat = (label ?? "").toLowerCase().replace(/[^a-z0-9&]/g, "");
+  if (!flat) return false;
+  // Holdings reports can never be a snapshot, whatever else they are called.
+  if (/watchlist|portfolio|holdings/.test(flat)) return false;
+  return /tsx|sp500|s&p500|spx|nasdaq100|russell|universe|index/.test(flat);
+}
+
+
+/**
  * One name's reading in a weekly universe export.
  *
  * `rank` and the CHG fields are the load-bearing ones. SMAX is a 0-10 integer,

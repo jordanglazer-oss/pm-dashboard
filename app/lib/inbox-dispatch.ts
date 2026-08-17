@@ -34,7 +34,7 @@ import {
 } from "./screenshot-extractors";
 import { parseMarketEdgeCsv } from "./marketedge-csv";
 import { parseSiaCsv } from "./sia-csv";
-import { writeSiaSnapshot, UNIVERSE_MIN_ROWS, type SiaRow } from "./sia-universe";
+import { writeSiaSnapshot, UNIVERSE_MIN_ROWS, isNamedUniverseExport, type SiaRow } from "./sia-universe";
 import { parseBoostedCsv } from "./boosted-csv";
 import { putDataUrl } from "./blob-store";
 import { applySiaEntries, applyBoostedEntries, applyMarketEdgeRows, type StockPatch } from "./stock-patches";
@@ -314,7 +314,10 @@ async function handleSia(att: AttachmentInput, label: string): Promise<DispatchR
     // A full-index export (S&P 500 / TSX) also feeds the universe snapshot
     // store, which is the ONLY place the non-held rows survive — applySiaEntries
     // drops them by design. Held names keep patching exactly as before.
-    const isUniverse = parsed.rows.length >= UNIVERSE_MIN_ROWS;
+    // Either big enough to be self-evidently an index, or it says which index
+    // it is. The TSX 60 is only the latter.
+    const named = isNamedUniverseExport(label);
+    const isUniverse = parsed.rows.length >= UNIVERSE_MIN_ROWS || named;
     const { patches, summary } = applySiaEntries(expected, parsed.rows, new Date().toISOString(), stocks, isUniverse);
     const { touched } = await applyPatchesToRedis(patches);
     let snapshotNote = "";
@@ -324,7 +327,7 @@ async function handleSia(att: AttachmentInput, label: string): Promise<DispatchR
         const { ticker, ...rest } = r;
         rows[ticker.toUpperCase()] = rest;
       }
-      const snap = await writeSiaSnapshot(rows);
+      const snap = await writeSiaSnapshot(rows, { named });
       snapshotNote = snap.written
         ? ` · universe snapshot ${snap.date} (${snap.tickers} tickers${snap.merged ? ", merged" : ""})`
         : ` · snapshot skipped (${snap.reason})`;

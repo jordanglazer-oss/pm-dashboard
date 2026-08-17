@@ -1,6 +1,7 @@
 import { getRedis } from "./redis";
 import {
   UNIVERSE_MIN_ROWS,
+  isNamedUniverseExport,
   type SiaMover,
   type SiaMoverResult,
   type SiaRow,
@@ -8,7 +9,7 @@ import {
 } from "./sia-universe-shared";
 
 // Re-exported so server-side callers keep a single import site.
-export { UNIVERSE_MIN_ROWS };
+export { UNIVERSE_MIN_ROWS, isNamedUniverseExport };
 export type { SiaMover, SiaMoverResult, SiaRow, SiaSnapshot };
 
 /**
@@ -61,10 +62,13 @@ export type WriteResult =
  * the second universe file of the day must add to the first rather than be
  * rejected — rejecting it silently dropped an entire index.
  */
-export async function writeSiaSnapshot(rows: Record<string, SiaRow>): Promise<WriteResult> {
+export async function writeSiaSnapshot(
+  rows: Record<string, SiaRow>,
+  opts?: { /** The export names its index, so accept it at any size. */ named?: boolean },
+): Promise<WriteResult> {
   const date = todayUtc();
   const count = Object.keys(rows).length;
-  if (count < UNIVERSE_MIN_ROWS) return { written: false, reason: "too-few-rows", date };
+  if (count < UNIVERSE_MIN_ROWS && !opts?.named) return { written: false, reason: "too-few-rows", date };
   try {
     const redis = await getRedis();
 
