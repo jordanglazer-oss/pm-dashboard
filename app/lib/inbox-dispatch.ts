@@ -35,6 +35,8 @@ import {
 import { parseMarketEdgeCsv } from "./marketedge-csv";
 import { parseSiaCsv } from "./sia-csv";
 import { writeSiaSnapshot, UNIVERSE_MIN_ROWS, isNamedUniverseExport, type SiaRow } from "./sia-universe";
+import { parseEquateRows } from "./equate-parse";
+import { writeEquateSheet } from "./equate-store";
 import { parseBoostedCsv } from "./boosted-csv";
 import { putDataUrl } from "./blob-store";
 import { applySiaEntries, applyBoostedEntries, applyMarketEdgeRows, type StockPatch } from "./stock-patches";
@@ -61,6 +63,7 @@ export type ResearchKind =
 
 export type InboxKind =
   | "sia"
+  | "equate"
   | "boosted"
   | "marketedge"
   | "strategist"
@@ -75,6 +78,12 @@ export type InboxKind =
 export function classifySubject(subject: string): InboxKind {
   const s = subject.trim();
   if (/^analyst report:/i.test(s)) return "analyst-report";
+  // RBC EQUATE rank sheets. Matched on the vendor's own wording so the weekly
+  // email forwards unedited — its attachments are named
+  // "RBC EQUATE Model Ranks - US All Cap - 20260814.xlsx". Separators are
+  // stripped before testing rather than trusting \b: the same trap that made
+  // "SIA_SP500" and "TSX60" unmatchable.
+  if (isEquateLabel(s)) return "equate";
   // ── Research lists (RBC / Fundstrat / Seeking Alpha / RBCCM FEW) ──
   // Fundstrat "Core Ideas" DQM screens first — the "… Core" suffix keeps them
   // distinct from the "… Top/Bottom" idea lists below.
@@ -112,6 +121,14 @@ export function classifySubject(subject: string): InboxKind {
   }
   if (/\breports\s+Q[1-4]\b.*\bvs\b/i.test(s)) return "street-takeaways";
   return "unknown";
+}
+
+/** True for anything naming itself an RBC EQUATE rank sheet — subject OR
+ *  attachment filename, since the files are self-describing and the email
+ *  subject is whatever RBC happens to send. */
+export function isEquateLabel(label: string | undefined): boolean {
+  const flat = (label ?? "").toLowerCase().replace(/[^a-z0-9]/g, "");
+  return /equate/.test(flat) && /modelrank|allcap|largecap/.test(flat);
 }
 
 /** FactSet alert emails are recognised by SENDER as well as subject, so a
@@ -412,6 +429,44 @@ async function handleMarketEdge(att: AttachmentInput, label: string): Promise<Di
   };
 }
 
+/**
+ * RBC EQUATE rank sheet → pm:equate:{region}.
+ *
+ * Stores the parsed rows rather than folding them straight into the candidate
+ * list. The three sheets arrive as separate emails/attachments, and the
+ * candidate merge needs to know which sources reported in one pass — merging
+ * per-file would make each arrival look like a week where only that source
+ * reported, and every other source's names would appear to have fallen off.
+ * The weekly refresh reads these stores and merges once.
+ */
+async function handleEquate(att: AttachmentInput, label: string): Promise<DispatchResult> {
+  if (isImageDataUrl(att.dataUrl) || isPdfDataUrl(att.dataUrl)) {
+    return { ok: false, kind: "equate", status: 400, message: "EQUATE expects the .xlsx rank sheet — got an image/PDF instead." };
+  }
+  try {
+    const XLSX = await import("xlsx");
+    const b64 = att.dataUrl.includes(",") ? att.dataUrl.split(",")[1] : att.dataUrl;
+    const wb = XLSX.read(Buffer.from(b64, "base64"), { type: "buffer" });
+    const ws = wb.Sheets[wb.SheetNames[0]];
+    const rows = XLSX.utils.sheet_to_json<unknown[]>(ws, { header: 1 });
+    // Sheet name is the most reliable descriptor ("RBC EQUATE US All Cap");
+    // fall back to the filename/subject.
+    const sheet = parseEquateRows(rows, `${wb.SheetNames[0]} ${label}`);
+    if (sheet.errors.length > 0) {
+      return { ok: false, kind: "equate", status: 400, message: `EQUATE sheet unreadable (${sheet.errors.join("; ")}).` };
+    }
+    const stored = await writeEquateSheet(sheet);
+    return {
+      ok: true,
+      kind: "equate",
+      message: `EQUATE ${sheet.region === "canada" ? "Canada" : "US"}${sheet.largeCapOnly ? " Large Cap" : " All Cap"}: ${sheet.rows.length} ranks stored${sheet.largeCapOnly ? " (Large Cap is a subset of All Cap — kept for reference, not scored)" : ""}.`,
+      detail: { label, region: sheet.region, largeCapOnly: sheet.largeCapOnly, rows: sheet.rows.length, stored },
+    };
+  } catch (e) {
+    return { ok: false, kind: "equate", status: 400, message: `EQUATE sheet could not be read: ${String(e)}` };
+  }
+}
+
 async function handleStrategist(att: AttachmentInput, label: string): Promise<DispatchResult> {
   if (!isImageDataUrl(att.dataUrl) && !isPdfDataUrl(att.dataUrl)) {
     return { ok: false, kind: "strategist", status: 400, message: "Strategist email expects a PDF or image attachment." };
@@ -515,6 +570,7 @@ export async function dispatchInbox(args: {
     case "sia":          return await handleSia(att, label);
     case "boosted":      return await handleBoosted(att, label);
     case "marketedge":   return await handleMarketEdge(att, label);
+    case "equate":       return await handleEquate(att, label);
     case "strategist":   return await handleStrategist(att, label);
     case "street-takeaways": return await handleStreetTakeaways(args.bodyText ?? "", args.subject);
     case "analyst-report": return null;  // existing flow handles this
