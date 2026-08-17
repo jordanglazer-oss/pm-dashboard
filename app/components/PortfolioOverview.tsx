@@ -17,6 +17,7 @@ import { groupTotal, isScoreable, normalizeSector, computeScores } from "@/app/l
 import { displayTicker, canonicalTicker } from "@/app/lib/ticker";
 import { useSearchParams, useRouter, usePathname } from "next/navigation";
 import { useLiveModelWeights } from "@/app/lib/useLiveModelWeights";
+import { SuggestedWatchlist } from "@/app/components/SuggestedWatchlist";
 import type { PimProfileType } from "@/app/lib/pim-types";
 import { buildBoostedRows, buildSiaSymbolList, buildMarketEdgeList, boostedSymbol, siaSymbol } from "@/app/lib/watchlist-export";
 
@@ -275,13 +276,24 @@ export function PortfolioOverview({ sidebar }: { sidebar?: React.ReactNode } = {
   const pathname = usePathname();
   const urlBucket: "Portfolio" | "Watchlist" =
     searchParams.get("bucket") === "Watchlist" ? "Watchlist" : "Portfolio";
-  const [rankBucket, setRankBucket] = useState<"Portfolio" | "Watchlist">(urlBucket);
+  const [rankBucket, setRankBucket] = useState<"Portfolio" | "Watchlist" | "Suggested">(urlBucket);
+  // Live candidate count for the Suggested tab chip. Cheap read; the panel
+  // itself fetches the full store only when the tab is open.
+  const [suggestedCount, setSuggestedCount] = useState(0);
+  useEffect(() => {
+    fetch("/api/kv/watchlist-candidates", { cache: "no-store" })
+      .then((r) => (r.ok ? r.json() : null))
+      .then((d) => {
+        if (d?.candidates) setSuggestedCount(d.candidates.filter((c: { fallenOffAt?: string }) => !c.fallenOffAt).length);
+      })
+      .catch(() => {});
+  }, []);
   // Re-sync when the URL changes underneath us (Back/Forward navigation).
   useEffect(() => {
     setRankBucket(urlBucket);
   }, [urlBucket]);
   const selectRankBucket = useCallback(
-    (b: "Portfolio" | "Watchlist") => {
+    (b: "Portfolio" | "Watchlist" | "Suggested") => {
       setRankBucket(b);
       const params = new URLSearchParams(searchParams.toString());
       params.set("bucket", b);
@@ -1128,15 +1140,43 @@ export function PortfolioOverview({ sidebar }: { sidebar?: React.ReactNode } = {
       <div className="grid gap-5 lg:grid-cols-[minmax(0,1fr)_340px] items-start">
         <div className="min-w-0 space-y-6">
 
-      {/* Rankings — one table with a Portfolio / Watchlist segmented toggle. */}
+      {/* Rankings — one table with a Portfolio / Watchlist / Suggested toggle.
+          Suggested renders its own panel: it lists CANDIDATES rather than
+          scored holdings, so it shares the column rhythm but not the data. */}
+      {rankBucket === "Suggested" ? (
+        <div>
+          <div className="mb-3 inline-flex items-center rounded-control border border-line bg-surface-2 p-0.5">
+            {(["Portfolio", "Watchlist", "Suggested"] as const).map((b) => {
+              const active = rankBucket === b;
+              const count =
+                b === "Portfolio" ? scoreablePortfolio.length
+                : b === "Watchlist" ? scoreableWatchlist.length
+                : suggestedCount;
+              return (
+                <button
+                  key={b}
+                  onClick={() => selectRankBucket(b)}
+                  className={`rounded-[6px] px-3.5 py-1.5 text-[13px] font-semibold transition-colors ${active ? "bg-accent text-white shadow-sm" : "text-ink-2 hover:bg-surface hover:text-ink"}`}
+                >
+                  {b} <span className={`font-normal ${active ? "text-white/70" : "text-ink-3"}`}>{count}</span>
+                </button>
+              );
+            })}
+          </div>
+          <SuggestedWatchlist />
+        </div>
+      ) : (
       <RankingTable
         title={rankBucket === "Portfolio" ? "Portfolio Rankings" : "Watchlist Rankings"}
         subtitle={rankBucket === "Portfolio" ? "Bottom 3 flagged for review" : "Top 3 flagged as buy candidates"}
         bucketTabs={
           <div className="inline-flex items-center rounded-control border border-line bg-surface-2 p-0.5">
-            {(["Portfolio", "Watchlist"] as const).map((b) => {
+            {(["Portfolio", "Watchlist", "Suggested"] as const).map((b) => {
               const active = rankBucket === b;
-              const count = b === "Portfolio" ? scoreablePortfolio.length : scoreableWatchlist.length;
+              const count =
+                b === "Portfolio" ? scoreablePortfolio.length
+                : b === "Watchlist" ? scoreableWatchlist.length
+                : suggestedCount;
               return (
                 <button
                   key={b}
@@ -1153,11 +1193,12 @@ export function PortfolioOverview({ sidebar }: { sidebar?: React.ReactNode } = {
         loading={loading}
         livePreviousCloses={livePreviousCloses}
         liveWeights={liveWeights}
+        showWeight={rankBucket === "Portfolio"}
         flagType={rankBucket === "Portfolio" ? "review" : "buy"}
         uiPrefs={uiPrefs}
         setUiPref={setUiPref}
-        onScoreAll={(tickers) => handleScoreBucket(rankBucket, undefined, tickers)}
-        onScoreFundamentals={(tickers) => handleScoreBucket(rankBucket, ["growth", "relativeValuation", "historicalValuation"], tickers)}
+        onScoreAll={(tickers) => handleScoreBucket(rankBucket === "Portfolio" ? "Portfolio" : "Watchlist", undefined, tickers)}
+        onScoreFundamentals={(tickers) => handleScoreBucket(rankBucket === "Portfolio" ? "Portfolio" : "Watchlist", ["growth", "relativeValuation", "historicalValuation"], tickers)}
         scoring={scoringBucket === rankBucket}
         scoreProgress={scoringBucket === rankBucket ? scoreProgress : ""}
         scoreFailures={scoringBucket === rankBucket || scoringBucket == null ? scoreFailures : []}
@@ -1177,6 +1218,7 @@ export function PortfolioOverview({ sidebar }: { sidebar?: React.ReactNode } = {
         splitByCurrency
         enableExternalExports={rankBucket === "Watchlist"}
       />
+      )}
         </div>
 
         {/* Right sidebar: Change Monitor (injected from the page) + a compact
@@ -1493,6 +1535,7 @@ function RankingTable({
   enableExternalExports,
   livePreviousCloses,
   liveWeights,
+  showWeight = true,
   bucketTabs,
   loading,
 }: {
@@ -1546,6 +1589,9 @@ function RankingTable({
   /** Live current model weight (canonicalTicker → %) for the selected Version.
    *  null until computed; "—" for names not in the PIM positions. */
   liveWeights: Map<string, number> | null;
+  /** Weight is a held-position concept. A watchlist name has no model weight,
+   *  so the column was a row of dashes taking up space. */
+  showWeight?: boolean;
 }) {
   // Collapse state — defaults to expanded. Persisted in uiPrefs so it
   // sticks across refreshes and syncs to other devices via Redis. The
@@ -2052,7 +2098,7 @@ function RankingTable({
                 Ticker{arrow("ticker")}
               </th>
               <th className={thClass} onClick={() => toggleSort("sector")}>Sector{arrow("sector")}</th>
-              <th className={`${thClass} text-right`}>Weight</th>
+              {showWeight && <th className={`${thClass} text-right`}>Weight</th>}
               <th className={`${thClass} text-right`} onClick={() => toggleSort("price")}>Price{arrow("price")}</th>
               <th className={`${thClass} text-right`}>Day</th>
               <th className={`${thClass} text-right`} onClick={() => toggleSort("adjusted")}>Score{arrow("adjusted")}</th>
@@ -2143,12 +2189,14 @@ function RankingTable({
                     </div>
                   </td>
                   <td className="py-3 pr-3 text-ink-2 text-xs whitespace-nowrap">{s.sector || "—"}</td>
-                  <td className="py-3 pr-3 text-right font-medium text-ink tabular-nums whitespace-nowrap">
-                    {(() => {
-                      const w = liveWeights?.get(canonicalTicker(s.ticker));
-                      return w != null ? `${w.toFixed(1)}%` : <span className="text-ink-faint">—</span>;
-                    })()}
-                  </td>
+                  {showWeight && (
+                    <td className="py-3 pr-3 text-right font-medium text-ink tabular-nums whitespace-nowrap">
+                      {(() => {
+                        const w = liveWeights?.get(canonicalTicker(s.ticker));
+                        return w != null ? `${w.toFixed(1)}%` : <span className="text-ink-faint">—</span>;
+                      })()}
+                    </td>
+                  )}
                   <td className="py-3 pr-3 text-right text-ink-2 tabular-nums">
                     <FlashValue value={s.price ?? null}>{s.price != null ? `$${s.price.toFixed(2)}` : "—"}</FlashValue>
                   </td>
