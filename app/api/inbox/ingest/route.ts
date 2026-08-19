@@ -250,7 +250,22 @@ export async function POST(request: NextRequest) {
   // below (PDF-only, ticker/source routing).
   // Sender-based fallback: a plain forward of a FactSet alert keeps its own
   // subject, so recognise the sender even if the subject prefix drifts.
-  const kind = isBodyTextKind ? "street-takeaways" : classifySubject(subject);
+  // Subject first, then the FILENAME as a fallback.
+  //
+  // Some attachments describe themselves better than the email carrying them:
+  // the RBC EQUATE sheets arrive as "RBC EQUATE Model Ranks - US All Cap -
+  // 20260814.xlsx" under whatever subject the vendor happens to send, so
+  // classifying on the subject alone left them "unknown" and rejected. The
+  // filename is already passed to the dispatcher — it just was not consulted
+  // for routing.
+  //
+  // Subject still WINS when it resolves, so an explicit subject convention can
+  // always override a misleading filename.
+  let kind = isBodyTextKind ? "street-takeaways" : classifySubject(subject);
+  if (kind === "unknown" && filename) {
+    const fromFilename = classifySubject(filename);
+    if (fromFilename !== "unknown") kind = fromFilename;
+  }
   // Anything other than the legacy "analyst-report" and the catch-all
   // "unknown" routes through the dispatcher. Research kinds arrive as
   // an object `{ kind: "research", source }`; per-stock/strategist

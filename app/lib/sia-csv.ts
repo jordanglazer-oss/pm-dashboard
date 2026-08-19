@@ -48,8 +48,39 @@ export function parseSiaCsv(text: string): SiaCsvParseResult {
     errors.push("CSV looks empty (no data rows found).");
     return { rows: [], ranked: [], errors };
   }
-  const sep = detectCsvSeparator(lines[0]);
-  const header = splitCsvRow(lines[0], sep).map((h) => h.toLowerCase());
+  // ── Find the header row ────────────────────────────────────────────────
+  // It is not always line 1. The larger SIA exports carry title / filter /
+  // date lines above the column names, so assuming lines[0] made a perfectly
+  // good universe file fail with "missing a SYM column" while the small
+  // holdings exports — which have no preamble — went through. Scan the first
+  // few lines for the row that actually names the columns.
+  const SYMBOL_NAMES = ["sym", "symbol", "ticker"];
+  let headerLine = -1;
+  let sep = detectCsvSeparator(lines[0]);
+  let header: string[] = [];
+  for (let i = 0; i < Math.min(lines.length, 15); i++) {
+    const trySep = detectCsvSeparator(lines[i]);
+    const cells = splitCsvRow(lines[i], trySep).map((h) => h.trim().toLowerCase());
+    if (cells.some((c) => SYMBOL_NAMES.includes(c))) {
+      headerLine = i;
+      sep = trySep;
+      header = cells;
+      break;
+    }
+  }
+  if (headerLine < 0) {
+    // Say what WAS seen. "Missing a SYM column" with no sample makes a
+    // wrong-file and a preamble-offset indistinguishable from the message.
+    const sample = splitCsvRow(lines[0], detectCsvSeparator(lines[0]))
+      .slice(0, 8)
+      .map((c) => c.trim())
+      .filter(Boolean)
+      .join(" | ");
+    errors.push(
+      `No column named SYM / Symbol / Ticker in the first ${Math.min(lines.length, 15)} lines. First line reads: ${sample || "(empty)"}`,
+    );
+    return { rows: [], ranked: [], errors };
+  }
   const idx = {
     symbol: header.findIndex((h) => h === "sym" || h === "symbol" || h === "ticker"),
     smax: header.findIndex((h) => h === "smax" || h === "s-max" || h === "smax score"),
@@ -80,7 +111,9 @@ export function parseSiaCsv(text: string): SiaCsvParseResult {
 
   const rows: ScrapedSia[] = [];
   const ranked: SiaRankedRow[] = [];
-  for (const raw of lines.slice(1)) {
+  // Data starts after the header WHEREVER it was found — slice(1) silently
+  // fed preamble lines in as data when the header was not line 1.
+  for (const raw of lines.slice(headerLine + 1)) {
     const cells = shiftFor(splitCsvRow(raw, sep));
     const sym = (cells[idx.symbol] ?? "").trim().toUpperCase();
     // Skip CASH rows + any row whose ticker is "-" or empty.
