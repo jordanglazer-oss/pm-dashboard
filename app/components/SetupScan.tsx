@@ -2,6 +2,7 @@
 
 import React, { useCallback, useEffect, useRef, useState } from "react";
 import { displayTicker } from "@/app/lib/ticker";
+import { useTableSort, currencyOf } from "@/app/lib/useTableSort";
 
 /**
  * Setups — names that look ready to move, rather than names that already have.
@@ -72,7 +73,8 @@ export function SetupScan({ onCountChange }: { onCountChange?: (n: number) => vo
   const [loading, setLoading] = useState(true);
   const [running, setRunning] = useState(false);
   const [universe, setUniverse] = useState<"suggested" | "watchlist" | "portfolio">("suggested");
-  const [sortBy, setSortBy] = useState<"base" | "improving">("base");
+  /** Seeds the initial sort only — the column headers drive it from there. */
+  const sortBy: "base" | "improving" = "base";
   const [passInfo, setPassInfo] = useState<{ pass: number; remaining: number } | null>(null);
   const stopRef = useRef(false);
 
@@ -131,14 +133,31 @@ export function SetupScan({ onCountChange }: { onCountChange?: (n: number) => vo
   };
 
   const [showUnread, setShowUnread] = useState(false);
-  const visible = showUnread ? scan.rows : scan.rows.filter((r) => !r.error);
-  const rows = [...visible].sort((a, b) =>
-    sortBy === "base"
-      ? (b.base?.score ?? -1) - (a.base?.score ?? -1) || b.improving.score - a.improving.score
-      : b.improving.score - a.improving.score || (b.base?.score ?? -1) - (a.base?.score ?? -1),
+  const [ccy, setCcy] = useState<"All" | "CAD" | "USD">("All");
+
+  const readable = showUnread ? scan.rows : scan.rows.filter((r) => !r.error);
+  const visible = ccy === "All" ? readable : readable.filter((r) => currencyOf(r.ticker) === ccy);
+
+  const { sorted, toggle, arrow } = useTableSort(
+    visible,
+    {
+      ticker: (r) => r.ticker,
+      name: (r) => r.name ?? null,
+      sector: (r) => r.sector ?? null,
+      price: (r) => (r.price > 0 ? r.price : null),
+      offHigh: (r) => r.base?.pctFromHigh ?? null,
+      base: (r) => r.base?.score ?? null,
+      improving: (r) => r.improving.score,
+    },
+    sortBy === "base" ? "base" : "improving",
   );
+  const rows = sorted;
+
+  const cadCount = readable.filter((r) => currencyOf(r.ticker) === "CAD").length;
+  const usdCount = readable.length - cadCount;
 
   const th = "pb-2 pr-3 text-left text-[11px] font-semibold uppercase tracking-wide text-ink-3";
+  const thSort = `${th} cursor-pointer select-none hover:text-ink`;
 
   return (
     <div className="rounded-card border border-line bg-white p-5 shadow-card">
@@ -159,6 +178,22 @@ export function SetupScan({ onCountChange }: { onCountChange?: (n: number) => vo
           </p>
         </div>
         <div className="flex flex-wrap items-center gap-2 text-xs">
+          <span className="inline-flex items-center rounded-control border border-line bg-surface-2 p-0.5">
+            {(["All", "CAD", "USD"] as const).map((c) => (
+              <button
+                key={c}
+                onClick={() => setCcy(c)}
+                className={`rounded-[6px] px-2.5 py-1 font-semibold transition-colors ${ccy === c ? "bg-accent text-white" : "text-ink-2 hover:text-ink"}`}
+              >
+                {c}
+                {c !== "All" && (
+                  <span className={`ml-1 font-normal ${ccy === c ? "text-white/70" : "text-ink-3"}`}>
+                    {c === "CAD" ? cadCount : usdCount}
+                  </span>
+                )}
+              </button>
+            ))}
+          </span>
           <select
             value={universe}
             onChange={(e) => setUniverse(e.target.value as typeof universe)}
@@ -173,12 +208,6 @@ export function SetupScan({ onCountChange }: { onCountChange?: (n: number) => vo
             className="rounded-control border border-line px-3 py-1.5 font-semibold text-ink-2 hover:text-ink"
           >
             {showUnread ? "Hide unread" : `Show unread (${scan.rows.filter((r) => !!r.error).length})`}
-          </button>
-          <button
-            onClick={() => setSortBy((s) => (s === "base" ? "improving" : "base"))}
-            className="rounded-control border border-line px-3 py-1.5 font-semibold text-ink-2 hover:text-ink"
-          >
-            Sort: {sortBy === "base" ? "Coiling" : "Recovering"}
           </button>
           {running ? (
             <button
@@ -222,13 +251,13 @@ export function SetupScan({ onCountChange }: { onCountChange?: (n: number) => vo
           <table className="w-full min-w-[820px] text-sm">
             <thead>
               <tr className="border-b border-line">
-                <th className={th}>Ticker</th>
-                <th className={th}>Name</th>
-                <th className={th}>Sector</th>
-                <th className={`${th} text-right`}>Price</th>
-                <th className={`${th} text-right`}>Off high</th>
-                <th className={th}>Base</th>
-                <th className={th}>Recovering</th>
+                <th className={thSort} onClick={() => toggle("ticker")}>Ticker{arrow("ticker")}</th>
+                <th className={thSort} onClick={() => toggle("name")}>Name{arrow("name")}</th>
+                <th className={thSort} onClick={() => toggle("sector")}>Sector{arrow("sector")}</th>
+                <th className={`${thSort} text-right`} onClick={() => toggle("price")}>Price{arrow("price")}</th>
+                <th className={`${thSort} text-right`} onClick={() => toggle("offHigh")}>Off high{arrow("offHigh")}</th>
+                <th className={thSort} onClick={() => toggle("base")}>Base{arrow("base")}</th>
+                <th className={thSort} onClick={() => toggle("improving")}>Recovering{arrow("improving")}</th>
                 <th className={th}>Why</th>
               </tr>
             </thead>

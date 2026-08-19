@@ -3,6 +3,7 @@
 import React, { useEffect, useState, useCallback } from "react";
 import { useStocks } from "@/app/lib/StockContext";
 import { displayTicker } from "@/app/lib/ticker";
+import { useTableSort, currencyOf } from "@/app/lib/useTableSort";
 import type { ScoreKey } from "@/app/lib/types";
 import type { Candidate, CandidateStore } from "@/app/lib/watchlist-candidates";
 
@@ -44,6 +45,7 @@ export function SuggestedWatchlist({ onCountChange }: { onCountChange?: (n: numb
   const [refreshing, setRefreshing] = useState(false);
   const [adding, setAdding] = useState<string | null>(null);
   const [showFallen, setShowFallen] = useState(false);
+  const [ccy, setCcy] = useState<"All" | "CAD" | "USD">("All");
 
   const load = useCallback(async () => {
     try {
@@ -98,11 +100,29 @@ export function SuggestedWatchlist({ onCountChange }: { onCountChange?: (n: numb
 
   const live = store.candidates.filter((c) => !c.fallenOffAt);
   const fallen = store.candidates.filter((c) => c.fallenOffAt);
-  const all = showFallen ? fallen : live;
-  const rows = all.slice(0, MAX_SHOWN);
-  const hidden = all.length - rows.length;
+  const byState = showFallen ? fallen : live;
+  const all = ccy === "All" ? byState : byState.filter((c) => currencyOf(c.ticker) === ccy);
+
+  const { sorted, toggle, arrow } = useTableSort(
+    all,
+    {
+      ticker: (c) => c.ticker,
+      name: (c) => c.name,
+      sector: (c) => c.sector ?? null,
+      score: (c) => c.score,
+      sources: (c) => Object.keys(c.sources).length,
+      seen: (c) => c.fallenOffAt ?? c.firstSeenAt,
+    },
+    "score",
+  );
+  const rows = sorted.slice(0, MAX_SHOWN);
+  const hidden = sorted.length - rows.length;
+
+  const cadCount = byState.filter((c) => currencyOf(c.ticker) === "CAD").length;
+  const usdCount = byState.length - cadCount;
 
   const th = "pb-2 pr-3 text-left text-[11px] font-semibold uppercase tracking-wide text-ink-3";
+  const thSort = `${th} cursor-pointer select-none hover:text-ink`;
 
   return (
     <div className="rounded-card border border-line bg-white p-5 shadow-card">
@@ -115,7 +135,26 @@ export function SuggestedWatchlist({ onCountChange }: { onCountChange?: (n: numb
               : "No refresh yet — run one to assemble candidates from the ingested sources."}
           </p>
         </div>
-        <div className="flex items-center gap-2 text-xs">
+        <div className="flex flex-wrap items-center gap-2 text-xs">
+          {/* Currency split. Derived from the ticker suffix — research lists do
+              not all publish a currency, and the symbol is what the rest of the
+              app keys on anyway. */}
+          <span className="inline-flex items-center rounded-control border border-line bg-surface-2 p-0.5">
+            {(["All", "CAD", "USD"] as const).map((c) => (
+              <button
+                key={c}
+                onClick={() => setCcy(c)}
+                className={`rounded-[6px] px-2.5 py-1 font-semibold transition-colors ${ccy === c ? "bg-accent text-white" : "text-ink-2 hover:text-ink"}`}
+              >
+                {c}
+                {c !== "All" && (
+                  <span className={`ml-1 font-normal ${ccy === c ? "text-white/70" : "text-ink-3"}`}>
+                    {c === "CAD" ? cadCount : usdCount}
+                  </span>
+                )}
+              </button>
+            ))}
+          </span>
           <button
             onClick={() => setShowFallen((v) => !v)}
             className={`rounded-control border px-3 py-1.5 font-semibold ${showFallen ? "border-neg-border bg-neg-soft text-neg" : "border-line text-ink-2 hover:text-ink"}`}
@@ -145,12 +184,14 @@ export function SuggestedWatchlist({ onCountChange }: { onCountChange?: (n: numb
           <table className="w-full min-w-[720px] text-sm">
             <thead>
               <tr className="border-b border-line">
-                <th className={th}>Ticker</th>
-                <th className={th}>Name</th>
-                <th className={th}>Sector</th>
-                <th className={`${th} text-right`}>Score</th>
-                <th className={th}>Sources</th>
-                <th className={th}>{showFallen ? "Fell off" : "First seen"}</th>
+                <th className={thSort} onClick={() => toggle("ticker")}>Ticker{arrow("ticker")}</th>
+                <th className={thSort} onClick={() => toggle("name")}>Name{arrow("name")}</th>
+                <th className={thSort} onClick={() => toggle("sector")}>Sector{arrow("sector")}</th>
+                <th className={`${thSort} text-right`} onClick={() => toggle("score")}>Score{arrow("score")}</th>
+                <th className={thSort} onClick={() => toggle("sources")}>Sources{arrow("sources")}</th>
+                <th className={thSort} onClick={() => toggle("seen")}>
+                  {showFallen ? "Fell off" : "First seen"}{arrow("seen")}
+                </th>
                 <th className={`${th} text-right`}>Action</th>
               </tr>
             </thead>
