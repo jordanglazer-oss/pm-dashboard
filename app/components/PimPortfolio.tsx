@@ -14,6 +14,7 @@ import type {
   PimHolding,
   PimModelGroupState,
   PimAssetClass,
+  PimModelData,
 } from "@/app/lib/pim-types";
 import type { Stock, InstrumentType, ScoreKey } from "@/app/lib/types";
 import { displayTicker } from "@/app/lib/ticker";
@@ -87,6 +88,134 @@ function isUsSitusTicker(ticker: string, currency?: string): boolean {
 }
 
 const NO_US_SITUS_GROUP_ID = "no-us-situs";
+
+/** Symbol comparison tolerant of the -T / .TO Canadian listing variants, which
+ *  are NOT normalized at the storage layer (see CLAUDE.md). */
+const symbolEq = (a: string, b: string): boolean => {
+  const n = (x: string) => (x || "").toUpperCase().replace(/-T$/, ".TO");
+  return n(a) === n(b);
+};
+
+/** Currency of a bare symbol, matching the rule used by the trade executor:
+ *  .U is a Canadian-listed USD class, .TO/-T/.NE are CAD, anything else USD. */
+const tickerIsUsd = (sym: string): boolean => {
+  const t = (sym || "").toUpperCase();
+  if (t.endsWith(".U")) return true;
+  if (t.endsWith(".TO") || t.endsWith("-T") || t.endsWith(".NE")) return false;
+  return true;
+};
+
+/**
+ * Abort-guard shared by both model-write paths (full switch and partial sell).
+ *
+ * Every touched group's per-asset-class weightInClass must still sum to ~100%.
+ * Both paths preserve the invariant by construction, so this should never
+ * fire — but if it ever did, persisting would corrupt model weights, so the
+ * trade aborts and persists NOTHING.
+ *
+ * Compared against the PRE-trade sums, not against 100% in the absolute. The
+ * absolute check once turned a pre-existing problem into a permanent block on
+ * all trading: a switch was aborted because an untouched fixed-income sleeve
+ * in another group already summed to 150%, which the trade neither caused nor
+ * could fix. The guard exists to stop a trade CORRUPTING weights, so it asks
+ * whether this trade made things worse — a sleeve already broken and no worse
+ * for the trade is reported, not blocked.
+ *
+ * Returns an error string to abort with, or null when it is safe to persist.
+ */
+function assertClassSumsSafe(
+  beforeGroups: PimModelGroup[],
+  afterGroups: PimModelGroup[],
+  affectedGroupIds: Set<string>,
+): string | null {
+  const ASSET_CLASSES: PimHolding["assetClass"][] = ["equity", "fixedIncome", "alternative"];
+  const TOL = 0.005;
+  const classSum = (holdings: PimHolding[], ac: PimHolding["assetClass"]) => {
+    const inClass = holdings.filter((h) => h.assetClass === ac);
+    return inClass.length === 0 ? null : inClass.reduce((s, h) => s + h.weightInClass, 0);
+  };
+  const preExisting: string[] = [];
+  for (const g of afterGroups) {
+    if (!affectedGroupIds.has(g.id)) continue;
+    const before = beforeGroups.find((x) => x.id === g.id);
+    for (const ac of ASSET_CLASSES) {
+      const after = classSum(g.holdings, ac);
+      if (after == null) continue;
+      const beforeSum = before ? (classSum(before.holdings, ac) ?? 1) : 1;
+      const wasOff = Math.abs(beforeSum - 1) > TOL;
+      if (Math.abs(after - 1) <= TOL) continue;
+      if (!wasOff) {
+        return `Aborted: this trade would leave ${g.name} ${ac} at ${(after * 100).toFixed(2)}% (expected 100%). No model changes persisted.`;
+      }
+      if (Math.abs(after - 1) > Math.abs(beforeSum - 1) + 1e-9) {
+        return `Aborted: ${g.name} ${ac} was already at ${(beforeSum * 100).toFixed(2)}% and this trade would push it to ${(after * 100).toFixed(2)}%. No model changes persisted.`;
+      }
+      preExisting.push(`${g.name} ${ac} ${(after * 100).toFixed(2)}%`);
+    }
+  }
+  if (preExisting.length > 0) {
+    // Not fatal to this trade, but it must not pass unnoticed — the sleeve is
+    // genuinely wrong and needs repairing.
+    console.warn(
+      "[buy/sell] pre-existing model weight problems, untouched by this trade:",
+      preExisting.join("; "),
+    );
+  }
+  return null;
+}
+
+/**
+ * Post-write reconciliation: does the book agree with the model?
+ *
+ * Run after every executed trade against the state that was just persisted.
+ * The recurring failure in this feature is not a bad number, it is a SILENT
+ * divergence between pm:pim-models and pm:pim-positions — a position with no
+ * model holding (invisible on Positioning, which iterates model holdings) or
+ * a model holding with no units (contributes nothing to performance). Both
+ * have shipped to production undetected more than once. Neither is allowed to
+ * pass quietly again.
+ *
+ * Only groups that actually carry position records are checked; the models
+ * that aren't position-tracked would otherwise report every holding as
+ * unitless.
+ */
+function reconcileModelsVsPositions(
+  models: PimModelData,
+  positions: PimPortfolioPositions[],
+  tickerEq: (a: string, b: string) => boolean,
+): string[] {
+  const problems: string[] = [];
+  const trackedGroupIds = new Set(positions.map((p) => p.groupId));
+
+  for (const pp of positions) {
+    const group = models.groups.find((g) => g.id === pp.groupId);
+    if (!group) continue;
+    for (const pos of pp.positions) {
+      if (pos.units <= 0) continue;
+      if (!group.holdings.some((h) => tickerEq(h.symbol, pos.symbol))) {
+        problems.push(
+          `${pos.symbol}: ${pos.units.toFixed(2)} units in ${group.name}/${pp.profile} but it is NOT a holding in that model — it will not appear on Positioning.`,
+        );
+      }
+    }
+  }
+
+  for (const group of models.groups) {
+    if (!trackedGroupIds.has(group.id)) continue;
+    for (const h of group.holdings) {
+      if (h.weightInClass <= 0) continue;
+      const anyUnits = positions.some(
+        (pp) => pp.groupId === group.id && pp.positions.some((p) => tickerEq(p.symbol, h.symbol) && p.units > 0),
+      );
+      if (!anyUnits) {
+        problems.push(
+          `${h.symbol}: ${group.name} targets ${(h.weightInClass * 100).toFixed(2)}% of class but holds 0 units — it contributes nothing to performance.`,
+        );
+      }
+    }
+  }
+  return problems;
+}
 
 /** Compact "Xm ago" / "Xh ago" relative-time formatter for tile freshness
  *  labels. Falls back to a full date+time string past 24 hours so the
@@ -317,6 +446,10 @@ type HoldingRow = {
   driftPct: number;
   gainLoss: number;
   action: "BUY" | "SELL" | "HOLD";
+  /** Units are held but the group's model has no holding for this symbol.
+   *  Such a row has no model target and would not exist at all before the
+   *  orphan pass was added — it was simply invisible. */
+  isOrphan?: boolean;
 };
 
 type Props = {
@@ -706,15 +839,54 @@ export function PimPortfolio({ groups }: Props) {
       return { h, modelPct, units, costBasis, costBasisCad, price, priceCad, value, valueCad, costValue, costValueCad, fxRate };
     });
 
-    // Total CAD value = cash + every holding's CAD value. Computed via reduce
-    // AFTER the map (rather than mutating an outer `let` inside the map) so we
-    // don't reassign a variable mid-render. Same value as before: the old
-    // accumulator summed valueCad across ALL holdings, which is exactly this.
-    const totalValueCad = (currentPositions?.cashBalance || 0)
-      + rawRows.reduce((sum, r) => sum + r.valueCad, 0);
+    // ── Orphan positions: units held with NO holding in the group's model.
+    // The rows above are built by walking MODEL holdings, so a position the
+    // model does not know about cannot render at all — and its value is
+    // missing from the denominator every other weight is divided by, quietly
+    // overstating all of them. That is exactly how a partial switch hid an
+    // entire position. Matched against the UNFILTERED group holdings, since
+    // effectiveGroup is profile-filtered and would call every Core ETF an
+    // orphan on the Alpha profile.
+    const modelSymbols = selectedGroup?.holdings ?? [];
+    const orphanRaw = (currentPositions?.positions ?? [])
+      .filter((p) => p.units > 0 && !modelSymbols.some((h) => symbolEq(h.symbol, p.symbol)))
+      .map((p) => {
+        const price = livePrices[p.symbol] || 0;
+        const currency: "CAD" | "USD" = tickerIsUsd(p.symbol) ? "USD" : "CAD";
+        const fxRate = currency === "USD" ? usdCadRate : 1;
+        const priceCad = price * fxRate;
+        return {
+          h: {
+            symbol: p.symbol,
+            name: p.symbol,
+            currency,
+            assetClass: "equity" as PimAssetClass,
+            weightInClass: 0,
+          },
+          modelPct: 0,
+          units: p.units,
+          costBasis: p.costBasis,
+          costBasisCad: p.costBasis,
+          price,
+          priceCad,
+          value: p.units * price,
+          valueCad: p.units * priceCad,
+          costValue: p.units * p.costBasis,
+          costValueCad: p.units * p.costBasis,
+          fxRate,
+          isOrphan: true,
+        };
+      });
 
-    // Filter out holdings with 0% model weight for this profile
-    const activeRows = rawRows.filter((r) => r.modelPct > 0);
+    // Total CAD value = cash + every holding's CAD value, INCLUDING orphans —
+    // they are real money and belong in the denominator.
+    const totalValueCad = (currentPositions?.cashBalance || 0)
+      + rawRows.reduce((sum, r) => sum + r.valueCad, 0)
+      + orphanRaw.reduce((sum, r) => sum + r.valueCad, 0);
+
+    // Filter out holdings with 0% model weight for this profile, but never
+    // drop an orphan — being weightless is the whole point of showing it.
+    const activeRows = [...rawRows.filter((r) => r.modelPct > 0), ...orphanRaw];
 
     // Second pass: compute current weights (based on CAD values) and actions
     for (const r of activeRows) {
@@ -746,11 +918,12 @@ export function PimPortfolio({ groups }: Props) {
         driftPct,
         gainLoss,
         action,
+        isOrphan: "isOrphan" in r ? true : undefined,
       });
     }
 
     return rows;
-  }, [effectiveGroup, profileWeights, livePrices, positionMap, currentPositions, usdCadRate, sharedCostBasisMap]);
+  }, [effectiveGroup, selectedGroup, profileWeights, livePrices, positionMap, currentPositions, usdCadRate, sharedCostBasisMap]);
 
   // Sort
   const sortedRows = useMemo(() => {
@@ -1707,6 +1880,9 @@ export function PimPortfolio({ groups }: Props) {
     /** Groups where the model got the bought holding but the book got no
      *  shares, because there was no sold position there to fund it. */
     const unitlessBuyGroups: string[] = [];
+    /** Set when a partial trim could not move the model target, because the
+     *  sold name is an equal-weighted individual stock. */
+    let partialTrimNotApplied = false;
 
     // ── Capture PRE-mutation pim-models snapshot for the atomic swap.
     // A single Execute Switch action is treated as ONE firm-wide position
@@ -1745,7 +1921,23 @@ export function PimPortfolio({ groups }: Props) {
         swapPlan.push({ groupId: g.id, groupName: g.name, soldHolding: sold });
       }
     }
-    const affectedGroupIds = new Set(swapPlan.map((p) => p.groupId));
+
+    // Groups holding the sold ticker WITHOUT the already-holds-the-buy skip.
+    // A partial sell trims the target everywhere the name is held; whether
+    // the bought name is already present decides only whether it gets ADDED,
+    // not whether the trim applies. (A full switch still uses swapPlan — it
+    // must not put the bought name into a group that already holds it.)
+    const trimPlan: SwapPlan[] = [];
+    if (trade.sellSymbol) {
+      for (const g of originalPim.groups) {
+        const sold = g.holdings.find((h) => tickerEq(h.symbol, trade.sellSymbol));
+        if (sold) trimPlan.push({ groupId: g.id, groupName: g.name, soldHolding: sold });
+      }
+    }
+
+    /** The plan that drives model writes + transaction-tape grouping. */
+    const modelPlan = isPartialSell ? trimPlan : swapPlan;
+    const affectedGroupIds = new Set(modelPlan.map((p) => p.groupId));
 
     // ── Resolve buy-side metadata up front so the atomic swap and the
     // addStock call share the same name / instrumentType / sector.
@@ -1765,6 +1957,13 @@ export function PimPortfolio({ groups }: Props) {
     let buyName = trade.buyName || buyTicker;
     let buyInstrumentType: InstrumentType = "stock";
     let buySector = "";
+    /** The buy-side Stock, passed to rebalanceStockWeights as `extraStock`.
+     *  That function classifies holdings off the `stocks` context array, which
+     *  has NOT re-rendered with a stock added moments earlier in this same
+     *  function — without this the fresh name falls through to the legacy
+     *  lookup, is treated as a residual-absorbing Core ETF, and silently
+     *  inflates. `extraStock` exists precisely for this race. */
+    let buyStockForRebalance: Stock | undefined;
     if (buyTicker) {
       // Important distinction:
       //   - existingStock — stock exists in ANY bucket (Portfolio OR Watchlist).
@@ -1804,8 +2003,10 @@ export function PimPortfolio({ groups }: Props) {
         // isSwitch: the atomic swap below computes and writes the final
         // model state. Letting addStock persist its own version first is what
         // diluted every stock and left the sold holding in place.
+        buyStockForRebalance = stock;
         addStock(stock, { skipPimModels: isSwitch });
       } else {
+        buyStockForRebalance = existingStock;
         // Persist any user-set eligibility BEFORE the bucket flip so the
         // addToPimModels triggered by moveBucket (Watchlist → Portfolio)
         // respects the choice. (For switches the atomic swap below
@@ -1847,9 +2048,87 @@ export function PimPortfolio({ groups }: Props) {
       }
     }
 
+    // ── Partial sell: the model target moves too.
+    //
+    // This used to be skipped entirely ("model weights stay as designed"),
+    // on the theory that a partial sell is a drift correction. It isn't — a
+    // partial sell is a deliberate reduction in the target, and skipping the
+    // model write produced two failures. The sold name kept its full target,
+    // so the app immediately advised buying back what had just been trimmed;
+    // and when the sell funded a NEW name, that name got units in
+    // pm:pim-positions with no holding in pm:pim-models at all. The
+    // Positioning table iterates MODEL holdings, so such a position is not
+    // merely mis-weighted — it cannot render, and its value is missing from
+    // the denominator every other weight is computed against.
+    //
+    // So: trim the sold holding by the fraction sold, add the bought name
+    // where it is eligible and not already present, and let the standing
+    // residual rule redistribute. Weight is moved, never created, so the
+    // asset-class sum is preserved by construction.
+    if (isPartialSell && trimPlan.length > 0) {
+      const keepFraction = 1 - sellPercent / 100;
+      const partialBuyCurrency: "CAD" | "USD" =
+        buyTicker.endsWith(".U")
+          ? "USD"
+          : buyTicker.endsWith("-T") || buyTicker.endsWith(".TO")
+            ? "CAD"
+            : trimPlan[0].soldHolding.currency;
+
+      const updatedGroups = originalPim.groups.map((g) => {
+        const plan = trimPlan.find((p) => p.groupId === g.id);
+        if (!plan) return g;
+
+        const trimmed = g.holdings.map((h) =>
+          h === plan.soldHolding
+            ? { ...h, weightInClass: h.weightInClass * keepFraction }
+            : h,
+        );
+
+        // No buy side, buy ineligible here, or the name is already held:
+        // take the trim alone and let the residual rule place the freed
+        // weight. (Already-held is why this walks trimPlan and not swapPlan.)
+        const alreadyHolds = buyTicker && g.holdings.some((h) => tickerEq(h.symbol, buyTicker));
+        if (!buyTicker || excludedSet.has(g.id) || alreadyHolds) {
+          return { ...g, holdings: rebalanceStockWeights(trimmed, buyStockForRebalance, g.id) };
+        }
+
+        const withBuy: PimHolding[] = [
+          ...trimmed,
+          {
+            name: buyName.toUpperCase(),
+            symbol: buyTicker,
+            currency: partialBuyCurrency,
+            assetClass: plan.soldHolding.assetClass,
+            weightInClass: 0,
+          },
+        ];
+        return { ...g, holdings: rebalanceStockWeights(withBuy, buyStockForRebalance, g.id) };
+      });
+
+      const guardError = assertClassSumsSafe(originalPim.groups, updatedGroups, affectedGroupIds);
+      if (guardError) return { ok: false, error: guardError };
+
+      const nextPim = { ...originalPim, groups: updatedGroups, lastUpdated: nowIso };
+      updatePimModels(nextPim);
+      pimModelsRef.current = nextPim;
+
+      // An individual stock's target is equal-weighted by construction, so a
+      // trim to one cannot be expressed in the model — the residual rule puts
+      // it straight back. Say so rather than let the user believe the target
+      // moved.
+      const soldStillFull = updatedGroups.some((g) => {
+        const plan = trimPlan.find((p) => p.groupId === g.id);
+        if (!plan) return false;
+        const after = g.holdings.find((h) => tickerEq(h.symbol, trade.sellSymbol));
+        return !!after && after.weightInClass >= plan.soldHolding.weightInClass - 1e-9;
+      });
+      if (soldStillFull) {
+        partialTrimNotApplied = true;
+      }
+    }
+
     // ── Atomic firm-wide swap in pm:pim-models.
-    // SKIPPED for partial sells — target model weights stay as
-    // designed; only the realized position shifts.
+    // Full sells only — partial sells are handled by the block above.
     if (swapPlan.length > 0 && !isPartialSell && buyTicker) {
       const buyCurrency: "CAD" | "USD" =
         buyTicker.endsWith(".U")
@@ -1909,64 +2188,9 @@ export function PimPortfolio({ groups }: Props) {
         };
       });
 
-      // ── Hard abort-guard: every touched group's per-asset-class
-      // weightInClass must still sum to ~100%. The eligible-group swap
-      // preserves weights exactly and rebalanceStockWeights preserves the
-      // invariant by construction, so this should never fire — but if it
-      // ever did, persisting would corrupt model weights. Abort instead
-      // and persist NOTHING from the swap. (The pre-trade snapshot taken
-      // by Execute All covers rollback of the earlier addStock/moveBucket.)
-      // Compared against the PRE-trade sums, not against 100% in the absolute.
-      //
-      // The absolute check turned a pre-existing problem into a permanent
-      // block on all trading: an equity switch was aborted because an
-      // untouched fixed-income sleeve in another group already summed to 150%,
-      // which this trade neither caused nor could fix. The guard exists to
-      // stop a trade CORRUPTING weights, so it now asks whether this trade
-      // made things worse — a sleeve that was already broken and is no worse
-      // for the trade is reported, not blocked.
-      const ASSET_CLASSES: PimHolding["assetClass"][] = ["equity", "fixedIncome", "alternative"];
-      const TOL = 0.005;
-      const classSum = (holdings: PimHolding[], ac: PimHolding["assetClass"]) => {
-        const inClass = holdings.filter((h) => h.assetClass === ac);
-        return inClass.length === 0 ? null : inClass.reduce((s, h) => s + h.weightInClass, 0);
-      };
-      const preExisting: string[] = [];
-      for (const g of updatedGroups) {
-        if (!affectedGroupIds.has(g.id)) continue;
-        const before = originalPim.groups.find((x) => x.id === g.id);
-        for (const ac of ASSET_CLASSES) {
-          const after = classSum(g.holdings, ac);
-          if (after == null) continue;
-          const wasOff = before ? Math.abs((classSum(before.holdings, ac) ?? 1) - 1) > TOL : false;
-          const isOff = Math.abs(after - 1) > TOL;
-          if (!isOff) continue;
-          if (!wasOff) {
-            // This trade broke a sleeve that was fine. Persist nothing.
-            return {
-              ok: false,
-              error: `Aborted: this trade would leave ${g.name} ${ac} at ${(after * 100).toFixed(2)}% (expected 100%). No model changes persisted.`,
-            };
-          }
-          const beforeSum = classSum(before!.holdings, ac) ?? 1;
-          if (Math.abs(after - 1) > Math.abs(beforeSum - 1) + 1e-9) {
-            // Already broken, and this trade made it worse. Still refuse.
-            return {
-              ok: false,
-              error: `Aborted: ${g.name} ${ac} was already at ${(beforeSum * 100).toFixed(2)}% and this trade would push it to ${(after * 100).toFixed(2)}%. No model changes persisted.`,
-            };
-          }
-          preExisting.push(`${g.name} ${ac} ${(after * 100).toFixed(2)}%`);
-        }
-      }
-      if (preExisting.length > 0) {
-        // Not fatal to this trade, but it must not pass unnoticed — the sleeve
-        // is genuinely wrong and needs repairing.
-        console.warn(
-          "[buy/sell] pre-existing model weight problems, untouched by this trade:",
-          preExisting.join("; "),
-        );
-      }
+      // Shared with the partial-sell block above — see assertClassSumsSafe.
+      const guardError = assertClassSumsSafe(originalPim.groups, updatedGroups, affectedGroupIds);
+      if (guardError) return { ok: false, error: guardError };
 
       const nextPim = { ...originalPim, groups: updatedGroups, lastUpdated: nowIso };
       updatePimModels(nextPim);
@@ -1995,13 +2219,15 @@ export function PimPortfolio({ groups }: Props) {
 
     // For each affected group, build/patch its state. Three branches:
     //   - Full sell + buy:  swapPlan drives it (one entry per affected group)
-    //   - Partial sell:     swapPlan is empty; log to every group that
-    //                       actually holds the sold position so each
-    //                       group's transaction tape reflects the reduce
+    //   - Partial sell:     trimPlan drives it — every group whose model
+    //                       target was trimmed gets a tape entry, matching
+    //                       the full-switch behaviour
+    //   - Neither in a model: fall back to the groups that actually hold the
+    //                       sold position so the reduce still lands somewhere
     //   - Pure buy:         fallback to selectedGroupId (single txn row)
     const groupsToWrite: { groupId: string; soldWeightInClass: number }[] =
-      swapPlan.length > 0
-        ? swapPlan.map((p) => ({ groupId: p.groupId, soldWeightInClass: p.soldHolding.weightInClass }))
+      modelPlan.length > 0
+        ? modelPlan.map((p) => ({ groupId: p.groupId, soldWeightInClass: p.soldHolding.weightInClass }))
         : isPartialSell
           ? Array.from(
               new Set(
@@ -2224,6 +2450,24 @@ export function PimPortfolio({ groups }: Props) {
       const note = `${buyTicker} was added to the model but NO SHARES were recorded in ${unitlessBuyGroups.join(", ")} — ${trade.sellSymbol} had no position there to fund the buy. Enter the units via Edit Positions, or the holding will not contribute to performance.`;
       warning = warning ? `${warning} ${note}` : note;
     }
+    if (partialTrimNotApplied) {
+      const note = `${trade.sellSymbol} is an individual stock, and individual stocks are equal-weighted by design — the model target could NOT be trimmed. The position was reduced; the model still targets the full weight.`;
+      warning = warning ? `${warning} ${note}` : note;
+    }
+
+    // ── Post-write reconciliation. The failure mode this feature keeps
+    // producing is not a wrong number, it is model and book disagreeing in
+    // silence. Check the state that was actually persisted and surface any
+    // divergence rather than leaving it to be discovered later.
+    const recon = reconcileModelsVsPositions(pimModelsRef.current, positionsRef.current, tickerEq)
+      .filter((msg) =>
+        msg.startsWith(`${buyTicker}:`) || (!!trade.sellSymbol && msg.startsWith(`${trade.sellSymbol}:`)),
+      );
+    if (recon.length > 0) {
+      const note = `MODEL/BOOK MISMATCH after this trade — ${recon.join(" ")}`;
+      warning = warning ? `${warning} ${note}` : note;
+    }
+
     return { ok: true, warning };
   }, [pimPortfolioState, selectedGroupId, updatePimPortfolioState, scoredStocks, addStock, pimModels, updatePimModels, moveBucket, stocks, positions, usdCadRate, rebalanceStockWeights, updateStockFields, coreSymbols]);
 
@@ -2647,9 +2891,9 @@ export function PimPortfolio({ groups }: Props) {
 
       {/* Buy/Sell Panel \u2014 supports a queue of trades, each independently
           configurable as buy-only / sell-only / switch. Sell % defaults
-          to 100; lower values run a partial-sell that only touches
-          pm:pim-positions, not pm:pim-models (target weights stay as
-          designed). Execute All runs the queue sequentially. */}
+          to 100; lower values run a partial-sell, which trims the model
+          target by the fraction sold AND adds the bought name to each
+          eligible model. Execute All runs the queue sequentially. */}
       {showSwitch && (() => {
         const watchlistStocks = stocks
           .filter((s) => s.bucket === "Watchlist")
@@ -2679,7 +2923,7 @@ export function PimPortfolio({ groups }: Props) {
             <div>
               <h3 className="text-sm font-bold text-ink">Buy / Sell</h3>
               <p className="text-xs text-ink-3 mt-0.5">
-                Queue one or more trades. Sell % defaults to 100 (full position); lower it for a partial sell — only the positions table is touched, model weights stay as designed.
+                Queue one or more trades. Sell % defaults to 100 (full position); lower it for a partial sell — the model target is trimmed by the same fraction and the bought name is added to each eligible model.
               </p>
             </div>
             <button onClick={addTrade}
@@ -2728,7 +2972,7 @@ export function PimPortfolio({ groups }: Props) {
                                 value={t.sellPercent}
                                 onChange={(e) => updateTrade(t.id, { sellPercent: e.target.value })}
                                 aria-label="Percent of position to sell"
-                                title="Percent of the position to sell. 100 = full liquidation (touches model weights); <100 = partial sell (positions only)."
+                                title="Percent of the position to sell. 100 = full liquidation (the name is replaced in every model that holds it); <100 = partial sell (the model target is trimmed by the same fraction, and any bought name is added)."
                                 className="w-full rounded-lg border border-line bg-white text-ink px-3 pr-6 py-2 text-sm outline-none focus:border-neg-border" />
                               <span className="absolute right-2 top-1/2 -translate-y-1/2 text-xs text-ink-3 pointer-events-none">%</span>
                             </div>
@@ -2736,11 +2980,26 @@ export function PimPortfolio({ groups }: Props) {
                           {livePrices[t.sellSymbol] && (
                             <p className="text-[10px] text-ink-3">Market: ${livePrices[t.sellSymbol].toFixed(2)}</p>
                           )}
-                          {isPartial && (
-                            <p className="text-[10px] text-warn">
-                              Partial sell — pim-models weights unchanged; only the realized position shifts.
-                            </p>
-                          )}
+                          {isPartial && (() => {
+                            // A trim to an individual stock cannot be expressed
+                            // in the model: stock targets are equal-weighted by
+                            // construction, so the residual rule puts the weight
+                            // straight back. Say so BEFORE the button is pressed.
+                            const soldIsEqualWeightStock = stocks.some(
+                              (st) => symbolEq(st.ticker, t.sellSymbol) &&
+                                st.bucket === "Portfolio" &&
+                                (st.instrumentType === "stock" || st.instrumentType === undefined),
+                            );
+                            return (
+                              <p className="text-[10px] text-warn">
+                                Partial sell — the model target is trimmed by the same {sellPctParsed || 0}%
+                                {t.buyTicker ? `, and ${t.buyTicker.toUpperCase()} is added to each eligible model.` : "."}
+                                {soldIsEqualWeightStock && (
+                                  <> <strong>{displayTicker(t.sellSymbol)} is an individual stock, so its target cannot be trimmed</strong> — stock targets are equal-weighted by design. The position will shrink; the target will not.</>
+                                )}
+                              </p>
+                            );
+                          })()}
                         </>
                       )}
                     </div>
@@ -3099,10 +3358,20 @@ export function PimPortfolio({ groups }: Props) {
                 ) : null;
 
                 return (
-                  <tr key={row.symbol} className="border-b border-line-soft hover:bg-surface-2 transition-colors">
+                  <tr key={row.symbol} className={`border-b border-line-soft hover:bg-surface-2 transition-colors ${row.isOrphan ? "bg-warn-soft/40" : ""}`}>
                     {/* Ticker with company name folded in as a subtitle */}
                     <td className="py-2.5 px-2">
-                      <div className="font-semibold text-ink">{displayTicker(row.symbol)}{currBadge}</div>
+                      <div className="font-semibold text-ink">
+                        {displayTicker(row.symbol)}{currBadge}
+                        {row.isOrphan && (
+                          <span
+                            title="Held in the book but NOT a holding in this model. It has no target weight, and until it is added to the model it will not be rebalanced or attributed. Add it via Buy / Sell or the Models tab."
+                            className="ml-1 inline-block rounded bg-warn px-1 py-0 text-[8px] font-bold uppercase tracking-wider text-white align-middle"
+                          >
+                            Not in model
+                          </span>
+                        )}
+                      </div>
                       {row.name && <div className="text-[10px] text-ink-3 max-w-[220px] truncate">{row.name}</div>}
                     </td>
                     {/* Shares */}
