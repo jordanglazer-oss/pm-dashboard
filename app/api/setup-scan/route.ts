@@ -115,10 +115,26 @@ export async function POST(req: NextRequest) {
   const body = await req.json().catch(() => ({}));
   const redis = await getRedis();
 
-  // Universe: explicit list, else the suggested candidates, else the watchlist.
+  // Universe: an explicit ticker list, a named bucket, or the suggested
+  // candidates by default.
   let tickers: string[] = Array.isArray(body?.tickers) ? body.tickers : [];
   let universe = "explicit";
-  if (tickers.length === 0) {
+
+  const wanted = typeof body?.universe === "string" ? body.universe : null;
+  if (tickers.length === 0 && (wanted === "watchlist" || wanted === "portfolio")) {
+    const raw = await redis.get("pm:stocks");
+    const stocks = raw ? (JSON.parse(raw) as { ticker: string; bucket?: string; instrumentType?: string }[]) : [];
+    const bucket = wanted === "portfolio" ? "Portfolio" : "Watchlist";
+    // Funds and ETFs have no base to break out of in any useful sense, so they
+    // are excluded rather than padding the list with names that will never
+    // score.
+    tickers = stocks
+      .filter((s) => s.bucket === bucket && (!s.instrumentType || s.instrumentType === "stock"))
+      .map((s) => s.ticker);
+    universe = wanted;
+  }
+
+  if (tickers.length === 0 && !wanted) {
     const raw = await redis.get("pm:watchlist-candidates");
     const cands = raw ? (JSON.parse(raw) as { candidates: { ticker: string; fallenOffAt?: string }[] }).candidates : [];
     tickers = cands.filter((c) => !c.fallenOffAt).map((c) => c.ticker);

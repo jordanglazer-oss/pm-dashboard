@@ -18,6 +18,7 @@ import { displayTicker, canonicalTicker } from "@/app/lib/ticker";
 import { useSearchParams, useRouter, usePathname } from "next/navigation";
 import { useLiveModelWeights } from "@/app/lib/useLiveModelWeights";
 import { SuggestedWatchlist } from "@/app/components/SuggestedWatchlist";
+import { SetupScan } from "@/app/components/SetupScan";
 import type { PimProfileType } from "@/app/lib/pim-types";
 import { buildBoostedRows, buildSiaSymbolList, buildMarketEdgeList, boostedSymbol, siaSymbol } from "@/app/lib/watchlist-export";
 
@@ -276,10 +277,22 @@ export function PortfolioOverview({ sidebar }: { sidebar?: React.ReactNode } = {
   const pathname = usePathname();
   const urlBucket: "Portfolio" | "Watchlist" =
     searchParams.get("bucket") === "Watchlist" ? "Watchlist" : "Portfolio";
-  const [rankBucket, setRankBucket] = useState<"Portfolio" | "Watchlist" | "Suggested">(urlBucket);
+  const [rankBucket, setRankBucket] = useState<"Portfolio" | "Watchlist" | "Suggested" | "Setups">(urlBucket);
   // Live candidate count for the Suggested tab chip. Cheap read; the panel
   // itself fetches the full store only when the tab is open.
   const [suggestedCount, setSuggestedCount] = useState(0);
+  // Coiled/Building count for the Setups chip — the reading worth acting on.
+  const [setupCount, setSetupCount] = useState(0);
+  useEffect(() => {
+    fetch("/api/setup-scan", { cache: "no-store" })
+      .then((r) => (r.ok ? r.json() : null))
+      .then((d) => {
+        if (Array.isArray(d?.rows)) {
+          setSetupCount(d.rows.filter((x: { base?: { score?: number } }) => (x.base?.score ?? 0) >= 3).length);
+        }
+      })
+      .catch(() => {});
+  }, []);
   useEffect(() => {
     fetch("/api/kv/watchlist-candidates", { cache: "no-store" })
       .then((r) => (r.ok ? r.json() : null))
@@ -293,7 +306,7 @@ export function PortfolioOverview({ sidebar }: { sidebar?: React.ReactNode } = {
     setRankBucket(urlBucket);
   }, [urlBucket]);
   const selectRankBucket = useCallback(
-    (b: "Portfolio" | "Watchlist" | "Suggested") => {
+    (b: "Portfolio" | "Watchlist" | "Suggested" | "Setups") => {
       setRankBucket(b);
       const params = new URLSearchParams(searchParams.toString());
       params.set("bucket", b);
@@ -1143,15 +1156,16 @@ export function PortfolioOverview({ sidebar }: { sidebar?: React.ReactNode } = {
       {/* Rankings — one table with a Portfolio / Watchlist / Suggested toggle.
           Suggested renders its own panel: it lists CANDIDATES rather than
           scored holdings, so it shares the column rhythm but not the data. */}
-      {rankBucket === "Suggested" ? (
+      {rankBucket === "Suggested" || rankBucket === "Setups" ? (
         <div>
           <div className="mb-3 inline-flex items-center rounded-control border border-line bg-surface-2 p-0.5">
-            {(["Portfolio", "Watchlist", "Suggested"] as const).map((b) => {
+            {(["Portfolio", "Watchlist", "Suggested", "Setups"] as const).map((b) => {
               const active = rankBucket === b;
               const count =
                 b === "Portfolio" ? scoreablePortfolio.length
                 : b === "Watchlist" ? scoreableWatchlist.length
-                : suggestedCount;
+                : b === "Suggested" ? suggestedCount
+                : setupCount;
               return (
                 <button
                   key={b}
@@ -1163,7 +1177,7 @@ export function PortfolioOverview({ sidebar }: { sidebar?: React.ReactNode } = {
               );
             })}
           </div>
-          <SuggestedWatchlist onCountChange={setSuggestedCount} />
+          {rankBucket === "Suggested" ? <SuggestedWatchlist onCountChange={setSuggestedCount} /> : <SetupScan />}
         </div>
       ) : (
       <RankingTable
@@ -1171,12 +1185,13 @@ export function PortfolioOverview({ sidebar }: { sidebar?: React.ReactNode } = {
         subtitle={rankBucket === "Portfolio" ? "Bottom 3 flagged for review" : "Top 3 flagged as buy candidates"}
         bucketTabs={
           <div className="inline-flex items-center rounded-control border border-line bg-surface-2 p-0.5">
-            {(["Portfolio", "Watchlist", "Suggested"] as const).map((b) => {
+            {(["Portfolio", "Watchlist", "Suggested", "Setups"] as const).map((b) => {
               const active = rankBucket === b;
               const count =
                 b === "Portfolio" ? scoreablePortfolio.length
                 : b === "Watchlist" ? scoreableWatchlist.length
-                : suggestedCount;
+                : b === "Suggested" ? suggestedCount
+                : setupCount;
               return (
                 <button
                   key={b}
