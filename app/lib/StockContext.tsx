@@ -31,6 +31,19 @@ import { buildResearchMentionsExplanation } from "./research-mentions-display";
 // would otherwise be silently re-scaled into the Core ETF residual pool.
 const LEGACY_LOCKED_EQUITY_SYMBOLS = new Set(["FID5982", "FID5982-T", "GRNJ"]);
 
+/**
+ * Models whose equity class is weighted as TWO independent currency sleeves
+ * rather than one pool. See the currency-sleeve branch in
+ * rebalanceStockWeights for the full rationale.
+ *
+ * PC USA ONLY, deliberately. Applying this to the other models was measured
+ * and rejected: it moves weights in four of them and destroys No US Situs,
+ * whose CAD fixed holdings alone (49.77%) already exceed its declared 50%
+ * split. Do not add group ids here without auditing that group first
+ * (GET /api/admin/currency-sleeve-audit).
+ */
+const CURRENCY_SLEEVE_GROUPS = new Set(["pc-usa"]);
+
 // One-shot migration for the Research-category restructure (researchCoverage
 // shrank from max 4 → 1, externalSources from max 4 → 1, and two new
 // deterministic keys analystConsensus + researchMentions were added at max 3
@@ -745,6 +758,59 @@ export function StockProvider({ children }: { children: React.ReactNode }) {
     // sticks and the stocks flex to keep the class at 100%. (`groupId` is
     // retained on the signature for call-site auditability / future
     // per-model hooks even though the rule is now uniform.)
+    // ── Currency-sleeve weighting (PC USA only) ──────────────────────────
+    // PC USA is the one model whose CAD sleeve is a fixed TARGET rather than
+    // a by-product. It holds Canadian STOCKS ONLY on the CAD side — no CAD
+    // ETFs — so the Canadian names must stay put while every manual weight
+    // change to a USD ETF (ITOT / VTWO / JBND / WTPI) is absorbed entirely by
+    // the US stocks.
+    //
+    // The single-residual rule below is currency-BLIND: it equal-weights every
+    // individual stock against one pool. That is why ITOT drifting from 56.82%
+    // to 62.03% was clawed back out of the Canadian names too, dragging all 19
+    // stocks to an identical 1.5286%. Splitting the class into two sleeves,
+    // each with its own residual, fixes it at the root.
+    //
+    // BASIS: PC USA stores cadSplit as a share of the TOTAL portfolio (0.084),
+    // while every other group stores it as a share of the EQUITY CLASS (0.5).
+    // Dividing by the balanced equity allocation converts it —
+    // 0.084 / 0.66 = 0.127273 — which matches the seed's CAD sleeve exactly
+    // (7 Canadian stocks x 0.018182). Read from the baseline rather than
+    // hardcoded so the sleeve target stays editable as data.
+    if (groupId && CURRENCY_SLEEVE_GROUPS.has(groupId)) {
+      const baseGroup = pimBaseline.find((g) => g.id === groupId);
+      const declaredCadSplit = baseGroup?.cadSplit;
+      const equityAlloc = baseGroup?.profiles?.balanced?.equity;
+      if (declaredCadSplit != null && equityAlloc) {
+        const cadTarget = declaredCadSplit / equityAlloc;
+        const usdTarget = 1 - cadTarget;
+
+        /** Weight one currency sleeve: fixed holdings keep their set weights,
+         *  individual stocks equal-weight what is left of the sleeve target.
+         *  Returns null when the sleeve cannot reach its target — no stocks to
+         *  absorb the residual, or fixed holdings already over it — so the
+         *  caller falls back rather than emitting a class that misses 100%. */
+        const weightSleeve = (members: PimHolding[], target: number): PimHolding[] | null => {
+          if (members.length === 0) return [];
+          const sleeveStocks = members.filter((h) => seedStockSymbols.has(h.symbol));
+          const sleeveFixed = members.filter((h) => !seedStockSymbols.has(h.symbol));
+          const fixedTotal = sleeveFixed.reduce((sum, h) => sum + h.weightInClass, 0);
+          if (sleeveStocks.length === 0 || fixedTotal > target) return null;
+          const per = parseFloat(((target - fixedTotal) / sleeveStocks.length).toFixed(6));
+          return [...sleeveFixed, ...sleeveStocks.map((h) => ({ ...h, weightInClass: per }))];
+        };
+
+        const usdSleeve = weightSleeve(equityHoldings.filter((h) => h.currency === "USD"), usdTarget);
+        const cadSleeve = weightSleeve(equityHoldings.filter((h) => h.currency !== "USD"), cadTarget);
+        if (usdSleeve && cadSleeve) {
+          return [...nonEquity, ...cadSleeve, ...usdSleeve];
+        }
+        console.warn(
+          `[rebalance] ${groupId}: currency-sleeve weighting not feasible (a sleeve has no stocks to absorb its residual, or its fixed holdings exceed the target). Falling back to the single-residual rule.`,
+        );
+      }
+    }
+
     if (stockHoldings.length > 0) {
       const coreTotalFixed = etfHoldings.reduce((s, h) => s + h.weightInClass, 0);
       const stockResidual = Math.max(0, 1.0 - coreTotalFixed - lockedTotal);
