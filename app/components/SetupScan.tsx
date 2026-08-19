@@ -31,6 +31,8 @@ type Row = {
     pctFromHigh: number;
     contraction: number;
     volumeDryUp: number;
+    volumeCharacter?: "dry-up" | "accumulation" | "distribution" | "neutral";
+    upVolumeShare?: number;
     aboveBothMAs: boolean;
     score: number;
     label: string;
@@ -256,8 +258,10 @@ export function SetupScan({ onCountChange }: { onCountChange?: (n: number) => vo
                       {r.improving.label} {r.improving.score}/6
                     </span>
                   </td>
-                  <td className="py-2.5 pr-3 text-[11px] text-ink-3">
-                    {r.base?.detail || r.improving.active.join(" · ") || "—"}
+                  <td className="py-2.5 pr-3 text-[11px]">
+                    <span className={r.base?.volumeCharacter === "distribution" ? "text-neg" : "text-ink-3"}>
+                      {r.base?.detail || r.improving.active.join(" · ") || "—"}
+                    </span>
                   </td>
                 </tr>
               ))}

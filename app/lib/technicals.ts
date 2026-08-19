@@ -1015,6 +1015,24 @@ export type BaseSetup = {
   contraction: number;
   /** Recent volume vs its own 50-day average. Below 1 = drying up. */
   volumeDryUp: number;
+  /**
+   * What the volume is DOING, not merely how much there is.
+   *
+   * Level alone cannot tell exhaustion from accumulation. Quiet volume in a
+   * base is the textbook read — supply used up, weak holders gone. But HEAVY
+   * volume in a tightening range is not the opposite of that, it is
+   * institutions buying into the consolidation, and scoring it as a failure
+   * penalised the better setup. What separates them is which side the volume
+   * is on: up-day volume against down-day volume over the base.
+   *
+   *   dry-up       quiet — classic contraction base
+   *   accumulation heavy, but skewed to up days — buyers absorbing supply
+   *   distribution heavy, skewed to down days — sellers in control, NOT a base
+   *   neutral      ordinary volume, no character either way
+   */
+  volumeCharacter: "dry-up" | "accumulation" | "distribution" | "neutral";
+  /** Up-day volume as a share of total volume over the base window. */
+  upVolumeShare: number;
   /** Above the 50 AND 200 day averages — a base worth watching sits above
    *  them, not below. */
   aboveBothMAs: boolean;
@@ -1049,6 +1067,27 @@ export function computeBaseSetup(bars: OHLCVBar[], current: TechnicalIndicators)
   const vol20 = vols.slice(-20).reduce((s, v) => s + v, 0) / 20;
   const volumeDryUp = current.volumeAvg50 > 0 ? vol20 / current.volumeAvg50 : 1;
 
+  // Which side the recent volume fell on. A bar closing above its open is
+  // demand, below is supply — crude, but it is the distinction the level alone
+  // cannot make, and it is computed from bars already in hand.
+  let upVol = 0;
+  let downVol = 0;
+  for (const b of bars.slice(-20)) {
+    if (b.close >= b.open) upVol += b.volume;
+    else downVol += b.volume;
+  }
+  const totalVol = upVol + downVol;
+  const upVolumeShare = totalVol > 0 ? upVol / totalVol : 0.5;
+
+  const volumeCharacter: BaseSetup["volumeCharacter"] =
+    volumeDryUp <= 0.9
+      ? "dry-up"
+      : volumeDryUp >= 1.1 && upVolumeShare >= 0.6
+        ? "accumulation"
+        : volumeDryUp >= 1.1 && upVolumeShare <= 0.4
+          ? "distribution"
+          : "neutral";
+
   const aboveBothMAs = current.currentPrice > current.sma50 && current.currentPrice > current.sma200;
 
   // Each condition is one point. Deliberately simple and inspectable — a
@@ -1059,7 +1098,18 @@ export function computeBaseSetup(bars: OHLCVBar[], current: TechnicalIndicators)
   // of, which is the distinction the whole signal exists to make.
   if (pctFromHigh <= 12 && pctFromHigh >= 1) { score++; parts.push(`${pctFromHigh.toFixed(1)}% off the high`); }
   if (contraction <= 0.75) { score++; parts.push(`range contracted to ${(contraction * 100).toFixed(0)}% of prior`); }
-  if (volumeDryUp <= 0.9) { score++; parts.push(`volume ${(volumeDryUp * 100).toFixed(0)}% of average`); }
+  // Either character earns the point — exhaustion and absorption are both
+  // constructive. Distribution earns nothing: heavy volume on down days is
+  // supply arriving, which is the opposite of a base and worth saying out loud.
+  if (volumeCharacter === "dry-up") {
+    score++;
+    parts.push(`volume dried up to ${(volumeDryUp * 100).toFixed(0)}% of average`);
+  } else if (volumeCharacter === "accumulation") {
+    score++;
+    parts.push(`accumulation — ${(upVolumeShare * 100).toFixed(0)}% of volume on up days`);
+  } else if (volumeCharacter === "distribution") {
+    parts.push(`⚠ distribution — ${((1 - upVolumeShare) * 100).toFixed(0)}% of volume on down days`);
+  }
   if (aboveBothMAs) { score++; parts.push("above both MAs"); }
 
   const label: BaseSetup["label"] =
@@ -1069,6 +1119,8 @@ export function computeBaseSetup(bars: OHLCVBar[], current: TechnicalIndicators)
     pctFromHigh: +pctFromHigh.toFixed(2),
     contraction: +contraction.toFixed(3),
     volumeDryUp: +volumeDryUp.toFixed(3),
+    volumeCharacter,
+    upVolumeShare: +upVolumeShare.toFixed(3),
     aboveBothMAs,
     score,
     label,
