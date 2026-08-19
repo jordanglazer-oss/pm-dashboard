@@ -19,6 +19,7 @@ import { companySnapshot, formatSnapshotForPrompt, factsetPeerBlock, namesMatch,
 import { parseModelJson } from "@/app/lib/json-repair";
 import { SCORING_PROMPT } from "@/app/lib/scoring-prompt";
 import { getAdverseEventFlags, formatAdverseFlagsForPrompt } from "@/app/lib/edgar-adverse";
+import { getValuationBand, formatValuationBandForPrompt } from "@/app/lib/valuation-band";
 
 const client = new Anthropic();
 
@@ -621,7 +622,17 @@ export async function POST(request: NextRequest) {
       // Fetch FactSet + Yahoo + price history + EDGAR XBRL in parallel.
       // Yahoo/price/EDGAR are each wrapped so one upstream hiccup can't drop
       // the FactSet block (EDGAR also returns null cleanly for non-US names).
-      const [factsetSnap, financialResult, priceHistory, edgarBlock] = await Promise.all([
+      // Own-history valuation band (audit Finding 13): FG_PE monthly over 5y
+      // via the FactSet time-series batch flow, cache-first (7d TTL). Runs in
+      // the same parallel stage so a cache miss overlaps the other fetches;
+      // fails open to null (band block simply absent — the pre-band status
+      // quo) on any relay error, timeout, or unexpected payload shape.
+      const valBandPromise =
+        fsRes.source === "factset"
+          ? getValuationBand(upperTicker, fsRes.id).catch(() => null)
+          : Promise.resolve(null);
+
+      const [factsetSnap, financialResult, priceHistory, edgarBlock, valBand] = await Promise.all([
         factsetPromise,
         fetchFinancialData(upperTicker),
         fetchPriceHistory(upperTicker).catch(() => [] as OHLCVBar[]),
@@ -629,6 +640,7 @@ export async function POST(request: NextRequest) {
           console.error("[EDGAR] non-fatal fetch error:", e);
           return null;
         }),
+        valBandPromise,
       ]);
 
       stockPrice = financialResult.price;
@@ -695,7 +707,11 @@ export async function POST(request: NextRequest) {
       } else if (rawModules != null) {
         yahooContext = financialResult.context;
       }
-      financialContext = [factsetBlock, peerBlock, yahooContext].filter(Boolean).join("\n\n---\n\n");
+      // The band block rides directly behind the FactSet snapshot so the
+      // historicalValuation evidence sits beside the current multiples. Only
+      // meaningful when FactSet is the graded source (factsetUsed).
+      const valBandBlock = factsetUsed ? formatValuationBandForPrompt(valBand) : "";
+      financialContext = [factsetBlock, valBandBlock, peerBlock, yahooContext].filter(Boolean).join("\n\n---\n\n");
 
       // ── Sector playbook: deterministic metric selection by GICS class ──
       // Chosen server-side from FactSet sector+industry (falls back to the
