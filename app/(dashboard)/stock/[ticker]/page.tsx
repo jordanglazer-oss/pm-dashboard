@@ -6,7 +6,7 @@ import Link from "next/link";
 import { useStocks } from "@/app/lib/StockContext";
 import { SCORE_GROUPS, MAX_SCORE, INSTRUMENT_LABELS } from "@/app/lib/types";
 import type { ScoreKey, Scores, FundData, ScoreDataPoint, ScoreDataPointSource, ExternalSourceNote } from "@/app/lib/types";
-import { groupTotal, isScoreable, normalizeSector, marketEdgeApplies, boostedAiApplies, siaApplies } from "@/app/lib/scoring";
+import { groupTotal, isScoreable, normalizeSector, marketEdgeApplies, boostedAiApplies, siaApplies, ownershipTrendsApplies } from "@/app/lib/scoring";
 import { computeAnalystConsensus, buildConsensusExplanation } from "@/app/lib/analyst-snapshots";
 import { displayTicker } from "@/app/lib/ticker";
 import { AnalystSnapshotPanel } from "@/app/components/AnalystSnapshotPanel";
@@ -2217,7 +2217,19 @@ export default function StockDetailPage() {
                               )}
                             </div>
                             <div className="flex gap-1">
-                              {cat.key === "marketEdge" && !marketEdgeApplies(stock) ? (
+                              {cat.key === "ownershipTrends" && !ownershipTrendsApplies(stock) ? (
+                                /* Form 4 insider data is US-only (SEDI not integrated), so
+                                   for Canadian listings the category is N/A and excluded
+                                   from the composite (normalized back to the full scale in
+                                   computeScores) — a fixed DATA GAP 1/2 on every TSX name
+                                   was a constant, non-discriminating offset. */
+                                <span
+                                  className="flex h-7 items-center justify-center rounded-md bg-surface-2 px-2 text-[11px] font-semibold text-ink-3"
+                                  title="Insider-trend data (SEC Form 4) covers US listings only — SEDI is not integrated. For this Canadian listing the category is N/A and excluded from the composite (score normalized so the stock isn't penalized)."
+                                >
+                                  N/A
+                                </span>
+                              ) : cat.key === "marketEdge" && !marketEdgeApplies(stock) ? (
                                 /* MarketEdge covers US listings only. For a pure-Canadian
                                    name it can't reach, the category is N/A and excluded
                                    from the composite (which is normalized back to the full

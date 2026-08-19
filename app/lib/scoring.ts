@@ -381,6 +381,23 @@ export function siaApplies(stock: Stock): boolean {
   return (stock.scores.relativeStrength || 0) !== 0;
 }
 
+const OWNERSHIP_MAX = 2;
+
+/** ownershipTrends is graded from SEC Form 4 open-market insider trades — a
+ *  feed that STRUCTURALLY does not exist for Canadian-only listings (SEDI is
+ *  not integrated), so every TSX name was receiving the fixed DATA GAP
+ *  default of 1/2: a constant offset that can't discriminate and dilutes
+ *  ranking exactly where the book is heaviest (audit Finding 04). Same
+ *  treatment as MarketEdge's structural gap: the category drops out of BOTH
+ *  the numerator and the denominator for Canadian listings and the composite
+ *  renormalizes. Deliberately unconditional (not data-presence-gated like
+ *  BoostedAI/SIA): counting only bullish 2s or only bearish 0s would bias
+ *  the composite directionally on web-scraped scraps. If SEDI is ever
+ *  integrated, switch this to a data-presence predicate like marketEdge. */
+export function ownershipTrendsApplies(stock: Stock): boolean {
+  return !CANADIAN_LISTING_RE.test(stock.ticker.trim());
+}
+
 /** MarketEdge in the COMPOSITE: the structural Canadian rule above, plus the
  *  same not-yet-imported rule for US names. Deliberately separate from
  *  marketEdgeApplies — the coverage UI keeps using that, because for a US name
@@ -423,6 +440,10 @@ export function computeScores(
   if (!siaApplies(stock)) {
     applicableSum -= stock.scores.relativeStrength || 0;
     effectiveMax -= RELSTRENGTH_MAX;
+  }
+  if (!ownershipTrendsApplies(stock)) {
+    applicableSum -= stock.scores.ownershipTrends || 0;
+    effectiveMax -= OWNERSHIP_MAX;
   }
   const normalizedSum = effectiveMax > 0 ? applicableSum * (MAX_SCORE / effectiveMax) : applicableSum;
   // Round to 1 decimal to avoid IEEE 754 floating-point noise

@@ -182,9 +182,21 @@ export function setReportsForTicker(blob: AnalystReports, ticker: string, next: 
 
 // ── Pure scoring helpers ───────────────────────────────────────────────
 
+/**
+ * Level-component weight (audit Finding 06). The components used to sum to a
+ * possible 4.5 before the [0,3] clamp: two Outperforms + 25% upside alone hit
+ * 3.0, so the revision-momentum and Morningstar modifiers — the fast,
+ * forward-looking signals — contributed NOTHING on exactly the
+ * highest-conviction names. Ratings and upside now carry 0.75 each (level
+ * ceiling 2.25), leaving 0.75 of live headroom: a well-liked name with
+ * estimates being cut is now visibly different from one with estimates
+ * being raised.
+ */
+export const RATING_WEIGHT = 0.75;
+
 export function ratingScore(rating: AnalystRating): number {
-  if (rating === "outperform") return 1.0;
-  if (rating === "neutral") return 0.5;
+  if (rating === "outperform") return RATING_WEIGHT;
+  if (rating === "neutral") return RATING_WEIGHT / 2;
   if (rating === "underperform") return 0.0;
   return 0; // not-covered contributes nothing
 }
@@ -203,14 +215,15 @@ export function freshnessWeight(_entry: AnalystEntry, _currentPrice?: number): F
   return { weight: 1.0, label: "fresh", reason: undefined };
 }
 
-/** FactSet target → upside sub-point (0–1). */
+/** FactSet target → upside sub-point (0–0.75; rescaled per Finding 06 so the
+ *  level components cap at 2.25 and revisions/Morningstar keep headroom). */
 export function upsideScore(target: number, currentPrice: number): number {
   if (!target || !currentPrice || currentPrice <= 0) return 0;
   const upside = (target - currentPrice) / currentPrice;
-  if (upside >= 0.25) return 1.0;
-  if (upside >= 0.10) return 0.75;
-  if (upside >= 0) return 0.5;
-  if (upside >= -0.10) return 0.25;
+  if (upside >= 0.25) return 0.75;
+  if (upside >= 0.10) return 0.55;
+  if (upside >= 0) return 0.35;
+  if (upside >= -0.10) return 0.2;
   return 0;
 }
 
@@ -327,10 +340,11 @@ export function computeAnalystConsensus(
       : { target, targetSource, contribution: 0 };
 
   // Revision momentum — the forward component. Acts as a promoter/demoter on
-  // the level-based sum (ratings + upside), so the level signal keeps its full
-  // range while direction of travel moves the final number: a maxed consensus
-  // with estimates being cut drops; a middling one with strong up-revisions
-  // rises. Null (not imported) contributes nothing — absent ≠ bearish.
+  // the level-based sum (ratings + upside, ceiling 2.25 after the Finding 06
+  // rescale), so the level signal can no longer pin the [0,3] clamp on its
+  // own: a maxed consensus with estimates being cut drops below 3; a middling
+  // one with strong up-revisions rises. Null (not imported) contributes
+  // nothing — absent ≠ bearish.
   const revisions = revisionContribution(snapshot?.factset);
   const morningstar = morningstarContribution(snapshot?.morningstar);
 
