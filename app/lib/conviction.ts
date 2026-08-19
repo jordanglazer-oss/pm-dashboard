@@ -27,7 +27,7 @@ function norm(t: string): string {
   return String(t || "").replace(/^\$+/, "").replace(/\//g, "-").split(/[.\s]/)[0].toUpperCase();
 }
 
-export type ConvictionSignalKind = "rating" | "upside" | "external" | "list";
+export type ConvictionSignalKind = "rating" | "upside" | "external" | "list" | "quant" | "setup";
 
 export type ConvictionSignal = {
   label: string;
@@ -85,10 +85,49 @@ export type ComputeConvictionInput = {
   snapshots: AnalystSnapshots;
   /** ticker → live price, for the FactSet upside calc (falls back to stock.price). */
   prices: Record<string, number | null | undefined>;
+  /** Weekly RBC EQUATE composite ranks. Optional — absent simply means the
+   *  quant signal does not fire, never that a name scores worse. */
+  equateRanks?: { symbol: string; compositeRank: number; decile: number }[];
+  /** Latest setup-scan rows. Optional, same reasoning. */
+  setups?: { ticker: string; base: { score: number; label: string } | null }[];
 };
 
 export function computeConviction(input: ComputeConvictionInput): ConvictionEntry[] {
-  const { stocks, research, snapshots, prices } = input;
+  const { stocks, research, snapshots, prices, equateRanks, setups } = input;
+
+  /**
+   * RBC EQUATE composite RANK, from the weekly rank sheets.
+   *
+   * Deliberately separate from the existing "Equate CAD / USD" list signals:
+   * those are membership of the CORE 40 MODEL PORTFOLIO — forty names RBC has
+   * actually picked — whereas this is position within a 1,360-name quant
+   * ranking. Folding one into the other would destroy the distinction and
+   * overwrite a curated list with a screen.
+   *
+   * Decile 1 is the top 10% of the universe; rank <= 25 is the sharp end of
+   * that, and scores double.
+   */
+  const rankByKey = new Map<string, { rank: number; decile: number }>();
+  for (const r of equateRanks || []) {
+    const key = norm(r.symbol);
+    const prev = rankByKey.get(key);
+    // A name can appear in both regional sheets; keep the better reading.
+    if (!prev || r.compositeRank < prev.rank) rankByKey.set(key, { rank: r.compositeRank, decile: r.decile });
+  }
+
+  /**
+   * Technical SETUP, from the setup scan.
+   *
+   * The only forward-looking signal here. Every other input describes what has
+   * already happened — a rating earned, a list published, a rank achieved — so
+   * the board systematically favours names that have already moved. A coiled
+   * base is the one reading that says "not yet".
+   */
+  const setupByKey = new Map<string, { base: number; label: string }>();
+  for (const row of setups || []) {
+    if (!row.base || row.base.score < 3) continue; // Building or better only
+    setupByKey.set(norm(row.ticker), { base: row.base.score, label: row.base.label });
+  }
 
   // Per-list membership sets keyed by normalized ticker + a display-ticker map.
   const listSets = LISTS.map((l) => {
@@ -207,6 +246,26 @@ export function computeConviction(input: ComputeConvictionInput): ConvictionEntr
       const net = rev.up - rev.down;
       if (net >= 2) signals.push({ label: `Estimates ↑ (${rev.up}/${rev.down})`, points: 1, kind: "external" });
       else if (net <= -2) signals.push({ label: `Estimates ↓ (${rev.up}/${rev.down})`, points: -1, kind: "external" });
+    }
+
+    // 3c. EQUATE quant rank.
+    const qr = rankByKey.get(entry.key);
+    if (qr && qr.decile <= 1) {
+      signals.push({
+        label: qr.rank <= 25 ? `Equate rank #${qr.rank}` : `Equate top decile (#${qr.rank})`,
+        points: qr.rank <= 25 ? 2 : 1,
+        kind: "quant",
+      });
+    }
+
+    // 3d. Technical setup — the only signal that is not backward-looking.
+    const su = setupByKey.get(entry.key);
+    if (su) {
+      signals.push({
+        label: su.base >= 4 ? "Coiled base" : "Base building",
+        points: su.base >= 4 ? 2 : 1,
+        kind: "setup",
+      });
     }
 
     // 4. Research-list membership.

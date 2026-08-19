@@ -25,6 +25,11 @@ const KIND_STYLE: Record<ConvictionSignal["kind"], string> = {
   upside: "bg-pos-soft text-pos border-pos-border",
   external: "bg-accent-soft text-accent border-accent-border",
   list: "bg-warn-soft text-warn border-warn-border",
+  // Distinct tones: the quant rank and the technical setup are different KINDS
+  // of evidence from a research list, and a board whose badges all look alike
+  // hides where the agreement actually comes from.
+  quant: "bg-violet-soft text-violet border-violet-border",
+  setup: "bg-pos-soft text-pos border-pos-border",
 };
 
 function SignalBadge({ sig }: { sig: ConvictionSignal }) {
@@ -134,6 +139,20 @@ export default function ConvictionPage() {
   // enriches the quantitative board with the "why" and regime context.
   const [synthesisByKey, setSynthesisByKey] = useState<Map<string, { thesis?: string; regimeFit?: string; regimeFitRationale?: string }>>(new Map());
   const [pipeline, setPipeline] = useState<IdeaPipelineStore>({});
+  // EQUATE ranks and setup readings — both optional inputs to the board, so a
+  // failed fetch degrades the signal rather than the page.
+  const [equateRanks, setEquateRanks] = useState<{ symbol: string; compositeRank: number; decile: number }[]>([]);
+  const [setups, setSetups] = useState<{ ticker: string; base: { score: number; label: string } | null }[]>([]);
+  useEffect(() => {
+    fetch("/api/equate-ranks", { cache: "no-store" })
+      .then((r) => (r.ok ? r.json() : null))
+      .then((d) => { if (Array.isArray(d?.rows)) setEquateRanks(d.rows); })
+      .catch(() => {});
+    fetch("/api/setup-scan", { cache: "no-store" })
+      .then((r) => (r.ok ? r.json() : null))
+      .then((d) => { if (Array.isArray(d?.rows)) setSetups(d.rows); })
+      .catch(() => {});
+  }, []);
 
   // Load the idea-pipeline tracking store.
   useEffect(() => {
@@ -250,8 +269,10 @@ export default function ConvictionPage() {
   };
 
   const entries = useMemo(
-    () => computeConviction({ stocks: scoredStocks, research, snapshots: analystSnapshots, prices }),
-    [scoredStocks, research, analystSnapshots, prices]
+    () => computeConviction({ stocks: scoredStocks, research, snapshots: analystSnapshots, prices, equateRanks, setups }),
+    // equateRanks and setups load asynchronously — without them here the board
+    // computes once from empty arrays and never picks the readings up.
+    [scoredStocks, research, analystSnapshots, prices, equateRanks, setups]
   );
 
   // Auto-surface: any research-list name (an idea) not yet tracked gets added to
