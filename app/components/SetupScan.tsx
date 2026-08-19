@@ -1,6 +1,6 @@
 "use client";
 
-import React, { useCallback, useEffect, useState } from "react";
+import React, { useCallback, useEffect, useRef, useState } from "react";
 import { displayTicker } from "@/app/lib/ticker";
 
 /**
@@ -45,12 +45,18 @@ type Scan = {
   scanned?: number;
   requested?: number;
   reused?: number;
+  fetched?: number;
   failed?: number;
   remaining?: number;
   complete?: number;
   note?: string;
   rows: Row[];
 };
+
+/** Enough passes to cover a few hundred names; the loop exits early once the
+ *  universe is covered or the limiter stops answering. */
+const MAX_PASSES = 12;
+const PAUSE_MS = 2500;
 
 const BASE_TONE: Record<string, string> = {
   Coiled: "bg-pos-soft text-pos ring-pos-border",
@@ -65,6 +71,8 @@ export function SetupScan({ onCountChange }: { onCountChange?: (n: number) => vo
   const [running, setRunning] = useState(false);
   const [universe, setUniverse] = useState<"suggested" | "watchlist" | "portfolio">("suggested");
   const [sortBy, setSortBy] = useState<"base" | "improving">("base");
+  const [passInfo, setPassInfo] = useState<{ pass: number; remaining: number } | null>(null);
+  const stopRef = useRef(false);
 
   const load = useCallback(async () => {
     try {
@@ -80,24 +88,43 @@ export function SetupScan({ onCountChange }: { onCountChange?: (n: number) => vo
   }, [onCountChange]);
   useEffect(() => { load(); }, [load]);
 
+  /**
+   * Run slices until the universe is covered, rather than making the PM press
+   * the button five times.
+   *
+   * Each pass is a separate request on purpose: the slice size exists because
+   * Yahoo throttles Vercel's shared IPs, so one long request would be refused
+   * partway regardless. Pausing between passes gives the limiter room to
+   * recover, which is what makes the next slice succeed.
+   *
+   * Stops on its own when nothing is left, when a pass reads NOTHING (fully
+   * throttled — hammering will not help), or when the PM presses Stop.
+   */
   const run = async () => {
     setRunning(true);
+    stopRef.current = false;
     try {
-      // An empty body scans the suggested candidates; the other two universes
-      // are resolved server-side from pm:stocks by bucket.
-      const body = universe === "suggested" ? {} : { universe };
-      const r = await fetch("/api/setup-scan", {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify(body),
-      });
-      if (r.ok) {
+      for (let pass = 0; pass < MAX_PASSES; pass++) {
+        if (stopRef.current) break;
+        const body: Record<string, unknown> = universe === "suggested" ? {} : { universe };
+        const r = await fetch("/api/setup-scan", {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify(body),
+        });
+        if (!r.ok) break;
         const d: Scan = await r.json();
         setScan(d);
         onCountChange?.(d.rows.filter((x) => (x.base?.score ?? 0) >= 3).length);
+        setPassInfo({ pass: pass + 1, remaining: d.remaining ?? 0 });
+        if ((d.remaining ?? 0) <= 0) break;
+        if ((d.fetched ?? 0) === 0) break; // throttled flat — stop rather than spin
+        await new Promise((res) => setTimeout(res, PAUSE_MS));
       }
     } finally {
       setRunning(false);
+      setPassInfo(null);
+      stopRef.current = false;
     }
   };
 
@@ -151,17 +178,32 @@ export function SetupScan({ onCountChange }: { onCountChange?: (n: number) => vo
           >
             Sort: {sortBy === "base" ? "Coiling" : "Recovering"}
           </button>
-          <button
-            onClick={run}
-            disabled={running}
-            className="rounded-control bg-accent px-3 py-1.5 font-semibold !text-white disabled:opacity-50"
-          >
-            {running ? "Scanning…" : (scan.remaining ?? 0) > 0 ? `Scan next ${Math.min(scan.remaining ?? 0, 25)}` : "Run scan"}
-          </button>
+          {running ? (
+            <button
+              onClick={() => { stopRef.current = true; }}
+              className="rounded-control border border-neg-border bg-neg-soft px-3 py-1.5 font-semibold text-neg"
+            >
+              Stop
+            </button>
+          ) : (
+            <button
+              onClick={run}
+              className="rounded-control bg-accent px-3 py-1.5 font-semibold !text-white"
+            >
+              {(scan.remaining ?? 0) > 0 ? `Continue (${scan.remaining} left)` : "Run scan"}
+            </button>
+          )}
         </div>
       </div>
 
-      {scan.note && (
+      {running && (
+        <div className="mb-3 rounded border border-accent-border bg-accent-soft px-3 py-2 text-xs text-accent">
+          Scanning in passes{passInfo ? ` — pass ${passInfo.pass}, ${passInfo.remaining} left` : "…"}. Yahoo
+          limits how much can be read at once, so this pauses between passes. Safe to leave running.
+        </div>
+      )}
+
+      {!running && scan.note && (
         <div className="mb-3 rounded border border-line bg-surface-2 px-3 py-2 text-xs text-ink-2">
           {scan.note}
         </div>
