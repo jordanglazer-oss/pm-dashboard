@@ -76,7 +76,11 @@ export type InboxKind =
  *  prefixes are ordered most-specific first ("Fundstrat SMID Top" before
  *  "Fundstrat Top") so the regex alternation matches correctly. */
 export function classifySubject(subject: string): InboxKind {
-  const s = subject.trim();
+  // Strip forwarding prefixes before matching. Almost every pattern below is
+  // anchored at the start, so "FW: SIA - 2026-08-17" matched none of them —
+  // and forwarding is the normal way these arrive. Handles stacked prefixes
+  // ("RE: FW: ...") and the localised forms Gmail emits.
+  const s = subject.trim().replace(/^(?:\s*(?:fw|fwd|re|tr|wg|aw|rv)\s*:\s*)+/i, "");
   if (/^analyst report:/i.test(s)) return "analyst-report";
   // RBC EQUATE rank sheets. Matched on the vendor's own wording so the weekly
   // email forwards unedited — its attachments are named
@@ -128,7 +132,12 @@ export function classifySubject(subject: string): InboxKind {
  *  subject is whatever RBC happens to send. */
 export function isEquateLabel(label: string | undefined): boolean {
   const flat = (label ?? "").toLowerCase().replace(/[^a-z0-9]/g, "");
-  return /equate/.test(flat) && /modelrank|allcap|largecap/.test(flat);
+  // "equate" plus any rank/cap wording. The vendor is not consistent between
+  // the email and the files it carries — the subject reads "RBC EQUATE
+  // Quantitative Ranks" while the attachments say "RBC EQUATE Model Ranks -
+  // US All Cap" — so matching one exact phrase rejected the very emails this
+  // was written for. "FW:" / "RE:" prefixes fall out of the flattening.
+  return /equate/.test(flat) && /rank|allcap|largecap|midcap|smallcap/.test(flat);
 }
 
 /** FactSet alert emails are recognised by SENDER as well as subject, so a
