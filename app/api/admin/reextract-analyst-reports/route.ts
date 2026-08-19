@@ -10,6 +10,16 @@ const log = createLogger("Reextract-reports");
 /**
  * GET /api/admin/reextract-analyst-reports
  *
+ * STATUS (2026-08-19): DELIBERATELY STOPPED PARTWAY — not abandoned or broken.
+ * Jordan opted to upgrade the library going FORWARD (every new upload already
+ * carries the new fields) rather than pay to re-extract the whole ~118-slot
+ * archive, on the reasoning that reports older than ~90 days are demoted to
+ * background context by the scoring prompt anyway and their "dated catalysts"
+ * have usually already passed. The batches that did run are stored and valid.
+ * This endpoint is left in place, inert (dry-run unless &confirm=YES), because
+ * it is the right tool if the extraction schema is widened again. Hit it with
+ * no params any time to see how many slots still predate the current schema.
+ *
  * One-shot backfill for audit Finding 14: the PDF extraction schema was
  * widened (dated catalysts, valuation basis, scenario targets), and every
  * archived report PDF in Blob (analyst-reports/<id>) can be re-extracted so
