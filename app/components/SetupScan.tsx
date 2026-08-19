@@ -39,7 +39,17 @@ type Row = {
   error?: string;
 };
 
-type Scan = { generatedAt: string | null; universe?: string; scanned?: number; rows: Row[] };
+type Scan = {
+  generatedAt: string | null;
+  universe?: string;
+  scanned?: number;
+  requested?: number;
+  reused?: number;
+  failed?: number;
+  remaining?: number;
+  note?: string;
+  rows: Row[];
+};
 
 const BASE_TONE: Record<string, string> = {
   Coiled: "bg-pos-soft text-pos ring-pos-border",
@@ -48,7 +58,7 @@ const BASE_TONE: Record<string, string> = {
   None: "bg-surface-2 text-ink-faint ring-line",
 };
 
-export function SetupScan() {
+export function SetupScan({ onCountChange }: { onCountChange?: (n: number) => void }) {
   const [scan, setScan] = useState<Scan>({ generatedAt: null, rows: [] });
   const [loading, setLoading] = useState(true);
   const [running, setRunning] = useState(false);
@@ -58,11 +68,15 @@ export function SetupScan() {
   const load = useCallback(async () => {
     try {
       const r = await fetch("/api/setup-scan", { cache: "no-store" });
-      if (r.ok) setScan(await r.json());
+      if (r.ok) {
+        const d: Scan = await r.json();
+        setScan(d);
+        onCountChange?.(d.rows.filter((x) => (x.base?.score ?? 0) >= 3).length);
+      }
     } finally {
       setLoading(false);
     }
-  }, []);
+  }, [onCountChange]);
   useEffect(() => { load(); }, [load]);
 
   const run = async () => {
@@ -76,7 +90,11 @@ export function SetupScan() {
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify(body),
       });
-      if (r.ok) setScan(await r.json());
+      if (r.ok) {
+        const d: Scan = await r.json();
+        setScan(d);
+        onCountChange?.(d.rows.filter((x) => (x.base?.score ?? 0) >= 3).length);
+      }
     } finally {
       setRunning(false);
     }
@@ -125,6 +143,14 @@ export function SetupScan() {
           </button>
         </div>
       </div>
+
+      {scan.note && (
+        <div className="mb-3 rounded border border-warn-border bg-warn-soft px-3 py-2 text-xs text-warn">
+          {scan.note}
+          {typeof scan.failed === "number" && scan.failed > 0 && ` ${scan.failed} failed this pass.`}
+          {typeof scan.reused === "number" && scan.reused > 0 && ` ${scan.reused} reused from earlier today.`}
+        </div>
+      )}
 
       {loading ? (
         <p className="py-8 text-center text-xs text-ink-3">Loading…</p>

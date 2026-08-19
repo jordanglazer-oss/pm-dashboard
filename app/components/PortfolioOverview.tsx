@@ -1177,7 +1177,7 @@ export function PortfolioOverview({ sidebar }: { sidebar?: React.ReactNode } = {
               );
             })}
           </div>
-          {rankBucket === "Suggested" ? <SuggestedWatchlist onCountChange={setSuggestedCount} /> : <SetupScan />}
+          {rankBucket === "Suggested" ? <SuggestedWatchlist onCountChange={setSuggestedCount} /> : <SetupScan onCountChange={setSetupCount} />}
         </div>
       ) : (
       <RankingTable

@@ -14,9 +14,25 @@ export const maxDuration = 60;
 const KEY = "pm:setup-scan";
 const YAHOO = "https://query1.finance.yahoo.com";
 const UA = "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 Chrome/120 Safari/537.36";
-/** Yahoo throttles hard on parallel bursts; this is a scan, not a page load. */
-const CONCURRENCY = 6;
+/**
+ * Yahoo rate-limits aggressively. Six parallel workers with no pacing got two
+ * names through and then 429'd the other 87 — the scan "succeeded" while
+ * returning almost nothing.
+ *
+ * Two workers with a gap between requests keeps roughly 4-5 req/sec, which
+ * Yahoo tolerates. A 429 is retried with backoff rather than discarded: it is
+ * a "slow down", not a "no such ticker", and treating it as failure threw away
+ * names that would have answered a moment later.
+ */
+const CONCURRENCY = 2;
+const REQUEST_GAP_MS = 220;
+const MAX_RETRIES = 3;
 const DEADLINE_MS = 50_000;
+/** A reading from earlier today is still the same reading — reuse it so a
+ *  re-run spends its request budget on what actually failed. */
+const FRESH_MS = 12 * 60 * 60 * 1000;
+
+const sleep = (ms: number) => new Promise((r) => setTimeout(r, ms));
 
 /**
  * POST /api/setup-scan — find names that look ready to move, not names that
@@ -52,11 +68,17 @@ function toYahoo(t: string) {
 }
 
 async function fetchBars(ticker: string): Promise<OHLCVBar[]> {
-  const res = await fetch(
-    `${YAHOO}/v8/finance/chart/${encodeURIComponent(toYahoo(ticker))}?range=1y&interval=1d`,
-    { cache: "no-store", headers: { "User-Agent": UA } },
-  );
-  if (!res.ok) throw new Error(`Yahoo ${res.status}`);
+  let res: Response | null = null;
+  for (let attempt = 0; attempt <= MAX_RETRIES; attempt++) {
+    res = await fetch(
+      `${YAHOO}/v8/finance/chart/${encodeURIComponent(toYahoo(ticker))}?range=1y&interval=1d`,
+      { cache: "no-store", headers: { "User-Agent": UA } },
+    );
+    if (res.status !== 429) break;
+    // Back off and try again — 429 means "slow down", not "no such ticker".
+    if (attempt < MAX_RETRIES) await sleep(600 * Math.pow(2, attempt));
+  }
+  if (!res || !res.ok) throw new Error(`Yahoo ${res?.status ?? "no response"}`);
   const j = await res.json();
   const r = j?.chart?.result?.[0];
   const ts: number[] = r?.timestamp ?? [];
@@ -90,6 +112,9 @@ async function scanTickers(tickers: string[], startedAt: number) {
     while (i < tickers.length) {
       if (Date.now() - startedAt > DEADLINE_MS) return;
       const t = tickers[i++];
+      // Pace the workers so the burst never trips the limiter in the first
+      // place; retries are the safety net, not the strategy.
+      await sleep(REQUEST_GAP_MS);
       try {
         const bars = await fetchBars(t);
         const tech = computeTechnicals(bars);
@@ -150,7 +175,29 @@ export async function POST(req: NextRequest) {
     return NextResponse.json({ ok: false, error: "No tickers to scan." }, { status: 400 });
   }
 
-  const rows = await scanTickers([...new Set(tickers)], startedAt);
+  const unique = [...new Set(tickers)];
+
+  // ── Incremental ────────────────────────────────────────────────────────
+  // Reuse today's good readings and re-fetch only what is missing or errored.
+  // Without this a rate-limited run threw away its successes too, so every
+  // retry restarted from zero and hit the same wall in the same place.
+  let carried: SetupRow[] = [];
+  if (!body?.full) {
+    try {
+      const prevRaw = await redis.get(KEY);
+      const prev = prevRaw ? (JSON.parse(prevRaw) as { generatedAt?: string; rows?: SetupRow[] }) : null;
+      const age = prev?.generatedAt ? Date.now() - Date.parse(prev.generatedAt) : Infinity;
+      if (prev?.rows && age < FRESH_MS) {
+        const wanted = new Set(unique.map((t) => t.toUpperCase()));
+        carried = prev.rows.filter((r) => wanted.has(r.ticker.toUpperCase()) && !r.error && r.price > 0);
+      }
+    } catch { /* no carry-over; scan everything */ }
+  }
+  const carriedSet = new Set(carried.map((r) => r.ticker.toUpperCase()));
+  const todo = unique.filter((t) => !carriedSet.has(t.toUpperCase()));
+
+  const fresh = await scanTickers(todo, startedAt);
+  const rows = [...carried, ...fresh];
 
   // Name and sector from pm:stocks where known — same taxonomy as everywhere
   // else, and free for anything already tracked.
@@ -175,8 +222,18 @@ export async function POST(req: NextRequest) {
     generatedAt: new Date().toISOString(),
     universe,
     scanned: rows.length,
-    requested: tickers.length,
-    truncated: rows.length < tickers.length,
+    requested: unique.length,
+    reused: carried.length,
+    fetched: fresh.length,
+    failed: rows.filter((r) => r.error).length,
+    // A partial scan is normal when Yahoo throttles. Say so, and say what to
+    // do about it, rather than presenting a short list as a complete one.
+    remaining: unique.length - rows.length,
+    truncated: rows.length < unique.length,
+    note:
+      rows.length < unique.length || rows.some((r) => r.error)
+        ? "Partial — run again to pick up the rest; today's good readings are reused."
+        : undefined,
     rows,
   };
   if (!body?.dryRun) await redis.set(KEY, JSON.stringify(payload));
