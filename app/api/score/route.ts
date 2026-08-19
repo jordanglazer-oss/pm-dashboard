@@ -18,6 +18,7 @@ import { loadStreetTakeawaysFor, formatStreetTakeawaysForPrompt } from "@/app/li
 import { companySnapshot, formatSnapshotForPrompt, factsetPeerBlock, namesMatch, normalizeFactsetSector, type CompanySnapshot } from "@/app/lib/factset-fundamentals";
 import { parseModelJson } from "@/app/lib/json-repair";
 import { SCORING_PROMPT } from "@/app/lib/scoring-prompt";
+import { getAdverseEventFlags, formatAdverseFlagsForPrompt } from "@/app/lib/edgar-adverse";
 
 const client = new Anthropic();
 
@@ -797,7 +798,22 @@ export async function POST(request: NextRequest) {
           financialContext += `\n\n---\n\n${edgarBlock}`;
         }
       } else if (isCanadianListing) {
-        financialContext += `\n\n---\n\n=== NO SEC EDGAR DATA AVAILABLE ===\n${upperTicker} is a Canadian-only listing (no US dual-listing in the SEC ticker map). SEC EDGAR XBRL data is unavailable for this issuer.\n\nFor fundamental categories (growth, leverageCoverage, cashFlowQuality, relativeValuation, historicalValuation), use the Yahoo Finance data block above as the primary source and aggressively use web_search to verify against the company's MOST RECENT quarterly MD&A or earnings press release (cite the IR-page or SEDAR+ filing URL in sourceDetail). For ownershipTrends (normally driven by Form 4 in the US): no SEDI insider feed is available in this pipeline — report the most recent insider activity disclosed via the company's MD&A or news releases if web_search surfaces it, otherwise score conservatively at the midpoint and confidence: "low". Do not pretend Form 4-style data exists when it doesn't.\n`;
+        financialContext += `\n\n---\n\n=== NO SEC EDGAR DATA AVAILABLE ===\n${upperTicker} is a Canadian-only listing (no US dual-listing in the SEC ticker map). SEC EDGAR XBRL data is unavailable for this issuer.\n\nFor fundamental categories (growth, leverageCoverage, cashFlowQuality, relativeValuation, historicalValuation), use the FactSet block above as the primary source (or Yahoo when FactSet is absent) and use web_search to verify against the company's MOST RECENT quarterly MD&A or earnings press release (cite the IR-page or SEDAR+ filing URL in sourceDetail). For ownershipTrends: no SEDI insider feed is available — the category is excluded from this name's composite server-side; emit only the brief DATA GAP explanation per the system prompt. Do not pretend Form 4-style data exists when it doesn't.\n`;
+      }
+
+      // ── Deterministic hard-floor scan (audit Finding 05) ──────────────
+      // 8-K items 4.02 / 1.03 / 3.01 and Form 25 from the cached SEC
+      // submissions index. Previously the hard floors could only fire via
+      // web_search, which is off by default — a bankruptcy filing could go
+      // completely unseen by a normal rescore. US names only; returns []
+      // on any failure so scoring never breaks because of this scan.
+      if (!isCanadianListing) {
+        const adverseFlags = await getAdverseEventFlags(upperTicker);
+        const adverseBlock = formatAdverseFlagsForPrompt(adverseFlags);
+        if (adverseBlock) {
+          financialContext += `\n\n---\n\n${adverseBlock}`;
+          console.warn(`[Score] ${upperTicker} adverse-event flags: ${adverseFlags.map((f) => `${f.kind}@${f.filingDate}`).join(", ")}`);
+        }
       }
 
       // Append PM-logged notes if any. Each note is rendered as a single
@@ -934,7 +950,7 @@ export async function POST(request: NextRequest) {
             ? `Do NOT re-source fundamentals via web — the FACTSET block is current and authoritative, so cite those figures as source:"factset". Use web ONLY to surface a number the company reported AFTER the FactSet data date, or a material event; do not add web dataPoints that merely restate a figure already in the FactSet block.`
             : `Confirm the most recent reported quarterly numbers match what's in the data above (or supersede them if the company reported AFTER the data was cached).`}\n  2. Check for guidance revisions / pre-announcements / 8-K filings issued in the last 90 days.\n  3. Find any analyst rating or price-target changes from named firms in the last 30 days.\n  4. ${isCanadianListing
             ? `THIS IS A CANADIAN LISTING (${upperTicker}) — no EDGAR data is available. Use web_search as the PRIMARY financial verification: look up the company's most recent quarterly press release / MD&A / SEDAR+ filing and use those numbers in your dataPoints. Cite each source URL or publication name in sourceDetail.`
-            : `Verify the latest dividend / buyback / split changes.`}\nRespect the noise filter in the system prompt: ignore rumors, opinion blogs, and unsourced speculation. Cite source name and date in dataPoints.sourceDetail for every web-sourced fact.\nMax 2 searches — be targeted.\n=== End verified scoring ===\n`
+            : `Verify the latest dividend / buyback / split changes.`}\n  5. RESERVED FOR HARD FLOORS — spend one search on the material-adverse-event list in the system prompt for this issuer (fraud investigation, going-concern doubt, restatement, delisting notice, enforcement penalty, forced CFO/CEO exit, bankruptcy). This search is not optional and is not interchangeable with items 1-4. If nothing is found, say so in one dataPoint (label "Adverse-event check", value "none found", source "web") and move on.\nRespect the noise filter in the system prompt: ignore rumors, opinion blogs, and unsourced speculation. Cite source name and date in dataPoints.sourceDetail for every web-sourced fact.\nMax 4 searches — be targeted, and always keep one for item 5.\n=== End verified scoring ===\n`
       : "";
 
     // ── Input health check ────────────────────────────────────────────
@@ -992,7 +1008,7 @@ export async function POST(request: NextRequest) {
     // max_uses to keep cost/latency bounded.
     type WebSearchTool = { type: "web_search_20250305"; name: "web_search"; max_uses?: number };
     const tools: WebSearchTool[] = verifyWithWebSearch
-      ? [{ type: "web_search_20250305", name: "web_search", max_uses: 2 }]
+      ? [{ type: "web_search_20250305", name: "web_search", max_uses: 4 }]
       : [];
 
     // Prompt caching: the ~10KB system prompt is identical across rescores,

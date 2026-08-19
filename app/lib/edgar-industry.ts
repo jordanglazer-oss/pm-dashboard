@@ -42,13 +42,25 @@ export type EdgarIndustry =
   | "media"
   | "default";    // fallback: behaves like industrial/general
 
-type EdgarSubmissions = {
+export type EdgarSubmissions = {
   cik: string;
   name: string;
   sic?: string;
   sicDescription?: string;
   tickers?: string[];
   exchanges?: string[];
+  /** Recent-filings index (parallel arrays, newest first). Present in the SEC
+   *  response and therefore in the cached blob all along — surfaced in the
+   *  type for the adverse-event scan (app/lib/edgar-adverse.ts). */
+  filings?: {
+    recent?: {
+      form?: string[];
+      filingDate?: string[];
+      /** 8-K item numbers, comma-separated per filing (e.g. "2.02,9.01"). */
+      items?: string[];
+      accessionNumber?: string[];
+    };
+  };
 };
 
 async function secFetch(url: string): Promise<Response> {
