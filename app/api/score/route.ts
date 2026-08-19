@@ -1072,10 +1072,20 @@ export async function POST(request: NextRequest) {
     // discount on the cached portion. On a batch rescore of 50 names this
     // cuts input-token spend by ~25-30%. Model behavior is identical —
     // cache_control is a billing/latency optimization, not a quality knob.
-    // temperature is EXPLICITLY 0 — scoring must be reproducible: the same inputs should
-    // always produce the same scores. Without this Anthropic's sampling
-    // can cause a category to oscillate (e.g. 0→2→1→2) across weekly
-    // rescores even when nothing about the underlying company changed.
+    // NO SAMPLING PARAMETERS. temperature / top_p / top_k were REMOVED on
+    // Sonnet 5 (and the Opus 4.7+ family) — sending temperature returns
+    // 400 "`temperature` is deprecated for this model". An earlier comment
+    // here claimed temperature:0 was what made scoring reproducible; that
+    // was written for a pre-Sonnet-5 model and is no longer achievable.
+    //
+    // What actually holds scores steady across weekly rescores is the
+    // "=== PREVIOUS RESCORE ===" block: it hands the model last week's
+    // per-category scores as a PRIOR and instructs it to AFFIRM a category
+    // unless the new data gives a concrete reason to move, naming the
+    // trigger in the summary when it does. Category stability is an
+    // evidence question here, not a sampling-parameter question — if
+    // scores oscillate on unchanged fundamentals, strengthen that block
+    // (or the rubric bands), because there is no temperature knob to reach for.
     //
     // callAnthropicWithRetry wraps this in up to 3 attempts with
     // exponential backoff (1s, 2s) on transient errors — 429 rate
@@ -1086,7 +1096,6 @@ export async function POST(request: NextRequest) {
       client.messages.create({
         model: "claude-sonnet-5",
         thinking: { type: "disabled" },
-        temperature: 0,
         max_tokens: 8192,
         messages: [
           {

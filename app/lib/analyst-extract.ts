@@ -198,8 +198,10 @@ export async function extractAnalystReport(opts: {
 
   const msg = await client.messages.create({
     model: "claude-sonnet-5",
+    // No sampling parameters: temperature/top_p/top_k are removed on Sonnet 5
+    // (400 if sent). Extraction consistency comes from the strict JSON schema
+    // in PROMPT_TEMPLATE and the hash-gated cache, not from a temperature knob.
     thinking: { type: "disabled" },
-    temperature: 0,
     max_tokens: 2048,
     messages: [
       {

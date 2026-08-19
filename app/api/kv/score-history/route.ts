@@ -80,7 +80,7 @@ export type ScoreHistoryEntry = {
    * together. Absent = the pre-band era. 2 = the 2026-07 release: explicit
    * per-category score bands, DATA GAP defaults, whole-point rule, report
    * evidence admitted, Morningstar panel voice, Sonnet 5. 3 = the 2026-08
-   * audit release: temperature 0, single DATA GAP rule, researchCoverage
+   * audit release: single DATA GAP rule, researchCoverage
    * threshold rework, technicals fence, consensus rescale, ownership N/A for
    * Canadian listings, 8-K hard-floor flags, own-history valuation band,
    * widened analyst-PDF extraction (see rubricHash for finer eras).

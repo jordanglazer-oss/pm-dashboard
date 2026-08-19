@@ -754,8 +754,10 @@ export async function POST(request: NextRequest) {
     // mid-day. The "force" flag from the frontend Regenerate button
     // bypasses the cache.
     //
-    // Determinism note: with temperature=0 the same input always produces
-    // the same output, but day-caching is still worth doing because (a)
+    // Determinism note: this route sends no sampling parameters (temperature
+    // and friends are removed on Sonnet 5 — a 400 if sent), so identical
+    // input does NOT guarantee identical output. That makes day-caching
+    // more valuable, not less, because (a)
     // it avoids the cost, (b) it eliminates round-trip latency on every
     // page load, and (c) the brief is timestamped — readers know "this is
     // today's brief" rather than "this is freshly generated 5 minutes ago
