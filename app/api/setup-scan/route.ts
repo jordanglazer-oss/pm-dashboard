@@ -12,8 +12,17 @@ import {
 export const maxDuration = 60;
 
 const KEY = "pm:setup-scan";
-const YAHOO = "https://query1.finance.yahoo.com";
-const UA = "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 Chrome/120 Safari/537.36";
+/**
+ * query2 first, query1 as fallback.
+ *
+ * /api/prices has been fetching 250 tickers in parallel from query2 without
+ * trouble for as long as it has existed, while this route was 429ing on the
+ * third request against query1 — the hosts are limited independently. Matching
+ * the endpoint and User-Agent of the call that already works is a better
+ * starting point than inventing a new one and tuning around its limits.
+ */
+const YAHOO_HOSTS = ["https://query2.finance.yahoo.com", "https://query1.finance.yahoo.com"];
+const UA = "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36";
 /**
  * Yahoo rate-limits aggressively. Six parallel workers with no pacing got two
  * names through and then 429'd the other 87 — the scan "succeeded" while
@@ -24,8 +33,23 @@ const UA = "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 C
  * a "slow down", not a "no such ticker", and treating it as failure threw away
  * names that would have answered a moment later.
  */
-const CONCURRENCY = 2;
-const REQUEST_GAP_MS = 220;
+const CONCURRENCY = 3;
+const REQUEST_GAP_MS = 150;
+/**
+ * Fetches attempted per invocation.
+ *
+ * Both Yahoo hosts answer 8/8 from a laptop, so the 429s are not the endpoint
+ * or the pacing — Yahoo throttles DATACENTRE IPs, and Vercel's are shared, so
+ * a large part of the per-IP budget is already spent by someone else before
+ * this route asks for anything. Ninety requests for a year of daily bars in
+ * one invocation will not get through however politely they are spaced.
+ *
+ * So the scan is a SLICE, not a sweep: it takes a bite, stores it, and the
+ * next run continues where it stopped. Repeated runs (or a cron) complete the
+ * picture, and a partial answer built up over three passes is worth far more
+ * than a complete answer that never arrives.
+ */
+const MAX_FETCH_PER_RUN = 25;
 const MAX_RETRIES = 3;
 const DEADLINE_MS = 50_000;
 /** A reading from earlier today is still the same reading — reuse it so a
@@ -70,13 +94,15 @@ function toYahoo(t: string) {
 async function fetchBars(ticker: string): Promise<OHLCVBar[]> {
   let res: Response | null = null;
   for (let attempt = 0; attempt <= MAX_RETRIES; attempt++) {
+    // Alternate hosts across retries: a 429 is per-host, so trying the other
+    // one is more useful than waiting longer on the one that just refused.
+    const host = YAHOO_HOSTS[attempt % YAHOO_HOSTS.length];
     res = await fetch(
-      `${YAHOO}/v8/finance/chart/${encodeURIComponent(toYahoo(ticker))}?range=1y&interval=1d`,
+      `${host}/v8/finance/chart/${encodeURIComponent(toYahoo(ticker))}?range=1y&interval=1d`,
       { cache: "no-store", headers: { "User-Agent": UA } },
     );
     if (res.status !== 429) break;
-    // Back off and try again — 429 means "slow down", not "no such ticker".
-    if (attempt < MAX_RETRIES) await sleep(600 * Math.pow(2, attempt));
+    if (attempt < MAX_RETRIES) await sleep(400 * Math.pow(2, attempt));
   }
   if (!res || !res.ok) throw new Error(`Yahoo ${res?.status ?? "no response"}`);
   const j = await res.json();
@@ -196,8 +222,27 @@ export async function POST(req: NextRequest) {
   const carriedSet = new Set(carried.map((r) => r.ticker.toUpperCase()));
   const todo = unique.filter((t) => !carriedSet.has(t.toUpperCase()));
 
-  const fresh = await scanTickers(todo, startedAt);
-  const rows = [...carried, ...fresh];
+  // One slice per run. Anything not reached stays untouched and is picked up
+  // next time, rather than being fetched and failing.
+  const limit = Number(body?.limit) > 0 ? Math.min(Number(body.limit), 90) : MAX_FETCH_PER_RUN;
+  const slice = todo.slice(0, limit);
+  const fresh = await scanTickers(slice, startedAt);
+
+  // Carry forward previous ERRORED rows too, so a name that failed twice does
+  // not vanish from the table between attempts — but they stay eligible for a
+  // re-fetch, since `carried` only reuses good readings.
+  const freshSet = new Set(fresh.map((r) => r.ticker.toUpperCase()));
+  let priorErrors: SetupRow[] = [];
+  try {
+    const prevRaw = await redis.get(KEY);
+    const prev = prevRaw ? (JSON.parse(prevRaw) as { rows?: SetupRow[] }) : null;
+    const wanted = new Set(unique.map((t) => t.toUpperCase()));
+    priorErrors = (prev?.rows ?? []).filter(
+      (r) => r.error && wanted.has(r.ticker.toUpperCase()) && !freshSet.has(r.ticker.toUpperCase()) && !carriedSet.has(r.ticker.toUpperCase()),
+    );
+  } catch { /* nothing to carry */ }
+
+  const rows = [...carried, ...fresh, ...priorErrors];
 
   // Name and sector from pm:stocks where known — same taxonomy as everywhere
   // else, and free for anything already tracked.
@@ -225,17 +270,20 @@ export async function POST(req: NextRequest) {
     requested: unique.length,
     reused: carried.length,
     fetched: fresh.length,
-    failed: rows.filter((r) => r.error).length,
-    // A partial scan is normal when Yahoo throttles. Say so, and say what to
-    // do about it, rather than presenting a short list as a complete one.
-    remaining: unique.length - rows.length,
-    truncated: rows.length < unique.length,
-    note:
-      rows.length < unique.length || rows.some((r) => r.error)
-        ? "Partial — run again to pick up the rest; today's good readings are reused."
-        : undefined,
+    failed: fresh.filter((r) => r.error).length,
+    // "Remaining" counts names with NO good reading yet — the honest measure of
+    // how much of the universe is still unknown, not how many rows exist.
+    remaining: unique.length - rows.filter((r) => !r.error && r.price > 0).length,
+    complete: rows.filter((r) => !r.error && r.price > 0).length,
+    truncated: unique.length > rows.filter((r) => !r.error && r.price > 0).length,
     rows,
   };
+  const done = rows.filter((r) => !r.error && r.price > 0).length;
+  (payload as Record<string, unknown>).note =
+    done < unique.length
+      ? `${done} of ${unique.length} scanned. Yahoo throttles datacentre IPs, so each run takes a slice — run again to continue; readings already taken are kept.`
+      : undefined;
+
   if (!body?.dryRun) await redis.set(KEY, JSON.stringify(payload));
   return NextResponse.json({ ...payload, rows: rows.slice(0, 100) });
 }

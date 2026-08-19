@@ -47,6 +47,7 @@ type Scan = {
   reused?: number;
   failed?: number;
   remaining?: number;
+  complete?: number;
   note?: string;
   rows: Row[];
 };
@@ -100,7 +101,9 @@ export function SetupScan({ onCountChange }: { onCountChange?: (n: number) => vo
     }
   };
 
-  const rows = [...scan.rows].sort((a, b) =>
+  const [showUnread, setShowUnread] = useState(false);
+  const visible = showUnread ? scan.rows : scan.rows.filter((r) => !r.error);
+  const rows = [...visible].sort((a, b) =>
     sortBy === "base"
       ? (b.base?.score ?? -1) - (a.base?.score ?? -1) || b.improving.score - a.improving.score
       : b.improving.score - a.improving.score || (b.base?.score ?? -1) - (a.base?.score ?? -1),
@@ -115,7 +118,15 @@ export function SetupScan({ onCountChange }: { onCountChange?: (n: number) => vo
           <h2 className="text-base font-bold text-ink">Setups</h2>
           <p className="text-xs text-ink-3">
             Names that look ready to move — computed from price, not taken from a research list.
-            {scan.generatedAt && ` · ${scan.scanned ?? scan.rows.length} scanned ${new Date(scan.generatedAt).toLocaleString()}`}
+            {scan.generatedAt && (
+              <>
+                {" · "}
+                <span className="font-medium text-ink-2">
+                  {scan.complete ?? scan.rows.filter((r) => !r.error).length} of {scan.requested ?? scan.rows.length} read
+                </span>
+                {` · ${new Date(scan.generatedAt).toLocaleString()}`}
+              </>
+            )}
           </p>
         </div>
         <div className="flex flex-wrap items-center gap-2 text-xs">
@@ -129,6 +140,12 @@ export function SetupScan({ onCountChange }: { onCountChange?: (n: number) => vo
             <option value="portfolio">Portfolio</option>
           </select>
           <button
+            onClick={() => setShowUnread((v) => !v)}
+            className="rounded-control border border-line px-3 py-1.5 font-semibold text-ink-2 hover:text-ink"
+          >
+            {showUnread ? "Hide unread" : `Show unread (${scan.rows.filter((r) => !!r.error).length})`}
+          </button>
+          <button
             onClick={() => setSortBy((s) => (s === "base" ? "improving" : "base"))}
             className="rounded-control border border-line px-3 py-1.5 font-semibold text-ink-2 hover:text-ink"
           >
@@ -139,16 +156,14 @@ export function SetupScan({ onCountChange }: { onCountChange?: (n: number) => vo
             disabled={running}
             className="rounded-control bg-accent px-3 py-1.5 font-semibold !text-white disabled:opacity-50"
           >
-            {running ? "Scanning…" : "Run scan"}
+            {running ? "Scanning…" : (scan.remaining ?? 0) > 0 ? `Scan next ${Math.min(scan.remaining ?? 0, 25)}` : "Run scan"}
           </button>
         </div>
       </div>
 
       {scan.note && (
-        <div className="mb-3 rounded border border-warn-border bg-warn-soft px-3 py-2 text-xs text-warn">
+        <div className="mb-3 rounded border border-line bg-surface-2 px-3 py-2 text-xs text-ink-2">
           {scan.note}
-          {typeof scan.failed === "number" && scan.failed > 0 && ` ${scan.failed} failed this pass.`}
-          {typeof scan.reused === "number" && scan.reused > 0 && ` ${scan.reused} reused from earlier today.`}
         </div>
       )}
 
