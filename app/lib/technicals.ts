@@ -993,3 +993,85 @@ export function computeSMASeries(bars: OHLCVBar[], period: number): { date: stri
   }
   return result;
 }
+
+// ── Base / coil detection ──
+// The one classic pre-breakout pattern computeImprovingSignals does NOT cover.
+//
+// Its six signals all describe a stock RECOVERING — RSI lifting off a low, MACD
+// turning up, price approaching a DMA from below, reclaiming the cloud. That is
+// one way a move starts. The other is a stock that is already strong, near its
+// highs, going quiet: range contracting, volume drying up, price refusing to
+// give back ground. Nothing here measured that, so a name coiling two percent
+// under its 52-week high scored zero on "improving" while being the textbook
+// setup.
+//
+// Every input comes from bars already fetched for the chart — no new data.
+
+export type BaseSetup = {
+  /** How far below the 52-week high, as a positive percent. */
+  pctFromHigh: number;
+  /** Recent 20-day true range as a share of the prior 60-day range.
+   *  Below 1 means the stock is quieter than it was — a tightening base. */
+  contraction: number;
+  /** Recent volume vs its own 50-day average. Below 1 = drying up. */
+  volumeDryUp: number;
+  /** Above the 50 AND 200 day averages — a base worth watching sits above
+   *  them, not below. */
+  aboveBothMAs: boolean;
+  /** 0-4. Not blended with ImprovingScore: they describe different setups and
+   *  averaging them would hide which one a name actually is. */
+  score: number;
+  label: "Coiled" | "Building" | "Loose" | "None";
+  detail: string;
+};
+
+export function computeBaseSetup(bars: OHLCVBar[], current: TechnicalIndicators): BaseSetup | null {
+  if (bars.length < 80) return null;
+
+  const highs = bars.map((b) => b.high);
+  const lows = bars.map((b) => b.low);
+  const vols = bars.map((b) => b.volume);
+
+  const pctFromHigh =
+    current.week52High > 0 ? ((current.week52High - current.currentPrice) / current.week52High) * 100 : 100;
+
+  // Range over the last 20 sessions vs the 60 before them. A base is the
+  // recent window being NARROWER than what preceded it.
+  const rng = (from: number, to: number) => {
+    const h = Math.max(...highs.slice(from, to));
+    const l = Math.min(...lows.slice(from, to));
+    return l > 0 ? (h - l) / l : 0;
+  };
+  const recent = rng(bars.length - 20, bars.length);
+  const prior = rng(bars.length - 80, bars.length - 20);
+  const contraction = prior > 0 ? recent / prior : 1;
+
+  const vol20 = vols.slice(-20).reduce((s, v) => s + v, 0) / 20;
+  const volumeDryUp = current.volumeAvg50 > 0 ? vol20 / current.volumeAvg50 : 1;
+
+  const aboveBothMAs = current.currentPrice > current.sma50 && current.currentPrice > current.sma200;
+
+  // Each condition is one point. Deliberately simple and inspectable — a
+  // weighted blend would be harder to argue with when it is wrong.
+  let score = 0;
+  const parts: string[] = [];
+  // Near the high but NOT at it: at the high there is no base left to break out
+  // of, which is the distinction the whole signal exists to make.
+  if (pctFromHigh <= 12 && pctFromHigh >= 1) { score++; parts.push(`${pctFromHigh.toFixed(1)}% off the high`); }
+  if (contraction <= 0.75) { score++; parts.push(`range contracted to ${(contraction * 100).toFixed(0)}% of prior`); }
+  if (volumeDryUp <= 0.9) { score++; parts.push(`volume ${(volumeDryUp * 100).toFixed(0)}% of average`); }
+  if (aboveBothMAs) { score++; parts.push("above both MAs"); }
+
+  const label: BaseSetup["label"] =
+    score >= 4 ? "Coiled" : score === 3 ? "Building" : score === 2 ? "Loose" : "None";
+
+  return {
+    pctFromHigh: +pctFromHigh.toFixed(2),
+    contraction: +contraction.toFixed(3),
+    volumeDryUp: +volumeDryUp.toFixed(3),
+    aboveBothMAs,
+    score,
+    label,
+    detail: parts.length ? parts.join(" · ") : "no base pattern",
+  };
+}
