@@ -534,6 +534,11 @@ export async function POST(request: NextRequest) {
     // opt in explicitly via the UI "Verify" toggle. Canadian / non-EDGAR
     // tickers benefit most from this since they lack the XBRL fallback.
     const verifyWithWebSearch: boolean = body?.verifyWithWebSearch === true;
+    // Finding 15 escape hatch: allow a deliberate Yahoo-graded rescore while
+    // the FactSet relay is down (e.g. multi-day outage and a score is needed
+    // NOW). Off by default — a transient relay failure skips the rescore
+    // instead of silently grading a decision input from Yahoo.
+    const allowDegraded: boolean = body?.allowDegraded === true;
     // Strict-FactSet mode (default ON): when FactSet supplies a company's
     // financials, withhold the competing EDGAR XBRL block (keep Form 4 insider)
     // so the model scores fundamentals on FactSet, not EDGAR. Set false to let
@@ -645,6 +650,26 @@ export async function POST(request: NextRequest) {
 
       stockPrice = financialResult.price;
       rawModules = financialResult.rawModules ?? undefined;
+
+      // ── Degrade-vs-fail policy (audit Finding 15) ────────────────────
+      // TRANSIENT relay failure (this name resolves to a FactSet id but the
+      // snapshot fetch failed after retries): skip the rescore rather than
+      // silently grading a multi-million-dollar decision input from Yahoo.
+      // STRUCTURAL cases (no id mapping, FactSet has no data, name-guard
+      // mismatch) still fall through to the labeled Yahoo-fallback path —
+      // those names would never get FactSet, and blocking them forever is
+      // worse than a flagged degraded run.
+      if (fsRes.source === "factset" && factsetSnap === null && !allowDegraded) {
+        console.warn(`[Score] ${upperTicker} skipped: FactSet relay unavailable after retries (transient). Pass allowDegraded:true to force a Yahoo-graded run.`);
+        return NextResponse.json(
+          {
+            error: `Skipped scoring ${upperTicker}: the FactSet relay was unavailable after retries. Retry in a few minutes — or pass allowDegraded: true to force a Yahoo-graded rescore (explanations will carry the YAHOO-FALLBACK RUN prefix).`,
+            skipped: true,
+            reason: "factset-relay-unavailable",
+          },
+          { status: 422 },
+        );
+      }
 
       // Name-guard: only trust FactSet when its company name reasonably matches
       // Yahoo's for this ticker. A mismatch means the ticker resolved to the

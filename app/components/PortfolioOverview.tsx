@@ -503,13 +503,14 @@ export function PortfolioOverview({ sidebar }: { sidebar?: React.ReactNode } = {
         const missingKeys = scoreResults.get(s.ticker)?.missingCategories ?? [];
         if (missingKeys.length === 0) continue;
         try {
-          const res = await fetch("/api/score-gaps", {
+          // Partial rescore via the FULL scoring pipeline (audit Finding 03):
+          // the old /api/score-gaps endpoint scored these categories with no
+          // financial data at all. The partial mode runs the real FactSet/
+          // EDGAR/playbook context and rubric for just the missing keys.
+          const res = await fetch("/api/score", {
             method: "POST",
             headers: { "Content-Type": "application/json" },
-            body: JSON.stringify({
-              ticker: s.ticker, missingKeys,
-              name: s.name, sector: s.sector, existingExplanations: s.explanations,
-            }),
+            body: JSON.stringify({ ticker: s.ticker, categories: missingKeys }),
           });
           if (res.ok) {
             const data = await res.json();
@@ -707,8 +708,10 @@ export function PortfolioOverview({ sidebar }: { sidebar?: React.ReactNode } = {
   const [fillingGaps, setFillingGaps] = useState(false);
   const [fillGapsProgress, setFillGapsProgress] = useState("");
 
-  /** Targeted fill: score ONLY the categories missing explanations.
-   *  ~$0.01/stock — no web search, minimal context. */
+  /** Targeted fill: partial rescore of ONLY the categories missing
+   *  explanations, through the full /api/score pipeline (real FactSet/EDGAR
+   *  context + full rubric; no web search). Costs a bit more than the old
+   *  no-data gap endpoint — the price of scores backed by actual data. */
   const handleFillGaps = useCallback(async (bucket: "Portfolio" | "Watchlist") => {
     if (fillingGaps || scoringAny || refreshingAll) return;
     const source = bucket === "Portfolio" ? portfolioStocks : watchlistStocks;
@@ -724,16 +727,13 @@ export function PortfolioOverview({ sidebar }: { sidebar?: React.ReactNode } = {
       const missingKeys = AI_SEMI_KEYS.filter((k) => !hasExplanation(s, k));
       setFillGapsProgress(`Filling ${s.ticker} (${++done}/${stocksWithGaps.length}) — ${missingKeys.length} categories`);
       try {
-        const res = await fetch("/api/score-gaps", {
+        // Partial rescore via the FULL scoring pipeline (audit Finding 03) —
+        // real FactSet/EDGAR/playbook context for just the missing keys,
+        // instead of the retired no-data /api/score-gaps endpoint.
+        const res = await fetch("/api/score", {
           method: "POST",
           headers: { "Content-Type": "application/json" },
-          body: JSON.stringify({
-            ticker: s.ticker,
-            missingKeys,
-            name: s.name,
-            sector: s.sector,
-            existingExplanations: s.explanations,
-          }),
+          body: JSON.stringify({ ticker: s.ticker, categories: missingKeys }),
         });
         if (res.ok) {
           const data = await res.json();
