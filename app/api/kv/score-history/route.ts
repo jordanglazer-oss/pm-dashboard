@@ -44,10 +44,12 @@ import type { Scores } from "@/app/lib/types";
  *      or `timestamp` — only the score-fact fields are revised.
  */
 
+import { RUBRIC_HASH } from "@/app/lib/rubric-version";
+
 const KEY = "pm:score-history";
 
 /** Current scoring-rubric regime — bump when the SCORING_PROMPT rubric changes materially. */
-const RUBRIC_REV = 2;
+const RUBRIC_REV = 3;
 
 /**
  * How long a rescore entry stays "open" for revision via patch-recent.
@@ -77,9 +79,20 @@ export type ScoreHistoryEntry = {
    * study can segment eras instead of averaging different scoring systems
    * together. Absent = the pre-band era. 2 = the 2026-07 release: explicit
    * per-category score bands, DATA GAP defaults, whole-point rule, report
-   * evidence admitted, Morningstar panel voice, Sonnet 5.
+   * evidence admitted, Morningstar panel voice, Sonnet 5. 3 = the 2026-08
+   * audit release: temperature 0, single DATA GAP rule, researchCoverage
+   * threshold rework, technicals fence, consensus rescale, ownership N/A for
+   * Canadian listings, 8-K hard-floor flags, own-history valuation band,
+   * widened analyst-PDF extraction (see rubricHash for finer eras).
    */
   rubricRev?: number;
+  /**
+   * Content-derived rubric fingerprint (sha256 of the master scoring prompt +
+   * playbook bodies, first 8 chars — see app/lib/rubric-version.ts). Stamped
+   * server-side alongside rubricRev; catches prompt edits that shipped
+   * without a manual RUBRIC_REV bump. Calibration groups by (rev, hash).
+   */
+  rubricHash?: string;
   /** Web search queries the model issued during a verified rescore. */
   searchQueries?: string[];
   /** Web search citation URLs surfaced during a verified rescore (titles optional). */
@@ -226,6 +239,7 @@ export async function POST(req: NextRequest) {
       // Server-stamped, never client-supplied: the rubric era is a property
       // of the deployed prompt, not of whoever posted the entry.
       rubricRev: RUBRIC_REV,
+      rubricHash: RUBRIC_HASH,
     });
     current[ticker] = arr;
     await redis.set(KEY, JSON.stringify(current));

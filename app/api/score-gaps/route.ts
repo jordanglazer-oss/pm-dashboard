@@ -100,6 +100,7 @@ export async function POST(request: NextRequest) {
       client.messages.create({
       model: "claude-sonnet-5",
       thinking: { type: "disabled" },
+      temperature: 0,
       max_tokens: 2048,
       messages: [
         {

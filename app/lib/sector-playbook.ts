@@ -152,6 +152,13 @@ leverageCoverage: net debt/EBITDA through-cycle, pension where material.
 cashFlowQuality: FCF conversion ≥ 90-100% of net income as the quality bar, working-capital discipline through the cycle.`),
 };
 
+/** Every playbook label+body concatenated, in stable key order — the input
+ *  app/lib/rubric-version.ts hashes so playbook edits change RUBRIC_HASH. */
+export const ALL_PLAYBOOK_BODIES = Object.keys(PLAYBOOKS)
+  .sort()
+  .map((k) => `${PLAYBOOKS[k].label}\n${PLAYBOOKS[k].body}`)
+  .join("\n\n");
+
 /** Regex router: FactSet GICS industry string first (most specific), then
  *  sector fallback. Returns null only when we know nothing — the prompt's
  *  generic guidance then applies unchanged. */
@@ -181,9 +188,17 @@ export function pickPlaybook(sector: string | null, industry: string | null): Pl
     if (/aerospace|machinery|road|rail|air freight|airlines|marine|construction|electrical equip|industrial conglom|trading companies|commercial services|professional services|transportation/.test(ind)) return PLAYBOOKS.industrial;
   }
 
+  // Sector-level fallbacks. Technology deliberately has NO fallback (audit
+  // Finding 11): the hardware playbook (units × ASP, structurally-lower
+  // multiples) is wrong for any Tech name that isn't hardware, and a wrong
+  // playbook is worse than none — null lets the master prompt's generic
+  // metric guidance stand. Unmatched industry strings are logged below so
+  // the router's regex list can be extended from real misses.
+  if (ind) {
+    console.warn(`[Playbook] no industry match for "${industry}" (sector "${sector}") — using sector fallback`);
+  }
   if (/financial/.test(sec)) return PLAYBOOKS.capmarkets;
   if (/real estate/.test(sec)) return PLAYBOOKS.reit;
-  if (/technology/.test(sec)) return PLAYBOOKS.hardware;
   if (/health/.test(sec)) return PLAYBOOKS.medtech;
   if (/energy/.test(sec)) return PLAYBOOKS.energy;
   if (/materials/.test(sec)) return PLAYBOOKS.materials;
