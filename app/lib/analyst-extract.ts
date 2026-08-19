@@ -59,7 +59,10 @@ Schema:
   "thesis": ["bullet 1", "bullet 2", ...],                  // 3-5 dense bullets capturing the analyst's investment thesis (bull case if Outperform, bear case if Underperform, sideways thesis if Neutral). Each bullet ≤ 25 words.
   "risks": ["risk 1", "risk 2", ...],                       // 2-4 bullets capturing key downside risks the report flags. ≤ 25 words each.
   "sectorView": "one sentence",                             // the analyst's sector / industry outlook if it's mentioned in this report. Omit if absent.
-  "keyMetrics": [{"label": "...", "value": "..."}, ...]     // 3-6 named numeric data points the analyst uses to support their thesis (e.g. {"label": "FY27 EPS estimate", "value": "$12.40"}). Omit if none.
+  "keyMetrics": [{"label": "...", "value": "..."}, ...],    // 3-6 named numeric data points the analyst uses to support their thesis (e.g. {"label": "FY27 EPS estimate", "value": "$12.40"}). Omit if none.
+  "catalysts": [{"date": "YYYY-MM-DD or a period like Q4 FY26 / 2H26", "event": "...", "detail": "expected impact in <=15 words"}, ...],  // 0-5 DATED, company-specific upcoming events the report names (product launches, capital markets days, regulatory decisions, contract awards, guidance events). ONLY events with a stated date or period — a generic "continued execution" is NOT a catalyst. Omit if none.
+  "valuationBasis": "...",                                  // one short phrase: how the analyst derives the price target (e.g. "18x FY27 EPS", "DCF at 9% WACC", "SOTP", "1.6x P/B on 14% ROE"). Omit if not stated.
+  "scenarios": {"bull": <number>, "base": <number>, "bear": <number>}  // the report's published scenario price targets (RBC upside/downside scenarios, JPM bull/bear cases), numeric, same currency as target. Include only the scenarios actually stated; omit the field entirely if none.
 ${source === "morningstar" ? `  ,"stars": <1-5>,                                          // the Morningstar star rating. Omit if not stated.
   "fairValue": <number>,                                    // the Fair Value Estimate, numeric. Omit if not stated.
   "moat": "wide" | "narrow" | "none",                       // the Economic Moat rating. Omit if not stated.
@@ -133,6 +136,30 @@ function parseExtraction(text: string): ExtractedReport | null {
       .filter((m) => m.label && m.value)
       .slice(0, 10);
   }
+  // ── Finding 14 fields (all optional; absent on pre-widening cache hits) ──
+  if (Array.isArray(parsed.catalysts)) {
+    out.catalysts = parsed.catalysts
+      .filter((c: unknown): c is Record<string, unknown> => c !== null && typeof c === "object")
+      .map((c: Record<string, unknown>) => ({
+        ...(typeof c.date === "string" && c.date.trim() ? { date: c.date.trim() } : {}),
+        event: typeof c.event === "string" ? c.event.trim() : "",
+        ...(typeof c.detail === "string" && c.detail.trim() ? { detail: c.detail.trim() } : {}),
+      }))
+      .filter((c) => c.event)
+      .slice(0, 5);
+    if (out.catalysts.length === 0) delete out.catalysts;
+  }
+  if (typeof parsed.valuationBasis === "string" && parsed.valuationBasis.trim()) {
+    out.valuationBasis = parsed.valuationBasis.trim();
+  }
+  if (parsed.scenarios && typeof parsed.scenarios === "object") {
+    const sc = parsed.scenarios as Record<string, unknown>;
+    const num = (v: unknown) => (typeof v === "number" && Number.isFinite(v) ? v : undefined);
+    const scenarios = { bull: num(sc.bull), base: num(sc.base), bear: num(sc.bear) };
+    if (scenarios.bull != null || scenarios.base != null || scenarios.bear != null) {
+      out.scenarios = scenarios;
+    }
+  }
   return out;
 }
 
@@ -172,6 +199,7 @@ export async function extractAnalystReport(opts: {
   const msg = await client.messages.create({
     model: "claude-sonnet-5",
     thinking: { type: "disabled" },
+    temperature: 0,
     max_tokens: 2048,
     messages: [
       {

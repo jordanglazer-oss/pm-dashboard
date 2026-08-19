@@ -880,7 +880,7 @@ export async function POST(request: NextRequest) {
           const tickerReports = reportsBlob[canonical];
           if (tickerReports?.rbc?.extracted || tickerReports?.jpm?.extracted || tickerReports?.morningstar?.extracted) {
             const lines: string[] = ["=== INGESTED ANALYST REPORTS (RBC / JPM / MORNINGSTAR) ==="];
-            lines.push("PDF-extracted thesis, risks, and sector view from the most recent reports stored in pm:analyst-reports. Use these to ground the companySummary and investmentThesis fields in the analysts' actual rationale (not your paraphrase). DO NOT extend the length of those fields beyond 1-2 sentences each — the rule still applies. Per the SCORING DISCIPLINE rules: FACTS from these reports are admissible evidence in catalysts, competitiveMoat, trackRecord, and secular; OPINIONS (ratings, targets, stars) never move a category score.");
+            lines.push("PDF-extracted thesis, risks, and sector view from the most recent reports stored in pm:analyst-reports. Use these to ground the companySummary and investmentThesis fields in the analysts' actual rationale (not your paraphrase). DO NOT extend the length of those fields beyond 1-2 sentences each — the rule still applies. Per the SCORING DISCIPLINE rules: FACTS from these reports are admissible evidence in catalysts, competitiveMoat, trackRecord, and secular; OPINIONS (ratings, targets, stars) never move a category score. Structured routing for the extracted fields: 'Dated catalysts' lines are exactly the evidence the catalysts 3-pt bar demands (a dated, company-specific event) — cite the report as sourceDetail; 'Valuation basis' is fact evidence about the analyst's methodology, usable to FRAME relativeValuation/historicalValuation (which multiple the street prices this name on) but never as a directional vote; 'Scenario targets' ground the bearCase field in the analyst's own published downside math — quote the bear value there. None of these three lift or lower a score merely because an analyst is bullish or bearish.");
             for (const src of ["rbc", "jpm", "morningstar"] as const) {
               const r = tickerReports[src]?.extracted;
               if (!r) continue;
@@ -901,6 +901,20 @@ export async function POST(request: NextRequest) {
               if (Array.isArray(r.keyMetrics) && r.keyMetrics.length > 0) {
                 lines.push("Key metrics cited:");
                 for (const m of r.keyMetrics.slice(0, 6)) lines.push(`  - ${m.label}: ${m.value}`);
+              }
+              if (Array.isArray(r.catalysts) && r.catalysts.length > 0) {
+                lines.push("Dated catalysts (report-named upcoming events):");
+                for (const c of r.catalysts.slice(0, 5)) {
+                  lines.push(`  - ${c.date ? `[${c.date}] ` : ""}${c.event}${c.detail ? ` — ${c.detail}` : ""}`);
+                }
+              }
+              if (r.valuationBasis) lines.push(`Valuation basis (how the target is derived): ${r.valuationBasis}`);
+              if (r.scenarios && (r.scenarios.bull != null || r.scenarios.bear != null || r.scenarios.base != null)) {
+                const sc: string[] = [];
+                if (r.scenarios.bull != null) sc.push(`bull ${r.scenarios.bull}`);
+                if (r.scenarios.base != null) sc.push(`base ${r.scenarios.base}`);
+                if (r.scenarios.bear != null) sc.push(`bear ${r.scenarios.bear}`);
+                lines.push(`Scenario targets: ${sc.join(" / ")}`);
               }
               if (src === "morningstar") {
                 const msBits: string[] = [];

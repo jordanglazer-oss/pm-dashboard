@@ -110,6 +110,16 @@ export type ExtractedReport = {
   risks?: string[];
   sectorView?: string;
   keyMetrics?: { label: string; value: string }[];
+  /** Dated, company-specific upcoming events the report names (audit
+   *  Finding 14) — the exact evidence the catalysts rubric's 3-pt bar
+   *  demands. date is YYYY-MM-DD or a period like "Q4 FY26" / "2H26". */
+  catalysts?: { date?: string; event: string; detail?: string }[];
+  /** How the analyst derives the price target (e.g. "18x FY27 EPS",
+   *  "DCF, 9% WACC", "SOTP") — fact evidence for valuation framing. */
+  valuationBasis?: string;
+  /** Analyst's published scenario values (bull/base/bear price targets) —
+   *  grounds the bearCase in the analyst's own downside math. */
+  scenarios?: { bull?: number; base?: number; bear?: number };
   /** Morningstar-only structured ratings — populated when source === "morningstar". */
   stars?: number;
   fairValue?: number;
