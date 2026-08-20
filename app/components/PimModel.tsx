@@ -621,6 +621,20 @@ export function PimModel({ groups }: Props) {
     // model. Only PC USA derives its columns from actual sleeve shares.
     const isCurrencySplitModel = effectiveGroup.id === "pc-usa";
 
+    // Size of each currency SUB-ACCOUNT as a share of the whole portfolio:
+    // sum over asset classes of (class allocation x that currency's share of
+    // the class). For PC USA Balanced this yields 0.084 CAD / 0.916 USD —
+    // i.e. cadSplit and usdSplit are DERIVED here rather than read from stored
+    // metadata, and cannot drift away from the holdings.
+    const currencyAccountTotal: Record<"CAD" | "USD", number> = { CAD: 0, USD: 0 };
+    for (const ac of ["equity", "fixedIncome", "alternative"] as const) {
+      const alloc = ac === "fixedIncome" ? profileWeights.fixedIncome
+        : ac === "equity" ? profileWeights.equity
+        : profileWeights.alternatives;
+      currencyAccountTotal.CAD += alloc * (classCadTotals[ac] || 0);
+      currencyAccountTotal.USD += alloc * (classUsdTotals[ac] || 0);
+    }
+
     // ── Dynamic Weight computation (sleeve-level drift) ────────────
     // Read the standalone Alpha Model return (PIM "alpha" series) and
     // this group's core-sleeve return (groupId/"core-${profile}"
@@ -791,23 +805,26 @@ export function PimModel({ groups }: Props) {
       // separate stocks-only branch (PC USA's CAD sleeve) — that existed to
       // work around the same 50/50 assumption — so both columns are now
       // symmetric and each sums to its class target by construction.
-      if (h.assetClass === "equity" && !isVirtualProfile && (h.currency === "CAD" || h.currency === "USD")) {
-        if (isCurrencySplitModel) {
-          // PC USA: actual sleeve share. A currency confined to ONE asset
-          // class is a sub-account with no other sleeve to be a fraction of,
-          // so it normalizes to 100% rather than scaling by the allocation.
-          const classCadCount = Object.values(classCadTotals).filter((v) => v > 0).length;
-          const classUsdCount = Object.values(classUsdTotals).filter((v) => v > 0).length;
-          if (h.currency === "CAD") {
-            cadModelWeight = classCadTotal > 0
-              ? (h.weightInClass / classCadTotal) * (classCadCount <= 1 ? 1 : assetClassAllocation)
-              : null;
-          } else {
-            usdModelWeight = classUsdTotal > 0
-              ? (h.weightInClass / classUsdTotal) * (classUsdCount <= 1 ? 1 : assetClassAllocation)
-              : null;
-          }
-        } else {
+      if (isCurrencySplitModel && !isVirtualProfile && (h.currency === "CAD" || h.currency === "USD")) {
+        // PC USA: weight WITHIN that currency's sub-account, which is what the
+        // column name means. Share of the currency's sleeve in this class,
+        // times that class's share of the account, reduces to:
+        //
+        //     weightInClass x classAllocation / accountTotal
+        //
+        // Applied across ALL asset classes, not just equity, since the account
+        // spans them — PC USA's bonds and alternatives are USD and belong in
+        // the USD column's denominator. Each column then sums to exactly 100%
+        // of its account by construction. The CAD account holds only equity,
+        // so its 7 stocks sit at 14.29% on every profile without a special
+        // case; the USD account carries the bonds, so ITOT reads 40.94% on
+        // Balanced rather than 42.97%.
+        const total = currencyAccountTotal[h.currency];
+        const w = total > 0 ? (h.weightInClass * assetClassAllocation) / total : null;
+        if (h.currency === "CAD") cadModelWeight = w;
+        else usdModelWeight = w;
+      } else if (h.assetClass === "equity" && !isVirtualProfile && (h.currency === "CAD" || h.currency === "USD")) {
+        {
           // Every other model: the 50/50 construction.
           const info = equityCcy[h.currency];
           let w: number | null;
