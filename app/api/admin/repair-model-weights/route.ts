@@ -27,6 +27,7 @@
 
 import { NextRequest, NextResponse } from "next/server";
 import { getRedis } from "@/app/lib/redis";
+import { pimModelSeed } from "@/app/lib/pim-seed";
 
 const REF_PER_STOCK = 0.018182;
 const LEGACY_LOCKED = new Set(["FID5982", "FID5982-T", "GRNJ"]);
@@ -120,20 +121,46 @@ export async function GET(req: NextRequest) {
       }, { status: 400 });
     }
 
-    // Core ETFs share the residual in proportion to their CURRENT weights, so
-    // the sleeve's internal balance is preserved rather than reset.
+    // Core ETFs share the residual by their ratio within the PIM MODEL's Core
+    // sleeve — not by this group's own live weights. The PIM model is the
+    // target every other model is derived from, so a group's Core mix follows
+    // it rather than whatever its stored weights happen to be. This matches
+    // what rebalanceStockWeights does live, so the repair and the running code
+    // cannot disagree.
+    const pimBase = pimModelSeed.find((g) => g.id === "pim");
+    const pimCoreRatio = new Map<string, number>();
+    if (pimBase) {
+      let pimCoreTotal = 0;
+      for (const h of pimBase.holdings) {
+        if (h.assetClass !== "equity") continue;
+        if (!coreEtfs.some((c) => norm(c.symbol) === norm(h.symbol))) continue;
+        pimCoreRatio.set(norm(h.symbol), h.weightInClass);
+        pimCoreTotal += h.weightInClass;
+      }
+      if (pimCoreTotal > 0) {
+        for (const [k, v] of pimCoreRatio) pimCoreRatio.set(k, v / pimCoreTotal);
+      } else {
+        pimCoreRatio.clear();
+      }
+    }
+    // A Core ETF absent from the PIM model (e.g. PC USA's ITOT) has no PIM
+    // ratio to follow; those fall back to their share of this group's own
+    // Core sleeve so the residual is still fully distributed.
     const coreCurrentTotal = coreEtfs.reduce((s, h) => s + h.weightInClass, 0);
+    const covered = coreEtfs.filter((h) => pimCoreRatio.has(norm(h.symbol)));
+    const usePimRatios = covered.length === coreEtfs.length && pimCoreRatio.size > 0;
+
     const nextEquity: Holding[] = [
       ...stockHoldings.map((h) => ({ ...h, weightInClass: REF_PER_STOCK })),
       ...alphaFunds,
-      ...coreEtfs.map((h) => ({
-        ...h,
-        weightInClass: parseFloat((
-          coreCurrentTotal > 0
-            ? (h.weightInClass / coreCurrentTotal) * coreResidual
-            : coreResidual / coreEtfs.length
-        ).toFixed(6)),
-      })),
+      ...coreEtfs.map((h) => {
+        const ratio = usePimRatios
+          ? pimCoreRatio.get(norm(h.symbol))!
+          : coreCurrentTotal > 0
+            ? h.weightInClass / coreCurrentTotal
+            : 1 / coreEtfs.length;
+        return { ...h, weightInClass: parseFloat((ratio * coreResidual).toFixed(6)) };
+      }),
     ];
     const nextHoldings = [...other, ...nextEquity];
 
@@ -168,7 +195,8 @@ export async function GET(req: NextRequest) {
 
     const plan = {
       groupId, groupName: group.name,
-      rule: "individual stocks at refPerStock; Alpha funds unchanged; Core ETFs absorb the residual pro-rata to current weights",
+      rule: "individual stocks at refPerStock; Alpha funds unchanged; Core ETFs absorb the residual by their ratio in the PIM model",
+      coreRatioSource: usePimRatios ? "PIM model target weights" : "this group's own Core weights (a Core ETF here is absent from the PIM model)",
       stockCount: stockHoldings.length,
       perStockTargetWtPct: r4(REF_PER_STOCK * eqAlloc),
       alphaFunds: alphaFunds.map((h) => ({ symbol: h.symbol, targetWtPct: r4(h.weightInClass * eqAlloc) })),
