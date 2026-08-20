@@ -112,6 +112,51 @@ function midPrice(bid: number | undefined, ask: number | undefined, last: number
  *
  * @param extraStrikes  Optional list of custom strikes to price at each expiry
  */
+/**
+ * Live mid price for an arbitrary SPY put, keyed the way a logged hedge is
+ * (expiry + absolute strike). Same CBOE chain fetchLiveHedgingCosts uses — the
+ * dashboard narrows that chain to monthly expiries and three strikes, but the
+ * raw response carries every listed contract, so a position can be marked
+ * directly rather than approximated from the nearest displayed tenor.
+ *
+ * Returns null when the exact contract is not listed (CBOE lists discrete
+ * strikes; a hedge recorded with an off-grid strike cannot be marked) or when
+ * bid/ask/last are all absent. Callers must treat null as "unknown", never as
+ * zero — a hedge silently valued at zero would overstate a drawdown.
+ */
+export async function fetchPutQuotes(
+  wanted: Array<{ expiry: string; strike: number }>,
+): Promise<Map<string, { mid: number | null; bid?: number; ask?: number; last?: number; spot: number }>> {
+  const out = new Map<string, { mid: number | null; bid?: number; ask?: number; last?: number; spot: number }>();
+  if (wanted.length === 0) return out;
+
+  const res = await fetch("https://cdn.cboe.com/api/global/delayed_quotes/options/SPY.json", {
+    headers: { "User-Agent": "Mozilla/5.0" },
+    cache: "no-store",
+  });
+  if (!res.ok) throw new Error(`CBOE returned ${res.status}`);
+  const body = (await res.json()) as CboeResponse;
+  const spot = body?.data?.current_price;
+  const rawOptions = body?.data?.options || [];
+  if (!spot || rawOptions.length === 0) throw new Error("Could not parse SPY quote or options");
+
+  const puts = new Map<string, CboeOption>();
+  for (const opt of rawOptions) {
+    const parsed = parseOptionSymbol(opt.option);
+    if (!parsed || parsed.type !== "P") continue;
+    puts.set(`${parsed.expiry}|${parsed.strike}`, opt);
+  }
+
+  for (const w of wanted) {
+    const key = `${w.expiry}|${w.strike}`;
+    const opt = puts.get(key);
+    out.set(key, opt
+      ? { mid: midPrice(opt.bid, opt.ask, opt.last_trade_price), bid: opt.bid, ask: opt.ask, last: opt.last_trade_price, spot }
+      : { mid: null, spot });
+  }
+  return out;
+}
+
 export async function fetchLiveHedgingCosts(extraStrikes: number[] = []): Promise<HedgingLiveData> {
   const res = await fetch("https://cdn.cboe.com/api/global/delayed_quotes/options/SPY.json", {
     headers: { "User-Agent": "Mozilla/5.0" },
