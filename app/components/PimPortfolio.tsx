@@ -1883,6 +1883,9 @@ export function PimPortfolio({ groups }: Props) {
     /** Set when a partial trim could not move the model target, because the
      *  sold name is an equal-weighted individual stock. */
     let partialTrimNotApplied = false;
+    /** Buy-only: profiles where the name carries no model target, so no
+     *  units could be sized. */
+    const buyOnlyNoTargetGroups: string[] = [];
 
     // ── Capture PRE-mutation pim-models snapshot for the atomic swap.
     // A single Execute Switch action is treated as ONE firm-wide position
@@ -2321,11 +2324,19 @@ export function PimPortfolio({ groups }: Props) {
     //     - Reduce sold units by sellPercent; keep its per-unit costBasis.
     //     - Add bought sized from the partial proceeds (or merge).
     //
-    //   Buy-only / sell-only:
-    //     - Existing behavior: position math is skipped (the trade
-    //       logs to the transaction tape, but pm:pim-positions isn't
-    //       re-derived from a cash side). The PM updates positions
-    //       manually for cash-only trades.
+    //   Sell-only (sellOnly):
+    //     - Reduce or remove the position; proceeds credited to cashBalance.
+    //
+    //   Buy-only (buyOnly):
+    //     - Size the new position from its MODEL TARGET for each profile and
+    //       debit cashBalance. There is no sold leg to fund it, and the model
+    //       already knows what the name should weigh, so the target is the
+    //       funding source. Adding the name equal-weights it against the other
+    //       individual stocks, which is what lowers theirs.
+    //
+    //     Both used to be skipped entirely — the trade hit the transaction tape
+    //     but pm:pim-positions was never touched, so the PM had to enter units
+    //     by hand and the book silently disagreed with the model until they did.
     //
     // Math:
     //   soldUnitsToTrade = soldPos.units × (sellPercent / 100)
@@ -2439,6 +2450,139 @@ export function PimPortfolio({ groups }: Props) {
       } catch { /* non-fatal; local state is correct */ }
     }
 
+    // ── Sell-only: reduce or close the position, proceeds to cash ────────
+    if (sellOnly && sellPrice > 0) {
+      const sellFx = tickerIsUsd(trade.sellSymbol) ? usdCadRate : 1;
+      const fraction = sellPercent / 100;
+      const updated = positionsRef.current.map((pp) => {
+        const soldPos = pp.positions.find((p) => tickerEq(p.symbol, trade.sellSymbol));
+        if (!soldPos || soldPos.units <= 0) return pp;
+        const unitsSold = soldPos.units * fraction;
+        const remaining = soldPos.units - unitsSold;
+        const proceedsCad = unitsSold * sellPrice * sellFx;
+        // Below a thousandth of a unit is rounding dust, not a position.
+        const nextPositions = remaining > 0.001
+          ? pp.positions.map((p) =>
+              tickerEq(p.symbol, trade.sellSymbol) ? { ...p, units: remaining } : p)
+          : pp.positions.filter((p) => !tickerEq(p.symbol, trade.sellSymbol));
+        return {
+          ...pp,
+          positions: nextPositions,
+          cashBalance: (pp.cashBalance || 0) + proceedsCad,
+          lastUpdated: nowIso,
+        };
+      });
+      setPositions(updated);
+      positionsRef.current = updated;
+      try {
+        await fetch("/api/kv/pim-positions", {
+          method: "PUT", headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ portfolios: updated }),
+        });
+      } catch { /* non-fatal; local state is correct */ }
+    }
+
+    // ── Buy-only: size from the model target, debit cash ─────────────────
+    // No sold leg funds this, but the model already knows what the name
+    // should weigh, so the target IS the size. Mirrors the arithmetic in
+    // executeRebalanceForProfile (including its alpha-profile renormalization)
+    // rather than inventing a second sizing rule.
+    if (buyOnly && buyPrice > 0) {
+      const buyFx = tickerIsUsd(buyTicker) ? usdCadRate : 1;
+      const buyCostBasisCad = buyPrice * buyFx;
+      const modelsNow = pimModelsRef.current;
+
+      // A missing live price would silently understate a portfolio's total and
+      // therefore undersize the buy. Refuse rather than size off a bad total.
+      const unpriced = new Set<string>();
+      for (const pp of positionsRef.current) {
+        for (const p of pp.positions) {
+          if (p.units > 0 && !livePrices[p.symbol]) unpriced.add(p.symbol);
+        }
+      }
+      if (unpriced.size > 0) {
+        return {
+          ok: false,
+          error: `${buyTicker}: cannot size a buy-only trade — no live price for ${[...unpriced].join(", ")}. Refresh prices and retry. Nothing was written to positions.`,
+        };
+      }
+
+      const noTarget: string[] = [];
+      const updated = positionsRef.current.map((pp) => {
+        if (excludedSet.has(pp.groupId)) return pp;
+        const g = modelsNow.groups.find((x) => x.id === pp.groupId);
+        if (!g) return pp;
+        const holding = g.holdings.find((h) => tickerEq(h.symbol, buyTicker));
+        if (!holding) return pp;
+
+        // Target share of THIS profile's portfolio.
+        let targetPct = 0;
+        if (pp.profile === "alpha") {
+          // Alpha is equity-only and excludes Core ETFs, renormalized to 100%.
+          const alphaHoldings = g.holdings.filter(
+            (h) => h.assetClass === "equity" && !coreSymbols.has(symbolToTicker(h.symbol)),
+          );
+          const alphaTotal = alphaHoldings.reduce((sum, h) => sum + h.weightInClass, 0);
+          const inAlpha = alphaHoldings.some((h) => tickerEq(h.symbol, buyTicker));
+          targetPct = inAlpha && alphaTotal > 0 ? holding.weightInClass / alphaTotal : 0;
+        } else {
+          const pW = g.profiles[pp.profile as keyof typeof g.profiles];
+          if (!pW) return pp;
+          const alloc = holding.assetClass === "fixedIncome" ? pW.fixedIncome
+            : holding.assetClass === "equity" ? pW.equity
+            : pW.alternatives;
+          targetPct = holding.weightInClass * alloc;
+        }
+        if (targetPct <= 0) {
+          noTarget.push(`${g.name}/${pp.profile}`);
+          return pp;
+        }
+
+        let totalCad = pp.cashBalance || 0;
+        for (const p of pp.positions) {
+          const fx = tickerIsUsd(p.symbol) ? usdCadRate : 1;
+          totalCad += p.units * (livePrices[p.symbol] || 0) * fx;
+        }
+        const targetValueCad = totalCad * targetPct;
+        const units = buyCostBasisCad > 0 ? targetValueCad / buyCostBasisCad : 0;
+        if (units <= 0) return pp;
+
+        const existing = pp.positions.find((p) => tickerEq(p.symbol, buyTicker));
+        const nextPositions = existing
+          ? pp.positions.map((p) => {
+              if (!tickerEq(p.symbol, buyTicker)) return p;
+              const mergedUnits = p.units + units;
+              return {
+                ...p,
+                units: mergedUnits,
+                costBasis: mergedUnits > 0
+                  ? (p.units * p.costBasis + units * buyCostBasisCad) / mergedUnits
+                  : buyCostBasisCad,
+              };
+            })
+          : [...pp.positions, { symbol: buyTicker, units, costBasis: buyCostBasisCad }];
+
+        return {
+          ...pp,
+          positions: nextPositions,
+          cashBalance: (pp.cashBalance || 0) - targetValueCad,
+          lastUpdated: nowIso,
+        };
+      });
+
+      setPositions(updated);
+      positionsRef.current = updated;
+      try {
+        await fetch("/api/kv/pim-positions", {
+          method: "PUT", headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ portfolios: updated }),
+        });
+      } catch { /* non-fatal; local state is correct */ }
+      if (noTarget.length > 0) {
+        buyOnlyNoTargetGroups.push(...noTarget);
+      }
+    }
+
     // Surface skipped-group warnings via the return value rather than
     // alert() — the multi-trade caller aggregates them into the
     // tradeExecProgress label so one alert popup per queue execution
@@ -2448,6 +2592,10 @@ export function PimPortfolio({ groups }: Props) {
       : undefined;
     if (unitlessBuyGroups.length > 0) {
       const note = `${buyTicker} was added to the model but NO SHARES were recorded in ${unitlessBuyGroups.join(", ")} — ${trade.sellSymbol} had no position there to fund the buy. Enter the units via Edit Positions, or the holding will not contribute to performance.`;
+      warning = warning ? `${warning} ${note}` : note;
+    }
+    if (buyOnlyNoTargetGroups.length > 0) {
+      const note = `${buyTicker} has no model target in ${buyOnlyNoTargetGroups.join(", ")}, so NO units were sized there. Check the name is eligible for those models.`;
       warning = warning ? `${warning} ${note}` : note;
     }
     if (partialTrimNotApplied) {
@@ -2469,7 +2617,7 @@ export function PimPortfolio({ groups }: Props) {
     }
 
     return { ok: true, warning };
-  }, [pimPortfolioState, selectedGroupId, updatePimPortfolioState, scoredStocks, addStock, pimModels, updatePimModels, moveBucket, stocks, positions, usdCadRate, rebalanceStockWeights, updateStockFields, coreSymbols]);
+  }, [pimPortfolioState, selectedGroupId, updatePimPortfolioState, scoredStocks, addStock, pimModels, updatePimModels, moveBucket, stocks, positions, usdCadRate, rebalanceStockWeights, updateStockFields, coreSymbols, livePrices]);
 
   /**
    * Run every valid trade in the queue sequentially. Skips invalid rows
@@ -2923,7 +3071,7 @@ export function PimPortfolio({ groups }: Props) {
             <div>
               <h3 className="text-sm font-bold text-ink">Buy / Sell</h3>
               <p className="text-xs text-ink-3 mt-0.5">
-                Queue one or more trades. Sell % defaults to 100 (full position); lower it for a partial sell — the model target is trimmed by the same fraction and the bought name is added to each eligible model.
+                Queue one or more trades. Sell % defaults to 100 (full position); lower it for a partial sell — the model target is trimmed by the same fraction and the bought name is added to each eligible model. Sell-only credits proceeds to cash; buy-only sizes the position from its model target and debits cash.
               </p>
             </div>
             <button onClick={addTrade}
