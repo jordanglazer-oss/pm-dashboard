@@ -1,39 +1,33 @@
 /**
- * GET /api/admin/repair-pc-usa-weights[&confirm=YES]
+ * GET /api/admin/repair-model-weights?group=kpmg[&confirm=YES]
  *
- * Restores PC USA's equity weights to the state its own design determines:
- * every individual stock — CAD and USD alike — at the standard per-stock
- * weight, with the Core ETF absorbing whatever is left.
+ * Applies the standing weighting rule to one model group's live equity
+ * weights: every individual stock at refPerStock, Alpha funds untouched, and
+ * the Core ETFs absorbing whatever residual is left, in proportion to their
+ * current weights.
  *
- * WHY THIS IS THE END STATE, not a guess. With 7 CAD stocks, 12 USD stocks,
- * GRNJ at 3.1818% and VTWO at 5.4545%, pinning stocks at 0.018182 leaves ITOT
- * at 0.568179 — the seed's 0.568182. Expressed against the currency splits
- * that fall out of it:
+ * WHY A REPAIR IS NEEDED. rebalanceStockWeights only runs when something
+ * triggers it — a holding added or removed, or a manual weight edited. A model
+ * that drifted under the previous (inverse) rule keeps its stored weights until
+ * something touches it. This applies the rule once, deliberately.
  *
- *   CAD sub-portfolio = 7 x 1.20% = 8.400% of total   (cadSplit 0.084)
- *   ITOT Target 37.50% / usdSplit 0.916 = 40.94%      (the number actually typed)
+ * The inverse rule — Core/Alpha fixed, stocks flexing to fill the residual —
+ * is a no-op on balanced data, which is why it went unnoticed, but it made the
+ * individual stocks pay for every other change in the model. Adding LITE to
+ * KPMG pulled all 11 of its stocks from 1.20% to 1.09% of portfolio instead of
+ * the Core sleeve funding the addition.
  *
- * Both land on their declared values without being forced there, which is what
- * makes this the model's intended shape rather than one reading of it.
- *
- * WHAT WENT WRONG. rebalanceStockWeights runs the branch where Core ETFs hold
- * a fixed weight and the individual stocks flex to absorb the residual. PC USA
- * needs the opposite — stocks fixed, Core absorbing — because ITOT's Target Wt
- * is meant to be DERIVED. With ITOT's manual 40.94% taken as a share of the
- * whole model instead of the USD one, it sat at 62.03% of the class and all 19
- * stocks gave up the difference, collapsing onto 1.5286%.
- *
- * SCOPE. PC USA only. No other model is read or written.
+ * ONE GROUP PER CALL, named explicitly — there is no "repair everything", so a
+ * model cannot be rewritten by accident.
  *
  * DRY-RUN BY DEFAULT. ?confirm=YES stashes pm:pim-models to
- * pm:pim-models.pre-pcusa-repair-<ISO> first. Aborts without writing unless
- * every asset class lands on 100%.
+ * pm:pim-models.pre-weight-repair-<ISO> first. Aborts without writing unless
+ * EVERY asset class lands on 100%.
  */
 
 import { NextRequest, NextResponse } from "next/server";
 import { getRedis } from "@/app/lib/redis";
 
-const GROUP_ID = "pc-usa";
 const REF_PER_STOCK = 0.018182;
 const LEGACY_LOCKED = new Set(["FID5982", "FID5982-T", "GRNJ"]);
 const TOL = 0.0005;
@@ -45,7 +39,6 @@ type Holding = {
 };
 type Group = {
   id: string; name: string; holdings: Holding[];
-  cadSplit?: number; usdSplit?: number;
   profiles?: Record<string, { equity?: number } | undefined>; [k: string]: unknown;
 };
 type PimModelData = { groups?: Group[]; [k: string]: unknown };
@@ -64,7 +57,13 @@ function parseStocks(raw: string | null): Stock[] {
 
 export async function GET(req: NextRequest) {
   try {
-    const confirm = new URL(req.url).searchParams.get("confirm") === "YES";
+    const { searchParams } = new URL(req.url);
+    const groupId = (searchParams.get("group") || "").trim();
+    const confirm = searchParams.get("confirm") === "YES";
+    if (!groupId) {
+      return NextResponse.json({ error: "group query param is required (e.g. ?group=kpmg)" }, { status: 400 });
+    }
+
     const redis = await getRedis();
     const [pimRaw, stocksRaw] = await Promise.all([
       redis.get("pm:pim-models"),
@@ -73,8 +72,13 @@ export async function GET(req: NextRequest) {
     if (!pimRaw) return NextResponse.json({ error: "pm:pim-models missing" }, { status: 500 });
 
     const pim: PimModelData = JSON.parse(pimRaw);
-    const group = (pim.groups ?? []).find((g) => g.id === GROUP_ID);
-    if (!group) return NextResponse.json({ error: "pc-usa not found" }, { status: 404 });
+    const group = (pim.groups ?? []).find((g) => g.id === groupId);
+    if (!group) {
+      return NextResponse.json({
+        error: `group "${groupId}" not found`,
+        available: (pim.groups ?? []).map((g) => g.id),
+      }, { status: 404 });
+    }
 
     const stocks = parseStocks(stocksRaw);
     const byTicker = new Map<string, Stock>();
@@ -93,7 +97,6 @@ export async function GET(req: NextRequest) {
 
     const equity = group.holdings.filter((h) => h.assetClass === "equity");
     const other = group.holdings.filter((h) => h.assetClass !== "equity");
-
     const stockHoldings = equity.filter((h) => isIndividualStock(h.symbol));
     const nonStock = equity.filter((h) => !isIndividualStock(h.symbol));
     const alphaFunds = nonStock.filter((h) => isAlphaLocked(h.symbol));
@@ -102,7 +105,7 @@ export async function GET(req: NextRequest) {
     if (stockHoldings.length === 0 || coreEtfs.length === 0) {
       return NextResponse.json({
         ok: false, aborted: true,
-        error: "PC USA needs both individual stocks and at least one Core ETF for this rule. Nothing written.",
+        error: "This rule needs both individual stocks and at least one Core ETF to absorb the residual. Nothing written.",
         stockCount: stockHoldings.length, coreCount: coreEtfs.length,
       }, { status: 400 });
     }
@@ -113,11 +116,12 @@ export async function GET(req: NextRequest) {
     if (coreResidual <= 0) {
       return NextResponse.json({
         ok: false, aborted: true,
-        error: `Stocks (${r4(stockTotal)}%) plus Alpha funds (${r4(alphaTotal)}%) already fill or exceed the equity class — no residual for the Core ETF. Nothing written.`,
+        error: `Stocks (${r4(stockTotal)}%) plus Alpha funds (${r4(alphaTotal)}%) already fill the equity class — no residual left for the Core ETFs. Nothing written.`,
       }, { status: 400 });
     }
 
-    // Core ETFs share the residual in proportion to their current weights.
+    // Core ETFs share the residual in proportion to their CURRENT weights, so
+    // the sleeve's internal balance is preserved rather than reset.
     const coreCurrentTotal = coreEtfs.reduce((s, h) => s + h.weightInClass, 0);
     const nextEquity: Holding[] = [
       ...stockHoldings.map((h) => ({ ...h, weightInClass: REF_PER_STOCK })),
@@ -131,10 +135,8 @@ export async function GET(req: NextRequest) {
         ).toFixed(6)),
       })),
     ];
-
     const nextHoldings = [...other, ...nextEquity];
 
-    // Guard every asset class, not just equity.
     const classes = ["equity", "fixedIncome", "alternative"] as const;
     const violations: string[] = [];
     for (const ac of classes) {
@@ -157,32 +159,20 @@ export async function GET(req: NextRequest) {
         if (!b || Math.abs(b.weightInClass - h.weightInClass) < 1e-9) return null;
         return {
           symbol: h.symbol,
-          currency: h.currency,
           role: isIndividualStock(h.symbol) ? "stock" : isAlphaLocked(h.symbol) ? "alpha" : "core",
-          beforeWeightInClass: r4(b.weightInClass),
-          afterWeightInClass: r4(h.weightInClass),
           beforeTargetWtPct: r4(b.weightInClass * eqAlloc),
           afterTargetWtPct: r4(h.weightInClass * eqAlloc),
         };
       })
       .filter(Boolean);
 
-    const cadStockCount = stockHoldings.filter((h) => h.currency !== "USD").length;
     const plan = {
-      groupId: GROUP_ID,
-      rule: "individual stocks pinned at refPerStock; Alpha funds unchanged; Core ETF absorbs the residual",
+      groupId, groupName: group.name,
+      rule: "individual stocks at refPerStock; Alpha funds unchanged; Core ETFs absorb the residual pro-rata to current weights",
       stockCount: stockHoldings.length,
-      perStockWeightInClass: REF_PER_STOCK,
       perStockTargetWtPct: r4(REF_PER_STOCK * eqAlloc),
-      alphaFunds: alphaFunds.map((h) => ({ symbol: h.symbol, weightInClass: r4(h.weightInClass) })),
-      coreResidualWeightInClass: r4(coreResidual),
-      coreTargetWtPct: r4(coreResidual * eqAlloc),
-      crossChecks: {
-        cadSubPortfolioPctOfTotal: r4(cadStockCount * REF_PER_STOCK * eqAlloc),
-        declaredCadSplitPct: group.cadSplit != null ? r4(group.cadSplit) : null,
-        coreUsdModelPct: group.usdSplit ? r4(coreResidual * eqAlloc / group.usdSplit) : null,
-        note: "cadSubPortfolio should match declaredCadSplit, and coreUsdModel should match the manual weight typed for the Core ETF.",
-      },
+      alphaFunds: alphaFunds.map((h) => ({ symbol: h.symbol, targetWtPct: r4(h.weightInClass * eqAlloc) })),
+      coreResidualTargetWtPct: r4(coreResidual * eqAlloc),
       changed,
     };
 
@@ -191,21 +181,21 @@ export async function GET(req: NextRequest) {
     }
 
     const stamp = new Date().toISOString();
-    await redis.set(`pm:pim-models.pre-pcusa-repair-${stamp}`, pimRaw);
+    await redis.set(`pm:pim-models.pre-weight-repair-${stamp}`, pimRaw);
     const nextPim: PimModelData = {
       ...pim,
-      groups: (pim.groups ?? []).map((g) => (g.id === GROUP_ID ? { ...g, holdings: nextHoldings } : g)),
+      groups: (pim.groups ?? []).map((g) => (g.id === groupId ? { ...g, holdings: nextHoldings } : g)),
       lastUpdated: stamp,
     };
     await redis.set("pm:pim-models", JSON.stringify(nextPim));
 
     return NextResponse.json({
       ok: true, dryRun: false,
-      message: "PC USA equity weights repaired.",
-      stashedTo: `pm:pim-models.pre-pcusa-repair-${stamp}`,
+      message: `${group.name} equity weights repaired.`,
+      stashedTo: `pm:pim-models.pre-weight-repair-${stamp}`,
       ...plan,
     });
   } catch (e) {
-    return NextResponse.json({ error: e instanceof Error ? e.message : "repair-pc-usa-weights failed" }, { status: 500 });
+    return NextResponse.json({ error: e instanceof Error ? e.message : "repair-model-weights failed" }, { status: 500 });
   }
 }

@@ -1877,6 +1877,12 @@ export function PimPortfolio({ groups }: Props) {
     const tickerEq = (a: string, b: string) =>
       a === b || a.replace("-T", ".TO") === b.replace("-T", ".TO");
 
+    /** Model group ids the bought ticker is INELIGIBLE for — the unticked
+     *  models in the buy ticket, plus the No-US-Situs auto-rule. Hoisted above
+     *  the plan build because eligibility, not the sold name's presence, is
+     *  what decides where the buy lands. */
+    const excludedSet = new Set(trade.excludedGroupIds || []);
+
     /** Groups where the model got the bought holding but the book got no
      *  shares, because there was no sold position there to fund it. */
     const unitlessBuyGroups: string[] = [];
@@ -1940,7 +1946,29 @@ export function PimPortfolio({ groups }: Props) {
 
     /** The plan that drives model writes + transaction-tape grouping. */
     const modelPlan = isPartialSell ? trimPlan : swapPlan;
-    const affectedGroupIds = new Set(modelPlan.map((p) => p.groupId));
+
+    // Eligible models that do NOT hold the sold name still need the BUY.
+    // Ticking a model means "this model should own the bought name"; whether
+    // it happened to hold the name being sold is a separate question. Only
+    // groups holding the sold ticker used to be touched, so a switch funded
+    // from GRNJ silently skipped KPMG — which never held GRNJ — and LITE
+    // never reached it even though KPMG was ticked. The residual rule funds
+    // the addition from that model's own Core ETFs.
+    const buyOnlyAddGroups: string[] = [];
+    if (buyTicker) {
+      for (const g of originalPim.groups) {
+        if (excludedSet.has(g.id)) continue;
+        if (modelPlan.some((p) => p.groupId === g.id)) continue;
+        if (g.holdings.some((h) => tickerEq(h.symbol, buyTicker))) continue;
+        buyOnlyAddGroups.push(g.id);
+      }
+    }
+    const buyOnlyAddSet = new Set(buyOnlyAddGroups);
+
+    const affectedGroupIds = new Set([
+      ...modelPlan.map((p) => p.groupId),
+      ...buyOnlyAddGroups,
+    ]);
 
     // ── Resolve buy-side metadata up front so the atomic swap and the
     // addStock call share the same name / instrumentType / sector.
@@ -1951,7 +1979,6 @@ export function PimPortfolio({ groups }: Props) {
     // No-US-Situs auto-rule) has marked the buy INELIGIBLE for. Build the
     // full eligibility map so it can be persisted on pm:stocks (stock-page
     // display + future ops) and consulted by addToPimModels on pure buys.
-    const excludedSet = new Set(trade.excludedGroupIds || []);
     const eligibilityMap: Record<string, boolean> = {};
     for (const g of originalPim.groups) {
       eligibilityMap[g.id] = !excludedSet.has(g.id);
@@ -2079,7 +2106,22 @@ export function PimPortfolio({ groups }: Props) {
 
       const updatedGroups = originalPim.groups.map((g) => {
         const plan = trimPlan.find((p) => p.groupId === g.id);
-        if (!plan) return g;
+        if (!plan) {
+          if (!buyOnlyAddSet.has(g.id) || !buyTicker) return g;
+          // Eligible model that doesn't hold the sold name — add the buy and
+          // let the residual rule fund it from this model's Core ETFs.
+          const added: PimHolding[] = [
+            ...g.holdings,
+            {
+              name: buyName.toUpperCase(),
+              symbol: buyTicker,
+              currency: partialBuyCurrency,
+              assetClass: "equity",
+              weightInClass: 0,
+            },
+          ];
+          return { ...g, holdings: rebalanceStockWeights(added, buyStockForRebalance, g.id) };
+        }
 
         const trimmed = g.holdings.map((h) =>
           h === plan.soldHolding
@@ -2141,7 +2183,22 @@ export function PimPortfolio({ groups }: Props) {
             : swapPlan[0].soldHolding.currency; // inherit when suffix is silent
       const updatedGroups = originalPim.groups.map((g) => {
         const plan = swapPlan.find((p) => p.groupId === g.id);
-        if (!plan) return g;
+        if (!plan) {
+          if (!buyOnlyAddSet.has(g.id)) return g;
+          // Eligible model that doesn't hold the sold name — add the buy and
+          // let the residual rule fund it from this model's Core ETFs.
+          const added: PimHolding[] = [
+            ...g.holdings,
+            {
+              name: buyName.toUpperCase(),
+              symbol: buyTicker,
+              currency: buyCurrency,
+              assetClass: "equity",
+              weightInClass: 0,
+            },
+          ];
+          return { ...g, holdings: rebalanceStockWeights(added, buyStockForRebalance, g.id) };
+        }
         if (excludedSet.has(g.id)) {
           // Buy is INELIGIBLE for this model (e.g. No US Situs + US-listed
           // buy). Remove the sold holding and redistribute its freed weight
