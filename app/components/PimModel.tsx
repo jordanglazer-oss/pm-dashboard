@@ -3,7 +3,7 @@
 import React, { useState, useMemo, useRef, useEffect, useCallback } from "react";
 import Link from "next/link";
 import { useSearchParams, useRouter, usePathname } from "next/navigation";
-import type { PimModelGroup, PimProfileType, PimComputedHolding, PimAssetClass, PimPerformanceData } from "@/app/lib/pim-types";
+import type { PimHolding, PimModelGroup, PimProfileType, PimComputedHolding, PimAssetClass, PimPerformanceData } from "@/app/lib/pim-types";
 import type { Stock, InstrumentType, ScoreKey } from "@/app/lib/types";
 import { displayTicker } from "@/app/lib/ticker";
 import { useStocks } from "@/app/lib/StockContext";
@@ -563,11 +563,63 @@ export function PimModel({ groups }: Props) {
       }
     });
 
-    // (The equity class used to be built here with a "2x rule" plus a
-    // stocks-only special case. Both encoded a 50/50 CAD/USD assumption that
-    // PC USA breaks; the per-holding computation below now derives each
-    // column from the sleeve's actual share instead. DISPLAY-ONLY — none of
-    // it feeds weightInClass or rebalance math.)
+    // ── EQUITY-class CAD/USD Model construction ──────────────────────
+    // Standard models are designed 50% CAD / 50% USD, so an individual
+    // stock (or Alpha-locked fund) that sits in one currency sleeve
+    // represents 2× its blended class weight when that sleeve is viewed
+    // as a standalone single-currency model (1 / 0.5 = 2×). The
+    // same-currency Core ETFs then absorb the residual so each currency
+    // column still sums to the class target. PC USA is the exception:
+    // its CAD sleeve is only the CAD individual stocks (~12.7% of
+    // equity, not 50%), so its CAD column uses actual-share
+    // normalization FROZEN at the All-Equity allocation across every
+    // profile, while its USD column stays per-profile actual-share.
+    // FI/alt classes keep actual-share for every model (they are 50/50
+    // and have no Core ETF to absorb a residual). Alpha/Core virtual
+    // profiles also keep actual-share (their views drop the Core sleeve).
+    // DISPLAY-ONLY — none of this feeds weightInClass or rebalance math.
+    const isVirtualProfile = activeProfile === "alpha" || activeProfile === "core";
+    const isCoreHolding = (h: PimHolding) => coreSymbols.has(symbolToTicker(h.symbol));
+    // Per-currency equity construction, decided by whether the sleeve has
+    // Core ETFs to absorb a residual:
+    //   • Sleeve HAS Core ETFs → 2× rule: individual stocks + Alpha-locked
+    //     funds are fixed at 2× their class weight (each currency is half of
+    //     a 50/50 model → 1/0.5 = 2×), and the same-currency Core ETFs
+    //     absorb the residual so the column sums to the class target.
+    //     (Applies to both EY sleeves AND PC USA's USD sleeve, which holds
+    //     ITOT/VTWO.)
+    //   • Sleeve has NO Core ETF (e.g. PC USA's CAD sleeve = CAD stocks
+    //     only) → can't absorb a residual, so normalize the stocks to 100%
+    //     and FREEZE at the All-Equity allocation across every profile
+    //     (a stocks-only sleeve's internal proportions are profile-invariant).
+    // DISPLAY-ONLY — none of this feeds weightInClass or rebalance math.
+    const allEquityAlloc = effectiveGroup.profiles.allEquity?.equity ?? 1;
+    const equityCcy: Record<"CAD" | "USD", { hasCore: boolean; residualClass: number; coreStoredTotal: number; coreCount: number; classTotal: number }> = {
+      CAD: { hasCore: false, residualClass: 0, coreStoredTotal: 0, coreCount: 0, classTotal: 0 },
+      USD: { hasCore: false, residualClass: 0, coreStoredTotal: 0, coreCount: 0, classTotal: 0 },
+    };
+    if (!isVirtualProfile) {
+      (["CAD", "USD"] as const).forEach((ccy) => {
+        const eq = holdings.filter((h) => h.assetClass === "equity" && h.currency === ccy);
+        const core = eq.filter((h) => isCoreHolding(h));
+        const nonCoreClassSum = eq.filter((h) => !isCoreHolding(h)).reduce((s, h) => s + h.weightInClass, 0);
+        equityCcy[ccy] = {
+          hasCore: core.length > 0,
+          residualClass: Math.max(0, 1 - nonCoreClassSum * 2),
+          coreStoredTotal: core.reduce((s, h) => s + h.weightInClass, 0),
+          coreCount: core.length,
+          classTotal: eq.reduce((s, h) => s + h.weightInClass, 0),
+        };
+      });
+    }
+
+
+    // PC USA is the ONLY model with a real currency split (~87/13). Every
+    // other model is designed 50% CAD / 50% USD, and its columns are built on
+    // that assumption above — deliberately, so a sleeve drifting a point or
+    // two off 50 does not restate what a name weighs in a single-currency
+    // model. Only PC USA derives its columns from actual sleeve shares.
+    const isCurrencySplitModel = effectiveGroup.id === "pc-usa";
 
     // ── Dynamic Weight computation (sleeve-level drift) ────────────
     // Read the standalone Alpha Model return (PIM "alpha" series) and
@@ -709,17 +761,21 @@ export function PimModel({ groups }: Props) {
       let cadModelWeight: number | null = null;
       let usdModelWeight: number | null = null;
 
-      // A holding's share of its own currency sleeve, scaled by the class
-      // allocation — EXCEPT where that currency exists in only one asset
-      // class, in which case the sleeve is a sub-account holding nothing else
-      // and its column normalizes to 100% instead.
+      // Equity columns. Every model except PC USA is designed 50% CAD / 50%
+      // USD and is built on that assumption — a name in one sleeve shows at 2x
+      // its class weight (2 being 1/0.5), with the same-currency Core ETFs
+      // absorbing the residual so the column still sums to the class target.
+      // Holding that constant is deliberate: a sleeve sitting a point or two
+      // off 50 is drift, not a different model, and should not restate what a
+      // name weighs in a single-currency view.
       //
-      // PC USA is the case: its only Canadian positions are CAD stocks, so a
-      // Balanced client's CAD account is still 100% equity and each of the 7
-      // names is 100%/7 = 14.29% of it, on every profile. Scaling that by the
-      // household's 66% equity allocation would report 9.43% for an account
-      // that holds nothing but those stocks. PIM's CAD sleeve does hold bonds
-      // (JBND-T), so there the class allocation rightly applies.
+      // PC USA is the exception, and the only model with a genuine split
+      // (~87% USD / ~13% CAD). Its columns come from actual sleeve shares. Its
+      // CAD sleeve is also equity-ONLY — the bonds and alternatives are all
+      // USD — so a Balanced client's CAD account is still 100% equity and each
+      // of the 7 names is 100%/7 = 14.29% of it on every profile. Scaling that
+      // by the household's 66% equity allocation would report 9.43% for an
+      // account holding nothing else.
       //
       // Equity used to be special-cased with a "2x rule" — non-Core holdings
       // shown at twice their class weight, Core ETFs absorbing the residual —
@@ -735,16 +791,49 @@ export function PimModel({ groups }: Props) {
       // separate stocks-only branch (PC USA's CAD sleeve) — that existed to
       // work around the same 50/50 assumption — so both columns are now
       // symmetric and each sums to its class target by construction.
-      // Does this currency appear in any OTHER asset class in this model?
-      const cadClassCount = Object.values(classCadTotals).filter((v) => v > 0).length;
-      const usdClassCount = Object.values(classUsdTotals).filter((v) => v > 0).length;
-      const cadScale = cadClassCount <= 1 ? 1 : assetClassAllocation;
-      const usdScale = usdClassCount <= 1 ? 1 : assetClassAllocation;
-
-      cadModelWeight = h.currency === "CAD" && classCadTotal > 0
-        ? (h.weightInClass / classCadTotal) * cadScale : null;
-      usdModelWeight = h.currency === "USD" && classUsdTotal > 0
-        ? (h.weightInClass / classUsdTotal) * usdScale : null;
+      if (h.assetClass === "equity" && !isVirtualProfile && (h.currency === "CAD" || h.currency === "USD")) {
+        if (isCurrencySplitModel) {
+          // PC USA: actual sleeve share. A currency confined to ONE asset
+          // class is a sub-account with no other sleeve to be a fraction of,
+          // so it normalizes to 100% rather than scaling by the allocation.
+          const classCadCount = Object.values(classCadTotals).filter((v) => v > 0).length;
+          const classUsdCount = Object.values(classUsdTotals).filter((v) => v > 0).length;
+          if (h.currency === "CAD") {
+            cadModelWeight = classCadTotal > 0
+              ? (h.weightInClass / classCadTotal) * (classCadCount <= 1 ? 1 : assetClassAllocation)
+              : null;
+          } else {
+            usdModelWeight = classUsdTotal > 0
+              ? (h.weightInClass / classUsdTotal) * (classUsdCount <= 1 ? 1 : assetClassAllocation)
+              : null;
+          }
+        } else {
+          // Every other model: the 50/50 construction.
+          const info = equityCcy[h.currency];
+          let w: number | null;
+          if (info.hasCore) {
+            if (isCoreHolding(h)) {
+              const ratio = info.coreStoredTotal > 0
+                ? h.weightInClass / info.coreStoredTotal
+                : (info.coreCount > 0 ? 1 / info.coreCount : 0);
+              w = info.residualClass * ratio * assetClassAllocation;
+            } else {
+              w = h.weightInClass * 2 * assetClassAllocation;
+            }
+          } else {
+            w = info.classTotal > 0 ? (h.weightInClass / info.classTotal) * allEquityAlloc : null;
+          }
+          if (h.currency === "CAD") cadModelWeight = w;
+          else usdModelWeight = w;
+        }
+      } else {
+        // FI / alt (every model) + equity under Alpha/Core profiles:
+        // per-asset-class actual-share normalization (symmetric CAD/USD).
+        cadModelWeight = h.currency === "CAD" && classCadTotal > 0
+          ? (h.weightInClass / classCadTotal) * assetClassAllocation : null;
+        usdModelWeight = h.currency === "USD" && classUsdTotal > 0
+          ? (h.weightInClass / classUsdTotal) * assetClassAllocation : null;
+      }
 
       // Live weight with drift
       let liveWeight: number | undefined;
