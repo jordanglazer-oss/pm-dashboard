@@ -34,7 +34,7 @@ export type UsEquityResolution = {
   symbol: string;
   /** 0-100, or null when it cannot be resolved and must be set by hand. */
   pct: number | null;
-  source: "manual" | "country" | "unresolved";
+  source: "manual" | "country" | "listing" | "unresolved";
   country: Country | null;
   /** Shown in the UI to explain where the number came from. */
   reason: string;
@@ -57,6 +57,21 @@ export function lookupCountry(symbol: string): Country | null {
     if (hit) return hit;
   }
   return null;
+}
+
+/**
+ * Canadian listing suffixes. Used ONLY for individual stocks, where the
+ * listing genuinely settles the exposure. It must NEVER be applied to funds:
+ * XUH.TO is a Canadian listing holding 100% US equity, which is the entire
+ * reason SYMBOL_COUNTRY classifies by underlying instead.
+ */
+const CANADIAN_LISTING = /(\.TO|-T|\.NE|\.V|\.CN)$/i;
+
+/** An individual stock, as opposed to an ETF or mutual fund. Undefined
+ *  instrumentType means stock, matching isStock() in StockContext. */
+function isIndividualStock(stock?: Stock | null): boolean {
+  if (!stock) return false;
+  return stock.instrumentType === "stock" || stock.instrumentType == null;
 }
 
 /** Resolve one holding's US-equity percentage. */
@@ -83,9 +98,24 @@ export function resolveUsEquityPct(symbol: string, stock?: Stock | null): UsEqui
       reason: "Global mandate — the US share is partial and cannot be derived. Set it on the stock page.",
     };
   }
+  // An individual stock's exposure follows its listing — a US-listed stock is
+  // US exposure, a Canadian-listed one is Canadian. No geography.ts entry and
+  // no manual input required, which is why the stock page does not ask for one.
+  // Deliberately NOT applied to funds: see CANADIAN_LISTING above.
+  if (isIndividualStock(stock)) {
+    const cad = CANADIAN_LISTING.test(symbol);
+    return {
+      symbol,
+      pct: cad ? 0 : 100,
+      source: "listing",
+      country: cad ? "Canada" : "United States",
+      reason: cad ? "Canadian-listed stock." : "US-listed stock.",
+    };
+  }
+
   return {
     symbol, pct: null, source: "unresolved", country: null,
-    reason: "Not classified in geography.ts and no manual value set. Set it on the stock page.",
+    reason: "Fund with no country classification and no manual value. Set its US equity % on the stock page.",
   };
 }
 

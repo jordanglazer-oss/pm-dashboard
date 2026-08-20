@@ -2025,11 +2025,12 @@ export default function StockDetailPage() {
               {!scoreable && " Set the weight (%) for each model's Balanced profile."}
             </p>
 
-            {/* US equity exposure — drives SPY put hedge sizing. Derived where
-                it can be (a CAD-hedged S&P 500 tracker is 100% US; currency is
-                not the test), manual only for Global mandates, whose US share
-                is partial and cannot be scraped reliably. */}
-            {(() => {
+            {/* US equity exposure — drives SPY put hedge sizing. Funds/ETFs ONLY:
+                an individual stock's exposure follows its listing (US-listed is
+                US, Canadian-listed is Canadian), so it resolves without asking.
+                Only a fund can be ambiguous — XUH.TO is a Canadian listing that
+                is 100% US equity, and a Global mandate is genuinely partial. */}
+            {!scoreable && (() => {
               const res = resolveUsEquityPct(ticker, stock);
               return (
                 <div className="mb-4 rounded-lg border border-line bg-surface-2 p-3">
