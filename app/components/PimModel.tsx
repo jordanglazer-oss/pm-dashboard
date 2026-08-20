@@ -709,8 +709,17 @@ export function PimModel({ groups }: Props) {
       let cadModelWeight: number | null = null;
       let usdModelWeight: number | null = null;
 
-      // ONE rule for every asset class, currency and profile: a holding's
-      // share of its own currency sleeve, scaled by the class allocation.
+      // A holding's share of its own currency sleeve, scaled by the class
+      // allocation — EXCEPT where that currency exists in only one asset
+      // class, in which case the sleeve is a sub-account holding nothing else
+      // and its column normalizes to 100% instead.
+      //
+      // PC USA is the case: its only Canadian positions are CAD stocks, so a
+      // Balanced client's CAD account is still 100% equity and each of the 7
+      // names is 100%/7 = 14.29% of it, on every profile. Scaling that by the
+      // household's 66% equity allocation would report 9.43% for an account
+      // that holds nothing but those stocks. PIM's CAD sleeve does hold bonds
+      // (JBND-T), so there the class allocation rightly applies.
       //
       // Equity used to be special-cased with a "2x rule" — non-Core holdings
       // shown at twice their class weight, Core ETFs absorbing the residual —
@@ -726,10 +735,16 @@ export function PimModel({ groups }: Props) {
       // separate stocks-only branch (PC USA's CAD sleeve) — that existed to
       // work around the same 50/50 assumption — so both columns are now
       // symmetric and each sums to its class target by construction.
+      // Does this currency appear in any OTHER asset class in this model?
+      const cadClassCount = Object.values(classCadTotals).filter((v) => v > 0).length;
+      const usdClassCount = Object.values(classUsdTotals).filter((v) => v > 0).length;
+      const cadScale = cadClassCount <= 1 ? 1 : assetClassAllocation;
+      const usdScale = usdClassCount <= 1 ? 1 : assetClassAllocation;
+
       cadModelWeight = h.currency === "CAD" && classCadTotal > 0
-        ? (h.weightInClass / classCadTotal) * assetClassAllocation : null;
+        ? (h.weightInClass / classCadTotal) * cadScale : null;
       usdModelWeight = h.currency === "USD" && classUsdTotal > 0
-        ? (h.weightInClass / classUsdTotal) * assetClassAllocation : null;
+        ? (h.weightInClass / classUsdTotal) * usdScale : null;
 
       // Live weight with drift
       let liveWeight: number | undefined;
