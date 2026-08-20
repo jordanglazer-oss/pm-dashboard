@@ -4,6 +4,7 @@ import React, { useState, useEffect, useCallback, useRef } from "react";
 import { useParams, useRouter, useSearchParams } from "next/navigation";
 import Link from "next/link";
 import { useStocks } from "@/app/lib/StockContext";
+import { resolveUsEquityPct } from "@/app/lib/us-equity-exposure";
 import { SCORE_GROUPS, MAX_SCORE, INSTRUMENT_LABELS } from "@/app/lib/types";
 import type { ScoreKey, Scores, FundData, ScoreDataPoint, ScoreDataPointSource, ExternalSourceNote } from "@/app/lib/types";
 import { groupTotal, isScoreable, normalizeSector, marketEdgeApplies, boostedAiApplies, siaApplies, ownershipTrendsApplies } from "@/app/lib/scoring";
@@ -2023,6 +2024,57 @@ export default function StockDetailPage() {
               Toggle which PIM model groups this position is eligible for.
               {!scoreable && " Set the weight (%) for each model's Balanced profile."}
             </p>
+
+            {/* US equity exposure — drives SPY put hedge sizing. Derived where
+                it can be (a CAD-hedged S&P 500 tracker is 100% US; currency is
+                not the test), manual only for Global mandates, whose US share
+                is partial and cannot be scraped reliably. */}
+            {(() => {
+              const res = resolveUsEquityPct(ticker, stock);
+              return (
+                <div className="mb-4 rounded-lg border border-line bg-surface-2 p-3">
+                  <label className="block text-[11px] font-semibold text-ink-2 mb-1">
+                    US equity exposure (%)
+                  </label>
+                  <div className="flex flex-wrap items-center gap-2">
+                    <input
+                      type="number"
+                      step="1"
+                      min="0"
+                      max="100"
+                      placeholder={res.source === "country" ? `auto: ${res.pct}` : "e.g. 65"}
+                      defaultValue={stock.usEquityPct != null ? String(stock.usEquityPct) : ""}
+                      onBlur={(e) => {
+                        const raw = e.target.value.trim();
+                        if (raw === "") {
+                          if (stock.usEquityPct != null) {
+                            updateStockFields(ticker, { usEquityPct: undefined });
+                          }
+                          return;
+                        }
+                        const n = Number(raw);
+                        if (Number.isFinite(n) && n >= 0 && n <= 100) {
+                          updateStockFields(ticker, { usEquityPct: n });
+                        }
+                      }}
+                      className="w-28 rounded border border-line px-2 py-1 text-sm"
+                    />
+                    {res.source === "unresolved" ? (
+                      <span className="rounded bg-warn px-1.5 py-0.5 text-[10px] font-bold uppercase tracking-wider text-white">
+                        Needs a value
+                      </span>
+                    ) : (
+                      <span className="rounded bg-pos-soft px-1.5 py-0.5 text-[10px] font-semibold text-pos">
+                        {res.pct}% {res.source === "manual" ? "(manual)" : "(auto)"}
+                      </span>
+                    )}
+                  </div>
+                  <p className="mt-1.5 text-[10px] text-ink-3">
+                    {res.reason} Used to size SPY put hedges against the book&apos;s US equity notional. Leave blank to use the derived value.
+                  </p>
+                </div>
+              );
+            })()}
             <div className="grid grid-cols-1 sm:grid-cols-2 md:grid-cols-3 lg:grid-cols-4 gap-3">
               {pimModels.groups.map((group) => {
                 const eligible = stock.modelEligibility?.[group.id] !== false;

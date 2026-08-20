@@ -28,7 +28,8 @@ import { NextResponse } from "next/server";
 import { getRedis } from "@/app/lib/redis";
 import { loadHedges, isActiveHedge } from "@/app/lib/hedges";
 import { fetchPutQuotes } from "@/app/lib/hedging";
-import { SYMBOL_COUNTRY } from "@/app/lib/geography";
+import { usEquityNotional } from "@/app/lib/us-equity-exposure";
+import type { Stock } from "@/app/lib/types";
 
 type Holding = { symbol: string; currency?: "CAD" | "USD"; assetClass?: string; weightInClass: number };
 type Group = { id: string; name: string; holdings: Holding[]; profiles?: Record<string, { equity?: number } | undefined> };
@@ -41,12 +42,19 @@ const r2 = (n: number) => Math.round(n * 100) / 100;
 export async function GET() {
   try {
     const redis = await getRedis();
-    const [pimRaw, posRaw, marketRaw, hedges] = await Promise.all([
+    const [pimRaw, posRaw, marketRaw, stocksRaw, hedges] = await Promise.all([
       redis.get("pm:pim-models"),
       redis.get("pm:pim-positions"),
       redis.get("pm:market"),
+      redis.get("pm:stocks"),
       loadHedges(),
     ]);
+
+    const stocksArr: Stock[] = stocksRaw
+      ? (() => { const p = JSON.parse(stocksRaw); return Array.isArray(p) ? p : (p?.stocks ?? []); })()
+      : [];
+    const stockByTicker = new Map<string, Stock>();
+    for (const st of stocksArr) if (st?.ticker) stockByTicker.set(norm(st.ticker), st);
 
     const pim = pimRaw ? (JSON.parse(pimRaw) as { groups?: Group[] }) : {};
     const pos = posRaw ? (JSON.parse(posRaw) as { portfolios?: Portfolio[] }) : {};
@@ -117,42 +125,36 @@ export async function GET() {
         classOf.set(norm(h.symbol), h.assetClass);
       }
 
-      let usEquityCad = 0;
-      let globalEquityCad = 0;
-      const unclassified: string[] = [];
-      for (const p of pp.positions ?? []) {
-        if (p.units <= 0) continue;
-        const key = norm(p.symbol);
-        if (classOf.get(key) !== "equity") continue;
-        const country = SYMBOL_COUNTRY[p.symbol] ?? SYMBOL_COUNTRY[key];
-        // Valued at COST here on purpose: this route must not depend on a live
-        // price fetch to answer "can this be built". Live marks come later.
-        const valueCad = p.units * p.costBasis;
-        if (country === "United States") usEquityCad += valueCad;
-        else if (country === "Global") globalEquityCad += valueCad;
-        else if (!country) unclassified.push(p.symbol);
-      }
+      // Valued at COST here on purpose: this route must not depend on a live
+      // price fetch to answer "can this be built". Live marks come later.
+      const valued = (pp.positions ?? [])
+        .filter((p) => p.units > 0)
+        .map((p) => ({
+          symbol: p.symbol,
+          valueUsd: usdCad ? (p.units * p.costBasis) / usdCad : 0,
+          isEquity: classOf.get(norm(p.symbol)) === "equity",
+          stock: stockByTicker.get(norm(p.symbol)) ?? null,
+        }));
+
+      const { notionalUsd, unresolved, contributions } = usEquityNotional(valued);
 
       const impliedContracts = active
         .filter((h) => h.strikePrice != null)
-        .map((h) => {
-          const strike = h.strikePrice!;
-          const usdNotional = usdCad ? usEquityCad / usdCad : null;
-          return {
-            hedgeId: h.id,
-            strike,
-            usEquityNotionalUsd: usdNotional != null ? r2(usdNotional) : null,
-            impliedContracts: usdNotional != null ? r2(usdNotional / (strike * 100)) : null,
-            loggedContracts: h.contracts ?? null,
-          };
-        });
+        .map((h) => ({
+          hedgeId: h.id,
+          strike: h.strikePrice!,
+          impliedContracts: notionalUsd > 0 ? r2(notionalUsd / (h.strikePrice! * 100)) : null,
+          loggedContracts: h.contracts ?? null,
+        }));
 
       return {
         groupId: pp.groupId,
         profile: pp.profile,
-        usEquityAtCostCad: r2(usEquityCad),
-        globalEquityAtCostCad: r2(globalEquityCad),
-        unclassifiedEquitySymbols: [...new Set(unclassified)],
+        usEquityNotionalAtCostUsd: r2(notionalUsd),
+        /** Holdings whose US share is unknown. Sizing must NOT proceed while
+         *  this is non-empty — treating them as 0% under-hedges silently. */
+        unresolvedSymbols: [...new Set(unresolved)],
+        contributions: contributions.map((c) => ({ ...c, valueUsd: r2(c.valueUsd), contributionUsd: r2(c.contributionUsd) })),
         impliedContracts,
       };
     });
@@ -167,6 +169,7 @@ export async function GET() {
       notionalByProfile: notionalRows,
       caveats: [
         "Notional is valued at COST here, not live prices — this route deliberately avoids a price fetch. The real implementation will mark at live prices.",
+        "unresolvedSymbols must be empty before any hedge is sized. A holding with an unknown US share is never counted as 0% — that would under-hedge silently. Set its US equity % on the stock page.",
         "CBOE quotes are 15-minute delayed, which is fine for a daily mark.",
         "There are no historical option prices available, so a hedge can only be marked from the day tracking starts — its earlier contribution cannot be reconstructed.",
       ],

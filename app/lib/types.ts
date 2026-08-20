@@ -417,6 +417,16 @@ export type Stock = {
    *  takes precedence over `fundData.expenseRatio` in the Client
    *  Report blended-MER calculation. */
   manualExpenseRatio?: number;
+  /** Share of this holding that is US equity exposure, 0-100. Drives SPY put
+   *  hedge sizing (contracts = US notional / (strike x 100)).
+   *
+   *  Only needed where it cannot be derived: pure-mandate funds resolve from
+   *  geography.ts automatically (a CAD-hedged S&P 500 tracker is 100% US —
+   *  currency is not the test), while GLOBAL mandates are genuinely partial
+   *  and must be set by hand. An unset, underivable holding is reported as
+   *  unresolved and blocks sizing — never silently treated as 0%, which would
+   *  under-hedge with nothing to show for it. See app/lib/us-equity-exposure.ts */
+  usEquityPct?: number;
   modelEligibility?: Record<string, boolean>; // PIM model group id → eligible (default all true)
   modelWeights?: Record<string, number>; // PIM model group id → weight% in Balanced (overrides weights.portfolio)
   designation?: "core" | "alpha"; // Core = indexed/passive, Alpha = active picks (default alpha)
