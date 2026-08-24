@@ -129,7 +129,33 @@ export function Attribution() {
     return prof?.periods.find((p) => p.period === period) ?? null;
   }, [data, profileIdx, period]);
 
-  const bench = decomp?.benchmarks[benchIdx] ?? null;
+  // Clamp: a stale cached payload can have fewer benchmarks than the index.
+  const bench = decomp
+    ? decomp.benchmarks[Math.min(benchIdx, decomp.benchmarks.length - 1)] ?? null
+    : null;
+
+  // Plain-English "why" for the active return vs the chosen benchmark. Uses
+  // the decomposition identity: total − bench = (beta−1)×bench + currency + selection.
+  const active = useMemo(() => {
+    if (!decomp || !bench || decomp.portfolioReturnPct == null || bench.benchmarkReturnPct == null)
+      return null;
+    const activePct = decomp.portfolioReturnPct - bench.benchmarkReturnPct;
+    const betaGap =
+      bench.marketContributionPct == null ? null : bench.marketContributionPct - bench.benchmarkReturnPct;
+    const parts: string[] = [];
+    const phrase = (v: number | null, pos: string, neg: string) => {
+      if (v == null || Math.abs(v) < 0.05) return;
+      parts.push(`${v > 0 ? pos : neg} ${Math.abs(v).toFixed(1)}pp`);
+    };
+    phrase(bench.selectionPct, "stock selection added", "stock selection cost");
+    phrase(decomp.currencyContributionPct, "the USD/CAD move added", "the USD/CAD move cost");
+    phrase(
+      betaGap,
+      `running beta ${decomp.portfolioBeta.toFixed(2)} added`,
+      `running beta ${decomp.portfolioBeta.toFixed(2)} cost`,
+    );
+    return { activePct, sentence: parts.length ? parts.join(", ") : "the pieces roughly offset" };
+  }, [decomp, bench]);
 
   const profileData = data?.profiles[profileIdx] ?? null;
   const contrib = profileData?.contributionsByPeriod?.[period] ?? null;
@@ -259,7 +285,7 @@ export function Attribution() {
                       }`}
                       title={`Split your return vs ${b.label}`}
                     >
-                      {b.label === "S&P 500" ? "vs S&P 500" : "vs TSX"}
+                      vs {b.label}
                     </button>
                   ))}
                 </div>
@@ -268,6 +294,24 @@ export function Attribution() {
             <p className="text-[11.5px] text-ink-3">
               Your {data.profiles[profileIdx]?.label} model&apos;s actual {period} return (in CAD), split below into the three things that drove it. Toggle the benchmark on the right.
             </p>
+            {active && bench && (
+              <div className="mt-1 flex flex-col gap-0.5 rounded-control border border-line-soft bg-surface-2/40 px-3 py-2">
+                <div className="flex flex-wrap items-baseline gap-x-2 gap-y-0.5 text-[12px]">
+                  <span className="font-semibold text-ink-2">vs {bench.label}</span>
+                  <span className="text-ink-3">
+                    benchmark {fmtPct(bench.benchmarkReturnPct)} {period}
+                  </span>
+                  <span className={`font-mono font-bold tabular-nums ${toneClass(active.activePct)}`}>
+                    {Math.abs(active.activePct) < 0.05
+                      ? "in line"
+                      : `${active.activePct > 0 ? "ahead" : "behind"} by ${Math.abs(active.activePct).toFixed(2)}pp`}
+                  </span>
+                </div>
+                <p className="text-[11.5px] text-ink-3">
+                  Why: {active.sentence}. <span className="text-ink-faint">(Benchmark in its own currency; the FX effect is the Currency line.)</span>
+                </p>
+              </div>
+            )}
           </div>
 
           {/* decomposition rows */}
@@ -364,6 +408,14 @@ export function Attribution() {
                                   since {new Date(`${h.ownedSince}T12:00:00Z`).toLocaleDateString("en-US", { month: "short", day: "numeric" })}
                                 </span>
                               )}
+                              {h.soldOn && (
+                                <span
+                                  className="ml-1.5 rounded-full border border-line px-1.5 py-[1px] text-[9.5px] font-semibold text-ink-3"
+                                  title={`Fully exited during this period — measured to the sale on ${h.soldOn} at the sale price. Weight estimated from the model weight recorded on the trade.`}
+                                >
+                                  sold {new Date(`${h.soldOn}T12:00:00Z`).toLocaleDateString("en-US", { month: "short", day: "numeric" })}
+                                </span>
+                              )}
                             </span>
                             <span className={`font-mono text-[12.5px] tabular-nums shrink-0 ${toneClass(h.contributionPct)}`}>{fmtPct(h.contributionPct)}</span>
                           </div>
@@ -413,7 +465,7 @@ export function Attribution() {
                 </div>
               </div>
               <p className="text-[10.5px] leading-4 text-ink-faint">
-                Contribution = each holding&apos;s current weight × its total-return move in CAD (incl. distributions) over the portion of the {period} window it was actually held. Weights include cash. Names sold during the period aren&apos;t captured yet. Estimates.
+                Contribution = each holding&apos;s current weight × its total-return move in CAD (incl. distributions) over the portion of the {period} window it was actually held. Weights include cash. Names sold during the period stay listed (&quot;sold&quot; tag) — measured to the sale, with weight estimated from the model weight on the trade. Estimates.
               </p>
             </div>
           )}

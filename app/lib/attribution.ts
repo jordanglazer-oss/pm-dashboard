@@ -170,6 +170,10 @@ export type HoldingContribution = {
   /** YYYY-MM-DD when the measurement window starts at a mid-period purchase
    *  instead of the period start (position initiated during the period). */
   ownedSince?: string;
+  /** YYYY-MM-DD when the position was fully exited during the period. The
+   *  window ends at the sale (at the sale price) and the weight is an
+   *  ESTIMATE from the model weight recorded on the sell transaction. */
+  soldOn?: string;
 };
 
 export type ContributionBreakdown = {
@@ -191,8 +195,12 @@ export function computeContributions(
     // Baseline and current price must BOTH be in CAD — otherwise a USD name's
     // return is corrupted by the FX gap.
     costBasisCad: number; // baseline price/unit, CAD (period start or purchase)
-    priceCad: number; // current price/unit, CAD
+    priceCad: number; // current price/unit, CAD (or sale price for sold rows)
     ownedSince?: string;
+    soldOn?: string;
+    /** For SOLD rows (no current market value): use this weight directly
+     *  instead of deriving it from marketValueCad / total. */
+    fixedWeightPct?: number;
   }>,
   opts?: {
     /** Cash sitting in the accounts (CAD). Included in the weighting
@@ -203,12 +211,20 @@ export function computeContributions(
 ): ContributionBreakdown {
   const cash = isFinite(opts?.cashCad ?? NaN) && (opts?.cashCad ?? 0) > 0 ? (opts!.cashCad as number) : 0;
   const totalMv =
-    rows.reduce((s, r) => s + (isFinite(r.marketValueCad) ? r.marketValueCad : 0), 0) + cash;
+    rows.reduce(
+      (s, r) => s + (r.fixedWeightPct == null && isFinite(r.marketValueCad) ? r.marketValueCad : 0),
+      0,
+    ) + cash;
   const holdings: HoldingContribution[] = [];
   for (const r of rows) {
     if (!isFinite(r.costBasisCad) || r.costBasisCad <= 0 || !isFinite(r.priceCad)) continue;
-    if (totalMv <= 0) continue;
-    const weightPct = (r.marketValueCad / totalMv) * 100;
+    const weightPct =
+      r.fixedWeightPct != null
+        ? r.fixedWeightPct
+        : totalMv > 0
+          ? (r.marketValueCad / totalMv) * 100
+          : NaN;
+    if (!isFinite(weightPct)) continue;
     const returnPct = (r.priceCad / r.costBasisCad - 1) * 100;
     holdings.push({
       ticker: r.ticker,
@@ -218,6 +234,7 @@ export function computeContributions(
       returnPct,
       contributionPct: (weightPct / 100) * returnPct,
       ...(r.ownedSince ? { ownedSince: r.ownedSince } : {}),
+      ...(r.soldOn ? { soldOn: r.soldOn } : {}),
     });
   }
   holdings.sort((a, b) => b.contributionPct - a.contributionPct);

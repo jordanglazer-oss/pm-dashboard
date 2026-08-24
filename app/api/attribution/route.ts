@@ -65,11 +65,18 @@ type StoredStock = {
   instrumentType?: string;
 };
 type StoredPosition = { symbol?: string; units?: number; costBasis?: number };
-type PositionLedger = { profile?: string; positions?: StoredPosition[]; cashBalance?: number };
+type PositionLedger = { profile?: string; groupId?: string; positions?: StoredPosition[]; cashBalance?: number };
 type ModelHolding = { symbol?: string; assetClass?: string };
 type ModelGroup = { holdings?: ModelHolding[] };
-type StoredTransaction = { date?: string; symbol?: string; direction?: string; price?: number };
+type StoredTransaction = {
+  date?: string;
+  symbol?: string;
+  direction?: string;
+  price?: number;
+  targetWeight?: number;
+};
 type StoredGroupState = {
+  groupId?: string;
   trackingStart?: { prices?: Record<string, number> } | null;
   transactions?: StoredTransaction[];
 };
@@ -200,6 +207,9 @@ export async function GET(req: NextRequest) {
     // denominator.
     const positionsByProfile = new Map<string, Map<string, StoredPosition>>();
     const cashByProfile = new Map<string, number>();
+    // Which model groups make up each profile — needed to scope group-level
+    // sell transactions to the right profiles.
+    const groupsByProfile = new Map<string, Set<string>>();
     try {
       const raw = await redis.get("pm:pim-positions");
       const parsed = raw ? JSON.parse(raw) : null;
@@ -211,6 +221,11 @@ export async function GET(req: NextRequest) {
           : [];
       for (const pl of arr) {
         if (!pl.profile) continue;
+        if (pl.groupId) {
+          const set = groupsByProfile.get(pl.profile) ?? new Set<string>();
+          set.add(pl.groupId);
+          groupsByProfile.set(pl.profile, set);
+        }
         if (typeof pl.cashBalance === "number" && isFinite(pl.cashBalance)) {
           cashByProfile.set(pl.profile, (cashByProfile.get(pl.profile) ?? 0) + pl.cashBalance);
         }
@@ -245,6 +260,11 @@ export async function GET(req: NextRequest) {
     // so it is never clamped (its later buys are top-ups, not initiations).
     const firstBuyBySymbol = new Map<string, { date: string; price: number | null }>();
     const preExisting = new Set<string>();
+    // Sell transactions per symbol — lets fully-exited names still appear in
+    // the contribution list (measured to the sale, weight estimated from the
+    // model weight the sell recorded).
+    type SellTxn = { date: string; price: number | null; weightInClass: number; groupId: string | null; rawSymbol: string };
+    const sellsBySymbol = new Map<string, SellTxn[]>();
     try {
       const raw = await redis.get("pm:pim-portfolio-state");
       const parsed = raw ? JSON.parse(raw) : null;
@@ -257,12 +277,27 @@ export async function GET(req: NextRequest) {
           preExisting.add(normTicker(sym));
         }
         for (const t of gs.transactions ?? []) {
-          if (!t.symbol || !t.date || t.direction !== "buy") continue;
+          if (!t.symbol || !t.date) continue;
           const key = normTicker(t.symbol);
           const date = t.date.slice(0, 10);
           const price = typeof t.price === "number" && isFinite(t.price) && t.price > 0 ? t.price : null;
-          const prev = firstBuyBySymbol.get(key);
-          if (!prev || date < prev.date) firstBuyBySymbol.set(key, { date, price });
+          if (t.direction === "buy") {
+            const prev = firstBuyBySymbol.get(key);
+            if (!prev || date < prev.date) firstBuyBySymbol.set(key, { date, price });
+          } else if (t.direction === "sell") {
+            const list = sellsBySymbol.get(key) ?? [];
+            list.push({
+              date,
+              price,
+              weightInClass:
+                typeof t.targetWeight === "number" && isFinite(t.targetWeight) && t.targetWeight > 0
+                  ? t.targetWeight
+                  : 0,
+              groupId: gs.groupId ?? null,
+              rawSymbol: t.symbol,
+            });
+            sellsBySymbol.set(key, list);
+          }
         }
       }
     } catch (e) {
@@ -287,17 +322,41 @@ export async function GET(req: NextRequest) {
     }
 
     // ── Benchmarks + FX (Yahoo) ──
+    // SPY / XIU.TO (adjclose) rather than ^GSPC / ^GSPTSE: the portfolio's
+    // return includes distributions, so comparing it against price-only
+    // indexes overstated "selection". These are total-return proxies, and
+    // XIU.TO matches the TSX 60 the team actually benchmarks against.
     const [sp500, tsx, usdcad] = await Promise.all([
-      fetchYahooHistory("^GSPC").catch(() => [] as ValuePoint[]),
-      fetchYahooHistory("^GSPTSE").catch(() => [] as ValuePoint[]),
+      fetchYahooHistory("SPY").catch(() => [] as ValuePoint[]),
+      fetchYahooHistory("XIU.TO").catch(() => [] as ValuePoint[]),
       fetchYahooHistory("USDCAD=X").catch(() => [] as ValuePoint[]),
     ]);
 
     const ref = new Date();
-    const benchmarkReturns = (period: PeriodKey) => [
-      { label: "S&P 500", returnPct: returnOverPeriod(sp500, period, ref) },
-      { label: "S&P/TSX Composite", returnPct: returnOverPeriod(tsx, period, ref) },
-    ];
+    // Blend weights follow the book's USD/CAD name split (shown in the label,
+    // so the mix is transparent). Count-based, same basis as the currency
+    // sleeve estimate.
+    const blendUs = Math.round(usdEquityFraction * 100);
+    const blendLabel = `Blend ${blendUs}/${100 - blendUs}`;
+    // Benchmarks stay in LOCAL-currency terms (S&P in USD, TSX in CAD) —
+    // the FX overlay is the decomposition's separate Currency term, so the
+    // identity  active = (beta−1)×bench + currency + selection  holds without
+    // double-counting the USD/CAD move.
+    const benchmarkReturns = (period: PeriodKey) => {
+      const sp = returnOverPeriod(sp500, period, ref);
+      const tx = returnOverPeriod(tsx, period, ref);
+      const out = [
+        { label: "S&P 500", returnPct: sp },
+        { label: "TSX 60", returnPct: tx },
+      ];
+      if (sp != null && tx != null) {
+        out.push({
+          label: blendLabel,
+          returnPct: usdEquityFraction * sp + (1 - usdEquityFraction) * tx,
+        });
+      }
+      return out;
+    };
 
     // Latest USD/CAD rate for converting USD position values to CAD (weighting).
     const usdcadRate = usdcad.length > 0 ? usdcad[usdcad.length - 1].value : null;
@@ -313,6 +372,14 @@ export async function GET(req: NextRequest) {
         const st = stockLookup.get(normTicker(p.symbol));
         if (st?.ticker) historyTickers.add(st.ticker);
       }
+    }
+    // Sold names need history too (for their baselines). They may be gone
+    // from pm:stocks entirely — fall back to the symbol the trade recorded.
+    const soldHistTicker = new Map<string, string>();
+    for (const [key, sells] of sellsBySymbol) {
+      const tk = stockLookup.get(key)?.ticker ?? sells[0].rawSymbol;
+      soldHistTicker.set(key, tk);
+      historyTickers.add(tk);
     }
     const histMap = new Map<string, ValuePoint[]>();
     await Promise.all(
@@ -432,6 +499,77 @@ export async function GET(req: NextRequest) {
             marketValueCad: p.units * currentPriceCad,
             costBasisCad: startPriceCad, // window-start CAD price → return = owned-window return
             priceCad: currentPriceCad,
+            ...(clamped ? { ownedSince: baselineDate } : {}),
+          });
+        }
+
+        // Fully-exited names: still shown, measured from the period start (or
+        // the mid-period purchase) TO THE SALE at the sale price. Their weight
+        // can't come from a current market value, so it's estimated from the
+        // model weight recorded on the sell transaction(s) — tagged in the UI.
+        const profileGroups = groupsByProfile.get(profile);
+        for (const [key, sells] of sellsBySymbol) {
+          if (positionsByProfile.get(profile)?.has(key)) continue; // still held → handled above
+          const scoped = profileGroups
+            ? sells.filter((s) => s.groupId == null || profileGroups.has(s.groupId))
+            : sells;
+          const inPeriod = scoped.filter((s) => s.date > start && s.date <= todayIso);
+          if (inPeriod.length === 0) continue; // exited before this period began
+          const lastSell = inPeriod.reduce((a, b) => (a.date >= b.date ? a : b));
+          const tk = soldHistTicker.get(key) ?? key;
+          const hist = histMap.get(tk) ?? [];
+
+          const closeAtSell = valueOnOrBefore(hist, lastSell.date);
+          const endPriceNative =
+            lastSell.price != null &&
+            (closeAtSell == null || Math.abs(lastSell.price / closeAtSell - 1) <= 0.25)
+              ? lastSell.price
+              : closeAtSell;
+          if (endPriceNative == null || endPriceNative <= 0) {
+            excluded++;
+            continue;
+          }
+
+          const firstBuy = !preExisting.has(key) ? firstBuyBySymbol.get(key) : undefined;
+          const clamped = !!firstBuy && firstBuy.date > start && firstBuy.date <= lastSell.date;
+          const baselineDate = clamped ? firstBuy!.date : start;
+          let startPriceNative: number | null;
+          if (clamped) {
+            const closeAtBuy = valueOnOrBefore(hist, baselineDate);
+            startPriceNative =
+              firstBuy!.price != null &&
+              (closeAtBuy == null || Math.abs(firstBuy!.price / closeAtBuy - 1) <= 0.25)
+                ? firstBuy!.price
+                : closeAtBuy;
+          } else {
+            startPriceNative = valueBefore(hist, start);
+          }
+          if (startPriceNative == null || startPriceNative <= 0) {
+            excluded++;
+            continue;
+          }
+
+          const weightSum = Math.min(1, inPeriod.reduce((s, x) => s + x.weightInClass, 0));
+          if (weightSum <= 0) {
+            excluded++;
+            continue; // no usable weight recorded on the sell — can't size it
+          }
+
+          const stock = stockLookup.get(key);
+          const isUsd = stock ? stock.currency === "USD" : !isCad(tk);
+          const fxStart =
+            (clamped ? valueOnOrBefore(usdcadSorted, baselineDate) : valueBefore(usdcadSorted, start)) ??
+            usdcadNow;
+          const fxEnd = valueOnOrBefore(usdcadSorted, lastSell.date) ?? usdcadNow;
+          rows.push({
+            ticker: tk,
+            sector: classifyHolding(stock?.sector ?? "", stock?.instrumentType, assetClassByTicker.get(key)),
+            currency: isUsd ? ("USD" as const) : ("CAD" as const),
+            marketValueCad: 0,
+            costBasisCad: startPriceNative * (isUsd ? fxStart : 1),
+            priceCad: endPriceNative * (isUsd ? fxEnd : 1),
+            fixedWeightPct: weightSum * equityAlloc * 100,
+            soldOn: lastSell.date,
             ...(clamped ? { ownedSince: baselineDate } : {}),
           });
         }
