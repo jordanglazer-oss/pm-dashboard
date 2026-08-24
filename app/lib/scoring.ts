@@ -195,6 +195,13 @@ const QUALITY_MAX = 8; // sum of individual maxes: 3 + 2 + 1 + 2
 const AI_SEMI_KEYS: ScoreKey[] = SCORE_GROUPS.flatMap((g) =>
   g.categories.filter((c) => c.inputType === "auto" || c.inputType === "semi").map((c) => c.key as ScoreKey)
 );
+// Every key in the CURRENT rubric. The composite must sum over THIS set, not
+// Object.keys(stock.scores): stored blobs can still carry retired keys (e.g.
+// "externalSources", up to 4 pts in its pre-shrink era) that nothing strips
+// on hydration — summing blob keys inflates the numerator against the fixed
+// /MAX_SCORE denominator. Same guard score-calibration's VALID_SCORE_KEYS
+// applies to the per-category series.
+const ALL_RUBRIC_KEYS: ScoreKey[] = SCORE_GROUPS.flatMap((g) => g.categories.map((c) => c.key as ScoreKey));
 const CATEGORY_MAX: Partial<Record<ScoreKey, number>> = Object.fromEntries(
   SCORE_GROUPS.flatMap((g) => g.categories.map((c) => [c.key, c.max]))
 );
@@ -438,7 +445,7 @@ export function computeScores(
    *  `adjusted` is never changed by this. Absent → forward === current. */
   forward?: { anticipatedRegime?: string; transitionWeight?: number }
 ): ScoredStock {
-  const rawSum = (Object.keys(stock.scores) as ScoreKey[]).reduce(
+  const rawSum = ALL_RUBRIC_KEYS.reduce(
     (sum, key) => sum + (stock.scores[key] || 0),
     0
   );
