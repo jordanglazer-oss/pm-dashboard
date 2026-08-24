@@ -573,6 +573,10 @@ export async function POST(request: NextRequest) {
     // of dispersion-under-anchoring. Diagnostic only (score-dispersion admin
     // route); production callers never set it.
     const skipPriorAnchor: boolean = body?.skipPriorAnchor === true;
+    // Whether a DETERMINISTIC material-event flags block (filed 8-K 4.02 /
+    // 1.03 / 3.01 or Form 25) reached the prompt. The ONLY legitimate basis
+    // for a hard floor — used below to reject model-invented floors.
+    let hadAdverseFlags = false;
 
     if (!ticker || typeof ticker !== "string") {
       return NextResponse.json(
@@ -863,10 +867,16 @@ export async function POST(request: NextRequest) {
       // web_search, which is off by default — a bankruptcy filing could go
       // completely unseen by a normal rescore. US names only; returns []
       // on any failure so scoring never breaks because of this scan.
-      if (!isCanadianListing) {
+      // NOT gated on isCanadianListing: getAdverseEventFlags resolves via
+      // getCikForTickerWithCrossList, so a cross-listed Canadian name (NTR.TO
+      // → NTR) reaches its US filings. The old gate skipped exactly the
+      // cross-list case the resolver exists for; genuinely non-US names still
+      // return [] from the resolver itself.
+      {
         const adverseFlags = await getAdverseEventFlags(upperTicker);
         const adverseBlock = formatAdverseFlagsForPrompt(adverseFlags);
         if (adverseBlock) {
+          hadAdverseFlags = true;
           financialContext += `\n\n---\n\n${adverseBlock}`;
           console.warn(`[Score] ${upperTicker} adverse-event flags: ${adverseFlags.map((f) => `${f.kind}@${f.filingDate}`).join(", ")}`);
         }
@@ -1369,6 +1379,42 @@ export async function POST(request: NextRequest) {
         } else if (typeof val === "string") {
           explanations[key as ScoreKey] = { summary: val, dataPoints: [] };
         }
+      }
+    }
+
+    // ── Invented-hard-floor guard ────────────────────────────────────
+    // A hard floor zeroes a whole company. Its ONLY valid trigger is the
+    // deterministic MATERIAL EVENT FLAGS block (filed 8-K 4.02/1.03/3.01,
+    // Form 25). NTR.TO was pinned at 4/41 across rescores because a
+    // web_search hit on a DOJ ANTITRUST probe — not a fraud/non-reliance
+    // filing, and sourced to a farm-law blog — was treated as a floor and
+    // zeroed every fundamental category. The prompt now forbids this, but
+    // prompt rules are probabilistic and this one already failed once, so
+    // reject deterministically: when no flags block was sent, a floor claim
+    // means the run is invalid. Better a visible failed rescore the PM can
+    // retry than a bogus composite persisted into pm:stocks AND appended to
+    // the append-only pm:score-history as permanent calibration evidence.
+    if (!hadAdverseFlags) {
+      const floorClaims = (Object.entries(explanations) as Array<[string, unknown]>)
+        .filter(([, v]) => {
+          if (!v || Array.isArray(v) || typeof v !== "object") return false;
+          const summary = (v as { summary?: unknown }).summary;
+          return typeof summary === "string" && /\bHARD[\s-]?FLOOR\b/i.test(summary);
+        })
+        .map(([k]) => k);
+      if (floorClaims.length > 0) {
+        console.error(
+          `[Score] ${upperTicker}: REJECTED — model applied a hard floor to ${floorClaims.join(", ")} with no MATERIAL EVENT FLAGS block. Nothing persisted.`
+        );
+        return NextResponse.json(
+          {
+            error:
+              `Rescore rejected: the model applied a HARD FLOOR to ${floorClaims.length} categor${floorClaims.length === 1 ? "y" : "ies"} (${floorClaims.join(", ")}) with no filed SEC material-event disclosure to justify it. ` +
+              `Hard floors require a filed 8-K item 4.02 / 1.03 / 3.01 or Form 25 — an investigation or news report is a risk note, not a floor. No scores were changed; retry the rescore.`,
+            invalidHardFloor: floorClaims,
+          },
+          { status: 422 }
+        );
       }
     }
 

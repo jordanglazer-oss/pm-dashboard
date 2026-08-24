@@ -86,7 +86,11 @@ export type ScoreHistoryEntry = {
    * re-derive-then-reconcile protocol replacing "affirm unless changed",
    * scoped to AI/SEMI keys only, >90-day priors context-only), price-target
    * direction struck from the catalysts rubric, route prompt fragments
-   * folded into RUBRIC_HASH.
+   * folded into RUBRIC_HASH. 5 = the 2026-08-25 hard-floor containment:
+   * ONLY a filed SEC material-event disclosure can trigger a hard floor
+   * (web_search findings are risk notes for bearCase, never zeros),
+   * antitrust/litigation/conduct probes explicitly excluded, and the score
+   * route rejects (422) any model-invented floor.
    */
   rubricRev?: number;
   /**
