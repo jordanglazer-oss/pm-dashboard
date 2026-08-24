@@ -75,6 +75,22 @@ export function valueOnOrBefore(series: ValuePoint[], targetDate: string): numbe
   return chosen;
 }
 
+/**
+ * The value strictly before `targetDate` in a date-sorted series. This is the
+ * correct BASELINE for a calendar period: MTD measures from the prior
+ * month-end close, so if the 1st is a trading day its move belongs IN the
+ * period — `valueOnOrBefore` would silently drop day one.
+ */
+export function valueBefore(series: ValuePoint[], targetDate: string): number | null {
+  let chosen: number | null = null;
+  for (const p of series) {
+    if (!p || typeof p.value !== "number" || !isFinite(p.value)) continue;
+    if (p.date < targetDate) chosen = p.value;
+    else break; // series is ascending; at/past the target
+  }
+  return chosen;
+}
+
 /** Latest finite value in a date-sorted series. */
 export function latestValue(series: ValuePoint[]): number | null {
   for (let i = series.length - 1; i >= 0; i--) {
@@ -85,15 +101,16 @@ export function latestValue(series: ValuePoint[]): number | null {
 }
 
 /**
- * % return over a period for a cumulative series. Baseline = the value on or
- * before the period start (for YTD that's the prior year-end print). Returns
+ * % return over a period for a cumulative series. Baseline = the last value
+ * strictly before the period start (for YTD that's the prior year-end print;
+ * for MTD the prior month-end close, so day one's move counts). Returns
  * null when the series doesn't reach back far enough.
  */
 export function returnOverPeriod(series: ValuePoint[], period: PeriodKey, ref: Date): number | null {
   if (!series || series.length < 2) return null;
   const sorted = [...series].sort((a, b) => (a.date < b.date ? -1 : a.date > b.date ? 1 : 0));
   const start = periodStartDate(period, ref);
-  const base = valueOnOrBefore(sorted, start);
+  const base = valueBefore(sorted, start);
   const end = latestValue(sorted);
   if (base == null || end == null || base === 0) return null;
   return (end / base - 1) * 100;
@@ -138,16 +155,21 @@ export function decompose(input: {
 }
 
 /**
- * Cost-basis contribution breakdown (view 2) — pure. Since-purchase, not
- * period-bounded (that's what the stored cost basis supports cleanly).
+ * Period contribution breakdown (view 2) — pure. Each row's return is measured
+ * from its baseline price (the period-start close, or — when the position was
+ * initiated mid-period — the actual purchase) to the current price, so a name
+ * only contributes for the time it was actually owned.
  */
 export type HoldingContribution = {
   ticker: string;
   sector: string;
   currency: "CAD" | "USD";
-  weightPct: number; // share of portfolio market value (CAD)
-  returnPct: number; // (price − cost) / cost, native currency
+  weightPct: number; // share of portfolio market value incl. cash (CAD)
+  returnPct: number; // (price − baseline) / baseline, both CAD
   contributionPct: number; // weight × return
+  /** YYYY-MM-DD when the measurement window starts at a mid-period purchase
+   *  instead of the period start (position initiated during the period). */
+  ownedSince?: string;
 };
 
 export type ContributionBreakdown = {
@@ -155,6 +177,9 @@ export type ContributionBreakdown = {
   bySector: { key: string; contributionPct: number }[];
   byCurrency: { key: "CAD" | "USD"; contributionPct: number }[];
   totalContributionPct: number;
+  /** Positions that couldn't be priced for this period (no match / no
+   *  history / no live price) and are missing from `holdings`. */
+  excludedCount?: number;
 };
 
 export function computeContributions(
@@ -163,14 +188,22 @@ export function computeContributions(
     sector: string;
     currency: "CAD" | "USD";
     marketValueCad: number; // current value in CAD (for weighting)
-    // Cost basis is stored in CAD (the app enters ACB in CAD regardless of the
-    // holding's listing currency), so the price MUST also be in CAD — otherwise
-    // a USD name's return is corrupted by the FX gap. Both in CAD here.
-    costBasisCad: number; // avg cost/unit, CAD
+    // Baseline and current price must BOTH be in CAD — otherwise a USD name's
+    // return is corrupted by the FX gap.
+    costBasisCad: number; // baseline price/unit, CAD (period start or purchase)
     priceCad: number; // current price/unit, CAD
+    ownedSince?: string;
   }>,
+  opts?: {
+    /** Cash sitting in the accounts (CAD). Included in the weighting
+     *  denominator so holdings aren't overstated; contributes 0 itself. */
+    cashCad?: number;
+    excludedCount?: number;
+  },
 ): ContributionBreakdown {
-  const totalMv = rows.reduce((s, r) => s + (isFinite(r.marketValueCad) ? r.marketValueCad : 0), 0);
+  const cash = isFinite(opts?.cashCad ?? NaN) && (opts?.cashCad ?? 0) > 0 ? (opts!.cashCad as number) : 0;
+  const totalMv =
+    rows.reduce((s, r) => s + (isFinite(r.marketValueCad) ? r.marketValueCad : 0), 0) + cash;
   const holdings: HoldingContribution[] = [];
   for (const r of rows) {
     if (!isFinite(r.costBasisCad) || r.costBasisCad <= 0 || !isFinite(r.priceCad)) continue;
@@ -184,6 +217,7 @@ export function computeContributions(
       weightPct,
       returnPct,
       contributionPct: (weightPct / 100) * returnPct,
+      ...(r.ownedSince ? { ownedSince: r.ownedSince } : {}),
     });
   }
   holdings.sort((a, b) => b.contributionPct - a.contributionPct);
@@ -203,5 +237,6 @@ export function computeContributions(
       .sort((a, b) => b.contributionPct - a.contributionPct),
     byCurrency: [...currencyMap.entries()].map(([key, contributionPct]) => ({ key, contributionPct })),
     totalContributionPct: total,
+    ...(opts?.excludedCount != null ? { excludedCount: opts.excludedCount } : {}),
   };
 }

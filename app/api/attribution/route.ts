@@ -7,6 +7,8 @@ import {
   computeContributions,
   periodStartDate,
   valueOnOrBefore,
+  valueBefore,
+  latestValue,
   PERIODS,
   type ReturnDecomposition,
   type ContributionBreakdown,
@@ -63,9 +65,14 @@ type StoredStock = {
   instrumentType?: string;
 };
 type StoredPosition = { symbol?: string; units?: number; costBasis?: number };
-type PositionLedger = { profile?: string; positions?: StoredPosition[] };
+type PositionLedger = { profile?: string; positions?: StoredPosition[]; cashBalance?: number };
 type ModelHolding = { symbol?: string; assetClass?: string };
 type ModelGroup = { holdings?: ModelHolding[] };
+type StoredTransaction = { date?: string; symbol?: string; direction?: string; price?: number };
+type StoredGroupState = {
+  trackingStart?: { prices?: Record<string, number> } | null;
+  transactions?: StoredTransaction[];
+};
 
 /** Classify a holding for the sector breakdown. Individual stocks keep their
  *  GICS sector; ETFs / mutual funds (which have no single GICS sector) are
@@ -96,7 +103,11 @@ function normTicker(t: string): string {
     .replace(/-T$/i, "");
 }
 
-/** Fetch a Yahoo daily close history as an ascending ValuePoint[] series. */
+/** Fetch a Yahoo daily history as an ascending ValuePoint[] series. Prefers
+ *  adjusted closes so a period baseline bakes in distributions paid since —
+ *  i.e. per-holding "returns" are total returns, which matters for the
+ *  dividend-heavy names. (Latest adjclose === latest close, so this stays
+ *  consistent with the live price used as the window's end.) */
 async function fetchYahooHistory(symbol: string): Promise<ValuePoint[]> {
   const url = `https://query2.finance.yahoo.com/v8/finance/chart/${encodeURIComponent(
     symbol,
@@ -107,9 +118,11 @@ async function fetchYahooHistory(symbol: string): Promise<ValuePoint[]> {
   const result = json?.chart?.result?.[0];
   const ts: number[] = result?.timestamp || [];
   const closes: number[] = result?.indicators?.quote?.[0]?.close || [];
+  const adj: number[] = result?.indicators?.adjclose?.[0]?.adjclose || [];
   const out: ValuePoint[] = [];
   for (let i = 0; i < ts.length; i++) {
-    const c = closes[i];
+    const a = adj[i];
+    const c = typeof a === "number" && isFinite(a) ? a : closes[i];
     if (typeof c === "number" && isFinite(c)) {
       out.push({ date: new Date(ts[i] * 1000).toISOString().slice(0, 10), value: c });
     }
@@ -179,8 +192,14 @@ export async function GET(req: NextRequest) {
       log.warn("stocks read failed:", e instanceof Error ? e.message : e);
     }
 
-    // ── PIM positions (for cost-basis contributions, view 2) ──
-    const positionsByProfile = new Map<string, StoredPosition[]>();
+    // ── PIM positions (for period contributions, view 2) ──
+    // A profile spans multiple groups; the SAME symbol can be held in several
+    // of them. Aggregate units per normalised ticker so the contribution list
+    // shows one row per name (duplicates previously double-listed and split
+    // the weight). Cash balances are summed per profile for the weighting
+    // denominator.
+    const positionsByProfile = new Map<string, Map<string, StoredPosition>>();
+    const cashByProfile = new Map<string, number>();
     try {
       const raw = await redis.get("pm:pim-positions");
       const parsed = raw ? JSON.parse(raw) : null;
@@ -191,13 +210,63 @@ export async function GET(req: NextRequest) {
           ? ((parsed as { portfolios: PositionLedger[] }).portfolios)
           : [];
       for (const pl of arr) {
-        if (!pl.profile || !Array.isArray(pl.positions)) continue;
-        const list = positionsByProfile.get(pl.profile) ?? [];
-        list.push(...pl.positions);
-        positionsByProfile.set(pl.profile, list);
+        if (!pl.profile) continue;
+        if (typeof pl.cashBalance === "number" && isFinite(pl.cashBalance)) {
+          cashByProfile.set(pl.profile, (cashByProfile.get(pl.profile) ?? 0) + pl.cashBalance);
+        }
+        if (!Array.isArray(pl.positions)) continue;
+        const bySym = positionsByProfile.get(pl.profile) ?? new Map<string, StoredPosition>();
+        for (const p of pl.positions) {
+          if (!p.symbol || typeof p.units !== "number") {
+            // keep unparseable entries so the debug counters still see them
+            bySym.set(`__invalid_${bySym.size}`, p);
+            continue;
+          }
+          const key = normTicker(p.symbol);
+          const prev = bySym.get(key);
+          bySym.set(
+            key,
+            prev && typeof prev.units === "number"
+              ? { ...prev, units: prev.units + p.units }
+              : { ...p },
+          );
+        }
+        positionsByProfile.set(pl.profile, bySym);
       }
     } catch (e) {
       log.warn("positions read failed:", e instanceof Error ? e.message : e);
+    }
+
+    // ── Trade log (pm:pim-portfolio-state) → when was each name FIRST bought?
+    // Used to clamp a holding's contribution window to the time it was
+    // actually owned: a name initiated mid-period is measured from its
+    // purchase (at the execution price), not from the period start. A symbol
+    // present in any group's trackingStart snapshot predates the trade log,
+    // so it is never clamped (its later buys are top-ups, not initiations).
+    const firstBuyBySymbol = new Map<string, { date: string; price: number | null }>();
+    const preExisting = new Set<string>();
+    try {
+      const raw = await redis.get("pm:pim-portfolio-state");
+      const parsed = raw ? JSON.parse(raw) : null;
+      const states: StoredGroupState[] =
+        parsed && Array.isArray((parsed as { groupStates?: unknown }).groupStates)
+          ? ((parsed as { groupStates: StoredGroupState[] }).groupStates)
+          : [];
+      for (const gs of states) {
+        for (const sym of Object.keys(gs.trackingStart?.prices ?? {})) {
+          preExisting.add(normTicker(sym));
+        }
+        for (const t of gs.transactions ?? []) {
+          if (!t.symbol || !t.date || t.direction !== "buy") continue;
+          const key = normTicker(t.symbol);
+          const date = t.date.slice(0, 10);
+          const price = typeof t.price === "number" && isFinite(t.price) && t.price > 0 ? t.price : null;
+          const prev = firstBuyBySymbol.get(key);
+          if (!prev || date < prev.date) firstBuyBySymbol.set(key, { date, price });
+        }
+      }
+    } catch (e) {
+      log.warn("portfolio-state read failed:", e instanceof Error ? e.message : e);
     }
 
     // ── PIM model asset classes (to classify ETFs/funds by asset class) ──
@@ -239,7 +308,7 @@ export async function GET(req: NextRequest) {
     // so we can price each name at each period's start. ~35 holdings.
     const historyTickers = new Set<string>();
     for (const [, poss] of positionsByProfile) {
-      for (const p of poss) {
+      for (const p of poss.values()) {
         if (!p.symbol) continue;
         const st = stockLookup.get(normTicker(p.symbol));
         if (st?.ticker) historyTickers.add(st.ticker);
@@ -283,53 +352,96 @@ export async function GET(req: NextRequest) {
         }),
       );
 
-      // View 2 — PERIOD-based contribution (MTD/QTD/YTD/1Y), so it reconciles
-      // with the return you're auditing. Each holding's contribution =
-      // current CAD weight × its return over the period (current price vs the
-      // price at the period's start). computeContributions reused by feeding it
-      // the period-start CAD price as "cost" and the current CAD price as "price".
-      const positions = positionsByProfile.get(profile) ?? [];
+      // View 2 — PERIOD-based contribution (MTD/QTD/YTD/1Y). Each holding's
+      // contribution = current CAD weight × its return over the part of the
+      // period we actually OWNED it. For names held before the period starts,
+      // that window is the whole period (baseline = last close before the
+      // period start). For names initiated mid-period (per the trade log),
+      // the window starts at the purchase — baseline = the execution price —
+      // so a name bought days ago can't book weeks of pre-ownership gains.
+      const positions = [...(positionsByProfile.get(profile)?.values() ?? [])];
       const dbg = { positions: positions.length, noSymbol: 0, noMatch: 0, noPrice: 0, noHistory: 0, rows: 0 };
       const contributionsByPeriod: Partial<Record<PeriodKey, ContributionBreakdown>> = {};
       const usdcadNow = usdcadRate ?? 1;
+      const todayIso = ref.toISOString().slice(0, 10);
       for (const period of PERIODS) {
         const start = periodStartDate(period, ref);
-        const usdcadStart = valueOnOrBefore(usdcadSorted, start) ?? usdcadNow;
         const rows = [];
+        let excluded = 0;
         for (const p of positions) {
           if (!p.symbol || typeof p.units !== "number") {
             if (period === "YTD") dbg.noSymbol++;
+            excluded++;
             continue;
           }
           const stock = stockLookup.get(normTicker(p.symbol));
           if (!stock) {
             if (period === "YTD") dbg.noMatch++;
-            continue;
-          }
-          if (stock.price == null) {
-            if (period === "YTD") dbg.noPrice++;
+            excluded++;
             continue;
           }
           const hist = histMap.get(stock.ticker) ?? [];
-          const startPriceNative = valueOnOrBefore(hist, start);
+          // Live price from pm:stocks; fall back to the freshest Yahoo close
+          // so a name isn't dropped just because the stored quote is missing.
+          const livePrice = stock.price ?? latestValue(hist);
+          if (livePrice == null) {
+            if (period === "YTD") dbg.noPrice++;
+            excluded++;
+            continue;
+          }
+
+          // Ownership clamp: position initiated mid-period → measure from the
+          // buy. Only when the symbol is absent from every trackingStart
+          // snapshot (otherwise it predates the trade log and buys are top-ups).
+          const key = normTicker(p.symbol);
+          const firstBuy = !preExisting.has(key) ? firstBuyBySymbol.get(key) : undefined;
+          const clamped = !!firstBuy && firstBuy.date > start && firstBuy.date <= todayIso;
+          const baselineDate = clamped ? firstBuy!.date : start;
+
+          let startPriceNative: number | null;
+          if (clamped) {
+            const closeAtBuy = valueOnOrBefore(hist, baselineDate);
+            // Prefer the actual execution price; guard against fat-fingered /
+            // wrong-currency entries by falling back to that day's close when
+            // the two disagree wildly.
+            startPriceNative =
+              firstBuy!.price != null &&
+              (closeAtBuy == null || Math.abs(firstBuy!.price / closeAtBuy - 1) <= 0.25)
+                ? firstBuy!.price
+                : closeAtBuy;
+          } else {
+            startPriceNative = valueBefore(hist, start);
+          }
           if (startPriceNative == null || startPriceNative <= 0) {
             if (period === "YTD") dbg.noHistory++;
-            continue; // history doesn't reach back to the period start
+            excluded++;
+            continue; // history doesn't reach back to the window start
           }
           const isUsd = stock.currency === "USD";
+          // FX baseline matches the price baseline: strictly before the period
+          // start for full-period windows, at the buy date for clamped ones.
+          const usdcadStart =
+            (clamped ? valueOnOrBefore(usdcadSorted, baselineDate) : valueBefore(usdcadSorted, start)) ??
+            usdcadNow;
           const startPriceCad = startPriceNative * (isUsd ? usdcadStart : 1);
-          const currentPriceCad = stock.price * (isUsd ? usdcadNow : 1);
+          const currentPriceCad = livePrice * (isUsd ? usdcadNow : 1);
           rows.push({
             ticker: stock.ticker,
             sector: classifyHolding(stock.sector, stock.instrumentType, assetClassByTicker.get(normTicker(stock.ticker))),
             currency: stock.currency,
             marketValueCad: p.units * currentPriceCad,
-            costBasisCad: startPriceCad, // period-start CAD price → return = period return
+            costBasisCad: startPriceCad, // window-start CAD price → return = owned-window return
             priceCad: currentPriceCad,
+            ...(clamped ? { ownedSince: baselineDate } : {}),
           });
         }
         if (period === "YTD") dbg.rows = rows.length;
-        if (rows.length > 0) contributionsByPeriod[period] = computeContributions(rows);
+        if (rows.length > 0) {
+          contributionsByPeriod[period] = computeContributions(rows, {
+            cashCad: cashByProfile.get(profile) ?? 0,
+            excludedCount: excluded,
+          });
+        }
       }
       const contributionsExcluded = dbg.noSymbol + dbg.noMatch + dbg.noPrice + dbg.noHistory;
 

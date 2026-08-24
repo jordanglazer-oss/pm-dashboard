@@ -134,6 +134,7 @@ export function Attribution() {
   const profileData = data?.profiles[profileIdx] ?? null;
   const contrib = profileData?.contributionsByPeriod?.[period] ?? null;
   const [showAllHoldings, setShowAllHoldings] = useState(false);
+  const [showAllNames, setShowAllNames] = useState(false);
 
   // Rows for the current selection. Market + Selection follow the chosen
   // benchmark; Currency is benchmark-independent.
@@ -321,9 +322,9 @@ export function Attribution() {
                   </span>
                 </div>
                 <p className="text-[11.5px] text-ink-3">
-                  Percentage points each name added to (or subtracted from) your model&apos;s <span className="font-semibold text-ink-2">{period}</span> return — its weight × its own {period} price move (in CAD). These sum to <span className="font-semibold text-ink-2">{fmtPct(contrib.totalContributionPct)}</span>, reconciling with the {period} figure up top.
-                  {(profileData?.contributionsExcluded ?? 0) > 0
-                    ? ` ${profileData!.contributionsExcluded} position${profileData!.contributionsExcluded === 1 ? "" : "s"} without price history for this period excluded.`
+                  Percentage points each name added to (or subtracted from) your model&apos;s <span className="font-semibold text-ink-2">{period}</span> return — its weight × its own move (in CAD, incl. distributions) <span className="font-semibold text-ink-2">over the time you owned it</span>. Names bought mid-period are measured from the purchase, not the period start. The sum ({fmtPct(contrib.totalContributionPct)}) approximates the {period} figure up top; cash, fees and intraperiod trades account for the gap.
+                  {(contrib.excludedCount ?? 0) > 0
+                    ? ` ${contrib.excludedCount} position${contrib.excludedCount === 1 ? "" : "s"} without usable prices for this period excluded.`
                     : ""}
                 </p>
               </div>
@@ -331,25 +332,56 @@ export function Attribution() {
               {/* winners + detractors, side by side */}
               <div className="grid grid-cols-1 gap-4 sm:grid-cols-2">
                 {[
-                  { title: "Top contributors", rows: contrib.holdings.filter((h) => h.contributionPct > 0).slice(0, 5) },
-                  { title: "Top detractors", rows: [...contrib.holdings].filter((h) => h.contributionPct < 0).sort((a, b) => a.contributionPct - b.contributionPct).slice(0, 5) },
-                ].map((col) => (
-                  <div key={col.title} className="flex flex-col gap-1.5">
-                    <span className="text-[11px] font-semibold text-ink-3">{col.title}</span>
-                    {col.rows.length === 0 ? (
-                      <span className="text-[12px] text-ink-faint">—</span>
-                    ) : (
-                      col.rows.map((h) => (
-                        <div key={h.ticker} className="flex items-center gap-2 text-[13px]">
-                          <span className="font-mono font-semibold text-ink w-[64px] shrink-0 truncate">{h.ticker}</span>
-                          <span className="text-[11px] text-ink-faint truncate flex-1">{h.sector}</span>
-                          <span className={`font-mono text-[12.5px] tabular-nums shrink-0 ${toneClass(h.contributionPct)}`}>{fmtPct(h.contributionPct)}</span>
-                        </div>
-                      ))
-                    )}
-                  </div>
-                ))}
+                  {
+                    title: "Top contributors",
+                    all: contrib.holdings.filter((h) => h.contributionPct > 0),
+                  },
+                  {
+                    title: "Top detractors",
+                    all: [...contrib.holdings].filter((h) => h.contributionPct < 0).sort((a, b) => a.contributionPct - b.contributionPct),
+                  },
+                ].map((col) => {
+                  const rows = showAllNames ? col.all : col.all.slice(0, 10);
+                  return (
+                    <div key={col.title} className="flex flex-col gap-1.5">
+                      <span className="text-[11px] font-semibold text-ink-3">
+                        {col.title}
+                        <span className="ml-1.5 font-normal text-ink-faint">{col.all.length}</span>
+                      </span>
+                      {rows.length === 0 ? (
+                        <span className="text-[12px] text-ink-faint">—</span>
+                      ) : (
+                        rows.map((h) => (
+                          <div key={h.ticker} className="flex items-center gap-2 text-[13px]">
+                            <span className="font-mono font-semibold text-ink w-[64px] shrink-0 truncate">{h.ticker}</span>
+                            <span className="text-[11px] text-ink-faint truncate flex-1">
+                              {h.sector}
+                              {h.ownedSince && (
+                                <span
+                                  className="ml-1.5 rounded-full bg-surface-2 px-1.5 py-[1px] text-[9.5px] font-semibold text-ink-3"
+                                  title={`Bought during this period — measured from the purchase on ${h.ownedSince}, not the period start`}
+                                >
+                                  since {new Date(`${h.ownedSince}T12:00:00Z`).toLocaleDateString("en-US", { month: "short", day: "numeric" })}
+                                </span>
+                              )}
+                            </span>
+                            <span className={`font-mono text-[12.5px] tabular-nums shrink-0 ${toneClass(h.contributionPct)}`}>{fmtPct(h.contributionPct)}</span>
+                          </div>
+                        ))
+                      )}
+                    </div>
+                  );
+                })}
               </div>
+              {contrib.holdings.filter((h) => h.contributionPct > 0).length > 10 ||
+              contrib.holdings.filter((h) => h.contributionPct < 0).length > 10 ? (
+                <button
+                  onClick={() => setShowAllNames((v) => !v)}
+                  className="self-start text-[11px] font-semibold text-accent hover:text-accent-ink transition-colors"
+                >
+                  {showAllNames ? "Show top 10" : "Show every name"}
+                </button>
+              ) : null}
 
               {/* by currency + by sector */}
               <div className="grid grid-cols-1 gap-4 rounded-control bg-surface-2/60 px-3 py-2.5 sm:grid-cols-2">
@@ -381,7 +413,7 @@ export function Attribution() {
                 </div>
               </div>
               <p className="text-[10.5px] leading-4 text-ink-faint">
-                Contribution = each holding&apos;s current weight × its {period} price move (in CAD). Period-based, so it reconciles with the {period} return above.
+                Contribution = each holding&apos;s current weight × its total-return move in CAD (incl. distributions) over the portion of the {period} window it was actually held. Weights include cash. Names sold during the period aren&apos;t captured yet. Estimates.
               </p>
             </div>
           )}
