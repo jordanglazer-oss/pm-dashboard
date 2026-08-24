@@ -119,6 +119,25 @@ export function ScoreCalibration() {
                 </div>
               </div>
 
+              {/* Rubric-era mix — pooled numbers above average across scoring
+                  regimes; make the composition explicit so they're read with
+                  that caveat. Absent on results cached before eras existed. */}
+              {res.eras && res.eras.length > 0 && (
+                <div className="mb-3 rounded-md border border-line bg-surface-2 px-2.5 py-1.5 text-[11px] text-ink-3">
+                  <span className="font-medium text-ink-2">Rubric eras in this sample: </span>
+                  {res.eras.map((e, i) => (
+                    <span key={e.label}>
+                      {i > 0 && " · "}
+                      {e.label} n={e.n}
+                      {e.buyMinusSell != null && ` (Buy−Sell ${e.buyMinusSell >= 0 ? "+" : ""}${e.buyMinusSell}%)`}
+                    </span>
+                  ))}
+                  {res.eras.length > 1 && (
+                    <span> — pooled figures mix scoring regimes; weight the newest era as evidence accumulates.</span>
+                  )}
+                </div>
+              )}
+
               <div className="text-[11px] text-ink-3 mb-1.5">Avg {res.horizonDays >= 182 ? "6-month" : res.horizonDays >= 91 ? "3-month" : "1-month"} return by rating bucket</div>
               <div className="space-y-1.5 mb-4">
                 {res.buckets.map((b) => (

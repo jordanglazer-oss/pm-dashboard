@@ -83,11 +83,30 @@ export type CategorySignal = {
   ic: number | null;
 };
 
+/** Per-rubric-era slice of the observation set. The rubric changed materially
+ *  at each RUBRIC_REV bump (and pm:score-history stamps rev on append), so
+ *  pooling eras averages different scoring systems — these slices keep the
+ *  pooled numbers honest by showing how much of each era they contain and
+ *  whether the eras' headline discrimination diverges. */
+export type EraStat = {
+  /** rubricRev of the entries in this slice; null = pre-stamp (pre-band) era. */
+  rev: number | null;
+  label: string;
+  n: number;
+  buyHitRate: number | null;
+  buyMinusSell: number | null;
+};
+
 export type CalibrationResult = {
   horizonDays: number;
   totalObservations: number;
   buckets: BucketStat[];
   categories: CategorySignal[];
+  /** Observation mix by rubric era — absent on results cached before this
+   *  field existed. When more than one era is present, the pooled bucket /
+   *  category numbers mix scoring regimes and should be read with that
+   *  caveat (the UI surfaces it). */
+  eras?: EraStat[];
   /** Pearson correlation between category sub-scores across observations —
    *  the redundancy test for the reviewer's "one factor wearing four hats"
    *  claim. Optional so cached results computed before this field parse. */
@@ -100,7 +119,7 @@ export type CalibrationResult = {
   };
 };
 
-type Obs = { bucket: Bucket; ret: number; excess: number; scores: Partial<Record<ScoreKey, number>> };
+type Obs = { bucket: Bucket; ret: number; excess: number; scores: Partial<Record<ScoreKey, number>>; rev: number | null };
 
 const CATEGORY_LABELS: Partial<Record<ScoreKey, string>> = {
   marketEdge: "MarketEdge", relativeStrength: "SIA", aiRating: "BoostedAI",
@@ -180,7 +199,7 @@ export function computeCalibration(args: {
       const b1 = priceOnOrBefore(benchmark, endIso);
       const benchRet = b0 != null && b1 != null ? ((b1 - b0) / b0) * 100 : 0;
 
-      obs.push({ bucket: bucketFor(e.adjusted), ret, excess: ret - benchRet, scores: e.scores });
+      obs.push({ bucket: bucketFor(e.adjusted), ret, excess: ret - benchRet, scores: e.scores, rev: typeof e.rubricRev === "number" ? e.rubricRev : null });
     }
   }
 
@@ -264,5 +283,24 @@ export function computeCalibration(args: {
   );
   const categoryCorr = { keys: corrKeys, labels: corrKeys.map(catLabel), matrix };
 
-  return { horizonDays, totalObservations: obs.length, buckets, categories, headline, categoryCorr };
+  // ── Era slices ── observation mix + headline discrimination per rubricRev,
+  // so pooled numbers can't silently average different scoring systems.
+  const revsPresent = Array.from(new Set(obs.map((o) => o.rev))).sort((a, b) => (a ?? 0) - (b ?? 0));
+  const eras: EraStat[] = revsPresent.map((rev) => {
+    const rows = obs.filter((o) => o.rev === rev);
+    const buy = rows.filter((o) => o.bucket === "Strong Buy" || o.bucket === "Moderate Buy");
+    const sellRows = rows.filter((o) => o.bucket === "Sell");
+    return {
+      rev,
+      label: rev == null ? "pre-band" : `rev ${rev}`,
+      n: rows.length,
+      buyHitRate: buy.length ? Math.round((buy.filter((o) => o.excess > 0).length / buy.length) * 100) : null,
+      buyMinusSell:
+        buy.length && sellRows.length
+          ? Number((mean(buy.map((o) => o.excess)) - mean(sellRows.map((o) => o.excess))).toFixed(2))
+          : null,
+    };
+  });
+
+  return { horizonDays, totalObservations: obs.length, buckets, categories, headline, categoryCorr, eras };
 }
