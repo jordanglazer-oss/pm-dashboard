@@ -1872,6 +1872,23 @@ export default function InboxPage() {
                 <td className="py-2 font-mono whitespace-nowrap">Equate USD</td>
               </tr>
               <tr className="border-b border-accent-border">
+                <td className="py-2 pr-3 font-mono whitespace-nowrap">
+                  RBC EQUATE …Ranks
+                  <div className="mt-0.5 font-sans text-[10px] font-normal opacity-70">or just forward the email</div>
+                </td>
+                <td className="py-2 pr-3 whitespace-nowrap">XLSX rank sheets</td>
+                <td className="py-2 pr-3">
+                  The weekly <span className="font-semibold">Model Ranks</span> spreadsheets — a different thing from the CORE 40 rows above, which are RBC&apos;s picked model portfolio. These are the full quant ranking (~1,360 US names, ~300 Canadian).
+                  {" "}<span className="font-semibold">Forward the vendor email unedited</span>: the attachment filenames identify region and cut on their own, and the subject is matched on the words &quot;equate&quot; + &quot;ranks&quot;, at any date.
+                  {" "}Feeds the <span className="font-semibold">Suggested Watchlist</span> (top decile) and adds an <span className="font-semibold">Equate rank</span> signal on the Conviction board. Parsed locally — no AI cost.
+                  {" "}<span className="opacity-70">US All Cap and Canada All Cap are used; US Large Cap is a subset of All Cap at identical ranks and is stored but not scored.</span>
+                </td>
+                <td className="py-2 font-mono whitespace-nowrap">
+                  FW: RBC EQUATE
+                  <br />Quantitative Ranks
+                </td>
+              </tr>
+              <tr className="border-b border-accent-border">
                 <td className="py-2 pr-3 font-mono whitespace-nowrap">RBCCM FEW</td>
                 <td className="py-2 pr-3 whitespace-nowrap">Screenshot (PNG/JPG/PDF)</td>
                 <td className="py-2 pr-3">Merges into the RBCCM Canadian FEW Portfolio list.</td>

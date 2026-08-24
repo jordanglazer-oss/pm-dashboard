@@ -40,6 +40,65 @@ export type SiaCsvParseResult = {
   errors: string[];
 };
 
+/** SIA's ranked export, in the order the vendor publishes it. Used ONLY when a
+ *  file arrives with no header row, and only after the data confirms the fit. */
+const RANKED_LAYOUT = [
+  "rank", "d chg", "w chg", "m chg", "q chg", "name", "sym",
+  "smax", "sector", "price", "pnf 1%", "1d", "1w", "1m", "3m", "ytd",
+];
+
+const TICKER_RE = /^[A-Z][A-Z0-9]{0,5}(?:[.\-][A-Z]{1,3})?$/;
+
+/**
+ * Try to read a headerless file as SIA's ranked export.
+ *
+ * Refuses unless the data actually behaves like the layout claims: the SYM
+ * column must look like tickers and SMAX must be small integers. Column count
+ * alone is not evidence — plenty of CSVs have sixteen columns.
+ */
+type CsvSep = ReturnType<typeof detectCsvSeparator>;
+
+function inferHeaderlessLayout(
+  lines: string[],
+  sepIn: CsvSep,
+): { ok: true; header: string[]; sep: CsvSep } | { ok: false; reason: string } {
+  const sep = detectCsvSeparator(lines[0]) || sepIn;
+  const rows = lines.slice(0, 40).map((l) => splitCsvRow(l, sep));
+  if (rows.length === 0) return { ok: false, reason: "no rows" };
+
+  // Allow the known leading-blank quirk: data may carry one extra column.
+  const width = rows[0].length;
+  const offset = width === RANKED_LAYOUT.length + 1 ? 1 : 0;
+  if (width - offset !== RANKED_LAYOUT.length) {
+    return { ok: false, reason: `expected ${RANKED_LAYOUT.length} columns, found ${width}` };
+  }
+
+  const symIdx = RANKED_LAYOUT.indexOf("sym") + offset;
+  const smaxIdx = RANKED_LAYOUT.indexOf("smax") + offset;
+
+  let tickerLike = 0, smaxLike = 0, counted = 0;
+  for (const r of rows) {
+    const sym = (r[symIdx] ?? "").trim().toUpperCase();
+    const smax = Number((r[smaxIdx] ?? "").trim());
+    if (!sym) continue;
+    counted++;
+    if (TICKER_RE.test(sym)) tickerLike++;
+    if (Number.isFinite(smax) && smax >= 0 && smax <= 10) smaxLike++;
+  }
+  if (counted === 0) return { ok: false, reason: "no populated rows" };
+  if (tickerLike / counted < 0.8) {
+    return { ok: false, reason: `column ${symIdx} does not look like tickers (${tickerLike}/${counted})` };
+  }
+  if (smaxLike / counted < 0.8) {
+    return { ok: false, reason: `column ${smaxIdx} does not look like SMAX 0-10 (${smaxLike}/${counted})` };
+  }
+
+  // Synthesize the header the rest of the parser expects, including the blank
+  // leading column when present so the existing shift logic still applies.
+  const header = offset ? ["", ...RANKED_LAYOUT] : [...RANKED_LAYOUT];
+  return { ok: true, header, sep };
+}
+
 export function parseSiaCsv(text: string): SiaCsvParseResult {
   const errors: string[] = [];
   // Strip BOM and split on any line ending.
@@ -68,18 +127,36 @@ export function parseSiaCsv(text: string): SiaCsvParseResult {
       break;
     }
   }
+  // ── Headerless exports ─────────────────────────────────────────────────
+  // Some SIA exports ship with NO header row at all — the file opens straight
+  // on data ("1 | 35 | 60 | SHOPIFY INC | SHOP.TO"). The column ORDER is fixed
+  // and documented by the vendor, so the layout can be applied positionally.
+  //
+  // But positional mapping is only safe if it is CHECKED. Guessing wrong here
+  // does not fail loudly — it reads the company name as the ticker and a rank
+  // change as SMAX, then writes hundreds of plausible-looking wrong rows. So
+  // the inferred layout has to prove itself against the data before it is
+  // used, and a file that does not fit is refused rather than half-read.
+  let headerless = false;
   if (headerLine < 0) {
-    // Say what WAS seen. "Missing a SYM column" with no sample makes a
-    // wrong-file and a preamble-offset indistinguishable from the message.
-    const sample = splitCsvRow(lines[0], detectCsvSeparator(lines[0]))
-      .slice(0, 8)
-      .map((c) => c.trim())
-      .filter(Boolean)
-      .join(" | ");
-    errors.push(
-      `No column named SYM / Symbol / Ticker in the first ${Math.min(lines.length, 15)} lines. First line reads: ${sample || "(empty)"}`,
-    );
-    return { rows: [], ranked: [], errors };
+    const probe = inferHeaderlessLayout(lines, sep);
+    if (probe.ok) {
+      headerless = true;
+      header = probe.header;
+      headerLine = -1; // no header line to skip: data starts at line 0
+      sep = probe.sep;
+    } else {
+      // Dump enough to identify the file. "Missing a SYM column" with no
+      // sample made a wrong file and a layout change indistinguishable.
+      const dump = lines.slice(0, 3).map((l, i) => {
+        const cells = splitCsvRow(l, detectCsvSeparator(l));
+        return `  row ${i}: [${cells.length} cols] ` + cells.slice(0, 12).map((c) => c.trim() || "\u2205").join(" | ");
+      }).join("\n");
+      errors.push(
+        `No SYM / Symbol / Ticker column in the first ${Math.min(lines.length, 15)} lines, and the columns do not match SIA's ranked layout (${probe.reason}).\n${dump}`,
+      );
+      return { rows: [], ranked: [], errors };
+    }
   }
   const idx = {
     symbol: header.findIndex((h) => h === "sym" || h === "symbol" || h === "ticker"),
@@ -113,7 +190,7 @@ export function parseSiaCsv(text: string): SiaCsvParseResult {
   const ranked: SiaRankedRow[] = [];
   // Data starts after the header WHEREVER it was found — slice(1) silently
   // fed preamble lines in as data when the header was not line 1.
-  for (const raw of lines.slice(headerLine + 1)) {
+  for (const raw of lines.slice(headerless ? 0 : headerLine + 1)) {
     const cells = shiftFor(splitCsvRow(raw, sep));
     const sym = (cells[idx.symbol] ?? "").trim().toUpperCase();
     // Skip CASH rows + any row whose ticker is "-" or empty.
