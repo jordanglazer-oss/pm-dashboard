@@ -2,6 +2,7 @@ import { getRedis } from "./redis";
 import {
   UNIVERSE_MIN_ROWS,
   isNamedUniverseExport,
+  looksLikeCompleteIndexCut,
   type SiaMover,
   type SiaMoverResult,
   type SiaRow,
@@ -9,7 +10,7 @@ import {
 } from "./sia-universe-shared";
 
 // Re-exported so server-side callers keep a single import site.
-export { UNIVERSE_MIN_ROWS, isNamedUniverseExport };
+export { UNIVERSE_MIN_ROWS, isNamedUniverseExport, looksLikeCompleteIndexCut };
 export type { SiaMover, SiaMoverResult, SiaRow, SiaSnapshot };
 
 /**

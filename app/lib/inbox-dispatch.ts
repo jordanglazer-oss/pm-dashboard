@@ -34,7 +34,7 @@ import {
 } from "./screenshot-extractors";
 import { parseMarketEdgeCsv } from "./marketedge-csv";
 import { parseSiaCsv } from "./sia-csv";
-import { writeSiaSnapshot, UNIVERSE_MIN_ROWS, isNamedUniverseExport, type SiaRow } from "./sia-universe";
+import { writeSiaSnapshot, UNIVERSE_MIN_ROWS, isNamedUniverseExport, looksLikeCompleteIndexCut, type SiaRow } from "./sia-universe";
 import { parseEquateRows } from "./equate-parse";
 import { writeEquateSheet } from "./equate-store";
 import { parseBoostedCsv } from "./boosted-csv";
@@ -343,7 +343,13 @@ async function handleSia(att: AttachmentInput, label: string): Promise<DispatchR
     // Either big enough to be self-evidently an index, or it says which index
     // it is. The TSX 60 is only the latter.
     const named = isNamedUniverseExport(label);
-    const isUniverse = parsed.rows.length >= UNIVERSE_MIN_ROWS || named;
+    // Third form of evidence. An unedited SIA download is called
+    // "tableExport-7.csv", so it names no index, and the TSX 60 sits far under
+    // the row gate — the two existing tests both miss it and its non-held rows
+    // were being discarded in silence. A complete 1..N ranked block is an
+    // index cut; a holdings report carries scattered universe ranks instead.
+    const completeCut = looksLikeCompleteIndexCut(parsed.ranked.map((r) => r.rank));
+    const isUniverse = parsed.rows.length >= UNIVERSE_MIN_ROWS || named || completeCut;
     const { patches, summary } = applySiaEntries(expected, parsed.rows, new Date().toISOString(), stocks, isUniverse);
     const { touched } = await applyPatchesToRedis(patches);
     let snapshotNote = "";
@@ -353,10 +359,15 @@ async function handleSia(att: AttachmentInput, label: string): Promise<DispatchR
         const { ticker, ...rest } = r;
         rows[ticker.toUpperCase()] = rest;
       }
-      const snap = await writeSiaSnapshot(rows, { named });
+      const snap = await writeSiaSnapshot(rows, { named: named || completeCut });
       snapshotNote = snap.written
         ? ` · universe snapshot ${snap.date} (${snap.tickers} tickers${snap.merged ? ", merged" : ""})`
         : ` · snapshot skipped (${snap.reason})`;
+    } else {
+      // Say so out loud. These rows are dropped by design, but a silent drop
+      // is how a whole index went missing from the suggested watchlist.
+      const dropped = summary.rowsParsed - summary.matched;
+      if (dropped > 0) snapshotNote = ` · held names only — ${dropped} other rows not stored (not recognised as an index export)`;
     }
     return {
       ok: true,

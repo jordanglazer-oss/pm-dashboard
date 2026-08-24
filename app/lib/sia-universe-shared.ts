@@ -91,3 +91,40 @@ export type SiaMoverResult = {
   /** Names in the snapshot at all — context for "N of M". */
   universeSize: number;
 };
+
+/**
+ * Minimum rows for a file to be judged an index cut on its CONTENTS alone.
+ *
+ * Deliberately well above the largest holdings report seen in the wild (a
+ * 43-row SIA export of the PM's own names), so those are refused on size
+ * before contiguity is even considered, and comfortably below the TSX 60
+ * (62 rows including index funds). Both tests must pass, so a holdings report
+ * would have to be both large and re-ranked from 1 to slip through.
+ */
+export const INDEX_CUT_MIN_ROWS = 50;
+
+/**
+ * Third form of evidence that a file is a universe export: it is a COMPLETE
+ * ranked block.
+ *
+ * The row-count gate misses the TSX 60, and the name gate only fires when the
+ * file says which index it is — which an unedited SIA download never does
+ * ("tableExport-7.csv"). Asking the PM to rename every download defeats the
+ * point of ingesting mail automatically.
+ *
+ * A full index export ranks its members 1..N with no gaps. A holdings or
+ * watchlist report carries each name's rank WITHIN the universe instead, so
+ * its ranks are scattered (3, 17, 88, 204, 431...) and never form a block
+ * from 1. That is the discriminator, and it does not depend on how many of
+ * the names the PM happens to own — a size-vs-overlap heuristic would quietly
+ * stop recognising the TSX 60 as the watchlist grew into it.
+ */
+export function looksLikeCompleteIndexCut(ranks: Array<number | null | undefined>): boolean {
+  const clean = ranks.filter((r): r is number => typeof r === "number" && Number.isFinite(r));
+  if (clean.length < INDEX_CUT_MIN_ROWS) return false;
+  // Every row must carry a rank; a partially-ranked file is not a clean cut.
+  if (clean.length !== ranks.length) return false;
+  const unique = new Set(clean);
+  if (unique.size !== clean.length) return false;
+  return Math.min(...clean) === 1 && Math.max(...clean) === clean.length;
+}
