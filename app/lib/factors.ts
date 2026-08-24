@@ -79,6 +79,28 @@ function stdev(vals: number[]): number {
 }
 
 /**
+ * Percentile from already-computed group z's under an ALTERNATE group weighting
+ * (the Radar regime-tilt path). Same reweight-to-available semantics as
+ * computeFactorScore — a missing group doesn't drag the score. Returns null
+ * when no weighted group is present.
+ */
+export function percentileFromGroups(
+  groups: Record<string, number>,
+  weights: Record<string, number>,
+): number | null {
+  let wsum = 0;
+  let zsum = 0;
+  for (const [g, w] of Object.entries(weights)) {
+    if (groups[g] != null) {
+      zsum += groups[g] * w;
+      wsum += w;
+    }
+  }
+  if (wsum === 0) return null;
+  return Math.round(normalCdf(zsum / wsum) * 100);
+}
+
+/**
  * Score one stock's metrics against its sector's distribution in the universe.
  * `metrics` is the output of deriveMetrics() for that stock (absent metrics
  * simply omitted). Returns null when the sector isn't in the universe or no
