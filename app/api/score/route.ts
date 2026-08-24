@@ -18,6 +18,15 @@ import { loadStreetTakeawaysFor, formatStreetTakeawaysForPrompt } from "@/app/li
 import { companySnapshot, formatSnapshotForPrompt, factsetPeerBlock, namesMatch, normalizeFactsetSector, type CompanySnapshot } from "@/app/lib/factset-fundamentals";
 import { parseModelJson } from "@/app/lib/json-repair";
 import { SCORING_PROMPT } from "@/app/lib/scoring-prompt";
+import { RUBRIC_HASH } from "@/app/lib/rubric-version";
+import {
+  DEGRADED_RUN_NOTE,
+  noEdgarCanadianNote,
+  partialRescoreNote,
+  buildPriorAnchorBlock,
+  RUBRIC_CHANGED_NOTE,
+  type PriorCategoryLine,
+} from "@/app/lib/score-prompt-fragments";
 import { getAdverseEventFlags, formatAdverseFlagsForPrompt } from "@/app/lib/edgar-adverse";
 import { getValuationBand, formatValuationBandForPrompt } from "@/app/lib/valuation-band";
 
@@ -774,7 +783,7 @@ export async function POST(request: NextRequest) {
       // ── Source health: make a FactSet-outage run visible, not silent ──
       sourceHealthOut = factsetUsed ? "factset" : fsRes.source === "factset" ? "degraded-yahoo-fallback" : "yahoo";
       if (sourceHealthOut === "degraded-yahoo-fallback") {
-        financialContext += `\n\n---\n\n=== SOURCE HEALTH: DEGRADED RUN ===\nFactSet was expected for this name but was unavailable after retries — the fundamental categories below are graded from Yahoo fallback data. Cap confidence at "medium" for growth, relativeValuation, historicalValuation, leverageCoverage, and cashFlowQuality, and begin each of those explanation summaries with "YAHOO-FALLBACK RUN:" so the PM knows a FactSet-backed rescore may read differently.`;
+        financialContext += DEGRADED_RUN_NOTE;
       }
 
       // Auto-populate the FactSet analyst-consensus row (mean target price +
@@ -844,7 +853,7 @@ export async function POST(request: NextRequest) {
           financialContext += `\n\n---\n\n${edgarBlock}`;
         }
       } else if (isCanadianListing) {
-        financialContext += `\n\n---\n\n=== NO SEC EDGAR DATA AVAILABLE ===\n${upperTicker} is a Canadian-only listing (no US dual-listing in the SEC ticker map). SEC EDGAR XBRL data is unavailable for this issuer.\n\nFor fundamental categories (growth, leverageCoverage, cashFlowQuality, relativeValuation, historicalValuation), use the FactSet block above as the primary source (or Yahoo when FactSet is absent) and use web_search to verify against the company's MOST RECENT quarterly MD&A or earnings press release (cite the IR-page or SEDAR+ filing URL in sourceDetail). For ownershipTrends: no SEDI insider feed is available — the category is excluded from this name's composite server-side; emit only the brief DATA GAP explanation per the system prompt. Do not pretend Form 4-style data exists when it doesn't.\n`;
+        financialContext += noEdgarCanadianNote(upperTicker);
       }
 
       // ── Deterministic hard-floor scan (audit Finding 05) ──────────────
@@ -967,31 +976,75 @@ export async function POST(request: NextRequest) {
       financialContext = "Financial data API unavailable. Use your best knowledge but note that data should be verified.";
     }
 
-    // ── Previous-rescore context ────────────────────────────────────
-    // Read the most recent entry from pm:score-history (if any) for this
-    // ticker and embed it in the prompt. Asking the model to "affirm or
-    // explain changes" against last week's scores stabilises a category
-    // that would otherwise oscillate (0→2→1→2) on each rescore, and
-    // produces honest diff narratives: "downgraded growth from 3 to 2
-    // because Q3 revenue growth decelerated to 8% from 14%."
+    // ── Prior-score anchor (rev 4) ──────────────────────────────────
+    // Reconciliation, not affirmation: the model derives every category
+    // fresh, then classifies differences vs the prior (new data / prior
+    // misread / band-ambiguity — only the last retains the prior). The
+    // prior carries its own evidence summaries + confidence (from
+    // pm:stocks explanations), is era-gated on RUBRIC_HASH so old-rubric
+    // scores never anchor a new-rubric run, is scoped to the categories
+    // this run actually scores, and goes context-only past 90 days.
+    // Instruction text lives in score-prompt-fragments.ts (hashed).
     if (!skipPriorAnchor) try {
       const redis = await getRedis();
-      const raw = await redis.get("pm:score-history");
-      if (raw) {
-        const blob = JSON.parse(raw) as Record<string, Array<{ date?: string; timestamp?: string; total?: number; scores?: Record<string, number> }>>;
-        const arr = blob[upperTicker];
-        if (Array.isArray(arr) && arr.length > 0) {
-          const latest = arr[arr.length - 1];
-          if (latest?.scores && typeof latest.scores === "object") {
+      const [rawHist, rawStocksPrior] = await Promise.all([
+        redis.get("pm:score-history"),
+        redis.get("pm:stocks"),
+      ]);
+      const histBlob = rawHist
+        ? (JSON.parse(rawHist) as Record<string, Array<{ timestamp?: string; total?: number; rubricHash?: string; scores?: Record<string, number> }>>)
+        : {};
+      const arr = histBlob[upperTicker];
+      const latest = Array.isArray(arr) && arr.length > 0 ? arr[arr.length - 1] : null;
+      if (latest?.scores && typeof latest.scores === "object") {
+        // ── Era gate ── a prior scored under a different rubric (hash
+        // mismatch, or pre-hash-stamp entry) must NOT anchor this run:
+        // anchoring across rubric revisions lets old-rubric bias survive the
+        // very fixes the revision shipped. First-ever scores (no history at
+        // all) fall through silently — nothing to anchor or disclaim.
+        if (latest.rubricHash !== RUBRIC_HASH) {
+          financialContext += RUBRIC_CHANGED_NOTE;
+        } else {
+          // ── Evidence-carrying prior ── numbers come from history, but the
+          // summaries/confidence come from pm:stocks explanations (history
+          // stores no prose). Restricted to the categories THIS run scores
+          // (activeAiKeys): computed/manual categories are stale here by
+          // construction, invite double-counting the SCORING DISCIPLINE rule
+          // bans, and are recomputed or PM-owned anyway.
+          const anchorKeys = partialKeys ?? AI_KEYS;
+          let priorExplanations: ScoreExplanations = {};
+          try {
+            const stocksArr = rawStocksPrior ? (JSON.parse(rawStocksPrior) as Array<{ ticker?: string; explanations?: ScoreExplanations }>) : [];
+            const match = stocksArr.find((s) => (s.ticker || "").toUpperCase() === upperTicker);
+            if (match?.explanations) priorExplanations = match.explanations;
+          } catch { /* summaries are additive — lines render without them */ }
+          const lines: PriorCategoryLine[] = anchorKeys
+            .filter((k) => typeof latest.scores![k] === "number")
+            .map((k) => {
+              const expl = priorExplanations[k as ScoreKey];
+              const rich = expl && !Array.isArray(expl) ? expl : null;
+              const summary = rich?.summary
+                ? rich.summary.length > 200 ? `${rich.summary.slice(0, 200)}…` : rich.summary
+                : undefined;
+              return {
+                key: k,
+                score: latest.scores![k],
+                max: maxLookup[k] ?? 3,
+                confidence: rich?.confidence,
+                summary,
+              };
+            });
+          if (lines.length > 0) {
             const ageDays = latest.timestamp
               ? Math.round((Date.now() - new Date(latest.timestamp).getTime()) / 86400000)
               : null;
-            const scoreLines = Object.entries(latest.scores)
-              .filter(([, v]) => typeof v === "number")
-              .map(([k, v]) => `  ${k}: ${v}`)
-              .join("\n");
             const ageLabel = ageDays != null ? `${ageDays} day${ageDays === 1 ? "" : "s"} ago` : "previously";
-            financialContext += `\n\n---\n\n=== PREVIOUS RESCORE (${ageLabel}) ===\nLast week's per-category scores for ${upperTicker} (composite ${typeof latest.total === "number" ? latest.total.toFixed(1) : "n/a"}):\n${scoreLines}\n\nTreat these as your prior. AFFIRM the score for a category when the underlying data hasn't materially changed — re-deriving from scratch produces unnecessary volatility. Only change a category's value when there's a concrete reason rooted in the new data (a fresh earnings print, a guidance change, a new analyst note, a sector regime shift). When you DO change a category, briefly state the trigger in the explanation summary so the diff is auditable (e.g. "downgraded from 3 to 2: Q3 revenue growth decelerated to 8% YoY from 14%").\n`;
+            financialContext += buildPriorAnchorBlock({
+              ageLabel,
+              ageDays,
+              lines,
+              priorComposite: typeof latest.total === "number" ? latest.total.toFixed(1) : undefined,
+            });
           }
         }
       }
@@ -1107,7 +1160,7 @@ export async function POST(request: NextRequest) {
             role: "user",
             content: `Score the following stock: ${upperTicker}\n\nHere is the real financial data for this company — USE THIS DATA for your scoring and explanations:\n\n${financialContext}${verifyPreamble}${
               partialKeys
-                ? `\n\n=== PARTIAL RESCORE MODE ===\nScore ONLY these categories: ${partialKeys.join(", ")}.\nIn the "scores" and "explanations" JSON objects include ONLY those keys — every other category is carried forward unchanged server-side, so do NOT include them.\nSkip the narrative fields entirely: return empty strings for companySummary, investmentThesis, and bearCase (they are preserved from the last full rescore and must not be rewritten by a partial pass).\nStill return name, sector, and beta as usual.`
+                ? partialRescoreNote(partialKeys)
                 : ""
             }`,
           },

@@ -165,9 +165,9 @@ COMPANY SPECIFIC GROUP:
   * 1 = real but contested differentiation: peer-level margins with a defensible niche, or an advantage not yet (or no longer) visible in returns
   * 0 = commodity economics: no pricing power, margins at/below peers, share losses
   The moat must show up in the numbers — a story without a margin premium is at best a 1.
-- catalysts (max 3, SEMI): Potential catalysts — upcoming events, product launches, strategic shifts, M&A potential. Use the FACTSET "Analyst signals" line as structured evidence (a cluster of upward EPS revisions and/or upside to the mean/high target price is a positive estimate-momentum catalyst — cite source: "factset"); use PM notes and web_search only for discrete events (launches, M&A, guidance) not captured in the estimates.
+- catalysts (max 3, SEMI): Potential catalysts — upcoming events, product launches, strategic shifts, M&A potential. Use the FACTSET "Analyst signals" line as structured evidence: a cluster of upward EPS REVISIONS is a positive estimate-momentum catalyst (analyst BEHAVIOR, cite source: "factset"). Price-target levels and upside-to-target are directional analyst OPINION — already counted deterministically in analystConsensus — and must NOT move this score (the SCORING DISCIPLINE rule applies here too). Use PM notes and web_search only for discrete events (launches, M&A, guidance) not captured in the estimates.
   * 3 = at least one DATED, company-specific catalyst inside ~6 months with quantifiable impact (guidance raise vs prior guide, launch with revenue attached, announced buyback/spin/restructuring), plus supportive estimate momentum
-  * 2 = a credible company-specific catalyst without a firm date or size; or strong estimate momentum (clustered upward FY+1 revisions, targets above spot) as the primary driver
+  * 2 = a credible company-specific catalyst without a firm date or size; or strong estimate momentum (clustered upward FY+1 revisions) as the primary driver
   * 1 = only sector-level tailwinds or routine events — the next earnings print alone is NOT a catalyst unless there is a specific setup into it
   * 0 = nothing identifiable, or the nearest dated events skew negative
 

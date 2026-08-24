@@ -44,12 +44,9 @@ import type { Scores } from "@/app/lib/types";
  *      or `timestamp` — only the score-fact fields are revised.
  */
 
-import { RUBRIC_HASH } from "@/app/lib/rubric-version";
+import { RUBRIC_HASH, RUBRIC_REV } from "@/app/lib/rubric-version";
 
 const KEY = "pm:score-history";
-
-/** Current scoring-rubric regime — bump when the SCORING_PROMPT rubric changes materially. */
-const RUBRIC_REV = 3;
 
 /**
  * How long a rescore entry stays "open" for revision via patch-recent.
@@ -83,7 +80,13 @@ export type ScoreHistoryEntry = {
    * audit release: single DATA GAP rule, researchCoverage
    * threshold rework, technicals fence, consensus rescale, ownership N/A for
    * Canadian listings, 8-K hard-floor flags, own-history valuation band,
-   * widened analyst-PDF extraction (see rubricHash for finer eras).
+   * widened analyst-PDF extraction (see rubricHash for finer eras). 4 = the
+   * 2026-08 anchor-bias release: prior-score anchor reworked (era-gated on
+   * rubricHash, carries prior explanations/confidence from pm:stocks,
+   * re-derive-then-reconcile protocol replacing "affirm unless changed",
+   * scoped to AI/SEMI keys only, >90-day priors context-only), price-target
+   * direction struck from the catalysts rubric, route prompt fragments
+   * folded into RUBRIC_HASH.
    */
   rubricRev?: number;
   /**

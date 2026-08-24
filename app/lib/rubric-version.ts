@@ -17,9 +17,20 @@
 import { createHash } from "crypto";
 import { SCORING_PROMPT } from "./scoring-prompt";
 import { ALL_PLAYBOOK_BODIES } from "./sector-playbook";
+import { SCORE_ROUTE_FRAGMENTS_HASH_INPUT } from "./score-prompt-fragments";
+
+/** Current scoring-rubric regime — the human-readable era label. Bump when
+ *  the rubric changes materially (era meanings documented on the rubricRev
+ *  field in app/api/kv/score-history/route.ts). Lives here, not in the KV
+ *  route, so non-route writers (auto-rescore) can stamp it too. */
+export const RUBRIC_REV = 4;
 
 export const RUBRIC_HASH = createHash("sha256")
   .update(SCORING_PROMPT)
   .update(ALL_PLAYBOOK_BODIES)
+  // Route-level instruction fragments (prior-score anchor, partial mode,
+  // degraded/Canadian notes) — behavioral text that used to live as literals
+  // inside route.ts, invisible to the hash. See score-prompt-fragments.ts.
+  .update(SCORE_ROUTE_FRAGMENTS_HASH_INPUT)
   .digest("hex")
   .slice(0, 8);

@@ -6,6 +6,7 @@ import { defaultMarketData } from "@/app/lib/defaults";
 import { enqueueMail } from "@/app/lib/mail-outbox";
 import { daysSinceEastern, easternHour } from "@/app/lib/date-eastern";
 import { POST as scorePOST } from "@/app/api/score/route";
+import { RUBRIC_HASH, RUBRIC_REV } from "@/app/lib/rubric-version";
 import type { MarketData, ScoreKey, ScoreExplanations, Stock } from "@/app/lib/types";
 import type { ScoreHistoryStore, ScoreHistoryEntry } from "@/app/api/kv/score-history/route";
 
@@ -384,6 +385,12 @@ export async function autoRescoreStep(): Promise<{
       raw: after ?? 0,
       adjusted: after ?? 0,
       scores: mergedScores,
+      // Era stamps — the KV route stamps these server-side on its own POST
+      // path; this direct-append path must stamp them too or the score
+      // route's rubricHash era gate would treat every auto-rescored name as
+      // a different-rubric prior and never anchor it.
+      rubricRev: RUBRIC_REV,
+      rubricHash: RUBRIC_HASH,
     } as ScoreHistoryEntry;
     hist[pick.ticker] = [...(hist[pick.ticker] ?? []), entry];
     await redis.set("pm:score-history", JSON.stringify(hist));
