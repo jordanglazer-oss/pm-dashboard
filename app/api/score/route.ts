@@ -558,6 +558,11 @@ export async function POST(request: NextRequest) {
     const partialKeys: string[] | null = requestedCats.length
       ? AI_KEYS.filter((k) => requestedCats.includes(k))
       : null;
+    // Dispersion-test flag: suppress the PRIOR SCORE anchor block so repeated
+    // same-day runs measure the pipeline's intrinsic scoring variance instead
+    // of dispersion-under-anchoring. Diagnostic only (score-dispersion admin
+    // route); production callers never set it.
+    const skipPriorAnchor: boolean = body?.skipPriorAnchor === true;
 
     if (!ticker || typeof ticker !== "string") {
       return NextResponse.json(
@@ -969,7 +974,7 @@ export async function POST(request: NextRequest) {
     // that would otherwise oscillate (0→2→1→2) on each rescore, and
     // produces honest diff narratives: "downgraded growth from 3 to 2
     // because Q3 revenue growth decelerated to 8% from 14%."
-    try {
+    if (!skipPriorAnchor) try {
       const redis = await getRedis();
       const raw = await redis.get("pm:score-history");
       if (raw) {
