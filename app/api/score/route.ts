@@ -7,6 +7,7 @@ import type { OHLCVBar, TechnicalIndicators, RiskAlert } from "@/app/lib/technic
 import { computeTechnicals, computeRiskAlert, formatTechnicalsForPrompt } from "@/app/lib/technicals";
 import { formatEdgarSnapshotForPrompt } from "@/app/lib/edgar-prompt";
 import { tallyResearchMentions } from "@/app/lib/research-mentions";
+import { buildResearchMentionsExplanation } from "@/app/lib/research-mentions-display";
 import { computeAnalystConsensus, getSnapshotForTicker, setSnapshotForTicker, buildConsensusExplanation } from "@/app/lib/analyst-snapshots";
 import type { AnalystSnapshots } from "@/app/lib/analyst-snapshots";
 import { mapBoostedAiToAiRating, mapSmaxToRelativeStrength, consensusLabel, type BoostedAiConsensus } from "@/app/lib/external-scoring";
@@ -1371,23 +1372,15 @@ export async function POST(request: NextRequest) {
       }
     }
 
-    // Synthesize the researchMentions explanation from the tally citations.
+    // researchMentions explanation — shared builder (research-mentions-display)
+    // so the score route and the client's live refresh render identically,
+    // including the double-count-guard "(+0 — not double-counted)" rows.
     // No confidence field: deterministic categories don't render a chip.
-    const bullishCount = mentionsTally.mentions.filter((m) => m.direction === "bullish").length;
-    const bearishCount = mentionsTally.mentions.filter((m) => m.direction === "bearish").length;
-    const mentionsSummary =
-      mentionsTally.mentions.length === 0
-        ? `No mentions of ${upperTicker} found across cached research feeds. Score: ${mentionsTally.score}/3.`
-        : `Tallied ${mentionsTally.mentions.length} mention${mentionsTally.mentions.length === 1 ? "" : "s"} across cached research feeds (${bullishCount} bullish, ${bearishCount} bearish). Raw delta: ${mentionsTally.rawDelta >= 0 ? "+" : ""}${mentionsTally.rawDelta}, clamped to ${mentionsTally.score}/3.`;
-    explanations.researchMentions = {
-      summary: mentionsSummary,
-      dataPoints: mentionsTally.mentions.map((m) => ({
-        label: m.label,
-        value: m.direction === "bullish" ? "Bullish (+1)" : "Bearish (−1)",
-        source: "model" as ScoreDataPointSource,
-        sourceDetail: m.analyzedAt ? `Analyzed ${m.analyzedAt.slice(0, 10)}` : undefined,
-      })),
-    };
+    explanations.researchMentions = buildResearchMentionsExplanation(upperTicker, {
+      score: mentionsTally.score,
+      rawDelta: mentionsTally.rawDelta,
+      mentions: mentionsTally.mentions,
+    });
 
     // analystConsensus explanation — uses the shared builder so the score
     // route, Coverage Checklist, and stock page all produce identical output.

@@ -1177,7 +1177,7 @@ export function StockProvider({ children }: { children: React.ReactNode }) {
       const results = (data?.results ?? {}) as Record<string, {
         score: number;
         rawDelta: number;
-        mentions: Array<{ source: string; label: string; direction: string; analyzedAt?: string }>;
+        mentions: Array<{ source: string; label: string; direction: string; analyzedAt?: string; scored?: boolean; note?: string }>;
       }>;
       // Apply each ticker's new score + explanation. Wrapped in a
       // single setStocks below would be cleaner perf-wise, but
@@ -1203,6 +1203,8 @@ export function StockProvider({ children }: { children: React.ReactNode }) {
             label: m.label,
             direction: m.direction as "bullish" | "bearish",
             analyzedAt: m.analyzedAt,
+            scored: m.scored,
+            note: m.note,
           })),
         });
         // Only write when the score OR the explanation actually changed.

@@ -215,25 +215,41 @@ export type FreshnessLabel = "fresh" | "stale" | "very-stale";
 export type FreshnessResult = { weight: number; label: FreshnessLabel; reason?: string };
 
 /**
- * Per-analyst freshness multiplier. Always 1.0 — no decay.
+ * Per-analyst freshness. Weight is ALWAYS 1.0 — no decay (user call,
+ * re-confirmed 2026-08-25): fresh reports are uploaded as they come in, so
+ * the standing rating is treated as the firm's current view at full weight
+ * until replaced.
  *
- * Analysts keep their reports current when material changes occur, so
- * penalizing older reports distorts the score. The rating stands at full
- * weight until the PM uploads a newer report that replaces it.
+ * The LABEL, however, must be honest: it used to hard-code "fresh", so an
+ * 18-month-old rating displayed as current. It now reflects the report's
+ * actual age from asOf (quarterly cadence: ≤120d fresh, ≤240d stale, then
+ * very-stale; undated = fresh for backward compat, since age is unknowable).
+ * Label-only — nothing in the score math reads it beyond the informational
+ * confidence field.
  */
-export function freshnessWeight(_entry: AnalystEntry, _currentPrice?: number): FreshnessResult {
-  return { weight: 1.0, label: "fresh", reason: undefined };
+export function freshnessWeight(entry: AnalystEntry, _currentPrice?: number): FreshnessResult {
+  const asOf = entry?.asOf ? Date.parse(entry.asOf) : NaN;
+  if (!Number.isFinite(asOf)) return { weight: 1.0, label: "fresh", reason: undefined };
+  const ageDays = Math.round((Date.now() - asOf) / 86400000);
+  if (ageDays <= 120) return { weight: 1.0, label: "fresh", reason: undefined };
+  const label: FreshnessLabel = ageDays <= 240 ? "stale" : "very-stale";
+  return { weight: 1.0, label, reason: `report dated ${entry.asOf} (${ageDays} days old) — full weight, but consider requesting an updated report` };
 }
 
 /** FactSet target → upside sub-point (0–0.75; rescaled per Finding 06 so the
- *  level components cap at 2.25 and revisions/Morningstar keep headroom). */
+ *  level components cap at 2.25 and revisions/Morningstar keep headroom).
+ *
+ *  A street target AT or BELOW spot earns nothing (user call, 2026-08-25):
+ *  the old map paid 0.35 for zero upside and 0.2 for a target up to 10%
+ *  BELOW the price — level credit for the street seeing no room, which is
+ *  neutral-at-best information, not a positive. The 5–10% band keeps the
+ *  ramp from cliffing at exactly 10%. */
 export function upsideScore(target: number, currentPrice: number): number {
   if (!target || !currentPrice || currentPrice <= 0) return 0;
   const upside = (target - currentPrice) / currentPrice;
   if (upside >= 0.25) return 0.75;
   if (upside >= 0.10) return 0.55;
-  if (upside >= 0) return 0.35;
-  if (upside >= -0.10) return 0.2;
+  if (upside >= 0.05) return 0.3;
   return 0;
 }
 
@@ -399,23 +415,24 @@ export function buildConsensusExplanation(
 ): ScoreCategoryExplanation {
   const dataPoints: ScoreDataPoint[] = [];
 
-  // Freshness decay was removed (freshnessWeight always returns 1.0),
-  // so the previous "rating × multiplier = pts (fresh)" format was
-  // just noise — the rating, the multiplier-product, and the
-  // contribution were all identical. Surface the contribution
-  // directly and drop the freshness label.
+  // Weight never decays (freshnessWeight always returns 1.0), so no
+  // "rating × multiplier" noise — but the honest AGE label from
+  // freshnessWeight IS surfaced when a report has gone stale, so an old
+  // rating can't silently display as current.
   if (breakdown.rbc) {
     dataPoints.push({
       label: "RBC",
-      value: `${breakdown.rbc.contribution.toFixed(2)} pts`,
+      value: `${breakdown.rbc.contribution.toFixed(2)} pts${breakdown.rbc.freshnessLabel !== "fresh" ? ` (${breakdown.rbc.freshnessLabel.replace("-", " ")} report)` : ""}`,
       source: "model",
+      ...(breakdown.rbc.freshnessReason ? { sourceDetail: breakdown.rbc.freshnessReason } : {}),
     });
   }
   if (breakdown.jpm) {
     dataPoints.push({
       label: "JPM",
-      value: `${breakdown.jpm.contribution.toFixed(2)} pts`,
+      value: `${breakdown.jpm.contribution.toFixed(2)} pts${breakdown.jpm.freshnessLabel !== "fresh" ? ` (${breakdown.jpm.freshnessLabel.replace("-", " ")} report)` : ""}`,
       source: "model",
+      ...(breakdown.jpm.freshnessReason ? { sourceDetail: breakdown.jpm.freshnessReason } : {}),
     });
   }
   if (breakdown.upside.target && breakdown.upside.upsidePercent !== undefined) {
