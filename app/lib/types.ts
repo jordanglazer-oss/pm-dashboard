@@ -78,6 +78,14 @@ export type ScoreDataPointSource =
   | "edgar-form4"
   | "yahoo"
   | "web"
+  /** A PM-ingested analyst report (RBC / JPM / Morningstar PDF filed through
+   *  the inbox and extracted into pm:analyst-reports). Distinct from "web":
+   *  these facts come from a document the PM filed, not from a web_search
+   *  during the rescore, and they carry no public URL. Without this member
+   *  the model had to mislabel report facts as "web", which claimed a
+   *  provenance that never happened and pressured it to invent a URL to
+   *  satisfy the web-source URL rule. */
+  | "report"
   | "model";
 
 export type ScoreDataPoint = {
@@ -94,7 +102,9 @@ export type ScoreDataPoint = {
    * to verify the number directly. Required for `source: "web"` data points
    * (the model is instructed to include the actual cited URL). For Yahoo
    * sources, the UI computes a default Yahoo Finance subpage URL from the
-   * label and ticker if this is absent.
+   * label and ticker if this is absent. Never present for "factset" or
+   * "report" (an ingested PDF has no public address — the report name and
+   * date go in sourceDetail instead).
    */
   url?: string;
 };

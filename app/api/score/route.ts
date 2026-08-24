@@ -1332,7 +1332,7 @@ export async function POST(request: NextRequest) {
           // NOTE: "factset" MUST be here — without it, a correctly tagged
           // source:"factset" was being silently downgraded to "model", which is
           // why FactSet provenance never surfaced even though the data was FactSet.
-          const allowedSources = new Set(["factset", "edgar", "edgar-form4", "yahoo", "web", "model"]);
+          const allowedSources = new Set(["factset", "edgar", "edgar-form4", "yahoo", "web", "report", "model"]);
           const dataPoints = (dpsRaw as unknown[])
             .filter((d: unknown): d is Record<string, unknown> => d != null && typeof d === "object")
             .map((d: Record<string, unknown>) => {
@@ -1347,11 +1347,29 @@ export async function POST(request: NextRequest) {
               if (source !== "factset" && sourceDetail && /factset/i.test(sourceDetail)) {
                 source = "factset";
               }
+              // Ingested-report re-tag: before the "report" source existed the
+              // model had to label RBC/JPM/Morningstar report facts as "web",
+              // which asserts a web_search that never happened and leaves a
+              // dead click-through (an ingested PDF has no URL). A "web" point
+              // with NO usable URL whose detail names an ingested report is
+              // that mislabel — retag it. A genuine web hit about the same
+              // firm keeps its URL and is untouched.
+              const rawUrlEarly = typeof d.url === "string" ? d.url.trim() : "";
+              if (
+                source === "web" &&
+                !/^https?:\/\/\S+$/.test(rawUrlEarly) &&
+                sourceDetail &&
+                /\b(rbc|jpm|j\.?p\.?\s*morgan|morningstar)\b/i.test(sourceDetail)
+              ) {
+                source = "report";
+              }
               // Only accept URLs that look like real http(s) addresses, to
               // defend against the model fabricating placeholder strings
-              // like "(URL not available)" or "n/a". FactSet points carry no URL.
-              const rawUrl = typeof d.url === "string" ? d.url.trim() : "";
-              const url = source !== "factset" && /^https?:\/\/\S+$/.test(rawUrl) ? rawUrl : undefined;
+              // like "(URL not available)" or "n/a". FactSet and ingested
+              // reports carry no URL.
+              const rawUrl = rawUrlEarly;
+              const url =
+                source !== "factset" && source !== "report" && /^https?:\/\/\S+$/.test(rawUrl) ? rawUrl : undefined;
               return {
                 label: typeof d.label === "string" ? d.label : "(unnamed)",
                 value: typeof d.value === "string" ? d.value : String(d.value ?? ""),

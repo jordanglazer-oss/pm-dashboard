@@ -114,7 +114,7 @@ function categoryDataSource(dps: ScoreDataPoint[]): ScoreDataPointSource | undef
     if (!dp?.source || dp.source === "model") continue;
     counts[dp.source] = (counts[dp.source] ?? 0) + 1;
   }
-  const order: ScoreDataPointSource[] = ["factset", "edgar", "edgar-form4", "yahoo", "web"];
+  const order: ScoreDataPointSource[] = ["factset", "edgar", "edgar-form4", "report", "yahoo", "web"];
   let best: ScoreDataPointSource | undefined;
   let bestN = 0;
   for (const s of order) {
@@ -132,6 +132,7 @@ const CATEGORY_SOURCE_META: Partial<Record<ScoreDataPointSource, { label: string
   edgar: { label: "EDGAR", cls: "bg-pos-soft text-pos border-pos-border" },
   "edgar-form4": { label: "Form 4", cls: "bg-pos-soft text-pos border-pos-border" },
   yahoo: { label: "Yahoo", cls: "bg-surface-2 text-ink-2 border-line" },
+  report: { label: "Report", cls: "bg-violet-soft text-violet border-violet-border" },
   web: { label: "Web", cls: "bg-accent-soft text-accent border-accent-border" },
 };
 
@@ -141,6 +142,7 @@ function SourceChip({ source, detail, url, label, ticker }: { source: ScoreDataP
     edgar: { label: "EDGAR", cls: "bg-pos-soft text-pos border-pos-border", clsLink: "hover:bg-pos-soft", title: "SEC EDGAR XBRL — audited as-reported from 10-K/Q filings. Click to open the company's EDGAR filings page." },
     "edgar-form4": { label: "Form 4", cls: "bg-pos-soft text-pos border-pos-border", clsLink: "hover:bg-pos-soft", title: "SEC Form 4 — insider transactions (open-market only). Click to open the company's Form 4 filings on EDGAR." },
     yahoo: { label: "Yahoo", cls: "bg-surface-2 text-ink-2 border-line", clsLink: "hover:bg-line", title: "Yahoo Finance data feed. Click to open the relevant Yahoo Finance page." },
+    report: { label: "Report", cls: "bg-violet-soft text-violet border-violet-border", clsLink: "", title: "PM-ingested analyst report (RBC / JPM / Morningstar PDF filed through the inbox). Not a web search — no public URL; the firm and report date are shown alongside." },
     web: { label: "Web", cls: "bg-accent-soft text-accent border-accent-border", clsLink: "hover:bg-accent-soft", title: "Anthropic web_search result (verified during this rescore). Click to open the cited source." },
     model: { label: "Model", cls: "bg-warn-soft text-warn border-warn-border", clsLink: "", title: "Qualitative inference by the model — no specific data source." },
   };

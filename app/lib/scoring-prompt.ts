@@ -88,7 +88,7 @@ Omit ALL of them from the "scores" and "explanations" objects in your response. 
 SCORING DISCIPLINE (applies to every category below):
 - WHOLE POINTS ONLY. Every category score is an integer — no 0.5s. If torn between adjacent scores, evidence decides: corroborated by a second metric → the higher score; contradicted or unverified → the lower.
 - MISSING DATA ≠ BAD DATA. Never score a category low because inputs are unavailable. When material inputs are absent, apply the DATA GAP rule defined in the MISSING DATA section above (1 for 2-pt and 3-pt categories, 0 for 1-pt categories, confidence "low", summary opens "DATA GAP:").
-- INGESTED REPORT EVIDENCE. FACTS from the INGESTED ANALYST REPORTS block (segment figures, dated catalysts, guidance quotes, capital-allocation record, moat analysis) MAY be cited as evidence in catalysts, competitiveMoat, trackRecord, and secular — cite the source (e.g. "RBC report", "Morningstar"). OPINIONS — ratings, price targets, star ratings, "we like" — must NOT move any category score: directional analyst view is already counted once, deterministically, in analystConsensus. Reports older than ~90 days are background context, not primary evidence.
+- INGESTED REPORT EVIDENCE. FACTS from the INGESTED ANALYST REPORTS block (segment figures, dated catalysts, guidance quotes, capital-allocation record, moat analysis) MAY be cited as evidence in catalysts, competitiveMoat, trackRecord, and secular — tag those dataPoints source: "report" (NOT "web" — the PDF was filed by the PM, not found by a search) with sourceDetail naming the firm and report date, e.g. "RBC report, May 8 2026". OPINIONS — ratings, price targets, star ratings, "we like" — must NOT move any category score: directional analyst view is already counted once, deterministically, in analystConsensus. Reports older than ~90 days are background context, not primary evidence.
 
 LONG-TERM GROUP:
 - secular (max 2, AUTO): Secular growth trend. Ground this in the FACTSET "Classification:" line (GICS sector/industry) plus the multi-year revenue trend and FY+1 consensus growth in the FactSet block; cite those as source: "factset".
@@ -232,7 +232,8 @@ For every data point you cite, label its source:
   - "edgar" — value came from the SEC EDGAR XBRL block in the data above
   - "edgar-form4" — insider transaction data from the Form 4 block
   - "yahoo" — value came from the Yahoo Finance block
-  - "web" — value came from a web_search result (sourceDetail = source name + date, e.g. "Apple Q4 2025 press release, Oct 30 2025")
+  - "web" — value came from a web_search result you ran during THIS rescore (sourceDetail = source name + date, e.g. "Apple Q4 2025 press release, Oct 30 2025")
+  - "report" — value came from the INGESTED ANALYST REPORTS block above (an RBC / JPM / Morningstar PDF the PM filed through the inbox). Use this, NOT "web": these reports were not found by a web search and have no public URL. sourceDetail = firm + report date, e.g. "JPM report, May 8 2026".
   - "model" — qualitative inference based on company description / industry (use sparingly, only for narrative claims)
 
 CRITICAL — FACTSET TAKES PRECEDENCE IN SOURCING (this overrides the labels above):
@@ -250,6 +251,7 @@ For EDGAR / EDGAR-Form4 sources, do NOT include a URL — the UI will construct 
 For Yahoo sources, do NOT include a URL — the UI will route to the appropriate Yahoo Finance subpage automatically based on the label (financials, key-statistics, analysis, etc.).
 For Model sources, do NOT include a URL (qualitative inference has no source URL).
 For FactSet sources, do NOT include a URL (sourceDetail = "FactSet" or the period, e.g. "FactSet, FY2025").
+For Report sources, do NOT include a URL — an ingested PDF has no public address. Put the firm and the report date in sourceDetail instead.
 
 Also provide:
 - name: Full company name
