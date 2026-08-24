@@ -378,19 +378,28 @@ export function Attribution() {
                 {[
                   {
                     title: "Top contributors",
+                    shareLabel: "% of gains",
                     all: contrib.holdings.filter((h) => h.contributionPct > 0),
                   },
                   {
                     title: "Top detractors",
+                    shareLabel: "% of losses",
                     all: [...contrib.holdings].filter((h) => h.contributionPct < 0).sort((a, b) => a.contributionPct - b.contributionPct),
                   },
                 ].map((col) => {
                   const rows = showAllNames ? col.all : col.all.slice(0, 10);
+                  // Each name's slice of the column's summed contribution —
+                  // "this name was N% of everything that made (or lost) money".
+                  const colTotal = col.all.reduce((s, h) => s + h.contributionPct, 0);
                   return (
                     <div key={col.title} className="flex flex-col gap-1.5">
-                      <span className="text-[11px] font-semibold text-ink-3">
+                      <span className="flex items-baseline text-[11px] font-semibold text-ink-3">
                         {col.title}
                         <span className="ml-1.5 font-normal text-ink-faint">{col.all.length}</span>
+                        <span className="ml-auto flex gap-2 font-normal text-[9.5px] uppercase tracking-wide text-ink-faint">
+                          <span className="w-[44px] text-right">{col.shareLabel}</span>
+                          <span className="w-[52px] text-right">contrib</span>
+                        </span>
                       </span>
                       {rows.length === 0 ? (
                         <span className="text-[12px] text-ink-faint">—</span>
@@ -417,7 +426,10 @@ export function Attribution() {
                                 </span>
                               )}
                             </span>
-                            <span className={`font-mono text-[12.5px] tabular-nums shrink-0 ${toneClass(h.contributionPct)}`}>{fmtPct(h.contributionPct)}</span>
+                            <span className="w-[44px] shrink-0 text-right font-mono text-[11px] tabular-nums text-ink-3">
+                              {colTotal !== 0 ? `${((h.contributionPct / colTotal) * 100).toFixed(0)}%` : "—"}
+                            </span>
+                            <span className={`w-[52px] shrink-0 text-right font-mono text-[12.5px] tabular-nums ${toneClass(h.contributionPct)}`}>{fmtPct(h.contributionPct)}</span>
                           </div>
                         ))
                       )}
@@ -465,7 +477,7 @@ export function Attribution() {
                 </div>
               </div>
               <p className="text-[10.5px] leading-4 text-ink-faint">
-                Contribution = each holding&apos;s current weight × its total-return move in CAD (incl. distributions) over the portion of the {period} window it was actually held. Weights include cash. Names sold during the period stay listed (&quot;sold&quot; tag) — measured to the sale, with weight estimated from the model weight on the trade. Estimates.
+                Contribution = each holding&apos;s current weight × its total-return move in CAD (incl. distributions) over the portion of the {period} window it was actually held. Weights include cash. &quot;% of gains / losses&quot; = that name&apos;s share of all positive (resp. negative) contributions; each column sums to 100%. Names sold during the period stay listed (&quot;sold&quot; tag) — measured to the sale, with weight estimated from the model weight on the trade. Estimates.
               </p>
             </div>
           )}
