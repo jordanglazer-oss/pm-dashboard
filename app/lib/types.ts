@@ -328,6 +328,12 @@ export type Stock = {
   scores: Scores;
   explanations?: ScoreExplanations;
   lastScored?: string;
+  /** Per-key edit dates (YYYY-MM-DD) for MANUAL categories (brand, charting,
+   *  turnaround), stamped by updateScore. Manual scores otherwise never age —
+   *  a months-old charting entry sits at full weight beside a fresh AI
+   *  rescore with nothing marking it stale. Absent for scores entered before
+   *  this field existed (rendered as "age unknown" rather than fresh). */
+  manualScoredAt?: Partial<Record<ScoreKey, string>>;
   price?: number;
   costBasis?: number;
   notes: string;

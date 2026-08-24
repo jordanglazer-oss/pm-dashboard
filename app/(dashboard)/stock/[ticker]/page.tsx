@@ -2234,6 +2234,33 @@ export default function StockDetailPage() {
                                   Value-trap ×0.5
                                 </span>
                               )}
+                              {/* Manual-score age — manual entries never expire on their
+                                  own; badge anything old (or undated) so a months-old
+                                  charting score can't pass as fresh. */}
+                              {cat.inputType === "manual" && (stock.scores[cat.key as ScoreKey] ?? 0) > 0 && (() => {
+                                const at = stock.manualScoredAt?.[cat.key as ScoreKey];
+                                const ageDays = at ? Math.round((Date.now() - new Date(`${at}T00:00:00Z`).getTime()) / 86400000) : null;
+                                if (ageDays != null && ageDays <= 60) return null;
+                                return (
+                                  <span
+                                    className="rounded px-1.5 py-0.5 text-[9px] font-bold uppercase tracking-wider border bg-warn-soft text-warn border-warn-border"
+                                    title={ageDays != null
+                                      ? `Manual entry last updated ${at} (${ageDays} days ago). Manual scores never age out of the composite — re-check whether this still holds.`
+                                      : "No edit date recorded for this manual entry (predates age tracking). Re-enter the score to stamp it."}
+                                  >
+                                    {ageDays != null ? `Manual · ${ageDays}d old` : "Manual · age unknown"}
+                                  </span>
+                                );
+                              })()}
+                              {/* DATA GAP composite exclusion — never silent. */}
+                              {stock.gapExcluded?.includes(cat.key as ScoreKey) && (
+                                <span
+                                  className="rounded px-1.5 py-0.5 text-[9px] font-bold uppercase tracking-wider border bg-surface-2 text-ink-3 border-line"
+                                  title="Parked with the DATA GAP default: no source covered this category's inputs. Excluded from the composite (numerator and denominator; score renormalized to /41) — the displayed value is informational only."
+                                >
+                                  Gap · excluded
+                                </span>
+                              )}
                               {confidence && (
                                 <span
                                   className={`rounded px-1.5 py-0.5 text-[9px] font-bold uppercase tracking-wider ${

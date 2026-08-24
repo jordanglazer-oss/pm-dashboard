@@ -2,6 +2,7 @@
 
 import React, { createContext, useContext, useState, useMemo, useCallback, useEffect, useRef } from "react";
 import type { Stock, MarketData, ScoredStock, MorningBrief, ScoreKey, ScoreExplanations, HealthData, TechnicalIndicators, RiskAlert, FundData } from "./types";
+import { SCORE_GROUPS } from "./types";
 import type { PimHolding, PimModelData, PimModelGroup, PimPortfolioState, PimModelGroupState } from "./pim-types";
 import { computeScores, isOffensiveSector, isScoreable, transitionWeight } from "./scoring";
 import { defaultMarketData } from "./defaults";
@@ -30,6 +31,12 @@ import { buildResearchMentionsExplanation } from "./research-mentions-display";
 // locking the three specialty funds that were originally hardcoded — they
 // would otherwise be silently re-scaled into the Core ETF residual pool.
 const LEGACY_LOCKED_EQUITY_SYMBOLS = new Set(["FID5982", "FID5982-T", "GRNJ"]);
+
+// PM-entered category keys (inputType "manual") — updateScore stamps
+// manualScoredAt for these so aged manual entries are badgeable.
+const MANUAL_SCORE_KEYS: ReadonlySet<ScoreKey> = new Set<ScoreKey>(
+  SCORE_GROUPS.flatMap((g) => g.categories.filter((c) => c.inputType === "manual").map((c) => c.key as ScoreKey))
+);
 
 // One-shot migration for the Research-category restructure (researchCoverage
 // shrank from max 4 → 1, externalSources from max 4 → 1, and two new
@@ -951,7 +958,21 @@ export function StockProvider({ children }: { children: React.ReactNode }) {
   const updateScore = useCallback((ticker: string, key: ScoreKey, value: number) => {
     setStocks((prev) => {
       const next = prev.map((s) =>
-        s.ticker === ticker ? { ...s, scores: { ...s.scores, [key]: value } } : s
+        s.ticker === ticker
+          ? {
+              ...s,
+              scores: { ...s.scores, [key]: value },
+              // Manual categories (brand / charting / turnaround) are
+              // PM-entered and otherwise never age: a charting score from
+              // months ago sits at full weight beside a fresh AI rescore
+              // with nothing marking it stale. Stamp the edit date per key
+              // so the UI can badge aged manual scores. AI-applied keys are
+              // never manual, so this only fires on genuine PM edits.
+              ...(MANUAL_SCORE_KEYS.has(key)
+                ? { manualScoredAt: { ...s.manualScoredAt, [key]: new Date().toISOString().slice(0, 10) } }
+                : {}),
+            }
+          : s
       );
       persistStocks(next);
       return next;
