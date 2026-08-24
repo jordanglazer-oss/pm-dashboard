@@ -67,6 +67,35 @@ const CANDIDATE_SETS: Record<string, { key: string; formula: string; note: strin
     { key: "ffAccrualRatio", formula: "FF_ACCRUAL_RATIO(ANN,0)", note: "Accrual ratio (FF)" },
     { key: "feEpsStdev", formula: "FE_ESTIMATE(EPS,STDDEV,ANN_ROLL,1,NOW,'')", note: "EPS estimate dispersion (persistence proxy)" },
   ],
+  // Factor-universe freshness upgrade: switch flow metrics ANN→LTM and balance
+  // sheet ANN→QTR so the universe re-scores each quarterly report instead of
+  // annually. Controls (probe-proven codes) included so a relay/id problem is
+  // distinguishable from a bad period basis. LTM,-4 = the TTM window ended 4
+  // quarters ago (year-ago TTM) — the trend base; verify its value sits near
+  // ANN,0/ANN,-1 rather than echoing LTM,0.
+  freshness: [
+    { key: "ctrlLtmSales", formula: "FF_SALES(LTM,0)", note: "CONTROL — proven in scoring snapshot" },
+    { key: "ctrlQtrSales0", formula: "FF_SALES(QTR,0)", note: "CONTROL — proven in scoring snapshot" },
+    { key: "ctrlAnnSales", formula: "FF_SALES(ANN,0)", note: "CONTROL — current universe basis (compare vs LTM)" },
+    { key: "ltmNetInc", formula: "FF_NET_INC(LTM,0)", note: "Net income, TTM" },
+    { key: "ltmFcf", formula: "FF_FREE_CF(LTM,0)", note: "Free cash flow, TTM" },
+    { key: "ltmOcf", formula: "FF_OPER_CF(LTM,0)", note: "Operating cash flow, TTM" },
+    { key: "ltmEbitda", formula: "FF_EBITDA_OPER(LTM,0)", note: "EBITDA, TTM" },
+    { key: "ltmIntExp", formula: "FF_INT_EXP_DEBT(LTM,0)", note: "Interest expense, TTM" },
+    { key: "ltmOperMgn", formula: "FF_OPER_MGN(LTM,0)", note: "Operating margin, TTM" },
+    { key: "ltmOperMgnY1", formula: "FF_OPER_MGN(LTM,-4)", note: "Operating margin, year-ago TTM (trend base)" },
+    { key: "ltmSalesY1", formula: "FF_SALES(LTM,-4)", note: "Revenue, year-ago TTM (sanity: ≈ FY-1, ≠ LTM,0)" },
+    { key: "ltmRoe", formula: "FF_ROE(LTM,0)", note: "ROE, TTM" },
+    { key: "qtrDebt", formula: "FF_DEBT(QTR,0)", note: "Total debt, latest quarter" },
+    { key: "qtrCash", formula: "FF_CASH_ST(QTR,0)", note: "Cash & ST investments, latest quarter" },
+    { key: "qtrAssets", formula: "FF_ASSETS(QTR,0)", note: "Total assets, latest quarter" },
+    { key: "qtrWkcap", formula: "FF_WKCAP(QTR,0)", note: "Working capital, latest quarter (Altman)" },
+    { key: "qtrRetainEarn", formula: "FF_COM_EQ_RETAIN_EARN(QTR,0)", note: "Retained earnings, latest quarter (Altman)" },
+    { key: "qtrShsOut", formula: "FF_COM_SHS_OUT(QTR,0)", note: "Shares out, latest quarter" },
+    { key: "qtrSales4", formula: "FF_SALES(QTR,-4)", note: "Revenue, same quarter last year (y/y growth base)" },
+    { key: "qtrEps0", formula: "FF_EPS(QTR,0)", note: "EPS, latest quarter" },
+    { key: "qtrEps4", formula: "FF_EPS(QTR,-4)", note: "EPS, same quarter last year (y/y growth base)" },
+  ],
   guidance: [
     { key: "guidEpsMeanQ1", formula: "FE_GUIDANCE(EPS,MEAN,QTR_ROLL,1,NOW,'')", note: "EPS guidance mean, next quarter" },
     { key: "guidEpsHighQ1", formula: "FE_GUIDANCE(EPS,HIGH,QTR_ROLL,1,NOW,'')", note: "EPS guidance high, next quarter" },
@@ -131,7 +160,7 @@ export async function GET(req: NextRequest) {
     const list =
       candSet === "all" ? [...CANDIDATE_SETS.earnings, ...CANDIDATE_SETS.guidance] : (CANDIDATE_SETS[candSet] || []);
     if (list.length === 0) {
-      return NextResponse.json({ ok: false, error: `Unknown set '${candSet}'. Use earnings | guidance | all.` });
+      return NextResponse.json({ ok: false, error: `Unknown set '${candSet}'. Use ${Object.keys(CANDIDATE_SETS).join(" | ")} | all.` });
     }
     try {
       const diag = await crossSectionalDiagnostic(id, list.map((c) => c.formula));
