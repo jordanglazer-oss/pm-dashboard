@@ -25,34 +25,48 @@ export const UNIVERSE_NAMES_KEY = "pm:factor-universe-names";
 const PROGRESS_KEY = "pm:factor-universe-progress";
 const CHUNK = 40;
 
-/** Raw formulas fetched per name — every code probe-confirmed on our entitlement. */
+/** Raw formulas fetched per name — every code probe-confirmed on our entitlement.
+ *
+ * Period bases (freshness upgrade, probe-confirmed 2026-08-23 via
+ * /api/admin/factset-probe?candidates=freshness on MSFT-US / RY-CA / JPM-US):
+ *   • Flow items (sales, NI, FCF, OCF, EBITDA, int exp, margins) → LTM —
+ *     trailing 12 months, refreshes each quarterly report instead of annually.
+ *   • Growth pairs → QTR,0 vs QTR,-4 — latest quarter vs same quarter last
+ *     year (seasonally clean y/y off the freshest data).
+ *   • Balance sheet (debt, cash, assets, wkcap, retained earnings, shares) →
+ *     QTR,0 — latest reported quarter.
+ *   • ROE stays ANN,0 — FF_ROE(LTM,0) probes valid-but-null on every name.
+ *   • LTM,-4 = the TTM window ended 4 quarters ago (verified ≈ FY-1, not an
+ *     echo of LTM,0) — the margin-trend base.
+ * EBITDA + cash are null for Financials on ANY basis (FactSet doesn't compute
+ * them for banks) — their metrics simply don't score there, same as before. */
 export const RAW_FORMULAS = {
   sector: "FG_GICS_SECTOR",
   mktVal: "FG_MKT_VALUE",
   pe: "FG_PE",
   pbk: "FG_PBK",
   psales: "FG_PSALES",
-  sales0: "FF_SALES(ANN,0)",
-  sales1: "FF_SALES(ANN,-1)",
-  eps0: "FF_EPS(ANN,0)",
-  eps1: "FF_EPS(ANN,-1)",
-  fcf: "FF_FREE_CF(ANN,0)",
-  ocf: "FF_OPER_CF(ANN,0)",
-  ni: "FF_NET_INC(ANN,0)",
-  operMgn0: "FF_OPER_MGN(ANN,0)",
-  operMgn1: "FF_OPER_MGN(ANN,-1)",
+  salesLtm: "FF_SALES(LTM,0)",
+  salesQ0: "FF_SALES(QTR,0)",
+  salesQ4: "FF_SALES(QTR,-4)",
+  epsQ0: "FF_EPS(QTR,0)",
+  epsQ4: "FF_EPS(QTR,-4)",
+  fcf: "FF_FREE_CF(LTM,0)",
+  ocf: "FF_OPER_CF(LTM,0)",
+  ni: "FF_NET_INC(LTM,0)",
+  operMgn0: "FF_OPER_MGN(LTM,0)",
+  operMgn1: "FF_OPER_MGN(LTM,-4)",
   roe: "FF_ROE(ANN,0)",
-  debt: "FF_DEBT(ANN,0)",
-  ebitda: "FF_EBITDA_OPER(ANN,0)",
-  cash: "FF_CASH_ST(ANN,0)",
-  intExp: "FF_INT_EXP_DEBT(ANN,0)",
-  assets: "FF_ASSETS(ANN,0)",
+  debt: "FF_DEBT(QTR,0)",
+  ebitda: "FF_EBITDA_OPER(LTM,0)",
+  cash: "FF_CASH_ST(QTR,0)",
+  intExp: "FF_INT_EXP_DEBT(LTM,0)",
+  assets: "FF_ASSETS(QTR,0)",
   // Balance-sheet items for the distress/red-flag layer (probe-confirmed
   // 2026-07-17: FF_COM_EQ_RETAIN_EARN is the entitled retained-earnings code).
-  // Fetched from day one so the data exists when the veto factor lands.
-  shsOut: "FF_COM_SHS_OUT(ANN,0)",
-  wkcap: "FF_WKCAP(ANN,0)",
-  retainEarn: "FF_COM_EQ_RETAIN_EARN(ANN,0)",
+  shsOut: "FF_COM_SHS_OUT(QTR,0)",
+  wkcap: "FF_WKCAP(QTR,0)",
+  retainEarn: "FF_COM_EQ_RETAIN_EARN(QTR,0)",
   ret12m: "P_TOTAL_RETURNC(-12M,0)",
   ret6m: "P_TOTAL_RETURNC(-6M,0)",
   ret1m: "P_TOTAL_RETURNC(-1M,0)",
@@ -99,19 +113,20 @@ export type FactorUniverse = {
 export function deriveMetrics(r: RawRow): Partial<Record<FactorMetric, number>> {
   const out: Partial<Record<FactorMetric, number>> = {};
   const n = (v: unknown): number | null => (typeof v === "number" && isFinite(v) ? v : null);
-  const sales0 = n(r.sales0), sales1 = n(r.sales1), eps0 = n(r.eps0), eps1 = n(r.eps1);
+  const salesLtm = n(r.salesLtm), salesQ0 = n(r.salesQ0), salesQ4 = n(r.salesQ4);
+  const epsQ0 = n(r.epsQ0), epsQ4 = n(r.epsQ4);
   const fcf = n(r.fcf), ocf = n(r.ocf), ni = n(r.ni), assets = n(r.assets);
   const debt = n(r.debt), ebitda = n(r.ebitda), cash = n(r.cash), intExp = n(r.intExp);
   const mktVal = n(r.mktVal);
-  if (fcf != null && sales0 != null && sales0 > 0) out.fcfMargin = (fcf / sales0) * 100;
+  if (fcf != null && salesLtm != null && salesLtm > 0) out.fcfMargin = (fcf / salesLtm) * 100;
   if (n(r.operMgn0) != null) out.operMgn = r.operMgn0 as number;
   if (n(r.operMgn0) != null && n(r.operMgn1) != null) out.operMgnTrend = (r.operMgn0 as number) - (r.operMgn1 as number);
   if (n(r.roe) != null) out.roe = r.roe as number;
   if (ni != null && ocf != null && assets != null && assets > 0) out.accruals = ((ni - ocf) / assets) * 100;
   if (debt != null && ebitda != null && ebitda > 0) out.debtEbitda = debt / ebitda;
   if (ebitda != null && intExp != null && intExp > 0) out.intCoverage = Math.min(50, ebitda / intExp);
-  if (sales0 != null && sales1 != null && sales1 > 0) out.revGrowth = ((sales0 - sales1) / sales1) * 100;
-  if (eps0 != null && eps1 != null && Math.abs(eps1) > 0.01) out.epsGrowth = ((eps0 - eps1) / Math.abs(eps1)) * 100;
+  if (salesQ0 != null && salesQ4 != null && salesQ4 > 0) out.revGrowth = ((salesQ0 - salesQ4) / salesQ4) * 100;
+  if (epsQ0 != null && epsQ4 != null && Math.abs(epsQ4) > 0.01) out.epsGrowth = ((epsQ0 - epsQ4) / Math.abs(epsQ4)) * 100;
   if (n(r.pe) != null && (r.pe as number) > 0) out.pe = r.pe as number;
   if (n(r.pbk) != null && (r.pbk as number) > 0) out.pbk = r.pbk as number;
   if (n(r.psales) != null && (r.psales as number) > 0) out.psales = r.psales as number;
@@ -160,7 +175,7 @@ export function altmanFlag(r: RawRow): { z: number; zone: "distress" | "grey" } 
   const n = (v: unknown): number | null => (typeof v === "number" && isFinite(v) ? v : null);
   const assets = n(r.assets);
   const wkcap = n(r.wkcap), re = n(r.retainEarn), ebitda = n(r.ebitda);
-  const mv = n(r.mktVal), debt = n(r.debt), sales = n(r.sales0);
+  const mv = n(r.mktVal), debt = n(r.debt), sales = n(r.salesLtm);
   if (assets == null || assets <= 0) return null;
   // Require the three core terms — absent data must not fabricate a flag.
   if (wkcap == null || re == null || ebitda == null) return null;

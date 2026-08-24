@@ -1,6 +1,7 @@
 import { NextRequest, NextResponse } from "next/server";
 import { createLogger } from "@/app/lib/logger";
 import { buildUniverseStep, readUniverse } from "@/app/lib/factor-universe";
+import { LIST_VERSION } from "@/app/lib/factor-constituents";
 
 /**
  * Factor-universe build pacer (Phase A2). Pinged by the Gmail Apps Script's
@@ -27,8 +28,12 @@ export async function GET(req: NextRequest) {
     const existing = await readUniverse();
     const ageDays = existing ? (Date.now() - Date.parse(existing.builtAt)) / 86_400_000 : Infinity;
     const isSunday = new Intl.DateTimeFormat("en-US", { timeZone: "America/New_York", weekday: "short" }).format(new Date()) === "Sun";
-    // Due when: forced, never built, stale beyond a week, or Sunday refresh.
-    const due = force || !existing || ageDays > 6.5 || (isSunday && ageDays > 0.5);
+    // Due when: forced, never built, built on an outdated constituent-list /
+    // formula-basis version (bumping LIST_VERSION triggers a prompt rebuild on
+    // the next 5-min ping instead of waiting for Sunday), stale beyond a week,
+    // or Sunday refresh.
+    const due =
+      force || !existing || existing.listVersion !== LIST_VERSION || ageDays > 6.5 || (isSunday && ageDays > 0.5);
     if (!due) return NextResponse.json({ skipped: true, ageDays: Math.round(ageDays * 10) / 10 });
 
     const result = await buildUniverseStep();
