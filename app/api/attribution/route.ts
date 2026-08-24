@@ -74,6 +74,8 @@ type StoredTransaction = {
   direction?: string;
   price?: number;
   targetWeight?: number;
+  type?: string;
+  profile?: string;
 };
 type StoredGroupState = {
   groupId?: string;
@@ -263,7 +265,18 @@ export async function GET(req: NextRequest) {
     // Sell transactions per symbol — lets fully-exited names still appear in
     // the contribution list (measured to the sale, weight estimated from the
     // model weight the sell recorded).
-    type SellTxn = { date: string; price: number | null; weightInClass: number; groupId: string | null; rawSymbol: string };
+    // `weight` semantics differ by writer: trade-flow sells record the raw
+    // weightInClass (needs × profile equity share); rebalance sells record
+    // modelPct = weightInClass × assetAlloc, i.e. already profile-scaled.
+    type SellTxn = {
+      date: string;
+      price: number | null;
+      weight: number;
+      preScaled: boolean;
+      groupId: string | null;
+      profile: string | null;
+      rawSymbol: string;
+    };
     const sellsBySymbol = new Map<string, SellTxn[]>();
     try {
       const raw = await redis.get("pm:pim-portfolio-state");
@@ -289,11 +302,13 @@ export async function GET(req: NextRequest) {
             list.push({
               date,
               price,
-              weightInClass:
+              weight:
                 typeof t.targetWeight === "number" && isFinite(t.targetWeight) && t.targetWeight > 0
                   ? t.targetWeight
                   : 0,
+              preScaled: t.type === "rebalance",
               groupId: gs.groupId ?? null,
+              profile: t.profile ?? null,
               rawSymbol: t.symbol,
             });
             sellsBySymbol.set(key, list);
@@ -510,9 +525,11 @@ export async function GET(req: NextRequest) {
         const profileGroups = groupsByProfile.get(profile);
         for (const [key, sells] of sellsBySymbol) {
           if (positionsByProfile.get(profile)?.has(key)) continue; // still held → handled above
-          const scoped = profileGroups
-            ? sells.filter((s) => s.groupId == null || profileGroups.has(s.groupId))
-            : sells;
+          const scoped = sells.filter(
+            (s) =>
+              (s.profile == null || s.profile === profile) &&
+              (!profileGroups || s.groupId == null || profileGroups.has(s.groupId)),
+          );
           const inPeriod = scoped.filter((s) => s.date > start && s.date <= todayIso);
           if (inPeriod.length === 0) continue; // exited before this period began
           const lastSell = inPeriod.reduce((a, b) => (a.date >= b.date ? a : b));
@@ -549,11 +566,28 @@ export async function GET(req: NextRequest) {
             continue;
           }
 
-          const weightSum = Math.min(1, inPeriod.reduce((s, x) => s + x.weightInClass, 0));
-          if (weightSum <= 0) {
-            excluded++;
-            continue; // no usable weight recorded on the sell — can't size it
+          // Exit weight per group = the LATEST sell's recorded model weight
+          // there (a full sell logs the holding's whole weightInClass; an
+          // earlier trim in the same group must not be added on top). Groups
+          // run the same model in parallel, so the profile-level weight is
+          // the AVERAGE of the groups' exit weights — summing across groups
+          // multiplied a name's weight by the number of groups that sold it.
+          const latestByGroup = new Map<string, SellTxn>();
+          for (const s of inPeriod) {
+            const gk = s.groupId ?? "__none";
+            const prev = latestByGroup.get(gk);
+            if (!prev || s.date > prev.date) latestByGroup.set(gk, s);
           }
+          const exitWeights = [...latestByGroup.values()]
+            // portfolio-level fraction; no single name is 15%+ — treat larger as corrupt
+            .map((s) => Math.min(s.preScaled ? s.weight : s.weight * equityAlloc, 0.15))
+            .filter((w) => w > 0);
+          if (exitWeights.length === 0) {
+            excluded++;
+            continue; // no usable weight recorded on the sells — can't size it
+          }
+          const exitWeightPct =
+            (exitWeights.reduce((a, b) => a + b, 0) / exitWeights.length) * 100;
 
           const stock = stockLookup.get(key);
           const isUsd = stock ? stock.currency === "USD" : !isCad(tk);
@@ -568,7 +602,7 @@ export async function GET(req: NextRequest) {
             marketValueCad: 0,
             costBasisCad: startPriceNative * (isUsd ? fxStart : 1),
             priceCad: endPriceNative * (isUsd ? fxEnd : 1),
-            fixedWeightPct: weightSum * equityAlloc * 100,
+            fixedWeightPct: exitWeightPct,
             soldOn: lastSell.date,
             ...(clamped ? { ownedSince: baselineDate } : {}),
           });
