@@ -47,7 +47,7 @@ const RANKED_LAYOUT = [
   "smax", "sector", "price", "pnf 1%", "1d", "1w", "1m", "3m", "ytd",
 ];
 
-const TICKER_RE = /^[A-Z][A-Z0-9]{0,5}(?:[.\-][A-Z]{1,3})?$/;
+const TICKER_RE = /^[A-Z][A-Z0-9]{0,5}(?:[.\-][A-Z0-9]{1,3}){0,2}$/;
 
 /**
  * Try to read a headerless file as SIA's ranked export.
