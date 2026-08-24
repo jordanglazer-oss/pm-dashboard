@@ -188,6 +188,27 @@ const QUALITY_KEYS: ScoreKey[] = [
 ];
 const QUALITY_MAX = 8; // sum of individual maxes: 3 + 2 + 1 + 2
 
+// ── DATA GAP renormalization support ───────────────────────────────────
+// The AI/SEMI categories the model scores (and may park with the DATA GAP
+// default). Computed categories have their own N/A paths above; manual
+// categories are PM-entered and have no gap concept.
+const AI_SEMI_KEYS: ScoreKey[] = SCORE_GROUPS.flatMap((g) =>
+  g.categories.filter((c) => c.inputType === "auto" || c.inputType === "semi").map((c) => c.key as ScoreKey)
+);
+const CATEGORY_MAX: Partial<Record<ScoreKey, number>> = Object.fromEntries(
+  SCORE_GROUPS.flatMap((g) => g.categories.map((c) => [c.key, c.max]))
+);
+
+/** True when a category's explanation marks it as gap-parked. The scoring
+ *  prompt mandates the exact "DATA GAP:" summary prefix for this case, so the
+ *  prefix is the machine-readable contract. Legacy string[] explanations
+ *  predate the DATA GAP rule entirely → never gap-parked. */
+function isDataGapExplanation(expl: unknown): boolean {
+  if (!expl || Array.isArray(expl) || typeof expl !== "object") return false;
+  const summary = (expl as { summary?: unknown }).summary;
+  return typeof summary === "string" && summary.trimStart().toUpperCase().startsWith("DATA GAP");
+}
+
 /**
  * Compute a quality factor (0 → 1) from the stock's quality-related scores.
  * 0 = lowest quality (all zeros), 1 = highest quality (all maxed out).
@@ -445,6 +466,26 @@ export function computeScores(
     applicableSum -= stock.scores.ownershipTrends || 0;
     effectiveMax -= OWNERSHIP_MAX;
   }
+  // DATA GAP renormalization: a category the model parked with the DATA GAP
+  // default (explanation summary opens "DATA GAP:") is a COVERAGE gap, not a
+  // judgment — yet the parked value (1 for 2/3-pt, 0 for 1-pt categories) is
+  // indistinguishable from a real low grade in the composite, so missing data
+  // silently penalizes the score. Treat gaps exactly like the external-source
+  // N/A cases above: drop the category from numerator AND denominator and let
+  // renormalization spread its weight over the categories that have data. The
+  // parked value stays visible in the accordion (with its "DATA GAP:" chip);
+  // it just no longer moves the composite. Skip keys already dropped above
+  // (e.g. ownershipTrends on Canadian listings is BOTH N/A-dropped and
+  // gap-labeled — subtracting twice would double-count the removal).
+  const gapExcluded: ScoreKey[] = [];
+  for (const key of AI_SEMI_KEYS) {
+    if (key === "ownershipTrends" && !ownershipTrendsApplies(stock)) continue;
+    if (isDataGapExplanation(stock.explanations?.[key])) {
+      applicableSum -= stock.scores[key] || 0;
+      effectiveMax -= CATEGORY_MAX[key] ?? 0;
+      gapExcluded.push(key);
+    }
+  }
   const normalizedSum = effectiveMax > 0 ? applicableSum * (MAX_SCORE / effectiveMax) : applicableSum;
   // Round to 1 decimal to avoid IEEE 754 floating-point noise
   // (e.g. 21.490000000000002 → 21.5)
@@ -492,6 +533,7 @@ export function computeScores(
     regimeFitNext,
     anticipatedRegime: anticipated,
     transitionWeight: p,
+    ...(gapExcluded.length > 0 ? { gapExcluded } : {}),
   };
 }
 

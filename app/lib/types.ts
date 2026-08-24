@@ -464,6 +464,13 @@ export type ScoredStock = Stock & {
    *  net revision count + the points removed so the UI can badge it —
    *  the haircut is NEVER applied silently. */
   valueTrap?: { net: number; pointsRemoved: number };
+  /** Categories excluded from the composite because the model parked them
+   *  with the DATA GAP default (explanation summary opens "DATA GAP:").
+   *  A coverage gap is not a judgment: the category drops out of numerator
+   *  and denominator (same renormalization as the external-source N/A
+   *  cases) instead of masquerading as a low grade. Carried on the scored
+   *  stock so the UI can badge the exclusion — never applied silently. */
+  gapExcluded?: ScoreKey[];
 };
 
 export type MarketData = {
