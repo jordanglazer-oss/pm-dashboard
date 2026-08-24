@@ -18,7 +18,6 @@
 
 import { getRedis } from "./redis";
 import { canonicalTicker, sameCompanyLoose } from "./ticker";
-import { getSnapshotForTicker, type AnalystSnapshots } from "./analyst-snapshots";
 
 export type MentionDirection = "bullish" | "bearish";
 
@@ -44,13 +43,6 @@ export type Mention = {
   direction: MentionDirection;
   /** ISO timestamp the cache entry was analyzed at (Newton Upticks / scrape route). */
   analyzedAt?: string;
-  /** Whether this mention contributed to the score. False for an RBC/JPM
-   *  list mention when that firm's rating already sits in analystConsensus
-   *  for this name — the same firm's direction must not count in two
-   *  categories. The mention still renders (with `note`) for transparency. */
-  scored: boolean;
-  /** Why an unscored mention contributed 0. */
-  note?: string;
 };
 
 export type ResearchMentionsResult = {
@@ -69,11 +61,6 @@ type SourceConfig = {
   /** Field name on the pm:research blob whose entry list this source maps to. */
   field: string;
   direction: MentionDirection;
-  /** Set for lists curated by a firm that also holds a rating seat in
-   *  analystConsensus (RBC, JPM). Used to suppress the score contribution
-   *  when that firm's rating is already entered for the name — fallback
-   *  semantics: the list speaks for the firm only until its report does. */
-  firm?: "rbc" | "jpm";
 };
 
 // Sources now map to the LISTS on the pm:research blob — the same merged,
@@ -94,13 +81,13 @@ const SOURCES: SourceConfig[] = [
   { source: "fundstrat-smid-bottom", label: "Fundstrat SMID Bottom", field: "fundstratSmidBottom", direction: "bearish" },
   { source: "fundstrat-largecap-core", label: "Fundstrat Large-Cap Core", field: "fundstratLargeCapCore", direction: "bullish" },
   { source: "fundstrat-smid-core", label: "Fundstrat SMID Core", field: "fundstratSmidCore", direction: "bullish" },
-  { source: "rbc-focus", label: "RBC Canadian Focus", field: "rbcCanadianFocus", direction: "bullish", firm: "rbc" },
-  { source: "rbc-us-focus", label: "RBC US Focus", field: "rbcUsFocus", direction: "bullish", firm: "rbc" },
-  { source: "jpm-us-analyst-focus", label: "JPM US Analyst Focus", field: "jpmUsAnalystFocus", direction: "bullish", firm: "jpm" },
-  { source: "rbc-equate-cad", label: "RBC Equate CAD (CORE 40)", field: "equateCad", direction: "bullish", firm: "rbc" },
-  { source: "rbc-equate-usd", label: "RBC Equate USD (CORE 40)", field: "equateUsd", direction: "bullish", firm: "rbc" },
+  { source: "rbc-focus", label: "RBC Canadian Focus", field: "rbcCanadianFocus", direction: "bullish" },
+  { source: "rbc-us-focus", label: "RBC US Focus", field: "rbcUsFocus", direction: "bullish" },
+  { source: "jpm-us-analyst-focus", label: "JPM US Analyst Focus", field: "jpmUsAnalystFocus", direction: "bullish" },
+  { source: "rbc-equate-cad", label: "RBC Equate CAD (CORE 40)", field: "equateCad", direction: "bullish" },
+  { source: "rbc-equate-usd", label: "RBC Equate USD (CORE 40)", field: "equateUsd", direction: "bullish" },
   { source: "seeking-alpha-picks", label: "Seeking Alpha Picks", field: "alphaPicks", direction: "bullish" },
-  { source: "rbccm-few", label: "RBCCM Canadian FEW", field: "rbccmFew", direction: "bullish", firm: "rbc" },
+  { source: "rbccm-few", label: "RBCCM Canadian FEW", field: "rbccmFew", direction: "bullish" },
 ];
 
 type ResearchListEntry = { ticker?: unknown; analyzedAt?: unknown; dateAdded?: unknown };
@@ -110,23 +97,12 @@ export async function tallyResearchMentions(ticker: string): Promise<ResearchMen
   const target = canonicalTicker(ticker);
 
   // Read the merged research state once (the same blob the Research page
-  // displays), plus the consensus snapshot for the double-count guard below.
+  // displays). One Redis read instead of eight cache reads.
   let research: Record<string, unknown> | null = null;
-  let firmCovered: { rbc: boolean; jpm: boolean } = { rbc: false, jpm: false };
   try {
     const redis = await getRedis();
-    const [raw, rawSnap] = await Promise.all([redis.get("pm:research"), redis.get("pm:analyst-snapshots")]);
+    const raw = await redis.get("pm:research");
     if (raw) research = JSON.parse(raw) as Record<string, unknown>;
-    // Double-count guard (user call, 2026-08-25): when RBC's/JPM's RATING is
-    // already entered in analystConsensus for this name, that firm's curated
-    // LISTS stop contributing points here — the same firm's direction must
-    // not be counted in two categories. The list mention is a FALLBACK voice
-    // for the firm until its report is uploaded. READ-ONLY on the snapshot.
-    if (rawSnap) {
-      const snap = getSnapshotForTicker(JSON.parse(rawSnap) as AnalystSnapshots, target);
-      const rated = (e?: { rating?: string }) => !!e?.rating && e.rating !== "not-covered";
-      firmCovered = { rbc: rated(snap?.rbc), jpm: rated(snap?.jpm) };
-    }
   } catch {
     research = null;
   }
@@ -148,7 +124,6 @@ export async function tallyResearchMentions(ticker: string): Promise<ResearchMen
     });
     if (!hit) continue;
 
-    const suppressed = !!cfg.firm && firmCovered[cfg.firm];
     mentions.push({
       source: cfg.source,
       label: cfg.label,
@@ -161,12 +136,8 @@ export async function tallyResearchMentions(ticker: string): Promise<ResearchMen
           : typeof hit.dateAdded === "string"
             ? hit.dateAdded
             : undefined,
-      scored: !suppressed,
-      ...(suppressed
-        ? { note: `${cfg.firm === "rbc" ? "RBC" : "JPM"} rating already counted in Analyst consensus — list membership not double-counted` }
-        : {}),
     });
-    if (!suppressed) rawDelta += cfg.direction === "bullish" ? 1 : -1;
+    rawDelta += cfg.direction === "bullish" ? 1 : -1;
   }
 
   const score = Math.max(0, Math.min(3, rawDelta));
