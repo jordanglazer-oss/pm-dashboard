@@ -569,13 +569,67 @@ export function ModelScenarios({ groups }: Props) {
    * all-equity mandate has no bond sleeve for a bond trade to land in.
    */
   const acrossProfiles = useMemo(() => {
-    if (!group || actions.length === 0) return [];
+    /**
+     * The asset-mix override propagates too, as a RELATIVE change anchored to
+     * the edited profile's MODEL TARGETS (Jordan's rule): typing 24% into a
+     * sleeve whose target is 25% is a ×0.96 on that sleeve in EVERY mandate —
+     * Growth's 11% bond target becomes 10.56%, not 24%. Anchoring to targets
+     * rather than today's drifted splits keeps the scaling factor the same no
+     * matter which basis the scenario was started from. Only boxes the PM
+     * actually edited propagate — the editor seeds itself from the current
+     * splits, so an untouched box (which under an "actual" basis already sits
+     * off-target) must not read as a proposed shift.
+     */
+    const shiftActive =
+      allocOverride &&
+      customAlloc != null &&
+      (["equity", "fixedIncome", "alternative"] as const).some(
+        (c) => !sameAtDisplay(customAlloc[c], basisAlloc[c] ?? 0),
+      );
+    const allocShift = shiftActive ? customAlloc : null;
+    if (!group || (actions.length === 0 && !allocShift)) return [];
+    const edited = group.profiles[profile];
+    const editedTgt = edited
+      ? { equity: edited.equity, fixedIncome: edited.fixedIncome, alternative: edited.alternatives }
+      : null;
     const order: PimProfileType[] = ["conservative", "balanced", "growth", "allEquity"];
     return order
       .filter((p) => group.profiles[p])
       .map((p) => {
         const w = group.profiles[p]!;
         const alloc = { equity: w.equity, fixedIncome: w.fixedIncome, alternative: w.alternatives };
+        let allocAfter = { ...alloc };
+        const allocMoves: { cls: PimAssetClass | "cash"; from: number; to: number }[] = [];
+        if (allocShift && editedTgt) {
+          for (const cls of ["equity", "fixedIncome", "alternative"] as PimAssetClass[]) {
+            if (sameAtDisplay(allocShift[cls], basisAlloc[cls] ?? 0)) continue; // box untouched
+            const anchor = editedTgt[cls] ?? 0;
+            allocAfter[cls] =
+              anchor > 0
+                ? alloc[cls] * (allocShift[cls] / anchor)
+                : // No target sleeve to scale against — carry the new sleeve
+                  // over as the same share of the portfolio instead.
+                  alloc[cls] + allocShift[cls];
+          }
+          const sum = allocAfter.equity + allocAfter.fixedIncome + allocAfter.alternative;
+          // Cash absorbs what the scaled classes free up; if they instead
+          // OVERFLOW 100% (an equity-heavy mandate scaled further up), the
+          // classes are renormalised down together — cash cannot go negative.
+          if (sum > 1) {
+            allocAfter = {
+              equity: allocAfter.equity / sum,
+              fixedIncome: allocAfter.fixedIncome / sum,
+              alternative: allocAfter.alternative / sum,
+            };
+          }
+          for (const cls of ["equity", "fixedIncome", "alternative"] as PimAssetClass[]) {
+            if (!sameAtDisplay(alloc[cls], allocAfter[cls]))
+              allocMoves.push({ cls, from: alloc[cls], to: allocAfter[cls] });
+          }
+          const cashFrom = Math.max(0, 1 - alloc.equity - alloc.fixedIncome - alloc.alternative);
+          const cashTo = Math.max(0, 1 - allocAfter.equity - allocAfter.fixedIncome - allocAfter.alternative);
+          if (!sameAtDisplay(cashFrom, cashTo)) allocMoves.push({ cls: "cash", from: cashFrom, to: cashTo });
+        }
         const before = applyScenario(baseHoldings, [], {
           basis: basis === "actual" && hasActuals ? "actual" : "model",
           actualWeights, isCore, residual, residualTargets, pinnedSymbols: pinned,
@@ -584,7 +638,7 @@ export function ModelScenarios({ groups }: Props) {
         const after = applyScenario(baseHoldings, actions, {
           basis: basis === "actual" && hasActuals ? "actual" : "model",
           actualWeights, isCore, residual, residualTargets, pinnedSymbols: pinned,
-          allocations: alloc, targetAllocations: startAlloc,
+          allocations: allocAfter, targetAllocations: startAlloc,
         });
         const wt = (r: typeof after, sym: string) => {
           const x = r.holdings.find((y) => y.symbol === sym);
@@ -600,12 +654,13 @@ export function ModelScenarios({ groups }: Props) {
           })
           .filter((m) => !sameAtDisplay(m.from ?? 0, m.to ?? 0));
         // Which classes this scenario touches, and whether this profile holds
-        // any of them at all.
+        // any of them at all. An allocation shift counts as touching a class
+        // even when the mandate holds nothing in it (the shift can create it).
         const touchedClasses = [...new Set(moves.map((m) => m.cls))];
-        const applies = touchedClasses.some((c) => (alloc[c] ?? 0) > 0);
-        return { profile: p, alloc, moves, applies, touchedClasses };
+        const applies = touchedClasses.some((c) => (alloc[c] ?? 0) > 0) || allocMoves.length > 0;
+        return { profile: p, alloc, allocMoves, moves, applies, touchedClasses };
       });
-  }, [group, actions, baseHoldings, basis, hasActuals, actualWeights, isCore, residual, residualTargets, startAlloc, pinned]);
+  }, [group, profile, actions, baseHoldings, basis, hasActuals, actualWeights, isCore, residual, residualTargets, startAlloc, pinned, allocOverride, customAlloc, basisAlloc]);
 
   /**
    * The allocation the LEFT-HAND column is scaled by — a fixed reference point.
@@ -1899,13 +1954,16 @@ export function ModelScenarios({ groups }: Props) {
             );
           })()}
 
-          {/* Across the other mandates */}
-          {acrossProfiles.length > 1 && actions.length > 0 && (
+          {/* Across the other mandates — non-empty whenever there are actions
+              OR an asset-mix shift in force, so an allocation-only scenario
+              still shows how it lands on every profile. */}
+          {acrossProfiles.length > 1 && (
             <div className="mt-4 overflow-hidden rounded-card border border-line bg-white">
               <div className="flex items-center justify-between border-b border-line-soft px-4 py-2.5">
                 <h3 className="text-sm font-bold text-ink">Across the other mandates</h3>
                 <span className="text-xs text-ink-3">
-                  one holdings list, scaled by each profile&apos;s asset mix
+                  one holdings list, scaled by each profile&apos;s asset mix; mix shifts scale
+                  relative to each mandate&apos;s targets
                 </span>
               </div>
               <div className="max-w-full overflow-x-auto">
@@ -1932,17 +1990,32 @@ export function ModelScenarios({ groups }: Props) {
                               this mandate — unaffected
                             </span>
                           ) : (
-                            <span className="flex flex-wrap gap-x-3 gap-y-1 font-mono text-xs">
-                              {p.moves.map((m) => (
-                                <span key={m.sym} className="whitespace-nowrap">
-                                  <span className="font-sans text-ink-3">{displayTicker(m.sym)}</span>{" "}
-                                  {m.from == null ? "—" : pct(m.from)} →{" "}
-                                  <span className="font-semibold text-ink">
-                                    {m.to == null ? "—" : pct(m.to)}
-                                  </span>
+                            <>
+                              {p.allocMoves.length > 0 && (
+                                <span className="mb-1 flex flex-wrap gap-x-3 gap-y-1 font-mono text-xs">
+                                  {p.allocMoves.map((m) => (
+                                    <span key={m.cls} className="whitespace-nowrap">
+                                      <span className="font-sans font-medium text-ink-3">
+                                        {m.cls === "cash" ? "Cash" : ASSET_CLASS_LABELS[m.cls]}
+                                      </span>{" "}
+                                      {pct(m.from)} →{" "}
+                                      <span className="font-semibold text-ink">{pct(m.to)}</span>
+                                    </span>
+                                  ))}
                                 </span>
-                              ))}
-                            </span>
+                              )}
+                              <span className="flex flex-wrap gap-x-3 gap-y-1 font-mono text-xs">
+                                {p.moves.map((m) => (
+                                  <span key={m.sym} className="whitespace-nowrap">
+                                    <span className="font-sans text-ink-3">{displayTicker(m.sym)}</span>{" "}
+                                    {m.from == null ? "—" : pct(m.from)} →{" "}
+                                    <span className="font-semibold text-ink">
+                                      {m.to == null ? "—" : pct(m.to)}
+                                    </span>
+                                  </span>
+                                ))}
+                              </span>
+                            </>
                           )}
                         </td>
                       </tr>
