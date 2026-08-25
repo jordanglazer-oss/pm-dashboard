@@ -1561,7 +1561,7 @@ export function ModelScenarios({ groups }: Props) {
                         into an unreadable width; the page itself never scrolls
                         horizontally because the overflow is owned here. */}
                     <div className="max-w-full overflow-x-auto">
-                      <table className="w-full min-w-[860px] text-sm">
+                      <table className="w-full min-w-[920px] text-sm">
                         <thead className="bg-white shadow-[0_1px_0_0_rgb(226_232_240)]">
                           <tr className="border-b border-line-soft text-xs text-ink-3">
                             <th
@@ -1578,6 +1578,12 @@ export function ModelScenarios({ groups }: Props) {
                             </th>
                             <th className="py-2.5 px-2 text-right font-semibold whitespace-nowrap">Scenario Wt</th>
                             <th className="py-2.5 px-2 text-right font-semibold whitespace-nowrap">Δ</th>
+                            <th
+                              className="py-2.5 px-2 text-right font-semibold whitespace-nowrap"
+                              title="Relative change vs the starting weight (Δ ÷ starting weight)"
+                            >
+                              Δ %
+                            </th>
                             <th className="py-2.5 px-2 text-right font-semibold whitespace-nowrap">CAD Model</th>
                             <th className="py-2.5 px-2 text-right font-semibold whitespace-nowrap">USD Model</th>
                             <th className="py-2.5 px-2 text-right font-normal whitespace-nowrap opacity-70">
@@ -1693,6 +1699,29 @@ export function ModelScenarios({ groups }: Props) {
                                   return `${d >= 0 ? "+" : ""}${pct(d)}`;
                                 })()}
                               </td>
+                              <td
+                                className={(() => {
+                                  // Same move expressed relative to the position
+                                  // itself: 25% → 20% reads −20%, so a trim of a
+                                  // small position registers as loudly as one of
+                                  // a large position.
+                                  const d = (dToP.values[i] ?? 0) - (dFromP.values[i] ?? 0);
+                                  const flat =
+                                    sameAtDisplay(dFromP.values[i], dToP.values[i]) || !(dFromP.values[i] ?? 0);
+                                  return `py-2 px-2 text-right font-mono text-xs ${
+                                    flat ? "text-ink-faint" : d >= 0 ? "text-pos" : "text-neg"
+                                  }`;
+                                })()}
+                              >
+                                {(() => {
+                                  const from = dFromP.values[i] ?? 0;
+                                  const d = (dToP.values[i] ?? 0) - from;
+                                  if (sameAtDisplay(dFromP.values[i], dToP.values[i])) return "—";
+                                  if (!from) return "—"; // new position: no base to measure against
+                                  const rel = (d / from) * 100;
+                                  return `${rel >= 0 ? "+" : ""}${Math.abs(rel) >= 99.95 ? rel.toFixed(0) : rel.toFixed(1)}%`;
+                                })()}
+                              </td>
                               <td className="py-2 px-2 text-right font-mono text-xs text-ink-2">
                                 {dCad.values[i] == null ? <span className="text-ink-faint">&mdash;</span> : pct(dCad.values[i] as number)}
                               </td>
@@ -1746,6 +1775,21 @@ export function ModelScenarios({ groups }: Props) {
                                 ? "—"
                                 : `${dToP.total > dFromP.total ? "+" : ""}${pct(dToP.total - dFromP.total)}`}
                             </td>
+                            <td
+                              className={`py-2 px-2 text-right font-mono text-xs font-bold ${
+                                sameAtDisplay(dFromP.total, dToP.total) || !dFromP.total
+                                  ? "text-ink-faint"
+                                  : dToP.total > dFromP.total
+                                    ? "text-pos"
+                                    : "text-neg"
+                              }`}
+                            >
+                              {(() => {
+                                if (sameAtDisplay(dFromP.total, dToP.total) || !dFromP.total) return "—";
+                                const rel = ((dToP.total - dFromP.total) / dFromP.total) * 100;
+                                return `${rel >= 0 ? "+" : ""}${Math.abs(rel) >= 99.95 ? rel.toFixed(0) : rel.toFixed(1)}%`;
+                              })()}
+                            </td>
                             <td className="py-2 px-2 text-right font-mono text-xs font-bold">{pct(dCad.total)}</td>
                             <td className="py-2 px-2 text-right font-mono text-xs font-bold">{pct(dUsd.total)}</td>
                             <td className="py-2 px-2 text-right font-mono text-xs text-ink-faint">
@@ -1756,7 +1800,7 @@ export function ModelScenarios({ groups }: Props) {
                           {/* Add straight into the sleeve you're looking at —
                               the class is implied by where the row sits. */}
                           <tr>
-                            <td colSpan={10} className="py-2 pl-4 pr-4">
+                            <td colSpan={12} className="py-2 pl-4 pr-4">
                               {addingTo === ac ? (
                                 <span className="flex flex-col gap-2 text-xs sm:flex-row sm:flex-wrap sm:items-center">
                                   <input
