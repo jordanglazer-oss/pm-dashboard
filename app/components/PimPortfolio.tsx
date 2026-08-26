@@ -49,11 +49,13 @@ type QueuedTrade = {
   buyTicker: string;
   buyPrice: string;
   buyName: string;
-  /** Model group ids the bought ticker is INELIGIBLE for. Defaults to the
-   *  auto-rule exclusion (No US Situs when the buy is US-listed/USD). The user
-   *  can override per-model via the eligibility checkboxes in the buy ticket.
-   *  Excluded models that held the sold ticker get the freed weight
-   *  redistributed to their Core ETFs (NOT a formal rebalance). */
+  /** Model group ids this trade does NOT apply to. Defaults to the auto-rule
+   *  exclusion (No US Situs when the buy is US-listed/USD); user-overridable
+   *  via the checkboxes in the buy ticket. An unticked model is left
+   *  COMPLETELY untouched — no sell, no buy, no position change, no
+   *  transaction row. (The old semantics executed the sell leg there and
+   *  redistributed the freed weight, skewing sleeves the PM had opted out
+   *  of.) */
   excludedGroupIds: string[];
   /** Which model sleeve the bought security belongs to. Defaults from the
    *  sold holding's class (switches) or a name heuristic (pure buys); shown
@@ -1937,11 +1939,13 @@ export function PimPortfolio({ groups }: Props) {
     const tickerEq = (a: string, b: string) =>
       a === b || a.replace("-T", ".TO") === b.replace("-T", ".TO");
 
-    /** Model group ids the bought ticker is INELIGIBLE for — the unticked
-     *  models in the buy ticket, plus the No-US-Situs auto-rule. Hoisted above
-     *  the plan build because eligibility, not the sold name's presence, is
-     *  what decides where the buy lands. */
-    const excludedSet = new Set(trade.excludedGroupIds || []);
+    /** Model group ids this trade does NOT apply to — the unticked models in
+     *  the buy ticket, plus the No-US-Situs auto-rule. An excluded model is
+     *  left completely untouched: no sell, no buy, no position change, no
+     *  transaction row. Gated on buyTicker because the checkbox UI only
+     *  exists on the buy side — a sell-only trade must not inherit stale
+     *  exclusions from a buy that was picked and then cleared. */
+    const excludedSet = new Set(buyTicker ? trade.excludedGroupIds || [] : []);
 
     /** Groups where the model got the bought holding but the book got no
      *  shares, because there was no sold position there to fund it. */
@@ -2003,11 +2007,12 @@ export function PimPortfolio({ groups }: Props) {
     const skippedDueToBoughtPresent: string[] = [];
     if (trade.sellSymbol) {
       for (const g of originalPim.groups) {
-        // Excluded groups STAY in the plan on purpose. Unticking a model means
-        // "cannot BUY here", not "leave this model alone" — a name being sold
-        // is sold everywhere it is held. The updatedGroups mapping below gives
-        // those groups the sell-only treatment: remove the holding and hand
-        // its weight to the Core ETFs.
+        // Unticked models are left COMPLETELY untouched — neither leg
+        // executes there. The old semantics ("cannot buy here, but the sell
+        // still applies") sold JBND out of excluded models with no buy to
+        // absorb the weight, skewing the sleeve (15.4/12.6 instead of 14/14)
+        // and trimming positions the PM had explicitly opted out of.
+        if (excludedSet.has(g.id)) continue;
         const sold = g.holdings.find((h) => tickerEq(h.symbol, trade.sellSymbol));
         if (!sold) continue;
         const boughtAlreadyPresent = g.holdings.some((h) => tickerEq(h.symbol, buyTicker));
@@ -2020,13 +2025,16 @@ export function PimPortfolio({ groups }: Props) {
     }
 
     // Groups holding the sold ticker WITHOUT the already-holds-the-buy skip.
-    // A partial sell trims the target everywhere the name is held; whether
+    // A partial sell trims the target everywhere the trade applies; whether
     // the bought name is already present decides only whether it gets ADDED,
     // not whether the trim applies. (A full switch still uses swapPlan — it
     // must not put the bought name into a group that already holds it.)
+    // Excluded groups are skipped for the same reason as swapPlan: unticked
+    // means the model is not part of this trade at all.
     const trimPlan: SwapPlan[] = [];
     if (trade.sellSymbol) {
       for (const g of originalPim.groups) {
+        if (excludedSet.has(g.id)) continue;
         const sold = g.holdings.find((h) => tickerEq(h.symbol, trade.sellSymbol));
         if (sold) trimPlan.push({ groupId: g.id, groupName: g.name, soldHolding: sold });
       }
@@ -2155,7 +2163,16 @@ export function PimPortfolio({ groups }: Props) {
     //
     // SKIPPED for partial sells — the position is being reduced, not
     // closed out, so the stock stays in Portfolio.
-    if (trade.sellSymbol && !isPartialSell) {
+    /** Excluded models that still hold the sold name after a full sell —
+     *  the name is NOT fully exited, so the Portfolio → Watchlist demotion
+     *  must not happen. */
+    const soldKeptInGroups: string[] = excludedSet.size > 0 && trade.sellSymbol && !isPartialSell
+      ? originalPim.groups
+          .filter((g) => excludedSet.has(g.id) && g.holdings.some((h) => tickerEq(h.symbol, trade.sellSymbol)))
+          .map((g) => g.name)
+      : [];
+
+    if (trade.sellSymbol && !isPartialSell && soldKeptInGroups.length === 0) {
       const soldStock = stocks.find((s) => tickerEq(s.ticker, trade.sellSymbol));
       if (soldStock?.bucket === "Portfolio") {
         // Same reason as the buy side: this fires removeFromPimModels, which
@@ -2325,9 +2342,6 @@ export function PimPortfolio({ groups }: Props) {
           : buyTicker.endsWith("-T") || buyTicker.endsWith(".TO")
             ? "CAD"
             : swapPlan[0].soldHolding.currency; // inherit when suffix is silent
-      /** Excluded groups where a full sell of a non-equity name cannot be
-       *  expressed — the sleeve has no sibling to absorb the freed weight. */
-      const fullSellSoleSleeve: string[] = [];
       const updatedGroups = originalPim.groups.map((g) => {
         const plan = swapPlan.find((p) => p.groupId === g.id);
         if (!plan) {
@@ -2349,54 +2363,10 @@ export function PimPortfolio({ groups }: Props) {
             ? { ...g, holdings: rebalanceStockWeights(added, buyStockForRebalance, g.id) }
             : { ...g, holdings: added };
         }
-        if (excludedSet.has(g.id) && plan.soldHolding.assetClass !== "equity") {
-          // Buy ineligible here and the sold name is non-equity: the Core
-          // redistribution below is equity-only, so the sleeve itself must
-          // absorb the freed weight or the class-sum guard aborts.
-          const sold = plan.soldHolding;
-          const remaining = g.holdings.filter((h) => h !== sold);
-          const redistributed = redistributeWithinClass(
-            remaining, sold.assetClass, sold.symbol, sold.weightInClass,
-          );
-          if (redistributed === null) {
-            fullSellSoleSleeve.push(g.name);
-            return g;
-          }
-          return { ...g, holdings: redistributed };
-        }
-        if (excludedSet.has(g.id)) {
-          // Buy is INELIGIBLE for this model (e.g. No US Situs + US-listed
-          // buy). Remove the sold holding and redistribute its freed weight
-          // to this group's Core ETFs via rebalanceStockWeights. This is NOT
-          // the formal Rebalance feature — no transaction log, no rebalance
-          // prices, no drift reset; just a weight redistribution so the
-          // class still sums to 100%.
-          const sold = plan.soldHolding;
-          const remaining = g.holdings.filter((h) => h !== sold);
-          // Prefer same-currency Core ETFs so the 50/50 CAD/USD balance is
-          // preserved (e.g. a freed USD weight flows to XUU.U / XUS.U, not
-          // the CAD Core ETFs). Distribute proportional to current weight.
-          const sameCcyCore = remaining.filter(
-            (h) => h.assetClass === "equity" && h.currency === sold.currency &&
-              coreSymbols.has(symbolToTicker(h.symbol)),
-          );
-          if (sameCcyCore.length === 0) {
-            // No same-currency Core ETF in this group (e.g. PC USA's CAD
-            // sleeve is stocks-only) — fall back to the generic Core
-            // redistribution so the class still sums to 100%.
-            return { ...g, holdings: rebalanceStockWeights(remaining, undefined, g.id) };
-          }
-          // Split EVENLY across the same-currency Core ETFs. Proportional
-          // distribution quietly widened whichever Core holding was already
-          // largest every time a name was excluded; an even split leaves the
-          // Core sleeve's internal balance where it was set.
-          const freed = sold.weightInClass;
-          const perCore = freed / sameCcyCore.length;
-          const redistributed = remaining.map((h) =>
-            sameCcyCore.includes(h) ? { ...h, weightInClass: h.weightInClass + perCore } : h,
-          );
-          return { ...g, holdings: redistributed };
-        }
+        // NOTE: excluded groups never make it into swapPlan — an unticked
+        // model is left completely untouched (no sell, no buy), so the old
+        // "remove the sold holding and hand its weight to Core" branch for
+        // excluded groups is gone by design.
         return {
           ...g,
           holdings: g.holdings.map((h) =>
@@ -2412,13 +2382,6 @@ export function PimPortfolio({ groups }: Props) {
           ),
         };
       });
-
-      if (fullSellSoleSleeve.length > 0) {
-        return {
-          ok: false,
-          error: `${displayTicker(trade.sellSymbol)} is the only holding in its sleeve for ${fullSellSoleSleeve.join(", ")}, and the buy is excluded there — the freed weight has nowhere to go. Make the buy eligible for those models or replace the holding there first. No changes persisted.`,
-        };
-      }
 
       // Shared with the partial-sell block above — see assertClassSumsSafe.
       const guardError = assertClassSumsSafe(originalPim.groups, updatedGroups, affectedGroupIds);
@@ -2504,7 +2467,8 @@ export function PimPortfolio({ groups }: Props) {
                 // state — consistent with the position math below.
                 positionsRef.current
                   .filter((pp) => pp.positions.some((p) => tickerEq(p.symbol, trade.sellSymbol) && p.units > 0))
-                  .map((pp) => pp.groupId),
+                  .map((pp) => pp.groupId)
+                  .filter((gid) => !excludedSet.has(gid)),
               )
             ).map((gid) => ({ groupId: gid, soldWeightInClass: 0 }))
           : [{ groupId: selectedGroupId, soldWeightInClass: 0 }]; // fallback for pure buy / ticker-not-in-any-model
@@ -2642,6 +2606,10 @@ export function PimPortfolio({ groups }: Props) {
             currentPositions
               .filter((pp) => pp.positions.some((p) => tickerEq(p.symbol, trade.sellSymbol) && p.units > 0))
               .map((pp) => pp.groupId)
+              // Unticked models are untouched on BOTH legs — the book must
+              // not sell there either, or the position drifts away from a
+              // model target that never moved.
+              .filter((gid) => !excludedSet.has(gid))
           )
         : affectedGroupIds;
 
@@ -2865,6 +2833,10 @@ export function PimPortfolio({ groups }: Props) {
     }
     if (partialTrimNotApplied) {
       const note = `${trade.sellSymbol} is an individual stock, and individual stocks are equal-weighted by design — the model target could NOT be trimmed. The position was reduced; the model still targets the full weight.`;
+      warning = warning ? `${warning} ${note}` : note;
+    }
+    if (soldKeptInGroups.length > 0) {
+      const note = `${trade.sellSymbol} was NOT sold in ${soldKeptInGroups.join(", ")} (unticked models are left untouched), so it stays in the Portfolio bucket and keeps its targets there.`;
       warning = warning ? `${warning} ${note}` : note;
     }
     if (soleSleeveGroups.length > 0) {
@@ -3505,7 +3477,7 @@ export function PimPortfolio({ groups }: Props) {
                     <div className="mt-3 rounded-lg border border-line bg-surface-2 p-2.5">
                       <div className="flex items-center justify-between gap-2 mb-1.5">
                         <span className="text-[10px] uppercase tracking-wider font-semibold text-ink-3">
-                          Eligible models for {t.buyTicker}
+                          Models this trade applies to
                         </span>
                         {t.excludedGroupIds.includes(NO_US_SITUS_GROUP_ID) &&
                           isUsSitusTicker(t.buyTicker) && (
@@ -3535,11 +3507,9 @@ export function PimPortfolio({ groups }: Props) {
                           );
                         })}
                       </div>
-                      {t.sellSymbol && t.excludedGroupIds.length > 0 && (
-                        <p className="mt-1.5 text-[10px] text-ink-3">
-                          For excluded models that hold {symbolToTicker(t.sellSymbol)}, the freed weight is redistributed to that model&apos;s Core ETFs (not a formal rebalance).
-                        </p>
-                      )}
+                      <p className="mt-1.5 text-[10px] text-ink-3">
+                        Unticked models are left completely untouched — neither the sell nor the buy executes there.
+                      </p>
                     </div>
                   )}
 
