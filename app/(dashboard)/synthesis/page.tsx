@@ -57,6 +57,20 @@ const SORT_LABELS: { mode: SortMode; label: string; title: string }[] = [
   { mode: "name", label: "Company", title: "Alphabetical by company name" },
 ];
 
+type FilterMode = "generated" | "stale" | "ungenerated";
+
+/** Mutually exclusive states — a row is exactly one of these. */
+function rowState(r: Row): FilterMode {
+  if (!r.entry) return "ungenerated";
+  return r.stale.length > 0 ? "stale" : "generated";
+}
+
+const FILTER_LABELS: { mode: FilterMode; label: string; title: string }[] = [
+  { mode: "generated", label: "Current", title: "Synthesis generated and up to date" },
+  { mode: "stale", label: "Stale", title: "Generated, but inputs/price/earnings have moved since" },
+  { mode: "ungenerated", label: "Not generated", title: "No synthesis yet" },
+];
+
 type ScreenData = { rows: Row[]; leadership: SectorLeadership };
 
 const VERDICT_STYLE: Record<string, string> = {
@@ -269,6 +283,7 @@ export default function SynthesisPage() {
   const [expanded, setExpanded] = useState<Set<string>>(new Set());
   const [collapsedSections, setCollapsedSections] = useState<Set<string>>(new Set());
   const [sortMode, setSortMode] = useState<SortMode>("priority");
+  const [filters, setFilters] = useState<Set<FilterMode>>(new Set());
   const [generating, setGenerating] = useState<Set<string>>(new Set());
   const [genErrors, setGenErrors] = useState<Record<string, string>>({});
 
@@ -355,6 +370,14 @@ export default function SynthesisPage() {
       return next;
     });
 
+  const toggleFilter = (mode: FilterMode) =>
+    setFilters((prev) => {
+      const next = new Set(prev);
+      if (next.has(mode)) next.delete(mode);
+      else next.add(mode);
+      return next;
+    });
+
   const sections: Array<{ title: string; bucket: "Portfolio" | "Watchlist" }> = [
     { title: "Watchlist", bucket: "Watchlist" },
     { title: "Portfolio", bucket: "Portfolio" },
@@ -392,6 +415,11 @@ export default function SynthesisPage() {
   if (!data) {
     return <div className="mx-auto max-w-5xl px-4 py-8 text-sm text-ink-3">Loading synthesis screen…</div>;
   }
+
+  // Row-state counts drive the filter chip labels. Every row is exactly one
+  // of the three states, so the counts sum to the full universe.
+  const stateCounts: Record<FilterMode, number> = { generated: 0, stale: 0, ungenerated: 0 };
+  for (const r of data.rows) stateCounts[rowState(r)] += 1;
 
   // Bulk refresh only covers names with at least one uploaded RBC/JPM report —
   // thin-evidence names are generated deliberately, one at a time.
@@ -437,9 +465,40 @@ export default function SynthesisPage() {
 
       <LeadershipStrip data={data.leadership} />
 
+      <div className="flex flex-wrap items-center gap-1.5">
+        <span className="text-[10px] font-bold uppercase tracking-wide text-ink-3">Show</span>
+        {FILTER_LABELS.map(({ mode, label, title }) => {
+          const active = filters.has(mode);
+          return (
+            <button
+              key={mode}
+              onClick={() => toggleFilter(mode)}
+              title={title}
+              aria-pressed={active}
+              className={`rounded-full border px-2 py-0.5 text-[10px] font-medium transition-colors ${
+                active
+                  ? "border-accent-border bg-accent-soft text-accent"
+                  : "border-line bg-surface text-ink-3 hover:text-ink-2"
+              }`}
+            >
+              {label} ({stateCounts[mode]})
+            </button>
+          );
+        })}
+        {filters.size > 0 && (
+          <button
+            onClick={() => setFilters(new Set())}
+            className="text-[10px] text-ink-3 underline hover:text-ink-2"
+          >
+            Clear
+          </button>
+        )}
+      </div>
+
       {sections.map(({ title, bucket }) => {
-        const rows = sortRows(data.rows.filter((r) => r.bucket === bucket));
-        if (rows.length === 0) return null;
+        const bucketRows = data.rows.filter((r) => r.bucket === bucket);
+        if (bucketRows.length === 0) return null;
+        const rows = sortRows(bucketRows.filter((r) => filters.size === 0 || filters.has(rowState(r))));
         const collapsed = collapsedSections.has(bucket);
         return (
           <div key={bucket} className="rounded-lg border border-line bg-surface">
@@ -455,11 +514,17 @@ export default function SynthesisPage() {
               className={`flex w-full items-center justify-between px-3 py-2 text-left text-xs font-bold uppercase tracking-wide text-ink-2 hover:bg-surface-2 ${collapsed ? "" : "border-b border-line"}`}
             >
               <span>
-                {title} <span className="font-normal text-ink-3">({rows.length})</span>
+                {title}{" "}
+                <span className="font-normal text-ink-3">
+                  ({rows.length}
+                  {rows.length !== bucketRows.length ? ` of ${bucketRows.length}` : ""})
+                </span>
               </span>
               <span className="font-mono text-ink-3">{collapsed ? "▸" : "▾"}</span>
             </button>
-            {collapsed ? null : (
+            {collapsed ? null : rows.length === 0 ? (
+              <div className="px-3 py-3 text-xs text-ink-3">No names match the current filter.</div>
+            ) : (
             <div className="divide-y divide-line">
               {rows.map((row) => {
                 const isOpen = expanded.has(row.ticker);
