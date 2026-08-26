@@ -57,6 +57,9 @@ export type SynthesisResult = {
   priceAction?: string;
   /** One concrete next action consistent with the verdict. Pre-v2: absent. */
   nextStep?: string;
+  /** PM business primer: what the company does, how it generates revenue,
+   *  most profitable/largest segments. Pre-v4: absent. */
+  whatTheyDo?: string;
   keyDebate: string;
   catalysts: { date?: string; event: string }[];
   wouldChangeCall: string[];

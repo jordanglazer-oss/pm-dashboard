@@ -168,6 +168,60 @@ async function cheapInputsHashFor(
   return { hash, mentions };
 }
 
+// ── Business profile (Yahoo assetProfile.longBusinessSummary) ─────────
+// Near-static text, so cached in pm:business-profile-cache (nukeable,
+// matches the `-cache$` backup exclude) with a 30-day lazy refresh.
+// Fetched only at generation time — never on GET.
+
+const BUSINESS_CACHE_KEY = "pm:business-profile-cache";
+const BUSINESS_MAX_AGE_MS = 30 * 24 * 60 * 60 * 1000;
+
+type BusinessProfileCache = Record<string, { summary: string; fetchedAt: string }>;
+
+async function fetchBusinessSummary(ticker: string): Promise<string | undefined> {
+  const key = canonicalTicker(ticker);
+  const cache = await readJson<BusinessProfileCache>(BUSINESS_CACHE_KEY, {});
+  const hit = cache[key];
+  if (hit?.summary && Date.now() - new Date(hit.fetchedAt).getTime() < BUSINESS_MAX_AGE_MS) {
+    return hit.summary;
+  }
+  try {
+    // Yahoo quoteSummary needs the cookie+crumb dance (same pattern as
+    // refresh-data). On any failure fall back to the stale cache entry.
+    const cookieRes = await fetch("https://fc.yahoo.com", {
+      cache: "no-store",
+      headers: { "User-Agent": "Mozilla/5.0" },
+    });
+    const cookie = cookieRes.headers.get("set-cookie") || "";
+    const crumbRes = await fetch("https://query1.finance.yahoo.com/v1/test/getcrumb", {
+      cache: "no-store",
+      headers: { "User-Agent": "Mozilla/5.0", Cookie: cookie },
+    });
+    const crumb = await crumbRes.text();
+    if (!crumb || crumb.includes("error")) return hit?.summary;
+    const url = `https://query1.finance.yahoo.com/v10/finance/quoteSummary/${encodeURIComponent(toYahoo(ticker))}?modules=assetProfile&crumb=${encodeURIComponent(crumb)}`;
+    const res = await fetch(url, { cache: "no-store", headers: { "User-Agent": "Mozilla/5.0", Cookie: cookie } });
+    if (!res.ok) return hit?.summary;
+    const data = (await res.json()) as {
+      quoteSummary?: { result?: Array<{ assetProfile?: { longBusinessSummary?: string } }> };
+    };
+    const summary = data?.quoteSummary?.result?.[0]?.assetProfile?.longBusinessSummary;
+    if (!summary) return hit?.summary;
+    // Read-modify-write: re-read so concurrent generations of other tickers
+    // aren't clobbered, spread, write back.
+    const redis = await getRedis();
+    const fresh = await readJson<BusinessProfileCache>(BUSINESS_CACHE_KEY, {});
+    await redis.set(
+      BUSINESS_CACHE_KEY,
+      JSON.stringify({ ...fresh, [key]: { summary, fetchedAt: new Date().toISOString() } }),
+    );
+    return summary;
+  } catch (e) {
+    log.warn(`business summary fetch failed for ${ticker}:`, e);
+    return hit?.summary;
+  }
+}
+
 // ───────────────────────── GET ─────────────────────────
 
 export async function GET() {
@@ -329,9 +383,10 @@ export async function POST(request: NextRequest) {
         }
       }
 
-      const [factsetBlock, technicals] = await Promise.all([
+      const [factsetBlock, technicals, businessSummary] = await Promise.all([
         factsetBlockFor(ticker),
         fetchTechnicals(stock.ticker!),
+        fetchBusinessSummary(stock.ticker!),
       ]);
       const takeaways = takeawaysFor(takeawayStore, ticker);
 
@@ -357,6 +412,7 @@ export async function POST(request: NextRequest) {
         technicals,
         leadership,
         thirdPartyTech: thirdPartyTechFor(stock),
+        businessSummary,
       };
 
       const { system, user } = buildSynthesisPrompt(payload);

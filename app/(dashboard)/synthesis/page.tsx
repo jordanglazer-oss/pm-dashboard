@@ -592,6 +592,12 @@ export default function SynthesisPage() {
                     </div>
                     {isOpen && r && (
                       <div className="space-y-3 bg-surface-2/50 px-4 py-3">
+                        {r.whatTheyDo && (
+                          <div>
+                            <div className="text-[10px] font-bold uppercase tracking-wide text-ink-3">What they do</div>
+                            <div className="text-xs leading-snug text-ink-2">{r.whatTheyDo}</div>
+                          </div>
+                        )}
                         {row.entry?.targets && row.entry.targets.length > 0 && (
                           <div className="flex flex-wrap items-center gap-1.5">
                             <span className="text-[10px] font-bold uppercase tracking-wide text-ink-3">Targets</span>

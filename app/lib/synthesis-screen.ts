@@ -55,7 +55,7 @@ export const SYNTHESIS_CACHE_KEY = "pm:synthesis-screen-cache";
 export const SYNTHESIS_HISTORY_KEY = "pm:synthesis-history";
 
 /** Bump to invalidate every cached synthesis when the prompt changes shape. */
-export const SYNTHESIS_PROMPT_VERSION = "v3";
+export const SYNTHESIS_PROMPT_VERSION = "v4";
 
 /** Third-party technical readings older than this are flagged as discounted. */
 export const TECH_OPINION_STALE_DAYS = 30;
@@ -364,6 +364,8 @@ export type SynthesisPayload = {
   technicals: Technicals | null;
   leadership: SectorLeadership;
   thirdPartyTech?: ThirdPartyTech;
+  /** Yahoo assetProfile.longBusinessSummary (cached ~30d in the route). */
+  businessSummary?: string;
 };
 
 export function buildSynthesisPrompt(p: SynthesisPayload): { system: string; user: string } {
@@ -394,12 +396,14 @@ STRICT EVIDENCE RULES:
 6. Price-target hierarchy: the RBC and JPM report targets are the PRIMARY anchors; the FactSet street average is a breadth/consensus check on them; the Morningstar FVE carries the least weight. When citing a target range, anchor it on RBC/JPM.
 7. "priceAction" is the ONLY place for price/sector/subsector movement commentary. "keyDebate" must be the fundamental question (demand, competition, margins, valuation vs growth) — do not restate price action there.
 8. Third-party technical opinions (MarketEdge, BoostedAI, SIA) are CORROBORATING input for "priceAction" and technical bullets — never a verdict driver on their own (vendor agreement does not outvote deteriorating fundamentals). MarketEdge's Opinion Score is the most forward-leaning of them (a deteriorating Long is an early warning). Any reading flagged STALE must be discounted and, if it would otherwise matter, listed in "dataGaps" as needing a refresh.
+9. "whatTheyDo" is the ONE exception to rule 1's data-only constraint, and only partially: describing the business QUALITATIVELY (what the company does, how it charges customers, which segments exist and which drive profit) may draw on the BUSINESS PROFILE block, the report extracts, and your general industry knowledge. But every NUMBER in it (revenue splits, margins, segment sizes) must still come from the provided data blocks — never from memory. If segment economics aren't in the data and you aren't qualitatively certain, say "segment economics not in data" rather than guessing.
 
 OUTPUT: respond with ONLY a JSON object, no markdown fences:
 {
   "verdict": one of ${JSON.stringify([...verdicts])},
   "verdictReason": "one sentence",
   "skew": integer -2..2 (risk/reward asymmetry: +2 strongly bull-skewed, 0 balanced, -2 strongly bear-skewed),
+  "whatTheyDo": "2-3 sentences: what the company does, exactly how it generates revenue (who pays it, for what), and its most profitable / largest segments — the primer a PM needs before the cases below. Plain English.",
   "base": [{"text": "...", "source": "..."}] (2-3 bullets — the most likely path),
   "bull": [{"text": "...", "source": "..."}] (2-3 bullets),
   "bear": [{"text": "...", "source": "..."}] (2-3 bullets),
@@ -419,6 +423,10 @@ ${verdictGuide}`;
     `NAME: ${p.name} (${p.ticker}) — ${p.bucket}`,
     `Current price: ${p.currentPrice ?? "DATA GAP"}`,
     p.earningsDate ? `Next earnings: ${p.earningsDate.slice(0, 10)}` : "Next earnings: DATA GAP",
+    "",
+    p.businessSummary
+      ? `=== BUSINESS PROFILE (Yahoo company description) ===\n${p.businessSummary}`
+      : "=== BUSINESS PROFILE ===\nDATA GAP — no company description on file.",
     "",
     p.factsetBlock,
     "",
@@ -479,6 +487,7 @@ export function normalizeSynthesisResult(raw: unknown, bucket: "Portfolio" | "Wa
     plain,
     priceAction: r.priceAction != null ? String(r.priceAction) : undefined,
     nextStep: r.nextStep != null ? String(r.nextStep) : undefined,
+    whatTheyDo: r.whatTheyDo != null ? String(r.whatTheyDo) : undefined,
     keyDebate: String(r.keyDebate ?? ""),
     catalysts: Array.isArray(r.catalysts)
       ? r.catalysts
