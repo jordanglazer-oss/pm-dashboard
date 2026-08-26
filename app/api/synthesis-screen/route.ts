@@ -22,6 +22,7 @@ import {
   computeInputsHash,
   evaluateStaleness,
   computeTechnicalsFromCloses,
+  computeTargets,
   buildSynthesisPrompt,
   normalizeSynthesisResult,
   type SynthesisScreenCache,
@@ -320,6 +321,7 @@ export async function POST(request: NextRequest) {
         priceAtGeneration: stock.currentPrice,
         earningsDateAtGeneration: stock.earningsDate,
         webFillUsed: webFill,
+        targets: computeTargets(payload.snapshot, stock.currentPrice),
         result,
       };
 

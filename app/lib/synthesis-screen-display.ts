@@ -39,6 +39,9 @@ export type SynthesisBullet = {
   source: string;
 };
 
+/** One-sentence plain-English read of each case (no jargon). */
+export type SynthesisPlain = { base: string; bull: string; bear: string };
+
 export type SynthesisResult = {
   verdict: SynthesisVerdict;
   verdictReason: string; // one line
@@ -47,10 +50,26 @@ export type SynthesisResult = {
   base: SynthesisBullet[];
   bull: SynthesisBullet[];
   bear: SynthesisBullet[];
+  /** Optional on entries generated before prompt v2. */
+  plain?: SynthesisPlain;
+  /** Dedicated price-action read (name + sector/subsector standing) — its own
+   *  section so keyDebate can stay on the fundamental question. Pre-v2: absent. */
+  priceAction?: string;
+  /** One concrete next action consistent with the verdict. Pre-v2: absent. */
+  nextStep?: string;
   keyDebate: string;
   catalysts: { date?: string; event: string }[];
   wouldChangeCall: string[];
   dataGaps: string[];
+};
+
+/** Deterministic (server-computed, not model-generated) price-target line. */
+export type TargetLine = {
+  source: "RBC" | "JPM" | "Street avg" | "Morningstar FVE";
+  target: number;
+  /** vs price at generation; null when no price was available. */
+  upsidePct: number | null;
+  asOf?: string;
 };
 
 export type SynthesisEntry = {
@@ -64,6 +83,8 @@ export type SynthesisEntry = {
   /** The stock's next-earnings date as known at generation time. */
   earningsDateAtGeneration?: string;
   webFillUsed: boolean;
+  /** Deterministic target summary computed at generation time. Pre-v2: absent. */
+  targets?: TargetLine[];
   result: SynthesisResult;
 };
 

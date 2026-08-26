@@ -42,6 +42,8 @@ import {
   type SynthesisResult,
   type SynthesisEntry,
   type StaleReason,
+  type SynthesisPlain,
+  type TargetLine,
 } from "./synthesis-screen-display";
 
 // Client-safe types + labels live in synthesis-screen-display.ts (this module
@@ -53,7 +55,7 @@ export const SYNTHESIS_CACHE_KEY = "pm:synthesis-screen-cache";
 export const SYNTHESIS_HISTORY_KEY = "pm:synthesis-history";
 
 /** Bump to invalidate every cached synthesis when the prompt changes shape. */
-export const SYNTHESIS_PROMPT_VERSION = "v1";
+export const SYNTHESIS_PROMPT_VERSION = "v2";
 
 // ── Cheap-inputs hash ────────────────────────────────────────────────
 // Computed from Redis-only inputs so the GET staleness pass never has to
@@ -175,6 +177,38 @@ export function formatTechnicalsForPrompt(t: Technicals | null): string {
   ].join("\n");
 }
 
+// ── Deterministic target summary ─────────────────────────────────────
+// Computed server-side from the analyst snapshot, never model-generated,
+// so the displayed targets/upside are exact. Ordering reflects the PM's
+// stated hierarchy: RBC/JPM first, street average as breadth check,
+// Morningstar FVE last.
+
+export function computeTargets(snapshot: TickerSnapshot | undefined, currentPrice: number | undefined): TargetLine[] {
+  if (!snapshot) return [];
+  const upside = (target: number): number | null =>
+    currentPrice && currentPrice > 0 ? +(((target - currentPrice) / currentPrice) * 100).toFixed(1) : null;
+  const out: TargetLine[] = [];
+  if (snapshot.rbc?.target != null)
+    out.push({ source: "RBC", target: snapshot.rbc.target, upsidePct: upside(snapshot.rbc.target), asOf: snapshot.rbc.asOf });
+  if (snapshot.jpm?.target != null)
+    out.push({ source: "JPM", target: snapshot.jpm.target, upsidePct: upside(snapshot.jpm.target), asOf: snapshot.jpm.asOf });
+  if (snapshot.factset?.averageTarget != null)
+    out.push({
+      source: "Street avg",
+      target: snapshot.factset.averageTarget,
+      upsidePct: upside(snapshot.factset.averageTarget),
+      asOf: snapshot.factset.asOf,
+    });
+  if (snapshot.morningstar?.fairValue != null)
+    out.push({
+      source: "Morningstar FVE",
+      target: snapshot.morningstar.fairValue,
+      upsidePct: upside(snapshot.morningstar.fairValue),
+      asOf: snapshot.morningstar.asOf,
+    });
+  return out;
+}
+
 // ── Prompt assembly ──────────────────────────────────────────────────
 
 function formatAnalystBlock(snapshot: TickerSnapshot | undefined, reports: { rbc?: ExtractedReport; jpm?: ExtractedReport; morningstar?: ExtractedReport } | undefined, currentPrice: number | undefined): string {
@@ -267,6 +301,8 @@ STRICT EVIDENCE RULES:
 3. Every bullet must cite its supporting block in "source" (one of: "factset", "rbc report", "jpm report", "morningstar", "consensus", "revisions", "street takeaways", "research lists", "technicals", "sector leadership", "earnings", "web").
 4. The BEAR case must be built from actual negatives present in the data (downward revisions, target cuts, bearish list mentions, deteriorating technicals, analyst-stated risks, lagging sector). If the data contains no genuine negatives, say so in one bullet rather than inventing generic risks.
 5. Be direct and specific — numbers over adjectives. No hedging boilerplate.
+6. Price-target hierarchy: the RBC and JPM report targets are the PRIMARY anchors; the FactSet street average is a breadth/consensus check on them; the Morningstar FVE carries the least weight. When citing a target range, anchor it on RBC/JPM.
+7. "priceAction" is the ONLY place for price/sector/subsector movement commentary. "keyDebate" must be the fundamental question (demand, competition, margins, valuation vs growth) — do not restate price action there.
 
 OUTPUT: respond with ONLY a JSON object, no markdown fences:
 {
@@ -276,9 +312,12 @@ OUTPUT: respond with ONLY a JSON object, no markdown fences:
   "base": [{"text": "...", "source": "..."}] (2-3 bullets — the most likely path),
   "bull": [{"text": "...", "source": "..."}] (2-3 bullets),
   "bear": [{"text": "...", "source": "..."}] (2-3 bullets),
-  "keyDebate": "the single question that decides this name",
+  "plain": {"base": "...", "bull": "...", "bear": "..."} (REQUIRED — one sentence each, plain English a non-specialist gets in 10 seconds: no tickers-as-shorthand, no jargon like "revisions" or "multiple re-rating", just what would happen and why it matters),
+  "priceAction": "1-2 sentences: what the stock itself has done recently AND how its sector/subsector are trading (leading or lagging), from the technicals and sector-leadership blocks",
+  "nextStep": "ONE concrete action consistent with the verdict (e.g. 'Underwrite now; pressure-test hyperscaler capex assumptions at the Oct earnings', 'Revisit after the Q3 print', 'Trim review: confirm whether the estimate cuts extend to FY+2') — an instruction, not an observation",
+  "keyDebate": "the single FUNDAMENTAL question that decides this name",
   "catalysts": [{"date": "YYYY-MM-DD or period", "event": "..."}] (from the data only; [] if none),
-  "wouldChangeCall": ["observable development that would flip the verdict", ...] (1-3 items),
+  "wouldChangeCall": ["observable development that would flip the verdict", ...] (REQUIRED, 1-3 items — never empty; there is always at least one observable that would flip the call),
   "dataGaps": ["missing input", ...] ([] if none)
 }
 
@@ -333,6 +372,10 @@ export function normalizeSynthesisResult(raw: unknown, bucket: "Portfolio" | "Wa
   const skewNum = Number(r.skew);
   const base = bullets(r.base);
   if (base.length === 0) return null;
+  const plainRaw = r.plain && typeof r.plain === "object" ? (r.plain as Record<string, unknown>) : null;
+  const plain: SynthesisPlain | undefined = plainRaw
+    ? { base: String(plainRaw.base ?? ""), bull: String(plainRaw.bull ?? ""), bear: String(plainRaw.bear ?? "") }
+    : undefined;
   return {
     verdict: verdict as SynthesisVerdict,
     verdictReason: String(r.verdictReason ?? ""),
@@ -340,6 +383,9 @@ export function normalizeSynthesisResult(raw: unknown, bucket: "Portfolio" | "Wa
     base,
     bull: bullets(r.bull),
     bear: bullets(r.bear),
+    plain,
+    priceAction: r.priceAction != null ? String(r.priceAction) : undefined,
+    nextStep: r.nextStep != null ? String(r.nextStep) : undefined,
     keyDebate: String(r.keyDebate ?? ""),
     catalysts: Array.isArray(r.catalysts)
       ? r.catalysts

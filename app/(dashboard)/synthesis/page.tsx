@@ -80,7 +80,7 @@ function StaleBadges({ stale }: { stale: StaleReason[] }) {
   );
 }
 
-function Bullets({ title, bullets, tone }: { title: string; bullets: SynthesisBullet[]; tone: string }) {
+function Bullets({ title, bullets, tone, plain }: { title: string; bullets: SynthesisBullet[]; tone: string; plain?: string }) {
   return (
     <div>
       <div className={`mb-1 text-[10px] font-bold uppercase tracking-wide ${tone}`}>{title}</div>
@@ -92,6 +92,11 @@ function Bullets({ title, bullets, tone }: { title: string; bullets: SynthesisBu
           </li>
         ))}
       </ul>
+      {plain && (
+        <div className="mt-2 border-t border-line pt-1.5 text-xs italic leading-snug text-ink">
+          {plain}
+        </div>
+      )}
     </div>
   );
 }
@@ -385,11 +390,43 @@ export default function SynthesisPage() {
                     </div>
                     {isOpen && r && (
                       <div className="space-y-3 bg-surface-2/50 px-4 py-3">
+                        {row.entry?.targets && row.entry.targets.length > 0 && (
+                          <div className="flex flex-wrap items-center gap-1.5">
+                            <span className="text-[10px] font-bold uppercase tracking-wide text-ink-3">Targets</span>
+                            {row.entry.targets.map((t) => (
+                              <span
+                                key={t.source}
+                                className="inline-flex items-center gap-1 rounded-full border border-line bg-surface px-2 py-0.5 text-[10px] text-ink-2"
+                                title={t.asOf ? `as of ${t.asOf}` : undefined}
+                              >
+                                {t.source} <span className="font-mono font-semibold text-ink">{t.target}</span>
+                                {t.upsidePct != null && (
+                                  <span className={`font-mono ${t.upsidePct >= 0 ? "text-pos" : "text-neg"}`}>
+                                    {t.upsidePct >= 0 ? "+" : ""}
+                                    {t.upsidePct.toFixed(0)}%
+                                  </span>
+                                )}
+                              </span>
+                            ))}
+                          </div>
+                        )}
+                        {r.nextStep && (
+                          <div className="rounded-md border border-accent-border bg-accent-soft px-2.5 py-1.5 text-xs text-accent">
+                            <span className="font-bold uppercase tracking-wide text-[10px]">Next step</span>{" "}
+                            {r.nextStep}
+                          </div>
+                        )}
                         <div className="grid gap-4 sm:grid-cols-3">
-                          <Bullets title="Base" bullets={r.base} tone="text-ink-2" />
-                          <Bullets title="Bull" bullets={r.bull} tone="text-pos" />
-                          <Bullets title="Bear" bullets={r.bear} tone="text-neg" />
+                          <Bullets title="Base" bullets={r.base} tone="text-ink-2" plain={r.plain?.base} />
+                          <Bullets title="Bull" bullets={r.bull} tone="text-pos" plain={r.plain?.bull} />
+                          <Bullets title="Bear" bullets={r.bear} tone="text-neg" plain={r.plain?.bear} />
                         </div>
+                        {r.priceAction && (
+                          <div>
+                            <div className="text-[10px] font-bold uppercase tracking-wide text-ink-3">Price action — name &amp; sector</div>
+                            <div className="text-xs text-ink-2">{r.priceAction}</div>
+                          </div>
+                        )}
                         <div className="grid gap-3 sm:grid-cols-2">
                           <div>
                             <div className="text-[10px] font-bold uppercase tracking-wide text-ink-3">Key debate</div>
