@@ -49,6 +49,14 @@ type Row = {
 
 const hasReports = (r: Row) => !!(r.evidence?.rbcReport || r.evidence?.jpmReport);
 
+type SortMode = "priority" | "symbol" | "name";
+
+const SORT_LABELS: { mode: SortMode; label: string; title: string }[] = [
+  { mode: "priority", label: "Priority", title: "Ungenerated first, then verdict, then skew" },
+  { mode: "symbol", label: "Symbol", title: "Alphabetical by ticker" },
+  { mode: "name", label: "Company", title: "Alphabetical by company name" },
+];
+
 type ScreenData = { rows: Row[]; leadership: SectorLeadership };
 
 const VERDICT_STYLE: Record<string, string> = {
@@ -260,6 +268,7 @@ export default function SynthesisPage() {
   const [loadError, setLoadError] = useState<string | null>(null);
   const [expanded, setExpanded] = useState<Set<string>>(new Set());
   const [collapsedSections, setCollapsedSections] = useState<Set<string>>(new Set());
+  const [sortMode, setSortMode] = useState<SortMode>("priority");
   const [generating, setGenerating] = useState<Set<string>>(new Set());
   const [genErrors, setGenErrors] = useState<Record<string, string>>({});
 
@@ -353,6 +362,14 @@ export default function SynthesisPage() {
 
   const sortRows = (rows: Row[]) =>
     [...rows].sort((a, b) => {
+      if (sortMode === "symbol") {
+        return displayTicker(a.displayTicker ?? a.ticker).localeCompare(displayTicker(b.displayTicker ?? b.ticker));
+      }
+      if (sortMode === "name") {
+        const byName = a.name.localeCompare(b.name);
+        if (byName !== 0) return byName;
+        return a.ticker.localeCompare(b.ticker);
+      }
       const av = a.entry ? (VERDICT_ORDER[a.entry.result.verdict] ?? 9) : -1;
       const bv = b.entry ? (VERDICT_ORDER[b.entry.result.verdict] ?? 9) : -1;
       // Never-generated first (they need attention), then verdict order, then skew desc.
@@ -391,14 +408,31 @@ export default function SynthesisPage() {
             research lists, technicals. Score and factors deliberately excluded.
           </p>
         </div>
-        <button
-          onClick={() => void generate(staleTickers)}
-          disabled={staleTickers.length === 0 || generating.size > 0}
-          className="rounded-md border border-accent-border bg-accent-soft px-3 py-1.5 text-xs font-semibold text-accent disabled:opacity-40"
-          title={staleNoReports > 0 ? `Skips ${staleNoReports} stale name(s) with no RBC/JPM report — generate those individually` : undefined}
-        >
-          Refresh stale ({staleTickers.length})
-        </button>
+        <div className="flex items-center gap-2">
+          <div className="inline-flex overflow-hidden rounded-md border border-line" role="group" aria-label="Sort rows">
+            {SORT_LABELS.map(({ mode, label, title }) => (
+              <button
+                key={mode}
+                onClick={() => setSortMode(mode)}
+                title={title}
+                aria-pressed={sortMode === mode}
+                className={`px-2 py-1.5 text-[11px] font-medium transition-colors ${
+                  sortMode === mode ? "bg-surface-2 text-ink" : "bg-surface text-ink-3 hover:text-ink-2"
+                }`}
+              >
+                {label}
+              </button>
+            ))}
+          </div>
+          <button
+            onClick={() => void generate(staleTickers)}
+            disabled={staleTickers.length === 0 || generating.size > 0}
+            className="rounded-md border border-accent-border bg-accent-soft px-3 py-1.5 text-xs font-semibold text-accent disabled:opacity-40"
+            title={staleNoReports > 0 ? `Skips ${staleNoReports} stale name(s) with no RBC/JPM report — generate those individually` : undefined}
+          >
+            Refresh stale ({staleTickers.length})
+          </button>
+        </div>
       </div>
 
       <LeadershipStrip data={data.leadership} />
@@ -437,8 +471,13 @@ export default function SynthesisPage() {
                       className="flex cursor-pointer flex-wrap items-center gap-2 px-3 py-2 hover:bg-surface-2"
                       onClick={() => toggle(row.ticker)}
                     >
-                      <div className="w-20 shrink-0 font-mono text-xs font-bold text-ink">
-                        {displayTicker(row.displayTicker ?? row.ticker)}
+                      <div className="w-40 shrink-0">
+                        <div className="font-mono text-xs font-bold text-ink">
+                          {displayTicker(row.displayTicker ?? row.ticker)}
+                        </div>
+                        <div className="truncate text-[10px] text-ink-3" title={row.name}>
+                          {row.name}
+                        </div>
                       </div>
                       <div className="min-w-0 flex-1">
                         <div className="flex flex-wrap items-center gap-2">
