@@ -161,6 +161,7 @@ const tabs = [
   { label: "Chat", href: "/chat" },
   { label: "Screener", href: "/screener" },
   { label: "Research", href: "/research" },
+  { label: "Synthesis", href: "/synthesis" },
   { label: "Pipeline", href: "/conviction" },
   { label: "Factor Lab", href: "/factor-lab" },
   { label: "Hedging", href: "/hedging" },
