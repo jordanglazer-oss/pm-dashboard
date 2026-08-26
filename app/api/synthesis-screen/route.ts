@@ -31,6 +31,7 @@ import {
   type SynthesisHistoryRow,
   type StaleReason,
   type SynthesisPayload,
+  type ThirdPartyTech,
 } from "@/app/lib/synthesis-screen";
 
 /**
@@ -68,7 +69,32 @@ type StockLike = {
   currentPrice?: number;
   earningsDate?: string;
   instrumentType?: string;
+  marketEdge?: {
+    opinion?: "long" | "neutral" | "avoid";
+    opinionScore?: number;
+    powerRating?: number;
+    opinionDate?: string;
+  };
+  boostedAi?: number;
+  boostedAiConsensus?: string;
+  boostedLastReadAt?: string;
+  sia?: number;
+  siaLastReadAt?: string;
 };
+
+/** Raw third-party technical opinions off the stock row (never the 41-pt score). */
+function thirdPartyTechFor(s: StockLike): ThirdPartyTech | undefined {
+  const hasMe = !!s.marketEdge && (s.marketEdge.opinion != null || s.marketEdge.powerRating != null);
+  if (!hasMe && s.boostedAi == null && s.sia == null) return undefined;
+  return {
+    marketEdge: hasMe ? s.marketEdge : undefined,
+    boostedAi: s.boostedAi,
+    boostedAiConsensus: s.boostedAiConsensus,
+    boostedAsOf: s.boostedLastReadAt,
+    sia: s.sia,
+    siaAsOf: s.siaLastReadAt,
+  };
+}
 
 function toYahoo(ticker: string): string {
   if (ticker.endsWith(".U")) return ticker.replace(/\.U$/, "-U.TO");
@@ -137,6 +163,7 @@ async function cheapInputsHashFor(
     takeaways: takeaways.map((t) => ({ date: t.date, event: t.event })),
     mentionsFingerprint: mentionsFingerprint(mentions),
     earningsDate: stock.earningsDate,
+    thirdPartyTech: thirdPartyTechFor(stock),
   });
   return { hash, mentions };
 }
@@ -177,6 +204,7 @@ export async function GET() {
         // not as a report.
         const rep = getReportsForTicker(reports, ticker);
         const snap = getSnapshotForTicker(snapshots, ticker);
+        const tech = thirdPartyTechFor(s);
         const evidence = {
           rbcReport: !!rep?.rbc,
           jpmReport: !!rep?.jpm,
@@ -184,6 +212,9 @@ export async function GET() {
           streetConsensus: snap?.factset?.averageTarget != null,
           takeaways: takeawaysFor(takeawayStore, ticker).length,
           mentions: mentionCount,
+          marketEdge: !!tech?.marketEdge,
+          boosted: tech?.boostedAi != null || !!tech?.boostedAiConsensus,
+          sia: tech?.sia != null,
         };
 
         // Previous different-day verdict for the change marker: the latest
@@ -325,6 +356,7 @@ export async function POST(request: NextRequest) {
         mentions,
         technicals,
         leadership,
+        thirdPartyTech: thirdPartyTechFor(stock),
       };
 
       const { system, user } = buildSynthesisPrompt(payload);

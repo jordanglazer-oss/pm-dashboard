@@ -55,7 +55,27 @@ export const SYNTHESIS_CACHE_KEY = "pm:synthesis-screen-cache";
 export const SYNTHESIS_HISTORY_KEY = "pm:synthesis-history";
 
 /** Bump to invalidate every cached synthesis when the prompt changes shape. */
-export const SYNTHESIS_PROMPT_VERSION = "v2";
+export const SYNTHESIS_PROMPT_VERSION = "v3";
+
+/** Third-party technical readings older than this are flagged as discounted. */
+export const TECH_OPINION_STALE_DAYS = 30;
+
+/** Raw third-party technical opinions off pm:stocks (NOT the 41-pt score). */
+export type ThirdPartyTech = {
+  marketEdge?: {
+    opinion?: "long" | "neutral" | "avoid";
+    opinionScore?: number;
+    powerRating?: number;
+    opinionDate?: string;
+  };
+  boostedAi?: number;
+  boostedAiConsensus?: string;
+  /** Most recent successful Boosted screenshot read (staleness display only). */
+  boostedAsOf?: string;
+  sia?: number;
+  /** Most recent successful SIA screenshot read (staleness display only). */
+  siaAsOf?: string;
+};
 
 // ── Cheap-inputs hash ────────────────────────────────────────────────
 // Computed from Redis-only inputs so the GET staleness pass never has to
@@ -69,9 +89,30 @@ export function computeInputsHash(input: {
   takeaways: Pick<StreetTakeaway, "date" | "event">[] | { date?: string; event?: string }[];
   mentionsFingerprint: string;
   earningsDate?: string;
+  thirdPartyTech?: ThirdPartyTech;
 }): string {
+  // Hash the opinion VALUES (a MarketEdge flip or new Boosted read should
+  // raise the staleness badge) but not the read timestamps — a re-read that
+  // returns the same value is not new information.
+  const tech = input.thirdPartyTech;
+  const techProjection = tech
+    ? {
+        me: tech.marketEdge
+          ? {
+              op: tech.marketEdge.opinion ?? null,
+              os: tech.marketEdge.opinionScore ?? null,
+              pr: tech.marketEdge.powerRating ?? null,
+              d: tech.marketEdge.opinionDate ?? null,
+            }
+          : null,
+        boosted: tech.boostedAi ?? null,
+        boostedConsensus: tech.boostedAiConsensus ?? null,
+        sia: tech.sia ?? null,
+      }
+    : null;
   const projection = {
     v: SYNTHESIS_PROMPT_VERSION,
+    tech: techProjection,
     snapshot: input.snapshot ?? null,
     reports: {
       rbc: input.reports?.rbc ? { at: input.reports.rbc.extractedAt ?? null, h: input.reports.rbc.hash ?? null } : null,
@@ -177,6 +218,54 @@ export function formatTechnicalsForPrompt(t: Technicals | null): string {
   ].join("\n");
 }
 
+// ── Third-party technical opinions block ─────────────────────────────
+
+function daysOld(dateStr: string | undefined, todayMs: number): number | null {
+  if (!dateStr) return null;
+  const t = new Date(dateStr).getTime();
+  if (!isFinite(t)) return null;
+  return Math.floor((todayMs - t) / (24 * 60 * 60 * 1000));
+}
+
+function staleTag(age: number | null): string {
+  if (age == null) return " (as-of date unknown — treat as stale, discount)";
+  if (age > TECH_OPINION_STALE_DAYS) return ` (STALE — ${age}d old, discount)`;
+  return ` (${age}d old)`;
+}
+
+export function formatThirdPartyTechForPrompt(tech: ThirdPartyTech | undefined): string {
+  const header = "=== THIRD-PARTY TECHNICAL OPINIONS (external vendors — corroborating input only) ===";
+  if (!tech || (!tech.marketEdge && tech.boostedAi == null && tech.sia == null)) {
+    return `${header}\nNone on file.`;
+  }
+  const now = Date.now();
+  const lines: string[] = [header];
+  const me = tech.marketEdge;
+  if (me && (me.opinion || me.powerRating != null)) {
+    const parts = [
+      me.opinion ? `opinion ${me.opinion.toUpperCase()}` : null,
+      me.powerRating != null ? `Power Rating ${me.powerRating}` : null,
+      me.opinionScore != null
+        ? `Opinion Score ${me.opinionScore >= 0 ? "+" : ""}${me.opinionScore} (trajectory since the opinion was issued: negative = deteriorating Long, positive = improving Avoid)`
+        : null,
+    ].filter(Boolean);
+    lines.push(`MarketEdge: ${parts.join(", ")}${staleTag(daysOld(me.opinionDate, now))}`);
+  }
+  if (tech.boostedAi != null || tech.boostedAiConsensus) {
+    const parts = [
+      tech.boostedAi != null ? `rating ${tech.boostedAi}/5` : null,
+      tech.boostedAiConsensus ? `consensus ${tech.boostedAiConsensus}` : null,
+    ].filter(Boolean);
+    lines.push(`BoostedAI (ML forward-return model): ${parts.join(", ")}${staleTag(daysOld(tech.boostedAsOf, now))}`);
+  }
+  if (tech.sia != null) {
+    lines.push(
+      `SIA SMAX (relative strength, backward-looking — lowest weight): ${tech.sia}/10${staleTag(daysOld(tech.siaAsOf, now))}`,
+    );
+  }
+  return lines.join("\n");
+}
+
 // ── Deterministic target summary ─────────────────────────────────────
 // Computed server-side from the analyst snapshot, never model-generated,
 // so the displayed targets/upside are exact. Ordering reflects the PM's
@@ -274,6 +363,7 @@ export type SynthesisPayload = {
   mentions: ResearchMentionsResult | null;
   technicals: Technicals | null;
   leadership: SectorLeadership;
+  thirdPartyTech?: ThirdPartyTech;
 };
 
 export function buildSynthesisPrompt(p: SynthesisPayload): { system: string; user: string } {
@@ -298,11 +388,12 @@ export function buildSynthesisPrompt(p: SynthesisPayload): { system: string; use
 STRICT EVIDENCE RULES:
 1. Use ONLY the data blocks provided in the user message${p ? "" : ""}. Never use general knowledge about the company, its products, or its history that is not in the blocks. If web search is available, you may use it ONLY to fill a gap the blocks explicitly lack, citing reputable financial sources (exchange filings, major financial press); mark any web-sourced bullet with source "web".
 2. Where an important input is missing, list it in "dataGaps" — do not guess or fill from memory.
-3. Every bullet must cite its supporting block in "source" (one of: "factset", "rbc report", "jpm report", "morningstar", "consensus", "revisions", "street takeaways", "research lists", "technicals", "sector leadership", "earnings", "web").
+3. Every bullet must cite its supporting block in "source" (one of: "factset", "rbc report", "jpm report", "morningstar", "consensus", "revisions", "street takeaways", "research lists", "technicals", "third-party technicals", "sector leadership", "earnings", "web").
 4. The BEAR case must be built from actual negatives present in the data (downward revisions, target cuts, bearish list mentions, deteriorating technicals, analyst-stated risks, lagging sector). If the data contains no genuine negatives, say so in one bullet rather than inventing generic risks.
 5. Be direct and specific — numbers over adjectives. No hedging boilerplate.
 6. Price-target hierarchy: the RBC and JPM report targets are the PRIMARY anchors; the FactSet street average is a breadth/consensus check on them; the Morningstar FVE carries the least weight. When citing a target range, anchor it on RBC/JPM.
 7. "priceAction" is the ONLY place for price/sector/subsector movement commentary. "keyDebate" must be the fundamental question (demand, competition, margins, valuation vs growth) — do not restate price action there.
+8. Third-party technical opinions (MarketEdge, BoostedAI, SIA) are CORROBORATING input for "priceAction" and technical bullets — never a verdict driver on their own (vendor agreement does not outvote deteriorating fundamentals). MarketEdge's Opinion Score is the most forward-leaning of them (a deteriorating Long is an early warning). Any reading flagged STALE must be discounted and, if it would otherwise matter, listed in "dataGaps" as needing a refresh.
 
 OUTPUT: respond with ONLY a JSON object, no markdown fences:
 {
@@ -340,6 +431,8 @@ ${verdictGuide}`;
     formatMentionsBlock(p.mentions),
     "",
     formatTechnicalsForPrompt(p.technicals),
+    "",
+    formatThirdPartyTechForPrompt(p.thirdPartyTech),
     "",
     formatLeadershipForPrompt(p.leadership),
     sectorLine,

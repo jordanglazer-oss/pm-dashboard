@@ -28,6 +28,9 @@ type Evidence = {
   streetConsensus: boolean;
   takeaways: number;
   mentions: number;
+  marketEdge?: boolean;
+  boosted?: boolean;
+  sia?: boolean;
 };
 
 type Row = {
@@ -125,6 +128,9 @@ function EvidenceIcons({ evidence }: { evidence: Evidence }) {
       {chip("ST", evidence.streetConsensus, evidence.streetConsensus ? "FactSet street consensus present" : "No street consensus")}
       {chip(`TA ${evidence.takeaways}`, evidence.takeaways > 0, `${evidence.takeaways} street-takeaway entries`)}
       {chip(`L ${evidence.mentions}`, evidence.mentions > 0, `${evidence.mentions} research-list mentions`)}
+      {chip("ME", !!evidence.marketEdge, evidence.marketEdge ? "MarketEdge opinion on file" : "No MarketEdge opinion")}
+      {chip("AI", !!evidence.boosted, evidence.boosted ? "BoostedAI rating on file" : "No BoostedAI rating")}
+      {chip("SIA", !!evidence.sia, evidence.sia ? "SIA SMAX on file" : "No SIA SMAX")}
     </span>
   );
 }
