@@ -13,6 +13,7 @@ import {
   type AnalystReports,
 } from "@/app/lib/analyst-snapshots";
 import { resolveFactsetId, isFundservCode } from "@/app/lib/factset-symbols";
+import { crossSectional, factsetConfigured } from "@/app/lib/factset";
 import { companySnapshot, formatSnapshotForPrompt } from "@/app/lib/factset-fundamentals";
 import { getSectorLeadership } from "@/app/lib/sector-leadership";
 import {
@@ -168,15 +169,29 @@ async function cheapInputsHashFor(
   return { hash, mentions };
 }
 
-// ── Business profile (Yahoo assetProfile.longBusinessSummary) ─────────
-// Near-static text, so cached in pm:business-profile-cache (nukeable,
-// matches the `-cache$` backup exclude) with a 30-day lazy refresh.
-// Fetched only at generation time — never on GET.
+// ── Business profile (FactSet FF_BUS_DESC_EXT, Yahoo fallback) ────────
+// FactSet's extended business description names the operating segments and
+// what sits in each (probe-confirmed Aug 2026), so it is the PRIMARY source;
+// Yahoo assetProfile.longBusinessSummary is the fallback for names FactSet
+// can't resolve. Near-static text, so cached in pm:business-profile-cache
+// (nukeable, matches the `-cache$` backup exclude) with a 30-day lazy
+// refresh. Fetched only at generation time — never on GET.
 
 const BUSINESS_CACHE_KEY = "pm:business-profile-cache";
 const BUSINESS_MAX_AGE_MS = 30 * 24 * 60 * 60 * 1000;
 
-type BusinessProfileCache = Record<string, { summary: string; fetchedAt: string }>;
+type BusinessProfileCache = Record<string, { summary: string; fetchedAt: string; source?: string }>;
+
+async function writeBusinessCache(key: string, summary: string, source: string): Promise<void> {
+  // Read-modify-write: re-read so concurrent generations of other tickers
+  // aren't clobbered, spread, write back.
+  const redis = await getRedis();
+  const fresh = await readJson<BusinessProfileCache>(BUSINESS_CACHE_KEY, {});
+  await redis.set(
+    BUSINESS_CACHE_KEY,
+    JSON.stringify({ ...fresh, [key]: { summary, fetchedAt: new Date().toISOString(), source } }),
+  );
+}
 
 async function fetchBusinessSummary(ticker: string): Promise<string | undefined> {
   const key = canonicalTicker(ticker);
@@ -185,6 +200,24 @@ async function fetchBusinessSummary(ticker: string): Promise<string | undefined>
   if (hit?.summary && Date.now() - new Date(hit.fetchedAt).getTime() < BUSINESS_MAX_AGE_MS) {
     return hit.summary;
   }
+
+  // Primary: FactSet extended business description.
+  if (factsetConfigured()) {
+    try {
+      const resolution = resolveFactsetId(ticker);
+      if (resolution.source === "factset") {
+        const data = await crossSectional([resolution.id], ["FF_BUS_DESC_EXT"]);
+        const desc = data[resolution.id]?.["FF_BUS_DESC_EXT"];
+        if (typeof desc === "string" && desc.trim().length > 40) {
+          await writeBusinessCache(key, desc.trim(), "factset");
+          return desc.trim();
+        }
+      }
+    } catch (e) {
+      log.warn(`FactSet business description failed for ${ticker}:`, e);
+    }
+  }
+
   try {
     // Yahoo quoteSummary needs the cookie+crumb dance (same pattern as
     // refresh-data). On any failure fall back to the stale cache entry.
@@ -207,14 +240,7 @@ async function fetchBusinessSummary(ticker: string): Promise<string | undefined>
     };
     const summary = data?.quoteSummary?.result?.[0]?.assetProfile?.longBusinessSummary;
     if (!summary) return hit?.summary;
-    // Read-modify-write: re-read so concurrent generations of other tickers
-    // aren't clobbered, spread, write back.
-    const redis = await getRedis();
-    const fresh = await readJson<BusinessProfileCache>(BUSINESS_CACHE_KEY, {});
-    await redis.set(
-      BUSINESS_CACHE_KEY,
-      JSON.stringify({ ...fresh, [key]: { summary, fetchedAt: new Date().toISOString() } }),
-    );
+    await writeBusinessCache(key, summary, "yahoo");
     return summary;
   } catch (e) {
     log.warn(`business summary fetch failed for ${ticker}:`, e);

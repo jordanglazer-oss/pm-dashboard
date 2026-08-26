@@ -10,6 +10,11 @@ const log = createLogger("Reextract-reports");
 /**
  * GET /api/admin/reextract-analyst-reports
  *
+ * STATUS (2026-08-26): REACTIVATED for schema rev 2 — the `segments` field
+ * (business-segment economics for the Synthesis screen's "what they do"
+ * primer). The work-list check now keys on segments/extraction date, so
+ * slots upgraded in the Finding-14 pass are candidates again. Prior status:
+ *
  * STATUS (2026-08-19): DELIBERATELY STOPPED PARTWAY — not abandoned or broken.
  * Jordan opted to upgrade the library going FORWARD (every new upload already
  * carries the new fields) rather than pay to re-extract the whole ~118-slot
@@ -73,8 +78,16 @@ export async function GET(req: NextRequest) {
   if (!raw) return NextResponse.json({ ok: true, message: "pm:analyst-reports is empty — nothing to do." });
   const reports = JSON.parse(raw) as AnalystReports;
 
-  const hasNewFields = (r: ExtractedReport | undefined) =>
-    !!r && (r.catalysts !== undefined || r.valuationBasis !== undefined || r.scenarios !== undefined);
+  // Schema rev 2 (2026-08-26): `segments` added for the Synthesis screen's
+  // business primer. A slot is current if it either carries segments already
+  // or was extracted after the segments schema shipped (a report can
+  // legitimately have no segment discussion — the timestamp check stops
+  // those from being re-extracted forever).
+  const SEGMENTS_SCHEMA_AT = "2026-08-26T22:45:00Z";
+  const hasCurrentSchema = (meta: { extracted?: ExtractedReport; extractedAt?: string } | undefined) =>
+    !!meta &&
+    (meta.extracted?.segments !== undefined ||
+      (!!meta.extractedAt && meta.extractedAt >= SEGMENTS_SCHEMA_AT));
 
   // Work list: every (ticker, source) slot with an archived PDF whose stored
   // extraction predates the widened schema.
@@ -83,7 +96,7 @@ export async function GET(req: NextRequest) {
     for (const source of ["rbc", "jpm", "morningstar"] as const) {
       const meta = slots[source];
       if (!meta?.pdfUrl) continue;
-      if (hasNewFields(meta.extracted)) continue; // already upgraded
+      if (hasCurrentSchema(meta)) continue; // already upgraded
       work.push({ ticker, source, id: meta.id });
     }
   }
@@ -136,6 +149,7 @@ export async function GET(req: NextRequest) {
             result.catalysts?.length ? `catalysts(${result.catalysts.length})` : null,
             result.valuationBasis ? "valuationBasis" : null,
             result.scenarios ? "scenarios" : null,
+            result.segments?.length ? `segments(${result.segments.length})` : null,
           ].filter((x): x is string => !!x);
           results.push({ ticker: w.ticker, source: w.source, status: "reextracted", newFields });
           log.info(`${w.ticker}/${w.source} re-extracted; new fields: ${newFields.join(", ") || "none present in PDF"}`);
