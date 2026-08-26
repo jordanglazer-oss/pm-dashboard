@@ -55,6 +55,13 @@ type QueuedTrade = {
    *  Excluded models that held the sold ticker get the freed weight
    *  redistributed to their Core ETFs (NOT a formal rebalance). */
   excludedGroupIds: string[];
+  /** Which model sleeve the bought security belongs to. Defaults from the
+   *  sold holding's class (switches) or a name heuristic (pure buys); shown
+   *  as an explicit selector in the buy ticket so a bond fund can never be
+   *  silently filed under equity. The executor REQUIRES buy class === sold
+   *  class on a switch — a cross-class switch is an asset-mix change, which
+   *  profile allocations own, not weightInClass. */
+  buyAssetClass: PimAssetClass;
 };
 function newTrade(): QueuedTrade {
   return {
@@ -66,7 +73,47 @@ function newTrade(): QueuedTrade {
     buyPrice: "",
     buyName: "",
     excludedGroupIds: [],
+    buyAssetClass: "equity",
   };
+}
+
+/** Default sleeve for a bought security, from its name/ticker. Mirrors the
+ *  keyword set in StockContext.detectAssetClass. Only a DEFAULT — the buy
+ *  ticket shows the result as an editable selector. */
+function guessAssetClass(name: string, ticker: string): PimAssetClass {
+  const s = `${name || ""} ${ticker || ""}`.toLowerCase();
+  if (/bond|fixed income|aggregate|treasur/.test(s)) return "fixedIncome";
+  if (/premium yield|premium incom|covered call|option income|option writing|alternative|hedge/.test(s)) return "alternative";
+  return "equity";
+}
+
+/** Redistribute weight freed inside a NON-EQUITY sleeve to that sleeve's
+ *  remaining holdings, proportional to their current weights. Equity has the
+ *  Core-absorbs-residual rule (rebalanceStockWeights); fixed income and
+ *  alternatives have no Core sleeve, so the sleeve must rebalance itself or
+ *  the class sum breaks and the trade guard aborts.
+ *
+ *  `holdings` is the FULL group holdings list with the sold holding already
+ *  trimmed/removed. Returns the adjusted list, or null when no sibling in the
+ *  sleeve can absorb the weight (sole-holding sleeve) — callers must treat
+ *  null as "cannot be expressed in the model" and either warn or abort. */
+function redistributeWithinClass(
+  holdings: PimHolding[],
+  assetClass: PimAssetClass,
+  excludeSymbol: string,
+  freed: number,
+): PimHolding[] | null {
+  if (freed <= 0) return holdings;
+  const siblings = holdings.filter(
+    (h) => h.assetClass === assetClass && !symbolEq(h.symbol, excludeSymbol) && h.weightInClass > 0,
+  );
+  const siblingTotal = siblings.reduce((s, h) => s + h.weightInClass, 0);
+  if (siblings.length === 0 || siblingTotal <= 0) return null;
+  return holdings.map((h) =>
+    siblings.includes(h)
+      ? { ...h, weightInClass: h.weightInClass + freed * (h.weightInClass / siblingTotal) }
+      : h,
+  );
 }
 
 /** US-situs detection for the No-US-Situs tax mandate. A security is US-situs
@@ -1334,16 +1381,29 @@ export function PimPortfolio({ groups }: Props) {
   // ── Rebalance & Buy/Sell logic ──
   const groupState = getGroupState(selectedGroupId);
 
-  const computedHoldingsForSwitch = useMemo(() => {
-    if (!effectiveGroup || !profileWeights) return [];
-    return effectiveGroup.holdings.map((h) => {
-      let alloc = 0;
-      if (h.assetClass === "fixedIncome") alloc = profileWeights.fixedIncome;
-      else if (h.assetClass === "equity") alloc = profileWeights.equity;
-      else if (h.assetClass === "alternative") alloc = profileWeights.alternatives;
-      return { symbol: h.symbol, name: h.name, weightInPortfolio: h.weightInClass * alloc };
-    });
-  }, [effectiveGroup, profileWeights]);
+  /** Sell candidates for the Buy / Sell panel. Built from the RAW selected
+   *  group (not effectiveGroup) and NOT scaled by the active profile's asset
+   *  allocation — scaling hid every fixed-income / alternative holding
+   *  whenever the viewed profile allocated 0% to its sleeve (All-Equity,
+   *  Alpha, Core), so JBND could never be sold from those tabs even though a
+   *  sell executes firm-wide. Unioned with the group's actual positions so a
+   *  book/model divergence (units with no model target) stays sellable. */
+  const sellCandidates = useMemo(() => {
+    if (!selectedGroup) return [];
+    const out: { symbol: string; name: string; assetClass: PimAssetClass }[] = [];
+    for (const h of selectedGroup.holdings) {
+      if (h.weightInClass > 0) out.push({ symbol: h.symbol, name: h.name, assetClass: h.assetClass });
+    }
+    for (const pp of positions) {
+      if (pp.groupId !== selectedGroupId) continue;
+      for (const p of pp.positions) {
+        if (p.units > 0 && !out.some((c) => symbolEq(c.symbol, p.symbol))) {
+          out.push({ symbol: p.symbol, name: p.symbol, assetClass: "equity" });
+        }
+      }
+    }
+    return out;
+  }, [selectedGroup, positions, selectedGroupId]);
 
   // Execute rebalance for a specific profile. Two-phase: stocks/ETFs settle
   // immediately; mutual funds (FUNDSERV codes) become "pending" trades that
@@ -1889,6 +1949,10 @@ export function PimPortfolio({ groups }: Props) {
     /** Set when a partial trim could not move the model target, because the
      *  sold name is an equal-weighted individual stock. */
     let partialTrimNotApplied = false;
+    /** Groups where a non-equity trim could not move the model target because
+     *  the sold name is its sleeve's only holding — the freed weight has
+     *  nowhere inside the sleeve to go. Position still trims. */
+    const soleSleeveGroups: string[] = [];
     /** Buy-only: profiles where the name carries no model target, so no
      *  units could be sized. */
     const buyOnlyNoTargetGroups: string[] = [];
@@ -1905,6 +1969,30 @@ export function PimPortfolio({ groups }: Props) {
     // would close over the pre-loop snapshot for every iteration.
     const originalPim = pimModelsRef.current;
     const nowIso = new Date().toISOString();
+
+    /** Sleeve of the bought security (explicit from the buy ticket). */
+    const buyAC: PimAssetClass = trade.buyAssetClass || "equity";
+    /** Sleeve of the sold holding, from the first model that holds it. */
+    const soldClass: PimAssetClass | undefined = trade.sellSymbol
+      ? originalPim.groups
+          .flatMap((g) => g.holdings)
+          .find((h) => tickerEq(h.symbol, trade.sellSymbol))?.assetClass
+      : undefined;
+
+    // A switch must stay inside one sleeve. Selling JBND (fixed income) to
+    // buy an equity name — or vice versa — moves weight BETWEEN asset
+    // classes, and weightInClass cannot express that: each sleeve must still
+    // sum to 100% of itself, with the mix owned by the profile allocations.
+    // The old behaviour silently filed the buy under the sold name's class,
+    // which kept the sums valid but put the security in the wrong bucket.
+    if (trade.sellSymbol && buyTicker && soldClass && buyAC !== soldClass) {
+      const label = (ac: PimAssetClass) =>
+        ac === "fixedIncome" ? "fixed income" : ac === "alternative" ? "alternatives" : "equity";
+      return {
+        ok: false,
+        error: `${displayTicker(trade.sellSymbol)} is ${label(soldClass)} but ${buyTicker} is marked ${label(buyAC)} — a cross-class switch changes the asset mix, which profile allocations own. Pick a same-class replacement (or fix the Bucket selector), or do a sell-only and adjust the mix separately.`,
+      };
+    }
 
     type SwapPlan = {
       groupId: string;
@@ -2034,7 +2122,7 @@ export function PimPortfolio({ groups }: Props) {
         // model state. Letting addStock persist its own version first is what
         // diluted every stock and left the sold holding in place.
         buyStockForRebalance = stock;
-        addStock(stock, { skipPimModels: isSwitch });
+        addStock(stock, { skipPimModels: isSwitch, assetClass: buyAC });
       } else {
         buyStockForRebalance = existingStock;
         // Persist any user-set eligibility BEFORE the bucket flip so the
@@ -2054,6 +2142,7 @@ export function PimPortfolio({ groups }: Props) {
           moveBucket(existingStock.ticker, {
             skipPimModels: isSwitch,
             eligibility: excludedSet.size > 0 ? eligibilityMap : undefined,
+            assetClass: buyAC,
           });
         }
       }
@@ -2074,7 +2163,12 @@ export function PimPortfolio({ groups }: Props) {
         // third writer racing the atomic swap for the same key. The bucket
         // flip on pm:stocks still happens; only the model write is deferred to
         // the swap, which removes the sold holding as part of one write.
-        moveBucket(soldStock.ticker, { skipPimModels: isSwitch });
+        // Non-equity sells are also skipped here: removeFromPimModels'
+        // equity-only rebalance can't re-normalize a fixed-income /
+        // alternatives sleeve — the sell-only block below owns that write.
+        moveBucket(soldStock.ticker, {
+          skipPimModels: isSwitch || (soldClass != null && soldClass !== "equity"),
+        });
       }
     }
 
@@ -2108,27 +2202,77 @@ export function PimPortfolio({ groups }: Props) {
         const plan = trimPlan.find((p) => p.groupId === g.id);
         if (!plan) {
           if (!buyOnlyAddSet.has(g.id) || !buyTicker) return g;
-          // Eligible model that doesn't hold the sold name — add the buy and
-          // let the residual rule fund it from this model's Core ETFs.
+          // Eligible model that doesn't hold the sold name — add the buy.
+          // Equity buys are funded by the residual rule (Core ETFs shrink);
+          // non-equity buys have no Core sleeve to fund them, so they land
+          // at 0 target and are surfaced via the no-target warning.
           const added: PimHolding[] = [
             ...g.holdings,
             {
               name: buyName.toUpperCase(),
               symbol: buyTicker,
               currency: partialBuyCurrency,
-              assetClass: "equity",
+              assetClass: buyAC,
               weightInClass: 0,
             },
           ];
-          return { ...g, holdings: rebalanceStockWeights(added, buyStockForRebalance, g.id) };
+          return buyAC === "equity"
+            ? { ...g, holdings: rebalanceStockWeights(added, buyStockForRebalance, g.id) }
+            : { ...g, holdings: added };
         }
 
+        const soldAC = plan.soldHolding.assetClass;
+        const freed = plan.soldHolding.weightInClass * (sellPercent / 100);
         const trimmed = g.holdings.map((h) =>
           h === plan.soldHolding
             ? { ...h, weightInClass: h.weightInClass * keepFraction }
             : h,
         );
 
+        // ── Non-equity sleeve (fixed income / alternatives) ──────────────
+        // rebalanceStockWeights only touches equity, so the freed weight
+        // must be placed HERE or the sleeve stops summing to 100% and the
+        // class-sum guard aborts the trade (which is exactly what made JBND
+        // untradeable). Same-class buy takes the freed weight verbatim;
+        // otherwise the sleeve's remaining holdings absorb it
+        // proportionally; a sole-holding sleeve cannot express the trim at
+        // all, so the target is left unchanged and the user is told.
+        if (soldAC !== "equity") {
+          const existingBuy = buyTicker
+            ? g.holdings.find((h) => tickerEq(h.symbol, buyTicker))
+            : undefined;
+          if (buyTicker && !excludedSet.has(g.id) && !existingBuy) {
+            const withBuy: PimHolding[] = [
+              ...trimmed,
+              {
+                name: buyName.toUpperCase(),
+                symbol: buyTicker,
+                currency: partialBuyCurrency,
+                assetClass: buyAC,
+                weightInClass: freed,
+              },
+            ];
+            return { ...g, holdings: withBuy };
+          }
+          if (existingBuy && !excludedSet.has(g.id) && existingBuy.assetClass === soldAC) {
+            // Already holds the bought name in the same sleeve — the freed
+            // weight tops it up.
+            return {
+              ...g,
+              holdings: trimmed.map((h) =>
+                tickerEq(h.symbol, buyTicker) ? { ...h, weightInClass: h.weightInClass + freed } : h,
+              ),
+            };
+          }
+          const redistributed = redistributeWithinClass(trimmed, soldAC, plan.soldHolding.symbol, freed);
+          if (redistributed === null) {
+            soleSleeveGroups.push(g.name);
+            return g; // model target unchanged; position still trims below
+          }
+          return { ...g, holdings: redistributed };
+        }
+
+        // ── Equity sleeve — existing residual-rule path, unchanged ───────
         // No buy side, buy ineligible here, or the name is already held:
         // take the trim alone and let the residual rule place the freed
         // weight. (Already-held is why this walks trimPlan and not swapPlan.)
@@ -2181,23 +2325,44 @@ export function PimPortfolio({ groups }: Props) {
           : buyTicker.endsWith("-T") || buyTicker.endsWith(".TO")
             ? "CAD"
             : swapPlan[0].soldHolding.currency; // inherit when suffix is silent
+      /** Excluded groups where a full sell of a non-equity name cannot be
+       *  expressed — the sleeve has no sibling to absorb the freed weight. */
+      const fullSellSoleSleeve: string[] = [];
       const updatedGroups = originalPim.groups.map((g) => {
         const plan = swapPlan.find((p) => p.groupId === g.id);
         if (!plan) {
           if (!buyOnlyAddSet.has(g.id)) return g;
-          // Eligible model that doesn't hold the sold name — add the buy and
-          // let the residual rule fund it from this model's Core ETFs.
+          // Eligible model that doesn't hold the sold name — add the buy.
+          // Equity buys are funded by the residual rule (Core ETFs shrink);
+          // non-equity buys have no Core sleeve, so they land at 0 target.
           const added: PimHolding[] = [
             ...g.holdings,
             {
               name: buyName.toUpperCase(),
               symbol: buyTicker,
               currency: buyCurrency,
-              assetClass: "equity",
+              assetClass: buyAC,
               weightInClass: 0,
             },
           ];
-          return { ...g, holdings: rebalanceStockWeights(added, buyStockForRebalance, g.id) };
+          return buyAC === "equity"
+            ? { ...g, holdings: rebalanceStockWeights(added, buyStockForRebalance, g.id) }
+            : { ...g, holdings: added };
+        }
+        if (excludedSet.has(g.id) && plan.soldHolding.assetClass !== "equity") {
+          // Buy ineligible here and the sold name is non-equity: the Core
+          // redistribution below is equity-only, so the sleeve itself must
+          // absorb the freed weight or the class-sum guard aborts.
+          const sold = plan.soldHolding;
+          const remaining = g.holdings.filter((h) => h !== sold);
+          const redistributed = redistributeWithinClass(
+            remaining, sold.assetClass, sold.symbol, sold.weightInClass,
+          );
+          if (redistributed === null) {
+            fullSellSoleSleeve.push(g.name);
+            return g;
+          }
+          return { ...g, holdings: redistributed };
         }
         if (excludedSet.has(g.id)) {
           // Buy is INELIGIBLE for this model (e.g. No US Situs + US-listed
@@ -2248,6 +2413,13 @@ export function PimPortfolio({ groups }: Props) {
         };
       });
 
+      if (fullSellSoleSleeve.length > 0) {
+        return {
+          ok: false,
+          error: `${displayTicker(trade.sellSymbol)} is the only holding in its sleeve for ${fullSellSoleSleeve.join(", ")}, and the buy is excluded there — the freed weight has nowhere to go. Make the buy eligible for those models or replace the holding there first. No changes persisted.`,
+        };
+      }
+
       // Shared with the partial-sell block above — see assertClassSumsSafe.
       const guardError = assertClassSumsSafe(originalPim.groups, updatedGroups, affectedGroupIds);
       if (guardError) return { ok: false, error: guardError };
@@ -2255,6 +2427,42 @@ export function PimPortfolio({ groups }: Props) {
       const nextPim = { ...originalPim, groups: updatedGroups, lastUpdated: nowIso };
       updatePimModels(nextPim);
       // Sync the ref so the next trade in the queue sees this update.
+      pimModelsRef.current = nextPim;
+    }
+
+    // ── Full sell-only of a NON-EQUITY holding: remove the model target. ──
+    // Equity full sells reach the model via moveBucket → removeFromPimModels
+    // (Core ETFs absorb the freed weight). Non-equity names are usually not
+    // in pm:stocks at all, and the equity-only rebalance couldn't re-normalize
+    // their sleeve anyway — so the removal is written here, with the sleeve's
+    // remaining holdings absorbing the weight proportionally. A sole-holding
+    // sleeve cannot express the removal (the profile still allocates to the
+    // class), so the trade aborts with the options spelled out.
+    if (sellOnly && !isPartialSell && soldClass && soldClass !== "equity" && trimPlan.length > 0) {
+      const soleSleeve: string[] = [];
+      const updatedGroups = originalPim.groups.map((g) => {
+        const plan = trimPlan.find((p) => p.groupId === g.id);
+        if (!plan) return g;
+        const remaining = g.holdings.filter((h) => h !== plan.soldHolding);
+        const redistributed = redistributeWithinClass(
+          remaining, soldClass, plan.soldHolding.symbol, plan.soldHolding.weightInClass,
+        );
+        if (redistributed === null) {
+          soleSleeve.push(g.name);
+          return g;
+        }
+        return { ...g, holdings: redistributed };
+      });
+      if (soleSleeve.length > 0) {
+        return {
+          ok: false,
+          error: `${displayTicker(trade.sellSymbol)} is the ONLY ${soldClass === "fixedIncome" ? "fixed-income" : "alternatives"} holding in ${soleSleeve.join(", ")} — the profile still allocates to that sleeve, so a full sell can't be expressed in the model. Switch into a replacement fund instead, use a partial sell, or change the profile's asset mix first. No changes persisted.`,
+        };
+      }
+      const guardError = assertClassSumsSafe(originalPim.groups, updatedGroups, affectedGroupIds);
+      if (guardError) return { ok: false, error: guardError };
+      const nextPim = { ...originalPim, groups: updatedGroups, lastUpdated: nowIso };
+      updatePimModels(nextPim);
       pimModelsRef.current = nextPim;
     }
 
@@ -2657,6 +2865,10 @@ export function PimPortfolio({ groups }: Props) {
     }
     if (partialTrimNotApplied) {
       const note = `${trade.sellSymbol} is an individual stock, and individual stocks are equal-weighted by design — the model target could NOT be trimmed. The position was reduced; the model still targets the full weight.`;
+      warning = warning ? `${warning} ${note}` : note;
+    }
+    if (soleSleeveGroups.length > 0) {
+      const note = `${trade.sellSymbol} is the only holding in its sleeve for ${soleSleeveGroups.join(", ")} — the freed weight had nowhere inside the sleeve to go, so the model target was NOT trimmed there. The position was reduced; switch into a replacement fund or adjust the profile mix to move the target.`;
       warning = warning ? `${warning} ${note}` : note;
     }
 
@@ -3158,11 +3370,24 @@ export function PimPortfolio({ groups }: Props) {
                     <div className="space-y-1.5">
                       <label className="text-[10px] font-semibold text-neg uppercase">Sell (optional)</label>
                       <select value={t.sellSymbol}
-                        onChange={(e) => updateTrade(t.id, { sellSymbol: e.target.value, sellPrice: e.target.value ? t.sellPrice : "" })}
+                        onChange={(e) => {
+                          // The buy inherits the sold name's sleeve by default —
+                          // a JBND sale funds a fixed-income buy unless the user
+                          // says otherwise via the class selector.
+                          const soldClass = sellCandidates.find((c) => symbolEq(c.symbol, e.target.value))?.assetClass;
+                          updateTrade(t.id, {
+                            sellSymbol: e.target.value,
+                            sellPrice: e.target.value ? t.sellPrice : "",
+                            ...(soldClass ? { buyAssetClass: soldClass } : {}),
+                          });
+                        }}
                         className="w-full rounded-lg border border-line bg-white text-ink px-3 py-2 text-sm outline-none focus:border-warn-border">
                         <option value="">None — buy only</option>
-                {computedHoldingsForSwitch.filter((h) => h.weightInPortfolio > 0).map((h) => (
-                          <option key={h.symbol} value={h.symbol}>{symbolToTicker(h.symbol)} — {h.name}</option>
+                {sellCandidates.map((h) => (
+                          <option key={h.symbol} value={h.symbol}>
+                            {symbolToTicker(h.symbol)} — {h.name}
+                            {h.assetClass === "fixedIncome" ? " · fixed income" : h.assetClass === "alternative" ? " · alternative" : ""}
+                          </option>
                         ))}
                       </select>
                       {t.sellSymbol && (
@@ -3195,12 +3420,17 @@ export function PimPortfolio({ groups }: Props) {
                                 st.bucket === "Portfolio" &&
                                 (st.instrumentType === "stock" || st.instrumentType === undefined),
                             );
+                            const soldCand = sellCandidates.find((c) => symbolEq(c.symbol, t.sellSymbol));
+                            const soldNonEquity = soldCand && soldCand.assetClass !== "equity";
                             return (
                               <p className="text-[10px] text-warn">
                                 Partial sell — the model target is trimmed by the same {sellPctParsed || 0}%
                                 {t.buyTicker ? `, and ${t.buyTicker.toUpperCase()} is added to each eligible model.` : "."}
                                 {soldIsEqualWeightStock && (
                                   <> <strong>{displayTicker(t.sellSymbol)} is an individual stock, so its target cannot be trimmed</strong> — stock targets are equal-weighted by design. The position will shrink; the target will not.</>
+                                )}
+                                {soldNonEquity && (
+                                  <> {displayTicker(t.sellSymbol)} is {soldCand.assetClass === "fixedIncome" ? "fixed income" : "an alternative"} — the freed target goes to {t.buyTicker ? "the bought fund" : "the sleeve's other holdings"}; where a model holds nothing else in that sleeve, the position shrinks but the target stays.</>
                                 )}
                               </p>
                             );
@@ -3226,11 +3456,19 @@ export function PimPortfolio({ groups }: Props) {
                               pimModels.groups.some((g) => g.id === NO_US_SITUS_GROUP_ID)
                                 ? [NO_US_SITUS_GROUP_ID]
                                 : [];
+                            // Default sleeve: inherit the sold holding's class on a
+                            // switch; otherwise guess from the name (bond → fixed
+                            // income). Always user-overridable below.
+                            const soldClass = t.sellSymbol
+                              ? sellCandidates.find((c) => symbolEq(c.symbol, t.sellSymbol))?.assetClass
+                              : undefined;
                             updateTrade(t.id, {
                               buyTicker: e.target.value,
                               buyName: picked?.name || e.target.value,
                               buyPrice: e.target.value ? t.buyPrice : "",
                               excludedGroupIds: autoExcluded,
+                              buyAssetClass: soldClass
+                                ?? guessAssetClass(picked?.name || "", e.target.value),
                             });
                           }}
                           className="w-full rounded-lg border border-line bg-white text-ink px-3 py-2 text-sm outline-none focus:border-pos-border font-mono">
@@ -3243,10 +3481,23 @@ export function PimPortfolio({ groups }: Props) {
                         </select>
                       )}
                       {t.buyTicker && (
-                        <input type="number" step="0.01" placeholder="Buy price"
-                          value={t.buyPrice}
-                          onChange={(e) => updateTrade(t.id, { buyPrice: e.target.value })}
-                          className="w-full rounded-lg border border-line bg-white text-ink px-3 py-2 text-sm outline-none focus:border-pos-border" />
+                        <>
+                          <input type="number" step="0.01" placeholder="Buy price"
+                            value={t.buyPrice}
+                            onChange={(e) => updateTrade(t.id, { buyPrice: e.target.value })}
+                            className="w-full rounded-lg border border-line bg-white text-ink px-3 py-2 text-sm outline-none focus:border-pos-border" />
+                          <div className="flex items-center gap-2">
+                            <span className="text-[10px] font-semibold text-ink-3 uppercase whitespace-nowrap">Bucket</span>
+                            <select value={t.buyAssetClass}
+                              onChange={(e) => updateTrade(t.id, { buyAssetClass: e.target.value as PimAssetClass })}
+                              className="w-full rounded-lg border border-line bg-white text-ink px-2 py-1.5 text-xs outline-none focus:border-pos-border"
+                              title="Which model sleeve the bought security belongs to. A switch must stay within one sleeve — changing the equity/fixed-income mix is a profile-allocation decision, not a trade.">
+                              <option value="equity">Equity</option>
+                              <option value="fixedIncome">Fixed income</option>
+                              <option value="alternative">Alternative</option>
+                            </select>
+                          </div>
+                        </>
                       )}
                     </div>
                   </div>

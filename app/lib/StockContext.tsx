@@ -100,9 +100,9 @@ type StockContextType = {
   scannerData: ScannerData | null;
   offensiveExposure: number;
   loading: boolean;
-  addStock: (stock: Stock, opts?: { skipPimModels?: boolean }) => void;
+  addStock: (stock: Stock, opts?: { skipPimModels?: boolean; assetClass?: "fixedIncome" | "equity" | "alternative" }) => void;
   removeStock: (ticker: string) => void;
-  moveBucket: (ticker: string, opts?: { skipPimModels?: boolean; eligibility?: Record<string, boolean> }) => void;
+  moveBucket: (ticker: string, opts?: { skipPimModels?: boolean; eligibility?: Record<string, boolean>; assetClass?: "fixedIncome" | "equity" | "alternative" }) => void;
   updateScore: (ticker: string, key: ScoreKey, value: number) => void;
   updateExplanations: (ticker: string, explanations: ScoreExplanations) => void;
   updateLastScored: (ticker: string, timestamp: string) => void;
@@ -799,12 +799,17 @@ export function StockProvider({ children }: { children: React.ReactNode }) {
   }, []);
 
   /* ─── Auto-add to PIM models when stock is added ─── */
-  const addToPimModels = useCallback((stock: Stock) => {
+  /**
+   * @param assetClassOverride  Explicit sleeve from the caller (the Buy/Sell
+   *   ticket's Bucket selector). Without it the name-keyword heuristic
+   *   decides, which mis-files funds whose names don't say "bond".
+   */
+  const addToPimModels = useCallback((stock: Stock, assetClassOverride?: "fixedIncome" | "equity" | "alternative") => {
     // Defensive guard: Watchlist stocks never belong in PIM models.
     // This backstops addStock / moveBucket callers.
     if (stock.bucket !== "Portfolio") return;
     setPimModelsState((prev) => {
-      const assetClass = detectAssetClass(stock);
+      const assetClass = assetClassOverride ?? detectAssetClass(stock);
       // PIM models only support CAD/USD — cast the general currency string
       const currency = tickerCurrency(stock.ticker) as "CAD" | "USD";
       const eligibility = stock.modelEligibility || {};
@@ -882,7 +887,7 @@ export function StockProvider({ children }: { children: React.ReactNode }) {
    *   write then aborted on a validation guard, leaving the model diluted
    *   with the sold holding still in it. Two writers, one key, no ordering.
    */
-  const addStock = useCallback((stock: Stock, opts?: { skipPimModels?: boolean }) => {
+  const addStock = useCallback((stock: Stock, opts?: { skipPimModels?: boolean; assetClass?: "fixedIncome" | "equity" | "alternative" }) => {
     setStocks((prev) => {
       const next = [stock, ...prev];
       persistStocks(next);
@@ -893,7 +898,7 @@ export function StockProvider({ children }: { children: React.ReactNode }) {
     // performance calculations. They are research candidates, not
     // actual holdings.
     if (stock.bucket === "Portfolio") {
-      if (!opts?.skipPimModels) addToPimModels(stock);
+      if (!opts?.skipPimModels) addToPimModels(stock, opts?.assetClass);
     }
     // Watchlist add → queue a one-time "request RBC/JPM coverage" email
     // (fire-and-forget; the route is idempotent per ticker, and no-ops
@@ -925,7 +930,7 @@ export function StockProvider({ children }: { children: React.ReactNode }) {
    *   and added the holding to every group including the ones the PM had
    *   explicitly unticked.
    */
-  const moveBucket = useCallback((ticker: string, opts?: { skipPimModels?: boolean; eligibility?: Record<string, boolean> }) => {
+  const moveBucket = useCallback((ticker: string, opts?: { skipPimModels?: boolean; eligibility?: Record<string, boolean>; assetClass?: "fixedIncome" | "equity" | "alternative" }) => {
     const stock = stocks.find((s) => s.ticker === ticker);
     const wasPortfolio = stock?.bucket === "Portfolio";
     setStocks((prev) => {
@@ -951,7 +956,7 @@ export function StockProvider({ children }: { children: React.ReactNode }) {
         ...stock,
         bucket: "Portfolio",
         ...(opts?.eligibility ? { modelEligibility: opts.eligibility } : {}),
-      });
+      }, opts?.assetClass);
     }
   }, [stocks, persistStocks, removeFromPimModels, addToPimModels]);
 
