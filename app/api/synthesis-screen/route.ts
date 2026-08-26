@@ -12,7 +12,7 @@ import {
   type AnalystSnapshots,
   type AnalystReports,
 } from "@/app/lib/analyst-snapshots";
-import { resolveFactsetId } from "@/app/lib/factset-symbols";
+import { resolveFactsetId, isFundservCode } from "@/app/lib/factset-symbols";
 import { companySnapshot, formatSnapshotForPrompt } from "@/app/lib/factset-fundamentals";
 import { getSectorLeadership } from "@/app/lib/sector-leadership";
 import {
@@ -67,6 +67,7 @@ type StockLike = {
   sector?: string;
   currentPrice?: number;
   earningsDate?: string;
+  instrumentType?: string;
 };
 
 function toYahoo(ticker: string): string {
@@ -90,7 +91,16 @@ async function readJson<T>(key: string, fallback: T): Promise<T> {
 async function loadBookStocks(): Promise<StockLike[]> {
   const stocks = await readJson<StockLike[]>("pm:stocks", []);
   return (Array.isArray(stocks) ? stocks : []).filter(
-    (s) => s?.ticker && (s.bucket === "Portfolio" || s.bucket === "Watchlist"),
+    (s) =>
+      s?.ticker &&
+      (s.bucket === "Portfolio" || s.bucket === "Watchlist") &&
+      // Individual equities only — ETFs and funds are excluded from the
+      // synthesis screen (2026-08-26 decision). Unset instrumentType is
+      // treated as a stock (same convention as the beta persistence rule),
+      // except FUNDSERV codes which are always mutual funds.
+      s.instrumentType !== "etf" &&
+      s.instrumentType !== "mutual-fund" &&
+      !isFundservCode(s.ticker),
   );
 }
 
@@ -135,13 +145,14 @@ async function cheapInputsHashFor(
 
 export async function GET() {
   try {
-    const [stocks, snapshots, reports, cache, leadership, takeawayStore] = await Promise.all([
+    const [stocks, snapshots, reports, cache, leadership, takeawayStore, history] = await Promise.all([
       loadBookStocks(),
       readJson<AnalystSnapshots>("pm:analyst-snapshots", {}),
       readJson<AnalystReports>("pm:analyst-reports", {}),
       readJson<SynthesisScreenCache>(SYNTHESIS_CACHE_KEY, {}),
       getSectorLeadership(),
       loadStreetTakeaways(),
+      readJson<SynthesisHistory>(SYNTHESIS_HISTORY_KEY, {}),
     ]);
 
     const today = new Date().toISOString().slice(0, 10);
@@ -150,13 +161,41 @@ export async function GET() {
         const ticker = canonicalTicker(s.ticker!);
         const entry = cache[ticker];
         let stale: StaleReason[];
+        let mentionCount = 0;
         try {
-          const { hash } = await cheapInputsHashFor(ticker, s, snapshots, reports, takeawayStore);
+          const { hash, mentions } = await cheapInputsHashFor(ticker, s, snapshots, reports, takeawayStore);
+          mentionCount = mentions.mentions.length;
           stale = evaluateStaleness(entry, hash, s.currentPrice, today);
         } catch (e) {
           log.warn(`staleness check failed for ${ticker}:`, e);
           stale = entry ? [] : ["never-generated"];
         }
+
+        // Evidence-coverage summary for the pre-generation icons. "Reports"
+        // means an uploaded PDF extract (what the PM cares about most) —
+        // a snapshot target entered by hand still counts for targets but
+        // not as a report.
+        const rep = getReportsForTicker(reports, ticker);
+        const snap = getSnapshotForTicker(snapshots, ticker);
+        const evidence = {
+          rbcReport: !!rep?.rbc,
+          jpmReport: !!rep?.jpm,
+          morningstarReport: !!rep?.morningstar,
+          streetConsensus: snap?.factset?.averageTarget != null,
+          takeaways: takeawaysFor(takeawayStore, ticker).length,
+          mentions: mentionCount,
+        };
+
+        // Previous different-day verdict for the change marker: the latest
+        // history row strictly before the current entry's generation day.
+        let previous: SynthesisHistoryRow | null = null;
+        if (entry) {
+          const entryDay = entry.generatedAt.slice(0, 10);
+          const rowsFor = Array.isArray(history[ticker]) ? history[ticker] : [];
+          const prior = rowsFor.filter((r) => r.date < entryDay).sort((a, b) => a.date.localeCompare(b.date));
+          previous = prior.length > 0 ? prior[prior.length - 1] : null;
+        }
+
         return {
           ticker,
           displayTicker: s.ticker,
@@ -167,6 +206,8 @@ export async function GET() {
           earningsDate: s.earningsDate,
           entry: entry ?? null,
           stale,
+          evidence,
+          previous,
         };
       }),
     );

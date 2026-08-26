@@ -8,6 +8,8 @@ import {
   type SynthesisEntry,
   type SynthesisBullet,
   type StaleReason,
+  type SynthesisHistoryRow,
+  type SynthesisVerdict,
 } from "@/app/lib/synthesis-screen-display";
 import type { SectorLeadership, LeadershipRow } from "@/app/lib/sector-leadership";
 
@@ -19,6 +21,15 @@ import type { SectorLeadership, LeadershipRow } from "@/app/lib/sector-leadershi
  * names have new inputs, a big price move, or earnings since last run.
  */
 
+type Evidence = {
+  rbcReport: boolean;
+  jpmReport: boolean;
+  morningstarReport: boolean;
+  streetConsensus: boolean;
+  takeaways: number;
+  mentions: number;
+};
+
 type Row = {
   ticker: string;
   displayTicker?: string;
@@ -29,7 +40,11 @@ type Row = {
   earningsDate?: string;
   entry: SynthesisEntry | null;
   stale: StaleReason[];
+  evidence?: Evidence;
+  previous?: SynthesisHistoryRow | null;
 };
+
+const hasReports = (r: Row) => !!(r.evidence?.rbcReport || r.evidence?.jpmReport);
 
 type ScreenData = { rows: Row[]; leadership: SectorLeadership };
 
@@ -65,6 +80,53 @@ function SkewPill({ skew }: { skew: number }) {
   const cls = skew > 0 ? "text-pos" : skew < 0 ? "text-neg" : "text-ink-3";
   const label = skew > 0 ? `Bull +${skew}` : skew < 0 ? `Bear ${skew}` : "Balanced";
   return <span className={`font-mono text-[10px] font-semibold ${cls}`} title="Risk/reward skew (−2 bear-heavy … +2 bull-heavy)">{label}</span>;
+}
+
+/** Higher = better outcome, per bucket. Drives the change-marker arrow. */
+const VERDICT_GOODNESS: Record<string, number> = {
+  pass: 0,
+  watch: 1,
+  advance: 2,
+  "exit-watch": 0,
+  review: 1,
+  "thesis-intact": 2,
+};
+
+function VerdictChangeMarker({ current, previous }: { current: SynthesisVerdict; previous: SynthesisHistoryRow }) {
+  if (previous.verdict === current) return null;
+  const improved = (VERDICT_GOODNESS[current] ?? 1) > (VERDICT_GOODNESS[previous.verdict] ?? 1);
+  return (
+    <span
+      className={`font-mono text-[10px] font-bold ${improved ? "text-pos" : "text-neg"}`}
+      title={`Was ${VERDICT_LABEL[previous.verdict] ?? previous.verdict} on ${previous.date}`}
+    >
+      {improved ? "▲" : "▼"} was {VERDICT_LABEL[previous.verdict] ?? previous.verdict}
+    </span>
+  );
+}
+
+function EvidenceIcons({ evidence }: { evidence: Evidence }) {
+  const chip = (label: string, on: boolean, title: string) => (
+    <span
+      key={label}
+      title={title}
+      className={`inline-flex items-center rounded border px-1 py-px font-mono text-[8px] font-semibold ${
+        on ? "border-line bg-surface text-ink-2" : "border-line bg-surface-2 text-ink-3 opacity-40"
+      }`}
+    >
+      {label}
+    </span>
+  );
+  return (
+    <span className="inline-flex items-center gap-0.5" onClick={(e) => e.stopPropagation()}>
+      {chip("RBC", evidence.rbcReport, evidence.rbcReport ? "RBC report uploaded" : "No RBC report")}
+      {chip("JPM", evidence.jpmReport, evidence.jpmReport ? "JPM report uploaded" : "No JPM report")}
+      {chip("MS", evidence.morningstarReport, evidence.morningstarReport ? "Morningstar report uploaded" : "No Morningstar report")}
+      {chip("ST", evidence.streetConsensus, evidence.streetConsensus ? "FactSet street consensus present" : "No street consensus")}
+      {chip(`TA ${evidence.takeaways}`, evidence.takeaways > 0, `${evidence.takeaways} street-takeaway entries`)}
+      {chip(`L ${evidence.mentions}`, evidence.mentions > 0, `${evidence.mentions} research-list mentions`)}
+    </span>
+  );
 }
 
 function StaleBadges({ stale }: { stale: StaleReason[] }) {
@@ -307,7 +369,10 @@ export default function SynthesisPage() {
     return <div className="mx-auto max-w-5xl px-4 py-8 text-sm text-ink-3">Loading synthesis screen…</div>;
   }
 
-  const staleTickers = data.rows.filter((r) => r.stale.length > 0).map((r) => r.ticker);
+  // Bulk refresh only covers names with at least one uploaded RBC/JPM report —
+  // thin-evidence names are generated deliberately, one at a time.
+  const staleTickers = data.rows.filter((r) => r.stale.length > 0 && hasReports(r)).map((r) => r.ticker);
+  const staleNoReports = data.rows.filter((r) => r.stale.length > 0 && !hasReports(r)).length;
 
   return (
     <div className="mx-auto max-w-5xl space-y-4 px-4 py-6">
@@ -323,6 +388,7 @@ export default function SynthesisPage() {
           onClick={() => void generate(staleTickers)}
           disabled={staleTickers.length === 0 || generating.size > 0}
           className="rounded-md border border-accent-border bg-accent-soft px-3 py-1.5 text-xs font-semibold text-accent disabled:opacity-40"
+          title={staleNoReports > 0 ? `Skips ${staleNoReports} stale name(s) with no RBC/JPM report — generate those individually` : undefined}
         >
           Refresh stale ({staleTickers.length})
         </button>
@@ -357,6 +423,7 @@ export default function SynthesisPage() {
                           {row.entry && r ? (
                             <>
                               <VerdictChip entry={row.entry} />
+                              {row.previous && <VerdictChangeMarker current={r.verdict} previous={row.previous} />}
                               <SkewPill skew={r.skew} />
                               <span className="truncate text-xs text-ink-2">{r.verdictReason}</span>
                             </>
@@ -365,6 +432,15 @@ export default function SynthesisPage() {
                           )}
                         </div>
                         <div className="mt-0.5 flex flex-wrap items-center gap-2">
+                          {row.evidence && <EvidenceIcons evidence={row.evidence} />}
+                          {!hasReports(row) && (
+                            <span
+                              className="inline-flex items-center rounded-full border border-warn-border bg-warn-soft px-1.5 py-0.5 text-[9px] font-medium text-warn"
+                              title="No RBC/JPM report uploaded — the synthesis would run on thin evidence. Upload a report first, or generate anyway."
+                            >
+                              No reports
+                            </span>
+                          )}
                           <StaleBadges stale={row.stale} />
                           {row.entry && (
                             <span className="text-[9px] text-ink-3">
