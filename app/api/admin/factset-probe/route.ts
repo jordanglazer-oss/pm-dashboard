@@ -32,6 +32,22 @@ export const maxDuration = 30;
  * URL-encodes inner commas (%2C).
  */
 const CANDIDATE_SETS: Record<string, { key: string; formula: string; note: string }[]> = {
+  // Business description + segment data candidates for the Synthesis screen's
+  // "what they do" primer. If a description code resolves (error 0, non-null),
+  // it replaces Yahoo assetProfile as the primary source; if a segment code
+  // resolves, segment economics become a deterministic payload block instead
+  // of relying on report extracts alone. Probe on a segment-rich name:
+  // ?candidates=business&id=NVDA-US
+  business: [
+    { key: "busDescExt", formula: "FF_BUS_DESC_EXT", note: "Extended business description (FactSet Fundamentals)" },
+    { key: "busDesc", formula: "FF_BUS_DESC", note: "Business description (short form)" },
+    { key: "busDescAbbrev", formula: "FF_BUS_DESC_ABBREV", note: "Abbreviated business description" },
+    { key: "entityDesc", formula: "FG_COMPANY_DESC", note: "Company description (FG family)" },
+    { key: "segSales", formula: "FF_SEGMENT_SALES(BUS,ANN,0)", note: "Business-segment sales, latest annual" },
+    { key: "segSalesAlt", formula: "FF_SEG_SALES(ANN,0)", note: "Segment sales (alt code)" },
+    { key: "segOpInc", formula: "FF_SEGMENT_OPER_INC(BUS,ANN,0)", note: "Business-segment operating income (profitability by segment)" },
+    { key: "segNames", formula: "FF_SEGMENT_NAME(BUS,ANN,0)", note: "Business-segment names" },
+  ],
   // Round 3: FE_ESTIMATE(REPORT_DATE,...) + FE_GUIDANCE(...) are VALID (error 0)
   // but null for AAPL (no populated estimate report date; no formal guidance).
   // Re-probe on a name that reports on schedule AND guides (id=MSFT-US) to see

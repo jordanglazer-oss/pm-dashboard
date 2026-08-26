@@ -120,6 +120,10 @@ export type ExtractedReport = {
   /** Analyst's published scenario values (bull/base/bear price targets) —
    *  grounds the bearCase in the analyst's own downside math. */
   scenarios?: { bull?: number; base?: number; bear?: number };
+  /** Business/operating segments the report breaks out, with the analyst's
+   *  size/growth/margin read on each. Feeds the synthesis screen's
+   *  "what they do" primer with report-grounded segment economics. */
+  segments?: { name: string; detail: string }[];
   /** Morningstar-only structured ratings — populated when source === "morningstar". */
   stars?: number;
   fairValue?: number;

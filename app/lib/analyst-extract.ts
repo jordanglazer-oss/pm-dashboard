@@ -63,6 +63,7 @@ Schema:
   "catalysts": [{"date": "YYYY-MM-DD or a period like Q4 FY26 / 2H26", "event": "...", "detail": "expected impact in <=15 words"}, ...],  // 0-5 DATED, company-specific upcoming events the report names (product launches, capital markets days, regulatory decisions, contract awards, guidance events). ONLY events with a stated date or period — a generic "continued execution" is NOT a catalyst. Omit if none.
   "valuationBasis": "...",                                  // one short phrase: how the analyst derives the price target (e.g. "18x FY27 EPS", "DCF at 9% WACC", "SOTP", "1.6x P/B on 14% ROE"). Omit if not stated.
   "scenarios": {"bull": <number>, "base": <number>, "bear": <number>}  // the report's published scenario price targets (RBC upside/downside scenarios, JPM bull/bear cases), numeric, same currency as target. Include only the scenarios actually stated; omit the field entirely if none.
+  ,"segments": [{"name": "...", "detail": "..."}, ...]      // 0-5 business/operating segments the report discusses (e.g. Data Center, Gaming; P&C vs Life; US vs International). "detail" ≤ 30 words: the segment's size/growth/margin and the analyst's read on it, with numbers verbatim from the report (e.g. "revenue $14.8B +35% q/q, ~20% of Data Center; expected to outgrow Hyperscale"). ONLY segments the report actually breaks out — omit the field if the report has no segment discussion.
 ${source === "morningstar" ? `  ,"stars": <1-5>,                                          // the Morningstar star rating. Omit if not stated.
   "fairValue": <number>,                                    // the Fair Value Estimate, numeric. Omit if not stated.
   "moat": "wide" | "narrow" | "none",                       // the Economic Moat rating. Omit if not stated.
@@ -148,6 +149,17 @@ function parseExtraction(text: string): ExtractedReport | null {
       .filter((c) => c.event)
       .slice(0, 5);
     if (out.catalysts.length === 0) delete out.catalysts;
+  }
+  if (Array.isArray(parsed.segments)) {
+    out.segments = parsed.segments
+      .filter((x): x is Record<string, unknown> => !!x && typeof x === "object")
+      .map((x) => ({
+        name: typeof x.name === "string" ? x.name.trim() : "",
+        detail: typeof x.detail === "string" ? x.detail.trim() : "",
+      }))
+      .filter((x) => x.name && x.detail)
+      .slice(0, 5);
+    if (out.segments.length === 0) delete out.segments;
   }
   if (typeof parsed.valuationBasis === "string" && parsed.valuationBasis.trim()) {
     out.valuationBasis = parsed.valuationBasis.trim();

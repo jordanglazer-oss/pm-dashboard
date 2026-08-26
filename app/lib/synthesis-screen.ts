@@ -332,6 +332,8 @@ function formatAnalystBlock(snapshot: TickerSnapshot | undefined, reports: { rbc
       lines.push(`Analyst scenarios: bull ${r.scenarios.bull ?? "n/a"} / base ${r.scenarios.base ?? "n/a"} / bear ${r.scenarios.bear ?? "n/a"}`);
     if (r.catalysts?.length)
       lines.push(`Report catalysts: ${r.catalysts.map((cat) => `${cat.date ?? "undated"}: ${cat.event}`).join(" | ")}`);
+    if (r.segments?.length)
+      lines.push(`Segments (analyst's read): ${r.segments.map((seg) => `${seg.name} — ${seg.detail}`).join(" | ")}`);
   };
   reportBlock("RBC", reports?.rbc);
   reportBlock("JPM", reports?.jpm);
