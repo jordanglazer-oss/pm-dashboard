@@ -259,6 +259,7 @@ export default function SynthesisPage() {
   const [data, setData] = useState<ScreenData | null>(null);
   const [loadError, setLoadError] = useState<string | null>(null);
   const [expanded, setExpanded] = useState<Set<string>>(new Set());
+  const [collapsedSections, setCollapsedSections] = useState<Set<string>>(new Set());
   const [generating, setGenerating] = useState<Set<string>>(new Set());
   const [genErrors, setGenErrors] = useState<Record<string, string>>({});
 
@@ -405,11 +406,26 @@ export default function SynthesisPage() {
       {sections.map(({ title, bucket }) => {
         const rows = sortRows(data.rows.filter((r) => r.bucket === bucket));
         if (rows.length === 0) return null;
+        const collapsed = collapsedSections.has(bucket);
         return (
           <div key={bucket} className="rounded-lg border border-line bg-surface">
-            <div className="border-b border-line px-3 py-2 text-xs font-bold uppercase tracking-wide text-ink-2">
-              {title} <span className="font-normal text-ink-3">({rows.length})</span>
-            </div>
+            <button
+              onClick={() =>
+                setCollapsedSections((prev) => {
+                  const next = new Set(prev);
+                  if (next.has(bucket)) next.delete(bucket);
+                  else next.add(bucket);
+                  return next;
+                })
+              }
+              className={`flex w-full items-center justify-between px-3 py-2 text-left text-xs font-bold uppercase tracking-wide text-ink-2 hover:bg-surface-2 ${collapsed ? "" : "border-b border-line"}`}
+            >
+              <span>
+                {title} <span className="font-normal text-ink-3">({rows.length})</span>
+              </span>
+              <span className="font-mono text-ink-3">{collapsed ? "▸" : "▾"}</span>
+            </button>
+            {collapsed ? null : (
             <div className="divide-y divide-line">
               {rows.map((row) => {
                 const isOpen = expanded.has(row.ticker);
@@ -566,6 +582,7 @@ export default function SynthesisPage() {
                 );
               })}
             </div>
+            )}
           </div>
         );
       })}
