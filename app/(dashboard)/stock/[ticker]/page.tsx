@@ -1596,7 +1596,7 @@ export default function StockDetailPage() {
                   { label: "Beta", value: typeof stock.beta === "number" ? stock.beta.toFixed(2) : "—" },
                   { label: "Score", value: `${stock.adjusted.toFixed(1)} / 41` },
                   { label: "Rating", value: stock.ratingLabel || stock.rating || "—" },
-                  { label: "Weight", value: stock.bucket === "Portfolio" ? `${stock.weights.portfolio}%` : "Watchlist" },
+                  { label: "Weight", value: stock.bucket === "Portfolio" ? (stock.weights.portfolio > 0 ? `${stock.weights.portfolio}%` : "—") : "Watchlist" },
                   { label: "Last scored", value: stock.lastScored || "never" },
                 ].map((c) => (
                   <div key={c.label} className="-ml-px -mt-px min-w-0 border-l border-t border-line-soft px-5 py-2">
@@ -1612,9 +1612,7 @@ export default function StockDetailPage() {
               <div className="min-w-0">
                 {/* Sector (stocks only) + Weight (funds only) */}
                 <div className="flex items-center gap-2 mb-2">
-                  {scoreable && stock.sector && (
-                    <span className="rounded-lg bg-surface-2 px-3 py-1.5 text-sm font-medium text-ink-2">{stock.sector}</span>
-                  )}
+                  {/* Sector lives in the stat strip above. */}
                   {!scoreable && (
                     <div className="flex items-center gap-1.5">
                       <span className="text-xs text-ink-3">Default Weight:</span>
