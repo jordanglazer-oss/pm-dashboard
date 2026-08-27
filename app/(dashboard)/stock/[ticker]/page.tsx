@@ -1587,6 +1587,25 @@ export default function StockDetailPage() {
 
               </div>
             </div>
+            {/* Canvas stat strip — the at-a-glance row under the identity strip.
+                All values already live on this page; nothing new is fetched. */}
+            {scoreable && (
+              <div className="grid grid-cols-2 overflow-hidden border-b border-line-soft sm:grid-cols-3 lg:grid-cols-6">
+                {[
+                  { label: "Sector", value: stock.sector || "—" },
+                  { label: "Beta", value: typeof stock.beta === "number" ? stock.beta.toFixed(2) : "—" },
+                  { label: "Score", value: `${stock.adjusted.toFixed(1)} / 41` },
+                  { label: "Rating", value: stock.ratingLabel || stock.rating || "—" },
+                  { label: "Weight", value: stock.bucket === "Portfolio" ? `${stock.weights.portfolio}%` : "Watchlist" },
+                  { label: "Last scored", value: stock.lastScored || "never" },
+                ].map((c) => (
+                  <div key={c.label} className="-ml-px -mt-px min-w-0 border-l border-t border-line-soft px-5 py-2">
+                    <div className="truncate text-[10px] font-semibold uppercase tracking-wider text-ink-3">{c.label}</div>
+                    <div className="truncate text-[13px] font-semibold text-ink tabular-nums">{c.value}</div>
+                  </div>
+                ))}
+              </div>
+            )}
             <div className="px-5 py-4">
             <div className="grid grid-cols-1 lg:grid-cols-[1fr_200px] gap-6 items-start">
               {/* Left: stock info */}
@@ -1890,6 +1909,15 @@ export default function StockDetailPage() {
           {/* Price Chart (not available for mutual funds) */}
           {stock.instrumentType !== "mutual-fund" && (
             <StockChart ticker={stock.ticker} technicals={stock.technicals} className="mt-6" />
+          )}
+
+          {/* Street takeaways + factor lens ride high (canvas order) — the
+              post-earnings street read and the quant cross-check are daily
+              context, not appendix material. */}
+          {scoreable && <StreetTakeawaysTile ticker={stock.ticker} className="mt-6" />}
+          {/* Factor Lens (shadow) — quant read-out beside the 41-pt score */}
+          {scoreable && (
+            <FactorLensTile ticker={stock.ticker} adjusted={stock.adjusted} className="mt-6" />
           )}
 
           {/* Fund Data Panels (ETFs / Mutual Funds) */}
@@ -2685,12 +2713,7 @@ export default function StockDetailPage() {
           })()}
 
           {/* Street Takeaways — FactSet analyst roundup (renders only when ingested) */}
-          {scoreable && <StreetTakeawaysTile ticker={stock.ticker} className="mt-6" />}
 
-          {/* Factor Lens (shadow) — quant read-out beside the 41-pt score */}
-          {scoreable && (
-            <FactorLensTile ticker={stock.ticker} adjusted={stock.adjusted} className="mt-6" />
-          )}
         </div>
       </div>
     </main>
