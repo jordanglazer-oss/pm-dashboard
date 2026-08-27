@@ -1,6 +1,7 @@
 "use client";
 
 import React, { useState, useEffect, useCallback, useRef, useMemo } from "react";
+import { Attribution } from "@/app/components/Attribution";
 import Link from "next/link";
 import { ImageUpload, type BriefAttachment } from "@/app/components/ImageUpload";
 import { useStocks } from "@/app/lib/StockContext";
@@ -1069,6 +1070,19 @@ export default function AAPerformancePage() {
             </table>
           </div>
         </div>
+      </section>
+
+      {/* ── Attribution — merged in from the old /attribution segment.
+          The route still exists; this page is now the single Performance
+          surface (allocation + performance + attribution). ── */}
+      <section id="attribution" className="scroll-mt-6">
+        <div className="mb-4">
+          <h2 className="text-xl font-bold text-ink">Attribution</h2>
+          <p className="mt-1 text-sm text-ink-3">
+            Where your return came from — market, currency, and selection. Use ← / → to switch models.
+          </p>
+        </div>
+        <Attribution />
       </section>
 
     </div>
