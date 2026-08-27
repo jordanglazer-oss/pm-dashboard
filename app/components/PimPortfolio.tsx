@@ -3055,16 +3055,271 @@ export function PimPortfolio({ groups }: Props) {
         </button>
       </div>
 
-      {/* Live (drifted) asset-allocation pie for the active profile, with
-          target + drift in the legend. Re-renders whenever prices refresh
-          or the profile tab changes. */}
-      {allocationBreakdown && (
-        <AssetAllocationPie
-          live={allocationBreakdown.live}
-          target={allocationBreakdown.target}
-          profileLabel={PROFILE_LABELS[activeProfile]}
-        />
+      {/* Portfolio summary (all CAD) */}
+      {pricesFetchedAt && (
+        <div className="flex justify-end text-[11px] text-ink-3">
+          <span title="When live prices and FX were last fetched from Yahoo. Refreshes when the page mounts or the group changes.">
+            Prices updated {formatRelTimeShort(pricesFetchedAt)}
+          </span>
+        </div>
       )}
+      <div className="grid grid-cols-2 overflow-hidden rounded-card border border-line bg-white shadow-sm sm:grid-cols-3 lg:grid-cols-6">
+        <div className="-ml-px -mt-px border-l border-t border-line-soft px-4 py-3 text-center">
+          <div className="text-[10px] font-semibold text-ink-3 uppercase">Total Value (CAD)</div>
+          <div className="text-lg font-bold text-ink">{fmtCurrency(totalValueCadSummary)}</div>
+        </div>
+        <div className="-ml-px -mt-px border-l border-t border-line-soft px-4 py-3 text-center">
+          <div className="text-[10px] font-semibold text-ink-3 uppercase">Total ACB (CAD)</div>
+          <div className="text-lg font-bold text-ink">{fmtCurrency(totalCostCad)}</div>
+        </div>
+        <div className="-ml-px -mt-px border-l border-t border-line-soft px-4 py-3 text-center">
+          <div className="text-[10px] font-semibold text-ink-3 uppercase">Gain/Loss</div>
+          <div className={`text-lg font-bold ${totalValueCadSummary - totalCostCad >= 0 ? "text-pos" : "text-neg"}`}>
+            {fmtCurrency(totalValueCadSummary - totalCostCad)}
+          </div>
+        </div>
+        <div className="-ml-px -mt-px border-l border-t border-line-soft px-4 py-3 text-center">
+          <div className="text-[10px] font-semibold text-ink-3 uppercase">Return</div>
+          <div className={`text-lg font-bold ${totalCostCad > 0 && totalValueCadSummary - totalCostCad >= 0 ? "text-pos" : "text-neg"}`}>
+            {totalCostCad > 0 ? fmtGainLoss(((totalValueCadSummary - totalCostCad) / totalCostCad) * 100) : "--"}
+          </div>
+        </div>
+        <div className="-ml-px -mt-px border-l border-t border-line-soft px-4 py-3 text-center">
+          <div className="text-[10px] font-semibold text-ink-3 uppercase">Today</div>
+          <div className={`text-lg font-bold ${todayReturn != null && todayReturn >= 0 ? "text-pos" : "text-neg"}`}>
+            {todayReturn != null ? fmtGainLoss(todayReturn) : "--"}
+          </div>
+        </div>
+        <div
+          className="-ml-px -mt-px border-l border-t border-line-soft px-4 py-3 text-center"
+          title="Weighted-average management expense ratio across the current positions. Updates live as weights drift. Cash and direct equities contribute 0%. Funds without an MER on the Dashboard are excluded from the denominator — check the coverage % if the number looks low."
+        >
+          <div className="text-[10px] font-semibold text-ink-3 uppercase">Blended MER</div>
+          <div className="text-lg font-bold text-ink">
+            {blendedMerTile.blended != null
+              ? `${blendedMerTile.blended.toFixed(2)}%`
+              : "--"}
+          </div>
+          <div className="text-[9px] text-ink-3">
+            {blendedMerTile.coveragePct >= 99.5
+              ? `Cash ${pct(cashPct)}`
+              : `${blendedMerTile.coveragePct.toFixed(0)}% covered · Cash ${pct(cashPct)}`}
+          </div>
+        </div>
+      </div>
+
+
+      {/* Holdings table */}
+      <div className="rounded-card border border-line bg-white shadow-sm overflow-hidden">
+        {/* Positions header (mockup): title + inline summary */}
+        <div className="flex items-center justify-between gap-3 flex-wrap border-b border-line-soft px-4 py-3">
+          <h3 className="text-sm font-bold text-ink">Positions</h3>
+          <div className="flex items-center gap-x-2.5 gap-y-1 flex-wrap text-[11px] text-ink-3">
+            <span>Total <span className="font-semibold text-ink">{fmtCurrency(totalValueCadSummary)}</span></span>
+            <span className="text-ink-faint">·</span>
+            <span>Cost <span className="font-semibold text-ink">{fmtCurrency(totalCostCad)}</span></span>
+            <span className="text-ink-faint">·</span>
+            <span className={`font-semibold ${totalValueCadSummary - totalCostCad >= 0 ? "text-pos" : "text-neg"}`}>
+              {totalCostCad > 0 ? fmtGainLoss(((totalValueCadSummary - totalCostCad) / totalCostCad) * 100) : "--"}
+            </span>
+            <span className="text-ink-faint">·</span>
+            <span>Target = <span className="font-semibold text-accent">{PROFILE_LABELS[activeProfile]}</span></span>
+          </div>
+        </div>
+        {loading && holdingRows.length === 0 ? (
+          <div className="p-4"><SkeletonTable rows={8} cols={6} /></div>
+        ) : (
+        <div className="flex flex-col gap-4 p-4">
+        {(["fixedIncome", "equity", "alternative"] as PimAssetClass[]).map((ac) => {
+          const classRows = positionsByClass[ac];
+          if (!classRows.length) return null;
+          const colors = POS_CLASS_COLORS[ac];
+          const classValue = classRows.reduce((t, r) => t + r.valueCad, 0);
+          const classPct = totalValueCadSummary > 0 ? classValue / totalValueCadSummary : 0;
+          const classTarget = classRows.reduce((t, r) => t + r.modelPct, 0);
+          return (
+          <div key={ac} className="overflow-hidden rounded-card border border-line bg-white shadow-sm">
+            <div className={`${colors.header} flex items-center justify-between px-5 py-3`}>
+              <h3 className="text-sm font-bold">
+                {POS_CLASS_LABELS[ac]}
+                <span className="ml-2 text-xs font-normal opacity-70">
+                  ({classRows.length} holding{classRows.length === 1 ? "" : "s"})
+                </span>
+              </h3>
+              <span className="flex items-center gap-3 text-xs">
+                <span className="font-semibold">{fmtCurrency(classValue)}</span>
+                <span>
+                  <span className="font-semibold">{fmtPct2(classPct)}</span>
+                  <span className="opacity-70"> vs {fmtPct2(classTarget)} tgt</span>
+                </span>
+              </span>
+            </div>
+        <div className="max-w-full overflow-x-auto">
+          <table className="w-full min-w-[760px] text-xs">
+            <thead className="sticky top-0 z-10 bg-surface-2 shadow-[0_1px_0_0_rgb(226_232_240)]">
+              <tr className="border-b border-line-soft bg-surface-2">
+                <th className={`text-left ${thClass}`} onClick={() => handleSort("symbol")}>
+                  Ticker<SortIcon field="symbol" sortField={sortField} sortDir={sortDir} />
+                </th>
+                <th className={`text-right ${thClass}`} onClick={() => handleSort("units")}>
+                  Shares<SortIcon field="units" sortField={sortField} sortDir={sortDir} />
+                </th>
+                <th className={`text-right ${thClass}`} onClick={() => handleSort("price")}>
+                  Price<SortIcon field="price" sortField={sortField} sortDir={sortDir} />
+                </th>
+                {hasPositions && (
+                  <th className={`text-right ${thClass}`} onClick={() => handleSort("gainLoss")}>
+                    Gain<SortIcon field="gainLoss" sortField={sortField} sortDir={sortDir} />
+                  </th>
+                )}
+                <th className={`text-right ${thClass}`} onClick={() => handleSort("value")}>
+                  Market Value<SortIcon field="value" sortField={sortField} sortDir={sortDir} />
+                </th>
+                {editMode && (
+                  <th className={`text-right ${thClass}`} onClick={() => handleSort("acb")}>
+                    ACB (CAD)<SortIcon field="acb" sortField={sortField} sortDir={sortDir} />
+                  </th>
+                )}
+                <th className={`text-right ${thClass}`} onClick={() => handleSort("modelPct")}>
+                  Target<SortIcon field="modelPct" sortField={sortField} sortDir={sortDir} />
+                </th>
+                {hasPositions && (
+                  <>
+                    <th className={`text-right ${thClass}`} onClick={() => handleSort("currentPct")}>
+                      Current<SortIcon field="currentPct" sortField={sortField} sortDir={sortDir} />
+                    </th>
+                    <th className={`text-right ${thClass}`} onClick={() => handleSort("drift")}>
+                      Drift<SortIcon field="drift" sortField={sortField} sortDir={sortDir} />
+                    </th>
+                  </>
+                )}
+              </tr>
+            </thead>
+            <tbody>
+              {/* Cash row removed from UI — cashBalance is still tracked in
+                  pm:pim-positions and feeds total value + MER coverage. To
+                  expose an edit affordance for cash again, re-add this row
+                  or surface an inline input elsewhere. */}
+
+              {classRows.map((row) => {
+                const dTargetV = dPos[row.assetClass]?.target.get(row.symbol) ?? null;
+                const dCurrentV = dPos[row.assetClass]?.current.get(row.symbol) ?? null;
+                // Drift is the difference between the two numbers ON SCREEN,
+                // not a separately-rounded float — otherwise the row can show
+                // 1.82% / 1.85% next to a drift of +0.02%.
+                const dDriftV =
+                  row.units > 0 && dCurrentV != null && dTargetV != null ? dCurrentV - dTargetV : null;
+                const currBadge = row.currency === "USD" ? (
+                  <span className="ml-1 inline-block rounded bg-accent-soft px-1 py-0 text-[8px] font-bold text-accent align-middle">USD</span>
+                ) : null;
+
+                return (
+                  <tr key={row.symbol} className={`border-b border-line-soft hover:bg-surface-2 transition-colors ${row.isOrphan ? "bg-warn-soft/40" : ""}`}>
+                    {/* Ticker with company name folded in as a subtitle */}
+                    <td className="py-2.5 px-2">
+                      <div className="font-semibold text-ink">
+                        {displayTicker(row.symbol)}{currBadge}
+                        {row.isOrphan && (
+                          <span
+                            title="Held in the book but NOT a holding in this model. It has no target weight, and until it is added to the model it will not be rebalanced or attributed. Add it via Buy / Sell or the Models tab."
+                            className="ml-1 inline-block rounded bg-warn px-1 py-0 text-[8px] font-bold uppercase tracking-wider text-white align-middle"
+                          >
+                            Not in model
+                          </span>
+                        )}
+                      </div>
+                      {row.name && <div className="text-[10px] text-ink-3 max-w-[220px] truncate">{row.name}</div>}
+                    </td>
+                    {/* Shares */}
+                    <td className="py-2.5 px-2 text-right font-mono text-ink">
+                      {editMode ? (
+                        <input
+                          type="number"
+                          value={editPositions.find((p) => p.symbol === row.symbol)?.units || ""}
+                          onChange={(e) => {
+                            const val = parseFloat(e.target.value) || 0;
+                            setEditPositions((prev) =>
+                              prev.map((p) => p.symbol === row.symbol ? { ...p, units: val } : p)
+                            );
+                          }}
+                          className="w-24 rounded border border-line px-2 py-1 text-right text-xs font-mono"
+                          step="0.0001"
+                        />
+                      ) : (
+                        row.units > 0 ? fmtUnits(row.units) : "-"
+                      )}
+                    </td>
+                    {/* Price in instrument currency */}
+                    <td className="py-2.5 px-2 text-right font-mono text-ink">
+                      {row.price > 0 ? (
+                        <span>${row.price.toFixed(2)}</span>
+                      ) : "-"}
+                    </td>
+                    {/* Gain */}
+                    {hasPositions && (
+                      <td className={`py-2.5 px-2 text-right font-mono font-semibold ${row.gainLoss >= 0 ? "text-pos" : "text-neg"}`}>
+                        {row.units > 0 ? fmtGainLoss(row.gainLoss) : "-"}
+                      </td>
+                    )}
+                    {/* Market Value in CAD */}
+                    <td className="py-2.5 px-2 text-right font-mono font-semibold text-ink">
+                      {row.valueCad > 0 ? fmtCurrency(row.valueCad) : "-"}
+                    </td>
+                    {/* ACB (Book Cost) in CAD — edit mode only (cost-basis input) */}
+                    {editMode && (
+                      <td className="py-2.5 px-2 text-right font-mono text-ink-2">
+                        <div className="mb-1">
+                          <input
+                            type="number"
+                            value={editPositions.find((p) => p.symbol === row.symbol)?.costBasis || ""}
+                            onChange={(e) => {
+                              const val = parseFloat(e.target.value) || 0;
+                              setEditPositions((prev) =>
+                                prev.map((p) => p.symbol === row.symbol ? { ...p, costBasis: val } : p)
+                              );
+                            }}
+                            className="w-20 rounded border border-line px-2 py-1 text-right text-xs font-mono"
+                            step="0.01"
+                            placeholder={`Cost (${row.currency})`}
+                          />
+                        </div>
+                        {row.costValueCad > 0 ? fmtCurrency(row.costValueCad) : "-"}
+                      </td>
+                    )}
+                    {/* Target */}
+                    <td className="py-2.5 px-2 text-right font-mono text-ink-2">{fmtPct2(dTargetV)}</td>
+                    {/* Current + Drift */}
+                    {hasPositions && (
+                      <>
+                        <td className="py-2.5 px-2 text-right font-mono text-ink">
+                          {row.units > 0 ? fmtPct2(dCurrentV) : "-"}
+                        </td>
+                        <td
+                          className={`py-2.5 px-2 text-right font-mono font-semibold ${
+                            dDriftV == null || sameAtDisplay(dCurrentV, dTargetV)
+                              ? "text-ink-3"
+                              : dDriftV > 0
+                                ? "text-pos"
+                                : "text-neg"
+                          }`}
+                        >
+                          {dDriftV == null ? "-" : `${dDriftV > 0 ? "+" : ""}${fmtPct2(dDriftV)}`}
+                        </td>
+                      </>
+                    )}
+                  </tr>
+                );
+              })}
+            </tbody>
+          </table>
+        </div>
+          </div>
+          );
+        })}
+        </div>
+        )}
+      </div>
+
 
       {/* Rebalance Panel */}
       {showRebalance && (
@@ -3619,58 +3874,17 @@ export function PimPortfolio({ groups }: Props) {
         );
       })()}
 
-      {/* Portfolio summary (all CAD) */}
-      {pricesFetchedAt && (
-        <div className="flex justify-end text-[11px] text-ink-3">
-          <span title="When live prices and FX were last fetched from Yahoo. Refreshes when the page mounts or the group changes.">
-            Prices updated {formatRelTimeShort(pricesFetchedAt)}
-          </span>
-        </div>
+      {/* Live (drifted) asset-allocation pie for the active profile, with
+          target + drift in the legend. Re-renders whenever prices refresh
+          or the profile tab changes. */}
+      {allocationBreakdown && (
+        <AssetAllocationPie
+          live={allocationBreakdown.live}
+          target={allocationBreakdown.target}
+          profileLabel={PROFILE_LABELS[activeProfile]}
+        />
       )}
-      <div className="grid grid-cols-2 sm:grid-cols-6 gap-3">
-        <div className="rounded-control border border-line bg-white p-4 text-center">
-          <div className="text-[10px] font-semibold text-ink-3 uppercase">Total Value (CAD)</div>
-          <div className="text-lg font-bold text-ink">{fmtCurrency(totalValueCadSummary)}</div>
-        </div>
-        <div className="rounded-control border border-line bg-white p-4 text-center">
-          <div className="text-[10px] font-semibold text-ink-3 uppercase">Total ACB (CAD)</div>
-          <div className="text-lg font-bold text-ink">{fmtCurrency(totalCostCad)}</div>
-        </div>
-        <div className="rounded-control border border-line bg-white p-4 text-center">
-          <div className="text-[10px] font-semibold text-ink-3 uppercase">Gain/Loss</div>
-          <div className={`text-lg font-bold ${totalValueCadSummary - totalCostCad >= 0 ? "text-pos" : "text-neg"}`}>
-            {fmtCurrency(totalValueCadSummary - totalCostCad)}
-          </div>
-        </div>
-        <div className="rounded-control border border-line bg-white p-4 text-center">
-          <div className="text-[10px] font-semibold text-ink-3 uppercase">Return</div>
-          <div className={`text-lg font-bold ${totalCostCad > 0 && totalValueCadSummary - totalCostCad >= 0 ? "text-pos" : "text-neg"}`}>
-            {totalCostCad > 0 ? fmtGainLoss(((totalValueCadSummary - totalCostCad) / totalCostCad) * 100) : "--"}
-          </div>
-        </div>
-        <div className="rounded-control border border-line bg-white p-4 text-center">
-          <div className="text-[10px] font-semibold text-ink-3 uppercase">Today</div>
-          <div className={`text-lg font-bold ${todayReturn != null && todayReturn >= 0 ? "text-pos" : "text-neg"}`}>
-            {todayReturn != null ? fmtGainLoss(todayReturn) : "--"}
-          </div>
-        </div>
-        <div
-          className="rounded-control border border-line bg-white p-4 text-center"
-          title="Weighted-average management expense ratio across the current positions. Updates live as weights drift. Cash and direct equities contribute 0%. Funds without an MER on the Dashboard are excluded from the denominator — check the coverage % if the number looks low."
-        >
-          <div className="text-[10px] font-semibold text-ink-3 uppercase">Blended MER</div>
-          <div className="text-lg font-bold text-ink">
-            {blendedMerTile.blended != null
-              ? `${blendedMerTile.blended.toFixed(2)}%`
-              : "--"}
-          </div>
-          <div className="text-[9px] text-ink-3">
-            {blendedMerTile.coveragePct >= 99.5
-              ? `Cash ${pct(cashPct)}`
-              : `${blendedMerTile.coveragePct.toFixed(0)}% covered · Cash ${pct(cashPct)}`}
-          </div>
-        </div>
-      </div>
+
 
       {/* USD/CAD rate indicator */}
       {usdCadRate > 1 && (
@@ -3682,217 +3896,6 @@ export function PimPortfolio({ groups }: Props) {
           )}
         </div>
       )}
-
-      {/* Holdings table */}
-      <div className="rounded-card border border-line bg-white shadow-sm overflow-hidden">
-        {/* Positions header (mockup): title + inline summary */}
-        <div className="flex items-center justify-between gap-3 flex-wrap border-b border-line-soft px-4 py-3">
-          <h3 className="text-sm font-bold text-ink">Positions</h3>
-          <div className="flex items-center gap-x-2.5 gap-y-1 flex-wrap text-[11px] text-ink-3">
-            <span>Total <span className="font-semibold text-ink">{fmtCurrency(totalValueCadSummary)}</span></span>
-            <span className="text-ink-faint">·</span>
-            <span>Cost <span className="font-semibold text-ink">{fmtCurrency(totalCostCad)}</span></span>
-            <span className="text-ink-faint">·</span>
-            <span className={`font-semibold ${totalValueCadSummary - totalCostCad >= 0 ? "text-pos" : "text-neg"}`}>
-              {totalCostCad > 0 ? fmtGainLoss(((totalValueCadSummary - totalCostCad) / totalCostCad) * 100) : "--"}
-            </span>
-            <span className="text-ink-faint">·</span>
-            <span>Target = <span className="font-semibold text-accent">{PROFILE_LABELS[activeProfile]}</span></span>
-          </div>
-        </div>
-        {loading && holdingRows.length === 0 ? (
-          <div className="p-4"><SkeletonTable rows={8} cols={6} /></div>
-        ) : (
-        <div className="flex flex-col gap-4 p-4">
-        {(["fixedIncome", "equity", "alternative"] as PimAssetClass[]).map((ac) => {
-          const classRows = positionsByClass[ac];
-          if (!classRows.length) return null;
-          const colors = POS_CLASS_COLORS[ac];
-          const classValue = classRows.reduce((t, r) => t + r.valueCad, 0);
-          const classPct = totalValueCadSummary > 0 ? classValue / totalValueCadSummary : 0;
-          const classTarget = classRows.reduce((t, r) => t + r.modelPct, 0);
-          return (
-          <div key={ac} className="overflow-hidden rounded-card border border-line bg-white shadow-sm">
-            <div className={`${colors.header} flex items-center justify-between px-5 py-3`}>
-              <h3 className="text-sm font-bold">
-                {POS_CLASS_LABELS[ac]}
-                <span className="ml-2 text-xs font-normal opacity-70">
-                  ({classRows.length} holding{classRows.length === 1 ? "" : "s"})
-                </span>
-              </h3>
-              <span className="flex items-center gap-3 text-xs">
-                <span className="font-semibold">{fmtCurrency(classValue)}</span>
-                <span>
-                  <span className="font-semibold">{fmtPct2(classPct)}</span>
-                  <span className="opacity-70"> vs {fmtPct2(classTarget)} tgt</span>
-                </span>
-              </span>
-            </div>
-        <div className="max-w-full overflow-x-auto">
-          <table className="w-full min-w-[760px] text-xs">
-            <thead className="sticky top-0 z-10 bg-surface-2 shadow-[0_1px_0_0_rgb(226_232_240)]">
-              <tr className="border-b border-line-soft bg-surface-2">
-                <th className={`text-left ${thClass}`} onClick={() => handleSort("symbol")}>
-                  Ticker<SortIcon field="symbol" sortField={sortField} sortDir={sortDir} />
-                </th>
-                <th className={`text-right ${thClass}`} onClick={() => handleSort("units")}>
-                  Shares<SortIcon field="units" sortField={sortField} sortDir={sortDir} />
-                </th>
-                <th className={`text-right ${thClass}`} onClick={() => handleSort("price")}>
-                  Price<SortIcon field="price" sortField={sortField} sortDir={sortDir} />
-                </th>
-                {hasPositions && (
-                  <th className={`text-right ${thClass}`} onClick={() => handleSort("gainLoss")}>
-                    Gain<SortIcon field="gainLoss" sortField={sortField} sortDir={sortDir} />
-                  </th>
-                )}
-                <th className={`text-right ${thClass}`} onClick={() => handleSort("value")}>
-                  Market Value<SortIcon field="value" sortField={sortField} sortDir={sortDir} />
-                </th>
-                {editMode && (
-                  <th className={`text-right ${thClass}`} onClick={() => handleSort("acb")}>
-                    ACB (CAD)<SortIcon field="acb" sortField={sortField} sortDir={sortDir} />
-                  </th>
-                )}
-                <th className={`text-right ${thClass}`} onClick={() => handleSort("modelPct")}>
-                  Target<SortIcon field="modelPct" sortField={sortField} sortDir={sortDir} />
-                </th>
-                {hasPositions && (
-                  <>
-                    <th className={`text-right ${thClass}`} onClick={() => handleSort("currentPct")}>
-                      Current<SortIcon field="currentPct" sortField={sortField} sortDir={sortDir} />
-                    </th>
-                    <th className={`text-right ${thClass}`} onClick={() => handleSort("drift")}>
-                      Drift<SortIcon field="drift" sortField={sortField} sortDir={sortDir} />
-                    </th>
-                  </>
-                )}
-              </tr>
-            </thead>
-            <tbody>
-              {/* Cash row removed from UI — cashBalance is still tracked in
-                  pm:pim-positions and feeds total value + MER coverage. To
-                  expose an edit affordance for cash again, re-add this row
-                  or surface an inline input elsewhere. */}
-
-              {classRows.map((row) => {
-                const dTargetV = dPos[row.assetClass]?.target.get(row.symbol) ?? null;
-                const dCurrentV = dPos[row.assetClass]?.current.get(row.symbol) ?? null;
-                // Drift is the difference between the two numbers ON SCREEN,
-                // not a separately-rounded float — otherwise the row can show
-                // 1.82% / 1.85% next to a drift of +0.02%.
-                const dDriftV =
-                  row.units > 0 && dCurrentV != null && dTargetV != null ? dCurrentV - dTargetV : null;
-                const currBadge = row.currency === "USD" ? (
-                  <span className="ml-1 inline-block rounded bg-accent-soft px-1 py-0 text-[8px] font-bold text-accent align-middle">USD</span>
-                ) : null;
-
-                return (
-                  <tr key={row.symbol} className={`border-b border-line-soft hover:bg-surface-2 transition-colors ${row.isOrphan ? "bg-warn-soft/40" : ""}`}>
-                    {/* Ticker with company name folded in as a subtitle */}
-                    <td className="py-2.5 px-2">
-                      <div className="font-semibold text-ink">
-                        {displayTicker(row.symbol)}{currBadge}
-                        {row.isOrphan && (
-                          <span
-                            title="Held in the book but NOT a holding in this model. It has no target weight, and until it is added to the model it will not be rebalanced or attributed. Add it via Buy / Sell or the Models tab."
-                            className="ml-1 inline-block rounded bg-warn px-1 py-0 text-[8px] font-bold uppercase tracking-wider text-white align-middle"
-                          >
-                            Not in model
-                          </span>
-                        )}
-                      </div>
-                      {row.name && <div className="text-[10px] text-ink-3 max-w-[220px] truncate">{row.name}</div>}
-                    </td>
-                    {/* Shares */}
-                    <td className="py-2.5 px-2 text-right font-mono text-ink">
-                      {editMode ? (
-                        <input
-                          type="number"
-                          value={editPositions.find((p) => p.symbol === row.symbol)?.units || ""}
-                          onChange={(e) => {
-                            const val = parseFloat(e.target.value) || 0;
-                            setEditPositions((prev) =>
-                              prev.map((p) => p.symbol === row.symbol ? { ...p, units: val } : p)
-                            );
-                          }}
-                          className="w-24 rounded border border-line px-2 py-1 text-right text-xs font-mono"
-                          step="0.0001"
-                        />
-                      ) : (
-                        row.units > 0 ? fmtUnits(row.units) : "-"
-                      )}
-                    </td>
-                    {/* Price in instrument currency */}
-                    <td className="py-2.5 px-2 text-right font-mono text-ink">
-                      {row.price > 0 ? (
-                        <span>${row.price.toFixed(2)}</span>
-                      ) : "-"}
-                    </td>
-                    {/* Gain */}
-                    {hasPositions && (
-                      <td className={`py-2.5 px-2 text-right font-mono font-semibold ${row.gainLoss >= 0 ? "text-pos" : "text-neg"}`}>
-                        {row.units > 0 ? fmtGainLoss(row.gainLoss) : "-"}
-                      </td>
-                    )}
-                    {/* Market Value in CAD */}
-                    <td className="py-2.5 px-2 text-right font-mono font-semibold text-ink">
-                      {row.valueCad > 0 ? fmtCurrency(row.valueCad) : "-"}
-                    </td>
-                    {/* ACB (Book Cost) in CAD — edit mode only (cost-basis input) */}
-                    {editMode && (
-                      <td className="py-2.5 px-2 text-right font-mono text-ink-2">
-                        <div className="mb-1">
-                          <input
-                            type="number"
-                            value={editPositions.find((p) => p.symbol === row.symbol)?.costBasis || ""}
-                            onChange={(e) => {
-                              const val = parseFloat(e.target.value) || 0;
-                              setEditPositions((prev) =>
-                                prev.map((p) => p.symbol === row.symbol ? { ...p, costBasis: val } : p)
-                              );
-                            }}
-                            className="w-20 rounded border border-line px-2 py-1 text-right text-xs font-mono"
-                            step="0.01"
-                            placeholder={`Cost (${row.currency})`}
-                          />
-                        </div>
-                        {row.costValueCad > 0 ? fmtCurrency(row.costValueCad) : "-"}
-                      </td>
-                    )}
-                    {/* Target */}
-                    <td className="py-2.5 px-2 text-right font-mono text-ink-2">{fmtPct2(dTargetV)}</td>
-                    {/* Current + Drift */}
-                    {hasPositions && (
-                      <>
-                        <td className="py-2.5 px-2 text-right font-mono text-ink">
-                          {row.units > 0 ? fmtPct2(dCurrentV) : "-"}
-                        </td>
-                        <td
-                          className={`py-2.5 px-2 text-right font-mono font-semibold ${
-                            dDriftV == null || sameAtDisplay(dCurrentV, dTargetV)
-                              ? "text-ink-3"
-                              : dDriftV > 0
-                                ? "text-pos"
-                                : "text-neg"
-                          }`}
-                        >
-                          {dDriftV == null ? "-" : `${dDriftV > 0 ? "+" : ""}${fmtPct2(dDriftV)}`}
-                        </td>
-                      </>
-                    )}
-                  </tr>
-                );
-              })}
-            </tbody>
-          </table>
-        </div>
-          </div>
-          );
-        })}
-        </div>
-        )}
-      </div>
 
       {/* Suggested Trades (mockup): compact chip row derived from live drift.
           "Review & execute all" opens the full Rebalance Preview above — no

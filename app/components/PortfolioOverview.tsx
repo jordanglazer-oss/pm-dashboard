@@ -1692,9 +1692,8 @@ function RankingTable({
   };
 
   const prefPrefix = flagType === "review" ? "rankPort" : "rankWatch";
-  // Canvas header state: view toggle (persisted), Stale/Flagged chips + search
-  // (transient view state), and the ⋯ menu holding the action cluster.
-  const view = (uiPrefs[`${prefPrefix}View`] as "scores" | "weights" | "sectors") || "scores";
+  // Canvas header state: Stale/Flagged chips + search (transient view state),
+  // and the ⋯ menu holding the action cluster.
   const [chipFilter, setChipFilter] = useState<"all" | "stale" | "flagged">("all");
   const [query, setQuery] = useState("");
   const [menuOpen, setMenuOpen] = useState(false);
@@ -1784,32 +1783,9 @@ function RankingTable({
   // syncs across devices) keyed off the table's collapseKey + currency.
   const subCollapsed = (ck: string) =>
     !!collapseKey && uiPrefs[`${collapseKey}.${ck}`] === "1";
-  // Weights view overrides the column sort with live model weight.
-  const effSorted = view === "weights"
-    ? [...filteredStocks].sort((a, b) =>
-        (liveWeights?.get(canonicalTicker(b.ticker)) ?? -1) - (liveWeights?.get(canonicalTicker(a.ticker)) ?? -1))
-    : sorted;
+  const effSorted = sorted;
   let displayRows: DisplayRow[];
-  if (view === "sectors") {
-    // Sectors view: group rows under sector sub-headers (collapsible, same
-    // pref mechanism as the currency split).
-    const bySector = new Map<string, ScoredStock[]>();
-    for (const st of effSorted) {
-      const k = st.sector || "Other";
-      const arr = bySector.get(k) || [];
-      arr.push(st);
-      bySector.set(k, arr);
-    }
-    displayRows = [...bySector.keys()].sort().flatMap((sec) => {
-      const rows = buildGroup(bySector.get(sec)!);
-      const ck = `sec-${sec}`;
-      const c = subCollapsed(ck);
-      return [
-        { kind: "header", key: `hdr-${ck}`, currencyKey: ck, label: sec, count: rows.length, collapsed: c } as DisplayRow,
-        ...(c ? [] : rows.map((r) => ({ kind: "stock", ...r } as DisplayRow))),
-      ];
-    });
-  } else if (splitByCurrency) {
+  if (splitByCurrency) {
     const cad = effSorted.filter((s) => isCanadianTicker(s.ticker));
     const us = effSorted.filter((s) => !isCanadianTicker(s.ticker));
     const cadCollapsed = subCollapsed("cad");
@@ -1951,19 +1927,6 @@ function RankingTable({
   return (
     <section className="rounded-card border border-line bg-white shadow-sm overflow-hidden">
       <div className={`flex items-center gap-3 flex-wrap px-4 py-3 ${collapsed ? "" : "border-b border-line-soft"}`}>
-        {/* View toggle — Scores / Weights / Sectors (canvas). Weights orders by
-            live model weight; Sectors groups under collapsible sector headers. */}
-        <div className="inline-flex items-center rounded-control border border-line bg-surface-2 p-0.5">
-          {(["scores", "weights", "sectors"] as const).map((v) => (
-            <button
-              key={v}
-              onClick={() => setUiPref(`${prefPrefix}View`, v)}
-              className={`rounded-[6px] px-3 py-1 text-[12px] font-semibold capitalize transition-colors ${view === v ? "bg-white text-ink shadow-sm" : "text-ink-2 hover:text-ink"}`}
-            >
-              {v}
-            </button>
-          ))}
-        </div>
         {bucketTabs || <h2 className="text-[15px] font-bold text-ink">{title}</h2>}
         {/* Stale / Flagged filter chips */}
         <button
@@ -2468,7 +2431,7 @@ function RankingTable({
         </table>
       </div>
       <div className="flex items-center justify-between border-t border-line bg-surface-2 px-4 py-2 text-[11px] text-ink-3">
-        <span>Showing {effSorted.length} of {stocks.length} · sorted by {view === "weights" ? "weight" : view === "sectors" ? "sector" : String(sort.key)}</span>
+        <span>Showing {effSorted.length} of {stocks.length} · sorted by {String(sort.key)}</span>
         <span className="hidden sm:inline">click a row to open the stock page</span>
       </div>
       </>
