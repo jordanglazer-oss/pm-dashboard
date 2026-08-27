@@ -3025,29 +3025,33 @@ export function PimPortfolio({ groups }: Props) {
         <span>Positioning tracks the <strong className="text-ink-2">PIM</strong> model only — other groups aren&apos;t position-tracked.</span>
       </div>
 
-      {/* Stat tiles (mockup): Active Model · Sleeve Drift · Last Rebalanced · Rebalance */}
-      <div className="grid grid-cols-2 gap-3 md:grid-cols-4">
-        <div className="hover-lift rounded-card border border-line bg-surface p-4 shadow-sm">
+      {/* Status band: Active Model · Sleeve Drift · Last Rebalanced · Rebalance
+          CTA — one bordered strip with hairline cells (canvas anatomy) instead
+          of four separate tiles. */}
+      <div className="grid grid-cols-2 overflow-hidden rounded-card border border-line bg-white shadow-sm md:grid-cols-4">
+        <div className="-ml-px -mt-px border-l border-t border-line-soft px-4 py-3">
           <div className="text-[10px] font-semibold uppercase tracking-wide text-ink-3">Active Model</div>
-          <div className="mt-1 text-xl font-bold text-ink">{PROFILE_LABELS[activeProfile]}</div>
-          <div className="text-xs text-ink-3">target sleeve</div>
+          <div className="mt-1 text-lg font-bold text-ink">{PROFILE_LABELS[activeProfile]}</div>
+          <div className="text-[11px] text-ink-3">target sleeve</div>
         </div>
-        <div className="hover-lift rounded-card border border-line bg-surface p-4 shadow-sm">
+        <div className="-ml-px -mt-px border-l border-t border-line-soft px-4 py-3">
           <div className="text-[10px] font-semibold uppercase tracking-wide text-ink-3">Sleeve Drift</div>
-          <div className={`mt-1 text-xl font-bold ${sleeveDrift >= 2 ? "text-warn" : "text-ink"}`}>{sleeveDrift >= 0 ? "+" : ""}{sleeveDrift.toFixed(2)}%</div>
-          <div className="text-xs text-ink-3">overweight vs target</div>
+          <div className={`mt-1 text-lg font-bold tabular-nums ${sleeveDrift >= 2 ? "text-warn" : "text-ink"}`}>{sleeveDrift >= 0 ? "+" : ""}{sleeveDrift.toFixed(2)}%</div>
+          <div className="text-[11px] text-ink-3">overweight vs target</div>
         </div>
-        <div className="hover-lift rounded-card border border-line bg-surface p-4 shadow-sm">
+        <div className="-ml-px -mt-px border-l border-t border-line-soft px-4 py-3">
           <div className="text-[10px] font-semibold uppercase tracking-wide text-ink-3">Last Rebalanced</div>
-          <div className="mt-1 text-xl font-bold text-ink">{groupState.lastRebalance ? new Date(groupState.lastRebalance.date).toLocaleDateString(undefined, { month: "short", day: "numeric" }) : "—"}</div>
-          <div className="text-xs text-ink-3">{groupState.lastRebalance ? "" : "no rebalance yet"}</div>
+          <div className="mt-1 text-lg font-bold text-ink">{groupState.lastRebalance ? new Date(groupState.lastRebalance.date).toLocaleDateString(undefined, { month: "short", day: "numeric" }) : "—"}</div>
+          <div className="text-[11px] text-ink-3">{groupState.lastRebalance ? " " : "no rebalance yet"}</div>
         </div>
         <button
           onClick={() => setShowRebalance(!showRebalance)}
-          className="rounded-card bg-pos p-4 text-left shadow-sm transition-opacity hover:opacity-90"
+          className="-ml-px -mt-px grid place-items-center border-l border-t border-line-soft bg-accent px-4 py-3 text-left transition-colors hover:bg-accent-ink"
         >
-          <div className="text-base font-bold text-white">Rebalance to {PROFILE_LABELS[activeProfile]} →</div>
-          <div className="mt-1 text-xs text-white/80">{showRebalance ? "hide preview" : "show suggested trades"}</div>
+          <div>
+            <div className="text-sm font-bold text-white">Rebalance to {PROFILE_LABELS[activeProfile]} →</div>
+            <div className="mt-0.5 text-[11px] text-white/80">{showRebalance ? "hide preview" : "show suggested trades"}</div>
+          </div>
         </button>
       </div>
 

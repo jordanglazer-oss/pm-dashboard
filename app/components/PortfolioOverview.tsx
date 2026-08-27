@@ -1344,7 +1344,7 @@ export function PortfolioOverview({ sidebar }: { sidebar?: React.ReactNode } = {
         const fThClass = "pb-2 font-semibold cursor-pointer select-none hover:text-ink transition-colors whitespace-nowrap";
 
         return (
-          <section className="rounded-card border border-accent-border bg-white p-5 shadow-sm">
+          <section className="rounded-card border border-line bg-white p-5 shadow-sm">
             <div className={`flex items-center gap-3 ${fundCollapsed ? "" : "mb-4"}`}>
               <button
                 onClick={toggleFundCollapsed}
@@ -1784,16 +1784,16 @@ function RankingTable({
     prevTops.current = nextTops;
   }, [orderKey]);
 
-  const thClass = "pb-2 pr-3 cursor-pointer hover:text-ink select-none whitespace-nowrap";
+  const thClass = "pb-2 pr-3 pt-2 cursor-pointer hover:text-ink select-none whitespace-nowrap";
   // Sticky first column — ticker + company name stay visible while the rest of
   // the row scrolls horizontally. `left-0` pins it to the scroll container.
   // The explicit bg matches the row background (white, or the hover tint via
   // the `group` pattern on the parent <tr>) so the scrolled-under columns
   // don't bleed through. `z-10` on body cells, `z-20` on header to stay above.
   const stickyHeadCls =
-    "pb-2 pr-4 cursor-pointer hover:text-ink select-none whitespace-nowrap sticky left-0 z-20 bg-white";
+    "pb-2 pl-4 pr-4 pt-2 cursor-pointer hover:text-ink select-none whitespace-nowrap sticky left-0 z-20 bg-white";
   const stickyCellCls =
-    "py-3 pr-4 sticky left-0 z-10 bg-white group-hover:bg-surface-hover align-top";
+    "py-3 pl-4 pr-4 sticky left-0 z-10 bg-white group-hover:bg-surface-hover align-top";
 
   const scoreableCount = stocks.filter((s) => isScoreable(s)).length;
   const chartingNonZeroCount = stocks.filter((s) => isScoreable(s) && (s.scores?.charting ?? 0) > 0).length;
@@ -1873,8 +1873,8 @@ function RankingTable({
   };
 
   return (
-    <section className="rounded-card border border-line bg-white p-5 shadow-sm">
-      <div className={`flex items-center gap-3 flex-wrap ${collapsed ? "" : "mb-4"}`}>
+    <section className="rounded-card border border-line bg-white shadow-sm overflow-hidden">
+      <div className={`flex items-center gap-3 flex-wrap px-4 py-3 ${collapsed ? "" : "border-b border-line-soft"}`}>
         {bucketTabs ? (
           <>
             {bucketTabs}
@@ -2352,6 +2352,10 @@ function RankingTable({
             })}
           </tbody>
         </table>
+      </div>
+      <div className="flex items-center justify-between border-t border-line bg-surface-2 px-4 py-2 text-[11px] text-ink-3">
+        <span>{sorted.length} name{sorted.length === 1 ? "" : "s"}</span>
+        <span className="hidden sm:inline">click a row to open the stock page</span>
       </div>
       </>
       )}

@@ -64,9 +64,12 @@ export function IdeasTabs() {
 
   return (
     <div className="bg-surface border-b border-line print:hidden">
-      <div className="mx-auto max-w-7xl px-4 md:px-8 pt-3">
-        <div className="flex items-center gap-2 overflow-x-auto pb-2">
-          <span className="text-[11px] font-semibold uppercase tracking-wide text-ink-3 mr-1">Ideas</span>
+      <div className="mx-auto max-w-7xl px-4 md:px-8 pt-3.5">
+        <div>
+          <h1 className="text-[22px] font-bold tracking-tight text-ink leading-none">Ideas</h1>
+          <p className="mt-1.5 text-xs text-ink-3">Where the next name comes from — six feeds into one watchlist</p>
+        </div>
+        <div className="flex items-center gap-2 overflow-x-auto pb-2 pt-2.5">
           <div className="relative flex items-center gap-0.5 rounded-control border border-line bg-surface-2 p-0.5 shrink-0">
             {pill && (
               <span

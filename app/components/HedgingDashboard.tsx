@@ -249,7 +249,7 @@ export default function HedgingDashboard() {
         {/* Header */}
         <div className="mb-5 flex flex-col gap-3 sm:flex-row sm:items-end sm:justify-between">
           <div>
-            <h1 className="text-2xl font-bold text-ink">Hedging</h1>
+            <h1 className="text-[15px] font-bold text-ink">Hedging</h1>
             <p className="text-sm text-ink-3 mt-1">
               SPY protective put premiums · ATM / ~5% OTM / ~10% OTM · strikes rounded to nearest $5
             </p>

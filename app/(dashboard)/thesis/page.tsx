@@ -429,7 +429,7 @@ export default function ThesisDeskPage() {
           two expanded cards already pushed the rest below the fold. */}
       <div className="mx-auto max-w-[1600px]">
         <div className="mb-6">
-          <h1 className="text-2xl font-bold text-ink">Thesis Desk</h1>
+          <h1 className="text-[15px] font-bold text-ink">Thesis Desk</h1>
           {/* Capped to a readable measure — the GRID uses the full width, prose shouldn't. */}
           <p className="mt-1 max-w-3xl text-sm text-ink-3">
             Every underwritten position, its thesis as signed, and the pre-registered conditions

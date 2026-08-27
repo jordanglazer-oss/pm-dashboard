@@ -356,7 +356,7 @@ export default function FactorLabPage() {
   return (
     <div className="mx-auto max-w-[1200px] px-4 py-6">
       <div className="mb-2 flex items-center justify-between">
-        <h1 className="text-xl font-semibold text-ink">Factor Lab <span className="ml-2 rounded bg-surface-2 px-2 py-0.5 text-[11px] font-medium text-ink-3 align-middle">shadow · read-only</span></h1>
+        <h1 className="text-[15px] font-bold text-ink">Factor Lab <span className="ml-2 rounded bg-surface-2 px-2 py-0.5 text-[11px] font-medium text-ink-3 align-middle">shadow · read-only</span></h1>
       </div>
       <p className="mb-4 max-w-3xl text-sm text-ink-2">
         A from-scratch quantitative factor model computed <em>beside</em> the 41-point score — it changes nothing.

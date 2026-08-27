@@ -1034,7 +1034,7 @@ export default function InboxPage() {
   const marketEdgeGap = coverageRows.filter((r) => r.marketEdgeApplies && r.marketEdgePowerRating == null).length;
 
   return (
-    <div className="p-3 sm:p-6 max-w-7xl mx-auto">
+    <div className="p-3 sm:p-6 max-w-[88rem] mx-auto">
       <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-3 mb-4">
         <div>
           <h1 className="text-xl sm:text-2xl font-bold">Email Inbox Ingestion</h1>

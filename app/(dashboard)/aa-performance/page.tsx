@@ -980,7 +980,7 @@ export default function AAPerformancePage() {
       {/* ── Asset Allocation Section ── */}
       <section>
         <div className="flex items-baseline justify-between mb-4">
-          <h2 className="text-xl font-bold text-ink">Asset Allocation</h2>
+          <h2 className="text-[15px] font-bold text-ink">Asset Allocation</h2>
           <p className="text-xs text-ink-3">
             <span className="text-pos font-semibold">Current</span> row edits the PIM Model profile weights.
             {pimModels.lastUpdated && (
@@ -1020,7 +1020,7 @@ export default function AAPerformancePage() {
       {/* ── Performance Section ── */}
       <section>
         <div className="flex items-center gap-2 mb-4">
-          <h2 className="text-xl font-bold text-ink">Performance</h2>
+          <h2 className="text-[15px] font-bold text-ink">Performance</h2>
           {(pimLoading || indexLoading) && (
             <span className="text-xs text-ink-3 animate-pulse">refreshing…</span>
           )}
@@ -1077,7 +1077,7 @@ export default function AAPerformancePage() {
           surface (allocation + performance + attribution). ── */}
       <section id="attribution" className="scroll-mt-6">
         <div className="mb-4">
-          <h2 className="text-xl font-bold text-ink">Attribution</h2>
+          <h2 className="text-[15px] font-bold text-ink">Attribution</h2>
           <p className="mt-1 text-sm text-ink-3">
             Where your return came from — market, currency, and selection. Use ← / → to switch models.
           </p>
