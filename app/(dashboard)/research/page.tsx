@@ -2358,7 +2358,7 @@ export default function ResearchPage() {
         <CollapsibleSection
           prefKey="research.newton"
           className="border-line"
-          titleClass="text-xl font-bold"
+          titleClass="text-[15px] font-bold"
           title={<>Newton&apos;s Upticks</>}
           subtitle={<>Fundstrat technical uptick list &mdash; click any cell to edit</>}
           right={<span className="text-sm text-ink-3">{state.newtonUpticks.length} stocks</span>}
@@ -2598,7 +2598,7 @@ export default function ResearchPage() {
         <CollapsibleSection
           prefKey="research.sectorViews"
           className="border-line"
-          titleClass="text-xl font-bold"
+          titleClass="text-[15px] font-bold"
           title={<>Sector Views</>}
           subtitle={<>Newton&apos;s &amp; Lee&apos;s sector tilts — click any chip to cycle OW / N / UW. These feed the morning brief.</>}
           right={<span className="text-sm text-ink-3">2 sources</span>}
@@ -2689,7 +2689,7 @@ export default function ResearchPage() {
             prefKey="research.fsTop"
             linkedKeys={["research.fsBottom"]}
             className="border-pos-border min-w-0"
-            titleClass="text-xl font-bold text-pos"
+            titleClass="text-[15px] font-bold text-pos"
             title={<>Fundstrat Large-Cap Top Ideas</>}
             subtitle={<>Best long ideas — large-cap names</>}
             right={<><span className="text-sm text-ink-3">{state.fundstratTop.length} names</span></>}
@@ -2794,7 +2794,7 @@ export default function ResearchPage() {
             prefKey="research.fsBottom"
             linkedKeys={["research.fsTop"]}
             className="border-neg-border min-w-0"
-            titleClass="text-xl font-bold text-neg"
+            titleClass="text-[15px] font-bold text-neg"
             title={<>Fundstrat Large-Cap Bottom Ideas</>}
             subtitle={<>Names to avoid or short — large-cap</>}
             right={<><span className="text-sm text-ink-3">{state.fundstratBottom.length} names</span></>}
@@ -2905,7 +2905,7 @@ export default function ResearchPage() {
             prefKey="research.fsSmidTop"
             linkedKeys={["research.fsSmidBottom"]}
             className="border-pos-border min-w-0"
-            titleClass="text-xl font-bold text-pos"
+            titleClass="text-[15px] font-bold text-pos"
             title={<>Fundstrat Top SMID-Cap Core Ideas</>}
             subtitle={<>Best long ideas — small/mid-cap names</>}
             right={<><span className="text-sm text-ink-3">{(state.fundstratSmidTop ?? []).length} names</span></>}
@@ -3004,7 +3004,7 @@ export default function ResearchPage() {
             prefKey="research.fsSmidBottom"
             linkedKeys={["research.fsSmidTop"]}
             className="border-neg-border min-w-0"
-            titleClass="text-xl font-bold text-neg"
+            titleClass="text-[15px] font-bold text-neg"
             title={<>Fundstrat Bottom SMID-Cap Core Ideas</>}
             subtitle={<>Names to avoid or short — small/mid-cap</>}
             right={<><span className="text-sm text-ink-3">{(state.fundstratSmidBottom ?? []).length} names</span></>}
@@ -3114,7 +3114,7 @@ export default function ResearchPage() {
               helper: "Upload a Fundstrat Large-Cap Core Ideas screenshot. On Refresh, ticker + company + sector + DQM rank + momentum + relative perf are extracted and merged.",
               list: sortedLcCore(), rawLen: (state.fundstratLargeCapCore || []).length, view: lcCoreView,
               sort: lcCoreSort, toggle: toggleLcCoreSort, arrow: lcArrow, onAdd: addLcCore, onRemove: removeLcCore,
-              titleClass: "text-xl font-bold text-violet", border: "border-violet-border min-w-0",
+              titleClass: "text-[15px] font-bold text-violet", border: "border-violet-border min-w-0",
               th: "text-violet", ticker: "text-violet", rowAlt: "bg-violet-soft/30", rowHover: "hover:bg-violet-soft/60",
             },
             {
@@ -3123,7 +3123,7 @@ export default function ResearchPage() {
               helper: "Upload a Fundstrat SMID Core Ideas screenshot. On Refresh, ticker + company + sector + DQM rank + momentum + relative perf are extracted and merged.",
               list: sortedSmidCore(), rawLen: (state.fundstratSmidCore || []).length, view: smidCoreView,
               sort: smidCoreSort, toggle: toggleSmidCoreSort, arrow: smcArrow, onAdd: addSmidCore, onRemove: removeSmidCore,
-              titleClass: "text-xl font-bold text-accent", border: "border-accent-border min-w-0",
+              titleClass: "text-[15px] font-bold text-accent", border: "border-accent-border min-w-0",
               th: "text-accent", ticker: "text-accent", rowAlt: "bg-accent-soft/30", rowHover: "hover:bg-accent-soft/60",
             },
           ]).map((cfg) => (
@@ -3291,7 +3291,7 @@ export default function ResearchPage() {
           prefKey="research.rbcCa"
           linkedKeys={["research.rbcUs"]}
           className="border-accent-border min-w-0"
-          titleClass="text-xl font-bold text-accent"
+          titleClass="text-[15px] font-bold text-accent"
           title={<>RBC Canadian Focus List</>}
           subtitle={<>RBC Capital Markets Canadian equity picks</>}
           right={<><span className="text-sm text-ink-3">{(state.rbcCanadianFocus || []).length} names</span></>}
@@ -3389,7 +3389,7 @@ export default function ResearchPage() {
           prefKey="research.rbcUs"
           linkedKeys={["research.rbcCa"]}
           className="border-accent-border min-w-0"
-          titleClass="text-xl font-bold text-accent"
+          titleClass="text-[15px] font-bold text-accent"
           title={<>RBC US Focus List</>}
           subtitle={<>RBC Capital Markets US equity picks</>}
           right={<><span className="text-sm text-ink-3">{(state.rbcUsFocus || []).length} names</span></>}
@@ -3489,7 +3489,7 @@ export default function ResearchPage() {
           prefKey="research.equateCad"
           linkedKeys={["research.equateUsd"]}
           className="border-accent-border min-w-0"
-          titleClass="text-xl font-bold text-accent"
+          titleClass="text-[15px] font-bold text-accent"
           title={<>RBC Equate — Canada Large Cap CORE 40</>}
           subtitle={<>RBC Equate Canada Large Cap CORE 40 Model Portfolio</>}
           right={<><span className="text-sm text-ink-3">{(state.equateCad || []).length} names</span></>}
@@ -3571,7 +3571,7 @@ export default function ResearchPage() {
           prefKey="research.equateUsd"
           linkedKeys={["research.equateCad"]}
           className="border-accent-border min-w-0"
-          titleClass="text-xl font-bold text-accent"
+          titleClass="text-[15px] font-bold text-accent"
           title={<>RBC Equate — U.S. All Cap CORE 40</>}
           subtitle={<>RBC Equate U.S. All Cap CORE 40 Model Portfolio</>}
           right={<><span className="text-sm text-ink-3">{(state.equateUsd || []).length} names</span></>}
@@ -3658,7 +3658,7 @@ export default function ResearchPage() {
           prefKey="research.jpm"
           linkedKeys={["research.few"]}
           className="border-warn-border min-w-0"
-          titleClass="text-xl font-bold text-warn"
+          titleClass="text-[15px] font-bold text-warn"
           title={<>JPM US Equity Analyst Focus List</>}
           subtitle={<>J.P. Morgan US equity analyst focus picks · prices live from FactSet</>}
           right={<span className="text-sm text-ink-3">{(state.jpmUsAnalystFocus || []).length} names</span>}
@@ -3759,7 +3759,7 @@ export default function ResearchPage() {
           prefKey="research.few"
           linkedKeys={["research.jpm"]}
           className="border-violet-soft min-w-0"
-          titleClass="text-xl font-bold text-violet"
+          titleClass="text-[15px] font-bold text-violet"
           title={<>RBCCM Canadian FEW Portfolio</>}
           subtitle={<>RBC Capital Markets Canadian Fundamental Equity Weighting portfolio</>}
           right={<><span className="text-sm text-ink-3">{(state.rbccmFew || []).length} names</span></>}
@@ -3846,7 +3846,7 @@ export default function ResearchPage() {
         <CollapsibleSection
           prefKey="research.alpha"
           className="border-line"
-          titleClass="text-xl font-bold"
+          titleClass="text-[15px] font-bold"
           title={<>Seeking Alpha &mdash; Alpha Picks</>}
           subtitle={<>Institutional buy recommendations &mdash; primarily populated by uploading the Alpha Picks dashboard screenshot. Manual adds also work.</>}
           right={<><span className="text-sm text-ink-3">{(state.alphaPicks ?? []).length} picks</span></>}

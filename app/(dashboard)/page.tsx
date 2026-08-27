@@ -110,7 +110,7 @@ export default function DashboardPage() {
                 <svg className={`w-4 h-4 text-ink-3 transition-transform ${regimeCollapsed ? "-rotate-90" : ""}`} fill="none" stroke="currentColor" strokeWidth="2.5" viewBox="0 0 24 24">
                   <path strokeLinecap="round" strokeLinejoin="round" d="M19 9l-7 7-7-7" />
                 </svg>
-                <h2 className="text-lg font-bold text-ink">Regime Multiplier Detail</h2>
+                <h2 className="text-[15px] font-bold text-ink">Regime Multiplier Detail</h2>
               </button>
               <span className={`rounded-full px-2.5 py-0.5 text-xs font-bold ${
                 regime === "Risk-Off" ? "bg-neg-soft text-neg"

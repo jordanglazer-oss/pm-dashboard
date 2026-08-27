@@ -29,7 +29,7 @@ export function CollapsibleSection({
   className?: string;
   title: React.ReactNode;
   subtitle?: React.ReactNode;
-  /** Classes for the <h3> (e.g. "text-xl font-bold text-warn"). */
+  /** Classes for the <h3> (e.g. "text-[15px] font-bold text-warn"). */
   titleClass?: string;
   /** Right-aligned header content (counts, refresh buttons, etc.). */
   right?: React.ReactNode;
@@ -88,7 +88,7 @@ export function CollapsibleSection({
             ▾
           </span>
           <span className="min-w-0">
-            <span className={`block ${titleClass || (flush ? "text-sm font-semibold text-ink" : "text-xl font-bold text-ink")}`}>{title}</span>
+            <span className={`block ${titleClass || (flush ? "text-sm font-semibold text-ink" : "text-[15px] font-bold text-ink")}`}>{title}</span>
             {subtitle && <span className={`block text-xs text-ink-3 ${flush ? "sr-only sm:not-sr-only sm:inline sm:ml-2" : ""}`}>{subtitle}</span>}
           </span>
         </div>
