@@ -976,7 +976,8 @@ export default function AAPerformancePage() {
   }
 
   return (
-    <div className="space-y-8 pb-12">
+    <main className="min-h-screen bg-ground px-4 py-6 text-ink md:px-8 md:py-8 overflow-x-hidden">
+    <div className="mx-auto max-w-7xl space-y-8 pb-12">
       {/* ── Performance Section ── */}
       <section>
         <div className="flex items-center gap-2 mb-4">
@@ -1086,5 +1087,6 @@ export default function AAPerformancePage() {
       </section>
 
     </div>
+    </main>
   );
 }

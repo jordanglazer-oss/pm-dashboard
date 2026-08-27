@@ -4,8 +4,6 @@ import React from "react";
 import { useStocks } from "@/app/lib/StockContext";
 import { PimPortfolio } from "@/app/components/PimPortfolio";
 import { PortfolioXray } from "@/app/components/PortfolioXray";
-import { ThesisWatch } from "@/app/components/ThesisWatch";
-import { DecisionJournal } from "@/app/components/DecisionJournal";
 
 export default function PortfolioPage() {
   const { pimModels } = useStocks();
@@ -24,13 +22,8 @@ export default function PortfolioPage() {
         <div id="xray" className="mt-6 scroll-mt-24">
           <PortfolioXray />
         </div>
-        {/* Thesis watch + Decision journal sit side-by-side — both are compact
-            collapsibles, so one row instead of two keeps the page from feeling
-            stacked. */}
-        <div className="mt-6 grid items-start gap-4 lg:grid-cols-2">
-          <ThesisWatch />
-          <DecisionJournal />
-        </div>
+        {/* Thesis Watch and the Decision Journal live on their own segments
+            (/thesis, /journal) — no duplicates here. */}
       </div>
     </main>
   );

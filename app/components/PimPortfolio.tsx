@@ -3109,6 +3109,19 @@ export function PimPortfolio({ groups }: Props) {
       </div>
 
 
+      {/* Live (drifted) asset-allocation pie for the active profile, with
+          target + drift in the legend. Re-renders whenever prices refresh
+          or the profile tab changes. */}
+      {allocationBreakdown && (
+        <AssetAllocationPie
+          live={allocationBreakdown.live}
+          target={allocationBreakdown.target}
+          profileLabel={PROFILE_LABELS[activeProfile]}
+        />
+      )}
+
+
+
       {/* Holdings table */}
       <div className="rounded-card border border-line bg-white shadow-sm overflow-hidden">
         {/* Positions header (mockup): title + inline summary */}
@@ -3873,18 +3886,6 @@ export function PimPortfolio({ groups }: Props) {
         </div>
         );
       })()}
-
-      {/* Live (drifted) asset-allocation pie for the active profile, with
-          target + drift in the legend. Re-renders whenever prices refresh
-          or the profile tab changes. */}
-      {allocationBreakdown && (
-        <AssetAllocationPie
-          live={allocationBreakdown.live}
-          target={allocationBreakdown.target}
-          profileLabel={PROFILE_LABELS[activeProfile]}
-        />
-      )}
-
 
       {/* USD/CAD rate indicator */}
       {usdCadRate > 1 && (
