@@ -287,6 +287,23 @@ export function PortfolioOverview({ sidebar }: { sidebar?: React.ReactNode } = {
   // the Holdings/Watchlist tables to the Ideas › Synthesis record. Read-only
   // fetch of the same endpoint the Synthesis screen renders from.
   const [synthesisByTicker, setSynthesisByTicker] = useState<Map<string, { verdict: SynthesisVerdict; stale: boolean }>>(new Map());
+  // Thesis-health verdicts for the Status column (eroding / broken). Read-only.
+  const [thesisByTicker, setThesisByTicker] = useState<Map<string, "eroding" | "broken">>(new Map());
+  useEffect(() => {
+    let alive = true;
+    fetch("/api/thesis-health", { cache: "no-store" })
+      .then((r) => (r.ok ? r.json() : null))
+      .then((j) => {
+        if (!alive || !j?.thesisHealth?.holdings) return;
+        const m = new Map<string, "eroding" | "broken">();
+        for (const h of j.thesisHealth.holdings as Array<{ ticker: string; verdict: string }>) {
+          if (h.verdict === "eroding" || h.verdict === "broken") m.set(h.ticker.toUpperCase(), h.verdict);
+        }
+        setThesisByTicker(m);
+      })
+      .catch(() => {});
+    return () => { alive = false; };
+  }, []);
   useEffect(() => {
     let alive = true;
     fetch("/api/synthesis-screen")
@@ -1159,9 +1176,10 @@ export function PortfolioOverview({ sidebar }: { sidebar?: React.ReactNode } = {
         </div>
       </div>
 
-      {/* ── Cockpit: Rankings (left) + Change Monitor & Sector Exposure (right) ── */}
-      <div className="grid gap-5 lg:grid-cols-[minmax(0,1fr)_340px] items-start">
-        <div className="min-w-0 space-y-6">
+      {/* ── Holdings full-width (canvas); Change Monitor + Sector Exposure
+          keep everything they had, in a two-up band below the table. ── */}
+      <div className="space-y-5">
+        <div className="min-w-0 space-y-5">
 
       {/* Rankings — one table with a Portfolio / Watchlist / Suggested toggle.
           Suggested renders its own panel: it lists CANDIDATES rather than
@@ -1213,6 +1231,7 @@ export function PortfolioOverview({ sidebar }: { sidebar?: React.ReactNode } = {
           </div>
         }
         synthesisByTicker={synthesisByTicker}
+        thesisByTicker={thesisByTicker}
         stocks={rankBucket === "Portfolio" ? scoreablePortfolio : scoreableWatchlist}
         loading={loading}
         livePreviousCloses={livePreviousCloses}
@@ -1245,9 +1264,9 @@ export function PortfolioOverview({ sidebar }: { sidebar?: React.ReactNode } = {
       )}
         </div>
 
-        {/* Right sidebar: Change Monitor (injected from the page) + a compact
-            Sector-Exposure-vs-S&P panel (moved out of the old full-width bar). */}
-        <div className="space-y-4">
+        {/* Below the table: Change Monitor (injected from the page) + the
+            Sector-Exposure-vs-S&P panel — two-up on desktop. */}
+        <div className="grid items-start gap-5 lg:grid-cols-2">
           {sidebar}
           <section className="rounded-card border border-line bg-surface p-4 shadow-sm">
             <div className="flex items-baseline justify-between gap-2 mb-3">
@@ -1563,6 +1582,7 @@ function RankingTable({
   bucketTabs,
   loading,
   synthesisByTicker,
+  thesisByTicker,
 }: {
   title: string;
   subtitle: string;
@@ -1574,6 +1594,8 @@ function RankingTable({
   stocks: ScoredStock[];
   /** ticker → latest synthesis verdict (+staleness) for the Synthesis column. */
   synthesisByTicker?: Map<string, { verdict: SynthesisVerdict; stale: boolean }>;
+  /** ticker (upper) → thesis-health verdict, for the Status column. */
+  thesisByTicker?: Map<string, "eroding" | "broken">;
   /** When true, split the rows into 🇨🇦 Canadian and 🇺🇸 US sub-sections,
    *  each independently ranked + flagged, so CAD and USD names are compared
    *  within their own currency rather than against each other. */
@@ -1670,6 +1692,29 @@ function RankingTable({
   };
 
   const prefPrefix = flagType === "review" ? "rankPort" : "rankWatch";
+  // Canvas header state: view toggle (persisted), Stale/Flagged chips + search
+  // (transient view state), and the ⋯ menu holding the action cluster.
+  const view = (uiPrefs[`${prefPrefix}View`] as "scores" | "weights" | "sectors") || "scores";
+  const [chipFilter, setChipFilter] = useState<"all" | "stale" | "flagged">("all");
+  const [query, setQuery] = useState("");
+  const [menuOpen, setMenuOpen] = useState(false);
+  const menuRef = useRef<HTMLDivElement>(null);
+  useEffect(() => {
+    if (!menuOpen) return;
+    const onDown = (e: MouseEvent) => {
+      if (menuRef.current && !menuRef.current.contains(e.target as Node)) setMenuOpen(false);
+    };
+    document.addEventListener("mousedown", onDown);
+    return () => document.removeEventListener("mousedown", onDown);
+  }, [menuOpen]);
+  const staleDaysOf = (st: ScoredStock): number => {
+    if (!st.lastScored) return Infinity;
+    const t = Date.parse(st.lastScored);
+    return Number.isFinite(t) ? (Date.now() - t) / 86400000 : Infinity;
+  };
+  const isStaleRow = (st: ScoredStock) => isScoreable(st) && staleDaysOf(st) > 30;
+  const isFlaggedRow = (st: ScoredStock) =>
+    Boolean(riskScanByTicker?.get(normalizeRiskTicker(st.ticker)) || st.valueTrap || thesisByTicker?.get(st.ticker.toUpperCase()));
   const sort = {
     key: (uiPrefs[`${prefPrefix}Sort`] as RankingSortKey) || "adjusted",
     dir: (uiPrefs[`${prefPrefix}SortDir`] as SortDir) || "desc",
@@ -1689,7 +1734,14 @@ function RankingTable({
 
   const arrow = (key: RankingSortKey) => sort.key === key ? (sort.dir === "asc" ? " \u25B2" : " \u25BC") : "";
 
-  const sorted = [...stocks].sort((a, b) => {
+  const q = query.trim().toLowerCase();
+  const filteredStocks = stocks.filter((st) => {
+    if (q && !(st.ticker.toLowerCase().includes(q) || (st.name || "").toLowerCase().includes(q) || (st.sector || "").toLowerCase().includes(q))) return false;
+    if (chipFilter === "stale" && !isStaleRow(st)) return false;
+    if (chipFilter === "flagged" && !isFlaggedRow(st)) return false;
+    return true;
+  });
+  const sorted = [...filteredStocks].sort((a, b) => {
     const { key, dir } = sort;
     let cmp = 0;
     if (key === "ticker") {
@@ -1732,10 +1784,34 @@ function RankingTable({
   // syncs across devices) keyed off the table's collapseKey + currency.
   const subCollapsed = (ck: string) =>
     !!collapseKey && uiPrefs[`${collapseKey}.${ck}`] === "1";
+  // Weights view overrides the column sort with live model weight.
+  const effSorted = view === "weights"
+    ? [...filteredStocks].sort((a, b) =>
+        (liveWeights?.get(canonicalTicker(b.ticker)) ?? -1) - (liveWeights?.get(canonicalTicker(a.ticker)) ?? -1))
+    : sorted;
   let displayRows: DisplayRow[];
-  if (splitByCurrency) {
-    const cad = sorted.filter((s) => isCanadianTicker(s.ticker));
-    const us = sorted.filter((s) => !isCanadianTicker(s.ticker));
+  if (view === "sectors") {
+    // Sectors view: group rows under sector sub-headers (collapsible, same
+    // pref mechanism as the currency split).
+    const bySector = new Map<string, ScoredStock[]>();
+    for (const st of effSorted) {
+      const k = st.sector || "Other";
+      const arr = bySector.get(k) || [];
+      arr.push(st);
+      bySector.set(k, arr);
+    }
+    displayRows = [...bySector.keys()].sort().flatMap((sec) => {
+      const rows = buildGroup(bySector.get(sec)!);
+      const ck = `sec-${sec}`;
+      const c = subCollapsed(ck);
+      return [
+        { kind: "header", key: `hdr-${ck}`, currencyKey: ck, label: sec, count: rows.length, collapsed: c } as DisplayRow,
+        ...(c ? [] : rows.map((r) => ({ kind: "stock", ...r } as DisplayRow))),
+      ];
+    });
+  } else if (splitByCurrency) {
+    const cad = effSorted.filter((s) => isCanadianTicker(s.ticker));
+    const us = effSorted.filter((s) => !isCanadianTicker(s.ticker));
     const cadCollapsed = subCollapsed("cad");
     const usCollapsed = subCollapsed("us");
     displayRows = [
@@ -1749,7 +1825,7 @@ function RankingTable({
       ] : []),
     ];
   } else {
-    displayRows = buildGroup(sorted).map((r) => ({ kind: "stock", ...r } as DisplayRow));
+    displayRows = buildGroup(effSorted).map((r) => ({ kind: "stock", ...r } as DisplayRow));
   }
 
   // FLIP re-sort (#13): when the row ORDER changes, glide each row from its old
@@ -1875,46 +1951,60 @@ function RankingTable({
   return (
     <section className="rounded-card border border-line bg-white shadow-sm overflow-hidden">
       <div className={`flex items-center gap-3 flex-wrap px-4 py-3 ${collapsed ? "" : "border-b border-line-soft"}`}>
-        {bucketTabs ? (
-          <>
-            {bucketTabs}
-            {collapseKey && (
-              <button
-                onClick={toggleCollapsed}
-                className="flex items-center gap-1 rounded-control border border-line px-2 py-1 text-[11px] font-semibold text-ink-3 hover:bg-surface-2 hover:text-ink transition-colors"
-                aria-expanded={!collapsed}
-                aria-label={collapsed ? `Expand ${title}` : `Collapse ${title}`}
-                title={collapsed ? "Show the rankings table" : "Hide the rankings table"}
-              >
-                <svg className={`w-3.5 h-3.5 transition-transform ${collapsed ? "-rotate-90" : ""}`} fill="none" stroke="currentColor" strokeWidth="2.5" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" d="M19 9l-7 7-7-7" /></svg>
-                {collapsed ? "Show" : "Hide"}
-              </button>
-            )}
-          </>
-        ) : collapseKey ? (
-          <button
-            onClick={toggleCollapsed}
-            className="flex items-center gap-2 cursor-pointer hover:opacity-80 transition-opacity"
-            aria-expanded={!collapsed}
-            aria-label={collapsed ? `Expand ${title}` : `Collapse ${title}`}
-          >
-            <svg
-              className={`w-4 h-4 text-ink-3 transition-transform ${collapsed ? "-rotate-90" : ""}`}
-              fill="none"
-              stroke="currentColor"
-              strokeWidth="2.5"
-              viewBox="0 0 24 24"
+        {/* View toggle — Scores / Weights / Sectors (canvas). Weights orders by
+            live model weight; Sectors groups under collapsible sector headers. */}
+        <div className="inline-flex items-center rounded-control border border-line bg-surface-2 p-0.5">
+          {(["scores", "weights", "sectors"] as const).map((v) => (
+            <button
+              key={v}
+              onClick={() => setUiPref(`${prefPrefix}View`, v)}
+              className={`rounded-[6px] px-3 py-1 text-[12px] font-semibold capitalize transition-colors ${view === v ? "bg-white text-ink shadow-sm" : "text-ink-2 hover:text-ink"}`}
             >
-              <path strokeLinecap="round" strokeLinejoin="round" d="M19 9l-7 7-7-7" />
-            </svg>
-            <h2 className="text-[15px] font-bold text-ink">{title}</h2>
+              {v}
+            </button>
+          ))}
+        </div>
+        {bucketTabs || <h2 className="text-[15px] font-bold text-ink">{title}</h2>}
+        {/* Stale / Flagged filter chips */}
+        <button
+          onClick={() => setChipFilter(chipFilter === "stale" ? "all" : "stale")}
+          className={`rounded-pill border px-2.5 py-1 text-[12px] font-semibold transition-colors ${chipFilter === "stale" ? "border-warn-border bg-warn-soft text-warn" : "border-line bg-white text-ink-2 hover:text-ink"}`}
+          title="Only names whose score is older than 30 days"
+        >
+          Stale
+        </button>
+        <button
+          onClick={() => setChipFilter(chipFilter === "flagged" ? "all" : "flagged")}
+          className={`rounded-pill border px-2.5 py-1 text-[12px] font-semibold transition-colors ${chipFilter === "flagged" ? "border-neg-border bg-neg-soft text-neg" : "border-line bg-white text-ink-2 hover:text-ink"}`}
+          title="Only names with a risk flag, a value-trap haircut, or a tripped thesis"
+        >
+          Flagged
+        </button>
+        <span className="flex-grow" />
+        <div className="relative">
+          <svg className="pointer-events-none absolute left-2.5 top-1/2 h-3.5 w-3.5 -translate-y-1/2 text-ink-3" fill="none" stroke="currentColor" strokeWidth="2" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" d="m21 21-4.34-4.34M17 11a6 6 0 1 1-12 0 6 6 0 0 1 12 0Z" /></svg>
+          <input
+            value={query}
+            onChange={(e) => setQuery(e.target.value)}
+            placeholder={`Filter ${stocks.length} holdings`}
+            className="w-44 rounded-control border border-line bg-white py-1.5 pl-8 pr-2 text-[12px] outline-none placeholder:text-ink-3 focus:border-accent"
+          />
+        </div>
+        {/* ⋯ menu — the full action cluster (Score All, rescores, exports),
+            unchanged, one click away instead of permanently in the header. */}
+        <div ref={menuRef} className="relative">
+          <button
+            onClick={() => setMenuOpen(!menuOpen)}
+            aria-expanded={menuOpen}
+            aria-label="Table actions"
+            className="flex h-8 w-8 items-center justify-center rounded-control border border-line bg-white text-ink-2 hover:bg-surface-hover hover:text-ink transition-colors"
+          >
+            ⋯
           </button>
-        ) : (
-          <h2 className="text-[15px] font-bold text-ink">{title}</h2>
-        )}
-        {!bucketTabs && <span className="text-sm text-ink-3">{subtitle}</span>}
+          {menuOpen && (
+            <div className="absolute right-0 top-10 z-30 w-max max-w-[26rem] rounded-card border border-line bg-white p-3 shadow-card">
         {onScoreAll && (
-          <div className="ml-auto flex flex-wrap items-center gap-2">
+          <div className="flex max-w-md flex-wrap items-center gap-2">
             {lastScoredAt && !scoring && (
               <span className="text-[11px] text-ink-3">
                 Last scored {formatRelTimestamp(lastScoredAt)}
@@ -2007,6 +2097,17 @@ function RankingTable({
             )}
           </div>
         )}
+              {collapseKey && (
+                <button
+                  onClick={() => { toggleCollapsed(); setMenuOpen(false); }}
+                  className="mt-2 block w-full rounded-control border border-line px-3 py-1.5 text-left text-xs font-semibold text-ink-2 hover:bg-surface-2 transition-colors"
+                >
+                  {collapsed ? "Show the table" : "Hide the table"}
+                </button>
+              )}
+            </div>
+          )}
+        </div>
       </div>
       {/* Score All failure banner — persists until dismissed */}
       {!scoring && scoreFailures && scoreFailures.length > 0 && (
@@ -2088,7 +2189,7 @@ function RankingTable({
           </div>
         );
       })()}
-      {!collapsed && sorted.length === 0 && (
+      {!collapsed && !loading && effSorted.length === 0 && (
         <div className="mx-4 my-6 rounded-control border border-dashed border-line bg-surface-2 p-8 text-center">
           <svg className="w-10 h-10 mx-auto mb-3 text-ink-faint" fill="none" stroke="currentColor" strokeWidth="1.5" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" d="M3.75 6h16.5M3.75 12h16.5m-16.5 5.25h16.5" /></svg>
           <p className="text-sm font-semibold text-ink-2 mb-1">
@@ -2106,10 +2207,10 @@ function RankingTable({
           </kbd>
         </div>
       )}
-      {!collapsed && loading && sorted.length === 0 && (
+      {!collapsed && loading && effSorted.length === 0 && (
         <div className="px-4 py-3"><SkeletonTable rows={10} cols={7} /></div>
       )}
-      {!collapsed && sorted.length > 0 && (
+      {!collapsed && effSorted.length > 0 && (
       <>
       {/* Mobile: two-line rows, score pinned right — the table below never
           side-scrolls on a phone (streamline rule 05). */}
@@ -2165,9 +2266,9 @@ function RankingTable({
               {showWeight && <th className={`${thClass} text-right`}>Weight</th>}
               <th className={`${thClass} text-right`} onClick={() => toggleSort("price")}>Price{arrow("price")}</th>
               <th className={`${thClass} text-right`}>Day</th>
-              <th className={`${thClass} text-right`} onClick={() => toggleSort("adjusted")}>Score{arrow("adjusted")}</th>
-              <th className={thClass} onClick={() => toggleSort("rating")}>Rating{arrow("rating")}</th>
               <th className={`${thClass} hidden lg:table-cell`}>Synthesis</th>
+              <th className={`${thClass} text-right`} onClick={() => toggleSort("adjusted")}>Score{arrow("adjusted")}</th>
+              <th className={thClass}>Status</th>
               <th className="pb-2 pr-2 w-8" aria-label="Detail"></th>
             </tr>
           </thead>
@@ -2280,15 +2381,6 @@ function RankingTable({
                       return <span className={chg >= 0 ? "text-pos" : "text-neg"}>{chg >= 0 ? "+" : ""}{chg.toFixed(1)}%</span>;
                     })()}
                   </td>
-                  {/* Score = adjusted composite (with regime delta) */}
-                  <td className="py-3 pr-3 text-right whitespace-nowrap">
-                    <span className="font-bold text-ink tabular-nums">{Number(s.adjusted.toFixed(1))}</span>
-                    <span className="text-ink-faint text-[11px]">/41</span>
-                    <span className={`ml-1 text-[11px] ${adj >= 0 ? "text-pos" : "text-neg"}`}>
-                      {adj >= 0 ? "+" : ""}{adj}
-                    </span>
-                  </td>
-                  <td className="py-3 pr-3">{ratingPill(label)}</td>
                   <td className="py-3 pr-3 hidden lg:table-cell">
                     {(() => {
                       const sv = synthesisByTicker?.get(canonicalTicker(s.ticker));
@@ -2308,6 +2400,27 @@ function RankingTable({
                           {sv.stale && <span className="font-normal opacity-70">stale</span>}
                         </Link>
                       );
+                    })()}
+                  </td>
+                  {/* Score = adjusted composite (with regime delta) */}
+                  <td className="py-3 pr-3 text-right whitespace-nowrap">
+                    <span className="font-bold text-ink tabular-nums">{Number(s.adjusted.toFixed(1))}</span>
+                    <span className="text-ink-faint text-[11px]">/41</span>
+                    <span className={`ml-1 text-[11px] ${adj >= 0 ? "text-pos" : "text-neg"}`}>
+                      {adj >= 0 ? "+" : ""}{adj}
+                    </span>
+                  </td>
+                  <td className="py-3 pr-3 whitespace-nowrap">
+                    {(() => {
+                      // Status (canvas): thesis tripped > risk flag > value trap > stale > current.
+                      const thesis = thesisByTicker?.get(s.ticker.toUpperCase());
+                      if (thesis) return <span className="rounded-full bg-neg-soft px-2 py-0.5 text-[10px] font-bold text-neg">Thesis {thesis === "broken" ? "tripped" : "eroding"}</span>;
+                      const risk = riskScanByTicker?.get(normalizeRiskTicker(s.ticker));
+                      if (risk) return <span className="rounded-full bg-neg-soft px-2 py-0.5 text-[10px] font-bold text-neg">Risk · {risk.priority}</span>;
+                      if (s.valueTrap) return <span className="rounded-full bg-warn-soft px-2 py-0.5 text-[10px] font-bold text-warn">Revisions ↓</span>;
+                      const d = staleDaysOf(s);
+                      if (isScoreable(s) && d > 30) return <span className="rounded-full bg-warn-soft px-2 py-0.5 text-[10px] font-bold text-warn">Stale {Number.isFinite(d) ? `${Math.round(d)}d` : ""}</span>;
+                      return <span className="rounded-full bg-pos-soft px-2 py-0.5 text-[10px] font-bold text-pos">Current</span>;
                     })()}
                   </td>
                   <td className="py-3 pr-2 text-right">
@@ -2335,7 +2448,8 @@ function RankingTable({
                           <p className="text-xs leading-relaxed text-ink-2">{s.investmentThesis || <span className="text-ink-faint">—</span>}</p>
                         </div>
                       </div>
-                      <div className="mt-3 flex flex-wrap gap-x-4 gap-y-1 text-[11px]">
+                      <div className="mt-3 flex flex-wrap items-center gap-x-4 gap-y-1 text-[11px]">
+                        {ratingPill(label)}
                         <span className="text-ink-3">Base <span className="font-mono text-ink">{Number(s.raw.toFixed(1))}</span></span>
                         {SCORE_GROUPS.map((g) => (
                           <span key={g.name} className="text-ink-3">
@@ -2354,7 +2468,7 @@ function RankingTable({
         </table>
       </div>
       <div className="flex items-center justify-between border-t border-line bg-surface-2 px-4 py-2 text-[11px] text-ink-3">
-        <span>{sorted.length} name{sorted.length === 1 ? "" : "s"}</span>
+        <span>Showing {effSorted.length} of {stocks.length} · sorted by {view === "weights" ? "weight" : view === "sectors" ? "sector" : String(sort.key)}</span>
         <span className="hidden sm:inline">click a row to open the stock page</span>
       </div>
       </>

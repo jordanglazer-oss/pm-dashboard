@@ -1,6 +1,7 @@
 "use client";
 
 import React, { useEffect, useState } from "react";
+import Link from "next/link";
 import { useStocks } from "@/app/lib/StockContext";
 import { PortfolioOverview } from "@/app/components/PortfolioOverview";
 import { CockpitBand } from "@/app/components/CockpitBand";
@@ -13,6 +14,14 @@ import { displayTicker } from "@/app/lib/ticker";
 
 
 export default function DashboardPage() {
+  // Canvas "Reference:" row — reference analyses render on demand.
+  const [openRefs, setOpenRefs] = useState<Set<string>>(new Set());
+  const toggleRef = (k: string) =>
+    setOpenRefs((prev) => {
+      const next = new Set(prev);
+      if (next.has(k)) next.delete(k); else next.add(k);
+      return next;
+    });
   const { scoredStocks, marketData, updateMarketData, uiPrefs, setUiPref } = useStocks();
 
   // Thesis-health verdicts (Phase 03) keyed by ticker — surfaced on the score
@@ -89,13 +98,29 @@ export default function DashboardPage() {
         {/* ── Portfolio Overview ── */}
         <PortfolioOverview sidebar={<ChangeMonitor />} />
 
-        {/* ── Forward regime score (Phase 05) — parallel forward-tilted score.
-            Sits with the score/regime detail; off by default, toggle to reveal. */}
-        <ForwardScorePanel />
+        {/* ── Reference row (canvas): links reveal the reference analyses. ── */}
+        <div className="flex flex-wrap items-center gap-x-2 gap-y-1 px-1 text-xs">
+          <span className="text-ink-3">Reference:</span>
+          {([["regime", "Regime multiplier detail"], ["calibration", "Score calibration"], ["forward", "Forward-regime score"]] as const).map(([k, label], idx) => (
+            <React.Fragment key={k}>
+              {idx > 0 && <span className="text-ink-faint">·</span>}
+              <button
+                onClick={() => toggleRef(k)}
+                className={`font-semibold transition-colors ${openRefs.has(k) ? "text-accent" : "text-ink-2 hover:text-ink"}`}
+              >
+                {label}
+              </button>
+            </React.Fragment>
+          ))}
+          <span className="text-ink-faint">·</span>
+          <Link href="/methodology" className="font-semibold !text-ink-2 hover:!text-ink transition-colors">Methodology</Link>
+        </div>
+
+        {openRefs.has("forward") && <ForwardScorePanel />}
 
         {/* ── Regime Detail — per-stock multiplier breakdown ── */}
-        {(() => {
-          const regimeCollapsed = (uiPrefs["dashboard.regimeMultiplier.collapsed"] ?? "1") === "1";
+        {openRefs.has("regime") && (() => {
+          const regimeCollapsed = (uiPrefs["dashboard.regimeMultiplier.collapsed"] ?? "0") === "1";
           const toggleRegimeCollapsed = () => setUiPref("dashboard.regimeMultiplier.collapsed", regimeCollapsed ? "0" : "1");
           return (
         <div id="regime-detail" className="scroll-mt-6">
@@ -202,9 +227,9 @@ export default function DashboardPage() {
         })()}
 
         {/* Score-calibration — "does the score actually predict returns?"
-            Collapsed by default; computes on open (expensive Yahoo fetch,
-            cached server-side in pm:score-calibration). */}
-        <ScoreCalibration />
+            Renders from the Reference row; computes on open (expensive Yahoo
+            fetch, cached server-side in pm:score-calibration). */}
+        {openRefs.has("calibration") && <ScoreCalibration />}
       </div>
     </main>
   );
