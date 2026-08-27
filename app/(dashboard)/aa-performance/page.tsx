@@ -977,46 +977,6 @@ export default function AAPerformancePage() {
 
   return (
     <div className="space-y-8 pb-12">
-      {/* ── Asset Allocation Section ── */}
-      <section>
-        <div className="flex items-baseline justify-between mb-4">
-          <h2 className="text-[15px] font-bold text-ink">Asset Allocation</h2>
-          <p className="text-xs text-ink-3">
-            <span className="text-pos font-semibold">Current</span> row edits the PIM Model profile weights.
-            {pimModels.lastUpdated && (
-              <>
-                {" "}Last saved{" "}
-                <span className="font-mono">
-                  {new Date(pimModels.lastUpdated).toLocaleTimeString()}
-                </span>
-              </>
-            )}
-          </p>
-        </div>
-        <div className="grid grid-cols-1 sm:grid-cols-2 xl:grid-cols-4 gap-4">
-          <AllocationTableCard
-            title="Conservative"
-            table={displayedAllocations.conservative}
-            onUpdate={(rowKey, colKey, value) => updateAllocation("conservative", rowKey, colKey, value)}
-          />
-          <AllocationTableCard
-            title="Balanced"
-            table={displayedAllocations.balanced}
-            onUpdate={(rowKey, colKey, value) => updateAllocation("balanced", rowKey, colKey, value)}
-          />
-          <AllocationTableCard
-            title="Growth"
-            table={displayedAllocations.growth}
-            onUpdate={(rowKey, colKey, value) => updateAllocation("growth", rowKey, colKey, value)}
-          />
-          <AllocationTableCard
-            title="All-Equity"
-            table={displayedAllocations.allEquity}
-            onUpdate={(rowKey, colKey, value) => updateAllocation("allEquity", rowKey, colKey, value)}
-          />
-        </div>
-      </section>
-
       {/* ── Performance Section ── */}
       <section>
         <div className="flex items-center gap-2 mb-4">
@@ -1069,6 +1029,46 @@ export default function AAPerformancePage() {
               </tbody>
             </table>
           </div>
+        </div>
+      </section>
+
+      {/* ── Asset Allocation Section ── */}
+      <section>
+        <div className="flex items-baseline justify-between mb-4">
+          <h2 className="text-[15px] font-bold text-ink">Asset Allocation</h2>
+          <p className="text-xs text-ink-3">
+            <span className="text-pos font-semibold">Current</span> row edits the PIM Model profile weights.
+            {pimModels.lastUpdated && (
+              <>
+                {" "}Last saved{" "}
+                <span className="font-mono">
+                  {new Date(pimModels.lastUpdated).toLocaleTimeString()}
+                </span>
+              </>
+            )}
+          </p>
+        </div>
+        <div className="grid grid-cols-1 sm:grid-cols-2 xl:grid-cols-4 gap-4">
+          <AllocationTableCard
+            title="Conservative"
+            table={displayedAllocations.conservative}
+            onUpdate={(rowKey, colKey, value) => updateAllocation("conservative", rowKey, colKey, value)}
+          />
+          <AllocationTableCard
+            title="Balanced"
+            table={displayedAllocations.balanced}
+            onUpdate={(rowKey, colKey, value) => updateAllocation("balanced", rowKey, colKey, value)}
+          />
+          <AllocationTableCard
+            title="Growth"
+            table={displayedAllocations.growth}
+            onUpdate={(rowKey, colKey, value) => updateAllocation("growth", rowKey, colKey, value)}
+          />
+          <AllocationTableCard
+            title="All-Equity"
+            table={displayedAllocations.allEquity}
+            onUpdate={(rowKey, colKey, value) => updateAllocation("allEquity", rowKey, colKey, value)}
+          />
         </div>
       </section>
 

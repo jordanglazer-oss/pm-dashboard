@@ -123,8 +123,8 @@ export default function JournalPage() {
         {data && data.rows.length + data.skipped.length > 0 && (
           <>
             {/* ── Hit-rate stats ── */}
-            <div className="mb-4 grid grid-cols-1 gap-3 sm:grid-cols-2">
-              <div className="rounded-card border border-line bg-white p-4 shadow-sm">
+            <div className="mb-4 grid grid-cols-1 overflow-hidden rounded-card border border-line bg-white shadow-sm sm:grid-cols-2">
+              <div className="-ml-px -mt-px border-l border-t border-line-soft p-4">
                 <div className="text-[10px] font-bold uppercase tracking-[0.08em] text-ink-3">
                   Buys / adds — right vs sector
                 </div>
@@ -144,7 +144,7 @@ export default function JournalPage() {
                   <div className="mt-1 text-[11px] text-warn">small sample — read direction, not precision</div>
                 )}
               </div>
-              <div className="rounded-card border border-line bg-white p-4 shadow-sm">
+              <div className="-ml-px -mt-px border-l border-t border-line-soft p-4">
                 <div className="text-[10px] font-bold uppercase tracking-[0.08em] text-ink-3">
                   Trims / sells — right to reduce
                 </div>

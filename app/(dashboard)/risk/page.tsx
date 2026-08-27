@@ -166,51 +166,11 @@ export default function RiskPage() {
             <StatTile label="Coverage" value={`${data.namesIncluded}`} sub={data.namesSkipped.length ? `no history: ${data.namesSkipped.join(", ")}` : "all names covered"} />
           </div>
 
-          {/* ── Correlation clusters ── */}
-          <div className="mt-6 rounded-card border border-line bg-white p-4 shadow-sm">
-            <h2 className="text-sm font-semibold text-ink">Correlation clusters — holdings that trade as one position</h2>
-            <p className="mt-1 text-xs text-ink-2">Pairwise correlation ≥ 0.70 over the last year. A cluster&rsquo;s weight is your true position size in that trade.</p>
-            {data.clusters.length === 0 ? (
-              <div className="mt-3 text-xs text-ink-3">No clusters at the 0.70 threshold — the book&rsquo;s names are trading independently.</div>
-            ) : (
-              <div className="mt-3 grid grid-cols-1 gap-3 md:grid-cols-2">
-                {/* Fund clusters are the CORE ALLOCATION — broad ETFs correlate
-                    with each other by construction, so their cluster is
-                    expected structure, never flagged as concentration risk.
-                    The ⚠ treatment is reserved for single-name clusters. */}
-                {data.clusters.map((c, i) => {
-                  const isFund = c.kind === "fund";
-                  const hot = !isFund && c.totalWeight >= 0.2;
-                  return (
-                  <div key={i} className={`rounded-card border p-3 ${hot ? "border-neg-border bg-neg-soft" : "border-line bg-surface-2"}`}>
-                    <div className="flex items-center justify-between">
-                      <span className="text-xs font-semibold text-ink">
-                        {hot ? "⚠ " : ""}
-                        {isFund ? "Core funds" : `Cluster ${i + 1}`} · {pct(c.totalWeight)} of book
-                      </span>
-                      <span className="text-[11px] text-ink-3">avg corr {c.avgCorr.toFixed(2)}</span>
-                    </div>
-                    {isFund && (
-                      <p className="mt-1 text-[11px] text-ink-3">
-                        Broad funds — correlated by construction. Expected structure, not a concentration signal.
-                      </p>
-                    )}
-                    <div className="mt-1.5 flex flex-wrap gap-1.5">
-                      {c.members.map((t) => (
-                        <Link key={t} href={`/stock/${encodeURIComponent(t)}`} className="rounded bg-white px-1.5 py-0.5 font-mono text-[11px] font-semibold text-ink border border-line hover:text-accent">
-                          {displayTicker(t)}
-                        </Link>
-                      ))}
-                    </div>
-                  </div>
-                  );
-                })}
-              </div>
-            )}
-          </div>
-
+          {/* ── Two-up (canvas): risk contribution left; clusters + stress right ── */}
+          <div className="mt-6 grid items-start gap-5 xl:grid-cols-2">
+            <div>
           {/* ── Risk contribution ── */}
-          <div className="mt-6 rounded-card border border-line bg-white p-4 shadow-sm">
+          <div className="rounded-card border border-line bg-white p-4 shadow-sm">
             <h2 className="text-sm font-semibold text-ink">Risk contribution — who actually drives portfolio volatility</h2>
             <p className="mt-1 text-xs text-ink-2">
               Covariance-based share of portfolio variance. <span className="font-semibold text-neg">Highlighted</span>:
@@ -254,8 +214,53 @@ export default function RiskPage() {
             </div>
           </div>
 
+            </div>
+            <div className="space-y-5">
+          {/* ── Correlation clusters ── */}
+          <div className="rounded-card border border-line bg-white p-4 shadow-sm">
+            <h2 className="text-sm font-semibold text-ink">Correlation clusters — holdings that trade as one position</h2>
+            <p className="mt-1 text-xs text-ink-2">Pairwise correlation ≥ 0.70 over the last year. A cluster&rsquo;s weight is your true position size in that trade.</p>
+            {data.clusters.length === 0 ? (
+              <div className="mt-3 text-xs text-ink-3">No clusters at the 0.70 threshold — the book&rsquo;s names are trading independently.</div>
+            ) : (
+              <div className="mt-3 grid grid-cols-1 gap-3 md:grid-cols-2">
+                {/* Fund clusters are the CORE ALLOCATION — broad ETFs correlate
+                    with each other by construction, so their cluster is
+                    expected structure, never flagged as concentration risk.
+                    The ⚠ treatment is reserved for single-name clusters. */}
+                {data.clusters.map((c, i) => {
+                  const isFund = c.kind === "fund";
+                  const hot = !isFund && c.totalWeight >= 0.2;
+                  return (
+                  <div key={i} className={`rounded-card border p-3 ${hot ? "border-neg-border bg-neg-soft" : "border-line bg-surface-2"}`}>
+                    <div className="flex items-center justify-between">
+                      <span className="text-xs font-semibold text-ink">
+                        {hot ? "⚠ " : ""}
+                        {isFund ? "Core funds" : `Cluster ${i + 1}`} · {pct(c.totalWeight)} of book
+                      </span>
+                      <span className="text-[11px] text-ink-3">avg corr {c.avgCorr.toFixed(2)}</span>
+                    </div>
+                    {isFund && (
+                      <p className="mt-1 text-[11px] text-ink-3">
+                        Broad funds — correlated by construction. Expected structure, not a concentration signal.
+                      </p>
+                    )}
+                    <div className="mt-1.5 flex flex-wrap gap-1.5">
+                      {c.members.map((t) => (
+                        <Link key={t} href={`/stock/${encodeURIComponent(t)}`} className="rounded bg-white px-1.5 py-0.5 font-mono text-[11px] font-semibold text-ink border border-line hover:text-accent">
+                          {displayTicker(t)}
+                        </Link>
+                      ))}
+                    </div>
+                  </div>
+                  );
+                })}
+              </div>
+            )}
+          </div>
+
           {/* ── Stress replays ── */}
-          <div className="mt-6 rounded-card border border-line bg-white p-4 shadow-sm">
+          <div className="rounded-card border border-line bg-white p-4 shadow-sm">
             <h2 className="text-sm font-semibold text-ink">Stress replays — documented episodes applied to today&rsquo;s weights</h2>
             <p className="mt-1 text-xs text-ink-2">Sector-level shocks from each episode × current look-through weights. Approximations for orientation, not predictions.</p>
             <div className="mt-3 grid grid-cols-1 gap-3 md:grid-cols-2">
@@ -279,6 +284,8 @@ export default function RiskPage() {
             </div>
           </div>
 
+            </div>
+          </div>
           {/* ── Beta-weighted sector exposure ── */}
           <div className="mt-6 rounded-card border border-line bg-white p-4 shadow-sm">
             <h2 className="text-sm font-semibold text-ink">Sector exposure — capital vs beta-adjusted, vs the S&amp;P</h2>
