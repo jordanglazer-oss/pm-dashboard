@@ -343,7 +343,7 @@ export default function RiskAlertPanel({
   return (
     <div className="mt-6">
       <div className="flex items-center gap-3 mb-4">
-        <h2 className="text-lg font-bold text-ink">Risk Alert</h2>
+        <h2 className="text-[15px] font-bold text-ink">Risk Alert</h2>
         <span className={`rounded-full px-3 py-0.5 text-xs font-semibold ${
           riskAlert.level === "critical"
             ? "bg-neg-soft text-neg"

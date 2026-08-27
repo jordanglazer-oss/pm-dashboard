@@ -179,7 +179,7 @@ export default function StockHealthMonitor({
       prefKey="stock.healthMonitor"
       defaultCollapsed
       className="border-line mt-6"
-      titleClass="text-lg font-bold text-ink"
+      titleClass="text-[15px] font-bold text-ink"
       title="Stock Health Monitor"
       right={<span className="rounded-full bg-surface-2 px-3 py-0.5 text-xs font-medium text-ink-3">Informational Only</span>}
     >

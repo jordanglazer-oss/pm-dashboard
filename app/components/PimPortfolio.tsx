@@ -2938,7 +2938,7 @@ export function PimPortfolio({ groups }: Props) {
     <div className="space-y-6">
       {/* Header bar */}
       <div className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
-        <h2 className="text-lg font-bold text-ink">PIM</h2>
+        <h2 className="text-[15px] font-bold text-ink">PIM</h2>
 
         {/* Profile tabs — horizontally scrollable so the 5-6 profiles
             (Conservative … Core) don't overflow on mobile. */}

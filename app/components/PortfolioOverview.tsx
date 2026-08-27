@@ -1355,7 +1355,7 @@ export function PortfolioOverview({ sidebar }: { sidebar?: React.ReactNode } = {
                 <svg className={`w-4 h-4 text-ink-3 transition-transform ${fundCollapsed ? "-rotate-90" : ""}`} fill="none" stroke="currentColor" strokeWidth="2.5" viewBox="0 0 24 24">
                   <path strokeLinecap="round" strokeLinejoin="round" d="M19 9l-7 7-7-7" />
                 </svg>
-                <h2 className="text-lg font-bold text-ink">Fund & ETF Holdings</h2>
+                <h2 className="text-[15px] font-bold text-ink">Fund & ETF Holdings</h2>
               </button>
               <span className="text-sm text-ink-3">{fundPortfolio.length} holdings</span>
               {!fundCollapsed && (
@@ -1907,10 +1907,10 @@ function RankingTable({
             >
               <path strokeLinecap="round" strokeLinejoin="round" d="M19 9l-7 7-7-7" />
             </svg>
-            <h2 className="text-lg font-bold text-ink">{title}</h2>
+            <h2 className="text-[15px] font-bold text-ink">{title}</h2>
           </button>
         ) : (
-          <h2 className="text-lg font-bold text-ink">{title}</h2>
+          <h2 className="text-[15px] font-bold text-ink">{title}</h2>
         )}
         {!bucketTabs && <span className="text-sm text-ink-3">{subtitle}</span>}
         {onScoreAll && (

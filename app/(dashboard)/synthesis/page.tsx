@@ -430,7 +430,7 @@ export default function SynthesisPage() {
     <div className="mx-auto max-w-5xl space-y-4 px-4 py-6">
       <div className="flex flex-wrap items-center justify-between gap-2">
         <div>
-          <h1 className="text-lg font-bold text-ink">Synthesis</h1>
+          <h1 className="text-[15px] font-bold text-ink">Synthesis</h1>
           <p className="text-xs text-ink-3">
             Evidence-bound base / bull / bear per name — FactSet, analyst reports, revisions, street takeaways,
             research lists, technicals. Score and factors deliberately excluded.
