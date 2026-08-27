@@ -1514,12 +1514,13 @@ export default function StockDetailPage() {
       <div className="px-4 py-6 md:px-8 md:py-8">
         <div className="mx-auto max-w-7xl">
           {/* Stock header card */}
-          <div className="rounded-card border border-line bg-white p-6 shadow-sm">
-            <div className="grid grid-cols-1 lg:grid-cols-[1fr_200px] gap-6 items-start">
-              {/* Left: stock info */}
+          <div className="overflow-hidden rounded-card border border-line bg-white shadow-sm">
+            {/* Identity strip — ticker/price/pills left, actions right (canvas anatomy).
+                Same elements as before, recomposed; nothing removed. */}
+            <div className="flex flex-wrap items-center justify-between gap-x-6 gap-y-2 border-b border-line-soft px-5 py-3">
               <div className="min-w-0">
                 {/* Ticker + price */}
-                <div className="flex items-baseline gap-2 sm:gap-3 flex-wrap mb-1">
+                <div className="flex items-baseline gap-2 sm:gap-3 flex-wrap">
                   <h1 className="text-2xl sm:text-3xl font-bold font-mono tracking-tight">{displayTicker(stock.ticker)}</h1>
                   {stock.price != null && (
                     <span className="text-xl sm:text-2xl font-semibold text-ink-2">${stock.price.toFixed(2)}</span>
@@ -1534,8 +1535,10 @@ export default function StockDetailPage() {
                   )}
                 </div>
 
+              </div>
+              <div className="min-w-0">
                 {/* Action buttons */}
-                <div className="flex items-center gap-1.5 sm:gap-2 flex-wrap mb-3">
+                <div className="flex items-center gap-1.5 sm:gap-2 flex-wrap justify-end">
                   {scoreable && (
                     <button
                       onClick={handleRescore}
@@ -1582,6 +1585,12 @@ export default function StockDetailPage() {
                   {refreshError && <span className="text-xs text-neg ml-1">{refreshError}</span>}
                 </div>
 
+              </div>
+            </div>
+            <div className="px-5 py-4">
+            <div className="grid grid-cols-1 lg:grid-cols-[1fr_200px] gap-6 items-start">
+              {/* Left: stock info */}
+              <div className="min-w-0">
                 {/* Sector (stocks only) + Weight (funds only) */}
                 <div className="flex items-center gap-2 mb-2">
                   {scoreable && stock.sector && (
@@ -1874,6 +1883,7 @@ export default function StockDetailPage() {
                   <ScoreDelta ticker={stock.ticker} />
                 </div>
               )}
+            </div>
             </div>
           </div>
 

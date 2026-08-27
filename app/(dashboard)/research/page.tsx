@@ -517,6 +517,9 @@ const RAIL_GROUPS: { label: string; items: { key: string; label: string }[] }[] 
 ];
 
 export default function ResearchPage() {
+  // Master-detail rail: "all" = classic stacked view; a prefKey = show only
+  // that source's pane (canvas layout). View state only — nothing persisted.
+  const [railSel, setRailSel] = useState<string>("all");
   const [state, setState] = useState<ResearchState>(defaultResearch);
   const [loaded, setLoaded] = useState(false);
   const [attachmentsSaveError, setAttachmentsSaveError] = useState<string | null>(null);
@@ -2065,6 +2068,12 @@ export default function ResearchPage() {
             hunting through 17 stacked panels. Preferences are the same
             pm:ui-prefs collapse keys the sections already persist. */}
         <nav className="hidden xl:block w-52 shrink-0 sticky top-20 max-h-[calc(100vh-6rem)] overflow-y-auto rounded-card border border-line bg-white p-2 shadow-sm">
+          <button
+            onClick={() => setRailSel("all")}
+            className={`block w-full rounded-[6px] px-2.5 py-1.5 text-left text-[12.5px] transition-colors ${railSel === "all" ? "bg-accent-soft font-semibold text-accent-ink" : "text-ink-2 hover:bg-surface-hover hover:text-ink"}`}
+          >
+            All sources
+          </button>
           {RAIL_GROUPS.map((g) => (
             <div key={g.label} className="mb-1.5">
               <div className="px-2.5 pb-1 pt-1.5 text-[10px] font-bold uppercase tracking-wider text-ink-3">{g.label}</div>
@@ -2072,10 +2081,11 @@ export default function ResearchPage() {
                 <button
                   key={it.key}
                   onClick={() => {
-                    setUiPref(it.key, "0"); // open it
-                    document.getElementById(it.key)?.scrollIntoView({ behavior: "smooth", block: "start" });
+                    setRailSel(it.key);
+                    setUiPref(it.key, "0"); // make sure the pane is open
+                    window.scrollTo({ top: 0, behavior: "smooth" });
                   }}
-                  className="block w-full rounded-[6px] px-2.5 py-1.5 text-left text-[12.5px] text-ink-2 hover:bg-surface-hover hover:text-ink transition-colors"
+                  className={`block w-full rounded-[6px] px-2.5 py-1.5 text-left text-[12.5px] transition-colors ${railSel === it.key ? "bg-accent-soft font-semibold text-accent-ink" : "text-ink-2 hover:bg-surface-hover hover:text-ink"}`}
                 >
                   {it.label}
                 </button>
@@ -2083,7 +2093,10 @@ export default function ResearchPage() {
             </div>
           ))}
         </nav>
-        <div className="min-w-0 flex-1 space-y-5">
+        <div className="research-col min-w-0 flex-1 space-y-5">
+          {railSel !== "all" && (
+            <style>{`@media (min-width: 1280px) { .research-col section[id^="research."] { display: none; } .research-col section[id="${railSel}"], .research-col section[id="research.synthesisCollapsed"] { display: block !important; } }`}</style>
+          )}
         <div className="flex items-start justify-between gap-3 flex-wrap">
           <div className="max-w-3xl">
             <h1 className="text-3xl font-semibold tracking-tight">Research Notes</h1>

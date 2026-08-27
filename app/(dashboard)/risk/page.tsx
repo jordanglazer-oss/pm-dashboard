@@ -42,10 +42,12 @@ type RiskData = {
 const pct = (x: number) => `${(x * 100).toFixed(1)}%`;
 
 function StatTile({ label, value, sub }: { label: string; value: string; sub?: string }) {
+  // A cell in the headline band — hairline dividers, one shared border
+  // (canvas anatomy), instead of five floating cards.
   return (
-    <div className="hover-lift rounded-card border border-line bg-white p-4 shadow-sm">
+    <div className="-ml-px -mt-px border-l border-t border-line-soft px-4 py-3">
       <div className="text-[11px] uppercase tracking-wide text-ink-3">{label}</div>
-      <div className="mt-1 text-2xl font-semibold tabular-nums text-ink">{value}</div>
+      <div className="mt-1 text-xl font-semibold tabular-nums text-ink">{value}</div>
       {sub && <div className="mt-0.5 text-[11px] text-ink-3">{sub}</div>}
     </div>
   );
@@ -92,7 +94,7 @@ export default function RiskPage() {
   return (
     <div className="mx-auto max-w-[1200px] px-4 py-6">
       <div className="mb-2 flex flex-wrap items-center justify-between gap-2">
-        <h1 className="text-xl font-semibold text-ink">Risk <span className="ml-2 rounded bg-surface-2 px-2 py-0.5 text-[11px] font-medium text-ink-3 align-middle">read-only</span></h1>
+        <h1 className="text-[15px] font-bold text-ink">Risk <span className="ml-2 rounded bg-surface-2 px-2 py-0.5 text-[11px] font-medium text-ink-3 align-middle">read-only</span></h1>
         <div className="flex items-center gap-3 text-xs text-ink-3">
           {data && <span>computed {new Date(data.computedAt).toLocaleString()}</span>}
           <button
@@ -114,9 +116,9 @@ export default function RiskPage() {
         // The first run fetches a year of history per holding (15-30s), so the
         // shape of what's coming beats a bare "Loading…" string.
         <div className="space-y-6">
-          <div className="grid grid-cols-2 gap-3 sm:grid-cols-3 lg:grid-cols-5">
+          <div className="grid grid-cols-2 overflow-hidden rounded-card border border-line bg-white shadow-sm sm:grid-cols-3 lg:grid-cols-5">
             {Array.from({ length: 5 }).map((_, i) => (
-              <div key={i} className="rounded-card border border-line bg-white p-4 shadow-sm">
+              <div key={i} className="-ml-px -mt-px border-l border-t border-line-soft p-4">
                 <Skeleton className="h-2.5 w-24 bg-line-soft" />
                 <Skeleton className="mt-2 h-7 w-16" />
                 <Skeleton className="mt-2 h-2.5 w-28 bg-line-soft" />
@@ -156,7 +158,7 @@ export default function RiskPage() {
           )}
 
           {/* ── Header stats ── */}
-          <div className="grid grid-cols-2 gap-3 sm:grid-cols-3 lg:grid-cols-5">
+          <div className="grid grid-cols-2 overflow-hidden rounded-card border border-line bg-white shadow-sm sm:grid-cols-3 lg:grid-cols-5">
             <StatTile label="Portfolio ann. vol" value={data.portfolioAnnVol != null ? `${data.portfolioAnnVol}%` : "—"} sub="realized, 1y daily, correlation-aware" />
             <StatTile label="Weighted beta" value={data.weightedBeta.toFixed(2)} sub={`${data.betaScenario.label}: ${data.betaScenario.portfolioImpact}%`} />
             <StatTile label="Top-5 weight" value={pct(data.top5Weight)} sub="of the weighted book" />

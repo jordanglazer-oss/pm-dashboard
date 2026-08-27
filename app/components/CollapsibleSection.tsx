@@ -62,10 +62,10 @@ export function CollapsibleSection({
       className={
         flush
           ? `bg-white px-5 py-2.5 scroll-mt-24 ${className || ""}`
-          : `rounded-card border bg-white p-6 shadow-card scroll-mt-24 ${className || "border-line"}`
+          : `overflow-hidden rounded-card border bg-white shadow-card scroll-mt-24 ${className || "border-line"}`
       }
     >
-      <div className={`flex items-center justify-between ${collapsed || flush ? "" : "mb-4"}`}>
+      <div className={`flex items-center justify-between ${flush ? "" : `px-5 py-3 ${collapsed ? "" : "border-b border-line-soft"}`}`}>
         {/* The whole title region (arrow + title + subtitle + the empty space up
             to the right-side controls) toggles — not just the arrow. Uses a div
             with role="button" rather than <button> so the `right` slot can hold
@@ -101,7 +101,7 @@ export function CollapsibleSection({
           </div>
         )}
       </div>
-      {!collapsed && <div className={`animate-section-reveal ${flush ? "mt-2.5 pl-6" : ""}`}>{children}</div>}
+      {!collapsed && <div className={`animate-section-reveal ${flush ? "mt-2.5 pl-6" : "px-5 py-4"}`}>{children}</div>}
     </section>
   );
 }

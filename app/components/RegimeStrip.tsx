@@ -99,7 +99,7 @@ export function RegimeStrip({ bare = false }: { bare?: boolean } = {}) {
         {/* Signal tiles — label over mono value, colored by direction. Same
             data as the old pills, read as a metrics row instead of a chip
             cloud (streamline: "show the number, not a descriptor"). */}
-        <div className="grid min-w-0 flex-1 grid-cols-2 gap-x-5 gap-y-2 sm:grid-cols-3 lg:grid-cols-6">
+        <div className="grid min-w-0 flex-1 grid-cols-2 gap-x-5 gap-y-2 sm:grid-cols-4 xl:grid-cols-8">
           {regime.composite.signals.map((s, i) => (
             <span key={i} className="min-w-0" title={s.detail}>
               <span className="block truncate text-[10px] text-ink-3">{s.name}</span>
