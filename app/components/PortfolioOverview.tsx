@@ -15,6 +15,7 @@ import type { ScoredStock, ScoreKey, HealthData, FundHolding, FundSectorWeight }
 import type { TechnicalIndicators, RiskAlert } from "@/app/lib/technicals";
 import { groupTotal, isScoreable, normalizeSector, computeScores } from "@/app/lib/scoring";
 import { displayTicker, canonicalTicker } from "@/app/lib/ticker";
+import { VERDICT_LABEL, type SynthesisVerdict } from "@/app/lib/synthesis-screen-display";
 import { useSearchParams, useRouter, usePathname } from "next/navigation";
 import { useLiveModelWeights } from "@/app/lib/useLiveModelWeights";
 import { SuggestedWatchlist } from "@/app/components/SuggestedWatchlist";
@@ -282,6 +283,26 @@ export function PortfolioOverview({ sidebar }: { sidebar?: React.ReactNode } = {
   // Live candidate count for the Suggested tab chip. Cheap read; the panel
   // itself fetches the full store only when the tab is open.
   const [suggestedCount, setSuggestedCount] = useState(0);
+  // Per-ticker synthesis verdicts for the rankings' Synthesis column — links
+  // the Holdings/Watchlist tables to the Ideas › Synthesis record. Read-only
+  // fetch of the same endpoint the Synthesis screen renders from.
+  const [synthesisByTicker, setSynthesisByTicker] = useState<Map<string, { verdict: SynthesisVerdict; stale: boolean }>>(new Map());
+  useEffect(() => {
+    let alive = true;
+    fetch("/api/synthesis-screen")
+      .then((r) => (r.ok ? r.json() : null))
+      .then((d) => {
+        if (!alive || !Array.isArray(d?.rows)) return;
+        const m = new Map<string, { verdict: SynthesisVerdict; stale: boolean }>();
+        for (const row of d.rows) {
+          const v = row?.entry?.result?.verdict;
+          if (row?.ticker && v) m.set(canonicalTicker(row.ticker), { verdict: v, stale: Array.isArray(row.stale) && row.stale.length > 0 });
+        }
+        setSynthesisByTicker(m);
+      })
+      .catch(() => {});
+    return () => { alive = false; };
+  }, []);
   useEffect(() => {
     fetch("/api/kv/watchlist-candidates", { cache: "no-store" })
       .then((r) => (r.ok ? r.json() : null))
@@ -1191,6 +1212,7 @@ export function PortfolioOverview({ sidebar }: { sidebar?: React.ReactNode } = {
             })}
           </div>
         }
+        synthesisByTicker={synthesisByTicker}
         stocks={rankBucket === "Portfolio" ? scoreablePortfolio : scoreableWatchlist}
         loading={loading}
         livePreviousCloses={livePreviousCloses}
@@ -1540,6 +1562,7 @@ function RankingTable({
   showWeight = true,
   bucketTabs,
   loading,
+  synthesisByTicker,
 }: {
   title: string;
   subtitle: string;
@@ -1549,6 +1572,8 @@ function RankingTable({
    *  (the Portfolio / Watchlist toggle). */
   bucketTabs?: React.ReactNode;
   stocks: ScoredStock[];
+  /** ticker → latest synthesis verdict (+staleness) for the Synthesis column. */
+  synthesisByTicker?: Map<string, { verdict: SynthesisVerdict; stale: boolean }>;
   /** When true, split the rows into 🇨🇦 Canadian and 🇺🇸 US sub-sections,
    *  each independently ranked + flagged, so CAD and USD names are compared
    *  within their own currency rather than against each other. */
@@ -2105,6 +2130,7 @@ function RankingTable({
               <th className={`${thClass} text-right`}>Day</th>
               <th className={`${thClass} text-right`} onClick={() => toggleSort("adjusted")}>Score{arrow("adjusted")}</th>
               <th className={thClass} onClick={() => toggleSort("rating")}>Rating{arrow("rating")}</th>
+              <th className={`${thClass} hidden lg:table-cell`}>Synthesis</th>
               <th className="pb-2 pr-2 w-8" aria-label="Detail"></th>
             </tr>
           </thead>
@@ -2219,6 +2245,27 @@ function RankingTable({
                     </span>
                   </td>
                   <td className="py-3 pr-3">{ratingPill(label)}</td>
+                  <td className="py-3 pr-3 hidden lg:table-cell">
+                    {(() => {
+                      const sv = synthesisByTicker?.get(canonicalTicker(s.ticker));
+                      if (!sv) return <span className="text-ink-faint text-[11px]">—</span>;
+                      const tone =
+                        sv.verdict === "advance" || sv.verdict === "thesis-intact" ? "bg-pos-soft text-pos"
+                        : sv.verdict === "pass" || sv.verdict === "exit-watch" ? "bg-neg-soft text-neg"
+                        : "bg-warn-soft text-warn";
+                      return (
+                        <Link
+                          href="/synthesis"
+                          onClick={(e) => e.stopPropagation()}
+                          className={`inline-flex items-center gap-1 rounded-full px-2 py-0.5 text-[10px] font-bold whitespace-nowrap ${tone}`}
+                          title={`Latest synthesis verdict${sv.stale ? " (stale — regenerate on the Synthesis screen)" : ""} — click to open Ideas › Synthesis`}
+                        >
+                          {VERDICT_LABEL[sv.verdict] ?? sv.verdict}
+                          {sv.stale && <span className="font-normal opacity-70">stale</span>}
+                        </Link>
+                      );
+                    })()}
+                  </td>
                   <td className="py-3 pr-2 text-right">
                     <button
                       type="button"
@@ -2233,7 +2280,7 @@ function RankingTable({
                 </tr>
                 {expanded && (
                   <tr className="border-b border-line-soft bg-surface-2/70">
-                    <td colSpan={8} className="px-4 py-3">
+                    <td colSpan={9} className="px-4 py-3">
                       <div className="grid gap-4 md:grid-cols-2">
                         <div>
                           <div className="mb-1 text-[10px] font-semibold uppercase tracking-wide text-ink-3">What They Do</div>
