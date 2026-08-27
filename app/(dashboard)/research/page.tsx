@@ -486,6 +486,36 @@ const ZERO_SCORES: Record<ScoreKey, number> = {
   trackRecord: 0, ownershipTrends: 0,
 };
 
+/** Source rail: label → CollapsibleSection prefKey (also its DOM id). */
+const RAIL_GROUPS: { label: string; items: { key: string; label: string }[] }[] = [
+  { label: "Overview", items: [
+    { key: "research.synthesisCollapsed", label: "Cross-source synthesis" },
+    { key: "research.sectorViews", label: "Sector views" },
+  ] },
+  { label: "Ranked lists", items: [
+    { key: "research.newton", label: "Newton Upticks" },
+    { key: "research.fsTop", label: "Fundstrat — Top" },
+    { key: "research.fsBottom", label: "Fundstrat — Bottom" },
+    { key: "research.fsSmidTop", label: "Fundstrat SMID — Top" },
+    { key: "research.fsSmidBottom", label: "Fundstrat SMID — Bottom" },
+    { key: "research.lcCore", label: "Large-Cap Core Ideas" },
+    { key: "research.smidCore", label: "SMID Core Ideas" },
+    { key: "research.alpha", label: "Alpha Picks" },
+  ] },
+  { label: "Focus lists", items: [
+    { key: "research.leeFocus", label: "Lee Focus" },
+    { key: "research.rbcCa", label: "RBC Canada" },
+    { key: "research.rbcUs", label: "RBC US" },
+    { key: "research.jpm", label: "JPM Focus" },
+    { key: "research.few", label: "RBC CM FEW" },
+  ] },
+  { label: "Reference", items: [
+    { key: "research.equateCad", label: "Equate CAD" },
+    { key: "research.equateUsd", label: "Equate USD" },
+    { key: "research.quickRef", label: "Quick reference" },
+  ] },
+];
+
 export default function ResearchPage() {
   const [state, setState] = useState<ResearchState>(defaultResearch);
   const [loaded, setLoaded] = useState(false);
@@ -2030,7 +2060,30 @@ export default function ResearchPage() {
 
   return (
     <main className="min-h-screen bg-ground px-4 py-6 text-ink md:px-8 md:py-8 overflow-x-hidden">
-      <div className="mx-auto max-w-7xl space-y-6">
+      <div className="mx-auto flex max-w-[88rem] items-start gap-5">
+        {/* Source rail (xl+): one click opens + scrolls to a source instead of
+            hunting through 17 stacked panels. Preferences are the same
+            pm:ui-prefs collapse keys the sections already persist. */}
+        <nav className="hidden xl:block w-52 shrink-0 sticky top-20 max-h-[calc(100vh-6rem)] overflow-y-auto rounded-card border border-line bg-white p-2 shadow-sm">
+          {RAIL_GROUPS.map((g) => (
+            <div key={g.label} className="mb-1.5">
+              <div className="px-2.5 pb-1 pt-1.5 text-[10px] font-bold uppercase tracking-wider text-ink-3">{g.label}</div>
+              {g.items.map((it) => (
+                <button
+                  key={it.key}
+                  onClick={() => {
+                    setUiPref(it.key, "0"); // open it
+                    document.getElementById(it.key)?.scrollIntoView({ behavior: "smooth", block: "start" });
+                  }}
+                  className="block w-full rounded-[6px] px-2.5 py-1.5 text-left text-[12.5px] text-ink-2 hover:bg-surface-hover hover:text-ink transition-colors"
+                >
+                  {it.label}
+                </button>
+              ))}
+            </div>
+          ))}
+        </nav>
+        <div className="min-w-0 flex-1 space-y-5">
         <div className="flex items-start justify-between gap-3 flex-wrap">
           <div className="max-w-3xl">
             <h1 className="text-3xl font-semibold tracking-tight">Research Notes</h1>
@@ -4221,6 +4274,7 @@ export default function ResearchPage() {
             </div>
           </div>
         </CollapsibleSection>
+        </div>
       </div>
     </main>
   );

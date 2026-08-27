@@ -1,6 +1,7 @@
 "use client";
 
 import React, { useState, useEffect, useCallback, useRef } from "react";
+import { StatStrip } from "@/app/components/StatStrip";
 import { useParams, useRouter, useSearchParams } from "next/navigation";
 import Link from "next/link";
 import { useStocks } from "@/app/lib/StockContext";
@@ -692,8 +693,9 @@ function FundDataPanels({ fundData, ticker, onHoldingsUpdate }: { fundData: Fund
         {fundData.performance && (
           <div className="rounded-card border border-line bg-white p-5 shadow-sm">
             <h2 className="text-base font-bold text-ink mb-4">Performance</h2>
-            <div className="grid grid-cols-2 sm:grid-cols-4 gap-2 text-center">
-              {[
+            <StatStrip
+              cols={4}
+              items={[
                 { label: "1M", val: fundData.performance.oneMonth },
                 { label: "3M", val: fundData.performance.threeMonth },
                 { label: "YTD", val: fundData.performance.ytd },
@@ -703,73 +705,39 @@ function FundDataPanels({ fundData, ticker, onHoldingsUpdate }: { fundData: Fund
                 { label: "10Y", val: fundData.performance.tenYear },
               ]
                 .filter((r) => r.val != null)
-                .map((r) => (
-                  <div key={r.label} className="rounded-card bg-surface-2 p-2.5">
-                    <div className="text-[10px] font-semibold text-ink-3 uppercase">{r.label}</div>
-                    <div className={`mt-1 text-sm font-bold ${returnColor(r.val)}`}>
-                      {formatReturn(r.val)}
-                    </div>
-                  </div>
-                ))}
-            </div>
+                .map((r) => ({
+                  label: r.label,
+                  value: <span className={returnColor(r.val)}>{formatReturn(r.val)}</span>,
+                }))}
+            />
           </div>
         )}
 
         {/* Risk & Key Stats */}
         <div className="rounded-card border border-line bg-white p-5 shadow-sm">
           <h2 className="text-base font-bold text-ink mb-4">Key Statistics</h2>
-          <div className="grid grid-cols-2 gap-3">
-            {fundData.fundFamily && (
-              <div className="rounded-card bg-surface-2 p-2.5">
-                <div className="text-[10px] font-semibold text-ink-3 uppercase">Fund Family</div>
-                <div className="mt-1 text-sm font-semibold text-ink-2 truncate">{fundData.fundFamily}</div>
-              </div>
-            )}
-            {fundData.inceptionDate && (
-              <div className="rounded-card bg-surface-2 p-2.5">
-                <div className="text-[10px] font-semibold text-ink-3 uppercase">Inception</div>
-                <div className="mt-1 text-sm font-semibold text-ink-2">{fundData.inceptionDate}</div>
-              </div>
-            )}
-            {fundData.turnover != null && (
-              <div className="rounded-card bg-surface-2 p-2.5">
-                <div className="text-[10px] font-semibold text-ink-3 uppercase">Turnover</div>
-                <div className="mt-1 text-sm font-semibold text-ink-2">{fundData.turnover.toFixed(0)}%</div>
-              </div>
-            )}
-            {fundData.riskStats?.beta != null && (
-              <div className="rounded-card bg-surface-2 p-2.5">
-                <div className="text-[10px] font-semibold text-ink-3 uppercase">Beta (3Y)</div>
-                <div className="mt-1 text-sm font-semibold text-ink-2">{fundData.riskStats.beta.toFixed(2)}</div>
-              </div>
-            )}
-            {fundData.riskStats?.sharpeRatio != null && (
-              <div className="rounded-card bg-surface-2 p-2.5">
-                <div className="text-[10px] font-semibold text-ink-3 uppercase">Sharpe (3Y)</div>
-                <div className="mt-1 text-sm font-semibold text-ink-2">{fundData.riskStats.sharpeRatio.toFixed(2)}</div>
-              </div>
-            )}
-            {fundData.riskStats?.stdDev != null && (
-              <div className="rounded-card bg-surface-2 p-2.5">
-                <div className="text-[10px] font-semibold text-ink-3 uppercase">Std Dev (3Y)</div>
-                <div className="mt-1 text-sm font-semibold text-ink-2">{fundData.riskStats.stdDev.toFixed(2)}%</div>
-              </div>
-            )}
-            {fundData.riskStats?.alpha != null && (
-              <div className="rounded-card bg-surface-2 p-2.5">
-                <div className="text-[10px] font-semibold text-ink-3 uppercase">Alpha (3Y)</div>
-                <div className={`mt-1 text-sm font-semibold ${fundData.riskStats.alpha >= 0 ? "text-pos" : "text-neg"}`}>
-                  {fundData.riskStats.alpha >= 0 ? "+" : ""}{fundData.riskStats.alpha.toFixed(2)}
-                </div>
-              </div>
-            )}
-            {fundData.riskStats?.rSquared != null && (
-              <div className="rounded-card bg-surface-2 p-2.5">
-                <div className="text-[10px] font-semibold text-ink-3 uppercase">R-Squared</div>
-                <div className="mt-1 text-sm font-semibold text-ink-2">{fundData.riskStats.rSquared.toFixed(2)}</div>
-              </div>
-            )}
-          </div>
+          <StatStrip
+            cols={2}
+            items={[
+              fundData.fundFamily ? { label: "Fund Family", value: fundData.fundFamily } : null,
+              fundData.inceptionDate ? { label: "Inception", value: fundData.inceptionDate } : null,
+              fundData.turnover != null ? { label: "Turnover", value: `${fundData.turnover.toFixed(0)}%` } : null,
+              fundData.riskStats?.beta != null ? { label: "Beta (3Y)", value: fundData.riskStats.beta.toFixed(2) } : null,
+              fundData.riskStats?.sharpeRatio != null ? { label: "Sharpe (3Y)", value: fundData.riskStats.sharpeRatio.toFixed(2) } : null,
+              fundData.riskStats?.stdDev != null ? { label: "Std Dev (3Y)", value: `${fundData.riskStats.stdDev.toFixed(2)}%` } : null,
+              fundData.riskStats?.alpha != null
+                ? {
+                    label: "Alpha (3Y)",
+                    value: (
+                      <span className={fundData.riskStats.alpha >= 0 ? "text-pos" : "text-neg"}>
+                        {fundData.riskStats.alpha >= 0 ? "+" : ""}{fundData.riskStats.alpha.toFixed(2)}
+                      </span>
+                    ),
+                  }
+                : null,
+              fundData.riskStats?.rSquared != null ? { label: "R-Squared", value: fundData.riskStats.rSquared.toFixed(2) } : null,
+            ].filter((x) => x != null)}
+          />
         </div>
       </div>
 
@@ -987,32 +955,15 @@ function FundDataPanels({ fundData, ticker, onHoldingsUpdate }: { fundData: Fund
       {fundData.equityMetrics && (
         <div className="rounded-card border border-line bg-white p-5 shadow-sm">
           <h2 className="text-base font-bold text-ink mb-3">Underlying Equity Metrics</h2>
-          <div className="grid grid-cols-2 sm:grid-cols-4 gap-3">
-            {fundData.equityMetrics.priceToEarnings != null && (
-              <div className="rounded-card bg-surface-2 p-3 text-center">
-                <div className="text-[10px] font-semibold text-ink-3 uppercase">P/E Ratio</div>
-                <div className="mt-1 text-xl font-bold text-ink">{fundData.equityMetrics.priceToEarnings.toFixed(1)}</div>
-              </div>
-            )}
-            {fundData.equityMetrics.priceToBook != null && (
-              <div className="rounded-card bg-surface-2 p-3 text-center">
-                <div className="text-[10px] font-semibold text-ink-3 uppercase">P/B Ratio</div>
-                <div className="mt-1 text-xl font-bold text-ink">{fundData.equityMetrics.priceToBook.toFixed(2)}</div>
-              </div>
-            )}
-            {fundData.equityMetrics.priceToSales != null && (
-              <div className="rounded-card bg-surface-2 p-3 text-center">
-                <div className="text-[10px] font-semibold text-ink-3 uppercase">P/S Ratio</div>
-                <div className="mt-1 text-xl font-bold text-ink">{fundData.equityMetrics.priceToSales.toFixed(2)}</div>
-              </div>
-            )}
-            {fundData.equityMetrics.priceToCashflow != null && (
-              <div className="rounded-card bg-surface-2 p-3 text-center">
-                <div className="text-[10px] font-semibold text-ink-3 uppercase">P/CF Ratio</div>
-                <div className="mt-1 text-xl font-bold text-ink">{fundData.equityMetrics.priceToCashflow.toFixed(2)}</div>
-              </div>
-            )}
-          </div>
+          <StatStrip
+            cols={4}
+            items={[
+              fundData.equityMetrics.priceToEarnings != null ? { label: "P/E Ratio", value: fundData.equityMetrics.priceToEarnings.toFixed(1) } : null,
+              fundData.equityMetrics.priceToBook != null ? { label: "P/B Ratio", value: fundData.equityMetrics.priceToBook.toFixed(2) } : null,
+              fundData.equityMetrics.priceToSales != null ? { label: "P/S Ratio", value: fundData.equityMetrics.priceToSales.toFixed(2) } : null,
+              fundData.equityMetrics.priceToCashflow != null ? { label: "P/CF Ratio", value: fundData.equityMetrics.priceToCashflow.toFixed(2) } : null,
+            ].filter((x) => x != null)}
+          />
         </div>
       )}
     </div>
@@ -1789,49 +1740,33 @@ export default function StockDetailPage() {
                       </div>
                     )}
                     {stock.fundData && (
-                      <div className="grid grid-cols-2 sm:grid-cols-4 gap-3">
-                        {effectiveMer != null && (
-                          <div className="rounded-card bg-surface-2 p-3">
-                            <div className="text-[10px] font-semibold uppercase tracking-wider text-ink-3 flex items-center gap-1.5">
-                              {merLabel}
-                              {merIsManual && (
-                                <span className="rounded bg-accent-soft px-1.5 py-0.5 text-[8px] font-bold tracking-wider text-accent">
-                                  MANUAL
-                                </span>
-                              )}
-                            </div>
-                            <div className="mt-1 text-lg font-bold text-ink">
-                              {effectiveMer.toFixed(2)}%
-                            </div>
-                          </div>
-                        )}
-                        {stock.fundData.totalAssets != null && (
-                          <div className="rounded-card bg-surface-2 p-3">
-                            <div className="text-[10px] font-semibold uppercase tracking-wider text-ink-3">AUM</div>
-                            <div className="mt-1 text-lg font-bold text-ink">{formatAUM(stock.fundData.totalAssets)}</div>
-                          </div>
-                        )}
-                        {stock.fundData.yield != null && (
-                          <div className="rounded-card bg-surface-2 p-3">
-                            <div className="text-[10px] font-semibold uppercase tracking-wider text-ink-3">Yield</div>
-                            <div className="mt-1 text-lg font-bold text-ink">{stock.fundData.yield.toFixed(2)}%</div>
-                          </div>
-                        )}
-                        {stock.fundData.starRating != null && (
-                          <div className="rounded-card bg-surface-2 p-3">
-                            <div className="text-[10px] font-semibold uppercase tracking-wider text-ink-3">Morningstar</div>
-                            <div className="mt-1 text-lg font-bold text-warn">
-                              {"★".repeat(stock.fundData.starRating)}{"☆".repeat(5 - stock.fundData.starRating)}
-                            </div>
-                          </div>
-                        )}
-                        {stock.fundData.category && (
-                          <div className="rounded-card bg-surface-2 p-3">
-                            <div className="text-[10px] font-semibold uppercase tracking-wider text-ink-3">Category</div>
-                            <div className="mt-1 text-sm font-bold text-ink leading-tight">{stock.fundData.category}</div>
-                          </div>
-                        )}
-                      </div>
+                      <StatStrip
+                        cols={5}
+                        items={[
+                          effectiveMer != null
+                            ? {
+                                label: (
+                                  <span className="inline-flex items-center gap-1.5">
+                                    {merLabel}
+                                    {merIsManual && (
+                                      <span className="rounded bg-accent-soft px-1.5 py-0.5 text-[8px] font-bold tracking-wider text-accent">MANUAL</span>
+                                    )}
+                                  </span>
+                                ),
+                                value: `${effectiveMer.toFixed(2)}%`,
+                              }
+                            : null,
+                          stock.fundData.totalAssets != null ? { label: "AUM", value: formatAUM(stock.fundData.totalAssets) } : null,
+                          stock.fundData.yield != null ? { label: "Yield", value: `${stock.fundData.yield.toFixed(2)}%` } : null,
+                          stock.fundData.starRating != null
+                            ? {
+                                label: "Morningstar",
+                                value: <span className="text-warn">{"★".repeat(stock.fundData.starRating)}{"☆".repeat(5 - stock.fundData.starRating)}</span>,
+                              }
+                            : null,
+                          stock.fundData.category ? { label: "Category", value: stock.fundData.category, title: stock.fundData.category } : null,
+                        ].filter((x) => x != null)}
+                      />
                     )}
                     {!stock.fundData && !loadingFundData && (
                       <button
@@ -2668,32 +2603,29 @@ export default function StockDetailPage() {
             titleClass="text-base font-bold text-ink"
             title="Regime Context"
           >
-            <div className="grid gap-4 md:grid-cols-4">
-              <div className="rounded-card bg-surface-2 p-3">
-                <div className="text-xs text-ink-3">Current Regime</div>
-                <div className="mt-1 text-lg font-semibold">{marketData.riskRegime}</div>
-              </div>
-              <div className="rounded-card bg-surface-2 p-3">
-                <div className="text-xs text-ink-3">Sector Classification</div>
-                <div className="mt-1 text-lg font-semibold">
-                  {["Technology", "Communication Services", "Consumer Discretionary"].includes(stock.sector)
+            <StatStrip
+              cols={4}
+              items={[
+                { label: "Current Regime", value: marketData.riskRegime },
+                {
+                  label: "Sector Classification",
+                  value: ["Technology", "Communication Services", "Consumer Discretionary"].includes(stock.sector)
                     ? "Offensive"
                     : ["Energy", "Utilities", "Consumer Staples", "Financials", "Materials", "Industrials"].includes(stock.sector)
                     ? "Defensive"
-                    : "Neutral"}
-                </div>
-              </div>
-              <div className="rounded-card bg-surface-2 p-3">
-                <div className="text-xs text-ink-3">Regime Effect</div>
-                <div className={`mt-1 text-lg font-semibold ${stock.adjusted - stock.raw >= 0 ? "text-pos" : "text-neg"}`}>
-                  {stock.adjusted - stock.raw >= 0 ? "+" : ""}{(stock.adjusted - stock.raw).toFixed(1)} pts
-                </div>
-              </div>
-              <div className="rounded-card bg-surface-2 p-3">
-                <div className="text-xs text-ink-3">Composite Signal</div>
-                <div className="mt-1 text-lg font-semibold">{marketData.compositeSignal}</div>
-              </div>
-            </div>
+                    : "Neutral",
+                },
+                {
+                  label: "Regime Effect",
+                  value: (
+                    <span className={stock.adjusted - stock.raw >= 0 ? "text-pos" : "text-neg"}>
+                      {stock.adjusted - stock.raw >= 0 ? "+" : ""}{(stock.adjusted - stock.raw).toFixed(1)} pts
+                    </span>
+                  ),
+                },
+                { label: "Composite Signal", value: marketData.compositeSignal },
+              ]}
+            />
           </CollapsibleSection>}
 
           {/* Relative strength vs SPY — informational sparkline */}

@@ -65,7 +65,7 @@ export default function DashboardPage() {
 
   return (
     <main className="min-h-screen bg-ground px-4 py-6 text-ink md:px-8 md:py-8 overflow-x-hidden">
-      <div className="mx-auto max-w-7xl space-y-6">
+      <div className="mx-auto max-w-7xl space-y-5">
 
         {/* Cockpit band (#11): the per-PIM-model day returns + the full
             deterministic market-regime read, merged into one at-a-glance card.
@@ -95,7 +95,7 @@ export default function DashboardPage() {
 
         {/* ── Regime Detail — per-stock multiplier breakdown ── */}
         {(() => {
-          const regimeCollapsed = uiPrefs["dashboard.regimeMultiplier.collapsed"] === "1";
+          const regimeCollapsed = (uiPrefs["dashboard.regimeMultiplier.collapsed"] ?? "1") === "1";
           const toggleRegimeCollapsed = () => setUiPref("dashboard.regimeMultiplier.collapsed", regimeCollapsed ? "0" : "1");
           return (
         <div id="regime-detail" className="scroll-mt-6">

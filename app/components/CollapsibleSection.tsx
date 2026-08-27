@@ -58,10 +58,11 @@ export function CollapsibleSection({
   };
   return (
     <section
+      id={prefKey}
       className={
         flush
-          ? `bg-white px-5 py-2.5 ${className || ""}`
-          : `rounded-card border bg-white p-6 shadow-card ${className || "border-line"}`
+          ? `bg-white px-5 py-2.5 scroll-mt-24 ${className || ""}`
+          : `rounded-card border bg-white p-6 shadow-card scroll-mt-24 ${className || "border-line"}`
       }
     >
       <div className={`flex items-center justify-between ${collapsed || flush ? "" : "mb-4"}`}>
