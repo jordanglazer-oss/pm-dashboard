@@ -1,6 +1,6 @@
 "use client";
 
-import React, { useState, useEffect, useCallback, useRef } from "react";
+import React, { useState, useEffect, useCallback, useRef, useMemo } from "react";
 import { StatStrip } from "@/app/components/StatStrip";
 import { useParams, useRouter, useSearchParams } from "next/navigation";
 import Link from "next/link";
@@ -20,6 +20,7 @@ import ScoreHistory from "@/app/components/ScoreHistory";
 import ThesisTile from "@/app/components/ThesisTile";
 import FactorLensTile from "@/app/components/FactorLensTile";
 import StreetTakeawaysTile from "@/app/components/StreetTakeawaysTile";
+import { StockSynthesisTile } from "@/app/components/StockSynthesisTile";
 import { ScoreDelta } from "@/app/components/ScoreDelta";
 import { CollapsibleSection } from "@/app/components/CollapsibleSection";
 import { colorForSector } from "@/app/lib/sectorColors";
@@ -1011,7 +1012,7 @@ export default function StockDetailPage() {
     el.addEventListener("scroll", onScroll, { passive: true });
     return () => el.removeEventListener("scroll", onScroll);
   }, []);
-  const { getStock, scoredStocks, marketData, updateScore, updateExplanations, updateLastScored, updatePrice, updateHealthData, updateTechnicals, updateStockFields, updateWeight, updateFundData, moveBucket, removeStock, pimModels, toggleModelEligibility, updateModelWeight, getAnalystSnapshot, updateAnalystSnapshot, getAnalystReports, uploadAnalystReport, removeAnalystReport, convertAnalystTarget, tickerCurrency } = useStocks();
+  const { getStock, scoredStocks, marketData, updateScore, updateExplanations, updateLastScored, updatePrice, updateHealthData, updateTechnicals, updateStockFields, updateWeight, updateFundData, moveBucket, removeStock, pimModels, toggleModelEligibility, updateModelWeight, getAnalystSnapshot, updateAnalystSnapshot, getAnalystReports, uploadAnalystReport, removeAnalystReport, convertAnalystTarget, tickerCurrency, uiPrefs, setUiPref } = useStocks();
   const { notify } = useNotifications();
   const stock = getStock(ticker);
   const [scoring, setScoring] = useState(false);
@@ -1028,17 +1029,18 @@ export default function StockDetailPage() {
   } | null>(null);
   const [scoreError, setScoreError] = useState("");
   // Narrative bullets for each scorable category can be long; collapse
-  // them by default so the page isn't a wall of text. Per-category
-  // toggle via the small chevron next to the category label.
-  const [expandedCategories, setExpandedCategories] = useState<Set<string>>(new Set());
+  // them by default. Open/closed state persists in pm:ui-prefs
+  // (stock.cat.<key>) so it survives refreshes and syncs across devices.
+  const expandedCategories = useMemo(() => {
+    const open = new Set<string>();
+    for (const k of Object.keys(uiPrefs)) {
+      if (k.startsWith("stock.cat.") && uiPrefs[k] === "1") open.add(k.slice("stock.cat.".length));
+    }
+    return open;
+  }, [uiPrefs]);
   const toggleCategory = useCallback((key: string) => {
-    setExpandedCategories((prev) => {
-      const next = new Set(prev);
-      if (next.has(key)) next.delete(key);
-      else next.add(key);
-      return next;
-    });
-  }, []);
+    setUiPref(`stock.cat.${key}`, expandedCategories.has(key) ? "0" : "1");
+  }, [expandedCategories, setUiPref]);
   // When handleRescore finishes it flips this ref so the effect below
   // posts an append-only entry to pm:score-history once the updated
   // `stock.adjusted` / `stock.raw` values have propagated through
@@ -1671,33 +1673,8 @@ export default function StockDetailPage() {
                   </div>
                 )}
 
-                {/* Group progress bars (stocks only) */}
-                {scoreable && (
-                  <div className="mt-6 space-y-3 max-w-xl">
-                    {SCORE_GROUPS.map((group) => {
-                      const total = groupTotal(stock, group);
-                      const colors = GROUP_COLORS[group.color] || GROUP_COLORS.blue;
-                      const pct = (total / group.maxTotal) * 100;
-
-                      return (
-                        <div key={group.name} className="flex items-center gap-3">
-                          <span className="w-20 text-right text-xs text-ink-3 shrink-0 leading-tight">
-                            {group.name === "Company Specific" ? "Company Specific" : group.name}
-                          </span>
-                          <div className="flex-1 h-3.5 rounded-full bg-surface-2 overflow-hidden">
-                            <div
-                              className={`h-full rounded-full ${colors.bar} transition-all duration-500`}
-                              style={{ width: `${pct}%` }}
-                            />
-                          </div>
-                          <span className={`w-14 text-right text-xs font-bold shrink-0 ${colors.scoreText}`}>
-                            {Number.isInteger(total) ? total : total.toFixed(1)}/{group.maxTotal}
-                          </span>
-                        </div>
-                      );
-                    })}
-                  </div>
-                )}
+                {/* Group bars removed — the Score breakdown card below is
+                    the single scoring surface (canvas). */}
 
                 {/* Fund key stats for non-scoreable instruments.
                     `effectiveMer` prefers the manual override over the
@@ -1904,198 +1881,44 @@ export default function StockDetailPage() {
             </div>
           </div>
 
-          {/* Price Chart (not available for mutual funds) */}
-          {stock.instrumentType !== "mutual-fund" && (
-            <StockChart ticker={stock.ticker} technicals={stock.technicals} className="mt-6" />
-          )}
 
-          {/* Street takeaways + factor lens ride high (canvas order) — the
-              post-earnings street read and the quant cross-check are daily
-              context, not appendix material. */}
-          {scoreable && <StreetTakeawaysTile ticker={stock.ticker} className="mt-6" />}
-          {/* Factor Lens (shadow) — quant read-out beside the 41-pt score */}
-          {scoreable && (
-            <FactorLensTile ticker={stock.ticker} adjusted={stock.adjusted} className="mt-6" />
-          )}
 
-          {/* Fund Data Panels (ETFs / Mutual Funds) */}
-          {!scoreable && stock.fundData && (
-            <FundDataPanels
-              fundData={stock.fundData}
-              ticker={stock.ticker}
-              onHoldingsUpdate={(holdings, sectors, url) => {
-                let sourceLabel = "Custom URL";
-                try {
-                  sourceLabel = new URL(url).hostname.replace(/^www\./, "");
-                } catch {
-                  /* fall through to default label */
-                }
-                updateFundData(stock.ticker, {
-                  ...stock.fundData!,
-                  topHoldings: holdings,
-                  sectorWeightings: sectors,
-                  holdingsUrl: url,
-                  holdingsLastUpdated: new Date().toISOString(),
-                  holdingsSource: sourceLabel,
-                });
-              }}
-            />
-          )}
 
-          {/* Portfolio Role — only for equity ETFs/MFs */}
-          {!scoreable && stock.instrumentType && stock.instrumentType !== "stock" && (() => {
-            // Only show for equity-class ETFs/MFs (not bond/alternative funds)
-            const nameLower = (stock.name || "").toLowerCase();
-            const sectorLower = (stock.sector || "").toLowerCase();
-            const isBondOrAlt = sectorLower.includes("bond") || sectorLower.includes("fixed") || nameLower.includes("bond") || nameLower.includes("fixed income")
-              || sectorLower.includes("alternative") || nameLower.includes("alternative") || nameLower.includes("premium yield") || nameLower.includes("premium incom") || nameLower.includes("hedge") || nameLower.includes("option income") || nameLower.includes("option writing") || nameLower.includes("covered call");
-            if (isBondOrAlt) return null;
+
+
+
+
+
+          {/* ── Canvas two-column zone: decision material left, market
+              context right. Funds render single-column (left side is
+              stock-only). ── */}
+          <div className={`mt-6 grid items-start gap-5 ${scoreable ? "lg:grid-cols-[1.35fr_1fr]" : ""}`}>
+            <div className="min-w-0 space-y-6">
+              {scoreable && <StockSynthesisTile ticker={stock.ticker} />}
+          {/* Thesis & kill conditions — pre-registered exit criteria, checked
+              deterministically from data already on this page (preview build). */}
+          {scoreable && (() => {
+            const snap = getAnalystSnapshot(stock.ticker)?.factset;
+            const revUp = typeof snap?.revUp === "number" ? snap.revUp : null;
+            const revDown = typeof snap?.revDown === "number" ? snap.revDown : null;
             return (
-              <CollapsibleSection
-                prefKey="stock.portfolioRole"
-                defaultCollapsed
-                className="border-line mt-6"
-                titleClass="text-sm font-bold text-ink"
-                title="Portfolio Role"
-              >
-                <p className="text-xs text-ink-3 mb-3">Core = indexed/passive. Alpha = active picks. Sector exposure is based on Alpha picks only.</p>
-                <div className="flex gap-2">
-                  <button
-                    onClick={() => updateStockFields(ticker, { designation: "core" })}
-                    className={`rounded-lg px-4 py-2 text-sm font-semibold transition-all border ${
-                      stock.designation === "core"
-                        ? "bg-accent-soft border-accent-border text-accent"
-                        : "bg-surface-2 border-line text-ink-3 hover:bg-surface-2"
-                    }`}
-                  >
-                    Core
-                  </button>
-                  <button
-                    onClick={() => updateStockFields(ticker, { designation: "alpha" })}
-                    className={`rounded-lg px-4 py-2 text-sm font-semibold transition-all border ${
-                      (stock.designation || "alpha") === "alpha"
-                        ? "bg-warn-soft border-warn-border text-warn"
-                        : "bg-surface-2 border-line text-ink-3 hover:bg-surface-2"
-                    }`}
-                  >
-                    Alpha
-                  </button>
-                </div>
-              </CollapsibleSection>
+              <ThesisTile
+                ticker={stock.ticker}
+               
+                signals={{
+                  score: typeof stock.adjusted === "number" ? stock.adjusted : null,
+                  netRevisions: revUp != null || revDown != null ? (revUp ?? 0) - (revDown ?? 0) : null,
+                  revUp,
+                  revDown,
+                  riskLevel: stock.riskAlert ? stock.riskAlert.level : stock.technicals ? null : undefined,
+                  price: typeof stock.price === "number" ? stock.price : stock.healthData?.currentPrice ?? null,
+                  ma200: stock.healthData?.twoHundredDayAvg ?? null,
+                }}
+              />
             );
           })()}
-
-          {/* Model Eligibility & Per-Model Weights — secondary config, collapsed by default */}
-          <CollapsibleSection
-            prefKey="stock.modelEligibility"
-            defaultCollapsed
-            className="border-line mt-6"
-            titleClass="text-sm font-bold text-ink"
-            title="Model Eligibility"
-          >
-            <p className="text-xs text-ink-3 mb-3">
-              Toggle which PIM model groups this position is eligible for.
-              {!scoreable && " Set the weight (%) for each model's Balanced profile."}
-            </p>
-
-            {/* US equity exposure — drives SPY put hedge sizing. Funds/ETFs ONLY:
-                an individual stock's exposure follows its listing (US-listed is
-                US, Canadian-listed is Canadian), so it resolves without asking.
-                Only a fund can be ambiguous — XUH.TO is a Canadian listing that
-                is 100% US equity, and a Global mandate is genuinely partial. */}
-            {!scoreable && (() => {
-              const res = resolveUsEquityPct(ticker, stock);
-              return (
-                <div className="mb-4 rounded-lg border border-line bg-surface-2 p-3">
-                  <label className="block text-[11px] font-semibold text-ink-2 mb-1">
-                    US equity exposure (%)
-                  </label>
-                  <div className="flex flex-wrap items-center gap-2">
-                    <input
-                      type="number"
-                      step="1"
-                      min="0"
-                      max="100"
-                      placeholder={res.source === "country" ? `auto: ${res.pct}` : "e.g. 65"}
-                      defaultValue={stock.usEquityPct != null ? String(stock.usEquityPct) : ""}
-                      onBlur={(e) => {
-                        const raw = e.target.value.trim();
-                        if (raw === "") {
-                          if (stock.usEquityPct != null) {
-                            updateStockFields(ticker, { usEquityPct: undefined });
-                          }
-                          return;
-                        }
-                        const n = Number(raw);
-                        if (Number.isFinite(n) && n >= 0 && n <= 100) {
-                          updateStockFields(ticker, { usEquityPct: n });
-                        }
-                      }}
-                      className="w-28 rounded border border-line px-2 py-1 text-sm"
-                    />
-                    {res.source === "unresolved" ? (
-                      <span className="rounded bg-warn px-1.5 py-0.5 text-[10px] font-bold uppercase tracking-wider text-white">
-                        Needs a value
-                      </span>
-                    ) : (
-                      <span className="rounded bg-pos-soft px-1.5 py-0.5 text-[10px] font-semibold text-pos">
-                        {res.pct}% {res.source === "manual" ? "(manual)" : "(auto)"}
-                      </span>
-                    )}
-                  </div>
-                  <p className="mt-1.5 text-[10px] text-ink-3">
-                    {res.reason} Used to size SPY put hedges against the book&apos;s US equity notional. Leave blank to use the derived value.
-                  </p>
-                </div>
-              );
-            })()}
-            <div className="grid grid-cols-1 sm:grid-cols-2 md:grid-cols-3 lg:grid-cols-4 gap-3">
-              {pimModels.groups.map((group) => {
-                const eligible = stock.modelEligibility?.[group.id] !== false;
-                const modelWeight = stock.modelWeights?.[group.id] ?? stock.weights.portfolio;
-                return (
-                  <div
-                    key={group.id}
-                    className={`rounded-lg border transition-all ${
-                      eligible
-                        ? "bg-pos-soft border-pos-border"
-                        : "bg-surface-2 border-line"
-                    }`}
-                  >
-                    <button
-                      onClick={() => toggleModelEligibility(ticker, group.id, !eligible)}
-                      className={`flex items-center gap-2 w-full px-3 py-2 text-sm font-medium transition-all ${
-                        eligible ? "text-pos" : "text-ink-3 hover:text-ink-3"
-                      }`}
-                    >
-                      <span className={`flex items-center justify-center w-4 h-4 rounded border transition-colors ${
-                        eligible ? "bg-pos border-pos-border" : "border-line bg-white"
-                      }`}>
-                        {eligible && (
-                          <svg className="w-3 h-3 text-white" fill="none" stroke="currentColor" strokeWidth="3" viewBox="0 0 24 24">
-                            <path strokeLinecap="round" strokeLinejoin="round" d="M5 13l4 4L19 7" />
-                          </svg>
-                        )}
-                      </span>
-                      {group.name}
-                    </button>
-                    {/* Per-model weight input for funds/ETFs */}
-                    {!scoreable && eligible && (
-                      <ModelWeightInput
-                        groupId={group.id}
-                        modelWeight={modelWeight}
-                        isOverride={stock.modelWeights?.[group.id] != null && stock.modelWeights[group.id] !== stock.weights.portfolio}
-                        onCommit={(val) => updateModelWeight(ticker, group.id, val)}
-                      />
-                    )}
-                  </div>
-                );
-              })}
-            </div>
-          </CollapsibleSection>
-
           {/* Score breakdown - 2 column grid (stocks only) */}
-          {scoreable && <div className="grid gap-4 md:grid-cols-2 mt-6">
+          {scoreable && <div className="grid gap-5 grid-cols-1">
             {SCORE_GROUPS.map((group) => {
               const total = groupTotal(stock, group);
               const colors = GROUP_COLORS[group.color] || GROUP_COLORS.blue;
@@ -2630,52 +2453,207 @@ export default function StockDetailPage() {
               );
             })}
           </div>}
-
-          {/* Regime context (stocks only) — secondary, collapsed by default */}
-          {scoreable && <CollapsibleSection
-            prefKey="stock.regimeContext"
-            defaultCollapsed
-            className="border-line mt-6"
-            titleClass="text-base font-bold text-ink"
-            title="Regime Context"
-          >
-            <StatStrip
-              cols={4}
-              items={[
-                { label: "Current Regime", value: marketData.riskRegime },
-                {
-                  label: "Sector Classification",
-                  value: ["Technology", "Communication Services", "Consumer Discretionary"].includes(stock.sector)
-                    ? "Offensive"
-                    : ["Energy", "Utilities", "Consumer Staples", "Financials", "Materials", "Industrials"].includes(stock.sector)
-                    ? "Defensive"
-                    : "Neutral",
-                },
-                {
-                  label: "Regime Effect",
-                  value: (
-                    <span className={stock.adjusted - stock.raw >= 0 ? "text-pos" : "text-neg"}>
-                      {stock.adjusted - stock.raw >= 0 ? "+" : ""}{(stock.adjusted - stock.raw).toFixed(1)} pts
-                    </span>
-                  ),
-                },
-                { label: "Composite Signal", value: marketData.compositeSignal },
-              ]}
+            </div>
+            <div className="min-w-0 space-y-6">
+          {/* Price Chart (not available for mutual funds) */}
+          {stock.instrumentType !== "mutual-fund" && (
+            <StockChart ticker={stock.ticker} technicals={stock.technicals} />
+          )}
+          {/* Street takeaways + factor lens ride high (canvas order) — the
+              post-earnings street read and the quant cross-check are daily
+              context, not appendix material. */}
+          {scoreable && <StreetTakeawaysTile ticker={stock.ticker} />}
+          {/* Fund Data Panels (ETFs / Mutual Funds) */}
+          {!scoreable && stock.fundData && (
+            <FundDataPanels
+              fundData={stock.fundData}
+              ticker={stock.ticker}
+              onHoldingsUpdate={(holdings, sectors, url) => {
+                let sourceLabel = "Custom URL";
+                try {
+                  sourceLabel = new URL(url).hostname.replace(/^www\./, "");
+                } catch {
+                  /* fall through to default label */
+                }
+                updateFundData(stock.ticker, {
+                  ...stock.fundData!,
+                  topHoldings: holdings,
+                  sectorWeightings: sectors,
+                  holdingsUrl: url,
+                  holdingsLastUpdated: new Date().toISOString(),
+                  holdingsSource: sourceLabel,
+                });
+              }}
             />
-          </CollapsibleSection>}
+          )}
+          {/* Portfolio Role — only for equity ETFs/MFs */}
+          {!scoreable && stock.instrumentType && stock.instrumentType !== "stock" && (() => {
+            // Only show for equity-class ETFs/MFs (not bond/alternative funds)
+            const nameLower = (stock.name || "").toLowerCase();
+            const sectorLower = (stock.sector || "").toLowerCase();
+            const isBondOrAlt = sectorLower.includes("bond") || sectorLower.includes("fixed") || nameLower.includes("bond") || nameLower.includes("fixed income")
+              || sectorLower.includes("alternative") || nameLower.includes("alternative") || nameLower.includes("premium yield") || nameLower.includes("premium incom") || nameLower.includes("hedge") || nameLower.includes("option income") || nameLower.includes("option writing") || nameLower.includes("covered call");
+            if (isBondOrAlt) return null;
+            return (
+              <CollapsibleSection
+                prefKey="stock.portfolioRole"
+                defaultCollapsed
+                className="border-line"
+                titleClass="text-sm font-bold text-ink"
+                title="Portfolio Role"
+              >
+                <p className="text-xs text-ink-3 mb-3">Core = indexed/passive. Alpha = active picks. Sector exposure is based on Alpha picks only.</p>
+                <div className="flex gap-2">
+                  <button
+                    onClick={() => updateStockFields(ticker, { designation: "core" })}
+                    className={`rounded-lg px-4 py-2 text-sm font-semibold transition-all border ${
+                      stock.designation === "core"
+                        ? "bg-accent-soft border-accent-border text-accent"
+                        : "bg-surface-2 border-line text-ink-3 hover:bg-surface-2"
+                    }`}
+                  >
+                    Core
+                  </button>
+                  <button
+                    onClick={() => updateStockFields(ticker, { designation: "alpha" })}
+                    className={`rounded-lg px-4 py-2 text-sm font-semibold transition-all border ${
+                      (stock.designation || "alpha") === "alpha"
+                        ? "bg-warn-soft border-warn-border text-warn"
+                        : "bg-surface-2 border-line text-ink-3 hover:bg-surface-2"
+                    }`}
+                  >
+                    Alpha
+                  </button>
+                </div>
+              </CollapsibleSection>
+            );
+          })()}
+          {/* Model Eligibility & Per-Model Weights — FUNDS only here (weights +
+              US-equity % live with the fund). For stocks the eligibility
+              matrix lives on Portfolio › Models. */}
+          {!scoreable && (<>
+          <CollapsibleSection
+            prefKey="stock.modelEligibility"
+            defaultCollapsed
+            className="border-line"
+            titleClass="text-sm font-bold text-ink"
+            title="Model Eligibility"
+          >
+            <p className="text-xs text-ink-3 mb-3">
+              Toggle which PIM model groups this position is eligible for.
+              {!scoreable && " Set the weight (%) for each model's Balanced profile."}
+            </p>
 
-          {/* Relative strength vs SPY — informational sparkline */}
-          <RatioVsSpxSparkline ticker={stock.ticker} className="mt-6" />
-
+            {/* US equity exposure — drives SPY put hedge sizing. Funds/ETFs ONLY:
+                an individual stock's exposure follows its listing (US-listed is
+                US, Canadian-listed is Canadian), so it resolves without asking.
+                Only a fund can be ambiguous — XUH.TO is a Canadian listing that
+                is 100% US equity, and a Global mandate is genuinely partial. */}
+            {!scoreable && (() => {
+              const res = resolveUsEquityPct(ticker, stock);
+              return (
+                <div className="mb-4 rounded-lg border border-line bg-surface-2 p-3">
+                  <label className="block text-[11px] font-semibold text-ink-2 mb-1">
+                    US equity exposure (%)
+                  </label>
+                  <div className="flex flex-wrap items-center gap-2">
+                    <input
+                      type="number"
+                      step="1"
+                      min="0"
+                      max="100"
+                      placeholder={res.source === "country" ? `auto: ${res.pct}` : "e.g. 65"}
+                      defaultValue={stock.usEquityPct != null ? String(stock.usEquityPct) : ""}
+                      onBlur={(e) => {
+                        const raw = e.target.value.trim();
+                        if (raw === "") {
+                          if (stock.usEquityPct != null) {
+                            updateStockFields(ticker, { usEquityPct: undefined });
+                          }
+                          return;
+                        }
+                        const n = Number(raw);
+                        if (Number.isFinite(n) && n >= 0 && n <= 100) {
+                          updateStockFields(ticker, { usEquityPct: n });
+                        }
+                      }}
+                      className="w-28 rounded border border-line px-2 py-1 text-sm"
+                    />
+                    {res.source === "unresolved" ? (
+                      <span className="rounded bg-warn px-1.5 py-0.5 text-[10px] font-bold uppercase tracking-wider text-white">
+                        Needs a value
+                      </span>
+                    ) : (
+                      <span className="rounded bg-pos-soft px-1.5 py-0.5 text-[10px] font-semibold text-pos">
+                        {res.pct}% {res.source === "manual" ? "(manual)" : "(auto)"}
+                      </span>
+                    )}
+                  </div>
+                  <p className="mt-1.5 text-[10px] text-ink-3">
+                    {res.reason} Used to size SPY put hedges against the book&apos;s US equity notional. Leave blank to use the derived value.
+                  </p>
+                </div>
+              );
+            })()}
+            <div className="grid grid-cols-1 sm:grid-cols-2 md:grid-cols-3 lg:grid-cols-4 gap-3">
+              {pimModels.groups.map((group) => {
+                const eligible = stock.modelEligibility?.[group.id] !== false;
+                const modelWeight = stock.modelWeights?.[group.id] ?? stock.weights.portfolio;
+                return (
+                  <div
+                    key={group.id}
+                    className={`rounded-lg border transition-all ${
+                      eligible
+                        ? "bg-pos-soft border-pos-border"
+                        : "bg-surface-2 border-line"
+                    }`}
+                  >
+                    <button
+                      onClick={() => toggleModelEligibility(ticker, group.id, !eligible)}
+                      className={`flex items-center gap-2 w-full px-3 py-2 text-sm font-medium transition-all ${
+                        eligible ? "text-pos" : "text-ink-3 hover:text-ink-3"
+                      }`}
+                    >
+                      <span className={`flex items-center justify-center w-4 h-4 rounded border transition-colors ${
+                        eligible ? "bg-pos border-pos-border" : "border-line bg-white"
+                      }`}>
+                        {eligible && (
+                          <svg className="w-3 h-3 text-white" fill="none" stroke="currentColor" strokeWidth="3" viewBox="0 0 24 24">
+                            <path strokeLinecap="round" strokeLinejoin="round" d="M5 13l4 4L19 7" />
+                          </svg>
+                        )}
+                      </span>
+                      {group.name}
+                    </button>
+                    {/* Per-model weight input for funds/ETFs */}
+                    {!scoreable && eligible && (
+                      <ModelWeightInput
+                        groupId={group.id}
+                        modelWeight={modelWeight}
+                        isOverride={stock.modelWeights?.[group.id] != null && stock.modelWeights[group.id] !== stock.weights.portfolio}
+                        onCommit={(val) => updateModelWeight(ticker, group.id, val)}
+                      />
+                    )}
+                  </div>
+                );
+              })}
+            </div>
+          </CollapsibleSection>
+          </>)}
           {/* Risk Alert Panel */}
           {stock.riskAlert && stock.technicals && (
             <RiskAlertPanel riskAlert={stock.riskAlert} technicals={stock.technicals} />
           )}
-
           {/* Stock Health Monitor */}
           {stock.healthData && (
             <StockHealthMonitor healthData={stock.healthData} technicals={stock.technicals} />
           )}
+          {/* Factor Lens (shadow) — quant read-out beside the 41-pt score */}
+          {scoreable && (
+            <FactorLensTile ticker={stock.ticker} adjusted={stock.adjusted} />
+          )}
+            </div>
+          </div>
 
           {/* Score History — append-only change log */}
           {scoreable && (
@@ -2687,30 +2665,7 @@ export default function StockDetailPage() {
             />
           )}
 
-          {/* Thesis & kill conditions — pre-registered exit criteria, checked
-              deterministically from data already on this page (preview build). */}
-          {scoreable && (() => {
-            const snap = getAnalystSnapshot(stock.ticker)?.factset;
-            const revUp = typeof snap?.revUp === "number" ? snap.revUp : null;
-            const revDown = typeof snap?.revDown === "number" ? snap.revDown : null;
-            return (
-              <ThesisTile
-                ticker={stock.ticker}
-                className="mt-6"
-                signals={{
-                  score: typeof stock.adjusted === "number" ? stock.adjusted : null,
-                  netRevisions: revUp != null || revDown != null ? (revUp ?? 0) - (revDown ?? 0) : null,
-                  revUp,
-                  revDown,
-                  riskLevel: stock.riskAlert ? stock.riskAlert.level : stock.technicals ? null : undefined,
-                  price: typeof stock.price === "number" ? stock.price : stock.healthData?.currentPrice ?? null,
-                  ma200: stock.healthData?.twoHundredDayAvg ?? null,
-                }}
-              />
-            );
-          })()}
 
-          {/* Street Takeaways — FactSet analyst roundup (renders only when ingested) */}
 
         </div>
       </div>
