@@ -2097,11 +2097,9 @@ export default function ResearchPage() {
           {railSel !== "all" && (
             <style>{`@media (min-width: 1280px) { .research-col section[id^="research."] { display: none; } .research-col section[id="${railSel}"], .research-col section[id="research.synthesisCollapsed"] { display: block !important; } }`}</style>
           )}
-        <div className="flex items-start justify-between gap-3 flex-wrap">
-          <div className="max-w-3xl">
-            <h1 className="text-3xl font-semibold tracking-tight">Research Notes</h1>
-            <p className="text-ink-3 mt-1">Every sell-side &amp; quant source list — each with a screenshot scanner and paste-to-add. Drag any ticker onto the Watchlist. The cross-source synthesis ranks names appearing across multiple lists.</p>
-          </div>
+        {/* The hub band above already titles the page — this row keeps only the
+            synthesis action, right-aligned. */}
+        <div className="flex items-center justify-end gap-3">
           <button
             onClick={() => {
               if (synthesis) {

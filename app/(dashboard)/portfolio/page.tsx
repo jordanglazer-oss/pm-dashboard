@@ -13,12 +13,7 @@ export default function PortfolioPage() {
   return (
     <main className="min-h-screen bg-ground px-4 py-6 text-ink md:px-8 md:py-8 overflow-x-hidden">
       <div className="mx-auto max-w-7xl">
-        <div className="mb-6">
-          <h1 className="text-2xl font-bold text-ink">Positioning</h1>
-          <p className="text-sm text-ink-3 mt-1">
-            Current positions, weights, drift from target, rebalance and trade actions
-          </p>
-        </div>
+        {/* Page title lives in the Portfolio hub band above. */}
         {/* Positioning itself comes FIRST. The X-ray, thesis watch and journal
             are all portfolio-level context rather than positioning, and stacked
             above the model they pushed the actual weights and the positions
