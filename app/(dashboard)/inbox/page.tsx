@@ -1098,6 +1098,290 @@ export default function InboxPage() {
         </div>
       </div>
 
+      {/* ── Coverage Checklist ──
+          Cross-references pm:stocks against pm:analyst-reports to surface
+          gaps: scoreable Portfolio + Watchlist tickers that don't yet have
+          a single analyst report ingested. Surfaces the actionable
+          "what's still missing" view alongside the activity log. */}
+      <div className="mt-6 rounded-lg border border-line bg-white overflow-hidden">
+        <CollapsibleHeader
+          collapsed={coverageCollapsed}
+          onToggle={toggleCoverage}
+          title="Coverage Checklist"
+          meta={
+            <span className="text-[11px] text-ink-3">
+              {totalCovered}/{coverageRows.length} covered ·
+              <span className="ml-1">Portfolio {portfolioCovered}/{portfolioTotal}</span> ·
+              <span className="ml-1">Watchlist {watchlistCovered}/{watchlistTotal}</span>
+              {missingCount > 0 && (
+                <span className="ml-2 inline-flex items-center rounded-full bg-neg-soft text-neg border border-neg-border px-2 py-0.5 text-[10px] font-bold uppercase">
+                  {missingCount} missing
+                </span>
+              )}
+            </span>
+          }
+          action={
+            <div className="flex flex-wrap gap-1">
+              {[
+                { key: "all", label: "All" },
+                { key: "missing", label: "Missing only" },
+                { key: "portfolio", label: "Portfolio" },
+                { key: "watchlist", label: "Watchlist" },
+              ].map((b) => (
+                <button
+                  key={b.key}
+                  onClick={() => setCoverageFilter(b.key)}
+                  className={`text-[11px] font-semibold rounded-full px-2.5 py-0.5 transition-colors ${
+                    coverageFilter === b.key
+                      ? "bg-ink text-white"
+                      : "bg-surface-2 text-ink-2 hover:bg-line"
+                  }`}
+                >
+                  {b.label}
+                </button>
+              ))}
+            </div>
+          }
+        />
+        {!coverageCollapsed && coverageRows.length > 0 && (
+          // Per-source data-freshness strip — at a glance, how many names are
+          // missing or stale for each external feed. Green when a source is
+          // fully reflected; amber with a count when something didn't land.
+          <div className="flex flex-wrap items-center gap-2 px-4 py-2.5 border-b border-line-soft bg-surface-hover text-[11px]">
+            <span className="font-semibold text-ink-3 uppercase tracking-wider">Data freshness:</span>
+            {[
+              { label: "BoostedAI", gap: boostedGap },
+              { label: "SIA", gap: siaGap },
+              { label: "MarketEdge", gap: marketEdgeGap },
+            ].map((s) => (
+              <span
+                key={s.label}
+                className={`inline-flex items-center gap-1 rounded-full border px-2 py-0.5 font-semibold ${
+                  s.gap === 0
+                    ? "bg-pos-soft text-pos border-pos-border"
+                    : "bg-warn-soft text-warn border-warn-border"
+                }`}
+                title={
+                  s.gap === 0
+                    ? `${s.label}: every applicable name has a current value.`
+                    : `${s.label}: ${s.gap} name${s.gap === 1 ? "" : "s"} missing a value or not captured by the last import. ⚠ marks them in the table below.`
+                }
+              >
+                {s.gap === 0 ? "✓" : "⚠"} {s.label} {s.gap === 0 ? "all current" : `${s.gap} to check`}
+              </span>
+            ))}
+            <span className="text-ink-3">— ⚠ in a cell = no value for that source yet. Reload after an email import to pull the latest.</span>
+          </div>
+        )}
+        {!coverageCollapsed && (coverageRows.length === 0 ? (
+          <p className="text-sm text-ink-3 p-4 italic">
+            No scoreable stocks in your Portfolio or Watchlist yet. Add stocks on the Dashboard to start tracking analyst coverage.
+          </p>
+        ) : sortedCoverage.length === 0 ? (
+          <p className="text-sm text-ink-3 p-4 italic">
+            {coverageFilter === "missing"
+              ? "🎉 Every scoreable stock has at least one source. No gaps."
+              : "No stocks match this filter."}
+          </p>
+        ) : (
+          <div className="overflow-x-auto">
+          <table className="w-full min-w-[1560px] text-sm">
+            <thead className="bg-surface-2 text-xs uppercase tracking-wider text-ink-3">
+              <tr>
+                <th className="px-3 py-2 text-left cursor-pointer select-none hover:text-ink" onClick={() => toggleCovSort("ticker")}>Ticker{covArrow("ticker")}</th>
+                <th className="px-3 py-2 text-left cursor-pointer select-none hover:text-ink" onClick={() => toggleCovSort("name")}>Name{covArrow("name")}</th>
+                <th className="px-3 py-2 text-left cursor-pointer select-none hover:text-ink" onClick={() => toggleCovSort("bucket")}>Bucket{covArrow("bucket")}</th>
+                <th className="px-3 py-2 text-center w-20 cursor-pointer select-none hover:text-ink" onClick={() => toggleCovSort("rbc")} title="Date the RBC PDF was last uploaded. Amber &gt;90d, red &gt;180d — a cue to fetch a newer report. Click to sort by recency (oldest first).">RBC{covArrow("rbc")}</th>
+                <th className="px-3 py-2 text-center w-20 cursor-pointer select-none hover:text-ink" onClick={() => toggleCovSort("jpm")} title="Date the JPM PDF was last uploaded. Amber &gt;90d, red &gt;180d — a cue to fetch a newer report. Click to sort by recency (oldest first).">JPM{covArrow("jpm")}</th>
+                <th className="px-3 py-2 text-center w-20 cursor-pointer select-none hover:text-ink" onClick={() => toggleCovSort("morn")} title="Date the Morningstar PDF was last uploaded. Amber &gt;90d, red &gt;180d. Morningstar is optional — a blank is not counted as a coverage gap in Status. Click to sort by recency (oldest first).">Morningstar{covArrow("morn")}</th>
+                {FACTSET_COLS.map((c, i) => (
+                  <th
+                    key={c.kind}
+                    className="px-2 py-2 text-center w-20 cursor-pointer select-none hover:text-ink"
+                    onClick={() => toggleCovSort("factset")}
+                    title={c.title}
+                  >
+                    {c.head}
+                    {i === 0 ? covArrow("factset") : null}
+                  </th>
+                ))}
+                <th className="px-3 py-2 text-right w-20 cursor-pointer select-none hover:text-ink" onClick={() => toggleCovSort("boostedAi")} title="Raw BoostedAI rating (0-5, decimals OK). Combined with Consensus to auto-derive the dashboard's aiRating (0-2).">Boosted.ai{covArrow("boostedAi")}</th>
+                <th className="px-3 py-2 text-left w-28 cursor-pointer select-none hover:text-ink" onClick={() => toggleCovSort("consensus")} title="BoostedAI consensus recommendation. Combined with the numeric rating to auto-derive aiRating (Strong Buy / Buy → 2, Hold → 1, Sell / Strong Sell → 0).">Consensus{covArrow("consensus")}</th>
+                <th className="px-3 py-2 text-right w-20 cursor-pointer select-none hover:text-ink" onClick={() => toggleCovSort("sia")} title="SIA SMAX score (0-10 integer). Maps to relativeStrength: 8-10 → 2, 6-7 → 1, 0-5 → 0.">SIA SMAX{covArrow("sia")}</th>
+                <th className="px-3 py-2 text-right w-28 cursor-pointer select-none hover:text-ink" onClick={() => toggleCovSort("marketEdge")} title="MarketEdge Power Rating (−60…+100) and Opinion. Power Rating drives the marketEdge score: ≥ +60 → 2 (Long), −27…+59 → 1 (Neutral), < −27 → 0 (Avoid). Click the rating to edit; click the opinion chip to cycle. N/A for pure-Canadian names (MarketEdge covers US listings only).">MarketEdge{covArrow("marketEdge")}</th>
+                <th className="px-3 py-2 text-left w-32 cursor-pointer select-none hover:text-ink" onClick={() => toggleCovSort("status")} title="Sort by overall coverage status (No reports / Partial / Both). Ascending shows gaps first.">Status{covArrow("status")}</th>
+              </tr>
+            </thead>
+            <tbody>
+              {sortedCoverage.map((r) => {
+                const fullyCovered = r.hasRbc && r.hasJpm;
+                const partiallyCovered = (r.hasRbc || r.hasJpm) && !fullyCovered;
+                const noCoverage = !r.hasRbc && !r.hasJpm;
+                return (
+                  <tr
+                    key={`${r.bucket}-${r.displayTicker}`}
+                    className={`border-t border-line-soft transition-colors ${
+                      noCoverage ? "bg-neg-soft/40 hover:bg-neg-soft/60" : "hover:bg-surface-hover"
+                    }`}
+                  >
+                    <td className="px-3 py-2">
+                      <Link href={`/stock/${r.displayTicker.toLowerCase()}`} className="font-mono font-semibold text-ink hover:underline">
+                        {r.displayTicker}
+                      </Link>
+                    </td>
+                    <td className="px-3 py-2 text-xs text-ink-2 truncate max-w-[260px]" title={r.name}>{r.name}</td>
+                    <td className="px-3 py-2">
+                      <span className={`inline-block rounded px-1.5 py-0.5 text-[10px] font-semibold ${
+                        r.bucket === "Portfolio"
+                          ? "bg-accent-soft text-accent border border-accent-border"
+                          : "bg-surface-2 text-ink-2 border border-line"
+                      }`}>{r.bucket}</span>
+                    </td>
+                    <td className="px-3 py-2 text-center">
+                      {r.rbcDate ? (
+                        <span className={`inline-block text-xs font-semibold ${staleClass(daysSince(r.rbcDate))}`} title={`RBC report last uploaded ${fmtTime(r.rbcDate)}${(daysSince(r.rbcDate) ?? 0) > 90 ? " — worth checking for a newer one" : ""}`}>
+                          {fmtReportDate(r.rbcDate)}
+                        </span>
+                      ) : (
+                        <span className="inline-block text-ink-faint text-base" title="No RBC report yet">—</span>
+                      )}
+                    </td>
+                    <td className="px-3 py-2 text-center">
+                      {r.jpmDate ? (
+                        <span className={`inline-block text-xs font-semibold ${staleClass(daysSince(r.jpmDate))}`} title={`JPM report last uploaded ${fmtTime(r.jpmDate)}${(daysSince(r.jpmDate) ?? 0) > 90 ? " — worth checking for a newer one" : ""}`}>
+                          {fmtReportDate(r.jpmDate)}
+                        </span>
+                      ) : (
+                        <span className="inline-block text-ink-faint text-base" title="No JPM report yet">—</span>
+                      )}
+                    </td>
+                    <td className="px-3 py-2 text-center">
+                      {r.mornDate ? (
+                        <span className={`inline-block text-xs font-semibold ${staleClass(daysSince(r.mornDate))}`} title={`Morningstar report last uploaded ${fmtTime(r.mornDate)}${(daysSince(r.mornDate) ?? 0) > 90 ? " — worth checking for a newer one" : ""}`}>
+                          {fmtReportDate(r.mornDate)}
+                        </span>
+                      ) : (
+                        <span className="inline-block text-ink-faint text-base" title="No Morningstar report yet (optional source)">—</span>
+                      )}
+                    </td>
+                    {FACTSET_COLS.map((c) => {
+                      const e = r.factset[c.kind];
+                      return (
+                        <td key={c.kind} className="px-2 py-2 text-center">
+                          {e ? (
+                            <span
+                              className={`inline-block text-xs font-semibold ${staleClass(daysSince(e.date))}`}
+                              title={`${e.label}${e.event ? ` — ${e.event}` : ""} (${e.date})`}
+                            >
+                              {fmtReportDate(e.date)}
+                            </span>
+                          ) : (
+                            <span className="inline-block text-ink-faint text-base" title={`No ${c.head} alert ingested for this name yet`}>—</span>
+                          )}
+                        </td>
+                      );
+                    })}
+                    <td className="px-3 py-2 text-right">
+                      <div className="flex items-center justify-end gap-1">
+                        {r.boostedAi == null && (
+                          <span className="text-warn text-xs leading-none" title="No BoostedAI rating for this name yet. Send the Boosted.ai unified-data CSV, or edit the value here.">⚠</span>
+                        )}
+                        <EditableNumberCell
+                          value={r.boostedAi}
+                          step="0.1"
+                          min={0}
+                          max={5}
+                          onCommit={(next) => saveBoostedAi(r.displayTicker, next)}
+                          width="w-14"
+                          placeholder="—"
+                          ariaLabel={`BoostedAI rating for ${r.displayTicker}`}
+                          formatDisplay={(n) => n.toFixed(1)}
+                        />
+                      </div>
+                    </td>
+                    <td className="px-3 py-2">
+                      <ConsensusButton
+                        value={r.boostedAiConsensus}
+                        ariaLabel={`BoostedAI consensus for ${r.displayTicker}`}
+                        onChange={(next) => saveBoostedAiConsensus(r.displayTicker, next)}
+                      />
+                    </td>
+                    <td className="px-3 py-2 text-right">
+                      <div className="flex items-center justify-end gap-1">
+                        {r.sia == null && (
+                          <span className="text-warn text-xs leading-none" title="No SIA SMAX for this name yet. Send the SIA CSV export, or edit the value here.">⚠</span>
+                        )}
+                        <EditableNumberCell
+                          value={r.sia}
+                          step="1"
+                          min={0}
+                          max={10}
+                          onCommit={(next) => saveSia(r.displayTicker, next)}
+                          width="w-14"
+                          placeholder="—"
+                          ariaLabel={`SIA SMAX for ${r.displayTicker}`}
+                          formatDisplay={(n) => String(Math.round(n))}
+                        />
+                      </div>
+                    </td>
+                    {/* MarketEdge: Power Rating (editable) + Opinion chip
+                        (click to cycle). N/A for pure-Canadian names. */}
+                    <td className="px-3 py-2 text-right">
+                      {r.marketEdgeApplies ? (
+                        <div className="flex items-center justify-end gap-1.5">
+                          {r.marketEdgePowerRating == null && (
+                            <span className="text-warn text-xs leading-none" title="No MarketEdge Power Rating for this name yet. Send the ChartScout Likes CSV, or edit the value here.">⚠</span>
+                          )}
+                          <EditableNumberCell
+                            value={r.marketEdgePowerRating}
+                            step="1"
+                            min={-60}
+                            max={100}
+                            onCommit={(next) => saveMarketEdgePowerRating(r.displayTicker, next)}
+                            width="w-14"
+                            placeholder="—"
+                            ariaLabel={`MarketEdge Power Rating for ${r.displayTicker}`}
+                            formatDisplay={(n) => String(Math.round(n))}
+                          />
+                          <button
+                            type="button"
+                            onClick={() => cycleMarketEdgeOpinion(r.displayTicker, r.marketEdgeOpinion)}
+                            title="Click to cycle MarketEdge opinion: — → Long → Neutral → Avoid"
+                            className={`rounded px-1.5 py-0.5 text-[10px] font-semibold border ${
+                              r.marketEdgeOpinion === "long" ? "bg-pos-soft text-pos border-pos-border"
+                              : r.marketEdgeOpinion === "avoid" ? "bg-neg-soft text-neg border-neg-border"
+                              : r.marketEdgeOpinion === "neutral" ? "bg-surface-2 text-ink-2 border-line"
+                              : "bg-white text-ink-3 border-line"
+                            }`}
+                          >
+                            {r.marketEdgeOpinion === "long" ? "Long" : r.marketEdgeOpinion === "avoid" ? "Avoid" : r.marketEdgeOpinion === "neutral" ? "Neutral" : "—"}
+                          </button>
+                        </div>
+                      ) : (
+                        <span className="text-[10px] text-ink-3 italic" title="MarketEdge (ChartScout) covers US-listed stocks only. This pure-Canadian name is excluded from the marketEdge category, so a blank here is expected — not a gap.">N/A</span>
+                      )}
+                    </td>
+                    <td className="px-3 py-2">
+                      <span className={`inline-block rounded-full px-2 py-0.5 text-[10px] font-semibold ${
+                        fullyCovered
+                          ? "bg-pos-soft text-pos border border-pos-border"
+                          : partiallyCovered
+                          ? "bg-warn-soft text-warn border border-warn-border"
+                          : "bg-neg-soft text-neg border border-neg-border"
+                      }`}>
+                        {fullyCovered ? "Both" : partiallyCovered ? "Partial" : "No reports"}
+                      </span>
+                    </td>
+                  </tr>
+                );
+              })}
+            </tbody>
+          </table>
+          </div>
+        ))}
+      </div>
+
+
       <div className="rounded-lg border border-line bg-white overflow-hidden">
         <CollapsibleHeader
           collapsed={eventsCollapsed}
@@ -1384,289 +1668,6 @@ export default function InboxPage() {
             )}
           </div>
         )}
-      </div>
-
-      {/* ── Coverage Checklist ──
-          Cross-references pm:stocks against pm:analyst-reports to surface
-          gaps: scoreable Portfolio + Watchlist tickers that don't yet have
-          a single analyst report ingested. Surfaces the actionable
-          "what's still missing" view alongside the activity log. */}
-      <div className="mt-6 rounded-lg border border-line bg-white overflow-hidden">
-        <CollapsibleHeader
-          collapsed={coverageCollapsed}
-          onToggle={toggleCoverage}
-          title="Coverage Checklist"
-          meta={
-            <span className="text-[11px] text-ink-3">
-              {totalCovered}/{coverageRows.length} covered ·
-              <span className="ml-1">Portfolio {portfolioCovered}/{portfolioTotal}</span> ·
-              <span className="ml-1">Watchlist {watchlistCovered}/{watchlistTotal}</span>
-              {missingCount > 0 && (
-                <span className="ml-2 inline-flex items-center rounded-full bg-neg-soft text-neg border border-neg-border px-2 py-0.5 text-[10px] font-bold uppercase">
-                  {missingCount} missing
-                </span>
-              )}
-            </span>
-          }
-          action={
-            <div className="flex flex-wrap gap-1">
-              {[
-                { key: "all", label: "All" },
-                { key: "missing", label: "Missing only" },
-                { key: "portfolio", label: "Portfolio" },
-                { key: "watchlist", label: "Watchlist" },
-              ].map((b) => (
-                <button
-                  key={b.key}
-                  onClick={() => setCoverageFilter(b.key)}
-                  className={`text-[11px] font-semibold rounded-full px-2.5 py-0.5 transition-colors ${
-                    coverageFilter === b.key
-                      ? "bg-ink text-white"
-                      : "bg-surface-2 text-ink-2 hover:bg-line"
-                  }`}
-                >
-                  {b.label}
-                </button>
-              ))}
-            </div>
-          }
-        />
-        {!coverageCollapsed && coverageRows.length > 0 && (
-          // Per-source data-freshness strip — at a glance, how many names are
-          // missing or stale for each external feed. Green when a source is
-          // fully reflected; amber with a count when something didn't land.
-          <div className="flex flex-wrap items-center gap-2 px-4 py-2.5 border-b border-line-soft bg-surface-hover text-[11px]">
-            <span className="font-semibold text-ink-3 uppercase tracking-wider">Data freshness:</span>
-            {[
-              { label: "BoostedAI", gap: boostedGap },
-              { label: "SIA", gap: siaGap },
-              { label: "MarketEdge", gap: marketEdgeGap },
-            ].map((s) => (
-              <span
-                key={s.label}
-                className={`inline-flex items-center gap-1 rounded-full border px-2 py-0.5 font-semibold ${
-                  s.gap === 0
-                    ? "bg-pos-soft text-pos border-pos-border"
-                    : "bg-warn-soft text-warn border-warn-border"
-                }`}
-                title={
-                  s.gap === 0
-                    ? `${s.label}: every applicable name has a current value.`
-                    : `${s.label}: ${s.gap} name${s.gap === 1 ? "" : "s"} missing a value or not captured by the last import. ⚠ marks them in the table below.`
-                }
-              >
-                {s.gap === 0 ? "✓" : "⚠"} {s.label} {s.gap === 0 ? "all current" : `${s.gap} to check`}
-              </span>
-            ))}
-            <span className="text-ink-3">— ⚠ in a cell = no value for that source yet. Reload after an email import to pull the latest.</span>
-          </div>
-        )}
-        {!coverageCollapsed && (coverageRows.length === 0 ? (
-          <p className="text-sm text-ink-3 p-4 italic">
-            No scoreable stocks in your Portfolio or Watchlist yet. Add stocks on the Dashboard to start tracking analyst coverage.
-          </p>
-        ) : sortedCoverage.length === 0 ? (
-          <p className="text-sm text-ink-3 p-4 italic">
-            {coverageFilter === "missing"
-              ? "🎉 Every scoreable stock has at least one source. No gaps."
-              : "No stocks match this filter."}
-          </p>
-        ) : (
-          <div className="overflow-x-auto">
-          <table className="w-full min-w-[1560px] text-sm">
-            <thead className="bg-surface-2 text-xs uppercase tracking-wider text-ink-3">
-              <tr>
-                <th className="px-3 py-2 text-left cursor-pointer select-none hover:text-ink" onClick={() => toggleCovSort("ticker")}>Ticker{covArrow("ticker")}</th>
-                <th className="px-3 py-2 text-left cursor-pointer select-none hover:text-ink" onClick={() => toggleCovSort("name")}>Name{covArrow("name")}</th>
-                <th className="px-3 py-2 text-left cursor-pointer select-none hover:text-ink" onClick={() => toggleCovSort("bucket")}>Bucket{covArrow("bucket")}</th>
-                <th className="px-3 py-2 text-center w-20 cursor-pointer select-none hover:text-ink" onClick={() => toggleCovSort("rbc")} title="Date the RBC PDF was last uploaded. Amber &gt;90d, red &gt;180d — a cue to fetch a newer report. Click to sort by recency (oldest first).">RBC{covArrow("rbc")}</th>
-                <th className="px-3 py-2 text-center w-20 cursor-pointer select-none hover:text-ink" onClick={() => toggleCovSort("jpm")} title="Date the JPM PDF was last uploaded. Amber &gt;90d, red &gt;180d — a cue to fetch a newer report. Click to sort by recency (oldest first).">JPM{covArrow("jpm")}</th>
-                <th className="px-3 py-2 text-center w-20 cursor-pointer select-none hover:text-ink" onClick={() => toggleCovSort("morn")} title="Date the Morningstar PDF was last uploaded. Amber &gt;90d, red &gt;180d. Morningstar is optional — a blank is not counted as a coverage gap in Status. Click to sort by recency (oldest first).">Morningstar{covArrow("morn")}</th>
-                {FACTSET_COLS.map((c, i) => (
-                  <th
-                    key={c.kind}
-                    className="px-2 py-2 text-center w-20 cursor-pointer select-none hover:text-ink"
-                    onClick={() => toggleCovSort("factset")}
-                    title={c.title}
-                  >
-                    {c.head}
-                    {i === 0 ? covArrow("factset") : null}
-                  </th>
-                ))}
-                <th className="px-3 py-2 text-right w-20 cursor-pointer select-none hover:text-ink" onClick={() => toggleCovSort("boostedAi")} title="Raw BoostedAI rating (0-5, decimals OK). Combined with Consensus to auto-derive the dashboard's aiRating (0-2).">Boosted.ai{covArrow("boostedAi")}</th>
-                <th className="px-3 py-2 text-left w-28 cursor-pointer select-none hover:text-ink" onClick={() => toggleCovSort("consensus")} title="BoostedAI consensus recommendation. Combined with the numeric rating to auto-derive aiRating (Strong Buy / Buy → 2, Hold → 1, Sell / Strong Sell → 0).">Consensus{covArrow("consensus")}</th>
-                <th className="px-3 py-2 text-right w-20 cursor-pointer select-none hover:text-ink" onClick={() => toggleCovSort("sia")} title="SIA SMAX score (0-10 integer). Maps to relativeStrength: 8-10 → 2, 6-7 → 1, 0-5 → 0.">SIA SMAX{covArrow("sia")}</th>
-                <th className="px-3 py-2 text-right w-28 cursor-pointer select-none hover:text-ink" onClick={() => toggleCovSort("marketEdge")} title="MarketEdge Power Rating (−60…+100) and Opinion. Power Rating drives the marketEdge score: ≥ +60 → 2 (Long), −27…+59 → 1 (Neutral), < −27 → 0 (Avoid). Click the rating to edit; click the opinion chip to cycle. N/A for pure-Canadian names (MarketEdge covers US listings only).">MarketEdge{covArrow("marketEdge")}</th>
-                <th className="px-3 py-2 text-left w-32 cursor-pointer select-none hover:text-ink" onClick={() => toggleCovSort("status")} title="Sort by overall coverage status (No reports / Partial / Both). Ascending shows gaps first.">Status{covArrow("status")}</th>
-              </tr>
-            </thead>
-            <tbody>
-              {sortedCoverage.map((r) => {
-                const fullyCovered = r.hasRbc && r.hasJpm;
-                const partiallyCovered = (r.hasRbc || r.hasJpm) && !fullyCovered;
-                const noCoverage = !r.hasRbc && !r.hasJpm;
-                return (
-                  <tr
-                    key={`${r.bucket}-${r.displayTicker}`}
-                    className={`border-t border-line-soft transition-colors ${
-                      noCoverage ? "bg-neg-soft/40 hover:bg-neg-soft/60" : "hover:bg-surface-hover"
-                    }`}
-                  >
-                    <td className="px-3 py-2">
-                      <Link href={`/stock/${r.displayTicker.toLowerCase()}`} className="font-mono font-semibold text-ink hover:underline">
-                        {r.displayTicker}
-                      </Link>
-                    </td>
-                    <td className="px-3 py-2 text-xs text-ink-2 truncate max-w-[260px]" title={r.name}>{r.name}</td>
-                    <td className="px-3 py-2">
-                      <span className={`inline-block rounded px-1.5 py-0.5 text-[10px] font-semibold ${
-                        r.bucket === "Portfolio"
-                          ? "bg-accent-soft text-accent border border-accent-border"
-                          : "bg-surface-2 text-ink-2 border border-line"
-                      }`}>{r.bucket}</span>
-                    </td>
-                    <td className="px-3 py-2 text-center">
-                      {r.rbcDate ? (
-                        <span className={`inline-block text-xs font-semibold ${staleClass(daysSince(r.rbcDate))}`} title={`RBC report last uploaded ${fmtTime(r.rbcDate)}${(daysSince(r.rbcDate) ?? 0) > 90 ? " — worth checking for a newer one" : ""}`}>
-                          {fmtReportDate(r.rbcDate)}
-                        </span>
-                      ) : (
-                        <span className="inline-block text-ink-faint text-base" title="No RBC report yet">—</span>
-                      )}
-                    </td>
-                    <td className="px-3 py-2 text-center">
-                      {r.jpmDate ? (
-                        <span className={`inline-block text-xs font-semibold ${staleClass(daysSince(r.jpmDate))}`} title={`JPM report last uploaded ${fmtTime(r.jpmDate)}${(daysSince(r.jpmDate) ?? 0) > 90 ? " — worth checking for a newer one" : ""}`}>
-                          {fmtReportDate(r.jpmDate)}
-                        </span>
-                      ) : (
-                        <span className="inline-block text-ink-faint text-base" title="No JPM report yet">—</span>
-                      )}
-                    </td>
-                    <td className="px-3 py-2 text-center">
-                      {r.mornDate ? (
-                        <span className={`inline-block text-xs font-semibold ${staleClass(daysSince(r.mornDate))}`} title={`Morningstar report last uploaded ${fmtTime(r.mornDate)}${(daysSince(r.mornDate) ?? 0) > 90 ? " — worth checking for a newer one" : ""}`}>
-                          {fmtReportDate(r.mornDate)}
-                        </span>
-                      ) : (
-                        <span className="inline-block text-ink-faint text-base" title="No Morningstar report yet (optional source)">—</span>
-                      )}
-                    </td>
-                    {FACTSET_COLS.map((c) => {
-                      const e = r.factset[c.kind];
-                      return (
-                        <td key={c.kind} className="px-2 py-2 text-center">
-                          {e ? (
-                            <span
-                              className={`inline-block text-xs font-semibold ${staleClass(daysSince(e.date))}`}
-                              title={`${e.label}${e.event ? ` — ${e.event}` : ""} (${e.date})`}
-                            >
-                              {fmtReportDate(e.date)}
-                            </span>
-                          ) : (
-                            <span className="inline-block text-ink-faint text-base" title={`No ${c.head} alert ingested for this name yet`}>—</span>
-                          )}
-                        </td>
-                      );
-                    })}
-                    <td className="px-3 py-2 text-right">
-                      <div className="flex items-center justify-end gap-1">
-                        {r.boostedAi == null && (
-                          <span className="text-warn text-xs leading-none" title="No BoostedAI rating for this name yet. Send the Boosted.ai unified-data CSV, or edit the value here.">⚠</span>
-                        )}
-                        <EditableNumberCell
-                          value={r.boostedAi}
-                          step="0.1"
-                          min={0}
-                          max={5}
-                          onCommit={(next) => saveBoostedAi(r.displayTicker, next)}
-                          width="w-14"
-                          placeholder="—"
-                          ariaLabel={`BoostedAI rating for ${r.displayTicker}`}
-                          formatDisplay={(n) => n.toFixed(1)}
-                        />
-                      </div>
-                    </td>
-                    <td className="px-3 py-2">
-                      <ConsensusButton
-                        value={r.boostedAiConsensus}
-                        ariaLabel={`BoostedAI consensus for ${r.displayTicker}`}
-                        onChange={(next) => saveBoostedAiConsensus(r.displayTicker, next)}
-                      />
-                    </td>
-                    <td className="px-3 py-2 text-right">
-                      <div className="flex items-center justify-end gap-1">
-                        {r.sia == null && (
-                          <span className="text-warn text-xs leading-none" title="No SIA SMAX for this name yet. Send the SIA CSV export, or edit the value here.">⚠</span>
-                        )}
-                        <EditableNumberCell
-                          value={r.sia}
-                          step="1"
-                          min={0}
-                          max={10}
-                          onCommit={(next) => saveSia(r.displayTicker, next)}
-                          width="w-14"
-                          placeholder="—"
-                          ariaLabel={`SIA SMAX for ${r.displayTicker}`}
-                          formatDisplay={(n) => String(Math.round(n))}
-                        />
-                      </div>
-                    </td>
-                    {/* MarketEdge: Power Rating (editable) + Opinion chip
-                        (click to cycle). N/A for pure-Canadian names. */}
-                    <td className="px-3 py-2 text-right">
-                      {r.marketEdgeApplies ? (
-                        <div className="flex items-center justify-end gap-1.5">
-                          {r.marketEdgePowerRating == null && (
-                            <span className="text-warn text-xs leading-none" title="No MarketEdge Power Rating for this name yet. Send the ChartScout Likes CSV, or edit the value here.">⚠</span>
-                          )}
-                          <EditableNumberCell
-                            value={r.marketEdgePowerRating}
-                            step="1"
-                            min={-60}
-                            max={100}
-                            onCommit={(next) => saveMarketEdgePowerRating(r.displayTicker, next)}
-                            width="w-14"
-                            placeholder="—"
-                            ariaLabel={`MarketEdge Power Rating for ${r.displayTicker}`}
-                            formatDisplay={(n) => String(Math.round(n))}
-                          />
-                          <button
-                            type="button"
-                            onClick={() => cycleMarketEdgeOpinion(r.displayTicker, r.marketEdgeOpinion)}
-                            title="Click to cycle MarketEdge opinion: — → Long → Neutral → Avoid"
-                            className={`rounded px-1.5 py-0.5 text-[10px] font-semibold border ${
-                              r.marketEdgeOpinion === "long" ? "bg-pos-soft text-pos border-pos-border"
-                              : r.marketEdgeOpinion === "avoid" ? "bg-neg-soft text-neg border-neg-border"
-                              : r.marketEdgeOpinion === "neutral" ? "bg-surface-2 text-ink-2 border-line"
-                              : "bg-white text-ink-3 border-line"
-                            }`}
-                          >
-                            {r.marketEdgeOpinion === "long" ? "Long" : r.marketEdgeOpinion === "avoid" ? "Avoid" : r.marketEdgeOpinion === "neutral" ? "Neutral" : "—"}
-                          </button>
-                        </div>
-                      ) : (
-                        <span className="text-[10px] text-ink-3 italic" title="MarketEdge (ChartScout) covers US-listed stocks only. This pure-Canadian name is excluded from the marketEdge category, so a blank here is expected — not a gap.">N/A</span>
-                      )}
-                    </td>
-                    <td className="px-3 py-2">
-                      <span className={`inline-block rounded-full px-2 py-0.5 text-[10px] font-semibold ${
-                        fullyCovered
-                          ? "bg-pos-soft text-pos border border-pos-border"
-                          : partiallyCovered
-                          ? "bg-warn-soft text-warn border border-warn-border"
-                          : "bg-neg-soft text-neg border border-neg-border"
-                      }`}>
-                        {fullyCovered ? "Both" : partiallyCovered ? "Partial" : "No reports"}
-                      </span>
-                    </td>
-                  </tr>
-                );
-              })}
-            </tbody>
-          </table>
-          </div>
-        ))}
       </div>
 
       {/* ── All Ingested Reports ──
