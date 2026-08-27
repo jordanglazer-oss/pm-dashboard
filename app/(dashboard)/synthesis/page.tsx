@@ -1,6 +1,7 @@
 "use client";
 
 import { Fragment, useCallback, useEffect, useMemo, useState } from "react";
+import { IdeasRail } from "@/app/components/IdeasRail";
 import { displayTicker } from "@/app/lib/ticker";
 import {
   VERDICT_LABEL,
@@ -427,7 +428,8 @@ export default function SynthesisPage() {
   const staleNoReports = data.rows.filter((r) => r.stale.length > 0 && !hasReports(r)).length;
 
   return (
-    <div className="mx-auto max-w-5xl space-y-4 px-4 py-6">
+    <div className="mx-auto flex max-w-7xl items-start gap-5 px-4 py-6">
+    <div className="min-w-0 flex-1 space-y-4">
       <div className="flex flex-wrap items-center justify-between gap-2">
         <div>
           <h1 className="text-[15px] font-bold text-ink">Synthesis</h1>
@@ -696,6 +698,8 @@ export default function SynthesisPage() {
           </div>
         );
       })}
+    </div>
+    <IdeasRail />
     </div>
   );
 }
