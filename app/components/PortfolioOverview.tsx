@@ -2109,7 +2109,43 @@ function RankingTable({
         <div className="px-4 py-3"><SkeletonTable rows={10} cols={7} /></div>
       )}
       {!collapsed && sorted.length > 0 && (
-      <div className="max-h-[80vh] overflow-auto">
+      <>
+      {/* Mobile: two-line rows, score pinned right — the table below never
+          side-scrolls on a phone (streamline rule 05). */}
+      <div className="md:hidden divide-y divide-line-soft">
+        {displayRows.map((row) => {
+          if (row.kind === "header") {
+            return (
+              <div key={row.key} className="bg-surface-hover px-3 py-1.5 text-[11px] font-bold uppercase tracking-wider text-ink-3">
+                {row.label} · {row.count}
+              </div>
+            );
+          }
+          const s = row.stock;
+          const pc = livePreviousCloses[s.ticker];
+          const chg = s.price != null && pc != null && pc > 0 ? ((s.price - pc) / pc) * 100 : null;
+          const w = liveWeights?.get(canonicalTicker(s.ticker));
+          return (
+            <Link key={s.ticker} href={`/stock/${s.ticker.toLowerCase()}`} className="flex items-center gap-3 px-3 py-2.5 active:bg-surface-hover">
+              <span className="min-w-0 flex-1">
+                <span className="flex items-baseline gap-1.5">
+                  <span className="font-mono text-[14px] font-bold text-ink">{displayTicker(s.ticker)}</span>
+                  {showWeight && w != null && <span className="text-[11px] text-ink-3 tabular-nums">{w.toFixed(1)}%</span>}
+                </span>
+                <span className="block truncate text-[11px] text-ink-3">{s.name}{s.sector ? ` · ${s.sector}` : ""}</span>
+              </span>
+              <span className="shrink-0 text-right">
+                <span className="block font-mono text-[13px] text-ink tabular-nums">{s.price != null ? `$${s.price.toFixed(2)}` : "—"}</span>
+                <span className={`block font-mono text-[11px] tabular-nums ${chg == null ? "text-ink-faint" : chg >= 0 ? "text-pos" : "text-neg"}`}>
+                  {chg == null ? "—" : `${chg >= 0 ? "+" : ""}${chg.toFixed(1)}%`}
+                </span>
+              </span>
+              <span className="w-11 shrink-0 text-right font-mono text-[15px] font-bold text-ink tabular-nums">{Number(s.adjusted.toFixed(1))}</span>
+            </Link>
+          );
+        })}
+      </div>
+      <div className="hidden md:block max-h-[80vh] overflow-auto">
         <table className="w-full text-left text-sm">
           <thead className="sticky top-0 z-20 bg-white shadow-[0_1px_0_0_rgb(226_232_240)]">
             <tr className="border-b border-line text-xs text-ink-3">
@@ -2309,6 +2345,7 @@ function RankingTable({
           </tbody>
         </table>
       </div>
+      </>
       )}
     </section>
   );
