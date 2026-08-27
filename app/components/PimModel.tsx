@@ -1369,8 +1369,9 @@ export function PimModel({ groups }: Props) {
 
         return (
           <div key={ac} className="rounded-card border border-line bg-white shadow-sm overflow-hidden">
-            <div className={`${colors.header} px-5 py-3 flex items-center justify-between`}>
-              <h3 className="text-sm font-bold">
+            <div className="flex items-center justify-between border-b border-line-soft bg-white px-5 py-3">
+              <h3 className="flex items-center gap-2 text-sm font-bold text-ink">
+                <span className={`inline-block h-2 w-2 rounded-full ${colors.bar}`} aria-hidden />
                 {ASSET_CLASS_LABELS[ac]}
                 <span className="ml-2 font-normal text-xs opacity-70">({holdings.length} holdings)</span>
               </h3>
