@@ -1620,6 +1620,7 @@ function RankingTable({
    *  so the column was a row of dashes taking up space. */
   showWeight?: boolean;
 }) {
+  const router = useRouter();
   // Collapse state — defaults to expanded. Persisted in uiPrefs so it
   // sticks across refreshes and syncs to other devices via Redis. The
   // Score All button stays visible even when collapsed so the user can
@@ -2202,8 +2203,15 @@ function RankingTable({
                     Score column already convey best/worst). */}
                 <tr
                   ref={(el) => { const m = rowElRefs.current; if (el) m.set(s.ticker, el); else m.delete(s.ticker); }}
-                  className="animate-row-in group border-b border-l-2 border-l-transparent border-line-soft transition-colors hover:bg-surface-hover hover:border-l-accent [&>td]:align-top"
+                  className="animate-row-in group cursor-pointer border-b border-l-2 border-l-transparent border-line-soft transition-colors hover:bg-surface-hover hover:border-l-accent [&>td]:align-top"
                   style={{ animationDelay: `${Math.min(rowIdx, 12) * 28}ms` }}
+                  onClick={(e) => {
+                    // Whole row opens the stock page — unless the click hit a
+                    // real control (checkbox, links, expand chevron, chips).
+                    const el = e.target as HTMLElement;
+                    if (el.closest("a, button, input, [role='button']")) return;
+                    router.push(`/stock/${s.ticker.toLowerCase()}`);
+                  }}
                 >
                   <td className={stickyCellCls}>
                     <div className="flex items-center gap-2">

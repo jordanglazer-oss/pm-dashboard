@@ -2688,7 +2688,7 @@ export default function ResearchPage() {
           <CollapsibleSection
             prefKey="research.fsTop"
             linkedKeys={["research.fsBottom"]}
-            className="border-pos-border min-w-0"
+            className="border-line min-w-0"
             titleClass="text-[15px] font-bold text-pos"
             title={<>Fundstrat Large-Cap Top Ideas</>}
             subtitle={<>Best long ideas — large-cap names</>}
@@ -2793,7 +2793,7 @@ export default function ResearchPage() {
           <CollapsibleSection
             prefKey="research.fsBottom"
             linkedKeys={["research.fsTop"]}
-            className="border-neg-border min-w-0"
+            className="border-line min-w-0"
             titleClass="text-[15px] font-bold text-neg"
             title={<>Fundstrat Large-Cap Bottom Ideas</>}
             subtitle={<>Names to avoid or short — large-cap</>}
@@ -2904,7 +2904,7 @@ export default function ResearchPage() {
           <CollapsibleSection
             prefKey="research.fsSmidTop"
             linkedKeys={["research.fsSmidBottom"]}
-            className="border-pos-border min-w-0"
+            className="border-line min-w-0"
             titleClass="text-[15px] font-bold text-pos"
             title={<>Fundstrat Top SMID-Cap Core Ideas</>}
             subtitle={<>Best long ideas — small/mid-cap names</>}
@@ -3003,7 +3003,7 @@ export default function ResearchPage() {
           <CollapsibleSection
             prefKey="research.fsSmidBottom"
             linkedKeys={["research.fsSmidTop"]}
-            className="border-neg-border min-w-0"
+            className="border-line min-w-0"
             titleClass="text-[15px] font-bold text-neg"
             title={<>Fundstrat Bottom SMID-Cap Core Ideas</>}
             subtitle={<>Names to avoid or short — small/mid-cap</>}
@@ -3114,7 +3114,7 @@ export default function ResearchPage() {
               helper: "Upload a Fundstrat Large-Cap Core Ideas screenshot. On Refresh, ticker + company + sector + DQM rank + momentum + relative perf are extracted and merged.",
               list: sortedLcCore(), rawLen: (state.fundstratLargeCapCore || []).length, view: lcCoreView,
               sort: lcCoreSort, toggle: toggleLcCoreSort, arrow: lcArrow, onAdd: addLcCore, onRemove: removeLcCore,
-              titleClass: "text-[15px] font-bold text-violet", border: "border-violet-border min-w-0",
+              titleClass: "text-[15px] font-bold text-violet", border: "border-line min-w-0",
               th: "text-violet", ticker: "text-violet", rowAlt: "bg-violet-soft/30", rowHover: "hover:bg-violet-soft/60",
             },
             {
@@ -3123,7 +3123,7 @@ export default function ResearchPage() {
               helper: "Upload a Fundstrat SMID Core Ideas screenshot. On Refresh, ticker + company + sector + DQM rank + momentum + relative perf are extracted and merged.",
               list: sortedSmidCore(), rawLen: (state.fundstratSmidCore || []).length, view: smidCoreView,
               sort: smidCoreSort, toggle: toggleSmidCoreSort, arrow: smcArrow, onAdd: addSmidCore, onRemove: removeSmidCore,
-              titleClass: "text-[15px] font-bold text-accent", border: "border-accent-border min-w-0",
+              titleClass: "text-[15px] font-bold text-accent", border: "border-line min-w-0",
               th: "text-accent", ticker: "text-accent", rowAlt: "bg-accent-soft/30", rowHover: "hover:bg-accent-soft/60",
             },
           ]).map((cfg) => (
@@ -3228,7 +3228,7 @@ export default function ResearchPage() {
         {/* ── Tom Lee Focus Areas ── */}
         <CollapsibleSection
           prefKey="research.leeFocus"
-          className="border-warn-border"
+          className="border-line"
           titleClass="text-lg font-bold text-warn"
           title={<>Tom Lee&apos;s Focus Areas</>}
           subtitle={<>Key themes and areas Lee is emphasizing — type freely, these feed into the morning brief</>}
@@ -3290,7 +3290,7 @@ export default function ResearchPage() {
         <CollapsibleSection
           prefKey="research.rbcCa"
           linkedKeys={["research.rbcUs"]}
-          className="border-accent-border min-w-0"
+          className="border-line min-w-0"
           titleClass="text-[15px] font-bold text-accent"
           title={<>RBC Canadian Focus List</>}
           subtitle={<>RBC Capital Markets Canadian equity picks</>}
@@ -3388,7 +3388,7 @@ export default function ResearchPage() {
         <CollapsibleSection
           prefKey="research.rbcUs"
           linkedKeys={["research.rbcCa"]}
-          className="border-accent-border min-w-0"
+          className="border-line min-w-0"
           titleClass="text-[15px] font-bold text-accent"
           title={<>RBC US Focus List</>}
           subtitle={<>RBC Capital Markets US equity picks</>}
@@ -3488,7 +3488,7 @@ export default function ResearchPage() {
         <CollapsibleSection
           prefKey="research.equateCad"
           linkedKeys={["research.equateUsd"]}
-          className="border-accent-border min-w-0"
+          className="border-line min-w-0"
           titleClass="text-[15px] font-bold text-accent"
           title={<>RBC Equate — Canada Large Cap CORE 40</>}
           subtitle={<>RBC Equate Canada Large Cap CORE 40 Model Portfolio</>}
@@ -3570,7 +3570,7 @@ export default function ResearchPage() {
         <CollapsibleSection
           prefKey="research.equateUsd"
           linkedKeys={["research.equateCad"]}
-          className="border-accent-border min-w-0"
+          className="border-line min-w-0"
           titleClass="text-[15px] font-bold text-accent"
           title={<>RBC Equate — U.S. All Cap CORE 40</>}
           subtitle={<>RBC Equate U.S. All Cap CORE 40 Model Portfolio</>}
@@ -3657,7 +3657,7 @@ export default function ResearchPage() {
         <CollapsibleSection
           prefKey="research.jpm"
           linkedKeys={["research.few"]}
-          className="border-warn-border min-w-0"
+          className="border-line min-w-0"
           titleClass="text-[15px] font-bold text-warn"
           title={<>JPM US Equity Analyst Focus List</>}
           subtitle={<>J.P. Morgan US equity analyst focus picks · prices live from FactSet</>}

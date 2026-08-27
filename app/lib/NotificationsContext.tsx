@@ -37,6 +37,9 @@ export type NotificationEvent = {
   source?: string;
   /** ISO timestamp. */
   at: string;
+  /** Quiet events land in the tray (audit trail) but never toast — for
+   *  routine successes where a popup is noise. */
+  quiet?: boolean;
 };
 
 type Ctx = {
