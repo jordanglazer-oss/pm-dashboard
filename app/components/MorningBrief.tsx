@@ -2065,7 +2065,7 @@ export function MorningBrief({
                       return (
                         <div key={h.id} className="flex items-start justify-between gap-2 text-[11px]">
                           <span className="text-ink">
-                            <span className="text-pos font-semibold">🛡 On:</span>{" "}
+                            <span className="text-pos font-semibold">On:</span>{" "}
                             {[h.tenorLabel, h.strikePctOtm != null ? `${h.strikePctOtm}% OTM` : null].filter(Boolean).join(" ")} SPY put
                             {h.premiumUsd != null ? ` · $${h.premiumUsd.toFixed(2)}` : ""}
                             {h.premiumPctOfSpot != null ? ` (${h.premiumPctOfSpot.toFixed(2)}% of spot)` : ""}
@@ -2555,11 +2555,10 @@ export function MorningBrief({
       </div>
       <div className="space-y-6 ">
       {/* Forward View — Next 2 Weeks */}
-      <section className="rounded-card border border-accent-border bg-gradient-to-br from-accent-soft/60 to-white p-4 md:p-5 shadow-sm">
+      <section className="rounded-card border border-line bg-white p-4 md:p-5 shadow-sm">
         <div className="flex flex-wrap items-center justify-between gap-3 mb-3">
           <div className="flex flex-wrap items-center gap-2">
-            <span className="text-base">🧭</span>
-            <h2 className="text-base font-semibold text-ink">Forward View — Multi-Horizon</h2>
+            <h2 className="text-[15px] font-bold text-ink">Forward View — Multi-Horizon</h2>
             {forwardLoading && <span className="text-xs text-accent animate-pulse">Fetching live data...</span>}
             {activeForward && (
               <span
