@@ -2,6 +2,8 @@ import { Providers } from "../providers";
 import { Navigation } from "../components/Navigation";
 import { PortfolioTabs } from "../components/PortfolioTabs";
 import { ResearchTabs } from "../components/ResearchTabs";
+import { IdeasTabs } from "../components/IdeasTabs";
+import { BriefTabs } from "../components/BriefTabs";
 import { ScrollToTop } from "../components/ScrollToTop";
 import { ToastHost } from "../components/ToastHost";
 import { PageTransition } from "../components/PageTransition";
@@ -18,6 +20,8 @@ export default function DashboardLayout({
         <Navigation />
         <PortfolioTabs />
         <ResearchTabs />
+        <IdeasTabs />
+        <BriefTabs />
         <PageTransition>{children}</PageTransition>
         <ScrollToTop />
         <ToastHost />

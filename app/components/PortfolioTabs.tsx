@@ -25,15 +25,18 @@ const useIsoLayoutEffect = typeof window !== "undefined" ? useLayoutEffect : use
 
 // X-ray was removed as a distinct segment — Portfolio X-ray already lives on the
 // Positioning page, so a separate segment was redundant. Positioning owns it.
+// Streamline pass: Rankings → "Holdings"; Allocation + Attribution merge into
+// one "Performance" segment (/aa-performance renders both; the /attribution
+// route still works and highlights Performance); Thesis moves in from the old
+// top-level tab; Methodology moved to the nav's More ⋯ overflow.
 const SEGMENTS: { label: string; href: string }[] = [
-  { label: "Rankings", href: "/" },
+  { label: "Holdings", href: "/" },
   { label: "Positioning", href: "/portfolio" },
   { label: "Models", href: "/pim-model" },
-  { label: "Allocation", href: "/aa-performance" },
-  { label: "Attribution", href: "/attribution" },
+  { label: "Performance", href: "/aa-performance" },
   { label: "Risk", href: "/risk" },
+  { label: "Thesis", href: "/thesis" },
   { label: "Journal", href: "/journal" },
-  { label: "Methodology", href: "/methodology" },
 ];
 
 export function PortfolioTabs() {
@@ -50,18 +53,18 @@ export function PortfolioTabs() {
     pathname === "/aa-performance" ||
     pathname === "/attribution" ||
     pathname === "/risk" ||
-    pathname === "/journal" ||
-    pathname === "/methodology";
+    pathname === "/thesis" ||
+    pathname === "/journal";
 
   // Which segment "owns" the current route (X-ray shares /portfolio with
   // Positioning; it's an in-page anchor, so Positioning is the active one there).
   const activeHref =
     pathname === "/pim-model" ? "/pim-model"
     : pathname === "/aa-performance" ? "/aa-performance"
-    : pathname === "/attribution" ? "/attribution"
+    : pathname === "/attribution" ? "/aa-performance" // merged into Performance
     : pathname === "/risk" ? "/risk"
+    : pathname === "/thesis" ? "/thesis"
     : pathname === "/journal" ? "/journal"
-    : pathname === "/methodology" ? "/methodology"
     : pathname.startsWith("/portfolio") ? "/portfolio"
     : "/"; // "/", "/scoring", "/stock/*"
 
