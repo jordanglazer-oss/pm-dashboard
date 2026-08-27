@@ -8,27 +8,12 @@ import { AttentionPanel } from "@/app/components/AttentionPanel";
 import { ChangeMonitor } from "@/app/components/ChangeMonitor";
 import { ScoreCalibration } from "@/app/components/ScoreCalibration";
 import { ForwardScorePanel } from "@/app/components/ForwardScorePanel";
-import { regimeMultiplier, isOffensiveSector, normalizeSector } from "@/app/lib/scoring";
-import type { Stock, ScoreKey, InstrumentType } from "@/app/lib/types";
-import { INSTRUMENT_LABELS } from "@/app/lib/types";
+import { regimeMultiplier, normalizeSector } from "@/app/lib/scoring";
 import { displayTicker } from "@/app/lib/ticker";
 
-const ZERO_SCORES: Record<ScoreKey, number> = {
-  brand: 0, secular: 0, researchCoverage: 0, marketEdge: 0,
-  analystConsensus: 0, researchMentions: 0,
-  charting: 0, relativeStrength: 0, aiRating: 0, growth: 0,
-  relativeValuation: 0, historicalValuation: 0, leverageCoverage: 0,
-  cashFlowQuality: 0, competitiveMoat: 0, turnaround: 0, catalysts: 0,
-  trackRecord: 0, ownershipTrends: 0,
-};
 
 export default function DashboardPage() {
-  const { scoredStocks, marketData, addStock, updateMarketData, uiPrefs, setUiPref } = useStocks();
-  const [newTicker, setNewTicker] = useState("");
-  const [newBucket, setNewBucket] = useState<"Portfolio" | "Watchlist">("Watchlist");
-  const [detectedType, setDetectedType] = useState<InstrumentType | null>(null);
-  const [newWeight, setNewWeight] = useState("");
-  const [adding, setAdding] = useState(false);
+  const { scoredStocks, marketData, updateMarketData, uiPrefs, setUiPref } = useStocks();
 
   // Thesis-health verdicts (Phase 03) keyed by ticker — surfaced on the score
   // row so a name scoring well whose THESIS is eroding/broken reads differently.
@@ -73,69 +58,10 @@ export default function DashboardPage() {
   // The scoring posture that drives the multiplier math. Distinct from the
   // consolidated label above only when the PM has overridden the suggestion.
   const regime = marketData.riskRegime;
-  const regimeMismatch = consolidatedRegime != null && consolidatedRegime !== regime;
 
   // Portfolio β is now rendered inside PortfolioOverview next to the
   // Sector Exposure header — kept alongside other portfolio-level risk
   // context rather than in the market regime card.
-
-  async function handleAdd() {
-    const ticker = newTicker.trim().toUpperCase();
-    if (!ticker) return;
-    if (scoredStocks.some((s) => s.ticker === ticker)) {
-      alert(`${ticker} is already in your list.`);
-      return;
-    }
-
-    setAdding(true);
-
-    // Fetch company name, sector, and instrument type from Yahoo Finance
-    let name = ticker;
-    let sector = "Technology";
-    let instrumentType: InstrumentType = detectedType || "stock";
-    try {
-      const res = await fetch(`/api/company-name?tickers=${encodeURIComponent(ticker)}`);
-      if (res.ok) {
-        const data = await res.json();
-        if (data.names?.[ticker]) name = data.names[ticker];
-        if (data.sectors?.[ticker]) sector = data.sectors[ticker];
-        if (data.types?.[ticker]) instrumentType = data.types[ticker] as InstrumentType;
-      }
-    } catch { /* fallback to ticker */ }
-
-    const isFund = instrumentType === "etf" || instrumentType === "mutual-fund";
-    const weight = isFund && newWeight ? parseFloat(newWeight) : (newBucket === "Portfolio" ? 2 : 0);
-
-    const stock: Stock = {
-      ticker,
-      name,
-      instrumentType,
-      bucket: newBucket,
-      sector: isFund ? "" : sector,
-      beta: 1.0,
-      weights: { portfolio: weight },
-      scores: { ...ZERO_SCORES },
-      notes: "",
-    };
-    addStock(stock);
-    setNewTicker("");
-    setNewWeight("");
-    setDetectedType(null);
-    setAdding(false);
-  }
-
-  // Auto-detect instrument type when ticker changes
-  async function detectType(ticker: string) {
-    if (!ticker || ticker.length < 1) { setDetectedType(null); return; }
-    try {
-      const res = await fetch(`/api/company-name?tickers=${encodeURIComponent(ticker)}`);
-      if (res.ok) {
-        const data = await res.json();
-        const t = data.types?.[ticker] as InstrumentType | undefined;
-        setDetectedType(t || null);
-      }
-    } catch { setDetectedType(null); }
-  }
 
   return (
     <main className="min-h-screen bg-ground px-4 py-6 text-ink md:px-8 md:py-8 overflow-x-hidden">
@@ -146,7 +72,11 @@ export default function DashboardPage() {
             Every regime signal/horizon is preserved (RegimeStrip renders bare
             inside it); reads /api/market-regime (cached in pm:market-regime) and
             silently hides the regime row on fetch failure. */}
-        <CockpitBand />
+        <CockpitBand
+          posture={regime}
+          consolidatedRegime={consolidatedRegime}
+          onApplyPosture={() => consolidatedRegime && updateMarketData({ riskRegime: consolidatedRegime })}
+        />
 
         {/* Proactive "needs your attention" digest (Phase 07) — sits right
             under the cockpit; renders only when there's something actionable,
@@ -155,119 +85,6 @@ export default function DashboardPage() {
 
         {/* Change monitor moved into the Rankings cockpit's right sidebar
             (passed to PortfolioOverview below) alongside Sector Exposure. */}
-
-        {/* ── Add Stock + Regime Banner ── */}
-        <div className="grid gap-4 lg:grid-cols-2">
-
-          {/* Add Holding Card */}
-          <div className="rounded-card border border-line bg-surface p-4 shadow-sm">
-            <div className="mb-2 flex items-baseline gap-2">
-              <h2 className="text-sm font-bold text-ink">Add a Holding</h2>
-              {detectedType && detectedType !== "stock" ? (
-                <span className="text-[11px] font-medium text-warn">No auto-scoring for {INSTRUMENT_LABELS[detectedType]}s — set weight</span>
-              ) : (
-                <span className="text-[11px] text-ink-3">ticker · ETF · FUNDSERV code</span>
-              )}
-            </div>
-            <div className="flex flex-wrap gap-3">
-              <div className="relative flex-1 min-w-[120px]">
-                <input
-                  value={newTicker}
-                  onChange={(e) => setNewTicker(e.target.value.toUpperCase())}
-                  onBlur={() => newTicker.trim() && detectType(newTicker.trim().toUpperCase())}
-                  onKeyDown={(e) => e.key === "Enter" && handleAdd()}
-                  placeholder="e.g. AAPL, SPY, TDB900"
-                  className="w-full rounded-control border border-line bg-surface px-4 py-2.5 text-sm outline-none placeholder:text-ink-3 focus:border-accent focus:ring-1 focus:ring-accent-soft"
-                />
-                {detectedType && detectedType !== "stock" && (
-                  <span className={`absolute right-2 top-1/2 -translate-y-1/2 rounded-md px-2 py-0.5 text-[10px] font-bold ${detectedType === "etf" ? "bg-accent-soft text-accent-ink" : "bg-violet-soft text-violet"}`}>
-                    {INSTRUMENT_LABELS[detectedType]}
-                  </span>
-                )}
-              </div>
-              <select
-                value={newBucket}
-                onChange={(e) => setNewBucket(e.target.value as "Portfolio" | "Watchlist")}
-                className="rounded-control border border-line bg-surface px-3 py-2.5 text-sm"
-              >
-                <option>Portfolio</option>
-                <option>Watchlist</option>
-              </select>
-              {detectedType && detectedType !== "stock" && (
-                <input
-                  value={newWeight}
-                  onChange={(e) => setNewWeight(e.target.value)}
-                  placeholder="Weight %"
-                  type="number"
-                  step="0.1"
-                  min="0"
-                  className="w-24 rounded-control border border-line bg-surface px-3 py-2.5 text-sm outline-none placeholder:text-ink-3 focus:border-accent focus:ring-1 focus:ring-accent-soft"
-                />
-              )}
-              <button
-                onClick={handleAdd}
-                disabled={adding}
-                className="rounded-control bg-accent px-5 py-2.5 text-sm font-semibold text-white hover:bg-accent-ink transition-colors disabled:opacity-50"
-              >
-                {adding ? "Adding..." : "Add"}
-              </button>
-            </div>
-          </div>
-
-          {/* Regime Info Card — the HEADLINE is the consolidated regime (the one
-              canonical label, matching the cockpit). The scoring posture below
-              is the multiplier knob that drives score math; it auto-suggests
-              from the consolidated label but the PM can override it. */}
-          {(() => {
-            const headline = consolidatedRegime ?? regime;
-            const tone = (r: string) =>
-              r === "Risk-Off"
-                ? { card: "border-neg-border bg-neg-soft", pill: "bg-neg-soft text-neg" }
-                : r === "Neutral"
-                ? { card: "border-warn-border bg-warn-soft", pill: "bg-warn-soft text-warn" }
-                : { card: "border-pos-border bg-pos-soft", pill: "bg-pos-soft text-pos" };
-            const postureNote =
-              regime === "Risk-Off"
-                ? "Defensive tilt — growth & cyclical sectors penalized, defensives boosted."
-                : regime === "Neutral"
-                ? "No regime adjustment — scores driven by fundamentals & quality (all 1.0×)."
-                : "Growth-favoring — growth & cyclicals boosted, defensives trimmed.";
-            return (
-          <div className={`rounded-card border p-5 shadow-sm ${tone(headline).card}`}>
-            <div className="flex items-center gap-3 mb-3">
-              <h2 className="text-lg font-bold text-ink">Market Regime</h2>
-              <span className={`rounded-full px-3 py-1 text-xs font-bold ${tone(headline).pill}`}>
-                {headline}
-              </span>
-              {consolidatedRegime && <span className="text-[10px] font-medium uppercase tracking-wider text-ink-3">regime engine</span>}
-            </div>
-
-            {/* Scoring posture — what actually drives the multipliers. */}
-            <div className="rounded-control border border-line-soft bg-surface/60 px-3 py-2.5">
-              <div className="flex flex-wrap items-center gap-2">
-                <span className="text-[11px] font-semibold uppercase tracking-wide text-ink-3">Scoring posture</span>
-                <span className={`rounded-full px-2 py-0.5 text-[11px] font-bold ${tone(regime).pill}`}>{regime}</span>
-                {regimeMismatch ? (
-                  <button
-                    onClick={() => consolidatedRegime && updateMarketData({ riskRegime: consolidatedRegime })}
-                    className="rounded-pill bg-accent px-2.5 py-0.5 text-[11px] font-semibold text-white hover:bg-accent-ink transition-colors"
-                    title={`Set the scoring posture to ${consolidatedRegime} to match the regime engine. This changes the multipliers applied to every stock score.`}
-                  >
-                    Engine suggests {consolidatedRegime} — Apply
-                  </button>
-                ) : (
-                  consolidatedRegime && <span className="text-[11px] text-ink-3">in sync with the engine</span>
-                )}
-              </div>
-              <p className="mt-1.5 text-sm text-ink-2">
-                {postureNote}{" "}
-                <a href="#regime-detail" className="font-semibold text-accent hover:underline whitespace-nowrap">Per-stock detail ↓</a>
-              </p>
-            </div>
-          </div>
-            );
-          })()}
-        </div>
 
         {/* ── Portfolio Overview ── */}
         <PortfolioOverview sidebar={<ChangeMonitor />} />
