@@ -3,6 +3,8 @@
 import { useState, FormEvent } from "react";
 import { useRouter } from "next/navigation";
 
+/** Precision Light login — the last screen still wearing the old dark theme.
+ *  Same auth flow (POST /api/auth → cookie); styling only. */
 export default function LoginPage() {
   const [password, setPassword] = useState("");
   const [error, setError] = useState("");
@@ -35,33 +37,44 @@ export default function LoginPage() {
   }
 
   return (
-    <div className="min-h-screen flex items-center justify-center bg-[#0f172a]">
+    <div className="flex min-h-screen items-center justify-center bg-ground px-4">
       <div className="w-full max-w-sm">
-        <div className="bg-white rounded-2xl shadow-xl p-8">
-          <h1 className="text-2xl font-bold text-slate-900 mb-1">PIM Scoring System</h1>
-          <p className="text-sm text-slate-500 mb-6">Enter the team password to continue</p>
+        <div className="mb-6 flex items-center justify-center gap-2.5">
+          <span className="grid h-9 w-9 place-items-center rounded-[9px] bg-accent text-[17px] font-bold text-white">P</span>
+          <span className="text-xl font-bold tracking-tight text-ink">PIM Dashboard</span>
+        </div>
+        <div className="rounded-card border border-line bg-surface p-7 shadow-card">
+          <h1 className="text-[15px] font-bold text-ink">Team access</h1>
+          <p className="mt-1 text-xs text-ink-3">Enter the team password to continue</p>
 
-          <form onSubmit={handleSubmit} className="space-y-4">
-            <input
-              type="password"
-              value={password}
-              onChange={(e) => setPassword(e.target.value)}
-              placeholder="Password"
-              autoFocus
-              className="w-full px-4 py-3 rounded-lg border border-slate-300 text-slate-900 placeholder-slate-400 focus:outline-none focus:ring-2 focus:ring-indigo-500 focus:border-transparent"
-            />
+          <form onSubmit={handleSubmit} className="mt-5 space-y-4">
+            <div>
+              <label htmlFor="password" className="mb-1.5 block text-[11px] font-semibold text-ink-2">
+                Password
+              </label>
+              <input
+                id="password"
+                type="password"
+                value={password}
+                onChange={(e) => setPassword(e.target.value)}
+                placeholder="••••••••"
+                autoFocus
+                className="w-full rounded-control border border-line bg-surface px-3.5 py-2.5 text-sm text-ink outline-none placeholder:text-ink-faint focus:border-accent focus:ring-1 focus:ring-accent-soft"
+              />
+            </div>
 
-            {error && <p className="text-red-500 text-sm">{error}</p>}
+            {error && <p className="text-sm text-neg">{error}</p>}
 
             <button
               type="submit"
               disabled={loading || !password}
-              className="w-full py-3 rounded-lg bg-indigo-600 text-white font-semibold hover:bg-indigo-700 transition disabled:opacity-50 disabled:cursor-not-allowed"
+              className="w-full rounded-control bg-accent py-2.5 text-sm font-semibold text-white transition-colors hover:bg-accent-ink disabled:cursor-not-allowed disabled:opacity-50"
             >
-              {loading ? "Verifying..." : "Enter"}
+              {loading ? "Checking…" : "Enter"}
             </button>
           </form>
         </div>
+        <p className="mt-4 text-center text-[11px] text-ink-3">Private team tool · sessions persist on this device</p>
       </div>
     </div>
   );

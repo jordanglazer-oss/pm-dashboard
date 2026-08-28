@@ -1,6 +1,6 @@
 "use client";
 
-import { Fragment, useCallback, useEffect, useMemo, useState } from "react";
+import { Fragment, useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { IdeasRail } from "@/app/components/IdeasRail";
 import { useStocks } from "@/app/lib/StockContext";
 import { displayTicker } from "@/app/lib/ticker";
@@ -311,6 +311,24 @@ export default function SynthesisPage() {
   const [generating, setGenerating] = useState<Set<string>>(new Set());
   const [genErrors, setGenErrors] = useState<Record<string, string>>({});
 
+  // Deep-link support: /synthesis?ticker=CSU.TO&from=stock — show a
+  // "back to the stock page" button and scroll/open that name's row.
+  const [focusTicker, setFocusTicker] = useState<string | null>(null);
+  const focusedOnce = useRef(false);
+  useEffect(() => {
+    const p = new URLSearchParams(window.location.search);
+    const t = p.get("ticker");
+    if (t) setFocusTicker(t);
+  }, []);
+  useEffect(() => {
+    if (!focusTicker || !data || focusedOnce.current) return;
+    focusedOnce.current = true;
+    const t = focusTicker.toUpperCase();
+    setExpanded((prev) => new Set([...prev, t]));
+    setTimeout(() => document.getElementById(`syn-${t}`)?.scrollIntoView({ behavior: "smooth", block: "center" }), 150);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [focusTicker, data]);
+
   const load = useCallback(async () => {
     try {
       const res = await fetch("/api/synthesis-screen");
@@ -558,7 +576,8 @@ export default function SynthesisPage() {
                 return (
                   <Fragment key={row.ticker}>
                     <div
-                      className="flex cursor-pointer flex-wrap items-center gap-2 px-3 py-2 hover:bg-surface-2"
+                      id={`syn-${row.ticker.toUpperCase()}`}
+                      className="flex scroll-mt-24 cursor-pointer flex-wrap items-center gap-2 px-3 py-2 hover:bg-surface-2"
                       onClick={() => toggle(row.ticker)}
                     >
                       <div className="w-40 shrink-0">

@@ -67,7 +67,7 @@ export function StockSynthesisTile({ ticker, className }: { ticker: string; clas
         {stale && <span className="rounded-full bg-warn-soft px-2 py-0.5 text-[10px] font-bold text-warn">Stale</span>}
         <span className="ml-auto flex items-center gap-2 text-[11px] text-ink-3">
           {updated && <span>updated {updated}</span>}
-          <Link href="/synthesis" className="font-semibold !text-accent hover:underline">Full record →</Link>
+          <Link href={`/synthesis?ticker=${encodeURIComponent(canonicalTicker(ticker))}&from=stock`} className="font-semibold !text-accent hover:underline">Full record →</Link>
         </span>
       </div>
       <div className="space-y-2 px-5 py-4">
