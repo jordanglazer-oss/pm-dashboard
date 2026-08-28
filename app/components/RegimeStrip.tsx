@@ -96,11 +96,13 @@ export function RegimeStrip({ bare = false }: { bare?: boolean } = {}) {
           </span>
         </div>
 
-        <div className="flex min-w-0 flex-1 flex-wrap gap-1.5 sm:gap-2">
+        {/* Signal pills — back by PM preference, one size smaller than the
+            originals; whitespace-nowrap so the text always fits its pill. */}
+        <div className="flex min-w-0 flex-1 flex-wrap gap-1.5">
           {regime.composite.signals.map((s, i) => (
             <span
               key={i}
-              className={`inline-flex max-w-full items-center gap-1 rounded-full border px-2 py-0.5 text-[11px] sm:gap-1.5 sm:px-3 sm:py-1 sm:text-xs ${pillClasses(s.direction)}`}
+              className={`inline-flex max-w-full items-center gap-1 whitespace-nowrap rounded-full border px-2 py-[3px] text-[10.5px] leading-none ${pillClasses(s.direction)}`}
               title={s.detail}
             >
               <span className="truncate font-semibold">{s.name}</span>

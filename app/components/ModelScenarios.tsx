@@ -34,7 +34,12 @@ import type {
  * real model stays a manual edit in the models table, on purpose.
  */
 
-type Props = { groups: PimModelGroup[] };
+type Props = {
+  groups: PimModelGroup[];
+  /** In the Models-page subwindow the scratchpad renders fully open with no
+   *  inner "Scenarios · Show" tile — the window itself is the opt-in. */
+  alwaysOpen?: boolean;
+};
 
 // Mirrors PimModel's own labels/colors on purpose: the scenario result is
 // meant to be read side-by-side with the model table, so it uses the same
@@ -99,7 +104,7 @@ const pct = (v: number) => fmtPct2(v);
 const yahooSymbol = (s: string) =>
   s.endsWith("-T") ? s.replace("-T", ".TO") : s.endsWith(".U") ? s.replace(".U", "-U.TO") : s;
 
-export function ModelScenarios({ groups }: Props) {
+export function ModelScenarios({ groups, alwaysOpen = false }: Props) {
   const { stocks } = useStocks();
   const searchParams = useSearchParams();
 
@@ -884,7 +889,8 @@ export function ModelScenarios({ groups }: Props) {
   if (!group) return null;
 
   return (
-    <div className="mt-6 rounded-lg border border-line bg-white">
+    <div className={alwaysOpen ? "" : "mt-6 rounded-lg border border-line bg-white"}>
+      {!alwaysOpen && (
       <button
         onClick={() => setOpen((v) => !v)}
         className="flex w-full items-center justify-between px-4 py-3 text-left"
@@ -898,9 +904,10 @@ export function ModelScenarios({ groups }: Props) {
         </div>
         <span className="text-xs text-ink-3">{open ? "Hide" : "Show"}</span>
       </button>
+      )}
 
-      {open && (
-        <div className="border-t border-line-soft px-4 py-4">
+      {(open || alwaysOpen) && (
+        <div className={alwaysOpen ? "" : "border-t border-line-soft px-4 py-4"}>
           {/* Basis + residual */}
           {/* Each label + control stays glued together while the ROW wraps, so
               on a phone the settings read as a stacked list rather than a

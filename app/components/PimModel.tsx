@@ -48,6 +48,21 @@ type Props = {
   groups: PimModelGroup[];
 };
 
+/** Locked specialty symbols — weights set by the per-group Balanced % input,
+ *  never by residual math (mirrors StockContext's locked set; display-only). */
+const WEIGHT_MATH_LOCKED = new Set(["FID5982", "FID5982-T", "GRNJ"]);
+const REF_PER_STOCK = 0.018182;
+
+/** How a holding's weight is derived — the "weight math" column. */
+function weightMathLabel(h: { symbol: string; assetClass: string; weightInClass: number }): { text: string; cls: string } {
+  if (h.assetClass !== "equity") {
+    return { text: h.assetClass === "fixedIncome" ? "FI sleeve" : "Alt sleeve", cls: "bg-surface-2 text-ink-3 border-line-soft" };
+  }
+  if (WEIGHT_MATH_LOCKED.has(h.symbol)) return { text: "🔒 Balanced %", cls: "bg-warn-soft text-warn border-warn-border" };
+  if (Math.abs(h.weightInClass - REF_PER_STOCK) < 0.0005) return { text: "Stock · 1.82%", cls: "bg-surface-2 text-ink-2 border-line-soft" };
+  return { text: "ETF · residual", cls: "bg-accent-soft text-accent-ink border-accent-border" };
+}
+
 const PROFILE_LABELS: Record<PimProfileType, string> = {
   conservative: "Conservative",
   balanced: "Balanced",
@@ -93,6 +108,8 @@ function SortIcon({ field, sortField, sortDir }: { field: SortField; sortField: 
 
 export function PimModel({ groups }: Props) {
   const { getGroupState, uiPrefs, setUiPref, addStock, stocks, pimPortfolioState } = useStocks();
+  // "Weight math" column — hidden by default, toggled per user via pm:ui-prefs.
+  const showWeightMath = uiPrefs["models.showWeightMath"] === "1";
   const [selectedGroupId, setSelectedGroupId] = useState(groups[0]?.id || "");
   const [selectedProfile, setSelectedProfile] = useState<PimProfileType>("balanced");
   const [dropdownOpen, setDropdownOpen] = useState(false);
@@ -1352,12 +1369,20 @@ export function PimModel({ groups }: Props) {
 
         return (
           <div key={ac} className="rounded-card border border-line bg-white shadow-sm overflow-hidden">
-            <div className={`${colors.header} px-5 py-3 flex items-center justify-between`}>
-              <h3 className="text-sm font-bold">
+            <div className="flex items-center justify-between border-b border-line-soft bg-white px-5 py-3">
+              <h3 className="flex items-center gap-2 text-sm font-bold text-ink">
+                <span className={`inline-block h-2 w-2 rounded-full ${colors.bar}`} aria-hidden />
                 {ASSET_CLASS_LABELS[ac]}
                 <span className="ml-2 font-normal text-xs opacity-70">({holdings.length} holdings)</span>
               </h3>
               <div className="flex items-center gap-4 text-xs">
+                <button
+                  onClick={() => setUiPref("models.showWeightMath", showWeightMath ? "0" : "1")}
+                  className={`rounded-pill border px-2 py-0.5 text-[11px] font-semibold transition-colors ${showWeightMath ? "border-accent-border bg-accent-soft text-accent-ink" : "border-line bg-white text-ink-3 hover:text-ink"}`}
+                  title="Show how each weight is derived: stocks locked at 1.82% of class, locked specialty funds set by the Balanced % input, ETFs absorbing the residual"
+                >
+                  Weight math {showWeightMath ? "on" : "off"}
+                </button>
                 <span>
                   Class Weight Check:{" "}
                   {/* Colour is driven by the number actually shown, so the two
@@ -1384,6 +1409,9 @@ export function PimModel({ groups }: Props) {
                     <th className={`text-center ${thClass}`} onClick={() => handleSort("currency")}>
                       Ccy<SortIcon field="currency" sortField={sortField} sortDir={sortDir} />
                     </th>
+                    {showWeightMath && (
+                      <th className="py-2.5 px-2 text-left text-xs font-semibold whitespace-nowrap">Weight math</th>
+                    )}
                     <th className={`text-right ${thClass}`} onClick={() => handleSort("weightInPortfolio")}>
                       Target Wt<SortIcon field="weightInPortfolio" sortField={sortField} sortDir={sortDir} />
                     </th>
@@ -1458,6 +1486,14 @@ export function PimModel({ groups }: Props) {
                       <td className="py-2 px-2 text-center">
                         <span className={`inline-block rounded px-1.5 py-0.5 text-[10px] font-bold ${h.currency === "CAD" ? "bg-neg-soft text-neg" : "bg-pos-soft text-pos"}`}>{h.currency}</span>
                       </td>
+                      {showWeightMath && (
+                        <td className="py-2 px-2 whitespace-nowrap">
+                          {(() => {
+                            const wm = weightMathLabel(h);
+                            return <span className={`inline-block rounded-pill border px-2 py-0.5 text-[10px] font-semibold ${wm.cls}`}>{wm.text}</span>;
+                          })()}
+                        </td>
+                      )}
                       <td className="py-2 px-2 text-right font-mono text-xs font-semibold">{fmtPct2(dTarget.values[i])}</td>
                       {activeProfile !== "alpha" && activeProfile !== "core" && (
                         <td className="py-2 px-2 text-right font-mono text-xs">
@@ -1496,7 +1532,7 @@ export function PimModel({ groups }: Props) {
                     </tr>
                   ))}
                   <tr className={`${colors.bg} font-semibold`}>
-                    <td className="py-2 pl-5 pr-2 text-xs text-ink-3" colSpan={3}>TOTAL</td>
+                    <td className="py-2 pl-5 pr-2 text-xs text-ink-3" colSpan={showWeightMath ? 4 : 3}>TOTAL</td>
                     <td className="py-2 px-2 text-right font-mono text-xs font-bold">{fmtPct2(dTarget.total)}</td>
                     {activeProfile !== "alpha" && activeProfile !== "core" && (
                       <td className="py-2 px-2 text-right font-mono text-xs font-bold">

@@ -22,7 +22,18 @@ const MODELS: { label: string; profile: PimProfileType }[] = [
   { label: "Core", profile: "core" },
 ];
 
-export function CockpitBand() {
+export function CockpitBand({
+  posture,
+  consolidatedRegime,
+  onApplyPosture,
+}: {
+  /** The scoring posture that drives multiplier math (marketData.riskRegime). */
+  posture?: string;
+  /** The canonical regime-engine label, when loaded. */
+  consolidatedRegime?: string | null;
+  /** Sets the posture to the engine's suggestion. */
+  onApplyPosture?: () => void;
+} = {}) {
   // Fixed number of hook calls in a stable order (Rules of Hooks) — same as the
   // old ModelReturnsStrip; the hook dedupes the underlying price fetch per key.
   const balanced = useLiveTodayReturn("pim", "balanced");
@@ -71,6 +82,33 @@ export function CockpitBand() {
       <div className="px-3 py-3 sm:px-4">
         <RegimeStrip bare />
       </div>
+
+      {/* Row 3 — scoring posture. This is the one control the old Market
+          Regime card carried: the knob that actually drives score
+          multipliers, with a one-click apply when it disagrees with the
+          regime engine. Renders only when the dashboard passes it in. */}
+      {posture && (
+        <div className="flex flex-wrap items-center gap-2 border-t border-line-soft px-4 py-2.5">
+          <span className="text-[11px] font-semibold uppercase tracking-wide text-ink-3">Scoring posture</span>
+          <span className={`rounded-full px-2.5 py-0.5 text-[11px] font-bold ${
+            posture === "Risk-Off" ? "bg-neg-soft text-neg"
+            : posture === "Neutral" ? "bg-warn-soft text-warn"
+            : "bg-pos-soft text-pos"
+          }`}>{posture}</span>
+          {consolidatedRegime && consolidatedRegime !== posture ? (
+            <button
+              onClick={onApplyPosture}
+              className="rounded-pill bg-accent px-2.5 py-0.5 text-[11px] font-semibold text-white hover:bg-accent-ink transition-colors"
+              title={`Set the scoring posture to ${consolidatedRegime} to match the regime engine. This changes the multipliers applied to every stock score.`}
+            >
+              Engine suggests {consolidatedRegime} — Apply
+            </button>
+          ) : (
+            consolidatedRegime && <span className="text-[11px] text-ink-3">in sync with the engine</span>
+          )}
+          <a href="#regime-detail" className="ml-auto text-[11px] font-semibold text-accent hover:underline">Per-stock detail ↓</a>
+        </div>
+      )}
     </section>
   );
 }

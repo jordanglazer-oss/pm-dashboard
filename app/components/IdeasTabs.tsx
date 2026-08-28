@@ -2,25 +2,30 @@
 
 import Link from "next/link";
 import { useEffect, useLayoutEffect, useRef, useState } from "react";
-import { usePathname } from "next/navigation";
+import { usePathname, useRouter } from "next/navigation";
 
 const useIsoLayoutEffect = typeof window !== "undefined" ? useLayoutEffect : useEffect;
 
 /**
- * Sub-navigation for the Research area. Inbox was consolidated from a top-level
- * nav tab into a sub-tab of Research (analyst-report ingestion feeds the same
- * research workflow). This bar shows on /research and /inbox and lets the PM
- * switch between the source lists and the Inbox. Self-hides everywhere else.
- * Mirrors the PortfolioTabs pattern, including the sliding active-tab pill (#15).
+ * Segmented switcher for the "Ideas" hub — one home for every surface that
+ * feeds the watchlist. Synthesis / Pipeline / Screener / Factor Lab keep
+ * their existing routes; Radar and Setups (previously embedded as buckets
+ * inside the Rankings table) get proper routes of their own. Mirrors the
+ * PortfolioTabs pattern, including the sliding pill and Shift+←/→.
  */
 const SEGMENTS: { label: string; href: string }[] = [
-  { label: "Sources", href: "/research" },
-  { label: "Inbox", href: "/inbox" },
+  { label: "Synthesis", href: "/synthesis" },
+  { label: "Pipeline", href: "/conviction" },
+  { label: "Screener", href: "/screener" },
+  { label: "Radar", href: "/radar" },
+  { label: "Setups", href: "/setups" },
+  { label: "Factor Lab", href: "/factor-lab" },
 ];
 
-export function ResearchTabs() {
+export function IdeasTabs() {
   const pathname = usePathname();
-  const isVisible = pathname === "/research" || pathname === "/inbox";
+  const router = useRouter();
+  const isVisible = SEGMENTS.some((s) => s.href === pathname);
   const activeIdx = Math.max(0, SEGMENTS.findIndex((s) => s.href === pathname));
 
   const tabRefs = useRef<(HTMLAnchorElement | null)[]>([]);
@@ -36,14 +41,33 @@ export function ResearchTabs() {
     return () => cancelAnimationFrame(raf);
   }, [isVisible]);
 
+  // Shift + ← / → jumps between Ideas segments, same as the Portfolio hub.
+  useEffect(() => {
+    if (!isVisible) return;
+    function onKey(e: globalThis.KeyboardEvent) {
+      if (!e.shiftKey || (e.key !== "ArrowLeft" && e.key !== "ArrowRight")) return;
+      const t = e.target as HTMLElement | null;
+      const tag = t?.tagName?.toLowerCase();
+      if (tag === "input" || tag === "textarea" || tag === "select" || t?.isContentEditable) return;
+      const idx = Math.max(0, SEGMENTS.findIndex((s) => s.href === pathname));
+      const next = e.key === "ArrowRight"
+        ? (idx + 1) % SEGMENTS.length
+        : (idx - 1 + SEGMENTS.length) % SEGMENTS.length;
+      e.preventDefault();
+      router.push(SEGMENTS[next].href);
+    }
+    window.addEventListener("keydown", onKey);
+    return () => window.removeEventListener("keydown", onKey);
+  }, [isVisible, pathname, router]);
+
   if (!isVisible) return null;
 
   return (
     <div className="bg-surface border-b border-line print:hidden">
-      <div className="mx-auto max-w-[88rem] px-4 md:px-8 pt-3.5">
+      <div className="mx-auto max-w-7xl px-4 md:px-8 pt-3.5">
         <div>
-          <h1 className="text-[22px] font-bold tracking-tight text-ink leading-none">Research</h1>
-          <p className="mt-1.5 text-xs text-ink-3">Screenshots in, structured lists out · synthesis anchored to today&apos;s brief</p>
+          <h1 className="text-[22px] font-bold tracking-tight text-ink leading-none">Ideas</h1>
+          <p className="mt-1.5 text-xs text-ink-3">Where the next name comes from — six feeds into one watchlist</p>
         </div>
         <div className="flex items-center gap-2 overflow-x-auto pb-2 pt-2.5">
           <div className="relative flex items-center gap-0.5 rounded-control border border-line bg-surface-2 p-0.5 shrink-0">

@@ -249,7 +249,7 @@ export default function HedgingDashboard() {
         {/* Header */}
         <div className="mb-5 flex flex-col gap-3 sm:flex-row sm:items-end sm:justify-between">
           <div>
-            <h1 className="text-2xl font-bold text-ink">Hedging</h1>
+            <h1 className="text-[15px] font-bold text-ink">Hedging</h1>
             <p className="text-sm text-ink-3 mt-1">
               SPY protective put premiums · ATM / ~5% OTM / ~10% OTM · strikes rounded to nearest $5
             </p>
@@ -275,24 +275,24 @@ export default function HedgingDashboard() {
 
         {/* Spot + summary */}
         {data && (
-          <div className="grid grid-cols-2 sm:grid-cols-4 gap-3 mb-5">
-            <div className="rounded-card border border-line bg-white px-3 py-2.5 shadow-sm">
+          <div className="mb-5 grid grid-cols-2 overflow-hidden rounded-card border border-line bg-white shadow-sm sm:grid-cols-4">
+            <div className="-ml-px -mt-px border-l border-t border-line-soft px-3 py-2.5">
               <div className="text-[10px] font-semibold text-ink-3 uppercase tracking-wider">SPY Spot</div>
               <div className="text-sm font-bold mt-0.5 text-ink">${data.spotPrice.toFixed(2)}</div>
             </div>
-            <div className="rounded-card border border-line bg-white px-3 py-2.5 shadow-sm">
+            <div className="-ml-px -mt-px border-l border-t border-line-soft px-3 py-2.5">
               <div className="text-[10px] font-semibold text-ink-3 uppercase tracking-wider">ATM Strike</div>
               <div className="text-sm font-bold mt-0.5 text-ink">
                 ${data.quotes[0] ? data.quotes[0].atmStrike : "—"}
               </div>
             </div>
-            <div className="rounded-card border border-line bg-white px-3 py-2.5 shadow-sm">
+            <div className="-ml-px -mt-px border-l border-t border-line-soft px-3 py-2.5">
               <div className="text-[10px] font-semibold text-ink-3 uppercase tracking-wider">~5% OTM Strike</div>
               <div className="text-sm font-bold mt-0.5 text-ink">
                 ${data.quotes[0] ? data.quotes[0].otm5Strike : "—"}
               </div>
             </div>
-            <div className="rounded-card border border-line bg-white px-3 py-2.5 shadow-sm">
+            <div className="-ml-px -mt-px border-l border-t border-line-soft px-3 py-2.5">
               <div className="text-[10px] font-semibold text-ink-3 uppercase tracking-wider">~10% OTM Strike</div>
               <div className="text-sm font-bold mt-0.5 text-ink">
                 ${data.quotes[0] ? data.quotes[0].otm10Strike : "—"}

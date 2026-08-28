@@ -1,6 +1,7 @@
 "use client";
 
 import React, { useState, useEffect, useCallback, useRef, useMemo } from "react";
+import { Attribution } from "@/app/components/Attribution";
 import Link from "next/link";
 import { ImageUpload, type BriefAttachment } from "@/app/components/ImageUpload";
 import { useStocks } from "@/app/lib/StockContext";
@@ -975,51 +976,12 @@ export default function AAPerformancePage() {
   }
 
   return (
-    <div className="space-y-8 pb-12">
-      {/* ── Asset Allocation Section ── */}
-      <section>
-        <div className="flex items-baseline justify-between mb-4">
-          <h2 className="text-xl font-bold text-ink">Asset Allocation</h2>
-          <p className="text-xs text-ink-3">
-            <span className="text-pos font-semibold">Current</span> row edits the PIM Model profile weights.
-            {pimModels.lastUpdated && (
-              <>
-                {" "}Last saved{" "}
-                <span className="font-mono">
-                  {new Date(pimModels.lastUpdated).toLocaleTimeString()}
-                </span>
-              </>
-            )}
-          </p>
-        </div>
-        <div className="grid grid-cols-1 sm:grid-cols-2 xl:grid-cols-4 gap-4">
-          <AllocationTableCard
-            title="Conservative"
-            table={displayedAllocations.conservative}
-            onUpdate={(rowKey, colKey, value) => updateAllocation("conservative", rowKey, colKey, value)}
-          />
-          <AllocationTableCard
-            title="Balanced"
-            table={displayedAllocations.balanced}
-            onUpdate={(rowKey, colKey, value) => updateAllocation("balanced", rowKey, colKey, value)}
-          />
-          <AllocationTableCard
-            title="Growth"
-            table={displayedAllocations.growth}
-            onUpdate={(rowKey, colKey, value) => updateAllocation("growth", rowKey, colKey, value)}
-          />
-          <AllocationTableCard
-            title="All-Equity"
-            table={displayedAllocations.allEquity}
-            onUpdate={(rowKey, colKey, value) => updateAllocation("allEquity", rowKey, colKey, value)}
-          />
-        </div>
-      </section>
-
+    <main className="min-h-screen bg-ground px-4 py-6 text-ink md:px-8 md:py-8 overflow-x-hidden">
+    <div className="mx-auto max-w-7xl space-y-8 pb-12">
       {/* ── Performance Section ── */}
       <section>
         <div className="flex items-center gap-2 mb-4">
-          <h2 className="text-xl font-bold text-ink">Performance</h2>
+          <h2 className="text-[15px] font-bold text-ink">Performance</h2>
           {(pimLoading || indexLoading) && (
             <span className="text-xs text-ink-3 animate-pulse">refreshing…</span>
           )}
@@ -1071,6 +1033,60 @@ export default function AAPerformancePage() {
         </div>
       </section>
 
+      {/* ── Asset Allocation Section ── */}
+      <section>
+        <div className="flex items-baseline justify-between mb-4">
+          <h2 className="text-[15px] font-bold text-ink">Asset Allocation</h2>
+          <p className="text-xs text-ink-3">
+            <span className="text-pos font-semibold">Current</span> row edits the PIM Model profile weights.
+            {pimModels.lastUpdated && (
+              <>
+                {" "}Last saved{" "}
+                <span className="font-mono">
+                  {new Date(pimModels.lastUpdated).toLocaleTimeString()}
+                </span>
+              </>
+            )}
+          </p>
+        </div>
+        <div className="grid grid-cols-1 sm:grid-cols-2 xl:grid-cols-4 gap-4">
+          <AllocationTableCard
+            title="Conservative"
+            table={displayedAllocations.conservative}
+            onUpdate={(rowKey, colKey, value) => updateAllocation("conservative", rowKey, colKey, value)}
+          />
+          <AllocationTableCard
+            title="Balanced"
+            table={displayedAllocations.balanced}
+            onUpdate={(rowKey, colKey, value) => updateAllocation("balanced", rowKey, colKey, value)}
+          />
+          <AllocationTableCard
+            title="Growth"
+            table={displayedAllocations.growth}
+            onUpdate={(rowKey, colKey, value) => updateAllocation("growth", rowKey, colKey, value)}
+          />
+          <AllocationTableCard
+            title="All-Equity"
+            table={displayedAllocations.allEquity}
+            onUpdate={(rowKey, colKey, value) => updateAllocation("allEquity", rowKey, colKey, value)}
+          />
+        </div>
+      </section>
+
+      {/* ── Attribution — merged in from the old /attribution segment.
+          The route still exists; this page is now the single Performance
+          surface (allocation + performance + attribution). ── */}
+      <section id="attribution" className="scroll-mt-6">
+        <div className="mb-4">
+          <h2 className="text-[15px] font-bold text-ink">Attribution</h2>
+          <p className="mt-1 text-sm text-ink-3">
+            Where your return came from — market, currency, and selection. Use ← / → to switch models.
+          </p>
+        </div>
+        <Attribution />
+      </section>
+
     </div>
+    </main>
   );
 }

@@ -7,20 +7,18 @@ import { usePathname } from "next/navigation";
 const useIsoLayoutEffect = typeof window !== "undefined" ? useLayoutEffect : useEffect;
 
 /**
- * Sub-navigation for the Research area. Inbox was consolidated from a top-level
- * nav tab into a sub-tab of Research (analyst-report ingestion feeds the same
- * research workflow). This bar shows on /research and /inbox and lets the PM
- * switch between the source lists and the Inbox. Self-hides everywhere else.
- * Mirrors the PortfolioTabs pattern, including the sliding active-tab pill (#15).
+ * Sub-navigation for the Brief area. Hedging moved from a top-level tab to a
+ * sub-tab of the Brief — the Brief already issues the daily hedging call and
+ * reads the same pm:hedges ledger, so they belong together. Routes unchanged.
  */
 const SEGMENTS: { label: string; href: string }[] = [
-  { label: "Sources", href: "/research" },
-  { label: "Inbox", href: "/inbox" },
+  { label: "Today", href: "/brief" },
+  { label: "Hedging", href: "/hedging" },
 ];
 
-export function ResearchTabs() {
+export function BriefTabs() {
   const pathname = usePathname();
-  const isVisible = pathname === "/research" || pathname === "/inbox";
+  const isVisible = SEGMENTS.some((s) => s.href === pathname);
   const activeIdx = Math.max(0, SEGMENTS.findIndex((s) => s.href === pathname));
 
   const tabRefs = useRef<(HTMLAnchorElement | null)[]>([]);
@@ -40,10 +38,10 @@ export function ResearchTabs() {
 
   return (
     <div className="bg-surface border-b border-line print:hidden">
-      <div className="mx-auto max-w-[88rem] px-4 md:px-8 pt-3.5">
+      <div className="mx-auto max-w-[1560px] px-4 md:px-8 pt-3.5">
         <div>
-          <h1 className="text-[22px] font-bold tracking-tight text-ink leading-none">Research</h1>
-          <p className="mt-1.5 text-xs text-ink-3">Screenshots in, structured lists out · synthesis anchored to today&apos;s brief</p>
+          <h1 className="text-[22px] font-bold tracking-tight text-ink leading-none">Brief</h1>
+          <p className="mt-1.5 text-xs text-ink-3">Regime, verdict, and the day&apos;s calls — hedging lives here too</p>
         </div>
         <div className="flex items-center gap-2 overflow-x-auto pb-2 pt-2.5">
           <div className="relative flex items-center gap-0.5 rounded-control border border-line bg-surface-2 p-0.5 shrink-0">

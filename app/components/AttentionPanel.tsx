@@ -62,15 +62,20 @@ export function AttentionPanel() {
       }
     >
       {alerts.length > 0 && (
-      <ul className="flex flex-col gap-3">
+      <ul className="-mx-5 flex flex-col divide-y divide-line-soft">
         {alerts.map((a) => (
-          <li key={a.id} className="flex items-start gap-2.5 text-[13px]">
+          <li key={a.id} className="flex items-start gap-3 px-5 py-2.5 text-[13px]">
+            {/* Canvas row: priority color bar + mono ticker column. */}
             <span
-              className={`mt-1.5 h-1.5 w-1.5 shrink-0 rounded-full ${a.priority === "high" ? "bg-neg" : "bg-warn"}`}
+              className={`mt-0.5 h-8 w-1 shrink-0 rounded-full ${a.priority === "high" ? "bg-neg" : "bg-warn"}`}
               aria-hidden
             />
-            <span className="shrink-0 rounded bg-surface-2 px-1.5 py-0.5 text-[10px] font-semibold uppercase tracking-wide text-ink-3">
-              {CAT_LABEL[a.category] ?? a.category}
+            <span className="w-16 shrink-0 pt-px font-mono text-[13px] font-bold text-ink">
+              {a.ticker ? (
+                <Link href={`/stock/${a.ticker.toLowerCase()}`} className="hover:underline">{a.ticker.toUpperCase()}</Link>
+              ) : (
+                <span className="text-ink-3">—</span>
+              )}
             </span>
             <span className="min-w-0 flex-1">
               <span>
@@ -104,6 +109,9 @@ export function AttentionPanel() {
                   {a.action}
                 </span>
               )}
+            </span>
+            <span className="shrink-0 self-start rounded bg-surface-2 px-1.5 py-0.5 text-[10px] font-semibold uppercase tracking-wide text-ink-3">
+              {CAT_LABEL[a.category] ?? a.category}
             </span>
           </li>
         ))}

@@ -278,3 +278,11 @@ button:not(:disabled):active,
   .animate-toast-in { animation: none; }
   .hover-lift:hover { transform: none; }
 }
+
+/* Mobile bottom tab bar clearance — the fixed 60px bar (plus iOS safe area)
+   must not cover page content. Desktop is untouched. */
+@media (max-width: 767px) {
+  body {
+    padding-bottom: calc(60px + env(safe-area-inset-bottom));
+  }
+}

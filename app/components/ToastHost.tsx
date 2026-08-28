@@ -40,7 +40,8 @@ export function ToastHost() {
       primed.current = true;
       return;
     }
-    const fresh = events.filter((e) => !seen.current.has(e.id));
+    const fresh = events.filter((e) => !seen.current.has(e.id) && !e.quiet);
+    events.forEach((e) => { if (e.quiet) seen.current.add(e.id); });
     if (fresh.length === 0) return;
     fresh.forEach((e) => seen.current.add(e.id));
     setToasts((prev) =>

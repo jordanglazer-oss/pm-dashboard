@@ -1,6 +1,7 @@
 "use client";
 
 import React, { useEffect, useMemo, useState } from "react";
+import { useStocks } from "@/app/lib/StockContext";
 import Link from "next/link";
 import { displayTicker } from "@/app/lib/ticker";
 import { Skeleton } from "@/app/components/Skeleton";
@@ -123,6 +124,10 @@ export default function ThesisDeskPage() {
    *  it is still `loading` until the client fetch returns — so there is no
    *  server/client markup to mismatch. It also avoids setState-inside-effect,
    *  which cascades renders. */
+  // Open/closed state now persists in pm:ui-prefs (Redis-backed, synced
+  // across devices + refreshes); the old localStorage blob remains only as a
+  // one-time fallback default for names never toggled since the migration.
+  const { uiPrefs, setUiPref } = useStocks();
   const [overrides, setOverrides] = useState<Record<string, boolean>>(() => {
     if (typeof window === "undefined") return {};
     try {
@@ -149,11 +154,18 @@ export default function ThesisDeskPage() {
   // collapsed at all — it reopened on the next refresh. Safe because the
   // TRIPPED badge and red border sit in the header, which stays visible when
   // collapsed; only the prose and per-condition readings are hidden.
-  const isOpen = (r: Row) => overrides[r.ticker] ?? needsAttention(r);
+  const isOpen = (r: Row) => {
+    const pref = uiPrefs[`thesis.open.${r.ticker}`];
+    if (pref === "1") return true;
+    if (pref === "0") return false;
+    return overrides[r.ticker] ?? needsAttention(r);
+  };
 
   const toggle = (ticker: string) => {
     const row = rows.find((x) => x.ticker === ticker);
     const current = row ? isOpen(row) : false;
+    setUiPref(`thesis.open.${ticker}`, current ? "0" : "1");
+    // Keep the legacy blob in sync so a pref-less session shows the same state.
     const next = { ...overrides, [ticker]: !current };
     setOverrides(next);
     persist(next);
@@ -429,7 +441,7 @@ export default function ThesisDeskPage() {
           two expanded cards already pushed the rest below the fold. */}
       <div className="mx-auto max-w-[1600px]">
         <div className="mb-6">
-          <h1 className="text-2xl font-bold text-ink">Thesis Desk</h1>
+          <h1 className="text-[15px] font-bold text-ink">Thesis Desk</h1>
           {/* Capped to a readable measure — the GRID uses the full width, prose shouldn't. */}
           <p className="mt-1 max-w-3xl text-sm text-ink-3">
             Every underwritten position, its thesis as signed, and the pre-registered conditions

@@ -43,7 +43,10 @@ type Props = {
 };
 
 export default function StockChart({ ticker, technicals, className = "" }: Props) {
-  const { chartAnalyses, setChartAnalysis, clearChartAnalysis } = useStocks();
+  const { chartAnalyses, setChartAnalysis, clearChartAnalysis, uiPrefs, setUiPref } = useStocks();
+  // Analysis body collapses to just the header (persisted) — the chart
+  // section was eating half the page.
+  const chartAnalysisCollapsed = (uiPrefs["stock.chartAnalysis.collapsed"] ?? "1") === "1";
   const containerRef = useRef<HTMLDivElement>(null);
   const tooltipRef = useRef<HTMLDivElement>(null);
   // eslint-disable-next-line @typescript-eslint/no-explicit-any
@@ -354,7 +357,7 @@ export default function StockChart({ ticker, technicals, className = "" }: Props
         <div className="flex flex-col gap-2 mb-4">
           <div className="flex items-center justify-between">
             <div className="flex items-center gap-2">
-              <h2 className="text-lg font-bold text-ink">Price Chart</h2>
+              <h2 className="text-[15px] font-bold text-ink">Price Chart</h2>
               <div className="hidden sm:flex items-center gap-3 text-xs text-ink-3">
                 <span className="flex items-center gap-1">
                   <span className="inline-block w-3 h-0.5 bg-accent rounded" /> SMA 50
@@ -440,9 +443,23 @@ export default function StockChart({ ticker, technicals, className = "" }: Props
         </div>
       )}
       {analysis && (
-        <div className="mt-4 rounded-card border border-violet-border bg-white p-5 shadow-sm">
-          <div className="flex items-center gap-2 mb-3">
-            <h3 className="text-base font-bold text-ink">Chart Analysis</h3>
+        <div className="mt-4 rounded-card border border-line bg-white p-5 shadow-sm">
+          <div className={`flex items-center gap-2 ${chartAnalysisCollapsed ? "" : "mb-3"}`}>
+            <button
+              onClick={() => setUiPref("stock.chartAnalysis.collapsed", chartAnalysisCollapsed ? "0" : "1")}
+              className="flex items-center gap-1.5 cursor-pointer hover:opacity-80 transition-opacity"
+              aria-expanded={!chartAnalysisCollapsed}
+            >
+              <svg className={`w-3.5 h-3.5 text-ink-3 transition-transform ${chartAnalysisCollapsed ? "-rotate-90" : ""}`} fill="none" stroke="currentColor" strokeWidth="2.5" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" d="M19 9l-7 7-7-7" /></svg>
+              <h3 className="text-[15px] font-bold text-ink">Chart Analysis</h3>
+            </button>
+            {savedAnalysis?.outlook && (
+              <span className={`rounded-full px-2 py-0.5 text-[10px] font-bold ${
+                savedAnalysis.outlook === "Bullish" ? "bg-pos-soft text-pos"
+                : savedAnalysis.outlook === "Bearish" ? "bg-neg-soft text-neg"
+                : "bg-surface-2 text-ink-2"
+              }`}>{savedAnalysis.outlook}</span>
+            )}
             <span className="rounded-full bg-violet-soft text-violet px-2 py-0.5 text-[10px] font-semibold">
               AI Generated
             </span>
@@ -464,6 +481,7 @@ export default function StockChart({ ticker, technicals, className = "" }: Props
             </button>
           </div>
 
+          {!chartAnalysisCollapsed && (<>
           {/* Structured summary — renders only when the saved analysis has
               the new fields. Old analyses fall through to the prose block. */}
           {savedAnalysis?.outlook && (
@@ -584,6 +602,7 @@ export default function StockChart({ ticker, technicals, className = "" }: Props
               );
             })}
           </div>
+          </>)}
         </div>
       )}
     </div>

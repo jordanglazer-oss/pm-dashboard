@@ -97,6 +97,72 @@ function thirdPartyTechFor(s: StockLike): ThirdPartyTech | undefined {
   };
 }
 
+/** Output budget for one synthesis.
+ *
+ *  Sonnet 5 runs ADAPTIVE thinking by default — omitting the `thinking`
+ *  parameter does NOT disable it — and thinking tokens come out of
+ *  `max_tokens`. At the previous 3000, a long deliberation on a dense name
+ *  could consume the whole budget and return a message containing only a
+ *  thinking block and NO text block. That reached the user as
+ *  "model output unparseable: no JSON object in response" (parseModelJson's
+ *  empty-input branch). 16000 leaves ample room for both, and stays under the
+ *  SDK's non-streaming HTTP timeout. */
+const SYNTHESIS_MAX_TOKENS = 16000;
+
+type SynthesisTools = Array<{ type: "web_search_20250305"; name: "web_search"; max_uses?: number }>;
+
+/** One synthesis generation.
+ *
+ *  Two failure modes are handled here, both of which previously surfaced as an
+ *  unparseable-output error:
+ *    - `pause_turn` — the server-side web-search loop hit its iteration cap.
+ *      Resume by re-sending the paused assistant turn (no extra user message).
+ *    - no text block at all — retry once with thinking off so the entire
+ *      budget goes to the JSON.
+ *  Returns "" only when both attempts produced nothing; the caller reports it. */
+async function callSynthesisModel(
+  ticker: string,
+  system: string,
+  user: string,
+  tools: SynthesisTools,
+): Promise<string> {
+  const attempt = async (thinkingOff: boolean): Promise<string> => {
+    const messages: Anthropic.MessageParam[] = [{ role: "user", content: user }];
+    for (let i = 0; i < 4; i++) {
+      const response = await client.messages.create({
+        model: "claude-sonnet-5",
+        max_tokens: SYNTHESIS_MAX_TOKENS,
+        ...(thinkingOff ? { thinking: { type: "disabled" as const } } : {}),
+        system: [{ type: "text", text: system, cache_control: { type: "ephemeral" } }],
+        messages,
+        tools,
+      });
+      if (response.stop_reason === "pause_turn") {
+        messages.push({ role: "assistant", content: response.content });
+        continue;
+      }
+      const text = response.content
+        .filter((b): b is Anthropic.TextBlock => b.type === "text")
+        .map((b) => b.text)
+        .join("\n");
+      if (!text.trim()) {
+        log.warn(
+          `${ticker}: empty response (stop_reason=${response.stop_reason}, blocks=[${response.content
+            .map((b) => b.type)
+            .join(",")}], output_tokens=${response.usage.output_tokens}, thinkingOff=${thinkingOff})`,
+        );
+      }
+      return text;
+    }
+    log.warn(`${ticker}: pause_turn continuation cap reached`);
+    return "";
+  };
+
+  const first = await attempt(false);
+  if (first.trim()) return first;
+  return attempt(true);
+}
+
 function toYahoo(ticker: string): string {
   if (ticker.endsWith(".U")) return ticker.replace(/\.U$/, "-U.TO");
   if (ticker.endsWith("-T")) return ticker.replace(/-T$/, ".TO");
@@ -442,20 +508,9 @@ export async function POST(request: NextRequest) {
       };
 
       const { system, user } = buildSynthesisPrompt(payload);
-      type WebSearchTool = { type: "web_search_20250305"; name: "web_search"; max_uses?: number };
-      const tools: WebSearchTool[] = webFill ? [{ type: "web_search_20250305", name: "web_search", max_uses: 3 }] : [];
+      const tools: SynthesisTools = webFill ? [{ type: "web_search_20250305", name: "web_search", max_uses: 3 }] : [];
 
-      const response = await client.messages.create({
-        model: "claude-sonnet-5",
-        max_tokens: 3000,
-        system: [{ type: "text", text: system, cache_control: { type: "ephemeral" } }],
-        messages: [{ role: "user", content: user }],
-        tools,
-      });
-      const text = response.content
-        .filter((b): b is Anthropic.TextBlock => b.type === "text")
-        .map((b) => b.text)
-        .join("\n");
+      const text = await callSynthesisModel(ticker, system, user, tools);
       const parsed = parseModelJson<Record<string, unknown>>(text);
       if (!parsed.ok) {
         results.push({ ticker, status: "error", error: `model output unparseable: ${parsed.error}` });

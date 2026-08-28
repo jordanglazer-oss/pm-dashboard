@@ -490,7 +490,7 @@ export function TechnicalScreener({ stocks, onAddToWatchlist }: Props) {
           <div className="rounded-card border border-line bg-white p-6 shadow-sm">
             <div className="flex flex-col gap-4 xl:flex-row xl:items-center xl:justify-between">
               <div>
-                <h3 className="text-2xl font-semibold">Technical Screener</h3>
+                <h3 className="text-[15px] font-bold">Technical Screener</h3>
                 <p className="text-sm text-ink-3 mt-1">
                   Screen stocks by technical signals across 6 factors. {stocksWithTechnicals.length} stocks with data.
                   {noTechnicalsCount > 0 && <span className="text-warn ml-1">({noTechnicalsCount} need scoring)</span>}

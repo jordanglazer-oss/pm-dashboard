@@ -15,11 +15,10 @@ import type { ScoredStock, ScoreKey, HealthData, FundHolding, FundSectorWeight }
 import type { TechnicalIndicators, RiskAlert } from "@/app/lib/technicals";
 import { groupTotal, isScoreable, normalizeSector, computeScores } from "@/app/lib/scoring";
 import { displayTicker, canonicalTicker } from "@/app/lib/ticker";
+import { VERDICT_LABEL, type SynthesisVerdict } from "@/app/lib/synthesis-screen-display";
 import { useSearchParams, useRouter, usePathname } from "next/navigation";
 import { useLiveModelWeights } from "@/app/lib/useLiveModelWeights";
 import { SuggestedWatchlist } from "@/app/components/SuggestedWatchlist";
-import { SetupScan } from "@/app/components/SetupScan";
-import { RadarScreen } from "@/app/components/RadarScreen";
 import type { PimProfileType } from "@/app/lib/pim-types";
 import { buildBoostedRows, buildSiaSymbolList, buildMarketEdgeList, boostedSymbol, siaSymbol } from "@/app/lib/watchlist-export";
 
@@ -278,31 +277,48 @@ export function PortfolioOverview({ sidebar }: { sidebar?: React.ReactNode } = {
   const pathname = usePathname();
   const urlBucket: "Portfolio" | "Watchlist" =
     searchParams.get("bucket") === "Watchlist" ? "Watchlist" : "Portfolio";
-  const [rankBucket, setRankBucket] = useState<"Portfolio" | "Watchlist" | "Suggested" | "Radar" | "Setups">(urlBucket);
+  // Radar + Setups moved out of the Rankings buckets to their own Ideas
+  // segments (/radar, /setups) in the streamline pass.
+  const [rankBucket, setRankBucket] = useState<"Portfolio" | "Watchlist" | "Suggested">(urlBucket);
   // Live candidate count for the Suggested tab chip. Cheap read; the panel
   // itself fetches the full store only when the tab is open.
   const [suggestedCount, setSuggestedCount] = useState(0);
-  // Coiled/Building count for the Setups chip — the reading worth acting on.
-  const [setupCount, setSetupCount] = useState(0);
-  // Radar chip: how many not-owned names the factor screen is nominating.
-  const [radarCount, setRadarCount] = useState(0);
+  // Per-ticker synthesis verdicts for the rankings' Synthesis column — links
+  // the Holdings/Watchlist tables to the Ideas › Synthesis record. Read-only
+  // fetch of the same endpoint the Synthesis screen renders from.
+  const [synthesisByTicker, setSynthesisByTicker] = useState<Map<string, { verdict: SynthesisVerdict; stale: boolean }>>(new Map());
+  // Thesis-health verdicts for the Status column (eroding / broken). Read-only.
+  const [thesisByTicker, setThesisByTicker] = useState<Map<string, "eroding" | "broken">>(new Map());
   useEffect(() => {
-    fetch("/api/radar", { cache: "no-store" })
+    let alive = true;
+    fetch("/api/thesis-health", { cache: "no-store" })
       .then((r) => (r.ok ? r.json() : null))
-      .then((d) => {
-        if (Array.isArray(d?.names)) setRadarCount(d.names.length);
+      .then((j) => {
+        if (!alive || !j?.thesisHealth?.holdings) return;
+        const m = new Map<string, "eroding" | "broken">();
+        for (const h of j.thesisHealth.holdings as Array<{ ticker: string; verdict: string }>) {
+          if (h.verdict === "eroding" || h.verdict === "broken") m.set(h.ticker.toUpperCase(), h.verdict);
+        }
+        setThesisByTicker(m);
       })
       .catch(() => {});
+    return () => { alive = false; };
   }, []);
   useEffect(() => {
-    fetch("/api/setup-scan", { cache: "no-store" })
+    let alive = true;
+    fetch("/api/synthesis-screen")
       .then((r) => (r.ok ? r.json() : null))
       .then((d) => {
-        if (Array.isArray(d?.rows)) {
-          setSetupCount(d.rows.filter((x: { base?: { score?: number } }) => (x.base?.score ?? 0) >= 3).length);
+        if (!alive || !Array.isArray(d?.rows)) return;
+        const m = new Map<string, { verdict: SynthesisVerdict; stale: boolean }>();
+        for (const row of d.rows) {
+          const v = row?.entry?.result?.verdict;
+          if (row?.ticker && v) m.set(canonicalTicker(row.ticker), { verdict: v, stale: Array.isArray(row.stale) && row.stale.length > 0 });
         }
+        setSynthesisByTicker(m);
       })
       .catch(() => {});
+    return () => { alive = false; };
   }, []);
   useEffect(() => {
     fetch("/api/kv/watchlist-candidates", { cache: "no-store" })
@@ -317,7 +333,7 @@ export function PortfolioOverview({ sidebar }: { sidebar?: React.ReactNode } = {
     setRankBucket(urlBucket);
   }, [urlBucket]);
   const selectRankBucket = useCallback(
-    (b: "Portfolio" | "Watchlist" | "Suggested" | "Radar" | "Setups") => {
+    (b: "Portfolio" | "Watchlist" | "Suggested") => {
       setRankBucket(b);
       const params = new URLSearchParams(searchParams.toString());
       params.set("bucket", b);
@@ -1160,24 +1176,23 @@ export function PortfolioOverview({ sidebar }: { sidebar?: React.ReactNode } = {
         </div>
       </div>
 
-      {/* ── Cockpit: Rankings (left) + Change Monitor & Sector Exposure (right) ── */}
-      <div className="grid gap-5 lg:grid-cols-[minmax(0,1fr)_340px] items-start">
-        <div className="min-w-0 space-y-6">
+      {/* ── Holdings full-width (canvas); Change Monitor + Sector Exposure
+          keep everything they had, in a two-up band below the table. ── */}
+      <div className="space-y-5">
+        <div className="min-w-0 space-y-5">
 
       {/* Rankings — one table with a Portfolio / Watchlist / Suggested toggle.
           Suggested renders its own panel: it lists CANDIDATES rather than
           scored holdings, so it shares the column rhythm but not the data. */}
-      {rankBucket === "Suggested" || rankBucket === "Radar" || rankBucket === "Setups" ? (
+      {rankBucket === "Suggested" ? (
         <div>
           <div className="mb-3 inline-flex items-center rounded-control border border-line bg-surface-2 p-0.5">
-            {(["Portfolio", "Watchlist", "Suggested", "Radar", "Setups"] as const).map((b) => {
+            {(["Portfolio", "Watchlist", "Suggested"] as const).map((b) => {
               const active = rankBucket === b;
               const count =
                 b === "Portfolio" ? scoreablePortfolio.length
                 : b === "Watchlist" ? scoreableWatchlist.length
-                : b === "Suggested" ? suggestedCount
-                : b === "Radar" ? radarCount
-                : setupCount;
+                : suggestedCount;
               return (
                 <button
                   key={b}
@@ -1189,13 +1204,7 @@ export function PortfolioOverview({ sidebar }: { sidebar?: React.ReactNode } = {
               );
             })}
           </div>
-          {rankBucket === "Suggested" ? (
-            <SuggestedWatchlist onCountChange={setSuggestedCount} />
-          ) : rankBucket === "Radar" ? (
-            <RadarScreen onCountChange={setRadarCount} />
-          ) : (
-            <SetupScan onCountChange={setSetupCount} />
-          )}
+          <SuggestedWatchlist onCountChange={setSuggestedCount} />
         </div>
       ) : (
       <RankingTable
@@ -1203,14 +1212,12 @@ export function PortfolioOverview({ sidebar }: { sidebar?: React.ReactNode } = {
         subtitle={rankBucket === "Portfolio" ? "Bottom 3 flagged for review" : "Top 3 flagged as buy candidates"}
         bucketTabs={
           <div className="inline-flex items-center rounded-control border border-line bg-surface-2 p-0.5">
-            {(["Portfolio", "Watchlist", "Suggested", "Radar", "Setups"] as const).map((b) => {
+            {(["Portfolio", "Watchlist", "Suggested"] as const).map((b) => {
               const active = rankBucket === b;
               const count =
                 b === "Portfolio" ? scoreablePortfolio.length
                 : b === "Watchlist" ? scoreableWatchlist.length
-                : b === "Suggested" ? suggestedCount
-                : b === "Radar" ? radarCount
-                : setupCount;
+                : suggestedCount;
               return (
                 <button
                   key={b}
@@ -1223,6 +1230,8 @@ export function PortfolioOverview({ sidebar }: { sidebar?: React.ReactNode } = {
             })}
           </div>
         }
+        synthesisByTicker={synthesisByTicker}
+        thesisByTicker={thesisByTicker}
         stocks={rankBucket === "Portfolio" ? scoreablePortfolio : scoreableWatchlist}
         loading={loading}
         livePreviousCloses={livePreviousCloses}
@@ -1255,9 +1264,9 @@ export function PortfolioOverview({ sidebar }: { sidebar?: React.ReactNode } = {
       )}
         </div>
 
-        {/* Right sidebar: Change Monitor (injected from the page) + a compact
-            Sector-Exposure-vs-S&P panel (moved out of the old full-width bar). */}
-        <div className="space-y-4">
+        {/* Below the table: Change Monitor (injected from the page) + the
+            Sector-Exposure-vs-S&P panel — two-up on desktop. */}
+        <div className="grid items-start gap-5 lg:grid-cols-2">
           {sidebar}
           <section className="rounded-card border border-line bg-surface p-4 shadow-sm">
             <div className="flex items-baseline justify-between gap-2 mb-3">
@@ -1354,7 +1363,7 @@ export function PortfolioOverview({ sidebar }: { sidebar?: React.ReactNode } = {
         const fThClass = "pb-2 font-semibold cursor-pointer select-none hover:text-ink transition-colors whitespace-nowrap";
 
         return (
-          <section className="rounded-card border border-accent-border bg-white p-5 shadow-sm">
+          <section className="rounded-card border border-line bg-white p-5 shadow-sm">
             <div className={`flex items-center gap-3 ${fundCollapsed ? "" : "mb-4"}`}>
               <button
                 onClick={toggleFundCollapsed}
@@ -1365,7 +1374,7 @@ export function PortfolioOverview({ sidebar }: { sidebar?: React.ReactNode } = {
                 <svg className={`w-4 h-4 text-ink-3 transition-transform ${fundCollapsed ? "-rotate-90" : ""}`} fill="none" stroke="currentColor" strokeWidth="2.5" viewBox="0 0 24 24">
                   <path strokeLinecap="round" strokeLinejoin="round" d="M19 9l-7 7-7-7" />
                 </svg>
-                <h2 className="text-lg font-bold text-ink">Fund & ETF Holdings</h2>
+                <h2 className="text-[15px] font-bold text-ink">Fund & ETF Holdings</h2>
               </button>
               <span className="text-sm text-ink-3">{fundPortfolio.length} holdings</span>
               {!fundCollapsed && (
@@ -1572,6 +1581,8 @@ function RankingTable({
   showWeight = true,
   bucketTabs,
   loading,
+  synthesisByTicker,
+  thesisByTicker,
 }: {
   title: string;
   subtitle: string;
@@ -1581,6 +1592,10 @@ function RankingTable({
    *  (the Portfolio / Watchlist toggle). */
   bucketTabs?: React.ReactNode;
   stocks: ScoredStock[];
+  /** ticker → latest synthesis verdict (+staleness) for the Synthesis column. */
+  synthesisByTicker?: Map<string, { verdict: SynthesisVerdict; stale: boolean }>;
+  /** ticker (upper) → thesis-health verdict, for the Status column. */
+  thesisByTicker?: Map<string, "eroding" | "broken">;
   /** When true, split the rows into 🇨🇦 Canadian and 🇺🇸 US sub-sections,
    *  each independently ranked + flagged, so CAD and USD names are compared
    *  within their own currency rather than against each other. */
@@ -1627,6 +1642,7 @@ function RankingTable({
    *  so the column was a row of dashes taking up space. */
   showWeight?: boolean;
 }) {
+  const router = useRouter();
   // Collapse state — defaults to expanded. Persisted in uiPrefs so it
   // sticks across refreshes and syncs to other devices via Redis. The
   // Score All button stays visible even when collapsed so the user can
@@ -1643,14 +1659,14 @@ function RankingTable({
   // compact. Either the Show more button under "What They Do" OR the
   // one under "Why Own It" flips the same state, so whichever is closer
   // to where the user is reading will do the job.
-  const [expandedRows, setExpandedRows] = useState<Set<string>>(new Set());
+  // Persisted (site rule: every collapse/expand survives refreshes).
+  const expandedRows = useMemo(() => {
+    const out = new Set<string>();
+    for (const k of Object.keys(uiPrefs)) if (k.startsWith("rank.row.") && uiPrefs[k] === "1") out.add(k.slice("rank.row.".length));
+    return out;
+  }, [uiPrefs]);
   const toggleRowExpanded = (ticker: string) => {
-    setExpandedRows((prev) => {
-      const next = new Set(prev);
-      if (next.has(ticker)) next.delete(ticker);
-      else next.add(ticker);
-      return next;
-    });
+    setUiPref(`rank.row.${ticker}`, expandedRows.has(ticker) ? "0" : "1");
   };
 
   // ── Row selection for targeted rescores ─────────────────────────────
@@ -1676,6 +1692,28 @@ function RankingTable({
   };
 
   const prefPrefix = flagType === "review" ? "rankPort" : "rankWatch";
+  // Canvas header state: Stale/Flagged chips + search (transient view state),
+  // and the ⋯ menu holding the action cluster.
+  const [chipFilter, setChipFilter] = useState<"all" | "stale" | "flagged">("all");
+  const [query, setQuery] = useState("");
+  const [menuOpen, setMenuOpen] = useState(false);
+  const menuRef = useRef<HTMLDivElement>(null);
+  useEffect(() => {
+    if (!menuOpen) return;
+    const onDown = (e: MouseEvent) => {
+      if (menuRef.current && !menuRef.current.contains(e.target as Node)) setMenuOpen(false);
+    };
+    document.addEventListener("mousedown", onDown);
+    return () => document.removeEventListener("mousedown", onDown);
+  }, [menuOpen]);
+  const staleDaysOf = (st: ScoredStock): number => {
+    if (!st.lastScored) return Infinity;
+    const t = Date.parse(st.lastScored);
+    return Number.isFinite(t) ? (Date.now() - t) / 86400000 : Infinity;
+  };
+  const isStaleRow = (st: ScoredStock) => isScoreable(st) && staleDaysOf(st) > 30;
+  const isFlaggedRow = (st: ScoredStock) =>
+    Boolean(riskScanByTicker?.get(normalizeRiskTicker(st.ticker)) || st.valueTrap || thesisByTicker?.get(st.ticker.toUpperCase()));
   const sort = {
     key: (uiPrefs[`${prefPrefix}Sort`] as RankingSortKey) || "adjusted",
     dir: (uiPrefs[`${prefPrefix}SortDir`] as SortDir) || "desc",
@@ -1695,7 +1733,14 @@ function RankingTable({
 
   const arrow = (key: RankingSortKey) => sort.key === key ? (sort.dir === "asc" ? " \u25B2" : " \u25BC") : "";
 
-  const sorted = [...stocks].sort((a, b) => {
+  const q = query.trim().toLowerCase();
+  const filteredStocks = stocks.filter((st) => {
+    if (q && !(st.ticker.toLowerCase().includes(q) || (st.name || "").toLowerCase().includes(q) || (st.sector || "").toLowerCase().includes(q))) return false;
+    if (chipFilter === "stale" && !isStaleRow(st)) return false;
+    if (chipFilter === "flagged" && !isFlaggedRow(st)) return false;
+    return true;
+  });
+  const sorted = [...filteredStocks].sort((a, b) => {
     const { key, dir } = sort;
     let cmp = 0;
     if (key === "ticker") {
@@ -1738,10 +1783,11 @@ function RankingTable({
   // syncs across devices) keyed off the table's collapseKey + currency.
   const subCollapsed = (ck: string) =>
     !!collapseKey && uiPrefs[`${collapseKey}.${ck}`] === "1";
+  const effSorted = sorted;
   let displayRows: DisplayRow[];
   if (splitByCurrency) {
-    const cad = sorted.filter((s) => isCanadianTicker(s.ticker));
-    const us = sorted.filter((s) => !isCanadianTicker(s.ticker));
+    const cad = effSorted.filter((s) => isCanadianTicker(s.ticker));
+    const us = effSorted.filter((s) => !isCanadianTicker(s.ticker));
     const cadCollapsed = subCollapsed("cad");
     const usCollapsed = subCollapsed("us");
     displayRows = [
@@ -1755,7 +1801,7 @@ function RankingTable({
       ] : []),
     ];
   } else {
-    displayRows = buildGroup(sorted).map((r) => ({ kind: "stock", ...r } as DisplayRow));
+    displayRows = buildGroup(effSorted).map((r) => ({ kind: "stock", ...r } as DisplayRow));
   }
 
   // FLIP re-sort (#13): when the row ORDER changes, glide each row from its old
@@ -1790,16 +1836,16 @@ function RankingTable({
     prevTops.current = nextTops;
   }, [orderKey]);
 
-  const thClass = "pb-2 pr-3 cursor-pointer hover:text-ink select-none whitespace-nowrap";
+  const thClass = "pb-2 pr-3 pt-2 cursor-pointer hover:text-ink select-none whitespace-nowrap";
   // Sticky first column — ticker + company name stay visible while the rest of
   // the row scrolls horizontally. `left-0` pins it to the scroll container.
   // The explicit bg matches the row background (white, or the hover tint via
   // the `group` pattern on the parent <tr>) so the scrolled-under columns
   // don't bleed through. `z-10` on body cells, `z-20` on header to stay above.
   const stickyHeadCls =
-    "pb-2 pr-4 cursor-pointer hover:text-ink select-none whitespace-nowrap sticky left-0 z-20 bg-white";
+    "pb-2 pl-4 pr-4 pt-2 cursor-pointer hover:text-ink select-none whitespace-nowrap sticky left-0 z-20 bg-white";
   const stickyCellCls =
-    "py-3 pr-4 sticky left-0 z-10 bg-white group-hover:bg-surface-hover align-top";
+    "py-3 pl-4 pr-4 sticky left-0 z-10 bg-white group-hover:bg-surface-hover align-top";
 
   const scoreableCount = stocks.filter((s) => isScoreable(s)).length;
   const chartingNonZeroCount = stocks.filter((s) => isScoreable(s) && (s.scores?.charting ?? 0) > 0).length;
@@ -1879,48 +1925,49 @@ function RankingTable({
   };
 
   return (
-    <section className="rounded-card border border-line bg-white p-5 shadow-sm">
-      <div className={`flex items-center gap-3 flex-wrap ${collapsed ? "" : "mb-4"}`}>
-        {bucketTabs ? (
-          <>
-            {bucketTabs}
-            {collapseKey && (
-              <button
-                onClick={toggleCollapsed}
-                className="flex items-center gap-1 rounded-control border border-line px-2 py-1 text-[11px] font-semibold text-ink-3 hover:bg-surface-2 hover:text-ink transition-colors"
-                aria-expanded={!collapsed}
-                aria-label={collapsed ? `Expand ${title}` : `Collapse ${title}`}
-                title={collapsed ? "Show the rankings table" : "Hide the rankings table"}
-              >
-                <svg className={`w-3.5 h-3.5 transition-transform ${collapsed ? "-rotate-90" : ""}`} fill="none" stroke="currentColor" strokeWidth="2.5" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" d="M19 9l-7 7-7-7" /></svg>
-                {collapsed ? "Show" : "Hide"}
-              </button>
-            )}
-          </>
-        ) : collapseKey ? (
+    <section className="rounded-card border border-line bg-white shadow-sm overflow-hidden">
+      <div className={`flex items-center gap-3 flex-wrap px-4 py-3 ${collapsed ? "" : "border-b border-line-soft"}`}>
+        {bucketTabs || <h2 className="text-[15px] font-bold text-ink">{title}</h2>}
+        {/* Stale / Flagged filter chips */}
+        <button
+          onClick={() => setChipFilter(chipFilter === "stale" ? "all" : "stale")}
+          className={`rounded-pill border px-2.5 py-1 text-[12px] font-semibold transition-colors ${chipFilter === "stale" ? "border-warn-border bg-warn-soft text-warn" : "border-line bg-white text-ink-2 hover:text-ink"}`}
+          title="Only names whose score is older than 30 days"
+        >
+          Stale
+        </button>
+        <button
+          onClick={() => setChipFilter(chipFilter === "flagged" ? "all" : "flagged")}
+          className={`rounded-pill border px-2.5 py-1 text-[12px] font-semibold transition-colors ${chipFilter === "flagged" ? "border-neg-border bg-neg-soft text-neg" : "border-line bg-white text-ink-2 hover:text-ink"}`}
+          title="Only names with a risk flag, a value-trap haircut, or a tripped thesis"
+        >
+          Flagged
+        </button>
+        <span className="flex-grow" />
+        <div className="relative">
+          <svg className="pointer-events-none absolute left-2.5 top-1/2 h-3.5 w-3.5 -translate-y-1/2 text-ink-3" fill="none" stroke="currentColor" strokeWidth="2" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" d="m21 21-4.34-4.34M17 11a6 6 0 1 1-12 0 6 6 0 0 1 12 0Z" /></svg>
+          <input
+            value={query}
+            onChange={(e) => setQuery(e.target.value)}
+            placeholder={`Filter ${stocks.length} holdings`}
+            className="w-44 rounded-control border border-line bg-white py-1.5 pl-8 pr-2 text-[12px] outline-none placeholder:text-ink-3 focus:border-accent"
+          />
+        </div>
+        {/* ⋯ menu — the full action cluster (Score All, rescores, exports),
+            unchanged, one click away instead of permanently in the header. */}
+        <div ref={menuRef} className="relative">
           <button
-            onClick={toggleCollapsed}
-            className="flex items-center gap-2 cursor-pointer hover:opacity-80 transition-opacity"
-            aria-expanded={!collapsed}
-            aria-label={collapsed ? `Expand ${title}` : `Collapse ${title}`}
+            onClick={() => setMenuOpen(!menuOpen)}
+            aria-expanded={menuOpen}
+            aria-label="Table actions"
+            className="flex h-8 w-8 items-center justify-center rounded-control border border-line bg-white text-ink-2 hover:bg-surface-hover hover:text-ink transition-colors"
           >
-            <svg
-              className={`w-4 h-4 text-ink-3 transition-transform ${collapsed ? "-rotate-90" : ""}`}
-              fill="none"
-              stroke="currentColor"
-              strokeWidth="2.5"
-              viewBox="0 0 24 24"
-            >
-              <path strokeLinecap="round" strokeLinejoin="round" d="M19 9l-7 7-7-7" />
-            </svg>
-            <h2 className="text-lg font-bold text-ink">{title}</h2>
+            ⋯
           </button>
-        ) : (
-          <h2 className="text-lg font-bold text-ink">{title}</h2>
-        )}
-        {!bucketTabs && <span className="text-sm text-ink-3">{subtitle}</span>}
+          {menuOpen && (
+            <div className="absolute right-0 top-10 z-30 w-max max-w-[26rem] rounded-card border border-line bg-white p-3 shadow-card">
         {onScoreAll && (
-          <div className="ml-auto flex flex-wrap items-center gap-2">
+          <div className="flex max-w-md flex-wrap items-center gap-2">
             {lastScoredAt && !scoring && (
               <span className="text-[11px] text-ink-3">
                 Last scored {formatRelTimestamp(lastScoredAt)}
@@ -2013,6 +2060,17 @@ function RankingTable({
             )}
           </div>
         )}
+              {collapseKey && (
+                <button
+                  onClick={() => { toggleCollapsed(); setMenuOpen(false); }}
+                  className="mt-2 block w-full rounded-control border border-line px-3 py-1.5 text-left text-xs font-semibold text-ink-2 hover:bg-surface-2 transition-colors"
+                >
+                  {collapsed ? "Show the table" : "Hide the table"}
+                </button>
+              )}
+            </div>
+          )}
+        </div>
       </div>
       {/* Score All failure banner — persists until dismissed */}
       {!scoring && scoreFailures && scoreFailures.length > 0 && (
@@ -2094,7 +2152,7 @@ function RankingTable({
           </div>
         );
       })()}
-      {!collapsed && sorted.length === 0 && (
+      {!collapsed && !loading && effSorted.length === 0 && (
         <div className="mx-4 my-6 rounded-control border border-dashed border-line bg-surface-2 p-8 text-center">
           <svg className="w-10 h-10 mx-auto mb-3 text-ink-faint" fill="none" stroke="currentColor" strokeWidth="1.5" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" d="M3.75 6h16.5M3.75 12h16.5m-16.5 5.25h16.5" /></svg>
           <p className="text-sm font-semibold text-ink-2 mb-1">
@@ -2112,11 +2170,47 @@ function RankingTable({
           </kbd>
         </div>
       )}
-      {!collapsed && loading && sorted.length === 0 && (
+      {!collapsed && loading && effSorted.length === 0 && (
         <div className="px-4 py-3"><SkeletonTable rows={10} cols={7} /></div>
       )}
-      {!collapsed && sorted.length > 0 && (
-      <div className="max-h-[80vh] overflow-auto">
+      {!collapsed && effSorted.length > 0 && (
+      <>
+      {/* Mobile: two-line rows, score pinned right — the table below never
+          side-scrolls on a phone (streamline rule 05). */}
+      <div className="md:hidden divide-y divide-line-soft">
+        {displayRows.map((row) => {
+          if (row.kind === "header") {
+            return (
+              <div key={row.key} className="bg-surface-hover px-3 py-1.5 text-[11px] font-bold uppercase tracking-wider text-ink-3">
+                {row.label} · {row.count}
+              </div>
+            );
+          }
+          const s = row.stock;
+          const pc = livePreviousCloses[s.ticker];
+          const chg = s.price != null && pc != null && pc > 0 ? ((s.price - pc) / pc) * 100 : null;
+          const w = liveWeights?.get(canonicalTicker(s.ticker));
+          return (
+            <Link key={s.ticker} href={`/stock/${s.ticker.toLowerCase()}`} className="flex items-center gap-3 px-3 py-2.5 active:bg-surface-hover">
+              <span className="min-w-0 flex-1">
+                <span className="flex items-baseline gap-1.5">
+                  <span className="font-mono text-[14px] font-bold text-ink">{displayTicker(s.ticker)}</span>
+                  {showWeight && w != null && <span className="text-[11px] text-ink-3 tabular-nums">{w.toFixed(1)}%</span>}
+                </span>
+                <span className="block truncate text-[11px] text-ink-3">{s.name}{s.sector ? ` · ${s.sector}` : ""}</span>
+              </span>
+              <span className="shrink-0 text-right">
+                <span className="block font-mono text-[13px] text-ink tabular-nums">{s.price != null ? `$${s.price.toFixed(2)}` : "—"}</span>
+                <span className={`block font-mono text-[11px] tabular-nums ${chg == null ? "text-ink-faint" : chg >= 0 ? "text-pos" : "text-neg"}`}>
+                  {chg == null ? "—" : `${chg >= 0 ? "+" : ""}${chg.toFixed(1)}%`}
+                </span>
+              </span>
+              <span className="w-11 shrink-0 text-right font-mono text-[15px] font-bold text-ink tabular-nums">{Number(s.adjusted.toFixed(1))}</span>
+            </Link>
+          );
+        })}
+      </div>
+      <div className="hidden md:block max-h-[80vh] overflow-auto">
         <table className="w-full text-left text-sm">
           <thead className="sticky top-0 z-20 bg-white shadow-[0_1px_0_0_rgb(226_232_240)]">
             <tr className="border-b border-line text-xs text-ink-3">
@@ -2135,8 +2229,9 @@ function RankingTable({
               {showWeight && <th className={`${thClass} text-right`}>Weight</th>}
               <th className={`${thClass} text-right`} onClick={() => toggleSort("price")}>Price{arrow("price")}</th>
               <th className={`${thClass} text-right`}>Day</th>
+              <th className={`${thClass} hidden lg:table-cell`}>Synthesis</th>
               <th className={`${thClass} text-right`} onClick={() => toggleSort("adjusted")}>Score{arrow("adjusted")}</th>
-              <th className={thClass} onClick={() => toggleSort("rating")}>Rating{arrow("rating")}</th>
+              <th className={thClass}>Status</th>
               <th className="pb-2 pr-2 w-8" aria-label="Detail"></th>
             </tr>
           </thead>
@@ -2172,8 +2267,15 @@ function RankingTable({
                     Score column already convey best/worst). */}
                 <tr
                   ref={(el) => { const m = rowElRefs.current; if (el) m.set(s.ticker, el); else m.delete(s.ticker); }}
-                  className="animate-row-in group border-b border-l-2 border-l-transparent border-line-soft transition-colors hover:bg-surface-hover hover:border-l-accent [&>td]:align-top"
+                  className="animate-row-in group cursor-pointer border-b border-l-2 border-l-transparent border-line-soft transition-colors hover:bg-surface-hover hover:border-l-accent [&>td]:align-top"
                   style={{ animationDelay: `${Math.min(rowIdx, 12) * 28}ms` }}
+                  onClick={(e) => {
+                    // Whole row opens the stock page — unless the click hit a
+                    // real control (checkbox, links, expand chevron, chips).
+                    const el = e.target as HTMLElement;
+                    if (el.closest("a, button, input, [role='button']")) return;
+                    router.push(`/stock/${s.ticker.toLowerCase()}`);
+                  }}
                 >
                   <td className={stickyCellCls}>
                     <div className="flex items-center gap-2">
@@ -2242,6 +2344,27 @@ function RankingTable({
                       return <span className={chg >= 0 ? "text-pos" : "text-neg"}>{chg >= 0 ? "+" : ""}{chg.toFixed(1)}%</span>;
                     })()}
                   </td>
+                  <td className="py-3 pr-3 hidden lg:table-cell">
+                    {(() => {
+                      const sv = synthesisByTicker?.get(canonicalTicker(s.ticker));
+                      if (!sv) return <span className="text-ink-faint text-[11px]">—</span>;
+                      const tone =
+                        sv.verdict === "advance" || sv.verdict === "thesis-intact" ? "bg-pos-soft text-pos"
+                        : sv.verdict === "pass" || sv.verdict === "exit-watch" ? "bg-neg-soft text-neg"
+                        : "bg-warn-soft text-warn";
+                      return (
+                        <Link
+                          href="/synthesis"
+                          onClick={(e) => e.stopPropagation()}
+                          className={`inline-flex items-center gap-1 rounded-full px-2 py-0.5 text-[10px] font-bold whitespace-nowrap ${tone}`}
+                          title={`Latest synthesis verdict${sv.stale ? " (stale — regenerate on the Synthesis screen)" : ""} — click to open Ideas › Synthesis`}
+                        >
+                          {VERDICT_LABEL[sv.verdict] ?? sv.verdict}
+                          {sv.stale && <span className="font-normal opacity-70">stale</span>}
+                        </Link>
+                      );
+                    })()}
+                  </td>
                   {/* Score = adjusted composite (with regime delta) */}
                   <td className="py-3 pr-3 text-right whitespace-nowrap">
                     <span className="font-bold text-ink tabular-nums">{Number(s.adjusted.toFixed(1))}</span>
@@ -2250,7 +2373,19 @@ function RankingTable({
                       {adj >= 0 ? "+" : ""}{adj}
                     </span>
                   </td>
-                  <td className="py-3 pr-3">{ratingPill(label)}</td>
+                  <td className="py-3 pr-3 whitespace-nowrap">
+                    {(() => {
+                      // Status (canvas): thesis tripped > risk flag > value trap > stale > current.
+                      const thesis = thesisByTicker?.get(s.ticker.toUpperCase());
+                      if (thesis) return <span className="rounded-full bg-neg-soft px-2 py-0.5 text-[10px] font-bold text-neg">Thesis {thesis === "broken" ? "tripped" : "eroding"}</span>;
+                      const risk = riskScanByTicker?.get(normalizeRiskTicker(s.ticker));
+                      if (risk) return <span className="rounded-full bg-neg-soft px-2 py-0.5 text-[10px] font-bold text-neg">Risk · {risk.priority}</span>;
+                      if (s.valueTrap) return <span className="rounded-full bg-warn-soft px-2 py-0.5 text-[10px] font-bold text-warn">Revisions ↓</span>;
+                      const d = staleDaysOf(s);
+                      if (isScoreable(s) && d > 30) return <span className="rounded-full bg-warn-soft px-2 py-0.5 text-[10px] font-bold text-warn">Stale {Number.isFinite(d) ? `${Math.round(d)}d` : ""}</span>;
+                      return <span className="rounded-full bg-pos-soft px-2 py-0.5 text-[10px] font-bold text-pos">Current</span>;
+                    })()}
+                  </td>
                   <td className="py-3 pr-2 text-right">
                     <button
                       type="button"
@@ -2265,7 +2400,7 @@ function RankingTable({
                 </tr>
                 {expanded && (
                   <tr className="border-b border-line-soft bg-surface-2/70">
-                    <td colSpan={8} className="px-4 py-3">
+                    <td colSpan={9} className="px-4 py-3">
                       <div className="grid gap-4 md:grid-cols-2">
                         <div>
                           <div className="mb-1 text-[10px] font-semibold uppercase tracking-wide text-ink-3">What They Do</div>
@@ -2276,7 +2411,8 @@ function RankingTable({
                           <p className="text-xs leading-relaxed text-ink-2">{s.investmentThesis || <span className="text-ink-faint">—</span>}</p>
                         </div>
                       </div>
-                      <div className="mt-3 flex flex-wrap gap-x-4 gap-y-1 text-[11px]">
+                      <div className="mt-3 flex flex-wrap items-center gap-x-4 gap-y-1 text-[11px]">
+                        {ratingPill(label)}
                         <span className="text-ink-3">Base <span className="font-mono text-ink">{Number(s.raw.toFixed(1))}</span></span>
                         {SCORE_GROUPS.map((g) => (
                           <span key={g.name} className="text-ink-3">
@@ -2294,6 +2430,11 @@ function RankingTable({
           </tbody>
         </table>
       </div>
+      <div className="flex items-center justify-between border-t border-line bg-surface-2 px-4 py-2 text-[11px] text-ink-3">
+        <span>Showing {effSorted.length} of {stocks.length} · sorted by {String(sort.key)}</span>
+        <span className="hidden sm:inline">click a row to open the stock page</span>
+      </div>
+      </>
       )}
     </section>
   );

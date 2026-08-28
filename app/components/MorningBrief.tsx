@@ -25,6 +25,40 @@ import { regimeValence } from "@/app/lib/regime-transition";
 import { HORIZONS } from "@/app/lib/horizons";
 import { useStocks } from "@/app/lib/StockContext";
 
+/**
+ * Eyebrow-style fold for whole Brief zones (canvas: secondary reads sit one
+ * click away). Renders the familiar section eyebrow as a toggle; open/closed
+ * persists in pm:ui-prefs. Children render untouched when open.
+ */
+function BriefFold({ prefKey, title, meta, id, defaultCollapsed = true, children }: {
+  prefKey: string;
+  title: string;
+  meta?: React.ReactNode;
+  /** Anchor id for the command-bar jump links (e.g. "s-horizon"). */
+  id?: string;
+  defaultCollapsed?: boolean;
+  children: React.ReactNode;
+}) {
+  const { uiPrefs, setUiPref } = useStocks();
+  const collapsed = (uiPrefs[prefKey] ?? (defaultCollapsed ? "1" : "0")) === "1";
+  return (
+    <>
+      <div style={{ scrollMarginTop: "var(--brief-scroll-mt, 132px)" }} id={id} className="mb-2 mt-2">
+        <button
+          onClick={() => setUiPref(prefKey, collapsed ? "0" : "1")}
+          aria-expanded={!collapsed}
+          className="flex items-baseline gap-2.5 text-left cursor-pointer hover:opacity-80 transition-opacity"
+        >
+          <svg className={`h-3 w-3 self-center text-ink-3 transition-transform ${collapsed ? "-rotate-90" : ""}`} fill="none" stroke="currentColor" strokeWidth="2.5" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" d="M19 9l-7 7-7-7" /></svg>
+          <h2 className="text-xs font-bold uppercase tracking-[0.22em] text-ink-3">{title}</h2>
+          {meta && <span className="text-[11px] text-ink-faint">{meta}</span>}
+        </button>
+      </div>
+      {!collapsed && children}
+    </>
+  );
+}
+
 /** Numeric input with an inline save indicator.
  *  Value only persists when the user clicks the save icon (or presses Enter).
  *  Shows a subtle checkmark when saved, a blue save icon when dirty. */
@@ -1896,13 +1930,14 @@ export function MorningBrief({
         <h2 className="text-xs font-bold uppercase tracking-[0.22em] text-ink-3">Decide</h2>
         <span className="text-[11px] text-ink-faint">the day&apos;s call, and the four reads behind it</span>
       </div>
-      <div className="grid grid-cols-1 gap-4 lg:grid-cols-[1.55fr_1fr] ">
-        <div className="space-y-4 min-w-0">
+      <section className="overflow-hidden rounded-card border border-line bg-white shadow-card">
+      <div className="grid grid-cols-1 lg:grid-cols-[1.55fr_1fr] lg:divide-x lg:divide-line-soft">
+        <div className="min-w-0">
       {/* Bottom Line — the design's white card: label with the model + time
           right-aligned, the call in full, the posture line as an inset cream
           callout, and "since last brief" folded INSIDE the card rather than
           floating below it as a separate blue panel. */}
-      <section className="relative rounded-card border border-line bg-white p-5 shadow-card">
+      <section className="relative p-5">
         {generating && <LoadingOverlay message="Claude is analyzing markets..." />}
         <div className="mb-3 flex items-baseline justify-between gap-3">
           <span className="text-xs font-bold uppercase tracking-[0.22em] text-ink-3">Bottom line</span>
@@ -1933,12 +1968,12 @@ export function MorningBrief({
         {/* items-start is load-bearing: without it every tile stretches to the
             tallest in its row, so a verbose Cash tile left the calendar tile as
             a tall empty box. Each tile is now only as tall as its content. */}
-        <div className="grid grid-cols-1 gap-4 sm:grid-cols-2 content-start items-stretch min-w-0">
+        <div className="grid grid-cols-1 gap-3 p-4 sm:grid-cols-2 content-start items-stretch min-w-0 bg-surface-2/40">
       {/* Regime-transition gauge (Phase 02) — how close the current regime is
           to flipping + the early tells. A compact one-liner; the tells sit
           below as small pills. Hidden on briefs generated before Phase 02. */}
       {regimeTransition && (
-        <section className="flex h-full flex-col rounded-xl border border-line bg-white px-4 py-3 shadow-sm">
+        <section className="flex h-full flex-col rounded-xl border border-line bg-white px-4 py-3">
           {/* Mock form: label pill + distance-to-flip on one row, the composite
               read big, a proportional 3-segment bar, then the signal counts.
               Replaces the old 5-element wrapping header, which cost 3 lines at
@@ -1985,7 +2020,7 @@ export function MorningBrief({
       )}
 
           {hedgingCall && (
-            <div className={`flex h-full flex-col rounded-card border p-5 shadow-sm ${
+            <div className={`flex h-full flex-col rounded-card border p-5 ${
               hedgingCall.action === "ADD"
                 ? "border-neg-border bg-neg-soft"
                 : hedgingCall.action === "SKIP"
@@ -2065,7 +2100,7 @@ export function MorningBrief({
                       return (
                         <div key={h.id} className="flex items-start justify-between gap-2 text-[11px]">
                           <span className="text-ink">
-                            <span className="text-pos font-semibold">🛡 On:</span>{" "}
+                            <span className="text-pos font-semibold">On:</span>{" "}
                             {[h.tenorLabel, h.strikePctOtm != null ? `${h.strikePctOtm}% OTM` : null].filter(Boolean).join(" ")} SPY put
                             {h.premiumUsd != null ? ` · $${h.premiumUsd.toFixed(2)}` : ""}
                             {h.premiumPctOfSpot != null ? ` (${h.premiumPctOfSpot.toFixed(2)}% of spot)` : ""}
@@ -2161,7 +2196,7 @@ export function MorningBrief({
               : deploymentWindowStatus.tone === "rose" ? "bg-neg-soft text-neg"
               : "bg-surface-2 text-ink-2";
             return (
-              <div className={`flex h-full flex-col rounded-card border p-5 shadow-sm ${tone.border} ${tone.bg}`}>
+              <div className={`flex h-full flex-col rounded-card border p-5 ${tone.border} ${tone.bg}`}>
                 <div className="flex items-center justify-between gap-2 mb-3">
                   <div className={`text-xs font-bold uppercase tracking-[0.22em] ${tone.label}`}>
                     Cash Deployment
@@ -2214,7 +2249,7 @@ export function MorningBrief({
           holdings reporting within 7 days), given the count-first form the
           other Decide tiles use, with the dated macro events as a footer. */}
       {earningsSoon.length > 0 && (
-        <div className="flex h-full flex-col rounded-card border border-warn-border bg-warn-soft p-5 shadow-sm">
+        <div className="flex h-full flex-col rounded-card border border-warn-border bg-warn-soft p-5">
           <div className="mb-3 flex items-center justify-between gap-2">
             <span className="text-xs font-bold uppercase tracking-[0.22em] text-warn">Earnings</span>
             <span className="text-[10px] font-bold text-ink-3">next 7 sessions</span>
@@ -2265,6 +2300,7 @@ export function MorningBrief({
 
         </div>
       </div>
+      </section>
       {/* ── Act: what to do today, with the risk flags that justify it ── */}
       <div style={{ scrollMarginTop: "var(--brief-scroll-mt, 132px)" }} className="mb-2 mt-2 flex items-baseline gap-2.5" id="s-act">
         <h2 className="text-xs font-bold uppercase tracking-[0.22em] text-ink-3">Act</h2>
@@ -2433,6 +2469,7 @@ export function MorningBrief({
           heatmap or the leading/lagging fallback, PM implication); it simply no
           longer needs a click to see. */}
       {sectorRotation && (
+        <BriefFold prefKey="brief.fold.sectorRotation" title="Sector rotation" meta={brief?.sectorPerformance?.length ? `${brief.sectorPerformance.length} sectors · best → worst` : "best → worst"}>
         <section className="rounded-card border border-line bg-white shadow-sm">
           <div className="flex items-center gap-2 border-b border-line px-5 py-3">
             <span className="text-xs font-bold uppercase tracking-[0.22em] text-ink-3">Sector rotation</span>
@@ -2480,11 +2517,13 @@ export function MorningBrief({
             <ClampText text={sectorRotation.pmImplication} className="mt-3" textClassName="text-sm italic leading-6 text-ink-2" />
           </div>
         </section>
+        </BriefFold>
       )}
 
       {/* Contrarian sentiment + Catalyst watch side by side, as the mock
           pairs them: the sentiment read on the left, the dated calendar it
           has to survive on the right. */}
+      <BriefFold prefKey="brief.fold.sentiment" title="Contrarian sentiment & catalysts" meta="the counter-signal read, and the calendar it has to survive">
       <div className="grid grid-cols-1 gap-4 lg:grid-cols-[1.35fr_1fr] items-start">
         <div className="min-w-0">
       {/* Contrarian Sentiment — all 4 indicators + Claude analysis */}
@@ -2547,19 +2586,16 @@ export function MorningBrief({
       )}
         </div>
       </div>
+      </BriefFold>
       </div>
-      {/* ── Horizons: tactical / cyclical / structural ── */}
-      <div style={{ scrollMarginTop: "var(--brief-scroll-mt, 132px)" }} className="mb-2 mt-2 flex items-baseline gap-2.5" id="s-horizon">
-        <h2 className="text-xs font-bold uppercase tracking-[0.22em] text-ink-3">Horizons</h2>
-        <span className="text-[11px] text-ink-faint">tactical · cyclical · structural</span>
-      </div>
+      {/* ── Horizons: tactical / cyclical / structural — folded (canvas) ── */}
+      <BriefFold prefKey="brief.fold.horizons" title="Horizons" meta="tactical · cyclical · structural" id="s-horizon">
       <div className="space-y-6 ">
       {/* Forward View — Next 2 Weeks */}
-      <section className="rounded-card border border-accent-border bg-gradient-to-br from-accent-soft/60 to-white p-4 md:p-5 shadow-sm">
+      <section className="rounded-card border border-line bg-white p-4 md:p-5 shadow-sm">
         <div className="flex flex-wrap items-center justify-between gap-3 mb-3">
           <div className="flex flex-wrap items-center gap-2">
-            <span className="text-base">🧭</span>
-            <h2 className="text-base font-semibold text-ink">Forward View — Multi-Horizon</h2>
+            <h2 className="text-[15px] font-bold text-ink">Forward View — Multi-Horizon</h2>
             {forwardLoading && <span className="text-xs text-accent animate-pulse">Fetching live data...</span>}
             {activeForward && (
               <span
@@ -2703,6 +2739,7 @@ export function MorningBrief({
         )}
       </section>
       </div>
+      </BriefFold>
       {/* ── Narrative: the long-form model prose ── */}
       <div style={{ scrollMarginTop: "var(--brief-scroll-mt, 132px)" }} className="mb-2 mt-2 flex items-baseline gap-2.5" id="s-narrative">
         <h2 className="text-xs font-bold uppercase tracking-[0.22em] text-ink-3">Narrative</h2>
