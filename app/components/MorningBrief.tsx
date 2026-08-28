@@ -1896,13 +1896,14 @@ export function MorningBrief({
         <h2 className="text-xs font-bold uppercase tracking-[0.22em] text-ink-3">Decide</h2>
         <span className="text-[11px] text-ink-faint">the day&apos;s call, and the four reads behind it</span>
       </div>
-      <div className="grid grid-cols-1 gap-4 lg:grid-cols-[1.55fr_1fr] ">
-        <div className="space-y-4 min-w-0">
+      <section className="overflow-hidden rounded-card border border-line bg-white shadow-card">
+      <div className="grid grid-cols-1 lg:grid-cols-[1.55fr_1fr] lg:divide-x lg:divide-line-soft">
+        <div className="min-w-0">
       {/* Bottom Line — the design's white card: label with the model + time
           right-aligned, the call in full, the posture line as an inset cream
           callout, and "since last brief" folded INSIDE the card rather than
           floating below it as a separate blue panel. */}
-      <section className="relative rounded-card border border-line bg-white p-5 shadow-card">
+      <section className="relative p-5">
         {generating && <LoadingOverlay message="Claude is analyzing markets..." />}
         <div className="mb-3 flex items-baseline justify-between gap-3">
           <span className="text-xs font-bold uppercase tracking-[0.22em] text-ink-3">Bottom line</span>
@@ -1933,12 +1934,12 @@ export function MorningBrief({
         {/* items-start is load-bearing: without it every tile stretches to the
             tallest in its row, so a verbose Cash tile left the calendar tile as
             a tall empty box. Each tile is now only as tall as its content. */}
-        <div className="grid grid-cols-1 gap-4 sm:grid-cols-2 content-start items-stretch min-w-0">
+        <div className="grid grid-cols-1 gap-3 p-4 sm:grid-cols-2 content-start items-stretch min-w-0 bg-surface-2/40">
       {/* Regime-transition gauge (Phase 02) — how close the current regime is
           to flipping + the early tells. A compact one-liner; the tells sit
           below as small pills. Hidden on briefs generated before Phase 02. */}
       {regimeTransition && (
-        <section className="flex h-full flex-col rounded-xl border border-line bg-white px-4 py-3 shadow-sm">
+        <section className="flex h-full flex-col rounded-xl border border-line bg-white px-4 py-3">
           {/* Mock form: label pill + distance-to-flip on one row, the composite
               read big, a proportional 3-segment bar, then the signal counts.
               Replaces the old 5-element wrapping header, which cost 3 lines at
@@ -1985,7 +1986,7 @@ export function MorningBrief({
       )}
 
           {hedgingCall && (
-            <div className={`flex h-full flex-col rounded-card border p-5 shadow-sm ${
+            <div className={`flex h-full flex-col rounded-card border p-5 ${
               hedgingCall.action === "ADD"
                 ? "border-neg-border bg-neg-soft"
                 : hedgingCall.action === "SKIP"
@@ -2161,7 +2162,7 @@ export function MorningBrief({
               : deploymentWindowStatus.tone === "rose" ? "bg-neg-soft text-neg"
               : "bg-surface-2 text-ink-2";
             return (
-              <div className={`flex h-full flex-col rounded-card border p-5 shadow-sm ${tone.border} ${tone.bg}`}>
+              <div className={`flex h-full flex-col rounded-card border p-5 ${tone.border} ${tone.bg}`}>
                 <div className="flex items-center justify-between gap-2 mb-3">
                   <div className={`text-xs font-bold uppercase tracking-[0.22em] ${tone.label}`}>
                     Cash Deployment
@@ -2214,7 +2215,7 @@ export function MorningBrief({
           holdings reporting within 7 days), given the count-first form the
           other Decide tiles use, with the dated macro events as a footer. */}
       {earningsSoon.length > 0 && (
-        <div className="flex h-full flex-col rounded-card border border-warn-border bg-warn-soft p-5 shadow-sm">
+        <div className="flex h-full flex-col rounded-card border border-warn-border bg-warn-soft p-5">
           <div className="mb-3 flex items-center justify-between gap-2">
             <span className="text-xs font-bold uppercase tracking-[0.22em] text-warn">Earnings</span>
             <span className="text-[10px] font-bold text-ink-3">next 7 sessions</span>
@@ -2265,6 +2266,7 @@ export function MorningBrief({
 
         </div>
       </div>
+      </section>
       {/* ── Act: what to do today, with the risk flags that justify it ── */}
       <div style={{ scrollMarginTop: "var(--brief-scroll-mt, 132px)" }} className="mb-2 mt-2 flex items-baseline gap-2.5" id="s-act">
         <h2 className="text-xs font-bold uppercase tracking-[0.22em] text-ink-3">Act</h2>
