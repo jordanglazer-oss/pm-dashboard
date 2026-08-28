@@ -40,6 +40,8 @@ type Entry = {
   action?: () => void;
   // Last known price for holding rows (shown on the right). (#12)
   price?: number;
+  /** Adjusted composite for holding rows (v2 rich results). */
+  score?: number;
   // Lowercased search target — match anything containing this string.
   searchTarget: string;
 };
@@ -51,18 +53,28 @@ const CATEGORY_LABEL: Record<Entry["category"], string> = {
 };
 
 const PAGE_ENTRIES: Omit<Entry, "id" | "searchTarget">[] = [
-  { category: "page", label: "Brief",        subtitle: "Morning briefing & regime",       href: "/brief" },
-  { category: "page", label: "Dashboard",    subtitle: "Portfolio rankings & sector mix", href: "/" },
-  { category: "page", label: "Chat",         subtitle: "Ask Claude anything",             href: "/chat" },
-  { category: "page", label: "PIM Model",    subtitle: "Model holdings & sleeve drift",   href: "/pim-model" },
-  { category: "page", label: "Positioning",  subtitle: "Live positions & today's return", href: "/portfolio" },
-  { category: "page", label: "Screener",     subtitle: "Run scans / technicals scanner",  href: "/screener" },
-  { category: "page", label: "Research",     subtitle: "Upticks, Fundstrat, RBC, Alpha",  href: "/research" },
-  { category: "page", label: "AA & Perf",    subtitle: "Asset allocation & performance",  href: "/aa-performance" },
-  { category: "page", label: "Hedging",      subtitle: "SPY put hedging window",          href: "/hedging" },
-  { category: "page", label: "Appendix",     subtitle: "Daily ledger / historical",       href: "/appendix" },
-  { category: "page", label: "Inbox",        subtitle: "Brokerage emails ingest",         href: "/inbox" },
-  { category: "page", label: "Health",       subtitle: "Upstream data source status",    href: "/admin/health" },
+  { category: "page", label: "Brief",        subtitle: "Regime, verdict, the day's calls",  href: "/brief" },
+  { category: "page", label: "Holdings",     subtitle: "Portfolio rankings & filters",      href: "/" },
+  { category: "page", label: "Positioning",  subtitle: "Live book vs model · rebalance",    href: "/portfolio" },
+  { category: "page", label: "Models",       subtitle: "Model holdings · scenarios · eligibility", href: "/pim-model" },
+  { category: "page", label: "Performance",  subtitle: "Returns · allocation · attribution", href: "/aa-performance" },
+  { category: "page", label: "Risk",         subtitle: "Contributions · clusters · stress", href: "/risk" },
+  { category: "page", label: "Thesis",       subtitle: "Kill conditions & underwrites",     href: "/thesis" },
+  { category: "page", label: "Journal",      subtitle: "Decision log & hit rates",          href: "/journal" },
+  { category: "page", label: "Synthesis",    subtitle: "AI base/bull/bear per name",        href: "/synthesis" },
+  { category: "page", label: "Pipeline",     subtitle: "Conviction board",                  href: "/conviction" },
+  { category: "page", label: "Screener",     subtitle: "Technical scans",                   href: "/screener" },
+  { category: "page", label: "Radar",        subtitle: "Regime-tilted factor screen",       href: "/radar" },
+  { category: "page", label: "Setups",       subtitle: "Technical setup scan",              href: "/setups" },
+  { category: "page", label: "Factor Lab",   subtitle: "Shadow quant read-outs",            href: "/factor-lab" },
+  { category: "page", label: "Research",     subtitle: "Upticks, Fundstrat, RBC, Alpha",    href: "/research" },
+  { category: "page", label: "Inbox",        subtitle: "Coverage table & email ingest",     href: "/inbox" },
+  { category: "page", label: "Hedging",      subtitle: "SPY put hedging window",            href: "/hedging" },
+  { category: "page", label: "Chat",         subtitle: "Ask Claude anything",               href: "/chat" },
+  { category: "page", label: "Appendix",     subtitle: "Daily ledger / historical",         href: "/appendix" },
+  { category: "page", label: "Client Report", subtitle: "Client-facing PDF builder",        href: "/client-report" },
+  { category: "page", label: "Methodology",  subtitle: "How the process works",             href: "/methodology" },
+  { category: "page", label: "Health",       subtitle: "Upstream data source status",       href: "/admin/health" },
 ];
 
 const RECENT_KEY = "pm:cmd-palette:recent";
@@ -95,7 +107,7 @@ type Props = {
 
 export function CommandPalette({ open, onClose, onTriggerQuickAdd }: Props) {
   const router = useRouter();
-  const { stocks } = useStocks();
+  const { stocks, scoredStocks, refreshAllPrices } = useStocks();
   const [query, setQuery] = useState("");
   const [highlight, setHighlight] = useState(0);
   const inputRef = useRef<HTMLInputElement | null>(null);
@@ -118,12 +130,14 @@ export function CommandPalette({ open, onClose, onTriggerQuickAdd }: Props) {
       searchTarget: `${p.label} ${p.subtitle ?? ""}`.toLowerCase(),
     }));
 
+    const scoreByTicker = new Map(scoredStocks.map((x) => [x.ticker, x.adjusted]));
     const stockEntries: Entry[] = stocks.map((s) => ({
       id: `stock:${s.ticker}`,
       category: "stock",
       label: s.ticker,
       subtitle: `${s.name}${s.bucket ? ` · ${s.bucket}` : ""}${s.sector ? ` · ${s.sector}` : ""}`,
       price: typeof s.price === "number" ? s.price : undefined,
+      score: scoreByTicker.get(s.ticker),
       href: `/stock/${encodeURIComponent(s.ticker)}`,
       searchTarget: `${s.ticker} ${s.name} ${s.sector ?? ""} ${s.bucket ?? ""}`.toLowerCase(),
     }));
@@ -138,6 +152,30 @@ export function CommandPalette({ open, onClose, onTriggerQuickAdd }: Props) {
         searchTarget: "add stock new ticker",
       },
       {
+        id: "action:refresh-prices",
+        category: "action",
+        label: "Refresh prices",
+        subtitle: "Batched Yahoo refresh across the whole book",
+        action: () => { void refreshAllPrices(); },
+        searchTarget: "refresh prices update quotes yahoo",
+      },
+      {
+        id: "action:log-hedge",
+        category: "action",
+        label: "Log a hedge",
+        subtitle: "Open the hedging ledger",
+        href: "/hedging",
+        searchTarget: "log hedge spy put ledger protection",
+      },
+      {
+        id: "action:regenerate-brief",
+        category: "action",
+        label: "Regenerate brief…",
+        subtitle: "Opens the Brief — confirm the regeneration there",
+        href: "/brief",
+        searchTarget: "regenerate brief morning rerun",
+      },
+      {
         id: "action:health",
         category: "action",
         label: "Open Health dashboard",
@@ -147,8 +185,31 @@ export function CommandPalette({ open, onClose, onTriggerQuickAdd }: Props) {
       },
     ];
 
-    return [...pages, ...stockEntries, ...actions];
-  }, [stocks, onTriggerQuickAdd]);
+    // Per-ticker actions (v2): every scoreable holding gets a Rescore and a
+    // Synthesis jump, findable by typing the ticker + verb.
+    const tickerActions: Entry[] = [];
+    for (const st of stocks) {
+      if (st.instrumentType && st.instrumentType !== "stock") continue;
+      tickerActions.push({
+        id: `action:rescore:${st.ticker}`,
+        category: "action",
+        label: `Rescore ${st.ticker}`,
+        subtitle: "Web-verified full rescore · ~$0.04",
+        href: `/stock/${encodeURIComponent(st.ticker)}?action=rescore`,
+        searchTarget: `rescore score ${st.ticker} ${st.name}`.toLowerCase(),
+      });
+      tickerActions.push({
+        id: `action:synthesis:${st.ticker}`,
+        category: "action",
+        label: `Synthesis for ${st.ticker}`,
+        subtitle: "Jump to the name's base/bull/bear record",
+        href: `/synthesis?ticker=${encodeURIComponent(st.ticker)}`,
+        searchTarget: `synthesis generate ${st.ticker} ${st.name}`.toLowerCase(),
+      });
+    }
+
+    return [...pages, ...stockEntries, ...actions, ...tickerActions];
+  }, [stocks, scoredStocks, onTriggerQuickAdd, refreshAllPrices]);
 
   // Apply the query (substring on lowercased target) + recency boost.
   const filtered = useMemo<Entry[]>(() => {
@@ -285,6 +346,9 @@ export function CommandPalette({ open, onClose, onTriggerQuickAdd }: Props) {
                     </div>
                     {e.price != null && (
                       <span className="shrink-0 font-mono text-[12px] text-ink-2 tabular-nums">${e.price.toFixed(2)}</span>
+                    )}
+                    {e.score != null && (
+                      <span className="shrink-0 font-mono text-[12px] font-semibold text-ink tabular-nums">{e.score.toFixed(1)}<span className="text-ink-faint">/41</span></span>
                     )}
                     {active && (
                       <kbd className="shrink-0 rounded border border-line px-1 py-px text-[10px] text-ink-3">↵</kbd>

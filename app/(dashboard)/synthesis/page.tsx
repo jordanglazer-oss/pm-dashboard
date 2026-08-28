@@ -1,6 +1,6 @@
 "use client";
 
-import { Fragment, useCallback, useEffect, useMemo, useState } from "react";
+import { Fragment, useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { IdeasRail } from "@/app/components/IdeasRail";
 import { useStocks } from "@/app/lib/StockContext";
 import { displayTicker } from "@/app/lib/ticker";
@@ -311,6 +311,26 @@ export default function SynthesisPage() {
   const [generating, setGenerating] = useState<Set<string>>(new Set());
   const [genErrors, setGenErrors] = useState<Record<string, string>>({});
 
+  // Deep-link support: /synthesis?ticker=CSU.TO&from=stock — show a
+  // "back to the stock page" button and scroll/open that name's row.
+  const [fromStock, setFromStock] = useState<string | null>(null);
+  const [focusTicker, setFocusTicker] = useState<string | null>(null);
+  const focusedOnce = useRef(false);
+  useEffect(() => {
+    const p = new URLSearchParams(window.location.search);
+    const t = p.get("ticker");
+    if (t) setFocusTicker(t);
+    if (p.get("from") === "stock" && t) setFromStock(t);
+  }, []);
+  useEffect(() => {
+    if (!focusTicker || !data || focusedOnce.current) return;
+    focusedOnce.current = true;
+    const t = focusTicker.toUpperCase();
+    setExpanded((prev) => new Set([...prev, t]));
+    setTimeout(() => document.getElementById(`syn-${t}`)?.scrollIntoView({ behavior: "smooth", block: "center" }), 150);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [focusTicker, data]);
+
   const load = useCallback(async () => {
     try {
       const res = await fetch("/api/synthesis-screen");
@@ -455,7 +475,21 @@ export default function SynthesisPage() {
     <div className="min-w-0 flex-1 space-y-4">
       <div className="flex flex-wrap items-center justify-between gap-2">
         <div>
-          <h1 className="text-[15px] font-bold text-ink">Synthesis</h1>
+          <div className="flex items-center gap-2.5">
+            {fromStock && (
+              <button
+                onClick={() => {
+                  if (window.history.length > 1) window.history.back();
+                  else window.location.href = `/stock/${fromStock.toLowerCase()}`;
+                }}
+                className="flex items-center gap-1 rounded-control border border-line bg-white px-2.5 py-1 text-[12px] font-semibold text-ink-2 hover:bg-surface-hover hover:text-ink transition-colors"
+                title={`Return to the ${fromStock} stock page (restores your scroll position)`}
+              >
+                ← Back to {fromStock}
+              </button>
+            )}
+            <h1 className="text-[15px] font-bold text-ink">Synthesis</h1>
+          </div>
           <p className="text-xs text-ink-3">
             Evidence-bound base / bull / bear per name — FactSet, analyst reports, revisions, street takeaways,
             research lists, technicals. Score and factors deliberately excluded.
@@ -558,7 +592,8 @@ export default function SynthesisPage() {
                 return (
                   <Fragment key={row.ticker}>
                     <div
-                      className="flex cursor-pointer flex-wrap items-center gap-2 px-3 py-2 hover:bg-surface-2"
+                      id={`syn-${row.ticker.toUpperCase()}`}
+                      className="flex scroll-mt-24 cursor-pointer flex-wrap items-center gap-2 px-3 py-2 hover:bg-surface-2"
                       onClick={() => toggle(row.ticker)}
                     >
                       <div className="w-40 shrink-0">

@@ -1047,6 +1047,7 @@ export default function StockDetailPage() {
   // context. We can't POST inside handleRescore because those values
   // are derived from context state set asynchronously.
   const pendingScoreAppendRef = useRef(false);
+
   const [refreshing, setRefreshing] = useState(false);
   const [refreshError, setRefreshError] = useState("");
   const [editingWeight, setEditingWeight] = useState(false);
@@ -1054,6 +1055,21 @@ export default function StockDetailPage() {
   const [loadingFundData, setLoadingFundData] = useState(false);
 
   const scoreable = stock ? isScoreable(stock) : true;
+
+  // ?action=rescore (from the command palette): kick off the same rescore the
+  // Score button runs, once, then strip the param so refresh/back can't
+  // re-trigger a paid call.
+  const paletteRescoreFired = useRef(false);
+  useEffect(() => {
+    if (paletteRescoreFired.current || !stock || !scoreable) return;
+    const p = new URLSearchParams(window.location.search);
+    if (p.get("action") !== "rescore") return;
+    paletteRescoreFired.current = true;
+    p.delete("action");
+    router.replace(`${window.location.pathname}${p.toString() ? `?${p}` : ""}`, { scroll: false });
+    void handleRescore();
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [stock, scoreable]);
 
   // Watches stock.scores changes and writes to pm:score-history. Two
   // branches:
