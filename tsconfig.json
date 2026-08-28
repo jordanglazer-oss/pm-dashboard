@@ -30,5 +30,5 @@
     ".next/dev/types/**/*.ts",
     "**/*.mts"
   ],
-  "exclude": ["node_modules"]
+  "exclude": ["node_modules", "brief-redesign-sticky-command-bar", "design_handoff_polish_motion", "design-streamline"]
 }
