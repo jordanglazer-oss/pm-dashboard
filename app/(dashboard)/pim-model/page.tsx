@@ -74,7 +74,7 @@ export default function PimModelPage() {
               </button>
             </div>
             <div className="min-h-0 flex-1 overflow-auto p-4">
-              <ModelScenarios groups={pimModels.groups} />
+              <ModelScenarios groups={pimModels.groups} alwaysOpen />
             </div>
           </div>
         </div>
