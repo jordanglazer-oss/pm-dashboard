@@ -25,6 +25,40 @@ import { regimeValence } from "@/app/lib/regime-transition";
 import { HORIZONS } from "@/app/lib/horizons";
 import { useStocks } from "@/app/lib/StockContext";
 
+/**
+ * Eyebrow-style fold for whole Brief zones (canvas: secondary reads sit one
+ * click away). Renders the familiar section eyebrow as a toggle; open/closed
+ * persists in pm:ui-prefs. Children render untouched when open.
+ */
+function BriefFold({ prefKey, title, meta, id, defaultCollapsed = true, children }: {
+  prefKey: string;
+  title: string;
+  meta?: React.ReactNode;
+  /** Anchor id for the command-bar jump links (e.g. "s-horizon"). */
+  id?: string;
+  defaultCollapsed?: boolean;
+  children: React.ReactNode;
+}) {
+  const { uiPrefs, setUiPref } = useStocks();
+  const collapsed = (uiPrefs[prefKey] ?? (defaultCollapsed ? "1" : "0")) === "1";
+  return (
+    <>
+      <div style={{ scrollMarginTop: "var(--brief-scroll-mt, 132px)" }} id={id} className="mb-2 mt-2">
+        <button
+          onClick={() => setUiPref(prefKey, collapsed ? "0" : "1")}
+          aria-expanded={!collapsed}
+          className="flex items-baseline gap-2.5 text-left cursor-pointer hover:opacity-80 transition-opacity"
+        >
+          <svg className={`h-3 w-3 self-center text-ink-3 transition-transform ${collapsed ? "-rotate-90" : ""}`} fill="none" stroke="currentColor" strokeWidth="2.5" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" d="M19 9l-7 7-7-7" /></svg>
+          <h2 className="text-xs font-bold uppercase tracking-[0.22em] text-ink-3">{title}</h2>
+          {meta && <span className="text-[11px] text-ink-faint">{meta}</span>}
+        </button>
+      </div>
+      {!collapsed && children}
+    </>
+  );
+}
+
 /** Numeric input with an inline save indicator.
  *  Value only persists when the user clicks the save icon (or presses Enter).
  *  Shows a subtle checkmark when saved, a blue save icon when dirty. */
@@ -2435,6 +2469,7 @@ export function MorningBrief({
           heatmap or the leading/lagging fallback, PM implication); it simply no
           longer needs a click to see. */}
       {sectorRotation && (
+        <BriefFold prefKey="brief.fold.sectorRotation" title="Sector rotation" meta={brief?.sectorPerformance?.length ? `${brief.sectorPerformance.length} sectors · best → worst` : "best → worst"}>
         <section className="rounded-card border border-line bg-white shadow-sm">
           <div className="flex items-center gap-2 border-b border-line px-5 py-3">
             <span className="text-xs font-bold uppercase tracking-[0.22em] text-ink-3">Sector rotation</span>
@@ -2482,11 +2517,13 @@ export function MorningBrief({
             <ClampText text={sectorRotation.pmImplication} className="mt-3" textClassName="text-sm italic leading-6 text-ink-2" />
           </div>
         </section>
+        </BriefFold>
       )}
 
       {/* Contrarian sentiment + Catalyst watch side by side, as the mock
           pairs them: the sentiment read on the left, the dated calendar it
           has to survive on the right. */}
+      <BriefFold prefKey="brief.fold.sentiment" title="Contrarian sentiment & catalysts" meta="the counter-signal read, and the calendar it has to survive">
       <div className="grid grid-cols-1 gap-4 lg:grid-cols-[1.35fr_1fr] items-start">
         <div className="min-w-0">
       {/* Contrarian Sentiment — all 4 indicators + Claude analysis */}
@@ -2549,12 +2586,10 @@ export function MorningBrief({
       )}
         </div>
       </div>
+      </BriefFold>
       </div>
-      {/* ── Horizons: tactical / cyclical / structural ── */}
-      <div style={{ scrollMarginTop: "var(--brief-scroll-mt, 132px)" }} className="mb-2 mt-2 flex items-baseline gap-2.5" id="s-horizon">
-        <h2 className="text-xs font-bold uppercase tracking-[0.22em] text-ink-3">Horizons</h2>
-        <span className="text-[11px] text-ink-faint">tactical · cyclical · structural</span>
-      </div>
+      {/* ── Horizons: tactical / cyclical / structural — folded (canvas) ── */}
+      <BriefFold prefKey="brief.fold.horizons" title="Horizons" meta="tactical · cyclical · structural" id="s-horizon">
       <div className="space-y-6 ">
       {/* Forward View — Next 2 Weeks */}
       <section className="rounded-card border border-line bg-white p-4 md:p-5 shadow-sm">
@@ -2704,6 +2739,7 @@ export function MorningBrief({
         )}
       </section>
       </div>
+      </BriefFold>
       {/* ── Narrative: the long-form model prose ── */}
       <div style={{ scrollMarginTop: "var(--brief-scroll-mt, 132px)" }} className="mb-2 mt-2 flex items-baseline gap-2.5" id="s-narrative">
         <h2 className="text-xs font-bold uppercase tracking-[0.22em] text-ink-3">Narrative</h2>
