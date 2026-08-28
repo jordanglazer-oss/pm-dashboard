@@ -19,11 +19,11 @@ import Link from "next/link";
 import type { MarketRegimeData, RegimeDirection } from "@/app/lib/market-regime";
 import { HORIZONS } from "@/app/lib/horizons";
 
-function tileValueClasses(d: RegimeDirection): string {
+function pillClasses(d: RegimeDirection): string {
   switch (d) {
-    case "risk-on":  return "text-pos";
-    case "risk-off": return "text-neg";
-    case "neutral":  return "text-warn";
+    case "risk-on":  return "border-pos-border bg-pos-soft text-pos";
+    case "risk-off": return "border-neg-border bg-neg-soft text-neg";
+    case "neutral":  return "border-warn-border bg-warn-soft text-warn";
   }
 }
 
@@ -96,14 +96,18 @@ export function RegimeStrip({ bare = false }: { bare?: boolean } = {}) {
           </span>
         </div>
 
-        {/* Signal tiles — label over mono value, colored by direction. Same
-            data as the old pills, read as a metrics row instead of a chip
-            cloud (streamline: "show the number, not a descriptor"). */}
-        <div className="grid min-w-0 flex-1 grid-cols-2 gap-x-5 gap-y-2 sm:grid-cols-4 xl:grid-cols-8">
+        {/* Signal pills — back by PM preference, one size smaller than the
+            originals; whitespace-nowrap so the text always fits its pill. */}
+        <div className="flex min-w-0 flex-1 flex-wrap gap-1.5">
           {regime.composite.signals.map((s, i) => (
-            <span key={i} className="min-w-0" title={s.detail}>
-              <span className="block truncate text-[10px] text-ink-3">{s.name}</span>
-              <span className={`block truncate font-mono text-[12px] font-semibold ${tileValueClasses(s.direction)}`}>{s.detail}</span>
+            <span
+              key={i}
+              className={`inline-flex max-w-full items-center gap-1 whitespace-nowrap rounded-full border px-2 py-[3px] text-[10.5px] leading-none ${pillClasses(s.direction)}`}
+              title={s.detail}
+            >
+              <span className="truncate font-semibold">{s.name}</span>
+              <span className="opacity-70">·</span>
+              <span className="truncate font-mono opacity-80">{s.detail}</span>
             </span>
           ))}
         </div>

@@ -12,7 +12,8 @@ import { displayTicker } from "@/app/lib/ticker";
  * surface instead of forty.
  */
 export function ModelEligibilityMatrix() {
-  const { scoredStocks, pimModels, toggleModelEligibility } = useStocks();
+  const { scoredStocks, pimModels, toggleModelEligibility, uiPrefs, setUiPref } = useStocks();
+  const collapsed = (uiPrefs["models.eligibilityMatrix.collapsed"] ?? "1") === "1";
   const rows = scoredStocks
     .filter((s) => s.bucket === "Portfolio" && (!s.instrumentType || s.instrumentType === "stock"))
     .sort((a, b) => a.ticker.localeCompare(b.ticker));
@@ -21,12 +22,20 @@ export function ModelEligibilityMatrix() {
 
   return (
     <div className="overflow-hidden rounded-card border border-line bg-white shadow-sm">
-      <div className="flex flex-wrap items-center gap-2 border-b border-line-soft px-5 py-3">
-        <h2 className="text-[15px] font-bold text-ink">Model eligibility</h2>
+      <div className={`flex flex-wrap items-center gap-2 px-5 py-3 ${collapsed ? "" : "border-b border-line-soft"}`}>
+        <button
+          onClick={() => setUiPref("models.eligibilityMatrix.collapsed", collapsed ? "0" : "1")}
+          aria-expanded={!collapsed}
+          className="flex items-center gap-1.5 cursor-pointer hover:opacity-80 transition-opacity"
+        >
+          <svg className={`h-3.5 w-3.5 text-ink-3 transition-transform ${collapsed ? "-rotate-90" : ""}`} fill="none" stroke="currentColor" strokeWidth="2.5" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" d="M19 9l-7 7-7-7" /></svg>
+          <h2 className="text-[15px] font-bold text-ink">Model eligibility</h2>
+        </button>
         <span className="text-[11px] text-ink-3">
-          which model groups each stock may enter · funds manage eligibility + weights on their own page
+          {rows.length} stocks × {groups.length} models · funds manage eligibility + weights on their own page
         </span>
       </div>
+      {!collapsed && (<>
       <div className="max-h-[70vh] overflow-auto">
         <table className="w-full text-sm">
           <thead className="sticky top-0 z-10 bg-white shadow-[0_1px_0_0_rgb(230_232_236)]">
@@ -63,8 +72,9 @@ export function ModelEligibilityMatrix() {
         </table>
       </div>
       <div className="border-t border-line bg-surface-2 px-4 py-2 text-[11px] text-ink-3">
-        {rows.length} stocks × {groups.length} models · unchecked = the buy/sell + rebalance flows skip that model
+        unchecked = the buy/sell + rebalance flows skip that model
       </div>
+      </>)}
     </div>
   );
 }

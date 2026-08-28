@@ -2,6 +2,7 @@
 
 import { Fragment, useCallback, useEffect, useMemo, useState } from "react";
 import { IdeasRail } from "@/app/components/IdeasRail";
+import { useStocks } from "@/app/lib/StockContext";
 import { displayTicker } from "@/app/lib/ticker";
 import {
   VERDICT_LABEL,
@@ -281,8 +282,30 @@ function chunk<T>(arr: T[], size: number): T[][] {
 export default function SynthesisPage() {
   const [data, setData] = useState<ScreenData | null>(null);
   const [loadError, setLoadError] = useState<string | null>(null);
-  const [expanded, setExpanded] = useState<Set<string>>(new Set());
-  const [collapsedSections, setCollapsedSections] = useState<Set<string>>(new Set());
+  // Row-card + section open state persists in pm:ui-prefs (site rule:
+  // every collapse survives refreshes). Set-based APIs preserved so the
+  // render code below is untouched.
+  const { uiPrefs, setUiPref } = useStocks();
+  const expanded = useMemo(() => {
+    const out = new Set<string>();
+    for (const k of Object.keys(uiPrefs)) if (k.startsWith("synthesis.row.") && uiPrefs[k] === "1") out.add(k.slice("synthesis.row.".length));
+    return out;
+  }, [uiPrefs]);
+  const setExpanded = (fn: (prev: Set<string>) => Set<string>) => {
+    const next = fn(expanded);
+    for (const t of next) if (!expanded.has(t)) setUiPref(`synthesis.row.${t}`, "1");
+    for (const t of expanded) if (!next.has(t)) setUiPref(`synthesis.row.${t}`, "0");
+  };
+  const collapsedSections = useMemo(() => {
+    const out = new Set<string>();
+    for (const k of Object.keys(uiPrefs)) if (k.startsWith("synthesis.section.") && uiPrefs[k] === "1") out.add(k.slice("synthesis.section.".length));
+    return out;
+  }, [uiPrefs]);
+  const setCollapsedSections = (fn: (prev: Set<string>) => Set<string>) => {
+    const next = fn(collapsedSections);
+    for (const b of next) if (!collapsedSections.has(b)) setUiPref(`synthesis.section.${b}`, "1");
+    for (const b of collapsedSections) if (!next.has(b)) setUiPref(`synthesis.section.${b}`, "0");
+  };
   const [sortMode, setSortMode] = useState<SortMode>("priority");
   const [filters, setFilters] = useState<Set<FilterMode>>(new Set());
   const [generating, setGenerating] = useState<Set<string>>(new Set());

@@ -1659,14 +1659,14 @@ function RankingTable({
   // compact. Either the Show more button under "What They Do" OR the
   // one under "Why Own It" flips the same state, so whichever is closer
   // to where the user is reading will do the job.
-  const [expandedRows, setExpandedRows] = useState<Set<string>>(new Set());
+  // Persisted (site rule: every collapse/expand survives refreshes).
+  const expandedRows = useMemo(() => {
+    const out = new Set<string>();
+    for (const k of Object.keys(uiPrefs)) if (k.startsWith("rank.row.") && uiPrefs[k] === "1") out.add(k.slice("rank.row.".length));
+    return out;
+  }, [uiPrefs]);
   const toggleRowExpanded = (ticker: string) => {
-    setExpandedRows((prev) => {
-      const next = new Set(prev);
-      if (next.has(ticker)) next.delete(ticker);
-      else next.add(ticker);
-      return next;
-    });
+    setUiPref(`rank.row.${ticker}`, expandedRows.has(ticker) ? "0" : "1");
   };
 
   // ── Row selection for targeted rescores ─────────────────────────────

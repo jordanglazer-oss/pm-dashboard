@@ -1,6 +1,7 @@
 "use client";
 
 import React, { useCallback, useEffect, useState } from "react";
+import { useStocks } from "@/app/lib/StockContext";
 import type { CalibrationResult } from "@/app/lib/score-calibration";
 
 /**
@@ -40,7 +41,10 @@ function Bar({ value, maxAbs }: { value: number; maxAbs: number }) {
 }
 
 export function ScoreCalibration() {
-  const [collapsed, setCollapsed] = useState(true);
+  const { uiPrefs, setUiPref } = useStocks();
+  const collapsed = (uiPrefs["dashboard.scoreCalibration.collapsed"] ?? "1") === "1";
+  const setCollapsed = (fn: (c: boolean) => boolean) =>
+    setUiPref("dashboard.scoreCalibration.collapsed", fn(collapsed) ? "1" : "0");
   const [horizon, setHorizon] = useState(91);
   const [data, setData] = useState<Payload | null>(null);
   const [loading, setLoading] = useState(false);
