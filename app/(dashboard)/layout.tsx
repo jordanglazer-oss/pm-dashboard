@@ -8,6 +8,7 @@ import { ScrollToTop } from "../components/ScrollToTop";
 import { ToastHost } from "../components/ToastHost";
 import { PageTransition } from "../components/PageTransition";
 import { AuthGate } from "../components/AuthGate";
+import { NavHistoryTracker, BackCrumb } from "../lib/nav-history";
 
 export default function DashboardLayout({
   children,
@@ -22,7 +23,9 @@ export default function DashboardLayout({
         <ResearchTabs />
         <IdeasTabs />
         <BriefTabs />
+        <NavHistoryTracker />
         <PageTransition>{children}</PageTransition>
+        <BackCrumb />
         <ScrollToTop />
         <ToastHost />
       </Providers>

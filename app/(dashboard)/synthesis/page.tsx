@@ -313,14 +313,12 @@ export default function SynthesisPage() {
 
   // Deep-link support: /synthesis?ticker=CSU.TO&from=stock — show a
   // "back to the stock page" button and scroll/open that name's row.
-  const [fromStock, setFromStock] = useState<string | null>(null);
   const [focusTicker, setFocusTicker] = useState<string | null>(null);
   const focusedOnce = useRef(false);
   useEffect(() => {
     const p = new URLSearchParams(window.location.search);
     const t = p.get("ticker");
     if (t) setFocusTicker(t);
-    if (p.get("from") === "stock" && t) setFromStock(t);
   }, []);
   useEffect(() => {
     if (!focusTicker || !data || focusedOnce.current) return;
@@ -475,21 +473,7 @@ export default function SynthesisPage() {
     <div className="min-w-0 flex-1 space-y-4">
       <div className="flex flex-wrap items-center justify-between gap-2">
         <div>
-          <div className="flex items-center gap-2.5">
-            {fromStock && (
-              <button
-                onClick={() => {
-                  if (window.history.length > 1) window.history.back();
-                  else window.location.href = `/stock/${fromStock.toLowerCase()}`;
-                }}
-                className="flex items-center gap-1 rounded-control border border-line bg-white px-2.5 py-1 text-[12px] font-semibold text-ink-2 hover:bg-surface-hover hover:text-ink transition-colors"
-                title={`Return to the ${fromStock} stock page (restores your scroll position)`}
-              >
-                ← Back to {fromStock}
-              </button>
-            )}
-            <h1 className="text-[15px] font-bold text-ink">Synthesis</h1>
-          </div>
+          <h1 className="text-[15px] font-bold text-ink">Synthesis</h1>
           <p className="text-xs text-ink-3">
             Evidence-bound base / bull / bear per name — FactSet, analyst reports, revisions, street takeaways,
             research lists, technicals. Score and factors deliberately excluded.

@@ -21,6 +21,7 @@ import ThesisTile from "@/app/components/ThesisTile";
 import FactorLensTile from "@/app/components/FactorLensTile";
 import StreetTakeawaysTile from "@/app/components/StreetTakeawaysTile";
 import { StockSynthesisTile } from "@/app/components/StockSynthesisTile";
+import { usePrevPage } from "@/app/lib/nav-history";
 import { ScoreDelta } from "@/app/components/ScoreDelta";
 import { CollapsibleSection } from "@/app/components/CollapsibleSection";
 import { colorForSector } from "@/app/lib/sectorColors";
@@ -978,8 +979,19 @@ export default function StockDetailPage() {
   const from = searchParams.get("from");
   const ticker = (params.ticker as string)?.toUpperCase();
 
-  const backHref = from === "pim-model" ? "/pim-model" : "/";
-  const backLabel = from === "pim-model" ? "PIM Model" : "Dashboard";
+  // Universal back link: label from the tracked in-app history, navigation
+  // via history.back() so the origin page's scroll position restores. Falls
+  // back to the legacy ?from param, then Dashboard, when there's no history
+  // (direct link / new tab).
+  const prevPage = usePrevPage();
+  const backHref = prevPage?.path ?? (from === "pim-model" ? "/pim-model" : "/");
+  const backLabel = prevPage?.label ?? (from === "pim-model" ? "Models" : "Dashboard");
+  const goBack = (e: React.MouseEvent) => {
+    if (prevPage) {
+      e.preventDefault();
+      window.history.back();
+    }
+  };
   const fromSuffix = from ? `?from=${from}` : "";
 
   // Preserve the horizontal scroll position of the ticker nav bar across
@@ -1284,7 +1296,7 @@ export default function StockDetailPage() {
           <div className="rounded-card border border-line bg-white p-8 text-center shadow-sm">
             <h1 className="text-2xl font-semibold text-ink">{ticker} not found</h1>
             <p className="mt-2 text-ink-3">This ticker is not in your portfolio or watchlist.</p>
-            <Link href={backHref} className="mt-4 inline-block text-accent hover:underline text-sm">Back to {backLabel}</Link>
+            <Link href={backHref} onClick={goBack} className="mt-4 inline-block text-accent hover:underline text-sm">Back to {backLabel}</Link>
           </div>
         </div>
       </main>
@@ -1446,7 +1458,9 @@ export default function StockDetailPage() {
         <div className="flex items-center gap-2 w-max">
           <Link
             href={backHref}
+            onClick={goBack}
             className="shrink-0 rounded-lg border border-line px-3 py-1.5 text-xs font-semibold text-ink-3 hover:bg-surface-2 transition-colors"
+            title="Return to where you came from (restores your place)"
           >
             &larr; {backLabel}
           </Link>
