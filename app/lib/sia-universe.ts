@@ -73,28 +73,60 @@ export async function writeSiaSnapshot(
   try {
     const redis = await getRedis();
 
-    // Same day → MERGE (the S&P and TSX arrive as separate files, and the
-    // ingest route POSTs one attachment per request, so the second file must
-    // add to the first). A later date → REPLACE, so only the newest export is
-    // ever stored.
-    let merged = false;
-    let combined = rows;
-    const existingRaw = await redis.get(SNAP_KEY);
-    if (existingRaw) {
+    /**
+     * Merge this file into the snapshot the previous file of the same batch
+     * left behind, rather than replacing it.
+     *
+     * The window is a TIME window, not a same-UTC-date test. The date alone
+     * was wrong for the actual workflow: all four exports are sent in ONE
+     * email, the webhook POSTs one attachment per call, and `todayUtc()`
+     * rolls over at 8pm Eastern. A batch straddling that instant had the
+     * second index file land on a new date and REPLACE the first — dropping
+     * a whole index while still reporting `written: true`. A few hours is
+     * far wider than one email's attachments and far narrower than the
+     * weekly cadence, so it cannot accidentally merge last week's export.
+     */
+    const MERGE_WINDOW_MS = 6 * 60 * 60 * 1000;
+    const mergeableWith = (prior: SiaSnapshot | null): boolean => {
+      if (!prior?.rows || typeof prior.rows !== "object") return false;
+      if (prior.date === date) return true;
+      const t = Date.parse(prior.capturedAt ?? "");
+      return Number.isFinite(t) && Date.now() - t < MERGE_WINDOW_MS;
+    };
+    const readPrior = async (): Promise<SiaSnapshot | null> => {
+      const raw = await redis.get(SNAP_KEY);
+      if (!raw) return null;
       try {
-        const prior = JSON.parse(existingRaw) as SiaSnapshot;
-        if (prior?.date === date && prior.rows && typeof prior.rows === "object") {
-          combined = { ...prior.rows, ...rows }; // newer file wins per ticker
-          merged = true;
-        }
+        return JSON.parse(raw) as SiaSnapshot;
       } catch {
-        // Unparseable existing value — replace rather than lose today's upload.
+        // Unparseable existing value — replace rather than lose this upload.
+        return null;
       }
-    }
+    };
 
-    const snap: SiaSnapshot = { date, capturedAt: new Date().toISOString(), rows: combined };
-    await redis.set(SNAP_KEY, JSON.stringify(snap));
-    return { written: true, date, tickers: Object.keys(combined).length, merged };
+    /**
+     * Read-merge-write, verified. The four attachments are separate HTTP
+     * requests, so two index files can be in flight at once; both would read
+     * the same prior value and the loser's rows would vanish under the
+     * winner's write. Re-reading after the write and retrying if our own
+     * tickers aren't there converges on the union without needing a lock.
+     */
+    let merged = false;
+    let tickers = count;
+    for (let attempt = 0; attempt < 3; attempt++) {
+      const prior = await readPrior();
+      merged = mergeableWith(prior);
+      const combined = merged ? { ...prior!.rows, ...rows } : rows; // newer file wins per ticker
+      const snap: SiaSnapshot = { date, capturedAt: new Date().toISOString(), rows: combined };
+      await redis.set(SNAP_KEY, JSON.stringify(snap));
+      tickers = Object.keys(combined).length;
+
+      const after = await readPrior();
+      const lost = Object.keys(rows).filter((t) => !after?.rows?.[t]);
+      if (lost.length === 0) break;
+      console.warn(`[sia-universe] concurrent write dropped ${lost.length} rows, retrying (attempt ${attempt + 1})`);
+    }
+    return { written: true, date, tickers, merged };
   } catch (e) {
     console.error("[sia-universe] snapshot write failed:", e);
     return { written: false, reason: "error", date };

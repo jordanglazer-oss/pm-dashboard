@@ -1,0 +1,163 @@
+<!doctype html>
+<html>
+<head>
+  <meta charset="utf-8">
+  <script src="./support.js"></script>
+</head>
+<body>
+<x-dc>
+<helmet>
+  <link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=IBM+Plex+Mono:wght@400;500;600&family=IBM+Plex+Sans:wght@400;500;600;700&display=swap">
+  <style>
+    body { margin: 0; background: #f6f7f9; color: #10151c;
+           font-family: "IBM Plex Sans", -apple-system, BlinkMacSystemFont, "Segoe UI", Helvetica, Arial, sans-serif;
+           -webkit-font-smoothing: antialiased; }
+    a { color: #2d5bd0; text-decoration: none; }
+    a:hover { color: #2c43be; }
+    .mono { font-family: "IBM Plex Mono", ui-monospace, "SF Mono", Menlo, Consolas, monospace; font-variant-numeric: tabular-nums; }
+    table { border-collapse: collapse; width: 100%; font-variant-numeric: tabular-nums; }
+    .eyebrow { font-size: 11px; font-weight: 600; text-transform: uppercase; letter-spacing: 0.09em; color: #9aa3b0; }
+    .card { border: 1px solid #e6e8ec; border-radius: 8px; background: #ffffff; box-shadow: 0 1px 2px rgb(16 21 28 / 0.05); }
+    .seg { display: flex; align-items: center; gap: 2px; border-radius: 8px; background: #fafbfc; border: 1px solid #e6e8ec; padding: 2px; width: fit-content; }
+    .seg .on { border-radius: 6px; background: #ffffff; box-shadow: 0 1px 2px rgb(16 21 28 / 0.05); padding: 4px 12px; font-size: 13px; font-weight: 600; color: #10151c; }
+    .seg .off { padding: 4px 12px; font-size: 13px; color: #5b6472; }
+    .th { text-align: left; padding: 8px 10px; font-size: 11px; font-weight: 600; color: #9aa3b0; }
+    .thr { text-align: right; padding: 8px 10px; font-size: 11px; font-weight: 600; color: #9aa3b0; }
+    .tl { font-size: 10px; color: #9aa3b0; }
+    .tv { font-family: "IBM Plex Mono", ui-monospace, Menlo, monospace; font-variant-numeric: tabular-nums; font-size: 14px; font-weight: 600; color: #10151c; margin-top: 2px; }
+    .pill-pos { border-radius: 20px; background: #f0f9f4; color: #12805c; padding: 2px 8px; font-size: 11px; font-weight: 600; }
+    .pill-neg { border-radius: 20px; background: #fdf2f3; color: #d1435b; padding: 2px 8px; font-size: 11px; font-weight: 600; }
+    .pill-warn { border-radius: 20px; background: #fbf6ea; color: #b8791f; padding: 2px 8px; font-size: 11px; font-weight: 600; }
+    .pill-mut { border: 1px solid #e6e8ec; border-radius: 20px; background: #fafbfc; color: #5b6472; padding: 2px 8px; font-size: 11px; font-weight: 600; }
+    .btn { border: 1px solid #e6e8ec; border-radius: 8px; background: #ffffff; padding: 5px 11px; font-size: 12px; color: #5b6472; }
+    .btn-p { border-radius: 8px; background: #2d5bd0; padding: 5px 11px; font-size: 12px; font-weight: 600; color: #ffffff; }
+  </style>
+</helmet>
+<div style="width: 1440px; background: #f6f7f9;">
+  <div style="background: #ffffff; border-bottom: 1px solid #e6e8ec; padding: 14px 24px 0;">
+    <div style="max-width: 1392px; margin: 0 auto;">
+      <div style="display: flex; align-items: flex-end; justify-content: space-between; gap: 16px;">
+        <div>
+          <div style="font-size: 22px; font-weight: 700; letter-spacing: -0.02em; line-height: 1; color: #10151c;">Portfolio</div>
+          <div style="margin-top: 5px; font-size: 12px; color: #9aa3b0;">Risk · computed from 1y of daily closes · refreshed 6h ago</div>
+        </div>
+        <span class="btn" style="margin-bottom: 2px;">Refresh</span>
+      </div>
+      <div class="seg" style="margin-top: 12px;"><span class="off">Holdings</span><span class="off">Positioning</span><span class="off">Models</span><span class="off">Performance</span><span class="on">Risk</span><span class="off">Thesis</span><span class="off">Journal</span></div>
+      <div style="height: 12px;"></div>
+    </div>
+  </div>
+
+  <div style="max-width: 1392px; margin: 0 auto; padding: 16px 24px 28px; display: flex; flex-direction: column; gap: 14px;">
+
+    <!-- Headline tiles -->
+    <div class="card" style="overflow: hidden;">
+      <div style="display: grid; grid-template-columns: repeat(5, minmax(0, 1fr));">
+        <div style="padding: 12px 18px; border-right: 1px solid #f0f1f4;"><div class="tl">Book beta</div><div class="tv">0.94</div><div style="font-size: 11px; color: #9aa3b0; margin-top: 1px;">look-through</div></div>
+        <div style="padding: 12px 18px; border-right: 1px solid #f0f1f4;"><div class="tl">Ann. vol</div><div class="tv">13.8%</div><div style="font-size: 11px; color: #9aa3b0; margin-top: 1px;">vs SPX 15.2%</div></div>
+        <div style="padding: 12px 18px; border-right: 1px solid #f0f1f4;"><div class="tl">Top-5 risk share</div><div class="tv" style="color: #b8791f;">31%</div><div style="font-size: 11px; color: #9aa3b0; margin-top: 1px;">of covariance risk</div></div>
+        <div style="padding: 12px 18px; border-right: 1px solid #f0f1f4;"><div class="tl">Largest cluster</div><div class="tv">7 names</div><div style="font-size: 11px; color: #9aa3b0; margin-top: 1px;">rate-sensitive</div></div>
+        <div style="padding: 12px 18px;"><div class="tl">Hedge status</div><div class="tv" style="color: #d1435b;">None active</div><div style="font-size: 11px; color: #9aa3b0; margin-top: 1px;">Brief says ADD</div></div>
+      </div>
+    </div>
+
+    <div style="display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 14px; align-items: start;">
+
+      <!-- Risk contributions -->
+      <div class="card" style="overflow: hidden;">
+        <div style="display: flex; align-items: center; gap: 10px; padding: 12px 18px; border-bottom: 1px solid #e6e8ec;">
+          <span style="font-size: 14px; font-weight: 700; color: #10151c;">Risk contribution vs weight</span>
+          <span style="font-size: 12px; color: #9aa3b0;">covariance-based</span>
+        </div>
+        <div style="padding: 8px 18px 12px;">
+          <div style="display: flex; align-items: center; gap: 10px; padding: 7px 0; border-bottom: 1px solid #f0f1f4;">
+            <span class="mono" style="width: 62px; font-size: 12px; font-weight: 600;">NVDA</span>
+            <span style="flex-grow: 1;"><span style="display: block; height: 7px; border-radius: 4px; background: #f0f1f4; overflow: hidden;"><span style="display: block; width: 82%; height: 7px; background: #d1435b;"></span></span><span style="display: block; margin-top: 3px; height: 4px; border-radius: 2px; background: #f0f1f4; overflow: hidden;"><span style="display: block; width: 36%; height: 4px; background: #c3c8d0;"></span></span></span>
+            <span class="mono" style="width: 96px; text-align: right; font-size: 12px;"><span style="font-weight: 600; color: #d1435b;">8.2%</span><span style="color: #9aa3b0;"> / 3.6%</span></span>
+          </div>
+          <div style="display: flex; align-items: center; gap: 10px; padding: 7px 0; border-bottom: 1px solid #f0f1f4;">
+            <span class="mono" style="width: 62px; font-size: 12px; font-weight: 600;">SHOP-T</span>
+            <span style="flex-grow: 1;"><span style="display: block; height: 7px; border-radius: 4px; background: #f0f1f4; overflow: hidden;"><span style="display: block; width: 64%; height: 7px; background: #b8791f;"></span></span><span style="display: block; margin-top: 3px; height: 4px; border-radius: 2px; background: #f0f1f4; overflow: hidden;"><span style="display: block; width: 22%; height: 4px; background: #c3c8d0;"></span></span></span>
+            <span class="mono" style="width: 96px; text-align: right; font-size: 12px;"><span style="font-weight: 600; color: #b8791f;">6.4%</span><span style="color: #9aa3b0;"> / 2.2%</span></span>
+          </div>
+          <div style="display: flex; align-items: center; gap: 10px; padding: 7px 0; border-bottom: 1px solid #f0f1f4;">
+            <span class="mono" style="width: 62px; font-size: 12px; font-weight: 600;">MSFT</span>
+            <span style="flex-grow: 1;"><span style="display: block; height: 7px; border-radius: 4px; background: #f0f1f4; overflow: hidden;"><span style="display: block; width: 52%; height: 7px; background: #9aa3b0;"></span></span><span style="display: block; margin-top: 3px; height: 4px; border-radius: 2px; background: #f0f1f4; overflow: hidden;"><span style="display: block; width: 41%; height: 4px; background: #c3c8d0;"></span></span></span>
+            <span class="mono" style="width: 96px; text-align: right; font-size: 12px;"><span style="font-weight: 600; color: #5b6472;">5.2%</span><span style="color: #9aa3b0;"> / 4.1%</span></span>
+          </div>
+          <div style="display: flex; align-items: center; gap: 10px; padding: 7px 0;">
+            <span class="mono" style="width: 62px; font-size: 12px; font-weight: 600;">WCN-T</span>
+            <span style="flex-grow: 1;"><span style="display: block; height: 7px; border-radius: 4px; background: #f0f1f4; overflow: hidden;"><span style="display: block; width: 18%; height: 7px; background: #12805c;"></span></span><span style="display: block; margin-top: 3px; height: 4px; border-radius: 2px; background: #f0f1f4; overflow: hidden;"><span style="display: block; width: 28%; height: 4px; background: #c3c8d0;"></span></span></span>
+            <span class="mono" style="width: 96px; text-align: right; font-size: 12px;"><span style="font-weight: 600; color: #12805c;">1.8%</span><span style="color: #9aa3b0;"> / 2.8%</span></span>
+          </div>
+        </div>
+        <div style="padding: 9px 18px; border-top: 1px solid #f0f1f4; background: #fafbfc; display: flex; gap: 14px;">
+          <span style="display: flex; align-items: center; gap: 5px; font-size: 11px; color: #5b6472;"><span style="width: 12px; height: 5px; border-radius: 3px; background: #b8791f;"></span>risk share</span>
+          <span style="display: flex; align-items: center; gap: 5px; font-size: 11px; color: #5b6472;"><span style="width: 12px; height: 3px; border-radius: 2px; background: #c3c8d0;"></span>weight</span>
+          <span style="font-size: 11px; color: #9aa3b0;">— a fat top bar over a thin bottom bar = risk concentration</span>
+        </div>
+      </div>
+
+      <div style="display: flex; flex-direction: column; gap: 14px;">
+        <!-- Correlation clusters -->
+        <div class="card" style="overflow: hidden;">
+          <div style="display: flex; align-items: center; gap: 10px; padding: 12px 18px; border-bottom: 1px solid #e6e8ec;">
+            <span style="font-size: 14px; font-weight: 700; color: #10151c;">Correlation clusters</span>
+            <span style="font-size: 12px; color: #9aa3b0;">names that fall together</span>
+          </div>
+          <div style="padding: 12px 18px; display: flex; flex-direction: column; gap: 10px;">
+            <div>
+              <div style="display: flex; align-items: center; gap: 8px;"><span style="font-size: 12px; font-weight: 600; color: #10151c;">AI &amp; datacenter</span><span class="pill-warn">avg ρ 0.71</span></div>
+              <div style="margin-top: 5px; display: flex; flex-wrap: wrap; gap: 5px;"><span class="mono pill-mut">NVDA</span><span class="mono pill-mut">ANET</span><span class="mono pill-mut">MSFT</span><span class="mono pill-mut">AVGO</span><span class="mono pill-mut">VRT</span></div>
+            </div>
+            <div>
+              <div style="display: flex; align-items: center; gap: 8px;"><span style="font-size: 12px; font-weight: 600; color: #10151c;">Rate-sensitive</span><span class="pill-mut">avg ρ 0.63</span></div>
+              <div style="margin-top: 5px; display: flex; flex-wrap: wrap; gap: 5px;"><span class="mono pill-mut">BN-T</span><span class="mono pill-mut">BAM-T</span><span class="mono pill-mut">TRI-T</span><span class="mono pill-mut">RY-T</span><span class="mono pill-mut">+3</span></div>
+            </div>
+          </div>
+        </div>
+
+        <!-- Stress replays -->
+        <div class="card" style="overflow: hidden;">
+          <div style="display: flex; align-items: center; gap: 10px; padding: 12px 18px; border-bottom: 1px solid #e6e8ec;">
+            <span style="font-size: 14px; font-weight: 700; color: #10151c;">Stress replays</span>
+            <span style="font-size: 12px; color: #9aa3b0;">historical shocks applied to today&apos;s book</span>
+          </div>
+          <div style="display: grid; grid-template-columns: repeat(4, minmax(0, 1fr));">
+            <div style="padding: 10px 16px; border-right: 1px solid #f0f1f4;"><div class="tl">Covid crash</div><div class="tv" style="color: #d1435b;">−26.4%</div><div style="font-size: 11px; color: #9aa3b0; margin-top: 1px;">SPX −33.9%</div></div>
+            <div style="padding: 10px 16px; border-right: 1px solid #f0f1f4;"><div class="tl">2022 hikes</div><div class="tv" style="color: #d1435b;">−17.1%</div><div style="font-size: 11px; color: #9aa3b0; margin-top: 1px;">SPX −25.4%</div></div>
+            <div style="padding: 10px 16px; border-right: 1px solid #f0f1f4;"><div class="tl">Aug-24 unwind</div><div class="tv" style="color: #d1435b;">−6.8%</div><div style="font-size: 11px; color: #9aa3b0; margin-top: 1px;">SPX −8.5%</div></div>
+            <div style="padding: 10px 16px;"><div class="tl">GFC</div><div class="tv" style="color: #d1435b;">−41.2%</div><div style="font-size: 11px; color: #9aa3b0; margin-top: 1px;">SPX −56.8%</div></div>
+          </div>
+        </div>
+      </div>
+    </div>
+
+    <!-- Look-through sector exposure -->
+    <div class="card" style="overflow: hidden;">
+      <div style="display: flex; align-items: center; gap: 10px; padding: 12px 18px; border-bottom: 1px solid #e6e8ec;">
+        <span style="font-size: 14px; font-weight: 700; color: #10151c;">Look-through sector exposure</span>
+        <span style="font-size: 12px; color: #9aa3b0;">beta-weighted, ETFs decomposed · vs S&amp;P 500</span>
+      </div>
+      <div style="padding: 12px 18px;">
+        <div style="display: flex; height: 30px; border-radius: 8px; overflow: hidden;">
+          <span style="width: 31%; background: #2d5bd0; display: grid; place-items: center; color: #ffffff; font-size: 11px; font-weight: 600;">Tech 31%</span>
+          <span style="width: 17%; background: #7c5cd0; display: grid; place-items: center; color: #ffffff; font-size: 11px; font-weight: 600;">Fin 17%</span>
+          <span style="width: 14%; background: #12805c; display: grid; place-items: center; color: #ffffff; font-size: 11px; font-weight: 600;">Ind 14%</span>
+          <span style="width: 10%; background: #b8791f; display: grid; place-items: center; color: #ffffff; font-size: 11px; font-weight: 600;">HC 10%</span>
+          <span style="width: 8%; background: #9aa3b0; display: grid; place-items: center; color: #ffffff; font-size: 11px; font-weight: 600;">Disc 8%</span>
+          <span style="width: 20%; background: #e6e8ec; display: grid; place-items: center; color: #5b6472; font-size: 11px; font-weight: 600;">Other 20%</span>
+        </div>
+        <div style="margin-top: 8px; display: flex; gap: 16px; flex-wrap: wrap;">
+          <span style="font-size: 12px; color: #5b6472;">vs index: <span class="mono" style="color: #12805c; font-weight: 600;">Ind +5.2</span></span>
+          <span style="font-size: 12px; color: #5b6472;"><span class="mono" style="color: #12805c; font-weight: 600;">Fin +3.1</span></span>
+          <span style="font-size: 12px; color: #5b6472;"><span class="mono" style="color: #d1435b; font-weight: 600;">Tech −2.4</span></span>
+          <span style="font-size: 12px; color: #5b6472;"><span class="mono" style="color: #d1435b; font-weight: 600;">Staples −1.8</span></span>
+        </div>
+      </div>
+    </div>
+  </div>
+</div>
+</x-dc>
+</body>
+</html>

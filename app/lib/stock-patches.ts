@@ -17,7 +17,7 @@ import {
   mapPowerRatingToMarketEdge,
   type BoostedAiConsensus,
 } from "./external-scoring";
-import { sameCompanyLoose } from "./ticker";
+import { sameCompanyLoose, tickersEqual } from "./ticker";
 import type { ScrapedSia, ScrapedBoosted } from "./screenshot-extractors";
 import type { MarketEdgeCsvRow } from "./marketedge-csv";
 
@@ -45,6 +45,12 @@ const emptySummary = (): IngestSummary => ({
   expectedButMissing: [],
   unmatched: [],
 });
+
+/** How recently a name must have been read for a later file in the SAME
+ *  upload batch to leave its staleness stamp alone. Wide enough to span one
+ *  email's attachments arriving as separate webhook calls, far narrower than
+ *  the weekly SIA cadence. */
+const SAME_BATCH_MS = 6 * 60 * 60 * 1000;
 
 // ── SIA ─────────────────────────────────────────────────────────────
 
@@ -79,13 +85,30 @@ export function applySiaEntries(
   const matchedStockTickers = new Set<string>();
   const held = allHeld ?? expected;
 
+  // MATCH STRICTNESS DEPENDS ON THE SOURCE.
+  //
+  // A holdings export or screenshot lists the PM's own names, and the surface
+  // form drifts between sources ("RY", "RY-T", "RY.TO"), so the loose
+  // cross-listing match earns its keep there.
+  //
+  // A full-index export does NOT. It carries the correct listing for every
+  // name it contains, so loose matching buys nothing and costs correctness:
+  // crossListingRoot strips ".TO", which collapses the TSX's Loblaw (L.TO)
+  // onto the S&P's Loews Corp (L) — two unrelated companies. Ingesting the
+  // S&P 500 file then wrote Loews' SMAX onto the Loblaw position, and which
+  // value survived depended on the order the week's attachments happened to
+  // be processed in. Verified against the real exports: tightening to
+  // tickersEqual in universe mode keeps all 49 genuine matches and drops only
+  // that collision.
+  const matches = universeMode ? tickersEqual : sameCompanyLoose;
+
   for (const e of entries) {
-    const stock = expected.find((s) => sameCompanyLoose(s.ticker, e.ticker));
+    const stock = expected.find((s) => matches(s.ticker, e.ticker));
     if (!stock) {
       // If this is an ETF/fund the PM holds, silently drop it — SIA assigns
       // SMAX scores to ETFs too but our scoring system only applies to
       // individual stocks. Putting them in "unmatched" was misleading noise.
-      const heldNotScoreable = held.find((s) => sameCompanyLoose(s.ticker, e.ticker));
+      const heldNotScoreable = held.find((s) => matches(s.ticker, e.ticker));
       if (!heldNotScoreable && !universeMode) summary.unmatched.push(e.ticker);
       continue;
     }
@@ -106,10 +129,32 @@ export function applySiaEntries(
   }
 
   // Stamp every expected stock that wasn't in the screenshot.
-  for (const s of expected) {
-    if (matchedStockTickers.has(s.ticker)) continue;
-    summary.expectedButMissing.push(s.ticker);
-    patches.push({ ticker: s.ticker, fields: { siaLastScreenshotAt: now } });
+  //
+  // NOT in universe mode. The stamp means "an upload happened and this name
+  // wasn't readable in it", and a newer siaLastScreenshotAt than
+  // siaLastReadAt is what raises the "type this one in by hand" chip on the
+  // stock page and the Inbox. An index export legitimately contains only its
+  // own index, so the S&P 500 file was flagging all 26 held names outside it
+  // — every Canadian position — as unreadable. The holdings exports arrive in
+  // the same email and cover the whole book, so they remain the honest
+  // source of that staleness signal.
+  if (!universeMode) {
+    for (const s of expected) {
+      if (matchedStockTickers.has(s.ticker)) continue;
+      // …and not if this name was read from SIA moments ago. The portfolio
+      // and watchlist exports are separate attachments on the SAME email, so
+      // each covers only part of the book and each was stamping every name
+      // the OTHER one carried. Processed seconds apart, that leaves the first
+      // file's names with siaLastScreenshotAt newer than their own
+      // siaLastReadAt — the exact condition for the "SIA couldn't read this
+      // one, type it in" chip — so ~42 names raised a false flag every week
+      // on data that had just been read successfully. A name genuinely absent
+      // from the whole batch still has a week-old read and still flags.
+      const lastRead = Date.parse(s.siaLastReadAt ?? "");
+      if (Number.isFinite(lastRead) && Date.parse(now) - lastRead < SAME_BATCH_MS) continue;
+      summary.expectedButMissing.push(s.ticker);
+      patches.push({ ticker: s.ticker, fields: { siaLastScreenshotAt: now } });
+    }
   }
 
   return { patches, summary };

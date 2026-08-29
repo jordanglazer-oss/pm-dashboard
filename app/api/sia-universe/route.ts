@@ -38,7 +38,11 @@ export async function POST(req: NextRequest) {
     for (const [t, v] of Object.entries(raw as Record<string, unknown>)) {
       if (t && v && typeof v === "object") rows[t.toUpperCase()] = v as SiaRow;
     }
-    return NextResponse.json(await writeSiaSnapshot(rows));
+    // `named` is the client's verdict that this file IS an index export
+    // despite being under the 200-row gate — the TSX 60 is the case that
+    // matters. Without forwarding it the route refused that file with
+    // "too-few-rows" no matter what the uploader had concluded.
+    return NextResponse.json(await writeSiaSnapshot(rows, { named: body?.named === true }));
   } catch (e) {
     console.error("sia-universe POST failed:", e);
     return NextResponse.json({ error: "snapshot write failed" }, { status: 500 });

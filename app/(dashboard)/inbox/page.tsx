@@ -19,7 +19,7 @@ import {
 import { applySiaEntries, applyBoostedEntries, applyMarketEdgeRows, type StockPatch } from "@/app/lib/stock-patches";
 import { parseMarketEdgeCsv } from "@/app/lib/marketedge-csv";
 import { parseSiaCsv } from "@/app/lib/sia-csv";
-import { UNIVERSE_MIN_ROWS } from "@/app/lib/sia-universe-shared";
+import { UNIVERSE_MIN_ROWS, isNamedUniverseExport, looksLikeCompleteIndexCut } from "@/app/lib/sia-universe-shared";
 import { parseBoostedCsv } from "@/app/lib/boosted-csv";
 type FactsetEntry = { date: string; label: string; event: string | null };
 /** ticker → kind → newest entry of that kind. */
@@ -735,6 +735,8 @@ export default function InboxPage() {
     inScreenshotButUnreadable: string[]; // tickers vision saw but couldn't parse the value
     expectedButMissing: string[];        // scoreable P+W stocks not in screenshot
     unmatched: string[];                 // tickers in screenshot not in P+W
+    /** Non-error detail worth surfacing — e.g. how many universe rows landed. */
+    note?: string;
     errors: string[];
   };
   /** Dispatch a StockPatch[] through the React context. Used by SIA + Boosted
@@ -838,10 +840,20 @@ export default function InboxPage() {
       // Full-index export → also persist the universe snapshot, the only place
       // the ~96% of rows you don't hold survive (applySiaEntries drops them by
       // design). Held names patch exactly as before either way.
-      const isUniverse = parsed.rows.length >= UNIVERSE_MIN_ROWS;
+      //
+      // Row count ALONE is not enough evidence, and using it alone silently
+      // threw away the TSX every week: that export is 62 rows, far under the
+      // 200-row gate, and an unedited SIA download is called
+      // "tableExport-12.csv" so it names no index either. The emailed path has
+      // always applied all three tests; this one only applied the first. Same
+      // three, same order, so both paths agree on what a universe file is.
+      const named = isNamedUniverseExport(file.name);
+      const completeCut = looksLikeCompleteIndexCut(parsed.ranked.map((r) => r.rank));
+      const isUniverse = parsed.rows.length >= UNIVERSE_MIN_ROWS || named || completeCut;
       const { patches, summary } = applySiaEntries(expected, parsed.rows, now, stocks, isUniverse);
       dispatchPatches(patches);
       let snapshotError: string[] = [];
+      let snapshotNote = "";
       if (isUniverse) {
         const rows: Record<string, Record<string, unknown>> = {};
         for (const r of parsed.ranked) {
@@ -852,10 +864,17 @@ export default function InboxPage() {
           const res = await fetch("/api/sia-universe", {
             method: "POST",
             headers: { "Content-Type": "application/json" },
-            body: JSON.stringify({ rows }),
+            // Without this the route re-applies the 200-row gate server-side
+            // and refuses the TSX with "too-few-rows" even once the client
+            // has recognised it.
+            body: JSON.stringify({ rows, named: named || completeCut }),
           }).then((r) => r.json());
           if (!res?.written) {
             snapshotError = [`Universe snapshot not stored (${res?.reason ?? "error"}).`];
+          } else {
+            // Report what actually landed. The count is the only way to catch
+            // one index having replaced the other instead of merging.
+            snapshotNote = `Universe snapshot ${res.date}: ${Object.keys(rows).length} rows from this file, ${res.tickers} in the snapshot${res.merged ? " (merged)" : ""}.`;
           }
         } catch {
           snapshotError = ["Universe snapshot not stored (request failed)."];
@@ -865,6 +884,7 @@ export default function InboxPage() {
         source: "sia",
         cached: false,
         ...summary,
+        note: snapshotNote || undefined,
         errors: snapshotError,
       });
     } catch (e) {
@@ -1595,6 +1615,9 @@ export default function InboxPage() {
               <div className="text-warn">
                 ⚠ Expected scoreable names NOT in screenshot: <span className="font-mono">{screenshotImportSummary.expectedButMissing.join(", ")}</span>
               </div>
+            )}
+            {screenshotImportSummary.note && (
+              <div className="text-ink-2">{screenshotImportSummary.note}</div>
             )}
             {screenshotImportSummary.unmatched.length > 0 && (
               <div className="text-ink-3">

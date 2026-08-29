@@ -1,0 +1,151 @@
+<!doctype html>
+<html>
+<head>
+  <meta charset="utf-8">
+  <script src="./support.js"></script>
+</head>
+<body>
+<x-dc>
+<helmet>
+  <link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=IBM+Plex+Mono:wght@400;500;600&family=IBM+Plex+Sans:wght@400;500;600;700&display=swap">
+  <style>
+    body { margin: 0; background: #f6f7f9; color: #10151c;
+           font-family: "IBM Plex Sans", -apple-system, BlinkMacSystemFont, "Segoe UI", Helvetica, Arial, sans-serif;
+           -webkit-font-smoothing: antialiased; }
+    a { color: #2d5bd0; text-decoration: none; }
+    a:hover { color: #2c43be; }
+    .mono { font-family: "IBM Plex Mono", ui-monospace, "SF Mono", Menlo, Consolas, monospace; font-variant-numeric: tabular-nums; }
+    table { border-collapse: collapse; width: 100%; font-variant-numeric: tabular-nums; }
+    .eyebrow { font-size: 11px; font-weight: 600; text-transform: uppercase; letter-spacing: 0.09em; color: #9aa3b0; }
+    .card { border: 1px solid #e6e8ec; border-radius: 8px; background: #ffffff; box-shadow: 0 1px 2px rgb(16 21 28 / 0.05); }
+    .seg { display: flex; align-items: center; gap: 2px; border-radius: 8px; background: #fafbfc; border: 1px solid #e6e8ec; padding: 2px; width: fit-content; }
+    .seg .on { border-radius: 6px; background: #ffffff; box-shadow: 0 1px 2px rgb(16 21 28 / 0.05); padding: 4px 12px; font-size: 13px; font-weight: 600; color: #10151c; }
+    .seg .off { padding: 4px 12px; font-size: 13px; color: #5b6472; }
+    .th { text-align: left; padding: 8px 10px; font-size: 11px; font-weight: 600; color: #9aa3b0; }
+    .thr { text-align: right; padding: 8px 10px; font-size: 11px; font-weight: 600; color: #9aa3b0; }
+    .tl { font-size: 10px; color: #9aa3b0; }
+    .tv { font-family: "IBM Plex Mono", ui-monospace, Menlo, monospace; font-variant-numeric: tabular-nums; font-size: 14px; font-weight: 600; color: #10151c; margin-top: 2px; }
+    .pill-pos { border-radius: 20px; background: #f0f9f4; color: #12805c; padding: 2px 8px; font-size: 11px; font-weight: 600; }
+    .pill-neg { border-radius: 20px; background: #fdf2f3; color: #d1435b; padding: 2px 8px; font-size: 11px; font-weight: 600; }
+    .pill-warn { border-radius: 20px; background: #fbf6ea; color: #b8791f; padding: 2px 8px; font-size: 11px; font-weight: 600; }
+    .pill-mut { border: 1px solid #e6e8ec; border-radius: 20px; background: #fafbfc; color: #5b6472; padding: 2px 8px; font-size: 11px; font-weight: 600; }
+    .btn { border: 1px solid #e6e8ec; border-radius: 8px; background: #ffffff; padding: 5px 11px; font-size: 12px; color: #5b6472; }
+    .btn-p { border-radius: 8px; background: #2d5bd0; padding: 5px 11px; font-size: 12px; font-weight: 600; color: #ffffff; }
+  </style>
+</helmet>
+<div style="width: 1440px; background: #f6f7f9;">
+  <div style="background: #ffffff; border-bottom: 1px solid #e6e8ec; padding: 14px 24px 0;">
+    <div style="max-width: 1392px; margin: 0 auto;">
+      <div style="display: flex; align-items: flex-end; justify-content: space-between; gap: 16px;">
+        <div>
+          <div style="font-size: 22px; font-weight: 700; letter-spacing: -0.02em; line-height: 1; color: #10151c;">Brief</div>
+          <div style="margin-top: 5px; font-size: 12px; color: #9aa3b0;">Tuesday 26 Aug · generated 7:04 ET · compared vs Mon 25 Aug</div>
+        </div>
+        <div style="display: flex; align-items: center; gap: 6px; padding-bottom: 2px;">
+          <span class="btn">History</span>
+          <span class="btn-p">Regenerate</span>
+        </div>
+      </div>
+      <div class="seg" style="margin-top: 12px;"><span class="on">Today</span><span class="off">Hedging</span></div>
+      <div style="height: 12px;"></div>
+    </div>
+  </div>
+
+  <div style="max-width: 1392px; margin: 0 auto; padding: 16px 24px 28px; display: flex; flex-direction: column; gap: 14px;">
+
+    <!-- DECIDE: full verdict + summary + bottom line, always at the top -->
+    <div class="card" style="box-shadow: 0 1px 2px rgb(16 21 28 / 0.05), 0 4px 12px -4px rgb(16 21 28 / 0.08); overflow: hidden;">
+      <div style="display: flex; align-items: stretch;">
+        <div style="flex-grow: 1; padding: 16px 20px;">
+          <div style="display: flex; align-items: center; gap: 10px;">
+            <span class="eyebrow" style="letter-spacing: 0.22em;">Decide</span>
+            <span style="border-radius: 20px; background: #f0f9f4; color: #12805c; padding: 3px 11px; font-size: 12px; font-weight: 700;">Risk-On</span>
+            <span style="font-size: 12px; color: #9aa3b0;">unchanged since Friday · composite 5/7</span>
+          </div>
+          <div style="margin-top: 10px; font-size: 18px; font-weight: 600; line-height: 1.4; color: #10151c; max-width: 900px; text-wrap: pretty;">Stay fully invested, but stop adding to megacap tech.</div>
+          <div style="margin-top: 8px; font-size: 13px; line-height: 1.6; color: #5b6472; max-width: 900px; text-wrap: pretty;">Breadth has not confirmed the last two weeks of index gains — RSP/SPY is flat while the index makes new highs, and consumer-staples downgrades are clustering across sources. Credit is calm, the yield curve is quiet, and the composite still reads 5/7 risk-on, so this is a rotation warning rather than an exit signal. The industrials adds from last week are working and get room to run.</div>
+          <div style="margin-top: 12px; border-left: 3px solid #2d5bd0; background: #fafbfc; border-radius: 0 8px 8px 0; padding: 10px 14px; max-width: 900px;">
+            <div style="font-size: 10px; font-weight: 600; text-transform: uppercase; letter-spacing: 0.14em; color: #9aa3b0;">Bottom line</div>
+            <div style="margin-top: 4px; font-size: 14px; font-weight: 600; line-height: 1.5; color: #10151c; text-wrap: pretty;">Hold the book, add the hedge, and let the industrials adds work — nothing here justifies raising cash yet.</div>
+          </div>
+        </div>
+        <div style="width: 280px; flex-shrink: 0; border-left: 1px solid #f0f1f4; padding: 16px 20px; display: flex; flex-direction: column; gap: 12px;">
+          <div class="eyebrow" style="letter-spacing: 0.22em;">Act</div>
+          <div style="display: flex; gap: 10px;">
+            <span style="width: 4px; border-radius: 2px; background: #b8791f; flex-shrink: 0;"></span>
+            <span><span style="display: block; font-size: 13px; font-weight: 600; color: #10151c;">Hedging — ADD</span>
+            <span style="display: block; margin-top: 2px; font-size: 12px; color: #9aa3b0; text-wrap: pretty;">No active protection; VIX3M at 22nd %ile of 16y.</span></span>
+          </div>
+          <div style="display: flex; gap: 10px;">
+            <span style="width: 4px; border-radius: 2px; background: #12805c; flex-shrink: 0;"></span>
+            <span><span style="display: block; font-size: 13px; font-weight: 600; color: #10151c;">Cash — HOLD 4%</span>
+            <span style="display: block; margin-top: 2px; font-size: 12px; color: #9aa3b0;">No change warranted.</span></span>
+          </div>
+          <div style="display: flex; gap: 10px;">
+            <span style="width: 4px; border-radius: 2px; background: #d1435b; flex-shrink: 0;"></span>
+            <span><span style="display: block; font-size: 13px; font-weight: 600; color: #10151c;">Risk flags — 2</span>
+            <span style="display: block; margin-top: 2px; font-size: 12px; color: #9aa3b0; text-wrap: pretty;"><span class="mono">NVDA</span> thesis tripped · staples downgrades.</span></span>
+          </div>
+        </div>
+      </div>
+    </div>
+
+    <!-- BOARD: data tiles, same treatment as the cockpit -->
+    <div class="card" style="overflow: hidden;">
+      <div style="display: flex; align-items: center; gap: 10px; padding: 11px 18px; border-bottom: 1px solid #f0f1f4;">
+        <span class="eyebrow" style="letter-spacing: 0.22em;">Board</span>
+        <span style="font-size: 12px; color: #9aa3b0;">as of 7:02 ET</span>
+        <span style="flex-grow: 1;"></span>
+        <span style="font-size: 12px; font-weight: 600; color: #2d5bd0;">Full macro board (24 tiles)</span>
+      </div>
+      <div style="display: grid; grid-template-columns: repeat(8, minmax(0, 1fr));">
+        <div style="padding: 10px 16px; border-right: 1px solid #f0f1f4;"><div class="tl">S&amp;P 500 fut</div><div class="tv" style="color: #12805c;">+0.38%</div><div class="mono" style="font-size: 11px; color: #9aa3b0; margin-top: 1px;">5,634</div></div>
+        <div style="padding: 10px 16px; border-right: 1px solid #f0f1f4;"><div class="tl">TSX fut</div><div class="tv" style="color: #12805c;">+0.21%</div><div class="mono" style="font-size: 11px; color: #9aa3b0; margin-top: 1px;">24,180</div></div>
+        <div style="padding: 10px 16px; border-right: 1px solid #f0f1f4;"><div class="tl">Nasdaq fut</div><div class="tv" style="color: #12805c;">+0.52%</div><div class="mono" style="font-size: 11px; color: #9aa3b0; margin-top: 1px;">20,410</div></div>
+        <div style="padding: 10px 16px; border-right: 1px solid #f0f1f4;"><div class="tl">VIX</div><div class="tv">14.2</div><div class="mono" style="font-size: 11px; color: #12805c; margin-top: 1px;">−0.4</div></div>
+        <div style="padding: 10px 16px; border-right: 1px solid #f0f1f4;"><div class="tl">US 10Y</div><div class="tv">4.18%</div><div class="mono" style="font-size: 11px; color: #d1435b; margin-top: 1px;">+2 bp</div></div>
+        <div style="padding: 10px 16px; border-right: 1px solid #f0f1f4;"><div class="tl">DXY</div><div class="tv">102.4</div><div class="mono" style="font-size: 11px; color: #9aa3b0; margin-top: 1px;">−0.1%</div></div>
+        <div style="padding: 10px 16px; border-right: 1px solid #f0f1f4;"><div class="tl">WTI</div><div class="tv">78.4</div><div class="mono" style="font-size: 11px; color: #12805c; margin-top: 1px;">+0.8%</div></div>
+        <div style="padding: 10px 16px;"><div class="tl">Gold</div><div class="tv">2,488</div><div class="mono" style="font-size: 11px; color: #12805c; margin-top: 1px;">+0.3%</div></div>
+      </div>
+    </div>
+
+    <!-- NARRATIVE: flush rows in one card (already the Brief's pattern) -->
+    <div class="card" style="overflow: hidden;">
+      <div style="display: flex; align-items: center; gap: 10px; padding: 11px 18px; border-bottom: 1px solid #f0f1f4;">
+        <span class="eyebrow" style="letter-spacing: 0.22em;">Narrative</span>
+        <span style="font-size: 12px; color: #9aa3b0;">expand a row for the full read</span>
+      </div>
+      <div style="display: flex; align-items: flex-start; gap: 10px; padding: 11px 18px; border-bottom: 1px solid #f0f1f4;">
+        <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="#9aa3b0" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round" style="margin-top: 3px; transform: rotate(90deg);"><path d="m9 6 6 6-6 6"></path></svg>
+        <span style="flex-grow: 1;">
+          <span style="display: flex; align-items: center; gap: 9px;"><span style="font-size: 13px; font-weight: 600; color: #10151c;">Breadth</span><span class="pill-warn">narrowing</span></span>
+          <span style="display: block; margin-top: 4px; font-size: 13px; line-height: 1.55; color: #5b6472; max-width: 1080px; text-wrap: pretty;">Equal-weight has lagged cap-weight for 14 sessions. New 52-week highs on the NYSE are running at half their July pace even as the index prints records — the classic pre-rotation signature rather than a pre-drawdown one while credit stays quiet.</span>
+        </span>
+      </div>
+      <div style="display: flex; align-items: center; gap: 10px; padding: 11px 18px; border-bottom: 1px solid #f0f1f4;">
+        <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="#9aa3b0" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><path d="m9 6 6 6-6 6"></path></svg>
+        <span style="font-size: 13px; font-weight: 600; color: #10151c; flex-grow: 1;">Credit</span><span class="pill-pos">calm</span>
+      </div>
+      <div style="display: flex; align-items: center; gap: 10px; padding: 11px 18px; border-bottom: 1px solid #f0f1f4;">
+        <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="#9aa3b0" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><path d="m9 6 6 6-6 6"></path></svg>
+        <span style="font-size: 13px; font-weight: 600; color: #10151c; flex-grow: 1;">Regime tells</span><span style="font-size: 12px; color: #9aa3b0;">5 of 7 risk-on</span>
+      </div>
+      <div style="display: flex; align-items: center; gap: 10px; padding: 11px 18px; border-bottom: 1px solid #f0f1f4;">
+        <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="#9aa3b0" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><path d="m9 6 6 6-6 6"></path></svg>
+        <span style="font-size: 13px; font-weight: 600; color: #10151c; flex-grow: 1;">Hedge basis</span><span style="font-size: 12px; color: #9aa3b0;">premium 22nd %ile</span>
+      </div>
+      <div style="display: flex; align-items: center; gap: 10px; padding: 11px 18px; border-bottom: 1px solid #f0f1f4;">
+        <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="#9aa3b0" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><path d="m9 6 6 6-6 6"></path></svg>
+        <span style="font-size: 13px; font-weight: 600; color: #10151c; flex-grow: 1;">What&apos;s underpriced</span><span style="font-size: 12px; color: #9aa3b0;">2 notes</span>
+      </div>
+      <div style="display: flex; align-items: center; gap: 10px; padding: 11px 18px;">
+        <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="#9aa3b0" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><path d="m9 6 6 6-6 6"></path></svg>
+        <span style="font-size: 13px; font-weight: 600; color: #10151c; flex-grow: 1;">Cash &amp; composite</span><span style="font-size: 12px; color: #9aa3b0;">2 sections</span>
+      </div>
+    </div>
+  </div>
+</div>
+</x-dc>
+</body>
+</html>

@@ -1,0 +1,192 @@
+<!doctype html>
+<html>
+<head>
+  <meta charset="utf-8">
+  <script src="./support.js"></script>
+</head>
+<body>
+<x-dc>
+<helmet>
+  <link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=IBM+Plex+Mono:wght@400;500;600&family=IBM+Plex+Sans:wght@400;500;600;700&display=swap">
+  <style>
+    body { margin: 0; background: #f6f7f9; color: #10151c;
+           font-family: "IBM Plex Sans", -apple-system, BlinkMacSystemFont, "Segoe UI", Helvetica, Arial, sans-serif;
+           -webkit-font-smoothing: antialiased; }
+    a { color: #2d5bd0; text-decoration: none; }
+    a:hover { color: #2c43be; }
+    .mono { font-family: "IBM Plex Mono", ui-monospace, "SF Mono", Menlo, Consolas, monospace; font-variant-numeric: tabular-nums; }
+    .icon-btn { display: grid; place-items: center; width: 36px; height: 36px; border-radius: 8px; border: 1px solid #e6e8ec; background: #ffffff; color: #5b6472; }
+    .chip { border: 1px solid #e6e8ec; border-radius: 20px; background: #ffffff; padding: 6px 12px; font-size: 13px; color: #5b6472; white-space: nowrap; }
+    .chip.on { background: #10151c; border-color: #10151c; color: #ffffff; font-weight: 600; }
+    .eyebrow { font-size: 10px; font-weight: 600; text-transform: uppercase; letter-spacing: 0.09em; color: #9aa3b0; }
+  </style>
+</helmet>
+
+<div style="width: 390px; height: 844px; background: #f6f7f9; display: flex; flex-direction: column; overflow: hidden;">
+
+  <!-- Top bar: brand + global actions. No hamburger — navigation moved to the bottom bar. -->
+  <div style="background: #ffffff; border-bottom: 1px solid #e6e8ec; padding: 8px 12px; display: flex; align-items: center; gap: 8px; flex-shrink: 0;">
+    <span style="display: grid; place-items: center; width: 24px; height: 24px; border-radius: 7px; background: #2d5bd0; color: #ffffff; font-size: 12px; font-weight: 700;">P</span>
+    <span style="font-size: 15px; font-weight: 600; letter-spacing: -0.01em;">PIM</span>
+    <span style="flex-grow: 1;"></span>
+    <span class="icon-btn" style="position: relative;">
+      <svg width="17" height="17" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M18 8a6 6 0 1 0-12 0c0 6-2 7-2 7h16s-2-1-2-7"></path><path d="M10.5 20a2 2 0 0 0 3 0"></path></svg>
+      <span style="position: absolute; top: 6px; right: 7px; width: 6px; height: 6px; border-radius: 50%; background: #d1435b;"></span>
+    </span>
+    <span class="icon-btn">
+      <svg width="17" height="17" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M21 12a9 9 0 1 1-2.6-6.4"></path><path d="M21 4v5h-5"></path></svg>
+    </span>
+    <span style="display: grid; place-items: center; width: 36px; height: 36px; border-radius: 8px; background: #2d5bd0; color: #ffffff;">
+      <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round"><path d="M12 5v14M5 12h14"></path></svg>
+    </span>
+  </div>
+
+  <!-- Page header + horizontally scrolling section chips -->
+  <div style="background: #ffffff; border-bottom: 1px solid #e6e8ec; padding: 10px 12px; flex-shrink: 0;">
+    <div style="display: flex; align-items: baseline; justify-content: space-between;">
+      <span style="font-size: 20px; font-weight: 700; letter-spacing: -0.02em;">Portfolio</span>
+      <span style="font-size: 12px; color: #9aa3b0;">43 holdings</span>
+    </div>
+    <div style="display: flex; gap: 6px; margin-top: 10px; overflow: hidden;">
+      <span class="chip on">Holdings</span>
+      <span class="chip">Models</span>
+      <span class="chip">Performance</span>
+      <span class="chip">Risk</span>
+      <span class="chip" style="opacity: 0.5;">The</span>
+    </div>
+  </div>
+
+  <!-- Scrollable body -->
+  <div style="flex-grow: 1; padding: 12px; display: flex; flex-direction: column; gap: 12px; overflow: hidden;">
+
+    <!-- Cockpit: two rows, both horizontally scrollable -->
+    <div style="border: 1px solid #e6e8ec; border-radius: 8px; background: #ffffff; box-shadow: 0 1px 2px rgb(16 21 28 / 0.05); overflow: hidden; flex-shrink: 0;">
+      <div style="display: flex; align-items: center; gap: 16px; padding: 9px 12px; border-bottom: 1px solid #f0f1f4; overflow: hidden;">
+        <div style="display: flex; flex-direction: column; flex-shrink: 0;"><span style="font-size: 11px; color: #9aa3b0;">Balanced</span><span class="mono" style="font-size: 14px; font-weight: 600; color: #12805c;">+0.41%</span></div>
+        <div style="display: flex; flex-direction: column; flex-shrink: 0;"><span style="font-size: 11px; color: #9aa3b0;">Growth</span><span class="mono" style="font-size: 14px; font-weight: 600; color: #12805c;">+0.56%</span></div>
+        <div style="display: flex; flex-direction: column; flex-shrink: 0;"><span style="font-size: 11px; color: #9aa3b0;">All-Eq</span><span class="mono" style="font-size: 14px; font-weight: 600; color: #12805c;">+0.68%</span></div>
+        <div style="display: flex; flex-direction: column; flex-shrink: 0;"><span style="font-size: 11px; color: #9aa3b0;">Alpha</span><span class="mono" style="font-size: 14px; font-weight: 600; color: #d1435b;">−0.12%</span></div>
+        <div style="display: flex; flex-direction: column; flex-shrink: 0; opacity: 0.45;"><span style="font-size: 11px; color: #9aa3b0;">Core</span><span class="mono" style="font-size: 14px; font-weight: 600; color: #12805c;">+0.33%</span></div>
+      </div>
+      <div style="display: flex; align-items: center;">
+        <span style="border-radius: 20px; background: #f0f9f4; color: #12805c; padding: 3px 10px; font-size: 12px; font-weight: 700; margin: 8px 10px; flex-shrink: 0;">Risk-On</span>
+        <div style="display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); flex-grow: 1; border-left: 1px solid #f0f1f4;">
+          <div style="padding: 7px 10px; border-right: 1px solid #f0f1f4;"><div style="font-size: 9px; color: #9aa3b0;">SPX vs 10M</div><div class="mono" style="font-size: 12px; font-weight: 600; color: #12805c;">5,634&gt;5,412</div></div>
+          <div style="padding: 7px 10px; border-right: 1px solid #f0f1f4;"><div style="font-size: 9px; color: #9aa3b0;">VIX &middot; 3M</div><div class="mono" style="font-size: 12px; font-weight: 600; color: #10151c;">14.2 &middot; 16.1</div></div>
+          <div style="padding: 7px 10px;"><div style="font-size: 9px; color: #9aa3b0;">Book &beta;</div><div class="mono" style="font-size: 12px; font-weight: 600; color: #10151c;">0.94</div></div>
+        </div>
+      </div>
+    </div>
+
+    <!-- Attention -->
+    <div style="border: 1px solid #e6e8ec; border-radius: 8px; background: #ffffff; box-shadow: 0 1px 2px rgb(16 21 28 / 0.05); overflow: hidden; flex-shrink: 0;">
+      <div style="display: flex; align-items: center; gap: 8px; padding: 9px 12px; border-bottom: 1px solid #f0f1f4;">
+        <span style="font-size: 13px; font-weight: 700;">Needs your attention</span>
+        <span style="border-radius: 20px; background: #fbf6ea; color: #b8791f; padding: 1px 7px; font-size: 11px; font-weight: 700;">3</span>
+      </div>
+      <div style="display: flex; gap: 10px; padding: 9px 12px; border-bottom: 1px solid #f0f1f4;">
+        <span style="width: 3px; border-radius: 2px; background: #d1435b; flex-shrink: 0;"></span>
+        <span style="flex-grow: 1;">
+          <span style="display: block; font-size: 13px; color: #10151c;"><span class="mono" style="font-weight: 600;">NVDA</span> — kill condition tripped</span>
+          <span style="display: block; margin-top: 2px; font-size: 12px; color: #9aa3b0;">Gross margin below 70% two quarters</span>
+        </span>
+      </div>
+      <div style="display: flex; gap: 10px; padding: 9px 12px;">
+        <span style="width: 3px; border-radius: 2px; background: #b8791f; flex-shrink: 0;"></span>
+        <span style="flex-grow: 1;">
+          <span style="display: block; font-size: 13px; color: #10151c;"><span class="mono" style="font-weight: 600;">CSU-T</span> — score stale 41 days</span>
+          <span style="display: block; margin-top: 2px; font-size: 12px; color: #9aa3b0;">Last scored before the Q2 print</span>
+        </span>
+      </div>
+    </div>
+
+    <!-- Holdings as rows, not a squashed table -->
+    <div style="border: 1px solid #e6e8ec; border-radius: 8px; background: #ffffff; box-shadow: 0 1px 2px rgb(16 21 28 / 0.05); overflow: hidden; flex-shrink: 0;">
+      <div style="display: flex; align-items: center; gap: 8px; padding: 9px 12px; border-bottom: 1px solid #e6e8ec;">
+        <span style="font-size: 13px; font-weight: 700;">Holdings</span>
+        <span style="flex-grow: 1;"></span>
+        <span style="font-size: 12px; color: #9aa3b0;">by weight</span>
+        <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="#9aa3b0" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="m6 9 6 6 6-6"></path></svg>
+      </div>
+
+      <div style="display: flex; align-items: center; gap: 10px; padding: 9px 12px; border-bottom: 1px solid #f0f1f4;">
+        <span style="flex-grow: 1; min-width: 0;">
+          <span style="display: block; font-size: 14px;"><span class="mono" style="font-weight: 600; color: #10151c;">MSFT</span> <span style="color: #9aa3b0; font-size: 12px;">4.10%</span></span>
+          <span style="display: block; margin-top: 1px; font-size: 12px; color: #9aa3b0;">Microsoft · Technology</span>
+        </span>
+        <span style="text-align: right; flex-shrink: 0;">
+          <span class="mono" style="display: block; font-size: 14px; color: #10151c;">421.18</span>
+          <span class="mono" style="display: block; margin-top: 1px; font-size: 12px; color: #12805c;">+0.74%</span>
+        </span>
+        <span class="mono" style="width: 38px; text-align: right; font-size: 15px; font-weight: 600; color: #10151c; flex-shrink: 0;">34.2</span>
+      </div>
+
+      <div style="display: flex; align-items: center; gap: 10px; padding: 9px 12px; border-bottom: 1px solid #f0f1f4;">
+        <span style="flex-grow: 1; min-width: 0;">
+          <span style="display: block; font-size: 14px;"><span class="mono" style="font-weight: 600; color: #10151c;">CSU-T</span> <span style="color: #9aa3b0; font-size: 12px;">3.82%</span> <span style="border-radius: 20px; background: #fbf6ea; color: #b8791f; padding: 1px 6px; font-size: 10px; font-weight: 700;">stale</span></span>
+          <span style="display: block; margin-top: 1px; font-size: 12px; color: #9aa3b0;">Constellation Software · Tech</span>
+        </span>
+        <span style="text-align: right; flex-shrink: 0;">
+          <span class="mono" style="display: block; font-size: 14px; color: #10151c;">4,182</span>
+          <span class="mono" style="display: block; margin-top: 1px; font-size: 12px; color: #d1435b;">−0.31%</span>
+        </span>
+        <span class="mono" style="width: 38px; text-align: right; font-size: 15px; font-weight: 600; color: #10151c; flex-shrink: 0;">31.8</span>
+      </div>
+
+      <div style="display: flex; align-items: center; gap: 10px; padding: 9px 12px; border-bottom: 1px solid #f0f1f4;">
+        <span style="flex-grow: 1; min-width: 0;">
+          <span style="display: block; font-size: 14px;"><span class="mono" style="font-weight: 600; color: #10151c;">NVDA</span> <span style="color: #9aa3b0; font-size: 12px;">3.64%</span> <span style="border-radius: 20px; background: #fdf2f3; color: #d1435b; padding: 1px 6px; font-size: 10px; font-weight: 700;">thesis</span></span>
+          <span style="display: block; margin-top: 1px; font-size: 12px; color: #9aa3b0;">NVIDIA · Technology</span>
+        </span>
+        <span style="text-align: right; flex-shrink: 0;">
+          <span class="mono" style="display: block; font-size: 14px; color: #10151c;">138.42</span>
+          <span class="mono" style="display: block; margin-top: 1px; font-size: 12px; color: #12805c;">+1.92%</span>
+        </span>
+        <span class="mono" style="width: 38px; text-align: right; font-size: 15px; font-weight: 600; color: #10151c; flex-shrink: 0;">33.5</span>
+      </div>
+
+      <div style="display: flex; align-items: center; gap: 10px; padding: 9px 12px; border-bottom: 1px solid #f0f1f4;">
+        <span style="flex-grow: 1; min-width: 0;">
+          <span style="display: block; font-size: 14px;"><span class="mono" style="font-weight: 600; color: #10151c;">BN-T</span> <span style="color: #9aa3b0; font-size: 12px;">3.21%</span></span>
+          <span style="display: block; margin-top: 1px; font-size: 12px; color: #9aa3b0;">Brookfield · Financials</span>
+        </span>
+        <span style="text-align: right; flex-shrink: 0;">
+          <span class="mono" style="display: block; font-size: 14px; color: #10151c;">78.94</span>
+          <span class="mono" style="display: block; margin-top: 1px; font-size: 12px; color: #12805c;">+0.42%</span>
+        </span>
+        <span class="mono" style="width: 38px; text-align: right; font-size: 15px; font-weight: 600; color: #10151c; flex-shrink: 0;">30.6</span>
+      </div>
+
+      <div style="padding: 10px 12px; background: #fafbfc; text-align: center;">
+        <span style="font-size: 13px; font-weight: 600; color: #2d5bd0;">Show all 43</span>
+      </div>
+    </div>
+  </div>
+
+  <!-- Bottom tab bar — 4 sections + More, 44px+ targets -->
+  <div style="background: #ffffff; border-top: 1px solid #e6e8ec; display: grid; grid-template-columns: repeat(5, minmax(0, 1fr)); flex-shrink: 0;">
+    <span style="display: flex; flex-direction: column; align-items: center; justify-content: center; gap: 3px; height: 60px; color: #9aa3b0;">
+      <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="M4 5h16v14H4z"></path><path d="M8 9h8M8 13h5"></path></svg>
+      <span style="font-size: 10px;">Brief</span>
+    </span>
+    <span style="display: flex; flex-direction: column; align-items: center; justify-content: center; gap: 3px; height: 60px; color: #2d5bd0;">
+      <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="M4 19V9M10 19V5M16 19v-7M22 19H2"></path></svg>
+      <span style="font-size: 10px; font-weight: 600;">Portfolio</span>
+    </span>
+    <span style="display: flex; flex-direction: column; align-items: center; justify-content: center; gap: 3px; height: 60px; color: #9aa3b0;">
+      <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="M12 3v3M12 18v3M3 12h3M18 12h3M6.2 6.2 8.3 8.3M15.7 15.7l2.1 2.1M17.8 6.2 15.7 8.3M8.3 15.7l-2.1 2.1"></path><circle cx="12" cy="12" r="3"></circle></svg>
+      <span style="font-size: 10px;">Ideas</span>
+    </span>
+    <span style="display: flex; flex-direction: column; align-items: center; justify-content: center; gap: 3px; height: 60px; color: #9aa3b0;">
+      <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><circle cx="11" cy="11" r="7"></circle><path d="m21 21-4.3-4.3"></path></svg>
+      <span style="font-size: 10px;">Research</span>
+    </span>
+    <span style="display: flex; flex-direction: column; align-items: center; justify-content: center; gap: 3px; height: 60px; color: #9aa3b0;">
+      <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round"><circle cx="5" cy="12" r="1.4"></circle><circle cx="12" cy="12" r="1.4"></circle><circle cx="19" cy="12" r="1.4"></circle></svg>
+      <span style="font-size: 10px;">More</span>
+    </span>
+  </div>
+</div>
+</x-dc>
+</body>
+</html>

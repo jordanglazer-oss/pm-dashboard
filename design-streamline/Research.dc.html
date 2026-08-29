@@ -1,0 +1,204 @@
+<!doctype html>
+<html>
+<head>
+  <meta charset="utf-8">
+  <script src="./support.js"></script>
+</head>
+<body>
+<x-dc>
+<helmet>
+  <link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=IBM+Plex+Mono:wght@400;500;600&family=IBM+Plex+Sans:wght@400;500;600;700&display=swap">
+  <style>
+    body { margin: 0; background: #f6f7f9; color: #10151c;
+           font-family: "IBM Plex Sans", -apple-system, BlinkMacSystemFont, "Segoe UI", Helvetica, Arial, sans-serif;
+           -webkit-font-smoothing: antialiased; }
+    a { color: #2d5bd0; text-decoration: none; }
+    a:hover { color: #2c43be; }
+    .mono { font-family: "IBM Plex Mono", ui-monospace, "SF Mono", Menlo, Consolas, monospace; font-variant-numeric: tabular-nums; }
+    table { border-collapse: collapse; width: 100%; font-variant-numeric: tabular-nums; }
+    .eyebrow { font-size: 11px; font-weight: 600; text-transform: uppercase; letter-spacing: 0.09em; color: #9aa3b0; }
+    .rail-item { display: flex; align-items: center; gap: 9px; padding: 7px 12px; border-radius: 8px; font-size: 13px; color: #5b6472; }
+    .rail-item.on { background: #eef4ff; color: #2c43be; font-weight: 600; }
+    .dot { width: 6px; height: 6px; border-radius: 50%; flex-shrink: 0; }
+  </style>
+</helmet>
+
+<div style="width: 1440px; background: #f6f7f9;">
+
+  <!-- Page header -->
+  <div style="background: #ffffff; border-bottom: 1px solid #e6e8ec; padding: 14px 24px 0;">
+    <div style="max-width: 1392px; margin: 0 auto;">
+      <div style="display: flex; align-items: flex-end; justify-content: space-between; gap: 16px;">
+        <div>
+          <div style="font-size: 22px; font-weight: 700; letter-spacing: -0.02em; line-height: 1; color: #10151c;">Research</div>
+          <div style="margin-top: 5px; font-size: 12px; color: #9aa3b0;">13 sources · 4 refreshed today · 2 stale</div>
+        </div>
+        <div style="display: flex; align-items: center; gap: 6px; padding-bottom: 2px;">
+          <span style="border: 1px solid #e6e8ec; border-radius: 8px; background: #ffffff; padding: 5px 11px; font-size: 12px; color: #5b6472;">Refresh all</span>
+          <span style="border-radius: 8px; background: #2d5bd0; padding: 5px 11px; font-size: 12px; font-weight: 600; color: #ffffff;">Add screenshot</span>
+        </div>
+      </div>
+      <div style="display: flex; align-items: center; gap: 2px; margin-top: 12px; border-radius: 8px; background: #fafbfc; border: 1px solid #e6e8ec; padding: 2px; width: fit-content;">
+        <span style="border-radius: 6px; background: #ffffff; box-shadow: 0 1px 2px rgb(16 21 28 / 0.05); padding: 4px 12px; font-size: 13px; font-weight: 600; color: #10151c;">Sources</span>
+        <span style="padding: 4px 12px; font-size: 13px; color: #5b6472;">Inbox</span>
+      </div>
+      <div style="height: 12px;"></div>
+    </div>
+  </div>
+
+  <div style="max-width: 1392px; margin: 0 auto; padding: 16px 24px 28px; display: flex; flex-direction: column; gap: 14px;">
+
+    <!-- Synthesis: a strip, not a collapsed card you have to open -->
+    <div style="border: 1px solid #ddd3f2; border-radius: 8px; background: #f3f0fb; padding: 14px 18px;">
+      <div style="display: flex; align-items: center; gap: 10px; margin-bottom: 8px;">
+        <span style="font-size: 14px; font-weight: 700; color: #10151c;">Cross-source synthesis</span>
+        <span style="border-radius: 20px; background: #ffffff; border: 1px solid #ddd3f2; color: #7c5cd0; padding: 2px 9px; font-size: 11px; font-weight: 600;">Anchored to today&apos;s brief</span>
+        <span style="flex-grow: 1;"></span>
+        <span style="font-size: 12px; color: #7c5cd0; font-weight: 600;">Force re-generate</span>
+      </div>
+      <div style="display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 18px;">
+        <div>
+          <div class="eyebrow" style="margin-bottom: 5px;">Top picks</div>
+          <div style="display: flex; flex-wrap: wrap; gap: 5px;">
+            <span class="mono" style="border: 1px solid #ddd3f2; border-radius: 6px; background: #ffffff; padding: 3px 8px; font-size: 12px; font-weight: 600; color: #10151c;">SHOP-T</span>
+            <span class="mono" style="border: 1px solid #ddd3f2; border-radius: 6px; background: #ffffff; padding: 3px 8px; font-size: 12px; font-weight: 600; color: #10151c;">ANET</span>
+            <span class="mono" style="border: 1px solid #ddd3f2; border-radius: 6px; background: #ffffff; padding: 3px 8px; font-size: 12px; font-weight: 600; color: #10151c;">WCN-T</span>
+            <span class="mono" style="border: 1px solid #ddd3f2; border-radius: 6px; background: #ffffff; padding: 3px 8px; font-size: 12px; font-weight: 600; color: #10151c;">LLY</span>
+          </div>
+        </div>
+        <div>
+          <div class="eyebrow" style="margin-bottom: 5px;">Agreement across sources</div>
+          <div style="font-size: 13px; color: #5b6472; text-wrap: pretty;">Three of four sources are adding industrials on the capex theme; only Fundstrat is fading it.</div>
+        </div>
+        <div>
+          <div class="eyebrow" style="margin-bottom: 5px;">Cautions</div>
+          <div style="font-size: 13px; color: #5b6472; text-wrap: pretty;">Consumer staples downgrades are clustering — two sources moved names to the bottom quartile this week.</div>
+        </div>
+      </div>
+    </div>
+
+    <!-- Rail + single pane -->
+    <div style="display: flex; gap: 14px; align-items: stretch;">
+
+      <!-- Source rail -->
+      <div style="width: 244px; flex-shrink: 0; border: 1px solid #e6e8ec; border-radius: 8px; background: #ffffff; box-shadow: 0 1px 2px rgb(16 21 28 / 0.05); padding: 10px; height: 578px;">
+        <div class="eyebrow" style="padding: 4px 12px 8px;">Ranked lists</div>
+        <div class="rail-item on"><span class="dot" style="background: #12805c;"></span>Newton Upticks<span style="flex-grow: 1;"></span><span class="mono" style="font-size: 11px; color: #2c43be;">18</span></div>
+        <div class="rail-item"><span class="dot" style="background: #12805c;"></span>Fundstrat — Top<span style="flex-grow: 1;"></span><span class="mono" style="font-size: 11px; color: #9aa3b0;">25</span></div>
+        <div class="rail-item"><span class="dot" style="background: #12805c;"></span>Fundstrat — Bottom<span style="flex-grow: 1;"></span><span class="mono" style="font-size: 11px; color: #9aa3b0;">25</span></div>
+        <div class="rail-item"><span class="dot" style="background: #b8791f;"></span>Fundstrat SMID<span style="flex-grow: 1;"></span><span class="mono" style="font-size: 11px; color: #9aa3b0;">50</span></div>
+        <div class="rail-item"><span class="dot" style="background: #12805c;"></span>Alpha Picks<span style="flex-grow: 1;"></span><span class="mono" style="font-size: 11px; color: #9aa3b0;">31</span></div>
+
+        <div class="eyebrow" style="padding: 12px 12px 8px;">Focus lists</div>
+        <div class="rail-item"><span class="dot" style="background: #12805c;"></span>RBC Canada<span style="flex-grow: 1;"></span><span class="mono" style="font-size: 11px; color: #9aa3b0;">22</span></div>
+        <div class="rail-item"><span class="dot" style="background: #12805c;"></span>RBC US<span style="flex-grow: 1;"></span><span class="mono" style="font-size: 11px; color: #9aa3b0;">28</span></div>
+        <div class="rail-item"><span class="dot" style="background: #b8791f;"></span>JPM Focus<span style="flex-grow: 1;"></span><span class="mono" style="font-size: 11px; color: #9aa3b0;">40</span></div>
+        <div class="rail-item"><span class="dot" style="background: #12805c;"></span>Lee Focus<span style="flex-grow: 1;"></span><span class="mono" style="font-size: 11px; color: #9aa3b0;">15</span></div>
+
+        <div class="eyebrow" style="padding: 12px 12px 8px;">Context</div>
+        <div class="rail-item"><span class="dot" style="background: #12805c;"></span>Sector views</div>
+        <div class="rail-item"><span class="dot" style="background: #12805c;"></span>Equate CAD / USD</div>
+        <div class="rail-item"><span class="dot" style="background: #c3c8d0;"></span>Quick reference</div>
+      </div>
+
+      <!-- Pane -->
+      <div style="flex-grow: 1; border: 1px solid #e6e8ec; border-radius: 8px; background: #ffffff; box-shadow: 0 1px 2px rgb(16 21 28 / 0.05), 0 4px 12px -4px rgb(16 21 28 / 0.08); overflow: hidden;">
+        <div style="display: flex; align-items: center; gap: 12px; padding: 13px 18px; border-bottom: 1px solid #e6e8ec; flex-wrap: wrap;">
+          <span style="font-size: 15px; font-weight: 700; color: #10151c;">Newton Upticks</span>
+          <span style="border-radius: 20px; background: #f0f9f4; color: #12805c; padding: 2px 9px; font-size: 11px; font-weight: 600;">Scanned today 8:12</span>
+          <span style="font-size: 12px; color: #9aa3b0;">18 names · 4 new vs last scan</span>
+          <span style="flex-grow: 1;"></span>
+          <span style="border: 1px solid #e6e8ec; border-radius: 8px; background: #ffffff; padding: 4px 10px; font-size: 12px; color: #5b6472;">Replace screenshot</span>
+          <span style="border: 1px solid #e6e8ec; border-radius: 8px; background: #ffffff; padding: 4px 10px; font-size: 12px; color: #5b6472;">Re-scan</span>
+        </div>
+
+        <table>
+          <thead>
+            <tr style="border-bottom: 1px solid #e6e8ec;">
+              <th style="text-align: left; padding: 8px 18px; font-size: 11px; font-weight: 600; color: #9aa3b0;">Ticker</th>
+              <th style="text-align: left; padding: 8px 10px; font-size: 11px; font-weight: 600; color: #9aa3b0;">Name</th>
+              <th style="text-align: left; padding: 8px 10px; font-size: 11px; font-weight: 600; color: #9aa3b0;">Sector</th>
+              <th style="text-align: right; padding: 8px 10px; font-size: 11px; font-weight: 600; color: #9aa3b0;">Support</th>
+              <th style="text-align: right; padding: 8px 10px; font-size: 11px; font-weight: 600; color: #9aa3b0;">Resistance</th>
+              <th style="text-align: left; padding: 8px 10px; font-size: 11px; font-weight: 600; color: #9aa3b0;">Status</th>
+              <th style="text-align: right; padding: 8px 18px 8px 10px; font-size: 11px; font-weight: 600; color: #9aa3b0;"></th>
+            </tr>
+          </thead>
+          <tbody>
+            <tr style="border-bottom: 1px solid #f0f1f4;">
+              <td class="mono" style="padding: 9px 18px; font-size: 13px; font-weight: 600; color: #10151c;">ANET</td>
+              <td style="padding: 9px 10px; font-size: 13px; color: #5b6472;">Arista Networks</td>
+              <td style="padding: 9px 10px; font-size: 12px; color: #9aa3b0;">Technology</td>
+              <td class="mono" style="padding: 9px 10px; text-align: right; font-size: 12px; color: #5b6472;">96.40</td>
+              <td class="mono" style="padding: 9px 10px; text-align: right; font-size: 12px; color: #5b6472;">118.20</td>
+              <td style="padding: 9px 10px;"><span style="border-radius: 20px; background: #eef4ff; color: #2c43be; padding: 2px 8px; font-size: 11px; font-weight: 600;">New</span></td>
+              <td style="padding: 9px 18px 9px 10px; text-align: right;"><span style="border: 1px solid #cfe0ff; border-radius: 8px; background: #eef4ff; padding: 3px 9px; font-size: 11px; font-weight: 600; color: #2c43be;">+ Watch</span></td>
+            </tr>
+            <tr style="border-bottom: 1px solid #f0f1f4; background: #fafbfc;">
+              <td class="mono" style="padding: 9px 18px; font-size: 13px; font-weight: 600; color: #10151c;">SHOP-T</td>
+              <td style="padding: 9px 10px; font-size: 13px; color: #5b6472;">Shopify</td>
+              <td style="padding: 9px 10px; font-size: 12px; color: #9aa3b0;">Technology</td>
+              <td class="mono" style="padding: 9px 10px; text-align: right; font-size: 12px; color: #5b6472;">112.00</td>
+              <td class="mono" style="padding: 9px 10px; text-align: right; font-size: 12px; color: #5b6472;">146.50</td>
+              <td style="padding: 9px 10px;"><span style="border-radius: 20px; background: #eef4ff; color: #2c43be; padding: 2px 8px; font-size: 11px; font-weight: 600;">New</span></td>
+              <td style="padding: 9px 18px 9px 10px; text-align: right;"><span style="border: 1px solid #cfe0ff; border-radius: 8px; background: #eef4ff; padding: 3px 9px; font-size: 11px; font-weight: 600; color: #2c43be;">+ Watch</span></td>
+            </tr>
+            <tr style="border-bottom: 1px solid #f0f1f4;">
+              <td class="mono" style="padding: 9px 18px; font-size: 13px; font-weight: 600; color: #10151c;">WCN-T</td>
+              <td style="padding: 9px 10px; font-size: 13px; color: #5b6472;">Waste Connections</td>
+              <td style="padding: 9px 10px; font-size: 12px; color: #9aa3b0;">Industrials</td>
+              <td class="mono" style="padding: 9px 10px; text-align: right; font-size: 12px; color: #5b6472;">232.10</td>
+              <td class="mono" style="padding: 9px 10px; text-align: right; font-size: 12px; color: #5b6472;">268.00</td>
+              <td style="padding: 9px 10px;"><span style="border-radius: 20px; background: #f0f9f4; color: #12805c; padding: 2px 8px; font-size: 11px; font-weight: 600;">Held</span></td>
+              <td style="padding: 9px 18px 9px 10px; text-align: right;"><span style="font-size: 11px; color: #9aa3b0;">In portfolio</span></td>
+            </tr>
+            <tr style="border-bottom: 1px solid #f0f1f4; background: #fafbfc;">
+              <td class="mono" style="padding: 9px 18px; font-size: 13px; font-weight: 600; color: #10151c;">LLY</td>
+              <td style="padding: 9px 10px; font-size: 13px; color: #5b6472;">Eli Lilly</td>
+              <td style="padding: 9px 10px; font-size: 12px; color: #9aa3b0;">Health Care</td>
+              <td class="mono" style="padding: 9px 10px; text-align: right; font-size: 12px; color: #5b6472;">720.00</td>
+              <td class="mono" style="padding: 9px 10px; text-align: right; font-size: 12px; color: #5b6472;">840.00</td>
+              <td style="padding: 9px 10px;"><span style="border-radius: 20px; background: #fafbfc; border: 1px solid #e6e8ec; color: #5b6472; padding: 2px 8px; font-size: 11px; font-weight: 600;">Carried</span></td>
+              <td style="padding: 9px 18px 9px 10px; text-align: right;"><span style="border: 1px solid #cfe0ff; border-radius: 8px; background: #eef4ff; padding: 3px 9px; font-size: 11px; font-weight: 600; color: #2c43be;">+ Watch</span></td>
+            </tr>
+            <tr style="border-bottom: 1px solid #f0f1f4;">
+              <td class="mono" style="padding: 9px 18px; font-size: 13px; font-weight: 600; color: #10151c;">TT</td>
+              <td style="padding: 9px 10px; font-size: 13px; color: #5b6472;">Trane Technologies</td>
+              <td style="padding: 9px 10px; font-size: 12px; color: #9aa3b0;">Industrials</td>
+              <td class="mono" style="padding: 9px 10px; text-align: right; font-size: 12px; color: #5b6472;">352.00</td>
+              <td class="mono" style="padding: 9px 10px; text-align: right; font-size: 12px; color: #5b6472;">410.00</td>
+              <td style="padding: 9px 10px;"><span style="border-radius: 20px; background: #fafbfc; border: 1px solid #e6e8ec; color: #5b6472; padding: 2px 8px; font-size: 11px; font-weight: 600;">Carried</span></td>
+              <td style="padding: 9px 18px 9px 10px; text-align: right;"><span style="border: 1px solid #cfe0ff; border-radius: 8px; background: #eef4ff; padding: 3px 9px; font-size: 11px; font-weight: 600; color: #2c43be;">+ Watch</span></td>
+            </tr>
+            <tr style="border-bottom: 1px solid #f0f1f4; background: #fafbfc;">
+              <td class="mono" style="padding: 9px 18px; font-size: 13px; font-weight: 600; color: #10151c;">CNQ-T</td>
+              <td style="padding: 9px 10px; font-size: 13px; color: #5b6472;">Canadian Natural Resources</td>
+              <td style="padding: 9px 10px; font-size: 12px; color: #9aa3b0;">Energy</td>
+              <td class="mono" style="padding: 9px 10px; text-align: right; font-size: 12px; color: #5b6472;">42.80</td>
+              <td class="mono" style="padding: 9px 10px; text-align: right; font-size: 12px; color: #5b6472;">52.40</td>
+              <td style="padding: 9px 10px;"><span style="border-radius: 20px; background: #fdf2f3; color: #d1435b; padding: 2px 8px; font-size: 11px; font-weight: 600;">Dropped</span></td>
+              <td style="padding: 9px 18px 9px 10px; text-align: right;"><span style="font-size: 11px; color: #9aa3b0;">—</span></td>
+            </tr>
+            <tr>
+              <td class="mono" style="padding: 9px 18px; font-size: 13px; font-weight: 600; color: #10151c;">MELI</td>
+              <td style="padding: 9px 10px; font-size: 13px; color: #5b6472;">MercadoLibre</td>
+              <td style="padding: 9px 10px; font-size: 12px; color: #9aa3b0;">Cons. Discretionary</td>
+              <td class="mono" style="padding: 9px 10px; text-align: right; font-size: 12px; color: #5b6472;">1,640</td>
+              <td class="mono" style="padding: 9px 10px; text-align: right; font-size: 12px; color: #5b6472;">2,020</td>
+              <td style="padding: 9px 10px;"><span style="border-radius: 20px; background: #fafbfc; border: 1px solid #e6e8ec; color: #5b6472; padding: 2px 8px; font-size: 11px; font-weight: 600;">Carried</span></td>
+              <td style="padding: 9px 18px 9px 10px; text-align: right;"><span style="border: 1px solid #cfe0ff; border-radius: 8px; background: #eef4ff; padding: 3px 9px; font-size: 11px; font-weight: 600; color: #2c43be;">+ Watch</span></td>
+            </tr>
+          </tbody>
+        </table>
+
+        <div style="display: flex; align-items: center; justify-content: space-between; padding: 10px 18px; border-top: 1px solid #e6e8ec; background: #fafbfc;">
+          <span style="font-size: 12px; color: #9aa3b0;">Showing 7 of 18</span>
+          <span style="font-size: 12px; font-weight: 600; color: #2d5bd0;">Show all</span>
+        </div>
+      </div>
+    </div>
+  </div>
+</div>
+</x-dc>
+</body>
+</html>

@@ -1,0 +1,210 @@
+<!doctype html>
+<html>
+<head>
+  <meta charset="utf-8">
+  <script src="./support.js"></script>
+</head>
+<body>
+<x-dc>
+<helmet>
+  <link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=IBM+Plex+Mono:wght@400;500;600&family=IBM+Plex+Sans:wght@400;500;600;700&display=swap">
+  <style>
+    body { margin: 0; background: #f6f7f9; color: #10151c;
+           font-family: "IBM Plex Sans", -apple-system, BlinkMacSystemFont, "Segoe UI", Helvetica, Arial, sans-serif;
+           -webkit-font-smoothing: antialiased; }
+    a { color: #2d5bd0; text-decoration: none; }
+    a:hover { color: #2c43be; }
+    .mono { font-family: "IBM Plex Mono", ui-monospace, "SF Mono", Menlo, Consolas, monospace; font-variant-numeric: tabular-nums; }
+    table { border-collapse: collapse; width: 100%; font-variant-numeric: tabular-nums; }
+    .eyebrow { font-size: 11px; font-weight: 600; text-transform: uppercase; letter-spacing: 0.09em; color: #9aa3b0; }
+    .card { border: 1px solid #e6e8ec; border-radius: 8px; background: #ffffff; box-shadow: 0 1px 2px rgb(16 21 28 / 0.05); }
+    .seg { display: flex; align-items: center; gap: 2px; border-radius: 8px; background: #fafbfc; border: 1px solid #e6e8ec; padding: 2px; width: fit-content; }
+    .seg .on { border-radius: 6px; background: #ffffff; box-shadow: 0 1px 2px rgb(16 21 28 / 0.05); padding: 4px 12px; font-size: 13px; font-weight: 600; color: #10151c; }
+    .seg .off { padding: 4px 12px; font-size: 13px; color: #5b6472; }
+    .th { text-align: left; padding: 8px 10px; font-size: 11px; font-weight: 600; color: #9aa3b0; }
+    .thr { text-align: right; padding: 8px 10px; font-size: 11px; font-weight: 600; color: #9aa3b0; }
+    .tl { font-size: 10px; color: #9aa3b0; }
+    .tv { font-family: "IBM Plex Mono", ui-monospace, Menlo, monospace; font-variant-numeric: tabular-nums; font-size: 14px; font-weight: 600; color: #10151c; margin-top: 2px; }
+    .pill-pos { border-radius: 20px; background: #f0f9f4; color: #12805c; padding: 2px 8px; font-size: 11px; font-weight: 600; }
+    .pill-neg { border-radius: 20px; background: #fdf2f3; color: #d1435b; padding: 2px 8px; font-size: 11px; font-weight: 600; }
+    .pill-warn { border-radius: 20px; background: #fbf6ea; color: #b8791f; padding: 2px 8px; font-size: 11px; font-weight: 600; }
+    .pill-mut { border: 1px solid #e6e8ec; border-radius: 20px; background: #fafbfc; color: #5b6472; padding: 2px 8px; font-size: 11px; font-weight: 600; }
+    .btn { border: 1px solid #e6e8ec; border-radius: 8px; background: #ffffff; padding: 5px 11px; font-size: 12px; color: #5b6472; }
+    .btn-p { border-radius: 8px; background: #2d5bd0; padding: 5px 11px; font-size: 12px; font-weight: 600; color: #ffffff; }
+  </style>
+</helmet>
+<div style="width: 1440px; background: #f6f7f9;">
+  <div style="background: #ffffff; border-bottom: 1px solid #e6e8ec; padding: 14px 24px 0;">
+    <div style="max-width: 1392px; margin: 0 auto;">
+      <div style="display: flex; align-items: flex-end; justify-content: space-between; gap: 16px;">
+        <div>
+          <div style="font-size: 22px; font-weight: 700; letter-spacing: -0.02em; line-height: 1; color: #10151c;">Portfolio</div>
+          <div style="margin-top: 5px; font-size: 12px; color: #9aa3b0;">Performance · Allocation + Attribution merged — every tile expands in place to today's full tables</div>
+        </div>
+        <div style="display: flex; align-items: center; gap: 6px; padding-bottom: 2px;">
+          <div class="seg"><span class="off">1M</span><span class="off">3M</span><span class="on">YTD</span><span class="off">1Y</span><span class="off">SI</span></div>
+          <span class="btn">Export</span>
+        </div>
+      </div>
+      <div class="seg" style="margin-top: 12px;"><span class="off">Holdings</span><span class="off">Positioning</span><span class="off">Models</span><span class="on">Performance</span><span class="off">Risk</span><span class="off">Thesis</span><span class="off">Journal</span></div>
+      <div style="height: 12px;"></div>
+    </div>
+  </div>
+
+  <div style="max-width: 1392px; margin: 0 auto; padding: 16px 24px 28px; display: flex; flex-direction: column; gap: 14px;">
+
+    <!-- Model returns table -->
+    <div class="card" style="box-shadow: 0 1px 2px rgb(16 21 28 / 0.05), 0 4px 12px -4px rgb(16 21 28 / 0.08); overflow: hidden;">
+      <table>
+        <thead>
+          <tr style="border-bottom: 1px solid #e6e8ec;">
+            <th class="th" style="padding-left: 18px;">Model</th>
+            <th class="thr">Today</th>
+            <th class="thr">1M</th>
+            <th class="thr">3M</th>
+            <th class="thr">YTD</th>
+            <th class="thr">1Y</th>
+            <th class="thr">Benchmark YTD</th>
+            <th class="thr" style="padding-right: 18px;">Excess YTD</th>
+          </tr>
+        </thead>
+        <tbody>
+          <tr style="border-bottom: 1px solid #f0f1f4;">
+            <td style="padding: 10px 18px; font-size: 13px; font-weight: 600; color: #10151c;">Balanced</td>
+            <td class="mono" style="padding: 10px; text-align: right; font-size: 12px; color: #12805c;">+0.41%</td>
+            <td class="mono" style="padding: 10px; text-align: right; font-size: 12px; color: #12805c;">+2.1%</td>
+            <td class="mono" style="padding: 10px; text-align: right; font-size: 12px; color: #12805c;">+4.8%</td>
+            <td class="mono" style="padding: 10px; text-align: right; font-size: 13px; font-weight: 600; color: #12805c;">+9.6%</td>
+            <td class="mono" style="padding: 10px; text-align: right; font-size: 12px; color: #12805c;">+13.4%</td>
+            <td class="mono" style="padding: 10px; text-align: right; font-size: 12px; color: #5b6472;">+8.2%</td>
+            <td class="mono" style="padding: 10px 18px 10px 10px; text-align: right; font-size: 13px; font-weight: 600; color: #12805c;">+1.4%</td>
+          </tr>
+          <tr style="border-bottom: 1px solid #f0f1f4; background: #fafbfc;">
+            <td style="padding: 10px 18px; font-size: 13px; font-weight: 600; color: #10151c;">Growth</td>
+            <td class="mono" style="padding: 10px; text-align: right; font-size: 12px; color: #12805c;">+0.56%</td>
+            <td class="mono" style="padding: 10px; text-align: right; font-size: 12px; color: #12805c;">+2.8%</td>
+            <td class="mono" style="padding: 10px; text-align: right; font-size: 12px; color: #12805c;">+6.1%</td>
+            <td class="mono" style="padding: 10px; text-align: right; font-size: 13px; font-weight: 600; color: #12805c;">+12.3%</td>
+            <td class="mono" style="padding: 10px; text-align: right; font-size: 12px; color: #12805c;">+16.8%</td>
+            <td class="mono" style="padding: 10px; text-align: right; font-size: 12px; color: #5b6472;">+10.9%</td>
+            <td class="mono" style="padding: 10px 18px 10px 10px; text-align: right; font-size: 13px; font-weight: 600; color: #12805c;">+1.4%</td>
+          </tr>
+          <tr style="border-bottom: 1px solid #f0f1f4;">
+            <td style="padding: 10px 18px; font-size: 13px; font-weight: 600; color: #10151c;">All-Equity</td>
+            <td class="mono" style="padding: 10px; text-align: right; font-size: 12px; color: #12805c;">+0.68%</td>
+            <td class="mono" style="padding: 10px; text-align: right; font-size: 12px; color: #12805c;">+3.2%</td>
+            <td class="mono" style="padding: 10px; text-align: right; font-size: 12px; color: #12805c;">+7.4%</td>
+            <td class="mono" style="padding: 10px; text-align: right; font-size: 13px; font-weight: 600; color: #12805c;">+14.8%</td>
+            <td class="mono" style="padding: 10px; text-align: right; font-size: 12px; color: #12805c;">+19.9%</td>
+            <td class="mono" style="padding: 10px; text-align: right; font-size: 12px; color: #5b6472;">+13.6%</td>
+            <td class="mono" style="padding: 10px 18px 10px 10px; text-align: right; font-size: 13px; font-weight: 600; color: #12805c;">+1.2%</td>
+          </tr>
+          <tr style="border-bottom: 1px solid #f0f1f4; background: #fafbfc;">
+            <td style="padding: 10px 18px; font-size: 13px; font-weight: 600; color: #10151c;">Alpha</td>
+            <td class="mono" style="padding: 10px; text-align: right; font-size: 12px; color: #d1435b;">−0.12%</td>
+            <td class="mono" style="padding: 10px; text-align: right; font-size: 12px; color: #12805c;">+1.4%</td>
+            <td class="mono" style="padding: 10px; text-align: right; font-size: 12px; color: #12805c;">+3.9%</td>
+            <td class="mono" style="padding: 10px; text-align: right; font-size: 13px; font-weight: 600; color: #12805c;">+11.1%</td>
+            <td class="mono" style="padding: 10px; text-align: right; font-size: 12px; color: #12805c;">+15.2%</td>
+            <td class="mono" style="padding: 10px; text-align: right; font-size: 12px; color: #5b6472;">+13.6%</td>
+            <td class="mono" style="padding: 10px 18px 10px 10px; text-align: right; font-size: 13px; font-weight: 600; color: #d1435b;">−2.5%</td>
+          </tr>
+          <tr>
+            <td style="padding: 10px 18px; font-size: 13px; font-weight: 600; color: #10151c;">Core</td>
+            <td class="mono" style="padding: 10px; text-align: right; font-size: 12px; color: #12805c;">+0.33%</td>
+            <td class="mono" style="padding: 10px; text-align: right; font-size: 12px; color: #12805c;">+1.9%</td>
+            <td class="mono" style="padding: 10px; text-align: right; font-size: 12px; color: #12805c;">+4.2%</td>
+            <td class="mono" style="padding: 10px; text-align: right; font-size: 13px; font-weight: 600; color: #12805c;">+8.9%</td>
+            <td class="mono" style="padding: 10px; text-align: right; font-size: 12px; color: #12805c;">+12.1%</td>
+            <td class="mono" style="padding: 10px; text-align: right; font-size: 12px; color: #5b6472;">+8.2%</td>
+            <td class="mono" style="padding: 10px 18px 10px 10px; text-align: right; font-size: 13px; font-weight: 600; color: #12805c;">+0.7%</td>
+          </tr>
+        </tbody>
+      </table>
+    </div>
+
+    <div style="display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 14px; align-items: start;">
+
+      <!-- Attribution -->
+      <div class="card" style="overflow: hidden;">
+        <div style="display: flex; align-items: center; gap: 10px; padding: 12px 18px; border-bottom: 1px solid #e6e8ec;">
+          <span style="font-size: 14px; font-weight: 700; color: #10151c;">Attribution · YTD · Growth model</span>
+        </div>
+        <div style="padding: 8px 18px 4px;"><span class="eyebrow">Top contributors</span></div>
+        <div style="padding: 0 18px 8px;">
+          <div style="display: flex; align-items: center; gap: 10px; padding: 6px 0;"><span class="mono" style="width: 62px; font-size: 12px; font-weight: 600;">NVDA</span><span style="flex-grow: 1; height: 8px; border-radius: 4px; background: #f0f1f4; overflow: hidden;"><span style="display: block; width: 78%; height: 8px; background: #12805c;"></span></span><span class="mono" style="width: 64px; text-align: right; font-size: 12px; font-weight: 600; color: #12805c;">+1.84%</span></div>
+          <div style="display: flex; align-items: center; gap: 10px; padding: 6px 0;"><span class="mono" style="width: 62px; font-size: 12px; font-weight: 600;">MSFT</span><span style="flex-grow: 1; height: 8px; border-radius: 4px; background: #f0f1f4; overflow: hidden;"><span style="display: block; width: 52%; height: 8px; background: #12805c;"></span></span><span class="mono" style="width: 64px; text-align: right; font-size: 12px; font-weight: 600; color: #12805c;">+1.22%</span></div>
+          <div style="display: flex; align-items: center; gap: 10px; padding: 6px 0;"><span class="mono" style="width: 62px; font-size: 12px; font-weight: 600;">CP-T</span><span style="flex-grow: 1; height: 8px; border-radius: 4px; background: #f0f1f4; overflow: hidden;"><span style="display: block; width: 34%; height: 8px; background: #12805c;"></span></span><span class="mono" style="width: 64px; text-align: right; font-size: 12px; font-weight: 600; color: #12805c;">+0.81%</span></div>
+        </div>
+        <div style="padding: 4px 18px 4px; border-top: 1px solid #f0f1f4;"><span class="eyebrow">Top detractors</span></div>
+        <div style="padding: 0 18px 12px;">
+          <div style="display: flex; align-items: center; gap: 10px; padding: 6px 0;"><span class="mono" style="width: 62px; font-size: 12px; font-weight: 600;">ATD-T</span><span style="flex-grow: 1; height: 8px; border-radius: 4px; background: #f0f1f4; overflow: hidden;"><span style="display: block; width: 30%; height: 8px; background: #d1435b;"></span></span><span class="mono" style="width: 64px; text-align: right; font-size: 12px; font-weight: 600; color: #d1435b;">−0.42%</span></div>
+          <div style="display: flex; align-items: center; gap: 10px; padding: 6px 0;"><span class="mono" style="width: 62px; font-size: 12px; font-weight: 600;">CNQ-T</span><span style="flex-grow: 1; height: 8px; border-radius: 4px; background: #f0f1f4; overflow: hidden;"><span style="display: block; width: 22%; height: 8px; background: #d1435b;"></span></span><span class="mono" style="width: 64px; text-align: right; font-size: 12px; font-weight: 600; color: #d1435b;">−0.31%</span></div>
+        </div>
+        <div style="padding: 4px 18px 4px; border-top: 1px solid #f0f1f4;"><span class="eyebrow">Expanded — full contribution table (click a bar row)</span></div>
+        <table>
+          <thead><tr style="border-bottom: 1px solid #f0f1f4;">
+            <th class="th" style="padding-left: 18px;">Name</th><th class="thr">Avg weight</th><th class="thr">Return</th><th class="thr" style="padding-right: 18px;">Contribution</th>
+          </tr></thead>
+          <tbody>
+            <tr style="border-bottom: 1px solid #f0f1f4;"><td style="padding: 7px 18px;"><span class="mono" style="font-size: 12px; font-weight: 600;">NVDA</span></td><td class="mono" style="padding: 7px 10px; text-align: right; font-size: 12px; color: #5b6472;">3.5%</td><td class="mono" style="padding: 7px 10px; text-align: right; font-size: 12px; color: #12805c;">+58.2%</td><td class="mono" style="padding: 7px 18px 7px 10px; text-align: right; font-size: 12px; font-weight: 600; color: #12805c;">+1.84%</td></tr>
+            <tr style="border-bottom: 1px solid #f0f1f4;"><td style="padding: 7px 18px;"><span class="mono" style="font-size: 12px; font-weight: 600;">MSFT</span></td><td class="mono" style="padding: 7px 10px; text-align: right; font-size: 12px; color: #5b6472;">4.1%</td><td class="mono" style="padding: 7px 10px; text-align: right; font-size: 12px; color: #12805c;">+31.4%</td><td class="mono" style="padding: 7px 18px 7px 10px; text-align: right; font-size: 12px; font-weight: 600; color: #12805c;">+1.22%</td></tr>
+            <tr><td style="padding: 7px 18px;"><span class="mono" style="font-size: 12px; font-weight: 600;">ATD-T</span></td><td class="mono" style="padding: 7px 10px; text-align: right; font-size: 12px; color: #5b6472;">2.6%</td><td class="mono" style="padding: 7px 10px; text-align: right; font-size: 12px; color: #d1435b;">−15.1%</td><td class="mono" style="padding: 7px 18px 7px 10px; text-align: right; font-size: 12px; font-weight: 600; color: #d1435b;">−0.42%</td></tr>
+          </tbody>
+        </table>
+        <div style="padding: 9px 18px; border-top: 1px solid #f0f1f4; background: #fafbfc; font-size: 11px; color: #9aa3b0;">Selection +1.9% · allocation −0.5% vs benchmark · nothing from today’s Attribution page is dropped</div>
+      </div>
+
+      <!-- Allocation drift -->
+      <div class="card" style="overflow: hidden;">
+        <div style="display: flex; align-items: center; gap: 10px; padding: 12px 18px; border-bottom: 1px solid #e6e8ec;">
+          <span style="font-size: 14px; font-weight: 700; color: #10151c;">Allocation vs target · Growth model</span>
+        </div>
+        <div style="padding: 10px 18px 12px;">
+          <div style="display: flex; align-items: center; gap: 10px; padding: 7px 0;">
+            <span style="width: 92px; font-size: 12px; color: #10151c; flex-shrink: 0;">Equity</span>
+            <span style="flex-grow: 1; position: relative; height: 8px; border-radius: 4px; background: #f0f1f4;"><span style="position: absolute; left: 0; width: 85%; height: 8px; border-radius: 4px; background: #2d5bd0;"></span><span style="position: absolute; left: 83%; top: -3px; width: 2px; height: 14px; background: #10151c;"></span></span>
+            <span class="mono" style="width: 110px; text-align: right; font-size: 12px; color: #5b6472;">85.1% / tgt 83.0%</span>
+          </div>
+          <div style="display: flex; align-items: center; gap: 10px; padding: 7px 0;">
+            <span style="width: 92px; font-size: 12px; color: #10151c; flex-shrink: 0;">Fixed income</span>
+            <span style="flex-grow: 1; position: relative; height: 8px; border-radius: 4px; background: #f0f1f4;"><span style="position: absolute; left: 0; width: 11%; height: 8px; border-radius: 4px; background: #9aa3b0;"></span><span style="position: absolute; left: 13%; top: -3px; width: 2px; height: 14px; background: #10151c;"></span></span>
+            <span class="mono" style="width: 110px; text-align: right; font-size: 12px; color: #b8791f;">10.9% / tgt 13.0%</span>
+          </div>
+          <div style="display: flex; align-items: center; gap: 10px; padding: 7px 0;">
+            <span style="width: 92px; font-size: 12px; color: #10151c; flex-shrink: 0;">Cash</span>
+            <span style="flex-grow: 1; position: relative; height: 8px; border-radius: 4px; background: #f0f1f4;"><span style="position: absolute; left: 0; width: 4%; height: 8px; border-radius: 4px; background: #b8791f;"></span><span style="position: absolute; left: 4%; top: -3px; width: 2px; height: 14px; background: #10151c;"></span></span>
+            <span class="mono" style="width: 110px; text-align: right; font-size: 12px; color: #5b6472;">4.0% / tgt 4.0%</span>
+          </div>
+        </div>
+        <div style="padding: 4px 18px 4px; border-top: 1px solid #f0f1f4;"><span class="eyebrow">Daily values · appendix feed</span></div>
+        <div style="padding: 6px 18px 14px;">
+          <svg viewBox="0 0 560 90" width="100%" height="90" preserveAspectRatio="none" role="img" aria-label="YTD model value line, rising">
+            <line x1="0" y1="30" x2="560" y2="30" stroke="#f0f1f4" stroke-width="1"></line>
+            <line x1="0" y1="60" x2="560" y2="60" stroke="#f0f1f4" stroke-width="1"></line>
+            <path d="M0 76 L56 71 L112 73 L168 62 L224 57 L280 60 L336 46 L392 38 L448 33 L504 20 L560 24" fill="none" stroke="#2d5bd0" stroke-width="2" stroke-linejoin="round" stroke-linecap="round"></path>
+            <path d="M0 78 L56 75 L112 76 L168 70 L224 67 L280 69 L336 61 L392 56 L448 53 L504 45 L560 47" fill="none" stroke="#c3c8d0" stroke-width="1.5" stroke-dasharray="4 3" stroke-linejoin="round"></path>
+          </svg>
+          <div style="display: flex; gap: 14px; margin-top: 4px;">
+            <span style="display: flex; align-items: center; gap: 5px; font-size: 11px; color: #5b6472;"><span style="width: 14px; height: 2px; background: #2d5bd0;"></span>Growth model</span>
+            <span style="display: flex; align-items: center; gap: 5px; font-size: 11px; color: #5b6472;"><span style="width: 14px; height: 2px; background: #c3c8d0;"></span>Benchmark</span>
+          </div>
+        </div>
+        <div style="padding: 4px 18px 4px; border-top: 1px solid #f0f1f4;"><span class="eyebrow">Expanded — per-fund performance (today’s Allocation table, unchanged)</span></div>
+        <table>
+          <thead><tr style="border-bottom: 1px solid #f0f1f4;">
+            <th class="th" style="padding-left: 18px;">Name</th><th class="th">Code</th><th class="thr">YTD</th><th class="thr">1Y</th><th class="thr">3Y</th><th class="thr">5Y</th><th class="thr" style="padding-right: 18px;">10Y</th>
+          </tr></thead>
+          <tbody>
+            <tr style="border-bottom: 1px solid #f0f1f4;"><td style="padding: 7px 18px; font-size: 12px; color: #10151c;">JPM US Bond Active ETF</td><td class="mono" style="padding: 7px 10px; font-size: 12px; color: #5b6472;">JBND-T</td><td class="mono" style="padding: 7px 10px; text-align: right; font-size: 12px; color: #12805c;">+3.1%</td><td class="mono" style="padding: 7px 10px; text-align: right; font-size: 12px; color: #12805c;">+5.4%</td><td class="mono" style="padding: 7px 10px; text-align: right; font-size: 12px; color: #5b6472;">—</td><td class="mono" style="padding: 7px 10px; text-align: right; font-size: 12px; color: #5b6472;">—</td><td class="mono" style="padding: 7px 18px 7px 10px; text-align: right; font-size: 12px; color: #5b6472;">—</td></tr>
+            <tr style="border-bottom: 1px solid #f0f1f4;"><td style="padding: 7px 18px; font-size: 12px; color: #10151c;">RBC US Core Plus Bond</td><td class="mono" style="padding: 7px 10px; font-size: 12px; color: #5b6472;">RBF1083</td><td class="mono" style="padding: 7px 10px; text-align: right; font-size: 12px; color: #12805c;">+2.8%</td><td class="mono" style="padding: 7px 10px; text-align: right; font-size: 12px; color: #12805c;">+4.9%</td><td class="mono" style="padding: 7px 10px; text-align: right; font-size: 12px; color: #12805c;">+1.2%</td><td class="mono" style="padding: 7px 10px; text-align: right; font-size: 12px; color: #12805c;">+0.8%</td><td class="mono" style="padding: 7px 18px 7px 10px; text-align: right; font-size: 12px; color: #12805c;">+1.9%</td></tr>
+            <tr><td style="padding: 7px 18px; font-size: 12px; color: #10151c;">iShares S&amp;P/TSX 60</td><td class="mono" style="padding: 7px 10px; font-size: 12px; color: #5b6472;">XIU-T</td><td class="mono" style="padding: 7px 10px; text-align: right; font-size: 12px; color: #12805c;">+11.2%</td><td class="mono" style="padding: 7px 10px; text-align: right; font-size: 12px; color: #12805c;">+15.8%</td><td class="mono" style="padding: 7px 10px; text-align: right; font-size: 12px; color: #12805c;">+9.4%</td><td class="mono" style="padding: 7px 10px; text-align: right; font-size: 12px; color: #12805c;">+10.1%</td><td class="mono" style="padding: 7px 18px 7px 10px; text-align: right; font-size: 12px; color: #12805c;">+8.2%</td></tr>
+          </tbody>
+        </table>
+      </div>
+    </div>
+  </div>
+</div>
+</x-dc>
+</body>
+</html>

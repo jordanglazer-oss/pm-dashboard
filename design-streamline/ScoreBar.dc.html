@@ -1,0 +1,77 @@
+<!doctype html>
+<html>
+<head>
+  <meta charset="utf-8">
+  <script src="./support.js"></script>
+</head>
+<body>
+<x-dc>
+<helmet>
+  <link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=IBM+Plex+Mono:wght@400;500;600&family=IBM+Plex+Sans:wght@400;500;600;700&display=swap">
+  <style>
+    body { margin: 0; background: #f6f7f9; color: #10151c;
+           font-family: "IBM Plex Sans", -apple-system, BlinkMacSystemFont, "Segoe UI", Helvetica, Arial, sans-serif;
+           -webkit-font-smoothing: antialiased; }
+    a { color: #2d5bd0; text-decoration: none; }
+    a:hover { color: #2c43be; }
+    .mono { font-family: "IBM Plex Mono", ui-monospace, "SF Mono", Menlo, Consolas, monospace; font-variant-numeric: tabular-nums; }
+    table { border-collapse: collapse; width: 100%; font-variant-numeric: tabular-nums; }
+    .eyebrow { font-size: 11px; font-weight: 600; text-transform: uppercase; letter-spacing: 0.09em; color: #9aa3b0; }
+    .card { border: 1px solid #e6e8ec; border-radius: 8px; background: #ffffff; box-shadow: 0 1px 2px rgb(16 21 28 / 0.05); }
+    .seg { display: flex; align-items: center; gap: 2px; border-radius: 8px; background: #fafbfc; border: 1px solid #e6e8ec; padding: 2px; width: fit-content; }
+    .seg .on { border-radius: 6px; background: #ffffff; box-shadow: 0 1px 2px rgb(16 21 28 / 0.05); padding: 4px 12px; font-size: 13px; font-weight: 600; color: #10151c; }
+    .seg .off { padding: 4px 12px; font-size: 13px; color: #5b6472; }
+    .th { text-align: left; padding: 8px 10px; font-size: 11px; font-weight: 600; color: #9aa3b0; }
+    .thr { text-align: right; padding: 8px 10px; font-size: 11px; font-weight: 600; color: #9aa3b0; }
+    .tl { font-size: 10px; color: #9aa3b0; }
+    .tv { font-family: "IBM Plex Mono", ui-monospace, Menlo, monospace; font-variant-numeric: tabular-nums; font-size: 14px; font-weight: 600; color: #10151c; margin-top: 2px; }
+    .pill-pos { border-radius: 20px; background: #f0f9f4; color: #12805c; padding: 2px 8px; font-size: 11px; font-weight: 600; }
+    .pill-neg { border-radius: 20px; background: #fdf2f3; color: #d1435b; padding: 2px 8px; font-size: 11px; font-weight: 600; }
+    .pill-warn { border-radius: 20px; background: #fbf6ea; color: #b8791f; padding: 2px 8px; font-size: 11px; font-weight: 600; }
+    .pill-mut { border: 1px solid #e6e8ec; border-radius: 20px; background: #fafbfc; color: #5b6472; padding: 2px 8px; font-size: 11px; font-weight: 600; }
+    .btn { border: 1px solid #e6e8ec; border-radius: 8px; background: #ffffff; padding: 5px 11px; font-size: 12px; color: #5b6472; }
+    .btn-p { border-radius: 8px; background: #2d5bd0; padding: 5px 11px; font-size: 12px; font-weight: 600; color: #ffffff; }
+  </style>
+</helmet>
+<div style="width: 880px; background: #f6f7f9; padding: 26px;">
+  <div style="margin-bottom: 16px;">
+    <div class="eyebrow">Proposal 2</div>
+    <div style="margin-top: 4px; font-size: 20px; font-weight: 700; color: #10151c;">Score bar replaces the donut</div>
+    <div style="margin-top: 5px; font-size: 13px; color: #5b6472; max-width: 660px; text-wrap: pretty;">The donut hides which group carries the score. A segmented 0–41 bar shows the composition, the regime delta, and the rating in one glance — and it fits the stat-strip language of the rest of the site.</div>
+  </div>
+
+  <div class="card" style="padding: 16px; margin-bottom: 14px;">
+    <div style="display: flex; align-items: center; gap: 8px; margin-bottom: 8px;"><span class="pill-neg" style="text-transform: uppercase; letter-spacing: 0.05em;">Today</span><span style="font-size: 12px; color: #9aa3b0;">donut + caption, 200px column</span></div>
+    <div style="display: flex; align-items: center; gap: 18px;">
+      <svg width="96" height="96" viewBox="0 0 96 96"><circle cx="48" cy="48" r="40" fill="none" stroke="#f0f1f4" stroke-width="10"></circle><circle cx="48" cy="48" r="40" fill="none" stroke="#2d5bd0" stroke-width="10" stroke-dasharray="167 251" stroke-linecap="round" transform="rotate(-90 48 48)"></circle><text x="48" y="46" text-anchor="middle" font-size="20" font-weight="700" fill="#10151c" font-family="IBM Plex Mono">27.2</text><text x="48" y="62" text-anchor="middle" font-size="9" fill="#9aa3b0">/ 41</text></svg>
+      <div><div style="font-size: 13px; font-weight: 700; color: #b8791f;">Moderate Buy</div><div style="font-size: 11px; color: #9aa3b0;">Regime: neutral · Raw 27.2</div></div>
+    </div>
+  </div>
+
+  <div class="card" style="padding: 16px;">
+    <div style="display: flex; align-items: center; gap: 8px; margin-bottom: 12px;"><span class="pill-pos" style="text-transform: uppercase; letter-spacing: 0.05em;">Proposed</span><span style="font-size: 12px; color: #9aa3b0;">full-width bar in the stock header — groups readable, hover names each segment</span></div>
+    <div style="display: flex; align-items: baseline; gap: 10px; margin-bottom: 8px;">
+      <span class="mono" style="font-size: 26px; font-weight: 600; color: #10151c;">27.2</span>
+      <span style="font-size: 13px; color: #9aa3b0;">/ 41</span>
+      <span class="pill-warn" style="font-size: 11px;">Moderate Buy</span>
+      <span style="font-size: 12px; color: #9aa3b0;">regime neutral · raw 27.2</span>
+      <span style="margin-left: auto; font-size: 11px; color: #9aa3b0;">scored Aug 24</span>
+    </div>
+    <div style="display: flex; height: 14px; border-radius: 7px; overflow: hidden; background: #f0f1f4;">
+      <span style="width: 22%; background: #2d5bd0;" title="Long-term 3/4"></span>
+      <span style="width: 14%; background: #7c5cd0; margin-left: 1px;" title="Research 3/7"></span>
+      <span style="width: 12%; background: #b8791f; margin-left: 1px;" title="Technicals 2.6/9"></span>
+      <span style="width: 18%; background: #12805c; margin-left: 1px;" title="Fundamental 9/11"></span>
+    </div>
+    <div style="display: flex; gap: 16px; margin-top: 8px; flex-wrap: wrap;">
+      <span style="display: flex; align-items: center; gap: 5px; font-size: 11px; color: #5b6472;"><span style="width: 8px; height: 8px; border-radius: 2px; background: #2d5bd0;"></span>Long-term <span class="mono" style="font-weight: 600; color: #10151c;">3/4</span></span>
+      <span style="display: flex; align-items: center; gap: 5px; font-size: 11px; color: #5b6472;"><span style="width: 8px; height: 8px; border-radius: 2px; background: #7c5cd0;"></span>Research <span class="mono" style="font-weight: 600; color: #10151c;">3/7</span></span>
+      <span style="display: flex; align-items: center; gap: 5px; font-size: 11px; color: #5b6472;"><span style="width: 8px; height: 8px; border-radius: 2px; background: #b8791f;"></span>Technicals <span class="mono" style="font-weight: 600; color: #10151c;">2.6/9</span></span>
+      <span style="display: flex; align-items: center; gap: 5px; font-size: 11px; color: #5b6472;"><span style="width: 8px; height: 8px; border-radius: 2px; background: #12805c;"></span>Fundamental <span class="mono" style="font-weight: 600; color: #10151c;">9/11</span></span>
+      <span style="display: flex; align-items: center; gap: 5px; font-size: 11px; color: #9aa3b0;">unfilled = points left on the table</span>
+    </div>
+  </div>
+</div>
+</x-dc>
+</body>
+</html>

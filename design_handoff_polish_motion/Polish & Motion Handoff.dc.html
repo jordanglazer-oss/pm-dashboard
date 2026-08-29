@@ -1,0 +1,884 @@
+<!DOCTYPE html>
+<html>
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<script src="./support.js"></script>
+</head>
+<body>
+<x-dc>
+<helmet data-dc-atomics>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=IBM+Plex+Sans:wght@400;500;600;700&family=IBM+Plex+Mono:wght@400;500;600&display=swap" rel="stylesheet">
+<style>
+  * { box-sizing: border-box; }
+  body { margin: 0; background: #f6f7f9; color: #10151c; font-family: "IBM Plex Sans", -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif; -webkit-font-smoothing: antialiased; }
+  a { color: #2d5bd0; text-decoration: none; }
+  a:hover { color: #2c43be; }
+  table { font-variant-numeric: tabular-nums; }
+  .mono { font-family: "IBM Plex Mono", ui-monospace, "SF Mono", Menlo, monospace; font-variant-numeric: tabular-nums; }
+  @keyframes fadeUp { from { opacity: 0; transform: translateY(10px); } to { opacity: 1; transform: translateY(0); } }
+  @keyframes rowIn { from { opacity: 0; transform: translateY(7px); } to { opacity: 1; transform: translateY(0); } }
+  @keyframes sparkDraw { from { stroke-dashoffset: 1; } to { stroke-dashoffset: 0; } }
+  @keyframes ringFill { from { stroke-dashoffset: var(--c); } }
+  @keyframes barGrow { from { transform: scaleX(0); } to { transform: scaleX(1); } }
+  @keyframes dotPulse { 0% { transform: scale(.4); opacity: 0; } 55% { transform: scale(1.25); opacity: 1; } 100% { transform: scale(1); opacity: 1; } }
+  @keyframes flashPos { from { background-color: rgba(18,128,92,.20); } to { background-color: transparent; } }
+  @keyframes flashNeg { from { background-color: rgba(209,67,91,.20); } to { background-color: transparent; } }
+  @keyframes shimmer { 100% { transform: translateX(220%); } }
+  @keyframes chipIn { from { opacity: 0; transform: translateY(3px) scale(.9); } to { opacity: 1; transform: translateY(0) scale(1); } }
+  @keyframes scaleIn { from { opacity: 0; transform: translateY(8px) scale(.975); } to { opacity: 1; transform: translateY(0) scale(1); } }
+  @keyframes gaugeSlide { from { transform: translateX(-8px); opacity: 0; } to { transform: translateX(0); opacity: 1; } }
+  @keyframes pulseOp { 0%, 100% { opacity: 1; } 50% { opacity: .45; } }
+  @keyframes blink { 0%, 100% { opacity: 1; } 50% { opacity: 0; } }
+  .flashPos { animation: flashPos .95s ease-out; border-radius: 4px; }
+  .flashNeg { animation: flashNeg .95s ease-out; border-radius: 4px; }
+  [data-rm="1"] *, [data-rm="1"] *::before, [data-rm="1"] *::after { animation: none !important; transition: none !important; }
+</style>
+</helmet>
+
+<div data-rm="{{ rm }}" style="min-height:100vh;">
+
+  <!-- Top chrome — mirrors the app nav so the doc feels in-product -->
+  <header style="position:sticky;top:0;z-index:20;background:#ffffff;border-bottom:1px solid #e6e8ec;">
+    <div style="max-width:1080px;margin:0 auto;display:flex;align-items:center;justify-content:space-between;padding:11px 28px;">
+      <div style="display:flex;align-items:center;gap:10px;">
+        <span style="display:grid;place-items:center;height:24px;width:24px;border-radius:7px;background:#2d5bd0;color:#fff;font-size:12px;font-weight:700;">P</span>
+        <span style="font-size:15px;font-weight:600;letter-spacing:-0.01em;">PIM Dashboard</span>
+        <span style="margin-left:6px;font-size:11px;color:#9aa3b0;border-left:1px solid #e6e8ec;padding-left:12px;">Polish &amp; Motion — design handoff</span>
+      </div>
+      <span class="mono" style="font-size:10px;letter-spacing:.1em;text-transform:uppercase;color:#9aa3b0;">Precision Light · v-next</span>
+    </div>
+  </header>
+
+  <main style="max-width:1080px;margin:0 auto;padding:44px 28px 80px;">
+
+    <!-- Intro -->
+    <div style="animation:fadeUp .5s ease-out both;">
+      <span class="mono" style="font-size:11px;letter-spacing:.14em;text-transform:uppercase;color:#2d5bd0;">Review &amp; recommendations</span>
+      <h1 style="margin:14px 0 0;font-size:38px;line-height:1.08;font-weight:700;letter-spacing:-0.025em;max-width:20ch;">Making the redesign feel pristine.</h1>
+      <p style="margin:18px 0 0;font-size:16px;line-height:1.6;color:#5b6472;max-width:64ch;">The new <strong style="color:#10151c;font-weight:600;">Precision Light</strong> system is a strong base — the token palette, IBM&nbsp;Plex pairing, and existing motion set (page-in, row stagger, spark-draw, value flash) are all working. Below are fifteen targeted refinements, each shown as a live <strong style="color:#10151c;font-weight:600;">Before → After</strong> you can replay, plus a copy-paste handoff note for Claude&nbsp;Code. Motion is tuned to <strong style="color:#10151c;font-weight:600;">balanced</strong> — noticeable, never flashy — and every effect respects <span class="mono" style="font-size:13px;">prefers-reduced-motion</span>.</p>
+    </div>
+
+    <!-- Legend -->
+    <div style="margin-top:26px;display:flex;flex-wrap:wrap;gap:14px 22px;align-items:center;padding:14px 18px;background:#ffffff;border:1px solid #e6e8ec;border-radius:8px;box-shadow:0 1px 2px rgba(16,21,28,.04);animation:fadeUp .5s ease-out .06s both;">
+      <span style="display:inline-flex;align-items:center;gap:7px;font-size:12.5px;color:#5b6472;"><span style="font-size:10px;font-weight:600;letter-spacing:.08em;color:#9aa3b0;background:#eef0f3;padding:2px 7px;border-radius:5px;">BEFORE</span> today's build</span>
+      <span style="display:inline-flex;align-items:center;gap:7px;font-size:12.5px;color:#5b6472;"><span style="font-size:10px;font-weight:600;letter-spacing:.08em;color:#2c43be;background:#eef4ff;padding:2px 7px;border-radius:5px;">AFTER</span> proposed</span>
+      <span style="display:inline-flex;align-items:center;gap:7px;font-size:12.5px;color:#5b6472;margin-left:auto;">↻ replay any demo · <span class="mono" style="font-size:12px;color:#9aa3b0;">handoff</span> = code-ready spec</span>
+    </div>
+
+    <!-- ============ 01 — Numbers that change with intent ============ -->
+    <section style="margin-top:22px;background:#fff;border:1px solid #e6e8ec;border-radius:8px;box-shadow:0 1px 2px rgba(16,21,28,.04);padding:26px 28px 24px;animation:fadeUp .5s ease-out both;">
+      <div style="display:flex;align-items:baseline;justify-content:space-between;gap:12px;">
+        <span style="font-size:10px;font-weight:600;letter-spacing:.12em;text-transform:uppercase;color:#7c5cd0;background:#f3f0fb;padding:3px 9px;border-radius:5px;">Micro-interaction</span>
+        <span class="mono" style="font-size:12px;color:#c3c8d0;">01 / 15</span>
+      </div>
+      <h2 style="margin:14px 0 0;font-size:21px;font-weight:600;letter-spacing:-0.015em;">Numbers that change with intent</h2>
+      <p style="margin:8px 0 0;font-size:14.5px;line-height:1.55;color:#5b6472;max-width:70ch;">Live values currently snap to their new figure. Tween the digits over ~600ms, tint the direction (your <span class="mono" style="font-size:13px;">FlashValue</span> already does this), and fade in a delta chip — the eye catches <em>what moved and which way</em> without a hard cut.</p>
+      <div style="margin-top:20px;display:grid;grid-template-columns:1fr 1fr;gap:16px;">
+        <div style="position:relative;background:#fafbfc;border:1px solid #eef0f3;border-radius:8px;padding:22px;min-height:150px;display:flex;flex-direction:column;justify-content:center;">
+          <span style="position:absolute;top:11px;left:12px;font-size:10px;font-weight:600;letter-spacing:.08em;color:#9aa3b0;background:#eef0f3;padding:2px 7px;border-radius:5px;">BEFORE</span>
+          <div style="font-size:12px;color:#9aa3b0;">Composite score</div>
+          <div class="mono" style="font-size:44px;font-weight:600;letter-spacing:-0.02em;line-height:1;margin-top:6px;">{{ beforeStr }}</div>
+          <div style="font-size:12px;color:#9aa3b0;margin-top:8px;">snaps on refresh</div>
+        </div>
+        <div style="position:relative;background:#fafbfc;border:1px solid #cfe0ff;border-radius:8px;padding:22px;min-height:150px;display:flex;flex-direction:column;justify-content:center;">
+          <span style="position:absolute;top:11px;left:12px;font-size:10px;font-weight:600;letter-spacing:.08em;color:#2c43be;background:#eef4ff;padding:2px 7px;border-radius:5px;">AFTER</span>
+          <div style="font-size:12px;color:#9aa3b0;">Composite score</div>
+          <div style="display:flex;align-items:flex-end;gap:10px;margin-top:6px;">
+            <span class="mono flash-slot {{ flashClass }}" style="font-size:44px;font-weight:600;letter-spacing:-0.02em;line-height:1;">{{ afterStr }}</span>
+            <span class="mono" style="font-size:13px;font-weight:600;padding:2px 8px;border-radius:20px;margin-bottom:7px;animation:chipIn .3s ease-out;{{ deltaChipStyle }}">{{ deltaLabel }}</span>
+          </div>
+          <div style="font-size:12px;color:#5b6472;margin-top:8px;">tweens + tints + delta chip</div>
+        </div>
+      </div>
+      <sc-if value="{{ showHandoff }}" hint-placeholder-val="{{ true }}">
+        <div class="mono" style="margin-top:16px;font-size:12px;line-height:1.7;color:#5b6472;background:#10151c;color:#c3c8d0;border-radius:8px;padding:14px 16px;overflow-x:auto;">
+          <span style="color:#7c5cd0;">handoff</span> · wrap live figures in a <span style="color:#8ab4ff;">&lt;CountUp&gt;</span> that rAF-tweens prev→next (~600ms, easeOutCubic) then keep <span style="color:#8ab4ff;">FlashValue</span> for the tint. Add a delta pill: <span style="color:#8ab4ff;">+N.N</span> in <span style="color:#6fd39f;">--color-pos</span> / <span style="color:#e88;">--color-neg</span>, <span style="color:#8ab4ff;">animation: chipIn .3s</span>. Guard with tabular-nums so width doesn't jitter.
+        </div>
+      </sc-if>
+    </section>
+
+    <!-- ============ 02 — Table rows that respond ============ -->
+    <section style="margin-top:20px;background:#fff;border:1px solid #e6e8ec;border-radius:8px;box-shadow:0 1px 2px rgba(16,21,28,.04);padding:26px 28px 24px;">
+      <div style="display:flex;align-items:baseline;justify-content:space-between;gap:12px;">
+        <span style="font-size:10px;font-weight:600;letter-spacing:.12em;text-transform:uppercase;color:#7c5cd0;background:#f3f0fb;padding:3px 9px;border-radius:5px;">Micro-interaction</span>
+        <span class="mono" style="font-size:12px;color:#c3c8d0;">02 / 15</span>
+      </div>
+      <h2 style="margin:14px 0 0;font-size:21px;font-weight:600;letter-spacing:-0.015em;">Rows that respond</h2>
+      <p style="margin:8px 0 0;font-size:14.5px;line-height:1.55;color:#5b6472;max-width:70ch;">Rankings rows currently only shift background on hover. Add a staggered row-in on load, an accent rail + 1px lift on hover, and quick-actions that fade in — so the grid feels alive and the active row is unmistakable.</p>
+      <div style="margin-top:20px;display:grid;grid-template-columns:1fr 1fr;gap:16px;">
+        <!-- BEFORE -->
+        <div style="position:relative;background:#fafbfc;border:1px solid #eef0f3;border-radius:8px;padding:34px 14px 14px;min-height:180px;">
+          <span style="position:absolute;top:11px;left:12px;font-size:10px;font-weight:600;letter-spacing:.08em;color:#9aa3b0;background:#eef0f3;padding:2px 7px;border-radius:5px;">BEFORE</span>
+          <div style="background:#fff;border:1px solid #e6e8ec;border-radius:6px;overflow:hidden;">
+            <sc-for list="{{ rows }}" as="r" hint-placeholder-count="4">
+              <div class="before-row" style="display:flex;align-items:center;gap:10px;padding:9px 12px;border-bottom:1px solid #f0f1f4;transition:background .12s;" style-hover="background:#f4f6fb;">
+                <span class="mono" style="font-size:12px;font-weight:600;width:44px;">{{ r.ticker }}</span>
+                <span style="flex:1;font-size:12px;color:#5b6472;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;">{{ r.name }}</span>
+                <span class="mono" style="font-size:12px;color:#5b6472;">{{ r.score }}</span>
+              </div>
+            </sc-for>
+          </div>
+        </div>
+        <!-- AFTER -->
+        <div style="position:relative;background:#fafbfc;border:1px solid #cfe0ff;border-radius:8px;padding:34px 14px 14px;min-height:180px;">
+          <span style="position:absolute;top:11px;left:12px;font-size:10px;font-weight:600;letter-spacing:.08em;color:#2c43be;background:#eef4ff;padding:2px 7px;border-radius:5px;">AFTER</span>
+          <button onClick="{{ replay.rows }}" style="position:absolute;top:9px;right:11px;font-size:11px;color:#9aa3b0;background:#fff;border:1px solid #e6e8ec;border-radius:6px;padding:2px 8px;cursor:pointer;">↻ replay</button>
+          <div style="background:#fff;border:1px solid #e6e8ec;border-radius:6px;overflow:hidden;" key="{{ nonces.rows }}">
+            <sc-for list="{{ rowsIdx }}" as="r" hint-placeholder-count="4">
+              <div class="after-row" style="position:relative;display:flex;align-items:center;gap:10px;padding:9px 12px 9px 14px;border-bottom:1px solid #f0f1f4;transition:background .14s, box-shadow .14s, transform .14s;animation:rowIn .34s ease-out both;{{ r.delay }}" style-hover="background:#f4f6fb;box-shadow:0 4px 14px -6px rgba(16,21,28,.18);transform:translateY(-1px);z-index:1;">
+                <span style="position:absolute;left:0;top:0;bottom:0;width:2px;background:#2d5bd0;opacity:0;transition:opacity .14s;"></span>
+                <span class="mono" style="font-size:12px;font-weight:600;width:44px;">{{ r.ticker }}</span>
+                <span style="flex:1;font-size:12px;color:#10151c;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;">{{ r.name }}</span>
+                <span class="mono" style="font-size:12px;font-weight:600;{{ r.scoreColor }}">{{ r.score }}</span>
+              </div>
+            </sc-for>
+          </div>
+          <div style="font-size:11px;color:#9aa3b0;margin-top:9px;">hover a row →</div>
+        </div>
+      </div>
+      <sc-if value="{{ showHandoff }}" hint-placeholder-val="{{ true }}">
+        <div class="mono" style="margin-top:16px;font-size:12px;line-height:1.7;background:#10151c;color:#c3c8d0;border-radius:8px;padding:14px 16px;overflow-x:auto;">
+          <span style="color:#7c5cd0;">handoff</span> · rows: <span style="color:#8ab4ff;">animation: rowIn .34s ease-out both; animation-delay: calc(var(--i) * 28ms)</span> (cap the index). Hover: add <span style="color:#8ab4ff;">box-shadow 0 4px 14px -6px</span>, <span style="color:#8ab4ff;">translateY(-1px)</span>, and reveal a 2px <span style="color:#6fd39f;">--color-accent</span> left rail via opacity. Your <span style="color:#8ab4ff;">.hover-lift</span> + <span style="color:#8ab4ff;">animate-row-in</span> keyframes already exist — just apply to rankings <span style="color:#8ab4ff;">&lt;tr&gt;</span>.
+        </div>
+      </sc-if>
+    </section>
+
+    <!-- ============ 03 — Sparklines with body ============ -->
+    <section style="margin-top:20px;background:#fff;border:1px solid #e6e8ec;border-radius:8px;box-shadow:0 1px 2px rgba(16,21,28,.04);padding:26px 28px 24px;">
+      <div style="display:flex;align-items:baseline;justify-content:space-between;gap:12px;">
+        <span style="font-size:10px;font-weight:600;letter-spacing:.12em;text-transform:uppercase;color:#2d5bd0;background:#eef4ff;padding:3px 9px;border-radius:5px;">Data viz</span>
+        <span class="mono" style="font-size:12px;color:#c3c8d0;">03 / 15</span>
+      </div>
+      <h2 style="margin:14px 0 0;font-size:21px;font-weight:600;letter-spacing:-0.015em;">Sparklines with body</h2>
+      <p style="margin:8px 0 0;font-size:14.5px;line-height:1.55;color:#5b6472;max-width:70ch;">The <span class="mono" style="font-size:13px;">Sparkline</span> component already draws in — give it a gradient area fill, a pulsing end-dot, and a pinned last-value label so it reads as a finished chart, not a hairline.</p>
+      <div style="margin-top:20px;display:grid;grid-template-columns:1fr 1fr;gap:16px;">
+        <div style="position:relative;background:#fafbfc;border:1px solid #eef0f3;border-radius:8px;padding:34px 20px 20px;min-height:150px;display:flex;flex-direction:column;justify-content:center;">
+          <span style="position:absolute;top:11px;left:12px;font-size:10px;font-weight:600;letter-spacing:.08em;color:#9aa3b0;background:#eef0f3;padding:2px 7px;border-radius:5px;">BEFORE</span>
+          <div style="font-size:12px;color:#9aa3b0;margin-bottom:8px;">NVDA · 30d</div>
+          <svg width="100%" height="64" viewBox="0 0 260 64" preserveAspectRatio="none" style="display:block;">
+            <path d="M0,48 L26,44 L52,50 L78,38 L104,42 L130,30 L156,34 L182,22 L208,26 L234,14 L260,12" fill="none" stroke="#3b82f6" stroke-width="1.4"></path>
+          </svg>
+        </div>
+        <div style="position:relative;background:#fafbfc;border:1px solid #cfe0ff;border-radius:8px;padding:34px 20px 20px;min-height:150px;display:flex;flex-direction:column;justify-content:center;">
+          <span style="position:absolute;top:11px;left:12px;font-size:10px;font-weight:600;letter-spacing:.08em;color:#2c43be;background:#eef4ff;padding:2px 7px;border-radius:5px;">AFTER</span>
+          <button onClick="{{ replay.spark }}" style="position:absolute;top:9px;right:11px;font-size:11px;color:#9aa3b0;background:#fff;border:1px solid #e6e8ec;border-radius:6px;padding:2px 8px;cursor:pointer;">↻ replay</button>
+          <div style="display:flex;align-items:baseline;justify-content:space-between;margin-bottom:8px;"><span style="font-size:12px;color:#9aa3b0;">NVDA · 30d</span><span class="mono" style="font-size:13px;font-weight:600;color:#12805c;">+18.4%</span></div>
+          <svg width="100%" height="64" viewBox="0 0 260 64" preserveAspectRatio="none" style="display:block;overflow:visible;" key="{{ nonces.spark }}">
+            <defs><linearGradient id="sg" x1="0" y1="0" x2="0" y2="1"><stop offset="0" stop-color="#2d5bd0" stop-opacity="0.20"></stop><stop offset="1" stop-color="#2d5bd0" stop-opacity="0"></stop></linearGradient></defs>
+            <path d="M0,48 L26,44 L52,50 L78,38 L104,42 L130,30 L156,34 L182,22 L208,26 L234,14 L260,12 L260,64 L0,64 Z" fill="url(#sg)" stroke="none"></path>
+            <path d="M0,48 L26,44 L52,50 L78,38 L104,42 L130,30 L156,34 L182,22 L208,26 L234,14 L260,12" pathLength="1" fill="none" stroke="#2d5bd0" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" style="stroke-dasharray:1;stroke-dashoffset:1;animation:sparkDraw .8s ease-out .05s forwards;"></path>
+            <circle cx="260" cy="12" r="3" fill="#2d5bd0" style="transform-origin:260px 12px;animation:dotPulse .5s ease-out .8s both;"></circle>
+          </svg>
+        </div>
+      </div>
+      <sc-if value="{{ showHandoff }}" hint-placeholder-val="{{ true }}">
+        <div class="mono" style="margin-top:16px;font-size:12px;line-height:1.7;background:#10151c;color:#c3c8d0;border-radius:8px;padding:14px 16px;overflow-x:auto;">
+          <span style="color:#7c5cd0;">handoff</span> · in <span style="color:#8ab4ff;">Sparkline.tsx</span>: switch <span style="color:#8ab4ff;">fill</span> to a vertical <span style="color:#8ab4ff;">&lt;linearGradient&gt;</span> (token <span style="color:#6fd39f;">--color-accent</span> .20→0), bump stroke to 1.8, keep <span style="color:#8ab4ff;">.spark-draw</span>, and add <span style="color:#8ab4ff;">dotPulse</span> on the end circle delayed to after the draw. Recolor default stroke off <span style="color:#e88;">#3b82f6</span> onto <span style="color:#6fd39f;">--color-accent</span>.
+        </div>
+      </sc-if>
+    </section>
+
+    <!-- ============ 04 — Conviction as a ring ============ -->
+    <section style="margin-top:20px;background:#fff;border:1px solid #e6e8ec;border-radius:8px;box-shadow:0 1px 2px rgba(16,21,28,.04);padding:26px 28px 24px;">
+      <div style="display:flex;align-items:baseline;justify-content:space-between;gap:12px;">
+        <span style="font-size:10px;font-weight:600;letter-spacing:.12em;text-transform:uppercase;color:#2d5bd0;background:#eef4ff;padding:3px 9px;border-radius:5px;">Data viz</span>
+        <span class="mono" style="font-size:12px;color:#c3c8d0;">04 / 15</span>
+      </div>
+      <h2 style="margin:14px 0 0;font-size:21px;font-weight:600;letter-spacing:-0.015em;">Conviction as a ring</h2>
+      <p style="margin:8px 0 0;font-size:14.5px;line-height:1.55;color:#5b6472;max-width:70ch;">A bare "82 / 100" states the number but not the shape of it. A thin progress ring that sweeps to its value on mount gives an instant read against the 100 ceiling — ideal for the stock-page score donut.</p>
+      <div style="margin-top:20px;display:grid;grid-template-columns:1fr 1fr;gap:16px;">
+        <div style="position:relative;background:#fafbfc;border:1px solid #eef0f3;border-radius:8px;padding:22px;min-height:160px;display:flex;align-items:center;justify-content:center;">
+          <span style="position:absolute;top:11px;left:12px;font-size:10px;font-weight:600;letter-spacing:.08em;color:#9aa3b0;background:#eef0f3;padding:2px 7px;border-radius:5px;">BEFORE</span>
+          <div style="text-align:center;"><div class="mono" style="font-size:46px;font-weight:600;letter-spacing:-0.02em;line-height:1;">82<span style="font-size:20px;color:#9aa3b0;font-weight:400;"> / 100</span></div><div style="font-size:12px;color:#9aa3b0;margin-top:8px;">Composite</div></div>
+        </div>
+        <div style="position:relative;background:#fafbfc;border:1px solid #cfe0ff;border-radius:8px;padding:22px;min-height:160px;display:flex;align-items:center;justify-content:center;gap:22px;">
+          <span style="position:absolute;top:11px;left:12px;font-size:10px;font-weight:600;letter-spacing:.08em;color:#2c43be;background:#eef4ff;padding:2px 7px;border-radius:5px;">AFTER</span>
+          <button onClick="{{ replay.ring }}" style="position:absolute;top:9px;right:11px;font-size:11px;color:#9aa3b0;background:#fff;border:1px solid #e6e8ec;border-radius:6px;padding:2px 8px;cursor:pointer;">↻ replay</button>
+          <div style="position:relative;width:104px;height:104px;" key="{{ nonces.ring }}">
+            <svg width="104" height="104" viewBox="0 0 88 88">
+              <circle cx="44" cy="44" r="34" fill="none" stroke="#eef0f3" stroke-width="8"></circle>
+              <circle cx="44" cy="44" r="34" fill="none" stroke="#2d5bd0" stroke-width="8" stroke-linecap="round" transform="rotate(-90 44 44)" style="--c:213.6;stroke-dasharray:213.6;stroke-dashoffset:38.4;animation:ringFill 1s cubic-bezier(.22,1,.36,1);"></circle>
+            </svg>
+            <div style="position:absolute;inset:0;display:flex;flex-direction:column;align-items:center;justify-content:center;"><span class="mono" style="font-size:26px;font-weight:600;line-height:1;">82</span><span style="font-size:10px;color:#9aa3b0;">/ 100</span></div>
+          </div>
+          <div style="font-size:12px;line-height:1.7;color:#5b6472;">Composite<br><span style="color:#12805c;font-weight:600;">Strong</span> conviction<br><span style="color:#9aa3b0;">top decile</span></div>
+        </div>
+      </div>
+      <sc-if value="{{ showHandoff }}" hint-placeholder-val="{{ true }}">
+        <div class="mono" style="margin-top:16px;font-size:12px;line-height:1.7;background:#10151c;color:#c3c8d0;border-radius:8px;padding:14px 16px;overflow-x:auto;">
+          <span style="color:#7c5cd0;">handoff</span> · SVG ring, r=34, <span style="color:#8ab4ff;">stroke-dasharray = 2πr</span>, <span style="color:#8ab4ff;">stroke-dashoffset = C·(1 − score/100)</span>, rotate −90. Animate offset from <span style="color:#8ab4ff;">C</span>→target with <span style="color:#8ab4ff;">cubic-bezier(.22,1,.36,1) 1s</span>. Track = <span style="color:#6fd39f;">--color-line-soft</span>, arc = tier color (pos/warn/neg). Number stays centered <span style="color:#8ab4ff;">font-mono</span>.
+        </div>
+      </sc-if>
+    </section>
+
+    <!-- ============ 05 — Exposure bars ============ -->
+    <section style="margin-top:20px;background:#fff;border:1px solid #e6e8ec;border-radius:8px;box-shadow:0 1px 2px rgba(16,21,28,.04);padding:26px 28px 24px;">
+      <div style="display:flex;align-items:baseline;justify-content:space-between;gap:12px;">
+        <span style="font-size:10px;font-weight:600;letter-spacing:.12em;text-transform:uppercase;color:#2d5bd0;background:#eef4ff;padding:3px 9px;border-radius:5px;">Data viz</span>
+        <span class="mono" style="font-size:12px;color:#c3c8d0;">05 / 15</span>
+      </div>
+      <h2 style="margin:14px 0 0;font-size:21px;font-weight:600;letter-spacing:-0.015em;">Sector exposure you can scan</h2>
+      <p style="margin:8px 0 0;font-size:14.5px;line-height:1.55;color:#5b6472;max-width:70ch;">A percent list makes you read every number to find the big bet. Proportional bars that grow on load surface concentration at a glance, with the figure still pinned in tabular mono for exactness.</p>
+      <div style="margin-top:20px;display:grid;grid-template-columns:1fr 1fr;gap:16px;">
+        <div style="position:relative;background:#fafbfc;border:1px solid #eef0f3;border-radius:8px;padding:38px 20px 18px;min-height:210px;">
+          <span style="position:absolute;top:11px;left:12px;font-size:10px;font-weight:600;letter-spacing:.08em;color:#9aa3b0;background:#eef0f3;padding:2px 7px;border-radius:5px;">BEFORE</span>
+          <sc-for list="{{ sectors }}" as="s" hint-placeholder-count="5">
+            <div style="display:flex;justify-content:space-between;padding:6px 0;border-bottom:1px solid #f0f1f4;font-size:13px;"><span style="color:#5b6472;">{{ s.name }}</span><span class="mono" style="color:#10151c;">{{ s.pct }}%</span></div>
+          </sc-for>
+        </div>
+        <div style="position:relative;background:#fafbfc;border:1px solid #cfe0ff;border-radius:8px;padding:38px 20px 18px;min-height:210px;">
+          <span style="position:absolute;top:11px;left:12px;font-size:10px;font-weight:600;letter-spacing:.08em;color:#2c43be;background:#eef4ff;padding:2px 7px;border-radius:5px;">AFTER</span>
+          <button onClick="{{ replay.bars }}" style="position:absolute;top:9px;right:11px;font-size:11px;color:#9aa3b0;background:#fff;border:1px solid #e6e8ec;border-radius:6px;padding:2px 8px;cursor:pointer;">↻ replay</button>
+          <div key="{{ nonces.bars }}">
+            <sc-for list="{{ sectorsIdx }}" as="s" hint-placeholder-count="5">
+              <div style="padding:5px 0;">
+                <div style="display:flex;justify-content:space-between;font-size:12.5px;margin-bottom:3px;"><span style="color:#10151c;">{{ s.name }}</span><span class="mono" style="color:#5b6472;">{{ s.pct }}%</span></div>
+                <div style="height:6px;background:#eef0f3;border-radius:20px;overflow:hidden;"><div style="height:100%;border-radius:20px;transform-origin:left;transform:scaleX(1);animation:barGrow .7s cubic-bezier(.22,1,.36,1) both;{{ s.barStyle }}"></div></div>
+              </div>
+            </sc-for>
+          </div>
+        </div>
+      </div>
+      <sc-if value="{{ showHandoff }}" hint-placeholder-val="{{ true }}">
+        <div class="mono" style="margin-top:16px;font-size:12px;line-height:1.7;background:#10151c;color:#c3c8d0;border-radius:8px;padding:14px 16px;overflow-x:auto;">
+          <span style="color:#7c5cd0;">handoff</span> · 6px track (<span style="color:#6fd39f;">--color-line-soft</span>), fill width = pct%, <span style="color:#8ab4ff;">transform-origin:left; animation: barGrow .7s cubic-bezier(.22,1,.36,1)</span> (scaleX 0→1, GPU-cheap). Largest sector gets <span style="color:#6fd39f;">--color-accent</span>, rest <span style="color:#8ab4ff;">--color-ink-faint</span>; over-weight (&gt;25%) flips to <span style="color:#e88;">--color-warn</span>.
+        </div>
+      </sc-if>
+    </section>
+
+    <!-- ============ 06 — Numeric hierarchy ============ -->
+    <section style="margin-top:20px;background:#fff;border:1px solid #e6e8ec;border-radius:8px;box-shadow:0 1px 2px rgba(16,21,28,.04);padding:26px 28px 24px;">
+      <div style="display:flex;align-items:baseline;justify-content:space-between;gap:12px;">
+        <span style="font-size:10px;font-weight:600;letter-spacing:.12em;text-transform:uppercase;color:#12805c;background:#f0f9f4;padding:3px 9px;border-radius:5px;">Typography</span>
+        <span class="mono" style="font-size:12px;color:#c3c8d0;">06 / 15</span>
+      </div>
+      <h2 style="margin:14px 0 0;font-size:21px;font-weight:600;letter-spacing:-0.015em;">Numeric hierarchy &amp; alignment</h2>
+      <p style="margin:8px 0 0;font-size:14.5px;line-height:1.55;color:#5b6472;max-width:70ch;">Financial tables live or die on digit alignment. Set every numeric column in <span class="mono" style="font-size:13px;">IBM Plex Mono</span> with <span class="mono" style="font-size:13px;">tabular-nums</span>, right-align, demote the <span class="mono" style="font-size:13px;">%</span> sign, and let sign carry the color — columns lock into a grid the eye can run down.</p>
+      <div style="margin-top:20px;display:grid;grid-template-columns:1fr 1fr;gap:16px;">
+        <div style="position:relative;background:#fafbfc;border:1px solid #eef0f3;border-radius:8px;padding:38px 16px 16px;min-height:190px;">
+          <span style="position:absolute;top:11px;left:12px;font-size:10px;font-weight:600;letter-spacing:.08em;color:#9aa3b0;background:#eef0f3;padding:2px 7px;border-radius:5px;">BEFORE</span>
+          <sc-for list="{{ quotes }}" as="q" hint-placeholder-count="4">
+            <div style="display:flex;justify-content:space-between;align-items:center;padding:7px 4px;border-bottom:1px solid #f0f1f4;font-size:13px;">
+              <span style="font-weight:600;">{{ q.ticker }}</span>
+              <span style="color:#5b6472;">{{ q.pricePlain }}</span>
+              <span style="{{ q.chgColorLoud }}">{{ q.chgPlain }}</span>
+            </div>
+          </sc-for>
+        </div>
+        <div style="position:relative;background:#fafbfc;border:1px solid #cfe0ff;border-radius:8px;padding:38px 16px 16px;min-height:190px;">
+          <span style="position:absolute;top:11px;left:12px;font-size:10px;font-weight:600;letter-spacing:.08em;color:#2c43be;background:#eef4ff;padding:2px 7px;border-radius:5px;">AFTER</span>
+          <sc-for list="{{ quotes }}" as="q" hint-placeholder-count="4">
+            <div style="display:grid;grid-template-columns:56px 1fr 1fr;align-items:baseline;padding:7px 4px;border-bottom:1px solid #f0f1f4;">
+              <span class="mono" style="font-size:13px;font-weight:600;">{{ q.ticker }}</span>
+              <span class="mono" style="font-size:13px;text-align:right;color:#10151c;">{{ q.price }}</span>
+              <span class="mono" style="font-size:13px;text-align:right;{{ q.chgColor }}">{{ q.chg }}<span style="color:#c3c8d0;font-size:11px;">%</span></span>
+            </div>
+          </sc-for>
+        </div>
+      </div>
+      <sc-if value="{{ showHandoff }}" hint-placeholder-val="{{ true }}">
+        <div class="mono" style="margin-top:16px;font-size:12px;line-height:1.7;background:#10151c;color:#c3c8d0;border-radius:8px;padding:14px 16px;overflow-x:auto;">
+          <span style="color:#7c5cd0;">handoff</span> · numeric &lt;td&gt;: <span style="color:#8ab4ff;">font-mono text-right tabular-nums</span>; your <span style="color:#8ab4ff;">globals.css</span> already sets tabular-nums on <span style="color:#8ab4ff;">table</span> — extend to <span style="color:#8ab4ff;">text-align:right</span> on number cols. Sign carries color (<span style="color:#6fd39f;">--pos</span>/<span style="color:#e88;">--neg</span>); demote unit glyphs to <span style="color:#8ab4ff;">--color-ink-faint</span>, one step smaller.
+        </div>
+      </sc-if>
+    </section>
+
+    <!-- ============ 07 — Shimmer skeleton ============ -->
+    <section style="margin-top:20px;background:#fff;border:1px solid #e6e8ec;border-radius:8px;box-shadow:0 1px 2px rgba(16,21,28,.04);padding:26px 28px 24px;">
+      <div style="display:flex;align-items:baseline;justify-content:space-between;gap:12px;">
+        <span style="font-size:10px;font-weight:600;letter-spacing:.12em;text-transform:uppercase;color:#b8791f;background:#fbf6ea;padding:3px 9px;border-radius:5px;">Loading state</span>
+        <span class="mono" style="font-size:12px;color:#c3c8d0;">07 / 15</span>
+      </div>
+      <h2 style="margin:14px 0 0;font-size:21px;font-weight:600;letter-spacing:-0.015em;">Shimmer, not just pulse</h2>
+      <p style="margin:8px 0 0;font-size:14.5px;line-height:1.55;color:#5b6472;max-width:70ch;">Your <span class="mono" style="font-size:13px;">SkeletonTable</span> opacity-pulses in place. A directional shimmer sweep reads as <em>data streaming in</em> rather than <em>frozen</em> — same shapes, one extra keyframe.</p>
+      <div style="margin-top:20px;display:grid;grid-template-columns:1fr 1fr;gap:16px;">
+        <div style="position:relative;background:#fafbfc;border:1px solid #eef0f3;border-radius:8px;padding:38px 18px 18px;min-height:180px;">
+          <span style="position:absolute;top:11px;left:12px;font-size:10px;font-weight:600;letter-spacing:.08em;color:#9aa3b0;background:#eef0f3;padding:2px 7px;border-radius:5px;">BEFORE</span>
+          <div style="display:flex;flex-direction:column;gap:12px;">
+            <sc-for list="{{ skeleton }}" as="k" hint-placeholder-count="5">
+              <div style="display:flex;gap:14px;align-items:center;"><div style="height:14px;width:96px;border-radius:4px;background:#e6e8ec;animation:pulseOp 1.4s ease-in-out infinite;"></div><div style="height:14px;flex:1;border-radius:4px;background:#eef0f3;animation:pulseOp 1.4s ease-in-out infinite;"></div><div style="height:14px;width:44px;border-radius:4px;background:#eef0f3;animation:pulseOp 1.4s ease-in-out infinite;"></div></div>
+            </sc-for>
+          </div>
+        </div>
+        <div style="position:relative;background:#fafbfc;border:1px solid #cfe0ff;border-radius:8px;padding:38px 18px 18px;min-height:180px;">
+          <span style="position:absolute;top:11px;left:12px;font-size:10px;font-weight:600;letter-spacing:.08em;color:#2c43be;background:#eef4ff;padding:2px 7px;border-radius:5px;">AFTER</span>
+          <div style="display:flex;flex-direction:column;gap:12px;">
+            <sc-for list="{{ skeleton }}" as="k" hint-placeholder-count="5">
+              <div style="display:flex;gap:14px;align-items:center;">
+                <div style="position:relative;height:14px;width:96px;border-radius:4px;background:#e6e8ec;overflow:hidden;"><div style="position:absolute;inset:0;transform:translateX(-100%);background:linear-gradient(90deg,transparent,rgba(255,255,255,.85),transparent);animation:shimmer 1.5s ease-in-out infinite;"></div></div>
+                <div style="position:relative;height:14px;flex:1;border-radius:4px;background:#eef0f3;overflow:hidden;"><div style="position:absolute;inset:0;transform:translateX(-100%);background:linear-gradient(90deg,transparent,rgba(255,255,255,.9),transparent);animation:shimmer 1.5s ease-in-out infinite;"></div></div>
+                <div style="position:relative;height:14px;width:44px;border-radius:4px;background:#eef0f3;overflow:hidden;"><div style="position:absolute;inset:0;transform:translateX(-100%);background:linear-gradient(90deg,transparent,rgba(255,255,255,.9),transparent);animation:shimmer 1.5s ease-in-out infinite;"></div></div>
+              </div>
+            </sc-for>
+          </div>
+        </div>
+      </div>
+      <sc-if value="{{ showHandoff }}" hint-placeholder-val="{{ true }}">
+        <div class="mono" style="margin-top:16px;font-size:12px;line-height:1.7;background:#10151c;color:#c3c8d0;border-radius:8px;padding:14px 16px;overflow-x:auto;">
+          <span style="color:#7c5cd0;">handoff</span> · in <span style="color:#8ab4ff;">Skeleton.tsx</span> keep the bar as base <span style="color:#6fd39f;">--color-line</span>, add <span style="color:#8ab4ff;">position:relative;overflow:hidden</span> + an absolute sweep <span style="color:#8ab4ff;">linear-gradient(90deg,transparent,white/.85,transparent)</span> at <span style="color:#8ab4ff;">shimmer 1.5s infinite</span>. Drop <span style="color:#8ab4ff;">animate-pulse</span>. Already gated by your reduced-motion block.
+        </div>
+      </sc-if>
+    </section>
+
+    <!-- ============ 08 — Empty states ============ -->
+    <section style="margin-top:20px;background:#fff;border:1px solid #e6e8ec;border-radius:8px;box-shadow:0 1px 2px rgba(16,21,28,.04);padding:26px 28px 24px;">
+      <div style="display:flex;align-items:baseline;justify-content:space-between;gap:12px;">
+        <span style="font-size:10px;font-weight:600;letter-spacing:.12em;text-transform:uppercase;color:#b8791f;background:#fbf6ea;padding:3px 9px;border-radius:5px;">Empty state</span>
+        <span class="mono" style="font-size:12px;color:#c3c8d0;">08 / 15</span>
+      </div>
+      <h2 style="margin:14px 0 0;font-size:21px;font-weight:600;letter-spacing:-0.015em;">Empty states that guide</h2>
+      <p style="margin:8px 0 0;font-size:14.5px;line-height:1.55;color:#5b6472;max-width:70ch;">A watchlist with nothing in it shouldn't read as broken. Give empties a quiet glyph, one line of orientation, and the primary action inline — turning a dead end into the obvious next step.</p>
+      <div style="margin-top:20px;display:grid;grid-template-columns:1fr 1fr;gap:16px;">
+        <div style="position:relative;background:#fafbfc;border:1px solid #eef0f3;border-radius:8px;padding:38px 18px 18px;min-height:190px;display:flex;align-items:center;justify-content:center;">
+          <span style="position:absolute;top:11px;left:12px;font-size:10px;font-weight:600;letter-spacing:.08em;color:#9aa3b0;background:#eef0f3;padding:2px 7px;border-radius:5px;">BEFORE</span>
+          <span style="font-size:13px;color:#9aa3b0;">No stocks in watchlist.</span>
+        </div>
+        <div style="position:relative;background:#fafbfc;border:1px solid #cfe0ff;border-radius:8px;padding:38px 18px 22px;min-height:190px;display:flex;align-items:center;justify-content:center;">
+          <span style="position:absolute;top:11px;left:12px;font-size:10px;font-weight:600;letter-spacing:.08em;color:#2c43be;background:#eef4ff;padding:2px 7px;border-radius:5px;">AFTER</span>
+          <button onClick="{{ replay.empty }}" style="position:absolute;top:9px;right:11px;font-size:11px;color:#9aa3b0;background:#fff;border:1px solid #e6e8ec;border-radius:6px;padding:2px 8px;cursor:pointer;">↻ replay</button>
+          <div key="{{ nonces.empty }}" style="text-align:center;animation:fadeUp .45s ease-out both;">
+            <div style="width:44px;height:44px;margin:0 auto;border-radius:11px;background:#eef4ff;display:grid;place-items:center;">
+              <svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="#2d5bd0" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M3 3v18h18"></path><path d="M7 14l3-3 3 3 5-6"></path></svg>
+            </div>
+            <div style="font-size:14px;font-weight:600;margin-top:12px;">Your watchlist is empty</div>
+            <div style="font-size:12.5px;color:#5b6472;margin-top:4px;max-width:32ch;">Add a ticker to start tracking scores, price and regime fit.</div>
+            <div style="display:flex;gap:8px;justify-content:center;margin-top:14px;">
+              <span style="font-size:12.5px;font-weight:600;color:#fff;background:#2d5bd0;padding:6px 13px;border-radius:8px;">+ Add a stock</span>
+              <span style="font-size:12.5px;font-weight:500;color:#5b6472;background:#fff;border:1px solid #e6e8ec;padding:6px 13px;border-radius:8px;">Browse screener</span>
+            </div>
+          </div>
+        </div>
+      </div>
+      <sc-if value="{{ showHandoff }}" hint-placeholder-val="{{ true }}">
+        <div class="mono" style="margin-top:16px;font-size:12px;line-height:1.7;background:#10151c;color:#c3c8d0;border-radius:8px;padding:14px 16px;overflow-x:auto;">
+          <span style="color:#7c5cd0;">handoff</span> · one <span style="color:#8ab4ff;">&lt;EmptyState glyph title body action /&gt;</span> component: tinted <span style="color:#6fd39f;">--color-accent-soft</span> icon chip, title (semibold), one-line body <span style="color:#8ab4ff;">--color-ink-2</span>, primary + ghost button. Reuse on Watchlist, Screener no-results, Inbox zero. Fade-up on mount.
+        </div>
+      </sc-if>
+    </section>
+
+    <!-- ============ 09 — Elevation ============ -->
+    <section style="margin-top:20px;background:#fff;border:1px solid #e6e8ec;border-radius:8px;box-shadow:0 1px 2px rgba(16,21,28,.04);padding:26px 28px 24px;">
+      <div style="display:flex;align-items:baseline;justify-content:space-between;gap:12px;">
+        <span style="font-size:10px;font-weight:600;letter-spacing:.12em;text-transform:uppercase;color:#5b6472;background:#eef0f3;padding:3px 9px;border-radius:5px;">Depth</span>
+        <span class="mono" style="font-size:12px;color:#c3c8d0;">09 / 15</span>
+      </div>
+      <h2 style="margin:14px 0 0;font-size:21px;font-weight:600;letter-spacing:-0.015em;">A calmer elevation ladder</h2>
+      <p style="margin:8px 0 0;font-size:14.5px;line-height:1.55;color:#5b6472;max-width:70ch;">One flat drop-shadow on everything reads heavy. A two-layer ambient+key shadow at low opacity sits cards on the surface softly; reserve the lift for genuinely interactive tiles (your <span class="mono" style="font-size:13px;">.hover-lift</span>). Hover a card →</p>
+      <div style="margin-top:20px;display:grid;grid-template-columns:1fr 1fr;gap:16px;">
+        <div style="position:relative;background:#fafbfc;border:1px solid #eef0f3;border-radius:8px;padding:44px 24px 24px;min-height:170px;display:flex;align-items:center;justify-content:center;">
+          <span style="position:absolute;top:11px;left:12px;font-size:10px;font-weight:600;letter-spacing:.08em;color:#9aa3b0;background:#eef0f3;padding:2px 7px;border-radius:5px;">BEFORE</span>
+          <div style="width:80%;background:#fff;border:1px solid #e6e8ec;border-radius:8px;padding:18px;box-shadow:0 10px 24px rgba(16,21,28,.22);">
+            <div style="font-size:12px;color:#9aa3b0;">Portfolio value</div>
+            <div class="mono" style="font-size:24px;font-weight:600;margin-top:4px;">$4.82M</div>
+          </div>
+        </div>
+        <div style="position:relative;background:#fafbfc;border:1px solid #cfe0ff;border-radius:8px;padding:44px 24px 24px;min-height:170px;display:flex;align-items:center;justify-content:center;">
+          <span style="position:absolute;top:11px;left:12px;font-size:10px;font-weight:600;letter-spacing:.08em;color:#2c43be;background:#eef4ff;padding:2px 7px;border-radius:5px;">AFTER</span>
+          <div style="width:80%;background:#fff;border:1px solid #e6e8ec;border-radius:8px;padding:18px;box-shadow:0 1px 2px rgba(16,21,28,.05),0 4px 12px -4px rgba(16,21,28,.08);transition:box-shadow .16s ease,transform .16s ease;cursor:pointer;" style-hover="box-shadow:0 2px 4px rgba(16,21,28,.06),0 12px 28px -8px rgba(16,21,28,.16);transform:translateY(-2px);">
+            <div style="font-size:12px;color:#9aa3b0;">Portfolio value</div>
+            <div class="mono" style="font-size:24px;font-weight:600;margin-top:4px;">$4.82M</div>
+          </div>
+        </div>
+      </div>
+      <sc-if value="{{ showHandoff }}" hint-placeholder-val="{{ true }}">
+        <div class="mono" style="margin-top:16px;font-size:12px;line-height:1.7;background:#10151c;color:#c3c8d0;border-radius:8px;padding:14px 16px;overflow-x:auto;">
+          <span style="color:#7c5cd0;">handoff</span> · define <span style="color:#8ab4ff;">--shadow-sm: 0 1px 2px rgba(16,21,28,.05)</span> and <span style="color:#8ab4ff;">--shadow-card: 0 1px 2px .05, 0 4px 12px -4px .08</span> tokens; static cards use sm, containers use card. Only <span style="color:#8ab4ff;">.hover-lift</span> tiles animate to the raised two-layer shadow + <span style="color:#8ab4ff;">translateY(-2px)</span>. Retire the flat <span style="color:#e88;">0 10px 24px .22</span>.
+        </div>
+      </sc-if>
+    </section>
+
+    <!-- ============ 10 — Status color ============ -->
+    <section style="margin-top:20px;background:#fff;border:1px solid #e6e8ec;border-radius:8px;box-shadow:0 1px 2px rgba(16,21,28,.04);padding:26px 28px 24px;">
+      <div style="display:flex;align-items:baseline;justify-content:space-between;gap:12px;">
+        <span style="font-size:10px;font-weight:600;letter-spacing:.12em;text-transform:uppercase;color:#d1435b;background:#fdf2f3;padding:3px 9px;border-radius:5px;">Color &amp; status</span>
+        <span class="mono" style="font-size:12px;color:#c3c8d0;">10 / 15</span>
+      </div>
+      <h2 style="margin:14px 0 0;font-size:21px;font-weight:600;letter-spacing:-0.015em;">Let sign carry color</h2>
+      <p style="margin:8px 0 0;font-size:14.5px;line-height:1.55;color:#5b6472;max-width:70ch;">When every cell is a filled pill, nothing stands out and the grid feels loud. Reserve solid tint for true status; let numeric change carry color as text alone. The exception earns the eye.</p>
+      <div style="margin-top:20px;display:grid;grid-template-columns:1fr 1fr;gap:16px;">
+        <div style="position:relative;background:#fafbfc;border:1px solid #eef0f3;border-radius:8px;padding:38px 16px 16px;min-height:180px;">
+          <span style="position:absolute;top:11px;left:12px;font-size:10px;font-weight:600;letter-spacing:.08em;color:#9aa3b0;background:#eef0f3;padding:2px 7px;border-radius:5px;">BEFORE</span>
+          <sc-for list="{{ positions }}" as="p" hint-placeholder-count="4">
+            <div style="display:grid;grid-template-columns:52px 1fr auto;gap:8px;align-items:center;padding:6px 4px;">
+              <span class="mono" style="font-size:12px;font-weight:600;">{{ p.ticker }}</span>
+              <span class="mono" style="font-size:11px;font-weight:700;text-align:center;color:#fff;border-radius:20px;padding:3px 0;{{ p.loudBg }}">{{ p.chg }}%</span>
+              <span style="font-size:11px;font-weight:700;color:#fff;border-radius:20px;padding:3px 9px;{{ p.ratingLoud }}">{{ p.rating }}</span>
+            </div>
+          </sc-for>
+        </div>
+        <div style="position:relative;background:#fafbfc;border:1px solid #cfe0ff;border-radius:8px;padding:38px 16px 16px;min-height:180px;">
+          <span style="position:absolute;top:11px;left:12px;font-size:10px;font-weight:600;letter-spacing:.08em;color:#2c43be;background:#eef4ff;padding:2px 7px;border-radius:5px;">AFTER</span>
+          <sc-for list="{{ positions }}" as="p" hint-placeholder-count="4">
+            <div style="display:grid;grid-template-columns:52px 1fr auto;gap:8px;align-items:center;padding:6px 4px;border-bottom:1px solid #f0f1f4;">
+              <span class="mono" style="font-size:12px;font-weight:600;">{{ p.ticker }}</span>
+              <span class="mono" style="font-size:12.5px;text-align:right;{{ p.chgColor }}">{{ p.chgSigned }}<span style="color:#c3c8d0;font-size:10px;">%</span></span>
+              <span style="font-size:10.5px;font-weight:600;border-radius:20px;padding:2px 9px;{{ p.ratingSoft }}">{{ p.rating }}</span>
+            </div>
+          </sc-for>
+        </div>
+      </div>
+      <sc-if value="{{ showHandoff }}" hint-placeholder-val="{{ true }}">
+        <div class="mono" style="margin-top:16px;font-size:12px;line-height:1.7;background:#10151c;color:#c3c8d0;border-radius:8px;padding:14px 16px;overflow-x:auto;">
+          <span style="color:#7c5cd0;">handoff</span> · numeric deltas = colored <em>text</em> only (<span style="color:#6fd39f;">--pos</span>/<span style="color:#e88;">--neg</span>), no fill. <span style="color:#8ab4ff;">SignalPill</span> stays but default to the soft variant (tint bg + colored text + hairline border) you already have — reserve solid fills for a single alert-grade state per view.
+        </div>
+      </sc-if>
+    </section>
+
+    <!-- ============ 11 — Cockpit hero (bolder) ============ -->
+    <div style="margin-top:34px;display:flex;align-items:center;gap:12px;">
+      <span class="mono" style="font-size:11px;letter-spacing:.14em;text-transform:uppercase;color:#7c5cd0;">Bolder rethinks</span>
+      <span style="flex:1;height:1px;background:#e6e8ec;"></span>
+    </div>
+
+    <section style="margin-top:16px;background:#fff;border:1px solid #ddd3f2;border-radius:8px;box-shadow:0 1px 2px rgba(16,21,28,.04);padding:26px 28px 24px;">
+      <div style="display:flex;align-items:baseline;justify-content:space-between;gap:12px;">
+        <span style="font-size:10px;font-weight:600;letter-spacing:.12em;text-transform:uppercase;color:#7c5cd0;background:#f3f0fb;padding:3px 9px;border-radius:5px;">Rethink · layout</span>
+        <span class="mono" style="font-size:12px;color:#c3c8d0;">11 / 15</span>
+      </div>
+      <h2 style="margin:14px 0 0;font-size:21px;font-weight:600;letter-spacing:-0.015em;">A cockpit summary, not three tiles</h2>
+      <p style="margin:8px 0 0;font-size:14.5px;line-height:1.55;color:#5b6472;max-width:70ch;">The <span class="mono" style="font-size:13px;">ModelReturnsStrip</span> + <span class="mono" style="font-size:13px;">RegimeStrip</span> could fuse into one landing band: value with its day-move, a segmented regime gauge, and a portfolio spark — the whole state of the book in one glance before you scroll.</p>
+      <div style="margin-top:20px;display:grid;grid-template-columns:1fr 1fr;gap:16px;">
+        <div style="position:relative;background:#fafbfc;border:1px solid #eef0f3;border-radius:8px;padding:38px 16px 16px;min-height:200px;display:flex;gap:10px;align-items:center;">
+          <span style="position:absolute;top:11px;left:12px;font-size:10px;font-weight:600;letter-spacing:.08em;color:#9aa3b0;background:#eef0f3;padding:2px 7px;border-radius:5px;">BEFORE</span>
+          <sc-for list="{{ tiles }}" as="t" hint-placeholder-count="3">
+            <div style="flex:1;background:#fff;border:1px solid #e6e8ec;border-radius:8px;padding:14px;box-shadow:0 10px 24px rgba(16,21,28,.16);"><div style="font-size:11px;color:#9aa3b0;">{{ t.label }}</div><div class="mono" style="font-size:20px;font-weight:600;margin-top:4px;">{{ t.value }}</div></div>
+          </sc-for>
+        </div>
+        <div style="position:relative;background:#fafbfc;border:1px solid #ddd3f2;border-radius:8px;padding:38px 16px 16px;min-height:200px;">
+          <span style="position:absolute;top:11px;left:12px;font-size:10px;font-weight:600;letter-spacing:.08em;color:#2c43be;background:#eef4ff;padding:2px 7px;border-radius:5px;">AFTER</span>
+          <button onClick="{{ replay.hero }}" style="position:absolute;top:9px;right:11px;font-size:11px;color:#9aa3b0;background:#fff;border:1px solid #e6e8ec;border-radius:6px;padding:2px 8px;cursor:pointer;">↻ replay</button>
+          <div key="{{ nonces.hero }}" style="background:#fff;border:1px solid #e6e8ec;border-radius:8px;padding:16px 18px;display:flex;align-items:center;gap:20px;box-shadow:0 1px 2px rgba(16,21,28,.05),0 4px 12px -4px rgba(16,21,28,.08);animation:scaleIn .5s cubic-bezier(.22,1,.36,1) both;">
+            <div>
+              <div style="font-size:11px;color:#9aa3b0;">Portfolio value</div>
+              <div class="mono" style="font-size:27px;font-weight:600;letter-spacing:-0.02em;line-height:1.1;">$4.82M</div>
+              <div class="mono" style="font-size:12px;font-weight:600;color:#12805c;margin-top:2px;">+$38.4K · +0.80%</div>
+            </div>
+            <div style="width:1px;align-self:stretch;background:#f0f1f4;"></div>
+            <div style="flex:1;">
+              <div style="font-size:11px;color:#9aa3b0;margin-bottom:6px;">Regime</div>
+              <div style="display:flex;gap:4px;">
+                <span style="flex:1;height:6px;border-radius:20px;background:#12805c;animation:gaugeSlide .4s ease-out both;"></span>
+                <span style="flex:1;height:6px;border-radius:20px;background:#bfe3d4;animation:gaugeSlide .4s ease-out .06s both;"></span>
+                <span style="flex:1;height:6px;border-radius:20px;background:#eef0f3;animation:gaugeSlide .4s ease-out .12s both;"></span>
+              </div>
+              <div style="font-size:12px;font-weight:600;color:#12805c;margin-top:6px;">Risk-On</div>
+            </div>
+            <div style="width:1px;align-self:stretch;background:#f0f1f4;"></div>
+            <svg width="96" height="46" viewBox="0 0 96 46" preserveAspectRatio="none" style="overflow:visible;">
+              <defs><linearGradient id="hg" x1="0" y1="0" x2="0" y2="1"><stop offset="0" stop-color="#12805c" stop-opacity=".18"></stop><stop offset="1" stop-color="#12805c" stop-opacity="0"></stop></linearGradient></defs>
+              <path d="M0,34 L16,30 L32,33 L48,22 L64,26 L80,14 L96,10 L96,46 L0,46 Z" fill="url(#hg)"></path>
+              <path d="M0,34 L16,30 L32,33 L48,22 L64,26 L80,14 L96,10" pathLength="1" fill="none" stroke="#12805c" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" style="stroke-dasharray:1;stroke-dashoffset:1;animation:sparkDraw .8s ease-out .15s forwards;"></path>
+            </svg>
+          </div>
+          <div style="font-size:11px;color:#9aa3b0;margin-top:10px;">one band · value · day-move · regime gauge · spark</div>
+        </div>
+      </div>
+      <sc-if value="{{ showHandoff }}" hint-placeholder-val="{{ true }}">
+        <div class="mono" style="margin-top:16px;font-size:12px;line-height:1.7;background:#10151c;color:#c3c8d0;border-radius:8px;padding:14px 16px;overflow-x:auto;">
+          <span style="color:#7c5cd0;">handoff</span> · merge <span style="color:#8ab4ff;">ModelReturnsStrip</span> + <span style="color:#8ab4ff;">RegimeStrip</span> into one <span style="color:#8ab4ff;">&lt;CockpitBand&gt;</span> as the first child of the dashboard: value + CountUp day-move, a 3-segment regime gauge (fills by risk state), portfolio spark. <span style="color:#8ab4ff;">scaleIn .5s</span> on mount. Keep the per-model detail available on the Models sub-tab.
+        </div>
+      </sc-if>
+    </section>
+
+    <!-- ============ 12 — Command palette (bolder) ============ -->
+    <section style="margin-top:20px;background:#fff;border:1px solid #ddd3f2;border-radius:8px;box-shadow:0 1px 2px rgba(16,21,28,.04);padding:26px 28px 24px;">
+      <div style="display:flex;align-items:baseline;justify-content:space-between;gap:12px;">
+        <span style="font-size:10px;font-weight:600;letter-spacing:.12em;text-transform:uppercase;color:#7c5cd0;background:#f3f0fb;padding:3px 9px;border-radius:5px;">Rethink · flow</span>
+        <span class="mono" style="font-size:12px;color:#c3c8d0;">12 / 15</span>
+      </div>
+      <h2 style="margin:14px 0 0;font-size:21px;font-weight:600;letter-spacing:-0.015em;">A spotlight command palette</h2>
+      <p style="margin:8px 0 0;font-size:14.5px;line-height:1.55;color:#5b6472;max-width:70ch;">Your <span class="mono" style="font-size:13px;">⌘K</span> palette already exists — elevate it into the app's spine: grouped results with icons, a scale-in on open, keyboard hints on every row, and an active-row accent so it's fast and legible under the fingers.</p>
+      <div style="margin-top:20px;display:grid;grid-template-columns:1fr 1fr;gap:16px;">
+        <div style="position:relative;background:#fafbfc;border:1px solid #eef0f3;border-radius:8px;padding:38px 18px 18px;min-height:230px;">
+          <span style="position:absolute;top:11px;left:12px;font-size:10px;font-weight:600;letter-spacing:.08em;color:#9aa3b0;background:#eef0f3;padding:2px 7px;border-radius:5px;">BEFORE</span>
+          <div style="background:#fff;border:1px solid #e6e8ec;border-radius:8px;overflow:hidden;">
+            <div style="padding:9px 12px;border-bottom:1px solid #f0f1f4;font-size:12px;color:#9aa3b0;">Search…</div>
+            <div style="padding:8px 12px;font-size:12.5px;border-bottom:1px solid #f7f8f9;">Portfolio</div>
+            <div style="padding:8px 12px;font-size:12.5px;border-bottom:1px solid #f7f8f9;">Brief</div>
+            <div style="padding:8px 12px;font-size:12.5px;border-bottom:1px solid #f7f8f9;">NVDA</div>
+            <div style="padding:8px 12px;font-size:12.5px;">Screener</div>
+          </div>
+        </div>
+        <div style="position:relative;background:#fafbfc;border:1px solid #ddd3f2;border-radius:8px;padding:38px 18px 18px;min-height:230px;">
+          <span style="position:absolute;top:11px;left:12px;font-size:10px;font-weight:600;letter-spacing:.08em;color:#2c43be;background:#eef4ff;padding:2px 7px;border-radius:5px;">AFTER</span>
+          <button onClick="{{ replay.palette }}" style="position:absolute;top:9px;right:11px;font-size:11px;color:#9aa3b0;background:#fff;border:1px solid #e6e8ec;border-radius:6px;padding:2px 8px;cursor:pointer;">↻ replay</button>
+          <div key="{{ nonces.palette }}" style="background:#fff;border:1px solid #e6e8ec;border-radius:10px;overflow:hidden;box-shadow:0 12px 40px -12px rgba(16,21,28,.28);animation:scaleIn .28s cubic-bezier(.22,1,.36,1) both;">
+            <div style="display:flex;align-items:center;gap:9px;padding:11px 13px;border-bottom:1px solid #f0f1f4;">
+              <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="#9aa3b0" stroke-width="2" stroke-linecap="round"><path d="m21 21-4.34-4.34"></path><circle cx="11" cy="11" r="7"></circle></svg>
+              <span style="font-size:13px;color:#10151c;">nvi<span style="border-left:1.5px solid #2d5bd0;margin-left:1px;animation:blink 1.1s step-end infinite;">&nbsp;</span></span>
+            </div>
+            <div class="mono" style="padding:7px 13px 3px;font-size:9.5px;letter-spacing:.1em;text-transform:uppercase;color:#9aa3b0;">Holdings</div>
+            <div style="display:flex;align-items:center;gap:9px;padding:7px 13px;background:#eef4ff;">
+              <span style="width:20px;height:20px;border-radius:5px;background:#2d5bd0;color:#fff;font-size:9px;font-weight:700;display:grid;place-items:center;" class="mono">NV</span>
+              <span style="flex:1;font-size:12.5px;font-weight:500;">NVDA · NVIDIA</span>
+              <span class="mono" style="font-size:12px;color:#12805c;">+2.1%</span>
+              <span class="mono" style="font-size:9.5px;color:#9aa3b0;border:1px solid #e6e8ec;border-radius:4px;padding:1px 5px;">↵</span>
+            </div>
+            <div class="mono" style="padding:7px 13px 3px;font-size:9.5px;letter-spacing:.1em;text-transform:uppercase;color:#9aa3b0;">Actions</div>
+            <div style="display:flex;align-items:center;gap:9px;padding:7px 13px;">
+              <span style="width:20px;height:20px;border-radius:5px;background:#f3f0fb;display:grid;place-items:center;"><svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="#7c5cd0" stroke-width="2.4" stroke-linecap="round"><path d="M12 5v14M5 12h14"></path></svg></span>
+              <span style="flex:1;font-size:12.5px;">Add NVDA to watchlist</span>
+              <span class="mono" style="font-size:9.5px;color:#9aa3b0;border:1px solid #e6e8ec;border-radius:4px;padding:1px 5px;">⇧A</span>
+            </div>
+          </div>
+        </div>
+      </div>
+      <sc-if value="{{ showHandoff }}" hint-placeholder-val="{{ true }}">
+        <div class="mono" style="margin-top:16px;font-size:12px;line-height:1.7;background:#10151c;color:#c3c8d0;border-radius:8px;padding:14px 16px;overflow-x:auto;">
+          <span style="color:#7c5cd0;">handoff</span> · in <span style="color:#8ab4ff;">CommandPalette.tsx</span>: group results (Holdings / Pages / Actions) with a mono section label, ticker avatar + live change on holding rows, per-row <span style="color:#8ab4ff;">&lt;kbd&gt;</span> hint, active row = <span style="color:#6fd39f;">--color-accent-soft</span>. Open with <span style="color:#8ab4ff;">scaleIn .28s</span> + backdrop blur; arrow keys move the accent, ↵ runs.
+        </div>
+      </sc-if>
+    </section>
+
+    <!-- ==== Fun / interactive divider ==== -->
+    <div style="margin-top:34px;display:flex;align-items:center;gap:12px;">
+      <span class="mono" style="font-size:11px;letter-spacing:.14em;text-transform:uppercase;color:#12805c;">Make it fun to use</span>
+      <span style="flex:1;height:1px;background:#e6e8ec;"></span>
+    </div>
+
+    <!-- ============ 13 — FLIP re-sort ============ -->
+    <section style="margin-top:16px;background:#fff;border:1px solid #bfe3d4;border-radius:8px;box-shadow:0 1px 2px rgba(16,21,28,.04);padding:26px 28px 24px;">
+      <div style="display:flex;align-items:baseline;justify-content:space-between;gap:12px;">
+        <span style="font-size:10px;font-weight:600;letter-spacing:.12em;text-transform:uppercase;color:#12805c;background:#f0f9f4;padding:3px 9px;border-radius:5px;">Interactive · try it</span>
+        <span class="mono" style="font-size:12px;color:#c3c8d0;">13 / 15</span>
+      </div>
+      <h2 style="margin:14px 0 0;font-size:21px;font-weight:600;letter-spacing:-0.015em;">Rankings that reorder themselves</h2>
+      <p style="margin:8px 0 0;font-size:14.5px;line-height:1.55;color:#5b6472;max-width:70ch;">Re-sorting shouldn't teleport your holdings. When the order changes, rows physically glide to their new rank (a FLIP transition) — so you can <em>watch</em> where NVDA went instead of hunting for it. Switch the sort below.</p>
+      <div style="margin-top:20px;background:#fafbfc;border:1px solid #cfe0ff;border-radius:8px;padding:16px 16px 18px;">
+        <div style="display:flex;align-items:center;gap:8px;margin-bottom:14px;">
+          <span style="font-size:11px;color:#9aa3b0;">Sort by</span>
+          <button onClick="{{ sort.score }}" style="font-size:12px;border-radius:7px;padding:4px 12px;cursor:pointer;transition:all .15s;{{ hdrScore }}">Score</button>
+          <button onClick="{{ sort.chg }}" style="font-size:12px;border-radius:7px;padding:4px 12px;cursor:pointer;transition:all .15s;{{ hdrChg }}">Day&nbsp;%</button>
+          <button onClick="{{ sort.ticker }}" style="font-size:12px;border-radius:7px;padding:4px 12px;cursor:pointer;transition:all .15s;{{ hdrTicker }}">Ticker</button>
+        </div>
+        <div style="position:relative;height:220px;">
+          <sc-for list="{{ flipRows }}" as="r" hint-placeholder-count="5">
+            <div style="position:absolute;left:0;right:0;height:44px;transition:transform .5s cubic-bezier(.22,1,.36,1);{{ r.y }}">
+              <div style="display:flex;align-items:center;gap:12px;height:40px;padding:0 12px;background:#fff;border:1px solid #e6e8ec;border-radius:7px;">
+                <span class="mono" style="width:16px;font-size:11px;color:#9aa3b0;">{{ r.rank }}</span>
+                <span class="mono" style="width:52px;font-size:12.5px;font-weight:600;">{{ r.ticker }}</span>
+                <span style="flex:1;font-size:12.5px;color:#5b6472;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;">{{ r.name }}</span>
+                <span class="mono" style="width:52px;text-align:right;font-size:12.5px;{{ r.scoreCol }}">{{ r.scoreStr }}</span>
+                <span class="mono" style="width:62px;text-align:right;font-size:12.5px;{{ r.chgCol }}">{{ r.chgStr }}<span style="color:#c3c8d0;font-size:10px;">%</span></span>
+              </div>
+            </div>
+          </sc-for>
+        </div>
+      </div>
+      <sc-if value="{{ showHandoff }}" hint-placeholder-val="{{ true }}">
+        <div class="mono" style="margin-top:16px;font-size:12px;line-height:1.7;background:#10151c;color:#c3c8d0;border-radius:8px;padding:14px 16px;overflow-x:auto;">
+          <span style="color:#7c5cd0;">handoff</span> · keep row keys stable (by ticker) and drive position from rank, not DOM order: <span style="color:#8ab4ff;">transform:translateY(rank * rowH); transition: transform .5s cubic-bezier(.22,1,.36,1)</span>. Or use a FLIP helper (<span style="color:#8ab4ff;">react-flip-toolkit</span>) on the rankings <span style="color:#8ab4ff;">&lt;tbody&gt;</span>. Reduced-motion → drop the transition, reorder instantly.
+        </div>
+      </sc-if>
+    </section>
+
+    <!-- ============ 14 — Chart scrub ============ -->
+    <section style="margin-top:20px;background:#fff;border:1px solid #bfe3d4;border-radius:8px;box-shadow:0 1px 2px rgba(16,21,28,.04);padding:26px 28px 24px;">
+      <div style="display:flex;align-items:baseline;justify-content:space-between;gap:12px;">
+        <span style="font-size:10px;font-weight:600;letter-spacing:.12em;text-transform:uppercase;color:#12805c;background:#f0f9f4;padding:3px 9px;border-radius:5px;">Interactive · hover</span>
+        <span class="mono" style="font-size:12px;color:#c3c8d0;">14 / 15</span>
+      </div>
+      <h2 style="margin:14px 0 0;font-size:21px;font-weight:600;letter-spacing:-0.015em;">Scrub the line, read the tape</h2>
+      <p style="margin:8px 0 0;font-size:14.5px;line-height:1.55;color:#5b6472;max-width:70ch;">A price line that just sits there answers "trend." Let the PM run a pointer across it to reveal a crosshair, an anchored dot, and the exact value + date under the cursor — the chart becomes something you interrogate. <strong style="color:#10151c;font-weight:600;">Hover the chart →</strong></p>
+      <div style="margin-top:20px;background:#fafbfc;border:1px solid #cfe0ff;border-radius:8px;padding:18px;">
+        <div style="display:flex;align-items:baseline;justify-content:space-between;margin-bottom:10px;">
+          <span style="font-size:12px;color:#9aa3b0;">NVDA · 30d</span>
+          <span class="mono" style="font-size:12px;font-weight:600;color:#12805c;">$126.40 · +12.6%</span>
+        </div>
+        <div style="position:relative;width:100%;height:150px;cursor:crosshair;" onMouseMove="{{ onScrub }}" onMouseLeave="{{ offScrub }}">
+          <svg width="100%" height="150" viewBox="0 0 480 120" preserveAspectRatio="none" style="display:block;">
+            <defs><linearGradient id="scg" x1="0" y1="0" x2="0" y2="1"><stop offset="0" stop-color="#2d5bd0" stop-opacity="0.16"></stop><stop offset="1" stop-color="#2d5bd0" stop-opacity="0"></stop></linearGradient></defs>
+            <path d="{{ scrubArea }}" fill="url(#scg)" stroke="none"></path>
+            <path d="{{ scrubPath }}" fill="none" stroke="#2d5bd0" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round" vector-effect="non-scaling-stroke"></path>
+          </svg>
+          <sc-if value="{{ scrubShow }}" hint-placeholder-val="{{ false }}">
+            <div style="position:absolute;top:0;bottom:0;width:1px;background:#c3c8d0;pointer-events:none;left:{{ scrubLeft }};"></div>
+            <div style="position:absolute;width:10px;height:10px;border-radius:50%;background:#2d5bd0;border:2px solid #fff;box-shadow:0 1px 5px rgba(16,21,28,.28);pointer-events:none;transform:translate(-50%,-50%);left:{{ scrubLeft }};top:{{ scrubTop }};"></div>
+            <div style="position:absolute;top:4px;transform:translateX(-50%);background:#10151c;color:#fff;border-radius:6px;padding:4px 9px;font-size:11px;white-space:nowrap;pointer-events:none;left:{{ scrubLeft }};"><span class="mono" style="font-weight:600;">{{ scrubValue }}</span> <span style="color:#9aa3b0;">{{ scrubDate }}</span></div>
+          </sc-if>
+        </div>
+      </div>
+      <sc-if value="{{ showHandoff }}" hint-placeholder-val="{{ true }}">
+        <div class="mono" style="margin-top:16px;font-size:12px;line-height:1.7;background:#10151c;color:#c3c8d0;border-radius:8px;padding:14px 16px;overflow-x:auto;">
+          <span style="color:#7c5cd0;">handoff</span> · in <span style="color:#8ab4ff;">StockChart.tsx</span>: overlay a transparent <span style="color:#8ab4ff;">onPointerMove</span> capture, map <span style="color:#8ab4ff;">(clientX − rect.left)/rect.width</span> → nearest index, render a % crosshair + anchored dot + tooltip. <span style="color:#8ab4ff;">pointer-events:none</span> on overlays so the capture keeps firing; touch → snap to nearest on drag.
+        </div>
+      </sc-if>
+    </section>
+
+    <!-- ============ 15 — Tactile controls ============ -->
+    <section style="margin-top:20px;background:#fff;border:1px solid #bfe3d4;border-radius:8px;box-shadow:0 1px 2px rgba(16,21,28,.04);padding:26px 28px 24px;">
+      <div style="display:flex;align-items:baseline;justify-content:space-between;gap:12px;">
+        <span style="font-size:10px;font-weight:600;letter-spacing:.12em;text-transform:uppercase;color:#12805c;background:#f0f9f4;padding:3px 9px;border-radius:5px;">Interactive · try it</span>
+        <span class="mono" style="font-size:12px;color:#c3c8d0;">15 / 15</span>
+      </div>
+      <h2 style="margin:14px 0 0;font-size:21px;font-weight:600;letter-spacing:-0.015em;">Controls that feel tactile</h2>
+      <p style="margin:8px 0 0;font-size:14.5px;line-height:1.55;color:#5b6472;max-width:70ch;">A little physical feedback makes routine actions satisfying: a segmented control with a pill that slides between options, a toggle whose knob springs across, and buttons that give slightly on press. Click around.</p>
+      <div style="margin-top:20px;background:#fafbfc;border:1px solid #cfe0ff;border-radius:8px;padding:24px;display:flex;flex-wrap:wrap;align-items:center;gap:28px;">
+        <div>
+          <div style="font-size:11px;color:#9aa3b0;margin-bottom:8px;">Segmented control</div>
+          <div style="position:relative;display:inline-flex;background:#eef0f3;border-radius:9px;padding:3px;">
+            <div style="position:absolute;top:3px;bottom:3px;left:3px;width:calc((100% - 6px) / 3);background:#fff;border-radius:7px;box-shadow:0 1px 3px rgba(16,21,28,.14);transition:transform .28s cubic-bezier(.22,1,.36,1);{{ segIndicator }}"></div>
+            <button onClick="{{ seg0 }}" style="position:relative;z-index:1;border:none;background:none;font-size:12.5px;padding:6px 16px;cursor:pointer;transition:color .2s;{{ s0col }}">Rankings</button>
+            <button onClick="{{ seg1 }}" style="position:relative;z-index:1;border:none;background:none;font-size:12.5px;padding:6px 16px;cursor:pointer;transition:color .2s;{{ s1col }}">Positioning</button>
+            <button onClick="{{ seg2 }}" style="position:relative;z-index:1;border:none;background:none;font-size:12.5px;padding:6px 16px;cursor:pointer;transition:color .2s;{{ s2col }}">X-ray</button>
+          </div>
+        </div>
+        <div>
+          <div style="font-size:11px;color:#9aa3b0;margin-bottom:8px;">Spring toggle</div>
+          <div style="display:flex;align-items:center;gap:10px;">
+            <button onClick="{{ toggle }}" style="width:42px;height:24px;border-radius:20px;border:none;padding:2px;cursor:pointer;transition:background .2s;{{ toggleTrack }}">
+              <span style="display:block;width:20px;height:20px;border-radius:50%;background:#fff;box-shadow:0 1px 2px rgba(16,21,28,.3);transition:transform .24s cubic-bezier(.34,1.56,.64,1);{{ toggleKnob }}"></span>
+            </button>
+            <span style="font-size:12.5px;color:#5b6472;">{{ toggleText }}</span>
+          </div>
+        </div>
+        <div>
+          <div style="font-size:11px;color:#9aa3b0;margin-bottom:8px;">Press feedback</div>
+          <button style="display:inline-flex;align-items:center;gap:6px;font-size:12.5px;font-weight:600;color:#fff;background:#2d5bd0;border:none;border-radius:8px;padding:8px 16px;cursor:pointer;transition:transform .1s ease, background .15s;" style-hover="background:#2c43be;" style-active="transform:scale(.95);">↻ Refresh prices</button>
+        </div>
+      </div>
+      <sc-if value="{{ showHandoff }}" hint-placeholder-val="{{ true }}">
+        <div class="mono" style="margin-top:16px;font-size:12px;line-height:1.7;background:#10151c;color:#c3c8d0;border-radius:8px;padding:14px 16px;overflow-x:auto;">
+          <span style="color:#7c5cd0;">handoff</span> · segmented: absolute white pill, <span style="color:#8ab4ff;">translateX(active * 100%)</span>, <span style="color:#8ab4ff;">.28s cubic-bezier(.22,1,.36,1)</span>. Toggle knob uses an overshoot curve <span style="color:#8ab4ff;">cubic-bezier(.34,1.56,.64,1)</span> for spring. Every button/link gets <span style="color:#8ab4ff;">:active { transform: scale(.95..97) }</span>, <span style="color:#8ab4ff;">.1s</span>. All reduced-motion-safe.
+        </div>
+      </sc-if>
+    </section>
+
+    <!-- Closing -->
+    <div style="margin-top:34px;padding:22px 24px;background:#10151c;border-radius:10px;color:#c3c8d0;">
+      <div style="font-size:15px;font-weight:600;color:#fff;">Suggested sequencing for Claude Code</div>
+      <p style="margin:10px 0 0;font-size:13.5px;line-height:1.7;">Ship in three passes so nothing regresses: <strong style="color:#fff;">(1) Foundations</strong> — shadow tokens (09), numeric alignment (06), status restraint (10); pure CSS, zero risk. <strong style="color:#fff;">(2) Motion</strong> — row stagger &amp; hover (02), CountUp + delta (01), shimmer (07), sparkline body (03); all behind <span class="mono" style="font-size:12px;">prefers-reduced-motion</span>. <strong style="color:#fff;">(3) Structure</strong> — conviction ring (04), exposure bars (05), empty states (08), then the cockpit band (11) and palette (12) as the headline rethinks. <strong style="color:#fff;">(4) Delight</strong> — the self-reordering rankings (13), chart scrubbing (14) and tactile controls (15) are the "fun to use" layer; each is pointer-driven and reduced-motion-safe, so ship them once the foundations are stable.</p>
+      <p style="margin:12px 0 0;font-size:12px;color:#9aa3b0;">Every value above maps to an existing Precision Light token — no new palette, no new type. Toggle the handoff notes off with the Tweaks panel for a cleaner walkthrough.</p>
+    </div>
+
+  </main>
+</div>
+</x-dc>
+<script type="text/x-dc" data-dc-script data-props="{&quot;$preview&quot;:{&quot;width&quot;:1080,&quot;height&quot;:900},&quot;showHandoff&quot;:{&quot;editor&quot;:&quot;boolean&quot;,&quot;default&quot;:true,&quot;tsType&quot;:&quot;boolean&quot;,&quot;section&quot;:&quot;Walkthrough&quot;},&quot;reduceMotion&quot;:{&quot;editor&quot;:&quot;boolean&quot;,&quot;default&quot;:false,&quot;tsType&quot;:&quot;boolean&quot;,&quot;section&quot;:&quot;Walkthrough&quot;}}">
+class Component extends DCLogic {
+  state = { nonces: {}, before: 74.0, after: 74.0, flash: "", dir: 0, delta: 0, sortKey: "score", scrub: {}, seg: 0, toggleOn: false };
+
+  componentDidMount() {
+    this._iv = setInterval(() => this.tick(), 3000);
+    setTimeout(() => this.tick(), 900);
+  }
+  componentWillUnmount() {
+    clearInterval(this._iv);
+    if (this._raf) cancelAnimationFrame(this._raf);
+    if (this._ft) clearTimeout(this._ft);
+  }
+
+  tick() {
+    const from = this.state.after;
+    let t = from + (Math.random() * 13 - 6);
+    t = Math.max(41, Math.min(96, t));
+    const target = Math.round(t * 10) / 10;
+    const dir = target >= from ? 1 : -1;
+    const delta = Math.round((target - from) * 10) / 10;
+    this.setState({ before: target, flash: dir > 0 ? "flashPos" : "flashNeg", dir, delta });
+    const start = performance.now();
+    const dur = 640;
+    const step = (now) => {
+      const p = Math.min(1, (now - start) / dur);
+      const e = 1 - Math.pow(1 - p, 3);
+      const v = from + (target - from) * e;
+      this.setState({ after: Math.round(v * 10) / 10 });
+      if (p < 1) this._raf = requestAnimationFrame(step);
+    };
+    this._raf = requestAnimationFrame(step);
+    if (this._ft) clearTimeout(this._ft);
+    this._ft = setTimeout(() => this.setState({ flash: "" }), 950);
+  }
+
+  bump(id) {
+    this.setState((s) => ({ nonces: { ...s.nonces, [id]: (s.nonces[id] || 0) + 1 } }));
+  }
+
+  points() {
+    if (this._pts) return this._pts;
+    const vals = [112.3, 114.8, 113.1, 117.6, 119.2, 116.4, 121.0, 120.3, 123.8, 122.1, 124.9, 125.6, 126.4];
+    const dates = ["Jun 9", "Jun 11", "Jun 13", "Jun 16", "Jun 18", "Jun 20", "Jun 23", "Jun 25", "Jun 27", "Jun 30", "Jul 2", "Jul 7", "Jul 9"];
+    const min = Math.min(...vals), max = Math.max(...vals);
+    const W = 480, H = 120, pad = 12, n = vals.length;
+    this._pts = vals.map((v, i) => {
+      const x = (i / (n - 1)) * W;
+      const yPct = (1 - (v - min) / (max - min)) * ((H - 2 * pad) / H * 100) + (pad / H * 100);
+      return { x, y: (yPct / 100) * H, yPct, value: v, date: dates[i] };
+    });
+    return this._pts;
+  }
+  onScrub(e) {
+    const rect = e.currentTarget.getBoundingClientRect();
+    let rel = (e.clientX - rect.left) / rect.width;
+    rel = Math.max(0, Math.min(1, rel));
+    const pts = this.points();
+    this.setState({ scrub: { idx: Math.round(rel * (pts.length - 1)) } });
+  }
+  offScrub() { this.setState({ scrub: { idx: null } }); }
+
+  renderVals() {
+    const b = (id) => () => this.bump(id);
+
+    // ── FLIP re-sort demo ──
+    const fbase = [
+      { ticker: "NVDA", name: "NVIDIA Corp", score: 88.4, chgNum: 2.13 },
+      { ticker: "MSFT", name: "Microsoft Corp", score: 81.2, chgNum: 0.42 },
+      { ticker: "AAPL", name: "Apple Inc", score: 74.6, chgNum: 0.88 },
+      { ticker: "JPM", name: "JPMorgan Chase", score: 63.0, chgNum: -0.07 },
+      { ticker: "XOM", name: "Exxon Mobil", score: 55.1, chgNum: -1.90 },
+    ];
+    const sk = this.state.sortKey || "score";
+    const cmp = sk === "ticker"
+      ? (a, z) => (a.ticker < z.ticker ? -1 : 1)
+      : sk === "chg"
+      ? (a, z) => z.chgNum - a.chgNum
+      : (a, z) => z.score - a.score;
+    const fsorted = [...fbase].sort(cmp);
+    const rankMap = {};
+    fsorted.forEach((r, i) => { rankMap[r.ticker] = i; });
+    const flipRows = fbase.map((r) => ({
+      ticker: r.ticker, name: r.name,
+      scoreStr: r.score.toFixed(1),
+      chgStr: (r.chgNum >= 0 ? "+" : "") + r.chgNum.toFixed(2),
+      rank: String(rankMap[r.ticker] + 1),
+      y: "transform:translateY(" + rankMap[r.ticker] * 44 + "px);",
+      scoreCol: "color:#10151c;" + (sk === "score" ? "font-weight:700;" : "font-weight:500;"),
+      chgCol: (r.chgNum >= 0 ? "color:#12805c;" : "color:#d1435b;") + (sk === "chg" ? "font-weight:700;" : "font-weight:500;"),
+    }));
+    const hdr = (k) => sk === k
+      ? "color:#2c43be;background:#eef4ff;border:1px solid #cfe0ff;"
+      : "color:#5b6472;background:#fff;border:1px solid #e6e8ec;";
+
+    // ── Chart scrub demo ──
+    const pts = this.points();
+    const scr = this.state.scrub || {};
+    const sidx = scr.idx;
+    const scrubShow = sidx != null;
+    const sp = scrubShow ? pts[sidx] : null;
+    const scrubLeft = scrubShow ? (sidx / (pts.length - 1) * 100).toFixed(2) + "%" : "0";
+    const scrubTop = scrubShow ? sp.yPct.toFixed(2) + "%" : "0";
+    const scrubValue = scrubShow ? "$" + sp.value.toFixed(2) : "";
+    const scrubDate = scrubShow ? sp.date : "";
+    const scrubPath = "M" + pts.map((p) => p.x.toFixed(1) + "," + p.y.toFixed(1)).join(" L");
+    const scrubArea = scrubPath + " L480,120 L0,120 Z";
+
+    // ── Tactile controls demo ──
+    const seg = this.state.seg || 0;
+    const on = !!this.state.toggleOn;
+    const segIndicator = "transform:translateX(" + seg * 100 + "%);";
+    const segCol = (i) => seg === i ? "color:#10151c;font-weight:600;" : "color:#5b6472;font-weight:500;";
+
+    const d = this.state.delta;
+    const up = this.state.dir > 0;
+    const deltaChipStyle = up
+      ? "color:#12805c;background:#f0f9f4;border:1px solid #bfe3d4;"
+      : "color:#d1435b;background:#fdf2f3;border:1px solid #f2c9cf;";
+    const deltaLabel = (up ? "▲ +" : "▼ ") + Math.abs(d).toFixed(1);
+
+    const rowsRaw = [
+      { ticker: "NVDA", name: "NVIDIA Corp", score: "88.4", up: true },
+      { ticker: "MSFT", name: "Microsoft Corp", score: "81.2", up: true },
+      { ticker: "UNH", name: "UnitedHealth Grp", score: "62.7", up: false },
+      { ticker: "XOM", name: "Exxon Mobil", score: "55.1", up: false },
+    ];
+    const rowsIdx = rowsRaw.map((r, i) => ({
+      ...r,
+      delay: "animation-delay:" + i * 60 + "ms;",
+      scoreColor: r.up ? "color:#12805c;" : "color:#5b6472;",
+    }));
+
+    const sectorsRaw = [
+      { name: "Technology", pct: 34, big: true },
+      { name: "Financials", pct: 19, big: false },
+      { name: "Health Care", pct: 15, big: false },
+      { name: "Industrials", pct: 12, big: false },
+      { name: "Energy", pct: 9, big: false },
+    ];
+    const sectorsIdx = sectorsRaw.map((s, i) => ({
+      ...s,
+      barStyle:
+        "width:" + s.pct * 2.4 + "%;" +
+        "animation-delay:" + i * 70 + "ms;" +
+        (s.pct > 25 ? "background:#b8791f;" : s.big ? "background:#2d5bd0;" : "background:#c3c8d0;"),
+    }));
+
+    const quotes = [
+      { ticker: "NVDA", price: "$126.40", pricePlain: "$126.4", chg: "+2.13", chgPlain: "+2.13%", up: true },
+      { ticker: "AAPL", price: "$228.05", pricePlain: "$228.05", chg: "+0.42", chgPlain: "+0.42%", up: true },
+      { ticker: "TSLA", price: "$241.88", pricePlain: "$241.88", chg: "-1.90", chgPlain: "-1.9%", up: false },
+      { ticker: "JPM", price: "$205.31", pricePlain: "$205.31", chg: "-0.07", chgPlain: "-0.07%", up: false },
+    ].map((q) => ({
+      ...q,
+      chgColor: q.up ? "color:#12805c;" : "color:#d1435b;",
+      chgColorLoud: q.up ? "color:#12805c;font-weight:600;" : "color:#d1435b;font-weight:600;",
+    }));
+
+    const skeleton = [1, 2, 3, 4, 5];
+
+    const positions = [
+      { ticker: "NVDA", chg: "+2.1", chgSigned: "+2.13", rating: "Buy", tone: "green" },
+      { ticker: "AAPL", chg: "+0.4", chgSigned: "+0.42", rating: "Hold", tone: "amber" },
+      { ticker: "TSLA", chg: "-1.9", chgSigned: "-1.90", rating: "Sell", tone: "red" },
+      { ticker: "JPM", chg: "-0.1", chgSigned: "-0.07", rating: "Hold", tone: "amber" },
+    ].map((p) => {
+      const loudBg = p.tone === "green" ? "background:#12805c;" : p.tone === "red" ? "background:#d1435b;" : "background:#b8791f;";
+      const ratingLoud = loudBg;
+      const chgColor = p.chgSigned.startsWith("-") ? "color:#d1435b;" : "color:#12805c;";
+      const ratingSoft =
+        p.tone === "green" ? "color:#12805c;background:#f0f9f4;border:1px solid #bfe3d4;"
+        : p.tone === "red" ? "color:#d1435b;background:#fdf2f3;border:1px solid #f2c9cf;"
+        : "color:#b8791f;background:#fbf6ea;border:1px solid #f2e2bf;";
+      return { ...p, loudBg, ratingLoud, chgColor, ratingSoft };
+    });
+
+    const tiles = [
+      { label: "Balanced", value: "+0.62%" },
+      { label: "Growth", value: "+1.04%" },
+      { label: "All-Equity", value: "+0.88%" },
+    ];
+
+    return {
+      nonces: this.state.nonces,
+      replay: {
+        rows: b("rows"), spark: b("spark"), ring: b("ring"), bars: b("bars"),
+        empty: b("empty"), hero: b("hero"), palette: b("palette"),
+      },
+      beforeStr: this.state.before.toFixed(1),
+      afterStr: this.state.after.toFixed(1),
+      flashClass: this.state.flash,
+      deltaChipStyle,
+      deltaLabel,
+      rows: rowsRaw,
+      rowsIdx,
+      sectors: sectorsRaw,
+      sectorsIdx,
+      quotes,
+      skeleton,
+      positions,
+      tiles,
+      flipRows,
+      sort: {
+        score: () => this.setState({ sortKey: "score" }),
+        chg: () => this.setState({ sortKey: "chg" }),
+        ticker: () => this.setState({ sortKey: "ticker" }),
+      },
+      hdrScore: hdr("score"), hdrChg: hdr("chg"), hdrTicker: hdr("ticker"),
+      onScrub: (e) => this.onScrub(e), offScrub: () => this.offScrub(),
+      scrubShow, scrubLeft, scrubTop, scrubValue, scrubDate, scrubPath, scrubArea,
+      segIndicator, s0col: segCol(0), s1col: segCol(1), s2col: segCol(2),
+      seg0: () => this.setState({ seg: 0 }), seg1: () => this.setState({ seg: 1 }), seg2: () => this.setState({ seg: 2 }),
+      toggle: () => this.setState((s) => ({ toggleOn: !s.toggleOn })),
+      toggleTrack: on ? "background:#2d5bd0;" : "background:#c3c8d0;",
+      toggleKnob: on ? "transform:translateX(17px);" : "transform:translateX(0);",
+      toggleText: on ? "Live prices on" : "Live prices off",
+      showHandoff: this.props.showHandoff ?? true,
+      rm: this.props.reduceMotion ? "1" : null,
+    };
+  }
+}
+</script>
+</body>
+</html>

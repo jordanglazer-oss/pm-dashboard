@@ -1,0 +1,222 @@
+<!doctype html>
+<html>
+<head>
+  <meta charset="utf-8">
+  <script src="./support.js"></script>
+</head>
+<body>
+<x-dc>
+<helmet>
+  <link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=IBM+Plex+Mono:wght@400;500;600&family=IBM+Plex+Sans:wght@400;500;600;700&display=swap">
+  <style>
+    body { margin: 0; background: #f6f7f9; color: #10151c;
+           font-family: "IBM Plex Sans", -apple-system, BlinkMacSystemFont, "Segoe UI", Helvetica, Arial, sans-serif;
+           -webkit-font-smoothing: antialiased; }
+    a { color: #2d5bd0; text-decoration: none; }
+    a:hover { color: #2c43be; }
+    .mono { font-family: "IBM Plex Mono", ui-monospace, "SF Mono", Menlo, Consolas, monospace; font-variant-numeric: tabular-nums; }
+    .eyebrow { font-size: 10px; font-weight: 600; text-transform: uppercase; letter-spacing: 0.1em; color: #9aa3b0; }
+    .rule { border: 1px solid #e6e8ec; border-radius: 8px; background: #ffffff; box-shadow: 0 1px 2px rgb(16 21 28 / 0.05); padding: 16px; }
+    .demo { border-radius: 8px; background: #f6f7f9; padding: 12px; }
+    .tile { border-radius: 8px; background: #fafbfc; border: 1px solid #eceef1; padding: 8px 10px; }
+    .tl { font-size: 10px; color: #9aa3b0; }
+    .tv { font-family: "IBM Plex Mono", ui-monospace, Menlo, monospace; font-size: 14px; font-weight: 600; color: #10151c; margin-top: 2px; }
+    .tag-bad { border-radius: 20px; background: #fdf2f3; color: #d1435b; padding: 2px 8px; font-size: 10px; font-weight: 700; text-transform: uppercase; letter-spacing: 0.05em; }
+    .tag-good { border-radius: 20px; background: #f0f9f4; color: #12805c; padding: 2px 8px; font-size: 10px; font-weight: 700; text-transform: uppercase; letter-spacing: 0.05em; }
+  </style>
+</helmet>
+
+<div style="width: 880px; background: #f6f7f9; padding: 28px;">
+
+  <div style="margin-bottom: 20px;">
+    <div class="eyebrow">Density rules</div>
+    <div style="margin-top: 5px; font-size: 24px; font-weight: 700; letter-spacing: -0.02em;">Fewer boxes, fewer clicks</div>
+    <div style="margin-top: 6px; font-size: 14px; color: #5b6472; text-wrap: pretty;">Five rules that account for most of the visual noise. They change containers and defaults only — no data, no calculation, no route is affected.</div>
+  </div>
+
+  <div style="display: flex; flex-direction: column; gap: 14px;">
+
+    <!-- RULE 1 -->
+    <div class="rule">
+      <div style="display: flex; align-items: baseline; gap: 9px; margin-bottom: 4px;">
+        <span class="mono" style="font-size: 13px; font-weight: 600; color: #9aa3b0;">01</span>
+        <span style="font-size: 15px; font-weight: 700;">A card per concern, not a card per number</span>
+      </div>
+      <div style="font-size: 13px; color: #5b6472; margin-bottom: 12px; text-wrap: pretty;">The stock page nests thirteen bordered tiles inside two bordered cards. Hairline dividers separate the same numbers with a quarter of the ink.</div>
+
+      <div style="display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 12px;">
+        <div>
+          <div style="display: flex; align-items: center; gap: 7px; margin-bottom: 6px;"><span class="tag-bad">Today</span><span style="font-size: 12px; color: #9aa3b0;">2 borders deep, 4 radii</span></div>
+          <div class="demo">
+            <div style="border: 1px solid #e6e8ec; border-radius: 8px; background: #ffffff; padding: 12px;">
+              <div style="font-size: 13px; font-weight: 700; margin-bottom: 9px;">Key Statistics</div>
+              <div style="display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 7px;">
+                <div class="tile"><div class="tl">Mkt cap</div><div class="tv">88.6B</div></div>
+                <div class="tile"><div class="tl">Fwd P/E</div><div class="tv">34.2×</div></div>
+                <div class="tile"><div class="tl">Beta 3y</div><div class="tv">0.88</div></div>
+                <div class="tile"><div class="tl">Target</div><div class="tv">4,620</div></div>
+              </div>
+            </div>
+          </div>
+        </div>
+        <div>
+          <div style="display: flex; align-items: center; gap: 7px; margin-bottom: 6px;"><span class="tag-good">Proposed</span><span style="font-size: 12px; color: #9aa3b0;">1 border, hairline columns</span></div>
+          <div class="demo">
+            <div style="border: 1px solid #e6e8ec; border-radius: 8px; background: #ffffff; overflow: hidden;">
+              <div style="display: grid; grid-template-columns: repeat(4, minmax(0, 1fr));">
+                <div style="padding: 12px 10px; border-right: 1px solid #f0f1f4;"><div class="tl">Mkt cap</div><div class="tv">88.6B</div></div>
+                <div style="padding: 12px 10px; border-right: 1px solid #f0f1f4;"><div class="tl">Fwd P/E</div><div class="tv">34.2×</div></div>
+                <div style="padding: 12px 10px; border-right: 1px solid #f0f1f4;"><div class="tl">Beta 3y</div><div class="tv">0.88</div></div>
+                <div style="padding: 12px 10px;"><div class="tl">Target</div><div class="tv">4,620</div></div>
+              </div>
+            </div>
+          </div>
+        </div>
+      </div>
+    </div>
+
+    <!-- RULE 2 -->
+    <div class="rule">
+      <div style="display: flex; align-items: baseline; gap: 9px; margin-bottom: 4px;">
+        <span class="mono" style="font-size: 13px; font-weight: 600; color: #9aa3b0;">02</span>
+        <span style="font-size: 15px; font-weight: 700;">Sections are rows inside one card, not a stack of cards</span>
+      </div>
+      <div style="font-size: 13px; color: #5b6472; margin-bottom: 12px; text-wrap: pretty;">Research stacks seventeen bordered collapsibles down one page. The Brief already solves this with its flush Narrative rows — apply the same treatment everywhere a page lists peer sections.</div>
+
+      <div style="display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 12px;">
+        <div>
+          <div style="display: flex; align-items: center; gap: 7px; margin-bottom: 6px;"><span class="tag-bad">Today</span><span style="font-size: 12px; color: #9aa3b0;">17 cards, 17 shadows</span></div>
+          <div class="demo" style="display: flex; flex-direction: column; gap: 8px;">
+            <div style="border: 1px solid #e6e8ec; border-radius: 8px; background: #ffffff; box-shadow: 0 1px 2px rgb(16 21 28 / 0.05); padding: 11px 12px; font-size: 13px; font-weight: 600;">▾ &nbsp;Newton Upticks</div>
+            <div style="border: 1px solid #e6e8ec; border-radius: 8px; background: #ffffff; box-shadow: 0 1px 2px rgb(16 21 28 / 0.05); padding: 11px 12px; font-size: 13px; font-weight: 600;">▸ &nbsp;Fundstrat — Top</div>
+            <div style="border: 1px solid #e6e8ec; border-radius: 8px; background: #ffffff; box-shadow: 0 1px 2px rgb(16 21 28 / 0.05); padding: 11px 12px; font-size: 13px; font-weight: 600;">▸ &nbsp;Fundstrat — Bottom</div>
+            <div style="border: 1px solid #e6e8ec; border-radius: 8px; background: #ffffff; box-shadow: 0 1px 2px rgb(16 21 28 / 0.05); padding: 11px 12px; font-size: 13px; font-weight: 600;">▸ &nbsp;RBC Canada</div>
+          </div>
+        </div>
+        <div>
+          <div style="display: flex; align-items: center; gap: 7px; margin-bottom: 6px;"><span class="tag-good">Proposed</span><span style="font-size: 12px; color: #9aa3b0;">1 card, hairline rows</span></div>
+          <div class="demo">
+            <div style="border: 1px solid #e6e8ec; border-radius: 8px; background: #ffffff; box-shadow: 0 1px 2px rgb(16 21 28 / 0.05); overflow: hidden;">
+              <div style="padding: 11px 12px; font-size: 13px; font-weight: 600; background: #eef4ff; color: #2c43be;">Newton Upticks<span style="float: right; font-weight: 400; color: #9aa3b0;">18</span></div>
+              <div style="padding: 11px 12px; font-size: 13px; color: #5b6472; border-top: 1px solid #f0f1f4;">Fundstrat — Top<span style="float: right; color: #9aa3b0;">25</span></div>
+              <div style="padding: 11px 12px; font-size: 13px; color: #5b6472; border-top: 1px solid #f0f1f4;">Fundstrat — Bottom<span style="float: right; color: #9aa3b0;">25</span></div>
+              <div style="padding: 11px 12px; font-size: 13px; color: #5b6472; border-top: 1px solid #f0f1f4;">RBC Canada<span style="float: right; color: #9aa3b0;">22</span></div>
+            </div>
+          </div>
+        </div>
+      </div>
+    </div>
+
+    <!-- RULE 3 -->
+    <div class="rule">
+      <div style="display: flex; align-items: baseline; gap: 9px; margin-bottom: 4px;">
+        <span class="mono" style="font-size: 13px; font-weight: 600; color: #9aa3b0;">03</span>
+        <span style="font-size: 15px; font-weight: 700;">Show by default; collapse only reference</span>
+      </div>
+      <div style="font-size: 13px; color: #5b6472; margin-bottom: 12px; text-wrap: pretty;">Thirty-four collapsible panels are persisted in <span class="mono" style="font-size: 12px;">pm:ui-prefs</span> today. Sort them once: daily reading is always open, reference is a text link at the foot of the page that expands in place.</div>
+
+      <div style="display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 10px;">
+        <div style="border-left: 3px solid #12805c; padding-left: 11px;">
+          <div style="font-size: 13px; font-weight: 700;">Always open</div>
+          <div style="margin-top: 4px; font-size: 12px; color: #5b6472; line-height: 1.65;">Attention · Holdings · Score breakdown · Thesis · Brief verdict &amp; actions</div>
+        </div>
+        <div style="border-left: 3px solid #b8791f; padding-left: 11px;">
+          <div style="font-size: 13px; font-weight: 700;">Open on demand</div>
+          <div style="margin-top: 4px; font-size: 12px; color: #5b6472; line-height: 1.65;">Narrative sections · non-active research sources · Street takeaways detail</div>
+        </div>
+        <div style="border-left: 3px solid #c3c8d0; padding-left: 11px;">
+          <div style="font-size: 13px; font-weight: 700;">Reference link</div>
+          <div style="margin-top: 4px; font-size: 12px; color: #5b6472; line-height: 1.65;">Regime multiplier detail · Score calibration · Model eligibility · Methodology</div>
+        </div>
+      </div>
+    </div>
+
+    <!-- RULE 4 -->
+    <div class="rule">
+      <div style="display: flex; align-items: baseline; gap: 9px; margin-bottom: 4px;">
+        <span class="mono" style="font-size: 13px; font-weight: 600; color: #9aa3b0;">04</span>
+        <span style="font-size: 15px; font-weight: 700;">No card around a control you already have in the nav</span>
+      </div>
+      <div style="font-size: 13px; color: #5b6472; margin-bottom: 12px; text-wrap: pretty;">The landing page devotes half a row to an &quot;Add a Holding&quot; card and half to a &quot;Market Regime&quot; card. The nav&apos;s <span style="border-radius: 6px; background: #2d5bd0; color: #ffffff; padding: 1px 7px; font-size: 12px; font-weight: 600;">+ Add</span> already opens the same form, and the regime already reads in the cockpit band directly above. Both cards come out; the one control they carried — the scoring-posture override — moves inline into the cockpit.</div>
+
+      <div class="demo" style="display: flex; align-items: center; gap: 12px;">
+        <span style="font-size: 12px; color: #9aa3b0; flex-shrink: 0;">Cockpit, right end:</span>
+        <div style="display: flex; align-items: center; gap: 8px; border: 1px solid #e6e8ec; border-radius: 8px; background: #ffffff; padding: 8px 12px;">
+          <span style="font-size: 12px; color: #9aa3b0;">Scoring posture</span>
+          <span style="border-radius: 20px; background: #fbf6ea; color: #b8791f; padding: 2px 9px; font-size: 12px; font-weight: 700;">Neutral</span>
+          <span style="border-radius: 20px; background: #2d5bd0; color: #ffffff; padding: 2px 10px; font-size: 11px; font-weight: 600;">Engine says Risk-On — apply</span>
+        </div>
+      </div>
+    </div>
+
+    <!-- RULE 5 -->
+    <div class="rule">
+      <div style="display: flex; align-items: baseline; gap: 9px; margin-bottom: 4px;">
+        <span class="mono" style="font-size: 13px; font-weight: 600; color: #9aa3b0;">05</span>
+        <span style="font-size: 15px; font-weight: 700;">On a phone, a table becomes rows — and navigation moves to the thumb</span>
+      </div>
+      <div style="font-size: 13px; color: #5b6472; margin-bottom: 12px; text-wrap: pretty;">Wide tables currently side-scroll inside their card, so the score column is off-screen exactly when it matters. Below 768px each row folds into two lines with the score pinned right, and the eleven-item hamburger becomes a five-item bottom bar.</div>
+
+      <div style="display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 12px;">
+        <div>
+          <div style="display: flex; align-items: center; gap: 7px; margin-bottom: 6px;"><span class="tag-bad">Today</span><span style="font-size: 12px; color: #9aa3b0;">side-scrolls, score hidden</span></div>
+          <div class="demo">
+            <div style="border: 1px solid #e6e8ec; border-radius: 8px; background: #ffffff; overflow: hidden;">
+              <div style="display: flex; font-size: 11px; color: #9aa3b0; padding: 7px 10px; border-bottom: 1px solid #e6e8ec;"><span style="width: 62px;">Ticker</span><span style="width: 96px;">Sector</span><span style="width: 58px;">Weight</span><span style="width: 40px;">Pri…</span></div>
+              <div style="display: flex; font-size: 12px; padding: 8px 10px; border-bottom: 1px solid #f0f1f4;"><span class="mono" style="width: 62px; font-weight: 600;">CSU-T</span><span style="width: 96px; color: #9aa3b0;">Technology</span><span class="mono" style="width: 58px; color: #5b6472;">3.82%</span><span class="mono" style="width: 40px; color: #5b6472;">4,1…</span></div>
+              <div style="display: flex; font-size: 12px; padding: 8px 10px;"><span class="mono" style="width: 62px; font-weight: 600;">NVDA</span><span style="width: 96px; color: #9aa3b0;">Technology</span><span class="mono" style="width: 58px; color: #5b6472;">3.64%</span><span class="mono" style="width: 40px; color: #5b6472;">138…</span></div>
+            </div>
+          </div>
+        </div>
+        <div>
+          <div style="display: flex; align-items: center; gap: 7px; margin-bottom: 6px;"><span class="tag-good">Proposed</span><span style="font-size: 12px; color: #9aa3b0;">no horizontal scroll</span></div>
+          <div class="demo">
+            <div style="border: 1px solid #e6e8ec; border-radius: 8px; background: #ffffff; overflow: hidden;">
+              <div style="display: flex; align-items: center; gap: 10px; padding: 9px 10px; border-bottom: 1px solid #f0f1f4;">
+                <span style="flex-grow: 1; min-width: 0;">
+                  <span style="display: block; font-size: 13px;"><span class="mono" style="font-weight: 600;">CSU-T</span> <span style="color: #9aa3b0; font-size: 11px;">3.82%</span></span>
+                  <span style="display: block; font-size: 11px; color: #9aa3b0;">Constellation · Technology</span>
+                </span>
+                <span style="text-align: right; flex-shrink: 0;">
+                  <span class="mono" style="display: block; font-size: 13px;">4,182</span>
+                  <span class="mono" style="display: block; font-size: 11px; color: #d1435b;">−0.31%</span>
+                </span>
+                <span class="mono" style="font-size: 14px; font-weight: 600; flex-shrink: 0;">31.8</span>
+              </div>
+              <div style="display: flex; align-items: center; gap: 10px; padding: 9px 10px;">
+                <span style="flex-grow: 1; min-width: 0;">
+                  <span style="display: block; font-size: 13px;"><span class="mono" style="font-weight: 600;">NVDA</span> <span style="color: #9aa3b0; font-size: 11px;">3.64%</span></span>
+                  <span style="display: block; font-size: 11px; color: #9aa3b0;">NVIDIA · Technology</span>
+                </span>
+                <span style="text-align: right; flex-shrink: 0;">
+                  <span class="mono" style="display: block; font-size: 13px;">138.42</span>
+                  <span class="mono" style="display: block; font-size: 11px; color: #12805c;">+1.92%</span>
+                </span>
+                <span class="mono" style="font-size: 14px; font-weight: 600; flex-shrink: 0;">33.5</span>
+              </div>
+            </div>
+          </div>
+        </div>
+      </div>
+    </div>
+
+    <!-- Spacing -->
+    <div class="rule">
+      <div style="display: flex; align-items: baseline; gap: 9px; margin-bottom: 10px;">
+        <span class="mono" style="font-size: 13px; font-weight: 600; color: #9aa3b0;">—</span>
+        <span style="font-size: 15px; font-weight: 700;">Spacing, unchanged tokens</span>
+      </div>
+      <div style="display: grid; grid-template-columns: repeat(4, minmax(0, 1fr)); gap: 0; border: 1px solid #e6e8ec; border-radius: 8px; overflow: hidden;">
+        <div style="padding: 11px 14px; border-right: 1px solid #f0f1f4; background: #ffffff;"><div class="tl">Between sections</div><div class="tv">24 → 16px</div></div>
+        <div style="padding: 11px 14px; border-right: 1px solid #f0f1f4; background: #ffffff;"><div class="tl">Card padding</div><div class="tv">24 → 18px</div></div>
+        <div style="padding: 11px 14px; border-right: 1px solid #f0f1f4; background: #ffffff;"><div class="tl">Table row</div><div class="tv">8 → 9px</div></div>
+        <div style="padding: 11px 14px; background: #ffffff;"><div class="tl">Elevation</div><div class="tv">one ladder</div></div>
+      </div>
+      <div style="margin-top: 9px; font-size: 12px; color: #9aa3b0; text-wrap: pretty;">Palette, radii, type ramp and shadow tokens stay exactly as defined in globals.css. Only container counts, default open states and the two spacing steps above change.</div>
+    </div>
+
+  </div>
+</div>
+</x-dc>
+</body>
+</html>

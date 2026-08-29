@@ -1,0 +1,483 @@
+"use client";
+
+import React from "react";
+import type {
+  MarketData,
+  ForwardLookingBundle,
+  TrendStatsBundle,
+} from "@/app/lib/types";
+import { SignalPill } from "./SignalPill";
+import { Sparkline } from "./Sparkline";
+import { ClampText } from "./ClampText";
+
+// Render the multi-horizon delta line shown under each sentiment sparkline.
+// Uses whichever deltas are available in the bundle so a fresh oscillator
+// log (only 1w / 1m) doesn't print "3m null".
+function trendCaption(t: TrendStatsBundle | undefined): string | null {
+  if (!t) return null;
+  const fmt = (d: number | null | undefined): string | null => {
+    if (d == null) return null;
+    return `${d >= 0 ? "+" : ""}${d}`;
+  };
+  const parts: string[] = [];
+  const d1w = fmt(t.delta1w);
+  const d1m = fmt(t.delta1m);
+  const d3m = fmt(t.delta3m);
+  if (d1w) parts.push(`1w ${d1w}`);
+  if (d1m) parts.push(`1m ${d1m}`);
+  if (d3m) parts.push(`3m ${d3m}`);
+  if (parts.length === 0) return null;
+  // Intentionally omits the trailing-range percentile that used to be
+  // appended here. Our rolling window is only as long as the app has
+  // been logging, which produces misleading percentiles when the true
+  // multi-decade range is much wider. Trajectory + multi-horizon deltas
+  // are kept because those are genuinely self-referential.
+  return `${t.trajectory} · ${parts.join(" · ")}`;
+}
+
+type Props = {
+  marketData: MarketData;
+  aaiiBull?: number;
+  aaiiNeutral?: number;
+  aaiiBear?: number;
+  contrarianAnalysis?: string;
+  // Optional auto-fetched series. When present these override the manual
+  // marketData values for F&G / AAII / oscillator and unlock the sparklines.
+  forwardData?: ForwardLookingBundle | null;
+};
+
+// CNN Fear & Greed official category bands (so the label matches cnn.com):
+//   0-24 Extreme Fear · 25-44 Fear · 45-55 Neutral · 56-75 Greed · 76-100 Extreme Greed
+function fearGreedLabel(value: number): string {
+  if (value <= 24) return "Extreme Fear";
+  if (value <= 44) return "Fear";
+  if (value <= 55) return "Neutral";
+  if (value <= 75) return "Greed";
+  return "Extreme Greed";
+}
+
+function fearGreedContrarian(value: number): {
+  signal: string;
+  tone: "red" | "amber" | "green";
+  detail: string;
+} {
+  if (value <= 15)
+    return {
+      signal: "Contrarian Bullish",
+      tone: "green",
+      detail:
+        "Extreme fear readings historically precede strong forward returns. Panic selling creates opportunity for disciplined PMs willing to add risk when others capitulate.",
+    };
+  if (value <= 30)
+    return {
+      signal: "Leaning Bullish",
+      tone: "green",
+      detail:
+        "Fear is elevated but not extreme. The crowd is cautious, which reduces the probability of a further severe drawdown from current levels.",
+    };
+  if (value <= 55)
+    return {
+      signal: "Neutral",
+      tone: "amber",
+      detail:
+        "Sentiment is balanced. No strong contrarian signal in either direction.",
+    };
+  if (value <= 75)
+    return {
+      signal: "Leaning Bearish",
+      tone: "amber",
+      detail:
+        "Complacency is building. Consider tightening stops and reducing marginal risk.",
+    };
+  return {
+    signal: "Contrarian Bearish",
+    tone: "red",
+    detail:
+      "Extreme greed is a reliable warning sign. This is where PMs should be raising cash and adding hedges.",
+  };
+}
+
+function aaiiBullBearContrarian(spread: number): {
+  signal: string;
+  tone: "red" | "amber" | "green";
+  detail: string;
+} {
+  if (spread <= -20)
+    return {
+      signal: "Contrarian Bullish",
+      tone: "green",
+      detail:
+        "Retail investors are deeply bearish. Historically, AAII spreads below -20 have preceded above-average 6-12 month returns.",
+    };
+  if (spread <= -5)
+    return {
+      signal: "Leaning Bullish",
+      tone: "green",
+      detail:
+        "Bears outnumber bulls by a meaningful margin. Incrementally supportive for forward returns.",
+    };
+  if (spread <= 15)
+    return {
+      signal: "Neutral",
+      tone: "amber",
+      detail:
+        "No actionable contrarian signal from the AAII survey at current levels.",
+    };
+  if (spread <= 30)
+    return {
+      signal: "Leaning Bearish",
+      tone: "amber",
+      detail:
+        "Bulls are gaining confidence. Elevated bullish sentiment tends to precede below-average returns.",
+    };
+  return {
+    signal: "Contrarian Bearish",
+    tone: "red",
+    detail:
+      "Retail euphoria is extreme. AAII spreads above +30 are rare and have historically marked intermediate tops.",
+  };
+}
+
+// Contrarian rating based on all 4 indicators (range -8 to +8)
+export function overallContrarianRating(fg: number, spread: number, spOsc: number = 0, putCall: number = 0.85): { label: string; tone: "red" | "amber" | "green" } {
+  const fgSignal = fg <= 15 ? 2 : fg <= 30 ? 1 : fg <= 55 ? 0 : fg <= 75 ? -1 : -2;
+  const aaiiSignal = spread <= -20 ? 2 : spread <= -5 ? 1 : spread <= 15 ? 0 : spread <= 30 ? -1 : -2;
+  const oscSignal = spOsc <= -4 ? 2 : spOsc <= -2 ? 1 : spOsc <= 2 ? 0 : spOsc <= 4 ? -1 : -2;
+  const pcSignal = putCall >= 1.2 ? 2 : putCall >= 1.0 ? 1 : putCall >= 0.7 ? 0 : putCall >= 0.5 ? -1 : -2;
+  const combined = fgSignal + aaiiSignal + oscSignal + pcSignal;
+
+  if (combined >= 5) return { label: "Strong Buy", tone: "green" };
+  if (combined >= 2) return { label: "Leaning Bullish", tone: "green" };
+  if (combined >= -2) return { label: "Neutral", tone: "amber" };
+  if (combined >= -5) return { label: "Leaning Bearish", tone: "amber" };
+  return { label: "Strong Sell Signal", tone: "red" };
+}
+
+export function SentimentGauges({ marketData, aaiiBull = 30, aaiiNeutral = 17, aaiiBear = 52, contrarianAnalysis, forwardData }: Props) {
+  // Auto-fetched values win over manual entries when available. The fallback
+  // chain is: live forward data → marketData → hardcoded default. Each tile
+  // also surfaces a small "auto" badge so the PM can tell at a glance which
+  // values came from the live fetch vs. the manual snapshot.
+  const fgValue =
+    forwardData?.fearGreed?.value ?? marketData.fearGreed;
+  const fgIsAuto =
+    forwardData?.fearGreed?.value != null &&
+    forwardData.fearGreed.status === "live";
+  const fgHistory = forwardData?.fearGreed?.history ?? [];
+
+  const aaiiBullBearValue =
+    forwardData?.aaiiBullBear?.value ?? marketData.aaiiBullBear;
+  const aaiiIsAuto =
+    forwardData?.aaiiBullBear?.value != null &&
+    forwardData.aaiiBullBear.status === "live";
+  const aaiiBullBearHistory = forwardData?.aaiiBullBear?.history ?? [];
+  const effAaiiBull = forwardData?.aaiiBull?.value ?? aaiiBull;
+  const effAaiiNeutral = forwardData?.aaiiNeutral?.value ?? aaiiNeutral;
+  const effAaiiBear = forwardData?.aaiiBear?.value ?? aaiiBear;
+
+  const oscValue =
+    forwardData?.spOscillator?.value ?? marketData.spOscillator;
+  const oscHistory = forwardData?.spOscillator?.history ?? [];
+
+  const pcValue =
+    forwardData?.putCallRatio?.value ?? marketData.putCall;
+  const pcHistory = forwardData?.putCallRatio?.history ?? [];
+
+  const fgData = fearGreedContrarian(fgValue);
+  const aaiiData = aaiiBullBearContrarian(aaiiBullBearValue);
+  const overall = overallContrarianRating(fgValue, aaiiBullBearValue, oscValue, marketData.putCall);
+  const fgLabel = fearGreedLabel(fgValue);
+
+  // Color for the donut gauge
+  const fgColor =
+    fgValue <= 25 ? "#ef4444" : fgValue <= 50 ? "#f59e0b" : "#22c55e";
+
+  // SVG donut for F&G
+  const radius = 40;
+  const circumference = 2 * Math.PI * radius;
+  const pct = fgValue / 100;
+  const dashOffset = circumference * (1 - pct);
+
+  return (
+    <section className="rounded-card border border-line bg-white p-4 shadow-sm">
+      <div className="flex flex-wrap items-center justify-between gap-2 mb-1">
+        <div className="flex items-center gap-2">
+          <span className="text-base">🎯</span>
+          <h3 className="text-base font-semibold">Contrarian Sentiment</h3>
+          <SignalPill tone="amber">COUNTER-SIGNAL</SignalPill>
+        </div>
+        <SignalPill tone={overall.tone}>{overall.label}</SignalPill>
+      </div>
+      <p className="text-xs text-ink-3 mb-3">
+        Sentiment extremes read <strong className="text-ink-2">inversely</strong> — crowd fear = opportunity, crowd greed = warning. A counterweight to the regime read above, not another summary of it.
+      </p>
+
+      <div className="grid gap-3 lg:grid-cols-2">
+        {/* CNN Fear & Greed */}
+        <div className="rounded-xl border border-line-soft bg-surface-2 p-3">
+          <div className="flex items-center justify-between mb-2">
+            <div className="text-xs font-semibold text-ink-3 flex items-center gap-2">
+              CNN Fear &amp; Greed
+              <a href="https://www.cnn.com/markets/fear-and-greed" target="_blank" rel="noopener noreferrer" className="text-accent hover:text-accent" title="CNN Fear & Greed source">
+                <svg className="w-3.5 h-3.5" fill="none" stroke="currentColor" strokeWidth="2" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" d="M10 6H6a2 2 0 00-2 2v10a2 2 0 002 2h10a2 2 0 002-2v-4M14 4h6m0 0v6m0-6L10 14" /></svg>
+              </a>
+            </div>
+            {fgIsAuto && (
+              <span className="rounded-full bg-pos-soft px-2 py-0.5 text-[9px] font-bold uppercase text-pos">live</span>
+            )}
+          </div>
+          <div className="flex items-center gap-4">
+            <svg width="80" height="80" viewBox="0 0 100 100" className="shrink-0">
+              <circle cx="50" cy="50" r={radius} fill="none" stroke="#e2e8f0" strokeWidth="8" />
+              <circle
+                cx="50"
+                cy="50"
+                r={radius}
+                fill="none"
+                stroke={fgColor}
+                strokeWidth="8"
+                strokeLinecap="round"
+                strokeDasharray={circumference}
+                strokeDashoffset={dashOffset}
+                transform="rotate(-90 50 50)"
+              />
+              <text x="50" y="46" textAnchor="middle" className="font-bold" fill="#1e293b" fontSize="22">
+                {Math.round(fgValue)}
+              </text>
+              <text x="50" y="62" textAnchor="middle" fill="#94a3b8" fontSize="10">
+                /100
+              </text>
+            </svg>
+            <div className="flex-1 min-w-0">
+              <div className="text-base font-semibold" style={{ color: fgColor }}>{fgLabel}</div>
+              {fgHistory.length >= 2 && (
+                <div className="mt-1.5">
+                  <Sparkline
+                    points={fgHistory}
+                    width={180}
+                    height={32}
+                    stroke={fgColor}
+                    fill={`${fgColor}22`}
+                    yMin={0}
+                    yMax={100}
+                    referenceY={50}
+                  />
+                  <div className="text-[10px] text-ink-3 mt-0.5">trailing 1Y daily</div>
+                  {trendCaption(forwardData?.fearGreed?.trend) && (
+                    <div className="text-[10px] font-medium text-ink-3 mt-0.5">
+                      {trendCaption(forwardData?.fearGreed?.trend)}
+                    </div>
+                  )}
+                </div>
+              )}
+              <p className="mt-1.5 text-xs text-ink-3 leading-relaxed">{fgData.detail}</p>
+            </div>
+          </div>
+        </div>
+
+        {/* AAII Sentiment */}
+        <div className="rounded-xl border border-line-soft bg-surface-2 p-3">
+          <div className="flex items-center justify-between mb-2">
+            <div className="text-xs font-semibold text-ink-3 flex items-center gap-2">
+              AAII Sentiment Survey
+              <a href="https://www.aaii.com/sentimentsurvey" target="_blank" rel="noopener noreferrer" className="text-accent hover:text-accent" title="AAII source">
+                <svg className="w-3.5 h-3.5" fill="none" stroke="currentColor" strokeWidth="2" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" d="M10 6H6a2 2 0 00-2 2v10a2 2 0 002 2h10a2 2 0 002-2v-4M14 4h6m0 0v6m0-6L10 14" /></svg>
+              </a>
+            </div>
+            {aaiiIsAuto && (
+              <span className="rounded-full bg-pos-soft px-2 py-0.5 text-[9px] font-bold uppercase text-pos">live</span>
+            )}
+          </div>
+          <div className="space-y-2">
+            <div className="flex items-center gap-2">
+              <span className="w-14 text-xs text-ink-3">Bullish</span>
+              <div className="flex-1 h-3 rounded-full bg-line overflow-hidden">
+                <div className="h-full rounded-full bg-pos" style={{ width: `${effAaiiBull}%` }} />
+              </div>
+              <span className="w-12 text-right font-mono text-xs font-semibold">{effAaiiBull.toFixed(1)}%</span>
+            </div>
+            <div className="flex items-center gap-2">
+              <span className="w-14 text-xs text-ink-3">Neutral</span>
+              <div className="flex-1 h-3 rounded-full bg-line overflow-hidden">
+                <div className="h-full rounded-full bg-warn" style={{ width: `${effAaiiNeutral}%` }} />
+              </div>
+              <span className="w-12 text-right font-mono text-xs font-semibold">{effAaiiNeutral.toFixed(1)}%</span>
+            </div>
+            <div className="flex items-center gap-2">
+              <span className="w-14 text-xs text-ink-3">Bearish</span>
+              <div className="flex-1 h-3 rounded-full bg-line overflow-hidden">
+                <div className="h-full rounded-full bg-neg" style={{ width: `${effAaiiBear}%` }} />
+              </div>
+              <span className="w-12 text-right font-mono text-xs font-semibold">{effAaiiBear.toFixed(1)}%</span>
+            </div>
+            <div className="text-right text-xs text-ink-3">
+              Bull-Bear Spread: <strong className="text-ink-2">{aaiiBullBearValue > 0 ? "+" : ""}{aaiiBullBearValue.toFixed(1)}%</strong>
+            </div>
+          </div>
+          {aaiiBullBearHistory.length >= 2 && (
+            <div className="mt-2">
+              <Sparkline
+                points={aaiiBullBearHistory}
+                width={260}
+                height={32}
+                stroke="#6366f1"
+                fill="rgba(99, 102, 241, 0.12)"
+                referenceY={0}
+              />
+              <div className="text-[10px] text-ink-3 mt-0.5">bull-bear spread, trailing 52 weeks</div>
+              {trendCaption(forwardData?.aaiiBullBear?.trend) && (
+                <div className="text-[10px] font-medium text-ink-3 mt-0.5">
+                  {trendCaption(forwardData?.aaiiBullBear?.trend)}
+                </div>
+              )}
+            </div>
+          )}
+          <p className="mt-2 text-xs text-ink-3 leading-relaxed">{aaiiData.detail}</p>
+        </div>
+
+        {/* S&P Oscillator */}
+        <div className="rounded-xl border border-line-soft bg-surface-2 p-3">
+          <div className="flex items-center justify-between mb-2">
+            <div className="text-xs font-semibold text-ink-3 flex items-center gap-2">
+              S&amp;P Oscillator
+              <a href="https://app.marketedge.com/#!/markets" target="_blank" rel="noopener noreferrer" className="text-accent hover:text-accent" title="MarketEdge S&P Oscillator">
+                <svg className="w-3.5 h-3.5" fill="none" stroke="currentColor" strokeWidth="2" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" d="M10 6H6a2 2 0 00-2 2v10a2 2 0 002 2h10a2 2 0 002-2v-4M14 4h6m0 0v6m0-6L10 14" /></svg>
+              </a>
+            </div>
+            {oscHistory.length > 0 && (
+              <span className="rounded-full bg-accent-soft px-2 py-0.5 text-[9px] font-bold uppercase text-accent" title="Sparkline shows your saved entries from Redis (pm:oscillator-history)">logged</span>
+            )}
+          </div>
+          <div className="flex items-center gap-4">
+            <div className={`flex h-16 w-16 shrink-0 items-center justify-center rounded-xl text-xl font-bold ${
+              oscValue <= -4 ? "bg-pos-soft text-pos"
+              : oscValue <= -2 ? "bg-pos-soft text-pos"
+              : oscValue >= 4 ? "bg-neg-soft text-neg"
+              : oscValue >= 2 ? "bg-neg-soft text-neg"
+              : "bg-surface-2 text-ink-2"
+            }`}>
+              {oscValue > 0 ? "+" : ""}{oscValue}
+            </div>
+            <div className="flex-1 min-w-0">
+              <div className={`text-base font-semibold ${
+                oscValue <= -4 ? "text-pos"
+                : oscValue <= -2 ? "text-pos"
+                : oscValue >= 4 ? "text-neg"
+                : oscValue >= 2 ? "text-neg"
+                : "text-ink-2"
+              }`}>
+                {oscValue <= -4 ? "Deeply Oversold" : oscValue <= -2 ? "Oversold" : oscValue >= 4 ? "Deeply Overbought" : oscValue >= 2 ? "Overbought" : "Neutral"}
+              </div>
+              {oscHistory.length >= 2 && (
+                <div className="mt-1.5">
+                  <Sparkline
+                    points={oscHistory}
+                    width={180}
+                    height={32}
+                    stroke="#0ea5e9"
+                    fill="rgba(14, 165, 233, 0.12)"
+                    referenceY={0}
+                  />
+                  <div className="text-[10px] text-ink-3 mt-0.5">your saved entries (last 6mo)</div>
+                  {trendCaption(forwardData?.spOscillator?.trend) && (
+                    <div className="text-[10px] font-medium text-ink-3 mt-0.5">
+                      {trendCaption(forwardData?.spOscillator?.trend)}
+                    </div>
+                  )}
+                </div>
+              )}
+              <p className="mt-1.5 text-xs text-ink-3 leading-relaxed">
+                {oscValue <= -4
+                  ? "Extreme oversold conditions have historically preceded sharp mean-reversion rallies. High-conviction contrarian buy signal."
+                  : oscValue <= -2
+                  ? "Market is stretched to the downside. Incrementally bullish on a contrarian basis."
+                  : oscValue >= 4
+                  ? "Extreme overbought conditions. Risk of a pullback is elevated — consider trimming or hedging."
+                  : oscValue >= 2
+                  ? "Market is getting stretched. Reduce marginal risk and tighten stops."
+                  : "No strong directional signal from the oscillator at current levels."}
+              </p>
+            </div>
+          </div>
+        </div>
+
+        {/* Put/Call Ratio */}
+        <div className="rounded-xl border border-line-soft bg-surface-2 p-3">
+          <div className="flex items-center justify-between mb-2">
+            <div className="text-xs font-semibold text-ink-3 flex items-center gap-2">
+              Total Put/Call Ratio
+              <a href="https://www.cboe.com/us/options/market_statistics/daily/" target="_blank" rel="noopener noreferrer" className="text-accent hover:text-accent" title="CBOE Total Put/Call">
+                <svg className="w-3.5 h-3.5" fill="none" stroke="currentColor" strokeWidth="2" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" d="M10 6H6a2 2 0 00-2 2v10a2 2 0 002 2h10a2 2 0 002-2v-4M14 4h6m0 0v6m0-6L10 14" /></svg>
+              </a>
+            </div>
+            {pcHistory.length > 0 && (
+              <span className="rounded-full bg-accent-soft px-2 py-0.5 text-[9px] font-bold uppercase text-accent" title="Sparkline shows your saved entries from Redis (pm:putcall-history)">logged</span>
+            )}
+          </div>
+          <div className="flex items-center gap-4">
+            <div className={`flex h-16 w-16 shrink-0 items-center justify-center rounded-xl text-xl font-bold ${
+              pcValue >= 1.2 ? "bg-pos-soft text-pos"
+              : pcValue >= 1.0 ? "bg-pos-soft text-pos"
+              : pcValue <= 0.5 ? "bg-neg-soft text-neg"
+              : pcValue <= 0.7 ? "bg-neg-soft text-neg"
+              : "bg-surface-2 text-ink-2"
+            }`}>
+              {pcValue.toFixed(2)}
+            </div>
+            <div className="flex-1 min-w-0">
+              <div className={`text-base font-semibold ${
+                pcValue >= 1.2 ? "text-pos"
+                : pcValue >= 1.0 ? "text-pos"
+                : pcValue <= 0.5 ? "text-neg"
+                : pcValue <= 0.7 ? "text-neg"
+                : "text-ink-2"
+              }`}>
+                {pcValue >= 1.2 ? "Extreme Fear" : pcValue >= 1.0 ? "Elevated Fear" : pcValue <= 0.5 ? "Extreme Complacency" : pcValue <= 0.7 ? "Complacent" : "Neutral"}
+              </div>
+              {pcHistory.length >= 2 && (
+                <div className="mt-1.5">
+                  <Sparkline
+                    points={pcHistory}
+                    width={180}
+                    height={32}
+                    stroke="#8b5cf6"
+                    fill="rgba(139, 92, 246, 0.12)"
+                    referenceY={0.85}
+                  />
+                  <div className="text-[10px] text-ink-3 mt-0.5">your saved entries (last 6mo)</div>
+                  {trendCaption(forwardData?.putCallRatio?.trend) && (
+                    <div className="text-[10px] font-medium text-ink-3 mt-0.5">
+                      {trendCaption(forwardData?.putCallRatio?.trend)}
+                    </div>
+                  )}
+                </div>
+              )}
+              <p className="mt-1.5 text-xs text-ink-3 leading-relaxed">
+                {pcValue >= 1.2
+                  ? "Heavy put buying signals panic. Historically a strong contrarian buy signal — protection is expensive and the crowd is hedged."
+                  : pcValue >= 1.0
+                  ? "Put buying is elevated, suggesting caution in the market. Incrementally bullish on a contrarian basis."
+                  : pcValue <= 0.5
+                  ? "Extreme complacency — virtually no hedging activity. This is a strong contrarian warning sign."
+                  : pcValue <= 0.7
+                  ? "Low put demand suggests complacency. Protection is cheap, which is when disciplined PMs should be hedging."
+                  : "Put/Call ratio is in a neutral range. No strong contrarian signal."}
+              </p>
+            </div>
+          </div>
+        </div>
+      </div>
+
+      {/* Claude's contrarian analysis */}
+      {contrarianAnalysis && (
+        <div className="mt-3 border-t border-line-soft pt-3">
+          <div className="flex items-center gap-2 mb-1.5">
+            <span className="text-xs font-bold uppercase tracking-wider text-ink-3">Contrarian Take</span>
+            <SignalPill tone={overall.tone}>{overall.label}</SignalPill>
+          </div>
+          <ClampText text={contrarianAnalysis} />
+        </div>
+      )}
+    </section>
+  );
+}

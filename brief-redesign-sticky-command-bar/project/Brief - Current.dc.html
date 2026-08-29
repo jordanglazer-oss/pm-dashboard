@@ -1,0 +1,481 @@
+<!DOCTYPE html>
+<html>
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<script src="./support.js"></script>
+</head>
+<body>
+<x-dc>
+<helmet>
+<meta name="design_doc_mode" content="canvas">
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=IBM+Plex+Sans:wght@400;500;600;700&family=IBM+Plex+Mono:wght@400;500;600&display=swap" rel="stylesheet">
+<style>
+body{margin:0;background:#f4f5f7;color:#10151c;font-family:"IBM Plex Sans",-apple-system,BlinkMacSystemFont,"Segoe UI",Roboto,Helvetica,Arial,sans-serif;-webkit-font-smoothing:antialiased}
+*{box-sizing:border-box}
+a{color:#2d5bd0;text-decoration:none}
+a:hover{color:#2c43be}
+table{font-variant-numeric:tabular-nums}
+</style>
+</helmet>
+
+<div style="min-width:1280px">
+
+<header style="background:#fff;color:#10151c;border-bottom:1px solid #e6e8ec">
+  <div style="display:flex;align-items:center;justify-content:space-between;padding:10px 24px">
+    <div style="display:flex;align-items:center;gap:10px;flex-shrink:0">
+      <span style="display:grid;place-items:center;height:24px;width:24px;border-radius:7px;background:#2d5bd0;font-size:12px;font-weight:700;color:#fff">P</span>
+      <h1 style="margin:0;font-size:15px;font-weight:600;letter-spacing:-0.01em;white-space:nowrap">PIM Dashboard</h1>
+    </div>
+    <nav style="display:flex;align-items:center;gap:2px;flex-shrink:0;margin-left:16px">
+      <a href="#" style="padding:6px 10px;font-size:13px;white-space:nowrap;border-bottom:2px solid #2d5bd0;margin-bottom:-1px;color:#10151c;font-weight:600">Brief</a>
+      <a href="#" style="padding:6px 10px;font-size:13px;white-space:nowrap;border-bottom:2px solid transparent;margin-bottom:-1px;color:#5b6472">Portfolio</a>
+      <a href="#" style="padding:6px 10px;font-size:13px;white-space:nowrap;border-bottom:2px solid transparent;margin-bottom:-1px;color:#5b6472">Chat</a>
+      <a href="#" style="padding:6px 10px;font-size:13px;white-space:nowrap;border-bottom:2px solid transparent;margin-bottom:-1px;color:#5b6472">Screener</a>
+      <a href="#" style="padding:6px 10px;font-size:13px;white-space:nowrap;border-bottom:2px solid transparent;margin-bottom:-1px;color:#5b6472">Research</a>
+      <a href="#" style="padding:6px 10px;font-size:13px;white-space:nowrap;border-bottom:2px solid transparent;margin-bottom:-1px;color:#5b6472">Pipeline</a>
+      <a href="#" style="padding:6px 10px;font-size:13px;white-space:nowrap;border-bottom:2px solid transparent;margin-bottom:-1px;color:#5b6472">Hedging</a>
+      <a href="#" style="padding:6px 10px;font-size:13px;white-space:nowrap;border-bottom:2px solid transparent;margin-bottom:-1px;color:#5b6472">Appendix</a>
+      <div style="margin-left:8px;display:flex;align-items:center;gap:6px">
+        <button style="display:flex;align-items:center;gap:6px;border-radius:8px;border:1px solid #e6e8ec;background:#fff;padding:6px 10px;font-size:12px;color:#9aa3b0;cursor:pointer">
+          <svg style="width:14px;height:14px" fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" d="m21 21-4.34-4.34M17 11a6 6 0 1 1-12 0 6 6 0 0 1 12 0Z"></path></svg>
+          <kbd style="border-radius:4px;background:#fafbfc;border:1px solid #e6e8ec;padding:1px 4px;font-size:10px;color:#9aa3b0;font-family:inherit">⌘K</kbd>
+        </button>
+        <button title="Notifications" aria-label="Notifications (2 unread)" style="position:relative;display:flex;align-items:center;justify-content:center;width:36px;height:36px;border-radius:8px;border:none;background:transparent;color:#c3c8d0;cursor:pointer">
+          <svg style="width:20px;height:20px" fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" d="M14.857 17.082a23.848 23.848 0 0 0 5.454-1.31A8.967 8.967 0 0 1 18 9.75V9A6 6 0 0 0 6 9v.75a8.967 8.967 0 0 1-2.312 6.022c1.733.64 3.56 1.085 5.455 1.31m5.714 0a24.255 24.255 0 0 1-5.714 0m5.714 0a3 3 0 1 1-5.714 0"></path></svg>
+          <span style="position:absolute;top:-2px;right:-2px;display:flex;align-items:center;justify-content:center;min-width:16px;height:16px;padding:0 4px;border-radius:9999px;background:#d1435b;color:#fff;font-size:10px;font-weight:700;line-height:1">2</span>
+        </button>
+        <button style="display:flex;align-items:center;gap:4px;border-radius:8px;border:1px solid #e6e8ec;background:#fff;color:#5b6472;padding:6px 10px;font-size:13px;font-weight:500;white-space:nowrap;cursor:pointer">
+          <svg style="width:14px;height:14px" fill="none" stroke="currentColor" stroke-width="2.5" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" d="M16.023 9.348h4.992v-.001M2.985 19.644v-4.992m0 0h4.992m-4.993 0 3.181 3.183a8.25 8.25 0 0 0 13.803-3.7M4.031 9.865a8.25 8.25 0 0 1 13.803-3.7l3.181 3.182"></path></svg>
+          Refresh
+        </button>
+        <button style="display:flex;align-items:center;gap:4px;border-radius:8px;background:#2d5bd0;padding:6px 10px;font-size:13px;font-weight:600;color:#fff;white-space:nowrap;border:none;cursor:pointer">
+          <svg style="width:14px;height:14px" fill="none" stroke="currentColor" stroke-width="2.5" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" d="M12 4.5v15m7.5-7.5h-15"></path></svg>
+          Add
+        </button>
+      </div>
+    </nav>
+  </div>
+  <div style="display:flex;align-items:center;justify-content:center;gap:16px;background:#fafbfc;border-top:1px solid #e6e8ec;padding:4px 16px;font-size:10px;color:#9aa3b0">
+    <span><kbd style="border-radius:4px;background:#fff;border:1px solid #e6e8ec;padding:1px 4px;color:#5b6472;font-family:inherit">⌘/Win</kbd> + <kbd style="border-radius:4px;background:#fff;border:1px solid #e6e8ec;padding:1px 4px;color:#5b6472;font-family:inherit">←→</kbd> switch tabs</span>
+    <span><kbd style="border-radius:4px;background:#fff;border:1px solid #e6e8ec;padding:1px 4px;color:#5b6472;font-family:inherit">⌘/Ctrl</kbd> + <kbd style="border-radius:4px;background:#fff;border:1px solid #e6e8ec;padding:1px 4px;color:#5b6472;font-family:inherit">K</kbd> search</span>
+    <span><kbd style="border-radius:4px;background:#fff;border:1px solid #e6e8ec;padding:1px 4px;color:#5b6472;font-family:inherit">Shift</kbd> + <kbd style="border-radius:4px;background:#fff;border:1px solid #e6e8ec;padding:1px 4px;color:#5b6472;font-family:inherit">A</kbd> add stock</span>
+    <div style="margin-left:auto;display:flex;align-items:center;gap:12px">
+      <span style="display:flex;align-items:center;gap:4px;color:#9aa3b0"><span style="display:inline-block;width:6px;height:6px;border-radius:9999px;background:#12805c"></span>Backup 9h</span>
+      <span style="display:flex;align-items:center;gap:4px;color:#9aa3b0"><span style="display:inline-block;width:6px;height:6px;border-radius:9999px;background:#12805c"></span>Estimates 14h</span>
+      <a href="#" style="color:#9aa3b0">health</a>
+    </div>
+  </div>
+</header>
+
+<main style="min-height:100vh;background:#f4f5f7;padding:32px">
+  <div style="margin:0 auto;max-width:1280px;display:flex;flex-direction:column;gap:24px">
+
+    <header style="display:flex;align-items:flex-start;justify-content:space-between;gap:12px;flex-wrap:wrap">
+      <div>
+        <p style="margin:0;font-size:12px;font-weight:700;text-transform:uppercase;letter-spacing:0.18em;color:#9aa3b0">Monday, July 27, 2026</p>
+        <h1 style="margin:4px 0 0;font-size:36px;font-weight:600;letter-spacing:-0.02em">Morning Brief</h1>
+      </div>
+      <div style="display:flex;align-items:center;gap:12px;margin-top:8px">
+        <span style="font-size:14px;color:#c3c8d0">Generated Jul 27, 7:14 AM</span>
+        <button style="display:inline-flex;align-items:center;gap:6px;border-radius:8px;border:1px solid #e6e8ec;background:#fff;padding:6px 12px;font-size:14px;font-weight:600;color:#5b6472;cursor:pointer">
+          <svg style="width:14px;height:14px" fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" d="M4 4v5h.582m15.356 2A8.001 8.001 0 004.582 9m0 0H9m11 11v-5h-.581m0 0a8.003 8.003 0 01-15.357-2m15.357 2H15"></path></svg>
+          Regenerate
+        </button>
+      </div>
+    </header>
+
+    <div style="display:inline-flex;align-items:center;gap:2px;border-radius:8px;border:1px solid #e6e8ec;background:#fafbfc;padding:2px;width:fit-content">
+      <button style="border-radius:6px;padding:6px 14px;font-size:14px;font-weight:600;background:#10151c;color:#fff;border:none;box-shadow:0 1px 2px rgb(16 21 28/0.05);cursor:pointer">Brief</button>
+      <button style="border-radius:6px;padding:6px 14px;font-size:14px;font-weight:600;background:transparent;color:#5b6472;border:none;cursor:pointer">Daily Input</button>
+    </div>
+
+    <section style="display:flex;align-items:center;gap:8px;border-radius:8px;border:1px solid #f2e2bf;background:#fbf6ea;padding:6px 12px">
+      <span style="display:flex;flex-shrink:0;align-items:center;gap:4px;font-size:11px;font-weight:700;text-transform:uppercase;letter-spacing:0.06em;color:#b8791f">
+        <svg style="height:14px;width:14px" fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" d="M6.75 3v2.25M17.25 3v2.25M3 18.75V7.5a2.25 2.25 0 012.25-2.25h13.5A2.25 2.25 0 0121 7.5v11.25m-18 0A2.25 2.25 0 005.25 21h13.5A2.25 2.25 0 0021 18.75m-18 0v-7.5A2.25 2.25 0 015.25 9h13.5A2.25 2.25 0 0121 11.25v7.5"></path></svg>
+        Earnings ≤7d
+      </span>
+      <div style="display:flex;align-items:center;gap:6px;overflow-x:auto">
+        <span style="display:inline-flex;flex-shrink:0;align-items:center;gap:4px;white-space:nowrap;border-radius:9999px;border:1px solid #f2e2bf;background:#fff;padding:2px 8px;font-size:11px"><span style="font-family:'IBM Plex Mono',monospace;font-weight:700;color:#10151c">MSFT</span><span style="font-weight:600;color:#b8791f">tmrw</span></span>
+        <span style="display:inline-flex;flex-shrink:0;align-items:center;gap:4px;white-space:nowrap;border-radius:9999px;border:1px solid #f2e2bf;background:#fff;padding:2px 8px;font-size:11px"><span style="font-family:'IBM Plex Mono',monospace;font-weight:700;color:#10151c">V</span><span style="font-weight:600;color:#b8791f">Jul 29</span></span>
+        <span style="display:inline-flex;flex-shrink:0;align-items:center;gap:4px;white-space:nowrap;border-radius:9999px;border:1px solid #f2e2bf;background:#fff;padding:2px 8px;font-size:11px"><span style="font-family:'IBM Plex Mono',monospace;font-weight:700;color:#10151c">AAPL</span><span style="font-weight:600;color:#b8791f">Jul 30</span></span>
+        <span style="display:inline-flex;flex-shrink:0;align-items:center;gap:4px;white-space:nowrap;border-radius:9999px;border:1px solid #f2e2bf;background:#fff;padding:2px 8px;font-size:11px"><span style="font-family:'IBM Plex Mono',monospace;font-weight:700;color:#10151c">XOM</span><span style="font-weight:600;color:#b8791f">Aug 1</span></span>
+      </div>
+    </section>
+
+    <section style="position:relative;border-radius:8px;background:#fbf6ea;border:1px solid #f2e2bf;padding:20px;box-shadow:0 1px 2px rgb(16 21 28/0.05)">
+      <div style="font-size:12px;font-weight:700;text-transform:uppercase;letter-spacing:0.22em;color:#b8791f;margin-bottom:12px">Bottom line</div>
+      <p style="margin:0;max-width:1152px;font-size:14px;line-height:24px;color:#10151c;text-wrap:pretty">Tape stays constructive but narrower: SPX is +1.4% on the week with only 54% of the index above its 50-day, so the advance is being carried by mega-cap tech into a heavy earnings week. Credit is still tight (HY 291bps) and the vol surface is calm (VIX 14.2, term structure in contango), which argues against paying up for protection today. The live tension is valuation versus participation — forward P/E at 22.4x prices in ~11% EPS growth while breadth deteriorates, so add on weakness rather than strength and keep the cash sleeve for a wider entry.</p>
+      <p style="margin:12px 0 0;border-top:1px solid #f2e2bf;padding-top:12px;max-width:1152px;font-size:14px;font-weight:700;color:#10151c">Regime reads Neutral with a risk-on tilt — stay invested, stop adding beta, and let the Aug 1 payrolls print set the next move.</p>
+    </section>
+
+    <section style="display:flex;align-items:flex-start;gap:10px;border-radius:12px;border:1px solid #cfe0ff;background:rgba(238,244,255,0.5);padding:12px 16px">
+      <span style="margin-top:2px;flex-shrink:0;border-radius:6px;background:#2d5bd0;padding:2px 6px;font-size:10px;font-weight:700;text-transform:uppercase;letter-spacing:0.06em;color:#fff">Since last brief</span>
+      <p style="margin:0;font-size:14px;line-height:24px;color:#5b6472">Breadth fell another 3.1pp (57.1 → 54.0 above 50DMA) while the index made a new high — the divergence that was a footnote on Friday is now the main story. HY OAS unchanged; 10Y down 4bps to 4.18%.</p>
+    </section>
+
+    <section style="border-radius:12px;border:1px solid #e6e8ec;background:#fff;padding:12px 16px;box-shadow:0 1px 2px rgb(16 21 28/0.05)">
+      <div style="display:flex;flex-wrap:wrap;align-items:center;gap:4px 10px;font-size:13px">
+        <span style="border-radius:6px;background:#10151c;padding:2px 6px;font-size:10px;font-weight:700;text-transform:uppercase;letter-spacing:0.06em;color:#fff">Regime shift</span>
+        <span style="font-weight:600;color:#10151c">Neutral</span>
+        <span style="color:#c3c8d0">·</span>
+        <span style="font-weight:600;color:#b8791f">leaning Risk-Off</span>
+        <span style="border-radius:9999px;padding:2px 8px;font-size:10px;font-weight:700;text-transform:uppercase;letter-spacing:0.04em;background:#fbf6ea;color:#b8791f">Elevated de-risking</span>
+        <span style="font-size:11px;color:#9aa3b0">2 signals from a flip</span>
+      </div>
+      <div style="margin-top:8px;display:flex;flex-wrap:wrap;gap:6px">
+        <span style="display:inline-flex;align-items:center;gap:6px;border-radius:9999px;border:1px solid #f0f1f4;padding:2px 8px;font-size:11px;color:#5b6472"><span style="height:6px;width:6px;border-radius:9999px;background:#d1435b"></span>Breadth 50DMA</span>
+        <span style="display:inline-flex;align-items:center;gap:6px;border-radius:9999px;border:1px solid #f0f1f4;padding:2px 8px;font-size:11px;color:#5b6472"><span style="height:6px;width:6px;border-radius:9999px;background:#d1435b"></span>Equal-weight vs cap-weight</span>
+        <span style="display:inline-flex;align-items:center;gap:6px;border-radius:9999px;border:1px solid #f0f1f4;padding:2px 8px;font-size:11px;color:#5b6472"><span style="height:6px;width:6px;border-radius:9999px;background:#12805c"></span>HY OAS</span>
+        <span style="display:inline-flex;align-items:center;gap:6px;border-radius:9999px;border:1px solid #f0f1f4;padding:2px 8px;font-size:11px;color:#5b6472"><span style="height:6px;width:6px;border-radius:9999px;background:#12805c"></span>Copper/Gold</span>
+      </div>
+    </section>
+
+    <section style="border-radius:12px;border:1px solid #e6e8ec;background:#fff;padding:14px 16px;box-shadow:0 1px 2px rgb(16 21 28/0.05)">
+      <div style="margin-bottom:10px;display:flex;align-items:center;gap:8px">
+        <span style="border-radius:6px;background:#10151c;padding:2px 6px;font-size:10px;font-weight:700;text-transform:uppercase;letter-spacing:0.06em;color:#fff">Next 2 weeks</span>
+        <span style="font-size:12px;font-weight:600;color:#9aa3b0">Catalyst watch</span>
+      </div>
+      <p style="margin:0 0 12px;font-size:14px;line-height:24px;color:#5b6472">Two-thirds of the book's mega-cap weight reports inside eight sessions, and the Jul 29 FOMC lands between MSFT and AAPL. That clusters single-name and macro risk into the same window — size any new adds after Aug 1 payrolls, not before.</p>
+      <ul style="margin:0;padding:0;list-style:none;display:flex;flex-direction:column;gap:6px">
+        <li style="display:flex;align-items:center;gap:10px;font-size:13px"><span style="width:92px;flex-shrink:0;white-space:nowrap;font-family:'IBM Plex Mono',monospace;font-size:11px;color:#9aa3b0">Tue Jul 28</span><span style="height:6px;width:6px;flex-shrink:0;border-radius:9999px;background:#b8791f"></span><span style="color:#10151c">Microsoft Q4 earnings (after close)</span><span style="border-radius:9999px;background:#eef4ff;padding:1px 6px;font-size:10px;font-weight:600;color:#2d5bd0">held</span></li>
+        <li style="display:flex;align-items:center;gap:10px;font-size:13px"><span style="width:92px;flex-shrink:0;white-space:nowrap;font-family:'IBM Plex Mono',monospace;font-size:11px;color:#9aa3b0">Wed Jul 29</span><span style="height:6px;width:6px;flex-shrink:0;border-radius:9999px;background:#b8791f"></span><span style="color:#10151c">FOMC decision + press conference</span></li>
+        <li style="display:flex;align-items:center;gap:10px;font-size:13px"><span style="width:92px;flex-shrink:0;white-space:nowrap;font-family:'IBM Plex Mono',monospace;font-size:11px;color:#9aa3b0">Wed Jul 29</span><span style="height:6px;width:6px;flex-shrink:0;border-radius:9999px;background:#c3c8d0"></span><span style="color:#10151c">Visa Q3 earnings</span><span style="border-radius:9999px;background:#eef4ff;padding:1px 6px;font-size:10px;font-weight:600;color:#2d5bd0">held</span></li>
+        <li style="display:flex;align-items:center;gap:10px;font-size:13px"><span style="width:92px;flex-shrink:0;white-space:nowrap;font-family:'IBM Plex Mono',monospace;font-size:11px;color:#9aa3b0">Thu Jul 30</span><span style="height:6px;width:6px;flex-shrink:0;border-radius:9999px;background:#b8791f"></span><span style="color:#10151c">Apple Q3 earnings (after close)</span><span style="border-radius:9999px;background:#eef4ff;padding:1px 6px;font-size:10px;font-weight:600;color:#2d5bd0">held</span></li>
+        <li style="display:flex;align-items:center;gap:10px;font-size:13px"><span style="width:92px;flex-shrink:0;white-space:nowrap;font-family:'IBM Plex Mono',monospace;font-size:11px;color:#9aa3b0">Fri Jul 31</span><span style="height:6px;width:6px;flex-shrink:0;border-radius:9999px;background:#c3c8d0"></span><span style="color:#10151c">Core PCE (June)</span></li>
+        <li style="display:flex;align-items:center;gap:10px;font-size:13px"><span style="width:92px;flex-shrink:0;white-space:nowrap;font-family:'IBM Plex Mono',monospace;font-size:11px;color:#9aa3b0">Sat Aug 1</span><span style="height:6px;width:6px;flex-shrink:0;border-radius:9999px;background:#b8791f"></span><span style="color:#10151c">July non-farm payrolls</span></li>
+      </ul>
+      <button style="margin-top:8px;background:none;border:none;padding:0;font-size:11px;font-weight:600;color:#2d5bd0;cursor:pointer">Show 5 more</button>
+    </section>
+
+    <section style="display:grid;grid-template-columns:2fr 1fr;gap:16px">
+      <div style="border-radius:8px;border:1px solid #e6e8ec;background:#fff;padding:20px;box-shadow:0 1px 2px rgb(16 21 28/0.05)">
+        <div style="font-size:12px;font-weight:700;text-transform:uppercase;letter-spacing:0.22em;color:#9aa3b0;margin-bottom:12px">Top actions today</div>
+        <ul style="margin:0;padding:0;list-style:none;display:flex;flex-direction:column;gap:8px">
+          <li style="display:flex;align-items:flex-start;gap:12px;font-size:14px;line-height:24px;color:#10151c"><span style="margin-top:3px;display:inline-flex;height:20px;width:20px;flex:none;align-items:center;justify-content:center;border-radius:9999px;background:#10151c;font-size:10px;font-weight:700;color:#fff">1</span><span>Trim NVDA back to 4.5% target ahead of the AAPL/MSFT prints — position has drifted to 5.8% on price alone.</span></li>
+          <li style="display:flex;align-items:flex-start;gap:12px;font-size:14px;line-height:24px;color:#10151c"><span style="margin-top:3px;display:inline-flex;height:20px;width:20px;flex:none;align-items:center;justify-content:center;border-radius:9999px;background:#10151c;font-size:10px;font-weight:700;color:#fff">2</span><span>Leave the 3.2% cash sleeve untouched until Aug 1 payrolls — the deployment triggers are 2 of 5.</span></li>
+          <li style="display:flex;align-items:flex-start;gap:12px;font-size:14px;line-height:24px;color:#10151c"><span style="margin-top:3px;display:inline-flex;height:20px;width:20px;flex:none;align-items:center;justify-content:center;border-radius:9999px;background:#10151c;font-size:10px;font-weight:700;color:#fff">3</span><span>Review TD (score 62 → 55 over three weeks) — thesis drift on NIM guidance, decide hold vs exit.</span></li>
+        </ul>
+      </div>
+      <div style="border-radius:8px;border:1px solid #bfe3d4;background:#f0f9f4;padding:20px;box-shadow:0 1px 2px rgb(16 21 28/0.05)">
+        <div style="margin-bottom:12px;display:flex;align-items:center;justify-content:space-between;gap:8px">
+          <span style="font-size:12px;font-weight:700;text-transform:uppercase;letter-spacing:0.22em;color:#12805c">Hedging</span>
+          <button style="border-radius:9999px;background:rgba(255,255,255,0.7);padding:2px 10px;font-size:11px;font-weight:500;color:#5b6472;border:1px solid #e6e8ec;cursor:pointer">↻ Refresh</button>
+        </div>
+        <div style="display:flex;align-items:baseline;gap:8px;margin-bottom:8px">
+          <span style="font-size:24px;font-weight:600;letter-spacing:-0.02em;color:#12805c">SKIP</span>
+        </div>
+        <p style="margin:0;font-size:14px;line-height:20px;color:#5b6472">Contango term structure, VIX 14.2 and HY at 291bps give no Path-1 trigger; 5% OTM premiums sit at the 61st percentile, so insurance isn't cheap enough for Path 2 either.</p>
+        <div style="margin-top:10px;display:flex;flex-wrap:wrap;gap:6px">
+          <span style="border-radius:9999px;border:1px solid #e6e8ec;background:rgba(255,255,255,0.7);padding:2px 8px;font-size:10px;font-weight:600;color:#5b6472">5% OTM: 61st pct</span>
+          <span style="border-radius:9999px;border:1px solid #e6e8ec;background:rgba(255,255,255,0.7);padding:2px 8px;font-size:10px;font-weight:600;color:#5b6472">VVIX 91</span>
+        </div>
+        <button style="margin-top:8px;background:none;border:none;padding:0;font-size:11px;font-weight:500;color:#5b6472;cursor:pointer">▸ Show data basis (4✓ / 3✗)</button>
+        <div style="margin-top:12px;border-top:1px solid rgba(230,232,236,0.6);padding-top:10px;display:flex;align-items:center;justify-content:space-between;gap:8px">
+          <span style="font-size:11px;color:#9aa3b0">No hedge on record — book is <span style="font-weight:600;color:#5b6472">unhedged</span>.</span>
+          <button style="border-radius:9999px;border:1px solid #e6e8ec;background:rgba(255,255,255,0.7);padding:2px 10px;font-size:11px;font-weight:500;color:#5b6472;cursor:pointer">＋ Confirm / log hedge</button>
+        </div>
+      </div>
+    </section>
+
+    <div style="border-radius:8px;border:1px solid #f2e2bf;background:#fbf6ea;padding:20px;box-shadow:0 1px 2px rgb(16 21 28/0.05)">
+      <div style="display:flex;align-items:center;justify-content:space-between;gap:8px;margin-bottom:12px">
+        <div style="font-size:12px;font-weight:700;text-transform:uppercase;letter-spacing:0.22em;color:#b8791f">Cash Deployment</div>
+        <span style="font-size:10px;font-weight:700;color:#9aa3b0">38/100</span>
+      </div>
+      <div style="display:flex;align-items:baseline;gap:8px;margin-bottom:8px;flex-wrap:wrap">
+        <span style="font-size:24px;font-weight:600;letter-spacing:-0.02em;color:#b8791f">WAIT</span>
+        <span style="font-size:12px;color:#5b6472">Aug 1–20 window</span>
+      </div>
+      <p style="margin:0 0 10px;font-size:14px;line-height:20px;color:#5b6472">Only 2 of 5 deployment triggers are met and the index is within 0.6% of its high with deteriorating breadth. Hold the 3.2% sleeve; a 3–4% pullback with breadth stabilising would flip this to PARTIAL.</p>
+      <p style="margin:0 0 10px;font-size:12px;line-height:20px;color:#5b6472;font-style:italic">Newton: uptrend intact but momentum decelerating into early August; expects a 4–6% consolidation before the next leg.</p>
+      <div style="display:grid;grid-template-columns:1fr 1fr;gap:4px 32px;margin-bottom:10px;font-size:11px;line-height:16px">
+        <div style="display:flex;flex-direction:column;gap:4px">
+          <div style="display:flex;align-items:flex-start;gap:4px;color:#12805c"><span style="flex:none;margin-top:1px">✓</span><span>Credit spreads tight (HY &lt; 350bps)</span></div>
+          <div style="display:flex;align-items:flex-start;gap:4px;color:#12805c"><span style="flex:none;margin-top:1px">✓</span><span>No recession signal in the curve</span></div>
+        </div>
+        <div style="display:flex;flex-direction:column;gap:4px">
+          <div style="display:flex;align-items:flex-start;gap:4px;color:#9aa3b0"><span style="flex:none;margin-top:1px">·</span><span>Breadth above 60% on 50DMA</span></div>
+          <div style="display:flex;align-items:flex-start;gap:4px;color:#9aa3b0"><span style="flex:none;margin-top:1px">·</span><span>Oscillator oversold (&lt; −4)</span></div>
+          <div style="display:flex;align-items:flex-start;gap:4px;color:#9aa3b0"><span style="flex:none;margin-top:1px">·</span><span>Index &gt; 3% off the high</span></div>
+        </div>
+      </div>
+      <div style="margin-top:8px;padding:4px 8px;border-radius:6px;font-size:10px;font-weight:600;background:#fdf2f3;color:#d1435b">Day 27 — past normal window; document if deferred further</div>
+    </div>
+
+    <section style="border-radius:8px;border:1px solid #e6e8ec;background:#fff;padding:16px;box-shadow:0 1px 2px rgb(16 21 28/0.05)">
+      <div style="display:flex;flex-wrap:wrap;align-items:center;gap:8px">
+        <span style="font-size:16px">🔍</span>
+        <h2 style="margin:0;font-size:16px;font-weight:600">Composite Signal</h2>
+        <span style="display:inline-flex;align-items:center;border-radius:9999px;border:1px solid #f2e2bf;background:#fbf6ea;padding:2px 10px;font-size:11px;font-weight:700;text-transform:uppercase;letter-spacing:0.04em;color:#b8791f">Neutral–Bullish</span>
+        <span style="font-size:12px;color:#9aa3b0">Conviction: Moderate</span>
+        <span style="display:inline-flex;align-items:center;border-radius:9999px;border:1px solid #f2e2bf;background:#fbf6ea;padding:2px 10px;font-size:11px;font-weight:700;text-transform:uppercase;letter-spacing:0.04em;color:#b8791f">Neutral</span>
+      </div>
+      <p style="margin:4px 0 0;font-size:12px;color:#9aa3b0">The deterministic regime read — what the tape and macro data say the market <strong style="color:#5b6472">is</strong> doing, and what to focus on.</p>
+      <p style="margin:8px 0 0;font-size:14px;line-height:24px;color:#5b6472">Six of eleven regime signals read risk-on, three risk-off, two neutral — a composite that has been stable for nine sessions. The risk-off contributors are all participation-based (50DMA breadth, equal-weight relative, advance/decline line) while every credit and cross-asset input remains benign, which is the classic late-advance signature rather than a topping one.</p>
+    </section>
+
+    <section style="border-radius:8px;border:1px solid #ddd3f2;background:rgba(243,240,251,0.4);padding:16px;box-shadow:0 1px 2px rgb(16 21 28/0.05)">
+      <div style="display:flex;flex-wrap:wrap;align-items:center;gap:8px;margin-bottom:4px">
+        <span style="font-size:16px">💡</span>
+        <h2 style="margin:0;font-size:16px;font-weight:600">What the tape may be under-pricing</h2>
+        <span style="font-size:10px;font-weight:700;text-transform:uppercase;letter-spacing:0.06em;color:#7c5cd0">Non-consensus</span>
+      </div>
+      <p style="margin:0;font-size:14px;line-height:24px;color:#5b6472">Rate-cut odds for September sit near 80% while core PCE has not confirmed — a hawkish hold on Wednesday would repriced the front end faster than equities are positioned for. Cheapest expression is short-duration quality rather than index protection.</p>
+    </section>
+
+    <section style="border-radius:8px;border:1px solid #cfe0ff;background:linear-gradient(to bottom right,rgba(238,244,255,0.6),#fff);padding:20px;box-shadow:0 1px 2px rgb(16 21 28/0.05)">
+      <div style="display:flex;flex-wrap:wrap;align-items:center;justify-content:space-between;gap:12px;margin-bottom:12px">
+        <div style="display:flex;flex-wrap:wrap;align-items:center;gap:8px">
+          <span style="font-size:16px">🧭</span>
+          <h2 style="margin:0;font-size:16px;font-weight:600;color:#10151c">Forward View — Multi-Horizon</h2>
+          <span style="border-radius:9999px;background:#f0f9f4;padding:2px 8px;font-size:10px;font-weight:700;text-transform:uppercase;line-height:1;color:#12805c">FRED + Yahoo</span>
+        </div>
+        <div style="display:flex;align-items:center;gap:8px">
+          <span style="font-size:10px;font-weight:700;text-transform:uppercase;letter-spacing:0.06em;color:#9aa3b0">Regime</span>
+          <span style="display:inline-flex;align-items:center;border-radius:9999px;border:1px solid #f2e2bf;background:#fbf6ea;padding:2px 10px;font-size:11px;font-weight:700;text-transform:uppercase;letter-spacing:0.04em;color:#b8791f">Neutral</span>
+          <span style="font-size:12px;color:#9aa3b0">score +2</span>
+        </div>
+      </div>
+
+      <div style="margin-bottom:20px;display:grid;gap:12px;grid-template-columns:repeat(3,1fr)">
+        <div style="border-radius:12px;border:1px solid #cfe0ff;background:rgba(238,244,255,0.4);padding:12px">
+          <div style="display:flex;align-items:center;justify-content:space-between;gap:8px;margin-bottom:8px">
+            <div style="display:flex;align-items:center;gap:8px"><span style="font-size:10px;font-weight:700;text-transform:uppercase;letter-spacing:0.06em;color:#5b6472">Tactical · 1–3M</span><span style="font-size:9px;font-weight:600;color:#9aa3b0">×50%</span></div>
+            <span style="display:inline-flex;align-items:center;border-radius:9999px;border:1px solid #f2e2bf;background:#fbf6ea;padding:2px 8px;font-size:10px;font-weight:700;text-transform:uppercase;color:#b8791f">Neutral <span style="opacity:0.5;margin:0 5px">·</span><span style="font-family:'IBM Plex Mono',monospace;opacity:0.8">2↑ 2↓ <span style="opacity:0.6">/ 5</span></span></span>
+          </div>
+          <p style="margin:0;font-size:14px;line-height:24px;color:#5b6472">Earnings-driven chop into Aug 1. Narrow leadership means index-level downside is capped near 3% unless mega-cap guidance disappoints.</p>
+          <div style="margin-top:8px;padding-top:8px;border-top:1px solid rgba(230,232,236,0.7);display:flex;align-items:flex-start;gap:6px"><span style="font-size:9px;font-weight:700;text-transform:uppercase;letter-spacing:0.06em;color:#9aa3b0;margin-top:1px;flex:none">Invalidator</span><span style="font-size:12px;line-height:20px;color:#5b6472;font-style:italic">HY OAS through 340bps</span></div>
+        </div>
+        <div style="border-radius:12px;border:1px solid #bfe3d4;background:rgba(240,249,244,0.4);padding:12px">
+          <div style="display:flex;align-items:center;justify-content:space-between;gap:8px;margin-bottom:8px">
+            <div style="display:flex;align-items:center;gap:8px"><span style="font-size:10px;font-weight:700;text-transform:uppercase;letter-spacing:0.06em;color:#5b6472">Cyclical · 3–6M</span><span style="font-size:9px;font-weight:600;color:#9aa3b0">×30%</span></div>
+            <span style="display:inline-flex;align-items:center;border-radius:9999px;border:1px solid #bfe3d4;background:#f0f9f4;padding:2px 8px;font-size:10px;font-weight:700;text-transform:uppercase;color:#12805c">Risk-On <span style="opacity:0.5;margin:0 5px">·</span><span style="font-family:'IBM Plex Mono',monospace;opacity:0.8">4↑ 1↓ <span style="opacity:0.6">/ 6</span></span></span>
+          </div>
+          <p style="margin:0;font-size:14px;line-height:24px;color:#5b6472">Easing cycle plus stable credit supports a Q4 broadening. Watch whether equal-weight starts closing the gap on cap-weight.</p>
+          <div style="margin-top:8px;padding-top:8px;border-top:1px solid rgba(230,232,236,0.7);display:flex;align-items:flex-start;gap:6px"><span style="font-size:9px;font-weight:700;text-transform:uppercase;letter-spacing:0.06em;color:#9aa3b0;margin-top:1px;flex:none">Invalidator</span><span style="font-size:12px;line-height:20px;color:#5b6472;font-style:italic">Two consecutive payroll prints under 75k</span></div>
+        </div>
+        <div style="border-radius:12px;border:1px solid #ddd3f2;background:rgba(243,240,251,0.4);padding:12px">
+          <div style="display:flex;align-items:center;justify-content:space-between;gap:8px;margin-bottom:8px">
+            <div style="display:flex;align-items:center;gap:8px"><span style="font-size:10px;font-weight:700;text-transform:uppercase;letter-spacing:0.06em;color:#5b6472">Structural · 6–12M</span><span style="font-size:9px;font-weight:600;color:#9aa3b0">×20%</span></div>
+            <span style="display:inline-flex;align-items:center;border-radius:9999px;border:1px solid #f2e2bf;background:#fbf6ea;padding:2px 8px;font-size:10px;font-weight:700;text-transform:uppercase;color:#b8791f">Neutral <span style="opacity:0.5;margin:0 5px">·</span><span style="font-family:'IBM Plex Mono',monospace;opacity:0.8">2↑ 2↓ <span style="opacity:0.6">/ 4</span></span></span>
+          </div>
+          <p style="margin:0;font-size:14px;line-height:24px;color:#5b6472">22.4x forward P/E leaves no valuation cushion. Returns from here need earnings delivery, not multiple expansion.</p>
+          <div style="margin-top:8px;padding-top:8px;border-top:1px solid rgba(230,232,236,0.7);display:flex;align-items:flex-start;gap:6px"><span style="font-size:9px;font-weight:700;text-transform:uppercase;letter-spacing:0.06em;color:#9aa3b0;margin-top:1px;flex:none">Invalidator</span><span style="font-size:12px;line-height:20px;color:#5b6472;font-style:italic">2027 EPS revisions turning negative</span></div>
+        </div>
+      </div>
+
+      <div style="margin-bottom:20px;overflow:hidden;border-radius:8px;border:1px solid #e6e8ec;background:rgba(255,255,255,0.8);padding:16px">
+        <div style="margin-bottom:12px;display:flex;flex-wrap:wrap;align-items:flex-start;justify-content:space-between;gap:12px">
+          <div style="display:flex;flex-wrap:wrap;align-items:center;gap:8px">
+            <span style="font-size:10px;font-weight:700;text-transform:uppercase;letter-spacing:0.06em;color:#9aa3b0">Market Regime</span>
+            <span style="display:inline-flex;align-items:center;border-radius:9999px;border:1px solid #f2e2bf;background:#fbf6ea;padding:2px 10px;font-size:11px;font-weight:700;text-transform:uppercase;letter-spacing:0.04em;color:#b8791f">Neutral</span>
+            <span style="font-size:12px;color:#9aa3b0">6/11 risk-on signals</span>
+          </div>
+          <span style="font-size:10px;color:#9aa3b0">Yahoo-derived · cached 30m</span>
+        </div>
+        <div style="margin-bottom:12px;display:flex;flex-wrap:wrap;gap:6px">
+          <span style="display:inline-flex;align-items:center;gap:6px;border-radius:9999px;border:1px solid #bfe3d4;background:#f0f9f4;color:#12805c;padding:4px 10px;font-size:11px"><span style="font-weight:600">Credit</span><span style="opacity:0.7">· HY 291bps, tight</span></span>
+          <span style="display:inline-flex;align-items:center;gap:6px;border-radius:9999px;border:1px solid #bfe3d4;background:#f0f9f4;color:#12805c;padding:4px 10px;font-size:11px"><span style="font-weight:600">Vol</span><span style="opacity:0.7">· VIX 14.2, contango</span></span>
+          <span style="display:inline-flex;align-items:center;gap:6px;border-radius:9999px;border:1px solid #f2c9cf;background:#fdf2f3;color:#d1435b;padding:4px 10px;font-size:11px"><span style="font-weight:600">Breadth</span><span style="opacity:0.7">· 54% &gt; 50DMA, −3.1pp</span></span>
+          <span style="display:inline-flex;align-items:center;gap:6px;border-radius:9999px;border:1px solid #bfe3d4;background:#f0f9f4;color:#12805c;padding:4px 10px;font-size:11px"><span style="font-weight:600">Copper/Gold</span><span style="opacity:0.7">· rising 20d</span></span>
+          <span style="display:inline-flex;align-items:center;gap:6px;border-radius:9999px;border:1px solid #f2c9cf;background:#fdf2f3;color:#d1435b;padding:4px 10px;font-size:11px"><span style="font-weight:600">Equal-weight</span><span style="opacity:0.7">· −2.4% vs cap-weight 20d</span></span>
+          <span style="display:inline-flex;align-items:center;gap:6px;border-radius:9999px;border:1px solid #e6e8ec;background:#fafbfc;color:#5b6472;padding:4px 10px;font-size:11px"><span style="font-weight:600">Dollar</span><span style="opacity:0.7">· DXY flat 20d</span></span>
+        </div>
+        <div style="margin-bottom:12px;border-top:1px solid #f0f1f4;padding-top:8px">
+          <div style="display:flex;flex-wrap:wrap;align-items:center;gap:6px">
+            <span style="margin-right:4px;font-size:10px;font-weight:700;text-transform:uppercase;letter-spacing:0.06em;color:#9aa3b0">By Horizon</span>
+            <span style="display:inline-flex;align-items:center;gap:6px;border-radius:9999px;border:1px solid #e6e8ec;background:#fafbfc;color:#5b6472;padding:4px 10px;font-size:11px"><span style="font-weight:600">1–3M</span><span style="opacity:0.7">·</span><span style="font-weight:700">Neutral</span><span style="font-family:'IBM Plex Mono',monospace;opacity:0.7">2↑ 2↓ <span style="opacity:0.6">/ 5</span></span><span style="font-size:10px;opacity:0.5">×50%</span></span>
+            <span style="display:inline-flex;align-items:center;gap:6px;border-radius:9999px;border:1px solid #bfe3d4;background:#f0f9f4;color:#12805c;padding:4px 10px;font-size:11px"><span style="font-weight:600">3–6M</span><span style="opacity:0.7">·</span><span style="font-weight:700">Risk-On</span><span style="font-family:'IBM Plex Mono',monospace;opacity:0.7">4↑ 1↓ <span style="opacity:0.6">/ 6</span></span><span style="font-size:10px;opacity:0.5">×30%</span></span>
+            <span style="display:inline-flex;align-items:center;gap:6px;border-radius:9999px;border:1px solid #e6e8ec;background:#fafbfc;color:#5b6472;padding:4px 10px;font-size:11px"><span style="font-weight:600">6–12M</span><span style="opacity:0.7">·</span><span style="font-weight:700">Neutral</span><span style="font-family:'IBM Plex Mono',monospace;opacity:0.7">2↑ 2↓ <span style="opacity:0.6">/ 4</span></span><span style="font-size:10px;opacity:0.5">×20%</span></span>
+          </div>
+          <div style="margin-top:8px;font-size:10px;color:#9aa3b0;text-align:right">Weighted: <span style="font-weight:600;color:#5b6472">Neutral</span> <span style="font-family:'IBM Plex Mono',monospace;opacity:0.7">(+0.35)</span></div>
+        </div>
+        <div style="display:flex;flex-wrap:wrap;gap:4px 16px;padding-top:8px;border-top:1px solid #f0f1f4;font-size:11px;color:#9aa3b0">
+          <span><span style="font-weight:600;color:#5b6472">DXY</span> <span style="font-family:'IBM Plex Mono',monospace">98.42 · 20d +0.3%</span></span>
+          <span><span style="font-weight:600;color:#5b6472">10Y</span> <span style="font-family:'IBM Plex Mono',monospace">4.18% · 20d −2.1%</span></span>
+          <span><span style="font-weight:600;color:#5b6472">WTI</span> <span style="font-family:'IBM Plex Mono',monospace">$68.30 · 20d −4.6%</span></span>
+          <span><span style="font-weight:600;color:#5b6472">STOXX</span> <span style="font-family:'IBM Plex Mono',monospace">551 · 20d +1.8%</span></span>
+          <span><span style="font-weight:600;color:#5b6472">Nikkei</span> <span style="font-family:'IBM Plex Mono',monospace">41280 · 20d +2.9%</span></span>
+        </div>
+      </div>
+
+      <div style="display:flex;flex-wrap:wrap;align-items:center;gap:8px;border-radius:12px;border:1px solid #f0f1f4;background:rgba(250,251,252,0.6);padding:8px 12px;margin-bottom:20px">
+        <span style="font-size:10px;font-weight:700;text-transform:uppercase;letter-spacing:0.06em;color:#9aa3b0">Horizon</span>
+        <span style="display:inline-flex;align-items:center;border-radius:9999px;border:1px solid #cfe0ff;background:#eef4ff;color:#2d5bd0;padding:2px 8px;font-size:10px;font-weight:600">Tactical · 1–3M</span>
+        <span style="display:inline-flex;align-items:center;border-radius:9999px;border:1px solid #bfe3d4;background:#f0f9f4;color:#12805c;padding:2px 8px;font-size:10px;font-weight:600">Cyclical · 3–6M</span>
+        <span style="display:inline-flex;align-items:center;border-radius:9999px;border:1px solid #ddd3f2;background:#f3f0fb;color:#7c5cd0;padding:2px 8px;font-size:10px;font-weight:600">Structural · 6–12M</span>
+        <span style="font-size:11px;color:#9aa3b0">· Each indicator is tagged with the horizon it speaks to most directly.</span>
+      </div>
+
+      <div style="display:grid;gap:20px;grid-template-columns:1fr 1fr;align-items:start">
+        <section style="border-radius:8px;border:1px solid #e6e8ec;background:#fff;box-shadow:0 1px 2px rgb(16 21 28/0.05);overflow:hidden">
+          <header style="display:flex;align-items:baseline;gap:8px;padding:12px 16px 8px"><span style="display:inline-block;height:8px;width:8px;border-radius:9999px;background:#2d5bd0"></span><h3 style="margin:0;font-size:14px;font-weight:700;letter-spacing:-0.01em">Breadth &amp; Trend</h3><span style="font-size:12px;color:#9aa3b0">· SPX trajectory and how broadly the move is participating.</span></header>
+          <div style="border-top:1px solid #f0f1f4;padding:12px 16px">
+            <div style="display:grid;gap:12px;grid-template-columns:repeat(3,1fr)">
+              <div style="border-radius:8px;border:1px solid #f0f1f4;background:rgba(250,251,252,0.6);padding:16px"><div style="display:flex;align-items:flex-start;justify-content:space-between;gap:8px;margin-bottom:4px"><div style="display:flex;align-items:center;gap:6px;flex-wrap:wrap"><span style="font-size:11px;font-weight:600;text-transform:uppercase;letter-spacing:0.06em;color:#9aa3b0">S&amp;P 500 YTD</span><span style="display:inline-flex;align-items:center;border-radius:9999px;border:1px solid #bfe3d4;background:#f0f9f4;color:#12805c;padding:1px 6px;font-size:9px;font-weight:700;text-transform:uppercase;letter-spacing:0.06em">3–6M</span></div><span style="border-radius:9999px;background:#f0f9f4;padding:2px 6px;font-size:9px;font-weight:700;color:#12805c;text-transform:uppercase;line-height:1">Live</span></div><div style="font-size:24px;font-weight:700;line-height:1.2">11.8<span style="font-size:14px;font-weight:400;color:#9aa3b0;margin-left:4px">%</span></div><div style="font-size:10px;color:#9aa3b0;margin-top:4px">Yahoo ^GSPC</div></div>
+              <div style="border-radius:8px;border:1px solid #f0f1f4;background:rgba(250,251,252,0.6);padding:16px"><div style="display:flex;align-items:flex-start;justify-content:space-between;gap:8px;margin-bottom:4px"><div style="display:flex;align-items:center;gap:6px;flex-wrap:wrap"><span style="font-size:11px;font-weight:600;text-transform:uppercase;letter-spacing:0.06em;color:#9aa3b0">S&amp;P 500 Week</span><span style="display:inline-flex;align-items:center;border-radius:9999px;border:1px solid #cfe0ff;background:#eef4ff;color:#2d5bd0;padding:1px 6px;font-size:9px;font-weight:700;text-transform:uppercase;letter-spacing:0.06em">1–3M</span></div><span style="border-radius:9999px;background:#f0f9f4;padding:2px 6px;font-size:9px;font-weight:700;color:#12805c;text-transform:uppercase;line-height:1">Live</span></div><div style="font-size:24px;font-weight:700;line-height:1.2">1.4<span style="font-size:14px;font-weight:400;color:#9aa3b0;margin-left:4px">%</span></div><div style="font-size:10px;color:#9aa3b0;margin-top:4px">Yahoo ^GSPC</div></div>
+              <div style="border-radius:8px;border:1px solid #f0f1f4;background:rgba(250,251,252,0.6);padding:16px"><div style="display:flex;align-items:flex-start;justify-content:space-between;gap:8px;margin-bottom:4px"><div style="display:flex;align-items:center;gap:6px;flex-wrap:wrap"><span style="font-size:11px;font-weight:600;text-transform:uppercase;letter-spacing:0.06em;color:#9aa3b0">S&amp;P &gt;200DMA (wk)</span><span style="display:inline-flex;align-items:center;border-radius:9999px;border:1px solid #bfe3d4;background:#f0f9f4;color:#12805c;padding:1px 6px;font-size:9px;font-weight:700;text-transform:uppercase;letter-spacing:0.06em">3–6M</span></div><span style="border-radius:9999px;background:#f0f9f4;padding:2px 6px;font-size:9px;font-weight:700;color:#12805c;text-transform:uppercase;line-height:1">Live</span></div><div style="font-size:24px;font-weight:700;line-height:1.2">66.2<span style="font-size:14px;font-weight:400;color:#9aa3b0;margin-left:4px">%</span></div><div style="font-size:12px;font-weight:600;margin-top:2px;color:#d1435b">−1.8% wk/wk</div><div style="font-size:10px;color:#9aa3b0;margin-top:4px">Manual entry</div></div>
+              <div style="border-radius:8px;border:1px solid #f0f1f4;background:rgba(250,251,252,0.6);padding:16px"><div style="display:flex;align-items:flex-start;justify-content:space-between;gap:8px;margin-bottom:4px"><div style="display:flex;align-items:center;gap:6px;flex-wrap:wrap"><span style="font-size:11px;font-weight:600;text-transform:uppercase;letter-spacing:0.06em;color:#9aa3b0">S&amp;P &gt;200DMA (mo)</span><span style="display:inline-flex;align-items:center;border-radius:9999px;border:1px solid #bfe3d4;background:#f0f9f4;color:#12805c;padding:1px 6px;font-size:9px;font-weight:700;text-transform:uppercase;letter-spacing:0.06em">3–6M</span></div><span style="border-radius:9999px;background:#fafbfc;padding:2px 6px;font-size:9px;font-weight:700;color:#9aa3b0;text-transform:uppercase;line-height:1">Manual</span></div><div style="font-size:24px;font-weight:700;line-height:1.2">68.0<span style="font-size:14px;font-weight:400;color:#9aa3b0;margin-left:4px">%</span></div><div style="font-size:12px;font-weight:600;margin-top:2px;color:#d1435b">−4.4% mo/mo</div><div style="font-size:10px;color:#9aa3b0;margin-top:4px">Manual entry</div></div>
+              <div style="border-radius:8px;border:1px solid #f0f1f4;background:rgba(250,251,252,0.6);padding:16px"><div style="display:flex;align-items:flex-start;justify-content:space-between;gap:8px;margin-bottom:4px"><div style="display:flex;align-items:center;gap:6px;flex-wrap:wrap"><span style="font-size:11px;font-weight:600;text-transform:uppercase;letter-spacing:0.06em;color:#9aa3b0">S&amp;P &gt;50DMA (wk)</span><span style="display:inline-flex;align-items:center;border-radius:9999px;border:1px solid #cfe0ff;background:#eef4ff;color:#2d5bd0;padding:1px 6px;font-size:9px;font-weight:700;text-transform:uppercase;letter-spacing:0.06em">1–3M</span></div><span style="border-radius:9999px;background:#fafbfc;padding:2px 6px;font-size:9px;font-weight:700;color:#9aa3b0;text-transform:uppercase;line-height:1">Manual</span></div><div style="font-size:24px;font-weight:700;line-height:1.2">54.0<span style="font-size:14px;font-weight:400;color:#9aa3b0;margin-left:4px">%</span></div><div style="font-size:12px;font-weight:600;margin-top:2px;color:#d1435b">−3.1% wk/wk</div><div style="font-size:10px;color:#9aa3b0;margin-top:4px">Manual entry</div></div>
+              <div style="border-radius:8px;border:1px solid #f0f1f4;background:rgba(250,251,252,0.6);padding:16px"><div style="display:flex;align-items:flex-start;justify-content:space-between;gap:8px;margin-bottom:4px"><div style="display:flex;align-items:center;gap:6px;flex-wrap:wrap"><span style="font-size:11px;font-weight:600;text-transform:uppercase;letter-spacing:0.06em;color:#9aa3b0">Broad &gt;200DMA (wk)</span><span style="display:inline-flex;align-items:center;border-radius:9999px;border:1px solid #bfe3d4;background:#f0f9f4;color:#12805c;padding:1px 6px;font-size:9px;font-weight:700;text-transform:uppercase;letter-spacing:0.06em">3–6M</span></div><span style="border-radius:9999px;background:#fafbfc;padding:2px 6px;font-size:9px;font-weight:700;color:#9aa3b0;text-transform:uppercase;line-height:1">Manual</span></div><div style="font-size:24px;font-weight:700;line-height:1.2">47.5<span style="font-size:14px;font-weight:400;color:#9aa3b0;margin-left:4px">%</span></div><div style="font-size:12px;font-weight:600;margin-top:2px;color:#d1435b">−2.2% wk/wk</div><div style="font-size:10px;color:#9aa3b0;margin-top:4px">Barchart BCMM</div></div>
+              <div style="border-radius:8px;border:1px solid #f0f1f4;background:rgba(250,251,252,0.6);padding:16px"><div style="display:flex;align-items:flex-start;justify-content:space-between;gap:8px;margin-bottom:4px"><div style="display:flex;align-items:center;gap:6px;flex-wrap:wrap"><span style="font-size:11px;font-weight:600;text-transform:uppercase;letter-spacing:0.06em;color:#9aa3b0">NYSE New Highs</span><span style="display:inline-flex;align-items:center;border-radius:9999px;border:1px solid #cfe0ff;background:#eef4ff;color:#2d5bd0;padding:1px 6px;font-size:9px;font-weight:700;text-transform:uppercase;letter-spacing:0.06em">1–3M</span></div><span style="border-radius:9999px;background:#fafbfc;padding:2px 6px;font-size:9px;font-weight:700;color:#9aa3b0;text-transform:uppercase;line-height:1">Manual</span></div><div style="font-size:24px;font-weight:700;line-height:1.2">86</div><div style="font-size:10px;color:#9aa3b0;margin-top:4px">Manual entry</div></div>
+              <div style="border-radius:8px;border:1px solid #f0f1f4;background:rgba(250,251,252,0.6);padding:16px"><div style="display:flex;align-items:flex-start;justify-content:space-between;gap:8px;margin-bottom:4px"><div style="display:flex;align-items:center;gap:6px;flex-wrap:wrap"><span style="font-size:11px;font-weight:600;text-transform:uppercase;letter-spacing:0.06em;color:#9aa3b0">NYSE New Lows</span><span style="display:inline-flex;align-items:center;border-radius:9999px;border:1px solid #cfe0ff;background:#eef4ff;color:#2d5bd0;padding:1px 6px;font-size:9px;font-weight:700;text-transform:uppercase;letter-spacing:0.06em">1–3M</span></div><span style="border-radius:9999px;background:#fafbfc;padding:2px 6px;font-size:9px;font-weight:700;color:#9aa3b0;text-transform:uppercase;line-height:1">Manual</span></div><div style="font-size:24px;font-weight:700;line-height:1.2">41</div><div style="font-size:10px;color:#9aa3b0;margin-top:4px">Manual entry</div></div>
+              <div style="border-radius:8px;border:1px solid #f0f1f4;background:rgba(250,251,252,0.6);padding:16px"><div style="display:flex;align-items:flex-start;justify-content:space-between;gap:8px;margin-bottom:4px"><div style="display:flex;align-items:center;gap:6px;flex-wrap:wrap"><span style="font-size:11px;font-weight:600;text-transform:uppercase;letter-spacing:0.06em;color:#9aa3b0">NYSE Up Volume</span><span style="display:inline-flex;align-items:center;border-radius:9999px;border:1px solid #cfe0ff;background:#eef4ff;color:#2d5bd0;padding:1px 6px;font-size:9px;font-weight:700;text-transform:uppercase;letter-spacing:0.06em">1–3M</span></div><span style="border-radius:9999px;background:#fafbfc;padding:2px 6px;font-size:9px;font-weight:700;color:#9aa3b0;text-transform:uppercase;line-height:1">Manual</span></div><div style="font-size:24px;font-weight:700;line-height:1.2">58.4<span style="font-size:14px;font-weight:400;color:#9aa3b0;margin-left:4px">%</span></div><div style="font-size:12px;font-weight:600;margin-top:2px;color:#9aa3b0">wk/wk building…</div><div style="font-size:10px;color:#9aa3b0;margin-top:4px">Manual entry</div></div>
+            </div>
+          </div>
+        </section>
+
+        <section style="border-radius:8px;border:1px solid #e6e8ec;background:#fff;box-shadow:0 1px 2px rgb(16 21 28/0.05);overflow:hidden">
+          <header style="display:flex;align-items:baseline;gap:8px;padding:12px 16px 8px"><span style="display:inline-block;height:8px;width:8px;border-radius:9999px;background:#12805c"></span><h3 style="margin:0;font-size:14px;font-weight:700;letter-spacing:-0.01em">Valuation &amp; Growth</h3><span style="font-size:12px;color:#9aa3b0">· SPY multiples and the growth priced in.</span></header>
+          <div style="border-top:1px solid #f0f1f4;padding:12px 16px">
+            <div style="display:grid;gap:12px;grid-template-columns:1fr 1fr">
+              <div style="border-radius:8px;border:1px solid #f0f1f4;background:rgba(250,251,252,0.6);padding:16px"><div style="display:flex;align-items:flex-start;justify-content:space-between;gap:8px;margin-bottom:4px"><div style="display:flex;align-items:center;gap:6px;flex-wrap:wrap"><span style="font-size:11px;font-weight:600;text-transform:uppercase;letter-spacing:0.06em;color:#9aa3b0">SPY Forward P/E</span><span style="display:inline-flex;align-items:center;border-radius:9999px;border:1px solid #ddd3f2;background:#f3f0fb;color:#7c5cd0;padding:1px 6px;font-size:9px;font-weight:700;text-transform:uppercase;letter-spacing:0.06em">6–12M</span></div><span style="border-radius:9999px;background:#f0f9f4;padding:2px 6px;font-size:9px;font-weight:700;color:#12805c;text-transform:uppercase;line-height:1">Live</span></div><div style="font-size:24px;font-weight:700;line-height:1.2">22.4</div><div style="font-size:10px;color:#9aa3b0;margin-top:4px">FactSet</div></div>
+              <div style="border-radius:8px;border:1px solid #f0f1f4;background:rgba(250,251,252,0.6);padding:16px"><div style="display:flex;align-items:flex-start;justify-content:space-between;gap:8px;margin-bottom:4px"><div style="display:flex;align-items:center;gap:6px;flex-wrap:wrap"><span style="font-size:11px;font-weight:600;text-transform:uppercase;letter-spacing:0.06em;color:#9aa3b0">SPY Trailing P/E</span><span style="display:inline-flex;align-items:center;border-radius:9999px;border:1px solid #ddd3f2;background:#f3f0fb;color:#7c5cd0;padding:1px 6px;font-size:9px;font-weight:700;text-transform:uppercase;letter-spacing:0.06em">6–12M</span></div><span style="border-radius:9999px;background:#f0f9f4;padding:2px 6px;font-size:9px;font-weight:700;color:#12805c;text-transform:uppercase;line-height:1">Live</span></div><div style="font-size:24px;font-weight:700;line-height:1.2">26.9</div><div style="font-size:10px;color:#9aa3b0;margin-top:4px">FactSet</div></div>
+              <div style="border-radius:8px;border:1px solid #f0f1f4;background:rgba(250,251,252,0.6);padding:16px"><div style="display:flex;align-items:flex-start;justify-content:space-between;gap:8px;margin-bottom:4px"><div style="display:flex;align-items:center;gap:6px;flex-wrap:wrap"><span style="font-size:11px;font-weight:600;text-transform:uppercase;letter-spacing:0.06em;color:#9aa3b0">Implied 1Y EPS Growth</span><span style="display:inline-flex;align-items:center;border-radius:9999px;border:1px solid #bfe3d4;background:#f0f9f4;color:#12805c;padding:1px 6px;font-size:9px;font-weight:700;text-transform:uppercase;letter-spacing:0.06em">3–6M</span></div><span style="border-radius:9999px;background:#f0f9f4;padding:2px 6px;font-size:9px;font-weight:700;color:#12805c;text-transform:uppercase;line-height:1">Live</span></div><div style="font-size:24px;font-weight:700;line-height:1.2">11.1<span style="font-size:14px;font-weight:400;color:#9aa3b0;margin-left:4px">%</span></div><div style="font-size:10px;color:#9aa3b0;margin-top:4px">Derived</div></div>
+              <div style="border-radius:8px;border:1px solid #f0f1f4;background:rgba(250,251,252,0.6);padding:16px"><div style="display:flex;align-items:flex-start;justify-content:space-between;gap:8px;margin-bottom:4px"><div style="display:flex;align-items:center;gap:6px;flex-wrap:wrap"><span style="font-size:11px;font-weight:600;text-transform:uppercase;letter-spacing:0.06em;color:#9aa3b0">Est 3-5Y EPS Growth</span><span style="display:inline-flex;align-items:center;border-radius:9999px;border:1px solid #ddd3f2;background:#f3f0fb;color:#7c5cd0;padding:1px 6px;font-size:9px;font-weight:700;text-transform:uppercase;letter-spacing:0.06em">6–12M</span></div><span style="border-radius:9999px;background:#fafbfc;padding:2px 6px;font-size:9px;font-weight:700;color:#9aa3b0;text-transform:uppercase;line-height:1">Manual</span></div><div style="font-size:24px;font-weight:700;line-height:1.2">9.6<span style="font-size:14px;font-weight:400;color:#9aa3b0;margin-left:4px">%</span></div><div style="font-size:10px;color:#9aa3b0;margin-top:4px">Manual entry</div></div>
+            </div>
+          </div>
+        </section>
+
+        <section style="border-radius:8px;border:1px solid #e6e8ec;background:#fff;box-shadow:0 1px 2px rgb(16 21 28/0.05);overflow:hidden">
+          <header style="display:flex;align-items:baseline;gap:8px;padding:12px 16px 8px"><span style="display:inline-block;height:8px;width:8px;border-radius:9999px;background:#b8791f"></span><h3 style="margin:0;font-size:14px;font-weight:700;letter-spacing:-0.01em">Rates &amp; Curve</h3><span style="font-size:12px;color:#9aa3b0">· Treasury yields and curve shape.</span></header>
+          <div style="border-top:1px solid #f0f1f4;padding:12px 16px">
+            <div style="display:grid;gap:12px;grid-template-columns:repeat(3,1fr)">
+              <div style="border-radius:8px;border:1px solid #f0f1f4;background:rgba(250,251,252,0.6);padding:16px"><div style="display:flex;align-items:flex-start;justify-content:space-between;gap:8px;margin-bottom:4px"><span style="font-size:11px;font-weight:600;text-transform:uppercase;letter-spacing:0.06em;color:#9aa3b0">10Y Treasury</span><span style="border-radius:9999px;background:#f0f9f4;padding:2px 6px;font-size:9px;font-weight:700;color:#12805c;text-transform:uppercase;line-height:1">Live</span></div><div style="font-size:24px;font-weight:700;line-height:1.2">4.18<span style="font-size:14px;font-weight:400;color:#9aa3b0;margin-left:4px">%</span></div><div style="font-size:12px;font-weight:600;margin-top:2px;color:#d1435b">−0.04 wk/wk</div><div style="font-size:10px;color:#9aa3b0;margin-top:4px">FRED DGS10</div></div>
+              <div style="border-radius:8px;border:1px solid #f0f1f4;background:rgba(250,251,252,0.6);padding:16px"><div style="display:flex;align-items:flex-start;justify-content:space-between;gap:8px;margin-bottom:4px"><span style="font-size:11px;font-weight:600;text-transform:uppercase;letter-spacing:0.06em;color:#9aa3b0">2Y Treasury</span><span style="border-radius:9999px;background:#f0f9f4;padding:2px 6px;font-size:9px;font-weight:700;color:#12805c;text-transform:uppercase;line-height:1">Live</span></div><div style="font-size:24px;font-weight:700;line-height:1.2">3.62<span style="font-size:14px;font-weight:400;color:#9aa3b0;margin-left:4px">%</span></div><div style="font-size:12px;font-weight:600;margin-top:2px;color:#d1435b">−0.07 wk/wk</div><div style="font-size:10px;color:#9aa3b0;margin-top:4px">FRED DGS2</div></div>
+              <div style="border-radius:8px;border:1px solid #f0f1f4;background:rgba(250,251,252,0.6);padding:16px"><div style="display:flex;align-items:flex-start;justify-content:space-between;gap:8px;margin-bottom:4px"><span style="font-size:11px;font-weight:600;text-transform:uppercase;letter-spacing:0.06em;color:#9aa3b0">3M T-Bill</span><span style="border-radius:9999px;background:#f0f9f4;padding:2px 6px;font-size:9px;font-weight:700;color:#12805c;text-transform:uppercase;line-height:1">Live</span></div><div style="font-size:24px;font-weight:700;line-height:1.2">4.05<span style="font-size:14px;font-weight:400;color:#9aa3b0;margin-left:4px">%</span></div><div style="font-size:12px;font-weight:600;margin-top:2px;color:#d1435b">−0.02 wk/wk</div><div style="font-size:10px;color:#9aa3b0;margin-top:4px">FRED DGS3MO</div></div>
+              <div style="border-radius:8px;border:1px solid #f0f1f4;background:rgba(250,251,252,0.6);padding:16px"><div style="display:flex;align-items:flex-start;justify-content:space-between;gap:8px;margin-bottom:4px"><span style="font-size:11px;font-weight:600;text-transform:uppercase;letter-spacing:0.06em;color:#9aa3b0">10Y-2Y Curve</span><span style="border-radius:9999px;background:#f0f9f4;padding:2px 6px;font-size:9px;font-weight:700;color:#12805c;text-transform:uppercase;line-height:1">Live</span></div><div style="font-size:24px;font-weight:700;line-height:1.2">56<span style="font-size:14px;font-weight:400;color:#9aa3b0;margin-left:4px">bps</span></div><div style="font-size:10px;color:#9aa3b0;margin-top:4px">Derived</div></div>
+              <div style="border-radius:8px;border:1px solid #f0f1f4;background:rgba(250,251,252,0.6);padding:16px"><div style="display:flex;align-items:flex-start;justify-content:space-between;gap:8px;margin-bottom:4px"><span style="font-size:11px;font-weight:600;text-transform:uppercase;letter-spacing:0.06em;color:#9aa3b0">10Y-3M Curve</span><span style="border-radius:9999px;background:#f0f9f4;padding:2px 6px;font-size:9px;font-weight:700;color:#12805c;text-transform:uppercase;line-height:1">Live</span></div><div style="font-size:24px;font-weight:700;line-height:1.2">13<span style="font-size:14px;font-weight:400;color:#9aa3b0;margin-left:4px">bps</span></div><div style="font-size:10px;color:#9aa3b0;margin-top:4px">Derived</div></div>
+            </div>
+          </div>
+        </section>
+
+        <section style="border-radius:8px;border:1px solid #e6e8ec;background:#fff;box-shadow:0 1px 2px rgb(16 21 28/0.05);overflow:hidden">
+          <header style="display:flex;align-items:baseline;gap:8px;padding:12px 16px 8px"><span style="display:inline-block;height:8px;width:8px;border-radius:9999px;background:#d1435b"></span><h3 style="margin:0;font-size:14px;font-weight:700;letter-spacing:-0.01em">Credit &amp; Volatility</h3><span style="font-size:12px;color:#9aa3b0">· Where stress shows up first.</span></header>
+          <div style="border-top:1px solid #f0f1f4;padding:12px 16px">
+            <div style="display:grid;gap:12px;grid-template-columns:1fr 1fr">
+              <div style="border-radius:8px;border:1px solid #f0f1f4;background:rgba(250,251,252,0.6);padding:16px"><div style="display:flex;align-items:flex-start;justify-content:space-between;gap:8px;margin-bottom:4px"><span style="font-size:11px;font-weight:600;text-transform:uppercase;letter-spacing:0.06em;color:#9aa3b0">HY OAS Trend</span><span style="border-radius:9999px;background:#f0f9f4;padding:2px 6px;font-size:9px;font-weight:700;color:#12805c;text-transform:uppercase;line-height:1">Live</span></div><div style="font-size:24px;font-weight:700;line-height:1.2">291<span style="font-size:14px;font-weight:400;color:#9aa3b0;margin-left:4px">bps</span></div><div style="font-size:12px;font-weight:600;margin-top:2px;color:#12805c">−4bps wk/wk</div><div style="font-size:10px;color:#9aa3b0;margin-top:4px">FRED BAMLH0A0HYM2</div></div>
+              <div style="border-radius:8px;border:1px solid #f0f1f4;background:rgba(250,251,252,0.6);padding:16px"><div style="display:flex;align-items:flex-start;justify-content:space-between;gap:8px;margin-bottom:4px"><span style="font-size:11px;font-weight:600;text-transform:uppercase;letter-spacing:0.06em;color:#9aa3b0">IG OAS Trend</span><span style="border-radius:9999px;background:#f0f9f4;padding:2px 6px;font-size:9px;font-weight:700;color:#12805c;text-transform:uppercase;line-height:1">Live</span></div><div style="font-size:24px;font-weight:700;line-height:1.2">84<span style="font-size:14px;font-weight:400;color:#9aa3b0;margin-left:4px">bps</span></div><div style="font-size:12px;font-weight:600;margin-top:2px;color:#12805c">−1bps wk/wk</div><div style="font-size:10px;color:#9aa3b0;margin-top:4px">FRED BAMLC0A0CM</div></div>
+              <div style="border-radius:8px;border:1px solid #f0f1f4;background:rgba(250,251,252,0.6);padding:16px"><div style="display:flex;align-items:flex-start;justify-content:space-between;gap:8px;margin-bottom:4px"><span style="font-size:11px;font-weight:600;text-transform:uppercase;letter-spacing:0.06em;color:#9aa3b0">VIX (wk/wk)</span><span style="border-radius:9999px;background:#f0f9f4;padding:2px 6px;font-size:9px;font-weight:700;color:#12805c;text-transform:uppercase;line-height:1">Live</span></div><div style="font-size:24px;font-weight:700;line-height:1.2">14.2</div><div style="font-size:12px;font-weight:600;margin-top:2px;color:#12805c">−6.6% wk/wk</div><div style="font-size:10px;color:#9aa3b0;margin-top:4px">Yahoo ^VIX</div></div>
+              <div style="border-radius:8px;border:1px solid #f0f1f4;background:rgba(250,251,252,0.6);padding:16px"><div style="display:flex;align-items:flex-start;justify-content:space-between;gap:8px;margin-bottom:4px"><span style="font-size:11px;font-weight:600;text-transform:uppercase;letter-spacing:0.06em;color:#9aa3b0">MOVE (wk/wk)</span><span style="border-radius:9999px;background:#fbf6ea;padding:2px 6px;font-size:9px;font-weight:700;color:#b8791f;text-transform:uppercase;line-height:1">Stale</span></div><div style="font-size:24px;font-weight:700;line-height:1.2">78.4</div><div style="font-size:12px;font-weight:600;margin-top:2px;color:#12805c">−2.1% wk/wk</div><div style="font-size:10px;color:#9aa3b0;margin-top:4px">Yahoo ^MOVE</div></div>
+            </div>
+          </div>
+        </section>
+      </div>
+
+      <p style="font-size:10px;color:#9aa3b0;margin:12px 0 0">Data fetched Jul 27, 7:12 AM · Click any icon to verify the source.</p>
+    </section>
+
+    <section style="border-radius:8px;border:1px solid #e6e8ec;background:#fff;padding:20px;box-shadow:0 1px 2px rgb(16 21 28/0.05)">
+      <div style="display:flex;flex-wrap:wrap;align-items:center;gap:8px;margin-bottom:12px">
+        <span style="font-size:16px">🎭</span>
+        <h2 style="margin:0;font-size:16px;font-weight:600">Contrarian Sentiment</h2>
+        <span style="display:inline-flex;align-items:center;border-radius:9999px;border:1px solid #f2e2bf;background:#fbf6ea;padding:2px 10px;font-size:11px;font-weight:700;text-transform:uppercase;letter-spacing:0.04em;color:#b8791f">Mildly cautious</span>
+      </div>
+      <div style="display:grid;grid-template-columns:repeat(4,1fr);gap:16px">
+        <div style="border-radius:12px;border:1px solid #f0f1f4;background:#fafbfc;padding:16px">
+          <div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:8px"><span style="font-size:11px;font-weight:600;text-transform:uppercase;letter-spacing:0.06em;color:#9aa3b0">Fear &amp; Greed</span><a href="#" style="font-size:11px">↗</a></div>
+          <div style="font-size:32px;font-weight:700;line-height:1">68</div>
+          <div style="font-size:12px;color:#b8791f;font-weight:600;margin-top:2px">Greed</div>
+          <div style="margin-top:10px;height:6px;border-radius:9999px;background:#e6e8ec;overflow:hidden"><div style="height:100%;width:68%;background:#b8791f"></div></div>
+          <p style="margin:8px 0 0;font-size:11px;line-height:16px;color:#9aa3b0">Contrarian: mildly bearish. 7d ago 61, 30d ago 44.</p>
+        </div>
+        <div style="border-radius:12px;border:1px solid #f0f1f4;background:#fafbfc;padding:16px">
+          <div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:8px"><span style="font-size:11px;font-weight:600;text-transform:uppercase;letter-spacing:0.06em;color:#9aa3b0">AAII Bull–Bear</span><a href="#" style="font-size:11px">↗</a></div>
+          <div style="font-size:32px;font-weight:700;line-height:1">+12.4</div>
+          <div style="font-size:12px;color:#5b6472;font-weight:600;margin-top:2px">41.2 bull / 28.8 bear</div>
+          <div style="margin-top:10px;display:flex;height:6px;border-radius:9999px;overflow:hidden"><div style="width:41%;background:#12805c"></div><div style="width:30%;background:#c3c8d0"></div><div style="width:29%;background:#d1435b"></div></div>
+          <p style="margin:8px 0 0;font-size:11px;line-height:16px;color:#9aa3b0">Spread inside the neutral band — no contrarian edge.</p>
+        </div>
+        <div style="border-radius:12px;border:1px solid #f0f1f4;background:#fafbfc;padding:16px">
+          <div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:8px"><span style="font-size:11px;font-weight:600;text-transform:uppercase;letter-spacing:0.06em;color:#9aa3b0">S&amp;P Oscillator</span><span style="border-radius:9999px;background:#eef4ff;padding:1px 6px;font-size:9px;font-weight:700;text-transform:uppercase;color:#2d5bd0">logged</span></div>
+          <div style="font-size:32px;font-weight:700;line-height:1">+2.1</div>
+          <div style="font-size:12px;color:#b8791f;font-weight:600;margin-top:2px">Overbought (bearish)</div>
+          <svg viewBox="0 0 120 28" style="margin-top:10px;width:100%;height:28px"><polyline points="0,20 12,18 24,21 36,15 48,12 60,14 72,9 84,11 96,7 108,8 120,6" fill="none" stroke="#2d5bd0" stroke-width="1.5"></polyline></svg>
+          <p style="margin:6px 0 0;font-size:11px;line-height:16px;color:#9aa3b0">Rising for 6 sessions — approaching the +4 extreme.</p>
+        </div>
+        <div style="border-radius:12px;border:1px solid #f0f1f4;background:#fafbfc;padding:16px">
+          <div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:8px"><span style="font-size:11px;font-weight:600;text-transform:uppercase;letter-spacing:0.06em;color:#9aa3b0">Put/Call</span><span style="border-radius:9999px;background:#eef4ff;padding:1px 6px;font-size:9px;font-weight:700;text-transform:uppercase;color:#2d5bd0">logged</span></div>
+          <div style="font-size:32px;font-weight:700;line-height:1">0.82</div>
+          <div style="font-size:12px;color:#5b6472;font-weight:600;margin-top:2px">Neutral</div>
+          <svg viewBox="0 0 120 28" style="margin-top:10px;width:100%;height:28px"><polyline points="0,10 12,13 24,11 36,16 48,14 60,18 72,15 84,17 96,14 108,16 120,15" fill="none" stroke="#2d5bd0" stroke-width="1.5"></polyline></svg>
+          <p style="margin:6px 0 0;font-size:11px;line-height:16px;color:#9aa3b0">Drifting lower — complacency building, not extreme.</p>
+        </div>
+      </div>
+      <p style="margin:12px 0 0;font-size:14px;line-height:24px;color:#5b6472">Sentiment sits in the upper-middle of the range rather than at a contrarian extreme: F&amp;G at 68 and the oscillator turning positive both argue against chasing, but neither is at a level that has historically preceded more than a 3–5% drawdown on its own.</p>
+    </section>
+
+    <section style="display:grid;grid-template-columns:repeat(3,1fr);gap:16px">
+      <div style="border-radius:8px;border:1px solid #e6e8ec;background:#fff;padding:16px;box-shadow:0 1px 2px rgb(16 21 28/0.05)">
+        <div style="display:flex;align-items:center;justify-content:space-between;gap:12px"><div style="display:flex;align-items:center;gap:8px"><span style="font-size:16px">📉</span><h3 style="margin:0;font-size:16px;font-weight:600">Credit Spreads</h3></div><span style="display:inline-flex;align-items:center;border-radius:9999px;border:1px solid #bfe3d4;background:#f0f9f4;padding:2px 10px;font-size:11px;font-weight:700;text-transform:uppercase;letter-spacing:0.04em;color:#12805c">Tight</span></div>
+        <div style="margin-top:12px;display:grid;grid-template-columns:1fr 1fr;gap:8px">
+          <div style="border-radius:12px;background:#fafbfc;padding:10px"><div style="font-size:10px;font-weight:600;text-transform:uppercase;letter-spacing:0.06em;color:#9aa3b0">HY OAS</div><div style="margin-top:4px;font-size:20px;font-weight:700">291 <span style="font-size:12px;font-weight:400;color:#9aa3b0">bps</span></div></div>
+          <div style="border-radius:12px;background:#fafbfc;padding:10px"><div style="font-size:10px;font-weight:600;text-transform:uppercase;letter-spacing:0.06em;color:#9aa3b0">IG OAS</div><div style="margin-top:4px;font-size:20px;font-weight:700">84 <span style="font-size:12px;font-weight:400;color:#9aa3b0">bps</span></div></div>
+        </div>
+        <p style="margin:8px 0 0;font-size:12px;color:#9aa3b0">Trend: Stable</p>
+        <p style="margin:6px 0 0;font-size:14px;line-height:24px;color:#5b6472">Spreads are inside the 20th percentile of the last decade and have not widened on a single day this month — no corroboration for an equity de-risk here.</p>
+      </div>
+      <div style="border-radius:8px;border:1px solid #e6e8ec;background:#fff;padding:16px;box-shadow:0 1px 2px rgb(16 21 28/0.05)">
+        <div style="display:flex;align-items:center;justify-content:space-between;gap:12px"><div style="display:flex;align-items:center;gap:8px"><span style="font-size:16px">📊</span><h3 style="margin:0;font-size:16px;font-weight:600">Volatility</h3></div><span style="display:inline-flex;align-items:center;border-radius:9999px;border:1px solid #bfe3d4;background:#f0f9f4;padding:2px 10px;font-size:11px;font-weight:700;text-transform:uppercase;letter-spacing:0.04em;color:#12805c">Calm</span></div>
+        <div style="margin-top:12px;display:grid;grid-template-columns:repeat(3,1fr);gap:8px">
+          <div style="border-radius:12px;background:#fafbfc;padding:10px"><div style="font-size:10px;font-weight:600;text-transform:uppercase;letter-spacing:0.06em;color:#9aa3b0">VIX</div><div style="margin-top:4px;font-size:20px;font-weight:700">14.2</div></div>
+          <div style="border-radius:12px;background:#fafbfc;padding:10px"><div style="font-size:10px;font-weight:600;text-transform:uppercase;letter-spacing:0.06em;color:#9aa3b0">TERM</div><div style="margin-top:4px;font-size:14px;font-weight:700">Contango</div></div>
+          <div style="border-radius:12px;background:#fafbfc;padding:10px"><div style="font-size:10px;font-weight:600;text-transform:uppercase;letter-spacing:0.06em;color:#9aa3b0">MOVE</div><div style="margin-top:4px;font-size:20px;font-weight:700">78.4</div></div>
+        </div>
+        <p style="margin:8px 0 0;font-size:14px;line-height:24px;color:#5b6472">Vol surface is fully normal: contango, VVIX 91, and no bid for downside skew ahead of FOMC. Protection is available but not compelling.</p>
+      </div>
+      <div style="border-radius:8px;border:1px solid #e6e8ec;background:#fff;padding:16px;box-shadow:0 1px 2px rgb(16 21 28/0.05)">
+        <div style="display:flex;align-items:center;justify-content:space-between;gap:12px"><div style="display:flex;align-items:center;gap:8px"><span style="font-size:16px">📐</span><h3 style="margin:0;font-size:16px;font-weight:600">Breadth &amp; Structure</h3></div><span style="display:inline-flex;align-items:center;border-radius:9999px;border:1px solid #f2c9cf;background:#fdf2f3;padding:2px 10px;font-size:11px;font-weight:700;text-transform:uppercase;letter-spacing:0.04em;color:#d1435b">Narrowing</span></div>
+        <div style="margin-top:12px;display:grid;grid-template-columns:1fr 1fr;gap:8px">
+          <div style="border-radius:12px;background:#fafbfc;padding:10px"><div style="font-size:10px;font-weight:600;text-transform:uppercase;letter-spacing:0.06em;color:#9aa3b0">&gt;200DMA</div><div style="margin-top:4px;font-size:20px;font-weight:700">66.2 <span style="font-size:12px;font-weight:400;color:#9aa3b0">%</span></div></div>
+          <div style="border-radius:12px;background:#fafbfc;padding:10px"><div style="font-size:10px;font-weight:600;text-transform:uppercase;letter-spacing:0.06em;color:#9aa3b0">&gt;50DMA</div><div style="margin-top:4px;font-size:20px;font-weight:700">54.0 <span style="font-size:12px;font-weight:400;color:#9aa3b0">%</span></div></div>
+        </div>
+        <p style="margin:8px 0 0;font-size:14px;line-height:24px;color:#5b6472">Three straight weeks of deterioration in the 50DMA measure while the index made new highs. This is the single clearest negative in the dashboard.</p>
+      </div>
+    </section>
+
+    <section style="display:grid;grid-template-columns:3fr 2fr;gap:16px">
+      <div style="border-radius:8px;border:1px solid #e6e8ec;background:#fff;padding:16px;box-shadow:0 1px 2px rgb(16 21 28/0.05)">
+        <div style="display:flex;align-items:center;gap:8px;margin-bottom:12px"><span style="font-size:16px">⚠️</span><h3 style="margin:0;font-size:16px;font-weight:600">Portfolio Risk Scan</h3><span style="font-size:12px;color:#9aa3b0">3 flags</span></div>
+        <div style="display:flex;flex-direction:column;gap:8px">
+          <div style="display:flex;align-items:flex-start;gap:10px;border-radius:8px;border:1px solid #f2c9cf;background:#fdf2f3;padding:10px 12px"><span style="font-family:'IBM Plex Mono',monospace;font-weight:700;font-size:12px;color:#10151c;width:52px;flex:none">NVDA</span><span style="font-size:13px;line-height:20px;color:#5b6472">5.8% weight vs 4.5% target — position drift is now the largest single-name risk in the book.</span></div>
+          <div style="display:flex;align-items:flex-start;gap:10px;border-radius:8px;border:1px solid #f2e2bf;background:#fbf6ea;padding:10px 12px"><span style="font-family:'IBM Plex Mono',monospace;font-weight:700;font-size:12px;color:#10151c;width:52px;flex:none">TD</span><span style="font-size:13px;line-height:20px;color:#5b6472">Composite score fell 62 → 55 over three weeks on NIM guidance revisions.</span></div>
+          <div style="display:flex;align-items:flex-start;gap:10px;border-radius:8px;border:1px solid #f2e2bf;background:#fbf6ea;padding:10px 12px"><span style="font-family:'IBM Plex Mono',monospace;font-weight:700;font-size:12px;color:#10151c;width:52px;flex:none">XOM</span><span style="font-size:13px;line-height:20px;color:#5b6472">RSI 71 with WTI −4.6% on 20d — momentum and fundamentals diverging.</span></div>
+        </div>
+      </div>
+      <div style="border-radius:8px;border:1px solid #e6e8ec;background:#fff;padding:16px;box-shadow:0 1px 2px rgb(16 21 28/0.05)">
+        <div style="display:flex;align-items:center;gap:8px;margin-bottom:12px"><span style="font-size:16px">🛡</span><h3 style="margin:0;font-size:16px;font-weight:600">Hedging Window</h3><span style="display:inline-flex;align-items:center;border-radius:9999px;border:1px solid #bfe3d4;background:#f0f9f4;padding:2px 10px;font-size:11px;font-weight:700;text-transform:uppercase;letter-spacing:0.04em;color:#12805c">Not now</span></div>
+        <div style="display:flex;flex-direction:column;gap:6px;font-size:12px;color:#5b6472">
+          <div style="display:flex;justify-content:space-between"><span>Put cost (3M, 5% OTM)</span><span style="font-family:'IBM Plex Mono',monospace">1.84% of spot</span></div>
+          <div style="display:flex;justify-content:space-between"><span>VIX context</span><span style="font-family:'IBM Plex Mono',monospace">14.2 · contango</span></div>
+          <div style="display:flex;justify-content:space-between"><span>Sentiment</span><span style="font-family:'IBM Plex Mono',monospace">F&amp;G 68 · greed</span></div>
+          <div style="display:flex;justify-content:space-between;border-top:1px solid #f0f1f4;padding-top:6px;margin-top:2px"><span style="font-weight:600;color:#10151c">Verdict</span><span style="font-weight:600;color:#12805c">2 of 3 favour waiting</span></div>
+        </div>
+      </div>
+    </section>
+
+    <section style="border-radius:8px;border:1px solid #e6e8ec;background:#fff;padding:16px;box-shadow:0 1px 2px rgb(16 21 28/0.05)">
+      <div style="display:flex;align-items:center;gap:8px;margin-bottom:12px"><span style="font-size:16px">🔄</span><h3 style="margin:0;font-size:16px;font-weight:600">Sector Rotation</h3></div>
+      <div style="display:grid;grid-template-columns:1fr 1fr;gap:24px">
+        <div>
+          <div style="font-size:10px;font-weight:700;text-transform:uppercase;letter-spacing:0.06em;color:#12805c;margin-bottom:8px">Leading</div>
+          <div style="display:flex;flex-wrap:wrap;gap:6px"><span style="border-radius:9999px;background:#f0f9f4;border:1px solid #bfe3d4;padding:4px 10px;font-size:12px;color:#12805c">Technology +3.2%</span><span style="border-radius:9999px;background:#f0f9f4;border:1px solid #bfe3d4;padding:4px 10px;font-size:12px;color:#12805c">Comm Services +2.1%</span><span style="border-radius:9999px;background:#f0f9f4;border:1px solid #bfe3d4;padding:4px 10px;font-size:12px;color:#12805c">Utilities +1.4%</span></div>
+        </div>
+        <div>
+          <div style="font-size:10px;font-weight:700;text-transform:uppercase;letter-spacing:0.06em;color:#d1435b;margin-bottom:8px">Lagging</div>
+          <div style="display:flex;flex-wrap:wrap;gap:6px"><span style="border-radius:9999px;background:#fdf2f3;border:1px solid #f2c9cf;padding:4px 10px;font-size:12px;color:#d1435b">Energy −2.8%</span><span style="border-radius:9999px;background:#fdf2f3;border:1px solid #f2c9cf;padding:4px 10px;font-size:12px;color:#d1435b">Materials −1.9%</span><span style="border-radius:9999px;background:#fdf2f3;border:1px solid #f2c9cf;padding:4px 10px;font-size:12px;color:#d1435b">Small Caps −1.2%</span></div>
+        </div>
+      </div>
+      <p style="margin:12px 0 0;font-size:14px;line-height:24px;color:#5b6472">Defensive-plus-tech leadership with cyclicals lagging is not the rotation you want at a new high — it corroborates the breadth reading rather than offsetting it.</p>
+    </section>
+
+  </div>
+</main>
+</div>
+
+</x-dc>
+</body>
+</html>

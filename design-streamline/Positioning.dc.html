@@ -1,0 +1,183 @@
+<!doctype html>
+<html>
+<head>
+  <meta charset="utf-8">
+  <script src="./support.js"></script>
+</head>
+<body>
+<x-dc>
+<helmet>
+  <link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=IBM+Plex+Mono:wght@400;500;600&family=IBM+Plex+Sans:wght@400;500;600;700&display=swap">
+  <style>
+    body { margin: 0; background: #f6f7f9; color: #10151c;
+           font-family: "IBM Plex Sans", -apple-system, BlinkMacSystemFont, "Segoe UI", Helvetica, Arial, sans-serif;
+           -webkit-font-smoothing: antialiased; }
+    a { color: #2d5bd0; text-decoration: none; }
+    a:hover { color: #2c43be; }
+    .mono { font-family: "IBM Plex Mono", ui-monospace, "SF Mono", Menlo, Consolas, monospace; font-variant-numeric: tabular-nums; }
+    table { border-collapse: collapse; width: 100%; font-variant-numeric: tabular-nums; }
+    .eyebrow { font-size: 11px; font-weight: 600; text-transform: uppercase; letter-spacing: 0.09em; color: #9aa3b0; }
+    .card { border: 1px solid #e6e8ec; border-radius: 8px; background: #ffffff; box-shadow: 0 1px 2px rgb(16 21 28 / 0.05); }
+    .seg { display: flex; align-items: center; gap: 2px; border-radius: 8px; background: #fafbfc; border: 1px solid #e6e8ec; padding: 2px; width: fit-content; }
+    .seg .on { border-radius: 6px; background: #ffffff; box-shadow: 0 1px 2px rgb(16 21 28 / 0.05); padding: 4px 12px; font-size: 13px; font-weight: 600; color: #10151c; }
+    .seg .off { padding: 4px 12px; font-size: 13px; color: #5b6472; }
+    .th { text-align: left; padding: 8px 10px; font-size: 11px; font-weight: 600; color: #9aa3b0; }
+    .thr { text-align: right; padding: 8px 10px; font-size: 11px; font-weight: 600; color: #9aa3b0; }
+    .tl { font-size: 10px; color: #9aa3b0; }
+    .tv { font-family: "IBM Plex Mono", ui-monospace, Menlo, monospace; font-variant-numeric: tabular-nums; font-size: 14px; font-weight: 600; color: #10151c; margin-top: 2px; }
+    .pill-pos { border-radius: 20px; background: #f0f9f4; color: #12805c; padding: 2px 8px; font-size: 11px; font-weight: 600; }
+    .pill-neg { border-radius: 20px; background: #fdf2f3; color: #d1435b; padding: 2px 8px; font-size: 11px; font-weight: 600; }
+    .pill-warn { border-radius: 20px; background: #fbf6ea; color: #b8791f; padding: 2px 8px; font-size: 11px; font-weight: 600; }
+    .pill-mut { border: 1px solid #e6e8ec; border-radius: 20px; background: #fafbfc; color: #5b6472; padding: 2px 8px; font-size: 11px; font-weight: 600; }
+    .btn { border: 1px solid #e6e8ec; border-radius: 8px; background: #ffffff; padding: 5px 11px; font-size: 12px; color: #5b6472; }
+    .btn-p { border-radius: 8px; background: #2d5bd0; padding: 5px 11px; font-size: 12px; font-weight: 600; color: #ffffff; }
+  </style>
+</helmet>
+<div style="width: 1440px; background: #f6f7f9;">
+  <div style="background: #ffffff; border-bottom: 1px solid #e6e8ec; padding: 14px 24px 0;">
+    <div style="max-width: 1392px; margin: 0 auto;">
+      <div style="display: flex; align-items: flex-end; justify-content: space-between; gap: 16px;">
+        <div>
+          <div style="font-size: 22px; font-weight: 700; letter-spacing: -0.02em; line-height: 1; color: #10151c;">Portfolio</div>
+          <div style="margin-top: 5px; font-size: 12px; color: #9aa3b0;">Positioning · live book vs the model · prices 9:41 ET</div>
+        </div>
+        <div style="display: flex; align-items: center; gap: 6px; padding-bottom: 2px;">
+          <span class="btn" style="font-weight: 600; color: #10151c;">PIM ▾</span>
+          <div class="seg"><span class="off">Balanced</span><span class="on">Growth</span><span class="off">All-Equity</span></div>
+        </div>
+      </div>
+      <div class="seg" style="margin-top: 12px;"><span class="off">Holdings</span><span class="on">Positioning</span><span class="off">Models</span><span class="off">Performance</span><span class="off">Risk</span><span class="off">Thesis</span><span class="off">Journal</span></div>
+      <div style="height: 12px;"></div>
+    </div>
+  </div>
+
+  <div style="max-width: 1392px; margin: 0 auto; padding: 16px 24px 28px; display: flex; flex-direction: column; gap: 14px;">
+
+    <!-- Status band: profile / drift / last rebalance / totals / CTA -->
+    <div class="card" style="overflow: hidden;">
+      <div style="display: grid; grid-template-columns: repeat(7, minmax(0, 1fr)) 200px;">
+        <div style="padding: 11px 16px; border-right: 1px solid #f0f1f4;"><div class="tl">Profile</div><div style="font-size: 15px; font-weight: 700; color: #10151c; margin-top: 2px;">Growth</div></div>
+        <div style="padding: 11px 16px; border-right: 1px solid #f0f1f4;"><div class="tl">Sleeve drift</div><div class="tv" style="color: #b8791f;">+2.14%</div></div>
+        <div style="padding: 11px 16px; border-right: 1px solid #f0f1f4;"><div class="tl">Last rebalance</div><div class="tv">Aug 12</div></div>
+        <div style="padding: 11px 16px; border-right: 1px solid #f0f1f4;"><div class="tl">Total value</div><div class="tv">$4.82M</div></div>
+        <div style="padding: 11px 16px; border-right: 1px solid #f0f1f4;"><div class="tl">Gain / loss</div><div class="tv" style="color: #12805c;">+$612k</div></div>
+        <div style="padding: 11px 16px; border-right: 1px solid #f0f1f4;"><div class="tl">Today</div><div class="tv" style="color: #12805c;">+0.56%</div></div>
+        <div style="padding: 11px 16px; border-right: 1px solid #f0f1f4;"><div class="tl">Blended MER</div><div class="tv">0.21%</div></div>
+        <div style="display: grid; place-items: center; padding: 10px 14px; background: #2d5bd0;"><span style="font-size: 13px; font-weight: 700; color: #ffffff; text-align: center;">Rebalance to Growth →</span></div>
+      </div>
+    </div>
+
+    <!-- Positions vs target -->
+    <div class="card" style="box-shadow: 0 1px 2px rgb(16 21 28 / 0.05), 0 4px 12px -4px rgb(16 21 28 / 0.08); overflow: hidden;">
+      <div style="display: flex; align-items: center; gap: 12px; padding: 12px 18px; border-bottom: 1px solid #e6e8ec;">
+        <span style="font-size: 15px; font-weight: 700; color: #10151c;">Positions vs model target</span>
+        <span style="font-size: 12px; color: #9aa3b0;">drift &gt; 0.25% gets an action badge</span>
+        <span style="flex-grow: 1;"></span>
+        <span class="btn">Asset allocation detail</span>
+      </div>
+      <table>
+        <thead>
+          <tr style="border-bottom: 1px solid #e6e8ec;">
+            <th class="th" style="padding-left: 18px;">Position</th>
+            <th class="thr">Price</th>
+            <th class="thr">Value CAD</th>
+            <th class="thr">Actual</th>
+            <th class="thr">Target</th>
+            <th class="thr">Drift</th>
+            <th class="th" style="padding-right: 18px; text-align: right;">Action</th>
+          </tr>
+        </thead>
+        <tbody>
+          <tr style="border-bottom: 1px solid #f0f1f4;">
+            <td style="padding: 9px 18px;"><span class="mono" style="font-size: 13px; font-weight: 600;">NVDA</span><span style="margin-left: 9px; font-size: 12px; color: #5b6472;">NVIDIA</span></td>
+            <td class="mono" style="padding: 9px 10px; text-align: right; font-size: 12px;">138.42</td>
+            <td class="mono" style="padding: 9px 10px; text-align: right; font-size: 12px;">$96,410</td>
+            <td class="mono" style="padding: 9px 10px; text-align: right; font-size: 12px;">2.00%</td>
+            <td class="mono" style="padding: 9px 10px; text-align: right; font-size: 12px; color: #5b6472;">1.51%</td>
+            <td class="mono" style="padding: 9px 10px; text-align: right; font-size: 12px; font-weight: 600; color: #b8791f;">+0.49%</td>
+            <td style="padding: 9px 18px 9px 10px; text-align: right;"><span class="pill-neg">SELL $23,600</span></td>
+          </tr>
+          <tr style="border-bottom: 1px solid #f0f1f4; background: #fafbfc;">
+            <td style="padding: 9px 18px;"><span class="mono" style="font-size: 13px; font-weight: 600;">XIU-T</span><span style="margin-left: 9px; font-size: 12px; color: #5b6472;">iShares S&amp;P/TSX 60</span></td>
+            <td class="mono" style="padding: 9px 10px; text-align: right; font-size: 12px;">38.92</td>
+            <td class="mono" style="padding: 9px 10px; text-align: right; font-size: 12px;">$428,300</td>
+            <td class="mono" style="padding: 9px 10px; text-align: right; font-size: 12px;">8.89%</td>
+            <td class="mono" style="padding: 9px 10px; text-align: right; font-size: 12px; color: #5b6472;">9.38%</td>
+            <td class="mono" style="padding: 9px 10px; text-align: right; font-size: 12px; font-weight: 600; color: #b8791f;">−0.49%</td>
+            <td style="padding: 9px 18px 9px 10px; text-align: right;"><span class="pill-pos">BUY $23,600</span></td>
+          </tr>
+          <tr style="border-bottom: 1px solid #f0f1f4;">
+            <td style="padding: 9px 18px;"><span class="mono" style="font-size: 13px; font-weight: 600;">RBF1083</span><span style="margin-left: 9px; font-size: 12px; color: #5b6472;">RBC US Core Plus Bond</span><span style="margin-left: 7px; border-radius: 4px; background: #f3f0fb; color: #7c5cd0; padding: 1px 5px; font-size: 9px; font-weight: 700;">FUND</span></td>
+            <td class="mono" style="padding: 9px 10px; text-align: right; font-size: 12px;">9.84</td>
+            <td class="mono" style="padding: 9px 10px; text-align: right; font-size: 12px;">$412,000</td>
+            <td class="mono" style="padding: 9px 10px; text-align: right; font-size: 12px;">8.55%</td>
+            <td class="mono" style="padding: 9px 10px; text-align: right; font-size: 12px; color: #5b6472;">8.50%</td>
+            <td class="mono" style="padding: 9px 10px; text-align: right; font-size: 12px; color: #9aa3b0;">+0.05%</td>
+            <td style="padding: 9px 18px 9px 10px; text-align: right;"><span style="font-size: 11px; color: #9aa3b0;">—</span></td>
+          </tr>
+          <tr style="border-bottom: 1px solid #f0f1f4; background: #fafbfc;">
+            <td style="padding: 9px 18px;"><span class="mono" style="font-size: 13px; font-weight: 600;">MSFT</span><span style="margin-left: 9px; font-size: 12px; color: #5b6472;">Microsoft</span></td>
+            <td class="mono" style="padding: 9px 10px; text-align: right; font-size: 12px;">421.18</td>
+            <td class="mono" style="padding: 9px 10px; text-align: right; font-size: 12px;">$73,200</td>
+            <td class="mono" style="padding: 9px 10px; text-align: right; font-size: 12px;">1.52%</td>
+            <td class="mono" style="padding: 9px 10px; text-align: right; font-size: 12px; color: #5b6472;">1.51%</td>
+            <td class="mono" style="padding: 9px 10px; text-align: right; font-size: 12px; color: #9aa3b0;">+0.01%</td>
+            <td style="padding: 9px 18px 9px 10px; text-align: right;"><span style="font-size: 11px; color: #9aa3b0;">—</span></td>
+          </tr>
+          <tr>
+            <td style="padding: 9px 18px;"><span style="font-size: 13px; font-weight: 600; color: #5b6472;">Cash</span></td>
+            <td class="mono" style="padding: 9px 10px; text-align: right; font-size: 12px; color: #9aa3b0;">—</td>
+            <td class="mono" style="padding: 9px 10px; text-align: right; font-size: 12px;">$192,800</td>
+            <td class="mono" style="padding: 9px 10px; text-align: right; font-size: 12px;">4.00%</td>
+            <td class="mono" style="padding: 9px 10px; text-align: right; font-size: 12px; color: #5b6472;">4.00%</td>
+            <td class="mono" style="padding: 9px 10px; text-align: right; font-size: 12px; color: #9aa3b0;">0.00%</td>
+            <td style="padding: 9px 18px 9px 10px; text-align: right;"><span style="font-size: 11px; color: #9aa3b0;">—</span></td>
+          </tr>
+        </tbody>
+      </table>
+      <div style="display: flex; align-items: center; justify-content: space-between; padding: 10px 18px; border-top: 1px solid #e6e8ec; background: #fafbfc;">
+        <span style="font-size: 12px; color: #9aa3b0;">Showing 5 of 31 · MER coverage 96%</span>
+        <span style="font-size: 12px; font-weight: 600; color: #2d5bd0;">Show all</span>
+      </div>
+    </div>
+
+    <div style="display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 14px; align-items: start;">
+      <!-- Buy/Sell queue -->
+      <div class="card" style="overflow: hidden;">
+        <div style="display: flex; align-items: center; gap: 10px; padding: 12px 18px; border-bottom: 1px solid #e6e8ec;">
+          <span style="font-size: 14px; font-weight: 700; color: #10151c;">Buy / Sell queue</span>
+          <span style="font-size: 12px; color: #9aa3b0;">switches stay within one sleeve</span>
+          <span style="flex-grow: 1;"></span>
+          <span class="btn-p">+ Queue trade</span>
+        </div>
+        <div style="display: flex; align-items: center; gap: 12px; padding: 10px 18px; border-bottom: 1px solid #f0f1f4;">
+          <span class="pill-neg">SELL 100%</span>
+          <span class="mono" style="font-size: 13px; font-weight: 600;">CNQ-T</span>
+          <span style="font-size: 12px; color: #9aa3b0;">→</span>
+          <span class="pill-pos">BUY</span>
+          <span class="mono" style="font-size: 13px; font-weight: 600;">TT</span>
+          <span style="font-size: 12px; color: #9aa3b0; flex-grow: 1;">equity sleeve · replaces in every model holding it</span>
+          <span style="font-size: 12px; color: #9aa3b0;">×</span>
+        </div>
+        <div style="padding: 10px 18px; font-size: 12px; color: #9aa3b0;">Queue is applied by the Rebalance action, with a stash written first.</div>
+      </div>
+
+      <!-- Pending settlements -->
+      <div class="card" style="overflow: hidden;">
+        <div style="display: flex; align-items: center; gap: 10px; padding: 12px 18px; border-bottom: 1px solid #e6e8ec;">
+          <span style="font-size: 14px; font-weight: 700; color: #10151c;">Settle pending fund trades</span>
+          <span class="pill-warn">1 pending</span>
+        </div>
+        <div style="display: flex; align-items: center; gap: 12px; padding: 10px 18px;">
+          <span class="pill-pos">BUY</span>
+          <span class="mono" style="font-size: 13px; font-weight: 600;">RBF1083</span>
+          <span style="font-size: 12px; color: #5b6472; flex-grow: 1;">$18,400 · units at settlement</span>
+          <span class="btn">Enter settled units</span>
+        </div>
+      </div>
+    </div>
+  </div>
+</div>
+</x-dc>
+</body>
+</html>

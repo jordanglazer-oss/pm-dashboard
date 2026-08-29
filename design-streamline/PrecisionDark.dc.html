@@ -1,0 +1,96 @@
+<!doctype html>
+<html>
+<head>
+  <meta charset="utf-8">
+  <script src="./support.js"></script>
+</head>
+<body>
+<x-dc>
+<helmet>
+  <link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=IBM+Plex+Mono:wght@400;500;600&family=IBM+Plex+Sans:wght@400;500;600;700&display=swap">
+  <style>
+    body { margin: 0; background: #f6f7f9; color: #10151c;
+           font-family: "IBM Plex Sans", -apple-system, BlinkMacSystemFont, "Segoe UI", Helvetica, Arial, sans-serif;
+           -webkit-font-smoothing: antialiased; }
+    a { color: #2d5bd0; text-decoration: none; }
+    a:hover { color: #2c43be; }
+    .mono { font-family: "IBM Plex Mono", ui-monospace, "SF Mono", Menlo, Consolas, monospace; font-variant-numeric: tabular-nums; }
+    table { border-collapse: collapse; width: 100%; font-variant-numeric: tabular-nums; }
+    .eyebrow { font-size: 11px; font-weight: 600; text-transform: uppercase; letter-spacing: 0.09em; color: #9aa3b0; }
+    .card { border: 1px solid #e6e8ec; border-radius: 8px; background: #ffffff; box-shadow: 0 1px 2px rgb(16 21 28 / 0.05); }
+    .seg { display: flex; align-items: center; gap: 2px; border-radius: 8px; background: #fafbfc; border: 1px solid #e6e8ec; padding: 2px; width: fit-content; }
+    .seg .on { border-radius: 6px; background: #ffffff; box-shadow: 0 1px 2px rgb(16 21 28 / 0.05); padding: 4px 12px; font-size: 13px; font-weight: 600; color: #10151c; }
+    .seg .off { padding: 4px 12px; font-size: 13px; color: #5b6472; }
+    .th { text-align: left; padding: 8px 10px; font-size: 11px; font-weight: 600; color: #9aa3b0; }
+    .thr { text-align: right; padding: 8px 10px; font-size: 11px; font-weight: 600; color: #9aa3b0; }
+    .tl { font-size: 10px; color: #9aa3b0; }
+    .tv { font-family: "IBM Plex Mono", ui-monospace, Menlo, monospace; font-variant-numeric: tabular-nums; font-size: 14px; font-weight: 600; color: #10151c; margin-top: 2px; }
+    .pill-pos { border-radius: 20px; background: #f0f9f4; color: #12805c; padding: 2px 8px; font-size: 11px; font-weight: 600; }
+    .pill-neg { border-radius: 20px; background: #fdf2f3; color: #d1435b; padding: 2px 8px; font-size: 11px; font-weight: 600; }
+    .pill-warn { border-radius: 20px; background: #fbf6ea; color: #b8791f; padding: 2px 8px; font-size: 11px; font-weight: 600; }
+    .pill-mut { border: 1px solid #e6e8ec; border-radius: 20px; background: #fafbfc; color: #5b6472; padding: 2px 8px; font-size: 11px; font-weight: 600; }
+    .btn { border: 1px solid #e6e8ec; border-radius: 8px; background: #ffffff; padding: 5px 11px; font-size: 12px; color: #5b6472; }
+    .btn-p { border-radius: 8px; background: #2d5bd0; padding: 5px 11px; font-size: 12px; font-weight: 600; color: #ffffff; }
+  </style>
+</helmet>
+<div style="width: 1440px; background: #0f141a; padding: 0 0 28px; font-family: 'IBM Plex Sans', -apple-system, sans-serif;">
+  <div style="background: #131920; border-bottom: 1px solid #232a33; padding: 10px 24px; display: flex; align-items: center; gap: 24px;">
+    <div style="display: flex; align-items: center; gap: 10px;">
+      <span style="display: grid; place-items: center; width: 24px; height: 24px; border-radius: 7px; background: #4a76e8; color: #ffffff; font-size: 12px; font-weight: 700;">P</span>
+      <span style="font-size: 15px; font-weight: 600; color: #e8ebef;">PIM Dashboard</span>
+    </div>
+    <div style="display: flex; gap: 2px;">
+      <span style="padding: 8px 10px; font-size: 13px; color: #8b95a3;">Brief</span>
+      <span style="padding: 8px 10px; font-size: 13px; font-weight: 600; color: #e8ebef; border-bottom: 2px solid #4a76e8; margin-bottom: -11px;">Portfolio</span>
+      <span style="padding: 8px 10px; font-size: 13px; color: #8b95a3;">Ideas</span>
+      <span style="padding: 8px 10px; font-size: 13px; color: #8b95a3;">Research</span>
+    </div>
+  </div>
+  <div style="background: #131920; border-bottom: 1px solid #232a33; padding: 14px 24px;">
+    <div style="font-size: 22px; font-weight: 700; color: #e8ebef;">Portfolio</div>
+    <div style="margin-top: 4px; font-size: 12px; color: #6b7481;">37 holdings</div>
+  </div>
+  <div style="padding: 16px 24px 0;">
+    <div style="border: 1px solid #232a33; border-radius: 8px; background: #161c24; overflow: hidden;">
+      <div style="display: flex; align-items: center; gap: 24px; padding: 12px 18px; border-bottom: 1px solid #1c232d;">
+        <span style="font-size: 11px; font-weight: 600; text-transform: uppercase; letter-spacing: 0.06em; color: #6b7481;">PIM models · today</span>
+        <span style="font-size: 13px; color: #8b95a3;">Balanced <span class="mono" style="font-weight: 600; color: #4ade9b;">+0.47%</span></span>
+        <span style="font-size: 13px; color: #8b95a3;">Growth <span class="mono" style="font-weight: 600; color: #4ade9b;">+0.52%</span></span>
+        <span style="font-size: 13px; color: #8b95a3;">All-Equity <span class="mono" style="font-weight: 600; color: #4ade9b;">+0.55%</span></span>
+        <span style="font-size: 13px; color: #8b95a3;">Alpha <span class="mono" style="font-weight: 600; color: #4ade9b;">+0.32%</span></span>
+      </div>
+      <div style="display: flex; align-items: center; gap: 10px; padding: 12px 18px; flex-wrap: wrap;">
+        <span style="border-radius: 20px; background: rgba(232,180,80,0.14); color: #e8b450; padding: 3px 10px; font-size: 12px; font-weight: 700;">Neutral</span>
+        <span style="border: 1px solid rgba(74,222,155,0.25); border-radius: 20px; background: rgba(74,222,155,0.08); color: #4ade9b; padding: 3px 9px; font-size: 10.5px;">SPX 10-Month Trend · +8.0% vs 10M MA</span>
+        <span style="border: 1px solid rgba(232,180,80,0.25); border-radius: 20px; background: rgba(232,180,80,0.08); color: #e8b450; padding: 3px 9px; font-size: 10.5px;">Breadth (RSP/SPY) · 20d -1.10%</span>
+        <span style="border: 1px solid rgba(74,222,155,0.25); border-radius: 20px; background: rgba(74,222,155,0.08); color: #4ade9b; padding: 3px 9px; font-size: 10.5px;">XLK/XLU · +6.8% vs 50D</span>
+        <span style="border: 1px solid rgba(240,110,130,0.25); border-radius: 20px; background: rgba(240,110,130,0.08); color: #f06e82; padding: 3px 9px; font-size: 10.5px;">MTUM/USMV · -6.8% vs 50D</span>
+      </div>
+    </div>
+    <div style="margin-top: 14px; border: 1px solid #232a33; border-radius: 8px; background: #161c24; overflow: hidden;">
+      <div style="display: flex; padding: 8px 18px; border-bottom: 1px solid #232a33; font-size: 11px; color: #6b7481;">
+        <span style="width: 220px;">Ticker</span><span style="width: 150px;">Sector</span><span style="width: 90px; text-align: right;">Weight</span><span style="width: 110px; text-align: right;">Price</span><span style="width: 90px; text-align: right;">Today</span><span style="flex-grow: 1; text-align: right;">Score</span>
+      </div>
+      <div style="display: flex; align-items: center; padding: 10px 18px; border-bottom: 1px solid #1c232d;">
+        <span style="width: 220px;"><span class="mono" style="font-size: 13px; font-weight: 600; color: #e8ebef;">CNR.TO</span><span style="display: block; font-size: 11px; color: #6b7481;">Canadian National Railway</span></span>
+        <span style="width: 150px; font-size: 12px; color: #6b7481;">Industrials</span>
+        <span class="mono" style="width: 90px; text-align: right; font-size: 12px; color: #8b95a3;">2.4%</span>
+        <span class="mono" style="width: 110px; text-align: right; font-size: 12px; color: #e8ebef;">175.15</span>
+        <span class="mono" style="width: 90px; text-align: right; font-size: 12px; color: #4ade9b;">+0.4%</span>
+        <span class="mono" style="flex-grow: 1; text-align: right; font-size: 13px; font-weight: 600; color: #e8ebef;">28.5</span>
+      </div>
+      <div style="display: flex; align-items: center; padding: 10px 18px;">
+        <span style="width: 220px;"><span class="mono" style="font-size: 13px; font-weight: 600; color: #e8ebef;">CSU.TO</span><span style="display: block; font-size: 11px; color: #6b7481;">Constellation Software</span></span>
+        <span style="width: 150px; font-size: 12px; color: #6b7481;">Technology</span>
+        <span class="mono" style="width: 90px; text-align: right; font-size: 12px; color: #8b95a3;">2.9%</span>
+        <span class="mono" style="width: 110px; text-align: right; font-size: 12px; color: #e8ebef;">3,125.27</span>
+        <span class="mono" style="width: 90px; text-align: right; font-size: 12px; color: #f06e82;">−1.2%</span>
+        <span class="mono" style="flex-grow: 1; text-align: right; font-size: 13px; font-weight: 600; color: #e8ebef;">27.2</span>
+      </div>
+    </div>
+    <div style="margin-top: 14px; font-size: 12px; color: #6b7481;">Optional exploration — a "Precision Dark" theme on the same tokens (a settings toggle, light stays the default). Not scheduled; here to gauge appetite.</div>
+  </div>
+</div>
+</x-dc>
+</body>
+</html>

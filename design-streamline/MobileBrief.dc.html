@@ -1,0 +1,167 @@
+<!doctype html>
+<html>
+<head>
+  <meta charset="utf-8">
+  <script src="./support.js"></script>
+</head>
+<body>
+<x-dc>
+<helmet>
+  <link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=IBM+Plex+Mono:wght@400;500;600&family=IBM+Plex+Sans:wght@400;500;600;700&display=swap">
+  <style>
+    body { margin: 0; background: #f6f7f9; color: #10151c;
+           font-family: "IBM Plex Sans", -apple-system, BlinkMacSystemFont, "Segoe UI", Helvetica, Arial, sans-serif;
+           -webkit-font-smoothing: antialiased; }
+    a { color: #2d5bd0; text-decoration: none; }
+    a:hover { color: #2c43be; }
+    .mono { font-family: "IBM Plex Mono", ui-monospace, "SF Mono", Menlo, Consolas, monospace; font-variant-numeric: tabular-nums; }
+    .icon-btn { display: grid; place-items: center; width: 36px; height: 36px; border-radius: 8px; border: 1px solid #e6e8ec; background: #ffffff; color: #5b6472; }
+    .chip { border: 1px solid #e6e8ec; border-radius: 20px; background: #ffffff; padding: 6px 12px; font-size: 13px; color: #5b6472; white-space: nowrap; }
+    .chip.on { background: #10151c; border-color: #10151c; color: #ffffff; font-weight: 600; }
+    .eyebrow { font-size: 10px; font-weight: 600; text-transform: uppercase; letter-spacing: 0.14em; color: #9aa3b0; }
+    .row { display: flex; align-items: center; gap: 10px; padding: 11px 12px; border-bottom: 1px solid #f0f1f4; }
+  </style>
+</helmet>
+
+<div style="width: 390px; height: 844px; background: #f6f7f9; display: flex; flex-direction: column; overflow: hidden;">
+
+  <div style="background: #ffffff; border-bottom: 1px solid #e6e8ec; padding: 8px 12px; display: flex; align-items: center; gap: 8px; flex-shrink: 0;">
+    <span style="display: grid; place-items: center; width: 24px; height: 24px; border-radius: 7px; background: #2d5bd0; color: #ffffff; font-size: 12px; font-weight: 700;">P</span>
+    <span style="font-size: 15px; font-weight: 600; letter-spacing: -0.01em;">PIM</span>
+    <span style="flex-grow: 1;"></span>
+    <span class="icon-btn" style="position: relative;">
+      <svg width="17" height="17" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M18 8a6 6 0 1 0-12 0c0 6-2 7-2 7h16s-2-1-2-7"></path><path d="M10.5 20a2 2 0 0 0 3 0"></path></svg>
+      <span style="position: absolute; top: 6px; right: 7px; width: 6px; height: 6px; border-radius: 50%; background: #d1435b;"></span>
+    </span>
+    <span class="icon-btn">
+      <svg width="17" height="17" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M21 12a9 9 0 1 1-2.6-6.4"></path><path d="M21 4v5h-5"></path></svg>
+    </span>
+    <span style="display: grid; place-items: center; width: 36px; height: 36px; border-radius: 8px; background: #2d5bd0; color: #ffffff;">
+      <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round"><path d="M12 5v14M5 12h14"></path></svg>
+    </span>
+  </div>
+
+  <div style="background: #ffffff; border-bottom: 1px solid #e6e8ec; padding: 10px 12px; flex-shrink: 0;">
+    <div style="display: flex; align-items: baseline; justify-content: space-between;">
+      <span style="font-size: 20px; font-weight: 700; letter-spacing: -0.02em;">Brief</span>
+      <span style="font-size: 12px; color: #9aa3b0;">Tue 26 Aug · 7:04 ET</span>
+    </div>
+    <div style="display: flex; gap: 6px; margin-top: 10px;">
+      <span class="chip on">Today</span>
+      <span class="chip">Hedging</span>
+      <span style="flex-grow: 1;"></span>
+      <span class="chip">Regenerate</span>
+    </div>
+  </div>
+
+  <div style="flex-grow: 1; padding: 12px; display: flex; flex-direction: column; gap: 12px; overflow: hidden;">
+
+    <!-- DECIDE -->
+    <div style="border: 1px solid #e6e8ec; border-radius: 8px; background: #ffffff; box-shadow: 0 1px 2px rgb(16 21 28 / 0.05), 0 4px 12px -4px rgb(16 21 28 / 0.08); overflow: hidden; flex-shrink: 0;">
+      <div style="padding: 12px 12px 0;"><span class="eyebrow">Decide</span></div>
+      <div style="padding: 8px 12px 12px;">
+        <div style="display: flex; align-items: center; gap: 9px;">
+          <span style="border-radius: 20px; background: #f0f9f4; color: #12805c; padding: 4px 12px; font-size: 13px; font-weight: 700;">Risk-On</span>
+          <span style="font-size: 13px; color: #5b6472;">unchanged since Friday</span>
+        </div>
+        <div style="margin-top: 10px; font-size: 15px; font-weight: 600; line-height: 1.45; color: #10151c; text-wrap: pretty;">Stay fully invested, but stop adding to megacap tech.</div>
+        <div style="margin-top: 8px; font-size: 13px; line-height: 1.55; color: #5b6472; text-wrap: pretty;">Breadth has not confirmed the last two weeks of index gains — RSP/SPY is flat while the index makes highs, and staples downgrades are clustering. Credit is calm and the composite still reads 5/7 risk-on, so this is a rotation warning, not an exit signal.</div>
+        <div style="margin-top: 10px; border-left: 3px solid #2d5bd0; background: #fafbfc; border-radius: 0 8px 8px 0; padding: 9px 11px;">
+          <div style="font-size: 10px; font-weight: 600; text-transform: uppercase; letter-spacing: 0.12em; color: #9aa3b0;">Bottom line</div>
+          <div style="margin-top: 4px; font-size: 13px; font-weight: 600; line-height: 1.5; color: #10151c; text-wrap: pretty;">Hold the book, add the hedge, and let the industrials adds work — nothing here justifies raising cash yet.</div>
+        </div>
+      </div>
+    </div>
+
+    <!-- ACT -->
+    <div style="border: 1px solid #e6e8ec; border-radius: 8px; background: #ffffff; box-shadow: 0 1px 2px rgb(16 21 28 / 0.05); overflow: hidden; flex-shrink: 0;">
+      <div style="padding: 12px 12px 8px;"><span class="eyebrow">Act</span></div>
+      <div class="row">
+        <span style="width: 4px; height: 32px; border-radius: 2px; background: #b8791f; flex-shrink: 0;"></span>
+        <span style="flex-grow: 1;">
+          <span style="display: block; font-size: 13px; font-weight: 600; color: #10151c;">Hedging — ADD</span>
+          <span style="display: block; margin-top: 2px; font-size: 12px; color: #9aa3b0; text-wrap: pretty;">No active protection on the books; VIX3M sits at the 22nd percentile of 16 years.</span>
+        </span>
+      </div>
+      <div class="row">
+        <span style="width: 4px; height: 32px; border-radius: 2px; background: #12805c; flex-shrink: 0;"></span>
+        <span style="flex-grow: 1;">
+          <span style="display: block; font-size: 13px; font-weight: 600; color: #10151c;">Cash — HOLD at 4%</span>
+          <span style="display: block; margin-top: 2px; font-size: 12px; color: #9aa3b0; text-wrap: pretty;">No change warranted; the drawdown case is not yet priced.</span>
+        </span>
+      </div>
+      <div class="row" style="border-bottom: none;">
+        <span style="width: 4px; height: 32px; border-radius: 2px; background: #d1435b; flex-shrink: 0;"></span>
+        <span style="flex-grow: 1;">
+          <span style="display: block; font-size: 13px; font-weight: 600; color: #10151c;">Risk flags — 2</span>
+          <span style="display: block; margin-top: 2px; font-size: 12px; color: #9aa3b0; text-wrap: pretty;"><span class="mono">NVDA</span> thesis tripped · staples downgrades clustering.</span>
+        </span>
+      </div>
+    </div>
+
+    <!-- BOARD -->
+    <div style="border: 1px solid #e6e8ec; border-radius: 8px; background: #ffffff; box-shadow: 0 1px 2px rgb(16 21 28 / 0.05); overflow: hidden; flex-shrink: 0;">
+      <div style="padding: 12px 12px 8px;"><span class="eyebrow">Board</span></div>
+      <div style="display: grid; grid-template-columns: repeat(4, minmax(0, 1fr)); border-top: 1px solid #f0f1f4;">
+        <div style="padding: 9px 10px; border-right: 1px solid #f0f1f4;"><div style="font-size: 10px; color: #9aa3b0;">S&amp;P 500</div><div class="mono" style="margin-top: 2px; font-size: 14px; font-weight: 600; color: #12805c;">+0.38%</div></div>
+        <div style="padding: 9px 10px; border-right: 1px solid #f0f1f4;"><div style="font-size: 10px; color: #9aa3b0;">TSX</div><div class="mono" style="margin-top: 2px; font-size: 14px; font-weight: 600; color: #12805c;">+0.21%</div></div>
+        <div style="padding: 9px 10px; border-right: 1px solid #f0f1f4;"><div style="font-size: 10px; color: #9aa3b0;">VIX</div><div class="mono" style="margin-top: 2px; font-size: 14px; font-weight: 600; color: #10151c;">14.2</div></div>
+        <div style="padding: 9px 10px;"><div style="font-size: 10px; color: #9aa3b0;">10Y</div><div class="mono" style="margin-top: 2px; font-size: 14px; font-weight: 600; color: #10151c;">4.18%</div></div>
+      </div>
+      <div style="padding: 9px 12px; border-top: 1px solid #f0f1f4; background: #fafbfc;">
+        <span style="font-size: 12px; font-weight: 600; color: #2d5bd0;">Open the full macro board</span>
+      </div>
+    </div>
+
+    <!-- NARRATIVE — rows in one card, not seven separate panels -->
+    <div style="border: 1px solid #e6e8ec; border-radius: 8px; background: #ffffff; box-shadow: 0 1px 2px rgb(16 21 28 / 0.05); overflow: hidden; flex-shrink: 0;">
+      <div style="padding: 12px 12px 8px;"><span class="eyebrow">Narrative</span></div>
+      <div style="display: flex; align-items: center; gap: 9px; padding: 10px 12px; border-top: 1px solid #f0f1f4;">
+        <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="#9aa3b0" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><path d="m9 6 6 6-6 6"></path></svg>
+        <span style="font-size: 13px; font-weight: 600; color: #10151c; flex-grow: 1;">Breadth</span>
+        <span style="border-radius: 20px; background: #fbf6ea; color: #b8791f; padding: 2px 8px; font-size: 11px; font-weight: 600;">narrowing</span>
+      </div>
+      <div style="display: flex; align-items: center; gap: 9px; padding: 10px 12px; border-top: 1px solid #f0f1f4;">
+        <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="#9aa3b0" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><path d="m9 6 6 6-6 6"></path></svg>
+        <span style="font-size: 13px; font-weight: 600; color: #10151c; flex-grow: 1;">Credit</span>
+        <span style="border-radius: 20px; background: #f0f9f4; color: #12805c; padding: 2px 8px; font-size: 11px; font-weight: 600;">calm</span>
+      </div>
+      <div style="display: flex; align-items: center; gap: 9px; padding: 10px 12px; border-top: 1px solid #f0f1f4;">
+        <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="#9aa3b0" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><path d="m9 6 6 6-6 6"></path></svg>
+        <span style="font-size: 13px; font-weight: 600; color: #10151c; flex-grow: 1;">Regime tells</span>
+        <span style="font-size: 12px; color: #9aa3b0;">3 of 5 risk-on</span>
+      </div>
+      <div style="display: flex; align-items: center; gap: 9px; padding: 10px 12px; border-top: 1px solid #f0f1f4;">
+        <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="#9aa3b0" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><path d="m9 6 6 6-6 6"></path></svg>
+        <span style="font-size: 13px; font-weight: 600; color: #10151c; flex-grow: 1;">What&apos;s underpriced</span>
+        <span style="font-size: 12px; color: #9aa3b0;">2 notes</span>
+      </div>
+    </div>
+  </div>
+
+  <div style="background: #ffffff; border-top: 1px solid #e6e8ec; display: grid; grid-template-columns: repeat(5, minmax(0, 1fr)); flex-shrink: 0;">
+    <span style="display: flex; flex-direction: column; align-items: center; justify-content: center; gap: 3px; height: 60px; color: #2d5bd0;">
+      <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="M4 5h16v14H4z"></path><path d="M8 9h8M8 13h5"></path></svg>
+      <span style="font-size: 10px; font-weight: 600;">Brief</span>
+    </span>
+    <span style="display: flex; flex-direction: column; align-items: center; justify-content: center; gap: 3px; height: 60px; color: #9aa3b0;">
+      <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="M4 19V9M10 19V5M16 19v-7M22 19H2"></path></svg>
+      <span style="font-size: 10px;">Portfolio</span>
+    </span>
+    <span style="display: flex; flex-direction: column; align-items: center; justify-content: center; gap: 3px; height: 60px; color: #9aa3b0;">
+      <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="M12 3v3M12 18v3M3 12h3M18 12h3M6.2 6.2 8.3 8.3M15.7 15.7l2.1 2.1M17.8 6.2 15.7 8.3M8.3 15.7l-2.1 2.1"></path><circle cx="12" cy="12" r="3"></circle></svg>
+      <span style="font-size: 10px;">Ideas</span>
+    </span>
+    <span style="display: flex; flex-direction: column; align-items: center; justify-content: center; gap: 3px; height: 60px; color: #9aa3b0;">
+      <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><circle cx="11" cy="11" r="7"></circle><path d="m21 21-4.3-4.3"></path></svg>
+      <span style="font-size: 10px;">Research</span>
+    </span>
+    <span style="display: flex; flex-direction: column; align-items: center; justify-content: center; gap: 3px; height: 60px; color: #9aa3b0;">
+      <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round"><circle cx="5" cy="12" r="1.4"></circle><circle cx="12" cy="12" r="1.4"></circle><circle cx="19" cy="12" r="1.4"></circle></svg>
+      <span style="font-size: 10px;">More</span>
+    </span>
+  </div>
+</div>
+</x-dc>
+</body>
+</html>

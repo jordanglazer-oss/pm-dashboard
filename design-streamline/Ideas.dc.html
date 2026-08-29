@@ -1,0 +1,148 @@
+<!doctype html>
+<html>
+<head>
+  <meta charset="utf-8">
+  <script src="./support.js"></script>
+</head>
+<body>
+<x-dc>
+<helmet>
+  <link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=IBM+Plex+Mono:wght@400;500;600&family=IBM+Plex+Sans:wght@400;500;600;700&display=swap">
+  <style>
+    body { margin: 0; background: #f6f7f9; color: #10151c;
+           font-family: "IBM Plex Sans", -apple-system, BlinkMacSystemFont, "Segoe UI", Helvetica, Arial, sans-serif;
+           -webkit-font-smoothing: antialiased; }
+    a { color: #2d5bd0; text-decoration: none; }
+    a:hover { color: #2c43be; }
+    .mono { font-family: "IBM Plex Mono", ui-monospace, "SF Mono", Menlo, Consolas, monospace; font-variant-numeric: tabular-nums; }
+    table { border-collapse: collapse; width: 100%; font-variant-numeric: tabular-nums; }
+    .eyebrow { font-size: 11px; font-weight: 600; text-transform: uppercase; letter-spacing: 0.09em; color: #9aa3b0; }
+    .card { border: 1px solid #e6e8ec; border-radius: 8px; background: #ffffff; box-shadow: 0 1px 2px rgb(16 21 28 / 0.05); }
+    .seg { display: flex; align-items: center; gap: 2px; border-radius: 8px; background: #fafbfc; border: 1px solid #e6e8ec; padding: 2px; width: fit-content; }
+    .seg .on { border-radius: 6px; background: #ffffff; box-shadow: 0 1px 2px rgb(16 21 28 / 0.05); padding: 4px 12px; font-size: 13px; font-weight: 600; color: #10151c; }
+    .seg .off { padding: 4px 12px; font-size: 13px; color: #5b6472; }
+    .th { text-align: left; padding: 8px 10px; font-size: 11px; font-weight: 600; color: #9aa3b0; }
+    .thr { text-align: right; padding: 8px 10px; font-size: 11px; font-weight: 600; color: #9aa3b0; }
+    .tl { font-size: 10px; color: #9aa3b0; }
+    .tv { font-family: "IBM Plex Mono", ui-monospace, Menlo, monospace; font-variant-numeric: tabular-nums; font-size: 14px; font-weight: 600; color: #10151c; margin-top: 2px; }
+    .pill-pos { border-radius: 20px; background: #f0f9f4; color: #12805c; padding: 2px 8px; font-size: 11px; font-weight: 600; }
+    .pill-neg { border-radius: 20px; background: #fdf2f3; color: #d1435b; padding: 2px 8px; font-size: 11px; font-weight: 600; }
+    .pill-warn { border-radius: 20px; background: #fbf6ea; color: #b8791f; padding: 2px 8px; font-size: 11px; font-weight: 600; }
+    .pill-mut { border: 1px solid #e6e8ec; border-radius: 20px; background: #fafbfc; color: #5b6472; padding: 2px 8px; font-size: 11px; font-weight: 600; }
+    .btn { border: 1px solid #e6e8ec; border-radius: 8px; background: #ffffff; padding: 5px 11px; font-size: 12px; color: #5b6472; }
+    .btn-p { border-radius: 8px; background: #2d5bd0; padding: 5px 11px; font-size: 12px; font-weight: 600; color: #ffffff; }
+  </style>
+</helmet>
+<div style="width: 1440px; background: #f6f7f9;">
+  <div style="background: #ffffff; border-bottom: 1px solid #e6e8ec; padding: 14px 24px 0;">
+    <div style="max-width: 1392px; margin: 0 auto;">
+      <div style="display: flex; align-items: flex-end; justify-content: space-between; gap: 16px;">
+        <div>
+          <div style="font-size: 22px; font-weight: 700; letter-spacing: -0.02em; line-height: 1; color: #10151c;">Ideas</div>
+          <div style="margin-top: 5px; font-size: 12px; color: #9aa3b0;">Where the next name comes from · 6 feeds into one watchlist</div>
+        </div>
+        <span class="btn-p" style="margin-bottom: 2px;">+ Add to Watchlist</span>
+      </div>
+      <div class="seg" style="margin-top: 12px;"><span class="on">Synthesis</span><span class="off">Pipeline</span><span class="off">Screener</span><span class="off">Radar</span><span class="off">Setups</span><span class="off">Factor Lab</span></div>
+      <div style="height: 12px;"></div>
+    </div>
+  </div>
+
+  <div style="max-width: 1392px; margin: 0 auto; padding: 16px 24px 28px; display: flex; gap: 14px; align-items: start;">
+
+    <!-- Synthesis pane -->
+    <div class="card" style="flex-grow: 1; box-shadow: 0 1px 2px rgb(16 21 28 / 0.05), 0 4px 12px -4px rgb(16 21 28 / 0.08); overflow: hidden;">
+      <div style="display: flex; align-items: center; gap: 12px; padding: 12px 18px; border-bottom: 1px solid #e6e8ec; flex-wrap: wrap;">
+        <span style="font-size: 15px; font-weight: 700; color: #10151c;">Synthesis</span>
+        <span style="font-size: 12px; color: #9aa3b0;">AI base / bull / bear per name — the front-door filter before a name earns a thesis</span>
+        <span style="flex-grow: 1;"></span>
+        <span style="display: flex; align-items: center; gap: 6px;">
+          <span style="border-radius: 20px; background: #10151c; color: #ffffff; padding: 3px 11px; font-size: 12px; font-weight: 600;">All 55</span>
+          <span class="pill-mut" style="padding: 3px 11px; font-size: 12px;">Current 38</span>
+          <span class="pill-mut" style="padding: 3px 11px; font-size: 12px;">Stale 9</span>
+          <span class="pill-mut" style="padding: 3px 11px; font-size: 12px;">Not generated 8</span>
+        </span>
+      </div>
+
+      <div style="display: flex; align-items: flex-start; gap: 14px; padding: 12px 18px; border-bottom: 1px solid #f0f1f4;">
+        <span style="width: 74px; flex-shrink: 0;"><span class="mono" style="font-size: 13px; font-weight: 600; color: #10151c;">SHOP-T</span><span style="display: block; font-size: 11px; color: #9aa3b0;">Watchlist</span></span>
+        <span class="pill-pos" style="flex-shrink: 0; margin-top: 1px;">Bull tilt</span>
+        <span style="flex-grow: 1; font-size: 13px; line-height: 1.5; color: #5b6472; text-wrap: pretty;"><span style="font-weight: 600; color: #10151c;">Base:</span> take-rate expansion holds mid-20s revenue growth while opex discipline sticks; re-rating capped by consumer exposure. Bull needs enterprise wins; bear is a discretionary-spending rollover.</span>
+        <span style="flex-shrink: 0; text-align: right;"><span style="display: block; font-size: 11px; color: #9aa3b0;">updated today</span><span style="display: block; margin-top: 2px; font-size: 12px; font-weight: 600; color: #2d5bd0;">Open record</span></span>
+      </div>
+
+      <div style="display: flex; align-items: flex-start; gap: 14px; padding: 12px 18px; border-bottom: 1px solid #f0f1f4; background: #fafbfc;">
+        <span style="width: 74px; flex-shrink: 0;"><span class="mono" style="font-size: 13px; font-weight: 600; color: #10151c;">ANET</span><span style="display: block; font-size: 11px; color: #9aa3b0;">Watchlist</span></span>
+        <span class="pill-pos" style="flex-shrink: 0; margin-top: 1px;">Bull tilt</span>
+        <span style="flex-grow: 1; font-size: 13px; line-height: 1.5; color: #5b6472; text-wrap: pretty;"><span style="font-weight: 600; color: #10151c;">Base:</span> AI networking spend keeps 20%+ growth through FY27; concentration in two hyperscalers is the swing factor both directions.</span>
+        <span style="flex-shrink: 0; text-align: right;"><span style="display: block; font-size: 11px; color: #9aa3b0;">updated today</span><span style="display: block; margin-top: 2px; font-size: 12px; font-weight: 600; color: #2d5bd0;">Open record</span></span>
+      </div>
+
+      <div style="display: flex; align-items: flex-start; gap: 14px; padding: 12px 18px; border-bottom: 1px solid #f0f1f4;">
+        <span style="width: 74px; flex-shrink: 0;"><span class="mono" style="font-size: 13px; font-weight: 600; color: #10151c;">NVDA</span><span style="display: block; font-size: 11px; color: #9aa3b0;">Portfolio</span></span>
+        <span class="pill-neg" style="flex-shrink: 0; margin-top: 1px;">Bear tilt</span>
+        <span style="flex-grow: 1; font-size: 13px; line-height: 1.5; color: #5b6472; text-wrap: pretty;"><span style="font-weight: 600; color: #10151c;">Base:</span> demand intact but margin peak is behind; bear case gaining evidence — verdict flipped from Base on the Q2 print. Linked thesis has a tripped kill condition.</span>
+        <span style="flex-shrink: 0; text-align: right;"><span style="display: block; font-size: 11px; color: #9aa3b0;">updated 2d ago</span><span style="display: block; margin-top: 2px; font-size: 12px; font-weight: 600; color: #2d5bd0;">Open record</span></span>
+      </div>
+
+      <div style="display: flex; align-items: flex-start; gap: 14px; padding: 12px 18px; border-bottom: 1px solid #f0f1f4; background: #fafbfc;">
+        <span style="width: 74px; flex-shrink: 0;"><span class="mono" style="font-size: 13px; font-weight: 600; color: #10151c;">WCN-T</span><span style="display: block; font-size: 11px; color: #9aa3b0;">Portfolio</span></span>
+        <span class="pill-mut" style="flex-shrink: 0; margin-top: 1px;">Base</span>
+        <span style="flex-grow: 1; font-size: 13px; line-height: 1.5; color: #5b6472; text-wrap: pretty;"><span style="font-weight: 600; color: #10151c;">Base:</span> pricing power compounds through any macro; the debate is only ever the multiple. Verdict unchanged 4 runs.</span>
+        <span style="flex-shrink: 0; text-align: right;"><span style="display: block; font-size: 11px; color: #9aa3b0;">updated 5d ago</span><span style="display: block; margin-top: 2px; font-size: 12px; font-weight: 600; color: #2d5bd0;">Open record</span></span>
+      </div>
+
+      <div style="display: flex; align-items: flex-start; gap: 14px; padding: 12px 18px;">
+        <span style="width: 74px; flex-shrink: 0;"><span class="mono" style="font-size: 13px; font-weight: 600; color: #10151c;">MELI</span><span style="display: block; font-size: 11px; color: #9aa3b0;">Pipeline</span></span>
+        <span class="pill-warn" style="flex-shrink: 0; margin-top: 1px;">Stale 32d</span>
+        <span style="flex-grow: 1; font-size: 13px; line-height: 1.5; color: #5b6472; text-wrap: pretty;">Last verdict pre-dates the Q2 print — regenerate before acting on it.</span>
+        <span style="flex-shrink: 0; text-align: right;"><span style="display: block; font-size: 12px; font-weight: 600; color: #2d5bd0;">Regenerate</span></span>
+      </div>
+
+      <div style="display: flex; align-items: center; justify-content: space-between; padding: 10px 18px; border-top: 1px solid #e6e8ec; background: #fafbfc;">
+        <span style="font-size: 12px; color: #9aa3b0;">Showing 5 of 55 · verdict history accrues per name</span>
+        <span style="font-size: 12px; font-weight: 600; color: #2d5bd0;">Show all</span>
+      </div>
+    </div>
+
+    <!-- Right rail: the other feeds at a glance -->
+    <div style="width: 330px; flex-shrink: 0; display: flex; flex-direction: column; gap: 14px;">
+      <div class="card" style="overflow: hidden;">
+        <div style="display: flex; align-items: center; gap: 8px; padding: 11px 14px; border-bottom: 1px solid #f0f1f4;">
+          <span style="font-size: 13px; font-weight: 700; color: #10151c;">Radar</span>
+          <span style="font-size: 11px; color: #9aa3b0;">regime-tilted factor screen</span>
+          <span style="flex-grow: 1;"></span><span class="pill-mut">12</span>
+        </div>
+        <div style="display: flex; align-items: center; gap: 9px; padding: 8px 14px; border-bottom: 1px solid #f0f1f4;"><span class="mono" style="font-size: 12px; font-weight: 600; width: 58px;">ETN</span><span style="font-size: 12px; color: #9aa3b0; flex-grow: 1;">Industrials</span><span class="mono" style="font-size: 12px; font-weight: 600; color: #12805c;">%ile 91</span></div>
+        <div style="display: flex; align-items: center; gap: 9px; padding: 8px 14px; border-bottom: 1px solid #f0f1f4;"><span class="mono" style="font-size: 12px; font-weight: 600; width: 58px;">HWX-T</span><span style="font-size: 12px; color: #9aa3b0; flex-grow: 1;">Energy</span><span class="mono" style="font-size: 12px; font-weight: 600; color: #12805c;">%ile 88</span></div>
+        <div style="display: flex; align-items: center; gap: 9px; padding: 8px 14px;"><span class="mono" style="font-size: 12px; font-weight: 600; width: 58px;">FIX</span><span style="font-size: 12px; color: #9aa3b0; flex-grow: 1;">Industrials</span><span class="mono" style="font-size: 12px; font-weight: 600; color: #12805c;">%ile 86</span></div>
+        <div style="padding: 8px 14px; border-top: 1px solid #f0f1f4; background: #fafbfc;"><span style="font-size: 12px; font-weight: 600; color: #2d5bd0;">Open Radar →</span></div>
+      </div>
+
+      <div class="card" style="overflow: hidden;">
+        <div style="display: flex; align-items: center; gap: 8px; padding: 11px 14px; border-bottom: 1px solid #f0f1f4;">
+          <span style="font-size: 13px; font-weight: 700; color: #10151c;">Setups</span>
+          <span style="font-size: 11px; color: #9aa3b0;">technical scan</span>
+          <span style="flex-grow: 1;"></span><span class="pill-mut">5</span>
+        </div>
+        <div style="display: flex; align-items: center; gap: 9px; padding: 8px 14px; border-bottom: 1px solid #f0f1f4;"><span class="mono" style="font-size: 12px; font-weight: 600; width: 58px;">CP-T</span><span style="font-size: 12px; color: #9aa3b0; flex-grow: 1;">Base breakout</span><span class="mono" style="font-size: 11px; color: #9aa3b0;">3d</span></div>
+        <div style="display: flex; align-items: center; gap: 9px; padding: 8px 14px;"><span class="mono" style="font-size: 12px; font-weight: 600; width: 58px;">TT</span><span style="font-size: 12px; color: #9aa3b0; flex-grow: 1;">50DMA reclaim</span><span class="mono" style="font-size: 11px; color: #9aa3b0;">1d</span></div>
+        <div style="padding: 8px 14px; border-top: 1px solid #f0f1f4; background: #fafbfc;"><span style="font-size: 12px; font-weight: 600; color: #2d5bd0;">Open Setups →</span></div>
+      </div>
+
+      <div class="card" style="overflow: hidden;">
+        <div style="display: flex; align-items: center; gap: 8px; padding: 11px 14px; border-bottom: 1px solid #f0f1f4;">
+          <span style="font-size: 13px; font-weight: 700; color: #10151c;">Pipeline</span>
+          <span style="font-size: 11px; color: #9aa3b0;">conviction board</span>
+        </div>
+        <div style="display: flex; align-items: center; gap: 9px; padding: 8px 14px; border-bottom: 1px solid #f0f1f4;"><span style="font-size: 12px; color: #5b6472; flex-grow: 1;">Researching</span><span class="mono" style="font-size: 12px; font-weight: 600;">4</span></div>
+        <div style="display: flex; align-items: center; gap: 9px; padding: 8px 14px; border-bottom: 1px solid #f0f1f4;"><span style="font-size: 12px; color: #5b6472; flex-grow: 1;">Underwriting</span><span class="mono" style="font-size: 12px; font-weight: 600;">2</span></div>
+        <div style="display: flex; align-items: center; gap: 9px; padding: 8px 14px;"><span style="font-size: 12px; color: #5b6472; flex-grow: 1;">Ready to buy</span><span class="mono" style="font-size: 12px; font-weight: 600; color: #12805c;">1</span></div>
+        <div style="padding: 8px 14px; border-top: 1px solid #f0f1f4; background: #fafbfc;"><span style="font-size: 12px; font-weight: 600; color: #2d5bd0;">Open Pipeline →</span></div>
+      </div>
+    </div>
+  </div>
+</div>
+</x-dc>
+</body>
+</html>

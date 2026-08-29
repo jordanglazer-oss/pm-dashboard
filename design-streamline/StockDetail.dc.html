@@ -1,0 +1,250 @@
+<!doctype html>
+<html>
+<head>
+  <meta charset="utf-8">
+  <script src="./support.js"></script>
+</head>
+<body>
+<x-dc>
+<helmet>
+  <link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=IBM+Plex+Mono:wght@400;500;600&family=IBM+Plex+Sans:wght@400;500;600;700&display=swap">
+  <style>
+    body { margin: 0; background: #f6f7f9; color: #10151c;
+           font-family: "IBM Plex Sans", -apple-system, BlinkMacSystemFont, "Segoe UI", Helvetica, Arial, sans-serif;
+           -webkit-font-smoothing: antialiased; }
+    a { color: #2d5bd0; text-decoration: none; }
+    a:hover { color: #2c43be; }
+    .mono { font-family: "IBM Plex Mono", ui-monospace, "SF Mono", Menlo, Consolas, monospace; font-variant-numeric: tabular-nums; }
+    .eyebrow { font-size: 11px; font-weight: 600; text-transform: uppercase; letter-spacing: 0.09em; color: #9aa3b0; }
+    .stat-l { font-size: 11px; color: #9aa3b0; }
+    .stat-v { font-family: "IBM Plex Mono", ui-monospace, Menlo, monospace; font-variant-numeric: tabular-nums; font-size: 15px; font-weight: 600; color: #10151c; margin-top: 3px; }
+    .card { border: 1px solid #e6e8ec; border-radius: 8px; background: #ffffff; box-shadow: 0 1px 2px rgb(16 21 28 / 0.05); }
+  </style>
+</helmet>
+
+<div style="width: 1440px; background: #f6f7f9;">
+
+  <!-- Sticky identity header — everything you act on, one strip -->
+  <div style="background: #ffffff; border-bottom: 1px solid #e6e8ec; padding: 14px 24px;">
+    <div style="max-width: 1392px; margin: 0 auto; display: flex; align-items: center; gap: 22px; flex-wrap: wrap;">
+      <div style="flex-shrink: 0;">
+        <div style="display: flex; align-items: baseline; gap: 10px;">
+          <span class="mono" style="font-size: 24px; font-weight: 600; letter-spacing: -0.01em; color: #10151c;">CSU-T</span>
+          <span style="font-size: 15px; color: #5b6472;">Constellation Software</span>
+        </div>
+        <div style="margin-top: 4px; font-size: 12px; color: #9aa3b0;">Technology · Software &amp; Services · Portfolio 3.82%</div>
+      </div>
+
+      <div style="display: flex; align-items: baseline; gap: 9px; flex-shrink: 0;">
+        <span class="mono" style="font-size: 24px; font-weight: 600; color: #10151c;">4,182.00</span>
+        <span class="mono" style="font-size: 14px; font-weight: 600; color: #d1435b;">−13.00 (−0.31%)</span>
+      </div>
+
+      <span style="flex-grow: 1;"></span>
+
+      <div style="display: flex; align-items: center; gap: 20px; flex-shrink: 0;">
+        <div style="text-align: right;">
+          <div class="stat-l">Score</div>
+          <div class="mono" style="font-size: 20px; font-weight: 600; color: #10151c; margin-top: 2px;">31.8<span style="font-size: 13px; color: #9aa3b0;">/41</span></div>
+        </div>
+        <div style="text-align: right;">
+          <div class="stat-l">Quant %ile</div>
+          <div class="mono" style="font-size: 20px; font-weight: 600; color: #10151c; margin-top: 2px;">76</div>
+        </div>
+        <span style="border-radius: 20px; background: #fbf6ea; color: #b8791f; padding: 4px 11px; font-size: 12px; font-weight: 700;">Stale 41d</span>
+        <span style="border: 1px solid #e6e8ec; border-radius: 8px; background: #ffffff; padding: 6px 12px; font-size: 13px; font-weight: 600; color: #5b6472;">Thesis</span>
+        <span style="border-radius: 8px; background: #2d5bd0; padding: 6px 14px; font-size: 13px; font-weight: 600; color: #ffffff;">Rescore</span>
+      </div>
+    </div>
+  </div>
+
+  <!-- One hairline strip replaces 13 nested tiles -->
+  <div style="background: #ffffff; border-bottom: 1px solid #e6e8ec;">
+    <div style="max-width: 1392px; margin: 0 auto; display: grid; grid-template-columns: repeat(9, minmax(0, 1fr));">
+      <div style="padding: 11px 18px; border-right: 1px solid #f0f1f4;"><div class="stat-l">1D</div><div class="stat-v" style="color: #d1435b;">−0.31%</div></div>
+      <div style="padding: 11px 18px; border-right: 1px solid #f0f1f4;"><div class="stat-l">1M</div><div class="stat-v" style="color: #12805c;">+4.10%</div></div>
+      <div style="padding: 11px 18px; border-right: 1px solid #f0f1f4;"><div class="stat-l">YTD</div><div class="stat-v" style="color: #12805c;">+18.6%</div></div>
+      <div style="padding: 11px 18px; border-right: 1px solid #f0f1f4;"><div class="stat-l">1Y</div><div class="stat-v" style="color: #12805c;">+22.4%</div></div>
+      <div style="padding: 11px 18px; border-right: 1px solid #f0f1f4;"><div class="stat-l">Mkt cap</div><div class="stat-v">88.6B</div></div>
+      <div style="padding: 11px 18px; border-right: 1px solid #f0f1f4;"><div class="stat-l">Fwd P/E</div><div class="stat-v">34.2×</div></div>
+      <div style="padding: 11px 18px; border-right: 1px solid #f0f1f4;"><div class="stat-l">Beta 3y</div><div class="stat-v">0.88</div></div>
+      <div style="padding: 11px 18px; border-right: 1px solid #f0f1f4;"><div class="stat-l">Mean target</div><div class="stat-v">4,620</div></div>
+      <div style="padding: 11px 18px;"><div class="stat-l">Revisions 30d</div><div class="stat-v" style="color: #12805c;">6↑ / 1↓</div></div>
+    </div>
+  </div>
+
+  <!-- Body -->
+  <div style="max-width: 1392px; margin: 0 auto; padding: 16px 24px 28px; display: grid; grid-template-columns: minmax(0, 1.35fr) minmax(0, 1fr); gap: 14px; align-items: start;">
+
+    <!-- LEFT -->
+    <div style="display: flex; flex-direction: column; gap: 14px;">
+
+      <div class="card" style="overflow: hidden;">
+        <div style="display: flex; align-items: center; gap: 10px; padding: 12px 18px; border-bottom: 1px solid #e6e8ec;">
+          <span style="font-size: 14px; font-weight: 700; color: #10151c;">Score breakdown</span>
+          <span style="font-size: 12px; color: #9aa3b0;">7 categories · scored 41 days ago · rubric rev 2</span>
+        </div>
+        <div style="padding: 4px 18px 14px;">
+          <div style="display: flex; align-items: center; gap: 12px; padding: 9px 0; border-bottom: 1px solid #f0f1f4;">
+            <span style="width: 168px; font-size: 13px; color: #10151c; flex-shrink: 0;">Business quality</span>
+            <span style="flex-grow: 1; height: 6px; border-radius: 3px; background: #f0f1f4; overflow: hidden;"><span style="display: block; width: 86%; height: 6px; background: #12805c;"></span></span>
+            <span class="mono" style="width: 52px; text-align: right; font-size: 13px; font-weight: 600; color: #10151c;">6.0/7</span>
+          </div>
+          <div style="display: flex; align-items: center; gap: 12px; padding: 9px 0; border-bottom: 1px solid #f0f1f4;">
+            <span style="width: 168px; font-size: 13px; color: #10151c; flex-shrink: 0;">Growth &amp; catalysts</span>
+            <span style="flex-grow: 1; height: 6px; border-radius: 3px; background: #f0f1f4; overflow: hidden;"><span style="display: block; width: 71%; height: 6px; background: #12805c;"></span></span>
+            <span class="mono" style="width: 52px; text-align: right; font-size: 13px; font-weight: 600; color: #10151c;">5.0/7</span>
+          </div>
+          <div style="display: flex; align-items: center; gap: 12px; padding: 9px 0; border-bottom: 1px solid #f0f1f4;">
+            <span style="width: 168px; font-size: 13px; color: #10151c; flex-shrink: 0;">Valuation</span>
+            <span style="flex-grow: 1; height: 6px; border-radius: 3px; background: #f0f1f4; overflow: hidden;"><span style="display: block; width: 33%; height: 6px; background: #b8791f;"></span></span>
+            <span class="mono" style="width: 52px; text-align: right; font-size: 13px; font-weight: 600; color: #10151c;">2.0/6</span>
+          </div>
+          <div style="display: flex; align-items: center; gap: 12px; padding: 9px 0; border-bottom: 1px solid #f0f1f4;">
+            <span style="width: 168px; font-size: 13px; color: #10151c; flex-shrink: 0;">Balance sheet</span>
+            <span style="flex-grow: 1; height: 6px; border-radius: 3px; background: #f0f1f4; overflow: hidden;"><span style="display: block; width: 80%; height: 6px; background: #12805c;"></span></span>
+            <span class="mono" style="width: 52px; text-align: right; font-size: 13px; font-weight: 600; color: #10151c;">4.0/5</span>
+          </div>
+          <div style="display: flex; align-items: center; gap: 12px; padding: 9px 0; border-bottom: 1px solid #f0f1f4;">
+            <span style="width: 168px; font-size: 13px; color: #10151c; flex-shrink: 0;">Technicals</span>
+            <span style="flex-grow: 1; height: 6px; border-radius: 3px; background: #f0f1f4; overflow: hidden;"><span style="display: block; width: 60%; height: 6px; background: #12805c;"></span></span>
+            <span class="mono" style="width: 52px; text-align: right; font-size: 13px; font-weight: 600; color: #10151c;">3.0/5</span>
+          </div>
+          <div style="display: flex; align-items: center; gap: 12px; padding: 9px 0; border-bottom: 1px solid #f0f1f4;">
+            <span style="width: 168px; font-size: 13px; color: #10151c; flex-shrink: 0;">Street &amp; coverage</span>
+            <span style="flex-grow: 1; height: 6px; border-radius: 3px; background: #f0f1f4; overflow: hidden;"><span style="display: block; width: 75%; height: 6px; background: #12805c;"></span></span>
+            <span class="mono" style="width: 52px; text-align: right; font-size: 13px; font-weight: 600; color: #10151c;">4.5/6</span>
+          </div>
+          <div style="display: flex; align-items: center; gap: 12px; padding: 9px 0;">
+            <span style="width: 168px; font-size: 13px; color: #10151c; flex-shrink: 0;">Ownership &amp; record</span>
+            <span style="flex-grow: 1; height: 6px; border-radius: 3px; background: #f0f1f4; overflow: hidden;"><span style="display: block; width: 145%; height: 6px; background: #c3c8d0;"></span></span>
+            <span class="mono" style="width: 52px; text-align: right; font-size: 13px; font-weight: 600; color: #9aa3b0;">DATA GAP</span>
+          </div>
+        </div>
+      </div>
+
+      <div class="card" style="overflow: hidden;">
+        <div style="display: flex; align-items: center; gap: 10px; padding: 12px 18px; border-bottom: 1px solid #e6e8ec;">
+          <span style="font-size: 14px; font-weight: 700; color: #10151c;">Thesis</span>
+          <span style="border-radius: 20px; background: #f0f9f4; color: #12805c; padding: 2px 9px; font-size: 11px; font-weight: 600;">Intact</span>
+          <span style="flex-grow: 1;"></span>
+          <span style="font-size: 12px; color: #9aa3b0;">Underwritten 2026-03-14</span>
+        </div>
+        <div style="padding: 14px 18px;">
+          <div style="font-size: 13px; line-height: 1.6; color: #10151c; text-wrap: pretty;">Serial acquirer of vertical-market software with disciplined return hurdles. Owns the compounding, not the multiple — the thesis is that capital deployment stays above a 20% hurdle rate as the base grows.</div>
+          <div style="margin-top: 12px;" class="eyebrow">Kill conditions</div>
+          <div style="margin-top: 7px; display: flex; flex-direction: column; gap: 6px;">
+            <div style="display: flex; align-items: center; gap: 9px;">
+              <span style="width: 6px; height: 6px; border-radius: 50%; background: #12805c; flex-shrink: 0;"></span>
+              <span style="font-size: 13px; color: #5b6472; flex-grow: 1;">Deployed capital falls below $1.2B for four straight quarters</span>
+              <span class="mono" style="font-size: 12px; color: #9aa3b0;">clear</span>
+            </div>
+            <div style="display: flex; align-items: center; gap: 9px;">
+              <span style="width: 6px; height: 6px; border-radius: 50%; background: #12805c; flex-shrink: 0;"></span>
+              <span style="font-size: 13px; color: #5b6472; flex-grow: 1;">Organic growth turns negative two quarters running</span>
+              <span class="mono" style="font-size: 12px; color: #9aa3b0;">clear</span>
+            </div>
+            <div style="display: flex; align-items: center; gap: 9px;">
+              <span style="width: 6px; height: 6px; border-radius: 50%; background: #b8791f; flex-shrink: 0;"></span>
+              <span style="font-size: 13px; color: #5b6472; flex-grow: 1;">Founder-CEO departure without a named internal successor</span>
+              <span class="mono" style="font-size: 12px; color: #b8791f;">watch</span>
+            </div>
+          </div>
+        </div>
+      </div>
+    </div>
+
+    <!-- RIGHT -->
+    <div style="display: flex; flex-direction: column; gap: 14px;">
+
+      <div class="card" style="overflow: hidden;">
+        <div style="display: flex; align-items: center; gap: 10px; padding: 12px 18px; border-bottom: 1px solid #e6e8ec;">
+          <span style="font-size: 14px; font-weight: 700; color: #10151c;">Price</span>
+          <span style="flex-grow: 1;"></span>
+          <span style="display: flex; align-items: center; gap: 2px; border-radius: 8px; background: #fafbfc; border: 1px solid #e6e8ec; padding: 2px;">
+            <span style="padding: 3px 9px; font-size: 11px; color: #5b6472;">1M</span>
+            <span style="padding: 3px 9px; font-size: 11px; color: #5b6472;">6M</span>
+            <span style="border-radius: 6px; background: #ffffff; box-shadow: 0 1px 2px rgb(16 21 28 / 0.05); padding: 3px 9px; font-size: 11px; font-weight: 600; color: #10151c;">1Y</span>
+            <span style="padding: 3px 9px; font-size: 11px; color: #5b6472;">5Y</span>
+          </span>
+        </div>
+        <div style="padding: 14px 18px 10px;">
+          <svg viewBox="0 0 520 150" width="100%" height="150" preserveAspectRatio="none" role="img" aria-label="One-year price line, rising with a pullback in the final weeks">
+            <defs>
+              <linearGradient id="pg" x1="0" y1="0" x2="0" y2="1">
+                <stop offset="0%" stop-color="#2d5bd0" stop-opacity="0.16"></stop>
+                <stop offset="100%" stop-color="#2d5bd0" stop-opacity="0"></stop>
+              </linearGradient>
+            </defs>
+            <line x1="0" y1="37" x2="520" y2="37" stroke="#f0f1f4" stroke-width="1"></line>
+            <line x1="0" y1="75" x2="520" y2="75" stroke="#f0f1f4" stroke-width="1"></line>
+            <line x1="0" y1="113" x2="520" y2="113" stroke="#f0f1f4" stroke-width="1"></line>
+            <path d="M0 122 L43 116 L87 118 L130 101 L173 94 L217 99 L260 78 L303 62 L347 55 L390 34 L433 26 L476 44 L520 51 L520 150 L0 150 Z" fill="url(#pg)"></path>
+            <path d="M0 122 L43 116 L87 118 L130 101 L173 94 L217 99 L260 78 L303 62 L347 55 L390 34 L433 26 L476 44 L520 51" fill="none" stroke="#2d5bd0" stroke-width="2" stroke-linejoin="round" stroke-linecap="round"></path>
+          </svg>
+          <div style="display: flex; justify-content: space-between; margin-top: 6px;">
+            <span class="mono" style="font-size: 11px; color: #9aa3b0;">Aug 25</span>
+            <span class="mono" style="font-size: 11px; color: #9aa3b0;">Feb 26</span>
+            <span class="mono" style="font-size: 11px; color: #9aa3b0;">Aug 26</span>
+          </div>
+        </div>
+      </div>
+
+      <div class="card" style="overflow: hidden;">
+        <div style="display: flex; align-items: center; gap: 10px; padding: 12px 18px; border-bottom: 1px solid #e6e8ec;">
+          <span style="font-size: 14px; font-weight: 700; color: #10151c;">Street takeaways</span>
+          <span style="font-size: 12px; color: #9aa3b0;">post Q2 · 8 firms</span>
+        </div>
+        <div style="display: flex; align-items: center; gap: 12px; padding: 10px 18px; border-bottom: 1px solid #f0f1f4;">
+          <span style="width: 96px; font-size: 13px; color: #10151c; flex-shrink: 0;">RBC</span>
+          <span style="font-size: 13px; color: #5b6472; flex-grow: 1;">Target raised on deployment pace</span>
+          <span class="mono" style="font-size: 13px; font-weight: 600; color: #12805c;">4,900</span>
+        </div>
+        <div style="display: flex; align-items: center; gap: 12px; padding: 10px 18px; border-bottom: 1px solid #f0f1f4;">
+          <span style="width: 96px; font-size: 13px; color: #10151c; flex-shrink: 0;">BMO</span>
+          <span style="font-size: 13px; color: #5b6472; flex-grow: 1;">Unchanged — organic growth still soft</span>
+          <span class="mono" style="font-size: 13px; font-weight: 600; color: #5b6472;">4,500</span>
+        </div>
+        <div style="display: flex; align-items: center; gap: 12px; padding: 10px 18px; border-bottom: 1px solid #f0f1f4;">
+          <span style="width: 96px; font-size: 13px; color: #10151c; flex-shrink: 0;">Scotiabank</span>
+          <span style="font-size: 13px; color: #5b6472; flex-grow: 1;">Trimmed on multiple compression</span>
+          <span class="mono" style="font-size: 13px; font-weight: 600; color: #d1435b;">4,350</span>
+        </div>
+        <div style="display: flex; align-items: center; gap: 12px; padding: 10px 18px; background: #fafbfc;">
+          <span style="width: 96px; font-size: 13px; font-weight: 600; color: #10151c; flex-shrink: 0;">Panel</span>
+          <span style="font-size: 13px; color: #5b6472; flex-grow: 1;">6 buy · 2 hold · 0 sell · avg target +10.5%</span>
+          <span class="mono" style="font-size: 13px; font-weight: 600; color: #10151c;">4,620</span>
+        </div>
+      </div>
+
+      <div class="card" style="overflow: hidden;">
+        <div style="display: flex; align-items: center; gap: 10px; padding: 12px 18px; border-bottom: 1px solid #e6e8ec;">
+          <span style="font-size: 14px; font-weight: 700; color: #10151c;">Factor lens</span>
+          <span style="font-size: 12px; color: #9aa3b0;">vs S&amp;P 500 + TSX 60 universe</span>
+        </div>
+        <div style="display: grid; grid-template-columns: repeat(4, minmax(0, 1fr));">
+          <div style="padding: 11px 18px; border-right: 1px solid #f0f1f4;"><div class="stat-l">Quality</div><div class="stat-v" style="color: #12805c;">+1.4σ</div></div>
+          <div style="padding: 11px 18px; border-right: 1px solid #f0f1f4;"><div class="stat-l">Value</div><div class="stat-v" style="color: #d1435b;">−1.1σ</div></div>
+          <div style="padding: 11px 18px; border-right: 1px solid #f0f1f4;"><div class="stat-l">Momentum</div><div class="stat-v" style="color: #12805c;">+0.7σ</div></div>
+          <div style="padding: 11px 18px;"><div class="stat-l">Distress</div><div class="stat-v" style="color: #12805c;">safe</div></div>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <!-- Reference row: the five collapsibles become links, not five closed boxes -->
+  <div style="max-width: 1392px; margin: 0 auto; padding: 0 24px 26px;">
+    <div style="display: flex; align-items: center; gap: 10px; flex-wrap: wrap;">
+      <span style="font-size: 12px; color: #9aa3b0;">Reference:</span>
+      <span style="font-size: 12px; color: #5b6472;">Score history</span><span style="color: #c3c8d0;">·</span>
+      <span style="font-size: 12px; color: #5b6472;">Health monitor</span><span style="color: #c3c8d0;">·</span>
+      <span style="font-size: 12px; color: #5b6472;">Model eligibility</span><span style="color: #c3c8d0;">·</span>
+      <span style="font-size: 12px; color: #5b6472;">Portfolio role</span><span style="color: #c3c8d0;">·</span>
+      <span style="font-size: 12px; color: #5b6472;">Regime context</span><span style="color: #c3c8d0;">·</span>
+      <span style="font-size: 12px; color: #5b6472;">Analyst snapshot</span>
+    </div>
+  </div>
+</div>
+</x-dc>
+</body>
+</html>

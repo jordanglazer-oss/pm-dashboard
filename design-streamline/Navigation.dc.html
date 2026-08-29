@@ -1,0 +1,162 @@
+<!doctype html>
+<html>
+<head>
+  <meta charset="utf-8">
+  <script src="./support.js"></script>
+</head>
+<body>
+<x-dc>
+<helmet>
+  <link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=IBM+Plex+Mono:wght@400;500;600&family=IBM+Plex+Sans:wght@400;500;600;700&display=swap">
+  <style>
+    body { margin: 0; background: #f6f7f9; color: #10151c;
+           font-family: "IBM Plex Sans", -apple-system, BlinkMacSystemFont, "Segoe UI", Helvetica, Arial, sans-serif;
+           -webkit-font-smoothing: antialiased; }
+    a { color: #2d5bd0; text-decoration: none; }
+    a:hover { color: #2c43be; }
+    .mono { font-family: "IBM Plex Mono", ui-monospace, "SF Mono", Menlo, Consolas, monospace; font-variant-numeric: tabular-nums; }
+    .tab-old { border: 1px solid #e6e8ec; border-radius: 8px; background: #ffffff; padding: 6px 11px; font-size: 13px; color: #5b6472; }
+    .tab-new { border: 1px solid #cfe0ff; border-radius: 8px; background: #eef4ff; padding: 7px 13px; font-size: 14px; font-weight: 600; color: #2c43be; }
+    .sub { border: 1px solid #e6e8ec; border-radius: 20px; background: #ffffff; padding: 3px 10px; font-size: 12px; color: #5b6472; }
+    .eyebrow { font-size: 11px; font-weight: 600; text-transform: uppercase; letter-spacing: 0.09em; color: #9aa3b0; }
+  </style>
+</helmet>
+
+<div style="width: 1440px; background: #f6f7f9; padding: 32px 40px 36px;">
+
+  <div style="margin-bottom: 22px;">
+    <div class="eyebrow">Information architecture</div>
+    <div style="margin-top: 6px; font-size: 26px; font-weight: 700; letter-spacing: -0.02em; color: #10151c;">Four tabs instead of eleven</div>
+    <div style="margin-top: 7px; font-size: 14px; color: #5b6472; max-width: 760px; text-wrap: pretty;">Every route stays. Nothing is deleted — the 21 destinations are regrouped so the top bar carries the four things you actually switch between, and the rest sit one segment click away inside the tab that owns them.</div>
+  </div>
+
+  <div style="display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 20px; align-items: start;">
+
+    <!-- BEFORE -->
+    <div style="border: 1px solid #e6e8ec; border-radius: 8px; background: #ffffff; box-shadow: 0 1px 2px rgb(16 21 28 / 0.05); padding: 18px;">
+      <div style="display: flex; align-items: baseline; gap: 10px; margin-bottom: 14px;">
+        <span style="font-size: 15px; font-weight: 700; color: #10151c;">Today</span>
+        <span style="font-size: 12px; color: #9aa3b0;">11 top tabs · 21 destinations · 17 collapsible panels on Research alone</span>
+      </div>
+
+      <div class="eyebrow" style="margin-bottom: 8px;">Top bar</div>
+      <div style="display: flex; flex-wrap: wrap; gap: 6px; margin-bottom: 16px;">
+        <span class="tab-old">Brief</span><span class="tab-old">Portfolio</span><span class="tab-old">Thesis</span>
+        <span class="tab-old">Chat</span><span class="tab-old">Screener</span><span class="tab-old">Research</span>
+        <span class="tab-old">Synthesis</span><span class="tab-old">Pipeline</span><span class="tab-old">Factor Lab</span>
+        <span class="tab-old">Hedging</span><span class="tab-old">Appendix</span>
+      </div>
+
+      <div class="eyebrow" style="margin-bottom: 8px;">Portfolio segment bar</div>
+      <div style="display: flex; flex-wrap: wrap; gap: 6px; margin-bottom: 16px;">
+        <span class="sub">Rankings</span><span class="sub">Positioning</span><span class="sub">Models</span>
+        <span class="sub">Allocation</span><span class="sub">Attribution</span><span class="sub">Risk</span>
+        <span class="sub">Journal</span><span class="sub">Methodology</span>
+      </div>
+
+      <div class="eyebrow" style="margin-bottom: 8px;">Research segment bar</div>
+      <div style="display: flex; flex-wrap: wrap; gap: 6px;">
+        <span class="sub">Sources</span><span class="sub">Inbox</span>
+      </div>
+
+      <div style="margin-top: 18px; border-top: 1px solid #f0f1f4; padding-top: 14px; display: flex; flex-direction: column; gap: 7px;">
+        <div style="display: flex; gap: 9px; align-items: flex-start;">
+          <span style="width: 5px; height: 5px; border-radius: 50%; background: #d1435b; margin-top: 6px; flex-shrink: 0;"></span>
+          <span style="font-size: 13px; color: #5b6472; text-wrap: pretty;">Four idea-generation surfaces (Screener, Synthesis, Pipeline, Factor Lab) sit at the same level as the daily Brief.</span>
+        </div>
+        <div style="display: flex; gap: 9px; align-items: flex-start;">
+          <span style="width: 5px; height: 5px; border-radius: 50%; background: #d1435b; margin-top: 6px; flex-shrink: 0;"></span>
+          <span style="font-size: 13px; color: #5b6472; text-wrap: pretty;">Reference surfaces (Appendix, Methodology) hold prime top-bar real estate.</span>
+        </div>
+        <div style="display: flex; gap: 9px; align-items: flex-start;">
+          <span style="width: 5px; height: 5px; border-radius: 50%; background: #d1435b; margin-top: 6px; flex-shrink: 0;"></span>
+          <span style="font-size: 13px; color: #5b6472; text-wrap: pretty;">On a phone all 11 hide behind a hamburger — two taps to reach anything.</span>
+        </div>
+      </div>
+    </div>
+
+    <!-- AFTER -->
+    <div style="border: 1px solid #cfe0ff; border-radius: 8px; background: #ffffff; box-shadow: 0 1px 2px rgb(16 21 28 / 0.05), 0 4px 12px -4px rgb(16 21 28 / 0.08); padding: 18px;">
+      <div style="display: flex; align-items: baseline; gap: 10px; margin-bottom: 14px;">
+        <span style="font-size: 15px; font-weight: 700; color: #10151c;">Proposed</span>
+        <span style="font-size: 12px; color: #9aa3b0;">4 tabs + Ask + More · same 21 destinations</span>
+      </div>
+
+      <div class="eyebrow" style="margin-bottom: 8px;">Top bar</div>
+      <div style="display: flex; flex-wrap: wrap; gap: 7px; margin-bottom: 18px;">
+        <span class="tab-new">Brief</span><span class="tab-new">Portfolio</span><span class="tab-new">Ideas</span><span class="tab-new">Research</span>
+        <span style="border: 1px solid #e6e8ec; border-radius: 8px; background: #ffffff; padding: 7px 13px; font-size: 14px; font-weight: 600; color: #5b6472;">Ask</span>
+        <span style="border: 1px solid #e6e8ec; border-radius: 8px; background: #ffffff; padding: 7px 13px; font-size: 14px; color: #9aa3b0;">More ⋯</span>
+      </div>
+
+      <div style="display: flex; flex-direction: column; gap: 12px;">
+        <div style="border-left: 3px solid #2d5bd0; padding-left: 12px;">
+          <div style="font-size: 13px; font-weight: 700; color: #10151c;">Brief</div>
+          <div style="margin-top: 5px; display: flex; flex-wrap: wrap; gap: 6px;"><span class="sub">Today</span><span class="sub">Hedging</span></div>
+          <div style="margin-top: 5px; font-size: 12px; color: #9aa3b0; text-wrap: pretty;">Hedging joins the Brief because the Brief already issues the hedging call and reads the same ledger.</div>
+        </div>
+
+        <div style="border-left: 3px solid #2d5bd0; padding-left: 12px;">
+          <div style="font-size: 13px; font-weight: 700; color: #10151c;">Portfolio</div>
+          <div style="margin-top: 5px; display: flex; flex-wrap: wrap; gap: 6px;">
+            <span class="sub">Holdings</span><span class="sub">Positioning</span><span class="sub">Models</span><span class="sub">Performance</span>
+            <span class="sub">Risk</span><span class="sub">Thesis</span><span class="sub">Journal</span>
+          </div>
+          <div style="margin-top: 5px; font-size: 12px; color: #9aa3b0; text-wrap: pretty;">Rankings becomes Holdings. Positioning keeps its own segment (live book vs model, rebalance, trade queue). Allocation + Attribution merge into Performance. Thesis moves in beside Journal.</div>
+        </div>
+
+        <div style="border-left: 3px solid #7c5cd0; padding-left: 12px;">
+          <div style="font-size: 13px; font-weight: 700; color: #10151c;">Ideas</div>
+          <div style="margin-top: 5px; display: flex; flex-wrap: wrap; gap: 6px;">
+            <span class="sub">Synthesis</span><span class="sub">Pipeline</span><span class="sub">Screener</span><span class="sub">Radar</span><span class="sub">Setups</span><span class="sub">Factor Lab</span>
+          </div>
+          <div style="margin-top: 5px; font-size: 12px; color: #9aa3b0; text-wrap: pretty;">One home for &quot;where does the next name come from&quot;. Radar and Setups — today buried inside the Rankings page — become proper segments here.</div>
+        </div>
+
+        <div style="border-left: 3px solid #2d5bd0; padding-left: 12px;">
+          <div style="font-size: 13px; font-weight: 700; color: #10151c;">Research</div>
+          <div style="margin-top: 5px; display: flex; flex-wrap: wrap; gap: 6px;"><span class="sub">Sources</span><span class="sub">Inbox</span></div>
+          <div style="margin-top: 5px; font-size: 12px; color: #9aa3b0; text-wrap: pretty;">Unchanged as a tab — but Sources is rebuilt from 17 stacked panels into a rail plus one pane.</div>
+        </div>
+
+        <div style="border-left: 3px solid #c3c8d0; padding-left: 12px;">
+          <div style="font-size: 13px; font-weight: 700; color: #5b6472;">Ask &nbsp;·&nbsp; More ⋯</div>
+          <div style="margin-top: 5px; display: flex; flex-wrap: wrap; gap: 6px;">
+            <span class="sub">Chat</span><span class="sub">Appendix</span><span class="sub">Client Report</span><span class="sub">Methodology</span><span class="sub">Health</span>
+          </div>
+          <div style="margin-top: 5px; font-size: 12px; color: #9aa3b0; text-wrap: pretty;">Chat becomes &quot;Ask&quot; — a tool you invoke from anywhere, not a place you navigate to. Reference pages live under the overflow.</div>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <!-- Route continuity -->
+  <div style="margin-top: 20px; border: 1px solid #e6e8ec; border-radius: 8px; background: #ffffff; box-shadow: 0 1px 2px rgb(16 21 28 / 0.05); overflow: hidden;">
+    <div style="padding: 12px 18px; border-bottom: 1px solid #e6e8ec;">
+      <span style="font-size: 14px; font-weight: 700; color: #10151c;">Route continuity</span>
+      <span style="margin-left: 10px; font-size: 12px; color: #9aa3b0;">No route changes, no redirects needed — only the grouping and the labels move.</span>
+    </div>
+    <div style="display: grid; grid-template-columns: repeat(4, minmax(0, 1fr)); gap: 0;">
+      <div style="padding: 12px 18px; border-right: 1px solid #f0f1f4;">
+        <div class="eyebrow" style="margin-bottom: 7px;">Merged, not removed</div>
+        <div class="mono" style="font-size: 12px; color: #5b6472; line-height: 1.9;">/aa-performance + /attribution → Performance<br>/chat → Ask panel</div>
+      </div>
+      <div style="padding: 12px 18px; border-right: 1px solid #f0f1f4;">
+        <div class="eyebrow" style="margin-bottom: 7px;">Moved one level in</div>
+        <div class="mono" style="font-size: 12px; color: #5b6472; line-height: 1.9;">/thesis → Portfolio<br>/hedging → Brief<br>/screener /synthesis<br>/conviction /factor-lab → Ideas</div>
+      </div>
+      <div style="padding: 12px 18px; border-right: 1px solid #f0f1f4;">
+        <div class="eyebrow" style="margin-bottom: 7px;">Into the overflow</div>
+        <div class="mono" style="font-size: 12px; color: #5b6472; line-height: 1.9;">/appendix<br>/methodology<br>/client-report<br>/admin/health</div>
+      </div>
+      <div style="padding: 12px 18px;">
+        <div class="eyebrow" style="margin-bottom: 7px;">Unchanged</div>
+        <div class="mono" style="font-size: 12px; color: #5b6472; line-height: 1.9;">/brief /research /inbox<br>/portfolio (Positioning)<br>/risk /journal /pim-model<br>/stock/[ticker]</div>
+      </div>
+    </div>
+  </div>
+
+</div>
+</x-dc>
+</body>
+</html>
