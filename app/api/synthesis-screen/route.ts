@@ -13,7 +13,7 @@ import {
   type AnalystReports,
 } from "@/app/lib/analyst-snapshots";
 import { resolveFactsetId, isFundservCode } from "@/app/lib/factset-symbols";
-import { crossSectional, factsetConfigured } from "@/app/lib/factset";
+import { crossSectional, factsetConfigured, relayRetry, RELAY_HEAVY_TIMEOUT_MS } from "@/app/lib/factset";
 import { companySnapshot, formatSnapshotForPrompt } from "@/app/lib/factset-fundamentals";
 import { getSectorLeadership } from "@/app/lib/sector-leadership";
 import {
@@ -33,6 +33,7 @@ import {
   type StaleReason,
   type SynthesisPayload,
   type ThirdPartyTech,
+  type Technicals,
 } from "@/app/lib/synthesis-screen";
 
 /**
@@ -398,40 +399,81 @@ export async function GET() {
 
 // ───────────────────────── POST ─────────────────────────
 
-async function fetchTechnicals(ticker: string) {
+/** Yahoo daily closes for this name -> technicals AND the live quote.
+ *
+ *  The quote comes from the SAME chart response the technicals already need
+ *  (`meta.regularMarketPrice ?? meta.previousClose`) — byte-for-byte what
+ *  /api/prices uses, so the synthesis price matches the rest of the site and
+ *  carries no extra fetch and no FactSet dependency. */
+async function fetchTechnicals(ticker: string): Promise<{ technicals: Technicals | null; marketPrice?: number }> {
   try {
     const url = `https://query1.finance.yahoo.com/v8/finance/chart/${encodeURIComponent(toYahoo(ticker))}?range=1y&interval=1d`;
     const res = await fetch(url, { headers: { "User-Agent": "Mozilla/5.0" } });
-    if (!res.ok) return null;
+    if (!res.ok) return { technicals: null };
     const data = (await res.json()) as {
-      chart?: { result?: Array<{ indicators?: { quote?: Array<{ close?: Array<number | null> }> } }> };
+      chart?: {
+        result?: Array<{
+          meta?: { regularMarketPrice?: number; previousClose?: number };
+          indicators?: { quote?: Array<{ close?: Array<number | null> }> };
+        }>;
+      };
     };
-    const closes = (data?.chart?.result?.[0]?.indicators?.quote?.[0]?.close ?? []).filter(
+    const result = data?.chart?.result?.[0];
+    const closes = (result?.indicators?.quote?.[0]?.close ?? []).filter(
       (c): c is number => typeof c === "number" && isFinite(c),
     );
-    return computeTechnicalsFromCloses(closes);
+    const meta = result?.meta;
+    const quote = meta?.regularMarketPrice ?? meta?.previousClose;
+    return {
+      technicals: computeTechnicalsFromCloses(closes),
+      marketPrice: typeof quote === "number" && isFinite(quote) && quote > 0 ? quote : undefined,
+    };
   } catch (e) {
     log.warn(`technicals fetch failed for ${ticker}:`, e);
-    return null;
+    return { technicals: null };
   }
 }
 
-async function factsetBlockFor(ticker: string): Promise<string> {
+/** FactSet fundamentals for one name.
+ *
+ *  `ok: false` means the block is genuinely absent and the caller must gate on
+ *  it — a synthesis built without fundamentals reads as authoritative while
+ *  having had no financials at all (observed: AVGO 2026-08-29, where a single
+ *  7s relay abort produced a full-looking card with an empty FactSet block).
+ *  Retries first, and at the heavy timeout, so the gate rarely trips: the
+ *  55-formula snapshot is the largest FactSet call in the app. */
+async function factsetBlockFor(ticker: string): Promise<{ ok: boolean; block: string; reason?: string }> {
+  const resolution = resolveFactsetId(ticker);
+  if (resolution.source !== "factset") {
+    // Not a failure: funds / dual listings are deliberately off FactSet, and
+    // gating on them would make those names permanently un-generatable.
+    return {
+      ok: true,
+      block: `=== FACTSET FUNDAMENTALS ===\nDATA GAP — not resolvable in FactSet (${resolution.reason}).`,
+    };
+  }
   try {
-    const resolution = resolveFactsetId(ticker);
-    if (resolution.source !== "factset") {
-      return `=== FACTSET FUNDAMENTALS ===\nDATA GAP — not resolvable in FactSet (${resolution.reason}).`;
+    // 2 attempts, not the default 3: the gate runs per ticker inside a batch
+    // of up to 5, and 3 x 15s of retries per name would risk the route's 300s
+    // budget when the relay is genuinely down — exactly when we want to fail
+    // fast and gate rather than time the whole batch out.
+    const snap = await relayRetry(
+      () => companySnapshot(resolution.id, { timeoutMs: RELAY_HEAVY_TIMEOUT_MS }),
+      2,
+    );
+    if (!snap.hasData) {
+      return { ok: false, block: "", reason: `FactSet returned no financials for ${resolution.id}` };
     }
-    const snap = await companySnapshot(resolution.id);
-    return formatSnapshotForPrompt(snap);
+    return { ok: true, block: formatSnapshotForPrompt(snap) };
   } catch (e) {
-    log.warn(`FactSet snapshot failed for ${ticker}:`, e);
-    return "=== FACTSET FUNDAMENTALS ===\nDATA GAP — FactSet fetch failed for this run.";
+    const msg = e instanceof Error ? e.message : String(e);
+    log.warn(`FactSet snapshot failed for ${ticker} (${resolution.id}) after retries:`, msg);
+    return { ok: false, block: "", reason: `FactSet fundamentals unavailable — ${msg}` };
   }
 }
 
 export async function POST(request: NextRequest) {
-  let body: { tickers?: unknown; force?: unknown; webFill?: unknown };
+  let body: { tickers?: unknown; force?: unknown; webFill?: unknown; allowIncomplete?: unknown };
   try {
     body = await request.json();
   } catch {
@@ -442,6 +484,10 @@ export async function POST(request: NextRequest) {
   if (requested.length > 5) return NextResponse.json({ error: "max 5 tickers per call — chunk the request" }, { status: 400 });
   const force = body.force === true;
   const webFill = body.webFill === true;
+  // Explicit, per-click override for the completeness gate below. Never
+  // defaults on — the caller has to ask for a knowingly-partial read, and the
+  // entry it produces is permanently badged `incomplete`.
+  const allowIncomplete = body.allowIncomplete === true;
 
   const [stocks, snapshots, reports, leadership, takeawayStore] = await Promise.all([
     loadBookStocks(),
@@ -453,7 +499,15 @@ export async function POST(request: NextRequest) {
   const byTicker = new Map(stocks.map((s) => [canonicalTicker(s.ticker!), s]));
   const today = new Date().toISOString().slice(0, 10);
 
-  const results: Array<{ ticker: string; status: "generated" | "cached" | "error"; entry?: SynthesisEntry; error?: string }> = [];
+  const results: Array<{
+    ticker: string;
+    status: "generated" | "cached" | "error" | "incomplete";
+    entry?: SynthesisEntry;
+    error?: string;
+    /** Required inputs that were unavailable this run (status "incomplete", or
+     *  present on a "generated" row when the override was used). */
+    missing?: string[];
+  }> = [];
 
   for (const ticker of requested) {
     const stock = byTicker.get(ticker);
@@ -475,21 +529,49 @@ export async function POST(request: NextRequest) {
         }
       }
 
-      const [factsetBlock, technicals, businessSummary] = await Promise.all([
+      const [factset, yahoo, businessSummary] = await Promise.all([
         factsetBlockFor(ticker),
         fetchTechnicals(stock.ticker!),
         fetchBusinessSummary(stock.ticker!),
       ]);
+      const technicals = yahoo.technicals;
       const takeaways = takeawaysFor(takeawayStore, ticker);
+
+      // Price: Yahoo first (same source and same precedence as /api/prices),
+      // then the stored pm:stocks value, then the last daily close. FactSet is
+      // deliberately NOT a price source here — it isn't one anywhere else on
+      // the site, and keeping it out means a relay hiccup can't blank the
+      // price the way it blanked AVGO's on 2026-08-29.
+      const currentPrice = yahoo.marketPrice ?? stock.currentPrice ?? technicals?.last;
+
+      // ── Completeness gate ───────────────────────────────────────────────
+      // A synthesis missing a REQUIRED input still reads as authoritative, so
+      // it is not generated at all: no Anthropic spend, no cache write, no
+      // history row. The caller gets the specific reasons and a retry. Inputs
+      // that legitimately vary by name (RBC/JPM/Morningstar extracts, street
+      // takeaways, research mentions, vendor technicals) are NOT gated — the
+      // header coverage chips already show those, and gating on them would
+      // make most names permanently un-generatable.
+      const missing: string[] = [];
+      if (!factset.ok) missing.push(factset.reason ?? "FactSet fundamentals unavailable");
+      if (currentPrice == null) missing.push("Live price unavailable (Yahoo quote + stored price both empty)");
+      if (!technicals) missing.push("Price history unavailable — no technicals or sector-relative read");
+      if (missing.length > 0 && !allowIncomplete) {
+        log.warn(`${ticker}: gated, required inputs missing — ${missing.join("; ")}`);
+        results.push({ ticker, status: "incomplete", missing });
+        continue;
+      }
 
       const payload: SynthesisPayload = {
         ticker,
         name: stock.name ?? ticker,
         bucket: stock.bucket as "Portfolio" | "Watchlist",
         sector: stock.sector ?? "",
-        currentPrice: stock.currentPrice,
+        currentPrice,
         earningsDate: stock.earningsDate,
-        factsetBlock,
+        factsetBlock: factset.ok
+          ? factset.block
+          : `=== FACTSET FUNDAMENTALS ===\nDATA GAP — ${factset.reason ?? "unavailable"}.`,
         snapshot: getSnapshotForTicker(snapshots, ticker),
         reports: (() => {
           const rep = getReportsForTicker(reports, ticker);
@@ -528,10 +610,13 @@ export async function POST(request: NextRequest) {
         generatedAt: new Date().toISOString(),
         promptVersion: SYNTHESIS_PROMPT_VERSION,
         inputsHash: hash,
-        priceAtGeneration: stock.currentPrice,
+        priceAtGeneration: currentPrice,
         earningsDateAtGeneration: stock.earningsDate,
         webFillUsed: webFill,
-        targets: computeTargets(payload.snapshot, stock.currentPrice),
+        // Only set when the override was used — a normal run is gated above,
+        // so a present `incomplete` always means "knowingly generated partial".
+        incomplete: missing.length > 0 ? missing : undefined,
+        targets: computeTargets(payload.snapshot, currentPrice),
         result,
       };
 
@@ -555,14 +640,14 @@ export async function POST(request: NextRequest) {
           bucket: entry.bucket,
           verdict: result.verdict,
           skew: result.skew,
-          price: stock.currentPrice,
+          price: currentPrice,
         };
         const prior = Array.isArray(history[ticker]) ? history[ticker] : [];
         const next = [...prior.filter((r) => r.date !== today), row];
         await redis.set(SYNTHESIS_HISTORY_KEY, JSON.stringify({ ...history, [ticker]: next }));
       }
 
-      results.push({ ticker, status: "generated", entry });
+      results.push({ ticker, status: "generated", entry, missing: missing.length > 0 ? missing : undefined });
     } catch (e) {
       log.error(`generation failed for ${ticker}:`, e);
       results.push({ ticker, status: "error", error: e instanceof Error ? e.message : "unknown error" });

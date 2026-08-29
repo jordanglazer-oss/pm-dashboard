@@ -173,9 +173,12 @@ export function normalizeFactsetSector(s: string | null | undefined): string | n
   return t;
 }
 
-export async function companySnapshot(factsetId: string): Promise<CompanySnapshot> {
+export async function companySnapshot(
+  factsetId: string,
+  opts?: { timeoutMs?: number }
+): Promise<CompanySnapshot> {
   const formulas = [...SCORING_FORMULAS.map((f) => f.formula), NAME_FORMULA, SECTOR_FORMULA, INDUSTRY_FORMULA];
-  const data = await crossSectional([factsetId], formulas);
+  const data = await crossSectional([factsetId], formulas, opts?.timeoutMs);
   const row = data[factsetId] || {};
   const values: Record<string, number | null> = {};
   for (const f of SCORING_FORMULAS) {

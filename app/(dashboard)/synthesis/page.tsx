@@ -2,6 +2,7 @@
 
 import { Fragment, useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { IdeasRail } from "@/app/components/IdeasRail";
+import { ClampText } from "@/app/components/ClampText";
 import { useStocks } from "@/app/lib/StockContext";
 import { displayTicker } from "@/app/lib/ticker";
 import {
@@ -310,6 +311,10 @@ export default function SynthesisPage() {
   const [filters, setFilters] = useState<Set<FilterMode>>(new Set());
   const [generating, setGenerating] = useState<Set<string>>(new Set());
   const [genErrors, setGenErrors] = useState<Record<string, string>>({});
+  /** Tickers the completeness gate refused to generate, -> the missing inputs.
+   *  Distinct from genErrors: nothing failed technically, the evidence was
+   *  incomplete and we chose not to produce a card. */
+  const [blocked, setBlocked] = useState<Record<string, string[]>>({});
 
   // Deep-link support: /synthesis?ticker=CSU.TO&from=stock — show a
   // "back to the stock page" button and scroll/open that name's row.
@@ -345,9 +350,14 @@ export default function SynthesisPage() {
   }, [load]);
 
   const generate = useCallback(
-    async (tickers: string[], opts?: { force?: boolean; webFill?: boolean }) => {
+    async (tickers: string[], opts?: { force?: boolean; webFill?: boolean; allowIncomplete?: boolean }) => {
       setGenerating((prev) => new Set([...prev, ...tickers]));
       setGenErrors((prev) => {
+        const next = { ...prev };
+        for (const t of tickers) delete next[t];
+        return next;
+      });
+      setBlocked((prev) => {
         const next = { ...prev };
         for (const t of tickers) delete next[t];
         return next;
@@ -357,10 +367,15 @@ export default function SynthesisPage() {
           const res = await fetch("/api/synthesis-screen", {
             method: "POST",
             headers: { "Content-Type": "application/json" },
-            body: JSON.stringify({ tickers: batch, force: opts?.force ?? true, webFill: opts?.webFill ?? false }),
+            body: JSON.stringify({
+              tickers: batch,
+              force: opts?.force ?? true,
+              webFill: opts?.webFill ?? false,
+              allowIncomplete: opts?.allowIncomplete ?? false,
+            }),
           });
           const json = (await res.json()) as {
-            results?: Array<{ ticker: string; status: string; entry?: SynthesisEntry; error?: string }>;
+            results?: Array<{ ticker: string; status: string; entry?: SynthesisEntry; error?: string; missing?: string[] }>;
             error?: string;
           };
           if (!res.ok) throw new Error(json.error ?? `HTTP ${res.status}`);
@@ -379,6 +394,17 @@ export default function SynthesisPage() {
           setGenErrors((prev) => {
             const next = { ...prev };
             for (const r of json.results ?? []) if (r.status === "error" && r.error) next[r.ticker] = r.error;
+            return next;
+          });
+          // Rows the completeness gate blocked: nothing was generated or
+          // cached, so surface WHY and offer a retry rather than leaving the
+          // row looking merely un-generated.
+          setBlocked((prev) => {
+            const next = { ...prev };
+            for (const r of json.results ?? []) {
+              if (r.status === "incomplete") next[r.ticker] = r.missing ?? ["required inputs unavailable"];
+              else delete next[r.ticker];
+            }
             return next;
           });
           setGenerating((prev) => {
@@ -636,10 +662,30 @@ export default function SynthesisPage() {
                     </div>
                     {isOpen && r && (
                       <div className="space-y-3 bg-surface-2/50 px-4 py-3">
+                        {row.entry?.incomplete && row.entry.incomplete.length > 0 && (
+                          <div className="rounded-md border border-neg/40 bg-neg/5 px-3 py-2">
+                            <div className="text-[10px] font-bold uppercase tracking-wide text-neg">
+                              Incomplete — generated without required evidence
+                            </div>
+                            <ul className="mt-1 list-disc pl-4 text-xs text-ink-2">
+                              {row.entry.incomplete.map((m, i) => (
+                                <li key={i}>{m}</li>
+                              ))}
+                            </ul>
+                            <div className="mt-1 text-[10px] text-ink-3">
+                              Do not rely on this as a clean read — regenerate once the source recovers.
+                            </div>
+                          </div>
+                        )}
                         {r.whatTheyDo && (
                           <div>
                             <div className="text-[10px] font-bold uppercase tracking-wide text-ink-3">What they do</div>
-                            <div className="text-xs leading-snug text-ink-2">{r.whatTheyDo}</div>
+                            <ClampText
+                              text={r.whatTheyDo}
+                              lines={3}
+                              threshold={260}
+                              textClassName="text-xs leading-snug text-ink-2"
+                            />
                           </div>
                         )}
                         {row.entry?.targets && row.entry.targets.length > 0 && (
@@ -651,7 +697,7 @@ export default function SynthesisPage() {
                                 className="inline-flex items-center gap-1 rounded-full border border-line bg-surface px-2 py-0.5 text-[10px] text-ink-2"
                                 title={t.asOf ? `as of ${t.asOf}` : undefined}
                               >
-                                {t.source} <span className="font-mono font-semibold text-ink">{t.target}</span>
+                                {t.source} <span className="font-mono font-semibold text-ink">{t.target.toFixed(2)}</span>
                                 {t.upsidePct != null && (
                                   <span className={`font-mono ${t.upsidePct >= 0 ? "text-pos" : "text-neg"}`}>
                                     {t.upsidePct >= 0 ? "+" : ""}
@@ -676,7 +722,12 @@ export default function SynthesisPage() {
                         {r.priceAction && (
                           <div>
                             <div className="text-[10px] font-bold uppercase tracking-wide text-ink-3">Price action — name &amp; sector</div>
-                            <div className="text-xs text-ink-2">{r.priceAction}</div>
+                            <ClampText
+                              text={r.priceAction}
+                              lines={2}
+                              threshold={220}
+                              textClassName="text-xs text-ink-2"
+                            />
                           </div>
                         )}
                         <div className="grid gap-3 sm:grid-cols-2">
@@ -728,8 +779,44 @@ export default function SynthesisPage() {
                       </div>
                     )}
                     {isOpen && !r && (
-                      <div className="bg-surface-2/50 px-4 py-3 text-xs text-ink-3">
-                        No synthesis yet — hit Generate to build one from the current evidence.
+                      <div className="bg-surface-2/50 px-4 py-3 text-xs">
+                        {blocked[row.ticker] ? (
+                          <div className="space-y-2">
+                            <div className="font-semibold text-neg">
+                              Not generated — required evidence unavailable
+                            </div>
+                            <ul className="list-disc pl-4 text-ink-2">
+                              {blocked[row.ticker].map((m, i) => (
+                                <li key={i}>{m}</li>
+                              ))}
+                            </ul>
+                            <div className="text-ink-3">
+                              Nothing was cached or logged. Retry first — these are usually transient upstream
+                              timeouts.
+                            </div>
+                            <div className="flex gap-2">
+                              <button
+                                onClick={() => void generate([row.ticker], { force: true })}
+                                disabled={busy}
+                                className="rounded-md border border-line bg-surface px-2 py-1 text-[10px] font-medium text-ink-2 hover:text-ink disabled:opacity-40"
+                              >
+                                Retry
+                              </button>
+                              <button
+                                onClick={() => void generate([row.ticker], { force: true, allowIncomplete: true })}
+                                disabled={busy}
+                                className="rounded-md border border-line bg-surface px-2 py-1 text-[10px] text-ink-3 hover:text-ink disabled:opacity-40"
+                                title="Generate anyway from the evidence that IS available. The result is permanently marked incomplete — do not rely on it as a clean read."
+                              >
+                                Generate anyway (incomplete)
+                              </button>
+                            </div>
+                          </div>
+                        ) : (
+                          <span className="text-ink-3">
+                            No synthesis yet — hit Generate to build one from the current evidence.
+                          </span>
+                        )}
                       </div>
                     )}
                   </Fragment>

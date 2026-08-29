@@ -55,7 +55,7 @@ export const SYNTHESIS_CACHE_KEY = "pm:synthesis-screen-cache";
 export const SYNTHESIS_HISTORY_KEY = "pm:synthesis-history";
 
 /** Bump to invalidate every cached synthesis when the prompt changes shape. */
-export const SYNTHESIS_PROMPT_VERSION = "v4";
+export const SYNTHESIS_PROMPT_VERSION = "v5";
 
 /** Third-party technical readings older than this are flagged as discounted. */
 export const TECH_OPINION_STALE_DAYS = 30;
@@ -394,28 +394,29 @@ STRICT EVIDENCE RULES:
 2. Where an important input is missing, list it in "dataGaps" — do not guess or fill from memory.
 3. Every bullet must cite its supporting block in "source" (one of: "factset", "rbc report", "jpm report", "morningstar", "consensus", "revisions", "street takeaways", "research lists", "technicals", "third-party technicals", "sector leadership", "earnings", "web").
 4. The BEAR case must be built from actual negatives present in the data (downward revisions, target cuts, bearish list mentions, deteriorating technicals, analyst-stated risks, lagging sector). If the data contains no genuine negatives, say so in one bullet rather than inventing generic risks.
-5. Be direct and specific — numbers over adjectives. No hedging boilerplate.
+5. Be direct and specific — numbers over adjectives. No hedging boilerplate. In bullets, lead with the figure and cut every word that carries no information: do not name the source in prose ("Morningstar flags...", "JPM notes...") — the "source" field already records it — and do not append an explanatory clause restating what the figure implies. Prefer FEWER, denser bullets over more, thinner ones; two bullets carrying three facts each beats three carrying one.
 6. Price-target hierarchy: the RBC and JPM report targets are the PRIMARY anchors; the FactSet street average is a breadth/consensus check on them; the Morningstar FVE carries the least weight. When citing a target range, anchor it on RBC/JPM.
-7. "priceAction" is the ONLY place for price/sector/subsector movement commentary. "keyDebate" must be the fundamental question (demand, competition, margins, valuation vs growth) — do not restate price action there.
+7. "priceAction" is the ONLY place in the entire object for price/sector/subsector MOVEMENT commentary (% off highs, 1M/3M returns, DMA position, sector or subsector relative performance). Do not repeat those figures in base/bull/bear bullets or in keyDebate. A bear bullet may reference weak price action, but its substance must be the FUNDAMENTAL risk (demand, competition, margins, concentration, valuation), not a second recital of the move. "keyDebate" must be the fundamental question.
+7b. NO REPETITION: each fact, figure, and argument appears EXACTLY ONCE across the whole object. Before emitting a field, check what you already wrote — if a number is in priceAction it may not reappear elsewhere; if a bullet already makes a point, no other field may restate it in different words. Repetition is the single most common defect in this output; prefer omitting a restatement over padding a field.
 8. Third-party technical opinions (MarketEdge, BoostedAI, SIA) are CORROBORATING input for "priceAction" and technical bullets — never a verdict driver on their own (vendor agreement does not outvote deteriorating fundamentals). MarketEdge's Opinion Score is the most forward-leaning of them (a deteriorating Long is an early warning). Any reading flagged STALE must be discounted and, if it would otherwise matter, listed in "dataGaps" as needing a refresh.
 9. "whatTheyDo" is the ONE exception to rule 1's data-only constraint, and only partially: describing the business QUALITATIVELY (what the company does, how it charges customers, which segments exist and which drive profit) may draw on the BUSINESS PROFILE block, the report extracts, and your general industry knowledge. But every NUMBER in it (revenue splits, margins, segment sizes) must still come from the provided data blocks — never from memory. If segment economics aren't in the data and you aren't qualitatively certain, say "segment economics not in data" rather than guessing.
 
 OUTPUT: respond with ONLY a JSON object, no markdown fences:
 {
   "verdict": one of ${JSON.stringify([...verdicts])},
-  "verdictReason": "one sentence",
+  "verdictReason": "MAX 25 WORDS, one sentence — the deciding consideration only, not a summary of the cases below",
   "skew": integer -2..2 (risk/reward asymmetry: +2 strongly bull-skewed, 0 balanced, -2 strongly bear-skewed),
-  "whatTheyDo": "2-3 sentences: what the company does, exactly how it generates revenue (who pays it, for what), and its most profitable / largest segments — the primer a PM needs before the cases below. Plain English.",
+  "whatTheyDo": "MAX 55 WORDS. What the company does, exactly how it generates revenue (who pays it, for what), and its largest / most profitable segments — the primer a PM needs before the cases below. Plain English, no parenthetical list-dumps.",
   "base": [{"text": "...", "source": "..."}] (2-3 bullets — the most likely path),
   "bull": [{"text": "...", "source": "..."}] (2-3 bullets),
   "bear": [{"text": "...", "source": "..."}] (2-3 bullets),
-  "plain": {"base": "...", "bull": "...", "bear": "..."} (REQUIRED — one sentence each, plain English a non-specialist gets in 10 seconds: no tickers-as-shorthand, no jargon like "revisions" or "multiple re-rating", just what would happen and why it matters),
-  "priceAction": "1-2 sentences: what the stock itself has done recently AND how its sector/subsector are trading (leading or lagging), from the technicals and sector-leadership blocks",
+  "plain": {"base": "...", "bull": "...", "bear": "..."} (REQUIRED — MAX 20 WORDS each. This is NOT a simplified retelling of the bullets: it is the CONSEQUENCE FOR THE POSITION if that case plays out — what the PM would do or feel differently about owning it. If your sentence merely restates a bullet in easier words, you have written it wrong. Plain English, no jargon like "revisions" or "multiple re-rating"),
+  "priceAction": "MAX 35 WORDS. What the stock has done recently AND how its sector/subsector are trading (leading or lagging), from the technicals and sector-leadership blocks. This is the only place these figures appear.",
   "nextStep": "ONE concrete action consistent with the verdict (e.g. 'Underwrite now; pressure-test hyperscaler capex assumptions at the Oct earnings', 'Revisit after the Q3 print', 'Trim review: confirm whether the estimate cuts extend to FY+2') — an instruction, not an observation",
   "keyDebate": "the single FUNDAMENTAL question that decides this name",
   "catalysts": [{"date": "YYYY-MM-DD or period", "event": "..."}] (from the data only; [] if none),
   "wouldChangeCall": ["observable development that would flip the verdict", ...] (REQUIRED, 1-3 items — never empty; there is always at least one observable that would flip the call),
-  "dataGaps": ["missing input", ...] ([] if none)
+  "dataGaps": ["missing input", ...] (MAX 3, [] if none — investment gaps ONLY: something you would need to firm up the CALL. Never list pipeline/plumbing problems (a failed fetch, an unresolved vendor rating, a missing live price, an absent report) — the app detects those itself and shows them separately, and a required input being absent blocks generation before you are asked. Never list a source as a gap merely because this name has no coverage from it.)
 }
 
 Verdict guide:

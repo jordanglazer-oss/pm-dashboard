@@ -86,6 +86,12 @@ export type SynthesisEntry = {
   /** The stock's next-earnings date as known at generation time. */
   earningsDateAtGeneration?: string;
   webFillUsed: boolean;
+  /** Set ONLY when the completeness gate was explicitly overridden: the
+   *  required inputs that were missing at generation time. A normal run is
+   *  blocked before it reaches the model, so a present value always means the
+   *  PM knowingly asked for a partial read — render it as a warning, and never
+   *  treat such an entry as a clean synthesis. Absent on every gated run. */
+  incomplete?: string[];
   /** Deterministic target summary computed at generation time. Pre-v2: absent. */
   targets?: TargetLine[];
   result: SynthesisResult;

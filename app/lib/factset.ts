@@ -64,12 +64,20 @@ function relayBase(): string {
  *  source. Kept comfortably under the price routes' own maxDuration. */
 const RELAY_TIMEOUT_MS = 7000;
 
+/** Opt-in longer cap for HEAVY calls on routes that are not latency-sensitive.
+ *  The 7s default is tuned for the price routes, where fast-failing to Yahoo is
+ *  the right trade. It is the WRONG trade for the 55-formula companySnapshot()
+ *  on the scoring / synthesis paths, where FactSet is the primary source and
+ *  the route has minutes of budget: observed AVGO synthesis 2026-08-29 losing
+ *  its entire fundamentals block to a single 7s abort. */
+export const RELAY_HEAVY_TIMEOUT_MS = 15000;
+
 /** Low-level: pass a raw FactSet API path+query through the relay. */
-async function relayGet(factsetPath: string): Promise<unknown> {
+async function relayGet(factsetPath: string, timeoutMs: number = RELAY_TIMEOUT_MS): Promise<unknown> {
   if (!factsetConfigured()) throw new Error("FactSet relay not configured");
   const url = `${relayBase()}/?u=${encodeURIComponent(factsetPath)}`;
   const controller = new AbortController();
-  const timer = setTimeout(() => controller.abort(), RELAY_TIMEOUT_MS);
+  const timer = setTimeout(() => controller.abort(), timeoutMs);
   try {
     const res = await fetch(url, {
       headers: { "x-relay-key": RELAY_SECRET as string },
@@ -86,7 +94,7 @@ async function relayGet(factsetPath: string): Promise<unknown> {
   } catch (e) {
     // Normalize an abort into a clear, catchable error so callers fall back.
     if (e instanceof Error && e.name === "AbortError") {
-      throw new Error(`FactSet relay timed out after ${RELAY_TIMEOUT_MS}ms`);
+      throw new Error(`FactSet relay timed out after ${timeoutMs}ms`);
     }
     throw e;
   } finally {
@@ -169,13 +177,14 @@ function parseCrossSectional(
  */
 export async function crossSectional(
   ids: string[],
-  formulas: string[]
+  formulas: string[],
+  timeoutMs?: number
 ): Promise<Record<string, Record<string, FactsetValue>>> {
   if (ids.length === 0 || formulas.length === 0) return {};
   const idStr = ids.join(",");
   const formulaStr = formulas.map((f) => f.replace(/,/g, "%2C")).join(",");
   const path = `/formula-api/v1/cross-sectional?ids=${idStr}&formulas=${formulaStr}`;
-  const raw = (await relayGet(path)) as FactsetCrossSectional;
+  const raw = (await relayGet(path, timeoutMs)) as FactsetCrossSectional;
   return parseCrossSectional(raw, formulas);
 }
 
