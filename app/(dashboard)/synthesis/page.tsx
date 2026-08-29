@@ -196,6 +196,87 @@ function Bullets({ title, bullets, tone, plain }: { title: string; bullets: Synt
 
 const fmtPct = (v: number | null) => (v == null ? "–" : `${v >= 0 ? "+" : ""}${v.toFixed(1)}%`);
 
+type SortKey = "label" | "r1w" | "r1m" | "r3m";
+
+/** One sortable half of the leadership table (sectors on the left, industries on the right). */
+function LeadershipTable({ title, rows }: { title: string; rows: LeadershipRow[] }) {
+  // Default matches the previous render order: strongest 3M first.
+  const [sortKey, setSortKey] = useState<SortKey>("r3m");
+  const [asc, setAsc] = useState(false);
+
+  const sorted = useMemo(() => {
+    const out = [...rows];
+    out.sort((a, b) => {
+      if (sortKey === "label") return a.label.localeCompare(b.label) * (asc ? 1 : -1);
+      const av = a[sortKey];
+      const bv = b[sortKey];
+      // Nulls always sink to the bottom regardless of direction.
+      if (av == null && bv == null) return 0;
+      if (av == null) return 1;
+      if (bv == null) return -1;
+      return (av - bv) * (asc ? 1 : -1);
+    });
+    return out;
+  }, [rows, sortKey, asc]);
+
+  const toggle = (key: SortKey) => {
+    if (key === sortKey) setAsc((v) => !v);
+    else {
+      setSortKey(key);
+      setAsc(key === "label");
+    }
+  };
+
+  const arrow = (key: SortKey) => (key === sortKey ? (asc ? " ▲" : " ▼") : "");
+
+  const th = (key: SortKey, label: string, align: "left" | "right") => (
+    <th className={`px-2 py-1 ${align === "left" ? "text-left" : "text-right"}`}>
+      <button
+        type="button"
+        onClick={() => toggle(key)}
+        className={`uppercase tracking-wide hover:text-ink-2 ${key === sortKey ? "text-ink-2" : ""}`}
+      >
+        {label}
+        {arrow(key)}
+      </button>
+    </th>
+  );
+
+  const cell = (r: LeadershipRow, metric: "r1w" | "r1m" | "r3m") => {
+    const v = r[metric];
+    const cls = v == null ? "text-ink-3" : v >= 0 ? "text-pos" : "text-neg";
+    return <td key={metric} className={`px-2 py-1 text-right font-mono text-[11px] ${cls}`}>{fmtPct(v)}</td>;
+  };
+
+  return (
+    <div className="overflow-x-auto">
+      <div className="px-2 pb-1 text-[10px] font-bold uppercase tracking-wide text-ink-3">{title}</div>
+      <table className="w-full min-w-[280px]">
+        <thead>
+          <tr className="text-[10px] text-ink-3">
+            {th("label", "Group", "left")}
+            {th("r1w", "1W", "right")}
+            {th("r1m", "1M", "right")}
+            {th("r3m", "3M", "right")}
+          </tr>
+        </thead>
+        <tbody>
+          {sorted.map((r) => (
+            <tr key={r.symbol} className="border-t border-line">
+              <td className="px-2 py-1 text-xs text-ink-2">
+                {r.label} <span className="font-mono text-[10px] text-ink-3">{r.symbol}</span>
+              </td>
+              {cell(r, "r1w")}
+              {cell(r, "r1m")}
+              {cell(r, "r3m")}
+            </tr>
+          ))}
+        </tbody>
+      </table>
+    </div>
+  );
+}
+
 function LeadershipStrip({ data }: { data: SectorLeadership }) {
   const [open, setOpen] = useState(false);
   const sectors = useMemo(
@@ -206,11 +287,6 @@ function LeadershipStrip({ data }: { data: SectorLeadership }) {
     () => [...data.rows.filter((r) => r.kind === "industry" && r.r3m != null)].sort((a, b) => (b.r3m ?? 0) - (a.r3m ?? 0)),
     [data],
   );
-  const cell = (r: LeadershipRow, metric: "r1w" | "r1m" | "r3m") => {
-    const v = r[metric];
-    const cls = v == null ? "text-ink-3" : v >= 0 ? "text-pos" : "text-neg";
-    return <td key={metric} className={`px-2 py-1 text-right font-mono text-[11px] ${cls}`}>{fmtPct(v)}</td>;
-  };
   return (
     <div className="rounded-lg border border-line bg-surface p-3">
       <div className="flex items-center justify-between">
@@ -244,30 +320,9 @@ function LeadershipStrip({ data }: { data: SectorLeadership }) {
         ))}
       </div>
       {open && (
-        <div className="mt-3 overflow-x-auto">
-          <table className="min-w-[420px]">
-            <thead>
-              <tr className="text-[10px] uppercase tracking-wide text-ink-3">
-                <th className="px-2 py-1 text-left">Group</th>
-                <th className="px-2 py-1 text-right">1W</th>
-                <th className="px-2 py-1 text-right">1M</th>
-                <th className="px-2 py-1 text-right">3M</th>
-              </tr>
-            </thead>
-            <tbody>
-              {[...sectors, ...industries].map((r) => (
-                <tr key={r.symbol} className="border-t border-line">
-                  <td className="px-2 py-1 text-xs text-ink-2">
-                    {r.label} <span className="font-mono text-[10px] text-ink-3">{r.symbol}</span>
-                    {r.kind === "industry" && <span className="ml-1 text-[9px] text-ink-3">(industry)</span>}
-                  </td>
-                  {cell(r, "r1w")}
-                  {cell(r, "r1m")}
-                  {cell(r, "r3m")}
-                </tr>
-              ))}
-            </tbody>
-          </table>
+        <div className="mt-3 grid gap-4 md:grid-cols-2">
+          <LeadershipTable title="Sectors" rows={sectors} />
+          <LeadershipTable title="Industries" rows={industries} />
         </div>
       )}
     </div>
