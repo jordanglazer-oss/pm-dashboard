@@ -1,6 +1,7 @@
 import { NextRequest, NextResponse } from "next/server";
 import { getRedis } from "@/app/lib/redis";
 import { computeChangeEvents } from "@/app/lib/change-monitor";
+import { SIA_HISTORY_KEY, type SiaHistoryStore } from "@/app/lib/sia-history";
 import type { Stock } from "@/app/lib/types";
 import type { ScoreHistoryStore } from "@/app/api/kv/score-history/route";
 import type { AnalystSnapshots } from "@/app/lib/analyst-snapshots";
@@ -52,13 +53,14 @@ export async function GET(req: NextRequest) {
   const nowMs = Date.now();
   try {
     const redis = await getRedis();
-    const [scoreHistory, stocks, snapshots, base, researchRemovals, research] = await Promise.all([
+    const [scoreHistory, stocks, snapshots, base, researchRemovals, research, siaHistory] = await Promise.all([
       readJson<ScoreHistoryStore>(redis, "pm:score-history", {}),
       readJson<{ stocks?: Stock[] } | Stock[]>(redis, "pm:stocks", []),
       readJson<AnalystSnapshots>(redis, "pm:analyst-snapshots", {}),
       readJson<PriceBase | null>(redis, PRICEBASE_KEY, null),
       readJson<ResearchRemovalStore>(redis, RESEARCH_REMOVALS_KEY, {}),
       readJson<ResearchState | null>(redis, "pm:research", null),
+      readJson<SiaHistoryStore>(redis, SIA_HISTORY_KEY, {}),
     ]);
     const stockList: Stock[] = Array.isArray(stocks) ? stocks : (stocks.stocks ?? []);
 
@@ -87,6 +89,7 @@ export async function GET(req: NextRequest) {
       priceBaseline: base?.prices ?? {},
       researchRemovals,
       researchCurrentTickers,
+      siaHistory,
       windowDays,
       nowMs,
     });

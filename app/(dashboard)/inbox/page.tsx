@@ -19,6 +19,7 @@ import {
 import { applySiaEntries, applyBoostedEntries, applyMarketEdgeRows, type StockPatch } from "@/app/lib/stock-patches";
 import { parseMarketEdgeCsv } from "@/app/lib/marketedge-csv";
 import { parseSiaCsv } from "@/app/lib/sia-csv";
+import { tickersEqual, sameCompanyLoose } from "@/app/lib/ticker";
 import { UNIVERSE_MIN_ROWS, isNamedUniverseExport, looksLikeCompleteIndexCut } from "@/app/lib/sia-universe-shared";
 import { parseBoostedCsv } from "@/app/lib/boosted-csv";
 type FactsetEntry = { date: string; label: string; event: string | null };
@@ -880,11 +881,37 @@ export default function InboxPage() {
           snapshotError = ["Universe snapshot not stored (request failed)."];
         }
       }
+      // Log this week's reading for held names (monitoring only — no score is
+      // touched). Best-effort: a failed log must not fail an import whose
+      // score patches have already been applied.
+      let histNote = "";
+      try {
+        const readings: Record<string, Record<string, number | undefined>> = {};
+        for (const r of parsed.ranked) {
+          // SAME match rule as the score path: an index export must use exact
+          // ticker identity or it maps the S&P's Loews (L) onto Loblaw (L.TO).
+          const held = stocks.find((s) => (isUniverse ? tickersEqual : sameCompanyLoose)(s.ticker, r.ticker));
+          if (!held) continue;
+          readings[held.ticker.toUpperCase()] = {
+            smax: r.smax, percentile: r.percentile, rank: r.rank, universeSize: r.universeSize,
+          };
+        }
+        if (Object.keys(readings).length > 0) {
+          const res = await fetch("/api/kv/sia-history", {
+            method: "POST",
+            headers: { "Content-Type": "application/json" },
+            body: JSON.stringify({ readings }),
+          }).then((r) => r.json());
+          if (res?.appended > 0) histNote = ` Logged ${res.appended} history readings.`;
+        }
+      } catch {
+        // Monitoring log only — silence is correct here.
+      }
       setScreenshotImportSummary({
         source: "sia",
         cached: false,
         ...summary,
-        note: snapshotNote || undefined,
+        note: [snapshotNote, histNote].filter(Boolean).join(" ") || undefined,
         errors: snapshotError,
       });
     } catch (e) {

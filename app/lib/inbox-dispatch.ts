@@ -35,6 +35,8 @@ import {
 import { parseMarketEdgeCsv } from "./marketedge-csv";
 import { parseSiaCsv } from "./sia-csv";
 import { writeSiaSnapshot, UNIVERSE_MIN_ROWS, isNamedUniverseExport, looksLikeCompleteIndexCut, type SiaRow } from "./sia-universe";
+import { appendSiaHistory } from "./sia-history";
+import { sameCompanyLoose, tickersEqual } from "./ticker";
 import { parseEquateRows } from "./equate-parse";
 import { writeEquateSheet } from "./equate-store";
 import { parseBoostedCsv } from "./boosted-csv";
@@ -321,6 +323,42 @@ export type DispatchResult = {
 
 // ── Handlers ───────────────────────────────────────────────────────
 
+/**
+ * Record one reading per HELD name into pm:sia-history.
+ *
+ * Held names only: the point of the log is "is one of MY names rolling
+ * over?", and logging all 566 universe rows weekly would grow the key without
+ * serving that. Failures are swallowed — a monitoring log must never fail an
+ * ingest that has already written the scores.
+ */
+async function logSiaHistory(
+  ranked: Array<{ ticker: string; smax?: number; percentile?: number; rank?: number; universeSize?: number }>,
+  stocks: Stock[],
+  universeMode: boolean,
+): Promise<string> {
+  try {
+    // SAME match rule as applySiaEntries: an index export must use exact
+    // ticker identity, or the S&P's Loews (L) is logged as Loblaw (L.TO).
+    const matches = universeMode ? tickersEqual : sameCompanyLoose;
+    const readings: Record<string, { smax?: number; percentile?: number; rank?: number; universeSize?: number }> = {};
+    for (const r of ranked) {
+      const held = stocks.find((s) => matches(s.ticker, r.ticker));
+      if (!held) continue;
+      readings[held.ticker.toUpperCase()] = {
+        smax: r.smax,
+        percentile: r.percentile,
+        rank: r.rank,
+        universeSize: r.universeSize,
+      };
+    }
+    const res = await appendSiaHistory(readings);
+    return res.appended > 0 ? ` · logged ${res.appended} history readings` : "";
+  } catch (e) {
+    console.error("[Inbox] sia-history append failed (continuing):", e);
+    return "";
+  }
+}
+
 async function handleSia(att: AttachmentInput, label: string): Promise<DispatchResult> {
   // Routing by content, NOT by MIME label: image/PDF → vision path;
   // ANYTHING ELSE → attempt CSV. We don't trust the MIME type because
@@ -369,10 +407,15 @@ async function handleSia(att: AttachmentInput, label: string): Promise<DispatchR
       const dropped = summary.rowsParsed - summary.matched;
       if (dropped > 0) snapshotNote = ` · held names only — ${dropped} other rows not stored (not recognised as an index export)`;
     }
+    // Log this week's reading for the names the PM holds. Monitoring only —
+    // nothing here touches a score. First reading of the day wins, so the
+    // holdings exports (which carry SIA's percentile) take precedence over the
+    // index exports (which carry rank) when both cover the same name.
+    const histNote = await logSiaHistory(parsed.ranked, stocks, isUniverse);
     return {
       ok: true,
       kind: "sia",
-      message: `SIA CSV: ${summary.matched} matched / ${summary.rowsParsed} rows · ${summary.updated} updated${summary.expectedButMissing.length ? ` · ${summary.expectedButMissing.length} expected names missing` : ""}${snapshotNote}.`,
+      message: `SIA CSV: ${summary.matched} matched / ${summary.rowsParsed} rows · ${summary.updated} updated${summary.expectedButMissing.length ? ` · ${summary.expectedButMissing.length} expected names missing` : ""}${snapshotNote}${histNote}.`,
       detail: { label, source: "csv", summary, touched },
     };
   }

@@ -21,6 +21,7 @@ const TYPE_LABELS: Record<ChangeType, string> = {
   data: "Data",
   "research-removed": "List drops",
   estimate: "Estimates",
+  "relative-strength": "Rel. strength",
 };
 
 const SEV_DOT: Record<Severity, string> = {

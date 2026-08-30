@@ -23,6 +23,7 @@ import type { Stock, Scores, ScoreKey } from "./types";
 import type { ScoreHistoryEntry, ScoreHistoryStore } from "@/app/api/kv/score-history/route";
 import type { AnalystSnapshots } from "./analyst-snapshots";
 import type { ResearchRemovalStore } from "./research-removals";
+import { siaPercentileDrift, type SiaHistoryStore } from "./sia-history";
 import { isScoreable, marketEdgeApplies } from "./scoring";
 
 // ── Tunable thresholds ──────────────────────────────────────────────
@@ -33,9 +34,21 @@ export const THRESHOLDS = {
   priceMovePct: 7,
   /** A source value not refreshed in this many days reads as "going stale". */
   staleDays: 21,
+  /**
+   * Percentile points a name must give up in SIA's relative-strength ranking
+   * to surface as deterioration.
+   *
+   * This is the signal SMAX cannot carry. SMAX is a 0-10 integer, so a name
+   * can slide most of the way down its tier without the score used for
+   * `relativeStrength` moving at all — SMAX 10 alone spans the 52nd to the
+   * 97th percentile across the book. 15 points is roughly a sixth of the
+   * range: large enough not to fire on weekly noise, small enough to show up
+   * well before SMAX finally steps down.
+   */
+  siaPercentileDrop: 15,
 };
 
-export type ChangeType = "rating" | "score" | "target" | "price" | "signal" | "data" | "research-removed" | "estimate";
+export type ChangeType = "rating" | "score" | "target" | "price" | "signal" | "data" | "research-removed" | "estimate" | "relative-strength";
 export type Severity = "up" | "down" | "warn" | "info";
 
 export type ChangeEvent = {
@@ -114,6 +127,9 @@ export type ComputeInput = {
   priceBaseline: Record<string, number>;
   /** Append-only log of tickers dropped from research lists (pm:research-removals). */
   researchRemovals: ResearchRemovalStore;
+  /** Append-only log of SIA relative-strength readings (pm:sia-history).
+   *  Optional — absent until the first SIA upload after the log shipped. */
+  siaHistory?: SiaHistoryStore;
   /** Current tickers per research source (upper-cased), so a "drop" that has
    *  since been re-added (e.g. a name that was only on the 2nd screenshot of a
    *  multi-part list) is suppressed. Keyed by RemovalSource. */
@@ -124,7 +140,7 @@ export type ComputeInput = {
 };
 
 export function computeChangeEvents(input: ComputeInput): ChangeEvent[] {
-  const { scoreHistory, stocks, snapshots, priceBaseline, researchRemovals, researchCurrentTickers, windowDays, nowMs } = input;
+  const { scoreHistory, stocks, snapshots, priceBaseline, researchRemovals, researchCurrentTickers, siaHistory, windowDays, nowMs } = input;
   const windowStartMs = nowMs - windowDays * 24 * 60 * 60 * 1000;
   const events: ChangeEvent[] = [];
   const byTicker = new Map<string, Stock>();
@@ -318,6 +334,34 @@ export function computeChangeEvents(input: ComputeInput): ChangeEvent[] {
         severity: "warn",
         headline: `${staleSrcs.join(" + ")} value going stale`,
         detail: `Not refreshed in ${THRESHOLDS.staleDays}+ days — re-send to keep the score current`,
+        at: todayIso,
+      });
+    }
+  }
+
+  // ── SIA relative-strength drift ───────────────────────────────────
+  // Read from pm:sia-history rather than pm:stocks, because the fact of
+  // interest is a TREND and the stock record only holds the latest SMAX.
+  // Scoped to names still held, and reported whether or not SMAX moved —
+  // "still a 10, but down 29 percentile points" is precisely the case the
+  // existing score events cannot raise.
+  if (siaHistory) {
+    for (const s of stocks) {
+      if (!isScoreable(s)) continue;
+      const T = s.ticker.toUpperCase();
+      const drift = siaPercentileDrift(siaHistory[T], T, windowStartMs);
+      if (!drift || drift.delta > -THRESHOLDS.siaPercentileDrop) continue;
+      const smaxFlat = drift.smaxFrom != null && drift.smaxFrom === drift.smaxTo;
+      events.push({
+        id: `${T}:relative-strength:${drift.fromDate}-${drift.toDate}`,
+        ticker: s.ticker, name: s.name, bucket: s.bucket as "Portfolio" | "Watchlist",
+        type: "relative-strength",
+        severity: "down",
+        headline: `SIA relative strength falling${smaxFlat ? ` (SMAX still ${drift.smaxTo})` : ""}`,
+        detail: smaxFlat
+          ? `SIA percentile ${drift.from.toFixed(0)} → ${drift.to.toFixed(0)} since ${drift.fromDate}, with no change in SMAX — the score won't show this yet`
+          : `SIA percentile ${drift.from.toFixed(0)} → ${drift.to.toFixed(0)} since ${drift.fromDate}`,
+        delta: fmtSigned(drift.delta, 0),
         at: todayIso,
       });
     }
