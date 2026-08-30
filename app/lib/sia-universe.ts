@@ -143,10 +143,15 @@ export async function writeSiaSnapshot(
  * "already-strong names still improving".
  */
 export async function latestSiaMovers(opts?: {
-  minWChg?: number;
+  /** Minimum weekly climb as a PERCENT of the name's own index (4 = 4%). */
+  minWChgPct?: number;
   minSmax?: number;
 }): Promise<SiaMoverResult> {
-  const minWChg = opts?.minWChg ?? 20;
+  // Percent-of-own-index, for the same reason as siaHits: the merged snapshot
+  // holds a 504-name index and a 62-name one, and "climbed 20 places" is a
+  // routine week in the first and a third of the whole index in the second.
+  // The default reproduces the old absolute 20 against the S&P (20/504 = 4%).
+  const minWChgPct = opts?.minWChgPct ?? 4;
   const minSmax = opts?.minSmax ?? 7;
   const snap = await readSiaSnapshot();
   if (!snap?.rows) return { date: snap?.date ?? null, movers: [], universeSize: 0 };
@@ -154,8 +159,9 @@ export async function latestSiaMovers(opts?: {
 
   const movers: SiaMover[] = [];
   for (const [ticker, row] of Object.entries(snap.rows)) {
-    if (typeof row?.wChg !== "number" || row.wChg < minWChg) continue;
     if (typeof row.rank !== "number") continue;
+    const n = row.universeSize && row.universeSize > 0 ? row.universeSize : 504;
+    if (typeof row?.wChg !== "number" || row.wChg < (minWChgPct / 100) * n) continue;
     if (typeof row.smax === "number" && row.smax < minSmax) continue;
     movers.push({
       ticker,

@@ -26,11 +26,25 @@ import { splitCsvRow, detectCsvSeparator } from "./csv-utils";
  */
 export type SiaRankedRow = ScrapedSia & {
   rank?: number;
+  /** Rows in this file's ranked block — 504 for the S&P 500, 62 for the TSX.
+   *  Carried per row so a rank can be read as a position WITHIN ITS OWN index
+   *  after the two files are merged into one snapshot. Without it, rank 60
+   *  from a 62-name index and rank 60 from a 504-name index are
+   *  indistinguishable, and any threshold applied to the merged set means
+   *  something different for each. Taken from the file's contents, not its
+   *  name, so it needs no renaming and keeps working for any index SIA adds.
+   */
+  universeSize?: number;
   dChg?: number;
   wChg?: number;
   mChg?: number;
   qChg?: number;
   sector?: string;
+  /** SIA's own relative-strength percentile ("97.18%"), as a 0-100 number.
+   *  Present in the HOLDINGS exports, which have no RANK column; the index
+   *  exports carry rank instead. Continuous where SMAX is a 0-10 integer that
+   *  ties dozens of names together. */
+  percentile?: number;
 };
 
 export type SiaCsvParseResult = {
@@ -168,6 +182,11 @@ export function parseSiaCsv(text: string): SiaCsvParseResult {
     mChg: header.findIndex((h) => h === "m chg" || h === "mchg"),
     qChg: header.findIndex((h) => h === "q chg" || h === "qchg"),
     sector: header.findIndex((h) => h === "sector"),
+    // Holdings-export only: SIA's relative-strength percentile. Deliberately
+    // NOT matched by the bare "rank" alias above — "SIA Rank" here is a
+    // percentile string ("97.18%"), not a position, and reading it as a rank
+    // would put 97 into a field the pipeline treats as "97th best name".
+    percentile: header.findIndex((h) => h === "sia rank" || h === "sia rank %"),
   };
   if (idx.symbol < 0) {
     errors.push("CSV is missing a 'SYM' column (also accepts 'Symbol' or 'Ticker').");
@@ -223,7 +242,25 @@ export function parseSiaCsv(text: string): SiaCsvParseResult {
     const q = num(idx.qChg); if (q != null) rankedRow.qChg = q;
     const sec = idx.sector >= 0 ? (cells[idx.sector] ?? "").trim() : "";
     if (sec) rankedRow.sector = sec;
+    const pctRaw = idx.percentile >= 0 ? (cells[idx.percentile] ?? "").trim() : "";
+    if (pctRaw && pctRaw !== "-") {
+      const n = Number(pctRaw.replace(/[^0-9.\-]/g, ""));
+      if (Number.isFinite(n) && n >= 0 && n <= 100) rankedRow.percentile = n;
+    }
     ranked.push(rankedRow);
   }
+  // Stamp each row with the size of the ranked block it came from. Only for a
+  // COMPLETE cut (ranks 1..N, no gaps) — a holdings export's ranks are
+  // scattered positions within SIA's whole universe, so its row count says
+  // nothing about the universe those ranks refer to and labelling it would be
+  // a lie the pipeline would then divide by.
+  const ranks = ranked.map((r) => r.rank).filter((r): r is number => typeof r === "number");
+  if (ranks.length === ranked.length && ranks.length > 0) {
+    const unique = new Set(ranks);
+    if (unique.size === ranks.length && Math.min(...ranks) === 1 && Math.max(...ranks) === ranks.length) {
+      for (const r of ranked) r.universeSize = ranked.length;
+    }
+  }
+
   return { rows, ranked, errors };
 }

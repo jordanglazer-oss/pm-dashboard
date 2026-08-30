@@ -4,7 +4,8 @@ import { latestSiaMovers, writeSiaSnapshot, type SiaRow } from "@/app/lib/sia-un
 /**
  * SIA universe snapshots.
  *
- *   GET  /api/sia-universe?minWChg=&minSmax=  → this week's rank climbers
+ *   GET  /api/sia-universe?minWChgPct=&minSmax=  → this week's rank climbers
+ *        (minWChgPct is a PERCENT of each name's own index, not places)
  *   POST /api/sia-universe { rows }            → store the newest export
  *
  * POST is used by the Inbox page's CSV upload (which parses client-side); the
@@ -18,7 +19,7 @@ export async function GET(req: NextRequest) {
   try {
     const sp = new URL(req.url).searchParams;
     const n = (k: string, d: number) => { const v = Number(sp.get(k)); return Number.isFinite(v) ? v : d; };
-    const movers = await latestSiaMovers({ minWChg: n("minWChg", 20), minSmax: n("minSmax", 7) });
+    const movers = await latestSiaMovers({ minWChgPct: n("minWChgPct", 4), minSmax: n("minSmax", 7) });
     return NextResponse.json(movers);
   } catch (e) {
     console.error("sia-universe GET failed:", e);

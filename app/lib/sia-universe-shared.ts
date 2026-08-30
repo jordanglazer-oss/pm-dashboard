@@ -59,6 +59,14 @@ export function isNamedUniverseExport(label: string | undefined): boolean {
 export type SiaRow = {
   smax?: number;
   rank?: number;
+  /** Size of the ranked block this row came from (504 = S&P 500, 62 = TSX).
+   *  The two index files merge into ONE snapshot, so without this a rank is
+   *  not interpretable: 60th of 62 is the bottom of the TSX, 60th of 504 is
+   *  the top decile of the S&P. Absent on snapshots written before this
+   *  field existed — callers must handle undefined. */
+  universeSize?: number;
+  /** SIA's relative-strength percentile (0-100) when the source carried it. */
+  percentile?: number;
   /** Places climbed over each window; negative = slipped. */
   dChg?: number;
   wChg?: number;

@@ -41,7 +41,7 @@ export function NewThisWeek({ portfolioTickers, watchlistTickers, listTickers }:
 
   useEffect(() => {
     let alive = true;
-    fetch("/api/sia-universe?minWChg=20&minSmax=7", { cache: "no-store" })
+    fetch("/api/sia-universe?minWChgPct=4&minSmax=7", { cache: "no-store" })
       .then((r) => r.json())
       .then((d) => {
         if (alive) setData(d as SiaMoverResult);
