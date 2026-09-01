@@ -89,6 +89,7 @@ function inferHeaderlessLayout(
 
   const symIdx = RANKED_LAYOUT.indexOf("sym") + offset;
   const smaxIdx = RANKED_LAYOUT.indexOf("smax") + offset;
+  const rankIdx = RANKED_LAYOUT.indexOf("rank") + offset;
 
   let tickerLike = 0, smaxLike = 0, counted = 0;
   for (const r of rows) {
@@ -105,6 +106,36 @@ function inferHeaderlessLayout(
   }
   if (smaxLike / counted < 0.8) {
     return { ok: false, reason: `column ${smaxIdx} does not look like SMAX 0-10 (${smaxLike}/${counted})` };
+  }
+
+  // Anchor a THIRD column before trusting the layout.
+  //
+  // SYM and SMAX alone validate 2 of 16 positions, which is enough to catch a
+  // wholly wrong file but NOT a reordered one: if the vendor ever moved a
+  // column while keeping the count, those two could still pass while SECTOR
+  // was read as PRICE and W CHG as D CHG — a silent misread of hundreds of
+  // rows, which is exactly the failure this function exists to prevent.
+  //
+  // RANK is the natural anchor: a position column is distinct positive
+  // integers within the file's own bounds. Deliberately NOT a contiguous
+  // 1..N test — that would assume the export is still sorted by rank, and a
+  // file sorted by another column before export is still perfectly readable.
+  // The D CHG column that a one-place shift would put here fails easily: it
+  // is blank on ~17% of rows and repeats values constantly.
+  const seenRanks = new Set<number>();
+  let rankLike = 0, rankCounted = 0;
+  for (const r of rows) {
+    const raw = (r[rankIdx] ?? "").trim();
+    if (!(r[symIdx] ?? "").trim()) continue;
+    rankCounted++;
+    const n = Number(raw);
+    if (!Number.isInteger(n) || n < 1 || n > lines.length) continue;
+    if (seenRanks.has(n)) continue;
+    seenRanks.add(n);
+    rankLike++;
+  }
+  if (rankCounted > 0 && rankLike / rankCounted < 0.95) {
+    return { ok: false, reason: `column ${rankIdx} does not look like a rank (${rankLike}/${rankCounted} distinct positions in range)` };
   }
 
   // Synthesize the header the rest of the parser expects, including the blank
