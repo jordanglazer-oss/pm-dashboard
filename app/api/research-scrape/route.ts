@@ -2,7 +2,7 @@ import Anthropic from "@anthropic-ai/sdk";
 import { NextRequest, NextResponse } from "next/server";
 import { createHash } from "crypto";
 import { getRedis } from "@/app/lib/redis";
-import { toCanadianYahooTicker } from "@/app/lib/rbc-canonical";
+import { stripExchangeCode, toCanadianYahooTicker } from "@/app/lib/rbc-canonical";
 
 /**
  * Generic research-screenshot scraper for the four sources beyond
@@ -281,10 +281,20 @@ Example: [{"ticker":"MNST","name":"Monster Beverage Corp","sector":"Consumer Sta
     return `You are reading the "RBC Canadian Focus List" screenshot. It is a TABLE of Canadian equity buy recommendations from RBC Capital Markets, with each name carrying a target portfolio weight. Extract every row.
 
 Columns to look for:
-  - Ticker / Symbol → \`ticker\` (string, required, UPPERCASE). RBC reports use "-T" suffixes (e.g. "RY-T"); CONVERT these to Yahoo Finance "${"."}TO" form (e.g. "RY.TO", "CNR.TO", "BMO.TO") because that's the canonical convention used by the rest of the app for Canadian listings. If a row is already in ".TO" form leave it as-is. If it has no suffix at all, append ".TO" (it's the Canadian Focus List, every row is a TSX listing).
+  - Ticker / Symbol / Pricing Symbol → \`ticker\` (string, required, UPPERCASE). Emit the Yahoo Finance "${"."}TO" form (e.g. "RY.TO", "CNR.TO", "BMO.TO") — it's the Canadian Focus List, every row is a TSX listing, and ".TO" is the canonical convention for the rest of the app. Rules:
+      · "-T" suffix (e.g. "RY-T") → "RY.TO". Already ".TO" → leave as-is. No suffix → append ".TO".
+      · The Pricing Symbol column is Bloomberg-style: a SPACE-separated 2-letter exchange code follows the symbol ("AC CN", "SHOP US", "BBD/B CN"). The exchange code is NOT part of the ticker — DROP it.
+      · A "US" exchange code does NOT mean a US company. RBC prices the interlisted US line of some Canadian names (e.g. Shopify, Brookfield, Franco-Nevada, GFL). Emit the TSX listing anyway: "SHOP US" → "SHOP.TO", "GFL US" → "GFL.TO".
+      · A "/" is a share-class designator, not a separator: "RCI/B CN" → "RCI-B.TO", "BBD/B CN" → "BBD-B.TO".
+      · Brookfield partnerships quote their US line without the ".UN" unit class — "BIP US" is BIP.UN on the TSX → "BIP-UN.TO".
   - Sector → \`sector\` (string, the GICS or RBC sector label)
-  - Weight / Target Weight / Portfolio Weight → \`weight\` (NUMBER as a percentage, e.g. 5.0 for "5.0%". Strip % sign and commas.)
+  - Weight / Target Weight / Portfolio Weight / "Weights (%)" → \`weight\` (NUMBER as a percentage, e.g. 5.0 for "5.0%". Strip % sign and commas.)
   - Date Added / Date → \`dateAdded\` (string, e.g. "4/15/2026")
+
+IGNORE these columns entirely — they are NOT the weight and NOT the ticker:
+  - "Pricing Currency" / "CAD" / "USD"
+  - "Stock Price as of <date>" (the dollar quote)
+  - "Weighting Change (%) from Last Quarter" (free text like "New this quarter" / "Decreased from 5.0" — the CURRENT weight is the Weights (%) column, so a row reading "Decreased from 5.0" with a 2.5 weight is weight 2.5)
 
 If a column is missing or blank, OMIT that key (do not return null or empty string).
 
@@ -297,7 +307,7 @@ Example: [{"ticker":"RY.TO","sector":"Financials","weight":5.5,"dateAdded":"3/12
     return `You are reading the "RBC US Focus List" screenshot. It is a TABLE of US equity buy recommendations from RBC Capital Markets, with each name carrying a target portfolio weight. Extract every row.
 
 Columns to look for:
-  - Ticker / Symbol → \`ticker\` (string, required, UPPERCASE). US listings — DO NOT add a "-T" suffix. Tickers should be bare (e.g. "AAPL", "MSFT", "JPM"). For dual-class shares written with "/" (e.g. "BRK/B"), convert to dash form ("BRK-B").
+  - Ticker / Symbol / Pricing Symbol → \`ticker\` (string, required, UPPERCASE). US listings — DO NOT add a "-T" or ".TO" suffix. Tickers should be bare (e.g. "AAPL", "MSFT", "JPM"). For dual-class shares written with "/" (e.g. "BRK/B"), convert to dash form ("BRK-B"). If the symbol carries a SPACE-separated Bloomberg exchange code ("MSFT US"), DROP the code — it is not part of the ticker.
   - Sector → \`sector\` (string, the GICS or RBC sector label)
   - Weight / Target Weight / Portfolio Weight → \`weight\` (NUMBER as a percentage, e.g. 5.0 for "5.0%". Strip % sign and commas.)
   - Date Added / Date → \`dateAdded\` (string, e.g. "4/15/2026")
@@ -504,6 +514,13 @@ function parseAlphaPickRows(text: string): ScrapedAlphaPick[] {
   }
 }
 
+/** A parsed ticker must be a plain symbol. Rows that still carry a space
+ *  (an exchange code the strip didn't recognize) or any other stray
+ *  punctuation are DROPPED rather than persisted — a junk ticker in
+ *  pm:research reads as a real new name in the Change Monitor and the
+ *  watchlist-candidate feed. */
+const VALID_TICKER = /^[A-Z0-9][A-Z0-9.\-]*$/;
+
 function parseRbcRows(text: string, source: SourceKey): ScrapedRbcRow[] {
   const cleaned = text.replace(/```json\s*|```/g, "");
   const start = cleaned.indexOf("[");
@@ -515,7 +532,10 @@ function parseRbcRows(text: string, source: SourceKey): ScrapedRbcRow[] {
     return arr
       .filter((r) => r && typeof r === "object" && typeof r.ticker === "string" && r.ticker.trim())
       .map((r) => {
-        let ticker = String(r.ticker).trim().toUpperCase().replace(/^\$+/, "").replace(/\//g, "-");
+        // The Focus List PDFs print Bloomberg pricing symbols ("RCI/B CN",
+        // "SHOP US"): drop the space-separated exchange code BEFORE anything
+        // else, or it survives canonicalization as "SHOP US.TO".
+        let ticker = stripExchangeCode(String(r.ticker).trim().toUpperCase().replace(/^\$+/, "")).replace(/\//g, "-");
         // Canonicalize Canadian lists to .TO so Yahoo lookups succeed.
         if (source === "rbc-focus" || source === "rbc-equate-cad") ticker = toCanadianYahooTicker(ticker);
         const out: ScrapedRbcRow = { ticker };
@@ -556,7 +576,8 @@ function parseRbcRows(text: string, source: SourceKey): ScrapedRbcRow[] {
           else if (t === "n" || t === "no" || t === "false") out.trendAligned = false;
         }
         return out;
-      });
+      })
+      .filter((r) => VALID_TICKER.test(r.ticker));
   } catch {
     return [];
   }
@@ -575,7 +596,7 @@ function parseFewRows(text: string): ScrapedFewRow[] {
     return arr
       .filter((r) => r && typeof r === "object" && typeof r.ticker === "string" && r.ticker.trim())
       .map((r) => {
-        let ticker = String(r.ticker).trim().toUpperCase().replace(/^\$+/, "").replace(/\//g, "-");
+        let ticker = stripExchangeCode(String(r.ticker).trim().toUpperCase().replace(/^\$+/, "")).replace(/\//g, "-");
         // Force every row to the Canadian Yahoo (.TO) convention.
         ticker = toCanadianYahooTicker(ticker);
         const out: ScrapedFewRow = { ticker };
@@ -586,7 +607,8 @@ function parseFewRows(text: string): ScrapedFewRow[] {
           if (Number.isFinite(n) && n > 0) out.price = n;
         }
         return out;
-      });
+      })
+      .filter((r) => VALID_TICKER.test(r.ticker));
   } catch {
     return [];
   }

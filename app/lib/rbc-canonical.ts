@@ -6,6 +6,14 @@
  *   BBD-B.TO, BBD.B-T      → both = Bombardier Class B
  *   BIP-UN.TO, BIP.UN-T    → both = Brookfield Infra Partners units
  *
+ * As of the Q3-2026 layout the Focus List PDF prints a Bloomberg-style
+ * "Pricing Symbol" instead: a bare root, a slash class designator, and a
+ * SPACE-separated exchange code — "RCI/B CN", "BBD/B CN", "SHOP US". The
+ * exchange code is not part of the ticker, and a "US" code on the Canadian
+ * Focus List just means RBC priced the interlisted US line of a Canadian
+ * company (Shopify, Brookfield, Franco-Nevada, GFL) — the book still wants
+ * the TSX listing. Both are handled below.
+ *
  * The canonical form for the rest of this app (and Yahoo Finance) is:
  *   - Exchange suffix as ".TO"
  *   - Class designator as "-X" (e.g. "BBD-B", "BIP-UN")
@@ -26,15 +34,23 @@ import type { RBCEntry } from "./defaults";
  *
  * Algorithm:
  *   1. Strip leading $ and uppercase.
- *   2. Peel off any trailing ".TO" or "-T" exchange suffix.
- *   3. Convert any internal ".X" class designator (where X is letters)
+ *   2. Drop a Bloomberg exchange code ("RCI/B CN", "SHOP US" → "RCI/B",
+ *      "SHOP") — see stripExchangeCode.
+ *   3. Convert a "/" class designator to "." so it flows through step 5.
+ *   4. Peel off any trailing ".TO" or "-T" exchange suffix.
+ *   5. Convert any internal ".X" class designator (where X is letters)
  *      to "-X" form. Example: "BBD.B" → "BBD-B", "BIP.UN" → "BIP-UN".
  *      Note: this only touches the LAST dot-suffix segment to avoid
  *      breaking unusual base tickers.
- *   4. Re-append ".TO".
+ *   6. Restore the ".UN" unit class RBC drops when it quotes the US line
+ *      of a Brookfield partnership ("BIP US" → "BIP-UN.TO").
+ *   7. Re-append ".TO".
  */
 export function toCanadianYahooTicker(raw: string): string {
-  let s = raw.trim().toUpperCase().replace(/^\$+/, "");
+  let s = stripExchangeCode(raw.trim().toUpperCase().replace(/^\$+/, ""));
+
+  // "RCI/B" → "RCI.B" so the class designator normalizes with the dot form.
+  s = s.replace(/\//g, ".");
 
   // Peel exchange suffix.
   if (s.endsWith(".TO")) s = s.slice(0, -3);
@@ -43,7 +59,36 @@ export function toCanadianYahooTicker(raw: string): string {
   // Convert trailing ".X" class designator (letters only) to "-X".
   s = s.replace(/\.([A-Z]+)$/, "-$1");
 
+  // The US lines of the Brookfield partnerships trade without the unit
+  // class ("BIP"), but the TSX listing is BIP.UN → BIP-UN.TO. Only applied
+  // when no class designator survived step 5, so an explicit "BIP.UN" is
+  // untouched.
+  if (!s.includes("-")) s = UNIT_CLASS_ROOTS[s] ?? s;
+
   return `${s}.TO`;
+}
+
+/** Canadian roots whose TSX listing carries a ".UN" unit class that the
+ *  interlisted US symbol omits. Keyed by the bare root. */
+const UNIT_CLASS_ROOTS: Record<string, string> = {
+  BIP: "BIP-UN",
+  BEP: "BEP-UN",
+  BBU: "BBU-UN",
+  BPY: "BPY-UN",
+};
+
+/**
+ * Drop a trailing Bloomberg exchange code from a pricing symbol:
+ * "RCI/B CN" → "RCI/B", "SHOP US" → "SHOP", "RY.TO" → "RY.TO".
+ *
+ * Tickers never contain whitespace, so a space-separated 1-2 letter tail is
+ * unambiguously the exchange code — matching a fixed code list instead would
+ * silently pass through (and later corrupt) any venue RBC hasn't used yet.
+ */
+export function stripExchangeCode(raw: string): string {
+  const s = raw.trim().toUpperCase();
+  const m = s.match(/^(\S+)\s+[A-Z]{1,2}$/);
+  return m ? m[1] : s;
 }
 
 /**
