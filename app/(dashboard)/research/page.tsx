@@ -516,6 +516,11 @@ const RAIL_GROUPS: { label: string; items: { key: string; label: string }[] }[] 
   ] },
 ];
 
+/** Every collapsible pane the rail knows about — the target of Collapse all.
+ *  Derived from RAIL_GROUPS so a new source added to the rail is covered
+ *  automatically instead of needing a second list kept in sync. */
+const ALL_RAIL_KEYS: string[] = RAIL_GROUPS.flatMap((g) => g.items.map((i) => i.key));
+
 export default function ResearchPage() {
   // Master-detail rail: "all" = classic stacked view; a prefKey = show only
   // that source's pane (canvas layout). View state only — nothing persisted.
@@ -2062,6 +2067,22 @@ export default function ResearchPage() {
     }
   };
 
+  /** Collapse (or expand) every source pane at once.
+   *
+   *  17 sources stacked at full height is a lot of scrolling when you only
+   *  want to see which lists exist. Writes the same pm:ui-prefs collapse keys
+   *  the sections already persist — setUiPref's persist is debounced, so the
+   *  whole sweep costs ONE PUT, not one per section.
+   *
+   *  Collapsing also drops the rail back to "All sources": the point of the
+   *  collapsed view is to see the full stack of headers, which a single-pane
+   *  selection would hide. */
+  const setAllPanesCollapsed = (collapsed: boolean) => {
+    const value = collapsed ? "1" : "0";
+    ALL_RAIL_KEYS.forEach((k) => setUiPref(k, value));
+    setRailSel("all");
+  };
+
   if (!loaded) return null;
 
   return (
@@ -2077,6 +2098,22 @@ export default function ResearchPage() {
           >
             All sources
           </button>
+          <div className="mt-1 mb-1.5 flex gap-1 border-b border-line-soft pb-2">
+            <button
+              onClick={() => setAllPanesCollapsed(true)}
+              className="flex-1 rounded-[6px] px-2 py-1 text-[11px] font-semibold text-ink-3 transition-colors hover:bg-surface-hover hover:text-ink"
+              title="Collapse every source pane"
+            >
+              Collapse all
+            </button>
+            <button
+              onClick={() => setAllPanesCollapsed(false)}
+              className="flex-1 rounded-[6px] px-2 py-1 text-[11px] font-semibold text-ink-3 transition-colors hover:bg-surface-hover hover:text-ink"
+              title="Expand every source pane"
+            >
+              Expand all
+            </button>
+          </div>
           {RAIL_GROUPS.map((g) => (
             <div key={g.label} className="mb-1.5">
               <div className="px-2.5 pb-1 pt-1.5 text-[10px] font-bold uppercase tracking-wider text-ink-3">{g.label}</div>
@@ -2101,8 +2138,26 @@ export default function ResearchPage() {
             <style>{`@media (min-width: 1280px) { .research-col section[id^="research."] { display: none; } .research-col section[id="${railSel}"], .research-col section[id="research.synthesisCollapsed"] { display: block !important; } }`}</style>
           )}
         {/* The hub band above already titles the page — this row keeps only the
-            synthesis action, right-aligned. */}
+            synthesis action, right-aligned, plus the collapse-all pair below
+            xl (the source rail carries it at xl+, so exactly one copy of the
+            control is visible at any width). */}
         <div className="flex items-center justify-end gap-3">
+          <div className="mr-auto flex gap-1 xl:hidden">
+            <button
+              onClick={() => setAllPanesCollapsed(true)}
+              className="rounded-control border border-line bg-surface px-2.5 py-1.5 text-xs font-semibold text-ink-2 hover:bg-surface-2 transition-colors"
+              title="Collapse every source pane"
+            >
+              Collapse all
+            </button>
+            <button
+              onClick={() => setAllPanesCollapsed(false)}
+              className="rounded-control border border-line bg-surface px-2.5 py-1.5 text-xs font-semibold text-ink-2 hover:bg-surface-2 transition-colors"
+              title="Expand every source pane"
+            >
+              Expand all
+            </button>
+          </div>
           <button
             onClick={() => {
               if (synthesis) {
