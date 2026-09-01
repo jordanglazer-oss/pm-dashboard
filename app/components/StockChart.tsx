@@ -117,6 +117,14 @@ export default function StockChart({ ticker, technicals, className = "" }: Props
     if (!chartData || !containerRef.current) return;
 
     let disposed = false;
+    // Hoisted so the effect's own cleanup can disconnect it. It used to be
+    // returned from the async IIFE below, which React never calls — so every
+    // chart rebuild (ticker change, data refetch) left a live ResizeObserver
+    // holding a closure over the REMOVED chart. The next width change (a
+    // price refresh reflowing the page, a scrollbar appearing) fired that
+    // stale observer, which called applyOptions on a disposed chart and threw
+    // an uncaught "Object is disposed" out of lightweight-charts.
+    let ro: ResizeObserver | null = null;
 
     (async () => {
       const lc = await import("lightweight-charts");
@@ -269,23 +277,22 @@ export default function StockChart({ ticker, technicals, className = "" }: Props
         });
       }
 
-      // Resize observer
-      const ro = new ResizeObserver((entries) => {
+      // Resize observer. `disposed` is re-checked inside the callback because
+      // RO deliveries are queued to the end of a frame — one can still be in
+      // flight when cleanup runs.
+      ro = new ResizeObserver((entries) => {
+        if (disposed || chartRef.current !== chart) return;
         for (const entry of entries) {
           chart.applyOptions({ width: entry.contentRect.width });
         }
       });
       ro.observe(containerRef.current);
-
-      const currentContainer = containerRef.current;
-      return () => {
-        ro.unobserve(currentContainer);
-        ro.disconnect();
-      };
     })();
 
     return () => {
       disposed = true;
+      ro?.disconnect();
+      ro = null;
       if (chartRef.current) {
         chartRef.current.remove();
         chartRef.current = null;
