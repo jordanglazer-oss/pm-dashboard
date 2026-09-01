@@ -84,8 +84,8 @@ const SOURCES: SourceConfig[] = [
   { source: "rbc-focus", label: "RBC Canadian Focus", field: "rbcCanadianFocus", direction: "bullish" },
   { source: "rbc-us-focus", label: "RBC US Focus", field: "rbcUsFocus", direction: "bullish" },
   { source: "jpm-us-analyst-focus", label: "JPM US Analyst Focus", field: "jpmUsAnalystFocus", direction: "bullish" },
-  { source: "rbc-equate-cad", label: "RBC Equate CAD (CORE 40)", field: "equateCad", direction: "bullish" },
-  { source: "rbc-equate-usd", label: "RBC Equate USD (CORE 40)", field: "equateUsd", direction: "bullish" },
+  { source: "rbc-equate-cad", label: "RBC Equate CAD (top decile)", field: "equateCad", direction: "bullish" },
+  { source: "rbc-equate-usd", label: "RBC Equate USD (top decile)", field: "equateUsd", direction: "bullish" },
   { source: "seeking-alpha-picks", label: "Seeking Alpha Picks", field: "alphaPicks", direction: "bullish" },
   { source: "rbccm-few", label: "RBCCM Canadian FEW", field: "rbccmFew", direction: "bullish" },
 ];

@@ -1,4 +1,6 @@
 import type { SourceHit } from "./watchlist-candidates";
+import type { ScrapedRbcRow } from "@/app/api/research-scrape/route";
+import { canonicalTicker } from "./ticker";
 
 /**
  * RBC EQUATE Model Ranks — weekly quant rank sheets.
@@ -110,6 +112,57 @@ export function parseEquateRows(rows: unknown[][], label: string): EquateSheet {
 }
 
 /**
+ * Sheet symbol → the app's canonical ticker.
+ *
+ * RBC writes dual-class Canadian names with a DOT ("AGF.B", "ACO.X"), so a
+ * bare `${symbol}.TO` produced "AGF.B.TO" — not a Yahoo symbol, and not what
+ * pm:stocks stores ("AGF-B.TO"), so those names silently failed every
+ * cross-source match and every price lookup. canonicalTicker converts the
+ * class separator; plain symbols pass through unchanged.
+ */
+export function equateTicker(symbol: string, region: "us" | "canada"): string {
+  const raw = symbol.trim().toUpperCase();
+  if (region === "canada") return canonicalTicker(`${raw}.TO`);
+  // US class shares get the same treatment by hand: canonicalTicker only
+  // rewrites the class separator on Canadian symbols, and Yahoo spells US
+  // dual classes with a dash ("BRK-B"), never a dot. No US listing uses a
+  // dot for anything else, so this is safe.
+  return raw.replace(/\.([A-Z]+)$/, "-$1");
+}
+
+/**
+ * Project a sheet's TOP-DECILE rows into research-list rows.
+ *
+ * This is what feeds the Research tab's "RBC Equate" cards and, through
+ * pm:research, the researchMentions score category. It replaces the old
+ * CORE 40 model-portfolio lists that were vision-parsed out of the Equate
+ * PDF: the xlsx is deterministic, covers the whole universe rather than a
+ * 40-name cut, and costs no model tokens.
+ *
+ * Decile 1 is the cut (top 10% of the name's OWN universe), so the US and
+ * Canadian sheets stay comparable despite very different universe sizes —
+ * ~136 of 1,360 and ~30 of 300. Rows are returned in rank order.
+ */
+export function equateResearchRows(sheet: EquateSheet): ScrapedRbcRow[] {
+  if (sheet.largeCapOnly) return [];
+  return sheet.rows
+    .filter((r) => r.decile <= 1)
+    .sort((a, b) => a.compositeRank - b.compositeRank)
+    .map((r) => ({
+      ticker: equateTicker(r.symbol, sheet.region),
+      name: r.name,
+      // The research tables render `industry`; `sector` keeps the RBCEntry
+      // shape complete. Both carry the sheet's GICS sector wording, which the
+      // page overrides with the app's own sector when it has one.
+      sector: r.sector,
+      industry: r.sector,
+      mktCap: r.marketCapM,
+      equateRank: r.compositeRank,
+      weight: 0,
+    }));
+}
+
+/**
  * Turn a parsed sheet into candidate hits.
  *
  * US All Cap and Canada All Cap produce hits. US Large Cap produces none: All
@@ -132,7 +185,7 @@ export function equateHits(
     .filter((r) => r.decile <= maxDecile)
     .filter((r) => minCap <= 0 || r.marketCapM == null || r.marketCapM >= minCap)
     .map((r) => ({
-      ticker: sheet.region === "canada" ? `${r.symbol}.TO` : r.symbol,
+      ticker: equateTicker(r.symbol, sheet.region),
       name: r.name,
       source,
       sector: r.sector,

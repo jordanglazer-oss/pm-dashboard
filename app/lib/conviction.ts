@@ -53,13 +53,19 @@ export type ConvictionEntry = {
   listCount: number;
 };
 
-/** Research lists that feed conviction, with display label + direction. */
+/** Research lists that feed conviction, with display label + direction.
+ *
+ * equateCad / equateUsd are deliberately ABSENT. They used to be RBC's
+ * curated CORE 40 model portfolios — an opinion independent of the quant
+ * ranking — but they now hold the top decile of the EQUATE sheets, the same
+ * data behind the `Equate rank` signal below. Listing them here would score
+ * one reading twice, and the rank says it better: #3 and #130 are both
+ * decile 1, and rank <= 25 already scores double. They still feed
+ * researchMentions, which is a separate category. */
 const LISTS: { field: keyof ResearchState; label: string; dir: 1 | -1 }[] = [
   { field: "jpmUsAnalystFocus", label: "JPM Focus", dir: 1 },
   { field: "rbcUsFocus", label: "RBC US", dir: 1 },
   { field: "rbcCanadianFocus", label: "RBC Cdn", dir: 1 },
-  { field: "equateCad", label: "Equate CAD", dir: 1 },
-  { field: "equateUsd", label: "Equate USD", dir: 1 },
   { field: "fundstratTop", label: "Fundstrat Top", dir: 1 },
   { field: "fundstratSmidTop", label: "Fundstrat SMID Top", dir: 1 },
   { field: "fundstratLargeCapCore", label: "Fundstrat Large-Cap Core", dir: 1 },

@@ -1911,16 +1911,10 @@ export default function InboxPage() {
                 <td className="py-2 font-mono whitespace-nowrap">JPM Focus</td>
               </tr>
               <tr className="border-b border-accent-border">
-                <td className="py-2 pr-3 font-mono whitespace-nowrap">Equate CAD</td>
-                <td className="py-2 pr-3 whitespace-nowrap">RBC Equate PDF</td>
-                <td className="py-2 pr-3">Pulls ONLY the <span className="font-semibold">Canada Large Cap CORE 40 Model Portfolio</span> from the RBC Equate PDF (other lists in the PDF are ignored). Merges into the RBC Equate CAD list; +1 research mention per name.</td>
-                <td className="py-2 font-mono whitespace-nowrap">Equate CAD</td>
-              </tr>
-              <tr className="border-b border-accent-border">
-                <td className="py-2 pr-3 font-mono whitespace-nowrap">Equate USD</td>
-                <td className="py-2 pr-3 whitespace-nowrap">RBC Equate PDF</td>
-                <td className="py-2 pr-3">Pulls ONLY the <span className="font-semibold">U.S. All Cap CORE 40 Model Portfolio</span> from the RBC Equate PDF (other lists ignored). Merges into the RBC Equate USD list; +1 research mention per name.</td>
-                <td className="py-2 font-mono whitespace-nowrap">Equate USD</td>
+                <td className="py-2 pr-3 font-mono whitespace-nowrap text-ink-faint line-through">Equate CAD / USD</td>
+                <td className="py-2 pr-3 whitespace-nowrap text-ink-faint">RBC Equate PDF</td>
+                <td className="py-2 pr-3 text-ink-3"><span className="font-semibold">Retired.</span> The two Equate research lists are no longer vision-parsed out of the PDF&rsquo;s CORE 40 model portfolios — they are built from the xlsx rank sheets below. Sending the PDF under these subjects is refused so it cannot overwrite the spreadsheet-built list.</td>
+                <td className="py-2 font-mono whitespace-nowrap text-ink-faint">—</td>
               </tr>
               <tr className="border-b border-accent-border">
                 <td className="py-2 pr-3 font-mono whitespace-nowrap">
@@ -1929,9 +1923,9 @@ export default function InboxPage() {
                 </td>
                 <td className="py-2 pr-3 whitespace-nowrap">XLSX rank sheets</td>
                 <td className="py-2 pr-3">
-                  The weekly <span className="font-semibold">Model Ranks</span> spreadsheets — a different thing from the CORE 40 rows above, which are RBC&apos;s picked model portfolio. These are the full quant ranking (~1,360 US names, ~300 Canadian).
+                  The weekly <span className="font-semibold">Model Ranks</span> spreadsheets — the full quant ranking (~1,360 US names, ~300 Canadian). Now the ONLY Equate source; they replaced the CORE 40 PDF parse.
                   {" "}<span className="font-semibold">Forward the vendor email unedited</span>: the attachment filenames identify region and cut on their own, and the subject is matched on the words &quot;equate&quot; + &quot;ranks&quot;, at any date.
-                  {" "}Feeds the <span className="font-semibold">Suggested Watchlist</span> (top decile) and adds an <span className="font-semibold">Equate rank</span> signal on the Conviction board. Parsed locally — no AI cost.
+                  {" "}The <span className="font-semibold">top decile</span> populates the Research tab&rsquo;s two Equate lists (+1 research mention per name) and the <span className="font-semibold">Suggested Watchlist</span>; every decile-1 name also carries an <span className="font-semibold">Equate rank</span> signal on the Conviction board. Parsed locally — no AI cost.
                   {" "}<span className="opacity-70">US All Cap and Canada All Cap are used; US Large Cap is a subset of All Cap at identical ranks and is stored but not scored.</span>
                 </td>
                 <td className="py-2 font-mono whitespace-nowrap">

@@ -1,5 +1,6 @@
 import { NextResponse } from "next/server";
 import { readEquateSheet } from "@/app/lib/equate-store";
+import { equateTicker } from "@/app/lib/equate-parse";
 
 /**
  * GET /api/equate-ranks — the weekly RBC EQUATE composite ranks, both regions,
@@ -18,8 +19,9 @@ export async function GET() {
     for (const r of sheet?.rows ?? []) {
       if (r.decile > 1) continue;
       rows.push({
-        // Canadian symbols carry .TO everywhere else in the app.
-        symbol: region === "canada" ? `${r.symbol}.TO` : r.symbol,
+        // Canadian symbols carry .TO everywhere else in the app, and RBC's
+        // dot-written dual classes ("AGF.B") need the app's dash form.
+        symbol: equateTicker(r.symbol, region),
         compositeRank: r.compositeRank,
         decile: r.decile,
       });

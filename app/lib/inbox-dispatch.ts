@@ -37,14 +37,14 @@ import { parseSiaCsv } from "./sia-csv";
 import { writeSiaSnapshot, UNIVERSE_MIN_ROWS, isNamedUniverseExport, looksLikeCompleteIndexCut, type SiaRow } from "./sia-universe";
 import { appendSiaHistory } from "./sia-history";
 import { sameCompanyLoose, tickersEqual } from "./ticker";
-import { parseEquateRows } from "./equate-parse";
+import { parseEquateRows, equateResearchRows } from "./equate-parse";
 import { writeEquateSheet } from "./equate-store";
 import { parseBoostedCsv } from "./boosted-csv";
 import { putDataUrl } from "./blob-store";
 import { applySiaEntries, applyBoostedEntries, applyMarketEdgeRows, type StockPatch } from "./stock-patches";
 import { decodeBase64DataUrl } from "./csv-utils";
 import { extractResearchEntries, type SourceKey as ResearchSourceKey } from "@/app/api/research-scrape/route";
-import { applyResearchEntries } from "./research-merge";
+import { applyResearchEntries, type ResearchMergeSummary } from "./research-merge";
 import { logResearchRemovals } from "./research-removals";
 import type { ResearchState } from "./defaults";
 import { defaultResearch, defaultMarketData } from "./defaults";
@@ -598,14 +598,20 @@ async function handleMarketEdge(att: AttachmentInput, label: string): Promise<Di
 }
 
 /**
- * RBC EQUATE rank sheet → pm:equate:{region}.
+ * RBC EQUATE rank sheet → pm:equate:{region} (+ the Research list).
  *
- * Stores the parsed rows rather than folding them straight into the candidate
+ * Stores the parsed rows rather than folding them straight into the CANDIDATE
  * list. The three sheets arrive as separate emails/attachments, and the
  * candidate merge needs to know which sources reported in one pass — merging
  * per-file would make each arrival look like a week where only that source
  * reported, and every other source's names would appear to have fallen off.
  * The weekly refresh reads these stores and merges once.
+ *
+ * The RESEARCH list is different and IS written here. equateCad / equateUsd
+ * are per-source lists with no cross-source pass to wait for, and the merge
+ * already carries its own replace/additive safety, so the top decile lands as
+ * soon as the sheet does. This replaced a vision parse of the Equate PDF's
+ * CORE 40 model portfolio: same two lists, deterministic source, no tokens.
  */
 async function handleEquate(att: AttachmentInput, label: string): Promise<DispatchResult> {
   if (isImageDataUrl(att.dataUrl) || isPdfDataUrl(att.dataUrl)) {
@@ -624,11 +630,39 @@ async function handleEquate(att: AttachmentInput, label: string): Promise<Dispat
       return { ok: false, kind: "equate", status: 400, message: `EQUATE sheet unreadable (${sheet.errors.join("; ")}).` };
     }
     const stored = await writeEquateSheet(sheet);
+
+    // ── Research list: the top decile becomes equateCad / equateUsd ──
+    // Read-modify-write through the SAME merge the scrape path used, so the
+    // rest of pm:research is preserved verbatim and the replace/additive
+    // safety threshold still applies. Removals are deliberately NOT logged to
+    // the Change Monitor: a name leaving the top decile is ordinary weekly
+    // churn (~10% of the list), and the Conviction board already tracks each
+    // name's rank directly. Large Cap is a subset of All Cap — it must never
+    // overwrite the list.
+    let researchSummary: ResearchMergeSummary | undefined;
+    if (!sheet.largeCapOnly) {
+      try {
+        const researchRows = equateResearchRows(sheet);
+        const source: ResearchSourceKey = sheet.region === "canada" ? "rbc-equate-cad" : "rbc-equate-usd";
+        const state = await readResearch();
+        const { nextState, summary } = applyResearchEntries(state, source, researchRows);
+        await writeResearch(nextState);
+        researchSummary = summary;
+      } catch (e) {
+        // The ranks are already stored; a research-merge failure must not fail
+        // the ingest or lose the sheet.
+        console.error("[Inbox] EQUATE research merge failed (ranks still stored):", e);
+      }
+    }
+
+    const researchLabel = researchSummary
+      ? ` · Research list: ${researchSummary.rowsParsed} top-decile names (${researchSummary.matched} held, ${researchSummary.added} new${researchSummary.mode === "additive" ? `, ⚠ additive: ${researchSummary.fallbackReason ?? "same-day re-ingest"}` : ""})`
+      : "";
     return {
       ok: true,
       kind: "equate",
-      message: `EQUATE ${sheet.region === "canada" ? "Canada" : "US"}${sheet.largeCapOnly ? " Large Cap" : " All Cap"}: ${sheet.rows.length} ranks stored${sheet.largeCapOnly ? " (Large Cap is a subset of All Cap — kept for reference, not scored)" : ""}.`,
-      detail: { label, region: sheet.region, largeCapOnly: sheet.largeCapOnly, rows: sheet.rows.length, stored },
+      message: `EQUATE ${sheet.region === "canada" ? "Canada" : "US"}${sheet.largeCapOnly ? " Large Cap" : " All Cap"}: ${sheet.rows.length} ranks stored${sheet.largeCapOnly ? " (Large Cap is a subset of All Cap — kept for reference, not scored)" : ""}.${researchLabel}`,
+      detail: { label, region: sheet.region, largeCapOnly: sheet.largeCapOnly, rows: sheet.rows.length, stored, research: researchSummary },
     };
   } catch (e) {
     return { ok: false, kind: "equate", status: 400, message: `EQUATE sheet could not be read: ${String(e)}` };
@@ -681,6 +715,19 @@ async function handleResearch(
       kind: { kind: "research", source },
       status: 400,
       message: "Research email expects a screenshot (PNG/JPG) or PDF attachment.",
+    };
+  }
+  // The Equate lists are built from the weekly xlsx rank sheets now, so an
+  // "Equate CAD / USD" PDF email would clobber a 166-name top-decile list with
+  // a 40-name CORE 40 vision read. Refused with a 4xx (not the 5xx the
+  // extractResearchEntries backstop would throw) so the Apps Script treats it
+  // as a permanent verdict and stops retrying the thread.
+  if (source === "rbc-equate-cad" || source === "rbc-equate-usd") {
+    return {
+      ok: false,
+      kind: { kind: "research", source },
+      status: 410,
+      message: "RBC Equate lists are no longer built from the PDF — they come from the weekly EQUATE xlsx rank sheets (top decile). Forward the 'RBC EQUATE Quantitative Ranks' spreadsheets instead; this PDF was ignored.",
     };
   }
   // Reuse the SAME vision + hash-gated cache the manual /api/research-scrape

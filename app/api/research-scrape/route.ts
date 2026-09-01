@@ -103,6 +103,9 @@ export type ScrapedRbcRow = {
   priceVs20d?: number;
   ma20vs200?: number;
   trendAligned?: boolean;
+  // RBC EQUATE composite rank (1 = best in that region's universe). Set only
+  // by the xlsx ingest path (app/lib/equate-parse.ts) — no scrape emits it.
+  equateRank?: number;
 };
 
 /** RBCCM Canadian FEW Portfolio row: ticker (canonicalized to .TO),
@@ -633,6 +636,21 @@ export async function POST(req: NextRequest) {
         { status: 400 }
       );
     }
+    // The two EQUATE lists are no longer vision-parsed. They are written
+    // deterministically from the weekly xlsx rank sheets (top decile), so
+    // accepting a PDF here would silently overwrite that with a 40-name CORE
+    // 40 read — the exact clobber this rejection exists to prevent. The source
+    // keys stay in SourceKey / VALID_SOURCES because pm:research, the merge,
+    // and researchMentions all still address the lists by those names.
+    if (sourceRaw === "rbc-equate-cad" || sourceRaw === "rbc-equate-usd") {
+      return NextResponse.json(
+        {
+          error:
+            "RBC Equate lists are no longer scraped from the PDF — they are built from the weekly EQUATE xlsx rank sheets (top decile). Email the 'RBC EQUATE Quantitative Ranks' spreadsheets instead.",
+        },
+        { status: 410 },
+      );
+    }
     const source = sourceRaw;
 
     const attachments: AttachmentInput[] = Array.isArray(body?.attachments) ? body.attachments : [];
@@ -678,6 +696,14 @@ export async function extractResearchEntries(
   opts: { force?: boolean } = {},
 ): Promise<{ entries: CachedScrape["entries"]; cached: boolean; hash: string; rawText?: string }> {
   if (attachments.length === 0) return { entries: [], cached: false, hash: "none" };
+  // Retired sources — see the matching guard in POST. Enforced here too so the
+  // EMAIL path (inbox-dispatch calls this directly, not the route handler)
+  // cannot overwrite the xlsx-built list either.
+  if (source === "rbc-equate-cad" || source === "rbc-equate-usd") {
+    throw new Error(
+      "RBC Equate lists are built from the weekly EQUATE xlsx rank sheets (top decile), not from the PDF. Email the 'RBC EQUATE Quantitative Ranks' spreadsheets instead.",
+    );
+  }
   const hash = hashAttachments(attachments);
   if (!opts.force) {
     const cached = await getCached(source, hash);

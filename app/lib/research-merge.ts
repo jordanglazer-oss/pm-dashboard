@@ -191,6 +191,9 @@ function applyRbcEntries(
         pe: e.pe ?? ex.pe,
         dqmRank: e.dqmRank ?? ex.dqmRank,
         momentumRating: e.momentumRating ?? ex.momentumRating,
+        // EQUATE rank is a fresh weekly reading — the new sheet's value wins
+        // outright rather than falling back to last week's stale rank.
+        equateRank: e.equateRank ?? ex.equateRank,
         priceVs20d: e.priceVs20d ?? ex.priceVs20d,
         ma20vs200: e.ma20vs200 ?? ex.ma20vs200,
         trendAligned: e.trendAligned ?? ex.trendAligned,
@@ -212,6 +215,7 @@ function applyRbcEntries(
         pe: e.pe,
         dqmRank: e.dqmRank,
         momentumRating: e.momentumRating,
+        equateRank: e.equateRank,
         priceVs20d: e.priceVs20d,
         ma20vs200: e.ma20vs200,
         trendAligned: e.trendAligned,

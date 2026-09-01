@@ -179,6 +179,9 @@ export type RBCEntry = {
   dqmRank?: number;
   /** Fundstrat momentum rating (1 = best). */
   momentumRating?: number;
+  /** RBC EQUATE composite rank (1 = best in that region's universe). Set by
+   *  the weekly xlsx ingest for the equateCad / equateUsd lists only. */
+  equateRank?: number;
   /** Price vs its 20-day moving average, percent (e.g. 104 = 4% above). */
   priceVs20d?: number;
   /** 20-day MA vs 200-day MA, percent. */
@@ -264,12 +267,13 @@ export type ResearchState = {
   // populated separately from a screenshot / email. US tickers. Optional for
   // backward compat with older pm:research blobs that predate it.
   jpmUsAnalystFocus?: RBCEntry[];
-  // RBC Equate — Canada Large Cap CORE 40 Model Portfolio (CAD stocks, .TO).
-  // Extracted from the RBC Equate PDF (which carries several lists — only the
-  // CORE 40 model portfolio holdings are captured here). Optional for backward
-  // compat with older pm:research blobs.
+  // RBC EQUATE — TOP DECILE of the Canada All Cap quant ranking (CAD stocks,
+  // .TO). Written by the weekly xlsx ingest (pm:equate:canada → here), NOT by
+  // a PDF scrape: this used to hold the vision-parsed CORE 40 model portfolio,
+  // which the deterministic sheet replaced. Optional for backward compat with
+  // older pm:research blobs.
   equateCad?: RBCEntry[];
-  // RBC Equate — U.S. All Cap CORE 40 Model Portfolio (USD stocks, bare tickers).
+  // RBC EQUATE — TOP DECILE of the US All Cap quant ranking (bare US tickers).
   equateUsd?: RBCEntry[];
   // Seeking Alpha Alpha Picks — institutional buy recommendations
   // populated from the Alpha Picks dashboard screenshot. Mirrors the

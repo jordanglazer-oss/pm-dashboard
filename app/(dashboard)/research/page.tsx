@@ -469,7 +469,7 @@ type UptickSortKey = "ticker" | "name" | "sector" | "price" | "support" | "resis
 type IdeaSortKey = "ticker" | "priceWhenAdded" | "currentPrice";
 type RBCSortKey = "ticker" | "name" | "sector" | "weight" | "dateAdded";
 type JpmSortKey = "name" | "ticker" | "industry" | "strategy" | "currentPrice" | "priceTarget";
-type EquateSortKey = "name" | "ticker" | "industry" | "currentPrice";
+type EquateSortKey = "rank" | "name" | "ticker" | "industry" | "currentPrice";
 type FewSortKey = "ticker" | "name" | "industry" | "price";
 type CoreSortKey = "dqmRank" | "ticker" | "name" | "sector" | "momentumRating" | "perf1M" | "perfYTD" | "pe" | "mktCap" | "currentPrice";
 type AlphaSortKey = "name" | "ticker" | "sector" | "rating" | "holdingWeight" | "currentPrice" | "priceWhenAdded" | "returnSinceAdded" | "dateAdded" | "days";
@@ -608,10 +608,10 @@ export default function ResearchPage() {
   const setRbcSort = (next: { key: RBCSortKey; dir: SortDir }) => writeSort("research.rbcSortKey", "research.rbcSortDir", next);
   const rbcUsSort = readSort<RBCSortKey>("research.rbcUsSortKey", "research.rbcUsSortDir", RBC_SORT_KEYS, "ticker", "asc");
   const setRbcUsSort = (next: { key: RBCSortKey; dir: SortDir }) => writeSort("research.rbcUsSortKey", "research.rbcUsSortDir", next);
-  const EQUATE_SORT_KEYS: ReadonlyArray<EquateSortKey> = ["name", "ticker", "industry", "currentPrice"];
-  const equateCadSort = readSort<EquateSortKey>("research.equateCadSortKey", "research.equateCadSortDir", EQUATE_SORT_KEYS, "ticker", "asc");
+  const EQUATE_SORT_KEYS: ReadonlyArray<EquateSortKey> = ["rank", "name", "ticker", "industry", "currentPrice"];
+  const equateCadSort = readSort<EquateSortKey>("research.equateCadSortKey", "research.equateCadSortDir", EQUATE_SORT_KEYS, "rank", "asc");
   const setEquateCadSort = (next: { key: EquateSortKey; dir: SortDir }) => writeSort("research.equateCadSortKey", "research.equateCadSortDir", next);
-  const equateUsdSort = readSort<EquateSortKey>("research.equateUsdSortKey", "research.equateUsdSortDir", EQUATE_SORT_KEYS, "ticker", "asc");
+  const equateUsdSort = readSort<EquateSortKey>("research.equateUsdSortKey", "research.equateUsdSortDir", EQUATE_SORT_KEYS, "rank", "asc");
   const setEquateUsdSort = (next: { key: EquateSortKey; dir: SortDir }) => writeSort("research.equateUsdSortKey", "research.equateUsdSortDir", next);
   const JPM_SORT_KEYS: ReadonlyArray<JpmSortKey> = ["name", "ticker", "industry", "strategy", "currentPrice", "priceTarget"];
   const jpmFocusSort = readSort<JpmSortKey>("research.jpmFocusSortKey", "research.jpmFocusSortDir", JPM_SORT_KEYS, "ticker", "asc");
@@ -922,6 +922,9 @@ export default function ResearchPage() {
   function compareEquate(a: RBCEntry, b: RBCEntry, key: EquateSortKey): number {
     if (key === "currentPrice") return (factsetPrices[a.ticker] ?? 0) - (factsetPrices[b.ticker] ?? 0);
     if (key === "industry") return String(factsetSectors[a.ticker] || a.industry || "").localeCompare(String(factsetSectors[b.ticker] || b.industry || ""));
+    // Rank 1 is the best name in the universe, so ascending = strongest first.
+    // Manually-added rows carry no rank and sort to the bottom either way.
+    if (key === "rank") return (a.equateRank ?? Number.MAX_SAFE_INTEGER) - (b.equateRank ?? Number.MAX_SAFE_INTEGER);
     return String(a[key] || "").localeCompare(String(b[key] || ""));
   }
   function sortedEquateCad() {
@@ -3492,17 +3495,18 @@ export default function ResearchPage() {
         </div>
 
         <div className="grid gap-5 lg:grid-cols-2 items-start">
-        {/* ── RBC Equate — Canada Large Cap CORE 40 ──
-            Models the RBC US Focus card exactly. Same RBCEntry shape,
-            same manual-add + screenshot-scan flow; targets state.equateCad
-            (Canadian/.TO tickers). Sky-accented as its own section. */}
+        {/* ── RBC Equate — Canada All Cap, top decile ──
+            Same RBCEntry shape and manual-add flow as the RBC Focus cards,
+            but there is NO screenshot/PDF scan: the list is written by the
+            weekly xlsx ingest (pm:equate:canada → equateCad) and replaces
+            the CORE 40 model portfolio this card used to vision-parse. */}
         <CollapsibleSection
           prefKey="research.equateCad"
           linkedKeys={["research.equateUsd"]}
           className="border-line min-w-0"
           titleClass="text-[15px] font-bold text-accent"
-          title={<>RBC Equate — Canada Large Cap CORE 40</>}
-          subtitle={<>RBC Equate Canada Large Cap CORE 40 Model Portfolio</>}
+          title={<>RBC Equate — Canada All Cap (top decile)</>}
+          subtitle={<>Top decile of the weekly RBC EQUATE Canada All Cap quant ranking — emailed xlsx, no AI parse. Rank 1 is best.</>}
           right={<><span className="text-sm text-ink-3">{(state.equateCad || []).length} names</span></>}
         >
 
@@ -3520,6 +3524,7 @@ export default function ResearchPage() {
           <div className="overflow-x-auto"><table className="w-full text-sm">
             <thead>
               <tr className="border-b-2 border-accent-border text-left">
+                <th className="py-2 pr-3 text-xs font-semibold text-accent text-right cursor-pointer hover:text-accent select-none" onClick={() => toggleEquateCadSort("rank")} title="RBC EQUATE composite rank — 1 is the best name in that region's universe">Rank{ecArrow("rank")}</th>
                 <th className="py-2 pr-3 text-xs font-semibold text-accent cursor-pointer hover:text-accent select-none" onClick={() => toggleEquateCadSort("name")}>Company name{ecArrow("name")}</th>
                 <th className="py-2 pr-3 text-xs font-semibold text-accent cursor-pointer hover:text-accent select-none" onClick={() => toggleEquateCadSort("ticker")}>Ticker{ecArrow("ticker")}</th>
                 <th className="py-2 pr-3 text-xs font-semibold text-accent cursor-pointer hover:text-accent select-none" onClick={() => toggleEquateCadSort("industry")}>Sector{ecArrow("industry")}</th>
@@ -3532,6 +3537,8 @@ export default function ResearchPage() {
                 const fsPrice = livePrices[item.ticker] ?? null;
                 return (
                 <tr key={item.ticker} className={`border-b border-line-soft ${i % 2 === 0 ? "bg-white" : "bg-accent-soft/30"} hover:bg-accent-soft/60 transition-colors`}>
+                  <td className="py-2 pr-3 text-right font-mono text-ink-3 whitespace-nowrap">{typeof item.equateRank === "number" ? `#${item.equateRank}` : <span className="text-ink-faint">—</span>}</td>
+                  <td className="py-2 pr-3 text-right font-mono text-ink-3 whitespace-nowrap">{typeof item.equateRank === "number" ? `#${item.equateRank}` : <span className="text-ink-faint">—</span>}</td>
                   <td className="py-2 pr-3 text-ink-2 truncate max-w-[240px]" title={item.name || item.ticker}>{item.name || <span className="text-ink-faint italic">—</span>}</td>
                   <td className="py-2 pr-3 font-mono font-bold text-accent">${displayTicker(item.ticker)}</td>
                   <td className="py-2 pr-3 text-ink-2 truncate max-w-[180px]" title={factsetSectors[item.ticker] || item.industry || ""}>{factsetSectors[item.ticker] || item.industry || <span className="text-ink-faint">—</span>}</td>
@@ -3554,7 +3561,7 @@ export default function ResearchPage() {
                 );
               })}
               {(state.equateCad || []).length === 0 && (
-                <tr><td colSpan={5} className="py-6 text-center text-ink-3 italic">No names added yet</td></tr>
+                <tr><td colSpan={6} className="py-6 text-center text-ink-3 italic">No names added yet</td></tr>
               )}
             </tbody>
           </table></div>
@@ -3562,29 +3569,22 @@ export default function ResearchPage() {
 
           <RBCAddForm onAdd={addEquateCad} />
 
-          <ResearchScraperBlock
-            source="rbc-equate-cad"
-            sectionLabel="RBC Equate — Canada Large Cap CORE 40"
-            helperText="Upload the RBC Equate PDF. On Refresh, ONLY the Canada Large Cap CORE 40 Model Portfolio is read (other lists ignored) — company name + ticker + industry are extracted; current price is live from FactSet."
-            attachments={state.attachments || []}
-            onAddAttachment={addAttachment}
-            onRemoveAttachment={removeAttachment}
-            onScrape={(force) => scrapeResearchSource("rbc-equate-cad", force)}
-            loading={!!scrapeLoadingMap["rbc-equate-cad"]}
-            status={scrapeStatusMap["rbc-equate-cad"]}
-          />
+          <p className="mt-3 text-[11px] leading-relaxed text-ink-3">
+            Built automatically from the weekly <span className="font-semibold">RBC EQUATE Quantitative Ranks</span> spreadsheet —
+            forward the vendor email and the top decile lands here. The PDF upload was retired: the xlsx is exact,
+            covers the whole universe rather than a 40-name cut, and costs no AI tokens.
+          </p>
         </CollapsibleSection>
-        {/* ── RBC Equate — U.S. All Cap CORE 40 ──
-            Models the RBC US Focus card exactly. Same RBCEntry shape,
-            same manual-add + screenshot-scan flow; targets state.equateUsd
-            (US bare tickers). Sky-accented as its own section. */}
+        {/* ── RBC Equate — U.S. All Cap, top decile ──
+            Written by the weekly xlsx ingest (pm:equate:us → equateUsd);
+            see the Canadian card above. No screenshot/PDF scan. */}
         <CollapsibleSection
           prefKey="research.equateUsd"
           linkedKeys={["research.equateCad"]}
           className="border-line min-w-0"
           titleClass="text-[15px] font-bold text-accent"
-          title={<>RBC Equate — U.S. All Cap CORE 40</>}
-          subtitle={<>RBC Equate U.S. All Cap CORE 40 Model Portfolio</>}
+          title={<>RBC Equate — U.S. All Cap (top decile)</>}
+          subtitle={<>Top decile of the weekly RBC EQUATE U.S. All Cap quant ranking — emailed xlsx, no AI parse. Rank 1 is best.</>}
           right={<><span className="text-sm text-ink-3">{(state.equateUsd || []).length} names</span></>}
         >
 
@@ -3602,6 +3602,7 @@ export default function ResearchPage() {
           <div className="overflow-x-auto"><table className="w-full text-sm">
             <thead>
               <tr className="border-b-2 border-accent-border text-left">
+                <th className="py-2 pr-3 text-xs font-semibold text-accent text-right cursor-pointer hover:text-accent select-none" onClick={() => toggleEquateUsdSort("rank")} title="RBC EQUATE composite rank — 1 is the best name in that region's universe">Rank{euArrow("rank")}</th>
                 <th className="py-2 pr-3 text-xs font-semibold text-accent cursor-pointer hover:text-accent select-none" onClick={() => toggleEquateUsdSort("name")}>Company name{euArrow("name")}</th>
                 <th className="py-2 pr-3 text-xs font-semibold text-accent cursor-pointer hover:text-accent select-none" onClick={() => toggleEquateUsdSort("ticker")}>Ticker{euArrow("ticker")}</th>
                 <th className="py-2 pr-3 text-xs font-semibold text-accent cursor-pointer hover:text-accent select-none" onClick={() => toggleEquateUsdSort("industry")}>Sector{euArrow("industry")}</th>
@@ -3636,7 +3637,7 @@ export default function ResearchPage() {
                 );
               })}
               {(state.equateUsd || []).length === 0 && (
-                <tr><td colSpan={5} className="py-6 text-center text-ink-3 italic">No names added yet</td></tr>
+                <tr><td colSpan={6} className="py-6 text-center text-ink-3 italic">No names added yet</td></tr>
               )}
             </tbody>
           </table></div>
@@ -3644,17 +3645,11 @@ export default function ResearchPage() {
 
           <RBCAddForm onAdd={addEquateUsd} />
 
-          <ResearchScraperBlock
-            source="rbc-equate-usd"
-            sectionLabel="RBC Equate — U.S. All Cap CORE 40"
-            helperText="Upload the RBC Equate PDF. On Refresh, ONLY the U.S. All Cap CORE 40 Model Portfolio is read (other lists ignored) — company name + ticker + industry are extracted; current price is live from FactSet."
-            attachments={state.attachments || []}
-            onAddAttachment={addAttachment}
-            onRemoveAttachment={removeAttachment}
-            onScrape={(force) => scrapeResearchSource("rbc-equate-usd", force)}
-            loading={!!scrapeLoadingMap["rbc-equate-usd"]}
-            status={scrapeStatusMap["rbc-equate-usd"]}
-          />
+          <p className="mt-3 text-[11px] leading-relaxed text-ink-3">
+            Built automatically from the weekly <span className="font-semibold">RBC EQUATE Quantitative Ranks</span> spreadsheet —
+            forward the vendor email and the top decile lands here. The PDF upload was retired: the xlsx is exact,
+            covers the whole universe rather than a 40-name cut, and costs no AI tokens.
+          </p>
         </CollapsibleSection>
         </div>
 
