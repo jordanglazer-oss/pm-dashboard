@@ -47,7 +47,9 @@ import { extractResearchEntries, type SourceKey as ResearchSourceKey } from "@/a
 import { applyResearchEntries } from "./research-merge";
 import { logResearchRemovals } from "./research-removals";
 import type { ResearchState } from "./defaults";
-import { defaultResearch } from "./defaults";
+import { defaultResearch, defaultMarketData } from "./defaults";
+import { appendStrategistNote } from "./forward-looking";
+import { easternToday } from "./date-eastern";
 import {
   appendStreetTakeaway,
   describeTakeaway,
@@ -71,6 +73,8 @@ export type InboxKind =
   | "strategist"
   | "analyst-report"
   | "street-takeaways"
+  | "newton-note"
+  | "lee-note"
   | "unknown"
   | ResearchKind;
 
@@ -116,6 +120,13 @@ export function classifySubject(subject: string): InboxKind {
   if (/^(boostedai|boosted)\b/i.test(s)) return "boosted";
   if (/^(marketedge|chartscout)\b/i.test(s)) return "marketedge";
   if (/^strategist\b/i.test(s)) return "strategist";
+  // Strategist NOTES — the pasted TEXT of the daily Fundstrat reports, sent as
+  // the email BODY (no attachment). Distinct from "Strategist …" above, which
+  // files an attached PDF/image into the Brief's dropbox. Same lookahead
+  // pattern as SIA so "Newton — Sept 2" and "Lee: weekly" both match while
+  // "Newtonville" and "Leeds" don't.
+  if (/^(?:mark\s+)?newton(?![a-z0-9])/i.test(s)) return "newton-note";
+  if (/^(?:tom\s+)?lee(?![a-z0-9])/i.test(s)) return "lee-note";
   // FactSet earnings alerts — body-text emails, no attachment (see
   // handleStreetTakeaways). Several report formats share one pipeline:
   //   "SA: Street Takeaways - IBM Q2 Earnings"            → analyst reaction
@@ -250,6 +261,72 @@ async function addStrategistAttachment(dataUrl: string, label: string): Promise<
   };
   await redis.set("pm:attachments", JSON.stringify([...existing.filter((e) => e.id !== id), entry]));
   return { id };
+}
+
+// ── Strategist notes (Newton / Lee body-text email) ────────────────
+
+/**
+ * Store the pasted text of a Fundstrat daily note into
+ * pm:market.strategistNotes — the exact field the Brief's manual paste UI
+ * writes — plus the rolling 30-day history via appendStrategistNote (same
+ * pairing as the PUT /api/kv/market path, so the two entry points stay
+ * equivalent).
+ *
+ * Date: an ISO YYYY-MM-DD anywhere in the subject wins ("Lee 2026-09-01"
+ * backfills a note sent late); otherwise today's EASTERN date, matching the
+ * "done today" check in the Brief UI.
+ *
+ * Timing tags are preserved if already set and defaulted otherwise to each
+ * strategist's documented pattern (Newton → prior-close, Lee → pre-market);
+ * the UI selector remains the override.
+ */
+async function handleStrategistNote(
+  strategist: "newton" | "lee",
+  bodyText: string,
+  subject: string,
+): Promise<DispatchResult> {
+  const kind: InboxKind = strategist === "newton" ? "newton-note" : "lee-note";
+  const who = strategist === "newton" ? "Newton" : "Lee";
+  const text = (bodyText ?? "").trim();
+  // A real note is hundreds of words; a short body means the paste didn't
+  // make it into the email. Refuse (4xx = permanent, no Apps Script retry)
+  // rather than storing junk the Brief prompt would then reason from.
+  if (text.length < 100) {
+    return {
+      ok: false,
+      kind,
+      status: 400,
+      message: `${who} note body was too short to store (${text.length} chars) — paste the report text into the email BODY, not an attachment.`,
+    };
+  }
+  const date = subject.match(/(\d{4}-\d{2}-\d{2})/)?.[1] ?? easternToday();
+
+  // Read-modify-write pm:market, merging BOTH levels: the top-level blob and
+  // the nested strategistNotes object, so the other strategist's note and
+  // every unrelated market field survive. Missing-key fallback mirrors the
+  // PUT /api/kv/market route (defaultMarketData), not an empty object.
+  const redis = await getRedis();
+  const raw = await redis.get("pm:market");
+  const market = raw ? (JSON.parse(raw) as Record<string, unknown>) : { ...defaultMarketData } as Record<string, unknown>;
+  const prev = (market.strategistNotes ?? {}) as Record<string, unknown>;
+  const strategistNotes =
+    strategist === "newton"
+      ? { ...prev, newton: text, newtonDate: date, newtonTiming: prev.newtonTiming ?? "prior-close" }
+      : { ...prev, lee: text, leeDate: date, leeTiming: prev.leeTiming ?? "pre-market" };
+  await redis.set("pm:market", JSON.stringify({ ...market, strategistNotes }));
+
+  // Rolling 30-day history — best-effort, same as the kv/market PUT path.
+  await appendStrategistNote(strategist, text, date).catch((err) =>
+    console.error(`[Inbox] ${who} note history append failed:`, err),
+  );
+
+  const words = text.split(/\s+/).length;
+  return {
+    ok: true,
+    kind,
+    message: `${who} note stored for ${date} (${words} words). It will feed the next Morning Brief.`,
+    detail: { strategist, date, words, chars: text.length },
+  };
 }
 
 // ── Street Takeaways (FactSet body-text email) ─────────────────────
@@ -636,6 +713,8 @@ export async function dispatchInbox(args: {
     case "equate":       return await handleEquate(att, label);
     case "strategist":   return await handleStrategist(att, label);
     case "street-takeaways": return await handleStreetTakeaways(args.bodyText ?? "", args.subject);
+    case "newton-note":  return await handleStrategistNote("newton", args.bodyText ?? "", args.subject);
+    case "lee-note":     return await handleStrategistNote("lee", args.bodyText ?? "", args.subject);
     case "analyst-report": return null;  // existing flow handles this
     case "unknown":      return null;    // existing route returns its "couldn't determine source" error
   }

@@ -15,6 +15,8 @@ handles the rest.
 | `MarketEdge …` *or* `ChartScout …` | ChartScout Likes export (CSV) | Each matched stock's `marketEdge` fields + composite score |
 | `Strategist …` | Any analyst/strategist research (PDF or image) | Brief's "Analyst / Strategist Reports" dropbox |
 | `SA: Street Takeaways …` — **or just forward any email from `FactSet_Alerts@factset.com`** (sender is matched too, so the original subject works unchanged) | **The email BODY — no attachment needed** | Per-ticker Street Takeaways: per-firm PT changes, full-panel rating mix, avg target, valuation vs own history. Feeds catalysts / researchCoverage / historicalValuation on the next rescore, and the stock page's Street Takeaways tile. Names outside the Portfolio/Watchlist are skipped. |
+| `Newton …` (or `Mark Newton …`) | **The email BODY — paste the report TEXT, no attachment** | Brief's Strategist Notes → Mark Newton slot (`pm:market.strategistNotes`), exactly like pasting into the UI. Dated today (Eastern) unless the subject contains a `YYYY-MM-DD`. Timing defaults to prior-close if not already set. Also appends the rolling 30-day note history. |
+| `Lee …` (or `Tom Lee …`) | **The email BODY — paste the report TEXT, no attachment** | Same, Tom Lee slot. Timing defaults to pre-market. Skip the last 2 disclosure pages when copying — only paste the report text. |
 | `Fundstrat Top` / `Fundstrat Bottom` / `Fundstrat SMID Top` / `Fundstrat SMID Bottom` | Screenshot (PNG/JPG/PDF) | Respective Fundstrat list on the Research tab |
 | `Fundstrat Large-Cap Core` / `Fundstrat SMID Core` | Screenshot (PNG/JPG/PDF) of the DQM quant screen (Ticker, Company, Sector, Industry, Mkt Cap, 1M/YTD relative perf, P/E, DQM Rank, Momentum Rating, trend columns) | Respective Fundstrat "Core Ideas" list on the Research tab |
 | `RBC Canadian` / `RBC US` | Screenshot (PNG/JPG/PDF) | RBC Canadian / US Focus List |
@@ -223,7 +225,7 @@ function processInbox() {
     // FactSet alerts are BODY-TEXT emails (no attachment) — matched by sender so
     // a plain forward works with its original subject untouched.
     const BODY_TEXT_SENDER_RE = /factset[_.]?alerts?@factset\.com/i;
-    const BODY_TEXT_SUBJECT_RE = /^(?:(?:re|fwd?|fw):\s*)*(?:SA:\s*)?(?:Street Takeaways|StreetAccount|Transcript Intelligence)/i;
+    const BODY_TEXT_SUBJECT_RE = /^(?:(?:re|fwd?|fw):\s*)*(?:(?:SA:\s*)?(?:Street Takeaways|StreetAccount|Transcript Intelligence)|(?:Mark )?Newton\b|(?:Tom )?Lee\b)/i;
     const PROCESSED_LABEL_NAME = "Dashboard-Processed";
 
     let label = GmailApp.getUserLabelByName(PROCESSED_LABEL_NAME);

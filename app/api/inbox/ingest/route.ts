@@ -228,14 +228,18 @@ export async function POST(request: NextRequest) {
   // so they're recognised by sender (or subject) and exempt from the
   // attachment requirement below. Every other kind stays attachment-driven.
   const bodyText = typeof body.bodyText === "string" ? body.bodyText : "";
+  const classified = classifySubject(subject);
   // Three match paths — a FORWARD from the PM's own address makes `sender`
   // the PM, not FactSet, so the subject (which survives FW:/Fwd:) is the
   // primary signal, with FactSet's address in the forwarded header block as
   // the fallback for a forward whose subject was edited.
-  const isBodyTextKind =
-    classifySubject(subject) === "street-takeaways" ||
+  const isFactsetBodyKind =
+    classified === "street-takeaways" ||
     isFactsetAlertSender(sender) ||
     (bodyText.length > 0 && isFactsetAlertSender(bodyText.slice(0, 3000)));
+  // Strategist notes (Newton / Lee) are body-text emails too — the pasted
+  // report text IS the payload, no attachment expected.
+  const isBodyTextKind = isFactsetBodyKind || classified === "newton-note" || classified === "lee-note";
 
   if (!subject || (!dataUrl && !isBodyTextKind)) {
     await appendInboxEvent({ status: "error", subject, sender, filename, message: "Missing subject or dataUrl/blob" });
@@ -261,7 +265,10 @@ export async function POST(request: NextRequest) {
   //
   // Subject still WINS when it resolves, so an explicit subject convention can
   // always override a misleading filename.
-  let kind = isBodyTextKind ? "street-takeaways" : classifySubject(subject);
+  // Subject classification wins; the FactSet sender match only reroutes an
+  // email the subject couldn't place (a plain forward with an edited subject).
+  let kind = classified;
+  if (kind === "unknown" && isFactsetBodyKind) kind = "street-takeaways";
   if (kind === "unknown" && filename) {
     const fromFilename = classifySubject(filename);
     if (fromFilename !== "unknown") kind = fromFilename;
