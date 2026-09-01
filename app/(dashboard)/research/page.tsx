@@ -1,12 +1,13 @@
 "use client";
 
-import React, { useState, useEffect, useCallback, useRef } from "react";
+import React, { useState, useEffect, useCallback, useMemo, useRef } from "react";
 import type { ResearchState, UptickEntry, IdeaEntry, RBCEntry, SectorViewEntry, SectorView, LeeFocusArea, AlphaPickEntry, FewEntry } from "@/app/lib/defaults";
 import { defaultResearch, GICS_SECTORS } from "@/app/lib/defaults";
 import { dedupeRbcEntries } from "@/app/lib/rbc-canonical";
 import { applyResearchEntries } from "@/app/lib/research-merge";
 import type { RemovalSource } from "@/app/lib/research-removals";
 import { displayTicker } from "@/app/lib/ticker";
+import { tickerIssue, suggestTickerFix } from "@/app/lib/ticker-health";
 import { ImageUpload, type BriefAttachment } from "@/app/components/ImageUpload";
 import { CollapsibleSection } from "@/app/components/CollapsibleSection";
 import { FlashValue } from "@/app/components/FlashValue";
@@ -387,16 +388,60 @@ type SourceRowItem = {
   changePctOverride?: number | null; // when the source carries its own return-since-added
 };
 
+/** In-row editor for a ticker the screenshot parse couldn't resolve. Shown
+ *  only for suspect rows, so a clean list looks exactly as it did before.
+ *  The input pre-fills with the raw value (not a guess) — the banner at the
+ *  top of the page is where the suggested repair is offered. */
+function SuspectTickerCell({ ticker, issue, onFix }: {
+  ticker: string;
+  issue: string;
+  onFix: (from: string, to: string) => void;
+}) {
+  const [editing, setEditing] = useState(false);
+  const [temp, setTemp] = useState(ticker);
+  const commit = () => {
+    const next = temp.trim().toUpperCase();
+    setEditing(false);
+    if (next && next !== ticker) onFix(ticker, next);
+  };
+  if (editing) {
+    return (
+      <input
+        autoFocus
+        value={temp}
+        onChange={(e) => setTemp(e.target.value.toUpperCase())}
+        onBlur={commit}
+        onKeyDown={(e) => { if (e.key === "Enter") commit(); if (e.key === "Escape") { setTemp(ticker); setEditing(false); } }}
+        aria-label={`Corrected ticker for ${ticker}`}
+        className="w-32 rounded-lg border border-warn-border bg-white px-2 py-0.5 font-mono text-sm outline-none focus:ring-1 focus:ring-accent-border transition-all"
+      />
+    );
+  }
+  return (
+    <button
+      onClick={() => { setTemp(ticker); setEditing(true); }}
+      title={`${issue} — click to fix`}
+      className="flex items-center gap-1 rounded px-1 font-mono font-bold text-warn hover:bg-warn-soft transition-colors"
+    >
+      <span aria-hidden>⚠</span>
+      {ticker || "(blank)"}
+    </button>
+  );
+}
+
 /** Compact mockup-style row list shared by every research source. Keeps the key
  *  data (ticker, name, per-source context, live price, change-since-added) plus
  *  the +Watch / remove actions; the full sortable + inline-editable table stays
  *  behind the per-source "Table view" toggle so no functionality is lost. */
-function SourceRowsList({ rows, livePrices, isInList, onAdd, onRemove, emptyLabel = "No names yet" }: {
+function SourceRowsList({ rows, livePrices, isInList, onAdd, onRemove, onFixTicker, emptyLabel = "No names yet" }: {
   rows: SourceRowItem[];
   livePrices: LivePrices;
   isInList: (t: string) => boolean;
   onAdd: (t: string) => void;
   onRemove: (t: string) => void;
+  /** Retag a row whose ticker the parse couldn't resolve. When omitted the
+   *  row still renders — it just isn't editable from here. */
+  onFixTicker?: (from: string, to: string) => void;
   emptyLabel?: string;
 }) {
   if (rows.length === 0) {
@@ -417,7 +462,11 @@ function SourceRowsList({ rows, livePrices, isInList, onAdd, onRemove, emptyLabe
             <span className="shrink-0 text-ink-faint select-none" title="Use + Watch to add to the Watchlist">⋮⋮</span>
             <div className="min-w-0 flex-1">
               <div className="flex items-baseline gap-2">
-                <span className="font-mono font-bold text-ink">{displayTicker(r.ticker)}</span>
+                {tickerIssue(r.ticker) && onFixTicker ? (
+                  <SuspectTickerCell ticker={r.ticker} issue={tickerIssue(r.ticker)!} onFix={onFixTicker} />
+                ) : (
+                  <span className="font-mono font-bold text-ink">{displayTicker(r.ticker)}</span>
+                )}
                 {r.name && r.name !== r.ticker && <span className="truncate text-sm text-ink-2">{r.name}</span>}
               </div>
               {r.meta != null && r.meta !== "" && <div className="text-[11px] text-ink-3 truncate">{r.meta}</div>}
@@ -516,6 +565,139 @@ const RAIL_GROUPS: { label: string; items: { key: string; label: string }[] }[] 
   ] },
 ];
 
+/**
+ * Every research list that holds tickers, mapped to the pane the rail opens
+ * for it. Drives the "needs a manual fix" banner: a row whose ticker the
+ * screenshot parse couldn't resolve into a usable symbol is KEPT in the list
+ * and listed here for a one-click retag, rather than being dropped on
+ * ingest (a dropped row leaves no trace that the name was ever on the list).
+ *
+ * `canadian` marks the all-TSX lists, so the suggested repair lands on the
+ * ".TO" listing.
+ */
+const TICKER_LISTS: { key: keyof ResearchState; label: string; railKey: string; canadian?: boolean }[] = [
+  { key: "newtonUpticks", label: "Newton Upticks", railKey: "research.newton" },
+  { key: "fundstratTop", label: "Fundstrat — Top", railKey: "research.fsTop" },
+  { key: "fundstratBottom", label: "Fundstrat — Bottom", railKey: "research.fsBottom" },
+  { key: "fundstratSmidTop", label: "Fundstrat SMID — Top", railKey: "research.fsSmidTop" },
+  { key: "fundstratSmidBottom", label: "Fundstrat SMID — Bottom", railKey: "research.fsSmidBottom" },
+  { key: "fundstratLargeCapCore", label: "Large-Cap Core Ideas", railKey: "research.lcCore" },
+  { key: "fundstratSmidCore", label: "SMID Core Ideas", railKey: "research.smidCore" },
+  { key: "alphaPicks", label: "Alpha Picks", railKey: "research.alpha" },
+  { key: "rbcCanadianFocus", label: "RBC Canada", railKey: "research.rbcCa", canadian: true },
+  { key: "rbcUsFocus", label: "RBC US", railKey: "research.rbcUs" },
+  { key: "jpmUsAnalystFocus", label: "JPM Focus", railKey: "research.jpm" },
+  { key: "rbccmFew", label: "RBC CM FEW", railKey: "research.few", canadian: true },
+  { key: "equateCad", label: "Equate CAD", railKey: "research.equateCad", canadian: true },
+  { key: "equateUsd", label: "Equate USD", railKey: "research.equateUsd" },
+];
+
+type SuspectTicker = {
+  ticker: string;
+  issue: string;
+  suggestion: string;
+  listKey: keyof ResearchState;
+  listLabel: string;
+  railKey: string;
+};
+
+/** Scan every research list for tickers that need a manual retag. */
+function findSuspectTickers(state: ResearchState): SuspectTicker[] {
+  const out: SuspectTicker[] = [];
+  for (const list of TICKER_LISTS) {
+    const rows = (state[list.key] as { ticker?: string }[] | undefined) || [];
+    if (!Array.isArray(rows)) continue;
+    for (const row of rows) {
+      const ticker = row?.ticker ?? "";
+      const issue = tickerIssue(ticker);
+      if (!issue) continue;
+      out.push({
+        ticker,
+        issue,
+        suggestion: suggestTickerFix(ticker, { canadian: list.canadian }),
+        listKey: list.key,
+        listLabel: list.label,
+        railKey: list.railKey,
+      });
+    }
+  }
+  return out;
+}
+
+/**
+ * Top-of-page banner listing every research-list ticker that needs a manual
+ * retag. Renders nothing when the lists are clean, and sits OUTSIDE the
+ * `section[id^="research."]` panes so the single-source rail selection can't
+ * hide it.
+ *
+ * Each row offers both routes the PM might want: fix it here (the input is
+ * pre-filled with a suggested repair, never auto-applied), or jump to the
+ * source pane and fix it in place on the row itself.
+ */
+function TickerFixBanner({ suspects, onFix, onOpenList }: {
+  suspects: SuspectTicker[];
+  onFix: (listKey: keyof ResearchState, from: string, to: string) => void;
+  onOpenList: (railKey: string) => void;
+}) {
+  // Keyed by list + ticker so the same bad symbol on two lists edits apart.
+  const [drafts, setDrafts] = useState<Record<string, string>>({});
+  if (suspects.length === 0) return null;
+  const rowKey = (s: SuspectTicker) => `${String(s.listKey)}::${s.ticker}`;
+  return (
+    <div className="rounded-card border border-warn-border bg-warn-soft p-4">
+      <div className="flex items-baseline gap-2">
+        <span className="text-warn" aria-hidden>⚠</span>
+        <h2 className="text-sm font-bold text-ink">
+          {suspects.length} ticker{suspects.length === 1 ? "" : "s"} need{suspects.length === 1 ? "s" : ""} a manual fix
+        </h2>
+      </div>
+      <p className="mt-1 text-[12px] leading-relaxed text-ink-2">
+        These rows were ingested but their symbols aren&apos;t usable — no live price, no watchlist add, no
+        cross-source match until they&apos;re corrected. Nothing was dropped. Edit the ticker here, or open the
+        list and fix it on the row.
+      </p>
+      <div className="mt-3 space-y-2">
+        {suspects.map((sp) => {
+          const key = rowKey(sp);
+          const draft = drafts[key] ?? sp.suggestion;
+          const unchanged = draft.trim() === sp.ticker.trim();
+          return (
+            <div key={key} className="flex flex-wrap items-center gap-2 rounded-xl border border-warn-border bg-white px-3 py-2">
+              <span className="font-mono text-sm font-bold text-warn">{sp.ticker || "(blank)"}</span>
+              <span className="text-[11px] text-ink-3">{sp.listLabel} · {sp.issue}</span>
+              <div className="ml-auto flex items-center gap-2">
+                <span className="text-ink-faint" aria-hidden>→</span>
+                <input
+                  value={draft}
+                  onChange={(e) => setDrafts((d) => ({ ...d, [key]: e.target.value.toUpperCase() }))}
+                  onKeyDown={(e) => { if (e.key === "Enter" && draft.trim() && !unchanged) onFix(sp.listKey, sp.ticker, draft.trim()); }}
+                  aria-label={`Corrected ticker for ${sp.ticker}`}
+                  className="w-32 rounded-lg border border-line bg-surface-2 px-2 py-1 font-mono text-sm outline-none focus:border-accent-border focus:bg-white focus:ring-1 focus:ring-accent-border transition-all"
+                />
+                <button
+                  onClick={() => onFix(sp.listKey, sp.ticker, draft.trim())}
+                  disabled={!draft.trim() || unchanged}
+                  className="rounded-control border border-accent-border bg-accent-soft px-2.5 py-1 text-xs font-semibold text-accent transition-colors hover:bg-accent hover:text-white disabled:cursor-not-allowed disabled:opacity-40 disabled:hover:bg-accent-soft disabled:hover:text-accent"
+                  title="Save the corrected ticker to this list"
+                >
+                  Fix
+                </button>
+                <button
+                  onClick={() => onOpenList(sp.railKey)}
+                  className="rounded-control border border-line bg-white px-2.5 py-1 text-xs font-semibold text-ink-2 transition-colors hover:bg-surface-2"
+                  title={`Open ${sp.listLabel} and edit the row there`}
+                >
+                  Open {sp.listLabel}
+                </button>
+              </div>
+            </div>
+          );
+        })}
+      </div>
+    </div>
+  );
+}
+
 /** Every collapsible pane the rail knows about — the target of Collapse all.
  *  Derived from RAIL_GROUPS so a new source added to the rail is covered
  *  automatically instead of needing a second list kept in sync. */
@@ -526,6 +708,11 @@ export default function ResearchPage() {
   // that source's pane (canvas layout). View state only — nothing persisted.
   const [railSel, setRailSel] = useState<string>("all");
   const [state, setState] = useState<ResearchState>(defaultResearch);
+  // Latest state for async handlers that write back AFTER an await — a
+  // pre-await closure would persist a snapshot taken before whatever else
+  // the PM did in the meantime, silently reverting it.
+  const stateRef = useRef(state);
+  stateRef.current = state;
   const [loaded, setLoaded] = useState(false);
   const [attachmentsSaveError, setAttachmentsSaveError] = useState<string | null>(null);
   const saveTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
@@ -2030,6 +2217,72 @@ export default function ResearchPage() {
     save({ ...state, rbccmFew: (state.rbccmFew || []).filter((r) => r.ticker !== ticker) });
   };
 
+  /* ── Manual ticker retag ──
+     A screenshot parse can emit a ticker the app can't use (RBC's Bloomberg
+     pricing symbols are the reason this exists). Those rows are KEPT on
+     ingest and flagged in the banner at the top of the page; this is the
+     write path that corrects one.
+
+     Redis: read-modify-write of pm:research through the same debounced
+     `save` every other edit on this page uses. Only the target row's ticker
+     (plus its name/sector backfill) changes; every other list and every
+     other field rides through untouched. */
+  const renameTicker = useCallback(async (listKey: keyof ResearchState, from: string, to: string) => {
+    const next = to.trim().toUpperCase();
+    if (!next || next === from) return;
+    // Resolve the company under the CORRECTED ticker first, so the retag and
+    // the name/sector backfill land in ONE save. Two sequential saves would
+    // race: the second would be built from the pre-retag snapshot.
+    let name: string | undefined;
+    let sector: string | undefined;
+    try {
+      const res = await fetch(`/api/company-name?tickers=${encodeURIComponent(next)}`);
+      if (res.ok) {
+        const info = await res.json();
+        name = info.names?.[next];
+        sector = info.sectors?.[next];
+      }
+    } catch { /* best-effort — the retag still lands without the name */ }
+    const current = stateRef.current;
+    const rows = (current[listKey] as { ticker: string }[] | undefined) || [];
+    if (!Array.isArray(rows) || !rows.some((r) => r.ticker === from)) return;
+    const seen = new Set<string>();
+    const updated: { ticker: string }[] = [];
+    for (const r of rows) {
+      const row = r.ticker === from
+        ? {
+            ...r,
+            ticker: next,
+            ...(name ? { name } : {}),
+            ...(sector && "sector" in r ? { sector } : {}),
+          }
+        : r;
+      // The retag can collide with a row that already carries the corrected
+      // ticker (a bad "SHOP US.TO" sitting beside a good "SHOP.TO"). Keep the
+      // first occurrence so the list doesn't end up with a duplicate.
+      if (seen.has(row.ticker)) continue;
+      seen.add(row.ticker);
+      updated.push(row);
+    }
+    save({ ...current, [listKey]: updated } as ResearchState);
+  }, [save]);
+
+  /** Open a source pane from the banner: select it in the rail (which is what
+   *  hides the other panes at xl+), expand it, then scroll to it after the
+   *  layout has settled. */
+  const openSourcePane = useCallback((railKey: string) => {
+    setRailSel(railKey);
+    setUiPref(railKey, "0");
+    requestAnimationFrame(() => {
+      const el = document.getElementById(railKey);
+      if (el) el.scrollIntoView({ behavior: "smooth", block: "start" });
+      else window.scrollTo({ top: 0, behavior: "smooth" });
+    });
+  }, [setUiPref]);
+
+  /** Research-list tickers the parse couldn't resolve into usable symbols. */
+  const suspectTickers = useMemo(() => findSuspectTickers(state), [state]);
+
   /* Attachment helpers — image payloads are stored in separate Redis keys
      via /api/kv/attachments/[id] so they never blow up the research blob.
      Only the lightweight manifest (id/label/section/addedAt) rides on
@@ -2137,6 +2390,14 @@ export default function ResearchPage() {
           {railSel !== "all" && (
             <style>{`@media (min-width: 1280px) { .research-col section[id^="research."] { display: none; } .research-col section[id="${railSel}"], .research-col section[id="research.synthesisCollapsed"] { display: block !important; } }`}</style>
           )}
+        {/* Sits outside the source panes so the rail's single-source view
+            can't hide it — a ticker that needs fixing has to be visible from
+            whichever pane the PM happens to be on. */}
+        <TickerFixBanner
+          suspects={suspectTickers}
+          onFix={renameTicker}
+          onOpenList={openSourcePane}
+        />
         {/* The hub band above already titles the page — this row keeps only the
             synthesis action, right-aligned, plus the collapse-all pair below
             xl (the source rail carries it at xl+, so exactly one copy of the
@@ -2772,6 +3033,7 @@ export default function ResearchPage() {
                 isInList={isInList}
                 onAdd={addToWatchlist}
                 onRemove={(t) => removeIdea("fundstratTop", t)}
+              onFixTicker={(from, to) => renameTicker("fundstratTop", from, to)}
                 emptyLabel="No names added yet"
               />
             ) : (
@@ -2877,6 +3139,7 @@ export default function ResearchPage() {
                 isInList={isInList}
                 onAdd={addToWatchlist}
                 onRemove={(t) => removeIdea("fundstratBottom", t)}
+              onFixTicker={(from, to) => renameTicker("fundstratBottom", from, to)}
                 emptyLabel="No names added yet"
               />
             ) : (
@@ -2988,6 +3251,7 @@ export default function ResearchPage() {
                 isInList={isInList}
                 onAdd={addToWatchlist}
                 onRemove={(t) => removeIdea("fundstratSmidTop", t)}
+              onFixTicker={(from, to) => renameTicker("fundstratSmidTop", from, to)}
                 emptyLabel="No names added yet"
               />
             ) : (
@@ -3087,6 +3351,7 @@ export default function ResearchPage() {
                 isInList={isInList}
                 onAdd={addToWatchlist}
                 onRemove={(t) => removeIdea("fundstratSmidBottom", t)}
+              onFixTicker={(from, to) => renameTicker("fundstratSmidBottom", from, to)}
                 emptyLabel="No names added yet"
               />
             ) : (
@@ -3224,6 +3489,7 @@ export default function ResearchPage() {
                   isInList={isInList}
                   onAdd={addToWatchlist}
                   onRemove={cfg.onRemove}
+                  onFixTicker={(from, to) => renameTicker(cfg.key === "lc" ? "fundstratLargeCapCore" : "fundstratSmidCore", from, to)}
                   emptyLabel="No names added yet"
                 />
               ) : (
@@ -3374,6 +3640,7 @@ export default function ResearchPage() {
               isInList={isInList}
               onAdd={addToWatchlist}
               onRemove={removeRbc}
+              onFixTicker={(from, to) => renameTicker("rbcCanadianFocus", from, to)}
               emptyLabel="No names added yet"
             />
           ) : (
@@ -3472,6 +3739,7 @@ export default function ResearchPage() {
               isInList={isInList}
               onAdd={addToWatchlist}
               onRemove={removeRbcUs}
+              onFixTicker={(from, to) => renameTicker("rbcUsFocus", from, to)}
               emptyLabel="No names added yet"
             />
           ) : (
@@ -3573,6 +3841,7 @@ export default function ResearchPage() {
               isInList={isInList}
               onAdd={addToWatchlist}
               onRemove={removeEquateCad}
+              onFixTicker={(from, to) => renameTicker("equateCad", from, to)}
               emptyLabel="No names added yet"
             />
           ) : (
@@ -3651,6 +3920,7 @@ export default function ResearchPage() {
               isInList={isInList}
               onAdd={addToWatchlist}
               onRemove={removeEquateUsd}
+              onFixTicker={(from, to) => renameTicker("equateUsd", from, to)}
               emptyLabel="No names added yet"
             />
           ) : (
@@ -3743,6 +4013,7 @@ export default function ResearchPage() {
               isInList={isInList}
               onAdd={addToWatchlist}
               onRemove={removeJpmFocus}
+              onFixTicker={(from, to) => renameTicker("jpmUsAnalystFocus", from, to)}
               emptyLabel="No names added yet"
             />
           ) : (
@@ -3834,6 +4105,7 @@ export default function ResearchPage() {
               isInList={isInList}
               onAdd={addToWatchlist}
               onRemove={removeFew}
+              onFixTicker={(from, to) => renameTicker("rbccmFew", from, to)}
               emptyLabel="No names added yet"
             />
           ) : (
@@ -4140,6 +4412,7 @@ export default function ResearchPage() {
                     isInList={isInList}
                     onAdd={addToWatchlist}
                     onRemove={(t) => { const list = state.alphaPicks ?? []; save({ ...state, alphaPicks: list.filter((p) => p.ticker !== t) }); }}
+                    onFixTicker={(from, to) => renameTicker("alphaPicks", from, to)}
                     emptyLabel="No picks added yet"
                   />
                 ) : (

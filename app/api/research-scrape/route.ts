@@ -3,6 +3,7 @@ import { NextRequest, NextResponse } from "next/server";
 import { createHash } from "crypto";
 import { getRedis } from "@/app/lib/redis";
 import { stripExchangeCode, toCanadianYahooTicker } from "@/app/lib/rbc-canonical";
+import { isSuspectTicker } from "@/app/lib/ticker-health";
 
 /**
  * Generic research-screenshot scraper for the four sources beyond
@@ -514,12 +515,17 @@ function parseAlphaPickRows(text: string): ScrapedAlphaPick[] {
   }
 }
 
-/** A parsed ticker must be a plain symbol. Rows that still carry a space
- *  (an exchange code the strip didn't recognize) or any other stray
- *  punctuation are DROPPED rather than persisted — a junk ticker in
- *  pm:research reads as a real new name in the Change Monitor and the
- *  watchlist-candidate feed. */
-const VALID_TICKER = /^[A-Z0-9][A-Z0-9.\-]*$/;
+/** Log any row whose ticker still doesn't look like a symbol after the
+ *  exchange-code strip + canonicalization. The row is KEPT — dropping it
+ *  would make the name vanish from the list with no trace. The Research
+ *  page surfaces these in its "needs a manual fix" banner instead, where
+ *  the PM retags the ticker by hand. */
+function warnSuspectTickers(source: SourceKey, rows: { ticker: string }[]): void {
+  const bad = rows.filter((r) => isSuspectTicker(r.ticker)).map((r) => r.ticker);
+  if (bad.length > 0) {
+    console.warn(`[research-scrape:${source}] ${bad.length} ticker(s) need a manual fix:`, bad.join(", "));
+  }
+}
 
 function parseRbcRows(text: string, source: SourceKey): ScrapedRbcRow[] {
   const cleaned = text.replace(/```json\s*|```/g, "");
@@ -529,7 +535,7 @@ function parseRbcRows(text: string, source: SourceKey): ScrapedRbcRow[] {
   try {
     const arr = JSON.parse(cleaned.slice(start, end + 1));
     if (!Array.isArray(arr)) return [];
-    return arr
+    const rows: ScrapedRbcRow[] = arr
       .filter((r) => r && typeof r === "object" && typeof r.ticker === "string" && r.ticker.trim())
       .map((r) => {
         // The Focus List PDFs print Bloomberg pricing symbols ("RCI/B CN",
@@ -576,8 +582,9 @@ function parseRbcRows(text: string, source: SourceKey): ScrapedRbcRow[] {
           else if (t === "n" || t === "no" || t === "false") out.trendAligned = false;
         }
         return out;
-      })
-      .filter((r) => VALID_TICKER.test(r.ticker));
+      });
+    warnSuspectTickers(source, rows);
+    return rows;
   } catch {
     return [];
   }
@@ -593,7 +600,7 @@ function parseFewRows(text: string): ScrapedFewRow[] {
   try {
     const arr = JSON.parse(cleaned.slice(start, end + 1));
     if (!Array.isArray(arr)) return [];
-    return arr
+    const rows: ScrapedFewRow[] = arr
       .filter((r) => r && typeof r === "object" && typeof r.ticker === "string" && r.ticker.trim())
       .map((r) => {
         let ticker = stripExchangeCode(String(r.ticker).trim().toUpperCase().replace(/^\$+/, "")).replace(/\//g, "-");
@@ -607,8 +614,9 @@ function parseFewRows(text: string): ScrapedFewRow[] {
           if (Number.isFinite(n) && n > 0) out.price = n;
         }
         return out;
-      })
-      .filter((r) => VALID_TICKER.test(r.ticker));
+      });
+    warnSuspectTickers("rbccm-few", rows);
+    return rows;
   } catch {
     return [];
   }
