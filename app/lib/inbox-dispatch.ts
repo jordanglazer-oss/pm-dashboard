@@ -265,6 +265,34 @@ async function addStrategistAttachment(dataUrl: string, label: string): Promise<
 
 // ── Strategist notes (Newton / Lee body-text email) ────────────────
 
+/** The RBC work-email system appends a bilingual compliance footer
+ *  (unsubscribe + confidentiality, EN then FR) to EVERY outbound email — it
+ *  can't be removed at compose time. Truncate at the first marker so only the
+ *  pasted report text is stored; each block gets its own marker so the note
+ *  survives even if the mail system reorders or drops one of them. Matching
+ *  is case-insensitive on distinctive full phrases — generic separators like
+ *  underscore rules are deliberately NOT markers, since a pasted report could
+ *  plausibly contain one. */
+const EMAIL_FOOTER_MARKERS = [
+  "respecting your privacy and preferences for electronic communications",
+  "this email may be privileged and/or confidential",
+  "le respect de votre vie privée et de vos préférences",
+  "ce courrier électronique est confidentiel et protégé",
+];
+
+export function stripEmailFooter(text: string): { text: string; stripped: boolean } {
+  const lower = text.toLowerCase();
+  let cut = text.length;
+  for (const marker of EMAIL_FOOTER_MARKERS) {
+    const i = lower.indexOf(marker);
+    if (i >= 0 && i < cut) cut = i;
+  }
+  if (cut === text.length) return { text: text.trim(), stripped: false };
+  // Drop any separator line ("____", "--", whitespace) left dangling just
+  // above the footer.
+  return { text: text.slice(0, cut).replace(/[\s_\-–—*]+$/, "").trim(), stripped: true };
+}
+
 /**
  * Store the pasted text of a Fundstrat daily note into
  * pm:market.strategistNotes — the exact field the Brief's manual paste UI
@@ -287,7 +315,7 @@ async function handleStrategistNote(
 ): Promise<DispatchResult> {
   const kind: InboxKind = strategist === "newton" ? "newton-note" : "lee-note";
   const who = strategist === "newton" ? "Newton" : "Lee";
-  const text = (bodyText ?? "").trim();
+  const { text, stripped } = stripEmailFooter((bodyText ?? "").trim());
   // A real note is hundreds of words; a short body means the paste didn't
   // make it into the email. Refuse (4xx = permanent, no Apps Script retry)
   // rather than storing junk the Brief prompt would then reason from.
@@ -324,8 +352,8 @@ async function handleStrategistNote(
   return {
     ok: true,
     kind,
-    message: `${who} note stored for ${date} (${words} words). It will feed the next Morning Brief.`,
-    detail: { strategist, date, words, chars: text.length },
+    message: `${who} note stored for ${date} (${words} words${stripped ? ", compliance footer stripped" : ""}). It will feed the next Morning Brief.`,
+    detail: { strategist, date, words, chars: text.length, footerStripped: stripped },
   };
 }
 
