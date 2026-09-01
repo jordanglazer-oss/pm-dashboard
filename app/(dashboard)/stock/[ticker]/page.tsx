@@ -34,6 +34,7 @@ import { mapBoostedAiToAiRating, mapSmaxToRelativeStrength, mapPowerRatingToMark
 // can confirm it reflects real news rather than an AI artifact.
 const VARIANCE_ALERT_THRESHOLD = 5;
 import StockChart from "@/app/components/StockChart";
+import QuickStockView from "@/app/components/QuickStockView";
 
 // ── Helpers ──
 function formatAUM(value: number): string {
@@ -1024,7 +1025,7 @@ export default function StockDetailPage() {
     el.addEventListener("scroll", onScroll, { passive: true });
     return () => el.removeEventListener("scroll", onScroll);
   }, []);
-  const { getStock, scoredStocks, marketData, updateScore, updateExplanations, updateLastScored, updatePrice, updateHealthData, updateTechnicals, updateStockFields, updateWeight, updateFundData, moveBucket, removeStock, pimModels, toggleModelEligibility, updateModelWeight, getAnalystSnapshot, updateAnalystSnapshot, getAnalystReports, uploadAnalystReport, removeAnalystReport, convertAnalystTarget, tickerCurrency, uiPrefs, setUiPref } = useStocks();
+  const { loading: stocksLoading, getStock, scoredStocks, marketData, updateScore, updateExplanations, updateLastScored, updatePrice, updateHealthData, updateTechnicals, updateStockFields, updateWeight, updateFundData, moveBucket, removeStock, pimModels, toggleModelEligibility, updateModelWeight, getAnalystSnapshot, updateAnalystSnapshot, getAnalystReports, uploadAnalystReport, removeAnalystReport, convertAnalystTarget, tickerCurrency, uiPrefs, setUiPref } = useStocks();
   const { notify } = useNotifications();
   const stock = getStock(ticker);
   const [scoring, setScoring] = useState(false);
@@ -1290,17 +1291,26 @@ export default function StockDetailPage() {
   }, [scoredStocks, ticker, router, fromSuffix]);
 
   if (!stock) {
-    return (
-      <main className="min-h-screen bg-[#f4f5f7] px-4 py-6 text-ink md:px-8 md:py-8">
-        <div className="mx-auto max-w-5xl">
-          <div className="rounded-card border border-line bg-white p-8 text-center shadow-sm">
-            <h1 className="text-2xl font-semibold text-ink">{ticker} not found</h1>
-            <p className="mt-2 text-ink-3">This ticker is not in your portfolio or watchlist.</p>
-            <Link href={backHref} onClick={goBack} className="mt-4 inline-block text-accent hover:underline text-sm">Back to {backLabel}</Link>
+    // While the book is still hydrating from Redis we don't yet know whether
+    // this is a held name — hold off so a Portfolio/Watchlist ticker doesn't
+    // flash the lite view (and fire its quote/chart fetches) before the full
+    // page mounts.
+    if (stocksLoading) {
+      return (
+        <main className="min-h-screen bg-[#f4f5f7] px-4 py-6 text-ink md:px-8 md:py-8">
+          <div className="mx-auto max-w-5xl">
+            <div className="rounded-card border border-line bg-white p-8 shadow-sm animate-pulse">
+              <div className="h-7 w-40 rounded bg-surface-2" />
+              <div className="mt-3 h-4 w-64 rounded bg-surface-2" />
+            </div>
           </div>
-        </div>
-      </main>
-    );
+        </main>
+      );
+    }
+    // Not in the book: lightweight quote view (name + price + chart, nothing
+    // persisted) so any ticker clicked anywhere in the app opens something
+    // useful instead of a dead "not found" page.
+    return <QuickStockView ticker={ticker} backHref={backHref} backLabel={backLabel} goBack={goBack} />;
   }
 
   const portfolioAll = scoredStocks.filter((s) => s.bucket === "Portfolio");

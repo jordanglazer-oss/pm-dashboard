@@ -7,6 +7,7 @@ import { dedupeRbcEntries } from "@/app/lib/rbc-canonical";
 import { applyResearchEntries } from "@/app/lib/research-merge";
 import type { RemovalSource } from "@/app/lib/research-removals";
 import { displayTicker } from "@/app/lib/ticker";
+import TickerLink from "@/app/components/TickerLink";
 import { tickerIssue, suggestTickerFix } from "@/app/lib/ticker-health";
 import { ImageUpload, type BriefAttachment } from "@/app/components/ImageUpload";
 import { CollapsibleSection } from "@/app/components/CollapsibleSection";
@@ -465,7 +466,7 @@ function SourceRowsList({ rows, livePrices, isInList, onAdd, onRemove, onFixTick
                 {tickerIssue(r.ticker) && onFixTicker ? (
                   <SuspectTickerCell ticker={r.ticker} issue={tickerIssue(r.ticker)!} onFix={onFixTicker} />
                 ) : (
-                  <span className="font-mono font-bold text-ink">{displayTicker(r.ticker)}</span>
+                  <TickerLink ticker={r.ticker} className="font-mono font-bold text-ink hover:underline hover:text-accent transition-colors">{displayTicker(r.ticker)}</TickerLink>
                 )}
                 {r.name && r.name !== r.ticker && <span className="truncate text-sm text-ink-2">{r.name}</span>}
               </div>
@@ -2543,7 +2544,7 @@ export default function ResearchPage() {
                   <button onClick={() => togglePickExpand(p.ticker)} className="w-full text-left px-3 py-2 flex items-start gap-2 hover:bg-surface-2/40 transition-colors rounded-lg">
                     <div className="min-w-0 flex-1">
                       <div className="flex items-baseline gap-1.5">
-                        <span className={`font-mono font-bold ${tickerCls}`}>{displayTicker(p.ticker)}</span>
+                        <TickerLink ticker={p.ticker} className={`font-mono font-bold ${tickerCls} hover:underline`}>{displayTicker(p.ticker)}</TickerLink>
                         <span className="text-xs text-ink-3">· {p.sourceCount} {p.sourceCount === 1 ? "list" : "lists"}</span>
                       </div>
                       <p className={`text-sm leading-6 text-ink-2 ${expanded ? "" : "line-clamp-2"}`}>{p.thesis}</p>
@@ -2639,7 +2640,7 @@ export default function ResearchPage() {
                     {synthesis.honorableMentions.map((p) => isPickExpanded(p.ticker) ? (
                       <div key={p.ticker} className="mt-2 rounded-lg border border-line-soft bg-white p-3">
                         <div className="flex items-center gap-1.5 flex-wrap mb-1">
-                          <span className="font-mono font-bold text-ink">{displayTicker(p.ticker)}</span>
+                          <TickerLink ticker={p.ticker} className="font-mono font-bold text-ink hover:underline hover:text-accent transition-colors">{displayTicker(p.ticker)}</TickerLink>
                           <span className="text-xs text-ink-3">· {p.sourceCount} {p.sourceCount === 1 ? "list" : "lists"}</span>
                           <ConvictionBadge p={p} />
                           {p.sources.map((s) => (
@@ -2722,7 +2723,7 @@ export default function ResearchPage() {
                     <span className="shrink-0 text-ink-faint select-none" title="Use + Watch to add to the Watchlist">⋮⋮</span>
                     <div className="min-w-0 flex-1">
                       <div className="flex items-baseline gap-2">
-                        <span className="font-mono font-bold text-ink">{displayTicker(u.ticker)}</span>
+                        <TickerLink ticker={u.ticker} className="font-mono font-bold text-ink hover:underline hover:text-accent transition-colors">{displayTicker(u.ticker)}</TickerLink>
                         {u.name && u.name !== u.ticker && <span className="truncate text-sm text-ink-2">{u.name}</span>}
                       </div>
                       <div className="text-[11px] text-ink-3 truncate">
@@ -2778,7 +2779,7 @@ export default function ResearchPage() {
                   return (
                     <tr key={u.ticker} className={`border-b border-line-soft ${rowBg} hover:bg-accent-soft/40 transition-colors`}>
                       <td className="py-2 pr-2 text-ink-3">{i + 1}</td>
-                      <td className="py-2 pr-3 font-mono font-bold text-accent">${displayTicker(u.ticker)}</td>
+                      <td className="py-2 pr-3 font-mono font-bold text-accent">$<TickerLink ticker={u.ticker} className="hover:underline">{displayTicker(u.ticker)}</TickerLink></td>
                       <td className="py-2 pr-3 text-ink-2 truncate max-w-[160px]">
                         {u.name && u.name !== u.ticker ? u.name : <span className="text-ink-faint italic text-xs">loading...</span>}
                       </td>
@@ -2908,7 +2909,7 @@ export default function ResearchPage() {
                     <tbody>
                       {lastScrape.map((r, i) => (
                         <tr key={`${r.ticker}-${i}`} className="border-b border-line-soft">
-                          <td className="py-0.5 pr-2 font-mono font-semibold">{displayTicker(r.ticker)}</td>
+                          <td className="py-0.5 pr-2 font-mono font-semibold"><TickerLink ticker={r.ticker} className="hover:underline">{displayTicker(r.ticker)}</TickerLink></td>
                           <td className="py-0.5 pr-2">{r.support ?? <span className="text-ink-faint">—</span>}</td>
                           <td className="py-0.5 pr-2">{r.resistance ?? <span className="text-ink-faint">—</span>}</td>
                           <td className="py-0.5 pr-2 text-right">{r.priceWhenAdded != null ? `$${r.priceWhenAdded}` : <span className="text-ink-faint">—</span>}</td>
@@ -3055,7 +3056,7 @@ export default function ResearchPage() {
                   return (
                     <tr key={item.ticker} className={`border-b border-line-soft ${i % 2 === 0 ? "bg-white" : "bg-pos-soft/30"} hover:bg-pos-soft/60 transition-colors`}>
                       <td className="py-2 pr-2 text-ink-3">{i + 1}</td>
-                      <td className="py-2 pr-3 font-mono font-bold text-pos">${displayTicker(item.ticker)}</td>
+                      <td className="py-2 pr-3 font-mono font-bold text-pos">$<TickerLink ticker={item.ticker} className="hover:underline">{displayTicker(item.ticker)}</TickerLink></td>
                       <td className="py-2 pr-3 text-right font-mono">
                         {pricesLoading ? (
                           <span className="text-ink-faint animate-pulse">...</span>
@@ -3161,7 +3162,7 @@ export default function ResearchPage() {
                   return (
                     <tr key={item.ticker} className={`border-b border-line-soft ${i % 2 === 0 ? "bg-white" : "bg-neg-soft/30"} hover:bg-neg-soft/60 transition-colors`}>
                       <td className="py-2 pr-2 text-ink-3">{i + 1}</td>
-                      <td className="py-2 pr-3 font-mono font-bold text-neg">${displayTicker(item.ticker)}</td>
+                      <td className="py-2 pr-3 font-mono font-bold text-neg">$<TickerLink ticker={item.ticker} className="hover:underline">{displayTicker(item.ticker)}</TickerLink></td>
                       <td className="py-2 pr-3 text-right font-mono">
                         {pricesLoading ? (
                           <span className="text-ink-faint animate-pulse">...</span>
@@ -3273,7 +3274,7 @@ export default function ResearchPage() {
                   return (
                     <tr key={item.ticker} className={`border-b border-line-soft ${i % 2 === 0 ? "bg-white" : "bg-pos-soft/30"} hover:bg-pos-soft/60 transition-colors`}>
                       <td className="py-2 pr-2 text-ink-3">{i + 1}</td>
-                      <td className="py-2 pr-3 font-mono font-bold text-pos">${displayTicker(item.ticker)}</td>
+                      <td className="py-2 pr-3 font-mono font-bold text-pos">$<TickerLink ticker={item.ticker} className="hover:underline">{displayTicker(item.ticker)}</TickerLink></td>
                       <td className="py-2 pr-3 text-right font-mono">
                         {pricesLoading ? <span className="text-ink-faint animate-pulse">...</span>
                           : livePrice != null ? <span className="font-semibold">${livePrice.toFixed(2)}</span>
@@ -3373,7 +3374,7 @@ export default function ResearchPage() {
                   return (
                     <tr key={item.ticker} className={`border-b border-line-soft ${i % 2 === 0 ? "bg-white" : "bg-neg-soft/30"} hover:bg-neg-soft/60 transition-colors`}>
                       <td className="py-2 pr-2 text-ink-3">{i + 1}</td>
-                      <td className="py-2 pr-3 font-mono font-bold text-neg">${displayTicker(item.ticker)}</td>
+                      <td className="py-2 pr-3 font-mono font-bold text-neg">$<TickerLink ticker={item.ticker} className="hover:underline">{displayTicker(item.ticker)}</TickerLink></td>
                       <td className="py-2 pr-3 text-right font-mono">
                         {pricesLoading ? <span className="text-ink-faint animate-pulse">...</span>
                           : livePrice != null ? <span className="font-semibold">${livePrice.toFixed(2)}</span>
@@ -3517,7 +3518,7 @@ export default function ResearchPage() {
                       return (
                         <tr key={item.ticker} className={`border-b border-line-soft ${i % 2 === 0 ? "bg-white" : cfg.rowAlt} ${cfg.rowHover} transition-colors`}>
                           <td className="py-2 pr-2 text-ink-3 font-mono">{typeof item.dqmRank === "number" ? item.dqmRank : "—"}</td>
-                          <td className={`py-2 pr-3 font-mono font-bold ${cfg.ticker}`}>${displayTicker(item.ticker)}</td>
+                          <td className={`py-2 pr-3 font-mono font-bold ${cfg.ticker}`}>$<TickerLink ticker={item.ticker} className="hover:underline">{displayTicker(item.ticker)}</TickerLink></td>
                           <td className="py-2 pr-3 text-ink-2 truncate max-w-[200px]" title={item.name || item.ticker}>{item.name || <span className="text-ink-faint italic">—</span>}</td>
                           <td className="py-2 pr-3 text-ink-2 truncate max-w-[140px]" title={item.sector || ""}>{item.sector || <span className="text-ink-faint">—</span>}</td>
                           <td className="py-2 pr-3 text-right font-mono text-ink-2">{typeof item.momentumRating === "number" ? item.momentumRating : <span className="text-ink-faint">—</span>}</td>
@@ -3659,7 +3660,7 @@ export default function ResearchPage() {
               {sortedRbc().map((item, i) => (
                 <tr key={item.ticker} className={`border-b border-line-soft ${i % 2 === 0 ? "bg-white" : "bg-accent-soft/30"} hover:bg-accent-soft/60 transition-colors`}>
                   <td className="py-2 pr-2 text-ink-3">{i + 1}</td>
-                  <td className="py-2 pr-3 font-mono font-bold text-accent">${displayTicker(item.ticker)}</td>
+                  <td className="py-2 pr-3 font-mono font-bold text-accent">$<TickerLink ticker={item.ticker} className="hover:underline">{displayTicker(item.ticker)}</TickerLink></td>
                   <td className="py-2 pr-3 text-ink-2 truncate max-w-[260px]" title={item.name || item.ticker}>{item.name || <span className="text-ink-faint italic">—</span>}</td>
                   <td className="py-2 pr-3 text-ink-2">{item.sector}</td>
                   <td className="py-2 pr-3 text-ink-3">
@@ -3758,7 +3759,7 @@ export default function ResearchPage() {
               {sortedRbcUs().map((item, i) => (
                 <tr key={item.ticker} className={`border-b border-line-soft ${i % 2 === 0 ? "bg-white" : "bg-accent-soft/30"} hover:bg-accent-soft/60 transition-colors`}>
                   <td className="py-2 pr-2 text-ink-3">{i + 1}</td>
-                  <td className="py-2 pr-3 font-mono font-bold text-accent">${displayTicker(item.ticker)}</td>
+                  <td className="py-2 pr-3 font-mono font-bold text-accent">$<TickerLink ticker={item.ticker} className="hover:underline">{displayTicker(item.ticker)}</TickerLink></td>
                   <td className="py-2 pr-3 text-ink-2 truncate max-w-[260px]" title={item.name || item.ticker}>{item.name || <span className="text-ink-faint italic">—</span>}</td>
                   <td className="py-2 pr-3 text-ink-2">{item.sector}</td>
                   <td className="py-2 pr-3 text-ink-3">
@@ -3864,7 +3865,7 @@ export default function ResearchPage() {
                   <td className="py-2 pr-3 text-right font-mono text-ink-3 whitespace-nowrap">{typeof item.equateRank === "number" ? `#${item.equateRank}` : <span className="text-ink-faint">—</span>}</td>
                   <td className="py-2 pr-3 text-right font-mono text-ink-3 whitespace-nowrap">{typeof item.equateRank === "number" ? `#${item.equateRank}` : <span className="text-ink-faint">—</span>}</td>
                   <td className="py-2 pr-3 text-ink-2 truncate max-w-[240px]" title={item.name || item.ticker}>{item.name || <span className="text-ink-faint italic">—</span>}</td>
-                  <td className="py-2 pr-3 font-mono font-bold text-accent">${displayTicker(item.ticker)}</td>
+                  <td className="py-2 pr-3 font-mono font-bold text-accent">$<TickerLink ticker={item.ticker} className="hover:underline">{displayTicker(item.ticker)}</TickerLink></td>
                   <td className="py-2 pr-3 text-ink-2 truncate max-w-[180px]" title={factsetSectors[item.ticker] || item.industry || ""}>{factsetSectors[item.ticker] || item.industry || <span className="text-ink-faint">—</span>}</td>
                   <td className="py-2 pr-3 text-right font-mono text-ink-2 whitespace-nowrap">{typeof fsPrice === "number" ? `$${fsPrice.toFixed(2)}` : <span className="text-ink-faint">—</span>}</td>
                   <td className="py-2 text-right whitespace-nowrap">
@@ -3941,7 +3942,7 @@ export default function ResearchPage() {
                 return (
                 <tr key={item.ticker} className={`border-b border-line-soft ${i % 2 === 0 ? "bg-white" : "bg-accent-soft/30"} hover:bg-accent-soft/60 transition-colors`}>
                   <td className="py-2 pr-3 text-ink-2 truncate max-w-[240px]" title={item.name || item.ticker}>{item.name || <span className="text-ink-faint italic">—</span>}</td>
-                  <td className="py-2 pr-3 font-mono font-bold text-accent">${displayTicker(item.ticker)}</td>
+                  <td className="py-2 pr-3 font-mono font-bold text-accent">$<TickerLink ticker={item.ticker} className="hover:underline">{displayTicker(item.ticker)}</TickerLink></td>
                   <td className="py-2 pr-3 text-ink-2 truncate max-w-[180px]" title={factsetSectors[item.ticker] || item.industry || ""}>{factsetSectors[item.ticker] || item.industry || <span className="text-ink-faint">—</span>}</td>
                   <td className="py-2 pr-3 text-right font-mono text-ink-2 whitespace-nowrap">{typeof fsPrice === "number" ? `$${fsPrice.toFixed(2)}` : <span className="text-ink-faint">—</span>}</td>
                   <td className="py-2 text-right whitespace-nowrap">
@@ -4035,7 +4036,7 @@ export default function ResearchPage() {
                 return (
                 <tr key={item.ticker} className={`border-b border-line-soft ${i % 2 === 0 ? "bg-white" : "bg-warn-soft/30"} hover:bg-warn-soft/60 transition-colors`}>
                   <td className="py-2 pr-3 text-ink-2 truncate max-w-[240px]" title={item.name || item.ticker}>{item.name || <span className="text-ink-faint italic">—</span>}</td>
-                  <td className="py-2 pr-3 font-mono font-bold text-warn">${displayTicker(item.ticker)}</td>
+                  <td className="py-2 pr-3 font-mono font-bold text-warn">$<TickerLink ticker={item.ticker} className="hover:underline">{displayTicker(item.ticker)}</TickerLink></td>
                   <td className="py-2 pr-3 text-ink-2 truncate max-w-[180px]" title={factsetSectors[item.ticker] || item.industry || ""}>{factsetSectors[item.ticker] || item.industry || <span className="text-ink-faint">—</span>}</td>
                   <td className="py-2 pr-3 text-ink-2">{item.strategy || <span className="text-ink-faint">—</span>}</td>
                   <td className="py-2 pr-3 text-right font-mono text-ink-2 whitespace-nowrap">
@@ -4126,7 +4127,7 @@ export default function ResearchPage() {
                 return (
                 <tr key={item.ticker} className={`border-b border-line-soft ${i % 2 === 0 ? "bg-white" : "bg-violet-soft/30"} hover:bg-violet-soft/60 transition-colors`}>
                   <td className="py-2 pr-2 text-ink-3">{i + 1}</td>
-                  <td className="py-2 pr-3 font-mono font-bold text-violet">${displayTicker(item.ticker)}</td>
+                  <td className="py-2 pr-3 font-mono font-bold text-violet">$<TickerLink ticker={item.ticker} className="hover:underline">{displayTicker(item.ticker)}</TickerLink></td>
                   <td className="py-2 pr-3 text-ink-2 truncate max-w-[260px]" title={item.name || item.ticker}>{item.name || <span className="text-ink-faint italic">—</span>}</td>
                   <td className="py-2 pr-3 text-ink-2">{item.industry || <span className="text-ink-faint italic">—</span>}</td>
                   <td className="py-2 pr-3 text-ink-2 text-right font-mono">{px > 0 ? `$${px.toFixed(2)}` : <span className="text-ink-faint">—</span>}</td>
@@ -4447,7 +4448,7 @@ export default function ResearchPage() {
                           <tr key={`${pick.ticker}|${pick.dateAdded || ""}|${i}`} className={`border-b border-line-soft ${flagged ? "bg-neg-soft/40" : i % 2 === 0 ? "bg-white" : "bg-surface-2/40"} hover:bg-surface-2 transition-colors`}>
                             <td className="py-2 pr-2 text-ink-3">{i + 1}</td>
                             <td className="py-2 pr-3 text-ink-2 truncate max-w-[200px]" title={pick.name}>{pick.name}</td>
-                            <td className="py-2 pr-3 font-mono font-bold">${displayTicker(pick.ticker)}</td>
+                            <td className="py-2 pr-3 font-mono font-bold">$<TickerLink ticker={pick.ticker} className="hover:underline">{displayTicker(pick.ticker)}</TickerLink></td>
                             <td className="py-2 pr-3 text-xs text-ink-3">{pick.sector || "—"}</td>
                             <td className="py-2 pr-2">
                               <div className="flex items-center gap-1 flex-wrap">

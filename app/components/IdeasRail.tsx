@@ -2,6 +2,7 @@
 
 import { useEffect, useState } from "react";
 import Link from "next/link";
+import TickerLink from "@/app/components/TickerLink";
 
 /**
  * Ideas landing rail (canvas): compact read of the OTHER idea feeds beside
@@ -49,7 +50,7 @@ export function IdeasRail() {
           </div>
           {radar!.map((n) => (
             <div key={n.ticker} className="flex items-center gap-2 border-b border-line-soft px-4 py-2 last:border-b-0">
-              <span className="w-16 shrink-0 font-mono text-[12px] font-semibold text-ink">{n.ticker}</span>
+              <TickerLink ticker={n.ticker ?? ""} className="w-16 shrink-0 font-mono text-[12px] font-semibold text-ink hover:text-accent hover:underline">{n.ticker}</TickerLink>
               <span className="min-w-0 flex-1 truncate text-[11px] text-ink-3">{n.sector || ""}</span>
               {typeof n.regimeFit === "number" && (
                 <span className="shrink-0 font-mono text-[11px] font-semibold text-pos">{Math.round(n.regimeFit)}</span>

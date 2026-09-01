@@ -2,6 +2,7 @@
 
 import React, { useCallback, useEffect, useRef, useState } from "react";
 import { displayTicker } from "@/app/lib/ticker";
+import TickerLink from "@/app/components/TickerLink";
 import { useTableSort, currencyOf } from "@/app/lib/useTableSort";
 
 /**
@@ -264,7 +265,7 @@ export function SetupScan({ onCountChange }: { onCountChange?: (n: number) => vo
             <tbody>
               {rows.map((r) => (
                 <tr key={r.ticker} className="border-b border-line-soft hover:bg-surface-hover">
-                  <td className="py-2.5 pr-3 font-mono text-xs font-semibold text-ink">{displayTicker(r.ticker)}</td>
+                  <td className="py-2.5 pr-3 font-mono text-xs font-semibold text-ink"><TickerLink ticker={r.ticker}>{displayTicker(r.ticker)}</TickerLink></td>
                   <td className="max-w-[200px] truncate py-2.5 pr-3 text-ink">{r.name || "—"}</td>
                   <td className="py-2.5 pr-3 text-xs text-ink-2">{r.sector || "—"}</td>
                   <td className="py-2.5 pr-3 text-right font-mono text-xs tabular-nums text-ink-2">

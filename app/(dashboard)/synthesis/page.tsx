@@ -5,6 +5,7 @@ import { IdeasRail } from "@/app/components/IdeasRail";
 import { ClampText } from "@/app/components/ClampText";
 import { useStocks } from "@/app/lib/StockContext";
 import { displayTicker } from "@/app/lib/ticker";
+import TickerLink from "@/app/components/TickerLink";
 import {
   VERDICT_LABEL,
   STALE_LABEL,
@@ -663,7 +664,7 @@ export default function SynthesisPage() {
                     >
                       <div className="w-40 shrink-0">
                         <div className="font-mono text-xs font-bold text-ink">
-                          {displayTicker(row.displayTicker ?? row.ticker)}
+                          <TickerLink ticker={row.ticker} className="hover:underline hover:text-accent transition-colors">{displayTicker(row.displayTicker ?? row.ticker)}</TickerLink>
                         </div>
                         <div className="truncate text-[10px] text-ink-3" title={row.name}>
                           {row.name}

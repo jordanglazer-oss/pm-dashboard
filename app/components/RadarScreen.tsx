@@ -3,6 +3,7 @@
 import React, { useEffect, useState, useCallback } from "react";
 import { useStocks } from "@/app/lib/StockContext";
 import { displayTicker } from "@/app/lib/ticker";
+import TickerLink from "@/app/components/TickerLink";
 import { useTableSort, currencyOf } from "@/app/lib/useTableSort";
 import type { ScoreKey } from "@/app/lib/types";
 import type { RadarName, RadarPayload } from "@/app/lib/radar";
@@ -205,7 +206,7 @@ export function RadarScreen({ onCountChange }: { onCountChange?: (n: number) => 
               {sorted.map((n) => (
                 <tr key={n.ticker} className="border-b border-line-soft hover:bg-surface-hover">
                   <td className="py-2.5 pr-3 font-mono text-xs font-semibold text-ink">
-                    {displayTicker(n.ticker)}
+                    <TickerLink ticker={n.ticker}>{displayTicker(n.ticker)}</TickerLink>
                     {n.distress === "grey" && (
                       <span
                         title={`Altman-style Z ${n.altmanZ ?? "?"} — grey zone; balance sheet warrants a look`}
